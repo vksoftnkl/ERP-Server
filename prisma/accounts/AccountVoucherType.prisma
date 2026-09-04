@@ -63,12 +63,12 @@ model AccVoucherType {
   vchrCreatedBy              String?              @db.VarChar(100) @map("vchr_created_by")
   vchrUpdatedOn              DateTime?            @db.Timestamptz(6) @map("vchr_updated_on")
   vchrUpdatedBy              String?              @db.VarChar(100) @map("vchr_updated_by")
-  voucherBills               AccVoucherBill[]
   voucherCheques             AccVoucherCheque[]
   voucherDocRegisters        AccVoucherDocRegister[]
+  voucherSequences           AccVoucherSeq[]
   voucherHeaders             AccVoucherHeader[]
   vouchers                   AccVoucher[]
-  voucherTenders             AccVoucherTender[]
+  bills                      AccBillBalance[]
   @@unique([vchrTypeCode], map: "uq_acc_voucher_types_code")
   @@unique([vchrTypeName], map: "uq_acc_voucher_types_name")
   @@index([vchrIsActive, vchrSortOrder, vchrTypeName], map: "idx_acc_voucher_types_active_sort")

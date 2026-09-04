@@ -1,7 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { ConfiguredGridStyleDto } from '../../../../common/configured-grid-sql/dto/configured-grid-style.dto';
-import { LedGstPartyRegType, LedObType } from '@prisma/client';
-
+import { LedGstPartyRegType, LedObType } from '../types/account-ledger-master-enum';
+import { AccLedgerProfile } from '../../accGroupMaster/types/acc-group-master-enum';
+import { LedgerBankAccountPayloadDto } from '../../ledgerBankAccount/dto/ledger-bank-account-response.dto';
 export class AccountLedgerMasterErrorFieldDto {
   @ApiProperty({ example: 'ledName' })
   field!: string;
@@ -9,143 +9,128 @@ export class AccountLedgerMasterErrorFieldDto {
   @ApiProperty({ example: 'Duplicate ledName is not allowed for this company and group' })
   message!: string;
 }
-
 export class AccountLedgerMasterErrorResponseDto {
   @ApiProperty({ example: false })
   success!: false;
-
   @ApiProperty({ example: 'Validation failed' })
   message!: string;
-
   @ApiProperty({ type: AccountLedgerMasterErrorFieldDto, isArray: true })
   errors!: AccountLedgerMasterErrorFieldDto[];
 }
-
 export class AccountLedgerMasterPayloadDto {
   @ApiProperty({ format: 'uuid' })
   ledId!: string;
-
   @ApiPropertyOptional({ nullable: true })
   ledCompanyId!: string | null;
-
-  @ApiProperty({ format: 'uuid' })
-  ledBranchId!: string;
-
+  @ApiPropertyOptional({ nullable: true, description: 'Name of the company' })
+  ledCompanyName!: string | null;
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  ledBranchId!: string | null;
+  @ApiPropertyOptional({ nullable: true, description: 'Name of the branch' })
+  ledBranchName!: string | null;
   @ApiProperty({ format: 'uuid' })
   ledGroupId!: string;
-
+  @ApiPropertyOptional({ nullable: true, description: 'Name of the account group' })
+  ledGroupName!: string | null;
+  @ApiPropertyOptional({
+    enum: AccLedgerProfile,
+    enumName: 'AccLedgerProfile',
+    nullable: true,
+    description: 'Ledger profile inherited from the account group',
+  })
+  ledGroupLedgerProfile!: AccLedgerProfile | null;
   @ApiProperty({ maxLength: 200 })
   ledName!: string;
-
   @ApiPropertyOptional({ maxLength: 100, nullable: true })
   ledAlias!: string | null;
-
   @ApiPropertyOptional({ maxLength: 50, nullable: true })
   ledShort!: string | null;
-
   @ApiPropertyOptional({ maxLength: 200, nullable: true })
   ledTallyName!: string | null;
-
   @ApiPropertyOptional({ maxLength: 150, nullable: true })
   ledTallyGroupName!: string | null;
-
   @ApiPropertyOptional({ maxLength: 64, nullable: true })
   ledTallyGuid!: string | null;
-
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    description: 'Tally master id (BigInt serialized as string)',
+  })
+  ledTallyMasterId!: string | null;
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    description: 'Tally alter id (BigInt serialized as string)',
+  })
+  ledTallyAlterId!: string | null;
   @ApiProperty()
   ledCategory!: string;
-
+  @ApiPropertyOptional({ maxLength: 20, nullable: true })
+  ledLedgerType!: string | null;
+  @ApiPropertyOptional({ maxLength: 200, nullable: true })
+  ledMailingName!: string | null;
   @ApiProperty()
   ledIsBillByBill!: boolean;
-
   @ApiProperty()
   ledIsCostCenterReq!: boolean;
-
   @ApiProperty()
   ledIsInterestApplicable!: boolean;
-
   @ApiPropertyOptional({ nullable: true })
   ledInterestRate!: number | null;
-
   @ApiPropertyOptional({ nullable: true })
   ledContactPerson!: string | null;
-
   @ApiPropertyOptional({ nullable: true })
   ledEmail!: string | null;
-
   @ApiPropertyOptional({ nullable: true })
   ledTel!: string | null;
-
   @ApiPropertyOptional({ nullable: true })
   ledPhone1!: string | null;
-
   @ApiPropertyOptional({ nullable: true })
   ledPhone2!: string | null;
-
   @ApiPropertyOptional({ nullable: true })
   ledWhatsappNo!: string | null;
-
   @ApiPropertyOptional({ nullable: true })
   ledAddr1!: string | null;
-
   @ApiPropertyOptional({ nullable: true })
   ledAddr2!: string | null;
-
   @ApiPropertyOptional({ nullable: true })
   ledAddr3!: string | null;
-
   @ApiPropertyOptional({ nullable: true })
   ledCity!: string | null;
-
   @ApiPropertyOptional({ nullable: true })
   ledDistrict!: string | null;
-
   @ApiPropertyOptional({ nullable: true })
   ledStateName!: string | null;
-
   @ApiPropertyOptional({ nullable: true })
   ledStateCode!: string | null;
-
   @ApiPropertyOptional({ nullable: true })
   ledPin!: string | null;
-
   @ApiPropertyOptional({ nullable: true })
   ledCountry!: string | null;
-
   @ApiPropertyOptional({ nullable: true })
   ledRegionName!: string | null;
-
   @ApiPropertyOptional({ nullable: true })
   ledRegionAddr1!: string | null;
-
   @ApiPropertyOptional({ nullable: true })
   ledRegionAddr2!: string | null;
-
   @ApiPropertyOptional({ nullable: true })
   ledRegionAddr3!: string | null;
-
   @ApiPropertyOptional({ nullable: true })
   ledRegionCity!: string | null;
-
   @ApiPropertyOptional({ nullable: true })
   ledRegionDistrict!: string | null;
-
   @ApiPropertyOptional({ nullable: true })
   ledRegionStateName!: string | null;
-
   @ApiPropertyOptional({ nullable: true })
   ledRegionCountry!: string | null;
-
   @ApiPropertyOptional({
     enum: LedGstPartyRegType,
     enumName: 'LedGstPartyRegType',
     nullable: true,
   })
   ledGstPartyRegType!: LedGstPartyRegType | null;
-
   @ApiPropertyOptional({ nullable: true })
   ledGstinNo!: string | null;
-
   @ApiPropertyOptional({ nullable: true })
   ledPanNo!: string | null;
 
@@ -158,23 +143,56 @@ export class AccountLedgerMasterPayloadDto {
   @ApiProperty()
   ledIsSez!: boolean;
 
-  @ApiPropertyOptional({ nullable: true })
-  ledChequeName!: string | null;
+  @ApiPropertyOptional({ maxLength: 10, nullable: true })
+  ledTypeOfSupply!: string | null;
+
+  @ApiPropertyOptional({ maxLength: 10, nullable: true })
+  ledHsnSac!: string | null;
 
   @ApiPropertyOptional({ nullable: true })
-  ledBankName!: string | null;
+  ledGstRate!: number | null;
+
+  @ApiPropertyOptional({ maxLength: 15, nullable: true })
+  ledTaxability!: string | null;
+
+  @ApiPropertyOptional({ maxLength: 30, nullable: true })
+  ledGstPartyType!: string | null;
+
+  @ApiPropertyOptional({ maxLength: 10, nullable: true })
+  ledTanNo!: string | null;
+
+  @ApiPropertyOptional({ maxLength: 21, nullable: true })
+  ledCin!: string | null;
+
+  @ApiPropertyOptional({ maxLength: 25, nullable: true })
+  ledUdyamNo!: string | null;
+
+  @ApiPropertyOptional({ maxLength: 10, nullable: true })
+  ledMsmeType!: string | null;
+
+  @ApiPropertyOptional({ maxLength: 20, nullable: true })
+  ledGstDutyHead!: string | null;
 
   @ApiPropertyOptional({ nullable: true })
-  ledBankBranch!: string | null;
+  ledTaxRate!: number | null;
+
+  @ApiPropertyOptional({ maxLength: 15, nullable: true })
+  ledRoundingMethod!: string | null;
 
   @ApiPropertyOptional({ nullable: true })
-  ledBankAcNo!: string | null;
+  ledRoundingLimit!: number | null;
 
-  @ApiPropertyOptional({ nullable: true })
-  ledBankIfsc!: string | null;
+  @ApiProperty()
+  ledIsTdsApplicable!: boolean;
 
-  @ApiPropertyOptional({ nullable: true })
-  ledUpiId!: string | null;
+  @ApiPropertyOptional({ maxLength: 40, nullable: true })
+  ledTdsDeducteeType!: string | null;
+
+  @ApiPropertyOptional({ maxLength: 80, nullable: true })
+  ledTdsNatureOfPayment!: string | null;
+
+  @ApiProperty()
+  ledIsTcsApplicable!: boolean;
 
   @ApiProperty()
   ledObAmount!: number;
@@ -196,6 +214,9 @@ export class AccountLedgerMasterPayloadDto {
 
   @ApiProperty()
   ledTotalBalance!: number;
+
+  @ApiPropertyOptional({ nullable: true })
+  ledSortOrder!: number | null;
 
   @ApiProperty()
   ledIsActive!: boolean;
@@ -229,20 +250,9 @@ export class AccountLedgerMasterPayloadDto {
 
   @ApiPropertyOptional({ nullable: true })
   ledModifiedBy!: string | null;
-}
 
-export class AccountLedgerMasterListMetaDto {
-  @ApiProperty({ example: 1 })
-  page!: number;
-
-  @ApiProperty({ example: 20 })
-  limit!: number;
-
-  @ApiProperty({ example: 3 })
-  total!: number;
-
-  @ApiProperty({ example: 1 })
-  total_pages!: number;
+  @ApiProperty({ type: LedgerBankAccountPayloadDto, isArray: true })
+  ledgerBankAccount!: LedgerBankAccountPayloadDto[];
 }
 
 export class AccountLedgerMasterDeleteResultDto {
@@ -264,23 +274,6 @@ export class AccountLedgerMasterSuccessSingleDto {
   data!: AccountLedgerMasterPayloadDto;
 }
 
-export class AccountLedgerMasterSuccessListDto {
-  @ApiProperty({ example: true })
-  success!: true;
-
-  @ApiProperty({ example: 'Account ledgers fetched successfully' })
-  message!: string;
-
-  @ApiProperty({ type: AccountLedgerMasterPayloadDto, isArray: true })
-  data!: AccountLedgerMasterPayloadDto[];
-
-  @ApiProperty({ type: AccountLedgerMasterListMetaDto })
-  meta!: AccountLedgerMasterListMetaDto;
-
-  @ApiPropertyOptional({ type: ConfiguredGridStyleDto, isArray: true })
-  styles?: ConfiguredGridStyleDto[];
-}
-
 export class AccountLedgerMasterSuccessDeleteDto {
   @ApiProperty({ example: true })
   success!: true;
@@ -290,4 +283,64 @@ export class AccountLedgerMasterSuccessDeleteDto {
 
   @ApiProperty({ type: AccountLedgerMasterDeleteResultDto })
   data!: AccountLedgerMasterDeleteResultDto;
+}
+
+export class AccountLedgerMasterSuccessListDto {
+  @ApiProperty({ example: true })
+  success!: true;
+
+  @ApiProperty({ example: 'Account ledgers saved successfully' })
+  message!: string;
+
+  @ApiProperty({ type: AccountLedgerMasterPayloadDto, isArray: true })
+  data!: AccountLedgerMasterPayloadDto[];
+}
+
+export class AccountLedgerMasterBankAccountSingleDto {
+  @ApiProperty({ example: true })
+  success!: true;
+
+  @ApiProperty({ example: 'Ledger bank account fetched successfully' })
+  message!: string;
+
+  @ApiProperty({ type: LedgerBankAccountPayloadDto })
+  data!: LedgerBankAccountPayloadDto;
+}
+
+export class AccountLedgerMasterBankAccountListDataDto {
+  @ApiProperty({ type: LedgerBankAccountPayloadDto, isArray: true })
+  data!: LedgerBankAccountPayloadDto[];
+
+  @ApiProperty({ example: 2, description: 'Number of active bank accounts for the ledger' })
+  total!: number;
+}
+
+export class AccountLedgerMasterBankAccountListDto {
+  @ApiProperty({ example: true })
+  success!: true;
+
+  @ApiProperty({ example: 'Ledger bank accounts fetched successfully' })
+  message!: string;
+
+  @ApiProperty({ type: AccountLedgerMasterBankAccountListDataDto })
+  data!: AccountLedgerMasterBankAccountListDataDto;
+}
+
+export class AccountLedgerMasterBankAccountsDeleteResultDto {
+  @ApiProperty({ format: 'uuid' })
+  lbaId!: string;
+
+  @ApiProperty({ example: true })
+  deleted!: true;
+}
+
+export class AccountLedgerMasterBankAccountsDeleteDto {
+  @ApiProperty({ example: true })
+  success!: true;
+
+  @ApiProperty({ example: 'Ledger bank account deleted successfully' })
+  message!: string;
+
+  @ApiProperty({ type: AccountLedgerMasterBankAccountsDeleteResultDto })
+  data!: AccountLedgerMasterBankAccountsDeleteResultDto;
 }

@@ -1,19 +1,24 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
-import { LOOKUP_MODULE_KEYS, LookupModuleKey } from '../types/master-lookup-api.types';
-const LOOKUP_MODULE_ALIAS_MAP: Record<string, LookupModuleKey> = {
-  area: 'areas',
-  hsncode: 'hsnCodes',
-  hsncodes: 'hsnCodes',
-  pricelevel: 'priceLevels',
-  pricelevels: 'priceLevels',
-  state: 'states',
-  statecode: 'stateCodes',
-  statecodes: 'stateCodes',
-  city: 'cities',
-  customer: 'customers',
-};
+import { IsIn, IsOptional, IsString } from 'class-validator';
+import {
+  LOOKUP_MODULE_ALIASES,
+  LOOKUP_MODULE_KEYS,
+  LookupModuleKey,
+} from '../types/master-lookup-api.types';
+const normalizeLookupModuleAlias = (value: string): string =>
+  value
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '');
+const LOOKUP_MODULE_ALIAS_MAP: Record<string, LookupModuleKey> = Object.fromEntries(
+  LOOKUP_MODULE_KEYS.flatMap((moduleKey) =>
+    [moduleKey, ...LOOKUP_MODULE_ALIASES[moduleKey]].map((alias) => [
+      normalizeLookupModuleAlias(alias),
+      moduleKey,
+    ]),
+  ),
+) as Record<string, LookupModuleKey>;
 const toOptionalLookupModule = (value: unknown): LookupModuleKey | string | undefined => {
   if (value === undefined || value === null) {
     return undefined;
@@ -31,54 +36,31 @@ const toOptionalLookupModule = (value: unknown): LookupModuleKey | string | unde
   if (canonical) {
     return canonical;
   }
-  return LOOKUP_MODULE_ALIAS_MAP[trimmed.toLowerCase()] ?? trimmed;
+  return LOOKUP_MODULE_ALIAS_MAP[normalizeLookupModuleAlias(trimmed)] ?? trimmed;
 };
-const toOptionalTrimmedString = (value: unknown): string | undefined => {
-  if (value === undefined || value === null) {
-    return undefined;
-  }
+const toOptionalId = (value: unknown): string | undefined => {
   if (typeof value !== 'string') {
-    return value as string;
+    return value === undefined || value === null ? undefined : (value as string);
   }
   const trimmed = value.trim();
   return trimmed ? trimmed : undefined;
-};
-const toOptionalNumber = (value: unknown): number | undefined => {
-  if (value === undefined || value === null || value === '') {
-    return undefined;
-  }
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : (value as number);
 };
 export class MasterLookupQueryDto {
   @ApiPropertyOptional({
     enum: LOOKUP_MODULE_KEYS,
     description:
-      'When provided, returns only the selected module id-name list. Also accepts aliases: area, state, statecode, city, customer, pricelevel, hsncode',
+      'When provided, returns only the selected module id-name list. Also accepts route/display aliases such as item-group-master, tax-master, gsp-service-master, statecode, pricelevel, and hsncode.',
   })
   @IsOptional()
   @Transform(({ value }) => toOptionalLookupModule(value))
   @IsIn(LOOKUP_MODULE_KEYS)
   module?: LookupModuleKey;
   @ApiPropertyOptional({
-    description: 'Case-insensitive search text for module lookup',
-    maxLength: 100,
+    description:
+      "Narrows the result to the single row carrying this id, as the module's own table keys it — a UUID for most masters, but the state code for stateCodes, the HSN code for hsnCodes and a number for priceLevels / tenderTypes. Matched exactly against the option id. With `module` it is a by-id read of that master; without one, every module is searched. No row matching returns an empty list, not a 404.",
   })
   @IsOptional()
-  @Transform(({ value }) => toOptionalTrimmedString(value))
+  @Transform(({ value }) => toOptionalId(value))
   @IsString()
-  @MaxLength(100)
-  search?: string;
-  @ApiPropertyOptional({
-    description: 'Max number of records to return per module',
-    minimum: 1,
-    maximum: 100,
-    default: 20,
-  })
-  @IsOptional()
-  @Transform(({ value }) => toOptionalNumber(value))
-  @IsInt()
-  @Min(1)
-  @Max(100)
-  limit?: number;
+  id?: string;
 }

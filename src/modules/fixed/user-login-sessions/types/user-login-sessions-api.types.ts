@@ -1,21 +1,7 @@
-export interface UserLoginSessionsErrorDetail {
-  field: string;
-  message: string;
-}
-
-export interface UserLoginSessionsErrorResponse {
-  success: false;
-  message: string;
-  errors: UserLoginSessionsErrorDetail[];
-}
-
-export interface UserLoginSessionsSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> {
-  success: true;
-  message: string;
-  data: T;
-  meta?: TMeta;
-  styles?: TStyles;
-}
+export type { FixedErrorDetail as UserLoginSessionsErrorDetail } from 'src/common/types/module-api.types';
+export type { FixedErrorResponse as UserLoginSessionsErrorResponse } from 'src/common/types/module-api.types';
+export type { FixedSuccessResponse as UserLoginSessionsSuccessResponse } from 'src/common/types/module-api.types';
+export type { FixedListMeta as UserLoginSessionsListMeta } from 'src/common/types/module-list.types';
 
 export interface UserLoginSessionsPayload {
   ulsId: string;
@@ -45,10 +31,3 @@ export interface UserLoginSessionsPayload {
 }
 
 export type UserLoginSessionsListItem = UserLoginSessionsPayload | Record<string, unknown>;
-
-export interface UserLoginSessionsListMeta {
-  page: number;
-  limit: number;
-  total: number;
-  total_pages: number;
-}

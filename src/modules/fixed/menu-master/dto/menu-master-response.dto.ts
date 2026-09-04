@@ -19,6 +19,35 @@ export class MenuMasterErrorResponseDto {
   errors!: MenuMasterErrorFieldDto[];
 }
 
+export class MenuMasterUserPermissionsDto {
+  @ApiProperty({ example: false })
+  canCreate!: boolean;
+
+  @ApiProperty({ example: false })
+  canEdit!: boolean;
+
+  @ApiProperty({ example: false })
+  canDelete!: boolean;
+
+  @ApiProperty({ example: false })
+  canPrint!: boolean;
+
+  @ApiProperty({ example: false })
+  canExport!: boolean;
+
+  @ApiProperty({ example: true })
+  isVisible!: boolean;
+
+  @ApiProperty({ example: false })
+  isFavourite!: boolean;
+
+  @ApiProperty({ example: false })
+  isPinned!: boolean;
+
+  @ApiProperty({ example: 0 })
+  sortOrder!: number;
+}
+
 export class MenuMasterPayloadDto {
   @ApiProperty({ example: 1 })
   menuId!: number;
@@ -53,24 +82,15 @@ export class MenuMasterPayloadDto {
   @ApiProperty({ example: true })
   menuIsActive!: boolean;
 
+  @ApiPropertyOptional({ type: MenuMasterUserPermissionsDto, nullable: true })
+  permissions!: MenuMasterUserPermissionsDto | null;
+
   @ApiPropertyOptional({ type: () => [MenuMasterPayloadDto] })
   children?: MenuMasterPayloadDto[];
 }
 
 export class MenuMasterGetMetaDto {
-  @ApiPropertyOptional({ example: 1 })
-  menuId?: number;
-
-  @ApiPropertyOptional({ example: null, nullable: true })
-  parentId!: number | null;
-
-  @ApiProperty({ example: true })
-  includeChildren!: boolean;
-
-  @ApiProperty({ example: true })
-  activeOnly!: boolean;
-
-  @ApiProperty({ example: true })
+  @ApiProperty({ example: false })
   visibleOnly!: boolean;
 
   @ApiProperty({ example: 9 })
@@ -89,5 +109,24 @@ export class MenuMasterSuccessGetDto {
 
   @ApiProperty({ type: MenuMasterGetMetaDto })
   meta!: MenuMasterGetMetaDto;
+}
+
+export class MenuMasterUpdateVisibilityDataDto {
+  @ApiProperty({ example: 1 })
+  menuId!: number;
+
+  @ApiProperty({ example: true })
+  menuVisibility!: boolean;
+}
+
+export class MenuMasterSuccessUpdateVisibilityDto {
+  @ApiProperty({ example: true })
+  success!: true;
+
+  @ApiProperty({ example: 'Menu visibility updated successfully' })
+  message!: string;
+
+  @ApiProperty({ type: [MenuMasterUpdateVisibilityDataDto] })
+  data!: MenuMasterUpdateVisibilityDataDto[];
 }
 

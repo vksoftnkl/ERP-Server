@@ -1,0 +1,15 @@
+model ItemGstUnits {
+    itemGstUnitId Int @map("item_gst_unit_id") @id @default(autoincrement())
+    itemGstUnitCode String? @unique @db.Text @map("item_gst_unit_code")
+    itemGstUnitName String? @db.Text @map("item_gst_unit_name")
+    itemGstUnitCreatedOn DateTime @default(now()) @map("item_gst_unit_created_on")
+    itemGstUnitCreatedBy String? @db.Text @map("item_gst_unit_created_by")
+    itemGstUnitModifiedOn DateTime @default(now()) @map("item_gst_unit_modified_on")
+    itemGstUnitModifiedBy String? @db.Text @map("item_gst_unit_modified_by")
+    itemGstUnitSyncDate DateTime @default(now()) @map("item_gst_unit_sync_date")
+
+    units Unit[] // back-relation
+
+    @@map("item_gst_units")
+    @@schema("inventory")
+}

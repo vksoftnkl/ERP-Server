@@ -1,18 +1,22 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { ItemMaster, ItemPriceMaster, ItemTaxMaster, Prisma } from '@prisma/client';
-import { PrismaService } from '../../database/prisma/prisma.service';
-import { ItemPayload } from '../items-master/types/item-api.types';
-import { ItemPricePayload } from '../items-price-master/types/item-price-api.types';
-import { ItemTaxPayload } from '../items-tax-master/types/item-tax-api.types';
-import {
-  ItemPriceDetailErrorDetail,
-  ItemPriceDetailErrorResponse,
-  ItemPriceDetailPayload,
-} from './types/item-price-detail-api.types';
+import { ItemMaster, ItemTaxMaster, ItemUnitConversion, Prisma } from '@prisma/client';
+
+/** A price row read with the conversion row that owns its unit shape. */
+type ItemPriceMasterWithConversion = Prisma.ItemPriceMasterGetPayload<{
+  include: { itemUnitConversion: true };
+}>;
+import { PrismaService } from 'src/database/prisma/prisma.service';
+import { ItemPriceDetailPayloadDto } from 'src/modules/Inventory/item-price-details/dto/item-price-detail-response.dto';
+import { ItemPriceDetailErrorDetail, ItemPriceDetailErrorResponse } from 'src/modules/Inventory/item-price-details/types/item-price-detail-api.types';
+import { ItemPayload } from 'src/modules/Inventory/items-master/types/item-api.types';
+import { ItemPricePayload } from 'src/modules/Inventory/items-price-master/types/item-price-api.types';
+import { ItemUnitConversionPayload } from 'src/modules/Inventory/item-unit-conversion/types/item-unit-conversion-api.types';
+import { ItemTaxPayload } from 'src/modules/Inventory/items-tax-master/types/item-tax-api.types';
+
 @Injectable()
 export class ItemPriceDetailsService {
   constructor(private readonly prisma: PrismaService) {}
-  async getByItemId(itemId: string): Promise<ItemPriceDetailPayload> {
+  async getByItemId(itemId: string): Promise<ItemPriceDetailPayloadDto> {
     const itemRecord = await this.prisma.itemMaster.findFirst({
       where: {
         itemId,
@@ -22,13 +26,20 @@ export class ItemPriceDetailsService {
     if (!itemRecord) {
       this.throwItemNotFound(itemId);
     }
-    const [priceRecords, taxRecord] = await Promise.all([
+    const [priceRecords, unitConversionRecords, taxRecord] = await Promise.all([
       this.prisma.itemPriceMaster.findMany({
         where: {
           ipmItemId: itemId,
           ipmIsDeleted: false,
         },
-        orderBy: [{ ipmUnitSlno: 'asc' }, { ipmId: 'asc' }],
+        include: { itemUnitConversion: true },
+        orderBy: [{ itemUnitConversion: { iucUnitSlno: 'asc' } }, { ipmId: 'asc' }],
+      }),
+      // A price row points at a conversion (ipm_uc_unit_id) and carries none of
+      // its shape, so the conversions ride along in the same response.
+      this.prisma.itemUnitConversion.findMany({
+        where: { iucItemId: itemId, iucIsDeleted: false },
+        orderBy: [{ iucUnitSlno: 'asc' }, { iucId: 'asc' }],
       }),
       itemRecord.itemDefaultTaxId
         ? this.prisma.itemTaxMaster.findFirst({
@@ -42,7 +53,33 @@ export class ItemPriceDetailsService {
     return {
       item: this.toItemPayload(itemRecord),
       item_prices: priceRecords.map((record) => this.toItemPricePayload(record)),
+      item_unit_conversions: unitConversionRecords.map((record) =>
+        this.toItemUnitConversionPayload(record),
+      ),
       item_tax: taxRecord ? this.toItemTaxPayload(taxRecord) : null,
+    };
+  }
+  private toItemUnitConversionPayload(record: ItemUnitConversion): ItemUnitConversionPayload {
+    return {
+      iuc_id: record.iucId,
+      iuc_item_id: record.iucItemId,
+      iuc_unit_id: record.iucUnitId,
+      iuc_base_unit_id: record.iucBaseUnitId,
+      iuc_to_base_factor: this.toNumber(record.iucToBaseFactor),
+      iuc_unit_slno: record.iucUnitSlno,
+      iuc_unit_factor: this.toNumber(record.iucUnitFactor),
+      iuc_is_default_unit: record.iucIsDefaultUnit,
+      iuc_is_base_unit: record.iucIsBaseUnit,
+      iuc_is_big_unit: record.iucIsBigUnit,
+      iuc_uom_weight: this.toNumber(record.iucUomWeight),
+      iuc_uom_remarks: record.iucUomRemarks,
+      iuc_is_active: record.iucIsActive,
+      iuc_is_deleted: record.iucIsDeleted,
+      iuc_sync_date: record.iucSyncDate ? record.iucSyncDate.toISOString() : null,
+      iuc_created_on: record.iucCreatedOn.toISOString(),
+      iuc_created_by: record.iucCreatedBy,
+      iuc_updated_on: record.iucUpdatedOn ? record.iucUpdatedOn.toISOString() : null,
+      iuc_updated_by: record.iucUpdatedBy,
     };
   }
   private toItemPayload(record: ItemMaster): ItemPayload {
@@ -103,6 +140,7 @@ export class ItemPriceDetailsService {
       item_notes: record.itemNotes,
       item_storage_location: record.itemStorageLocation,
       item_packing_item_ids: record.itemPackingItemIds,
+      item_incl_tax: record.itemInclTax,
       item_is_active: record.itemIsActive,
       item_is_deleted: record.itemIsDeleted,
       item_created_on: record.itemCreatedOn.toISOString(),
@@ -111,21 +149,17 @@ export class ItemPriceDetailsService {
       item_modified_by: record.itemModifiedBy,
     };
   }
-  private toItemPricePayload(record: ItemPriceMaster): ItemPricePayload {
+  private toItemPricePayload(record: ItemPriceMasterWithConversion): ItemPricePayload {
+    // The unit shape now lives on the conversion row the price points at.
+    const conversion = record.itemUnitConversion;
     return {
       ipm_id: record.ipmId,
       ipm_company_id: record.ipmCompanyId,
       ipm_branch_id: record.ipmBranchId,
       ipm_item_id: record.ipmItemId,
-      ipm_unit_id: record.ipmUnitId,
+      ipm_uc_unit_id: record.ipmUcUnitId,
       ipm_godown_id: record.ipmGodownId,
-      ipm_base_unit_id: record.ipmBaseUnitId,
-      ipm_to_base_factor: this.toNumber(record.ipmToBaseFactor),
-      ipm_unit_slno: record.ipmUnitSlno,
-      ipm_unit_factor: this.toNumber(record.ipmUnitFactor),
-      ipm_is_default_unit: record.ipmIsDefaultUnit,
-      ipm_is_big_unit: record.ipmIsBigUnit,
-      ipm_is_base_unit: record.ipmIsBaseUnit,
+      ipm_sl_no: record.ipmSlNo,
       ipm_cost_price: this.toNumber(record.ipmCostPrice),
       ipm_cost_wot: this.toNumber(record.ipmCostWot),
       ipm_sales_price_a: this.toNumber(record.ipmSalesPriceA),

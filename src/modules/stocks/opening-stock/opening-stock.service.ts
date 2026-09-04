@@ -1,0 +1,1406 @@
+// import { Injectable } from '@nestjs/common';
+// import { DeviceType, OpeningStockDetail, Prisma, VoucherStatus } from '@prisma/client';
+// import {
+//   OpeningStockDetailCessType,
+//   OpeningStockDetailTrackingType,
+//   OpeningStockDeviceType,
+//   OpeningStockStatus,
+// } from './opening-stock.enums';
+// import { ItemStockLedgerService } from './item-stock-ledger.service';
+// import { ListOpeningStockQueryDto } from './dto/list-opening-stock-query.dto';
+// import {
+//   OpeningStockDetailLineDto,
+//   OpeningStockHeaderInputDto,
+//   SaveOpeningStockDto,
+// } from './dto/save-opening-stock.dto';
+// import {
+//   OpeningStockDocumentPayload,
+//   OpeningStockErrorDetail,
+//   OpeningStockHeaderPayload,
+//   OpeningStockListItem,
+//   OpeningStockListMeta,
+//   OpeningStockDetailPayload,
+// } from './types/opening-stock-api.types';
+// import { PrismaService } from 'src/database/prisma/prisma.service';
+// import { AuditLogService } from 'src/modules/audit-log/audit-log.service';
+// import { RequestContextService } from 'src/common/request-context/request-context.service';
+// import {
+//   createAccountVoucherHeader,
+//   CreateAccountVoucherHeaderPayload,
+//   softDeleteAccountVoucherHeader,
+//   updateAccountVoucherHeader,
+//   UpdateAccountVoucherHeaderPayload,
+// } from 'src/modules/accountsModule/accountVoucherHeader/account-voucher-header.helper';
+// import { resolvePagination } from 'src/common/utils/module-list.utils';
+// import {
+//   isForeignKeyConstraintError,
+//   throwBadRequest,
+//   throwNotFound,
+//   throwOnUniqueConstraintError,
+//   toNumber,
+// } from 'src/common/utils/module-service.utils';
+// const OPENING_STOCK_HEADER_TABLE_NAME = 'opening stock header';
+// const OPENING_STOCK_AUDIT_SCREEN_NAME = 'Opening Stock';
+// const OPENING_STOCK_HEADER_INCLUDE = {
+//   voucherHeader: true,
+// } as const;
+// type OpeningStockWriteClient = Prisma.TransactionClient | PrismaService;
+// type OpeningStockHeaderWithVoucher = Prisma.OpeningStockHeaderGetPayload<{
+//   include: typeof OPENING_STOCK_HEADER_INCLUDE;
+// }>;
+// type UserNameLookup = Map<string, string>;
+// type DetailLookupMaps = {
+//   itemsById: Map<string, { itemCode: string | null; itemNameEn: string | null }>;
+//   unitsById: Map<string, { unit_name: string }>;
+//   baseUomPricesById: Map<string, { baseUomName: string | null }>;
+//   godownsById: Map<string, { gdlName: string }>;
+//   taxesById: Map<string, { taxName: string }>;
+// };
+// type ResolvedHeaderContext = {
+//   accYear: string;
+//   companyId: string;
+//   branchId: string;
+//   actorUserId: string;
+//   voucherUserId: string;
+//   openingUserId: string;
+//   sessionId: string | null;
+//   deviceId: string | null;
+//   counterId: string;
+//   voucherDeviceType: DeviceType;
+//   openingDeviceType: OpeningStockDeviceType;
+//   status: OpeningStockStatus;
+// };
+// type NormalizedDetailLine = {
+//   oslBarcode: string | null;
+//   oslItemId: string;
+//   oslUnitId: string;
+//   oslBaseUomId: string | null;
+//   oslGodownId: string;
+//   oslTrackingType: OpeningStockDetailTrackingType;
+//   oslBatchId: string | null;
+//   oslTaxId: string | null;
+//   oslTaxPerc: number;
+//   oslCessType: OpeningStockDetailCessType;
+//   oslCessPerc: number;
+//   oslCessPerUnit: number;
+//   oslQty: number;
+//   oslFreeQty: number;
+//   oslBaseQty: number;
+//   oslFreeBaseQty: number;
+//   oslConvFactor: number;
+//   oslBatchNo: string | null;
+//   oslSerialNo: string | null;
+//   oslBatchDate: Date | null;
+//   oslMfgDate: Date | null;
+//   oslExpiryDate: Date | null;
+//   oslCostRate: number;
+//   oslCostRateWot: number;
+//   oslStockValue: number;
+//   oslStockValueWot: number;
+//   oslSaleRateAWot: number;
+//   oslMarkupPercA: number;
+//   oslSaleRateA: number;
+//   oslSaleRateBWot: number;
+//   oslMarkupPercB: number;
+//   oslSaleRateB: number;
+//   oslSaleRateCWot: number;
+//   oslMarkupPercC: number;
+//   oslSaleRateC: number;
+//   oslSaleRateDWot: number;
+//   oslMarkupPercD: number;
+//   oslSaleRateD: number;
+//   oslMrpRate: number;
+//   oslMinRate: number;
+//   oslRemarks: string | null;
+// };
+// @Injectable()
+// export class OpeningStockService {
+//   constructor(
+//     private readonly prisma: PrismaService,
+//     private readonly auditLogService: AuditLogService,
+//     private readonly requestContextService: RequestContextService,
+//     private readonly itemStockLedgerService: ItemStockLedgerService,
+//   ) {}
+//   async save(saveOpeningStockDto: SaveOpeningStockDto): Promise<OpeningStockDocumentPayload> {
+//     if (saveOpeningStockDto.header.avh_voucher_id) {
+//       return this.updateOpeningStock(saveOpeningStockDto);
+//     }
+//     return this.createOpeningStock(saveOpeningStockDto);
+//   }
+//   async getList(
+//     queryDto: ListOpeningStockQueryDto,
+//   ): Promise<{ items: OpeningStockListItem[]; meta: OpeningStockListMeta }> {
+//     return this.list(queryDto);
+//   }
+//   async list(
+//     queryDto: ListOpeningStockQueryDto,
+//   ): Promise<{ items: OpeningStockListItem[]; meta: OpeningStockListMeta }> {
+//     const { page, limit, skip } = resolvePagination(queryDto);
+//     const where = this.buildListWhere(queryDto);
+//     const [total, records] = await Promise.all([
+//       this.prisma.openingStockHeader.count({ where }),
+//       this.prisma.openingStockHeader.findMany({
+//         where,
+//         include: OPENING_STOCK_HEADER_INCLUDE,
+//         orderBy: [{ oshVoucherDate: 'desc' }, { oshVoucherNo: 'desc' }, { oshId: 'desc' }],
+//         skip,
+//         take: limit,
+//       }),
+//     ]);
+//     const userNames = await this.loadHeaderUserNames(this.prisma, records);
+//     return {
+//       items: records.map((record) => this.toHeaderPayload(record, userNames)),
+//       meta: {
+//         page,
+//         limit,
+//         total,
+//         total_pages: Math.ceil(total / limit),
+//       },
+//     };
+//   }
+//   async getByVoucherId(avhVoucherId: string): Promise<OpeningStockDocumentPayload> {
+//     return this.buildDocumentPayloadByVoucherId(this.prisma, avhVoucherId);
+//   }
+//   async getByVoucherRefNo(
+//     queryDto: Pick<
+//       ListOpeningStockQueryDto,
+//       | 'avh_voucher_refno'
+//       | 'osh_acc_year'
+//       | 'osh_company_id'
+//       | 'osh_branch_id'
+//       | 'osh_status'
+//       | 'date_from'
+//       | 'date_to'
+//     >,
+//   ): Promise<OpeningStockDocumentPayload> {
+//     const openingHeader = await this.getActiveHeaderByVoucherRefNoOrThrow(this.prisma, queryDto);
+//     return this.buildDocumentPayloadFromHeader(this.prisma, openingHeader);
+//   }
+//   async softDelete(avhVoucherId: string): Promise<{ avh_voucher_id: string; deleted: true }> {
+//     const actorUserId = this.resolveActorUserId();
+//     try {
+//       return await this.prisma.$transaction(async (tx) => {
+//         const existingDocument = await this.buildDocumentPayloadByVoucherId(tx, avhVoucherId);
+//         const existingHeader = await this.getActiveHeaderByVoucherIdOrThrow(tx, avhVoucherId);
+//         const now = new Date();
+//         await softDeleteAccountVoucherHeader(tx, avhVoucherId, {
+//           avhUpdatedBy: actorUserId,
+//           avhStatusBy: actorUserId,
+//           avhCancelReason: 'Opening stock cancelled',
+//         });
+//         await tx.openingStockHeader.update({
+//           where: {
+//             oshId: existingHeader.oshId,
+//           },
+//           data: {
+//             oshStatus: OpeningStockStatus.CANCELLED,
+//             oshIsActive: false,
+//             oshIsDeleted: true,
+//             oshUpdatedOn: now,
+//             oshUpdatedBy: actorUserId,
+//           },
+//         });
+//         await tx.openingStockDetail.updateMany({
+//           where: {
+//             oslVoucherId: avhVoucherId,
+//             oslIsDeleted: false,
+//           },
+//           data: {
+//             oslIsActive: false,
+//             oslIsDeleted: true,
+//             oslUpdatedOn: now,
+//             oslUpdatedBy: actorUserId,
+//           },
+//         });
+//         const deletedDocument: OpeningStockDocumentPayload = {
+//           ...existingDocument,
+//           header: {
+//             ...existingDocument.header,
+//             avh_voucher_status: VoucherStatus.CANCELLED,
+//             osh_status: OpeningStockStatus.CANCELLED,
+//             osh_is_active: false,
+//             osh_is_deleted: true,
+//             osh_updated_on: now.toISOString(),
+//             osh_updated_by: actorUserId,
+//           },
+//           details: existingDocument.details.map((detail) => ({
+//             ...detail,
+//             osl_is_active: false,
+//             osl_is_deleted: true,
+//             osl_updated_on: now.toISOString(),
+//             osl_updated_by: actorUserId,
+//           })),
+//         };
+//         await this.itemStockLedgerService.syncFromOpeningStockDocument(
+//           tx,
+//           deletedDocument,
+//           existingDocument,
+//         );
+//         await this.auditLogService.logEntityChange(
+//           {
+//             action: 'cancel',
+//             tableName: OPENING_STOCK_HEADER_TABLE_NAME,
+//             screenName: OPENING_STOCK_AUDIT_SCREEN_NAME,
+//             screenType: 'transaction',
+//             pk: avhVoucherId,
+//             displayName: this.buildDisplayName(existingDocument.header),
+//             originalRecord: existingDocument,
+//             modifiedRecord: deletedDocument,
+//             userId: actorUserId,
+//             branchId: existingHeader.oshBranchId,
+//             notes: 'Opening stock deleted',
+//           },
+//           tx,
+//         );
+//         return {
+//           avh_voucher_id: avhVoucherId,
+//           deleted: true,
+//         };
+//       });
+//     } catch (error: unknown) {
+//       this.handleWriteError(error);
+//       throw error;
+//     }
+//   }
+//   private async createOpeningStock(
+//     saveOpeningStockDto: SaveOpeningStockDto,
+//   ): Promise<OpeningStockDocumentPayload> {
+//     this.ensureDetailsPresent(saveOpeningStockDto.details);
+//     try {
+//       return await this.prisma.$transaction(async (tx) => {
+//         const context = this.resolveHeaderContext(saveOpeningStockDto.header);
+//         const normalizedDetails = this.normalizeDetailLines(saveOpeningStockDto.details);
+//         const totals = this.resolveHeaderTotals(saveOpeningStockDto.header);
+//         await this.validateHeaderReferences(tx, saveOpeningStockDto.header, context);
+//         await this.validateDetailReferences(tx, normalizedDetails);
+//         const voucherHeader = await createAccountVoucherHeader(
+//           tx,
+//           this.buildCreateVoucherPayload(saveOpeningStockDto.header, context, totals.totalValue),
+//         );
+//         const now = new Date();
+//         const voucherDate = this.parseRequiredDate(
+//           saveOpeningStockDto.header.osh_voucher_date,
+//           'osh_voucher_date',
+//         );
+//         const openingHeader = await tx.openingStockHeader.create({
+//           data: {
+//             oshVoucherId: voucherHeader.avhVoucherId,
+//             oshAccYear: context.accYear,
+//             oshCompanyId: context.companyId,
+//             oshBranchId: context.branchId,
+//             oshVoucherNo: voucherHeader.avhVoucherNo,
+//             oshVoucherDate: voucherDate,
+//             oshRefNo: voucherHeader.avhVoucherRefno,
+//             oshNarration: saveOpeningStockDto.header.osh_narration ?? null,
+//             oshTotalLines: totals.totalLines,
+//             oshTotalQty: totals.totalQty,
+//             oshTotalValue: totals.totalValue,
+//             oshStatus: context.status,
+//             oshUserId: context.openingUserId,
+//             oshSessionId: context.sessionId,
+//             oshDeviceType: context.openingDeviceType,
+//             oshDeviceId: context.deviceId,
+//             oshCounterId: context.counterId,
+//             oshCreatedOn: now,
+//             oshCreatedBy: context.actorUserId,
+//           },
+//         });
+//         await tx.openingStockDetail.createMany({
+//           data: normalizedDetails.map((detail, index) =>
+//             this.buildDetailCreateInput(
+//               detail,
+//               index + 1,
+//               openingHeader.oshId,
+//               voucherHeader.avhVoucherId,
+//               context,
+//               now,
+//             ),
+//           ),
+//         });
+//         const payloadBeforeSync = await this.buildDocumentPayloadByVoucherId(
+//           tx,
+//           voucherHeader.avhVoucherId,
+//         );
+//         await this.itemStockLedgerService.syncFromOpeningStockDocument(tx, payloadBeforeSync);
+//         const payload = await this.buildDocumentPayloadByVoucherId(tx, voucherHeader.avhVoucherId);
+//         await this.auditLogService.logEntityChange(
+//           {
+//             action: 'New',
+//             tableName: OPENING_STOCK_HEADER_TABLE_NAME,
+//             screenName: OPENING_STOCK_AUDIT_SCREEN_NAME,
+//             screenType: 'transaction',
+//             pk: voucherHeader.avhVoucherId,
+//             displayName: this.buildDisplayName(payload.header),
+//             originalRecord: null,
+//             modifiedRecord: payload,
+//             userId: context.actorUserId,
+//             branchId: context.branchId,
+//             notes: this.resolveAuditNotes(saveOpeningStockDto.audit_notes, 'Opening stock created'),
+//           },
+//           tx,
+//         );
+//         return payload;
+//       });
+//     } catch (error: unknown) {
+//       this.handleWriteError(error);
+//       throw error;
+//     }
+//   }
+//   private async updateOpeningStock(
+//     saveOpeningStockDto: SaveOpeningStockDto,
+//   ): Promise<OpeningStockDocumentPayload> {
+//     this.ensureDetailsPresent(saveOpeningStockDto.details);
+//     const avhVoucherId = saveOpeningStockDto.header.avh_voucher_id;
+//     if (!avhVoucherId) {
+//       throwBadRequest<OpeningStockErrorDetail>('Validation failed', [
+//         {
+//           field: 'avh_voucher_id',
+//           message: 'avh_voucher_id is required for update',
+//         },
+//       ]);
+//     }
+//     try {
+//       return await this.prisma.$transaction(async (tx) => {
+//         const existingHeader = await this.getActiveHeaderByVoucherIdOrThrow(tx, avhVoucherId);
+//         const existingDocument = await this.buildDocumentPayloadByVoucherId(tx, avhVoucherId);
+//         const context = this.resolveHeaderContext(saveOpeningStockDto.header);
+//         const normalizedDetails = this.normalizeDetailLines(saveOpeningStockDto.details);
+//         const totals = this.resolveHeaderTotals(saveOpeningStockDto.header);
+//         await this.validateHeaderReferences(tx, saveOpeningStockDto.header, context);
+//         await this.validateDetailReferences(tx, normalizedDetails);
+//         const voucherHeader = await updateAccountVoucherHeader(
+//           tx,
+//           avhVoucherId,
+//           this.buildUpdateVoucherPayload(saveOpeningStockDto.header, context, totals.totalValue),
+//         );
+//         const now = new Date();
+//         const voucherDate = this.parseRequiredDate(
+//           saveOpeningStockDto.header.osh_voucher_date,
+//           'osh_voucher_date',
+//         );
+//         await tx.openingStockHeader.update({
+//           where: {
+//             oshId: existingHeader.oshId,
+//           },
+//           data: {
+//             oshAccYear: context.accYear,
+//             oshCompanyId: context.companyId,
+//             oshBranchId: context.branchId,
+//             oshVoucherNo: voucherHeader.avhVoucherNo,
+//             oshVoucherDate: voucherDate,
+//             oshRefNo: voucherHeader.avhVoucherRefno,
+//             oshNarration: saveOpeningStockDto.header.osh_narration ?? null,
+//             oshTotalLines: totals.totalLines,
+//             oshTotalQty: totals.totalQty,
+//             oshTotalValue: totals.totalValue,
+//             oshStatus: context.status,
+//             oshUserId: context.openingUserId,
+//             oshSessionId: context.sessionId,
+//             oshDeviceType: context.openingDeviceType,
+//             oshDeviceId: context.deviceId,
+//             oshCounterId: context.counterId,
+//             oshUpdatedOn: now,
+//             oshUpdatedBy: context.actorUserId,
+//           },
+//         });
+//         await tx.openingStockDetail.deleteMany({
+//           where: {
+//             oslVoucherId: avhVoucherId,
+//           },
+//         });
+//         await tx.openingStockDetail.createMany({
+//           data: normalizedDetails.map((detail, index) =>
+//             this.buildDetailCreateInput(
+//               detail,
+//               index + 1,
+//               existingHeader.oshId,
+//               avhVoucherId,
+//               context,
+//               now,
+//             ),
+//           ),
+//         });
+//         const payloadBeforeSync = await this.buildDocumentPayloadByVoucherId(tx, avhVoucherId);
+//         await this.itemStockLedgerService.syncFromOpeningStockDocument(
+//           tx,
+//           payloadBeforeSync,
+//           existingDocument,
+//         );
+//         const payload = await this.buildDocumentPayloadByVoucherId(tx, avhVoucherId);
+//         await this.auditLogService.logEntityChange(
+//           {
+//             action: 'update',
+//             tableName: OPENING_STOCK_HEADER_TABLE_NAME,
+//             screenName: OPENING_STOCK_AUDIT_SCREEN_NAME,
+//             screenType: 'transaction',
+//             pk: avhVoucherId,
+//             displayName: this.buildDisplayName(payload.header),
+//             originalRecord: existingDocument,
+//             modifiedRecord: payload,
+//             userId: context.actorUserId,
+//             branchId: context.branchId,
+//             notes: this.resolveAuditNotes(saveOpeningStockDto.audit_notes, 'Opening stock updated'),
+//           },
+//           tx,
+//         );
+//         return payload;
+//       });
+//     } catch (error: unknown) {
+//       this.handleWriteError(error);
+//       throw error;
+//     }
+//   }
+//   private resolveHeaderContext(header: OpeningStockHeaderInputDto): ResolvedHeaderContext {
+//     const requestUserId = this.requestContextService.getUserId();
+//     const actorUserId = header.osh_user_id ?? requestUserId;
+//     if (!actorUserId) {
+//       throwBadRequest<OpeningStockErrorDetail>('Validation failed', [
+//         {
+//           field: 'osh_user_id',
+//           message: 'Authenticated user context or osh_user_id is required',
+//         },
+//       ]);
+//     }
+//     return {
+//       accYear: header.osh_acc_year,
+//       companyId: header.osh_company_id,
+//       branchId: header.osh_branch_id,
+//       actorUserId,
+//       voucherUserId: actorUserId,
+//       openingUserId: actorUserId,
+//       sessionId: header.osh_session_id ?? null,
+//       deviceId: header.osh_device_id ?? null,
+//       counterId: header.osh_counter_id,
+//       voucherDeviceType: header.osh_device_type,
+//       openingDeviceType: this.mapDeviceType(header.osh_device_type),
+//       status: header.osh_status ?? OpeningStockStatus.DRAFT,
+//     };
+//   }
+//   private buildCreateVoucherPayload(
+//     header: OpeningStockHeaderInputDto,
+//     context: ResolvedHeaderContext,
+//     totalValue: number,
+//   ): CreateAccountVoucherHeaderPayload {
+//     return {
+//       avhAccYear: context.accYear,
+//       avhCompanyId: context.companyId,
+//       avhBranchId: context.branchId,
+//       avhVoucherTypeId: this.resolveVoucherTypeId(header),
+//       avhVoucherDate: this.parseRequiredDate(header.osh_voucher_date, 'osh_voucher_date'),
+//       avhUserRefno: null,
+//       avhBillDate: this.parseNullableDate(header.avh_bill_date, 'avh_bill_date'),
+//       avhBillAmount: totalValue,
+//       avhTotalDebit: totalValue,
+//       avhPartyId: header.avh_party_id,
+//       avhOppositeLedgerId: header.avh_opposite_ledger_id ?? null,
+//       avhEmployeeId: header.avh_employee_id ?? [],
+//       avhPayNotes: null,
+//       avhRemarks: null,
+//       avhVoucherStatus: this.mapOpeningStatusToVoucherStatus(context.status),
+//       avhUserId: context.voucherUserId,
+//       avhSessionId: context.sessionId,
+//       avhDeviceType: context.voucherDeviceType,
+//       avhDeviceId: context.deviceId,
+//       avhCounterId: context.counterId,
+//       avhCreatedBy: context.actorUserId,
+//       avhStatusBy: context.actorUserId,
+//     };
+//   }
+//   private buildUpdateVoucherPayload(
+//     header: OpeningStockHeaderInputDto,
+//     context: ResolvedHeaderContext,
+//     totalValue: number,
+//   ): UpdateAccountVoucherHeaderPayload {
+//     return {
+//       avhAccYear: context.accYear,
+//       avhCompanyId: context.companyId,
+//       avhBranchId: context.branchId,
+//       avhVoucherTypeId: this.resolveVoucherTypeId(header),
+//       avhVoucherDate: this.parseRequiredDate(header.osh_voucher_date, 'osh_voucher_date'),
+//       avhUserRefno: null,
+//       avhBillDate: this.parseNullableDate(header.avh_bill_date, 'avh_bill_date'),
+//       avhBillAmount: totalValue,
+//       avhTotalDebit: totalValue,
+//       avhPartyId: header.avh_party_id,
+//       avhOppositeLedgerId: header.avh_opposite_ledger_id ?? null,
+//       avhEmployeeId: header.avh_employee_id ?? [],
+//       avhPayNotes: null,
+//       avhRemarks: null,
+//       avhVoucherStatus: this.mapOpeningStatusToVoucherStatus(context.status),
+//       avhUserId: context.voucherUserId,
+//       avhSessionId: context.sessionId,
+//       avhDeviceType: context.voucherDeviceType,
+//       avhDeviceId: context.deviceId,
+//       avhCounterId: context.counterId,
+//       avhUpdatedBy: context.actorUserId,
+//       avhStatusBy: context.actorUserId,
+//     };
+//   }
+//   private normalizeDetailLines(details: OpeningStockDetailLineDto[]): NormalizedDetailLine[] {
+//     return details.map((detail, index) => {
+//       const qty = detail.osl_qty;
+//       const convFactor = detail.osl_conv_factor ?? 1;
+//       const baseQty = detail.osl_base_qty ?? qty * convFactor;
+//       const freeQty = detail.osl_free_qty ?? 0;
+//       const freeBaseQty = this.roundQuantity(freeQty * convFactor);
+//       const costRate = detail.osl_cost_rate ?? 0;
+//       const costRateWot = detail.osl_cost_rate_wot ?? 0;
+//       const batchDate = this.parseNullableDate(detail.osl_batch_date, 'osl_batch_date');
+//       const mfgDate = this.parseNullableDate(detail.osl_mfg_date, 'osl_mfg_date');
+//       const expiryDate = this.parseNullableDate(detail.osl_expiry_date, 'osl_expiry_date');
+//       if (mfgDate && expiryDate && expiryDate.getTime() < mfgDate.getTime()) {
+//         throwBadRequest<OpeningStockErrorDetail>('Validation failed', [
+//           {
+//             field: `details[${index}].osl_expiry_date`,
+//             message: 'osl_expiry_date must be greater than or equal to osl_mfg_date',
+//           },
+//         ]);
+//       }
+//       return {
+//         oslBarcode: detail.osl_barcode ?? null,
+//         oslItemId: detail.osl_item_id,
+//         oslUnitId: detail.osl_unit_id,
+//         oslBaseUomId: detail.osl_base_uom_id ?? null,
+//         oslGodownId: detail.osl_godown_id,
+//         oslTrackingType: detail.osl_tracking_type ?? OpeningStockDetailTrackingType.NONE,
+//         oslBatchId: detail.osl_batch_id ?? null,
+//         oslTaxId: detail.osl_tax_id ?? null,
+//         oslTaxPerc: detail.osl_tax_perc ?? 0,
+//         oslCessType: detail.osl_cess_type ?? OpeningStockDetailCessType.NONE,
+//         oslCessPerc: detail.osl_cess_perc ?? 0,
+//         oslCessPerUnit: detail.osl_cess_per_unit ?? 0,
+//         oslQty: qty,
+//         oslFreeQty: freeQty,
+//         oslBaseQty: baseQty,
+//         oslFreeBaseQty: freeBaseQty,
+//         oslConvFactor: convFactor,
+//         oslBatchNo: detail.osl_batch_no ?? null,
+//         oslSerialNo: detail.osl_serial_no ?? null,
+//         oslBatchDate: batchDate,
+//         oslMfgDate: mfgDate,
+//         oslExpiryDate: expiryDate,
+//         oslCostRate: costRate,
+//         oslCostRateWot: costRateWot,
+//         oslStockValue: this.roundAmount(qty * costRate),
+//         oslStockValueWot: this.roundAmount(qty * costRateWot),
+//         oslSaleRateAWot: detail.osl_sale_rate_a_wot ?? 0,
+//         oslMarkupPercA: detail.osl_markup_perc_a ?? 0,
+//         oslSaleRateA: detail.osl_sale_rate_a ?? 0,
+//         oslSaleRateBWot: detail.osl_sale_rate_b_wot ?? 0,
+//         oslMarkupPercB: detail.osl_markup_perc_b ?? 0,
+//         oslSaleRateB: detail.osl_sale_rate_b ?? 0,
+//         oslSaleRateCWot: detail.osl_sale_rate_c_wot ?? 0,
+//         oslMarkupPercC: detail.osl_markup_perc_c ?? 0,
+//         oslSaleRateC: detail.osl_sale_rate_c ?? 0,
+//         oslSaleRateDWot: detail.osl_sale_rate_d_wot ?? 0,
+//         oslMarkupPercD: detail.osl_markup_perc_d ?? 0,
+//         oslSaleRateD: detail.osl_sale_rate_d ?? 0,
+//         oslMrpRate: detail.osl_mrp_rate ?? 0,
+//         oslMinRate: detail.osl_min_rate ?? 0,
+//         oslRemarks: detail.osl_remarks ?? null,
+//       };
+//     });
+//   }
+//   private resolveVoucherTypeId(header: OpeningStockHeaderInputDto): number {
+//     const voucherTypeId =
+//       header.avh_voucher_type_id ?? header.vchr_type_id ?? header.voucher_type_id;
+//     if (
+//       typeof voucherTypeId !== 'number' ||
+//       !Number.isInteger(voucherTypeId) ||
+//       voucherTypeId <= 0
+//     ) {
+//       throwBadRequest<OpeningStockErrorDetail>('Validation failed', [
+//         {
+//           field: 'avh_voucher_type_id',
+//           message:
+//             'avh_voucher_type_id, vchr_type_id, or voucher_type_id must be a positive integer',
+//         },
+//       ]);
+//     }
+//     return voucherTypeId;
+//   }
+//   private resolveAuditNotes(notes: string | null | undefined, fallback: string): string {
+//     const normalizedNotes = notes?.trim();
+//     return normalizedNotes || fallback;
+//   }
+//   private async validateHeaderReferences(
+//     tx: Prisma.TransactionClient,
+//     header: OpeningStockHeaderInputDto,
+//     context: ResolvedHeaderContext,
+//   ): Promise<void> {
+//     const [companies, branches, partyLedgers, oppositeLedgers, openingUsers] = await Promise.all([
+//       tx.company.findMany({
+//         where: {
+//           compId: { in: [context.companyId] },
+//           compIsDeleted: false,
+//         },
+//         select: {
+//           compId: true,
+//         },
+//       }),
+//       tx.branchMaster.findMany({
+//         where: {
+//           brId: { in: [context.branchId] },
+//           brCompId: context.companyId,
+//           brIsDeleted: false,
+//         },
+//         select: {
+//           brId: true,
+//         },
+//       }),
+//       tx.accLedgerMaster.findMany({
+//         where: {
+//           ledId: { in: [header.avh_party_id] },
+//           ledIsDeleted: false,
+//         },
+//         select: {
+//           ledId: true,
+//         },
+//       }),
+//       header.avh_opposite_ledger_id
+//         ? tx.accLedgerMaster.findMany({
+//             where: {
+//               ledId: { in: [header.avh_opposite_ledger_id] },
+//               ledIsDeleted: false,
+//             },
+//             select: {
+//               ledId: true,
+//             },
+//           })
+//         : Promise.resolve([]),
+//       tx.userMaster.findMany({
+//         where: {
+//           usrId: { in: [context.openingUserId] },
+//         },
+//         select: {
+//           usrId: true,
+//         },
+//       }),
+//     ]);
+//     this.throwMissingReferenceError(
+//       'osh_company_id',
+//       [context.companyId],
+//       companies.map((record) => record.compId),
+//     );
+//     this.throwMissingReferenceError(
+//       'osh_branch_id',
+//       [context.branchId],
+//       branches.map((record) => record.brId),
+//     );
+//     this.throwMissingReferenceError(
+//       'avh_party_id',
+//       [header.avh_party_id],
+//       partyLedgers.map((record) => record.ledId),
+//     );
+//     if (header.avh_opposite_ledger_id) {
+//       this.throwMissingReferenceError(
+//         'avh_opposite_ledger_id',
+//         [header.avh_opposite_ledger_id],
+//         oppositeLedgers.map((record) => record.ledId),
+//       );
+//     }
+//     this.throwMissingReferenceError(
+//       'osh_user_id',
+//       [context.openingUserId],
+//       openingUsers.map((record) => record.usrId),
+//     );
+//   }
+//   private async validateDetailReferences(
+//     tx: Prisma.TransactionClient,
+//     details: NormalizedDetailLine[],
+//   ): Promise<void> {
+//     const itemIds = this.uniqueIds(details.map((detail) => detail.oslItemId));
+//     const unitIds = this.uniqueIds(details.map((detail) => detail.oslUnitId));
+//     const baseUomIds = this.uniqueIds(
+//       details
+//         .map((detail) => detail.oslBaseUomId)
+//         .filter((value): value is string => Boolean(value)),
+//     );
+//     const godownIds = this.uniqueIds(details.map((detail) => detail.oslGodownId));
+//     const taxIds = this.uniqueIds(
+//       details.map((detail) => detail.oslTaxId).filter((value): value is string => Boolean(value)),
+//     );
+//     const [items, units, baseUomPrices, godowns, taxes] = await Promise.all([
+//       itemIds.length
+//         ? tx.itemMaster.findMany({
+//             where: {
+//               itemId: { in: itemIds },
+//               itemIsDeleted: false,
+//             },
+//             select: {
+//               itemId: true,
+//             },
+//           })
+//         : Promise.resolve([]),
+//       unitIds.length
+//         ? tx.unit.findMany({
+//             where: {
+//               unit_id: { in: unitIds },
+//               unit_is_deleted: false,
+//             },
+//             select: {
+//               unit_id: true,
+//             },
+//           })
+//         : Promise.resolve([]),
+//       baseUomIds.length
+//         ? tx.itemPriceMaster.findMany({
+//             where: {
+//               ipmId: { in: baseUomIds },
+//               ipmIsDeleted: false,
+//             },
+//             select: {
+//               ipmId: true,
+//             },
+//           })
+//         : Promise.resolve([]),
+//       godownIds.length
+//         ? tx.godownLocation.findMany({
+//             where: {
+//               gdlId: { in: godownIds },
+//               gdlIsDeleted: false,
+//             },
+//             select: {
+//               gdlId: true,
+//             },
+//           })
+//         : Promise.resolve([]),
+//       taxIds.length
+//         ? tx.itemTaxMaster.findMany({
+//             where: {
+//               taxId: { in: taxIds },
+//               taxIsDeleted: false,
+//             },
+//             select: {
+//               taxId: true,
+//             },
+//           })
+//         : Promise.resolve([]),
+//     ]);
+//     this.throwMissingReferenceError(
+//       'osl_item_id',
+//       itemIds,
+//       items.map((record) => record.itemId),
+//     );
+//     this.throwMissingReferenceError(
+//       'osl_unit_id',
+//       unitIds,
+//       units.map((record) => record.unit_id),
+//     );
+//     this.throwMissingReferenceError(
+//       'osl_base_uom_id',
+//       baseUomIds,
+//       baseUomPrices.map((record) => record.ipmId),
+//     );
+//     this.throwMissingReferenceError(
+//       'osl_godown_id',
+//       godownIds,
+//       godowns.map((record) => record.gdlId),
+//     );
+//     this.throwMissingReferenceError(
+//       'osl_tax_id',
+//       taxIds,
+//       taxes.map((record) => record.taxId),
+//     );
+//   }
+//   private throwMissingReferenceError(
+//     field: string,
+//     requestedIds: string[],
+//     existingIds: string[],
+//   ): void {
+//     const existingSet = new Set(existingIds);
+//     const missingIds = requestedIds.filter((id) => !existingSet.has(id));
+//     if (missingIds.length === 0) {
+//       return;
+//     }
+//     throwBadRequest<OpeningStockErrorDetail>('Validation failed', [
+//       {
+//         field,
+//         message: `Invalid ${field} reference: ${missingIds.join(', ')}`,
+//       },
+//     ]);
+//   }
+//   private resolveHeaderTotals(header: OpeningStockHeaderInputDto): {
+//     totalLines: number;
+//     totalQty: number;
+//     totalValue: number;
+//   } {
+//     return {
+//       totalLines: header.osh_total_lines ?? 0,
+//       totalQty: this.roundQuantity(header.osh_total_qty ?? 0),
+//       totalValue: this.roundAmount(header.osh_total_value ?? 0),
+//     };
+//   }
+//   private buildDetailCreateInput(
+//     detail: NormalizedDetailLine,
+//     lineNo: number,
+//     openingId: string,
+//     voucherId: string,
+//     context: ResolvedHeaderContext,
+//     now: Date,
+//   ): Prisma.OpeningStockDetailCreateManyInput {
+//     return {
+//       oslVoucherId: voucherId,
+//       oslOpeningId: openingId,
+//       oslLineNo: lineNo,
+//       oslAccYear: context.accYear,
+//       oslCompanyId: context.companyId,
+//       oslBranchId: context.branchId,
+//       oslItemId: detail.oslItemId,
+//       oslUnitId: detail.oslUnitId,
+//       oslBaseUomId: detail.oslBaseUomId,
+//       oslGodownId: detail.oslGodownId,
+//       oslTrackingType: detail.oslTrackingType,
+//       oslBarcode: detail.oslBarcode,
+//       oslBatchId: detail.oslBatchId,
+//       oslBatchNo: detail.oslBatchNo,
+//       oslBatchDate: detail.oslBatchDate,
+//       oslMfgDate: detail.oslMfgDate,
+//       oslExpiryDate: detail.oslExpiryDate,
+//       oslSerialNo: detail.oslSerialNo,
+//       oslQty: detail.oslQty,
+//       oslBaseQty: detail.oslBaseQty,
+//       oslFreeQty: detail.oslFreeQty,
+//       oslFreeBaseQty: detail.oslFreeBaseQty,
+//       oslConvFactor: detail.oslConvFactor,
+//       oslTaxId: detail.oslTaxId,
+//       oslTaxPerc: detail.oslTaxPerc,
+//       oslCessType: detail.oslCessType,
+//       oslCessPerc: detail.oslCessPerc,
+//       oslCessPerUnit: detail.oslCessPerUnit,
+//       oslCostRate: detail.oslCostRate,
+//       oslCostRateWot: detail.oslCostRateWot,
+//       oslStockValue: detail.oslStockValue,
+//       oslStockValueWot: detail.oslStockValueWot,
+//       oslMrpRate: detail.oslMrpRate,
+//       oslMinRate: detail.oslMinRate,
+//       oslSaleRateA: detail.oslSaleRateA,
+//       oslSaleRateB: detail.oslSaleRateB,
+//       oslSaleRateC: detail.oslSaleRateC,
+//       oslSaleRateD: detail.oslSaleRateD,
+//       oslSaleRateAWot: detail.oslSaleRateAWot,
+//       oslSaleRateBWot: detail.oslSaleRateBWot,
+//       oslSaleRateCWot: detail.oslSaleRateCWot,
+//       oslSaleRateDWot: detail.oslSaleRateDWot,
+//       oslMarkupPercA: detail.oslMarkupPercA,
+//       oslMarkupPercB: detail.oslMarkupPercB,
+//       oslMarkupPercC: detail.oslMarkupPercC,
+//       oslMarkupPercD: detail.oslMarkupPercD,
+//       oslRemarks: detail.oslRemarks,
+//       oslCreatedOn: now,
+//       oslCreatedBy: context.actorUserId,
+//     };
+//   }
+//   private buildScopedListWhere(
+//     queryDto: Pick<
+//       ListOpeningStockQueryDto,
+//       'osh_acc_year' | 'osh_company_id' | 'osh_branch_id' | 'osh_status' | 'date_from' | 'date_to'
+//     >,
+//   ): Prisma.OpeningStockHeaderWhereInput {
+//     const where: Prisma.OpeningStockHeaderWhereInput = {
+//       oshIsDeleted: false,
+//     };
+//     if (queryDto.osh_acc_year) {
+//       where.oshAccYear = queryDto.osh_acc_year;
+//     }
+//     if (queryDto.osh_company_id) {
+//       where.oshCompanyId = queryDto.osh_company_id;
+//     }
+//     if (queryDto.osh_branch_id) {
+//       where.oshBranchId = queryDto.osh_branch_id;
+//     }
+//     if (queryDto.osh_status) {
+//       where.oshStatus = queryDto.osh_status;
+//     }
+//     const dateFrom = queryDto.date_from
+//       ? this.parseRequiredDate(queryDto.date_from, 'date_from')
+//       : null;
+//     const dateTo = queryDto.date_to ? this.parseRequiredDate(queryDto.date_to, 'date_to') : null;
+//     if (dateFrom && dateTo && dateFrom.getTime() > dateTo.getTime()) {
+//       throwBadRequest<OpeningStockErrorDetail>('Validation failed', [
+//         {
+//           field: 'date_from',
+//           message: 'date_from must be less than or equal to date_to',
+//         },
+//       ]);
+//     }
+//     if (dateFrom || dateTo) {
+//       where.oshVoucherDate = {};
+//       if (dateFrom) {
+//         where.oshVoucherDate.gte = dateFrom;
+//       }
+//       if (dateTo) {
+//         where.oshVoucherDate.lte = dateTo;
+//       }
+//     }
+//     return where;
+//   }
+//   private buildListWhere(queryDto: ListOpeningStockQueryDto): Prisma.OpeningStockHeaderWhereInput {
+//     const where = this.buildScopedListWhere(queryDto);
+//     if (queryDto.search?.trim()) {
+//       const search = queryDto.search.trim();
+//       where.OR = [
+//         {
+//           oshRefNo: {
+//             contains: search,
+//             mode: 'insensitive',
+//           },
+//         },
+//         {
+//           oshNarration: {
+//             contains: search,
+//             mode: 'insensitive',
+//           },
+//         },
+//         {
+//           voucherHeader: {
+//             is: {
+//               avhVoucherRefno: {
+//                 contains: search,
+//                 mode: 'insensitive',
+//               },
+//             },
+//           },
+//         },
+//         {
+//           voucherHeader: {
+//             is: {
+//               avhBillRefno: {
+//                 contains: search,
+//                 mode: 'insensitive',
+//               },
+//             },
+//           },
+//         },
+//       ];
+//     }
+//     return where;
+//   }
+//   private async buildDocumentPayloadByVoucherId(
+//     client: OpeningStockWriteClient,
+//     avhVoucherId: string,
+//   ): Promise<OpeningStockDocumentPayload> {
+//     const openingHeader = await this.getActiveHeaderByVoucherIdOrThrow(client, avhVoucherId);
+//     return this.buildDocumentPayloadFromHeader(client, openingHeader);
+//   }
+//   private async buildDocumentPayloadFromHeader(
+//     client: OpeningStockWriteClient,
+//     openingHeader: OpeningStockHeaderWithVoucher,
+//   ): Promise<OpeningStockDocumentPayload> {
+//     const [details, userNames] = await Promise.all([
+//       client.openingStockDetail.findMany({
+//         where: {
+//           oslVoucherId: openingHeader.oshVoucherId,
+//           oslIsDeleted: false,
+//         },
+//         orderBy: [{ oslLineNo: 'asc' }, { oslId: 'asc' }],
+//       }),
+//       this.loadHeaderUserNames(client, [openingHeader]),
+//     ]);
+//     const lookups = await this.loadDetailLookups(client, details);
+//     return {
+//       header: this.toHeaderPayload(openingHeader, userNames),
+//       details: details.map((detail) => this.toDetailPayload(detail, lookups)),
+//     };
+//   }
+//   private async getActiveHeaderByVoucherIdOrThrow(
+//     client: OpeningStockWriteClient,
+//     avhVoucherId: string,
+//   ): Promise<OpeningStockHeaderWithVoucher> {
+//     const header = await client.openingStockHeader.findFirst({
+//       where: {
+//         oshVoucherId: avhVoucherId,
+//         oshIsDeleted: false,
+//       },
+//       include: OPENING_STOCK_HEADER_INCLUDE,
+//     });
+//     if (!header) {
+//       throwNotFound<OpeningStockErrorDetail>(
+//         'Opening stock document not found',
+//         'avh_voucher_id',
+//         `No active opening stock document found with avh_voucher_id ${avhVoucherId}`,
+//       );
+//     }
+//     return header;
+//   }
+//   private async getActiveHeaderByVoucherRefNoOrThrow(
+//     client: OpeningStockWriteClient,
+//     queryDto: Pick<
+//       ListOpeningStockQueryDto,
+//       | 'avh_voucher_refno'
+//       | 'osh_acc_year'
+//       | 'osh_company_id'
+//       | 'osh_branch_id'
+//       | 'osh_status'
+//       | 'date_from'
+//       | 'date_to'
+//     >,
+//   ): Promise<OpeningStockHeaderWithVoucher> {
+//     const avhVoucherRefno = queryDto.avh_voucher_refno?.trim() ?? '';
+//     if (!avhVoucherRefno) {
+//       throwBadRequest<OpeningStockErrorDetail>('Validation failed', [
+//         {
+//           field: 'avh_voucher_refno',
+//           message: 'avh_voucher_refno is required',
+//         },
+//       ]);
+//     }
+//     const where = this.buildScopedListWhere(queryDto);
+//     where.voucherHeader = {
+//       is: {
+//         avhVoucherRefno: {
+//           equals: avhVoucherRefno,
+//           mode: 'insensitive',
+//         },
+//       },
+//     };
+//     const header = await client.openingStockHeader.findFirst({
+//       where,
+//       include: OPENING_STOCK_HEADER_INCLUDE,
+//       orderBy: [{ oshVoucherDate: 'desc' }, { oshVoucherNo: 'desc' }, { oshId: 'desc' }],
+//     });
+//     if (!header) {
+//       throwNotFound<OpeningStockErrorDetail>(
+//         'Opening stock document not found',
+//         'avh_voucher_refno',
+//         `No active opening stock document found with avh_voucher_refno ${avhVoucherRefno ?? ''}`,
+//       );
+//     }
+//     return header;
+//   }
+//   private async loadDetailLookups(
+//     client: OpeningStockWriteClient,
+//     details: OpeningStockDetail[],
+//   ): Promise<DetailLookupMaps> {
+//     const itemIds = this.uniqueIds(details.map((detail) => detail.oslItemId));
+//     const unitIds = this.uniqueIds(details.map((detail) => detail.oslUnitId));
+//     const baseUomPriceIds = this.uniqueIds(
+//       details
+//         .map((detail) => detail.oslBaseUomId)
+//         .filter((value): value is string => Boolean(value)),
+//     );
+//     const godownIds = this.uniqueIds(details.map((detail) => detail.oslGodownId));
+//     const taxIds = this.uniqueIds(
+//       details.map((detail) => detail.oslTaxId).filter((value): value is string => Boolean(value)),
+//     );
+//     const [items, units, baseUomPrices, godowns, taxes] = await Promise.all([
+//       itemIds.length
+//         ? client.itemMaster.findMany({
+//             where: {
+//               itemId: { in: itemIds },
+//             },
+//             select: {
+//               itemId: true,
+//               itemCode: true,
+//               itemNameEn: true,
+//             },
+//           })
+//         : Promise.resolve([]),
+//       unitIds.length
+//         ? client.unit.findMany({
+//             where: {
+//               unit_id: { in: unitIds },
+//             },
+//             select: {
+//               unit_id: true,
+//               unit_name: true,
+//             },
+//           })
+//         : Promise.resolve([]),
+//       baseUomPriceIds.length
+//         ? client.itemPriceMaster.findMany({
+//             where: {
+//               ipmId: { in: baseUomPriceIds },
+//             },
+//             select: {
+//               ipmId: true,
+//               // ipm_uc_unit_id is a FK to item_unit_conversion; both the unit and
+//               // the base unit are one hop out through that row, which is the only
+//               // place the base unit is recorded now.
+//               itemUnitConversion: {
+//                 select: {
+//                   unit: {
+//                     select: {
+//                       unit_name: true,
+//                     },
+//                   },
+//                   baseUnit: {
+//                     select: {
+//                       unit_name: true,
+//                     },
+//                   },
+//                 },
+//               },
+//             },
+//           })
+//         : Promise.resolve([]),
+//       godownIds.length
+//         ? client.godownLocation.findMany({
+//             where: {
+//               gdlId: { in: godownIds },
+//             },
+//             select: {
+//               gdlId: true,
+//               gdlName: true,
+//             },
+//           })
+//         : Promise.resolve([]),
+//       taxIds.length
+//         ? client.itemTaxMaster.findMany({
+//             where: {
+//               taxId: { in: taxIds },
+//             },
+//             select: {
+//               taxId: true,
+//               taxName: true,
+//             },
+//           })
+//         : Promise.resolve([]),
+//     ]);
+//     return {
+//       itemsById: new Map(
+//         items.map((item) => [
+//           item.itemId,
+//           { itemCode: item.itemCode, itemNameEn: item.itemNameEn },
+//         ]),
+//       ),
+//       unitsById: new Map(units.map((unit) => [unit.unit_id, { unit_name: unit.unit_name }])),
+//       baseUomPricesById: new Map(
+//         baseUomPrices.map((price) => [
+//           price.ipmId,
+//           {
+//             baseUomName:
+//               price.itemUnitConversion?.baseUnit.unit_name ??
+//               price.itemUnitConversion?.unit.unit_name ??
+//               null,
+//           },
+//         ]),
+//       ),
+//       godownsById: new Map(godowns.map((godown) => [godown.gdlId, { gdlName: godown.gdlName }])),
+//       taxesById: new Map(taxes.map((tax) => [tax.taxId, { taxName: tax.taxName }])),
+//     };
+//   }
+//   private async loadHeaderUserNames(
+//     client: OpeningStockWriteClient,
+//     records: OpeningStockHeaderWithVoucher[],
+//   ): Promise<UserNameLookup> {
+//     const userIds = this.uniqueIds(
+//       records.flatMap((record) => [record.voucherHeader.avhUserId, record.oshUserId]),
+//     );
+//     if (userIds.length === 0) {
+//       return new Map();
+//     }
+//     const users = await client.userMaster.findMany({
+//       where: {
+//         usrId: {
+//           in: userIds,
+//         },
+//       },
+//       select: {
+//         usrId: true,
+//         usrDisplayName: true,
+//         usrLoginName: true,
+//       },
+//     });
+//     return new Map(users.map((user) => [user.usrId, user.usrDisplayName || user.usrLoginName]));
+//   }
+//   private toHeaderPayload(
+//     record: OpeningStockHeaderWithVoucher,
+//     userNames: UserNameLookup = new Map(),
+//   ): OpeningStockHeaderPayload {
+//     const voucherUserName = userNames.get(record.voucherHeader.avhUserId) ?? null;
+//     const openingUserName = userNames.get(record.oshUserId) ?? null;
+//     return {
+//       avh_voucher_id: record.voucherHeader.avhVoucherId,
+//       avh_voucher_refno: record.voucherHeader.avhVoucherRefno,
+//       avh_voucher_type_id: record.voucherHeader.avhVoucherTypeId,
+//       avh_bill_refno: record.voucherHeader.avhBillRefno,
+//       avh_user_refno: record.voucherHeader.avhUserRefno,
+//       avh_user_name: voucherUserName,
+//       avh_bill_date: this.toNullableIsoString(record.voucherHeader.avhBillDate),
+//       avh_party_id: record.voucherHeader.avhPartyId,
+//       avh_opposite_ledger_id: record.voucherHeader.avhOppositeLedgerId,
+//       avh_employee_id: record.voucherHeader.avhEmployeeId,
+//       avh_pay_notes: record.voucherHeader.avhPayNotes,
+//       avh_remarks: record.voucherHeader.avhRemarks,
+//       avh_voucher_status: record.voucherHeader.avhVoucherStatus,
+//       avh_user_id: record.voucherHeader.avhUserId,
+//       avh_session_id: record.voucherHeader.avhSessionId,
+//       avh_device_type: record.voucherHeader.avhDeviceType,
+//       avh_device_id: record.voucherHeader.avhDeviceId,
+//       avh_counter_id: record.voucherHeader.avhCounterId,
+//       osh_id: record.oshId,
+//       osh_acc_year: record.oshAccYear,
+//       osh_company_id: record.oshCompanyId,
+//       osh_branch_id: record.oshBranchId,
+//       osh_voucher_no: record.oshVoucherNo.toString(),
+//       osh_voucher_date: record.oshVoucherDate.toISOString(),
+//       osh_ref_no: record.oshRefNo,
+//       osh_narration: record.oshNarration,
+//       osh_total_lines: record.oshTotalLines,
+//       osh_total_qty: toNumber(record.oshTotalQty),
+//       osh_total_value: toNumber(record.oshTotalValue),
+//       osh_status: record.oshStatus,
+//       osh_user_name: openingUserName,
+//       osh_user_id: record.oshUserId,
+//       osh_session_id: record.oshSessionId,
+//       osh_device_type: record.oshDeviceType,
+//       osh_device_id: record.oshDeviceId,
+//       osh_counter_id: record.oshCounterId,
+//       osh_is_active: record.oshIsActive,
+//       osh_is_deleted: record.oshIsDeleted,
+//       osh_created_on: record.oshCreatedOn.toISOString(),
+//       osh_created_by: record.oshCreatedBy,
+//       osh_updated_on: this.toNullableIsoString(record.oshUpdatedOn),
+//       osh_updated_by: record.oshUpdatedBy,
+//     };
+//   }
+//   private toDetailPayload(
+//     record: OpeningStockDetail,
+//     lookups: DetailLookupMaps,
+//   ): OpeningStockDetailPayload {
+//     return {
+//       osl_id: record.oslId,
+//       osl_voucher_id: record.oslVoucherId,
+//       osl_opening_id: record.oslOpeningId,
+//       osl_line_no: record.oslLineNo,
+//       osl_acc_year: record.oslAccYear,
+//       osl_company_id: record.oslCompanyId,
+//       osl_branch_id: record.oslBranchId,
+//       osl_item_id: record.oslItemId,
+//       osl_item_code: lookups.itemsById.get(record.oslItemId)?.itemCode ?? null,
+//       osl_item_name: lookups.itemsById.get(record.oslItemId)?.itemNameEn ?? null,
+//       osl_unit_id: record.oslUnitId,
+//       osl_unit_name: lookups.unitsById.get(record.oslUnitId)?.unit_name ?? null,
+//       osl_base_uom_id: record.oslBaseUomId,
+//       osl_base_uom_name: record.oslBaseUomId
+//         ? (lookups.baseUomPricesById.get(record.oslBaseUomId)?.baseUomName ?? null)
+//         : null,
+//       osl_godown_id: record.oslGodownId,
+//       osl_godown_name: lookups.godownsById.get(record.oslGodownId)?.gdlName ?? null,
+//       osl_tracking_type: record.oslTrackingType,
+//       osl_barcode: record.oslBarcode,
+//       osl_batch_id: record.oslBatchId,
+//       osl_batch_no: record.oslBatchNo,
+//       osl_batch_date: this.toNullableIsoString(record.oslBatchDate),
+//       osl_mfg_date: this.toNullableIsoString(record.oslMfgDate),
+//       osl_expiry_date: this.toNullableIsoString(record.oslExpiryDate),
+//       osl_serial_no: record.oslSerialNo,
+//       osl_qty: toNumber(record.oslQty),
+//       osl_base_qty: toNumber(record.oslBaseQty),
+//       osl_free_qty: toNumber(record.oslFreeQty),
+//       osl_free_base_qty: toNumber(record.oslFreeBaseQty),
+//       osl_conv_factor: toNumber(record.oslConvFactor),
+//       osl_tax_id: record.oslTaxId,
+//       osl_tax_name: record.oslTaxId
+//         ? (lookups.taxesById.get(record.oslTaxId)?.taxName ?? null)
+//         : null,
+//       osl_tax_perc: toNumber(record.oslTaxPerc),
+//       osl_cess_type: record.oslCessType,
+//       osl_cess_perc: toNumber(record.oslCessPerc),
+//       osl_cess_per_unit: toNumber(record.oslCessPerUnit),
+//       osl_cost_rate: toNumber(record.oslCostRate),
+//       osl_cost_rate_wot: toNumber(record.oslCostRateWot),
+//       osl_stock_value: toNumber(record.oslStockValue),
+//       osl_stock_value_wot: toNumber(record.oslStockValueWot),
+//       osl_sale_rate_a: toNumber(record.oslSaleRateA),
+//       osl_sale_rate_b: toNumber(record.oslSaleRateB),
+//       osl_sale_rate_c: toNumber(record.oslSaleRateC),
+//       osl_sale_rate_d: toNumber(record.oslSaleRateD),
+//       osl_sale_rate_a_wot: toNumber(record.oslSaleRateAWot),
+//       osl_sale_rate_b_wot: toNumber(record.oslSaleRateBWot),
+//       osl_sale_rate_c_wot: toNumber(record.oslSaleRateCWot),
+//       osl_sale_rate_d_wot: toNumber(record.oslSaleRateDWot),
+//       osl_markup_perc_a: toNumber(record.oslMarkupPercA),
+//       osl_markup_perc_b: toNumber(record.oslMarkupPercB),
+//       osl_markup_perc_c: toNumber(record.oslMarkupPercC),
+//       osl_markup_perc_d: toNumber(record.oslMarkupPercD),
+//       osl_mrp_rate: toNumber(record.oslMrpRate),
+//       osl_min_rate: toNumber(record.oslMinRate),
+//       osl_remarks: record.oslRemarks,
+//       osl_is_active: record.oslIsActive,
+//       osl_is_deleted: record.oslIsDeleted,
+//       osl_created_on: record.oslCreatedOn.toISOString(),
+//       osl_created_by: record.oslCreatedBy,
+//       osl_updated_on: this.toNullableIsoString(record.oslUpdatedOn),
+//       osl_updated_by: record.oslUpdatedBy,
+//     };
+//   }
+//   private buildDisplayName(header: OpeningStockHeaderPayload): string {
+//     return header.avh_voucher_refno || header.osh_voucher_no;
+//   }
+//   private mapOpeningStatusToVoucherStatus(status: OpeningStockStatus): VoucherStatus {
+//     return status;
+//   }
+//   private mapDeviceType(deviceType: DeviceType): OpeningStockDeviceType {
+//     return deviceType;
+//   }
+//   private parseRequiredDate(value: string, field: string): Date {
+//     const parsed = new Date(value);
+//     if (Number.isNaN(parsed.getTime())) {
+//       throwBadRequest<OpeningStockErrorDetail>('Validation failed', [
+//         {
+//           field,
+//           message: `${field} must be a valid date`,
+//         },
+//       ]);
+//     }
+//     return parsed;
+//   }
+//   private parseNullableDate(value: string | null | undefined, field: string): Date | null {
+//     if (value === undefined || value === null || value === '') {
+//       return null;
+//     }
+//     return this.parseRequiredDate(value, field);
+//   }
+//   private ensureDetailsPresent(details: OpeningStockDetailLineDto[]): void {
+//     if (!Array.isArray(details) || details.length === 0) {
+//       throwBadRequest<OpeningStockErrorDetail>('Validation failed', [
+//         {
+//           field: 'details',
+//           message: 'At least one opening stock detail row is required',
+//         },
+//       ]);
+//     }
+//   }
+//   private resolveActorUserId(): string {
+//     const actorUserId = this.requestContextService.getUserId();
+//     if (!actorUserId) {
+//       throwBadRequest<OpeningStockErrorDetail>('Validation failed', [
+//         {
+//           field: 'user_id',
+//           message: 'Authenticated user context is required',
+//         },
+//       ]);
+//     }
+//     return actorUserId;
+//   }
+//   private uniqueIds(values: string[]): string[] {
+//     return Array.from(new Set(values));
+//   }
+//   private toNullableIsoString(value: Date | null): string | null {
+//     return value ? value.toISOString() : null;
+//   }
+//   private roundQuantity(value: number): number {
+//     return Number(value.toFixed(6));
+//   }
+//   private roundAmount(value: number): number {
+//     return Number(value.toFixed(2));
+//   }
+//   private handleWriteError(error: unknown): void {
+//     throwOnUniqueConstraintError<OpeningStockErrorDetail>(error, 'Opening stock already exists', [
+//       {
+//         field: 'avh_voucher_id',
+//         message: 'Duplicate opening stock document is not allowed for the same voucher',
+//       },
+//     ]);
+//     if (isForeignKeyConstraintError(error)) {
+//       throwBadRequest<OpeningStockErrorDetail>('Validation failed', [
+//         {
+//           field: 'request',
+//           message: 'Invalid foreign key reference in opening stock payload',
+//         },
+//       ]);
+//     }
+//   }
+// }

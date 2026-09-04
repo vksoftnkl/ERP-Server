@@ -29,10 +29,13 @@ npm run perf:baseline
 npm run perf:stress
 ```
 
+The target defaults to the API's own `.env` (`PORT` and `HTTPS_ENABLED`) — currently
+`http://localhost:3011`. Override it with `PERF_BASE_URL` or `--base-url`.
+
 ## 3. Run with overrides
 
 ```bash
-npm run perf:load -- --base-url https://localhost:3010 --duration 90s --concurrency 40
+npm run perf:load -- --base-url http://localhost:3011 --duration 90s --concurrency 40
 ```
 
 Common options:

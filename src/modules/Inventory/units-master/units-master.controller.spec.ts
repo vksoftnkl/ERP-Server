@@ -1,0 +1,125 @@
+import { Test, TestingModule } from '@nestjs/testing';
+import { SaveUnitDto } from './dto/save-unit.dto';
+import { UnitsMasterController } from './units-master.controller';
+import { UnitsMasterService } from './units-master.service';
+
+const UNIT_ID = '019c6f6c-be87-7a11-8905-36092c46fd06';
+
+const unitPayload = {
+  unit_id: UNIT_ID,
+  unit_name: 'PCS',
+  unit_alias: null,
+  unit_code: null,
+  unit_description: null,
+  unit_decimal_count: 0,
+  unit_weight: null,
+  unit_loading: null,
+  unit_unloading: null,
+  unit_attach_charge: null,
+  unit_is_pack_unit: false,
+  unit_base_unit_id: null,
+  unit_conversion: null,
+  unit_is_active: true,
+  unit_is_deleted: false,
+  unit_sync_date: null,
+  unit_created_on: '2026-02-14T10:00:00.000Z',
+  unit_created_by: 'tester',
+  unit_modified_on: '2026-02-14T10:00:00.000Z',
+  unit_modified_by: 'tester',
+};
+
+describe('UnitsMasterController', () => {
+  let controller: UnitsMasterController;
+
+  const serviceMock = {
+    save: jest.fn(),
+    list: jest.fn(),
+    getById: jest.fn(),
+    toggleDelete: jest.fn(),
+  };
+
+  beforeEach(async () => {
+    const moduleRef: TestingModule = await Test.createTestingModule({
+      controllers: [UnitsMasterController],
+      providers: [
+        {
+          provide: UnitsMasterService,
+          useValue: serviceMock,
+        },
+      ],
+    }).compile();
+
+    controller = moduleRef.get<UnitsMasterController>(UnitsMasterController);
+    jest.clearAllMocks();
+  });
+
+  it('wraps create response with success envelope', async () => {
+    serviceMock.save.mockResolvedValue(unitPayload);
+
+    const payload: SaveUnitDto = {
+      unit_name: 'PCS',
+    };
+
+    await expect(controller.save(payload)).resolves.toEqual({
+      success: true,
+      message: 'Unit created successfully',
+      data: unitPayload,
+    });
+  });
+
+  it('wraps update response with success envelope', async () => {
+    serviceMock.save.mockResolvedValue(unitPayload);
+
+    const payload: SaveUnitDto = {
+      unit_id: UNIT_ID,
+      unit_name: 'PCS',
+    };
+
+    await expect(controller.save(payload)).resolves.toEqual({
+      success: true,
+      message: 'Unit updated successfully',
+      data: unitPayload,
+    });
+  });
+  it('returns wrapped getById response', async () => {
+    serviceMock.getById.mockResolvedValue(unitPayload);
+
+    await expect(controller.getById(UNIT_ID)).resolves.toEqual({
+      success: true,
+      message: 'Unit fetched successfully',
+      data: unitPayload,
+    });
+  });
+
+  it('returns wrapped soft delete response', async () => {
+    serviceMock.toggleDelete.mockResolvedValue({
+      unit_id: UNIT_ID,
+      deleted: true,
+    });
+
+    await expect(controller.remove(UNIT_ID)).resolves.toEqual({
+      success: true,
+      message: 'Unit deleted successfully',
+      data: {
+        unit_id: UNIT_ID,
+        deleted: true,
+      },
+    });
+  });
+
+  it('returns wrapped restore response', async () => {
+    serviceMock.toggleDelete.mockResolvedValue({
+      unit_id: UNIT_ID,
+      deleted: false,
+    });
+
+    await expect(controller.remove(UNIT_ID)).resolves.toEqual({
+      success: true,
+      message: 'Unit restored successfully',
+      data: {
+        unit_id: UNIT_ID,
+        deleted: false,
+      },
+    });
+  });
+});

@@ -1,6 +1,6 @@
 model BranchMaster {
   brId                  String    @id @default(dbgenerated("uuidv7()")) @db.Uuid  @map("br_id")
-  compId                String    @db.Uuid                                         @map("comp_id")
+  brCompId                String    @db.Uuid                                         @map("br_comp_id")
   // 1) Identity / Reference
   brCode                String?   @unique @db.VarChar(20)                          @map("br_code")
   brName                String    @db.VarChar(150)                                 @map("br_name")
@@ -18,7 +18,7 @@ model BranchMaster {
   brDistrict            String?   @db.VarChar(100)                                 @map("br_district")
   brState               String?   @db.VarChar(100)                                 @map("br_state")
   brStateCode           String    @db.Char(2)                                      @map("br_state_code")
-  brPin                 String?   @db.VarChar(10)                                  @map("br_pin")
+  brPin                 Int?                                  @map("br_pin")
   brCountry             String    @default("India") @db.VarChar(60)               @map("br_country")
   brLandmark            String?   @db.VarChar(150)                                 @map("br_landmark")
   // 4) Region Address
@@ -58,20 +58,47 @@ model BranchMaster {
   brCreatedBy           String?   @db.VarChar(100)                                 @map("br_created_by")
   brModifiedOn          DateTime  @default(now()) @db.Timestamp                    @map("br_modified_on")
   brModifiedBy          String?   @db.VarChar(100)                                 @map("br_modified_by")
+  brRegionName          String?   @db.Text                                        @map("br_region_name")
+  brGstinNo             String?   @db.VarChar(15)                                  @map("br_gstin_no")
+  brGstRegType          String?   @db.VarChar(30)                                  @map("br_gst_reg_type")
+  brPanNo               String?   @db.VarChar(10)                                  @map("br_pan_no")
   // Relations
-  company               Company   @relation(fields: [compId], references: [compId])
+  company               Company   @relation(fields: [brCompId], references: [compId])
   accountLedgerMaster   AccLedgerMaster[]
-  voucherBills          AccVoucherBill[]
+  shipAddrs             AccShipAddr[]
   voucherCheques        AccVoucherCheque[]
   voucherDocDetails     AccVoucherDocDetail[]
   voucherDocRegisters   AccVoucherDocRegister[]
+  voucherSequences      AccVoucherSeq[]
   voucherHeaders        AccVoucherHeader[]
-  vouchers              AccVoucher[]
-  voucherTenders        AccVoucherTender[]
   openingStockHeaders   OpeningStockHeader[]
   openingStockDetails   OpeningStockDetail[]
+  physicalStockHeaders  PhysicalStockHeader[] @relation("PhysicalStockHeaderBranch")
+  physicalStockDetails  PhysicalStockDetail[] @relation("PhysicalStockDetailBranch")
+  physicalStockBatchDetails PhysicalStockBatchDetail[] @relation("PhysicalStockBatchDetailBranch")
   itemPrices            ItemPriceMaster[] @relation("BranchItemPrices")
-  @@index([compId],      name: "idx_branch_comp_id")
+  itemQtyPrices         ItemQtyPrice[]    @relation("BranchItemQtyPrices")
+  freightCharges        SaleFreightCharge[] @relation("BranchFreightCharges")
+  loadingCharges        SaleLoadingCharge[] @relation("BranchLoadingCharges")
+  deviceMasters         DeviceMaster[]
+  saleAgents            SaleAgent[]       @relation("BranchSaleAgents")
+  chargeDetails         TransactionChargeDetail[] @relation("BranchChargeDetails")
+  tenderMasters         AccTenderMaster[]
+  tenderDetails         AccTenderDetail[]
+  appSettingValues      AppSettingValue[]
+  promotionSchemes      PromotionScheme[]       @relation("PromotionSchemeBranchRef")
+  promotionSchemeBranches PromotionSchemeBranch[] @relation("PromotionSchemeBranchBranch")
+  loyaltySchemes        LoyaltyScheme[]         @relation("LoyaltySchemeBranchRef")
+  loyaltySchemeBranches LoyaltySchemeBranch[]   @relation("LoyaltySchemeBranchBranch")
+  stockTrackPolicies    StockTrackPolicy[]      @relation("StockTrackPolicyBranch")
+
+  // ── printing (17_printing.sql) ─────────────────────────────────────────
+  printAssignments      PrintTemplateAssignment[] @relation("PrintTemplateAssignmentBranch")
+
+  printerProfiles       PrinterProfile[]          @relation("PrinterProfileBranch")
+  printLogs             PrintLog[]                @relation("PrintLogBranch")
+
+  @@index([brCompId],    name: "idx_branch_comp_id")
   @@index([brStateCode], name: "idx_branch_state_code")
   @@map("branch_master")
   @@schema("public")

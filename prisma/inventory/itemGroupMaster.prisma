@@ -11,6 +11,9 @@ model ItemGroupMaster {
   parent            ItemGroupMaster? @relation("ItemGroupParent", fields: [itgParentId], references: [itgId], onUpdate: Cascade, onDelete: Restrict)
   children          ItemGroupMaster[] @relation("ItemGroupParent")
   items             ItemMaster[]
+  promotionSchemeItems PromotionSchemeItem[] @relation("PromotionItemGroup")
+  loyaltySchemeItems   LoyaltySchemeItem[]   @relation("LoyaltyItemGroup")
+  stockTrackPolicies   StockTrackPolicy[]    @relation("StockTrackPolicyGroup")
 
   itgSort           Int?     @map("itg_sort")
   itgLevel          Int?     @map("itg_level")

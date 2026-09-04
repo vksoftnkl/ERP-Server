@@ -1,0 +1,9 @@
+model AppThemeMaster {
+  thmId           Int    @id  @map("thm_id")
+  thmName         String @db.VarChar(100) @map("thm_name") 
+  thmIsActive     Boolean @default(true) @map("thm_is_active")
+  thmIsDeleted    Boolean @default(false) @map("thm_is_deleted")
+  company       Company[] @relation("CompanyStylesheet")
+  @@map("app_theme_master")
+  @@schema("public")
+}

@@ -1,3 +1,4 @@
+import { CacheTTL } from '@nestjs/cache-manager';
 import {
   Body,
   Controller,
@@ -24,31 +25,27 @@ import {
 import { HttpErrorResponseDto } from '../../../common/dto/http-error-response.dto';
 import { CustomerExceptionFilter } from './customer-exception.filter';
 import { CustomerService } from './customer.service';
-import { ListCustomerQueryDto } from './dto/list-customer-query.dto';
 import { SaveCustomerDto } from './dto/save-customer.dto';
 import {
   CustomerErrorResponseDto,
   CustomerSuccessDeleteDto,
-  CustomerSuccessListDto,
   CustomerSuccessSingleDto,
 } from './dto/customer-response.dto';
 import {
-  CustomerListItem,
-  CustomerListMeta,
   CustomerPayload,
   CustomerSuccessResponse,
 } from './types/customer-api.types';
-
+import { API_VERSION } from '../../../common/constants/api-version';
 @ApiTags('Customers')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
+@CacheTTL(1)
 @Controller('customers')
 @UseFilters(CustomerExceptionFilter)
 export class CustomerController {
-  constructor(private readonly customerService: CustomerService) {}
-
+  constructor(private readonly customerService: CustomerService) { }
   @Post('create')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Create or update customer (by cusId presence)' })
   @ApiCreatedResponse({ type: CustomerSuccessSingleDto })
   @ApiBadRequestResponse({ type: CustomerErrorResponseDto })
@@ -58,7 +55,6 @@ export class CustomerController {
     @Body() saveCustomerDto: SaveCustomerDto,
   ): Promise<CustomerSuccessResponse<CustomerPayload>> {
     const data = await this.customerService.save(saveCustomerDto);
-
     return {
       success: true,
       message: saveCustomerDto.cusId
@@ -67,28 +63,8 @@ export class CustomerController {
       data,
     };
   }
-
-  @Get('list')
-  @Version('1')
-  @ApiOperation({ summary: 'List customers with filter/search/pagination' })
-  @ApiOkResponse({ type: CustomerSuccessListDto })
-  @ApiBadRequestResponse({ type: CustomerErrorResponseDto })
-  async list(
-    @Query() queryDto: ListCustomerQueryDto,
-  ): Promise<CustomerSuccessResponse<CustomerListItem[], CustomerListMeta>> {
-    const result = await this.customerService.list(queryDto);
-
-    return {
-      success: true,
-      message: 'Customers fetched successfully',
-      data: result.items,
-      meta: result.meta,
-      ...(result.styles !== undefined && { styles: result.styles }),
-    };
-  }
-
   @Get('get')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Get customer by id' })
   @ApiQuery({ name: 'cusId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: CustomerSuccessSingleDto })
@@ -98,16 +74,14 @@ export class CustomerController {
     @Query('cusId', new ParseUUIDPipe({ version: '7' })) cusId: string,
   ): Promise<CustomerSuccessResponse<CustomerPayload>> {
     const data = await this.customerService.getById(cusId);
-
     return {
       success: true,
       message: 'Customer fetched successfully',
       data,
     };
   }
-
   @Delete('delete')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Soft delete customer by id' })
   @ApiQuery({ name: 'cusId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: CustomerSuccessDeleteDto })
@@ -117,7 +91,6 @@ export class CustomerController {
     @Query('cusId', new ParseUUIDPipe({ version: '7' })) cusId: string,
   ): Promise<CustomerSuccessResponse<{ cusId: string; deleted: true }>> {
     const data = await this.customerService.softDelete(cusId);
-
     return {
       success: true,
       message: 'Customer deleted successfully',

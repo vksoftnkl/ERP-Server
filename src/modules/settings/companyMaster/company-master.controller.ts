@@ -1,0 +1,107 @@
+import { CacheTTL } from '@nestjs/cache-manager';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  ParseUUIDPipe,
+  Post,
+  Query,
+  UseFilters,
+  Version,
+} from '@nestjs/common';
+import {
+  ApiBadRequestResponse,
+  ApiBearerAuth,
+  ApiConflictResponse,
+  ApiCreatedResponse,
+  ApiNotFoundResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiQuery,
+  ApiTags,
+  ApiUnauthorizedResponse,
+} from '@nestjs/swagger';
+import { HttpErrorResponseDto } from '../../../common/dto/http-error-response.dto';
+import { CompanyMasterExceptionFilter } from './company-master-exception.filter';
+import {
+  CompanyMasterErrorResponseDto,
+  CompanyMasterSuccessDeleteDto,
+  CompanyMasterSuccessSingleDto,
+} from './dto/company-master-response.dto';
+import { SaveCompanyMasterDto } from './dto/save-company-master.dto';
+import { CompanyMasterService } from './company-master.service';
+import {
+  CompanyMasterPayload,
+  CompanyMasterSuccessResponse,
+} from './types/company-master-api.types';
+import { API_VERSION } from '../../../common/constants/api-version';
+
+@ApiTags('Company Master')
+@ApiBearerAuth('access-token')
+@ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
+@CacheTTL(1)
+@Controller('company-masters')
+@UseFilters(CompanyMasterExceptionFilter)
+export class CompanyMasterController {
+  constructor(private readonly companyMasterService: CompanyMasterService) { }
+
+  @Post('create')
+  @Version(API_VERSION)
+  @ApiOperation({ summary: 'Create or update company (by compId presence)' })
+  @ApiCreatedResponse({ type: CompanyMasterSuccessSingleDto })
+  @ApiBadRequestResponse({ type: CompanyMasterErrorResponseDto })
+  @ApiConflictResponse({ type: CompanyMasterErrorResponseDto })
+  @ApiNotFoundResponse({ type: CompanyMasterErrorResponseDto })
+  async save(
+    @Body() saveCompanyMasterDto: SaveCompanyMasterDto,
+  ): Promise<CompanyMasterSuccessResponse<CompanyMasterPayload>> {
+    const data = await this.companyMasterService.save(saveCompanyMasterDto);
+
+    return {
+      success: true,
+      message: saveCompanyMasterDto.compId
+        ? 'Company updated successfully'
+        : 'Company created successfully',
+      data,
+    };
+  }
+
+  @Get('get')
+  @Version(API_VERSION)
+  @ApiOperation({ summary: 'Get company by id' })
+  @ApiQuery({ name: 'compId', type: String, example: '018e1b2c-3d4e-7f8a-9b0c-1d2e3f4a5b6c' })
+  @ApiOkResponse({ type: CompanyMasterSuccessSingleDto })
+  @ApiBadRequestResponse({ type: CompanyMasterErrorResponseDto })
+  @ApiNotFoundResponse({ type: CompanyMasterErrorResponseDto })
+  async getById(
+    @Query('compId', ParseUUIDPipe) compId: string,
+  ): Promise<CompanyMasterSuccessResponse<CompanyMasterPayload>> {
+    const data = await this.companyMasterService.getById(compId);
+
+    return {
+      success: true,
+      message: 'Company fetched successfully',
+      data,
+    };
+  }
+
+  @Delete('delete')
+  @Version(API_VERSION)
+  @ApiOperation({ summary: 'Soft delete company by id' })
+  @ApiQuery({ name: 'compId', type: String, example: '018e1b2c-3d4e-7f8a-9b0c-1d2e3f4a5b6c' })
+  @ApiOkResponse({ type: CompanyMasterSuccessDeleteDto })
+  @ApiBadRequestResponse({ type: CompanyMasterErrorResponseDto })
+  @ApiNotFoundResponse({ type: CompanyMasterErrorResponseDto })
+  async remove(
+    @Query('compId', ParseUUIDPipe) compId: string,
+  ): Promise<CompanyMasterSuccessResponse<{ compId: string; deleted: true }>> {
+    const data = await this.companyMasterService.softDelete(compId);
+
+    return {
+      success: true,
+      message: 'Company deleted successfully',
+      data,
+    };
+  }
+}

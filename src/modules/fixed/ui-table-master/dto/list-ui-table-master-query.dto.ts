@@ -1,70 +1,15 @@
-import { ApiPropertyOptional } from '@nestjs/swagger';
-import { Transform } from 'class-transformer';
-import { IsBoolean, IsInt, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
-
-const toOptionalNumber = (value: unknown): number | undefined => {
-  if (value === undefined || value === null || value === '') {
-    return undefined;
-  }
-
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : (value as number);
-};
-
-const toOptionalBoolean = (value: unknown): boolean | undefined => {
-  if (value === undefined || value === null || value === '') {
-    return undefined;
-  }
-
-  if (typeof value === 'boolean') {
-    return value;
-  }
-
-  if (typeof value === 'string') {
-    const normalized = value.trim().toLowerCase();
-    if (['1', 'true', 'yes', 'on'].includes(normalized)) {
-      return true;
-    }
-
-    if (['0', 'false', 'no', 'off'].includes(normalized)) {
-      return false;
-    }
-  }
-
-  return value as boolean;
-};
-
+import { ApiHideProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { OptionalNumberString, OptionalTrimmedString } from 'src/common/dto/dtoDecorators';
 export class ListUiTableMasterQueryDto {
-  @ApiPropertyOptional({ type: Boolean, description: 'Supports true/false/1/0/yes/no/on/off' })
-  @IsOptional()
-  @Transform(({ value }) => toOptionalBoolean(value))
-  @IsBoolean()
-  uiTblEditable?: boolean;
+  @ApiPropertyOptional({ description: 'UI table id — selects a specific configured grid for display' })
+  @OptionalNumberString()
+  uiTableId?: string;
 
-  @ApiPropertyOptional({ type: Boolean, description: 'Supports true/false/1/0/yes/no/on/off' })
-  @IsOptional()
-  @Transform(({ value }) => toOptionalBoolean(value))
-  @IsBoolean()
-  uiTblIsActive?: boolean;
+  @ApiHideProperty()
+  @OptionalNumberString()
+  uiTblId?: string;
 
-  @ApiPropertyOptional({ maxLength: 200 })
-  @IsOptional()
-  @IsString()
-  @MaxLength(200)
+  @ApiPropertyOptional({ maxLength: 255, description: 'Search by UI table name' })
+  @OptionalTrimmedString(255)
   search?: string;
-
-  @ApiPropertyOptional({ minimum: 1, default: 1 })
-  @IsOptional()
-  @Transform(({ value }) => toOptionalNumber(value))
-  @IsInt()
-  @Min(1)
-  page?: number;
-
-  @ApiPropertyOptional({ minimum: 1, maximum: 100, default: 20 })
-  @IsOptional()
-  @Transform(({ value }) => toOptionalNumber(value))
-  @IsInt()
-  @Min(1)
-  @Max(100)
-  limit?: number;
 }

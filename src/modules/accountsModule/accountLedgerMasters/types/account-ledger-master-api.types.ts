@@ -1,36 +1,31 @@
-import type { LedGstPartyRegType, LedObType } from '@prisma/client';
-
-export interface AccountLedgerMasterErrorDetail {
-  field: string;
-  message: string;
-}
-
-export interface AccountLedgerMasterErrorResponse {
-  success: false;
-  message: string;
-  errors: AccountLedgerMasterErrorDetail[];
-}
-
-export interface AccountLedgerMasterSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> {
-  success: true;
-  message: string;
-  data: T;
-  meta?: TMeta;
-  styles?: TStyles;
-}
-
+import type { LedGstPartyRegType, LedObType } from './account-ledger-master-enum';
+import type { AccLedgerProfile } from '../../accGroupMaster/types/acc-group-master-enum';
+import type { LedgerBankAccountPayload } from '../../ledgerBankAccount/types/ledger-bank-account-api.types';
+export type { AccountsErrorDetail as AccountLedgerMasterErrorDetail } from 'src/common/types/module-api.types';
+export type { AccountsErrorResponse as AccountLedgerMasterErrorResponse } from 'src/common/types/module-api.types';
+export type { AccountsSuccessResponse as AccountLedgerMasterSuccessResponse } from 'src/common/types/module-api.types';
+export { LedGstPartyRegType, LedObType, BankAccountType } from './account-ledger-master-enum';
+export type { LedgerBankAccountPayload } from '../../ledgerBankAccount/types/ledger-bank-account-api.types';
 export interface AccountLedgerMasterPayload {
   ledId: string;
   ledCompanyId: string | null;
-  ledBranchId: string;
+  ledCompanyName: string | null;
+  ledBranchId: string | null;
+  ledBranchName: string | null;
   ledGroupId: string;
+  ledGroupName: string | null;
+  ledGroupLedgerProfile: AccLedgerProfile | null;
   ledName: string;
   ledAlias: string | null;
   ledShort: string | null;
   ledTallyName: string | null;
   ledTallyGroupName: string | null;
   ledTallyGuid: string | null;
+  ledTallyMasterId: string | null;
+  ledTallyAlterId: string | null;
   ledCategory: string;
+  ledLedgerType: string | null;
+  ledMailingName: string | null;
   ledIsBillByBill: boolean;
   ledIsCostCenterReq: boolean;
   ledIsInterestApplicable: boolean;
@@ -64,18 +59,30 @@ export interface AccountLedgerMasterPayload {
   ledAadharNo: string | null;
   ledEcommerceGstin: string | null;
   ledIsSez: boolean;
-  ledChequeName: string | null;
-  ledBankName: string | null;
-  ledBankBranch: string | null;
-  ledBankAcNo: string | null;
-  ledBankIfsc: string | null;
-  ledUpiId: string | null;
+  ledTypeOfSupply: string | null;
+  ledHsnSac: string | null;
+  ledGstRate: number | null;
+  ledTaxability: string | null;
+  ledGstPartyType: string | null;
+  ledTanNo: string | null;
+  ledCin: string | null;
+  ledUdyamNo: string | null;
+  ledMsmeType: string | null;
+  ledGstDutyHead: string | null;
+  ledTaxRate: number | null;
+  ledRoundingMethod: string | null;
+  ledRoundingLimit: number | null;
+  ledIsTdsApplicable: boolean;
+  ledTdsDeducteeType: string | null;
+  ledTdsNatureOfPayment: string | null;
+  ledIsTcsApplicable: boolean;
   ledObAmount: number;
   ledObType: LedObType;
   ledObAsOn: string | null;
   ledTotalDr: number;
   ledTotalCr: number;
   ledTotalBalance: number;
+  ledSortOrder: number | null;
   ledIsActive: boolean;
   ledIsDeleted: boolean;
   ledAllowEdit: boolean;
@@ -87,13 +94,5 @@ export interface AccountLedgerMasterPayload {
   ledCreatedBy: string | null;
   ledModifiedOn: string;
   ledModifiedBy: string | null;
-}
-
-export type AccountLedgerMasterListItem = AccountLedgerMasterPayload | Record<string, unknown>;
-
-export interface AccountLedgerMasterListMeta {
-  page: number;
-  limit: number;
-  total: number;
-  total_pages: number;
+  ledgerBankAccount: LedgerBankAccountPayload[];
 }

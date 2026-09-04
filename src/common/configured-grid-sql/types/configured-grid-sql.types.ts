@@ -9,7 +9,13 @@ export interface LoadConfiguredGridSqlCandidatesOptions {
 }
 export interface ValidateConfiguredGridSqlOptions {
   sql: string;
-  tableName: string;
+  /**
+   * Table the query must be anchored to. Omit for callers with no single anchor
+   * table — a report dataset joins freely and is scoped by its p_company_id
+   * token instead. When omitted, `primaryTableSchema` is ignored too.
+   */
+  tableName?: string;
+  primaryTableSchema?: string;
   extraForbiddenPatterns?: Array<{
     pattern: RegExp;
     message: string;
@@ -25,9 +31,11 @@ export type ConfiguredGridSqlValidationResult =
     message: string;
   };
 export interface GridColumnItem {
+  grid_column_id: string;
   grid_column_number: number;
   grid_column_name: string;
   grid_column_width: number | null;
+  grid_column_position: number | null;
   grid_column_alignment: string | null;
   grid_column_visibility: boolean;
   grid_column_filter: boolean;
@@ -38,23 +46,49 @@ export interface GridColumnItem {
   grid_column_data_type: string | null;
   grid_column_color: string | null;
   grid_column_notes: string | null;
+  grid_column_px: string | null;
+  grid_column_sql_field_name: string | null;
 }
 export interface RunConfiguredGridSqlPageOptions {
   baseSql: string;
   alias: string;
   params?: unknown[];
+  search?: string;
   limit: number;
   skip: number;
-  /** When provided, grid column definitions are fetched in parallel and returned as `styles`. */
+  /** When provided, grid column definitions are used to derive searchable field names for search. */
   gridId?: bigint;
+  /**
+   * Pre-derived searchable field names. When provided, these take precedence over `gridId`-based
+   * derivation, allowing non-grid callers (e.g. dropdown details) to reuse the paged query engine.
+   */
+  searchableFieldNames?: string[];
+  sortBy?: string;
+  sortDir?: 'asc' | 'desc';
 }
 export interface RunConfiguredGridSqlPageResult<TItem> {
   items: TItem[];
   total: number;
-  styles?: GridColumnItem[];
 }
 export interface ConfiguredGridListResult<TItem, TMeta> {
   items: TItem[];
   meta: TMeta;
-  styles?: GridColumnItem[];
+}
+export interface BuildConfiguredGridSearchSqlOptions {
+  baseSql: string;
+  alias: string;
+  search: string;
+  searchableFieldNames: string[];
+  params?: unknown[];
+  conditions?: string[];
+}
+export interface BuildConfiguredGridFilterSqlOptions {
+  baseSql: string;
+  alias: string;
+  /**
+   * Map of output-column name → value to equality-filter on. Keys must match columns produced by
+   * `baseSql`. Entries with `null`/`undefined` values are ignored (no constraint added).
+   */
+  filters: Record<string, unknown>;
+  params?: unknown[];
 }

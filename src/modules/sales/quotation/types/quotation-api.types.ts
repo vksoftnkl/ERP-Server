@@ -1,0 +1,83 @@
+import { TransactionChargeDetail, SaleQuotation, SaleQuotationItem } from '@prisma/client';
+import { ChargeDocType } from '../../../master/charge-master/types/charge-enum';
+import {
+  TxnStatusDocType,
+  TxnStatusSrcModule,
+} from '../../../../common/txn-status-log/txn-status-log.helper';
+// txn_charge_detail is polymorphic — a quotation's applied charges are the rows
+// carrying this discriminator plus cdDocId = sqId (see ck_cd_doc_type).
+export const QUOTATION_CHARGE_DOC_TYPE = ChargeDocType.QUOTATION;
+// public.txn_status_log is polymorphic the same way — a quotation's status trail
+// is the rows carrying this (module, doc type) pair plus tslSrcDocId = sqId (see
+// ck_tsl_src_module / ck_tsl_src_doc_type). A separate vocabulary from
+// ck_cd_doc_type's, which happens to spell QUOTATION the same way.
+export const QUOTATION_STATUS_SRC_MODULE = TxnStatusSrcModule.SALES;
+export const QUOTATION_STATUS_SRC_DOC_TYPE = TxnStatusDocType.QUOTATION;
+// sqQuoteSlno is a bigint column; it is emitted as a string because JSON has no
+// bigint. Leaving it a bigint makes res.json() throw AFTER the save transaction
+// has committed, so the caller sees a 500 for a quotation that was in fact
+// written — the failure mode this Omit exists to prevent.
+export type QuotationPayload = Omit<
+  SaleQuotation,
+  'sqCreatedOn' | 'sqModifiedOn' | 'sqQuoteDatetime' | 'sqSyncDate' | 'sqQuoteSlno'
+> & {
+  sqCreatedOn?: string;
+  sqModifiedOn?: string | null;
+  sqQuoteDatetime?: string;
+  sqSyncDate?: string | null;
+  sqQuoteSlno: string;
+  // Master names resolved for the id columns on the header. Like the line
+  // items' sqiItemName/sqiUnitName these are read-only display fields, only
+  // populated on GET — the create/update paths return null for them.
+  sqCustAreaName?: string | null;
+  sqCustAreaDistanceKm?: number | null;
+  sqSalesmanName?: string | null;
+  sqAgentName?: string | null;
+  items?: QuotationItemPayload[];
+  charges?: QuotationChargePayload[];
+};
+export type QuotationItemPayload = Omit<
+  SaleQuotationItem,
+  'sqiCreatedOn' | 'sqiModifiedOn' | 'sqiSyncDate'
+> & {
+  sqiCreatedOn?: string;
+  sqiModifiedOn?: string | null;
+  sqiSyncDate?: string | null;
+  sqiItemName?: string | null;
+  sqiUnitName?: string | null;
+  // Item/unit master attributes resolved for the line's sqiItemId and
+  // sqiItemUnitId. Read-only display fields on the same footing as
+  // sqiItemName/sqiUnitName — only populated on GET.
+  sqiDecimalCount?: number | null;
+  sqiBatchConfig?: number | null;
+  sqiGroupId?: string | null;
+  sqiBrandId?: string | null;
+  sqiSectionId?: string | null;
+  sqiCategoryId?: string | null;
+};
+// cdVoucherNo is a bigint column; it is emitted as a string because JSON has no
+// bigint (same convention as the header's sqQuoteSlno).
+export type QuotationChargePayload = Omit<
+  TransactionChargeDetail,
+  'cdCreatedOn' | 'cdModifiedOn' | 'cdSyncDate' | 'cdVoucherNo'
+> & {
+  cdCreatedOn?: string;
+  cdModifiedOn?: string | null;
+  cdSyncDate?: string | null;
+  cdVoucherNo?: string | null;
+};
+export type QuotationErrorDetail = {
+  field: string;
+  message: string;
+};
+export type QuotationErrorResponse = {
+  statusCode?: number;
+  success: false;
+  message: string;
+  errors: QuotationErrorDetail[];
+};
+export type QuotationSuccessResponse<T> = {
+  success: true;
+  message: string;
+  data: T;
+};

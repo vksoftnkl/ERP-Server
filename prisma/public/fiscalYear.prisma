@@ -1,0 +1,59 @@
+model FiscalYear {
+  fyId             String    @id(map: "pkey_fiscal_years") @default(dbgenerated("uuidv7()")) @map("fy_id") @db.Uuid
+  compId           String    @map("comp_id") @db.Uuid
+  fyYearName       String    @map("fy_year_name") @db.Char(9) // '2025-2026'
+  fyBeginDate      DateTime  @map("fy_begin_date") @db.Date
+  fyEndDate        DateTime  @map("fy_end_date") @db.Date
+  fyBooksBeginDate DateTime? @map("fy_books_begin_date") @db.Date // mid-year onboarding
+
+  // Status / lifecycle
+  fyStatus    String    @default("OPEN") @map("fy_status") @db.VarChar(20) // OPEN | CLOSED | LOCKED
+  fyIsCurrent Boolean   @default(false) @map("fy_is_current")
+  fyLockDate  DateTime? @map("fy_lock_date") @db.Date
+  fyClosedAt  DateTime? @map("fy_closed_at") @db.Timestamptz(6)
+  fyClosedBy  String?   @map("fy_closed_by") @db.Uuid
+
+  // Year-end carry forward tracking
+  fyIsCarriedForward Boolean   @default(false) @map("fy_is_carried_forward")
+  fyCarriedForwardAt DateTime? @map("fy_carried_forward_at") @db.Timestamptz(6)
+  fyPrevFyId         String?   @map("fy_prev_fy_id") @db.Uuid
+
+  fyDetached Boolean @default(false) @map("fy_detached")
+  fyRemarks  String? @map("fy_remarks") @db.VarChar(500)
+
+  // Tally sync
+  tallyGuid     String? @map("tally_guid") @db.VarChar(64)
+  tallyMasterId BigInt? @map("tally_master_id")
+  tallyAlterId  BigInt? @map("tally_alter_id")
+
+  // Audit
+  isDeleted Boolean   @default(false) @map("is_deleted")
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  createdBy String    @map("created_by") @db.Uuid
+  updatedAt DateTime? @map("updated_at") @db.Timestamptz(6)
+  updatedBy String?   @map("updated_by") @db.Uuid
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(6)
+  deletedBy String?   @map("deleted_by") @db.Uuid
+
+  // Self-relation: previous fiscal year chain
+  prevFiscalYear FiscalYear?  @relation("FiscalYearChain", fields: [fyPrevFyId], references: [fyId], onDelete: NoAction, onUpdate: NoAction)
+  nextFiscalYears FiscalYear[] @relation("FiscalYearChain")
+
+  // NOTE (raw SQL migration-ல manually add பண்ணவும் — Prisma partial index support பண்ணாது):
+  //
+  // CREATE UNIQUE INDEX IF NOT EXISTS uq_fiscal_years_comp_name
+  //     ON public.fiscal_years (comp_id, fy_year_name)
+  //     WHERE is_deleted = false;
+  //
+  // CREATE UNIQUE INDEX IF NOT EXISTS uq_fiscal_years_current
+  //     ON public.fiscal_years (comp_id)
+  //     WHERE fy_is_current = true AND is_deleted = false;
+  //
+  // CHECK constraint (இதுவும் raw SQL):
+  // ALTER TABLE public.fiscal_years
+  //     ADD CONSTRAINT chk_fy_dates CHECK (fy_end_date > fy_begin_date);
+
+  @@index([compId, isDeleted], map: "idx_fiscal_years_comp")
+  @@map("fiscal_years")
+  @@schema("public")
+}

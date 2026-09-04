@@ -1,0 +1,41 @@
+// Parent: the section heading rows ("Primary Information", "Price Details" …)
+model FormSection {
+  sectionId         Int     @id @default(autoincrement())      @map("section_id")
+  sectionMenuId     Int                                        @map("section_menu_id")     // which screen this config drives (fk)
+  sectionName       String  @db.Text                  @map("section_name")        // shown in the "Widget" column
+  sectionGuiName    String  @db.Text                  @map("section_gui_name")    // shown in the "Widget" column
+  sectionPosition   Int     @default(0)                        @map("section_position")    // heading order
+  sectionVisibility Boolean @default(true)                     @map("section_visibility")  // the heading's own checkbox
+  sectionPlatform   String  @db.VarChar(255)                   @map("section_platform")    // platform scope
+  sectionSyncDate   DateTime @default(now())                    @map("section_sync_date")   // sync date
+  sectionCreatedOn DateTime @default(now())                    @map("section_created_on")   // created date
+  sectionCreatedBy  String? @db.Text                   @map("section_created_by")   // created by
+  sectionUpdatedOn DateTime @default(now())                    @map("section_updated_on")   // updated date
+  sectionUpdatedBy  String? @db.Text                   @map("section_updated_by")   // updated by
+
+  fields            FormField[]
+  menu              Menu      @relation(fields: [sectionMenuId], references: [menuId], onDelete: Cascade, onUpdate: Cascade)
+  @@map("form_section")
+  @@schema("fixed")
+}
+
+// Child: the individual fields under each section
+model FormField {
+  fieldId            Int         @id @default(autoincrement()) @map("field_id")
+  fieldSectionId     Int                                       @map("field_section_id")
+  section            FormSection @relation(fields: [fieldSectionId], references: [sectionId], onDelete: Cascade, onUpdate: Cascade)
+  fieldName          String      @db.VarChar(255)              @map("field_name")            // internal binding key / SQL field name
+  fieldGuiName       String?     @db.VarChar(255)              @map("field_gui_name")        // label rendered in the tree ("English Name")
+  fieldSecondaryText String?     @db.VarChar(255)              @map("field_secondary_text")  // the "Secondary Text" column
+  fieldPosition      Int         @default(0)                   @map("field_position")        // order within the section
+  fieldVisibility    Boolean     @default(true)                @map("field_visibility")      // the field's checkbox
+  fieldSyncDate      DateTime @default(now())                    @map("field_sync_date")   // sync date
+  fieldCreatedOn     DateTime @default(now())                    @map("field_created_on")   // created date
+  fieldCreatedBy      String? @db.Text                   @map("field_created_by")   // created by
+  fieldUpdatedOn     DateTime @default(now())                    @map("field_updated_on")   // updated date
+  fieldUpdatedBy     String? @db.Text                   @map("field_updated_by")   // updated by
+ 
+  @@index([fieldSectionId, fieldPosition], map: "ix_form_field_tree")
+  @@map("form_field")
+  @@schema("fixed")
+}

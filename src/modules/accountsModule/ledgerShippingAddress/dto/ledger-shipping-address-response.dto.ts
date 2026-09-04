@@ -1,5 +1,4 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { ConfiguredGridStyleDto } from '../../../../common/configured-grid-sql/dto/configured-grid-style.dto';
 
 export class LedgerShippingAddressErrorFieldDto {
   @ApiProperty({ example: 'saaLedgerId' })
@@ -25,7 +24,10 @@ export class LedgerShippingAddressPayloadDto {
   saaId!: string;
 
   @ApiPropertyOptional({ nullable: true })
-  saaCompanyId!: number | null;
+  saaCompanyId!: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  saaBranchId!: string | null;
 
   @ApiProperty({ format: 'uuid' })
   saaLedgerId!: string;
@@ -40,7 +42,7 @@ export class LedgerShippingAddressPayloadDto {
   saaSort!: number;
 
   @ApiPropertyOptional({ nullable: true })
-  saaTrdnm!: string | null;
+  saaTradeName!: string | null;
 
   @ApiPropertyOptional({ nullable: true })
   saaContactName!: string | null;
@@ -55,7 +57,7 @@ export class LedgerShippingAddressPayloadDto {
   saaAddr3!: string | null;
 
   @ApiPropertyOptional({ nullable: true })
-  saaLoc!: string | null;
+  saaLocation!: string | null;
 
   @ApiPropertyOptional({ nullable: true })
   saaPin!: string | null;
@@ -66,6 +68,9 @@ export class LedgerShippingAddressPayloadDto {
   @ApiPropertyOptional({ nullable: true })
   saaStateName!: string | null;
 
+  @ApiProperty()
+  saaCountryCode!: string;
+
   @ApiPropertyOptional({ nullable: true })
   saaDistanceKm!: number | null;
 
@@ -75,14 +80,11 @@ export class LedgerShippingAddressPayloadDto {
   @ApiPropertyOptional({ nullable: true })
   saaEmail!: string | null;
 
-  @ApiPropertyOptional({ nullable: true })
-  saaGstin!: string | null;
+  @ApiProperty()
+  saaGstin!: string;
 
   @ApiPropertyOptional({ nullable: true })
-  saaPan!: string | null;
-
-  @ApiPropertyOptional({ nullable: true })
-  saaSyncDate!: string | null;
+  saaSyncedOn!: string | null;
 
   @ApiProperty()
   saaIsActive!: boolean;
@@ -106,20 +108,6 @@ export class LedgerShippingAddressPayloadDto {
   saaRemarks!: string | null;
 }
 
-export class LedgerShippingAddressListMetaDto {
-  @ApiProperty({ example: 1 })
-  page!: number;
-
-  @ApiProperty({ example: 20 })
-  limit!: number;
-
-  @ApiProperty({ example: 3 })
-  total!: number;
-
-  @ApiProperty({ example: 1 })
-  total_pages!: number;
-}
-
 export class LedgerShippingAddressDeleteResultDto {
   @ApiProperty({ format: 'uuid' })
   saaId!: string;
@@ -137,23 +125,6 @@ export class LedgerShippingAddressSuccessSingleDto {
 
   @ApiProperty({ type: LedgerShippingAddressPayloadDto })
   data!: LedgerShippingAddressPayloadDto;
-}
-
-export class LedgerShippingAddressSuccessListDto {
-  @ApiProperty({ example: true })
-  success!: true;
-
-  @ApiProperty({ example: 'Ledger shipping addresses fetched successfully' })
-  message!: string;
-
-  @ApiProperty({ type: LedgerShippingAddressPayloadDto, isArray: true })
-  data!: LedgerShippingAddressPayloadDto[];
-
-  @ApiProperty({ type: LedgerShippingAddressListMetaDto })
-  meta!: LedgerShippingAddressListMetaDto;
-
-  @ApiPropertyOptional({ type: ConfiguredGridStyleDto, isArray: true })
-  styles?: ConfiguredGridStyleDto[];
 }
 
 export class LedgerShippingAddressSuccessDeleteDto {

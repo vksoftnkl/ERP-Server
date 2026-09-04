@@ -27,6 +27,9 @@ model ItemBrandMaster {
   parent   ItemBrandMaster?  @relation("BrandHierarchy", fields: [brand_parent_id], references: [brand_id], onUpdate: Cascade, onDelete: Restrict)
   children ItemBrandMaster[] @relation("BrandHierarchy")
 
+  promotionSchemeItems PromotionSchemeItem[] @relation("PromotionItemBrand")
+  loyaltySchemeItems   LoyaltySchemeItem[]   @relation("LoyaltyItemBrand")
+
   @@map("item_brand_master")
    @@schema("inventory")
 

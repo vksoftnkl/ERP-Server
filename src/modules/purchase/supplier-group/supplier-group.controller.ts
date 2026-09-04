@@ -1,3 +1,4 @@
+import { CacheTTL } from '@nestjs/cache-manager';
 import {
   Body,
   Controller,
@@ -22,31 +23,29 @@ import {
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import { HttpErrorResponseDto } from '../../../common/dto/http-error-response.dto';
-import { ListSupplierGroupQueryDto } from './dto/list-supplier-group-query.dto';
 import { SaveSupplierGroupDto } from './dto/save-supplier-group.dto';
 import {
   SupplierGroupErrorResponseDto,
   SupplierGroupSuccessDeleteDto,
-  SupplierGroupSuccessListDto,
   SupplierGroupSuccessSingleDto,
 } from './dto/supplier-group-response.dto';
 import { SupplierGroupExceptionFilter } from './supplier-group-exception.filter';
 import { SupplierGroupService } from './supplier-group.service';
 import {
-  SupplierGroupListItem,
-  SupplierGroupListMeta,
   SupplierGroupPayload,
   SupplierGroupSuccessResponse,
 } from './types/supplier-group-api.types';
+import { API_VERSION } from '../../../common/constants/api-version';
 @ApiTags('Supplier Groups')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
+@CacheTTL(1)
 @Controller('supplier-groups')
 @UseFilters(SupplierGroupExceptionFilter)
 export class SupplierGroupController {
-  constructor(private readonly supplierGroupService: SupplierGroupService) {}
+  constructor(private readonly supplierGroupService: SupplierGroupService) { }
   @Post('create')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Create or update supplier group (by spgId presence)' })
   @ApiCreatedResponse({ type: SupplierGroupSuccessSingleDto })
   @ApiBadRequestResponse({ type: SupplierGroupErrorResponseDto })
@@ -64,25 +63,8 @@ export class SupplierGroupController {
       data,
     };
   }
-  @Get('list')
-  @Version('1')
-  @ApiOperation({ summary: 'List supplier groups with filter/search/pagination' })
-  @ApiOkResponse({ type: SupplierGroupSuccessListDto })
-  @ApiBadRequestResponse({ type: SupplierGroupErrorResponseDto })
-  async list(
-    @Query() queryDto: ListSupplierGroupQueryDto,
-  ): Promise<SupplierGroupSuccessResponse<SupplierGroupListItem[], SupplierGroupListMeta>> {
-    const result = await this.supplierGroupService.list(queryDto);
-    return {
-      success: true,
-      message: 'Supplier groups fetched successfully',
-      data: result.items,
-      meta: result.meta,
-      ...(result.styles !== undefined && { styles: result.styles }),
-    };
-  }
   @Get('get')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Get supplier group by id' })
   @ApiQuery({ name: 'spgId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: SupplierGroupSuccessSingleDto })
@@ -99,7 +81,7 @@ export class SupplierGroupController {
     };
   }
   @Delete('delete')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Soft delete supplier group by id' })
   @ApiQuery({ name: 'spgId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: SupplierGroupSuccessDeleteDto })

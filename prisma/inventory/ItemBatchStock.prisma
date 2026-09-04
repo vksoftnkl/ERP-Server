@@ -19,7 +19,7 @@ model ItemBatchStock {
   ibsMfgDate          DateTime?       @db.Date @map("ibs_mfg_date")
   ibsExpiryDate       DateTime?       @db.Date @map("ibs_expiry_date")
   ibsMrp              Decimal         @default(0) @db.Decimal(18, 6) @map("ibs_mrp")
-  ibsStockBucket      ItemStockBucket @default(SALEABLE) @map("ibs_stock_bucket")
+  ibsStockBucket      String          @default("SALEABLE") @db.VarChar(20) @map("ibs_stock_bucket")
 
   // Normal qty
   ibsOpeningQty       Decimal         @default(0) @db.Decimal(18, 6) @map("ibs_opening_qty")

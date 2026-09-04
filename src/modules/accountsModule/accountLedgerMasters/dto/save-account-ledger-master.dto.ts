@@ -1,303 +1,228 @@
-import { Transform, Type } from 'class-transformer';
-import { LedGstPartyRegType, LedObType } from '@prisma/client';
+import { Type } from 'class-transformer';
+import { LedGstPartyRegType, LedObType } from '../types/account-ledger-master-enum';
+import { LedgerBankAccountItemDto } from './ledger-bank-account-item.dto';
 import {
-  IsBoolean,
+  IsArray,
   IsDate,
-  IsEmail,
   IsEnum,
   IsNotEmpty,
   IsNumber,
   IsOptional,
-  IsString,
-  IsUUID,
-  MaxLength,
   Min,
   ValidateIf,
+  ValidateNested,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-const toOptionalTrimmedString = (value: unknown): unknown => {
-  if (typeof value !== 'string') {
-    return value;
+import { Transform } from 'class-transformer';
+import {
+  NullableDate,
+  NullableEmail,
+  NullableString,
+  OptionalBoolean,
+  OptionalInteger,
+  OptionalUuid,
+  RequiredUuid,
+  SkipOnNullish,
+  TrimmedString,
+} from 'src/common/dto/dtoDecorators';
+import { toNullableUpperString, toUpperTrimmed } from 'src/common/dto/DtoTransforms';
+// A bank-account entry is "blank" when it is null/undefined, not an object, or an
+// object whose every value is null/undefined/empty string (e.g. an untouched grid row).
+// Such entries are dropped so a stray {} or null doesn't fail validation or insert garbage.
+const isBlankBankAccountItem = (item: unknown): boolean => {
+  if (item === null || item === undefined || typeof item !== 'object') {
+    return true;
   }
-  return value.trim();
+  return Object.values(item as Record<string, unknown>).every(
+    (value) => value === null || value === undefined || (typeof value === 'string' && value.trim() === ''),
+  );
 };
-const toNullableString = (value: unknown): string | null | undefined => {
-  if (value === undefined) {
+
+// Exported so linked masters that embed the same bank-account array (e.g. the supplier
+// create/update payload, which provisions a shared account ledger) reuse one normalizer
+// instead of duplicating the blank-row stripping logic.
+export const normalizeBankAccountItems = (value: unknown): unknown => {
+  if (value === null || value === undefined) {
     return undefined;
   }
-  if (value === null) {
-    return null;
-  }
-  if (typeof value !== 'string') {
-    return null;
-  }
-  const trimmed = value.trim();
-  return trimmed ? trimmed : null;
-};
-const toNullableDate = (value: unknown): Date | null | undefined => {
-  if (value === undefined) {
+  if (typeof value === 'string' && value.trim() === '') {
     return undefined;
   }
-  if (value === null || value === '') {
-    return null;
-  }
-  const parsed =
-    value instanceof Date
-      ? value
-      : typeof value === 'string' || typeof value === 'number'
-        ? new Date(value)
-        : new Date(Number.NaN);
-  return Number.isNaN(parsed.getTime()) ? (value as Date) : parsed;
-};
-const toUpper = (value: unknown): unknown => {
-  if (typeof value !== 'string') {
+  if (!Array.isArray(value)) {
     return value;
   }
-  return value.trim().toUpperCase();
+  return value.filter((item) => !isBlankBankAccountItem(item));
 };
+
 export class SaveAccountLedgerMasterDto {
   @ApiPropertyOptional({
     format: 'uuid',
     description: 'When provided, request updates the existing ledger',
   })
-  @IsOptional()
-  @IsUUID('all')
+  @OptionalUuid()
   ledId?: string;
+
   @ApiPropertyOptional({ format: 'uuid' })
-  @IsOptional()
-  @Transform(({ value }) => toOptionalTrimmedString(value))
-  @IsUUID('all')
+  @OptionalUuid()
   ledCompanyId?: string;
+
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  @OptionalUuid()
+  ledBranchId?: string;
+
   @ApiProperty({ format: 'uuid' })
-  @IsUUID('all')
-  ledBranchId!: string;
-  @ApiProperty({ format: 'uuid' })
-  @IsUUID('all')
+  @RequiredUuid()
   ledGroupId!: string;
+
   @ApiProperty({ maxLength: 200 })
-  @IsString()
+  @TrimmedString(200)
   @IsNotEmpty()
-  @MaxLength(200)
   ledName!: string;
+
   @ApiPropertyOptional({ maxLength: 100, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(100)
+  @NullableString(100)
   ledAlias?: string | null;
+
   @ApiPropertyOptional({ maxLength: 50, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(50)
+  @NullableString(50)
   ledShort?: string | null;
+
   @ApiPropertyOptional({ maxLength: 200, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(200)
+  @NullableString(200)
   ledTallyName?: string | null;
+
   @ApiPropertyOptional({ maxLength: 150, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(150)
+  @NullableString(150)
   ledTallyGroupName?: string | null;
+
   @ApiPropertyOptional({ maxLength: 64, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(64)
+  @NullableString(64)
   ledTallyGuid?: string | null;
+
   @ApiPropertyOptional({ maxLength: 30 })
   @IsOptional()
-  @IsString()
-  @MaxLength(30)
+  @TrimmedString(30)
   ledCategory?: string;
+
+  @ApiPropertyOptional({ maxLength: 20, nullable: true })
+  @NullableString(20)
+  ledLedgerType?: string | null;
+
+  @ApiPropertyOptional({ maxLength: 200, nullable: true })
+  @NullableString(200)
+  ledMailingName?: string | null;
+
   @ApiPropertyOptional()
-  @IsOptional()
-  @IsBoolean()
+  @OptionalBoolean()
   ledIsBillByBill?: boolean;
+
   @ApiPropertyOptional()
-  @IsOptional()
-  @IsBoolean()
+  @OptionalBoolean()
   ledIsCostCenterReq?: boolean;
+
   @ApiPropertyOptional()
-  @IsOptional()
-  @IsBoolean()
+  @OptionalBoolean()
   ledIsInterestApplicable?: boolean;
+
   @ApiPropertyOptional({ nullable: true })
   @IsOptional()
   @Type(() => Number)
   @IsNumber({ allowNaN: false, allowInfinity: false })
   ledInterestRate?: number;
+
   @ApiPropertyOptional({ maxLength: 150, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(150)
+  @NullableString(150)
   ledContactPerson?: string | null;
+
   @ApiPropertyOptional({ maxLength: 150, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsEmail()
-  @MaxLength(150)
+  @NullableEmail(150)
   ledEmail?: string | null;
+
   @ApiPropertyOptional({ maxLength: 20, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(20)
+  @NullableString(20)
   ledTel?: string | null;
+
   @ApiPropertyOptional({ maxLength: 20, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(20)
+  @NullableString(20)
   ledPhone1?: string | null;
+
   @ApiPropertyOptional({ maxLength: 20, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(20)
+  @NullableString(20)
   ledPhone2?: string | null;
+
   @ApiPropertyOptional({ maxLength: 20, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(20)
+  @NullableString(20)
   ledWhatsappNo?: string | null;
+
   @ApiPropertyOptional({ maxLength: 200, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(200)
+  @NullableString(200)
   ledAddr1?: string | null;
+
   @ApiPropertyOptional({ maxLength: 200, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(200)
+  @NullableString(200)
   ledAddr2?: string | null;
+
   @ApiPropertyOptional({ maxLength: 200, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(200)
+  @NullableString(200)
   ledAddr3?: string | null;
+
   @ApiPropertyOptional({ maxLength: 100, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(100)
+  @NullableString(100)
   ledCity?: string | null;
+
   @ApiPropertyOptional({ maxLength: 100, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(100)
+  @NullableString(100)
   ledDistrict?: string | null;
+
   @ApiPropertyOptional({ maxLength: 100, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(100)
+  @NullableString(100)
   ledStateName?: string | null;
+
   @ApiPropertyOptional({ maxLength: 2, nullable: true })
   @IsOptional()
-  @Transform(({ value }) => toNullableString(toUpper(value)))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(2)
+  @Transform(({ value }) => toNullableUpperString(value))
+  @SkipOnNullish()
+  @TrimmedString(2)
   ledStateCode?: string | null;
+
   @ApiPropertyOptional({ maxLength: 10, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(10)
+  @NullableString(10)
   ledPin?: string | null;
+
   @ApiPropertyOptional({ maxLength: 60, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(60)
+  @NullableString(60)
   ledCountry?: string | null;
+
   @ApiPropertyOptional({ nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
+  @NullableString()
   ledRegionName?: string | null;
+
   @ApiPropertyOptional({ maxLength: 200, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(200)
+  @NullableString(200)
   ledRegionAddr1?: string | null;
+
   @ApiPropertyOptional({ maxLength: 200, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(200)
+  @NullableString(200)
   ledRegionAddr2?: string | null;
+
   @ApiPropertyOptional({ maxLength: 200, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(200)
+  @NullableString(200)
   ledRegionAddr3?: string | null;
+
   @ApiPropertyOptional({ maxLength: 100, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(100)
+  @NullableString(100)
   ledRegionCity?: string | null;
 
   @ApiPropertyOptional({ maxLength: 100, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(100)
+  @NullableString(100)
   ledRegionDistrict?: string | null;
 
   @ApiPropertyOptional({ maxLength: 100, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(100)
+  @NullableString(100)
   ledRegionStateName?: string | null;
 
   @ApiPropertyOptional({ maxLength: 60, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(60)
+  @NullableString(60)
   ledRegionCountry?: string | null;
 
   @ApiPropertyOptional({
@@ -306,95 +231,122 @@ export class SaveAccountLedgerMasterDto {
     nullable: true,
   })
   @IsOptional()
-  @Transform(({ value }) => toNullableString(toUpper(value)))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
+  @Transform(({ value }) => toNullableUpperString(value))
+  @SkipOnNullish()
   @IsEnum(LedGstPartyRegType)
   ledGstPartyRegType?: LedGstPartyRegType | null;
 
   @ApiPropertyOptional({ maxLength: 15, nullable: true })
   @IsOptional()
-  @Transform(({ value }) => toNullableString(toUpper(value)))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(15)
+  @Transform(({ value }) => toNullableUpperString(value))
+  @SkipOnNullish()
+  @TrimmedString(15)
   ledGstinNo?: string | null;
 
   @ApiPropertyOptional({ maxLength: 10, nullable: true })
   @IsOptional()
-  @Transform(({ value }) => toNullableString(toUpper(value)))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(10)
+  @Transform(({ value }) => toNullableUpperString(value))
+  @SkipOnNullish()
+  @TrimmedString(10)
   ledPanNo?: string | null;
 
   @ApiPropertyOptional({ maxLength: 20, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(20)
+  @NullableString(20)
   ledAadharNo?: string | null;
 
   @ApiPropertyOptional({ maxLength: 15, nullable: true })
   @IsOptional()
-  @Transform(({ value }) => toNullableString(toUpper(value)))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(15)
+  @Transform(({ value }) => toNullableUpperString(value))
+  @SkipOnNullish()
+  @TrimmedString(15)
   ledEcommerceGstin?: string | null;
 
   @ApiPropertyOptional()
-  @IsOptional()
-  @IsBoolean()
+  @OptionalBoolean()
   ledIsSez?: boolean;
 
-  @ApiPropertyOptional({ maxLength: 80, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(80)
-  ledChequeName?: string | null;
+  @ApiPropertyOptional({ maxLength: 10, nullable: true })
+  @NullableString(10)
+  ledTypeOfSupply?: string | null;
 
-  @ApiPropertyOptional({ maxLength: 120, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(120)
-  ledBankName?: string | null;
+  @ApiPropertyOptional({ maxLength: 10, nullable: true })
+  @NullableString(10)
+  ledHsnSac?: string | null;
 
-  @ApiPropertyOptional({ maxLength: 120, nullable: true })
+  @ApiPropertyOptional({ nullable: true })
   @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(120)
-  ledBankBranch?: string | null;
-
-  @ApiPropertyOptional({ maxLength: 40, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(40)
-  ledBankAcNo?: string | null;
+  @Type(() => Number)
+  @IsNumber({ allowNaN: false, allowInfinity: false })
+  ledGstRate?: number;
 
   @ApiPropertyOptional({ maxLength: 15, nullable: true })
+  @NullableString(15)
+  ledTaxability?: string | null;
+
+  @ApiPropertyOptional({ maxLength: 30, nullable: true })
+  @NullableString(30)
+  ledGstPartyType?: string | null;
+
+  @ApiPropertyOptional({ maxLength: 10, nullable: true })
   @IsOptional()
-  @Transform(({ value }) => toNullableString(toUpper(value)))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(15)
-  ledBankIfsc?: string | null;
+  @Transform(({ value }) => toNullableUpperString(value))
+  @SkipOnNullish()
+  @TrimmedString(10)
+  ledTanNo?: string | null;
+
+  @ApiPropertyOptional({ maxLength: 21, nullable: true })
+  @IsOptional()
+  @Transform(({ value }) => toNullableUpperString(value))
+  @SkipOnNullish()
+  @TrimmedString(21)
+  ledCin?: string | null;
+
+  @ApiPropertyOptional({ maxLength: 25, nullable: true })
+  @IsOptional()
+  @Transform(({ value }) => toNullableUpperString(value))
+  @SkipOnNullish()
+  @TrimmedString(25)
+  ledUdyamNo?: string | null;
+
+  @ApiPropertyOptional({ maxLength: 10, nullable: true })
+  @NullableString(10)
+  ledMsmeType?: string | null;
+
+  @ApiPropertyOptional({ maxLength: 20, nullable: true })
+  @NullableString(20)
+  ledGstDutyHead?: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ allowNaN: false, allowInfinity: false })
+  ledTaxRate?: number;
+
+  @ApiPropertyOptional({ maxLength: 15, nullable: true })
+  @NullableString(15)
+  ledRoundingMethod?: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ allowNaN: false, allowInfinity: false })
+  ledRoundingLimit?: number;
+
+  @ApiPropertyOptional()
+  @OptionalBoolean()
+  ledIsTdsApplicable?: boolean;
+
+  @ApiPropertyOptional({ maxLength: 40, nullable: true })
+  @NullableString(40)
+  ledTdsDeducteeType?: string | null;
 
   @ApiPropertyOptional({ maxLength: 80, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(80)
-  ledUpiId?: string | null;
+  @NullableString(80)
+  ledTdsNatureOfPayment?: string | null;
+
+  @ApiPropertyOptional()
+  @OptionalBoolean()
+  ledIsTcsApplicable?: boolean;
 
   @ApiPropertyOptional({ minimum: 0, default: 0 })
   @IsOptional()
@@ -408,13 +360,12 @@ export class SaveAccountLedgerMasterDto {
     enumName: 'LedObType',
   })
   @IsOptional()
-  @Transform(({ value }) => toUpper(value))
+  @Transform(({ value }) => toUpperTrimmed(value))
   @IsEnum(LedObType)
   ledObType?: LedObType;
 
   @ApiPropertyOptional({ type: String, format: 'date', nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableDate(value))
+  @NullableDate()
   @ValidateIf((_, value) => value !== null && value !== undefined)
   @Type(() => Date)
   @IsDate()
@@ -439,30 +390,42 @@ export class SaveAccountLedgerMasterDto {
   ledTotalBalance?: number;
 
   @ApiPropertyOptional()
-  @IsOptional()
-  @IsBoolean()
+  @OptionalInteger()
+  ledSortOrder?: number;
+
+  @ApiPropertyOptional()
+  @OptionalBoolean()
   ledIsActive?: boolean;
 
   @ApiPropertyOptional()
-  @IsOptional()
-  @IsBoolean()
+  @OptionalBoolean()
   ledAllowEdit?: boolean;
 
   @ApiPropertyOptional()
-  @IsOptional()
-  @IsBoolean()
+  @OptionalBoolean()
   ledIsEntry?: boolean;
 
   @ApiPropertyOptional()
-  @IsOptional()
-  @IsBoolean()
+  @OptionalBoolean()
   ledAllowSms?: boolean;
 
   @ApiPropertyOptional({ maxLength: 250, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(250)
+  @NullableString(250)
   ledRemarks?: string | null;
+
+  @ApiPropertyOptional({
+    type: LedgerBankAccountItemDto,
+    isArray: true,
+    description:
+      'Bank accounts to persist alongside the ledger. On create every item is inserted; ' +
+      'on update an item with `lbaId` updates that row, an item without `lbaId` is inserted. ' +
+      'Omitting the array (or sending an empty one) leaves existing bank accounts untouched — ' +
+      'use the dedicated delete endpoint to remove them.',
+  })
+  @IsOptional()
+  @Transform(({ value }) => normalizeBankAccountItems(value))
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => LedgerBankAccountItemDto)
+  ledgerBankAccount?: LedgerBankAccountItemDto[];
 }

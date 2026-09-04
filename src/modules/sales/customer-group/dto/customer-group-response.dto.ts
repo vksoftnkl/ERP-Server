@@ -1,24 +1,11 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { ConfiguredGridStyleDto } from '../../../../common/configured-grid-sql/dto/configured-grid-style.dto';
+import {
+  SalesErrorFieldDto,
+  SalesErrorResponseDto,
+} from 'src/common/utils/module-response.dto';
 
-export class CustomerGroupErrorFieldDto {
-  @ApiProperty({ example: 'cgrName' })
-  field!: string;
-
-  @ApiProperty({ example: 'Duplicate customer group name is not allowed for this company' })
-  message!: string;
-}
-
-export class CustomerGroupErrorResponseDto {
-  @ApiProperty({ example: false })
-  success!: false;
-
-  @ApiProperty({ example: 'Validation failed' })
-  message!: string;
-
-  @ApiProperty({ type: CustomerGroupErrorFieldDto, isArray: true })
-  errors!: CustomerGroupErrorFieldDto[];
-}
+export { SalesErrorFieldDto as CustomerGroupErrorFieldDto };
+export { SalesErrorResponseDto as CustomerGroupErrorResponseDto };
 
 export class CustomerGroupPayloadDto {
   @ApiProperty({ format: 'uuid' })
@@ -79,20 +66,6 @@ export class CustomerGroupPayloadDto {
   cgrModifiedOn!: string;
 }
 
-export class CustomerGroupListMetaDto {
-  @ApiProperty({ example: 1 })
-  page!: number;
-
-  @ApiProperty({ example: 20 })
-  limit!: number;
-
-  @ApiProperty({ example: 3 })
-  total!: number;
-
-  @ApiProperty({ example: 1 })
-  total_pages!: number;
-}
-
 export class CustomerGroupDeleteResultDto {
   @ApiProperty({ format: 'uuid' })
   cgrId!: string;
@@ -110,23 +83,6 @@ export class CustomerGroupSuccessSingleDto {
 
   @ApiProperty({ type: CustomerGroupPayloadDto })
   data!: CustomerGroupPayloadDto;
-}
-
-export class CustomerGroupSuccessListDto {
-  @ApiProperty({ example: true })
-  success!: true;
-
-  @ApiProperty({ example: 'Customer groups fetched successfully' })
-  message!: string;
-
-  @ApiProperty({ type: CustomerGroupPayloadDto, isArray: true })
-  data!: CustomerGroupPayloadDto[];
-
-  @ApiProperty({ type: CustomerGroupListMetaDto })
-  meta!: CustomerGroupListMetaDto;
-
-  @ApiPropertyOptional({ type: ConfiguredGridStyleDto, isArray: true })
-  styles?: ConfiguredGridStyleDto[];
 }
 
 export class CustomerGroupSuccessDeleteDto {

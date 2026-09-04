@@ -34,12 +34,12 @@ model OpeningStockHeader {
   oshUpdatedOn     DateTime?              @db.Timestamptz(6) @map("osh_updated_on")
   oshUpdatedBy     String?                @db.Uuid @map("osh_updated_by")
   //relations
-  voucherHeader    AccVoucherHeader       @relation("OpeningStockHeaderVoucher", fields: [oshVoucherId], references: [avhVoucherId], onDelete: Cascade, map: "fk_osh_voucher_header")
+  // oshVoucherId stays a plain UUID column — acc_voucher_header was dropped.
   company          Company                @relation(fields: [oshCompanyId], references: [compId], map: "fk_osh_company")
   branch           BranchMaster           @relation(fields: [oshBranchId], references: [brId], map: "fk_osh_branch")
   details          OpeningStockDetail[]
   @@unique([oshAccYear, oshCompanyId, oshBranchId, oshVoucherId], map: "uq_opening_stock_header_voucher_id")
   @@index([oshAccYear, oshCompanyId, oshBranchId, oshVoucherDate], map: "idx_opening_stock_header_date")
   @@map("opening_stock_header")
-  @@schema("inventory")
+  @@schema("stock")
 }

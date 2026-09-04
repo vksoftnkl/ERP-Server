@@ -10,6 +10,12 @@ model StateCode {
   createdBy     String?   @db.VarChar(100)                                    @map("created_by")
   modifiedOn    DateTime  @default(now()) @db.Timestamptz                     @map("modified_on")
   modifiedBy    String?   @db.VarChar(100)                                    @map("modified_by")
+  // Relations
+  saleQuotations SaleQuotation[]
+  saleBills      SaleBill[]
+  // sale_order snapshots two states: place of supply and ship-to.
+  saleOrderPosStates  SaleOrder[] @relation("SaleOrderPosState")
+  saleOrderShipStates SaleOrder[] @relation("SaleOrderShipState")
 
   @@index([isActive],  name: "idx_state_codes_active")
   @@index([stateName], name: "idx_state_codes_name")

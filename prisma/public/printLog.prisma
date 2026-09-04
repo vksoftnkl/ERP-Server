@@ -1,0 +1,127 @@
+/// public.print_log — §7, every render, immutable.
+///
+/// ┌─────────────────────────────────────────────────────────────────────────┐
+/// │ RECONSTRUCTED, NOT TRANSCRIBED. §7 of 17_printing.sql has not reached   │
+/// │ me — both pastes of the file hit the 50,000-character message limit     │
+/// │ before it. RECONCILE AGAINST §7 BEFORE GENERATING A CLIENT.             │
+/// │                                                                         │
+/// │ Load-bearing and safe (the file states each of these directly):        │
+/// │   * prefix plg_, table public.print_log                                │
+/// │   * PARTITIONED BY LIST (plg_acc_year), one partition per accounting   │
+/// │     year, created by public.fn_create_printing_partitions('YYYY-YYYY') │
+/// │     as public.print_log_YYYY_YYYY. Retiring a year is a DROP of one    │
+/// │     partition; retention is policy, not schema.                        │
+/// │   * plg_version_id is a REAL FK to print_template_version — "what did  │
+/// │     this bill look like when it was printed" is enforced, not          │
+/// │     snapshotted and hoped for. This is the whole reason the body lives │
+/// │     on the version rather than the template.                           │
+/// │   * NO foreign key to any document. The subject is named by the        │
+/// │     POLYMORPHIC SOURCE QUAD (module, doc type, doc id, acc year),      │
+/// │     because the documents are themselves partitioned by their own      │
+/// │     accounting year and a purpose may name a master or a report.       │
+/// │   * plg_copy_label records what was printed on the paper. Deciding that │
+/// │     the second print of a tax invoice is a DUPLICATE is a rule about   │
+/// │     GST and belongs to the service layer, not here.                    │
+/// │   * plg_params is ONE jsonb object per render — the answers to         │
+/// │     ptv_params — not one per dataset. §3 cites this table as the       │
+/// │     reason the declaration moved to the version.                       │
+/// │   * A REPRINT IS NOT A STATUS TRANSITION. This table is the record of  │
+/// │     printing; sale_bill.sb_print_count and its siblings stay a         │
+/// │     denormalised cache of COUNT(*) over it, never the truth.           │
+/// │                                                                         │
+/// │ Inferred, most likely to differ from §7: the outcome block             │
+/// │ (plgStatus … plgDurationMs) and the exact spelling of the quad.        │
+/// └─────────────────────────────────────────────────────────────────────────┘
+///
+/// The composite primary key is the house shape for a partitioned fact table —
+/// sale_bill does the same — because PostgreSQL requires the partition key to
+/// be part of every unique constraint.
+///
+/// IMMUTABLE means immutable: there is no _is_deleted, no _modified_on and no
+/// _sync_date here. Enforce append-only with a REVOKE UPDATE, DELETE on the
+/// application role and, if you want it in the database, a BEFORE UPDATE OR
+/// DELETE trigger that raises. Prisma cannot express either.
+///
+/// Declared here WITHOUT any CHECK constraint:
+///   ck_plg_acc_year_shape   ^[0-9]{4}-[0-9]{4}$ with consecutive years, the
+///                           same rule fn_create_printing_partitions enforces
+///   ck_plg_src_module       the ppo_src_module vocabulary
+///   ck_plg_output_mode      PRINT | PREVIEW | EMAIL | FILE | REPRINT
+///   ck_plg_status           SUCCESS | FAILED | QUEUED | CANCELLED
+///   ck_plg_copy_no          >= 1
+///
+/// DB-only objects Prisma cannot express, hand-authored in the migration:
+///   ix_plg_subject   (plg_src_module, plg_src_doc_type, plg_src_doc_id,
+///                     plg_src_acc_year) — "how many times was this printed",
+///                     the query sb_print_count caches
+///   ix_plg_recent    (plg_company_id, plg_printed_on DESC) per partition
+///   ix_plg_version / ix_plg_purpose / ix_plg_template / ix_plg_printer /
+///   ix_plg_device / ix_plg_branch / ix_plg_printed_by   FK-covering
+model PrintLog {
+  plgId               String    @default(dbgenerated("uuidv7()")) @db.Uuid   @map("plg_id")
+  /// THE PARTITION KEY. One partition per accounting year.
+  plgAccYear          String    @db.Char(9)                                  @map("plg_acc_year")
+
+  plgCompanyId        String    @db.Uuid                                     @map("plg_company_id")
+  plgBranchId         String?   @db.Uuid                                     @map("plg_branch_id")
+  /// The counter the render came from.
+  plgDeviceId         String?   @db.Uuid                                     @map("plg_device_id")
+
+  // ── The subject, as the polymorphic source quad ─────────────────────────
+  // Deliberately NOT a foreign key to any document: the same shape every
+  // other polymorphic table in this chain uses.
+  plgSrcModule        String    @default("SALES") @db.VarChar(20)            @map("plg_src_module")
+  plgSrcDocType       String    @db.VarChar(40)                              @map("plg_src_doc_type")
+  plgSrcDocId         String?   @db.Uuid                                     @map("plg_src_doc_id")
+  /// The DOCUMENT's accounting year, which is not necessarily the year the
+  /// render happened in — a reprint of last year's bill is logged this year.
+  plgSrcAccYear       String?   @db.Char(9)                                  @map("plg_src_acc_year")
+
+  // ── What was rendered, and with what ────────────────────────────────────
+  plgPurposeId        String    @db.Uuid                                     @map("plg_purpose_id")
+  plgTemplateId       String    @db.Uuid                                     @map("plg_template_id")
+  /// The exact bytes. A real FK, and the point of the whole versioning design.
+  plgVersionId        String    @db.Uuid                                     @map("plg_version_id")
+  plgPrinterId        String?   @db.Uuid                                     @map("plg_printer_id")
+
+  plgOutputMode       String    @default("PRINT") @db.VarChar(15)            @map("plg_output_mode")
+  plgCopyNo           Int       @default(1) @db.SmallInt                     @map("plg_copy_no")
+  /// ORIGINAL / DUPLICATE / TRIPLICATE — what the paper actually said.
+  plgCopyLabel        String?   @db.VarChar(20)                              @map("plg_copy_label")
+  plgLang             String?   @db.VarChar(5)                               @map("plg_lang")
+
+  /// The answers to ptv_params, ONE object for the whole render.
+  plgParams           Json?     @db.JsonB                                    @map("plg_params")
+
+  // ── Outcome ─────────────────────────────────────────────────────────────
+  plgStatus           String    @default("SUCCESS") @db.VarChar(15)          @map("plg_status")
+  plgError            String?   @db.Text                                     @map("plg_error")
+  plgPageCount        Int?      @db.SmallInt                                 @map("plg_page_count")
+  plgByteCount        Int?                                                   @map("plg_byte_count")
+  plgDurationMs       Int?                                                   @map("plg_duration_ms")
+
+  plgPrintedOn        DateTime  @default(now()) @db.Timestamptz(6)           @map("plg_printed_on")
+  plgPrintedBy        String?   @db.Uuid                                     @map("plg_printed_by")
+
+  // ── Relations ───────────────────────────────────────────────────────────
+  company             Company              @relation("PrintLogCompany",   fields: [plgCompanyId],  references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_plg_company")
+  branch              BranchMaster?        @relation("PrintLogBranch",    fields: [plgBranchId],   references: [brId],   onUpdate: Cascade, onDelete: Restrict, map: "fk_plg_branch")
+  device              DeviceMaster?        @relation("PrintLogDevice",    fields: [plgDeviceId],   references: [devId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_plg_device")
+  purpose             PrintPurpose         @relation("PrintLogPurpose",   fields: [plgPurposeId],  references: [ppoId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_plg_purpose")
+  template            PrintTemplate        @relation("PrintLogTemplate",  fields: [plgTemplateId], references: [ptlId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_plg_template")
+  version             PrintTemplateVersion @relation("PrintLogVersion",   fields: [plgVersionId],  references: [ptvId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_plg_version")
+  printer             PrinterProfile?      @relation("PrintLogPrinter",   fields: [plgPrinterId],  references: [prfId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_plg_printer")
+  printedByUser       UserMaster?          @relation("PrintLogPrintedBy", fields: [plgPrintedBy],  references: [usrId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_plg_printed_by")
+
+  // Declared so `migrate dev` does not offer to drop them. The PARTIAL ones
+  // (ix_plg_subject, ix_plg_printer, ix_plg_device, ix_plg_branch,
+  // ix_plg_printed_by) stay DB-only — Prisma cannot express a WHERE clause and
+  // therefore ignores them.
+  @@index([plgCompanyId, plgPrintedOn(sort: Desc)], map: "ix_plg_recent")
+  @@index([plgVersionId],  map: "ix_plg_version")
+  @@index([plgPurposeId],  map: "ix_plg_purpose")
+  @@index([plgTemplateId], map: "ix_plg_template")
+  @@id([plgId, plgAccYear], map: "pk_print_log")
+  @@map("print_log")
+  @@schema("public")
+}

@@ -1,0 +1,158 @@
+// Lines -- one row per BATCH ALLOCATION. Printed line = GROUP BY sbi_line_no;
+// stock/GST reads rows as they are.
+model SaleBillItem {
+  sbiId              String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("sbi_id")
+  sbiBillId          String    @db.Uuid @map("sbi_bill_id")
+  sbiCompanyId       String    @db.Uuid @map("sbi_company_id")
+  sbiBranchId        String    @db.Uuid @map("sbi_branch_id")
+  sbiTenantId        String?   @db.Uuid @map("sbi_tenant_id")
+  sbiAccYear         String    @db.Char(9) @map("sbi_acc_year")
+  // The printed line, and which allocation within it. Non-batch items are
+  // always (line, 1).
+  sbiLineNo          Int       @map("sbi_line_no")
+  sbiSplitNo         Int       @default(1) @map("sbi_split_no")
+  // Which line of which source document this came from (order/quotation).
+  sbiSrcDocType      String?   @db.VarChar(30) @map("sbi_src_doc_type")
+  sbiSrcDocId        String?   @db.Uuid @map("sbi_src_doc_id")
+  sbiSrcDocYear      String?   @db.Char(9) @map("sbi_src_doc_year")
+  sbiSrcDocRefno     String?   @db.VarChar(100) @map("sbi_src_doc_refno")
+  sbiSrcDocLineNo    Int?      @map("sbi_src_doc_line_no")
+  sbiSrcItemQty      Decimal?  @db.Decimal(15, 3) @map("sbi_src_item_qty")
+  sbiSrcFreeQty      Decimal?  @db.Decimal(15, 3) @map("sbi_src_free_qty")
+  // What is being sold
+  sbiItemId          String    @db.Uuid @map("sbi_item_id")
+  sbiItemUnitId      String    @db.Uuid @map("sbi_item_unit_id")
+  sbiToBaseFactor    Decimal   @default(0) @db.Decimal(15, 6) @map("sbi_to_base_factor")
+  sbiHsnCode         String?   @db.VarChar(8) @map("sbi_hsn_code")
+  sbiPriceLevel      Int       @map("sbi_price_level")
+  sbiEanCode         String?   @db.VarChar(100) @map("sbi_ean_code")
+  // Free-text dimension the operator typed, e.g. a timber shop's "12*6*2*10"
+  // (length ft * width in * thickness in * pieces), which is what sbiBillQty
+  // was derived from. Stored verbatim so a reprint shows the size the customer
+  // agreed to, not just the cubic feet it became. Mirrors soi_size/soi_size_uom
+  // on sale_order_item.
+  sbiSize            String?   @db.VarChar(50) @map("sbi_size")
+  sbiSizeUom         String?   @db.VarChar(20) @map("sbi_size_uom")
+  // Where the stock came from. sbi_stock_id points at the inventory
+  // batch/stock row the quantity was taken from, so a reversal knows exactly
+  // what to put back.
+  sbiGodownId        String    @db.Uuid @map("sbi_godown_id")
+  sbiStockId         String?   @db.Uuid @map("sbi_stock_id")
+  sbiBatchNo         String?   @db.VarChar(100) @map("sbi_batch_no")
+  sbiBatchDate       DateTime? @db.Date @map("sbi_batch_date")
+  sbiExpiryDate      DateTime? @db.Date @map("sbi_expiry_date")
+  sbiSerialNo        String?   @db.VarChar(100) @map("sbi_serial_no")
+  // Flags
+  sbiIsTaxIncl       Boolean   @default(false) @map("sbi_is_tax_incl")
+  sbiIsPromo         Boolean   @default(false) @map("sbi_is_promo")
+  sbiIsFree          Boolean   @default(false) @map("sbi_is_free")
+  sbiFreeType        String?   @db.VarChar(20) @map("sbi_free_type") // NULL / SCHEME / SAMPLE / REPLACEMENT (app-layer only, ck_sbi_free_type dropped)
+  sbiIsService       Boolean   @default(false) @map("sbi_is_service")
+  sbiHasFreight      Boolean   @default(false) @map("sbi_has_freight")
+  // Quantities (of THIS allocation)
+  sbiCaseQty         Decimal   @default(0) @db.Decimal(15, 3) @map("sbi_case_qty")
+  sbiBillQty         Decimal   @default(0) @db.Decimal(15, 3) @map("sbi_bill_qty")
+  sbiLengthQty       Decimal?  @default(0) @db.Decimal(15, 3) @map("sbi_length_qty")
+  sbiNetQty          Decimal   @default(0) @db.Decimal(15, 3) @map("sbi_net_qty")
+  sbiWeightQty       Decimal?  @default(0) @db.Decimal(15, 3) @map("sbi_weight_qty")
+  sbiAvailableStock  Decimal   @default(0) @db.Decimal(15, 3) @map("sbi_available_stock")
+  sbiReturnQty       Decimal   @default(0) @db.Decimal(15, 3) @map("sbi_return_qty") // cache from sale_return
+  // Rates
+  sbiRate            Decimal   @default(0) @db.Decimal(15, 4) @map("sbi_rate")
+  sbiRatePreTax      Decimal   @default(0) @db.Decimal(15, 4) @map("sbi_rate_pre_tax")
+  sbiRateDiff        Decimal   @default(0) @db.Decimal(15, 4) @map("sbi_rate_diff")
+  sbiActPrice        Decimal?  @db.Decimal(15, 4) @map("sbi_act_price")
+  sbiMaxPrice        Decimal?  @db.Decimal(15, 4) @map("sbi_max_price") // MRP
+  sbiMinPrice        Decimal?  @db.Decimal(15, 4) @map("sbi_min_price")
+  sbiCostPrice       Decimal?  @db.Decimal(15, 4) @map("sbi_cost_price")
+  sbiCostPreTax      Decimal?  @db.Decimal(15, 2) @map("sbi_cost_pre_tax")
+  // Discounts
+  sbiItemDiscPerc    Decimal   @default(0) @db.Decimal(15, 4) @map("sbi_item_disc_perc")
+  sbiItemDiscQty     Decimal   @default(0) @db.Decimal(15, 3) @map("sbi_item_disc_qty")
+  sbiItemDiscAmt     Decimal   @default(0) @db.Decimal(15, 2) @map("sbi_item_disc_amt")
+  sbiSplDiscPerc     Decimal   @default(0) @db.Decimal(15, 4) @map("sbi_spl_disc_perc")
+  sbiSplDiscQty      Decimal   @default(0) @db.Decimal(15, 3) @map("sbi_spl_disc_qty")
+  sbiSplDiscAmt      Decimal   @default(0) @db.Decimal(15, 2) @map("sbi_spl_disc_amt")
+  sbiSchDiscPerc     Decimal   @default(0) @db.Decimal(15, 4) @map("sbi_sch_disc_perc")
+  sbiSchDiscQty      Decimal   @default(0) @db.Decimal(15, 3) @map("sbi_sch_disc_qty")
+  sbiSchDiscAmt      Decimal   @default(0) @db.Decimal(15, 2) @map("sbi_sch_disc_amt")
+  sbiBillSchPerc     Decimal   @default(0) @db.Decimal(15, 4) @map("sbi_bill_sch_perc")
+  sbiBillSchQty      Decimal   @default(0) @db.Decimal(15, 3) @map("sbi_bill_sch_qty")
+  sbiBillSchAmt      Decimal   @default(0) @db.Decimal(15, 2) @map("sbi_bill_sch_amt")
+  sbiAddlDisc1Perc   Decimal   @default(0) @db.Decimal(15, 4) @map("sbi_addl_disc1_perc")
+  sbiAddlDisc1Amt    Decimal   @default(0) @db.Decimal(15, 2) @map("sbi_addl_disc1_amt")
+  sbiAddlDisc2Perc   Decimal   @default(0) @db.Decimal(15, 4) @map("sbi_addl_disc2_perc")
+  sbiAddlDisc2Amt    Decimal   @default(0) @db.Decimal(15, 2) @map("sbi_addl_disc2_amt")
+  sbiCashDiscPerc    Decimal   @default(0) @db.Decimal(15, 4) @map("sbi_cash_disc_perc")
+  sbiCashDiscAmt     Decimal   @default(0) @db.Decimal(15, 2) @map("sbi_cash_disc_amt")
+  // The charge-distribution trio. Goods value after line discounts
+  // (pre-charge, pre-tax), then this line's signed share of the
+  // before/after-tax charges.
+  sbiGrossAmt        Decimal   @default(0) @db.Decimal(15, 2) @map("sbi_gross_amt")
+  sbiNetGross        Decimal?  @db.Decimal(14, 4) @map("sbi_net_gross")
+  sbiChrgBeforeTax   Decimal?  @db.Decimal(14, 4) @map("sbi_chrg_before_tax")
+  sbiChrgAfterTax    Decimal?  @db.Decimal(14, 4) @map("sbi_chrg_after_tax")
+  // Tax (on the POST-charge taxable)
+  sbiTaxableAmt      Decimal   @default(0) @db.Decimal(15, 2) @map("sbi_taxable_amt")
+  sbiTaxPerc         Decimal   @default(0) @db.Decimal(15, 4) @map("sbi_tax_perc")
+  sbiTaxAmt          Decimal   @default(0) @db.Decimal(15, 2) @map("sbi_tax_amt")
+  sbiCgstPerc        Decimal   @default(0) @db.Decimal(15, 4) @map("sbi_cgst_perc")
+  sbiCgstAmt         Decimal   @default(0) @db.Decimal(15, 2) @map("sbi_cgst_amt")
+  sbiSgstPerc        Decimal   @default(0) @db.Decimal(15, 4) @map("sbi_sgst_perc")
+  sbiSgstAmt         Decimal   @default(0) @db.Decimal(15, 2) @map("sbi_sgst_amt")
+  sbiIgstPerc        Decimal   @default(0) @db.Decimal(15, 4) @map("sbi_igst_perc")
+  sbiIgstAmt         Decimal   @default(0) @db.Decimal(15, 2) @map("sbi_igst_amt")
+  sbiCessPerc        Decimal   @default(0) @db.Decimal(15, 4) @map("sbi_cess_perc")
+  sbiCessPerUnit     Decimal   @default(0) @db.Decimal(15, 4) @map("sbi_cess_per_unit")
+  sbiCessAmt         Decimal   @default(0) @db.Decimal(15, 2) @map("sbi_cess_amt")
+  sbiAcessPerc       Decimal   @default(0) @db.Decimal(15, 4) @map("sbi_acess_perc")
+  sbiAcessPerUnit    Decimal   @default(0) @db.Decimal(15, 4) @map("sbi_acess_per_unit")
+  sbiAcessAmt        Decimal   @default(0) @db.Decimal(15, 2) @map("sbi_acess_amt")
+  sbiBatchConfig     Int       @default(0) @map("sbi_batch_config")
+  // Per-line charges
+  sbiFreightQty      Decimal   @default(0) @db.Decimal(15, 3) @map("sbi_freight_qty")
+  sbiFreightAmt      Decimal   @default(0) @db.Decimal(15, 2) @map("sbi_freight_amt")
+  sbiLoadQty         Decimal   @default(0) @db.Decimal(15, 3) @map("sbi_load_qty")
+  sbiLoadAmt         Decimal   @default(0) @db.Decimal(15, 2) @map("sbi_load_amt")
+  sbiUnloadQty       Decimal   @default(0) @db.Decimal(15, 3) @map("sbi_unload_qty")
+  sbiUnloadAmt       Decimal   @default(0) @db.Decimal(15, 2) @map("sbi_unload_amt")
+  sbiRoundOff        Decimal   @default(0) @db.Decimal(15, 2) @map("sbi_round_off")
+  sbiNetAmt          Decimal   @default(0) @db.Decimal(15, 2) @map("sbi_net_amt")
+  // Costing / margin, PER UNIT
+  sbiSoldPrice       Decimal?  @db.Decimal(15, 4) @map("sbi_sold_price")
+  sbiSoldPreTax      Decimal?  @db.Decimal(15, 2) @map("sbi_sold_pre_tax")
+  sbiItemProfit      Decimal?  @db.Decimal(15, 2) @map("sbi_item_profit")
+  sbiProfitPreTax    Decimal?  @db.Decimal(15, 2) @map("sbi_profit_pre_tax")
+  sbiMrpSavings      Decimal?  @db.Decimal(15, 3) @map("sbi_mrp_savings")
+  sbiMrpSavingsPerc  Decimal?  @db.Decimal(15, 4) @map("sbi_mrp_savings_perc")
+  // Attribution
+  sbiSalesmanId      String?   @db.Uuid @map("sbi_salesman_id")
+  sbiSchemeId        String?   @db.Uuid @map("sbi_scheme_id")
+  sbiSchemeName      String?   @db.VarChar(150) @map("sbi_scheme_name")
+  sbiRemarks         String?   @db.VarChar(250) @map("sbi_remarks")
+  // Audit
+  sbiIsDeleted       Boolean   @default(false) @map("sbi_is_deleted")
+  sbiSyncDate        DateTime? @db.Timestamptz(6) @map("sbi_sync_date")
+  sbiCreatedOn       DateTime  @default(now()) @db.Timestamptz(6) @map("sbi_created_on")
+  sbiCreatedBy       String    @db.Text @map("sbi_created_by")
+  sbiModifiedOn      DateTime? @db.Timestamptz(6) @map("sbi_modified_on")
+  sbiModifiedBy      String?   @db.Text @map("sbi_modified_by")
+  // Relations
+  bill               SaleBill           @relation(fields: [sbiBillId, sbiAccYear], references: [sbId, sbAccYear], onDelete: Cascade, onUpdate: Cascade, map: "fk_sbi_bill")
+  item               ItemMaster         @relation(fields: [sbiItemId], references: [itemId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sbi_item")
+  priceLevel         ItemPriceLevel     @relation("SaleBillItemPriceLevel", fields: [sbiPriceLevel], references: [iplId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sbi_price_level")
+  // sbiItemUnitId references item_unit_conversion(iuc_id), NOT item_unit_master(unit_id)
+  itemUnitConversion ItemUnitConversion @relation("SaleBillItemUnitConversion", fields: [sbiItemUnitId], references: [iucId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sbi_item_unit")
+  // ck_sbi_free_type, ck_sbi_split_no and ck_sbi_batch_split were dropped
+  // before the migration was ever applied and are enforced in the
+  // application layer instead (BillService.ensureBillItemValuesAreAllowed).
+  @@id([sbiId, sbiAccYear], map: "pk_sale_bill_item")
+  // Migration 20260813050000. The sale-order module re-derives soi_delivered_qty
+  // by summing these rows for one order — across every partition, since an order
+  // taken in one year is routinely billed in the next — so the src-doc reference
+  // needs an index of its own. Plain and non-unique, so unlike the DB-only
+  // partial indexes on sale_order_item it is safe to declare here.
+  @@index([sbiSrcDocId, sbiSrcDocYear, sbiSrcDocLineNo], map: "ix_sbi_src_doc")
+  @@map("sale_bill_item")
+  @@schema("sales")
+}

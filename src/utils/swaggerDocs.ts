@@ -1,45 +1,48 @@
 import { AuditLogModule } from '../modules/audit-log/audit-log.module';
+import { SequenceModule } from '../common/Sequence/sequence.module';
 import { AccountLedgerMastersModule } from '../modules/accountsModule/accountLedgerMasters/account-ledger-masters.module';
-import { AccountsGroupModule } from '../modules/accountsModule/accountsGroup/accounts-group.module';
+import { AccGroupMasterModule } from '../modules/accountsModule/accGroupMaster/acc-group-master.module';
 import { LedgerBankAccountModule } from '../modules/accountsModule/ledgerBankAccount/ledger-bank-account.module';
-import { BranchMasterModule } from '../modules/accountsModule/branchMaster/branch-master.module';
+import { BranchMasterModule } from '../modules/settings/branchMaster/branch-master.module';
 import { CompanyGroupMasterModule } from '../modules/accountsModule/companyGroupMaster/company-group-master.module';
-import { CompanyMasterModule } from '../modules/accountsModule/companyMaster/company-master.module';
-import { EmployeeDepartmentMasterModule } from '../modules/accountsModule/employeeDepartmentMaster/employee-department-master.module';
-import { EmployeeDesignationMasterModule } from '../modules/accountsModule/employeeDesignationMaster/employee-designation-master.module';
-import { EmployeeMasterModule } from '../modules/accountsModule/employeeMaster/employee-master.module';
-import { GspCompanyServiceModule } from '../modules/accountsModule/gspCompanyService/gsp-company-service.module';
+import { CompanyMasterModule } from '../modules/settings/companyMaster/company-master.module';
+import { EmployeeDepartmentMasterModule } from '../modules/settings/employeeDepartmentMaster/employee-department-master.module';
+import { EmployeeDesignationMasterModule } from '../modules/settings/employeeDesignationMaster/employee-designation-master.module';
+import { EmployeeMasterModule } from '../modules/settings/employeeMaster/employee-master.module';
+import { UserAdministrationModule } from '../modules/settings/userAdministration/user-administration.module';
+import { ConfigsModule } from '../modules/settings/configs/configs.module';
+import { AppSettingsModule } from '../modules/settings/appSettings/app-settings.module';
+import { PrintTemplateAssignmentModule } from '../modules/settings/print-template-assignment/print-template-assignment.module';
+import { PrintTemplateModule } from '../modules/settings/print-template/print-template.module';
+import { GspCompanyServiceModule } from '../modules/settings/gspCompanyService/gsp-company-service.module';
 import { GspProviderMasterModule } from '../modules/accountsModule/gspProviderMaster/gsp-provider-master.module';
 import { LedgerShippingAddressModule } from '../modules/accountsModule/ledgerShippingAddress/ledger-shipping-address.module';
 import { TenderMasterModule } from '../modules/accountsModule/tenderMaster/tender-master.module';
 import { TenderTypeMasterModule } from '../modules/accountsModule/tenderTypeMaster/tender-type-master.module';
+import { TenderDetailModule } from '../modules/accountsModule/tenderDetail/tender-detail.module';
+import { TransactionModule } from '../modules/accountsModule/transaction/transaction.module';
 import { AuthModule } from '../modules/auth/auth.module';
 import { AreaModule } from '../modules/sales/area/area.module';
+import { SaleFreightChargeModule } from '../modules/sales/sale-freight-charges/sale-freight-charges.module';
+import { SaleLoadingChargeModule } from '../modules/sales/sale-loading-charges/sale-loading-charges.module';
 import { CityModule } from '../modules/sales/city/city.module';
+import { SaleAgentModule } from '../modules/sales/sale-agent/sale-agent.module';
 import { CustomerGroupModule } from '../modules/sales/customer-group/customer-group.module';
 import { CustomerModule } from '../modules/sales/customer/customer.module';
-import { GridColumnsModule } from '../modules/grid-columns/grid-columns.module';
+import { QuotationModule } from '../modules/sales/quotation/quotation.module';
+import { BillModule } from '../modules/sales/bill/bill.module';
+import { SaleOrderModule } from '../modules/sales/sale-order/sale-order.module';
+import { TxnHoldModule } from '../modules/sales/txn-hold/txn-hold.module';
 import { GridDetailsModule } from '../modules/grid-details/grid-details.module';
 import { DropdownDetailsModule } from '../modules/dropdown-details/dropdown-details.module';
-import { DropdownColumnsModule } from '../modules/dropdown-columns/dropdown-columns.module';
-import { GodownsMasterModule } from '../modules/godowns-master/godowns-master.module';
 import { HealthModule } from '../modules/health/health.module';
-import { ItemsBrandMasterModule } from '../modules/items-brand-master/items-brand-master.module';
-import { ItemsCategoryMasterModule } from '../modules/items-category-master/items-category-master.module';
 import { ItemsCustRatesMasterModule } from '../modules/items-cust-rates-master/items-cust-rates-master.module';
-import { ItemsEanCodeMasterModule } from '../modules/items-ean-code-master/items-ean-code-master.module';
-import { ItemsGroupMasterModule } from '../modules/items-group-master/items-group-master.module';
-import { ItemsMasterModule } from '../modules/items-master/items-master.module';
-import { ItemsPriceMasterModule } from '../modules/items-price-master/items-price-master.module';
-import { ItemPriceDetailsModule } from '../modules/item-price-details/item-price-details.module';
-import { ItemsQtywiseRatesMasterModule } from '../modules/items-qtywise-rates-master/items-qtywise-rates-master.module';
-import { ItemsReorderMasterModule } from '../modules/items-reorder-master/items-reorder-master.module';
-import { ItemsSectionMasterModule } from '../modules/items-section-master/items-section-master.module';
-import { ItemsTaxHistoryMasterModule } from '../modules/items-tax-history-master/items-tax-history-master.module';
-import { ItemsTaxMasterModule } from '../modules/items-tax-master/items-tax-master.module';
-import { UnitsMasterModule } from '../modules/units-master/units-master.module';
+import { ItemPriceDetailsModule } from '../modules/Inventory/item-price-details/item-price-details.module';
 import { UsersModule } from '../modules/users/users.module';
 import { MasterLookupModule } from '../modules/master-lookup/master-lookup.module';
+import { BatchPrefixModule } from '../modules/master/batch-prefix/batch-prefix.module';
+import { ChargeMasterModule } from '../modules/master/charge-master/charge-master.module';
+import { ChargeDetailModule } from '../modules/master/charge-detail/charge-detail.module';
 import { SupplierGroupModule } from '../modules/purchase/supplier-group/supplier-group.module';
 import { SuppliersModule } from '../modules/purchase/suppliers/suppliers.module';
 import { StateModule } from '../modules/sales/state/state.module';
@@ -49,10 +52,33 @@ import { MenuMasterModule } from '../modules/fixed/menu-master/menu-master.modul
 import { PriceLevelMasterModule } from '../modules/fixed/price-level-master/price-level-master.module';
 import { HsnCodeMasterModule } from '../modules/fixed/hsn-code-master/hsn-code-master.module';
 import { StateCodeMasterModule } from '../modules/fixed/state-code-master/state-code-master.module';
-import { UiTableColumnsModule } from '../modules/fixed/ui-table-columns/ui-table-columns.module';
 import { UiTableMasterModule } from '../modules/fixed/ui-table-master/ui-table-master.module';
 import { UserLoginSessionsModule } from '../modules/fixed/user-login-sessions/user-login-sessions.module';
-import { OpeningStockModule } from '../modules/opening-stock/opening-stock.module';
+import { StockAdjReasonsModule } from '../modules/fixed/stock-adj-reasons/stock-adj-reasons.module';
+import { PromotionLoyaltyPointsModule } from '../modules/sales/loyalty/promotion-loyalty-points.module';
+import { PromotionSchemeModule } from '../modules/sales/promotion-scheme/promotion-scheme.module';
+import { ItemsGroupMasterModule } from 'src/modules/Inventory/items-group-master/items-group-master.module';
+import { ItemsBrandMasterModule } from 'src/modules/Inventory/items-brand-master/items-brand-master.module';
+import { ItemsSectionMasterModule } from 'src/modules/Inventory/items-section-master/items-section-master.module';
+import { ItemsCategoryMasterModule } from 'src/modules/Inventory/items-category-master/items-category-master.module';
+import { UnitsMasterModule } from 'src/modules/Inventory/units-master/units-master.module';
+import { ItemsTaxMasterModule } from 'src/modules/Inventory/items-tax-master/items-tax-master.module';
+import { ItemsPriceMasterModule } from 'src/modules/Inventory/items-price-master/items-price-master.module';
+import { ItemUnitConversionModule } from 'src/modules/Inventory/item-unit-conversion/item-unit-conversion.module';
+import { ItemsReorderMasterModule } from 'src/modules/Inventory/items-reorder-master/items-reorder-master.module';
+import { ItemsQtyPriceMasterModule } from 'src/modules/Inventory/items-qty-price-master/items-qty-price-master.module';
+import { ItemsTaxHistoryMasterModule } from 'src/modules/Inventory/items-tax-history-master/items-tax-history-master.module';
+import { ItemsMasterModule } from 'src/modules/Inventory/items-master/items-master.module';
+import { ItemsEanCodeMasterModule } from 'src/modules/Inventory/items-ean-code-master/items-ean-code-master.module';
+import { ItemsGstUnitsMasterModule } from 'src/modules/Inventory/items-gst-units-master/items-gst-units-master.module';
+import { GodownsMasterModule } from 'src/modules/Inventory/godowns-master/godowns-master.module';
+// import { OpeningStockModule } from 'src/modules/stocks/opening-stock/opening-stock.module';
+import { ItemStockBalanceModule } from 'src/modules/stocks/itemstockbalance/itemStockBalanceModule';
+import { ItemBatchStockModule } from 'src/modules/stocks/itembatchstock/itemBatchStockModule';
+import { PhysicalStockModule } from 'src/modules/stocks/physical-stock/physical-stock.module';
+import { PrintRenderModule } from 'src/modules/settings/print-render/print-render.module';
+import { WidgetMasterModule } from 'src/modules/master/widget-master/widget-master.module';
+import { ConfiguredGridSqlModule } from 'src/common/configured-grid-sql/configured-grid-sql.module';
 export const swaggerModuleDocuments = [
   {
     path: 'auth',
@@ -71,6 +97,24 @@ export const swaggerModuleDocuments = [
     title: 'Users API',
     description: 'Users module endpoints',
     include: [UsersModule],
+  },
+  {
+    path: 'batch-prefixes',
+    title: 'Batch Prefix API',
+    description: 'Batch prefix module endpoints',
+    include: [BatchPrefixModule],
+  },
+  {
+    path: 'charges',
+    title: 'Charge Master API',
+    description: 'Charge master (shared sales/purchase additional charges) endpoints',
+    include: [ChargeMasterModule],
+  },
+  {
+    path: 'charge-details',
+    title: 'Charge Detail API',
+    description: 'Per-document applied charge lines (txn_charge_detail) endpoints',
+    include: [ChargeDetailModule],
   },
   {
     path: 'items-group-master',
@@ -121,22 +165,28 @@ export const swaggerModuleDocuments = [
     include: [ItemsPriceMasterModule],
   },
   {
+    path: 'item-unit-conversions',
+    title: 'Item Unit Conversions API',
+    description: 'Item unit conversion module endpoints',
+    include: [ItemUnitConversionModule],
+  },
+  {
     path: 'item-price-details',
     title: 'Item Price Details API',
     description: 'Item price details module endpoints',
     include: [ItemPriceDetailsModule],
   },
   {
-    path: 'item-qtywise-rates',
-    title: 'Item Qtywise Rates API',
-    description: 'Item qtywise rates module endpoints',
-    include: [ItemsQtywiseRatesMasterModule],
-  },
-  {
     path: 'item-reorders',
     title: 'Item Reorders API',
     description: 'Item reorders module endpoints',
     include: [ItemsReorderMasterModule],
+  },
+  {
+    path: 'item-qty-prices',
+    title: 'Item Qty Prices API',
+    description: 'Item qty prices module endpoints',
+    include: [ItemsQtyPriceMasterModule],
   },
   {
     path: 'item-tax-histories',
@@ -154,7 +204,7 @@ export const swaggerModuleDocuments = [
     path: 'accounts-group',
     title: 'Account Group API',
     description: 'Account group module endpoints',
-    include: [AccountsGroupModule],
+    include: [AccGroupMasterModule],
   },
   {
     path: 'account-ledger-masters',
@@ -211,6 +261,56 @@ export const swaggerModuleDocuments = [
     include: [EmployeeMasterModule],
   },
   {
+    path: 'user-administration',
+    title: 'User Administration API',
+    description:
+      'User administration module endpoints — manages UserMaster and UserMenus in a single call',
+    include: [UserAdministrationModule],
+  },
+  {
+    path: 'configs',
+    title: 'Configs API',
+    description: 'Configs module endpoints',
+    include: [ConfigsModule],
+  },
+  {
+    path: 'app-settings',
+    title: 'App Settings API',
+    description:
+      'Setting overrides (app_setting_value) and the GLOBAL < COMPANY < BRANCH < DEVICE < USER ' +
+      'resolver. The catalog (app_setting_def) is maintained in SQL and has no endpoints',
+    include: [AppSettingsModule],
+  },
+  {
+    path: 'print-template-assignments',
+    title: 'Print Template Assignments API',
+    description:
+      'Which print design wins, and where. One row IS one choice \u2014 there is no is_default ' +
+      'flag \u2014 so changing the design for a scope is an update of a single row. Resolution ' +
+      'walks narrowest first: counter, then branch, then company, then the every-company ' +
+      'default a shipped design may hold',
+    include: [PrintTemplateAssignmentModule],
+  },
+  {
+    path: 'print-template',
+    title: 'Print Template API',
+    description:
+      'Print template endpoints. One payload carries the design whole — the template, its ' +
+      "versions array, and each version's nested datasets array — because a dataset hangs off " +
+      'the VERSION, not the template. A published version is never updated: revisions are ' +
+      "appended, and publishing moves the template's published pointer",
+    include: [PrintTemplateModule],
+  },
+  {
+    path: 'print-render',
+    title: 'Print Render API',
+    description:
+      'Print render endpoints: preview resolves a template against live data and returns the ' +
+      'rendered output, print sends it to a configured provider, and providers lists the ' +
+      'output targets available to the caller',
+    include: [PrintRenderModule],
+  },
+  {
     path: 'tender-master',
     title: 'Tender Master API',
     description: 'Tender master module endpoints',
@@ -221,6 +321,26 @@ export const swaggerModuleDocuments = [
     title: 'Tender Type Master API',
     description: 'Tender type master module endpoints',
     include: [TenderTypeMasterModule],
+  },
+  {
+    path: 'tender-details',
+    title: 'Tender Detail API',
+    description: 'Per-document tender lines (acc_tender_detail) endpoints',
+    include: [TenderDetailModule],
+  },
+  {
+    path: 'transactions',
+    title: 'Transaction API',
+    description:
+      'Settlement reads over acc_bill_balance — the unspent credits (ADVANCE / SALES_RETURN) a ' +
+      'party holds, which the adjustment panel offers and acc_bill_adjustment is posted from',
+    include: [TransactionModule],
+  },
+  {
+    path: 'sequences',
+    title: 'Sequence API',
+    description: 'Sequence module endpoints',
+    include: [SequenceModule],
   },
   {
     path: 'gsp-provider-masters',
@@ -241,16 +361,61 @@ export const swaggerModuleDocuments = [
     include: [ItemsEanCodeMasterModule],
   },
   {
+    path: 'items-gst-units-master',
+    title: 'Item GST Units API',
+    description: 'Item GST units module endpoints',
+    include: [ItemsGstUnitsMasterModule],
+  },
+  {
     path: 'godowns-master',
     title: 'Godowns API',
     description: 'Godowns module endpoints',
     include: [GodownsMasterModule],
   },
+  // OpeningStockModule is not registered in AppModule, so it has no routes to document.
+  // Re-enable this entry together with the AppModule import; leaving it here without an
+  // `include` makes SwaggerModule fall back to every controller in the app.
+  // {
+  //   path: 'opening-stocks',
+  //   title: 'Opening Stock API',
+  //   description: 'Opening stock module endpoints',
+  //   include: [OpeningStockModule],
+  // },
   {
-    path: 'opening-stocks',
-    title: 'Opening Stock API',
-    description: 'Opening stock module endpoints',
-    include: [OpeningStockModule],
+    path: 'item-stock-balance',
+    title: 'Item Stock Balance API',
+    description: 'Item stock balance lookup endpoints',
+    include: [ItemStockBalanceModule],
+  },
+  {
+    path: 'item-batch-stock',
+    title: 'Item Batch Stock API',
+    description: 'Item batch stock lookup endpoints',
+    include: [ItemBatchStockModule],
+  },
+  {
+    path: 'physical-stock',
+    title: 'Physical Stock API',
+    description:
+      'Physical stock (stock take) document endpoints: create/update by ps_id presence, ' +
+      'list and fetch by ps_id or header id, and soft delete',
+    include: [PhysicalStockModule],
+  },
+  {
+    path: 'promotion-loyalty-points',
+    title: 'Promotion Loyalty Points API',
+    description:
+      'Single-call loyalty scheme endpoints with nested branches, parties, items, earn slabs ' +
+      'and gifts',
+    include: [PromotionLoyaltyPointsModule],
+  },
+  {
+    path: 'promotion-scheme',
+    title: 'Promotion Scheme API',
+    description:
+      'Promotion scheme header endpoints plus the branch, party, item and slab scope grids saved ' +
+      'a page of rows at a time',
+    include: [PromotionSchemeModule],
   },
   {
     path: 'grid-details',
@@ -259,22 +424,26 @@ export const swaggerModuleDocuments = [
     include: [GridDetailsModule],
   },
   {
-    path: 'grid-columns',
-    title: 'Grid Columns API',
-    description: 'Grid columns module endpoints',
-    include: [GridColumnsModule],
+    path: 'configured-grid-sql',
+    title: 'Configured Grid SQL API',
+    description:
+      "Configured grid endpoints: fetch a grid's columns by grid id, and run its stored base " +
+      'SQL to return rows plus column styles',
+    include: [ConfiguredGridSqlModule],
+  },
+  {
+    path: 'widget-masters',
+    title: 'Widget Master API',
+    description:
+      'Dashboard widget master endpoints: create (single and bulk), fetch, per-user config, ' +
+      'visibility toggle, and delete',
+    include: [WidgetMasterModule],
   },
   {
     path: 'dropdown-details',
     title: 'Dropdown Details API',
     description: 'Dropdown details module endpoints',
     include: [DropdownDetailsModule],
-  },
-  {
-    path: 'dropdown-columns',
-    title: 'Dropdown Columns API',
-    description: 'Dropdown columns module endpoints',
-    include: [DropdownColumnsModule],
   },
   {
     path: 'master-lookups',
@@ -301,10 +470,28 @@ export const swaggerModuleDocuments = [
     include: [AreaModule],
   },
   {
+    path: 'sale-freight-charges',
+    title: 'Sale Freight Charges API',
+    description: 'Sale freight charges module endpoints',
+    include: [SaleFreightChargeModule],
+  },
+  {
+    path: 'sale-loading-charges',
+    title: 'Sale Loading Charges API',
+    description: 'Sale loading charges module endpoints',
+    include: [SaleLoadingChargeModule],
+  },
+  {
     path: 'cities',
     title: 'Cities API',
     description: 'Cities module endpoints',
     include: [CityModule],
+  },
+  {
+    path: 'sale-agents',
+    title: 'Sale Agents API',
+    description: 'Sale agents module endpoints',
+    include: [SaleAgentModule],
   },
   {
     path: 'states',
@@ -323,7 +510,33 @@ export const swaggerModuleDocuments = [
     title: 'Customer Groups API',
     description: 'Customer groups module endpoints',
     include: [CustomerGroupModule],
-  },  
+  },
+  {
+    path: 'quotations',
+    title: 'Quotations API',
+    description: 'Single-call sale quotation endpoints with nested line items',
+    include: [QuotationModule],
+  },
+  {
+    path: 'bills',
+    title: 'Bills API',
+    description: 'Single-call sale bill (tax invoice) endpoints with nested line items',
+    include: [BillModule],
+  },
+  {
+    path: 'sale-orders',
+    title: 'Sale Orders API',
+    description:
+      'Single-call sale order endpoints with nested line items, applied charges, tendered ' +
+      'advances and advance allocations',
+    include: [SaleOrderModule],
+  },
+  {
+    path: 'txn-holds',
+    title: 'Transaction Hold API',
+    description: 'Parked (held) transaction endpoints for public.txn_hold',
+    include: [TxnHoldModule],
+  },
   {
     path: 'bank-lists',
     title: 'Bank List API',
@@ -361,15 +574,9 @@ export const swaggerModuleDocuments = [
     include: [StateCodeMasterModule],
   },
   {
-    path: 'ui-table-columns',
-    title: 'UI Table Columns API',
-    description: 'UI table columns module endpoints',
-    include: [UiTableColumnsModule],
-  },
-  {
     path: 'ui-table-master',
     title: 'UI Table Master API',
-    description: 'UI table endpoints for fixed.ui_tables',
+    description: 'UI table master and columns endpoints',
     include: [UiTableMasterModule],
   },
   {
@@ -379,7 +586,13 @@ export const swaggerModuleDocuments = [
     include: [UserLoginSessionsModule],
   },
   {
-    path: 'audit-log',
+    path: 'stock-adj-reasons',
+    title: 'Stock Adj Reasons API',
+    description: 'Stock adjustment reasons endpoints for fixed.stock_adj_reasons',
+    include: [StockAdjReasonsModule],
+  },
+  {
+    path: 'audit-logs',
     title: 'Audit Log API',
     description: 'Audit log module endpoints',
     include: [AuditLogModule],

@@ -1,0 +1,88 @@
+/// sales.promotion_scheme_item — §4, which stock the campaign applies to.
+///
+/// One kind + one scope id, with five GENERATED ALWAYS ... STORED columns
+/// carrying the foreign keys — the same shape as PromotionSchemeParty, read
+/// that model's header for the write rules and the migration caveat. In short:
+/// set priKind + priScopeId (+ priUnitId on an ITEM row) and never touch
+/// itemId / groupId / categoryId / brandId / sectionId.
+///
+/// This is what makes "20% off own-brand, but nothing on tobacco" ONE scheme.
+///
+/// priMatchPriority: most specific wins. Seed ITEM 4, BRAND 3, CATEGORY 2,
+/// SECTION 1, GROUP 0 — data, not a hard-coded rule. An EXCLUDE row kills the
+/// line regardless of any broader rule.
+///
+/// Read only when prm_item_scope = 'LIST'.
+///
+/// ── The discount trio ───────────────────────────────────────────────────
+/// A rate may be stated here, on the item row, instead of on a slab band —
+/// that is all "Discount On Items (Offer Per Item)" ever was. Stored in the
+/// bill's own idiom because they are copied straight onto
+/// sbi_sch_disc_perc / _qty / _amt:
+///     priDiscPerc  percentage off the line
+///     priDiscQty   rupees off PER UNIT
+///     priDiscAmt   flat rupees off the line
+/// At most one is non-zero. All three zero = this row only says "in scope".
+///
+/// A unit is REQUIRED on an ITEM row and FORBIDDEN on every other kind:
+/// "10 of item X" is not a quantity until you say ten of WHAT, and a unit is a
+/// row of item_unit_conversion keyed to one item, so on a BRAND or CATEGORY
+/// row it would claim to apply to items that never define it.
+///
+/// CHECK ck_pri_kind, ck_pri_unit, ck_pri_one_rate, ck_pri_exclude,
+/// ck_pri_values, ck_pri_slno and ck_pri_match_priority are enforced in the
+/// service, not the DB.
+///
+/// DB-only objects to hand-author:
+///   ux_pri_row     UNIQUE (prm_id, kind, scope_id) WHERE NOT deleted
+///   ix_pri_scheme  (prm_id, match_priority DESC) INCLUDE (...), partial
+///   ix_pri_item / _group / _category / _brand / _section / _unit, all partial
+model PromotionSchemeItem {
+  priId            String    @id(map: "pk_promotion_scheme_item") @default(dbgenerated("uuidv7()")) @db.Uuid @map("pri_id")
+  priPrmId         String    @db.Uuid                                       @map("pri_prm_id")
+  priSlno          Int       @default(1)                                    @map("pri_slno")
+
+  // The GRID COLUMNS.
+  priKind          String    @db.VarChar(20)                                @map("pri_kind")
+  priScopeId       String    @db.Uuid                                       @map("pri_scope_id")
+
+  // GENERATED ALWAYS ... STORED. Read-only.
+  priItemId        String?   @default(dbgenerated()) @db.Uuid               @map("pri_item_id")
+  priGroupId       String?   @default(dbgenerated()) @db.Uuid               @map("pri_group_id")
+  priCategoryId    String?   @default(dbgenerated()) @db.Uuid               @map("pri_category_id")
+  priBrandId       String?   @default(dbgenerated()) @db.Uuid               @map("pri_brand_id")
+  priSectionId     String?   @default(dbgenerated()) @db.Uuid               @map("pri_section_id")
+
+  // Written normally. NOT NULL when priKind = 'ITEM', NULL for every other kind.
+  priUnitId        String?   @db.Uuid                                       @map("pri_unit_id")
+
+  priIsExclude     Boolean   @default(false)                                @map("pri_is_exclude")
+
+  priDiscPerc      Decimal   @default(0) @db.Decimal(18, 4)                 @map("pri_disc_perc")
+  priDiscQty       Decimal   @default(0) @db.Decimal(18, 4)                 @map("pri_disc_qty")
+  priDiscAmt       Decimal   @default(0) @db.Decimal(18, 2)                 @map("pri_disc_amt")
+
+  priMinQty        Decimal   @default(0) @db.Decimal(18, 3)                 @map("pri_min_qty")
+  priFactor        Decimal   @default(1) @db.Decimal(18, 4)                 @map("pri_factor")
+  priMaxBenefit    Decimal   @default(0) @db.Decimal(18, 2)                 @map("pri_max_benefit")
+  priMatchPriority Int       @default(1) @db.SmallInt                       @map("pri_match_priority")
+  priNotes         String?   @db.Text                                       @map("pri_notes")
+  priIsActive      Boolean   @default(true)                                 @map("pri_is_active")
+  priIsDeleted     Boolean   @default(false)                                @map("pri_is_deleted")
+  priSyncDate      DateTime? @db.Timestamptz(6)                             @map("pri_sync_date")
+  priCreatedOn     DateTime  @default(now()) @db.Timestamptz(6)             @map("pri_created_on")
+  priCreatedBy     String?   @db.VarChar(50)                                @map("pri_created_by")
+  priModifiedOn    DateTime? @db.Timestamptz(6)                             @map("pri_modified_on")
+  priModifiedBy    String?   @db.VarChar(50)                                @map("pri_modified_by")
+
+  scheme           PromotionScheme     @relation("PromotionSchemeItems",     fields: [priPrmId],      references: [prmId],      onUpdate: Cascade,  onDelete: Cascade,  map: "fk_pri_scheme")
+  item             ItemMaster?         @relation("PromotionItemItem",        fields: [priItemId],     references: [itemId],     onUpdate: NoAction, onDelete: Restrict, map: "fk_pri_item")
+  itemGroup        ItemGroupMaster?    @relation("PromotionItemGroup",       fields: [priGroupId],    references: [itgId],      onUpdate: NoAction, onDelete: Restrict, map: "fk_pri_group")
+  itemCategory     categoryMaster?     @relation("PromotionItemCategory",    fields: [priCategoryId], references: [categoryId], onUpdate: NoAction, onDelete: Restrict, map: "fk_pri_category")
+  itemBrand        ItemBrandMaster?    @relation("PromotionItemBrand",       fields: [priBrandId],    references: [brand_id],   onUpdate: NoAction, onDelete: Restrict, map: "fk_pri_brand")
+  itemSection      ItemSectionMaster?  @relation("PromotionItemSection",     fields: [priSectionId],  references: [secId],      onUpdate: NoAction, onDelete: Restrict, map: "fk_pri_section")
+  unit             ItemUnitConversion? @relation("PromotionItemUnit",        fields: [priUnitId],     references: [iucId],      onUpdate: Cascade,  onDelete: Restrict, map: "fk_pri_unit")
+
+  @@map("promotion_scheme_item")
+  @@schema("sales")
+}

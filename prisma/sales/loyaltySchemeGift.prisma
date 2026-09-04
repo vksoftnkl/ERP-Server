@@ -1,0 +1,50 @@
+/// sales.loyalty_scheme_gift — §6, points buy an ITEM.
+///
+/// The CATALOGUE of what MAY be claimed. What was actually handed over belongs
+/// in sales.loyalty_gift_issue (13), which is not in this schema yet.
+///
+/// A gift redemption is NOT a tender: no money crosses the counter, stock does.
+/// lsgUnitId references inventory.item_unit_conversion(iuc_id) — the same target
+/// sale_bill_item.fk_sbi_item_unit uses — because the gift becomes a bill line
+/// and the two must agree without a conversion lookup.
+///
+/// DB-only objects to hand-author:
+///   ux_lsg_item    UNIQUE (lsc_id, item_id, unit_id) WHERE NOT deleted
+///   ix_lsg_scheme  (lsc_id, redeem_points) INCLUDE (...), partial
+///   ix_lsg_item / ix_lsg_unit, both partial
+model LoyaltySchemeGift {
+  lsgId             String    @id(map: "pk_loyalty_scheme_gift") @default(dbgenerated("uuidv7()")) @db.Uuid @map("lsg_id")
+  lsgLscId          String    @db.Uuid                                       @map("lsg_lsc_id")
+  lsgSlno           Int       @default(1)                                    @map("lsg_slno")
+
+  lsgItemId         String    @db.Uuid                                       @map("lsg_item_id")
+  lsgUnitId         String    @db.Uuid                                       @map("lsg_unit_id")
+  lsgItemQty        Decimal   @default(1) @db.Decimal(18, 3)                 @map("lsg_item_qty")
+  lsgRedeemPoints   Decimal   @default(0) @db.Decimal(18, 4)                 @map("lsg_redeem_points")
+
+  /// Claimable more than once.
+  lsgRepeat         Boolean   @default(false)                                @map("lsg_repeat")
+  /// 0 = uncapped.
+  lsgMaxQtyPerBill  Decimal   @default(0) @db.Decimal(18, 3)                 @map("lsg_max_qty_per_bill")
+  /// Block the claim when the item is not in stock at the issuing branch. A
+  /// gift the shop cannot hand over is worse than one it never offered.
+  lsgStockCheck     Boolean   @default(true)                                 @map("lsg_stock_check")
+  lsgValidFrom      DateTime? @db.Date                                       @map("lsg_valid_from")
+  lsgValidUpto      DateTime? @db.Date                                       @map("lsg_valid_upto")
+
+  lsgNotes          String?   @db.Text                                       @map("lsg_notes")
+  lsgIsActive       Boolean   @default(true)                                 @map("lsg_is_active")
+  lsgIsDeleted      Boolean   @default(false)                                @map("lsg_is_deleted")
+  lsgSyncDate       DateTime? @db.Timestamptz(6)                             @map("lsg_sync_date")
+  lsgCreatedOn      DateTime  @default(now()) @db.Timestamptz(6)             @map("lsg_created_on")
+  lsgCreatedBy      String?   @db.VarChar(50)                                @map("lsg_created_by")
+  lsgModifiedOn     DateTime? @db.Timestamptz(6)                             @map("lsg_modified_on")
+  lsgModifiedBy     String?   @db.VarChar(50)                                @map("lsg_modified_by")
+
+  scheme            LoyaltyScheme      @relation("LoyaltySchemeGifts", fields: [lsgLscId],  references: [lscId],  onUpdate: Cascade, onDelete: Cascade,  map: "fk_lsg_scheme")
+  item              ItemMaster         @relation("LoyaltyGiftItem",    fields: [lsgItemId], references: [itemId], onUpdate: Cascade, onDelete: Restrict, map: "fk_lsg_item")
+  unit              ItemUnitConversion @relation("LoyaltyGiftUnit",    fields: [lsgUnitId], references: [iucId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_lsg_unit")
+
+  @@map("loyalty_scheme_gift")
+  @@schema("sales")
+}

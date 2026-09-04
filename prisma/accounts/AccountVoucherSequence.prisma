@@ -1,0 +1,47 @@
+model AccVoucherSeq {
+  id            String   @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("seq_id")
+  // Link to voucher type master
+  vchrTypeId    Int      @map("seq_vchr_type_id")
+  // Multi branch scope
+  companyId     String   @db.Uuid @map("seq_company_id")
+  branchId      String   @db.Uuid @map("seq_branch_id")
+  accYear       String   @db.VarChar(9) @map("seq_acc_year")
+  // Device/counter scope
+  deviceId      String?  @db.Uuid @map("seq_device_id")
+  deviceCode    String   @default("MAIN") @db.VarChar(20) @map("seq_device_code")
+  // Reset period key: 2026-27 / 2026-04 / 2026-04-27 / ALL
+  periodKey     String   @db.VarChar(20) @map("seq_period_key")
+  // Running number
+  lastNo        BigInt   @default(0) @map("seq_last_no")
+  // Applied format snapshot
+  voucherPrefix String?  @db.VarChar(20) @map("seq_voucher_prefix")
+  companyCode   String?  @db.VarChar(20) @map("seq_company_code")
+  branchCode    String?  @db.VarChar(20) @map("seq_branch_code")
+  voucherSuffix String?  @db.VarChar(20) @map("seq_voucher_suffix")
+  noWidth       Int      @default(5) @map("seq_no_width")
+  // Last generated printable number
+  lastRefno     String?  @db.VarChar(100) @map("seq_last_refno")
+  // Status
+  isActive      Boolean  @default(true) @map("seq_is_active")
+  // Add this only if SQL table also has seq_is_deleted
+  isDeleted     Boolean  @default(false) @map("seq_is_deleted")
+  // Audit
+  createdOn     DateTime  @default(now()) @db.Timestamptz @map("seq_created_on")
+  createdBy     String?   @db.Uuid @map("seq_created_by")
+  modifiedOn    DateTime? @db.Timestamptz @map("seq_modified_on")
+  modifiedBy    String?   @db.Uuid @map("seq_modified_by")
+  // Relations
+  voucherType   AccVoucherType @relation(fields: [vchrTypeId], references: [vchrTypeId], map: "fk_acc_voucher_seq_type")
+  company       Company        @relation(fields: [companyId], references: [compId], map: "fk_acc_voucher_seq_company")
+  branch        BranchMaster   @relation(fields: [branchId], references: [brId], map: "fk_acc_voucher_seq_branch")
+  // Main duplicate prevention constraint
+  @@unique([vchrTypeId, companyId, branchId, accYear, deviceCode, periodKey], map: "uq_acc_voucher_seq_scope")
+  // Useful indexes
+  @@index([companyId, branchId, accYear], map: "idx_acc_voucher_seq_company_branch_year")
+  @@index([vchrTypeId], map: "idx_acc_voucher_seq_vchr_type")
+  @@index([deviceId], map: "idx_acc_voucher_seq_device")
+  @@index([periodKey], map: "idx_acc_voucher_seq_period_key")
+  @@index([isActive, isDeleted], map: "idx_acc_voucher_seq_status")
+  @@map("acc_voucher_seq")
+  @@schema("accounts")
+}

@@ -32,6 +32,7 @@ export default () => ({
     host: process.env.HOST ?? '0.0.0.0',
     port: parseNumber(process.env.PORT, 3010),
     apiPrefix: process.env.API_PREFIX ?? 'api',
+    apiVersion: process.env.API_VERSION ?? '1',
     requestBodyLimit: process.env.REQUEST_BODY_LIMIT ?? '10mb',
     logFilePath: process.env.LOG_FILE_PATH ?? 'logs/app.log',
     errorLogFilePath: process.env.ERROR_LOG_FILE_PATH ?? 'logs/error.log',
@@ -44,6 +45,10 @@ export default () => ({
   },
   database: {
     url: buildDatabaseUrl(),
+    // Optional connection string for a read-only DB role; used to execute
+    // user-configured grid/dropdown SQL. Falls back to `url` (with the session
+    // forced read-only) when unset.
+    readOnlyUrl: process.env.DATABASE_READONLY_URL ?? '',
     host: process.env.DB_HOST ?? 'localhost',
     port: parseNumber(process.env.DB_PORT, 5432),
     username: process.env.DB_USER ?? 'erp_app',
@@ -54,12 +59,14 @@ export default () => ({
     logging: parseBoolean(process.env.DB_LOGGING),
   },
   throttler: {
+    enabled: parseBoolean(process.env.THROTTLE_ENABLED, true),
     ttl: parseNumber(process.env.THROTTLE_TTL, 60),
-    limit: parseNumber(process.env.THROTTLE_LIMIT, 100),
+    limit: parseNumber(process.env.THROTTLE_LIMIT, 10000),
   },
   auth: {
     jwtSecret: process.env.JWT_SECRET ?? '',
-    accessTokenTtlSeconds: parseNumber(process.env.ACCESS_TOKEN_TTL_SECONDS, 3600),
+    accessTokenTtlSeconds: parseNumber(process.env.ACCESS_TOKEN_TTL_SECONDS, 15 * 60),
+    refreshTokenTtlSeconds: parseNumber(process.env.REFRESH_TOKEN_TTL_SECONDS, 7 * 24 * 60 * 60),
   },
   redis: (() => {
     const redisUrl = process.env.REDIS_URL?.trim();
@@ -73,6 +80,7 @@ export default () => ({
         enabled: redisEnabled,
         host: parsedRedisUrl.hostname || '127.0.0.1',
         port: parseNumber(parsedRedisUrl.port, parsedRedisUrl.protocol === 'rediss:' ? 6380 : 6379),
+        ttl: parseNumber(process.env.REDIS_TTL, 300),
         username: decodeURIComponent(parsedRedisUrl.username || ''),
         password: decodeURIComponent(parsedRedisUrl.password || ''),
         db: parseNumber(databasePath || undefined, 0),
@@ -85,6 +93,7 @@ export default () => ({
       enabled: redisEnabled,
       host: process.env.REDIS_HOST ?? '127.0.0.1',
       port: parseNumber(process.env.REDIS_PORT, 6379),
+      ttl: parseNumber(process.env.REDIS_TTL, 300),
       username: process.env.REDIS_USERNAME ?? '',
       password: process.env.REDIS_PASSWORD ?? '',
       db: parseNumber(process.env.REDIS_DB, 0),

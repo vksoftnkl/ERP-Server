@@ -1,28 +1,18 @@
-export interface AreaErrorDetail {
-  field: string;
-  message: string;
-}
-export interface AreaErrorResponse {
-  success: false;
-  message: string;
-  errors: AreaErrorDetail[];
-}
-export interface AreaSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> {
-  success: true;
-  message: string;
-  data: T;
-  meta?: TMeta;
-  styles?: TStyles;
-}
+export type { SalesErrorDetail as AreaErrorDetail } from 'src/common/types/module-api.types';
+export type { SalesErrorResponse as AreaErrorResponse } from 'src/common/types/module-api.types';
+export type { SalesSuccessResponse as AreaSuccessResponse } from 'src/common/types/module-api.types';
+
 export interface AreaPayload {
   armId: string;
   armName: string;
   armAlias: string | null;
   armShort: string | null;
   armCityId: string;
+  armCityName?: string | null;
   armSort: number;
   armDistanceKm: number | null;
   armCollectionDays: number[];
+  armDescription: string | null;
   armIsActive: boolean;
   armIsDeleted: boolean;
   armSyncDate: string | null;
@@ -31,10 +21,11 @@ export interface AreaPayload {
   armModifiedOn: string;
   armModifiedBy: string | null;
 }
-export type AreaListItem = AreaPayload | Record<string, unknown>;
-export interface AreaListMeta {
-  page: number;
-  limit: number;
-  total: number;
-  total_pages: number;
+
+// Result of createAreaMaster: the created area master plus the linked account group id
+// (equal to armId, surfaced explicitly because the two rows are created together).
+export interface AreaMasterCreateResult {
+  areaMaster: AreaPayload;
+  accGroupId: string;
 }
+

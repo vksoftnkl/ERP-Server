@@ -1,19 +1,17 @@
-export interface MenuMasterErrorDetail {
-  field: string;
-  message: string;
-}
+export type { FixedErrorDetail as MenuMasterErrorDetail } from 'src/common/types/module-api.types';
+export type { FixedErrorResponse as MenuMasterErrorResponse } from 'src/common/types/module-api.types';
+export type { FixedSuccessResponse as MenuMasterSuccessResponse } from 'src/common/types/module-api.types';
 
-export interface MenuMasterErrorResponse {
-  success: false;
-  message: string;
-  errors: MenuMasterErrorDetail[];
-}
-
-export interface MenuMasterSuccessResponse<T, TMeta = Record<string, unknown>> {
-  success: true;
-  message: string;
-  data: T;
-  meta?: TMeta;
+export interface MenuMasterUserPermissions {
+  canCreate: boolean;
+  canEdit: boolean;
+  canDelete: boolean;
+  canPrint: boolean;
+  canExport: boolean;
+  isVisible: boolean;
+  isFavourite: boolean;
+  isPinned: boolean;
+  sortOrder: number;
 }
 
 export interface MenuMasterPayload {
@@ -28,15 +26,11 @@ export interface MenuMasterPayload {
   menuIconLocationMobile: string | null;
   menuSeparator: boolean;
   menuIsActive: boolean;
+  permissions: MenuMasterUserPermissions | null;
   children?: MenuMasterPayload[];
 }
 
 export interface MenuMasterGetMeta {
-  menuId?: number;
-  parentId: number | null;
-  includeChildren: boolean;
-  activeOnly: boolean;
   visibleOnly: boolean;
   count: number;
 }
-

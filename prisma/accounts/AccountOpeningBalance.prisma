@@ -1,0 +1,53 @@
+/// Opening balance per ledger per financial year. Balance-sheet ledgers
+/// only; P&L ledgers always start at zero. Partitioned by opAccYear, so the
+/// primary key is the composite (opId, opAccYear).
+model AccOpeningBalance {
+  opId            String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("op_id")
+  opCompanyId     String    @db.Uuid @map("op_company_id")
+  // NULL = company level
+  opBranchId      String?   @db.Uuid @map("op_branch_id")
+  // FY label in YYYY-YYYY form, matching fiscal_years.fy_code. The partition
+  // key.
+  opAccYear       String    @db.Char(9) @map("op_acc_year")
+  opLedgerId      String    @db.Uuid @map("op_ledger_id")
+
+  opAmount        Decimal   @default(0) @db.Decimal(18, 2) @map("op_amount")
+  // ck_op_dr_cr: D | C
+  opDrCr          String    @db.Char(1) @map("op_dr_cr")
+
+  // ck_op_source: CARRY_FORWARD | MANUAL | MIGRATION.
+  // Regeneration updates CARRY_FORWARD rows only — MANUAL and MIGRATION rows
+  // are owned by a human and must never be overwritten.
+  opSource        String    @default("CARRY_FORWARD") @db.VarChar(20) @map("op_source")
+
+  opIsStale       Boolean   @default(false) @map("op_is_stale")
+  opStaleSince    DateTime? @db.Timestamptz(6) @map("op_stale_since")
+  opGeneratedAt   DateTime? @db.Timestamptz(6) @map("op_generated_at")
+  opGeneratedBy   String?   @db.VarChar(50) @map("op_generated_by")
+  opRemarks       String?   @map("op_remarks")
+
+  opIsDeleted     Boolean   @default(false) @map("op_is_deleted")
+  opCreatedAt     DateTime  @default(now()) @db.Timestamptz(6) @map("op_created_at")
+  opCreatedBy     String?   @db.VarChar(50) @map("op_created_by")
+  opModifiedAt    DateTime? @db.Timestamptz(6) @map("op_modified_at")
+  opModifiedBy    String?   @db.VarChar(50) @map("op_modified_by")
+
+  @@id([opId, opAccYear], map: "pk_acc_opening")
+  @@map("acc_opening_balance")
+  @@schema("accounts")
+  // DB-only objects not expressible in the Prisma schema (see migrations
+  // 20260806090000_add_voucher_header_bills_pdc and
+  // 20260811060000_partition_account_bill_tables_by_acc_year):
+  //   - PARTITION BY LIST (op_acc_year); one partition per accounting year,
+  //     created by public.ensure_acc_year_partitions('YYYY-YYYY').
+  //   - Partial UNIQUE index ux_op_scope on
+  //     (op_company_id, COALESCE(op_branch_id, all-zero uuid), op_acc_year,
+  //     op_ledger_id) WHERE op_is_deleted = false. Branch NULL must still
+  //     collide with branch NULL, hence the COALESCE — not expressible as
+  //     @@unique.
+  //   - Partial/covering indexes ix_op_lookup, ix_op_stale.
+  //   - CHECK constraints ck_op_dr_cr, ck_op_amount, ck_op_source,
+  //     ck_op_acc_year.
+  //   - No FK on op_company_id / op_branch_id / op_ledger_id: the source DDL
+  //     declares none.
+}

@@ -1,3 +1,4 @@
+import { CacheTTL } from '@nestjs/cache-manager';
 import {
   Body,
   Controller,
@@ -25,30 +26,28 @@ import { HttpErrorResponseDto } from '../../../common/dto/http-error-response.dt
 import {
   LedgerShippingAddressErrorResponseDto,
   LedgerShippingAddressSuccessDeleteDto,
-  LedgerShippingAddressSuccessListDto,
   LedgerShippingAddressSuccessSingleDto,
 } from './dto/ledger-shipping-address-response.dto';
-import { ListLedgerShippingAddressQueryDto } from './dto/list-ledger-shipping-address-query.dto';
 import { SaveLedgerShippingAddressDto } from './dto/save-ledger-shipping-address.dto';
 import { LedgerShippingAddressExceptionFilter } from './ledger-shipping-address-exception.filter';
 import { LedgerShippingAddressService } from './ledger-shipping-address.service';
 import {
-  LedgerShippingAddressListItem,
-  LedgerShippingAddressListMeta,
   LedgerShippingAddressPayload,
   LedgerShippingAddressSuccessResponse,
 } from './types/ledger-shipping-address-api.types';
+import { API_VERSION } from '../../../common/constants/api-version';
 
 @ApiTags('Ledger Shipping Address')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
+@CacheTTL(1)
 @Controller('ledger-shipping-addresses')
 @UseFilters(LedgerShippingAddressExceptionFilter)
 export class LedgerShippingAddressController {
-  constructor(private readonly ledgerShippingAddressService: LedgerShippingAddressService) {}
+  constructor(private readonly ledgerShippingAddressService: LedgerShippingAddressService) { }
 
   @Post('create')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Create or update ledger shipping address (by saaId presence)' })
   @ApiCreatedResponse({ type: LedgerShippingAddressSuccessSingleDto })
   @ApiBadRequestResponse({ type: LedgerShippingAddressErrorResponseDto })
@@ -68,32 +67,8 @@ export class LedgerShippingAddressController {
     };
   }
 
-  @Get('list')
-  @Version('1')
-  @ApiOperation({ summary: 'List ledger shipping addresses with filter/search/pagination' })
-  @ApiOkResponse({ type: LedgerShippingAddressSuccessListDto })
-  @ApiBadRequestResponse({ type: LedgerShippingAddressErrorResponseDto })
-  async list(
-    @Query() queryDto: ListLedgerShippingAddressQueryDto,
-  ): Promise<
-    LedgerShippingAddressSuccessResponse<
-      LedgerShippingAddressListItem[],
-      LedgerShippingAddressListMeta
-    >
-  > {
-    const result = await this.ledgerShippingAddressService.list(queryDto);
-
-    return {
-      success: true,
-      message: 'Ledger shipping addresses fetched successfully',
-      data: result.items,
-      meta: result.meta,
-      ...(result.styles !== undefined && { styles: result.styles }),
-    };
-  }
-
   @Get('get')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Get ledger shipping address by id' })
   @ApiQuery({ name: 'saaId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: LedgerShippingAddressSuccessSingleDto })
@@ -112,7 +87,7 @@ export class LedgerShippingAddressController {
   }
 
   @Delete('delete')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Soft delete ledger shipping address by id' })
   @ApiQuery({ name: 'saaId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: LedgerShippingAddressSuccessDeleteDto })

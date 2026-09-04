@@ -1,37 +1,60 @@
-import { WidgetPlatform } from '@prisma/client';
+import type { ModuleApiErrorDetail, ModuleApiErrorResponse, ModuleApiSuccessResponse } from 'src/common/types/module-api.types';
 
-export interface WidgetMasterErrorDetail {
-  field: string;
-  message: string;
+export type WidgetMasterErrorDetail = ModuleApiErrorDetail;
+export type WidgetMasterErrorResponse = ModuleApiErrorResponse<WidgetMasterErrorDetail>;
+export type WidgetMasterSuccessResponse<T, TMeta = Record<string, unknown>> = ModuleApiSuccessResponse<T, TMeta, never>;
+
+/**
+ * Platform scope for a form section. The DB column is now a free `varchar(255)`,
+ * but the API keeps validating against the known platforms (previously the
+ * `WidgetPlatform` Prisma enum) so the contract is unchanged.
+ */
+export enum WidgetPlatform {
+  Mobile = 'Mobile',
+  Desktop = 'Desktop',
+  Web = 'Web',
 }
 
-export interface WidgetMasterErrorResponse {
-  success: false;
-  message: string;
-  errors: WidgetMasterErrorDetail[];
+/**
+ * Visibility filter for the widget config endpoint.
+ * - `False`: return only hidden sections, each carrying its hidden fields plus any field that has
+ *   secondary text (even when that field is itself visible).
+ * - `All`: return both visible and hidden sections (and their fields).
+ */
+export enum WidgetVisibilityFilter {
+  False = 'false',
+  All = 'all',
 }
 
-export interface WidgetMasterSuccessResponse<T, TMeta = Record<string, unknown>> {
-  success: true;
-  message: string;
-  data: T;
-  meta?: TMeta;
+/** One field row under a section ("field" in `fixed.form_field`). */
+export interface WidgetFieldPayload {
+  fieldId: number;
+  fieldSectionId: number;
+  fieldName: string;
+  fieldGuiName: string | null;
+  fieldSecondaryText: string | null;
+  fieldPosition: number;
+  fieldVisibility: boolean;
+  fieldSyncDate: string;
+  fieldCreatedOn: string;
+  fieldCreatedBy: string | null;
+  fieldUpdatedOn: string;
+  fieldUpdatedBy: string | null;
 }
 
+/** A section heading row ("section" in `fixed.form_section`) with its nested fields. */
 export interface WidgetMasterPayload {
-  widgetNo: number;
-  widgetGroupId: number;
-  widgetName: string;
-  widgetPosition: number;
-  widgetVisibility: boolean;
-  widgetGuiName: string | null;
-  widgetType: WidgetPlatform;
-  widgetSecondaryText: string | null;
-}
-
-export interface WidgetMasterListMeta {
-  page: number;
-  limit: number;
-  total: number;
-  total_pages: number;
+  sectionId: number;
+  sectionMenuId: number;
+  sectionName: string;
+  sectionGuiName: string;
+  sectionPosition: number;
+  sectionVisibility: boolean;
+  sectionPlatform: WidgetPlatform;
+  sectionSyncDate: string;
+  sectionCreatedOn: string;
+  sectionCreatedBy: string | null;
+  sectionUpdatedOn: string;
+  sectionUpdatedBy: string | null;
+  fields: WidgetFieldPayload[];
 }

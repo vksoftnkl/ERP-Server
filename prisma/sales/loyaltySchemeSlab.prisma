@@ -1,0 +1,61 @@
+/// sales.loyalty_scheme_slab — §5, the earn rates.
+///
+/// One row = one rate band. Read as: for every lssEach units ABOVE lssExceeds,
+/// award lssPoints, scaled by lssFactor.
+///
+/// "units" are RUPEES when lsc_apply_on is BILL_AMOUNT / ITEM_AMOUNT, and
+/// QUANTITY when it is BILL_QTY / ITEM_QTY — one column pair serving both.
+///
+/// Bill-value slabs are ROWS, not columns: 0-999 -> 1pt/100, 1000-4999 ->
+/// 2pt/100, 5000+ -> 3pt/100 is three rows.
+///
+/// lssItemId narrows a band to ONE item; leave it NULL for a whole-bill band.
+/// Anything broader than one item (group, brand, category) belongs in
+/// LoyaltySchemeItem, which multiplies what this computes.
+///
+/// lssUnitId references inventory.item_unit_conversion(iuc_id) — the same target
+/// sale_bill_item.fk_sbi_item_unit uses, NOT item_unit_master(unit_id).
+///
+/// DB-only objects to hand-author:
+///   ux_lss_band    UNIQUE (lsc_id, COALESCE(item_id, nil uuid), exceeds)
+///                  WHERE NOT deleted
+///   ix_lss_scheme  (lsc_id, exceeds) INCLUDE (...), partial
+///   ix_lss_item / ix_lss_unit, both partial
+model LoyaltySchemeSlab {
+  lssId          String    @id(map: "pk_loyalty_scheme_slab") @default(dbgenerated("uuidv7()")) @db.Uuid @map("lss_id")
+  lssLscId       String    @db.Uuid                                       @map("lss_lsc_id")
+  lssSlno        Int       @default(1)                                    @map("lss_slno")
+
+  /// NULL = applies to the whole bill.
+  lssItemId      String?   @db.Uuid                                       @map("lss_item_id")
+  /// item_unit_conversion, as on a bill line.
+  lssUnitId      String?   @db.Uuid                                       @map("lss_unit_id")
+
+  /// Band lower bound.
+  lssExceeds     Decimal   @default(0) @db.Decimal(18, 3)                 @map("lss_exceeds")
+  /// Band ceiling. NULL = open-ended.
+  lssUpto        Decimal?  @db.Decimal(18, 3)                             @map("lss_upto")
+  /// Granularity.
+  lssEach        Decimal   @default(1) @db.Decimal(18, 3)                 @map("lss_each")
+  /// Awarded per lssEach.
+  lssPoints      Decimal   @default(0) @db.Decimal(18, 4)                 @map("lss_points")
+  lssFactor      Decimal   @default(1) @db.Decimal(18, 4)                 @map("lss_factor")
+  /// 0 = uncapped.
+  lssMaxPoints   Decimal   @default(0) @db.Decimal(18, 4)                 @map("lss_max_points")
+
+  lssNotes       String?   @db.Text                                       @map("lss_notes")
+  lssIsActive    Boolean   @default(true)                                 @map("lss_is_active")
+  lssIsDeleted   Boolean   @default(false)                                @map("lss_is_deleted")
+  lssSyncDate    DateTime? @db.Timestamptz(6)                             @map("lss_sync_date")
+  lssCreatedOn   DateTime  @default(now()) @db.Timestamptz(6)             @map("lss_created_on")
+  lssCreatedBy   String?   @db.VarChar(50)                                @map("lss_created_by")
+  lssModifiedOn  DateTime? @db.Timestamptz(6)                             @map("lss_modified_on")
+  lssModifiedBy  String?   @db.VarChar(50)                                @map("lss_modified_by")
+
+  scheme         LoyaltyScheme       @relation("LoyaltySchemeSlabs", fields: [lssLscId],  references: [lscId],  onUpdate: Cascade, onDelete: Cascade,  map: "fk_lss_scheme")
+  item           ItemMaster?         @relation("LoyaltySlabItem",    fields: [lssItemId], references: [itemId], onUpdate: Cascade, onDelete: Restrict, map: "fk_lss_item")
+  unit           ItemUnitConversion? @relation("LoyaltySlabUnit",    fields: [lssUnitId], references: [iucId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_lss_unit")
+
+  @@map("loyalty_scheme_slab")
+  @@schema("sales")
+}

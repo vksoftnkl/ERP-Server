@@ -1,0 +1,147 @@
+// Batch/expiry/available_stock here are INFORMATIONAL (availability shown while
+// quoting). A quote allocates NO stock -- allocation happens at DC/invoice.
+//
+// LIST-partitioned by sqi_acc_year -- see the note on SaleQuotation. A line
+// always carries its header's year, which is what puts the two in the same
+// partition and lets fk_sqi_quote reference the header's composite key.
+model SaleQuotationItem {
+  sqiId              String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("sqi_id")
+  sqiQuoteId         String    @db.Uuid @map("sqi_quote_id")
+  sqiCompanyId       String    @db.Uuid @map("sqi_company_id")
+  sqiBranchId        String    @db.Uuid @map("sqi_branch_id")
+  // Nullable to follow sq_tenant_id: a line inherits the header's tenant, so it
+  // cannot be NOT NULL once the header's is optional.
+  sqiTenantId        String?   @db.Uuid @map("sqi_tenant_id")
+  sqiAccYear         String    @db.Char(9) @map("sqi_acc_year")
+  // source (enquiry line -> quote line) -- polymorphic, no FK
+  sqiSrcDocType      String?   @db.VarChar(30) @map("sqi_src_doc_type")
+  sqiSrcItemId       String?   @db.Uuid @map("sqi_src_item_id")
+  sqiSrcUnitId       String?   @db.Uuid @map("sqi_src_unit_id")
+  sqiSrcDocRefno     String?   @db.VarChar(100) @map("sqi_src_doc_refno")
+  sqiSrcItemQty      Decimal?  @db.Decimal(15, 3) @map("sqi_src_item_qty")
+  sqiLineNo          Int       @map("sqi_line_no")
+  sqiItemId          String    @db.Uuid @map("sqi_item_id")
+  sqiItemUnitId      String    @db.Uuid @map("sqi_item_unit_id")
+  sqiHsnCode         String?   @db.VarChar(8) @map("sqi_hsn_code")
+  sqiPriceLevel      Int       @map("sqi_price_level")
+  sqiEanCode         String?   @db.VarChar(100) @map("sqi_ean_code")
+  sqiBatchNo         String?   @db.VarChar(100) @map("sqi_batch_no")
+  sqiBatchDate       DateTime? @db.Date @map("sqi_batch_date")
+  sqiExpiryDate      DateTime? @db.Date @map("sqi_expiry_date")
+  // line flags
+  sqiIsTaxIncl       Boolean   @default(false) @map("sqi_is_tax_incl")
+  sqiIsPromo         Boolean   @default(false) @map("sqi_is_promo")
+  sqiIsFree          Boolean   @default(false) @map("sqi_is_free")
+  sqiFreeType        String?   @db.VarChar(20) @map("sqi_free_type") // NULL / SCHEME / SAMPLE (ck_sqi_free_type in DB)
+  sqiIsService       Boolean   @default(false) @map("sqi_is_service")
+  // quantities
+  sqiCaseQty             Decimal   @default(0) @db.Decimal(15, 3) @map("sqi_case_qty")
+  sqiBillQty             Decimal   @default(0) @db.Decimal(15, 3) @map("sqi_bill_qty")
+  sqiLengthQty           Decimal?  @default(0) @db.Decimal(15, 3) @map("sqi_length_qty")
+  sqiNetQty           Decimal   @default(0) @db.Decimal(15, 3) @map("sqi_net_qty")
+  sqiWeightQty           Decimal?  @default(0) @db.Decimal(15, 3) @map("sqi_weight_qty")
+  sqiAvailableStock  Decimal   @default(0) @db.Decimal(15, 3) @map("sqi_available_stock")
+  // rate / price
+  sqiRate            Decimal   @default(0) @db.Decimal(15, 4) @map("sqi_rate")
+  sqiRatePreTax      Decimal   @default(0) @db.Decimal(15, 4) @map("sqi_rate_pre_tax")
+  // discounts
+  sqiItemDiscPerc    Decimal   @default(0) @db.Decimal(15, 4) @map("sqi_item_disc_perc")
+  sqiItemDiscQty     Decimal   @default(0) @db.Decimal(15, 3) @map("sqi_item_disc_qty")
+  sqiItemDiscAmt     Decimal   @default(0) @db.Decimal(15, 2) @map("sqi_item_disc_amt")
+  sqiSplDiscPerc     Decimal   @default(0) @db.Decimal(15, 4) @map("sqi_spl_disc_perc")
+  sqiSplDiscQty      Decimal   @default(0) @db.Decimal(15, 3) @map("sqi_spl_disc_qty")
+  sqiSplDiscAmt      Decimal   @default(0) @db.Decimal(15, 2) @map("sqi_spl_disc_amt")
+  sqiSchDiscPerc     Decimal   @default(0) @db.Decimal(15, 4) @map("sqi_sch_disc_perc")
+  sqiSchDiscQty      Decimal   @default(0) @db.Decimal(15, 3) @map("sqi_sch_disc_qty")
+  sqiSchDiscAmt      Decimal   @default(0) @db.Decimal(15, 2) @map("sqi_sch_disc_amt")
+  sqiBillSchPerc     Decimal   @default(0) @db.Decimal(15, 4) @map("sqi_bill_sch_perc")
+  sqiBillSchQty      Decimal   @default(0) @db.Decimal(15, 3) @map("sqi_bill_sch_qty")
+  sqiBillSchAmt      Decimal   @default(0) @db.Decimal(15, 2) @map("sqi_bill_sch_amt")
+  sqiAddlDisc1Perc   Decimal   @default(0) @db.Decimal(15, 4) @map("sqi_addl_disc1_perc")
+  sqiAddlDisc1Amt    Decimal   @default(0) @db.Decimal(15, 2) @map("sqi_addl_disc1_amt")
+  sqiAddlDisc2Perc   Decimal   @default(0) @db.Decimal(15, 4) @map("sqi_addl_disc2_perc")
+  sqiAddlDisc2Amt    Decimal   @default(0) @db.Decimal(15, 2) @map("sqi_addl_disc2_amt")
+  sqiCashDiscPerc    Decimal   @default(0) @db.Decimal(15, 4) @map("sqi_cash_disc_perc")
+  sqiCashDiscAmt     Decimal   @default(0) @db.Decimal(15, 2) @map("sqi_cash_disc_amt")
+  // amounts + tax
+  sqiGrossAmt        Decimal   @default(0) @db.Decimal(15, 2) @map("sqi_gross_amt")
+  sqiTaxableAmt      Decimal   @default(0) @db.Decimal(15, 2) @map("sqi_taxable_amt")
+  sqiTaxPerc         Decimal   @default(0) @db.Decimal(15, 4) @map("sqi_tax_perc")
+  sqiTaxAmt          Decimal   @default(0) @db.Decimal(15, 2) @map("sqi_tax_amt")
+  sqiCgstPerc        Decimal   @default(0) @db.Decimal(15, 4) @map("sqi_cgst_perc")
+  sqiCgstAmt         Decimal   @default(0) @db.Decimal(15, 2) @map("sqi_cgst_amt")
+  sqiSgstPerc        Decimal   @default(0) @db.Decimal(15, 4) @map("sqi_sgst_perc")
+  sqiSgstAmt         Decimal   @default(0) @db.Decimal(15, 2) @map("sqi_sgst_amt")
+  sqiIgstPerc        Decimal   @default(0) @db.Decimal(15, 4) @map("sqi_igst_perc")
+  sqiIgstAmt         Decimal   @default(0) @db.Decimal(15, 2) @map("sqi_igst_amt")
+  sqiCessPerc        Decimal   @default(0) @db.Decimal(15, 4) @map("sqi_cess_perc")
+  sqiCessPerUnit     Decimal   @default(0) @db.Decimal(15, 4) @map("sqi_cess_per_unit")
+  sqiCessAmt         Decimal   @default(0) @db.Decimal(15, 2) @map("sqi_cess_amt")
+  sqiAcessPerc       Decimal   @default(0) @db.Decimal(15, 4) @map("sqi_acess_perc")
+  sqiAcessPerUnit    Decimal   @default(0) @db.Decimal(15, 4) @map("sqi_acess_per_unit")
+  sqiAcessAmt        Decimal   @default(0) @db.Decimal(15, 2) @map("sqi_acess_amt")
+  // line charges + net
+  sqiFreightQty      Decimal   @default(0) @db.Decimal(15, 3) @map("sqi_freight_qty")
+  sqiFreightAmt      Decimal   @default(0) @db.Decimal(15, 2) @map("sqi_freight_amt")
+  sqiLoadQty         Decimal   @default(0) @db.Decimal(15, 3) @map("sqi_load_qty")
+  sqiLoadAmt         Decimal   @default(0) @db.Decimal(15, 2) @map("sqi_load_amt")
+  sqiUnloadQty       Decimal   @default(0) @db.Decimal(15, 3) @map("sqi_unload_qty")
+  sqiUnloadAmt       Decimal   @default(0) @db.Decimal(15, 2) @map("sqi_unload_amt")
+  sqiRoundOff        Decimal   @default(0) @db.Decimal(15, 2) @map("sqi_round_off")
+  sqiNetAmt          Decimal   @default(0) @db.Decimal(15, 2) @map("sqi_net_amt")
+  // internal margin
+  sqiCostPrice       Decimal?  @db.Decimal(15, 4) @map("sqi_cost_price")
+  sqiMaxPrice        Decimal?  @db.Decimal(15, 4) @map("sqi_max_price")
+  sqiMinPrice        Decimal?  @db.Decimal(15, 4) @map("sqi_min_price")
+  sqiActPrice        Decimal?  @db.Decimal(15, 4) @map("sqi_act_price")
+  sqiQuotePrice      Decimal?  @db.Decimal(15, 4) @map("sqi_quote_price")
+  sqiItemProfit      Decimal?  @db.Decimal(15, 2) @map("sqi_item_profit")
+  sqiCostPreTax      Decimal?  @db.Decimal(15, 2) @map("sqi_cost_pre_tax")
+  sqiQuotePreTax     Decimal?  @db.Decimal(15, 2) @map("sqi_quote_pre_tax")
+  sqiProfitPreTax    Decimal?  @db.Decimal(15, 2) @map("sqi_profit_pre_tax")
+  sqiMrpSavings      Decimal?  @db.Decimal(15, 3) @map("sqi_mrp_savings")
+  sqiMrpSavingsPerc  Decimal?  @db.Decimal(15, 4) @map("sqi_mrp_savings_perc")
+  // scheme ref (display only on a quote)
+  sqiSchemeId        String?   @db.Uuid @map("sqi_scheme_id")
+  sqiSchemeName      String?   @db.VarChar(150) @map("sqi_scheme_name")
+  sqiRemarks         String?   @db.VarChar(250) @map("sqi_remarks")
+  sqiIsDeleted       Boolean   @default(false) @map("sqi_is_deleted")
+  sqiSyncDate        DateTime? @db.Timestamptz(6) @map("sqi_sync_date")
+  sqiCreatedOn       DateTime  @default(now()) @db.Timestamptz(6) @map("sqi_created_on")
+  sqiCreatedBy       String    @db.Text @map("sqi_created_by")
+  sqiModifiedOn      DateTime? @db.Timestamptz(6) @map("sqi_modified_on")
+  sqiModifiedBy      String?   @db.Text @map("sqi_modified_by")
+  // line net/gross basis + charges split by where they land relative to tax
+  sqiNetGross        Decimal?  @db.Decimal(14, 4) @map("sqi_net_gross")
+  sqiChrgBeforeTax   Decimal?  @db.Decimal(14, 4) @map("sqi_chrg_before_tax")
+  sqiChrgAfterTax    Decimal?  @db.Decimal(14, 4) @map("sqi_chrg_after_tax")
+  sqiToBaseFactor    Decimal   @default(0) @db.Decimal(15, 6) @map("sqi_to_base_factor")
+  sqiRateDiff        Decimal   @default(0) @db.Decimal(15, 4) @map("sqi_rate_diff")
+  sqiHasFreight      Boolean   @default(false) @map("sqi_has_freight")
+  // Free-text dimension the operator typed, e.g. a timber shop's "12*6*2*10"
+  // (length ft * width in * thickness in * pieces), which is what sqiBillQty
+  // was derived from. Stored verbatim so a reprint shows the size the customer
+  // was quoted, not just the cubic feet it became. Renamed from sqi_item_size
+  // by 20260814080000 to match soi_size/sbi_size.
+  sqiSize            String?   @db.VarChar(50) @map("sqi_size")
+  sqiSizeUom         String?   @db.VarChar(20) @map("sqi_size_uom")
+  // Relations
+  quote      SaleQuotation  @relation(fields: [sqiQuoteId, sqiAccYear], references: [sqId, sqAccYear], onDelete: NoAction, onUpdate: NoAction, map: "fk_sqi_quote")
+  item       ItemMaster     @relation(fields: [sqiItemId], references: [itemId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sqi_item")
+  priceLevel ItemPriceLevel @relation(fields: [sqiPriceLevel], references: [iplId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sqi_price_level")
+  // sqiItemUnitId references item_unit_conversion(iuc_id), NOT item_unit_master(unit_id)
+  itemUnitConversion ItemUnitConversion @relation("SaleQuotationItemUnitConversion", fields: [sqiItemUnitId], references: [iucId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sqi_item_unit")
+  // ux_sqi_quote_line (unique line no per quote among non-deleted rows, keyed
+  // on sqi_quote_id + sqi_acc_year + sqi_line_no since 20260810130000) is a
+  // DB-only partial index. Prisma cannot express its WHERE predicate;
+  // declaring it here makes `migrate dev` regenerate it without the predicate
+  // and fail on the existing name. Do NOT add @@unique.
+  //
+  // CHECK constraint (DB-only): ck_sqi_free_type.
+  @@id([sqiId, sqiAccYear], map: "pk_sale_quotation_item")
+  @@index([sqiQuoteId], map: "ix_sqi_quote")
+  @@index([sqiItemId], map: "ix_sqi_item")
+  @@index([sqiHsnCode], map: "ix_sqi_hsn")
+  @@map("sale_quotation_item")
+  @@schema("sales")
+}

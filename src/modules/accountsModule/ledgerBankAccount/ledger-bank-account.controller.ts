@@ -1,3 +1,4 @@
+import { CacheTTL } from '@nestjs/cache-manager';
 import {
   Body,
   Controller,
@@ -12,6 +13,7 @@ import {
 import {
   ApiBadRequestResponse,
   ApiBearerAuth,
+  ApiBody,
   ApiConflictResponse,
   ApiCreatedResponse,
   ApiNotFoundResponse,
@@ -26,30 +28,65 @@ import { LedgerBankAccountExceptionFilter } from './ledger-bank-account-exceptio
 import {
   LedgerBankAccountErrorResponseDto,
   LedgerBankAccountSuccessDeleteDto,
-  LedgerBankAccountSuccessListDto,
   LedgerBankAccountSuccessSingleDto,
 } from './dto/ledger-bank-account-response.dto';
-import { ListLedgerBankAccountQueryDto } from './dto/list-ledger-bank-account-query.dto';
 import { SaveLedgerBankAccountDto } from './dto/save-ledger-bank-account.dto';
 import { LedgerBankAccountService } from './ledger-bank-account.service';
 import {
-  LedgerBankAccountListItem,
-  LedgerBankAccountListMeta,
   LedgerBankAccountPayload,
   LedgerBankAccountSuccessResponse,
 } from './types/ledger-bank-account-api.types';
+import { API_VERSION } from '../../../common/constants/api-version';
 
 @ApiTags('Ledger Bank Accounts')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
+@CacheTTL(1)
 @Controller('ledger-bank-accounts')
 @UseFilters(LedgerBankAccountExceptionFilter)
 export class LedgerBankAccountController {
   constructor(private readonly ledgerBankAccountService: LedgerBankAccountService) {}
 
   @Post('create')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Create or update ledger bank account (by lbaId presence)' })
+  @ApiBody({
+    type: SaveLedgerBankAccountDto,
+    examples: {
+      createBankAccount: {
+        summary: 'Create a new bank account for a ledger',
+        value: {
+          lbaLedgerId: '0199b3a4-1c2d-7e3f-8a9b-0c1d2e3f4a5b',
+          lbaCompanyId: '0199b3a4-1111-7222-8333-444455556666',
+          lbaAccountHolder: 'Acme Industries Pvt Ltd',
+          lbaBankName: 'HDFC Bank',
+          lbaBranchName: 'MG Road',
+          lbaAccountNo: '50100123456789',
+          lbaIfscCode: 'HDFC0001234',
+          lbaMicrCode: '560240002',
+          lbaAccountType: 'CURRENT',
+          lbaUpiId: 'acme@hdfcbank',
+          lbaChequeName: 'Acme Industries',
+          lbaIsDefault: true,
+          lbaIsActive: true,
+          lbaRemarks: 'Primary settlement account',
+        },
+      },
+      updateBankAccount: {
+        summary: 'Update an existing bank account (include lbaId)',
+        value: {
+          lbaId: '0199b3a4-7777-7888-8999-aaaabbbbcccc',
+          lbaLedgerId: '0199b3a4-1c2d-7e3f-8a9b-0c1d2e3f4a5b',
+          lbaAccountHolder: 'Acme Industries Pvt Ltd',
+          lbaBankName: 'HDFC Bank',
+          lbaBranchName: 'Indiranagar',
+          lbaAccountNo: '50100123456789',
+          lbaIfscCode: 'HDFC0005678',
+          lbaIsDefault: false,
+        },
+      },
+    },
+  })
   @ApiCreatedResponse({ type: LedgerBankAccountSuccessSingleDto })
   @ApiBadRequestResponse({ type: LedgerBankAccountErrorResponseDto })
   @ApiConflictResponse({ type: LedgerBankAccountErrorResponseDto })
@@ -68,29 +105,8 @@ export class LedgerBankAccountController {
     };
   }
 
-  @Get('list')
-  @Version('1')
-  @ApiOperation({ summary: 'List ledger bank accounts with filter/search/pagination' })
-  @ApiOkResponse({ type: LedgerBankAccountSuccessListDto })
-  @ApiBadRequestResponse({ type: LedgerBankAccountErrorResponseDto })
-  async list(
-    @Query() queryDto: ListLedgerBankAccountQueryDto,
-  ): Promise<
-    LedgerBankAccountSuccessResponse<LedgerBankAccountListItem[], LedgerBankAccountListMeta>
-  > {
-    const result = await this.ledgerBankAccountService.list(queryDto);
-
-    return {
-      success: true,
-      message: 'Ledger bank accounts fetched successfully',
-      data: result.items,
-      meta: result.meta,
-      ...(result.styles !== undefined && { styles: result.styles }),
-    };
-  }
-
   @Get('get')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Get ledger bank account by id' })
   @ApiQuery({ name: 'lbaId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: LedgerBankAccountSuccessSingleDto })
@@ -109,7 +125,7 @@ export class LedgerBankAccountController {
   }
 
   @Delete('delete')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Soft delete ledger bank account by id' })
   @ApiQuery({ name: 'lbaId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: LedgerBankAccountSuccessDeleteDto })

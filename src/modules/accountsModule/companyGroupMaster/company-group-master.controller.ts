@@ -1,3 +1,4 @@
+import { CacheTTL } from '@nestjs/cache-manager';
 import {
   Body,
   Controller,
@@ -26,29 +27,25 @@ import { CompanyGroupMasterExceptionFilter } from './company-group-master-except
 import {
   CompanyGroupMasterErrorResponseDto,
   CompanyGroupMasterSuccessDeleteDto,
-  CompanyGroupMasterSuccessListDto,
   CompanyGroupMasterSuccessSingleDto,
 } from './dto/company-group-master-response.dto';
-import { ListCompanyGroupMasterQueryDto } from './dto/list-company-group-master-query.dto';
 import { SaveCompanyGroupMasterDto } from './dto/save-company-group-master.dto';
 import { CompanyGroupMasterService } from './company-group-master.service';
 import {
-  CompanyGroupMasterListItem,
-  CompanyGroupMasterListMeta,
   CompanyGroupMasterPayload,
   CompanyGroupMasterSuccessResponse,
 } from './types/company-group-master-api.types';
-
+import { API_VERSION } from '../../../common/constants/api-version';
 @ApiTags('Company Group Master')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
+@CacheTTL(1)
 @Controller('company-group-masters')
 @UseFilters(CompanyGroupMasterExceptionFilter)
 export class CompanyGroupMasterController {
   constructor(private readonly companyGroupMasterService: CompanyGroupMasterService) {}
-
   @Post('create')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Create or update company group (by cogGroupId presence)' })
   @ApiCreatedResponse({ type: CompanyGroupMasterSuccessSingleDto })
   @ApiBadRequestResponse({ type: CompanyGroupMasterErrorResponseDto })
@@ -58,7 +55,6 @@ export class CompanyGroupMasterController {
     @Body() saveCompanyGroupMasterDto: SaveCompanyGroupMasterDto,
   ): Promise<CompanyGroupMasterSuccessResponse<CompanyGroupMasterPayload>> {
     const data = await this.companyGroupMasterService.save(saveCompanyGroupMasterDto);
-
     return {
       success: true,
       message: saveCompanyGroupMasterDto.cogGroupId
@@ -67,30 +63,8 @@ export class CompanyGroupMasterController {
       data,
     };
   }
-
-  @Get('list')
-  @Version('1')
-  @ApiOperation({ summary: 'List company groups with filter/search/pagination' })
-  @ApiOkResponse({ type: CompanyGroupMasterSuccessListDto })
-  @ApiBadRequestResponse({ type: CompanyGroupMasterErrorResponseDto })
-  async list(
-    @Query() queryDto: ListCompanyGroupMasterQueryDto,
-  ): Promise<
-    CompanyGroupMasterSuccessResponse<CompanyGroupMasterListItem[], CompanyGroupMasterListMeta>
-  > {
-    const result = await this.companyGroupMasterService.list(queryDto);
-
-    return {
-      success: true,
-      message: 'Company groups fetched successfully',
-      data: result.items,
-      meta: result.meta,
-      ...(result.styles !== undefined && { styles: result.styles }),
-    };
-  }
-
   @Get('get')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Get company group by id' })
   @ApiQuery({ name: 'cogGroupId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: CompanyGroupMasterSuccessSingleDto })
@@ -100,16 +74,14 @@ export class CompanyGroupMasterController {
     @Query('cogGroupId', new ParseUUIDPipe({ version: '7' })) cogGroupId: string,
   ): Promise<CompanyGroupMasterSuccessResponse<CompanyGroupMasterPayload>> {
     const data = await this.companyGroupMasterService.getById(cogGroupId);
-
     return {
       success: true,
       message: 'Company group fetched successfully',
       data,
     };
   }
-
   @Delete('delete')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Soft delete company group by id' })
   @ApiQuery({ name: 'cogGroupId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: CompanyGroupMasterSuccessDeleteDto })
@@ -119,7 +91,6 @@ export class CompanyGroupMasterController {
     @Query('cogGroupId', new ParseUUIDPipe({ version: '7' })) cogGroupId: string,
   ): Promise<CompanyGroupMasterSuccessResponse<{ cogGroupId: string; deleted: true }>> {
     const data = await this.companyGroupMasterService.softDelete(cogGroupId);
-
     return {
       success: true,
       message: 'Company group deleted successfully',

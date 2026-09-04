@@ -3,15 +3,9 @@ model ItemPriceMaster {
   ipmCompanyId        String?       @db.Uuid @map("ipm_company_id")
   ipmBranchId         String?       @db.Uuid @map("ipm_branch_id")
   ipmItemId           String        @db.Uuid @map("ipm_item_id")
-  ipmUnitId           String        @db.Uuid @map("ipm_unit_id")
-  ipmGodownId         String        @db.Uuid @map("ipm_godown_id")
-  ipmBaseUnitId       String?       @db.Uuid @map("ipm_base_unit_id")
-  ipmToBaseFactor     Decimal       @default(1) @db.Decimal(18, 6) @map("ipm_to_base_factor")
-  ipmUnitSlno         Int           @default(0) @map("ipm_unit_slno")
-  ipmUnitFactor       Decimal       @default(1) @db.Decimal(18, 6) @map("ipm_unit_factor")
-  ipmIsDefaultUnit    Boolean       @default(false) @map("ipm_is_default_unit")
-  ipmIsBigUnit        Boolean       @default(false) @map("ipm_is_big_unit")
-  ipmIsBaseUnit       Boolean       @default(false) @map("ipm_is_base_unit")
+  ipmUcUnitId         String        @db.Uuid @map("ipm_uc_unit_id")
+  ipmGodownId         String?       @db.Uuid @map("ipm_godown_id") // NULL = price applies to every godown
+  ipmSlNo             Int           @default(0) @db.Integer @map("ipm_sl_no")
   ipmCostPrice        Decimal       @default(0) @db.Decimal(18, 6) @map("ipm_cost_price")
   ipmCostWot          Decimal       @default(0) @db.Decimal(18, 6) @map("ipm_cost_wot")
   ipmSalesPriceA      Decimal       @default(0) @db.Decimal(18, 6) @map("ipm_sales_price_a")
@@ -49,15 +43,18 @@ model ItemPriceMaster {
   item                ItemMaster     @relation("ItemPrices", fields: [ipmItemId], references: [itemId], onUpdate: Cascade, onDelete: Restrict, map: "fk_ipm_item")
   company             Company?       @relation("CompanyItemPrices", fields: [ipmCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_ipm_company_id")
   branch              BranchMaster?  @relation("BranchItemPrices", fields: [ipmBranchId], references: [brId], onUpdate: Cascade, onDelete: Restrict, map: "fk_ipm_branch_id")
-  unit                Unit           @relation("IpmUnit", fields: [ipmUnitId], references: [unit_id], onUpdate: Cascade, onDelete: Restrict, map: "fk_ipm_unit")
-  baseUnit            Unit?          @relation("IpmBaseUnit", fields: [ipmBaseUnitId], references: [unit_id], onUpdate: Cascade, onDelete: Restrict, map: "fk_ipm_base_unit")
-  godown              GodownLocation @relation("GodownPrices", fields: [ipmGodownId], references: [gdlId], onUpdate: Cascade, onDelete: Restrict, map: "fk_ipm_godown_id")
+  itemUnitConversion ItemUnitConversion @relation("ItemPriceMasterUnitConversion", fields: [ipmUcUnitId], references: [iucId], onUpdate: Cascade, onDelete: Restrict, map: "fk_ipm_unit")
+  godown              GodownLocation? @relation("GodownPrices", fields: [ipmGodownId], references: [gdlId], onUpdate: Cascade, onDelete: Restrict, map: "fk_ipm_godown_id")
   openingStockBaseUomDetails OpeningStockDetail[] @relation("OpeningStockDetailBaseUomPrice")
-  qtywiseRates        ItemQtywiseRate[]
 
-  @@index([ipmItemId, ipmUnitId], map: "idx_item_price_master_item")
+  @@index([ipmItemId, ipmUcUnitId], map: "idx_item_price_master_item")
   @@map("item_price_master")
   @@schema("inventory")
-  // Partial unique index uq_item_price_master_branch is not expressible in Prisma schema.
+  // Partial unique index uq_item_price_master_scope is not expressible in Prisma
+  // schema: (ipm_company_id, ipm_branch_id, ipm_item_id, ipm_uc_unit_id)
+  // NULLS NOT DISTINCT WHERE ipm_is_deleted = false. It replaced
+  // uq_item_price_master_branch and uq_item_price_master_item_unit_global.
+  // ipm_godown_id is deliberately NOT part of the key, so two godowns cannot
+  // hold different prices for the same item + unit + branch.
   // CHECK constraints are not expressible in Prisma schema.
 }

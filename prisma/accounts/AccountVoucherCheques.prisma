@@ -99,11 +99,18 @@ model AccVoucherCheque {
   chqUpdatedBy         String?               @db.Uuid @map("chq_updated_by")
 
   // Relations
-  voucherHeader        AccVoucherHeader      @relation(fields: [chqVoucherId], references: [avhVoucherId], onDelete: Cascade, map: "fk_acc_cheques_voucher_header")
+  // chqVoucherId stays a plain UUID column — acc_voucher_header was dropped.
   voucherType          AccVoucherType        @relation(fields: [chqVoucherTypeId], references: [vchrTypeId], map: "fk_acc_cheques_voucher_type")
   company              Company               @relation(fields: [chqCompanyId], references: [compId], map: "fk_acc_cheques_voucher_company")
   branch               BranchMaster          @relation(fields: [chqBranchId], references: [brId], map: "fk_acc_cheques_voucher_branch")
+  // The settlement rows this instrument carried. A bounce here writes the
+  // reversal row there.
+  billAdjustments      AccBillAdjustment[]
 
+  // Target for fk_abj_cheque, which names the cheque by (id, year) the same
+  // way a settlement names its tender. Redundant with the primary key on
+  // chqId — it exists only so the pair can be referenced.
+  @@unique([chqId, chqAccYear], map: "ux_chq_id_acc_year")
   @@index([chqCompanyId, chqBranchId, chqPartyId], map: "idx_acc_cheques_party")
   @@index([chqCompanyId, chqBranchId, chqStatus], map: "idx_acc_cheques_status")
   @@index([chqCompanyId, chqBranchId, chqChequeDate, chqDepositDate, chqClearDate], map: "idx_acc_cheques_dates")

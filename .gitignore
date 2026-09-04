@@ -1,13 +1,22 @@
 node_modules
-dist
+# dist
 coverage
 .DS_Store
 .env
-.env.local
-.env.*.local
+.env.*
+# ...but keep a committed template if one is ever added.
+!.env.example
+
+# Local development TLS certificates
+certs
 
 # Local runtime logs and release binaries
-logs/*.log
+logs
 release/erp-server
 release/erp-server-linux
 release/erp-server-win.exe
+
+# Reporting: rendered samples, spike outputs, and bulk-print output
+artifacts/reporting-samples
+artifacts/reporting-spikes
+artifacts/bulk-print

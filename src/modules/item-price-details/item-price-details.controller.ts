@@ -1,3 +1,4 @@
+import { CacheTTL } from '@nestjs/cache-manager';
 import { Controller, Get, Query, UseFilters, Version } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -10,35 +11,35 @@ import {
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
-import { HttpErrorResponseDto } from '../../common/dto/http-error-response.dto';
-import { validateDto } from '../../common/utils/request-payload-validation.util';
-import { ItemPayloadDto } from '../items-master/dto/item-response.dto';
-import { ItemPricePayloadDto } from '../items-price-master/dto/item-price-response.dto';
-import { ItemTaxPayloadDto } from '../items-tax-master/dto/item-tax-response.dto';
-import { GetItemPriceDetailQueryDto } from './dto/get-item-price-detail-query.dto';
+import { HttpErrorResponseDto } from 'src/common/dto/http-error-response.dto';
+import { validateDto } from 'src/common/utils/request-payload-validation.util';
+import { GetItemPriceDetailQueryDto } from 'src/modules/Inventory/item-price-details/dto/get-item-price-detail-query.dto';
+import { ItemPayloadDto } from 'src/modules/Inventory/items-master/dto/item-response.dto';
+import { ItemPricePayloadDto } from 'src/modules/Inventory/items-price-master/dto/item-price-response.dto';
+import { ItemTaxPayloadDto } from 'src/modules/Inventory/items-tax-master/dto/item-tax-response.dto';
 import {
   ItemPriceDetailErrorResponseDto,
   ItemPriceDetailPayloadDto,
   ItemPriceDetailSuccessSingleDto,
-} from './dto/item-price-detail-response.dto';
-import { ItemPriceDetailExceptionFilter } from './item-price-detail-exception.filter';
+} from 'src/modules/Inventory/item-price-details/dto/item-price-detail-response.dto';
+import { ItemPriceDetailExceptionFilter } from 'src/modules/Inventory/item-price-details/item-price-detail-exception.filter';
 import { ItemPriceDetailsService } from './item-price-details.service';
 import {
   ItemPriceDetailPayload,
   ItemPriceDetailSuccessResponse,
-} from './types/item-price-detail-api.types';
-
+} from 'src/modules/Inventory/item-price-details/types/item-price-detail-api.types';
+import { API_VERSION } from '../../common/constants/api-version';
 @ApiTags('Item Price Details')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
 @ApiExtraModels(ItemPayloadDto, ItemPricePayloadDto, ItemTaxPayloadDto, ItemPriceDetailPayloadDto)
+@CacheTTL(60)
 @Controller('item-price-details')
 @UseFilters(ItemPriceDetailExceptionFilter)
 export class ItemPriceDetailsController {
-  constructor(private readonly itemPriceDetailsService: ItemPriceDetailsService) {}
-
+  constructor(private readonly itemPriceDetailsService: ItemPriceDetailsService) { }
   @Get('get')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Get item with joined item price and item tax details' })
   @ApiQuery({
     name: 'item_id',
@@ -54,7 +55,6 @@ export class ItemPriceDetailsController {
       type: 'query',
     })) as GetItemPriceDetailQueryDto;
     const data = await this.itemPriceDetailsService.getByItemId(dto.item_id);
-
     return {
       success: true,
       message: 'Item price details fetched successfully',

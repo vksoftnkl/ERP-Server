@@ -1,20 +1,12 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { ConfiguredGridStyleDto } from '../../../../common/configured-grid-sql/dto/configured-grid-style.dto';
-export class AreaErrorFieldDto {
-  @ApiProperty({ example: 'armName' })
-  field!: string;
+import {
+  SalesErrorFieldDto,
+  SalesErrorResponseDto,
+} from 'src/common/utils/module-response.dto';
 
-  @ApiProperty({ example: 'Duplicate area name is not allowed for this city' })
-  message!: string;
-}
-export class AreaErrorResponseDto {
-  @ApiProperty({ example: false })
-  success!: false;
-  @ApiProperty({ example: 'Validation failed' })
-  message!: string;
-  @ApiProperty({ type: AreaErrorFieldDto, isArray: true })
-  errors!: AreaErrorFieldDto[];
-}
+export { SalesErrorFieldDto as AreaErrorFieldDto };
+export { SalesErrorResponseDto as AreaErrorResponseDto };
+
 export class AreaPayloadDto {
   @ApiProperty({ format: 'uuid' })
   armId!: string;
@@ -26,12 +18,20 @@ export class AreaPayloadDto {
   armShort!: string | null;
   @ApiProperty({ format: 'uuid' })
   armCityId!: string;
+  @ApiPropertyOptional({
+    nullable: true,
+    example: 'Coimbatore',
+    description: 'Name of the linked city (resolved on the get endpoint)',
+  })
+  armCityName?: string | null;
   @ApiProperty({ example: 0 })
   armSort!: number;
   @ApiPropertyOptional({ nullable: true, example: 10 })
   armDistanceKm!: number | null;
   @ApiProperty({ type: [Number], example: [] })
   armCollectionDays!: number[];
+  @ApiPropertyOptional({ nullable: true })
+  armDescription!: string | null;
   @ApiProperty({ example: true })
   armIsActive!: boolean;
   @ApiProperty({ example: false })
@@ -47,22 +47,14 @@ export class AreaPayloadDto {
   @ApiPropertyOptional({ nullable: true })
   armModifiedBy!: string | null;
 }
-export class AreaListMetaDto {
-  @ApiProperty({ example: 1 })
-  page!: number;
-  @ApiProperty({ example: 20 })
-  limit!: number;
-  @ApiProperty({ example: 3 })
-  total!: number;
-  @ApiProperty({ example: 1 })
-  total_pages!: number;
-}
+
 export class AreaDeleteResultDto {
   @ApiProperty({ format: 'uuid' })
   armId!: string;
   @ApiProperty({ example: true })
   deleted!: true;
 }
+
 export class AreaSuccessSingleDto {
   @ApiProperty({ example: true })
   success!: true;
@@ -71,18 +63,7 @@ export class AreaSuccessSingleDto {
   @ApiProperty({ type: AreaPayloadDto })
   data!: AreaPayloadDto;
 }
-export class AreaSuccessListDto {
-  @ApiProperty({ example: true })
-  success!: true;
-  @ApiProperty({ example: 'Areas fetched successfully' })
-  message!: string;
-  @ApiProperty({ type: AreaPayloadDto, isArray: true })
-  data!: AreaPayloadDto[];
-  @ApiProperty({ type: AreaListMetaDto })
-  meta!: AreaListMetaDto;
-  @ApiPropertyOptional({ type: ConfiguredGridStyleDto, isArray: true })
-  styles?: ConfiguredGridStyleDto[];
-}
+
 export class AreaSuccessDeleteDto {
   @ApiProperty({ example: true })
   success!: true;
@@ -90,4 +71,20 @@ export class AreaSuccessDeleteDto {
   message!: string;
   @ApiProperty({ type: AreaDeleteResultDto })
   data!: AreaDeleteResultDto;
+}
+
+export class AreaMasterCreateResultDto {
+  @ApiProperty({ type: AreaPayloadDto })
+  areaMaster!: AreaPayloadDto;
+  @ApiProperty({ format: 'uuid', description: 'Linked account group id (equals armId)' })
+  accGroupId!: string;
+}
+
+export class AreaMasterCreateSuccessDto {
+  @ApiProperty({ example: true })
+  success!: true;
+  @ApiProperty({ example: 'Area created successfully' })
+  message!: string;
+  @ApiProperty({ type: AreaMasterCreateResultDto })
+  data!: AreaMasterCreateResultDto;
 }

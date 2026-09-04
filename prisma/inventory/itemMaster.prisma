@@ -1,6 +1,6 @@
 model ItemMaster {
   itemId               String   @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("item_id")
-  itemCompanyId        String   @db.Uuid @map("item_company_id")
+  itemCompanyId        String?  @db.Uuid @map("item_company_id")
   itemBranchId         String?  @db.Uuid @map("item_branch_id")
   // Names / Codes
   itemCode             String?  @db.VarChar(50)  @map("item_code")
@@ -62,6 +62,7 @@ model ItemMaster {
   itemNotes            String?  @db.VarChar(250) @map("item_notes")
   itemStorageLocation  String?  @db.VarChar(250) @map("item_storage_location")
   itemPackingItemIds   String[] @db.Uuid @map("item_packing_item_ids")
+  itemInclTax   Boolean  @default(true) @map("item_incl_tax")
   // Status / Audit
   itemIsActive         Boolean  @default(true)  @map("item_is_active")
   itemIsDeleted        Boolean  @default(false) @map("item_is_deleted")
@@ -75,11 +76,23 @@ model ItemMaster {
   baseUnit             Unit?           @relation(fields: [itemBaseUnitId], references: [unit_id], onUpdate: Cascade, onDelete: Restrict)
   defaultTax           ItemTaxMaster? @relation(fields: [itemDefaultTaxId], references: [taxId], onUpdate: Cascade, onDelete: Restrict)
   prices               ItemPriceMaster[] @relation("ItemPrices")
+  qtyPrices            ItemQtyPrice[] @relation("ItemQtyPrices")
   unitConversions      ItemUnitConversion[] @relation("ItemUnitConversions")
   openingStockDetails  OpeningStockDetail[] @relation("OpeningStockDetailItem")
+  physicalStockDetails PhysicalStockDetail[] @relation("PhysicalStockDetailItem")
+  physicalStockBatchDetails PhysicalStockBatchDetail[] @relation("PhysicalStockBatchDetailItem")
   reorders             ItemReorder[]
   taxHistory           ItemTaxHistory[]
-  company              Company @relation(fields: [itemCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict)
+  company              Company? @relation(fields: [itemCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict)
+  saleQuotationItems   SaleQuotationItem[]
+  saleBillItems        SaleBillItem[]
+  saleOrderItems       SaleOrderItem[]
+  promotionSchemeItems PromotionSchemeItem[] @relation("PromotionItemItem")
+  promotionSchemeSlabs PromotionSchemeSlab[] @relation("PromotionSlabFreeItem")
+  loyaltySchemeItems   LoyaltySchemeItem[]   @relation("LoyaltyItemItem")
+  loyaltySchemeSlabs   LoyaltySchemeSlab[]   @relation("LoyaltySlabItem")
+  loyaltySchemeGifts   LoyaltySchemeGift[]   @relation("LoyaltyGiftItem")
+  stockTrackPolicies   StockTrackPolicy[]    @relation("StockTrackPolicyItem")
   @@map("item_master")
   @@schema("inventory")
   // UNIQUE item_name_en globally (since company removed)

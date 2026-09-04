@@ -1,6 +1,8 @@
-import { Body, Controller, Delete, Get, Post, Query, UseFilters, Version } from '@nestjs/common';
+import { CacheTTL } from '@nestjs/cache-manager';
+import { Body, Controller, Delete, Get, Post, Put, Query, UseFilters, Version } from '@nestjs/common';
 import {
   ApiBearerAuth,
+  ApiBody,
   ApiBadRequestResponse,
   ApiCreatedResponse,
   ApiNotFoundResponse,
@@ -14,30 +16,79 @@ import { HttpErrorResponseDto } from '../../common/dto/http-error-response.dto';
 import { ListGridDetailQueryDto } from './dto/list-grid-detail-query.dto';
 import {
   GridDetailErrorResponseDto,
+  GridDetailSuccessColumnDeleteDto,
+  GridDetailSuccessColumnUpdateDto,
   GridDetailSuccessDeleteDto,
   GridDetailSuccessListDto,
   GridDetailSuccessSingleDto,
 } from './dto/grid-detail-response.dto';
 import { SaveGridDetailDto } from './dto/save-grid-detail.dto';
+import { SaveColumnWidthDto } from './dto/save-column-width.dto';
+import { SaveFilterSettingsDto } from './dto/save-filter-settings.dto';
+import { SaveVisibilitySettingsDto } from './dto/save-visibility-settings.dto';
 import { GridDetailExceptionFilter } from './grid-detail-exception.filter';
 import { GridDetailsService } from './grid-details.service';
 import {
-  GridDetailListMeta,
+  GridDetailListItem,
   GridDetailPayload,
   GridDetailSuccessResponse,
 } from './types/grid-detail-api.types';
-
+import { API_VERSION } from '../../common/constants/api-version';
+const gridDetailsCreateExample = {
+  grid_id: '17',
+  grid_name: 'Item Master Grid',
+  grid_description: 'Item master grid configuration',
+  grid_sort_column: 'item_name',
+  grid_sort_order: 'asc',
+  grid_sql: 'SELECT item_id, item_name FROM inventory.item_master',
+  grid_status: true,
+  grid_device_type: 'desktop',
+  grid_columns: [
+    {
+      grid_column_id: '018f2c9a-6cf2-7b6a-8f1c-4c9478c60001',
+      grid_column_number: 1,
+      grid_column_name: 'Item Name',
+      grid_column_width: 180,
+      grid_column_position: 1,
+      grid_column_alignment: 'left',
+      grid_column_visibility: true,
+      grid_column_filter: false,
+      grid_column_condition: null,
+      grid_column_condition_color: null,
+      grid_column_group: false,
+      grid_column_total: false,
+      grid_column_data_type: 'string',
+      grid_column_color: null,
+      grid_column_notes: null,
+      grid_column_px: '180px',
+      grid_column_sql_field_name: 'item_name',
+    },
+  ],
+};
 @ApiTags('Grid Details')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
+@CacheTTL(1)
 @Controller('grid-details')
 @UseFilters(GridDetailExceptionFilter)
 export class GridDetailsController {
-  constructor(private readonly gridDetailsService: GridDetailsService) {}
-
+  constructor(private readonly gridDetailsService: GridDetailsService) { }
   @Post('create')
-  @Version('1')
-  @ApiOperation({ summary: 'Create or update grid details (by grid_id presence)' })
+  @Version(API_VERSION)
+  @ApiOperation({
+    summary: 'Create or update grid details with nested columns',
+    description:
+      'Use this endpoint instead of POST /api/v1/grid-columns/create. Send column rows inside grid_columns.',
+  })
+  @ApiBody({
+    type: SaveGridDetailDto,
+    examples: {
+      gridDetailsWithColumns: {
+        summary: 'Grid details create/update payload',
+        value: gridDetailsCreateExample,
+      },
+    },
+  })
   @ApiCreatedResponse({ type: GridDetailSuccessSingleDto })
   @ApiBadRequestResponse({ type: GridDetailErrorResponseDto })
   @ApiNotFoundResponse({ type: GridDetailErrorResponseDto })
@@ -45,7 +96,6 @@ export class GridDetailsController {
     @Body() saveGridDetailDto: SaveGridDetailDto,
   ): Promise<GridDetailSuccessResponse<GridDetailPayload>> {
     const data = await this.gridDetailsService.save(saveGridDetailDto);
-
     return {
       success: true,
       message: saveGridDetailDto.grid_id
@@ -54,60 +104,81 @@ export class GridDetailsController {
       data,
     };
   }
-
-  @Get('list')
-  @Version('1')
-  @ApiOperation({ summary: 'List grid details with filter/search/pagination' })
+  @Get('get')
+  @Version(API_VERSION)
+  @ApiOperation({ summary: 'List grid details with filters' })
   @ApiOkResponse({ type: GridDetailSuccessListDto })
   @ApiBadRequestResponse({ type: GridDetailErrorResponseDto })
   async list(
     @Query() queryDto: ListGridDetailQueryDto,
-  ): Promise<GridDetailSuccessResponse<GridDetailPayload[], GridDetailListMeta>> {
+  ): Promise<GridDetailSuccessResponse<GridDetailListItem[]>> {
     const result = await this.gridDetailsService.list(queryDto);
-
     return {
       success: true,
       message: 'Grid details fetched successfully',
       data: result.items,
-      meta: result.meta,
     };
   }
-
-  @Get('get')
-  @Version('1')
-  @ApiOperation({ summary: 'Get grid details by id' })
-  @ApiQuery({ name: 'grid_id', description: 'Numeric grid id' })
-  @ApiOkResponse({ type: GridDetailSuccessSingleDto })
+  @Put('column-width')
+  @Version(API_VERSION)
+  @ApiOperation({ summary: 'Update column width for one or more grid columns' })
+  @ApiOkResponse({ type: GridDetailSuccessColumnUpdateDto })
   @ApiBadRequestResponse({ type: GridDetailErrorResponseDto })
   @ApiNotFoundResponse({ type: GridDetailErrorResponseDto })
-  async getById(
-    @Query('grid_id') gridId: string,
-  ): Promise<GridDetailSuccessResponse<GridDetailPayload>> {
-    const data = await this.gridDetailsService.getById(gridId);
-
-    return {
-      success: true,
-      message: 'Grid details fetched successfully',
-      data,
-    };
+  async updateColumnWidths(
+    @Body() dto: SaveColumnWidthDto,
+  ): Promise<GridDetailSuccessResponse<{ updated: number }>> {
+    const data = await this.gridDetailsService.updateColumnWidths(dto);
+    return { success: true, message: 'Column widths updated successfully', data };
   }
-
+  @Put('filter-settings')
+  @Version(API_VERSION)
+  @ApiOperation({ summary: 'Update filter setting for one or more grid columns' })
+  @ApiOkResponse({ type: GridDetailSuccessColumnUpdateDto })
+  @ApiBadRequestResponse({ type: GridDetailErrorResponseDto })
+  @ApiNotFoundResponse({ type: GridDetailErrorResponseDto })
+  async updateFilterSettings(
+    @Body() dto: SaveFilterSettingsDto,
+  ): Promise<GridDetailSuccessResponse<{ updated: number }>> {
+    const data = await this.gridDetailsService.updateFilterSettings(dto);
+    return { success: true, message: 'Filter settings updated successfully', data };
+  }
+  @Put('visibility-settings')
+  @Version(API_VERSION)
+  @ApiOperation({ summary: 'Update visibility setting for one or more grid columns' })
+  @ApiOkResponse({ type: GridDetailSuccessColumnUpdateDto })
+  @ApiBadRequestResponse({ type: GridDetailErrorResponseDto })
+  @ApiNotFoundResponse({ type: GridDetailErrorResponseDto })
+  async updateVisibilitySettings(
+    @Body() dto: SaveVisibilitySettingsDto,
+  ): Promise<GridDetailSuccessResponse<{ updated: number }>> {
+    const data = await this.gridDetailsService.updateVisibilitySettings(dto);
+    return { success: true, message: 'Visibility settings updated successfully', data };
+  }
+  @Delete('column-delete')
+  @Version(API_VERSION)
+  @ApiOperation({ summary: 'Soft delete a grid column by id' })
+  @ApiQuery({ name: 'grid_column_id', description: 'UUID grid column id' })
+  @ApiOkResponse({ type: GridDetailSuccessColumnDeleteDto })
+  @ApiBadRequestResponse({ type: GridDetailErrorResponseDto })
+  @ApiNotFoundResponse({ type: GridDetailErrorResponseDto })
+  async removeColumn(
+    @Query('grid_column_id') gridColumnId?: string,
+  ): Promise<GridDetailSuccessResponse<{ grid_column_id: string; deleted: true }>> {
+    const data = await this.gridDetailsService.softDeleteColumn(gridColumnId ?? '');
+    return { success: true, message: 'Grid column deleted successfully', data };
+  }
   @Delete('delete')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Soft delete grid details by id' })
   @ApiQuery({ name: 'grid_id', description: 'Numeric grid id' })
   @ApiOkResponse({ type: GridDetailSuccessDeleteDto })
   @ApiBadRequestResponse({ type: GridDetailErrorResponseDto })
   @ApiNotFoundResponse({ type: GridDetailErrorResponseDto })
   async remove(
-    @Query('grid_id') gridId: string,
+    @Query('grid_id') gridId?: string,
   ): Promise<GridDetailSuccessResponse<{ grid_id: string; deleted: true }>> {
-    const data = await this.gridDetailsService.softDelete(gridId);
-
-    return {
-      success: true,
-      message: 'Grid details deleted successfully',
-      data,
-    };
+    const data = await this.gridDetailsService.softDelete(gridId ?? '');
+    return { success: true, message: 'Grid details deleted successfully', data };
   }
 }

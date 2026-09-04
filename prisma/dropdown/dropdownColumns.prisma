@@ -1,25 +1,27 @@
 model DropdownColumns {
-  dropColumnsSerialId BigInt @id @default(autoincrement()) @map("dropColumns_serial_id")
+  dropdownColumnsId   String   @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("dropdown_columns_id")
 
   // FK -> dropdown_details.dropdown_id
-  dropColumnsDropdownId Int            @map("dropColumns_dropdown_id")
-  dropdown              DropdownDetails @relation(fields: [dropColumnsDropdownId], references: [dropdownId], onDelete: Cascade, onUpdate: Cascade)
+  dropdownColumnsDropdownId Int            @map("dropdown_columns_dropdown_id")
+  dropdown              DropdownDetails @relation(fields: [dropdownColumnsDropdownId], references: [dropdownId], onDelete: Cascade, onUpdate: Cascade)
 
-  dropColumnsColumnNo Int    @map("dropColumns_column_no")
-  dropColumnsDataType String @db.VarChar(50) @map("dropColumns_data_type")
+  dropdownColumnsNo Int    @map("dropdown_columns_no")
+  dropdownColumnsDataType String @db.VarChar(50) @map("dropdown_columns_data_type")
 
-  dropColumnsColumnName      String  @db.VarChar(200) @map("dropColumns_column_name")
-  dropColumnsColumnAlias     String? @db.VarChar(200) @map("dropColumns_column_alias")
-  dropColumnsColumnWidth     Decimal? @db.Decimal(12, 2) @map("dropColumns_column_width")
-  dropColumnsColumnVisiblity Boolean @default(true) @map("dropColumns_column_visiblity") // kept your spelling
-  dropColumnsColumnAllignment String? @db.VarChar(30) @map("dropColumns_column_allignment")
-  dropColumnsColumnFilter     Boolean @default(false) @map("dropColumns_column_filter")
-
-  dropColumnsCreatedOn  DateTime  @default(now()) @db.Timestamptz(6) @map("dropColumns_created_on")
-  dropColumnsModifiedOn DateTime? @updatedAt      @db.Timestamptz(6) @map("dropColumns_modified_on")
-
-  @@index([dropColumnsDropdownId])
-  @@index([dropColumnsDropdownId, dropColumnsColumnNo])
+  dropdownColumnsName      String  @db.VarChar(200) @map("dropdown_columns_name")
+  dropdownColumnsAlias     String? @db.VarChar(200) @map("dropdown_columns_alias")
+  dropdownColumnsWidth     Decimal? @db.Decimal(12, 2) @map("dropdown_columns_width")
+  dropdownColumnsVisiblity Boolean @default(true) @map("dropdown_columns_visiblity") // kept your spelling
+  dropdownColumnsAllignment String? @db.VarChar(30) @map("dropdown_columns_allignment")
+  dropdownColumnsFilter     Boolean @default(false) @map("dropdown_columns_filter")
+  dropdownColumnsSqlName   String? @db.Text @map("dropdown_columns_sql_name")
+  dropdownColumnsCreatedOn  DateTime  @default(now()) @db.Timestamptz(6) @map("dropdown_columns_created_on")
+  dropdownColumnsModifiedOn DateTime? @updatedAt      @db.Timestamptz(6) @map("dropdown_columns_modified_on")
+  dropdownColumnsCreatedBy String? @db.Text @map("dropdown_columns_created_by")
+  dropdownColumnsModifiedBy String? @db.Text @map("dropdown_columns_modified_by")
+  dropdownColumnsSyncOn     DateTime? @db.Timestamptz(6) @map("dropdown_columns_sync_on")
+  @@index([dropdownColumnsDropdownId])
+  @@index([dropdownColumnsDropdownId, dropdownColumnsNo])
   @@map("dropdown_columns")
   @@schema("fixed")
 }

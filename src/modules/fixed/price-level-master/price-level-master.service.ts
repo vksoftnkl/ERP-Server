@@ -1,12 +1,14 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PriceLevel, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
+import { RequestContextService } from '../../../common/request-context/request-context.service';
+import { DEFAULT_ACTOR } from '../../../common/utils/module-shared.utils';
 import { GetPriceLevelMasterQueryDto } from './dto/get-price-level-master-query.dto';
+import { UpdatePriceLevelMasterDto } from './dto/update-price-level-master.dto';
 import {
   PriceLevelMasterGetMeta,
   PriceLevelMasterPayload,
 } from './types/price-level-master-api.types';
-
 type PriceLevelRecord = Pick<
   PriceLevel,
   | 'priceLvlId'
@@ -21,31 +23,23 @@ type PriceLevelRecord = Pick<
   | 'priceLvlModifiedOn'
   | 'priceLvlModifiedBy'
 >;
-
 @Injectable()
 export class PriceLevelMasterService {
-  constructor(private readonly prisma: PrismaService) {}
-
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly requestContextService: RequestContextService,
+  ) {}
   async get(
     queryDto: GetPriceLevelMasterQueryDto,
   ): Promise<{ items: PriceLevelMasterPayload[]; meta: PriceLevelMasterGetMeta }> {
-    const activeOnly = queryDto.activeOnly ?? true;
-    const includeDeleted = queryDto.includeDeleted ?? false;
-
+   
     const where: Prisma.PriceLevelWhereInput = {};
     if (queryDto.priceLvlId !== undefined) {
       where.priceLvlId = queryDto.priceLvlId;
     }
-    if (activeOnly) {
-      where.priceLvlIsActive = true;
-    }
-    if (!includeDeleted) {
-      where.priceLvlIsDeleted = false;
-    }
-
     const records = await this.prisma.priceLevel.findMany({
       where,
-      orderBy: [{ priceLvlName: 'asc' }, { priceLvlId: 'asc' }],
+      orderBy: [ { priceLvlId: 'asc' }],
       select: {
         priceLvlId: true,
         priceLvlName: true,
@@ -60,22 +54,72 @@ export class PriceLevelMasterService {
         priceLvlModifiedBy: true,
       },
     });
-
     if (queryDto.priceLvlId !== undefined && records.length === 0) {
       throw new NotFoundException(`Price level not found for priceLvlId ${queryDto.priceLvlId}`);
     }
-
     const items = records.map((record) => this.toPayload(record));
-
     return {
       items,
       meta: {
         priceLvlId: queryDto.priceLvlId,
-        activeOnly,
-        includeDeleted,
         count: items.length,
       },
     };
+  }
+  async update(
+    updateDto: UpdatePriceLevelMasterDto,
+  ): Promise<PriceLevelMasterPayload[]> {
+    const ids = updateDto.priceLevels.map((item) => item.priceLvlId);
+    const existing = await this.prisma.priceLevel.findMany({
+      where: { priceLvlId: { in: ids } },
+      select: { priceLvlId: true },
+    });
+    const foundIds = new Set(existing.map((record) => record.priceLvlId));
+    const missing = ids.filter((id) => !foundIds.has(id));
+    if (missing.length > 0) {
+      throw new NotFoundException(`Price level(s) not found for priceLvlId(s): ${missing.join(', ')}`);
+    }
+
+    const actor = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
+    const records = await this.prisma.$transaction(
+      updateDto.priceLevels.map((item) => {
+        const data: Prisma.PriceLevelUpdateInput = {};
+        if (item.priceLvlName !== undefined) {
+          data.priceLvlName = item.priceLvlName;
+        }
+        if (item.priceLvlShort !== undefined) {
+          data.priceLvlShort = item.priceLvlShort;
+        }
+        if (item.priceLvlIsActive !== undefined) {
+          data.priceLvlIsActive = item.priceLvlIsActive;
+        }
+        if (item.priceLvlIsAdmin !== undefined) {
+          data.priceLvlIsAdmin = item.priceLvlIsAdmin;
+        }
+        data.priceLvlModifiedOn = new Date();
+        data.priceLvlModifiedBy = actor;
+
+        return this.prisma.priceLevel.update({
+          where: { priceLvlId: item.priceLvlId },
+          data,
+          select: {
+            priceLvlId: true,
+            priceLvlName: true,
+            priceLvlShort: true,
+            priceLvlIsActive: true,
+            priceLvlIsAdmin: true,
+            priceLvlIsDeleted: true,
+            priceLvlSyncDate: true,
+            priceLvlCreatedOn: true,
+            priceLvlCreatedBy: true,
+            priceLvlModifiedOn: true,
+            priceLvlModifiedBy: true,
+          },
+        });
+      }),
+    );
+
+    return records.map((record) => this.toPayload(record));
   }
 
   private toPayload(record: PriceLevelRecord): PriceLevelMasterPayload {

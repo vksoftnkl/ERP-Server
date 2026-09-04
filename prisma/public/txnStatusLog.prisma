@@ -1,0 +1,100 @@
+// Append-only status trail for every transactional document (quotation,
+// order, challan, bill, return, voucher, ...). One row per status step; a
+// document's history is the ordered set of its rows. Rows are written once
+// and never edited — correcting history means appending, not rewriting, which
+// is why there is no modified_on/modified_by pair here.
+//
+// LIST-partitioned by tslAccYear (the SOURCE DOCUMENT's year), like
+// sales.sale_bill / sales.sale_bill_item / accounts.acc_tender_detail.
+// Partitions (e.g. txn_status_log_2026_2027) are created by
+// public.ensure_acc_year_partitions('YYYY-YYYY') — run it whenever a fiscal
+// year is opened, or every insert fails with "no partition of relation ...".
+model TxnStatusLog {
+  tslId              String    @default(dbgenerated("uuidv7()")) @db.Uuid   @map("tsl_id")
+  tslCompanyId       String    @db.Uuid                                     @map("tsl_company_id")
+  tslBranchId        String    @db.Uuid                                     @map("tsl_branch_id")
+  tslTenantId        String?   @db.Uuid                                     @map("tsl_tenant_id")
+  tslAccYear         String    @db.Char(9)                                  @map("tsl_acc_year")
+
+  // ── Which document ───────────────────────────────────────────────────
+  tslSrcModule       String    @db.VarChar(20)                              @map("tsl_src_module")
+  tslSrcDocType      String    @db.VarChar(30)                              @map("tsl_src_doc_type")
+  tslSrcDocId        String    @db.Uuid                                     @map("tsl_src_doc_id")
+  tslSrcDocRefno     String?   @db.VarChar(100)                             @map("tsl_src_doc_refno")
+  tslSeqNo           Int                                                    @map("tsl_seq_no")
+
+  // ── What happened ────────────────────────────────────────────────────
+  tslEvent           String    @db.VarChar(30)                              @map("tsl_event")
+  tslFromStatus      String?   @db.VarChar(20)                              @map("tsl_from_status")
+  tslToStatus        String    @db.VarChar(20)                              @map("tsl_to_status")
+  tslChangedOn       DateTime  @default(now()) @db.Timestamptz(6)           @map("tsl_changed_on")
+  tslChangedBy       String    @db.Uuid                                     @map("tsl_changed_by")
+  tslRemarks         String?   @db.VarChar(500)                             @map("tsl_remarks")
+
+  // Where it happened, for a device-level audit in an offline chain.
+  tslDeviceId        String?   @db.Uuid                                     @map("tsl_device_id")
+  tslSessionId       String?   @db.Uuid                                     @map("tsl_session_id")
+
+  // ── Party notification that accompanied the step ─────────────────────
+  tslNotifyChannel   String?   @db.VarChar(20)                              @map("tsl_notify_channel")
+  tslNotifiedOn      DateTime? @db.Timestamptz(6)                           @map("tsl_notified_on")
+  tslNotifyRef       String?   @db.VarChar(100)                             @map("tsl_notify_ref")
+
+  // ── Audit ────────────────────────────────────────────────────────────
+  tslIsDeleted       Boolean   @default(false)                              @map("tsl_is_deleted")
+  tslSyncDate        DateTime? @db.Timestamptz(6)                           @map("tsl_sync_date")
+  tslCreatedOn       DateTime  @default(now()) @db.Timestamptz(6)           @map("tsl_created_on")
+  tslCreatedBy       String    @db.VarChar(50)                              @map("tsl_created_by")
+
+  // Relations
+  device             DeviceMaster? @relation(fields: [tslDeviceId], references: [devId], onUpdate: Cascade, onDelete: SetNull, map: "fk_tsl_device")
+  // No relation fields for:
+  //   tslCompanyId / tslBranchId / tslChangedBy
+  //                  — the DDL declares no FKs for them; a log row must survive
+  //                    even if the actor row is later reorganised.
+  //   tslTenantId    — no Tenant model exists in this schema (same as sb_tenant_id).
+  //   tslSessionId   — user_login_sessions.uls_session_id is nullable and not
+  //                    unique, so it is not a valid FK target.
+  //   tslSrcDocId    — polymorphic; the target table varies by
+  //                    tslSrcModule/tslSrcDocType.
+
+  @@id([tslId, tslAccYear], map: "pk_txn_status_log")
+
+  // One document's trail in order — the History button's query, and the
+  // uniqueness of the sequence within a document. Intentionally NOT partial.
+  @@unique([tslSrcDocType, tslSrcDocId, tslAccYear, tslSeqNo], map: "ux_tsl_doc_seq")
+  // Same trail, newest first, when a screen shows only the last few steps.
+  @@index([tslSrcDocType, tslSrcDocId, tslChangedOn(sort: Desc)], map: "ix_tsl_doc_recent")
+
+  // Partial indexes are DB-only — Prisma ignores WHERE predicates, so
+  // declaring them here would produce phantom drift on every migrate dev:
+  //
+  //   CREATE INDEX ix_tsl_branch_period
+  //       ON public.txn_status_log
+  //          (tsl_company_id, tsl_branch_id, tsl_acc_year, tsl_changed_on DESC)
+  //       WHERE tsl_is_deleted = false;
+  //
+  //   CREATE INDEX ix_tsl_user_event
+  //       ON public.txn_status_log (tsl_changed_by, tsl_event, tsl_changed_on DESC)
+  //       WHERE tsl_is_deleted = false;
+  //
+  //   CREATE INDEX ix_tsl_module_event
+  //       ON public.txn_status_log
+  //          (tsl_src_module, tsl_event, tsl_acc_year, tsl_changed_on DESC)
+  //       WHERE tsl_is_deleted = false;
+  //
+  //   -- notification retry queue
+  //   CREATE INDEX ix_tsl_notify_pending
+  //       ON public.txn_status_log (tsl_changed_on)
+  //       WHERE tsl_notify_channel IS NOT NULL
+  //         AND tsl_notify_channel <> 'NONE'
+  //         AND tsl_notified_on IS NULL;
+  //
+  // CHECK constraints (DB-only): ck_tsl_src_module, ck_tsl_src_doc_type,
+  //   ck_tsl_seq_no, ck_tsl_event_shape, ck_tsl_to_status_shape,
+  //   ck_tsl_from_status_shape, ck_tsl_reason_required, ck_tsl_notify_channel,
+  //   ck_tsl_notified
+
+  @@map("txn_status_log")
+  @@schema("public")
+}

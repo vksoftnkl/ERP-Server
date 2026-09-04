@@ -1,21 +1,7 @@
-export interface CustomerErrorDetail {
-  field: string;
-  message: string;
-}
-
-export interface CustomerErrorResponse {
-  success: false;
-  message: string;
-  errors: CustomerErrorDetail[];
-}
-
-export interface CustomerSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> {
-  success: true;
-  message: string;
-  data: T;
-  meta?: TMeta;
-  styles?: TStyles;
-}
+import type { ModuleApiErrorDetail, ModuleApiErrorResponse, ModuleApiSuccessResponse } from 'src/common/types/module-api.types';
+export type CustomerErrorDetail = ModuleApiErrorDetail;
+export type CustomerErrorResponse = ModuleApiErrorResponse<CustomerErrorDetail>;
+export type CustomerSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> = ModuleApiSuccessResponse<T, TMeta, TStyles>;
 
 export interface CustomerPayload {
   cusId: string;
@@ -80,13 +66,18 @@ export interface CustomerPayload {
   cusCollectionDays: number[];
   cusDefaultSalesman: string | null;
   cusPriceLevelId: number;
+  cusPriceLevelName?: string | null;
   cusBilledDate: string | null;
   cusBilledCount: number;
   cusNotes: string | null;
   cusCompanyId: string | null;
+  cusCompanyName?: string | null;
   cusBranchId: string | null;
+  cusBranchName?: string | null;
   cusAreaId: string;
+  cusAreaName?: string | null;
   cusGroupId: string;
+  cusGroupName?: string | null;
   cusIsActive: boolean;
   cusIsDeleted: boolean;
   cusSyncDate: string | null;
@@ -96,11 +87,4 @@ export interface CustomerPayload {
   cusModifiedBy: string | null;
 }
 
-export type CustomerListItem = CustomerPayload | Record<string, unknown>;
 
-export interface CustomerListMeta {
-  page: number;
-  limit: number;
-  total: number;
-  total_pages: number;
-}

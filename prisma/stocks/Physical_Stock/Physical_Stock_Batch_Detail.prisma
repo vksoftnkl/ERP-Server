@@ -1,0 +1,92 @@
+model PhysicalStockBatchDetail {
+  psbId                   String    @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("psb_id")
+
+  psbPsdId                String    @db.Uuid @map("psb_psd_id")
+  psbPshId                String    @db.Uuid @map("psb_psh_id")
+  psbRowNo                Int       @default(1) @map("psb_row_no")
+
+  // Scope snapshot
+  psbAccYear              String    @db.VarChar(9) @map("psb_acc_year")
+  psbCompanyId            String    @db.Uuid @map("psb_company_id")
+  psbBranchId             String    @db.Uuid @map("psb_branch_id")
+  psbGodownId             String    @db.Uuid @map("psb_godown_id")
+
+  // Item snapshot
+  psbItemId               String    @db.Uuid @map("psb_item_id")
+  psbUnitId               String    @db.Uuid @map("psb_unit_id")
+  psbBaseUnitId           String    @db.Uuid @map("psb_base_unit_id")
+  psbToBaseFactor         Decimal   @default(1) @db.Decimal(18, 6) @map("psb_to_base_factor")
+
+  // Batch / lot / MRP identity
+  psbBatchId              String?   @db.Uuid @map("psb_batch_id")
+  psbBatchNo              String?   @db.VarChar(100) @map("psb_batch_no")
+  psbMfgBatchNo           String?   @db.VarChar(100) @map("psb_mfg_batch_no")
+
+  psbBatchDate            DateTime? @db.Date @map("psb_batch_date")
+  psbMfgDate              DateTime? @db.Date @map("psb_mfg_date")
+  psbExpiryDate           DateTime? @db.Date @map("psb_expiry_date")
+
+  psbMrp                  Decimal   @default(0) @db.Decimal(18, 6) @map("psb_mrp")
+  psbBarcode              String?   @db.VarChar(100) @map("psb_barcode")
+  psbSerialNo             String?   @db.VarChar(100) @map("psb_serial_no")
+
+  // System/book stock for this batch
+  psbBookQty              Decimal   @default(0) @db.Decimal(18, 6) @map("psb_book_qty")
+  psbBookBaseQty          Decimal   @default(0) @db.Decimal(18, 6) @map("psb_book_base_qty")
+
+  // Physical counted stock for this batch
+  psbPhysicalQty          Decimal   @default(0) @db.Decimal(18, 6) @map("psb_physical_qty")
+  psbPhysicalBaseQty      Decimal   @default(0) @db.Decimal(18, 6) @map("psb_physical_base_qty")
+
+  // Generated difference columns
+  psbDiffQty              Decimal?  @default(dbgenerated()) @db.Decimal(18, 6) @map("psb_diff_qty")
+  psbDiffBaseQty          Decimal?  @default(dbgenerated()) @db.Decimal(18, 6) @map("psb_diff_base_qty")
+
+  // Batch valuation
+  psbStockRateWot         Decimal   @default(0) @db.Decimal(18, 6) @map("psb_stock_rate_wot")
+  psbStockRateWithTax     Decimal   @default(0) @db.Decimal(18, 6) @map("psb_stock_rate_with_tax")
+
+  // Generated value columns
+  psbBookValueWot         Decimal?  @default(dbgenerated()) @db.Decimal(18, 2) @map("psb_book_value_wot")
+  psbPhysicalValueWot     Decimal?  @default(dbgenerated()) @db.Decimal(18, 2) @map("psb_physical_value_wot")
+  psbDiffValueWot         Decimal?  @default(dbgenerated()) @db.Decimal(18, 2) @map("psb_diff_value_wot")
+  psbDiffValueWithTax     Decimal?  @default(dbgenerated()) @db.Decimal(18, 2) @map("psb_diff_value_with_tax")
+
+  // Resolution
+  psbReasonId             String?   @db.Uuid @map("psb_reason_id")
+  psbResolution           String    @default("ADJUST_LOSS_GAIN") @db.VarChar(30) @map("psb_resolution")
+  psbNotes                String?   @db.Text @map("psb_notes")
+
+  // Posting
+  psbIsPosted             Boolean   @default(false) @map("psb_is_posted")
+  psbIsActive             Boolean   @default(true) @map("psb_is_active")
+  psbIsDeleted            Boolean   @default(false) @map("psb_is_deleted")
+  psbSyncDate             DateTime? @db.Timestamptz(6) @map("psb_sync_date")
+
+  // Audit
+  psbCreatedOn            DateTime  @default(now()) @db.Timestamptz(6) @map("psb_created_on")
+  psbCreatedBy            String?   @db.Uuid @map("psb_created_by")
+  psbModifiedOn           DateTime  @default(now()) @updatedAt @db.Timestamptz(6) @map("psb_modified_on")
+  psbModifiedBy           String?   @db.Uuid @map("psb_modified_by")
+
+  // Relations
+  physicalStockDetail     PhysicalStockDetail          @relation("PhysicalStockDetailBatchDetails", fields: [psbPsdId], references: [psdId])
+  physicalStockHeader     PhysicalStockHeader          @relation("PhysicalStockHeaderBatchDetails", fields: [psbPshId], references: [psId], onUpdate: Cascade, onDelete: Restrict)
+  company                 Company                      @relation("PhysicalStockBatchDetailCompany", fields: [psbCompanyId], references: [compId])
+  branch                  BranchMaster                 @relation("PhysicalStockBatchDetailBranch", fields: [psbBranchId], references: [brId])
+  godown                  GodownLocation               @relation("PhysicalStockBatchDetailGodown", fields: [psbGodownId], references: [gdlId], onUpdate: Cascade, onDelete: Restrict)
+
+  item                    ItemMaster                   @relation("PhysicalStockBatchDetailItem", fields: [psbItemId], references: [itemId])
+
+  unit                    Unit                         @relation("PhysicalStockBatchDetailUnit", fields: [psbUnitId], references: [unit_id], onUpdate: Cascade, onDelete: Restrict)
+  baseUnit                Unit                         @relation("PhysicalStockBatchDetailBaseUnit", fields: [psbBaseUnitId], references: [unit_id], onUpdate: Cascade, onDelete: Restrict)
+
+  batch                   ItemBatchMaster?             @relation("PhysicalStockBatchDetailBatch", fields: [psbBatchId], references: [btmId])
+
+  // Partial indexes ix_physical_stock_batch_detail_* WHERE psb_is_deleted = false
+  // are maintained in SQL migrations because Prisma schema cannot express filtered indexes.
+  @@index([psbPshId], map: "ix_physical_stock_batch_detail_header")
+
+  @@map("physical_stock_batch_detail")
+  @@schema("stock")
+}

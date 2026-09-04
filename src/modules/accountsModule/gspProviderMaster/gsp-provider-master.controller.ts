@@ -1,3 +1,4 @@
+import { CacheTTL } from '@nestjs/cache-manager';
 import {
   Body,
   Controller,
@@ -26,29 +27,25 @@ import { GspProviderMasterExceptionFilter } from './gsp-provider-master-exceptio
 import {
   GspProviderMasterErrorResponseDto,
   GspProviderMasterSuccessDeleteDto,
-  GspProviderMasterSuccessListDto,
   GspProviderMasterSuccessSingleDto,
 } from './dto/gsp-provider-master-response.dto';
-import { ListGspProviderMasterQueryDto } from './dto/list-gsp-provider-master-query.dto';
 import { SaveGspProviderMasterDto } from './dto/save-gsp-provider-master.dto';
 import { GspProviderMasterService } from './gsp-provider-master.service';
 import {
-  GspProviderMasterListItem,
-  GspProviderMasterListMeta,
   GspProviderMasterPayload,
   GspProviderMasterSuccessResponse,
 } from './types/gsp-provider-master-api.types';
-
+import { API_VERSION } from '../../../common/constants/api-version';
 @ApiTags('GSP Provider Master')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
+@CacheTTL(1)
 @Controller('gsp-provider-masters')
 @UseFilters(GspProviderMasterExceptionFilter)
 export class GspProviderMasterController {
-  constructor(private readonly gspProviderMasterService: GspProviderMasterService) {}
-
+  constructor(private readonly gspProviderMasterService: GspProviderMasterService) { }
   @Post('create')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Create or update GSP provider (by gspProviderId presence)' })
   @ApiCreatedResponse({ type: GspProviderMasterSuccessSingleDto })
   @ApiBadRequestResponse({ type: GspProviderMasterErrorResponseDto })
@@ -58,7 +55,6 @@ export class GspProviderMasterController {
     @Body() saveGspProviderMasterDto: SaveGspProviderMasterDto,
   ): Promise<GspProviderMasterSuccessResponse<GspProviderMasterPayload>> {
     const data = await this.gspProviderMasterService.save(saveGspProviderMasterDto);
-
     return {
       success: true,
       message: saveGspProviderMasterDto.gspProviderId
@@ -67,30 +63,8 @@ export class GspProviderMasterController {
       data,
     };
   }
-
-  @Get('list')
-  @Version('1')
-  @ApiOperation({ summary: 'List GSP providers with filter/search/pagination' })
-  @ApiOkResponse({ type: GspProviderMasterSuccessListDto })
-  @ApiBadRequestResponse({ type: GspProviderMasterErrorResponseDto })
-  async list(
-    @Query() queryDto: ListGspProviderMasterQueryDto,
-  ): Promise<
-    GspProviderMasterSuccessResponse<GspProviderMasterListItem[], GspProviderMasterListMeta>
-  > {
-    const result = await this.gspProviderMasterService.list(queryDto);
-
-    return {
-      success: true,
-      message: 'GSP providers fetched successfully',
-      data: result.items,
-      meta: result.meta,
-      ...(result.styles !== undefined && { styles: result.styles }),
-    };
-  }
-
   @Get('get')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Get GSP provider by id' })
   @ApiQuery({ name: 'gspProviderId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: GspProviderMasterSuccessSingleDto })
@@ -100,16 +74,14 @@ export class GspProviderMasterController {
     @Query('gspProviderId', new ParseUUIDPipe({ version: '7' })) gspProviderId: string,
   ): Promise<GspProviderMasterSuccessResponse<GspProviderMasterPayload>> {
     const data = await this.gspProviderMasterService.getById(gspProviderId);
-
     return {
       success: true,
       message: 'GSP provider fetched successfully',
       data,
     };
   }
-
   @Delete('delete')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Soft delete GSP provider by id' })
   @ApiQuery({ name: 'gspProviderId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: GspProviderMasterSuccessDeleteDto })
@@ -119,7 +91,6 @@ export class GspProviderMasterController {
     @Query('gspProviderId', new ParseUUIDPipe({ version: '7' })) gspProviderId: string,
   ): Promise<GspProviderMasterSuccessResponse<{ gspProviderId: string; deleted: true }>> {
     const data = await this.gspProviderMasterService.softDelete(gspProviderId);
-
     return {
       success: true,
       message: 'GSP provider deleted successfully',

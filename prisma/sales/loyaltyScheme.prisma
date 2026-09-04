@@ -1,0 +1,128 @@
+/// sales.loyalty_scheme — §1, the loyalty campaign header.
+///
+/// The RULES: who earns, on what, how fast, and what a point is worth. It holds
+/// no balances and no movements — those belong to the points ledger (13) and the
+/// coupon/gift tables (14), neither of which is in this schema yet.
+///
+/// Supersedes sales.loyalty_sch_list / _party / _points / _gift, which
+/// 20260831060000_replace_loyalty_scheme_tables drops.
+///
+/// Declared here WITHOUT its CHECK constraints expressed in Prisma — Prisma has
+/// no concept of them. The migration DOES create them, and
+/// utils/loyalty-scheme-invariants.ts mirrors every one so a rejected campaign
+/// comes back as a field-addressed 400 rather than a Postgres error string the
+/// screen cannot place on an input.
+///
+/// DB-only objects the migration hand-authors, none of them expressible here:
+///   ux_lsc_code       UNIQUE (lsc_comp_id, lower(lsc_code)) WHERE NOT deleted
+///   ux_lsc_primary    UNIQUE (comp, branch, type) NULLS NOT DISTINCT
+///                     WHERE priority = 1 AND APPROVED AND active AND NOT deleted
+///   ix_lsc_resolve    the per-bill resolver, covering, partial
+///   ix_lsc_branch / ix_lsc_price_level / ix_lsc_redeem_tender /
+///   ix_lsc_approved_by   FK-covering, all partial
+model LoyaltyScheme {
+  lscId                     String    @id(map: "pk_loyalty_scheme") @default(dbgenerated("uuidv7()")) @db.Uuid @map("lsc_id")
+  lscCompId                 String    @db.Uuid                                       @map("lsc_comp_id")
+  /// Single-shop shorthand. NULL = every branch.
+  lscBranchId               String?   @db.Uuid                                       @map("lsc_branch_id")
+  lscTenantId               String?   @db.Uuid                                       @map("lsc_tenant_id")
+
+  lscCode                   String    @db.VarChar(30)                                @map("lsc_code")
+  lscName                   String    @db.VarChar(150)                               @map("lsc_name")
+  lscType                   String    @default("BOTH") @db.VarChar(20)               @map("lsc_type")
+  lscStatus                 String    @default("DRAFT") @db.VarChar(20)              @map("lsc_status")
+  /// Which scheme wins when several match one bill. 1 = primary.
+  lscPriority               Int       @default(1) @db.SmallInt                       @map("lsc_priority")
+  lscAutoApply              Boolean   @default(true)                                 @map("lsc_auto_apply")
+
+  // ── What it earns on ────────────────────────────────────────────────────
+  lscApplyOn                String    @default("BILL_AMOUNT") @db.VarChar(20)        @map("lsc_apply_on")
+  lscCalcOnAmountType       String    @default("NET_AMOUNT") @db.VarChar(20)         @map("lsc_calc_on_amount_type")
+  lscIncludeTax             Boolean   @default(false)                                @map("lsc_include_tax")
+  lscBillType               String    @default("ALL") @db.VarChar(20)                @map("lsc_bill_type")
+  lscMinBillAmount          Decimal   @default(0) @db.Decimal(18, 2)                 @map("lsc_min_bill_amount")
+  /// Per bill. 0 = uncapped.
+  lscMaxEarnPoints          Decimal   @default(0) @db.Decimal(18, 4)                 @map("lsc_max_earn_points")
+  lscEarnOnDiscounted       Boolean   @default(true)                                 @map("lsc_earn_on_discounted")
+  lscEarnOnCharges          Boolean   @default(false)                                @map("lsc_earn_on_charges")
+  lscEarnWithRedeem         Boolean   @default(false)                                @map("lsc_earn_with_redeem")
+  lscRoundingMethod         String    @default("FLOOR") @db.VarChar(10)              @map("lsc_rounding_method")
+  lscPointsDecimals         Int       @default(2) @db.SmallInt                       @map("lsc_points_decimals")
+
+  // ── Scope switches: 'ALL' = everything, 'LIST' = read the child table ────
+  lscBranchScope            String    @default("ALL") @db.VarChar(10)                @map("lsc_branch_scope")
+  lscCustScope              String    @default("ALL") @db.VarChar(10)                @map("lsc_cust_scope")
+  lscItemScope              String    @default("ALL") @db.VarChar(10)                @map("lsc_item_scope")
+  lscPriceLevelId           Int?                                                     @map("lsc_price_level_id")
+
+  // ── Chain store ─────────────────────────────────────────────────────────
+  /// COMPANY = one wallet, earned anywhere, spent anywhere (the default, and
+  /// what a chain wants). BRANCH = a franchisee honours only what it issued.
+  lscPoolMode               String    @default("COMPANY") @db.VarChar(10)            @map("lsc_pool_mode")
+  lscAllowCrossBranchRedeem Boolean   @default(true)                                 @map("lsc_allow_cross_branch_redeem")
+
+  // ── Redemption ──────────────────────────────────────────────────────────
+  lscAllowPointRedeem       Boolean   @default(false)                                @map("lsc_allow_point_redeem")
+  lscAllowGiftRedeem        Boolean   @default(false)                                @map("lsc_allow_gift_redeem")
+  /// accounts.acc_tender_master(tnd_id) — the LOYALTY tender (type 10).
+  lscRedeemTenderId         String?   @db.Uuid                                       @map("lsc_redeem_tender_id")
+  /// Rupees per point. WINS over acc_tender_master.tnd_conversion_rate whenever
+  /// a scheme matches; the tender master is the fallback for a company running
+  /// no scheme, and acc_tender_detail.td_conversion_rate snapshots whichever was
+  /// used. A write-path rule the schema cannot enforce.
+  lscRedeemValuePerPoint    Decimal   @default(0) @db.Decimal(18, 4)                 @map("lsc_redeem_value_per_point")
+  lscMinRedeemPoints        Decimal   @default(0) @db.Decimal(18, 4)                 @map("lsc_min_redeem_points")
+  /// Per bill. 0 = uncapped.
+  lscMaxRedeemPoints        Decimal   @default(0) @db.Decimal(18, 4)                 @map("lsc_max_redeem_points")
+  /// Per bill: the % of it points may settle.
+  lscMaxRedeemPerc          Decimal   @default(100) @db.Decimal(6, 3)                @map("lsc_max_redeem_perc")
+  lscRedeemMinBillAmount    Decimal   @default(0) @db.Decimal(18, 2)                 @map("lsc_redeem_min_bill_amount")
+  /// 0 = any quantity.
+  lscRedeemMultiple         Decimal   @default(0) @db.Decimal(18, 4)                 @map("lsc_redeem_multiple")
+
+  // ── Expiry and the return window ────────────────────────────────────────
+  lscExpiryBasis            String    @default("EARN_DATE") @db.VarChar(20)          @map("lsc_expiry_basis")
+  lscPointsValidDays        Int       @default(0)                                    @map("lsc_points_valid_days")
+  /// THE CLAW-BACK DEFENCE. Points earn on bill save (offline included) but are
+  /// not REDEEMABLE until this many days have passed — long enough for the
+  /// return window to close. 0 = redeemable immediately.
+  lscActivationDays         Int       @default(0) @db.SmallInt                       @map("lsc_activation_days")
+  lscReturnMode             String    @default("REVERSE") @db.VarChar(10)            @map("lsc_return_mode")
+
+  // ── When it runs ────────────────────────────────────────────────────────
+  lscStartDate              DateTime  @db.Date                                       @map("lsc_start_date")
+  lscEndDate                DateTime  @db.Date                                       @map("lsc_end_date")
+  /// Both bounds or neither. from > to legitimately means "spans midnight" —
+  /// 22:22 to 04:44 is a late-night promotion, not a typo.
+  lscValidFromTime          DateTime? @db.Time(6)                                    @map("lsc_valid_from_time")
+  lscValidToTime            DateTime? @db.Time(6)                                    @map("lsc_valid_to_time")
+  /// 'MON,TUE,...'; NULL = every day.
+  lscValidWeekdays          String?   @db.VarChar(30)                                @map("lsc_valid_weekdays")
+
+  lscRemarks                String?   @db.Text                                       @map("lsc_remarks")
+  lscIsActive               Boolean   @default(true)                                 @map("lsc_is_active")
+  lscIsDeleted              Boolean   @default(false)                                @map("lsc_is_deleted")
+  lscSyncDate               DateTime? @db.Timestamptz(6)                             @map("lsc_sync_date")
+  lscCreatedOn              DateTime  @default(now()) @db.Timestamptz(6)             @map("lsc_created_on")
+  lscCreatedBy              String?   @db.VarChar(50)                                @map("lsc_created_by")
+  lscModifiedOn             DateTime? @db.Timestamptz(6)                             @map("lsc_modified_on")
+  lscModifiedBy             String?   @db.VarChar(50)                                @map("lsc_modified_by")
+  lscApprovedOn             DateTime? @db.Timestamptz(6)                             @map("lsc_approved_on")
+  lscApprovedBy             String?   @db.Uuid                                       @map("lsc_approved_by")
+
+  // ── Relations ───────────────────────────────────────────────────────────
+  company                   Company         @relation("LoyaltySchemeCompany",    fields: [lscCompId],          references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_lsc_company")
+  branch                    BranchMaster?   @relation("LoyaltySchemeBranchRef",  fields: [lscBranchId],        references: [brId],   onUpdate: Cascade, onDelete: Restrict, map: "fk_lsc_branch")
+  priceLevel                ItemPriceLevel? @relation("LoyaltySchemePriceLevel", fields: [lscPriceLevelId],    references: [iplId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_lsc_price_level")
+  redeemTender              AccTenderMaster? @relation("LoyaltySchemeRedeemTender", fields: [lscRedeemTenderId], references: [tndId], onUpdate: Cascade, onDelete: Restrict, map: "fk_lsc_redeem_tender")
+  approvedBy                UserMaster?     @relation("LoyaltySchemeApprovedBy", fields: [lscApprovedBy],      references: [usrId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_lsc_approved_by")
+
+  branches                  LoyaltySchemeBranch[] @relation("LoyaltySchemeBranches")
+  parties                   LoyaltySchemeParty[]  @relation("LoyaltySchemeParties")
+  items                     LoyaltySchemeItem[]   @relation("LoyaltySchemeItems")
+  slabs                     LoyaltySchemeSlab[]   @relation("LoyaltySchemeSlabs")
+  gifts                     LoyaltySchemeGift[]   @relation("LoyaltySchemeGifts")
+
+  @@map("loyalty_scheme")
+  @@schema("sales")
+}

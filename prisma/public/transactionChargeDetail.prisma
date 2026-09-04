@@ -1,0 +1,123 @@
+/// Per-document applied charges — freight, loading, packing, cash discount, etc.
+/// One row per charge line on a document, shared by every module (sales,
+/// purchase, quotation, GRN, invoice) via the cdDocType discriminator.
+///
+/// Every cd* column except the amounts is a SNAPSHOT taken from ChargeMaster
+/// (and its ledger) at save time, so editing a charge master later never
+/// rewrites what was already invoiced.
+///
+/// public.txn_charge_detail is LIST-partitioned by cd_acc_year, like
+/// sales.sale_bill, sales.sale_order and sales.sale_quotation. Partitions (e.g.
+/// txn_charge_detail_2026_2027) are created by
+/// public.ensure_acc_year_partitions('YYYY-YYYY') — run it whenever a fiscal
+/// year is opened, or every insert fails with "no partition of relation
+/// "txn_charge_detail" found for row". Because Postgres requires every unique
+/// constraint on a partitioned table to contain the partition key, the primary
+/// key is the pair (cdId, cdAccYear): a row is addressed by both, never by the
+/// id alone.
+model TransactionChargeDetail {
+  cdId            String    @default(dbgenerated("gen_random_uuid()")) @db.Uuid @map("cd_id")
+  // -- Parent document (polymorphic — no single FK possible) ----------------
+  cdDocType       String    @db.VarChar(12)                                @map("cd_doc_type")   // which module's document
+  cdDocId         String    @db.Uuid                                       @map("cd_doc_id")     // parent document id
+  cdSlno          Int?                                                     @map("cd_slno")       // line order within the document
+  // -- Denormalised context (lets the table be queried/reported without
+  //    joining the parent document) -----------------------------------------
+  cdCompId        String    @db.Uuid                                       @map("cd_comp_id")
+  cdBranchId      String    @db.Uuid                                       @map("cd_branch_id")
+  cdAccYear       String    @db.Char(9)                                    @map("cd_acc_year")
+  cdVoucherNo     BigInt?                                                  @map("cd_voucher_no")
+  // -- Charge reference + snapshots -----------------------------------------
+  cdChgId         String    @db.Uuid                                       @map("cd_chg_id")     // FK charge_master.chg_id
+  cdChgName       String?   @db.VarChar(100)                               @map("cd_chg_name")   // snapshot, for print/history
+  cdRole          String?   @db.VarChar(15)                                @map("cd_role")       // FREIGHT | LOADING | UNLOADING | CASH_DISC | OTHERS | NONE
+  cdMethod        String?   @db.VarChar(10)                                @map("cd_method")     // how the amount is computed
+  cdType          String    @default("ADD") @db.VarChar(10)                @map("cd_type")       // ADD | DEDUCT (the sign)
+  cdApplyOn       String?   @db.VarChar(10)                                @map("cd_apply_on")   // distribution basis for a FIXED lump sum
+  cdLedgerCode    String    @db.Uuid                                       @map("cd_ledger_code") // GL ledger this charge posts to
+  // -- Landing cost + posting flags -----------------------------------------
+  cdLandingCost   Boolean   @default(false)                                @map("cd_landing_cost") // purchase: adds to item landing cost
+  cdCostAlloc     String?   @db.VarChar(10)                                @map("cd_cost_alloc")   // how that landing cost is allocated
+  // The two tax flags are mutually exclusive (ck_cd_tax_apl in the DB).
+  // cdBeforeTax folds the charge into the goods' taxable value, so it is taxed
+  // at each ITEM's own GST rate; cdTaxApl means the charge carries its OWN GST,
+  // after tax. Both at once would tax it twice. Neither = flat, untaxed
+  // adjustment.
+  cdBeforeTax     Boolean   @default(false)                                @map("cd_before_tax")
+  cdTaxApl        Boolean   @default(false)                                @map("cd_tax_apl")
+  cdSepPost       Boolean   @default(false)                                @map("cd_sep_post")     // post to its own ledger vs absorb
+  // -- Basis + amounts ------------------------------------------------------
+  cdUnit          String?   @db.VarChar(15)                                @map("cd_unit")
+  cdQtyVal        Decimal?  @db.Decimal(18, 4)                             @map("cd_qty_val")      // qty or value basis keyed on the line
+  cdWeight        Decimal?  @db.Decimal(18, 4)                             @map("cd_weight")       // weight / tonnage basis
+  // rate 0 with a non-zero amount is meaningful, NOT missing data: the operator
+  // priced the charge by typing its total, and the client spreads that total in
+  // the method's own shape rather than deriving a rate. Never add a
+  // rate-is-required constraint.
+  cdRate          Decimal?  @db.Decimal(14, 4)                             @map("cd_rate")         // rate or %, per cdMethod
+  cdAmount        Decimal?  @db.Decimal(14, 4)                             @map("cd_amount")       // charge amount BEFORE tax
+  // -- Tax (non-zero only when cdTaxApl AND NOT cdBeforeTax) ----------------
+  cdTaxCode       String?   @db.Uuid                                       @map("cd_tax_code")
+  cdHsn           String?   @db.VarChar(15)                                @map("cd_hsn")          // HSN/SAC, snapshot from the ledger
+  cdTaxPerc       Decimal?  @db.Decimal(9, 4)                              @map("cd_tax_perc")
+  cdTaxAmt        Decimal?  @db.Decimal(14, 4)                             @map("cd_tax_amt")
+  cdSgstPerc      Decimal?  @db.Decimal(9, 4)                              @map("cd_sgst_perc")
+  cdSgstAmt       Decimal?  @db.Decimal(14, 4)                             @map("cd_sgst_amt")
+  cdCgstPerc      Decimal?  @db.Decimal(9, 4)                              @map("cd_cgst_perc")
+  cdCgstAmt       Decimal?  @db.Decimal(14, 4)                             @map("cd_cgst_amt")
+  cdIgstPerc      Decimal?  @db.Decimal(9, 4)                              @map("cd_igst_perc")
+  cdIgstAmt       Decimal?  @db.Decimal(14, 4)                             @map("cd_igst_amt")
+  cdCessPerc      Decimal?  @db.Decimal(9, 4)                              @map("cd_cess_perc")
+  cdCessAmt       Decimal?  @db.Decimal(14, 4)                             @map("cd_cess_amt")
+  cdNetAmt        Decimal?  @db.Decimal(14, 4)                             @map("cd_net_amt")      // cdAmount + its own tax
+  // -- Status + audit -------------------------------------------------------
+  cdRemarks       String?   @db.VarChar(255)                               @map("cd_remarks")
+  cdIsActive      Boolean   @default(true)                                 @map("cd_is_active")
+  cdIsDeleted     Boolean   @default(false)                                @map("cd_is_deleted")
+  cdSyncDate      DateTime? @db.Timestamptz                                @map("cd_sync_date")
+  cdCreatedOn     DateTime  @default(now()) @db.Timestamptz                @map("cd_created_on")
+  cdCreatedBy     String?   @db.Text                                   @map("cd_created_by")
+  cdModifiedOn    DateTime? @db.Timestamptz                                @map("cd_modified_on")
+  cdModifiedBy    String?   @db.Text                                      @map("cd_modified_by")
+  // Relations
+  charge          ChargeMaster    @relation(fields: [cdChgId], references: [chgId], onUpdate: NoAction, onDelete: NoAction, map: "fk_cd_charge")
+  // The GL ledger the charge posts to. Restrict on delete: a ledger that has
+  // been posted to on any document must not disappear from under it.
+  ledger          AccLedgerMaster @relation(fields: [cdLedgerCode], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_cd_ledger")
+  company         Company         @relation("CompanyChargeDetails", fields: [cdCompId], references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_cd_company")
+  branch          BranchMaster    @relation("BranchChargeDetails", fields: [cdBranchId], references: [brId], onUpdate: Cascade, onDelete: Restrict, map: "fk_cd_branch")
+  // The partition key completes the primary key — see the note above the model.
+  @@id([cdId, cdAccYear], map: "pk_txn_charge_detail")
+  // Fetch all charge lines for one document (the hot path on entry load).
+  @@index([cdDocType, cdDocId], map: "ix_txn_charge_detail_doc")
+  @@index([cdChgId], map: "ix_txn_charge_detail_chg")
+  @@index([cdLedgerCode], map: "ix_txn_charge_detail_ledger")
+  @@index([cdCompId], map: "ix_txn_charge_detail_comp")
+  @@index([cdBranchId], map: "ix_txn_charge_detail_branch")
+  @@map("txn_charge_detail")
+  @@schema("public")
+  // The table began life as sales.sale_charge_detail (created in
+  // 20260728130000_create_sale_charge_detail, rebuilt by
+  // 20260729071620_sale_charge_details_table_schema_changed) and was moved,
+  // renamed and partitioned by
+  // 20260810140000_partition_txn_charge_detail_by_acc_year.
+  //
+  // The CHECK constraints 20260728140000_sale_charge_detail_check_constraints
+  // added (ck_cd_tax_apl / ck_cd_doc_type / ck_cd_type / ck_cd_method /
+  // ck_cd_apply_on / ck_cd_cost_alloc) did NOT survive that 20260729071620
+  // rebuild and are no longer in the database. The value sets they guarded live
+  // on app-side only, as the TypeScript enums in
+  // src/modules/master/charge-master/types/charge-enum.ts (ChargeDocType /
+  // ChargeType / ChargeMethod / ChargeApplyOn / ChargeCostAlloc), which the DTOs
+  // and CHARGE_DETAIL_VALUE_GUARDS both read:
+  //   - cd_tax_apl and cd_before_tax are mutually exclusive.
+  //     Taxed at the item rate, or carrying its own GST — never both.
+  //   - cd_doc_type   PURCHASE | SALES | GRN | QUOTATION | INVOICE
+  //   - cd_type       ADD | DEDUCT
+  //   - cd_method     FIXED | QTY | NET_QTY | KG | QTL | TON | PERCENT (nullable)
+  //   - cd_apply_on   FLAT | QTY | VALUE | WEIGHT (nullable)
+  //   - cd_cost_alloc VALUE | QTY | WEIGHT (nullable)
+  // cd_ledger_code / cd_comp_id / cd_branch_id gained their FKs in migration
+  // 20260728150000_sale_charge_detail_relations. cd_tax_code still carries NO
+  // FK: the value is a snapshot and no module writes it from a tax master yet.
+}

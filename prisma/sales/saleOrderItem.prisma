@@ -1,0 +1,166 @@
+// One row per ORDERED LINE (not per batch: an order allocates no stock).
+// Fulfilment is tracked as two written caches — delivered and cancelled — from
+// which soi_pending_qty and soi_line_status are GENERATED, so "what is still
+// pending" never needs the bill table and can never disagree with itself.
+//
+// LIST-partitioned by soi_acc_year — see the note on SaleOrder.
+model SaleOrderItem {
+  soiId               String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("soi_id")
+  soiOrderId          String    @db.Uuid @map("soi_order_id")
+  soiCompanyId        String    @db.Uuid @map("soi_company_id")
+  soiBranchId         String    @db.Uuid @map("soi_branch_id")
+  soiTenantId         String?   @db.Uuid @map("soi_tenant_id")
+  soiAccYear          String    @db.Char(9) @map("soi_acc_year")
+  soiLineNo           Int       @map("soi_line_no")
+  // Which line of which source document this came from (quotation).
+  soiSrcDocType       String?   @db.VarChar(30) @map("soi_src_doc_type")
+  soiSrcDocId         String?   @db.Uuid @map("soi_src_doc_id")
+  soiSrcDocAccYear    String?   @db.Char(9) @map("soi_src_doc_acc_year")
+  soiSrcDocRefno      String?   @db.VarChar(100) @map("soi_src_doc_refno")
+  soiSrcLineNo        Int?      @map("soi_src_line_no")
+  // What is being ordered
+  soiItemId           String    @db.Uuid @map("soi_item_id")
+  soiItemUnitId       String    @db.Uuid @map("soi_item_unit_id")
+  soiToBaseFactor     Decimal   @default(0) @db.Decimal(15, 6) @map("soi_to_base_factor")
+  soiHsnCode          String?   @db.VarChar(8) @map("soi_hsn_code")
+  soiPriceLevel       Int       @map("soi_price_level")
+  soiEanCode          String?   @db.VarChar(100) @map("soi_ean_code")
+  // Free-text dimension the operator typed, e.g. a timber shop's "12*6*2*10"
+  // (length ft * width in * thickness in * pieces), which is what soiOrderQty
+  // was derived from. Stored verbatim so a reprint shows the size the customer
+  // agreed to, not just the cubic feet it became.
+  soiSize             String?   @db.VarChar(50) @map("soi_size")
+  soiSizeUom          String?   @db.VarChar(20) @map("soi_size_uom")
+  // Reservation (a soft hold; inventory owns the hard one)
+  soiGodownId         String?   @db.Uuid @map("soi_godown_id")
+  soiIsReserved       Boolean   @default(false) @map("soi_is_reserved")
+  soiReservedQty      Decimal   @default(0) @db.Decimal(15, 3) @map("soi_reserved_qty")
+  soiReserveExpiresOn DateTime? @db.Date @map("soi_reserve_expires_on")
+  // Flags
+  soiIsTaxIncl        Boolean   @default(false) @map("soi_is_tax_incl")
+  soiIsPromo          Boolean   @default(false) @map("soi_is_promo")
+  soiIsFree           Boolean   @default(false) @map("soi_is_free")
+  soiFreeType         String?   @db.VarChar(20) @map("soi_free_type") // NULL / SCHEME / SAMPLE / REPLACEMENT (ck_soi_free_type in DB)
+  soiIsService        Boolean   @default(false) @map("soi_is_service")
+  soiHasFreight       Boolean   @default(false) @map("soi_has_freight")
+  // Quantities
+  soiCaseQty          Decimal   @default(0) @db.Decimal(15, 3) @map("soi_case_qty")
+  soiOrderQty         Decimal   @default(0) @db.Decimal(15, 3) @map("soi_order_qty")
+  soiLengthQty        Decimal?  @default(0) @db.Decimal(15, 3) @map("soi_length_qty")
+  soiNetQty           Decimal   @default(0) @db.Decimal(15, 3) @map("soi_net_qty")
+  soiWeightQty        Decimal?  @default(0) @db.Decimal(15, 3) @map("soi_weight_qty")
+  soiAvailableStock   Decimal   @default(0) @db.Decimal(15, 3) @map("soi_available_stock") // at order time
+  // Fulfilment caches — sale_bill_item is the truth (sbi_src_doc_id).
+  soiDeliveredQty     Decimal   @default(0) @db.Decimal(15, 3) @map("soi_delivered_qty")
+  soiCancelledQty     Decimal   @default(0) @db.Decimal(15, 3) @map("soi_cancelled_qty")
+  // GENERATED ALWAYS ... STORED as round(net - delivered - cancelled, 3)
+  // (migration 20260814060000). Read-only: writing it raises 428C9. The
+  // no-arg dbgenerated() is what stops `migrate dev` emitting DROP DEFAULT.
+  soiPendingQty       Decimal   @default(dbgenerated()) @db.Decimal(15, 3) @map("soi_pending_qty")
+  soiBilledAmt        Decimal   @default(0) @db.Decimal(15, 2) @map("soi_billed_amt")
+  // Rates
+  soiRate             Decimal   @default(0) @db.Decimal(15, 4) @map("soi_rate")
+  soiRatePreTax       Decimal   @default(0) @db.Decimal(15, 4) @map("soi_rate_pre_tax")
+  soiRateDiff         Decimal   @default(0) @db.Decimal(15, 4) @map("soi_rate_diff")
+  soiActPrice         Decimal?  @db.Decimal(15, 4) @map("soi_act_price")
+  soiMaxPrice         Decimal?  @db.Decimal(15, 4) @map("soi_max_price") // MRP
+  soiMinPrice         Decimal?  @db.Decimal(15, 4) @map("soi_min_price")
+  soiCostPrice        Decimal?  @db.Decimal(15, 4) @map("soi_cost_price")
+  soiCostPreTax       Decimal?  @db.Decimal(15, 2) @map("soi_cost_pre_tax")
+  // A confirmed order holds its price even if the price master moves; false
+  // lets the bill re-price at delivery (long-lead custom orders).
+  soiIsRateLocked     Boolean   @default(true) @map("soi_is_rate_locked")
+  // Discounts
+  soiItemDiscPerc     Decimal   @default(0) @db.Decimal(15, 4) @map("soi_item_disc_perc")
+  soiItemDiscQty      Decimal   @default(0) @db.Decimal(15, 3) @map("soi_item_disc_qty")
+  soiItemDiscAmt      Decimal   @default(0) @db.Decimal(15, 2) @map("soi_item_disc_amt")
+  soiSplDiscPerc      Decimal   @default(0) @db.Decimal(15, 4) @map("soi_spl_disc_perc")
+  soiSplDiscQty       Decimal   @default(0) @db.Decimal(15, 3) @map("soi_spl_disc_qty")
+  soiSplDiscAmt       Decimal   @default(0) @db.Decimal(15, 2) @map("soi_spl_disc_amt")
+  soiSchDiscPerc      Decimal   @default(0) @db.Decimal(15, 4) @map("soi_sch_disc_perc")
+  soiSchDiscQty       Decimal   @default(0) @db.Decimal(15, 3) @map("soi_sch_disc_qty")
+  soiSchDiscAmt       Decimal   @default(0) @db.Decimal(15, 2) @map("soi_sch_disc_amt")
+  soiBillSchPerc      Decimal   @default(0) @db.Decimal(15, 4) @map("soi_bill_sch_perc")
+  soiBillSchQty       Decimal   @default(0) @db.Decimal(15, 3) @map("soi_bill_sch_qty")
+  soiBillSchAmt       Decimal   @default(0) @db.Decimal(15, 2) @map("soi_bill_sch_amt")
+  soiAddlDisc1Perc    Decimal   @default(0) @db.Decimal(15, 4) @map("soi_addl_disc1_perc")
+  soiAddlDisc1Amt     Decimal   @default(0) @db.Decimal(15, 2) @map("soi_addl_disc1_amt")
+  soiAddlDisc2Perc    Decimal   @default(0) @db.Decimal(15, 4) @map("soi_addl_disc2_perc")
+  soiAddlDisc2Amt     Decimal   @default(0) @db.Decimal(15, 2) @map("soi_addl_disc2_amt")
+  soiCashDiscPerc     Decimal   @default(0) @db.Decimal(15, 4) @map("soi_cash_disc_perc")
+  soiCashDiscAmt      Decimal   @default(0) @db.Decimal(15, 2) @map("soi_cash_disc_amt")
+  // The charge-distribution trio
+  soiGrossAmt         Decimal   @default(0) @db.Decimal(15, 2) @map("soi_gross_amt")
+  soiNetGross         Decimal?  @db.Decimal(14, 4) @map("soi_net_gross")
+  soiChrgBeforeTax    Decimal?  @db.Decimal(14, 4) @map("soi_chrg_before_tax")
+  soiChrgAfterTax     Decimal?  @db.Decimal(14, 4) @map("soi_chrg_after_tax")
+  // Tax (on the POST-charge taxable)
+  soiTaxableAmt       Decimal   @default(0) @db.Decimal(15, 2) @map("soi_taxable_amt")
+  soiTaxPerc          Decimal   @default(0) @db.Decimal(15, 4) @map("soi_tax_perc")
+  soiTaxAmt           Decimal   @default(0) @db.Decimal(15, 2) @map("soi_tax_amt")
+  soiCgstPerc         Decimal   @default(0) @db.Decimal(15, 4) @map("soi_cgst_perc")
+  soiCgstAmt          Decimal   @default(0) @db.Decimal(15, 2) @map("soi_cgst_amt")
+  soiSgstPerc         Decimal   @default(0) @db.Decimal(15, 4) @map("soi_sgst_perc")
+  soiSgstAmt          Decimal   @default(0) @db.Decimal(15, 2) @map("soi_sgst_amt")
+  soiIgstPerc         Decimal   @default(0) @db.Decimal(15, 4) @map("soi_igst_perc")
+  soiIgstAmt          Decimal   @default(0) @db.Decimal(15, 2) @map("soi_igst_amt")
+  soiCessPerc         Decimal   @default(0) @db.Decimal(15, 4) @map("soi_cess_perc")
+  soiCessPerUnit      Decimal   @default(0) @db.Decimal(15, 4) @map("soi_cess_per_unit")
+  soiCessAmt          Decimal   @default(0) @db.Decimal(15, 2) @map("soi_cess_amt")
+  soiAcessPerc        Decimal   @default(0) @db.Decimal(15, 4) @map("soi_acess_perc")
+  soiAcessPerUnit     Decimal   @default(0) @db.Decimal(15, 4) @map("soi_acess_per_unit")
+  soiAcessAmt         Decimal   @default(0) @db.Decimal(15, 2) @map("soi_acess_amt")
+  // Per-line charges
+  soiFreightQty       Decimal   @default(0) @db.Decimal(15, 3) @map("soi_freight_qty")
+  soiFreightAmt       Decimal   @default(0) @db.Decimal(15, 2) @map("soi_freight_amt")
+  soiLoadQty          Decimal   @default(0) @db.Decimal(15, 3) @map("soi_load_qty")
+  soiLoadAmt          Decimal   @default(0) @db.Decimal(15, 2) @map("soi_load_amt")
+  soiUnloadQty        Decimal   @default(0) @db.Decimal(15, 3) @map("soi_unload_qty")
+  soiUnloadAmt        Decimal   @default(0) @db.Decimal(15, 2) @map("soi_unload_amt")
+  soiRoundOff         Decimal   @default(0) @db.Decimal(15, 2) @map("soi_round_off")
+  soiNetAmt           Decimal   @default(0) @db.Decimal(15, 2) @map("soi_net_amt")
+  // Costing / margin, PER UNIT
+  soiSoldPrice        Decimal?  @db.Decimal(15, 4) @map("soi_sold_price")
+  soiSoldPreTax       Decimal?  @db.Decimal(15, 2) @map("soi_sold_pre_tax")
+  soiItemProfit       Decimal?  @db.Decimal(15, 2) @map("soi_item_profit")
+  soiProfitPreTax     Decimal?  @db.Decimal(15, 2) @map("soi_profit_pre_tax")
+  soiMrpSavings       Decimal?  @db.Decimal(15, 3) @map("soi_mrp_savings")
+  soiMrpSavingsPerc   Decimal?  @db.Decimal(15, 4) @map("soi_mrp_savings_perc")
+  // Line fulfilment / attribution
+  soiDeliveryDate     DateTime? @db.Date @map("soi_delivery_date") // a split delivery per line
+  // GENERATED ALWAYS ... STORED from the three quantities (migration
+  // 20260814060000) — PENDING / PARTIAL / DELIVERED / CANCELLED. Read-only.
+  soiLineStatus       String    @default(dbgenerated()) @db.VarChar(20) @map("soi_line_status")
+  soiSalesmanId       String?   @db.Uuid @map("soi_salesman_id")
+  soiSchemeId         String?   @db.Uuid @map("soi_scheme_id")
+  soiSchemeName       String?   @db.VarChar(150) @map("soi_scheme_name")
+  soiRemarks          String?   @db.VarChar(250) @map("soi_remarks")
+  soiCancelReason     String?   @db.VarChar(250) @map("soi_cancel_reason")
+  // Audit
+  soiIsDeleted        Boolean   @default(false) @map("soi_is_deleted")
+  soiSyncDate         DateTime? @db.Timestamptz(6) @map("soi_sync_date")
+  soiCreatedOn        DateTime  @default(now()) @db.Timestamptz(6) @map("soi_created_on")
+  soiCreatedBy        String    @db.VarChar(50) @map("soi_created_by")
+  soiModifiedOn       DateTime? @db.Timestamptz(6) @map("soi_modified_on")
+  soiModifiedBy       String?   @db.VarChar(50) @map("soi_modified_by")
+  // Relations
+  order              SaleOrder          @relation(fields: [soiOrderId, soiAccYear], references: [soId, soAccYear], onDelete: Cascade, onUpdate: Cascade, map: "fk_soi_order")
+  item               ItemMaster         @relation(fields: [soiItemId], references: [itemId], onDelete: Restrict, onUpdate: Cascade, map: "fk_soi_item")
+  priceLevel         ItemPriceLevel     @relation("SaleOrderItemPriceLevel", fields: [soiPriceLevel], references: [iplId], onDelete: Restrict, onUpdate: Cascade, map: "fk_soi_price_level")
+  // soiItemUnitId references item_unit_conversion(iuc_id), NOT item_unit_master(unit_id)
+  itemUnitConversion ItemUnitConversion @relation("SaleOrderItemUnitConversion", fields: [soiItemUnitId], references: [iucId], onDelete: Restrict, onUpdate: Cascade, map: "fk_soi_item_unit")
+  // DB-only partial indexes (migration 20260808132323): the unique
+  // ux_soi_order_line, plus ix_soi_pending_item and ix_soi_reserved. Prisma
+  // cannot express their WHERE predicates; declaring them here makes
+  // `migrate dev` regenerate them without the predicate and fail on the
+  // existing names. Do NOT add @@unique/@@index for them.
+  //
+  // CHECK constraints (DB-only): ck_soi_free_type, ck_soi_line_no,
+  // ck_soi_line_status, ck_soi_qty_signs, ck_soi_reserved, ck_soi_size.
+  // ck_soi_qty_balance was dropped by 20260814060000 — the balance identity is
+  // now how soi_pending_qty is computed, so the CHECK was a tautology.
+  @@id([soiId, soiAccYear], map: "pk_sale_order_item")
+  @@index([soiOrderId], map: "ix_soi_order")
+  @@map("sale_order_item")
+  @@schema("sales")
+}

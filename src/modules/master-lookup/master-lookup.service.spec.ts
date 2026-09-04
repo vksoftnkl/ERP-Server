@@ -1,6 +1,8 @@
+import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { PgService } from '../../database/pg/pg.service';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import { MasterLookupService } from './master-lookup.service';
-
+import { DocumentLookupModuleKey } from './types/master-lookup-api.types';
 type PrismaMock = {
   dropdownDetails: {
     findMany: jest.Mock;
@@ -14,13 +16,18 @@ type PrismaMock = {
   company: {
     findMany: jest.Mock;
   };
-  $queryRawUnsafe: jest.Mock;
+  priceLevel: {
+    findMany: jest.Mock;
+  };
 };
-
+type PgMock = {
+  queryReadOnly: jest.Mock;
+};
+const pgRows = (rows: unknown[]) => ({ rows });
 describe('MasterLookupService', () => {
   let service: MasterLookupService;
   let prisma: PrismaMock;
-
+  let pg: PgMock;
   beforeEach(() => {
     prisma = {
       dropdownDetails: {
@@ -35,12 +42,15 @@ describe('MasterLookupService', () => {
       company: {
         findMany: jest.fn().mockResolvedValue([]),
       },
-      $queryRawUnsafe: jest.fn().mockResolvedValue([]),
+      priceLevel: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
     };
-
-    service = new MasterLookupService(prisma as unknown as PrismaService);
+    pg = {
+      queryReadOnly: jest.fn().mockResolvedValue(pgRows([])),
+    };
+    service = new MasterLookupService(prisma as unknown as PrismaService, pg as unknown as PgService);
   });
-
   it('uses configured regional dropdown SQL and dropdown columns for module lookups', async () => {
     prisma.dropdownDetails.findMany.mockResolvedValue([
       {
@@ -53,41 +63,37 @@ describe('MasterLookupService', () => {
         dropdownSortOrder: 'DESC',
         dropdownColumns: [
           {
-            dropColumnsColumnNo: 1,
-            dropColumnsColumnName: 'item_id',
-            dropColumnsColumnAlias: 'Item Id',
-            dropColumnsColumnFilter: false,
+            dropdownColumnsNo: 1,
+            dropdownColumnsName: 'item_id',
+            dropdownColumnsAlias: 'Item Id',
+            dropdownColumnsFilter: false,
           },
           {
-            dropColumnsColumnNo: 2,
-            dropColumnsColumnName: 'item_name',
-            dropColumnsColumnAlias: 'Item Name',
-            dropColumnsColumnFilter: true,
+            dropdownColumnsNo: 2,
+            dropdownColumnsName: 'item_name',
+            dropdownColumnsAlias: 'Item Name',
+            dropdownColumnsFilter: true,
           },
         ],
       },
     ]);
-    prisma.$queryRawUnsafe.mockResolvedValue([
+    pg.queryReadOnly.mockResolvedValue(pgRows([
       { item_id: 'ITEM-1', item_name: 'Milk', item_code: 'MILK-001' },
-    ]);
-
-    const result = await service.getAllAccountsAndMasterNameIds('items', 'milk', 5);
-
+    ]));
+    const result = await service.getAllAccountsAndMasterNameIds('items');
     expect(result).toEqual({
       scope: 'masters',
       module: 'items',
       items: [{ id: 'ITEM-1', name: 'Milk', item_id: 'ITEM-1', item_name: 'Milk', item_code: 'MILK-001' }],
     });
     expect(prisma.itemMaster.findMany).not.toHaveBeenCalled();
-    expect(prisma.$queryRawUnsafe).toHaveBeenCalledTimes(1);
-
-    const [sql, ...params] = prisma.$queryRawUnsafe.mock.calls[0];
+    expect(pg.queryReadOnly).toHaveBeenCalledTimes(1);
+    const [sql, ...params] = pg.queryReadOnly.mock.calls[0];
     expect(String(sql)).toContain('SELECT regional_item_id AS item_id');
     expect(String(sql)).toContain('regional_item_name AS item_name FROM regional_items');
     expect(String(sql)).not.toContain(', FROM regional_items');
     expect(params).toEqual([]);
   });
-
   it('prefers actual SQL row keys when dropdown columns only contain display labels', async () => {
     prisma.dropdownDetails.findMany.mockResolvedValue([
       {
@@ -99,31 +105,29 @@ describe('MasterLookupService', () => {
         dropdownSortOrder: 'ASC',
         dropdownColumns: [
           {
-            dropColumnsColumnNo: 1,
-            dropColumnsColumnName: 'Cus group name',
-            dropColumnsColumnAlias: 'cus grp name',
-            dropColumnsColumnFilter: false,
+            dropdownColumnsNo: 1,
+            dropdownColumnsName: 'Cus group name',
+            dropdownColumnsAlias: 'cus grp name',
+            dropdownColumnsFilter: false,
           },
           {
-            dropColumnsColumnNo: 2,
-            dropColumnsColumnName: 'cust group Alias',
-            dropColumnsColumnAlias: 'cust group Alias',
-            dropColumnsColumnFilter: false,
+            dropdownColumnsNo: 2,
+            dropdownColumnsName: 'cust group Alias',
+            dropdownColumnsAlias: 'cust group Alias',
+            dropdownColumnsFilter: false,
           },
         ],
       },
     ]);
-    prisma.$queryRawUnsafe.mockResolvedValue([
+    pg.queryReadOnly.mockResolvedValue(pgRows([
       {
         cgr_id: '019cad4b-84db-7a76-a67f-41e7e6adb9ce',
         cgr_branch_id: null,
         cgr_name: 'Retail',
         cgr_alias: 'RTL',
       },
-    ]);
-
+    ]));
     const result = await service.getAllAccountsAndMasterNameIds('customerGroups');
-
     expect(result).toEqual({
       scope: 'masters',
       module: 'customerGroups',
@@ -138,10 +142,9 @@ describe('MasterLookupService', () => {
         },
       ],
     });
-    expect(prisma.$queryRawUnsafe).toHaveBeenCalledTimes(1);
+    expect(pg.queryReadOnly).toHaveBeenCalledTimes(1);
     expect(prisma.custGroup.findMany).not.toHaveBeenCalled();
   });
-
   it('does not substitute id into name for configured dropdown SQL rows', async () => {
     prisma.dropdownDetails.findMany.mockResolvedValue([
       {
@@ -153,22 +156,20 @@ describe('MasterLookupService', () => {
         dropdownSortOrder: null,
         dropdownColumns: [
           {
-            dropColumnsColumnNo: 1,
-            dropColumnsColumnName: 'cgr_id',
-            dropColumnsColumnAlias: 'Customer Group Id',
-            dropColumnsColumnFilter: false,
+            dropdownColumnsNo: 1,
+            dropdownColumnsName: 'cgr_id',
+            dropdownColumnsAlias: 'Customer Group Id',
+            dropdownColumnsFilter: false,
           },
         ],
       },
     ]);
-    prisma.$queryRawUnsafe.mockResolvedValue([
+    pg.queryReadOnly.mockResolvedValue(pgRows([
       {
         cgr_id: '019cad4b-84db-7a76-a67f-41e7e6adb9ce',
       },
-    ]);
-
+    ]));
     const result = await service.getAllAccountsAndMasterNameIds('customerGroups');
-
     expect(result).toEqual({
       scope: 'masters',
       module: 'customerGroups',
@@ -180,10 +181,90 @@ describe('MasterLookupService', () => {
         },
       ],
     });
-    expect(prisma.$queryRawUnsafe).toHaveBeenCalledTimes(1);
+    expect(pg.queryReadOnly).toHaveBeenCalledTimes(1);
     expect(prisma.custGroup.findMany).not.toHaveBeenCalled();
   });
-
+  it('returns price levels in id order, not the configured sort column order', async () => {
+    prisma.dropdownDetails.findMany.mockResolvedValue([
+      {
+        dropdownId: 34,
+        dropdownName: 'PRICE LEVELS',
+        dropdownSql: 'SELECT ipl_id, ipl_name FROM inventory.item_price_levels',
+        dropdownSqlRegional: null,
+        dropdownSortColumn: 'ipl_name',
+        dropdownSortOrder: 'asc',
+        dropdownColumns: [
+          {
+            dropdownColumnsNo: 1,
+            dropdownColumnsName: 'ipl_id',
+            dropdownColumnsAlias: null,
+            dropdownColumnsFilter: false,
+          },
+          {
+            dropdownColumnsNo: 2,
+            dropdownColumnsName: 'ipl_name',
+            dropdownColumnsAlias: null,
+            dropdownColumnsFilter: true,
+          },
+        ],
+      },
+    ]);
+    // Rows come back name-ascending, the order the configured sort column asks for.
+    pg.queryReadOnly.mockResolvedValue(
+      pgRows([
+        { ipl_id: 6, ipl_name: 'Min.Price Sale' },
+        { ipl_id: 5, ipl_name: 'MRP Sale' },
+        { ipl_id: 2, ipl_name: 'Retail Price' },
+        { ipl_id: 10, ipl_name: 'Special Price' },
+        { ipl_id: 1, ipl_name: 'WS Price' },
+      ]),
+    );
+    const result = await service.getAllMasters('priceLevels');
+    // Numeric id order — "10" last, not between "1" and "2".
+    expect(result).toEqual([
+      { id: '1', name: 'WS Price' },
+      { id: '2', name: 'Retail Price' },
+      { id: '5', name: 'MRP Sale' },
+      { id: '6', name: 'Min.Price Sale' },
+      { id: '10', name: 'Special Price' },
+    ]);
+    expect(prisma.priceLevel.findMany).not.toHaveBeenCalled();
+  });
+  it('keeps the configured sort column order for modules that are not id-ordered', async () => {
+    prisma.dropdownDetails.findMany.mockResolvedValue([
+      {
+        dropdownId: 33,
+        dropdownName: 'CUSTOMER GROUPS',
+        dropdownSql: 'SELECT cgr_id, cgr_name FROM sales.cust_groups',
+        dropdownSqlRegional: null,
+        dropdownSortColumn: 'cgr_name',
+        dropdownSortOrder: 'asc',
+        dropdownColumns: [
+          {
+            dropdownColumnsNo: 1,
+            dropdownColumnsName: 'cgr_id',
+            dropdownColumnsAlias: null,
+            dropdownColumnsFilter: false,
+          },
+          {
+            dropdownColumnsNo: 2,
+            dropdownColumnsName: 'cgr_name',
+            dropdownColumnsAlias: null,
+            dropdownColumnsFilter: true,
+          },
+        ],
+      },
+    ]);
+    pg.queryReadOnly.mockResolvedValue(
+      pgRows([
+        { cgr_id: '3', cgr_name: 'Retail' },
+        { cgr_id: '1', cgr_name: 'Wholesale' },
+        { cgr_id: '2', cgr_name: 'Hotel' },
+      ]),
+    );
+    const result = await service.getAllMasters('customerGroups');
+    expect(result.map((item) => item.name)).toEqual(['Hotel', 'Retail', 'Wholesale']);
+  });
   it('falls back to Prisma table queries when configured dropdown SQL is unusable', async () => {
     prisma.dropdownDetails.findMany.mockResolvedValue([
       {
@@ -195,10 +276,10 @@ describe('MasterLookupService', () => {
         dropdownSortOrder: null,
         dropdownColumns: [
           {
-            dropColumnsColumnNo: 1,
-            dropColumnsColumnName: 'item_id',
-            dropColumnsColumnAlias: null,
-            dropColumnsColumnFilter: true,
+            dropdownColumnsNo: 1,
+            dropdownColumnsName: 'item_id',
+            dropdownColumnsAlias: null,
+            dropdownColumnsFilter: true,
           },
         ],
       },
@@ -209,18 +290,15 @@ describe('MasterLookupService', () => {
         itemNameEn: 'Bread',
       },
     ]);
-
-    const result = await service.getAllAccountsAndMasterNameIds('items', 'bread', 3);
-
+    const result = await service.getAllAccountsAndMasterNameIds('items');
     expect(result).toEqual({
       scope: 'masters',
       module: 'items',
       items: [{ id: 'ITEM-2', name: 'Bread' }],
     });
-    expect(prisma.$queryRawUnsafe).not.toHaveBeenCalled();
+    expect(pg.queryReadOnly).not.toHaveBeenCalled();
     expect(prisma.itemMaster.findMany).toHaveBeenCalledTimes(1);
   });
-
   it('falls back to Prisma table queries when configured dropdown SQL execution fails', async () => {
     prisma.dropdownDetails.findMany.mockResolvedValue([
       {
@@ -232,33 +310,30 @@ describe('MasterLookupService', () => {
         dropdownSortOrder: 'ASC',
         dropdownColumns: [
           {
-            dropColumnsColumnNo: 1,
-            dropColumnsColumnName: 'Item Name',
-            dropColumnsColumnAlias: null,
-            dropColumnsColumnFilter: true,
+            dropdownColumnsNo: 1,
+            dropdownColumnsName: 'Item Name',
+            dropdownColumnsAlias: null,
+            dropdownColumnsFilter: true,
           },
         ],
       },
     ]);
-    prisma.$queryRawUnsafe.mockRejectedValue(new Error('broken dropdown sql'));
+    pg.queryReadOnly.mockRejectedValue(new Error('broken dropdown sql'));
     prisma.itemMaster.findMany.mockResolvedValue([
       {
         itemId: 'ITEM-3',
         itemNameEn: 'Butter',
       },
     ]);
-
-    const result = await service.getAllAccountsAndMasterNameIds('items', 'butter', 3);
-
+    const result = await service.getAllAccountsAndMasterNameIds('items');
     expect(result).toEqual({
       scope: 'masters',
       module: 'items',
       items: [{ id: 'ITEM-3', name: 'Butter' }],
     });
-    expect(prisma.$queryRawUnsafe).toHaveBeenCalledTimes(1);
+    expect(pg.queryReadOnly).toHaveBeenCalledTimes(1);
     expect(prisma.itemMaster.findMany).toHaveBeenCalledTimes(1);
   });
-
   it('falls back to dropdown_sql when dropdown_sql_regional execution fails', async () => {
     prisma.dropdownDetails.findMany.mockResolvedValue([
       {
@@ -270,46 +345,168 @@ describe('MasterLookupService', () => {
         dropdownSortOrder: 'ASC',
         dropdownColumns: [
           {
-            dropColumnsColumnNo: 1,
-            dropColumnsColumnName: 'item_id',
-            dropColumnsColumnAlias: null,
-            dropColumnsColumnFilter: false,
+            dropdownColumnsNo: 1,
+            dropdownColumnsName: 'item_id',
+            dropdownColumnsAlias: null,
+            dropdownColumnsFilter: false,
           },
           {
-            dropColumnsColumnNo: 2,
-            dropColumnsColumnName: 'item_name',
-            dropColumnsColumnAlias: null,
-            dropColumnsColumnFilter: true,
+            dropdownColumnsNo: 2,
+            dropdownColumnsName: 'item_name',
+            dropdownColumnsAlias: null,
+            dropdownColumnsFilter: true,
           },
         ],
       },
     ]);
-    prisma.$queryRawUnsafe
+    pg.queryReadOnly
       .mockRejectedValueOnce(new Error('broken regional dropdown sql'))
-      .mockResolvedValueOnce([
+      .mockResolvedValueOnce(pgRows([
         {
           item_id: 'ITEM-4',
           item_name: 'Cheese',
         },
-      ]);
-
-    const result = await service.getAllAccountsAndMasterNameIds('items', 'cheese', 3);
-
+      ]));
+    const result = await service.getAllAccountsAndMasterNameIds('items');
     expect(result).toEqual({
       scope: 'masters',
       module: 'items',
       items: [{ id: 'ITEM-4', name: 'Cheese', item_id: 'ITEM-4', item_name: 'Cheese' }],
     });
-    expect(prisma.$queryRawUnsafe).toHaveBeenCalledTimes(2);
-    expect(String(prisma.$queryRawUnsafe.mock.calls[0][0])).toContain(
+    expect(pg.queryReadOnly).toHaveBeenCalledTimes(2);
+    expect(String(pg.queryReadOnly.mock.calls[0][0])).toContain(
       'SELECT item_id, item_name FROM regional_item_master',
     );
-    expect(String(prisma.$queryRawUnsafe.mock.calls[1][0])).toContain(
+    expect(String(pg.queryReadOnly.mock.calls[1][0])).toContain(
       'SELECT item_id, item_name FROM item_master',
     );
     expect(prisma.itemMaster.findMany).not.toHaveBeenCalled();
   });
-
+  it('rewrites stale configured table names before executing dropdown SQL', async () => {
+    prisma.dropdownDetails.findMany.mockResolvedValue([
+      {
+        dropdownId: 9,
+        dropdownName: 'Branches',
+        dropdownSql:
+          'SELECT br_id, br_name FROM accounts.branch_master UNION SELECT unit_id, unit_name FROM inventory.units',
+        dropdownSqlRegional: null,
+        dropdownSortColumn: 'br_name',
+        dropdownSortOrder: 'ASC',
+        dropdownColumns: [
+          {
+            dropdownColumnsNo: 1,
+            dropdownColumnsName: 'br_id',
+            dropdownColumnsAlias: null,
+            dropdownColumnsFilter: false,
+          },
+          {
+            dropdownColumnsNo: 2,
+            dropdownColumnsName: 'br_name',
+            dropdownColumnsAlias: null,
+            dropdownColumnsFilter: true,
+          },
+        ],
+      },
+    ]);
+    pg.queryReadOnly.mockResolvedValue(pgRows([
+      {
+        br_id: 'BR-1',
+        br_name: 'Main Branch',
+      },
+    ]));
+    const result = await service.getAllAccountsAndMasterNameIds('branches');
+    expect(result).toEqual({
+      scope: 'accounts',
+      module: 'branches',
+      items: [{ id: 'BR-1', name: 'Main Branch', br_id: 'BR-1', br_name: 'Main Branch' }],
+    });
+    const [sql] = pg.queryReadOnly.mock.calls[0];
+    expect(String(sql)).toContain('public.branch_master');
+    expect(String(sql)).toContain('inventory.item_unit_master');
+    expect(String(sql)).not.toContain('accounts.branch_master');
+    expect(String(sql)).not.toContain('inventory.units');
+  });
+  it('rewrites stale configured company table names before executing dropdown SQL', async () => {
+    prisma.dropdownDetails.findMany.mockResolvedValue([
+      {
+        dropdownId: 10,
+        dropdownName: 'Companies',
+        dropdownSql: 'SELECT comp_id, comp_name FROM accounts.companys',
+        dropdownSqlRegional: null,
+        dropdownSortColumn: 'comp_name',
+        dropdownSortOrder: 'ASC',
+        dropdownColumns: [
+          {
+            dropdownColumnsNo: 1,
+            dropdownColumnsName: 'comp_id',
+            dropdownColumnsAlias: null,
+            dropdownColumnsFilter: false,
+          },
+          {
+            dropdownColumnsNo: 2,
+            dropdownColumnsName: 'comp_name',
+            dropdownColumnsAlias: null,
+            dropdownColumnsFilter: true,
+          },
+        ],
+      },
+    ]);
+    pg.queryReadOnly.mockResolvedValue(pgRows([
+      {
+        comp_id: 'COMP-1',
+        comp_name: 'Acme Pvt Ltd',
+      },
+    ]));
+    const result = await service.getAllAccountsAndMasterNameIds('companies');
+    expect(result).toEqual({
+      scope: 'accounts',
+      module: 'companies',
+      items: [{ id: 'COMP-1', name: 'Acme Pvt Ltd', comp_id: 'COMP-1', comp_name: 'Acme Pvt Ltd' }],
+    });
+    const [sql] = pg.queryReadOnly.mock.calls[0];
+    expect(String(sql)).toContain('public.companys');
+    expect(String(sql)).not.toContain('accounts.companys');
+    expect(prisma.company.findMany).not.toHaveBeenCalled();
+  });
+  it('matches configured dropdown records by master page display names', async () => {
+    prisma.dropdownDetails.findMany.mockResolvedValue([
+      {
+        dropdownId: 11,
+        dropdownName: 'GSP Service Master',
+        dropdownSql: 'SELECT ttm_type_id, ttm_type_name FROM accounts.acc_tender_types',
+        dropdownSqlRegional: null,
+        dropdownSortColumn: 'ttm_type_name',
+        dropdownSortOrder: 'ASC',
+        dropdownColumns: [
+          {
+            dropdownColumnsNo: 1,
+            dropdownColumnsName: 'ttm_type_id',
+            dropdownColumnsAlias: null,
+            dropdownColumnsFilter: false,
+          },
+          {
+            dropdownColumnsNo: 2,
+            dropdownColumnsName: 'ttm_type_name',
+            dropdownColumnsAlias: null,
+            dropdownColumnsFilter: true,
+          },
+        ],
+      },
+    ]);
+    pg.queryReadOnly.mockResolvedValue(pgRows([
+      {
+        ttm_type_id: 1,
+        ttm_type_name: 'E-Invoice',
+      },
+    ]));
+    const result = await service.getAllAccountsAndMasterNameIds('tenderTypes');
+    expect(result).toEqual({
+      scope: 'accounts',
+      module: 'tenderTypes',
+      items: [{ id: '1', name: 'E-Invoice', ttm_type_id: 1, ttm_type_name: 'E-Invoice' }],
+    });
+    expect(pg.queryReadOnly).toHaveBeenCalledTimes(1);
+  });
   it('falls back to Prisma table queries when no dropdown mapping exists for the module', async () => {
     prisma.company.findMany.mockResolvedValue([
       {
@@ -317,15 +514,663 @@ describe('MasterLookupService', () => {
         compName: 'Acme Pvt Ltd',
       },
     ]);
-
     const result = await service.getAllAccountsAndMasterNameIds('companies');
-
     expect(result).toEqual({
       scope: 'accounts',
       module: 'companies',
       items: [{ id: 'COMP-1', name: 'Acme Pvt Ltd' }],
     });
-    expect(prisma.$queryRawUnsafe).not.toHaveBeenCalled();
+    expect(pg.queryReadOnly).not.toHaveBeenCalled();
     expect(prisma.company.findMany).toHaveBeenCalledTimes(1);
+  });
+  describe('id filter', () => {
+    const configuredCustomerGroups = (rows: unknown[]) => {
+      prisma.dropdownDetails.findMany.mockResolvedValue([
+        {
+          dropdownId: 3,
+          dropdownName: 'customerGroups',
+          dropdownSql: 'SELECT cgr_id, cgr_name FROM sales.cust_groups',
+          dropdownSqlRegional: null,
+          dropdownSortColumn: null,
+          dropdownSortOrder: null,
+          dropdownColumns: [],
+        },
+      ]);
+      pg.queryReadOnly.mockResolvedValue(pgRows(rows));
+    };
+    it('returns only the master row carrying the id', async () => {
+      prisma.itemMaster.findMany.mockResolvedValue([
+        { itemId: 'ITEM-1', itemNameEn: 'Milk' },
+        { itemId: 'ITEM-2', itemNameEn: 'Sugar' },
+      ]);
+      const result = await service.getAllMasters('items', 'ITEM-2');
+      expect(result).toEqual([{ id: 'ITEM-2', name: 'Sugar' }]);
+    });
+    it('returns an empty list when no row carries the id', async () => {
+      prisma.itemMaster.findMany.mockResolvedValue([{ itemId: 'ITEM-1', itemNameEn: 'Milk' }]);
+      await expect(service.getAllMasters('items', 'ITEM-9')).resolves.toEqual([]);
+    });
+    it('returns the whole module list when no id is given', async () => {
+      prisma.itemMaster.findMany.mockResolvedValue([
+        { itemId: 'ITEM-1', itemNameEn: 'Milk' },
+        { itemId: 'ITEM-2', itemNameEn: 'Sugar' },
+      ]);
+      const result = await service.getAllMasters('items');
+      expect(result).toEqual([
+        { id: 'ITEM-1', name: 'Milk' },
+        { id: 'ITEM-2', name: 'Sugar' },
+      ]);
+    });
+    it('matches the id a configured dropdown produced, not the underlying table PK', async () => {
+      configuredCustomerGroups([
+        { cgr_id: 'CGR-1', cgr_name: 'Retail' },
+        { cgr_id: 'CGR-2', cgr_name: 'Wholesale' },
+      ]);
+      const result = await service.getAllMasters('customerGroups', 'CGR-2');
+      expect(result).toEqual([{ id: 'CGR-2', name: 'Wholesale' }]);
+      expect(prisma.custGroup.findMany).not.toHaveBeenCalled();
+    });
+    it('narrows the single-module payload of the accounts/masters endpoint', async () => {
+      prisma.company.findMany.mockResolvedValue([
+        { compId: 'COMP-1', compName: 'Acme Pvt Ltd' },
+        { compId: 'COMP-2', compName: 'Globex' },
+      ]);
+      const result = await service.getAllAccountsAndMasterNameIds('companies', 'COMP-1');
+      expect(result).toEqual({
+        scope: 'accounts',
+        module: 'companies',
+        items: [{ id: 'COMP-1', name: 'Acme Pvt Ltd' }],
+      });
+    });
+    it('matches a numeric option id sent as a string', async () => {
+      configuredCustomerGroups([
+        { cgr_id: 1, cgr_name: 'Retail' },
+        { cgr_id: 2, cgr_name: 'Wholesale' },
+      ]);
+      const result = await service.getAllMasters('customerGroups', '2');
+      expect(result).toEqual([{ id: '2', name: 'Wholesale' }]);
+    });
+  });
+  describe('getItemPriceLookup', () => {
+    const ITEM_ID = 'ITEM-1';
+    const priceRow = (ipmId: string, slno: number, priceA: number, branchId: string | null = null) => ({
+      ipmId,
+      ipmItemId: ITEM_ID,
+      ipmBranchId: branchId,
+      ipmUcUnitId: `IUC-${slno}`,
+      ipmGodownId: null,
+      ipmCostPrice: 0,
+      ipmCostWot: 0,
+      ipmSalesPriceA: priceA,
+      ipmSalesPriceB: 0,
+      ipmSalesPriceC: 0,
+      ipmSalesPriceD: 0,
+      ipmMinPrice: 0,
+      ipmMaxPrice: 0,
+      ipmDiscPerc: 0,
+      ipmDiscQty: 0,
+      ipmAddlCess: 0,
+      ipmLoyaltyPoints: 0,
+      ipmLoadingCharge: 0,
+      ipmFreightCharge: 0,
+      itemUnitConversion: {
+        iucId: `IUC-${slno}`,
+        iucUnitId: `UNIT-${slno}`,
+        iucUnitSlno: slno,
+        iucBaseUnitId: 'UNIT-BASE',
+        iucToBaseFactor: slno,
+        iucUomWeight: 0,
+        unit: { unit_name: `UNIT-${slno}`, unit_weight: 0, unit_decimal_count: 2 },
+      },
+    });
+    const itemRow = (overrides: Record<string, unknown> = {}) => ({
+      itemId: ITEM_ID,
+      itemNameEn: 'A001',
+      itemNameTa: null,
+      itemCode: 'A001',
+      itemSku: null,
+      itemDefaultBarcode: null,
+      itemGroupId: 'GRP-1',
+      itemCategoryId: null,
+      itemDefaultTaxId: null,
+      itemRetailItem: false,
+      itemAllowPromo: false,
+      itemAllowFreight: true,
+      itemAllowLoading: true,
+      itemAllowLoyalty: false,
+      itemAllowNegStock: false,
+      itemIsService: false,
+      itemWeighScale: false,
+      itemBatchConfig: 0,
+      itemInclTax: true,
+      ...overrides,
+    });
+    const mockItemPricePrisma = (item: unknown, rows: unknown[]) => {
+      Object.assign(prisma as unknown as Record<string, unknown>, {
+        itemMaster: { ...prisma.itemMaster, findFirst: jest.fn().mockResolvedValue(item) },
+        itemPriceMaster: { findMany: jest.fn().mockResolvedValue(rows) },
+        godownLocation: { findFirst: jest.fn().mockResolvedValue(null) },
+        itemTaxMaster: { findFirst: jest.fn().mockResolvedValue(null) },
+        company: { ...prisma.company, findFirst: jest.fn().mockResolvedValue(null) },
+        custItemRate: { findFirst: jest.fn().mockResolvedValue(null) },
+        itemReorder: { findFirst: jest.fn().mockResolvedValue(null) },
+        itemStockBalance: { aggregate: jest.fn() },
+        saleLoadingCharge: { findMany: jest.fn().mockResolvedValue([]) },
+      });
+    };
+    it('picks the lowest-slno price row as the base unit when slno numbering starts at 1', async () => {
+      // item_unit_conversion numbers an item's units from 1, so the legacy
+      // "base unit = slno 0" rule found nothing and the lookup 404'd.
+      mockItemPricePrisma(itemRow(), [priceRow('IPM-2', 2, 250), priceRow('IPM-1', 1, 115)]);
+      const result = await service.getItemPriceLookup({
+        item_id: ITEM_ID,
+        price_level: 1,
+      } as never);
+      expect(result.item_uc_id).toBe('IUC-1');
+      expect(result.sales_price).toBe(115);
+    });
+    it('prefers the branch rate over the branch-less one pricing the same unit', async () => {
+      // A NULL-branch row prices every branch, but the branch's own rate is the
+      // more specific of the two and must not be shadowed by it.
+      mockItemPricePrisma(itemRow(), [
+        priceRow('IPM-BRANCH', 1, 115, 'BRANCH-1'),
+        priceRow('IPM-ALL', 1, 0, null),
+      ]);
+      const result = await service.getItemPriceLookup({
+        item_id: ITEM_ID,
+        branch_id: 'BRANCH-1',
+        price_level: 1,
+      } as never);
+      // Both rows price the same conversion, so the price is what tells them apart.
+      expect(result.sales_price).toBe(115);
+    });
+    it('falls back to a branch-less rate for a unit the branch does not price', async () => {
+      mockItemPricePrisma(itemRow(), [
+        priceRow('IPM-BRANCH', 1, 115, 'BRANCH-1'),
+        priceRow('IPM-ALL', 2, 250, null),
+      ]);
+      const result = await service.getItemPriceLookup({
+        item_id: ITEM_ID,
+        branch_id: 'BRANCH-1',
+        unit_id: 'UNIT-2',
+        price_level: 1,
+      } as never);
+      expect(result.item_uc_id).toBe('IUC-2');
+      expect(result.sales_price).toBe(250);
+    });
+    it('picks the highest-slno price row for a retail item', async () => {
+      mockItemPricePrisma(itemRow({ itemRetailItem: true }), [
+        priceRow('IPM-1', 1, 115),
+        priceRow('IPM-2', 2, 250),
+      ]);
+      const result = await service.getItemPriceLookup({
+        item_id: ITEM_ID,
+        price_level: 1,
+      } as never);
+      expect(result.item_uc_id).toBe('IUC-2');
+    });
+    it('returns the to-base factor of the selected unit conversion row', async () => {
+      mockItemPricePrisma(itemRow(), [priceRow('IPM-1', 1, 115), priceRow('IPM-2', 2, 250)]);
+      const result = await service.getItemPriceLookup({
+        item_id: ITEM_ID,
+        unit_id: 'UNIT-2',
+        price_level: 1,
+      } as never);
+      expect(result.item_uc_id).toBe('IUC-2');
+      expect(result.base_unit_id).toBe('UNIT-BASE');
+      expect(result.base_factor).toBe(2);
+    });
+    it("returns the item's item_incl_tax flag even when GST is not applicable", async () => {
+      // The GST toggle zeroes the perc fields, but whether the item's stored
+      // prices already include tax is the item's own property — it must survive.
+      mockItemPricePrisma(itemRow({ itemInclTax: true }), [priceRow('IPM-1', 1, 115)]);
+      const result = await service.getItemPriceLookup({
+        item_id: ITEM_ID,
+        company_id: 'COMP-1',
+        price_level: 1,
+      } as never);
+      expect(result.gst_rate).toBe(0);
+      expect(result.item_incl_tax).toBe(true);
+    });
+    describe('loading charge resolution', () => {
+      const COMPANY_ID = 'COMP-1';
+      const BRANCH_ID = 'BRANCH-1';
+      /** A sale_loading_charges row as the resolution reads it (the query has already matched the weight). */
+      const slab = (
+        ilcId: string,
+        ilcLoadChrg: number | null,
+        scope: { comp?: string | null; branch?: string | null } = {},
+      ) => ({
+        ilcId,
+        ilcCompId: scope.comp === undefined ? COMPANY_ID : scope.comp,
+        ilcBranchId: scope.branch === undefined ? BRANCH_ID : scope.branch,
+        ilcLoadChrg,
+      });
+      /**
+       * The conversion's per-unit UOM weight is the only weight the slab match
+       * runs against — the lookup takes none from the caller — so every `auto`
+       * case sets it here rather than passing a weight in the query.
+       */
+      const withUomWeight = (row: ReturnType<typeof priceRow>, iucUomWeight: number) => ({
+        ...row,
+        itemUnitConversion: { ...row.itemUnitConversion, iucUomWeight },
+      });
+      const slabQuery = () =>
+        (prisma as unknown as { saleLoadingCharge: { findMany: jest.Mock } }).saleLoadingCharge
+          .findMany;
+      const mockSlabs = (rows: unknown[]) => {
+        slabQuery().mockResolvedValue(rows);
+      };
+      /** The where clause the slab query actually ran with — the scoping and the weight match are asserted on it directly. */
+      type SlabWhere = {
+        ilcIsDeleted: boolean;
+        ilcIsActive: boolean;
+        ilcFromWeight: { lte: { toString: () => string } };
+        ilcToWeight: { gt: { toString: () => string } };
+        AND: unknown[];
+      };
+      const slabWhere = () =>
+        (slabQuery().mock.calls[0] as [{ where: SlabWhere }])[0].where;
+      const lookup = (query: Record<string, unknown>) =>
+        service.getItemPriceLookup({ item_id: ITEM_ID, price_level: 1, ...query } as never);
+
+      it('resolves nothing and reads no slab for manual', async () => {
+        mockItemPricePrisma(itemRow(), [
+          withUomWeight({ ...priceRow('IPM-1', 1, 115), ipmLoadingCharge: 99 }, 500),
+        ]);
+        const result = await lookup({
+          loading_type: 'manual',
+          company_id: COMPANY_ID,
+          branch_id: BRANCH_ID,
+        });
+        expect(result.loading_charge).toBeNull();
+        expect(result.resolved_weight).toBeNull();
+        expect(slabQuery()).not.toHaveBeenCalled();
+      });
+      it('treats an omitted loading_type as manual, so a caller that never sent one is unchanged', async () => {
+        mockItemPricePrisma(itemRow(), [priceRow('IPM-1', 1, 115)]);
+        const result = await lookup({ company_id: COMPANY_ID, branch_id: BRANCH_ID });
+        expect(result.loading_charge).toBeNull();
+        expect(slabQuery()).not.toHaveBeenCalled();
+      });
+      it('returns the item price master charge as stored for item_basis, weight ignored', async () => {
+        mockItemPricePrisma(itemRow(), [
+          withUomWeight({ ...priceRow('IPM-1', 1, 115), ipmLoadingCharge: 42.75 }, 500),
+        ]);
+        const result = await lookup({ loading_type: 'item_basis' });
+        expect(result.loading_charge).toBe(42.75);
+        expect(result.resolved_weight).toBeNull();
+        expect(slabQuery()).not.toHaveBeenCalled();
+      });
+      it('reports an unset item_basis charge as null, not 0', async () => {
+        // ipm_loading_charge is NOT NULL DEFAULT 0, so a stored 0 is how "never
+        // configured" looks — it must not reach the screen as a real 0 charge.
+        mockItemPricePrisma(itemRow(), [{ ...priceRow('IPM-1', 1, 115), ipmLoadingCharge: 0 }]);
+        const result = await lookup({ loading_type: 'item_basis' });
+        expect(result.loading_charge).toBeNull();
+        expect(result.loading_charge).not.toBe(0);
+      });
+      it('returns the matched slab charge for auto', async () => {
+        mockItemPricePrisma(itemRow(), [withUomWeight(priceRow('IPM-1', 1, 115), 145.5)]);
+        mockSlabs([slab('ILC-1', 250)]);
+        const result = await lookup({
+          loading_type: 'auto',
+          company_id: COMPANY_ID,
+          branch_id: BRANCH_ID,
+        });
+        expect(result.loading_charge).toBe(250);
+        expect(result.resolved_weight).toBe(145.5);
+      });
+      it('matches slabs half-open, so a boundary weight opens one slab and closes none', async () => {
+        mockItemPricePrisma(itemRow(), [withUomWeight(priceRow('IPM-1', 1, 115), 100)]);
+        await lookup({
+          loading_type: 'auto',
+          company_id: COMPANY_ID,
+          branch_id: BRANCH_ID,
+        });
+        const where = slabWhere();
+        // from <= 100 < to: the 0–100 slab excludes 100, the 100–200 slab takes it.
+        expect(where.ilcFromWeight.lte.toString()).toBe('100');
+        expect(where.ilcToWeight.gt.toString()).toBe('100');
+      });
+      it('excludes soft-deleted and inactive slabs in the query, not after the fetch', async () => {
+        mockItemPricePrisma(itemRow(), [withUomWeight(priceRow('IPM-1', 1, 115), 50)]);
+        await lookup({
+          loading_type: 'auto',
+          company_id: COMPANY_ID,
+          branch_id: BRANCH_ID,
+        });
+        const where = slabWhere();
+        expect(where.ilcIsDeleted).toBe(false);
+        expect(where.ilcIsActive).toBe(true);
+      });
+      it('scopes the slab query to the caller company and branch', async () => {
+        mockItemPricePrisma(itemRow(), [withUomWeight(priceRow('IPM-1', 1, 115), 50)]);
+        await lookup({
+          loading_type: 'auto',
+          company_id: COMPANY_ID,
+          branch_id: BRANCH_ID,
+        });
+        const where = slabWhere();
+        // A NULL leg is the master's "applies to all" scope, never another tenant.
+        expect(where.AND).toEqual([
+          { OR: [{ ilcCompId: COMPANY_ID }, { ilcCompId: null }] },
+          { OR: [{ ilcBranchId: BRANCH_ID }, { ilcBranchId: null }] },
+        ]);
+      });
+      it('prefers the branch slab over the company-wide one when both match', async () => {
+        mockItemPricePrisma(itemRow(), [withUomWeight(priceRow('IPM-1', 1, 115), 145.5)]);
+        // Company-wide row first, so the pick is the specificity rule and not the order.
+        mockSlabs([slab('ILC-COMPANY', 100, { branch: null }), slab('ILC-BRANCH', 250)]);
+        const result = await lookup({
+          loading_type: 'auto',
+          company_id: COMPANY_ID,
+          branch_id: BRANCH_ID,
+        });
+        // The branch slab's charge, not the company-wide 100.
+        expect(result.loading_charge).toBe(250);
+      });
+      it('returns a null charge, never 0, when no slab covers the weight', async () => {
+        mockItemPricePrisma(itemRow(), [withUomWeight(priceRow('IPM-1', 1, 115), 9999)]);
+        mockSlabs([]);
+        const result = await lookup({
+          loading_type: 'auto',
+          company_id: COMPANY_ID,
+          branch_id: BRANCH_ID,
+        });
+        expect(result.loading_charge).toBeNull();
+        expect(result.loading_charge).not.toBe(0);
+        expect(result.resolved_weight).toBe(9999);
+      });
+      it("matches on the UOM weight of the selected unit, not the item's first conversion", async () => {
+        // The slab is matched per unit: a 5 KG pack and a 60 KG pack of the same
+        // item land in different slabs, so the weight has to follow the unit the
+        // rate was picked for and not whichever conversion sorts first.
+        mockItemPricePrisma(itemRow(), [
+          withUomWeight(priceRow('IPM-1', 1, 115), 5),
+          withUomWeight(priceRow('IPM-2', 2, 250), 60),
+        ]);
+        mockSlabs([slab('ILC-1', 250)]);
+        const result = await lookup({
+          loading_type: 'auto',
+          company_id: COMPANY_ID,
+          branch_id: BRANCH_ID,
+          unit_id: 'UNIT-2',
+        });
+        expect(result.resolved_weight).toBe(60);
+      });
+      it('carries the UOM weight through as a Decimal, not a binary float', async () => {
+        mockItemPricePrisma(itemRow(), [withUomWeight(priceRow('IPM-1', 1, 115), 48.505)]);
+        mockSlabs([slab('ILC-1', 250)]);
+        await lookup({ loading_type: 'auto', company_id: COMPANY_ID, branch_id: BRANCH_ID });
+        // The query compares against 48.505 exactly — no float tail reaches the numeric.
+        const where = slabWhere();
+        expect(where.ilcFromWeight.lte.toString()).toBe('48.505');
+        expect(where.ilcToWeight.gt.toString()).toBe('48.505');
+      });
+      it('rejects auto when the conversion carries no UOM weight to match on', async () => {
+        mockItemPricePrisma(itemRow(), [withUomWeight(priceRow('IPM-1', 1, 115), 0)]);
+        await expect(
+          lookup({ loading_type: 'auto', company_id: COMPANY_ID, branch_id: BRANCH_ID }),
+        ).rejects.toBeInstanceOf(BadRequestException);
+        expect(slabQuery()).not.toHaveBeenCalled();
+      });
+      it('rejects auto without the company and branch scope the slab match needs', async () => {
+        mockItemPricePrisma(itemRow(), [withUomWeight(priceRow('IPM-1', 1, 115), 145.5)]);
+        await expect(lookup({ loading_type: 'auto' })).rejects.toBeInstanceOf(BadRequestException);
+        await expect(
+          lookup({ loading_type: 'auto', company_id: COMPANY_ID }),
+        ).rejects.toBeInstanceOf(BadRequestException);
+        expect(slabQuery()).not.toHaveBeenCalled();
+      });
+      it('returns the same keys in all three modes', async () => {
+        mockItemPricePrisma(itemRow(), [withUomWeight(priceRow('IPM-1', 1, 115), 145.5)]);
+        mockSlabs([slab('ILC-1', 250)]);
+        const scope = { company_id: COMPANY_ID, branch_id: BRANCH_ID };
+        const manual = await lookup({ ...scope, loading_type: 'manual' });
+        const itemBasis = await lookup({ ...scope, loading_type: 'item_basis' });
+        const auto = await lookup({ ...scope, loading_type: 'auto' });
+        expect(Object.keys(itemBasis)).toEqual(Object.keys(manual));
+        expect(Object.keys(auto)).toEqual(Object.keys(manual));
+      });
+    });
+    describe('freight charge resolution', () => {
+      const withFreight = (row: ReturnType<typeof priceRow>, ipmFreightCharge: number) => ({
+        ...row,
+        ipmFreightCharge,
+      });
+      const lookup = (query: Record<string, unknown>) =>
+        service.getItemPriceLookup({ item_id: ITEM_ID, price_level: 1, ...query } as never);
+
+      it('resolves nothing for manual, even with a charge on the price row', async () => {
+        mockItemPricePrisma(itemRow(), [withFreight(priceRow('IPM-1', 1, 115), 120)]);
+        const result = await lookup({ freight_type: 'manual' });
+        expect(result.freight_charge).toBeNull();
+      });
+      it('treats an omitted freight_type as manual, so a caller that never sent one is unchanged', async () => {
+        mockItemPricePrisma(itemRow(), [withFreight(priceRow('IPM-1', 1, 115), 120)]);
+        const result = await lookup({});
+        expect(result.freight_charge).toBeNull();
+      });
+      it('returns ipm_freight_charge as stored for item_basis', async () => {
+        mockItemPricePrisma(itemRow(), [withFreight(priceRow('IPM-1', 1, 115), 120.5)]);
+        const result = await lookup({ freight_type: 'item_basis' });
+        expect(result.freight_charge).toBe(120.5);
+      });
+      it('reports an unset item_basis charge as null, not 0', async () => {
+        // ipm_freight_charge is NOT NULL DEFAULT 0, so a stored 0 is how "never
+        // configured" looks — it must not reach the screen as a real 0 charge.
+        mockItemPricePrisma(itemRow(), [withFreight(priceRow('IPM-1', 1, 115), 0)]);
+        const result = await lookup({ freight_type: 'item_basis' });
+        expect(result.freight_charge).toBeNull();
+        expect(result.freight_charge).not.toBe(0);
+      });
+      it('reads the charge off the selected unit rate, not the first price row', async () => {
+        mockItemPricePrisma(itemRow(), [
+          withFreight(priceRow('IPM-1', 1, 115), 20),
+          withFreight(priceRow('IPM-2', 2, 250), 90),
+        ]);
+        const result = await lookup({ freight_type: 'item_basis', unit_id: 'UNIT-2' });
+        expect(result.freight_charge).toBe(90);
+      });
+      it('does not let item_allow_freight gate the resolution — add_freight rides along separately', async () => {
+        mockItemPricePrisma(itemRow({ itemAllowFreight: false }), [
+          withFreight(priceRow('IPM-1', 1, 115), 120),
+        ]);
+        const result = await lookup({ freight_type: 'item_basis' });
+        expect(result.freight_charge).toBe(120);
+        expect(result.add_freight).toBe(false);
+      });
+      it('returns the same keys in both modes', async () => {
+        mockItemPricePrisma(itemRow(), [withFreight(priceRow('IPM-1', 1, 115), 120)]);
+        const manual = await lookup({ freight_type: 'manual' });
+        const itemBasis = await lookup({ freight_type: 'item_basis' });
+        expect(Object.keys(itemBasis)).toEqual(Object.keys(manual));
+      });
+    });
+    describe('refreshItemPriceLookup (unit cycling)', () => {
+      type ConversionRow = { iucId: string; iucUnitId: string; iucIsDeleted: boolean };
+      const conversion = (slno: number, isDeleted = false): ConversionRow => ({
+        iucId: `IUC-${slno}`,
+        iucUnitId: `UNIT-${slno}`,
+        iucIsDeleted: isDeleted,
+      });
+      /**
+       * Stands in for item_unit_conversion, honouring the soft-delete filter of
+       * the where clause so the cycle order is tested against what the query
+       * would actually return.
+       */
+      const mockConversions = (rows: ConversionRow[]) => {
+        const findMany = jest
+          .fn()
+          .mockImplementation(({ where }: { where: { iucIsDeleted?: boolean } }) =>
+            Promise.resolve(
+              where.iucIsDeleted === false ? rows.filter((row) => !row.iucIsDeleted) : rows,
+            ),
+          );
+        Object.assign(prisma as unknown as Record<string, unknown>, {
+          itemUnitConversion: { findMany },
+        });
+        return findMany;
+      };
+      const refresh = (iucId: string) =>
+        service.refreshItemPriceLookup({ item_id: ITEM_ID, iuc_id: iucId });
+      it('returns the second conversion when the first one is selected', async () => {
+        mockConversions([conversion(1), conversion(2), conversion(3)]);
+        const result = await refresh('IUC-1');
+        expect(result).toEqual({ item_id: ITEM_ID, iuc_id: 'IUC-2' });
+      });
+      it('wraps around to the first conversion when the last one is selected', async () => {
+        mockConversions([conversion(1), conversion(2), conversion(3)]);
+        const result = await refresh('IUC-3');
+        expect(result.iuc_id).toBe('IUC-1');
+      });
+      it('returns the requested conversion when the item has only one', async () => {
+        mockConversions([conversion(1)]);
+        const result = await refresh('IUC-1');
+        expect(result.iuc_id).toBe('IUC-1');
+      });
+      it('falls back to the first conversion when the requested one is not the item’s', async () => {
+        mockConversions([conversion(1), conversion(2)]);
+        const result = await refresh('IUC-OTHER-ITEM');
+        expect(result.iuc_id).toBe('IUC-1');
+      });
+      it('returns the requested conversion when the item has no conversion rows', async () => {
+        mockConversions([]);
+        const result = await refresh('IUC-2');
+        expect(result.iuc_id).toBe('IUC-2');
+      });
+      it('skips soft-deleted conversion rows in the cycle order', async () => {
+        const findMany = mockConversions([conversion(1), conversion(2, true), conversion(3)]);
+        const result = await refresh('IUC-1');
+
+        expect(result.iuc_id).toBe('IUC-3');
+        expect(findMany).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: { iucItemId: ITEM_ID, iucIsDeleted: false },
+            orderBy: [{ iucUnitSlno: 'asc' }, { iucId: 'asc' }],
+          }),
+        );
+      });
+      it('cycles in the item’s unit order, not by to-base factor', async () => {
+        // An item whose extra units are fractions of base (1 KG, 0.5 KG, 0.1 KG)
+        // sorts factor-ascending in the exact reverse of its configured list, so
+        // ordering the cycle by factor would step backwards — from the first
+        // unit straight to the third.
+        const findMany = mockConversions([conversion(1), conversion(2), conversion(3)]);
+        await refresh('IUC-1');
+        const { orderBy } = findMany.mock.calls[0][0] as { orderBy: Record<string, string>[] };
+        expect(orderBy[0]).toEqual({ iucUnitSlno: 'asc' });
+        expect(JSON.stringify(orderBy)).not.toContain('iucToBaseFactor');
+      });
+      it('steps the cycle for a caller still holding a raw unit_id', async () => {
+        mockConversions([conversion(1), conversion(2)]);
+        const result = await refresh('UNIT-1');
+        expect(result.iuc_id).toBe('IUC-2');
+      });
+      it('reads no price row at all', async () => {
+        // The cycle answers from item_unit_conversion alone — the screen
+        // re-reads /item-price itself, with its own scope.
+        mockItemPricePrisma(itemRow(), [priceRow('IPM-1', 1, 115), priceRow('IPM-2', 2, 250)]);
+        mockConversions([conversion(1), conversion(2)]);
+        await refresh('IUC-1');
+        const priceTables = prisma as unknown as {
+          itemPriceMaster: { findMany: jest.Mock };
+          itemMaster: { findFirst: jest.Mock };
+        };
+        expect(priceTables.itemPriceMaster.findMany).not.toHaveBeenCalled();
+        expect(priceTables.itemMaster.findFirst).not.toHaveBeenCalled();
+      });
+    });
+  });
+  describe('getDocumentByNumber', () => {
+    const COMPANY_ID = '11111111-1111-1111-1111-111111111111';
+    const BRANCH_ID = '22222222-2222-2222-2222-222222222222';
+    /** The shape the assertions read back off the stubbed delegate. */
+    type FindFirstArgs = {
+      where: Record<string, unknown> & { OR: unknown[] };
+      orderBy: Record<string, string>[];
+    };
+    /** Stubs one document delegate and hands back its findFirst mock. */
+    const mockDocument = (delegate: string, row: unknown) => {
+      const findFirst = jest.fn<Promise<unknown>, [FindFirstArgs]>().mockResolvedValue(row);
+      Object.assign(prisma as unknown as Record<string, unknown>, { [delegate]: { findFirst } });
+      return findFirst;
+    };
+    const billRow = {
+      sbId: 'SB-1',
+      sbCompanyId: COMPANY_ID,
+      sbBranchId: BRANCH_ID,
+      sbAccYear: '2025-2026',
+    };
+    const lookup = (module: DocumentLookupModuleKey, orderNo: string) =>
+      service.getDocumentByNumber({ module, orderNo, companyId: COMPANY_ID, branchId: BRANCH_ID });
+    it('resolves a sale bill number into its id and accounting year', async () => {
+      const findFirst = mockDocument('saleBill', billRow);
+      const result = await lookup('saleBill', 'INV-0007');
+      expect(result).toEqual({
+        orderId: 'SB-1',
+        companyId: COMPANY_ID,
+        branchId: BRANCH_ID,
+        accYear: '2025-2026',
+      });
+      const { where } = findFirst.mock.calls[0][0];
+      expect(where).toMatchObject({
+        sbCompanyId: COMPANY_ID,
+        sbBranchId: BRANCH_ID,
+        sbIsDeleted: false,
+      });
+    });
+    it('trims the padding a CHAR(9) accounting year comes back with', async () => {
+      mockDocument('saleBill', { ...billRow, sbAccYear: '2025-2026 ' });
+      await expect(lookup('saleBill', 'INV-0007')).resolves.toMatchObject({
+        accYear: '2025-2026',
+      });
+    });
+    it('matches the serial as well when the number is all digits', async () => {
+      const findFirst = mockDocument('saleOrder', {
+        soId: 'SO-1',
+        soCompanyId: COMPANY_ID,
+        soBranchId: BRANCH_ID,
+        soAccYear: '2025-2026',
+      });
+      await lookup('saleOrder', '42');
+      const { where } = findFirst.mock.calls[0][0];
+      expect(where.OR).toEqual([{ soOrderRefno: '42' }, { soOrderSlno: 42n }]);
+    });
+    it('matches the refno only when the number is not a serial', async () => {
+      const findFirst = mockDocument('saleQuotation', {
+        sqId: 'SQ-1',
+        sqCompanyId: COMPANY_ID,
+        sqBranchId: BRANCH_ID,
+        sqAccYear: '2025-2026',
+      });
+      await lookup('saleQuotation', 'quo00042');
+      const { where } = findFirst.mock.calls[0][0];
+      expect(where.OR).toEqual([{ sqQuoteRefno: 'quo00042' }]);
+    });
+    it('does not push a number wider than BIGINT at the serial column', async () => {
+      // Prisma throws on an out-of-range BigInt; the caller gets a clean 404
+      // instead of a 500 for a number no row could be carrying.
+      const findFirst = mockDocument('saleBill', null);
+      await expect(lookup('saleBill', '9'.repeat(25))).rejects.toBeInstanceOf(NotFoundException);
+      const { where } = findFirst.mock.calls[0][0];
+      expect(where.OR).toEqual([{ sbBillRefno: '9'.repeat(25) }]);
+    });
+    it('takes the newest year, then the newest revision, for a repeated quotation number', async () => {
+      const findFirst = mockDocument('saleQuotation', {
+        sqId: 'SQ-2',
+        sqCompanyId: COMPANY_ID,
+        sqBranchId: BRANCH_ID,
+        sqAccYear: '2026-2027',
+      });
+      await lookup('saleQuotation', 'quo00042');
+      const { orderBy } = findFirst.mock.calls[0][0];
+      expect(orderBy.slice(0, 2)).toEqual([{ sqAccYear: 'desc' }, { sqRevisionNo: 'desc' }]);
+    });
+    it('404s when no document carries the number', async () => {
+      mockDocument('saleOrder', null);
+      await expect(lookup('saleOrder', 'NOPE')).rejects.toBeInstanceOf(NotFoundException);
+    });
   });
 });

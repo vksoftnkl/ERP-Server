@@ -1,226 +1,235 @@
-import {
-  BadRequestException,
-  ConflictException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
-import { ConfiguredGridListResult, ConfiguredGridSqlService } from '../../../common/configured-grid-sql/configured-grid-sql.service';
+import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../../database/prisma/prisma.service';
-import { Prisma, Uitable } from '@prisma/client';
+import { Prisma, Uitable, UitableColumns } from '@prisma/client';
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import { ListUiTableMasterQueryDto } from './dto/list-ui-table-master-query.dto';
 import { SaveUiTableMasterDto } from './dto/save-ui-table-master.dto';
+import { SaveUiTableColumnDto } from './dto/save-ui-table-column.dto';
+import { SaveUiTableColumnWidthDto } from './dto/save-ui-table-column-width.dto';
+import {
+  SaveUiTableVisibilitySettingsDto,
+  UiTableVisibilitySettingItemDto,
+} from './dto/save-ui-table-visibility-settings.dto';
 import {
   UiTableMasterErrorDetail,
   UiTableMasterErrorResponse,
   UiTableMasterListItem,
-  UiTableMasterListMeta,
   UiTableMasterPayload,
+  UiTableColumnPayload,
 } from './types/ui-table-master-api.types';
+import {
+  DEFAULT_ACTOR,
+  FixedWriteClient,
+  applyPresentFields,
+  hasOwnProperty,
+  resolveActor,
+  throwFixedBadRequest,
+  throwFixedConflict,
+  throwFixedNotFound,
+  throwOnUniqueConstraintError,
+} from 'src/common/utils/module-service.utils';
+import { RequestContextService } from '../../../common/request-context/request-context.service';
 
-const DEFAULT_ACTOR = 'system';
-const DEFAULT_PAGE = 1;
-const DEFAULT_LIMIT = 20;
-const UI_TABLE_MASTER_TABLE_NAME = 'ui_tables';
+const UI_TABLE_MASTER_TABLE_NAME = 'ui tables';
+const UI_TABLE_COLUMN_TABLE_NAME = 'ui table columns';
 const UI_TABLE_MASTER_AUDIT_SCREEN_NAME = 'UI Table Master';
+const UI_TABLE_MASTER_OPTIONAL_FIELDS = ['uiTblEditable', 'uiTblIsActive', 'uiTblDeviceType'];
 
-type UiTableMasterWriteClient = Prisma.TransactionClient | PrismaService;
+const UI_TABLE_VISIBILITY_SETTING_FIELDS = [
+  'uiTblClmColumnWidth',
+  'uiTblClmColumnVisibility',
+  'uiTblClmColumnFocus',
+  'uiTblClmColumnPosition',
+  'uiTblClmColumnNecessity',
+  'uiTblClmNextColumn',
+  'uiTblClmPreviousColumn',
+  'uiTblClmPx',
+] as const satisfies readonly (keyof UiTableVisibilitySettingItemDto)[];
+
+const UI_TABLE_COLUMN_OPTIONAL_FIELDS = [
+  'uiTblClmColumnWidth',
+  'uiTblClmColumnVisibility',
+  'uiTblClmColumnFocus',
+  'uiTblClmColumnPosition',
+  'uiTblClmColumnNecessity',
+  'uiTblClmNextColumn',
+  'uiTblClmPreviousColumn',
+  'uiTblClmPx',
+  'uiTblClmIsActive',
+];
+
+type UitableWithColumns = Uitable & { uiTableColumns: UitableColumns[] };
 
 @Injectable()
 export class UiTableMasterService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
-    private readonly configuredGridSqlService: ConfiguredGridSqlService,
+    private readonly requestContextService: RequestContextService,
   ) {}
 
   async save(saveUiTableMasterDto: SaveUiTableMasterDto): Promise<UiTableMasterPayload> {
-    if (saveUiTableMasterDto.uiTblId) {
-      return this.updateUiTable(saveUiTableMasterDto);
-    }
-
-    return this.createUiTable(saveUiTableMasterDto);
+    return saveUiTableMasterDto.uiTblId
+      ? this.updateUiTable(saveUiTableMasterDto)
+      : this.createUiTable(saveUiTableMasterDto);
   }
 
-  async list(
-    queryDto: ListUiTableMasterQueryDto,
-  ): Promise<ConfiguredGridListResult<UiTableMasterListItem, UiTableMasterListMeta>> {
-    const page = queryDto.page ?? DEFAULT_PAGE;
-    const limit = queryDto.limit ?? DEFAULT_LIMIT;
-    const skip = (page - 1) * limit;
-    const hasStructuredFilters =
-      queryDto.uiTblEditable !== undefined ||
-      queryDto.uiTblIsActive !== undefined ||
-      Boolean(queryDto.search?.trim());
-
-    if (!hasStructuredFilters) {
-      const configuredList = await this.listFromConfiguredGridSql(page, limit, skip);
-      if (configuredList) {
-        return configuredList;
-      }
-    }
-
-    const where: Prisma.UitableWhereInput = {
+  async list(queryDto: ListUiTableMasterQueryDto): Promise<{ items: UiTableMasterListItem[] }> {
+    const requestedTableId = queryDto.uiTableId ?? queryDto.uiTblId;
+    const fixedTableId = requestedTableId ? BigInt(requestedTableId) : undefined;
+    const search = queryDto.search?.trim();
+    const tableWhere: Prisma.UitableWhereInput = {
       uiTblIsDeleted: false,
+      ...(fixedTableId !== undefined ? { uiTblId: fixedTableId } : {}),
+      ...(search ? { uiTblName: { contains: search, mode: 'insensitive' } } : {}),
+    };
+    const columnWhere: Prisma.UitableColumnsWhereInput = {
+      uiTblClmIsDeleted: false,
     };
 
-    if (queryDto.uiTblEditable !== undefined) {
-      where.uiTblEditable = queryDto.uiTblEditable;
-    }
-
-    if (queryDto.uiTblIsActive !== undefined) {
-      where.uiTblIsActive = queryDto.uiTblIsActive;
-    }
-
-    if (queryDto.search?.trim()) {
-      const search = queryDto.search.trim();
-      where.OR = [{ uiTblName: { contains: search, mode: 'insensitive' } }];
-    }
-
-    const [total, records] = await Promise.all([
-      this.prisma.uitable.count({ where }),
-      this.prisma.uitable.findMany({
-        where,
-        orderBy: [{ uiTblName: 'asc' }, { uiTblId: 'asc' }],
-        skip,
-        take: limit,
-      }),
-    ]);
-
-    return {
-      items: records.map((record) => this.toPayload(record)),
-      meta: {
-        page,
-        limit,
-        total,
-        total_pages: Math.ceil(total / limit),
+    const records = await this.prisma.uitable.findMany({
+      where: tableWhere,
+      orderBy: { uiTblId: 'asc' },
+      include: {
+        uiTableColumns: {
+          where: columnWhere,
+          orderBy: [{ uiTblClmNo: 'asc' }, { uiTblClmId: 'asc' }],
+        },
       },
-    };
-  }
+    }) as unknown as UitableWithColumns[];
 
-  private async listFromConfiguredGridSql(
-    page: number,
-    limit: number,
-    skip: number,
-  ): Promise<ConfiguredGridListResult<UiTableMasterListItem, UiTableMasterListMeta> | null> {
-    const configuredGrids = await this.configuredGridSqlService.loadCandidates({
-      tableName: UI_TABLE_MASTER_TABLE_NAME,
-    });
-    const primaryConfiguredGrids = this.configuredGridSqlService.filterPrimaryFromTable(
-      configuredGrids,
-      UI_TABLE_MASTER_TABLE_NAME,
-    );
-    const configuredGrid = primaryConfiguredGrids[0];
-    if (!configuredGrid) {
-      return null;
-    }
-
-    const rawGridSql = configuredGrid.gridSql?.trim();
-    if (!rawGridSql) {
-      return null;
-    }
-
-    const validation = this.configuredGridSqlService.validateBaseSql({
-      sql: rawGridSql,
-      tableName: UI_TABLE_MASTER_TABLE_NAME,
-    });
-    if (!validation.isValid) {
-      this.throwBadRequest('Invalid grid_sql configuration for UI table master', [
-        {
-          field: 'grid_sql',
-          message: validation.message,
-        },
-      ]);
-    }
-
-    try {
-      const result = await this.configuredGridSqlService.runPagedQuery<UiTableMasterListItem>({
-        baseSql: validation.normalizedSql,
-        alias: 'ui_table_master_grid',
-        limit,
-        skip,
-          gridId: configuredGrid.gridId,
-      });
-
-      return {
-        items: result.items,
-        meta: {
-          page,
-          limit,
-          total: result.total,
-          total_pages: Math.ceil(result.total / limit),
-        },
-        styles: result.styles,
-      };
-    } catch {
-      this.throwBadRequest('Invalid grid_sql configuration for UI table master', [
-        {
-          field: 'grid_sql',
-          message: 'Configured query could not be executed for ui_tables',
-        },
-      ]);
-    }
+    return { items: records.map((record) => this.toPayload(record)) };
   }
 
   async getById(uiTblId: string): Promise<UiTableMasterPayload> {
     const parsedUiTableId = this.parseBigIntId('uiTblId', uiTblId);
-
     const record = await this.prisma.uitable.findFirst({
-      where: {
-        uiTblId: parsedUiTableId,
-        uiTblIsDeleted: false,
+      where: { uiTblId: parsedUiTableId, uiTblIsDeleted: false },
+      include: {
+        uiTableColumns: {
+          where: { uiTblClmIsDeleted: false },
+          orderBy: [{ uiTblClmNo: 'asc' }, { uiTblClmId: 'asc' }],
+        },
       },
     });
-
     if (!record) {
-      this.throwNotFound(uiTblId);
+      throwFixedNotFound<UiTableMasterErrorDetail, UiTableMasterErrorResponse>(
+        'UI table not found',
+        'uiTblId',
+        `No active UI table found with id ${uiTblId}`,
+      );
     }
+    return this.toPayload(record as UitableWithColumns);
+  }
 
-    return this.toPayload(record);
+  async updateColumnWidths(dto: SaveUiTableColumnWidthDto): Promise<{ updated: number }> {
+    const actor = resolveActor(null, this.requestContextService.getUserId());
+    let count = 0;
+    await this.prisma.$transaction(async (tx) => {
+      for (const item of dto.columns) {
+        const columnId = BigInt(item.uiTblClmId);
+        const existing = await tx.uitableColumns.findFirst({
+          where: { uiTblClmId: columnId, uiTblClmIsDeleted: false },
+          select: { uiTblClmId: true },
+        });
+        if (!existing) {
+          throwFixedNotFound<UiTableMasterErrorDetail, UiTableMasterErrorResponse>(
+            'UI table column not found',
+            'uiTblClmId',
+            `No active UI table column found with id ${item.uiTblClmId}`,
+          );
+        }
+        const data: Prisma.UitableColumnsUncheckedUpdateInput = {
+          uiTblClmColumnWidth: item.uiTblClmColumnWidth,
+          uiTblClmModifiedOn: new Date(),
+          uiTblClmModifiedBy: actor,
+        };
+        // Only touch the px sizing when the caller actually sent it, so a client that
+        // still posts width alone leaves an existing px value intact.
+        if (hasOwnProperty(item, 'uiTblClmPx')) {
+          data.uiTblClmPx = item.uiTblClmPx;
+        }
+        await tx.uitableColumns.update({ where: { uiTblClmId: columnId }, data });
+        count++;
+      }
+    });
+    return { updated: count };
+  }
+
+  async updateVisibilitySettings(dto: SaveUiTableVisibilitySettingsDto): Promise<{ updated: number }> {
+    const actor = resolveActor(null, this.requestContextService.getUserId());
+    let count = 0;
+    await this.prisma.$transaction(async (tx) => {
+      for (const item of dto.columns) {
+        const columnId = BigInt(item.uiTblClmId);
+        const existing = await tx.uitableColumns.findFirst({
+          where: { uiTblClmId: columnId, uiTblClmIsDeleted: false },
+          select: { uiTblClmId: true },
+        });
+        if (!existing) {
+          throwFixedNotFound<UiTableMasterErrorDetail, UiTableMasterErrorResponse>(
+            'UI table column not found',
+            'uiTblClmId',
+            `No active UI table column found with id ${item.uiTblClmId}`,
+          );
+        }
+        const data: Prisma.UitableColumnsUncheckedUpdateInput = {
+          uiTblClmModifiedOn: new Date(),
+          uiTblClmModifiedBy: actor,
+        };
+        for (const field of UI_TABLE_VISIBILITY_SETTING_FIELDS) {
+          const value = item[field];
+          if (value !== undefined) {
+            (data as Record<string, unknown>)[field] = value;
+          }
+        }
+        await tx.uitableColumns.update({ where: { uiTblClmId: columnId }, data });
+        count++;
+      }
+    });
+    return { updated: count };
   }
 
   async softDelete(uiTblId: string): Promise<{ uiTblId: string; deleted: true }> {
     const parsedUiTableId = this.parseBigIntId('uiTblId', uiTblId);
-
     return this.prisma.$transaction(async (tx) => {
       const existing = await tx.uitable.findFirst({
-        where: {
-          uiTblId: parsedUiTableId,
-          uiTblIsDeleted: false,
-        },
+        where: { uiTblId: parsedUiTableId, uiTblIsDeleted: false },
       });
-
       if (!existing) {
-        this.throwNotFound(uiTblId);
+        throwFixedNotFound<UiTableMasterErrorDetail, UiTableMasterErrorResponse>(
+          'UI table not found',
+          'uiTblId',
+          `No active UI table found with id ${uiTblId}`,
+        );
       }
-
       const modifiedOn = new Date();
+      const actor = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
       const result = await tx.uitable.updateMany({
-        where: {
-          uiTblId: parsedUiTableId,
-          uiTblIsDeleted: false,
-        },
+        where: { uiTblId: parsedUiTableId, uiTblIsDeleted: false },
         data: {
           uiTblIsDeleted: true,
           uiTblIsActive: false,
           uiTblModifiedOn: modifiedOn,
-          uiTblModifiedBy: DEFAULT_ACTOR,
+          uiTblModifiedBy: actor,
         },
       });
-
       if (result.count === 0) {
-        this.throwNotFound(uiTblId);
+        throwFixedNotFound<UiTableMasterErrorDetail, UiTableMasterErrorResponse>(
+          'UI table not found',
+          'uiTblId',
+          `No active UI table found with id ${uiTblId}`,
+        );
       }
-
-      const originalRecord = this.toPayload(existing);
+      const originalRecord = this.toPayload({ ...existing, uiTableColumns: [] });
       const modifiedRecord = this.toPayload({
         ...existing,
         uiTblIsDeleted: true,
         uiTblIsActive: false,
         uiTblModifiedOn: modifiedOn,
-        uiTblModifiedBy: DEFAULT_ACTOR,
+        uiTblModifiedBy: actor,
+        uiTableColumns: [],
       });
-
       await this.auditLogService.logEntityChange(
         {
           action: 'cancel',
@@ -231,16 +240,61 @@ export class UiTableMasterService {
           displayName: this.resolveDisplayName(existing.uiTblName, uiTblId),
           originalRecord,
           modifiedRecord,
-          userId: DEFAULT_ACTOR,
+          userId: actor,
           notes: 'UI table soft deleted',
         },
         tx,
       );
+      return { uiTblId, deleted: true };
+    });
+  }
 
-      return {
-        uiTblId,
-        deleted: true,
-      };
+  async softDeleteColumn(uiTblClmId: string): Promise<{ uiTblClmId: string; deleted: true }> {
+    const parsedColumnId = this.parseBigIntId('uiTblClmId', uiTblClmId);
+    return this.prisma.$transaction(async (tx) => {
+      const existing = await tx.uitableColumns.findFirst({
+        where: { uiTblClmId: parsedColumnId, uiTblClmIsDeleted: false },
+      });
+      if (!existing) {
+        throwFixedNotFound<UiTableMasterErrorDetail, UiTableMasterErrorResponse>(
+          'UI table column not found',
+          'uiTblClmId',
+          `No active UI table column found with id ${uiTblClmId}`,
+        );
+      }
+      const modifiedOn = new Date();
+      const actor = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
+      await tx.uitableColumns.update({
+        where: { uiTblClmId: parsedColumnId },
+        data: {
+          uiTblClmIsDeleted: true,
+          uiTblClmIsActive: false,
+          uiTblClmModifiedOn: modifiedOn,
+          uiTblClmModifiedBy: actor,
+        },
+      });
+      await this.auditLogService.logEntityChange(
+        {
+          action: 'cancel',
+          tableName: UI_TABLE_COLUMN_TABLE_NAME,
+          screenName: UI_TABLE_MASTER_AUDIT_SCREEN_NAME,
+          screenType: 'master',
+          pk: uiTblClmId,
+          displayName: existing.uiTblClmName?.trim() || `UI table column ${uiTblClmId}`,
+          originalRecord: this.toColumnPayload(existing),
+          modifiedRecord: this.toColumnPayload({
+            ...existing,
+            uiTblClmIsDeleted: true,
+            uiTblClmIsActive: false,
+            uiTblClmModifiedOn: modifiedOn,
+            uiTblClmModifiedBy: actor,
+          }),
+          userId: actor,
+          notes: 'UI table column soft deleted',
+        },
+        tx,
+      );
+      return { uiTblClmId, deleted: true };
     });
   }
 
@@ -249,24 +303,30 @@ export class UiTableMasterService {
   ): Promise<UiTableMasterPayload> {
     const normalizedName = this.normalizeRequiredName(saveUiTableMasterDto.uiTblName);
     const now = new Date();
-    const createdBy = this.resolveActor(saveUiTableMasterDto.uiTblCreatedBy);
-    const modifiedBy = this.resolveActor(saveUiTableMasterDto.uiTblModifiedBy, createdBy);
+    const createdBy = resolveActor(null, this.requestContextService.getUserId());
     const data: Prisma.UitableUncheckedCreateInput = {
       uiTblName: normalizedName,
       uiTblCreatedOn: now,
       uiTblCreatedBy: createdBy,
-      uiTblModifiedOn: now,
-      uiTblModifiedBy: modifiedBy,
     };
-    this.applyOptionalFields(data, saveUiTableMasterDto);
-
+    applyPresentFields(data, saveUiTableMasterDto, UI_TABLE_MASTER_OPTIONAL_FIELDS);
     try {
       return await this.prisma.$transaction(async (tx) => {
         await this.ensureNameIsUnique(tx, normalizedName);
-
         const created = await tx.uitable.create({ data });
-        const payload = this.toPayload(created);
-
+        if (saveUiTableMasterDto.uiTblColumns?.length) {
+          await this.saveColumnsInTx(saveUiTableMasterDto.uiTblColumns, created.uiTblId, createdBy, tx);
+        }
+        const full = await tx.uitable.findFirstOrThrow({
+          where: { uiTblId: created.uiTblId },
+          include: {
+            uiTableColumns: {
+              where: { uiTblClmIsDeleted: false },
+              orderBy: [{ uiTblClmNo: 'asc' }, { uiTblClmId: 'asc' }],
+            },
+          },
+        });
+        const payload = this.toPayload(full as UitableWithColumns);
         await this.auditLogService.logEntityChange(
           {
             action: 'New',
@@ -282,52 +342,81 @@ export class UiTableMasterService {
           },
           tx,
         );
-
         return payload;
       });
     } catch (error: unknown) {
-      this.handleWriteError(error);
+      throwOnUniqueConstraintError<UiTableMasterErrorDetail, UiTableMasterErrorResponse>(
+        error,
+        'UI table already exists',
+        [{ field: 'uiTblName', message: 'Duplicate uiTblName is not allowed' }],
+      );
       throw error;
     }
   }
-
   private async updateUiTable(
     saveUiTableMasterDto: SaveUiTableMasterDto,
   ): Promise<UiTableMasterPayload> {
     const uiTblId = saveUiTableMasterDto.uiTblId!;
     const parsedUiTableId = this.parseBigIntId('uiTblId', uiTblId);
-
     try {
       return await this.prisma.$transaction(async (tx) => {
         const existing = await tx.uitable.findFirst({
-          where: {
-            uiTblId: parsedUiTableId,
-            uiTblIsDeleted: false,
-          },
+          where: { uiTblId: parsedUiTableId, uiTblIsDeleted: false },
         });
-
         if (!existing) {
-          this.throwNotFound(uiTblId);
+          throwFixedNotFound<UiTableMasterErrorDetail, UiTableMasterErrorResponse>(
+            'UI table not found',
+            'uiTblId',
+            `No active UI table found with id ${uiTblId}`,
+          );
         }
-
-        const normalizedName = this.normalizeRequiredName(saveUiTableMasterDto.uiTblName);
-        await this.ensureNameIsUnique(tx, normalizedName, parsedUiTableId);
-
+        const actor = resolveActor(null, this.requestContextService.getUserId());
         const data: Prisma.UitableUncheckedUpdateInput = {
-          uiTblName: normalizedName,
           uiTblModifiedOn: new Date(),
-          uiTblModifiedBy: this.resolveActor(saveUiTableMasterDto.uiTblModifiedBy),
+          uiTblModifiedBy: actor,
         };
-        this.applyOptionalFields(data, saveUiTableMasterDto);
-
-        const updated = await tx.uitable.update({
-          where: {
-            uiTblId: parsedUiTableId,
+        if (saveUiTableMasterDto.uiTblName?.trim()) {
+          const normalizedName = this.normalizeRequiredName(saveUiTableMasterDto.uiTblName);
+          await this.ensureNameIsUnique(tx, normalizedName, parsedUiTableId);
+          data.uiTblName = normalizedName;
+        }
+        applyPresentFields(data, saveUiTableMasterDto, UI_TABLE_MASTER_OPTIONAL_FIELDS);
+        await tx.uitable.update({ where: { uiTblId: parsedUiTableId }, data });
+        if (saveUiTableMasterDto.uiTblColumns !== undefined) {
+          // keptIds must include columns created in this request (they have no
+          // uiTblClmId in the DTO), otherwise the replace step wipes them too.
+          const keptIds = await this.saveColumnsInTx(
+            saveUiTableMasterDto.uiTblColumns,
+            parsedUiTableId,
+            actor,
+            tx,
+          );
+          if (saveUiTableMasterDto.replaceColumns === true) {
+            await tx.uitableColumns.updateMany({
+              where: {
+                uiTblClmTableId: parsedUiTableId,
+                uiTblClmIsDeleted: false,
+                ...(keptIds.length > 0 ? { uiTblClmId: { notIn: keptIds } } : {}),
+              },
+              data: {
+                uiTblClmIsDeleted: true,
+                uiTblClmIsActive: false,
+                uiTblClmModifiedOn: new Date(),
+                uiTblClmModifiedBy: actor,
+              },
+            });
+          }
+        }
+        const full = await tx.uitable.findFirstOrThrow({
+          where: { uiTblId: parsedUiTableId },
+          include: {
+            uiTableColumns: {
+              where: { uiTblClmIsDeleted: false },
+              orderBy: [{ uiTblClmNo: 'asc' }, { uiTblClmId: 'asc' }],
+            },
           },
-          data,
         });
-        const payload = this.toPayload(updated);
-
+        const payload = this.toPayload(full as UitableWithColumns);
         await this.auditLogService.logEntityChange(
           {
             action: 'update',
@@ -336,176 +425,160 @@ export class UiTableMasterService {
             screenType: 'master',
             pk: uiTblId,
             displayName: this.resolveDisplayName(payload.uiTblName, payload.uiTblId),
-            originalRecord: this.toPayload(existing),
+            originalRecord: this.toPayload({ ...existing, uiTableColumns: [] }),
             modifiedRecord: payload,
-            userId: this.resolveActor(saveUiTableMasterDto.uiTblModifiedBy),
+            userId: actor,
             notes: 'UI table updated',
           },
           tx,
         );
-
         return payload;
       });
     } catch (error: unknown) {
-      this.handleWriteError(error);
+      throwOnUniqueConstraintError<UiTableMasterErrorDetail, UiTableMasterErrorResponse>(
+        error,
+        'UI table already exists',
+        [{ field: 'uiTblName', message: 'Duplicate uiTblName is not allowed' }],
+      );
       throw error;
     }
   }
-
+  private async saveColumnsInTx(
+    columns: SaveUiTableColumnDto[],
+    tableId: bigint,
+    actor: string,
+    tx: FixedWriteClient,
+  ): Promise<bigint[]> {
+    const savedIds: bigint[] = [];
+    for (const colDto of columns) {
+      savedIds.push(await this.upsertColumnInTx(colDto, tableId, actor, tx));
+    }
+    return savedIds;
+  }
+  private async upsertColumnInTx(
+    colDto: SaveUiTableColumnDto,
+    tableId: bigint,
+    actor: string,
+    tx: FixedWriteClient,
+  ): Promise<bigint> {
+    const normalizedName = colDto.uiTblClmName?.trim();
+    if (!normalizedName) {
+      throwFixedBadRequest<UiTableMasterErrorDetail, UiTableMasterErrorResponse>(
+        'Validation failed',
+        [{ field: 'uiTblClmName', message: 'uiTblClmName must not be empty' }],
+      );
+    }
+    const now = new Date();
+    if (colDto.uiTblClmId) {
+      const parsedId = BigInt(colDto.uiTblClmId);
+      const colData: Prisma.UitableColumnsUncheckedUpdateInput = {
+        uiTblClmName: normalizedName,
+        uiTblClmTableId: tableId,
+        uiTblClmModifiedOn: now,
+        uiTblClmModifiedBy: actor,
+      };
+      if (colDto.uiTblClmNo !== undefined && colDto.uiTblClmNo !== null) {
+        colData.uiTblClmNo = BigInt(colDto.uiTblClmNo);
+      }
+      applyPresentFields(colData, colDto, UI_TABLE_COLUMN_OPTIONAL_FIELDS);
+      await tx.uitableColumns.update({ where: { uiTblClmId: parsedId }, data: colData });
+      return parsedId;
+    } else {
+      const colData: Prisma.UitableColumnsUncheckedCreateInput = {
+        uiTblClmName: normalizedName,
+        uiTblClmTableId: tableId,
+        uiTblClmCreatedOn: now,
+        uiTblClmCreatedBy: actor,
+      };
+      if (colDto.uiTblClmNo !== undefined && colDto.uiTblClmNo !== null) {
+        colData.uiTblClmNo = BigInt(colDto.uiTblClmNo);
+      }
+      applyPresentFields(colData, colDto, UI_TABLE_COLUMN_OPTIONAL_FIELDS);
+      const created = await tx.uitableColumns.create({ data: colData });
+      return created.uiTblClmId;
+    }
+  }
   private async ensureNameIsUnique(
-    tx: UiTableMasterWriteClient,
+    tx: FixedWriteClient,
     uiTblName: string,
     excludeId?: bigint,
   ): Promise<void> {
     const existing = await tx.uitable.findFirst({
       where: {
         uiTblIsDeleted: false,
-        uiTblName: {
-          equals: uiTblName,
-          mode: 'insensitive',
-        },
-        ...(excludeId
-          ? {
-              uiTblId: {
-                not: excludeId,
-              },
-            }
-          : {}),
+        uiTblName: { equals: uiTblName, mode: 'insensitive' },
+        ...(excludeId ? { uiTblId: { not: excludeId } } : {}),
       },
-      select: {
-        uiTblId: true,
-      },
+      select: { uiTblId: true },
     });
-
     if (existing) {
-      throw new ConflictException(
-        this.buildErrorResponse('UI table name already exists', [
-          {
-            field: 'uiTblName',
-            message: 'Duplicate uiTblName is not allowed',
-          },
-        ]),
+      throwFixedConflict<UiTableMasterErrorDetail, UiTableMasterErrorResponse>(
+        'UI table name already exists',
+        [{ field: 'uiTblName', message: 'Duplicate uiTblName is not allowed' }],
       );
     }
   }
-
-  private applyOptionalFields(
-    data: Prisma.UitableUncheckedCreateInput | Prisma.UitableUncheckedUpdateInput,
-    saveUiTableMasterDto: SaveUiTableMasterDto,
-  ): void {
-    if (this.hasOwnProperty(saveUiTableMasterDto, 'uiTblEditable')) {
-      data.uiTblEditable = saveUiTableMasterDto.uiTblEditable;
-    }
-
-    if (this.hasOwnProperty(saveUiTableMasterDto, 'uiTblIsActive')) {
-      data.uiTblIsActive = saveUiTableMasterDto.uiTblIsActive;
-    }
-  }
-
   private normalizeRequiredName(name: string): string {
     const trimmed = name.trim();
     if (!trimmed) {
-      this.throwBadRequest('Validation failed', [
-        {
-          field: 'uiTblName',
-          message: 'uiTblName must not be empty',
-        },
-      ]);
+      throwFixedBadRequest<UiTableMasterErrorDetail, UiTableMasterErrorResponse>(
+        'Validation failed',
+        [{ field: 'uiTblName', message: 'uiTblName must not be empty' }],
+      );
     }
-
     return trimmed;
   }
-
-  private toPayload(record: Uitable): UiTableMasterPayload {
+  private toPayload(record: UitableWithColumns): UiTableMasterPayload {
     return {
       uiTblId: record.uiTblId.toString(),
       uiTblName: record.uiTblName,
       uiTblEditable: record.uiTblEditable,
       uiTblIsActive: record.uiTblIsActive,
       uiTblIsDeleted: record.uiTblIsDeleted,
+      uiTblDeviceType: (record as unknown as Record<string, unknown>)['uiTblDeviceType'] as string | null ?? null,
       uiTblSyncDate: record.uiTblSyncDate ? record.uiTblSyncDate.toISOString() : null,
+      uiTblSyncOn: record.uiTblSyncOn ? record.uiTblSyncOn.toISOString() : null,
       uiTblCreatedOn: record.uiTblCreatedOn.toISOString(),
       uiTblCreatedBy: record.uiTblCreatedBy,
       uiTblModifiedOn: record.uiTblModifiedOn.toISOString(),
       uiTblModifiedBy: record.uiTblModifiedBy,
+      columns: record.uiTableColumns.map((col) => this.toColumnPayload(col)),
     };
   }
-
-  private resolveActor(value: string | null | undefined, fallback = DEFAULT_ACTOR): string {
-    if (!value) {
-      return fallback;
-    }
-
-    const trimmed = value.trim();
-    return trimmed || fallback;
+  private toColumnPayload(record: UitableColumns): UiTableColumnPayload {
+    return {
+      uiTblClmId: record.uiTblClmId.toString(),
+      uiTblClmNo: record.uiTblClmNo?.toString() ?? '',
+      uiTblClmName: record.uiTblClmName,
+      uiTblClmTableId: record.uiTblClmTableId?.toString() ?? null,
+      uiTblClmColumnWidth: record.uiTblClmColumnWidth === null ? null : Number(record.uiTblClmColumnWidth),
+      uiTblClmColumnVisibility: record.uiTblClmColumnVisibility,
+      uiTblClmColumnFocus: record.uiTblClmColumnFocus,
+      uiTblClmColumnPosition: record.uiTblClmColumnPosition,
+      uiTblClmColumnNecessity: record.uiTblClmColumnNecessity,
+      uiTblClmNextColumn: record.uiTblClmNextColumn,
+      uiTblClmPreviousColumn: record.uiTblClmPreviousColumn,
+      uiTblClmPx: record.uiTblClmPx,
+      uiTblClmIsActive: record.uiTblClmIsActive,
+      uiTblClmIsDeleted: record.uiTblClmIsDeleted,
+      uiTblClmSyncDate: record.uiTblClmSyncDate ? record.uiTblClmSyncDate.toISOString() : null,
+      uiTblClmCreatedOn: record.uiTblClmCreatedOn.toISOString(),
+      uiTblClmCreatedBy: record.uiTblClmCreatedBy,
+      uiTblClmModifiedOn: record.uiTblClmModifiedOn.toISOString(),
+      uiTblClmModifiedBy: record.uiTblClmModifiedBy,
+    };
   }
-
   private resolveDisplayName(uiTblName: string | null, uiTblId: string): string {
     return uiTblName?.trim() || `UI Table ${uiTblId}`;
   }
-
-  private handleWriteError(error: unknown): void {
-    if (this.isUniqueConstraintError(error)) {
-      throw new ConflictException(
-        this.buildErrorResponse('UI table already exists', [
-          {
-            field: 'uiTblName',
-            message: 'Duplicate uiTblName is not allowed',
-          },
-        ]),
-      );
-    }
-  }
-
-  private isUniqueConstraintError(error: unknown): boolean {
-    if (typeof error !== 'object' || error === null || !('code' in error)) {
-      return false;
-    }
-
-    return (error as { code?: string }).code === 'P2002';
-  }
-
-  private throwNotFound(uiTblId: string): never {
-    throw new NotFoundException(
-      this.buildErrorResponse('UI table not found', [
-        {
-          field: 'uiTblId',
-          message: `No active UI table found with id ${uiTblId}`,
-        },
-      ]),
-    );
-  }
-
-  private throwBadRequest(message: string, errors: UiTableMasterErrorDetail[]): never {
-    throw new BadRequestException(this.buildErrorResponse(message, errors));
-  }
-
   private parseBigIntId(field: string, value: string): bigint {
     const normalized = value.trim();
     if (!/^\d+$/.test(normalized)) {
-      this.throwBadRequest('Validation failed', [
-        {
-          field,
-          message: `${field} must be a numeric id`,
-        },
-      ]);
+      throwFixedBadRequest<UiTableMasterErrorDetail, UiTableMasterErrorResponse>(
+        'Validation failed',
+        [{ field, message: `${field} must be a numeric id` }],
+      );
     }
-
     return BigInt(normalized);
-  }
-
-  private buildErrorResponse(
-    message: string,
-    errors: UiTableMasterErrorDetail[] = [],
-  ): UiTableMasterErrorResponse {
-    return {
-      success: false,
-      message,
-      errors,
-    };
-  }
-
-  private hasOwnProperty<T extends object>(obj: T, key: PropertyKey): boolean {
-    return Object.prototype.hasOwnProperty.call(obj, key);
   }
 }

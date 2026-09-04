@@ -3,11 +3,10 @@ model ItemEanCode {
 
   // Link
   eanItemId    String  @db.Uuid @map("ean_item_id")
-  eanUnitId    String  @db.Uuid @map("ean_unit_id")
+  eanUcUnitId    String  @db.Uuid @map("ean_uc_unit_id")
   eanCode      String  @db.VarChar(64) @map("ean_code")
-
-  // Optional scoping for default-barcode rule
-  eanGodownId  String? @db.Uuid @map("ean_godown_id")
+  eanSlNo      Int     @default(0) @map("ean_sl_no")
+  // Default-barcode rule is scoped per (item, unit)
   eanIsDefault Boolean @default(false) @map("ean_is_default")
 
   // Status / audit
@@ -21,8 +20,8 @@ model ItemEanCode {
 
   eanRemarks   String?  @db.VarChar(250) @map("ean_remarks")
 
-  // Relation
-  unit         Unit       @relation(fields: [eanUnitId], references: [unit_id], onUpdate: Cascade, onDelete: Restrict)
+  // Relation — eanUcUnitId references item_unit_conversion(iuc_id)
+  itemUnitConversion ItemUnitConversion @relation("ItemEanCodeUnitConversion", fields: [eanUcUnitId], references: [iucId], onUpdate: Cascade, onDelete: Restrict, map: "fk_ean_item_unit")
 
   @@map("item_ean_codes")
   @@schema("inventory")
@@ -32,7 +31,4 @@ model ItemEanCode {
 
   @@index([eanCode], map: "idx_ean_code")
   @@index([eanItemId], map: "idx_ean_item")
-
-  // NOTE: partial unique index uq_ean_one_default cannot be expressed in Prisma schema.
-  // Keep it in SQL migration.
 }

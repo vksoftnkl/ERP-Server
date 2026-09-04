@@ -1,3 +1,4 @@
+import { CacheTTL } from '@nestjs/cache-manager';
 import {
   Body,
   Controller,
@@ -22,33 +23,31 @@ import {
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import { HttpErrorResponseDto } from '../../../common/dto/http-error-response.dto';
-import { ListCustomerGroupQueryDto } from './dto/list-customer-group-query.dto';
 import { SaveCustomerGroupDto } from './dto/save-customer-group.dto';
 import {
   CustomerGroupErrorResponseDto,
   CustomerGroupSuccessDeleteDto,
-  CustomerGroupSuccessListDto,
   CustomerGroupSuccessSingleDto,
 } from './dto/customer-group-response.dto';
 import { CustomerGroupExceptionFilter } from './customer-group-exception.filter';
 import { CustomerGroupService } from './customer-group.service';
 import {
-  CustomerGroupListItem,
-  CustomerGroupListMeta,
   CustomerGroupPayload,
   CustomerGroupSuccessResponse,
 } from './types/customer-group-api.types';
+import { API_VERSION } from '../../../common/constants/api-version';
 
 @ApiTags('Customer Groups')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
+@CacheTTL(1)
 @Controller('customer-groups')
 @UseFilters(CustomerGroupExceptionFilter)
 export class CustomerGroupController {
-  constructor(private readonly customerGroupService: CustomerGroupService) {}
+  constructor(private readonly customerGroupService: CustomerGroupService) { }
 
   @Post('create')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Create or update customer group (by cgrId presence)' })
   @ApiCreatedResponse({ type: CustomerGroupSuccessSingleDto })
   @ApiBadRequestResponse({ type: CustomerGroupErrorResponseDto })
@@ -68,27 +67,8 @@ export class CustomerGroupController {
     };
   }
 
-  @Get('list')
-  @Version('1')
-  @ApiOperation({ summary: 'List customer groups with filter/search/pagination' })
-  @ApiOkResponse({ type: CustomerGroupSuccessListDto })
-  @ApiBadRequestResponse({ type: CustomerGroupErrorResponseDto })
-  async list(
-    @Query() queryDto: ListCustomerGroupQueryDto,
-  ): Promise<CustomerGroupSuccessResponse<CustomerGroupListItem[], CustomerGroupListMeta>> {
-    const result = await this.customerGroupService.list(queryDto);
-
-    return {
-      success: true,
-      message: 'Customer groups fetched successfully',
-      data: result.items,
-      meta: result.meta,
-      ...(result.styles !== undefined && { styles: result.styles }),
-    };
-  }
-
   @Get('get')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Get customer group by id' })
   @ApiQuery({ name: 'cgrId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: CustomerGroupSuccessSingleDto })
@@ -107,7 +87,7 @@ export class CustomerGroupController {
   }
 
   @Delete('delete')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Soft delete customer group by id' })
   @ApiQuery({ name: 'cgrId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: CustomerGroupSuccessDeleteDto })

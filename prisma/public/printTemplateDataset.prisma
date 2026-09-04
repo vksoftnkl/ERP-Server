@@ -1,0 +1,141 @@
+/// public.print_template_dataset — §4, where the rows come from.
+///
+/// This model and PrintTemplateAssignment are the whole point of the module. A
+/// layout has been data since 3.0; what was never data is WHICH QUERY feeds it.
+///
+/// It hangs off the VERSION, not the template. A dataset is part of the report
+/// definition, not a setting beside it — if it hung off the template, editing a
+/// query would silently change what every past version rendered, and print_log's
+/// version reference would be a lie.
+///
+/// THE 3.0 FIX, in two columns:
+///   ptdDatasetNo   THE BINDING. The body's bands reference this number. The
+///                  master is always 0.
+///   ptdSortOrder   Display order in the designer. Binds nothing.
+/// pssql_slno was both jobs at once — documented as a serial number, actually
+/// the DataSet index — so reordering rows in the editor rebound every band to
+/// the wrong query, with no error and no visible cause.
+///
+/// Declared here WITHOUT any CHECK constraint. That is a bigger omission than
+/// usual, so the full list is below and PrintTemplateDatasetService must carry
+/// every one of them:
+///   ck_ptd_role                  MASTER | DETAIL
+///   ck_ptd_source_kind           PROVIDER | SQL
+///   ck_ptd_source_biconditional  PROVIDER <=> provider_code, SQL <=> sql
+///   ck_ptd_master_is_zero        MASTER <=> dataset_no = 0
+///   ck_ptd_dataset_no            0..99
+///   ck_ptd_name_shape            ^[a-z][a-z0-9_]*$
+///   ck_ptd_provider_shape        dotted lower snake
+///   ck_ptd_parent                no self-parent, MASTER may not have one
+///   ck_ptd_parent_pair           parent_no <=> link_fields
+///   ck_ptd_link_fields_shape     parent=child, comma separated, no spaces
+///   ck_ptd_limits                row_limit 1..200000, timeout 100..120000 ms
+///   ck_ptd_sql_*                 the eleven stored-SQL guards, below
+///
+/// ── THE STORED-SQL GUARDS ARE AN AUTHORING LINT, NOT A SECURITY BOUNDARY ──
+/// The boundary is three runtime facts: parameters BOUND over the extended
+/// protocol (which makes a second statement structurally impossible rather than
+/// merely filtered), the query run in a READ ONLY transaction, and a role with
+/// no write privilege. A CHECK cannot parse SQL and never will.
+///
+/// Verified behaviour of the guards against PostgreSQL 18, so the service layer
+/// can reproduce it exactly:
+///   REFUSED   ':iacc_year' (3.0's quoted param), :1, arr[2:5], two statements,
+///             data-modifying CTE, $q$dollar quotes$q$, nested block comments,
+///             pg_sleep and friends, a query with no :company_id
+///   ACCEPTED  'last updated' AND x = :company_id (a literal BEFORE a param —
+///             the false positive the count-based check was written to kill),
+///             'it''s', a ';' inside a literal, last_updated_on, updated_at,
+///             E'...' and U&'...' (the comment claiming these are caught is
+///             wrong; they normalise harmlessly)
+///   KNOWN FALSE POSITIVES, both undocumented in §4 — the service layer should
+///   give a better message than the constraint name does:
+///     * a :name inside a "--" comment trips ck_ptd_sql_no_quoted_param, whose
+///       error talks about literals
+///     * a "--" inside a literal mangles the residue and the query is refused
+///       by ck_ptd_sql_company_scoped, i.e. a company-scoped query is told it
+///       is not company-scoped
+///
+/// DB-only objects Prisma cannot express, hand-authored in the migration:
+///   ux_ptd_dataset_no   UNIQUE (ptd_version_id, ptd_dataset_no) WHERE NOT deleted
+///   ux_ptd_name         UNIQUE (ptd_version_id, ptd_name)       WHERE NOT deleted
+///   ux_ptd_one_master   UNIQUE (ptd_version_id) WHERE role = 'MASTER' AND NOT deleted
+///   ix_ptd_version      (ptd_version_id, ptd_sort_order) WHERE NOT deleted
+///   ix_ptd_created_by / ix_ptd_modified_by   FK-covering, partial
+model PrintTemplateDataset {
+  ptdId               String    @id(map: "pk_print_template_dataset") @default(dbgenerated("uuidv7()")) @db.Uuid @map("ptd_id")
+  ptdVersionId        String    @db.Uuid                                     @map("ptd_version_id")
+
+  /// MASTER: exactly one, the header context, one row read (3.0's pstyl_sql).
+  /// DETAIL: the repeating bands (3.0's printing_style_sql rows).
+  ptdRole             String    @default("DETAIL") @db.VarChar(10)           @map("ptd_role")
+
+  /// THE BINDING — what a band actually points at. Unique per version.
+  ptdDatasetNo        Int       @db.SmallInt                                 @map("ptd_dataset_no")
+  /// Display order in the designer. Binds nothing. Safe to reorder.
+  ptdSortOrder        Int       @default(0) @db.SmallInt                     @map("ptd_sort_order")
+  /// The same binding by name, so a later engine can address 'items' rather
+  /// than 2 and ptdDatasetNo becomes pure back-compatibility.
+  ptdName             String    @db.VarChar(40)                              @map("ptd_name")
+  ptdLabel            String?   @db.VarChar(120)                             @map("ptd_label")
+
+  // ── PROVIDER or SQL ─────────────────────────────────────────────────────
+  // A code-registered PROVIDER for anything needing joins across partitioned
+  // tables or real business logic — the e-invoice QR, tax summaries, amount in
+  // words. Stored SQL for everything else, so a new report costs no release.
+  ptdSourceKind       String    @default("PROVIDER") @db.VarChar(10)         @map("ptd_source_kind")
+  ptdProviderCode     String?   @db.VarChar(80)                              @map("ptd_provider_code")
+  ptdSql              String?   @db.Text                                     @map("ptd_sql")
+
+  /// GENERATED ALWAYS ... STORED: comments stripped, literals and quoted
+  /// identifiers replaced by tokens, casts flattened, lowercased. Read-only —
+  /// writing it raises 428C9. The no-arg dbgenerated() is what stops
+  /// `migrate dev` emitting DROP DEFAULT. EVERY sql guard reads this and not
+  /// ptdSql, so a keyword inside a literal is neither a false positive nor a
+  /// way through.
+  ptdSqlNorm          String?   @default(dbgenerated()) @db.Text             @map("ptd_sql_norm")
+
+  // There is deliberately NO per-dataset params column. USER prompts are
+  // declared once on print_template_version.ptv_params; CONTEXT parameters
+  // (:company_id, :branch_id, :acc_year, :doc_id, :user_id, :device_id) are a
+  // closed set the server finds by reading the query text.
+
+  /// A report that is not company-scoped shows one company another's numbers.
+  /// Set false only for genuinely global data, such as a state-code list.
+  ptdRequiresCompany  Boolean   @default(false)                               @map("ptd_requires_company")
+
+  /// Nested detail, which 3.0 could not express at all: this dataset's rows are
+  /// the children of the current row of the dataset numbered ptdParentNo.
+  ///
+  /// ptdLinkFields says HOW they match, as parent=child pairs, comma separated
+  /// for a composite — `sbi_id=line_id` or `sb_id=bill_id,sbi_slno=slno`. LEFT
+  /// is a column the PARENT dataset returns; RIGHT is a column THIS dataset
+  /// returns. Both are output columns, neither side is a bound parameter.
+  ///
+  /// THE CHILD QUERY RUNS ONCE FOR THE WHOLE RENDER, NOT ONCE PER PARENT ROW.
+  /// It is bound with the same context every other dataset gets, returns the
+  /// parent's key as an ordinary column, and the RENDERER groups on it. A
+  /// 14-line bill costs one query, not fifteen — which is also why ptdRowLimit
+  /// and ptdTimeoutMs measure the whole band, not a single child execution.
+  ptdParentNo         Int?      @db.SmallInt                                 @map("ptd_parent_no")
+  ptdLinkFields       String?   @db.VarChar(200)                             @map("ptd_link_fields")
+
+  ptdRowLimit         Int       @default(5000)                               @map("ptd_row_limit")
+  ptdTimeoutMs        Int       @default(15000)                              @map("ptd_timeout_ms")
+
+  ptdRemarks          String?   @db.VarChar(250)                             @map("ptd_remarks")
+  ptdIsDeleted        Boolean   @default(false)                              @map("ptd_is_deleted")
+  ptdSyncDate         DateTime? @db.Timestamptz(6)                           @map("ptd_sync_date")
+  ptdCreatedOn        DateTime  @default(now()) @db.Timestamptz(6)           @map("ptd_created_on")
+  ptdCreatedBy        String?   @db.Uuid                                     @map("ptd_created_by")
+  ptdModifiedOn       DateTime? @db.Timestamptz(6)                           @map("ptd_modified_on")
+  ptdModifiedBy       String?   @db.Uuid                                     @map("ptd_modified_by")
+
+  // ── Relations ───────────────────────────────────────────────────────────
+  version             PrintTemplateVersion @relation("PrintTemplateDatasetVersion",    fields: [ptdVersionId],  references: [ptvId], onUpdate: Cascade, onDelete: Cascade,  map: "fk_ptd_version")
+  createdByUser       UserMaster?          @relation("PrintTemplateDatasetCreatedBy",  fields: [ptdCreatedBy],  references: [usrId], onUpdate: Cascade, onDelete: Restrict, map: "fk_ptd_created_by")
+  modifiedByUser      UserMaster?          @relation("PrintTemplateDatasetModifiedBy", fields: [ptdModifiedBy], references: [usrId], onUpdate: Cascade, onDelete: Restrict, map: "fk_ptd_modified_by")
+
+  @@map("print_template_dataset")
+  @@schema("public")
+}

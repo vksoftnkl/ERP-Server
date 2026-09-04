@@ -1,0 +1,85 @@
+{
+  "realData": {
+    "company": {
+      "companyId": "019cc7fc-3547-74a6-b65b-179b9db989a6",
+      "companyName": "THE SCM SILK"
+    },
+    "branch": {
+      "branchId": "019d8f8a-d076-74eb-a8cf-5fc369372236",
+      "branchName": "scm branch"
+    },
+    "voucherType": {
+      "vchrTypeId": 20,
+      "vchrTypeCode": "Opn",
+      "vchrTypeName": "Opening Stock",
+      "voucherPrefix": "opn",
+      "voucherSuffix": "st",
+      "noWidth": 12
+    },
+    "device": {
+      "deviceId": null,
+      "deviceCode": "MAIN"
+    }
+  },
+  "requests": {
+    "createFirstSequence": {
+      "method": "POST",
+      "url": "/api/v1/sequences/create",
+      "body": {
+        "vchrTypeId": 20,
+        "companyId": "019cc7fc-3547-74a6-b65b-179b9db989a6",
+        "branchId": "019d8f8a-d076-74eb-a8cf-5fc369372236",
+        "accYear": "2026-27",
+        "deviceId": null,
+        "deviceCode": "MAIN",
+        "periodKey": "2026-27-TEST-01",
+        "voucherPrefix": "opn",
+        "voucherSuffix": "st",
+        "noWidth": 12,
+        "isActive": true
+      },
+      "expectedLastNo": "1"
+    },
+    "createFirstSequenceAgainSameUniqueScope": {
+      "method": "POST",
+      "url": "/api/v1/sequences/create",
+      "body": {
+        "vchrTypeId": 20,
+        "companyId": "019cc7fc-3547-74a6-b65b-179b9db989a6",
+        "branchId": "019d8f8a-d076-74eb-a8cf-5fc369372236",
+        "accYear": "2026-27",
+        "deviceId": null,
+        "deviceCode": "MAIN",
+        "periodKey": "2026-27-TEST-01",
+        "voucherPrefix": "opn",
+        "voucherSuffix": "st",
+        "noWidth": 12,
+        "isActive": true
+      },
+      "expectedBehavior": "Updates the existing TEST-01 sequence instead of returning 409",
+      "expectedLastNo": "next max(lastNo) + 1 for companyId, branchId, accYear, deviceId"
+    },
+    "createSecondSequenceSameScope": {
+      "method": "POST",
+      "url": "/api/v1/sequences/create",
+      "body": {
+        "vchrTypeId": 20,
+        "companyId": "019cc7fc-3547-74a6-b65b-179b9db989a6",
+        "branchId": "019d8f8a-d076-74eb-a8cf-5fc369372236",
+        "accYear": "2026-27",
+        "deviceId": null,
+        "deviceCode": "MAIN",
+        "periodKey": "2026-27-TEST-02",
+        "voucherPrefix": "opn",
+        "voucherSuffix": "st",
+        "noWidth": 12,
+        "isActive": true
+      },
+      "expectedLastNo": "2"
+    },
+    "listCreatedSequences": {
+      "method": "GET",
+      "url": "/api/v1/sequences/list?companyId=019cc7fc-3547-74a6-b65b-179b9db989a6&branchId=019d8f8a-d076-74eb-a8cf-5fc369372236&accYear=2026-27&deviceCode=MAIN&search=2026-27-TEST"
+    }
+  }
+}

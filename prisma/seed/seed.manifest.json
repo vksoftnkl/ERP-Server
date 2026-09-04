@@ -1,0 +1,98 @@
+{
+  "$comment": [
+    "Execution order for the SQL files in this folder, used by the deploy seed runner",
+    "(src/database/seed/seed-runner.ts). Order matters where one seed reads rows another",
+    "one inserts. A .sql file that is not listed here still runs — appended after these,",
+    "in file-name order, with mode 'always' — so a new independent seed needs no edit here.",
+    "mode: 'always' (default) re-runs every deploy; every file below is idempotent.",
+    "mode: 'once' runs one time only, while the file's checksum stays unchanged."
+  ],
+  "seeds": [
+    {
+      "file": "Menu_Master.sql",
+      "description": "fixed.menu_master — the menu tree; runs first because form_section and user_menus reference menus by id"
+    },
+    {
+      "file": "Ui_Tables.sql",
+      "description": "fixed.ui_tables — entry-screen item grid registry; parent of ui_table_columns"
+    },
+    {
+      "file": "Ui_Table_Columns.sql",
+      "description": "fixed.ui_table_columns — item grid layouts; after Ui_Tables.sql (FK) and before the targeted single-column seeds"
+    },
+    {
+      "file": "Grid_Details.sql",
+      "description": "fixed.grid_details — configured list/report grids and their SQL; parent of grid_columns"
+    },
+    {
+      "file": "Grid_Columns.sql",
+      "description": "fixed.grid_columns — grid column layouts; after Grid_Details.sql (FK)"
+    },
+    {
+      "file": "Dropdown_Details.sql",
+      "description": "fixed.dropdown_details — configured lookup popups and their SQL; parent of dropdown_columns"
+    },
+    {
+      "file": "Dropdown_Columns.sql",
+      "description": "fixed.dropdown_columns — dropdown column layouts; after Dropdown_Details.sql (FK)"
+    },
+    {
+      "file": "Form_Section.sql",
+      "description": "fixed.form_section — widget-master tabs; after Menu_Master.sql (FK) and before Item_Master_Widget_Config_Menu29.sql"
+    },
+    {
+      "file": "Form_Field.sql",
+      "description": "fixed.form_field — widget-master fields; after Form_Section.sql (FK)"
+    },
+    {
+      "file": "Price_Levels.sql",
+      "description": "fixed.price_levels — selling price levels"
+    },
+    {
+      "file": "Item_Price_Levels.sql",
+      "description": "inventory.item_price_levels — price levels sales documents reference (RESTRICT), so ids must match everywhere"
+    },
+    {
+      "file": "Item_Gst_Units.sql",
+      "description": "inventory.item_gst_units — GST UQC codes; item_unit_master.unit_code is an FK to the code"
+    },
+    {
+      "file": "Stock_Adjust_Reasons.sql",
+      "description": "fixed.stock_adj_reasons — physical stock adjustment reasons (replaces the former TypeScript seed)"
+    },
+    {
+      "file": "State_Codes.sql",
+      "description": "fixed.state_codes \u2014 GST state codes; sale_quotation/sale_bill/sale_order reference state_code, so they must exist before any sales document can save"
+    },
+    {
+      "file": "Account_Groups.sql",
+      "description": "accounts.acc_group_master \u2014 the reserved chart of accounts, including the Customers/Suppliers groups the state, city, area and supplier services address by hardcoded id; without it those screens 400 with 'Parent account group does not exist'"
+    },
+    {
+      "file": "Acc_Tender_Types.sql",
+      "description": "accounts.acc_tender_types — payment tender types; referenced by acc_tender_master/detail"
+    },
+    {
+      "file": "Acc_Voucher_Types.sql",
+      "description": "accounts.acc_voucher_types — all document series; runs before Acc_Voucher_Seq_Sale_Bill.sql"
+    },
+    { "file": "Hsn_Master.sql", "description": "fixed.hsn_master — GST HSN/SAC codes" },
+    { "file": "Bank_Master.sql", "description": "fixed.bank_master — Indian banks" },
+    {
+      "file": "Acc_Voucher_Seq_Sale_Bill.sql",
+      "description": "accounts.acc_voucher_seq — counter row; joins the voucher type above, plus the company/branch masters, so it must run after them and stays 'always' (it inserts nothing until those rows exist)"
+    },
+    {
+      "file": "Item_Master_Widget_Config_Menu29.sql",
+      "description": "fixed.form_section / form_field — item master widget layout"
+    },
+    {
+      "file": "Quotation_Item_Grid_ItemSize_Column.sql",
+      "description": "fixed.ui_table_columns — ItemSize column on the quotation item grid"
+    },
+    {
+      "file": "Quotation_Charges_Grid_Web.sql",
+      "description": "fixed.ui_tables / ui_table_columns — the web additional-charges grid (id 26); after Ui_Tables.sql and Ui_Table_Columns.sql, which leave the pinned id free"
+    }
+  ]
+}

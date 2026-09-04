@@ -1,20 +1,6 @@
-export interface HsnCodeMasterErrorDetail {
-  field: string;
-  message: string;
-}
-
-export interface HsnCodeMasterErrorResponse {
-  success: false;
-  message: string;
-  errors: HsnCodeMasterErrorDetail[];
-}
-
-export interface HsnCodeMasterSuccessResponse<T, TMeta = Record<string, unknown>> {
-  success: true;
-  message: string;
-  data: T;
-  meta?: TMeta;
-}
+export type { FixedErrorDetail as HsnCodeMasterErrorDetail } from 'src/common/types/module-api.types';
+export type { FixedErrorResponse as HsnCodeMasterErrorResponse } from 'src/common/types/module-api.types';
+export type { FixedSuccessResponse as HsnCodeMasterSuccessResponse } from 'src/common/types/module-api.types';
 
 export interface HsnCodeMasterPayload {
   hsnId: number;

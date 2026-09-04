@@ -1,0 +1,30 @@
+import { ConfiguredGridSqlService } from '../../../common/configured-grid-sql/configured-grid-sql.service';
+import { PrismaService } from '../../../database/prisma/prisma.service';
+import { RequestContextService } from '../../../common/request-context/request-context.service';
+import { AuditLogService } from '../../audit-log/audit-log.service';
+import { GetChargeMasterQueryDto } from './dto/get-charge-master-query.dto';
+import { SaveChargeMasterDto } from './dto/save-charge-master.dto';
+import { ChargeMasterDeleteResult, ChargeMasterPayload } from './types/charge-master-api.types';
+export declare class ChargeMasterService {
+    private readonly prisma;
+    private readonly auditLogService;
+    private readonly configuredGridSqlService;
+    private readonly requestContextService;
+    constructor(prisma: PrismaService, auditLogService: AuditLogService, configuredGridSqlService: ConfiguredGridSqlService, requestContextService: RequestContextService);
+    save(saveChargeMasterDto: SaveChargeMasterDto): Promise<ChargeMasterPayload>;
+    get(getChargeMasterQueryDto: GetChargeMasterQueryDto): Promise<ChargeMasterPayload | ChargeMasterPayload[]>;
+    getById(chgId: string): Promise<ChargeMasterPayload>;
+    getByModule(chgModule: string): Promise<ChargeMasterPayload[]>;
+    softDelete(chgId: string): Promise<ChargeMasterDeleteResult>;
+    private createCharge;
+    private updateCharge;
+    private ensureLedgerExists;
+    private ensureCodeIsUnique;
+    private ensureValuesAreAllowed;
+    private guardedValues;
+    private ensureRoleIsUnique;
+    private applyOptionalFields;
+    private handleWriteError;
+    private throwNotFound;
+    private toPayload;
+}

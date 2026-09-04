@@ -30,6 +30,7 @@ model AccLedgerBankAccount {
   // Relations
   company             Company?         @relation(fields: [lbaCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict)
   ledger              AccLedgerMaster @relation(fields: [lbaLedgerId], references: [ledId])
+  tenderMasters       AccTenderMaster[]
 
   @@index([lbaLedgerId],  name: "idx_lba_ledger")
   @@index([lbaCompanyId], name: "idx_lba_company")

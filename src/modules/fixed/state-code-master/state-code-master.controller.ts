@@ -1,3 +1,4 @@
+import { CacheTTL } from '@nestjs/cache-manager';
 import { Body, Controller, Delete, Get, Post, Query, UseFilters, Version } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
@@ -28,17 +29,19 @@ import {
   StateCodeMasterPayload,
   StateCodeMasterSuccessResponse,
 } from './types/state-code-master-api.types';
+import { API_VERSION } from '../../../common/constants/api-version';
 
 @ApiTags('State Code Master')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
+@CacheTTL(1)
 @Controller('state-code-masters')
 @UseFilters(StateCodeMasterExceptionFilter)
 export class StateCodeMasterController {
-  constructor(private readonly stateCodeMasterService: StateCodeMasterService) {}
+  constructor(private readonly stateCodeMasterService: StateCodeMasterService) { }
 
   @Post('create')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Create or update state code' })
   @ApiCreatedResponse({ type: StateCodeMasterSuccessSingleDto })
   @ApiBadRequestResponse({ type: StateCodeMasterErrorResponseDto })
@@ -57,7 +60,7 @@ export class StateCodeMasterController {
   }
 
   @Get('list')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'List state codes with filter/search/pagination' })
   @ApiOkResponse({ type: StateCodeMasterSuccessListDto })
   @ApiBadRequestResponse({ type: StateCodeMasterErrorResponseDto })
@@ -71,12 +74,11 @@ export class StateCodeMasterController {
       message: 'State codes fetched successfully',
       data: result.items,
       meta: result.meta,
-      ...(result.styles !== undefined && { styles: result.styles }),
     };
   }
 
   @Get('get')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Get state code by code' })
   @ApiQuery({ name: 'stateCode', description: '2-character state code', example: 'MH' })
   @ApiOkResponse({ type: StateCodeMasterSuccessSingleDto })
@@ -95,7 +97,7 @@ export class StateCodeMasterController {
   }
 
   @Delete('delete')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Soft delete state code by code' })
   @ApiQuery({ name: 'stateCode', description: '2-character state code', example: 'MH' })
   @ApiOkResponse({ type: StateCodeMasterSuccessDeleteDto })

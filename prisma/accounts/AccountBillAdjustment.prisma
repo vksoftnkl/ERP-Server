@@ -1,0 +1,126 @@
+/// One row per settlement EVENT against one bill: a receipt allocated, an
+/// advance applied, a credit note set off, a discount allowed, an amount
+/// written off — or the reversal of any of those.
+///
+/// Partitioned by abjAccYear, the year the ADJUSTMENT happened rather than the
+/// year the bill was raised, so the primary key is the composite (abjId,
+/// abjAccYear). That is the whole trick: April's receipts land in April's
+/// partition and the March bill they settle never moves. The bill is
+/// partitioned on its OWN year, so the reference to it is the pair
+/// (abjBillId, abjBillAccYear) — and abjBillAccYear is precisely the column
+/// that differs from abjAccYear on a cross-year settlement.
+///
+/// Two-sided settlements (an advance into an invoice, a credit note against an
+/// invoice) are TWO rows — one against each bill — pointing at each other
+/// through abjAgainstBillId. Both are written in one transaction; neither is
+/// meaningful alone. Nothing here is ever edited or deleted: a correction is a
+/// reversal row.
+model AccBillAdjustment {
+  abjId                 String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("abj_id")
+  abjCompanyId          String    @db.Uuid @map("abj_company_id")
+  // Branch that SETTLED it. May differ from the branch that raised the bill —
+  // that is the whole point of the chain-store split.
+  abjBranchId           String    @db.Uuid @map("abj_branch_id")
+  abjTenantId           String?   @db.Uuid @map("abj_tenant_id")
+  // FY of the adjustment, and the partition key.
+  abjAccYear            String    @db.Char(9) @map("abj_acc_year")
+  // What is being settled. abjBillAccYear is the FY the BILL was RAISED in —
+  // its own year, not abjAccYear — and completes the reference to the bill's
+  // composite key (ck_abj_bill_acc_year).
+  abjBillId             String    @db.Uuid @map("abj_bill_id")
+  abjBillAccYear        String    @db.Char(9) @map("abj_bill_acc_year")
+  // Snapshot of the party; ageing groups by it.
+  abjPartyId            String    @db.Uuid @map("abj_party_id")
+  abjRowNo              Int       @default(1) @map("abj_row_no")
+  // The other side of a two-sided settlement (advance <-> invoice, credit note
+  // <-> invoice). Null for money that came from outside — ck_abj_against. Its
+  // year travels with it (ck_abj_against_bill_pair), same as the bill above.
+  abjAgainstBillId      String?   @db.Uuid @map("abj_against_bill_id")
+  abjAgainstBillAccYear String?   @db.Char(9) @map("abj_against_bill_acc_year")
+  // The voucher that performed the settlement, with its OWN year
+  // (ck_abj_voucher_pair: both columns move together).
+  abjVoucherId          String?   @db.Uuid @map("abj_voucher_id")
+  abjVoucherAccYear     String?   @db.Char(9) @map("abj_voucher_acc_year")
+  abjVoucherLineId      String?   @db.Uuid @map("abj_voucher_line_id")
+  // The event — ck_abj_adj_type:
+  //   ALLOCATION     money received / paid against the bill
+  //   ADVANCE_ADJUST an advance already held being applied to the bill
+  //   NOTE_ADJUST    a credit / debit note set off against the bill
+  //   DISCOUNT       settlement discount allowed at collection time
+  //   WRITEOFF       bad debt or rounding, written off
+  //   TRANSFER       balance moved to another bill / party
+  abjAdjType            String    @db.VarChar(20) @map("abj_adj_type")
+  abjAdjDate            DateTime  @db.Date @map("abj_adj_date")
+  abjDrCr               String    @db.Char(2) @map("abj_dr_cr")
+  // SIGNED. A reversal (bounce, cancelled receipt, mis-keyed allocation)
+  // carries the SAME abjAdjType as the row it undoes and a NEGATIVE amount, so
+  // the roll-ups on AccBillBalance self-correct and the trail still shows what
+  // happened — ck_abj_amount, ck_abj_reversal_sign.
+  abjAmount             Decimal   @db.Decimal(18, 2) @map("abj_amount")
+  // How the money moved — ck_abj_settlement_mode: CASH | CARD | UPI | WALLET |
+  // CHEQUE | BANK | CREDIT_NOTE | ADVANCE | LOYALTY | VOUCHER | JOURNAL |
+  // DISCOUNT | WRITEOFF | MIXED.
+  abjSettlementMode     String?   @db.VarChar(20) @map("abj_settlement_mode")
+  abjSettlementLedgerId String?   @db.Uuid @map("abj_settlement_ledger_id")
+  // The tender row this settlement came from — one tender, one row, which is
+  // what lets "the cheque part bounced, the cash part stands" be a fact rather
+  // than an arithmetic guess (ck_abj_tender_pair).
+  abjTenderId           String?   @db.Uuid @map("abj_tender_id")
+  abjTenderAccYear      String?   @db.Char(9) @map("abj_tender_acc_year")
+  // The cheque behind it, when the instrument is one. AccVoucherCheque owns
+  // its lifecycle; a bounce there writes the reversal row here
+  // (ck_abj_cheque_pair, ck_abj_cheque_mode, ck_abj_pdc).
+  abjChequeId           String?   @db.Uuid @map("abj_cheque_id")
+  abjChequeAccYear      String?   @db.Char(9) @map("abj_cheque_acc_year")
+  abjIsPostDated        Boolean   @default(false) @map("abj_is_post_dated")
+  // Reversal. abjReversalOfId names the row being undone; it carries no FK
+  // because the target is in some other year's partition, and ux_abj_reversal
+  // is only unique per year (see the note below).
+  abjReversalOfId       String?   @db.Uuid @map("abj_reversal_of_id")
+  abjReversalReason     String?   @db.VarChar(250) @map("abj_reversal_reason")
+  abjRemarks            String?   @db.VarChar(250) @map("abj_remarks")
+  // Write-offs and refunds need a sign-off — ck_abj_writeoff_approval.
+  abjApprovedBy         String?   @db.Uuid @map("abj_approved_by")
+  abjUserId             String    @db.Uuid @map("abj_user_id")
+  abjSessionId          String?   @db.Uuid @map("abj_session_id")
+  // Audit
+  abjIsDeleted          Boolean   @default(false) @map("abj_is_deleted")
+  abjSyncDate           DateTime? @db.Timestamptz(6) @map("abj_sync_date")
+  abjCreatedOn          DateTime  @default(now()) @db.Timestamptz(6) @map("abj_created_on")
+  abjCreatedBy          String?   @db.VarChar(50) @map("abj_created_by")
+  abjModifiedOn         DateTime? @db.Timestamptz(6) @map("abj_modified_on")
+  abjModifiedBy         String?   @db.VarChar(50) @map("abj_modified_by")
+  // Relations
+  bill                  AccBillBalance    @relation("BillAdjustmentBill", fields: [abjBillId, abjBillAccYear], references: [ablId, ablAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_abj_bill")
+  againstBill           AccBillBalance?   @relation("BillAdjustmentAgainstBill", fields: [abjAgainstBillId, abjAgainstBillAccYear], references: [ablId, ablAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_abj_against_bill")
+  party                 AccLedgerMaster   @relation("BillAdjustmentParty", fields: [abjPartyId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_abj_party")
+  settlementLedger      AccLedgerMaster?  @relation("BillAdjustmentSettleLedger", fields: [abjSettlementLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_abj_settlement_ledger")
+  voucherHeader         AccVoucherHeader? @relation(fields: [abjVoucherId, abjVoucherAccYear], references: [avhVoucherId, avhAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_abj_voucher")
+  tender                AccTenderDetail?  @relation(fields: [abjTenderId, abjTenderAccYear], references: [tdId, tdAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_abj_tender")
+  cheque                AccVoucherCheque? @relation(fields: [abjChequeId, abjChequeAccYear], references: [chqId, chqAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_abj_cheque")
+  @@id([abjId, abjAccYear], map: "pk_acc_bill_adjustment")
+  @@map("acc_bill_adjustment")
+  @@schema("accounts")
+  // DB-only objects not expressible in the Prisma schema (see migration
+  // 20260811080000_replace_acc_bill_balance_and_adjustment):
+  //   - PARTITION BY LIST (abj_acc_year); one partition per accounting year,
+  //     created by public.ensure_acc_year_partitions('YYYY-YYYY').
+  //   - Partial UNIQUE index ux_abj_reversal — a row may be reversed once.
+  //     CAVEAT: a unique index on a partitioned table must carry the partition
+  //     key, so it is unique per YEAR; a reversal in March and another in April
+  //     of the same row would both be accepted, and the posting code has to
+  //     check before it writes.
+  //   - Partial indexes ix_abj_bill, ix_abj_voucher, ix_abj_tender,
+  //     ix_abj_cheque, ix_abj_party_period.
+  //   - CHECK constraints ck_abj_adj_type, ck_abj_dr_cr,
+  //     ck_abj_settlement_mode, ck_abj_acc_year, ck_abj_bill_acc_year,
+  //     ck_abj_against_bill_pair, ck_abj_amount (a settlement of
+  //     zero is not an event), ck_abj_reversal_sign (only a reversal may be
+  //     negative, and a reversal must always be), ck_abj_no_self_reversal,
+  //     ck_abj_tender_pair, ck_abj_cheque_pair, ck_abj_voucher_pair,
+  //     ck_abj_cheque_mode, ck_abj_pdc, ck_abj_against, ck_abj_no_self_against,
+  //     ck_abj_writeoff_approval, ck_abj_row_no.
+  //   - No FK on abj_company_id / abj_branch_id / abj_user_id /
+  //     abj_approved_by / abj_session_id / abj_reversal_of_id: the source DDL
+  //     declares none.
+}

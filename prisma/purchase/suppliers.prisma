@@ -57,7 +57,7 @@ model Supplier {
   supModifiedBy        String?   @db.VarChar(100) @map("sup_modified_by")
   // 11) FK fields + relations
   // NOTE: sup_state_id column was missing in your DDL snippet, but FK references it.
-  supStateId           String?   @db.Uuid @map("sup_state_id")
+ 
   group                SupplierGroup   @relation(fields: [supGroupId], references: [spgId], onUpdate: Cascade, onDelete: Restrict)
   @@map("suppliers")
   @@schema("purchase")

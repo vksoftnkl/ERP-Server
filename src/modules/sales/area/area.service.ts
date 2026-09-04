@@ -1,246 +1,154 @@
-import {
-  BadRequestException,
-  ConflictException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
-import { ConfiguredGridListResult, ConfiguredGridSqlService } from '../../../common/configured-grid-sql/configured-grid-sql.service';
+import { Injectable } from '@nestjs/common';
 import { AreaMaster, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
-import { ListAreaQueryDto } from './dto/list-area-query.dto';
 import { SaveAreaDto } from './dto/save-area.dto';
 import {
   AreaErrorDetail,
   AreaErrorResponse,
-  AreaListItem,
-  AreaListMeta,
+  AreaMasterCreateResult,
   AreaPayload,
 } from './types/area-api.types';
-const DEFAULT_ACTOR = 'system';
-const DEFAULT_PAGE = 1;
-const DEFAULT_LIMIT = 20;
-const AREA_TABLE_NAME = 'area_master';
+import {
+  DEFAULT_ACTOR,
+  SalesWriteClient,
+  applyPresentFields,
+  hasOwnProperty,
+  normalizeRequiredText,
+  resolveActor,
+  throwOnUniqueConstraintError,
+  throwSalesBadRequest,
+  throwSalesConflict,
+  throwSalesNotFound,
+  toNumber,
+} from 'src/common/utils/module-service.utils';
+import { RequestContextService } from '../../../common/request-context/request-context.service';
+const AREA_TABLE_NAME = 'area master';
 const AREA_AUDIT_SCREEN_NAME = 'Area Master';
-type AreaWriteClient = Prisma.TransactionClient | PrismaService;
+const AREA_OPTIONAL_FIELDS = [
+  'armAlias',
+  'armShort',
+  'armSort',
+  'armDistanceKm',
+  'armCollectionDays',
+  'armDescription',
+  'armIsActive',
+];
+// Fixed parent account group. An area master's account group is always created under it.
+const AREA_ACCOUNT_GROUP_PARENT_ID = '019f081c-6764-73b0-b397-3f30a6efe73e';
+type AreaWriteClient = SalesWriteClient;
 @Injectable()
 export class AreaService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
-    private readonly configuredGridSqlService: ConfiguredGridSqlService,
+    private readonly requestContextService: RequestContextService,
   ) {}
   async save(saveAreaDto: SaveAreaDto): Promise<AreaPayload> {
     if (saveAreaDto.armId) {
       return this.updateArea(saveAreaDto);
     }
-    return this.createArea(saveAreaDto);
+    const userId = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
+    const { areaMaster } = await this.createAreaMaster(saveAreaDto, userId);
+    return areaMaster;
   }
-  async list(queryDto: ListAreaQueryDto): Promise<ConfiguredGridListResult<AreaListItem, AreaListMeta>> {
-    const page = queryDto.page ?? DEFAULT_PAGE;
-    const limit = queryDto.limit ?? DEFAULT_LIMIT;
-    const skip = (page - 1) * limit;
-    const hasStructuredFilters =
-      queryDto.armCityId !== undefined ||
-      queryDto.armIsActive !== undefined ||
-      Boolean(queryDto.search?.trim());
-    if (!hasStructuredFilters) {
-      const configuredList = await this.listFromConfiguredGridSql(page, limit, skip);
-      if (configuredList) {
-        return configuredList;
-      }
-    }
-    const where: Prisma.AreaMasterWhereInput = {
-      armIsDeleted: false,
-    };
-    if (queryDto.armCityId !== undefined) {
-      where.armCityId = queryDto.armCityId;
-    }
-    if (queryDto.armIsActive !== undefined) {
-      where.armIsActive = queryDto.armIsActive;
-    }
-    if (queryDto.search?.trim()) {
-      const search = queryDto.search.trim();
-      where.OR = [
-        { armName: { contains: search, mode: 'insensitive' } },
-        { armAlias: { contains: search, mode: 'insensitive' } },
-        { armShort: { contains: search, mode: 'insensitive' } },
-      ];
-    }
-    const [total, records] = await Promise.all([
-      this.prisma.areaMaster.count({ where }),
-      this.prisma.areaMaster.findMany({
-        where,
-        orderBy: [{ armName: 'asc' }, { armId: 'asc' }],
-        skip,
-        take: limit,
-      }),
-    ]);
-    return {
-      items: records.map((record) => this.toPayload(record)),
-      meta: {
-        page,
-        limit,
-        total,
-        total_pages: Math.ceil(total / limit),
-      },
-    };
-  }
-  private async listFromConfiguredGridSql(
-    page: number,
-    limit: number,
-    skip: number,
-  ): Promise<ConfiguredGridListResult<AreaListItem, AreaListMeta> | null> {
-    const configuredGrids = await this.configuredGridSqlService.loadCandidates({
-      tableName: AREA_TABLE_NAME,
-    });
-    const primaryConfiguredGrids = this.configuredGridSqlService.filterPrimaryFromTable(
-      configuredGrids,
-      AREA_TABLE_NAME,
+  async createAreaMaster(
+    dto: SaveAreaDto,
+    userId: string,
+    // parentId is a separate argument because it can't come from the area payload. For this flow
+    // it defaults to the fixed parent account group; callers may override it.
+    parentId: string = AREA_ACCOUNT_GROUP_PARENT_ID,
+  ): Promise<AreaMasterCreateResult> {
+    const normalizedName = normalizeRequiredText<AreaErrorDetail, AreaErrorResponse>(
+      dto.armName,
+      'armName',
     );
-    if (primaryConfiguredGrids.length === 0) {
-      return null;
-    }
-    for (const configuredGrid of primaryConfiguredGrids) {
-      const rawGridSql = configuredGrid.gridSql?.trim();
-      if (!rawGridSql) {
-        continue;
-      }
-      const validation = this.configuredGridSqlService.validateBaseSql({
-        sql: rawGridSql,
-        tableName: AREA_TABLE_NAME,
-      });
-      if (!validation.isValid) {
-        continue;
-      }
-      try {
-        const result = await this.configuredGridSqlService.runPagedQuery<AreaListItem>({
-          baseSql: validation.normalizedSql,
-          alias: 'area_grid',
-          limit,
-          skip,
-          gridId: configuredGrid.gridId,
-        });
-        return {
-          items: result.items,
-          meta: {
-            page,
-            limit,
-            total: result.total,
-            total_pages: Math.ceil(result.total / limit),
-          },
-          styles: result.styles,
-        };
-      } catch {
-        continue;
-      }
-    }
-    return null;
-  }
-  async getById(armId: string): Promise<AreaPayload> {
-    const record = await this.prisma.areaMaster.findFirst({
-      where: {
-        armId,
-        armIsDeleted: false,
-      },
-    });
-    if (!record) {
-      this.throwNotFound(armId);
-    }
-    return this.toPayload(record);
-  }
-  async softDelete(armId: string): Promise<{ armId: string; deleted: true }> {
-    return this.prisma.$transaction(async (tx) => {
-      const existing = await tx.areaMaster.findFirst({
-        where: {
-          armId,
-          armIsDeleted: false,
-        },
-      });
-      if (!existing) {
-        this.throwNotFound(armId);
-      }
-      const customerCount = await tx.customer.count({
-        where: {
-          cusAreaId: armId,
-          cusIsDeleted: false,
-        },
-      });
-      if (customerCount > 0) {
-        this.throwBadRequest('Cannot delete area with active customers', [
-          {
-            field: 'armId',
-            message: `Area ${armId} is used by ${customerCount} customer(s).`,
-          },
-        ]);
-      }
-      const modifiedOn = new Date();
-      const result = await tx.areaMaster.updateMany({
-        where: {
-          armId,
-          armIsDeleted: false,
-        },
-        data: {
-          armIsDeleted: true,
-          armIsActive: false,
-          armModifiedOn: modifiedOn,
-          armModifiedBy: DEFAULT_ACTOR,
-        },
-      });
-      if (result.count === 0) {
-        this.throwNotFound(armId);
-      }
-      const originalRecord = this.toPayload(existing);
-      const modifiedRecord = this.toPayload({
-        ...existing,
-        armIsDeleted: true,
-        armIsActive: false,
-        armModifiedOn: modifiedOn,
-        armModifiedBy: DEFAULT_ACTOR,
-      });
-      await this.auditLogService.logEntityChange(
-        {
-          action: 'cancel',
-          tableName: AREA_TABLE_NAME,
-          screenName: AREA_AUDIT_SCREEN_NAME,
-          screenType: 'master',
-          pk: armId,
-          displayName: existing.armName,
-          originalRecord,
-          modifiedRecord,
-          userId: DEFAULT_ACTOR,
-          notes: 'Area soft deleted',
-        },
-        tx,
-      );
-      return {
-        armId,
-        deleted: true,
-      };
-    });
-  }
-  private async createArea(saveAreaDto: SaveAreaDto): Promise<AreaPayload> {
-    const normalizedName = this.normalizeRequiredName(saveAreaDto.armName);
+    const actor = resolveActor(dto.armCreatedBy, userId);
     const now = new Date();
-    const createdBy = this.resolveActor(saveAreaDto.armCreatedBy);
-    const modifiedBy = this.resolveActor(saveAreaDto.armModifiedBy, createdBy);
-    const data: Prisma.AreaMasterUncheckedCreateInput = {
-      armName: normalizedName,
-      armCityId: saveAreaDto.armCityId,
-      armCollectionDays: this.hasOwnProperty(saveAreaDto, 'armCollectionDays')
-        ? (saveAreaDto.armCollectionDays ?? [])
-        : [],
-      armCreatedOn: now,
-      armCreatedBy: createdBy,
-      armModifiedOn: now,
-      armModifiedBy: modifiedBy,
-    };
-    this.applyOptionalFields(data, saveAreaDto);
+    // armIsActive collapses onto soft-delete state: active => is_deleted false, inactive => true.
+    const isDeleted = dto.armIsActive === false;
+    const sort = dto.armSort ?? 0;
     try {
+      // $transaction is the rollback boundary: the account group insert and the area master
+      // insert commit together. Any throw below (including the second insert failing) rolls
+      // back BOTH rows.
       return await this.prisma.$transaction(async (tx) => {
-        await this.ensureCityExists(tx, data.armCityId);
-        await this.ensureNameIsUnique(tx, normalizedName, data.armCityId);
-        const created = await tx.areaMaster.create({ data });
+        await this.ensureCityExists(tx, dto.armCityId);
+        await this.ensureNameIsUnique(tx, normalizedName, dto.armCityId);
+        // acc_group_type / company / nature / ledger profile are required (or NOT NULL) on
+        // acc_group_master and are never client-supplied — inherit them from the parent group.
+        const parent = await tx.accGroupMaster.findFirst({
+          where: {
+            accGroupId: parentId,
+            accGroupIsDeleted: false,
+          },
+          select: {
+            accGroupCompanyId: true,
+            accGroupType: true,
+            accLedgerProfile: true,
+            accGroupNature: true,
+          },
+        });
+        if (!parent) {
+          throwSalesBadRequest<AreaErrorDetail, AreaErrorResponse>(
+            'Parent account group does not exist',
+            [
+              {
+                field: 'parentId',
+                message: `No active account group found with id ${parentId}`,
+              },
+            ],
+          );
+        }
+        // Create the account group derived from the area fields; capture acc_group_id.
+        const accountGroupData: Prisma.AccGroupMasterUncheckedCreateInput = {
+          accGroupName: normalizedName, // <- armName
+          accGroupShort: dto.armShort ?? null, // <- armShort
+          // acc_group_description is VarChar(250) while the master column is unbounded Text;
+          // cap the mirror so an over-long description can't abort the whole transaction.
+          accGroupDescription: dto.armDescription?.slice(0, 250) ?? null, // <- armDescription
+          accGroupSort: Math.trunc(sort), // <- armSort (acc_group_sort is Int)
+          accGroupParentId: parentId, // <- parentId argument
+          accGroupCompanyId: parent.accGroupCompanyId,
+          accGroupType: parent.accGroupType,
+          accLedgerProfile: parent.accLedgerProfile,
+          accGroupNature: parent.accGroupNature,
+          accGroupChildIds: [],
+          accGroupIsActive: !isDeleted,
+          accGroupIsDeleted: isDeleted,
+          accGroupCreatedOn: now,
+          accGroupCreatedBy: actor,
+          accGroupModifiedOn: now,
+          accGroupModifiedBy: actor,
+        };
+        const accountGroup = await tx.accGroupMaster.create({ data: accountGroupData });
+        const accGroupId = accountGroup.accGroupId;
+        // The area master shares its PK with the account group. arm_id is set EXPLICITLY to
+        // acc_group_id, overriding the uuidv7() default, so the two rows share one id.
+        const areaData: Prisma.AreaMasterUncheckedCreateInput = {
+          armId: accGroupId,
+          armName: normalizedName,
+          armAlias: dto.armAlias ?? null,
+          armShort: dto.armShort ?? null,
+          armCityId: dto.armCityId,
+          armSort: sort,
+          armDescription: dto.armDescription ?? null,
+          armCollectionDays: hasOwnProperty(dto, 'armCollectionDays')
+            ? (dto.armCollectionDays ?? [])
+            : [],
+          armIsActive: !isDeleted,
+          armIsDeleted: isDeleted,
+          armCreatedOn: now,
+          armCreatedBy: actor,
+          armModifiedOn: now,
+          armModifiedBy: actor,
+        };
+        // armDistanceKm is nullable with a DB default of 0 — only write it when the client sent
+        // it, so an omitted value keeps the default rather than being forced to null.
+        if (hasOwnProperty(dto, 'armDistanceKm')) {
+          areaData.armDistanceKm = dto.armDistanceKm ?? null;
+        }
+        const created = await tx.areaMaster.create({ data: areaData });
         const payload = this.toPayload(created);
         await this.auditLogService.logEntityChange(
           {
@@ -252,18 +160,193 @@ export class AreaService {
             displayName: payload.armName,
             originalRecord: null,
             modifiedRecord: payload,
-            userId: createdBy,
-            notes: 'Area created',
+            userId: actor,
+            notes: 'Area created with linked account group',
           },
           tx,
         );
-        return payload;
+        return { areaMaster: payload, accGroupId };
       });
     } catch (error: unknown) {
-      this.handleWriteError(error);
+      throwOnUniqueConstraintError<AreaErrorDetail, AreaErrorResponse>(
+        error,
+        'Area already exists',
+        [
+          {
+            field: 'armName',
+            message: 'Duplicate armName is not allowed',
+          },
+        ],
+      );
       throw error;
     }
   }
+  async getById(armId: string): Promise<AreaPayload> {
+    const record = await this.prisma.areaMaster.findFirst({
+      where: {
+        armId,
+        armIsDeleted: false,
+      },
+    });
+    if (!record) {
+      throwSalesNotFound<AreaErrorDetail, AreaErrorResponse>(
+        'Area not found',
+        'armId',
+        `No active area found with id ${armId}`,
+      );
+    }
+    const payload = this.toPayload(record);
+    payload.armCityName = await this.getCityName(this.prisma, record.armCityId);
+    return payload;
+  }
+  async softDelete(armId: string): Promise<{ armId: string; deleted: true }> {
+    return this.prisma.$transaction(async (tx) => {
+      const existing = await tx.areaMaster.findFirst({
+        where: {
+          armId,
+          armIsDeleted: false,
+        },
+      });
+      if (!existing) {
+        throwSalesNotFound<AreaErrorDetail, AreaErrorResponse>(
+          'Area not found',
+          'armId',
+          `No active area found with id ${armId}`,
+        );
+      }
+      const customerCount = await tx.customer.count({
+        where: {
+          cusAreaId: armId,
+          cusIsDeleted: false,
+        },
+      });
+      if (customerCount > 0) {
+        throwSalesBadRequest<AreaErrorDetail, AreaErrorResponse>(
+          'Cannot delete area with active customers',
+          [
+            {
+              field: 'armId',
+              message: `Area ${armId} is used by ${customerCount} customer(s).`,
+            },
+          ],
+        );
+      }
+      const modifiedOn = new Date();
+      const result = await tx.areaMaster.updateMany({
+        where: {
+          armId,
+          armIsDeleted: false,
+        },
+        data: {
+          armIsDeleted: true,
+          armIsActive: false,
+          armModifiedOn: modifiedOn,
+          armModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
+        },
+      });
+      if (result.count === 0) {
+        throwSalesNotFound<AreaErrorDetail, AreaErrorResponse>(
+          'Area not found',
+          'armId',
+          `No active area found with id ${armId}`,
+        );
+      }
+      // Mirror the soft delete onto the linked account group (shares arm_id as its PK) so it
+      // can't stay active while the area is logically deleted. No-op for legacy rows.
+      await tx.accGroupMaster.updateMany({
+        where: { accGroupId: armId },
+        data: {
+          accGroupIsActive: false,
+          accGroupIsDeleted: true,
+          accGroupModifiedOn: modifiedOn,
+          accGroupModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
+        },
+      });
+      const originalRecord = this.toPayload(existing);
+      const modifiedRecord = this.toPayload({
+        ...existing,
+        armIsDeleted: true,
+        armIsActive: false,
+        armModifiedOn: modifiedOn,
+        armModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
+      });
+      await this.auditLogService.logEntityChange(
+        {
+          action: 'cancel',
+          tableName: AREA_TABLE_NAME,
+          screenName: AREA_AUDIT_SCREEN_NAME,
+          screenType: 'master',
+          pk: armId,
+          displayName: existing.armName,
+          originalRecord,
+          modifiedRecord,
+          userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
+          notes: 'Area soft deleted',
+        },
+        tx,
+      );
+      return {
+        armId,
+        deleted: true,
+      };
+    });
+  }
+  // Standalone area create (no linked account group). Superseded by createAreaMaster, which
+  // creates the account group first and reuses its id as arm_id. Kept for reference.
+  // private async createArea(saveAreaDto: SaveAreaDto): Promise<AreaPayload> {
+  //   const normalizedName = normalizeRequiredText<AreaErrorDetail, AreaErrorResponse>(
+  //     saveAreaDto.armName,
+  //     'armName',
+  //   );
+  //   const now = new Date();
+  //   const createdBy = resolveActor(saveAreaDto.armCreatedBy, this.requestContextService.getUserId());
+  //   const data: Prisma.AreaMasterUncheckedCreateInput = {
+  //     armName: normalizedName,
+  //     armCityId: saveAreaDto.armCityId,
+  //     armCollectionDays: hasOwnProperty(saveAreaDto, 'armCollectionDays')
+  //       ? (saveAreaDto.armCollectionDays ?? [])
+  //       : [],
+  //     armCreatedOn: now,
+  //     armCreatedBy: createdBy,
+  //   };
+  //   this.applyOptionalFields(data, saveAreaDto);
+  //   try {
+  //     return await this.prisma.$transaction(async (tx) => {
+  //       await this.ensureCityExists(tx, data.armCityId);
+  //       await this.ensureNameIsUnique(tx, normalizedName, data.armCityId);
+  //       const created = await tx.areaMaster.create({ data });
+  //       const payload = this.toPayload(created);
+  //       await this.auditLogService.logEntityChange(
+  //         {
+  //           action: 'New',
+  //           tableName: AREA_TABLE_NAME,
+  //           screenName: AREA_AUDIT_SCREEN_NAME,
+  //           screenType: 'master',
+  //           pk: payload.armId,
+  //           displayName: payload.armName,
+  //           originalRecord: null,
+  //           modifiedRecord: payload,
+  //           userId: createdBy,
+  //           notes: 'Area created',
+  //         },
+  //         tx,
+  //       );
+  //       return payload;
+  //     });
+  //   } catch (error: unknown) {
+  //     throwOnUniqueConstraintError<AreaErrorDetail, AreaErrorResponse>(
+  //       error,
+  //       'Area already exists',
+  //       [
+  //         {
+  //           field: 'armName',
+  //           message: 'Duplicate armName is not allowed',
+  //         },
+  //       ],
+  //     );
+  //     throw error;
+  //   }
+  // }
   private async updateArea(saveAreaDto: SaveAreaDto): Promise<AreaPayload> {
     const armId = saveAreaDto.armId!;
     try {
@@ -275,10 +358,17 @@ export class AreaService {
           },
         });
         if (!existing) {
-          this.throwNotFound(armId);
+          throwSalesNotFound<AreaErrorDetail, AreaErrorResponse>(
+            'Area not found',
+            'armId',
+            `No active area found with id ${armId}`,
+          );
         }
-        const normalizedName = this.normalizeRequiredName(saveAreaDto.armName);
-        const nextCityId = this.hasOwnProperty(saveAreaDto, 'armCityId')
+        const normalizedName = normalizeRequiredText<AreaErrorDetail, AreaErrorResponse>(
+          saveAreaDto.armName,
+          'armName',
+        );
+        const nextCityId = hasOwnProperty(saveAreaDto, 'armCityId')
           ? saveAreaDto.armCityId
           : existing.armCityId;
         await this.ensureCityExists(tx, nextCityId);
@@ -287,7 +377,10 @@ export class AreaService {
           armName: normalizedName,
           armCityId: nextCityId,
           armModifiedOn: new Date(),
-          armModifiedBy: this.resolveActor(saveAreaDto.armModifiedBy),
+          armModifiedBy: resolveActor(
+            saveAreaDto.armModifiedBy,
+            this.requestContextService.getUserId(),
+          ),
         };
         this.applyOptionalFields(data, saveAreaDto);
         const updated = await tx.areaMaster.update({
@@ -295,6 +388,22 @@ export class AreaService {
             armId,
           },
           data,
+        });
+        // Keep the linked account group (shares arm_id as its PK) in sync with the mirrored
+        // area fields, the same subset the create flow derives. updateMany is a no-op for
+        // legacy rows that have no linked group, so it can't fail the update.
+        await tx.accGroupMaster.updateMany({
+          where: { accGroupId: armId },
+          data: {
+            accGroupName: updated.armName,
+            accGroupShort: updated.armShort,
+            accGroupDescription: updated.armDescription?.slice(0, 250) ?? null,
+            accGroupSort: Math.trunc(toNumber(updated.armSort)),
+            accGroupIsActive: updated.armIsActive,
+            accGroupIsDeleted: updated.armIsDeleted,
+            accGroupModifiedOn: updated.armModifiedOn,
+            accGroupModifiedBy: updated.armModifiedBy,
+          },
         });
         const payload = this.toPayload(updated);
         await this.auditLogService.logEntityChange(
@@ -315,10 +424,30 @@ export class AreaService {
         return payload;
       });
     } catch (error: unknown) {
-      this.handleWriteError(error);
+      throwOnUniqueConstraintError<AreaErrorDetail, AreaErrorResponse>(
+        error,
+        'Area already exists',
+        [
+          {
+            field: 'armName',
+            message: 'Duplicate armName is not allowed',
+          },
+        ],
+      );
       throw error;
     }
   }
+  private async getCityName(client: AreaWriteClient, cityId: string): Promise<string | null> {
+    if (!cityId) {
+      return null;
+    }
+    const city = await client.cityMaster.findFirst({
+      where: { ctmId: cityId },
+      select: { ctmName: true },
+    });
+    return city?.ctmName ?? null;
+  }
+
   private async ensureCityExists(tx: AreaWriteClient, cityId: string): Promise<void> {
     const city = await tx.cityMaster.findFirst({
       where: {
@@ -330,7 +459,7 @@ export class AreaService {
       },
     });
     if (!city) {
-      this.throwBadRequest('City does not exist', [
+      throwSalesBadRequest<AreaErrorDetail, AreaErrorResponse>('City does not exist', [
         {
           field: 'armCityId',
           message: `No active city found with id ${cityId}`,
@@ -365,13 +494,14 @@ export class AreaService {
       },
     });
     if (existing) {
-      throw new ConflictException(
-        this.buildErrorResponse('Area name already exists for this city', [
+      throwSalesConflict<AreaErrorDetail, AreaErrorResponse>(
+        'Area name already exists for this city',
+        [
           {
             field: 'armName',
             message: 'Duplicate area name is not allowed for this city',
           },
-        ]),
+        ],
       );
     }
   }
@@ -379,36 +509,7 @@ export class AreaService {
     data: Prisma.AreaMasterUncheckedCreateInput | Prisma.AreaMasterUncheckedUpdateInput,
     saveAreaDto: SaveAreaDto,
   ): void {
-    if (this.hasOwnProperty(saveAreaDto, 'armAlias')) {
-      data.armAlias = saveAreaDto.armAlias;
-    }
-    if (this.hasOwnProperty(saveAreaDto, 'armShort')) {
-      data.armShort = saveAreaDto.armShort;
-    }
-    if (this.hasOwnProperty(saveAreaDto, 'armSort')) {
-      data.armSort = saveAreaDto.armSort;
-    }
-    if (this.hasOwnProperty(saveAreaDto, 'armDistanceKm')) {
-      data.armDistanceKm = saveAreaDto.armDistanceKm;
-    }
-    if (this.hasOwnProperty(saveAreaDto, 'armCollectionDays')) {
-      data.armCollectionDays = saveAreaDto.armCollectionDays;
-    }
-    if (this.hasOwnProperty(saveAreaDto, 'armIsActive')) {
-      data.armIsActive = saveAreaDto.armIsActive;
-    }
-  }
-  private normalizeRequiredName(name: string): string {
-    const trimmed = name.trim();
-    if (!trimmed) {
-      this.throwBadRequest('Validation failed', [
-        {
-          field: 'armName',
-          message: 'armName must not be empty',
-        },
-      ]);
-    }
-    return trimmed;
+    applyPresentFields(data, saveAreaDto, AREA_OPTIONAL_FIELDS);
   }
   private toPayload(record: AreaMaster): AreaPayload {
     return {
@@ -417,9 +518,10 @@ export class AreaService {
       armAlias: record.armAlias,
       armShort: record.armShort,
       armCityId: record.armCityId,
-      armSort: this.toNumber(record.armSort),
+      armSort: toNumber(record.armSort),
       armDistanceKm: record.armDistanceKm,
       armCollectionDays: record.armCollectionDays,
+      armDescription: record.armDescription,
       armIsActive: record.armIsActive,
       armIsDeleted: record.armIsDeleted,
       armSyncDate: record.armSyncDate ? record.armSyncDate.toISOString() : null,
@@ -428,59 +530,5 @@ export class AreaService {
       armModifiedOn: record.armModifiedOn.toISOString(),
       armModifiedBy: record.armModifiedBy,
     };
-  }
-  private toNumber(value: Prisma.Decimal | number): number {
-    if (typeof value === 'number') {
-      return value;
-    }
-    return Number(value.toString());
-  }
-  private resolveActor(value: string | null | undefined, fallback = DEFAULT_ACTOR): string {
-    if (!value) {
-      return fallback;
-    }
-    const trimmed = value.trim();
-    return trimmed || fallback;
-  }
-  private handleWriteError(error: unknown): void {
-    if (this.isUniqueConstraintError(error)) {
-      throw new ConflictException(
-        this.buildErrorResponse('Area already exists', [
-          {
-            field: 'armName',
-            message: 'Duplicate armName is not allowed',
-          },
-        ]),
-      );
-    }
-  }
-  private isUniqueConstraintError(error: unknown): boolean {
-    if (typeof error !== 'object' || error === null || !('code' in error)) {
-      return false;
-    }
-    return (error as { code?: string }).code === 'P2002';
-  }
-  private throwNotFound(armId: string): never {
-    throw new NotFoundException(
-      this.buildErrorResponse('Area not found', [
-        {
-          field: 'armId',
-          message: `No active area found with id ${armId}`,
-        },
-      ]),
-    );
-  }
-  private throwBadRequest(message: string, errors: AreaErrorDetail[]): never {
-    throw new BadRequestException(this.buildErrorResponse(message, errors));
-  }
-  private buildErrorResponse(message: string, errors: AreaErrorDetail[] = []): AreaErrorResponse {
-    return {
-      success: false,
-      message,
-      errors,
-    };
-  }
-  private hasOwnProperty<T extends object>(obj: T, key: PropertyKey): boolean {
-    return Object.prototype.hasOwnProperty.call(obj, key);
   }
 }

@@ -1,22 +1,6 @@
-export interface CompanyGroupMasterErrorDetail {
-  field: string;
-  message: string;
-}
-
-export interface CompanyGroupMasterErrorResponse {
-  success: false;
-  message: string;
-  errors: CompanyGroupMasterErrorDetail[];
-}
-
-export interface CompanyGroupMasterSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> {
-  success: true;
-  message: string;
-  data: T;
-  meta?: TMeta;
-  styles?: TStyles;
-}
-
+export type { AccountsErrorDetail as CompanyGroupMasterErrorDetail } from 'src/common/types/module-api.types';
+export type { AccountsErrorResponse as CompanyGroupMasterErrorResponse } from 'src/common/types/module-api.types';
+export type { AccountsSuccessResponse as CompanyGroupMasterSuccessResponse } from 'src/common/types/module-api.types';
 export interface CompanyGroupMasterPayload {
   cogGroupId: string;
   cogGroupName: string;
@@ -28,13 +12,4 @@ export interface CompanyGroupMasterPayload {
   cogCreatedBy: string | null;
   cogModifiedOn: string;
   cogModifiedBy: string | null;
-}
-
-export type CompanyGroupMasterListItem = CompanyGroupMasterPayload | Record<string, unknown>;
-
-export interface CompanyGroupMasterListMeta {
-  page: number;
-  limit: number;
-  total: number;
-  total_pages: number;
 }

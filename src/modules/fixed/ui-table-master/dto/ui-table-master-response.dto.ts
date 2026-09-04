@@ -1,24 +1,11 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { ConfiguredGridStyleDto } from '../../../../common/configured-grid-sql/dto/configured-grid-style.dto';
-
-export class UiTableMasterErrorFieldDto {
-  @ApiProperty({ example: 'uiTblName' })
-  field!: string;
-
-  @ApiProperty({ example: 'Duplicate uiTblName is not allowed' })
-  message!: string;
-}
-
-export class UiTableMasterErrorResponseDto {
-  @ApiProperty({ example: false })
-  success!: false;
-
-  @ApiProperty({ example: 'Validation failed' })
-  message!: string;
-
-  @ApiProperty({ type: UiTableMasterErrorFieldDto, isArray: true })
-  errors!: UiTableMasterErrorFieldDto[];
-}
+import {
+  FixedErrorFieldDto,
+  FixedErrorResponseDto,
+} from 'src/common/utils/module-response.dto';
+import { UiTableColumnPayloadDto } from './ui-table-column-response.dto';
+export { FixedErrorFieldDto as UiTableMasterErrorFieldDto };
+export { FixedErrorResponseDto as UiTableMasterErrorResponseDto };
 
 export class UiTableMasterPayloadDto {
   @ApiProperty({ example: '1', description: 'BigInt id serialized as string' })
@@ -44,6 +31,14 @@ export class UiTableMasterPayloadDto {
   })
   uiTblSyncDate!: string | null;
 
+  @ApiPropertyOptional({
+    example: '2026-03-12T06:34:47.000Z',
+    nullable: true,
+    type: String,
+    format: 'date-time',
+  })
+  uiTblSyncOn!: string | null;
+
   @ApiProperty({ example: '2026-03-12T06:34:47.000Z', type: String, format: 'date-time' })
   uiTblCreatedOn!: string;
 
@@ -55,20 +50,12 @@ export class UiTableMasterPayloadDto {
 
   @ApiPropertyOptional({ example: 'system', nullable: true })
   uiTblModifiedBy!: string | null;
-}
 
-export class UiTableMasterListMetaDto {
-  @ApiProperty({ example: 1 })
-  page!: number;
+  @ApiPropertyOptional({ example: 'mobile', nullable: true })
+  uiTblDeviceType!: string | null;
 
-  @ApiProperty({ example: 20 })
-  limit!: number;
-
-  @ApiProperty({ example: 3 })
-  total!: number;
-
-  @ApiProperty({ example: 1 })
-  total_pages!: number;
+  @ApiProperty({ type: [UiTableColumnPayloadDto], description: 'Columns belonging to this UI table' })
+  columns!: UiTableColumnPayloadDto[];
 }
 
 export class UiTableMasterDeleteResultDto {
@@ -99,12 +86,6 @@ export class UiTableMasterSuccessListDto {
 
   @ApiProperty({ type: UiTableMasterPayloadDto, isArray: true })
   data!: UiTableMasterPayloadDto[];
-
-  @ApiProperty({ type: UiTableMasterListMetaDto })
-  meta!: UiTableMasterListMetaDto;
-
-  @ApiPropertyOptional({ type: ConfiguredGridStyleDto, isArray: true })
-  styles?: ConfiguredGridStyleDto[];
 }
 
 export class UiTableMasterSuccessDeleteDto {
@@ -116,4 +97,39 @@ export class UiTableMasterSuccessDeleteDto {
 
   @ApiProperty({ type: UiTableMasterDeleteResultDto })
   data!: UiTableMasterDeleteResultDto;
+}
+
+export class UiTableColumnDeleteResultDto {
+  @ApiProperty({ example: '1', description: 'BigInt id serialized as string' })
+  uiTblClmId!: string;
+
+  @ApiProperty({ example: true })
+  deleted!: true;
+}
+
+export class UiTableMasterSuccessColumnDeleteDto {
+  @ApiProperty({ example: true })
+  success!: true;
+
+  @ApiProperty({ example: 'UI table column deleted successfully' })
+  message!: string;
+
+  @ApiProperty({ type: UiTableColumnDeleteResultDto })
+  data!: UiTableColumnDeleteResultDto;
+}
+
+export class UiTableColumnUpdateResultDto {
+  @ApiProperty({ example: 2 })
+  updated!: number;
+}
+
+export class UiTableMasterSuccessColumnUpdateDto {
+  @ApiProperty({ example: true })
+  success!: true;
+
+  @ApiProperty({ example: 'Column widths updated successfully' })
+  message!: string;
+
+  @ApiProperty({ type: UiTableColumnUpdateResultDto })
+  data!: UiTableColumnUpdateResultDto;
 }

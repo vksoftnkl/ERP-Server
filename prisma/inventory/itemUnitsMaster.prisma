@@ -5,7 +5,8 @@ model Unit {
   // Master fields
   unit_name        String   @unique @db.VarChar(50)
   unit_alias       String?  @db.VarChar(50)
-  unit_code        String?  @db.VarChar(30)
+ unit_code        String?  @db.Text
+  gstUnit          ItemGstUnits? @relation(fields: [unit_code], references: [itemGstUnitCode], onDelete: SetNull, onUpdate: Cascade)
   unit_description String?  @db.VarChar(100)
 
   // Decimal / measurement
@@ -40,14 +41,15 @@ model Unit {
   iucBaseUnits ItemUnitConversion[] @relation("IucBaseUnit")
 
   // Back-relations — ItemPriceMaster
-  ipmUnits     ItemPriceMaster[] @relation("IpmUnit")
-  ipmBaseUnits ItemPriceMaster[] @relation("IpmBaseUnit")
+  // (ItemPriceMaster no longer stores a base unit — it reaches one through ItemUnitConversion.)
   openingStockUnits OpeningStockDetail[] @relation("OpeningStockDetailUnit")
+  physicalStockUnits PhysicalStockDetail[] @relation("PhysicalStockDetailUnit")
+  physicalStockBaseUnits PhysicalStockDetail[] @relation("PhysicalStockDetailBaseUnit")
+  physicalStockBatchUnits PhysicalStockBatchDetail[] @relation("PhysicalStockBatchDetailUnit")
+  physicalStockBatchBaseUnits PhysicalStockBatchDetail[] @relation("PhysicalStockBatchDetailBaseUnit")
 
   // Back-relations — others
-  eanCodes     ItemEanCode[]
   itemMasters  ItemMaster[]
-  itemReorders ItemReorder[]
 
   @@map("item_unit_master")
   @@schema("inventory")
