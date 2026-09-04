@@ -114,6 +114,7 @@ model Company {
   appSettingValues      AppSettingValue[]
   promotionSchemes      PromotionScheme[] @relation("PromotionSchemeCompany")
   loyaltySchemes        LoyaltyScheme[]   @relation("LoyaltySchemeCompany")
+  stockTrackPolicies    StockTrackPolicy[] @relation("StockTrackPolicyCompany")
 
   // ── printing (17_printing.sql) ─────────────────────────────────────────
   printPurposes         PrintPurpose[]            @relation("PrintPurposeCompany")

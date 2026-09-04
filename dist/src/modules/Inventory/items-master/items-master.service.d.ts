@@ -8,6 +8,7 @@ import { ItemsPriceMasterService } from '../items-price-master/items-price-maste
 import { ItemsEanCodeMasterService } from '../items-ean-code-master/items-ean-code-master.service';
 import { ItemsReorderMasterService } from '../items-reorder-master/items-reorder-master.service';
 import { ItemMasterUpdateService } from './item-master-update.service';
+import { StockTrackPolicyService } from "../../stocks/stock-track-policy/stock-track-policy.service";
 import { PrismaService } from "../../../database/prisma/prisma.service";
 import { AuditLogService } from "../../audit-log/audit-log.service";
 import { RequestContextService } from '../../../common/request-context/request-context.service';
@@ -20,7 +21,8 @@ export declare class ItemsMasterService {
     private readonly itemsEanCodeMasterService;
     private readonly itemsReorderMasterService;
     private readonly itemMasterUpdateService;
-    constructor(prisma: PrismaService, auditLogService: AuditLogService, requestContextService: RequestContextService, itemUnitConversionService: ItemUnitConversionService, itemsPriceMasterService: ItemsPriceMasterService, itemsEanCodeMasterService: ItemsEanCodeMasterService, itemsReorderMasterService: ItemsReorderMasterService, itemMasterUpdateService: ItemMasterUpdateService);
+    private readonly stockTrackPolicyService;
+    constructor(prisma: PrismaService, auditLogService: AuditLogService, requestContextService: RequestContextService, itemUnitConversionService: ItemUnitConversionService, itemsPriceMasterService: ItemsPriceMasterService, itemsEanCodeMasterService: ItemsEanCodeMasterService, itemsReorderMasterService: ItemsReorderMasterService, itemMasterUpdateService: ItemMasterUpdateService, stockTrackPolicyService: StockTrackPolicyService);
     save(saveItemDto: SaveItemDto, tx?: Prisma.TransactionClient): Promise<ItemPayload>;
     saveComposite(dto: SaveItemCompositeDto): Promise<ItemCompositePayload>;
     getById(itemId: string): Promise<ItemPayload>;

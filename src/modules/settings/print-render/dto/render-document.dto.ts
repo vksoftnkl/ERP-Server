@@ -107,7 +107,10 @@ export class RenderDocumentDto {
   @ApiPropertyOptional({
     type: 'object',
     additionalProperties: true,
-    description: "The operator's answers to this revision's prompts (ptvParams).",
+    description:
+      "The operator's answers to this revision's prompts (ptvParams). A declared context name " +
+      'is answerable here and the answer overrides what the render holds — except :company_id, ' +
+      "which is always the authenticated session's.",
   })
   @IsOptional()
   @IsObject()

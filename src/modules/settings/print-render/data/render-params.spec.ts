@@ -23,12 +23,22 @@ describe('readParamSpecs', () => {
     expect(specs[0].required).toBe(true);
   });
 
-  it('refuses a prompt that shadows a context parameter', () => {
-    // "Declaring one as a USER prompt is a mistake worth naming, because the
-    // render would then ask the operator for something it already knows."
-    const { errors } = readParamSpecs([{ name: 'company_id', type: 'UUID' }]);
-    expect(errors[0].message).toContain('CONTEXT parameter');
-    expect(errors[0].message).toContain('company_id');
+  it('accepts a context name declared as a prompt — ptv_params is the whole declaration', () => {
+    // The closed set is gone: an author who wants :doc_id answered by the
+    // operator rather than taken from the print request declares it here.
+    const { specs, errors } = readParamSpecs([
+      { name: 'doc_id', type: 'UUID', required: true, label: 'Document' },
+      { name: 'company_id', type: 'UUID' },
+    ]);
+    expect(errors).toEqual([]);
+    expect(specs.map((spec) => spec.name)).toEqual(['doc_id', 'company_id']);
+  });
+
+  it('does not call a declared context name unanswered — the render has a value either way', () => {
+    // `required` on :doc_id must not refuse a print that carries a document.
+    expect(() =>
+      resolveRenderParams([{ name: 'doc_id', type: 'UUID', required: true }], {}),
+    ).not.toThrow();
   });
 
   it('refuses an unknown prompt type rather than guessing a coercion', () => {
@@ -76,16 +86,29 @@ describe('resolveRenderParams', () => {
     }
   });
 
-  it('refuses an attempt to supply a context parameter with the request', () => {
+  it('refuses an answer to company_id however the revision declares it', () => {
+    // The tenant guarantee is the one thing the author cannot take over: a
+    // caller able to name the company is a caller able to read another tenant.
     try {
-      resolveRenderParams(prompts, { from_date: '2026-04-01', company_id: 'other-company' });
+      resolveRenderParams([...prompts, { name: 'company_id', type: 'UUID' }], {
+        from_date: '2026-04-01',
+        company_id: 'other-company',
+      });
       throw new Error('should have refused');
     } catch (error) {
       const detail = (error as RenderParamError).details.find(
         (entry) => entry.field === 'params.company_id',
       );
-      expect(detail?.message).toContain('supplies itself');
+      expect(detail?.message).toContain("server's to decide");
     }
+  });
+
+  it('accepts an answer to a declared context name that is not server-owned', () => {
+    const values = resolveRenderParams([...prompts, { name: 'doc_id', type: 'UUID' }], {
+      from_date: '2026-04-01',
+      doc_id: '11111111-2222-3333-4444-555555555555',
+    });
+    expect(values.doc_id).toBe('11111111-2222-3333-4444-555555555555');
   });
 
   it('refuses a malformed date rather than binding something PostgreSQL will read differently', () => {

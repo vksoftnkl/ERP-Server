@@ -5,6 +5,7 @@ import { ModuleErrorDetail } from 'src/common/utils/module-service.utils';
 import { PTV_CONTEXT_PARAMS } from '../../print-template/print-template.constants';
 import { RenderContext, ResolvedDataset } from '../types/print-render-api.types';
 import { DatasetBindError, bindDatasetSql, withRowLimit } from './dataset-sql-binder';
+import { hasContextDefault, isServerOwnedParam } from './render-params';
 import { PrintDataProviderRegistry } from './print-data-provider.registry';
 import { PrintRow } from './print-data-provider.types';
 import { toScalarText } from './scalar-text';
@@ -259,22 +260,25 @@ export class DatasetRunnerService {
   // ─── Parameters ────────────────────────────────────────────────────────
 
   /**
-   * What a query may bind: the six context parameters, then the operator's
-   * answers.
+   * What a query may bind: the context the render already holds, then whatever
+   * the revision declared and the operator answered.
    *
-   * ORDER IS THE TENANT GUARANTEE. The context is written FIRST and the
-   * operator's answers cannot overwrite it, so a revision that declares a
-   * prompt named `company_id` — by mistake or otherwise — gets the authenticated
-   * company bound to `:company_id` regardless of what the operator typed. The
-   * declaration is refused at save time too; this is what makes the refusal not
-   * load-bearing.
+   * THE CONTEXT IS A DEFAULT, NOT A CEILING. It is written first, and a
+   * DECLARED prompt of the same name overwrites it — that is the whole point of
+   * being able to put `doc_id` in `ptv_params`: a report that prints a document
+   * the operator picks needs `:doc_id` to be the answer, not the id the print
+   * request happened to carry. An unanswered prompt (null) does NOT overwrite,
+   * so declaring one costs nothing when it is left blank.
+   *
+   * `company_id` is the exception, and it is the tenant guarantee: it is written
+   * LAST, so no declaration and no answer can move it off the authenticated
+   * company. `resolveRenderParams` refuses an answer to it as well; this is what
+   * makes that refusal not load-bearing.
    */
   private bindableValues(
     dataset: PrintTemplateDataset,
     request: DatasetRunRequest,
   ): Record<string, unknown> {
-    const values: Record<string, unknown> = { ...request.params };
-
     const context: Record<(typeof PTV_CONTEXT_PARAMS)[number], unknown> = {
       company_id: request.context.companyId,
       branch_id: request.context.branchId,
@@ -284,8 +288,19 @@ export class DatasetRunnerService {
       device_id: request.context.deviceId,
     };
 
+    const values: Record<string, unknown> = {};
     for (const name of PTV_CONTEXT_PARAMS) {
       values[name] = context[name] ?? null;
+    }
+
+    for (const [name, value] of Object.entries(request.params)) {
+      if (isServerOwnedParam(name)) continue;
+      if (value === null || value === undefined) {
+        // Only a context name has something to fall back TO; anything else
+        // keeps its null, because a query binding it must still see the blank.
+        if (hasContextDefault(name)) continue;
+      }
+      values[name] = value ?? null;
     }
 
     // ptd_requires_company is the flag that says a query is allowed to be

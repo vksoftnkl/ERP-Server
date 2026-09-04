@@ -5,13 +5,14 @@ export type { SettingsErrorResponse as PrintRenderErrorResponse } from 'src/comm
 export type { SettingsSuccessResponse as PrintRenderSuccessResponse } from 'src/common/types/module-api.types';
 
 /**
- * The closed set of context parameters — §3's list, and nothing else.
+ * What the render already knows — the DEFAULT value of each context name.
  *
- * "CONTEXT PARAMETERS ARE NOT DECLARED ANYWHERE. :company_id, :branch_id,
- * :acc_year, :doc_id, :user_id and :device_id are a closed set the server holds
- * the types for, and it finds which of them a query uses by reading the query."
- * This interface IS that closed set: a dataset can bind any of these six and
- * nothing outside them, and the operator is never asked for one.
+ * `:company_id`, `:branch_id`, `:acc_year`, `:doc_id`, `:user_id` and
+ * `:device_id` are bound from here whenever the revision's `ptv_params`
+ * declares no prompt of that name. A revision that DOES declare one overrides
+ * the default with the operator's answer — the one exception is `companyId`,
+ * which stays the authenticated company however the revision is written, since
+ * a caller able to name the company is a caller able to read another tenant.
  */
 export interface RenderContext {
   readonly companyId: string;

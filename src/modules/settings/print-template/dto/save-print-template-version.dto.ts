@@ -175,9 +175,10 @@ export class SavePrintTemplateVersionDto {
       { name: 'godown_id', type: 'UUID', required: false, label: 'Godown' },
     ],
     description:
-      'What the OPERATOR is asked, ONCE, for the whole render. Context parameters — ' +
-      ':company_id, :branch_id, :acc_year, :doc_id, :user_id, :device_id — are NEVER declared ' +
-      'here; the server holds them and finds which a query uses by reading it.',
+      'What the OPERATOR is asked, ONCE, for the whole render. ANY name may be declared, ' +
+      'including a context one (:company_id, :branch_id, :acc_year, :doc_id, :user_id, ' +
+      ':device_id): those are filled in from the render when this array leaves them out, and a ' +
+      "row here overrides that — except company_id, whose value stays the session's.",
   })
   @IsOptional()
   @SkipOnNullish()

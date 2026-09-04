@@ -342,6 +342,13 @@ export const pagebreakElementSchema = elementBase.extend({
  *   columnBy  -> the label across the top       ({{ date(row.billDate, 'MMM') }})
  *   measure   -> the number in the cell         ({{ row.netAmount }})
  *
+ * Each of the three is the FIRST of a list. `extraRowBys` adds further label
+ * columns down the left edge, `extraColumnBys` adds further header rows across
+ * the top, and `extraMeasures` splits every column group into one sub-column
+ * per measure. All three default to empty, so a crosstab that names none of
+ * them is exactly the one-row-one-column-one-measure pivot that shipped first,
+ * and no stored `ptv_body` needs migrating.
+ *
  * They are evaluated once per source row against the same `row` context a
  * DETAIL band would see, which is what lets `columnBy` be an expression rather
  * than a column name: a month bucket, a size band, a yes/no flag are all just
@@ -356,6 +363,48 @@ export const pagebreakElementSchema = elementBase.extend({
  * the box the designer drew, because the one thing worse than a missing column
  * is a column printed over the page margin.
  */
+/**
+ * One level of a crosstab's row or column axis.
+ *
+ * A crosstab used to have exactly one row dimension and one column dimension.
+ * These are the SECOND and subsequent levels: `rowBy`/`columnBy` stay the first
+ * level, so every template written before nesting existed still parses, and an
+ * axis with no extra levels is byte-for-byte the crosstab that shipped.
+ */
+export const crosstabAxisSchema = z.object({
+  /** Expression -> this level's label. */
+  expression: expressionString,
+  /**
+   * Header caption for the column this level prints in.
+   *
+   * Row axes only: the first row column is captioned by `corner`, and a nested
+   * COLUMN level has no fixed caption -- its header cells are the data's own
+   * labels.
+   */
+  label: z.string().max(60).default(''),
+  /** Row axes only. 0 = share whatever `rowHeaderWidthMm` leaves. */
+  widthMm: millimetreSize.default(0),
+});
+
+/**
+ * One value column of a crosstab.
+ *
+ * With a single measure the table is the classic pivot: one number per
+ * (row, column). With several, every column group splits into one sub-column
+ * per measure -- "Qty" and "Amount" under each month -- and each measure keeps
+ * its OWN aggregate and number format, because a quantity summed as an integer
+ * and a value averaged to two decimals cannot share either.
+ */
+export const crosstabMeasureSchema = z.object({
+  /** Expression -> the number accumulated into the cell. */
+  expression: expressionString,
+  /** Sub-header caption. Printed only when the crosstab has >1 measure. */
+  label: z.string().max(60).default(''),
+  fn: z.enum(AGGREGATE_FUNCTIONS).default('sum'),
+  format: z.string().max(60).default('#,##0.00'),
+  blankWhenZero: z.boolean().default(true),
+});
+
 export const crosstabElementSchema = elementBase.extend({
   kind: z.literal('CROSSTAB'),
   /** The total width the table may occupy. Enforced, not advisory. */
@@ -368,17 +417,35 @@ export const crosstabElementSchema = elementBase.extend({
   h: millimetreSize.default(0),
   /** The repeating dataset the pivot reads. Not the band's dataset. */
   dataset: identifier,
-  /** Expression -> the row dimension label. */
+  /** Expression -> the FIRST row dimension label. */
   rowBy: expressionString,
-  /** Expression -> the column dimension label. */
+  /** Expression -> the FIRST column dimension label. */
   columnBy: expressionString,
-  /** Expression -> the number accumulated into the cell. */
+  /** Expression -> the number the FIRST measure accumulates into the cell. */
   measure: expressionString,
   fn: z.enum(AGGREGATE_FUNCTIONS).default('sum'),
-  /** Number pattern for every cell and total, e.g. '#,##0.00'. */
+  /** Number pattern for the first measure's cells and totals, e.g. '#,##0.00'. */
   format: z.string().max(60).default('#,##0.00'),
   /** Print an empty cell instead of a zero. An empty grid reads far faster. */
   blankWhenZero: z.boolean().default(true),
+  /**
+   * Sub-header caption for the first measure. Printed only when there is more
+   * than one, which is why it is not `measure`'s own required field.
+   */
+  measureLabel: z.string().max(60).default(''),
+  /**
+   * Row dimensions AFTER `rowBy`, printed as further label columns down the
+   * left edge and grouped left to right: HSN, then description within it.
+   */
+  extraRowBys: z.array(crosstabAxisSchema).max(6).default([]),
+  /**
+   * Column dimensions AFTER `columnBy`, printed as further HEADER ROWS: year
+   * across the top, month underneath it, one leaf column per combination the
+   * data actually contains.
+   */
+  extraColumnBys: z.array(crosstabAxisSchema).max(4).default([]),
+  /** Value columns AFTER `measure`. Every column group repeats all of them. */
+  extraMeasures: z.array(crosstabMeasureSchema).max(8).default([]),
   /** The top-left cell, above the row labels. Expression-capable. */
   corner: expressionString.default(''),
   rowHeaderWidthMm: millimetreSize.default(40),
@@ -641,6 +708,63 @@ export const templateDefinitionSchema = z
             message: 'the row-label column leaves no width for the data columns',
           });
         }
+        // An empty EXTRA level is not the same mistake as an empty `rowBy`.
+        // `rowBy` empty gives one unnamed row group, which is visibly wrong on
+        // the paper; an extra level that evaluates to nothing silently doubles
+        // the row count with a blank column beside it, or -- on the column axis
+        // -- multiplies the leaf columns by one nameless level. So the extras
+        // are refused where the originals only warn.
+        for (const [axisIndex, axis] of element.extraRowBys.entries()) {
+          if (!axis.expression.trim()) {
+            ctx.addIssue({
+              code: 'custom',
+              path: [
+                'bands',
+                bandIndex,
+                'elements',
+                elementIndex,
+                'extraRowBys',
+                axisIndex,
+                'expression',
+              ],
+              message: 'a row level needs an expression',
+            });
+          }
+        }
+        for (const [axisIndex, axis] of element.extraColumnBys.entries()) {
+          if (!axis.expression.trim()) {
+            ctx.addIssue({
+              code: 'custom',
+              path: [
+                'bands',
+                bandIndex,
+                'elements',
+                elementIndex,
+                'extraColumnBys',
+                axisIndex,
+                'expression',
+              ],
+              message: 'a column level needs an expression',
+            });
+          }
+        }
+        for (const [measureIndex, measure] of element.extraMeasures.entries()) {
+          if (!measure.expression.trim()) {
+            ctx.addIssue({
+              code: 'custom',
+              path: [
+                'bands',
+                bandIndex,
+                'elements',
+                elementIndex,
+                'extraMeasures',
+                measureIndex,
+                'expression',
+              ],
+              message: 'a measure needs an expression',
+            });
+          }
+        }
       }
     }
 
@@ -734,6 +858,8 @@ export type AggregateFunction = (typeof AGGREGATE_FUNCTIONS)[number];
 export type AggregateScope = (typeof AGGREGATE_SCOPES)[number];
 export type CrosstabSort = (typeof CROSSTAB_SORTS)[number];
 export type CrosstabOverflow = (typeof CROSSTAB_OVERFLOWS)[number];
+export type CrosstabAxis = z.infer<typeof crosstabAxisSchema>;
+export type CrosstabMeasure = z.infer<typeof crosstabMeasureSchema>;
 export type CrosstabElement = z.infer<typeof crosstabElementSchema>;
 
 /** Text-bearing elements share one shape; the engine measures them together. */

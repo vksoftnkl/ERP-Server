@@ -3,6 +3,7 @@ import {
   PTV_CONTEXT_PARAMS,
   PTV_PARAM_NAME_PATTERN,
   PTV_PARAM_TYPES,
+  PTV_SERVER_OWNED_PARAMS,
   PtvParamType,
 } from '../../print-template/print-template.constants';
 import { toScalarText } from './scalar-text';
@@ -23,6 +24,14 @@ import { toScalarText } from './scalar-text';
  * an ENTRY — that it has a name, that its type is one of six — is this file's
  * to enforce, and it enforces it at RENDER as well as at save, because a
  * revision published by an older build is still expected to print.
+ *
+ * WHAT MAY BE DECLARED: anything, context names included. The six context names
+ * are a DEFAULT the dataset runner falls back to, not a reserved word list, so a
+ * revision that wants `:doc_id` answered by the operator simply declares it and
+ * the answer wins. Two things survive from the old closed set: an answer to a
+ * SERVER-OWNED name is still refused (`company_id`, the tenant guarantee), and a
+ * declared context name is never "required and unanswered", because the render
+ * has a value for it either way.
  */
 
 export interface ParamSpec {
@@ -31,6 +40,16 @@ export interface ParamSpec {
   readonly required: boolean;
   readonly label: string;
   readonly defaultValue: unknown;
+}
+
+/** True for a name the render fills in when the revision leaves it unanswered. */
+export function hasContextDefault(name: string): boolean {
+  return (PTV_CONTEXT_PARAMS as readonly string[]).includes(name);
+}
+
+/** True for a name whose VALUE stays the server's, however it is declared. */
+export function isServerOwnedParam(name: string): boolean {
+  return (PTV_SERVER_OWNED_PARAMS as readonly string[]).includes(name);
 }
 
 export class RenderParamError extends Error {
@@ -80,19 +99,6 @@ export function readParamSpecs(raw: unknown): { specs: ParamSpec[]; errors: Modu
       errors.push({
         field: `${path}.name`,
         message: `'${name}' is not a usable prompt name — lower case, starting with a letter, ${'letters, digits and underscores only'}.`,
-      });
-      continue;
-    }
-
-    // "Declaring one as a USER prompt is a mistake worth naming, because the
-    // render would then ask the operator for something it already knows."
-    if ((PTV_CONTEXT_PARAMS as readonly string[]).includes(name)) {
-      errors.push({
-        field: `${path}.name`,
-        message:
-          `'${name}' is a CONTEXT parameter the server already holds, not something to ask for. ` +
-          `The closed set is ${PTV_CONTEXT_PARAMS.join(', ')} — remove this prompt; queries can ` +
-          `bind :${name} without it.`,
       });
       continue;
     }
@@ -211,14 +217,22 @@ export function resolveRenderParams(
   const declared = new Set(specs.map((spec) => spec.name));
 
   for (const name of Object.keys(supplied)) {
+    if (isServerOwnedParam(name)) {
+      errors.push({
+        field: `params.${name}`,
+        message:
+          `'${name}' is the server's to decide — it comes from the authenticated session and ` +
+          'cannot be sent with the request. Declaring it as a prompt is allowed; answering it ' +
+          'is not.',
+      });
+      continue;
+    }
     if (declared.has(name)) continue;
     errors.push({
       field: `params.${name}`,
-      message: (PTV_CONTEXT_PARAMS as readonly string[]).includes(name)
-        ? `'${name}' is a context parameter the server supplies itself — it cannot be sent with the request.`
-        : `This revision has no prompt named '${name}'. It asks for: ${
-            specs.map((spec) => spec.name).join(', ') || 'nothing'
-          }.`,
+      message: `This revision has no prompt named '${name}'. It asks for: ${
+        specs.map((spec) => spec.name).join(', ') || 'nothing'
+      }.`,
     });
   }
 
@@ -230,7 +244,10 @@ export function resolveRenderParams(
 
     const coerced = coerce(spec, answer, errors);
 
-    if (coerced === null && spec.required) {
+    // A context name is never "unanswered": the runner falls back to the value
+    // the render already holds, so requiring an answer here would refuse a
+    // print that has one.
+    if (coerced === null && spec.required && !hasContextDefault(spec.name)) {
       errors.push({
         field: `params.${spec.name}`,
         message: `'${spec.label}' is required by this revision and was not answered.`,

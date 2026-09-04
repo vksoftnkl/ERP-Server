@@ -158,13 +158,19 @@ describe('collectVersionInvariantErrors', () => {
     ).toEqual([]);
   });
 
-  it('refuses a CONTEXT parameter declared as an operator prompt', () => {
-    const errors = collectVersionInvariantErrors({
-      ...version,
-      ptvParams: [{ name: 'company_id', type: 'UUID' }],
-    });
-    expect(fields(errors)).toEqual(['ptvParams[0].name']);
-    expect(errors[0].message).toContain('CONTEXT parameter');
+  it('accepts a context name declared as an operator prompt', () => {
+    // ptv_params is the whole declaration now: an author who wants :doc_id to
+    // come from the operator rather than from the print request says so here,
+    // and the context value is only the default for what is left out.
+    expect(
+      collectVersionInvariantErrors({
+        ...version,
+        ptvParams: [
+          { name: 'doc_id', type: 'UUID', required: true, label: 'Document' },
+          { name: 'company_id', type: 'UUID' },
+        ],
+      }),
+    ).toEqual([]);
   });
 
   it('refuses two prompts with the same name — the operator is asked once', () => {

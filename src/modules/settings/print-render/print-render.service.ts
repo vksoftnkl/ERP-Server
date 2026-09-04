@@ -231,10 +231,7 @@ export class PrintRenderService {
       docType: request.srcDocType ?? purpose.ppoDocType,
     });
 
-    const accYear = await this.printLog.currentAccYear(
-      context.companyId,
-      context.accYear,
-    );
+    const accYear = await this.printLog.currentAccYear(context.companyId, context.accYear);
 
     const entries: PrintLogEntry[] = outcome.copyLabels.map((label, index) => ({
       accYear,

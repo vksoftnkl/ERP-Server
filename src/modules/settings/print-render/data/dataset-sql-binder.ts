@@ -182,8 +182,8 @@ export function bindDatasetSql(sql: string, values: Readonly<Record<string, unkn
           .sort()
           .map((name) => `:${name}`)
           .join(', ')}. ` +
-        'Context parameters are a closed set; anything else must be declared as an operator ' +
-        'prompt on the revision (ptvParams).',
+        'The context names are filled in automatically; anything else must be declared as an ' +
+        'operator prompt on the revision (ptvParams).',
       unknown,
     );
   }

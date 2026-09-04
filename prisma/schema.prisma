@@ -2326,7 +2326,7 @@ model GridColumn {
   gridColumnNotes           String?  @db.Text @map("grid_column_notes")
   gridColumnIsDeleted       Boolean  @default(false) @map("grid_column_is_deleted")
   gridColumnPosition        Decimal? @db.Decimal(12, 2) @map("grid_column_position")
-  gridColumnPx              String?  @db.Text @map("grid_column_px")      
+  gridColumnPx              String?  @db.Text @map("grid_column_px")
   gridColumnSqlFieldName    String?  @db.Text@map("grid_column_sql_field_name")
   gridColumnCreatedOn       DateTime @default(now()) @db.Timestamptz(6) @map("grid_column_created_on")
   gridColumnCreatedBy       String?  @db.Text @map("grid_column_created_by")
@@ -2555,7 +2555,7 @@ model UitableColumns {
   uiTblClmColumnNecessity  Boolean   @default(false)                @map("ui_tbl_clm_column_necessity")
   uiTblClmNextColumn       Int?                                     @map("ui_tbl_clm_next_column")
   uiTblClmPreviousColumn   Int?                                     @map("ui_tbl_clm_previous_column")
-  uiTblClmPx               String?   @db.Text                       @map("ui_tbl_clm_px")      
+  uiTblClmPx               String?   @db.Text                       @map("ui_tbl_clm_px")
   uiTblClmIsActive         Boolean   @default(true)                 @map("ui_tbl_clm_is_active")
   uiTblClmIsDeleted        Boolean   @default(false)                @map("ui_tbl_clm_is_deleted")
   uiTblClmSyncDate         DateTime? @db.Timestamptz(6)             @map("ui_tbl_clm_sync_date")
@@ -2862,6 +2862,7 @@ model ItemGroupMaster {
   items             ItemMaster[]
   promotionSchemeItems PromotionSchemeItem[] @relation("PromotionItemGroup")
   loyaltySchemeItems   LoyaltySchemeItem[]   @relation("LoyaltyItemGroup")
+  stockTrackPolicies   StockTrackPolicy[]    @relation("StockTrackPolicyGroup")
 
   itgSort           Int?     @map("itg_sort")
   itgLevel          Int?     @map("itg_level")
@@ -3006,6 +3007,7 @@ model ItemMaster {
   loyaltySchemeItems   LoyaltySchemeItem[]   @relation("LoyaltyItemItem")
   loyaltySchemeSlabs   LoyaltySchemeSlab[]   @relation("LoyaltySlabItem")
   loyaltySchemeGifts   LoyaltySchemeGift[]   @relation("LoyaltyGiftItem")
+  stockTrackPolicies   StockTrackPolicy[]    @relation("StockTrackPolicyItem")
   @@map("item_master")
   @@schema("inventory")
   // UNIQUE item_name_en globally (since company removed)
@@ -4006,6 +4008,7 @@ model BranchMaster {
   promotionSchemeBranches PromotionSchemeBranch[] @relation("PromotionSchemeBranchBranch")
   loyaltySchemes        LoyaltyScheme[]         @relation("LoyaltySchemeBranchRef")
   loyaltySchemeBranches LoyaltySchemeBranch[]   @relation("LoyaltySchemeBranchBranch")
+  stockTrackPolicies    StockTrackPolicy[]      @relation("StockTrackPolicyBranch")
 
   // ── printing (17_printing.sql) ─────────────────────────────────────────
   printAssignments      PrintTemplateAssignment[] @relation("PrintTemplateAssignmentBranch")
@@ -4182,6 +4185,7 @@ model Company {
   appSettingValues      AppSettingValue[]
   promotionSchemes      PromotionScheme[] @relation("PromotionSchemeCompany")
   loyaltySchemes        LoyaltyScheme[]   @relation("LoyaltySchemeCompany")
+  stockTrackPolicies    StockTrackPolicy[] @relation("StockTrackPolicyCompany")
 
   // ── printing (17_printing.sql) ─────────────────────────────────────────
   printPurposes         PrintPurpose[]            @relation("PrintPurposeCompany")
@@ -5639,6 +5643,7 @@ model UserMaster {
   appSettingValues       AppSettingValue[]
   approvedPromotionSchemes PromotionScheme[] @relation("PromotionSchemeApprovedBy")
   approvedLoyaltySchemes   LoyaltyScheme[]   @relation("LoyaltySchemeApprovedBy")
+  stockTrackPolicies       StockTrackPolicy[] @relation("StockTrackPolicyCreatedBy")
 
   // ── printing (17_printing.sql) — every *_created_by / *_modified_by in
   // that schema carries a real FK, unlike the reports.* tables it replaces.
@@ -8415,6 +8420,150 @@ model PhysicalStockHeader {
   // ix_physical_stock_header_* WHERE psc_is_deleted = false are maintained in
   // SQL migrations because Prisma schema cannot express filtered indexes.
   @@map("physical_stock_header")
+  @@schema("stock")
+}
+
+// ----- prisma/stocks/stockTrackPolicy.prisma -----
+/// stock.stock_track_policy — how a holding is keyed, valued, issued and aged.
+///
+/// One row answers, for a (company, branch, scope) at a document's date: what
+/// makes two holdings of the same item DIFFERENT (batch / mrp / sale price /
+/// expiry / serial / supplier), which one goes out when nobody names a lot,
+/// which cost a report believes, and whether the counter may sell into
+/// negative stock.
+///
+/// RESOLUTION is most-specific-first, and the window is resolved against the
+/// DOCUMENT's date, not today's — a business can genuinely say "we start
+/// tracking batches on 1 July" and have June's receipts keep the identity
+/// scheme they were entered under:
+///
+///     branch + ITEM  →  branch + GROUP  →  branch + COMPANY
+///     company + ITEM →  company + GROUP →  company + COMPANY
+///     (stpCompanyId NULL = every company; stpBranchId NULL = every branch)
+///
+/// stpEffectiveFrom defaults to 1900-01-01 on purpose. Defaulting it to today
+/// looks tidier and is a trap: a policy authored today would not apply to a
+/// receipt back-dated to yesterday, which would silently fall through to
+/// "track nothing" and create an untracked lot for an item the business
+/// believes is batch-tracked. A policy with no stated start date has ALWAYS
+/// been in force.
+///
+/// WRITE RULES:
+///   * set stpScope + stpScopeId; NEVER write stpItemId / stpGroupId /
+///     stpTrackSignature — all three are GENERATED ALWAYS ... STORED and
+///     Postgres rejects any write to them.
+///   * stpScopeId is NULL only when stpScope = 'COMPANY'.
+///
+/// stpTrackSignature is B/M/S/E/R/P in that order, 'N' when nothing is
+/// tracked. It is stamped onto every lot at creation so history survives a
+/// policy change.
+///
+/// Vocabularies, enforced by CHECK constraints in the migration:
+///   stpScope            COMPANY | GROUP | ITEM
+///   stpValuationMethod  WAVG | FIFO | LOT_ACTUAL
+///   stpIssueStrategy    FIFO | FEFO | LIFO | MANUAL
+///   stpAllowNegative    ALLOW | WARN | BLOCK
+///   stpAgeingBasis      INWARD_DATE | MFG_DATE | LAST_IN_DATE
+/// plus ck_stp_expiry_needs_batch (expiry without batch cannot be keyed) and
+/// ck_stp_fefo_needs_expiry (FEFO can only order lots that have an expiry).
+///
+/// DB-only objects Prisma cannot express — hand-authored in the migration and
+/// deliberately NOT declared here:
+///   ex_stp_overlap   EXCLUDE USING gist — two policies for the same thing,
+///                    same branch, overlapping dates, is not a rule but a
+///                    race. Needs btree_gist. NULL company/branch/scope_id are
+///                    COALESCEd to the nil uuid because EXCLUDE never
+///                    conflicts on NULL.
+///   ix_stp_resolve   the resolver's exact lookup shape, covering, partial
+///   ix_stp_item      reverse lookup / FK-covering, partial
+model StockTrackPolicy {
+  stpId                String    @id(map: "pk_stock_track_policy") @default(dbgenerated("uuidv7()")) @db.Uuid @map("stp_id")
+
+  /// NULL = EVERY company. item_master.item_company_id is itself nullable and
+  /// items are deliberately not company-owned, so a company-less item would
+  /// have nothing to write a policy against. A company row beats a NULL one.
+  stpCompanyId         String?   @db.Uuid                                     @map("stp_company_id")
+  /// NULL = every branch in the company. A branch row beats a company row.
+  stpBranchId          String?   @db.Uuid                                     @map("stp_branch_id")
+
+  // ── Scope: the pair, and the typed columns beside it ────────────────────
+  stpScope             String    @default("COMPANY") @db.VarChar(20)          @map("stp_scope")
+  /// NULL only when stpScope = 'COMPANY'.
+  stpScopeId           String?   @db.Uuid                                     @map("stp_scope_id")
+
+  // GENERATED ALWAYS ... STORED. Read-only, never sent.
+  stpItemId            String?   @default(dbgenerated()) @db.Uuid             @map("stp_item_id")
+  stpGroupId           String?   @default(dbgenerated()) @db.Uuid             @map("stp_group_id")
+
+  // ── What is significant about a holding ─────────────────────────────────
+  // All false = plain item-wise stock: one lot, for ever, every identity
+  // column NULL. That is the DEFAULT, and it is the common case.
+  stpTrackBatch        Boolean   @default(false)                              @map("stp_track_batch")
+  stpTrackMrp          Boolean   @default(false)                              @map("stp_track_mrp")
+  stpTrackSalePrice    Boolean   @default(false)                              @map("stp_track_sale_price")
+  stpTrackExpiry       Boolean   @default(false)                              @map("stp_track_expiry")
+  stpTrackSerial       Boolean   @default(false)                              @map("stp_track_serial")
+  /// Tracked separately from batch on purpose: the same batch number from two
+  /// suppliers is two holdings, and only this flag decides whether the
+  /// business cares.
+  stpTrackSupplier     Boolean   @default(false)                              @map("stp_track_supplier")
+
+  /// GENERATED ALWAYS ... STORED. B/M/S/E/R/P, 'N' when nothing is tracked.
+  stpTrackSignature    String?   @default(dbgenerated()) @db.VarChar(8)       @map("stp_track_signature")
+
+  // ── How it is valued ────────────────────────────────────────────────────
+  /// WAVG reads stock_item_cost; FIFO and LOT_ACTUAL read slt_cost_rate. Both
+  /// are always maintained, so this only selects which one a report believes —
+  /// changing it needs no recomputation.
+  stpValuationMethod   String    @default("WAVG") @db.VarChar(20)             @map("stp_valuation_method")
+
+  // ── Which lot goes out when nobody names one ────────────────────────────
+  /// The single most consequential column here. /master-lookups/item-price
+  /// returns ONE stock row to the billing screen; before this there was
+  /// nothing in the schema that said which. FEFO is the default because it is
+  /// right for anything perishable and harmless for anything else.
+  stpIssueStrategy     String    @default("FEFO") @db.VarChar(20)             @map("stp_issue_strategy")
+
+  // ── Negative stock ──────────────────────────────────────────────────────
+  /// ALLOW because a counter must be able to sell before the GRN clerk has
+  /// caught up. WARN posts and flags. BLOCK aborts the transaction — for
+  /// controlled substances and anything serialised.
+  stpAllowNegative     String    @default("ALLOW") @db.VarChar(10)            @map("stp_allow_negative")
+
+  // ── Expiry ──────────────────────────────────────────────────────────────
+  stpShelfLifeDays     Int?                                                   @map("stp_shelf_life_days")
+  stpNearExpiryDays    Int       @default(30)                                 @map("stp_near_expiry_days")
+  stpBlockExpiredSale  Boolean   @default(false)                              @map("stp_block_expired_sale")
+
+  /// INWARD_DATE  — when the lot first entered the company (chain-wide age)
+  /// LAST_IN_DATE — when it last entered THIS godown (shelf age)
+  /// MFG_DATE     — age of the goods themselves
+  stpAgeingBasis       String    @default("INWARD_DATE") @db.VarChar(20)      @map("stp_ageing_basis")
+
+  // ── When this policy is in force (resolved against the DOCUMENT's date) ──
+  stpEffectiveFrom     DateTime  @default(dbgenerated("'1900-01-01'::date")) @db.Date @map("stp_effective_from")
+  stpEffectiveTo       DateTime  @default(dbgenerated("'9999-12-31'::date")) @db.Date @map("stp_effective_to")
+
+  stpRemarks           String?   @db.VarChar(250)                             @map("stp_remarks")
+  stpIsActive          Boolean   @default(true)                               @map("stp_is_active")
+  stpIsDeleted         Boolean   @default(false)                              @map("stp_is_deleted")
+  stpSyncDate          DateTime? @db.Timestamptz(6)                           @map("stp_sync_date")
+  stpCreatedOn         DateTime  @default(now()) @db.Timestamptz(6)           @map("stp_created_on")
+  stpCreatedBy         String?   @db.Uuid                                     @map("stp_created_by")
+  stpModifiedOn        DateTime? @db.Timestamptz(6)                           @map("stp_modified_on")
+  stpModifiedBy        String?   @db.Uuid                                     @map("stp_modified_by")
+
+  // ── Relations ───────────────────────────────────────────────────────────
+  // item/itemGroup are NoAction on update, not Cascade: PostgreSQL refuses
+  // ON UPDATE CASCADE on a foreign key over a GENERATED column, because it
+  // cannot write one.
+  company              Company?         @relation("StockTrackPolicyCompany",   fields: [stpCompanyId], references: [compId], onUpdate: Cascade,  onDelete: Restrict, map: "fk_stp_company")
+  branch               BranchMaster?    @relation("StockTrackPolicyBranch",    fields: [stpBranchId],  references: [brId],   onUpdate: Cascade,  onDelete: Restrict, map: "fk_stp_branch")
+  item                 ItemMaster?      @relation("StockTrackPolicyItem",      fields: [stpItemId],    references: [itemId], onUpdate: NoAction, onDelete: Restrict, map: "fk_stp_item")
+  itemGroup            ItemGroupMaster? @relation("StockTrackPolicyGroup",     fields: [stpGroupId],   references: [itgId],  onUpdate: NoAction, onDelete: Restrict, map: "fk_stp_group")
+  createdBy            UserMaster?      @relation("StockTrackPolicyCreatedBy", fields: [stpCreatedBy], references: [usrId],  onUpdate: Cascade,  onDelete: Restrict, map: "fk_stp_created_by")
+
+  @@map("stock_track_policy")
   @@schema("stock")
 }
 

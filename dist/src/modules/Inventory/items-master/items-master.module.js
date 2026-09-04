@@ -17,6 +17,7 @@ const item_unit_conversion_module_1 = require("../item-unit-conversion/item-unit
 const items_price_master_module_1 = require("../items-price-master/items-price-master.module");
 const items_ean_code_master_module_1 = require("../items-ean-code-master/items-ean-code-master.module");
 const items_reorder_master_module_1 = require("../items-reorder-master/items-reorder-master.module");
+const stock_track_policy_module_1 = require("../../stocks/stock-track-policy/stock-track-policy.module");
 let ItemsMasterModule = class ItemsMasterModule {
 };
 exports.ItemsMasterModule = ItemsMasterModule;
@@ -28,6 +29,7 @@ exports.ItemsMasterModule = ItemsMasterModule = __decorate([
             items_price_master_module_1.ItemsPriceMasterModule,
             items_ean_code_master_module_1.ItemsEanCodeMasterModule,
             items_reorder_master_module_1.ItemsReorderMasterModule,
+            stock_track_policy_module_1.StockTrackPolicyModule,
         ],
         controllers: [items_master_controller_1.ItemsMasterController],
         providers: [items_master_service_1.ItemsMasterService, item_master_update_service_1.ItemMasterUpdateService, item_exception_filter_1.ItemExceptionFilter],

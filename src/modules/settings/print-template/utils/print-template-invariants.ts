@@ -17,7 +17,6 @@ import {
   PTV_BODY_MIN_LENGTH,
   PTV_COLUMNS_MAX,
   PTV_COLUMNS_MIN,
-  PTV_CONTEXT_PARAMS,
   PTV_ENGINES,
   PTV_JSON_ENGINE,
   PTV_LANG_PATTERN,
@@ -315,10 +314,15 @@ function checkVersionLang(
  * defines and no constraint can.
  *
  * The prompts are declared ON THE VERSION because the operator is asked ONCE.
- * The other half of that decision is enforced here: a CONTEXT parameter —
- * :company_id and its five siblings — is never declared, because the server
- * already holds it and finds it by reading the query. Declaring one would put a
- * box on the screen asking the operator for something the render knows.
+ * ANY name may be declared, including a context one: `ptv_params` is the whole
+ * declaration, and an author who wants `:doc_id` to come from the operator
+ * rather than from the print request says so by putting a row here. The context
+ * names remain a FALLBACK for what a revision does not declare — see
+ * PTV_CONTEXT_PARAMS — so nothing written before this change has to be edited.
+ *
+ * The only thing still refused is a second row for a name already declared:
+ * the operator is asked once, and two rows have no answer to which type the
+ * screen should use.
  */
 function checkVersionParams(
   version: EffectiveVersion,
@@ -352,15 +356,6 @@ function checkVersionParams(
         message: 'name must be lower snake case, starting with a letter — it is what :name binds',
       });
     } else {
-      if ((PTV_CONTEXT_PARAMS as readonly string[]).includes(name)) {
-        errors.push({
-          field: `${field}.name`,
-          message:
-            `"${name}" is a CONTEXT parameter — the server supplies it and finds it by reading ` +
-            'the query. Do not declare it as a prompt; the operator would be asked for something ' +
-            'the render already knows.',
-        });
-      }
       const first = seen.get(name);
       if (first !== undefined) {
         errors.push({

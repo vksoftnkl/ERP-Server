@@ -71,6 +71,7 @@ model UserMaster {
   appSettingValues       AppSettingValue[]
   approvedPromotionSchemes PromotionScheme[] @relation("PromotionSchemeApprovedBy")
   approvedLoyaltySchemes   LoyaltyScheme[]   @relation("LoyaltySchemeApprovedBy")
+  stockTrackPolicies       StockTrackPolicy[] @relation("StockTrackPolicyCreatedBy")
 
   // ── printing (17_printing.sql) — every *_created_by / *_modified_by in
   // that schema carries a real FK, unlike the reports.* tables it replaces.

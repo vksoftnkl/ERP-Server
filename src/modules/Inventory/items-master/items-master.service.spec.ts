@@ -10,6 +10,7 @@ import { ItemsReorderMasterService } from '../items-reorder-master/items-reorder
 import { SaveItemCompositeDto } from './dto/save-item-composite.dto';
 import { ItemsMasterService } from './items-master.service';
 import { ItemMasterUpdateService } from './item-master-update.service';
+import { StockTrackPolicyService } from '../../stocks/stock-track-policy/stock-track-policy.service';
 
 const ITEM_ID = '019c6f6c-be87-7a11-8905-36092c46aa01';
 const COMPANY_ID = '019c6f6c-be87-7a11-8905-36092c46aa02';
@@ -145,6 +146,7 @@ describe('ItemsMasterService composite endpoints', () => {
   let priceService: ChildServiceMock;
   let eanCodeService: ChildServiceMock;
   let reorderService: ChildServiceMock;
+  let stockTrackPolicyService: { syncFromItem: jest.Mock };
 
   beforeEach(() => {
     prisma = {
@@ -216,6 +218,15 @@ describe('ItemsMasterService composite endpoints', () => {
     eanCodeService = makeChildServiceMock('ean_id', 'e1');
     reorderService = makeChildServiceMock('ir_id', 'r1');
 
+    stockTrackPolicyService = {
+      syncFromItem: jest.fn().mockResolvedValue({
+        stp_id: 'stp1',
+        item_id: ITEM_ID,
+        outcome: 'created',
+        track_signature: 'N',
+      }),
+    };
+
     const itemMasterUpdateService = new ItemMasterUpdateService(
       unitConversionService as unknown as ItemUnitConversionService,
       priceService as unknown as ItemsPriceMasterService,
@@ -232,6 +243,7 @@ describe('ItemsMasterService composite endpoints', () => {
       eanCodeService as unknown as ItemsEanCodeMasterService,
       reorderService as unknown as ItemsReorderMasterService,
       itemMasterUpdateService,
+      stockTrackPolicyService as unknown as StockTrackPolicyService,
     );
   });
 

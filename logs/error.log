@@ -6237,3 +6237,5 @@ Error: Cannot use a pool after calling end on the pool
 2026-09-01T13:38:53.468Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
 2026-09-01T13:40:09.868Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
 2026-09-01T13:40:26.104Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-09-04T09:03:44.458Z ERROR [DatasetRunnerService] Dataset 'charges' (01a06ba5-d7c0-7d71-9947-bb8015bc9fde) failed after binding :quote_id: syntax error at or near ";"
+2026-09-04T09:04:43.853Z ERROR [DatasetRunnerService] Dataset 'charges' (01a06ba5-d7c0-7d71-9947-bb8015bc9fde) failed after binding :quote_id: syntax error at or near ";"

@@ -9,6 +9,7 @@ import { ItemsPriceMasterService } from '../items-price-master/items-price-maste
 import { ItemsEanCodeMasterService } from '../items-ean-code-master/items-ean-code-master.service';
 import { ItemsReorderMasterService } from '../items-reorder-master/items-reorder-master.service';
 import { ItemMasterUpdateService } from './item-master-update.service';
+import { StockTrackPolicyService } from 'src/modules/stocks/stock-track-policy/stock-track-policy.service';
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import { toNumber } from 'src/common/utils/module-service.utils';
 import { AuditLogService } from 'src/modules/audit-log/audit-log.service';
@@ -40,6 +41,7 @@ export class ItemsMasterService {
     private readonly itemsEanCodeMasterService: ItemsEanCodeMasterService,
     private readonly itemsReorderMasterService: ItemsReorderMasterService,
     private readonly itemMasterUpdateService: ItemMasterUpdateService,
+    private readonly stockTrackPolicyService: StockTrackPolicyService,
   ) {}
   /**
    * @param tx When supplied, the write runs inside the caller's transaction
@@ -519,6 +521,10 @@ export class ItemsMasterService {
     this.applyOptionalFields(data, saveItemDto);
     const create = async (client: Prisma.TransactionClient) => {
       const created = await client.itemMaster.create({ data });
+      // Same transaction as the item: an item never exists without the policy
+      // that says how its stock is keyed, and neither is written if the other
+      // fails.
+      await this.stockTrackPolicyService.syncFromItem(created, client);
       const payload = this.toPayload(created);
       await this.auditLogService.logEntityChange(
         {
@@ -588,6 +594,10 @@ export class ItemsMasterService {
         },
         data,
       });
+      // Refreshes the derived policy from the saved row — a no-op write when
+      // nothing the policy cares about changed, and left alone entirely when an
+      // admin has hand-authored the policy for this item.
+      await this.stockTrackPolicyService.syncFromItem(updated, client);
       const payload = this.toPayload(updated);
       await this.auditLogService.logEntityChange(
         {

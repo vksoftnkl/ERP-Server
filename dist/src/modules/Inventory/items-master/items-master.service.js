@@ -16,6 +16,7 @@ const items_price_master_service_1 = require("../items-price-master/items-price-
 const items_ean_code_master_service_1 = require("../items-ean-code-master/items-ean-code-master.service");
 const items_reorder_master_service_1 = require("../items-reorder-master/items-reorder-master.service");
 const item_master_update_service_1 = require("./item-master-update.service");
+const stock_track_policy_service_1 = require("../../stocks/stock-track-policy/stock-track-policy.service");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
 const audit_log_service_1 = require("../../audit-log/audit-log.service");
@@ -34,7 +35,8 @@ let ItemsMasterService = class ItemsMasterService {
     itemsEanCodeMasterService;
     itemsReorderMasterService;
     itemMasterUpdateService;
-    constructor(prisma, auditLogService, requestContextService, itemUnitConversionService, itemsPriceMasterService, itemsEanCodeMasterService, itemsReorderMasterService, itemMasterUpdateService) {
+    stockTrackPolicyService;
+    constructor(prisma, auditLogService, requestContextService, itemUnitConversionService, itemsPriceMasterService, itemsEanCodeMasterService, itemsReorderMasterService, itemMasterUpdateService, stockTrackPolicyService) {
         this.prisma = prisma;
         this.auditLogService = auditLogService;
         this.requestContextService = requestContextService;
@@ -43,6 +45,7 @@ let ItemsMasterService = class ItemsMasterService {
         this.itemsEanCodeMasterService = itemsEanCodeMasterService;
         this.itemsReorderMasterService = itemsReorderMasterService;
         this.itemMasterUpdateService = itemMasterUpdateService;
+        this.stockTrackPolicyService = stockTrackPolicyService;
     }
     async save(saveItemDto, tx) {
         if (saveItemDto.item_id) {
@@ -411,6 +414,7 @@ let ItemsMasterService = class ItemsMasterService {
         this.applyOptionalFields(data, saveItemDto);
         const create = async (client) => {
             const created = await client.itemMaster.create({ data });
+            await this.stockTrackPolicyService.syncFromItem(created, client);
             const payload = this.toPayload(created);
             await this.auditLogService.logEntityChange({
                 action: 'New',
@@ -471,6 +475,7 @@ let ItemsMasterService = class ItemsMasterService {
                 },
                 data,
             });
+            await this.stockTrackPolicyService.syncFromItem(updated, client);
             const payload = this.toPayload(updated);
             await this.auditLogService.logEntityChange({
                 action: 'update',
@@ -765,6 +770,7 @@ exports.ItemsMasterService = ItemsMasterService = __decorate([
         items_price_master_service_1.ItemsPriceMasterService,
         items_ean_code_master_service_1.ItemsEanCodeMasterService,
         items_reorder_master_service_1.ItemsReorderMasterService,
-        item_master_update_service_1.ItemMasterUpdateService])
+        item_master_update_service_1.ItemMasterUpdateService,
+        stock_track_policy_service_1.StockTrackPolicyService])
 ], ItemsMasterService);
 //# sourceMappingURL=items-master.service.js.map

@@ -9,7 +9,13 @@ import { LayoutEngine } from './layout.engine';
 import { LayoutTree, TextPrimitive } from './layout-tree.types';
 import { TextMeasurer } from './text-measure';
 import { formatNumber } from '../expression/transforms/format';
-import { CROSSTAB_FOLD_KEY, buildCrosstabModel, planCrosstab, sliceCrosstab } from './crosstab';
+import {
+  CROSSTAB_FOLD_KEY,
+  buildCrosstabModel,
+  emitCrosstab,
+  planCrosstab,
+  sliceCrosstab,
+} from './crosstab';
 import { loadCanvasFixture, loadCanvasFixtureSample } from '../../__fixtures__/load-fixture';
 
 /**
@@ -635,4 +641,395 @@ describe('the shipped quotation-rate-matrix-a4 design', () => {
       .filter((value) => /^1\d{3}$/.test(value));
     expect(new Set(printedHsn).size).toBe(40);
   });
+});
+
+// ─── 4. Several rows, several columns, several measures ──────────────────────
+
+/**
+ * The three axes are LISTS, and each one nests independently.
+ *
+ * These fixtures are deliberately small enough to add up by eye, because the
+ * mistake that matters here is not a crash -- it is a table that looks right
+ * and totals the wrong cells. Every case therefore asserts on both the shape
+ * (which columns exist, in what order) and the arithmetic behind them.
+ */
+describe('a crosstab with more than one of each axis', () => {
+  interface WideRow {
+    year: string;
+    month: string;
+    hsn: string;
+    item: string;
+    qty: number;
+    amount: number;
+  }
+
+  const WIDE: WideRow[] = [
+    { year: '2025', month: 'Apr', hsn: '6109', item: 'T-SHIRT', qty: 3, amount: 300 },
+    { year: '2025', month: 'Apr', hsn: '6109', item: 'VEST', qty: 2, amount: 150 },
+    { year: '2025', month: 'May', hsn: '6109', item: 'T-SHIRT', qty: 4, amount: 400 },
+    { year: '2025', month: 'Apr', hsn: '6203', item: 'TROUSER', qty: 1, amount: 500 },
+    { year: '2026', month: 'Apr', hsn: '6109', item: 'T-SHIRT', qty: 5, amount: 550 },
+    { year: '2026', month: 'Apr', hsn: '6203', item: 'TROUSER', qty: 2, amount: 900 },
+  ];
+
+  /** `{{ row.field }}` against a WideRow, which is all these fixtures use. */
+  const wideField = (expression: string): keyof WideRow =>
+    expression.replace(/[{}\s]/g, '').replace('row.', '') as keyof WideRow;
+
+  const wideReader = {
+    text: (expression: string, row: unknown) => {
+      const value = (row as WideRow)[wideField(expression)];
+      return value === undefined || value === null ? '' : String(value);
+    },
+    number: (expression: string, row: unknown) =>
+      Number((row as WideRow)[wideField(expression)] ?? 0),
+  };
+
+  const wideElement = (overrides: Record<string, unknown>): CrosstabElement =>
+    crosstabElement({
+      rowBy: '{{ row.hsn }}',
+      columnBy: '{{ row.year }}',
+      measure: '{{ row.amount }}',
+      columnSort: 'FIRST_SEEN',
+      rowSort: 'FIRST_SEEN',
+      ...overrides,
+    });
+
+  it('keeps `rowBy`/`columnBy`/`measure` as the first entry of each list', () => {
+    const model = buildCrosstabModel(wideElement({}), WIDE, wideReader);
+
+    expect(model.rowAxes).toHaveLength(1);
+    expect(model.columnAxes).toHaveLength(1);
+    expect(model.measures).toHaveLength(1);
+    expect(model.measures[0].expression).toBe('{{ row.amount }}');
+    // With no extras the flat model is exactly what it always was.
+    expect(model.columns.map((column) => column.label)).toEqual(['2025', '2026']);
+    expect(model.rows.map((row) => row.label)).toEqual(['6109', '6203']);
+  });
+
+  // ── Several measures ───────────────────────────────────────────────────
+
+  it('splits every column group into one sub-column per measure', () => {
+    const model = buildCrosstabModel(
+      wideElement({
+        measureLabel: 'Amt',
+        extraMeasures: [{ expression: '{{ row.qty }}', label: 'Qty', fn: 'sum', format: '#,##0' }],
+      }),
+      WIDE,
+      wideReader,
+    );
+
+    // Two years x two measures = four printed columns, measures innermost.
+    expect(model.leaves.map((leaf) => leaf.label)).toEqual(['2025', '2026']);
+    expect(model.columns.map((column) => [column.label, column.measureIndex])).toEqual([
+      ['Amt', 0],
+      ['Qty', 1],
+      ['Amt', 0],
+      ['Qty', 1],
+    ]);
+
+    // HSN 6109 in 2025: 300 + 150 + 400 amount, 3 + 2 + 4 qty.
+    expect(model.rows[0].values).toEqual([850, 9, 550, 5]);
+    expect(model.rows[0].totals).toEqual([1400, 14]);
+    expect(model.grandTotals).toEqual([2800, 17]);
+  });
+
+  it('gives each measure its own aggregate rather than one for the whole table', () => {
+    const model = buildCrosstabModel(
+      wideElement({
+        fn: 'sum',
+        extraMeasures: [
+          { expression: '{{ row.amount }}', label: 'Max', fn: 'max', format: '#,##0' },
+          { expression: '{{ row.qty }}', label: 'Lines', fn: 'count', format: '#,##0' },
+        ],
+      }),
+      WIDE,
+      wideReader,
+    );
+
+    const hsn6109in2025 = model.rows[0];
+    expect(hsn6109in2025.values[0]).toBe(850); // sum
+    expect(hsn6109in2025.values[1]).toBe(400); // max of 300/150/400
+    expect(hsn6109in2025.values[2]).toBe(3); // three source lines
+    // A row total is a RE-aggregation of the source rows, so the max column's
+    // total is the largest single line, not the sum of the per-column maxima.
+    expect(hsn6109in2025.totals[1]).toBe(550);
+  });
+
+  it('folds surplus columns per measure, keeping each measure honest', () => {
+    const model = buildCrosstabModel(
+      wideElement({
+        columnBy: '{{ row.month }}',
+        maxColumns: 1,
+        overflow: 'FOLD',
+        overflowLabel: 'Other',
+        extraMeasures: [{ expression: '{{ row.qty }}', label: 'Qty', fn: 'sum', format: '#,##0' }],
+      }),
+      WIDE,
+      wideReader,
+    );
+
+    expect(model.leaves.map((leaf) => leaf.label)).toEqual(['Apr', 'Other']);
+    expect(model.leaves[1].key).toBe(CROSSTAB_FOLD_KEY);
+    // 6109: April is 300 + 150 + 550 = 1000 (qty 10); May folds to 400 (qty 4).
+    expect(model.rows[0].values).toEqual([1000, 10, 400, 4]);
+    expect(model.rows[0].totals).toEqual([1400, 14]);
+  });
+
+  it('prints a measure caption row and formats each measure its own way', () => {
+    const element = wideElement({
+      measureLabel: 'Amount',
+      format: '#,##0.00',
+      extraMeasures: [
+        {
+          expression: '{{ row.qty }}',
+          label: 'Qty',
+          fn: 'sum',
+          format: '#,##0',
+          blankWhenZero: true,
+        },
+      ],
+    });
+    const model = buildCrosstabModel(element, WIDE, wideReader);
+    const plan = planCrosstab(element, model, measurer);
+
+    // One row for the year, one for the measure captions.
+    expect(plan.headerRowCount).toBe(2);
+    expect(plan.headerHeightMm).toBeCloseTo(plan.headerRowHeightMm * 2, 5);
+
+    const printed = emitted(plan);
+    expect(printed).toContain('Amount');
+    expect(printed).toContain('Qty');
+    // The amount keeps two decimals, the quantity none -- one format per column.
+    expect(printed).toContain(formatNumber(850, '#,##0.00'));
+    expect(printed).toContain(formatNumber(9, '#,##0'));
+  });
+
+  // ── Nested column levels ───────────────────────────────────────────────
+
+  it('nests column levels instead of interleaving them', () => {
+    const model = buildCrosstabModel(
+      wideElement({
+        columnBy: '{{ row.year }}',
+        extraColumnBys: [{ expression: '{{ row.month }}' }],
+      }),
+      WIDE,
+      wideReader,
+    );
+
+    // 2025 has April and May; 2026 only April. The leaves are the combinations
+    // the data holds, NOT the 2 x 2 cartesian product.
+    expect(model.leaves.map((leaf) => leaf.labels)).toEqual([
+      ['2025', 'Apr'],
+      ['2025', 'May'],
+      ['2026', 'Apr'],
+    ]);
+    expect(model.rows[0].values).toEqual([450, 400, 550]);
+    expect(model.rows[0].total).toBe(1400);
+  });
+
+  it('sorts a nested column axis level by level, never across levels', () => {
+    const model = buildCrosstabModel(
+      wideElement({
+        columnBy: '{{ row.year }}',
+        extraColumnBys: [{ expression: '{{ row.month }}' }],
+        columnSort: 'LABEL_DESC',
+      }),
+      WIDE,
+      wideReader,
+    );
+
+    // Years descend, and the months descend WITHIN each year -- an axis sorted
+    // flat would give 2026-May, 2025-May, 2026-Apr and span nothing.
+    expect(model.leaves.map((leaf) => leaf.labels.join(' '))).toEqual([
+      '2026 Apr',
+      '2025 May',
+      '2025 Apr',
+    ]);
+  });
+
+  it('merges a nested header into spanning cells and rules them separately', () => {
+    const element = wideElement({
+      columnBy: '{{ row.year }}',
+      extraColumnBys: [{ expression: '{{ row.month }}' }],
+      showRowTotals: true,
+    });
+    const model = buildCrosstabModel(element, WIDE, wideReader);
+    const plan = planCrosstab(element, model, measurer);
+
+    expect(plan.headerRowCount).toBe(2);
+
+    const primitives = emitCrosstab(plan, {
+      xMm: 0,
+      yMm: 0,
+      slice: sliceCrosstab(plan, 0, 200, true),
+      cornerText: 'HSN',
+      strokeColour: '#000000',
+      textColour: '#000000',
+      headerFill: null,
+    });
+    const texts = primitives.filter((p): p is TextPrimitive => p.k === 'text');
+
+    // '2025' is printed once, over BOTH its months.
+    const years = texts.filter((t) => t.text === '2025');
+    expect(years).toHaveLength(1);
+    const aprils = texts.filter((t) => t.text === 'Apr');
+    expect(aprils).toHaveLength(2);
+    expect(years[0].w).toBeGreaterThan(aprils[0].w);
+
+    // The totals column is its own group at the top level, so the year cell
+    // cannot bleed across it.
+    const totalHeading = texts.find((t) => t.text === 'Total' && t.y < plan.headerHeightMm);
+    expect(totalHeading).toBeDefined();
+    expect(totalHeading!.x).toBeGreaterThan(years[0].x + years[0].w);
+  });
+
+  it('spans one Total heading over every measure, not one per measure', () => {
+    const element = wideElement({
+      measureLabel: 'Amt',
+      extraMeasures: [{ expression: '{{ row.qty }}', label: 'Qty', fn: 'sum', format: '#,##0' }],
+      showRowTotals: true,
+    });
+    const plan = planCrosstab(element, buildCrosstabModel(element, WIDE, wideReader), measurer);
+    const printed = emitted(plan);
+
+    // Two totals columns, one heading over both -- the reader is told once that
+    // this group is the total, and the measure captions below say which is which.
+    expect(printed.filter((value) => value === 'Total')).toHaveLength(
+      // Once in the header, once as the column-totals row label.
+      2,
+    );
+  });
+
+  // ── Several row levels ─────────────────────────────────────────────────
+
+  it('prints one label column per row level, grouped left to right', () => {
+    const element = wideElement({
+      rowBy: '{{ row.hsn }}',
+      extraRowBys: [{ expression: '{{ row.item }}', label: 'Description' }],
+      columnBy: '{{ row.year }}',
+    });
+    const model = buildCrosstabModel(element, WIDE, wideReader);
+    const plan = planCrosstab(element, model, measurer);
+
+    expect(model.rows.map((row) => row.labels)).toEqual([
+      ['6109', 'T-SHIRT'],
+      ['6109', 'VEST'],
+      ['6203', 'TROUSER'],
+    ]);
+    expect(plan.rowColumns).toHaveLength(2);
+    // Both share `rowHeaderWidthMm` when neither names a width.
+    expect(plan.rowColumns[0].wMm).toBeCloseTo(plan.rowHeaderWidthMm / 2, 5);
+    expect(plan.rowColumns[1].xMm).toBeCloseTo(plan.rowHeaderWidthMm / 2, 5);
+  });
+
+  it('honours a fixed width on a row level and shares the rest', () => {
+    const element = wideElement({
+      rowHeaderWidthMm: 60,
+      extraRowBys: [{ expression: '{{ row.item }}', widthMm: 20 }],
+    });
+    const plan = planCrosstab(element, buildCrosstabModel(element, WIDE, wideReader), measurer);
+
+    expect(plan.rowColumns[0].wMm).toBeCloseTo(40, 5);
+    expect(plan.rowColumns[1].wMm).toBeCloseTo(20, 5);
+  });
+
+  it('prints a repeated group label once, and again at the top of a new page', () => {
+    const element = wideElement({
+      extraRowBys: [{ expression: '{{ row.item }}', label: 'Description' }],
+    });
+    const model = buildCrosstabModel(element, WIDE, wideReader);
+    const plan = planCrosstab(element, model, measurer);
+
+    const firstTwo = emitted(
+      plan,
+      sliceCrosstab(plan, 0, plan.headerHeightMm + plan.rowHeightMm * 2, true),
+    );
+    // '6109' covers both T-SHIRT and VEST, so it is written once.
+    expect(firstTwo.filter((value) => value === '6109')).toHaveLength(1);
+    expect(firstTwo).toContain('T-SHIRT');
+    expect(firstTwo).toContain('VEST');
+
+    // A continuation slice opens on a row whose group started overleaf; it
+    // reprints the group rather than leaving the column blank.
+    const continued = emitted(plan, sliceCrosstab(plan, 1, plan.rowHeightMm * 2, false));
+    expect(continued).toContain('6109');
+  });
+
+  // ── All three at once, through the real engine ─────────────────────────
+
+  it('renders all three nested at once without warnings', () => {
+    const definition = parse({
+      schemaVersion: 1,
+      layoutMode: 'GRAPHIC',
+      paper: A4,
+      datasets: [{ name: 'sales', provider: 'sales.by.branch', cardinality: 'many' }],
+      bands: [
+        {
+          type: 'SUMMARY',
+          heightMm: 10,
+          autoGrow: true,
+          elements: [
+            {
+              id: 'ct',
+              kind: 'CROSSTAB',
+              x: 8,
+              y: 0,
+              w: 190,
+              dataset: 'sales',
+              corner: 'HSN',
+              rowBy: '{{ row.hsn }}',
+              // 'Item', not 'Description': the two row levels share the 40mm
+              // row header, and a caption wider than its 20mm column is
+              // truncated with an ellipsis like any other cell.
+              extraRowBys: [{ expression: '{{ row.item }}', label: 'Item' }],
+              columnBy: '{{ row.year }}',
+              extraColumnBys: [{ expression: '{{ row.month }}' }],
+              measure: '{{ row.amount }}',
+              measureLabel: 'Amt',
+              extraMeasures: [
+                { expression: '{{ row.qty }}', label: 'Qty', fn: 'sum', format: '#,##0' },
+              ],
+              columnSort: 'FIRST_SEEN',
+              rowSort: 'FIRST_SEEN',
+            },
+          ],
+        },
+      ],
+    });
+
+    const tree = engine.render({
+      definition,
+      datasets: { sales: WIDE },
+      ctx: {},
+      sys: { now: '2026-09-01T00:00:00.000Z' },
+    });
+
+    expect(tree.warnings).toEqual([]);
+    const texts = textOf(tree, 0);
+    expect(texts).toContain('HSN');
+    expect(texts).toContain('Item');
+    expect(texts).toContain('2025');
+    expect(texts).toContain('Amt');
+    expect(texts).toContain('Qty');
+    expect(texts).toContain('TROUSER');
+  });
+
+  /** The text a slice prints, in order. */
+  function emitted(
+    plan: ReturnType<typeof planCrosstab>,
+    slice = sliceCrosstab(plan, 0, 400, true),
+  ) {
+    return emitCrosstab(plan, {
+      xMm: 0,
+      yMm: 0,
+      slice,
+      cornerText: 'HSN',
+      strokeColour: '#000000',
+      textColour: '#000000',
+      headerFill: null,
+    })
+      .filter((primitive): primitive is TextPrimitive => primitive.k === 'text')
+      .map((primitive) => primitive.text);
+  }
 });

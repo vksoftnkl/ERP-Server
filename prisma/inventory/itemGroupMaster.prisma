@@ -13,6 +13,7 @@ model ItemGroupMaster {
   items             ItemMaster[]
   promotionSchemeItems PromotionSchemeItem[] @relation("PromotionItemGroup")
   loyaltySchemeItems   LoyaltySchemeItem[]   @relation("LoyaltyItemGroup")
+  stockTrackPolicies   StockTrackPolicy[]    @relation("StockTrackPolicyGroup")
 
   itgSort           Int?     @map("itg_sort")
   itgLevel          Int?     @map("itg_level")

@@ -61,10 +61,19 @@ export const PTV_NOTE_MAX_LENGTH = 250;
 export const PTV_PARAM_TYPES = ['TEXT', 'NUMBER', 'DATE', 'DATETIME', 'BOOLEAN', 'UUID'] as const;
 export type PtvParamType = (typeof PTV_PARAM_TYPES)[number];
 
-/// CONTEXT PARAMETERS ARE NOT DECLARED ANYWHERE — a closed set the server holds
-/// the types for and finds by reading the query text. Declaring one as a USER
-/// prompt is a mistake worth naming, because the render would then ask the
-/// operator for something it already knows.
+/// CONTEXT PARAMETERS — the names the render fills IN BY DEFAULT when the
+/// revision declares nothing for them.
+///
+/// They used to be a CLOSED SET that a revision was forbidden to declare. That
+/// refusal is gone: `ptv_params` is now the whole story, so an author who wants
+/// `:doc_id` to come from somewhere other than the print request declares it in
+/// the prompts table like any other parameter and answers it at render time.
+///
+/// What is left is a FALLBACK, and only a fallback. A query binding `:doc_id`
+/// on a revision that declares no such prompt still gets the document being
+/// printed, so every design written before this change keeps printing; and a
+/// declared prompt left unanswered falls back to the same value rather than
+/// binding NULL.
 export const PTV_CONTEXT_PARAMS = [
   'company_id',
   'branch_id',
@@ -73,6 +82,16 @@ export const PTV_CONTEXT_PARAMS = [
   'user_id',
   'device_id',
 ] as const;
+
+/// The one context name whose VALUE is still the server's alone.
+///
+/// It may be declared as a prompt like any other — the declaration is what puts
+/// it on the operator's screen and in the payload's shape — but an ANSWER to it
+/// is refused and the authenticated company is bound regardless. A render reads
+/// a company's documents, so a caller able to name the company is a caller able
+/// to print another tenant's data, and no amount of authoring freedom is worth
+/// that. Empty this list to hand company selection to the template author.
+export const PTV_SERVER_OWNED_PARAMS = ['company_id'] as const;
 
 /// Same shape ck_ptd_name_shape uses: both name something a query addresses.
 export const PTV_PARAM_NAME_PATTERN = /^[a-z][a-z0-9_]*$/;

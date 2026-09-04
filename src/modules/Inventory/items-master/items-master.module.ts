@@ -8,6 +8,7 @@ import { ItemUnitConversionModule } from '../item-unit-conversion/item-unit-conv
 import { ItemsPriceMasterModule } from '../items-price-master/items-price-master.module';
 import { ItemsEanCodeMasterModule } from '../items-ean-code-master/items-ean-code-master.module';
 import { ItemsReorderMasterModule } from '../items-reorder-master/items-reorder-master.module';
+import { StockTrackPolicyModule } from 'src/modules/stocks/stock-track-policy/stock-track-policy.module';
 @Module({
   imports: [
     AuditLogModule,
@@ -15,6 +16,7 @@ import { ItemsReorderMasterModule } from '../items-reorder-master/items-reorder-
     ItemsPriceMasterModule,
     ItemsEanCodeMasterModule,
     ItemsReorderMasterModule,
+    StockTrackPolicyModule,
   ],
   controllers: [ItemsMasterController],
   providers: [ItemsMasterService, ItemMasterUpdateService, ItemExceptionFilter],

@@ -80,7 +80,10 @@ export class RenderPreviewDto {
     description:
       "The operator's answers to this revision's prompts (ptvParams), keyed by prompt name. " +
       'An answer to a prompt the revision does not declare is refused rather than ignored — it ' +
-      'is almost always a spelling mistake, and dropping it quietly makes the report subtly wrong.',
+      'is almost always a spelling mistake, and dropping it quietly makes the report subtly ' +
+      'wrong. A context name declared as a prompt (:doc_id, :branch_id, :acc_year, :user_id, ' +
+      ':device_id) may be answered here and the answer wins over what the render holds; ' +
+      ':company_id may not, whatever the revision declares.',
     type: 'object',
     additionalProperties: true,
     example: { from_date: '2026-04-01', godown_id: null },

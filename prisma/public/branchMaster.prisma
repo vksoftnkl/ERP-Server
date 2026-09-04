@@ -90,6 +90,7 @@ model BranchMaster {
   promotionSchemeBranches PromotionSchemeBranch[] @relation("PromotionSchemeBranchBranch")
   loyaltySchemes        LoyaltyScheme[]         @relation("LoyaltySchemeBranchRef")
   loyaltySchemeBranches LoyaltySchemeBranch[]   @relation("LoyaltySchemeBranchBranch")
+  stockTrackPolicies    StockTrackPolicy[]      @relation("StockTrackPolicyBranch")
 
   // ── printing (17_printing.sql) ─────────────────────────────────────────
   printAssignments      PrintTemplateAssignment[] @relation("PrintTemplateAssignmentBranch")
