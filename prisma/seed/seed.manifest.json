@@ -89,6 +89,10 @@
     {
       "file": "Quotation_Item_Grid_ItemSize_Column.sql",
       "description": "fixed.ui_table_columns — ItemSize column on the quotation item grid"
+    },
+    {
+      "file": "Quotation_Charges_Grid_Web.sql",
+      "description": "fixed.ui_tables / ui_table_columns — the web additional-charges grid (id 26); after Ui_Tables.sql and Ui_Table_Columns.sql, which leave the pinned id free"
     }
   ]
 }
