@@ -55,6 +55,8 @@ import { StateCodeMasterModule } from '../modules/fixed/state-code-master/state-
 import { UiTableMasterModule } from '../modules/fixed/ui-table-master/ui-table-master.module';
 import { UserLoginSessionsModule } from '../modules/fixed/user-login-sessions/user-login-sessions.module';
 import { StockAdjReasonsModule } from '../modules/fixed/stock-adj-reasons/stock-adj-reasons.module';
+import { StockTrackPresetsModule } from '../modules/stocks/stock-track-presets/stock-track-presets.module';
+import { OpeningStockVoucherModule } from '../modules/stocks/opening-stock-voucher/opening-stock-voucher.module';
 import { PromotionLoyaltyPointsModule } from '../modules/sales/loyalty/promotion-loyalty-points.module';
 import { PromotionSchemeModule } from '../modules/sales/promotion-scheme/promotion-scheme.module';
 import { ItemsGroupMasterModule } from 'src/modules/Inventory/items-group-master/items-group-master.module';
@@ -72,10 +74,8 @@ import { ItemsMasterModule } from 'src/modules/Inventory/items-master/items-mast
 import { ItemsEanCodeMasterModule } from 'src/modules/Inventory/items-ean-code-master/items-ean-code-master.module';
 import { ItemsGstUnitsMasterModule } from 'src/modules/Inventory/items-gst-units-master/items-gst-units-master.module';
 import { GodownsMasterModule } from 'src/modules/Inventory/godowns-master/godowns-master.module';
-// import { OpeningStockModule } from 'src/modules/stocks/opening-stock/opening-stock.module';
 import { ItemStockBalanceModule } from 'src/modules/stocks/itemstockbalance/itemStockBalanceModule';
 import { ItemBatchStockModule } from 'src/modules/stocks/itembatchstock/itemBatchStockModule';
-import { PhysicalStockModule } from 'src/modules/stocks/physical-stock/physical-stock.module';
 import { PrintRenderModule } from 'src/modules/settings/print-render/print-render.module';
 import { WidgetMasterModule } from 'src/modules/master/widget-master/widget-master.module';
 import { ConfiguredGridSqlModule } from 'src/common/configured-grid-sql/configured-grid-sql.module';
@@ -372,15 +372,6 @@ export const swaggerModuleDocuments = [
     description: 'Godowns module endpoints',
     include: [GodownsMasterModule],
   },
-  // OpeningStockModule is not registered in AppModule, so it has no routes to document.
-  // Re-enable this entry together with the AppModule import; leaving it here without an
-  // `include` makes SwaggerModule fall back to every controller in the app.
-  // {
-  //   path: 'opening-stocks',
-  //   title: 'Opening Stock API',
-  //   description: 'Opening stock module endpoints',
-  //   include: [OpeningStockModule],
-  // },
   {
     path: 'item-stock-balance',
     title: 'Item Stock Balance API',
@@ -392,14 +383,6 @@ export const swaggerModuleDocuments = [
     title: 'Item Batch Stock API',
     description: 'Item batch stock lookup endpoints',
     include: [ItemBatchStockModule],
-  },
-  {
-    path: 'physical-stock',
-    title: 'Physical Stock API',
-    description:
-      'Physical stock (stock take) document endpoints: create/update by ps_id presence, ' +
-      'list and fetch by ps_id or header id, and soft delete',
-    include: [PhysicalStockModule],
   },
   {
     path: 'promotion-loyalty-points',
@@ -590,6 +573,20 @@ export const swaggerModuleDocuments = [
     title: 'Stock Adj Reasons API',
     description: 'Stock adjustment reasons endpoints for fixed.stock_adj_reasons',
     include: [StockAdjReasonsModule],
+  },
+  {
+    path: 'stock-track-presets',
+    title: 'Stock Track Presets API',
+    description:
+      'Stock tracking presets from stock.stock_track_preset — the combo behind item_track_preset_id / itg_track_preset_id',
+    include: [StockTrackPresetsModule],
+  },
+  {
+    path: 'opening-stock',
+    title: 'Opening Stock API',
+    description:
+      'Opening stock on the stock voucher engine — stock.stock_voucher OPENING documents, their preflight, post and cancel, and the two go-live reports. There is no opening-stock table: the document IS a stock voucher.',
+    include: [OpeningStockVoucherModule],
   },
   {
     path: 'audit-logs',

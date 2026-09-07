@@ -102,6 +102,7 @@ class SaveItemDto {
     item_default_tax_id;
     item_hsn_code;
     item_batch_config;
+    item_track_preset_id;
     item_sort_order;
     item_photo;
     item_image_url;
@@ -373,6 +374,15 @@ __decorate([
     (0, dtoDecorators_1.OptionalInteger)(),
     __metadata("design:type", Number)
 ], SaveItemDto.prototype, "item_batch_config", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        format: 'uuid',
+        nullable: true,
+        description: 'stock.stock_track_preset.spt_id, from /stock-track-presets/get. Supplies every column of the ITEM-scope stock track policy. Send null to clear it and fall back to item_batch_config / item_is_batch_based / item_is_expiry_item.',
+    }),
+    (0, dtoDecorators_1.NullableUuid)(),
+    __metadata("design:type", Object)
+], SaveItemDto.prototype, "item_track_preset_id", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
     (0, dtoDecorators_1.OptionalInteger)(),

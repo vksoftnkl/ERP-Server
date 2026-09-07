@@ -15,16 +15,19 @@ const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const audit_log_service_1 = require("../../audit-log/audit-log.service");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
+const stock_track_policy_service_1 = require("../../stocks/stock-track-policy/stock-track-policy.service");
 const ITEM_GROUP_TABLE_NAME = 'item group master';
 const ITEM_GROUP_AUDIT_SCREEN_NAME = 'Item Group Master';
 let ItemsGroupMasterService = class ItemsGroupMasterService {
     prisma;
     auditLogService;
     requestContextService;
-    constructor(prisma, auditLogService, requestContextService) {
+    stockTrackPolicyService;
+    constructor(prisma, auditLogService, requestContextService, stockTrackPolicyService) {
         this.prisma = prisma;
         this.auditLogService = auditLogService;
         this.requestContextService = requestContextService;
+        this.stockTrackPolicyService = stockTrackPolicyService;
     }
     async save(saveItemGroupDto) {
         if (saveItemGroupDto.itg_id) {
@@ -125,6 +128,7 @@ let ItemsGroupMasterService = class ItemsGroupMasterService {
                 this.applyOptionalFields(data, saveItemGroupDto);
                 const created = await tx.itemGroupMaster.create({ data });
                 await this.ensureSelfInPath(tx, created.itgId);
+                await this.stockTrackPolicyService.syncFromItemGroup(created, tx);
                 if (saveItemGroupDto.itg_parent_id) {
                     const ancestorIds = await this.getAncestorIds(tx, saveItemGroupDto.itg_parent_id);
                     await this.appendPathIds(tx, ancestorIds, [created.itgId]);
@@ -207,6 +211,7 @@ let ItemsGroupMasterService = class ItemsGroupMasterService {
                     data,
                 });
                 await this.ensureSelfInPath(tx, itgId);
+                await this.stockTrackPolicyService.syncFromItemGroup(updated, tx);
                 if (isParentChanged) {
                     const newAncestorIds = await this.getAncestorIds(tx, nextParentId);
                     await this.removePathIds(tx, oldAncestorIds, subtreeIds);
@@ -288,6 +293,9 @@ let ItemsGroupMasterService = class ItemsGroupMasterService {
         }
         if ((0, module_service_utils_1.hasOwnProperty)(saveItemGroupDto, 'itg_default_uom_id')) {
             data.itgDefaultUomId = saveItemGroupDto.itg_default_uom_id;
+        }
+        if ((0, module_service_utils_1.hasOwnProperty)(saveItemGroupDto, 'itg_track_preset_id')) {
+            data.itgTrackPresetId = saveItemGroupDto.itg_track_preset_id;
         }
         if ((0, module_service_utils_1.hasOwnProperty)(saveItemGroupDto, 'itg_photo')) {
             data.itgPhoto = this.decodePhotoInput(saveItemGroupDto.itg_photo);
@@ -505,6 +513,7 @@ let ItemsGroupMasterService = class ItemsGroupMasterService {
             itg_default_tax_id: record.itgDefaultTaxId,
             itg_default_hsn: record.itgDefaultHsn,
             itg_default_uom_id: record.itgDefaultUomId,
+            itg_track_preset_id: record.itgTrackPresetId,
             itg_photo: record.itgPhoto ? Buffer.from(record.itgPhoto).toString('base64') : null,
             itg_photo_url: record.itgPhotoUrl,
             itg_sync_date: record.itgSyncDate ? record.itgSyncDate.toISOString() : null,
@@ -527,6 +536,7 @@ exports.ItemsGroupMasterService = ItemsGroupMasterService = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [prisma_service_1.PrismaService,
         audit_log_service_1.AuditLogService,
-        request_context_service_1.RequestContextService])
+        request_context_service_1.RequestContextService,
+        stock_track_policy_service_1.StockTrackPolicyService])
 ], ItemsGroupMasterService);
 //# sourceMappingURL=items-group-master.service.js.map

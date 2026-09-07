@@ -12,6 +12,7 @@ import {
   throwOnUniqueConstraintError,
 } from 'src/common/utils/module-service.utils';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
+import { StockTrackPolicyService } from 'src/modules/stocks/stock-track-policy/stock-track-policy.service';
 const ITEM_GROUP_TABLE_NAME = 'item group master';
 const ITEM_GROUP_AUDIT_SCREEN_NAME = 'Item Group Master';
 type ItemGroupWriteClient = Prisma.TransactionClient | PrismaService;
@@ -21,6 +22,7 @@ export class ItemsGroupMasterService {
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
     private readonly requestContextService: RequestContextService,
+    private readonly stockTrackPolicyService: StockTrackPolicyService,
   ) {}
   async save(saveItemGroupDto: SaveItemGroupDto): Promise<ItemGroupPayload> {
     if (saveItemGroupDto.itg_id) {
@@ -147,6 +149,12 @@ export class ItemsGroupMasterService {
         this.applyOptionalFields(data, saveItemGroupDto);
         const created = await tx.itemGroupMaster.create({ data });
         await this.ensureSelfInPath(tx, created.itgId);
+        // Same transaction as the group: a GROUP-scope track policy and the
+        // group it applies to are written or rolled back together. A no-op when
+        // no preset was chosen — a group has no tracking flags to fall back to,
+        // and an empty GROUP policy would shadow the company-wide one for every
+        // item in the group.
+        await this.stockTrackPolicyService.syncFromItemGroup(created, tx);
 
         if (saveItemGroupDto.itg_parent_id) {
           const ancestorIds = await this.getAncestorIds(tx, saveItemGroupDto.itg_parent_id);
@@ -237,6 +245,10 @@ export class ItemsGroupMasterService {
           data,
         });
         await this.ensureSelfInPath(tx, itgId);
+        // Refreshes the derived policy from the saved row: writes it when a
+        // preset was picked, retires it when the preset was cleared, and leaves
+        // an admin-authored GROUP policy alone either way.
+        await this.stockTrackPolicyService.syncFromItemGroup(updated, tx);
         if (isParentChanged) {
           const newAncestorIds = await this.getAncestorIds(tx, nextParentId);
           await this.removePathIds(tx, oldAncestorIds, subtreeIds);
@@ -323,6 +335,9 @@ export class ItemsGroupMasterService {
     }
     if (hasOwnProperty(saveItemGroupDto, 'itg_default_uom_id')) {
       data.itgDefaultUomId = saveItemGroupDto.itg_default_uom_id;
+    }
+    if (hasOwnProperty(saveItemGroupDto, 'itg_track_preset_id')) {
+      data.itgTrackPresetId = saveItemGroupDto.itg_track_preset_id;
     }
     if (hasOwnProperty(saveItemGroupDto, 'itg_photo')) {
       data.itgPhoto = this.decodePhotoInput(saveItemGroupDto.itg_photo);
@@ -559,6 +574,7 @@ export class ItemsGroupMasterService {
       itg_default_tax_id: record.itgDefaultTaxId,
       itg_default_hsn: record.itgDefaultHsn,
       itg_default_uom_id: record.itgDefaultUomId,
+      itg_track_preset_id: record.itgTrackPresetId,
       itg_photo: record.itgPhoto ? Buffer.from(record.itgPhoto).toString('base64') : null,
       itg_photo_url: record.itgPhotoUrl,
       itg_sync_date: record.itgSyncDate ? record.itgSyncDate.toISOString() : null,

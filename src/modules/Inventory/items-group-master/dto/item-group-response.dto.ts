@@ -46,6 +46,13 @@ export class ItemGroupPayloadDto {
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   itg_default_uom_id!: string | null;
 
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description: 'stock.stock_track_preset the group-scope stock track policy is derived from; null = no group policy',
+  })
+  itg_track_preset_id!: string | null;
+
   @ApiPropertyOptional({ nullable: true, description: 'Base64 encoded image' })
   itg_photo!: string | null;
 

@@ -1,7 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.throwInventoryNotFound = exports.throwFixedNotFound = exports.throwMasterNotFound = exports.throwAccountsNotFound = exports.throwNotFound = exports.throwSettingsForbidden = exports.throwSalesForbidden = exports.throwPurchaseForbidden = exports.throwInventoryForbidden = exports.throwFixedForbidden = exports.throwMasterForbidden = exports.throwAccountsForbidden = exports.throwForbidden = exports.throwSettingsConflict = exports.throwSalesConflict = exports.throwPurchaseConflict = exports.throwInventoryConflict = exports.throwFixedConflict = exports.throwMasterConflict = exports.throwAccountsConflict = exports.throwConflict = exports.throwSettingsBadRequest = exports.throwSalesBadRequest = exports.throwPurchaseBadRequest = exports.throwInventoryBadRequest = exports.throwFixedBadRequest = exports.throwMasterBadRequest = exports.throwAccountsBadRequest = exports.throwBadRequest = exports.resolveActor = exports.normalizeRequiredText = exports.normalizeNullableString = exports.isUniqueConstraintError = exports.isPrismaErrorCode = exports.isForeignKeyConstraintError = exports.isExclusionConstraintError = exports.hasOwnProperty = exports.buildSettingsErrorResponse = exports.buildMasterErrorResponse = exports.buildSalesErrorResponse = exports.buildPurchaseErrorResponse = exports.buildInventoryErrorResponse = exports.buildFixedErrorResponse = exports.buildAccountsErrorResponse = exports.buildErrorResponse = exports.applyPresentFields = exports.DEFAULT_PAGE = exports.DEFAULT_LIMIT = exports.DEFAULT_AUDIT_ACTOR = exports.DEFAULT_ACTOR = void 0;
-exports.toNumber = exports.toNullableNumber = exports.throwOnUniqueConstraintError = exports.throwSettingsNotFound = exports.throwSalesNotFound = exports.throwPurchaseNotFound = void 0;
+exports.throwNotFound = exports.throwStockForbidden = exports.throwSettingsForbidden = exports.throwSalesForbidden = exports.throwPurchaseForbidden = exports.throwInventoryForbidden = exports.throwFixedForbidden = exports.throwMasterForbidden = exports.throwAccountsForbidden = exports.throwForbidden = exports.throwStockConflict = exports.throwSettingsConflict = exports.throwSalesConflict = exports.throwPurchaseConflict = exports.throwInventoryConflict = exports.throwFixedConflict = exports.throwMasterConflict = exports.throwAccountsConflict = exports.throwConflict = exports.throwStockBadRequest = exports.throwSettingsBadRequest = exports.throwSalesBadRequest = exports.throwPurchaseBadRequest = exports.throwInventoryBadRequest = exports.throwFixedBadRequest = exports.throwMasterBadRequest = exports.throwAccountsBadRequest = exports.throwBadRequest = exports.resolveActor = exports.normalizeRequiredText = exports.normalizeNullableString = exports.isUniqueConstraintError = exports.isPrismaErrorCode = exports.isForeignKeyConstraintError = exports.isExclusionConstraintError = exports.hasOwnProperty = exports.buildStockErrorResponse = exports.buildSettingsErrorResponse = exports.buildMasterErrorResponse = exports.buildSalesErrorResponse = exports.buildPurchaseErrorResponse = exports.buildInventoryErrorResponse = exports.buildFixedErrorResponse = exports.buildAccountsErrorResponse = exports.buildErrorResponse = exports.applyPresentFields = exports.DEFAULT_PAGE = exports.DEFAULT_LIMIT = exports.DEFAULT_AUDIT_ACTOR = exports.DEFAULT_ACTOR = void 0;
+exports.toNumber = exports.toNullableNumber = exports.throwStockUnprocessable = exports.throwUnprocessable = exports.throwOnUniqueConstraintError = exports.throwStockNotFound = exports.throwSettingsNotFound = exports.throwSalesNotFound = exports.throwPurchaseNotFound = exports.throwInventoryNotFound = exports.throwFixedNotFound = exports.throwMasterNotFound = exports.throwAccountsNotFound = void 0;
 var module_shared_utils_1 = require("./module-shared.utils");
 Object.defineProperty(exports, "DEFAULT_ACTOR", { enumerable: true, get: function () { return module_shared_utils_1.DEFAULT_ACTOR; } });
 Object.defineProperty(exports, "DEFAULT_AUDIT_ACTOR", { enumerable: true, get: function () { return module_shared_utils_1.DEFAULT_ACTOR; } });
@@ -16,6 +16,7 @@ Object.defineProperty(exports, "buildPurchaseErrorResponse", { enumerable: true,
 Object.defineProperty(exports, "buildSalesErrorResponse", { enumerable: true, get: function () { return module_shared_utils_1.buildErrorResponse; } });
 Object.defineProperty(exports, "buildMasterErrorResponse", { enumerable: true, get: function () { return module_shared_utils_1.buildErrorResponse; } });
 Object.defineProperty(exports, "buildSettingsErrorResponse", { enumerable: true, get: function () { return module_shared_utils_1.buildErrorResponse; } });
+Object.defineProperty(exports, "buildStockErrorResponse", { enumerable: true, get: function () { return module_shared_utils_1.buildErrorResponse; } });
 Object.defineProperty(exports, "hasOwnProperty", { enumerable: true, get: function () { return module_shared_utils_1.hasOwnProperty; } });
 Object.defineProperty(exports, "isExclusionConstraintError", { enumerable: true, get: function () { return module_shared_utils_1.isExclusionConstraintError; } });
 Object.defineProperty(exports, "isForeignKeyConstraintError", { enumerable: true, get: function () { return module_shared_utils_1.isForeignKeyConstraintError; } });
@@ -32,6 +33,7 @@ Object.defineProperty(exports, "throwInventoryBadRequest", { enumerable: true, g
 Object.defineProperty(exports, "throwPurchaseBadRequest", { enumerable: true, get: function () { return module_shared_utils_1.throwBadRequest; } });
 Object.defineProperty(exports, "throwSalesBadRequest", { enumerable: true, get: function () { return module_shared_utils_1.throwBadRequest; } });
 Object.defineProperty(exports, "throwSettingsBadRequest", { enumerable: true, get: function () { return module_shared_utils_1.throwBadRequest; } });
+Object.defineProperty(exports, "throwStockBadRequest", { enumerable: true, get: function () { return module_shared_utils_1.throwBadRequest; } });
 Object.defineProperty(exports, "throwConflict", { enumerable: true, get: function () { return module_shared_utils_1.throwConflict; } });
 Object.defineProperty(exports, "throwAccountsConflict", { enumerable: true, get: function () { return module_shared_utils_1.throwConflict; } });
 Object.defineProperty(exports, "throwMasterConflict", { enumerable: true, get: function () { return module_shared_utils_1.throwConflict; } });
@@ -40,6 +42,7 @@ Object.defineProperty(exports, "throwInventoryConflict", { enumerable: true, get
 Object.defineProperty(exports, "throwPurchaseConflict", { enumerable: true, get: function () { return module_shared_utils_1.throwConflict; } });
 Object.defineProperty(exports, "throwSalesConflict", { enumerable: true, get: function () { return module_shared_utils_1.throwConflict; } });
 Object.defineProperty(exports, "throwSettingsConflict", { enumerable: true, get: function () { return module_shared_utils_1.throwConflict; } });
+Object.defineProperty(exports, "throwStockConflict", { enumerable: true, get: function () { return module_shared_utils_1.throwConflict; } });
 Object.defineProperty(exports, "throwForbidden", { enumerable: true, get: function () { return module_shared_utils_1.throwForbidden; } });
 Object.defineProperty(exports, "throwAccountsForbidden", { enumerable: true, get: function () { return module_shared_utils_1.throwForbidden; } });
 Object.defineProperty(exports, "throwMasterForbidden", { enumerable: true, get: function () { return module_shared_utils_1.throwForbidden; } });
@@ -48,6 +51,7 @@ Object.defineProperty(exports, "throwInventoryForbidden", { enumerable: true, ge
 Object.defineProperty(exports, "throwPurchaseForbidden", { enumerable: true, get: function () { return module_shared_utils_1.throwForbidden; } });
 Object.defineProperty(exports, "throwSalesForbidden", { enumerable: true, get: function () { return module_shared_utils_1.throwForbidden; } });
 Object.defineProperty(exports, "throwSettingsForbidden", { enumerable: true, get: function () { return module_shared_utils_1.throwForbidden; } });
+Object.defineProperty(exports, "throwStockForbidden", { enumerable: true, get: function () { return module_shared_utils_1.throwForbidden; } });
 Object.defineProperty(exports, "throwNotFound", { enumerable: true, get: function () { return module_shared_utils_1.throwNotFound; } });
 Object.defineProperty(exports, "throwAccountsNotFound", { enumerable: true, get: function () { return module_shared_utils_1.throwNotFound; } });
 Object.defineProperty(exports, "throwMasterNotFound", { enumerable: true, get: function () { return module_shared_utils_1.throwNotFound; } });
@@ -56,7 +60,10 @@ Object.defineProperty(exports, "throwInventoryNotFound", { enumerable: true, get
 Object.defineProperty(exports, "throwPurchaseNotFound", { enumerable: true, get: function () { return module_shared_utils_1.throwNotFound; } });
 Object.defineProperty(exports, "throwSalesNotFound", { enumerable: true, get: function () { return module_shared_utils_1.throwNotFound; } });
 Object.defineProperty(exports, "throwSettingsNotFound", { enumerable: true, get: function () { return module_shared_utils_1.throwNotFound; } });
+Object.defineProperty(exports, "throwStockNotFound", { enumerable: true, get: function () { return module_shared_utils_1.throwNotFound; } });
 Object.defineProperty(exports, "throwOnUniqueConstraintError", { enumerable: true, get: function () { return module_shared_utils_1.throwOnUniqueConstraintError; } });
+Object.defineProperty(exports, "throwUnprocessable", { enumerable: true, get: function () { return module_shared_utils_1.throwUnprocessable; } });
+Object.defineProperty(exports, "throwStockUnprocessable", { enumerable: true, get: function () { return module_shared_utils_1.throwUnprocessable; } });
 Object.defineProperty(exports, "toNullableNumber", { enumerable: true, get: function () { return module_shared_utils_1.toNullableNumber; } });
 Object.defineProperty(exports, "toNumber", { enumerable: true, get: function () { return module_shared_utils_1.toNumber; } });
 //# sourceMappingURL=module-service.utils.js.map

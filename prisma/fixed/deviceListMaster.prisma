@@ -25,6 +25,7 @@ model DeviceMaster {
 
   txnStatusLogs   TxnStatusLog[]
   saleOrders      SaleOrder[]
+  stockVouchers   StockVoucher[] @relation("StockVoucherDevice")
   txnHolds        TxnHold[]     @relation("TxnHoldDevice")      // the till that parked the work
   txnHoldLocks    TxnHold[]     @relation("TxnHoldLockDevice")  // the till currently holding the lease
   appSettingValues AppSettingValue[]

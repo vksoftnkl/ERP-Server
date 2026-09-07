@@ -119,6 +119,15 @@ export class SaveItemGroupDto {
   itg_default_uom_id?: string | null;
 
   @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description:
+      'stock.stock_track_preset.spt_id, from /stock-track-presets/get. Writes the GROUP-scope stock track policy for the request context company. Send null to remove it: a group has no tracking flags of its own, so no preset means no policy row.',
+  })
+  @NullableUuid()
+  itg_track_preset_id?: string | null;
+
+  @ApiPropertyOptional({
     nullable: true,
     description:
       'Raw base64 string, data URL (data:*;base64,...) or object payload containing data_base64/data_url. For multipart/form-data, upload a file using the same field name.',

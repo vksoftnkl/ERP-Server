@@ -296,6 +296,7 @@ Table acc_ledger_master {
   chargeMasters charge_master [not null]
   chargeDetails txn_charge_detail [not null]
   saleOrderAdvanceLedgers sale_order [not null]
+  stockReasonGlLedgers stock_reason_master [not null]
 
   indexes {
     (ledCompanyId, ledName) [unique]
@@ -1260,6 +1261,7 @@ Table device_master {
   devModifiedBy String
   txnStatusLogs txn_status_log [not null]
   saleOrders sale_order [not null]
+  stockVouchers stock_voucher [not null]
   txnHolds txn_hold [not null]
   txnHoldLocks txn_hold [not null]
   appSettingValues app_setting_value [not null]
@@ -1460,7 +1462,6 @@ Table stock_adj_reasons {
   sarCreatedBy String
   sarModifiedOn DateTime
   sarModifiedBy String
-  physicalStockDetails physical_stock_detail [not null]
 }
 
 Table ui_tables {
@@ -1553,10 +1554,16 @@ Table godown_locations {
   parent godown_locations
   children godown_locations [not null]
   itemPrices item_price_master [not null]
-  openingStockDetails opening_stock_detail [not null]
-  physicalStockHeaders physical_stock_header [not null]
-  physicalStockDetails physical_stock_detail [not null]
-  physicalStockBatchDetails physical_stock_batch_detail [not null]
+  stockLedgerEntries stock_ledger [not null]
+  stockBalances stock_balance [not null]
+  stockVouchersFrom stock_voucher [not null]
+  stockVouchersTo stock_voucher [not null]
+  stockVoucherItems stock_voucher_item [not null]
+  stockReservations stock_reservation [not null]
+  stockTransitsFrom stock_transit [not null]
+  stockTransitsTo stock_transit [not null]
+  stockValuationSnaps stock_valuation_snap [not null]
+  stockReorderPolicies stock_reorder_policy [not null]
 
   indexes {
     (gdlBranchId, gdlParentId, gdlName) [unique]
@@ -1587,7 +1594,6 @@ Table item_batch_master {
   btmUpdatedOn DateTime
   btmUpdatedBy String
   batchStocks item_batch_stock [not null]
-  physicalStockBatchDetails physical_stock_batch_detail [not null]
 }
 
 Table item_batch_stock {
@@ -1697,6 +1703,11 @@ Table item_group_master {
   itgDefaultTaxId String
   itgDefaultHsn String
   itgDefaultUomId String
+  itgTrackPresetId String [note: 'The stock.stock_track_preset the GROUP-scope stock_track_policy row is
+derived from. NULL = no group policy is written at all — a group has no
+tracking flags of its own, and an all-false GROUP row would shadow the
+company-wide fallback for every item in the group.']
+  trackPreset stock_track_preset
   itgPhoto Bytes
   itgPhotoUrl String
   itgIsActive Boolean [not null, default: true]
@@ -1771,6 +1782,11 @@ Table item_master {
   itemDefaultTaxId String
   itemHsnCode String
   itemBatchConfig Int [not null, default: 0]
+  itemTrackPresetId String [note: 'The stock.stock_track_preset the ITEM-scope stock_track_policy row is
+derived from. NULL = derive from itemBatchConfig / itemIsBatchBased /
+itemIsExpiryItem instead. The link is on the MASTER, never on the policy:
+the policy row still owns its own thirteen columns, so editing a preset
+changes nothing until this item is explicitly re-saved.']
   itemSortOrder Int
   itemPhoto Bytes
   itemImageUrl String
@@ -1785,15 +1801,13 @@ Table item_master {
   itemModifiedOn DateTime [default: `now()`, not null]
   itemModifiedBy String
   group item_group_master [not null]
+  trackPreset stock_track_preset
   category item_category_master
   baseUnit item_unit_master
   defaultTax item_tax_master
   prices item_price_master [not null]
   qtyPrices item_qty_price [not null]
   unitConversions item_unit_conversion [not null]
-  openingStockDetails opening_stock_detail [not null]
-  physicalStockDetails physical_stock_detail [not null]
-  physicalStockBatchDetails physical_stock_batch_detail [not null]
   reorders item_reorders [not null]
   taxHistory item_tax_history [not null]
   company companys
@@ -1806,6 +1820,18 @@ Table item_master {
   loyaltySchemeSlabs loyalty_scheme_slab [not null]
   loyaltySchemeGifts loyalty_scheme_gift [not null]
   stockTrackPolicies stock_track_policy [not null]
+  stockLots stock_lot [not null]
+  stockLedgerEntries stock_ledger [not null]
+  stockBalances stock_balance [not null]
+  stockItemCosts stock_item_cost [not null]
+  stockVoucherItems stock_voucher_item [not null]
+  stockReservations stock_reservation [not null]
+  stockTransits stock_transit [not null]
+  stockValuationSnaps stock_valuation_snap [not null]
+  stockDemandDaily stock_demand_daily [not null]
+  stockReorderPolicies stock_reorder_policy [not null]
+  stockForecasts stock_forecast [not null]
+  stockMovementClasses stock_movement_class [not null]
 }
 
 Table item_price_levels {
@@ -1878,7 +1904,6 @@ Table item_price_master {
   branch branch_master
   itemUnitConversion item_unit_conversion [not null]
   godown godown_locations
-  openingStockBaseUomDetails opening_stock_detail [not null]
 }
 
 Table item_qty_price {
@@ -2149,6 +2174,18 @@ Table item_unit_conversion {
   promotionSchemeSlabs promotion_scheme_slab [not null]
   loyaltySchemeSlabs loyalty_scheme_slab [not null]
   loyaltySchemeGifts loyalty_scheme_gift [not null]
+  stockLotsBaseUom stock_lot [not null]
+  stockLedgerUom stock_ledger [not null]
+  stockLedgerBaseUom stock_ledger [not null]
+  stockBalanceBaseUom stock_balance [not null]
+  stockItemCostBaseUom stock_item_cost [not null]
+  stockVoucherItemUom stock_voucher_item [not null]
+  stockVoucherItemBaseUom stock_voucher_item [not null]
+  stockReservationBaseUom stock_reservation [not null]
+  stockTransitBaseUom stock_transit [not null]
+  stockDemandDailyBaseUom stock_demand_daily [not null]
+  stockReorderPolicyUom stock_reorder_policy [not null]
+  stockForecastBaseUom stock_forecast [not null]
 }
 
 Table item_unit_master {
@@ -2177,117 +2214,7 @@ Table item_unit_master {
   packUnits item_unit_master [not null]
   iucUnits item_unit_conversion [not null]
   iucBaseUnits item_unit_conversion [not null]
-  openingStockUnits opening_stock_detail [not null]
-  physicalStockUnits physical_stock_detail [not null]
-  physicalStockBaseUnits physical_stock_detail [not null]
-  physicalStockBatchUnits physical_stock_batch_detail [not null]
-  physicalStockBatchBaseUnits physical_stock_batch_detail [not null]
   itemMasters item_master [not null]
-}
-
-Table opening_stock_detail {
-  oslId String [pk]
-  oslVoucherId String [not null]
-  oslOpeningId String [not null]
-  oslLineNo Int [not null]
-  oslAccYear String [not null]
-  oslCompanyId String [not null]
-  oslBranchId String [not null]
-  oslItemId String [not null]
-  oslUnitId String [not null]
-  oslBaseUomId String
-  oslGodownId String [not null]
-  oslTrackingType String [not null, default: 'NONE']
-  oslBatchId String
-  oslBarcode String
-  oslBatchNo String
-  oslMfgBatchNo String
-  oslBatchDate DateTime
-  oslMfgDate DateTime
-  oslExpiryDate DateTime
-  oslSerialNo String
-  oslQty Decimal [not null, default: 0]
-  oslBaseQty Decimal [not null, default: 0]
-  oslFreeQty Decimal [not null, default: 0]
-  oslFreeBaseQty Decimal [not null, default: 0]
-  oslConvFactor Decimal [not null, default: 1]
-  oslTaxId String
-  oslTaxPerc Decimal [not null, default: 0]
-  oslCessType String [not null, default: 'NONE']
-  oslCessPerc Decimal [not null, default: 0]
-  oslCessPerUnit Decimal [not null, default: 0]
-  oslCostRate Decimal [not null, default: 0]
-  oslCostRateWot Decimal [not null, default: 0]
-  oslStockValue Decimal [not null, default: 0]
-  oslStockValueWot Decimal [not null, default: 0]
-  oslMrpRate Decimal [not null, default: 0]
-  oslMinRate Decimal [not null, default: 0]
-  oslSaleRateA Decimal [not null, default: 0]
-  oslSaleRateB Decimal [not null, default: 0]
-  oslSaleRateC Decimal [not null, default: 0]
-  oslSaleRateD Decimal [not null, default: 0]
-  oslSaleRateAWot Decimal [not null, default: 0]
-  oslSaleRateBWot Decimal [not null, default: 0]
-  oslSaleRateCWot Decimal [not null, default: 0]
-  oslSaleRateDWot Decimal [not null, default: 0]
-  oslMarkupPercA Decimal [not null, default: 0]
-  oslMarkupPercB Decimal [not null, default: 0]
-  oslMarkupPercC Decimal [not null, default: 0]
-  oslMarkupPercD Decimal [not null, default: 0]
-  oslRemarks String
-  oslIsActive Boolean [not null, default: true]
-  oslIsDeleted Boolean [not null, default: false]
-  oslSyncDate DateTime
-  oslCreatedOn DateTime [default: `now()`, not null]
-  oslCreatedBy String
-  oslUpdatedOn DateTime
-  oslUpdatedBy String
-  company companys [not null]
-  branch branch_master [not null]
-  item item_master [not null]
-  unitMaster item_unit_master [not null]
-  baseUomPriceMaster item_price_master
-  godown godown_locations [not null]
-  openingHeader opening_stock_header [not null]
-
-  indexes {
-    (oslCompanyId, oslBranchId, oslAccYear, oslVoucherId, oslLineNo) [unique]
-  }
-}
-
-Table opening_stock_header {
-  oshId String [pk]
-  oshVoucherId String [not null]
-  oshAccYear String [not null]
-  oshCompanyId String [not null]
-  oshBranchId String [not null]
-  oshVoucherNo BigInt [not null]
-  oshVoucherDate DateTime [not null]
-  oshRefNo String
-  oshNarration String
-  oshTotalLines Int [not null, default: 0]
-  oshTotalQty Decimal [not null, default: 0]
-  oshTotalValue Decimal [not null, default: 0]
-  oshStatus String [not null, default: 'DRAFT']
-  oshUserId String [not null]
-  oshSessionId String
-  oshDeviceType String [not null]
-  oshDeviceId String
-  oshCounterId String
-  oshIsActive Boolean [not null, default: true]
-  oshIsDeleted Boolean [not null, default: false]
-  oshSyncDate DateTime
-  oshCreatedOn DateTime [default: `now()`, not null]
-  oshCreatedBy String
-  oshUpdatedOn DateTime
-  oshUpdatedBy String
-  company companys [not null]
-  branch branch_master [not null]
-  details opening_stock_detail [not null]
-
-  indexes {
-    (oshAccYear, oshCompanyId, oshBranchId, oshVoucherId) [unique]
-  }
 }
 
 Table app_setting_def {
@@ -2430,11 +2357,6 @@ Table branch_master {
   voucherDocRegisters acc_voucher_doc_register [not null]
   voucherSequences acc_voucher_seq [not null]
   voucherHeaders acc_voucher_header [not null]
-  openingStockHeaders opening_stock_header [not null]
-  openingStockDetails opening_stock_detail [not null]
-  physicalStockHeaders physical_stock_header [not null]
-  physicalStockDetails physical_stock_detail [not null]
-  physicalStockBatchDetails physical_stock_batch_detail [not null]
   itemPrices item_price_master [not null]
   itemQtyPrices item_qty_price [not null]
   freightCharges sale_freight_charges [not null]
@@ -2450,6 +2372,20 @@ Table branch_master {
   loyaltySchemes loyalty_scheme [not null]
   loyaltySchemeBranches loyalty_scheme_branch [not null]
   stockTrackPolicies stock_track_policy [not null]
+  stockLotsFirstInward stock_lot [not null]
+  stockLedgerEntries stock_ledger [not null]
+  stockBalances stock_balance [not null]
+  stockItemCosts stock_item_cost [not null]
+  stockVouchers stock_voucher [not null]
+  stockVouchersInbound stock_voucher [not null]
+  stockReservations stock_reservation [not null]
+  stockTransitsOut stock_transit [not null]
+  stockTransitsIn stock_transit [not null]
+  stockValuationSnaps stock_valuation_snap [not null]
+  stockDemandDaily stock_demand_daily [not null]
+  stockReorderPolicies stock_reorder_policy [not null]
+  stockForecasts stock_forecast [not null]
+  stockMovementClasses stock_movement_class [not null]
   printAssignments print_template_assignment [not null]
   printerProfiles printer_profile [not null]
   printLogs print_log [not null]
@@ -2580,11 +2516,6 @@ Table companys {
   voucherDocRegisters acc_voucher_doc_register [not null]
   voucherSequences acc_voucher_seq [not null]
   voucherHeaders acc_voucher_header [not null]
-  openingStockHeaders opening_stock_header [not null]
-  openingStockDetails opening_stock_detail [not null]
-  physicalStockHeaders physical_stock_header [not null]
-  physicalStockDetails physical_stock_detail [not null]
-  physicalStockBatchDetails physical_stock_batch_detail [not null]
   saleAgents sale_agents [not null]
   chargeDetails txn_charge_detail [not null]
   tenderMasters acc_tender_master [not null]
@@ -2593,6 +2524,21 @@ Table companys {
   promotionSchemes promotion_scheme [not null]
   loyaltySchemes loyalty_scheme [not null]
   stockTrackPolicies stock_track_policy [not null]
+  stockLedgerEntries stock_ledger [not null]
+  stockTrackPresets stock_track_preset [not null]
+  stockAgeingSlabs stock_ageing_slab [not null]
+  stockReasonMasters stock_reason_master [not null]
+  stockLots stock_lot [not null]
+  stockBalances stock_balance [not null]
+  stockItemCosts stock_item_cost [not null]
+  stockVouchers stock_voucher [not null]
+  stockReservations stock_reservation [not null]
+  stockTransits stock_transit [not null]
+  stockValuationSnaps stock_valuation_snap [not null]
+  stockDemandDaily stock_demand_daily [not null]
+  stockReorderPolicies stock_reorder_policy [not null]
+  stockForecasts stock_forecast [not null]
+  stockMovementClasses stock_movement_class [not null]
   printPurposes print_purpose [not null]
   printTemplates print_template [not null]
   printAssignments print_template_assignment [not null]
@@ -3550,6 +3496,7 @@ Table user_master {
   approvedPromotionSchemes promotion_scheme [not null]
   approvedLoyaltySchemes loyalty_scheme [not null]
   stockTrackPolicies stock_track_policy [not null]
+  stockTrackPresets stock_track_preset [not null]
   printPurposesCreated print_purpose [not null]
   printPurposesModified print_purpose [not null]
   printTemplatesCreated print_template [not null]
@@ -3644,6 +3591,12 @@ Table suppliers {
   supModifiedOn DateTime [not null]
   supModifiedBy String
   group supplier_groups [not null]
+  stockLots stock_lot [not null]
+  stockBalances stock_balance [not null]
+  stockVouchers stock_voucher [not null]
+  stockVoucherItems stock_voucher_item [not null]
+  stockReorderPolicies stock_reorder_policy [not null]
+  stockForecasts stock_forecast [not null]
 }
 
 Table supplier_groups {
@@ -5471,165 +5424,1210 @@ Table state_master {
   cities city_master [not null]
 }
 
-Table physical_stock_batch_detail {
-  psbId String [pk]
-  psbPsdId String [not null]
-  psbPshId String [not null]
-  psbRowNo Int [not null, default: 1]
-  psbAccYear String [not null]
-  psbCompanyId String [not null]
-  psbBranchId String [not null]
-  psbGodownId String [not null]
-  psbItemId String [not null]
-  psbUnitId String [not null]
-  psbBaseUnitId String [not null]
-  psbToBaseFactor Decimal [not null, default: 1]
-  psbBatchId String
-  psbBatchNo String
-  psbMfgBatchNo String
-  psbBatchDate DateTime
-  psbMfgDate DateTime
-  psbExpiryDate DateTime
-  psbMrp Decimal [not null, default: 0]
-  psbBarcode String
-  psbSerialNo String
-  psbBookQty Decimal [not null, default: 0]
-  psbBookBaseQty Decimal [not null, default: 0]
-  psbPhysicalQty Decimal [not null, default: 0]
-  psbPhysicalBaseQty Decimal [not null, default: 0]
-  psbDiffQty Decimal
-  psbDiffBaseQty Decimal
-  psbStockRateWot Decimal [not null, default: 0]
-  psbStockRateWithTax Decimal [not null, default: 0]
-  psbBookValueWot Decimal
-  psbPhysicalValueWot Decimal
-  psbDiffValueWot Decimal
-  psbDiffValueWithTax Decimal
-  psbReasonId String
-  psbResolution String [not null, default: 'ADJUST_LOSS_GAIN']
-  psbNotes String
-  psbIsPosted Boolean [not null, default: false]
-  psbIsActive Boolean [not null, default: true]
-  psbIsDeleted Boolean [not null, default: false]
-  psbSyncDate DateTime
-  psbCreatedOn DateTime [default: `now()`, not null]
-  psbCreatedBy String
-  psbModifiedOn DateTime [default: `now()`, not null]
-  psbModifiedBy String
-  physicalStockDetail physical_stock_detail [not null]
-  physicalStockHeader physical_stock_header [not null]
-  company companys [not null]
-  branch branch_master [not null]
-  godown godown_locations [not null]
-  item item_master [not null]
-  unit item_unit_master [not null]
-  baseUnit item_unit_master [not null]
-  batch item_batch_master
+Table stock_ageing_slab {
+  sagId String [pk]
+  sagCompanyId String [note: 'NULL = the default ladder, used whole by any company with no ladder of
+its own. Never merged with a company\'s own slabs.']
+  sagSlabNo Int [not null, note: '1-based position in the ladder: display order and stable identity.']
+  sagLabel String [not null, note: 'What the report column says — "31-60 days". Free text on purpose: it is
+never parsed back into the bounds below.']
+  sagFromDays Int [not null, note: 'Inclusive lower bound, in days.']
+  sagToDays Int [note: 'Inclusive upper bound, in days. NULL = open ended; exactly one slab per
+ladder may be NULL, and it is the last one.']
+  sagIsActive Boolean [not null, default: true]
+  sagIsDeleted Boolean [not null, default: false]
+  sagSyncDate DateTime
+  sagCreatedOn DateTime [default: `now()`, not null]
+  sagCreatedBy String
+  sagModifiedOn DateTime
+  sagModifiedBy String
+  company companys
+
+  Note: 'stock.stock_ageing_slab — the age buckets an ageing report sums into:
+"0-30 / 31-60 / 61-90 / 91-180 / over 180". One row is one bucket; the rows
+sharing a sagCompanyId are one LADDER.
+
+sagCompanyId NULL = the DEFAULT ladder, used by any company that has not
+authored one of its own. Unlike the tracking presets — where a company row
+merges over a shared row code by code — this fallback is ALL OR NOTHING:
+fn_sag_effective returns a company\'s own slabs if it has any, otherwise the
+default ones, never a mixture. Merging two ladders would put one holding in
+two buckets and the report would stop summing to the balance. A company that
+wants a dairy\'s 0-3-7 inserts its FULL ladder, not a patch over the default.
+
+The bucket a holding falls in is decided by the age in DAYS measured from
+whatever stpAgeingBasis the resolved StockTrackPolicy names (inward date,
+last-in date, or manufacture date) — this table only says where the cuts
+are, never how age is computed.
+
+The range is HALF-OPEN in the database: [sagFromDays, sagToDays + 1). Read
+the columns as inclusive-inclusive — 31-60 means both 31 and 60 — and let
+the exclusion constraint do the arithmetic. It is written that way rather
+than as an inclusive \'[]\' range because an inclusive upper bound of int4\'s
+maximum overflows when PostgreSQL normalises it to upper + 1.
+
+sagToDays NULL = OPEN ENDED, "and everything older". There must be exactly
+one such slab per ladder, and it must be the last one: without it the oldest
+stock falls out of every bucket and the report silently under-reports.
+
+WRITE RULES:
+* a ladder is contiguous and gapless. The overlap constraint stops two
+slabs claiming the same day; nothing at the database level stops a GAP
+(31-60 followed by 71-90), so the screen must.
+* REORDERING A LADDER NEEDS A DEFERRED TRANSACTION. Shrinking 0-30 to
+0-14 collides with 31-60 until that row moves too, so a row-at-a-time
+save cannot reorder a ladder at all. Issue
+SET CONSTRAINTS stock.ex_sag_overlap DEFERRED
+first, write every row, then COMMIT. The constraint is DEFERRABLE
+INITIALLY IMMEDIATE, so callers that do not ask for this are unaffected.
+* sagSlabNo is the display order and the stable identity within a ladder,
+1-based. (sagCompanyId, sagSlabNo) is unique among undeleted rows.
+
+DB-only objects Prisma cannot express — hand-authored in the migration and
+deliberately NOT declared here (both carry a WHERE, and Prisma ignores
+indexes with predicates):
+ex_sag_overlap  EXCLUDE USING gist over (company, int4range(from, to+1))
+WHERE active AND NOT deleted. Needs btree_gist. The
+company is COALESCEd to the nil uuid because EXCLUDE never
+conflicts on NULL — without it two default slabs could
+claim the same day. A default slab and a company slab
+covering the same days DO coexist, and must: they belong
+to different ladders.
+ux_sag_slab_no  unique on (COALESCE(company, nil uuid), slab_no) WHERE NOT
+deleted — COALESCEd for the same reason, a plain unique
+index treats every NULL as distinct and would let the seed
+insert two slab 1s into the default ladder.
+plus ck_sag_days (from >= 0, and to >= from when to is given) and
+ck_sag_slab_no (>= 1).
+
+sagCreatedBy carries no foreign key in the migration, unlike
+[[StockTrackPolicy]] and [[StockTrackPreset]], so no relation is declared —
+adding one here without adding fk_sag_created_by to the DDL would show up as
+schema drift on the next migrate.'
 }
 
-Table physical_stock_detail {
-  psdId String [pk]
-  psdPscId String [not null]
-  psdRowNo Int [not null, default: 1]
-  psdAccYear String [not null]
-  psdCompanyId String [not null]
-  psdBranchId String [not null]
-  psdGodownId String [not null]
-  psdItemId String [not null]
-  psdUnitId String [not null]
-  psdBaseUnitId String [not null]
-  psdToBaseFactor Decimal [not null, default: 1]
-  psdBarcode String
-  psdMrp Decimal [not null, default: 0]
-  psdTrackingType String [not null, default: 'NONE']
-  psdBookQty Decimal [not null, default: 0]
-  psdBookBaseQty Decimal [not null, default: 0]
-  psdPhysicalQty Decimal [not null, default: 0]
-  psdPhysicalBaseQty Decimal [not null, default: 0]
-  psdDiffQty Decimal [not null]
-  psdDiffBaseQty Decimal [not null]
-  psdStockRateWot Decimal [not null, default: 0]
-  psdStockRateWithTax Decimal [not null, default: 0]
-  psdBookValueWot Decimal [not null]
-  psdPhysicalValueWot Decimal [not null]
-  psdDiffValueWot Decimal [not null]
-  psdDiffValueWithTax Decimal [not null]
-  psdReasonId String
-  psdResolution String [not null, default: 'ADJUST_LOSS_GAIN']
-  psdNotes String
-  psdIsPosted Boolean [not null, default: false]
-  psdIsActive Boolean [not null, default: true]
-  psdIsDeleted Boolean [not null, default: false]
-  psdSyncDate DateTime
-  psdCreatedOn DateTime [default: `now()`, not null]
-  psdCreatedBy String
-  psdModifiedOn DateTime [default: `now()`, not null]
-  psdModifiedBy String
-  physicalStockHeader physical_stock_header [not null]
+Table stock_balance {
+  sblId String [pk]
+  sblCompanyId String [not null]
+  sblBranchId String [not null]
+  sblTenantId String
+  sblGodownId String [not null, note: 'The shelf — an inventory.godown_locations(gdl_id). Branch and godown live
+HERE and not on the lot: the same batch held in four godowns is four
+balance rows and one lot.']
+  sblItemId String [not null]
+  sblLotId String [not null]
+  sblBaseUomId String [not null, note: 'The item\'s BASE unit — an item_unit_conversion(iuc_id), NEVER an
+item_unit_master(unit_id). Every quantity on this row is in this unit.']
+  sblBucket String [not null, default: 'SALEABLE']
+  sblInQty Decimal [not null, default: 0]
+  sblOutQty Decimal [not null, default: 0]
+  sblFreeInQty Decimal [not null, default: 0]
+  sblFreeOutQty Decimal [not null, default: 0]
+  sblOnHandQty Decimal [note: 'GENERATED ALWAYS ... STORED as in + freeIn - out - freeOut. What is
+PHYSICALLY here, free goods included. Read-only, never sent.']
+  sblReservedQty Decimal [not null, default: 0, note: 'Here, but promised to an order. Owned by stock_reservation.']
+  sblTransitInQty Decimal [not null, default: 0, note: 'Sent from another branch, not yet received here. Owned by stock_transit,
+and NOT part of on hand: it is not here yet.']
+  sblAvailableQty Decimal [note: 'GENERATED ALWAYS ... STORED as onHand - reserved. What may still be SOLD,
+and the figure a billing screen checks. Read-only, never sent.']
+  sblAvgCostRate Decimal [not null, default: 0]
+  sblAvgCostRateWot Decimal [not null, default: 0]
+  sblStockValue Decimal [not null, default: 0]
+  sblStockValueWot Decimal [not null, default: 0]
+  sblFirstInDate DateTime
+  sblLastInDate DateTime
+  sblLastOutDate DateTime
+  sblBatchNo String
+  sblMrp Decimal
+  sblSalePrice Decimal
+  sblExpiryDate DateTime
+  sblSupplierId String
+  sblRowVersion BigInt [not null, default: 1]
+  sblIsActive Boolean [not null, default: true]
+  sblIsDeleted Boolean [not null, default: false]
+  sblSyncDate DateTime
+  sblCreatedOn DateTime [default: `now()`, not null]
+  sblCreatedBy String
+  sblModifiedOn DateTime
+  sblModifiedBy String
   company companys [not null]
   branch branch_master [not null]
   godown godown_locations [not null]
   item item_master [not null]
-  unit item_unit_master [not null]
-  baseUnit item_unit_master [not null]
-  reason stock_adj_reasons
-  batchDetails physical_stock_batch_detail [not null]
+  lot stock_lot [not null]
+  baseUom item_unit_conversion [not null]
+  supplier suppliers
+
+  Note: 'stock.stock_balance — the CURRENT position. One row per holding.
+
+[[StockLedger]] is the truth and this is the answer: every figure here is
+derivable by replaying the ledger, and is kept here only so the billing
+screen does not have to. The grain is
+(company, branch, godown, item, lot, bucket) — ux_sbl_scope — which is one
+row per "this batch of this item, on this shelf, in this condition".
+
+NOT PARTITIONED, and deliberately without an acc-year column. A balance is
+as-of-now, not as-of-a-year: carrying stock into a new fiscal year must not
+mean copying every holding into a new partition, and "what is on the shelf"
+has exactly one answer regardless of which year the movements that produced
+it were posted in. Year-wise questions are ledger questions.
+
+TRIGGER-MAINTAINED. fn_sml_apply() owns this table: it upserts on
+ux_sbl_scope as ledger rows land, and it alone writes the four accumulators
+and the identity cache. Application code that writes sblInQty / sblOutQty /
+sblFreeInQty / sblFreeOutQty is writing a number the next posting will
+overwrite, and has moved stock without a ledger row to explain it. Post to
+StockLedger instead — always.
+
+THE FOUR ACCUMULATORS, NOT A SINGLE BALANCE. In and out are kept apart
+because a concurrent inward and outward then touch different columns of the
+same row rather than fighting over one, and because "how much moved" is a
+question the balance can answer without opening the ledger. Free in and
+free out are kept apart again so margin reporting can separate what was
+paid for from what was not — but free goods ARE stock: they sit on the
+shelf, they get sold, and sblOnHandQty counts them.
+
+THREE QUANTITIES, THREE MEANINGS, and confusing them is the classic stock
+bug:
+sblOnHandQty     what is physically here      (in + freeIn - out - freeOut)
+sblReservedQty   here, but promised to an order   — owned by stock_reservation
+sblAvailableQty  what may still be sold       (onHand - reserved)
+sblTransitInQty  sent from another branch, NOT here yet — owned by
+stock_transit, and NOT part of on hand
+A billing screen checks AVAILABLE, a physical count reconciles against ON
+HAND, and a transfer receipt clears TRANSIT. sblAvailableQty repeats the
+on-hand arithmetic instead of referencing it because PostgreSQL forbids a
+generated column reading another generated column.
+
+THE IDENTITY CACHE — sblBatchNo, sblMrp, sblSalePrice, sblExpiryDate,
+sblSupplierId — is COPIED from [[StockLot]] by the same trigger, and the lot
+remains the owner. It is duplicated so that near-expiry, MRP-wise and
+supplier-wise stock reports are covering-index reads on this table alone;
+when the two ever disagree, the lot is right.
+
+AGEING ANCHORS. sblFirstInDate / sblLastInDate answer "how long has this sat
+on THIS shelf"; the lot\'s sltFirstInwardDate answers "how old is this stock
+in the chain", which a transfer must not reset. StockTrackPolicy.
+stpAgeingBasis picks which one an ageing report measures from, and
+[[StockAgeingSlab]] says where the cuts are.
+
+NEGATIVE STOCK IS REPRESENTABLE ON PURPOSE. ck_sbl_accum keeps the four
+accumulators non-negative, but nothing stops on-hand going below zero —
+a StockTrackPolicy of ALLOW is a real business choice (an offline till that
+must keep billing, a receipt keyed after the sale it supplied). The
+exception report reads ix_sbl_negative.
+
+WRITE RULES:
+* NEVER write sblOnHandQty or sblAvailableQty — GENERATED ALWAYS ...
+STORED, and Postgres rejects any write to them.
+* NEVER write the accumulators or the identity cache from application
+code; post a ledger row.
+* sblReservedQty and sblTransitInQty belong to stock_reservation and
+stock_transit respectively, and neither may go negative.
+
+Vocabulary, enforced by a CHECK constraint in the migration:
+sblBucket  SALEABLE | DAMAGED | QUARANTINE | EXPIRED | SAMPLE — the same
+five as StockLedger.smlBucket, and one balance row each,
+because saleable stock and damaged stock must never be added
+together by accident
+
+DB-only objects Prisma cannot express — hand-authored in the migration and
+deliberately NOT declared here. EVERY index on this table carries a WHERE,
+and Prisma ignores indexes with predicates:
+ux_sbl_scope       ONE ROW PER HOLDING, and the upsert target of
+fn_sml_apply(). Partial on NOT deleted.
+ix_sbl_lookup      the billing screen\'s stock lookup — what
+/master-lookups/item-price asks, answered without
+touching the heap
+ix_sbl_item_chain  item-wise stock across a branch\'s godowns, and the
+chain-wide "who else has this?" behind an inter-store
+transfer suggestion
+ix_sbl_ageing      ageing, on shelf age
+ix_sbl_supplier    supplier-wise stock, straight off the cached supplier
+ix_sbl_expiry      near expiry and expired-stock blocking
+ix_sbl_mrp         MRP-wise and selling-price-wise summaries
+ix_sbl_negative    the negative-stock exception report'
+}
+
+Table stock_demand_daily {
+  sddId String [pk]
+  sddCompanyId String [not null]
+  sddBranchId String [not null]
+  sddTenantId String
+  sddItemId String [not null]
+  sddBaseUomId String [not null]
+  sddDemandDate DateTime [not null]
+  sddDayOfWeek Int [not null, default: 0, note: 'Denormalised for seasonality models. 0 = Sunday, matching EXTRACT(dow).']
+  sddSoldQty Decimal [not null, default: 0]
+  sddFreeQty Decimal [not null, default: 0]
+  sddReturnQty Decimal [not null, default: 0]
+  sddNetQty Decimal [note: 'GENERATED ALWAYS ... STORED as sold + free - returned. Read-only.']
+  sddPromoQty Decimal [not null, default: 0, note: 'Sold while a promotion was running: real sales, but not the baseline.
+A SUBSET of sddSoldQty, not an addition to it.']
+  sddBillCount Int [not null, default: 0]
+  sddLineCount Int [not null, default: 0]
+  sddCustomerCount Int [not null, default: 0]
+  sddRevenueWot Decimal [not null, default: 0]
+  sddCogsWot Decimal [not null, default: 0]
+  sddMarginWot Decimal [note: 'GENERATED ALWAYS ... STORED as revenue - COGS. Read-only.']
+  sddStockoutFlag Boolean [not null, default: false, note: 'On hand hit zero at some point that day: demand was CENSORED, and the
+figures above are a floor, not a measurement.']
+  sddStockoutHours Decimal [not null, default: 0]
+  sddClosedFlag Boolean [not null, default: false, note: 'The branch was SHUT. Exclude from a moving average — never read as zero
+demand.']
+  sddOpenQtyStart Decimal [not null, default: 0]
+  sddCloseQtyEnd Decimal [not null, default: 0]
+  sddRebuiltOn DateTime [default: `now()`, not null, note: 'When this row was last recomputed. A stale date on a recent day means the
+rebuild job did not run — otherwise invisible.']
+  sddIsDeleted Boolean [not null, default: false]
+  sddSyncDate DateTime
+  sddCreatedOn DateTime [default: `now()`, not null]
+  company companys [not null]
+  branch branch_master [not null]
+  item item_master [not null]
+  baseUom item_unit_conversion [not null]
+
+  Note: 'stock.stock_demand_daily — what actually sold, per branch, per day.
+
+The input every forecast needs and no transactional table can serve.
+Aggregating a year of SaleBillItem across fifty branches on every run of a
+replenishment job is not a plan. This is the pre-aggregate, rebuilt by
+fn_sdd_rebuild() from [[StockLedger]] — which means it can ALWAYS be
+recomputed and never has to be trusted blindly.
+
+sddStockoutFlag IS THE COLUMN THAT MAKES FORECASTS HONEST. If an item was
+out of stock on Tuesday it sold zero on Tuesday, and a model that reads
+that as "demand was zero" will under-forecast the fastest movers for ever
+and keep them out of stock — the failure feeds itself. Censored demand has
+to be MARKED at the point where it is still knowable; afterwards a zero is
+indistinguishable from a zero. sddStockoutHours says how much of the day
+was lost, so a partial day is not thrown away whole.
+
+sddPromoQty exists for the same reason in the other direction: a week of
+buy-one-get-one is not the baseline, and a model that treats it as one will
+over-order for the month after. It is a subset of what sold, not an
+addition to it.
+
+sddClosedFlag is a THIRD kind of zero. Shut is not "nobody wanted it": such
+a day must be EXCLUDED from a moving average, not averaged in as demand.
+Three different zeros, three different columns, because a forecast that
+cannot tell them apart is worse than no forecast.
+
+sddDayOfWeek is denormalised so a weekday/seasonality model does not
+compute it a million times. 0 = Sunday, matching EXTRACT(dow).
+
+NOT PARTITIONED. The read is a WINDOW of days for one item — "the last
+ninety days" crosses a year boundary four times out of five — and a
+partition per year would split every one of those.
+
+WRITE RULES:
+* NEVER write sddNetQty or sddMarginWot — both are GENERATED ALWAYS ...
+STORED.
+* This table is DERIVED. Do not patch a row to make a report look right;
+fix the ledger and re-run fn_sdd_rebuild(), or the next rebuild silently
+discards the correction.
+* sddRebuiltOn says when the row was last recomputed — a stale date on a
+recent day means the job did not run, which is otherwise invisible.
+
+DB-only objects Prisma cannot express — hand-authored in the migration and
+deliberately NOT declared here (every one carries a WHERE):
+ux_sdd_scope   one row per (company, branch, item, date)
+ix_sdd_series  the forecasting read: one item, one branch, a window of
+days, in order
+ix_sdd_chain   chain-wide demand for one item across every branch — the
+head-office allocation question'
+}
+
+Table stock_forecast {
+  sfcId String [pk]
+  sfcCompanyId String [not null]
+  sfcBranchId String [not null]
+  sfcTenantId String
+  sfcItemId String [not null]
+  sfcBaseUomId String [not null]
+  sfcForecastDate DateTime [not null, note: 'The day forecast FOR — not the day computed, which is sfcComputedOn.']
+  sfcHorizonDays Int [not null, default: 30]
+  sfcMethod String [not null, default: 'MOVING_AVG', note: 'In the unique key: two methods may run side by side on the same history.']
+  sfcForecastQty Decimal [not null, default: 0]
+  sfcForecastLower Decimal
+  sfcForecastUpper Decimal
+  sfcConfidencePerc Decimal
+  sfcDailyRate Decimal [not null, default: 0]
+  sfcHistoryDays Int [not null, default: 0]
+  sfcStockoutDays Int [not null, default: 0, note: 'Censored days WITHIN that history — cannot exceed sfcHistoryDays.']
+  sfcTrendSlope Decimal
+  sfcSeasonalityIndex Decimal
+  sfcModelParams Json [note: 'Alpha/beta/gamma, window lengths, whatever the method needs. jsonb so a
+new method costs no column and no migration.']
+  sfcMape Decimal
+  sfcRmse Decimal
+  sfcBias Decimal [note: 'Separate from error on purpose: consistently over-ordering and randomly
+missing are different diseases with different cures.']
+  sfcBacktestDays Int
+  sfcOnHandQty Decimal [not null, default: 0]
+  sfcPipelineQty Decimal [not null, default: 0, note: 'Ordered or in transit: stock already coming, which MUST be netted off
+before suggesting more. Forgetting this is how a chain double-orders.']
+  sfcSafetyStock Decimal [not null, default: 0]
+  sfcReorderPoint Decimal [not null, default: 0]
+  sfcSuggestedOrderQty Decimal [not null, default: 0]
+  sfcDaysOfCover Decimal
+  sfcExpectedStockoutOn DateTime
+  sfcPreferredSupplierId String
+  sfcAcceptedQty Decimal [note: 'Set when a buyer OVERRIDES the suggestion, so the next back-test knows
+the order it sees was not the one the model asked for.']
+  sfcAcceptedBy String
+  sfcAcceptedOn DateTime
+  sfcComputedOn DateTime [default: `now()`, not null]
+  sfcComputedBy String [note: 'Which job, service or notebook produced this row.']
+  sfcIsDeleted Boolean [not null, default: false]
+  sfcSyncDate DateTime
+  sfcCreatedOn DateTime [default: `now()`, not null]
+  company companys [not null]
+  branch branch_master [not null]
+  item item_master [not null]
+  baseUom item_unit_conversion [not null]
+  preferredSupplier suppliers
+
+  Note: 'stock.stock_forecast — what we expect to sell, and what to order.
+
+THE MATHS IS NOT IN THE DATABASE, and that is the design. A forecasting
+model written in PL/pgSQL cannot be changed without a migration, cannot be
+back-tested against last year without running last year, and cannot be
+swapped when the retailer discovers Croston fits their slow movers better
+than exponential smoothing. It WILL be changed.
+
+So the schema holds the three things a model needs to be useful and does
+not hold the model: the INPUTS ([[StockDemandDaily]]), the SETTINGS
+([[StockReorderPolicy]]) and the OUTPUTS (this table). A nightly job, the
+API layer, or somebody\'s notebook writes rows here; every screen reads them
+the same way regardless of what produced them, and sfcComputedBy says which
+it was.
+
+THE ERROR COLUMNS ARE NOT OPTIONAL. A forecast without a measured error is
+a number somebody made up. sfcMape, sfcRmse and sfcBias are written by the
+same run that writes the forecast, computed against the period just past,
+so a buyer can see that this item\'s model has been wrong by 40% for three
+months and stop trusting it. BIAS IS SEPARATE FROM ERROR on purpose:
+consistently over-ordering and randomly missing are different diseases with
+different cures, and a single accuracy number hides both.
+
+ONE ROW PER (item, branch, forecast date, horizon, METHOD). Keeping the
+method in the key means two models run side by side against the same
+history and be compared on it — which is the only honest way to choose one.
+
+sfcPipelineQty IS THE COLUMN A REPLENISHMENT BUG LIVES IN. Stock already
+ordered or in transit must be netted off before suggesting more; forgetting
+it is how a chain double-orders, twice a week, until somebody notices the
+warehouse is full.
+
+sfcAcceptedQty is set when a BUYER OVERRIDES the suggestion, so the next
+back-test knows the order it sees in the purchase history was not the one
+the model asked for. Without it every override silently becomes evidence
+against the model.
+
+sfcModelParams is jsonb — alpha/beta/gamma, window lengths, whatever the
+method needs — so a new method costs no column and no migration.
+
+sfcForecastDate IS THE DAY FORECAST FOR, not the day computed. The day
+computed is sfcComputedOn. Confusing the two makes every back-test wrong.
+
+WRITE RULES:
+* sfcStockoutDays cannot exceed sfcHistoryDays (ck_sfc_stockout_days) —
+it is a count of censored days WITHIN the history the model saw.
+* sfcAcceptedQty and sfcAcceptedOn move together (ck_sfc_accepted).
+* The confidence band is optional, but if both ends are given the upper
+must not be below the lower (ck_sfc_band).
+
+Vocabulary, enforced by a CHECK constraint in the migration:
+sfcMethod  MOVING_AVG | WMA | SES | HOLT | HOLT_WINTERS | CROSTON |
+REGRESSION | MANUAL | EXTERNAL
+plus ck_sfc_horizon, ck_sfc_confidence and ck_sfc_qty.
+
+DB-only objects Prisma cannot express — hand-authored in the migration and
+deliberately NOT declared here (every one carries a WHERE):
+ux_sfc_scope      one row per item/branch/date/horizon/method
+ix_sfc_action     the buying screen: this branch, latest run, worst first
+ix_sfc_item_chain chain view for one item — which branch runs out first
+ix_sfc_accuracy   model comparison: how has each method actually done'
+}
+
+Table stock_item_cost {
+  sicId String [pk]
+  sicCompanyId String [not null]
+  sicBranchId String [not null]
+  sicItemId String [not null]
+  sicBaseUomId String [not null, note: 'The item\'s BASE unit — an item_unit_conversion(iuc_id), NEVER an
+item_unit_master(unit_id). sicTotalQty is in this unit, so the average is
+a rate per base unit and never per "case".']
+  sicTotalQty Decimal [not null, default: 0]
+  sicTotalValue Decimal [not null, default: 0]
+  sicTotalValueWot Decimal [not null, default: 0]
+  sicAvgCostRate Decimal [not null, default: 0, note: 'Stored, not derived — the rate must survive sicTotalQty reaching zero.']
+  sicAvgCostRateWot Decimal [not null, default: 0]
+  sicLastPurchaseRate Decimal [not null, default: 0]
+  sicLastPurchaseDate DateTime
+  sicLastSaleRate Decimal [not null, default: 0]
+  sicLastSaleDate DateTime
+  sicMaxCostRate Decimal [not null, default: 0, note: 'The highest rate this item has ever been received at — a
+replacement-cost valuation asks for it, and it cannot be recovered once
+lots close.']
+  sicRowVersion BigInt [not null, default: 1]
+  sicIsDeleted Boolean [not null, default: false]
+  sicSyncDate DateTime
+  sicCreatedOn DateTime [default: `now()`, not null]
+  sicCreatedBy String
+  sicModifiedOn DateTime
+  sicModifiedBy String
+  company companys [not null]
+  branch branch_master [not null]
+  item item_master [not null]
+  baseUom item_unit_conversion [not null]
+
+  Note: 'stock.stock_item_cost — the MOVING WEIGHTED AVERAGE, one row per
+(company, branch, item). The other half of the valuation answer.
+
+[[StockLot]] carries each lot\'s OWN cost, which is what makes FIFO, LIFO and
+LOT_ACTUAL valuation a read rather than a replay. This table carries the
+running average across all of an item\'s lots in a branch. BOTH are
+maintained on every posting, always — so StockTrackPolicy.stpValuationMethod
+SELECTS an answer instead of triggering a rebuild, and switching a company
+from average to FIFO costs nothing.
+
+BRANCH-LEVEL, NOT GODOWN-LEVEL. Moving a case from the back store to the
+shop floor must not change what the stock cost; a per-godown average would
+let an internal transfer move value. Godown-wise value is stock_balance\'s
+sblStockValue, which is a distribution of this, not a separate truth. It is
+also not company-wide: two branches buying the same item at different rates
+have different costs, and averaging them would let one branch\'s bad buying
+inflate the other\'s margin.
+
+NOT LOT-LEVEL EITHER, on purpose — that is exactly what the lot\'s own
+sltCostRate is. This row is what the average costs when the lot identity is
+deliberately ignored.
+
+TRIGGER-MAINTAINED. fn_sml_apply() owns it: an inward adds qty and value and
+recomputes the average, an outward removes qty at the CURRENT average and
+leaves the rate alone — which is what "moving average" means, and why an
+outward can never change the cost of what remains. Application code that
+writes these columns is writing a number the next posting will overwrite.
+Post to [[StockLedger]] instead.
+
+THE AVERAGE IS STORED, NOT DERIVED. sicAvgCostRate is a plain column rather
+than value/qty as a generated one, because qty legitimately reaches zero
+when the last unit is sold and the rate must SURVIVE that: the next inward
+of an item that went to nil is not a fresh start, and a division by zero
+would make it one.
+
+sicMaxCostRate is the highest rate this item has ever been received at. It
+is kept because a replacement-cost valuation asks for it and because it
+cannot be recovered afterwards — closed lots are still there, but the
+question is asked often enough that scanning them every time is not
+reasonable.
+
+WOT columns are WITHOUT TAX. Where GST is claimable the value that belongs
+in the accounts is the ex-tax one, so both are carried and the caller picks
+per the company\'s tax treatment rather than re-deriving one from the other.
+
+WRITE RULES:
+* NEVER write sicTotalQty / sicTotalValue / sicTotalValueWot /
+sicAvgCostRate / sicAvgCostRateWot / sicMaxCostRate, nor the last
+purchase and last sale columns — all are trigger-maintained.
+* There is no sicIsActive: a cost row is not something a user switches
+off. sicIsDeleted exists only for the partial index predicate.
+
+DB-only objects Prisma cannot express — hand-authored in the migration and
+deliberately NOT declared here (it carries a WHERE, and Prisma ignores
+indexes with predicates):
+ux_sic_scope  ONE ROW PER (company, branch, item), and the upsert target
+of fn_sml_apply(). Partial on NOT deleted.'
+}
+
+Table stock_ledger {
+  smlId String [not null]
+  smlCompanyId String [not null]
+  smlBranchId String [not null]
+  smlTenantId String
+  smlAccYear String [not null, note: 'The PARTITION KEY, and half the primary key. See PARTITIONED BY above.']
+  smlGodownId String [not null, note: 'Where the stock physically is — an inventory.godown_locations(gdl_id),
+the self-referencing WAREHOUSE/ZONE/AISLE/RACK/SHELF/BIN tree. Never
+nullable: an unlocated movement cannot be reversed, counted or
+transferred. BranchMaster.brDefaultGodownId resolves it for screens with
+no godown selector.']
+  smlItemId String [not null]
+  smlLotId String [not null]
+  smlUomId String [not null, note: 'The unit the document was keyed in, and the item\'s base unit. BOTH are
+item_unit_conversion(iuc_id), NEVER item_unit_master(unit_id) — the stock
+a bill consumes must be keyed the same way the bill keys it
+(SaleBillItem.sbiItemUnitId). Both stored so a report can show "3 cases"
+and still sum pieces.']
+  smlBaseUomId String [not null]
+  smlToBaseFactor Decimal [not null, default: 1]
+  smlSrcModule String [not null, note: 'The (module, docType, docId) triple used by acc_tender_detail,
+txn_status_log, txn_hold and acc_voucher_doc_register. A new document type
+that moves stock costs one CHECK value and nothing else.']
+  smlSrcDocType String [not null]
+  smlSrcDocId String [not null]
+  smlSrcAccYear String [note: 'The DOCUMENT\'s own year, which is not always smlAccYear.']
+  smlSrcRefno String
+  smlLineNo Int [not null, default: 1]
+  smlSplitNo Int [not null, default: 1]
+  smlTxnType String [not null]
+  smlDirection Int [not null, note: '+1 in, -1 out. See the vocabulary note above for why this is redundant
+against smlTxnType on purpose.']
+  smlBucket String [not null, default: 'SALEABLE']
+  smlDocDate DateTime [not null]
+  smlDocDatetime DateTime [default: `now()`, not null]
+  smlPostedOn DateTime [default: `now()`, not null]
+  smlQty Decimal [not null, default: 0]
+  smlBaseQty Decimal [not null, default: 0]
+  smlFreeQty Decimal [not null, default: 0]
+  smlFreeBaseQty Decimal [not null, default: 0]
+  smlWeightQty Decimal [not null, default: 0]
+  smlSignedBaseQty Decimal [note: 'GENERATED ALWAYS ... STORED as direction * (baseQty + freeBaseQty). The
+one column stock_balance reads and every quantity report sums. Read-only,
+never sent.']
+  smlCostRate Decimal [not null, default: 0]
+  smlCostValue Decimal [not null, default: 0]
+  smlCostRateWot Decimal [not null, default: 0]
+  smlCostValueWot Decimal [not null, default: 0]
+  smlLandedRate Decimal [not null, default: 0]
+  smlLandedValue Decimal [not null, default: 0]
+  smlDocRate Decimal [not null, default: 0, note: 'What the DOCUMENT said, which is the selling price on a sale. Kept beside
+cost so margin needs no join back to SaleBillItem.']
+  smlDocRateWot Decimal [not null, default: 0]
+  smlDocAmountWot Decimal [not null, default: 0]
+  smlMrp Decimal [note: 'Snapshots from the lot, so batch/MRP-wise reports read one table.']
+  smlBatchNo String
+  smlExpiryDate DateTime
+  smlIsReversal Boolean [not null, default: false, note: 'smlReversesId points at the smlId being reversed. It carries NO foreign
+key — the target lives in another partition as often as not, and a
+composite FK back into a partitioned parent would buy nothing that
+ux_sml_reversal does not already guarantee. Both columns move together
+per ck_sml_reversal.']
+  smlReversesId String
+  smlReasonId String
+  smlPartyId String [note: 'Customer or supplier, per smlSrcModule. Polymorphic, so no foreign key.']
+  smlNarration String
+  smlIsDeleted Boolean [not null, default: false]
+  smlSyncDate DateTime
+  smlCreatedOn DateTime [default: `now()`, not null]
+  smlCreatedBy String
+  company companys [not null]
+  branch branch_master [not null]
+  godown godown_locations [not null]
+  item item_master [not null]
+  lot stock_lot [not null]
+  uom item_unit_conversion [not null]
+  baseUom item_unit_conversion [not null]
+  reason stock_reason_master
 
   indexes {
-    (psdPscId, psdRowNo) [unique]
+    (smlId, smlAccYear) [pk]
   }
+
+  Note: 'stock.stock_ledger — every movement. The truth.
+
+APPEND-ONLY. Never updated in place, never deleted. A cancelled bill does
+not remove its ledger rows, it writes REVERSING ones — because a stock
+figure that can change retrospectively is a stock figure nobody can
+reconcile, and because in an offline chain the cancellation may arrive
+after the day was closed. A BEFORE DELETE trigger raises rather than
+trusting convention, so Prisma\'s delete/deleteMany WILL fail here by
+design; smlIsDeleted exists for the soft-delete predicate the partial
+indexes are built on, not as an escape hatch.
+
+GRAIN — one row per (source document, line, split, godown, lot, direction).
+That is exactly the grain SaleBillItem already emits (sbiLineNo ×
+sbiSplitNo × sbiGodownId × sbiStockId), so posting a bill is a straight
+INSERT ... SELECT with no reshaping and no aggregation. A transfer writes
+TWO rows, not one: TRANSFER_OUT at the source and TRANSFER_IN at the
+destination, each with its own godown — and they are not simultaneous, see
+stock_transit.
+
+THERE IS NO RUNNING-BALANCE COLUMN, on purpose. "Balance after this
+movement" is the classic stock-ledger trap: two tills posting concurrently
+must serialise on it, a back-dated entry invalidates every row after it,
+and an offline chain has no global order to compute it in. The balance is
+stock_balance\'s job and nothing else\'s.
+
+FREE QUANTITY IS STOCK. Free goods sit on the shelf and get sold, so they
+are counted in on-hand — but kept in their own columns, because margin
+reporting must separate what was paid for from what was not.
+smlSignedBaseQty adds both and applies the direction; it is the one column
+every quantity report sums, and the only one stock_balance reads.
+
+PARTITIONED BY LIST (sml_acc_year), hence the composite primary key
+(smlId, smlAccYear). A new fiscal year needs its partitions created before
+the first save of that year, or EVERY insert fails:
+SELECT public.ensure_acc_year_partitions(\'2027-2028\');
+That helper is the ONE place a year is opened — the same call that
+provisions sale_bill, sale_bill_item, acc_tender_detail, txn_status_log and
+the rest. It does NOT know about this table until the migration that
+creates stock_ledger extends it (CREATE OR REPLACE, restating every
+existing block in order, as 20260810140000 and 20260811080000 did), so
+extending it is part of adding this table, not a follow-up.
+
+WRITE RULES:
+* NEVER write smlSignedBaseQty — GENERATED ALWAYS ... STORED, and
+Postgres rejects any write to it.
+* Quantities are MAGNITUDES; the sign lives in smlDirection alone. A
+negative qty with a negative direction is a silent double negation, so
+ck_sml_qty_sign refuses it.
+* smlAccYear is this ROW\'s year; smlSrcAccYear is the DOCUMENT\'s, and
+they differ legitimately — a sale return in April against a March bill
+posts here in the new year.
+* On an outward, the cost columns are what the stock cost US (the COGS),
+taken from the lot or the moving average per stpValuationMethod —
+NEVER the selling price. The selling price goes in smlDocRate.
+
+Vocabularies, enforced by CHECK constraints in the migration:
+smlTxnType    OPENING | PURCHASE | PURCHASE_RETURN | SALE | SALE_RETURN |
+TRANSFER_OUT | TRANSFER_IN | ADJUST_PLUS | ADJUST_MINUS |
+PHYSICAL_PLUS | PHYSICAL_MINUS | DAMAGE | EXPIRY_WRITEOFF |
+REPACK_IN | REPACK_OUT | BUCKET_IN | BUCKET_OUT |
+GIFT_ISSUE | SAMPLE_ISSUE
+smlDirection  1 (in) | -1 (out) — redundant against smlTxnType on
+purpose: a report that sums must not have to know that
+EXPIRY_WRITEOFF is an out
+smlBucket     SALEABLE | DAMAGED | QUARANTINE | EXPIRED | SAMPLE —
+saleable stock and damaged stock are both stock, and must
+never be added together by accident
+smlSrcModule  SALES | PURCHASE | STOCK | LOYALTY | PRODUCTION | MIGRATION
+plus ck_sml_acc_year (YYYY-YYYY, second = first + 1), ck_sml_qty_nonzero,
+ck_sml_to_base_factor and ck_sml_reversal.
+
+DB-only objects Prisma cannot express — hand-authored in the migration and
+deliberately NOT declared here. EVERY index on this table carries a WHERE,
+and Prisma ignores indexes with predicates:
+ux_sml_source     POSTING IDEMPOTENCY. The same bill posted twice — a
+retry after a timeout, a sync replaying a day — must
+not move stock twice. Direction is in the key because a
+transfer legitimately writes an OUT and an IN for one
+source line. Partial on NOT deleted AND NOT reversal.
+ux_sml_reversal   REVERSAL IDEMPOTENCY. ux_sml_source excludes reversal
+rows, which would otherwise have no unique constraint
+at all; fn_svh_cancel guards with a NOT EXISTS, but
+that is read-then-write and two concurrent cancels
+could both pass it and reverse the same movement twice.
+ix_sml_item_date  the item ledger screen
+ix_sml_balance_scope  fn_sbl_rebuild and every as-on-date recomputation
+ix_sml_lot        lot movement history: the recall trail
+ix_sml_source_doc drilling from a document into what it moved
+ix_sml_demand     fn_sdd_rebuild: the sales-only slice, by day'
 }
 
-Table physical_stock_header {
-  psId String [pk]
-  psAccYear String [not null]
-  psCompanyId String [not null]
-  psBranchId String [not null]
-  psGodownId String [not null]
-  psDocNo BigInt [not null]
-  psDocRefNo String
-  psDocDate DateTime [default: `now()`, not null]
-  psCountType String [not null, default: 'FULL']
-  psCountedBy String
-  psCountStartedOn DateTime
-  psCountCompletedOn DateTime
-  psStockCutoffAt DateTime [default: `now()`, not null]
-  psFreezeStock Boolean [not null, default: true]
-  psFreezeFrom DateTime
-  psFreezeTo DateTime
-  psPostingMode String [not null, default: 'ADJUST_DIFFERENCE_ONLY']
-  psRateSource String [not null, default: 'AVG_COST']
-  psAdjustmentVoucherId String
-  psTotalLines Int [not null, default: 0]
-  psTotalBookValue Decimal [not null, default: 0]
-  psTotalCountedValue Decimal [not null, default: 0]
-  psNetVarianceValue Decimal [not null, default: 0]
-  psStatus String [not null, default: 'DRAFT']
-  psApprovalRequired Boolean [not null, default: true]
-  psApprovedOn DateTime
-  psApprovedBy String
-  psPostedOn DateTime
-  psPostedBy String
-  psCancelledOn DateTime
-  psCancelledBy String
-  psCancelReason String
-  psDeviceType String
-  psDeviceId String
-  psCounterId String
-  psSessionId String
-  psRemarks String
-  psIsActive Boolean [not null, default: true]
-  psIsDeleted Boolean [not null, default: false]
-  psSyncDate DateTime
-  psCreatedOn DateTime [default: `now()`, not null]
-  psCreatedBy String [not null]
-  psModifiedOn DateTime [default: `now()`, not null]
-  psModifiedBy String
+Table stock_lot {
+  sltId String [pk]
+  sltCompanyId String [not null]
+  sltTenantId String
+  sltItemId String [not null]
+  sltBaseUomId String [not null, note: 'The item\'s BASE unit — an item_unit_conversion(iuc_id), NEVER an
+item_unit_master(unit_id). Every quantity in this engine is stored in
+this unit as well as in the unit it was keyed in.']
+  sltBatchNo String
+  sltMfgBatchNo String
+  sltMrp Decimal
+  sltSalePrice Decimal
+  sltMfgDate DateTime
+  sltExpiryDate DateTime
+  sltSerialNo String
+  sltSupplierId String
+  sltKeyBatch String
+  sltKeyMrp Decimal
+  sltKeySp Decimal
+  sltKeyExpiry DateTime
+  sltKeySerial String
+  sltKeySupplier String
+  sltTrackSignature String [not null, default: 'N', note: 'Which StockTrackPolicy flags were live when this lot was created —
+B/M/S/E/R/P, \'N\' when nothing is tracked. A policy change tomorrow must
+not make yesterday\'s lots unreadable.']
+  sltFirstInwardDate DateTime [not null, note: 'The ageing anchor for the CHAIN as a whole (StockTrackPolicy
+stpAgeingBasis = INWARD_DATE reads this). A godown\'s own "how long has
+this sat HERE" reads stock_balance.sbl_first_in_date instead.']
+  sltFirstInwardBranch String
+  sltInwardSrcModule String [note: 'The (module, docType, docId) triple, all-or-nothing per ck_slt_inward_src.']
+  sltInwardSrcDocType String
+  sltInwardSrcDocId String
+  sltInwardSrcAccYear String
+  sltInwardRefno String
+  sltPurchaseRate Decimal [not null, default: 0, note: 'sltCostRate is THIS lot\'s own cost, which is what makes FIFO and
+LOT_ACTUAL valuation a read rather than a replay. The moving weighted
+average is maintained in parallel in stock_item_cost. Both, always, so
+stpValuationMethod selects an answer instead of triggering a rebuild.']
+  sltCostRate Decimal [not null, default: 0]
+  sltCostRateWot Decimal [not null, default: 0]
+  sltLandedRate Decimal [not null, default: 0]
+  sltTaxRate Decimal [not null, default: 0]
+  sltStatus String [not null, default: 'ACTIVE', note: 'CLOSED is set by the engine when the last unit leaves; BLOCKED and
+EXPIRED are business decisions that stop the lot being issued.']
+  sltClosedOn DateTime
+  sltBlockedReason String
+  sltTotalOnHand Decimal [not null, default: 0, note: 'Chain-wide total across every branch and godown. TRIGGER-MAINTAINED from
+StockLedger by fn_sml_apply(). NEVER written from application code.']
+  sltRowVersion BigInt [not null, default: 1]
+  sltRemarks String
+  sltIsActive Boolean [not null, default: true]
+  sltIsDeleted Boolean [not null, default: false]
+  sltSyncDate DateTime
+  sltCreatedOn DateTime [default: `now()`, not null]
+  sltCreatedBy String
+  sltModifiedOn DateTime
+  sltModifiedBy String
+  company companys [not null]
+  item item_master [not null]
+  baseUom item_unit_conversion [not null]
+  supplier suppliers
+  firstInwardBranch branch_master
+  ledgerEntries stock_ledger [not null]
+  balances stock_balance [not null]
+  voucherItems stock_voucher_item [not null]
+  reservations stock_reservation [not null]
+  transits stock_transit [not null]
+  valuationSnaps stock_valuation_snap [not null]
+
+  Note: 'stock.stock_lot — the IDENTITY of a holding. Never its quantity.
+
+A lot is "this item, this batch, this MRP, this selling price, this expiry,
+from this supplier". Quantity lives in stock_balance, movement in
+StockLedger. Splitting identity from quantity is what lets the same lot be
+held in four godowns across three branches without four truths about its
+expiry date.
+
+COMPANY-SCOPED, DELIBERATELY. A lot is NOT per branch. Transfer stock from
+one branch to another and it is the same batch, the same expiry, the same
+supplier and — critically — the same AGE. A per-branch lot would reset the
+ageing clock at every transfer and let a chain hide ninety-day-old stock by
+moving it. Branch and godown live on stock_balance, which carries its own
+sbl_first_in_date for "how long has it been on THIS shelf".
+
+THE NULL-NORMALISED KEY. Every tracked dimension is a nullable column with a
+GENERATED companion that substitutes a sentinel when it is NULL:
+
+tracked:      sltMrp = 120.00  →  sltKeyMrp = 120.00
+not tracked:  sltMrp = NULL    →  sltKeyMrp = -1
+
+ux_slt_identity is built over the COMPANIONS, never the originals, because
+a UNIQUE index treats every NULL as distinct — which would let the same
+untracked item accrete a new lot on every single receipt, for ever. So an
+item tracked by nothing has exactly ONE lot with all six identity columns
+NULL, and there is no "non-batch path" anywhere in the engine.
+
+Sentinels are impossible values, not merely unlikely: \'~\' sorts after every
+alphanumeric batch number, -1 cannot be a price, 0001-01-01 cannot be an
+expiry, and the nil uuid is not a supplier.
+
+SUPPLIER IS ON THE LOT, not derived by tracing consumption back to a
+purchase. The same batch number received from two suppliers is two lots.
+That costs a few more rows and buys exact supplier-wise stock, exact
+supplier-wise ageing, and a recall that names the right supplier without a
+single join back through the ledger.
+
+WRITE RULES:
+* NEVER write sltKeyBatch / sltKeyMrp / sltKeySp / sltKeyExpiry /
+sltKeySerial / sltKeySupplier — all six are GENERATED ALWAYS ... STORED
+and Postgres rejects any write to them. Write the nullable originals.
+* NEVER write sltTotalOnHand. It is TRIGGER-MAINTAINED from StockLedger
+by fn_sml_apply(); stock_balance owns the per-godown truth it sums.
+* sltTrackSignature is stamped from the resolved StockTrackPolicy at
+creation, so a policy change tomorrow cannot re-key yesterday\'s stock.
+
+Vocabularies, enforced by CHECK constraints in the migration:
+sltStatus  ACTIVE | CLOSED | BLOCKED | EXPIRED
+plus ck_slt_expiry_order, ck_slt_prices, ck_slt_batch_shape,
+ck_slt_serial_shape and ck_slt_inward_src (the source triple is
+all-or-nothing, as everywhere else in the chain).
+
+DB-only objects Prisma cannot express — hand-authored in the migration and
+deliberately NOT declared here (every one is partial, and ux_slt_identity
+is over generated columns as well):
+ux_slt_identity  THE index of the stock engine — the one that collapses
+batch-wise, MRP-wise, sale-price-wise and none into one
+mechanism
+ix_slt_expiry    FEFO and near-expiry
+ix_slt_inward    FIFO / LIFO, and the chain-wide ageing report
+ix_slt_supplier  supplier-wise stock and supplier recall
+ix_slt_batch_no  "who has any of batch AX-4471?"
+ix_slt_mrp       "how much at 120, how much at the old 110"'
+}
+
+Table stock_movement_class {
+  smcId String [pk]
+  smcCompanyId String [not null]
+  smcBranchId String [not null]
+  smcTenantId String
+  smcItemId String [not null]
+  smcPeriodFrom DateTime [not null, note: 'Explicit, and part of the unique key, so monthly and quarterly runs
+coexist without overwriting each other.']
+  smcPeriodTo DateTime [not null]
+  smcAbcClass String [note: 'By VALUE. NULL = no movement in the period, which is not the same claim
+as a \'C\'.']
+  smcXyzClass String [note: 'By VARIABILITY — an X can be forecast, a Z can only be buffered.']
+  smcFsnClass String [note: 'By FREQUENCY — Fast, Slow, Non-moving.']
+  smcVelocityQtyPerDay Decimal [not null, default: 0]
+  smcMovementCount Int [not null, default: 0]
+  smcDaysSinceLastSale Int
+  smcDaysOfCover Decimal
+  smcTurnRatio Decimal [note: 'COGS in the period over average stock held: how many times the shelf
+turned over. The number a retailer actually manages by.']
+  smcDemandCv Decimal [note: 'Coefficient of variation — the figure the XYZ class is cut from, kept
+beside the letter so the cut can be re-examined.']
+  smcPeriodQty Decimal [not null, default: 0]
+  smcPeriodValueWot Decimal [not null, default: 0]
+  smcAvgStockQty Decimal [not null, default: 0]
+  smcAvgStockValue Decimal [not null, default: 0]
+  smcClosingQty Decimal [not null, default: 0]
+  smcClosingValue Decimal [not null, default: 0]
+  smcRankInBranch Int [note: 'The working of the ABC cut, stored so the A/B boundary can be audited
+rather than reproduced.']
+  smcCumValuePerc Decimal
+  smcDeadStockFlag Boolean [not null, default: false, note: 'Held, not sold, for long enough to be a decision.']
+  smcDeadSinceDate DateTime [note: 'Required whenever the flag is set — "dead since November" is actionable,
+"dead" is not.']
+  smcDeadValue Decimal [not null, default: 0, note: 'What is tied up. Makes the liquidation worklist sortable by how much it
+hurts.']
+  smcComputedOn DateTime [default: `now()`, not null]
+  smcIsDeleted Boolean [not null, default: false]
+  smcSyncDate DateTime
+  smcCreatedOn DateTime [default: `now()`, not null]
+  company companys [not null]
+  branch branch_master [not null]
+  item item_master [not null]
+
+  Note: 'stock.stock_movement_class — fast, slow, dead.
+
+THREE ORTHOGONAL CLASSIFICATIONS, because they answer different questions
+and a single "category A" hides two of them:
+
+ABC  by VALUE        where the money is. 20% of items, 80% of value.
+XYZ  by VARIABILITY  how predictable. An X item can be FORECAST; a Z item
+can only be BUFFERED.
+FSN  by FREQUENCY    how often it moves at all. Fast, Slow, Non-moving.
+
+An A-Z item — high value, wildly unpredictable — is the one that ties up
+capital and STILL stocks out, and it is invisible to any single ranking.
+That combination is the whole reason there are three columns and not one.
+
+COMPUTED PER PERIOD AND STORED, not derived on read. The classification of
+March must not change when April\'s sales arrive: a buyer who was told an
+item was dead in March needs that to still be what the system said in
+March. Period bounds are explicit — smcPeriodFrom / smcPeriodTo — and are
+part of the unique key, so monthly and quarterly runs coexist.
+
+smcTurnRatio is cost of goods sold in the period over average stock held:
+how many times the shelf turned over, and the number a retailer actually
+manages by. smcDemandCv is the coefficient of variation the XYZ class is
+cut from, kept beside the letter so the cut can be re-examined without
+recomputing the period.
+
+DEAD STOCK NEEDS A DATE. "Dead since November" is actionable — it dates the
+buying mistake and prices the liquidation; "dead" alone is not.
+ck_smc_dead therefore refuses a dead flag with no smcDeadSinceDate, and
+smcDeadValue is what is tied up, which is what makes the worklist sortable
+by how much it hurts.
+
+smcRankInBranch and smcCumValuePerc are the working of the ABC cut, stored
+so the boundary between A and B can be audited rather than reproduced.
+
+WRITE RULES:
+* This table is DERIVED, from [[StockLedger]] and [[StockValuationSnap]].
+Do not patch a row to change a class; fix the inputs and recompute.
+* The three class columns are NULLABLE — an item with no movement in the
+period has no honest class, and NULL says that where \'N\' would be a
+claim.
+
+Vocabularies, enforced by CHECK constraints in the migration:
+smcAbcClass  A | B | C     (by value)
+smcXyzClass  X | Y | Z     (by variability)
+smcFsnClass  F | S | N     (by frequency)
+each nullable, plus ck_smc_period (to >= from) and ck_smc_dead.
+
+DB-only objects Prisma cannot express — hand-authored in the migration and
+deliberately NOT declared here (all three carry a WHERE):
+ux_smc_scope  one row per (company, branch, item, period)
+ix_smc_class  the classification report, and the A-Z drilldown
+ix_smc_dead   dead stock, worst first — the liquidation worklist'
+}
+
+Table stock_reason_master {
+  srmId String [pk]
+  srmCompanyId String [note: 'NULL = SHARED with every company; a company row with the same code
+overrides the shared one in the picker.']
+  srmCode String [not null]
+  srmName String [not null]
+  srmAllowedTxnTypes String[] [not null, note: 'Which movements may cite it. Empty array = any. Kept as text[] rather
+than a child table because it is a filter for a dropdown, not a rule
+anybody reports on. NEVER null — see WRITE RULES above.']
+  srmDirection String [not null, default: 'BOTH', note: 'IN, OUT or BOTH — stops "damaged" appearing on a receipt screen.']
+  srmRequireRemarks Boolean [not null, default: false]
+  srmGlLedgerId String [note: 'Where the value goes when stock is written off. NULL = no auto posting.']
+  srmSortOrder Int [not null, default: 0]
+  srmRemarks String
+  srmIsActive Boolean [not null, default: true]
+  srmIsDeleted Boolean [not null, default: false]
+  srmSyncDate DateTime
+  srmCreatedOn DateTime [default: `now()`, not null]
+  srmCreatedBy String
+  srmModifiedOn DateTime
+  srmModifiedBy String
+  company companys
+  glLedger acc_ledger_master
+  ledgerEntries stock_ledger [not null]
+  vouchers stock_voucher [not null]
+  voucherItems stock_voucher_item [not null]
+
+  Note: 'stock.stock_reason_master — WHY stock moved when no trade document explains
+it. A receipt says "we bought it" and an invoice says "we sold it"; an
+ADJUSTMENT says nothing on its own, so it must cite a row from here.
+
+This table is LOAD-BEARING, not a lookup for a dropdown label:
+* fn_svh_txn_map REFUSES an ADJUSTMENT that cites no reason, and refuses
+one whose reason is direction BOTH — a document that cannot say which
+way it moved is not a document. With this table empty, ADJUSTMENT
+cannot be posted at all.
+* srmDirection (IN | OUT) is what turns an ADJUSTMENT into ADJUST_PLUS or
+ADJUST_MINUS. BOTH is only safe where the direction comes from
+elsewhere — a PHYSICAL count, where the counted difference supplies it
+— so every BOTH row is restricted to PHYSICAL via srmAllowedTxnTypes.
+* srmAllowedTxnTypes empty = any movement may cite it. But when a reason
+names EXACTLY ONE type and the voucher is an ISSUE, fn_svh_txn_map
+BELIEVES the reason and posts that type: an ISSUE citing SAMPLE becomes
+SAMPLE_ISSUE, not a bare ADJUST_MINUS. That is the whole mechanism by
+which sample, gift and internal-use issues classify themselves.
+
+COMPANY SCOPING is a MERGE, and this is the one place in the stock module
+where scoping merges. The tracking policy picks the MOST SPECIFIC row, the
+ageing ladder is ALL-OR-NOTHING, but reasons ADD UP: srmCompanyId NULL =
+SHARED with every company, and the picker shows the shared rows and the
+company\'s own together, because the user is choosing one from a list and
+more choices are not a contradiction. A company that defines its own row
+with a shared row\'s code OVERRIDES it — the picker hides the shared one.
+Nothing is copied per company. Same rule as [[StockTrackPreset]].
+
+srmGlLedgerId is where the value of written-off stock lands. NULL = no auto
+posting, and the seed leaves every row NULL because the chart of accounts
+is a per-company question. Nothing in the stock engine reads it yet.
+
+WRITE RULES:
+* srmCode is the stable identity, unique per company (or per SHARED),
+[A-Za-z0-9_-] only — enforced by ck_srm_code_shape.
+* srmAllowedTxnTypes is a Postgres text[] with DEFAULT \'{}\'. Prisma
+scalar lists REJECT null and report it as a missing-relation error, so
+normalise an absent value to [] in the DTO — never pass null.
+
+Vocabulary, enforced by a CHECK constraint in the migration:
+srmDirection  IN | OUT | BOTH
+
+DB-only objects Prisma cannot express — hand-authored in the migration and
+deliberately NOT declared here (both carry a WHERE, and Prisma ignores
+indexes with predicates):
+ux_srm_code   unique on (COALESCE(company, nil uuid), code) WHERE NOT
+deleted — COALESCEd because a plain unique index treats
+every NULL as distinct, which would let the seed insert
+SHORTAGE twice. Uniqueness on this path is app-side.
+ix_srm_list   the picker\'s list shape, partial on active + not deleted.'
+}
+
+Table stock_reorder_policy {
+  srpId String [pk]
+  srpCompanyId String [not null]
+  srpBranchId String [not null]
+  srpGodownId String [note: 'NULL = the whole branch, however many godowns it operates.']
+  srpItemId String [not null]
+  srpUomId String [not null, note: 'The unit the buyer thinks in — an item_unit_conversion(iuc_id). Every
+quantity below is in THIS unit, not the base unit.']
+  srpMinQty Decimal [not null, default: 0]
+  srpMaxQty Decimal [not null, default: 0, note: '0 = NO CEILING, exempted from the "max >= min" rule.']
+  srpReorderLevel Decimal [not null, default: 0]
+  srpReorderQty Decimal [not null, default: 0]
+  srpSafetyStock Decimal [not null, default: 0]
+  srpLeadTimeDays Decimal [not null, default: 0]
+  srpLeadTimeSdDays Decimal [not null, default: 0, note: 'The standard deviation of the lead time — what tells "3 days ± 1" apart
+from "3 days ± 6", and the only thing that makes safety stock honest.']
+  srpReviewPeriodDays Int [not null, default: 7]
+  srpServiceLevelPerc Decimal [not null, default: 95, note: 'The probability of not stocking out during lead time that the safety
+stock is sized for. 95.000 is the usual retail answer; strictly between
+0 and 100, because 100% service means infinite stock.']
+  srpMoq Decimal [not null, default: 0, note: 'The supplier\'s constraints, applied AFTER the maths.']
+  srpPackMultiple Decimal [not null, default: 1]
+  srpShelfCapacityQty Decimal [not null, default: 0, note: 'The opposite constraint: no point ordering more than the shelf holds.']
+  srpPreferredSupplierId String
+  srpSource String [not null, default: 'MANUAL', note: 'MANUAL means a human set these and a job MUST NOT overwrite them.']
+  srpComputedOn DateTime
+  srpAutoReplenish Boolean [not null, default: false, note: 'Arms the sweep that raises orders without a human. Off by default.']
+  srpRemarks String
+  srpIsActive Boolean [not null, default: true]
+  srpIsDeleted Boolean [not null, default: false]
+  srpSyncDate DateTime
+  srpCreatedOn DateTime [default: `now()`, not null]
+  srpCreatedBy String
+  srpModifiedOn DateTime
+  srpModifiedBy String
+  company companys [not null]
+  branch branch_master [not null]
+  godown godown_locations
+  item item_master [not null]
+  uom item_unit_conversion [not null]
+  preferredSupplier suppliers
+
+  Note: 'stock.stock_reorder_policy — the SETTINGS a replenishment decision is made
+from. One row per item per location.
+
+srpGodownId NULL = THE WHOLE BRANCH, however many godowns it operates. A
+shop keeps one reorder level for an item and does not care whether the
+units are on the shelf or in the back store; a warehouse that does care
+adds a godown-specific row beside it. ux_srp_scope COALESCEs the godown to
+the nil uuid, because a plain unique index treats every NULL as distinct
+and would let the same branch-wide row be inserted twice.
+
+srpSource IS LOAD-BEARING, not a label. MANUAL means a human set these
+numbers and the nightly job MUST NOT overwrite them: a buyer who has
+deliberately raised a level for a festival will not do it twice, and a job
+that silently reverts it destroys trust in the whole module. COMPUTED rows
+are the job\'s to maintain, and srpComputedOn says when it last did.
+
+THE NUMBERS ARE SETTINGS, NOT ANSWERS. What to order today is
+[[StockForecast]].sfcSuggestedOrderQty, computed from these plus actual
+demand. This table holds only what a human decided about the item: how low
+it may go, how much to buy, how long the supplier takes, and how sure we
+want to be.
+
+srpServiceLevelPerc is the probability of NOT stocking out during lead
+time that srpSafetyStock is sized for. 95.000 is the usual retail answer,
+and it is strictly between 0 and 100 — 100% service means infinite safety
+stock, which ck_srp_service_level refuses rather than letting a job compute
+it.
+
+srpLeadTimeSdDays is the standard deviation of the lead time, and it is
+what makes safety stock honest: an item whose supplier takes 3 days ± 1 and
+an item whose supplier takes 3 days ± 6 need very different buffers, and
+only the second figure tells them apart.
+
+srpMoq and srpPackMultiple are the supplier\'s constraints, applied AFTER
+the maths — a suggestion of 17 against a case of 12 becomes 24, and
+pretending otherwise produces orders no supplier will accept.
+srpShelfCapacityQty is the opposite constraint: no point ordering more than
+the shelf holds.
+
+WRITE RULES:
+* srpUomId is part of the key: min/max/reorder are expressed in the unit
+a buyer thinks in ("reorder at 4 cases"), NOT in the base unit.
+* A max of 0 means NO CEILING — ck_srp_levels exempts it from the
+"max >= min" rule rather than forcing a sentinel.
+* srpAutoReplenish arms the sweep that raises orders without a human. It
+is off by default, and it should stay off until the forecast for that
+item has been watched for a while.
+
+Vocabulary, enforced by a CHECK constraint in the migration:
+srpSource  MANUAL | COMPUTED
+plus ck_srp_levels, ck_srp_lead_time, ck_srp_service_level, ck_srp_pack
+(a pack multiple of 0 would divide by zero) and ck_srp_review.
+
+DB-only objects Prisma cannot express — hand-authored in the migration and
+deliberately NOT declared here (all three carry a WHERE, and ux_srp_scope
+is over an expression as well):
+ux_srp_scope  one policy per item per location, godown COALESCEd to the
+nil uuid so the branch-wide row has something to be unique
+against. Uniqueness on this path is app-side.
+ix_srp_item   the item\'s policies across branches
+ix_srp_auto   the auto-replenishment sweep'
+}
+
+Table stock_reservation {
+  srvId String [not null]
+  srvCompanyId String [not null]
+  srvBranchId String [not null]
+  srvTenantId String
+  srvAccYear String [not null, note: 'The PARTITION KEY, and half the primary key.']
+  srvGodownId String [not null]
+  srvItemId String [not null]
+  srvLotId String [not null]
+  srvBaseUomId String [not null]
+  srvBucket String [not null, default: 'SALEABLE']
+  srvSrcModule String [not null]
+  srvSrcDocType String [not null]
+  srvSrcDocId String [not null]
+  srvSrcAccYear String
+  srvSrcRefno String
+  srvLineNo Int [not null, default: 1]
+  srvReservedQty Decimal [not null, default: 0]
+  srvConsumedQty Decimal [not null, default: 0]
+  srvReleasedQty Decimal [not null, default: 0]
+  srvOpenQty Decimal [note: 'GENERATED ALWAYS ... STORED as reserved - consumed - released. What is
+still holding stock, and what the trigger sums into
+StockBalance.sblReservedQty. Read-only, never sent.']
+  srvReservedOn DateTime [default: `now()`, not null]
+  srvExpiresOn DateTime [note: 'Without this, an abandoned order holds stock for ever.']
+  srvStatus String [not null, default: 'OPEN']
+  srvClosedOn DateTime
+  srvCloseReason String
+  srvIsDeleted Boolean [not null, default: false]
+  srvSyncDate DateTime
+  srvCreatedOn DateTime [default: `now()`, not null]
+  srvCreatedBy String
+  srvModifiedOn DateTime
+  srvModifiedBy String
   company companys [not null]
   branch branch_master [not null]
   godown godown_locations [not null]
-  details physical_stock_detail [not null]
-  batchDetails physical_stock_batch_detail [not null]
+  item item_master [not null]
+  lot stock_lot [not null]
+  baseUom item_unit_conversion [not null]
+
+  indexes {
+    (srvId, srvAccYear) [pk]
+  }
+
+  Note: 'stock.stock_reservation — quantity PROMISED but still on the shelf.
+
+A sale order taken at one till against stock a second till is about to
+sell. Counting open orders out of SaleOrderItem cannot work in a chain: the
+order that committed the last unit may have been raised offline in another
+branch and not yet synced, and soiPendingQty is a cache of the ORDER\'s
+state, not of the STOCK\'s. So the hold lives beside the stock it holds.
+
+RESERVED STOCK IS ON HAND. It is physically there — a physical count will
+find it, a valuation must include it — but it is NOT AVAILABLE. That
+distinction is exactly why [[StockBalance]] carries sblOnHandQty and
+sblAvailableQty as separate figures, and a billing screen must check the
+second.
+
+A RESERVATION EXPIRES, and srvExpiresOn is not optional in spirit: without
+it a quoted order abandoned in March holds stock hostage for ever, and the
+only cure is a human noticing. The expiry sweep reads ix_srv_expiring.
+
+THREE COUNTERS, ONE ANSWER. srvReservedQty is what was promised,
+srvConsumedQty is what the eventual document actually took, srvReleasedQty
+is what was given back — and srvOpenQty, GENERATED from all three, is what
+is still holding stock. The trigger sums srvOpenQty into
+StockBalance.sblReservedQty; nothing else may write that column.
+ck_srv_settled refuses consuming and releasing more than was ever reserved.
+
+A PARTIAL is a reservation whose document took some of it. CONSUMED,
+RELEASED and EXPIRED are terminal, and a terminal row keeps its numbers
+rather than being deleted — "we held four units for that order and the
+customer never came" is a question somebody asks.
+
+WRITE RULES:
+* NEVER write srvOpenQty — GENERATED ALWAYS ... STORED.
+* NEVER write StockBalance.sblReservedQty; write here and let the trigger
+aggregate.
+* One reservation per source line per lot — ux_srv_source — so a re-post
+UPDATES rather than stacking a second hold on the same stock. Getting
+this wrong double-reserves and makes stock vanish from the sale screen.
+
+Vocabularies, enforced by CHECK constraints in the migration:
+srvStatus  OPEN | PARTIAL | CONSUMED | RELEASED | EXPIRED
+srvBucket  SALEABLE | DAMAGED | QUARANTINE | EXPIRED | SAMPLE
+plus ck_srv_acc_year and ck_srv_qty (a reservation of zero is not a
+reservation).
+
+PARTITIONED BY LIST (srv_acc_year), hence the composite primary key.
+
+DB-only objects Prisma cannot express — hand-authored in the migration and
+deliberately NOT declared here (every one carries a WHERE):
+ux_srv_source   one hold per source line per lot
+ix_srv_balance  the trigger\'s aggregate: open holds against one balance
+ix_srv_expiring the expiry sweep'
 }
 
 Table stock_track_policy {
@@ -5735,6 +6733,550 @@ COALESCEd to the nil uuid because EXCLUDE never
 conflicts on NULL.
 ix_stp_resolve   the resolver\'s exact lookup shape, covering, partial
 ix_stp_item      reverse lookup / FK-covering, partial'
+}
+
+Table stock_track_preset {
+  sptId String [pk]
+  sptCompanyId String [note: 'NULL = shared with every company; a company row with the same code
+overrides the shared one in the picker.']
+  sptCode String [not null]
+  sptName String [not null, note: 'Named by TRADE, not by flags: "Pharma" tells the user more than
+"batch+expiry+MRP+supplier" ever will. The flags live in the tooltip.']
+  sptDescription String
+  sptTrackBatch Boolean [not null, default: false]
+  sptTrackMrp Boolean [not null, default: false]
+  sptTrackSalePrice Boolean [not null, default: false]
+  sptTrackExpiry Boolean [not null, default: false]
+  sptTrackSerial Boolean [not null, default: false]
+  sptTrackSupplier Boolean [not null, default: false]
+  sptTrackSignature String [note: 'GENERATED ALWAYS ... STORED, same expression as stpTrackSignature so a
+screen can match a saved policy back to a preset by comparing the two.']
+  sptValuationMethod String [not null, default: 'WAVG']
+  sptIssueStrategy String [not null, default: 'FEFO']
+  sptAllowNegative String [not null, default: 'ALLOW']
+  sptShelfLifeDays Int
+  sptNearExpiryDays Int [not null, default: 30]
+  sptBlockExpiredSale Boolean [not null, default: false]
+  sptAgeingBasis String [not null, default: 'INWARD_DATE']
+  sptSortOrder Int [not null, default: 0]
+  sptRemarks String
+  sptIsActive Boolean [not null, default: true]
+  sptIsDeleted Boolean [not null, default: false]
+  sptSyncDate DateTime
+  sptCreatedOn DateTime [default: `now()`, not null]
+  sptCreatedBy String
+  sptModifiedOn DateTime
+  sptModifiedBy String
+  company companys
+  createdBy user_master
+  items item_master [not null, note: 'The masters configured with this preset. Back-relations only — a preset
+still has NO relation to StockTrackPolicy, and must not gain one.']
+  itemGroups item_group_master [not null]
+
+  Note: 'stock.stock_track_preset — named tracking-flag combinations, offered by the
+policy screen as a combo of TRADES ("Pharma", "Perishables") instead of six
+checkboxes. Adding a preset for a new trade is an INSERT, not a release.
+
+THE ENGINE NEVER READS THIS TABLE. fn_stp_effective, fn_slt_resolve and
+everything downstream read StockTrackPolicy\'s own six flags. A preset is a
+STENCIL:
+
+picking one COPIES its values into the policy form;
+Save writes an ordinary StockTrackPolicy row that owns its flags;
+after that the preset is irrelevant to that policy for ever.
+
+There is deliberately NO relation from StockTrackPolicy to this model and
+no sptId stored on the policy. Link semantics — where editing a preset
+re-keys every policy that used it — would silently re-identify stock across
+every company at a stroke: exactly the accident the policy\'s effective
+dates and the lot\'s stamped signature exist to prevent. To show "which
+preset is this policy?", match on the GENERATED signature
+(stpTrackSignature = sptTrackSignature); no match means "Custom", which is
+the truth.
+
+WHAT THE MASTERS DO STORE. ItemMaster.itemTrackPresetId and
+ItemGroupMaster.itgTrackPresetId (20260907060000) point HERE, and
+StockTrackPolicyService copies this row\'s values into the policy when either
+master is saved. That is not the link semantics refused above: the link is on
+the MASTER, the policy row still owns its own thirteen columns outright, and
+editing a preset changes no policy until somebody explicitly re-saves the
+item or group that names it. What it buys is that a re-save re-derives the
+SAME policy rather than falling back to the item\'s flags and quietly undoing
+the choice. A policy still has no way back to a preset except the signature.
+
+COMPANY SCOPING is a MERGE, exactly like the stock adjustment reasons:
+sptCompanyId NULL = a SHARED preset offered to every company; a company row
+with a shared row\'s code overrides it in the picker. Nothing has to be
+copied per company.
+
+The CHECK constraints are the POLICY\'s rulebook verbatim, on purpose: a
+preset that cannot be saved as a policy is a trap waiting in a combo, so an
+admin cannot author "Batch, FEFO, no expiry" here either.
+
+WRITE RULES:
+* NEVER write sptTrackSignature — it is GENERATED ALWAYS ... STORED and
+Postgres rejects any write to it.
+* sptCode is the stable identity, uppercase-ish [A-Za-z0-9_-] only.
+
+Vocabularies, enforced by CHECK constraints in the migration:
+sptValuationMethod  WAVG | FIFO | LOT_ACTUAL
+sptIssueStrategy    FIFO | FEFO | LIFO | MANUAL
+sptAllowNegative    ALLOW | WARN | BLOCK
+sptAgeingBasis      INWARD_DATE | MFG_DATE | LAST_IN_DATE
+plus ck_spt_expiry_needs_batch and ck_spt_fefo_needs_expiry — the same two
+derivable rules the policy enforces.
+
+DB-only objects Prisma cannot express — hand-authored in the migration and
+deliberately NOT declared here (both carry a WHERE, and Prisma ignores
+indexes with predicates):
+ux_spt_code   unique on (COALESCE(company, nil uuid), code) WHERE NOT
+deleted — COALESCEd because a plain unique index treats
+every NULL as distinct, which would let the seed insert
+PHARMA twice. Uniqueness on this path is app-side.
+ix_spt_list   the picker\'s list shape, partial on active + not deleted.'
+}
+
+Table stock_transit {
+  sttId String [pk]
+  sttCompanyId String [not null]
+  sttTenantId String
+  sttFromBranchId String [not null]
+  sttFromGodownId String [not null]
+  sttToBranchId String [not null]
+  sttToGodownId String [not null]
+  sttItemId String [not null]
+  sttLotId String [not null]
+  sttBaseUomId String [not null]
+  sttBucket String [not null, default: 'SALEABLE', note: 'In ux_stt_out_line on purpose — see ONE ROW PER above.']
+  sttOutVoucherId String [not null]
+  sttOutAccYear String [not null]
+  sttOutRefno String
+  sttInVoucherId String
+  sttInAccYear String
+  sttInRefno String
+  sttSentQty Decimal [not null, default: 0]
+  sttReceivedQty Decimal [not null, default: 0]
+  sttDamageQty Decimal [not null, default: 0]
+  sttShortQty Decimal [note: 'GENERATED ALWAYS ... STORED as sent - received - damage. What left and
+never arrived, and the number a transfer-loss report is built on.
+Read-only, never sent — it must not be editable.']
+  sttCostRate Decimal [not null, default: 0]
+  sttTransitValue Decimal [not null, default: 0]
+  sttSentOn DateTime [default: `now()`, not null]
+  sttExpectedOn DateTime
+  sttReceivedOn DateTime
+  sttStatus String [not null, default: 'IN_TRANSIT']
+  sttLrNo String
+  sttVehicleNo String
+  sttRemarks String
+  sttIsDeleted Boolean [not null, default: false]
+  sttSyncDate DateTime
+  sttCreatedOn DateTime [default: `now()`, not null]
+  sttCreatedBy String
+  sttModifiedOn DateTime
+  sttModifiedBy String
+  company companys [not null]
+  fromBranch branch_master [not null]
+  toBranch branch_master [not null]
+  fromGodown godown_locations [not null]
+  toGodown godown_locations [not null]
+  item item_master [not null]
+  lot stock_lot [not null]
+  baseUom item_unit_conversion [not null]
+
+  Note: 'stock.stock_transit — sent from A, not yet arrived at B.
+
+A chain moves stock between stores constantly, and a transfer is not
+instantaneous. Between the lorry leaving and the goods being checked in the
+stock is out of A\'s balance and not yet in B\'s — and if nothing records it,
+it is simply MISSING. That is how a chain loses stock on paper and then
+finds it on the floor, and it is why this table exists rather than a status
+flag on the transfer voucher.
+
+TRANSIT IS NOT ON HAND. StockBalance.sblTransitInQty is fed from here and
+is deliberately excluded from sblOnHandQty: it is not here yet, it cannot
+be sold, and a physical count will not find it. It is shown so the
+receiving branch knows what is coming, never so it can be billed.
+
+NOT PARTITIONED, and this is the point. A transfer despatched on 29 March
+and received on 2 April spans two accounting years; partitioning by year
+would put the two halves of ONE fact in two partitions and make "what is in
+transit right now" a query across years. Both voucher references therefore
+carry their OWN year — sttOutAccYear and sttInAccYear — and neither carries
+a foreign key, because a composite FK into a partitioned parent would pin
+this row to one year\'s partition and defeat the whole arrangement. Same
+reasoning as [[StockBalance]] and acc_bill_balance.
+
+SHORT RECEIPTS ARE THE POINT. sttShortQty is what left and never arrived —
+GENERATED, not entered, so it cannot be quietly rounded away by whoever
+keys the receipt — and it is the number a transfer-loss report is built on.
+Damage is tracked separately from shortage because they are different
+failures with different people to talk to.
+
+ONE ROW PER (out voucher, item, lot, destination godown, BUCKET). Bucket is
+in the key because one voucher legitimately sends saleable units and
+damaged units of the same lot to the same godown as two transit lines — a
+returns-to-warehouse run does exactly this — and they must not collide.
+
+WRITE RULES:
+* NEVER write sttShortQty — GENERATED ALWAYS ... STORED.
+* ck_stt_qty refuses receiving more than was sent; ck_stt_endpoints
+refuses stock in transit to the place it already is.
+* sttInVoucherId and sttInAccYear move together (ck_stt_in_pair).
+
+Vocabularies, enforced by CHECK constraints in the migration:
+sttStatus  IN_TRANSIT | PARTIAL | RECEIVED | CANCELLED
+sttBucket  SALEABLE | DAMAGED | QUARANTINE | EXPIRED | SAMPLE
+
+DB-only objects Prisma cannot express — hand-authored in the migration and
+deliberately NOT declared here (every one carries a WHERE):
+ux_stt_out_line  one line per (out voucher, item, lot, to-godown, bucket)
+ix_stt_inbound   "what is on its way to me?" — the receiving worklist,
+and the source of sblTransitInQty
+ix_stt_outbound  "what have I sent that has not been acknowledged?" — the
+ageing of transit itself, where losses show up'
+}
+
+Table stock_valuation_snap {
+  svsId String [pk]
+  svsCompanyId String [not null]
+  svsBranchId String [not null]
+  svsTenantId String
+  svsAccYear String [not null, note: 'A SCOPE column, not a partition key — see the header note.']
+  svsGodownId String [not null]
+  svsItemId String [not null]
+  svsLotId String [not null]
+  svsBaseUomId String [not null, note: 'The item\'s base unit at freeze time. Carries NO foreign key in the
+migration, unlike everywhere else in this module, so it stays scalar.']
+  svsBucket String [not null, default: 'SALEABLE']
+  svsSnapType String [not null, default: 'MONTH']
+  svsSnapDate DateTime [not null]
+  svsQty Decimal [not null, default: 0]
+  svsAvgCostRate Decimal [not null, default: 0]
+  svsAvgCostRateWot Decimal [not null, default: 0]
+  svsValueAtCost Decimal [not null, default: 0]
+  svsValueAtCostWot Decimal [not null, default: 0]
+  svsValueAtMrp Decimal [not null, default: 0, note: 'What the shop floor counts. Unrecoverable once a price list changes.']
+  svsValueAtSp Decimal [not null, default: 0, note: 'What a retailer means by "stock worth". Likewise unrecoverable.']
+  svsBatchNo String
+  svsMrp Decimal
+  svsExpiryDate DateTime
+  svsSupplierId String [note: 'No foreign key in the migration, unlike StockBalance.sblSupplierId — a
+snapshot must survive the supplier row being restricted away.']
+  svsAgeDays Int [note: 'How old the stock was ON the snapshot date. Stored because it cannot be
+recomputed for a lot that has since been consumed.']
+  svsFrozenOn DateTime [default: `now()`, not null]
+  svsFrozenBy String
+  svsIsDeleted Boolean [not null, default: false]
+  svsSyncDate DateTime
+  svsCreatedOn DateTime [default: `now()`, not null]
+  company companys [not null]
+  branch branch_master [not null]
+  godown godown_locations [not null]
+  item item_master [not null]
+  lot stock_lot [not null]
+
+  Note: 'stock.stock_valuation_snap — closing stock, FROZEN.
+
+"Stock value as on 31 March" must give the same answer in April and in
+October, and it must give it in seconds for fifty branches. Replaying
+[[StockLedger]] does neither: it is slow, and a back-dated correction
+posted in June would silently change March\'s audited figure. So the figure
+is taken once at period close and never touched again.
+
+AS-ON-DATE FOR ANY OTHER DAY is the nearest snapshot at or before it, plus
+the ledger delta since — bounded work rather than a full replay. That is
+what fn_stock_asof() does, and ix_svs_asof is the index it reads.
+
+THREE VALUATIONS, NOT ONE, and this cannot be fixed later. At COST is what
+the books want, at MRP is what the shop floor counts, at SELLING PRICE is
+what a retailer means by "stock worth". Once a price list changes, the
+second and third are unrecoverable for a date in the past — so all three
+are frozen together or not at all.
+
+svsAgeDays is stored for the same reason: it cannot be recomputed for a lot
+that has since been consumed and closed.
+
+svsAccYear IS A SCOPE COLUMN, NOT A PARTITION KEY. A snapshot is a frozen
+fact that gets read for years, and a year-close snapshot is precisely what
+the NEXT year opens against — partitioning it by year would put the two
+sides of that handover in different partitions.
+
+THE IDENTITY CACHE — svsBatchNo, svsMrp, svsExpiryDate, svsSupplierId — is
+copied from [[StockLot]] at freeze time because the lot may be closed, and
+its costs long superseded, by the time anybody reads this row.
+
+WRITE RULES:
+* A snapshot is WRITE-ONCE. Re-freezing a period means deleting the rows
+for that (snapType, snapDate) and writing them again — never editing a
+figure in place, which would make the audited number and the reported
+number diverge with nothing to show for it.
+* There is no modifiedOn/By pair, on purpose.
+
+Vocabularies, enforced by CHECK constraints in the migration:
+svsSnapType  DAY | MONTH | YEAR_OPEN | YEAR_CLOSE
+svsBucket    SALEABLE | DAMAGED | QUARANTINE | EXPIRED | SAMPLE
+
+DB-only objects Prisma cannot express — hand-authored in the migration and
+deliberately NOT declared here (every one carries a WHERE):
+ux_svs_scope   one row per holding per snapshot
+ix_svs_asof    fn_stock_asof(): the nearest snapshot at or before a date
+ix_svs_report  the valuation report: one branch, one date, everything'
+}
+
+Table stock_voucher {
+  svhId String [not null]
+  svhCompanyId String [not null]
+  svhBranchId String [not null]
+  svhTenantId String
+  svhAccYear String [not null, note: 'The PARTITION KEY, and half the primary key.']
+  svhDeviceId String [not null, note: 'The counter. See THE DEVICE IS THE COUNTER above.']
+  svhSessionId String
+  svhVoucherType String [not null]
+  svhSlno BigInt [not null, note: 'Per company/branch/year/type/DEVICE — ux_svh_slno.']
+  svhRefno String [not null, note: 'The printed number: unique per branch and year on its own — ux_svh_refno.']
+  svhUsrRefno String
+  svhDocDate DateTime [not null]
+  svhDocDatetime DateTime [default: `now()`, not null]
+  svhFromGodownId String
+  svhToGodownId String
+  svhToBranchId String
+  svhSupplierId String
+  svhPartyRef String
+  svhReasonId String
+  svhLinkSrcModule String
+  svhLinkSrcDocType String
+  svhLinkSrcDocId String
+  svhLinkSrcAccYear String
+  svhLineCount Int [not null, default: 0]
+  svhTotalQty Decimal [not null, default: 0]
+  svhTotalValue Decimal [not null, default: 0]
+  svhTotalValueWot Decimal [not null, default: 0]
+  svhStatus String [not null, default: 'DRAFT']
+  svhPostedOn DateTime
+  svhPostedBy String
+  svhApprovedOn DateTime
+  svhApprovedBy String
+  svhCancelledOn DateTime
+  svhCancelledBy String
+  svhCancelReason String
+  svhVersionNo Int [not null, default: 1]
+  svhFreezeStock Boolean [not null, default: false, note: 'A count freezes the stock it is counting, or it counts a moving target.
+ck_svh_freeze refuses a freeze with no window.']
+  svhFreezeFrom DateTime
+  svhFreezeTo DateTime
+  svhRateSource String [note: 'Which rate the lines are valued at — see the vocabulary above.']
+  svhRemarks String
+  svhIsDeleted Boolean [not null, default: false]
+  svhSyncDate DateTime
+  svhCreatedOn DateTime [default: `now()`, not null]
+  svhCreatedBy String
+  svhModifiedOn DateTime
+  svhModifiedBy String
+  items stock_voucher_item [not null]
+  company companys [not null]
+  branch branch_master [not null]
+  toBranch branch_master
+  device device_master [not null, note: 'RESTRICT, not SET NULL: the device owns this document\'s number series, so
+it can be blocked or deactivated but never unlinked.']
+  fromGodown godown_locations
+  toGodown godown_locations
+  supplier suppliers
+  reason stock_reason_master
+
+  indexes {
+    (svhId, svhAccYear) [pk]
+  }
+
+  Note: 'stock.stock_voucher — the DOCUMENT a stock movement is raised on. Eleven
+voucher types, one table.
+
+[[StockLedger]] records that stock moved; this records that somebody
+DECIDED to move it — who, when, on what authority, with what remarks, and
+with a printable number. A receipt, an issue, an adjustment, a transfer and
+a physical count differ in which columns they fill, not in shape, so
+splitting them into five tables would buy five sets of the same numbering,
+posting, cancellation and print logic.
+
+THE DEVICE IS THE COUNTER. There is no counter id: svhSlno is per
+(company, branch, year, type, DEVICE), exactly as SaleOrder numbers itself,
+because a voucher raised offline on a warehouse tablet must number itself
+without asking a server it cannot reach. The printed svhRefno embeds the
+device series and is unique per branch and year on its own.
+
+NOTHING REACHES THE LEDGER UNTIL POSTED. A DRAFT is editable and moves no
+stock; posting writes the ledger rows and is the point of no return —
+afterwards a mistake is CANCELLED, which REVERSES, never deleted.
+IN_TRANSIT is a TRANSFER_OUT that has left and not yet been received; see
+[[StockTransit]] for why that state has to exist at all.
+
+A TRANSFER IS TWO VOUCHERS, not one with two godowns — TRANSFER_OUT at the
+source and TRANSFER_IN at the destination, each posting its own ledger row
+in its own branch, and ck_svh_transfer_in_link refuses a TRANSFER_IN that
+does not name the TRANSFER_OUT it answers. The link columns are the same
+(module, docType, docId) triple used everywhere else and carry their own
+year, because a transfer despatched on 29 March is received on 2 April.
+
+PHYSICAL COUNTS FREEZE. svhFreezeStock with a from/to window is what stops
+a count measuring a moving target; without it the difference posted is the
+difference between a count taken at 6pm and a book figure read at 8pm.
+ck_svh_freeze refuses a freeze with no window.
+
+TOTALS ARE CACHES of [[StockVoucherItem]], which owns them. They exist so a
+list screen does not aggregate the line table; when the two disagree, the
+lines are right.
+
+Vocabularies, enforced by CHECK constraints in the migration:
+svhVoucherType  OPENING | RECEIPT | ISSUE | ADJUSTMENT | TRANSFER_OUT |
+TRANSFER_IN | DAMAGE | EXPIRY_WRITEOFF | PHYSICAL |
+REPACK_IN | REPACK_OUT
+svhStatus       DRAFT | POSTED | IN_TRANSIT | RECEIVED | CANCELLED
+svhRateSource   AVG_COST | LAST_PURCHASE | LOT_COST | MRP | MANUAL
+plus ck_svh_acc_year (YYYY-YYYY, second = first + 1), ck_svh_godowns (a
+movement must say where stock comes from or where it goes),
+ck_svh_transfer_godowns (a transfer must say both), ck_svh_link (the source
+triple is all-or-nothing) and ck_svh_slno.
+
+PARTITIONED BY LIST (svh_acc_year), hence the composite primary key
+(svhId, svhAccYear) — and hence [[StockVoucherItem]] joins back on BOTH
+columns. A new fiscal year needs its partitions before the first save:
+SELECT stock.fn_create_stock_partitions(\'2027-2028\');
+
+DB-only objects Prisma cannot express — hand-authored in the migration and
+deliberately NOT declared here. EVERY index on this table carries a WHERE,
+and Prisma ignores indexes with predicates; declaring them would make
+`migrate dev` regenerate them WITHOUT the predicate and fail on the
+existing names:
+ux_svh_slno    the per-DEVICE serial — offline numbering
+ux_svh_refno   the per-branch printed number
+ix_svh_list    the list screen, newest first, per type
+ix_svh_inbound the transfer-in worklist: sent to me, not yet received
+ix_svh_link    following a link back to the voucher that caused this one
+Uniqueness on svhSlno / svhRefno is therefore app-side. Beware the DB error
+if you rely on it: because the table is PARTITIONED, a duplicate is
+reported against the PARTITION-LOCAL index name, never ux_svh_refno — match
+on the column list in P2002 meta.target, or pre-check.'
+}
+
+Table stock_voucher_item {
+  sviId String [not null]
+  sviVoucherId String [not null]
+  sviCompanyId String [not null]
+  sviBranchId String [not null]
+  sviTenantId String
+  sviAccYear String [not null, note: 'The PARTITION KEY, half the primary key, AND half the foreign key back to
+the voucher. Must equal the voucher\'s own year.']
+  sviLineNo Int [not null]
+  sviSplitNo Int [not null, default: 1, note: 'A second allocation of the same line — one line issued from three batches
+is three rows. Only meaningful with a batch no (ck_svi_batch_split).']
+  sviItemId String [not null]
+  sviUomId String [not null, note: 'The unit keyed, and the item\'s base unit. BOTH are
+item_unit_conversion(iuc_id), NEVER item_unit_master(unit_id).']
+  sviBaseUomId String [not null]
+  sviToBaseFactor Decimal [not null, default: 1]
+  sviGodownId String [not null]
+  sviLotId String [note: 'Resolved by fn_slt_resolve() at POSTING time. NULL only while DRAFT.']
+  sviBucket String [not null, default: 'SALEABLE']
+  sviBatchNo String
+  sviMfgDate DateTime
+  sviExpiryDate DateTime
+  sviMrp Decimal
+  sviSalePrice Decimal
+  sviSerialNo String
+  sviSupplierId String
+  sviQty Decimal [not null, default: 0]
+  sviBaseQty Decimal [not null, default: 0]
+  sviFreeQty Decimal [not null, default: 0]
+  sviFreeBaseQty Decimal [not null, default: 0]
+  sviWeightQty Decimal [not null, default: 0]
+  sviBookQty Decimal [note: 'What the system thought was there.']
+  sviCountedQty Decimal [note: 'What was actually on the shelf.']
+  sviDiffQty Decimal [note: 'GENERATED ALWAYS ... STORED as counted - book. What POSTS. Read-only,
+never sent — the variance must not be editable.']
+  sviCostRate Decimal [not null, default: 0]
+  sviCostRateWot Decimal [not null, default: 0]
+  sviLandedRate Decimal [not null, default: 0]
+  sviTaxPerc Decimal [not null, default: 0]
+  sviValue Decimal [note: 'GENERATED ALWAYS ... STORED as ROUND((baseQty + freeBaseQty) × rate, 2).
+Read-only, never sent.']
+  sviValueWot Decimal
+  sviReasonId String
+  sviRemarks String
+  sviIsDeleted Boolean [not null, default: false]
+  sviSyncDate DateTime
+  sviCreatedOn DateTime [default: `now()`, not null]
+  sviCreatedBy String
+  sviModifiedOn DateTime
+  sviModifiedBy String
+  voucher stock_voucher [not null]
+  item item_master [not null]
+  uom item_unit_conversion [not null]
+  baseUom item_unit_conversion [not null]
+  godown godown_locations [not null]
+  lot stock_lot
+  supplier suppliers
+  reason stock_reason_master
+
+  indexes {
+    (sviId, sviAccYear) [pk]
+  }
+
+  Note: 'stock.stock_voucher_item — the LINES of a [[StockVoucher]].
+
+Same (lineNo, splitNo) grain as SaleBillItem, so one line issued from three
+batches is three rows and [[StockLedger]] receives them unchanged: posting
+is an INSERT ... SELECT with no reshaping and no aggregation. That symmetry
+is the whole reason the grain is what it is.
+
+THE BATCH ATTRIBUTES ARE STORED AS ENTERED as well as resolved to a lot.
+sviBatchNo / sviMfgDate / sviExpiryDate / sviMrp / sviSalePrice /
+sviSerialNo / sviSupplierId are what the storekeeper typed; sviLotId is
+what fn_slt_resolve() made of it. Both are kept because a reprint must show
+what was keyed, and because the resolver may LEGITIMATELY have blanked a
+value the item\'s StockTrackPolicy does not track — an MRP typed on an item
+that is not MRP-tracked does not become part of the lot identity, and
+silently losing it would make the document unreadable a year later.
+
+sviLotId IS NULL ONLY WHILE DRAFT. It is resolved at posting time, which is
+also when the tracking policy is applied — so a draft saved before a policy
+change posts under the policy live when it POSTS, not when it was keyed.
+
+PHYSICAL COUNTS keep three numbers, not one: sviBookQty is what the system
+thought, sviCountedQty is what was on the shelf, and sviDiffQty — GENERATED,
+so it cannot be edited — is what actually posts to the ledger. Storing only
+the difference makes a variance impossible to defend a year later; storing
+it generated makes it impossible to fudge.
+
+sviValue and sviValueWot are GENERATED from (baseQty + freeBaseQty) × rate,
+rounded to 2, so a line\'s value cannot drift from its own quantity and rate.
+Free goods are included: they are stock, and they cost something to hold.
+
+WRITE RULES:
+* NEVER write sviDiffQty, sviValue or sviValueWot — all three are
+GENERATED ALWAYS ... STORED, and Postgres rejects any write to them.
+* Quantities are MAGNITUDES; direction comes from the voucher type, not
+from a sign here (ck_svi_qty_sign).
+* ck_svi_batch_split mirrors ck_sbi_batch_split: a splitNo above 1 only
+makes sense when the line is split BY BATCH, so it requires a batch no.
+* sviAccYear must equal the voucher\'s — it is half the foreign key.
+
+Vocabulary, enforced by a CHECK constraint in the migration:
+sviBucket  SALEABLE | DAMAGED | QUARANTINE | EXPIRED | SAMPLE
+plus ck_svi_acc_year, ck_svi_line_no, ck_svi_split_no,
+ck_svi_to_base_factor and ck_svi_expiry_order.
+
+PARTITIONED BY LIST (svi_acc_year), hence the composite primary key and the
+COMPOSITE foreign key back to the voucher on (id, accYear) — a partitioned
+parent can only be referenced through its partition key. ON DELETE CASCADE:
+deleting a draft voucher takes its lines with it.
+
+DB-only objects Prisma cannot express — hand-authored in the migration and
+deliberately NOT declared here (every one carries a WHERE, and Prisma
+ignores indexes with predicates):
+ux_svi_line     one row per (voucher, year, lineNo, splitNo)
+ix_svi_voucher  the lines of one voucher
+ix_svi_item     item-wise across vouchers
+ix_svi_lot      which documents touched a lot'
 }
 
 Enum ChequeTraType {
@@ -6142,7 +7684,11 @@ Ref: item_ean_codes.eanUcUnitId > item_unit_conversion.iucId [delete: Restrict]
 
 Ref: item_group_master.itgParentId - item_group_master.itgId [delete: Restrict]
 
+Ref: item_group_master.itgTrackPresetId > stock_track_preset.sptId [delete: Restrict]
+
 Ref: item_master.itemGroupId > item_group_master.itgId [delete: Restrict]
+
+Ref: item_master.itemTrackPresetId > stock_track_preset.sptId [delete: Restrict]
 
 Ref: item_master.itemCategoryId > item_category_master.categoryId [delete: Set Null]
 
@@ -6193,24 +7739,6 @@ Ref: item_unit_conversion.iucBaseUnitId > item_unit_master.unit_id [delete: Rest
 Ref: item_unit_master.unit_code > item_gst_units.itemGstUnitCode [delete: Set Null]
 
 Ref: item_unit_master.unit_base_unit_id - item_unit_master.unit_id [delete: Restrict]
-
-Ref: opening_stock_detail.oslCompanyId > companys.compId
-
-Ref: opening_stock_detail.oslBranchId > branch_master.brId
-
-Ref: opening_stock_detail.oslItemId > item_master.itemId [delete: Restrict]
-
-Ref: opening_stock_detail.oslUnitId > item_unit_master.unit_id [delete: Restrict]
-
-Ref: opening_stock_detail.oslBaseUomId > item_price_master.ipmId [delete: Restrict]
-
-Ref: opening_stock_detail.oslGodownId > godown_locations.gdlId [delete: Restrict]
-
-Ref: opening_stock_detail.oslOpeningId > opening_stock_header.oshId
-
-Ref: opening_stock_header.oshCompanyId > companys.compId
-
-Ref: opening_stock_header.oshBranchId > branch_master.brId
 
 Ref: app_setting_value.asvSettingKey > app_setting_def.asdKey [delete: Restrict]
 
@@ -6502,45 +8030,107 @@ Ref: sale_quotation_item.sqiPriceLevel > item_price_levels.iplId [delete: Restri
 
 Ref: sale_quotation_item.sqiItemUnitId > item_unit_conversion.iucId [delete: Restrict]
 
-Ref: physical_stock_batch_detail.psbPsdId > physical_stock_detail.psdId
+Ref: stock_ageing_slab.sagCompanyId > companys.compId [delete: Restrict]
 
-Ref: physical_stock_batch_detail.psbPshId > physical_stock_header.psId [delete: Restrict]
+Ref: stock_balance.sblCompanyId > companys.compId [delete: Restrict]
 
-Ref: physical_stock_batch_detail.psbCompanyId > companys.compId
+Ref: stock_balance.sblBranchId > branch_master.brId [delete: Restrict]
 
-Ref: physical_stock_batch_detail.psbBranchId > branch_master.brId
+Ref: stock_balance.sblGodownId > godown_locations.gdlId [delete: Restrict]
 
-Ref: physical_stock_batch_detail.psbGodownId > godown_locations.gdlId [delete: Restrict]
+Ref: stock_balance.sblItemId > item_master.itemId [delete: Restrict]
 
-Ref: physical_stock_batch_detail.psbItemId > item_master.itemId
+Ref: stock_balance.sblLotId > stock_lot.sltId [delete: Restrict]
 
-Ref: physical_stock_batch_detail.psbUnitId > item_unit_master.unit_id [delete: Restrict]
+Ref: stock_balance.sblBaseUomId > item_unit_conversion.iucId [delete: Restrict]
 
-Ref: physical_stock_batch_detail.psbBaseUnitId > item_unit_master.unit_id [delete: Restrict]
+Ref: stock_balance.sblSupplierId > suppliers.supId [delete: Restrict]
 
-Ref: physical_stock_batch_detail.psbBatchId > item_batch_master.btmId
+Ref: stock_demand_daily.sddCompanyId > companys.compId [delete: Restrict]
 
-Ref: physical_stock_detail.psdPscId > physical_stock_header.psId [delete: Restrict]
+Ref: stock_demand_daily.sddBranchId > branch_master.brId [delete: Restrict]
 
-Ref: physical_stock_detail.psdCompanyId > companys.compId [delete: Restrict]
+Ref: stock_demand_daily.sddItemId > item_master.itemId [delete: Restrict]
 
-Ref: physical_stock_detail.psdBranchId > branch_master.brId [delete: Restrict]
+Ref: stock_demand_daily.sddBaseUomId > item_unit_conversion.iucId [delete: Restrict]
 
-Ref: physical_stock_detail.psdGodownId > godown_locations.gdlId [delete: Restrict]
+Ref: stock_forecast.sfcCompanyId > companys.compId [delete: Restrict]
 
-Ref: physical_stock_detail.psdItemId > item_master.itemId [delete: Restrict]
+Ref: stock_forecast.sfcBranchId > branch_master.brId [delete: Restrict]
 
-Ref: physical_stock_detail.psdUnitId > item_unit_master.unit_id [delete: Restrict]
+Ref: stock_forecast.sfcItemId > item_master.itemId [delete: Restrict]
 
-Ref: physical_stock_detail.psdBaseUnitId > item_unit_master.unit_id [delete: Restrict]
+Ref: stock_forecast.sfcBaseUomId > item_unit_conversion.iucId [delete: Restrict]
 
-Ref: physical_stock_detail.psdReasonId > stock_adj_reasons.sarId [delete: Set Null]
+Ref: stock_forecast.sfcPreferredSupplierId > suppliers.supId [delete: Restrict]
 
-Ref: physical_stock_header.psCompanyId > companys.compId [delete: Restrict]
+Ref: stock_item_cost.sicCompanyId > companys.compId [delete: Restrict]
 
-Ref: physical_stock_header.psBranchId > branch_master.brId [delete: Restrict]
+Ref: stock_item_cost.sicBranchId > branch_master.brId [delete: Restrict]
 
-Ref: physical_stock_header.psGodownId > godown_locations.gdlId [delete: Restrict]
+Ref: stock_item_cost.sicItemId > item_master.itemId [delete: Restrict]
+
+Ref: stock_item_cost.sicBaseUomId > item_unit_conversion.iucId [delete: Restrict]
+
+Ref: stock_ledger.smlCompanyId > companys.compId [delete: Restrict]
+
+Ref: stock_ledger.smlBranchId > branch_master.brId [delete: Restrict]
+
+Ref: stock_ledger.smlGodownId > godown_locations.gdlId [delete: Restrict]
+
+Ref: stock_ledger.smlItemId > item_master.itemId [delete: Restrict]
+
+Ref: stock_ledger.smlLotId > stock_lot.sltId [delete: Restrict]
+
+Ref: stock_ledger.smlUomId > item_unit_conversion.iucId [delete: Restrict]
+
+Ref: stock_ledger.smlBaseUomId > item_unit_conversion.iucId [delete: Restrict]
+
+Ref: stock_ledger.smlReasonId > stock_reason_master.srmId [delete: Restrict]
+
+Ref: stock_lot.sltCompanyId > companys.compId [delete: Restrict]
+
+Ref: stock_lot.sltItemId > item_master.itemId [delete: Restrict]
+
+Ref: stock_lot.sltBaseUomId > item_unit_conversion.iucId [delete: Restrict]
+
+Ref: stock_lot.sltSupplierId > suppliers.supId [delete: Restrict]
+
+Ref: stock_lot.sltFirstInwardBranch > branch_master.brId [delete: Restrict]
+
+Ref: stock_movement_class.smcCompanyId > companys.compId [delete: Restrict]
+
+Ref: stock_movement_class.smcBranchId > branch_master.brId [delete: Restrict]
+
+Ref: stock_movement_class.smcItemId > item_master.itemId [delete: Restrict]
+
+Ref: stock_reason_master.srmCompanyId > companys.compId [delete: Restrict]
+
+Ref: stock_reason_master.srmGlLedgerId > acc_ledger_master.ledId [delete: Restrict]
+
+Ref: stock_reorder_policy.srpCompanyId > companys.compId [delete: Restrict]
+
+Ref: stock_reorder_policy.srpBranchId > branch_master.brId [delete: Restrict]
+
+Ref: stock_reorder_policy.srpGodownId > godown_locations.gdlId [delete: Restrict]
+
+Ref: stock_reorder_policy.srpItemId > item_master.itemId [delete: Restrict]
+
+Ref: stock_reorder_policy.srpUomId > item_unit_conversion.iucId [delete: Restrict]
+
+Ref: stock_reorder_policy.srpPreferredSupplierId > suppliers.supId [delete: Restrict]
+
+Ref: stock_reservation.srvCompanyId > companys.compId [delete: Restrict]
+
+Ref: stock_reservation.srvBranchId > branch_master.brId [delete: Restrict]
+
+Ref: stock_reservation.srvGodownId > godown_locations.gdlId [delete: Restrict]
+
+Ref: stock_reservation.srvItemId > item_master.itemId [delete: Restrict]
+
+Ref: stock_reservation.srvLotId > stock_lot.sltId [delete: Restrict]
+
+Ref: stock_reservation.srvBaseUomId > item_unit_conversion.iucId [delete: Restrict]
 
 Ref: stock_track_policy.stpCompanyId > companys.compId [delete: Restrict]
 
@@ -6551,3 +8141,65 @@ Ref: stock_track_policy.stpItemId > item_master.itemId [delete: Restrict]
 Ref: stock_track_policy.stpGroupId > item_group_master.itgId [delete: Restrict]
 
 Ref: stock_track_policy.stpCreatedBy > user_master.usrId [delete: Restrict]
+
+Ref: stock_track_preset.sptCompanyId > companys.compId [delete: Restrict]
+
+Ref: stock_track_preset.sptCreatedBy > user_master.usrId [delete: Restrict]
+
+Ref: stock_transit.sttCompanyId > companys.compId [delete: Restrict]
+
+Ref: stock_transit.sttFromBranchId > branch_master.brId [delete: Restrict]
+
+Ref: stock_transit.sttToBranchId > branch_master.brId [delete: Restrict]
+
+Ref: stock_transit.sttFromGodownId > godown_locations.gdlId [delete: Restrict]
+
+Ref: stock_transit.sttToGodownId > godown_locations.gdlId [delete: Restrict]
+
+Ref: stock_transit.sttItemId > item_master.itemId [delete: Restrict]
+
+Ref: stock_transit.sttLotId > stock_lot.sltId [delete: Restrict]
+
+Ref: stock_transit.sttBaseUomId > item_unit_conversion.iucId [delete: Restrict]
+
+Ref: stock_valuation_snap.svsCompanyId > companys.compId [delete: Restrict]
+
+Ref: stock_valuation_snap.svsBranchId > branch_master.brId [delete: Restrict]
+
+Ref: stock_valuation_snap.svsGodownId > godown_locations.gdlId [delete: Restrict]
+
+Ref: stock_valuation_snap.svsItemId > item_master.itemId [delete: Restrict]
+
+Ref: stock_valuation_snap.svsLotId > stock_lot.sltId [delete: Restrict]
+
+Ref: stock_voucher.svhCompanyId > companys.compId [delete: Restrict]
+
+Ref: stock_voucher.svhBranchId > branch_master.brId [delete: Restrict]
+
+Ref: stock_voucher.svhToBranchId > branch_master.brId [delete: Restrict]
+
+Ref: stock_voucher.svhDeviceId > device_master.devId [delete: Restrict]
+
+Ref: stock_voucher.svhFromGodownId > godown_locations.gdlId [delete: Restrict]
+
+Ref: stock_voucher.svhToGodownId > godown_locations.gdlId [delete: Restrict]
+
+Ref: stock_voucher.svhSupplierId > suppliers.supId [delete: Restrict]
+
+Ref: stock_voucher.svhReasonId > stock_reason_master.srmId [delete: Restrict]
+
+Ref: stock_voucher_item.(sviVoucherId, sviAccYear) > stock_voucher.(svhId, svhAccYear) [delete: Cascade]
+
+Ref: stock_voucher_item.sviItemId > item_master.itemId [delete: Restrict]
+
+Ref: stock_voucher_item.sviUomId > item_unit_conversion.iucId [delete: Restrict]
+
+Ref: stock_voucher_item.sviBaseUomId > item_unit_conversion.iucId [delete: Restrict]
+
+Ref: stock_voucher_item.sviGodownId > godown_locations.gdlId [delete: Restrict]
+
+Ref: stock_voucher_item.sviLotId > stock_lot.sltId [delete: Restrict]
+
+Ref: stock_voucher_item.sviSupplierId > suppliers.supId [delete: Restrict]
+
+Ref: stock_voucher_item.sviReasonId > stock_reason_master.srmId [delete: Restrict]

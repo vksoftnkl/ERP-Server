@@ -54,7 +54,7 @@ __decorate([
     (0, swagger_1.ApiProperty)({
         maxLength: 100,
         description: 'The document number as printed on it — sb_bill_refno / so_order_refno / sq_quote_refno. An all-digits value is matched against the serial (sb_bill_slno / so_order_slno / sq_quote_slno) as well, so a screen that shows the bare running number resolves too.',
-        example: 'quo00042',
+        example: 'Q0042',
     }),
     (0, dtoDecorators_1.TrimmedString)(100),
     (0, class_validator_1.IsNotEmpty)({ message: 'orderNo should not be empty' }),

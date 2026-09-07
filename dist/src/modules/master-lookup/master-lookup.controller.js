@@ -348,7 +348,7 @@ __decorate([
         name: 'orderNo',
         required: true,
         description: 'The document number as printed on it, or its bare running serial.',
-        schema: { type: 'string', maxLength: 100, example: 'quo00042' },
+        schema: { type: 'string', maxLength: 100, example: 'Q0042' },
     }),
     (0, swagger_1.ApiQuery)({ name: 'companyId', required: true, schema: { type: 'string', format: 'uuid' } }),
     (0, swagger_1.ApiQuery)({ name: 'branchId', required: true, schema: { type: 'string', format: 'uuid' } }),

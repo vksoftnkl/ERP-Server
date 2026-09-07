@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.SettingsExceptionFilter = exports.SalesExceptionFilter = exports.PurchaseExceptionFilter = exports.InventoryExceptionFilter = exports.FixedExceptionFilter = exports.AccountsExceptionFilter = void 0;
+exports.StockExceptionFilter = exports.SettingsExceptionFilter = exports.SalesExceptionFilter = exports.PurchaseExceptionFilter = exports.InventoryExceptionFilter = exports.FixedExceptionFilter = exports.AccountsExceptionFilter = void 0;
 const module_shared_utils_1 = require("./module-shared.utils");
 class AccountsExceptionFilter extends module_shared_utils_1.ModuleExceptionFilter {
 }
@@ -20,4 +20,7 @@ exports.SalesExceptionFilter = SalesExceptionFilter;
 class SettingsExceptionFilter extends module_shared_utils_1.ModuleExceptionFilter {
 }
 exports.SettingsExceptionFilter = SettingsExceptionFilter;
+class StockExceptionFilter extends module_shared_utils_1.ModuleExceptionFilter {
+}
+exports.StockExceptionFilter = StockExceptionFilter;
 //# sourceMappingURL=module-exception-filter.utils.js.map

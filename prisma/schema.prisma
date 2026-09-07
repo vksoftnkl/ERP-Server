@@ -487,6 +487,7 @@ model AccLedgerMaster {
   chargeMasters            ChargeMaster[]
   chargeDetails            TransactionChargeDetail[]
   saleOrderAdvanceLedgers  SaleOrder[]              @relation("SaleOrderAdvanceLedger")
+  stockReasonGlLedgers     StockReasonMaster[]      @relation("StockReasonMasterGlLedger")
   @@unique([ledCompanyId, ledName], name: "uq_led_name_per_company")
   @@unique([ledCompanyId, ledTallyName], name: "uq_led_tally_name_per_company")
   @@index([ledCompanyId], name: "idx_led_company_id")
@@ -2247,6 +2248,7 @@ model DeviceMaster {
 
   txnStatusLogs   TxnStatusLog[]
   saleOrders      SaleOrder[]
+  stockVouchers   StockVoucher[] @relation("StockVoucherDevice")
   txnHolds        TxnHold[]     @relation("TxnHoldDevice")      // the till that parked the work
   txnHoldLocks    TxnHold[]     @relation("TxnHoldLockDevice")  // the till currently holding the lease
   appSettingValues AppSettingValue[]
@@ -2515,7 +2517,6 @@ model StockAdjReason {
   sarCreatedBy         String?   @db.Uuid @map("sar_created_by")
   sarModifiedOn        DateTime? @db.Timestamptz @map("sar_modified_on")
   sarModifiedBy        String?   @db.Uuid @map("sar_modified_by")
-  physicalStockDetails PhysicalStockDetail[] @relation("PhysicalStockDetailReason")
 
   @@unique([sarCode])
   @@map("stock_adj_reasons")
@@ -2634,10 +2635,16 @@ model GodownLocation {
   parent            GodownLocation?  @relation("GodownLocationToParent", fields: [gdlParentId], references: [gdlId], onUpdate: Cascade, onDelete: Restrict)
   children          GodownLocation[] @relation("GodownLocationToParent")
   itemPrices        ItemPriceMaster[] @relation("GodownPrices")
-  openingStockDetails OpeningStockDetail[] @relation("OpeningStockDetailGodown")
-  physicalStockHeaders PhysicalStockHeader[] @relation("PhysicalStockHeaderGodown")
-  physicalStockDetails PhysicalStockDetail[] @relation("PhysicalStockDetailGodown")
-  physicalStockBatchDetails PhysicalStockBatchDetail[] @relation("PhysicalStockBatchDetailGodown")
+  stockLedgerEntries  StockLedger[]    @relation("StockLedgerGodown")
+  stockBalances       StockBalance[]   @relation("StockBalanceGodown")
+  stockVouchersFrom   StockVoucher[]   @relation("StockVoucherFromGodown")
+  stockVouchersTo     StockVoucher[]   @relation("StockVoucherToGodown")
+  stockVoucherItems   StockVoucherItem[] @relation("StockVoucherItemGodown")
+  stockReservations   StockReservation[] @relation("StockReservationGodown")
+  stockTransitsFrom   StockTransit[]   @relation("StockTransitFromGodown")
+  stockTransitsTo     StockTransit[]   @relation("StockTransitToGodown")
+  stockValuationSnaps StockValuationSnap[] @relation("StockValuationSnapGodown")
+  stockReorderPolicies StockReorderPolicy[] @relation("StockReorderPolicyGodown")
   @@map("godown_locations")
    @@schema("inventory")
   // Indexes
@@ -2686,7 +2693,6 @@ model ItemBatchMaster {
   btmUpdatedOn             DateTime?        @db.Timestamptz(6) @map("btm_updated_on")
   btmUpdatedBy             String?          @db.Uuid @map("btm_updated_by")
   batchStocks              ItemBatchStock[]
-  physicalStockBatchDetails PhysicalStockBatchDetail[] @relation("PhysicalStockBatchDetailBatch")
 
   // Expression/partial indexes are maintained in SQL because Prisma schema
   // cannot express `lower(trim(...))` or filtered uniqueness/indexes.
@@ -2873,6 +2879,12 @@ model ItemGroupMaster {
   itgDefaultTaxId   String?  @db.Uuid @map("itg_default_tax_id")
   itgDefaultHsn     String?  @db.VarChar(20) @map("itg_default_hsn")
   itgDefaultUomId   String?  @db.Uuid @map("itg_default_uom_id")
+  /// The stock.stock_track_preset the GROUP-scope stock_track_policy row is
+  /// derived from. NULL = no group policy is written at all — a group has no
+  /// tracking flags of its own, and an all-false GROUP row would shadow the
+  /// company-wide fallback for every item in the group.
+  itgTrackPresetId  String?  @db.Uuid @map("itg_track_preset_id")
+  trackPreset       StockTrackPreset? @relation("ItemGroupTrackPreset", fields: [itgTrackPresetId], references: [sptId], onUpdate: Cascade, onDelete: Restrict, map: "fk_itg_track_preset")
 
   // Media
   itgPhoto          Bytes?   @map("itg_photo")
@@ -2971,6 +2983,12 @@ model ItemMaster {
   itemHsnCode          String?  @db.VarChar(10) @map("item_hsn_code")
   // UI / misc
   itemBatchConfig      Int      @default(0) @map("item_batch_config")
+  /// The stock.stock_track_preset the ITEM-scope stock_track_policy row is
+  /// derived from. NULL = derive from itemBatchConfig / itemIsBatchBased /
+  /// itemIsExpiryItem instead. The link is on the MASTER, never on the policy:
+  /// the policy row still owns its own thirteen columns, so editing a preset
+  /// changes nothing until this item is explicitly re-saved.
+  itemTrackPresetId    String?  @db.Uuid @map("item_track_preset_id")
   itemSortOrder        Int?     @map("item_sort_order")
   itemPhoto            Bytes?   @map("item_photo")
   itemImageUrl         String?  @db.Text @map("item_image_url")
@@ -2987,15 +3005,13 @@ model ItemMaster {
   itemModifiedBy       String?  @db.VarChar(100) @map("item_modified_by")
   // Relations
   group                ItemGroupMaster @relation(fields: [itemGroupId], references: [itgId], onUpdate: Cascade, onDelete: Restrict)
+  trackPreset          StockTrackPreset? @relation("ItemTrackPreset", fields: [itemTrackPresetId], references: [sptId], onUpdate: Cascade, onDelete: Restrict, map: "fk_item_track_preset")
   category             categoryMaster? @relation(fields: [itemCategoryId], references: [categoryId], onUpdate: Cascade, onDelete: SetNull)
   baseUnit             Unit?           @relation(fields: [itemBaseUnitId], references: [unit_id], onUpdate: Cascade, onDelete: Restrict)
   defaultTax           ItemTaxMaster? @relation(fields: [itemDefaultTaxId], references: [taxId], onUpdate: Cascade, onDelete: Restrict)
   prices               ItemPriceMaster[] @relation("ItemPrices")
   qtyPrices            ItemQtyPrice[] @relation("ItemQtyPrices")
   unitConversions      ItemUnitConversion[] @relation("ItemUnitConversions")
-  openingStockDetails  OpeningStockDetail[] @relation("OpeningStockDetailItem")
-  physicalStockDetails PhysicalStockDetail[] @relation("PhysicalStockDetailItem")
-  physicalStockBatchDetails PhysicalStockBatchDetail[] @relation("PhysicalStockBatchDetailItem")
   reorders             ItemReorder[]
   taxHistory           ItemTaxHistory[]
   company              Company? @relation(fields: [itemCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict)
@@ -3008,6 +3024,18 @@ model ItemMaster {
   loyaltySchemeSlabs   LoyaltySchemeSlab[]   @relation("LoyaltySlabItem")
   loyaltySchemeGifts   LoyaltySchemeGift[]   @relation("LoyaltyGiftItem")
   stockTrackPolicies   StockTrackPolicy[]    @relation("StockTrackPolicyItem")
+  stockLots            StockLot[]            @relation("StockLotItem")
+  stockLedgerEntries   StockLedger[]         @relation("StockLedgerItem")
+  stockBalances        StockBalance[]        @relation("StockBalanceItem")
+  stockItemCosts       StockItemCost[]       @relation("StockItemCostItem")
+  stockVoucherItems    StockVoucherItem[]    @relation("StockVoucherItemItem")
+  stockReservations    StockReservation[]    @relation("StockReservationItem")
+  stockTransits        StockTransit[]        @relation("StockTransitItem")
+  stockValuationSnaps  StockValuationSnap[]  @relation("StockValuationSnapItem")
+  stockDemandDaily     StockDemandDaily[]    @relation("StockDemandDailyItem")
+  stockReorderPolicies StockReorderPolicy[]  @relation("StockReorderPolicyItem")
+  stockForecasts       StockForecast[]       @relation("StockForecastItem")
+  stockMovementClasses StockMovementClass[]  @relation("StockMovementClassItem")
   @@map("item_master")
   @@schema("inventory")
   // UNIQUE item_name_en globally (since company removed)
@@ -3093,7 +3121,6 @@ model ItemPriceMaster {
   branch              BranchMaster?  @relation("BranchItemPrices", fields: [ipmBranchId], references: [brId], onUpdate: Cascade, onDelete: Restrict, map: "fk_ipm_branch_id")
   itemUnitConversion ItemUnitConversion @relation("ItemPriceMasterUnitConversion", fields: [ipmUcUnitId], references: [iucId], onUpdate: Cascade, onDelete: Restrict, map: "fk_ipm_unit")
   godown              GodownLocation? @relation("GodownPrices", fields: [ipmGodownId], references: [gdlId], onUpdate: Cascade, onDelete: Restrict, map: "fk_ipm_godown_id")
-  openingStockBaseUomDetails OpeningStockDetail[] @relation("OpeningStockDetailBaseUomPrice")
 
   @@index([ipmItemId, ipmUcUnitId], map: "idx_item_price_master_item")
   @@map("item_price_master")
@@ -3521,6 +3548,18 @@ model ItemUnitConversion {
   promotionSchemeSlabs PromotionSchemeSlab[] @relation("PromotionSlabFreeUnit")
   loyaltySchemeSlabs   LoyaltySchemeSlab[]   @relation("LoyaltySlabUnit")
   loyaltySchemeGifts   LoyaltySchemeGift[]   @relation("LoyaltyGiftUnit")
+  stockLotsBaseUom     StockLot[]            @relation("StockLotBaseUom")
+  stockLedgerUom       StockLedger[]         @relation("StockLedgerUom")
+  stockLedgerBaseUom   StockLedger[]         @relation("StockLedgerBaseUom")
+  stockBalanceBaseUom  StockBalance[]        @relation("StockBalanceBaseUom")
+  stockItemCostBaseUom StockItemCost[]       @relation("StockItemCostBaseUom")
+  stockVoucherItemUom  StockVoucherItem[]    @relation("StockVoucherItemUom")
+  stockVoucherItemBaseUom StockVoucherItem[] @relation("StockVoucherItemBaseUom")
+  stockReservationBaseUom StockReservation[] @relation("StockReservationBaseUom")
+  stockTransitBaseUom  StockTransit[]        @relation("StockTransitBaseUom")
+  stockDemandDailyBaseUom StockDemandDaily[] @relation("StockDemandDailyBaseUom")
+  stockReorderPolicyUom StockReorderPolicy[] @relation("StockReorderPolicyUom")
+  stockForecastBaseUom StockForecast[]       @relation("StockForecastBaseUom")
   @@index([iucItemId, iucUnitSlno], map: "idx_item_unit_conversion_item")
   @@map("item_unit_conversion")
   @@schema("inventory")
@@ -3576,11 +3615,6 @@ model Unit {
 
   // Back-relations — ItemPriceMaster
   // (ItemPriceMaster no longer stores a base unit — it reaches one through ItemUnitConversion.)
-  openingStockUnits OpeningStockDetail[] @relation("OpeningStockDetailUnit")
-  physicalStockUnits PhysicalStockDetail[] @relation("PhysicalStockDetailUnit")
-  physicalStockBaseUnits PhysicalStockDetail[] @relation("PhysicalStockDetailBaseUnit")
-  physicalStockBatchUnits PhysicalStockBatchDetail[] @relation("PhysicalStockBatchDetailUnit")
-  physicalStockBatchBaseUnits PhysicalStockBatchDetail[] @relation("PhysicalStockBatchDetailBaseUnit")
 
   // Back-relations — others
   itemMasters  ItemMaster[]
@@ -3589,142 +3623,6 @@ model Unit {
   @@schema("inventory")
   @@index([unit_is_active], map: "idx_unit_active")
   @@index([unit_base_unit_id], map: "idx_unit_base")
-}
-
-// ----- prisma/inventory/OpeningStockDetail.prisma -----
-model OpeningStockDetail {
-  // Primary
-  oslId               String    @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("osl_id")
-  // Header link
-  oslVoucherId        String    @db.Uuid @map("osl_voucher_id")
-  oslOpeningId        String    @db.Uuid @map("osl_opening_id")
-  oslLineNo           Int       @map("osl_line_no")
-  // Multi-branch snapshot
-  oslAccYear          String    @db.VarChar(9) @map("osl_acc_year")
-  oslCompanyId        String    @db.Uuid @map("osl_company_id")
-  oslBranchId         String    @db.Uuid @map("osl_branch_id")
-  // Item / location
-  oslItemId           String    @db.Uuid @map("osl_item_id")
-  oslUnitId           String    @db.Uuid @map("osl_unit_id")
-  oslBaseUomId        String?   @db.Uuid @map("osl_base_uom_id")
-  oslGodownId         String    @db.Uuid @map("osl_godown_id")
-  // Tracking — validated at app level (OpeningStockDetailTrackingType)
-  oslTrackingType     String    @default("NONE") @db.VarChar(20) @map("osl_tracking_type")
-  oslBatchId          String?   @db.Uuid @map("osl_batch_id")
-  // Batch / lot / serial fields
-  oslBarcode          String?   @db.VarChar(100) @map("osl_barcode")
-  oslBatchNo          String?   @db.VarChar(100) @map("osl_batch_no")
-  oslMfgBatchNo       String?   @db.VarChar(100) @map("osl_mfg_batch_no")
-  oslBatchDate        DateTime? @db.Date @map("osl_batch_date")
-  oslMfgDate          DateTime? @db.Date @map("osl_mfg_date")
-  oslExpiryDate       DateTime? @db.Date @map("osl_expiry_date")
-  oslSerialNo         String?   @db.VarChar(100) @map("osl_serial_no")
-  // Quantity
-  oslQty              Decimal   @default(0) @db.Decimal(18, 6) @map("osl_qty")
-  oslBaseQty          Decimal   @default(0) @db.Decimal(18, 6) @map("osl_base_qty")
-  oslFreeQty          Decimal   @default(0) @db.Decimal(18, 6) @map("osl_free_qty")
-  oslFreeBaseQty      Decimal   @default(0) @db.Decimal(18, 6) @map("osl_free_base_qty")
-  oslConvFactor       Decimal   @default(1) @db.Decimal(18, 6) @map("osl_conv_factor")
-  // Tax snapshot
-  oslTaxId            String?   @db.Uuid @map("osl_tax_id")
-  oslTaxPerc          Decimal   @default(0) @db.Decimal(9, 3) @map("osl_tax_perc")
-  // Validated at app level (OpeningStockDetailCessType)
-  oslCessType         String    @default("NONE") @db.VarChar(20) @map("osl_cess_type")
-  oslCessPerc         Decimal                        @default(0) @db.Decimal(9, 3) @map("osl_cess_perc")
-  oslCessPerUnit      Decimal                        @default(0) @db.Decimal(18, 6) @map("osl_cess_per_unit")
-  // Cost / value snapshot
-  oslCostRate         Decimal                        @default(0) @db.Decimal(18, 6) @map("osl_cost_rate")
-  oslCostRateWot      Decimal                        @default(0) @db.Decimal(18, 6) @map("osl_cost_rate_wot")
-  oslStockValue       Decimal                        @default(0) @db.Decimal(18, 2) @map("osl_stock_value")
-  oslStockValueWot    Decimal                        @default(0) @db.Decimal(18, 2) @map("osl_stock_value_wot")
-  // Selling / pricing snapshot
-  oslMrpRate          Decimal                        @default(0) @db.Decimal(18, 6) @map("osl_mrp_rate")
-  oslMinRate          Decimal                        @default(0) @db.Decimal(18, 6) @map("osl_min_rate")
-  oslSaleRateA        Decimal                        @default(0) @db.Decimal(18, 6) @map("osl_sale_rate_a")
-  oslSaleRateB        Decimal                        @default(0) @db.Decimal(18, 6) @map("osl_sale_rate_b")
-  oslSaleRateC        Decimal                        @default(0) @db.Decimal(18, 6) @map("osl_sale_rate_c")
-  oslSaleRateD        Decimal                        @default(0) @db.Decimal(18, 6) @map("osl_sale_rate_d")
-  oslSaleRateAWot     Decimal                        @default(0) @db.Decimal(18, 6) @map("osl_sale_rate_a_wot")
-  oslSaleRateBWot     Decimal                        @default(0) @db.Decimal(18, 6) @map("osl_sale_rate_b_wot")
-  oslSaleRateCWot     Decimal                        @default(0) @db.Decimal(18, 6) @map("osl_sale_rate_c_wot")
-  oslSaleRateDWot     Decimal                        @default(0) @db.Decimal(18, 6) @map("osl_sale_rate_d_wot")
-  // Markup snapshot
-  oslMarkupPercA      Decimal                        @default(0) @db.Decimal(9, 3) @map("osl_markup_perc_a")
-  oslMarkupPercB      Decimal                        @default(0) @db.Decimal(9, 3) @map("osl_markup_perc_b")
-  oslMarkupPercC      Decimal                        @default(0) @db.Decimal(9, 3) @map("osl_markup_perc_c")
-  oslMarkupPercD      Decimal                        @default(0) @db.Decimal(9, 3) @map("osl_markup_perc_d")
-  // Notes
-  oslRemarks          String?                        @map("osl_remarks")
-  // Status
-  oslIsActive         Boolean                        @default(true) @map("osl_is_active")
-  oslIsDeleted        Boolean                        @default(false) @map("osl_is_deleted")
-  // Audit
-  oslSyncDate         DateTime?                      @db.Timestamptz(6) @map("osl_sync_date")
-  oslCreatedOn        DateTime                       @default(now()) @db.Timestamptz(6) @map("osl_created_on")
-  oslCreatedBy        String?                        @db.Uuid @map("osl_created_by")
-  oslUpdatedOn        DateTime?                      @db.Timestamptz(6) @map("osl_updated_on")
-  oslUpdatedBy        String?                        @db.Uuid @map("osl_updated_by")
-  // Relations
-  // oslVoucherId stays a plain UUID column — acc_voucher_header was dropped.
-  company             Company                        @relation(fields: [oslCompanyId], references: [compId], map: "fk_osl_company")
-  branch              BranchMaster                   @relation(fields: [oslBranchId], references: [brId], map: "fk_osl_branch")
-  item                ItemMaster                     @relation("OpeningStockDetailItem", fields: [oslItemId], references: [itemId], onUpdate: Cascade, onDelete: Restrict, map: "fk_osl_item")
-  unitMaster          Unit                           @relation("OpeningStockDetailUnit", fields: [oslUnitId], references: [unit_id], onUpdate: Cascade, onDelete: Restrict, map: "fk_osl_unit")
-  baseUomPriceMaster  ItemPriceMaster?              @relation("OpeningStockDetailBaseUomPrice", fields: [oslBaseUomId], references: [ipmId], onUpdate: Cascade, onDelete: Restrict, map: "fk_osl_base_uom_price")
-  godown              GodownLocation                 @relation("OpeningStockDetailGodown", fields: [oslGodownId], references: [gdlId], onUpdate: Cascade, onDelete: Restrict, map: "fk_osl_godown")
-  openingHeader       OpeningStockHeader             @relation(fields: [oslOpeningId], references: [oshId], map: "fk_osl_opening_header")
-  
-  @@unique([oslCompanyId, oslBranchId, oslAccYear, oslVoucherId, oslLineNo], map: "uq_opening_stock_detail_voucher_line")
-  @@index([oslCompanyId, oslBranchId, oslAccYear, oslOpeningId], map: "idx_opening_stock_detail_opening")
-  @@map("opening_stock_detail")
-  @@schema("stock")
-}
-
-// ----- prisma/inventory/OpeningStockHeader.prisma -----
-model OpeningStockHeader {
-  // Primary
-  oshId            String   @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("osh_id")
-  // Business / document identity
-  oshVoucherId     String   @db.Uuid @map("osh_voucher_id")
-  oshAccYear       String   @db.VarChar(9) @map("osh_acc_year")
-  oshCompanyId     String   @db.Uuid @map("osh_company_id")
-  oshBranchId      String   @db.Uuid @map("osh_branch_id")
-  // Voucher details
-  oshVoucherNo     BigInt   @map("osh_voucher_no")
-  oshVoucherDate   DateTime @db.Date @map("osh_voucher_date")
-  oshRefNo         String?  @db.VarChar(50) @map("osh_ref_no")
-  oshNarration     String?  @map("osh_narration")
-  // Optional header totals
-  oshTotalLines    Int      @default(0) @map("osh_total_lines")
-  oshTotalQty      Decimal  @default(0) @db.Decimal(18, 6) @map("osh_total_qty")
-  oshTotalValue    Decimal  @default(0) @db.Decimal(18, 2) @map("osh_total_value")
-  // Workflow — validated at app level (OpeningStockStatus)
-  oshStatus        String   @default("DRAFT") @db.VarChar(20) @map("osh_status")
-  // User / session / device
-  oshUserId        String   @db.Uuid @map("osh_user_id")
-  oshSessionId     String?  @db.Uuid @map("osh_session_id")
-  // Validated at app level (OpeningStockDeviceType)
-  oshDeviceType    String   @db.VarChar(20) @map("osh_device_type")
-  oshDeviceId      String?  @db.Uuid @map("osh_device_id")
-  oshCounterId     String?  @db.VarChar(20) @map("osh_counter_id")
-  // Status flags
-  oshIsActive      Boolean                @default(true) @map("osh_is_active")
-  oshIsDeleted     Boolean                @default(false) @map("osh_is_deleted")
-  // Audit
-  oshSyncDate      DateTime?              @db.Timestamptz(6) @map("osh_sync_date")
-  oshCreatedOn     DateTime               @default(now()) @db.Timestamptz(6) @map("osh_created_on")
-  oshCreatedBy     String?                @db.Uuid @map("osh_created_by")
-  oshUpdatedOn     DateTime?              @db.Timestamptz(6) @map("osh_updated_on")
-  oshUpdatedBy     String?                @db.Uuid @map("osh_updated_by")
-  //relations
-  // oshVoucherId stays a plain UUID column — acc_voucher_header was dropped.
-  company          Company                @relation(fields: [oshCompanyId], references: [compId], map: "fk_osh_company")
-  branch           BranchMaster           @relation(fields: [oshBranchId], references: [brId], map: "fk_osh_branch")
-  details          OpeningStockDetail[]
-  @@unique([oshAccYear, oshCompanyId, oshBranchId, oshVoucherId], map: "uq_opening_stock_header_voucher_id")
-  @@index([oshAccYear, oshCompanyId, oshBranchId, oshVoucherDate], map: "idx_opening_stock_header_date")
-  @@map("opening_stock_header")
-  @@schema("stock")
 }
 
 // ----- prisma/public/appSettings.prisma -----
@@ -3989,11 +3887,6 @@ model BranchMaster {
   voucherDocRegisters   AccVoucherDocRegister[]
   voucherSequences      AccVoucherSeq[]
   voucherHeaders        AccVoucherHeader[]
-  openingStockHeaders   OpeningStockHeader[]
-  openingStockDetails   OpeningStockDetail[]
-  physicalStockHeaders  PhysicalStockHeader[] @relation("PhysicalStockHeaderBranch")
-  physicalStockDetails  PhysicalStockDetail[] @relation("PhysicalStockDetailBranch")
-  physicalStockBatchDetails PhysicalStockBatchDetail[] @relation("PhysicalStockBatchDetailBranch")
   itemPrices            ItemPriceMaster[] @relation("BranchItemPrices")
   itemQtyPrices         ItemQtyPrice[]    @relation("BranchItemQtyPrices")
   freightCharges        SaleFreightCharge[] @relation("BranchFreightCharges")
@@ -4009,6 +3902,20 @@ model BranchMaster {
   loyaltySchemes        LoyaltyScheme[]         @relation("LoyaltySchemeBranchRef")
   loyaltySchemeBranches LoyaltySchemeBranch[]   @relation("LoyaltySchemeBranchBranch")
   stockTrackPolicies    StockTrackPolicy[]      @relation("StockTrackPolicyBranch")
+  stockLotsFirstInward  StockLot[]              @relation("StockLotFirstInwardBranch")
+  stockLedgerEntries    StockLedger[]           @relation("StockLedgerBranch")
+  stockBalances         StockBalance[]          @relation("StockBalanceBranch")
+  stockItemCosts        StockItemCost[]         @relation("StockItemCostBranch")
+  stockVouchers         StockVoucher[]          @relation("StockVoucherBranch")
+  stockVouchersInbound  StockVoucher[]          @relation("StockVoucherToBranch")
+  stockReservations     StockReservation[]      @relation("StockReservationBranch")
+  stockTransitsOut      StockTransit[]          @relation("StockTransitFromBranch")
+  stockTransitsIn       StockTransit[]          @relation("StockTransitToBranch")
+  stockValuationSnaps   StockValuationSnap[]    @relation("StockValuationSnapBranch")
+  stockDemandDaily      StockDemandDaily[]      @relation("StockDemandDailyBranch")
+  stockReorderPolicies  StockReorderPolicy[]    @relation("StockReorderPolicyBranch")
+  stockForecasts        StockForecast[]         @relation("StockForecastBranch")
+  stockMovementClasses  StockMovementClass[]    @relation("StockMovementClassBranch")
 
   // ── printing (17_printing.sql) ─────────────────────────────────────────
   printAssignments      PrintTemplateAssignment[] @relation("PrintTemplateAssignmentBranch")
@@ -4173,11 +4080,6 @@ model Company {
   voucherDocRegisters   AccVoucherDocRegister[]
   voucherSequences      AccVoucherSeq[]
   voucherHeaders        AccVoucherHeader[]
-  openingStockHeaders   OpeningStockHeader[]
-  openingStockDetails   OpeningStockDetail[]
-  physicalStockHeaders  PhysicalStockHeader[] @relation("PhysicalStockHeaderCompany")
-  physicalStockDetails  PhysicalStockDetail[] @relation("PhysicalStockDetailCompany")
-  physicalStockBatchDetails PhysicalStockBatchDetail[] @relation("PhysicalStockBatchDetailCompany")
   saleAgents            SaleAgent[]       @relation("CompanySaleAgents")
   chargeDetails         TransactionChargeDetail[] @relation("CompanyChargeDetails")
   tenderMasters         AccTenderMaster[]
@@ -4186,6 +4088,21 @@ model Company {
   promotionSchemes      PromotionScheme[] @relation("PromotionSchemeCompany")
   loyaltySchemes        LoyaltyScheme[]   @relation("LoyaltySchemeCompany")
   stockTrackPolicies    StockTrackPolicy[] @relation("StockTrackPolicyCompany")
+  stockLedgerEntries    StockLedger[]      @relation("StockLedgerCompany")
+  stockTrackPresets     StockTrackPreset[] @relation("StockTrackPresetCompany")
+  stockAgeingSlabs      StockAgeingSlab[]  @relation("StockAgeingSlabCompany")
+  stockReasonMasters    StockReasonMaster[] @relation("StockReasonMasterCompany")
+  stockLots             StockLot[]         @relation("StockLotCompany")
+  stockBalances         StockBalance[]     @relation("StockBalanceCompany")
+  stockItemCosts        StockItemCost[]    @relation("StockItemCostCompany")
+  stockVouchers         StockVoucher[]     @relation("StockVoucherCompany")
+  stockReservations     StockReservation[] @relation("StockReservationCompany")
+  stockTransits         StockTransit[]     @relation("StockTransitCompany")
+  stockValuationSnaps   StockValuationSnap[] @relation("StockValuationSnapCompany")
+  stockDemandDaily      StockDemandDaily[] @relation("StockDemandDailyCompany")
+  stockReorderPolicies  StockReorderPolicy[] @relation("StockReorderPolicyCompany")
+  stockForecasts        StockForecast[]    @relation("StockForecastCompany")
+  stockMovementClasses  StockMovementClass[] @relation("StockMovementClassCompany")
 
   // ── printing (17_printing.sql) ─────────────────────────────────────────
   printPurposes         PrintPurpose[]            @relation("PrintPurposeCompany")
@@ -5644,6 +5561,7 @@ model UserMaster {
   approvedPromotionSchemes PromotionScheme[] @relation("PromotionSchemeApprovedBy")
   approvedLoyaltySchemes   LoyaltyScheme[]   @relation("LoyaltySchemeApprovedBy")
   stockTrackPolicies       StockTrackPolicy[] @relation("StockTrackPolicyCreatedBy")
+  stockTrackPresets        StockTrackPreset[] @relation("StockTrackPresetCreatedBy")
 
   // ── printing (17_printing.sql) — every *_created_by / *_modified_by in
   // that schema carries a real FK, unlike the reports.* tables it replaces.
@@ -5785,6 +5703,12 @@ model Supplier {
   // NOTE: sup_state_id column was missing in your DDL snippet, but FK references it.
  
   group                SupplierGroup   @relation(fields: [supGroupId], references: [spgId], onUpdate: Cascade, onDelete: Restrict)
+  stockLots           StockLot[]       @relation("StockLotSupplier")
+  stockBalances       StockBalance[]   @relation("StockBalanceSupplier")
+  stockVouchers       StockVoucher[]   @relation("StockVoucherSupplier")
+  stockVoucherItems   StockVoucherItem[] @relation("StockVoucherItemSupplier")
+  stockReorderPolicies StockReorderPolicy[] @relation("StockReorderPolicySupplier")
+  stockForecasts      StockForecast[]  @relation("StockForecastSupplier")
   @@map("suppliers")
   @@schema("purchase")
   @@index([supCompanyId], map: "idx_sup_company")
@@ -8182,244 +8106,1447 @@ model StateMaster {
   @@schema("sales")
 }
 
-// ----- prisma/stocks/Physical_Stock/Physical_Stock_Adj_Reason.prisma -----
+// ----- prisma/stocks/stockAgeingSlab.prisma -----
+/// stock.stock_ageing_slab — the age buckets an ageing report sums into:
+/// "0-30 / 31-60 / 61-90 / 91-180 / over 180". One row is one bucket; the rows
+/// sharing a sagCompanyId are one LADDER.
+///
+/// sagCompanyId NULL = the DEFAULT ladder, used by any company that has not
+/// authored one of its own. Unlike the tracking presets — where a company row
+/// merges over a shared row code by code — this fallback is ALL OR NOTHING:
+/// fn_sag_effective returns a company's own slabs if it has any, otherwise the
+/// default ones, never a mixture. Merging two ladders would put one holding in
+/// two buckets and the report would stop summing to the balance. A company that
+/// wants a dairy's 0-3-7 inserts its FULL ladder, not a patch over the default.
+///
+/// The bucket a holding falls in is decided by the age in DAYS measured from
+/// whatever stpAgeingBasis the resolved StockTrackPolicy names (inward date,
+/// last-in date, or manufacture date) — this table only says where the cuts
+/// are, never how age is computed.
+///
+/// The range is HALF-OPEN in the database: [sagFromDays, sagToDays + 1). Read
+/// the columns as inclusive-inclusive — 31-60 means both 31 and 60 — and let
+/// the exclusion constraint do the arithmetic. It is written that way rather
+/// than as an inclusive '[]' range because an inclusive upper bound of int4's
+/// maximum overflows when PostgreSQL normalises it to upper + 1.
+///
+/// sagToDays NULL = OPEN ENDED, "and everything older". There must be exactly
+/// one such slab per ladder, and it must be the last one: without it the oldest
+/// stock falls out of every bucket and the report silently under-reports.
+///
+/// WRITE RULES:
+///   * a ladder is contiguous and gapless. The overlap constraint stops two
+///     slabs claiming the same day; nothing at the database level stops a GAP
+///     (31-60 followed by 71-90), so the screen must.
+///   * REORDERING A LADDER NEEDS A DEFERRED TRANSACTION. Shrinking 0-30 to
+///     0-14 collides with 31-60 until that row moves too, so a row-at-a-time
+///     save cannot reorder a ladder at all. Issue
+///         SET CONSTRAINTS stock.ex_sag_overlap DEFERRED
+///     first, write every row, then COMMIT. The constraint is DEFERRABLE
+///     INITIALLY IMMEDIATE, so callers that do not ask for this are unaffected.
+///   * sagSlabNo is the display order and the stable identity within a ladder,
+///     1-based. (sagCompanyId, sagSlabNo) is unique among undeleted rows.
+///
+/// DB-only objects Prisma cannot express — hand-authored in the migration and
+/// deliberately NOT declared here (both carry a WHERE, and Prisma ignores
+/// indexes with predicates):
+///   ex_sag_overlap  EXCLUDE USING gist over (company, int4range(from, to+1))
+///                   WHERE active AND NOT deleted. Needs btree_gist. The
+///                   company is COALESCEd to the nil uuid because EXCLUDE never
+///                   conflicts on NULL — without it two default slabs could
+///                   claim the same day. A default slab and a company slab
+///                   covering the same days DO coexist, and must: they belong
+///                   to different ladders.
+///   ux_sag_slab_no  unique on (COALESCE(company, nil uuid), slab_no) WHERE NOT
+///                   deleted — COALESCEd for the same reason, a plain unique
+///                   index treats every NULL as distinct and would let the seed
+///                   insert two slab 1s into the default ladder.
+/// plus ck_sag_days (from >= 0, and to >= from when to is given) and
+/// ck_sag_slab_no (>= 1).
+///
+/// sagCreatedBy carries no foreign key in the migration, unlike
+/// [[StockTrackPolicy]] and [[StockTrackPreset]], so no relation is declared —
+/// adding one here without adding fk_sag_created_by to the DDL would show up as
+/// schema drift on the next migrate.
+model StockAgeingSlab {
+  sagId              String    @id(map: "pk_stock_ageing_slab") @default(dbgenerated("uuidv7()")) @db.Uuid @map("sag_id")
 
+  /// NULL = the default ladder, used whole by any company with no ladder of
+  /// its own. Never merged with a company's own slabs.
+  sagCompanyId       String?   @db.Uuid                                     @map("sag_company_id")
+  /// 1-based position in the ladder: display order and stable identity.
+  sagSlabNo          Int                                                    @map("sag_slab_no")
+  /// What the report column says — "31-60 days". Free text on purpose: it is
+  /// never parsed back into the bounds below.
+  sagLabel           String    @db.VarChar(50)                              @map("sag_label")
+  /// Inclusive lower bound, in days.
+  sagFromDays        Int                                                    @map("sag_from_days")
+  /// Inclusive upper bound, in days. NULL = open ended; exactly one slab per
+  /// ladder may be NULL, and it is the last one.
+  sagToDays          Int?                                                   @map("sag_to_days")
 
-// ----- prisma/stocks/Physical_Stock/Physical_Stock_Batch_Detail.prisma -----
-model PhysicalStockBatchDetail {
-  psbId                   String    @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("psb_id")
+  sagIsActive        Boolean   @default(true)                               @map("sag_is_active")
+  sagIsDeleted       Boolean   @default(false)                              @map("sag_is_deleted")
+  sagSyncDate        DateTime? @db.Timestamptz(6)                           @map("sag_sync_date")
+  sagCreatedOn       DateTime  @default(now()) @db.Timestamptz(6)           @map("sag_created_on")
+  sagCreatedBy       String?   @db.Uuid                                     @map("sag_created_by")
+  sagModifiedOn      DateTime? @db.Timestamptz(6)                           @map("sag_modified_on")
+  sagModifiedBy      String?   @db.Uuid                                     @map("sag_modified_by")
 
-  psbPsdId                String    @db.Uuid @map("psb_psd_id")
-  psbPshId                String    @db.Uuid @map("psb_psh_id")
-  psbRowNo                Int       @default(1) @map("psb_row_no")
+  // ── Relations ───────────────────────────────────────────────────────────
+  company            Company?  @relation("StockAgeingSlabCompany", fields: [sagCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_sag_company")
 
-  // Scope snapshot
-  psbAccYear              String    @db.VarChar(9) @map("psb_acc_year")
-  psbCompanyId            String    @db.Uuid @map("psb_company_id")
-  psbBranchId             String    @db.Uuid @map("psb_branch_id")
-  psbGodownId             String    @db.Uuid @map("psb_godown_id")
-
-  // Item snapshot
-  psbItemId               String    @db.Uuid @map("psb_item_id")
-  psbUnitId               String    @db.Uuid @map("psb_unit_id")
-  psbBaseUnitId           String    @db.Uuid @map("psb_base_unit_id")
-  psbToBaseFactor         Decimal   @default(1) @db.Decimal(18, 6) @map("psb_to_base_factor")
-
-  // Batch / lot / MRP identity
-  psbBatchId              String?   @db.Uuid @map("psb_batch_id")
-  psbBatchNo              String?   @db.VarChar(100) @map("psb_batch_no")
-  psbMfgBatchNo           String?   @db.VarChar(100) @map("psb_mfg_batch_no")
-
-  psbBatchDate            DateTime? @db.Date @map("psb_batch_date")
-  psbMfgDate              DateTime? @db.Date @map("psb_mfg_date")
-  psbExpiryDate           DateTime? @db.Date @map("psb_expiry_date")
-
-  psbMrp                  Decimal   @default(0) @db.Decimal(18, 6) @map("psb_mrp")
-  psbBarcode              String?   @db.VarChar(100) @map("psb_barcode")
-  psbSerialNo             String?   @db.VarChar(100) @map("psb_serial_no")
-
-  // System/book stock for this batch
-  psbBookQty              Decimal   @default(0) @db.Decimal(18, 6) @map("psb_book_qty")
-  psbBookBaseQty          Decimal   @default(0) @db.Decimal(18, 6) @map("psb_book_base_qty")
-
-  // Physical counted stock for this batch
-  psbPhysicalQty          Decimal   @default(0) @db.Decimal(18, 6) @map("psb_physical_qty")
-  psbPhysicalBaseQty      Decimal   @default(0) @db.Decimal(18, 6) @map("psb_physical_base_qty")
-
-  // Generated difference columns
-  psbDiffQty              Decimal?  @default(dbgenerated()) @db.Decimal(18, 6) @map("psb_diff_qty")
-  psbDiffBaseQty          Decimal?  @default(dbgenerated()) @db.Decimal(18, 6) @map("psb_diff_base_qty")
-
-  // Batch valuation
-  psbStockRateWot         Decimal   @default(0) @db.Decimal(18, 6) @map("psb_stock_rate_wot")
-  psbStockRateWithTax     Decimal   @default(0) @db.Decimal(18, 6) @map("psb_stock_rate_with_tax")
-
-  // Generated value columns
-  psbBookValueWot         Decimal?  @default(dbgenerated()) @db.Decimal(18, 2) @map("psb_book_value_wot")
-  psbPhysicalValueWot     Decimal?  @default(dbgenerated()) @db.Decimal(18, 2) @map("psb_physical_value_wot")
-  psbDiffValueWot         Decimal?  @default(dbgenerated()) @db.Decimal(18, 2) @map("psb_diff_value_wot")
-  psbDiffValueWithTax     Decimal?  @default(dbgenerated()) @db.Decimal(18, 2) @map("psb_diff_value_with_tax")
-
-  // Resolution
-  psbReasonId             String?   @db.Uuid @map("psb_reason_id")
-  psbResolution           String    @default("ADJUST_LOSS_GAIN") @db.VarChar(30) @map("psb_resolution")
-  psbNotes                String?   @db.Text @map("psb_notes")
-
-  // Posting
-  psbIsPosted             Boolean   @default(false) @map("psb_is_posted")
-  psbIsActive             Boolean   @default(true) @map("psb_is_active")
-  psbIsDeleted            Boolean   @default(false) @map("psb_is_deleted")
-  psbSyncDate             DateTime? @db.Timestamptz(6) @map("psb_sync_date")
-
-  // Audit
-  psbCreatedOn            DateTime  @default(now()) @db.Timestamptz(6) @map("psb_created_on")
-  psbCreatedBy            String?   @db.Uuid @map("psb_created_by")
-  psbModifiedOn           DateTime  @default(now()) @updatedAt @db.Timestamptz(6) @map("psb_modified_on")
-  psbModifiedBy           String?   @db.Uuid @map("psb_modified_by")
-
-  // Relations
-  physicalStockDetail     PhysicalStockDetail          @relation("PhysicalStockDetailBatchDetails", fields: [psbPsdId], references: [psdId])
-  physicalStockHeader     PhysicalStockHeader          @relation("PhysicalStockHeaderBatchDetails", fields: [psbPshId], references: [psId], onUpdate: Cascade, onDelete: Restrict)
-  company                 Company                      @relation("PhysicalStockBatchDetailCompany", fields: [psbCompanyId], references: [compId])
-  branch                  BranchMaster                 @relation("PhysicalStockBatchDetailBranch", fields: [psbBranchId], references: [brId])
-  godown                  GodownLocation               @relation("PhysicalStockBatchDetailGodown", fields: [psbGodownId], references: [gdlId], onUpdate: Cascade, onDelete: Restrict)
-
-  item                    ItemMaster                   @relation("PhysicalStockBatchDetailItem", fields: [psbItemId], references: [itemId])
-
-  unit                    Unit                         @relation("PhysicalStockBatchDetailUnit", fields: [psbUnitId], references: [unit_id], onUpdate: Cascade, onDelete: Restrict)
-  baseUnit                Unit                         @relation("PhysicalStockBatchDetailBaseUnit", fields: [psbBaseUnitId], references: [unit_id], onUpdate: Cascade, onDelete: Restrict)
-
-  batch                   ItemBatchMaster?             @relation("PhysicalStockBatchDetailBatch", fields: [psbBatchId], references: [btmId])
-
-  // Partial indexes ix_physical_stock_batch_detail_* WHERE psb_is_deleted = false
-  // are maintained in SQL migrations because Prisma schema cannot express filtered indexes.
-  @@index([psbPshId], map: "ix_physical_stock_batch_detail_header")
-
-  @@map("physical_stock_batch_detail")
+  @@map("stock_ageing_slab")
   @@schema("stock")
 }
 
-// ----- prisma/stocks/Physical_Stock/Physical_Stock_Detail.prisma -----
-model PhysicalStockDetail {
-    psdId                   String   @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("psd_id")
-    psdPscId                String   @db.Uuid @map("psd_psc_id")
-    psdRowNo                Int      @default(1) @map("psd_row_no")
-    // Scope
-    psdAccYear              String   @db.VarChar(9) @map("psd_acc_year")
-    psdCompanyId            String   @db.Uuid @map("psd_company_id")
-    psdBranchId             String   @db.Uuid @map("psd_branch_id")
-    psdGodownId             String   @db.Uuid @map("psd_godown_id")
-    // Item
-    psdItemId               String   @db.Uuid @map("psd_item_id")
-    psdUnitId               String   @db.Uuid @map("psd_unit_id")
-    psdBaseUnitId           String   @db.Uuid @map("psd_base_unit_id")
-    psdToBaseFactor         Decimal  @default(1) @db.Decimal(18, 6) @map("psd_to_base_factor")
-    // Quick identity / scan fields
-    psdBarcode              String?  @db.VarChar(100) @map("psd_barcode")
-    psdMrp                  Decimal  @default(0) @db.Decimal(18, 6) @map("psd_mrp")
-    // Tracking
-    psdTrackingType         String   @default("NONE") @db.VarChar(20) @map("psd_tracking_type")
-    // Item-level system/book stock
-    psdBookQty              Decimal  @default(0) @db.Decimal(18, 6) @map("psd_book_qty")
-    psdBookBaseQty          Decimal  @default(0) @db.Decimal(18, 6) @map("psd_book_base_qty")
-    // Item-level physical counted stock
-    psdPhysicalQty          Decimal  @default(0) @db.Decimal(18, 6) @map("psd_physical_qty")
-    psdPhysicalBaseQty      Decimal  @default(0) @db.Decimal(18, 6) @map("psd_physical_base_qty")
-    // Generated difference columns
-    psdDiffQty              Decimal  @default(dbgenerated()) @db.Decimal(18, 6) @map("psd_diff_qty")
-    psdDiffBaseQty          Decimal  @default(dbgenerated()) @db.Decimal(18, 6) @map("psd_diff_base_qty")
-    // Valuation
-    psdStockRateWot         Decimal  @default(0) @db.Decimal(18, 6) @map("psd_stock_rate_wot")
-    psdStockRateWithTax     Decimal  @default(0) @db.Decimal(18, 6) @map("psd_stock_rate_with_tax")
-    // Generated value columns
-    psdBookValueWot         Decimal  @default(dbgenerated()) @db.Decimal(18, 2) @map("psd_book_value_wot")
-    psdPhysicalValueWot     Decimal  @default(dbgenerated()) @db.Decimal(18, 2) @map("psd_physical_value_wot")
-    psdDiffValueWot         Decimal  @default(dbgenerated()) @db.Decimal(18, 2) @map("psd_diff_value_wot")
-    psdDiffValueWithTax     Decimal  @default(dbgenerated()) @db.Decimal(18, 2) @map("psd_diff_value_with_tax")
-    // Resolution
-    psdReasonId             String?  @db.Uuid @map("psd_reason_id")
-    psdResolution           String   @default("ADJUST_LOSS_GAIN") @db.VarChar(30) @map("psd_resolution")
-    psdNotes                String?  @db.Text @map("psd_notes")
-    // Posting / status
-    psdIsPosted             Boolean  @default(false) @map("psd_is_posted")
-    psdIsActive             Boolean  @default(true) @map("psd_is_active")
-    psdIsDeleted            Boolean  @default(false) @map("psd_is_deleted")
-    psdSyncDate             DateTime? @db.Timestamptz(6) @map("psd_sync_date")
-    // Audit
-    psdCreatedOn            DateTime @default(now()) @db.Timestamptz(6) @map("psd_created_on")
-    psdCreatedBy            String?  @db.Uuid @map("psd_created_by")
-    psdModifiedOn           DateTime @default(now()) @updatedAt @db.Timestamptz(6) @map("psd_modified_on")
-    psdModifiedBy           String?  @db.Uuid @map("psd_modified_by")
-    // Relations
-    physicalStockHeader     PhysicalStockHeader @relation("PhysicalStockHeaderDetails", fields: [psdPscId], references: [psId], onUpdate: Cascade, onDelete: Restrict)
-    company                 Company             @relation("PhysicalStockDetailCompany", fields: [psdCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict)
-    branch                  BranchMaster        @relation("PhysicalStockDetailBranch", fields: [psdBranchId], references: [brId], onUpdate: Cascade, onDelete: Restrict)
-    godown                  GodownLocation      @relation("PhysicalStockDetailGodown", fields: [psdGodownId], references: [gdlId], onUpdate: Cascade, onDelete: Restrict)
-    item                    ItemMaster          @relation("PhysicalStockDetailItem", fields: [psdItemId], references: [itemId], onUpdate: Cascade, onDelete: Restrict)
-    unit                    Unit                @relation("PhysicalStockDetailUnit", fields: [psdUnitId], references: [unit_id], onUpdate: Cascade, onDelete: Restrict)
-    baseUnit                Unit                @relation("PhysicalStockDetailBaseUnit", fields: [psdBaseUnitId], references: [unit_id], onUpdate: Cascade, onDelete: Restrict)
-    reason                  StockAdjReason?     @relation("PhysicalStockDetailReason", fields: [psdReasonId], references: [sarId], onUpdate: Cascade, onDelete: SetNull)
-    batchDetails            PhysicalStockBatchDetail[] @relation("PhysicalStockDetailBatchDetails")
-    @@unique([psdPscId, psdRowNo], map: "uq_physical_stock_detail_psc_row")
-    @@index([psdPscId], map: "ix_physical_stock_detail_header")
-    @@index([psdCompanyId, psdBranchId, psdGodownId, psdItemId], map: "ix_physical_stock_detail_item")
-    @@index([psdPscId, psdDiffBaseQty], map: "ix_physical_stock_detail_diff")
-    @@index([psdPscId, psdResolution], map: "ix_physical_stock_detail_resolution")
-    @@map("physical_stock_detail")
-    @@schema("stock")
+// ----- prisma/stocks/stockBalance.prisma -----
+/// stock.stock_balance — the CURRENT position. One row per holding.
+///
+/// [[StockLedger]] is the truth and this is the answer: every figure here is
+/// derivable by replaying the ledger, and is kept here only so the billing
+/// screen does not have to. The grain is
+/// (company, branch, godown, item, lot, bucket) — ux_sbl_scope — which is one
+/// row per "this batch of this item, on this shelf, in this condition".
+///
+/// NOT PARTITIONED, and deliberately without an acc-year column. A balance is
+/// as-of-now, not as-of-a-year: carrying stock into a new fiscal year must not
+/// mean copying every holding into a new partition, and "what is on the shelf"
+/// has exactly one answer regardless of which year the movements that produced
+/// it were posted in. Year-wise questions are ledger questions.
+///
+/// TRIGGER-MAINTAINED. fn_sml_apply() owns this table: it upserts on
+/// ux_sbl_scope as ledger rows land, and it alone writes the four accumulators
+/// and the identity cache. Application code that writes sblInQty / sblOutQty /
+/// sblFreeInQty / sblFreeOutQty is writing a number the next posting will
+/// overwrite, and has moved stock without a ledger row to explain it. Post to
+/// StockLedger instead — always.
+///
+/// THE FOUR ACCUMULATORS, NOT A SINGLE BALANCE. In and out are kept apart
+/// because a concurrent inward and outward then touch different columns of the
+/// same row rather than fighting over one, and because "how much moved" is a
+/// question the balance can answer without opening the ledger. Free in and
+/// free out are kept apart again so margin reporting can separate what was
+/// paid for from what was not — but free goods ARE stock: they sit on the
+/// shelf, they get sold, and sblOnHandQty counts them.
+///
+/// THREE QUANTITIES, THREE MEANINGS, and confusing them is the classic stock
+/// bug:
+///   sblOnHandQty     what is physically here      (in + freeIn - out - freeOut)
+///   sblReservedQty   here, but promised to an order   — owned by stock_reservation
+///   sblAvailableQty  what may still be sold       (onHand - reserved)
+///   sblTransitInQty  sent from another branch, NOT here yet — owned by
+///                    stock_transit, and NOT part of on hand
+/// A billing screen checks AVAILABLE, a physical count reconciles against ON
+/// HAND, and a transfer receipt clears TRANSIT. sblAvailableQty repeats the
+/// on-hand arithmetic instead of referencing it because PostgreSQL forbids a
+/// generated column reading another generated column.
+///
+/// THE IDENTITY CACHE — sblBatchNo, sblMrp, sblSalePrice, sblExpiryDate,
+/// sblSupplierId — is COPIED from [[StockLot]] by the same trigger, and the lot
+/// remains the owner. It is duplicated so that near-expiry, MRP-wise and
+/// supplier-wise stock reports are covering-index reads on this table alone;
+/// when the two ever disagree, the lot is right.
+///
+/// AGEING ANCHORS. sblFirstInDate / sblLastInDate answer "how long has this sat
+/// on THIS shelf"; the lot's sltFirstInwardDate answers "how old is this stock
+/// in the chain", which a transfer must not reset. StockTrackPolicy.
+/// stpAgeingBasis picks which one an ageing report measures from, and
+/// [[StockAgeingSlab]] says where the cuts are.
+///
+/// NEGATIVE STOCK IS REPRESENTABLE ON PURPOSE. ck_sbl_accum keeps the four
+/// accumulators non-negative, but nothing stops on-hand going below zero —
+/// a StockTrackPolicy of ALLOW is a real business choice (an offline till that
+/// must keep billing, a receipt keyed after the sale it supplied). The
+/// exception report reads ix_sbl_negative.
+///
+/// WRITE RULES:
+///   * NEVER write sblOnHandQty or sblAvailableQty — GENERATED ALWAYS ...
+///     STORED, and Postgres rejects any write to them.
+///   * NEVER write the accumulators or the identity cache from application
+///     code; post a ledger row.
+///   * sblReservedQty and sblTransitInQty belong to stock_reservation and
+///     stock_transit respectively, and neither may go negative.
+///
+/// Vocabulary, enforced by a CHECK constraint in the migration:
+///   sblBucket  SALEABLE | DAMAGED | QUARANTINE | EXPIRED | SAMPLE — the same
+///              five as StockLedger.smlBucket, and one balance row each,
+///              because saleable stock and damaged stock must never be added
+///              together by accident
+///
+/// DB-only objects Prisma cannot express — hand-authored in the migration and
+/// deliberately NOT declared here. EVERY index on this table carries a WHERE,
+/// and Prisma ignores indexes with predicates:
+///   ux_sbl_scope       ONE ROW PER HOLDING, and the upsert target of
+///                      fn_sml_apply(). Partial on NOT deleted.
+///   ix_sbl_lookup      the billing screen's stock lookup — what
+///                      /master-lookups/item-price asks, answered without
+///                      touching the heap
+///   ix_sbl_item_chain  item-wise stock across a branch's godowns, and the
+///                      chain-wide "who else has this?" behind an inter-store
+///                      transfer suggestion
+///   ix_sbl_ageing      ageing, on shelf age
+///   ix_sbl_supplier    supplier-wise stock, straight off the cached supplier
+///   ix_sbl_expiry      near expiry and expired-stock blocking
+///   ix_sbl_mrp         MRP-wise and selling-price-wise summaries
+///   ix_sbl_negative    the negative-stock exception report
+model StockBalance {
+  sblId                String    @id(map: "pk_stock_balance") @default(dbgenerated("uuidv7()")) @db.Uuid @map("sbl_id")
+  sblCompanyId         String    @db.Uuid                            @map("sbl_company_id")
+  sblBranchId          String    @db.Uuid                            @map("sbl_branch_id")
+  sblTenantId          String?   @db.Uuid                            @map("sbl_tenant_id")
+  /// The shelf — an inventory.godown_locations(gdl_id). Branch and godown live
+  /// HERE and not on the lot: the same batch held in four godowns is four
+  /// balance rows and one lot.
+  sblGodownId          String    @db.Uuid                            @map("sbl_godown_id")
+  sblItemId            String    @db.Uuid                            @map("sbl_item_id")
+  sblLotId             String    @db.Uuid                            @map("sbl_lot_id")
+  /// The item's BASE unit — an item_unit_conversion(iuc_id), NEVER an
+  /// item_unit_master(unit_id). Every quantity on this row is in this unit.
+  sblBaseUomId         String    @db.Uuid                            @map("sbl_base_uom_id")
+  sblBucket            String    @default("SALEABLE") @db.VarChar(20) @map("sbl_bucket")
+
+  // ── Accumulators ────────────────────────────────────────────────────────
+  // TRIGGER-MAINTAINED from StockLedger by fn_sml_apply(). NEVER written from
+  // application code — see WRITE RULES above.
+  sblInQty             Decimal   @default(0) @db.Decimal(18, 6)      @map("sbl_in_qty")
+  sblOutQty            Decimal   @default(0) @db.Decimal(18, 6)      @map("sbl_out_qty")
+  sblFreeInQty         Decimal   @default(0) @db.Decimal(18, 6)      @map("sbl_free_in_qty")
+  sblFreeOutQty        Decimal   @default(0) @db.Decimal(18, 6)      @map("sbl_free_out_qty")
+
+  /// GENERATED ALWAYS ... STORED as in + freeIn - out - freeOut. What is
+  /// PHYSICALLY here, free goods included. Read-only, never sent.
+  sblOnHandQty         Decimal?  @default(dbgenerated()) @db.Decimal(18, 6) @map("sbl_on_hand_qty")
+
+  /// Here, but promised to an order. Owned by stock_reservation.
+  sblReservedQty       Decimal   @default(0) @db.Decimal(18, 6)      @map("sbl_reserved_qty")
+  /// Sent from another branch, not yet received here. Owned by stock_transit,
+  /// and NOT part of on hand: it is not here yet.
+  sblTransitInQty      Decimal   @default(0) @db.Decimal(18, 6)      @map("sbl_transit_in_qty")
+
+  /// GENERATED ALWAYS ... STORED as onHand - reserved. What may still be SOLD,
+  /// and the figure a billing screen checks. Read-only, never sent.
+  sblAvailableQty      Decimal?  @default(dbgenerated()) @db.Decimal(18, 6) @map("sbl_available_qty")
+
+  // ── Value ───────────────────────────────────────────────────────────────
+  sblAvgCostRate       Decimal   @default(0) @db.Decimal(18, 6)      @map("sbl_avg_cost_rate")
+  sblAvgCostRateWot    Decimal   @default(0) @db.Decimal(18, 6)      @map("sbl_avg_cost_rate_wot")
+  sblStockValue        Decimal   @default(0) @db.Decimal(18, 2)      @map("sbl_stock_value")
+  sblStockValueWot     Decimal   @default(0) @db.Decimal(18, 2)      @map("sbl_stock_value_wot")
+
+  // ── Ageing anchors, for THIS godown ─────────────────────────────────────
+  // "How long has it sat on this shelf". The chain-wide age is the lot's
+  // sltFirstInwardDate, which a transfer must not reset.
+  sblFirstInDate       DateTime? @db.Date                            @map("sbl_first_in_date")
+  sblLastInDate        DateTime? @db.Date                            @map("sbl_last_in_date")
+  sblLastOutDate       DateTime? @db.Date                            @map("sbl_last_out_date")
+
+  // ── Identity cache ──────────────────────────────────────────────────────
+  // Owned by StockLot, copied here by the same trigger so the expiry, MRP and
+  // supplier reports are covering-index reads on this table alone. When the
+  // two disagree, the lot is right.
+  sblBatchNo           String?   @db.VarChar(100)                    @map("sbl_batch_no")
+  sblMrp               Decimal?  @db.Decimal(18, 6)                  @map("sbl_mrp")
+  sblSalePrice         Decimal?  @db.Decimal(18, 6)                  @map("sbl_sale_price")
+  sblExpiryDate        DateTime? @db.Date                            @map("sbl_expiry_date")
+  sblSupplierId        String?   @db.Uuid                            @map("sbl_supplier_id")
+
+  sblRowVersion        BigInt    @default(1)                         @map("sbl_row_version")
+  sblIsActive          Boolean   @default(true)                      @map("sbl_is_active")
+  sblIsDeleted         Boolean   @default(false)                     @map("sbl_is_deleted")
+  sblSyncDate          DateTime? @db.Timestamptz(6)                  @map("sbl_sync_date")
+  sblCreatedOn         DateTime  @default(now()) @db.Timestamptz(6)  @map("sbl_created_on")
+  sblCreatedBy         String?   @db.Uuid                            @map("sbl_created_by")
+  sblModifiedOn        DateTime? @db.Timestamptz(6)                  @map("sbl_modified_on")
+  sblModifiedBy        String?   @db.Uuid                            @map("sbl_modified_by")
+
+  // ── Relations ───────────────────────────────────────────────────────────
+  // sblCreatedBy / sblModifiedBy carry NO foreign key in the migration, so
+  // they stay scalar here.
+  company              Company            @relation("StockBalanceCompany",  fields: [sblCompanyId],  references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_sbl_company")
+  branch               BranchMaster       @relation("StockBalanceBranch",   fields: [sblBranchId],   references: [brId],   onUpdate: Cascade, onDelete: Restrict, map: "fk_sbl_branch")
+  godown               GodownLocation     @relation("StockBalanceGodown",   fields: [sblGodownId],   references: [gdlId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_sbl_godown")
+  item                 ItemMaster         @relation("StockBalanceItem",     fields: [sblItemId],     references: [itemId], onUpdate: Cascade, onDelete: Restrict, map: "fk_sbl_item")
+  lot                  StockLot           @relation("StockBalanceLot",      fields: [sblLotId],      references: [sltId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_sbl_lot")
+  baseUom              ItemUnitConversion @relation("StockBalanceBaseUom",  fields: [sblBaseUomId],  references: [iucId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_sbl_base_uom")
+  supplier             Supplier?          @relation("StockBalanceSupplier", fields: [sblSupplierId], references: [supId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_sbl_supplier")
+
+  @@map("stock_balance")
+  @@schema("stock")
 }
 
-// ----- prisma/stocks/Physical_Stock/Physical_Stock_Header.prisma -----
-model PhysicalStockHeader {
-  psId                    String    @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("psc_id")
-  // Multi-branch scope
-  psAccYear               String    @db.VarChar(9)                         @map("psc_acc_year")
-  psCompanyId             String    @db.Uuid                               @map("psc_company_id")
-  psBranchId              String    @db.Uuid                               @map("psc_branch_id")
-  psGodownId              String    @db.Uuid                               @map("psc_godown_id")
-  // Document identity
-  psDocNo                 BigInt                                           @map("psc_doc_no")
-  psDocRefNo              String?   @db.VarChar(50)                        @map("psc_doc_refno")
-  psDocDate               DateTime  @default(now()) @db.Date               @map("psc_doc_date")
-  // Count information
-  psCountType             String    @default("FULL") @db.VarChar(20)       @map("psc_count_type")
-  psCountedBy             String?   @db.Uuid                               @map("psc_counted_by")
-  psCountStartedOn        DateTime? @db.Timestamptz(6)                     @map("psc_count_started_on")
-  psCountCompletedOn      DateTime? @db.Timestamptz(6)                     @map("psc_count_completed_on")
-  // Stock cutoff
-  psStockCutoffAt         DateTime  @default(now()) @db.Timestamptz(6)      @map("psc_stock_cutoff_at")
-  psFreezeStock           Boolean   @default(true)                         @map("psc_freeze_stock")
-  psFreezeFrom            DateTime? @db.Timestamptz(6)                     @map("psc_freeze_from")
-  psFreezeTo              DateTime? @db.Timestamptz(6)                     @map("psc_freeze_to")
-  // Posting mode
-  psPostingMode           String    @default("ADJUST_DIFFERENCE_ONLY") @db.VarChar(30) @map("psc_posting_mode")
-  // Rate source
-  psRateSource            String    @default("AVG_COST") @db.VarChar(20)   @map("psc_rate_source")
-  // Adjustment voucher
-  psAdjustmentVoucherId   String?   @db.Uuid                               @map("psc_adjustment_voucher_id")
-  // Summary
-  psTotalLines            Int       @default(0)                            @map("psc_total_lines")
-  psTotalBookValue        Decimal   @default(0) @db.Decimal(18, 2)          @map("psc_total_book_value")
-  psTotalCountedValue     Decimal   @default(0) @db.Decimal(18, 2)          @map("psc_total_counted_value")
-  psNetVarianceValue      Decimal   @default(0) @db.Decimal(18, 2)          @map("psc_net_variance_value")
-  // Workflow status
-  psStatus                String    @default("DRAFT") @db.VarChar(20)      @map("psc_status")
-  psApprovalRequired      Boolean   @default(true)                         @map("psc_approval_required")
-  // Approval
-  psApprovedOn            DateTime? @db.Timestamptz(6)                     @map("psc_approved_on")
-  psApprovedBy            String?   @db.Uuid                               @map("psc_approved_by")
-  // Posting
-  psPostedOn              DateTime? @db.Timestamptz(6)                     @map("psc_posted_on")
-  psPostedBy              String?   @db.Uuid                               @map("psc_posted_by")
-  // Cancel
-  psCancelledOn           DateTime? @db.Timestamptz(6)                     @map("psc_cancelled_on")
-  psCancelledBy           String?   @db.Uuid                               @map("psc_cancelled_by")
-  psCancelReason          String?   @db.VarChar(250)                       @map("psc_cancel_reason")
-  // Device/session info
-  psDeviceType            String?   @db.VarChar(20)                        @map("psc_device_type")
-  psDeviceId              String?   @db.Uuid                               @map("psc_device_id")
-  psCounterId             String?   @db.VarChar(20)                        @map("psc_counter_id")
-  psSessionId             String?   @db.Uuid                               @map("psc_session_id")
-  // Remarks
-  psRemarks               String?   @db.Text                               @map("psc_remarks")
-  // Audit
-  psIsActive              Boolean   @default(true)                         @map("psc_is_active")
-  psIsDeleted             Boolean   @default(false)                        @map("psc_is_deleted")
-  psSyncDate              DateTime? @db.Timestamptz(6)                     @map("psc_sync_date")
-  psCreatedOn             DateTime  @default(now()) @db.Timestamptz(6)      @map("psc_created_on")
-  psCreatedBy             String    @db.Uuid                               @map("psc_created_by")
-  psModifiedOn            DateTime  @default(now()) @updatedAt @db.Timestamptz(6) @map("psc_modified_on")
-  psModifiedBy            String?   @db.Uuid                               @map("psc_modified_by")
-  // Relations
-  company              Company         @relation("PhysicalStockHeaderCompany", fields: [psCompanyId], references: [compId], onDelete: Restrict, onUpdate: NoAction)
-  branch               BranchMaster    @relation("PhysicalStockHeaderBranch", fields: [psBranchId], references: [brId], onDelete: Restrict, onUpdate: NoAction)
-  godown               GodownLocation  @relation("PhysicalStockHeaderGodown", fields: [psGodownId], references: [gdlId], onDelete: Restrict, onUpdate: NoAction)
-  details              PhysicalStockDetail[] @relation("PhysicalStockHeaderDetails")
-  batchDetails         PhysicalStockBatchDetail[] @relation("PhysicalStockHeaderBatchDetails")
-  // Partial unique/indexes ux_physical_stock_header_doc_no and
-  // ix_physical_stock_header_* WHERE psc_is_deleted = false are maintained in
-  // SQL migrations because Prisma schema cannot express filtered indexes.
-  @@map("physical_stock_header")
+// ----- prisma/stocks/stockDemandDaily.prisma -----
+/// stock.stock_demand_daily — what actually sold, per branch, per day.
+///
+/// The input every forecast needs and no transactional table can serve.
+/// Aggregating a year of SaleBillItem across fifty branches on every run of a
+/// replenishment job is not a plan. This is the pre-aggregate, rebuilt by
+/// fn_sdd_rebuild() from [[StockLedger]] — which means it can ALWAYS be
+/// recomputed and never has to be trusted blindly.
+///
+/// sddStockoutFlag IS THE COLUMN THAT MAKES FORECASTS HONEST. If an item was
+/// out of stock on Tuesday it sold zero on Tuesday, and a model that reads
+/// that as "demand was zero" will under-forecast the fastest movers for ever
+/// and keep them out of stock — the failure feeds itself. Censored demand has
+/// to be MARKED at the point where it is still knowable; afterwards a zero is
+/// indistinguishable from a zero. sddStockoutHours says how much of the day
+/// was lost, so a partial day is not thrown away whole.
+///
+/// sddPromoQty exists for the same reason in the other direction: a week of
+/// buy-one-get-one is not the baseline, and a model that treats it as one will
+/// over-order for the month after. It is a subset of what sold, not an
+/// addition to it.
+///
+/// sddClosedFlag is a THIRD kind of zero. Shut is not "nobody wanted it": such
+/// a day must be EXCLUDED from a moving average, not averaged in as demand.
+/// Three different zeros, three different columns, because a forecast that
+/// cannot tell them apart is worse than no forecast.
+///
+/// sddDayOfWeek is denormalised so a weekday/seasonality model does not
+/// compute it a million times. 0 = Sunday, matching EXTRACT(dow).
+///
+/// NOT PARTITIONED. The read is a WINDOW of days for one item — "the last
+/// ninety days" crosses a year boundary four times out of five — and a
+/// partition per year would split every one of those.
+///
+/// WRITE RULES:
+///   * NEVER write sddNetQty or sddMarginWot — both are GENERATED ALWAYS ...
+///     STORED.
+///   * This table is DERIVED. Do not patch a row to make a report look right;
+///     fix the ledger and re-run fn_sdd_rebuild(), or the next rebuild silently
+///     discards the correction.
+///   * sddRebuiltOn says when the row was last recomputed — a stale date on a
+///     recent day means the job did not run, which is otherwise invisible.
+///
+/// DB-only objects Prisma cannot express — hand-authored in the migration and
+/// deliberately NOT declared here (every one carries a WHERE):
+///   ux_sdd_scope   one row per (company, branch, item, date)
+///   ix_sdd_series  the forecasting read: one item, one branch, a window of
+///                  days, in order
+///   ix_sdd_chain   chain-wide demand for one item across every branch — the
+///                  head-office allocation question
+model StockDemandDaily {
+  sddId                String    @id(map: "pk_stock_demand_daily") @default(dbgenerated("uuidv7()")) @db.Uuid @map("sdd_id")
+  sddCompanyId         String    @db.Uuid                            @map("sdd_company_id")
+  sddBranchId          String    @db.Uuid                            @map("sdd_branch_id")
+  sddTenantId          String?   @db.Uuid                            @map("sdd_tenant_id")
+  sddItemId            String    @db.Uuid                            @map("sdd_item_id")
+  sddBaseUomId         String    @db.Uuid                            @map("sdd_base_uom_id")
+  sddDemandDate        DateTime  @db.Date                            @map("sdd_demand_date")
+  /// Denormalised for seasonality models. 0 = Sunday, matching EXTRACT(dow).
+  sddDayOfWeek         Int       @default(0) @db.SmallInt            @map("sdd_day_of_week")
+
+  sddSoldQty           Decimal   @default(0) @db.Decimal(18, 6)      @map("sdd_sold_qty")
+  sddFreeQty           Decimal   @default(0) @db.Decimal(18, 6)      @map("sdd_free_qty")
+  sddReturnQty         Decimal   @default(0) @db.Decimal(18, 6)      @map("sdd_return_qty")
+  /// GENERATED ALWAYS ... STORED as sold + free - returned. Read-only.
+  sddNetQty            Decimal?  @default(dbgenerated()) @db.Decimal(18, 6) @map("sdd_net_qty")
+  /// Sold while a promotion was running: real sales, but not the baseline.
+  /// A SUBSET of sddSoldQty, not an addition to it.
+  sddPromoQty          Decimal   @default(0) @db.Decimal(18, 6)      @map("sdd_promo_qty")
+
+  sddBillCount         Int       @default(0)                         @map("sdd_bill_count")
+  sddLineCount         Int       @default(0)                         @map("sdd_line_count")
+  sddCustomerCount     Int       @default(0)                         @map("sdd_customer_count")
+
+  sddRevenueWot        Decimal   @default(0) @db.Decimal(18, 2)      @map("sdd_revenue_wot")
+  sddCogsWot           Decimal   @default(0) @db.Decimal(18, 2)      @map("sdd_cogs_wot")
+  /// GENERATED ALWAYS ... STORED as revenue - COGS. Read-only.
+  sddMarginWot         Decimal?  @default(dbgenerated()) @db.Decimal(18, 2) @map("sdd_margin_wot")
+
+  // ── Truthfulness flags ──────────────────────────────────────────────────
+  /// On hand hit zero at some point that day: demand was CENSORED, and the
+  /// figures above are a floor, not a measurement.
+  sddStockoutFlag      Boolean   @default(false)                     @map("sdd_stockout_flag")
+  sddStockoutHours     Decimal   @default(0) @db.Decimal(9, 3)       @map("sdd_stockout_hours")
+  /// The branch was SHUT. Exclude from a moving average — never read as zero
+  /// demand.
+  sddClosedFlag        Boolean   @default(false)                     @map("sdd_closed_flag")
+  sddOpenQtyStart      Decimal   @default(0) @db.Decimal(18, 6)      @map("sdd_open_qty_start")
+  sddCloseQtyEnd       Decimal   @default(0) @db.Decimal(18, 6)      @map("sdd_close_qty_end")
+
+  /// When this row was last recomputed. A stale date on a recent day means the
+  /// rebuild job did not run — otherwise invisible.
+  sddRebuiltOn         DateTime  @default(now()) @db.Timestamptz(6)  @map("sdd_rebuilt_on")
+  sddIsDeleted         Boolean   @default(false)                     @map("sdd_is_deleted")
+  sddSyncDate          DateTime? @db.Timestamptz(6)                  @map("sdd_sync_date")
+  sddCreatedOn         DateTime  @default(now()) @db.Timestamptz(6)  @map("sdd_created_on")
+
+  // ── Relations ───────────────────────────────────────────────────────────
+  // A derived table: there is no created/modified-by pair to relate.
+  company              Company            @relation("StockDemandDailyCompany", fields: [sddCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_sdd_company")
+  branch               BranchMaster       @relation("StockDemandDailyBranch",  fields: [sddBranchId],  references: [brId],   onUpdate: Cascade, onDelete: Restrict, map: "fk_sdd_branch")
+  item                 ItemMaster         @relation("StockDemandDailyItem",    fields: [sddItemId],    references: [itemId], onUpdate: Cascade, onDelete: Restrict, map: "fk_sdd_item")
+  baseUom              ItemUnitConversion @relation("StockDemandDailyBaseUom", fields: [sddBaseUomId], references: [iucId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_sdd_base_uom")
+
+  @@map("stock_demand_daily")
+  @@schema("stock")
+}
+
+// ----- prisma/stocks/stockForecast.prisma -----
+/// stock.stock_forecast — what we expect to sell, and what to order.
+///
+/// THE MATHS IS NOT IN THE DATABASE, and that is the design. A forecasting
+/// model written in PL/pgSQL cannot be changed without a migration, cannot be
+/// back-tested against last year without running last year, and cannot be
+/// swapped when the retailer discovers Croston fits their slow movers better
+/// than exponential smoothing. It WILL be changed.
+///
+/// So the schema holds the three things a model needs to be useful and does
+/// not hold the model: the INPUTS ([[StockDemandDaily]]), the SETTINGS
+/// ([[StockReorderPolicy]]) and the OUTPUTS (this table). A nightly job, the
+/// API layer, or somebody's notebook writes rows here; every screen reads them
+/// the same way regardless of what produced them, and sfcComputedBy says which
+/// it was.
+///
+/// THE ERROR COLUMNS ARE NOT OPTIONAL. A forecast without a measured error is
+/// a number somebody made up. sfcMape, sfcRmse and sfcBias are written by the
+/// same run that writes the forecast, computed against the period just past,
+/// so a buyer can see that this item's model has been wrong by 40% for three
+/// months and stop trusting it. BIAS IS SEPARATE FROM ERROR on purpose:
+/// consistently over-ordering and randomly missing are different diseases with
+/// different cures, and a single accuracy number hides both.
+///
+/// ONE ROW PER (item, branch, forecast date, horizon, METHOD). Keeping the
+/// method in the key means two models run side by side against the same
+/// history and be compared on it — which is the only honest way to choose one.
+///
+/// sfcPipelineQty IS THE COLUMN A REPLENISHMENT BUG LIVES IN. Stock already
+/// ordered or in transit must be netted off before suggesting more; forgetting
+/// it is how a chain double-orders, twice a week, until somebody notices the
+/// warehouse is full.
+///
+/// sfcAcceptedQty is set when a BUYER OVERRIDES the suggestion, so the next
+/// back-test knows the order it sees in the purchase history was not the one
+/// the model asked for. Without it every override silently becomes evidence
+/// against the model.
+///
+/// sfcModelParams is jsonb — alpha/beta/gamma, window lengths, whatever the
+/// method needs — so a new method costs no column and no migration.
+///
+/// sfcForecastDate IS THE DAY FORECAST FOR, not the day computed. The day
+/// computed is sfcComputedOn. Confusing the two makes every back-test wrong.
+///
+/// WRITE RULES:
+///   * sfcStockoutDays cannot exceed sfcHistoryDays (ck_sfc_stockout_days) —
+///     it is a count of censored days WITHIN the history the model saw.
+///   * sfcAcceptedQty and sfcAcceptedOn move together (ck_sfc_accepted).
+///   * The confidence band is optional, but if both ends are given the upper
+///     must not be below the lower (ck_sfc_band).
+///
+/// Vocabulary, enforced by a CHECK constraint in the migration:
+///   sfcMethod  MOVING_AVG | WMA | SES | HOLT | HOLT_WINTERS | CROSTON |
+///              REGRESSION | MANUAL | EXTERNAL
+/// plus ck_sfc_horizon, ck_sfc_confidence and ck_sfc_qty.
+///
+/// DB-only objects Prisma cannot express — hand-authored in the migration and
+/// deliberately NOT declared here (every one carries a WHERE):
+///   ux_sfc_scope      one row per item/branch/date/horizon/method
+///   ix_sfc_action     the buying screen: this branch, latest run, worst first
+///   ix_sfc_item_chain chain view for one item — which branch runs out first
+///   ix_sfc_accuracy   model comparison: how has each method actually done
+model StockForecast {
+  sfcId                  String    @id(map: "pk_stock_forecast") @default(dbgenerated("uuidv7()")) @db.Uuid @map("sfc_id")
+  sfcCompanyId           String    @db.Uuid                          @map("sfc_company_id")
+  sfcBranchId            String    @db.Uuid                          @map("sfc_branch_id")
+  sfcTenantId            String?   @db.Uuid                          @map("sfc_tenant_id")
+  sfcItemId              String    @db.Uuid                          @map("sfc_item_id")
+  sfcBaseUomId           String    @db.Uuid                          @map("sfc_base_uom_id")
+
+  /// The day forecast FOR — not the day computed, which is sfcComputedOn.
+  sfcForecastDate        DateTime  @db.Date                          @map("sfc_forecast_date")
+  sfcHorizonDays         Int       @default(30)                      @map("sfc_horizon_days")
+  /// In the unique key: two methods may run side by side on the same history.
+  sfcMethod              String    @default("MOVING_AVG") @db.VarChar(30) @map("sfc_method")
+
+  // ── The forecast ────────────────────────────────────────────────────────
+  sfcForecastQty         Decimal   @default(0) @db.Decimal(18, 6)    @map("sfc_forecast_qty")
+  sfcForecastLower       Decimal?  @db.Decimal(18, 6)                @map("sfc_forecast_lower")
+  sfcForecastUpper       Decimal?  @db.Decimal(18, 6)                @map("sfc_forecast_upper")
+  sfcConfidencePerc      Decimal?  @db.Decimal(9, 3)                 @map("sfc_confidence_perc")
+  sfcDailyRate           Decimal   @default(0) @db.Decimal(18, 6)    @map("sfc_daily_rate")
+
+  // ── What the model saw ──────────────────────────────────────────────────
+  sfcHistoryDays         Int       @default(0)                       @map("sfc_history_days")
+  /// Censored days WITHIN that history — cannot exceed sfcHistoryDays.
+  sfcStockoutDays        Int       @default(0)                       @map("sfc_stockout_days")
+  sfcTrendSlope          Decimal?  @db.Decimal(18, 6)                @map("sfc_trend_slope")
+  sfcSeasonalityIndex    Decimal?  @db.Decimal(9, 4)                 @map("sfc_seasonality_index")
+  /// Alpha/beta/gamma, window lengths, whatever the method needs. jsonb so a
+  /// new method costs no column and no migration.
+  sfcModelParams         Json?     @db.JsonB                         @map("sfc_model_params")
+
+  // ── How wrong it has been ───────────────────────────────────────────────
+  // Written by the same run, against the period just past. A forecast without
+  // these is a number somebody made up.
+  sfcMape                Decimal?  @db.Decimal(9, 3)                 @map("sfc_mape")
+  sfcRmse                Decimal?  @db.Decimal(18, 6)                @map("sfc_rmse")
+  /// Separate from error on purpose: consistently over-ordering and randomly
+  /// missing are different diseases with different cures.
+  sfcBias                Decimal?  @db.Decimal(18, 6)                @map("sfc_bias")
+  sfcBacktestDays        Int?                                        @map("sfc_backtest_days")
+
+  // ── What to do about it ─────────────────────────────────────────────────
+  sfcOnHandQty           Decimal   @default(0) @db.Decimal(18, 6)    @map("sfc_on_hand_qty")
+  /// Ordered or in transit: stock already coming, which MUST be netted off
+  /// before suggesting more. Forgetting this is how a chain double-orders.
+  sfcPipelineQty         Decimal   @default(0) @db.Decimal(18, 6)    @map("sfc_pipeline_qty")
+  sfcSafetyStock         Decimal   @default(0) @db.Decimal(18, 6)    @map("sfc_safety_stock")
+  sfcReorderPoint        Decimal   @default(0) @db.Decimal(18, 6)    @map("sfc_reorder_point")
+  sfcSuggestedOrderQty   Decimal   @default(0) @db.Decimal(18, 6)    @map("sfc_suggested_order_qty")
+  sfcDaysOfCover         Decimal?  @db.Decimal(9, 2)                 @map("sfc_days_of_cover")
+  sfcExpectedStockoutOn  DateTime? @db.Date                          @map("sfc_expected_stockout_on")
+  sfcPreferredSupplierId String?   @db.Uuid                          @map("sfc_preferred_supplier_id")
+
+  /// Set when a buyer OVERRIDES the suggestion, so the next back-test knows
+  /// the order it sees was not the one the model asked for.
+  sfcAcceptedQty         Decimal?  @db.Decimal(18, 6)                @map("sfc_accepted_qty")
+  sfcAcceptedBy          String?   @db.Uuid                          @map("sfc_accepted_by")
+  sfcAcceptedOn          DateTime? @db.Timestamptz(6)                @map("sfc_accepted_on")
+
+  sfcComputedOn          DateTime  @default(now()) @db.Timestamptz(6) @map("sfc_computed_on")
+  /// Which job, service or notebook produced this row.
+  sfcComputedBy          String?   @db.VarChar(50)                   @map("sfc_computed_by")
+  sfcIsDeleted           Boolean   @default(false)                   @map("sfc_is_deleted")
+  sfcSyncDate            DateTime? @db.Timestamptz(6)                @map("sfc_sync_date")
+  sfcCreatedOn           DateTime  @default(now()) @db.Timestamptz(6) @map("sfc_created_on")
+
+  // ── Relations ───────────────────────────────────────────────────────────
+  // sfcAcceptedBy carries no foreign key in the migration, so it stays scalar.
+  company                Company            @relation("StockForecastCompany",  fields: [sfcCompanyId],           references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_sfc_company")
+  branch                 BranchMaster       @relation("StockForecastBranch",   fields: [sfcBranchId],            references: [brId],   onUpdate: Cascade, onDelete: Restrict, map: "fk_sfc_branch")
+  item                   ItemMaster         @relation("StockForecastItem",     fields: [sfcItemId],              references: [itemId], onUpdate: Cascade, onDelete: Restrict, map: "fk_sfc_item")
+  baseUom                ItemUnitConversion @relation("StockForecastBaseUom",  fields: [sfcBaseUomId],           references: [iucId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_sfc_base_uom")
+  preferredSupplier      Supplier?          @relation("StockForecastSupplier", fields: [sfcPreferredSupplierId], references: [supId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_sfc_supplier")
+
+  @@map("stock_forecast")
+  @@schema("stock")
+}
+
+// ----- prisma/stocks/stockItemCost.prisma -----
+/// stock.stock_item_cost — the MOVING WEIGHTED AVERAGE, one row per
+/// (company, branch, item). The other half of the valuation answer.
+///
+/// [[StockLot]] carries each lot's OWN cost, which is what makes FIFO, LIFO and
+/// LOT_ACTUAL valuation a read rather than a replay. This table carries the
+/// running average across all of an item's lots in a branch. BOTH are
+/// maintained on every posting, always — so StockTrackPolicy.stpValuationMethod
+/// SELECTS an answer instead of triggering a rebuild, and switching a company
+/// from average to FIFO costs nothing.
+///
+/// BRANCH-LEVEL, NOT GODOWN-LEVEL. Moving a case from the back store to the
+/// shop floor must not change what the stock cost; a per-godown average would
+/// let an internal transfer move value. Godown-wise value is stock_balance's
+/// sblStockValue, which is a distribution of this, not a separate truth. It is
+/// also not company-wide: two branches buying the same item at different rates
+/// have different costs, and averaging them would let one branch's bad buying
+/// inflate the other's margin.
+///
+/// NOT LOT-LEVEL EITHER, on purpose — that is exactly what the lot's own
+/// sltCostRate is. This row is what the average costs when the lot identity is
+/// deliberately ignored.
+///
+/// TRIGGER-MAINTAINED. fn_sml_apply() owns it: an inward adds qty and value and
+/// recomputes the average, an outward removes qty at the CURRENT average and
+/// leaves the rate alone — which is what "moving average" means, and why an
+/// outward can never change the cost of what remains. Application code that
+/// writes these columns is writing a number the next posting will overwrite.
+/// Post to [[StockLedger]] instead.
+///
+/// THE AVERAGE IS STORED, NOT DERIVED. sicAvgCostRate is a plain column rather
+/// than value/qty as a generated one, because qty legitimately reaches zero
+/// when the last unit is sold and the rate must SURVIVE that: the next inward
+/// of an item that went to nil is not a fresh start, and a division by zero
+/// would make it one.
+///
+/// sicMaxCostRate is the highest rate this item has ever been received at. It
+/// is kept because a replacement-cost valuation asks for it and because it
+/// cannot be recovered afterwards — closed lots are still there, but the
+/// question is asked often enough that scanning them every time is not
+/// reasonable.
+///
+/// WOT columns are WITHOUT TAX. Where GST is claimable the value that belongs
+/// in the accounts is the ex-tax one, so both are carried and the caller picks
+/// per the company's tax treatment rather than re-deriving one from the other.
+///
+/// WRITE RULES:
+///   * NEVER write sicTotalQty / sicTotalValue / sicTotalValueWot /
+///     sicAvgCostRate / sicAvgCostRateWot / sicMaxCostRate, nor the last
+///     purchase and last sale columns — all are trigger-maintained.
+///   * There is no sicIsActive: a cost row is not something a user switches
+///     off. sicIsDeleted exists only for the partial index predicate.
+///
+/// DB-only objects Prisma cannot express — hand-authored in the migration and
+/// deliberately NOT declared here (it carries a WHERE, and Prisma ignores
+/// indexes with predicates):
+///   ux_sic_scope  ONE ROW PER (company, branch, item), and the upsert target
+///                 of fn_sml_apply(). Partial on NOT deleted.
+model StockItemCost {
+  sicId                String    @id(map: "pk_stock_item_cost") @default(dbgenerated("uuidv7()")) @db.Uuid @map("sic_id")
+  sicCompanyId         String    @db.Uuid                            @map("sic_company_id")
+  sicBranchId          String    @db.Uuid                            @map("sic_branch_id")
+  sicItemId            String    @db.Uuid                            @map("sic_item_id")
+  /// The item's BASE unit — an item_unit_conversion(iuc_id), NEVER an
+  /// item_unit_master(unit_id). sicTotalQty is in this unit, so the average is
+  /// a rate per base unit and never per "case".
+  sicBaseUomId         String    @db.Uuid                            @map("sic_base_uom_id")
+
+  // ── The moving average ──────────────────────────────────────────────────
+  // TRIGGER-MAINTAINED by fn_sml_apply(). NEVER written from application code.
+  sicTotalQty          Decimal   @default(0) @db.Decimal(18, 6)      @map("sic_total_qty")
+  sicTotalValue        Decimal   @default(0) @db.Decimal(18, 2)      @map("sic_total_value")
+  sicTotalValueWot     Decimal   @default(0) @db.Decimal(18, 2)      @map("sic_total_value_wot")
+  /// Stored, not derived — the rate must survive sicTotalQty reaching zero.
+  sicAvgCostRate       Decimal   @default(0) @db.Decimal(18, 6)      @map("sic_avg_cost_rate")
+  sicAvgCostRateWot    Decimal   @default(0) @db.Decimal(18, 6)      @map("sic_avg_cost_rate_wot")
+
+  sicLastPurchaseRate  Decimal   @default(0) @db.Decimal(18, 6)      @map("sic_last_purchase_rate")
+  sicLastPurchaseDate  DateTime? @db.Date                            @map("sic_last_purchase_date")
+  sicLastSaleRate      Decimal   @default(0) @db.Decimal(18, 6)      @map("sic_last_sale_rate")
+  sicLastSaleDate      DateTime? @db.Date                            @map("sic_last_sale_date")
+  /// The highest rate this item has ever been received at — a
+  /// replacement-cost valuation asks for it, and it cannot be recovered once
+  /// lots close.
+  sicMaxCostRate       Decimal   @default(0) @db.Decimal(18, 6)      @map("sic_max_cost_rate")
+
+  sicRowVersion        BigInt    @default(1)                         @map("sic_row_version")
+  sicIsDeleted         Boolean   @default(false)                     @map("sic_is_deleted")
+  sicSyncDate          DateTime? @db.Timestamptz(6)                  @map("sic_sync_date")
+  sicCreatedOn         DateTime  @default(now()) @db.Timestamptz(6)  @map("sic_created_on")
+  sicCreatedBy         String?   @db.Uuid                            @map("sic_created_by")
+  sicModifiedOn        DateTime? @db.Timestamptz(6)                  @map("sic_modified_on")
+  sicModifiedBy        String?   @db.Uuid                            @map("sic_modified_by")
+
+  // ── Relations ───────────────────────────────────────────────────────────
+  // sicCreatedBy / sicModifiedBy carry NO foreign key in the migration, so
+  // they stay scalar here.
+  company              Company            @relation("StockItemCostCompany", fields: [sicCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_sic_company")
+  branch               BranchMaster       @relation("StockItemCostBranch",  fields: [sicBranchId],  references: [brId],   onUpdate: Cascade, onDelete: Restrict, map: "fk_sic_branch")
+  item                 ItemMaster         @relation("StockItemCostItem",    fields: [sicItemId],    references: [itemId], onUpdate: Cascade, onDelete: Restrict, map: "fk_sic_item")
+  baseUom              ItemUnitConversion @relation("StockItemCostBaseUom", fields: [sicBaseUomId], references: [iucId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_sic_base_uom")
+
+  @@map("stock_item_cost")
+  @@schema("stock")
+}
+
+// ----- prisma/stocks/stockLedger.prisma -----
+/// stock.stock_ledger — every movement. The truth.
+///
+/// APPEND-ONLY. Never updated in place, never deleted. A cancelled bill does
+/// not remove its ledger rows, it writes REVERSING ones — because a stock
+/// figure that can change retrospectively is a stock figure nobody can
+/// reconcile, and because in an offline chain the cancellation may arrive
+/// after the day was closed. A BEFORE DELETE trigger raises rather than
+/// trusting convention, so Prisma's delete/deleteMany WILL fail here by
+/// design; smlIsDeleted exists for the soft-delete predicate the partial
+/// indexes are built on, not as an escape hatch.
+///
+/// GRAIN — one row per (source document, line, split, godown, lot, direction).
+/// That is exactly the grain SaleBillItem already emits (sbiLineNo ×
+/// sbiSplitNo × sbiGodownId × sbiStockId), so posting a bill is a straight
+/// INSERT ... SELECT with no reshaping and no aggregation. A transfer writes
+/// TWO rows, not one: TRANSFER_OUT at the source and TRANSFER_IN at the
+/// destination, each with its own godown — and they are not simultaneous, see
+/// stock_transit.
+///
+/// THERE IS NO RUNNING-BALANCE COLUMN, on purpose. "Balance after this
+/// movement" is the classic stock-ledger trap: two tills posting concurrently
+/// must serialise on it, a back-dated entry invalidates every row after it,
+/// and an offline chain has no global order to compute it in. The balance is
+/// stock_balance's job and nothing else's.
+///
+/// FREE QUANTITY IS STOCK. Free goods sit on the shelf and get sold, so they
+/// are counted in on-hand — but kept in their own columns, because margin
+/// reporting must separate what was paid for from what was not.
+/// smlSignedBaseQty adds both and applies the direction; it is the one column
+/// every quantity report sums, and the only one stock_balance reads.
+///
+/// PARTITIONED BY LIST (sml_acc_year), hence the composite primary key
+/// (smlId, smlAccYear). A new fiscal year needs its partitions created before
+/// the first save of that year, or EVERY insert fails:
+///     SELECT public.ensure_acc_year_partitions('2027-2028');
+/// That helper is the ONE place a year is opened — the same call that
+/// provisions sale_bill, sale_bill_item, acc_tender_detail, txn_status_log and
+/// the rest. It does NOT know about this table until the migration that
+/// creates stock_ledger extends it (CREATE OR REPLACE, restating every
+/// existing block in order, as 20260810140000 and 20260811080000 did), so
+/// extending it is part of adding this table, not a follow-up.
+///
+/// WRITE RULES:
+///   * NEVER write smlSignedBaseQty — GENERATED ALWAYS ... STORED, and
+///     Postgres rejects any write to it.
+///   * Quantities are MAGNITUDES; the sign lives in smlDirection alone. A
+///     negative qty with a negative direction is a silent double negation, so
+///     ck_sml_qty_sign refuses it.
+///   * smlAccYear is this ROW's year; smlSrcAccYear is the DOCUMENT's, and
+///     they differ legitimately — a sale return in April against a March bill
+///     posts here in the new year.
+///   * On an outward, the cost columns are what the stock cost US (the COGS),
+///     taken from the lot or the moving average per stpValuationMethod —
+///     NEVER the selling price. The selling price goes in smlDocRate.
+///
+/// Vocabularies, enforced by CHECK constraints in the migration:
+///   smlTxnType    OPENING | PURCHASE | PURCHASE_RETURN | SALE | SALE_RETURN |
+///                 TRANSFER_OUT | TRANSFER_IN | ADJUST_PLUS | ADJUST_MINUS |
+///                 PHYSICAL_PLUS | PHYSICAL_MINUS | DAMAGE | EXPIRY_WRITEOFF |
+///                 REPACK_IN | REPACK_OUT | BUCKET_IN | BUCKET_OUT |
+///                 GIFT_ISSUE | SAMPLE_ISSUE
+///   smlDirection  1 (in) | -1 (out) — redundant against smlTxnType on
+///                 purpose: a report that sums must not have to know that
+///                 EXPIRY_WRITEOFF is an out
+///   smlBucket     SALEABLE | DAMAGED | QUARANTINE | EXPIRED | SAMPLE —
+///                 saleable stock and damaged stock are both stock, and must
+///                 never be added together by accident
+///   smlSrcModule  SALES | PURCHASE | STOCK | LOYALTY | PRODUCTION | MIGRATION
+/// plus ck_sml_acc_year (YYYY-YYYY, second = first + 1), ck_sml_qty_nonzero,
+/// ck_sml_to_base_factor and ck_sml_reversal.
+///
+/// DB-only objects Prisma cannot express — hand-authored in the migration and
+/// deliberately NOT declared here. EVERY index on this table carries a WHERE,
+/// and Prisma ignores indexes with predicates:
+///   ux_sml_source     POSTING IDEMPOTENCY. The same bill posted twice — a
+///                     retry after a timeout, a sync replaying a day — must
+///                     not move stock twice. Direction is in the key because a
+///                     transfer legitimately writes an OUT and an IN for one
+///                     source line. Partial on NOT deleted AND NOT reversal.
+///   ux_sml_reversal   REVERSAL IDEMPOTENCY. ux_sml_source excludes reversal
+///                     rows, which would otherwise have no unique constraint
+///                     at all; fn_svh_cancel guards with a NOT EXISTS, but
+///                     that is read-then-write and two concurrent cancels
+///                     could both pass it and reverse the same movement twice.
+///   ix_sml_item_date  the item ledger screen
+///   ix_sml_balance_scope  fn_sbl_rebuild and every as-on-date recomputation
+///   ix_sml_lot        lot movement history: the recall trail
+///   ix_sml_source_doc drilling from a document into what it moved
+///   ix_sml_demand     fn_sdd_rebuild: the sales-only slice, by day
+model StockLedger {
+  smlId                String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("sml_id")
+  smlCompanyId         String    @db.Uuid                            @map("sml_company_id")
+  smlBranchId          String    @db.Uuid                            @map("sml_branch_id")
+  smlTenantId          String?   @db.Uuid                            @map("sml_tenant_id")
+  /// The PARTITION KEY, and half the primary key. See PARTITIONED BY above.
+  smlAccYear           String    @db.Char(9)                         @map("sml_acc_year")
+
+  /// Where the stock physically is — an inventory.godown_locations(gdl_id),
+  /// the self-referencing WAREHOUSE/ZONE/AISLE/RACK/SHELF/BIN tree. Never
+  /// nullable: an unlocated movement cannot be reversed, counted or
+  /// transferred. BranchMaster.brDefaultGodownId resolves it for screens with
+  /// no godown selector.
+  smlGodownId          String    @db.Uuid                            @map("sml_godown_id")
+
+  // ── What moved ──────────────────────────────────────────────────────────
+  smlItemId            String    @db.Uuid                            @map("sml_item_id")
+  smlLotId             String    @db.Uuid                            @map("sml_lot_id")
+  /// The unit the document was keyed in, and the item's base unit. BOTH are
+  /// item_unit_conversion(iuc_id), NEVER item_unit_master(unit_id) — the stock
+  /// a bill consumes must be keyed the same way the bill keys it
+  /// (SaleBillItem.sbiItemUnitId). Both stored so a report can show "3 cases"
+  /// and still sum pieces.
+  smlUomId             String    @db.Uuid                            @map("sml_uom_id")
+  smlBaseUomId         String    @db.Uuid                            @map("sml_base_uom_id")
+  smlToBaseFactor      Decimal   @default(1) @db.Decimal(18, 6)      @map("sml_to_base_factor")
+
+  // ── Which document caused it ────────────────────────────────────────────
+  /// The (module, docType, docId) triple used by acc_tender_detail,
+  /// txn_status_log, txn_hold and acc_voucher_doc_register. A new document type
+  /// that moves stock costs one CHECK value and nothing else.
+  smlSrcModule         String    @db.VarChar(20)                     @map("sml_src_module")
+  smlSrcDocType        String    @db.VarChar(30)                     @map("sml_src_doc_type")
+  smlSrcDocId          String    @db.Uuid                            @map("sml_src_doc_id")
+  /// The DOCUMENT's own year, which is not always smlAccYear.
+  smlSrcAccYear        String?   @db.Char(9)                         @map("sml_src_acc_year")
+  smlSrcRefno          String?   @db.VarChar(100)                    @map("sml_src_refno")
+  smlLineNo            Int       @default(1)                         @map("sml_line_no")
+  smlSplitNo           Int       @default(1)                         @map("sml_split_no")
+
+  // ── The movement itself ─────────────────────────────────────────────────
+  smlTxnType           String    @db.VarChar(30)                     @map("sml_txn_type")
+  /// +1 in, -1 out. See the vocabulary note above for why this is redundant
+  /// against smlTxnType on purpose.
+  smlDirection         Int       @db.SmallInt                        @map("sml_direction")
+  smlBucket            String    @default("SALEABLE") @db.VarChar(20) @map("sml_bucket")
+
+  smlDocDate           DateTime  @db.Date                            @map("sml_doc_date")
+  smlDocDatetime       DateTime  @default(now()) @db.Timestamptz(6)  @map("sml_doc_datetime")
+  smlPostedOn          DateTime  @default(now()) @db.Timestamptz(6)  @map("sml_posted_on")
+
+  // ── Quantity, as keyed and in base ──────────────────────────────────────
+  smlQty               Decimal   @default(0) @db.Decimal(18, 6)      @map("sml_qty")
+  smlBaseQty           Decimal   @default(0) @db.Decimal(18, 6)      @map("sml_base_qty")
+  smlFreeQty           Decimal   @default(0) @db.Decimal(18, 6)      @map("sml_free_qty")
+  smlFreeBaseQty       Decimal   @default(0) @db.Decimal(18, 6)      @map("sml_free_base_qty")
+  smlWeightQty         Decimal   @default(0) @db.Decimal(18, 6)      @map("sml_weight_qty")
+
+  /// GENERATED ALWAYS ... STORED as direction * (baseQty + freeBaseQty). The
+  /// one column stock_balance reads and every quantity report sums. Read-only,
+  /// never sent.
+  smlSignedBaseQty     Decimal?  @default(dbgenerated()) @db.Decimal(18, 6) @map("sml_signed_base_qty")
+
+  // ── Value ───────────────────────────────────────────────────────────────
+  // On an inward these are what it cost. On an outward they are the COGS.
+  smlCostRate          Decimal   @default(0) @db.Decimal(18, 6)      @map("sml_cost_rate")
+  smlCostValue         Decimal   @default(0) @db.Decimal(18, 2)      @map("sml_cost_value")
+  smlCostRateWot       Decimal   @default(0) @db.Decimal(18, 6)      @map("sml_cost_rate_wot")
+  smlCostValueWot      Decimal   @default(0) @db.Decimal(18, 2)      @map("sml_cost_value_wot")
+  smlLandedRate        Decimal   @default(0) @db.Decimal(18, 6)      @map("sml_landed_rate")
+  smlLandedValue       Decimal   @default(0) @db.Decimal(18, 2)      @map("sml_landed_value")
+  /// What the DOCUMENT said, which is the selling price on a sale. Kept beside
+  /// cost so margin needs no join back to SaleBillItem.
+  smlDocRate           Decimal   @default(0) @db.Decimal(18, 6)      @map("sml_doc_rate")
+  smlDocRateWot        Decimal   @default(0) @db.Decimal(18, 6)      @map("sml_doc_rate_wot")
+  smlDocAmountWot      Decimal   @default(0) @db.Decimal(18, 2)      @map("sml_doc_amount_wot")
+  /// Snapshots from the lot, so batch/MRP-wise reports read one table.
+  smlMrp               Decimal?  @db.Decimal(18, 6)                  @map("sml_mrp")
+  smlBatchNo           String?   @db.VarChar(100)                    @map("sml_batch_no")
+  smlExpiryDate        DateTime? @db.Date                            @map("sml_expiry_date")
+
+  // ── Reversal ────────────────────────────────────────────────────────────
+  /// smlReversesId points at the smlId being reversed. It carries NO foreign
+  /// key — the target lives in another partition as often as not, and a
+  /// composite FK back into a partitioned parent would buy nothing that
+  /// ux_sml_reversal does not already guarantee. Both columns move together
+  /// per ck_sml_reversal.
+  smlIsReversal        Boolean   @default(false)                     @map("sml_is_reversal")
+  smlReversesId        String?   @db.Uuid                            @map("sml_reverses_id")
+
+  smlReasonId          String?   @db.Uuid                            @map("sml_reason_id")
+  /// Customer or supplier, per smlSrcModule. Polymorphic, so no foreign key.
+  smlPartyId           String?   @db.Uuid                            @map("sml_party_id")
+  smlNarration         String?   @db.Text                            @map("sml_narration")
+
+  smlIsDeleted         Boolean   @default(false)                     @map("sml_is_deleted")
+  smlSyncDate          DateTime? @db.Timestamptz(6)                  @map("sml_sync_date")
+  smlCreatedOn         DateTime  @default(now()) @db.Timestamptz(6)  @map("sml_created_on")
+  smlCreatedBy         String?   @db.Uuid                            @map("sml_created_by")
+
+  // ── Relations ───────────────────────────────────────────────────────────
+  // There is no smlModifiedOn/By pair: the table is append-only. smlCreatedBy
+  // carries no foreign key in the migration, so it stays scalar.
+  company              Company            @relation("StockLedgerCompany", fields: [smlCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_sml_company")
+  branch               BranchMaster       @relation("StockLedgerBranch",  fields: [smlBranchId],  references: [brId],   onUpdate: Cascade, onDelete: Restrict, map: "fk_sml_branch")
+  godown               GodownLocation     @relation("StockLedgerGodown",  fields: [smlGodownId],  references: [gdlId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_sml_godown")
+  item                 ItemMaster         @relation("StockLedgerItem",    fields: [smlItemId],    references: [itemId], onUpdate: Cascade, onDelete: Restrict, map: "fk_sml_item")
+  lot                  StockLot           @relation("StockLedgerLot",     fields: [smlLotId],     references: [sltId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_sml_lot")
+  uom                  ItemUnitConversion @relation("StockLedgerUom",     fields: [smlUomId],     references: [iucId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_sml_uom")
+  baseUom              ItemUnitConversion @relation("StockLedgerBaseUom", fields: [smlBaseUomId], references: [iucId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_sml_base_uom")
+  reason               StockReasonMaster? @relation("StockLedgerReason",  fields: [smlReasonId],  references: [srmId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_sml_reason")
+
+  @@id([smlId, smlAccYear], map: "pk_stock_ledger")
+  @@map("stock_ledger")
+  @@schema("stock")
+}
+
+// ----- prisma/stocks/stockLot.prisma -----
+/// stock.stock_lot — the IDENTITY of a holding. Never its quantity.
+///
+/// A lot is "this item, this batch, this MRP, this selling price, this expiry,
+/// from this supplier". Quantity lives in stock_balance, movement in
+/// StockLedger. Splitting identity from quantity is what lets the same lot be
+/// held in four godowns across three branches without four truths about its
+/// expiry date.
+///
+/// COMPANY-SCOPED, DELIBERATELY. A lot is NOT per branch. Transfer stock from
+/// one branch to another and it is the same batch, the same expiry, the same
+/// supplier and — critically — the same AGE. A per-branch lot would reset the
+/// ageing clock at every transfer and let a chain hide ninety-day-old stock by
+/// moving it. Branch and godown live on stock_balance, which carries its own
+/// sbl_first_in_date for "how long has it been on THIS shelf".
+///
+/// THE NULL-NORMALISED KEY. Every tracked dimension is a nullable column with a
+/// GENERATED companion that substitutes a sentinel when it is NULL:
+///
+///     tracked:      sltMrp = 120.00  →  sltKeyMrp = 120.00
+///     not tracked:  sltMrp = NULL    →  sltKeyMrp = -1
+///
+/// ux_slt_identity is built over the COMPANIONS, never the originals, because
+/// a UNIQUE index treats every NULL as distinct — which would let the same
+/// untracked item accrete a new lot on every single receipt, for ever. So an
+/// item tracked by nothing has exactly ONE lot with all six identity columns
+/// NULL, and there is no "non-batch path" anywhere in the engine.
+///
+/// Sentinels are impossible values, not merely unlikely: '~' sorts after every
+/// alphanumeric batch number, -1 cannot be a price, 0001-01-01 cannot be an
+/// expiry, and the nil uuid is not a supplier.
+///
+/// SUPPLIER IS ON THE LOT, not derived by tracing consumption back to a
+/// purchase. The same batch number received from two suppliers is two lots.
+/// That costs a few more rows and buys exact supplier-wise stock, exact
+/// supplier-wise ageing, and a recall that names the right supplier without a
+/// single join back through the ledger.
+///
+/// WRITE RULES:
+///   * NEVER write sltKeyBatch / sltKeyMrp / sltKeySp / sltKeyExpiry /
+///     sltKeySerial / sltKeySupplier — all six are GENERATED ALWAYS ... STORED
+///     and Postgres rejects any write to them. Write the nullable originals.
+///   * NEVER write sltTotalOnHand. It is TRIGGER-MAINTAINED from StockLedger
+///     by fn_sml_apply(); stock_balance owns the per-godown truth it sums.
+///   * sltTrackSignature is stamped from the resolved StockTrackPolicy at
+///     creation, so a policy change tomorrow cannot re-key yesterday's stock.
+///
+/// Vocabularies, enforced by CHECK constraints in the migration:
+///   sltStatus  ACTIVE | CLOSED | BLOCKED | EXPIRED
+/// plus ck_slt_expiry_order, ck_slt_prices, ck_slt_batch_shape,
+/// ck_slt_serial_shape and ck_slt_inward_src (the source triple is
+/// all-or-nothing, as everywhere else in the chain).
+///
+/// DB-only objects Prisma cannot express — hand-authored in the migration and
+/// deliberately NOT declared here (every one is partial, and ux_slt_identity
+/// is over generated columns as well):
+///   ux_slt_identity  THE index of the stock engine — the one that collapses
+///                    batch-wise, MRP-wise, sale-price-wise and none into one
+///                    mechanism
+///   ix_slt_expiry    FEFO and near-expiry
+///   ix_slt_inward    FIFO / LIFO, and the chain-wide ageing report
+///   ix_slt_supplier  supplier-wise stock and supplier recall
+///   ix_slt_batch_no  "who has any of batch AX-4471?"
+///   ix_slt_mrp       "how much at 120, how much at the old 110"
+model StockLot {
+  sltId                 String    @id(map: "pk_stock_lot") @default(dbgenerated("uuidv7()")) @db.Uuid @map("slt_id")
+  sltCompanyId          String    @db.Uuid                            @map("slt_company_id")
+  sltTenantId           String?   @db.Uuid                            @map("slt_tenant_id")
+
+  sltItemId             String    @db.Uuid                            @map("slt_item_id")
+  /// The item's BASE unit — an item_unit_conversion(iuc_id), NEVER an
+  /// item_unit_master(unit_id). Every quantity in this engine is stored in
+  /// this unit as well as in the unit it was keyed in.
+  sltBaseUomId          String    @db.Uuid                            @map("slt_base_uom_id")
+
+  // ── Identity. NULL means "not significant for this item". ───────────────
+  sltBatchNo            String?   @db.VarChar(100)                    @map("slt_batch_no")
+  sltMfgBatchNo         String?   @db.VarChar(100)                    @map("slt_mfg_batch_no")
+  sltMrp                Decimal?  @db.Decimal(18, 6)                  @map("slt_mrp")
+  sltSalePrice          Decimal?  @db.Decimal(18, 6)                  @map("slt_sale_price")
+  sltMfgDate            DateTime? @db.Date                            @map("slt_mfg_date")
+  sltExpiryDate         DateTime? @db.Date                            @map("slt_expiry_date")
+  sltSerialNo           String?   @db.VarChar(100)                    @map("slt_serial_no")
+  sltSupplierId         String?   @db.Uuid                            @map("slt_supplier_id")
+
+  // ── The key ux_slt_identity is actually built on ────────────────────────
+  // GENERATED ALWAYS ... STORED. Read-only, never sent.
+  sltKeyBatch           String?   @default(dbgenerated()) @db.VarChar(100) @map("slt_key_batch")
+  sltKeyMrp             Decimal?  @default(dbgenerated()) @db.Decimal(18, 6) @map("slt_key_mrp")
+  sltKeySp              Decimal?  @default(dbgenerated()) @db.Decimal(18, 6) @map("slt_key_sp")
+  sltKeyExpiry          DateTime? @default(dbgenerated()) @db.Date       @map("slt_key_expiry")
+  sltKeySerial          String?   @default(dbgenerated()) @db.VarChar(100) @map("slt_key_serial")
+  sltKeySupplier        String?   @default(dbgenerated()) @db.Uuid       @map("slt_key_supplier")
+
+  /// Which StockTrackPolicy flags were live when this lot was created —
+  /// B/M/S/E/R/P, 'N' when nothing is tracked. A policy change tomorrow must
+  /// not make yesterday's lots unreadable.
+  sltTrackSignature     String    @default("N") @db.VarChar(8)        @map("slt_track_signature")
+
+  // ── Where it came from, and when ────────────────────────────────────────
+  /// The ageing anchor for the CHAIN as a whole (StockTrackPolicy
+  /// stpAgeingBasis = INWARD_DATE reads this). A godown's own "how long has
+  /// this sat HERE" reads stock_balance.sbl_first_in_date instead.
+  sltFirstInwardDate    DateTime  @default(dbgenerated("CURRENT_DATE")) @db.Date @map("slt_first_inward_date")
+  sltFirstInwardBranch  String?   @db.Uuid                            @map("slt_first_inward_branch")
+  /// The (module, docType, docId) triple, all-or-nothing per ck_slt_inward_src.
+  sltInwardSrcModule    String?   @db.VarChar(20)                     @map("slt_inward_src_module")
+  sltInwardSrcDocType   String?   @db.VarChar(30)                     @map("slt_inward_src_doc_type")
+  sltInwardSrcDocId     String?   @db.Uuid                            @map("slt_inward_src_doc_id")
+  sltInwardSrcAccYear   String?   @db.Char(9)                         @map("slt_inward_src_acc_year")
+  sltInwardRefno        String?   @db.VarChar(100)                    @map("slt_inward_refno")
+
+  // ── Cost, as received ───────────────────────────────────────────────────
+  /// sltCostRate is THIS lot's own cost, which is what makes FIFO and
+  /// LOT_ACTUAL valuation a read rather than a replay. The moving weighted
+  /// average is maintained in parallel in stock_item_cost. Both, always, so
+  /// stpValuationMethod selects an answer instead of triggering a rebuild.
+  sltPurchaseRate       Decimal   @default(0) @db.Decimal(18, 6)      @map("slt_purchase_rate")
+  sltCostRate           Decimal   @default(0) @db.Decimal(18, 6)      @map("slt_cost_rate")
+  sltCostRateWot        Decimal   @default(0) @db.Decimal(18, 6)      @map("slt_cost_rate_wot")
+  sltLandedRate         Decimal   @default(0) @db.Decimal(18, 6)      @map("slt_landed_rate")
+  sltTaxRate            Decimal   @default(0) @db.Decimal(9, 3)       @map("slt_tax_rate")
+
+  // ── Lifecycle ───────────────────────────────────────────────────────────
+  /// CLOSED is set by the engine when the last unit leaves; BLOCKED and
+  /// EXPIRED are business decisions that stop the lot being issued.
+  sltStatus             String    @default("ACTIVE") @db.VarChar(20)  @map("slt_status")
+  sltClosedOn           DateTime? @db.Timestamptz(6)                  @map("slt_closed_on")
+  sltBlockedReason      String?   @db.VarChar(250)                    @map("slt_blocked_reason")
+
+  /// Chain-wide total across every branch and godown. TRIGGER-MAINTAINED from
+  /// StockLedger by fn_sml_apply(). NEVER written from application code.
+  sltTotalOnHand        Decimal   @default(0) @db.Decimal(18, 6)      @map("slt_total_on_hand")
+
+  sltRowVersion         BigInt    @default(1)                         @map("slt_row_version")
+  sltRemarks            String?   @db.VarChar(250)                    @map("slt_remarks")
+  sltIsActive           Boolean   @default(true)                      @map("slt_is_active")
+  sltIsDeleted          Boolean   @default(false)                     @map("slt_is_deleted")
+  sltSyncDate           DateTime? @db.Timestamptz(6)                  @map("slt_sync_date")
+  sltCreatedOn          DateTime  @default(now()) @db.Timestamptz(6)  @map("slt_created_on")
+  sltCreatedBy          String?   @db.Uuid                            @map("slt_created_by")
+  sltModifiedOn         DateTime? @db.Timestamptz(6)                  @map("slt_modified_on")
+  sltModifiedBy         String?   @db.Uuid                            @map("slt_modified_by")
+
+  // ── Relations ───────────────────────────────────────────────────────────
+  // sltCreatedBy / sltModifiedBy carry NO foreign key in the migration, so
+  // they stay scalar here.
+  company               Company            @relation("StockLotCompany",       fields: [sltCompanyId],         references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_slt_company")
+  item                  ItemMaster         @relation("StockLotItem",          fields: [sltItemId],            references: [itemId], onUpdate: Cascade, onDelete: Restrict, map: "fk_slt_item")
+  baseUom               ItemUnitConversion @relation("StockLotBaseUom",       fields: [sltBaseUomId],         references: [iucId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_slt_base_uom")
+  supplier              Supplier?          @relation("StockLotSupplier",      fields: [sltSupplierId],        references: [supId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_slt_supplier")
+  firstInwardBranch     BranchMaster?      @relation("StockLotFirstInwardBranch", fields: [sltFirstInwardBranch], references: [brId], onUpdate: Cascade, onDelete: Restrict, map: "fk_slt_branch")
+  ledgerEntries         StockLedger[]      @relation("StockLedgerLot")
+  balances              StockBalance[]     @relation("StockBalanceLot")
+  voucherItems          StockVoucherItem[] @relation("StockVoucherItemLot")
+  reservations          StockReservation[] @relation("StockReservationLot")
+  transits              StockTransit[]     @relation("StockTransitLot")
+  valuationSnaps        StockValuationSnap[] @relation("StockValuationSnapLot")
+
+  @@map("stock_lot")
+  @@schema("stock")
+}
+
+// ----- prisma/stocks/stockMovementClass.prisma -----
+/// stock.stock_movement_class — fast, slow, dead.
+///
+/// THREE ORTHOGONAL CLASSIFICATIONS, because they answer different questions
+/// and a single "category A" hides two of them:
+///
+///   ABC  by VALUE        where the money is. 20% of items, 80% of value.
+///   XYZ  by VARIABILITY  how predictable. An X item can be FORECAST; a Z item
+///                        can only be BUFFERED.
+///   FSN  by FREQUENCY    how often it moves at all. Fast, Slow, Non-moving.
+///
+/// An A-Z item — high value, wildly unpredictable — is the one that ties up
+/// capital and STILL stocks out, and it is invisible to any single ranking.
+/// That combination is the whole reason there are three columns and not one.
+///
+/// COMPUTED PER PERIOD AND STORED, not derived on read. The classification of
+/// March must not change when April's sales arrive: a buyer who was told an
+/// item was dead in March needs that to still be what the system said in
+/// March. Period bounds are explicit — smcPeriodFrom / smcPeriodTo — and are
+/// part of the unique key, so monthly and quarterly runs coexist.
+///
+/// smcTurnRatio is cost of goods sold in the period over average stock held:
+/// how many times the shelf turned over, and the number a retailer actually
+/// manages by. smcDemandCv is the coefficient of variation the XYZ class is
+/// cut from, kept beside the letter so the cut can be re-examined without
+/// recomputing the period.
+///
+/// DEAD STOCK NEEDS A DATE. "Dead since November" is actionable — it dates the
+/// buying mistake and prices the liquidation; "dead" alone is not.
+/// ck_smc_dead therefore refuses a dead flag with no smcDeadSinceDate, and
+/// smcDeadValue is what is tied up, which is what makes the worklist sortable
+/// by how much it hurts.
+///
+/// smcRankInBranch and smcCumValuePerc are the working of the ABC cut, stored
+/// so the boundary between A and B can be audited rather than reproduced.
+///
+/// WRITE RULES:
+///   * This table is DERIVED, from [[StockLedger]] and [[StockValuationSnap]].
+///     Do not patch a row to change a class; fix the inputs and recompute.
+///   * The three class columns are NULLABLE — an item with no movement in the
+///     period has no honest class, and NULL says that where 'N' would be a
+///     claim.
+///
+/// Vocabularies, enforced by CHECK constraints in the migration:
+///   smcAbcClass  A | B | C     (by value)
+///   smcXyzClass  X | Y | Z     (by variability)
+///   smcFsnClass  F | S | N     (by frequency)
+/// each nullable, plus ck_smc_period (to >= from) and ck_smc_dead.
+///
+/// DB-only objects Prisma cannot express — hand-authored in the migration and
+/// deliberately NOT declared here (all three carry a WHERE):
+///   ux_smc_scope  one row per (company, branch, item, period)
+///   ix_smc_class  the classification report, and the A-Z drilldown
+///   ix_smc_dead   dead stock, worst first — the liquidation worklist
+model StockMovementClass {
+  smcId                  String    @id(map: "pk_stock_movement_class") @default(dbgenerated("uuidv7()")) @db.Uuid @map("smc_id")
+  smcCompanyId           String    @db.Uuid                          @map("smc_company_id")
+  smcBranchId            String    @db.Uuid                          @map("smc_branch_id")
+  smcTenantId            String?   @db.Uuid                          @map("smc_tenant_id")
+  smcItemId              String    @db.Uuid                          @map("smc_item_id")
+
+  /// Explicit, and part of the unique key, so monthly and quarterly runs
+  /// coexist without overwriting each other.
+  smcPeriodFrom          DateTime  @db.Date                          @map("smc_period_from")
+  smcPeriodTo            DateTime  @db.Date                          @map("smc_period_to")
+
+  /// By VALUE. NULL = no movement in the period, which is not the same claim
+  /// as a 'C'.
+  smcAbcClass            String?   @db.Char(1)                       @map("smc_abc_class")
+  /// By VARIABILITY — an X can be forecast, a Z can only be buffered.
+  smcXyzClass            String?   @db.Char(1)                       @map("smc_xyz_class")
+  /// By FREQUENCY — Fast, Slow, Non-moving.
+  smcFsnClass            String?   @db.Char(1)                       @map("smc_fsn_class")
+
+  smcVelocityQtyPerDay   Decimal   @default(0) @db.Decimal(18, 6)    @map("smc_velocity_qty_per_day")
+  smcMovementCount       Int       @default(0)                       @map("smc_movement_count")
+  smcDaysSinceLastSale   Int?                                        @map("smc_days_since_last_sale")
+  smcDaysOfCover         Decimal?  @db.Decimal(9, 2)                 @map("smc_days_of_cover")
+  /// COGS in the period over average stock held: how many times the shelf
+  /// turned over. The number a retailer actually manages by.
+  smcTurnRatio           Decimal?  @db.Decimal(9, 3)                 @map("smc_turn_ratio")
+  /// Coefficient of variation — the figure the XYZ class is cut from, kept
+  /// beside the letter so the cut can be re-examined.
+  smcDemandCv            Decimal?  @db.Decimal(9, 4)                 @map("smc_demand_cv")
+
+  smcPeriodQty           Decimal   @default(0) @db.Decimal(18, 6)    @map("smc_period_qty")
+  smcPeriodValueWot      Decimal   @default(0) @db.Decimal(18, 2)    @map("smc_period_value_wot")
+  smcAvgStockQty         Decimal   @default(0) @db.Decimal(18, 6)    @map("smc_avg_stock_qty")
+  smcAvgStockValue       Decimal   @default(0) @db.Decimal(18, 2)    @map("smc_avg_stock_value")
+  smcClosingQty          Decimal   @default(0) @db.Decimal(18, 6)    @map("smc_closing_qty")
+  smcClosingValue        Decimal   @default(0) @db.Decimal(18, 2)    @map("smc_closing_value")
+
+  /// The working of the ABC cut, stored so the A/B boundary can be audited
+  /// rather than reproduced.
+  smcRankInBranch        Int?                                        @map("smc_rank_in_branch")
+  smcCumValuePerc        Decimal?  @db.Decimal(9, 3)                 @map("smc_cum_value_perc")
+
+  /// Held, not sold, for long enough to be a decision.
+  smcDeadStockFlag       Boolean   @default(false)                   @map("smc_dead_stock_flag")
+  /// Required whenever the flag is set — "dead since November" is actionable,
+  /// "dead" is not.
+  smcDeadSinceDate       DateTime? @db.Date                          @map("smc_dead_since_date")
+  /// What is tied up. Makes the liquidation worklist sortable by how much it
+  /// hurts.
+  smcDeadValue           Decimal   @default(0) @db.Decimal(18, 2)    @map("smc_dead_value")
+
+  smcComputedOn          DateTime  @default(now()) @db.Timestamptz(6) @map("smc_computed_on")
+  smcIsDeleted           Boolean   @default(false)                   @map("smc_is_deleted")
+  smcSyncDate            DateTime? @db.Timestamptz(6)                @map("smc_sync_date")
+  smcCreatedOn           DateTime  @default(now()) @db.Timestamptz(6) @map("smc_created_on")
+
+  // ── Relations ───────────────────────────────────────────────────────────
+  // A derived table: there is no created/modified-by pair to relate.
+  company                Company      @relation("StockMovementClassCompany", fields: [smcCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_smc_company")
+  branch                 BranchMaster @relation("StockMovementClassBranch",  fields: [smcBranchId],  references: [brId],   onUpdate: Cascade, onDelete: Restrict, map: "fk_smc_branch")
+  item                   ItemMaster   @relation("StockMovementClassItem",    fields: [smcItemId],    references: [itemId], onUpdate: Cascade, onDelete: Restrict, map: "fk_smc_item")
+
+  @@map("stock_movement_class")
+  @@schema("stock")
+}
+
+// ----- prisma/stocks/stockReasonMaster.prisma -----
+/// stock.stock_reason_master — WHY stock moved when no trade document explains
+/// it. A receipt says "we bought it" and an invoice says "we sold it"; an
+/// ADJUSTMENT says nothing on its own, so it must cite a row from here.
+///
+/// This table is LOAD-BEARING, not a lookup for a dropdown label:
+///   * fn_svh_txn_map REFUSES an ADJUSTMENT that cites no reason, and refuses
+///     one whose reason is direction BOTH — a document that cannot say which
+///     way it moved is not a document. With this table empty, ADJUSTMENT
+///     cannot be posted at all.
+///   * srmDirection (IN | OUT) is what turns an ADJUSTMENT into ADJUST_PLUS or
+///     ADJUST_MINUS. BOTH is only safe where the direction comes from
+///     elsewhere — a PHYSICAL count, where the counted difference supplies it
+///     — so every BOTH row is restricted to PHYSICAL via srmAllowedTxnTypes.
+///   * srmAllowedTxnTypes empty = any movement may cite it. But when a reason
+///     names EXACTLY ONE type and the voucher is an ISSUE, fn_svh_txn_map
+///     BELIEVES the reason and posts that type: an ISSUE citing SAMPLE becomes
+///     SAMPLE_ISSUE, not a bare ADJUST_MINUS. That is the whole mechanism by
+///     which sample, gift and internal-use issues classify themselves.
+///
+/// COMPANY SCOPING is a MERGE, and this is the one place in the stock module
+/// where scoping merges. The tracking policy picks the MOST SPECIFIC row, the
+/// ageing ladder is ALL-OR-NOTHING, but reasons ADD UP: srmCompanyId NULL =
+/// SHARED with every company, and the picker shows the shared rows and the
+/// company's own together, because the user is choosing one from a list and
+/// more choices are not a contradiction. A company that defines its own row
+/// with a shared row's code OVERRIDES it — the picker hides the shared one.
+/// Nothing is copied per company. Same rule as [[StockTrackPreset]].
+///
+/// srmGlLedgerId is where the value of written-off stock lands. NULL = no auto
+/// posting, and the seed leaves every row NULL because the chart of accounts
+/// is a per-company question. Nothing in the stock engine reads it yet.
+///
+/// WRITE RULES:
+///   * srmCode is the stable identity, unique per company (or per SHARED),
+///     [A-Za-z0-9_-] only — enforced by ck_srm_code_shape.
+///   * srmAllowedTxnTypes is a Postgres text[] with DEFAULT '{}'. Prisma
+///     scalar lists REJECT null and report it as a missing-relation error, so
+///     normalise an absent value to [] in the DTO — never pass null.
+///
+/// Vocabulary, enforced by a CHECK constraint in the migration:
+///   srmDirection  IN | OUT | BOTH
+///
+/// DB-only objects Prisma cannot express — hand-authored in the migration and
+/// deliberately NOT declared here (both carry a WHERE, and Prisma ignores
+/// indexes with predicates):
+///   ux_srm_code   unique on (COALESCE(company, nil uuid), code) WHERE NOT
+///                 deleted — COALESCEd because a plain unique index treats
+///                 every NULL as distinct, which would let the seed insert
+///                 SHORTAGE twice. Uniqueness on this path is app-side.
+///   ix_srm_list   the picker's list shape, partial on active + not deleted.
+model StockReasonMaster {
+  srmId                String    @id(map: "pk_stock_reason_master") @default(dbgenerated("uuidv7()")) @db.Uuid @map("srm_id")
+
+  /// NULL = SHARED with every company; a company row with the same code
+  /// overrides the shared one in the picker.
+  srmCompanyId         String?   @db.Uuid                                     @map("srm_company_id")
+  srmCode              String    @db.VarChar(30)                              @map("srm_code")
+  srmName              String    @db.VarChar(150)                             @map("srm_name")
+
+  /// Which movements may cite it. Empty array = any. Kept as text[] rather
+  /// than a child table because it is a filter for a dropdown, not a rule
+  /// anybody reports on. NEVER null — see WRITE RULES above.
+  srmAllowedTxnTypes   String[]  @default([])                                 @map("srm_allowed_txn_types")
+  /// IN, OUT or BOTH — stops "damaged" appearing on a receipt screen.
+  srmDirection         String    @default("BOTH") @db.VarChar(10)             @map("srm_direction")
+
+  srmRequireRemarks    Boolean   @default(false)                              @map("srm_require_remarks")
+  /// Where the value goes when stock is written off. NULL = no auto posting.
+  srmGlLedgerId        String?   @db.Uuid                                     @map("srm_gl_ledger_id")
+  srmSortOrder         Int       @default(0)                                  @map("srm_sort_order")
+
+  srmRemarks           String?   @db.VarChar(250)                             @map("srm_remarks")
+  srmIsActive          Boolean   @default(true)                               @map("srm_is_active")
+  srmIsDeleted         Boolean   @default(false)                              @map("srm_is_deleted")
+  srmSyncDate          DateTime? @db.Timestamptz(6)                           @map("srm_sync_date")
+  srmCreatedOn         DateTime  @default(now()) @db.Timestamptz(6)           @map("srm_created_on")
+  srmCreatedBy         String?   @db.Uuid                                     @map("srm_created_by")
+  srmModifiedOn        DateTime? @db.Timestamptz(6)                           @map("srm_modified_on")
+  srmModifiedBy        String?   @db.Uuid                                     @map("srm_modified_by")
+
+  // ── Relations ───────────────────────────────────────────────────────────
+  // Only srm_company_id and srm_gl_ledger_id carry a real FK in the
+  // migration; srm_created_by / srm_modified_by do not, so they stay plain
+  // uuid columns here rather than inventing a constraint the DB lacks.
+  company              Company?        @relation("StockReasonMasterCompany",  fields: [srmCompanyId],  references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_srm_company")
+  glLedger             AccLedgerMaster? @relation("StockReasonMasterGlLedger", fields: [srmGlLedgerId], references: [ledId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_srm_gl_ledger")
+  ledgerEntries        StockLedger[]    @relation("StockLedgerReason")
+  vouchers             StockVoucher[]     @relation("StockVoucherReason")
+  voucherItems         StockVoucherItem[] @relation("StockVoucherItemReason")
+
+  @@map("stock_reason_master")
+  @@schema("stock")
+}
+
+// ----- prisma/stocks/stockReorderPolicy.prisma -----
+/// stock.stock_reorder_policy — the SETTINGS a replenishment decision is made
+/// from. One row per item per location.
+///
+/// srpGodownId NULL = THE WHOLE BRANCH, however many godowns it operates. A
+/// shop keeps one reorder level for an item and does not care whether the
+/// units are on the shelf or in the back store; a warehouse that does care
+/// adds a godown-specific row beside it. ux_srp_scope COALESCEs the godown to
+/// the nil uuid, because a plain unique index treats every NULL as distinct
+/// and would let the same branch-wide row be inserted twice.
+///
+/// srpSource IS LOAD-BEARING, not a label. MANUAL means a human set these
+/// numbers and the nightly job MUST NOT overwrite them: a buyer who has
+/// deliberately raised a level for a festival will not do it twice, and a job
+/// that silently reverts it destroys trust in the whole module. COMPUTED rows
+/// are the job's to maintain, and srpComputedOn says when it last did.
+///
+/// THE NUMBERS ARE SETTINGS, NOT ANSWERS. What to order today is
+/// [[StockForecast]].sfcSuggestedOrderQty, computed from these plus actual
+/// demand. This table holds only what a human decided about the item: how low
+/// it may go, how much to buy, how long the supplier takes, and how sure we
+/// want to be.
+///
+/// srpServiceLevelPerc is the probability of NOT stocking out during lead
+/// time that srpSafetyStock is sized for. 95.000 is the usual retail answer,
+/// and it is strictly between 0 and 100 — 100% service means infinite safety
+/// stock, which ck_srp_service_level refuses rather than letting a job compute
+/// it.
+///
+/// srpLeadTimeSdDays is the standard deviation of the lead time, and it is
+/// what makes safety stock honest: an item whose supplier takes 3 days ± 1 and
+/// an item whose supplier takes 3 days ± 6 need very different buffers, and
+/// only the second figure tells them apart.
+///
+/// srpMoq and srpPackMultiple are the supplier's constraints, applied AFTER
+/// the maths — a suggestion of 17 against a case of 12 becomes 24, and
+/// pretending otherwise produces orders no supplier will accept.
+/// srpShelfCapacityQty is the opposite constraint: no point ordering more than
+/// the shelf holds.
+///
+/// WRITE RULES:
+///   * srpUomId is part of the key: min/max/reorder are expressed in the unit
+///     a buyer thinks in ("reorder at 4 cases"), NOT in the base unit.
+///   * A max of 0 means NO CEILING — ck_srp_levels exempts it from the
+///     "max >= min" rule rather than forcing a sentinel.
+///   * srpAutoReplenish arms the sweep that raises orders without a human. It
+///     is off by default, and it should stay off until the forecast for that
+///     item has been watched for a while.
+///
+/// Vocabulary, enforced by a CHECK constraint in the migration:
+///   srpSource  MANUAL | COMPUTED
+/// plus ck_srp_levels, ck_srp_lead_time, ck_srp_service_level, ck_srp_pack
+/// (a pack multiple of 0 would divide by zero) and ck_srp_review.
+///
+/// DB-only objects Prisma cannot express — hand-authored in the migration and
+/// deliberately NOT declared here (all three carry a WHERE, and ux_srp_scope
+/// is over an expression as well):
+///   ux_srp_scope  one policy per item per location, godown COALESCEd to the
+///                 nil uuid so the branch-wide row has something to be unique
+///                 against. Uniqueness on this path is app-side.
+///   ix_srp_item   the item's policies across branches
+///   ix_srp_auto   the auto-replenishment sweep
+model StockReorderPolicy {
+  srpId                  String    @id(map: "pk_stock_reorder_policy") @default(dbgenerated("uuidv7()")) @db.Uuid @map("srp_id")
+  srpCompanyId           String    @db.Uuid                          @map("srp_company_id")
+  srpBranchId            String    @db.Uuid                          @map("srp_branch_id")
+  /// NULL = the whole branch, however many godowns it operates.
+  srpGodownId            String?   @db.Uuid                          @map("srp_godown_id")
+  srpItemId              String    @db.Uuid                          @map("srp_item_id")
+  /// The unit the buyer thinks in — an item_unit_conversion(iuc_id). Every
+  /// quantity below is in THIS unit, not the base unit.
+  srpUomId               String    @db.Uuid                          @map("srp_uom_id")
+
+  srpMinQty              Decimal   @default(0) @db.Decimal(18, 6)    @map("srp_min_qty")
+  /// 0 = NO CEILING, exempted from the "max >= min" rule.
+  srpMaxQty              Decimal   @default(0) @db.Decimal(18, 6)    @map("srp_max_qty")
+  srpReorderLevel        Decimal   @default(0) @db.Decimal(18, 6)    @map("srp_reorder_level")
+  srpReorderQty          Decimal   @default(0) @db.Decimal(18, 6)    @map("srp_reorder_qty")
+  srpSafetyStock         Decimal   @default(0) @db.Decimal(18, 6)    @map("srp_safety_stock")
+
+  srpLeadTimeDays        Decimal   @default(0) @db.Decimal(9, 3)     @map("srp_lead_time_days")
+  /// The standard deviation of the lead time — what tells "3 days ± 1" apart
+  /// from "3 days ± 6", and the only thing that makes safety stock honest.
+  srpLeadTimeSdDays      Decimal   @default(0) @db.Decimal(9, 3)     @map("srp_lead_time_sd_days")
+  srpReviewPeriodDays    Int       @default(7)                       @map("srp_review_period_days")
+  /// The probability of not stocking out during lead time that the safety
+  /// stock is sized for. 95.000 is the usual retail answer; strictly between
+  /// 0 and 100, because 100% service means infinite stock.
+  srpServiceLevelPerc    Decimal   @default(95) @db.Decimal(9, 3)    @map("srp_service_level_perc")
+
+  /// The supplier's constraints, applied AFTER the maths.
+  srpMoq                 Decimal   @default(0) @db.Decimal(18, 6)    @map("srp_moq")
+  srpPackMultiple        Decimal   @default(1) @db.Decimal(18, 6)    @map("srp_pack_multiple")
+  /// The opposite constraint: no point ordering more than the shelf holds.
+  srpShelfCapacityQty    Decimal   @default(0) @db.Decimal(18, 6)    @map("srp_shelf_capacity_qty")
+  srpPreferredSupplierId String?   @db.Uuid                          @map("srp_preferred_supplier_id")
+
+  /// MANUAL means a human set these and a job MUST NOT overwrite them.
+  srpSource              String    @default("MANUAL") @db.VarChar(20) @map("srp_source")
+  srpComputedOn          DateTime? @db.Timestamptz(6)                @map("srp_computed_on")
+  /// Arms the sweep that raises orders without a human. Off by default.
+  srpAutoReplenish       Boolean   @default(false)                   @map("srp_auto_replenish")
+
+  srpRemarks             String?   @db.VarChar(250)                  @map("srp_remarks")
+  srpIsActive            Boolean   @default(true)                    @map("srp_is_active")
+  srpIsDeleted           Boolean   @default(false)                   @map("srp_is_deleted")
+  srpSyncDate            DateTime? @db.Timestamptz(6)                @map("srp_sync_date")
+  srpCreatedOn           DateTime  @default(now()) @db.Timestamptz(6) @map("srp_created_on")
+  srpCreatedBy           String?   @db.Uuid                          @map("srp_created_by")
+  srpModifiedOn          DateTime? @db.Timestamptz(6)                @map("srp_modified_on")
+  srpModifiedBy          String?   @db.Uuid                          @map("srp_modified_by")
+
+  // ── Relations ───────────────────────────────────────────────────────────
+  company                Company            @relation("StockReorderPolicyCompany",  fields: [srpCompanyId],           references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_srp_company")
+  branch                 BranchMaster       @relation("StockReorderPolicyBranch",   fields: [srpBranchId],            references: [brId],   onUpdate: Cascade, onDelete: Restrict, map: "fk_srp_branch")
+  godown                 GodownLocation?    @relation("StockReorderPolicyGodown",   fields: [srpGodownId],            references: [gdlId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_srp_godown")
+  item                   ItemMaster         @relation("StockReorderPolicyItem",     fields: [srpItemId],              references: [itemId], onUpdate: Cascade, onDelete: Restrict, map: "fk_srp_item")
+  uom                    ItemUnitConversion @relation("StockReorderPolicyUom",      fields: [srpUomId],               references: [iucId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_srp_uom")
+  preferredSupplier      Supplier?          @relation("StockReorderPolicySupplier", fields: [srpPreferredSupplierId], references: [supId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_srp_supplier")
+
+  @@map("stock_reorder_policy")
+  @@schema("stock")
+}
+
+// ----- prisma/stocks/stockReservation.prisma -----
+/// stock.stock_reservation — quantity PROMISED but still on the shelf.
+///
+/// A sale order taken at one till against stock a second till is about to
+/// sell. Counting open orders out of SaleOrderItem cannot work in a chain: the
+/// order that committed the last unit may have been raised offline in another
+/// branch and not yet synced, and soiPendingQty is a cache of the ORDER's
+/// state, not of the STOCK's. So the hold lives beside the stock it holds.
+///
+/// RESERVED STOCK IS ON HAND. It is physically there — a physical count will
+/// find it, a valuation must include it — but it is NOT AVAILABLE. That
+/// distinction is exactly why [[StockBalance]] carries sblOnHandQty and
+/// sblAvailableQty as separate figures, and a billing screen must check the
+/// second.
+///
+/// A RESERVATION EXPIRES, and srvExpiresOn is not optional in spirit: without
+/// it a quoted order abandoned in March holds stock hostage for ever, and the
+/// only cure is a human noticing. The expiry sweep reads ix_srv_expiring.
+///
+/// THREE COUNTERS, ONE ANSWER. srvReservedQty is what was promised,
+/// srvConsumedQty is what the eventual document actually took, srvReleasedQty
+/// is what was given back — and srvOpenQty, GENERATED from all three, is what
+/// is still holding stock. The trigger sums srvOpenQty into
+/// StockBalance.sblReservedQty; nothing else may write that column.
+/// ck_srv_settled refuses consuming and releasing more than was ever reserved.
+///
+/// A PARTIAL is a reservation whose document took some of it. CONSUMED,
+/// RELEASED and EXPIRED are terminal, and a terminal row keeps its numbers
+/// rather than being deleted — "we held four units for that order and the
+/// customer never came" is a question somebody asks.
+///
+/// WRITE RULES:
+///   * NEVER write srvOpenQty — GENERATED ALWAYS ... STORED.
+///   * NEVER write StockBalance.sblReservedQty; write here and let the trigger
+///     aggregate.
+///   * One reservation per source line per lot — ux_srv_source — so a re-post
+///     UPDATES rather than stacking a second hold on the same stock. Getting
+///     this wrong double-reserves and makes stock vanish from the sale screen.
+///
+/// Vocabularies, enforced by CHECK constraints in the migration:
+///   srvStatus  OPEN | PARTIAL | CONSUMED | RELEASED | EXPIRED
+///   srvBucket  SALEABLE | DAMAGED | QUARANTINE | EXPIRED | SAMPLE
+/// plus ck_srv_acc_year and ck_srv_qty (a reservation of zero is not a
+/// reservation).
+///
+/// PARTITIONED BY LIST (srv_acc_year), hence the composite primary key.
+///
+/// DB-only objects Prisma cannot express — hand-authored in the migration and
+/// deliberately NOT declared here (every one carries a WHERE):
+///   ux_srv_source   one hold per source line per lot
+///   ix_srv_balance  the trigger's aggregate: open holds against one balance
+///   ix_srv_expiring the expiry sweep
+model StockReservation {
+  srvId                String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("srv_id")
+  srvCompanyId         String    @db.Uuid                            @map("srv_company_id")
+  srvBranchId          String    @db.Uuid                            @map("srv_branch_id")
+  srvTenantId          String?   @db.Uuid                            @map("srv_tenant_id")
+  /// The PARTITION KEY, and half the primary key.
+  srvAccYear           String    @db.Char(9)                         @map("srv_acc_year")
+
+  srvGodownId          String    @db.Uuid                            @map("srv_godown_id")
+  srvItemId            String    @db.Uuid                            @map("srv_item_id")
+  srvLotId             String    @db.Uuid                            @map("srv_lot_id")
+  srvBaseUomId         String    @db.Uuid                            @map("srv_base_uom_id")
+  srvBucket            String    @default("SALEABLE") @db.VarChar(20) @map("srv_bucket")
+
+  // ── What is holding the stock ───────────────────────────────────────────
+  // The same (module, docType, docId) triple used everywhere else. No foreign
+  // key: the holder is a sale order today and something else tomorrow.
+  srvSrcModule         String    @db.VarChar(20)                     @map("srv_src_module")
+  srvSrcDocType        String    @db.VarChar(30)                     @map("srv_src_doc_type")
+  srvSrcDocId          String    @db.Uuid                            @map("srv_src_doc_id")
+  srvSrcAccYear        String?   @db.Char(9)                         @map("srv_src_acc_year")
+  srvSrcRefno          String?   @db.VarChar(100)                    @map("srv_src_refno")
+  srvLineNo            Int       @default(1)                         @map("srv_line_no")
+
+  srvReservedQty       Decimal   @default(0) @db.Decimal(18, 6)      @map("srv_reserved_qty")
+  srvConsumedQty       Decimal   @default(0) @db.Decimal(18, 6)      @map("srv_consumed_qty")
+  srvReleasedQty       Decimal   @default(0) @db.Decimal(18, 6)      @map("srv_released_qty")
+  /// GENERATED ALWAYS ... STORED as reserved - consumed - released. What is
+  /// still holding stock, and what the trigger sums into
+  /// StockBalance.sblReservedQty. Read-only, never sent.
+  srvOpenQty           Decimal?  @default(dbgenerated()) @db.Decimal(18, 6) @map("srv_open_qty")
+
+  srvReservedOn        DateTime  @default(now()) @db.Timestamptz(6)  @map("srv_reserved_on")
+  /// Without this, an abandoned order holds stock for ever.
+  srvExpiresOn         DateTime? @db.Timestamptz(6)                  @map("srv_expires_on")
+  srvStatus            String    @default("OPEN") @db.VarChar(20)    @map("srv_status")
+  srvClosedOn          DateTime? @db.Timestamptz(6)                  @map("srv_closed_on")
+  srvCloseReason       String?   @db.VarChar(250)                    @map("srv_close_reason")
+
+  srvIsDeleted         Boolean   @default(false)                     @map("srv_is_deleted")
+  srvSyncDate          DateTime? @db.Timestamptz(6)                  @map("srv_sync_date")
+  srvCreatedOn         DateTime  @default(now()) @db.Timestamptz(6)  @map("srv_created_on")
+  srvCreatedBy         String?   @db.Uuid                            @map("srv_created_by")
+  srvModifiedOn        DateTime? @db.Timestamptz(6)                  @map("srv_modified_on")
+  srvModifiedBy        String?   @db.Uuid                            @map("srv_modified_by")
+
+  // ── Relations ───────────────────────────────────────────────────────────
+  company              Company            @relation("StockReservationCompany", fields: [srvCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_srv_company")
+  branch               BranchMaster       @relation("StockReservationBranch",  fields: [srvBranchId],  references: [brId],   onUpdate: Cascade, onDelete: Restrict, map: "fk_srv_branch")
+  godown               GodownLocation     @relation("StockReservationGodown",  fields: [srvGodownId],  references: [gdlId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_srv_godown")
+  item                 ItemMaster         @relation("StockReservationItem",    fields: [srvItemId],    references: [itemId], onUpdate: Cascade, onDelete: Restrict, map: "fk_srv_item")
+  lot                  StockLot           @relation("StockReservationLot",     fields: [srvLotId],     references: [sltId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_srv_lot")
+  baseUom              ItemUnitConversion @relation("StockReservationBaseUom", fields: [srvBaseUomId], references: [iucId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_srv_base_uom")
+
+  @@id([srvId, srvAccYear], map: "pk_stock_reservation")
+  @@map("stock_reservation")
   @@schema("stock")
 }
 
@@ -8564,6 +9691,665 @@ model StockTrackPolicy {
   createdBy            UserMaster?      @relation("StockTrackPolicyCreatedBy", fields: [stpCreatedBy], references: [usrId],  onUpdate: Cascade,  onDelete: Restrict, map: "fk_stp_created_by")
 
   @@map("stock_track_policy")
+  @@schema("stock")
+}
+
+// ----- prisma/stocks/stockTrackPreset.prisma -----
+/// stock.stock_track_preset — named tracking-flag combinations, offered by the
+/// policy screen as a combo of TRADES ("Pharma", "Perishables") instead of six
+/// checkboxes. Adding a preset for a new trade is an INSERT, not a release.
+///
+/// THE ENGINE NEVER READS THIS TABLE. fn_stp_effective, fn_slt_resolve and
+/// everything downstream read StockTrackPolicy's own six flags. A preset is a
+/// STENCIL:
+///
+///     picking one COPIES its values into the policy form;
+///     Save writes an ordinary StockTrackPolicy row that owns its flags;
+///     after that the preset is irrelevant to that policy for ever.
+///
+/// There is deliberately NO relation from StockTrackPolicy to this model and
+/// no sptId stored on the policy. Link semantics — where editing a preset
+/// re-keys every policy that used it — would silently re-identify stock across
+/// every company at a stroke: exactly the accident the policy's effective
+/// dates and the lot's stamped signature exist to prevent. To show "which
+/// preset is this policy?", match on the GENERATED signature
+/// (stpTrackSignature = sptTrackSignature); no match means "Custom", which is
+/// the truth.
+///
+/// WHAT THE MASTERS DO STORE. ItemMaster.itemTrackPresetId and
+/// ItemGroupMaster.itgTrackPresetId (20260907060000) point HERE, and
+/// StockTrackPolicyService copies this row's values into the policy when either
+/// master is saved. That is not the link semantics refused above: the link is on
+/// the MASTER, the policy row still owns its own thirteen columns outright, and
+/// editing a preset changes no policy until somebody explicitly re-saves the
+/// item or group that names it. What it buys is that a re-save re-derives the
+/// SAME policy rather than falling back to the item's flags and quietly undoing
+/// the choice. A policy still has no way back to a preset except the signature.
+///
+/// COMPANY SCOPING is a MERGE, exactly like the stock adjustment reasons:
+/// sptCompanyId NULL = a SHARED preset offered to every company; a company row
+/// with a shared row's code overrides it in the picker. Nothing has to be
+/// copied per company.
+///
+/// The CHECK constraints are the POLICY's rulebook verbatim, on purpose: a
+/// preset that cannot be saved as a policy is a trap waiting in a combo, so an
+/// admin cannot author "Batch, FEFO, no expiry" here either.
+///
+/// WRITE RULES:
+///   * NEVER write sptTrackSignature — it is GENERATED ALWAYS ... STORED and
+///     Postgres rejects any write to it.
+///   * sptCode is the stable identity, uppercase-ish [A-Za-z0-9_-] only.
+///
+/// Vocabularies, enforced by CHECK constraints in the migration:
+///   sptValuationMethod  WAVG | FIFO | LOT_ACTUAL
+///   sptIssueStrategy    FIFO | FEFO | LIFO | MANUAL
+///   sptAllowNegative    ALLOW | WARN | BLOCK
+///   sptAgeingBasis      INWARD_DATE | MFG_DATE | LAST_IN_DATE
+/// plus ck_spt_expiry_needs_batch and ck_spt_fefo_needs_expiry — the same two
+/// derivable rules the policy enforces.
+///
+/// DB-only objects Prisma cannot express — hand-authored in the migration and
+/// deliberately NOT declared here (both carry a WHERE, and Prisma ignores
+/// indexes with predicates):
+///   ux_spt_code   unique on (COALESCE(company, nil uuid), code) WHERE NOT
+///                 deleted — COALESCEd because a plain unique index treats
+///                 every NULL as distinct, which would let the seed insert
+///                 PHARMA twice. Uniqueness on this path is app-side.
+///   ix_spt_list   the picker's list shape, partial on active + not deleted.
+model StockTrackPreset {
+  sptId                String    @id(map: "pk_stock_track_preset") @default(dbgenerated("uuidv7()")) @db.Uuid @map("spt_id")
+
+  /// NULL = shared with every company; a company row with the same code
+  /// overrides the shared one in the picker.
+  sptCompanyId         String?   @db.Uuid                                     @map("spt_company_id")
+  sptCode              String    @db.VarChar(30)                              @map("spt_code")
+  /// Named by TRADE, not by flags: "Pharma" tells the user more than
+  /// "batch+expiry+MRP+supplier" ever will. The flags live in the tooltip.
+  sptName              String    @db.VarChar(150)                             @map("spt_name")
+  sptDescription       String?   @db.VarChar(250)                             @map("spt_description")
+
+  // ── The six flags the preset stamps into the policy form ────────────────
+  sptTrackBatch        Boolean   @default(false)                              @map("spt_track_batch")
+  sptTrackMrp          Boolean   @default(false)                              @map("spt_track_mrp")
+  sptTrackSalePrice    Boolean   @default(false)                              @map("spt_track_sale_price")
+  sptTrackExpiry       Boolean   @default(false)                              @map("spt_track_expiry")
+  sptTrackSerial       Boolean   @default(false)                              @map("spt_track_serial")
+  sptTrackSupplier     Boolean   @default(false)                              @map("spt_track_supplier")
+
+  /// GENERATED ALWAYS ... STORED, same expression as stpTrackSignature so a
+  /// screen can match a saved policy back to a preset by comparing the two.
+  sptTrackSignature    String?   @default(dbgenerated()) @db.VarChar(8)       @map("spt_track_signature")
+
+  // ── The policy defaults that travel with the trade ──────────────────────
+  // A preset carries the WHOLE sensible policy, not only the flags: a pharma
+  // item is not just "BEMP", it is also FEFO, blocked-when-expired and 90-day
+  // near-expiry. All of it is copied, all of it stays editable before Save.
+  sptValuationMethod   String    @default("WAVG") @db.VarChar(20)             @map("spt_valuation_method")
+  sptIssueStrategy     String    @default("FEFO") @db.VarChar(20)             @map("spt_issue_strategy")
+  sptAllowNegative     String    @default("ALLOW") @db.VarChar(10)            @map("spt_allow_negative")
+  sptShelfLifeDays     Int?                                                   @map("spt_shelf_life_days")
+  sptNearExpiryDays    Int       @default(30)                                 @map("spt_near_expiry_days")
+  sptBlockExpiredSale  Boolean   @default(false)                              @map("spt_block_expired_sale")
+  sptAgeingBasis       String    @default("INWARD_DATE") @db.VarChar(20)      @map("spt_ageing_basis")
+
+  sptSortOrder         Int       @default(0)                                  @map("spt_sort_order")
+  sptRemarks           String?   @db.VarChar(250)                             @map("spt_remarks")
+  sptIsActive          Boolean   @default(true)                               @map("spt_is_active")
+  sptIsDeleted         Boolean   @default(false)                              @map("spt_is_deleted")
+  sptSyncDate          DateTime? @db.Timestamptz(6)                           @map("spt_sync_date")
+  sptCreatedOn         DateTime  @default(now()) @db.Timestamptz(6)           @map("spt_created_on")
+  sptCreatedBy         String?   @db.Uuid                                     @map("spt_created_by")
+  sptModifiedOn        DateTime? @db.Timestamptz(6)                           @map("spt_modified_on")
+  sptModifiedBy        String?   @db.Uuid                                     @map("spt_modified_by")
+
+  // ── Relations ───────────────────────────────────────────────────────────
+  company              Company?    @relation("StockTrackPresetCompany",   fields: [sptCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_spt_company")
+  createdBy            UserMaster? @relation("StockTrackPresetCreatedBy", fields: [sptCreatedBy], references: [usrId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_spt_created_by")
+
+  /// The masters configured with this preset. Back-relations only — a preset
+  /// still has NO relation to StockTrackPolicy, and must not gain one.
+  items                ItemMaster[]      @relation("ItemTrackPreset")
+  itemGroups           ItemGroupMaster[] @relation("ItemGroupTrackPreset")
+
+  @@map("stock_track_preset")
+  @@schema("stock")
+}
+
+// ----- prisma/stocks/stockTransit.prisma -----
+/// stock.stock_transit — sent from A, not yet arrived at B.
+///
+/// A chain moves stock between stores constantly, and a transfer is not
+/// instantaneous. Between the lorry leaving and the goods being checked in the
+/// stock is out of A's balance and not yet in B's — and if nothing records it,
+/// it is simply MISSING. That is how a chain loses stock on paper and then
+/// finds it on the floor, and it is why this table exists rather than a status
+/// flag on the transfer voucher.
+///
+/// TRANSIT IS NOT ON HAND. StockBalance.sblTransitInQty is fed from here and
+/// is deliberately excluded from sblOnHandQty: it is not here yet, it cannot
+/// be sold, and a physical count will not find it. It is shown so the
+/// receiving branch knows what is coming, never so it can be billed.
+///
+/// NOT PARTITIONED, and this is the point. A transfer despatched on 29 March
+/// and received on 2 April spans two accounting years; partitioning by year
+/// would put the two halves of ONE fact in two partitions and make "what is in
+/// transit right now" a query across years. Both voucher references therefore
+/// carry their OWN year — sttOutAccYear and sttInAccYear — and neither carries
+/// a foreign key, because a composite FK into a partitioned parent would pin
+/// this row to one year's partition and defeat the whole arrangement. Same
+/// reasoning as [[StockBalance]] and acc_bill_balance.
+///
+/// SHORT RECEIPTS ARE THE POINT. sttShortQty is what left and never arrived —
+/// GENERATED, not entered, so it cannot be quietly rounded away by whoever
+/// keys the receipt — and it is the number a transfer-loss report is built on.
+/// Damage is tracked separately from shortage because they are different
+/// failures with different people to talk to.
+///
+/// ONE ROW PER (out voucher, item, lot, destination godown, BUCKET). Bucket is
+/// in the key because one voucher legitimately sends saleable units and
+/// damaged units of the same lot to the same godown as two transit lines — a
+/// returns-to-warehouse run does exactly this — and they must not collide.
+///
+/// WRITE RULES:
+///   * NEVER write sttShortQty — GENERATED ALWAYS ... STORED.
+///   * ck_stt_qty refuses receiving more than was sent; ck_stt_endpoints
+///     refuses stock in transit to the place it already is.
+///   * sttInVoucherId and sttInAccYear move together (ck_stt_in_pair).
+///
+/// Vocabularies, enforced by CHECK constraints in the migration:
+///   sttStatus  IN_TRANSIT | PARTIAL | RECEIVED | CANCELLED
+///   sttBucket  SALEABLE | DAMAGED | QUARANTINE | EXPIRED | SAMPLE
+///
+/// DB-only objects Prisma cannot express — hand-authored in the migration and
+/// deliberately NOT declared here (every one carries a WHERE):
+///   ux_stt_out_line  one line per (out voucher, item, lot, to-godown, bucket)
+///   ix_stt_inbound   "what is on its way to me?" — the receiving worklist,
+///                    and the source of sblTransitInQty
+///   ix_stt_outbound  "what have I sent that has not been acknowledged?" — the
+///                    ageing of transit itself, where losses show up
+model StockTransit {
+  sttId                String    @id(map: "pk_stock_transit") @default(dbgenerated("uuidv7()")) @db.Uuid @map("stt_id")
+  sttCompanyId         String    @db.Uuid                            @map("stt_company_id")
+  sttTenantId          String?   @db.Uuid                            @map("stt_tenant_id")
+
+  sttFromBranchId      String    @db.Uuid                            @map("stt_from_branch_id")
+  sttFromGodownId      String    @db.Uuid                            @map("stt_from_godown_id")
+  sttToBranchId        String    @db.Uuid                            @map("stt_to_branch_id")
+  sttToGodownId        String    @db.Uuid                            @map("stt_to_godown_id")
+
+  sttItemId            String    @db.Uuid                            @map("stt_item_id")
+  sttLotId             String    @db.Uuid                            @map("stt_lot_id")
+  sttBaseUomId         String    @db.Uuid                            @map("stt_base_uom_id")
+  /// In ux_stt_out_line on purpose — see ONE ROW PER above.
+  sttBucket            String    @default("SALEABLE") @db.VarChar(20) @map("stt_bucket")
+
+  // ── Both halves of the movement, each with its own year ─────────────────
+  // No foreign key on either: StockVoucher is partitioned, and a composite FK
+  // would pin this row to one year — which is exactly what a transfer across
+  // a year end cannot tolerate.
+  sttOutVoucherId      String    @db.Uuid                            @map("stt_out_voucher_id")
+  sttOutAccYear        String    @db.Char(9)                         @map("stt_out_acc_year")
+  sttOutRefno          String?   @db.VarChar(100)                    @map("stt_out_refno")
+  sttInVoucherId       String?   @db.Uuid                            @map("stt_in_voucher_id")
+  sttInAccYear         String?   @db.Char(9)                         @map("stt_in_acc_year")
+  sttInRefno           String?   @db.VarChar(100)                    @map("stt_in_refno")
+
+  sttSentQty           Decimal   @default(0) @db.Decimal(18, 6)      @map("stt_sent_qty")
+  sttReceivedQty       Decimal   @default(0) @db.Decimal(18, 6)      @map("stt_received_qty")
+  sttDamageQty         Decimal   @default(0) @db.Decimal(18, 6)      @map("stt_damage_qty")
+  /// GENERATED ALWAYS ... STORED as sent - received - damage. What left and
+  /// never arrived, and the number a transfer-loss report is built on.
+  /// Read-only, never sent — it must not be editable.
+  sttShortQty          Decimal?  @default(dbgenerated()) @db.Decimal(18, 6) @map("stt_short_qty")
+
+  sttCostRate          Decimal   @default(0) @db.Decimal(18, 6)      @map("stt_cost_rate")
+  sttTransitValue      Decimal   @default(0) @db.Decimal(18, 2)      @map("stt_transit_value")
+
+  sttSentOn            DateTime  @default(now()) @db.Timestamptz(6)  @map("stt_sent_on")
+  sttExpectedOn        DateTime? @db.Date                            @map("stt_expected_on")
+  sttReceivedOn        DateTime? @db.Timestamptz(6)                  @map("stt_received_on")
+  sttStatus            String    @default("IN_TRANSIT") @db.VarChar(20) @map("stt_status")
+  sttLrNo              String?   @db.VarChar(50)                     @map("stt_lr_no")
+  sttVehicleNo         String?   @db.VarChar(30)                     @map("stt_vehicle_no")
+
+  sttRemarks           String?   @db.VarChar(250)                    @map("stt_remarks")
+  sttIsDeleted         Boolean   @default(false)                     @map("stt_is_deleted")
+  sttSyncDate          DateTime? @db.Timestamptz(6)                  @map("stt_sync_date")
+  sttCreatedOn         DateTime  @default(now()) @db.Timestamptz(6)  @map("stt_created_on")
+  sttCreatedBy         String?   @db.Uuid                            @map("stt_created_by")
+  sttModifiedOn        DateTime? @db.Timestamptz(6)                  @map("stt_modified_on")
+  sttModifiedBy        String?   @db.Uuid                            @map("stt_modified_by")
+
+  // ── Relations ───────────────────────────────────────────────────────────
+  company              Company            @relation("StockTransitCompany",    fields: [sttCompanyId],    references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_stt_company")
+  fromBranch           BranchMaster       @relation("StockTransitFromBranch", fields: [sttFromBranchId], references: [brId],   onUpdate: Cascade, onDelete: Restrict, map: "fk_stt_from_branch")
+  toBranch             BranchMaster       @relation("StockTransitToBranch",   fields: [sttToBranchId],   references: [brId],   onUpdate: Cascade, onDelete: Restrict, map: "fk_stt_to_branch")
+  fromGodown           GodownLocation     @relation("StockTransitFromGodown", fields: [sttFromGodownId], references: [gdlId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_stt_from_godown")
+  toGodown             GodownLocation     @relation("StockTransitToGodown",   fields: [sttToGodownId],   references: [gdlId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_stt_to_godown")
+  item                 ItemMaster         @relation("StockTransitItem",       fields: [sttItemId],       references: [itemId], onUpdate: Cascade, onDelete: Restrict, map: "fk_stt_item")
+  lot                  StockLot           @relation("StockTransitLot",        fields: [sttLotId],        references: [sltId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_stt_lot")
+  baseUom              ItemUnitConversion @relation("StockTransitBaseUom",    fields: [sttBaseUomId],    references: [iucId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_stt_base_uom")
+
+  @@map("stock_transit")
+  @@schema("stock")
+}
+
+// ----- prisma/stocks/stockValuationSnap.prisma -----
+/// stock.stock_valuation_snap — closing stock, FROZEN.
+///
+/// "Stock value as on 31 March" must give the same answer in April and in
+/// October, and it must give it in seconds for fifty branches. Replaying
+/// [[StockLedger]] does neither: it is slow, and a back-dated correction
+/// posted in June would silently change March's audited figure. So the figure
+/// is taken once at period close and never touched again.
+///
+/// AS-ON-DATE FOR ANY OTHER DAY is the nearest snapshot at or before it, plus
+/// the ledger delta since — bounded work rather than a full replay. That is
+/// what fn_stock_asof() does, and ix_svs_asof is the index it reads.
+///
+/// THREE VALUATIONS, NOT ONE, and this cannot be fixed later. At COST is what
+/// the books want, at MRP is what the shop floor counts, at SELLING PRICE is
+/// what a retailer means by "stock worth". Once a price list changes, the
+/// second and third are unrecoverable for a date in the past — so all three
+/// are frozen together or not at all.
+///
+/// svsAgeDays is stored for the same reason: it cannot be recomputed for a lot
+/// that has since been consumed and closed.
+///
+/// svsAccYear IS A SCOPE COLUMN, NOT A PARTITION KEY. A snapshot is a frozen
+/// fact that gets read for years, and a year-close snapshot is precisely what
+/// the NEXT year opens against — partitioning it by year would put the two
+/// sides of that handover in different partitions.
+///
+/// THE IDENTITY CACHE — svsBatchNo, svsMrp, svsExpiryDate, svsSupplierId — is
+/// copied from [[StockLot]] at freeze time because the lot may be closed, and
+/// its costs long superseded, by the time anybody reads this row.
+///
+/// WRITE RULES:
+///   * A snapshot is WRITE-ONCE. Re-freezing a period means deleting the rows
+///     for that (snapType, snapDate) and writing them again — never editing a
+///     figure in place, which would make the audited number and the reported
+///     number diverge with nothing to show for it.
+///   * There is no modifiedOn/By pair, on purpose.
+///
+/// Vocabularies, enforced by CHECK constraints in the migration:
+///   svsSnapType  DAY | MONTH | YEAR_OPEN | YEAR_CLOSE
+///   svsBucket    SALEABLE | DAMAGED | QUARANTINE | EXPIRED | SAMPLE
+///
+/// DB-only objects Prisma cannot express — hand-authored in the migration and
+/// deliberately NOT declared here (every one carries a WHERE):
+///   ux_svs_scope   one row per holding per snapshot
+///   ix_svs_asof    fn_stock_asof(): the nearest snapshot at or before a date
+///   ix_svs_report  the valuation report: one branch, one date, everything
+model StockValuationSnap {
+  svsId                String    @id(map: "pk_stock_valuation_snap") @default(dbgenerated("uuidv7()")) @db.Uuid @map("svs_id")
+  svsCompanyId         String    @db.Uuid                            @map("svs_company_id")
+  svsBranchId          String    @db.Uuid                            @map("svs_branch_id")
+  svsTenantId          String?   @db.Uuid                            @map("svs_tenant_id")
+  /// A SCOPE column, not a partition key — see the header note.
+  svsAccYear           String    @db.Char(9)                         @map("svs_acc_year")
+
+  svsGodownId          String    @db.Uuid                            @map("svs_godown_id")
+  svsItemId            String    @db.Uuid                            @map("svs_item_id")
+  svsLotId             String    @db.Uuid                            @map("svs_lot_id")
+  /// The item's base unit at freeze time. Carries NO foreign key in the
+  /// migration, unlike everywhere else in this module, so it stays scalar.
+  svsBaseUomId         String    @db.Uuid                            @map("svs_base_uom_id")
+  svsBucket            String    @default("SALEABLE") @db.VarChar(20) @map("svs_bucket")
+
+  svsSnapType          String    @default("MONTH") @db.VarChar(20)   @map("svs_snap_type")
+  svsSnapDate          DateTime  @db.Date                            @map("svs_snap_date")
+
+  svsQty               Decimal   @default(0) @db.Decimal(18, 6)      @map("svs_qty")
+  svsAvgCostRate       Decimal   @default(0) @db.Decimal(18, 6)      @map("svs_avg_cost_rate")
+  svsAvgCostRateWot    Decimal   @default(0) @db.Decimal(18, 6)      @map("svs_avg_cost_rate_wot")
+  svsValueAtCost       Decimal   @default(0) @db.Decimal(18, 2)      @map("svs_value_at_cost")
+  svsValueAtCostWot    Decimal   @default(0) @db.Decimal(18, 2)      @map("svs_value_at_cost_wot")
+  /// What the shop floor counts. Unrecoverable once a price list changes.
+  svsValueAtMrp        Decimal   @default(0) @db.Decimal(18, 2)      @map("svs_value_at_mrp")
+  /// What a retailer means by "stock worth". Likewise unrecoverable.
+  svsValueAtSp         Decimal   @default(0) @db.Decimal(18, 2)      @map("svs_value_at_sp")
+
+  // ── Identity cache, copied from the lot at freeze time ──────────────────
+  svsBatchNo           String?   @db.VarChar(100)                    @map("svs_batch_no")
+  svsMrp               Decimal?  @db.Decimal(18, 6)                  @map("svs_mrp")
+  svsExpiryDate        DateTime? @db.Date                            @map("svs_expiry_date")
+  /// No foreign key in the migration, unlike StockBalance.sblSupplierId — a
+  /// snapshot must survive the supplier row being restricted away.
+  svsSupplierId        String?   @db.Uuid                            @map("svs_supplier_id")
+  /// How old the stock was ON the snapshot date. Stored because it cannot be
+  /// recomputed for a lot that has since been consumed.
+  svsAgeDays           Int?                                          @map("svs_age_days")
+
+  svsFrozenOn          DateTime  @default(now()) @db.Timestamptz(6)  @map("svs_frozen_on")
+  svsFrozenBy          String?   @db.Uuid                            @map("svs_frozen_by")
+  svsIsDeleted         Boolean   @default(false)                     @map("svs_is_deleted")
+  svsSyncDate          DateTime? @db.Timestamptz(6)                  @map("svs_sync_date")
+  svsCreatedOn         DateTime  @default(now()) @db.Timestamptz(6)  @map("svs_created_on")
+
+  // ── Relations ───────────────────────────────────────────────────────────
+  // svsBaseUomId, svsSupplierId and svsFrozenBy carry NO foreign key in the
+  // migration, so they stay scalar.
+  company              Company        @relation("StockValuationSnapCompany", fields: [svsCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_svs_company")
+  branch               BranchMaster   @relation("StockValuationSnapBranch",  fields: [svsBranchId],  references: [brId],   onUpdate: Cascade, onDelete: Restrict, map: "fk_svs_branch")
+  godown               GodownLocation @relation("StockValuationSnapGodown",  fields: [svsGodownId],  references: [gdlId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_svs_godown")
+  item                 ItemMaster     @relation("StockValuationSnapItem",    fields: [svsItemId],    references: [itemId], onUpdate: Cascade, onDelete: Restrict, map: "fk_svs_item")
+  lot                  StockLot       @relation("StockValuationSnapLot",     fields: [svsLotId],     references: [sltId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_svs_lot")
+
+  @@map("stock_valuation_snap")
+  @@schema("stock")
+}
+
+// ----- prisma/stocks/stockVoucher.prisma -----
+/// stock.stock_voucher — the DOCUMENT a stock movement is raised on. Eleven
+/// voucher types, one table.
+///
+/// [[StockLedger]] records that stock moved; this records that somebody
+/// DECIDED to move it — who, when, on what authority, with what remarks, and
+/// with a printable number. A receipt, an issue, an adjustment, a transfer and
+/// a physical count differ in which columns they fill, not in shape, so
+/// splitting them into five tables would buy five sets of the same numbering,
+/// posting, cancellation and print logic.
+///
+/// THE DEVICE IS THE COUNTER. There is no counter id: svhSlno is per
+/// (company, branch, year, type, DEVICE), exactly as SaleOrder numbers itself,
+/// because a voucher raised offline on a warehouse tablet must number itself
+/// without asking a server it cannot reach. The printed svhRefno embeds the
+/// device series and is unique per branch and year on its own.
+///
+/// NOTHING REACHES THE LEDGER UNTIL POSTED. A DRAFT is editable and moves no
+/// stock; posting writes the ledger rows and is the point of no return —
+/// afterwards a mistake is CANCELLED, which REVERSES, never deleted.
+/// IN_TRANSIT is a TRANSFER_OUT that has left and not yet been received; see
+/// [[StockTransit]] for why that state has to exist at all.
+///
+/// A TRANSFER IS TWO VOUCHERS, not one with two godowns — TRANSFER_OUT at the
+/// source and TRANSFER_IN at the destination, each posting its own ledger row
+/// in its own branch, and ck_svh_transfer_in_link refuses a TRANSFER_IN that
+/// does not name the TRANSFER_OUT it answers. The link columns are the same
+/// (module, docType, docId) triple used everywhere else and carry their own
+/// year, because a transfer despatched on 29 March is received on 2 April.
+///
+/// PHYSICAL COUNTS FREEZE. svhFreezeStock with a from/to window is what stops
+/// a count measuring a moving target; without it the difference posted is the
+/// difference between a count taken at 6pm and a book figure read at 8pm.
+/// ck_svh_freeze refuses a freeze with no window.
+///
+/// TOTALS ARE CACHES of [[StockVoucherItem]], which owns them. They exist so a
+/// list screen does not aggregate the line table; when the two disagree, the
+/// lines are right.
+///
+/// Vocabularies, enforced by CHECK constraints in the migration:
+///   svhVoucherType  OPENING | RECEIPT | ISSUE | ADJUSTMENT | TRANSFER_OUT |
+///                   TRANSFER_IN | DAMAGE | EXPIRY_WRITEOFF | PHYSICAL |
+///                   REPACK_IN | REPACK_OUT
+///   svhStatus       DRAFT | POSTED | IN_TRANSIT | RECEIVED | CANCELLED
+///   svhRateSource   AVG_COST | LAST_PURCHASE | LOT_COST | MRP | MANUAL
+/// plus ck_svh_acc_year (YYYY-YYYY, second = first + 1), ck_svh_godowns (a
+/// movement must say where stock comes from or where it goes),
+/// ck_svh_transfer_godowns (a transfer must say both), ck_svh_link (the source
+/// triple is all-or-nothing) and ck_svh_slno.
+///
+/// PARTITIONED BY LIST (svh_acc_year), hence the composite primary key
+/// (svhId, svhAccYear) — and hence [[StockVoucherItem]] joins back on BOTH
+/// columns. A new fiscal year needs its partitions before the first save:
+///     SELECT stock.fn_create_stock_partitions('2027-2028');
+///
+/// DB-only objects Prisma cannot express — hand-authored in the migration and
+/// deliberately NOT declared here. EVERY index on this table carries a WHERE,
+/// and Prisma ignores indexes with predicates; declaring them would make
+/// `migrate dev` regenerate them WITHOUT the predicate and fail on the
+/// existing names:
+///   ux_svh_slno    the per-DEVICE serial — offline numbering
+///   ux_svh_refno   the per-branch printed number
+///   ix_svh_list    the list screen, newest first, per type
+///   ix_svh_inbound the transfer-in worklist: sent to me, not yet received
+///   ix_svh_link    following a link back to the voucher that caused this one
+/// Uniqueness on svhSlno / svhRefno is therefore app-side. Beware the DB error
+/// if you rely on it: because the table is PARTITIONED, a duplicate is
+/// reported against the PARTITION-LOCAL index name, never ux_svh_refno — match
+/// on the column list in P2002 meta.target, or pre-check.
+model StockVoucher {
+  svhId                String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("svh_id")
+  svhCompanyId         String    @db.Uuid                            @map("svh_company_id")
+  svhBranchId          String    @db.Uuid                            @map("svh_branch_id")
+  svhTenantId          String?   @db.Uuid                            @map("svh_tenant_id")
+  /// The PARTITION KEY, and half the primary key.
+  svhAccYear           String    @db.Char(9)                         @map("svh_acc_year")
+
+  /// The counter. See THE DEVICE IS THE COUNTER above.
+  svhDeviceId          String    @db.Uuid                            @map("svh_device_id")
+  svhSessionId         String?   @db.Uuid                            @map("svh_session_id")
+
+  svhVoucherType       String    @db.VarChar(30)                     @map("svh_voucher_type")
+  /// Per company/branch/year/type/DEVICE — ux_svh_slno.
+  svhSlno              BigInt                                        @map("svh_slno")
+  /// The printed number: unique per branch and year on its own — ux_svh_refno.
+  svhRefno             String    @db.VarChar(100)                    @map("svh_refno")
+  svhUsrRefno          String?   @db.VarChar(100)                    @map("svh_usr_refno")
+  svhDocDate           DateTime  @db.Date                            @map("svh_doc_date")
+  svhDocDatetime       DateTime  @default(now()) @db.Timestamptz(6)  @map("svh_doc_datetime")
+
+  // ── Where stock came from and went ──────────────────────────────────────
+  // A RECEIPT fills toGodown only; an ISSUE fills fromGodown only; a TRANSFER
+  // fills both, and toBranch when it leaves the store.
+  svhFromGodownId      String?   @db.Uuid                            @map("svh_from_godown_id")
+  svhToGodownId        String?   @db.Uuid                            @map("svh_to_godown_id")
+  svhToBranchId        String?   @db.Uuid                            @map("svh_to_branch_id")
+
+  svhSupplierId        String?   @db.Uuid                            @map("svh_supplier_id")
+  svhPartyRef          String?   @db.VarChar(100)                    @map("svh_party_ref")
+  svhReasonId          String?   @db.Uuid                            @map("svh_reason_id")
+
+  // ── The voucher this one answers ────────────────────────────────────────
+  // TRANSFER_IN points back at its TRANSFER_OUT; PHYSICAL points at the
+  // ADJUSTMENT it generated. Composite, because it can cross a year end, and
+  // all-or-nothing per ck_svh_link. No foreign key: the target lives in
+  // another partition, and often another branch's document, as often as not.
+  svhLinkSrcModule     String?   @db.VarChar(20)                     @map("svh_link_src_module")
+  svhLinkSrcDocType    String?   @db.VarChar(30)                     @map("svh_link_src_doc_type")
+  svhLinkSrcDocId      String?   @db.Uuid                            @map("svh_link_src_doc_id")
+  svhLinkSrcAccYear    String?   @db.Char(9)                         @map("svh_link_src_acc_year")
+
+  // ── Totals ──────────────────────────────────────────────────────────────
+  // Caches of StockVoucherItem, which owns them.
+  svhLineCount         Int       @default(0)                         @map("svh_line_count")
+  svhTotalQty          Decimal   @default(0) @db.Decimal(18, 6)      @map("svh_total_qty")
+  svhTotalValue        Decimal   @default(0) @db.Decimal(18, 2)      @map("svh_total_value")
+  svhTotalValueWot     Decimal   @default(0) @db.Decimal(18, 2)      @map("svh_total_value_wot")
+
+  // ── Lifecycle ───────────────────────────────────────────────────────────
+  svhStatus            String    @default("DRAFT") @db.VarChar(20)   @map("svh_status")
+  svhPostedOn          DateTime? @db.Timestamptz(6)                  @map("svh_posted_on")
+  svhPostedBy          String?   @db.Uuid                            @map("svh_posted_by")
+  svhApprovedOn        DateTime? @db.Timestamptz(6)                  @map("svh_approved_on")
+  svhApprovedBy        String?   @db.Uuid                            @map("svh_approved_by")
+  svhCancelledOn       DateTime? @db.Timestamptz(6)                  @map("svh_cancelled_on")
+  svhCancelledBy       String?   @db.Uuid                            @map("svh_cancelled_by")
+  svhCancelReason      String?   @db.VarChar(250)                    @map("svh_cancel_reason")
+  svhVersionNo         Int       @default(1)                         @map("svh_version_no")
+
+  // ── PHYSICAL only ───────────────────────────────────────────────────────
+  /// A count freezes the stock it is counting, or it counts a moving target.
+  /// ck_svh_freeze refuses a freeze with no window.
+  svhFreezeStock       Boolean   @default(false)                     @map("svh_freeze_stock")
+  svhFreezeFrom        DateTime? @db.Timestamptz(6)                  @map("svh_freeze_from")
+  svhFreezeTo          DateTime? @db.Timestamptz(6)                  @map("svh_freeze_to")
+  /// Which rate the lines are valued at — see the vocabulary above.
+  svhRateSource        String?   @db.VarChar(20)                     @map("svh_rate_source")
+
+  svhRemarks           String?   @db.VarChar(250)                    @map("svh_remarks")
+  svhIsDeleted         Boolean   @default(false)                     @map("svh_is_deleted")
+  svhSyncDate          DateTime? @db.Timestamptz(6)                  @map("svh_sync_date")
+  svhCreatedOn         DateTime  @default(now()) @db.Timestamptz(6)  @map("svh_created_on")
+  svhCreatedBy         String?   @db.Uuid                            @map("svh_created_by")
+  svhModifiedOn        DateTime? @db.Timestamptz(6)                  @map("svh_modified_on")
+  svhModifiedBy        String?   @db.Uuid                            @map("svh_modified_by")
+
+  // ── Relations ───────────────────────────────────────────────────────────
+  // svhSessionId and the posted/approved/cancelled/created/modified user
+  // columns carry NO foreign key in the migration, so they stay scalar.
+  items                StockVoucherItem[] @relation("StockVoucherItemVoucher")
+  company              Company            @relation("StockVoucherCompany",    fields: [svhCompanyId],   references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_svh_company")
+  branch               BranchMaster       @relation("StockVoucherBranch",     fields: [svhBranchId],    references: [brId],   onUpdate: Cascade, onDelete: Restrict, map: "fk_svh_branch")
+  toBranch             BranchMaster?      @relation("StockVoucherToBranch",   fields: [svhToBranchId],  references: [brId],   onUpdate: Cascade, onDelete: Restrict, map: "fk_svh_to_branch")
+  /// RESTRICT, not SET NULL: the device owns this document's number series, so
+  /// it can be blocked or deactivated but never unlinked.
+  device               DeviceMaster       @relation("StockVoucherDevice",     fields: [svhDeviceId],    references: [devId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_svh_device")
+  fromGodown           GodownLocation?    @relation("StockVoucherFromGodown", fields: [svhFromGodownId], references: [gdlId], onUpdate: Cascade, onDelete: Restrict, map: "fk_svh_from_godown")
+  toGodown             GodownLocation?    @relation("StockVoucherToGodown",   fields: [svhToGodownId],  references: [gdlId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_svh_to_godown")
+  supplier             Supplier?          @relation("StockVoucherSupplier",   fields: [svhSupplierId],  references: [supId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_svh_supplier")
+  reason               StockReasonMaster? @relation("StockVoucherReason",     fields: [svhReasonId],    references: [srmId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_svh_reason")
+
+  @@id([svhId, svhAccYear], map: "pk_stock_voucher")
+  @@map("stock_voucher")
+  @@schema("stock")
+}
+
+// ----- prisma/stocks/stockVoucherItem.prisma -----
+/// stock.stock_voucher_item — the LINES of a [[StockVoucher]].
+///
+/// Same (lineNo, splitNo) grain as SaleBillItem, so one line issued from three
+/// batches is three rows and [[StockLedger]] receives them unchanged: posting
+/// is an INSERT ... SELECT with no reshaping and no aggregation. That symmetry
+/// is the whole reason the grain is what it is.
+///
+/// THE BATCH ATTRIBUTES ARE STORED AS ENTERED as well as resolved to a lot.
+/// sviBatchNo / sviMfgDate / sviExpiryDate / sviMrp / sviSalePrice /
+/// sviSerialNo / sviSupplierId are what the storekeeper typed; sviLotId is
+/// what fn_slt_resolve() made of it. Both are kept because a reprint must show
+/// what was keyed, and because the resolver may LEGITIMATELY have blanked a
+/// value the item's StockTrackPolicy does not track — an MRP typed on an item
+/// that is not MRP-tracked does not become part of the lot identity, and
+/// silently losing it would make the document unreadable a year later.
+///
+/// sviLotId IS NULL ONLY WHILE DRAFT. It is resolved at posting time, which is
+/// also when the tracking policy is applied — so a draft saved before a policy
+/// change posts under the policy live when it POSTS, not when it was keyed.
+///
+/// PHYSICAL COUNTS keep three numbers, not one: sviBookQty is what the system
+/// thought, sviCountedQty is what was on the shelf, and sviDiffQty — GENERATED,
+/// so it cannot be edited — is what actually posts to the ledger. Storing only
+/// the difference makes a variance impossible to defend a year later; storing
+/// it generated makes it impossible to fudge.
+///
+/// sviValue and sviValueWot are GENERATED from (baseQty + freeBaseQty) × rate,
+/// rounded to 2, so a line's value cannot drift from its own quantity and rate.
+/// Free goods are included: they are stock, and they cost something to hold.
+///
+/// WRITE RULES:
+///   * NEVER write sviDiffQty, sviValue or sviValueWot — all three are
+///     GENERATED ALWAYS ... STORED, and Postgres rejects any write to them.
+///   * Quantities are MAGNITUDES; direction comes from the voucher type, not
+///     from a sign here (ck_svi_qty_sign).
+///   * ck_svi_batch_split mirrors ck_sbi_batch_split: a splitNo above 1 only
+///     makes sense when the line is split BY BATCH, so it requires a batch no.
+///   * sviAccYear must equal the voucher's — it is half the foreign key.
+///
+/// Vocabulary, enforced by a CHECK constraint in the migration:
+///   sviBucket  SALEABLE | DAMAGED | QUARANTINE | EXPIRED | SAMPLE
+/// plus ck_svi_acc_year, ck_svi_line_no, ck_svi_split_no,
+/// ck_svi_to_base_factor and ck_svi_expiry_order.
+///
+/// PARTITIONED BY LIST (svi_acc_year), hence the composite primary key and the
+/// COMPOSITE foreign key back to the voucher on (id, accYear) — a partitioned
+/// parent can only be referenced through its partition key. ON DELETE CASCADE:
+/// deleting a draft voucher takes its lines with it.
+///
+/// DB-only objects Prisma cannot express — hand-authored in the migration and
+/// deliberately NOT declared here (every one carries a WHERE, and Prisma
+/// ignores indexes with predicates):
+///   ux_svi_line     one row per (voucher, year, lineNo, splitNo)
+///   ix_svi_voucher  the lines of one voucher
+///   ix_svi_item     item-wise across vouchers
+///   ix_svi_lot      which documents touched a lot
+model StockVoucherItem {
+  sviId                String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("svi_id")
+  sviVoucherId         String    @db.Uuid                            @map("svi_voucher_id")
+  sviCompanyId         String    @db.Uuid                            @map("svi_company_id")
+  sviBranchId          String    @db.Uuid                            @map("svi_branch_id")
+  sviTenantId          String?   @db.Uuid                            @map("svi_tenant_id")
+  /// The PARTITION KEY, half the primary key, AND half the foreign key back to
+  /// the voucher. Must equal the voucher's own year.
+  sviAccYear           String    @db.Char(9)                         @map("svi_acc_year")
+
+  sviLineNo            Int                                           @map("svi_line_no")
+  /// A second allocation of the same line — one line issued from three batches
+  /// is three rows. Only meaningful with a batch no (ck_svi_batch_split).
+  sviSplitNo           Int       @default(1)                         @map("svi_split_no")
+
+  sviItemId            String    @db.Uuid                            @map("svi_item_id")
+  /// The unit keyed, and the item's base unit. BOTH are
+  /// item_unit_conversion(iuc_id), NEVER item_unit_master(unit_id).
+  sviUomId             String    @db.Uuid                            @map("svi_uom_id")
+  sviBaseUomId         String    @db.Uuid                            @map("svi_base_uom_id")
+  sviToBaseFactor      Decimal   @default(1) @db.Decimal(18, 6)      @map("svi_to_base_factor")
+
+  sviGodownId          String    @db.Uuid                            @map("svi_godown_id")
+  /// Resolved by fn_slt_resolve() at POSTING time. NULL only while DRAFT.
+  sviLotId             String?   @db.Uuid                            @map("svi_lot_id")
+  sviBucket            String    @default("SALEABLE") @db.VarChar(20) @map("svi_bucket")
+
+  // ── As entered ──────────────────────────────────────────────────────────
+  // What the storekeeper typed. The resolver may legitimately have dropped a
+  // value the item's policy does not track — see the header note.
+  sviBatchNo           String?   @db.VarChar(100)                    @map("svi_batch_no")
+  sviMfgDate           DateTime? @db.Date                            @map("svi_mfg_date")
+  sviExpiryDate        DateTime? @db.Date                            @map("svi_expiry_date")
+  sviMrp               Decimal?  @db.Decimal(18, 6)                  @map("svi_mrp")
+  sviSalePrice         Decimal?  @db.Decimal(18, 6)                  @map("svi_sale_price")
+  sviSerialNo          String?   @db.VarChar(100)                    @map("svi_serial_no")
+  sviSupplierId        String?   @db.Uuid                            @map("svi_supplier_id")
+
+  // ── Quantity ────────────────────────────────────────────────────────────
+  sviQty               Decimal   @default(0) @db.Decimal(18, 6)      @map("svi_qty")
+  sviBaseQty           Decimal   @default(0) @db.Decimal(18, 6)      @map("svi_base_qty")
+  sviFreeQty           Decimal   @default(0) @db.Decimal(18, 6)      @map("svi_free_qty")
+  sviFreeBaseQty       Decimal   @default(0) @db.Decimal(18, 6)      @map("svi_free_base_qty")
+  sviWeightQty         Decimal   @default(0) @db.Decimal(18, 6)      @map("svi_weight_qty")
+
+  // ── PHYSICAL count only ─────────────────────────────────────────────────
+  /// What the system thought was there.
+  sviBookQty           Decimal?  @db.Decimal(18, 6)                  @map("svi_book_qty")
+  /// What was actually on the shelf.
+  sviCountedQty        Decimal?  @db.Decimal(18, 6)                  @map("svi_counted_qty")
+  /// GENERATED ALWAYS ... STORED as counted - book. What POSTS. Read-only,
+  /// never sent — the variance must not be editable.
+  sviDiffQty           Decimal?  @default(dbgenerated()) @db.Decimal(18, 6) @map("svi_diff_qty")
+
+  // ── Value ───────────────────────────────────────────────────────────────
+  sviCostRate          Decimal   @default(0) @db.Decimal(18, 6)      @map("svi_cost_rate")
+  sviCostRateWot       Decimal   @default(0) @db.Decimal(18, 6)      @map("svi_cost_rate_wot")
+  sviLandedRate        Decimal   @default(0) @db.Decimal(18, 6)      @map("svi_landed_rate")
+  sviTaxPerc           Decimal   @default(0) @db.Decimal(9, 3)       @map("svi_tax_perc")
+  /// GENERATED ALWAYS ... STORED as ROUND((baseQty + freeBaseQty) × rate, 2).
+  /// Read-only, never sent.
+  sviValue             Decimal?  @default(dbgenerated()) @db.Decimal(18, 2) @map("svi_value")
+  sviValueWot          Decimal?  @default(dbgenerated()) @db.Decimal(18, 2) @map("svi_value_wot")
+
+  sviReasonId          String?   @db.Uuid                            @map("svi_reason_id")
+  sviRemarks           String?   @db.VarChar(250)                    @map("svi_remarks")
+  sviIsDeleted         Boolean   @default(false)                     @map("svi_is_deleted")
+  sviSyncDate          DateTime? @db.Timestamptz(6)                  @map("svi_sync_date")
+  sviCreatedOn         DateTime  @default(now()) @db.Timestamptz(6)  @map("svi_created_on")
+  sviCreatedBy         String?   @db.Uuid                            @map("svi_created_by")
+  sviModifiedOn        DateTime? @db.Timestamptz(6)                  @map("svi_modified_on")
+  sviModifiedBy        String?   @db.Uuid                            @map("svi_modified_by")
+
+  // ── Relations ───────────────────────────────────────────────────────────
+  // sviCompanyId / sviBranchId carry no FK of their own here — the voucher
+  // owns that scope — and sviCreatedBy / sviModifiedBy have none either.
+  voucher              StockVoucher       @relation("StockVoucherItemVoucher", fields: [sviVoucherId, sviAccYear], references: [svhId, svhAccYear], onUpdate: Cascade, onDelete: Cascade, map: "fk_svi_voucher")
+  item                 ItemMaster         @relation("StockVoucherItemItem",     fields: [sviItemId],     references: [itemId], onUpdate: Cascade, onDelete: Restrict, map: "fk_svi_item")
+  uom                  ItemUnitConversion @relation("StockVoucherItemUom",      fields: [sviUomId],      references: [iucId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_svi_uom")
+  baseUom              ItemUnitConversion @relation("StockVoucherItemBaseUom",  fields: [sviBaseUomId],  references: [iucId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_svi_base_uom")
+  godown               GodownLocation     @relation("StockVoucherItemGodown",   fields: [sviGodownId],   references: [gdlId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_svi_godown")
+  lot                  StockLot?          @relation("StockVoucherItemLot",      fields: [sviLotId],      references: [sltId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_svi_lot")
+  supplier             Supplier?          @relation("StockVoucherItemSupplier", fields: [sviSupplierId], references: [supId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_svi_supplier")
+  reason               StockReasonMaster? @relation("StockVoucherItemReason",   fields: [sviReasonId],   references: [srmId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_svi_reason")
+
+  @@id([sviId, sviAccYear], map: "pk_stock_voucher_item")
+  @@map("stock_voucher_item")
   @@schema("stock")
 }
 

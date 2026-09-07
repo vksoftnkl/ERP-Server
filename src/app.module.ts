@@ -69,6 +69,9 @@ import { StateCodeMasterModule } from './modules/fixed/state-code-master/state-c
 import { UiTableMasterModule } from './modules/fixed/ui-table-master/ui-table-master.module';
 import { UserLoginSessionsModule } from './modules/fixed/user-login-sessions/user-login-sessions.module';
 import { StockAdjReasonsModule } from './modules/fixed/stock-adj-reasons/stock-adj-reasons.module';
+import { StockTrackPresetsModule } from './modules/stocks/stock-track-presets/stock-track-presets.module';
+import { StockVoucherModule } from './modules/stocks/stock-voucher/stock-voucher.module';
+import { OpeningStockVoucherModule } from './modules/stocks/opening-stock-voucher/opening-stock-voucher.module';
 import { MasterLookupModule } from './modules/master-lookup/master-lookup.module';
 import { BatchPrefixModule } from './modules/master/batch-prefix/batch-prefix.module';
 import { WidgetMasterModule } from './modules/master/widget-master/widget-master.module';
@@ -78,8 +81,6 @@ import { PromotionLoyaltyPointsModule } from './modules/sales/loyalty/promotion-
 import { PromotionSchemeModule } from './modules/sales/promotion-scheme/promotion-scheme.module';
 import { PrintTemplateAssignmentModule } from './modules/settings/print-template-assignment/print-template-assignment.module';
 import { PrintRenderModule } from './modules/settings/print-render/print-render.module';
-// import { OpeningStockModule } from './modules/stocks/opening-stock/opening-stock.module';
-import { PhysicalStockModule } from './modules/stocks/physical-stock/physical-stock.module';
 import { ItemStockBalanceModule } from './modules/stocks/itemstockbalance/itemStockBalanceModule';
 import { ItemBatchStockModule } from './modules/stocks/itembatchstock/itemBatchStockModule';
 import { GodownsMasterModule } from './modules/Inventory/godowns-master/godowns-master.module';
@@ -195,13 +196,14 @@ const isThrottlerEnabled = parseBoolean(process.env.THROTTLE_ENABLED, true);
     UiTableMasterModule,
     UserLoginSessionsModule,
     StockAdjReasonsModule,
+    StockTrackPresetsModule,
+    StockVoucherModule,
+    OpeningStockVoucherModule,
     MasterLookupModule,
     BatchPrefixModule,
     WidgetMasterModule,
     ChargeMasterModule,
     ChargeDetailModule,
-    // OpeningStockModule,
-    PhysicalStockModule,
     ItemStockBalanceModule,
     ItemBatchStockModule,
     PromotionLoyaltyPointsModule,

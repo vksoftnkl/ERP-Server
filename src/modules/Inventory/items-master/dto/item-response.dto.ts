@@ -107,6 +107,13 @@ export class ItemPayloadDto {
   item_hsn_code!: string | null;
   @ApiProperty()
   item_batch_config!: number;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description: 'stock.stock_track_preset the item\'s track policy is derived from; null = derived from the item\'s own flags',
+  })
+  item_track_preset_id!: string | null;
   @ApiPropertyOptional({ nullable: true })
   item_sort_order!: number | null;
   @ApiPropertyOptional({ nullable: true, description: 'Base64-encoded image bytes' })

@@ -24,3 +24,7 @@ export abstract class SettingsExceptionFilter<
   TErrorDetail extends ModuleErrorDetail,
   TErrorResponse extends ModuleErrorResponse<TErrorDetail>,
 > extends ModuleExceptionFilter<TErrorDetail, TErrorResponse> {}
+export abstract class StockExceptionFilter<
+  TErrorDetail extends ModuleErrorDetail,
+  TErrorResponse extends ModuleErrorResponse<TErrorDetail>,
+> extends ModuleExceptionFilter<TErrorDetail, TErrorResponse> {}

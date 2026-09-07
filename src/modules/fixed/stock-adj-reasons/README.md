@@ -1,7 +1,7 @@
 # Stock Adjustment Reasons
 
 Read-only lookup API for **stock adjustment reasons** — the fixed catalogue of reasons a
-physical-stock adjustment can be recorded against (e.g. `DAMAGE`, `EXPIRY`), each carrying a
+a stock adjustment can be recorded against (e.g. `DAMAGE`, `EXPIRY`), each carrying a
 reason kind, a default resolution and whether it affects accounts.
 
 - **Base route:** `stock-adj-reasons` (API-versioned via `API_VERSION` — [`@Version(API_VERSION)`](stock-adj-reasons.controller.ts))
@@ -53,7 +53,6 @@ as free-text `VarChar(30)` values, not app enums.
 
 ## Cross-module relation
 
-The `StockAdjReason` model is referenced by `PhysicalStockDetail`
-(`physicalStockDetails PhysicalStockDetail[]`, relation `PhysicalStockDetailReason`) — physical-stock
-adjustment lines point at a reason. The service itself is **not exported**, so this module is
-consumed over HTTP rather than composed into other services.
+`PhysicalStockDetail` used to point at this master, but the physical stock tables were dropped, so
+`StockAdjReason` currently has no back-relation in the Prisma schema. The service itself is **not
+exported**, so this module is consumed over HTTP rather than composed into other services.

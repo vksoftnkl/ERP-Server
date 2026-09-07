@@ -265,6 +265,15 @@ export class SaveItemDto {
   @OptionalInteger()
   item_batch_config?: number;
 
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description:
+      'stock.stock_track_preset.spt_id, from /stock-track-presets/get. Supplies every column of the ITEM-scope stock track policy. Send null to clear it and fall back to item_batch_config / item_is_batch_based / item_is_expiry_item.',
+  })
+  @NullableUuid()
+  item_track_preset_id?: string | null;
+
   @ApiPropertyOptional({ nullable: true })
   @OptionalInteger()
   item_sort_order?: number;

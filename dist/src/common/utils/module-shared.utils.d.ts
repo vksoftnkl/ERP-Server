@@ -18,6 +18,7 @@ export declare function buildErrorResponse<TErrorDetail extends ModuleErrorDetai
 export declare function throwBadRequest<TErrorDetail extends ModuleErrorDetail, TErrorResponse extends ModuleErrorResponse<TErrorDetail> = ModuleErrorResponse<TErrorDetail>>(message: string, errors: TErrorDetail[]): never;
 export declare function throwConflict<TErrorDetail extends ModuleErrorDetail, TErrorResponse extends ModuleErrorResponse<TErrorDetail> = ModuleErrorResponse<TErrorDetail>>(message: string, errors: TErrorDetail[]): never;
 export declare function throwForbidden<TErrorDetail extends ModuleErrorDetail, TErrorResponse extends ModuleErrorResponse<TErrorDetail> = ModuleErrorResponse<TErrorDetail>>(message: string, errors: TErrorDetail[]): never;
+export declare function throwUnprocessable<TErrorDetail extends ModuleErrorDetail, TErrorResponse extends ModuleErrorResponse<TErrorDetail> = ModuleErrorResponse<TErrorDetail>>(message: string, errors: TErrorDetail[]): never;
 export declare function throwNotFound<TErrorDetail extends ModuleErrorDetail, TErrorResponse extends ModuleErrorResponse<TErrorDetail> = ModuleErrorResponse<TErrorDetail>>(message: string, field: string, detailMessage: string): never;
 export declare function throwOnUniqueConstraintError<TErrorDetail extends ModuleErrorDetail, TErrorResponse extends ModuleErrorResponse<TErrorDetail> = ModuleErrorResponse<TErrorDetail>>(error: unknown, message: string, errors: TErrorDetail[]): void;
 export declare function isUniqueConstraintError(error: unknown): boolean;

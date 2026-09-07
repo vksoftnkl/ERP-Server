@@ -8,6 +8,7 @@ import {
   HttpStatus,
   Logger,
   NotFoundException,
+  UnprocessableEntityException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { Request, Response } from 'express';
@@ -61,6 +62,20 @@ export function throwForbidden<
   TErrorResponse extends ModuleErrorResponse<TErrorDetail> = ModuleErrorResponse<TErrorDetail>,
 >(message: string, errors: TErrorDetail[]): never {
   throw new ForbiddenException(buildErrorResponse<TErrorDetail, TErrorResponse>(message, errors));
+}
+// 422 — the request is syntactically valid and the row it names exists, but the
+// CONTENT cannot be processed: a document whose lines break a rule the database
+// would otherwise raise on, one line at a time, from inside a function. Distinct
+// from a 400 (which class-validator owns, and which means the shape is wrong)
+// because the caller here has a per-line list to render against its own grid
+// rather than a field name to highlight.
+export function throwUnprocessable<
+  TErrorDetail extends ModuleErrorDetail,
+  TErrorResponse extends ModuleErrorResponse<TErrorDetail> = ModuleErrorResponse<TErrorDetail>,
+>(message: string, errors: TErrorDetail[]): never {
+  throw new UnprocessableEntityException(
+    buildErrorResponse<TErrorDetail, TErrorResponse>(message, errors),
+  );
 }
 export function throwNotFound<
   TErrorDetail extends ModuleErrorDetail,

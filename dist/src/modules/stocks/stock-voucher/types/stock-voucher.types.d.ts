@@ -1,0 +1,176 @@
+import type { StockErrorDetail, StockErrorResponse } from "../../../../common/utils/module-service.utils";
+export type { StockErrorDetail, StockErrorResponse };
+export declare const STOCK_VOUCHER_TYPES: readonly ["OPENING", "RECEIPT", "ISSUE", "ADJUSTMENT", "TRANSFER_OUT", "TRANSFER_IN", "DAMAGE", "EXPIRY_WRITEOFF", "PHYSICAL", "REPACK_IN", "REPACK_OUT"];
+export type StockVoucherType = (typeof STOCK_VOUCHER_TYPES)[number];
+export declare const STOCK_VOUCHER_STATUSES: readonly ["DRAFT", "POSTED", "IN_TRANSIT", "RECEIVED", "CANCELLED"];
+export type StockVoucherStatus = (typeof STOCK_VOUCHER_STATUSES)[number];
+export declare const STOCK_BUCKETS: readonly ["SALEABLE", "DAMAGED", "QUARANTINE", "EXPIRED", "SAMPLE"];
+export type StockBucket = (typeof STOCK_BUCKETS)[number];
+export declare const STOCK_RATE_SOURCES: readonly ["AVG_COST", "LAST_PURCHASE", "LOT_COST", "MRP", "MANUAL"];
+export type StockRateSource = (typeof STOCK_RATE_SOURCES)[number];
+export declare const STOCK_SRC_MODULE = "STOCK";
+export interface StockVoucherTypeRules {
+    voucherType: StockVoucherType;
+    typeCode: string;
+    displayName: string;
+    requiresToGodown: boolean;
+    requiresFromGodown: boolean;
+    isInward: boolean;
+    ledgerTxnType: string;
+    auditScreenName: string;
+    refuseTypes?: readonly StockVoucherType[];
+}
+export interface StockVoucherLineProblem {
+    sviId: string;
+    lineNo: number;
+    splitNo: number;
+    itemId: string;
+    itemCode: string | null;
+    itemName: string;
+    problem: string | null;
+}
+export interface StockVoucherHeaderPayload {
+    svhId: string;
+    accYear: string;
+    companyId: string;
+    branchId: string;
+    tenantId: string | null;
+    deviceId: string;
+    sessionId: string | null;
+    voucherType: StockVoucherType;
+    slno: string;
+    refno: string;
+    usrRefno: string | null;
+    docDate: string;
+    docDatetime: string;
+    fromGodownId: string | null;
+    fromGodownName: string | null;
+    godownId: string | null;
+    godownName: string | null;
+    supplierId: string | null;
+    status: StockVoucherStatus;
+    lineCount: number;
+    totalQty: number;
+    totalValue: number;
+    totalValueWot: number;
+    postedOn: string | null;
+    postedBy: string | null;
+    postedByName: string | null;
+    cancelledOn: string | null;
+    cancelReason: string | null;
+    rateSource: StockRateSource | null;
+    remarks: string | null;
+    isDeleted: boolean;
+}
+export interface StockVoucherLinePayload {
+    sviId: string;
+    lineNo: number;
+    splitNo: number;
+    itemId: string;
+    itemCode: string | null;
+    itemName: string;
+    unitName: string | null;
+    uomId: string;
+    baseUomId: string;
+    toBaseFactor: number;
+    godownId: string;
+    godownName: string | null;
+    bucket: StockBucket;
+    batchNo: string | null;
+    mfgDate: string | null;
+    expiryDate: string | null;
+    mrp: number | null;
+    salePrice: number | null;
+    serialNo: string | null;
+    supplierId: string | null;
+    qty: number;
+    baseQty: number;
+    freeQty: number;
+    freeBaseQty: number;
+    costRate: number;
+    costRateWot: number;
+    taxPerc: number;
+    value: number;
+    valueWot: number;
+    lotId: string | null;
+    remarks: string | null;
+}
+export interface StockVoucherPayload {
+    header: StockVoucherHeaderPayload;
+    lines: StockVoucherLinePayload[];
+}
+export interface StockVoucherListItem {
+    svhId: string;
+    accYear: string;
+    refno: string;
+    usrRefno: string | null;
+    docDate: string;
+    godownId: string | null;
+    godownName: string | null;
+    status: StockVoucherStatus;
+    lineCount: number;
+    totalQty: number;
+    totalValue: number;
+    totalValueWot: number;
+    postedOn: string | null;
+    rateSource: StockRateSource | null;
+    remarks: string | null;
+}
+export interface StockVoucherListResult {
+    items: StockVoucherListItem[];
+    meta: {
+        limit: number;
+        offset: number;
+        count: number;
+    };
+}
+export interface StockVoucherPostResult extends StockVoucherPayload {
+    rowsPosted: number;
+    status: StockVoucherStatus;
+    postedOn: string | null;
+}
+export interface StockVoucherCancelResult extends StockVoucherPayload {
+    rowsReversed: number;
+    status: StockVoucherStatus;
+    cancelledOn: string | null;
+}
+export interface StockVoucherDeleteResult {
+    svhId: string;
+    accYear: string;
+    deleted: true;
+}
+export interface StockVoucherSuccessResponse<TData> {
+    success: true;
+    message: string;
+    data: TData;
+}
+export interface PendingOpeningItem {
+    itemId: string;
+    itemCode: string | null;
+    itemName: string;
+    baseUomId: string | null;
+    unitName: string | null;
+    trackSignature: string | null;
+}
+export interface OpeningReconcileRow {
+    itemId: string;
+    itemCode: string | null;
+    itemName: string;
+    unitName: string | null;
+    openingQty: number;
+    openingValue: number;
+    currentQty: number;
+    currentValue: number;
+    diffQty: number;
+    diffValue: number;
+}
+export interface PagedResult<TRow> {
+    items: TRow[];
+    meta: {
+        limit: number;
+        offset: number;
+        count: number;
+    };
+}
+export declare const STOCK_ENGINE_SQLSTATE_STATUS: Readonly<Record<string, number>>;
+export declare const NEGATIVE_STOCK_MESSAGE_FRAGMENT = "would go negative";

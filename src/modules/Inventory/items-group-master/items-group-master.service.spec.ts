@@ -73,6 +73,7 @@ describe('ItemsGroupMasterService', () => {
   let auditLogService: Pick<AuditLogService, 'logEntityChange'>;
   let configuredGridSqlService: ConfiguredGridSqlServiceMock;
   let requestContextService: { getUserId: jest.Mock };
+  let stockTrackPolicyService: { syncFromItemGroup: jest.Mock };
   beforeEach(() => {
     prisma = {
       itemGroupMaster: {
@@ -216,10 +217,22 @@ describe('ItemsGroupMasterService', () => {
       getUserId: jest.fn().mockReturnValue(null),
     };
 
+    stockTrackPolicyService = {
+      syncFromItemGroup: jest.fn().mockResolvedValue({
+        stp_id: null,
+        scope_id: ITEM_GROUP_ID,
+        scope: 'GROUP',
+        outcome: 'no_preset',
+        track_signature: null,
+        preset_code: null,
+      }),
+    };
+
     service = new ItemsGroupMasterService(
       prisma as unknown as PrismaService,
       auditLogService as AuditLogService,
       requestContextService as never,
+      stockTrackPolicyService as never,
     );
   });
   it('creates an item group when itg_id is not provided', async () => {
@@ -618,5 +631,42 @@ describe('ItemsGroupMasterService', () => {
     expect(prisma.itemGroupMaster.create).toHaveBeenCalledTimes(1);
     const createArgs = prisma.itemGroupMaster.create.mock.calls[0][0];
     expect(createArgs.data.itgPhoto).toEqual(new Uint8Array(Buffer.from('sample-image')));
+  });
+  it('stores itg_track_preset_id and syncs the GROUP track policy inside the transaction', async () => {
+    const presetId = '018f0a2b-7c4d-7e8f-9a0b-c1d2e3f4aaaa';
+    const createdRecord = makeRecord({ itgTrackPresetId: presetId, itgPathIdsCache: [] });
+    const refreshedRecord = makeRecord({
+      itgTrackPresetId: presetId,
+      itgPathIdsCache: [ITEM_GROUP_ID],
+    });
+    prisma.itemGroupMaster.create.mockResolvedValue(createdRecord);
+    prisma.itemGroupMaster.findMany.mockResolvedValueOnce([createdRecord]);
+    prisma.itemGroupMaster.update.mockResolvedValueOnce(refreshedRecord);
+    prisma.itemGroupMaster.findFirst.mockResolvedValueOnce(refreshedRecord);
+    const result = await service.save({ itg_name: 'Pharma', itg_track_preset_id: presetId });
+    const createArgs = prisma.itemGroupMaster.create.mock.calls[0][0];
+    expect(createArgs.data.itgTrackPresetId).toBe(presetId);
+    expect(result.itg_track_preset_id).toBe(presetId);
+    // The saved record is what the policy derives from, not the DTO, and the
+    // transaction client is passed so both writes roll back together.
+    expect(stockTrackPolicyService.syncFromItemGroup).toHaveBeenCalledTimes(1);
+    const [syncedGroup, syncedTx] = stockTrackPolicyService.syncFromItemGroup.mock.calls[0];
+    expect(syncedGroup.itgTrackPresetId).toBe(presetId);
+    expect(syncedTx).toBeDefined();
+  });
+  it('still syncs the GROUP track policy when no preset is sent, so a cleared preset retires the row', async () => {
+    const createdRecord = makeRecord({ itgTrackPresetId: null, itgPathIdsCache: [] });
+    const refreshedRecord = makeRecord({
+      itgTrackPresetId: null,
+      itgPathIdsCache: [ITEM_GROUP_ID],
+    });
+    prisma.itemGroupMaster.create.mockResolvedValue(createdRecord);
+    prisma.itemGroupMaster.findMany.mockResolvedValueOnce([createdRecord]);
+    prisma.itemGroupMaster.update.mockResolvedValueOnce(refreshedRecord);
+    prisma.itemGroupMaster.findFirst.mockResolvedValueOnce(refreshedRecord);
+    const result = await service.save({ itg_name: 'Raw Materials' });
+    expect(result.itg_track_preset_id).toBeNull();
+    expect(stockTrackPolicyService.syncFromItemGroup).toHaveBeenCalledTimes(1);
+    expect(stockTrackPolicyService.syncFromItemGroup.mock.calls[0][0].itgTrackPresetId).toBeNull();
   });
 });

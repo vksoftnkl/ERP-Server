@@ -1,0 +1,117 @@
+/// stock.stock_transit — sent from A, not yet arrived at B.
+///
+/// A chain moves stock between stores constantly, and a transfer is not
+/// instantaneous. Between the lorry leaving and the goods being checked in the
+/// stock is out of A's balance and not yet in B's — and if nothing records it,
+/// it is simply MISSING. That is how a chain loses stock on paper and then
+/// finds it on the floor, and it is why this table exists rather than a status
+/// flag on the transfer voucher.
+///
+/// TRANSIT IS NOT ON HAND. StockBalance.sblTransitInQty is fed from here and
+/// is deliberately excluded from sblOnHandQty: it is not here yet, it cannot
+/// be sold, and a physical count will not find it. It is shown so the
+/// receiving branch knows what is coming, never so it can be billed.
+///
+/// NOT PARTITIONED, and this is the point. A transfer despatched on 29 March
+/// and received on 2 April spans two accounting years; partitioning by year
+/// would put the two halves of ONE fact in two partitions and make "what is in
+/// transit right now" a query across years. Both voucher references therefore
+/// carry their OWN year — sttOutAccYear and sttInAccYear — and neither carries
+/// a foreign key, because a composite FK into a partitioned parent would pin
+/// this row to one year's partition and defeat the whole arrangement. Same
+/// reasoning as [[StockBalance]] and acc_bill_balance.
+///
+/// SHORT RECEIPTS ARE THE POINT. sttShortQty is what left and never arrived —
+/// GENERATED, not entered, so it cannot be quietly rounded away by whoever
+/// keys the receipt — and it is the number a transfer-loss report is built on.
+/// Damage is tracked separately from shortage because they are different
+/// failures with different people to talk to.
+///
+/// ONE ROW PER (out voucher, item, lot, destination godown, BUCKET). Bucket is
+/// in the key because one voucher legitimately sends saleable units and
+/// damaged units of the same lot to the same godown as two transit lines — a
+/// returns-to-warehouse run does exactly this — and they must not collide.
+///
+/// WRITE RULES:
+///   * NEVER write sttShortQty — GENERATED ALWAYS ... STORED.
+///   * ck_stt_qty refuses receiving more than was sent; ck_stt_endpoints
+///     refuses stock in transit to the place it already is.
+///   * sttInVoucherId and sttInAccYear move together (ck_stt_in_pair).
+///
+/// Vocabularies, enforced by CHECK constraints in the migration:
+///   sttStatus  IN_TRANSIT | PARTIAL | RECEIVED | CANCELLED
+///   sttBucket  SALEABLE | DAMAGED | QUARANTINE | EXPIRED | SAMPLE
+///
+/// DB-only objects Prisma cannot express — hand-authored in the migration and
+/// deliberately NOT declared here (every one carries a WHERE):
+///   ux_stt_out_line  one line per (out voucher, item, lot, to-godown, bucket)
+///   ix_stt_inbound   "what is on its way to me?" — the receiving worklist,
+///                    and the source of sblTransitInQty
+///   ix_stt_outbound  "what have I sent that has not been acknowledged?" — the
+///                    ageing of transit itself, where losses show up
+model StockTransit {
+  sttId                String    @id(map: "pk_stock_transit") @default(dbgenerated("uuidv7()")) @db.Uuid @map("stt_id")
+  sttCompanyId         String    @db.Uuid                            @map("stt_company_id")
+  sttTenantId          String?   @db.Uuid                            @map("stt_tenant_id")
+
+  sttFromBranchId      String    @db.Uuid                            @map("stt_from_branch_id")
+  sttFromGodownId      String    @db.Uuid                            @map("stt_from_godown_id")
+  sttToBranchId        String    @db.Uuid                            @map("stt_to_branch_id")
+  sttToGodownId        String    @db.Uuid                            @map("stt_to_godown_id")
+
+  sttItemId            String    @db.Uuid                            @map("stt_item_id")
+  sttLotId             String    @db.Uuid                            @map("stt_lot_id")
+  sttBaseUomId         String    @db.Uuid                            @map("stt_base_uom_id")
+  /// In ux_stt_out_line on purpose — see ONE ROW PER above.
+  sttBucket            String    @default("SALEABLE") @db.VarChar(20) @map("stt_bucket")
+
+  // ── Both halves of the movement, each with its own year ─────────────────
+  // No foreign key on either: StockVoucher is partitioned, and a composite FK
+  // would pin this row to one year — which is exactly what a transfer across
+  // a year end cannot tolerate.
+  sttOutVoucherId      String    @db.Uuid                            @map("stt_out_voucher_id")
+  sttOutAccYear        String    @db.Char(9)                         @map("stt_out_acc_year")
+  sttOutRefno          String?   @db.VarChar(100)                    @map("stt_out_refno")
+  sttInVoucherId       String?   @db.Uuid                            @map("stt_in_voucher_id")
+  sttInAccYear         String?   @db.Char(9)                         @map("stt_in_acc_year")
+  sttInRefno           String?   @db.VarChar(100)                    @map("stt_in_refno")
+
+  sttSentQty           Decimal   @default(0) @db.Decimal(18, 6)      @map("stt_sent_qty")
+  sttReceivedQty       Decimal   @default(0) @db.Decimal(18, 6)      @map("stt_received_qty")
+  sttDamageQty         Decimal   @default(0) @db.Decimal(18, 6)      @map("stt_damage_qty")
+  /// GENERATED ALWAYS ... STORED as sent - received - damage. What left and
+  /// never arrived, and the number a transfer-loss report is built on.
+  /// Read-only, never sent — it must not be editable.
+  sttShortQty          Decimal?  @default(dbgenerated()) @db.Decimal(18, 6) @map("stt_short_qty")
+
+  sttCostRate          Decimal   @default(0) @db.Decimal(18, 6)      @map("stt_cost_rate")
+  sttTransitValue      Decimal   @default(0) @db.Decimal(18, 2)      @map("stt_transit_value")
+
+  sttSentOn            DateTime  @default(now()) @db.Timestamptz(6)  @map("stt_sent_on")
+  sttExpectedOn        DateTime? @db.Date                            @map("stt_expected_on")
+  sttReceivedOn        DateTime? @db.Timestamptz(6)                  @map("stt_received_on")
+  sttStatus            String    @default("IN_TRANSIT") @db.VarChar(20) @map("stt_status")
+  sttLrNo              String?   @db.VarChar(50)                     @map("stt_lr_no")
+  sttVehicleNo         String?   @db.VarChar(30)                     @map("stt_vehicle_no")
+
+  sttRemarks           String?   @db.VarChar(250)                    @map("stt_remarks")
+  sttIsDeleted         Boolean   @default(false)                     @map("stt_is_deleted")
+  sttSyncDate          DateTime? @db.Timestamptz(6)                  @map("stt_sync_date")
+  sttCreatedOn         DateTime  @default(now()) @db.Timestamptz(6)  @map("stt_created_on")
+  sttCreatedBy         String?   @db.Uuid                            @map("stt_created_by")
+  sttModifiedOn        DateTime? @db.Timestamptz(6)                  @map("stt_modified_on")
+  sttModifiedBy        String?   @db.Uuid                            @map("stt_modified_by")
+
+  // ── Relations ───────────────────────────────────────────────────────────
+  company              Company            @relation("StockTransitCompany",    fields: [sttCompanyId],    references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_stt_company")
+  fromBranch           BranchMaster       @relation("StockTransitFromBranch", fields: [sttFromBranchId], references: [brId],   onUpdate: Cascade, onDelete: Restrict, map: "fk_stt_from_branch")
+  toBranch             BranchMaster       @relation("StockTransitToBranch",   fields: [sttToBranchId],   references: [brId],   onUpdate: Cascade, onDelete: Restrict, map: "fk_stt_to_branch")
+  fromGodown           GodownLocation     @relation("StockTransitFromGodown", fields: [sttFromGodownId], references: [gdlId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_stt_from_godown")
+  toGodown             GodownLocation     @relation("StockTransitToGodown",   fields: [sttToGodownId],   references: [gdlId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_stt_to_godown")
+  item                 ItemMaster         @relation("StockTransitItem",       fields: [sttItemId],       references: [itemId], onUpdate: Cascade, onDelete: Restrict, map: "fk_stt_item")
+  lot                  StockLot           @relation("StockTransitLot",        fields: [sttLotId],        references: [sltId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_stt_lot")
+  baseUom              ItemUnitConversion @relation("StockTransitBaseUom",    fields: [sttBaseUomId],    references: [iucId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_stt_base_uom")
+
+  @@map("stock_transit")
+  @@schema("stock")
+}

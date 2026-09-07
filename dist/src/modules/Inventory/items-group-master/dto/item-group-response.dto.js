@@ -28,6 +28,7 @@ class ItemGroupPayloadDto {
     itg_default_tax_id;
     itg_default_hsn;
     itg_default_uom_id;
+    itg_track_preset_id;
     itg_photo;
     itg_photo_url;
     itg_sync_date;
@@ -91,6 +92,14 @@ __decorate([
     (0, swagger_1.ApiPropertyOptional)({ format: 'uuid', nullable: true }),
     __metadata("design:type", Object)
 ], ItemGroupPayloadDto.prototype, "itg_default_uom_id", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        format: 'uuid',
+        nullable: true,
+        description: 'stock.stock_track_preset the group-scope stock track policy is derived from; null = no group policy',
+    }),
+    __metadata("design:type", Object)
+], ItemGroupPayloadDto.prototype, "itg_track_preset_id", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ nullable: true, description: 'Base64 encoded image' }),
     __metadata("design:type", Object)

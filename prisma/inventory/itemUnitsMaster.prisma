@@ -42,11 +42,6 @@ model Unit {
 
   // Back-relations — ItemPriceMaster
   // (ItemPriceMaster no longer stores a base unit — it reaches one through ItemUnitConversion.)
-  openingStockUnits OpeningStockDetail[] @relation("OpeningStockDetailUnit")
-  physicalStockUnits PhysicalStockDetail[] @relation("PhysicalStockDetailUnit")
-  physicalStockBaseUnits PhysicalStockDetail[] @relation("PhysicalStockDetailBaseUnit")
-  physicalStockBatchUnits PhysicalStockBatchDetail[] @relation("PhysicalStockBatchDetailUnit")
-  physicalStockBatchBaseUnits PhysicalStockBatchDetail[] @relation("PhysicalStockBatchDetailBaseUnit")
 
   // Back-relations — others
   itemMasters  ItemMaster[]

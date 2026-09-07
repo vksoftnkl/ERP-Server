@@ -59,6 +59,12 @@ model Supplier {
   // NOTE: sup_state_id column was missing in your DDL snippet, but FK references it.
  
   group                SupplierGroup   @relation(fields: [supGroupId], references: [spgId], onUpdate: Cascade, onDelete: Restrict)
+  stockLots           StockLot[]       @relation("StockLotSupplier")
+  stockBalances       StockBalance[]   @relation("StockBalanceSupplier")
+  stockVouchers       StockVoucher[]   @relation("StockVoucherSupplier")
+  stockVoucherItems   StockVoucherItem[] @relation("StockVoucherItemSupplier")
+  stockReorderPolicies StockReorderPolicy[] @relation("StockReorderPolicySupplier")
+  stockForecasts      StockForecast[]  @relation("StockForecastSupplier")
   @@map("suppliers")
   @@schema("purchase")
   @@index([supCompanyId], map: "idx_sup_company")

@@ -1,0 +1,104 @@
+/// stock.stock_item_cost — the MOVING WEIGHTED AVERAGE, one row per
+/// (company, branch, item). The other half of the valuation answer.
+///
+/// [[StockLot]] carries each lot's OWN cost, which is what makes FIFO, LIFO and
+/// LOT_ACTUAL valuation a read rather than a replay. This table carries the
+/// running average across all of an item's lots in a branch. BOTH are
+/// maintained on every posting, always — so StockTrackPolicy.stpValuationMethod
+/// SELECTS an answer instead of triggering a rebuild, and switching a company
+/// from average to FIFO costs nothing.
+///
+/// BRANCH-LEVEL, NOT GODOWN-LEVEL. Moving a case from the back store to the
+/// shop floor must not change what the stock cost; a per-godown average would
+/// let an internal transfer move value. Godown-wise value is stock_balance's
+/// sblStockValue, which is a distribution of this, not a separate truth. It is
+/// also not company-wide: two branches buying the same item at different rates
+/// have different costs, and averaging them would let one branch's bad buying
+/// inflate the other's margin.
+///
+/// NOT LOT-LEVEL EITHER, on purpose — that is exactly what the lot's own
+/// sltCostRate is. This row is what the average costs when the lot identity is
+/// deliberately ignored.
+///
+/// TRIGGER-MAINTAINED. fn_sml_apply() owns it: an inward adds qty and value and
+/// recomputes the average, an outward removes qty at the CURRENT average and
+/// leaves the rate alone — which is what "moving average" means, and why an
+/// outward can never change the cost of what remains. Application code that
+/// writes these columns is writing a number the next posting will overwrite.
+/// Post to [[StockLedger]] instead.
+///
+/// THE AVERAGE IS STORED, NOT DERIVED. sicAvgCostRate is a plain column rather
+/// than value/qty as a generated one, because qty legitimately reaches zero
+/// when the last unit is sold and the rate must SURVIVE that: the next inward
+/// of an item that went to nil is not a fresh start, and a division by zero
+/// would make it one.
+///
+/// sicMaxCostRate is the highest rate this item has ever been received at. It
+/// is kept because a replacement-cost valuation asks for it and because it
+/// cannot be recovered afterwards — closed lots are still there, but the
+/// question is asked often enough that scanning them every time is not
+/// reasonable.
+///
+/// WOT columns are WITHOUT TAX. Where GST is claimable the value that belongs
+/// in the accounts is the ex-tax one, so both are carried and the caller picks
+/// per the company's tax treatment rather than re-deriving one from the other.
+///
+/// WRITE RULES:
+///   * NEVER write sicTotalQty / sicTotalValue / sicTotalValueWot /
+///     sicAvgCostRate / sicAvgCostRateWot / sicMaxCostRate, nor the last
+///     purchase and last sale columns — all are trigger-maintained.
+///   * There is no sicIsActive: a cost row is not something a user switches
+///     off. sicIsDeleted exists only for the partial index predicate.
+///
+/// DB-only objects Prisma cannot express — hand-authored in the migration and
+/// deliberately NOT declared here (it carries a WHERE, and Prisma ignores
+/// indexes with predicates):
+///   ux_sic_scope  ONE ROW PER (company, branch, item), and the upsert target
+///                 of fn_sml_apply(). Partial on NOT deleted.
+model StockItemCost {
+  sicId                String    @id(map: "pk_stock_item_cost") @default(dbgenerated("uuidv7()")) @db.Uuid @map("sic_id")
+  sicCompanyId         String    @db.Uuid                            @map("sic_company_id")
+  sicBranchId          String    @db.Uuid                            @map("sic_branch_id")
+  sicItemId            String    @db.Uuid                            @map("sic_item_id")
+  /// The item's BASE unit — an item_unit_conversion(iuc_id), NEVER an
+  /// item_unit_master(unit_id). sicTotalQty is in this unit, so the average is
+  /// a rate per base unit and never per "case".
+  sicBaseUomId         String    @db.Uuid                            @map("sic_base_uom_id")
+
+  // ── The moving average ──────────────────────────────────────────────────
+  // TRIGGER-MAINTAINED by fn_sml_apply(). NEVER written from application code.
+  sicTotalQty          Decimal   @default(0) @db.Decimal(18, 6)      @map("sic_total_qty")
+  sicTotalValue        Decimal   @default(0) @db.Decimal(18, 2)      @map("sic_total_value")
+  sicTotalValueWot     Decimal   @default(0) @db.Decimal(18, 2)      @map("sic_total_value_wot")
+  /// Stored, not derived — the rate must survive sicTotalQty reaching zero.
+  sicAvgCostRate       Decimal   @default(0) @db.Decimal(18, 6)      @map("sic_avg_cost_rate")
+  sicAvgCostRateWot    Decimal   @default(0) @db.Decimal(18, 6)      @map("sic_avg_cost_rate_wot")
+
+  sicLastPurchaseRate  Decimal   @default(0) @db.Decimal(18, 6)      @map("sic_last_purchase_rate")
+  sicLastPurchaseDate  DateTime? @db.Date                            @map("sic_last_purchase_date")
+  sicLastSaleRate      Decimal   @default(0) @db.Decimal(18, 6)      @map("sic_last_sale_rate")
+  sicLastSaleDate      DateTime? @db.Date                            @map("sic_last_sale_date")
+  /// The highest rate this item has ever been received at — a
+  /// replacement-cost valuation asks for it, and it cannot be recovered once
+  /// lots close.
+  sicMaxCostRate       Decimal   @default(0) @db.Decimal(18, 6)      @map("sic_max_cost_rate")
+
+  sicRowVersion        BigInt    @default(1)                         @map("sic_row_version")
+  sicIsDeleted         Boolean   @default(false)                     @map("sic_is_deleted")
+  sicSyncDate          DateTime? @db.Timestamptz(6)                  @map("sic_sync_date")
+  sicCreatedOn         DateTime  @default(now()) @db.Timestamptz(6)  @map("sic_created_on")
+  sicCreatedBy         String?   @db.Uuid                            @map("sic_created_by")
+  sicModifiedOn        DateTime? @db.Timestamptz(6)                  @map("sic_modified_on")
+  sicModifiedBy        String?   @db.Uuid                            @map("sic_modified_by")
+
+  // ── Relations ───────────────────────────────────────────────────────────
+  // sicCreatedBy / sicModifiedBy carry NO foreign key in the migration, so
+  // they stay scalar here.
+  company              Company            @relation("StockItemCostCompany", fields: [sicCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_sic_company")
+  branch               BranchMaster       @relation("StockItemCostBranch",  fields: [sicBranchId],  references: [brId],   onUpdate: Cascade, onDelete: Restrict, map: "fk_sic_branch")
+  item                 ItemMaster         @relation("StockItemCostItem",    fields: [sicItemId],    references: [itemId], onUpdate: Cascade, onDelete: Restrict, map: "fk_sic_item")
+  baseUom              ItemUnitConversion @relation("StockItemCostBaseUom", fields: [sicBaseUomId], references: [iucId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_sic_base_uom")
+
+  @@map("stock_item_cost")
+  @@schema("stock")
+}

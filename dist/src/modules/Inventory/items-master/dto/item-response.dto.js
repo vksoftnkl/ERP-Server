@@ -65,6 +65,7 @@ class ItemPayloadDto {
     item_default_tax_id;
     item_hsn_code;
     item_batch_config;
+    item_track_preset_id;
     item_sort_order;
     item_photo;
     item_image_url;
@@ -290,6 +291,14 @@ __decorate([
     (0, swagger_1.ApiProperty)(),
     __metadata("design:type", Number)
 ], ItemPayloadDto.prototype, "item_batch_config", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        format: 'uuid',
+        nullable: true,
+        description: 'stock.stock_track_preset the item\'s track policy is derived from; null = derived from the item\'s own flags',
+    }),
+    __metadata("design:type", Object)
+], ItemPayloadDto.prototype, "item_track_preset_id", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
     __metadata("design:type", Object)

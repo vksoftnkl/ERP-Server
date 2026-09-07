@@ -58,6 +58,8 @@ const state_code_master_module_1 = require("../modules/fixed/state-code-master/s
 const ui_table_master_module_1 = require("../modules/fixed/ui-table-master/ui-table-master.module");
 const user_login_sessions_module_1 = require("../modules/fixed/user-login-sessions/user-login-sessions.module");
 const stock_adj_reasons_module_1 = require("../modules/fixed/stock-adj-reasons/stock-adj-reasons.module");
+const stock_track_presets_module_1 = require("../modules/stocks/stock-track-presets/stock-track-presets.module");
+const opening_stock_voucher_module_1 = require("../modules/stocks/opening-stock-voucher/opening-stock-voucher.module");
 const promotion_loyalty_points_module_1 = require("../modules/sales/loyalty/promotion-loyalty-points.module");
 const promotion_scheme_module_1 = require("../modules/sales/promotion-scheme/promotion-scheme.module");
 const items_group_master_module_1 = require("../modules/Inventory/items-group-master/items-group-master.module");
@@ -77,7 +79,6 @@ const items_gst_units_master_module_1 = require("../modules/Inventory/items-gst-
 const godowns_master_module_1 = require("../modules/Inventory/godowns-master/godowns-master.module");
 const itemStockBalanceModule_1 = require("../modules/stocks/itemstockbalance/itemStockBalanceModule");
 const itemBatchStockModule_1 = require("../modules/stocks/itembatchstock/itemBatchStockModule");
-const physical_stock_module_1 = require("../modules/stocks/physical-stock/physical-stock.module");
 const print_render_module_1 = require("../modules/settings/print-render/print-render.module");
 const widget_master_module_1 = require("../modules/master/widget-master/widget-master.module");
 const configured_grid_sql_module_1 = require("../common/configured-grid-sql/configured-grid-sql.module");
@@ -381,13 +382,6 @@ exports.swaggerModuleDocuments = [
         include: [itemBatchStockModule_1.ItemBatchStockModule],
     },
     {
-        path: 'physical-stock',
-        title: 'Physical Stock API',
-        description: 'Physical stock (stock take) document endpoints: create/update by ps_id presence, ' +
-            'list and fetch by ps_id or header id, and soft delete',
-        include: [physical_stock_module_1.PhysicalStockModule],
-    },
-    {
         path: 'promotion-loyalty-points',
         title: 'Promotion Loyalty Points API',
         description: 'Single-call loyalty scheme endpoints with nested branches, parties, items, earn slabs ' +
@@ -571,6 +565,18 @@ exports.swaggerModuleDocuments = [
         title: 'Stock Adj Reasons API',
         description: 'Stock adjustment reasons endpoints for fixed.stock_adj_reasons',
         include: [stock_adj_reasons_module_1.StockAdjReasonsModule],
+    },
+    {
+        path: 'stock-track-presets',
+        title: 'Stock Track Presets API',
+        description: 'Stock tracking presets from stock.stock_track_preset — the combo behind item_track_preset_id / itg_track_preset_id',
+        include: [stock_track_presets_module_1.StockTrackPresetsModule],
+    },
+    {
+        path: 'opening-stock',
+        title: 'Opening Stock API',
+        description: 'Opening stock on the stock voucher engine — stock.stock_voucher OPENING documents, their preflight, post and cancel, and the two go-live reports. There is no opening-stock table: the document IS a stock voucher.',
+        include: [opening_stock_voucher_module_1.OpeningStockVoucherModule],
     },
     {
         path: 'audit-logs',

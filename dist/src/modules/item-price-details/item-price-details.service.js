@@ -131,6 +131,7 @@ let ItemPriceDetailsService = class ItemPriceDetailsService {
             item_default_tax_id: record.itemDefaultTaxId,
             item_hsn_code: record.itemHsnCode,
             item_batch_config: record.itemBatchConfig,
+            item_track_preset_id: record.itemTrackPresetId,
             item_sort_order: record.itemSortOrder,
             item_photo: record.itemPhoto ? Buffer.from(record.itemPhoto).toString('base64') : null,
             item_image_url: record.itemImageUrl,

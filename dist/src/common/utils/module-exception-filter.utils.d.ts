@@ -12,3 +12,5 @@ export declare abstract class SalesExceptionFilter<TErrorDetail extends ModuleEr
 }
 export declare abstract class SettingsExceptionFilter<TErrorDetail extends ModuleErrorDetail, TErrorResponse extends ModuleErrorResponse<TErrorDetail>> extends ModuleExceptionFilter<TErrorDetail, TErrorResponse> {
 }
+export declare abstract class StockExceptionFilter<TErrorDetail extends ModuleErrorDetail, TErrorResponse extends ModuleErrorResponse<TErrorDetail>> extends ModuleExceptionFilter<TErrorDetail, TErrorResponse> {
+}

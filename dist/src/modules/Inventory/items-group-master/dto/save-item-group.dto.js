@@ -56,6 +56,7 @@ class SaveItemGroupDto {
     itg_default_tax_id;
     itg_default_hsn;
     itg_default_uom_id;
+    itg_track_preset_id;
     itg_photo;
     itg_photo_url;
 }
@@ -137,6 +138,15 @@ __decorate([
     (0, dtoDecorators_1.NullableUuid)(),
     __metadata("design:type", Object)
 ], SaveItemGroupDto.prototype, "itg_default_uom_id", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        format: 'uuid',
+        nullable: true,
+        description: 'stock.stock_track_preset.spt_id, from /stock-track-presets/get. Writes the GROUP-scope stock track policy for the request context company. Send null to remove it: a group has no tracking flags of its own, so no preset means no policy row.',
+    }),
+    (0, dtoDecorators_1.NullableUuid)(),
+    __metadata("design:type", Object)
+], SaveItemGroupDto.prototype, "itg_track_preset_id", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({
         nullable: true,

@@ -1,0 +1,164 @@
+/// stock.stock_voucher — the DOCUMENT a stock movement is raised on. Eleven
+/// voucher types, one table.
+///
+/// [[StockLedger]] records that stock moved; this records that somebody
+/// DECIDED to move it — who, when, on what authority, with what remarks, and
+/// with a printable number. A receipt, an issue, an adjustment, a transfer and
+/// a physical count differ in which columns they fill, not in shape, so
+/// splitting them into five tables would buy five sets of the same numbering,
+/// posting, cancellation and print logic.
+///
+/// THE DEVICE IS THE COUNTER. There is no counter id: svhSlno is per
+/// (company, branch, year, type, DEVICE), exactly as SaleOrder numbers itself,
+/// because a voucher raised offline on a warehouse tablet must number itself
+/// without asking a server it cannot reach. The printed svhRefno embeds the
+/// device series and is unique per branch and year on its own.
+///
+/// NOTHING REACHES THE LEDGER UNTIL POSTED. A DRAFT is editable and moves no
+/// stock; posting writes the ledger rows and is the point of no return —
+/// afterwards a mistake is CANCELLED, which REVERSES, never deleted.
+/// IN_TRANSIT is a TRANSFER_OUT that has left and not yet been received; see
+/// [[StockTransit]] for why that state has to exist at all.
+///
+/// A TRANSFER IS TWO VOUCHERS, not one with two godowns — TRANSFER_OUT at the
+/// source and TRANSFER_IN at the destination, each posting its own ledger row
+/// in its own branch, and ck_svh_transfer_in_link refuses a TRANSFER_IN that
+/// does not name the TRANSFER_OUT it answers. The link columns are the same
+/// (module, docType, docId) triple used everywhere else and carry their own
+/// year, because a transfer despatched on 29 March is received on 2 April.
+///
+/// PHYSICAL COUNTS FREEZE. svhFreezeStock with a from/to window is what stops
+/// a count measuring a moving target; without it the difference posted is the
+/// difference between a count taken at 6pm and a book figure read at 8pm.
+/// ck_svh_freeze refuses a freeze with no window.
+///
+/// TOTALS ARE CACHES of [[StockVoucherItem]], which owns them. They exist so a
+/// list screen does not aggregate the line table; when the two disagree, the
+/// lines are right.
+///
+/// Vocabularies, enforced by CHECK constraints in the migration:
+///   svhVoucherType  OPENING | RECEIPT | ISSUE | ADJUSTMENT | TRANSFER_OUT |
+///                   TRANSFER_IN | DAMAGE | EXPIRY_WRITEOFF | PHYSICAL |
+///                   REPACK_IN | REPACK_OUT
+///   svhStatus       DRAFT | POSTED | IN_TRANSIT | RECEIVED | CANCELLED
+///   svhRateSource   AVG_COST | LAST_PURCHASE | LOT_COST | MRP | MANUAL
+/// plus ck_svh_acc_year (YYYY-YYYY, second = first + 1), ck_svh_godowns (a
+/// movement must say where stock comes from or where it goes),
+/// ck_svh_transfer_godowns (a transfer must say both), ck_svh_link (the source
+/// triple is all-or-nothing) and ck_svh_slno.
+///
+/// PARTITIONED BY LIST (svh_acc_year), hence the composite primary key
+/// (svhId, svhAccYear) — and hence [[StockVoucherItem]] joins back on BOTH
+/// columns. A new fiscal year needs its partitions before the first save:
+///     SELECT stock.fn_create_stock_partitions('2027-2028');
+///
+/// DB-only objects Prisma cannot express — hand-authored in the migration and
+/// deliberately NOT declared here. EVERY index on this table carries a WHERE,
+/// and Prisma ignores indexes with predicates; declaring them would make
+/// `migrate dev` regenerate them WITHOUT the predicate and fail on the
+/// existing names:
+///   ux_svh_slno    the per-DEVICE serial — offline numbering
+///   ux_svh_refno   the per-branch printed number
+///   ix_svh_list    the list screen, newest first, per type
+///   ix_svh_inbound the transfer-in worklist: sent to me, not yet received
+///   ix_svh_link    following a link back to the voucher that caused this one
+/// Uniqueness on svhSlno / svhRefno is therefore app-side. Beware the DB error
+/// if you rely on it: because the table is PARTITIONED, a duplicate is
+/// reported against the PARTITION-LOCAL index name, never ux_svh_refno — match
+/// on the column list in P2002 meta.target, or pre-check.
+model StockVoucher {
+  svhId                String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("svh_id")
+  svhCompanyId         String    @db.Uuid                            @map("svh_company_id")
+  svhBranchId          String    @db.Uuid                            @map("svh_branch_id")
+  svhTenantId          String?   @db.Uuid                            @map("svh_tenant_id")
+  /// The PARTITION KEY, and half the primary key.
+  svhAccYear           String    @db.Char(9)                         @map("svh_acc_year")
+
+  /// The counter. See THE DEVICE IS THE COUNTER above.
+  svhDeviceId          String    @db.Uuid                            @map("svh_device_id")
+  svhSessionId         String?   @db.Uuid                            @map("svh_session_id")
+
+  svhVoucherType       String    @db.VarChar(30)                     @map("svh_voucher_type")
+  /// Per company/branch/year/type/DEVICE — ux_svh_slno.
+  svhSlno              BigInt                                        @map("svh_slno")
+  /// The printed number: unique per branch and year on its own — ux_svh_refno.
+  svhRefno             String    @db.VarChar(100)                    @map("svh_refno")
+  svhUsrRefno          String?   @db.VarChar(100)                    @map("svh_usr_refno")
+  svhDocDate           DateTime  @db.Date                            @map("svh_doc_date")
+  svhDocDatetime       DateTime  @default(now()) @db.Timestamptz(6)  @map("svh_doc_datetime")
+
+  // ── Where stock came from and went ──────────────────────────────────────
+  // A RECEIPT fills toGodown only; an ISSUE fills fromGodown only; a TRANSFER
+  // fills both, and toBranch when it leaves the store.
+  svhFromGodownId      String?   @db.Uuid                            @map("svh_from_godown_id")
+  svhToGodownId        String?   @db.Uuid                            @map("svh_to_godown_id")
+  svhToBranchId        String?   @db.Uuid                            @map("svh_to_branch_id")
+
+  svhSupplierId        String?   @db.Uuid                            @map("svh_supplier_id")
+  svhPartyRef          String?   @db.VarChar(100)                    @map("svh_party_ref")
+  svhReasonId          String?   @db.Uuid                            @map("svh_reason_id")
+
+  // ── The voucher this one answers ────────────────────────────────────────
+  // TRANSFER_IN points back at its TRANSFER_OUT; PHYSICAL points at the
+  // ADJUSTMENT it generated. Composite, because it can cross a year end, and
+  // all-or-nothing per ck_svh_link. No foreign key: the target lives in
+  // another partition, and often another branch's document, as often as not.
+  svhLinkSrcModule     String?   @db.VarChar(20)                     @map("svh_link_src_module")
+  svhLinkSrcDocType    String?   @db.VarChar(30)                     @map("svh_link_src_doc_type")
+  svhLinkSrcDocId      String?   @db.Uuid                            @map("svh_link_src_doc_id")
+  svhLinkSrcAccYear    String?   @db.Char(9)                         @map("svh_link_src_acc_year")
+
+  // ── Totals ──────────────────────────────────────────────────────────────
+  // Caches of StockVoucherItem, which owns them.
+  svhLineCount         Int       @default(0)                         @map("svh_line_count")
+  svhTotalQty          Decimal   @default(0) @db.Decimal(18, 6)      @map("svh_total_qty")
+  svhTotalValue        Decimal   @default(0) @db.Decimal(18, 2)      @map("svh_total_value")
+  svhTotalValueWot     Decimal   @default(0) @db.Decimal(18, 2)      @map("svh_total_value_wot")
+
+  // ── Lifecycle ───────────────────────────────────────────────────────────
+  svhStatus            String    @default("DRAFT") @db.VarChar(20)   @map("svh_status")
+  svhPostedOn          DateTime? @db.Timestamptz(6)                  @map("svh_posted_on")
+  svhPostedBy          String?   @db.Uuid                            @map("svh_posted_by")
+  svhApprovedOn        DateTime? @db.Timestamptz(6)                  @map("svh_approved_on")
+  svhApprovedBy        String?   @db.Uuid                            @map("svh_approved_by")
+  svhCancelledOn       DateTime? @db.Timestamptz(6)                  @map("svh_cancelled_on")
+  svhCancelledBy       String?   @db.Uuid                            @map("svh_cancelled_by")
+  svhCancelReason      String?   @db.VarChar(250)                    @map("svh_cancel_reason")
+  svhVersionNo         Int       @default(1)                         @map("svh_version_no")
+
+  // ── PHYSICAL only ───────────────────────────────────────────────────────
+  /// A count freezes the stock it is counting, or it counts a moving target.
+  /// ck_svh_freeze refuses a freeze with no window.
+  svhFreezeStock       Boolean   @default(false)                     @map("svh_freeze_stock")
+  svhFreezeFrom        DateTime? @db.Timestamptz(6)                  @map("svh_freeze_from")
+  svhFreezeTo          DateTime? @db.Timestamptz(6)                  @map("svh_freeze_to")
+  /// Which rate the lines are valued at — see the vocabulary above.
+  svhRateSource        String?   @db.VarChar(20)                     @map("svh_rate_source")
+
+  svhRemarks           String?   @db.VarChar(250)                    @map("svh_remarks")
+  svhIsDeleted         Boolean   @default(false)                     @map("svh_is_deleted")
+  svhSyncDate          DateTime? @db.Timestamptz(6)                  @map("svh_sync_date")
+  svhCreatedOn         DateTime  @default(now()) @db.Timestamptz(6)  @map("svh_created_on")
+  svhCreatedBy         String?   @db.Uuid                            @map("svh_created_by")
+  svhModifiedOn        DateTime? @db.Timestamptz(6)                  @map("svh_modified_on")
+  svhModifiedBy        String?   @db.Uuid                            @map("svh_modified_by")
+
+  // ── Relations ───────────────────────────────────────────────────────────
+  // svhSessionId and the posted/approved/cancelled/created/modified user
+  // columns carry NO foreign key in the migration, so they stay scalar.
+  items                StockVoucherItem[] @relation("StockVoucherItemVoucher")
+  company              Company            @relation("StockVoucherCompany",    fields: [svhCompanyId],   references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_svh_company")
+  branch               BranchMaster       @relation("StockVoucherBranch",     fields: [svhBranchId],    references: [brId],   onUpdate: Cascade, onDelete: Restrict, map: "fk_svh_branch")
+  toBranch             BranchMaster?      @relation("StockVoucherToBranch",   fields: [svhToBranchId],  references: [brId],   onUpdate: Cascade, onDelete: Restrict, map: "fk_svh_to_branch")
+  /// RESTRICT, not SET NULL: the device owns this document's number series, so
+  /// it can be blocked or deactivated but never unlinked.
+  device               DeviceMaster       @relation("StockVoucherDevice",     fields: [svhDeviceId],    references: [devId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_svh_device")
+  fromGodown           GodownLocation?    @relation("StockVoucherFromGodown", fields: [svhFromGodownId], references: [gdlId], onUpdate: Cascade, onDelete: Restrict, map: "fk_svh_from_godown")
+  toGodown             GodownLocation?    @relation("StockVoucherToGodown",   fields: [svhToGodownId],  references: [gdlId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_svh_to_godown")
+  supplier             Supplier?          @relation("StockVoucherSupplier",   fields: [svhSupplierId],  references: [supId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_svh_supplier")
+  reason               StockReasonMaster? @relation("StockVoucherReason",     fields: [svhReasonId],    references: [srmId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_svh_reason")
+
+  @@id([svhId, svhAccYear], map: "pk_stock_voucher")
+  @@map("stock_voucher")
+  @@schema("stock")
+}

@@ -123,6 +123,7 @@ model AccLedgerMaster {
   chargeMasters            ChargeMaster[]
   chargeDetails            TransactionChargeDetail[]
   saleOrderAdvanceLedgers  SaleOrder[]              @relation("SaleOrderAdvanceLedger")
+  stockReasonGlLedgers     StockReasonMaster[]      @relation("StockReasonMasterGlLedger")
   @@unique([ledCompanyId, ledName], name: "uq_led_name_per_company")
   @@unique([ledCompanyId, ledTallyName], name: "uq_led_tally_name_per_company")
   @@index([ledCompanyId], name: "idx_led_company_id")

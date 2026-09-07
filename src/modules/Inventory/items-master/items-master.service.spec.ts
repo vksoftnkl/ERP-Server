@@ -221,9 +221,11 @@ describe('ItemsMasterService composite endpoints', () => {
     stockTrackPolicyService = {
       syncFromItem: jest.fn().mockResolvedValue({
         stp_id: 'stp1',
-        item_id: ITEM_ID,
+        scope_id: ITEM_ID,
+        scope: 'ITEM',
         outcome: 'created',
         track_signature: 'N',
+        preset_code: null,
       }),
     };
 
@@ -413,6 +415,26 @@ describe('ItemsMasterService composite endpoints', () => {
     await service.saveComposite(dto);
 
     expect(prisma.itemMaster.update.mock.calls[0][0].data.itemCompanyId).toBeNull();
+  });
+
+  it('stores item_track_preset_id and hands the saved record to the policy sync', async () => {
+    const presetId = '019c6f6c-be87-7a11-8905-36092c46eeee';
+    prisma.itemMaster.create.mockResolvedValue(
+      makeItemRecord({ itemTrackPresetId: presetId }),
+    );
+
+    await service.saveComposite({
+      item_name_en: 'Amoxicillin 500mg',
+      item_group_id: GROUP_ID,
+      item_track_preset_id: presetId,
+    } as SaveItemCompositeDto);
+
+    expect(prisma.itemMaster.create.mock.calls[0][0].data.itemTrackPresetId).toBe(presetId);
+    // The SAVED record, not the DTO: the policy derives from what the database
+    // actually holds, and shares the item's transaction client.
+    const [syncedItem, syncedTx] = stockTrackPolicyService.syncFromItem.mock.calls[0];
+    expect(syncedItem.itemTrackPresetId).toBe(presetId);
+    expect(syncedTx).toBeDefined();
   });
 
   it('does not call child services when no child arrays are provided', async () => {

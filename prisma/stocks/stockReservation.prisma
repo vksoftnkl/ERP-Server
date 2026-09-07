@@ -1,0 +1,109 @@
+/// stock.stock_reservation — quantity PROMISED but still on the shelf.
+///
+/// A sale order taken at one till against stock a second till is about to
+/// sell. Counting open orders out of SaleOrderItem cannot work in a chain: the
+/// order that committed the last unit may have been raised offline in another
+/// branch and not yet synced, and soiPendingQty is a cache of the ORDER's
+/// state, not of the STOCK's. So the hold lives beside the stock it holds.
+///
+/// RESERVED STOCK IS ON HAND. It is physically there — a physical count will
+/// find it, a valuation must include it — but it is NOT AVAILABLE. That
+/// distinction is exactly why [[StockBalance]] carries sblOnHandQty and
+/// sblAvailableQty as separate figures, and a billing screen must check the
+/// second.
+///
+/// A RESERVATION EXPIRES, and srvExpiresOn is not optional in spirit: without
+/// it a quoted order abandoned in March holds stock hostage for ever, and the
+/// only cure is a human noticing. The expiry sweep reads ix_srv_expiring.
+///
+/// THREE COUNTERS, ONE ANSWER. srvReservedQty is what was promised,
+/// srvConsumedQty is what the eventual document actually took, srvReleasedQty
+/// is what was given back — and srvOpenQty, GENERATED from all three, is what
+/// is still holding stock. The trigger sums srvOpenQty into
+/// StockBalance.sblReservedQty; nothing else may write that column.
+/// ck_srv_settled refuses consuming and releasing more than was ever reserved.
+///
+/// A PARTIAL is a reservation whose document took some of it. CONSUMED,
+/// RELEASED and EXPIRED are terminal, and a terminal row keeps its numbers
+/// rather than being deleted — "we held four units for that order and the
+/// customer never came" is a question somebody asks.
+///
+/// WRITE RULES:
+///   * NEVER write srvOpenQty — GENERATED ALWAYS ... STORED.
+///   * NEVER write StockBalance.sblReservedQty; write here and let the trigger
+///     aggregate.
+///   * One reservation per source line per lot — ux_srv_source — so a re-post
+///     UPDATES rather than stacking a second hold on the same stock. Getting
+///     this wrong double-reserves and makes stock vanish from the sale screen.
+///
+/// Vocabularies, enforced by CHECK constraints in the migration:
+///   srvStatus  OPEN | PARTIAL | CONSUMED | RELEASED | EXPIRED
+///   srvBucket  SALEABLE | DAMAGED | QUARANTINE | EXPIRED | SAMPLE
+/// plus ck_srv_acc_year and ck_srv_qty (a reservation of zero is not a
+/// reservation).
+///
+/// PARTITIONED BY LIST (srv_acc_year), hence the composite primary key.
+///
+/// DB-only objects Prisma cannot express — hand-authored in the migration and
+/// deliberately NOT declared here (every one carries a WHERE):
+///   ux_srv_source   one hold per source line per lot
+///   ix_srv_balance  the trigger's aggregate: open holds against one balance
+///   ix_srv_expiring the expiry sweep
+model StockReservation {
+  srvId                String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("srv_id")
+  srvCompanyId         String    @db.Uuid                            @map("srv_company_id")
+  srvBranchId          String    @db.Uuid                            @map("srv_branch_id")
+  srvTenantId          String?   @db.Uuid                            @map("srv_tenant_id")
+  /// The PARTITION KEY, and half the primary key.
+  srvAccYear           String    @db.Char(9)                         @map("srv_acc_year")
+
+  srvGodownId          String    @db.Uuid                            @map("srv_godown_id")
+  srvItemId            String    @db.Uuid                            @map("srv_item_id")
+  srvLotId             String    @db.Uuid                            @map("srv_lot_id")
+  srvBaseUomId         String    @db.Uuid                            @map("srv_base_uom_id")
+  srvBucket            String    @default("SALEABLE") @db.VarChar(20) @map("srv_bucket")
+
+  // ── What is holding the stock ───────────────────────────────────────────
+  // The same (module, docType, docId) triple used everywhere else. No foreign
+  // key: the holder is a sale order today and something else tomorrow.
+  srvSrcModule         String    @db.VarChar(20)                     @map("srv_src_module")
+  srvSrcDocType        String    @db.VarChar(30)                     @map("srv_src_doc_type")
+  srvSrcDocId          String    @db.Uuid                            @map("srv_src_doc_id")
+  srvSrcAccYear        String?   @db.Char(9)                         @map("srv_src_acc_year")
+  srvSrcRefno          String?   @db.VarChar(100)                    @map("srv_src_refno")
+  srvLineNo            Int       @default(1)                         @map("srv_line_no")
+
+  srvReservedQty       Decimal   @default(0) @db.Decimal(18, 6)      @map("srv_reserved_qty")
+  srvConsumedQty       Decimal   @default(0) @db.Decimal(18, 6)      @map("srv_consumed_qty")
+  srvReleasedQty       Decimal   @default(0) @db.Decimal(18, 6)      @map("srv_released_qty")
+  /// GENERATED ALWAYS ... STORED as reserved - consumed - released. What is
+  /// still holding stock, and what the trigger sums into
+  /// StockBalance.sblReservedQty. Read-only, never sent.
+  srvOpenQty           Decimal?  @default(dbgenerated()) @db.Decimal(18, 6) @map("srv_open_qty")
+
+  srvReservedOn        DateTime  @default(now()) @db.Timestamptz(6)  @map("srv_reserved_on")
+  /// Without this, an abandoned order holds stock for ever.
+  srvExpiresOn         DateTime? @db.Timestamptz(6)                  @map("srv_expires_on")
+  srvStatus            String    @default("OPEN") @db.VarChar(20)    @map("srv_status")
+  srvClosedOn          DateTime? @db.Timestamptz(6)                  @map("srv_closed_on")
+  srvCloseReason       String?   @db.VarChar(250)                    @map("srv_close_reason")
+
+  srvIsDeleted         Boolean   @default(false)                     @map("srv_is_deleted")
+  srvSyncDate          DateTime? @db.Timestamptz(6)                  @map("srv_sync_date")
+  srvCreatedOn         DateTime  @default(now()) @db.Timestamptz(6)  @map("srv_created_on")
+  srvCreatedBy         String?   @db.Uuid                            @map("srv_created_by")
+  srvModifiedOn        DateTime? @db.Timestamptz(6)                  @map("srv_modified_on")
+  srvModifiedBy        String?   @db.Uuid                            @map("srv_modified_by")
+
+  // ── Relations ───────────────────────────────────────────────────────────
+  company              Company            @relation("StockReservationCompany", fields: [srvCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_srv_company")
+  branch               BranchMaster       @relation("StockReservationBranch",  fields: [srvBranchId],  references: [brId],   onUpdate: Cascade, onDelete: Restrict, map: "fk_srv_branch")
+  godown               GodownLocation     @relation("StockReservationGodown",  fields: [srvGodownId],  references: [gdlId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_srv_godown")
+  item                 ItemMaster         @relation("StockReservationItem",    fields: [srvItemId],    references: [itemId], onUpdate: Cascade, onDelete: Restrict, map: "fk_srv_item")
+  lot                  StockLot           @relation("StockReservationLot",     fields: [srvLotId],     references: [sltId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_srv_lot")
+  baseUom              ItemUnitConversion @relation("StockReservationBaseUom", fields: [srvBaseUomId], references: [iucId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_srv_base_uom")
+
+  @@id([srvId, srvAccYear], map: "pk_stock_reservation")
+  @@map("stock_reservation")
+  @@schema("stock")
+}

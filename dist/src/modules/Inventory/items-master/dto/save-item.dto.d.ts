@@ -49,6 +49,7 @@ export declare class SaveItemDto {
     item_default_tax_id?: string | null;
     item_hsn_code?: string | null;
     item_batch_config?: number;
+    item_track_preset_id?: string | null;
     item_sort_order?: number;
     item_photo?: string | null;
     item_image_url?: string | null;

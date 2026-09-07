@@ -102,11 +102,6 @@ model Company {
   voucherDocRegisters   AccVoucherDocRegister[]
   voucherSequences      AccVoucherSeq[]
   voucherHeaders        AccVoucherHeader[]
-  openingStockHeaders   OpeningStockHeader[]
-  openingStockDetails   OpeningStockDetail[]
-  physicalStockHeaders  PhysicalStockHeader[] @relation("PhysicalStockHeaderCompany")
-  physicalStockDetails  PhysicalStockDetail[] @relation("PhysicalStockDetailCompany")
-  physicalStockBatchDetails PhysicalStockBatchDetail[] @relation("PhysicalStockBatchDetailCompany")
   saleAgents            SaleAgent[]       @relation("CompanySaleAgents")
   chargeDetails         TransactionChargeDetail[] @relation("CompanyChargeDetails")
   tenderMasters         AccTenderMaster[]
@@ -115,6 +110,21 @@ model Company {
   promotionSchemes      PromotionScheme[] @relation("PromotionSchemeCompany")
   loyaltySchemes        LoyaltyScheme[]   @relation("LoyaltySchemeCompany")
   stockTrackPolicies    StockTrackPolicy[] @relation("StockTrackPolicyCompany")
+  stockLedgerEntries    StockLedger[]      @relation("StockLedgerCompany")
+  stockTrackPresets     StockTrackPreset[] @relation("StockTrackPresetCompany")
+  stockAgeingSlabs      StockAgeingSlab[]  @relation("StockAgeingSlabCompany")
+  stockReasonMasters    StockReasonMaster[] @relation("StockReasonMasterCompany")
+  stockLots             StockLot[]         @relation("StockLotCompany")
+  stockBalances         StockBalance[]     @relation("StockBalanceCompany")
+  stockItemCosts        StockItemCost[]    @relation("StockItemCostCompany")
+  stockVouchers         StockVoucher[]     @relation("StockVoucherCompany")
+  stockReservations     StockReservation[] @relation("StockReservationCompany")
+  stockTransits         StockTransit[]     @relation("StockTransitCompany")
+  stockValuationSnaps   StockValuationSnap[] @relation("StockValuationSnapCompany")
+  stockDemandDaily      StockDemandDaily[] @relation("StockDemandDailyCompany")
+  stockReorderPolicies  StockReorderPolicy[] @relation("StockReorderPolicyCompany")
+  stockForecasts        StockForecast[]    @relation("StockForecastCompany")
+  stockMovementClasses  StockMovementClass[] @relation("StockMovementClassCompany")
 
   // ── printing (17_printing.sql) ─────────────────────────────────────────
   printPurposes         PrintPurpose[]            @relation("PrintPurposeCompany")

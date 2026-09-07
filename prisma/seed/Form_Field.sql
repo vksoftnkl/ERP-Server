@@ -29,6 +29,7 @@ SELECT v.* FROM (VALUES
     ,(141, 1 , 'itg_parent'                  , 'Parent Group'            , NULL  , 4 , true, 'system')
     ,(142, 1 , 'itg_description'             , 'Description'             , NULL  , 5 , true, 'system')
     ,(143, 1 , 'itg_image'                   , 'Image'                   , NULL  , 6 , true, 'system')
+    ,(620, 1 , 'itg_track_preset_id'         , 'Stock Tracking'          , 'Default tracking preset for items in this group', 7 , true, 'system')
     -- ============ Item Brand Master / basic (id 2) ============
     ,(5  , 2 , 'name'                        , 'name'                    , 'name', 1 , true, 'system')
     -- ============ Unit Master / MAIN SECTION (id 6) ============
@@ -454,6 +455,7 @@ SELECT v.* FROM (VALUES
     ,(617, 71, 'Image Url'                   , 'Image Url'               , NULL  , 2 , true, 'system')
     ,(618, 71, 'Photo File'                  , 'Photo File'              , NULL  , 3 , true, 'system')
     ,(619, 71, 'Notes'                       , 'Notes'                   , NULL  , 4 , true, 'system')
+    ,(621, 71, 'item_track_preset_id'        , 'Stock Tracking'          , 'Batch / expiry / MRP tracking preset', 5 , true, 'system')
 ) AS v(field_id, field_section_id, field_name, field_gui_name, field_secondary_text, field_position, field_visibility, field_created_by)
 WHERE NOT EXISTS (
   SELECT 1 FROM fixed.form_field existing

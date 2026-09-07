@@ -56,6 +56,12 @@ model ItemMaster {
   itemHsnCode          String?  @db.VarChar(10) @map("item_hsn_code")
   // UI / misc
   itemBatchConfig      Int      @default(0) @map("item_batch_config")
+  /// The stock.stock_track_preset the ITEM-scope stock_track_policy row is
+  /// derived from. NULL = derive from itemBatchConfig / itemIsBatchBased /
+  /// itemIsExpiryItem instead. The link is on the MASTER, never on the policy:
+  /// the policy row still owns its own thirteen columns, so editing a preset
+  /// changes nothing until this item is explicitly re-saved.
+  itemTrackPresetId    String?  @db.Uuid @map("item_track_preset_id")
   itemSortOrder        Int?     @map("item_sort_order")
   itemPhoto            Bytes?   @map("item_photo")
   itemImageUrl         String?  @db.Text @map("item_image_url")
@@ -72,15 +78,13 @@ model ItemMaster {
   itemModifiedBy       String?  @db.VarChar(100) @map("item_modified_by")
   // Relations
   group                ItemGroupMaster @relation(fields: [itemGroupId], references: [itgId], onUpdate: Cascade, onDelete: Restrict)
+  trackPreset          StockTrackPreset? @relation("ItemTrackPreset", fields: [itemTrackPresetId], references: [sptId], onUpdate: Cascade, onDelete: Restrict, map: "fk_item_track_preset")
   category             categoryMaster? @relation(fields: [itemCategoryId], references: [categoryId], onUpdate: Cascade, onDelete: SetNull)
   baseUnit             Unit?           @relation(fields: [itemBaseUnitId], references: [unit_id], onUpdate: Cascade, onDelete: Restrict)
   defaultTax           ItemTaxMaster? @relation(fields: [itemDefaultTaxId], references: [taxId], onUpdate: Cascade, onDelete: Restrict)
   prices               ItemPriceMaster[] @relation("ItemPrices")
   qtyPrices            ItemQtyPrice[] @relation("ItemQtyPrices")
   unitConversions      ItemUnitConversion[] @relation("ItemUnitConversions")
-  openingStockDetails  OpeningStockDetail[] @relation("OpeningStockDetailItem")
-  physicalStockDetails PhysicalStockDetail[] @relation("PhysicalStockDetailItem")
-  physicalStockBatchDetails PhysicalStockBatchDetail[] @relation("PhysicalStockBatchDetailItem")
   reorders             ItemReorder[]
   taxHistory           ItemTaxHistory[]
   company              Company? @relation(fields: [itemCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict)
@@ -93,6 +97,18 @@ model ItemMaster {
   loyaltySchemeSlabs   LoyaltySchemeSlab[]   @relation("LoyaltySlabItem")
   loyaltySchemeGifts   LoyaltySchemeGift[]   @relation("LoyaltyGiftItem")
   stockTrackPolicies   StockTrackPolicy[]    @relation("StockTrackPolicyItem")
+  stockLots            StockLot[]            @relation("StockLotItem")
+  stockLedgerEntries   StockLedger[]         @relation("StockLedgerItem")
+  stockBalances        StockBalance[]        @relation("StockBalanceItem")
+  stockItemCosts       StockItemCost[]       @relation("StockItemCostItem")
+  stockVoucherItems    StockVoucherItem[]    @relation("StockVoucherItemItem")
+  stockReservations    StockReservation[]    @relation("StockReservationItem")
+  stockTransits        StockTransit[]        @relation("StockTransitItem")
+  stockValuationSnaps  StockValuationSnap[]  @relation("StockValuationSnapItem")
+  stockDemandDaily     StockDemandDaily[]    @relation("StockDemandDailyItem")
+  stockReorderPolicies StockReorderPolicy[]  @relation("StockReorderPolicyItem")
+  stockForecasts       StockForecast[]       @relation("StockForecastItem")
+  stockMovementClasses StockMovementClass[]  @relation("StockMovementClassItem")
   @@map("item_master")
   @@schema("inventory")
   // UNIQUE item_name_en globally (since company removed)

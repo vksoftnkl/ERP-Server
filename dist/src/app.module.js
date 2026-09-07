@@ -78,6 +78,9 @@ const state_code_master_module_1 = require("./modules/fixed/state-code-master/st
 const ui_table_master_module_1 = require("./modules/fixed/ui-table-master/ui-table-master.module");
 const user_login_sessions_module_1 = require("./modules/fixed/user-login-sessions/user-login-sessions.module");
 const stock_adj_reasons_module_1 = require("./modules/fixed/stock-adj-reasons/stock-adj-reasons.module");
+const stock_track_presets_module_1 = require("./modules/stocks/stock-track-presets/stock-track-presets.module");
+const stock_voucher_module_1 = require("./modules/stocks/stock-voucher/stock-voucher.module");
+const opening_stock_voucher_module_1 = require("./modules/stocks/opening-stock-voucher/opening-stock-voucher.module");
 const master_lookup_module_1 = require("./modules/master-lookup/master-lookup.module");
 const batch_prefix_module_1 = require("./modules/master/batch-prefix/batch-prefix.module");
 const widget_master_module_1 = require("./modules/master/widget-master/widget-master.module");
@@ -87,7 +90,6 @@ const promotion_loyalty_points_module_1 = require("./modules/sales/loyalty/promo
 const promotion_scheme_module_1 = require("./modules/sales/promotion-scheme/promotion-scheme.module");
 const print_template_assignment_module_1 = require("./modules/settings/print-template-assignment/print-template-assignment.module");
 const print_render_module_1 = require("./modules/settings/print-render/print-render.module");
-const physical_stock_module_1 = require("./modules/stocks/physical-stock/physical-stock.module");
 const itemStockBalanceModule_1 = require("./modules/stocks/itemstockbalance/itemStockBalanceModule");
 const itemBatchStockModule_1 = require("./modules/stocks/itembatchstock/itemBatchStockModule");
 const godowns_master_module_1 = require("./modules/Inventory/godowns-master/godowns-master.module");
@@ -210,12 +212,14 @@ exports.AppModule = AppModule = __decorate([
             ui_table_master_module_1.UiTableMasterModule,
             user_login_sessions_module_1.UserLoginSessionsModule,
             stock_adj_reasons_module_1.StockAdjReasonsModule,
+            stock_track_presets_module_1.StockTrackPresetsModule,
+            stock_voucher_module_1.StockVoucherModule,
+            opening_stock_voucher_module_1.OpeningStockVoucherModule,
             master_lookup_module_1.MasterLookupModule,
             batch_prefix_module_1.BatchPrefixModule,
             widget_master_module_1.WidgetMasterModule,
             charge_master_module_1.ChargeMasterModule,
             charge_detail_module_1.ChargeDetailModule,
-            physical_stock_module_1.PhysicalStockModule,
             itemStockBalanceModule_1.ItemStockBalanceModule,
             itemBatchStockModule_1.ItemBatchStockModule,
             promotion_loyalty_points_module_1.PromotionLoyaltyPointsModule,

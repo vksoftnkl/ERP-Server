@@ -3,11 +3,13 @@ import { ItemGroupPayload } from './types/item-group-api.types';
 import { PrismaService } from "../../../database/prisma/prisma.service";
 import { AuditLogService } from "../../audit-log/audit-log.service";
 import { RequestContextService } from '../../../common/request-context/request-context.service';
+import { StockTrackPolicyService } from "../../stocks/stock-track-policy/stock-track-policy.service";
 export declare class ItemsGroupMasterService {
     private readonly prisma;
     private readonly auditLogService;
     private readonly requestContextService;
-    constructor(prisma: PrismaService, auditLogService: AuditLogService, requestContextService: RequestContextService);
+    private readonly stockTrackPolicyService;
+    constructor(prisma: PrismaService, auditLogService: AuditLogService, requestContextService: RequestContextService, stockTrackPolicyService: StockTrackPolicyService);
     save(saveItemGroupDto: SaveItemGroupDto): Promise<ItemGroupPayload>;
     getById(itgId: string): Promise<ItemGroupPayload>;
     private resolveParentName;

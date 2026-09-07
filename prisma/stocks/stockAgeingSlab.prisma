@@ -1,0 +1,92 @@
+/// stock.stock_ageing_slab — the age buckets an ageing report sums into:
+/// "0-30 / 31-60 / 61-90 / 91-180 / over 180". One row is one bucket; the rows
+/// sharing a sagCompanyId are one LADDER.
+///
+/// sagCompanyId NULL = the DEFAULT ladder, used by any company that has not
+/// authored one of its own. Unlike the tracking presets — where a company row
+/// merges over a shared row code by code — this fallback is ALL OR NOTHING:
+/// fn_sag_effective returns a company's own slabs if it has any, otherwise the
+/// default ones, never a mixture. Merging two ladders would put one holding in
+/// two buckets and the report would stop summing to the balance. A company that
+/// wants a dairy's 0-3-7 inserts its FULL ladder, not a patch over the default.
+///
+/// The bucket a holding falls in is decided by the age in DAYS measured from
+/// whatever stpAgeingBasis the resolved StockTrackPolicy names (inward date,
+/// last-in date, or manufacture date) — this table only says where the cuts
+/// are, never how age is computed.
+///
+/// The range is HALF-OPEN in the database: [sagFromDays, sagToDays + 1). Read
+/// the columns as inclusive-inclusive — 31-60 means both 31 and 60 — and let
+/// the exclusion constraint do the arithmetic. It is written that way rather
+/// than as an inclusive '[]' range because an inclusive upper bound of int4's
+/// maximum overflows when PostgreSQL normalises it to upper + 1.
+///
+/// sagToDays NULL = OPEN ENDED, "and everything older". There must be exactly
+/// one such slab per ladder, and it must be the last one: without it the oldest
+/// stock falls out of every bucket and the report silently under-reports.
+///
+/// WRITE RULES:
+///   * a ladder is contiguous and gapless. The overlap constraint stops two
+///     slabs claiming the same day; nothing at the database level stops a GAP
+///     (31-60 followed by 71-90), so the screen must.
+///   * REORDERING A LADDER NEEDS A DEFERRED TRANSACTION. Shrinking 0-30 to
+///     0-14 collides with 31-60 until that row moves too, so a row-at-a-time
+///     save cannot reorder a ladder at all. Issue
+///         SET CONSTRAINTS stock.ex_sag_overlap DEFERRED
+///     first, write every row, then COMMIT. The constraint is DEFERRABLE
+///     INITIALLY IMMEDIATE, so callers that do not ask for this are unaffected.
+///   * sagSlabNo is the display order and the stable identity within a ladder,
+///     1-based. (sagCompanyId, sagSlabNo) is unique among undeleted rows.
+///
+/// DB-only objects Prisma cannot express — hand-authored in the migration and
+/// deliberately NOT declared here (both carry a WHERE, and Prisma ignores
+/// indexes with predicates):
+///   ex_sag_overlap  EXCLUDE USING gist over (company, int4range(from, to+1))
+///                   WHERE active AND NOT deleted. Needs btree_gist. The
+///                   company is COALESCEd to the nil uuid because EXCLUDE never
+///                   conflicts on NULL — without it two default slabs could
+///                   claim the same day. A default slab and a company slab
+///                   covering the same days DO coexist, and must: they belong
+///                   to different ladders.
+///   ux_sag_slab_no  unique on (COALESCE(company, nil uuid), slab_no) WHERE NOT
+///                   deleted — COALESCEd for the same reason, a plain unique
+///                   index treats every NULL as distinct and would let the seed
+///                   insert two slab 1s into the default ladder.
+/// plus ck_sag_days (from >= 0, and to >= from when to is given) and
+/// ck_sag_slab_no (>= 1).
+///
+/// sagCreatedBy carries no foreign key in the migration, unlike
+/// [[StockTrackPolicy]] and [[StockTrackPreset]], so no relation is declared —
+/// adding one here without adding fk_sag_created_by to the DDL would show up as
+/// schema drift on the next migrate.
+model StockAgeingSlab {
+  sagId              String    @id(map: "pk_stock_ageing_slab") @default(dbgenerated("uuidv7()")) @db.Uuid @map("sag_id")
+
+  /// NULL = the default ladder, used whole by any company with no ladder of
+  /// its own. Never merged with a company's own slabs.
+  sagCompanyId       String?   @db.Uuid                                     @map("sag_company_id")
+  /// 1-based position in the ladder: display order and stable identity.
+  sagSlabNo          Int                                                    @map("sag_slab_no")
+  /// What the report column says — "31-60 days". Free text on purpose: it is
+  /// never parsed back into the bounds below.
+  sagLabel           String    @db.VarChar(50)                              @map("sag_label")
+  /// Inclusive lower bound, in days.
+  sagFromDays        Int                                                    @map("sag_from_days")
+  /// Inclusive upper bound, in days. NULL = open ended; exactly one slab per
+  /// ladder may be NULL, and it is the last one.
+  sagToDays          Int?                                                   @map("sag_to_days")
+
+  sagIsActive        Boolean   @default(true)                               @map("sag_is_active")
+  sagIsDeleted       Boolean   @default(false)                              @map("sag_is_deleted")
+  sagSyncDate        DateTime? @db.Timestamptz(6)                           @map("sag_sync_date")
+  sagCreatedOn       DateTime  @default(now()) @db.Timestamptz(6)           @map("sag_created_on")
+  sagCreatedBy       String?   @db.Uuid                                     @map("sag_created_by")
+  sagModifiedOn      DateTime? @db.Timestamptz(6)                           @map("sag_modified_on")
+  sagModifiedBy      String?   @db.Uuid                                     @map("sag_modified_by")
+
+  // ── Relations ───────────────────────────────────────────────────────────
+  company            Company?  @relation("StockAgeingSlabCompany", fields: [sagCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_sag_company")
+
+  @@map("stock_ageing_slab")
+  @@schema("stock")
+}

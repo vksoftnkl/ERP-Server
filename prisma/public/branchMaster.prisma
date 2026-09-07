@@ -71,11 +71,6 @@ model BranchMaster {
   voucherDocRegisters   AccVoucherDocRegister[]
   voucherSequences      AccVoucherSeq[]
   voucherHeaders        AccVoucherHeader[]
-  openingStockHeaders   OpeningStockHeader[]
-  openingStockDetails   OpeningStockDetail[]
-  physicalStockHeaders  PhysicalStockHeader[] @relation("PhysicalStockHeaderBranch")
-  physicalStockDetails  PhysicalStockDetail[] @relation("PhysicalStockDetailBranch")
-  physicalStockBatchDetails PhysicalStockBatchDetail[] @relation("PhysicalStockBatchDetailBranch")
   itemPrices            ItemPriceMaster[] @relation("BranchItemPrices")
   itemQtyPrices         ItemQtyPrice[]    @relation("BranchItemQtyPrices")
   freightCharges        SaleFreightCharge[] @relation("BranchFreightCharges")
@@ -91,6 +86,20 @@ model BranchMaster {
   loyaltySchemes        LoyaltyScheme[]         @relation("LoyaltySchemeBranchRef")
   loyaltySchemeBranches LoyaltySchemeBranch[]   @relation("LoyaltySchemeBranchBranch")
   stockTrackPolicies    StockTrackPolicy[]      @relation("StockTrackPolicyBranch")
+  stockLotsFirstInward  StockLot[]              @relation("StockLotFirstInwardBranch")
+  stockLedgerEntries    StockLedger[]           @relation("StockLedgerBranch")
+  stockBalances         StockBalance[]          @relation("StockBalanceBranch")
+  stockItemCosts        StockItemCost[]         @relation("StockItemCostBranch")
+  stockVouchers         StockVoucher[]          @relation("StockVoucherBranch")
+  stockVouchersInbound  StockVoucher[]          @relation("StockVoucherToBranch")
+  stockReservations     StockReservation[]      @relation("StockReservationBranch")
+  stockTransitsOut      StockTransit[]          @relation("StockTransitFromBranch")
+  stockTransitsIn       StockTransit[]          @relation("StockTransitToBranch")
+  stockValuationSnaps   StockValuationSnap[]    @relation("StockValuationSnapBranch")
+  stockDemandDaily      StockDemandDaily[]      @relation("StockDemandDailyBranch")
+  stockReorderPolicies  StockReorderPolicy[]    @relation("StockReorderPolicyBranch")
+  stockForecasts        StockForecast[]         @relation("StockForecastBranch")
+  stockMovementClasses  StockMovementClass[]    @relation("StockMovementClassBranch")
 
   // ── printing (17_printing.sql) ─────────────────────────────────────────
   printAssignments      PrintTemplateAssignment[] @relation("PrintTemplateAssignmentBranch")

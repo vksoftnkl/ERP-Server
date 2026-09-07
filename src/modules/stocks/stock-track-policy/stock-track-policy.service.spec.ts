@@ -1,19 +1,29 @@
-import { Prisma, StockTrackPolicy } from '@prisma/client';
+import { Prisma, StockTrackPolicy, StockTrackPreset } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
-import { DERIVED_FROM_ITEM_REMARK, StockTrackPolicyService } from './stock-track-policy.service';
-import { ItemTrackPolicySource } from './types/stock-track-policy.types';
+import {
+  DERIVED_FROM_GROUP_REMARK,
+  DERIVED_FROM_ITEM_REMARK,
+  StockTrackPolicyService,
+} from './stock-track-policy.service';
+import {
+  ItemGroupTrackPolicySource,
+  ItemTrackPolicySource,
+} from './types/stock-track-policy.types';
 
 const ITEM_ID = '01000000-0000-7000-8000-000000000001';
 const COMPANY_ID = '01000000-0000-7000-8000-0000000000c1';
 const BRANCH_ID = '01000000-0000-7000-8000-0000000000b1';
 const USER_ID = '01000000-0000-7000-8000-0000000000a1';
+const GROUP_ID = '01000000-0000-7000-8000-0000000000f1';
+const PRESET_ID = '01000000-0000-7000-8000-0000000000e1';
 
 const item = (overrides: Partial<ItemTrackPolicySource> = {}): ItemTrackPolicySource => ({
   itemId: ITEM_ID,
   itemCompanyId: COMPANY_ID,
   itemBranchId: BRANCH_ID,
+  itemTrackPresetId: null,
   itemBatchConfig: 0,
   itemIsBatchBased: false,
   itemIsExpiryItem: false,
@@ -22,6 +32,48 @@ const item = (overrides: Partial<ItemTrackPolicySource> = {}): ItemTrackPolicySo
   itemAllowNegStock: true,
   ...overrides,
 });
+
+const group = (
+  overrides: Partial<ItemGroupTrackPolicySource> = {},
+): ItemGroupTrackPolicySource => ({
+  itgId: GROUP_ID,
+  itgTrackPresetId: null,
+  ...overrides,
+});
+
+/** PHARMA from prisma/seed/Stock_Track_Presets.sql. */
+const preset = (overrides: Partial<StockTrackPreset> = {}): StockTrackPreset =>
+  ({
+    sptId: PRESET_ID,
+    sptCompanyId: null,
+    sptCode: 'PHARMA',
+    sptName: 'Pharma (batch + expiry + MRP + supplier)',
+    sptDescription: null,
+    sptTrackBatch: true,
+    sptTrackMrp: true,
+    sptTrackSalePrice: false,
+    sptTrackExpiry: true,
+    sptTrackSerial: false,
+    sptTrackSupplier: true,
+    sptTrackSignature: 'BMEP',
+    sptValuationMethod: 'WAVG',
+    sptIssueStrategy: 'FEFO',
+    sptAllowNegative: 'ALLOW',
+    sptShelfLifeDays: null,
+    sptNearExpiryDays: 90,
+    sptBlockExpiredSale: true,
+    sptAgeingBasis: 'INWARD_DATE',
+    sptSortOrder: 70,
+    sptRemarks: null,
+    sptIsActive: true,
+    sptIsDeleted: false,
+    sptSyncDate: null,
+    sptCreatedOn: new Date('2026-09-05'),
+    sptCreatedBy: null,
+    sptModifiedOn: null,
+    sptModifiedBy: null,
+    ...overrides,
+  }) as StockTrackPreset;
 
 const policyRow = (overrides: Partial<StockTrackPolicy> = {}): StockTrackPolicy =>
   ({
@@ -63,6 +115,7 @@ describe('StockTrackPolicyService', () => {
   let service: StockTrackPolicyService;
   let client: {
     stockTrackPolicy: { findFirst: jest.Mock; create: jest.Mock; update: jest.Mock };
+    stockTrackPreset: { findUnique: jest.Mock };
   };
   let auditLogService: { logEntityChange: jest.Mock };
 
@@ -79,12 +132,16 @@ describe('StockTrackPolicyService', () => {
           Promise.resolve(policyRow(args.data as Partial<StockTrackPolicy>)),
         ),
       },
+      stockTrackPreset: { findUnique: jest.fn().mockResolvedValue(null) },
     };
     auditLogService = { logEntityChange: jest.fn().mockResolvedValue(undefined) };
     service = new StockTrackPolicyService(
       client as unknown as PrismaService,
       auditLogService as unknown as AuditLogService,
-      { getUserId: () => USER_ID } as unknown as RequestContextService,
+      {
+        getUserId: () => USER_ID,
+        getCompanyId: () => COMPANY_ID,
+      } as unknown as RequestContextService,
     );
   });
 
@@ -224,6 +281,203 @@ describe('StockTrackPolicyService', () => {
           data: expect.objectContaining({ stpBranchId: BRANCH_ID }),
         }),
       );
+    });
+
+    it('takes every column from the preset, ignoring the item flags entirely', async () => {
+      client.stockTrackPreset.findUnique.mockResolvedValueOnce(preset());
+
+      // Flags that on their own would derive B/FEFO/BLOCK and a 7-day window.
+      const result = await service.syncFromItem(
+        item({
+          itemTrackPresetId: PRESET_ID,
+          itemIsBatchBased: true,
+          itemAllowNegStock: false,
+          itemIntimateBeforeDays: 7,
+        }),
+        tx(),
+      );
+
+      expect(result.outcome).toBe('created');
+      expect(result.preset_code).toBe('PHARMA');
+      const { data } = client.stockTrackPolicy.create.mock.calls[0][0];
+      expect(data).toMatchObject({
+        stpTrackBatch: true,
+        stpTrackMrp: true,
+        stpTrackExpiry: true,
+        // Only a preset can set these three; no item_master column expresses them.
+        stpTrackSupplier: true,
+        stpTrackSalePrice: false,
+        stpTrackSerial: false,
+        stpBlockExpiredSale: true,
+        // The preset's window and negative-stock rule, not the item's.
+        stpNearExpiryDays: 90,
+        stpAllowNegative: 'ALLOW',
+        stpRemarks: `${DERIVED_FROM_ITEM_REMARK} [preset PHARMA]`,
+      });
+    });
+
+    it('falls back to the item flags when the preset id names nothing', async () => {
+      client.stockTrackPreset.findUnique.mockResolvedValueOnce(null);
+
+      const result = await service.syncFromItem(
+        item({ itemTrackPresetId: PRESET_ID, itemIsExpiryItem: true }),
+        tx(),
+      );
+
+      expect(result.outcome).toBe('created');
+      expect(result.preset_code).toBeNull();
+      const { data } = client.stockTrackPolicy.create.mock.calls[0][0];
+      expect(data).toMatchObject({
+        stpTrackExpiry: true,
+        stpTrackSupplier: false,
+        stpNearExpiryDays: 30,
+        stpRemarks: DERIVED_FROM_ITEM_REMARK,
+      });
+    });
+
+    it('honours a preset that has since been deactivated, rather than silently untracking the item', async () => {
+      // Retiring a preset stops it being OFFERED. An item already configured
+      // with it must keep resolving to it — falling back here would drop batch
+      // and expiry from an item whose stock is already keyed by them.
+      client.stockTrackPreset.findUnique.mockResolvedValueOnce(
+        preset({ sptIsActive: false, sptIsDeleted: true }),
+      );
+
+      const result = await service.syncFromItem(item({ itemTrackPresetId: PRESET_ID }), tx());
+
+      expect(result.preset_code).toBe('PHARMA');
+      expect(client.stockTrackPreset.findUnique).toHaveBeenCalledWith({
+        where: { sptId: PRESET_ID },
+      });
+      expect(client.stockTrackPolicy.create.mock.calls[0][0].data).toMatchObject({
+        stpTrackBatch: true,
+        stpTrackSupplier: true,
+      });
+    });
+
+    it('rewrites the remark when the preset changes but its values do not', async () => {
+      client.stockTrackPolicy.findFirst.mockResolvedValueOnce(
+        policyRow({ stpRemarks: `${DERIVED_FROM_ITEM_REMARK} [preset FMCG_MRP]` }),
+      );
+      client.stockTrackPreset.findUnique.mockResolvedValueOnce(
+        // Same thirteen values as the untracked policyRow default, different code.
+        preset({
+          sptCode: 'NONE',
+          sptTrackBatch: false,
+          sptTrackMrp: false,
+          sptTrackExpiry: false,
+          sptTrackSupplier: false,
+          sptIssueStrategy: 'FIFO',
+          sptNearExpiryDays: 30,
+          sptBlockExpiredSale: false,
+        }),
+      );
+
+      const result = await service.syncFromItem(item({ itemTrackPresetId: PRESET_ID }), tx());
+
+      // Provenance is only recorded on the row, so a changed preset is a change
+      // even when every value it supplies is identical.
+      expect(result.outcome).toBe('updated');
+      expect(client.stockTrackPolicy.update.mock.calls[0][0].data.stpRemarks).toBe(
+        `${DERIVED_FROM_ITEM_REMARK} [preset NONE]`,
+      );
+    });
+
+    it('still recognises a pre-preset derived row, which carries the bare marker', async () => {
+      client.stockTrackPolicy.findFirst.mockResolvedValueOnce(
+        policyRow({ stpRemarks: DERIVED_FROM_ITEM_REMARK }),
+      );
+
+      const result = await service.syncFromItem(item({ itemIsBatchBased: true }), tx());
+
+      expect(result.outcome).toBe('updated');
+    });
+  });
+
+  describe('syncFromItemGroup', () => {
+    it('writes nothing at all when the group names no preset', async () => {
+      const result = await service.syncFromItemGroup(group(), tx());
+
+      // An all-false GROUP row would shadow the company-wide policy for every
+      // item in the group, so "no preset" must mean no row, not a default one.
+      expect(result).toMatchObject({ outcome: 'no_preset', stp_id: null, scope: 'GROUP' });
+      expect(client.stockTrackPolicy.create).not.toHaveBeenCalled();
+      expect(client.stockTrackPolicy.update).not.toHaveBeenCalled();
+      expect(auditLogService.logEntityChange).not.toHaveBeenCalled();
+    });
+
+    it('creates the GROUP row at the context company, open to every branch', async () => {
+      client.stockTrackPreset.findUnique.mockResolvedValueOnce(preset());
+
+      const result = await service.syncFromItemGroup(group({ itgTrackPresetId: PRESET_ID }), tx());
+
+      expect(result).toMatchObject({ outcome: 'created', scope: 'GROUP', preset_code: 'PHARMA' });
+      const { data } = client.stockTrackPolicy.create.mock.calls[0][0];
+      expect(data).toMatchObject({
+        stpScope: 'GROUP',
+        stpScopeId: GROUP_ID,
+        stpCompanyId: COMPANY_ID,
+        // A group rule sits above the branches, not inside one.
+        stpBranchId: null,
+        stpTrackSupplier: true,
+        stpRemarks: `${DERIVED_FROM_GROUP_REMARK} [preset PHARMA]`,
+      });
+      expect(data).not.toHaveProperty('stpGroupId');
+      expect(data).not.toHaveProperty('stpTrackSignature');
+    });
+
+    it('retires the derived row when the preset is cleared', async () => {
+      client.stockTrackPolicy.findFirst.mockResolvedValueOnce(
+        policyRow({
+          stpScope: 'GROUP',
+          stpScopeId: GROUP_ID,
+          stpItemId: null,
+          stpGroupId: GROUP_ID,
+          stpBranchId: null,
+          stpRemarks: `${DERIVED_FROM_GROUP_REMARK} [preset PHARMA]`,
+        }),
+      );
+
+      const result = await service.syncFromItemGroup(group(), tx());
+
+      expect(result.outcome).toBe('cleared');
+      // Deactivated as well as soft-deleted: ex_stp_overlap and ix_stp_resolve
+      // are both partial on active AND NOT deleted, so this frees the slot.
+      expect(client.stockTrackPolicy.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { stpId: 'stp1' },
+          data: expect.objectContaining({ stpIsActive: false, stpIsDeleted: true }),
+        }),
+      );
+    });
+
+    it('leaves an admin-authored GROUP policy alone, even when a preset is set', async () => {
+      client.stockTrackPolicy.findFirst.mockResolvedValueOnce(
+        policyRow({
+          stpScope: 'GROUP',
+          stpGroupId: GROUP_ID,
+          stpRemarks: 'Authored by the stock controller',
+        }),
+      );
+      client.stockTrackPreset.findUnique.mockResolvedValueOnce(preset());
+
+      const result = await service.syncFromItemGroup(group({ itgTrackPresetId: PRESET_ID }), tx());
+
+      expect(result.outcome).toBe('skipped_manual');
+      expect(client.stockTrackPolicy.create).not.toHaveBeenCalled();
+      expect(client.stockTrackPolicy.update).not.toHaveBeenCalled();
+    });
+
+    it('revives a previously retired row rather than colliding with it', async () => {
+      client.stockTrackPolicy.findFirst.mockResolvedValueOnce(null);
+      client.stockTrackPreset.findUnique.mockResolvedValueOnce(preset());
+
+      await service.syncFromItemGroup(group({ itgTrackPresetId: PRESET_ID }), tx());
+
+      // The retired row is invisible to the slot lookup (stpIsDeleted: false),
+      // so this is a create — and createDerived leaves is_active/is_deleted at
+      // their defaults rather than resurrecting anything by accident.
+      expect(client.stockTrackPolicy.create).toHaveBeenCalledTimes(1);
     });
   });
 });

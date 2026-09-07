@@ -45,6 +45,10 @@
       "description": "fixed.form_field — widget-master fields; after Form_Section.sql (FK)"
     },
     {
+      "file": "Form_Field_Stock_Track_Preset.sql",
+      "description": "fixed.form_field \u2014 the Stock Tracking preset combo on Item Master (section 71) and Item Group Master (section 1); targeted because Form_Field.sql is guarded per section and skips one that already has fields"
+    },
+    {
       "file": "Price_Levels.sql",
       "description": "fixed.price_levels — selling price levels"
     },
@@ -59,6 +63,18 @@
     {
       "file": "Stock_Adjust_Reasons.sql",
       "description": "fixed.stock_adj_reasons — physical stock adjustment reasons (replaces the former TypeScript seed)"
+    },
+    {
+      "file": "Stock_Track_Presets.sql",
+      "description": "stock.stock_track_preset \u2014 the shared tracking presets offered by the tracking-policy screen; independent of every other seed, needs only the stock_track_preset table"
+    },
+    {
+      "file": "Stock_Reason_Master.sql",
+      "description": "stock.stock_reason_master \u2014 the shared movement reasons; fn_svh_txn_map refuses an ADJUSTMENT that cites none, so ADJUSTMENT cannot post until these exist. No-ops until the stock movement engine is migrated in"
+    },
+    {
+      "file": "Stock_Ageing_Slabs.sql",
+      "description": "stock.stock_ageing_slab \u2014 the default 30/60/90/180 ageing ladder offered to every company that has not defined its own; all-or-nothing, so it seeds only when no shared slab exists. No-ops until the stock movement engine is migrated in"
     },
     {
       "file": "State_Codes.sql",

@@ -5,6 +5,7 @@ exports.buildErrorResponse = buildErrorResponse;
 exports.throwBadRequest = throwBadRequest;
 exports.throwConflict = throwConflict;
 exports.throwForbidden = throwForbidden;
+exports.throwUnprocessable = throwUnprocessable;
 exports.throwNotFound = throwNotFound;
 exports.throwOnUniqueConstraintError = throwOnUniqueConstraintError;
 exports.isUniqueConstraintError = isUniqueConstraintError;
@@ -38,6 +39,9 @@ function throwConflict(message, errors) {
 }
 function throwForbidden(message, errors) {
     throw new common_1.ForbiddenException(buildErrorResponse(message, errors));
+}
+function throwUnprocessable(message, errors) {
+    throw new common_1.UnprocessableEntityException(buildErrorResponse(message, errors));
 }
 function throwNotFound(message, field, detailMessage) {
     throw new common_1.NotFoundException(buildErrorResponse(message, [

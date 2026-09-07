@@ -1,10 +1,11 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma, StockTrackPolicy } from '@prisma/client';
+import { Prisma, StockTrackPolicy, StockTrackPreset } from '@prisma/client';
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import { AuditLogService } from 'src/modules/audit-log/audit-log.service';
 import { RequestContextService } from 'src/common/request-context/request-context.service';
 import {
   DerivedTrackPolicy,
+  ItemGroupTrackPolicySource,
   ItemTrackPolicySource,
   StockTrackPolicySyncResult,
 } from './types/stock-track-policy.types';
@@ -13,9 +14,17 @@ const STP_AUDIT_SCREEN_NAME = 'Stock Track Policy';
 /**
  * Written into stp_remarks on every row this service creates, and the ONLY
  * thing that distinguishes a derived row from one an admin authored by hand.
- * Rows without this marker are never written to — see syncFromItem.
+ * Rows without one of these markers are never written to — see syncFromItem.
+ *
+ * A row derived from a PRESET carries the marker plus the code it resolved,
+ * `Auto-derived from item master [preset PHARMA]`, so that later drift — an
+ * admin edits PHARMA, somebody re-saves the item, the policy silently moves —
+ * is visible on the row itself rather than only in the audit trail. That is
+ * why the derived test is a PREFIX match and not an equality one; rows written
+ * before presets existed carry the bare marker and still read as derived.
  */
 export const DERIVED_FROM_ITEM_REMARK = 'Auto-derived from item master';
+export const DERIVED_FROM_GROUP_REMARK = 'Auto-derived from item group master';
 @Injectable()
 export class StockTrackPolicyService {
   constructor(
@@ -25,9 +34,15 @@ export class StockTrackPolicyService {
   ) {}
   /**
    * Creates or refreshes the ITEM-scope stock.stock_track_policy row for an
-   * item, derived entirely from item_master. Call it from item create AND item
-   * update, inside the caller's transaction, so the item and its policy are
-   * saved or rolled back together.
+   * item. Call it from item create AND item update, inside the caller's
+   * transaction, so the item and its policy are saved or rolled back together.
+   *
+   * WHERE THE VALUES COME FROM. item_track_preset_code wins outright: a preset
+   * was chosen deliberately and supplies all thirteen columns, including the
+   * three (sale price, serial, supplier) and the two (valuation, ageing basis)
+   * that no item_master column can express. Only when there is no preset — or
+   * the code names nothing this company can see — do the item's own
+   * batch/expiry flags derive the policy, exactly as they always did.
    *
    * WHAT IT WILL NOT DO — an admin's policy always wins. If a row already
    * holds this item's (company, branch, ITEM) slot and does NOT carry
@@ -51,7 +66,11 @@ export class StockTrackPolicyService {
     tx?: Prisma.TransactionClient,
   ): Promise<StockTrackPolicySyncResult> {
     const client: Prisma.TransactionClient = tx ?? this.prisma;
-    const derived = this.deriveFromItem(item);
+    const preset = await this.resolvePreset(item.itemTrackPresetId, client);
+    const derived = preset ? this.presetToDerived(preset) : this.deriveFromItem(item);
+    // No preset means the row was derived from the item's own flags, and the
+    // remark says so — it is the only place that provenance is recorded.
+    const remarks = this.derivedRemark(DERIVED_FROM_ITEM_REMARK, preset?.sptCode ?? null);
     // The slot the database itself considers "the same policy": ex_stp_overlap
     // keys on (company, branch, scope, scope_id, date range).
     const atSlot = await client.stockTrackPolicy.findFirst({
@@ -64,13 +83,8 @@ export class StockTrackPolicyService {
       },
       orderBy: { stpCreatedOn: 'asc' },
     });
-    if (atSlot && atSlot.stpRemarks !== DERIVED_FROM_ITEM_REMARK) {
-      return {
-        stp_id: atSlot.stpId,
-        item_id: item.itemId,
-        outcome: 'skipped_manual',
-        track_signature: atSlot.stpTrackSignature,
-      };
+    if (atSlot && !this.isDerivedRemark(atSlot.stpRemarks, DERIVED_FROM_ITEM_REMARK)) {
+      return this.result(atSlot, item.itemId, 'ITEM', 'skipped_manual');
     }
     // Nothing in this slot: the item may still own a derived row filed under
     // the company/branch it had BEFORE this save. Move that one instead of
@@ -81,20 +95,138 @@ export class StockTrackPolicyService {
         where: {
           stpScope: 'ITEM',
           stpItemId: item.itemId,
-          stpRemarks: DERIVED_FROM_ITEM_REMARK,
+          stpRemarks: { startsWith: DERIVED_FROM_ITEM_REMARK },
           stpIsDeleted: false,
         },
         orderBy: { stpCreatedOn: 'asc' },
       }));
     return existing
-      ? this.updateDerived(existing, item, derived, client)
-      : this.createDerived(item, derived, client);
+      ? this.updateDerived(existing, item.itemId, 'ITEM', derived, remarks, client, {
+          companyId: item.itemCompanyId,
+          branchId: item.itemBranchId,
+        })
+      : this.createDerived(item.itemId, 'ITEM', derived, remarks, client, {
+          companyId: item.itemCompanyId,
+          branchId: item.itemBranchId,
+        });
+  }
+  /**
+   * Creates, refreshes or retires the GROUP-scope policy row for an item group.
+   * Call it from group create AND group update, inside the caller's
+   * transaction, exactly like syncFromItem.
+   *
+   * THE PRESET IS THE ONLY INPUT. item_group_master has no tracking flags of
+   * its own, so there is nothing to fall back to — and a defaulted all-false
+   * GROUP row would be worse than no row at all: the resolver's chain runs
+   * branch+ITEM -> branch+GROUP -> branch+COMPANY -> company+ITEM ->
+   * company+GROUP -> company+COMPANY, so an empty GROUP row would SHADOW the
+   * company-wide policy for every item in the group and quietly untrack them.
+   * No preset therefore means no write ('no_preset'), and REMOVING a preset
+   * retires the row it wrote ('cleared') rather than leaving it standing.
+   *
+   * SCOPE. item_group_master is not company-owned, but a policy must be: two
+   * companies sharing a group can legitimately track it differently. The row
+   * is filed under the request context's company and left open to every branch
+   * (stp_branch_id NULL), which is the level the resolver expects a group rule
+   * to sit at.
+   */
+  async syncFromItemGroup(
+    group: ItemGroupTrackPolicySource,
+    tx?: Prisma.TransactionClient,
+  ): Promise<StockTrackPolicySyncResult> {
+    const client: Prisma.TransactionClient = tx ?? this.prisma;
+    const companyId = this.requestContextService.getCompanyId();
+    const preset = await this.resolvePreset(group.itgTrackPresetId, client);
+    const atSlot = await client.stockTrackPolicy.findFirst({
+      where: {
+        stpScope: 'GROUP',
+        stpGroupId: group.itgId,
+        stpCompanyId: companyId,
+        stpBranchId: null,
+        stpIsDeleted: false,
+      },
+      orderBy: { stpCreatedOn: 'asc' },
+    });
+    if (atSlot && !this.isDerivedRemark(atSlot.stpRemarks, DERIVED_FROM_GROUP_REMARK)) {
+      return this.result(atSlot, group.itgId, 'GROUP', 'skipped_manual');
+    }
+    if (!preset) {
+      return atSlot
+        ? this.retireDerived(atSlot, group.itgId, client)
+        : {
+            stp_id: null,
+            scope_id: group.itgId,
+            scope: 'GROUP',
+            outcome: 'no_preset',
+            track_signature: null,
+            preset_code: null,
+          };
+    }
+    const derived = this.presetToDerived(preset);
+    const remarks = this.derivedRemark(DERIVED_FROM_GROUP_REMARK, preset.sptCode);
+    return atSlot
+      ? this.updateDerived(atSlot, group.itgId, 'GROUP', derived, remarks, client, {
+          companyId,
+          branchId: null,
+        })
+      : this.createDerived(group.itgId, 'GROUP', derived, remarks, client, {
+          companyId,
+          branchId: null,
+        });
+  }
+  /**
+   * The preset an id names, or null.
+   *
+   * A plain primary-key read: spt_id identifies exactly one row, and the
+   * company MERGE that makes spt_code ambiguous was already resolved by
+   * whoever picked the preset. fk_item_track_preset / fk_itg_track_preset
+   * guarantee the row exists, so null here means only that the column is unset.
+   *
+   * Deliberately NOT filtered on sptIsActive / sptIsDeleted. Retiring a preset
+   * stops it being OFFERED; it must not change what an item already configured
+   * with it resolves to. Filtering here would mean that deactivating PHARMA and
+   * then re-saving a pharma item silently fell back to the item's flags and
+   * untracked its stock — the exact accident the fallback exists to avoid.
+   */
+  async resolvePreset(
+    presetId: string | null | undefined,
+    tx?: Prisma.TransactionClient,
+  ): Promise<StockTrackPreset | null> {
+    if (!presetId) {
+      return null;
+    }
+    const client: Prisma.TransactionClient = tx ?? this.prisma;
+    return client.stockTrackPreset.findUnique({ where: { sptId: presetId } });
+  }
+  /**
+   * A preset's thirteen columns, verbatim. Nothing is recomputed or second
+   * guessed: the preset table carries the SAME CHECK constraints as the policy
+   * table (ck_spt_expiry_needs_batch, ck_spt_fefo_needs_expiry), precisely so
+   * that anything storable as a preset is storable as a policy.
+   */
+  presetToDerived(preset: StockTrackPreset): DerivedTrackPolicy {
+    return {
+      trackBatch: preset.sptTrackBatch,
+      trackMrp: preset.sptTrackMrp,
+      trackSalePrice: preset.sptTrackSalePrice,
+      trackExpiry: preset.sptTrackExpiry,
+      trackSerial: preset.sptTrackSerial,
+      trackSupplier: preset.sptTrackSupplier,
+      valuationMethod: preset.sptValuationMethod,
+      issueStrategy: preset.sptIssueStrategy,
+      allowNegative: preset.sptAllowNegative,
+      shelfLifeDays: preset.sptShelfLifeDays,
+      nearExpiryDays: preset.sptNearExpiryDays,
+      blockExpiredSale: preset.sptBlockExpiredSale,
+      ageingBasis: preset.sptAgeingBasis,
+    };
   }
   /**
    * item_master's flags, read as the six independent identity dimensions the
-   * policy table actually has. The batch/mrp reading is the one already used
-   * for tracking_type in ItemsMasterService.bulkLoad, kept identical so the
-   * billing lookup and the policy cannot disagree:
+   * policy table actually has. Used only when the item names no preset. The
+   * batch/mrp reading is the one already used for tracking_type in
+   * ItemsMasterService.bulkLoad, kept identical so the billing lookup and the
+   * policy cannot disagree:
    *
    *     item_batch_config 1  → MRP-wise
    *     item_batch_config 2, item_is_batch_based, item_is_expiry_item → batch-wise
@@ -104,8 +236,9 @@ export class StockTrackPolicyService {
    * AND expiry ('BME') instead of having to pick.
    *
    * Sale price, serial and supplier stay false: no item_master column expresses
-   * them, and inventing one from a related flag would be a guess. They are
-   * admin-only, set on a hand-authored policy row.
+   * them, and inventing one from a related flag would be a guess. To set them,
+   * pick a preset that carries them (SP_ONLY, SERIAL, PHARMA) or hand-author
+   * the policy row.
    */
   deriveFromItem(item: ItemTrackPolicySource): DerivedTrackPolicy {
     const trackMrp = item.itemBatchConfig === 1;
@@ -152,21 +285,46 @@ export class StockTrackPolicyService {
       orderBy: { stpCreatedOn: 'asc' },
     });
   }
+  /**
+   * The GROUP-scope policy for a group in a company. companyId is explicit
+   * rather than read from the request context because a background caller
+   * (a report, a reconciliation job) has no context to read.
+   */
+  async findByGroupId(
+    itgId: string,
+    companyId: string | null,
+    tx?: Prisma.TransactionClient,
+  ): Promise<StockTrackPolicy | null> {
+    const client: Prisma.TransactionClient = tx ?? this.prisma;
+    return client.stockTrackPolicy.findFirst({
+      where: {
+        stpScope: 'GROUP',
+        stpGroupId: itgId,
+        stpCompanyId: companyId,
+        stpIsDeleted: false,
+      },
+      orderBy: { stpCreatedOn: 'asc' },
+    });
+  }
   private async createDerived(
-    item: ItemTrackPolicySource,
+    scopeId: string,
+    scope: 'ITEM' | 'GROUP',
     derived: DerivedTrackPolicy,
+    remarks: string,
     client: Prisma.TransactionClient,
+    slot: { companyId: string | null; branchId: string | null },
   ): Promise<StockTrackPolicySyncResult> {
     const actor = this.actor();
     const created = await client.stockTrackPolicy.create({
       data: {
-        stpCompanyId: item.itemCompanyId,
-        stpBranchId: item.itemBranchId,
-        stpScope: 'ITEM',
-        // stpItemId is GENERATED ALWAYS from this pair — never write it.
-        stpScopeId: item.itemId,
+        stpCompanyId: slot.companyId,
+        stpBranchId: slot.branchId,
+        stpScope: scope,
+        // stpItemId / stpGroupId are GENERATED ALWAYS from this pair — never
+        // write either of them.
+        stpScopeId: scopeId,
         ...this.toColumns(derived),
-        stpRemarks: DERIVED_FROM_ITEM_REMARK,
+        stpRemarks: remarks,
         stpCreatedBy: actor,
         // stp_effective_from/_to are left to their defaults (1900-01-01 ..
         // 9999-12-31): a derived policy has always been in force, so a receipt
@@ -174,49 +332,119 @@ export class StockTrackPolicyService {
         // the business expects.
       },
     });
-    await this.logChange(client, created.stpId, item.itemId, null, created, actor, 'New');
-    return {
-      stp_id: created.stpId,
-      item_id: item.itemId,
-      outcome: 'created',
-      track_signature: created.stpTrackSignature,
-    };
+    await this.logChange(client, created.stpId, scopeId, scope, null, created, actor, 'New');
+    return this.result(created, scopeId, scope, 'created');
   }
   private async updateDerived(
     existing: StockTrackPolicy,
-    item: ItemTrackPolicySource,
+    scopeId: string,
+    scope: 'ITEM' | 'GROUP',
     derived: DerivedTrackPolicy,
+    remarks: string,
     client: Prisma.TransactionClient,
+    slot: { companyId: string | null; branchId: string | null },
   ): Promise<StockTrackPolicySyncResult> {
-    const moved =
-      existing.stpCompanyId !== item.itemCompanyId || existing.stpBranchId !== item.itemBranchId;
-    if (!moved && !this.hasChanged(existing, derived)) {
-      // Item saves are frequent and most of them touch nothing this row cares
+    const moved = existing.stpCompanyId !== slot.companyId || existing.stpBranchId !== slot.branchId;
+    // Remarks are compared too, not only the thirteen values: swapping BATCH
+    // for a company preset that happens to carry identical flags still changes
+    // where the row came from, and the row is the only place that is recorded.
+    const rewritten = existing.stpRemarks !== remarks;
+    if (!moved && !rewritten && !this.hasChanged(existing, derived)) {
+      // Master saves are frequent and most of them touch nothing this row cares
       // about. Skip the write and the audit row it would drag with it.
-      return {
-        stp_id: existing.stpId,
-        item_id: item.itemId,
-        outcome: 'unchanged',
-        track_signature: existing.stpTrackSignature,
-      };
+      return this.result(existing, scopeId, scope, 'unchanged');
     }
     const actor = this.actor();
     const updated = await client.stockTrackPolicy.update({
       where: { stpId: existing.stpId },
       data: {
-        stpCompanyId: item.itemCompanyId,
-        stpBranchId: item.itemBranchId,
+        stpCompanyId: slot.companyId,
+        stpBranchId: slot.branchId,
         ...this.toColumns(derived),
+        stpRemarks: remarks,
+        // A row retired by an earlier 'cleared' and then given a preset again
+        // is revived rather than duplicated; ex_stp_overlap only counts active,
+        // undeleted rows, so the slot was genuinely free while it was retired.
+        stpIsActive: true,
+        stpIsDeleted: false,
         stpModifiedOn: new Date(),
         stpModifiedBy: actor,
       },
     });
-    await this.logChange(client, existing.stpId, item.itemId, existing, updated, actor, 'update');
+    await this.logChange(
+      client,
+      existing.stpId,
+      scopeId,
+      scope,
+      existing,
+      updated,
+      actor,
+      'update',
+    );
+    return this.result(updated, scopeId, scope, 'updated');
+  }
+  /**
+   * Retires a derived GROUP row whose preset has been removed. Soft-deleted
+   * rather than hard-deleted so the audit trail keeps pointing somewhere, and
+   * deactivated as well because ex_stp_overlap and ix_stp_resolve are both
+   * partial on `is_active AND NOT is_deleted` — a retired row occupies no slot
+   * and is invisible to the resolver.
+   */
+  private async retireDerived(
+    existing: StockTrackPolicy,
+    scopeId: string,
+    client: Prisma.TransactionClient,
+  ): Promise<StockTrackPolicySyncResult> {
+    const actor = this.actor();
+    const retired = await client.stockTrackPolicy.update({
+      where: { stpId: existing.stpId },
+      data: {
+        stpIsActive: false,
+        stpIsDeleted: true,
+        stpModifiedOn: new Date(),
+        stpModifiedBy: actor,
+      },
+    });
+    await this.logChange(
+      client,
+      existing.stpId,
+      scopeId,
+      'GROUP',
+      existing,
+      retired,
+      actor,
+      'update',
+    );
+    return this.result(retired, scopeId, 'GROUP', 'cleared');
+  }
+  /**
+   * `Auto-derived from item master` on its own, or with the preset that
+   * produced it appended. The bare form is what rows written before presets
+   * existed carry, and isDerivedRemark accepts both.
+   */
+  private derivedRemark(marker: string, presetCode: string | null): string {
+    return presetCode ? `${marker} [preset ${presetCode}]` : marker;
+  }
+  private isDerivedRemark(remarks: string | null, marker: string): boolean {
+    return remarks === marker || (remarks?.startsWith(`${marker} [`) ?? false);
+  }
+  /** The preset code recorded in a remark, or null when there is none. */
+  private presetCodeFromRemark(remarks: string | null): string | null {
+    return /\[preset ([A-Za-z0-9_-]+)\]$/.exec(remarks ?? '')?.[1] ?? null;
+  }
+  private result(
+    record: StockTrackPolicy,
+    scopeId: string,
+    scope: 'ITEM' | 'GROUP',
+    outcome: StockTrackPolicySyncResult['outcome'],
+  ): StockTrackPolicySyncResult {
     return {
-      stp_id: updated.stpId,
-      item_id: item.itemId,
-      outcome: 'updated',
-      track_signature: updated.stpTrackSignature,
+      stp_id: record.stpId,
+      scope_id: scopeId,
+      scope,
+      outcome,
+      track_signature: record.stpTrackSignature,
+      preset_code: this.presetCodeFromRemark(record.stpRemarks),
     };
   }
   private toColumns(derived: DerivedTrackPolicy) {
@@ -261,12 +489,14 @@ export class StockTrackPolicyService {
   private async logChange(
     client: Prisma.TransactionClient,
     stpId: string,
-    itemId: string,
+    scopeId: string,
+    scope: 'ITEM' | 'GROUP',
     originalRecord: StockTrackPolicy | null,
     modifiedRecord: StockTrackPolicy,
     actor: string | null,
     action: 'New' | 'update',
   ): Promise<void> {
+    const source = scope === 'ITEM' ? 'item master' : 'item group master';
     await this.auditLogService.logEntityChange(
       {
         action,
@@ -274,14 +504,16 @@ export class StockTrackPolicyService {
         screenName: STP_AUDIT_SCREEN_NAME,
         screenType: 'master',
         pk: stpId,
-        displayName: modifiedRecord.stpTrackSignature ?? itemId,
+        displayName: modifiedRecord.stpTrackSignature ?? scopeId,
         originalRecord: originalRecord ? this.toAuditRecord(originalRecord) : null,
         modifiedRecord: this.toAuditRecord(modifiedRecord),
         userId: actor ?? undefined,
         notes:
           action === 'New'
-            ? 'Track policy derived from item master'
-            : 'Track policy refreshed from item master',
+            ? `Track policy derived from ${source}`
+            : modifiedRecord.stpIsDeleted
+              ? `Track policy retired — preset removed on ${source}`
+              : `Track policy refreshed from ${source}`,
       },
       client,
     );
@@ -294,6 +526,7 @@ export class StockTrackPolicyService {
       stp_scope: record.stpScope,
       stp_scope_id: record.stpScopeId,
       stp_item_id: record.stpItemId,
+      stp_group_id: record.stpGroupId,
       stp_track_batch: record.stpTrackBatch,
       stp_track_mrp: record.stpTrackMrp,
       stp_track_sale_price: record.stpTrackSalePrice,
