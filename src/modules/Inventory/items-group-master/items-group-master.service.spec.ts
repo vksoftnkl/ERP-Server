@@ -635,10 +635,10 @@ describe('ItemsGroupMasterService', () => {
   it('stores itg_track_preset_id and syncs the GROUP track policy inside the transaction', async () => {
     const presetId = '018f0a2b-7c4d-7e8f-9a0b-c1d2e3f4aaaa';
     const createdRecord = makeRecord({ itgTrackPresetId: presetId, itgPathIdsCache: [] });
-    const refreshedRecord = makeRecord({
-      itgTrackPresetId: presetId,
-      itgPathIdsCache: [ITEM_GROUP_ID],
-    });
+    const refreshedRecord = {
+      ...makeRecord({ itgTrackPresetId: presetId, itgPathIdsCache: [ITEM_GROUP_ID] }),
+      trackPreset: { sptName: 'Pharma' },
+    };
     prisma.itemGroupMaster.create.mockResolvedValue(createdRecord);
     prisma.itemGroupMaster.findMany.mockResolvedValueOnce([createdRecord]);
     prisma.itemGroupMaster.update.mockResolvedValueOnce(refreshedRecord);
@@ -647,6 +647,9 @@ describe('ItemsGroupMasterService', () => {
     const createArgs = prisma.itemGroupMaster.create.mock.calls[0][0];
     expect(createArgs.data.itgTrackPresetId).toBe(presetId);
     expect(result.itg_track_preset_id).toBe(presetId);
+    // The preset name rides along with the id so the screen can label the
+    // chosen preset without a second lookup.
+    expect(result.itg_track_preset_name).toBe('Pharma');
     // The saved record is what the policy derives from, not the DTO, and the
     // transaction client is passed so both writes roll back together.
     expect(stockTrackPolicyService.syncFromItemGroup).toHaveBeenCalledTimes(1);
@@ -666,6 +669,7 @@ describe('ItemsGroupMasterService', () => {
     prisma.itemGroupMaster.findFirst.mockResolvedValueOnce(refreshedRecord);
     const result = await service.save({ itg_name: 'Raw Materials' });
     expect(result.itg_track_preset_id).toBeNull();
+    expect(result.itg_track_preset_name).toBeNull();
     expect(stockTrackPolicyService.syncFromItemGroup).toHaveBeenCalledTimes(1);
     expect(stockTrackPolicyService.syncFromItemGroup.mock.calls[0][0].itgTrackPresetId).toBeNull();
   });

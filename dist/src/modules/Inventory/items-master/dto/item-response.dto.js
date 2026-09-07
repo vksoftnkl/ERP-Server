@@ -66,6 +66,7 @@ class ItemPayloadDto {
     item_hsn_code;
     item_batch_config;
     item_track_preset_id;
+    item_track_preset_name;
     item_sort_order;
     item_photo;
     item_image_url;
@@ -299,6 +300,13 @@ __decorate([
     }),
     __metadata("design:type", Object)
 ], ItemPayloadDto.prototype, "item_track_preset_id", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        description: 'Name of the stock.stock_track_preset named by item_track_preset_id; null when no preset is set',
+    }),
+    __metadata("design:type", Object)
+], ItemPayloadDto.prototype, "item_track_preset_name", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
     __metadata("design:type", Object)

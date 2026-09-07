@@ -18,6 +18,9 @@ const request_context_service_1 = require("../../../common/request-context/reque
 const stock_track_policy_service_1 = require("../../stocks/stock-track-policy/stock-track-policy.service");
 const ITEM_GROUP_TABLE_NAME = 'item group master';
 const ITEM_GROUP_AUDIT_SCREEN_NAME = 'Item Group Master';
+const TRACK_PRESET_INCLUDE = {
+    trackPreset: { select: { sptName: true } },
+};
 let ItemsGroupMasterService = class ItemsGroupMasterService {
     prisma;
     auditLogService;
@@ -41,6 +44,7 @@ let ItemsGroupMasterService = class ItemsGroupMasterService {
                 itgId,
                 itgIsDeleted: false,
             },
+            include: TRACK_PRESET_INCLUDE,
         });
         if (!record) {
             (0, module_service_utils_1.throwInventoryNotFound)('Item group not found', 'itg_id', `No active item group found with id ${itgId}`);
@@ -70,7 +74,7 @@ let ItemsGroupMasterService = class ItemsGroupMasterService {
             const nextDeleted = !wasDeleted;
             const modifiedOn = new Date();
             const userId = this.requestContextService.getUserId() ?? module_service_utils_1.DEFAULT_ACTOR;
-            const subtreeIds = await this.getActiveSubtreeIds(tx, itgId);
+            const subtreeIds = wasDeleted ? [] : await this.getActiveSubtreeIds(tx, itgId);
             const ancestorIds = await this.getAncestorIds(tx, existing.itgParentId);
             const result = await tx.itemGroupMaster.updateMany({
                 where: { itgId, itgIsDeleted: wasDeleted },
@@ -87,7 +91,7 @@ let ItemsGroupMasterService = class ItemsGroupMasterService {
                 await this.removePathIds(tx, ancestorIds, subtreeIds);
             }
             else {
-                await this.appendPathIds(tx, ancestorIds, subtreeIds);
+                await this.appendPathIds(tx, ancestorIds, await this.getActiveSubtreeIds(tx, itgId));
             }
             const originalRecord = this.toPayload(existing);
             const modifiedRecord = this.toPayload({
@@ -119,14 +123,13 @@ let ItemsGroupMasterService = class ItemsGroupMasterService {
                 }
                 const now = new Date();
                 const createdBy = this.requestContextService.getUserId() ?? module_service_utils_1.DEFAULT_ACTOR;
-                const modifiedBy = createdBy;
                 const data = {
                     itgName: saveItemGroupDto.itg_name.trim(),
                     itgCreatedOn: now,
                     itgCreatedBy: createdBy,
                 };
                 this.applyOptionalFields(data, saveItemGroupDto);
-                const created = await tx.itemGroupMaster.create({ data });
+                const created = await tx.itemGroupMaster.create({ data, include: TRACK_PRESET_INCLUDE });
                 await this.ensureSelfInPath(tx, created.itgId);
                 await this.stockTrackPolicyService.syncFromItemGroup(created, tx);
                 if (saveItemGroupDto.itg_parent_id) {
@@ -138,6 +141,7 @@ let ItemsGroupMasterService = class ItemsGroupMasterService {
                         itgId: created.itgId,
                         itgIsDeleted: false,
                     },
+                    include: TRACK_PRESET_INCLUDE,
                 });
                 const payload = !refreshed
                     ? this.toPayload({
@@ -209,6 +213,7 @@ let ItemsGroupMasterService = class ItemsGroupMasterService {
                         itgId,
                     },
                     data,
+                    include: TRACK_PRESET_INCLUDE,
                 });
                 await this.ensureSelfInPath(tx, itgId);
                 await this.stockTrackPolicyService.syncFromItemGroup(updated, tx);
@@ -222,6 +227,7 @@ let ItemsGroupMasterService = class ItemsGroupMasterService {
                         itgId,
                         itgIsDeleted: false,
                     },
+                    include: TRACK_PRESET_INCLUDE,
                 });
                 const payload = this.toPayload(refreshed ?? updated);
                 await this.auditLogService.logEntityChange({
@@ -514,6 +520,7 @@ let ItemsGroupMasterService = class ItemsGroupMasterService {
             itg_default_hsn: record.itgDefaultHsn,
             itg_default_uom_id: record.itgDefaultUomId,
             itg_track_preset_id: record.itgTrackPresetId,
+            itg_track_preset_name: record.trackPreset?.sptName ?? null,
             itg_photo: record.itgPhoto ? Buffer.from(record.itgPhoto).toString('base64') : null,
             itg_photo_url: record.itgPhotoUrl,
             itg_sync_date: record.itgSyncDate ? record.itgSyncDate.toISOString() : null,

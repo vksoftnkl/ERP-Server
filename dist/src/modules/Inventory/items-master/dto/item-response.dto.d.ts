@@ -53,6 +53,7 @@ export declare class ItemPayloadDto {
     item_hsn_code: string | null;
     item_batch_config: number;
     item_track_preset_id: string | null;
+    item_track_preset_name: string | null;
     item_sort_order: number | null;
     item_photo: string | null;
     item_image_url: string | null;

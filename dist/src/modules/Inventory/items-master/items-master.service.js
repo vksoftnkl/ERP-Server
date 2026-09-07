@@ -26,6 +26,7 @@ const ITEM_TABLE_NAME = 'item master';
 const ITEM_AUDIT_SCREEN_NAME = 'Item Master';
 const BASE64_PATTERN = /^[A-Za-z0-9+/]+={0,2}$/;
 const COMPOSITE_TRANSACTION_OPTIONS = { maxWait: 10_000, timeout: 30_000 };
+const TRACK_PRESET_INCLUDE = { trackPreset: { select: { sptName: true } } };
 let ItemsMasterService = class ItemsMasterService {
     prisma;
     auditLogService;
@@ -66,6 +67,7 @@ let ItemsMasterService = class ItemsMasterService {
                 itemId,
                 itemIsDeleted: false,
             },
+            include: TRACK_PRESET_INCLUDE,
         });
         if (!record) {
             (0, module_service_utils_2.throwInventoryNotFound)('Item not found', 'item_id', `No active item found with id ${itemId}`);
@@ -413,7 +415,7 @@ let ItemsMasterService = class ItemsMasterService {
         };
         this.applyOptionalFields(data, saveItemDto);
         const create = async (client) => {
-            const created = await client.itemMaster.create({ data });
+            const created = await client.itemMaster.create({ data, include: TRACK_PRESET_INCLUDE });
             await this.stockTrackPolicyService.syncFromItem(created, client);
             const payload = this.toPayload(created);
             await this.auditLogService.logEntityChange({
@@ -474,6 +476,7 @@ let ItemsMasterService = class ItemsMasterService {
                     itemId,
                 },
                 data,
+                include: TRACK_PRESET_INCLUDE,
             });
             await this.stockTrackPolicyService.syncFromItem(updated, client);
             const payload = this.toPayload(updated);
@@ -738,6 +741,7 @@ let ItemsMasterService = class ItemsMasterService {
             item_hsn_code: record.itemHsnCode,
             item_batch_config: record.itemBatchConfig,
             item_track_preset_id: record.itemTrackPresetId,
+            item_track_preset_name: record.trackPreset?.sptName ?? null,
             item_sort_order: record.itemSortOrder,
             item_photo: record.itemPhoto ? Buffer.from(record.itemPhoto).toString('base64') : null,
             item_image_url: record.itemImageUrl,

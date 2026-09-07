@@ -244,6 +244,7 @@ describe('ItemPriceDetailsService', () => {
         itemId: ITEM_ID,
         itemIsDeleted: false,
       },
+      include: { trackPreset: { select: { sptName: true } } },
     });
     expect(prisma.itemPriceMaster.findMany).toHaveBeenCalledWith({
       where: {

@@ -16,6 +16,7 @@ export declare class ItemGroupPayloadDto {
     itg_default_hsn: string | null;
     itg_default_uom_id: string | null;
     itg_track_preset_id: string | null;
+    itg_track_preset_name: string | null;
     itg_photo: string | null;
     itg_photo_url: string | null;
     itg_sync_date: string | null;

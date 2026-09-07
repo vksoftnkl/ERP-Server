@@ -29,6 +29,7 @@ class ItemGroupPayloadDto {
     itg_default_hsn;
     itg_default_uom_id;
     itg_track_preset_id;
+    itg_track_preset_name;
     itg_photo;
     itg_photo_url;
     itg_sync_date;
@@ -100,6 +101,13 @@ __decorate([
     }),
     __metadata("design:type", Object)
 ], ItemGroupPayloadDto.prototype, "itg_track_preset_id", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        description: 'Name of the stock.stock_track_preset named by itg_track_preset_id; null when no preset is set',
+    }),
+    __metadata("design:type", Object)
+], ItemGroupPayloadDto.prototype, "itg_track_preset_name", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ nullable: true, description: 'Base64 encoded image' }),
     __metadata("design:type", Object)

@@ -29,6 +29,9 @@ const UNMAPPED_UNIT_ID = '019c6f6c-be87-7a11-8905-36092c46aa10';
 // standing in for the real services' uuidv7() default.
 const IUC_ID = '019c6f6c-be87-7a11-8905-36092c46ab01';
 
+// getById/create/update pull the preset name over the relation, so the record
+// the mocks resolve carries the joined column alongside the item's own columns.
+type ItemMasterWithPreset = ItemMaster & { trackPreset?: { sptName: string } | null };
 const makeItemRecord = (overrides: Partial<ItemMaster> = {}): ItemMaster =>
   ({
     itemId: ITEM_ID,
@@ -105,9 +108,9 @@ const makeLookup = (): LookupMock => ({
 
 type PrismaMock = {
   itemMaster: {
-    create: jest.Mock<Promise<ItemMaster>, [Prisma.ItemMasterCreateArgs]>;
-    findFirst: jest.Mock<Promise<ItemMaster | null>, [Prisma.ItemMasterFindFirstArgs]>;
-    update: jest.Mock<Promise<ItemMaster>, [Prisma.ItemMasterUpdateArgs]>;
+    create: jest.Mock<Promise<ItemMasterWithPreset>, [Prisma.ItemMasterCreateArgs]>;
+    findFirst: jest.Mock<Promise<ItemMasterWithPreset | null>, [Prisma.ItemMasterFindFirstArgs]>;
+    update: jest.Mock<Promise<ItemMasterWithPreset>, [Prisma.ItemMasterUpdateArgs]>;
     updateMany: jest.Mock<Promise<{ count: number }>, [Prisma.ItemMasterUpdateManyArgs]>;
   };
   company: LookupMock;
@@ -151,9 +154,9 @@ describe('ItemsMasterService composite endpoints', () => {
   beforeEach(() => {
     prisma = {
       itemMaster: {
-        create: jest.fn<Promise<ItemMaster>, [Prisma.ItemMasterCreateArgs]>(),
-        findFirst: jest.fn<Promise<ItemMaster | null>, [Prisma.ItemMasterFindFirstArgs]>(),
-        update: jest.fn<Promise<ItemMaster>, [Prisma.ItemMasterUpdateArgs]>(),
+        create: jest.fn<Promise<ItemMasterWithPreset>, [Prisma.ItemMasterCreateArgs]>(),
+        findFirst: jest.fn<Promise<ItemMasterWithPreset | null>, [Prisma.ItemMasterFindFirstArgs]>(),
+        update: jest.fn<Promise<ItemMasterWithPreset>, [Prisma.ItemMasterUpdateArgs]>(),
         updateMany: jest
           .fn<Promise<{ count: number }>, [Prisma.ItemMasterUpdateManyArgs]>()
           .mockResolvedValue({ count: 1 }),
@@ -419,17 +422,25 @@ describe('ItemsMasterService composite endpoints', () => {
 
   it('stores item_track_preset_id and hands the saved record to the policy sync', async () => {
     const presetId = '019c6f6c-be87-7a11-8905-36092c46eeee';
-    prisma.itemMaster.create.mockResolvedValue(
-      makeItemRecord({ itemTrackPresetId: presetId }),
-    );
+    prisma.itemMaster.create.mockResolvedValue({
+      ...makeItemRecord({ itemTrackPresetId: presetId }),
+      trackPreset: { sptName: 'Pharma' },
+    });
 
-    await service.saveComposite({
+    const { item } = await service.saveComposite({
       item_name_en: 'Amoxicillin 500mg',
       item_group_id: GROUP_ID,
       item_track_preset_id: presetId,
     } as SaveItemCompositeDto);
 
     expect(prisma.itemMaster.create.mock.calls[0][0].data.itemTrackPresetId).toBe(presetId);
+    // The preset name rides along with the id so the screen can label the
+    // chosen preset without a second lookup.
+    expect(prisma.itemMaster.create.mock.calls[0][0].include).toEqual({
+      trackPreset: { select: { sptName: true } },
+    });
+    expect(item.item_track_preset_id).toBe(presetId);
+    expect(item.item_track_preset_name).toBe('Pharma');
     // The SAVED record, not the DTO: the policy derives from what the database
     // actually holds, and shares the item's transaction client.
     const [syncedItem, syncedTx] = stockTrackPolicyService.syncFromItem.mock.calls[0];

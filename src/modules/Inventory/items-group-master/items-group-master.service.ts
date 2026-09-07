@@ -15,6 +15,11 @@ import { RequestContextService } from '../../../common/request-context/request-c
 import { StockTrackPolicyService } from 'src/modules/stocks/stock-track-policy/stock-track-policy.service';
 const ITEM_GROUP_TABLE_NAME = 'item group master';
 const ITEM_GROUP_AUDIT_SCREEN_NAME = 'Item Group Master';
+// The payload echoes the preset's name next to itg_track_preset_id, so every
+// path that builds one pulls that single column over the relation.
+const TRACK_PRESET_INCLUDE = {
+  trackPreset: { select: { sptName: true } },
+} satisfies Prisma.ItemGroupMasterInclude;
 type ItemGroupWriteClient = Prisma.TransactionClient | PrismaService;
 @Injectable()
 export class ItemsGroupMasterService {
@@ -36,6 +41,7 @@ export class ItemsGroupMasterService {
         itgId,
         itgIsDeleted: false,
       },
+      include: TRACK_PRESET_INCLUDE,
     });
     if (!record) {
       throwInventoryNotFound<ItemGroupErrorDetail>(
@@ -57,81 +63,87 @@ export class ItemsGroupMasterService {
     });
     return parent?.itgName ?? null;
   }
- async toggleDelete(itgId: string): Promise<{ itg_id: string; deleted: boolean }> {
-  return this.prisma.$transaction(async (tx) => {
-    // Find regardless of current deleted state
-    const existing = await tx.itemGroupMaster.findFirst({
-      where: { itgId },
-    });
+  async toggleDelete(itgId: string): Promise<{ itg_id: string; deleted: boolean }> {
+    return this.prisma.$transaction(async (tx) => {
+      // Find regardless of current deleted state
+      const existing = await tx.itemGroupMaster.findFirst({
+        where: { itgId },
+      });
 
-    if (!existing) {
-      throwInventoryNotFound<ItemGroupErrorDetail>(
-        'Item group not found',
-        'itg_id',
-        `No item group found with id ${itgId}`,
-      );
-    }
+      if (!existing) {
+        throwInventoryNotFound<ItemGroupErrorDetail>(
+          'Item group not found',
+          'itg_id',
+          `No item group found with id ${itgId}`,
+        );
+      }
 
-    const wasDeleted = existing.itgIsDeleted;       // current state
-    const nextDeleted = !wasDeleted;                // flip it
-    const modifiedOn = new Date();
-    const userId = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
+      const wasDeleted = existing.itgIsDeleted; // current state
+      const nextDeleted = !wasDeleted; // flip it
+      const modifiedOn = new Date();
+      const userId = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
 
-    const subtreeIds = await this.getActiveSubtreeIds(tx, itgId);
-    const ancestorIds = await this.getAncestorIds(tx, existing.itgParentId);
+      // getActiveSubtreeIds only walks live rows, so the subtree has to be read
+      // while this row is still active — before the flip when deleting, after
+      // it when restoring (below). Reading it in the deleted state yields
+      // nothing, and the ancestors' caches never get the ids back.
+      const subtreeIds = wasDeleted ? [] : await this.getActiveSubtreeIds(tx, itgId);
+      const ancestorIds = await this.getAncestorIds(tx, existing.itgParentId);
 
-    // Guarded update: only flips if state hasn't changed since the read
-    const result = await tx.itemGroupMaster.updateMany({
-      where: { itgId, itgIsDeleted: wasDeleted },
-      data: {
+      // Guarded update: only flips if state hasn't changed since the read
+      const result = await tx.itemGroupMaster.updateMany({
+        where: { itgId, itgIsDeleted: wasDeleted },
+        data: {
+          itgIsDeleted: nextDeleted,
+          itgModifiedOn: modifiedOn,
+          itgModifiedBy: userId,
+        },
+      });
+
+      if (result.count === 0) {
+        // Lost a race, or row vanished between read and write
+        throwInventoryNotFound<ItemGroupErrorDetail>(
+          'Item group not found',
+          'itg_id',
+          `No item group found with id ${itgId}`,
+        );
+      }
+
+      if (nextDeleted) {
+        await this.removePathIds(tx, ancestorIds, subtreeIds);
+      } else {
+        // Now that the row is live again, the same subtree the delete stripped
+        // out — this row plus every descendant that stayed active — reads back.
+        await this.appendPathIds(tx, ancestorIds, await this.getActiveSubtreeIds(tx, itgId));
+      }
+
+      const originalRecord = this.toPayload(existing);
+      const modifiedRecord = this.toPayload({
+        ...existing,
         itgIsDeleted: nextDeleted,
         itgModifiedOn: modifiedOn,
         itgModifiedBy: userId,
-      },
-    });
+      });
 
-    if (result.count === 0) {
-      // Lost a race, or row vanished between read and write
-      throwInventoryNotFound<ItemGroupErrorDetail>(
-        'Item group not found',
-        'itg_id',
-        `No item group found with id ${itgId}`,
+      await this.auditLogService.logEntityChange(
+        {
+          action: nextDeleted ? 'cancel' : 'update',
+          tableName: ITEM_GROUP_TABLE_NAME,
+          screenName: ITEM_GROUP_AUDIT_SCREEN_NAME,
+          screenType: 'master',
+          pk: itgId,
+          displayName: existing.itgName,
+          originalRecord,
+          modifiedRecord,
+          userId,
+          notes: nextDeleted ? 'Item group soft deleted' : 'Item group restored',
+        },
+        tx,
       );
-    }
 
-    if (nextDeleted) {
-      await this.removePathIds(tx, ancestorIds, subtreeIds);
-    } else {
-      await this.appendPathIds(tx, ancestorIds, subtreeIds); // inverse op
-    }
-
-    const originalRecord = this.toPayload(existing);
-    const modifiedRecord = this.toPayload({
-      ...existing,
-      itgIsDeleted: nextDeleted,
-      itgModifiedOn: modifiedOn,
-      itgModifiedBy: userId,
+      return { itg_id: itgId, deleted: nextDeleted };
     });
-
-    await this.auditLogService.logEntityChange(
-      {
-        action: nextDeleted ? 'cancel' : 'update',
-        tableName: ITEM_GROUP_TABLE_NAME,
-        screenName: ITEM_GROUP_AUDIT_SCREEN_NAME,
-        screenType: 'master',
-        pk: itgId,
-        displayName: existing.itgName,
-        originalRecord,
-        modifiedRecord,
-        userId,
-        notes: nextDeleted ? 'Item group soft deleted' : 'Item group restored',
-      },
-      tx,
-    );
-
-    return { itg_id: itgId, deleted: nextDeleted };
-  });
-}
+  }
   private async createItemGroup(saveItemGroupDto: SaveItemGroupDto): Promise<ItemGroupPayload> {
     try {
       return await this.prisma.$transaction(async (tx) => {
@@ -140,14 +152,13 @@ export class ItemsGroupMasterService {
         }
         const now = new Date();
         const createdBy = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
-        const modifiedBy = createdBy;
         const data: Prisma.ItemGroupMasterUncheckedCreateInput = {
           itgName: saveItemGroupDto.itg_name.trim(),
           itgCreatedOn: now,
           itgCreatedBy: createdBy,
         };
         this.applyOptionalFields(data, saveItemGroupDto);
-        const created = await tx.itemGroupMaster.create({ data });
+        const created = await tx.itemGroupMaster.create({ data, include: TRACK_PRESET_INCLUDE });
         await this.ensureSelfInPath(tx, created.itgId);
         // Same transaction as the group: a GROUP-scope track policy and the
         // group it applies to are written or rolled back together. A no-op when
@@ -165,6 +176,7 @@ export class ItemsGroupMasterService {
             itgId: created.itgId,
             itgIsDeleted: false,
           },
+          include: TRACK_PRESET_INCLUDE,
         });
         const payload = !refreshed
           ? this.toPayload({
@@ -243,6 +255,7 @@ export class ItemsGroupMasterService {
             itgId,
           },
           data,
+          include: TRACK_PRESET_INCLUDE,
         });
         await this.ensureSelfInPath(tx, itgId);
         // Refreshes the derived policy from the saved row: writes it when a
@@ -259,6 +272,7 @@ export class ItemsGroupMasterService {
             itgId,
             itgIsDeleted: false,
           },
+          include: TRACK_PRESET_INCLUDE,
         });
         const payload = this.toPayload(refreshed ?? updated);
         await this.auditLogService.logEntityChange(
@@ -556,7 +570,7 @@ export class ItemsGroupMasterService {
     return new Uint8Array(Buffer.from(normalized, 'base64'));
   }
   private toPayload(
-    record: ItemGroupMaster,
+    record: ItemGroupMaster & { trackPreset?: { sptName: string } | null },
     parentName: string | null = null,
   ): ItemGroupPayload {
     return {
@@ -575,6 +589,7 @@ export class ItemsGroupMasterService {
       itg_default_hsn: record.itgDefaultHsn,
       itg_default_uom_id: record.itgDefaultUomId,
       itg_track_preset_id: record.itgTrackPresetId,
+      itg_track_preset_name: record.trackPreset?.sptName ?? null,
       itg_photo: record.itgPhoto ? Buffer.from(record.itgPhoto).toString('base64') : null,
       itg_photo_url: record.itgPhotoUrl,
       itg_sync_date: record.itgSyncDate ? record.itgSyncDate.toISOString() : null,

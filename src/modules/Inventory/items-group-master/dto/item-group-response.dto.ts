@@ -53,6 +53,12 @@ export class ItemGroupPayloadDto {
   })
   itg_track_preset_id!: string | null;
 
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'Name of the stock.stock_track_preset named by itg_track_preset_id; null when no preset is set',
+  })
+  itg_track_preset_name!: string | null;
+
   @ApiPropertyOptional({ nullable: true, description: 'Base64 encoded image' })
   itg_photo!: string | null;
 

@@ -22,6 +22,7 @@ export class ItemPriceDetailsService {
         itemId,
         itemIsDeleted: false,
       },
+      include: { trackPreset: { select: { sptName: true } } },
     });
     if (!itemRecord) {
       this.throwItemNotFound(itemId);
@@ -82,7 +83,7 @@ export class ItemPriceDetailsService {
       iuc_updated_by: record.iucUpdatedBy,
     };
   }
-  private toItemPayload(record: ItemMaster): ItemPayload {
+  private toItemPayload(record: ItemMaster & { trackPreset?: { sptName: string } | null }): ItemPayload {
     return {
       item_id: record.itemId,
       item_company_id: record.itemCompanyId,
@@ -135,6 +136,7 @@ export class ItemPriceDetailsService {
       item_hsn_code: record.itemHsnCode,
       item_batch_config: record.itemBatchConfig,
       item_track_preset_id: record.itemTrackPresetId,
+      item_track_preset_name: record.trackPreset?.sptName ?? null,
       item_sort_order: record.itemSortOrder,
       item_photo: record.itemPhoto ? Buffer.from(record.itemPhoto).toString('base64') : null,
       item_image_url: record.itemImageUrl,

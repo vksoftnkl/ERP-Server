@@ -12,12 +12,13 @@ const item_group_exception_filter_1 = require("./item-group-exception.filter");
 const items_group_master_controller_1 = require("./items-group-master.controller");
 const items_group_master_service_1 = require("./items-group-master.service");
 const audit_log_module_1 = require("../../audit-log/audit-log.module");
+const stock_track_policy_module_1 = require("../../stocks/stock-track-policy/stock-track-policy.module");
 let ItemsGroupMasterModule = class ItemsGroupMasterModule {
 };
 exports.ItemsGroupMasterModule = ItemsGroupMasterModule;
 exports.ItemsGroupMasterModule = ItemsGroupMasterModule = __decorate([
     (0, common_1.Module)({
-        imports: [audit_log_module_1.AuditLogModule],
+        imports: [audit_log_module_1.AuditLogModule, stock_track_policy_module_1.StockTrackPolicyModule],
         controllers: [items_group_master_controller_1.ItemsGroupMasterController],
         providers: [items_group_master_service_1.ItemsGroupMasterService, item_group_exception_filter_1.ItemGroupExceptionFilter],
     })

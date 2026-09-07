@@ -30,6 +30,9 @@ const BASE64_PATTERN = /^[A-Za-z0-9+/]+={0,2}$/;
 // insert/update alongside its audit-log row) in one transaction, so it needs
 // more headroom than Prisma's 5s interactive-transaction default.
 const COMPOSITE_TRANSACTION_OPTIONS = { maxWait: 10_000, timeout: 30_000 };
+// The payload echoes the preset's name next to item_track_preset_id, so every
+// path that builds one pulls that single column over the relation.
+const TRACK_PRESET_INCLUDE = { trackPreset: { select: { sptName: true } } } satisfies Prisma.ItemMasterInclude;
 @Injectable()
 export class ItemsMasterService {
   constructor(
@@ -80,6 +83,7 @@ export class ItemsMasterService {
         itemId,
         itemIsDeleted: false,
       },
+      include: TRACK_PRESET_INCLUDE,
     });
     if (!record) {
       throwInventoryNotFound<ItemErrorDetail>(
@@ -520,7 +524,7 @@ export class ItemsMasterService {
     };
     this.applyOptionalFields(data, saveItemDto);
     const create = async (client: Prisma.TransactionClient) => {
-      const created = await client.itemMaster.create({ data });
+      const created = await client.itemMaster.create({ data, include: TRACK_PRESET_INCLUDE });
       // Same transaction as the item: an item never exists without the policy
       // that says how its stock is keyed, and neither is written if the other
       // fails.
@@ -593,6 +597,7 @@ export class ItemsMasterService {
           itemId,
         },
         data,
+        include: TRACK_PRESET_INCLUDE,
       });
       // Refreshes the derived policy from the saved row — a no-op write when
       // nothing the policy cares about changed, and left alone entirely when an
@@ -765,6 +770,7 @@ export class ItemsMasterService {
     if (hasOwnProperty(saveItemDto, 'item_track_preset_id')) {
       data.itemTrackPresetId = saveItemDto.item_track_preset_id;
     }
+    
     if (hasOwnProperty(saveItemDto, 'item_sort_order')) {
       data.itemSortOrder = saveItemDto.item_sort_order;
     }
@@ -814,7 +820,7 @@ export class ItemsMasterService {
     const bytes = Uint8Array.from(Buffer.from(normalized, 'base64'));
     return bytes;
   }
-  private toPayload(record: ItemMaster): ItemPayload {
+  private toPayload(record: ItemMaster & { trackPreset?: { sptName: string } | null }): ItemPayload {
     return {
       item_id: record.itemId,
       item_company_id: record.itemCompanyId,
@@ -867,6 +873,7 @@ export class ItemsMasterService {
       item_hsn_code: record.itemHsnCode,
       item_batch_config: record.itemBatchConfig,
       item_track_preset_id: record.itemTrackPresetId,
+      item_track_preset_name: record.trackPreset?.sptName ?? null,
       item_sort_order: record.itemSortOrder,
       item_photo: record.itemPhoto ? Buffer.from(record.itemPhoto).toString('base64') : null,
       item_image_url: record.itemImageUrl,

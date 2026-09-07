@@ -114,6 +114,11 @@ export class ItemPayloadDto {
     description: 'stock.stock_track_preset the item\'s track policy is derived from; null = derived from the item\'s own flags',
   })
   item_track_preset_id!: string | null;
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'Name of the stock.stock_track_preset named by item_track_preset_id; null when no preset is set',
+  })
+  item_track_preset_name!: string | null;
   @ApiPropertyOptional({ nullable: true })
   item_sort_order!: number | null;
   @ApiPropertyOptional({ nullable: true, description: 'Base64-encoded image bytes' })
