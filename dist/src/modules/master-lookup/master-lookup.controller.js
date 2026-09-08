@@ -77,7 +77,7 @@ let MasterLookupController = class MasterLookupController {
         };
     }
     async getItemByBarcode(query) {
-        const data = await this.masterLookupService.getItemByBarcode(query.barcode);
+        const data = await this.masterLookupService.getItemByBarcode(query.barcode, query.company_id, query.branch_id);
         return {
             success: true,
             message: `Item fetched successfully for barcode ${query.barcode}`,
@@ -216,9 +216,11 @@ __decorate([
     (0, common_1.Get)('item-by-barcode'),
     (0, common_1.Version)(api_version_1.API_VERSION),
     (0, swagger_1.ApiOperation)({
-        summary: 'Resolve a scanned barcode into its item and selling unit (legacy iflag=10). Matches item_ean_codes.ean_code case-insensitively; returns allow_sales, item_status, batch_config and weigh_scale flags.',
+        summary: 'Resolve a scanned barcode into its item and selling unit (legacy iflag=10). Matches item_ean_codes.ean_code case-insensitively; returns allow_sales, item_status, batch_config and weigh_scale flags. Optional company_id and branch_id each restrict the match to items of that company / branch or of none; both are independent and both are optional.',
     }),
     (0, swagger_1.ApiQuery)({ name: 'barcode', required: true, schema: { type: 'string', maxLength: 64 } }),
+    (0, swagger_1.ApiQuery)({ name: 'company_id', required: false, schema: { type: 'string', format: 'uuid' } }),
+    (0, swagger_1.ApiQuery)({ name: 'branch_id', required: false, schema: { type: 'string', format: 'uuid' } }),
     (0, swagger_1.ApiOkResponse)({ type: master_lookup_response_dto_1.BarcodeItemLookupSuccessDto }),
     __param(0, (0, common_1.Query)()),
     __metadata("design:type", Function),

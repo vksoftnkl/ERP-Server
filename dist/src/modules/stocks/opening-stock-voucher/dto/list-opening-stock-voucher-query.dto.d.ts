@@ -13,3 +13,10 @@ export declare class OpeningStockReportQueryDto extends OpeningStockVoucherScope
     limit?: number;
     offset?: number;
 }
+export declare class OpeningStockItemLookupQueryDto {
+    companyId?: string | null;
+    branchId?: string | null;
+    itemId: string;
+    uomId?: string;
+    onDate: string;
+}

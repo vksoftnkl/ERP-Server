@@ -77,11 +77,16 @@ net variance read off the ledger, which nothing on the count sheet adds up to.
 
 ## Numbering is self-contained
 
-Not `SequenceService`, not `accounts.acc_voucher_seq`, and no
-`acc_voucher_header` row. That sequence table is keyed by an FK into
-`accounts.acc_voucher_type`, and a stock voucher type is not an accounting
-voucher type — a stock voucher moves quantity and cost and posts no debit and no
-credit.
+`svh_slno` never touches `SequenceService` / `accounts.acc_voucher_seq`, and no
+`acc_voucher_header` row is ever created — a stock voucher moves quantity and
+cost and posts no debit and no credit.
+
+`svh_refno` depends on the type's rules. With no `refnoVchrTypeId` it is the
+self-contained `{typeCode}/{accYear}/{deviceCode}/{slno}`. With one — OPENING
+names `accounts.acc_voucher_types` row 1, "Opening Stock" — the printed number
+comes from `accounts.acc_voucher_seq` under that row's prefix / suffix / width
+/ reset frequency (`opn000000000001st`), on the branch-wide `MAIN` counter
+because `ux_svh_refno` has no device in it.
 
 `svh_slno` is per **device** (`ux_svh_slno`) because a warehouse tablet must
 number its own document offline. A client-supplied `slno`/`refno` is therefore

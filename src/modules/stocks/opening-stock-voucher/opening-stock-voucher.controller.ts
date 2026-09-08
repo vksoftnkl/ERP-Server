@@ -2,7 +2,6 @@ import {
   BadRequestException,
   Body,
   Controller,
-  Delete,
   Get,
   Post,
   Query,
@@ -34,9 +33,7 @@ import { StockVoucherService } from '../stock-voucher/stock-voucher.service';
 import type {
   OpeningReconcileRow,
   PagedResult,
-  PendingOpeningItem,
   StockVoucherCancelResult,
-  StockVoucherDeleteResult,
   StockVoucherImportResult,
   StockVoucherLineProblem,
   StockVoucherPayload,
@@ -45,9 +42,12 @@ import type {
   StockVoucherSuccessResponse,
   StockVoucherTypeRules,
 } from '../stock-voucher/types/stock-voucher.types';
+import { OpeningStockLookupService } from './opening-stock-lookup.service';
+import type { OpeningStockItemLookup } from './types/opening-stock-lookup.types';
 import { SaveOpeningStockVoucherDto } from './dto/save-opening-stock-voucher.dto';
 import {
   GetOpeningStockVoucherQueryDto,
+  OpeningStockItemLookupQueryDto,
   OpeningStockReportQueryDto,
   OpeningStockVoucherRefQueryDto,
 } from './dto/list-opening-stock-voucher-query.dto';
@@ -59,14 +59,13 @@ import { ImportOpeningStockVoucherDto } from './dto/import-opening-stock-voucher
 import {
   OpeningReconcileSuccessDto,
   OpeningStockCancelSuccessDto,
-  OpeningStockDeleteSuccessDto,
   OpeningStockSaveSuccessDto,
   OpeningStockErrorResponseDto,
   OpeningStockDocumentSuccessDto,
   OpeningStockPostSuccessDto,
   OpeningStockImportSuccessDto,
+  OpeningStockItemLookupSuccessDto,
   OpeningStockValidateSuccessDto,
-  PendingOpeningItemsSuccessDto,
 } from './dto/opening-stock-voucher-response.dto';
 
 /**
@@ -83,9 +82,17 @@ import {
  * receiving branch). A transfer posted through this route would look like it
  * worked.
  */
+/**
+ * accounts.acc_voucher_types row "OPENING" / Opening Stock. Its numbering
+ * format (prefix `opn`, suffix `st`, width 12, yearly reset) seeds the
+ * acc_voucher_seq row that svh_refno is drawn from — `opn000000000001st`.
+ */
+const OPENING_VCHR_TYPE_ID = 1;
+
 const OPENING_RULES: StockVoucherTypeRules = {
   voucherType: 'OPENING',
   typeCode: 'OPN',
+  refnoVchrTypeId: OPENING_VCHR_TYPE_ID,
   displayName: 'Opening stock',
   // ck_svh_godowns is satisfied by a from-godown alone — see the DTO.
   requiresToGodown: true,
@@ -130,7 +137,44 @@ const MAX_IMPORT_BYTES = 5 * 1024 * 1024;
 @Controller('stock/opening')
 @UseFilters(StockVoucherExceptionFilter)
 export class OpeningStockVoucherController {
-  constructor(private readonly stockVoucherService: StockVoucherService) {}
+  constructor(
+    private readonly stockVoucherService: StockVoucherService,
+    private readonly lookupService: OpeningStockLookupService,
+  ) {}
+
+  /**
+   * 19q Q6. Runs ONCE per item picked on the line grid and fills the whole
+   * line in one round trip: unit, base unit, factor, tax, and how the item is
+   * tracked. It returns NO COST — see OpeningStockItemLookup for why a seeded
+   * cost cell would silently disable the engine's rate source.
+   *
+   * Empty is a 404 that names the cause: no such item, an inactive or service item, no unit
+   * conversion at all, or a unit that is not one of the item's.
+   */
+  @Get('item-lookup')
+  @Version(API_VERSION)
+  @ApiOperation({
+    summary: 'The item picker — fill an opening line for one item',
+    description:
+      'Unit, base unit (as an iuc_id), conversion factor, tax and cess, the tracking signature in force on onDate, an MRP / sale-price seed for the bucket, and whether the item has already been opened in this branch. Deliberately returns no cost: the cost cell stays empty unless a human types one, so the engine can apply the rate source. 404 names which of the four causes left the item unpickable.',
+  })
+  @ApiOkResponse({ type: OpeningStockItemLookupSuccessDto })
+  @ApiBadRequestResponse({ type: OpeningStockErrorResponseDto })
+  @ApiNotFoundResponse({ type: OpeningStockErrorResponseDto })
+  async lookupItem(
+    @Query() query: OpeningStockItemLookupQueryDto,
+  ): Promise<StockVoucherSuccessResponse<OpeningStockItemLookup>> {
+    const data = await this.lookupService.lookupItem(query);
+    return {
+      success: true,
+      // The warning goes in the message too, so a client that shows messages
+      // and ignores flags still hears it while the operator is typing.
+      message: data.alreadyOpened
+        ? `${data.itemName} has already been opened in this branch`
+        : 'Item fetched successfully',
+      data,
+    };
+  }
 
   @Post('create')
   @Version(API_VERSION)
@@ -282,29 +326,6 @@ export class OpeningStockVoucherController {
     };
   }
 
-  @Delete()
-  @Version(API_VERSION)
-  @ApiOperation({
-    summary: 'Soft delete an opening stock DRAFT',
-    description:
-      'DRAFT only. A POSTED voucher is cancelled, never deleted: soft-deleting it would hide the document from every list while its ledger rows went on affecting stock for ever.',
-  })
-  @ApiOkResponse({ type: OpeningStockDeleteSuccessDto })
-  @ApiConflictResponse({ type: OpeningStockErrorResponseDto })
-  @ApiNotFoundResponse({ type: OpeningStockErrorResponseDto })
-  async remove(
-    @Query() query: OpeningStockVoucherRefQueryDto,
-  ): Promise<StockVoucherSuccessResponse<StockVoucherDeleteResult>> {
-    const data = await this.stockVoucherService.softDelete(
-      OPENING_RULES,
-      query.svhId,
-      query.accYear,
-      query.companyId,
-      query.branchId,
-    );
-    return { success: true, message: 'Opening stock deleted successfully', data };
-  }
-
   @Post('import')
   @Version(API_VERSION)
   @UseInterceptors(FileInterceptor('file'))
@@ -342,28 +363,6 @@ export class OpeningStockVoucherController {
         : `${data.linesImported} lines imported, all clean`,
       data,
     };
-  }
-
-  @Get('pending-items')
-  @Version(API_VERSION)
-  @ApiOperation({
-    summary: 'Every stockable item with no opening movement in this branch and year',
-    description:
-      'On go-live day this is the work list. A week later it should be the items that genuinely started at zero.',
-  })
-  @ApiOkResponse({ type: PendingOpeningItemsSuccessDto })
-  async pendingItems(
-    @Query() query: OpeningStockReportQueryDto,
-  ): Promise<StockVoucherSuccessResponse<PagedResult<PendingOpeningItem>>> {
-    const data = await this.stockVoucherService.pendingItems(
-      OPENING_RULES,
-      query.companyId,
-      query.branchId,
-      query.accYear,
-      query.limit,
-      query.offset,
-    );
-    return { success: true, message: 'Pending opening items fetched successfully', data };
   }
 
   @Get('reconcile')

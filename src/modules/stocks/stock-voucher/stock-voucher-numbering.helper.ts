@@ -1,4 +1,5 @@
 import { Prisma } from '@prisma/client';
+import { allocateVoucherNumber } from 'src/common/Sequence/voucher-sequence.helper';
 import { throwStockNotFound } from 'src/common/utils/module-service.utils';
 import type {
   StockErrorDetail,
@@ -6,17 +7,20 @@ import type {
   StockVoucherType,
 } from './types/stock-voucher.types';
 /**
- * NUMBERING IS SELF-CONTAINED, AND DELIBERATELY SO.
+ * THE SERIAL IS SELF-CONTAINED; THE PRINTED NUMBER MAY NOT BE.
  *
- * It does NOT use SequenceService / accounts.acc_voucher_seq, and it does NOT
- * create an accounts.acc_voucher_header row. That table is keyed by
- * seq_vchr_type_id, a foreign key into accounts.acc_voucher_type — and a stock
- * voucher type is not an accounting voucher type. Inventing rows in the
- * accounting voucher-type master to satisfy that foreign key is exactly how the
- * two masters start disagreeing about what documents exist.
+ * svh_slno never touches SequenceService / accounts.acc_voucher_seq, and
+ * nothing here creates an accounts.acc_voucher_header row. A stock voucher
+ * moves quantity and cost, posts no debit and no credit, and stock_voucher has
+ * no column pointing at an accounting document.
  *
- * A stock voucher moves quantity and cost. It posts no debit and no credit, and
- * stock_voucher has no column pointing at an accounting document.
+ * svh_refno has two sources. A type with no `refnoVchrTypeId` in its rules
+ * builds `{typeCode}/{accYear}/{deviceCode}/{slno}` here. A type that names
+ * one — OPENING names accounts.acc_voucher_types row 1, "Opening Stock" —
+ * draws the printed number from accounts.acc_voucher_seq under that row's
+ * prefix / suffix / width / reset frequency, exactly as a sale bill does. That
+ * row already exists in the accounting master (category INVENTORY, nature
+ * STOCK_JOURNAL); it is not invented here to satisfy the FK.
  *
  * THE DEVICE IS THE COUNTER. svh_slno is unique per
  * (company, branch, acc_year, voucher_type, DEVICE) — ux_svh_slno — because a
@@ -183,6 +187,7 @@ export async function allocateStockVoucherNumber(
   scope: StockVoucherNumberScope,
   typeCode: string,
   supplied: { slno?: string | number | bigint | null; refno?: string | null } = {},
+  refnoVchrTypeId?: number,
 ): Promise<AllocatedStockVoucherNumber> {
   const suppliedRefno = supplied.refno?.trim() || null;
   const suppliedSlno =
@@ -196,6 +201,38 @@ export async function allocateStockVoucherNumber(
   if (suppliedRefno !== null) {
     return { slno, refno: suppliedRefno };
   }
+  if (refnoVchrTypeId !== undefined) {
+    return { slno, refno: await nextAccountsRefno(tx, scope, refnoVchrTypeId) };
+  }
   const deviceCode = await resolveDeviceCode(tx, scope.deviceId);
   return { slno, refno: buildStockVoucherRefno(typeCode, scope.accYear, deviceCode, slno) };
+}
+
+/**
+ * The printed number from accounts.acc_voucher_seq, formatted by the named
+ * acc_voucher_types row — `opn000000000001st` for row 1.
+ *
+ * NO deviceCode is passed, so every device in the branch shares the 'MAIN'
+ * counter. That is deliberate: ux_svh_refno is unique per (company, branch,
+ * acc_year) with no device in it, so a per-device counter would hand two tills
+ * the same printed number and the second save would 409. The serial keeps its
+ * per-device scope alongside; the two numbers are allowed to differ.
+ *
+ * The device is still validated first, because svh_device_id is NOT NULL and
+ * a bad id would otherwise surface as an FK violation after the accounts
+ * counter had already been consumed inside the same transaction.
+ */
+async function nextAccountsRefno(
+  tx: Prisma.TransactionClient,
+  scope: StockVoucherNumberScope,
+  vchrTypeId: number,
+): Promise<string> {
+  await resolveDeviceCode(tx, scope.deviceId);
+  const allocated = await allocateVoucherNumber(tx, {
+    vchrTypeId,
+    companyId: scope.companyId,
+    branchId: scope.branchId,
+    accYear: scope.accYear,
+  });
+  return allocated.refno;
 }

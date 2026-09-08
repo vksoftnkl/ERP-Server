@@ -17,4 +17,4 @@ export declare function buildStockVoucherRefno(typeCode: string, accYear: string
 export declare function allocateStockVoucherNumber(tx: Prisma.TransactionClient, scope: StockVoucherNumberScope, typeCode: string, supplied?: {
     slno?: string | number | bigint | null;
     refno?: string | null;
-}): Promise<AllocatedStockVoucherNumber>;
+}, refnoVchrTypeId?: number): Promise<AllocatedStockVoucherNumber>;

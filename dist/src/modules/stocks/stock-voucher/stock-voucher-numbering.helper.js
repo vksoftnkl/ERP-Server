@@ -4,6 +4,7 @@ exports.resolveDeviceCode = resolveDeviceCode;
 exports.nextStockVoucherSlno = nextStockVoucherSlno;
 exports.buildStockVoucherRefno = buildStockVoucherRefno;
 exports.allocateStockVoucherNumber = allocateStockVoucherNumber;
+const voucher_sequence_helper_1 = require("../../../common/Sequence/voucher-sequence.helper");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
 const SLNO_LOCK_NAMESPACE = 'stock.stock_voucher.slno';
 const REFNO_MAX_LENGTH = 100;
@@ -64,7 +65,7 @@ function buildStockVoucherRefno(typeCode, accYear, deviceCode, slno) {
     }
     return refno;
 }
-async function allocateStockVoucherNumber(tx, scope, typeCode, supplied = {}) {
+async function allocateStockVoucherNumber(tx, scope, typeCode, supplied = {}, refnoVchrTypeId) {
     const suppliedRefno = supplied.refno?.trim() || null;
     const suppliedSlno = supplied.slno === undefined || supplied.slno === null || supplied.slno === ''
         ? null
@@ -76,7 +77,20 @@ async function allocateStockVoucherNumber(tx, scope, typeCode, supplied = {}) {
     if (suppliedRefno !== null) {
         return { slno, refno: suppliedRefno };
     }
+    if (refnoVchrTypeId !== undefined) {
+        return { slno, refno: await nextAccountsRefno(tx, scope, refnoVchrTypeId) };
+    }
     const deviceCode = await resolveDeviceCode(tx, scope.deviceId);
     return { slno, refno: buildStockVoucherRefno(typeCode, scope.accYear, deviceCode, slno) };
+}
+async function nextAccountsRefno(tx, scope, vchrTypeId) {
+    await resolveDeviceCode(tx, scope.deviceId);
+    const allocated = await (0, voucher_sequence_helper_1.allocateVoucherNumber)(tx, {
+        vchrTypeId,
+        companyId: scope.companyId,
+        branchId: scope.branchId,
+        accYear: scope.accYear,
+    });
+    return allocated.refno;
 }
 //# sourceMappingURL=stock-voucher-numbering.helper.js.map

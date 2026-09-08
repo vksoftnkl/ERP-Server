@@ -146,8 +146,24 @@ export const PHYSICAL_DEFAULT_RATE_SOURCE: StockRateSource = 'AVG_COST';
  */
 export interface StockVoucherTypeRules {
   voucherType: StockVoucherType;
-  /** Prefix of the printed refno — `OPN` in `OPN/2026-2027/TILL-01/1`. */
+  /**
+   * Prefix of the printed refno — `OPN` in `OPN/2026-2027/TILL-01/1` — when
+   * the type numbers itself. Ignored for the refno when `refnoVchrTypeId` is
+   * set; still the type's short code in messages.
+   */
   typeCode: string;
+  /**
+   * accounts.acc_voucher_types.vchr_type_id whose numbering format (prefix,
+   * suffix, width, reset frequency) builds svh_refno through
+   * accounts.acc_voucher_seq — `opn000000000001st` for the Opening Stock row.
+   *
+   * Absent means the self-contained `{typeCode}/{accYear}/{device}/{slno}`
+   * scheme. svh_slno stays per device either way; only the printed number
+   * moves to the branch-wide accounts counter, because ux_svh_refno is per
+   * (company, branch, acc_year) and a per-device counter would let two tills
+   * print the same number.
+   */
+  refnoVchrTypeId?: number;
   /** Human name used in messages and the audit trail. */
   displayName: string;
   requiresToGodown: boolean;

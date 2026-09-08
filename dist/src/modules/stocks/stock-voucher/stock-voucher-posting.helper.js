@@ -6,6 +6,7 @@ exports.postStockVoucher = postStockVoucher;
 exports.effectivePolicyLateral = effectivePolicyLateral;
 exports.effectivePolicyCte = effectivePolicyCte;
 exports.lotIdentityKeyColumns = lotIdentityKeyColumns;
+exports.cancelStockVoucher = cancelStockVoucher;
 const common_1 = require("@nestjs/common");
 const client_1 = require("@prisma/client");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
@@ -19,16 +20,21 @@ function usesInProcessPosting(rules) {
 function auditColumnActor(actor) {
     return actor === module_service_utils_1.DEFAULT_ACTOR ? null : actor;
 }
+function ledgerRowsOf({ svhId, accYear, reversal }) {
+    return client_1.Prisma.sql `
+             sml.sml_src_doc_id  = ${svhId}::uuid
+         AND sml.sml_acc_year    = ${accYear}::bpchar
+         AND sml.sml_is_deleted  = false
+         AND sml.sml_is_reversal = ${reversal}::boolean
+  `;
+}
 async function postStockVoucher(tx, params) {
     const { svhId, accYear, actor, postedOn } = params;
     const author = auditColumnActor(actor);
     await resolveLots(tx, params);
     await attachLotsToLines(tx, params);
     const rowsPosted = await writeLedger(tx, params);
-    await applyBalances(tx, params);
-    await applyItemCost(tx, params);
-    await assertNegativeStockPolicy(tx, params);
-    await refreshLotTotals(tx, params);
+    await applyLedgerRows(tx, { ...params, reversal: false });
     await tx.stockVoucher.update({
         where: { svhId_svhAccYear: { svhId, svhAccYear: accYear } },
         data: {
@@ -41,6 +47,12 @@ async function postStockVoucher(tx, params) {
         },
     });
     return rowsPosted;
+}
+async function applyLedgerRows(tx, params) {
+    await applyBalances(tx, params);
+    await applyItemCost(tx, params);
+    await assertNegativeStockPolicy(tx, params);
+    await refreshLotTotals(tx, params);
 }
 function effectivePolicyLateral(scope) {
     return client_1.Prisma.sql `
@@ -297,7 +309,8 @@ async function writeLedger(tx, { rules, svhId, accYear, actor, postedOn }) {
      WHERE (c.move_base_qty + c.move_free_base_qty) <> 0
   `;
 }
-async function applyBalances(tx, { svhId, accYear, actor, postedOn }) {
+async function applyBalances(tx, params) {
+    const { actor, postedOn } = params;
     await tx.$executeRaw `
     WITH moved AS (
       SELECT sml.sml_company_id, sml.sml_branch_id, sml.sml_tenant_id,
@@ -311,9 +324,7 @@ async function applyBalances(tx, { svhId, accYear, actor, postedOn }) {
              MAX(sml.sml_doc_date) FILTER (WHERE sml.sml_direction < 0)                 AS last_out_date,
              MIN(sml.sml_doc_date) FILTER (WHERE sml.sml_direction > 0)                 AS first_in_date
         FROM stock.stock_ledger sml
-       WHERE sml.sml_src_doc_id = ${svhId}::uuid
-         AND sml.sml_acc_year   = ${accYear}::bpchar
-         AND sml.sml_is_deleted = false
+       WHERE ${ledgerRowsOf(params)}
        GROUP BY 1, 2, 3, 4, 5, 6, 7, 8
     )
     INSERT INTO stock.stock_balance (
@@ -353,16 +364,15 @@ async function applyBalances(tx, { svhId, accYear, actor, postedOn }) {
       sbl_modified_by   = ${auditColumnActor(actor)}
   `;
 }
-async function applyItemCost(tx, { svhId, accYear, actor, postedOn }) {
+async function applyItemCost(tx, params) {
+    const { actor, postedOn } = params;
     await tx.$queryRaw `
     SELECT count(pg_advisory_xact_lock(hashtextextended(
              t.sml_company_id::text || ':' || t.sml_branch_id::text || ':' || t.sml_item_id::text, 0)))::int AS locked
       FROM (
             SELECT DISTINCT sml.sml_company_id, sml.sml_branch_id, sml.sml_item_id
               FROM stock.stock_ledger sml
-             WHERE sml.sml_src_doc_id = ${svhId}::uuid
-               AND sml.sml_acc_year   = ${accYear}::bpchar
-               AND sml.sml_is_deleted = false
+             WHERE ${ledgerRowsOf(params)}
              ORDER BY 1, 2, 3
            ) t
   `;
@@ -394,9 +404,7 @@ async function applyItemCost(tx, { svhId, accYear, actor, postedOn }) {
              (array_agg(sml.sml_doc_date      ORDER BY sml.sml_line_no DESC, sml.sml_split_no DESC)
                  FILTER (WHERE sml.sml_direction < 0 AND sml.sml_txn_type = 'SALE'))[1]                     AS last_sale_date
         FROM stock.stock_ledger sml
-       WHERE sml.sml_src_doc_id = ${svhId}::uuid
-         AND sml.sml_acc_year   = ${accYear}::bpchar
-         AND sml.sml_is_deleted = false
+       WHERE ${ledgerRowsOf(params)}
        GROUP BY 1, 2, 3
     ),
     cur AS (
@@ -488,9 +496,7 @@ async function applyItemCost(tx, { svhId, accYear, actor, postedOn }) {
     WITH touched AS (
       SELECT DISTINCT sml.sml_company_id, sml.sml_branch_id, sml.sml_item_id
         FROM stock.stock_ledger sml
-       WHERE sml.sml_src_doc_id = ${svhId}::uuid
-         AND sml.sml_acc_year   = ${accYear}::bpchar
-         AND sml.sml_is_deleted = false
+       WHERE ${ledgerRowsOf(params)}
     )
     UPDATE stock.stock_balance b
        SET sbl_avg_cost_rate     = c.sic_avg_cost_rate,
@@ -509,15 +515,14 @@ async function applyItemCost(tx, { svhId, accYear, actor, postedOn }) {
        AND b.sbl_is_deleted = false
   `;
 }
-async function assertNegativeStockPolicy(tx, { rules, svhId, accYear }) {
+async function assertNegativeStockPolicy(tx, params) {
+    const { rules, svhId } = params;
     const holdings = await tx.$queryRaw `
     WITH touched AS (
       SELECT DISTINCT sml.sml_company_id, sml.sml_branch_id, sml.sml_godown_id,
              sml.sml_item_id, sml.sml_lot_id, sml.sml_bucket, sml.sml_doc_date
         FROM stock.stock_ledger sml
-       WHERE sml.sml_src_doc_id = ${svhId}::uuid
-         AND sml.sml_acc_year   = ${accYear}::bpchar
-         AND sml.sml_is_deleted = false
+       WHERE ${ledgerRowsOf(params)}
     )
     SELECT itm.item_name_en                             AS "itemName",
            slt.slt_batch_no                             AS "batchNo",
@@ -559,16 +564,15 @@ async function assertNegativeStockPolicy(tx, { rules, svhId, accYear }) {
         (0, module_service_utils_1.throwStockConflict)(`This ${rules.displayName.toLowerCase()} would drive stock negative — policy is BLOCK`, blocked.map((row) => ({ field: 'lines', message: `${describe(row)} — policy is BLOCK` })));
     }
 }
-async function refreshLotTotals(tx, { svhId, accYear, actor, postedOn }) {
+async function refreshLotTotals(tx, params) {
+    const { actor, postedOn } = params;
     await tx.$executeRaw `
     WITH touched AS (
       SELECT sml.sml_lot_id                AS lot_id,
              bool_or(sml.sml_direction > 0) AS had_in,
              bool_or(sml.sml_direction < 0) AS had_out
         FROM stock.stock_ledger sml
-       WHERE sml.sml_src_doc_id = ${svhId}::uuid
-         AND sml.sml_acc_year   = ${accYear}::bpchar
-         AND sml.sml_is_deleted = false
+       WHERE ${ledgerRowsOf(params)}
        GROUP BY sml.sml_lot_id
     ),
     totals AS (
@@ -602,6 +606,99 @@ async function refreshLotTotals(tx, { svhId, accYear, actor, postedOn }) {
            slt_modified_by   = ${auditColumnActor(actor)}
       FROM verdict v
      WHERE slt.slt_id = v.lot_id
+  `;
+}
+async function cancelStockVoucher(tx, params) {
+    const { rules, svhId, accYear, actor, reason, cancelledOn } = params;
+    const author = auditColumnActor(actor);
+    await lockPostedHeader(tx, params);
+    const rowsReversed = await writeReversalLedger(tx, params);
+    await applyLedgerRows(tx, {
+        rules,
+        svhId,
+        accYear,
+        actor,
+        postedOn: cancelledOn,
+        reversal: true,
+    });
+    await tx.stockVoucher.update({
+        where: { svhId_svhAccYear: { svhId, svhAccYear: accYear } },
+        data: {
+            svhStatus: 'CANCELLED',
+            svhCancelledOn: cancelledOn,
+            svhCancelledBy: author,
+            svhCancelReason: reason.slice(0, 250),
+            svhVersionNo: { increment: 1 },
+            svhModifiedOn: cancelledOn,
+            svhModifiedBy: author,
+        },
+    });
+    return rowsReversed;
+}
+async function lockPostedHeader(tx, { rules, svhId, accYear }) {
+    const [header] = await tx.$queryRaw `
+    SELECT svh.svh_status AS status, svh.svh_refno AS refno
+      FROM stock.stock_voucher svh
+     WHERE svh.svh_id         = ${svhId}::uuid
+       AND svh.svh_acc_year   = ${accYear}::bpchar
+       AND svh.svh_is_deleted = false
+       FOR UPDATE
+  `;
+    if (!header) {
+        (0, module_service_utils_1.throwStockConflict)(`${rules.displayName} not found`, [
+            {
+                field: 'svhId',
+                message: `${svhId} no longer exists in ${accYear}, so there is nothing to reverse.`,
+            },
+        ]);
+    }
+    if (header.status !== 'POSTED') {
+        (0, module_service_utils_1.throwStockConflict)(`${rules.displayName} is ${header.status}`, [
+            {
+                field: 'svhId',
+                message: header.status === 'CANCELLED'
+                    ? `${header.refno} was already cancelled.`
+                    : `${header.refno} is ${header.status}: only a POSTED ${rules.displayName.toLowerCase()} has ledger rows to reverse.`,
+            },
+        ]);
+    }
+}
+async function writeReversalLedger(tx, { svhId, accYear, actor, reason, cancelledOn }) {
+    return tx.$executeRaw `
+    INSERT INTO stock.stock_ledger (
+      sml_company_id, sml_branch_id, sml_tenant_id, sml_acc_year, sml_godown_id,
+      sml_item_id, sml_lot_id, sml_uom_id, sml_base_uom_id, sml_to_base_factor,
+      sml_src_module, sml_src_doc_type, sml_src_doc_id, sml_src_acc_year, sml_src_refno,
+      sml_line_no, sml_split_no,
+      sml_txn_type, sml_direction, sml_bucket,
+      sml_doc_date, sml_doc_datetime, sml_posted_on,
+      sml_qty, sml_base_qty, sml_free_qty, sml_free_base_qty, sml_weight_qty,
+      sml_cost_rate, sml_cost_value, sml_cost_rate_wot, sml_cost_value_wot,
+      sml_landed_rate, sml_landed_value,
+      sml_doc_rate, sml_doc_rate_wot, sml_doc_amount_wot,
+      sml_mrp, sml_batch_no, sml_expiry_date,
+      sml_is_reversal, sml_reverses_id,
+      sml_reason_id, sml_party_id, sml_narration, sml_created_by
+    )
+    SELECT sml.sml_company_id, sml.sml_branch_id, sml.sml_tenant_id, sml.sml_acc_year, sml.sml_godown_id,
+           sml.sml_item_id, sml.sml_lot_id, sml.sml_uom_id, sml.sml_base_uom_id, sml.sml_to_base_factor,
+           sml.sml_src_module, sml.sml_src_doc_type, sml.sml_src_doc_id, sml.sml_src_acc_year, sml.sml_src_refno,
+           sml.sml_line_no, sml.sml_split_no,
+           sml.sml_txn_type, -sml.sml_direction, sml.sml_bucket,
+           sml.sml_doc_date, sml.sml_doc_datetime, ${cancelledOn},
+           sml.sml_qty, sml.sml_base_qty, sml.sml_free_qty, sml.sml_free_base_qty, sml.sml_weight_qty,
+           sml.sml_cost_rate, sml.sml_cost_value, sml.sml_cost_rate_wot, sml.sml_cost_value_wot,
+           sml.sml_landed_rate, sml.sml_landed_value,
+           sml.sml_doc_rate, sml.sml_doc_rate_wot, sml.sml_doc_amount_wot,
+           sml.sml_mrp, sml.sml_batch_no, sml.sml_expiry_date,
+           true, sml.sml_id,
+           sml.sml_reason_id, sml.sml_party_id, ${reason}, ${auditColumnActor(actor)}
+      FROM stock.stock_ledger sml
+     WHERE sml.sml_src_doc_id  = ${svhId}::uuid
+       AND sml.sml_acc_year    = ${accYear}::bpchar
+       AND sml.sml_is_deleted  = false
+       AND sml.sml_is_reversal = false
+     ORDER BY sml.sml_line_no, sml.sml_split_no
   `;
 }
 //# sourceMappingURL=stock-voucher-posting.helper.js.map

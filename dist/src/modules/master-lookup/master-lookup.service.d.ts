@@ -19,7 +19,7 @@ export declare class MasterLookupService {
     getBranchesByCompany(companyId: string): Promise<NameIdOption[]>;
     getFiscalYearsByCompany(companyId: string): Promise<FiscalYearOption[]>;
     getFreightChargesForDistance(distance: number): Promise<FreightChargeOption[]>;
-    getItemByBarcode(barcode: string): Promise<BarcodeItemLookup>;
+    getItemByBarcode(barcode: string, companyId?: string, branchId?: string): Promise<BarcodeItemLookup>;
     getUnitsByItem(itemId: string): Promise<ItemUnitOption[]>;
     getCustomerDetail(query: CustomerDetailQueryDto): Promise<CustomerDetail>;
     getItemPriceLookup(query: ItemPriceLookupQueryDto): Promise<ItemPriceLookupPayload>;

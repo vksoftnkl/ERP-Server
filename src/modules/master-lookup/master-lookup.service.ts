@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import { Injectable } from '@nestjs/common';
 import { MasterErrorDetail, throwMasterNotFound } from '../../common/utils/module-service.utils';
 import { PgService } from '../../database/pg/pg.service';
@@ -156,11 +157,20 @@ export class MasterLookupService {
   /**
    * Legacy `iflag = 10` (barcode): resolve a scanned EAN code to its item and
    * selling unit. Matches item_ean_codes.ean_code case-insensitively (legacy
-   * `lower(ean_code) = lower(...)`) among active, non-deleted codes. The legacy
-   * `item_comp_id IN (0, icompany_id)` scope is dropped — lookup is by barcode
-   * only. Returns the sales flags the POS needs (allow_sales, item_status, etc.).
+   * `lower(ean_code) = lower(...)`) among active, non-deleted codes.
+   *
+   * Company and branch are BOTH optional and independent. Each one, when
+   * given, applies the legacy `IN (0, id)` shape: the item must belong to that
+   * company / branch OR carry none (`item_company_id IS NULL`,
+   * `item_branch_id IS NULL`), so a shared item still resolves. When both are
+   * given both apply; when neither is, the lookup is by barcode alone.
+   * Returns the sales flags the POS needs (allow_sales, item_status, etc.).
    */
-  async getItemByBarcode(barcode: string): Promise<BarcodeItemLookup> {
+  async getItemByBarcode(
+    barcode: string,
+    companyId?: string,
+    branchId?: string,
+  ): Promise<BarcodeItemLookup> {
     const code = barcode.trim();
     const ean = await this.prisma.itemEanCode.findFirst({
       where: {
@@ -177,9 +187,22 @@ export class MasterLookupService {
         `No active item found for barcode ${code}`,
       );
     }
-    // Legacy INNER JOIN item_master ON item_id = ean.item_id.
+    // Legacy INNER JOIN item_master ON item_id = ean.item_id
+    //   AND item_comp_id IN (0, icompany_id)   — only when a company is given
+    //   AND item_branch_id IN (0, ibranch_id)  — only when a branch is given.
+    // Each is its own OR (the id, or null = shared); the two are ANDed.
+    const scope: Prisma.ItemMasterWhereInput[] = [];
+    if (companyId) {
+      scope.push({ OR: [{ itemCompanyId: companyId }, { itemCompanyId: null }] });
+    }
+    if (branchId) {
+      scope.push({ OR: [{ itemBranchId: branchId }, { itemBranchId: null }] });
+    }
     const item = await this.prisma.itemMaster.findFirst({
-      where: { itemId: ean.eanItemId },
+      where: {
+        itemId: ean.eanItemId,
+        ...(scope.length ? { AND: scope } : {}),
+      },
       select: {
         itemNameEn: true,
         itemBatchConfig: true,
@@ -192,7 +215,14 @@ export class MasterLookupService {
       throwMasterNotFound<MasterErrorDetail>(
         'Barcode not found',
         'barcode',
-        `Barcode ${code} is not linked to a valid item`,
+        scope.length
+          ? `Barcode ${code} is not linked to an item of ${[
+              companyId ? `company ${companyId}` : null,
+              branchId ? `branch ${branchId}` : null,
+            ]
+              .filter(Boolean)
+              .join(' and ')}`
+          : `Barcode ${code} is not linked to a valid item`,
       );
     }
     return {

@@ -13,8 +13,11 @@ exports.BarcodeLookupQueryDto = void 0;
 const swagger_1 = require("@nestjs/swagger");
 const class_transformer_1 = require("class-transformer");
 const class_validator_1 = require("class-validator");
+const dtoDecorators_1 = require("../../../common/dto/dtoDecorators");
 class BarcodeLookupQueryDto {
     barcode;
+    company_id;
+    branch_id;
 }
 exports.BarcodeLookupQueryDto = BarcodeLookupQueryDto;
 __decorate([
@@ -29,4 +32,20 @@ __decorate([
     (0, class_validator_1.MaxLength)(64),
     __metadata("design:type", String)
 ], BarcodeLookupQueryDto.prototype, "barcode", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        format: 'uuid',
+        description: 'Company id (legacy icompany_id). When given, the barcode only resolves to an item that belongs to this company or to no company at all (legacy item_comp_id IN (0, icompany_id)). When omitted, the lookup is by barcode alone.',
+    }),
+    (0, dtoDecorators_1.OptionalUuid)(),
+    __metadata("design:type", String)
+], BarcodeLookupQueryDto.prototype, "company_id", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        format: 'uuid',
+        description: 'Branch id (legacy ibranch_id). When given, the barcode only resolves to an item that belongs to this branch or to no branch at all (item_branch_id IS NULL — a company-wide item). When omitted, branch is not checked.',
+    }),
+    (0, dtoDecorators_1.OptionalUuid)(),
+    __metadata("design:type", String)
+], BarcodeLookupQueryDto.prototype, "branch_id", void 0);
 //# sourceMappingURL=barcode-lookup-query.dto.js.map

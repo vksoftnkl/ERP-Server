@@ -45,7 +45,7 @@ All routes are `GET` and wrap their result in `{ success: true, message, data }`
 | `GET` | `/fiscal-years/by-company/:companyId` | Fixed to fiscal years, scoped by company | Non-deleted fiscal years for the given company UUID (current-first). |
 | `GET` | `/customer-detail` | `?cus_id=&company_id=&branch_id=&regional=` | Resolve one customer into a flat detail row (legacy `iflag=7`). |
 | `GET` | `/freight-charges/charge` | `?distance=` | Freight-charge slabs whose km range covers the distance (legacy `iflag=9`). |
-| `GET` | `/item-by-barcode` | `?barcode=` | Resolve a scanned EAN code to its item + selling unit (legacy `iflag=10`). |
+| `GET` | `/item-by-barcode` | `?barcode=` (+ optional `company_id`, `branch_id`) | Resolve a scanned EAN code to its item + selling unit (legacy `iflag=10`). Each of `company_id` / `branch_id`, when given, requires the item to belong to that company / branch **or to none** (null = shared, legacy `IN (0, id)`); both are independent and both optional. |
 | `GET` | `/item-price` | `?item_id=&price_level=` (+ optional `company_id`, `branch_id`, `unit_id`, `customer_id`, `godown_id`, `acccyear`, `regional`, `loading_type`, `freight_type`) | Resolve one item into a single sale-lookup row — effective price, tax block, stock, reorder, resolved loading and freight charges (legacy `getItemForSale`). `@CacheTTL(60)`. |
 | `GET` | `/document-by-number` | `?module=&orderNo=&companyId=&branchId=` | Resolve a printed sales-document number into `{ orderId, companyId, branchId, accYear }`. `@CacheTTL(0)`. |
 | `GET` | `/dropdown/:dropdownId` | Numeric configured-dropdown id | Runs one configured dropdown's stored SQL directly and returns its rows as options. |

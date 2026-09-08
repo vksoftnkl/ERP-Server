@@ -22,13 +22,25 @@ of what this one does.
 | `GET /stock/opening/validate` | the preflight — every line, `problem` null on the clean ones |
 | `POST /stock/opening/post` | the whole engine, one statement |
 | `POST /stock/opening/cancel` | reversal rows, never a delete. `reason` required. |
-| `DELETE /stock/opening` | soft delete, **DRAFT only** |
 | `POST /stock/opening/import` | replace an existing DRAFT's lines from a CSV. Never posts, never creates. |
-| `GET /stock/opening/pending-items` | items with no opening movement in this branch and year |
 | `GET /stock/opening/reconcile` | what the branch started with, what it holds now, the difference |
+| `GET /stock/opening/item-lookup` | the item picker — one round trip fills a line: unit, base unit, factor, tax, tracking signature. **No cost.** |
 
 Every response is `{ success, message, data }`. No `@CacheTTL` anywhere — these
 are live balances, and a cached preflight is worse than none.
+
+## The number comes from the accounts voucher-type master
+
+`svh_refno` is drawn from `accounts.acc_voucher_seq` under
+`accounts.acc_voucher_types` row 1 — code `OPENING`, "Opening Stock": prefix
+`opn`, suffix `st`, width 12, yearly reset — so the first opening of a year
+prints as `opn000000000001st`. The counter is branch-wide (`MAIN`), not per
+device, because `ux_svh_refno` is unique per (company, branch, acc_year) with no
+device in it. `svh_slno` keeps its own per-device serial; the two numbers are
+allowed to differ. `OPENING_VCHR_TYPE_ID` in the controller is what pins the row.
+
+A client that sends `refno` still has it honoured verbatim and consumes no
+accounts number.
 
 ## The type is pinned by the route
 
@@ -36,6 +48,59 @@ are live balances, and a cached preflight is worse than none.
 `voucherType: 'TRANSFER_OUT'` is refused with a 400, not silently honoured — a
 transfer posted through this route would leave its `stock_transit` row uncreated
 and the receiving branch waiting for a document that never arrives.
+
+## Picking an item — `GET /stock/opening/item-lookup`
+
+19q Q6. Runs once per item picked on the line grid (menu 44), with the
+**document's** `companyId`, `branchId` and date (`onDate`), the `itemId`, and
+optionally a `uomId` (an `iuc_id`; omit it for the item's default unit). One
+round trip returns what a line cannot be built without:
+
+* **`uomId` and `baseUomId`, both `iuc_id`s.** The sales lookup the screen used
+  to call returns no base unit at all, and `svi_base_uom_id` is `NOT NULL` and
+  not resolved on save. Guessing it from the selling unit is right only for
+  single-unit items. `toBaseFactor` comes with them.
+* **`trackSignature`** — which of batch / MRP / sale price / expiry / serial /
+  supplier the line must carry, resolved by the same `effectivePolicyLateral`
+  fragment the preflight and the post use, **as at `onDate`**. A back-dated
+  opening is keyed under the policy in force then, which is why the date is
+  required rather than defaulted. `'N'` when nothing matches: track nothing.
+* **`taxPerc`, `cessPerc`, `cessUnit`.** Cess travels with the tax because the
+  screen derives cost-without-tax, and a per-unit cess is not a percentage.
+* **`mrp` and `salePrice`** — lot *identity*, not a price list: a seed for a
+  signature carrying M or S, most specific price scope first, then the dearest
+  live bucket. The line's real bucket is the MRP that gets typed. They read
+  `stock.stock_mrp_price` through `StockMrpPriceGateway` and are **0 on every
+  database where that table is not deployed** (all of them today) — the picker
+  itself keeps working, because a LEFT JOIN to a missing relation is an error,
+  not an empty row.
+* **`alreadyOpened`** — a warning while the operator is still typing, not a
+  refusal. The engine's rule is per holding, finer than this can see; the
+  preflight is the real check.
+
+**It returns no cost, deliberately.** The engine resolves `rateSource` only
+when a line arrives at cost 0. A picker that seeds the cost cell hands the
+engine a non-zero rate, the rate-source CASE never runs, and the line is valued
+at a figure read when the item was picked rather than when it posted — under
+`AVG_COST` the average moves with every line of the same document. The cost
+cell stays empty unless a human types one.
+
+**The item is scoped to the document's company and branch.** Company is a
+strict match: an item with no company is a row nobody owns, not a shared one
+(that is what a null means for `stock_track_policy`, and inventing the same
+rule for items would let five orphan rows open in every company). Branch is
+nullable-means-shared: 10,010 of 10,041 live items carry no branch and belong to
+the whole company, so the lookup returns this branch's own items plus the
+company-wide ones and never another branch's. Without this a barcode scanned
+through `/master-lookups/item-by-barcode`, which takes no company at all,
+filled a line from another company's item (seen on 192.168.0.106, 2026-09-08).
+
+**Empty is a 404 that names the cause**, because "no such item" would mislead
+for almost every item on a real master (on 192.168.0.106, 46 of 10,041 live
+items have any conversion row): no such item, an item with no company, another
+company's item, another branch's item, a service item, no unit conversion at
+all, a `uomId` that is not one of the item's, no default unit when none was
+sent, or a keyed unit whose base unit has no conversion row.
 
 ## What the screen must not do
 
@@ -154,7 +219,8 @@ retry around: the fix is an ADJUSTMENT with a reason.
 A POSTED voucher is likewise **cancelled, never deleted**. `svh_is_deleted` is
 not read by `fn_svh_cancel`'s ledger scan, so soft-deleting a posted document
 would hide it from every list while its ledger rows went on affecting stock for
-ever. `DELETE` on a POSTED document answers 409 and points at cancel.
+ever. This screen exposes no delete route at all; a draft that is not wanted is
+simply never posted.
 
 ## Importing from a file
 

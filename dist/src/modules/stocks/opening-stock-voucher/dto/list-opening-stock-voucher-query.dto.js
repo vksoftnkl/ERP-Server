@@ -9,7 +9,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.OpeningStockReportQueryDto = exports.OpeningStockVoucherRefQueryDto = exports.GetOpeningStockVoucherQueryDto = exports.OpeningStockVoucherScopeQueryDto = void 0;
+exports.OpeningStockItemLookupQueryDto = exports.OpeningStockReportQueryDto = exports.OpeningStockVoucherRefQueryDto = exports.GetOpeningStockVoucherQueryDto = exports.OpeningStockVoucherScopeQueryDto = void 0;
 const swagger_1 = require("@nestjs/swagger");
 const class_validator_1 = require("class-validator");
 const dtoDecorators_1 = require("../../../../common/dto/dtoDecorators");
@@ -72,4 +72,54 @@ __decorate([
     (0, dtoDecorators_1.OptionalQueryInt)(0),
     __metadata("design:type", Number)
 ], OpeningStockReportQueryDto.prototype, "offset", void 0);
+class OpeningStockItemLookupQueryDto {
+    companyId;
+    branchId;
+    itemId;
+    uomId;
+    onDate;
+}
+exports.OpeningStockItemLookupQueryDto = OpeningStockItemLookupQueryDto;
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        format: 'uuid',
+        nullable: true,
+        description: "The DOCUMENT's company. Omit, or send null / empty, to look the item up without a company restriction.",
+    }),
+    (0, dtoDecorators_1.NullableUuid)(),
+    __metadata("design:type", Object)
+], OpeningStockItemLookupQueryDto.prototype, "companyId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        format: 'uuid',
+        nullable: true,
+        description: "The DOCUMENT's branch. Omit, or send null / empty, to look the item up without a branch restriction.",
+    }),
+    (0, dtoDecorators_1.NullableUuid)(),
+    __metadata("design:type", Object)
+], OpeningStockItemLookupQueryDto.prototype, "branchId", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ format: 'uuid', description: 'What the picker returned.' }),
+    (0, dtoDecorators_1.RequiredUuid)(),
+    __metadata("design:type", String)
+], OpeningStockItemLookupQueryDto.prototype, "itemId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        format: 'uuid',
+        description: "An iuc_id (inventory.item_unit_conversion), never a unit_id. Omit for the item's default unit.",
+    }),
+    (0, dtoDecorators_1.OptionalUuid)(),
+    __metadata("design:type", String)
+], OpeningStockItemLookupQueryDto.prototype, "uomId", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        type: 'string',
+        format: 'date',
+        example: '2026-04-01',
+        description: 'The document date. The tracking policy is resolved as at this date, not today.',
+    }),
+    (0, dtoDecorators_1.TrimmedString)(10),
+    (0, class_validator_1.Matches)(/^\d{4}-\d{2}-\d{2}$/, { message: 'onDate must be yyyy-MM-dd' }),
+    __metadata("design:type", String)
+], OpeningStockItemLookupQueryDto.prototype, "onDate", void 0);
 //# sourceMappingURL=list-opening-stock-voucher-query.dto.js.map

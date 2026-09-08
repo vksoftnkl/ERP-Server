@@ -441,45 +441,6 @@ export class OpeningStockImportSuccessDto {
   data!: OpeningStockImportResultDto;
 }
 
-export class OpeningStockDeleteResultDto {
-  @ApiProperty({ format: 'uuid' })
-  svhId!: string;
-
-  @ApiProperty()
-  accYear!: string;
-
-  @ApiProperty({ example: true })
-  deleted!: true;
-}
-
-export class PendingOpeningItemDto {
-  @ApiProperty({ format: 'uuid' })
-  itemId!: string;
-
-  @ApiPropertyOptional({ nullable: true })
-  itemCode!: string | null;
-
-  @ApiProperty()
-  itemName!: string;
-
-  @ApiPropertyOptional({ format: 'uuid', nullable: true })
-  baseUomId!: string | null;
-
-  @ApiPropertyOptional({ nullable: true })
-  unitName!: string | null;
-
-  @ApiPropertyOptional({ nullable: true, example: 'BE' })
-  trackSignature!: string | null;
-}
-
-export class PendingOpeningItemsDto {
-  @ApiProperty({ type: PendingOpeningItemDto, isArray: true })
-  items!: PendingOpeningItemDto[];
-
-  @ApiProperty({ type: PagedMetaDto })
-  meta!: PagedMetaDto;
-}
-
 export class OpeningReconcileRowDto {
   @ApiProperty({ format: 'uuid' })
   itemId!: string;
@@ -521,6 +482,83 @@ export class OpeningReconcileDto {
 
   @ApiProperty({ type: PagedMetaDto })
   meta!: PagedMetaDto;
+}
+
+/**
+ * 19q Q6 — what the picker gets back for one item. No cost, deliberately: the
+ * engine resolves the rate source only when a line arrives at cost 0, so a
+ * seeded cost cell would silently disable it. See OpeningStockItemLookup.
+ */
+export class OpeningStockItemLookupDto {
+  @ApiProperty({ format: 'uuid' })
+  itemId!: string;
+
+  @ApiPropertyOptional({ nullable: true })
+  itemCode!: string | null;
+
+  @ApiProperty()
+  itemName!: string;
+
+  @ApiPropertyOptional({ nullable: true })
+  barcode!: string | null;
+
+  @ApiProperty({
+    format: 'uuid',
+    description: 'The unit the line is keyed in — an iuc_id, never a unit_id.',
+  })
+  uomId!: string;
+
+  @ApiProperty({ example: 'BOX' })
+  unitName!: string;
+
+  @ApiProperty({ example: 12, description: 'How many base units one keyed unit is.' })
+  toBaseFactor!: number;
+
+  @ApiProperty({
+    format: 'uuid',
+    description:
+      "The unit the stock is STORED in, as the base unit's own conversion row — the value svi_base_uom_id takes.",
+  })
+  baseUomId!: string;
+
+  @ApiProperty({ example: 18 })
+  taxPerc!: number;
+
+  @ApiProperty({ example: 0, description: 'Cess as a percentage of value.' })
+  cessPerc!: number;
+
+  @ApiProperty({
+    example: 0,
+    description:
+      'Cess per UNIT. Returned because the screen derives cost-without-tax, and a per-unit cess is not a percentage the engine can express.',
+  })
+  cessUnit!: number;
+
+  @ApiProperty({
+    example: 'BME',
+    description:
+      "Which identity columns the line must carry — B batch, M MRP, S sale price, E expiry, R serial, P supplier; 'N' when no policy matches on the document date.",
+  })
+  trackSignature!: string;
+
+  @ApiProperty({
+    example: 0,
+    description:
+      "A SEED for a signature carrying M: the dearest live bucket at the most specific price scope. 0 when there is none, and 0 wherever stock.stock_mrp_price is not deployed. The line's real bucket is the MRP that ends up typed.",
+  })
+  mrp!: number;
+
+  @ApiProperty({
+    example: 0,
+    description: "The seed bucket's sale price, on the same terms as mrp.",
+  })
+  salePrice!: number;
+
+  @ApiProperty({
+    description:
+      'A warning, not a refusal: this item has an OPENING ledger row somewhere in this branch. The preflight is the real check.',
+  })
+  alreadyOpened!: boolean;
 }
 
 // ── Envelopes ─────────────────────────────────────────────────────────────
@@ -607,28 +645,6 @@ export class OpeningStockCancelSuccessDto {
   data!: OpeningStockCancelResultDto;
 }
 
-export class OpeningStockDeleteSuccessDto {
-  @ApiProperty({ example: true })
-  success!: true;
-
-  @ApiProperty({ example: 'Opening stock deleted successfully' })
-  message!: string;
-
-  @ApiProperty({ type: OpeningStockDeleteResultDto })
-  data!: OpeningStockDeleteResultDto;
-}
-
-export class PendingOpeningItemsSuccessDto {
-  @ApiProperty({ example: true })
-  success!: true;
-
-  @ApiProperty({ example: 'Pending opening items fetched successfully' })
-  message!: string;
-
-  @ApiProperty({ type: PendingOpeningItemsDto })
-  data!: PendingOpeningItemsDto;
-}
-
 export class OpeningReconcileSuccessDto {
   @ApiProperty({ example: true })
   success!: true;
@@ -638,4 +654,15 @@ export class OpeningReconcileSuccessDto {
 
   @ApiProperty({ type: OpeningReconcileDto })
   data!: OpeningReconcileDto;
+}
+
+export class OpeningStockItemLookupSuccessDto {
+  @ApiProperty({ example: true })
+  success!: true;
+
+  @ApiProperty({ example: 'Item fetched successfully' })
+  message!: string;
+
+  @ApiProperty({ type: OpeningStockItemLookupDto })
+  data!: OpeningStockItemLookupDto;
 }

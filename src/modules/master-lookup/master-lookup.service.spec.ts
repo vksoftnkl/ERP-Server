@@ -49,7 +49,10 @@ describe('MasterLookupService', () => {
     pg = {
       queryReadOnly: jest.fn().mockResolvedValue(pgRows([])),
     };
-    service = new MasterLookupService(prisma as unknown as PrismaService, pg as unknown as PgService);
+    service = new MasterLookupService(
+      prisma as unknown as PrismaService,
+      pg as unknown as PgService,
+    );
   });
   it('uses configured regional dropdown SQL and dropdown columns for module lookups', async () => {
     prisma.dropdownDetails.findMany.mockResolvedValue([
@@ -77,14 +80,16 @@ describe('MasterLookupService', () => {
         ],
       },
     ]);
-    pg.queryReadOnly.mockResolvedValue(pgRows([
-      { item_id: 'ITEM-1', item_name: 'Milk', item_code: 'MILK-001' },
-    ]));
+    pg.queryReadOnly.mockResolvedValue(
+      pgRows([{ item_id: 'ITEM-1', item_name: 'Milk', item_code: 'MILK-001' }]),
+    );
     const result = await service.getAllAccountsAndMasterNameIds('items');
     expect(result).toEqual({
       scope: 'masters',
       module: 'items',
-      items: [{ id: 'ITEM-1', name: 'Milk', item_id: 'ITEM-1', item_name: 'Milk', item_code: 'MILK-001' }],
+      items: [
+        { id: 'ITEM-1', name: 'Milk', item_id: 'ITEM-1', item_name: 'Milk', item_code: 'MILK-001' },
+      ],
     });
     expect(prisma.itemMaster.findMany).not.toHaveBeenCalled();
     expect(pg.queryReadOnly).toHaveBeenCalledTimes(1);
@@ -119,14 +124,16 @@ describe('MasterLookupService', () => {
         ],
       },
     ]);
-    pg.queryReadOnly.mockResolvedValue(pgRows([
-      {
-        cgr_id: '019cad4b-84db-7a76-a67f-41e7e6adb9ce',
-        cgr_branch_id: null,
-        cgr_name: 'Retail',
-        cgr_alias: 'RTL',
-      },
-    ]));
+    pg.queryReadOnly.mockResolvedValue(
+      pgRows([
+        {
+          cgr_id: '019cad4b-84db-7a76-a67f-41e7e6adb9ce',
+          cgr_branch_id: null,
+          cgr_name: 'Retail',
+          cgr_alias: 'RTL',
+        },
+      ]),
+    );
     const result = await service.getAllAccountsAndMasterNameIds('customerGroups');
     expect(result).toEqual({
       scope: 'masters',
@@ -164,11 +171,13 @@ describe('MasterLookupService', () => {
         ],
       },
     ]);
-    pg.queryReadOnly.mockResolvedValue(pgRows([
-      {
-        cgr_id: '019cad4b-84db-7a76-a67f-41e7e6adb9ce',
-      },
-    ]));
+    pg.queryReadOnly.mockResolvedValue(
+      pgRows([
+        {
+          cgr_id: '019cad4b-84db-7a76-a67f-41e7e6adb9ce',
+        },
+      ]),
+    );
     const result = await service.getAllAccountsAndMasterNameIds('customerGroups');
     expect(result).toEqual({
       scope: 'masters',
@@ -361,12 +370,14 @@ describe('MasterLookupService', () => {
     ]);
     pg.queryReadOnly
       .mockRejectedValueOnce(new Error('broken regional dropdown sql'))
-      .mockResolvedValueOnce(pgRows([
-        {
-          item_id: 'ITEM-4',
-          item_name: 'Cheese',
-        },
-      ]));
+      .mockResolvedValueOnce(
+        pgRows([
+          {
+            item_id: 'ITEM-4',
+            item_name: 'Cheese',
+          },
+        ]),
+      );
     const result = await service.getAllAccountsAndMasterNameIds('items');
     expect(result).toEqual({
       scope: 'masters',
@@ -408,12 +419,14 @@ describe('MasterLookupService', () => {
         ],
       },
     ]);
-    pg.queryReadOnly.mockResolvedValue(pgRows([
-      {
-        br_id: 'BR-1',
-        br_name: 'Main Branch',
-      },
-    ]));
+    pg.queryReadOnly.mockResolvedValue(
+      pgRows([
+        {
+          br_id: 'BR-1',
+          br_name: 'Main Branch',
+        },
+      ]),
+    );
     const result = await service.getAllAccountsAndMasterNameIds('branches');
     expect(result).toEqual({
       scope: 'accounts',
@@ -451,12 +464,14 @@ describe('MasterLookupService', () => {
         ],
       },
     ]);
-    pg.queryReadOnly.mockResolvedValue(pgRows([
-      {
-        comp_id: 'COMP-1',
-        comp_name: 'Acme Pvt Ltd',
-      },
-    ]));
+    pg.queryReadOnly.mockResolvedValue(
+      pgRows([
+        {
+          comp_id: 'COMP-1',
+          comp_name: 'Acme Pvt Ltd',
+        },
+      ]),
+    );
     const result = await service.getAllAccountsAndMasterNameIds('companies');
     expect(result).toEqual({
       scope: 'accounts',
@@ -493,12 +508,14 @@ describe('MasterLookupService', () => {
         ],
       },
     ]);
-    pg.queryReadOnly.mockResolvedValue(pgRows([
-      {
-        ttm_type_id: 1,
-        ttm_type_name: 'E-Invoice',
-      },
-    ]));
+    pg.queryReadOnly.mockResolvedValue(
+      pgRows([
+        {
+          ttm_type_id: 1,
+          ttm_type_name: 'E-Invoice',
+        },
+      ]),
+    );
     const result = await service.getAllAccountsAndMasterNameIds('tenderTypes');
     expect(result).toEqual({
       scope: 'accounts',
@@ -593,7 +610,12 @@ describe('MasterLookupService', () => {
   });
   describe('getItemPriceLookup', () => {
     const ITEM_ID = 'ITEM-1';
-    const priceRow = (ipmId: string, slno: number, priceA: number, branchId: string | null = null) => ({
+    const priceRow = (
+      ipmId: string,
+      slno: number,
+      priceA: number,
+      branchId: string | null = null,
+    ) => ({
       ipmId,
       ipmItemId: ITEM_ID,
       ipmBranchId: branchId,
@@ -769,8 +791,7 @@ describe('MasterLookupService', () => {
         ilcToWeight: { gt: { toString: () => string } };
         AND: unknown[];
       };
-      const slabWhere = () =>
-        (slabQuery().mock.calls[0] as [{ where: SlabWhere }])[0].where;
+      const slabWhere = () => (slabQuery().mock.calls[0] as [{ where: SlabWhere }])[0].where;
       const lookup = (query: Record<string, unknown>) =>
         service.getItemPriceLookup({ item_id: ITEM_ID, price_level: 1, ...query } as never);
 
@@ -1171,6 +1192,101 @@ describe('MasterLookupService', () => {
     it('404s when no document carries the number', async () => {
       mockDocument('saleOrder', null);
       await expect(lookup('saleOrder', 'NOPE')).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+  describe('getItemByBarcode', () => {
+    const COMPANY_ID = '11111111-1111-4111-8111-111111111111';
+    const BRANCH_ID = '44444444-4444-4444-8444-444444444444';
+    const ITEM_ID = '22222222-2222-4222-8222-222222222222';
+    const UNIT_ID = '33333333-3333-4333-8333-333333333333';
+    const itemRow = {
+      itemNameEn: 'Sugar 1kg',
+      itemBatchConfig: 0,
+      itemAllowSales: true,
+      itemIsActive: true,
+      itemWeighScale: false,
+    };
+    type ScopeClause = {
+      OR: Array<{ itemCompanyId?: string | null; itemBranchId?: string | null }>;
+    };
+    type ItemWhere = { itemId: string; AND?: ScopeClause[] };
+    let itemEanCode: { findFirst: jest.Mock };
+    let itemMaster: { findFirst: jest.Mock };
+    const itemWhere = (): ItemWhere =>
+      (itemMaster.findFirst.mock.calls[0] as [{ where: ItemWhere }])[0].where;
+    beforeEach(() => {
+      itemEanCode = {
+        findFirst: jest.fn().mockResolvedValue({ eanItemId: ITEM_ID, eanUcUnitId: UNIT_ID }),
+      };
+      itemMaster = { findFirst: jest.fn().mockResolvedValue(itemRow) };
+      (prisma as unknown as { itemEanCode: unknown }).itemEanCode = itemEanCode;
+      (prisma as unknown as { itemMaster: unknown }).itemMaster = itemMaster;
+    });
+    it('resolves by barcode alone when no company is given', async () => {
+      await expect(service.getItemByBarcode(' 8901234567890 ')).resolves.toEqual({
+        itemId: ITEM_ID,
+        unitId: UNIT_ID,
+        itemName: 'Sugar 1kg',
+        batchConfig: 0,
+        allowSales: true,
+        itemStatus: true,
+        weighScale: false,
+      });
+      const eanCall = itemEanCode.findFirst.mock.calls[0] as [
+        { where: { eanCode: unknown; eanIsActive: boolean; eanIsDeleted: boolean } },
+      ];
+      expect(eanCall[0].where).toEqual({
+        eanIsActive: true,
+        eanIsDeleted: false,
+        eanCode: { equals: '8901234567890', mode: 'insensitive' },
+      });
+      expect(itemWhere()).toEqual({ itemId: ITEM_ID });
+    });
+    it('scopes the item to the company or to no company when company_id is given', async () => {
+      await service.getItemByBarcode('8901234567890', COMPANY_ID);
+      expect(itemWhere()).toEqual({
+        itemId: ITEM_ID,
+        AND: [{ OR: [{ itemCompanyId: COMPANY_ID }, { itemCompanyId: null }] }],
+      });
+    });
+    it('scopes the item to the branch or to no branch when only branch_id is given', async () => {
+      await service.getItemByBarcode('8901234567890', undefined, BRANCH_ID);
+      expect(itemWhere()).toEqual({
+        itemId: ITEM_ID,
+        AND: [{ OR: [{ itemBranchId: BRANCH_ID }, { itemBranchId: null }] }],
+      });
+    });
+    it('applies both scopes, each null-tolerant, when company_id and branch_id are given', async () => {
+      await service.getItemByBarcode('8901234567890', COMPANY_ID, BRANCH_ID);
+      expect(itemWhere()).toEqual({
+        itemId: ITEM_ID,
+        AND: [
+          { OR: [{ itemCompanyId: COMPANY_ID }, { itemCompanyId: null }] },
+          { OR: [{ itemBranchId: BRANCH_ID }, { itemBranchId: null }] },
+        ],
+      });
+    });
+    it('names both scopes in the 404 when the item is outside them', async () => {
+      itemMaster.findFirst.mockResolvedValue(null);
+      const error = await service
+        .getItemByBarcode('8901234567890', COMPANY_ID, BRANCH_ID)
+        .catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(NotFoundException);
+      const body = (error as NotFoundException).getResponse() as {
+        errors: Array<{ message: string }>;
+      };
+      expect(body.errors[0].message).toContain(`company ${COMPANY_ID} and branch ${BRANCH_ID}`);
+    });
+    it('404s when the barcode resolves to an item outside the company', async () => {
+      itemMaster.findFirst.mockResolvedValue(null);
+      await expect(service.getItemByBarcode('8901234567890', COMPANY_ID)).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+    });
+    it('404s when the barcode is unknown', async () => {
+      itemEanCode.findFirst.mockResolvedValue(null);
+      await expect(service.getItemByBarcode('NOPE')).rejects.toBeInstanceOf(NotFoundException);
+      expect(itemMaster.findFirst).not.toHaveBeenCalled();
     });
   });
 });

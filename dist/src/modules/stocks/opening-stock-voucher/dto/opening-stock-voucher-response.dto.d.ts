@@ -150,23 +150,6 @@ export declare class OpeningStockImportSuccessDto {
     message: string;
     data: OpeningStockImportResultDto;
 }
-export declare class OpeningStockDeleteResultDto {
-    svhId: string;
-    accYear: string;
-    deleted: true;
-}
-export declare class PendingOpeningItemDto {
-    itemId: string;
-    itemCode: string | null;
-    itemName: string;
-    baseUomId: string | null;
-    unitName: string | null;
-    trackSignature: string | null;
-}
-export declare class PendingOpeningItemsDto {
-    items: PendingOpeningItemDto[];
-    meta: PagedMetaDto;
-}
 export declare class OpeningReconcileRowDto {
     itemId: string;
     itemCode: string | null;
@@ -182,6 +165,23 @@ export declare class OpeningReconcileRowDto {
 export declare class OpeningReconcileDto {
     items: OpeningReconcileRowDto[];
     meta: PagedMetaDto;
+}
+export declare class OpeningStockItemLookupDto {
+    itemId: string;
+    itemCode: string | null;
+    itemName: string;
+    barcode: string | null;
+    uomId: string;
+    unitName: string;
+    toBaseFactor: number;
+    baseUomId: string;
+    taxPerc: number;
+    cessPerc: number;
+    cessUnit: number;
+    trackSignature: string;
+    mrp: number;
+    salePrice: number;
+    alreadyOpened: boolean;
 }
 export declare class OpeningStockDocumentSuccessDto {
     success: true;
@@ -216,18 +216,13 @@ export declare class OpeningStockCancelSuccessDto {
     message: string;
     data: OpeningStockCancelResultDto;
 }
-export declare class OpeningStockDeleteSuccessDto {
-    success: true;
-    message: string;
-    data: OpeningStockDeleteResultDto;
-}
-export declare class PendingOpeningItemsSuccessDto {
-    success: true;
-    message: string;
-    data: PendingOpeningItemsDto;
-}
 export declare class OpeningReconcileSuccessDto {
     success: true;
     message: string;
     data: OpeningReconcileDto;
+}
+export declare class OpeningStockItemLookupSuccessDto {
+    success: true;
+    message: string;
+    data: OpeningStockItemLookupDto;
 }

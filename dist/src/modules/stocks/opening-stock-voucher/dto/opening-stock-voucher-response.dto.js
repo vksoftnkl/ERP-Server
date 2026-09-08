@@ -9,7 +9,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.OpeningReconcileSuccessDto = exports.PendingOpeningItemsSuccessDto = exports.OpeningStockDeleteSuccessDto = exports.OpeningStockCancelSuccessDto = exports.OpeningStockPostSuccessDto = exports.OpeningStockValidateSuccessDto = exports.OpeningStockListSuccessDto = exports.OpeningStockSaveSuccessDto = exports.OpeningStockSavedDocumentDto = exports.OpeningStockDocumentSuccessDto = exports.OpeningReconcileDto = exports.OpeningReconcileRowDto = exports.PendingOpeningItemsDto = exports.PendingOpeningItemDto = exports.OpeningStockDeleteResultDto = exports.OpeningStockImportSuccessDto = exports.OpeningStockImportResultDto = exports.OpeningStockCancelResultDto = exports.OpeningStockPostResultDto = exports.OpeningStockLineProblemDto = exports.OpeningStockListDto = exports.PagedMetaDto = exports.OpeningStockListItemDto = exports.OpeningStockDocumentDto = exports.OpeningStockLineDto = exports.OpeningStockHeaderDto = exports.OpeningStockErrorResponseDto = exports.OpeningStockErrorFieldDto = void 0;
+exports.OpeningStockItemLookupSuccessDto = exports.OpeningReconcileSuccessDto = exports.OpeningStockCancelSuccessDto = exports.OpeningStockPostSuccessDto = exports.OpeningStockValidateSuccessDto = exports.OpeningStockListSuccessDto = exports.OpeningStockSaveSuccessDto = exports.OpeningStockSavedDocumentDto = exports.OpeningStockDocumentSuccessDto = exports.OpeningStockItemLookupDto = exports.OpeningReconcileDto = exports.OpeningReconcileRowDto = exports.OpeningStockImportSuccessDto = exports.OpeningStockImportResultDto = exports.OpeningStockCancelResultDto = exports.OpeningStockPostResultDto = exports.OpeningStockLineProblemDto = exports.OpeningStockListDto = exports.PagedMetaDto = exports.OpeningStockListItemDto = exports.OpeningStockDocumentDto = exports.OpeningStockLineDto = exports.OpeningStockHeaderDto = exports.OpeningStockErrorResponseDto = exports.OpeningStockErrorFieldDto = void 0;
 const swagger_1 = require("@nestjs/swagger");
 const stock_voucher_types_1 = require("../../stock-voucher/types/stock-voucher.types");
 class OpeningStockErrorFieldDto {
@@ -708,70 +708,6 @@ __decorate([
     (0, swagger_1.ApiProperty)({ type: OpeningStockImportResultDto }),
     __metadata("design:type", OpeningStockImportResultDto)
 ], OpeningStockImportSuccessDto.prototype, "data", void 0);
-class OpeningStockDeleteResultDto {
-    svhId;
-    accYear;
-    deleted;
-}
-exports.OpeningStockDeleteResultDto = OpeningStockDeleteResultDto;
-__decorate([
-    (0, swagger_1.ApiProperty)({ format: 'uuid' }),
-    __metadata("design:type", String)
-], OpeningStockDeleteResultDto.prototype, "svhId", void 0);
-__decorate([
-    (0, swagger_1.ApiProperty)(),
-    __metadata("design:type", String)
-], OpeningStockDeleteResultDto.prototype, "accYear", void 0);
-__decorate([
-    (0, swagger_1.ApiProperty)({ example: true }),
-    __metadata("design:type", Boolean)
-], OpeningStockDeleteResultDto.prototype, "deleted", void 0);
-class PendingOpeningItemDto {
-    itemId;
-    itemCode;
-    itemName;
-    baseUomId;
-    unitName;
-    trackSignature;
-}
-exports.PendingOpeningItemDto = PendingOpeningItemDto;
-__decorate([
-    (0, swagger_1.ApiProperty)({ format: 'uuid' }),
-    __metadata("design:type", String)
-], PendingOpeningItemDto.prototype, "itemId", void 0);
-__decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
-    __metadata("design:type", Object)
-], PendingOpeningItemDto.prototype, "itemCode", void 0);
-__decorate([
-    (0, swagger_1.ApiProperty)(),
-    __metadata("design:type", String)
-], PendingOpeningItemDto.prototype, "itemName", void 0);
-__decorate([
-    (0, swagger_1.ApiPropertyOptional)({ format: 'uuid', nullable: true }),
-    __metadata("design:type", Object)
-], PendingOpeningItemDto.prototype, "baseUomId", void 0);
-__decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
-    __metadata("design:type", Object)
-], PendingOpeningItemDto.prototype, "unitName", void 0);
-__decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true, example: 'BE' }),
-    __metadata("design:type", Object)
-], PendingOpeningItemDto.prototype, "trackSignature", void 0);
-class PendingOpeningItemsDto {
-    items;
-    meta;
-}
-exports.PendingOpeningItemsDto = PendingOpeningItemsDto;
-__decorate([
-    (0, swagger_1.ApiProperty)({ type: PendingOpeningItemDto, isArray: true }),
-    __metadata("design:type", Array)
-], PendingOpeningItemsDto.prototype, "items", void 0);
-__decorate([
-    (0, swagger_1.ApiProperty)({ type: PagedMetaDto }),
-    __metadata("design:type", PagedMetaDto)
-], PendingOpeningItemsDto.prototype, "meta", void 0);
 class OpeningReconcileRowDto {
     itemId;
     itemCode;
@@ -840,6 +776,104 @@ __decorate([
     (0, swagger_1.ApiProperty)({ type: PagedMetaDto }),
     __metadata("design:type", PagedMetaDto)
 ], OpeningReconcileDto.prototype, "meta", void 0);
+class OpeningStockItemLookupDto {
+    itemId;
+    itemCode;
+    itemName;
+    barcode;
+    uomId;
+    unitName;
+    toBaseFactor;
+    baseUomId;
+    taxPerc;
+    cessPerc;
+    cessUnit;
+    trackSignature;
+    mrp;
+    salePrice;
+    alreadyOpened;
+}
+exports.OpeningStockItemLookupDto = OpeningStockItemLookupDto;
+__decorate([
+    (0, swagger_1.ApiProperty)({ format: 'uuid' }),
+    __metadata("design:type", String)
+], OpeningStockItemLookupDto.prototype, "itemId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
+    __metadata("design:type", Object)
+], OpeningStockItemLookupDto.prototype, "itemCode", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)(),
+    __metadata("design:type", String)
+], OpeningStockItemLookupDto.prototype, "itemName", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
+    __metadata("design:type", Object)
+], OpeningStockItemLookupDto.prototype, "barcode", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        format: 'uuid',
+        description: 'The unit the line is keyed in — an iuc_id, never a unit_id.',
+    }),
+    __metadata("design:type", String)
+], OpeningStockItemLookupDto.prototype, "uomId", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 'BOX' }),
+    __metadata("design:type", String)
+], OpeningStockItemLookupDto.prototype, "unitName", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 12, description: 'How many base units one keyed unit is.' }),
+    __metadata("design:type", Number)
+], OpeningStockItemLookupDto.prototype, "toBaseFactor", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        format: 'uuid',
+        description: "The unit the stock is STORED in, as the base unit's own conversion row — the value svi_base_uom_id takes.",
+    }),
+    __metadata("design:type", String)
+], OpeningStockItemLookupDto.prototype, "baseUomId", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 18 }),
+    __metadata("design:type", Number)
+], OpeningStockItemLookupDto.prototype, "taxPerc", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 0, description: 'Cess as a percentage of value.' }),
+    __metadata("design:type", Number)
+], OpeningStockItemLookupDto.prototype, "cessPerc", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        example: 0,
+        description: 'Cess per UNIT. Returned because the screen derives cost-without-tax, and a per-unit cess is not a percentage the engine can express.',
+    }),
+    __metadata("design:type", Number)
+], OpeningStockItemLookupDto.prototype, "cessUnit", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        example: 'BME',
+        description: "Which identity columns the line must carry — B batch, M MRP, S sale price, E expiry, R serial, P supplier; 'N' when no policy matches on the document date.",
+    }),
+    __metadata("design:type", String)
+], OpeningStockItemLookupDto.prototype, "trackSignature", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        example: 0,
+        description: "A SEED for a signature carrying M: the dearest live bucket at the most specific price scope. 0 when there is none, and 0 wherever stock.stock_mrp_price is not deployed. The line's real bucket is the MRP that ends up typed.",
+    }),
+    __metadata("design:type", Number)
+], OpeningStockItemLookupDto.prototype, "mrp", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        example: 0,
+        description: "The seed bucket's sale price, on the same terms as mrp.",
+    }),
+    __metadata("design:type", Number)
+], OpeningStockItemLookupDto.prototype, "salePrice", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        description: 'A warning, not a refusal: this item has an OPENING ledger row somewhere in this branch. The preflight is the real check.',
+    }),
+    __metadata("design:type", Boolean)
+], OpeningStockItemLookupDto.prototype, "alreadyOpened", void 0);
 class OpeningStockDocumentSuccessDto {
     success;
     message;
@@ -961,42 +995,6 @@ __decorate([
     (0, swagger_1.ApiProperty)({ type: OpeningStockCancelResultDto }),
     __metadata("design:type", OpeningStockCancelResultDto)
 ], OpeningStockCancelSuccessDto.prototype, "data", void 0);
-class OpeningStockDeleteSuccessDto {
-    success;
-    message;
-    data;
-}
-exports.OpeningStockDeleteSuccessDto = OpeningStockDeleteSuccessDto;
-__decorate([
-    (0, swagger_1.ApiProperty)({ example: true }),
-    __metadata("design:type", Boolean)
-], OpeningStockDeleteSuccessDto.prototype, "success", void 0);
-__decorate([
-    (0, swagger_1.ApiProperty)({ example: 'Opening stock deleted successfully' }),
-    __metadata("design:type", String)
-], OpeningStockDeleteSuccessDto.prototype, "message", void 0);
-__decorate([
-    (0, swagger_1.ApiProperty)({ type: OpeningStockDeleteResultDto }),
-    __metadata("design:type", OpeningStockDeleteResultDto)
-], OpeningStockDeleteSuccessDto.prototype, "data", void 0);
-class PendingOpeningItemsSuccessDto {
-    success;
-    message;
-    data;
-}
-exports.PendingOpeningItemsSuccessDto = PendingOpeningItemsSuccessDto;
-__decorate([
-    (0, swagger_1.ApiProperty)({ example: true }),
-    __metadata("design:type", Boolean)
-], PendingOpeningItemsSuccessDto.prototype, "success", void 0);
-__decorate([
-    (0, swagger_1.ApiProperty)({ example: 'Pending opening items fetched successfully' }),
-    __metadata("design:type", String)
-], PendingOpeningItemsSuccessDto.prototype, "message", void 0);
-__decorate([
-    (0, swagger_1.ApiProperty)({ type: PendingOpeningItemsDto }),
-    __metadata("design:type", PendingOpeningItemsDto)
-], PendingOpeningItemsSuccessDto.prototype, "data", void 0);
 class OpeningReconcileSuccessDto {
     success;
     message;
@@ -1015,4 +1013,22 @@ __decorate([
     (0, swagger_1.ApiProperty)({ type: OpeningReconcileDto }),
     __metadata("design:type", OpeningReconcileDto)
 ], OpeningReconcileSuccessDto.prototype, "data", void 0);
+class OpeningStockItemLookupSuccessDto {
+    success;
+    message;
+    data;
+}
+exports.OpeningStockItemLookupSuccessDto = OpeningStockItemLookupSuccessDto;
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: true }),
+    __metadata("design:type", Boolean)
+], OpeningStockItemLookupSuccessDto.prototype, "success", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 'Item fetched successfully' }),
+    __metadata("design:type", String)
+], OpeningStockItemLookupSuccessDto.prototype, "message", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ type: OpeningStockItemLookupDto }),
+    __metadata("design:type", OpeningStockItemLookupDto)
+], OpeningStockItemLookupSuccessDto.prototype, "data", void 0);
 //# sourceMappingURL=opening-stock-voucher-response.dto.js.map

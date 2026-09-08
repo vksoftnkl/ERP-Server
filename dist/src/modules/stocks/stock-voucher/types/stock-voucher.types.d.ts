@@ -21,6 +21,7 @@ export declare const PHYSICAL_DEFAULT_RATE_SOURCE: StockRateSource;
 export interface StockVoucherTypeRules {
     voucherType: StockVoucherType;
     typeCode: string;
+    refnoVchrTypeId?: number;
     displayName: string;
     requiresToGodown: boolean;
     requiresFromGodown: boolean;

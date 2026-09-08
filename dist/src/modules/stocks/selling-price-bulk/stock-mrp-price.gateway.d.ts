@@ -12,6 +12,17 @@ export interface ListSellingPricesArgs {
     limit: number;
     offset: number;
 }
+export interface OpeningSeedBucket {
+    mrp: number;
+    salePrice: number;
+}
+export interface OpeningSeedBucketArgs {
+    companyId: string | null;
+    branchId: string | null;
+    itemId: string;
+    uomId: string;
+    onDate: string;
+}
 export interface BucketLevelWrite {
     level: PriceLevel;
     price: number;
@@ -34,7 +45,8 @@ export interface BucketPriceCandidate {
 export declare class StockMrpPriceGateway {
     private readonly prisma;
     constructor(prisma: PrismaService);
-    readonly isDeployed = false;
+    readonly isDeployed: boolean;
+    findOpeningSeedBucket(args: OpeningSeedBucketArgs): Promise<OpeningSeedBucket | null>;
     listPrices(_args: ListSellingPricesArgs): Promise<PagedResult<SellingPriceRow>>;
     listBuckets(_itemId: string, _companyId: string, _branchId: string): Promise<SellingPriceRow[]>;
     validateRows(_tx: Prisma.TransactionClient, _candidates: readonly BucketPriceCandidate[], _scope: ScopeResolution[]): Promise<SellingPriceProblem[]>;

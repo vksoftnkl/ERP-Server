@@ -23,7 +23,7 @@ exports.SellingPriceBulkModule = SellingPriceBulkModule = __decorate([
         imports: [audit_log_module_1.AuditLogModule, app_settings_module_1.AppSettingsModule, items_price_master_module_1.ItemsPriceMasterModule],
         controllers: [selling_price_bulk_controller_1.SellingPriceBulkController],
         providers: [selling_price_bulk_service_1.SellingPriceBulkService, selling_price_bulk_exception_filter_1.SellingPriceBulkExceptionFilter, stock_mrp_price_gateway_1.StockMrpPriceGateway],
-        exports: [selling_price_bulk_service_1.SellingPriceBulkService],
+        exports: [selling_price_bulk_service_1.SellingPriceBulkService, stock_mrp_price_gateway_1.StockMrpPriceGateway],
     })
 ], SellingPriceBulkModule);
 //# sourceMappingURL=selling-price-bulk.module.js.map

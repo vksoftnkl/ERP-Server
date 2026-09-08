@@ -112,7 +112,7 @@ let MasterLookupService = class MasterLookupService {
         });
         return rows.map((row) => (0, lookup_option_utils_1.toFreightChargeOption)(row));
     }
-    async getItemByBarcode(barcode) {
+    async getItemByBarcode(barcode, companyId, branchId) {
         const code = barcode.trim();
         const ean = await this.prisma.itemEanCode.findFirst({
             where: {
@@ -125,8 +125,18 @@ let MasterLookupService = class MasterLookupService {
         if (!ean) {
             (0, module_service_utils_1.throwMasterNotFound)('Barcode not found', 'barcode', `No active item found for barcode ${code}`);
         }
+        const scope = [];
+        if (companyId) {
+            scope.push({ OR: [{ itemCompanyId: companyId }, { itemCompanyId: null }] });
+        }
+        if (branchId) {
+            scope.push({ OR: [{ itemBranchId: branchId }, { itemBranchId: null }] });
+        }
         const item = await this.prisma.itemMaster.findFirst({
-            where: { itemId: ean.eanItemId },
+            where: {
+                itemId: ean.eanItemId,
+                ...(scope.length ? { AND: scope } : {}),
+            },
             select: {
                 itemNameEn: true,
                 itemBatchConfig: true,
@@ -136,7 +146,14 @@ let MasterLookupService = class MasterLookupService {
             },
         });
         if (!item) {
-            (0, module_service_utils_1.throwMasterNotFound)('Barcode not found', 'barcode', `Barcode ${code} is not linked to a valid item`);
+            (0, module_service_utils_1.throwMasterNotFound)('Barcode not found', 'barcode', scope.length
+                ? `Barcode ${code} is not linked to an item of ${[
+                    companyId ? `company ${companyId}` : null,
+                    branchId ? `branch ${branchId}` : null,
+                ]
+                    .filter(Boolean)
+                    .join(' and ')}`
+                : `Barcode ${code} is not linked to a valid item`);
         }
         return {
             itemId: ean.eanItemId,

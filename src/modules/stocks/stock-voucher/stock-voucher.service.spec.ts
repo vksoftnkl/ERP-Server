@@ -9,6 +9,18 @@ import { StockVoucherExceptionFilter } from './stock-voucher-exception.filter';
 import { SaveStockVoucherDto } from './dto/save-stock-voucher.dto';
 import type { StockVoucherTypeRules } from './types/stock-voucher.types';
 import { buildStockVoucherRefno } from './stock-voucher-numbering.helper';
+import { allocateVoucherNumber } from 'src/common/Sequence/voucher-sequence.helper';
+
+// The accounts counter is a real table walk (voucher type, sequence row,
+// company, branch) that a unit test has no business standing up. What is under
+// test is WHICH allocator a type's rules route the refno to, and with what scope.
+jest.mock('src/common/Sequence/voucher-sequence.helper', () => ({
+  allocateVoucherNumber: jest.fn().mockResolvedValue({
+    lastNo: BigInt(1),
+    refno: 'opn000000000001st',
+    periodKey: '2026-2027',
+  }),
+}));
 
 const COMPANY_ID = '01000000-0000-7000-8000-0000000000c1';
 const BRANCH_ID = '01000000-0000-7000-8000-0000000000b1';
@@ -184,6 +196,53 @@ describe('StockVoucherService', () => {
   });
 
   const createdLine = () => client.stockVoucherItem.createMany.mock.calls[0][0].data[0];
+
+  describe('numbering — where the printed number comes from', () => {
+    beforeEach(() => {
+      (allocateVoucherNumber as jest.Mock).mockClear();
+    });
+
+    it('builds the self-contained device refno when the rules name no accounts voucher type', async () => {
+      await service.save(OPENING_RULES, payload());
+
+      expect(allocateVoucherNumber).not.toHaveBeenCalled();
+      expect(client.stockVoucher.create.mock.calls[0][0].data.svhRefno).toBe(
+        buildStockVoucherRefno('OPN', ACC_YEAR, 'TILL-01', BigInt(1)),
+      );
+    });
+
+    it('draws the refno from accounts.acc_voucher_seq under the named acc_voucher_types row', async () => {
+      // The opening screen pins row 1, "Opening Stock": prefix opn, suffix st,
+      // width 12 — the format the mocked allocator answers with.
+      await service.save({ ...OPENING_RULES, refnoVchrTypeId: 1 }, payload());
+
+      expect(allocateVoucherNumber).toHaveBeenCalledTimes(1);
+      const scope = (allocateVoucherNumber as jest.Mock).mock.calls[0][1];
+      expect(scope).toEqual({
+        vchrTypeId: 1,
+        companyId: COMPANY_ID,
+        branchId: BRANCH_ID,
+        accYear: ACC_YEAR,
+      });
+      // No deviceCode: ux_svh_refno is per (company, branch, acc_year), so a
+      // per-device accounts counter would let two tills print the same number.
+      expect(scope).not.toHaveProperty('deviceCode');
+      const data = client.stockVoucher.create.mock.calls[0][0].data;
+      expect(data.svhRefno).toBe('opn000000000001st');
+      // The serial is untouched by the switch: still MAX(slno) + 1 per device.
+      expect(data.svhSlno).toBe(BigInt(1));
+    });
+
+    it('honours a client-supplied refno without consuming an accounts number', async () => {
+      await service.save(
+        { ...OPENING_RULES, refnoVchrTypeId: 1 },
+        payload({ header: { refno: 'opn000000000040st' } as never }),
+      );
+
+      expect(allocateVoucherNumber).not.toHaveBeenCalled();
+      expect(client.stockVoucher.create.mock.calls[0][0].data.svhRefno).toBe('opn000000000040st');
+    });
+  });
 
   describe('save — what the service computes and must not trust', () => {
     it('writes to_base_factor and base_qty from the PAYLOAD, unread and unrecomputed', async () => {
@@ -1432,6 +1491,95 @@ describe('StockVoucherService', () => {
           data: expect.objectContaining({ sviIsDeleted: true }),
         }),
       );
+    });
+
+    it('reverses an OPENING in process, without ever naming fn_svh_cancel', async () => {
+      client.stockVoucher.findUnique.mockResolvedValue(posted);
+      // The header lock re-reads the status under FOR UPDATE; the moving-
+      // average phase's advisory lock and the policy check share the mock.
+      client.$queryRaw.mockResolvedValue([{ status: 'POSTED', refno: posted.svhRefno, locked: 1 }]);
+      jest.spyOn(service, 'getById').mockResolvedValue({
+        header: { svhId: SVH_ID, refno: posted.svhRefno, status: 'CANCELLED' } as never,
+        lines: [],
+      });
+
+      const result = await service.cancel(
+        OPENING_RULES,
+        SVH_ID,
+        ACC_YEAR,
+        'wrong figures',
+        COMPANY_ID,
+        BRANCH_ID,
+        USER_ID,
+      );
+
+      // stock.fn_svh_cancel does not exist on this deployment any more than
+      // fn_svh_post does; a $queryRaw naming it is the 500 this path used to be.
+      const named = client.$queryRaw.mock.calls.some((call: unknown[]) =>
+        JSON.stringify(call).includes('fn_svh_cancel'),
+      );
+      expect(named).toBe(false);
+      // Reversal rows, balances, the moving average and its stamp, lot totals
+      // — five set-based statements.
+      expect(client.$executeRaw).toHaveBeenCalledTimes(5);
+      expect(client.stockVoucher.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            svhStatus: 'CANCELLED',
+            svhCancelReason: 'wrong figures',
+            svhCancelledBy: USER_ID,
+          }),
+        }),
+      );
+      expect(result.rowsReversed).toBe(2);
+      expect(client.txnStatusLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ tslToStatus: 'CANCELLED', tslRemarks: 'wrong figures' }),
+        }),
+      );
+    });
+
+    it('refuses under the header lock when a concurrent cancel got there first', async () => {
+      client.stockVoucher.findUnique.mockResolvedValue(posted);
+      client.$queryRaw.mockResolvedValue([{ status: 'CANCELLED', refno: posted.svhRefno }]);
+
+      await expect(
+        service.cancel(OPENING_RULES, SVH_ID, ACC_YEAR, 'wrong figures', COMPANY_ID, BRANCH_ID),
+      ).rejects.toMatchObject({ status: 409 });
+      expect(client.$executeRaw).not.toHaveBeenCalled();
+      expect(client.stockVoucher.update).not.toHaveBeenCalled();
+    });
+
+    it('still hands a transfer to stock.fn_svh_cancel — transit is not reversed here', async () => {
+      const transferRules: StockVoucherTypeRules = {
+        ...OPENING_RULES,
+        voucherType: 'TRANSFER_OUT',
+        displayName: 'Stock transfer',
+        postFunction: 'stock.fn_svh_post_transfer',
+      };
+      client.stockVoucher.findUnique.mockResolvedValue({
+        ...posted,
+        svhVoucherType: 'TRANSFER_OUT',
+        svhRefno: 'TRF/x',
+      });
+      client.$queryRaw.mockResolvedValue([{ rows: 1 }]);
+      jest.spyOn(service, 'getById').mockResolvedValue({
+        header: { svhId: SVH_ID, refno: 'TRF/x', status: 'CANCELLED' } as never,
+        lines: [],
+      });
+
+      await service.cancel(
+        transferRules,
+        SVH_ID,
+        ACC_YEAR,
+        'sent by mistake',
+        COMPANY_ID,
+        BRANCH_ID,
+      );
+
+      const call = client.$queryRaw.mock.calls.at(-1) as unknown[];
+      expect(JSON.stringify(call)).toContain('fn_svh_cancel');
+      expect(client.$executeRaw).not.toHaveBeenCalled();
     });
 
     it('refuses to cancel a DRAFT — there is nothing in the ledger to reverse', async () => {

@@ -13,7 +13,7 @@
 import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from 'src/database/prisma/prisma.service';
-import { buildStockErrorResponse } from 'src/common/utils/module-service.utils';
+import { buildStockErrorResponse, toNumber } from 'src/common/utils/module-service.utils';
 import type { ScopeResolution } from './selling-price-scope.helper';
 import {
   STOCK_MRP_PRICE_NOT_DEPLOYED,
@@ -36,6 +36,23 @@ export interface ListSellingPricesArgs {
   supplierId?: string;
   limit: number;
   offset: number;
+}
+
+/** The bucket the opening picker SEEDS a line with — 19q Q6's price columns. */
+export interface OpeningSeedBucket {
+  mrp: number;
+  salePrice: number;
+}
+
+/** What Q6's price seed is keyed by: the document's scope, the item, the keyed unit, the document date. */
+export interface OpeningSeedBucketArgs {
+  /** null restricts the read to company-wide (smp_company_id IS NULL) rows. */
+  companyId: string | null;
+  /** null restricts the read to branch-wide (smp_branch_id IS NULL) rows. */
+  branchId: string | null;
+  itemId: string;
+  uomId: string;
+  onDate: string;
 }
 
 /** One level's write, after §5.1's server recompute. */
@@ -112,7 +129,59 @@ export class StockMrpPriceGateway {
    * the database, and would answer "yes" to a table that exists with the wrong
    * columns. Flip it in the same commit that fills the methods in.
    */
-  readonly isDeployed = false;
+  readonly isDeployed: boolean = false;
+
+  /**
+   * 19q Q6, the price columns — the bucket an Opening Stock line is SEEDED
+   * with when the item is picked. The one caller is OpeningStockLookupService,
+   * which reads `isDeployed` first and puts 0 in both columns when this is not
+   * available, because a picker that fails on every database lacking the table
+   * is worse than a picker with no seed.
+   *
+   * It is a SEED, not an answer: the table is keyed BY MRP, so it cannot tell a
+   * blank line which MRP the stock has — that is what the packet says and what
+   * the operator types. Most specific scope first (this branch beats chain-wide,
+   * this company beats every-company — the same resolution fn_stp_effective
+   * uses), then the DEAREST bucket, deliberately: an item with several live
+   * MRPs has no single right answer, and the highest is the one an operator
+   * notices is wrong.
+   *
+   * Written from Q6 as reviewed, bound and otherwise unedited. STATUS: UNTESTED
+   * — Q6's own note records that everything above its price join was verified
+   * on 192.168.0.106 (2026-09-08) and the join itself could not be, because §20
+   * has never been deployed there. Re-run against a cluster built from the
+   * chain before flipping `isDeployed`.
+   */
+  async findOpeningSeedBucket(args: OpeningSeedBucketArgs): Promise<OpeningSeedBucket | null> {
+    if (!this.isDeployed) {
+      return this.notDeployed('19q Q6');
+    }
+    const [row] = await this.prisma.$queryRaw<
+      Array<{ mrp: Prisma.Decimal | null; salePrice: Prisma.Decimal | null }>
+    >`
+      SELECT smp.smp_mrp        AS "mrp",
+             smp.smp_sale_price AS "salePrice"
+        FROM stock.stock_mrp_price smp
+       WHERE smp.smp_item_id = ${args.itemId}::uuid
+         AND smp.smp_uom_id  = ${args.uomId}::uuid
+         AND (smp.smp_company_id = ${args.companyId}::uuid OR smp.smp_company_id IS NULL)
+         AND (smp.smp_branch_id  = ${args.branchId}::uuid  OR smp.smp_branch_id  IS NULL)
+         AND ${args.onDate}::date BETWEEN smp.smp_effective_from AND smp.smp_effective_to
+         AND smp.smp_is_active  = true
+         AND smp.smp_is_deleted = false
+       ORDER BY (smp.smp_branch_id  IS NULL),
+                (smp.smp_company_id IS NULL),
+                smp.smp_mrp DESC NULLS LAST
+       LIMIT 1
+    `;
+    if (!row) {
+      return null;
+    }
+    return {
+      mrp: row.mrp === null ? 0 : toNumber(row.mrp),
+      salePrice: row.salePrice === null ? 0 : toNumber(row.salePrice),
+    };
+  }
 
   /** Q25 — one row per (item × uom × live bucket) with stock, plus §4.2's headline rows. */
   async listPrices(_args: ListSellingPricesArgs): Promise<PagedResult<SellingPriceRow>> {

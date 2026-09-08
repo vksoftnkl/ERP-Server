@@ -20,6 +20,7 @@ import {
 } from './stock-voucher-numbering.helper';
 import { resolveImportedLines } from './stock-voucher-import.helper';
 import {
+  cancelStockVoucher,
   effectivePolicyCte,
   lotIdentityKeyColumns,
   postStockVoucher,
@@ -898,10 +899,13 @@ export class StockVoucherService {
       voucherType: rules.voucherType,
       deviceId: header.deviceId,
     };
-    const { slno, refno } = await allocateStockVoucherNumber(tx, scope, rules.typeCode, {
-      slno: header.slno,
-      refno: header.refno,
-    });
+    const { slno, refno } = await allocateStockVoucherNumber(
+      tx,
+      scope,
+      rules.typeCode,
+      { slno: header.slno, refno: header.refno },
+      rules.refnoVchrTypeId,
+    );
 
     const created = await tx.stockVoucher.create({
       data: {
@@ -2044,10 +2048,17 @@ export class StockVoucherService {
    *     as-on-date report reads "this document never moved stock".
    *     sml_posted_on is the audit trail of when the cancellation happened.
    *   * It can LEGITIMATELY fail. Cancelling an opening after stock has been
-   *     sold from it drives the holding negative, and fn_sml_apply refuses that
+   *     sold from it drives the holding negative, and the engine refuses that
    *     under stp_allow_negative = 'BLOCK'. That is correct behaviour, not a
    *     bug to route around — it surfaces as a 409 naming the item, and the fix
    *     is an ADJUSTMENT with a reason.
+   *
+   * WHO REVERSES: the generic types are reversed IN PROCESS by
+   * `cancelStockVoucher`, for the same reason `post()` runs `postStockVoucher`
+   * — stock.fn_svh_cancel does not exist on this deployment, and a cancel that
+   * called it answered every request with a 500. The transfer types keep
+   * calling the engine function, as their post does, because a transfer's
+   * cancel also has to undo stock_transit and the paired document.
    *
    * `reason` is required here even though svh_cancel_reason is nullable: a
    * cancelled opening with no reason is unanswerable three months later.
@@ -2096,10 +2107,22 @@ export class StockVoucherService {
     const cancelledOn = new Date();
 
     const rowsReversed = await this.prisma.$transaction(async (tx) => {
-      const [row] = await tx.$queryRaw<Array<{ rows: number }>>`
-        SELECT stock.fn_svh_cancel(${svhId}::uuid, ${accYear}::bpchar, ${trimmedReason}, ${actor}::uuid) AS rows
-      `;
-      const reversed = Number(row?.rows ?? 0);
+      let reversed: number;
+      if (usesInProcessPosting(rules)) {
+        reversed = await cancelStockVoucher(tx, {
+          rules,
+          svhId,
+          accYear,
+          actor,
+          reason: trimmedReason,
+          cancelledOn,
+        });
+      } else {
+        const [row] = await tx.$queryRaw<Array<{ rows: number }>>`
+          SELECT stock.fn_svh_cancel(${svhId}::uuid, ${accYear}::bpchar, ${trimmedReason}, ${actor}::uuid) AS rows
+        `;
+        reversed = Number(row?.rows ?? 0);
+      }
       // Inside the reversal's own transaction: a cancellation whose ledger
       // reversal committed and whose trail row did not is a document that says
       // CANCELLED with nothing saying who cancelled it or why.

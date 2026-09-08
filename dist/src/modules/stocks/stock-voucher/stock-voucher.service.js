@@ -403,10 +403,7 @@ let StockVoucherService = class StockVoucherService {
             voucherType: rules.voucherType,
             deviceId: header.deviceId,
         };
-        const { slno, refno } = await (0, stock_voucher_numbering_helper_1.allocateStockVoucherNumber)(tx, scope, rules.typeCode, {
-            slno: header.slno,
-            refno: header.refno,
-        });
+        const { slno, refno } = await (0, stock_voucher_numbering_helper_1.allocateStockVoucherNumber)(tx, scope, rules.typeCode, { slno: header.slno, refno: header.refno }, rules.refnoVchrTypeId);
         const created = await tx.stockVoucher.create({
             data: {
                 svhCompanyId: header.companyId,
@@ -1165,10 +1162,23 @@ let StockVoucherService = class StockVoucherService {
         }
         const cancelledOn = new Date();
         const rowsReversed = await this.prisma.$transaction(async (tx) => {
-            const [row] = await tx.$queryRaw `
-        SELECT stock.fn_svh_cancel(${svhId}::uuid, ${accYear}::bpchar, ${trimmedReason}, ${actor}::uuid) AS rows
-      `;
-            const reversed = Number(row?.rows ?? 0);
+            let reversed;
+            if ((0, stock_voucher_posting_helper_1.usesInProcessPosting)(rules)) {
+                reversed = await (0, stock_voucher_posting_helper_1.cancelStockVoucher)(tx, {
+                    rules,
+                    svhId,
+                    accYear,
+                    actor,
+                    reason: trimmedReason,
+                    cancelledOn,
+                });
+            }
+            else {
+                const [row] = await tx.$queryRaw `
+          SELECT stock.fn_svh_cancel(${svhId}::uuid, ${accYear}::bpchar, ${trimmedReason}, ${actor}::uuid) AS rows
+        `;
+                reversed = Number(row?.rows ?? 0);
+            }
             await this.logStatusChange(tx, {
                 rules,
                 svhId,

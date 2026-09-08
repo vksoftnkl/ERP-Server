@@ -19,11 +19,16 @@ import { StockMrpPriceGateway } from './stock-mrp-price.gateway';
  * below-cost setting), ItemsPriceMasterModule exports ItemsPriceMasterService
  * (whose `save(rows, tx)` takes this module's transaction, §6), and
  * AuditLogModule the audit trail every write here is filed under.
+ *
+ * StockMrpPriceGateway is exported as well: the Opening Stock item picker
+ * (OpeningStockVoucherModule) seeds a line's MRP and sale price from the same
+ * table, and the rule that EVERY statement against `stock.stock_mrp_price`
+ * lives in that one class is worth more than module tidiness.
  */
 @Module({
   imports: [AuditLogModule, AppSettingsModule, ItemsPriceMasterModule],
   controllers: [SellingPriceBulkController],
   providers: [SellingPriceBulkService, SellingPriceBulkExceptionFilter, StockMrpPriceGateway],
-  exports: [SellingPriceBulkService],
+  exports: [SellingPriceBulkService, StockMrpPriceGateway],
 })
 export class SellingPriceBulkModule {}

@@ -1,6 +1,12 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Matches } from 'class-validator';
-import { OptionalQueryInt, RequiredUuid, TrimmedString } from 'src/common/dto/dtoDecorators';
+import {
+  NullableUuid,
+  OptionalQueryInt,
+  OptionalUuid,
+  RequiredUuid,
+  TrimmedString,
+} from 'src/common/dto/dtoDecorators';
 
 const ACC_YEAR_PATTERN = /^\d{4}-\d{4}$/;
 
@@ -81,4 +87,60 @@ export class OpeningStockReportQueryDto extends OpeningStockVoucherScopeQueryDto
   @ApiPropertyOptional({ default: 0 })
   @OptionalQueryInt(0)
   offset?: number;
+}
+
+/**
+ * GET /stock/opening/item-lookup — THE ITEM PICKER, 19q Q6.
+ *
+ * Runs once per item picked on the line grid. Company and branch are the
+ * DOCUMENT's, not the session's, and `onDate` is the document date: the
+ * tracking policy is resolved AS AT the date the stock is being opened on, so a
+ * back-dated opening is keyed under the policy that was in force then. It is
+ * required rather than defaulted to today for exactly that reason — a default
+ * would be a silent "as at today" on every back-dated document.
+ *
+ * No `accYear`: nothing here is read from a partitioned document table. The
+ * `alreadyOpened` warning looks across every year on purpose, because an item
+ * opened last year is still an item that has been opened.
+ */
+export class OpeningStockItemLookupQueryDto {
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description:
+      "The DOCUMENT's company. Omit, or send null / empty, to look the item up without a company restriction.",
+  })
+  @NullableUuid()
+  companyId?: string | null;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description:
+      "The DOCUMENT's branch. Omit, or send null / empty, to look the item up without a branch restriction.",
+  })
+  @NullableUuid()
+  branchId?: string | null;
+
+  @ApiProperty({ format: 'uuid', description: 'What the picker returned.' })
+  @RequiredUuid()
+  itemId!: string;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      "An iuc_id (inventory.item_unit_conversion), never a unit_id. Omit for the item's default unit.",
+  })
+  @OptionalUuid()
+  uomId?: string;
+
+  @ApiProperty({
+    type: 'string',
+    format: 'date',
+    example: '2026-04-01',
+    description: 'The document date. The tracking policy is resolved as at this date, not today.',
+  })
+  @TrimmedString(10)
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'onDate must be yyyy-MM-dd' })
+  onDate!: string;
 }

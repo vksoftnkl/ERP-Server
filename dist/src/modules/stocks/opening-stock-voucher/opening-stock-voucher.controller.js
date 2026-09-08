@@ -21,14 +21,17 @@ const api_version_1 = require("../../../common/constants/api-version");
 const http_error_response_dto_1 = require("../../../common/dto/http-error-response.dto");
 const stock_voucher_exception_filter_1 = require("../stock-voucher/stock-voucher-exception.filter");
 const stock_voucher_service_1 = require("../stock-voucher/stock-voucher.service");
+const opening_stock_lookup_service_1 = require("./opening-stock-lookup.service");
 const save_opening_stock_voucher_dto_1 = require("./dto/save-opening-stock-voucher.dto");
 const list_opening_stock_voucher_query_dto_1 = require("./dto/list-opening-stock-voucher-query.dto");
 const post_opening_stock_voucher_dto_1 = require("./dto/post-opening-stock-voucher.dto");
 const import_opening_stock_voucher_dto_1 = require("./dto/import-opening-stock-voucher.dto");
 const opening_stock_voucher_response_dto_1 = require("./dto/opening-stock-voucher-response.dto");
+const OPENING_VCHR_TYPE_ID = 1;
 const OPENING_RULES = {
     voucherType: 'OPENING',
     typeCode: 'OPN',
+    refnoVchrTypeId: OPENING_VCHR_TYPE_ID,
     displayName: 'Opening stock',
     requiresToGodown: true,
     requiresFromGodown: false,
@@ -45,8 +48,20 @@ const OPENING_RULES = {
 const MAX_IMPORT_BYTES = 5 * 1024 * 1024;
 let OpeningStockVoucherController = class OpeningStockVoucherController {
     stockVoucherService;
-    constructor(stockVoucherService) {
+    lookupService;
+    constructor(stockVoucherService, lookupService) {
         this.stockVoucherService = stockVoucherService;
+        this.lookupService = lookupService;
+    }
+    async lookupItem(query) {
+        const data = await this.lookupService.lookupItem(query);
+        return {
+            success: true,
+            message: data.alreadyOpened
+                ? `${data.itemName} has already been opened in this branch`
+                : 'Item fetched successfully',
+            data,
+        };
     }
     async save(dto) {
         const data = await this.stockVoucherService.save(OPENING_RULES, dto);
@@ -90,10 +105,6 @@ let OpeningStockVoucherController = class OpeningStockVoucherController {
             data,
         };
     }
-    async remove(query) {
-        const data = await this.stockVoucherService.softDelete(OPENING_RULES, query.svhId, query.accYear, query.companyId, query.branchId);
-        return { success: true, message: 'Opening stock deleted successfully', data };
-    }
     async import(dto, file) {
         const csvText = this.readCsv(file);
         const data = await this.stockVoucherService.importLines(OPENING_RULES, dto.svhId, dto.accYear, dto.companyId, dto.branchId, csvText, dto.userId);
@@ -105,10 +116,6 @@ let OpeningStockVoucherController = class OpeningStockVoucherController {
                 : `${data.linesImported} lines imported, all clean`,
             data,
         };
-    }
-    async pendingItems(query) {
-        const data = await this.stockVoucherService.pendingItems(OPENING_RULES, query.companyId, query.branchId, query.accYear, query.limit, query.offset);
-        return { success: true, message: 'Pending opening items fetched successfully', data };
     }
     async reconcile(query) {
         const data = await this.stockVoucherService.reconcile(OPENING_RULES, query.companyId, query.branchId, query.accYear, query.limit, query.offset);
@@ -138,6 +145,21 @@ let OpeningStockVoucherController = class OpeningStockVoucherController {
     }
 };
 exports.OpeningStockVoucherController = OpeningStockVoucherController;
+__decorate([
+    (0, common_1.Get)('item-lookup'),
+    (0, common_1.Version)(api_version_1.API_VERSION),
+    (0, swagger_1.ApiOperation)({
+        summary: 'The item picker — fill an opening line for one item',
+        description: 'Unit, base unit (as an iuc_id), conversion factor, tax and cess, the tracking signature in force on onDate, an MRP / sale-price seed for the bucket, and whether the item has already been opened in this branch. Deliberately returns no cost: the cost cell stays empty unless a human types one, so the engine can apply the rate source. 404 names which of the four causes left the item unpickable.',
+    }),
+    (0, swagger_1.ApiOkResponse)({ type: opening_stock_voucher_response_dto_1.OpeningStockItemLookupSuccessDto }),
+    (0, swagger_1.ApiBadRequestResponse)({ type: opening_stock_voucher_response_dto_1.OpeningStockErrorResponseDto }),
+    (0, swagger_1.ApiNotFoundResponse)({ type: opening_stock_voucher_response_dto_1.OpeningStockErrorResponseDto }),
+    __param(0, (0, common_1.Query)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [list_opening_stock_voucher_query_dto_1.OpeningStockItemLookupQueryDto]),
+    __metadata("design:returntype", Promise)
+], OpeningStockVoucherController.prototype, "lookupItem", null);
 __decorate([
     (0, common_1.Post)('create'),
     (0, common_1.Version)(api_version_1.API_VERSION),
@@ -216,21 +238,6 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], OpeningStockVoucherController.prototype, "cancel", null);
 __decorate([
-    (0, common_1.Delete)(),
-    (0, common_1.Version)(api_version_1.API_VERSION),
-    (0, swagger_1.ApiOperation)({
-        summary: 'Soft delete an opening stock DRAFT',
-        description: 'DRAFT only. A POSTED voucher is cancelled, never deleted: soft-deleting it would hide the document from every list while its ledger rows went on affecting stock for ever.',
-    }),
-    (0, swagger_1.ApiOkResponse)({ type: opening_stock_voucher_response_dto_1.OpeningStockDeleteSuccessDto }),
-    (0, swagger_1.ApiConflictResponse)({ type: opening_stock_voucher_response_dto_1.OpeningStockErrorResponseDto }),
-    (0, swagger_1.ApiNotFoundResponse)({ type: opening_stock_voucher_response_dto_1.OpeningStockErrorResponseDto }),
-    __param(0, (0, common_1.Query)()),
-    __metadata("design:type", Function),
-    __metadata("design:paramtypes", [list_opening_stock_voucher_query_dto_1.OpeningStockVoucherRefQueryDto]),
-    __metadata("design:returntype", Promise)
-], OpeningStockVoucherController.prototype, "remove", null);
-__decorate([
     (0, common_1.Post)('import'),
     (0, common_1.Version)(api_version_1.API_VERSION),
     (0, common_1.UseInterceptors)((0, platform_express_1.FileInterceptor)('file')),
@@ -252,19 +259,6 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], OpeningStockVoucherController.prototype, "import", null);
 __decorate([
-    (0, common_1.Get)('pending-items'),
-    (0, common_1.Version)(api_version_1.API_VERSION),
-    (0, swagger_1.ApiOperation)({
-        summary: 'Every stockable item with no opening movement in this branch and year',
-        description: 'On go-live day this is the work list. A week later it should be the items that genuinely started at zero.',
-    }),
-    (0, swagger_1.ApiOkResponse)({ type: opening_stock_voucher_response_dto_1.PendingOpeningItemsSuccessDto }),
-    __param(0, (0, common_1.Query)()),
-    __metadata("design:type", Function),
-    __metadata("design:paramtypes", [list_opening_stock_voucher_query_dto_1.OpeningStockReportQueryDto]),
-    __metadata("design:returntype", Promise)
-], OpeningStockVoucherController.prototype, "pendingItems", null);
-__decorate([
     (0, common_1.Get)('reconcile'),
     (0, common_1.Version)(api_version_1.API_VERSION),
     (0, swagger_1.ApiOperation)({
@@ -283,6 +277,7 @@ exports.OpeningStockVoucherController = OpeningStockVoucherController = __decora
     (0, swagger_1.ApiUnauthorizedResponse)({ type: http_error_response_dto_1.HttpErrorResponseDto }),
     (0, common_1.Controller)('stock/opening'),
     (0, common_1.UseFilters)(stock_voucher_exception_filter_1.StockVoucherExceptionFilter),
-    __metadata("design:paramtypes", [stock_voucher_service_1.StockVoucherService])
+    __metadata("design:paramtypes", [stock_voucher_service_1.StockVoucherService,
+        opening_stock_lookup_service_1.OpeningStockLookupService])
 ], OpeningStockVoucherController);
 //# sourceMappingURL=opening-stock-voucher.controller.js.map

@@ -185,14 +185,20 @@ export class MasterLookupController {
   @Version(API_VERSION)
   @ApiOperation({
     summary:
-      'Resolve a scanned barcode into its item and selling unit (legacy iflag=10). Matches item_ean_codes.ean_code case-insensitively; returns allow_sales, item_status, batch_config and weigh_scale flags.',
+      'Resolve a scanned barcode into its item and selling unit (legacy iflag=10). Matches item_ean_codes.ean_code case-insensitively; returns allow_sales, item_status, batch_config and weigh_scale flags. Optional company_id and branch_id each restrict the match to items of that company / branch or of none; both are independent and both are optional.',
   })
   @ApiQuery({ name: 'barcode', required: true, schema: { type: 'string', maxLength: 64 } })
+  @ApiQuery({ name: 'company_id', required: false, schema: { type: 'string', format: 'uuid' } })
+  @ApiQuery({ name: 'branch_id', required: false, schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: BarcodeItemLookupSuccessDto })
   async getItemByBarcode(
     @Query() query: BarcodeLookupQueryDto,
   ): Promise<MasterLookupSuccessResponse<BarcodeItemLookup>> {
-    const data = await this.masterLookupService.getItemByBarcode(query.barcode);
+    const data = await this.masterLookupService.getItemByBarcode(
+      query.barcode,
+      query.company_id,
+      query.branch_id,
+    );
     return {
       success: true,
       message: `Item fetched successfully for barcode ${query.barcode}`,

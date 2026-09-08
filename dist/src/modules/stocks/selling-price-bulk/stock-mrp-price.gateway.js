@@ -20,6 +20,34 @@ let StockMrpPriceGateway = class StockMrpPriceGateway {
         this.prisma = prisma;
     }
     isDeployed = false;
+    async findOpeningSeedBucket(args) {
+        if (!this.isDeployed) {
+            return this.notDeployed('19q Q6');
+        }
+        const [row] = await this.prisma.$queryRaw `
+      SELECT smp.smp_mrp        AS "mrp",
+             smp.smp_sale_price AS "salePrice"
+        FROM stock.stock_mrp_price smp
+       WHERE smp.smp_item_id = ${args.itemId}::uuid
+         AND smp.smp_uom_id  = ${args.uomId}::uuid
+         AND (smp.smp_company_id = ${args.companyId}::uuid OR smp.smp_company_id IS NULL)
+         AND (smp.smp_branch_id  = ${args.branchId}::uuid  OR smp.smp_branch_id  IS NULL)
+         AND ${args.onDate}::date BETWEEN smp.smp_effective_from AND smp.smp_effective_to
+         AND smp.smp_is_active  = true
+         AND smp.smp_is_deleted = false
+       ORDER BY (smp.smp_branch_id  IS NULL),
+                (smp.smp_company_id IS NULL),
+                smp.smp_mrp DESC NULLS LAST
+       LIMIT 1
+    `;
+        if (!row) {
+            return null;
+        }
+        return {
+            mrp: row.mrp === null ? 0 : (0, module_service_utils_1.toNumber)(row.mrp),
+            salePrice: row.salePrice === null ? 0 : (0, module_service_utils_1.toNumber)(row.salePrice),
+        };
+    }
     async listPrices(_args) {
         return this.notDeployed('16q Q25');
     }
