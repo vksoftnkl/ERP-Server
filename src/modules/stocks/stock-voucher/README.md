@@ -12,11 +12,23 @@ PHYSICAL and the rest are the same shape.
 
 `stock.stock_voucher` and `stock.stock_voucher_item`. Nothing else.
 
-The lot, the ledger row, the balance, the moving average and every header total
-are written by `stock.fn_svh_post()` and by triggers. There is no code here that
-inserts into `stock_ledger`, touches `stock_balance`, or computes a total — and
+The lot, the ledger row, the balance and the moving average are written by
+**`stock-voucher-posting.helper.ts`**, the posting engine — in the application,
+not in the database, because the share's `stock.fn_svh_post()` / `fn_sml_apply()`
+are not installed here (see the note at the top of that file; installing them on
+top of this engine would apply every movement twice). It resolves lots, writes
+`stock_ledger`, applies `stock_balance`, maintains `stock_item_cost` and stamps
+the branch average onto every holding, checks the negative-stock policy and
+refreshes `slt_total_on_hand` — seven set-based statements in the caller's
+transaction. Nothing outside that file inserts into `stock_ledger`, and
 `stock_ledger` deliberately has **no Prisma model at all**, which is the cheapest
 possible guard against a future `create` finding its way in.
+
+The database keeps the rules that must hold whatever writes the ledger, from
+migration `20260908110000`: the ledger is append-only (`tr_sml_forbid_delete`,
+`tr_sml_immutable`), a godown under a DRAFT physical count's freeze refuses every
+movement but the count's own (`tr_sml_freeze_guard`, answered as 409), and the
+lot identity keys fold batch/serial case and whitespace.
 
 ## Where the rules live
 

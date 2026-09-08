@@ -38,13 +38,10 @@ async function lockSlnoScope(tx, scope) {
         scope.deviceId,
     ].join('|');
     await tx.$queryRaw `
-    WITH advisory_lock AS (
-      SELECT pg_advisory_xact_lock(
-        hashtext(${SLNO_LOCK_NAMESPACE}),
-        hashtext(${lockKey})
-      )
-    )
-    SELECT 1::int AS locked
+    SELECT count(pg_advisory_xact_lock(
+             hashtext(${SLNO_LOCK_NAMESPACE}),
+             hashtext(${lockKey})
+           ))::int AS locked
   `;
 }
 async function nextStockVoucherSlno(tx, scope) {

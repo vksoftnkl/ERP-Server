@@ -27,7 +27,6 @@ const DEFAULT_REPORT_LIMIT = 200;
 const MAX_REPORT_LIMIT = 1000;
 const DEFAULT_LIST_LIMIT = 50;
 const MAX_LIST_LIMIT = 500;
-const NIL_UUID = '00000000-0000-0000-0000-000000000000';
 let StockVoucherService = class StockVoucherService {
     prisma;
     auditLogService;
@@ -125,8 +124,7 @@ let StockVoucherService = class StockVoucherService {
                     message: `Only a physical count freezes stock; a ${rules.displayName.toLowerCase()} counts nothing.`,
                 });
             }
-            const counted = lines.findIndex((line) => line.bookQty !== undefined &&
-                line.bookQty !== null);
+            const counted = lines.findIndex((line) => line.bookQty !== undefined && line.bookQty !== null);
             const shelf = lines.findIndex((line) => line.countedQty !== undefined && line.countedQty !== null);
             const at = counted >= 0 ? counted : shelf;
             if (at >= 0) {
@@ -862,7 +860,10 @@ let StockVoucherService = class StockVoucherService {
          AND svi.svi_is_deleted = false
        ORDER BY svi.svi_line_no, svi.svi_split_no
     `;
-        return { header: this.toHeaderPayload(header), lines: lines.map((row) => this.toLinePayload(row)) };
+        return {
+            header: this.toHeaderPayload(header),
+            lines: lines.map((row) => this.toLinePayload(row)),
+        };
     }
     async validate(rules, svhId, accYear, companyId, branchId, tx) {
         await this.loadHeaderOrThrow(rules, svhId, accYear, companyId, branchId, tx);
@@ -888,49 +889,18 @@ let StockVoucherService = class StockVoucherService {
       -- The effective policy, most-specific-first, resolved against the
       -- DOCUMENT's date and not today's — see the StockTrackPolicy model note.
       -- No row at all is a complete answer: track nothing, WAVG, FEFO, ALLOW.
-      policy AS (
-        SELECT line.svi_id,
-               COALESCE(stp.stp_track_batch,      false) AS track_batch,
-               COALESCE(stp.stp_track_mrp,        false) AS track_mrp,
-               COALESCE(stp.stp_track_sale_price, false) AS track_sale_price,
-               COALESCE(stp.stp_track_expiry,     false) AS track_expiry,
-               COALESCE(stp.stp_track_serial,     false) AS track_serial,
-               COALESCE(stp.stp_track_supplier,   false) AS track_supplier
-          FROM line
-          JOIN inventory.item_master itm ON itm.item_id = line.svi_item_id
-          LEFT JOIN LATERAL (
-            SELECT p.*
-              FROM stock.stock_track_policy p
-             WHERE p.stp_is_active  = true
-               AND p.stp_is_deleted = false
-               AND line.svh_doc_date BETWEEN p.stp_effective_from AND p.stp_effective_to
-               AND (p.stp_company_id IS NULL OR p.stp_company_id = line.svh_company_id)
-               AND (p.stp_branch_id  IS NULL OR p.stp_branch_id  = line.svh_branch_id)
-               AND (
-                     (p.stp_scope = 'ITEM'    AND p.stp_scope_id = line.svi_item_id)
-                  OR (p.stp_scope = 'GROUP'   AND p.stp_scope_id = itm.item_group_id)
-                  OR  p.stp_scope = 'COMPANY'
-               )
-             ORDER BY (p.stp_branch_id IS NOT NULL) DESC,
-                      (p.stp_company_id IS NOT NULL) DESC,
-                      CASE p.stp_scope WHEN 'ITEM' THEN 0 WHEN 'GROUP' THEN 1 ELSE 2 END,
-                      p.stp_effective_from DESC
-             LIMIT 1
-          ) stp ON true
-      ),
-      -- The identity fn_slt_resolve would key on: each dimension blanked when
-      -- the policy does not track it, then collapsed to the same sentinels
-      -- ux_slt_identity is built over ('~', -1, 0001-01-01, the nil uuid).
+      -- THE SAME FRAGMENT THE POST USES (stock-voucher-posting.helper), so the
+      -- preflight and the engine cannot disagree about which policy applies.
+      ${(0, stock_voucher_posting_helper_1.effectivePolicyCte)()},
+      -- The identity the post will key on: each dimension blanked when the
+      -- policy does not track it, then collapsed to the same sentinels
+      -- ux_slt_identity is built over ('~', -1, 0001-01-01, the nil uuid),
+      -- batch and serial folded the way the generated key columns fold them.
       keyed AS (
         SELECT line.*,
                policy.track_batch, policy.track_mrp, policy.track_sale_price,
                policy.track_expiry, policy.track_serial, policy.track_supplier,
-               COALESCE(CASE WHEN policy.track_batch       THEN NULLIF(line.svi_batch_no, '') END, '~')          AS key_batch,
-               COALESCE(CASE WHEN policy.track_mrp         THEN line.svi_mrp        END, -1)                     AS key_mrp,
-               COALESCE(CASE WHEN policy.track_sale_price  THEN line.svi_sale_price END, -1)                     AS key_sp,
-               COALESCE(CASE WHEN policy.track_expiry      THEN line.svi_expiry_date END, DATE '0001-01-01')     AS key_expiry,
-               COALESCE(CASE WHEN policy.track_serial      THEN NULLIF(line.svi_serial_no, '') END, '~')         AS key_serial,
-               COALESCE(CASE WHEN policy.track_supplier    THEN line.svi_supplier_id END, ${NIL_UUID}::uuid)     AS key_supplier
+               ${(0, stock_voucher_posting_helper_1.lotIdentityKeyColumns)()}
           FROM line
           JOIN policy ON policy.svi_id = line.svi_id
       ),
@@ -991,6 +961,33 @@ let StockVoucherService = class StockVoucherService {
                 AND sbl.sbl_lot_id     = keyed.svi_lot_id
                 AND sbl.sbl_bucket     = keyed.svi_bucket
                 AND sbl.sbl_is_deleted = false
+      ),
+      -- §11 — THE FREEZE, SEEN BEFORE THE POST. tr_sml_freeze_guard refuses the
+      -- ledger row regardless, but as one 409 for the whole document; this
+      -- names the line and the count that holds the shelf. Wall clock, like
+      -- the guard: a back-dated document posted now still changes today's
+      -- on-hand. A count never trips over its own freeze, and a second DRAFT
+      -- count of the same godown is refused by the first's — one sheet holds
+      -- a shelf at a time.
+      frozen AS (
+        SELECT keyed.svi_id,
+               f.svh_refno     AS frozen_by,
+               f.svh_freeze_to AS frozen_until
+          FROM keyed
+          LEFT JOIN LATERAL (
+            SELECT svh.svh_refno, svh.svh_freeze_to
+              FROM stock.stock_voucher svh
+             WHERE svh.svh_voucher_type = 'PHYSICAL'
+               AND svh.svh_freeze_stock = true
+               AND svh.svh_status       = 'DRAFT'
+               AND svh.svh_is_deleted   = false
+               AND svh.svh_company_id   = keyed.svh_company_id
+               AND svh.svh_branch_id    = keyed.svh_branch_id
+               AND COALESCE(svh.svh_from_godown_id, svh.svh_to_godown_id) = keyed.svi_godown_id
+               AND now() BETWEEN svh.svh_freeze_from AND svh.svh_freeze_to
+               AND svh.svh_id <> keyed.svi_voucher_id
+             LIMIT 1
+          ) f ON true
       )
       SELECT keyed.svi_id                             AS "sviId",
              keyed.svi_line_no                        AS "lineNo",
@@ -1055,11 +1052,15 @@ let StockVoucherService = class StockVoucherService {
                  THEN 'the rate source is AVG_COST and this item has no average cost yet'
                WHEN opened.already_opened
                  THEN 'this holding already has an opening in this year'
+               WHEN frozen.frozen_by IS NOT NULL
+                 THEN 'this godown is frozen for physical count ' || frozen.frozen_by
+                      || ' until ' || to_char(frozen.frozen_until, 'YYYY-MM-DD HH24:MI')
                ELSE NULL
              END                                      AS "problem"
         FROM keyed
         JOIN opened ON opened.svi_id = keyed.svi_id
         JOIN bal    ON bal.svi_id    = keyed.svi_id
+        JOIN frozen ON frozen.svi_id = keyed.svi_id
         JOIN inventory.item_master itm ON itm.item_id = keyed.svi_item_id
         LEFT JOIN inventory.item_unit_conversion iuc ON iuc.iuc_id = keyed.svi_uom_id
         LEFT JOIN stock.stock_item_cost sic
@@ -1656,7 +1657,9 @@ let StockVoucherService = class StockVoucherService {
     }
     assertDraft(rules, existing) {
         if (existing.svhIsDeleted) {
-            (0, module_service_utils_1.throwStockConflict)(`${rules.displayName} is deleted`, [{ field: 'svhId', message: `${existing.svhRefno} has been deleted.` }]);
+            (0, module_service_utils_1.throwStockConflict)(`${rules.displayName} is deleted`, [
+                { field: 'svhId', message: `${existing.svhRefno} has been deleted.` },
+            ]);
         }
         if (existing.svhStatus !== 'DRAFT') {
             (0, module_service_utils_1.throwStockConflict)(`${rules.displayName} is ${existing.svhStatus}`, [

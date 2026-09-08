@@ -20,12 +20,14 @@
 /// sltCostRate is. This row is what the average costs when the lot identity is
 /// deliberately ignored.
 ///
-/// TRIGGER-MAINTAINED. fn_sml_apply() owns it: an inward adds qty and value and
-/// recomputes the average, an outward removes qty at the CURRENT average and
-/// leaves the rate alone — which is what "moving average" means, and why an
-/// outward can never change the cost of what remains. Application code that
-/// writes these columns is writing a number the next posting will overwrite.
-/// Post to [[StockLedger]] instead.
+/// ENGINE-MAINTAINED. The posting engine owns it — on this deployment that is
+/// stock-voucher-posting.helper.ts (phase 5), doing what the share's
+/// fn_sml_apply() does: an inward adds qty and value and recomputes the
+/// average, an outward removes qty at the CURRENT average and leaves the rate
+/// alone — which is what "moving average" means, and why an outward can never
+/// change the cost of what remains. Application code that writes these columns
+/// is writing a number the next posting will overwrite. Post to [[StockLedger]]
+/// instead.
 ///
 /// THE AVERAGE IS STORED, NOT DERIVED. sicAvgCostRate is a plain column rather
 /// than value/qty as a generated one, because qty legitimately reaches zero
@@ -46,7 +48,7 @@
 /// WRITE RULES:
 ///   * NEVER write sicTotalQty / sicTotalValue / sicTotalValueWot /
 ///     sicAvgCostRate / sicAvgCostRateWot / sicMaxCostRate, nor the last
-///     purchase and last sale columns — all are trigger-maintained.
+///     purchase and last sale columns — all are engine-maintained.
 ///   * There is no sicIsActive: a cost row is not something a user switches
 ///     off. sicIsDeleted exists only for the partial index predicate.
 ///
@@ -66,7 +68,8 @@ model StockItemCost {
   sicBaseUomId         String    @db.Uuid                            @map("sic_base_uom_id")
 
   // ── The moving average ──────────────────────────────────────────────────
-  // TRIGGER-MAINTAINED by fn_sml_apply(). NEVER written from application code.
+  // ENGINE-MAINTAINED (stock-voucher-posting.helper.ts). NEVER written from
+  // application code outside that engine.
   sicTotalQty          Decimal   @default(0) @db.Decimal(18, 6)      @map("sic_total_qty")
   sicTotalValue        Decimal   @default(0) @db.Decimal(18, 2)      @map("sic_total_value")
   sicTotalValueWot     Decimal   @default(0) @db.Decimal(18, 2)      @map("sic_total_value_wot")

@@ -10,3 +10,12 @@ export interface PostStockVoucherParams {
     postedOn: Date;
 }
 export declare function postStockVoucher(tx: Prisma.TransactionClient, params: PostStockVoucherParams): Promise<number>;
+export declare function effectivePolicyLateral(scope: {
+    companyId: Prisma.Sql;
+    branchId: Prisma.Sql;
+    itemId: Prisma.Sql;
+    itemGroupId: Prisma.Sql;
+    onDate: Prisma.Sql;
+}): Prisma.Sql;
+export declare function effectivePolicyCte(): Prisma.Sql;
+export declare function lotIdentityKeyColumns(): Prisma.Sql;

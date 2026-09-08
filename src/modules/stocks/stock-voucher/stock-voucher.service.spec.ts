@@ -167,7 +167,7 @@ describe('StockVoucherService', () => {
       $transaction: jest.fn(async (fn: (tx: unknown) => unknown) => fn(client)),
       // The numbering helper's advisory lock, then MAX(slno) + 1.
       $queryRaw: jest.fn().mockResolvedValue([{ locked: 1, next_slno: BigInt(1) }]),
-      // The in-process posting engine's five set-based statements.
+      // The in-process posting engine's seven set-based statements.
       $executeRaw: jest.fn().mockResolvedValue(2),
     };
     auditLogService = { logEntityChange: jest.fn().mockResolvedValue(undefined) };
@@ -308,7 +308,11 @@ describe('StockVoucherService', () => {
       await service.save(
         OPENING_RULES,
         payload({
-          header: { svhId: SVH_ID, createdBy: 'the original author', modifiedBy: 'the editor' } as never,
+          header: {
+            svhId: SVH_ID,
+            createdBy: 'the original author',
+            modifiedBy: 'the editor',
+          } as never,
         }),
       );
 
@@ -356,11 +360,11 @@ describe('StockVoucherService', () => {
       await service.save(OPENING_RULES, payload());
 
       expect(client.stockVoucher.create.mock.calls[0][0].data.svhStatus).toBe('DRAFT');
-      // The five posting statements never ran.
+      // The posting statements never ran.
       expect(client.$executeRaw).not.toHaveBeenCalled();
     });
 
-    it("saves and posts in ONE transaction when the payload says status POSTED", async () => {
+    it('saves and posts in ONE transaction when the payload says status POSTED', async () => {
       jest.spyOn(service, 'validate').mockResolvedValue([]);
 
       const result = await service.save(
@@ -372,8 +376,8 @@ describe('StockVoucherService', () => {
       // a value the insert takes. Nothing may create a POSTED document.
       expect(client.stockVoucher.create.mock.calls[0][0].data.svhStatus).toBe('DRAFT');
       // ...and then the same transaction posts it: lots, lines, ledger,
-      // balances, lot totals.
-      expect(client.$executeRaw).toHaveBeenCalledTimes(5);
+      // balances, the moving average and its stamp, lot totals.
+      expect(client.$executeRaw).toHaveBeenCalledTimes(7);
       expect(client.stockVoucher.update).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ svhStatus: 'POSTED' }) }),
       );
@@ -431,7 +435,7 @@ describe('StockVoucherService', () => {
       expect(client.$executeRaw).not.toHaveBeenCalled();
     });
 
-    it('opens the voucher\'s status trail with a CREATED step', async () => {
+    it("opens the voucher's status trail with a CREATED step", async () => {
       await service.save(OPENING_RULES, payload());
 
       // First row of the trail: fromStatus NULL says the document did not exist
@@ -625,9 +629,23 @@ describe('StockVoucherService', () => {
       // that already has one, and the destination must keep the same slt_id or
       // ageing resets.
       await expect(
-        service.save(TRANSFER_OUT_RULES, transferPayload({ lines: [
-          { lineNo: 1, itemId: ITEM_ID, uomId: UOM_ID, baseUomId: BASE_UOM_ID, toBaseFactor: 12, baseQty: 120, godownId: GODOWN_ID, qty: 10 },
-        ] })),
+        service.save(
+          TRANSFER_OUT_RULES,
+          transferPayload({
+            lines: [
+              {
+                lineNo: 1,
+                itemId: ITEM_ID,
+                uomId: UOM_ID,
+                baseUomId: BASE_UOM_ID,
+                toBaseFactor: 12,
+                baseQty: 120,
+                godownId: GODOWN_ID,
+                qty: 10,
+              },
+            ],
+          }),
+        ),
       ).rejects.toMatchObject({
         response: {
           errors: expect.arrayContaining([
@@ -643,7 +661,18 @@ describe('StockVoucherService', () => {
           OPENING_RULES,
           payload({
             lines: [
-              { lineNo: 1, itemId: ITEM_ID, uomId: UOM_ID, baseUomId: BASE_UOM_ID, toBaseFactor: 12, baseQty: 120, godownId: GODOWN_ID, qty: 10, costRate: 20, lotId: LOT_ID },
+              {
+                lineNo: 1,
+                itemId: ITEM_ID,
+                uomId: UOM_ID,
+                baseUomId: BASE_UOM_ID,
+                toBaseFactor: 12,
+                baseQty: 120,
+                godownId: GODOWN_ID,
+                qty: 10,
+                costRate: 20,
+                lotId: LOT_ID,
+              },
             ] as never,
           }),
         ),
@@ -672,7 +701,18 @@ describe('StockVoucherService', () => {
           TRANSFER_OUT_RULES,
           transferPayload({
             lines: [
-              { lineNo: 1, itemId: ITEM_ID, uomId: UOM_ID, baseUomId: BASE_UOM_ID, toBaseFactor: 12, baseQty: 120, godownId: GODOWN_ID, lotId: LOT_ID, qty: 10, costRate: 555 },
+              {
+                lineNo: 1,
+                itemId: ITEM_ID,
+                uomId: UOM_ID,
+                baseUomId: BASE_UOM_ID,
+                toBaseFactor: 12,
+                baseQty: 120,
+                godownId: GODOWN_ID,
+                lotId: LOT_ID,
+                qty: 10,
+                costRate: 555,
+              },
             ],
           }),
         ),
@@ -707,10 +747,7 @@ describe('StockVoucherService', () => {
         postFunction: 'stock.fn_svh_receive_transfer',
         refuseTypes: ['OPENING', 'PHYSICAL', 'TRANSFER_OUT', 'REPACK_IN', 'REPACK_OUT'],
       };
-      await service.save(
-        TRANSFER_IN_RULES,
-        transferPayload({ header: { rateSource: null } }),
-      );
+      await service.save(TRANSFER_IN_RULES, transferPayload({ header: { rateSource: null } }));
       expect(client.stockVoucher.create).toHaveBeenCalled();
     });
 
@@ -720,14 +757,26 @@ describe('StockVoucherService', () => {
           OPENING_RULES,
           payload({
             lines: [
-              { lineNo: 1, itemId: ITEM_ID, uomId: UOM_ID, baseUomId: BASE_UOM_ID, toBaseFactor: 12, baseQty: 120, godownId: GODOWN_ID, qty: 10, costRate: 0 },
+              {
+                lineNo: 1,
+                itemId: ITEM_ID,
+                uomId: UOM_ID,
+                baseUomId: BASE_UOM_ID,
+                toBaseFactor: 12,
+                baseQty: 120,
+                godownId: GODOWN_ID,
+                qty: 10,
+                costRate: 0,
+              },
             ] as never,
           }),
         ),
       ).rejects.toMatchObject({
         response: {
           errors: expect.arrayContaining([
-            expect.objectContaining({ message: expect.stringContaining('brings stock in at cost 0') }),
+            expect.objectContaining({
+              message: expect.stringContaining('brings stock in at cost 0'),
+            }),
           ]),
         },
       });
@@ -763,8 +812,9 @@ describe('StockVoucherService', () => {
         JSON.stringify(call).includes('fn_svh_post'),
       );
       expect(named).toBe(false);
-      // Lots, lines, ledger, balances, lot totals — five set-based statements.
-      expect(client.$executeRaw).toHaveBeenCalledTimes(5);
+      // Lots, lines, ledger, balances, the moving average and its stamp, lot
+      // totals — seven set-based statements.
+      expect(client.$executeRaw).toHaveBeenCalledTimes(7);
       expect(client.stockVoucher.update).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ svhStatus: 'POSTED' }) }),
       );
@@ -953,7 +1003,17 @@ describe('StockVoucherService', () => {
       await expectRefusal(
         payload({
           lines: [
-            { lineNo: 1, itemId: ITEM_ID, uomId: UOM_ID, baseUomId: BASE_UOM_ID, toBaseFactor: 12, baseQty: 120, godownId: GODOWN_ID, qty: 0, costRate: 20 },
+            {
+              lineNo: 1,
+              itemId: ITEM_ID,
+              uomId: UOM_ID,
+              baseUomId: BASE_UOM_ID,
+              toBaseFactor: 12,
+              baseQty: 120,
+              godownId: GODOWN_ID,
+              qty: 0,
+              costRate: 20,
+            },
           ],
         }),
         'has no quantity',
@@ -1030,8 +1090,28 @@ describe('StockVoucherService', () => {
       await expectRefusal(
         payload({
           lines: [
-            { lineNo: 1, itemId: ITEM_ID, uomId: UOM_ID, baseUomId: BASE_UOM_ID, toBaseFactor: 12, baseQty: 120, godownId: GODOWN_ID, qty: 1, costRate: 20 },
-            { lineNo: 1, itemId: ITEM_ID, uomId: UOM_ID, baseUomId: BASE_UOM_ID, toBaseFactor: 12, baseQty: 120, godownId: GODOWN_ID, qty: 2, costRate: 20 },
+            {
+              lineNo: 1,
+              itemId: ITEM_ID,
+              uomId: UOM_ID,
+              baseUomId: BASE_UOM_ID,
+              toBaseFactor: 12,
+              baseQty: 120,
+              godownId: GODOWN_ID,
+              qty: 1,
+              costRate: 20,
+            },
+            {
+              lineNo: 1,
+              itemId: ITEM_ID,
+              uomId: UOM_ID,
+              baseUomId: BASE_UOM_ID,
+              toBaseFactor: 12,
+              baseQty: 120,
+              godownId: GODOWN_ID,
+              qty: 2,
+              costRate: 20,
+            },
           ],
         }),
         'already used by row 1',
@@ -1043,7 +1123,17 @@ describe('StockVoucherService', () => {
         payload({
           header: { rateSource: null } as never,
           lines: [
-            { lineNo: 1, itemId: ITEM_ID, uomId: UOM_ID, baseUomId: BASE_UOM_ID, toBaseFactor: 12, baseQty: 120, godownId: GODOWN_ID, qty: 1, costRate: 0 },
+            {
+              lineNo: 1,
+              itemId: ITEM_ID,
+              uomId: UOM_ID,
+              baseUomId: BASE_UOM_ID,
+              toBaseFactor: 12,
+              baseQty: 120,
+              godownId: GODOWN_ID,
+              qty: 1,
+              costRate: 0,
+            },
           ],
         }),
         'names no rate source',
@@ -1059,7 +1149,17 @@ describe('StockVoucherService', () => {
         payload({
           header: { rateSource: 'MANUAL' } as never,
           lines: [
-            { lineNo: 1, itemId: ITEM_ID, uomId: UOM_ID, baseUomId: BASE_UOM_ID, toBaseFactor: 12, baseQty: 120, godownId: GODOWN_ID, qty: 1, costRate: 0 },
+            {
+              lineNo: 1,
+              itemId: ITEM_ID,
+              uomId: UOM_ID,
+              baseUomId: BASE_UOM_ID,
+              toBaseFactor: 12,
+              baseQty: 120,
+              godownId: GODOWN_ID,
+              qty: 1,
+              costRate: 0,
+            },
           ],
         }),
         'which derives nothing',
@@ -1462,7 +1562,17 @@ describe('StockVoucherService', () => {
           OPENING_RULES,
           payload({
             lines: [
-              { lineNo: 1, itemId: ITEM_ID, uomId: UOM_ID, baseUomId: BASE_UOM_ID, toBaseFactor: 12, baseQty: 120, godownId: GODOWN_ID, qty: 0, costRate: 20 },
+              {
+                lineNo: 1,
+                itemId: ITEM_ID,
+                uomId: UOM_ID,
+                baseUomId: BASE_UOM_ID,
+                toBaseFactor: 12,
+                baseQty: 120,
+                godownId: GODOWN_ID,
+                qty: 0,
+                costRate: 20,
+              },
             ],
           }),
         ),
@@ -1841,12 +1951,10 @@ describe('StockVoucherExceptionFilter — the SQLSTATE map', () => {
     // The engine's own wording is passed through: it already names the refno
     // and the line number, and paraphrasing it in TypeScript is how the message
     // the user reads and the message in the log drift apart.
-    expect(json).toHaveBeenCalledWith(
-      expect.objectContaining({ success: false, message }),
-    );
+    expect(json).toHaveBeenCalledWith(expect.objectContaining({ success: false, message }));
   });
 
-  it("answers 409, not 422, when fn_sml_apply refuses to go negative on a cancel", () => {
+  it('answers 409, not 422, when fn_sml_apply refuses to go negative on a cancel', () => {
     filter.catch(
       engineError('23514', 'stock for item SALT in godown MAIN would go negative'),
       host,
@@ -1862,10 +1970,7 @@ describe('StockVoucherExceptionFilter — the SQLSTATE map', () => {
   });
 
   it('passes an HttpException the service already built through untouched', () => {
-    filter.catch(
-      new HttpException({ success: false, message: 'nope', errors: [] }, 409),
-      host,
-    );
+    filter.catch(new HttpException({ success: false, message: 'nope', errors: [] }, 409), host);
 
     expect(status).toHaveBeenCalledWith(409);
     expect(json).toHaveBeenCalledWith({ success: false, message: 'nope', errors: [] });

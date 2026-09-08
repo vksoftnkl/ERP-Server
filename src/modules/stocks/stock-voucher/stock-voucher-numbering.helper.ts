@@ -1,6 +1,10 @@
 import { Prisma } from '@prisma/client';
 import { throwStockNotFound } from 'src/common/utils/module-service.utils';
-import type { StockErrorDetail, StockErrorResponse, StockVoucherType } from './types/stock-voucher.types';
+import type {
+  StockErrorDetail,
+  StockErrorResponse,
+  StockVoucherType,
+} from './types/stock-voucher.types';
 /**
  * NUMBERING IS SELF-CONTAINED, AND DELIBERATELY SO.
  *
@@ -85,6 +89,14 @@ export async function resolveDeviceCode(
  * pg_advisory_xact_lock, never pg_advisory_lock: it is released when the
  * caller's transaction ends, whether that is a commit or a rollback, so a
  * failed save cannot leave the counter wedged.
+ *
+ * THE CALL SITS INSIDE count() FOR A REASON. pg_advisory_xact_lock returns
+ * void, which Prisma's $queryRaw cannot deserialise ("Failed to deserialize
+ * column of type 'void'"), and an earlier shape of this statement hid the call
+ * in a CTE that nothing referenced — which PostgreSQL never executes, so NO
+ * LOCK WAS EVER TAKEN and two tills could draw one serial (verified against
+ * pg_locks on PG 18). count() over the void value is evaluated, returns 1, and
+ * is a type Prisma can read back. Do not move the call back into a CTE.
  */
 async function lockSlnoScope(
   tx: Prisma.TransactionClient,
@@ -98,13 +110,10 @@ async function lockSlnoScope(
     scope.deviceId,
   ].join('|');
   await tx.$queryRaw<Array<{ locked: number }>>`
-    WITH advisory_lock AS (
-      SELECT pg_advisory_xact_lock(
-        hashtext(${SLNO_LOCK_NAMESPACE}),
-        hashtext(${lockKey})
-      )
-    )
-    SELECT 1::int AS locked
+    SELECT count(pg_advisory_xact_lock(
+             hashtext(${SLNO_LOCK_NAMESPACE}),
+             hashtext(${lockKey})
+           ))::int AS locked
   `;
 }
 /**

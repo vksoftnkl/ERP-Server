@@ -12,9 +12,10 @@
 /// has exactly one answer regardless of which year the movements that produced
 /// it were posted in. Year-wise questions are ledger questions.
 ///
-/// TRIGGER-MAINTAINED. fn_sml_apply() owns this table: it upserts on
-/// ux_sbl_scope as ledger rows land, and it alone writes the four accumulators
-/// and the identity cache. Application code that writes sblInQty / sblOutQty /
+/// ENGINE-MAINTAINED. The posting engine owns this table — on this deployment
+/// stock-voucher-posting.helper.ts, doing what the share's fn_sml_apply() does:
+/// it upserts on ux_sbl_scope as ledger rows land, and it alone writes the four
+/// accumulators and the identity cache. Application code that writes sblInQty / sblOutQty /
 /// sblFreeInQty / sblFreeOutQty is writing a number the next posting will
 /// overwrite, and has moved stock without a ledger row to explain it. Post to
 /// StockLedger instead — always.
@@ -104,8 +105,8 @@ model StockBalance {
   sblBucket            String    @default("SALEABLE") @db.VarChar(20) @map("sbl_bucket")
 
   // ── Accumulators ────────────────────────────────────────────────────────
-  // TRIGGER-MAINTAINED from StockLedger by fn_sml_apply(). NEVER written from
-  // application code — see WRITE RULES above.
+  // ENGINE-MAINTAINED from StockLedger (stock-voucher-posting.helper.ts). NEVER
+  // written from application code outside that engine — see WRITE RULES above.
   sblInQty             Decimal   @default(0) @db.Decimal(18, 6)      @map("sbl_in_qty")
   sblOutQty            Decimal   @default(0) @db.Decimal(18, 6)      @map("sbl_out_qty")
   sblFreeInQty         Decimal   @default(0) @db.Decimal(18, 6)      @map("sbl_free_in_qty")
@@ -126,6 +127,10 @@ model StockBalance {
   sblAvailableQty      Decimal?  @default(dbgenerated()) @db.Decimal(18, 6) @map("sbl_available_qty")
 
   // ── Value ───────────────────────────────────────────────────────────────
+  // The BRANCH average from [[StockItemCost]], distributed over this shelf:
+  // stamped on every holding of the item whenever the average moves. Not a
+  // per-holding truth of its own — a transfer between two godowns of one
+  // branch must not move value.
   sblAvgCostRate       Decimal   @default(0) @db.Decimal(18, 6)      @map("sbl_avg_cost_rate")
   sblAvgCostRateWot    Decimal   @default(0) @db.Decimal(18, 6)      @map("sbl_avg_cost_rate_wot")
   sblStockValue        Decimal   @default(0) @db.Decimal(18, 2)      @map("sbl_stock_value")

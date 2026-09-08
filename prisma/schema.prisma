@@ -8213,9 +8213,10 @@ model StockAgeingSlab {
 /// has exactly one answer regardless of which year the movements that produced
 /// it were posted in. Year-wise questions are ledger questions.
 ///
-/// TRIGGER-MAINTAINED. fn_sml_apply() owns this table: it upserts on
-/// ux_sbl_scope as ledger rows land, and it alone writes the four accumulators
-/// and the identity cache. Application code that writes sblInQty / sblOutQty /
+/// ENGINE-MAINTAINED. The posting engine owns this table — on this deployment
+/// stock-voucher-posting.helper.ts, doing what the share's fn_sml_apply() does:
+/// it upserts on ux_sbl_scope as ledger rows land, and it alone writes the four
+/// accumulators and the identity cache. Application code that writes sblInQty / sblOutQty /
 /// sblFreeInQty / sblFreeOutQty is writing a number the next posting will
 /// overwrite, and has moved stock without a ledger row to explain it. Post to
 /// StockLedger instead — always.
@@ -8305,8 +8306,8 @@ model StockBalance {
   sblBucket            String    @default("SALEABLE") @db.VarChar(20) @map("sbl_bucket")
 
   // ── Accumulators ────────────────────────────────────────────────────────
-  // TRIGGER-MAINTAINED from StockLedger by fn_sml_apply(). NEVER written from
-  // application code — see WRITE RULES above.
+  // ENGINE-MAINTAINED from StockLedger (stock-voucher-posting.helper.ts). NEVER
+  // written from application code outside that engine — see WRITE RULES above.
   sblInQty             Decimal   @default(0) @db.Decimal(18, 6)      @map("sbl_in_qty")
   sblOutQty            Decimal   @default(0) @db.Decimal(18, 6)      @map("sbl_out_qty")
   sblFreeInQty         Decimal   @default(0) @db.Decimal(18, 6)      @map("sbl_free_in_qty")
@@ -8327,6 +8328,10 @@ model StockBalance {
   sblAvailableQty      Decimal?  @default(dbgenerated()) @db.Decimal(18, 6) @map("sbl_available_qty")
 
   // ── Value ───────────────────────────────────────────────────────────────
+  // The BRANCH average from [[StockItemCost]], distributed over this shelf:
+  // stamped on every holding of the item whenever the average moves. Not a
+  // per-holding truth of its own — a transfer between two godowns of one
+  // branch must not move value.
   sblAvgCostRate       Decimal   @default(0) @db.Decimal(18, 6)      @map("sbl_avg_cost_rate")
   sblAvgCostRateWot    Decimal   @default(0) @db.Decimal(18, 6)      @map("sbl_avg_cost_rate_wot")
   sblStockValue        Decimal   @default(0) @db.Decimal(18, 2)      @map("sbl_stock_value")
@@ -8644,12 +8649,14 @@ model StockForecast {
 /// sltCostRate is. This row is what the average costs when the lot identity is
 /// deliberately ignored.
 ///
-/// TRIGGER-MAINTAINED. fn_sml_apply() owns it: an inward adds qty and value and
-/// recomputes the average, an outward removes qty at the CURRENT average and
-/// leaves the rate alone — which is what "moving average" means, and why an
-/// outward can never change the cost of what remains. Application code that
-/// writes these columns is writing a number the next posting will overwrite.
-/// Post to [[StockLedger]] instead.
+/// ENGINE-MAINTAINED. The posting engine owns it — on this deployment that is
+/// stock-voucher-posting.helper.ts (phase 5), doing what the share's
+/// fn_sml_apply() does: an inward adds qty and value and recomputes the
+/// average, an outward removes qty at the CURRENT average and leaves the rate
+/// alone — which is what "moving average" means, and why an outward can never
+/// change the cost of what remains. Application code that writes these columns
+/// is writing a number the next posting will overwrite. Post to [[StockLedger]]
+/// instead.
 ///
 /// THE AVERAGE IS STORED, NOT DERIVED. sicAvgCostRate is a plain column rather
 /// than value/qty as a generated one, because qty legitimately reaches zero
@@ -8670,7 +8677,7 @@ model StockForecast {
 /// WRITE RULES:
 ///   * NEVER write sicTotalQty / sicTotalValue / sicTotalValueWot /
 ///     sicAvgCostRate / sicAvgCostRateWot / sicMaxCostRate, nor the last
-///     purchase and last sale columns — all are trigger-maintained.
+///     purchase and last sale columns — all are engine-maintained.
 ///   * There is no sicIsActive: a cost row is not something a user switches
 ///     off. sicIsDeleted exists only for the partial index predicate.
 ///
@@ -8690,7 +8697,8 @@ model StockItemCost {
   sicBaseUomId         String    @db.Uuid                            @map("sic_base_uom_id")
 
   // ── The moving average ──────────────────────────────────────────────────
-  // TRIGGER-MAINTAINED by fn_sml_apply(). NEVER written from application code.
+  // ENGINE-MAINTAINED (stock-voucher-posting.helper.ts). NEVER written from
+  // application code outside that engine.
   sicTotalQty          Decimal   @default(0) @db.Decimal(18, 6)      @map("sic_total_qty")
   sicTotalValue        Decimal   @default(0) @db.Decimal(18, 2)      @map("sic_total_value")
   sicTotalValueWot     Decimal   @default(0) @db.Decimal(18, 2)      @map("sic_total_value_wot")
@@ -9020,7 +9028,10 @@ model StockLot {
   sltSupplierId         String?   @db.Uuid                            @map("slt_supplier_id")
 
   // ── The key ux_slt_identity is actually built on ────────────────────────
-  // GENERATED ALWAYS ... STORED. Read-only, never sent.
+  // GENERATED ALWAYS ... STORED. Read-only, never sent. Batch and serial are
+  // upper-cased and trimmed — COALESCE(NULLIF(upper(btrim(x)), ''), '~') — so
+  // 'b-2604', 'B-2604' and 'B-2604 ' are one lot; the original spelling stays
+  // in sltBatchNo / sltSerialNo.
   sltKeyBatch           String?   @default(dbgenerated()) @db.VarChar(100) @map("slt_key_batch")
   sltKeyMrp             Decimal?  @default(dbgenerated()) @db.Decimal(18, 6) @map("slt_key_mrp")
   sltKeySp              Decimal?  @default(dbgenerated()) @db.Decimal(18, 6) @map("slt_key_sp")

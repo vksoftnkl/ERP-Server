@@ -1,43 +1,66 @@
+import { Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { DEFAULT_ACTOR } from 'src/common/utils/module-service.utils';
-import type { StockVoucherTypeRules } from './types/stock-voucher.types';
+import { DEFAULT_ACTOR, throwStockConflict } from 'src/common/utils/module-service.utils';
+import type {
+  StockErrorDetail,
+  StockErrorResponse,
+  StockVoucherTypeRules,
+} from './types/stock-voucher.types';
 
 /**
  * THE POSTING ENGINE, IN THE APPLICATION RATHER THAN IN THE DATABASE.
  *
  * The models describe a different arrangement, and it is worth being explicit
- * about the departure rather than letting a reader discover it: `stock_balance`
- * says in its own doc comment that it is TRIGGER-MAINTAINED, that `fn_sml_apply`
- * owns it, and that application code writing the four accumulators "has moved
- * stock without a ledger row to explain it". `stock_lot.slt_total_on_hand` says
- * the same.
+ * about the departure rather than letting a reader discover it: `stock_balance`,
+ * `stock_lot` and `stock_item_cost` all say in their own doc comments that they
+ * are TRIGGER-MAINTAINED by `fn_sml_apply`, and that application code writing
+ * their accumulators "has moved stock without a ledger row to explain it".
  *
- * Neither `stock.fn_svh_post`, `stock.fn_slt_resolve` nor `stock.fn_sml_apply`
- * exists — not in this repo, not on the database. They live in an external
- * `schema/stock/19_stock_posting.sql` share that has never been deployed here,
- * so `post()` calling `fn_svh_post` failed with an undefined-function 42883 and
- * nothing has ever maintained a balance row. This module is the decision to post
- * from the service instead.
+ * `stock.fn_svh_post`, `fn_slt_resolve` and `fn_sml_apply` are not installed
+ * here. They live in an external `schema/stock/` share; its §17 trigger layer
+ * was read on 2026-09-08, and this module is the DECISION to keep posting from
+ * the service, with that SQL as the reference for what each phase must do.
+ * Installing the share's `tr_sml_apply` on top of this engine would apply every
+ * ledger row a second time — the two must never run together.
+ *
+ * WHAT THE DATABASE STILL OWNS — the rules that must hold whatever writes the
+ * ledger, installed by migration 20260908110000 from the same share:
+ *   * `tr_sml_forbid_delete` / `tr_sml_immutable`: the ledger is append-only.
+ *   * `tr_sml_freeze_guard`: no movement into a godown that a DRAFT PHYSICAL
+ *     count is freezing, except the count's own. It raises restrict_violation,
+ *     which StockVoucherExceptionFilter answers as 409; `validate()` reports the
+ *     same freeze per line first, so the screen sees it before the post.
+ *   * `slt_key_batch` / `slt_key_serial` fold case and whitespace, and so do
+ *     the identity keys built here — see `lotIdentityKeyColumns`.
+ *
+ * WHAT THIS ENGINE MAINTAINS, in order, one set-based statement per phase:
+ *   1. the lots the document needs                          (`resolveLots`)
+ *   2. each line's lot and resolved cost                    (`attachLotsToLines`)
+ *   3. the ledger — THE TRUTH; everything after is derived from it
+ *   4. `stock_balance`: accumulators, ageing anchors, identity cache
+ *   5. `stock_item_cost`, the branch's moving weighted average, and the
+ *      distribution of that average onto every holding of the item
+ *   6. the negative-stock policy: BLOCK refuses, WARN logs, ALLOW passes
+ *   7. `slt_total_on_hand`, and the lot's ACTIVE / CLOSED status with it
+ *
+ * Each phase is the matching step of the share's `fn_sml_apply` (§17.3), done
+ * once per document instead of once per ledger row. Where a set-based phase
+ * has to choose an order the trigger got from row order, the choice and its
+ * reason are on the phase.
  *
  * WHAT THAT COSTS, so it is not rediscovered as a bug:
- *   * The ledger is still written FIRST and the balance is still derived from
- *     the rows this function just inserted — the direction of truth is
- *     unchanged, only the place the arithmetic happens.
- *   * Anything that writes `stock_ledger` WITHOUT coming through here leaves the
- *     balance stale. Today nothing does.
- *   * If the external share is ever deployed, `tr_sml_apply` will fire on these
- *     same inserts and apply every movement A SECOND TIME. Deploying it means
- *     routing `post()` back to `fn_svh_post` in the same change — see
+ *   * Anything that writes `stock_ledger` WITHOUT coming through here leaves
+ *     the balance and the average stale. Today nothing does.
+ *   * The transfer routes are not implemented here; they keep calling their
+ *     engine functions and keep failing until those exist — see
  *     `usesInProcessPosting`.
- *   * `stock_item_cost` (the moving weighted average `fn_sml_apply` also
- *     maintains) is NOT written here. `AVG_COST` reads it, so an average that
- *     was never seeded stays unseeded; `validate()` already refuses to post a
- *     document that depends on one.
  *
  * Everything runs in the CALLER'S transaction and set-based — one statement per
- * phase, not one per line — so a four-hundred-line opening posts in six
+ * phase, not one per line — so a four-hundred-line opening posts in seven
  * statements and either all of it commits or none of it does.
  */
+
+const logger = new Logger('StockVoucherPosting');
 
 /** +1 brings stock in, -1 takes it out. `sml_signed_base_qty` is generated from it. */
 const DIRECTION_IN = 1;
@@ -102,8 +125,9 @@ export interface PostStockVoucherParams {
 }
 
 /**
- * Posts one DRAFT voucher: lots resolved, ledger written, balances applied,
- * lot totals updated, lines stamped with their lot, header moved to POSTED.
+ * Posts one DRAFT voucher: lots resolved, ledger written, balances and the
+ * moving average applied, the negative-stock policy checked, lot totals
+ * updated, lines stamped with their lot, header moved to POSTED.
  *
  * Returns the number of LEDGER ROWS written, which is what `fn_svh_post`
  * returned and what the API reports as `rowsPosted`. It is not always the line
@@ -123,6 +147,8 @@ export async function postStockVoucher(
   await attachLotsToLines(tx, params);
   const rowsPosted = await writeLedger(tx, params);
   await applyBalances(tx, params);
+  await applyItemCost(tx, params);
+  await assertNegativeStockPolicy(tx, params);
   await refreshLotTotals(tx, params);
 
   await tx.stockVoucher.update({
@@ -143,16 +169,124 @@ export async function postStockVoucher(
 }
 
 /**
- * The CTE chain every phase below starts from, and a deliberate copy of the one
- * `validate()` builds: the effective StockTrackPolicy per line, then the six
- * identity dimensions blanked wherever the policy does not track them and
- * collapsed onto the sentinels `ux_slt_identity` is built over ('~', -1,
- * 0001-01-01, the nil uuid).
+ * The effective StockTrackPolicy for one item on one date, as a LATERAL join
+ * that leaves `stp` NULL when no row matches. ONE definition, used by every
+ * query in the module that resolves a lot identity — `postingCte` here,
+ * `validate()` in the service, the negative-stock check below — so the
+ * preflight and the post cannot disagree about which policy applies.
  *
- * IT MUST STAY IDENTICAL TO validate()'s. The preflight tells the user "this
- * holding already has an opening in this year" by keying exactly this way; a
- * post that keyed differently would open a second lot for a holding the
- * preflight just said was already open.
+ * PRECEDENCE IS SCOPE FIRST, then branch, then company — transcribed from the
+ * share's `fn_stp_effective`: an ITEM row beats a GROUP row whatever their
+ * branches or companies; within one scope a branch-specific row beats a
+ * branch-wide one; company-specific breaks the remaining tie over global. An
+ * earlier version here sorted branch-first, so a branch-level GROUP rule could
+ * override a company-wide ITEM rule and open a lot under the wrong identity.
+ * The lot is what every answer is keyed on, so every reader must sort the same.
+ *
+ * No row at all is a complete answer — track nothing, WAVG, FEFO, ALLOW — and
+ * the correct default for a grocery line: an item needs no policy row to post.
+ *
+ * The scope expressions are column references from the caller's own aliases,
+ * never values from a request, which is why they are `Prisma.raw`.
+ */
+export function effectivePolicyLateral(scope: {
+  companyId: Prisma.Sql;
+  branchId: Prisma.Sql;
+  itemId: Prisma.Sql;
+  itemGroupId: Prisma.Sql;
+  onDate: Prisma.Sql;
+}): Prisma.Sql {
+  return Prisma.sql`
+    LEFT JOIN LATERAL (
+      SELECT p.*
+        FROM stock.stock_track_policy p
+       WHERE p.stp_is_active  = true
+         AND p.stp_is_deleted = false
+         AND ${scope.onDate} BETWEEN p.stp_effective_from AND p.stp_effective_to
+         AND (p.stp_company_id IS NULL OR p.stp_company_id = ${scope.companyId})
+         AND (p.stp_branch_id  IS NULL OR p.stp_branch_id  = ${scope.branchId})
+         AND (
+               (p.stp_scope = 'ITEM'    AND p.stp_scope_id = ${scope.itemId})
+            OR (p.stp_scope = 'GROUP'   AND p.stp_scope_id = ${scope.itemGroupId})
+            OR  p.stp_scope = 'COMPANY'
+         )
+       ORDER BY CASE
+                  WHEN p.stp_scope = 'ITEM'  AND p.stp_branch_id IS NOT NULL THEN 1
+                  WHEN p.stp_scope = 'ITEM'                                  THEN 2
+                  WHEN p.stp_scope = 'GROUP' AND p.stp_branch_id IS NOT NULL THEN 3
+                  WHEN p.stp_scope = 'GROUP'                                 THEN 4
+                  WHEN p.stp_branch_id IS NOT NULL                           THEN 5
+                  ELSE 6
+                END,
+                (p.stp_company_id IS NULL),
+                p.stp_effective_from DESC
+       LIMIT 1
+    ) stp ON true
+  `;
+}
+
+/**
+ * `policy AS (...)`: the six tracking flags per line, resolved against the
+ * DOCUMENT's date and not today's. Expects a `line` CTE carrying `svi_*` plus
+ * the document's `svh_company_id`, `svh_branch_id` and `svh_doc_date`.
+ */
+export function effectivePolicyCte(): Prisma.Sql {
+  return Prisma.sql`
+    policy AS (
+      SELECT line.svi_id,
+             COALESCE(stp.stp_track_batch,      false) AS track_batch,
+             COALESCE(stp.stp_track_mrp,        false) AS track_mrp,
+             COALESCE(stp.stp_track_sale_price, false) AS track_sale_price,
+             COALESCE(stp.stp_track_expiry,     false) AS track_expiry,
+             COALESCE(stp.stp_track_serial,     false) AS track_serial,
+             COALESCE(stp.stp_track_supplier,   false) AS track_supplier
+        FROM line
+        JOIN inventory.item_master itm ON itm.item_id = line.svi_item_id
+        ${effectivePolicyLateral({
+          companyId: Prisma.raw('line.svh_company_id'),
+          branchId: Prisma.raw('line.svh_branch_id'),
+          itemId: Prisma.raw('line.svi_item_id'),
+          itemGroupId: Prisma.raw('itm.item_group_id'),
+          onDate: Prisma.raw('line.svh_doc_date'),
+        })}
+    )
+  `;
+}
+
+/**
+ * The six identity dimensions, blanked wherever `policy` does not track them
+ * and collapsed onto the sentinels `ux_slt_identity` is built over ('~', -1,
+ * 0001-01-01, the nil uuid). Selects from a `line` and a `policy` alias.
+ *
+ * Batch and serial are UPPER-CASED AND TRIMMED, exactly as `slt_key_batch` and
+ * `slt_key_serial` are generated (migration 20260908110000) and as the share's
+ * `fn_slt_resolve` looks them up: a batch number is a label read off a carton,
+ * and 'b-2604', 'B-2604' and 'B-2604 ' are one carton. The original spelling
+ * is what the lot STORES (`lot_batch_no` in `postingCte`); only the key folds.
+ */
+export function lotIdentityKeyColumns(): Prisma.Sql {
+  return Prisma.sql`
+             COALESCE(CASE WHEN policy.track_batch      THEN NULLIF(upper(btrim(line.svi_batch_no)), '') END, '~')   AS key_batch,
+             COALESCE(CASE WHEN policy.track_mrp        THEN line.svi_mrp         END, -1)                             AS key_mrp,
+             COALESCE(CASE WHEN policy.track_sale_price THEN line.svi_sale_price  END, -1)                             AS key_sp,
+             COALESCE(CASE WHEN policy.track_expiry     THEN line.svi_expiry_date END, DATE '0001-01-01')              AS key_expiry,
+             COALESCE(CASE WHEN policy.track_serial     THEN NULLIF(upper(btrim(line.svi_serial_no)), '') END, '~')   AS key_serial,
+             COALESCE(CASE WHEN policy.track_supplier   THEN line.svi_supplier_id END,
+                      '00000000-0000-0000-0000-000000000000'::uuid)                                                    AS key_supplier
+  `;
+}
+
+/**
+ * The CTE chain every phase below starts from, built from the same exported
+ * fragments `validate()` builds its own from: the effective StockTrackPolicy
+ * per line, then the six identity dimensions keyed exactly as `ux_slt_identity`
+ * is.
+ *
+ * IT MUST STAY IDENTICAL TO validate()'s in what it keys on. The preflight
+ * tells the user "this holding already has an opening in this year" by keying
+ * exactly this way; a post that keyed differently would open a second lot for a
+ * holding the preflight just said was already open. Sharing the fragments is
+ * what makes that a property rather than a hope.
  *
  * `line_cost_rate` is where `fn_sml_cost_default` used to sit. It fills a GAP
  * and never overrides: a line that states its own cost keeps it, and only a zero
@@ -186,53 +320,20 @@ function postingCte(svhId: string, accYear: string, isCount: boolean): Prisma.Sq
         JOIN doc ON doc.svh_id = svi.svi_voucher_id AND doc.svh_acc_year = svi.svi_acc_year
        WHERE svi.svi_is_deleted = false
     ),
-    policy AS (
-      SELECT line.svi_id,
-             COALESCE(stp.stp_track_batch,      false) AS track_batch,
-             COALESCE(stp.stp_track_mrp,        false) AS track_mrp,
-             COALESCE(stp.stp_track_sale_price, false) AS track_sale_price,
-             COALESCE(stp.stp_track_expiry,     false) AS track_expiry,
-             COALESCE(stp.stp_track_serial,     false) AS track_serial,
-             COALESCE(stp.stp_track_supplier,   false) AS track_supplier
-        FROM line
-        JOIN inventory.item_master itm ON itm.item_id = line.svi_item_id
-        LEFT JOIN LATERAL (
-          SELECT p.*
-            FROM stock.stock_track_policy p
-           WHERE p.stp_is_active  = true
-             AND p.stp_is_deleted = false
-             AND line.svh_doc_date BETWEEN p.stp_effective_from AND p.stp_effective_to
-             AND (p.stp_company_id IS NULL OR p.stp_company_id = line.svh_company_id)
-             AND (p.stp_branch_id  IS NULL OR p.stp_branch_id  = line.svh_branch_id)
-             AND (
-                   (p.stp_scope = 'ITEM'    AND p.stp_scope_id = line.svi_item_id)
-                OR (p.stp_scope = 'GROUP'   AND p.stp_scope_id = itm.item_group_id)
-                OR  p.stp_scope = 'COMPANY'
-             )
-           ORDER BY (p.stp_branch_id IS NOT NULL) DESC,
-                    (p.stp_company_id IS NOT NULL) DESC,
-                    CASE p.stp_scope WHEN 'ITEM' THEN 0 WHEN 'GROUP' THEN 1 ELSE 2 END,
-                    p.stp_effective_from DESC
-           LIMIT 1
-        ) stp ON true
-    ),
+    ${effectivePolicyCte()},
     keyed AS (
       SELECT line.*,
              policy.track_batch, policy.track_mrp, policy.track_sale_price,
              policy.track_expiry, policy.track_serial, policy.track_supplier,
-             CASE WHEN policy.track_batch      THEN NULLIF(line.svi_batch_no, '') END AS lot_batch_no,
-             CASE WHEN policy.track_mrp        THEN line.svi_mrp         END          AS lot_mrp,
-             CASE WHEN policy.track_sale_price THEN line.svi_sale_price  END          AS lot_sale_price,
-             CASE WHEN policy.track_expiry     THEN line.svi_expiry_date END          AS lot_expiry_date,
-             CASE WHEN policy.track_serial     THEN NULLIF(line.svi_serial_no, '') END AS lot_serial_no,
-             CASE WHEN policy.track_supplier   THEN line.svi_supplier_id END          AS lot_supplier_id,
-             COALESCE(CASE WHEN policy.track_batch      THEN NULLIF(line.svi_batch_no, '') END, '~')          AS key_batch,
-             COALESCE(CASE WHEN policy.track_mrp        THEN line.svi_mrp         END, -1)                    AS key_mrp,
-             COALESCE(CASE WHEN policy.track_sale_price THEN line.svi_sale_price  END, -1)                    AS key_sp,
-             COALESCE(CASE WHEN policy.track_expiry     THEN line.svi_expiry_date END, DATE '0001-01-01')     AS key_expiry,
-             COALESCE(CASE WHEN policy.track_serial     THEN NULLIF(line.svi_serial_no, '') END, '~')         AS key_serial,
-             COALESCE(CASE WHEN policy.track_supplier   THEN line.svi_supplier_id END,
-                      '00000000-0000-0000-0000-000000000000'::uuid)                                           AS key_supplier,
+             -- What the lot STORES: the original spelling, trimmed. The key
+             -- below folds case; the label on the carton is kept as read.
+             CASE WHEN policy.track_batch      THEN NULLIF(btrim(line.svi_batch_no), '') END  AS lot_batch_no,
+             CASE WHEN policy.track_mrp        THEN line.svi_mrp         END                   AS lot_mrp,
+             CASE WHEN policy.track_sale_price THEN line.svi_sale_price  END                   AS lot_sale_price,
+             CASE WHEN policy.track_expiry     THEN line.svi_expiry_date END                   AS lot_expiry_date,
+             CASE WHEN policy.track_serial     THEN NULLIF(btrim(line.svi_serial_no), '') END  AS lot_serial_no,
+             CASE WHEN policy.track_supplier   THEN line.svi_supplier_id END                   AS lot_supplier_id,
+             ${lotIdentityKeyColumns()},
              -- 'B/M/S/E/R/P' in a fixed order, 'N' when the policy tracks
              -- nothing. Stamped on the lot so a policy change tomorrow cannot
              -- make today's lots unreadable.
@@ -243,18 +344,18 @@ function postingCte(svhId: string, accYear: string, isCount: boolean): Prisma.Sq
                CASE WHEN policy.track_expiry     THEN 'E' ELSE '' END ||
                CASE WHEN policy.track_serial     THEN 'R' ELSE '' END ||
                CASE WHEN policy.track_supplier   THEN 'P' ELSE '' END,
-             ''), 'N')                                                                                        AS track_signature,
+             ''), 'N')                                                                          AS track_signature,
              -- THE VARIANCE IS THE MOVEMENT ON A COUNT. svi_diff_qty is
              -- GENERATED (counted - book) and is the only quantity a count
              -- line moves; svi_qty is 0 on every count line by construction.
              CASE WHEN ${isCount}::boolean
                   THEN ABS(COALESCE(line.svi_diff_qty, 0))
-                  ELSE line.svi_base_qty END                                                                  AS move_base_qty,
+                  ELSE line.svi_base_qty END                                                    AS move_base_qty,
              CASE WHEN ${isCount}::boolean
                   THEN ABS(COALESCE(line.svi_diff_qty, 0))
-                  ELSE line.svi_qty      END                                                                  AS move_qty,
-             CASE WHEN ${isCount}::boolean THEN 0 ELSE line.svi_free_qty      END                             AS move_free_qty,
-             CASE WHEN ${isCount}::boolean THEN 0 ELSE line.svi_free_base_qty END                              AS move_free_base_qty
+                  ELSE line.svi_qty      END                                                    AS move_qty,
+             CASE WHEN ${isCount}::boolean THEN 0 ELSE line.svi_free_qty      END               AS move_free_qty,
+             CASE WHEN ${isCount}::boolean THEN 0 ELSE line.svi_free_base_qty END               AS move_free_base_qty
         FROM line
         JOIN policy ON policy.svi_id = line.svi_id
     ),
@@ -449,47 +550,20 @@ async function writeLedger(
  * generated `sbl_on_hand_qty` / `sbl_available_qty` fall out of them. Neither is
  * written here — Postgres rejects any write to a generated column.
  *
- * `sml_cost_value` IS A MAGNITUDE, NOT A SIGNED AMOUNT. The ledger's own doc
- * says it: "on an inward these are what it cost. On an outward they are the
- * COGS" — both positive. Summing it flat would make an issue INCREASE the value
- * on the shelf, so the sum applies `sml_direction` the way `sml_signed_base_qty`
- * already applies it to quantity. All-inward documents never showed this; a
- * count with a negative variance does.
- *
- * `sbl_avg_cost_rate` is DERIVED FROM THE TWO COLUMNS BESIDE IT — the new value
- * over the new on-hand — and not accumulated, because an average of an average
- * is not an average. `stock_balance` says these are trigger-maintained and must
- * never be written from application code; that rule assumed `fn_sml_apply`,
- * which is not deployed, and leaving them is not neutral — they stay at their
- * DEFAULT 0 while `sbl_stock_value` is right, so every reader that costs an
- * issue off the average silently values stock at nothing.
- *
- * WHEN ON-HAND IS NOT POSITIVE THE EXISTING RATE IS KEPT, never overwritten
- * with a division by zero or with the negative that a short balance would
- * produce: the last unit leaving the shelf does not make the next inward a
- * fresh start, which is the same rule `stock_item_cost` states for itself.
- *
- * The outward is taken out at the LEDGER'S OWN cost value rather than re-valued
- * at the running average, keeping "the balance is derived from the rows phase 3
- * just wrote and from nothing else" literally true. On an `AVG_COST` document
- * the two are the same figure. On a `MANUAL` one they are not, and a book that
- * must issue at the average needs `stock_item_cost` — which nothing maintains
- * yet, and which is the separate gap named at the top of this file.
+ * VALUE IS NOT WRITTEN HERE. `sbl_avg_cost_rate` and `sbl_stock_value` are the
+ * branch's moving average distributed over what is on this shelf — in the
+ * model's own words, "a distribution of stock_item_cost, not a separate truth" —
+ * and phase 5 stamps them on every holding of the item once the average is
+ * known. A per-holding average written here would only be overwritten there,
+ * and would let a transfer between two godowns of one branch move value.
  *
  * The identity cache and the ageing anchors are refreshed from the lot on every
- * apply, which is what `fn_sml_apply` did with them.
+ * apply, which is what `fn_sml_apply` does with them.
  */
 async function applyBalances(
   tx: Prisma.TransactionClient,
   { svhId, accYear, actor, postedOn }: PostStockVoucherParams,
 ): Promise<void> {
-  // The holding's on-hand AFTER this document, written out so the conflict
-  // branch can divide by it: the existing row's generated total plus the four
-  // deltas the refused insert proposed.
-  const newOnHand = Prisma.sql`(COALESCE(stock.stock_balance.sbl_on_hand_qty, 0)
-                                 + EXCLUDED.sbl_in_qty  + EXCLUDED.sbl_free_in_qty
-                                 - EXCLUDED.sbl_out_qty - EXCLUDED.sbl_free_out_qty)`;
-
   await tx.$executeRaw`
     WITH moved AS (
       SELECT sml.sml_company_id, sml.sml_branch_id, sml.sml_tenant_id,
@@ -499,9 +573,6 @@ async function applyBalances(
              SUM(CASE WHEN sml.sml_direction < 0 THEN sml.sml_base_qty      ELSE 0 END) AS out_qty,
              SUM(CASE WHEN sml.sml_direction > 0 THEN sml.sml_free_base_qty ELSE 0 END) AS free_in_qty,
              SUM(CASE WHEN sml.sml_direction < 0 THEN sml.sml_free_base_qty ELSE 0 END) AS free_out_qty,
-             SUM(sml.sml_signed_base_qty)                                               AS signed_qty,
-             SUM(sml.sml_cost_value     * sml.sml_direction)                            AS cost_value,
-             SUM(sml.sml_cost_value_wot * sml.sml_direction)                            AS cost_value_wot,
              MAX(sml.sml_doc_date) FILTER (WHERE sml.sml_direction > 0)                 AS last_in_date,
              MAX(sml.sml_doc_date) FILTER (WHERE sml.sml_direction < 0)                 AS last_out_date,
              MIN(sml.sml_doc_date) FILTER (WHERE sml.sml_direction > 0)                 AS first_in_date
@@ -515,8 +586,6 @@ async function applyBalances(
       sbl_company_id, sbl_branch_id, sbl_tenant_id, sbl_godown_id, sbl_item_id,
       sbl_lot_id, sbl_base_uom_id, sbl_bucket,
       sbl_in_qty, sbl_out_qty, sbl_free_in_qty, sbl_free_out_qty,
-      sbl_stock_value, sbl_stock_value_wot,
-      sbl_avg_cost_rate, sbl_avg_cost_rate_wot,
       sbl_first_in_date, sbl_last_in_date, sbl_last_out_date,
       sbl_batch_no, sbl_mrp, sbl_sale_price, sbl_expiry_date, sbl_supplier_id,
       sbl_created_by
@@ -524,11 +593,6 @@ async function applyBalances(
     SELECT m.sml_company_id, m.sml_branch_id, m.sml_tenant_id, m.sml_godown_id, m.sml_item_id,
            m.sml_lot_id, m.sml_base_uom_id, m.sml_bucket,
            m.in_qty, m.out_qty, m.free_in_qty, m.free_out_qty,
-           m.cost_value, m.cost_value_wot,
-           -- A row being created has no prior rate to keep, so a non-positive
-           -- opening on-hand can only be 0.
-           CASE WHEN m.signed_qty > 0 THEN ROUND(m.cost_value     / m.signed_qty, 6) ELSE 0 END,
-           CASE WHEN m.signed_qty > 0 THEN ROUND(m.cost_value_wot / m.signed_qty, 6) ELSE 0 END,
            m.first_in_date, m.last_in_date, m.last_out_date,
            slt.slt_batch_no, slt.slt_mrp, slt.slt_sale_price, slt.slt_expiry_date, slt.slt_supplier_id,
            ${auditColumnActor(actor)}
@@ -541,23 +605,6 @@ async function applyBalances(
       sbl_out_qty       = stock.stock_balance.sbl_out_qty       + EXCLUDED.sbl_out_qty,
       sbl_free_in_qty   = stock.stock_balance.sbl_free_in_qty   + EXCLUDED.sbl_free_in_qty,
       sbl_free_out_qty  = stock.stock_balance.sbl_free_out_qty  + EXCLUDED.sbl_free_out_qty,
-      sbl_stock_value     = stock.stock_balance.sbl_stock_value     + EXCLUDED.sbl_stock_value,
-      sbl_stock_value_wot = stock.stock_balance.sbl_stock_value_wot + EXCLUDED.sbl_stock_value_wot,
-      -- Every SET expression reads the PRE-UPDATE row, so these two see the old
-      -- value and the old on-hand however Postgres orders the clauses. The new
-      -- on-hand is spelled out from EXCLUDED's four plain accumulators rather
-      -- than read off EXCLUDED.sbl_on_hand_qty: that column is generated from
-      -- the deltas alone, so it holds this document's movement, not the total.
-      sbl_avg_cost_rate = CASE
-        WHEN ${newOnHand} > 0
-        THEN ROUND((stock.stock_balance.sbl_stock_value + EXCLUDED.sbl_stock_value) / ${newOnHand}, 6)
-        ELSE stock.stock_balance.sbl_avg_cost_rate
-      END,
-      sbl_avg_cost_rate_wot = CASE
-        WHEN ${newOnHand} > 0
-        THEN ROUND((stock.stock_balance.sbl_stock_value_wot + EXCLUDED.sbl_stock_value_wot) / ${newOnHand}, 6)
-        ELSE stock.stock_balance.sbl_avg_cost_rate_wot
-      END,
       -- The FIRST inward on this shelf never moves once set; the last two do.
       sbl_first_in_date = LEAST(stock.stock_balance.sbl_first_in_date, EXCLUDED.sbl_first_in_date),
       sbl_last_in_date  = GREATEST(stock.stock_balance.sbl_last_in_date, EXCLUDED.sbl_last_in_date),
@@ -574,12 +621,337 @@ async function applyBalances(
 }
 
 /**
- * Phase 5 — `slt_total_on_hand`, the lot's chain-wide total across every branch
- * and godown.
+ * Phase 5 — `stock_item_cost`, the branch's moving weighted average, and its
+ * distribution onto the holdings. Two statements: the MERGE, then the stamp.
  *
- * Recomputed from the balance rows rather than incremented, because that is the
- * definition of the column and a re-derivation cannot drift. Only the lots this
- * document touched are recomputed.
+ * THE DEFINITION, from the model and from the share's `fn_sml_apply`: an inward
+ * adds quantity and value at the row's own cost and recomputes the average; an
+ * outward removes quantity at the CURRENT average and leaves the rate alone —
+ * which is what "moving average" means, and why an outward can never change the
+ * cost of what remains. The average is STORED and survives quantity reaching
+ * zero: the next inward of an item that went to nil is not a fresh start.
+ *
+ * ORDER WITHIN ONE DOCUMENT: outwards first, at the average the branch carried
+ * BEFORE the document, then inwards re-average. The trigger applies rows one at
+ * a time in insertion order; a set-based phase has to choose, and this choice
+ * makes an outward's relief the same figure `costed` in `postingCte` stamped on
+ * its ledger row under AVG_COST — the ledger and the average agree about what
+ * the shortage cost. A count that is over on one lot and short on another of
+ * the same item is the only shape where the orders differ, and there the
+ * difference is which side of a rounding boundary the average lands on.
+ *
+ * A FRESH ROW NEVER STARTS BELOW ZERO. The trigger's seed clamps the first
+ * movement's quantity at 0 and takes its rate from that row's own cost, so an
+ * item whose first-ever movement is an outward (ALLOW, a sale keyed before its
+ * receipt) leaves the branch quantity at 0 and the negative on the balance,
+ * and the next receipt starts the average clean instead of dividing a real
+ * value by a quantity dragged down by stock that was never costed in. The
+ * same rule here: with no current row, outwards are swallowed, the average is
+ * the inward's rate when there is one and the outward's own cost when there is
+ * not. `sic_max_cost_rate` is the exception — it stays "highest rate ever
+ * RECEIVED at", as the model defines it, and an outward never sets it.
+ *
+ * An outward SALE row stamps `sic_last_sale_rate` / `_date` from its document
+ * rate, exactly as the trigger does. No stock voucher posts a SALE, so today
+ * this is the sales module's hook, not a live path.
+ *
+ * ONE ROW PER (company, branch, item), on `ux_sic_scope`. The current row is
+ * locked FOR UPDATE inside the CTE before the arithmetic reads it, so two
+ * documents posting the same item serialise on it and the second computes from
+ * the first's committed figures. The first-ever movement of an item has no row
+ * to lock, which is the race the trigger's lock-or-seed loop exists for; here a
+ * transaction-scoped advisory lock per (company, branch, item), taken in item
+ * order in its OWN statement before the MERGE, plays that part — the loser
+ * blocks until the winner commits, and its MERGE then sees a row to MATCH. The
+ * lock has to be a separate statement: a statement's snapshot is taken before
+ * anything in it runs, so a lock acquired inside the MERGE could not make the
+ * winner's row visible to it.
+ *
+ * MERGE rather than INSERT … ON CONFLICT because the update needs the OLD row
+ * and the document's inward and outward sides SEPARATELY, and EXCLUDED can carry
+ * only one row's worth of columns.
+ *
+ * THE STAMP is the trigger's "carry the branch average onto the holdings" step:
+ * a weighted average is a property of the item, so when a receipt moves it,
+ * every lot of that item in the branch is worth a different amount. Revaluing
+ * only the lot that moved would leave the others carrying the old rate, and the
+ * sum of `sbl_stock_value` would silently stop agreeing with `sic_total_value`.
+ * The row count is the number of lots of one item in one branch — small.
+ */
+async function applyItemCost(
+  tx: Prisma.TransactionClient,
+  { svhId, accYear, actor, postedOn }: PostStockVoucherParams,
+): Promise<void> {
+  // The first-movement lock — see the note on this function. The subquery's
+  // ORDER BY is what makes two documents take these in the same order, and
+  // the count() is only because the lock function returns void, which Prisma
+  // cannot read back; it still runs once per row, in that order.
+  await tx.$queryRaw`
+    SELECT count(pg_advisory_xact_lock(hashtextextended(
+             t.sml_company_id::text || ':' || t.sml_branch_id::text || ':' || t.sml_item_id::text, 0)))::int AS locked
+      FROM (
+            SELECT DISTINCT sml.sml_company_id, sml.sml_branch_id, sml.sml_item_id
+              FROM stock.stock_ledger sml
+             WHERE sml.sml_src_doc_id = ${svhId}::uuid
+               AND sml.sml_acc_year   = ${accYear}::bpchar
+               AND sml.sml_is_deleted = false
+             ORDER BY 1, 2, 3
+           ) t
+  `;
+
+  await tx.$executeRaw`
+    WITH moves AS (
+      SELECT sml.sml_company_id, sml.sml_branch_id, sml.sml_item_id,
+             (array_agg(sml.sml_base_uom_id ORDER BY sml.sml_line_no, sml.sml_split_no))[1]                AS base_uom_id,
+             SUM(CASE WHEN sml.sml_direction > 0 THEN sml.sml_base_qty + sml.sml_free_base_qty ELSE 0 END) AS qty_in,
+             SUM(CASE WHEN sml.sml_direction < 0 THEN sml.sml_base_qty + sml.sml_free_base_qty ELSE 0 END) AS qty_out,
+             SUM(CASE WHEN sml.sml_direction > 0 THEN sml.sml_cost_value     ELSE 0 END)                    AS value_in,
+             SUM(CASE WHEN sml.sml_direction > 0 THEN sml.sml_cost_value_wot ELSE 0 END)                    AS value_in_wot,
+             COALESCE(MAX(sml.sml_cost_rate) FILTER (WHERE sml.sml_direction > 0), 0)                       AS max_in_rate,
+             -- The document's LAST inward line, by line order, is its "last purchase".
+             (array_agg(sml.sml_cost_rate     ORDER BY sml.sml_line_no DESC, sml.sml_split_no DESC)
+                 FILTER (WHERE sml.sml_direction > 0))[1]                                                   AS last_in_rate,
+             (array_agg(sml.sml_cost_rate_wot ORDER BY sml.sml_line_no DESC, sml.sml_split_no DESC)
+                 FILTER (WHERE sml.sml_direction > 0))[1]                                                   AS last_in_rate_wot,
+             (array_agg(sml.sml_doc_date      ORDER BY sml.sml_line_no DESC, sml.sml_split_no DESC)
+                 FILTER (WHERE sml.sml_direction > 0))[1]                                                   AS last_in_date,
+             -- The document's last OUTWARD line: the rate a fresh row takes
+             -- when nothing was received (the trigger's seed from an outward).
+             (array_agg(sml.sml_cost_rate     ORDER BY sml.sml_line_no DESC, sml.sml_split_no DESC)
+                 FILTER (WHERE sml.sml_direction < 0))[1]                                                   AS last_out_rate,
+             (array_agg(sml.sml_cost_rate_wot ORDER BY sml.sml_line_no DESC, sml.sml_split_no DESC)
+                 FILTER (WHERE sml.sml_direction < 0))[1]                                                   AS last_out_rate_wot,
+             -- An outward SALE stamps the last sale, from the DOCUMENT rate.
+             (array_agg(sml.sml_doc_rate      ORDER BY sml.sml_line_no DESC, sml.sml_split_no DESC)
+                 FILTER (WHERE sml.sml_direction < 0 AND sml.sml_txn_type = 'SALE'))[1]                     AS last_sale_rate,
+             (array_agg(sml.sml_doc_date      ORDER BY sml.sml_line_no DESC, sml.sml_split_no DESC)
+                 FILTER (WHERE sml.sml_direction < 0 AND sml.sml_txn_type = 'SALE'))[1]                     AS last_sale_date
+        FROM stock.stock_ledger sml
+       WHERE sml.sml_src_doc_id = ${svhId}::uuid
+         AND sml.sml_acc_year   = ${accYear}::bpchar
+         AND sml.sml_is_deleted = false
+       GROUP BY 1, 2, 3
+    ),
+    cur AS (
+      SELECT c.sic_company_id, c.sic_branch_id, c.sic_item_id,
+             c.sic_total_qty, c.sic_total_value, c.sic_total_value_wot,
+             c.sic_avg_cost_rate, c.sic_avg_cost_rate_wot, c.sic_max_cost_rate,
+             c.sic_last_purchase_rate, c.sic_last_purchase_date,
+             c.sic_last_sale_rate, c.sic_last_sale_date
+        FROM stock.stock_item_cost c
+        JOIN moves m
+          ON m.sml_company_id = c.sic_company_id
+         AND m.sml_branch_id  = c.sic_branch_id
+         AND m.sml_item_id    = c.sic_item_id
+       WHERE c.sic_is_deleted = false
+         FOR UPDATE OF c
+    ),
+    step AS (
+      -- Outwards first, at the average the branch carried before this document.
+      -- A fresh row swallows them: it never starts below zero.
+      SELECT m.*,
+             (c.sic_company_id IS NOT NULL)                                                                AS has_row,
+             CASE WHEN c.sic_company_id IS NOT NULL THEN c.sic_total_qty - m.qty_out ELSE 0 END + m.qty_in AS new_qty,
+             GREATEST(COALESCE(c.sic_total_value, 0)
+                      - ROUND(m.qty_out * COALESCE(c.sic_avg_cost_rate, 0), 2), 0) + m.value_in          AS new_value,
+             GREATEST(COALESCE(c.sic_total_value_wot, 0)
+                      - ROUND(m.qty_out * COALESCE(c.sic_avg_cost_rate_wot, 0), 2), 0) + m.value_in_wot  AS new_value_wot,
+             COALESCE(c.sic_avg_cost_rate, 0)                                                              AS old_avg,
+             COALESCE(c.sic_avg_cost_rate_wot, 0)                                                          AS old_avg_wot,
+             GREATEST(COALESCE(c.sic_max_cost_rate, 0), m.max_in_rate)                                     AS new_max,
+             CASE WHEN m.qty_in > 0 THEN m.last_in_rate ELSE c.sic_last_purchase_rate END                  AS new_last_rate,
+             CASE WHEN m.qty_in > 0 THEN m.last_in_date ELSE c.sic_last_purchase_date END                  AS new_last_date,
+             COALESCE(m.last_sale_rate, c.sic_last_sale_rate, 0)                                           AS new_sale_rate,
+             COALESCE(m.last_sale_date, c.sic_last_sale_date)                                              AS new_sale_date
+        FROM moves m
+        LEFT JOIN cur c
+               ON c.sic_company_id = m.sml_company_id
+              AND c.sic_branch_id  = m.sml_branch_id
+              AND c.sic_item_id    = m.sml_item_id
+    ),
+    next AS (
+      -- Then inwards re-average. Quantity at or below zero keeps a rate: the
+      -- document's last inward if it had one, otherwise the rate as it stood —
+      -- and a fresh row with nothing received takes its outward's own cost.
+      SELECT step.*,
+             CASE WHEN step.new_qty > 0 THEN ROUND(step.new_value     / step.new_qty, 6)
+                  WHEN step.qty_in  > 0 THEN step.last_in_rate
+                  WHEN NOT step.has_row THEN COALESCE(step.last_out_rate, 0)
+                  ELSE step.old_avg END                                                                    AS new_avg,
+             CASE WHEN step.new_qty > 0 THEN ROUND(step.new_value_wot / step.new_qty, 6)
+                  WHEN step.qty_in  > 0 THEN step.last_in_rate_wot
+                  WHEN NOT step.has_row THEN COALESCE(step.last_out_rate_wot, 0)
+                  ELSE step.old_avg_wot END                                                                AS new_avg_wot
+        FROM step
+    )
+    MERGE INTO stock.stock_item_cost c
+    USING next n
+       ON c.sic_company_id = n.sml_company_id
+      AND c.sic_branch_id  = n.sml_branch_id
+      AND c.sic_item_id    = n.sml_item_id
+      AND c.sic_is_deleted = false
+    WHEN MATCHED THEN UPDATE SET
+         sic_total_qty          = n.new_qty,
+         sic_total_value        = n.new_value,
+         sic_total_value_wot    = n.new_value_wot,
+         sic_avg_cost_rate      = n.new_avg,
+         sic_avg_cost_rate_wot  = n.new_avg_wot,
+         sic_max_cost_rate      = n.new_max,
+         sic_last_purchase_rate = COALESCE(n.new_last_rate, 0),
+         sic_last_purchase_date = n.new_last_date,
+         sic_last_sale_rate     = n.new_sale_rate,
+         sic_last_sale_date     = n.new_sale_date,
+         sic_row_version        = c.sic_row_version + 1,
+         sic_modified_on        = ${postedOn},
+         sic_modified_by        = ${auditColumnActor(actor)}
+    WHEN NOT MATCHED THEN INSERT (
+         sic_company_id, sic_branch_id, sic_item_id, sic_base_uom_id,
+         sic_total_qty, sic_total_value, sic_total_value_wot,
+         sic_avg_cost_rate, sic_avg_cost_rate_wot, sic_max_cost_rate,
+         sic_last_purchase_rate, sic_last_purchase_date,
+         sic_last_sale_rate, sic_last_sale_date, sic_created_by)
+       VALUES (
+         n.sml_company_id, n.sml_branch_id, n.sml_item_id, n.base_uom_id,
+         n.new_qty, n.new_value, n.new_value_wot,
+         n.new_avg, n.new_avg_wot, n.new_max,
+         COALESCE(n.new_last_rate, 0), n.new_last_date,
+         n.new_sale_rate, n.new_sale_date, ${auditColumnActor(actor)})
+  `;
+
+  // The stamp. Only the four value columns, the way the trigger writes them: a
+  // revaluation is not a movement, so the row version and audit columns of a
+  // holding that did not move are left alone.
+  await tx.$executeRaw`
+    WITH touched AS (
+      SELECT DISTINCT sml.sml_company_id, sml.sml_branch_id, sml.sml_item_id
+        FROM stock.stock_ledger sml
+       WHERE sml.sml_src_doc_id = ${svhId}::uuid
+         AND sml.sml_acc_year   = ${accYear}::bpchar
+         AND sml.sml_is_deleted = false
+    )
+    UPDATE stock.stock_balance b
+       SET sbl_avg_cost_rate     = c.sic_avg_cost_rate,
+           sbl_avg_cost_rate_wot = c.sic_avg_cost_rate_wot,
+           sbl_stock_value       = ROUND(b.sbl_on_hand_qty * c.sic_avg_cost_rate,     2),
+           sbl_stock_value_wot   = ROUND(b.sbl_on_hand_qty * c.sic_avg_cost_rate_wot, 2)
+      FROM touched t
+      JOIN stock.stock_item_cost c
+        ON c.sic_company_id = t.sml_company_id
+       AND c.sic_branch_id  = t.sml_branch_id
+       AND c.sic_item_id    = t.sml_item_id
+       AND c.sic_is_deleted = false
+     WHERE b.sbl_company_id = c.sic_company_id
+       AND b.sbl_branch_id  = c.sic_branch_id
+       AND b.sbl_item_id    = c.sic_item_id
+       AND b.sbl_is_deleted = false
+  `;
+}
+
+/** One holding this document drove below zero, with the policy that decides what that means. */
+interface NegativeHolding {
+  itemName: string;
+  batchNo: string | null;
+  godownName: string | null;
+  onHand: string;
+  allowNegative: string;
+}
+
+/**
+ * Phase 6 — the negative-stock policy, `fn_sml_apply`'s last step.
+ *
+ * Every holding this document touched is re-read AFTER the balances landed, and
+ * any that is now below zero is judged by the item's effective policy on the
+ * document's date:
+ *
+ *     BLOCK   refuse the whole document, as one 409 naming every such holding —
+ *             the transaction rolls back with it. The caller's fix is an
+ *             ADJUSTMENT with a reason (or a receipt keyed first), not a retry.
+ *     WARN    let it through and say so in the log. An offline till that must
+ *             keep billing is a real business choice.
+ *     ALLOW   nothing to say. The exception report reads ix_sbl_negative.
+ *
+ * Checked here rather than left to `ck_sbl_accum`, which only keeps the four
+ * accumulators non-negative: on-hand is allowed to go below zero by design, so
+ * the database cannot know whether THIS item may.
+ */
+async function assertNegativeStockPolicy(
+  tx: Prisma.TransactionClient,
+  { rules, svhId, accYear }: PostStockVoucherParams,
+): Promise<void> {
+  const holdings = await tx.$queryRaw<NegativeHolding[]>`
+    WITH touched AS (
+      SELECT DISTINCT sml.sml_company_id, sml.sml_branch_id, sml.sml_godown_id,
+             sml.sml_item_id, sml.sml_lot_id, sml.sml_bucket, sml.sml_doc_date
+        FROM stock.stock_ledger sml
+       WHERE sml.sml_src_doc_id = ${svhId}::uuid
+         AND sml.sml_acc_year   = ${accYear}::bpchar
+         AND sml.sml_is_deleted = false
+    )
+    SELECT itm.item_name_en                             AS "itemName",
+           slt.slt_batch_no                             AS "batchNo",
+           gdl.gdl_name                                 AS "godownName",
+           sbl.sbl_on_hand_qty::text                    AS "onHand",
+           COALESCE(stp.stp_allow_negative, 'ALLOW')    AS "allowNegative"
+      FROM touched t
+      JOIN stock.stock_balance sbl
+        ON sbl.sbl_company_id = t.sml_company_id
+       AND sbl.sbl_branch_id  = t.sml_branch_id
+       AND sbl.sbl_godown_id  = t.sml_godown_id
+       AND sbl.sbl_item_id    = t.sml_item_id
+       AND sbl.sbl_lot_id     = t.sml_lot_id
+       AND sbl.sbl_bucket     = t.sml_bucket
+       AND sbl.sbl_is_deleted = false
+      JOIN inventory.item_master itm ON itm.item_id = t.sml_item_id
+      JOIN stock.stock_lot slt        ON slt.slt_id  = t.sml_lot_id
+      LEFT JOIN inventory.godown_locations gdl ON gdl.gdl_id = t.sml_godown_id
+      ${effectivePolicyLateral({
+        companyId: Prisma.raw('t.sml_company_id'),
+        branchId: Prisma.raw('t.sml_branch_id'),
+        itemId: Prisma.raw('t.sml_item_id'),
+        itemGroupId: Prisma.raw('itm.item_group_id'),
+        onDate: Prisma.raw('t.sml_doc_date'),
+      })}
+     WHERE sbl.sbl_on_hand_qty < 0
+       AND COALESCE(stp.stp_allow_negative, 'ALLOW') <> 'ALLOW'
+     ORDER BY itm.item_name_en, slt.slt_batch_no
+  `;
+
+  const describe = (row: NegativeHolding): string =>
+    `${row.itemName}${row.batchNo ? ` batch ${row.batchNo}` : ''}: stock would go negative ` +
+    `(${row.onHand} on hand) in ${row.godownName ?? 'this godown'}`;
+
+  for (const row of holdings) {
+    if (row.allowNegative === 'WARN') {
+      logger.warn(
+        `${rules.displayName} ${svhId}: negative stock allowed under WARN — ${describe(row)}`,
+      );
+    }
+  }
+
+  const blocked = holdings.filter((row) => row.allowNegative === 'BLOCK');
+  if (blocked.length) {
+    throwStockConflict<StockErrorDetail, StockErrorResponse>(
+      `This ${rules.displayName.toLowerCase()} would drive stock negative — policy is BLOCK`,
+      blocked.map((row) => ({ field: 'lines', message: `${describe(row)} — policy is BLOCK` })),
+    );
+  }
+}
+
+/**
+ * Phase 7 — `slt_total_on_hand`, the lot's chain-wide total across every branch
+ * and godown, and the lot's status with it.
+ *
+ * The total is recomputed from the balance rows rather than incremented,
+ * because that is the definition of the column and a re-derivation cannot
+ * drift. Only the lots this document touched are recomputed.
+ *
+ * STATUS, as the trigger keeps it: an outward that leaves the lot at or below
+ * zero CLOSES an ACTIVE lot and stamps `slt_closed_on`; an inward to a CLOSED
+ * lot reopens it, whatever the total, and clears the stamp. BLOCKED and
+ * EXPIRED are somebody's decision and are never touched. The trigger sees one
+ * row at a time; for the one shape where a document both receives into and
+ * issues from the same lot, ending empty wins — a lot with nothing in it is
+ * closed, whichever line came last.
  */
 async function refreshLotTotals(
   tx: Prisma.TransactionClient,
@@ -587,27 +959,45 @@ async function refreshLotTotals(
 ): Promise<void> {
   await tx.$executeRaw`
     WITH touched AS (
-      SELECT DISTINCT sml.sml_lot_id AS lot_id
+      SELECT sml.sml_lot_id                AS lot_id,
+             bool_or(sml.sml_direction > 0) AS had_in,
+             bool_or(sml.sml_direction < 0) AS had_out
         FROM stock.stock_ledger sml
        WHERE sml.sml_src_doc_id = ${svhId}::uuid
          AND sml.sml_acc_year   = ${accYear}::bpchar
          AND sml.sml_is_deleted = false
+       GROUP BY sml.sml_lot_id
     ),
     totals AS (
-      SELECT t.lot_id,
+      SELECT t.lot_id, t.had_in, t.had_out,
              COALESCE(SUM(sbl.sbl_on_hand_qty), 0) AS on_hand
         FROM touched t
         LEFT JOIN stock.stock_balance sbl
                ON sbl.sbl_lot_id     = t.lot_id
               AND sbl.sbl_is_deleted = false
-       GROUP BY t.lot_id
+       GROUP BY t.lot_id, t.had_in, t.had_out
+    ),
+    verdict AS (
+      SELECT totals.*,
+             (totals.on_hand <= 0 AND totals.had_out) AS ends_empty
+        FROM totals
     )
     UPDATE stock.stock_lot slt
-       SET slt_total_on_hand = totals.on_hand,
+       SET slt_total_on_hand = v.on_hand,
+           slt_status        = CASE
+                                 WHEN v.ends_empty AND slt.slt_status = 'ACTIVE' THEN 'CLOSED'
+                                 WHEN v.had_in AND slt.slt_status = 'CLOSED' AND NOT v.ends_empty THEN 'ACTIVE'
+                                 ELSE slt.slt_status
+                               END,
+           slt_closed_on     = CASE
+                                 WHEN v.ends_empty AND slt.slt_status = 'ACTIVE' THEN ${postedOn}
+                                 WHEN v.had_in AND slt.slt_status = 'CLOSED' AND NOT v.ends_empty THEN NULL
+                                 ELSE slt.slt_closed_on
+                               END,
            slt_row_version   = slt.slt_row_version + 1,
            slt_modified_on   = ${postedOn},
            slt_modified_by   = ${auditColumnActor(actor)}
-      FROM totals
-     WHERE slt.slt_id = totals.lot_id
+      FROM verdict v
+     WHERE slt.slt_id = v.lot_id
   `;
 }
