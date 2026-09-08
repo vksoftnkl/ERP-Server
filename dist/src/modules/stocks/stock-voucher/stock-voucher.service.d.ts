@@ -1,8 +1,9 @@
+import { Prisma } from '@prisma/client';
 import { PrismaService } from "../../../database/prisma/prisma.service";
 import { AuditLogService } from "../../audit-log/audit-log.service";
 import { RequestContextService } from "../../../common/request-context/request-context.service";
 import { SaveStockVoucherDto } from './dto/save-stock-voucher.dto';
-import { type OpeningReconcileRow, type PagedResult, type PendingOpeningItem, type StockVoucherCancelResult, type StockVoucherDeleteResult, type StockVoucherLineProblem, type StockVoucherListResult, type StockVoucherPayload, type StockVoucherPostResult, type StockVoucherStatus, type StockVoucherTypeRules } from './types/stock-voucher.types';
+import { type OpeningReconcileRow, type PagedResult, type PendingOpeningItem, type StockBucket, type StockCountSheetRow, type StockVoucherCancelResult, type StockVoucherDeleteResult, type StockVoucherLineProblem, type StockVoucherListResult, type StockVoucherPayload, type StockVoucherImportResult, type StockVoucherPostResult, type StockVoucherStatus, type StockVoucherTypeRules, type StockVarianceRow } from './types/stock-voucher.types';
 interface ListStockVouchersQuery {
     companyId: string;
     branchId: string;
@@ -14,6 +15,17 @@ interface ListStockVouchersQuery {
     limit?: number;
     offset?: number;
 }
+export interface CountSheetQuery {
+    companyId: string;
+    branchId: string;
+    accYear: string;
+    godownId: string;
+    bucket?: StockBucket;
+    itemGroupId?: string;
+    includeZero?: boolean;
+    limit?: number;
+    offset?: number;
+}
 export declare class StockVoucherService {
     private readonly prisma;
     private readonly auditLogService;
@@ -21,26 +33,39 @@ export declare class StockVoucherService {
     constructor(prisma: PrismaService, auditLogService: AuditLogService, requestContextService: RequestContextService);
     save(rules: StockVoucherTypeRules, dto: SaveStockVoucherDto): Promise<StockVoucherPayload>;
     private assertPayloadRules;
-    private resolveConversions;
-    private assertUnitsBelongToItems;
+    private assertReasons;
     private createDraft;
+    private writeHeaderTotals;
     private updateDraft;
     private replaceLines;
+    private loadCountHoldings;
+    private holdingKey;
     list(rules: StockVoucherTypeRules, query: ListStockVouchersQuery): Promise<StockVoucherListResult>;
     getById(rules: StockVoucherTypeRules, svhId: string, accYear: string, companyId: string, branchId: string): Promise<StockVoucherPayload>;
     validate(rules: StockVoucherTypeRules, svhId: string, accYear: string, companyId: string, branchId: string): Promise<StockVoucherLineProblem[]>;
-    post(rules: StockVoucherTypeRules, svhId: string, accYear: string, companyId: string, branchId: string, userId?: string): Promise<StockVoucherPostResult>;
+    post(rules: StockVoucherTypeRules, svhId: string, accYear: string, companyId: string, branchId: string, userId?: string, afterPost?: (tx: Prisma.TransactionClient, rowsPosted: number) => Promise<void>): Promise<StockVoucherPostResult>;
     cancel(rules: StockVoucherTypeRules, svhId: string, accYear: string, reason: string, companyId: string, branchId: string, userId?: string): Promise<StockVoucherCancelResult>;
     softDelete(rules: StockVoucherTypeRules, svhId: string, accYear: string, companyId: string, branchId: string, userId?: string): Promise<StockVoucherDeleteResult>;
+    importLines(rules: StockVoucherTypeRules, svhId: string, accYear: string, companyId: string, branchId: string, csvText: string, userId?: string): Promise<StockVoucherImportResult>;
     pendingItems(rules: StockVoucherTypeRules, companyId: string, branchId: string, accYear: string, limit?: number, offset?: number): Promise<PagedResult<PendingOpeningItem>>;
     reconcile(rules: StockVoucherTypeRules, companyId: string, branchId: string, accYear: string, limit?: number, offset?: number): Promise<PagedResult<OpeningReconcileRow>>;
+    countSheet(rules: StockVoucherTypeRules, query: CountSheetQuery): Promise<PagedResult<StockCountSheetRow>>;
+    variance(rules: StockVoucherTypeRules, svhId: string, accYear: string, companyId: string, branchId: string, limit?: number, offset?: number): Promise<PagedResult<StockVarianceRow>>;
     private loadForWrite;
     private loadHeaderOrThrow;
+    private assertPostFunction;
     private assertDraft;
     private toHeaderPayload;
     private toLinePayload;
+    private auditActor;
+    private docDatetimeData;
+    private linkSourceData;
+    private freezeData;
+    private resolveRateSource;
     private toIsoDate;
     private toDecimalNumber;
+    private toInstant;
+    private readRefusedBookQty;
     private toNullableDecimal;
     private clamp;
 }

@@ -81,6 +81,9 @@ const stock_adj_reasons_module_1 = require("./modules/fixed/stock-adj-reasons/st
 const stock_track_presets_module_1 = require("./modules/stocks/stock-track-presets/stock-track-presets.module");
 const stock_voucher_module_1 = require("./modules/stocks/stock-voucher/stock-voucher.module");
 const opening_stock_voucher_module_1 = require("./modules/stocks/opening-stock-voucher/opening-stock-voucher.module");
+const physical_stock_voucher_module_1 = require("./modules/stocks/physical-stock-voucher/physical-stock-voucher.module");
+const stock_transfer_module_1 = require("./modules/stocks/stock-transfer/stock-transfer.module");
+const selling_price_bulk_module_1 = require("./modules/stocks/selling-price-bulk/selling-price-bulk.module");
 const master_lookup_module_1 = require("./modules/master-lookup/master-lookup.module");
 const batch_prefix_module_1 = require("./modules/master/batch-prefix/batch-prefix.module");
 const widget_master_module_1 = require("./modules/master/widget-master/widget-master.module");
@@ -215,6 +218,9 @@ exports.AppModule = AppModule = __decorate([
             stock_track_presets_module_1.StockTrackPresetsModule,
             stock_voucher_module_1.StockVoucherModule,
             opening_stock_voucher_module_1.OpeningStockVoucherModule,
+            physical_stock_voucher_module_1.PhysicalStockVoucherModule,
+            stock_transfer_module_1.StockTransferModule,
+            selling_price_bulk_module_1.SellingPriceBulkModule,
             master_lookup_module_1.MasterLookupModule,
             batch_prefix_module_1.BatchPrefixModule,
             widget_master_module_1.WidgetMasterModule,

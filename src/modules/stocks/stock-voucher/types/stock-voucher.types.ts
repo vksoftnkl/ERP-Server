@@ -1,4 +1,5 @@
 import type { StockErrorDetail, StockErrorResponse } from 'src/common/utils/module-service.utils';
+import type { TxnStatusDocType } from 'src/common/txn-status-log/txn-status-log.helper';
 
 export type { StockErrorDetail, StockErrorResponse };
 
@@ -53,8 +54,70 @@ export const STOCK_RATE_SOURCES = [
 ] as const;
 export type StockRateSource = (typeof STOCK_RATE_SOURCES)[number];
 
+/**
+ * The rate sources the ENGINE can derive a cost from when the line carries none.
+ *
+ * MANUAL is deliberately absent, and that is the whole point of the set.
+ * "Manual" means the storekeeper types the rate — there is nothing behind it for
+ * fn_svh_post to read — so a MANUAL document whose line has cost 0 is an inward
+ * valued at nothing, exactly the failure the zero-cost check exists to catch.
+ * The plan's shorthand for that check is "inward with no cost rate and no rate
+ * source", which reads as though any of the five excuses a zero; four of them
+ * do, and treating MANUAL as the fifth would let the whole branch open at zero
+ * value with the check reporting itself satisfied.
+ */
+export const DERIVABLE_RATE_SOURCES = [
+  'AVG_COST',
+  'LAST_PURCHASE',
+  'LOT_COST',
+  'MRP',
+] as const satisfies readonly StockRateSource[];
+
+/**
+ * Every engine entry point a rule record may name, and the only values
+ * `postFunction` may take.
+ *
+ * The name is interpolated into SQL through `Prisma.raw`, which does not
+ * escape. It is a literal owned by a controller and no payload can reach it —
+ * this list is what guarantees that stays true as rule records get copied.
+ */
+export const STOCK_POST_FUNCTIONS: readonly string[] = [
+  'stock.fn_svh_post',
+  'stock.fn_svh_post_transfer',
+  'stock.fn_svh_receive_transfer',
+];
+
 /** The `svh_link_src_module` this module stamps on anything it raises. */
 export const STOCK_SRC_MODULE = 'STOCK';
+
+/**
+ * What a LINE states.
+ *
+ * QTY   — the line states a quantity to MOVE (OPENING, RECEIPT, ISSUE …).
+ *         `svi_qty` is the number, and it reaches the ledger as written.
+ * COUNT — the line states what was FOUND. `svi_qty`, `svi_base_qty` and
+ *         `svi_cost_rate` stay 0 for the whole document; the operator types
+ *         `svi_counted_qty`, and `svi_diff_qty` — GENERATED as counted − book
+ *         — is what reaches the ledger. Only PHYSICAL is COUNT today.
+ *
+ * This is not cosmetic. Under COUNT the zero-quantity refusal INVERTS: a rule
+ * that reads "every line must have a quantity" refuses a count outright, one
+ * error per line, at save.
+ */
+export const STOCK_QUANTITY_MODES = ['QTY', 'COUNT'] as const;
+export type StockQuantityMode = (typeof STOCK_QUANTITY_MODES)[number];
+
+/** The ledger txn types a PHYSICAL count posts — one document writes both. */
+export const PHYSICAL_TXN_TYPES = ['PHYSICAL_PLUS', 'PHYSICAL_MINUS'] as const;
+
+/**
+ * A count is valued in two directions by two different rules (§3.3 of the
+ * physical plan), and only the OVERAGE side needs a rate from the document.
+ * A shortage is relieved at what the stock cost us, stamped by
+ * `fn_sml_cost_default` from the item's valuation policy — never by the
+ * counter.
+ */
+export const PHYSICAL_DEFAULT_RATE_SOURCE: StockRateSource = 'AVG_COST';
 
 /**
  * The per-type rules the shared service needs and that differ between the
@@ -80,7 +143,7 @@ export interface StockVoucherTypeRules {
    */
   isInward: boolean;
   /**
-   * The `sml_txn_type` the two go-live reports scan for in stock_ledger.
+   * The `sml_txn_type`s the ledger-side reports scan for in stock_ledger.
    *
    * NOT derivable from `voucherType`, and that is the trap this field exists to
    * close. The ledger's vocabulary is finer than the document's: an ADJUSTMENT
@@ -89,11 +152,129 @@ export interface StockVoucherTypeRules {
    * type whose document and ledger names coincide — so a report that assumed
    * they always did would return an empty page for every other screen and look
    * like the answer rather than the bug.
+   *
+   * A LIST rather than a single value because PHYSICAL genuinely posts two, in
+   * the same document: one line short, the next line over. A scalar here would
+   * force every count report to pick a direction and silently drop the other.
    */
-  ledgerTxnType: string;
+  ledgerTxnTypes: readonly string[];
+
+  /**
+   * QTY unless the type says otherwise — see StockQuantityMode.
+   *
+   * REQUIRED rather than defaulted, so the next five screens have to decide
+   * what their lines state rather than inherit an answer that happens to suit
+   * an opening.
+   */
+  quantityMode: StockQuantityMode;
+
+  /**
+   * Applied in createDraft / updateDraft when the header names no rateSource,
+   * so the STORED document says out loud what it was valued at.
+   *
+   * AVG_COST for a count: found stock is worth what the rest of that item is
+   * worth. MANUAL — the right default for an opening, where stock_item_cost is
+   * empty — makes the engine refuse a count's overage line with
+   * "is an inward with no cost rate; set one or set svh_rate_source".
+   */
+  defaultRateSource?: StockRateSource;
+
+  /**
+   * OPENING guards one opening per holding per year — a holding opened twice
+   * is a branch that starts with twice its stock. A holding may be COUNTED any
+   * number of times, each posting its own variance from the then-current book
+   * figure, so the preflight's already-opened branch (and its expensive lot
+   * lookup) must be off for a count.
+   */
+  allowsRepeatHolding?: boolean;
+
+  /**
+   * Whether this document type may send the PHYSICAL-only columns —
+   * `bookQty` / `countedQty` on a line, and the `freezeStock` window on the
+   * header.
+   *
+   * Gated rather than simply absent from the DTO because the DTO is SHARED by
+   * all eleven types. An OPENING that sent a counted quantity would write
+   * svi_counted_qty on a document that never counted anything, and
+   * svi_diff_qty — GENERATED as counted minus book — would then post a variance
+   * nobody entered. ck_svh_freeze likewise refuses a freeze with no window, so
+   * a stray freezeStock on an opening fails at the database with a message
+   * about a constraint rather than about the field.
+   */
+  allowsCount: boolean;
+
+  /**
+   * Whether this type may name `toBranchId`. Only a transfer leaves the branch;
+   * on anything else it is a column that would make the document look like one.
+   */
+  allowsToBranch: boolean;
+
+  /**
+   * The engine function `post()` calls, schema-qualified.
+   *
+   * NOT derivable from `voucherType`, and pinning it here rather than branching
+   * inside the service is what keeps the transfer screens out of `fn_svh_post`.
+   * 19 refuses to post a TRANSFER_* by name (`0A000`), deliberately — so a
+   * mis-wired record fails loudly at the first despatch instead of half-posting
+   * a document the generic path does not know writes `stock_transit`.
+   *
+   * Three functions exist today:
+   *   stock.fn_svh_post              OPENING, PHYSICAL, and the generic types
+   *   stock.fn_svh_post_transfer     TRANSFER_OUT — writes the OUT ledger row
+   *                                  and, inter-branch, the transit rows
+   *   stock.fn_svh_receive_transfer  TRANSFER_IN — settles the transit rows
+   */
+  postFunction: string;
+
+  /**
+   * Whether a LINE names the lot it moves.
+   *
+   * THIS INVERTS AN EXISTING REFUSAL, which is why it is a rule and not a DTO
+   * decorator. `fn_slt_resolve` owns lot identity on an OPENING — a
+   * client-chosen lot there would let two documents open one holding under two
+   * lots — so the service refuses a `lotId` on every QTY document today. A
+   * TRANSFER does the opposite: it MOVES existing stock, the destination gets
+   * the SAME `slt_id` so ageing does not reset, and `fn_slt_resolve` is never
+   * called. A transfer line without a lot is refused by the engine forty lines
+   * in with a `23502`; refused here it names the line.
+   *
+   * A COUNT also carries one, for a third reason again — its line comes off a
+   * count sheet that already names the holding whose book figure it reconciles.
+   */
+  requiresLot?: boolean;
+
+  /**
+   * Whether the line's cost rate is STRIPPED before insert.
+   *
+   * Not "the client should not send one" — stripped, because on a transfer the
+   * consequence of an honoured rate is a silently wrong ledger. A nonzero
+   * `svi_cost_rate` makes `fn_sml_cost_default` bail (it only fills gaps) AND
+   * `20_stock_transfer.sql`'s OUT insert omits the value columns, so the row
+   * lands at that rate with **value 0** — reproduced in `REVIEW_2026-09-05.md`
+   * as MUST-FIX 5. The policy cost is the only correct answer on a transfer:
+   * cost travels with the stock and nobody re-enters it.
+   *
+   * A COUNT zeroes it too, for its own reason — see §3.3 of the physical plan.
+   */
+  zeroesLineCost?: boolean;
 
   /** The audit.audit_screen name rows from this controller are filed under. */
   auditScreenName: string;
+
+  /**
+   * The `tsl_src_doc_type` this screen's status trail is filed under in
+   * public.txn_status_log.
+   *
+   * A RULE RATHER THAN A MAPPING OFF `voucherType`, because ck_tsl_src_doc_type
+   * is a fourteen-value vocabulary shared with sales, purchase and accounts, and
+   * only three of them describe a stock document at all: STOCK_TRANSFER,
+   * STOCK_ADJUSTMENT and OTHER. Eleven voucher types have to land on three
+   * values, so which one each takes is a business classification and not
+   * something to be derived — an opening is filed as an adjustment because it
+   * adjusts a holding from nothing to something, and a reader who disagrees can
+   * change one line here rather than a switch buried in the service.
+   */
+  statusDocType: TxnStatusDocType;
   /**
    * Voucher types this route must refuse outright even if some future caller
    * hands them in. TRANSFER_* and REPACK_* post through their own routes
@@ -133,6 +314,13 @@ export interface StockVoucherHeaderPayload {
   godownId: string | null;
   godownName: string | null;
   supplierId: string | null;
+  toBranchId: string | null;
+  partyRef: string | null;
+  linkSrcModule: string | null;
+  linkSrcDocType: string | null;
+  linkSrcDocId: string | null;
+  linkSrcAccYear: string | null;
+  syncDate: string | null;
   status: StockVoucherStatus;
   lineCount: number;
   totalQty: number;
@@ -144,6 +332,22 @@ export interface StockVoucherHeaderPayload {
   cancelledOn: string | null;
   cancelReason: string | null;
   rateSource: StockRateSource | null;
+  /**
+   * The header reason every variance line inherits — a whole count explained
+   * as "Shrinkage" without touching a line. NULL on every other type today.
+   */
+  reasonId: string | null;
+  reasonName: string | null;
+  /**
+   * §11 — the freeze, and the only three columns a PHYSICAL uses alone.
+   *
+   * WALL CLOCK, NOT DOCUMENT DATE. tr_sml_freeze_guard compares the window to
+   * now(): a back-dated entry still changes today's shelf. These are instants,
+   * serialised with an offset.
+   */
+  freezeStock: boolean;
+  freezeFrom: string | null;
+  freezeTo: string | null;
   remarks: string | null;
   isDeleted: boolean;
 }
@@ -162,6 +366,8 @@ export interface StockVoucherLinePayload {
   godownId: string;
   godownName: string | null;
   bucket: StockBucket;
+  /** What the scanner read, verbatim. Echoed back, never resolved through. */
+  barcode: string | null;
   batchNo: string | null;
   mfgDate: string | null;
   expiryDate: string | null;
@@ -173,16 +379,39 @@ export interface StockVoucherLinePayload {
   baseQty: number;
   freeQty: number;
   freeBaseQty: number;
+  weightQty: number;
   costRate: number;
   costRateWot: number;
+  landedRate: number;
   taxPerc: number;
+  syncDate: string | null;
   value: number;
   valueWot: number;
   /**
-   * NULL while DRAFT and filled by the post. Not missing data — it means "this
-   * line has not reached the ledger yet".
+   * NULL while DRAFT and filled by the post — EXCEPT on a count, where it is
+   * written at save because it is where the book figure came from. Not missing
+   * data on the other types: it means "this line has not reached the ledger
+   * yet", and the screen may render it as the tick that says it has. A count
+   * screen must use `diffQty <> 0` plus POSTED for that instead.
    */
   lotId: string | null;
+
+  // ── The count columns. NULL on every non-count line, and NULL is the ──────
+  // ── right answer there: an opening line has no book figure to differ ──────
+  // ── from. ────────────────────────────────────────────────────────────────
+  /** Snapshot of stock_balance.sbl_on_hand_qty at save. Never refreshed. */
+  bookQty: number | null;
+  /** The one number the operator types. */
+  countedQty: number | null;
+  /**
+   * GENERATED ALWAYS — counted − book. SIGNED, where every other quantity in
+   * the engine is a magnitude, because it is not a quantity but a difference,
+   * and it cannot be edited to zero to make a variance disappear.
+   */
+  diffQty: number | null;
+  /** Per-line override of the header reason — the one pallet that was damaged. */
+  reasonId: string | null;
+  reasonName: string | null;
   remarks: string | null;
 }
 
@@ -226,6 +455,20 @@ export interface StockVoucherCancelResult extends StockVoucherPayload {
   cancelledOn: string | null;
 }
 
+/** §11 — what an import answers with: the reloaded document plus its verdict. */
+export interface StockVoucherImportResult extends StockVoucherPayload {
+  /** Data rows found in the file, blank rows excluded. */
+  rowsRead: number;
+  /** Lines actually written. Equal to rowsRead — a partial import is refused outright. */
+  linesImported: number;
+  /**
+   * The §6 preflight, run immediately after the write. An import that resolved
+   * cleanly can still produce lines the engine will refuse, and the operator
+   * should see that in the same response rather than on a separate button.
+   */
+  problems: StockVoucherLineProblem[];
+}
+
 export interface StockVoucherDeleteResult {
   svhId: string;
   accYear: string;
@@ -262,6 +505,62 @@ export interface OpeningReconcileRow {
   diffValue: number;
 }
 
+/**
+ * §4 — one row of the GENERATED count sheet.
+ *
+ * The grain is `stock_balance`'s own: one line per godown × lot × bucket, NOT
+ * per item. Two batches of MILK are two lines to count, because they are two
+ * holdings.
+ *
+ * An item with NO balance row is not here, and must not be added: no book
+ * quantity means no variance. Finding it on the shelf is an ADJUSTMENT.
+ */
+export interface StockCountSheetRow {
+  lineNo: number;
+  splitNo: number;
+  itemId: string;
+  itemCode: string | null;
+  itemName: string;
+  lotId: string;
+  godownId: string;
+  godownName: string | null;
+  bucket: StockBucket;
+  baseUomId: string;
+  unitName: string | null;
+  batchNo: string | null;
+  mfgDate: string | null;
+  expiryDate: string | null;
+  mrp: number | null;
+  salePrice: number | null;
+  serialNo: string | null;
+  supplierId: string | null;
+  /** sbl_on_hand_qty. The operator does not see it on a blind count. */
+  bookQty: number;
+  avgCostRate: number;
+  stockValue: number;
+  /** Always null — this is the column the screen fills. */
+  countedQty: null;
+}
+
+/** §12 — the count as the LEDGER recorded it, which is not the document. */
+export interface StockVarianceRow {
+  lineNo: number;
+  splitNo: number;
+  itemId: string;
+  itemCode: string | null;
+  itemName: string;
+  batchNo: string | null;
+  txnType: string;
+  direction: number;
+  /** A MAGNITUDE — the sign lives in `direction` alone. */
+  qty: number;
+  signedBaseQty: number;
+  costRate: number;
+  costValue: number;
+  reasonId: string | null;
+  reasonName: string | null;
+}
+
 export interface PagedResult<TRow> {
   items: TRow[];
   meta: { limit: number; offset: number; count: number };
@@ -284,6 +583,16 @@ export const STOCK_ENGINE_SQLSTATE_STATUS: Readonly<Record<string, number>> = {
   '23001': 409,
   /** unique_violation — holding already opened this year; refno/slno collision. */
   '23505': 409,
+  /**
+   * exclusion_violation — two rows claiming one bucket at one scope over one
+   * overlapping period. `ex_smp_overlap` on stock.stock_mrp_price raises it
+   * today; the transfer screens will meet it on their own range constraints.
+   *
+   * 409 rather than 422: the row being written is well formed, and the reason
+   * it cannot land is the state of the table, not the content of the request.
+   * A reload and a retry is the caller's fix, which is exactly what 409 means.
+   */
+  '23P01': 409,
   /** check_violation — no quantity; inward with no cost rate; no lines. */
   '23514': 422,
   /** not_null_violation — an OPENING with no svh_to_godown_id. */

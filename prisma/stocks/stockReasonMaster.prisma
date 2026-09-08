@@ -74,9 +74,9 @@ model StockReasonMaster {
   srmIsDeleted         Boolean   @default(false)                              @map("srm_is_deleted")
   srmSyncDate          DateTime? @db.Timestamptz(6)                           @map("srm_sync_date")
   srmCreatedOn         DateTime  @default(now()) @db.Timestamptz(6)           @map("srm_created_on")
-  srmCreatedBy         String?   @db.Uuid                                     @map("srm_created_by")
+  srmCreatedBy         String?   @db.Text                                     @map("srm_created_by")
   srmModifiedOn        DateTime? @db.Timestamptz(6)                           @map("srm_modified_on")
-  srmModifiedBy        String?   @db.Uuid                                     @map("srm_modified_by")
+  srmModifiedBy        String?   @db.Text                                     @map("srm_modified_by")
 
   // ── Relations ───────────────────────────────────────────────────────────
   // Only srm_company_id and srm_gl_ledger_id carry a real FK in the

@@ -153,9 +153,9 @@ model StockBalance {
   sblIsDeleted         Boolean   @default(false)                     @map("sbl_is_deleted")
   sblSyncDate          DateTime? @db.Timestamptz(6)                  @map("sbl_sync_date")
   sblCreatedOn         DateTime  @default(now()) @db.Timestamptz(6)  @map("sbl_created_on")
-  sblCreatedBy         String?   @db.Uuid                            @map("sbl_created_by")
+  sblCreatedBy         String?   @db.Text                            @map("sbl_created_by")
   sblModifiedOn        DateTime? @db.Timestamptz(6)                  @map("sbl_modified_on")
-  sblModifiedBy        String?   @db.Uuid                            @map("sbl_modified_by")
+  sblModifiedBy        String?   @db.Text                            @map("sbl_modified_by")
 
   // ── Relations ───────────────────────────────────────────────────────────
   // sblCreatedBy / sblModifiedBy carry NO foreign key in the migration, so

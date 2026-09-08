@@ -2,8 +2,12 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { ArrayMaxSize, IsArray, IsIn, IsOptional, Matches, ValidateNested } from 'class-validator';
 import {
+  NullableDateString,
   NullableStringStrict,
   NullableUuid,
+  OptionalBoolean,
+  OptionalInteger,
+  OptionalNumber,
   OptionalNumberString,
   OptionalTrimmedString,
   OptionalUuid,
@@ -108,6 +112,16 @@ export class SaveStockVoucherHeaderDto {
   docDate!: string;
 
   @ApiPropertyOptional({
+    type: 'string',
+    format: 'date-time',
+    nullable: true,
+    description:
+      'When the document was actually raised. Defaults to now() at the server. A device that numbered its own document offline should send the moment it was keyed, not the moment it synced — otherwise a week of backlog all lands at the same instant and the order the documents were raised in is lost.',
+  })
+  @NullableDateString()
+  docDatetime?: string | null;
+
+  @ApiPropertyOptional({
     format: 'uuid',
     nullable: true,
     description: 'Where stock leaves from. Required by ISSUE-shaped documents, unused by OPENING.',
@@ -129,6 +143,132 @@ export class SaveStockVoucherHeaderDto {
   supplierId?: string | null;
 
   @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description:
+      'The branch the stock is going to. TRANSFER_OUT only — see StockVoucherTypeRules.allowsToBranch.',
+  })
+  @NullableUuid()
+  toBranchId?: string | null;
+
+  @ApiPropertyOptional({
+    maxLength: 100,
+    nullable: true,
+    description: "The other side's own reference — a supplier's docket number, a branch's despatch note.",
+  })
+  @NullableStringStrict(100)
+  partyRef?: string | null;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description:
+      'stock.stock_reason_master. Unused by OPENING but required by ADJUSTMENT, which is the fix path when an opening turns out to be wrong.',
+  })
+  @NullableUuid()
+  reasonId?: string | null;
+
+  // ── The voucher this one answers ────────────────────────────────────────
+  // All four or none — ck_svh_link. Carries its own year because a transfer
+  // despatched on 29 March is received on 2 April, and because an opening
+  // brought over by a migration points at a document in the year before it.
+  @ApiPropertyOptional({ maxLength: 20, nullable: true })
+  @NullableStringStrict(20)
+  linkSrcModule?: string | null;
+
+  @ApiPropertyOptional({ maxLength: 30, nullable: true })
+  @NullableStringStrict(30)
+  linkSrcDocType?: string | null;
+
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  @NullableUuid()
+  linkSrcDocId?: string | null;
+
+  @ApiPropertyOptional({ minLength: 9, maxLength: 9, nullable: true })
+  @NullableStringStrict(9)
+  linkSrcAccYear?: string | null;
+
+  // ── PHYSICAL only — see StockVoucherTypeRules.allowsCount ───────────────
+  @ApiPropertyOptional({
+    description:
+      'Freeze the stock being counted. ck_svh_freeze refuses a freeze with no window: without one the difference posted is between a count taken at 6pm and a book figure read at 8pm.',
+  })
+  @OptionalBoolean()
+  freezeStock?: boolean;
+
+  @ApiPropertyOptional({ type: 'string', format: 'date-time', nullable: true })
+  @NullableDateString()
+  freezeFrom?: string | null;
+
+  @ApiPropertyOptional({ type: 'string', format: 'date-time', nullable: true })
+  @NullableDateString()
+  freezeTo?: string | null;
+
+  @ApiPropertyOptional({
+    type: 'string',
+    format: 'date-time',
+    nullable: true,
+    description: 'When an offline device synced this document up. Set by the device, not the server.',
+  })
+  @NullableDateString()
+  syncDate?: string | null;
+
+  // ── The totals. THE SCREEN'S, not the server's ──────────────────────────
+  //
+  // svh_line_count / svh_total_qty / svh_total_value / svh_total_value_wot are
+  // ordinary writable numeric columns, and they are now written from THIS
+  // PAYLOAD. The server no longer counts the lines or sums the grid: the screen
+  // already has both, and a server that re-summed could print a total the user
+  // never saw.
+  //
+  // All four are OPTIONAL because every one is NOT NULL DEFAULT 0 in the
+  // database. Omitting one on a CREATE takes that column default; omitting it
+  // on an UPDATE leaves the stored value alone. There is no server-side
+  // fallback that would quietly substitute a computed value for a missing one.
+  //
+  // NOTE FOR ANY ENVIRONMENT CARRYING THE ENGINE DDL: stock.tr_svi_refresh_header
+  // re-sums these on every line write, and stock.fn_svh_recompute does it again
+  // at post. The API writes them AFTER the lines so the payload wins at save
+  // time, but a post will still overwrite them from the lines. Dropping that
+  // trigger is a schema change, and the engine DDL is not in this repo.
+
+  @ApiPropertyOptional({
+    minimum: 0,
+    default: 0,
+    description:
+      'How many lines the document has, as the screen counted them. svh_line_count is NOT NULL DEFAULT 0; omit to take the default.',
+  })
+  @OptionalInteger(0)
+  lineCount?: number;
+
+  @ApiPropertyOptional({
+    minimum: 0,
+    default: 0,
+    description:
+      'The document total quantity, as the screen summed it. numeric(18,6), NOT NULL DEFAULT 0 — omit to take the default.',
+  })
+  @OptionalNumber(0)
+  totalQty?: number;
+
+  @ApiPropertyOptional({
+    minimum: 0,
+    default: 0,
+    description:
+      'The document total value, inclusive of tax, as the screen summed it. numeric(18,2), NOT NULL DEFAULT 0 — omit to take the default.',
+  })
+  @OptionalNumber(0)
+  totalValue?: number;
+
+  @ApiPropertyOptional({
+    minimum: 0,
+    default: 0,
+    description:
+      'The document total value excluding tax, as the screen summed it. numeric(18,2), NOT NULL DEFAULT 0 — omit to take the default.',
+  })
+  @OptionalNumber(0)
+  totalValueWot?: number;
+
+  @ApiPropertyOptional({
     enum: STOCK_RATE_SOURCES,
     nullable: true,
     description:
@@ -143,6 +283,48 @@ export class SaveStockVoucherHeaderDto {
   @ApiPropertyOptional({ maxLength: 250, nullable: true })
   @NullableStringStrict(250)
   remarks?: string | null;
+
+  // ── The lorry. stock_transit's, not the voucher's ────────────────────────
+  //
+  // §0.3 of the transfer plan, and the reason they are here rather than on a
+  // despatch-only DTO: they arrive with the document that despatches, and there
+  // is no other request in which the driver is standing at the counter.
+  //
+  // fn_svh_post_transfer NEVER SETS THEM. stt_lr_no, stt_vehicle_no and
+  // stt_expected_on exist on stock_transit and nothing in the engine writes
+  // them, so the API updates the transit rows itself immediately after the post
+  // returns, inside the same transaction, keyed by stt_out_voucher_id — option
+  // (a) of §0.3, which needs no schema change. Inter-branch only: a same-branch
+  // transfer creates no transit row for them to land on.
+
+  @ApiPropertyOptional({
+    maxLength: 50,
+    nullable: true,
+    description:
+      'Lorry receipt number. Goes to stock_transit, not to the voucher. Inter-branch despatch only.',
+  })
+  @NullableStringStrict(50)
+  lrNo?: string | null;
+
+  @ApiPropertyOptional({
+    maxLength: 30,
+    nullable: true,
+    description: 'Vehicle number. Goes to stock_transit. Inter-branch despatch only.',
+  })
+  @NullableStringStrict(30)
+  vehicleNo?: string | null;
+
+  @ApiPropertyOptional({
+    type: 'string',
+    format: 'date',
+    nullable: true,
+    example: '2026-09-12',
+    description:
+      'When the goods are expected. stt_expected_on is a DATE, not an instant — a lorry arrives on a day.',
+  })
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'expectedOn must be yyyy-MM-dd' })
+  expectedOn?: string | null;
 
   @ApiPropertyOptional({
     format: 'uuid',

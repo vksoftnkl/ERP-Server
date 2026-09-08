@@ -8,7 +8,7 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
-  schemas  = ["public", "grid", "audit", "purchase", "sales", "settings", "fixed", "accounts", "inventory", "stock", "transport"]
+  schemas  = ["public", "audit", "purchase", "sales", "settings", "fixed", "accounts", "inventory", "stock", "transport"]
 }
 generator dbml {
   provider   = "node node_modules/prisma-dbml-generator/dist/generator.js"
@@ -5560,8 +5560,6 @@ model UserMaster {
   appSettingValues       AppSettingValue[]
   approvedPromotionSchemes PromotionScheme[] @relation("PromotionSchemeApprovedBy")
   approvedLoyaltySchemes   LoyaltyScheme[]   @relation("LoyaltySchemeApprovedBy")
-  stockTrackPolicies       StockTrackPolicy[] @relation("StockTrackPolicyCreatedBy")
-  stockTrackPresets        StockTrackPreset[] @relation("StockTrackPresetCreatedBy")
 
   // ── printing (17_printing.sql) — every *_created_by / *_modified_by in
   // that schema carries a real FK, unlike the reports.* tables it replaces.
@@ -8189,9 +8187,9 @@ model StockAgeingSlab {
   sagIsDeleted       Boolean   @default(false)                              @map("sag_is_deleted")
   sagSyncDate        DateTime? @db.Timestamptz(6)                           @map("sag_sync_date")
   sagCreatedOn       DateTime  @default(now()) @db.Timestamptz(6)           @map("sag_created_on")
-  sagCreatedBy       String?   @db.Uuid                                     @map("sag_created_by")
+  sagCreatedBy       String?   @db.Text                                     @map("sag_created_by")
   sagModifiedOn      DateTime? @db.Timestamptz(6)                           @map("sag_modified_on")
-  sagModifiedBy      String?   @db.Uuid                                     @map("sag_modified_by")
+  sagModifiedBy      String?   @db.Text                                     @map("sag_modified_by")
 
   // ── Relations ───────────────────────────────────────────────────────────
   company            Company?  @relation("StockAgeingSlabCompany", fields: [sagCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_sag_company")
@@ -8356,9 +8354,9 @@ model StockBalance {
   sblIsDeleted         Boolean   @default(false)                     @map("sbl_is_deleted")
   sblSyncDate          DateTime? @db.Timestamptz(6)                  @map("sbl_sync_date")
   sblCreatedOn         DateTime  @default(now()) @db.Timestamptz(6)  @map("sbl_created_on")
-  sblCreatedBy         String?   @db.Uuid                            @map("sbl_created_by")
+  sblCreatedBy         String?   @db.Text                            @map("sbl_created_by")
   sblModifiedOn        DateTime? @db.Timestamptz(6)                  @map("sbl_modified_on")
-  sblModifiedBy        String?   @db.Uuid                            @map("sbl_modified_by")
+  sblModifiedBy        String?   @db.Text                            @map("sbl_modified_by")
 
   // ── Relations ───────────────────────────────────────────────────────────
   // sblCreatedBy / sblModifiedBy carry NO foreign key in the migration, so
@@ -8713,9 +8711,9 @@ model StockItemCost {
   sicIsDeleted         Boolean   @default(false)                     @map("sic_is_deleted")
   sicSyncDate          DateTime? @db.Timestamptz(6)                  @map("sic_sync_date")
   sicCreatedOn         DateTime  @default(now()) @db.Timestamptz(6)  @map("sic_created_on")
-  sicCreatedBy         String?   @db.Uuid                            @map("sic_created_by")
+  sicCreatedBy         String?   @db.Text                            @map("sic_created_by")
   sicModifiedOn        DateTime? @db.Timestamptz(6)                  @map("sic_modified_on")
-  sicModifiedBy        String?   @db.Uuid                            @map("sic_modified_by")
+  sicModifiedBy        String?   @db.Text                            @map("sic_modified_by")
 
   // ── Relations ───────────────────────────────────────────────────────────
   // sicCreatedBy / sicModifiedBy carry NO foreign key in the migration, so
@@ -8917,7 +8915,7 @@ model StockLedger {
   smlIsDeleted         Boolean   @default(false)                     @map("sml_is_deleted")
   smlSyncDate          DateTime? @db.Timestamptz(6)                  @map("sml_sync_date")
   smlCreatedOn         DateTime  @default(now()) @db.Timestamptz(6)  @map("sml_created_on")
-  smlCreatedBy         String?   @db.Uuid                            @map("sml_created_by")
+  smlCreatedBy         String?   @db.Text                            @map("sml_created_by")
 
   // ── Relations ───────────────────────────────────────────────────────────
   // There is no smlModifiedOn/By pair: the table is append-only. smlCreatedBy
@@ -9076,9 +9074,9 @@ model StockLot {
   sltIsDeleted          Boolean   @default(false)                     @map("slt_is_deleted")
   sltSyncDate           DateTime? @db.Timestamptz(6)                  @map("slt_sync_date")
   sltCreatedOn          DateTime  @default(now()) @db.Timestamptz(6)  @map("slt_created_on")
-  sltCreatedBy          String?   @db.Uuid                            @map("slt_created_by")
+  sltCreatedBy          String?   @db.Text                            @map("slt_created_by")
   sltModifiedOn         DateTime? @db.Timestamptz(6)                  @map("slt_modified_on")
-  sltModifiedBy         String?   @db.Uuid                            @map("slt_modified_by")
+  sltModifiedBy         String?   @db.Text                            @map("slt_modified_by")
 
   // ── Relations ───────────────────────────────────────────────────────────
   // sltCreatedBy / sltModifiedBy carry NO foreign key in the migration, so
@@ -9297,9 +9295,9 @@ model StockReasonMaster {
   srmIsDeleted         Boolean   @default(false)                              @map("srm_is_deleted")
   srmSyncDate          DateTime? @db.Timestamptz(6)                           @map("srm_sync_date")
   srmCreatedOn         DateTime  @default(now()) @db.Timestamptz(6)           @map("srm_created_on")
-  srmCreatedBy         String?   @db.Uuid                                     @map("srm_created_by")
+  srmCreatedBy         String?   @db.Text                                     @map("srm_created_by")
   srmModifiedOn        DateTime? @db.Timestamptz(6)                           @map("srm_modified_on")
-  srmModifiedBy        String?   @db.Uuid                                     @map("srm_modified_by")
+  srmModifiedBy        String?   @db.Text                                     @map("srm_modified_by")
 
   // ── Relations ───────────────────────────────────────────────────────────
   // Only srm_company_id and srm_gl_ledger_id carry a real FK in the
@@ -9423,9 +9421,9 @@ model StockReorderPolicy {
   srpIsDeleted           Boolean   @default(false)                   @map("srp_is_deleted")
   srpSyncDate            DateTime? @db.Timestamptz(6)                @map("srp_sync_date")
   srpCreatedOn           DateTime  @default(now()) @db.Timestamptz(6) @map("srp_created_on")
-  srpCreatedBy           String?   @db.Uuid                          @map("srp_created_by")
+  srpCreatedBy           String?   @db.Text                          @map("srp_created_by")
   srpModifiedOn          DateTime? @db.Timestamptz(6)                @map("srp_modified_on")
-  srpModifiedBy          String?   @db.Uuid                          @map("srp_modified_by")
+  srpModifiedBy          String?   @db.Text                          @map("srp_modified_by")
 
   // ── Relations ───────────────────────────────────────────────────────────
   company                Company            @relation("StockReorderPolicyCompany",  fields: [srpCompanyId],           references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_srp_company")
@@ -9533,9 +9531,9 @@ model StockReservation {
   srvIsDeleted         Boolean   @default(false)                     @map("srv_is_deleted")
   srvSyncDate          DateTime? @db.Timestamptz(6)                  @map("srv_sync_date")
   srvCreatedOn         DateTime  @default(now()) @db.Timestamptz(6)  @map("srv_created_on")
-  srvCreatedBy         String?   @db.Uuid                            @map("srv_created_by")
+  srvCreatedBy         String?   @db.Text                            @map("srv_created_by")
   srvModifiedOn        DateTime? @db.Timestamptz(6)                  @map("srv_modified_on")
-  srvModifiedBy        String?   @db.Uuid                            @map("srv_modified_by")
+  srvModifiedBy        String?   @db.Text                            @map("srv_modified_by")
 
   // ── Relations ───────────────────────────────────────────────────────────
   company              Company            @relation("StockReservationCompany", fields: [srvCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_srv_company")
@@ -9676,11 +9674,13 @@ model StockTrackPolicy {
   stpIsDeleted         Boolean   @default(false)                              @map("stp_is_deleted")
   stpSyncDate          DateTime? @db.Timestamptz(6)                           @map("stp_sync_date")
   stpCreatedOn         DateTime  @default(now()) @db.Timestamptz(6)           @map("stp_created_on")
-  stpCreatedBy         String?   @db.Uuid                                     @map("stp_created_by")
+  stpCreatedBy         String?   @db.Text                                     @map("stp_created_by")
   stpModifiedOn        DateTime? @db.Timestamptz(6)                           @map("stp_modified_on")
-  stpModifiedBy        String?   @db.Uuid                                     @map("stp_modified_by")
+  stpModifiedBy        String?   @db.Text                                     @map("stp_modified_by")
 
   // ── Relations ───────────────────────────────────────────────────────────
+  // stpCreatedBy / stpModifiedBy carry NO foreign key in the migration, so
+  // they stay scalar here.
   // item/itemGroup are NoAction on update, not Cascade: PostgreSQL refuses
   // ON UPDATE CASCADE on a foreign key over a GENERATED column, because it
   // cannot write one.
@@ -9688,7 +9688,6 @@ model StockTrackPolicy {
   branch               BranchMaster?    @relation("StockTrackPolicyBranch",    fields: [stpBranchId],  references: [brId],   onUpdate: Cascade,  onDelete: Restrict, map: "fk_stp_branch")
   item                 ItemMaster?      @relation("StockTrackPolicyItem",      fields: [stpItemId],    references: [itemId], onUpdate: NoAction, onDelete: Restrict, map: "fk_stp_item")
   itemGroup            ItemGroupMaster? @relation("StockTrackPolicyGroup",     fields: [stpGroupId],   references: [itgId],  onUpdate: NoAction, onDelete: Restrict, map: "fk_stp_group")
-  createdBy            UserMaster?      @relation("StockTrackPolicyCreatedBy", fields: [stpCreatedBy], references: [usrId],  onUpdate: Cascade,  onDelete: Restrict, map: "fk_stp_created_by")
 
   @@map("stock_track_policy")
   @@schema("stock")
@@ -9798,13 +9797,14 @@ model StockTrackPreset {
   sptIsDeleted         Boolean   @default(false)                              @map("spt_is_deleted")
   sptSyncDate          DateTime? @db.Timestamptz(6)                           @map("spt_sync_date")
   sptCreatedOn         DateTime  @default(now()) @db.Timestamptz(6)           @map("spt_created_on")
-  sptCreatedBy         String?   @db.Uuid                                     @map("spt_created_by")
+  sptCreatedBy         String?   @db.Text                                     @map("spt_created_by")
   sptModifiedOn        DateTime? @db.Timestamptz(6)                           @map("spt_modified_on")
-  sptModifiedBy        String?   @db.Uuid                                     @map("spt_modified_by")
+  sptModifiedBy        String?   @db.Text                                     @map("spt_modified_by")
 
   // ── Relations ───────────────────────────────────────────────────────────
+  // sptCreatedBy / sptModifiedBy carry NO foreign key in the migration, so
+  // they stay scalar here.
   company              Company?    @relation("StockTrackPresetCompany",   fields: [sptCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_spt_company")
-  createdBy            UserMaster? @relation("StockTrackPresetCreatedBy", fields: [sptCreatedBy], references: [usrId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_spt_created_by")
 
   /// The masters configured with this preset. Back-relations only — a preset
   /// still has NO relation to StockTrackPolicy, and must not gain one.
@@ -9916,9 +9916,9 @@ model StockTransit {
   sttIsDeleted         Boolean   @default(false)                     @map("stt_is_deleted")
   sttSyncDate          DateTime? @db.Timestamptz(6)                  @map("stt_sync_date")
   sttCreatedOn         DateTime  @default(now()) @db.Timestamptz(6)  @map("stt_created_on")
-  sttCreatedBy         String?   @db.Uuid                            @map("stt_created_by")
+  sttCreatedBy         String?   @db.Text                            @map("stt_created_by")
   sttModifiedOn        DateTime? @db.Timestamptz(6)                  @map("stt_modified_on")
-  sttModifiedBy        String?   @db.Uuid                            @map("stt_modified_by")
+  sttModifiedBy        String?   @db.Text                           @map("stt_modified_by")
 
   // ── Relations ───────────────────────────────────────────────────────────
   company              Company            @relation("StockTransitCompany",    fields: [sttCompanyId],    references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_stt_company")
@@ -10116,7 +10116,7 @@ model StockVoucher {
   svhTenantId          String?   @db.Uuid                            @map("svh_tenant_id")
   /// The PARTITION KEY, and half the primary key.
   svhAccYear           String    @db.Char(9)                         @map("svh_acc_year")
-
+  
   /// The counter. See THE DEVICE IS THE COUNTER above.
   svhDeviceId          String    @db.Uuid                            @map("svh_device_id")
   svhSessionId         String?   @db.Uuid                            @map("svh_session_id")
@@ -10160,6 +10160,8 @@ model StockVoucher {
 
   // ── Lifecycle ───────────────────────────────────────────────────────────
   svhStatus            String    @default("DRAFT") @db.VarChar(20)   @map("svh_status")
+  /// Stamped by fn_svh_post / fn_svh_cancel. Read by the list and load
+  /// queries, which select them by name — dropping them 500s both.
   svhPostedOn          DateTime? @db.Timestamptz(6)                  @map("svh_posted_on")
   svhPostedBy          String?   @db.Uuid                            @map("svh_posted_by")
   svhApprovedOn        DateTime? @db.Timestamptz(6)                  @map("svh_approved_on")
@@ -10182,9 +10184,9 @@ model StockVoucher {
   svhIsDeleted         Boolean   @default(false)                     @map("svh_is_deleted")
   svhSyncDate          DateTime? @db.Timestamptz(6)                  @map("svh_sync_date")
   svhCreatedOn         DateTime  @default(now()) @db.Timestamptz(6)  @map("svh_created_on")
-  svhCreatedBy         String?   @db.Uuid                            @map("svh_created_by")
+  svhCreatedBy         String?   @db.Text                            @map("svh_created_by")
   svhModifiedOn        DateTime? @db.Timestamptz(6)                  @map("svh_modified_on")
-  svhModifiedBy        String?   @db.Uuid                            @map("svh_modified_by")
+  svhModifiedBy        String?   @db.Text                            @map("svh_modified_by")
 
   // ── Relations ───────────────────────────────────────────────────────────
   // svhSessionId and the posted/approved/cancelled/created/modified user
@@ -10293,6 +10295,13 @@ model StockVoucherItem {
   // ── As entered ──────────────────────────────────────────────────────────
   // What the storekeeper typed. The resolver may legitimately have dropped a
   // value the item's policy does not track — see the header note.
+  /// What the scanner read, verbatim. NOT an identity: the item, batch and
+  /// serial were already resolved from it by the time the line is saved, and
+  /// nothing reads stock back through this column. It is kept so a reprint
+  /// can show the symbol that was actually scanned — a barcode retired from
+  /// the item master, or one that resolved through an alias, still prints as
+  /// what the storekeeper held under the gun.
+  sviBarcode           String?   @db.Text                            @map("svi_barcode")
   sviBatchNo           String?   @db.VarChar(100)                    @map("svi_batch_no")
   sviMfgDate           DateTime? @db.Date                            @map("svi_mfg_date")
   sviExpiryDate        DateTime? @db.Date                            @map("svi_expiry_date")
@@ -10332,9 +10341,9 @@ model StockVoucherItem {
   sviIsDeleted         Boolean   @default(false)                     @map("svi_is_deleted")
   sviSyncDate          DateTime? @db.Timestamptz(6)                  @map("svi_sync_date")
   sviCreatedOn         DateTime  @default(now()) @db.Timestamptz(6)  @map("svi_created_on")
-  sviCreatedBy         String?   @db.Uuid                            @map("svi_created_by")
+  sviCreatedBy         String?   @db.Text                            @map("svi_created_by")
   sviModifiedOn        DateTime? @db.Timestamptz(6)                  @map("svi_modified_on")
-  sviModifiedBy        String?   @db.Uuid                            @map("svi_modified_by")
+  sviModifiedBy        String?   @db.Text                            @map("svi_modified_by")
 
   // ── Relations ───────────────────────────────────────────────────────────
   // sviCompanyId / sviBranchId carry no FK of their own here — the voucher

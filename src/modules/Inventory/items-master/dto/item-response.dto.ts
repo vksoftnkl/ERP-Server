@@ -3,7 +3,6 @@ import {
   InventoryErrorFieldDto,
   InventoryErrorResponseDto,
 } from 'src/common/utils/module-response.dto';
-
 export { InventoryErrorFieldDto as ItemErrorFieldDto };
 export { InventoryErrorResponseDto as ItemErrorResponseDto };
 export class ItemPayloadDto {
@@ -107,7 +106,6 @@ export class ItemPayloadDto {
   item_hsn_code!: string | null;
   @ApiProperty()
   item_batch_config!: number;
-
   @ApiPropertyOptional({
     format: 'uuid',
     nullable: true,
@@ -166,7 +164,6 @@ export class ItemPayloadDto {
   @ApiPropertyOptional({ nullable: true, description: 'Name of the linked default tax (resolved on the composite get endpoint)' })
   item_default_tax_name?: string | null;
 }
-
 export class ItemDeleteResultDto {
   @ApiProperty({ format: 'uuid' })
   item_id!: string;

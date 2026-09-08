@@ -123,11 +123,13 @@ model StockTrackPolicy {
   stpIsDeleted         Boolean   @default(false)                              @map("stp_is_deleted")
   stpSyncDate          DateTime? @db.Timestamptz(6)                           @map("stp_sync_date")
   stpCreatedOn         DateTime  @default(now()) @db.Timestamptz(6)           @map("stp_created_on")
-  stpCreatedBy         String?   @db.Uuid                                     @map("stp_created_by")
+  stpCreatedBy         String?   @db.Text                                     @map("stp_created_by")
   stpModifiedOn        DateTime? @db.Timestamptz(6)                           @map("stp_modified_on")
-  stpModifiedBy        String?   @db.Uuid                                     @map("stp_modified_by")
+  stpModifiedBy        String?   @db.Text                                     @map("stp_modified_by")
 
   // ── Relations ───────────────────────────────────────────────────────────
+  // stpCreatedBy / stpModifiedBy carry NO foreign key in the migration, so
+  // they stay scalar here.
   // item/itemGroup are NoAction on update, not Cascade: PostgreSQL refuses
   // ON UPDATE CASCADE on a foreign key over a GENERATED column, because it
   // cannot write one.
@@ -135,7 +137,6 @@ model StockTrackPolicy {
   branch               BranchMaster?    @relation("StockTrackPolicyBranch",    fields: [stpBranchId],  references: [brId],   onUpdate: Cascade,  onDelete: Restrict, map: "fk_stp_branch")
   item                 ItemMaster?      @relation("StockTrackPolicyItem",      fields: [stpItemId],    references: [itemId], onUpdate: NoAction, onDelete: Restrict, map: "fk_stp_item")
   itemGroup            ItemGroupMaster? @relation("StockTrackPolicyGroup",     fields: [stpGroupId],   references: [itgId],  onUpdate: NoAction, onDelete: Restrict, map: "fk_stp_group")
-  createdBy            UserMaster?      @relation("StockTrackPolicyCreatedBy", fields: [stpCreatedBy], references: [usrId],  onUpdate: Cascade,  onDelete: Restrict, map: "fk_stp_created_by")
 
   @@map("stock_track_policy")
   @@schema("stock")

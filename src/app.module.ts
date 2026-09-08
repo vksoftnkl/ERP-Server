@@ -72,6 +72,9 @@ import { StockAdjReasonsModule } from './modules/fixed/stock-adj-reasons/stock-a
 import { StockTrackPresetsModule } from './modules/stocks/stock-track-presets/stock-track-presets.module';
 import { StockVoucherModule } from './modules/stocks/stock-voucher/stock-voucher.module';
 import { OpeningStockVoucherModule } from './modules/stocks/opening-stock-voucher/opening-stock-voucher.module';
+import { PhysicalStockVoucherModule } from './modules/stocks/physical-stock-voucher/physical-stock-voucher.module';
+import { StockTransferModule } from './modules/stocks/stock-transfer/stock-transfer.module';
+import { SellingPriceBulkModule } from './modules/stocks/selling-price-bulk/selling-price-bulk.module';
 import { MasterLookupModule } from './modules/master-lookup/master-lookup.module';
 import { BatchPrefixModule } from './modules/master/batch-prefix/batch-prefix.module';
 import { WidgetMasterModule } from './modules/master/widget-master/widget-master.module';
@@ -199,6 +202,9 @@ const isThrottlerEnabled = parseBoolean(process.env.THROTTLE_ENABLED, true);
     StockTrackPresetsModule,
     StockVoucherModule,
     OpeningStockVoucherModule,
+    PhysicalStockVoucherModule,
+    StockTransferModule,
+    SellingPriceBulkModule,
     MasterLookupModule,
     BatchPrefixModule,
     WidgetMasterModule,

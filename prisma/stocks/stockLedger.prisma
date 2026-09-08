@@ -185,7 +185,7 @@ model StockLedger {
   smlIsDeleted         Boolean   @default(false)                     @map("sml_is_deleted")
   smlSyncDate          DateTime? @db.Timestamptz(6)                  @map("sml_sync_date")
   smlCreatedOn         DateTime  @default(now()) @db.Timestamptz(6)  @map("sml_created_on")
-  smlCreatedBy         String?   @db.Uuid                            @map("sml_created_by")
+  smlCreatedBy         String?   @db.Text                            @map("sml_created_by")
 
   // ── Relations ───────────────────────────────────────────────────────────
   // There is no smlModifiedOn/By pair: the table is append-only. smlCreatedBy

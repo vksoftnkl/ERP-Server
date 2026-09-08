@@ -137,9 +137,9 @@ model StockLot {
   sltIsDeleted          Boolean   @default(false)                     @map("slt_is_deleted")
   sltSyncDate           DateTime? @db.Timestamptz(6)                  @map("slt_sync_date")
   sltCreatedOn          DateTime  @default(now()) @db.Timestamptz(6)  @map("slt_created_on")
-  sltCreatedBy          String?   @db.Uuid                            @map("slt_created_by")
+  sltCreatedBy          String?   @db.Text                            @map("slt_created_by")
   sltModifiedOn         DateTime? @db.Timestamptz(6)                  @map("slt_modified_on")
-  sltModifiedBy         String?   @db.Uuid                            @map("slt_modified_by")
+  sltModifiedBy         String?   @db.Text                            @map("slt_modified_by")
 
   // ── Relations ───────────────────────────────────────────────────────────
   // sltCreatedBy / sltModifiedBy carry NO foreign key in the migration, so

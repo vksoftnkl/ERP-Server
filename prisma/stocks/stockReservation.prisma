@@ -91,9 +91,9 @@ model StockReservation {
   srvIsDeleted         Boolean   @default(false)                     @map("srv_is_deleted")
   srvSyncDate          DateTime? @db.Timestamptz(6)                  @map("srv_sync_date")
   srvCreatedOn         DateTime  @default(now()) @db.Timestamptz(6)  @map("srv_created_on")
-  srvCreatedBy         String?   @db.Uuid                            @map("srv_created_by")
+  srvCreatedBy         String?   @db.Text                            @map("srv_created_by")
   srvModifiedOn        DateTime? @db.Timestamptz(6)                  @map("srv_modified_on")
-  srvModifiedBy        String?   @db.Uuid                            @map("srv_modified_by")
+  srvModifiedBy        String?   @db.Text                            @map("srv_modified_by")
 
   // ── Relations ───────────────────────────────────────────────────────────
   company              Company            @relation("StockReservationCompany", fields: [srvCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_srv_company")

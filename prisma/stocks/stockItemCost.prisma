@@ -87,9 +87,9 @@ model StockItemCost {
   sicIsDeleted         Boolean   @default(false)                     @map("sic_is_deleted")
   sicSyncDate          DateTime? @db.Timestamptz(6)                  @map("sic_sync_date")
   sicCreatedOn         DateTime  @default(now()) @db.Timestamptz(6)  @map("sic_created_on")
-  sicCreatedBy         String?   @db.Uuid                            @map("sic_created_by")
+  sicCreatedBy         String?   @db.Text                            @map("sic_created_by")
   sicModifiedOn        DateTime? @db.Timestamptz(6)                  @map("sic_modified_on")
-  sicModifiedBy        String?   @db.Uuid                            @map("sic_modified_by")
+  sicModifiedBy        String?   @db.Text                            @map("sic_modified_by")
 
   // ── Relations ───────────────────────────────────────────────────────────
   // sicCreatedBy / sicModifiedBy carry NO foreign key in the migration, so

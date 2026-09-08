@@ -30,11 +30,30 @@ class SaveStockVoucherHeaderDto {
     refno;
     usrRefno;
     docDate;
+    docDatetime;
     fromGodownId;
     toGodownId;
     supplierId;
+    toBranchId;
+    partyRef;
+    reasonId;
+    linkSrcModule;
+    linkSrcDocType;
+    linkSrcDocId;
+    linkSrcAccYear;
+    freezeStock;
+    freezeFrom;
+    freezeTo;
+    syncDate;
+    lineCount;
+    totalQty;
+    totalValue;
+    totalValueWot;
     rateSource;
     remarks;
+    lrNo;
+    vehicleNo;
+    expectedOn;
     userId;
 }
 exports.SaveStockVoucherHeaderDto = SaveStockVoucherHeaderDto;
@@ -115,6 +134,16 @@ __decorate([
 ], SaveStockVoucherHeaderDto.prototype, "docDate", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({
+        type: 'string',
+        format: 'date-time',
+        nullable: true,
+        description: 'When the document was actually raised. Defaults to now() at the server. A device that numbered its own document offline should send the moment it was keyed, not the moment it synced — otherwise a week of backlog all lands at the same instant and the order the documents were raised in is lost.',
+    }),
+    (0, dtoDecorators_1.NullableDateString)(),
+    __metadata("design:type", Object)
+], SaveStockVoucherHeaderDto.prototype, "docDatetime", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
         format: 'uuid',
         nullable: true,
         description: 'Where stock leaves from. Required by ISSUE-shaped documents, unused by OPENING.',
@@ -138,6 +167,116 @@ __decorate([
 ], SaveStockVoucherHeaderDto.prototype, "supplierId", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({
+        format: 'uuid',
+        nullable: true,
+        description: 'The branch the stock is going to. TRANSFER_OUT only — see StockVoucherTypeRules.allowsToBranch.',
+    }),
+    (0, dtoDecorators_1.NullableUuid)(),
+    __metadata("design:type", Object)
+], SaveStockVoucherHeaderDto.prototype, "toBranchId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        maxLength: 100,
+        nullable: true,
+        description: "The other side's own reference — a supplier's docket number, a branch's despatch note.",
+    }),
+    (0, dtoDecorators_1.NullableStringStrict)(100),
+    __metadata("design:type", Object)
+], SaveStockVoucherHeaderDto.prototype, "partyRef", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        format: 'uuid',
+        nullable: true,
+        description: 'stock.stock_reason_master. Unused by OPENING but required by ADJUSTMENT, which is the fix path when an opening turns out to be wrong.',
+    }),
+    (0, dtoDecorators_1.NullableUuid)(),
+    __metadata("design:type", Object)
+], SaveStockVoucherHeaderDto.prototype, "reasonId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ maxLength: 20, nullable: true }),
+    (0, dtoDecorators_1.NullableStringStrict)(20),
+    __metadata("design:type", Object)
+], SaveStockVoucherHeaderDto.prototype, "linkSrcModule", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ maxLength: 30, nullable: true }),
+    (0, dtoDecorators_1.NullableStringStrict)(30),
+    __metadata("design:type", Object)
+], SaveStockVoucherHeaderDto.prototype, "linkSrcDocType", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ format: 'uuid', nullable: true }),
+    (0, dtoDecorators_1.NullableUuid)(),
+    __metadata("design:type", Object)
+], SaveStockVoucherHeaderDto.prototype, "linkSrcDocId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ minLength: 9, maxLength: 9, nullable: true }),
+    (0, dtoDecorators_1.NullableStringStrict)(9),
+    __metadata("design:type", Object)
+], SaveStockVoucherHeaderDto.prototype, "linkSrcAccYear", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        description: 'Freeze the stock being counted. ck_svh_freeze refuses a freeze with no window: without one the difference posted is between a count taken at 6pm and a book figure read at 8pm.',
+    }),
+    (0, dtoDecorators_1.OptionalBoolean)(),
+    __metadata("design:type", Boolean)
+], SaveStockVoucherHeaderDto.prototype, "freezeStock", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ type: 'string', format: 'date-time', nullable: true }),
+    (0, dtoDecorators_1.NullableDateString)(),
+    __metadata("design:type", Object)
+], SaveStockVoucherHeaderDto.prototype, "freezeFrom", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ type: 'string', format: 'date-time', nullable: true }),
+    (0, dtoDecorators_1.NullableDateString)(),
+    __metadata("design:type", Object)
+], SaveStockVoucherHeaderDto.prototype, "freezeTo", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        type: 'string',
+        format: 'date-time',
+        nullable: true,
+        description: 'When an offline device synced this document up. Set by the device, not the server.',
+    }),
+    (0, dtoDecorators_1.NullableDateString)(),
+    __metadata("design:type", Object)
+], SaveStockVoucherHeaderDto.prototype, "syncDate", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        minimum: 0,
+        default: 0,
+        description: 'How many lines the document has, as the screen counted them. svh_line_count is NOT NULL DEFAULT 0; omit to take the default.',
+    }),
+    (0, dtoDecorators_1.OptionalInteger)(0),
+    __metadata("design:type", Number)
+], SaveStockVoucherHeaderDto.prototype, "lineCount", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        minimum: 0,
+        default: 0,
+        description: 'The document total quantity, as the screen summed it. numeric(18,6), NOT NULL DEFAULT 0 — omit to take the default.',
+    }),
+    (0, dtoDecorators_1.OptionalNumber)(0),
+    __metadata("design:type", Number)
+], SaveStockVoucherHeaderDto.prototype, "totalQty", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        minimum: 0,
+        default: 0,
+        description: 'The document total value, inclusive of tax, as the screen summed it. numeric(18,2), NOT NULL DEFAULT 0 — omit to take the default.',
+    }),
+    (0, dtoDecorators_1.OptionalNumber)(0),
+    __metadata("design:type", Number)
+], SaveStockVoucherHeaderDto.prototype, "totalValue", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        minimum: 0,
+        default: 0,
+        description: 'The document total value excluding tax, as the screen summed it. numeric(18,2), NOT NULL DEFAULT 0 — omit to take the default.',
+    }),
+    (0, dtoDecorators_1.OptionalNumber)(0),
+    __metadata("design:type", Number)
+], SaveStockVoucherHeaderDto.prototype, "totalValueWot", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
         enum: stock_voucher_types_1.STOCK_RATE_SOURCES,
         nullable: true,
         description: 'Which rate the lines are valued at. On a go-live day stock_item_cost is empty, so AVG_COST and LAST_PURCHASE have nothing to read — MANUAL is the honest default for an opening.',
@@ -153,6 +292,36 @@ __decorate([
     (0, dtoDecorators_1.NullableStringStrict)(250),
     __metadata("design:type", Object)
 ], SaveStockVoucherHeaderDto.prototype, "remarks", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        maxLength: 50,
+        nullable: true,
+        description: 'Lorry receipt number. Goes to stock_transit, not to the voucher. Inter-branch despatch only.',
+    }),
+    (0, dtoDecorators_1.NullableStringStrict)(50),
+    __metadata("design:type", Object)
+], SaveStockVoucherHeaderDto.prototype, "lrNo", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        maxLength: 30,
+        nullable: true,
+        description: 'Vehicle number. Goes to stock_transit. Inter-branch despatch only.',
+    }),
+    (0, dtoDecorators_1.NullableStringStrict)(30),
+    __metadata("design:type", Object)
+], SaveStockVoucherHeaderDto.prototype, "vehicleNo", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        type: 'string',
+        format: 'date',
+        nullable: true,
+        example: '2026-09-12',
+        description: 'When the goods are expected. stt_expected_on is a DATE, not an instant — a lorry arrives on a day.',
+    }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.Matches)(/^\d{4}-\d{2}-\d{2}$/, { message: 'expectedOn must be yyyy-MM-dd' }),
+    __metadata("design:type", Object)
+], SaveStockVoucherHeaderDto.prototype, "expectedOn", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({
         format: 'uuid',

@@ -6787,3 +6787,18 @@ Inconsistent column data: Error creating UUID, invalid length: expected length 3
     at async MenuMasterController.getUserMenu (/home/vk/Dev/erp/ERP server/src/modules/fixed/menu-master/menu-master.controller.ts:64:20)
 2026-09-05T10:44:16.025Z ERROR [DatasetRunnerService] Dataset 'header' (01a07108-21c8-79d9-9f9b-9888352b599e) failed after binding :quote_id: invalid input syntax for type uuid: "	01a057dc-d60f-7747-bc98-61216e494344"
 2026-09-05T10:44:25.821Z ERROR [DatasetRunnerService] Dataset 'header' (01a07108-21c8-79d9-9f9b-9888352b599e) failed after binding :quote_id: invalid input syntax for type uuid: "	01a057dc-d60f-7747-bc98-61216e494344"
+2026-09-08T05:10:42.470Z ERROR [ModuleExceptionFilter] POST /api/v1/stock/opening/post
+PrismaClientKnownRequestError: 
+Invalid `prisma.$queryRaw()` invocation:
+
+
+Raw query failed. Code: `42883`. Message: `ERROR: function stock.fn_svh_post(uuid, character, uuid) does not exist
+HINT: No function matches the given name and argument types. You might need to add explicit type casts.`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async <anonymous> (/home/vk/Dev/erp/ERP server/src/modules/stocks/stock-voucher/stock-voucher.service.ts:1818:21)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async StockVoucherService.post (/home/vk/Dev/erp/ERP server/src/modules/stocks/stock-voucher/stock-voucher.service.ts:1810:24)
+    at async OpeningStockVoucherController.post (/home/vk/Dev/erp/ERP server/src/modules/stocks/opening-stock-voucher/opening-stock-voucher.controller.ts:225:18)

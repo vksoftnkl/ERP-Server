@@ -73,7 +73,7 @@ model StockVoucher {
   svhTenantId          String?   @db.Uuid                            @map("svh_tenant_id")
   /// The PARTITION KEY, and half the primary key.
   svhAccYear           String    @db.Char(9)                         @map("svh_acc_year")
-
+  
   /// The counter. See THE DEVICE IS THE COUNTER above.
   svhDeviceId          String    @db.Uuid                            @map("svh_device_id")
   svhSessionId         String?   @db.Uuid                            @map("svh_session_id")
@@ -117,6 +117,8 @@ model StockVoucher {
 
   // ── Lifecycle ───────────────────────────────────────────────────────────
   svhStatus            String    @default("DRAFT") @db.VarChar(20)   @map("svh_status")
+  /// Stamped by fn_svh_post / fn_svh_cancel. Read by the list and load
+  /// queries, which select them by name — dropping them 500s both.
   svhPostedOn          DateTime? @db.Timestamptz(6)                  @map("svh_posted_on")
   svhPostedBy          String?   @db.Uuid                            @map("svh_posted_by")
   svhApprovedOn        DateTime? @db.Timestamptz(6)                  @map("svh_approved_on")
@@ -139,9 +141,9 @@ model StockVoucher {
   svhIsDeleted         Boolean   @default(false)                     @map("svh_is_deleted")
   svhSyncDate          DateTime? @db.Timestamptz(6)                  @map("svh_sync_date")
   svhCreatedOn         DateTime  @default(now()) @db.Timestamptz(6)  @map("svh_created_on")
-  svhCreatedBy         String?   @db.Uuid                            @map("svh_created_by")
+  svhCreatedBy         String?   @db.Text                            @map("svh_created_by")
   svhModifiedOn        DateTime? @db.Timestamptz(6)                  @map("svh_modified_on")
-  svhModifiedBy        String?   @db.Uuid                            @map("svh_modified_by")
+  svhModifiedBy        String?   @db.Text                            @map("svh_modified_by")
 
   // ── Relations ───────────────────────────────────────────────────────────
   // svhSessionId and the posted/approved/cancelled/created/modified user

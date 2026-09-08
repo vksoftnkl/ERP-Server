@@ -80,9 +80,9 @@ model StockAgeingSlab {
   sagIsDeleted       Boolean   @default(false)                              @map("sag_is_deleted")
   sagSyncDate        DateTime? @db.Timestamptz(6)                           @map("sag_sync_date")
   sagCreatedOn       DateTime  @default(now()) @db.Timestamptz(6)           @map("sag_created_on")
-  sagCreatedBy       String?   @db.Uuid                                     @map("sag_created_by")
+  sagCreatedBy       String?   @db.Text                                     @map("sag_created_by")
   sagModifiedOn      DateTime? @db.Timestamptz(6)                           @map("sag_modified_on")
-  sagModifiedBy      String?   @db.Uuid                                     @map("sag_modified_by")
+  sagModifiedBy      String?   @db.Text                                     @map("sag_modified_by")
 
   // ── Relations ───────────────────────────────────────────────────────────
   company            Company?  @relation("StockAgeingSlabCompany", fields: [sagCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_sag_company")

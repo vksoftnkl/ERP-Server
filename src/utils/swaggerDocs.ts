@@ -57,6 +57,9 @@ import { UserLoginSessionsModule } from '../modules/fixed/user-login-sessions/us
 import { StockAdjReasonsModule } from '../modules/fixed/stock-adj-reasons/stock-adj-reasons.module';
 import { StockTrackPresetsModule } from '../modules/stocks/stock-track-presets/stock-track-presets.module';
 import { OpeningStockVoucherModule } from '../modules/stocks/opening-stock-voucher/opening-stock-voucher.module';
+import { PhysicalStockVoucherModule } from '../modules/stocks/physical-stock-voucher/physical-stock-voucher.module';
+import { StockTransferModule } from '../modules/stocks/stock-transfer/stock-transfer.module';
+import { SellingPriceBulkModule } from '../modules/stocks/selling-price-bulk/selling-price-bulk.module';
 import { PromotionLoyaltyPointsModule } from '../modules/sales/loyalty/promotion-loyalty-points.module';
 import { PromotionSchemeModule } from '../modules/sales/promotion-scheme/promotion-scheme.module';
 import { ItemsGroupMasterModule } from 'src/modules/Inventory/items-group-master/items-group-master.module';
@@ -587,6 +590,31 @@ export const swaggerModuleDocuments = [
     description:
       'Opening stock on the stock voucher engine — stock.stock_voucher OPENING documents, their preflight, post and cancel, and the two go-live reports. There is no opening-stock table: the document IS a stock voucher.',
     include: [OpeningStockVoucherModule],
+  },
+  {
+    path: 'physical-stock',
+    title: 'Physical Stock API',
+    description:
+      'Physical stock counts on the stock voucher engine — stock.stock_voucher PHYSICAL documents, the count sheet GENERATED from stock_balance, the preflight, post, cancel and the variance report. There is no physical-stock table: the document IS a stock voucher, and the operator types one number per line. Only the difference posts, and a line that agrees writes nothing while the document still closes POSTED.',
+    include: [PhysicalStockVoucherModule],
+  },
+  {
+    path: 'stock-transfer',
+    title: 'Stock Transfer API',
+    description:
+      'Stock transfers on the stock voucher engine — godown → godown and branch → branch, ONE endpoint set and two screens. There is no transfer table: the documents are stock.stock_voucher rows of type TRANSFER_OUT and TRANSFER_IN, plus stock.stock_transit for the inter-branch leg. The engine picks the shape from svh_to_branch_id: same branch writes both ledger rows as a pair and ends POSTED; another branch writes the OUT row plus a transit row per line and ends IN_TRANSIT until the destination receives it. A transfer MOVES existing stock, so every line names the lot it moves and nobody enters a cost — the engine stamps it and it travels. An inter-branch despatch is never POSTED, so a status filter that offers only POSTED loses every transfer in flight.',
+    include: [StockTransferModule],
+  },
+  {
+    path: 'change-selling-price',
+    title: 'Change Selling Price API',
+    description:
+      'Bulk selling-price maintenance over stock.stock_mrp_price — menu 30. One item at one ' +
+      'unit can be priced four ways at once (a chain row, a branch override, a bucket row, a ' +
+      'headline row), so the grid says which one it is showing (priceSource + priceScope) and ' +
+      'the header scope says which one Save will touch. Prices resolve through ' +
+      'fn_smp_effective and never through a second implementation here.',
+    include: [SellingPriceBulkModule],
   },
   {
     path: 'audit-logs',

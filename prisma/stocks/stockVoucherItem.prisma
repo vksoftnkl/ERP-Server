@@ -84,6 +84,13 @@ model StockVoucherItem {
   // ── As entered ──────────────────────────────────────────────────────────
   // What the storekeeper typed. The resolver may legitimately have dropped a
   // value the item's policy does not track — see the header note.
+  /// What the scanner read, verbatim. NOT an identity: the item, batch and
+  /// serial were already resolved from it by the time the line is saved, and
+  /// nothing reads stock back through this column. It is kept so a reprint
+  /// can show the symbol that was actually scanned — a barcode retired from
+  /// the item master, or one that resolved through an alias, still prints as
+  /// what the storekeeper held under the gun.
+  sviBarcode           String?   @db.Text                            @map("svi_barcode")
   sviBatchNo           String?   @db.VarChar(100)                    @map("svi_batch_no")
   sviMfgDate           DateTime? @db.Date                            @map("svi_mfg_date")
   sviExpiryDate        DateTime? @db.Date                            @map("svi_expiry_date")
@@ -123,9 +130,9 @@ model StockVoucherItem {
   sviIsDeleted         Boolean   @default(false)                     @map("svi_is_deleted")
   sviSyncDate          DateTime? @db.Timestamptz(6)                  @map("svi_sync_date")
   sviCreatedOn         DateTime  @default(now()) @db.Timestamptz(6)  @map("svi_created_on")
-  sviCreatedBy         String?   @db.Uuid                            @map("svi_created_by")
+  sviCreatedBy         String?   @db.Text                            @map("svi_created_by")
   sviModifiedOn        DateTime? @db.Timestamptz(6)                  @map("svi_modified_on")
-  sviModifiedBy        String?   @db.Uuid                            @map("svi_modified_by")
+  sviModifiedBy        String?   @db.Text                            @map("svi_modified_by")
 
   // ── Relations ───────────────────────────────────────────────────────────
   // sviCompanyId / sviBranchId carry no FK of their own here — the voucher

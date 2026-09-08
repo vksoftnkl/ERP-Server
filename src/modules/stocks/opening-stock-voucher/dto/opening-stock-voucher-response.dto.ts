@@ -79,6 +79,50 @@ export class OpeningStockHeaderDto {
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   supplierId!: string | null;
 
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description: 'TRANSFER only — null on an opening.',
+  })
+  toBranchId!: string | null;
+
+  @ApiPropertyOptional({ nullable: true, description: "The other side's own reference." })
+  partyRef!: string | null;
+
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  reasonId!: string | null;
+
+  @ApiPropertyOptional({ nullable: true, description: 'stock_reason_master.srm_name' })
+  reasonName!: string | null;
+
+  @ApiPropertyOptional({ nullable: true, description: 'All four, or all null — ck_svh_link.' })
+  linkSrcModule!: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  linkSrcDocType!: string | null;
+
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  linkSrcDocId!: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  linkSrcAccYear!: string | null;
+
+  @ApiProperty({ description: 'PHYSICAL only — always false on an opening.' })
+  freezeStock!: boolean;
+
+  @ApiPropertyOptional({ format: 'date-time', nullable: true })
+  freezeFrom!: string | null;
+
+  @ApiPropertyOptional({ format: 'date-time', nullable: true })
+  freezeTo!: string | null;
+
+  @ApiPropertyOptional({
+    format: 'date-time',
+    nullable: true,
+    description: 'When an offline device synced this document up.',
+  })
+  syncDate!: string | null;
+
   @ApiProperty({ enum: STOCK_VOUCHER_STATUSES })
   status!: string;
 
@@ -159,6 +203,13 @@ export class OpeningStockLineDto {
   @ApiProperty({ enum: STOCK_BUCKETS })
   bucket!: string;
 
+  @ApiPropertyOptional({
+    nullable: true,
+    description:
+      'What the scanner read, verbatim. Echoed back as stored; the line is identified by itemId / batchNo / serialNo, not by this.',
+  })
+  barcode!: string | null;
+
   @ApiPropertyOptional({ nullable: true })
   batchNo!: string | null;
 
@@ -192,14 +243,32 @@ export class OpeningStockLineDto {
   @ApiProperty()
   freeBaseQty!: number;
 
+  @ApiProperty({
+    description:
+      'Net weight as keyed. Carried, never derived — a 10kg bag that weighs 9.7kg opens at what the scale said.',
+  })
+  weightQty!: number;
+
   @ApiProperty()
   costRate!: number;
 
   @ApiProperty({ description: 'Derived by the engine from taxPerc at post, then written back.' })
   costRateWot!: number;
 
+  @ApiProperty({ description: 'Cost including freight, duty and handling attributed to the line.' })
+  landedRate!: number;
+
   @ApiProperty()
   taxPerc!: number;
+
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  reasonId!: string | null;
+
+  @ApiPropertyOptional({ nullable: true, description: 'stock_reason_master.srm_name' })
+  reasonName!: string | null;
+
+  @ApiPropertyOptional({ format: 'date-time', nullable: true })
+  syncDate!: string | null;
 
   @ApiProperty({ description: 'GENERATED — (baseQty + freeBaseQty) × costRate, rounded to 2.' })
   value!: number;
@@ -316,7 +385,7 @@ export class OpeningStockLineProblemDto {
     nullable: true,
     example: 'this holding already has an opening in this year',
     description:
-      "null on a clean line. The wording comes from the preflight query and matches what the engine raises — it is not paraphrased in TypeScript.",
+      'null on a clean line. The wording comes from the preflight query and matches what the engine raises — it is not paraphrased in TypeScript.',
   })
   problem!: string | null;
 }
@@ -341,6 +410,35 @@ export class OpeningStockCancelResultDto extends OpeningStockDocumentDto {
 
   @ApiPropertyOptional({ format: 'date-time', nullable: true })
   cancelledOn!: string | null;
+}
+
+export class OpeningStockImportResultDto extends OpeningStockDocumentDto {
+  @ApiProperty({ description: 'Data rows found in the file, blank rows excluded.' })
+  rowsRead!: number;
+
+  @ApiProperty({
+    description: 'Lines written. Equal to rowsRead — a partial import is refused outright.',
+  })
+  linesImported!: number;
+
+  @ApiProperty({
+    type: OpeningStockLineProblemDto,
+    isArray: true,
+    description:
+      'The preflight, run immediately after the write: an import that resolved cleanly can still produce lines the engine will refuse.',
+  })
+  problems!: OpeningStockLineProblemDto[];
+}
+
+export class OpeningStockImportSuccessDto {
+  @ApiProperty({ example: true })
+  success!: true;
+
+  @ApiProperty({ example: '40 lines imported, all clean' })
+  message!: string;
+
+  @ApiProperty({ type: OpeningStockImportResultDto })
+  data!: OpeningStockImportResultDto;
 }
 
 export class OpeningStockDeleteResultDto {

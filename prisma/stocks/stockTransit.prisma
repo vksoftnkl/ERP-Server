@@ -98,9 +98,9 @@ model StockTransit {
   sttIsDeleted         Boolean   @default(false)                     @map("stt_is_deleted")
   sttSyncDate          DateTime? @db.Timestamptz(6)                  @map("stt_sync_date")
   sttCreatedOn         DateTime  @default(now()) @db.Timestamptz(6)  @map("stt_created_on")
-  sttCreatedBy         String?   @db.Uuid                            @map("stt_created_by")
+  sttCreatedBy         String?   @db.Text                            @map("stt_created_by")
   sttModifiedOn        DateTime? @db.Timestamptz(6)                  @map("stt_modified_on")
-  sttModifiedBy        String?   @db.Uuid                            @map("stt_modified_by")
+  sttModifiedBy        String?   @db.Text                           @map("stt_modified_by")
 
   // ── Relations ───────────────────────────────────────────────────────────
   company              Company            @relation("StockTransitCompany",    fields: [sttCompanyId],    references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_stt_company")

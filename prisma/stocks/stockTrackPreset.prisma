@@ -101,13 +101,14 @@ model StockTrackPreset {
   sptIsDeleted         Boolean   @default(false)                              @map("spt_is_deleted")
   sptSyncDate          DateTime? @db.Timestamptz(6)                           @map("spt_sync_date")
   sptCreatedOn         DateTime  @default(now()) @db.Timestamptz(6)           @map("spt_created_on")
-  sptCreatedBy         String?   @db.Uuid                                     @map("spt_created_by")
+  sptCreatedBy         String?   @db.Text                                     @map("spt_created_by")
   sptModifiedOn        DateTime? @db.Timestamptz(6)                           @map("spt_modified_on")
-  sptModifiedBy        String?   @db.Uuid                                     @map("spt_modified_by")
+  sptModifiedBy        String?   @db.Text                                     @map("spt_modified_by")
 
   // ── Relations ───────────────────────────────────────────────────────────
+  // sptCreatedBy / sptModifiedBy carry NO foreign key in the migration, so
+  // they stay scalar here.
   company              Company?    @relation("StockTrackPresetCompany",   fields: [sptCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_spt_company")
-  createdBy            UserMaster? @relation("StockTrackPresetCreatedBy", fields: [sptCreatedBy], references: [usrId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_spt_created_by")
 
   /// The masters configured with this preset. Back-relations only — a preset
   /// still has NO relation to StockTrackPolicy, and must not gain one.

@@ -1,7 +1,23 @@
-import { Body, Controller, Delete, Get, Post, Query, UseFilters, Version } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Post,
+  Query,
+  UploadedFile,
+  UseFilters,
+  UseInterceptors,
+  Version,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { TxnStatusDocType } from 'src/common/txn-status-log/txn-status-log.helper';
 import {
   ApiBadRequestResponse,
   ApiBearerAuth,
+  ApiBody,
+  ApiConsumes,
   ApiConflictResponse,
   ApiCreatedResponse,
   ApiNotFoundResponse,
@@ -21,6 +37,7 @@ import type {
   PendingOpeningItem,
   StockVoucherCancelResult,
   StockVoucherDeleteResult,
+  StockVoucherImportResult,
   StockVoucherLineProblem,
   StockVoucherListResult,
   StockVoucherPayload,
@@ -38,6 +55,7 @@ import {
   CancelOpeningStockVoucherDto,
   PostOpeningStockVoucherDto,
 } from './dto/post-opening-stock-voucher.dto';
+import { ImportOpeningStockVoucherDto } from './dto/import-opening-stock-voucher.dto';
 import {
   OpeningReconcileSuccessDto,
   OpeningStockCancelSuccessDto,
@@ -46,6 +64,7 @@ import {
   OpeningStockErrorResponseDto,
   OpeningStockListSuccessDto,
   OpeningStockPostSuccessDto,
+  OpeningStockImportSuccessDto,
   OpeningStockValidateSuccessDto,
   PendingOpeningItemsSuccessDto,
 } from './dto/opening-stock-voucher-response.dto';
@@ -73,10 +92,32 @@ const OPENING_RULES: StockVoucherTypeRules = {
   requiresFromGodown: false,
   isInward: true,
   // The one voucher type whose ledger txn_type is its own name — see the field.
-  ledgerTxnType: 'OPENING',
+  ledgerTxnTypes: ['OPENING'],
+  // Every OPENING line states a quantity to move — see StockQuantityMode.
+  quantityMode: 'QTY',
+  // An opening states a quantity; it does not reconcile one, and it does not
+  // leave the branch.
+  allowsCount: false,
+  allowsToBranch: false,
   auditScreenName: 'Opening Stock',
+  // An opening is not a transfer, and ck_tsl_src_doc_type has no OPENING —
+  // see StockVoucherTypeRules.statusDocType for why this is pinned per screen.
+  statusDocType: TxnStatusDocType.STOCK_ADJUSTMENT,
+  // The generic entry point. 19 refuses to post a TRANSFER_* through it by
+  // name, so the transfer screens cannot reach this record by accident.
+  postFunction: 'stock.fn_svh_post',
   refuseTypes: ['TRANSFER_IN', 'TRANSFER_OUT', 'REPACK_IN', 'REPACK_OUT'],
 };
+
+/** What FileInterceptor hands back for the uploaded CSV. */
+type UploadedCsvFile = {
+  buffer: Buffer;
+  originalname?: string;
+  size?: number;
+};
+
+/** A 400-line opening is ~60KB; this is generous and still bounds the request. */
+const MAX_IMPORT_BYTES = 5 * 1024 * 1024;
 
 /**
  * NO @CacheTTL ANYWHERE IN THIS CONTROLLER. Every read here is a live balance
@@ -253,6 +294,45 @@ export class OpeningStockVoucherController {
     return { success: true, message: 'Opening stock deleted successfully', data };
   }
 
+  @Post('import')
+  @Version(API_VERSION)
+  @UseInterceptors(FileInterceptor('file'))
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({ type: ImportOpeningStockVoucherDto })
+  @ApiOperation({
+    summary: "Replace an existing DRAFT's lines from a CSV",
+    description:
+      'Resolves item code and unit name to ids server-side, then goes through the ordinary save path so every line rule still applies. Ambiguity is refused, never guessed, and every bad row is reported at once. It never posts and never creates the document.',
+  })
+  @ApiOkResponse({ type: OpeningStockImportSuccessDto })
+  @ApiBadRequestResponse({ type: OpeningStockErrorResponseDto })
+  @ApiUnprocessableEntityResponse({ type: OpeningStockErrorResponseDto })
+  @ApiConflictResponse({ type: OpeningStockErrorResponseDto })
+  @ApiNotFoundResponse({ type: OpeningStockErrorResponseDto })
+  async import(
+    @Body() dto: ImportOpeningStockVoucherDto,
+    @UploadedFile() file?: UploadedCsvFile,
+  ): Promise<StockVoucherSuccessResponse<StockVoucherImportResult>> {
+    const csvText = this.readCsv(file);
+    const data = await this.stockVoucherService.importLines(
+      OPENING_RULES,
+      dto.svhId,
+      dto.accYear,
+      dto.companyId,
+      dto.branchId,
+      csvText,
+      dto.userId,
+    );
+    const failing = data.problems.filter((row) => row.problem !== null).length;
+    return {
+      success: true,
+      message: failing
+        ? `${data.linesImported} lines imported; ${failing} have problems`
+        : `${data.linesImported} lines imported, all clean`,
+      data,
+    };
+  }
+
   @Get('pending-items')
   @Version(API_VERSION)
   @ApiOperation({
@@ -295,5 +375,33 @@ export class OpeningStockVoucherController {
       query.offset,
     );
     return { success: true, message: 'Opening reconciliation fetched successfully', data };
+  }
+
+  /**
+   * Decodes the uploaded part, refusing the two things that are cheaper to
+   * catch here than to diagnose from a wall of resolution errors: no file at
+   * all, and a file large enough to be something other than a line list.
+   */
+  private readCsv(file?: UploadedCsvFile): string {
+    if (!file?.buffer?.length) {
+      throw new BadRequestException({
+        success: false,
+        message: 'No file uploaded',
+        errors: [{ field: 'file', message: 'Attach the CSV as the "file" part of the form.' }],
+      });
+    }
+    if (file.buffer.length > MAX_IMPORT_BYTES) {
+      throw new BadRequestException({
+        success: false,
+        message: 'File too large',
+        errors: [
+          {
+            field: 'file',
+            message: `The file is ${Math.round(file.buffer.length / 1024)}KB; the limit is ${MAX_IMPORT_BYTES / 1024 / 1024}MB.`,
+          },
+        ],
+      });
+    }
+    return file.buffer.toString('utf8');
   }
 }

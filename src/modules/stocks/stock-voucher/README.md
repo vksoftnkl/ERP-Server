@@ -46,12 +46,22 @@ to all eight failure modes. See `stock-voucher-exception.filter.ts`.
 `svh_acc_year` is `character(9)`: bpchar pads anything shorter, and
 `ck_svh_acc_year` then rejects the padding, so always send the full `YYYY-YYYY`.
 
-**3. Six columns must never appear in a write.** `svi_value`, `svi_value_wot` and
-`svi_diff_qty` are `GENERATED ALWAYS ... STORED` and Postgres rejects any write.
+**3. Three columns must never appear in a write.** `svi_value`, `svi_value_wot`
+and `svi_diff_qty` are `GENERATED ALWAYS ... STORED` and Postgres rejects any
+write — including a write of the value it would itself compute.
+
 The four header totals (`svh_line_count`, `svh_total_qty`, `svh_total_value`,
-`svh_total_value_wot`) are *not* generated — they are trigger-maintained, which
-means Prisma **can** write them, which is the danger. The spec asserts their
-absence for exactly this reason. The screen never sums its own grid either.
+`svh_total_value_wot`) are *not* generated, and are no longer off limits: they
+are taken from the header payload and written verbatim. The screen sums its own
+grid; this service counts nothing.
+
+They are written as **their own `UPDATE`, after the lines** — see
+`writeHeaderTotals`. Where the engine DDL is installed, `tr_svi_refresh_header`
+re-sums all four on every line write, so totals written before the lines would be
+silently replaced by that trigger's sums. `fn_svh_recompute` still re-derives
+them **at post**, which is out of this module's hands: that DDL does not live in
+this repo. A `PHYSICAL` count refuses all four outright — its header carries the
+net variance read off the ledger, which nothing on the count sheet adds up to.
 
 ## Numbering is self-contained
 

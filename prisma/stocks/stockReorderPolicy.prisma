@@ -105,9 +105,9 @@ model StockReorderPolicy {
   srpIsDeleted           Boolean   @default(false)                   @map("srp_is_deleted")
   srpSyncDate            DateTime? @db.Timestamptz(6)                @map("srp_sync_date")
   srpCreatedOn           DateTime  @default(now()) @db.Timestamptz(6) @map("srp_created_on")
-  srpCreatedBy           String?   @db.Uuid                          @map("srp_created_by")
+  srpCreatedBy           String?   @db.Text                          @map("srp_created_by")
   srpModifiedOn          DateTime? @db.Timestamptz(6)                @map("srp_modified_on")
-  srpModifiedBy          String?   @db.Uuid                          @map("srp_modified_by")
+  srpModifiedBy          String?   @db.Text                          @map("srp_modified_by")
 
   // ── Relations ───────────────────────────────────────────────────────────
   company                Company            @relation("StockReorderPolicyCompany",  fields: [srpCompanyId],           references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_srp_company")

@@ -471,9 +471,15 @@ export class StockTrackPolicyService {
     );
   }
   /**
-   * fk_stp_created_by points at public.user_master, so the nil-uuid
-   * DEFAULT_ACTOR the string-typed *_created_by columns fall back to would
-   * violate the foreign key. No user in context means no user recorded.
+   * No user in context means no user recorded. The nil-uuid DEFAULT_ACTOR the
+   * sales modules fall back to is a sentinel, not an actor, and stp_created_by
+   * has nothing to say about who acted when nobody did — a NULL reads that way
+   * and the sentinel does not.
+   *
+   * stp_created_by used to be a uuid carrying fk_stp_created_by into
+   * public.user_master, which made the fallback unwritable anyway. Both are
+   * gone as of 20260907080000 and the column is plain TEXT, so this is now a
+   * choice rather than a constraint.
    */
   private actor(): string | null {
     return this.requestContextService.getUserId() ?? null;

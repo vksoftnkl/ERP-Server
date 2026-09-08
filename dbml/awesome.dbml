@@ -3495,8 +3495,6 @@ Table user_master {
   appSettingValues app_setting_value [not null]
   approvedPromotionSchemes promotion_scheme [not null]
   approvedLoyaltySchemes loyalty_scheme [not null]
-  stockTrackPolicies stock_track_policy [not null]
-  stockTrackPresets stock_track_preset [not null]
   printPurposesCreated print_purpose [not null]
   printPurposesModified print_purpose [not null]
   printTemplatesCreated print_template [not null]
@@ -6679,7 +6677,6 @@ MFG_DATE     — age of the goods themselves']
   branch branch_master
   item item_master
   itemGroup item_group_master
-  createdBy user_master
 
   Note: 'stock.stock_track_policy — how a holding is keyed, valued, issued and aged.
 
@@ -6768,7 +6765,6 @@ screen can match a saved policy back to a preset by comparing the two.']
   sptModifiedOn DateTime
   sptModifiedBy String
   company companys
-  createdBy user_master
   items item_master [not null, note: 'The masters configured with this preset. Back-relations only — a preset
 still has NO relation to StockTrackPolicy, and must not gain one.']
   itemGroups item_group_master [not null]
@@ -7177,6 +7173,12 @@ item_unit_conversion(iuc_id), NEVER item_unit_master(unit_id).']
   sviGodownId String [not null]
   sviLotId String [note: 'Resolved by fn_slt_resolve() at POSTING time. NULL only while DRAFT.']
   sviBucket String [not null, default: 'SALEABLE']
+  sviBarcode String [note: 'What the scanner read, verbatim. NOT an identity: the item, batch and
+serial were already resolved from it by the time the line is saved, and
+nothing reads stock back through this column. It is kept so a reprint
+can show the symbol that was actually scanned — a barcode retired from
+the item master, or one that resolved through an alias, still prints as
+what the storekeeper held under the gun.']
   sviBatchNo String
   sviMfgDate DateTime
   sviExpiryDate DateTime
@@ -8140,11 +8142,7 @@ Ref: stock_track_policy.stpItemId > item_master.itemId [delete: Restrict]
 
 Ref: stock_track_policy.stpGroupId > item_group_master.itgId [delete: Restrict]
 
-Ref: stock_track_policy.stpCreatedBy > user_master.usrId [delete: Restrict]
-
 Ref: stock_track_preset.sptCompanyId > companys.compId [delete: Restrict]
-
-Ref: stock_track_preset.sptCreatedBy > user_master.usrId [delete: Restrict]
 
 Ref: stock_transit.sttCompanyId > companys.compId [delete: Restrict]
 

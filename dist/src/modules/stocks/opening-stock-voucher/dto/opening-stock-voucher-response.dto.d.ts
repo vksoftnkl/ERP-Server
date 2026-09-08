@@ -26,6 +26,18 @@ export declare class OpeningStockHeaderDto {
     godownId: string | null;
     godownName: string | null;
     supplierId: string | null;
+    toBranchId: string | null;
+    partyRef: string | null;
+    reasonId: string | null;
+    reasonName: string | null;
+    linkSrcModule: string | null;
+    linkSrcDocType: string | null;
+    linkSrcDocId: string | null;
+    linkSrcAccYear: string | null;
+    freezeStock: boolean;
+    freezeFrom: string | null;
+    freezeTo: string | null;
+    syncDate: string | null;
     status: string;
     lineCount: number;
     totalQty: number;
@@ -54,6 +66,7 @@ export declare class OpeningStockLineDto {
     godownId: string;
     godownName: string | null;
     bucket: string;
+    barcode: string | null;
     batchNo: string | null;
     mfgDate: string | null;
     expiryDate: string | null;
@@ -65,9 +78,14 @@ export declare class OpeningStockLineDto {
     baseQty: number;
     freeQty: number;
     freeBaseQty: number;
+    weightQty: number;
     costRate: number;
     costRateWot: number;
+    landedRate: number;
     taxPerc: number;
+    reasonId: string | null;
+    reasonName: string | null;
+    syncDate: string | null;
     value: number;
     valueWot: number;
     lotId: string | null;
@@ -121,6 +139,16 @@ export declare class OpeningStockCancelResultDto extends OpeningStockDocumentDto
     rowsReversed: number;
     status: string;
     cancelledOn: string | null;
+}
+export declare class OpeningStockImportResultDto extends OpeningStockDocumentDto {
+    rowsRead: number;
+    linesImported: number;
+    problems: OpeningStockLineProblemDto[];
+}
+export declare class OpeningStockImportSuccessDto {
+    success: true;
+    message: string;
+    data: OpeningStockImportResultDto;
 }
 export declare class OpeningStockDeleteResultDto {
     svhId: string;

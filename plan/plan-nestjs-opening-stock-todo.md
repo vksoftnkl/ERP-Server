@@ -1,57 +1,59 @@
 # Opening Stock — completion checklist
 
-Status of `plan/plan-nestjs-opening-stock.md` as of 2026-09-07.
+Status of `plan/plan-nestjs-opening-stock.md`. Last worked 2026-09-07.
 
-The NestJS module is **built, typechecked and unit-tested**. It cannot be *run*
-yet: the database half it is written against does not exist on this machine or
-on the local database. Everything below separates the two.
+Everything the plan asks for that can be built without the database engine is
+**built, typechecked and tested**. What remains is blocked on one external
+artefact and two decisions that are not this repo's to make. This file separates
+the three.
 
 ---
 
 ## Done
 
-- [x] **§0.2 Retire the legacy module.** Already done ahead of this work —
+### The module — §§1–13
+
+- [x] **§0.2 Retire the legacy module.** Done before this work:
   `20260907070000_drop_opening_and_physical_stock_tables` drops
   `stock.opening_stock_header` / `_detail` and the physical-stock trio, and
   neither `OpeningStockModule` nor `PhysicalStockModule` is in `app.module.ts`.
-  Nothing new imports from them.
-- [x] **§1 Prisma models.** Already present in `prisma/stocks/` —
-  `stockVoucher`, `stockVoucherItem`, `stockLot`, `stockBalance`,
-  `stockItemCost`, `stockTrackPolicy`, and `stockLedger`. All six of the plan's
-  "each one is a bug if missed" points hold: composite `@@id`, `@db.Char(9)`,
-  generated columns mapped read-only, no Prisma enums, `uuidv7()` defaults, and
-  totals left to the triggers.
-  *Deviation from the plan, deliberate and pre-existing:* these models **do**
-  carry relation fields to Prisma-owned masters (`ItemMaster`,
-  `GodownLocation`, `DeviceMaster`). The plan asked for none. The repo went the
-  other way before this work started; the module does not write those masters
-  either way, so it was left alone.
-  *Deviation from the plan:* `stockLedger` **has** a model, where the plan asked
-  for none. The service never writes it; the two reports that read it are raw.
-- [x] **§2 Module shape.** `src/modules/stocks/stock-voucher/` (shared) +
-  `src/modules/stocks/opening-stock-voucher/` (OPENING only).
-- [x] **§3 Numbering.** `stock-voucher-numbering.helper.ts` — advisory
-  `pg_advisory_xact_lock`, `MAX(svh_slno) + 1` in the `ux_svh_slno` scope,
-  `OPN/{accYear}/{deviceCode}/{slno}`, client-supplied slno/refno honoured.
-  Neither `SequenceService` nor `acc_voucher_header` is touched.
-- [x] **§4 Save.** Create/update, full line replace, every pre-engine refusal as
-  a 422 with a per-line list, factor read from `item_unit_conversion`, generated
-  columns and header totals never written.
-- [x] **§5 List and load.** Raw, scoped, ordered for `ix_svh_list`; not a
-  configured grid.
-- [x] **§6 Preflight.** Resolves the effective track policy most-specific-first
-  against the *document's* date, blanks untracked dimensions, matches
-  `stock_lot`'s generated key columns, and detects all nine problems.
+- [x] **§1 Prisma models.** Present in `prisma/stocks/`. All six of the plan's
+  "each one is a bug if missed" points hold.
+  *Two deliberate deviations, both pre-existing:* the models carry relation
+  fields to Prisma-owned masters (the plan asked for none), and `stockLedger`
+  has a model (the plan asked for none). The service writes neither.
+- [x] **§2 Module shape.** `stock-voucher/` (shared) + `opening-stock-voucher/`.
+- [x] **§3 Numbering.** Self-contained, per-device, advisory-locked; client
+  slno/refno honoured verbatim.
+- [x] **§4 Save.** Full line replace, per-line 422s, factor read not trusted,
+  generated columns and header totals never written.
+- [x] **§5 List and load.** Raw, scoped, ordered for `ix_svh_list`.
+- [x] **§6 Preflight.** Policy resolved most-specific-first against the
+  document's date; lot matched on the generated key columns without creating
+  anything.
 - [x] **§7 Post / §8 Cancel / §9 Soft delete.**
 - [x] **§10 Both go-live reports**, paged.
-- [x] **§12 Errors.** `StockVoucherExceptionFilter` switches on
-  `error.meta.code`, not `error.code`, and passes the engine's wording through.
-- [x] **§13 Wiring.** Both modules in `app.module.ts`, an `Opening Stock`
-  Swagger group in `src/utils/swaggerDocs.ts`, no `@CacheTTL`.
-- [x] **§14 unit tests.** 47 across two specs; the full suite is at the same 14
-  pre-existing failures in 12 suites it was before.
+- [x] **§11 Import from file.** `POST /stock/opening/import` — multipart CSV,
+  item code and unit name resolved server-side, ambiguity refused rather than
+  guessed, every bad row reported at once, routed through `save()` so no rule is
+  bypassed. Never posts, never creates the document.
+  *(The plan marked this deferrable. It is done.)*
+- [x] **§12 Errors.** Filter switches on `error.meta.code`, not `error.code`.
+- [x] **§13 Wiring.** Both modules registered, `Opening Stock` Swagger group,
+  no `@CacheTTL`.
 
-Routes confirmed registered:
+### Tests
+
+- [x] **§14 unit half** — 80 tests across three specs.
+- [x] **§14 integration half — written and wired**, in
+  `test/opening-stock.e2e-spec.ts`: the `19_opening_stock_flow.md` figures, the
+  `fn_sbl_rebuild` check *including the value columns it does not itself
+  verify*, all five negative assertions and the parallel-post race.
+  It **auto-skips** while the engine is absent, and `STOCK_ENGINE_REQUIRED=1`
+  turns that skip into a failure so CI can demand it actually runs once the
+  share is deployed. **Its assertions have never executed** — see Blocked.
+
+Nine routes confirmed registered:
 
 ```
 POST   /api/v1/stock/opening
@@ -60,127 +62,134 @@ GET    /api/v1/stock/opening/validate
 POST   /api/v1/stock/opening/post
 POST   /api/v1/stock/opening/cancel
 DELETE /api/v1/stock/opening
+POST   /api/v1/stock/opening/import
 GET    /api/v1/stock/opening/pending-items
 GET    /api/v1/stock/opening/reconcile
 ```
 
+### One defect fixed along the way
+
+- [x] **`MANUAL` no longer excuses a zero cost rate.** The plan words the check
+  as "inward with no cost rate and **no rate source**", which reads as though any
+  of the five sources excuses a zero. Four of them derive a rate; MANUAL means
+  the storekeeper types it, so a MANUAL document at cost 0 is an inward valued at
+  nothing — with the check reporting itself satisfied. `DERIVABLE_RATE_SOURCES`
+  now names the four, in both the save check and the preflight SQL.
+  **This is a deliberate strengthening of the plan's wording** — confirm it reads
+  the same way to the DB owner.
+
 ---
 
-## Blocked — the database half does not exist here
+## Blocked — one missing artefact
 
-**Nothing under `schema/stock/` is present in this repo or anywhere on this
-machine**, and none of it is on the local database. A filesystem search for
-`16_stock.sql`, `19_stock_posting.sql`, `19q_opening_stock_queries.sql` and
-`19_opening_stock_flow.md` returns nothing.
+**Nothing under `schema/stock/` exists in this repo or anywhere on this machine.**
+Re-checked 2026-09-07: a filesystem search for `16_stock.sql`,
+`19_stock_posting.sql` and `19q_opening_stock_queries.sql` still returns nothing,
+and `localhost:5432/ERP` still has no `stock_voucher`, no `stock_lot`, no
+`stock_ledger` and no `stock.*` functions. Only `stock_track_policy` and
+`stock_track_preset` are there, from ordinary Prisma migrations.
 
-Confirmed missing from `localhost:5432/ERP`:
+This is the single dependency the remaining work hangs off. It cannot be
+recovered from inside this repo — the DDL, the posting functions and the triggers
+have to come from the DB owner.
 
-| Missing | Consequence |
-|---|---|
-| `stock.stock_voucher`, `stock.stock_voucher_item`, `stock.stock_lot`, `stock.stock_balance`, `stock.stock_ledger`, `stock.stock_item_cost` | every route 500s |
-| `fn_svh_post`, `fn_svh_cancel`, `fn_slt_resolve`, `fn_sml_apply`, `fn_svh_recompute`, `fn_sbl_rebuild` | post and cancel cannot run |
-| `fn_create_stock_partitions` (the **`stock`-schema** one) | the year's partitions cannot be made |
-| the triggers `tr_svi_refresh_header`, `tr_sml_apply`, `tr_svh_post_lock`, `tr_svi_post_lock`, `tr_sml_immutable` | totals stay 0, posted documents stay editable |
-
-`stock.stock_track_policy` and `stock.stock_track_preset` *are* on the database;
-they came from ordinary Prisma migrations, and nothing else from the stock engine
-did.
-
-- [ ] **Obtain `schema/stock/` and deploy it.** Run order, whole chain, in one
-  go: `00_init … 15 → stock/16_stock.sql → 16t → 16s → 17 → 18 →
+- [ ] **Obtain `schema/stock/` and deploy it**, whole chain in one go:
+  `00_init … 15 → stock/16_stock.sql → 16t → 16s → 17 → 18 →
   stock/19_stock_posting.sql → stock/20_stock_transfer.sql`.
-- [ ] **Call the stock-schema partition function for the current year before the
-  first insert** — `SELECT stock.fn_create_stock_partitions('2026-2027');`. The
-  `00_init.sql` one scans only public/sales/accounts and will not make the
-  `stock.*` partitions; without this every write fails with "no partition of
-  relation".
-- [ ] **Apply the three pending Prisma migrations locally.** `migrate status`
-  reports `20260905070000_quotation_refno_prefix_q`,
-  `20260907060000_add_track_preset_to_masters` and
-  `20260907070000_drop_opening_and_physical_stock_tables` as not yet applied — so
-  the legacy opening/physical tables are still on this database.
+- [ ] **`SELECT stock.fn_create_stock_partitions('2026-2027');`** before the
+  first insert. The `00_init.sql` function of the same name scans only
+  public/sales/accounts and will not make the `stock.*` partitions.
+- [ ] **Run the acceptance test**: `STOCK_ENGINE_REQUIRED=1 npm run test:e2e -- opening-stock`.
+- [ ] **`19m_migrate_opening.sql`** — brings existing balances over, in psql.
 
----
+### Four assumptions the deploy will confirm or refute
 
-## Needs reconciling once the DDL arrives
+The five queries were written from the Prisma models' documentation of the
+constraints, indexes and generated columns, because `19q_opening_stock_queries.sql`
+was not available to copy. They are faithful to that documentation; they are not
+the same text. Each of these is cheap to check once the engine is up and
+expensive to discover later:
 
-The plan said Q1–Q5 were to be `19q_opening_stock_queries.sql` **verbatim**. That
-file does not exist here, so the five queries were written from the Prisma models'
-documentation of the constraints, indexes and generated columns. They are
-faithful to that documentation, but they are not the same text.
-
-- [ ] **Diff the five queries against `19q_opening_stock_queries.sql`** and adopt
-  its wording where it differs — particularly the nine preflight problem strings,
-  which the plan is explicit should not be paraphrased in TypeScript.
-- [ ] **Confirm the lot-identity sentinels.** The preflight assumes
-  `('~', -1, -1, 0001-01-01, '~', nil-uuid)` for batch / MRP / sale price /
-  expiry / serial / supplier, per the `StockLot` model comment. If
+- [ ] **The preflight problem strings.** The plan says the engine's own wording
+  should not be paraphrased in TypeScript. Ours is a paraphrase by necessity —
+  diff it against `19q` and adopt that file's wording.
+- [ ] **The lot-identity sentinels.** The preflight assumes
+  `('~', -1, -1, 0001-01-01, '~', nil-uuid)` per the `StockLot` model comment. If
   `fn_slt_resolve` collapses any dimension differently, the "already opened"
-  check silently answers the wrong question.
-- [ ] **Confirm `sml_txn_type` for an opening is `'OPENING'`.** Both reports scan
-  the ledger on `StockVoucherTypeRules.ledgerTxnType`, which the OPENING
-  controller sets to `'OPENING'`. The ledger vocabulary is finer than the
+  check silently answers a different question than the one asked.
+- [ ] **`sml_txn_type = 'OPENING'`.** Both reports scan the ledger on
+  `StockVoucherTypeRules.ledgerTxnType`. The ledger vocabulary is finer than the
   document's elsewhere (ADJUST_PLUS/MINUS, PHYSICAL_PLUS/MINUS, PURCHASE), so
-  this is an assumption, not a derivation.
-- [ ] **Confirm the negative-stock refusal wording.** The filter answers 409
-  rather than 422 for a `23514` whose message contains `would go negative`
-  (`NEGATIVE_STOCK_MESSAGE_FRAGMENT`). If `fn_sml_apply` words it differently, a
-  correct refusal is reported as a malformed document.
+  OPENING coinciding with its own name is an assumption.
+- [ ] **The negative-stock refusal wording.** The filter answers 409 rather than
+  422 for a `23514` whose message contains `would go negative`
+  (`NEGATIVE_STOCK_MESSAGE_FRAGMENT`). Different wording in `fn_sml_apply` turns
+  a correct refusal into a "malformed document".
 
 ---
 
-## Integration tests — §14, second half
+## Needs a decision that is not this repo's
 
-All of these need a live engine on a throwaway PG 18 cluster.
+### The Qt grid — §0.4, and it is worse than "missing"
 
-- [ ] **Run `19_opening_stock_flow.md` end to end** and assert its captured
-  figures: after save `svh_line_count` 2, `svh_total_qty` **175.000000**,
-  `svh_total_value` **3940.00**, status DRAFT, and `stock_lot` / `stock_ledger` /
-  `stock_balance` / `stock_item_cost` all **0 rows**; after post returns **2**,
-  SALT's lot at the sentinels, `sml_cost_rate_wot` **19.047619** on line 1,
-  `stock_balance` MILK 55 / SALT 120, `stock_item_cost` MILK avg 28.000000 and
-  `sic_total_value_wot` 1466.67, `svi_lot_id` set on both lines.
-- [ ] `SELECT stock.fn_sbl_rebuild(...)` → **0 holdings differed**, after the post
-  and again after a cancel. **Assert the value columns explicitly as well** —
-  `fn_sbl_rebuild` re-derives quantities only, so it can return 0 while a
-  valuation is wrong.
-- [ ] Negative assertions, each refusing cleanly: post twice → 409 "is POSTED";
-  a second OPENING for the same holding → 409; edit a line after post → 409 from
-  `tr_svi_post_lock`; inward at cost 0 with no rate source → 422; cancel then
-  post → 409.
-- [ ] Concurrency: two parallel posts of the same voucher — one returns 2, one
-  409. (No application lock is taken on purpose; `fn_svh_post` holds
-  `FOR UPDATE` on the header.)
-- [ ] Re-check the `422` vs `400` split end to end. The repo had no 422 anywhere
-  before this module; `throwUnprocessable` was added to
-  `src/common/utils/module-shared.utils.ts` for it.
+The original checklist said `menu_master` 44 and the grid rows "do not exist
+yet". Both statements turned out to be wrong, in opposite directions:
 
----
+- **`fixed.menu_master` 44 "Opening Stock" already exists** —
+  `prisma/seed/Menu_Master.sql:156`. Nothing to do.
+- **There is no `ui_table_master` table.** It is `fixed.ui_tables`;
+  `ui-table-master` is only the NestJS module name.
+- **`fixed.ui_tables` 5 "opening stock" already exists with 45 seeded columns**
+  (`Ui_Table_Columns.sql:153-198`) — and **they describe the retired screen**.
+  Ten are hidden `osl_*` id columns (`osl item id`, `osl unit id`,
+  `osl tracking type`, `osl cess perc`, …) from the dropped
+  `opening_stock_detail`. Twelve more are price levels — `Price A/B/C/D` with
+  their wot and markup columns, MRP, MSP, profit type, round off — which the
+  `svi_` line **deliberately does not have**.
 
-## Deferred by the plan
+So the new screen must not be pointed at table 5: it would bind a grid to fields
+this API never returns, and save NULL into the ones it does.
 
-- [ ] **§11 Import from file** — `POST /stock/opening/import`, multipart CSV
-  resolved by item code and unit name. Explicitly deferrable: a silent
-  code-resolution mismatch in an importer is 400 wrong lines.
-- [ ] **§0.4 Client-side rows** — `menu_master` 44 (Opening Stock) and the
-  `ui_table_master` / grid rows the Qt grid reads. Not this module's work, but
-  the screen cannot open without them.
-- [ ] **`19m_migrate_opening.sql`** — brings existing balances over. Runs in
-  psql, not through the API.
+- [ ] **Agree the new column set with whoever owns the Qt client**, then seed it
+  — either as new columns on a new pinned `ui_tables` id (template:
+  `prisma/seed/Quotation_Charges_Grid_Web.sql`) or as additions to an existing
+  one (template: `prisma/seed/Quotation_Item_Grid_ItemSize_Column.sql`).
+  Note `Ui_Table_Columns.sql` guards per table — a table that already has any
+  column is left completely alone, so editing that file is a no-op on any
+  existing database.
+- [ ] **Retire or repoint `ui_tables` 5.** Left as it is, it describes a screen
+  that no longer exists.
+
+A seeded row is only half the change: the client needs a *meaning* for each
+column too, or it renders nowhere and saves NULL. That half lives in the Qt repo.
+
+### The local database still has the legacy tables
+
+`prisma migrate status` reports two migrations unapplied:
+`20260905070000_quotation_refno_prefix_q` and
+`20260907070000_drop_opening_and_physical_stock_tables`.
+
+**Applying the second destroys data on this machine** — 64 rows:
+`opening_stock_header` 10, `opening_stock_detail` 13, `physical_stock_header` 13,
+`physical_stock_detail` 19, `physical_stock_batch_detail` 9.
+
+- [ ] **Decide whether that data matters, then `npx prisma migrate deploy`.**
+  Not applied unilaterally: the drop is irreversible and the rows may be a
+  deliberate reference for the migration that brings openings over.
 
 ---
 
 ## Still open with the DB owner / client
 
-1. **Sale prices on the opening line.** The legacy `osl_` line carried four sale
-   price levels; `svi_` deliberately does not. If go-live is to capture them,
-   that is a second call to the pricing endpoints, not a column here — confirm
-   whether the client wants it in the same save.
-2. **`svh_rate_source` default.** The mockup has the control; `AVG_COST` and
-   `LAST_PURCHASE` read `stock_item_cost`, which is empty on a go-live day. The
-   preflight reports it, but `MANUAL` is probably the right default.
+1. **Sale prices on the opening line.** The legacy `osl_` line carried four
+   price levels — and `ui_tables` 5 still has all twelve of their columns, which
+   is evidence the screen used to capture them. `svi_` deliberately does not. If
+   go-live must capture them, that is a second call to the pricing endpoints.
+2. **`svh_rate_source` default.** `MANUAL` is the honest default on a go-live
+   day, and is now the one source that does not excuse a zero cost rate (see the
+   defect above). Confirm the screen defaults to it.
 3. **Reason master.** `svh_reason_id` is unused by OPENING but required by
-   ADJUSTMENT, which is the fix path when an opening is wrong. Not planned yet.
+   ADJUSTMENT — the fix path when an opening is wrong. Not planned yet.
 4. **REVALUE / REPACK** remain gaps in the engine: an opening entered at the
-   wrong cost cannot be revalued — it is cancel and re-enter, and cancel is
-   refused once stock has been sold from it.
+   wrong cost cannot be revalued, and cancel is refused once stock has been sold
+   from it.
