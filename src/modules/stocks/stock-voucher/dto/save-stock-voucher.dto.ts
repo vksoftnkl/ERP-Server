@@ -14,7 +14,12 @@ import {
   RequiredUuid,
   TrimmedString,
 } from 'src/common/dto/dtoDecorators';
-import { STOCK_RATE_SOURCES, type StockRateSource } from '../types/stock-voucher.types';
+import {
+  SAVEABLE_STOCK_VOUCHER_STATUSES,
+  STOCK_RATE_SOURCES,
+  type SaveableStockVoucherStatus,
+  type StockRateSource,
+} from '../types/stock-voucher.types';
 import { SaveStockVoucherItemDto } from './save-stock-voucher-item.dto';
 
 /**
@@ -280,6 +285,39 @@ export class SaveStockVoucherHeaderDto {
   })
   rateSource?: StockRateSource | null;
 
+  /**
+   * WHAT THE SAVE SHOULD LEAVE THE DOCUMENT AS. Omit it and you get a DRAFT,
+   * which is what every caller got before this field existed.
+   *
+   * 'POSTED' IS AN INSTRUCTION, NOT A COLUMN VALUE. It does not write
+   * svh_status='POSTED' and stop — it saves the draft and then runs the whole
+   * post inside the SAME transaction: the per-line preflight, the lots, the
+   * stock_ledger rows, the stock_balance upsert and the POSTED row on
+   * public.txn_status_log. Either the document is saved AND the stock moved, or
+   * neither happened. That is the entire reason this is not a plain writable
+   * column: a voucher that says POSTED while nothing moved is the one state
+   * this module exists to prevent, and every stock report would quietly
+   * disagree with it.
+   *
+   * A failing line therefore fails the SAVE too, with the same 422 the separate
+   * post route returns. Send 'DRAFT' (or nothing) to save a document that is
+   * not ready yet and post it later through /stock/opening/post.
+   *
+   * Only these two are accepted here. IN_TRANSIT and RECEIVED belong to the
+   * transfer chain and CANCELLED is reached by cancelling, never by saving.
+   */
+  @ApiPropertyOptional({
+    enum: SAVEABLE_STOCK_VOUCHER_STATUSES,
+    default: 'DRAFT',
+    description:
+      "What to leave the document as. Omitted or 'DRAFT' saves a draft. 'POSTED' saves and then posts it in one transaction — preflight, lots, ledger, balance and the status trail — so a line the preflight refuses fails the save as well.",
+  })
+  @IsOptional()
+  @IsIn(SAVEABLE_STOCK_VOUCHER_STATUSES as unknown as string[], {
+    message: `status must be one of ${SAVEABLE_STOCK_VOUCHER_STATUSES.join(', ')} — a document is cancelled by cancelling it, never by saving`,
+  })
+  status?: SaveableStockVoucherStatus;
+
   @ApiPropertyOptional({ maxLength: 250, nullable: true })
   @NullableStringStrict(250)
   remarks?: string | null;
@@ -332,6 +370,38 @@ export class SaveStockVoucherHeaderDto {
   })
   @OptionalUuid()
   userId?: string;
+
+  /**
+   * WHO. `svh_created_by` and `svh_modified_by` are free TEXT and carry no
+   * foreign key, so they take whatever the client wants the audit trail to say —
+   * a user id, a till name, an import job's name.
+   *
+   * Each is only ever written on the step it names: a CREATE writes createdBy
+   * and an UPDATE writes modifiedBy, and an update NEVER rewrites created_by.
+   * Who raised a document is not something a later edit gets to change, and
+   * that is the one property of these two columns worth protecting.
+   *
+   * Both fall back to `userId`, and then to the authenticated user from the
+   * request context, so an existing caller that sends neither behaves exactly
+   * as it did before.
+   */
+  @ApiPropertyOptional({
+    maxLength: 100,
+    nullable: true,
+    description:
+      'Who created the document — written on a CREATE only. Falls back to userId, then to the authenticated user.',
+  })
+  @NullableStringStrict(100)
+  createdBy?: string | null;
+
+  @ApiPropertyOptional({
+    maxLength: 100,
+    nullable: true,
+    description:
+      'Who last changed it — written on an UPDATE only, and never overwrites created_by. Falls back to userId, then to the authenticated user.',
+  })
+  @NullableStringStrict(100)
+  modifiedBy?: string | null;
 }
 
 export class SaveStockVoucherDto {

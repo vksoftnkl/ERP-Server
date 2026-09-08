@@ -9,7 +9,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.OpeningReconcileSuccessDto = exports.PendingOpeningItemsSuccessDto = exports.OpeningStockDeleteSuccessDto = exports.OpeningStockCancelSuccessDto = exports.OpeningStockPostSuccessDto = exports.OpeningStockValidateSuccessDto = exports.OpeningStockListSuccessDto = exports.OpeningStockDocumentSuccessDto = exports.OpeningReconcileDto = exports.OpeningReconcileRowDto = exports.PendingOpeningItemsDto = exports.PendingOpeningItemDto = exports.OpeningStockDeleteResultDto = exports.OpeningStockImportSuccessDto = exports.OpeningStockImportResultDto = exports.OpeningStockCancelResultDto = exports.OpeningStockPostResultDto = exports.OpeningStockLineProblemDto = exports.OpeningStockListDto = exports.PagedMetaDto = exports.OpeningStockListItemDto = exports.OpeningStockDocumentDto = exports.OpeningStockLineDto = exports.OpeningStockHeaderDto = exports.OpeningStockErrorResponseDto = exports.OpeningStockErrorFieldDto = void 0;
+exports.OpeningReconcileSuccessDto = exports.PendingOpeningItemsSuccessDto = exports.OpeningStockDeleteSuccessDto = exports.OpeningStockCancelSuccessDto = exports.OpeningStockPostSuccessDto = exports.OpeningStockValidateSuccessDto = exports.OpeningStockListSuccessDto = exports.OpeningStockSaveSuccessDto = exports.OpeningStockSavedDocumentDto = exports.OpeningStockDocumentSuccessDto = exports.OpeningReconcileDto = exports.OpeningReconcileRowDto = exports.PendingOpeningItemsDto = exports.PendingOpeningItemDto = exports.OpeningStockDeleteResultDto = exports.OpeningStockImportSuccessDto = exports.OpeningStockImportResultDto = exports.OpeningStockCancelResultDto = exports.OpeningStockPostResultDto = exports.OpeningStockLineProblemDto = exports.OpeningStockListDto = exports.PagedMetaDto = exports.OpeningStockListItemDto = exports.OpeningStockDocumentDto = exports.OpeningStockLineDto = exports.OpeningStockHeaderDto = exports.OpeningStockErrorResponseDto = exports.OpeningStockErrorFieldDto = void 0;
 const swagger_1 = require("@nestjs/swagger");
 const stock_voucher_types_1 = require("../../stock-voucher/types/stock-voucher.types");
 class OpeningStockErrorFieldDto {
@@ -858,6 +858,37 @@ __decorate([
     (0, swagger_1.ApiProperty)({ type: OpeningStockDocumentDto }),
     __metadata("design:type", OpeningStockDocumentDto)
 ], OpeningStockDocumentSuccessDto.prototype, "data", void 0);
+class OpeningStockSavedDocumentDto extends OpeningStockDocumentDto {
+    rowsPosted;
+}
+exports.OpeningStockSavedDocumentDto = OpeningStockSavedDocumentDto;
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        type: Number,
+        nullable: true,
+        example: null,
+        description: "null when the save left a draft; the number of stock_ledger rows written when header.status was 'POSTED'.",
+    }),
+    __metadata("design:type", Object)
+], OpeningStockSavedDocumentDto.prototype, "rowsPosted", void 0);
+class OpeningStockSaveSuccessDto {
+    success;
+    message;
+    data;
+}
+exports.OpeningStockSaveSuccessDto = OpeningStockSaveSuccessDto;
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: true }),
+    __metadata("design:type", Boolean)
+], OpeningStockSaveSuccessDto.prototype, "success", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 'Opening stock created successfully' }),
+    __metadata("design:type", String)
+], OpeningStockSaveSuccessDto.prototype, "message", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ type: OpeningStockSavedDocumentDto }),
+    __metadata("design:type", OpeningStockSavedDocumentDto)
+], OpeningStockSaveSuccessDto.prototype, "data", void 0);
 class OpeningStockListSuccessDto {
     success;
     message;

@@ -18,6 +18,8 @@ const request_context_service_1 = require("../../../common/request-context/reque
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
 const stock_voucher_numbering_helper_1 = require("./stock-voucher-numbering.helper");
 const stock_voucher_import_helper_1 = require("./stock-voucher-import.helper");
+const stock_voucher_posting_helper_1 = require("./stock-voucher-posting.helper");
+const txn_status_log_helper_1 = require("../../../common/txn-status-log/txn-status-log.helper");
 const stock_voucher_types_1 = require("./types/stock-voucher.types");
 const STOCK_VOUCHER_TABLE_NAME = 'stock_voucher';
 const STOCK_VOUCHER_ITEM_TABLE_NAME = 'stock_voucher_item';
@@ -40,12 +42,50 @@ let StockVoucherService = class StockVoucherService {
         const actor = (0, module_service_utils_1.resolveActor)(header.userId, this.requestContextService.getUserId());
         this.assertPayloadRules(rules, dto);
         await this.assertReasons(rules, dto);
-        const svhId = await this.prisma.$transaction(async (tx) => {
-            return header.svhId
+        const postAfterSave = header.status === 'POSTED';
+        const postedOn = new Date();
+        const { svhId, rowsPosted } = await this.prisma.$transaction(async (tx) => {
+            const id = header.svhId
                 ? await this.updateDraft(tx, rules, dto, actor)
                 : await this.createDraft(tx, rules, dto, actor);
+            if (!postAfterSave) {
+                return { svhId: id, rowsPosted: null };
+            }
+            await this.assertPostable(rules, id, header.accYear, header.companyId, header.branchId, tx);
+            const posted = await (0, stock_voucher_posting_helper_1.postStockVoucher)(tx, {
+                rules,
+                svhId: id,
+                accYear: header.accYear,
+                actor,
+                postedOn,
+            });
+            await this.logStatusChange(tx, {
+                rules,
+                svhId: id,
+                accYear: header.accYear,
+                companyId: header.companyId,
+                branchId: header.branchId,
+                tenantId: header.tenantId ?? null,
+                refno: (await this.loadRefno(tx, id, header.accYear)) ?? id,
+                fromStatus: 'DRAFT',
+                toStatus: 'POSTED',
+                actor,
+                changedOn: postedOn,
+                remarks: `${rules.displayName} saved and posted — ${posted} ledger rows`,
+                deviceId: header.deviceId,
+                sessionId: header.sessionId ?? null,
+            });
+            return { svhId: id, rowsPosted: posted };
         });
-        return this.getById(rules, svhId, header.accYear, header.companyId, header.branchId);
+        const document = await this.getById(rules, svhId, header.accYear, header.companyId, header.branchId);
+        return { ...document, rowsPosted };
+    }
+    async loadRefno(tx, svhId, accYear) {
+        const row = await tx.stockVoucher.findUnique({
+            where: { svhId_svhAccYear: { svhId, svhAccYear: accYear } },
+            select: { svhRefno: true },
+        });
+        return row?.svhRefno ?? null;
     }
     assertPayloadRules(rules, dto) {
         const { header, lines } = dto;
@@ -395,11 +435,11 @@ let StockVoucherService = class StockVoucherService {
                 ...this.freezeData(header),
                 svhSyncDate: header.syncDate ? new Date(header.syncDate) : null,
                 svhStatus: 'DRAFT',
-                svhCreatedBy: this.auditActor(actor),
+                svhCreatedBy: this.actorFor(header.createdBy, actor),
             },
             select: { svhId: true, svhAccYear: true, svhRefno: true },
         });
-        await this.replaceLines(tx, rules, dto, created.svhId, actor);
+        await this.replaceLines(tx, rules, dto, created.svhId, actor, header.createdBy);
         await this.writeHeaderTotals(tx, created.svhId, header);
         await this.auditLogService.logEntityChange({
             action: 'insert',
@@ -413,6 +453,22 @@ let StockVoucherService = class StockVoucherService {
             userId: actor,
             notes: `${rules.displayName} draft created`,
         }, tx);
+        await this.logStatusChange(tx, {
+            rules,
+            svhId: created.svhId,
+            accYear: header.accYear,
+            companyId: header.companyId,
+            branchId: header.branchId,
+            tenantId: header.tenantId ?? null,
+            refno: created.svhRefno,
+            fromStatus: null,
+            toStatus: 'DRAFT',
+            actor,
+            changedOn: new Date(),
+            remarks: `${rules.displayName} created`,
+            deviceId: header.deviceId,
+            sessionId: header.sessionId ?? null,
+        });
         return created.svhId;
     }
     async writeHeaderTotals(tx, svhId, header) {
@@ -464,10 +520,10 @@ let StockVoucherService = class StockVoucherService {
                 svhSyncDate: header.syncDate ? new Date(header.syncDate) : null,
                 svhVersionNo: { increment: 1 },
                 svhModifiedOn: new Date(),
-                svhModifiedBy: this.auditActor(actor),
+                svhModifiedBy: this.actorFor(header.modifiedBy, actor),
             },
         });
-        await this.replaceLines(tx, rules, dto, svhId, actor);
+        await this.replaceLines(tx, rules, dto, svhId, actor, header.modifiedBy);
         await this.writeHeaderTotals(tx, svhId, header);
         await this.auditLogService.logEntityChange({
             action: 'update',
@@ -483,7 +539,7 @@ let StockVoucherService = class StockVoucherService {
         }, tx);
         return svhId;
     }
-    async replaceLines(tx, rules, dto, svhId, actor) {
+    async replaceLines(tx, rules, dto, svhId, actor, author) {
         const { header, lines } = dto;
         await tx.stockVoucherItem.deleteMany({
             where: { sviVoucherId: svhId, sviAccYear: header.accYear },
@@ -551,7 +607,8 @@ let StockVoucherService = class StockVoucherService {
                 sviReasonId: line.reasonId ?? null,
                 sviSyncDate: line.syncDate ? new Date(line.syncDate) : null,
                 sviRemarks: line.remarks ?? null,
-                sviCreatedBy: this.auditActor(actor),
+                sviCreatedBy: this.actorFor(line.createdBy ?? author, actor),
+                ...this.lineModifiedByData(line.modifiedBy ?? header.modifiedBy),
             };
         });
         await tx.stockVoucherItem.createMany({ data });
@@ -807,10 +864,10 @@ let StockVoucherService = class StockVoucherService {
     `;
         return { header: this.toHeaderPayload(header), lines: lines.map((row) => this.toLinePayload(row)) };
     }
-    async validate(rules, svhId, accYear, companyId, branchId) {
-        await this.loadHeaderOrThrow(rules, svhId, accYear, companyId, branchId);
+    async validate(rules, svhId, accYear, companyId, branchId, tx) {
+        await this.loadHeaderOrThrow(rules, svhId, accYear, companyId, branchId, tx);
         const isCount = rules.quantityMode === 'COUNT';
-        return this.prisma.$queryRaw `
+        return (tx ?? this.prisma).$queryRaw `
       WITH doc AS (
         SELECT svh.svh_id,
                svh.svh_acc_year,
@@ -1013,24 +1070,48 @@ let StockVoucherService = class StockVoucherService {
        ORDER BY keyed.svi_line_no, keyed.svi_split_no
     `;
     }
-    async post(rules, svhId, accYear, companyId, branchId, userId, afterPost) {
-        const actor = (0, module_service_utils_1.resolveActor)(userId, this.requestContextService.getUserId());
-        const existing = await this.loadHeaderOrThrow(rules, svhId, accYear, companyId, branchId);
-        this.assertDraft(rules, existing);
-        const problems = (await this.validate(rules, svhId, accYear, companyId, branchId)).filter((row) => row.problem !== null);
+    async assertPostable(rules, svhId, accYear, companyId, branchId, tx) {
+        const problems = (await this.validate(rules, svhId, accYear, companyId, branchId, tx)).filter((row) => row.problem !== null);
         if (problems.length) {
             (0, module_service_utils_1.throwStockUnprocessable)(`This ${rules.displayName.toLowerCase()} cannot be posted`, problems.map((row) => ({
                 field: `lines.${row.lineNo}`,
                 message: `Line ${row.lineNo}${row.splitNo > 1 ? ` split ${row.splitNo}` : ''} (${row.itemName}): ${row.problem}`,
             })));
         }
+    }
+    async post(rules, svhId, accYear, companyId, branchId, userId, afterPost) {
+        const actor = (0, module_service_utils_1.resolveActor)(userId, this.requestContextService.getUserId());
+        const existing = await this.loadHeaderOrThrow(rules, svhId, accYear, companyId, branchId);
+        this.assertDraft(rules, existing);
+        await this.assertPostable(rules, svhId, accYear, companyId, branchId);
+        const postedOn = new Date();
         const rowsPosted = await this.prisma.$transaction(async (tx) => {
-            const fn = client_1.Prisma.raw(this.assertPostFunction(rules));
-            const [row] = await tx.$queryRaw `
-        SELECT ${fn}(${svhId}::uuid, ${accYear}::bpchar, ${actor}::uuid) AS rows
-      `;
-            const posted = Number(row?.rows ?? 0);
+            let posted;
+            if ((0, stock_voucher_posting_helper_1.usesInProcessPosting)(rules)) {
+                posted = await (0, stock_voucher_posting_helper_1.postStockVoucher)(tx, { rules, svhId, accYear, actor, postedOn });
+            }
+            else {
+                const fn = client_1.Prisma.raw(this.assertPostFunction(rules));
+                const [row] = await tx.$queryRaw `
+          SELECT ${fn}(${svhId}::uuid, ${accYear}::bpchar, ${actor}::uuid) AS rows
+        `;
+                posted = Number(row?.rows ?? 0);
+            }
             await afterPost?.(tx, posted);
+            await this.logStatusChange(tx, {
+                rules,
+                svhId,
+                accYear,
+                companyId,
+                branchId,
+                tenantId: existing.svhTenantId ?? null,
+                refno: existing.svhRefno,
+                fromStatus: existing.svhStatus,
+                toStatus: 'POSTED',
+                actor,
+                changedOn: postedOn,
+                remarks: `${rules.displayName} posted — ${posted} ledger rows`,
+            });
             return posted;
         });
         const document = await this.getById(rules, svhId, accYear, companyId, branchId);
@@ -1081,11 +1162,29 @@ let StockVoucherService = class StockVoucherService {
                 },
             ]);
         }
+        const cancelledOn = new Date();
         const rowsReversed = await this.prisma.$transaction(async (tx) => {
             const [row] = await tx.$queryRaw `
         SELECT stock.fn_svh_cancel(${svhId}::uuid, ${accYear}::bpchar, ${trimmedReason}, ${actor}::uuid) AS rows
       `;
-            return Number(row?.rows ?? 0);
+            const reversed = Number(row?.rows ?? 0);
+            await this.logStatusChange(tx, {
+                rules,
+                svhId,
+                accYear,
+                companyId,
+                branchId,
+                tenantId: existing.svhTenantId ?? null,
+                refno: existing.svhRefno,
+                fromStatus: existing.svhStatus,
+                toStatus: 'CANCELLED',
+                actor,
+                changedOn: cancelledOn,
+                remarks: trimmedReason,
+                deviceId: existing.svhDeviceId,
+                sessionId: existing.svhSessionId,
+            });
+            return reversed;
         });
         const document = await this.getById(rules, svhId, accYear, companyId, branchId);
         await this.auditLogService.logEntityChange({
@@ -1148,6 +1247,23 @@ let StockVoucherService = class StockVoucherService {
                 userId: actor,
                 notes: `${rules.displayName} draft soft deleted`,
             }, tx);
+            await this.logStatusChange(tx, {
+                rules,
+                svhId,
+                accYear,
+                companyId,
+                branchId,
+                tenantId: existing.svhTenantId ?? null,
+                refno: existing.svhRefno,
+                fromStatus: existing.svhStatus,
+                toStatus: existing.svhStatus,
+                event: txn_status_log_helper_1.TxnStatusEvent.DELETED,
+                actor,
+                changedOn: modifiedOn,
+                remarks: `${rules.displayName} draft deleted`,
+                deviceId: existing.svhDeviceId,
+                sessionId: existing.svhSessionId,
+            });
         });
         return { svhId, accYear, deleted: true };
     }
@@ -1475,8 +1591,40 @@ let StockVoucherService = class StockVoucherService {
         }
         return existing;
     }
-    async loadHeaderOrThrow(rules, svhId, accYear, companyId, branchId) {
-        const existing = await this.prisma.stockVoucher.findUnique({
+    async logStatusChange(tx, step) {
+        await (0, txn_status_log_helper_1.appendTxnStatusLog)(tx, {
+            companyId: step.companyId,
+            branchId: step.branchId,
+            tenantId: step.tenantId,
+            accYear: step.accYear,
+            srcModule: txn_status_log_helper_1.TxnStatusSrcModule.INVENTORY,
+            srcDocType: step.rules.statusDocType,
+            srcDocId: step.svhId,
+            srcDocRefno: step.refno,
+            event: step.event ?? this.toStatusEvent(step.fromStatus, step.toStatus),
+            fromStatus: step.fromStatus,
+            toStatus: step.toStatus,
+            changedOn: step.changedOn,
+            changedBy: step.actor,
+            remarks: step.remarks ?? null,
+            deviceId: step.deviceId ?? null,
+            sessionId: step.sessionId ?? null,
+        });
+    }
+    toStatusEvent(fromStatus, toStatus) {
+        if (fromStatus === null) {
+            return txn_status_log_helper_1.TxnStatusEvent.CREATED;
+        }
+        if (toStatus === 'CANCELLED') {
+            return txn_status_log_helper_1.TxnStatusEvent.CANCELLED;
+        }
+        if (toStatus === 'POSTED') {
+            return txn_status_log_helper_1.TxnStatusEvent.POSTED;
+        }
+        return txn_status_log_helper_1.TxnStatusEvent.STATUS_CHANGED;
+    }
+    async loadHeaderOrThrow(rules, svhId, accYear, companyId, branchId, tx) {
+        const existing = await (tx ?? this.prisma).stockVoucher.findUnique({
             where: { svhId_svhAccYear: { svhId, svhAccYear: accYear } },
             select: {
                 svhId: true,
@@ -1487,6 +1635,9 @@ let StockVoucherService = class StockVoucherService {
                 svhCompanyId: true,
                 svhBranchId: true,
                 svhCancelledOn: true,
+                svhTenantId: true,
+                svhDeviceId: true,
+                svhSessionId: true,
             },
         });
         if (!existing ||
@@ -1609,6 +1760,14 @@ let StockVoucherService = class StockVoucherService {
     }
     auditActor(actor) {
         return actor === module_service_utils_1.DEFAULT_ACTOR ? null : actor;
+    }
+    actorFor(supplied, actor) {
+        const trimmed = supplied?.trim();
+        return trimmed ? trimmed : this.auditActor(actor);
+    }
+    lineModifiedByData(supplied) {
+        const trimmed = supplied?.trim();
+        return trimmed ? { sviModifiedBy: trimmed } : {};
     }
     docDatetimeData(header) {
         return header.docDatetime ? { svhDocDatetime: new Date(header.docDatetime) } : {};

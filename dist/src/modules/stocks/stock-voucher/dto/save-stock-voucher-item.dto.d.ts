@@ -31,4 +31,6 @@ export declare class SaveStockVoucherItemDto {
     reasonId?: string | null;
     syncDate?: string | null;
     remarks?: string | null;
+    createdBy?: string | null;
+    modifiedBy?: string | null;
 }

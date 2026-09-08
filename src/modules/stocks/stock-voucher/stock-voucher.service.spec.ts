@@ -266,6 +266,171 @@ describe('StockVoucherService', () => {
       expect(client.itemUnitConversion.findMany).not.toHaveBeenCalled();
     });
 
+    it('writes createdBy from the payload, on the header and on every line', async () => {
+      await service.save(
+        OPENING_RULES,
+        payload({
+          header: { createdBy: 'TILL-01 operator' } as never,
+          lines: [{ ...payload().lines[0], createdBy: 'row author' }] as never,
+        }),
+      );
+
+      expect(client.stockVoucher.create.mock.calls[0][0].data.svhCreatedBy).toBe(
+        'TILL-01 operator',
+      );
+      expect(createdLine().sviCreatedBy).toBe('row author');
+    });
+
+    it('falls back to the header author, then the actor, when a line names none', async () => {
+      await service.save(OPENING_RULES, payload({ header: { createdBy: 'import job' } as never }));
+      expect(createdLine().sviCreatedBy).toBe('import job');
+
+      client.stockVoucherItem.createMany.mockClear();
+      await service.save(OPENING_RULES, payload());
+      // Neither level named one, so the resolved actor stands — exactly what
+      // every caller got before these fields existed.
+      expect(createdLine().sviCreatedBy).toBe(USER_ID);
+    });
+
+    it('does not stamp the original author on lines an UPDATE rewrites', async () => {
+      client.stockVoucher.findUnique.mockResolvedValue({
+        svhId: SVH_ID,
+        svhAccYear: ACC_YEAR,
+        svhRefno: 'OPN/x',
+        svhStatus: 'DRAFT',
+        svhIsDeleted: false,
+        svhVoucherType: 'OPENING',
+        svhCompanyId: COMPANY_ID,
+        svhBranchId: BRANCH_ID,
+        svhCancelledOn: null,
+      });
+
+      await service.save(
+        OPENING_RULES,
+        payload({
+          header: { svhId: SVH_ID, createdBy: 'the original author', modifiedBy: 'the editor' } as never,
+        }),
+      );
+
+      // A save REPLACES the lines, so this row was inserted by the EDITOR. The
+      // header keeps its own created_by; the lines must not quietly re-credit
+      // the original author for an edit somebody else made.
+      expect(createdLine().sviCreatedBy).toBe('the editor');
+    });
+
+    it('never writes modified_by on a line the save is inserting fresh', async () => {
+      await service.save(OPENING_RULES, payload({ header: { createdBy: 'x' } as never }));
+
+      // Absent, not null: a line created by this save has not been modified,
+      // and a modified_by on it would claim an edit that never happened.
+      expect(createdLine()).not.toHaveProperty('sviModifiedBy');
+    });
+
+    it('writes modifiedBy on an update and leaves created_by alone', async () => {
+      client.stockVoucher.findUnique.mockResolvedValue({
+        svhId: SVH_ID,
+        svhAccYear: ACC_YEAR,
+        svhRefno: 'OPN/x',
+        svhStatus: 'DRAFT',
+        svhIsDeleted: false,
+        svhVoucherType: 'OPENING',
+        svhCompanyId: COMPANY_ID,
+        svhBranchId: BRANCH_ID,
+        svhCancelledOn: null,
+      });
+
+      await service.save(
+        OPENING_RULES,
+        payload({
+          header: { svhId: SVH_ID, createdBy: 'ignored', modifiedBy: 'the editor' } as never,
+        }),
+      );
+
+      const data = client.stockVoucher.update.mock.calls[0][0].data;
+      expect(data.svhModifiedBy).toBe('the editor');
+      // Who raised the document is not something a later edit gets to change.
+      expect(data).not.toHaveProperty('svhCreatedBy');
+    });
+
+    it('saves a DRAFT and posts nothing when the payload names no status', async () => {
+      await service.save(OPENING_RULES, payload());
+
+      expect(client.stockVoucher.create.mock.calls[0][0].data.svhStatus).toBe('DRAFT');
+      // The five posting statements never ran.
+      expect(client.$executeRaw).not.toHaveBeenCalled();
+    });
+
+    it("saves and posts in ONE transaction when the payload says status POSTED", async () => {
+      jest.spyOn(service, 'validate').mockResolvedValue([]);
+
+      const result = await service.save(
+        OPENING_RULES,
+        payload({ header: { status: 'POSTED' } as never }),
+      );
+
+      // The row is still WRITTEN as a draft — post is a step that follows, not
+      // a value the insert takes. Nothing may create a POSTED document.
+      expect(client.stockVoucher.create.mock.calls[0][0].data.svhStatus).toBe('DRAFT');
+      // ...and then the same transaction posts it: lots, lines, ledger,
+      // balances, lot totals.
+      expect(client.$executeRaw).toHaveBeenCalledTimes(5);
+      expect(client.stockVoucher.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ svhStatus: 'POSTED' }) }),
+      );
+      // One transaction, not a save followed by a separate post.
+      expect(client.$transaction).toHaveBeenCalledTimes(1);
+      expect(result.rowsPosted).not.toBeNull();
+    });
+
+    it('writes both trail steps when one request saves and posts', async () => {
+      jest.spyOn(service, 'validate').mockResolvedValue([]);
+
+      await service.save(OPENING_RULES, payload({ header: { status: 'POSTED' } as never }));
+
+      const events = client.txnStatusLog.create.mock.calls.map(
+        (call: [{ data: { tslEvent: string; tslToStatus: string } }]) => [
+          call[0].data.tslEvent,
+          call[0].data.tslToStatus,
+        ],
+      );
+      // The document was created and then posted, and the trail says both —
+      // collapsing them into one POSTED row would lose who created it.
+      expect(events).toEqual([
+        ['CREATED', 'DRAFT'],
+        ['POSTED', 'POSTED'],
+      ]);
+    });
+
+    it('refuses the whole save when status is POSTED and a line fails the preflight', async () => {
+      jest.spyOn(service, 'validate').mockResolvedValue([
+        {
+          sviId: 'x',
+          lineNo: 1,
+          splitNo: 1,
+          itemId: ITEM_ID,
+          itemCode: 'X',
+          itemName: 'Widget',
+          problem: 'this holding already has an opening in this year',
+        },
+      ]);
+
+      await expect(
+        service.save(OPENING_RULES, payload({ header: { status: 'POSTED' } as never })),
+      ).rejects.toMatchObject({
+        response: {
+          errors: expect.arrayContaining([
+            expect.objectContaining({
+              message: expect.stringContaining('already has an opening'),
+            }),
+          ]),
+        },
+      });
+
+      // The refusal happens INSIDE the transaction, so the draft rolls back
+      // with it: a save asked to post either does both or does neither.
+      expect(client.$executeRaw).not.toHaveBeenCalled();
+    });
+
     it('opens the voucher\'s status trail with a CREATED step', async () => {
       await service.save(OPENING_RULES, payload());
 

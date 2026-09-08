@@ -1,4 +1,5 @@
 import { Prisma } from '@prisma/client';
+import { DEFAULT_ACTOR } from 'src/common/utils/module-service.utils';
 import type { StockVoucherTypeRules } from './types/stock-voucher.types';
 
 /**
@@ -71,10 +72,30 @@ export function usesInProcessPosting(rules: StockVoucherTypeRules): boolean {
   return rules.postFunction === 'stock.fn_svh_post';
 }
 
+/**
+ * DEFAULT_ACTOR IS "NOBODY", NOT A USER, and must never be stamped into an audit
+ * column.
+ *
+ * `resolveActor` returns the nil uuid when a request carries no authenticated
+ * user, and every audit write elsewhere in the service passes it through
+ * `StockVoucherService.auditActor` to collapse that to NULL. Writing it raw
+ * leaves `svh_modified_by = 00000000-0000-0000-0000-000000000000` on the header
+ * and on every line — a row that looks attributed and is not, which is worse
+ * than an empty column because a reader has no way to tell the two apart.
+ */
+function auditColumnActor(actor: string): string | null {
+  return actor === DEFAULT_ACTOR ? null : actor;
+}
+
 export interface PostStockVoucherParams {
   rules: StockVoucherTypeRules;
   svhId: string;
   accYear: string;
+  /**
+   * The resolved actor. Never null — `resolveActor` falls back to DEFAULT_ACTOR,
+   * the nil uuid — so it is passed through `auditColumnActor` before it reaches
+   * any audit column. See that function for why writing it raw is wrong.
+   */
   actor: string;
   /** One instant for every row the post writes, so a trail sorts unambiguously. */
   postedOn: Date;
@@ -95,7 +116,8 @@ export async function postStockVoucher(
   tx: Prisma.TransactionClient,
   params: PostStockVoucherParams,
 ): Promise<number> {
-  const { rules, svhId, accYear, actor, postedOn } = params;
+  const { svhId, accYear, actor, postedOn } = params;
+  const author = auditColumnActor(actor);
 
   await resolveLots(tx, params);
   await attachLotsToLines(tx, params);
@@ -108,11 +130,12 @@ export async function postStockVoucher(
     data: {
       svhStatus: 'POSTED',
       svhPostedOn: postedOn,
-      // svh_posted_by is uuid; resolveActor guarantees one.
-      svhPostedBy: actor,
+      // NULL rather than the nil uuid when nobody is authenticated: "posted by
+      // nobody" is the truth, and svh_posted_by is nullable to say it.
+      svhPostedBy: author,
       svhVersionNo: { increment: 1 },
       svhModifiedOn: postedOn,
-      svhModifiedBy: actor,
+      svhModifiedBy: author,
     },
   });
 
@@ -301,7 +324,7 @@ async function resolveLots(
            ${STOCK_LEDGER_SRC_MODULE}, ${rules.voucherType}, c.svi_voucher_id,
            c.svi_acc_year, c.svh_refno,
            c.line_cost_rate, c.line_cost_rate, c.line_cost_rate_wot, c.svi_landed_rate, c.svi_tax_perc,
-           ${actor}
+           ${auditColumnActor(actor)}
       FROM costed c
      ORDER BY c.svh_company_id, c.svi_item_id, c.key_batch, c.key_mrp,
               c.key_sp, c.key_expiry, c.key_serial, c.key_supplier,
@@ -313,10 +336,14 @@ async function resolveLots(
 /**
  * Phase 2 — every line gets the `slt_id` its identity resolves to.
  *
- * A COUNT and a TRANSFER already carry one (their line names the holding it
- * reconciles or moves), so those are left alone: re-resolving a count line would
- * find a different lot than the sheet was generated against, and the whole point
- * of the drift check is that it did not.
+ * COALESCE and not an assignment: a COUNT and a TRANSFER already carry one —
+ * their line names the holding it reconciles or moves — and overwriting it would
+ * point a count at a different lot than the sheet was generated against, when the
+ * whole point of the drift check is that it was not.
+ *
+ * The resolved cost IS written back on every line, lot or no lot, because it is
+ * the figure the ledger row was valued at and a line that disagreed with its own
+ * movement would be unexplainable afterwards.
  */
 async function attachLotsToLines(
   tx: Prisma.TransactionClient,
@@ -326,11 +353,11 @@ async function attachLotsToLines(
   await tx.$executeRaw`
     WITH ${postingCte(svhId, accYear, isCount)}
     UPDATE stock.stock_voucher_item svi
-       SET svi_lot_id      = slt.slt_id,
+       SET svi_lot_id        = COALESCE(svi.svi_lot_id, slt.slt_id),
            svi_cost_rate     = c.line_cost_rate,
            svi_cost_rate_wot = c.line_cost_rate_wot,
-           svi_modified_on = ${postedOn},
-           svi_modified_by = ${actor}
+           svi_modified_on   = ${postedOn},
+           svi_modified_by   = ${auditColumnActor(actor)}
       FROM costed c
       JOIN stock.stock_lot slt
         ON slt.slt_company_id  = c.svh_company_id
@@ -344,7 +371,6 @@ async function attachLotsToLines(
        AND slt.slt_is_deleted  = false
      WHERE svi.svi_id       = c.svi_id
        AND svi.svi_acc_year = c.svi_acc_year
-       AND svi.svi_lot_id IS NULL
   `;
 }
 
@@ -366,7 +392,7 @@ async function writeLedger(
   // A count posts two txn types in one document, decided per line by the sign of
   // the variance; every other type posts one, decided by the document.
   const [plusTxnType, minusTxnType] = isCount
-    ? [rules.ledgerTxnTypes[0], (rules.ledgerTxnTypes[1] ?? rules.ledgerTxnTypes[0])]
+    ? [rules.ledgerTxnTypes[0], rules.ledgerTxnTypes[1] ?? rules.ledgerTxnTypes[0]]
     : [rules.ledgerTxnTypes[0], rules.ledgerTxnTypes[0]];
   const direction = rules.isInward ? DIRECTION_IN : DIRECTION_OUT;
 
@@ -402,7 +428,7 @@ async function writeLedger(
            c.line_cost_rate_wot, ROUND(c.line_cost_rate_wot * (c.move_base_qty + c.move_free_base_qty), 2),
            c.svi_landed_rate,    ROUND(c.svi_landed_rate    * (c.move_base_qty + c.move_free_base_qty), 2),
            c.svi_mrp, c.svi_batch_no, c.svi_expiry_date,
-           COALESCE(c.svi_reason_id, c.svh_reason_id), ${actor}
+           COALESCE(c.svi_reason_id, c.svh_reason_id), ${auditColumnActor(actor)}
       FROM costed c
       JOIN stock.stock_voucher_item svi
         ON svi.svi_id = c.svi_id AND svi.svi_acc_year = c.svi_acc_year
@@ -423,6 +449,33 @@ async function writeLedger(
  * generated `sbl_on_hand_qty` / `sbl_available_qty` fall out of them. Neither is
  * written here — Postgres rejects any write to a generated column.
  *
+ * `sml_cost_value` IS A MAGNITUDE, NOT A SIGNED AMOUNT. The ledger's own doc
+ * says it: "on an inward these are what it cost. On an outward they are the
+ * COGS" — both positive. Summing it flat would make an issue INCREASE the value
+ * on the shelf, so the sum applies `sml_direction` the way `sml_signed_base_qty`
+ * already applies it to quantity. All-inward documents never showed this; a
+ * count with a negative variance does.
+ *
+ * `sbl_avg_cost_rate` is DERIVED FROM THE TWO COLUMNS BESIDE IT — the new value
+ * over the new on-hand — and not accumulated, because an average of an average
+ * is not an average. `stock_balance` says these are trigger-maintained and must
+ * never be written from application code; that rule assumed `fn_sml_apply`,
+ * which is not deployed, and leaving them is not neutral — they stay at their
+ * DEFAULT 0 while `sbl_stock_value` is right, so every reader that costs an
+ * issue off the average silently values stock at nothing.
+ *
+ * WHEN ON-HAND IS NOT POSITIVE THE EXISTING RATE IS KEPT, never overwritten
+ * with a division by zero or with the negative that a short balance would
+ * produce: the last unit leaving the shelf does not make the next inward a
+ * fresh start, which is the same rule `stock_item_cost` states for itself.
+ *
+ * The outward is taken out at the LEDGER'S OWN cost value rather than re-valued
+ * at the running average, keeping "the balance is derived from the rows phase 3
+ * just wrote and from nothing else" literally true. On an `AVG_COST` document
+ * the two are the same figure. On a `MANUAL` one they are not, and a book that
+ * must issue at the average needs `stock_item_cost` — which nothing maintains
+ * yet, and which is the separate gap named at the top of this file.
+ *
  * The identity cache and the ageing anchors are refreshed from the lot on every
  * apply, which is what `fn_sml_apply` did with them.
  */
@@ -430,6 +483,13 @@ async function applyBalances(
   tx: Prisma.TransactionClient,
   { svhId, accYear, actor, postedOn }: PostStockVoucherParams,
 ): Promise<void> {
+  // The holding's on-hand AFTER this document, written out so the conflict
+  // branch can divide by it: the existing row's generated total plus the four
+  // deltas the refused insert proposed.
+  const newOnHand = Prisma.sql`(COALESCE(stock.stock_balance.sbl_on_hand_qty, 0)
+                                 + EXCLUDED.sbl_in_qty  + EXCLUDED.sbl_free_in_qty
+                                 - EXCLUDED.sbl_out_qty - EXCLUDED.sbl_free_out_qty)`;
+
   await tx.$executeRaw`
     WITH moved AS (
       SELECT sml.sml_company_id, sml.sml_branch_id, sml.sml_tenant_id,
@@ -440,8 +500,8 @@ async function applyBalances(
              SUM(CASE WHEN sml.sml_direction > 0 THEN sml.sml_free_base_qty ELSE 0 END) AS free_in_qty,
              SUM(CASE WHEN sml.sml_direction < 0 THEN sml.sml_free_base_qty ELSE 0 END) AS free_out_qty,
              SUM(sml.sml_signed_base_qty)                                               AS signed_qty,
-             SUM(sml.sml_cost_value)                                                    AS cost_value,
-             SUM(sml.sml_cost_value_wot)                                                AS cost_value_wot,
+             SUM(sml.sml_cost_value     * sml.sml_direction)                            AS cost_value,
+             SUM(sml.sml_cost_value_wot * sml.sml_direction)                            AS cost_value_wot,
              MAX(sml.sml_doc_date) FILTER (WHERE sml.sml_direction > 0)                 AS last_in_date,
              MAX(sml.sml_doc_date) FILTER (WHERE sml.sml_direction < 0)                 AS last_out_date,
              MIN(sml.sml_doc_date) FILTER (WHERE sml.sml_direction > 0)                 AS first_in_date
@@ -456,6 +516,7 @@ async function applyBalances(
       sbl_lot_id, sbl_base_uom_id, sbl_bucket,
       sbl_in_qty, sbl_out_qty, sbl_free_in_qty, sbl_free_out_qty,
       sbl_stock_value, sbl_stock_value_wot,
+      sbl_avg_cost_rate, sbl_avg_cost_rate_wot,
       sbl_first_in_date, sbl_last_in_date, sbl_last_out_date,
       sbl_batch_no, sbl_mrp, sbl_sale_price, sbl_expiry_date, sbl_supplier_id,
       sbl_created_by
@@ -464,9 +525,13 @@ async function applyBalances(
            m.sml_lot_id, m.sml_base_uom_id, m.sml_bucket,
            m.in_qty, m.out_qty, m.free_in_qty, m.free_out_qty,
            m.cost_value, m.cost_value_wot,
+           -- A row being created has no prior rate to keep, so a non-positive
+           -- opening on-hand can only be 0.
+           CASE WHEN m.signed_qty > 0 THEN ROUND(m.cost_value     / m.signed_qty, 6) ELSE 0 END,
+           CASE WHEN m.signed_qty > 0 THEN ROUND(m.cost_value_wot / m.signed_qty, 6) ELSE 0 END,
            m.first_in_date, m.last_in_date, m.last_out_date,
            slt.slt_batch_no, slt.slt_mrp, slt.slt_sale_price, slt.slt_expiry_date, slt.slt_supplier_id,
-           ${actor}
+           ${auditColumnActor(actor)}
       FROM moved m
       JOIN stock.stock_lot slt ON slt.slt_id = m.sml_lot_id
     ON CONFLICT (sbl_company_id, sbl_branch_id, sbl_godown_id, sbl_item_id, sbl_lot_id, sbl_bucket)
@@ -478,6 +543,21 @@ async function applyBalances(
       sbl_free_out_qty  = stock.stock_balance.sbl_free_out_qty  + EXCLUDED.sbl_free_out_qty,
       sbl_stock_value     = stock.stock_balance.sbl_stock_value     + EXCLUDED.sbl_stock_value,
       sbl_stock_value_wot = stock.stock_balance.sbl_stock_value_wot + EXCLUDED.sbl_stock_value_wot,
+      -- Every SET expression reads the PRE-UPDATE row, so these two see the old
+      -- value and the old on-hand however Postgres orders the clauses. The new
+      -- on-hand is spelled out from EXCLUDED's four plain accumulators rather
+      -- than read off EXCLUDED.sbl_on_hand_qty: that column is generated from
+      -- the deltas alone, so it holds this document's movement, not the total.
+      sbl_avg_cost_rate = CASE
+        WHEN ${newOnHand} > 0
+        THEN ROUND((stock.stock_balance.sbl_stock_value + EXCLUDED.sbl_stock_value) / ${newOnHand}, 6)
+        ELSE stock.stock_balance.sbl_avg_cost_rate
+      END,
+      sbl_avg_cost_rate_wot = CASE
+        WHEN ${newOnHand} > 0
+        THEN ROUND((stock.stock_balance.sbl_stock_value_wot + EXCLUDED.sbl_stock_value_wot) / ${newOnHand}, 6)
+        ELSE stock.stock_balance.sbl_avg_cost_rate_wot
+      END,
       -- The FIRST inward on this shelf never moves once set; the last two do.
       sbl_first_in_date = LEAST(stock.stock_balance.sbl_first_in_date, EXCLUDED.sbl_first_in_date),
       sbl_last_in_date  = GREATEST(stock.stock_balance.sbl_last_in_date, EXCLUDED.sbl_last_in_date),
@@ -489,7 +569,7 @@ async function applyBalances(
       sbl_supplier_id   = EXCLUDED.sbl_supplier_id,
       sbl_row_version   = stock.stock_balance.sbl_row_version + 1,
       sbl_modified_on   = ${postedOn},
-      sbl_modified_by   = ${actor}
+      sbl_modified_by   = ${auditColumnActor(actor)}
   `;
 }
 
@@ -526,7 +606,7 @@ async function refreshLotTotals(
        SET slt_total_on_hand = totals.on_hand,
            slt_row_version   = slt.slt_row_version + 1,
            slt_modified_on   = ${postedOn},
-           slt_modified_by   = ${actor}
+           slt_modified_by   = ${auditColumnActor(actor)}
       FROM totals
      WHERE slt.slt_id = totals.lot_id
   `;

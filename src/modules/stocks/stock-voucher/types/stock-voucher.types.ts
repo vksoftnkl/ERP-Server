@@ -34,6 +34,21 @@ export const STOCK_VOUCHER_STATUSES = [
 ] as const;
 export type StockVoucherStatus = (typeof STOCK_VOUCHER_STATUSES)[number];
 
+/**
+ * The two a SAVE may ask for, out of the five ck_svh_status allows.
+ *
+ * A save can leave a document as a draft, or save it and post it in one call.
+ * It can never reach the other three: IN_TRANSIT and RECEIVED belong to the
+ * transfer chain and are set by despatch and receipt, and CANCELLED is reached
+ * by reversing a posted document — a status a save could assign would be a
+ * cancellation with no reversal behind it.
+ */
+export const SAVEABLE_STOCK_VOUCHER_STATUSES = [
+  'DRAFT',
+  'POSTED',
+] as const satisfies readonly StockVoucherStatus[];
+export type SaveableStockVoucherStatus = (typeof SAVEABLE_STOCK_VOUCHER_STATUSES)[number];
+
 /** ck_svi_bucket. */
 export const STOCK_BUCKETS = [
   'SALEABLE',
@@ -441,6 +456,15 @@ export interface StockVoucherListItem {
 export interface StockVoucherListResult {
   items: StockVoucherListItem[];
   meta: { limit: number; offset: number; count: number };
+}
+
+/**
+ * What a save returns. `rowsPosted` is null when the save left a DRAFT and a
+ * number when the same call posted it — the header carries the resulting status
+ * and postedOn either way.
+ */
+export interface StockVoucherSaveResult extends StockVoucherPayload {
+  rowsPosted: number | null;
 }
 
 export interface StockVoucherPostResult extends StockVoucherPayload {

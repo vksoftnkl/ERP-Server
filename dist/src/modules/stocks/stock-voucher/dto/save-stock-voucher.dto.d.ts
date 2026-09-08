@@ -1,4 +1,4 @@
-import { type StockRateSource } from '../types/stock-voucher.types';
+import { type SaveableStockVoucherStatus, type StockRateSource } from '../types/stock-voucher.types';
 import { SaveStockVoucherItemDto } from './save-stock-voucher-item.dto';
 export declare class SaveStockVoucherHeaderDto {
     svhId?: string;
@@ -32,11 +32,14 @@ export declare class SaveStockVoucherHeaderDto {
     totalValue?: number;
     totalValueWot?: number;
     rateSource?: StockRateSource | null;
+    status?: SaveableStockVoucherStatus;
     remarks?: string | null;
     lrNo?: string | null;
     vehicleNo?: string | null;
     expectedOn?: string | null;
     userId?: string;
+    createdBy?: string | null;
+    modifiedBy?: string | null;
 }
 export declare class SaveStockVoucherDto {
     header: SaveStockVoucherHeaderDto;

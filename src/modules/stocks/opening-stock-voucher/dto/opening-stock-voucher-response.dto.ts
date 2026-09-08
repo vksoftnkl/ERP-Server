@@ -536,6 +536,33 @@ export class OpeningStockDocumentSuccessDto {
   data!: OpeningStockDocumentDto;
 }
 
+/**
+ * What POST /stock/opening returns. Identical to the document envelope but for
+ * `rowsPosted`, which is null when the save left a DRAFT and the ledger row
+ * count when `header.status` was 'POSTED' and the same call posted it.
+ */
+export class OpeningStockSavedDocumentDto extends OpeningStockDocumentDto {
+  @ApiProperty({
+    type: Number,
+    nullable: true,
+    example: null,
+    description:
+      "null when the save left a draft; the number of stock_ledger rows written when header.status was 'POSTED'.",
+  })
+  rowsPosted!: number | null;
+}
+
+export class OpeningStockSaveSuccessDto {
+  @ApiProperty({ example: true })
+  success!: true;
+
+  @ApiProperty({ example: 'Opening stock created successfully' })
+  message!: string;
+
+  @ApiProperty({ type: OpeningStockSavedDocumentDto })
+  data!: OpeningStockSavedDocumentDto;
+}
+
 export class OpeningStockListSuccessDto {
   @ApiProperty({ example: true })
   success!: true;

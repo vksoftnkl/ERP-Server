@@ -50,21 +50,18 @@ let OpeningStockVoucherController = class OpeningStockVoucherController {
     }
     async save(dto) {
         const data = await this.stockVoucherService.save(OPENING_RULES, dto);
+        const saved = dto.header.svhId ? 'updated' : 'created';
         return {
             success: true,
-            message: dto.header.svhId
-                ? 'Opening stock updated successfully'
-                : 'Opening stock created successfully',
+            message: data.rowsPosted === null
+                ? `Opening stock ${saved} successfully`
+                : `Opening stock ${saved} and posted successfully — ${data.rowsPosted} ledger rows`,
             data,
         };
     }
-    async listOrLoad(query) {
-        if (query.svhId) {
-            const data = await this.stockVoucherService.getById(OPENING_RULES, query.svhId, query.accYear, query.companyId, query.branchId);
-            return { success: true, message: 'Opening stock fetched successfully', data };
-        }
-        const data = await this.stockVoucherService.list(OPENING_RULES, query);
-        return { success: true, message: 'Opening stock list fetched successfully', data };
+    async load(query) {
+        const data = await this.stockVoucherService.getById(OPENING_RULES, query.svhId, query.accYear, query.companyId, query.branchId);
+        return { success: true, message: 'Opening stock fetched successfully', data };
     }
     async validate(query) {
         const data = await this.stockVoucherService.validate(OPENING_RULES, query.svhId, query.accYear, query.companyId, query.branchId);
@@ -142,13 +139,13 @@ let OpeningStockVoucherController = class OpeningStockVoucherController {
 };
 exports.OpeningStockVoucherController = OpeningStockVoucherController;
 __decorate([
-    (0, common_1.Post)(),
+    (0, common_1.Post)('create'),
     (0, common_1.Version)(api_version_1.API_VERSION),
     (0, swagger_1.ApiOperation)({
-        summary: 'Create or update an opening stock draft (by header.svhId presence)',
-        description: 'Update is a full replace of the lines. The saved status is always DRAFT — posting is a separate call, not a status field.',
+        summary: 'Create or update an opening stock document (by header.svhId presence)',
+        description: "Update is a full replace of the lines. Saves a DRAFT unless header.status is 'POSTED', which saves and posts in one transaction — preflight, lots, ledger, balance and the status trail — so a line the preflight refuses fails the save too. rowsPosted on the response is null for a draft.",
     }),
-    (0, swagger_1.ApiCreatedResponse)({ type: opening_stock_voucher_response_dto_1.OpeningStockDocumentSuccessDto }),
+    (0, swagger_1.ApiCreatedResponse)({ type: opening_stock_voucher_response_dto_1.OpeningStockSaveSuccessDto }),
     (0, swagger_1.ApiBadRequestResponse)({ type: opening_stock_voucher_response_dto_1.OpeningStockErrorResponseDto }),
     (0, swagger_1.ApiUnprocessableEntityResponse)({ type: opening_stock_voucher_response_dto_1.OpeningStockErrorResponseDto }),
     (0, swagger_1.ApiConflictResponse)({ type: opening_stock_voucher_response_dto_1.OpeningStockErrorResponseDto }),
@@ -159,19 +156,19 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], OpeningStockVoucherController.prototype, "save", null);
 __decorate([
-    (0, common_1.Get)(),
+    (0, common_1.Get)('get'),
     (0, common_1.Version)(api_version_1.API_VERSION),
     (0, swagger_1.ApiOperation)({
-        summary: 'List opening stock documents, or load one when svhId is given',
-        description: 'The list reads the trigger-maintained header counters — it never aggregates the line table.',
+        summary: 'Load one opening stock document by svhId',
+        description: 'Loads the document named by svhId, header and lines. This route does not list: svhId is required, and there are no status, date, search or paging filters — sending one is a 400.',
     }),
-    (0, swagger_1.ApiOkResponse)({ type: opening_stock_voucher_response_dto_1.OpeningStockListSuccessDto }),
+    (0, swagger_1.ApiOkResponse)({ type: opening_stock_voucher_response_dto_1.OpeningStockDocumentSuccessDto }),
     (0, swagger_1.ApiNotFoundResponse)({ type: opening_stock_voucher_response_dto_1.OpeningStockErrorResponseDto }),
     __param(0, (0, common_1.Query)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [list_opening_stock_voucher_query_dto_1.GetOpeningStockVoucherQueryDto]),
     __metadata("design:returntype", Promise)
-], OpeningStockVoucherController.prototype, "listOrLoad", null);
+], OpeningStockVoucherController.prototype, "load", null);
 __decorate([
     (0, common_1.Get)('validate'),
     (0, common_1.Version)(api_version_1.API_VERSION),

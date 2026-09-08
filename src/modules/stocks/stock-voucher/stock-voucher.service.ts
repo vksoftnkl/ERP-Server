@@ -46,6 +46,7 @@ import {
   type StockVoucherPayload,
   type StockVoucherImportResult,
   type StockVoucherPostResult,
+  type StockVoucherSaveResult,
   type StockVoucherStatus,
   type StockVoucherTypeRules,
   type StockVarianceRow,
@@ -290,7 +291,10 @@ export class StockVoucherService {
    * apart from the rows they name, and a DRAFT has no history worth preserving
    * — nothing downstream of it exists yet.
    */
-  async save(rules: StockVoucherTypeRules, dto: SaveStockVoucherDto): Promise<StockVoucherPayload> {
+  async save(
+    rules: StockVoucherTypeRules,
+    dto: SaveStockVoucherDto,
+  ): Promise<StockVoucherSaveResult> {
     const { header } = dto;
     const actor = resolveActor(header.userId, this.requestContextService.getUserId());
 
@@ -309,13 +313,79 @@ export class StockVoucherService {
     // because the book figure the count is measured against is in the base
     // unit. Its route has its own line DTO, which omits all three.
 
-    const svhId = await this.prisma.$transaction(async (tx) => {
-      return header.svhId
+    // 'POSTED' on the payload is an INSTRUCTION, not a column value — see the
+    // DTO's status field. Anything else, including nothing, saves a draft.
+    const postAfterSave = header.status === 'POSTED';
+    const postedOn = new Date();
+
+    const { svhId, rowsPosted } = await this.prisma.$transaction(async (tx) => {
+      const id = header.svhId
         ? await this.updateDraft(tx, rules, dto, actor)
         : await this.createDraft(tx, rules, dto, actor);
+
+      if (!postAfterSave) {
+        return { svhId: id, rowsPosted: null as number | null };
+      }
+
+      // IN THE SAME TRANSACTION AS THE SAVE, and that is the whole point of
+      // doing it here rather than calling post() afterwards: a document that
+      // saved and then failed to post would be a draft the user believes is
+      // posted, and one that posted and then failed to save cannot exist at
+      // all. Either the lines are stored AND the stock moved, or neither.
+      //
+      // Both reads below are handed the transaction because the draft they are
+      // about to check has not committed yet.
+      await this.assertPostable(rules, id, header.accYear, header.companyId, header.branchId, tx);
+      const posted = await postStockVoucher(tx, {
+        rules,
+        svhId: id,
+        accYear: header.accYear,
+        actor,
+        postedOn,
+      });
+      await this.logStatusChange(tx, {
+        rules,
+        svhId: id,
+        accYear: header.accYear,
+        companyId: header.companyId,
+        branchId: header.branchId,
+        tenantId: header.tenantId ?? null,
+        refno: (await this.loadRefno(tx, id, header.accYear)) ?? id,
+        // DRAFT whichever way in: createDraft wrote one a moment ago and
+        // updateDraft refuses anything else, so the trail reads DRAFT → POSTED
+        // even when the two steps arrived in one request.
+        fromStatus: 'DRAFT',
+        toStatus: 'POSTED',
+        actor,
+        changedOn: postedOn,
+        remarks: `${rules.displayName} saved and posted — ${posted} ledger rows`,
+        deviceId: header.deviceId,
+        sessionId: header.sessionId ?? null,
+      });
+      return { svhId: id, rowsPosted: posted as number | null };
     });
 
-    return this.getById(rules, svhId, header.accYear, header.companyId, header.branchId);
+    const document = await this.getById(
+      rules,
+      svhId,
+      header.accYear,
+      header.companyId,
+      header.branchId,
+    );
+    return { ...document, rowsPosted };
+  }
+
+  /** The printed number, for a trail row written in the same breath as the post. */
+  private async loadRefno(
+    tx: Prisma.TransactionClient,
+    svhId: string,
+    accYear: string,
+  ): Promise<string | null> {
+    const row = await tx.stockVoucher.findUnique({
+      where: { svhId_svhAccYear: { svhId, svhAccYear: accYear } },
+      select: { svhRefno: true },
+    });
+    return row?.svhRefno ?? null;
   }
 
   /**
@@ -859,14 +929,25 @@ export class StockVoucherService {
         ...this.linkSourceData(header),
         ...this.freezeData(header),
         svhSyncDate: header.syncDate ? new Date(header.syncDate) : null,
-        // Post is §7, not a status field. Nothing may create a POSTED document.
+        // THE PAYLOAD'S header.status IS NOT IGNORED — it is applied one step
+        // later. Every document is INSERTED as a draft; when the caller asked
+        // for 'POSTED', save() then posts it inside this same transaction and
+        // the post is what writes svh_status, svh_posted_on and svh_posted_by.
+        //
+        // The order is the guarantee, not an accident of layering: a row that
+        // said POSTED here would be claiming stock had moved before a single
+        // stock_ledger row existed, and if the preflight then refused a line
+        // the caller would have watched a POSTED document appear and vanish.
+        // Written this way the document only ever says POSTED after the ledger
+        // and the balances behind it are there.
         svhStatus: 'DRAFT',
-        svhCreatedBy: this.auditActor(actor),
+        // A CREATE writes created_by and nothing else — see the DTO's field.
+        svhCreatedBy: this.actorFor(header.createdBy, actor),
       },
       select: { svhId: true, svhAccYear: true, svhRefno: true },
     });
 
-    await this.replaceLines(tx, rules, dto, created.svhId, actor);
+    await this.replaceLines(tx, rules, dto, created.svhId, actor, header.createdBy);
     await this.writeHeaderTotals(tx, created.svhId, header);
 
     await this.auditLogService.logEntityChange(
@@ -994,11 +1075,13 @@ export class StockVoucherService {
         svhSyncDate: header.syncDate ? new Date(header.syncDate) : null,
         svhVersionNo: { increment: 1 },
         svhModifiedOn: new Date(),
-        svhModifiedBy: this.auditActor(actor),
+        // An UPDATE writes modified_by and NEVER touches created_by: who raised
+        // the document is not something a later edit gets to change.
+        svhModifiedBy: this.actorFor(header.modifiedBy, actor),
       },
     });
 
-    await this.replaceLines(tx, rules, dto, svhId, actor);
+    await this.replaceLines(tx, rules, dto, svhId, actor, header.modifiedBy);
     await this.writeHeaderTotals(tx, svhId, header);
 
     await this.auditLogService.logEntityChange(
@@ -1034,6 +1117,18 @@ export class StockVoucherService {
     dto: SaveStockVoucherDto,
     svhId: string,
     actor: string,
+    /**
+     * Who is writing THESE lines — the header's createdBy on a create, its
+     * modifiedBy on an update.
+     *
+     * It is not simply `header.createdBy`, and the difference shows on an
+     * update: a save REPLACES the lines, so every row is inserted afresh and
+     * takes a created_by from this save. Falling back to the header's createdBy
+     * there would stamp the lines with the ORIGINAL author's name on an edit
+     * somebody else made — the header keeps its created_by precisely so that
+     * cannot happen, and the lines must not undo it.
+     */
+    author: string | null | undefined,
   ): Promise<void> {
     const { header, lines } = dto;
     await tx.stockVoucherItem.deleteMany({
@@ -1164,7 +1259,11 @@ export class StockVoucherService {
         sviReasonId: line.reasonId ?? null,
         sviSyncDate: line.syncDate ? new Date(line.syncDate) : null,
         sviRemarks: line.remarks ?? null,
-        sviCreatedBy: this.auditActor(actor),
+        sviCreatedBy: this.actorFor(line.createdBy ?? author, actor),
+        // Only when something actually supplies one — a line inserted by this
+        // save that carried a modified_by would claim an edit that never
+        // happened.
+        ...this.lineModifiedByData(line.modifiedBy ?? header.modifiedBy),
         // svi_value, svi_value_wot and svi_diff_qty are GENERATED ALWAYS ...
         // STORED and are absent from this object on purpose — Postgres rejects
         // any write to them, including a write of the value it would compute.
@@ -1555,14 +1654,16 @@ export class StockVoucherService {
     accYear: string,
     companyId: string,
     branchId: string,
+    /** See loadHeaderOrThrow — the save-and-post path validates its own uncommitted draft. */
+    tx?: Prisma.TransactionClient,
   ): Promise<StockVoucherLineProblem[]> {
     // Presence check first: Q3 on a voucher that does not exist returns zero
     // rows, which reads identically to "no problems".
-    await this.loadHeaderOrThrow(rules, svhId, accYear, companyId, branchId);
+    await this.loadHeaderOrThrow(rules, svhId, accYear, companyId, branchId, tx);
 
     const isCount = rules.quantityMode === 'COUNT';
 
-    return this.prisma.$queryRaw<StockVoucherLineProblem[]>`
+    return (tx ?? this.prisma).$queryRaw<StockVoucherLineProblem[]>`
       WITH doc AS (
         SELECT svh.svh_id,
                svh.svh_acc_year,
@@ -1786,6 +1887,39 @@ export class StockVoucherService {
    * in stock_item_cost → the lines get their lot_id and resolved rates written
    * back → fn_svh_recompute → status POSTED.
    */
+  /**
+   * Q3 for every line, refused as ONE 422 rather than one error at a time.
+   *
+   * The engine raises on the FIRST bad line and rolls the document back, which
+   * is right for the database and useless as a screen message: a user forty
+   * lines into an opening fixes one, presses post, and is told about the next.
+   *
+   * Shared by post() and by the save-and-post path, so a document refused by
+   * one is refused by the other in the same words — a save that posted on
+   * looser rules than the post button would be a way round the preflight.
+   */
+  private async assertPostable(
+    rules: StockVoucherTypeRules,
+    svhId: string,
+    accYear: string,
+    companyId: string,
+    branchId: string,
+    tx?: Prisma.TransactionClient,
+  ): Promise<void> {
+    const problems = (await this.validate(rules, svhId, accYear, companyId, branchId, tx)).filter(
+      (row) => row.problem !== null,
+    );
+    if (problems.length) {
+      throwStockUnprocessable<StockErrorDetail, StockErrorResponse>(
+        `This ${rules.displayName.toLowerCase()} cannot be posted`,
+        problems.map((row) => ({
+          field: `lines.${row.lineNo}`,
+          message: `Line ${row.lineNo}${row.splitNo > 1 ? ` split ${row.splitNo}` : ''} (${row.itemName}): ${row.problem}`,
+        })),
+      );
+    }
+  }
+
   async post(
     rules: StockVoucherTypeRules,
     svhId: string,
@@ -1819,18 +1953,7 @@ export class StockVoucherService {
     // problem. Post is the button a user presses forty lines in; letting the
     // engine raise on the first bad one and roll back the rest hands them one
     // error at a time.
-    const problems = (await this.validate(rules, svhId, accYear, companyId, branchId)).filter(
-      (row) => row.problem !== null,
-    );
-    if (problems.length) {
-      throwStockUnprocessable<StockErrorDetail, StockErrorResponse>(
-        `This ${rules.displayName.toLowerCase()} cannot be posted`,
-        problems.map((row) => ({
-          field: `lines.${row.lineNo}`,
-          message: `Line ${row.lineNo}${row.splitNo > 1 ? ` split ${row.splitNo}` : ''} (${row.itemName}): ${row.problem}`,
-        })),
-      );
-    }
+    await this.assertPostable(rules, svhId, accYear, companyId, branchId);
 
     // One instant for the ledger rows, the balance rows, the header stamp and
     // the status-trail row alike, so a trail sorts unambiguously against the
@@ -2117,14 +2240,11 @@ export class StockVoucherService {
         sessionId: existing.svhSessionId,
       });
     });
-
     return { svhId, accYear, deleted: true };
   }
-
   // ──────────────────────────────────────────────────────────────────────────
   // §11 — import from file
   // ──────────────────────────────────────────────────────────────────────────
-
   /**
    * Replaces the lines of an existing DRAFT from a CSV, and reports what the
    * preflight then makes of them.
@@ -2155,7 +2275,6 @@ export class StockVoucherService {
   ): Promise<StockVoucherImportResult> {
     const existing = await this.loadHeaderOrThrow(rules, svhId, accYear, companyId, branchId);
     this.assertDraft(rules, existing);
-
     const header = await this.prisma.stockVoucher.findUnique({
       where: { svhId_svhAccYear: { svhId, svhAccYear: accYear } },
       select: {
@@ -2180,7 +2299,6 @@ export class StockVoucherService {
         `No ${rules.voucherType} voucher ${svhId} in ${accYear}.`,
       );
     }
-
     // Every row that names no godown of its own inherits the document's. For an
     // OPENING that is the to-godown; for an outward document it is the from.
     const defaultGodownId = rules.requiresToGodown
@@ -2197,20 +2315,17 @@ export class StockVoucherService {
         ],
       );
     }
-
     const { lines, errors, rowsRead } = await resolveImportedLines(this.prisma, csvText, {
       companyId,
       branchId,
       defaultGodownId,
     });
-
     if (errors.length) {
       throwStockUnprocessable<StockErrorDetail, StockErrorResponse>(
         `${errors.length} of ${rowsRead} rows could not be read`,
         errors,
       );
     }
-
     await this.save(rules, {
       header: {
         svhId,
@@ -2235,10 +2350,8 @@ export class StockVoucherService {
       },
       lines,
     });
-
     const problems = await this.validate(rules, svhId, accYear, companyId, branchId);
     const document = await this.getById(rules, svhId, accYear, companyId, branchId);
-
     return {
       ...document,
       rowsRead,
@@ -2246,11 +2359,9 @@ export class StockVoucherService {
       problems,
     };
   }
-
   // ──────────────────────────────────────────────────────────────────────────
   // §10 — the two go-live reports
   // ──────────────────────────────────────────────────────────────────────────
-
   /**
    * Q4 — every stockable item with no OPENING movement in this branch and year.
    *
@@ -2304,7 +2415,6 @@ export class StockVoucherService {
     `;
     return { items, meta: { limit: take, offset: skip, count: items.length } };
   }
-
   /**
    * Q5 — what the branch started with, what it holds now, the difference.
    *
@@ -2389,11 +2499,9 @@ export class StockVoucherService {
       meta: { limit: take, offset: skip, count: items.length },
     };
   }
-
   // ──────────────────────────────────────────────────────────────────────────
   // §4 / §12 — the count's own two reads
   // ──────────────────────────────────────────────────────────────────────────
-
   /**
    * §4 — the count sheet. GENERATED from stock_balance, never typed.
    *
@@ -2437,7 +2545,6 @@ export class StockVoucherService {
     const take = this.clamp(query.limit, DEFAULT_REPORT_LIMIT, MAX_REPORT_LIMIT);
     const skip = Math.max(query.offset ?? 0, 0);
     const includeZero = query.includeZero ?? true;
-
     const rows = await this.prisma.$queryRaw<CountSheetRow[]>`
       SELECT sbl.sbl_item_id,
              itm.item_code,
@@ -2474,7 +2581,6 @@ export class StockVoucherService {
        ORDER BY itm.item_name_en, sbl.sbl_batch_no NULLS FIRST, sbl.sbl_expiry_date, sbl.sbl_lot_id
        LIMIT ${take} OFFSET ${skip}
     `;
-
     return {
       // lineNo is assigned SERVER-SIDE in the order above, and continues across
       // pages: the operator walking the aisles with page 2 in hand is holding
@@ -2507,7 +2613,6 @@ export class StockVoucherService {
       meta: { limit: take, offset: skip, count: rows.length },
     };
   }
-
   /**
    * §12 — the count as the LEDGER recorded it, which is not the document the
    * screen holds.
@@ -2562,7 +2667,6 @@ export class StockVoucherService {
        ORDER BY sml.sml_line_no, sml.sml_split_no
        LIMIT ${take} OFFSET ${skip}
     `;
-
     return {
       items: rows.map((row) => ({
         lineNo: row.sml_line_no,
@@ -2585,11 +2689,9 @@ export class StockVoucherService {
       meta: { limit: take, offset: skip, count: rows.length },
     };
   }
-
   // ──────────────────────────────────────────────────────────────────────────
   // Helpers
   // ──────────────────────────────────────────────────────────────────────────
-
   private async loadForWrite(
     tx: Prisma.TransactionClient,
     rules: StockVoucherTypeRules,
@@ -2616,7 +2718,6 @@ export class StockVoucherService {
     }
     return existing;
   }
-
   /**
    * One row on public.txn_status_log per status STEP — the voucher's trail is
    * the ordered set of them, and svh_status is only ever the CURRENT state.
@@ -2684,7 +2785,6 @@ export class StockVoucherService {
       sessionId: step.sessionId ?? null,
     });
   }
-
   private toStatusEvent(fromStatus: string | null, toStatus: StockVoucherStatus): TxnStatusEvent {
     if (fromStatus === null) {
       // First row of the trail. Whether the voucher was born DRAFT or straight
@@ -2702,15 +2802,20 @@ export class StockVoucherService {
     // vocabulary honest rather than borrowing an event that means something else.
     return TxnStatusEvent.STATUS_CHANGED;
   }
-
   private async loadHeaderOrThrow(
     rules: StockVoucherTypeRules,
     svhId: string,
     accYear: string,
     companyId: string,
     branchId: string,
+    /**
+     * The save-and-post path passes its own transaction: the draft it is about
+     * to post has not committed yet, so a read on this.prisma would not see it
+     * and would 404 the document the same statement just wrote.
+     */
+    tx?: Prisma.TransactionClient,
   ) {
-    const existing = await this.prisma.stockVoucher.findUnique({
+    const existing = await (tx ?? this.prisma).stockVoucher.findUnique({
       where: { svhId_svhAccYear: { svhId, svhAccYear: accYear } },
       select: {
         svhId: true,
@@ -2894,6 +2999,30 @@ export class StockVoucherService {
    */
   private auditActor(actor: string): string | null {
     return actor === DEFAULT_ACTOR ? null : actor;
+  }
+
+  /**
+   * The payload's own answer to "who", falling back to the resolved actor.
+   *
+   * svh_created_by / svh_modified_by / svi_created_by / svi_modified_by are free
+   * TEXT carrying no foreign key, so a client may name a till or an import job
+   * here rather than a user id. A blank string is not an answer and is treated
+   * as absent; DEFAULT_ACTOR still collapses to NULL, so a request with no
+   * authenticated user and no stated author leaves the column empty rather than
+   * attributing the row to the nil uuid.
+   */
+  private actorFor(supplied: string | null | undefined, actor: string): string | null {
+    const trimmed = supplied?.trim();
+    return trimmed ? trimmed : this.auditActor(actor);
+  }
+
+  /**
+   * svi_modified_by is OMITTED rather than nulled when nothing supplies one, so
+   * a create leaves the column alone. Mirrors docDatetimeData.
+   */
+  private lineModifiedByData(supplied: string | null | undefined): { sviModifiedBy?: string } {
+    const trimmed = supplied?.trim();
+    return trimmed ? { sviModifiedBy: trimmed } : {};
   }
 
   /**

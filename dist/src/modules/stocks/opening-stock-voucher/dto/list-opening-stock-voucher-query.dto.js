@@ -13,7 +13,6 @@ exports.OpeningStockReportQueryDto = exports.OpeningStockVoucherRefQueryDto = ex
 const swagger_1 = require("@nestjs/swagger");
 const class_validator_1 = require("class-validator");
 const dtoDecorators_1 = require("../../../../common/dto/dtoDecorators");
-const stock_voucher_types_1 = require("../../stock-voucher/types/stock-voucher.types");
 const ACC_YEAR_PATTERN = /^\d{4}-\d{4}$/;
 class OpeningStockVoucherScopeQueryDto {
     companyId;
@@ -39,55 +38,16 @@ __decorate([
 ], OpeningStockVoucherScopeQueryDto.prototype, "accYear", void 0);
 class GetOpeningStockVoucherQueryDto extends OpeningStockVoucherScopeQueryDto {
     svhId;
-    status;
-    fromDate;
-    toDate;
-    search;
-    limit;
-    offset;
 }
 exports.GetOpeningStockVoucherQueryDto = GetOpeningStockVoucherQueryDto;
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({
+    (0, swagger_1.ApiProperty)({
         format: 'uuid',
-        description: 'Present = load this one document. Absent = list.',
+        description: 'The document to load. REQUIRED — this route no longer lists.',
     }),
-    (0, dtoDecorators_1.OptionalUuid)(),
+    (0, dtoDecorators_1.RequiredUuid)(),
     __metadata("design:type", String)
 ], GetOpeningStockVoucherQueryDto.prototype, "svhId", void 0);
-__decorate([
-    (0, swagger_1.ApiPropertyOptional)({ enum: stock_voucher_types_1.STOCK_VOUCHER_STATUSES }),
-    (0, class_validator_1.IsOptional)(),
-    (0, class_validator_1.IsIn)(stock_voucher_types_1.STOCK_VOUCHER_STATUSES, {
-        message: `status must be one of ${stock_voucher_types_1.STOCK_VOUCHER_STATUSES.join(', ')}`,
-    }),
-    __metadata("design:type", String)
-], GetOpeningStockVoucherQueryDto.prototype, "status", void 0);
-__decorate([
-    (0, swagger_1.ApiPropertyOptional)({ type: 'string', format: 'date' }),
-    (0, dtoDecorators_1.OptionalDateString)(),
-    __metadata("design:type", String)
-], GetOpeningStockVoucherQueryDto.prototype, "fromDate", void 0);
-__decorate([
-    (0, swagger_1.ApiPropertyOptional)({ type: 'string', format: 'date' }),
-    (0, dtoDecorators_1.OptionalDateString)(),
-    __metadata("design:type", String)
-], GetOpeningStockVoucherQueryDto.prototype, "toDate", void 0);
-__decorate([
-    (0, swagger_1.ApiPropertyOptional)({ description: 'Matches refno or the user reference' }),
-    (0, dtoDecorators_1.OptionalTrimmedString)(100),
-    __metadata("design:type", String)
-], GetOpeningStockVoucherQueryDto.prototype, "search", void 0);
-__decorate([
-    (0, swagger_1.ApiPropertyOptional)({ default: 50, maximum: 500 }),
-    (0, dtoDecorators_1.OptionalQueryInt)(1, 500),
-    __metadata("design:type", Number)
-], GetOpeningStockVoucherQueryDto.prototype, "limit", void 0);
-__decorate([
-    (0, swagger_1.ApiPropertyOptional)({ default: 0 }),
-    (0, dtoDecorators_1.OptionalQueryInt)(0),
-    __metadata("design:type", Number)
-], GetOpeningStockVoucherQueryDto.prototype, "offset", void 0);
 class OpeningStockVoucherRefQueryDto extends OpeningStockVoucherScopeQueryDto {
     svhId;
 }

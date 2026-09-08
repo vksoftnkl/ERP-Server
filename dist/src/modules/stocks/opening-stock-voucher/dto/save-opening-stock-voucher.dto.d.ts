@@ -1,4 +1,4 @@
-import { type StockBucket, type StockRateSource } from '../../stock-voucher/types/stock-voucher.types';
+import { type SaveableStockVoucherStatus, type StockBucket, type StockRateSource } from '../../stock-voucher/types/stock-voucher.types';
 export declare class SaveOpeningStockVoucherHeaderDto {
     svhId?: string;
     accYear: string;
@@ -21,6 +21,9 @@ export declare class SaveOpeningStockVoucherHeaderDto {
     remarks?: string | null;
     userId?: string;
     voucherType?: 'OPENING';
+    status?: SaveableStockVoucherStatus;
+    createdBy?: string | null;
+    modifiedBy?: string | null;
 }
 export declare class SaveOpeningStockVoucherItemDto {
     lineNo: number;
@@ -49,6 +52,8 @@ export declare class SaveOpeningStockVoucherItemDto {
     landedRate?: string | number;
     taxPerc?: string | number;
     remarks?: string | null;
+    createdBy?: string | null;
+    modifiedBy?: string | null;
 }
 export declare class SaveOpeningStockVoucherDto {
     header: SaveOpeningStockVoucherHeaderDto;

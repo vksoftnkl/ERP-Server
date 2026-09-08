@@ -50,11 +50,14 @@ class SaveStockVoucherHeaderDto {
     totalValue;
     totalValueWot;
     rateSource;
+    status;
     remarks;
     lrNo;
     vehicleNo;
     expectedOn;
     userId;
+    createdBy;
+    modifiedBy;
 }
 exports.SaveStockVoucherHeaderDto = SaveStockVoucherHeaderDto;
 __decorate([
@@ -288,6 +291,18 @@ __decorate([
     __metadata("design:type", Object)
 ], SaveStockVoucherHeaderDto.prototype, "rateSource", void 0);
 __decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        enum: stock_voucher_types_1.SAVEABLE_STOCK_VOUCHER_STATUSES,
+        default: 'DRAFT',
+        description: "What to leave the document as. Omitted or 'DRAFT' saves a draft. 'POSTED' saves and then posts it in one transaction — preflight, lots, ledger, balance and the status trail — so a line the preflight refuses fails the save as well.",
+    }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsIn)(stock_voucher_types_1.SAVEABLE_STOCK_VOUCHER_STATUSES, {
+        message: `status must be one of ${stock_voucher_types_1.SAVEABLE_STOCK_VOUCHER_STATUSES.join(', ')} — a document is cancelled by cancelling it, never by saving`,
+    }),
+    __metadata("design:type", String)
+], SaveStockVoucherHeaderDto.prototype, "status", void 0);
+__decorate([
     (0, swagger_1.ApiPropertyOptional)({ maxLength: 250, nullable: true }),
     (0, dtoDecorators_1.NullableStringStrict)(250),
     __metadata("design:type", Object)
@@ -330,6 +345,24 @@ __decorate([
     (0, dtoDecorators_1.OptionalUuid)(),
     __metadata("design:type", String)
 ], SaveStockVoucherHeaderDto.prototype, "userId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        maxLength: 100,
+        nullable: true,
+        description: 'Who created the document — written on a CREATE only. Falls back to userId, then to the authenticated user.',
+    }),
+    (0, dtoDecorators_1.NullableStringStrict)(100),
+    __metadata("design:type", Object)
+], SaveStockVoucherHeaderDto.prototype, "createdBy", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        maxLength: 100,
+        nullable: true,
+        description: 'Who last changed it — written on an UPDATE only, and never overwrites created_by. Falls back to userId, then to the authenticated user.',
+    }),
+    (0, dtoDecorators_1.NullableStringStrict)(100),
+    __metadata("design:type", Object)
+], SaveStockVoucherHeaderDto.prototype, "modifiedBy", void 0);
 class SaveStockVoucherDto {
     header;
     lines;

@@ -3,7 +3,7 @@ import { PrismaService } from "../../../database/prisma/prisma.service";
 import { AuditLogService } from "../../audit-log/audit-log.service";
 import { RequestContextService } from "../../../common/request-context/request-context.service";
 import { SaveStockVoucherDto } from './dto/save-stock-voucher.dto';
-import { type OpeningReconcileRow, type PagedResult, type PendingOpeningItem, type StockBucket, type StockCountSheetRow, type StockVoucherCancelResult, type StockVoucherDeleteResult, type StockVoucherLineProblem, type StockVoucherListResult, type StockVoucherPayload, type StockVoucherImportResult, type StockVoucherPostResult, type StockVoucherStatus, type StockVoucherTypeRules, type StockVarianceRow } from './types/stock-voucher.types';
+import { type OpeningReconcileRow, type PagedResult, type PendingOpeningItem, type StockBucket, type StockCountSheetRow, type StockVoucherCancelResult, type StockVoucherDeleteResult, type StockVoucherLineProblem, type StockVoucherListResult, type StockVoucherPayload, type StockVoucherImportResult, type StockVoucherPostResult, type StockVoucherSaveResult, type StockVoucherStatus, type StockVoucherTypeRules, type StockVarianceRow } from './types/stock-voucher.types';
 interface ListStockVouchersQuery {
     companyId: string;
     branchId: string;
@@ -31,7 +31,8 @@ export declare class StockVoucherService {
     private readonly auditLogService;
     private readonly requestContextService;
     constructor(prisma: PrismaService, auditLogService: AuditLogService, requestContextService: RequestContextService);
-    save(rules: StockVoucherTypeRules, dto: SaveStockVoucherDto): Promise<StockVoucherPayload>;
+    save(rules: StockVoucherTypeRules, dto: SaveStockVoucherDto): Promise<StockVoucherSaveResult>;
+    private loadRefno;
     private assertPayloadRules;
     private assertReasons;
     private createDraft;
@@ -42,7 +43,8 @@ export declare class StockVoucherService {
     private holdingKey;
     list(rules: StockVoucherTypeRules, query: ListStockVouchersQuery): Promise<StockVoucherListResult>;
     getById(rules: StockVoucherTypeRules, svhId: string, accYear: string, companyId: string, branchId: string): Promise<StockVoucherPayload>;
-    validate(rules: StockVoucherTypeRules, svhId: string, accYear: string, companyId: string, branchId: string): Promise<StockVoucherLineProblem[]>;
+    validate(rules: StockVoucherTypeRules, svhId: string, accYear: string, companyId: string, branchId: string, tx?: Prisma.TransactionClient): Promise<StockVoucherLineProblem[]>;
+    private assertPostable;
     post(rules: StockVoucherTypeRules, svhId: string, accYear: string, companyId: string, branchId: string, userId?: string, afterPost?: (tx: Prisma.TransactionClient, rowsPosted: number) => Promise<void>): Promise<StockVoucherPostResult>;
     cancel(rules: StockVoucherTypeRules, svhId: string, accYear: string, reason: string, companyId: string, branchId: string, userId?: string): Promise<StockVoucherCancelResult>;
     softDelete(rules: StockVoucherTypeRules, svhId: string, accYear: string, companyId: string, branchId: string, userId?: string): Promise<StockVoucherDeleteResult>;
@@ -52,12 +54,16 @@ export declare class StockVoucherService {
     countSheet(rules: StockVoucherTypeRules, query: CountSheetQuery): Promise<PagedResult<StockCountSheetRow>>;
     variance(rules: StockVoucherTypeRules, svhId: string, accYear: string, companyId: string, branchId: string, limit?: number, offset?: number): Promise<PagedResult<StockVarianceRow>>;
     private loadForWrite;
+    private logStatusChange;
+    private toStatusEvent;
     private loadHeaderOrThrow;
     private assertPostFunction;
     private assertDraft;
     private toHeaderPayload;
     private toLinePayload;
     private auditActor;
+    private actorFor;
+    private lineModifiedByData;
     private docDatetimeData;
     private linkSourceData;
     private freezeData;

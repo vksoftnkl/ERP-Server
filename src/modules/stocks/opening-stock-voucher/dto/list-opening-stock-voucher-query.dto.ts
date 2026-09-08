@@ -1,17 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsIn, IsOptional, Matches } from 'class-validator';
-import {
-  OptionalDateString,
-  OptionalQueryInt,
-  OptionalTrimmedString,
-  OptionalUuid,
-  RequiredUuid,
-  TrimmedString,
-} from 'src/common/dto/dtoDecorators';
-import {
-  STOCK_VOUCHER_STATUSES,
-  type StockVoucherStatus,
-} from '../../stock-voucher/types/stock-voucher.types';
+import { Matches } from 'class-validator';
+import { OptionalQueryInt, RequiredUuid, TrimmedString } from 'src/common/dto/dtoDecorators';
 
 const ACC_YEAR_PATTERN = /^\d{4}-\d{4}$/;
 
@@ -40,45 +29,40 @@ export class OpeningStockVoucherScopeQueryDto {
 }
 
 /**
- * GET /stock/opening — `svhId` present loads one document, absent lists them.
+ * GET /stock/opening/get — LOADS EXACTLY ONE DOCUMENT.
  *
- * One DTO for both because the Qt screen sends the same query object either
- * way; the filters below are simply ignored on the single-document path.
+ * It used to be a dual-purpose route: `svhId` present loaded one document and
+ * `svhId` absent listed them, filtered by status, date and refno and paged.
+ * BOTH OF THOSE ARE GONE. The filters went first, and `svhId` is now REQUIRED,
+ * which retires the listing branch altogether — there is no query this class
+ * can express that does not name one document.
+ *
+ * WHAT THAT COSTS, said plainly: `/stock/opening` has no list route any more.
+ * `StockVoucherService.list` is untouched and the other voucher screens still
+ * use it, so a list can be given back at its own path whenever the screen wants
+ * one; it is simply not reachable through this one.
+ *
+ * WHY REQUIRED RATHER THAN OPTIONAL-AND-VALIDATED: an absent `svhId` was a
+ * silent mode switch. A client that meant to load a document and dropped the id
+ * — a null in a Qt field, a stale binding — got a 200 with somebody else's
+ * fifty documents in it instead of an error, and looked like it had worked.
+ * Required, that mistake is a 400 naming `svhId`, which is the whole point.
+ *
+ * NOTE FOR CLIENTS: the API runs with `forbidNonWhitelisted`, so a caller still
+ * sending `?status=` or `?limit=` gets a 400 naming the property rather than
+ * having it quietly ignored. An old client breaks loudly, which is intended.
+ *
+ * Structurally this is now the same shape as OpeningStockVoucherRefQueryDto
+ * below. It is kept as its own class because it is the one Swagger names on
+ * this route, and because the two will not necessarily stay identical.
  */
 export class GetOpeningStockVoucherQueryDto extends OpeningStockVoucherScopeQueryDto {
-  @ApiPropertyOptional({
+  @ApiProperty({
     format: 'uuid',
-    description: 'Present = load this one document. Absent = list.',
+    description: 'The document to load. REQUIRED — this route no longer lists.',
   })
-  @OptionalUuid()
-  svhId?: string;
-
-  @ApiPropertyOptional({ enum: STOCK_VOUCHER_STATUSES })
-  @IsOptional()
-  @IsIn(STOCK_VOUCHER_STATUSES as unknown as string[], {
-    message: `status must be one of ${STOCK_VOUCHER_STATUSES.join(', ')}`,
-  })
-  status?: StockVoucherStatus;
-
-  @ApiPropertyOptional({ type: 'string', format: 'date' })
-  @OptionalDateString()
-  fromDate?: string;
-
-  @ApiPropertyOptional({ type: 'string', format: 'date' })
-  @OptionalDateString()
-  toDate?: string;
-
-  @ApiPropertyOptional({ description: 'Matches refno or the user reference' })
-  @OptionalTrimmedString(100)
-  search?: string;
-
-  @ApiPropertyOptional({ default: 50, maximum: 500 })
-  @OptionalQueryInt(1, 500)
-  limit?: number;
-
-  @ApiPropertyOptional({ default: 0 })
-  @OptionalQueryInt(0)
-  offset?: number;
+  @RequiredUuid()
+  svhId!: string;
 }
 
 /** The routes that address exactly one document: validate and delete. */

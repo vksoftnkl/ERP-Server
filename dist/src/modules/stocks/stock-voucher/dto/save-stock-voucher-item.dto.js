@@ -46,6 +46,8 @@ class SaveStockVoucherItemDto {
     reasonId;
     syncDate;
     remarks;
+    createdBy;
+    modifiedBy;
 }
 exports.SaveStockVoucherItemDto = SaveStockVoucherItemDto;
 __decorate([
@@ -282,4 +284,14 @@ __decorate([
     (0, dtoDecorators_1.NullableStringStrict)(250),
     __metadata("design:type", Object)
 ], SaveStockVoucherItemDto.prototype, "remarks", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ maxLength: 100, nullable: true }),
+    (0, dtoDecorators_1.NullableStringStrict)(100),
+    __metadata("design:type", Object)
+], SaveStockVoucherItemDto.prototype, "createdBy", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ maxLength: 100, nullable: true }),
+    (0, dtoDecorators_1.NullableStringStrict)(100),
+    __metadata("design:type", Object)
+], SaveStockVoucherItemDto.prototype, "modifiedBy", void 0);
 //# sourceMappingURL=save-stock-voucher-item.dto.js.map

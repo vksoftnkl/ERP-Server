@@ -1,7 +1,6 @@
 import { Prisma } from '@prisma/client';
 import { throwStockNotFound } from 'src/common/utils/module-service.utils';
 import type { StockErrorDetail, StockErrorResponse, StockVoucherType } from './types/stock-voucher.types';
-
 /**
  * NUMBERING IS SELF-CONTAINED, AND DELIBERATELY SO.
  *
@@ -21,13 +20,10 @@ import type { StockErrorDetail, StockErrorResponse, StockVoucherType } from './t
  * sync it later. That is also why a client-supplied slno/refno is ACCEPTED
  * rather than overwritten: the device's copy is already printed.
  */
-
 /** Namespace half of the advisory lock key. */
 const SLNO_LOCK_NAMESPACE = 'stock.stock_voucher.slno';
-
 /** svh_refno is varchar(100). */
 const REFNO_MAX_LENGTH = 100;
-
 export interface StockVoucherNumberScope {
   companyId: string;
   branchId: string;
@@ -35,12 +31,10 @@ export interface StockVoucherNumberScope {
   voucherType: StockVoucherType;
   deviceId: string;
 }
-
 export interface AllocatedStockVoucherNumber {
   slno: bigint;
   refno: string;
 }
-
 /**
  * Reads the device's printable code. `device_master` has no `dev_code`: the
  * uid is what the tills are labelled with (`TILL-01`), and the name is the
@@ -84,7 +78,6 @@ export async function resolveDeviceCode(
   const code = device.devDeviceUid?.trim() || device.devDeviceName?.trim();
   return code || deviceId;
 }
-
 /**
  * Takes the transaction-scoped advisory lock that serialises two devices — or
  * two tabs on one device — racing for the same next serial.
@@ -114,7 +107,6 @@ async function lockSlnoScope(
     SELECT 1::int AS locked
   `;
 }
-
 /**
  * MAX(svh_slno) + 1 within the ux_svh_slno scope, under the lock above.
  *
@@ -140,7 +132,6 @@ export async function nextStockVoucherSlno(
   `;
   return rows[0]?.next_slno ?? BigInt(1);
 }
-
 /**
  * `{typeCode}/{accYear}/{deviceCode}/{slno}` — `OPN/2026-2027/TILL-01/1`.
  *
@@ -165,7 +156,6 @@ export function buildStockVoucherRefno(
   }
   return refno;
 }
-
 /**
  * Allocates the pair, honouring anything the client already decided.
  *
@@ -190,11 +180,9 @@ export async function allocateStockVoucherNumber(
     supplied.slno === undefined || supplied.slno === null || supplied.slno === ''
       ? null
       : BigInt(supplied.slno);
-
   if (suppliedSlno !== null && suppliedRefno !== null) {
     return { slno: suppliedSlno, refno: suppliedRefno };
   }
-
   const slno = suppliedSlno ?? (await nextStockVoucherSlno(tx, scope));
   if (suppliedRefno !== null) {
     return { slno, refno: suppliedRefno };

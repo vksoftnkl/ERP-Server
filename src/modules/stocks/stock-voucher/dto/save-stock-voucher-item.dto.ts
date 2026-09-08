@@ -275,4 +275,23 @@ export class SaveStockVoucherItemDto {
   @ApiPropertyOptional({ maxLength: 250, nullable: true })
   @NullableStringStrict(250)
   remarks?: string | null;
+
+  /**
+   * WHO, per line. Both fall back to the header's createdBy / modifiedBy and
+   * then to the resolved actor, so a grid that does not track this per row can
+   * ignore them entirely.
+   *
+   * A save REPLACES the lines rather than merging them (see the service), so
+   * every line of an updated document is inserted afresh and takes createdBy
+   * from this save. modifiedBy is written only when something actually supplies
+   * it — a created line with a modified_by would claim an edit that never
+   * happened.
+   */
+  @ApiPropertyOptional({ maxLength: 100, nullable: true })
+  @NullableStringStrict(100)
+  createdBy?: string | null;
+
+  @ApiPropertyOptional({ maxLength: 100, nullable: true })
+  @NullableStringStrict(100)
+  modifiedBy?: string | null;
 }

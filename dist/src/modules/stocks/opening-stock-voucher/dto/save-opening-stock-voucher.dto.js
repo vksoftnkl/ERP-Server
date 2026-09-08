@@ -39,6 +39,9 @@ class SaveOpeningStockVoucherHeaderDto {
     remarks;
     userId;
     voucherType;
+    status;
+    createdBy;
+    modifiedBy;
 }
 exports.SaveOpeningStockVoucherHeaderDto = SaveOpeningStockVoucherHeaderDto;
 __decorate([
@@ -204,6 +207,36 @@ __decorate([
     }),
     __metadata("design:type", String)
 ], SaveOpeningStockVoucherHeaderDto.prototype, "voucherType", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        enum: stock_voucher_types_1.SAVEABLE_STOCK_VOUCHER_STATUSES,
+        default: 'DRAFT',
+        description: "What to leave the document as. Omitted or 'DRAFT' saves a draft. 'POSTED' saves and then posts it in one transaction — preflight, lots, ledger, balance and the status trail.",
+    }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsIn)(stock_voucher_types_1.SAVEABLE_STOCK_VOUCHER_STATUSES, {
+        message: `status must be one of ${stock_voucher_types_1.SAVEABLE_STOCK_VOUCHER_STATUSES.join(', ')} — a document is cancelled by cancelling it, never by saving`,
+    }),
+    __metadata("design:type", String)
+], SaveOpeningStockVoucherHeaderDto.prototype, "status", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        maxLength: 100,
+        nullable: true,
+        description: 'Who created the document — written on a CREATE only. Falls back to userId, then to the authenticated user.',
+    }),
+    (0, dtoDecorators_1.NullableStringStrict)(100),
+    __metadata("design:type", Object)
+], SaveOpeningStockVoucherHeaderDto.prototype, "createdBy", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        maxLength: 100,
+        nullable: true,
+        description: 'Who last changed it — written on an UPDATE only, and never overwrites created_by. Falls back to userId, then to the authenticated user.',
+    }),
+    (0, dtoDecorators_1.NullableStringStrict)(100),
+    __metadata("design:type", Object)
+], SaveOpeningStockVoucherHeaderDto.prototype, "modifiedBy", void 0);
 class SaveOpeningStockVoucherItemDto {
     lineNo;
     splitNo;
@@ -231,6 +264,8 @@ class SaveOpeningStockVoucherItemDto {
     landedRate;
     taxPerc;
     remarks;
+    createdBy;
+    modifiedBy;
 }
 exports.SaveOpeningStockVoucherItemDto = SaveOpeningStockVoucherItemDto;
 __decorate([
@@ -419,6 +454,16 @@ __decorate([
     (0, dtoDecorators_1.NullableStringStrict)(250),
     __metadata("design:type", Object)
 ], SaveOpeningStockVoucherItemDto.prototype, "remarks", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ maxLength: 100, nullable: true }),
+    (0, dtoDecorators_1.NullableStringStrict)(100),
+    __metadata("design:type", Object)
+], SaveOpeningStockVoucherItemDto.prototype, "createdBy", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ maxLength: 100, nullable: true }),
+    (0, dtoDecorators_1.NullableStringStrict)(100),
+    __metadata("design:type", Object)
+], SaveOpeningStockVoucherItemDto.prototype, "modifiedBy", void 0);
 class SaveOpeningStockVoucherDto {
     header;
     lines;

@@ -39,8 +39,8 @@ import type {
   StockVoucherDeleteResult,
   StockVoucherImportResult,
   StockVoucherLineProblem,
-  StockVoucherListResult,
   StockVoucherPayload,
+  StockVoucherSaveResult,
   StockVoucherPostResult,
   StockVoucherSuccessResponse,
   StockVoucherTypeRules,
@@ -60,9 +60,9 @@ import {
   OpeningReconcileSuccessDto,
   OpeningStockCancelSuccessDto,
   OpeningStockDeleteSuccessDto,
-  OpeningStockDocumentSuccessDto,
+  OpeningStockSaveSuccessDto,
   OpeningStockErrorResponseDto,
-  OpeningStockListSuccessDto,
+  OpeningStockDocumentSuccessDto,
   OpeningStockPostSuccessDto,
   OpeningStockImportSuccessDto,
   OpeningStockValidateSuccessDto,
@@ -132,55 +132,66 @@ const MAX_IMPORT_BYTES = 5 * 1024 * 1024;
 export class OpeningStockVoucherController {
   constructor(private readonly stockVoucherService: StockVoucherService) {}
 
-  @Post()
+  @Post('create')
   @Version(API_VERSION)
   @ApiOperation({
-    summary: 'Create or update an opening stock draft (by header.svhId presence)',
+    summary: 'Create or update an opening stock document (by header.svhId presence)',
     description:
-      'Update is a full replace of the lines. The saved status is always DRAFT — posting is a separate call, not a status field.',
+      "Update is a full replace of the lines. Saves a DRAFT unless header.status is 'POSTED', which saves and posts in one transaction — preflight, lots, ledger, balance and the status trail — so a line the preflight refuses fails the save too. rowsPosted on the response is null for a draft.",
   })
-  @ApiCreatedResponse({ type: OpeningStockDocumentSuccessDto })
+  @ApiCreatedResponse({ type: OpeningStockSaveSuccessDto })
   @ApiBadRequestResponse({ type: OpeningStockErrorResponseDto })
   @ApiUnprocessableEntityResponse({ type: OpeningStockErrorResponseDto })
   @ApiConflictResponse({ type: OpeningStockErrorResponseDto })
   @ApiNotFoundResponse({ type: OpeningStockErrorResponseDto })
   async save(
     @Body() dto: SaveOpeningStockVoucherDto,
-  ): Promise<StockVoucherSuccessResponse<StockVoucherPayload>> {
+  ): Promise<StockVoucherSuccessResponse<StockVoucherSaveResult>> {
     const data = await this.stockVoucherService.save(OPENING_RULES, dto);
+    // The message says which of the two things actually happened, because a
+    // save that also posted moved stock and the user is entitled to see that
+    // said out loud rather than inferring it from the status field.
+    const saved = dto.header.svhId ? 'updated' : 'created';
     return {
       success: true,
-      message: dto.header.svhId
-        ? 'Opening stock updated successfully'
-        : 'Opening stock created successfully',
+      message:
+        data.rowsPosted === null
+          ? `Opening stock ${saved} successfully`
+          : `Opening stock ${saved} and posted successfully — ${data.rowsPosted} ledger rows`,
       data,
     };
   }
 
-  @Get()
+  /**
+   * ONE DOCUMENT, ALWAYS. This route used to list as well — `svhId` absent meant
+   * "list them", with status, date, search and paging filters. `svhId` is now
+   * required, so that branch is unreachable and has been removed rather than
+   * left in as code no request can enter.
+   *
+   * `StockVoucherService.list` is untouched and still serves the other voucher
+   * screens; a list for openings can be given its own path whenever the screen
+   * needs one.
+   */
+  @Get('get')
   @Version(API_VERSION)
   @ApiOperation({
-    summary: 'List opening stock documents, or load one when svhId is given',
+    summary: 'Load one opening stock document by svhId',
     description:
-      'The list reads the trigger-maintained header counters — it never aggregates the line table.',
+      'Loads the document named by svhId, header and lines. This route does not list: svhId is required, and there are no status, date, search or paging filters — sending one is a 400.',
   })
-  @ApiOkResponse({ type: OpeningStockListSuccessDto })
+  @ApiOkResponse({ type: OpeningStockDocumentSuccessDto })
   @ApiNotFoundResponse({ type: OpeningStockErrorResponseDto })
-  async listOrLoad(
+  async load(
     @Query() query: GetOpeningStockVoucherQueryDto,
-  ): Promise<StockVoucherSuccessResponse<StockVoucherPayload | StockVoucherListResult>> {
-    if (query.svhId) {
-      const data = await this.stockVoucherService.getById(
-        OPENING_RULES,
-        query.svhId,
-        query.accYear,
-        query.companyId,
-        query.branchId,
-      );
-      return { success: true, message: 'Opening stock fetched successfully', data };
-    }
-    const data = await this.stockVoucherService.list(OPENING_RULES, query);
-    return { success: true, message: 'Opening stock list fetched successfully', data };
+  ): Promise<StockVoucherSuccessResponse<StockVoucherPayload>> {
+    const data = await this.stockVoucherService.getById(
+      OPENING_RULES,
+      query.svhId,
+      query.accYear,
+      query.companyId,
+      query.branchId,
+    );
+    return { success: true, message: 'Opening stock fetched successfully', data };
   }
 
   @Get('validate')

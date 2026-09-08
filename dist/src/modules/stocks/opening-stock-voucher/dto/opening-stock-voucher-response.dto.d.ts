@@ -188,6 +188,14 @@ export declare class OpeningStockDocumentSuccessDto {
     message: string;
     data: OpeningStockDocumentDto;
 }
+export declare class OpeningStockSavedDocumentDto extends OpeningStockDocumentDto {
+    rowsPosted: number | null;
+}
+export declare class OpeningStockSaveSuccessDto {
+    success: true;
+    message: string;
+    data: OpeningStockSavedDocumentDto;
+}
 export declare class OpeningStockListSuccessDto {
     success: true;
     message: string;

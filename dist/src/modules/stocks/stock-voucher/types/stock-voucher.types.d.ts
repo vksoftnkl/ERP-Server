@@ -1,9 +1,12 @@
 import type { StockErrorDetail, StockErrorResponse } from "../../../../common/utils/module-service.utils";
+import type { TxnStatusDocType } from "../../../../common/txn-status-log/txn-status-log.helper";
 export type { StockErrorDetail, StockErrorResponse };
 export declare const STOCK_VOUCHER_TYPES: readonly ["OPENING", "RECEIPT", "ISSUE", "ADJUSTMENT", "TRANSFER_OUT", "TRANSFER_IN", "DAMAGE", "EXPIRY_WRITEOFF", "PHYSICAL", "REPACK_IN", "REPACK_OUT"];
 export type StockVoucherType = (typeof STOCK_VOUCHER_TYPES)[number];
 export declare const STOCK_VOUCHER_STATUSES: readonly ["DRAFT", "POSTED", "IN_TRANSIT", "RECEIVED", "CANCELLED"];
 export type StockVoucherStatus = (typeof STOCK_VOUCHER_STATUSES)[number];
+export declare const SAVEABLE_STOCK_VOUCHER_STATUSES: readonly ["DRAFT", "POSTED"];
+export type SaveableStockVoucherStatus = (typeof SAVEABLE_STOCK_VOUCHER_STATUSES)[number];
 export declare const STOCK_BUCKETS: readonly ["SALEABLE", "DAMAGED", "QUARANTINE", "EXPIRED", "SAMPLE"];
 export type StockBucket = (typeof STOCK_BUCKETS)[number];
 export declare const STOCK_RATE_SOURCES: readonly ["AVG_COST", "LAST_PURCHASE", "LOT_COST", "MRP", "MANUAL"];
@@ -32,6 +35,7 @@ export interface StockVoucherTypeRules {
     requiresLot?: boolean;
     zeroesLineCost?: boolean;
     auditScreenName: string;
+    statusDocType: TxnStatusDocType;
     refuseTypes?: readonly StockVoucherType[];
 }
 export interface StockVoucherLineProblem {
@@ -158,6 +162,9 @@ export interface StockVoucherListResult {
         offset: number;
         count: number;
     };
+}
+export interface StockVoucherSaveResult extends StockVoucherPayload {
+    rowsPosted: number | null;
 }
 export interface StockVoucherPostResult extends StockVoucherPayload {
     rowsPosted: number;

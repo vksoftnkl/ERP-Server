@@ -4,14 +4,19 @@ exports.STOCK_LEDGER_SRC_MODULE = void 0;
 exports.usesInProcessPosting = usesInProcessPosting;
 exports.postStockVoucher = postStockVoucher;
 const client_1 = require("@prisma/client");
+const module_service_utils_1 = require("../../../common/utils/module-service.utils");
 const DIRECTION_IN = 1;
 const DIRECTION_OUT = -1;
 exports.STOCK_LEDGER_SRC_MODULE = 'STOCK';
 function usesInProcessPosting(rules) {
     return rules.postFunction === 'stock.fn_svh_post';
 }
+function auditColumnActor(actor) {
+    return actor === module_service_utils_1.DEFAULT_ACTOR ? null : actor;
+}
 async function postStockVoucher(tx, params) {
-    const { rules, svhId, accYear, actor, postedOn } = params;
+    const { svhId, accYear, actor, postedOn } = params;
+    const author = auditColumnActor(actor);
     await resolveLots(tx, params);
     await attachLotsToLines(tx, params);
     const rowsPosted = await writeLedger(tx, params);
@@ -22,10 +27,10 @@ async function postStockVoucher(tx, params) {
         data: {
             svhStatus: 'POSTED',
             svhPostedOn: postedOn,
-            svhPostedBy: actor,
+            svhPostedBy: author,
             svhVersionNo: { increment: 1 },
             svhModifiedOn: postedOn,
-            svhModifiedBy: actor,
+            svhModifiedBy: author,
         },
     });
     return rowsPosted;
@@ -178,7 +183,7 @@ async function resolveLots(tx, { rules, svhId, accYear, actor }) {
            ${exports.STOCK_LEDGER_SRC_MODULE}, ${rules.voucherType}, c.svi_voucher_id,
            c.svi_acc_year, c.svh_refno,
            c.line_cost_rate, c.line_cost_rate, c.line_cost_rate_wot, c.svi_landed_rate, c.svi_tax_perc,
-           ${actor}
+           ${auditColumnActor(actor)}
       FROM costed c
      ORDER BY c.svh_company_id, c.svi_item_id, c.key_batch, c.key_mrp,
               c.key_sp, c.key_expiry, c.key_serial, c.key_supplier,
@@ -191,11 +196,11 @@ async function attachLotsToLines(tx, { rules, svhId, accYear, postedOn, actor })
     await tx.$executeRaw `
     WITH ${postingCte(svhId, accYear, isCount)}
     UPDATE stock.stock_voucher_item svi
-       SET svi_lot_id      = slt.slt_id,
+       SET svi_lot_id        = COALESCE(svi.svi_lot_id, slt.slt_id),
            svi_cost_rate     = c.line_cost_rate,
            svi_cost_rate_wot = c.line_cost_rate_wot,
-           svi_modified_on = ${postedOn},
-           svi_modified_by = ${actor}
+           svi_modified_on   = ${postedOn},
+           svi_modified_by   = ${auditColumnActor(actor)}
       FROM costed c
       JOIN stock.stock_lot slt
         ON slt.slt_company_id  = c.svh_company_id
@@ -209,13 +214,12 @@ async function attachLotsToLines(tx, { rules, svhId, accYear, postedOn, actor })
        AND slt.slt_is_deleted  = false
      WHERE svi.svi_id       = c.svi_id
        AND svi.svi_acc_year = c.svi_acc_year
-       AND svi.svi_lot_id IS NULL
   `;
 }
 async function writeLedger(tx, { rules, svhId, accYear, actor, postedOn }) {
     const isCount = rules.quantityMode === 'COUNT';
     const [plusTxnType, minusTxnType] = isCount
-        ? [rules.ledgerTxnTypes[0], (rules.ledgerTxnTypes[1] ?? rules.ledgerTxnTypes[0])]
+        ? [rules.ledgerTxnTypes[0], rules.ledgerTxnTypes[1] ?? rules.ledgerTxnTypes[0]]
         : [rules.ledgerTxnTypes[0], rules.ledgerTxnTypes[0]];
     const direction = rules.isInward ? DIRECTION_IN : DIRECTION_OUT;
     return tx.$executeRaw `
@@ -250,7 +254,7 @@ async function writeLedger(tx, { rules, svhId, accYear, actor, postedOn }) {
            c.line_cost_rate_wot, ROUND(c.line_cost_rate_wot * (c.move_base_qty + c.move_free_base_qty), 2),
            c.svi_landed_rate,    ROUND(c.svi_landed_rate    * (c.move_base_qty + c.move_free_base_qty), 2),
            c.svi_mrp, c.svi_batch_no, c.svi_expiry_date,
-           COALESCE(c.svi_reason_id, c.svh_reason_id), ${actor}
+           COALESCE(c.svi_reason_id, c.svh_reason_id), ${auditColumnActor(actor)}
       FROM costed c
       JOIN stock.stock_voucher_item svi
         ON svi.svi_id = c.svi_id AND svi.svi_acc_year = c.svi_acc_year
@@ -258,6 +262,9 @@ async function writeLedger(tx, { rules, svhId, accYear, actor, postedOn }) {
   `;
 }
 async function applyBalances(tx, { svhId, accYear, actor, postedOn }) {
+    const newOnHand = client_1.Prisma.sql `(COALESCE(stock.stock_balance.sbl_on_hand_qty, 0)
+                                 + EXCLUDED.sbl_in_qty  + EXCLUDED.sbl_free_in_qty
+                                 - EXCLUDED.sbl_out_qty - EXCLUDED.sbl_free_out_qty)`;
     await tx.$executeRaw `
     WITH moved AS (
       SELECT sml.sml_company_id, sml.sml_branch_id, sml.sml_tenant_id,
@@ -268,8 +275,8 @@ async function applyBalances(tx, { svhId, accYear, actor, postedOn }) {
              SUM(CASE WHEN sml.sml_direction > 0 THEN sml.sml_free_base_qty ELSE 0 END) AS free_in_qty,
              SUM(CASE WHEN sml.sml_direction < 0 THEN sml.sml_free_base_qty ELSE 0 END) AS free_out_qty,
              SUM(sml.sml_signed_base_qty)                                               AS signed_qty,
-             SUM(sml.sml_cost_value)                                                    AS cost_value,
-             SUM(sml.sml_cost_value_wot)                                                AS cost_value_wot,
+             SUM(sml.sml_cost_value     * sml.sml_direction)                            AS cost_value,
+             SUM(sml.sml_cost_value_wot * sml.sml_direction)                            AS cost_value_wot,
              MAX(sml.sml_doc_date) FILTER (WHERE sml.sml_direction > 0)                 AS last_in_date,
              MAX(sml.sml_doc_date) FILTER (WHERE sml.sml_direction < 0)                 AS last_out_date,
              MIN(sml.sml_doc_date) FILTER (WHERE sml.sml_direction > 0)                 AS first_in_date
@@ -284,6 +291,7 @@ async function applyBalances(tx, { svhId, accYear, actor, postedOn }) {
       sbl_lot_id, sbl_base_uom_id, sbl_bucket,
       sbl_in_qty, sbl_out_qty, sbl_free_in_qty, sbl_free_out_qty,
       sbl_stock_value, sbl_stock_value_wot,
+      sbl_avg_cost_rate, sbl_avg_cost_rate_wot,
       sbl_first_in_date, sbl_last_in_date, sbl_last_out_date,
       sbl_batch_no, sbl_mrp, sbl_sale_price, sbl_expiry_date, sbl_supplier_id,
       sbl_created_by
@@ -292,9 +300,13 @@ async function applyBalances(tx, { svhId, accYear, actor, postedOn }) {
            m.sml_lot_id, m.sml_base_uom_id, m.sml_bucket,
            m.in_qty, m.out_qty, m.free_in_qty, m.free_out_qty,
            m.cost_value, m.cost_value_wot,
+           -- A row being created has no prior rate to keep, so a non-positive
+           -- opening on-hand can only be 0.
+           CASE WHEN m.signed_qty > 0 THEN ROUND(m.cost_value     / m.signed_qty, 6) ELSE 0 END,
+           CASE WHEN m.signed_qty > 0 THEN ROUND(m.cost_value_wot / m.signed_qty, 6) ELSE 0 END,
            m.first_in_date, m.last_in_date, m.last_out_date,
            slt.slt_batch_no, slt.slt_mrp, slt.slt_sale_price, slt.slt_expiry_date, slt.slt_supplier_id,
-           ${actor}
+           ${auditColumnActor(actor)}
       FROM moved m
       JOIN stock.stock_lot slt ON slt.slt_id = m.sml_lot_id
     ON CONFLICT (sbl_company_id, sbl_branch_id, sbl_godown_id, sbl_item_id, sbl_lot_id, sbl_bucket)
@@ -306,6 +318,21 @@ async function applyBalances(tx, { svhId, accYear, actor, postedOn }) {
       sbl_free_out_qty  = stock.stock_balance.sbl_free_out_qty  + EXCLUDED.sbl_free_out_qty,
       sbl_stock_value     = stock.stock_balance.sbl_stock_value     + EXCLUDED.sbl_stock_value,
       sbl_stock_value_wot = stock.stock_balance.sbl_stock_value_wot + EXCLUDED.sbl_stock_value_wot,
+      -- Every SET expression reads the PRE-UPDATE row, so these two see the old
+      -- value and the old on-hand however Postgres orders the clauses. The new
+      -- on-hand is spelled out from EXCLUDED's four plain accumulators rather
+      -- than read off EXCLUDED.sbl_on_hand_qty: that column is generated from
+      -- the deltas alone, so it holds this document's movement, not the total.
+      sbl_avg_cost_rate = CASE
+        WHEN ${newOnHand} > 0
+        THEN ROUND((stock.stock_balance.sbl_stock_value + EXCLUDED.sbl_stock_value) / ${newOnHand}, 6)
+        ELSE stock.stock_balance.sbl_avg_cost_rate
+      END,
+      sbl_avg_cost_rate_wot = CASE
+        WHEN ${newOnHand} > 0
+        THEN ROUND((stock.stock_balance.sbl_stock_value_wot + EXCLUDED.sbl_stock_value_wot) / ${newOnHand}, 6)
+        ELSE stock.stock_balance.sbl_avg_cost_rate_wot
+      END,
       -- The FIRST inward on this shelf never moves once set; the last two do.
       sbl_first_in_date = LEAST(stock.stock_balance.sbl_first_in_date, EXCLUDED.sbl_first_in_date),
       sbl_last_in_date  = GREATEST(stock.stock_balance.sbl_last_in_date, EXCLUDED.sbl_last_in_date),
@@ -317,7 +344,7 @@ async function applyBalances(tx, { svhId, accYear, actor, postedOn }) {
       sbl_supplier_id   = EXCLUDED.sbl_supplier_id,
       sbl_row_version   = stock.stock_balance.sbl_row_version + 1,
       sbl_modified_on   = ${postedOn},
-      sbl_modified_by   = ${actor}
+      sbl_modified_by   = ${auditColumnActor(actor)}
   `;
 }
 async function refreshLotTotals(tx, { svhId, accYear, actor, postedOn }) {
@@ -342,7 +369,7 @@ async function refreshLotTotals(tx, { svhId, accYear, actor, postedOn }) {
        SET slt_total_on_hand = totals.on_hand,
            slt_row_version   = slt.slt_row_version + 1,
            slt_modified_on   = ${postedOn},
-           slt_modified_by   = ${actor}
+           slt_modified_by   = ${auditColumnActor(actor)}
       FROM totals
      WHERE slt.slt_id = totals.lot_id
   `;
