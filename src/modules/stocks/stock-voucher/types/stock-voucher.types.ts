@@ -155,7 +155,7 @@ export interface StockVoucherTypeRules {
   /**
    * accounts.acc_voucher_types.vchr_type_id whose numbering format (prefix,
    * suffix, width, reset frequency) builds svh_refno through
-   * accounts.acc_voucher_seq — `opn000000000001st` for the Opening Stock row.
+   * accounts.acc_voucher_seq — `OPN0001` for the Opening Stock row.
    *
    * Absent means the self-contained `{typeCode}/{accYear}/{device}/{slno}`
    * scheme. svh_slno stays per device either way; only the printed number
@@ -345,6 +345,8 @@ export interface StockVoucherHeaderPayload {
   godownId: string | null;
   godownName: string | null;
   supplierId: string | null;
+  /** purchase.suppliers.sup_name for supplierId — null when unset or deleted. */
+  supplierName: string | null;
   toBranchId: string | null;
   partyRef: string | null;
   linkSrcModule: string | null;
@@ -406,6 +408,8 @@ export interface StockVoucherLinePayload {
   salePrice: number | null;
   serialNo: string | null;
   supplierId: string | null;
+  /** purchase.suppliers.sup_name for supplierId — null when the line names none. */
+  supplierName: string | null;
   qty: number;
   baseQty: number;
   freeQty: number;

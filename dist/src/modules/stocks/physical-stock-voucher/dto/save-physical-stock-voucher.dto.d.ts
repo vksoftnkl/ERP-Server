@@ -1,5 +1,4 @@
-import { SaveStockVoucherHeaderDto } from '../../stock-voucher/dto/save-stock-voucher.dto';
-import { type StockBucket } from '../../stock-voucher/types/stock-voucher.types';
+import { type SaveableStockVoucherStatus, type StockBucket, type StockRateSource } from '../../stock-voucher/types/stock-voucher.types';
 export declare class SavePhysicalStockVoucherItemDto {
     lineNo: number;
     splitNo?: number;
@@ -11,12 +10,32 @@ export declare class SavePhysicalStockVoucherItemDto {
     reasonId?: string | null;
     remarks?: string | null;
 }
-export declare class SavePhysicalStockVoucherHeaderDto extends SaveStockVoucherHeaderDto {
+export declare class SavePhysicalStockVoucherHeaderDto {
+    svhId?: string;
     voucherType?: 'PHYSICAL';
-    lineCount?: undefined;
-    totalQty?: undefined;
-    totalValue?: undefined;
-    totalValueWot?: undefined;
+    accYear: string;
+    companyId: string;
+    branchId: string;
+    tenantId?: string | null;
+    deviceId: string;
+    sessionId?: string | null;
+    slno?: string;
+    refno?: string;
+    usrRefno?: string | null;
+    docDate: string;
+    docDatetime?: string | null;
+    toGodownId: string;
+    reasonId?: string | null;
+    freezeStock?: boolean;
+    freezeFrom?: string | null;
+    freezeTo?: string | null;
+    syncDate?: string | null;
+    rateSource?: StockRateSource | null;
+    status?: SaveableStockVoucherStatus;
+    remarks?: string | null;
+    userId?: string;
+    createdBy?: string | null;
+    modifiedBy?: string | null;
 }
 export declare class SavePhysicalStockVoucherDto {
     header: SavePhysicalStockVoucherHeaderDto;

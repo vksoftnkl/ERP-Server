@@ -111,6 +111,12 @@ export class StockTransferHeaderDto {
   supplierId!: string | null;
 
   @ApiPropertyOptional({
+    nullable: true,
+    description: 'purchase.suppliers.sup_name for supplierId.',
+  })
+  supplierName!: string | null;
+
+  @ApiPropertyOptional({
     format: 'uuid',
     nullable: true,
     description:
@@ -283,6 +289,12 @@ export class StockTransferLineDto {
 
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   supplierId!: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'purchase.suppliers.sup_name for supplierId.',
+  })
+  supplierName!: string | null;
 
   @ApiProperty()
   qty!: number;

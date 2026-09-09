@@ -85,7 +85,7 @@ cost and posts no debit and no credit.
 self-contained `{typeCode}/{accYear}/{deviceCode}/{slno}`. With one — OPENING
 names `accounts.acc_voucher_types` row 1, "Opening Stock" — the printed number
 comes from `accounts.acc_voucher_seq` under that row's prefix / suffix / width
-/ reset frequency (`opn000000000001st`), on the branch-wide `MAIN` counter
+/ reset frequency (`OPN0001`), on the branch-wide `MAIN` counter
 because `ux_svh_refno` has no device in it.
 
 `svh_slno` is per **device** (`ux_svh_slno`) because a warehouse tablet must

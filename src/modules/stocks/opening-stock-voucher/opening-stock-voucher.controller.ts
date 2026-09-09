@@ -84,8 +84,8 @@ import {
  */
 /**
  * accounts.acc_voucher_types row "OPENING" / Opening Stock. Its numbering
- * format (prefix `opn`, suffix `st`, width 12, yearly reset) seeds the
- * acc_voucher_seq row that svh_refno is drawn from — `opn000000000001st`.
+ * format (prefix `OPN`, no suffix, width 4, yearly reset) seeds the
+ * acc_voucher_seq row that svh_refno is drawn from — `OPN0001`.
  */
 const OPENING_VCHR_TYPE_ID = 1;
 

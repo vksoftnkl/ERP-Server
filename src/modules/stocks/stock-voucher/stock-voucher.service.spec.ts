@@ -17,7 +17,7 @@ import { allocateVoucherNumber } from 'src/common/Sequence/voucher-sequence.help
 jest.mock('src/common/Sequence/voucher-sequence.helper', () => ({
   allocateVoucherNumber: jest.fn().mockResolvedValue({
     lastNo: BigInt(1),
-    refno: 'opn000000000001st',
+    refno: 'OPN0001',
     periodKey: '2026-2027',
   }),
 }));
@@ -228,7 +228,7 @@ describe('StockVoucherService', () => {
       // per-device accounts counter would let two tills print the same number.
       expect(scope).not.toHaveProperty('deviceCode');
       const data = client.stockVoucher.create.mock.calls[0][0].data;
-      expect(data.svhRefno).toBe('opn000000000001st');
+      expect(data.svhRefno).toBe('OPN0001');
       // The serial is untouched by the switch: still MAX(slno) + 1 per device.
       expect(data.svhSlno).toBe(BigInt(1));
     });
@@ -236,11 +236,11 @@ describe('StockVoucherService', () => {
     it('honours a client-supplied refno without consuming an accounts number', async () => {
       await service.save(
         { ...OPENING_RULES, refnoVchrTypeId: 1 },
-        payload({ header: { refno: 'opn000000000040st' } as never }),
+        payload({ header: { refno: 'OPN0040' } as never }),
       );
 
       expect(allocateVoucherNumber).not.toHaveBeenCalled();
-      expect(client.stockVoucher.create.mock.calls[0][0].data.svhRefno).toBe('opn000000000040st');
+      expect(client.stockVoucher.create.mock.calls[0][0].data.svhRefno).toBe('OPN0040');
     });
   });
 
@@ -361,7 +361,6 @@ describe('StockVoucherService', () => {
         svhVoucherType: 'OPENING',
         svhCompanyId: COMPANY_ID,
         svhBranchId: BRANCH_ID,
-        svhCancelledOn: null,
       });
 
       await service.save(
@@ -399,7 +398,6 @@ describe('StockVoucherService', () => {
         svhVoucherType: 'OPENING',
         svhCompanyId: COMPANY_ID,
         svhBranchId: BRANCH_ID,
-        svhCancelledOn: null,
       });
 
       await service.save(
@@ -522,7 +520,6 @@ describe('StockVoucherService', () => {
         svhVoucherType: 'OPENING',
         svhCompanyId: COMPANY_ID,
         svhBranchId: BRANCH_ID,
-        svhCancelledOn: null,
       });
       client.txnStatusLog.create.mockClear();
 
@@ -624,7 +621,6 @@ describe('StockVoucherService', () => {
         svhStatus: 'DRAFT',
         svhIsDeleted: false,
         svhVoucherType: 'OPENING',
-        svhCancelledOn: null,
       });
 
       await service.save(OPENING_RULES, payload({ header: { svhId: SVH_ID } as never }));
@@ -855,7 +851,6 @@ describe('StockVoucherService', () => {
         svhVoucherType: 'OPENING',
         svhCompanyId: COMPANY_ID,
         svhBranchId: BRANCH_ID,
-        svhCancelledOn: null,
         svhTenantId: null,
         svhDeviceId: DEVICE_ID,
         svhSessionId: null,
@@ -893,7 +888,6 @@ describe('StockVoucherService', () => {
         svhVoucherType: 'OPENING',
         svhCompanyId: COMPANY_ID,
         svhBranchId: BRANCH_ID,
-        svhCancelledOn: null,
         svhTenantId: null,
         svhDeviceId: DEVICE_ID,
         svhSessionId: null,
@@ -933,7 +927,6 @@ describe('StockVoucherService', () => {
         svhVoucherType: 'TRANSFER_OUT',
         svhCompanyId: COMPANY_ID,
         svhBranchId: BRANCH_ID,
-        svhCancelledOn: null,
       });
       client.$queryRaw.mockResolvedValue([{ rows: 1 }]);
 
@@ -961,7 +954,6 @@ describe('StockVoucherService', () => {
         svhVoucherType: 'TRANSFER_OUT',
         svhCompanyId: COMPANY_ID,
         svhBranchId: BRANCH_ID,
-        svhCancelledOn: null,
       });
       await expect(
         service.post(
@@ -991,7 +983,6 @@ describe('StockVoucherService', () => {
         svhVoucherType: 'TRANSFER_OUT',
         svhCompanyId: COMPANY_ID,
         svhBranchId: BRANCH_ID,
-        svhCancelledOn: null,
       });
       client.$queryRaw.mockResolvedValue([{ rows: 3 }]);
 
@@ -1023,7 +1014,6 @@ describe('StockVoucherService', () => {
         svhVoucherType: 'TRANSFER_OUT',
         svhCompanyId: COMPANY_ID,
         svhBranchId: BRANCH_ID,
-        svhCancelledOn: null,
       });
       client.$queryRaw.mockResolvedValue([{ rows: 1 }]);
       await expect(
@@ -1452,7 +1442,6 @@ describe('StockVoucherService', () => {
       svhVoucherType: 'OPENING',
       svhCompanyId: COMPANY_ID,
       svhBranchId: BRANCH_ID,
-      svhCancelledOn: null,
     };
 
     it('answers 409 on an update of a POSTED voucher instead of a trigger 500', async () => {
@@ -1522,19 +1511,24 @@ describe('StockVoucherService', () => {
       // Reversal rows, balances, the moving average and its stamp, lot totals
       // — five set-based statements.
       expect(client.$executeRaw).toHaveBeenCalledTimes(5);
-      expect(client.stockVoucher.update).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: expect.objectContaining({
-            svhStatus: 'CANCELLED',
-            svhCancelReason: 'wrong figures',
-            svhCancelledBy: USER_ID,
-          }),
-        }),
+      // The header moves to CANCELLED and carries NOTHING else about the
+      // cancellation: who did it, when, and why are the trail's, and writing
+      // them twice is what this asserts against.
+      const [[headerUpdate]] = client.stockVoucher.update.mock.calls;
+      expect(headerUpdate.data).toEqual(
+        expect.objectContaining({ svhStatus: 'CANCELLED', svhVersionNo: { increment: 1 } }),
+      );
+      expect(Object.keys(headerUpdate.data)).toEqual(
+        expect.not.arrayContaining(['svhCancelledOn', 'svhCancelledBy', 'svhCancelReason']),
       );
       expect(result.rowsReversed).toBe(2);
       expect(client.txnStatusLog.create).toHaveBeenCalledWith(
         expect.objectContaining({
-          data: expect.objectContaining({ tslToStatus: 'CANCELLED', tslRemarks: 'wrong figures' }),
+          data: expect.objectContaining({
+            tslToStatus: 'CANCELLED',
+            tslRemarks: 'wrong figures',
+            tslChangedBy: USER_ID,
+          }),
         }),
       );
     });
@@ -1607,7 +1601,6 @@ describe('StockVoucherService', () => {
         svhVoucherType: 'OPENING',
         svhCompanyId: COMPANY_ID,
         svhBranchId: BRANCH_ID,
-        svhCancelledOn: null,
       });
       jest.spyOn(service, 'validate').mockResolvedValue([
         {

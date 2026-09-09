@@ -101,10 +101,6 @@ let PhysicalStockVoucherController = class PhysicalStockVoucherController {
             data,
         };
     }
-    async remove(query) {
-        const data = await this.stockVoucherService.softDelete(PHYSICAL_RULES, query.svhId, query.accYear, query.companyId, query.branchId);
-        return { success: true, message: 'Physical stock count deleted successfully', data };
-    }
     async variance(query) {
         const data = await this.stockVoucherService.variance(PHYSICAL_RULES, query.svhId, query.accYear, query.companyId, query.branchId, query.limit, query.offset);
         return {
@@ -141,7 +137,7 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], PhysicalStockVoucherController.prototype, "countSheet", null);
 __decorate([
-    (0, common_1.Post)(),
+    (0, common_1.Post)('/create'),
     (0, common_1.Version)(api_version_1.API_VERSION),
     (0, swagger_1.ApiOperation)({
         summary: 'Create or update a physical count draft (by header.svhId presence)',
@@ -159,7 +155,7 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], PhysicalStockVoucherController.prototype, "save", null);
 __decorate([
-    (0, common_1.Get)(),
+    (0, common_1.Get)('/get'),
     (0, common_1.Version)(api_version_1.API_VERSION),
     (0, swagger_1.ApiOperation)({
         summary: 'List physical counts, or load one when svhId is given',
@@ -221,21 +217,6 @@ __decorate([
     __metadata("design:paramtypes", [post_physical_stock_voucher_dto_1.CancelPhysicalStockVoucherDto]),
     __metadata("design:returntype", Promise)
 ], PhysicalStockVoucherController.prototype, "cancel", null);
-__decorate([
-    (0, common_1.Delete)(),
-    (0, common_1.Version)(api_version_1.API_VERSION),
-    (0, swagger_1.ApiOperation)({
-        summary: 'Soft delete a physical count DRAFT',
-        description: 'DRAFT only; a POSTED count is cancelled, never deleted. It also LIFTS THE FREEZE, since the guard reads DRAFT sheets — a sheet abandoned with its window still open would otherwise block the godown until freezeTo passes.',
-    }),
-    (0, swagger_1.ApiOkResponse)({ type: physical_stock_voucher_response_dto_1.PhysicalStockDeleteSuccessDto }),
-    (0, swagger_1.ApiConflictResponse)({ type: physical_stock_voucher_response_dto_1.PhysicalStockErrorResponseDto }),
-    (0, swagger_1.ApiNotFoundResponse)({ type: physical_stock_voucher_response_dto_1.PhysicalStockErrorResponseDto }),
-    __param(0, (0, common_1.Query)()),
-    __metadata("design:type", Function),
-    __metadata("design:paramtypes", [list_physical_stock_voucher_query_dto_1.PhysicalStockVoucherRefQueryDto]),
-    __metadata("design:returntype", Promise)
-], PhysicalStockVoucherController.prototype, "remove", null);
 __decorate([
     (0, common_1.Get)('variance'),
     (0, common_1.Version)(api_version_1.API_VERSION),

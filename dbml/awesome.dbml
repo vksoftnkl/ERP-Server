@@ -5570,9 +5570,10 @@ mean copying every holding into a new partition, and "what is on the shelf"
 has exactly one answer regardless of which year the movements that produced
 it were posted in. Year-wise questions are ledger questions.
 
-TRIGGER-MAINTAINED. fn_sml_apply() owns this table: it upserts on
-ux_sbl_scope as ledger rows land, and it alone writes the four accumulators
-and the identity cache. Application code that writes sblInQty / sblOutQty /
+ENGINE-MAINTAINED. The posting engine owns this table — on this deployment
+stock-voucher-posting.helper.ts, doing what the share\'s fn_sml_apply() does:
+it upserts on ux_sbl_scope as ledger rows land, and it alone writes the four
+accumulators and the identity cache. Application code that writes sblInQty / sblOutQty /
 sblFreeInQty / sblFreeOutQty is writing a number the next posting will
 overwrite, and has moved stock without a ledger row to explain it. Post to
 StockLedger instead — always.
@@ -5903,12 +5904,14 @@ NOT LOT-LEVEL EITHER, on purpose — that is exactly what the lot\'s own
 sltCostRate is. This row is what the average costs when the lot identity is
 deliberately ignored.
 
-TRIGGER-MAINTAINED. fn_sml_apply() owns it: an inward adds qty and value and
-recomputes the average, an outward removes qty at the CURRENT average and
-leaves the rate alone — which is what "moving average" means, and why an
-outward can never change the cost of what remains. Application code that
-writes these columns is writing a number the next posting will overwrite.
-Post to [[StockLedger]] instead.
+ENGINE-MAINTAINED. The posting engine owns it — on this deployment that is
+stock-voucher-posting.helper.ts (phase 5), doing what the share\'s
+fn_sml_apply() does: an inward adds qty and value and recomputes the
+average, an outward removes qty at the CURRENT average and leaves the rate
+alone — which is what "moving average" means, and why an outward can never
+change the cost of what remains. Application code that writes these columns
+is writing a number the next posting will overwrite. Post to [[StockLedger]]
+instead.
 
 THE AVERAGE IS STORED, NOT DERIVED. sicAvgCostRate is a plain column rather
 than value/qty as a generated one, because qty legitimately reaches zero
@@ -5929,7 +5932,7 @@ per the company\'s tax treatment rather than re-deriving one from the other.
 WRITE RULES:
 * NEVER write sicTotalQty / sicTotalValue / sicTotalValueWot /
 sicAvgCostRate / sicAvgCostRateWot / sicMaxCostRate, nor the last
-purchase and last sale columns — all are trigger-maintained.
+purchase and last sale columns — all are engine-maintained.
 * There is no sicIsActive: a cost row is not something a user switches
 off. sicIsDeleted exists only for the partial index predicate.
 
@@ -7048,14 +7051,14 @@ Table stock_voucher {
   svhTotalQty Decimal [not null, default: 0]
   svhTotalValue Decimal [not null, default: 0]
   svhTotalValueWot Decimal [not null, default: 0]
-  svhStatus String [not null, default: 'DRAFT']
-  svhPostedOn DateTime
-  svhPostedBy String
-  svhApprovedOn DateTime
-  svhApprovedBy String
-  svhCancelledOn DateTime
-  svhCancelledBy String
-  svhCancelReason String
+  svhStatus String [not null, default: 'DRAFT', note: 'The CURRENT state only. WHO moved it there, WHEN, and WHY is
+public.txn_status_log\'s job — one row per step, and the only record of a
+post or a cancellation there is. The svh_posted_on/_by, svh_approved_on/_by
+and svh_cancelled_on/_by/svh_cancel_reason stamps that used to sit here
+were a second, editable copy of the same facts; migration
+20260909120000 backfilled the trail and dropped them. Read them back with
+a lateral on txn_status_log (tsl_src_doc_id = svh_id, tsl_to_status), the
+way getById and the list query do — never re-add a column here.']
   svhVersionNo Int [not null, default: 1]
   svhFreezeStock Boolean [not null, default: false, note: 'A count freezes the stock it is counting, or it counts a moving target.
 ck_svh_freeze refuses a freeze with no window.']

@@ -1,16 +1,45 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { ArrayMaxSize, IsArray, IsEmpty, IsIn, IsOptional, ValidateNested } from 'class-validator';
 import {
+  ArrayMaxSize,
+  IsArray,
+  IsIn,
+  IsOptional,
+  Matches,
+  ValidateNested,
+} from 'class-validator';
+import {
+  NullableDateString,
   NullableNumber,
   NullableStringStrict,
   NullableUuid,
+  OptionalBoolean,
   OptionalInteger,
+  OptionalNumberString,
+  OptionalTrimmedString,
+  OptionalUuid,
   RequiredInteger,
   RequiredUuid,
+  TrimmedString,
 } from 'src/common/dto/dtoDecorators';
-import { SaveStockVoucherHeaderDto } from '../../stock-voucher/dto/save-stock-voucher.dto';
-import { STOCK_BUCKETS, type StockBucket } from '../../stock-voucher/types/stock-voucher.types';
+import {
+  SAVEABLE_STOCK_VOUCHER_STATUSES,
+  STOCK_BUCKETS,
+  STOCK_RATE_SOURCES,
+  type SaveableStockVoucherStatus,
+  type StockBucket,
+  type StockRateSource,
+} from '../../stock-voucher/types/stock-voucher.types';
+
+/**
+ * `YYYY-YYYY`, second year = first + 1 — ck_svh_acc_year.
+ *
+ * The column is `character(9)`, NOT varchar: bpchar space-pads anything shorter
+ * and the CHECK then rejects the padded value with a message mentioning neither
+ * padding nor length. So all nine characters are demanded here, where the error
+ * can say so.
+ */
+const ACC_YEAR_PATTERN = /^\d{4}-\d{4}$/;
 
 /** As for the opening — a grid this size is a data-entry problem, not a document. */
 const MAX_LINES = 2000;
@@ -115,17 +144,77 @@ export class SavePhysicalStockVoucherItemDto {
 }
 
 /**
- * THE VOUCHER TYPE IS NEVER TAKEN FROM THE PAYLOAD — see the opening's DTO for
- * the whole argument. This property exists only so a payload carrying anything
- * else is refused with a field-level message rather than silently ignored.
+ * STANDALONE, NOT AN EXTENSION OF THE SHARED VOUCHER HEADER — for the reason
+ * the opening's DTO sets out at length, and one more of its own.
  *
- * `toGodownId` is not re-declared required here for the same class-validator
- * reason the opening documents: @IsOptional() on the base whitelists undefined
- * for every validator on the property, so a @RequiredUuid() added here would
- * never fire. The requirement lives in assertPayloadRules, driven off
- * StockVoucherTypeRules.requiresToGodown.
+ * This class used to extend `SaveStockVoucherHeaderDto` and refuse fifteen of
+ * its properties with `@IsEmpty`. That refusal WORKED — every one was a 400 —
+ * but the properties were still THERE: class-validator merges a base class's
+ * metadata into the subclass, so a subclass can only ever ADD. Which meant
+ *
+ *   * `forbidNonWhitelisted` could never refuse them (they are whitelisted, by
+ *     the base), hence the fifteen `@IsEmpty` + `= undefined` pairs, each of
+ *     which TS2612 also demanded an initializer for;
+ *   * they were still rendered in the /api/docs schema and in the example body,
+ *     because @ApiHideProperty is a no-op at runtime — it feeds the CLI plugin,
+ *     which this project does not enable — and cannot suppress an inherited
+ *     property. A field documented as "NOT ACCEPTED" is still a field the
+ *     client sees and sends;
+ *   * a subclass cannot TIGHTEN either: `@IsOptional()` on the base whitelists
+ *     `undefined` for EVERY validator on that property, so a `@RequiredUuid()`
+ *     added here never fired. That is why `toGodownId` — which a count cannot
+ *     be saved without — was a 422 from `assertPayloadRules` rather than a 400
+ *     naming the field. Declared here from scratch, it is simply required.
+ *
+ * WHAT IS ABSENT IS NOW REFUSED FOR FREE, by `forbidNonWhitelisted`, with no
+ * `@IsEmpty()` anywhere — and, more to the point, is no longer in the payload
+ * at all:
+ *
+ *   fromGodownId        a count is ONE GODOWN against its own book figure, and
+ *                       that godown is toGodownId. The service reads the counted
+ *                       godown as `toGodownId ?? fromGodownId`, so a payload
+ *                       sending both and disagreeing was a count of one godown
+ *                       filed against another
+ *   toBranchId          only a transfer leaves the branch
+ *   supplierId          a count receives from nobody. svi_supplier_id on a
+ *                       counted line is read from the HOLDING, never the header
+ *   partyRef            there is no counterparty to reference
+ *   linkSrcModule / linkSrcDocType / linkSrcDocId / linkSrcAccYear
+ *                       nothing outside the count causes it — it is what the
+ *                       shelf said. ck_svh_link is all-or-nothing and is
+ *                       satisfied by all four being NULL
+ *   lrNo / vehicleNo / expectedOn
+ *                       stock_transit columns (stt_lr_no, stt_vehicle_no,
+ *                       stt_expected_on), written only by the transfer service
+ *                       after fn_svh_post_transfer. A count despatches nothing,
+ *                       so there is no transit row for them to land on; sent
+ *                       here they were accepted and SILENTLY DISCARDED
+ *   lineCount / totalQty / totalValue / totalValueWot
+ *                       the shared header takes all four from the payload,
+ *                       because on a QTY document the screen has summed the
+ *                       grid. A COUNT is not that document: its header carries
+ *                       the NET VARIANCE, read off the LEDGER by
+ *                       fn_svh_recompute at post, and three lines totalling 236
+ *                       counted units can total +1 there. Nothing the counter
+ *                       can see adds up to it, so a client-supplied total is a
+ *                       number that would be silently replaced
+ *
+ * WHAT THIS COSTS: drift. A column added to the shared header no longer reaches
+ * this route on its own. That is the trade, and it is why the shared class
+ * still exists for the routes that want every column at once.
+ *
+ * THE VOUCHER TYPE IS NEVER TAKEN FROM THE PAYLOAD — see the opening's DTO for
+ * the whole argument. The property below exists only so a payload carrying
+ * anything else is refused with a field-level message rather than ignored.
  */
-export class SavePhysicalStockVoucherHeaderDto extends SaveStockVoucherHeaderDto {
+export class SavePhysicalStockVoucherHeaderDto {
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description: 'Present = update the existing DRAFT; absent = create.',
+  })
+  @OptionalUuid()
+  svhId?: string;
+
   @ApiPropertyOptional({
     enum: ['PHYSICAL'],
     description: 'Optional, and only ever "PHYSICAL". The route decides the type.',
@@ -137,84 +226,188 @@ export class SavePhysicalStockVoucherHeaderDto extends SaveStockVoucherHeaderDto
   })
   voucherType?: 'PHYSICAL';
 
+  @ApiProperty({
+    minLength: 9,
+    maxLength: 9,
+    example: '2026-2027',
+    description:
+      'character(9). Send all nine characters — bpchar pads, and ck_svh_acc_year rejects the padding.',
+  })
+  @TrimmedString(9)
+  @Matches(ACC_YEAR_PATTERN, { message: 'accYear must be YYYY-YYYY, e.g. 2026-2027' })
+  accYear!: string;
+
+  @ApiProperty({ format: 'uuid' })
+  @RequiredUuid()
+  companyId!: string;
+
+  @ApiProperty({ format: 'uuid' })
+  @RequiredUuid()
+  branchId!: string;
+
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  @NullableUuid()
+  tenantId?: string | null;
+
+  @ApiProperty({
+    format: 'uuid',
+    description:
+      'fixed.device_master.dev_id. NOT NULL, and the number series — see stock-voucher-numbering.helper.ts.',
+  })
+  @RequiredUuid()
+  deviceId!: string;
+
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  @NullableUuid()
+  sessionId?: string | null;
+
+  @ApiPropertyOptional({
+    description:
+      'The serial this device already assigned offline. Generated when absent; honoured verbatim when present, because the device has already printed it.',
+  })
+  @OptionalNumberString()
+  slno?: string;
+
+  @ApiPropertyOptional({
+    maxLength: 100,
+    description:
+      'The printed number. Generated as PHY/{accYear}/{deviceCode}/{slno} when absent.',
+  })
+  @OptionalTrimmedString(100)
+  refno?: string;
+
+  @ApiPropertyOptional({ maxLength: 100, nullable: true, description: "The user's own reference" })
+  @NullableStringStrict(100)
+  usrRefno?: string | null;
+
+  @ApiProperty({ type: 'string', format: 'date', example: '2026-06-30' })
+  @TrimmedString(10)
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'docDate must be yyyy-MM-dd' })
+  docDate!: string;
+
+  @ApiPropertyOptional({
+    type: 'string',
+    format: 'date-time',
+    nullable: true,
+    description:
+      'When the count was actually taken. Defaults to now() at the server. A handheld that numbered its own sheet offline should send the moment it was keyed, not the moment it synced.',
+  })
+  @NullableDateString()
+  docDatetime?: string | null;
+
   /**
-   * THE FOUR HEADER TOTALS ARE STILL REFUSED ON A COUNT.
+   * THE COUNTED GODOWN, and required — which extending could never make it.
    *
-   * The shared header now takes svh_line_count / svh_total_qty /
-   * svh_total_value / svh_total_value_wot straight from the payload, because on
-   * a QTY document the screen has summed the grid and the server no longer
-   * does. A COUNT is not that document: its header carries the NET VARIANCE,
-   * read off the LEDGER by fn_svh_recompute at post, and three lines totalling
-   * 236 counted units can total +1 there. Nothing the counter can see adds up
-   * to it, so a client-supplied total here is a number that will be silently
-   * replaced — better a 400 naming the property.
-   *
-   * Re-declared with @IsEmpty rather than left to `forbidNonWhitelisted`:
-   * inheriting from SaveStockVoucherHeaderDto whitelists all four, so the pipe
-   * would now accept them. See physical-stock-voucher.dto.spec.ts.
+   * A count is one godown against its own book figure. `requiresToGodown` in
+   * PHYSICAL_RULES still enforces it for the shared service, but the refusal
+   * now happens here, naming the field, before the payload is walked.
    */
-  // @ApiHideProperty is a no-op at runtime — it exists for the CLI plugin
-  // only, and cannot suppress a property inherited from the base schema. So
-  // the refusal is DOCUMENTED instead of hidden, which is the more useful of
-  // the two for anyone reading /api/docs.
-  @ApiPropertyOptional({
+  @ApiProperty({
+    format: 'uuid',
     description:
-      'NOT ACCEPTED on a count — sending it is a 400. Inherited from the shared header, where it is the screen\'s own total. A count header carries the NET VARIANCE, read off the ledger by fn_svh_recompute at post, and nothing on the count sheet adds up to it.',
+      'inventory.godown_locations.gdl_id — THE GODOWN BEING COUNTED. Every line must be in it. ck_svh_godowns will not catch its absence, because an ISSUE satisfies that check with a from-godown alone.',
   })
-  @IsEmpty({
-    message:
-      'lineCount is not accepted on a count. The header carries the net variance, read off the ledger at post.',
-  })
-  lineCount?: undefined = undefined;
+  @RequiredUuid()
+  toGodownId!: string;
 
-  // @ApiHideProperty is a no-op at runtime — it exists for the CLI plugin
-  // only, and cannot suppress a property inherited from the base schema. So
-  // the refusal is DOCUMENTED instead of hidden, which is the more useful of
-  // the two for anyone reading /api/docs.
   @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
     description:
-      'NOT ACCEPTED on a count — sending it is a 400. Inherited from the shared header, where it is the screen\'s own total. A count header carries the NET VARIANCE, read off the ledger by fn_svh_recompute at post, and nothing on the count sheet adds up to it.',
+      'stock.stock_reason_master — why the variance is being accepted, for the whole sheet. A line may override it. Must be scoped to PHYSICAL, or to nothing at all.',
   })
-  @IsEmpty({
-    message:
-      'totalQty is not accepted on a count. The header carries the net variance, read off the ledger at post.',
-  })
-  totalQty?: undefined = undefined;
+  @NullableUuid()
+  reasonId?: string | null;
 
-  // @ApiHideProperty is a no-op at runtime — it exists for the CLI plugin
-  // only, and cannot suppress a property inherited from the base schema. So
-  // the refusal is DOCUMENTED instead of hidden, which is the more useful of
-  // the two for anyone reading /api/docs.
+  // ── The freeze window. THE COUNT IS THE ONLY TYPE THAT HAS ONE ──────────
+  //
+  // ck_svh_freeze refuses a freeze with no window: without one the difference
+  // posted is between a count taken at 6pm and a book figure read at 8pm.
   @ApiPropertyOptional({
     description:
-      'NOT ACCEPTED on a count — sending it is a 400. Inherited from the shared header, where it is the screen\'s own total. A count header carries the NET VARIANCE, read off the ledger by fn_svh_recompute at post, and nothing on the count sheet adds up to it.',
+      'Freeze the stock being counted for the window below. Requires both freezeFrom and freezeTo — ck_svh_freeze refuses a freeze with no window.',
   })
-  @IsEmpty({
-    message:
-      'totalValue is not accepted on a count. The header carries the net variance, read off the ledger at post.',
-  })
-  totalValue?: undefined = undefined;
+  @OptionalBoolean()
+  freezeStock?: boolean;
 
-  // @ApiHideProperty is a no-op at runtime — it exists for the CLI plugin
-  // only, and cannot suppress a property inherited from the base schema. So
-  // the refusal is DOCUMENTED instead of hidden, which is the more useful of
-  // the two for anyone reading /api/docs.
+  @ApiPropertyOptional({ type: 'string', format: 'date-time', nullable: true })
+  @NullableDateString()
+  freezeFrom?: string | null;
+
+  @ApiPropertyOptional({ type: 'string', format: 'date-time', nullable: true })
+  @NullableDateString()
+  freezeTo?: string | null;
+
   @ApiPropertyOptional({
+    type: 'string',
+    format: 'date-time',
+    nullable: true,
     description:
-      'NOT ACCEPTED on a count — sending it is a 400. Inherited from the shared header, where it is the screen\'s own total. A count header carries the NET VARIANCE, read off the ledger by fn_svh_recompute at post, and nothing on the count sheet adds up to it.',
+      'When an offline handheld synced this sheet up. Set by the device, not the server — a count is the one document routinely keyed away from the counter.',
   })
-  @IsEmpty({
-    message:
-      'totalValueWot is not accepted on a count. The header carries the net variance, read off the ledger at post.',
+  @NullableDateString()
+  syncDate?: string | null;
+
+  @ApiPropertyOptional({
+    enum: STOCK_RATE_SOURCES,
+    nullable: true,
+    description:
+      'Which rate the OVERAGE side is valued at; defaults to AVG_COST. A shortage is never valued from the document — fn_sml_cost_default relieves it at what the stock cost us, stamped from the item valuation policy, never by the counter.',
   })
-  totalValueWot?: undefined = undefined;
+  @IsOptional()
+  @IsIn(STOCK_RATE_SOURCES as unknown as string[], {
+    message: `rateSource must be one of ${STOCK_RATE_SOURCES.join(', ')}`,
+  })
+  rateSource?: StockRateSource | null;
+
+  @ApiPropertyOptional({
+    enum: SAVEABLE_STOCK_VOUCHER_STATUSES,
+    default: 'DRAFT',
+    description:
+      "What to leave the sheet as. Omitted or 'DRAFT' saves a draft. 'POSTED' saves and then posts it in one transaction — preflight, lots, ledger, balance and the status trail — so a line the preflight refuses fails the save as well.",
+  })
+  @IsOptional()
+  @IsIn(SAVEABLE_STOCK_VOUCHER_STATUSES as unknown as string[], {
+    message: `status must be one of ${SAVEABLE_STOCK_VOUCHER_STATUSES.join(', ')} — a document is cancelled by cancelling it, never by saving`,
+  })
+  status?: SaveableStockVoucherStatus;
+
+  @ApiPropertyOptional({ maxLength: 250, nullable: true })
+  @NullableStringStrict(250)
+  remarks?: string | null;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description: 'Falls back to the authenticated user from the request context.',
+  })
+  @OptionalUuid()
+  userId?: string;
+
+  @ApiPropertyOptional({
+    maxLength: 100,
+    nullable: true,
+    description:
+      'Who created the sheet — written on a CREATE only. Falls back to userId, then to the authenticated user.',
+  })
+  @NullableStringStrict(100)
+  createdBy?: string | null;
+
+  @ApiPropertyOptional({
+    maxLength: 100,
+    nullable: true,
+    description:
+      'Who last changed it — written on an UPDATE only, and never overwrites created_by. Falls back to userId, then to the authenticated user.',
+  })
+  @NullableStringStrict(100)
+  modifiedBy?: string | null;
 }
 
 /**
- * Structurally assignable to SaveStockVoucherDto, which is what
- * StockVoucherService.save takes — the three shared line properties this one
- * omits (`uomId`, `qty`, `costRate`) are optional there precisely so a count
- * can leave them out.
+ * A NARROWER SHAPE than SaveStockVoucherDto, which is what
+ * StockVoucherService.save takes — narrower on both halves now that the header
+ * is standalone too, so the controller widens it with a cast at the call. The
+ * service reads only what a count fills in: every property omitted here is one
+ * it would have written as NULL, or one it overwrites at post.
  */
 export class SavePhysicalStockVoucherDto {
   @ApiProperty({ type: SavePhysicalStockVoucherHeaderDto })

@@ -9,7 +9,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.StockVarianceSuccessDto = exports.CountSheetSuccessDto = exports.PhysicalStockDeleteSuccessDto = exports.PhysicalStockCancelSuccessDto = exports.PhysicalStockPostSuccessDto = exports.PhysicalStockValidateSuccessDto = exports.PhysicalStockListSuccessDto = exports.PhysicalStockDocumentSuccessDto = exports.StockVarianceDto = exports.StockVarianceRowDto = exports.CountSheetDto = exports.CountSheetRowDto = exports.PhysicalStockDeleteResultDto = exports.PhysicalStockCancelResultDto = exports.PhysicalStockPostResultDto = exports.PhysicalStockLineProblemDto = exports.PhysicalStockListDto = exports.PagedMetaDto = exports.PhysicalStockListItemDto = exports.PhysicalStockDocumentDto = exports.PhysicalStockLineDto = exports.PhysicalStockHeaderDto = exports.PhysicalStockErrorResponseDto = exports.PhysicalStockErrorFieldDto = void 0;
+exports.StockVarianceSuccessDto = exports.CountSheetSuccessDto = exports.PhysicalStockCancelSuccessDto = exports.PhysicalStockPostSuccessDto = exports.PhysicalStockValidateSuccessDto = exports.PhysicalStockListSuccessDto = exports.PhysicalStockDocumentSuccessDto = exports.StockVarianceDto = exports.StockVarianceRowDto = exports.CountSheetDto = exports.CountSheetRowDto = exports.PhysicalStockCancelResultDto = exports.PhysicalStockPostResultDto = exports.PhysicalStockLineProblemDto = exports.PhysicalStockListDto = exports.PagedMetaDto = exports.PhysicalStockListItemDto = exports.PhysicalStockDocumentDto = exports.PhysicalStockLineDto = exports.PhysicalStockHeaderDto = exports.PhysicalStockErrorResponseDto = exports.PhysicalStockErrorFieldDto = void 0;
 const swagger_1 = require("@nestjs/swagger");
 const stock_voucher_types_1 = require("../../stock-voucher/types/stock-voucher.types");
 class PhysicalStockErrorFieldDto {
@@ -64,6 +64,7 @@ class PhysicalStockHeaderDto {
     godownId;
     godownName;
     supplierId;
+    supplierName;
     toBranchId;
     partyRef;
     reasonId;
@@ -167,6 +168,13 @@ __decorate([
     (0, swagger_1.ApiPropertyOptional)({ format: 'uuid', nullable: true }),
     __metadata("design:type", Object)
 ], PhysicalStockHeaderDto.prototype, "supplierId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        description: 'purchase.suppliers.sup_name for supplierId.',
+    }),
+    __metadata("design:type", Object)
+], PhysicalStockHeaderDto.prototype, "supplierName", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({
         format: 'uuid',
@@ -309,6 +317,7 @@ class PhysicalStockLineDto {
     salePrice;
     serialNo;
     supplierId;
+    supplierName;
     bookQty;
     countedQty;
     diffQty;
@@ -422,6 +431,13 @@ __decorate([
     (0, swagger_1.ApiPropertyOptional)({ format: 'uuid', nullable: true }),
     __metadata("design:type", Object)
 ], PhysicalStockLineDto.prototype, "supplierId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        description: 'purchase.suppliers.sup_name for supplierId.',
+    }),
+    __metadata("design:type", Object)
+], PhysicalStockLineDto.prototype, "supplierName", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({
         nullable: true,
@@ -711,24 +727,6 @@ __decorate([
     (0, swagger_1.ApiPropertyOptional)({ format: 'date-time', nullable: true }),
     __metadata("design:type", Object)
 ], PhysicalStockCancelResultDto.prototype, "cancelledOn", void 0);
-class PhysicalStockDeleteResultDto {
-    svhId;
-    accYear;
-    deleted;
-}
-exports.PhysicalStockDeleteResultDto = PhysicalStockDeleteResultDto;
-__decorate([
-    (0, swagger_1.ApiProperty)({ format: 'uuid' }),
-    __metadata("design:type", String)
-], PhysicalStockDeleteResultDto.prototype, "svhId", void 0);
-__decorate([
-    (0, swagger_1.ApiProperty)(),
-    __metadata("design:type", String)
-], PhysicalStockDeleteResultDto.prototype, "accYear", void 0);
-__decorate([
-    (0, swagger_1.ApiProperty)({ example: true }),
-    __metadata("design:type", Boolean)
-], PhysicalStockDeleteResultDto.prototype, "deleted", void 0);
 class CountSheetRowDto {
     lineNo;
     splitNo;
@@ -1046,24 +1044,6 @@ __decorate([
     (0, swagger_1.ApiProperty)({ type: PhysicalStockCancelResultDto }),
     __metadata("design:type", PhysicalStockCancelResultDto)
 ], PhysicalStockCancelSuccessDto.prototype, "data", void 0);
-class PhysicalStockDeleteSuccessDto {
-    success;
-    message;
-    data;
-}
-exports.PhysicalStockDeleteSuccessDto = PhysicalStockDeleteSuccessDto;
-__decorate([
-    (0, swagger_1.ApiProperty)({ example: true }),
-    __metadata("design:type", Boolean)
-], PhysicalStockDeleteSuccessDto.prototype, "success", void 0);
-__decorate([
-    (0, swagger_1.ApiProperty)({ example: 'Physical stock count deleted successfully' }),
-    __metadata("design:type", String)
-], PhysicalStockDeleteSuccessDto.prototype, "message", void 0);
-__decorate([
-    (0, swagger_1.ApiProperty)({ type: PhysicalStockDeleteResultDto }),
-    __metadata("design:type", PhysicalStockDeleteResultDto)
-], PhysicalStockDeleteSuccessDto.prototype, "data", void 0);
 class CountSheetSuccessDto {
     success;
     message;

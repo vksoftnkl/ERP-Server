@@ -20,7 +20,6 @@ was dropped by `20260509061137_remove_four_tables`. Nothing here imports from th
 | `GET /stock/physical/validate` | the preflight — every line, `problem` null on the clean ones |
 | `POST /stock/physical/post` | the whole engine, one statement |
 | `POST /stock/physical/cancel` | reversal rows, never a delete. `reason` required. |
-| `DELETE /stock/physical` | soft delete, **DRAFT only** — and it lifts the freeze |
 | `GET /stock/physical/variance` | the count as the **ledger** recorded it |
 
 Every response is `{ success, message, data }`. **No `@CacheTTL` anywhere** — and
@@ -106,7 +105,7 @@ still changes today's shelf. Send instants with an offset.
 
 The guard refuses movements touching **the counted godown only**; other godowns
 keep trading, and posting or cancelling the sheet lifts it without waiting for
-`freezeTo`. A deleted DRAFT lifts it too. Default the window on the screen —
+`freezeTo`. Default the window on the screen —
 `now()` to `now() + 3h` — rather than making the operator type it.
 
 **A refused movement surfaces in *other* modules** (sales, transfers), not this
@@ -122,6 +121,41 @@ for the captured run — not the sum of anything on the screen. A DRAFT count
 truthfully totals 0. Label the field **Net variance**, or do not show it: a column
 headed "Total" reading 1 under three lines totalling 236 counted units is worse
 than no column.
+
+### Fifteen header fields the count does not have
+
+The header DTO is **standalone** — it does not extend `SaveStockVoucherHeaderDto`
+— so these are not in the payload, not in the `/api/docs` schema, and refused
+with a **400 naming the field** by `forbidNonWhitelisted` alone.
+
+That is why it is standalone. class-validator *merges* a base class's metadata
+into a subclass, so a subclass can only ever **add**: while this class extended
+the shared header, each of the fifteen needed an explicit `@IsEmpty` to be
+refused at all, and every one still rendered in the schema and the example body
+regardless — `@ApiHideProperty` is a no-op at runtime (it feeds the CLI plugin,
+which this project does not enable) and cannot suppress an inherited property.
+A subclass cannot **tighten** either, which is why `toGodownId` — the counted
+godown, which a count cannot be saved without — was a 422 from
+`assertPayloadRules` and is now simply required, a 400 naming the field. The
+cost is drift: a column added to the shared header no longer reaches this route
+on its own.
+
+| Refused | Why |
+| --- | --- |
+| `lineCount` `totalQty` `totalValue` `totalValueWot` | The header carries the **net variance**, read off the ledger by `fn_svh_recompute` at post. A client total is a number that would be silently replaced |
+| `lrNo` `vehicleNo` `expectedOn` | `stock_transit` columns (`stt_lr_no`, `stt_vehicle_no`, `stt_expected_on`), written only by the transfer service after `fn_svh_post_transfer`. A count despatches nothing, so there is no transit row to write them to |
+| `fromGodownId` | A count is **one godown against its own book figure**, and that godown is `toGodownId` (required here). The service reads the counted godown as `toGodownId ?? fromGodownId`, so a payload sending both and disagreeing was a count of one godown filed against another |
+| `toBranchId` | Only a transfer leaves the branch. Was a 422 from `assertPayloadRules` (`allowsToBranch: false`) |
+| `supplierId` `partyRef` | A count receives from nobody. `svi_supplier_id` on a counted line is read from the holding, never from the header |
+| `linkSrcModule` `linkSrcDocType` `linkSrcDocId` `linkSrcAccYear` | Nothing outside the count causes it — it is what the shelf said. `ck_svh_link` is all-or-nothing and is satisfied by all four being NULL |
+
+Before this, the totals and the lorry were accepted and **silently discarded**
+(a 200 with the value gone), the counterparty fields were stored on a document
+they do not describe, and `toBranchId` / the link columns were 422s reported
+after the whole payload had been walked.
+
+What a count *does* keep, and what no other type has: `freezeStock` /
+`freezeFrom` / `freezeTo`.
 
 `lotId` is filled from the moment of save here, so the screen **cannot** use it as
 the "reached the ledger" tick. Use `diffQty <> 0` plus `status = 'POSTED'`, or

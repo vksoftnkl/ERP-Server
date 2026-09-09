@@ -80,6 +80,12 @@ export class OpeningStockHeaderDto {
   supplierId!: string | null;
 
   @ApiPropertyOptional({
+    nullable: true,
+    description: 'purchase.suppliers.sup_name for supplierId.',
+  })
+  supplierName!: string | null;
+
+  @ApiPropertyOptional({
     format: 'uuid',
     nullable: true,
     description: 'TRANSFER only — null on an opening.',
@@ -230,6 +236,12 @@ export class OpeningStockLineDto {
 
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   supplierId!: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'purchase.suppliers.sup_name for supplierId.',
+  })
+  supplierName!: string | null;
 
   @ApiProperty()
   qty!: number;

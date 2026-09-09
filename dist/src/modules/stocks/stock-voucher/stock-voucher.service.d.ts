@@ -55,6 +55,7 @@ export declare class StockVoucherService {
     variance(rules: StockVoucherTypeRules, svhId: string, accYear: string, companyId: string, branchId: string, limit?: number, offset?: number): Promise<PagedResult<StockVarianceRow>>;
     private loadForWrite;
     private logStatusChange;
+    private findLastStatusStep;
     private toStatusEvent;
     private loadHeaderOrThrow;
     private assertPostFunction;

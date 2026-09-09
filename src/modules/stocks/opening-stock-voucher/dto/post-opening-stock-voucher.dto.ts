@@ -32,8 +32,8 @@ export class PostOpeningStockVoucherDto {
 
 export class CancelOpeningStockVoucherDto extends PostOpeningStockVoucherDto {
   /**
-   * Required by this API even though svh_cancel_reason is nullable in the
-   * schema. A cancelled opening with no reason is unanswerable three months
+   * Required by this API even though the trail's tsl_remarks is nullable in
+   * general. A cancelled opening with no reason is unanswerable three months
    * later, and the cancellation is a reversal in the ledger — the row exists
    * for ever, so the explanation had better too.
    */

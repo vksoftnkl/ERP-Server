@@ -145,7 +145,77 @@ describe('SavePhysicalStockVoucherDto', () => {
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
-  it('refuses a payload that tries to set a header total', async () => {
-    await expect(transform({ totalQty: 1 })).rejects.toBeInstanceOf(BadRequestException);
+  // ── Fifteen header fields the SHARED voucher DTO carries and this one omits ──
+  //
+  // Every one is refused by `forbidNonWhitelisted` alone, because the header is
+  // STANDALONE and simply does not declare them — there is no @IsEmpty left in
+  // the file, and none of them is rendered in the /api/docs schema any more.
+  //
+  //   totals   the header carries the NET VARIANCE, read off the ledger by
+  //            fn_svh_recompute at post; nothing on the sheet adds up to it
+  //   lorry    stock_transit columns, written only by a transfer. They used to
+  //            be accepted here and SILENTLY DISCARDED
+  //   the rest a count is one godown against its own book figure: no source
+  //            side, no counterparty, and nothing outside it caused it.
+  //            toBranchId and the four linkSrc columns were 422s from
+  //            assertPayloadRules, reported after the whole payload was walked
+  it.each([
+    ['lineCount', 1],
+    ['totalQty', 1],
+    ['totalValue', 2400.5],
+    ['totalValueWot', 2286.19],
+    ['lrNo', 'LR-99'],
+    ['vehicleNo', 'TN-01-AB-1234'],
+    ['expectedOn', '2026-09-12'],
+    ['fromGodownId', '019c6f6c-be87-7a11-8905-36092c46fe0a'],
+    ['toBranchId', '019c6f6c-be87-7a11-8905-36092c46fe0c'],
+    ['supplierId', '019c6f6c-be87-7a11-8905-36092c46fe0b'],
+    ['partyRef', 'DOCKET-1'],
+    ['linkSrcModule', 'sales'],
+    ['linkSrcDocType', 'SALE_BILL'],
+    ['linkSrcDocId', '019c6f6c-be87-7a11-8905-36092c46fe0d'],
+    ['linkSrcAccYear', '2026-2027'],
+  ])('refuses %s — it describes a document a count is not', async (field, value) => {
+    await expect(transform({ [field]: value })).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  // What the STANDALONE header buys that extending never could: a subclass
+  // cannot TIGHTEN, because @IsOptional() on the base whitelists undefined for
+  // every validator on the property. This was a 422 from assertPayloadRules.
+  it('refuses a header with no toGodownId — a count is one godown', async () => {
+    const header: Record<string, unknown> = {
+      accYear: '2026-2027',
+      companyId: COMPANY_ID,
+      branchId: BRANCH_ID,
+      deviceId: DEVICE_ID,
+      docDate: '2026-06-30',
+    };
+
+    await expect(
+      validationPipe.transform(
+        {
+          header,
+          lines: [
+            { lineNo: 1, itemId: ITEM_ID, godownId: GODOWN_ID, lotId: LOT_ID, countedQty: 118 },
+          ],
+        },
+        { type: 'body', metatype: SavePhysicalStockVoucherDto },
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  // The other side of the rewrite: what a count legitimately fills in has to
+  // survive the standalone header, since it no longer inherits anything.
+  it('still accepts the reason, the offline sync stamp and a rate source', async () => {
+    const result = await transform({
+      reasonId: '019c6f6c-be87-7a11-8905-36092c46fe09',
+      syncDate: '2026-06-30T14:48:33.947Z',
+      rateSource: 'AVG_COST',
+      usrRefno: 'COUNT-JUN',
+      remarks: 'Quarter-end count, aisle 4',
+    });
+
+    expect(result.header.syncDate).toBe('2026-06-30T14:48:33.947Z');
+    expect(result.header.rateSource).toBe('AVG_COST');
   });
 });

@@ -187,11 +187,10 @@ export async function postStockVoucher(
   await tx.stockVoucher.update({
     where: { svhId_svhAccYear: { svhId, svhAccYear: accYear } },
     data: {
+      // The header carries the CURRENT state and nothing else. WHO posted it and
+      // WHEN is the txn_status_log row the service appends in this same
+      // transaction — the header has no posted_on/_by columns to stamp.
       svhStatus: 'POSTED',
-      svhPostedOn: postedOn,
-      // NULL rather than the nil uuid when nobody is authenticated: "posted by
-      // nobody" is the truth, and svh_posted_by is nullable to say it.
-      svhPostedBy: author,
       svhVersionNo: { increment: 1 },
       svhModifiedOn: postedOn,
       svhModifiedBy: author,
@@ -1069,8 +1068,9 @@ export interface CancelStockVoucherParams {
  *     on so the same movement can never be reversed twice, whichever way two
  *     cancels race. `ux_sml_source` excludes reversals, which is why the mirror
  *     may share the original's (doc type, doc id, line, split).
- *   * the reason, in `sml_narration`. The header stores it too; a ledger
- *     reader should not have to join back to find out why stock moved.
+ *   * the reason, in `sml_narration`. The CANCELLED row on txn_status_log
+ *     carries it too; a ledger reader should not have to join back to find out
+ *     why stock moved.
  *
  * WHAT CAN LEGITIMATELY REFUSE IT, both as 409:
  *   * the negative-stock policy (phase 6): cancelling an opening after stock
@@ -1089,7 +1089,7 @@ export async function cancelStockVoucher(
   tx: Prisma.TransactionClient,
   params: CancelStockVoucherParams,
 ): Promise<number> {
-  const { rules, svhId, accYear, actor, reason, cancelledOn } = params;
+  const { rules, svhId, accYear, actor, cancelledOn } = params;
   const author = auditColumnActor(actor);
 
   await lockPostedHeader(tx, params);
@@ -1106,12 +1106,10 @@ export async function cancelStockVoucher(
   await tx.stockVoucher.update({
     where: { svhId_svhAccYear: { svhId, svhAccYear: accYear } },
     data: {
+      // As in postStockVoucher: only the current state lands here. Who cancelled
+      // it, when, and the reason are the CANCELLED row on txn_status_log, which
+      // the service writes in this transaction.
       svhStatus: 'CANCELLED',
-      svhCancelledOn: cancelledOn,
-      svhCancelledBy: author,
-      // varchar(250); the DTO caps the reason at 250 and this is the belt to
-      // that brace, so a longer one is cut rather than refused with a 500.
-      svhCancelReason: reason.slice(0, 250),
       svhVersionNo: { increment: 1 },
       svhModifiedOn: cancelledOn,
       svhModifiedBy: author,

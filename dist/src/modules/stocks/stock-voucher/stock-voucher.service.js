@@ -704,11 +704,26 @@ let StockVoucherService = class StockVoucherService {
              svh.svh_total_qty,
              svh.svh_total_value,
              svh.svh_total_value_wot,
-             svh.svh_posted_on,
+             posted.tsl_changed_on AS posted_on,
              svh.svh_rate_source,
              svh.svh_remarks
         FROM stock.stock_voucher svh
         LEFT JOIN inventory.godown_locations gdl ON gdl.gdl_id = svh.svh_to_godown_id
+        -- WHEN it was posted lives on the trail, not on the header. Keyed on
+        -- (doc type, doc id, acc year) so ux_tsl_doc_seq serves the lookup; a
+        -- re-post after a cancellation appends a second POSTED row, and the
+        -- LATEST one is the answer the list wants.
+        LEFT JOIN LATERAL (
+          SELECT tsl.tsl_changed_on
+            FROM public.txn_status_log tsl
+           WHERE tsl.tsl_src_doc_type = ${rules.statusDocType}
+             AND tsl.tsl_src_doc_id   = svh.svh_id
+             AND tsl.tsl_acc_year     = svh.svh_acc_year
+             AND tsl.tsl_to_status    = 'POSTED'
+             AND tsl.tsl_is_deleted   = false
+           ORDER BY tsl.tsl_seq_no DESC
+           LIMIT 1
+        ) posted ON true
        WHERE svh.svh_company_id   = ${query.companyId}::uuid
          AND svh.svh_branch_id    = ${query.branchId}::uuid
          AND svh.svh_acc_year     = ${query.accYear}::bpchar
@@ -739,7 +754,7 @@ let StockVoucherService = class StockVoucherService {
                 totalQty: (0, module_service_utils_1.toNumber)(row.svh_total_qty),
                 totalValue: (0, module_service_utils_1.toNumber)(row.svh_total_value),
                 totalValueWot: (0, module_service_utils_1.toNumber)(row.svh_total_value_wot),
-                postedOn: row.svh_posted_on?.toISOString() ?? null,
+                postedOn: row.posted_on?.toISOString() ?? null,
                 rateSource: row.svh_rate_source,
                 remarks: row.svh_remarks,
             })),
@@ -766,6 +781,7 @@ let StockVoucherService = class StockVoucherService {
              svh.svh_to_godown_id,
              tgd.gdl_name AS to_godown_name,
              svh.svh_supplier_id,
+             sup.sup_name AS supplier_name,
              svh.svh_to_branch_id,
              svh.svh_party_ref,
              svh.svh_reason_id,
@@ -783,18 +799,45 @@ let StockVoucherService = class StockVoucherService {
              svh.svh_total_qty,
              svh.svh_total_value,
              svh.svh_total_value_wot,
-             svh.svh_posted_on,
-             svh.svh_posted_by,
-             usr.usr_display_name AS posted_by_name,
-             svh.svh_cancelled_on,
-             svh.svh_cancel_reason,
+             posted.tsl_changed_on AS posted_on,
+             posted.tsl_changed_by AS posted_by,
+             usr.usr_display_name  AS posted_by_name,
+             cancelled.tsl_changed_on AS cancelled_on,
+             cancelled.tsl_remarks    AS cancel_reason,
              svh.svh_rate_source,
              svh.svh_remarks,
              svh.svh_is_deleted
         FROM stock.stock_voucher svh
         LEFT JOIN inventory.godown_locations fgd ON fgd.gdl_id = svh.svh_from_godown_id
         LEFT JOIN inventory.godown_locations tgd ON tgd.gdl_id = svh.svh_to_godown_id
-        LEFT JOIN public.user_master usr         ON usr.usr_id = svh.svh_posted_by
+        LEFT JOIN purchase.suppliers sup ON sup.sup_id = svh.svh_supplier_id
+        -- Who posted or cancelled this, when, and why: public.txn_status_log is
+        -- the only record of it — the header carries svh_status alone. Both
+        -- laterals take the LATEST matching step, so a voucher posted, cancelled
+        -- and posted again reads back its current post, not its first.
+        LEFT JOIN LATERAL (
+          SELECT tsl.tsl_changed_on, tsl.tsl_changed_by
+            FROM public.txn_status_log tsl
+           WHERE tsl.tsl_src_doc_type = ${rules.statusDocType}
+             AND tsl.tsl_src_doc_id   = svh.svh_id
+             AND tsl.tsl_acc_year     = svh.svh_acc_year
+             AND tsl.tsl_to_status    = 'POSTED'
+             AND tsl.tsl_is_deleted   = false
+           ORDER BY tsl.tsl_seq_no DESC
+           LIMIT 1
+        ) posted ON true
+        LEFT JOIN LATERAL (
+          SELECT tsl.tsl_changed_on, tsl.tsl_remarks
+            FROM public.txn_status_log tsl
+           WHERE tsl.tsl_src_doc_type = ${rules.statusDocType}
+             AND tsl.tsl_src_doc_id   = svh.svh_id
+             AND tsl.tsl_acc_year     = svh.svh_acc_year
+             AND tsl.tsl_to_status    = 'CANCELLED'
+             AND tsl.tsl_is_deleted   = false
+           ORDER BY tsl.tsl_seq_no DESC
+           LIMIT 1
+        ) cancelled ON true
+        LEFT JOIN public.user_master usr         ON usr.usr_id = posted.tsl_changed_by
         LEFT JOIN stock.stock_reason_master srm  ON srm.srm_id = svh.svh_reason_id
        WHERE svh.svh_id          = ${svhId}::uuid
          AND svh.svh_acc_year    = ${accYear}::bpchar
@@ -827,6 +870,7 @@ let StockVoucherService = class StockVoucherService {
              svi.svi_sale_price,
              svi.svi_serial_no,
              svi.svi_supplier_id,
+             sup.sup_name AS line_supplier_name,
              svi.svi_qty,
              svi.svi_base_qty,
              svi.svi_free_qty,
@@ -852,6 +896,7 @@ let StockVoucherService = class StockVoucherService {
         LEFT JOIN inventory.item_unit_master unt  ON unt.unit_id = iuc.iuc_unit_id
         LEFT JOIN inventory.godown_locations gdl  ON gdl.gdl_id = svi.svi_godown_id
         LEFT JOIN stock.stock_reason_master srm   ON srm.srm_id = svi.svi_reason_id
+        LEFT JOIN purchase.suppliers sup          ON sup.sup_id = svi.svi_supplier_id
        WHERE svi.svi_voucher_id = ${svhId}::uuid
          AND svi.svi_acc_year   = ${accYear}::bpchar
          AND svi.svi_is_deleted = false
@@ -1145,10 +1190,11 @@ let StockVoucherService = class StockVoucherService {
         }
         const existing = await this.loadHeaderOrThrow(rules, svhId, accYear, companyId, branchId);
         if (existing.svhStatus === 'CANCELLED') {
+            const cancelStep = await this.findLastStatusStep(rules, svhId, accYear, 'CANCELLED');
             (0, module_service_utils_1.throwStockConflict)(`${rules.displayName} already cancelled`, [
                 {
                     field: 'svhId',
-                    message: `${existing.svhRefno} was cancelled on ${existing.svhCancelledOn?.toISOString() ?? 'an earlier date'}.`,
+                    message: `${existing.svhRefno} was cancelled on ${cancelStep?.tslChangedOn.toISOString() ?? 'an earlier date'}.`,
                 },
             ]);
         }
@@ -1594,7 +1640,6 @@ let StockVoucherService = class StockVoucherService {
                 svhStatus: true,
                 svhIsDeleted: true,
                 svhVoucherType: true,
-                svhCancelledOn: true,
             },
         });
         if (!existing || existing.svhVoucherType !== rules.voucherType) {
@@ -1622,6 +1667,19 @@ let StockVoucherService = class StockVoucherService {
             sessionId: step.sessionId ?? null,
         });
     }
+    findLastStatusStep(rules, svhId, accYear, toStatus) {
+        return this.prisma.txnStatusLog.findFirst({
+            where: {
+                tslSrcDocType: rules.statusDocType,
+                tslSrcDocId: svhId,
+                tslAccYear: accYear,
+                tslToStatus: toStatus,
+                tslIsDeleted: false,
+            },
+            orderBy: { tslSeqNo: 'desc' },
+            select: { tslChangedOn: true, tslChangedBy: true, tslRemarks: true },
+        });
+    }
     toStatusEvent(fromStatus, toStatus) {
         if (fromStatus === null) {
             return txn_status_log_helper_1.TxnStatusEvent.CREATED;
@@ -1645,7 +1703,6 @@ let StockVoucherService = class StockVoucherService {
                 svhVoucherType: true,
                 svhCompanyId: true,
                 svhBranchId: true,
-                svhCancelledOn: true,
                 svhTenantId: true,
                 svhDeviceId: true,
                 svhSessionId: true,
@@ -1700,6 +1757,7 @@ let StockVoucherService = class StockVoucherService {
             godownId: row.svh_to_godown_id,
             godownName: row.to_godown_name,
             supplierId: row.svh_supplier_id,
+            supplierName: row.supplier_name,
             toBranchId: row.svh_to_branch_id,
             partyRef: row.svh_party_ref,
             reasonId: row.svh_reason_id,
@@ -1717,11 +1775,11 @@ let StockVoucherService = class StockVoucherService {
             totalQty: (0, module_service_utils_1.toNumber)(row.svh_total_qty),
             totalValue: (0, module_service_utils_1.toNumber)(row.svh_total_value),
             totalValueWot: (0, module_service_utils_1.toNumber)(row.svh_total_value_wot),
-            postedOn: row.svh_posted_on?.toISOString() ?? null,
-            postedBy: row.svh_posted_by,
+            postedOn: row.posted_on?.toISOString() ?? null,
+            postedBy: row.posted_by,
             postedByName: row.posted_by_name,
-            cancelledOn: row.svh_cancelled_on?.toISOString() ?? null,
-            cancelReason: row.svh_cancel_reason,
+            cancelledOn: row.cancelled_on?.toISOString() ?? null,
+            cancelReason: row.cancel_reason,
             rateSource: row.svh_rate_source,
             remarks: row.svh_remarks,
             isDeleted: row.svh_is_deleted,
@@ -1750,6 +1808,7 @@ let StockVoucherService = class StockVoucherService {
             salePrice: (0, module_service_utils_1.toNullableNumber)(row.svi_sale_price),
             serialNo: row.svi_serial_no,
             supplierId: row.svi_supplier_id,
+            supplierName: row.line_supplier_name,
             qty: (0, module_service_utils_1.toNumber)(row.svi_qty),
             baseQty: (0, module_service_utils_1.toNumber)(row.svi_base_qty),
             freeQty: (0, module_service_utils_1.toNumber)(row.svi_free_qty),

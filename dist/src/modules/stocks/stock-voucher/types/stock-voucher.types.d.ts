@@ -67,6 +67,7 @@ export interface StockVoucherHeaderPayload {
     godownId: string | null;
     godownName: string | null;
     supplierId: string | null;
+    supplierName: string | null;
     toBranchId: string | null;
     partyRef: string | null;
     linkSrcModule: string | null;
@@ -115,6 +116,7 @@ export interface StockVoucherLinePayload {
     salePrice: number | null;
     serialNo: string | null;
     supplierId: string | null;
+    supplierName: string | null;
     qty: number;
     baseQty: number;
     freeQty: number;

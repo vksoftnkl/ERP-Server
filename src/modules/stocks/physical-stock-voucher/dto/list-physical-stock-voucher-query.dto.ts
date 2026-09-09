@@ -77,7 +77,7 @@ export class GetPhysicalStockVoucherQueryDto extends PhysicalStockVoucherScopeQu
   offset?: number;
 }
 
-/** The routes that address exactly one document: validate and delete. */
+/** The routes that address exactly one document: validate. */
 export class PhysicalStockVoucherRefQueryDto extends PhysicalStockVoucherScopeQueryDto {
   @ApiProperty({ format: 'uuid' })
   @RequiredUuid()

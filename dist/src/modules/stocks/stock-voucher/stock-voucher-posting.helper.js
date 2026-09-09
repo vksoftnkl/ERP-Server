@@ -39,8 +39,6 @@ async function postStockVoucher(tx, params) {
         where: { svhId_svhAccYear: { svhId, svhAccYear: accYear } },
         data: {
             svhStatus: 'POSTED',
-            svhPostedOn: postedOn,
-            svhPostedBy: author,
             svhVersionNo: { increment: 1 },
             svhModifiedOn: postedOn,
             svhModifiedBy: author,
@@ -609,7 +607,7 @@ async function refreshLotTotals(tx, params) {
   `;
 }
 async function cancelStockVoucher(tx, params) {
-    const { rules, svhId, accYear, actor, reason, cancelledOn } = params;
+    const { rules, svhId, accYear, actor, cancelledOn } = params;
     const author = auditColumnActor(actor);
     await lockPostedHeader(tx, params);
     const rowsReversed = await writeReversalLedger(tx, params);
@@ -625,9 +623,6 @@ async function cancelStockVoucher(tx, params) {
         where: { svhId_svhAccYear: { svhId, svhAccYear: accYear } },
         data: {
             svhStatus: 'CANCELLED',
-            svhCancelledOn: cancelledOn,
-            svhCancelledBy: author,
-            svhCancelReason: reason.slice(0, 250),
             svhVersionNo: { increment: 1 },
             svhModifiedOn: cancelledOn,
             svhModifiedBy: author,

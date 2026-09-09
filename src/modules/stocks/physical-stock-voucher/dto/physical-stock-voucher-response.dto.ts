@@ -87,6 +87,12 @@ export class PhysicalStockHeaderDto {
   supplierId!: string | null;
 
   @ApiPropertyOptional({
+    nullable: true,
+    description: 'purchase.suppliers.sup_name for supplierId.',
+  })
+  supplierName!: string | null;
+
+  @ApiPropertyOptional({
     format: 'uuid',
     nullable: true,
     description: 'TRANSFER only — null on a count.',
@@ -257,6 +263,12 @@ export class PhysicalStockLineDto {
 
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   supplierId!: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'purchase.suppliers.sup_name for supplierId.',
+  })
+  supplierName!: string | null;
 
   // ── The three numbers a count is about ──────────────────────────────────
   @ApiPropertyOptional({
@@ -457,17 +469,6 @@ export class PhysicalStockCancelResultDto extends PhysicalStockDocumentDto {
 
   @ApiPropertyOptional({ format: 'date-time', nullable: true })
   cancelledOn!: string | null;
-}
-
-export class PhysicalStockDeleteResultDto {
-  @ApiProperty({ format: 'uuid' })
-  svhId!: string;
-
-  @ApiProperty()
-  accYear!: string;
-
-  @ApiProperty({ example: true })
-  deleted!: true;
 }
 
 /** §4 — one row of the generated sheet. */
@@ -678,17 +679,6 @@ export class PhysicalStockCancelSuccessDto {
 
   @ApiProperty({ type: PhysicalStockCancelResultDto })
   data!: PhysicalStockCancelResultDto;
-}
-
-export class PhysicalStockDeleteSuccessDto {
-  @ApiProperty({ example: true })
-  success!: true;
-
-  @ApiProperty({ example: 'Physical stock count deleted successfully' })
-  message!: string;
-
-  @ApiProperty({ type: PhysicalStockDeleteResultDto })
-  data!: PhysicalStockDeleteResultDto;
 }
 
 export class CountSheetSuccessDto {

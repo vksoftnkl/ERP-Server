@@ -1,4 +1,4 @@
-import { Controller, Delete, Get, Post, Body, Query, UseFilters, Version } from '@nestjs/common';
+import { Controller, Get, Post, Body, Query, UseFilters, Version } from '@nestjs/common';
 import { TxnStatusDocType } from 'src/common/txn-status-log/txn-status-log.helper';
 import {
   ApiBadRequestResponse,
@@ -22,7 +22,6 @@ import type {
   StockCountSheetRow,
   StockVarianceRow,
   StockVoucherCancelResult,
-  StockVoucherDeleteResult,
   StockVoucherLineProblem,
   StockVoucherListResult,
   StockVoucherPayload,
@@ -45,7 +44,6 @@ import {
 import {
   CountSheetSuccessDto,
   PhysicalStockCancelSuccessDto,
-  PhysicalStockDeleteSuccessDto,
   PhysicalStockDocumentSuccessDto,
   PhysicalStockErrorResponseDto,
   PhysicalStockListSuccessDto,
@@ -114,7 +112,7 @@ const PHYSICAL_RULES: StockVoucherTypeRules = {
 @Controller('stock/physical')
 @UseFilters(StockVoucherExceptionFilter)
 export class PhysicalStockVoucherController {
-  constructor(private readonly stockVoucherService: StockVoucherService) {}
+  constructor(private readonly stockVoucherService: StockVoucherService) { }
 
   @Get('count-sheet')
   @Version(API_VERSION)
@@ -138,7 +136,7 @@ export class PhysicalStockVoucherController {
     };
   }
 
-  @Post()
+  @Post('/create')
   @Version(API_VERSION)
   @ApiOperation({
     summary: 'Create or update a physical count draft (by header.svhId presence)',
@@ -174,7 +172,7 @@ export class PhysicalStockVoucherController {
     };
   }
 
-  @Get()
+  @Get('/get')
   @Version(API_VERSION)
   @ApiOperation({
     summary: 'List physical counts, or load one when svhId is given',
@@ -291,29 +289,6 @@ export class PhysicalStockVoucherController {
       message: `Physical stock count cancelled successfully — ${data.rowsReversed} reversal rows`,
       data,
     };
-  }
-
-  @Delete()
-  @Version(API_VERSION)
-  @ApiOperation({
-    summary: 'Soft delete a physical count DRAFT',
-    description:
-      'DRAFT only; a POSTED count is cancelled, never deleted. It also LIFTS THE FREEZE, since the guard reads DRAFT sheets — a sheet abandoned with its window still open would otherwise block the godown until freezeTo passes.',
-  })
-  @ApiOkResponse({ type: PhysicalStockDeleteSuccessDto })
-  @ApiConflictResponse({ type: PhysicalStockErrorResponseDto })
-  @ApiNotFoundResponse({ type: PhysicalStockErrorResponseDto })
-  async remove(
-    @Query() query: PhysicalStockVoucherRefQueryDto,
-  ): Promise<StockVoucherSuccessResponse<StockVoucherDeleteResult>> {
-    const data = await this.stockVoucherService.softDelete(
-      PHYSICAL_RULES,
-      query.svhId,
-      query.accYear,
-      query.companyId,
-      query.branchId,
-    );
-    return { success: true, message: 'Physical stock count deleted successfully', data };
   }
 
   @Get('variance')

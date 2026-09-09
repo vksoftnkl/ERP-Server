@@ -187,6 +187,7 @@ interface HeaderRow {
   svh_to_godown_id: string | null;
   to_godown_name: string | null;
   svh_supplier_id: string | null;
+  supplier_name: string | null;
   svh_to_branch_id: string | null;
   svh_party_ref: string | null;
   svh_reason_id: string | null;
@@ -204,11 +205,13 @@ interface HeaderRow {
   svh_total_qty: Prisma.Decimal;
   svh_total_value: Prisma.Decimal;
   svh_total_value_wot: Prisma.Decimal;
-  svh_posted_on: Date | null;
-  svh_posted_by: string | null;
+  // Not columns on stock_voucher any more: the header keeps svh_status alone and
+  // these come from the public.txn_status_log laterals in the header query.
+  posted_on: Date | null;
+  posted_by: string | null;
   posted_by_name: string | null;
-  svh_cancelled_on: Date | null;
-  svh_cancel_reason: string | null;
+  cancelled_on: Date | null;
+  cancel_reason: string | null;
   svh_rate_source: string | null;
   svh_remarks: string | null;
   svh_is_deleted: boolean;
@@ -236,6 +239,7 @@ interface LineRow {
   svi_sale_price: Prisma.Decimal | null;
   svi_serial_no: string | null;
   svi_supplier_id: string | null;
+  line_supplier_name: string | null;
   svi_qty: Prisma.Decimal;
   svi_base_qty: Prisma.Decimal;
   svi_free_qty: Prisma.Decimal;
@@ -939,7 +943,8 @@ export class StockVoucherService {
         // THE PAYLOAD'S header.status IS NOT IGNORED — it is applied one step
         // later. Every document is INSERTED as a draft; when the caller asked
         // for 'POSTED', save() then posts it inside this same transaction and
-        // the post is what writes svh_status, svh_posted_on and svh_posted_by.
+        // the post is what writes svh_status and appends the POSTED step to
+        // public.txn_status_log.
         //
         // The order is the guarantee, not an accident of layering: a row that
         // said POSTED here would be claiming stock had moved before a single
@@ -1446,7 +1451,7 @@ export class StockVoucherService {
           | 'svh_total_qty'
           | 'svh_total_value'
           | 'svh_total_value_wot'
-          | 'svh_posted_on'
+          | 'posted_on'
           | 'svh_rate_source'
           | 'svh_remarks'
         >
@@ -1464,11 +1469,26 @@ export class StockVoucherService {
              svh.svh_total_qty,
              svh.svh_total_value,
              svh.svh_total_value_wot,
-             svh.svh_posted_on,
+             posted.tsl_changed_on AS posted_on,
              svh.svh_rate_source,
              svh.svh_remarks
         FROM stock.stock_voucher svh
         LEFT JOIN inventory.godown_locations gdl ON gdl.gdl_id = svh.svh_to_godown_id
+        -- WHEN it was posted lives on the trail, not on the header. Keyed on
+        -- (doc type, doc id, acc year) so ux_tsl_doc_seq serves the lookup; a
+        -- re-post after a cancellation appends a second POSTED row, and the
+        -- LATEST one is the answer the list wants.
+        LEFT JOIN LATERAL (
+          SELECT tsl.tsl_changed_on
+            FROM public.txn_status_log tsl
+           WHERE tsl.tsl_src_doc_type = ${rules.statusDocType}
+             AND tsl.tsl_src_doc_id   = svh.svh_id
+             AND tsl.tsl_acc_year     = svh.svh_acc_year
+             AND tsl.tsl_to_status    = 'POSTED'
+             AND tsl.tsl_is_deleted   = false
+           ORDER BY tsl.tsl_seq_no DESC
+           LIMIT 1
+        ) posted ON true
        WHERE svh.svh_company_id   = ${query.companyId}::uuid
          AND svh.svh_branch_id    = ${query.branchId}::uuid
          AND svh.svh_acc_year     = ${query.accYear}::bpchar
@@ -1500,7 +1520,7 @@ export class StockVoucherService {
         totalQty: toNumber(row.svh_total_qty),
         totalValue: toNumber(row.svh_total_value),
         totalValueWot: toNumber(row.svh_total_value_wot),
-        postedOn: row.svh_posted_on?.toISOString() ?? null,
+        postedOn: row.posted_on?.toISOString() ?? null,
         rateSource: row.svh_rate_source as StockRateSource | null,
         remarks: row.svh_remarks,
       })) satisfies StockVoucherListItem[],
@@ -1535,6 +1555,7 @@ export class StockVoucherService {
              svh.svh_to_godown_id,
              tgd.gdl_name AS to_godown_name,
              svh.svh_supplier_id,
+             sup.sup_name AS supplier_name,
              svh.svh_to_branch_id,
              svh.svh_party_ref,
              svh.svh_reason_id,
@@ -1552,18 +1573,45 @@ export class StockVoucherService {
              svh.svh_total_qty,
              svh.svh_total_value,
              svh.svh_total_value_wot,
-             svh.svh_posted_on,
-             svh.svh_posted_by,
-             usr.usr_display_name AS posted_by_name,
-             svh.svh_cancelled_on,
-             svh.svh_cancel_reason,
+             posted.tsl_changed_on AS posted_on,
+             posted.tsl_changed_by AS posted_by,
+             usr.usr_display_name  AS posted_by_name,
+             cancelled.tsl_changed_on AS cancelled_on,
+             cancelled.tsl_remarks    AS cancel_reason,
              svh.svh_rate_source,
              svh.svh_remarks,
              svh.svh_is_deleted
         FROM stock.stock_voucher svh
         LEFT JOIN inventory.godown_locations fgd ON fgd.gdl_id = svh.svh_from_godown_id
         LEFT JOIN inventory.godown_locations tgd ON tgd.gdl_id = svh.svh_to_godown_id
-        LEFT JOIN public.user_master usr         ON usr.usr_id = svh.svh_posted_by
+        LEFT JOIN purchase.suppliers sup ON sup.sup_id = svh.svh_supplier_id
+        -- Who posted or cancelled this, when, and why: public.txn_status_log is
+        -- the only record of it — the header carries svh_status alone. Both
+        -- laterals take the LATEST matching step, so a voucher posted, cancelled
+        -- and posted again reads back its current post, not its first.
+        LEFT JOIN LATERAL (
+          SELECT tsl.tsl_changed_on, tsl.tsl_changed_by
+            FROM public.txn_status_log tsl
+           WHERE tsl.tsl_src_doc_type = ${rules.statusDocType}
+             AND tsl.tsl_src_doc_id   = svh.svh_id
+             AND tsl.tsl_acc_year     = svh.svh_acc_year
+             AND tsl.tsl_to_status    = 'POSTED'
+             AND tsl.tsl_is_deleted   = false
+           ORDER BY tsl.tsl_seq_no DESC
+           LIMIT 1
+        ) posted ON true
+        LEFT JOIN LATERAL (
+          SELECT tsl.tsl_changed_on, tsl.tsl_remarks
+            FROM public.txn_status_log tsl
+           WHERE tsl.tsl_src_doc_type = ${rules.statusDocType}
+             AND tsl.tsl_src_doc_id   = svh.svh_id
+             AND tsl.tsl_acc_year     = svh.svh_acc_year
+             AND tsl.tsl_to_status    = 'CANCELLED'
+             AND tsl.tsl_is_deleted   = false
+           ORDER BY tsl.tsl_seq_no DESC
+           LIMIT 1
+        ) cancelled ON true
+        LEFT JOIN public.user_master usr         ON usr.usr_id = posted.tsl_changed_by
         LEFT JOIN stock.stock_reason_master srm  ON srm.srm_id = svh.svh_reason_id
        WHERE svh.svh_id          = ${svhId}::uuid
          AND svh.svh_acc_year    = ${accYear}::bpchar
@@ -1602,6 +1650,7 @@ export class StockVoucherService {
              svi.svi_sale_price,
              svi.svi_serial_no,
              svi.svi_supplier_id,
+             sup.sup_name AS line_supplier_name,
              svi.svi_qty,
              svi.svi_base_qty,
              svi.svi_free_qty,
@@ -1627,6 +1676,7 @@ export class StockVoucherService {
         LEFT JOIN inventory.item_unit_master unt  ON unt.unit_id = iuc.iuc_unit_id
         LEFT JOIN inventory.godown_locations gdl  ON gdl.gdl_id = svi.svi_godown_id
         LEFT JOIN stock.stock_reason_master srm   ON srm.srm_id = svi.svi_reason_id
+        LEFT JOIN purchase.suppliers sup          ON sup.sup_id = svi.svi_supplier_id
        WHERE svi.svi_voucher_id = ${svhId}::uuid
          AND svi.svi_acc_year   = ${accYear}::bpchar
          AND svi.svi_is_deleted = false
@@ -2060,8 +2110,10 @@ export class StockVoucherService {
    * calling the engine function, as their post does, because a transfer's
    * cancel also has to undo stock_transit and the paired document.
    *
-   * `reason` is required here even though svh_cancel_reason is nullable: a
-   * cancelled opening with no reason is unanswerable three months later.
+   * `reason` is required here even though the trail's tsl_remarks is nullable
+   * in general: a cancelled opening with no reason is unanswerable three months
+   * later. It is stored as the CANCELLED step's remark — ck_tsl_reason_required
+   * would refuse the row without one anyway.
    */
   async cancel(
     rules: StockVoucherTypeRules,
@@ -2085,12 +2137,16 @@ export class StockVoucherService {
 
     const existing = await this.loadHeaderOrThrow(rules, svhId, accYear, companyId, branchId);
     if (existing.svhStatus === 'CANCELLED') {
+      // WHEN it was cancelled is on the trail, not on the header — one extra
+      // read on a path that is about to 409 anyway, so the caller still gets a
+      // date instead of "an earlier date".
+      const cancelStep = await this.findLastStatusStep(rules, svhId, accYear, 'CANCELLED');
       throwStockConflict<StockErrorDetail, StockErrorResponse>(
         `${rules.displayName} already cancelled`,
         [
           {
             field: 'svhId',
-            message: `${existing.svhRefno} was cancelled on ${existing.svhCancelledOn?.toISOString() ?? 'an earlier date'}.`,
+            message: `${existing.svhRefno} was cancelled on ${cancelStep?.tslChangedOn.toISOString() ?? 'an earlier date'}.`,
           },
         ],
       );
@@ -2732,7 +2788,6 @@ export class StockVoucherService {
         svhStatus: true,
         svhIsDeleted: true,
         svhVoucherType: true,
-        svhCancelledOn: true,
       },
     });
     if (!existing || existing.svhVoucherType !== rules.voucherType) {
@@ -2811,6 +2866,33 @@ export class StockVoucherService {
       sessionId: step.sessionId ?? null,
     });
   }
+  /**
+   * The LATEST step that moved this voucher to `toStatus`, or null if it never
+   * did. The header stores no posted/cancelled stamps — txn_status_log is the
+   * record — so anything that needs one of those dates reads it back here.
+   *
+   * Newest first by tsl_seq_no: a voucher posted, cancelled and posted again has
+   * two POSTED rows, and the current one is the last.
+   */
+  private findLastStatusStep(
+    rules: StockVoucherTypeRules,
+    svhId: string,
+    accYear: string,
+    toStatus: StockVoucherStatus,
+  ) {
+    return this.prisma.txnStatusLog.findFirst({
+      where: {
+        tslSrcDocType: rules.statusDocType,
+        tslSrcDocId: svhId,
+        tslAccYear: accYear,
+        tslToStatus: toStatus,
+        tslIsDeleted: false,
+      },
+      orderBy: { tslSeqNo: 'desc' },
+      select: { tslChangedOn: true, tslChangedBy: true, tslRemarks: true },
+    });
+  }
+
   private toStatusEvent(fromStatus: string | null, toStatus: StockVoucherStatus): TxnStatusEvent {
     if (fromStatus === null) {
       // First row of the trail. Whether the voucher was born DRAFT or straight
@@ -2851,7 +2933,6 @@ export class StockVoucherService {
         svhVoucherType: true,
         svhCompanyId: true,
         svhBranchId: true,
-        svhCancelledOn: true,
         // For the txn_status_log row every status step writes — see
         // logStatusChange.
         svhTenantId: true,
@@ -2937,6 +3018,7 @@ export class StockVoucherService {
       godownId: row.svh_to_godown_id,
       godownName: row.to_godown_name,
       supplierId: row.svh_supplier_id,
+      supplierName: row.supplier_name,
       toBranchId: row.svh_to_branch_id,
       partyRef: row.svh_party_ref,
       reasonId: row.svh_reason_id,
@@ -2954,11 +3036,11 @@ export class StockVoucherService {
       totalQty: toNumber(row.svh_total_qty),
       totalValue: toNumber(row.svh_total_value),
       totalValueWot: toNumber(row.svh_total_value_wot),
-      postedOn: row.svh_posted_on?.toISOString() ?? null,
-      postedBy: row.svh_posted_by,
+      postedOn: row.posted_on?.toISOString() ?? null,
+      postedBy: row.posted_by,
       postedByName: row.posted_by_name,
-      cancelledOn: row.svh_cancelled_on?.toISOString() ?? null,
-      cancelReason: row.svh_cancel_reason,
+      cancelledOn: row.cancelled_on?.toISOString() ?? null,
+      cancelReason: row.cancel_reason,
       rateSource: row.svh_rate_source as StockRateSource | null,
       remarks: row.svh_remarks,
       isDeleted: row.svh_is_deleted,
@@ -2988,6 +3070,7 @@ export class StockVoucherService {
       salePrice: toNullableNumber(row.svi_sale_price),
       serialNo: row.svi_serial_no,
       supplierId: row.svi_supplier_id,
+      supplierName: row.line_supplier_name,
       qty: toNumber(row.svi_qty),
       baseQty: toNumber(row.svi_base_qty),
       freeQty: toNumber(row.svi_free_qty),

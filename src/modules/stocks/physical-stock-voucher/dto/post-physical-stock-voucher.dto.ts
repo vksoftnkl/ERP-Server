@@ -32,7 +32,8 @@ export class PostPhysicalStockVoucherDto {
 
 export class CancelPhysicalStockVoucherDto extends PostPhysicalStockVoucherDto {
   /**
-   * Required by this API even though svh_cancel_reason is nullable.
+   * Required by this API even though the trail's tsl_remarks is nullable in
+   * general.
    *
    * A cancelled count is a rarer and nastier thing than a cancelled opening: it
    * UN-CORRECTS a correction, so the book figure goes back to being the one the

@@ -210,7 +210,7 @@ export async function allocateStockVoucherNumber(
 
 /**
  * The printed number from accounts.acc_voucher_seq, formatted by the named
- * acc_voucher_types row — `opn000000000001st` for row 1.
+ * acc_voucher_types row — `OPN0001` for row 1.
  *
  * NO deviceCode is passed, so every device in the branch shares the 'MAIN'
  * counter. That is deliberate: ux_svh_refno is unique per (company, branch,

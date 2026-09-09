@@ -26,6 +26,7 @@ export declare class OpeningStockHeaderDto {
     godownId: string | null;
     godownName: string | null;
     supplierId: string | null;
+    supplierName: string | null;
     toBranchId: string | null;
     partyRef: string | null;
     reasonId: string | null;
@@ -74,6 +75,7 @@ export declare class OpeningStockLineDto {
     salePrice: number | null;
     serialNo: string | null;
     supplierId: string | null;
+    supplierName: string | null;
     qty: number;
     baseQty: number;
     freeQty: number;

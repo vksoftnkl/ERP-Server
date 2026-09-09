@@ -26,6 +26,7 @@ export declare class PhysicalStockHeaderDto {
     godownId: string | null;
     godownName: string | null;
     supplierId: string | null;
+    supplierName: string | null;
     toBranchId: string | null;
     partyRef: string | null;
     reasonId: string | null;
@@ -74,6 +75,7 @@ export declare class PhysicalStockLineDto {
     salePrice: number | null;
     serialNo: string | null;
     supplierId: string | null;
+    supplierName: string | null;
     bookQty: number | null;
     countedQty: number | null;
     diffQty: number | null;
@@ -142,11 +144,6 @@ export declare class PhysicalStockCancelResultDto extends PhysicalStockDocumentD
     rowsReversed: number;
     status: string;
     cancelledOn: string | null;
-}
-export declare class PhysicalStockDeleteResultDto {
-    svhId: string;
-    accYear: string;
-    deleted: true;
 }
 export declare class CountSheetRowDto {
     lineNo: number;
@@ -220,11 +217,6 @@ export declare class PhysicalStockCancelSuccessDto {
     success: true;
     message: string;
     data: PhysicalStockCancelResultDto;
-}
-export declare class PhysicalStockDeleteSuccessDto {
-    success: true;
-    message: string;
-    data: PhysicalStockDeleteResultDto;
 }
 export declare class CountSheetSuccessDto {
     success: true;

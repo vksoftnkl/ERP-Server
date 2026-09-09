@@ -33,8 +33,8 @@ are live balances, and a cached preflight is worse than none.
 
 `svh_refno` is drawn from `accounts.acc_voucher_seq` under
 `accounts.acc_voucher_types` row 1 — code `OPENING`, "Opening Stock": prefix
-`opn`, suffix `st`, width 12, yearly reset — so the first opening of a year
-prints as `opn000000000001st`. The counter is branch-wide (`MAIN`), not per
+`OPN`, no suffix, width 4, yearly reset — so the first opening of a year
+prints as `OPN0001`. The counter is branch-wide (`MAIN`), not per
 device, because `ux_svh_refno` is unique per (company, branch, acc_year) with no
 device in it. `svh_slno` keeps its own per-device serial; the two numbers are
 allowed to differ. `OPENING_VCHR_TYPE_ID` in the controller is what pins the row.

@@ -62,6 +62,7 @@ class OpeningStockHeaderDto {
     godownId;
     godownName;
     supplierId;
+    supplierName;
     toBranchId;
     partyRef;
     reasonId;
@@ -161,6 +162,13 @@ __decorate([
     (0, swagger_1.ApiPropertyOptional)({ format: 'uuid', nullable: true }),
     __metadata("design:type", Object)
 ], OpeningStockHeaderDto.prototype, "supplierId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        description: 'purchase.suppliers.sup_name for supplierId.',
+    }),
+    __metadata("design:type", Object)
+], OpeningStockHeaderDto.prototype, "supplierName", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({
         format: 'uuid',
@@ -291,6 +299,7 @@ class OpeningStockLineDto {
     salePrice;
     serialNo;
     supplierId;
+    supplierName;
     qty;
     baseQty;
     freeQty;
@@ -396,6 +405,13 @@ __decorate([
     (0, swagger_1.ApiPropertyOptional)({ format: 'uuid', nullable: true }),
     __metadata("design:type", Object)
 ], OpeningStockLineDto.prototype, "supplierId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        description: 'purchase.suppliers.sup_name for supplierId.',
+    }),
+    __metadata("design:type", Object)
+], OpeningStockLineDto.prototype, "supplierName", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)(),
     __metadata("design:type", Number)

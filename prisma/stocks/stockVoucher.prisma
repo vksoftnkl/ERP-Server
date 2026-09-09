@@ -116,16 +116,15 @@ model StockVoucher {
   svhTotalValueWot     Decimal   @default(0) @db.Decimal(18, 2)      @map("svh_total_value_wot")
 
   // ── Lifecycle ───────────────────────────────────────────────────────────
+  /// The CURRENT state only. WHO moved it there, WHEN, and WHY is
+  /// public.txn_status_log's job — one row per step, and the only record of a
+  /// post or a cancellation there is. The svh_posted_on/_by, svh_approved_on/_by
+  /// and svh_cancelled_on/_by/svh_cancel_reason stamps that used to sit here
+  /// were a second, editable copy of the same facts; migration
+  /// 20260909120000 backfilled the trail and dropped them. Read them back with
+  /// a lateral on txn_status_log (tsl_src_doc_id = svh_id, tsl_to_status), the
+  /// way getById and the list query do — never re-add a column here.
   svhStatus            String    @default("DRAFT") @db.VarChar(20)   @map("svh_status")
-  /// Stamped by fn_svh_post / fn_svh_cancel. Read by the list and load
-  /// queries, which select them by name — dropping them 500s both.
-  svhPostedOn          DateTime? @db.Timestamptz(6)                  @map("svh_posted_on")
-  svhPostedBy          String?   @db.Uuid                            @map("svh_posted_by")
-  svhApprovedOn        DateTime? @db.Timestamptz(6)                  @map("svh_approved_on")
-  svhApprovedBy        String?   @db.Uuid                            @map("svh_approved_by")
-  svhCancelledOn       DateTime? @db.Timestamptz(6)                  @map("svh_cancelled_on")
-  svhCancelledBy       String?   @db.Uuid                            @map("svh_cancelled_by")
-  svhCancelReason      String?   @db.VarChar(250)                    @map("svh_cancel_reason")
   svhVersionNo         Int       @default(1)                         @map("svh_version_no")
 
   // ── PHYSICAL only ───────────────────────────────────────────────────────
