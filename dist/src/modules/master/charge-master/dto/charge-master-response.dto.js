@@ -58,8 +58,6 @@ class ChargeMasterPayloadDto {
     chgLedgerCode;
     chgLedgerName;
     ledHsnSac;
-    ledGstRate;
-    ledTaxability;
     chgTaxApl;
     chgBeforeTax;
     chgSepPost;
@@ -135,22 +133,6 @@ __decorate([
     }),
     __metadata("design:type", Object)
 ], ChargeMasterPayloadDto.prototype, "ledHsnSac", void 0);
-__decorate([
-    (0, swagger_1.ApiPropertyOptional)({
-        type: Number,
-        nullable: true,
-        description: 'GST rate of the mapped GL ledger',
-    }),
-    __metadata("design:type", Object)
-], ChargeMasterPayloadDto.prototype, "ledGstRate", void 0);
-__decorate([
-    (0, swagger_1.ApiPropertyOptional)({
-        maxLength: 15,
-        nullable: true,
-        description: 'Taxability of the mapped GL ledger',
-    }),
-    __metadata("design:type", Object)
-], ChargeMasterPayloadDto.prototype, "ledTaxability", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)(),
     __metadata("design:type", Boolean)

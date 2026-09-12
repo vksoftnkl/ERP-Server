@@ -193,7 +193,7 @@ let StateCodeMasterService = class StateCodeMasterService {
         }
     }
     normalizeStateCode(value, fieldName = 'stateCode') {
-        const normalized = value.trim().toUpperCase();
+        const normalized = (value ?? '').trim().toUpperCase();
         if (!normalized || normalized.length !== 2) {
             (0, module_service_utils_1.throwFixedBadRequest)('Validation failed', [{ field: fieldName, message: `${fieldName} must be a 2-character code` }]);
         }

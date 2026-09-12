@@ -65,6 +65,7 @@ class SaveQuotationItemDto {
     sqiCashDiscPerc;
     sqiCashDiscAmt;
     sqiGrossAmt;
+    sqiTaxId;
     sqiTaxableAmt;
     sqiTaxPerc;
     sqiTaxAmt;
@@ -387,6 +388,18 @@ __decorate([
     (0, dtoDecorators_1.OptionalNumber)(),
     __metadata("design:type", Object)
 ], SaveQuotationItemDto.prototype, "sqiGrossAmt", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        format: 'uuid',
+        nullable: true,
+        description: 'The inventory.tax_rate_master row this line was taxed under, snapshotted at save. The ' +
+            'percentages below are what was CHARGED; this is where they came from, and posting ' +
+            'resolves the line\'s ledgers through it rather than re-reading the item default, which ' +
+            'is mutable. Null falls through to accounts.acc_ledger_map.',
+    }),
+    (0, dtoDecorators_1.NullableUuid)(),
+    __metadata("design:type", Object)
+], SaveQuotationItemDto.prototype, "sqiTaxId", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)(),
     (0, dtoDecorators_1.OptionalNumber)(),

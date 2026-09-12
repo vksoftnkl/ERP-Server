@@ -51,14 +51,18 @@ let OpeningStockLookupService = class OpeningStockLookupService {
 
              -- Scoped to whatever of company / branch was given; with
              -- neither it means "opened anywhere".
+             -- Aliased sml because unreversedLedgerRow expects that name
+             -- (and a backtick here would end the template literal). ONE
+             -- definition of "still counts" across the badge, the preflight
+             -- and the post, so the screen cannot call a holding opened that
+             -- the post would let through, or the reverse.
              EXISTS (SELECT 1
-                       FROM stock.stock_ledger l
-                      WHERE (${companyId}::uuid IS NULL OR l.sml_company_id = ${companyId}::uuid)
-                        AND (${branchId}::uuid  IS NULL OR l.sml_branch_id  = ${branchId}::uuid)
-                        AND l.sml_item_id    = i.item_id
-                        AND l.sml_txn_type   = 'OPENING'
-                        AND l.sml_is_deleted  = false
-                        AND l.sml_is_reversal = false)         AS "alreadyOpened"
+                       FROM stock.stock_ledger sml
+                      WHERE (${companyId}::uuid IS NULL OR sml.sml_company_id = ${companyId}::uuid)
+                        AND (${branchId}::uuid  IS NULL OR sml.sml_branch_id  = ${branchId}::uuid)
+                        AND sml.sml_item_id  = i.item_id
+                        AND sml.sml_txn_type = 'OPENING'
+                        AND ${(0, stock_voucher_posting_helper_1.unreversedLedgerRow)()})          AS "alreadyOpened"
 
         FROM inventory.item_master i
 

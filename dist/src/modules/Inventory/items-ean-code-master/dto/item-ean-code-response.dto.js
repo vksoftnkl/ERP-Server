@@ -69,7 +69,7 @@ __decorate([
     __metadata("design:type", String)
 ], ItemEanCodePayloadDto.prototype, "ean_created_on", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
+    (0, swagger_1.ApiPropertyOptional)({ type: String, nullable: true }),
     __metadata("design:type", Object)
 ], ItemEanCodePayloadDto.prototype, "ean_created_by", void 0);
 __decorate([
@@ -77,15 +77,15 @@ __decorate([
     __metadata("design:type", String)
 ], ItemEanCodePayloadDto.prototype, "ean_modified_on", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
+    (0, swagger_1.ApiPropertyOptional)({ type: String, nullable: true }),
     __metadata("design:type", Object)
 ], ItemEanCodePayloadDto.prototype, "ean_modified_by", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
+    (0, swagger_1.ApiPropertyOptional)({ type: String, nullable: true }),
     __metadata("design:type", Object)
 ], ItemEanCodePayloadDto.prototype, "ean_remarks", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true, description: 'Name of the linked unit (resolved on the item composite get endpoint)' }),
+    (0, swagger_1.ApiPropertyOptional)({ type: String, nullable: true, description: 'Name of the linked unit (resolved on the item composite get endpoint)' }),
     __metadata("design:type", Object)
 ], ItemEanCodePayloadDto.prototype, "ean_unit_name", void 0);
 class ItemEanCodeDeleteResultDto {

@@ -69,6 +69,13 @@ model ItemMaster {
   itemStorageLocation  String?  @db.VarChar(250) @map("item_storage_location")
   itemPackingItemIds   String[] @db.Uuid @map("item_packing_item_ids")
   itemInclTax   Boolean  @default(true) @map("item_incl_tax")
+  // Tally identity — mirrors led_tally_* on AccLedgerMaster.
+  // itemTallyGuid is uniquely indexed in the DB (ux_item_tally_guid,
+  // partial on NOT NULL AND NOT deleted), so it is not @unique here.
+  itemTallyName        String?  @db.VarChar(200) @map("item_tally_name")
+  itemTallyGuid        String?  @db.VarChar(64) @map("item_tally_guid")
+  itemTallyMasterId    BigInt?  @db.BigInt @map("item_tally_master_id")
+  itemTallyAlterId     BigInt?  @db.BigInt @map("item_tally_alter_id")
   // Status / Audit
   itemIsActive         Boolean  @default(true)  @map("item_is_active")
   itemIsDeleted        Boolean  @default(false) @map("item_is_deleted")
@@ -81,7 +88,10 @@ model ItemMaster {
   trackPreset          StockTrackPreset? @relation("ItemTrackPreset", fields: [itemTrackPresetId], references: [sptId], onUpdate: Cascade, onDelete: Restrict, map: "fk_item_track_preset")
   category             categoryMaster? @relation(fields: [itemCategoryId], references: [categoryId], onUpdate: Cascade, onDelete: SetNull)
   baseUnit             Unit?           @relation(fields: [itemBaseUnitId], references: [unit_id], onUpdate: Cascade, onDelete: Restrict)
-  defaultTax           ItemTaxMaster? @relation(fields: [itemDefaultTaxId], references: [taxId], onUpdate: Cascade, onDelete: Restrict)
+  // Repointed at inventory.tax_rate_master by migration
+  // 20260912110000_repoint_items_to_tax_rate_master. The FK keeps its
+  // Prisma-default name, so only the table it references changed.
+  defaultTax           TaxRateMaster? @relation(fields: [itemDefaultTaxId], references: [taxId], onUpdate: Cascade, onDelete: Restrict)
   prices               ItemPriceMaster[] @relation("ItemPrices")
   qtyPrices            ItemQtyPrice[] @relation("ItemQtyPrices")
   unitConversions      ItemUnitConversion[] @relation("ItemUnitConversions")

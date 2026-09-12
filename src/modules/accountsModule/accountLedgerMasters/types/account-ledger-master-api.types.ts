@@ -61,15 +61,18 @@ export interface AccountLedgerMasterPayload {
   ledIsSez: boolean;
   ledTypeOfSupply: string | null;
   ledHsnSac: string | null;
-  ledGstRate: number | null;
-  ledTaxability: string | null;
+  ledTaxId: string | null;
+  // Echoed from the referenced tax_rate_master row — display only; the rate is
+  // edited on that master, never here.
+  ledTaxName: string | null;
+  ledTaxRatePerc: number | null;
+  ledTaxTaxability: string | null;
   ledGstPartyType: string | null;
   ledTanNo: string | null;
   ledCin: string | null;
   ledUdyamNo: string | null;
   ledMsmeType: string | null;
   ledGstDutyHead: string | null;
-  ledTaxRate: number | null;
   ledRoundingMethod: string | null;
   ledRoundingLimit: number | null;
   ledIsTdsApplicable: boolean;

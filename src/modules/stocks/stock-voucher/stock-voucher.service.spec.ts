@@ -1576,12 +1576,74 @@ describe('StockVoucherService', () => {
       expect(client.$executeRaw).not.toHaveBeenCalled();
     });
 
-    it('refuses to cancel a DRAFT — there is nothing in the ledger to reverse', async () => {
+    it('cancels a DRAFT by moving the header alone — no ledger, no engine', async () => {
       client.stockVoucher.findUnique.mockResolvedValue({ ...posted, svhStatus: 'DRAFT' });
+      // The draft path's only read is the header lock, which must see DRAFT.
+      client.$queryRaw.mockResolvedValue([{ status: 'DRAFT', refno: posted.svhRefno }]);
+      jest.spyOn(service, 'getById').mockResolvedValue({
+        header: { svhId: SVH_ID, refno: posted.svhRefno, status: 'CANCELLED' } as never,
+        lines: [],
+      });
+
+      const result = await service.cancel(
+        OPENING_RULES,
+        SVH_ID,
+        ACC_YEAR,
+        'raised by mistake',
+        COMPANY_ID,
+        BRANCH_ID,
+        USER_ID,
+      );
+
+      // Nothing was written to stock_ledger, so nothing may be reversed: the
+      // five set-based statements of a posted cancellation must not run.
+      expect(client.$executeRaw).not.toHaveBeenCalled();
+      expect(result.rowsReversed).toBe(0);
+      const [[headerUpdate]] = client.stockVoucher.update.mock.calls;
+      expect(headerUpdate.data).toEqual(
+        expect.objectContaining({ svhStatus: 'CANCELLED', svhVersionNo: { increment: 1 } }),
+      );
+      // The reason is the whole difference between this and a soft delete, so
+      // the trail row carries it and says CANCELLED, not DELETED.
+      expect(client.txnStatusLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            tslFromStatus: 'DRAFT',
+            tslToStatus: 'CANCELLED',
+            tslRemarks: 'raised by mistake',
+          }),
+        }),
+      );
+    });
+
+    it('refuses under the header lock when a DRAFT was posted mid-flight', async () => {
+      client.stockVoucher.findUnique.mockResolvedValue({ ...posted, svhStatus: 'DRAFT' });
+      client.$queryRaw.mockResolvedValue([{ status: 'POSTED', refno: posted.svhRefno }]);
 
       await expect(
-        service.cancel(OPENING_RULES, SVH_ID, ACC_YEAR, 'wrong figures', COMPANY_ID, BRANCH_ID),
+        service.cancel(OPENING_RULES, SVH_ID, ACC_YEAR, 'raised by mistake', COMPANY_ID, BRANCH_ID),
       ).rejects.toMatchObject({ status: 409 });
+      expect(client.stockVoucher.update).not.toHaveBeenCalled();
+    });
+
+    it('still refuses a DRAFT TRANSFER — cancelling it would strand the despatch', async () => {
+      const transferRules: StockVoucherTypeRules = {
+        ...OPENING_RULES,
+        voucherType: 'TRANSFER_IN',
+        displayName: 'Stock transfer receipt',
+        postFunction: 'stock.fn_svh_receive_transfer',
+      };
+      client.stockVoucher.findUnique.mockResolvedValue({
+        ...posted,
+        svhStatus: 'DRAFT',
+        svhVoucherType: 'TRANSFER_IN',
+      });
+
+      await expect(
+        service.cancel(transferRules, SVH_ID, ACC_YEAR, 'sent by mistake', COMPANY_ID, BRANCH_ID),
+      ).rejects.toMatchObject({ status: 409 });
+      expect(client.stockVoucher.update).not.toHaveBeenCalled();
+      expect(client.$queryRaw).not.toHaveBeenCalled();
     });
 
     it('refuses to cancel with no reason', async () => {

@@ -341,6 +341,7 @@ class QuotationItemPayloadDto {
     sqiCashDiscPerc;
     sqiCashDiscAmt;
     sqiGrossAmt;
+    sqiTaxId;
     sqiTaxableAmt;
     sqiTaxPerc;
     sqiTaxAmt;
@@ -665,6 +666,14 @@ __decorate([
     (0, swagger_1.ApiProperty)(),
     __metadata("design:type", Number)
 ], QuotationItemPayloadDto.prototype, "sqiGrossAmt", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        format: 'uuid',
+        nullable: true,
+        description: 'The tax_rate_master row this line was taxed under. Null on historical lines.',
+    }),
+    __metadata("design:type", Object)
+], QuotationItemPayloadDto.prototype, "sqiTaxId", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)(),
     __metadata("design:type", Number)

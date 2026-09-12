@@ -19,6 +19,7 @@ const module_service_utils_1 = require("../../../common/utils/module-service.uti
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
 const voucher_sequence_helper_1 = require("../../../common/Sequence/voucher-sequence.helper");
 const txn_status_log_helper_1 = require("../../../common/txn-status-log/txn-status-log.helper");
+const tax_rate_reference_helper_1 = require("../../Inventory/tax-rate-master/utils/tax-rate-reference.helper");
 const QUOTATION_VCHR_TYPE_ID = 2;
 const QUOTATION_TABLE_NAME = 'sale_quotation';
 const QUOTATION_ITEM_TABLE_NAME = 'sale_quotation_item';
@@ -164,6 +165,7 @@ const QUOTATION_ITEM_OPTIONAL_FIELDS = [
     'sqiCashDiscPerc',
     'sqiCashDiscAmt',
     'sqiGrossAmt',
+    'sqiTaxId',
     'sqiTaxableAmt',
     'sqiTaxPerc',
     'sqiTaxAmt',
@@ -584,6 +586,7 @@ let QuotationService = class QuotationService {
         if (inputItems === undefined) {
             return existing;
         }
+        await (0, tax_rate_reference_helper_1.assertTaxRateRefs)(tx, (0, tax_rate_reference_helper_1.collectTaxRateRefs)(inputItems, (item) => item.sqiTaxId, (index) => `items.${index}.sqiTaxId`), 'Invalid quotation item tax rate');
         const existingMap = new Map(existing.map((item) => [item.sqiId, item]));
         const now = new Date();
         const resolvedItems = inputItems.map((inputItem, index) => ({
@@ -791,6 +794,7 @@ let QuotationService = class QuotationService {
         if (inputCharges === undefined) {
             return existing;
         }
+        await (0, tax_rate_reference_helper_1.assertTaxRateRefs)(tx, (0, tax_rate_reference_helper_1.collectTaxRateRefs)(inputCharges, (charge) => charge.cdTaxCode, (index) => `charges.${index}.cdTaxCode`), 'Invalid quotation charge tax rate');
         const existingMap = new Map(existing.map((charge) => [charge.cdId, charge]));
         const keptIds = new Set();
         const seenSlnos = new Set();
@@ -951,6 +955,15 @@ let QuotationService = class QuotationService {
             details.push({
                 field: 'cdTaxApl',
                 message: 'cdTaxApl and cdBeforeTax are mutually exclusive: a charge is either taxed at the item rate or carries its own GST',
+            });
+        }
+        const taxCode = (0, module_service_utils_1.hasOwnProperty)(inputCharge, 'cdTaxCode')
+            ? inputCharge.cdTaxCode
+            : existingCharge?.cdTaxCode;
+        if (taxCode && (!taxApl || beforeTax)) {
+            details.push({
+                field: 'cdTaxCode',
+                message: 'cdTaxCode is only meaningful on a charge that carries its own GST — set cdTaxApl and leave cdBeforeTax false, or clear cdTaxCode',
             });
         }
         if (details.length > 0) {

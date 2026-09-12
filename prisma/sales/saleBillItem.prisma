@@ -93,6 +93,10 @@ model SaleBillItem {
   sbiChrgBeforeTax   Decimal?  @db.Decimal(14, 4) @map("sbi_chrg_before_tax")
   sbiChrgAfterTax    Decimal?  @db.Decimal(14, 4) @map("sbi_chrg_after_tax")
   // Tax (on the POST-charge taxable)
+  // Which tax_rate_master row this line was taxed under, snapshotted at save.
+  // Not re-read from item_master at posting time: the item default is mutable
+  // and two tax rows can share a percentage.
+  sbiTaxId           String?   @db.Uuid @map("sbi_tax_id")
   sbiTaxableAmt      Decimal   @default(0) @db.Decimal(15, 2) @map("sbi_taxable_amt")
   sbiTaxPerc         Decimal   @default(0) @db.Decimal(15, 4) @map("sbi_tax_perc")
   sbiTaxAmt          Decimal   @default(0) @db.Decimal(15, 2) @map("sbi_tax_amt")
@@ -140,6 +144,7 @@ model SaleBillItem {
   // Relations
   bill               SaleBill           @relation(fields: [sbiBillId, sbiAccYear], references: [sbId, sbAccYear], onDelete: Cascade, onUpdate: Cascade, map: "fk_sbi_bill")
   item               ItemMaster         @relation(fields: [sbiItemId], references: [itemId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sbi_item")
+  tax                TaxRateMaster?     @relation(fields: [sbiTaxId], references: [taxId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sbi_tax")
   priceLevel         ItemPriceLevel     @relation("SaleBillItemPriceLevel", fields: [sbiPriceLevel], references: [iplId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sbi_price_level")
   // sbiItemUnitId references item_unit_conversion(iuc_id), NOT item_unit_master(unit_id)
   itemUnitConversion ItemUnitConversion @relation("SaleBillItemUnitConversion", fields: [sbiItemUnitId], references: [iucId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sbi_item_unit")
@@ -153,6 +158,9 @@ model SaleBillItem {
   // needs an index of its own. Plain and non-unique, so unlike the DB-only
   // partial indexes on sale_order_item it is safe to declare here.
   @@index([sbiSrcDocId, sbiSrcDocYear, sbiSrcDocLineNo], map: "ix_sbi_src_doc")
+  // ix_sbi_tax (sbi_tax_id) WHERE sbi_tax_id IS NOT NULL is a DB-only partial index
+  // (migration 20260912050000). Prisma cannot express the predicate and
+  // would re-create it without one. Do NOT add @@index for it.
   @@map("sale_bill_item")
   @@schema("sales")
 }

@@ -19,7 +19,7 @@ export class ItemPricePayloadDto {
   ipm_item_id!: string;
   @ApiProperty({ format: 'uuid', description: 'Item unit conversion id (iuc_id) this price applies to' })
   ipm_uc_unit_id!: string;
-  @ApiProperty({ format: 'uuid' })
+  @ApiProperty({ type: String, format: 'uuid' })
   ipm_godown_id!: string | null;
   @ApiProperty({ example: 0 })
   ipm_sl_no!: number;
@@ -89,13 +89,13 @@ export class ItemPricePayloadDto {
   ipm_updated_on!: string | null;
   @ApiPropertyOptional({ type: String, format: 'uuid', nullable: true, example: null })
   ipm_updated_by!: string | null;
-  @ApiPropertyOptional({ nullable: true, description: 'Name of the linked company (resolved on the item composite get endpoint)' })
+  @ApiPropertyOptional({ type: String, nullable: true, description: 'Name of the linked company (resolved on the item composite get endpoint)' })
   ipm_company_name?: string | null;
-  @ApiPropertyOptional({ nullable: true, description: 'Name of the linked branch (resolved on the item composite get endpoint)' })
+  @ApiPropertyOptional({ type: String, nullable: true, description: 'Name of the linked branch (resolved on the item composite get endpoint)' })
   ipm_branch_name?: string | null;
-  @ApiPropertyOptional({ nullable: true, description: 'Name of the linked unit (resolved on the item composite get endpoint)' })
+  @ApiPropertyOptional({ type: String, nullable: true, description: 'Name of the linked unit (resolved on the item composite get endpoint)' })
   ipm_unit_name?: string | null;
-  @ApiPropertyOptional({ nullable: true, description: 'Name of the linked godown (resolved on the item composite get endpoint)' })
+  @ApiPropertyOptional({ type: String, nullable: true, description: 'Name of the linked godown (resolved on the item composite get endpoint)' })
   ipm_godown_name?: string | null;
 }
 export class ItemPriceDeleteResultDto {

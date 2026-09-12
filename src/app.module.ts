@@ -93,6 +93,7 @@ import { ItemsSectionMasterModule } from './modules/Inventory/items-section-mast
 import { ItemsCategoryMasterModule } from './modules/Inventory/items-category-master/items-category-master.module';
 import { UnitsMasterModule } from './modules/Inventory/units-master/units-master.module';
 import { ItemsTaxMasterModule } from './modules/Inventory/items-tax-master/items-tax-master.module';
+import { TaxRateMasterModule } from './modules/Inventory/tax-rate-master/tax-rate-master.module';
 import { ItemsEanCodeMasterModule } from './modules/Inventory/items-ean-code-master/items-ean-code-master.module';
 import { ItemsGstUnitsMasterModule } from './modules/Inventory/items-gst-units-master/items-gst-units-master.module';
 import { ItemsPriceMasterModule } from './modules/Inventory/items-price-master/items-price-master.module';
@@ -146,6 +147,7 @@ const isThrottlerEnabled = parseBoolean(process.env.THROTTLE_ENABLED, true);
     ItemsCategoryMasterModule,
     UnitsMasterModule,
     ItemsTaxMasterModule,
+    TaxRateMasterModule,
     ItemsEanCodeMasterModule,
     ItemsGstUnitsMasterModule,
     ItemsCustRatesMasterModule,

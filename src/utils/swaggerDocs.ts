@@ -68,6 +68,7 @@ import { ItemsSectionMasterModule } from 'src/modules/Inventory/items-section-ma
 import { ItemsCategoryMasterModule } from 'src/modules/Inventory/items-category-master/items-category-master.module';
 import { UnitsMasterModule } from 'src/modules/Inventory/units-master/units-master.module';
 import { ItemsTaxMasterModule } from 'src/modules/Inventory/items-tax-master/items-tax-master.module';
+import { TaxRateMasterModule } from 'src/modules/Inventory/tax-rate-master/tax-rate-master.module';
 import { ItemsPriceMasterModule } from 'src/modules/Inventory/items-price-master/items-price-master.module';
 import { ItemUnitConversionModule } from 'src/modules/Inventory/item-unit-conversion/item-unit-conversion.module';
 import { ItemsReorderMasterModule } from 'src/modules/Inventory/items-reorder-master/items-reorder-master.module';
@@ -154,6 +155,14 @@ export const swaggerModuleDocuments = [
     title: 'Item Tax API',
     description: 'Item tax module endpoints',
     include: [ItemsTaxMasterModule],
+  },
+  {
+    path: 'tax-rates',
+    title: 'Tax Rate Master API',
+    description:
+      'GST rate master — the header and its per-rate ledger overrides, saved and read as one ' +
+      'payload. Supersedes the eighteen ledger columns of items-tax-master.',
+    include: [TaxRateMasterModule],
   },
   {
     path: 'item-cust-rates',

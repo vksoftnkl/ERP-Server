@@ -102,6 +102,7 @@ const items_section_master_module_1 = require("./modules/Inventory/items-section
 const items_category_master_module_1 = require("./modules/Inventory/items-category-master/items-category-master.module");
 const units_master_module_1 = require("./modules/Inventory/units-master/units-master.module");
 const items_tax_master_module_1 = require("./modules/Inventory/items-tax-master/items-tax-master.module");
+const tax_rate_master_module_1 = require("./modules/Inventory/tax-rate-master/tax-rate-master.module");
 const items_ean_code_master_module_1 = require("./modules/Inventory/items-ean-code-master/items-ean-code-master.module");
 const items_gst_units_master_module_1 = require("./modules/Inventory/items-gst-units-master/items-gst-units-master.module");
 const items_price_master_module_1 = require("./modules/Inventory/items-price-master/items-price-master.module");
@@ -162,6 +163,7 @@ exports.AppModule = AppModule = __decorate([
             items_category_master_module_1.ItemsCategoryMasterModule,
             units_master_module_1.UnitsMasterModule,
             items_tax_master_module_1.ItemsTaxMasterModule,
+            tax_rate_master_module_1.TaxRateMasterModule,
             items_ean_code_master_module_1.ItemsEanCodeMasterModule,
             items_gst_units_master_module_1.ItemsGstUnitsMasterModule,
             items_cust_rates_master_module_1.ItemsCustRatesMasterModule,

@@ -414,7 +414,10 @@ export class OpeningStockPostResultDto extends OpeningStockDocumentDto {
 }
 
 export class OpeningStockCancelResultDto extends OpeningStockDocumentDto {
-  @ApiProperty({ description: 'Reversal rows written by stock.fn_svh_cancel.' })
+  @ApiProperty({
+    description:
+      'Reversal rows written. 0 on a cancelled DRAFT — it had moved no stock, so there was nothing to mirror.',
+  })
   rowsReversed!: number;
 
   @ApiProperty({ example: 'CANCELLED' })

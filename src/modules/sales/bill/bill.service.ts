@@ -924,7 +924,7 @@ export class BillService {
     scope: BillScope,
     inputItems: SaveBillItemDto[] | undefined,
     actorId: string,
-  ): Promise<SaleBillItem[]> {
+   ): Promise<SaleBillItem[]> {
     const existing = await tx.saleBillItem.findMany({
       where: { sbiBillId: scope.sbId, sbiIsDeleted: false },
       orderBy: { sbiLineNo: 'asc' },

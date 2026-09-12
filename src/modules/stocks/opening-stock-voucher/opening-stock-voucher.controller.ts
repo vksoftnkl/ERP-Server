@@ -299,9 +299,11 @@ export class OpeningStockVoucherController {
   @Post('cancel')
   @Version(API_VERSION)
   @ApiOperation({
-    summary: 'Cancel a posted opening — reversal rows, never a delete',
+    summary: 'Cancel a DRAFT or a POSTED opening — never a delete',
     description:
-      'Can legitimately fail with 409: cancelling an opening after stock has been sold from it drives the holding negative, which fn_sml_apply refuses under BLOCK. The fix is an ADJUSTMENT, not a retry.',
+      'A DRAFT is cancelled by moving the header: it has written no ledger row, so `rowsReversed` is 0 and nothing about stock can refuse it. Cancelling a draft is not the same act as deleting one — a cancelled draft stays on the list, numbered, with the reason on its trail, while a soft delete takes it out of play as though it had never been raised. Both are offered; the reason is what makes cancel the honest choice for an abandoned document.\n\n' +
+      'A POSTED opening is reversed, and that can legitimately fail with 409: cancelling an opening after stock has been sold from it drives the holding negative, which fn_sml_apply refuses under BLOCK. The fix is an ADJUSTMENT, not a retry.\n\n' +
+      'An already-CANCELLED opening is refused with the date it was cancelled on.',
   })
   @ApiOkResponse({ type: OpeningStockCancelSuccessDto })
   @ApiUnprocessableEntityResponse({ type: OpeningStockErrorResponseDto })
@@ -321,7 +323,9 @@ export class OpeningStockVoucherController {
     );
     return {
       success: true,
-      message: `Opening stock cancelled successfully — ${data.rowsReversed} reversal rows`,
+      message: data.rowsReversed
+        ? `Opening stock cancelled successfully — ${data.rowsReversed} reversal rows`
+        : 'Opening stock cancelled successfully — no stock had moved, so nothing was reversed',
       data,
     };
   }

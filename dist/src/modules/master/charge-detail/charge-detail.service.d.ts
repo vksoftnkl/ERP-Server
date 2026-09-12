@@ -33,6 +33,7 @@ export declare class ChargeDetailService {
     private ensureDocumentIsUnchanged;
     private ensureDocumentMatchesScope;
     private ensureLedgerExists;
+    private ensureTaxRateExists;
     private ensureChargeExists;
     private resolveSlno;
     private ensureValuesAreAllowed;

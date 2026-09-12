@@ -230,6 +230,12 @@ export class SaleOrderItemPayloadDto {
   soiChrgBeforeTax!: number | null;
   @ApiPropertyOptional({ nullable: true, description: 'Line charges landing after tax' })
   soiChrgAfterTax!: number | null;
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description: 'The tax_rate_master row this line was taxed under. Null on historical lines.',
+  })
+  soiTaxId!: string | null;
   @ApiProperty({ description: 'On the POST-charge taxable' })
   soiTaxableAmt!: number;
   @ApiProperty()

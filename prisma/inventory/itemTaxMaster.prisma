@@ -42,8 +42,10 @@ model ItemTaxMaster {
   taxCreatedBy            String?   @db.VarChar(100) @map("tax_created_by")
   taxModifiedOn           DateTime  @default(now()) @db.Timestamptz(6) @map("tax_modified_on")
   taxModifiedBy           String?   @db.VarChar(100) @map("tax_modified_by")
-  defaultItems            ItemMaster[]
-  taxHistory              ItemTaxHistory[]
+  // defaultItems / taxHistory moved to TaxRateMaster in migration
+  // 20260912110000_repoint_items_to_tax_rate_master. Nothing references
+  // this table any more; it survives only until the client release that
+  // stops reading /item-taxes/* is deployed everywhere.
   @@map("item_tax_master")
    @@schema("inventory")
   // unique slab name globally (since company removed)

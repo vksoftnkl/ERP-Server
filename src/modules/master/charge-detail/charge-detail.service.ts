@@ -24,6 +24,7 @@ import {
   DEFAULT_ACTOR,
   MasterWriteClient,
   applyPresentFields,
+  hasOwnProperty,
   isForeignKeyConstraintError,
   normalizeRequiredText,
   resolveActor,
@@ -32,6 +33,7 @@ import {
   throwMasterConflict,
   throwMasterNotFound,
 } from 'src/common/utils/module-service.utils';
+import { assertTaxRateRefs } from '../../Inventory/tax-rate-master/utils/tax-rate-reference.helper';
 const CHARGE_DETAIL_TABLE_NAME = 'sale charge detail';
 const CHARGE_DETAIL_AUDIT_SCREEN_NAME = 'Charge Detail';
 // How this module labels the audit rows it writes on its own endpoints. A
@@ -422,6 +424,9 @@ export class ChargeDetailService {
     const ledgerCode = this.requireField(saveChargeDetailDto.cdLedgerCode, 'cdLedgerCode');
     const ledgerName = await this.ensureLedgerExists(tx, ledgerCode);
     await this.ensureChargeExists(tx, chgId);
+    if (saveChargeDetailDto.cdTaxCode) {
+      await this.ensureTaxRateExists(tx, saveChargeDetailDto.cdTaxCode);
+    }
     const data: Prisma.TransactionChargeDetailUncheckedCreateInput = {
       cdDocType: scope.cdDocType,
       cdDocId: scope.cdDocId,
@@ -482,6 +487,14 @@ export class ChargeDetailService {
     const ledgerName = await this.ensureLedgerExists(tx, nextLedgerCode);
     if (nextChgId !== existing.cdChgId) {
       await this.ensureChargeExists(tx, nextChgId);
+    }
+    const nextTaxCode = hasOwnProperty(saveChargeDetailDto, 'cdTaxCode')
+      ? saveChargeDetailDto.cdTaxCode
+      : existing.cdTaxCode;
+    // Only when it CHANGES: a rate deactivated after the line was written must
+    // not block an edit that leaves it alone.
+    if (nextTaxCode && nextTaxCode !== existing.cdTaxCode) {
+      await this.ensureTaxRateExists(tx, nextTaxCode);
     }
     const data: Prisma.TransactionChargeDetailUncheckedUpdateInput = {
       cdSlno: slno,
@@ -634,6 +647,13 @@ export class ChargeDetailService {
     }
     return ledger.ledName;
   }
+  // fk_cd_tax proves the rate EXISTS and nothing more. A soft-deleted rate
+  // satisfies it, and so does one withdrawn from new documents — which is the
+  // whole reason tax_is_active is separate from tax_is_deleted.
+  private async ensureTaxRateExists(tx: ChargeDetailWriteClient, taxId: string): Promise<void> {
+    await assertTaxRateRefs(tx, [{ taxId, field: 'cdTaxCode' }], 'Invalid charge tax rate');
+  }
+
   private async ensureChargeExists(tx: ChargeDetailWriteClient, chgId: string): Promise<void> {
     const charge = await tx.chargeMaster.findFirst({
       where: { chgId, chgIsDeleted: false },
@@ -727,6 +747,19 @@ export class ChargeDetailService {
         field: 'cdTaxApl',
         message:
           'cdTaxApl and cdBeforeTax are mutually exclusive: a charge is either taxed at the item rate or carries its own GST',
+      });
+    }
+    // charge_master.ck_chg_tax_id, restated for the line. A before-tax charge
+    // is taxed at the ITEM's rate inside the item line and a non-taxable one is
+    // never taxed, so either way a rate here would be one nothing reads.
+    const taxCode = hasOwnProperty(saveChargeDetailDto, 'cdTaxCode')
+      ? saveChargeDetailDto.cdTaxCode
+      : existing?.cdTaxCode;
+    if (taxCode && (!taxApl || beforeTax)) {
+      details.push({
+        field: 'cdTaxCode',
+        message:
+          'cdTaxCode is only meaningful on a charge that carries its own GST — set cdTaxApl and leave cdBeforeTax false, or clear cdTaxCode',
       });
     }
     if (details.length > 0) {

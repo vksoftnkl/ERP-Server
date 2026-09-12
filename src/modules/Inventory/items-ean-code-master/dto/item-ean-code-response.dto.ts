@@ -36,19 +36,19 @@ export class ItemEanCodePayloadDto {
   @ApiProperty()
   ean_created_on!: string;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: String, nullable: true })
   ean_created_by!: string | null;
 
   @ApiProperty()
   ean_modified_on!: string;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: String, nullable: true })
   ean_modified_by!: string | null;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: String, nullable: true })
   ean_remarks!: string | null;
 
-  @ApiPropertyOptional({ nullable: true, description: 'Name of the linked unit (resolved on the item composite get endpoint)' })
+  @ApiPropertyOptional({ type: String, nullable: true, description: 'Name of the linked unit (resolved on the item composite get endpoint)' })
   ean_unit_name?: string | null;
 }
 

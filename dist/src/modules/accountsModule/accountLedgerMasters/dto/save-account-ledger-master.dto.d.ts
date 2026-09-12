@@ -50,15 +50,13 @@ export declare class SaveAccountLedgerMasterDto {
     ledIsSez?: boolean;
     ledTypeOfSupply?: string | null;
     ledHsnSac?: string | null;
-    ledGstRate?: number;
-    ledTaxability?: string | null;
+    ledTaxId?: string | null;
     ledGstPartyType?: string | null;
     ledTanNo?: string | null;
     ledCin?: string | null;
     ledUdyamNo?: string | null;
     ledMsmeType?: string | null;
     ledGstDutyHead?: string | null;
-    ledTaxRate?: number;
     ledRoundingMethod?: string | null;
     ledRoundingLimit?: number;
     ledIsTdsApplicable?: boolean;

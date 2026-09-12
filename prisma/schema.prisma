@@ -361,6 +361,49 @@ model AccGroupMaster {
   @@schema("accounts")
 }
 
+// ----- prisma/accounts/accountLedgerMap.prisma -----
+/// Role -> ledger. Posting resolves a role here instead of naming a ledger, so
+/// the chart of accounts can be renamed or restructured without touching code.
+/// Per-GST-rate overrides live in inventory.tax_rate_ledger; tender and charge
+/// ledgers are owned by acc_tender_master and charge_master, not by this table.
+model AccLedgerMap {
+  almId           String  @id(map: "pk_acc_ledger_map") @default(dbgenerated("uuidv7()")) @db.Uuid @map("alm_id")
+  /// RESERVED — always NULL today and no screen sets it. Present so one company
+  /// or branch can be given its own ledger for a role later without a
+  /// migration: fn_ledger_for already prefers a scoped row. Do NOT surface it.
+  almCompanyId    String? @db.Uuid                                        @map("alm_company_id")
+  /// RESERVED — see almCompanyId. No FK: branch scoping is not in use yet.
+  almBranchId     String? @db.Uuid                                        @map("alm_branch_id")
+  almRole         String  @db.VarChar(30)                                 @map("alm_role")
+  /// NULL = both natures, the normal case. Only roles with alrBySupply may set
+  /// it — that rule lives on the role, checked by the guard.
+  /// INTRA | INTER (ck_alm_supply_nature)
+  almSupplyNature String? @db.VarChar(5)                                  @map("alm_supply_nature")
+  almLedgerId     String  @db.Uuid                                        @map("alm_ledger_id")
+  almRemarks      String? @db.VarChar(250)                                @map("alm_remarks")
+
+  almIsActive     Boolean   @default(true)                                @map("alm_is_active")
+  almIsDeleted    Boolean   @default(false)                               @map("alm_is_deleted")
+  almSyncDate     DateTime? @db.Timestamptz(6)                            @map("alm_sync_date")
+  almCreatedOn    DateTime  @default(now()) @db.Timestamptz(6)            @map("alm_created_on")
+  almCreatedBy    String?   @db.VarChar(50)                               @map("alm_created_by")
+  almModifiedOn   DateTime? @db.Timestamptz(6)                            @map("alm_modified_on")
+  almModifiedBy   String?   @db.VarChar(50)                               @map("alm_modified_by")
+
+  // The role is an FK, not a CHECK listing role names: adding a role is one
+  // insert in accounts.acc_ledger_role and every table that uses roles follows.
+  company         Company?        @relation(fields: [almCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_alm_company")
+  role            AccLedgerRole   @relation(fields: [almRole], references: [alrRole], onUpdate: Cascade, onDelete: Restrict, map: "fk_alm_role")
+  ledger          AccLedgerMaster @relation(fields: [almLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_alm_ledger")
+
+  @@index([almLedgerId], map: "ix_alm_ledger")
+  // Partial indexes — DB-only, Prisma cannot express a WHERE or NULLS NOT DISTINCT:
+  //   ux_alm_role    UNIQUE (alm_company_id, alm_branch_id, alm_role, alm_supply_nature) NULLS NOT DISTINCT WHERE NOT deleted
+  //   ix_alm_lookup  (alm_role) INCLUDE (alm_ledger_id, alm_supply_nature, alm_company_id, alm_branch_id) WHERE NOT deleted AND active
+  @@map("acc_ledger_map")
+  @@schema("accounts")
+}
+
 // ----- prisma/accounts/accountLedgerMasters.prisma -----
 model AccLedgerMaster {
   ledId                    String    @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("led_id")
@@ -421,8 +464,11 @@ model AccLedgerMaster {
   ledIsSez                 Boolean   @default(false)                                   @map("led_is_sez")
   ledTypeOfSupply          String?   @db.VarChar(10)                                  @map("led_type_of_supply")
   ledHsnSac                String?   @db.VarChar(10)                                  @map("led_hsn_sac")
-  ledGstRate               Decimal?  @db.Decimal                                       @map("led_gst_rate")
-  ledTaxability            String?   @db.VarChar(15)                                  @map("led_taxability")
+  // The tax_rate_master row this ledger carries when it appears as a taxable
+  // line (freight, packing, labour). NULL on a party or bank ledger.
+  // Replaced ledGstRate / ledTaxability / ledTaxRate, which held a bare
+  // percentage; those columns were dropped in 20260912100000.
+  ledTaxId                 String?   @db.Uuid                                         @map("led_tax_id")
   ledGstPartyType          String?   @db.VarChar(30)                                  @map("led_gst_party_type")
   ledTanNo                 String?   @db.VarChar(10)                                  @map("led_tan_no")
   ledCin                   String?   @db.VarChar(21)                                  @map("led_cin")
@@ -430,7 +476,6 @@ model AccLedgerMaster {
   ledMsmeType              String?   @db.VarChar(10)                                  @map("led_msme_type")
   // 7) Tax / duty ledger (CGST/SGST/IGST/Cess + round-off)
   ledGstDutyHead           String?   @db.VarChar(20)                                  @map("led_gst_duty_head")
-  ledTaxRate               Decimal?  @db.Decimal                                       @map("led_tax_rate")
   ledRoundingMethod        String?   @db.VarChar(15)                                  @map("led_rounding_method")
   ledRoundingLimit         Decimal?  @db.Decimal                                       @map("led_rounding_limit")
   // 8) TDS / TCS
@@ -488,6 +533,11 @@ model AccLedgerMaster {
   chargeDetails            TransactionChargeDetail[]
   saleOrderAdvanceLedgers  SaleOrder[]              @relation("SaleOrderAdvanceLedger")
   stockReasonGlLedgers     StockReasonMaster[]      @relation("StockReasonMasterGlLedger")
+  // fk_led_tax (20260912060000). ON DELETE RESTRICT: a rate a ledger quotes
+  // can be superseded, never removed.
+  taxRate                  TaxRateMaster?         @relation(fields: [ledTaxId], references: [taxId], onUpdate: Cascade, onDelete: Restrict, map: "fk_led_tax")
+  taxRateLedgers           TaxRateLedger[]
+  ledgerMaps               AccLedgerMap[]
   @@unique([ledCompanyId, ledName], name: "uq_led_name_per_company")
   @@unique([ledCompanyId, ledTallyName], name: "uq_led_tally_name_per_company")
   @@index([ledCompanyId], name: "idx_led_company_id")
@@ -500,6 +550,51 @@ model AccLedgerMaster {
   //   uq_led_tally_guid       UNIQUE (led_tally_guid)                       WHERE led_tally_guid IS NOT NULL
   //   uq_led_tally_master_id  UNIQUE (led_company_id, led_tally_master_id)  WHERE led_tally_master_id IS NOT NULL
   @@map("acc_ledger_master")
+  @@schema("accounts")
+}
+
+// ----- prisma/accounts/accountLedgerRole.prisma -----
+/// Every posting role, what kind of ledger it may take, and which dimensions it
+/// may be varied along. The single definition that acc_ledger_map and
+/// inventory.tax_rate_ledger both validate against, via
+/// accounts.fn_check_role_ledger — so adding a role (TCS, composition, an RCM
+/// variant) is one INSERT here, not an ALTER on every table that lists roles.
+model AccLedgerRole {
+  alrRole        String  @id(map: "pk_acc_ledger_role") @db.VarChar(30)                      @map("alr_role")
+  /// What the Posting Ledgers screen shows
+  alrLabel       String  @db.VarChar(60)                          @map("alr_label")
+  /// How that screen groups it.
+  /// REVENUE | OUTPUT_TAX | PURCHASE | INPUT_TAX | SHARED | FUTURE (ck_alr_group)
+  alrGroup       String  @db.VarChar(20)                          @map("alr_group")
+
+  // What kind of ledger this role may take. NULL means "not checked on this axis".
+  /// Expected acc_ledger_master.led_ledger_type
+  alrWantType    String? @db.VarChar(20)                          @map("alr_want_type")
+  /// Expected acc_ledger_master.led_gst_duty_head (ck_alr_duty)
+  alrWantDuty    String? @db.VarChar(20)                          @map("alr_want_duty")
+  /// Expected acc_group_master.acc_group_nature (ck_alr_nature)
+  alrWantNature  String? @db.VarChar(20)                          @map("alr_want_nature")
+
+  /// May carry INTRA / INTER. Only revenue and purchase roles can — a tax role
+  /// already says the supply nature by which it is used.
+  alrBySupply    Boolean @default(false)                          @map("alr_by_supply")
+  /// May be overridden per GST rate. Round-off, discount, write-off and
+  /// advances cannot — they have nothing to do with a rate.
+  alrByRate      Boolean @default(false)                          @map("alr_by_rate")
+
+  alrSortOrder   Int     @default(0) @db.SmallInt                 @map("alr_sort_order")
+  alrIsActive    Boolean @default(true)                           @map("alr_is_active")
+  alrRemarks     String? @db.VarChar(250)                         @map("alr_remarks")
+
+  /// The role -> ledger rows that name this role.
+  ledgerMaps     AccLedgerMap[]
+  /// The per-GST-rate overrides that name this role.
+  taxRateLedgers TaxRateLedger[]
+
+  // accounts.fn_check_role_ledger(role, ledger, company, where) validates a
+  // ledger against a row of this table. It lives in raw SQL — a function is not
+  // expressible here — and both posting guards call it.
+  @@map("acc_ledger_role")
   @@schema("accounts")
 }
 
@@ -1684,7 +1779,9 @@ model AccVoucher {
   // Accounting line — ck_av_dr_cr: DR | CR
   avDrCr             String    @db.Char(2) @map("av_dr_cr")
   avLedgerId         String    @db.Uuid @map("av_ledger_id")
-  avOppLedgerId      String    @db.Uuid @map("av_opp_ledger_id")
+  /// Two-leg vouchers only. NULL on a multi-leg voucher such as a sale:
+  /// there is no single opposite side to name.
+  avOppLedgerId      String?   @db.Uuid @map("av_opp_ledger_id")
   avAmount           Decimal   @default(0) @db.Decimal(18, 2) @map("av_amount")
   // GENERATED ALWAYS ... STORED in the DB. Read-only: never send it on a
   // create or update, the write will be rejected by Postgres.
@@ -1709,7 +1806,7 @@ model AccVoucher {
   // Relations
   voucherHeader      AccVoucherHeader @relation(fields: [avVoucherId, avAccYear], references: [avhVoucherId, avhAccYear], onUpdate: Cascade, onDelete: Cascade, map: "fk_av_header")
   ledger             AccLedgerMaster  @relation("AccVoucherLedger", fields: [avLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_av_ledger")
-  oppositeLedger     AccLedgerMaster  @relation("AccVoucherOppLedger", fields: [avOppLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_av_opp_ledger")
+  oppositeLedger     AccLedgerMaster? @relation("AccVoucherOppLedger", fields: [avOppLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_av_opp_ledger")
   voucherType        AccVoucherType   @relation(fields: [avVoucherTypeId], references: [vchrTypeId], onUpdate: Cascade, onDelete: Restrict, map: "fk_av_voucher_type")
   bill               AccBillBalance?  @relation(fields: [avDocId, avDocAccYear], references: [ablId, ablAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_av_doc")
   @@id([avId, avAccYear], map: "pk_acc_vouchers")
@@ -2996,6 +3093,13 @@ model ItemMaster {
   itemStorageLocation  String?  @db.VarChar(250) @map("item_storage_location")
   itemPackingItemIds   String[] @db.Uuid @map("item_packing_item_ids")
   itemInclTax   Boolean  @default(true) @map("item_incl_tax")
+  // Tally identity — mirrors led_tally_* on AccLedgerMaster.
+  // itemTallyGuid is uniquely indexed in the DB (ux_item_tally_guid,
+  // partial on NOT NULL AND NOT deleted), so it is not @unique here.
+  itemTallyName        String?  @db.VarChar(200) @map("item_tally_name")
+  itemTallyGuid        String?  @db.VarChar(64) @map("item_tally_guid")
+  itemTallyMasterId    BigInt?  @db.BigInt @map("item_tally_master_id")
+  itemTallyAlterId     BigInt?  @db.BigInt @map("item_tally_alter_id")
   // Status / Audit
   itemIsActive         Boolean  @default(true)  @map("item_is_active")
   itemIsDeleted        Boolean  @default(false) @map("item_is_deleted")
@@ -3008,7 +3112,10 @@ model ItemMaster {
   trackPreset          StockTrackPreset? @relation("ItemTrackPreset", fields: [itemTrackPresetId], references: [sptId], onUpdate: Cascade, onDelete: Restrict, map: "fk_item_track_preset")
   category             categoryMaster? @relation(fields: [itemCategoryId], references: [categoryId], onUpdate: Cascade, onDelete: SetNull)
   baseUnit             Unit?           @relation(fields: [itemBaseUnitId], references: [unit_id], onUpdate: Cascade, onDelete: Restrict)
-  defaultTax           ItemTaxMaster? @relation(fields: [itemDefaultTaxId], references: [taxId], onUpdate: Cascade, onDelete: Restrict)
+  // Repointed at inventory.tax_rate_master by migration
+  // 20260912110000_repoint_items_to_tax_rate_master. The FK keeps its
+  // Prisma-default name, so only the table it references changed.
+  defaultTax           TaxRateMaster? @relation(fields: [itemDefaultTaxId], references: [taxId], onUpdate: Cascade, onDelete: Restrict)
   prices               ItemPriceMaster[] @relation("ItemPrices")
   qtyPrices            ItemQtyPrice[] @relation("ItemQtyPrices")
   unitConversions      ItemUnitConversion[] @relation("ItemUnitConversions")
@@ -3446,7 +3553,8 @@ model ItemTaxHistory {
 
   // Relations
   item             ItemMaster    @relation(fields: [ithItemId], references: [itemId], onUpdate: Cascade, onDelete: Restrict)
-  tax              ItemTaxMaster  @relation(fields: [ithTaxId], references: [taxId], onUpdate: Cascade, onDelete: Restrict)
+  // See the note on ItemMaster.defaultTax — same migration, same rename.
+  tax              TaxRateMaster  @relation(fields: [ithTaxId], references: [taxId], onUpdate: Cascade, onDelete: Restrict)
 
   @@map("item_tax_history")
  @@schema("inventory")
@@ -3499,8 +3607,10 @@ model ItemTaxMaster {
   taxCreatedBy            String?   @db.VarChar(100) @map("tax_created_by")
   taxModifiedOn           DateTime  @default(now()) @db.Timestamptz(6) @map("tax_modified_on")
   taxModifiedBy           String?   @db.VarChar(100) @map("tax_modified_by")
-  defaultItems            ItemMaster[]
-  taxHistory              ItemTaxHistory[]
+  // defaultItems / taxHistory moved to TaxRateMaster in migration
+  // 20260912110000_repoint_items_to_tax_rate_master. Nothing references
+  // this table any more; it survives only until the client release that
+  // stops reading /item-taxes/* is deployed everywhere.
   @@map("item_tax_master")
    @@schema("inventory")
   // unique slab name globally (since company removed)
@@ -3598,6 +3708,13 @@ model Unit {
   unit_is_active  Boolean @default(true)
   unit_is_deleted Boolean @default(false)
 
+  // Tally identity — unit_tally_guid is uniquely indexed in the DB
+  // (ux_unit_tally_guid, partial on NOT NULL AND NOT deleted).
+  unit_tally_name      String? @db.VarChar(100)
+  unit_tally_guid      String? @db.VarChar(64)
+  unit_tally_master_id BigInt? @db.BigInt
+  unit_tally_alter_id  BigInt? @db.BigInt
+
   // Audit / Sync
   unit_sync_date   DateTime? @db.Timestamptz(6)
   unit_created_on  DateTime  @default(now()) @db.Timestamptz(6)
@@ -3623,6 +3740,137 @@ model Unit {
   @@schema("inventory")
   @@index([unit_is_active], map: "idx_unit_active")
   @@index([unit_base_unit_id], map: "idx_unit_base")
+}
+
+// ----- prisma/inventory/taxRateMaster.prisma -----
+/// GST rate master. One row per rate, shared by every company — a rate is
+/// statutory and national, so the ledgers it names must be global too.
+///
+/// Replaces the eighteen ledger columns of inventory.item_tax_master with rows
+/// in TaxRateLedger; see that model.
+model TaxRateMaster {
+  taxId              String  @id(map: "pk_tax_rate_master") @default(dbgenerated("uuidv7()")) @db.Uuid @map("tax_id")
+  taxName            String  @db.VarChar(100)                                   @map("tax_name")
+  taxCode            String? @db.VarChar(30)                                    @map("tax_code")
+  taxSortOrder       Int     @default(0) @db.SmallInt                           @map("tax_sort_order")
+
+  // ── Classification ─────────────────────────────────────────────────────
+  /// Same vocabulary as accounts."VoucherDocDetailTaxability", minus MIXED — a
+  /// rate is never mixed; a DOCUMENT is, when its lines disagree.
+  /// TAXABLE | EXEMPT | NIL_RATED | NON_GST | ZERO_RATED (ck_tax_taxability)
+  taxTaxability      String  @default("TAXABLE") @db.VarChar(15)                @map("tax_taxability")
+  taxIsReverseCharge Boolean @default(false)                                    @map("tax_is_reverse_charge")
+
+  // ── The rate. One number; the rest follow from it ───────────────────────
+  /// The total GST rate: 18 means 18%, charged as 9+9 locally or 18 inter-state.
+  taxRatePerc        Decimal @default(0) @db.Decimal(7, 3)                      @map("tax_rate_perc")
+
+  // The three component rates are GENERATED ALWAYS ... STORED from taxRatePerc,
+  // so they can no longer disagree with the rate they come from. Prisma has no
+  // generated-column concept: the no-argument @default(dbgenerated()) marks the
+  // value DB-owned so migrate never emits a DROP DEFAULT Postgres would reject,
+  // and they read back nullable because a generated column is not NOT NULL.
+  taxCgstPerc        Decimal? @default(dbgenerated()) @db.Decimal(7, 3)         @map("tax_cgst_perc")
+  taxSgstPerc        Decimal? @default(dbgenerated()) @db.Decimal(7, 3)         @map("tax_sgst_perc")
+  taxIgstPerc        Decimal? @default(dbgenerated()) @db.Decimal(7, 3)         @map("tax_igst_perc")
+
+  // ── Cess ───────────────────────────────────────────────────────────────
+  /// NONE | PERCENT (taxCessPerc) | PER_UNIT (taxCessPerUnit) | BOTH. Says
+  /// which figure is in play, so a zero is never ambiguous (ck_tax_cess_basis).
+  taxCessBasis       String  @default("NONE") @db.VarChar(10)                   @map("tax_cess_basis")
+  taxCessPerc        Decimal @default(0) @db.Decimal(7, 3)                      @map("tax_cess_perc")
+  taxCessPerUnit     Decimal @default(0) @db.Decimal(15, 4)                     @map("tax_cess_per_unit")
+
+  // ── Additional / state cess ────────────────────────────────────────────
+  /// A SECOND cess, because sale_bill_item (sbi_acess_*), acc_voucher_doc_register
+  /// (gdr_state_cess_value) and the 'State Cess' duty head all expect one. Same
+  /// shape as the block above, so a line can carry both independently — Kerala
+  /// flood cess beside compensation cess is the standard example.
+  taxAcessBasis      String  @default("NONE") @db.VarChar(10)                   @map("tax_acess_basis")
+  taxAcessPerc       Decimal @default(0) @db.Decimal(7, 3)                      @map("tax_acess_perc")
+  taxAcessPerUnit    Decimal @default(0) @db.Decimal(15, 4)                     @map("tax_acess_per_unit")
+
+  // ── Supersession ───────────────────────────────────────────────────────
+  /// The rate this one replaced. A rate change makes a NEW row and re-points
+  /// items (see ItemTaxHistory); this keeps the chain followable. NULL on an
+  /// original rate.
+  taxSupersedesId    String? @db.Uuid                                           @map("tax_supersedes_id")
+
+  // ── Audit ──────────────────────────────────────────────────────────────
+  taxIsActive        Boolean   @default(true)                                   @map("tax_is_active")
+  taxIsDeleted       Boolean   @default(false)                                  @map("tax_is_deleted")
+  taxSyncDate        DateTime? @db.Timestamptz(6)                               @map("tax_sync_date")
+  taxCreatedOn       DateTime  @default(now()) @db.Timestamptz(6)               @map("tax_created_on")
+  taxCreatedBy       String?   @db.VarChar(50)                                  @map("tax_created_by")
+  taxModifiedOn      DateTime? @db.Timestamptz(6)                               @map("tax_modified_on")
+  taxModifiedBy      String?   @db.VarChar(50)                                  @map("tax_modified_by")
+
+  // Relations
+  supersedes         TaxRateMaster?  @relation("TaxRateSupersedes", fields: [taxSupersedesId], references: [taxId], onUpdate: Cascade, onDelete: SetNull, map: "fk_tax_supersedes")
+  supersededBy       TaxRateMaster[] @relation("TaxRateSupersedes")
+  ledgerOverrides    TaxRateLedger[]
+  // Lines taxed under this rate. The reference is a snapshot, so ON DELETE
+  // RESTRICT: a rate a document has used can be superseded, never removed.
+  // Items defaulting to this rate, and their rate-change history — moved
+  // off ItemTaxMaster by 20260912110000_repoint_items_to_tax_rate_master.
+  defaultItems       ItemMaster[]
+  itemTaxHistory     ItemTaxHistory[]
+  // Service ledgers (freight, packing, labour) that carry this rate when they
+  // appear as a taxable line — acc_ledger_master.led_tax_id.
+  ledgers            AccLedgerMaster[]
+  billItems          SaleBillItem[]
+  orderItems         SaleOrderItem[]
+  quotationItems     SaleQuotationItem[]
+
+  // Partial indexes — DB-only, Prisma ignores a WHERE predicate and would keep
+  // re-creating these without one:
+  //   ux_tax_name       UNIQUE (lower(tax_name))  WHERE tax_is_deleted = false
+  //   ux_tax_code       UNIQUE (lower(tax_code))  WHERE tax_code IS NOT NULL AND tax_is_deleted = false
+  //   ix_tax_rate       (tax_rate_perc)           WHERE NOT deleted AND active
+  //   ix_tax_sort       (tax_sort_order, tax_name) WHERE NOT deleted AND active
+  //   ix_tax_supersedes (tax_supersedes_id)       WHERE tax_supersedes_id IS NOT NULL
+  // Name uniqueness among live rows must therefore be checked app-side.
+  @@map("tax_rate_master")
+  @@schema("inventory")
+}
+
+/// Per-GST-rate ledger overrides. One row per (rate, role, supply nature) that
+/// actually differs from the default — a rate that posts wherever
+/// accounts.acc_ledger_map says has no rows here at all, which is a complete
+/// configuration. Same (scope, role, nature) -> ledger shape as the map; the
+/// map's scope is company and branch, this one's is the rate.
+model TaxRateLedger {
+  trlId           String  @id(map: "pk_tax_rate_ledger") @default(dbgenerated("uuidv7()")) @db.Uuid @map("trl_id")
+  trlTaxId        String  @db.Uuid                                              @map("trl_tax_id")
+  trlRole         String  @db.VarChar(30)                                       @map("trl_role")
+  /// NULL = both natures. Only roles with alrBySupply may set it.
+  /// INTRA | INTER (ck_trl_supply_nature)
+  trlSupplyNature String? @db.VarChar(5)                                        @map("trl_supply_nature")
+  trlLedgerId     String  @db.Uuid                                              @map("trl_ledger_id")
+  trlRemarks      String? @db.VarChar(250)                                      @map("trl_remarks")
+
+  trlIsActive     Boolean   @default(true)                                      @map("trl_is_active")
+  trlIsDeleted    Boolean   @default(false)                                     @map("trl_is_deleted")
+  trlSyncDate     DateTime? @db.Timestamptz(6)                                  @map("trl_sync_date")
+  trlCreatedOn    DateTime  @default(now()) @db.Timestamptz(6)                  @map("trl_created_on")
+  trlCreatedBy    String?   @db.VarChar(50)                                     @map("trl_created_by")
+  trlModifiedOn   DateTime? @db.Timestamptz(6)                                  @map("trl_modified_on")
+  trlModifiedBy   String?   @db.VarChar(50)                                     @map("trl_modified_by")
+
+  // Relations. The role is an FK, not a CHECK listing role names: adding a role
+  // is one insert in accounts.acc_ledger_role and every table that uses roles
+  // follows.
+  taxRate         TaxRateMaster   @relation(fields: [trlTaxId], references: [taxId], onUpdate: Cascade, onDelete: Cascade, map: "fk_trl_tax")
+  role            AccLedgerRole   @relation(fields: [trlRole], references: [alrRole], onUpdate: Cascade, onDelete: Restrict, map: "fk_trl_role")
+  ledger          AccLedgerMaster @relation(fields: [trlLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_trl_ledger")
+
+  @@index([trlLedgerId], map: "ix_trl_ledger")
+  @@index([trlRole], map: "ix_trl_role")
+  // Partial indexes — DB-only, see the note on TaxRateMaster:
+  //   ux_trl_rate_role UNIQUE (trl_tax_id, trl_role, trl_supply_nature) NULLS NOT DISTINCT WHERE NOT deleted
+  //   ix_trl_lookup    (trl_tax_id, trl_role) INCLUDE (trl_ledger_id, trl_supply_nature) WHERE NOT deleted AND active
+  @@map("tax_rate_ledger")
+  @@schema("inventory")
 }
 
 // ----- prisma/public/appSettings.prisma -----
@@ -3946,6 +4194,9 @@ model ChargeMaster {
   chgLedgerCode   String    @db.Uuid                                                @map("chg_ledger_code")  // GL ledger mapping
   chgTaxApl       Boolean   @default(false)                                         @map("chg_tax_apl")      // charge itself taxable
   chgBeforeTax    Boolean   @default(false)                                         @map("chg_before_tax")   // deduct/add before tax calc?
+  // Per-charge override of the posting ledger's ledTaxId. NULL inherits it.
+  // DB CHECK ck_chg_tax_id: must be NULL unless chgTaxApl AND NOT chgBeforeTax.
+  chgTaxId        String?   @db.Uuid                                                @map("chg_tax_id")
   chgSepPost      Boolean   @default(false)                                         @map("chg_sep_post")     // post to own ledger vs absorb
   chgManParty     Boolean   @default(false)                                         @map("chg_man_party")    // requires a party (e.g. freight vendor)
   chgDispOrder    Int?      @default(0)                                             @map("chg_disp_order")   // grid ordering
@@ -4062,6 +4313,7 @@ model Company {
   branches              BranchMaster[]
   accGroupMasters       AccGroupMaster[]
   ledgers               AccLedgerMaster[]
+  ledgerMaps            AccLedgerMap[]
   employees             EmployeeMaster[]
   ledgerBankAccounts    AccLedgerBankAccount[]
   gspCompanyServices    GspCompanyService[]
@@ -7244,6 +7496,10 @@ model SaleBillItem {
   sbiChrgBeforeTax   Decimal?  @db.Decimal(14, 4) @map("sbi_chrg_before_tax")
   sbiChrgAfterTax    Decimal?  @db.Decimal(14, 4) @map("sbi_chrg_after_tax")
   // Tax (on the POST-charge taxable)
+  // Which tax_rate_master row this line was taxed under, snapshotted at save.
+  // Not re-read from item_master at posting time: the item default is mutable
+  // and two tax rows can share a percentage.
+  sbiTaxId           String?   @db.Uuid @map("sbi_tax_id")
   sbiTaxableAmt      Decimal   @default(0) @db.Decimal(15, 2) @map("sbi_taxable_amt")
   sbiTaxPerc         Decimal   @default(0) @db.Decimal(15, 4) @map("sbi_tax_perc")
   sbiTaxAmt          Decimal   @default(0) @db.Decimal(15, 2) @map("sbi_tax_amt")
@@ -7291,6 +7547,7 @@ model SaleBillItem {
   // Relations
   bill               SaleBill           @relation(fields: [sbiBillId, sbiAccYear], references: [sbId, sbAccYear], onDelete: Cascade, onUpdate: Cascade, map: "fk_sbi_bill")
   item               ItemMaster         @relation(fields: [sbiItemId], references: [itemId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sbi_item")
+  tax                TaxRateMaster?     @relation(fields: [sbiTaxId], references: [taxId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sbi_tax")
   priceLevel         ItemPriceLevel     @relation("SaleBillItemPriceLevel", fields: [sbiPriceLevel], references: [iplId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sbi_price_level")
   // sbiItemUnitId references item_unit_conversion(iuc_id), NOT item_unit_master(unit_id)
   itemUnitConversion ItemUnitConversion @relation("SaleBillItemUnitConversion", fields: [sbiItemUnitId], references: [iucId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sbi_item_unit")
@@ -7304,6 +7561,9 @@ model SaleBillItem {
   // needs an index of its own. Plain and non-unique, so unlike the DB-only
   // partial indexes on sale_order_item it is safe to declare here.
   @@index([sbiSrcDocId, sbiSrcDocYear, sbiSrcDocLineNo], map: "ix_sbi_src_doc")
+  // ix_sbi_tax (sbi_tax_id) WHERE sbi_tax_id IS NOT NULL is a DB-only partial index
+  // (migration 20260912050000). Prisma cannot express the predicate and
+  // would re-create it without one. Do NOT add @@index for it.
   @@map("sale_bill_item")
   @@schema("sales")
 }
@@ -7704,6 +7964,10 @@ model SaleOrderItem {
   soiChrgBeforeTax    Decimal?  @db.Decimal(14, 4) @map("soi_chrg_before_tax")
   soiChrgAfterTax     Decimal?  @db.Decimal(14, 4) @map("soi_chrg_after_tax")
   // Tax (on the POST-charge taxable)
+  // Which tax_rate_master row this line was taxed under, snapshotted at save.
+  // Not re-read from item_master at posting time: the item default is mutable
+  // and two tax rows can share a percentage.
+  soiTaxId            String?   @db.Uuid @map("soi_tax_id")
   soiTaxableAmt       Decimal   @default(0) @db.Decimal(15, 2) @map("soi_taxable_amt")
   soiTaxPerc          Decimal   @default(0) @db.Decimal(15, 4) @map("soi_tax_perc")
   soiTaxAmt           Decimal   @default(0) @db.Decimal(15, 2) @map("soi_tax_amt")
@@ -7755,6 +8019,7 @@ model SaleOrderItem {
   // Relations
   order              SaleOrder          @relation(fields: [soiOrderId, soiAccYear], references: [soId, soAccYear], onDelete: Cascade, onUpdate: Cascade, map: "fk_soi_order")
   item               ItemMaster         @relation(fields: [soiItemId], references: [itemId], onDelete: Restrict, onUpdate: Cascade, map: "fk_soi_item")
+  tax                TaxRateMaster?     @relation(fields: [soiTaxId], references: [taxId], onDelete: Restrict, onUpdate: Cascade, map: "fk_soi_tax")
   priceLevel         ItemPriceLevel     @relation("SaleOrderItemPriceLevel", fields: [soiPriceLevel], references: [iplId], onDelete: Restrict, onUpdate: Cascade, map: "fk_soi_price_level")
   // soiItemUnitId references item_unit_conversion(iuc_id), NOT item_unit_master(unit_id)
   itemUnitConversion ItemUnitConversion @relation("SaleOrderItemUnitConversion", fields: [soiItemUnitId], references: [iucId], onDelete: Restrict, onUpdate: Cascade, map: "fk_soi_item_unit")
@@ -7770,6 +8035,9 @@ model SaleOrderItem {
   // now how soi_pending_qty is computed, so the CHECK was a tautology.
   @@id([soiId, soiAccYear], map: "pk_sale_order_item")
   @@index([soiOrderId], map: "ix_soi_order")
+  // ix_soi_tax (soi_tax_id) WHERE soi_tax_id IS NOT NULL is a DB-only partial index
+  // (migration 20260912050000). Prisma cannot express the predicate and
+  // would re-create it without one. Do NOT add @@index for it.
   @@map("sale_order_item")
   @@schema("sales")
 }
@@ -7997,6 +8265,10 @@ model SaleQuotationItem {
   sqiCashDiscAmt     Decimal   @default(0) @db.Decimal(15, 2) @map("sqi_cash_disc_amt")
   // amounts + tax
   sqiGrossAmt        Decimal   @default(0) @db.Decimal(15, 2) @map("sqi_gross_amt")
+  // Which tax_rate_master row this line was taxed under, snapshotted at save.
+  // Not re-read from item_master at posting time: the item default is mutable
+  // and two tax rows can share a percentage.
+  sqiTaxId           String?   @db.Uuid @map("sqi_tax_id")
   sqiTaxableAmt      Decimal   @default(0) @db.Decimal(15, 2) @map("sqi_taxable_amt")
   sqiTaxPerc         Decimal   @default(0) @db.Decimal(15, 4) @map("sqi_tax_perc")
   sqiTaxAmt          Decimal   @default(0) @db.Decimal(15, 2) @map("sqi_tax_amt")
@@ -8060,6 +8332,7 @@ model SaleQuotationItem {
   // Relations
   quote      SaleQuotation  @relation(fields: [sqiQuoteId, sqiAccYear], references: [sqId, sqAccYear], onDelete: NoAction, onUpdate: NoAction, map: "fk_sqi_quote")
   item       ItemMaster     @relation(fields: [sqiItemId], references: [itemId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sqi_item")
+  tax        TaxRateMaster? @relation(fields: [sqiTaxId], references: [taxId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sqi_tax")
   priceLevel ItemPriceLevel @relation(fields: [sqiPriceLevel], references: [iplId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sqi_price_level")
   // sqiItemUnitId references item_unit_conversion(iuc_id), NOT item_unit_master(unit_id)
   itemUnitConversion ItemUnitConversion @relation("SaleQuotationItemUnitConversion", fields: [sqiItemUnitId], references: [iucId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sqi_item_unit")
@@ -8074,6 +8347,9 @@ model SaleQuotationItem {
   @@index([sqiQuoteId], map: "ix_sqi_quote")
   @@index([sqiItemId], map: "ix_sqi_item")
   @@index([sqiHsnCode], map: "ix_sqi_hsn")
+  // ix_sqi_tax (sqi_tax_id) WHERE sqi_tax_id IS NOT NULL is a DB-only partial index
+  // (migration 20260912050000). Prisma cannot express the predicate and
+  // would re-create it without one. Do NOT add @@index for it.
   @@map("sale_quotation_item")
   @@schema("sales")
 }

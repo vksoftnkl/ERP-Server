@@ -69,13 +69,22 @@ create/update payload:
   (`ensureBankAccountNumberIsUnique`).
 - The target **account group must exist and be active** (`ensureGroupExists`, validates
   `ledGroupId`).
+- **`ledTaxId`** — the `inventory.tax_rate_master` row a service ledger (freight, packing,
+  labour) carries when it appears as a taxable line; NULL on a party or bank ledger. It
+  replaces `ledGstRate` / `ledTaxability` / `ledTaxRate`, which held a bare percentage and
+  could express neither cess nor taxability (columns dropped in
+  `20260912100000_retire_ledger_gst_columns`). `fk_led_tax` only proves the row exists, so
+  `ensureTaxRateExists` additionally rejects a soft-deleted or inactive rate with a 400 on
+  `ledTaxId`.
 - **Soft delete only** — for GST / audit retention, rows are never hard-deleted. Deleting flags
   `ledIsDeleted = true` / `ledIsActive = false` (and clears `lbaIsDefault` for bank accounts).
 - **Every mutation is audited** via `AuditLogService.logEntityChange` (`New` / `update` /
   `cancel`), capturing original vs. modified records. The acting user comes from
   `RequestContextService.getUserId()`, falling back to `DEFAULT_ACTOR`.
 - List/get responses embed related names (`ledCompanyName`, `ledBranchName`, `ledGroupName`,
-  `ledGroupLedgerProfile`) and the active bank accounts (default-first, then oldest-first).
+  `ledGroupLedgerProfile`), the rate behind `ledTaxId` (`ledTaxName`, `ledTaxRatePerc`,
+  `ledTaxTaxability` — read-only, edited on the tax-rate master) and the active bank accounts
+  (default-first, then oldest-first).
 
 ## Enums (app-layer)
 

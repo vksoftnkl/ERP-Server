@@ -91,6 +91,7 @@ export declare class SaleOrderItemPayloadDto {
     soiNetGross: number | null;
     soiChrgBeforeTax: number | null;
     soiChrgAfterTax: number | null;
+    soiTaxId: string | null;
     soiTaxableAmt: number;
     soiTaxPerc: number;
     soiTaxAmt: number;

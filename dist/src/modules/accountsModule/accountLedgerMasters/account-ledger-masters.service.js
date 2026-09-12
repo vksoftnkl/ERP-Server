@@ -15,6 +15,7 @@ const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const audit_log_service_1 = require("../../audit-log/audit-log.service");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
+const tax_rate_reference_helper_1 = require("../../Inventory/tax-rate-master/utils/tax-rate-reference.helper");
 const ACCOUNT_LEDGER_MASTER_TABLE_NAME = 'acc_ledger_master';
 const ACCOUNT_LEDGER_MASTER_AUDIT_SCREEN_NAME = 'Account Ledger Master';
 const LEDGER_BANK_ACCOUNT_TABLE_NAME = 'acc_ledger_bank_accounts';
@@ -27,6 +28,7 @@ const ACCOUNT_LEDGER_MASTER_RELATIONS = {
     company: { select: { compName: true } },
     branches: { select: { brName: true } },
     accGroupMaster: { select: { accGroupName: true, accLedgerProfile: true } },
+    taxRate: { select: { taxName: true, taxRatePerc: true, taxTaxability: true } },
     bankAccounts: {
         where: { lbaIsDeleted: false },
         orderBy: LEDGER_BANK_ACCOUNT_ORDER_BY,
@@ -154,6 +156,7 @@ let AccountLedgerMastersService = class AccountLedgerMastersService {
     async createLedgerWithinTx(saveAccountLedgerMasterDto, tx) {
         const normalizedName = (0, module_service_utils_1.normalizeRequiredText)(saveAccountLedgerMasterDto.ledName, 'ledName');
         await this.ensureGroupExists(saveAccountLedgerMasterDto.ledGroupId, tx);
+        await this.ensureTaxRateExists(tx, saveAccountLedgerMasterDto.ledTaxId);
         const companyId = saveAccountLedgerMasterDto.ledCompanyId ?? null;
         const branchId = saveAccountLedgerMasterDto.ledBranchId ?? null;
         const groupId = saveAccountLedgerMasterDto.ledGroupId;
@@ -215,6 +218,7 @@ let AccountLedgerMastersService = class AccountLedgerMastersService {
         const normalizedName = (0, module_service_utils_1.normalizeRequiredText)(saveAccountLedgerMasterDto.ledName, 'ledName');
         const nextGroupId = saveAccountLedgerMasterDto.ledGroupId;
         await this.ensureGroupExists(nextGroupId, tx);
+        await this.ensureTaxRateExists(tx, saveAccountLedgerMasterDto.ledTaxId);
         const nextCompanyId = (0, module_service_utils_1.hasOwnProperty)(saveAccountLedgerMasterDto, 'ledCompanyId')
             ? (saveAccountLedgerMasterDto.ledCompanyId ?? null)
             : existing.ledCompanyId;
@@ -269,6 +273,12 @@ let AccountLedgerMastersService = class AccountLedgerMastersService {
                 },
             ]);
         }
+    }
+    async ensureTaxRateExists(tx, taxId) {
+        if (typeof taxId !== 'string' || taxId.length === 0) {
+            return;
+        }
+        await (0, tax_rate_reference_helper_1.assertTaxRateRefs)(tx, [{ taxId, field: 'ledTaxId' }], 'Invalid ledger tax rate');
     }
     async ensureNameIsUnique(tx, ledgerName, companyId, excludeId) {
         const existing = await tx.accLedgerMaster.findFirst({
@@ -431,11 +441,8 @@ let AccountLedgerMastersService = class AccountLedgerMastersService {
         if ((0, module_service_utils_1.hasOwnProperty)(saveAccountLedgerMasterDto, 'ledHsnSac')) {
             data.ledHsnSac = saveAccountLedgerMasterDto.ledHsnSac;
         }
-        if ((0, module_service_utils_1.hasOwnProperty)(saveAccountLedgerMasterDto, 'ledGstRate')) {
-            data.ledGstRate = saveAccountLedgerMasterDto.ledGstRate;
-        }
-        if ((0, module_service_utils_1.hasOwnProperty)(saveAccountLedgerMasterDto, 'ledTaxability')) {
-            data.ledTaxability = saveAccountLedgerMasterDto.ledTaxability;
+        if ((0, module_service_utils_1.hasOwnProperty)(saveAccountLedgerMasterDto, 'ledTaxId')) {
+            data.ledTaxId = saveAccountLedgerMasterDto.ledTaxId;
         }
         if ((0, module_service_utils_1.hasOwnProperty)(saveAccountLedgerMasterDto, 'ledGstPartyType')) {
             data.ledGstPartyType = saveAccountLedgerMasterDto.ledGstPartyType;
@@ -454,9 +461,6 @@ let AccountLedgerMastersService = class AccountLedgerMastersService {
         }
         if ((0, module_service_utils_1.hasOwnProperty)(saveAccountLedgerMasterDto, 'ledGstDutyHead')) {
             data.ledGstDutyHead = saveAccountLedgerMasterDto.ledGstDutyHead;
-        }
-        if ((0, module_service_utils_1.hasOwnProperty)(saveAccountLedgerMasterDto, 'ledTaxRate')) {
-            data.ledTaxRate = saveAccountLedgerMasterDto.ledTaxRate;
         }
         if ((0, module_service_utils_1.hasOwnProperty)(saveAccountLedgerMasterDto, 'ledRoundingMethod')) {
             data.ledRoundingMethod = saveAccountLedgerMasterDto.ledRoundingMethod;
@@ -569,15 +573,16 @@ let AccountLedgerMastersService = class AccountLedgerMastersService {
             ledIsSez: record.ledIsSez,
             ledTypeOfSupply: record.ledTypeOfSupply,
             ledHsnSac: record.ledHsnSac,
-            ledGstRate: (0, module_service_utils_1.toNullableNumber)(record.ledGstRate),
-            ledTaxability: record.ledTaxability,
+            ledTaxId: record.ledTaxId,
+            ledTaxName: record.taxRate?.taxName ?? null,
+            ledTaxRatePerc: record.taxRate ? (0, module_service_utils_1.toNullableNumber)(record.taxRate.taxRatePerc) : null,
+            ledTaxTaxability: record.taxRate?.taxTaxability ?? null,
             ledGstPartyType: record.ledGstPartyType,
             ledTanNo: record.ledTanNo,
             ledCin: record.ledCin,
             ledUdyamNo: record.ledUdyamNo,
             ledMsmeType: record.ledMsmeType,
             ledGstDutyHead: record.ledGstDutyHead,
-            ledTaxRate: (0, module_service_utils_1.toNullableNumber)(record.ledTaxRate),
             ledRoundingMethod: record.ledRoundingMethod,
             ledRoundingLimit: (0, module_service_utils_1.toNullableNumber)(record.ledRoundingLimit),
             ledIsTdsApplicable: record.ledIsTdsApplicable,

@@ -51,7 +51,6 @@ import {
   PhysicalStockValidateSuccessDto,
   StockVarianceSuccessDto,
 } from './dto/physical-stock-voucher-response.dto';
-
 /**
  * THE ROUTE IS WHAT PINS THE VOUCHER TYPE — as for the opening, and for the
  * same reason: nothing in a payload may reach this record.
@@ -78,10 +77,21 @@ import {
  * be svh_to_godown_id, and the service enforces that every line is in it, so
  * whichever side fn_svh_post reads, the two agree.
  */
+/**
+ * accounts.acc_voucher_types row for Physical Stock — prefix 'PHY', width 4, so
+ * refnos print as PHY0001 from accounts.acc_voucher_seq, exactly as OPENING
+ * draws OPN0001 from row 1. Without it the refno falls back to
+ * `{typeCode}/{accYear}/{deviceCode}/{slno}`, and a device with no printable
+ * code (dev_device_uid / dev_device_name both empty) leaves the raw device uuid
+ * in the middle segment — the `PHY/2026-2027/<uuid>/1` numbers seen before.
+ * Seeded by migration 20260909110000_physical_stock_refno_prefix_phy.
+ */
+const PHYSICAL_VCHR_TYPE_ID = 6;
 const PHYSICAL_RULES: StockVoucherTypeRules = {
   voucherType: 'PHYSICAL',
   typeCode: 'PHY',
   displayName: 'Physical stock count',
+  refnoVchrTypeId: PHYSICAL_VCHR_TYPE_ID,
   requiresToGodown: true,
   requiresFromGodown: false,
   // Superseded by quantityMode: a count moves stock BOTH ways at once, so a
@@ -100,7 +110,6 @@ const PHYSICAL_RULES: StockVoucherTypeRules = {
   postFunction: 'stock.fn_svh_post',
   refuseTypes: ['TRANSFER_IN', 'TRANSFER_OUT', 'REPACK_IN', 'REPACK_OUT'],
 };
-
 /**
  * NO @CacheTTL ANYWHERE IN THIS CONTROLLER, and here it matters more than
  * anywhere else in the module: A CACHED COUNT SHEET IS A BOOK FIGURE FROM
@@ -113,7 +122,6 @@ const PHYSICAL_RULES: StockVoucherTypeRules = {
 @UseFilters(StockVoucherExceptionFilter)
 export class PhysicalStockVoucherController {
   constructor(private readonly stockVoucherService: StockVoucherService) { }
-
   @Get('count-sheet')
   @Version(API_VERSION)
   @ApiOperation({
@@ -135,14 +143,14 @@ export class PhysicalStockVoucherController {
       data,
     };
   }
-
   @Post('/create')
   @Version(API_VERSION)
   @ApiOperation({
     summary: 'Create or update a physical count draft (by header.svhId presence)',
     description:
       'Update is a full replace of the lines. The saved status is always DRAFT — posting is a separate call, not a status field.\n\n' +
-      'THE SERVER READS RATHER THAN TRUSTS: svi_book_qty comes from stock_balance for the lot the line names, and the unit, batch, expiry, MRP, sale price, serial and supplier are copied from the same holding. A lotId with no live balance row in this godown is a 422 telling you to regenerate the sheet.',
+      'THE SERVER READS RATHER THAN TRUSTS: svi_book_qty comes from stock_balance for the lot the line names, and the unit, batch, expiry, MRP, sale price, serial and supplier are copied from the same holding. A lotId with no live balance row in this godown is a 422 telling you to regenerate the sheet.\n\n' +
+      "THE HEADER TOTALS ARE THE EXCEPTION — header.lineCount, totalQty, totalValue and totalValueWot are taken verbatim from the payload, because nothing server-side sums the grid. They are written AFTER the lines, each is optional against a NOT NULL DEFAULT 0 column, and on a count they may be NEGATIVE: the intended reading is the net variance, and a shortage is negative. Omit one and its stored value is left alone.",
   })
   @ApiCreatedResponse({ type: PhysicalStockDocumentSuccessDto })
   @ApiBadRequestResponse({ type: PhysicalStockErrorResponseDto })
@@ -263,9 +271,10 @@ export class PhysicalStockVoucherController {
   @Post('cancel')
   @Version(API_VERSION)
   @ApiOperation({
-    summary: 'Cancel a posted count — reversal rows, never a delete',
+    summary: 'Cancel a DRAFT or a POSTED count — never a delete',
     description:
-      'A cancelled count UN-CORRECTS a correction: the book figure goes back to being the one the shelf disagreed with. Usually the right answer to "the counter miscounted" is a SECOND COUNT, not a cancellation — a holding may be counted any number of times, each posting its own variance from the then-current book figure. Put that in the confirm dialog.\n\n' +
+      'A DRAFT count is cancelled by moving the header — no ledger row was written, so `rowsReversed` is 0. That also LIFTS THE GODOWN FREEZE it was holding: an abandoned count must not go on blocking every movement in the godown until its freeze window expires, which until now needed the draft deleted.\n\n' +
+      'A cancelled POSTED count UN-CORRECTS a correction: the book figure goes back to being the one the shelf disagreed with. Usually the right answer to "the counter miscounted" is a SECOND COUNT, not a cancellation — a holding may be counted any number of times, each posting its own variance from the then-current book figure. Put that in the confirm dialog.\n\n' +
       'It can also legitimately fail with 409: cancel an overage after the found stock has been sold and the reversal drives the holding negative, which fn_sml_apply refuses under BLOCK. The fix is another count, not a retry.',
   })
   @ApiOkResponse({ type: PhysicalStockCancelSuccessDto })
@@ -286,7 +295,9 @@ export class PhysicalStockVoucherController {
     );
     return {
       success: true,
-      message: `Physical stock count cancelled successfully — ${data.rowsReversed} reversal rows`,
+      message: data.rowsReversed
+        ? `Physical stock count cancelled successfully — ${data.rowsReversed} reversal rows`
+        : 'Physical stock count cancelled successfully — no variance had posted, so nothing was reversed',
       data,
     };
   }

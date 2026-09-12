@@ -242,21 +242,23 @@ __decorate([
     __metadata("design:type", String)
 ], PhysicalStockHeaderDto.prototype, "status", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ description: 'Trigger-maintained — lines counted, variance or not.' }),
+    (0, swagger_1.ApiProperty)({
+        description: 'Lines on the sheet, variance or not — whatever the save payload sent. 0 on a sheet whose screen sent none.',
+    }),
     __metadata("design:type", Number)
 ], PhysicalStockHeaderDto.prototype, "lineCount", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)({
-        description: 'THE NET VARIANCE, not the sum of anything on the screen: read off the ledger by fn_svh_recompute. Three lines totalling 236 counted units can total +1 here. A DRAFT count truthfully totals 0, because nothing has posted. Label it "Net variance" on the screen, or do not show it.',
+        description: 'WHAT THE SAVE PAYLOAD SENT, echoed back — nothing server-side sums the grid on this deployment. On a count the intended reading is the NET VARIANCE (three lines totalling 236 counted units can net +1), so it may be negative; label it "Net variance" on the screen, or do not show it. On an environment carrying the engine DDL, fn_svh_recompute overwrites it at post with the figure read off the ledger.',
     }),
     __metadata("design:type", Number)
 ], PhysicalStockHeaderDto.prototype, "totalQty", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ description: 'The net variance in value — see totalQty.' }),
+    (0, swagger_1.ApiProperty)({ description: 'The same, in value, inclusive of tax — see totalQty.' }),
     __metadata("design:type", Number)
 ], PhysicalStockHeaderDto.prototype, "totalValue", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ description: 'The net variance excluding tax.' }),
+    (0, swagger_1.ApiProperty)({ description: 'The same, excluding tax — see totalQty.' }),
     __metadata("design:type", Number)
 ], PhysicalStockHeaderDto.prototype, "totalValueWot", void 0);
 __decorate([
@@ -593,11 +595,13 @@ __decorate([
     __metadata("design:type", Number)
 ], PhysicalStockListItemDto.prototype, "lineCount", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ description: 'The net variance — see PhysicalStockHeaderDto.totalQty.' }),
+    (0, swagger_1.ApiProperty)({
+        description: 'As sent on the save — see PhysicalStockHeaderDto.totalQty for what to send.',
+    }),
     __metadata("design:type", Number)
 ], PhysicalStockListItemDto.prototype, "totalQty", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ description: 'The net variance in value.' }),
+    (0, swagger_1.ApiProperty)({ description: 'In value, inclusive of tax — see totalQty.' }),
     __metadata("design:type", Number)
 ], PhysicalStockListItemDto.prototype, "totalValue", void 0);
 __decorate([
@@ -716,7 +720,9 @@ class PhysicalStockCancelResultDto extends PhysicalStockDocumentDto {
 }
 exports.PhysicalStockCancelResultDto = PhysicalStockCancelResultDto;
 __decorate([
-    (0, swagger_1.ApiProperty)({ description: 'Reversal rows written by stock.fn_svh_cancel.' }),
+    (0, swagger_1.ApiProperty)({
+        description: 'Reversal rows written. 0 on a cancelled DRAFT — nothing had posted, so there was no variance to mirror.',
+    }),
     __metadata("design:type", Number)
 ], PhysicalStockCancelResultDto.prototype, "rowsReversed", void 0);
 __decorate([

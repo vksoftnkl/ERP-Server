@@ -1,7 +1,6 @@
 import { Module } from '@nestjs/common';
 import { StockVoucherModule } from '../stock-voucher/stock-voucher.module';
 import { PhysicalStockVoucherController } from './physical-stock-voucher.controller';
-
 /**
  * The PHYSICAL COUNT half of the stock voucher engine: one controller over the
  * shared StockVoucherService, with the voucher type pinned by the route.

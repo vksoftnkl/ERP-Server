@@ -50,12 +50,13 @@ migration `20260724120000_create_charge_master`).
     is enforced in the service (`ensureRoleIsUnique`).
 - **`chgLedgerCode`** is a GL ledger mapping with no DB foreign key; the service
   verifies the referenced `acc_ledger_master` row exists and is active.
-- **Ledger-derived response fields** — every payload echoes `chgLedgerName`,
-  `ledHsnSac`, `ledGstRate` and `ledTaxability` (`led_name` / `led_hsn_sac` /
-  `led_gst_rate` / `led_taxability`) read from the mapped `acc_ledger_master`
-  row. They are read-only display values, not stored on `charge_master`, and are
-  deliberately excluded from the audit snapshots so they never show up as a
-  change.
+- **Ledger-derived response fields** — every payload echoes `chgLedgerName` and
+  `ledHsnSac` (`led_name` / `led_hsn_sac`) read from the mapped
+  `acc_ledger_master` row. They are read-only display values, not stored on
+  `charge_master`, and are deliberately excluded from the audit snapshots so
+  they never show up as a change. `ledGstRate` / `ledTaxability` were echoed
+  here until 20260912100000 dropped those columns in favour of `led_tax_id`;
+  echoing the rate behind that id is still to be done.
 - Audit entries are written under screen name **"Charge Master"** (auto-created
   on first write). Add an entry to `audit-screen-sql.constants.ts` if you want
   field-level projection/snapshots.

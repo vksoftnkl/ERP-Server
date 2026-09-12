@@ -19,7 +19,7 @@ was dropped by `20260509061137_remove_four_tables`. Nothing here imports from th
 | `GET /stock/physical` | `svhId` present loads one count; absent lists them |
 | `GET /stock/physical/validate` | the preflight — every line, `problem` null on the clean ones |
 | `POST /stock/physical/post` | the whole engine, one statement |
-| `POST /stock/physical/cancel` | reversal rows, never a delete. `reason` required. |
+| `POST /stock/physical/cancel` | cancels a **DRAFT or a POSTED** count, never a delete. A posted one is reversed; a draft moves the header alone and releases its freeze. `reason` required on both. |
 | `GET /stock/physical/variance` | the count as the **ledger** recorded it |
 
 Every response is `{ success, message, data }`. **No `@CacheTTL` anywhere** — and
@@ -113,16 +113,31 @@ one. Their exception filters need the SQLSTATE the guard raises with; until it i
 confirmed against the deployed function, a blocked sale during a count is an
 unexplained 500. That is [open item 2](#open-items).
 
-## Header totals mean the net variance
+## Header totals are the screen's, and they mean the net variance
 
-After the 2026-09-04 `fn_svh_recompute` fix, `totalQty` / `totalValue` on a
-POSTED count are the **net variance read off the ledger** — qty +1, value 86.00
-for the captured run — not the sum of anything on the screen. A DRAFT count
-truthfully totals 0. Label the field **Net variance**, or do not show it: a column
-headed "Total" reading 1 under three lines totalling 236 counted units is worse
-than no column.
+`header.lineCount`, `totalQty`, `totalValue` and `totalValueWot` are **sent on
+the save and written verbatim**, after the lines. Each is optional against a
+`NOT NULL DEFAULT 0` column: omit one on a create and the column default stands,
+omit it on an update and the stored value is left alone. Nothing server-side
+counts the lines or sums the grid.
 
-### Fifteen header fields the count does not have
+**They may be negative here, unlike on an opening.** The intended reading on a
+count is the **net variance** — qty +1, value 86.00 for the captured run, under
+three lines totalling 236 counted units — and a shortage nets below zero.
+`svh_total_qty` has no `>= 0` constraint. Label the field **Net variance**, or do
+not show it: a column headed "Total" reading 1 under 236 counted units is worse
+than no column. `lineCount` is still floored at 0.
+
+> These four were **absent from this route until 2026-09-09**, on the theory
+> that a count's header is the engine's to fill. Neither `tr_svi_refresh_header`
+> nor `fn_svh_recompute` is in this repo's migrations, so nothing filled them:
+> the columns sat at 0 for ever and the screen had no way to say what it had
+> counted. On an environment that *does* carry the engine DDL, the trigger
+> re-sums them on every line write (the API writes after the lines, so the
+> payload still wins at save) and `fn_svh_recompute` overwrites them at post
+> with the ledger's own figures.
+
+### Eleven header fields the count does not have
 
 The header DTO is **standalone** — it does not extend `SaveStockVoucherHeaderDto`
 — so these are not in the payload, not in the `/api/docs` schema, and refused
@@ -130,7 +145,7 @@ with a **400 naming the field** by `forbidNonWhitelisted` alone.
 
 That is why it is standalone. class-validator *merges* a base class's metadata
 into a subclass, so a subclass can only ever **add**: while this class extended
-the shared header, each of the fifteen needed an explicit `@IsEmpty` to be
+the shared header, each of the then fifteen needed an explicit `@IsEmpty` to be
 refused at all, and every one still rendered in the schema and the example body
 regardless — `@ApiHideProperty` is a no-op at runtime (it feeds the CLI plugin,
 which this project does not enable) and cannot suppress an inherited property.
@@ -142,7 +157,6 @@ on its own.
 
 | Refused | Why |
 | --- | --- |
-| `lineCount` `totalQty` `totalValue` `totalValueWot` | The header carries the **net variance**, read off the ledger by `fn_svh_recompute` at post. A client total is a number that would be silently replaced |
 | `lrNo` `vehicleNo` `expectedOn` | `stock_transit` columns (`stt_lr_no`, `stt_vehicle_no`, `stt_expected_on`), written only by the transfer service after `fn_svh_post_transfer`. A count despatches nothing, so there is no transit row to write them to |
 | `fromGodownId` | A count is **one godown against its own book figure**, and that godown is `toGodownId` (required here). The service reads the counted godown as `toGodownId ?? fromGodownId`, so a payload sending both and disagreeing was a count of one godown filed against another |
 | `toBranchId` | Only a transfer leaves the branch. Was a 422 from `assertPayloadRules` (`allowsToBranch: false`) |
@@ -168,11 +182,20 @@ from the then-current book figure, and the ledger keeps them all. The opening's
 "one opening per holding per year" guard is switched off for a count by
 `allowsRepeatHolding`.
 
-Cancelling *un-corrects a correction*: the book figure goes back to being the one
-the shelf disagreed with. It can also legitimately fail with 409 — cancel an
-overage after the found stock has been sold and the reversal drives the holding
-negative, which `fn_sml_apply` refuses under `BLOCK`. Put "a second count is
-usually what you want" in the confirm dialog.
+Cancelling a POSTED count *un-corrects a correction*: the book figure goes back
+to being the one the shelf disagreed with. It can also legitimately fail with
+409 — cancel an overage after the found stock has been sold and the reversal
+drives the holding negative, which `fn_sml_apply` refuses under `BLOCK`. Put "a
+second count is usually what you want" in the confirm dialog.
+
+**A DRAFT count is a different matter, and the same route takes it.** Nothing
+was posted, so nothing is un-corrected: the header moves to CANCELLED, the
+answer says `rowsReversed: 0`, and — the reason this matters more here than
+anywhere else — **the godown freeze lifts**, because `ix_svh_freeze_open` keys
+on DRAFT. An abandoned count must not go on blocking every movement in the
+godown until `freezeTo` passes. Offer Cancel on a draft sheet, with the reason
+box — this screen exposes **no delete route**, so until now an abandoned sheet
+had no way out at all and its freeze ran to `freezeTo` whatever anyone did.
 
 ## Not built here
 

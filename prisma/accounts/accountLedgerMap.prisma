@@ -1,0 +1,41 @@
+/// Role -> ledger. Posting resolves a role here instead of naming a ledger, so
+/// the chart of accounts can be renamed or restructured without touching code.
+/// Per-GST-rate overrides live in inventory.tax_rate_ledger; tender and charge
+/// ledgers are owned by acc_tender_master and charge_master, not by this table.
+model AccLedgerMap {
+  almId           String  @id(map: "pk_acc_ledger_map") @default(dbgenerated("uuidv7()")) @db.Uuid @map("alm_id")
+  /// RESERVED — always NULL today and no screen sets it. Present so one company
+  /// or branch can be given its own ledger for a role later without a
+  /// migration: fn_ledger_for already prefers a scoped row. Do NOT surface it.
+  almCompanyId    String? @db.Uuid                                        @map("alm_company_id")
+  /// RESERVED — see almCompanyId. No FK: branch scoping is not in use yet.
+  almBranchId     String? @db.Uuid                                        @map("alm_branch_id")
+  almRole         String  @db.VarChar(30)                                 @map("alm_role")
+  /// NULL = both natures, the normal case. Only roles with alrBySupply may set
+  /// it — that rule lives on the role, checked by the guard.
+  /// INTRA | INTER (ck_alm_supply_nature)
+  almSupplyNature String? @db.VarChar(5)                                  @map("alm_supply_nature")
+  almLedgerId     String  @db.Uuid                                        @map("alm_ledger_id")
+  almRemarks      String? @db.VarChar(250)                                @map("alm_remarks")
+
+  almIsActive     Boolean   @default(true)                                @map("alm_is_active")
+  almIsDeleted    Boolean   @default(false)                               @map("alm_is_deleted")
+  almSyncDate     DateTime? @db.Timestamptz(6)                            @map("alm_sync_date")
+  almCreatedOn    DateTime  @default(now()) @db.Timestamptz(6)            @map("alm_created_on")
+  almCreatedBy    String?   @db.VarChar(50)                               @map("alm_created_by")
+  almModifiedOn   DateTime? @db.Timestamptz(6)                            @map("alm_modified_on")
+  almModifiedBy   String?   @db.VarChar(50)                               @map("alm_modified_by")
+
+  // The role is an FK, not a CHECK listing role names: adding a role is one
+  // insert in accounts.acc_ledger_role and every table that uses roles follows.
+  company         Company?        @relation(fields: [almCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_alm_company")
+  role            AccLedgerRole   @relation(fields: [almRole], references: [alrRole], onUpdate: Cascade, onDelete: Restrict, map: "fk_alm_role")
+  ledger          AccLedgerMaster @relation(fields: [almLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_alm_ledger")
+
+  @@index([almLedgerId], map: "ix_alm_ledger")
+  // Partial indexes — DB-only, Prisma cannot express a WHERE or NULLS NOT DISTINCT:
+  //   ux_alm_role    UNIQUE (alm_company_id, alm_branch_id, alm_role, alm_supply_nature) NULLS NOT DISTINCT WHERE NOT deleted
+  //   ix_alm_lookup  (alm_role) INCLUDE (alm_ledger_id, alm_supply_nature, alm_company_id, alm_branch_id) WHERE NOT deleted AND active
+  @@map("acc_ledger_map")
+  @@schema("accounts")
+}

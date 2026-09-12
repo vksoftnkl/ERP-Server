@@ -100,15 +100,16 @@ class AccountLedgerMasterPayloadDto {
     ledIsSez;
     ledTypeOfSupply;
     ledHsnSac;
-    ledGstRate;
-    ledTaxability;
+    ledTaxId;
+    ledTaxName;
+    ledTaxRatePerc;
+    ledTaxTaxability;
     ledGstPartyType;
     ledTanNo;
     ledCin;
     ledUdyamNo;
     ledMsmeType;
     ledGstDutyHead;
-    ledTaxRate;
     ledRoundingMethod;
     ledRoundingLimit;
     ledIsTdsApplicable;
@@ -370,13 +371,33 @@ __decorate([
     __metadata("design:type", Object)
 ], AccountLedgerMasterPayloadDto.prototype, "ledHsnSac", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
+    (0, swagger_1.ApiPropertyOptional)({
+        format: 'uuid',
+        nullable: true,
+        description: 'The inventory.tax_rate_master row this ledger carries when it appears as a taxable ' +
+            'line. Null on a party or bank ledger.',
+    }),
     __metadata("design:type", Object)
-], AccountLedgerMasterPayloadDto.prototype, "ledGstRate", void 0);
+], AccountLedgerMasterPayloadDto.prototype, "ledTaxId", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ maxLength: 15, nullable: true }),
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true, description: 'Name of the tax rate' }),
     __metadata("design:type", Object)
-], AccountLedgerMasterPayloadDto.prototype, "ledTaxability", void 0);
+], AccountLedgerMasterPayloadDto.prototype, "ledTaxName", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        description: 'Total GST rate of ledTaxId — 18 means 18%, charged as 9+9 locally',
+    }),
+    __metadata("design:type", Object)
+], AccountLedgerMasterPayloadDto.prototype, "ledTaxRatePerc", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        description: 'Taxability of ledTaxId (TAXABLE | EXEMPT | NIL_RATED | NON_GST | ZERO_RATED). ' +
+            'Read-only; it lives on the rate, not on the ledger.',
+    }),
+    __metadata("design:type", Object)
+], AccountLedgerMasterPayloadDto.prototype, "ledTaxTaxability", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ maxLength: 30, nullable: true }),
     __metadata("design:type", Object)
@@ -401,10 +422,6 @@ __decorate([
     (0, swagger_1.ApiPropertyOptional)({ maxLength: 20, nullable: true }),
     __metadata("design:type", Object)
 ], AccountLedgerMasterPayloadDto.prototype, "ledGstDutyHead", void 0);
-__decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
-    __metadata("design:type", Object)
-], AccountLedgerMasterPayloadDto.prototype, "ledTaxRate", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ maxLength: 15, nullable: true }),
     __metadata("design:type", Object)

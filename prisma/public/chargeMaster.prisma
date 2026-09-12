@@ -14,6 +14,9 @@ model ChargeMaster {
   chgLedgerCode   String    @db.Uuid                                                @map("chg_ledger_code")  // GL ledger mapping
   chgTaxApl       Boolean   @default(false)                                         @map("chg_tax_apl")      // charge itself taxable
   chgBeforeTax    Boolean   @default(false)                                         @map("chg_before_tax")   // deduct/add before tax calc?
+  // Per-charge override of the posting ledger's ledTaxId. NULL inherits it.
+  // DB CHECK ck_chg_tax_id: must be NULL unless chgTaxApl AND NOT chgBeforeTax.
+  chgTaxId        String?   @db.Uuid                                                @map("chg_tax_id")
   chgSepPost      Boolean   @default(false)                                         @map("chg_sep_post")     // post to own ledger vs absorb
   chgManParty     Boolean   @default(false)                                         @map("chg_man_party")    // requires a party (e.g. freight vendor)
   chgDispOrder    Int?      @default(0)                                             @map("chg_disp_order")   // grid ordering

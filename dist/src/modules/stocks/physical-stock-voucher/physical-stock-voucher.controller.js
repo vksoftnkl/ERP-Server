@@ -25,10 +25,12 @@ const save_physical_stock_voucher_dto_1 = require("./dto/save-physical-stock-vou
 const list_physical_stock_voucher_query_dto_1 = require("./dto/list-physical-stock-voucher-query.dto");
 const post_physical_stock_voucher_dto_1 = require("./dto/post-physical-stock-voucher.dto");
 const physical_stock_voucher_response_dto_1 = require("./dto/physical-stock-voucher-response.dto");
+const PHYSICAL_VCHR_TYPE_ID = 6;
 const PHYSICAL_RULES = {
     voucherType: 'PHYSICAL',
     typeCode: 'PHY',
     displayName: 'Physical stock count',
+    refnoVchrTypeId: PHYSICAL_VCHR_TYPE_ID,
     requiresToGodown: true,
     requiresFromGodown: false,
     isInward: false,
@@ -97,7 +99,9 @@ let PhysicalStockVoucherController = class PhysicalStockVoucherController {
         const data = await this.stockVoucherService.cancel(PHYSICAL_RULES, dto.svhId, dto.accYear, dto.reason, dto.companyId, dto.branchId, dto.userId);
         return {
             success: true,
-            message: `Physical stock count cancelled successfully — ${data.rowsReversed} reversal rows`,
+            message: data.rowsReversed
+                ? `Physical stock count cancelled successfully — ${data.rowsReversed} reversal rows`
+                : 'Physical stock count cancelled successfully — no variance had posted, so nothing was reversed',
             data,
         };
     }
@@ -142,7 +146,8 @@ __decorate([
     (0, swagger_1.ApiOperation)({
         summary: 'Create or update a physical count draft (by header.svhId presence)',
         description: 'Update is a full replace of the lines. The saved status is always DRAFT — posting is a separate call, not a status field.\n\n' +
-            'THE SERVER READS RATHER THAN TRUSTS: svi_book_qty comes from stock_balance for the lot the line names, and the unit, batch, expiry, MRP, sale price, serial and supplier are copied from the same holding. A lotId with no live balance row in this godown is a 422 telling you to regenerate the sheet.',
+            'THE SERVER READS RATHER THAN TRUSTS: svi_book_qty comes from stock_balance for the lot the line names, and the unit, batch, expiry, MRP, sale price, serial and supplier are copied from the same holding. A lotId with no live balance row in this godown is a 422 telling you to regenerate the sheet.\n\n' +
+            "THE HEADER TOTALS ARE THE EXCEPTION — header.lineCount, totalQty, totalValue and totalValueWot are taken verbatim from the payload, because nothing server-side sums the grid. They are written AFTER the lines, each is optional against a NOT NULL DEFAULT 0 column, and on a count they may be NEGATIVE: the intended reading is the net variance, and a shortage is negative. Omit one and its stored value is left alone.",
     }),
     (0, swagger_1.ApiCreatedResponse)({ type: physical_stock_voucher_response_dto_1.PhysicalStockDocumentSuccessDto }),
     (0, swagger_1.ApiBadRequestResponse)({ type: physical_stock_voucher_response_dto_1.PhysicalStockErrorResponseDto }),
@@ -204,8 +209,9 @@ __decorate([
     (0, common_1.Post)('cancel'),
     (0, common_1.Version)(api_version_1.API_VERSION),
     (0, swagger_1.ApiOperation)({
-        summary: 'Cancel a posted count — reversal rows, never a delete',
-        description: 'A cancelled count UN-CORRECTS a correction: the book figure goes back to being the one the shelf disagreed with. Usually the right answer to "the counter miscounted" is a SECOND COUNT, not a cancellation — a holding may be counted any number of times, each posting its own variance from the then-current book figure. Put that in the confirm dialog.\n\n' +
+        summary: 'Cancel a DRAFT or a POSTED count — never a delete',
+        description: 'A DRAFT count is cancelled by moving the header — no ledger row was written, so `rowsReversed` is 0. That also LIFTS THE GODOWN FREEZE it was holding: an abandoned count must not go on blocking every movement in the godown until its freeze window expires, which until now needed the draft deleted.\n\n' +
+            'A cancelled POSTED count UN-CORRECTS a correction: the book figure goes back to being the one the shelf disagreed with. Usually the right answer to "the counter miscounted" is a SECOND COUNT, not a cancellation — a holding may be counted any number of times, each posting its own variance from the then-current book figure. Put that in the confirm dialog.\n\n' +
             'It can also legitimately fail with 409: cancel an overage after the found stock has been sold and the reversal drives the holding negative, which fn_sml_apply refuses under BLOCK. The fix is another count, not a retry.',
     }),
     (0, swagger_1.ApiOkResponse)({ type: physical_stock_voucher_response_dto_1.PhysicalStockCancelSuccessDto }),

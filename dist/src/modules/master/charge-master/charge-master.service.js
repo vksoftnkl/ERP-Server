@@ -37,8 +37,6 @@ const CHARGE_OPTIONAL_FIELDS = [
 const CHARGE_LEDGER_SELECT = {
     ledName: true,
     ledHsnSac: true,
-    ledGstRate: true,
-    ledTaxability: true,
 };
 let ChargeMasterService = class ChargeMasterService {
     prisma;
@@ -369,8 +367,6 @@ let ChargeMasterService = class ChargeMasterService {
             chgLedgerCode: record.chgLedgerCode,
             chgLedgerName: ledger?.ledName ?? null,
             ledHsnSac: ledger?.ledHsnSac ?? null,
-            ledGstRate: (0, module_service_utils_1.toNullableNumber)(ledger?.ledGstRate ?? null),
-            ledTaxability: ledger?.ledTaxability ?? null,
             chgTaxApl: record.chgTaxApl,
             chgBeforeTax: record.chgBeforeTax,
             chgSepPost: record.chgSepPost,

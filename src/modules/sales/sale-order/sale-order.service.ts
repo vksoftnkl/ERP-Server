@@ -59,6 +59,10 @@ import {
 import { RequestContextService } from '../../../common/request-context/request-context.service';
 import { allocateVoucherNumber } from 'src/common/Sequence/voucher-sequence.helper';
 import {
+  assertTaxRateRefs,
+  collectTaxRateRefs,
+} from '../../Inventory/tax-rate-master/utils/tax-rate-reference.helper';
+import {
   OrderAdvancePostingSyncResult,
   deleteOrderAdvancePosting,
   syncOrderAdvancePosting,
@@ -378,6 +382,7 @@ const SALE_ORDER_ITEM_OPTIONAL_FIELDS = [
   'soiNetGross',
   'soiChrgBeforeTax',
   'soiChrgAfterTax',
+  'soiTaxId',
   'soiTaxableAmt',
   'soiTaxPerc',
   'soiTaxAmt',
@@ -2193,6 +2198,18 @@ export class SaleOrderService {
     if (inputItems === undefined) {
       return existing;
     }
+    // The rate each line quotes, before anything is written: fk_soi_tax only
+    // proves the row exists, and a soft-deleted or deactivated rate satisfies
+    // it just as well as a live one.
+    await assertTaxRateRefs(
+      tx,
+      collectTaxRateRefs(
+        inputItems,
+        (item) => item.soiTaxId,
+        (index) => `items.${index}.soiTaxId`,
+      ),
+      'Invalid order item tax rate',
+    );
     const existingMap = new Map(existing.map((item) => [item.soiId, item]));
     const now = new Date();
     // Line numbers first: an entry keeps the number it sent, otherwise it takes

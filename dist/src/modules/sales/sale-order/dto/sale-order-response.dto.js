@@ -126,6 +126,7 @@ class SaleOrderItemPayloadDto {
     soiNetGross;
     soiChrgBeforeTax;
     soiChrgAfterTax;
+    soiTaxId;
     soiTaxableAmt;
     soiTaxPerc;
     soiTaxAmt;
@@ -540,6 +541,14 @@ __decorate([
     (0, swagger_1.ApiPropertyOptional)({ nullable: true, description: 'Line charges landing after tax' }),
     __metadata("design:type", Object)
 ], SaleOrderItemPayloadDto.prototype, "soiChrgAfterTax", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        format: 'uuid',
+        nullable: true,
+        description: 'The tax_rate_master row this line was taxed under. Null on historical lines.',
+    }),
+    __metadata("design:type", Object)
+], SaleOrderItemPayloadDto.prototype, "soiTaxId", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)({ description: 'On the POST-charge taxable' }),
     __metadata("design:type", Number)

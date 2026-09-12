@@ -128,6 +128,10 @@ class SavePhysicalStockVoucherHeaderDto {
     freezeFrom;
     freezeTo;
     syncDate;
+    lineCount;
+    totalQty;
+    totalValue;
+    totalValueWot;
     rateSource;
     status;
     remarks;
@@ -274,6 +278,39 @@ __decorate([
     (0, dtoDecorators_1.NullableDateString)(),
     __metadata("design:type", Object)
 ], SavePhysicalStockVoucherHeaderDto.prototype, "syncDate", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        minimum: 0,
+        default: 0,
+        description: 'How many lines the sheet has, as the screen counted them — including the ones that agreed with the book. svh_line_count is NOT NULL DEFAULT 0; omit to take the default.',
+    }),
+    (0, dtoDecorators_1.OptionalInteger)(0),
+    __metadata("design:type", Number)
+], SavePhysicalStockVoucherHeaderDto.prototype, "lineCount", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        default: 0,
+        description: 'The sheet total quantity, as the screen summed it. MAY BE NEGATIVE — on a count this column is read back as the net variance, and a shortage is negative. numeric(18,6), NOT NULL DEFAULT 0.',
+    }),
+    (0, dtoDecorators_1.OptionalNumber)(),
+    __metadata("design:type", Number)
+], SavePhysicalStockVoucherHeaderDto.prototype, "totalQty", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        default: 0,
+        description: 'The sheet total value, inclusive of tax, as the screen summed it. May be negative — see totalQty. numeric(18,2), NOT NULL DEFAULT 0.',
+    }),
+    (0, dtoDecorators_1.OptionalNumber)(),
+    __metadata("design:type", Number)
+], SavePhysicalStockVoucherHeaderDto.prototype, "totalValue", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        default: 0,
+        description: 'The sheet total value excluding tax, as the screen summed it. May be negative — see totalQty. numeric(18,2), NOT NULL DEFAULT 0.',
+    }),
+    (0, dtoDecorators_1.OptionalNumber)(),
+    __metadata("design:type", Number)
+], SavePhysicalStockVoucherHeaderDto.prototype, "totalValueWot", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({
         enum: stock_voucher_types_1.STOCK_RATE_SOURCES,

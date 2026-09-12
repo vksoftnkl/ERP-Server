@@ -238,7 +238,7 @@ let TenderTypeMasterService = class TenderTypeMasterService {
         return provided || ttmTypeName;
     }
     parseTenderTypeId(value, field) {
-        const normalized = value.trim();
+        const normalized = (value ?? '').trim();
         if (!/^\d+$/.test(normalized)) {
             (0, module_service_utils_1.throwAccountsBadRequest)('Validation failed', [
                 {

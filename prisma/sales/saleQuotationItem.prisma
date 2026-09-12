@@ -65,6 +65,10 @@ model SaleQuotationItem {
   sqiCashDiscAmt     Decimal   @default(0) @db.Decimal(15, 2) @map("sqi_cash_disc_amt")
   // amounts + tax
   sqiGrossAmt        Decimal   @default(0) @db.Decimal(15, 2) @map("sqi_gross_amt")
+  // Which tax_rate_master row this line was taxed under, snapshotted at save.
+  // Not re-read from item_master at posting time: the item default is mutable
+  // and two tax rows can share a percentage.
+  sqiTaxId           String?   @db.Uuid @map("sqi_tax_id")
   sqiTaxableAmt      Decimal   @default(0) @db.Decimal(15, 2) @map("sqi_taxable_amt")
   sqiTaxPerc         Decimal   @default(0) @db.Decimal(15, 4) @map("sqi_tax_perc")
   sqiTaxAmt          Decimal   @default(0) @db.Decimal(15, 2) @map("sqi_tax_amt")
@@ -128,6 +132,7 @@ model SaleQuotationItem {
   // Relations
   quote      SaleQuotation  @relation(fields: [sqiQuoteId, sqiAccYear], references: [sqId, sqAccYear], onDelete: NoAction, onUpdate: NoAction, map: "fk_sqi_quote")
   item       ItemMaster     @relation(fields: [sqiItemId], references: [itemId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sqi_item")
+  tax        TaxRateMaster? @relation(fields: [sqiTaxId], references: [taxId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sqi_tax")
   priceLevel ItemPriceLevel @relation(fields: [sqiPriceLevel], references: [iplId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sqi_price_level")
   // sqiItemUnitId references item_unit_conversion(iuc_id), NOT item_unit_master(unit_id)
   itemUnitConversion ItemUnitConversion @relation("SaleQuotationItemUnitConversion", fields: [sqiItemUnitId], references: [iucId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sqi_item_unit")
@@ -142,6 +147,9 @@ model SaleQuotationItem {
   @@index([sqiQuoteId], map: "ix_sqi_quote")
   @@index([sqiItemId], map: "ix_sqi_item")
   @@index([sqiHsnCode], map: "ix_sqi_hsn")
+  // ix_sqi_tax (sqi_tax_id) WHERE sqi_tax_id IS NOT NULL is a DB-only partial index
+  // (migration 20260912050000). Prisma cannot express the predicate and
+  // would re-create it without one. Do NOT add @@index for it.
   @@map("sale_quotation_item")
   @@schema("sales")
 }

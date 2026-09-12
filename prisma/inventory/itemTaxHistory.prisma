@@ -15,7 +15,8 @@ model ItemTaxHistory {
 
   // Relations
   item             ItemMaster    @relation(fields: [ithItemId], references: [itemId], onUpdate: Cascade, onDelete: Restrict)
-  tax              ItemTaxMaster  @relation(fields: [ithTaxId], references: [taxId], onUpdate: Cascade, onDelete: Restrict)
+  // See the note on ItemMaster.defaultTax — same migration, same rename.
+  tax              TaxRateMaster  @relation(fields: [ithTaxId], references: [taxId], onUpdate: Cascade, onDelete: Restrict)
 
   @@map("item_tax_history")
  @@schema("inventory")

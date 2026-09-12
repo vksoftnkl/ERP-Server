@@ -51,6 +51,7 @@ export declare class SaveQuotationItemDto {
     sqiCashDiscPerc?: string | number;
     sqiCashDiscAmt?: string | number;
     sqiGrossAmt?: string | number;
+    sqiTaxId?: string | null;
     sqiTaxableAmt?: string | number;
     sqiTaxPerc?: string | number;
     sqiTaxAmt?: string | number;

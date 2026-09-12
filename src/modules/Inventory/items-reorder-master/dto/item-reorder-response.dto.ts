@@ -10,13 +10,13 @@ export { InventoryListMetaDto as ItemReorderListMetaDto };
 export class ItemReorderPayloadDto {
   @ApiProperty({ format: 'uuid' })
   ir_id!: string;
-  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  @ApiPropertyOptional({ type: String, format: 'uuid', nullable: true })
   ir_branch_id!: string | null;
   @ApiProperty({ format: 'uuid' })
   ir_item_id!: string;
-  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  @ApiPropertyOptional({ type: String, format: 'uuid', nullable: true })
   ir_unit_id!: string | null;
-  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  @ApiPropertyOptional({ type: String, format: 'uuid', nullable: true })
   ir_godown_id!: string | null;
   @ApiProperty({ example: 0 })
   ir_sl_no!: number;
@@ -42,21 +42,21 @@ export class ItemReorderPayloadDto {
   ir_is_active!: boolean;
   @ApiProperty({ example: false })
   ir_is_deleted!: boolean;
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: String, nullable: true })
   ir_remarks!: string | null;
   @ApiProperty()
   ir_created_on!: string;
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: String, nullable: true })
   ir_created_by!: string | null;
   @ApiProperty()
   ir_modified_on!: string;
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: String, nullable: true })
   ir_modified_by!: string | null;
-  @ApiPropertyOptional({ nullable: true, description: 'Name of the linked branch (resolved on the item composite get endpoint)' })
+  @ApiPropertyOptional({ type: String, nullable: true, description: 'Name of the linked branch (resolved on the item composite get endpoint)' })
   ir_branch_name?: string | null;
-  @ApiPropertyOptional({ nullable: true, description: 'Name of the linked unit (resolved on the item composite get endpoint)' })
+  @ApiPropertyOptional({ type: String, nullable: true, description: 'Name of the linked unit (resolved on the item composite get endpoint)' })
   ir_unit_name?: string | null;
-  @ApiPropertyOptional({ nullable: true, description: 'Name of the linked godown (resolved on the item composite get endpoint)' })
+  @ApiPropertyOptional({ type: String, nullable: true, description: 'Name of the linked godown (resolved on the item composite get endpoint)' })
   ir_godown_name?: string | null;
 }
 export class ItemReorderDeleteResultDto {

@@ -58,7 +58,7 @@ exports.CancelPhysicalStockVoucherDto = CancelPhysicalStockVoucherDto;
 __decorate([
     (0, swagger_1.ApiProperty)({
         maxLength: 250,
-        description: 'Why the count is being reversed. Consider a second count instead.',
+        description: 'Why the count is being abandoned. On a POSTED count this reverses the variance — consider a second count instead.',
     }),
     (0, dtoDecorators_1.TrimmedString)(250),
     __metadata("design:type", String)

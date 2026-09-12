@@ -28,6 +28,7 @@ export declare class AccountLedgerMastersService {
     private updateLedger;
     updateLedgerWithinTx(saveAccountLedgerMasterDto: SaveAccountLedgerMasterDto, tx: AccountLedgerWriteClient): Promise<AccountLedgerMasterPayload>;
     private ensureGroupExists;
+    private ensureTaxRateExists;
     private ensureNameIsUnique;
     private applyOptionalFields;
     private toPayload;

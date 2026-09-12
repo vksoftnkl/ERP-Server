@@ -34,8 +34,13 @@ export class CancelOpeningStockVoucherDto extends PostOpeningStockVoucherDto {
   /**
    * Required by this API even though the trail's tsl_remarks is nullable in
    * general. A cancelled opening with no reason is unanswerable three months
-   * later, and the cancellation is a reversal in the ledger — the row exists
-   * for ever, so the explanation had better too.
+   * later, and on a posted document the cancellation is a reversal in the
+   * ledger — the row exists for ever, so the explanation had better too.
+   *
+   * REQUIRED ON A DRAFT CANCELLATION TOO, where there is no ledger row to
+   * explain. It is the whole difference between cancelling a draft and
+   * deleting one: the deleted draft leaves the list, the cancelled one stays
+   * on it saying why it was abandoned.
    */
   @ApiProperty({ maxLength: 250, description: 'Why the document is being reversed.' })
   @TrimmedString(250)

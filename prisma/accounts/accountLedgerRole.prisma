@@ -1,0 +1,43 @@
+/// Every posting role, what kind of ledger it may take, and which dimensions it
+/// may be varied along. The single definition that acc_ledger_map and
+/// inventory.tax_rate_ledger both validate against, via
+/// accounts.fn_check_role_ledger — so adding a role (TCS, composition, an RCM
+/// variant) is one INSERT here, not an ALTER on every table that lists roles.
+model AccLedgerRole {
+  alrRole        String  @id(map: "pk_acc_ledger_role") @db.VarChar(30)                      @map("alr_role")
+  /// What the Posting Ledgers screen shows
+  alrLabel       String  @db.VarChar(60)                          @map("alr_label")
+  /// How that screen groups it.
+  /// REVENUE | OUTPUT_TAX | PURCHASE | INPUT_TAX | SHARED | FUTURE (ck_alr_group)
+  alrGroup       String  @db.VarChar(20)                          @map("alr_group")
+
+  // What kind of ledger this role may take. NULL means "not checked on this axis".
+  /// Expected acc_ledger_master.led_ledger_type
+  alrWantType    String? @db.VarChar(20)                          @map("alr_want_type")
+  /// Expected acc_ledger_master.led_gst_duty_head (ck_alr_duty)
+  alrWantDuty    String? @db.VarChar(20)                          @map("alr_want_duty")
+  /// Expected acc_group_master.acc_group_nature (ck_alr_nature)
+  alrWantNature  String? @db.VarChar(20)                          @map("alr_want_nature")
+
+  /// May carry INTRA / INTER. Only revenue and purchase roles can — a tax role
+  /// already says the supply nature by which it is used.
+  alrBySupply    Boolean @default(false)                          @map("alr_by_supply")
+  /// May be overridden per GST rate. Round-off, discount, write-off and
+  /// advances cannot — they have nothing to do with a rate.
+  alrByRate      Boolean @default(false)                          @map("alr_by_rate")
+
+  alrSortOrder   Int     @default(0) @db.SmallInt                 @map("alr_sort_order")
+  alrIsActive    Boolean @default(true)                           @map("alr_is_active")
+  alrRemarks     String? @db.VarChar(250)                         @map("alr_remarks")
+
+  /// The role -> ledger rows that name this role.
+  ledgerMaps     AccLedgerMap[]
+  /// The per-GST-rate overrides that name this role.
+  taxRateLedgers TaxRateLedger[]
+
+  // accounts.fn_check_role_ledger(role, ledger, company, where) validates a
+  // ledger against a row of this table. It lives in raw SQL — a function is not
+  // expressible here — and both posting guards call it.
+  @@map("acc_ledger_role")
+  @@schema("accounts")
+}

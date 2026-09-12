@@ -24,6 +24,7 @@ import {
   PresentFieldTransform,
   SalesWriteClient,
   applyPresentFields,
+  hasOwnProperty,
   normalizeRequiredText,
   resolveActor,
   throwOnUniqueConstraintError,
@@ -37,6 +38,10 @@ import {
   TxnStatusEvent,
   appendTxnStatusLog,
 } from 'src/common/txn-status-log/txn-status-log.helper';
+import {
+  assertTaxRateRefs,
+  collectTaxRateRefs,
+} from '../../Inventory/tax-rate-master/utils/tax-rate-reference.helper';
 // accounts.acc_voucher_types row "Quo" / Sales Quotation. Its numbering format
 // (prefix / suffix / width / reset frequency) seeds the acc_voucher_seq row the
 // quotation numbers are drawn from.
@@ -200,6 +205,7 @@ const QUOTATION_ITEM_OPTIONAL_FIELDS = [
   'sqiCashDiscPerc',
   'sqiCashDiscAmt',
   'sqiGrossAmt',
+  'sqiTaxId',
   'sqiTaxableAmt',
   'sqiTaxPerc',
   'sqiTaxAmt',
@@ -795,6 +801,18 @@ export class QuotationService {
     if (inputItems === undefined) {
       return existing;
     }
+    // The rate each line quotes, before anything is written: fk_sqi_tax only
+    // proves the row exists, and a soft-deleted or deactivated rate satisfies
+    // it just as well as a live one.
+    await assertTaxRateRefs(
+      tx,
+      collectTaxRateRefs(
+        inputItems,
+        (item) => item.sqiTaxId,
+        (index) => `items.${index}.sqiTaxId`,
+      ),
+      'Invalid quotation item tax rate',
+    );
     const existingMap = new Map(existing.map((item) => [item.sqiId, item]));
     const now = new Date();
     // Line numbers first: an entry keeps the number it sent, otherwise it takes
@@ -1099,6 +1117,15 @@ export class QuotationService {
     if (inputCharges === undefined) {
       return existing;
     }
+    await assertTaxRateRefs(
+      tx,
+      collectTaxRateRefs(
+        inputCharges,
+        (charge) => charge.cdTaxCode,
+        (index) => `charges.${index}.cdTaxCode`,
+      ),
+      'Invalid quotation charge tax rate',
+    );
     const existingMap = new Map(existing.map((charge) => [charge.cdId, charge]));
     const keptIds = new Set<string>();
     const seenSlnos = new Set<number>();
@@ -1295,6 +1322,19 @@ export class QuotationService {
         field: 'cdTaxApl',
         message:
           'cdTaxApl and cdBeforeTax are mutually exclusive: a charge is either taxed at the item rate or carries its own GST',
+      });
+    }
+    // charge_master.ck_chg_tax_id, restated for the line. A before-tax charge
+    // is taxed at the ITEM's rate inside the item line and a non-taxable one is
+    // never taxed, so either way a rate here would be one nothing reads.
+    const taxCode = hasOwnProperty(inputCharge, 'cdTaxCode')
+      ? inputCharge.cdTaxCode
+      : existingCharge?.cdTaxCode;
+    if (taxCode && (!taxApl || beforeTax)) {
+      details.push({
+        field: 'cdTaxCode',
+        message:
+          'cdTaxCode is only meaningful on a charge that carries its own GST — set cdTaxApl and leave cdBeforeTax false, or clear cdTaxCode',
       });
     }
     if (details.length > 0) {

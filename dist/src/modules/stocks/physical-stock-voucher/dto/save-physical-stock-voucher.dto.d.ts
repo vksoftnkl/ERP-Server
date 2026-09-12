@@ -30,6 +30,10 @@ export declare class SavePhysicalStockVoucherHeaderDto {
     freezeFrom?: string | null;
     freezeTo?: string | null;
     syncDate?: string | null;
+    lineCount?: number;
+    totalQty?: number;
+    totalValue?: number;
+    totalValueWot?: number;
     rateSource?: StockRateSource | null;
     status?: SaveableStockVoucherStatus;
     remarks?: string | null;

@@ -1,6 +1,7 @@
 import { PhysicalStockVoucherController } from './physical-stock-voucher.controller';
 import type { StockVoucherService } from '../stock-voucher/stock-voucher.service';
 import type {
+  StockVoucherCancelResult,
   StockVoucherLinePayload,
   StockVoucherPostResult,
   StockVoucherTypeRules,
@@ -23,12 +24,26 @@ const postResult = (lines: StockVoucherLinePayload[], rowsPosted: number): Stock
     postedOn: '2026-06-30T18:00:00Z',
   }) as unknown as StockVoucherPostResult;
 
+const cancelResult = (rowsReversed: number): StockVoucherCancelResult =>
+  ({
+    header: { svhId: SVH_ID, status: 'CANCELLED' },
+    lines: [],
+    rowsReversed,
+    status: 'CANCELLED',
+    cancelledOn: '2026-06-30T18:00:00Z',
+  }) as unknown as StockVoucherCancelResult;
+
 describe('PhysicalStockVoucherController', () => {
-  let service: { post: jest.Mock; countSheet: jest.Mock; variance: jest.Mock };
+  let service: {
+    post: jest.Mock;
+    cancel: jest.Mock;
+    countSheet: jest.Mock;
+    variance: jest.Mock;
+  };
   let controller: PhysicalStockVoucherController;
 
   beforeEach(() => {
-    service = { post: jest.fn(), countSheet: jest.fn(), variance: jest.fn() };
+    service = { post: jest.fn(), cancel: jest.fn(), countSheet: jest.fn(), variance: jest.fn() };
     controller = new PhysicalStockVoucherController(service as unknown as StockVoucherService);
   });
 
@@ -99,5 +114,63 @@ describe('PhysicalStockVoucherController', () => {
     });
 
     expect(response.message).toBe('Every line agreed — the count posted no ledger rows');
+  });
+
+  /**
+   * The same wording problem as the post message, on the other route: a
+   * cancelled DRAFT reverses nothing because nothing had posted, and
+   * "cancelled — 0 reversal rows" reads like a failure on the outcome that is
+   * now the ordinary way to abandon a count sheet and release its freeze.
+   */
+  describe('cancel', () => {
+    const cancel = () =>
+      controller.cancel({
+        svhId: SVH_ID,
+        accYear: ACC_YEAR,
+        companyId: COMPANY_ID,
+        branchId: BRANCH_ID,
+        reason: 'counter went home',
+      });
+
+    it('does not report a cancelled DRAFT as 0 reversal rows', async () => {
+      service.cancel.mockResolvedValue(cancelResult(0));
+
+      const response = await cancel();
+
+      expect(response.success).toBe(true);
+      expect(response.message).toBe(
+        'Physical stock count cancelled successfully — no variance had posted, so nothing was reversed',
+      );
+      expect(response.data.rowsReversed).toBe(0);
+    });
+
+    it('counts the reversal rows when a POSTED count is cancelled', async () => {
+      service.cancel.mockResolvedValue(cancelResult(2));
+
+      const response = await cancel();
+
+      expect(response.message).toBe(
+        'Physical stock count cancelled successfully — 2 reversal rows',
+      );
+    });
+
+    it('pins PHYSICAL on cancel too, and passes the reason through', async () => {
+      service.cancel.mockResolvedValue(cancelResult(0));
+
+      await cancel();
+
+      const [rules, , , reason] = service.cancel.mock.calls[0] as [
+        StockVoucherTypeRules,
+        string,
+        string,
+        string,
+      ];
+      expect(rules.voucherType).toBe('PHYSICAL');
+      // The generic entry point is what makes the draft path reachable at all:
+      // the service refuses a draft cancellation on any type whose
+      // postFunction is a transfer's.
+      expect(rules.postFunction).toBe('stock.fn_svh_post');
+      expect(reason).toBe('counter went home');
+    });
   });
 });

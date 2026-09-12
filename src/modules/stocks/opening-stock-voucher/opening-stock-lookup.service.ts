@@ -3,7 +3,10 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import { throwStockNotFound, toNumber } from 'src/common/utils/module-service.utils';
 import { StockMrpPriceGateway } from '../selling-price-bulk/stock-mrp-price.gateway';
-import { effectivePolicyLateral } from '../stock-voucher/stock-voucher-posting.helper';
+import {
+  effectivePolicyLateral,
+  unreversedLedgerRow,
+} from '../stock-voucher/stock-voucher-posting.helper';
 import type {
   StockErrorDetail,
   StockErrorResponse,
@@ -124,14 +127,18 @@ export class OpeningStockLookupService {
 
              -- Scoped to whatever of company / branch was given; with
              -- neither it means "opened anywhere".
+             -- Aliased sml because unreversedLedgerRow expects that name
+             -- (and a backtick here would end the template literal). ONE
+             -- definition of "still counts" across the badge, the preflight
+             -- and the post, so the screen cannot call a holding opened that
+             -- the post would let through, or the reverse.
              EXISTS (SELECT 1
-                       FROM stock.stock_ledger l
-                      WHERE (${companyId}::uuid IS NULL OR l.sml_company_id = ${companyId}::uuid)
-                        AND (${branchId}::uuid  IS NULL OR l.sml_branch_id  = ${branchId}::uuid)
-                        AND l.sml_item_id    = i.item_id
-                        AND l.sml_txn_type   = 'OPENING'
-                        AND l.sml_is_deleted  = false
-                        AND l.sml_is_reversal = false)         AS "alreadyOpened"
+                       FROM stock.stock_ledger sml
+                      WHERE (${companyId}::uuid IS NULL OR sml.sml_company_id = ${companyId}::uuid)
+                        AND (${branchId}::uuid  IS NULL OR sml.sml_branch_id  = ${branchId}::uuid)
+                        AND sml.sml_item_id  = i.item_id
+                        AND sml.sml_txn_type = 'OPENING'
+                        AND ${unreversedLedgerRow()})          AS "alreadyOpened"
 
         FROM inventory.item_master i
 

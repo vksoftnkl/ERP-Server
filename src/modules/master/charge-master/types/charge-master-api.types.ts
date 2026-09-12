@@ -1,4 +1,3 @@
-import type { Prisma } from '@prisma/client';
 import type {
   ModuleApiErrorDetail,
   ModuleApiErrorResponse,
@@ -118,8 +117,6 @@ export type ChargeDetailGuardedValues = Partial<
 export interface ChargeLedgerDetail {
   ledName: string;
   ledHsnSac: string | null;
-  ledGstRate: Prisma.Decimal | null;
-  ledTaxability: string | null;
 }
 export interface ChargeMasterPayload {
   chgId: string;
@@ -138,8 +135,6 @@ export interface ChargeMasterPayload {
   // Tax attributes echoed from the mapped acc_ledger_master row; derived
   // display values, never stored on charge_master itself.
   ledHsnSac: string | null;
-  ledGstRate: number | null;
-  ledTaxability: string | null;
   chgTaxApl: boolean;
   chgBeforeTax: boolean;
   chgSepPost: boolean;

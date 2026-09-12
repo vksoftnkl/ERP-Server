@@ -15,6 +15,18 @@ const validationPipe = new ValidationPipe({
   transformOptions: { enableImplicitConversion: true },
 });
 
+/**
+ * The four header totals by name. A cast to `Record<string, unknown>` would
+ * compile the table below just as well and would go on compiling after one of
+ * them was renamed off the DTO; this does not.
+ */
+const totalsOf = (dto: SavePhysicalStockVoucherDto): Record<string, number | undefined> => ({
+  lineCount: dto.header.lineCount,
+  totalQty: dto.header.totalQty,
+  totalValue: dto.header.totalValue,
+  totalValueWot: dto.header.totalValueWot,
+});
+
 const transform = (header: Record<string, unknown> = {}, lines?: unknown[]) =>
   validationPipe.transform(
     {
@@ -145,25 +157,21 @@ describe('SavePhysicalStockVoucherDto', () => {
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
-  // ── Fifteen header fields the SHARED voucher DTO carries and this one omits ──
+  // ── Eleven header fields the SHARED voucher DTO carries and this one omits ──
   //
   // Every one is refused by `forbidNonWhitelisted` alone, because the header is
   // STANDALONE and simply does not declare them — there is no @IsEmpty left in
   // the file, and none of them is rendered in the /api/docs schema any more.
   //
-  //   totals   the header carries the NET VARIANCE, read off the ledger by
-  //            fn_svh_recompute at post; nothing on the sheet adds up to it
   //   lorry    stock_transit columns, written only by a transfer. They used to
   //            be accepted here and SILENTLY DISCARDED
   //   the rest a count is one godown against its own book figure: no source
   //            side, no counterparty, and nothing outside it caused it.
   //            toBranchId and the four linkSrc columns were 422s from
   //            assertPayloadRules, reported after the whole payload was walked
+  //
+  // The four TOTALS are no longer among them — see the block below.
   it.each([
-    ['lineCount', 1],
-    ['totalQty', 1],
-    ['totalValue', 2400.5],
-    ['totalValueWot', 2286.19],
     ['lrNo', 'LR-99'],
     ['vehicleNo', 'TN-01-AB-1234'],
     ['expectedOn', '2026-09-12'],
@@ -177,6 +185,53 @@ describe('SavePhysicalStockVoucherDto', () => {
     ['linkSrcAccYear', '2026-2027'],
   ])('refuses %s — it describes a document a count is not', async (field, value) => {
     await expect(transform({ [field]: value })).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  // ── The four totals, which this header now DOES carry ──
+  //
+  // They were dropped with the other eleven on the theory that a count's header
+  // is the engine's to fill. On this deployment nothing fills it: neither
+  // tr_svi_refresh_header nor fn_svh_recompute is in the migrations, so the
+  // columns sat at 0 for ever and the screen had no way to say what it had
+  // counted. They are the screen's, as on every other route.
+  describe('the header totals', () => {
+    it.each([
+      ['lineCount', 3],
+      ['totalQty', 120],
+      ['totalValue', 2400.5],
+      ['totalValueWot', 2286.19],
+    ])('accepts %s', async (field, value) => {
+      const dto = await transform({ [field]: value });
+
+      expect(totalsOf(dto)[field]).toBe(value);
+    });
+
+    // The one place a count's totals differ from an opening's: a net variance
+    // is negative on a shortage, and svh_total_qty has no >= 0 constraint.
+    it.each([
+      ['totalQty', -12],
+      ['totalValue', -240.5],
+      ['totalValueWot', -228.61],
+    ])('accepts a NEGATIVE %s — a shortage nets below zero', async (field, value) => {
+      const dto = await transform({ [field]: value });
+
+      expect(totalsOf(dto)[field]).toBe(value);
+    });
+
+    it('still refuses a negative lineCount — a sheet cannot have fewer than no lines', async () => {
+      await expect(transform({ lineCount: -1 })).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    // Optional against a NOT NULL DEFAULT 0 column: omitted must stay omitted,
+    // so writeHeaderTotals leaves the stored value alone rather than zeroing it.
+    it('leaves all four undefined when the payload sends none', async () => {
+      const totals = totalsOf(await transform({}));
+
+      expect(totals.lineCount).toBeUndefined();
+      expect(totals.totalQty).toBeUndefined();
+      expect(totals.totalValue).toBeUndefined();
+      expect(totals.totalValueWot).toBeUndefined();
+    });
   });
 
   // What the STANDALONE header buys that extending never could: a subclass

@@ -671,7 +671,9 @@ class OpeningStockCancelResultDto extends OpeningStockDocumentDto {
 }
 exports.OpeningStockCancelResultDto = OpeningStockCancelResultDto;
 __decorate([
-    (0, swagger_1.ApiProperty)({ description: 'Reversal rows written by stock.fn_svh_cancel.' }),
+    (0, swagger_1.ApiProperty)({
+        description: 'Reversal rows written. 0 on a cancelled DRAFT — it had moved no stock, so there was nothing to mirror.',
+    }),
     __metadata("design:type", Number)
 ], OpeningStockCancelResultDto.prototype, "rowsReversed", void 0);
 __decorate([

@@ -57,8 +57,11 @@ model AccLedgerMaster {
   ledIsSez                 Boolean   @default(false)                                   @map("led_is_sez")
   ledTypeOfSupply          String?   @db.VarChar(10)                                  @map("led_type_of_supply")
   ledHsnSac                String?   @db.VarChar(10)                                  @map("led_hsn_sac")
-  ledGstRate               Decimal?  @db.Decimal                                       @map("led_gst_rate")
-  ledTaxability            String?   @db.VarChar(15)                                  @map("led_taxability")
+  // The tax_rate_master row this ledger carries when it appears as a taxable
+  // line (freight, packing, labour). NULL on a party or bank ledger.
+  // Replaced ledGstRate / ledTaxability / ledTaxRate, which held a bare
+  // percentage; those columns were dropped in 20260912100000.
+  ledTaxId                 String?   @db.Uuid                                         @map("led_tax_id")
   ledGstPartyType          String?   @db.VarChar(30)                                  @map("led_gst_party_type")
   ledTanNo                 String?   @db.VarChar(10)                                  @map("led_tan_no")
   ledCin                   String?   @db.VarChar(21)                                  @map("led_cin")
@@ -66,7 +69,6 @@ model AccLedgerMaster {
   ledMsmeType              String?   @db.VarChar(10)                                  @map("led_msme_type")
   // 7) Tax / duty ledger (CGST/SGST/IGST/Cess + round-off)
   ledGstDutyHead           String?   @db.VarChar(20)                                  @map("led_gst_duty_head")
-  ledTaxRate               Decimal?  @db.Decimal                                       @map("led_tax_rate")
   ledRoundingMethod        String?   @db.VarChar(15)                                  @map("led_rounding_method")
   ledRoundingLimit         Decimal?  @db.Decimal                                       @map("led_rounding_limit")
   // 8) TDS / TCS
@@ -124,6 +126,11 @@ model AccLedgerMaster {
   chargeDetails            TransactionChargeDetail[]
   saleOrderAdvanceLedgers  SaleOrder[]              @relation("SaleOrderAdvanceLedger")
   stockReasonGlLedgers     StockReasonMaster[]      @relation("StockReasonMasterGlLedger")
+  // fk_led_tax (20260912060000). ON DELETE RESTRICT: a rate a ledger quotes
+  // can be superseded, never removed.
+  taxRate                  TaxRateMaster?         @relation(fields: [ledTaxId], references: [taxId], onUpdate: Cascade, onDelete: Restrict, map: "fk_led_tax")
+  taxRateLedgers           TaxRateLedger[]
+  ledgerMaps               AccLedgerMap[]
   @@unique([ledCompanyId, ledName], name: "uq_led_name_per_company")
   @@unique([ledCompanyId, ledTallyName], name: "uq_led_tally_name_per_company")
   @@index([ledCompanyId], name: "idx_led_company_id")

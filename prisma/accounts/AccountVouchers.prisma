@@ -24,7 +24,9 @@ model AccVoucher {
   // Accounting line — ck_av_dr_cr: DR | CR
   avDrCr             String    @db.Char(2) @map("av_dr_cr")
   avLedgerId         String    @db.Uuid @map("av_ledger_id")
-  avOppLedgerId      String    @db.Uuid @map("av_opp_ledger_id")
+  /// Two-leg vouchers only. NULL on a multi-leg voucher such as a sale:
+  /// there is no single opposite side to name.
+  avOppLedgerId      String?   @db.Uuid @map("av_opp_ledger_id")
   avAmount           Decimal   @default(0) @db.Decimal(18, 2) @map("av_amount")
   // GENERATED ALWAYS ... STORED in the DB. Read-only: never send it on a
   // create or update, the write will be rejected by Postgres.
@@ -49,7 +51,7 @@ model AccVoucher {
   // Relations
   voucherHeader      AccVoucherHeader @relation(fields: [avVoucherId, avAccYear], references: [avhVoucherId, avhAccYear], onUpdate: Cascade, onDelete: Cascade, map: "fk_av_header")
   ledger             AccLedgerMaster  @relation("AccVoucherLedger", fields: [avLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_av_ledger")
-  oppositeLedger     AccLedgerMaster  @relation("AccVoucherOppLedger", fields: [avOppLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_av_opp_ledger")
+  oppositeLedger     AccLedgerMaster? @relation("AccVoucherOppLedger", fields: [avOppLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_av_opp_ledger")
   voucherType        AccVoucherType   @relation(fields: [avVoucherTypeId], references: [vchrTypeId], onUpdate: Cascade, onDelete: Restrict, map: "fk_av_voucher_type")
   bill               AccBillBalance?  @relation(fields: [avDocId, avDocAccYear], references: [ablId, ablAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_av_doc")
   @@id([avId, avAccYear], map: "pk_acc_vouchers")

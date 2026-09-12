@@ -149,11 +149,31 @@ export class AccountLedgerMasterPayloadDto {
   @ApiPropertyOptional({ maxLength: 10, nullable: true })
   ledHsnSac!: string | null;
 
-  @ApiPropertyOptional({ nullable: true })
-  ledGstRate!: number | null;
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description:
+      'The inventory.tax_rate_master row this ledger carries when it appears as a taxable ' +
+      'line. Null on a party or bank ledger.',
+  })
+  ledTaxId!: string | null;
 
-  @ApiPropertyOptional({ maxLength: 15, nullable: true })
-  ledTaxability!: string | null;
+  @ApiPropertyOptional({ nullable: true, description: 'Name of the tax rate' })
+  ledTaxName!: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'Total GST rate of ledTaxId — 18 means 18%, charged as 9+9 locally',
+  })
+  ledTaxRatePerc!: number | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    description:
+      'Taxability of ledTaxId (TAXABLE | EXEMPT | NIL_RATED | NON_GST | ZERO_RATED). ' +
+      'Read-only; it lives on the rate, not on the ledger.',
+  })
+  ledTaxTaxability!: string | null;
 
   @ApiPropertyOptional({ maxLength: 30, nullable: true })
   ledGstPartyType!: string | null;
@@ -172,9 +192,6 @@ export class AccountLedgerMasterPayloadDto {
 
   @ApiPropertyOptional({ maxLength: 20, nullable: true })
   ledGstDutyHead!: string | null;
-
-  @ApiPropertyOptional({ nullable: true })
-  ledTaxRate!: number | null;
 
   @ApiPropertyOptional({ maxLength: 15, nullable: true })
   ledRoundingMethod!: string | null;

@@ -6,7 +6,9 @@ exports.postStockVoucher = postStockVoucher;
 exports.effectivePolicyLateral = effectivePolicyLateral;
 exports.effectivePolicyCte = effectivePolicyCte;
 exports.lotIdentityKeyColumns = lotIdentityKeyColumns;
+exports.unreversedLedgerRow = unreversedLedgerRow;
 exports.cancelStockVoucher = cancelStockVoucher;
+exports.cancelDraftVoucher = cancelDraftVoucher;
 const common_1 = require("@nestjs/common");
 const client_1 = require("@prisma/client");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
@@ -112,6 +114,19 @@ function lotIdentityKeyColumns() {
              COALESCE(CASE WHEN policy.track_serial     THEN NULLIF(upper(btrim(line.svi_serial_no)), '') END, '~')   AS key_serial,
              COALESCE(CASE WHEN policy.track_supplier   THEN line.svi_supplier_id END,
                       '00000000-0000-0000-0000-000000000000'::uuid)                                                    AS key_supplier
+  `;
+}
+function unreversedLedgerRow() {
+    return client_1.Prisma.sql `
+             sml.sml_is_deleted  = false
+         AND sml.sml_is_reversal = false
+         AND NOT EXISTS (
+               SELECT 1
+                 FROM stock.stock_ledger rev
+                WHERE rev.sml_reverses_id = sml.sml_id
+                  AND rev.sml_acc_year    = sml.sml_acc_year
+                  AND rev.sml_is_reversal = true
+                  AND rev.sml_is_deleted  = false)
   `;
 }
 function postingCte(svhId, accYear, isCount) {
@@ -609,7 +624,7 @@ async function refreshLotTotals(tx, params) {
 async function cancelStockVoucher(tx, params) {
     const { rules, svhId, accYear, actor, cancelledOn } = params;
     const author = auditColumnActor(actor);
-    await lockPostedHeader(tx, params);
+    await lockHeaderInStatus(tx, params, 'POSTED');
     const rowsReversed = await writeReversalLedger(tx, params);
     await applyLedgerRows(tx, {
         rules,
@@ -630,7 +645,21 @@ async function cancelStockVoucher(tx, params) {
     });
     return rowsReversed;
 }
-async function lockPostedHeader(tx, { rules, svhId, accYear }) {
+async function cancelDraftVoucher(tx, params) {
+    const { svhId, accYear, actor, cancelledOn } = params;
+    await lockHeaderInStatus(tx, params, 'DRAFT');
+    await tx.stockVoucher.update({
+        where: { svhId_svhAccYear: { svhId, svhAccYear: accYear } },
+        data: {
+            svhStatus: 'CANCELLED',
+            svhVersionNo: { increment: 1 },
+            svhModifiedOn: cancelledOn,
+            svhModifiedBy: auditColumnActor(actor),
+        },
+    });
+    return 0;
+}
+async function lockHeaderInStatus(tx, { rules, svhId, accYear }, expected) {
     const [header] = await tx.$queryRaw `
     SELECT svh.svh_status AS status, svh.svh_refno AS refno
       FROM stock.stock_voucher svh
@@ -643,17 +672,18 @@ async function lockPostedHeader(tx, { rules, svhId, accYear }) {
         (0, module_service_utils_1.throwStockConflict)(`${rules.displayName} not found`, [
             {
                 field: 'svhId',
-                message: `${svhId} no longer exists in ${accYear}, so there is nothing to reverse.`,
+                message: `${svhId} no longer exists in ${accYear}, so there is nothing to cancel.`,
             },
         ]);
     }
-    if (header.status !== 'POSTED') {
+    if (header.status !== expected) {
         (0, module_service_utils_1.throwStockConflict)(`${rules.displayName} is ${header.status}`, [
             {
                 field: 'svhId',
                 message: header.status === 'CANCELLED'
                     ? `${header.refno} was already cancelled.`
-                    : `${header.refno} is ${header.status}: only a POSTED ${rules.displayName.toLowerCase()} has ledger rows to reverse.`,
+                    :
+                        `${header.refno} is ${header.status}, not ${expected}: it changed while this cancellation was waiting. Reload it and decide again.`,
             },
         ]);
     }

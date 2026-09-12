@@ -299,7 +299,9 @@ export class TenderTypeMasterService {
     return provided || ttmTypeName;
   }
   private parseTenderTypeId(value: string, field: string): number {
-    const normalized = value.trim();
+    // A missing query param arrives as undefined; guard before .trim() so an
+    // omitted id is a 400, not an unhandled TypeError (500).
+    const normalized = (value ?? '').trim();
     if (!/^\d+$/.test(normalized)) {
       throwAccountsBadRequest<TenderTypeMasterErrorDetail>('Validation failed', [
         {

@@ -6817,3 +6817,291 @@ HINT: No function matches the given name and argument types. You might need to a
     at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
     at async StockVoucherService.cancel (/home/vk/Dev/erp/ERP server/src/modules/stocks/stock-voucher/stock-voucher.service.ts:2101:26)
     at async OpeningStockVoucherController.cancel (/home/vk/Dev/erp/ERP server/src/modules/stocks/opening-stock-voucher/opening-stock-voucher.controller.ts:313:18)
+2026-09-12T06:56:36.144Z ERROR [AllExceptionsFilter] GET /api/v1/menu-masters/usermenu
+PrismaClientKnownRequestError: 
+Invalid `this.prisma.userMenus.findMany()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/fixed/menu-master/menu-master.service.ts:62:51
+
+  59 if (!userId) {
+  60   throw new UnauthorizedException('Unable to resolve the current user from the access token');
+  61 }
+→ 62 const userMenus = await this.prisma.userMenus.findMany(
+Inconsistent column data: Error creating UUID, invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `v` at 1
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async MenuMasterService.getUserMenu (/home/vk/Dev/erp/ERP server/src/modules/fixed/menu-master/menu-master.service.ts:62:23)
+    at async MenuMasterController.getUserMenu (/home/vk/Dev/erp/ERP server/src/modules/fixed/menu-master/menu-master.controller.ts:64:20)
+2026-09-12T06:57:06.978Z ERROR [AllExceptionsFilter] GET /api/v1/menu-masters/usermenu
+PrismaClientKnownRequestError: 
+Invalid `this.prisma.userMenus.findMany()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/fixed/menu-master/menu-master.service.ts:62:51
+
+  59 if (!userId) {
+  60   throw new UnauthorizedException('Unable to resolve the current user from the access token');
+  61 }
+→ 62 const userMenus = await this.prisma.userMenus.findMany(
+Inconsistent column data: Error creating UUID, invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `v` at 1
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async MenuMasterService.getUserMenu (/home/vk/Dev/erp/ERP server/src/modules/fixed/menu-master/menu-master.service.ts:62:23)
+    at async MenuMasterController.getUserMenu (/home/vk/Dev/erp/ERP server/src/modules/fixed/menu-master/menu-master.controller.ts:64:20)
+2026-09-12T06:57:07.077Z ERROR [AllExceptionsFilter] GET /api/v1/menu-masters/usermenu
+PrismaClientKnownRequestError: 
+Invalid `this.prisma.userMenus.findMany()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/fixed/menu-master/menu-master.service.ts:62:51
+
+  59 if (!userId) {
+  60   throw new UnauthorizedException('Unable to resolve the current user from the access token');
+  61 }
+→ 62 const userMenus = await this.prisma.userMenus.findMany(
+Inconsistent column data: Error creating UUID, invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `v` at 1
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async MenuMasterService.getUserMenu (/home/vk/Dev/erp/ERP server/src/modules/fixed/menu-master/menu-master.service.ts:62:23)
+    at async MenuMasterController.getUserMenu (/home/vk/Dev/erp/ERP server/src/modules/fixed/menu-master/menu-master.controller.ts:64:20)
+2026-09-12T06:57:11.214Z ERROR [AllExceptionsFilter] GET /api/v1/menu-masters/usermenu
+PrismaClientKnownRequestError: 
+Invalid `this.prisma.userMenus.findMany()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/fixed/menu-master/menu-master.service.ts:62:51
+
+  59 if (!userId) {
+  60   throw new UnauthorizedException('Unable to resolve the current user from the access token');
+  61 }
+→ 62 const userMenus = await this.prisma.userMenus.findMany(
+Inconsistent column data: Error creating UUID, invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `v` at 1
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async MenuMasterService.getUserMenu (/home/vk/Dev/erp/ERP server/src/modules/fixed/menu-master/menu-master.service.ts:62:23)
+    at async MenuMasterController.getUserMenu (/home/vk/Dev/erp/ERP server/src/modules/fixed/menu-master/menu-master.controller.ts:64:20)
+2026-09-12T06:58:14.370Z ERROR [AllExceptionsFilter] GET /api/v1/menu-masters/usermenu
+PrismaClientKnownRequestError: 
+Invalid `this.prisma.userMenus.findMany()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/fixed/menu-master/menu-master.service.ts:62:51
+
+  59 if (!userId) {
+  60   throw new UnauthorizedException('Unable to resolve the current user from the access token');
+  61 }
+→ 62 const userMenus = await this.prisma.userMenus.findMany(
+Inconsistent column data: Error creating UUID, invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `v` at 1
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async MenuMasterService.getUserMenu (/home/vk/Dev/erp/ERP server/src/modules/fixed/menu-master/menu-master.service.ts:62:23)
+    at async MenuMasterController.getUserMenu (/home/vk/Dev/erp/ERP server/src/modules/fixed/menu-master/menu-master.controller.ts:64:20)
+2026-09-12T06:59:32.687Z ERROR [AllExceptionsFilter] GET /api/v1/menu-masters/usermenu
+PrismaClientKnownRequestError: 
+Invalid `this.prisma.userMenus.findMany()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/fixed/menu-master/menu-master.service.ts:62:51
+
+  59 if (!userId) {
+  60   throw new UnauthorizedException('Unable to resolve the current user from the access token');
+  61 }
+→ 62 const userMenus = await this.prisma.userMenus.findMany(
+Inconsistent column data: Error creating UUID, invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `v` at 1
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async MenuMasterService.getUserMenu (/home/vk/Dev/erp/ERP server/src/modules/fixed/menu-master/menu-master.service.ts:62:23)
+    at async MenuMasterController.getUserMenu (/home/vk/Dev/erp/ERP server/src/modules/fixed/menu-master/menu-master.controller.ts:64:20)
+2026-09-12T06:59:32.786Z ERROR [AllExceptionsFilter] GET /api/v1/menu-masters/usermenu
+PrismaClientKnownRequestError: 
+Invalid `this.prisma.userMenus.findMany()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/fixed/menu-master/menu-master.service.ts:62:51
+
+  59 if (!userId) {
+  60   throw new UnauthorizedException('Unable to resolve the current user from the access token');
+  61 }
+→ 62 const userMenus = await this.prisma.userMenus.findMany(
+Inconsistent column data: Error creating UUID, invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `v` at 1
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async MenuMasterService.getUserMenu (/home/vk/Dev/erp/ERP server/src/modules/fixed/menu-master/menu-master.service.ts:62:23)
+    at async MenuMasterController.getUserMenu (/home/vk/Dev/erp/ERP server/src/modules/fixed/menu-master/menu-master.controller.ts:64:20)
+2026-09-12T06:59:36.944Z ERROR [AllExceptionsFilter] GET /api/v1/menu-masters/usermenu
+PrismaClientKnownRequestError: 
+Invalid `this.prisma.userMenus.findMany()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/fixed/menu-master/menu-master.service.ts:62:51
+
+  59 if (!userId) {
+  60   throw new UnauthorizedException('Unable to resolve the current user from the access token');
+  61 }
+→ 62 const userMenus = await this.prisma.userMenus.findMany(
+Inconsistent column data: Error creating UUID, invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `v` at 1
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async MenuMasterService.getUserMenu (/home/vk/Dev/erp/ERP server/src/modules/fixed/menu-master/menu-master.service.ts:62:23)
+    at async MenuMasterController.getUserMenu (/home/vk/Dev/erp/ERP server/src/modules/fixed/menu-master/menu-master.controller.ts:64:20)
+2026-09-12T07:00:11.758Z ERROR [AllExceptionsFilter] GET /api/v1/menu-masters/usermenu
+PrismaClientKnownRequestError: 
+Invalid `this.prisma.userMenus.findMany()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/fixed/menu-master/menu-master.service.ts:62:51
+
+  59 if (!userId) {
+  60   throw new UnauthorizedException('Unable to resolve the current user from the access token');
+  61 }
+→ 62 const userMenus = await this.prisma.userMenus.findMany(
+Inconsistent column data: Error creating UUID, invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `v` at 1
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async MenuMasterService.getUserMenu (/home/vk/Dev/erp/ERP server/src/modules/fixed/menu-master/menu-master.service.ts:62:23)
+    at async MenuMasterController.getUserMenu (/home/vk/Dev/erp/ERP server/src/modules/fixed/menu-master/menu-master.controller.ts:64:20)
+2026-09-12T07:00:47.867Z ERROR [AllExceptionsFilter] GET /api/v1/menu-masters/usermenu
+PrismaClientKnownRequestError: 
+Invalid `this.prisma.userMenus.findMany()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/fixed/menu-master/menu-master.service.ts:62:51
+
+  59 if (!userId) {
+  60   throw new UnauthorizedException('Unable to resolve the current user from the access token');
+  61 }
+→ 62 const userMenus = await this.prisma.userMenus.findMany(
+Inconsistent column data: Error creating UUID, invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `v` at 1
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async MenuMasterService.getUserMenu (/home/vk/Dev/erp/ERP server/src/modules/fixed/menu-master/menu-master.service.ts:62:23)
+    at async MenuMasterController.getUserMenu (/home/vk/Dev/erp/ERP server/src/modules/fixed/menu-master/menu-master.controller.ts:64:20)
+2026-09-12T07:00:47.988Z ERROR [AllExceptionsFilter] GET /api/v1/menu-masters/usermenu
+PrismaClientKnownRequestError: 
+Invalid `this.prisma.userMenus.findMany()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/fixed/menu-master/menu-master.service.ts:62:51
+
+  59 if (!userId) {
+  60   throw new UnauthorizedException('Unable to resolve the current user from the access token');
+  61 }
+→ 62 const userMenus = await this.prisma.userMenus.findMany(
+Inconsistent column data: Error creating UUID, invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `v` at 1
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async MenuMasterService.getUserMenu (/home/vk/Dev/erp/ERP server/src/modules/fixed/menu-master/menu-master.service.ts:62:23)
+    at async MenuMasterController.getUserMenu (/home/vk/Dev/erp/ERP server/src/modules/fixed/menu-master/menu-master.controller.ts:64:20)
+2026-09-12T07:00:52.126Z ERROR [AllExceptionsFilter] GET /api/v1/menu-masters/usermenu
+PrismaClientKnownRequestError: 
+Invalid `this.prisma.userMenus.findMany()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/fixed/menu-master/menu-master.service.ts:62:51
+
+  59 if (!userId) {
+  60   throw new UnauthorizedException('Unable to resolve the current user from the access token');
+  61 }
+→ 62 const userMenus = await this.prisma.userMenus.findMany(
+Inconsistent column data: Error creating UUID, invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `v` at 1
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async MenuMasterService.getUserMenu (/home/vk/Dev/erp/ERP server/src/modules/fixed/menu-master/menu-master.service.ts:62:23)
+    at async MenuMasterController.getUserMenu (/home/vk/Dev/erp/ERP server/src/modules/fixed/menu-master/menu-master.controller.ts:64:20)
+2026-09-12T07:00:55.239Z ERROR [AllExceptionsFilter] GET /api/v1/menu-masters/usermenu
+PrismaClientKnownRequestError: 
+Invalid `this.prisma.userMenus.findMany()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/fixed/menu-master/menu-master.service.ts:62:51
+
+  59 if (!userId) {
+  60   throw new UnauthorizedException('Unable to resolve the current user from the access token');
+  61 }
+→ 62 const userMenus = await this.prisma.userMenus.findMany(
+Inconsistent column data: Error creating UUID, invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `v` at 1
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async MenuMasterService.getUserMenu (/home/vk/Dev/erp/ERP server/src/modules/fixed/menu-master/menu-master.service.ts:62:23)
+    at async MenuMasterController.getUserMenu (/home/vk/Dev/erp/ERP server/src/modules/fixed/menu-master/menu-master.controller.ts:64:20)
+2026-09-12T07:01:30.746Z ERROR [AllExceptionsFilter] GET /api/v1/menu-masters/usermenu
+PrismaClientKnownRequestError: 
+Invalid `this.prisma.userMenus.findMany()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/fixed/menu-master/menu-master.service.ts:62:51
+
+  59 if (!userId) {
+  60   throw new UnauthorizedException('Unable to resolve the current user from the access token');
+  61 }
+→ 62 const userMenus = await this.prisma.userMenus.findMany(
+Inconsistent column data: Error creating UUID, invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `v` at 1
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async MenuMasterService.getUserMenu (/home/vk/Dev/erp/ERP server/src/modules/fixed/menu-master/menu-master.service.ts:62:23)
+    at async MenuMasterController.getUserMenu (/home/vk/Dev/erp/ERP server/src/modules/fixed/menu-master/menu-master.controller.ts:64:20)
+2026-09-12T07:01:30.842Z ERROR [AllExceptionsFilter] GET /api/v1/menu-masters/usermenu
+PrismaClientKnownRequestError: 
+Invalid `this.prisma.userMenus.findMany()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/fixed/menu-master/menu-master.service.ts:62:51
+
+  59 if (!userId) {
+  60   throw new UnauthorizedException('Unable to resolve the current user from the access token');
+  61 }
+→ 62 const userMenus = await this.prisma.userMenus.findMany(
+Inconsistent column data: Error creating UUID, invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `v` at 1
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async MenuMasterService.getUserMenu (/home/vk/Dev/erp/ERP server/src/modules/fixed/menu-master/menu-master.service.ts:62:23)
+    at async MenuMasterController.getUserMenu (/home/vk/Dev/erp/ERP server/src/modules/fixed/menu-master/menu-master.controller.ts:64:20)
+2026-09-12T07:01:35.015Z ERROR [AllExceptionsFilter] GET /api/v1/menu-masters/usermenu
+PrismaClientKnownRequestError: 
+Invalid `this.prisma.userMenus.findMany()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/fixed/menu-master/menu-master.service.ts:62:51
+
+  59 if (!userId) {
+  60   throw new UnauthorizedException('Unable to resolve the current user from the access token');
+  61 }
+→ 62 const userMenus = await this.prisma.userMenus.findMany(
+Inconsistent column data: Error creating UUID, invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `v` at 1
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async MenuMasterService.getUserMenu (/home/vk/Dev/erp/ERP server/src/modules/fixed/menu-master/menu-master.service.ts:62:23)
+    at async MenuMasterController.getUserMenu (/home/vk/Dev/erp/ERP server/src/modules/fixed/menu-master/menu-master.controller.ts:64:20)
+2026-09-12T07:01:38.086Z ERROR [AllExceptionsFilter] GET /api/v1/menu-masters/usermenu
+PrismaClientKnownRequestError: 
+Invalid `this.prisma.userMenus.findMany()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/fixed/menu-master/menu-master.service.ts:62:51
+
+  59 if (!userId) {
+  60   throw new UnauthorizedException('Unable to resolve the current user from the access token');
+  61 }
+→ 62 const userMenus = await this.prisma.userMenus.findMany(
+Inconsistent column data: Error creating UUID, invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `v` at 1
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async MenuMasterService.getUserMenu (/home/vk/Dev/erp/ERP server/src/modules/fixed/menu-master/menu-master.service.ts:62:23)
+    at async MenuMasterController.getUserMenu (/home/vk/Dev/erp/ERP server/src/modules/fixed/menu-master/menu-master.controller.ts:64:20)
+2026-09-12T07:01:42.018Z ERROR [AllExceptionsFilter] GET /api/v1/menu-masters/usermenu
+PrismaClientKnownRequestError: 
+Invalid `this.prisma.userMenus.findMany()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/fixed/menu-master/menu-master.service.ts:62:51
+
+  59 if (!userId) {
+  60   throw new UnauthorizedException('Unable to resolve the current user from the access token');
+  61 }
+→ 62 const userMenus = await this.prisma.userMenus.findMany(
+Inconsistent column data: Error creating UUID, invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `v` at 1
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async MenuMasterService.getUserMenu (/home/vk/Dev/erp/ERP server/src/modules/fixed/menu-master/menu-master.service.ts:62:23)
+    at async MenuMasterController.getUserMenu (/home/vk/Dev/erp/ERP server/src/modules/fixed/menu-master/menu-master.controller.ts:64:20)

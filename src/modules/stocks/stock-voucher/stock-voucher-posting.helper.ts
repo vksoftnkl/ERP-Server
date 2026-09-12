@@ -6,7 +6,6 @@ import type {
   StockErrorResponse,
   StockVoucherTypeRules,
 } from './types/stock-voucher.types';
-
 /**
  * THE POSTING ENGINE, IN THE APPLICATION RATHER THAN IN THE DATABASE.
  *
@@ -67,13 +66,10 @@ import type {
  * phase, not one per line — so a four-hundred-line opening posts in seven
  * statements and either all of it commits or none of it does.
  */
-
 const logger = new Logger('StockVoucherPosting');
-
 /** +1 brings stock in, -1 takes it out. `sml_signed_base_qty` is generated from it. */
 const DIRECTION_IN = 1;
 const DIRECTION_OUT = -1;
-
 /**
  * `sml_src_module` / `slt_inward_src_module` for every row this engine writes.
  *
@@ -86,7 +82,6 @@ const DIRECTION_OUT = -1;
  * purpose, and neither constant may be reused for the other table.
  */
 export const STOCK_LEDGER_SRC_MODULE = 'STOCK';
-
 /**
  * True when `post()` and `cancel()` must run this engine instead of calling
  * `rules.postFunction` / `stock.fn_svh_cancel`.
@@ -103,7 +98,6 @@ export const STOCK_LEDGER_SRC_MODULE = 'STOCK';
 export function usesInProcessPosting(rules: StockVoucherTypeRules): boolean {
   return rules.postFunction === 'stock.fn_svh_post';
 }
-
 /**
  * DEFAULT_ACTOR IS "NOBODY", NOT A USER, and must never be stamped into an audit
  * column.
@@ -118,7 +112,6 @@ export function usesInProcessPosting(rules: StockVoucherTypeRules): boolean {
 function auditColumnActor(actor: string): string | null {
   return actor === DEFAULT_ACTOR ? null : actor;
 }
-
 export interface PostStockVoucherParams {
   rules: StockVoucherTypeRules;
   svhId: string;
@@ -132,7 +125,6 @@ export interface PostStockVoucherParams {
   /** One instant for every row the post writes, so a trail sorts unambiguously. */
   postedOn: Date;
 }
-
 /**
  * What phases 4–7 need: the post's parameters plus WHICH of the document's
  * ledger rows they derive from. A post applies the rows it wrote
@@ -143,7 +135,6 @@ export interface PostStockVoucherParams {
 interface ApplyParams extends PostStockVoucherParams {
   reversal: boolean;
 }
-
 /**
  * The ledger rows one engine run derives everything from: this document's, in
  * this year, live, and on the requested side of `sml_is_reversal`. Expects the
@@ -159,7 +150,6 @@ function ledgerRowsOf({ svhId, accYear, reversal }: ApplyParams): Prisma.Sql {
          AND sml.sml_is_reversal = ${reversal}::boolean
   `;
 }
-
 /**
  * Posts one DRAFT voucher: lots resolved, ledger written, balances and the
  * moving average applied, the negative-stock policy checked, lot totals
@@ -178,12 +168,10 @@ export async function postStockVoucher(
 ): Promise<number> {
   const { svhId, accYear, actor, postedOn } = params;
   const author = auditColumnActor(actor);
-
   await resolveLots(tx, params);
   await attachLotsToLines(tx, params);
   const rowsPosted = await writeLedger(tx, params);
   await applyLedgerRows(tx, { ...params, reversal: false });
-
   await tx.stockVoucher.update({
     where: { svhId_svhAccYear: { svhId, svhAccYear: accYear } },
     data: {
@@ -196,10 +184,8 @@ export async function postStockVoucher(
       svhModifiedBy: author,
     },
   });
-
   return rowsPosted;
 }
-
 /**
  * Phases 4–7, in order, over one side of the document's ledger rows. The one
  * sequence both a post and a cancel run once their rows are in the ledger.
@@ -210,7 +196,6 @@ async function applyLedgerRows(tx: Prisma.TransactionClient, params: ApplyParams
   await assertNegativeStockPolicy(tx, params);
   await refreshLotTotals(tx, params);
 }
-
 /**
  * The effective StockTrackPolicy for one item on one date, as a LATERAL join
  * that leaves `stp` NULL when no row matches. ONE definition, used by every
@@ -295,7 +280,6 @@ export function effectivePolicyCte(): Prisma.Sql {
     )
   `;
 }
-
 /**
  * The six identity dimensions, blanked wherever `policy` does not track them
  * and collapsed onto the sentinels `ux_slt_identity` is built over ('~', -1,
@@ -318,7 +302,44 @@ export function lotIdentityKeyColumns(): Prisma.Sql {
                       '00000000-0000-0000-0000-000000000000'::uuid)                                                    AS key_supplier
   `;
 }
-
+/**
+ * The ledger rows that STILL COUNT: live, forward, and not reversed by a
+ * cancel. Expects the ledger aliased `sml`.
+ *
+ * `sml_is_reversal = false` on its own is not enough, and believing it was is
+ * the whole of the bug this fragment exists to end. A cancel does not touch the
+ * original row — the table is append-only — it writes a mirror beside it with
+ * the direction flipped. So the forward side of a cancelled document is still
+ * there, still live, still `sml_is_reversal = false`, and any check that reads
+ * only that side reads a cancelled movement as a live one.
+ *
+ * What that cost on an OPENING: a holding opened by mistake, cancelled, and
+ * then re-opened correctly was refused for ever — "this holding already has an
+ * opening in this year" — with no way out short of inventing a batch number,
+ * which corrupts lot identity permanently to work around a query. The ledger
+ * itself was never wrong: one forward row, one reversal, net zero.
+ *
+ * The NOT EXISTS probes `ux_sml_reversal (sml_acc_year, sml_reverses_id)` and
+ * repeats that index's partial predicate, so it costs one index lookup per row
+ * rather than a scan.
+ *
+ * ONE definition, shared: the preflight, the post guard, the item lookup badge
+ * and the pending-items report must agree about what "already opened" means, or
+ * the screen says a holding is free and the post then refuses it.
+ */
+export function unreversedLedgerRow(): Prisma.Sql {
+  return Prisma.sql`
+             sml.sml_is_deleted  = false
+         AND sml.sml_is_reversal = false
+         AND NOT EXISTS (
+               SELECT 1
+                 FROM stock.stock_ledger rev
+                WHERE rev.sml_reverses_id = sml.sml_id
+                  AND rev.sml_acc_year    = sml.sml_acc_year
+                  AND rev.sml_is_reversal = true
+                  AND rev.sml_is_deleted  = false)
+  `;
+}
 /**
  * The CTE chain every phase below starts from, built from the same exported
  * fragments `validate()` builds its own from: the effective StockTrackPolicy
@@ -427,7 +448,6 @@ function postingCte(svhId: string, accYear: string, isCount: boolean): Prisma.Sq
     )
   `;
 }
-
 /**
  * Phase 1 — the lots this document needs, created if they do not exist.
  *
@@ -476,7 +496,6 @@ async function resolveLots(
     ON CONFLICT DO NOTHING
   `;
 }
-
 /**
  * Phase 2 — every line gets the `slt_id` its identity resolves to.
  *
@@ -517,7 +536,6 @@ async function attachLotsToLines(
        AND svi.svi_acc_year = c.svi_acc_year
   `;
 }
-
 /**
  * Phase 3 — the ledger. THE TRUTH, and everything after this is derived from it.
  *
@@ -539,7 +557,6 @@ async function writeLedger(
     ? [rules.ledgerTxnTypes[0], rules.ledgerTxnTypes[1] ?? rules.ledgerTxnTypes[0]]
     : [rules.ledgerTxnTypes[0], rules.ledgerTxnTypes[0]];
   const direction = rules.isInward ? DIRECTION_IN : DIRECTION_OUT;
-
   return tx.$executeRaw`
     WITH ${postingCte(svhId, accYear, isCount)}
     INSERT INTO stock.stock_ledger (
@@ -579,7 +596,6 @@ async function writeLedger(
      WHERE (c.move_base_qty + c.move_free_base_qty) <> 0
   `;
 }
-
 /**
  * Phase 4 — the balance, from the rows phase 3 just wrote and from nothing else.
  *
@@ -658,7 +674,6 @@ async function applyBalances(tx: Prisma.TransactionClient, params: ApplyParams):
       sbl_modified_by   = ${auditColumnActor(actor)}
   `;
 }
-
 /**
  * Phase 5 — `stock_item_cost`, the branch's moving weighted average, and its
  * distribution onto the holdings. Two statements: the MERGE, then the stamp.
@@ -733,7 +748,6 @@ async function applyItemCost(tx: Prisma.TransactionClient, params: ApplyParams):
              ORDER BY 1, 2, 3
            ) t
   `;
-
   await tx.$executeRaw`
     WITH moves AS (
       SELECT sml.sml_company_id, sml.sml_branch_id, sml.sml_item_id,
@@ -850,7 +864,6 @@ async function applyItemCost(tx: Prisma.TransactionClient, params: ApplyParams):
          COALESCE(n.new_last_rate, 0), n.new_last_date,
          n.new_sale_rate, n.new_sale_date, ${auditColumnActor(actor)})
   `;
-
   // The stamp. Only the four value columns, the way the trigger writes them: a
   // revaluation is not a movement, so the row version and audit columns of a
   // holding that did not move are left alone.
@@ -877,7 +890,6 @@ async function applyItemCost(tx: Prisma.TransactionClient, params: ApplyParams):
        AND b.sbl_is_deleted = false
   `;
 }
-
 /** One holding this document drove below zero, with the policy that decides what that means. */
 interface NegativeHolding {
   itemName: string;
@@ -886,7 +898,6 @@ interface NegativeHolding {
   onHand: string;
   allowNegative: string;
 }
-
 /**
  * Phase 6 — the negative-stock policy, `fn_sml_apply`'s last step.
  *
@@ -945,11 +956,9 @@ async function assertNegativeStockPolicy(
        AND COALESCE(stp.stp_allow_negative, 'ALLOW') <> 'ALLOW'
      ORDER BY itm.item_name_en, slt.slt_batch_no
   `;
-
   const describe = (row: NegativeHolding): string =>
     `${row.itemName}${row.batchNo ? ` batch ${row.batchNo}` : ''}: stock would go negative ` +
     `(${row.onHand} on hand) in ${row.godownName ?? 'this godown'}`;
-
   for (const row of holdings) {
     if (row.allowNegative === 'WARN') {
       logger.warn(
@@ -957,7 +966,6 @@ async function assertNegativeStockPolicy(
       );
     }
   }
-
   const blocked = holdings.filter((row) => row.allowNegative === 'BLOCK');
   if (blocked.length) {
     throwStockConflict<StockErrorDetail, StockErrorResponse>(
@@ -966,7 +974,6 @@ async function assertNegativeStockPolicy(
     );
   }
 }
-
 /**
  * Phase 7 — `slt_total_on_hand`, the lot's chain-wide total across every branch
  * and godown, and the lot's status with it.
@@ -1027,11 +1034,9 @@ async function refreshLotTotals(tx: Prisma.TransactionClient, params: ApplyParam
      WHERE slt.slt_id = v.lot_id
   `;
 }
-
 // ──────────────────────────────────────────────────────────────────────────
 // Cancel — reversal rows, then the same engine over them
 // ──────────────────────────────────────────────────────────────────────────
-
 export interface CancelStockVoucherParams {
   rules: StockVoucherTypeRules;
   svhId: string;
@@ -1043,7 +1048,6 @@ export interface CancelStockVoucherParams {
   /** One instant for every reversal row, the header stamp and the trail row. */
   cancelledOn: Date;
 }
-
 /**
  * Cancels one POSTED voucher by REVERSAL, never by delete: every ledger row the
  * post wrote gets a mirror row with the opposite direction, and the balance,
@@ -1091,8 +1095,7 @@ export async function cancelStockVoucher(
 ): Promise<number> {
   const { rules, svhId, accYear, actor, cancelledOn } = params;
   const author = auditColumnActor(actor);
-
-  await lockPostedHeader(tx, params);
+  await lockHeaderInStatus(tx, params, 'POSTED');
   const rowsReversed = await writeReversalLedger(tx, params);
   await applyLedgerRows(tx, {
     rules,
@@ -1102,7 +1105,6 @@ export async function cancelStockVoucher(
     postedOn: cancelledOn,
     reversal: true,
   });
-
   await tx.stockVoucher.update({
     where: { svhId_svhAccYear: { svhId, svhAccYear: accYear } },
     data: {
@@ -1115,19 +1117,63 @@ export async function cancelStockVoucher(
       svhModifiedBy: author,
     },
   });
-
   return rowsReversed;
 }
-
 /**
- * Takes the header lock and refuses anything but POSTED under it — see the
+ * Cancels one DRAFT voucher: the header moves to CANCELLED and NOTHING else
+ * happens, because nothing else has happened yet. A draft has written no
+ * `stock_ledger` row, so there is nothing to mirror, no balance to re-apply
+ * and no negative-stock policy to satisfy — which is why this cannot fail the
+ * way `cancelStockVoucher` legitimately can, and why it returns 0.
+ *
+ * WHY CANCEL A DRAFT AT ALL, when `softDelete` exists: the two say different
+ * things and both are wanted. A soft delete takes the document out of play as
+ * though it had never been raised; a cancellation leaves it listed, numbered
+ * and readable with a reason attached, which is what an operator wants for a
+ * draft that was abandoned for a reason worth recording. The trail row the
+ * service writes carries that reason either way.
+ *
+ * TWO SIDE EFFECTS OF THE STATUS MOVE, both wanted:
+ *   * `ix_svh_freeze_open` and `fn_sml_freeze_guard` key on DRAFT, so
+ *     cancelling a draft PHYSICAL count lifts the godown freeze it was
+ *     holding. An abandoned count must not go on blocking every movement in
+ *     the godown until its freeze window expires.
+ *   * `post()` and `update()` accept DRAFT only, so a cancelled draft can no
+ *     longer be edited or posted. That is the point: re-raise it instead.
+ *
+ * THE HEADER IS LOCKED FIRST, `FOR UPDATE`, and re-read under the lock for the
+ * same reason the posted path does it — two cancels arriving together both
+ * pass the service's pre-transaction status check, and the loser must read
+ * CANCELLED here rather than write a second trail row.
+ */
+export async function cancelDraftVoucher(
+  tx: Prisma.TransactionClient,
+  params: CancelStockVoucherParams,
+): Promise<number> {
+  const { svhId, accYear, actor, cancelledOn } = params;
+  await lockHeaderInStatus(tx, params, 'DRAFT');
+  await tx.stockVoucher.update({
+    where: { svhId_svhAccYear: { svhId, svhAccYear: accYear } },
+    data: {
+      // As in cancelStockVoucher: only the current state lands on the header.
+      svhStatus: 'CANCELLED',
+      svhVersionNo: { increment: 1 },
+      svhModifiedOn: cancelledOn,
+      svhModifiedBy: auditColumnActor(actor),
+    },
+  });
+  return 0;
+}
+/**
+ * Takes the header lock and refuses anything but `expected` under it — see the
  * note on `cancelStockVoucher`. The wording matches the service's own
  * pre-transaction refusals so the loser of a race reads the same sentence
  * the next request would.
  */
-async function lockPostedHeader(
+async function lockHeaderInStatus(
   tx: Prisma.TransactionClient,
   { rules, svhId, accYear }: CancelStockVoucherParams,
+  expected: 'POSTED' | 'DRAFT',
 ): Promise<void> {
   const [header] = await tx.$queryRaw<Array<{ status: string; refno: string }>>`
     SELECT svh.svh_status AS status, svh.svh_refno AS refno
@@ -1141,11 +1187,11 @@ async function lockPostedHeader(
     throwStockConflict<StockErrorDetail, StockErrorResponse>(`${rules.displayName} not found`, [
       {
         field: 'svhId',
-        message: `${svhId} no longer exists in ${accYear}, so there is nothing to reverse.`,
+        message: `${svhId} no longer exists in ${accYear}, so there is nothing to cancel.`,
       },
     ]);
   }
-  if (header.status !== 'POSTED') {
+  if (header.status !== expected) {
     throwStockConflict<StockErrorDetail, StockErrorResponse>(
       `${rules.displayName} is ${header.status}`,
       [
@@ -1154,13 +1200,16 @@ async function lockPostedHeader(
           message:
             header.status === 'CANCELLED'
               ? `${header.refno} was already cancelled.`
-              : `${header.refno} is ${header.status}: only a POSTED ${rules.displayName.toLowerCase()} has ledger rows to reverse.`,
+              : // The status changed between the service's check and this lock —
+                // a concurrent post or cancel got in. Naming both states beats
+                // "only a POSTED one can be cancelled", which would read as a
+                // rule the caller had broken rather than a race it lost.
+                `${header.refno} is ${header.status}, not ${expected}: it changed while this cancellation was waiting. Reload it and decide again.`,
         },
       ],
     );
   }
 }
-
 /**
  * The mirror rows — see `cancelStockVoucher` for what each column carries and
  * why. One INSERT … SELECT over the document's live, non-reversal rows;

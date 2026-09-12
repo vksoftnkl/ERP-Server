@@ -86,15 +86,13 @@ class SaveAccountLedgerMasterDto {
     ledIsSez;
     ledTypeOfSupply;
     ledHsnSac;
-    ledGstRate;
-    ledTaxability;
+    ledTaxId;
     ledGstPartyType;
     ledTanNo;
     ledCin;
     ledUdyamNo;
     ledMsmeType;
     ledGstDutyHead;
-    ledTaxRate;
     ledRoundingMethod;
     ledRoundingLimit;
     ledIsTdsApplicable;
@@ -383,17 +381,17 @@ __decorate([
     __metadata("design:type", Object)
 ], SaveAccountLedgerMasterDto.prototype, "ledHsnSac", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
-    (0, class_validator_1.IsOptional)(),
-    (0, class_transformer_1.Type)(() => Number),
-    (0, class_validator_1.IsNumber)({ allowNaN: false, allowInfinity: false }),
-    __metadata("design:type", Number)
-], SaveAccountLedgerMasterDto.prototype, "ledGstRate", void 0);
-__decorate([
-    (0, swagger_1.ApiPropertyOptional)({ maxLength: 15, nullable: true }),
-    (0, dtoDecorators_1.NullableString)(15),
+    (0, swagger_1.ApiPropertyOptional)({
+        format: 'uuid',
+        nullable: true,
+        description: 'The inventory.tax_rate_master row this ledger carries when it appears as a taxable ' +
+            'line — a service ledger such as freight or packing. Replaces ledGstRate / ledTaxability ' +
+            '/ ledTaxRate, which held a bare percentage and could express neither cess nor ' +
+            'taxability. Null on a party or bank ledger.',
+    }),
+    (0, dtoDecorators_1.NullableUuid)(),
     __metadata("design:type", Object)
-], SaveAccountLedgerMasterDto.prototype, "ledTaxability", void 0);
+], SaveAccountLedgerMasterDto.prototype, "ledTaxId", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ maxLength: 30, nullable: true }),
     (0, dtoDecorators_1.NullableString)(30),
@@ -433,13 +431,6 @@ __decorate([
     (0, dtoDecorators_1.NullableString)(20),
     __metadata("design:type", Object)
 ], SaveAccountLedgerMasterDto.prototype, "ledGstDutyHead", void 0);
-__decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
-    (0, class_validator_1.IsOptional)(),
-    (0, class_transformer_1.Type)(() => Number),
-    (0, class_validator_1.IsNumber)({ allowNaN: false, allowInfinity: false }),
-    __metadata("design:type", Number)
-], SaveAccountLedgerMasterDto.prototype, "ledTaxRate", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ maxLength: 15, nullable: true }),
     (0, dtoDecorators_1.NullableString)(15),

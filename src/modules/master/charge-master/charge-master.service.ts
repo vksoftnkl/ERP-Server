@@ -51,12 +51,12 @@ const CHARGE_OPTIONAL_FIELDS = [
   'chgIsActive',
 ];
 // Columns pulled from the mapped acc_ledger_master row and echoed on the
-// payload (display label + the GST attributes the charge inherits).
+// payload (display label + the HSN/SAC the charge inherits). ledGstRate and
+// ledTaxability used to be echoed here too; 20260912100000 dropped them in
+// favour of led_tax_id, and resolving that rate is still to be done.
 const CHARGE_LEDGER_SELECT = {
   ledName: true,
   ledHsnSac: true,
-  ledGstRate: true,
-  ledTaxability: true,
 } as const satisfies Prisma.AccLedgerMasterSelect;
 type ChargeMasterWriteClient = MasterWriteClient;
 @Injectable()
@@ -459,8 +459,6 @@ export class ChargeMasterService {
       chgLedgerCode: record.chgLedgerCode,
       chgLedgerName: ledger?.ledName ?? null,
       ledHsnSac: ledger?.ledHsnSac ?? null,
-      ledGstRate: toNullableNumber(ledger?.ledGstRate ?? null),
-      ledTaxability: ledger?.ledTaxability ?? null,
       chgTaxApl: record.chgTaxApl,
       chgBeforeTax: record.chgBeforeTax,
       chgSepPost: record.chgSepPost,

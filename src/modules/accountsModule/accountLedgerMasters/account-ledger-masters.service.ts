@@ -24,6 +24,7 @@ import {
 } from 'src/common/utils/module-service.utils';
 import type { AccountsWriteClient } from 'src/common/utils/module-service.utils';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
+import { assertTaxRateRefs } from '../../Inventory/tax-rate-master/utils/tax-rate-reference.helper';
 import { AccLedgerProfile } from '../accGroupMaster/types/acc-group-master-enum';
 const ACCOUNT_LEDGER_MASTER_TABLE_NAME = 'acc_ledger_master';
 const ACCOUNT_LEDGER_MASTER_AUDIT_SCREEN_NAME = 'Account Ledger Master';
@@ -39,6 +40,7 @@ const ACCOUNT_LEDGER_MASTER_RELATIONS = {
   company: { select: { compName: true } },
   branches: { select: { brName: true } },
   accGroupMaster: { select: { accGroupName: true, accLedgerProfile: true } },
+  taxRate: { select: { taxName: true, taxRatePerc: true, taxTaxability: true } },
   bankAccounts: {
     where: { lbaIsDeleted: false },
     orderBy: LEDGER_BANK_ACCOUNT_ORDER_BY,
@@ -217,6 +219,7 @@ export class AccountLedgerMastersService {
       'ledName',
     );
     await this.ensureGroupExists(saveAccountLedgerMasterDto.ledGroupId, tx);
+    await this.ensureTaxRateExists(tx, saveAccountLedgerMasterDto.ledTaxId);
     const companyId = saveAccountLedgerMasterDto.ledCompanyId ?? null;
     const branchId = saveAccountLedgerMasterDto.ledBranchId ?? null;
     const groupId = saveAccountLedgerMasterDto.ledGroupId;
@@ -309,6 +312,7 @@ export class AccountLedgerMastersService {
     );
     const nextGroupId = saveAccountLedgerMasterDto.ledGroupId;
     await this.ensureGroupExists(nextGroupId, tx);
+    await this.ensureTaxRateExists(tx, saveAccountLedgerMasterDto.ledTaxId);
     const nextCompanyId = hasOwnProperty(saveAccountLedgerMasterDto, 'ledCompanyId')
       ? (saveAccountLedgerMasterDto.ledCompanyId ?? null)
       : existing.ledCompanyId;
@@ -372,6 +376,20 @@ export class AccountLedgerMastersService {
       ]);
     }
   }
+  // fk_led_tax proves the rate EXISTS and nothing more: a soft-deleted rate
+  // still satisfies it, and so does one withdrawn from new documents. Check
+  // both here so a bad reference is a 400 naming ledTaxId rather than a P2003
+  // surfacing as a 500.
+  private async ensureTaxRateExists(
+    tx: AccountLedgerWriteClient,
+    taxId: string | null | undefined,
+  ): Promise<void> {
+    if (typeof taxId !== 'string' || taxId.length === 0) {
+      return;
+    }
+    await assertTaxRateRefs(tx, [{ taxId, field: 'ledTaxId' }], 'Invalid ledger tax rate');
+  }
+
   private async ensureNameIsUnique(
     tx: AccountLedgerWriteClient,
     ledgerName: string,
@@ -544,11 +562,8 @@ export class AccountLedgerMastersService {
     if (hasOwnProperty(saveAccountLedgerMasterDto, 'ledHsnSac')) {
       data.ledHsnSac = saveAccountLedgerMasterDto.ledHsnSac;
     }
-    if (hasOwnProperty(saveAccountLedgerMasterDto, 'ledGstRate')) {
-      data.ledGstRate = saveAccountLedgerMasterDto.ledGstRate;
-    }
-    if (hasOwnProperty(saveAccountLedgerMasterDto, 'ledTaxability')) {
-      data.ledTaxability = saveAccountLedgerMasterDto.ledTaxability;
+    if (hasOwnProperty(saveAccountLedgerMasterDto, 'ledTaxId')) {
+      data.ledTaxId = saveAccountLedgerMasterDto.ledTaxId;
     }
     if (hasOwnProperty(saveAccountLedgerMasterDto, 'ledGstPartyType')) {
       data.ledGstPartyType = saveAccountLedgerMasterDto.ledGstPartyType;
@@ -567,9 +582,6 @@ export class AccountLedgerMastersService {
     }
     if (hasOwnProperty(saveAccountLedgerMasterDto, 'ledGstDutyHead')) {
       data.ledGstDutyHead = saveAccountLedgerMasterDto.ledGstDutyHead;
-    }
-    if (hasOwnProperty(saveAccountLedgerMasterDto, 'ledTaxRate')) {
-      data.ledTaxRate = saveAccountLedgerMasterDto.ledTaxRate;
     }
     if (hasOwnProperty(saveAccountLedgerMasterDto, 'ledRoundingMethod')) {
       data.ledRoundingMethod = saveAccountLedgerMasterDto.ledRoundingMethod;
@@ -683,15 +695,16 @@ export class AccountLedgerMastersService {
       ledIsSez: record.ledIsSez,
       ledTypeOfSupply: record.ledTypeOfSupply,
       ledHsnSac: record.ledHsnSac,
-      ledGstRate: toNullableNumber(record.ledGstRate),
-      ledTaxability: record.ledTaxability,
+      ledTaxId: record.ledTaxId,
+      ledTaxName: record.taxRate?.taxName ?? null,
+      ledTaxRatePerc: record.taxRate ? toNullableNumber(record.taxRate.taxRatePerc) : null,
+      ledTaxTaxability: record.taxRate?.taxTaxability ?? null,
       ledGstPartyType: record.ledGstPartyType,
       ledTanNo: record.ledTanNo,
       ledCin: record.ledCin,
       ledUdyamNo: record.ledUdyamNo,
       ledMsmeType: record.ledMsmeType,
       ledGstDutyHead: record.ledGstDutyHead,
-      ledTaxRate: toNullableNumber(record.ledTaxRate),
       ledRoundingMethod: record.ledRoundingMethod,
       ledRoundingLimit: toNullableNumber(record.ledRoundingLimit),
       ledIsTdsApplicable: record.ledIsTdsApplicable,

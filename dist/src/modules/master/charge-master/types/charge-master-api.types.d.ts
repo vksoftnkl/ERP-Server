@@ -1,4 +1,3 @@
-import type { Prisma } from '@prisma/client';
 import type { ModuleApiErrorDetail, ModuleApiErrorResponse, ModuleApiSuccessResponse } from "../../../../common/types/module-api.types";
 import type { ModuleListMeta } from "../../../../common/types/module-list.types";
 import { ChargeApplyOn, ChargeCostAlloc, ChargeDocType, ChargeMethod, ChargeRole, ChargeType } from './charge-enum';
@@ -78,8 +77,6 @@ export type ChargeDetailGuardedValues = Partial<Record<ChargeDetailGuardedField,
 export interface ChargeLedgerDetail {
     ledName: string;
     ledHsnSac: string | null;
-    ledGstRate: Prisma.Decimal | null;
-    ledTaxability: string | null;
 }
 export interface ChargeMasterPayload {
     chgId: string;
@@ -96,8 +93,6 @@ export interface ChargeMasterPayload {
     chgLedgerCode: string;
     chgLedgerName: string | null;
     ledHsnSac: string | null;
-    ledGstRate: number | null;
-    ledTaxability: string | null;
     chgTaxApl: boolean;
     chgBeforeTax: boolean;
     chgSepPost: boolean;

@@ -275,6 +275,12 @@ export class QuotationItemPayloadDto {
   sqiCashDiscAmt!: number;
   @ApiProperty()
   sqiGrossAmt!: number;
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description: 'The tax_rate_master row this line was taxed under. Null on historical lines.',
+  })
+  sqiTaxId!: string | null;
   @ApiProperty()
   sqiTaxableAmt!: number;
   @ApiProperty()

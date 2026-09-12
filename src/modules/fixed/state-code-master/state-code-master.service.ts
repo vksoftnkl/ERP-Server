@@ -263,7 +263,9 @@ export class StateCodeMasterService {
   }
 
   private normalizeStateCode(value: string, fieldName = 'stateCode'): string {
-    const normalized = value.trim().toUpperCase();
+    // A missing query param arrives as undefined; guard before .trim() so an
+    // omitted code is a 400, not an unhandled TypeError (500).
+    const normalized = (value ?? '').trim().toUpperCase();
     if (!normalized || normalized.length !== 2) {
       throwFixedBadRequest<StateCodeMasterErrorDetail, StateCodeMasterErrorResponse>(
         'Validation failed',

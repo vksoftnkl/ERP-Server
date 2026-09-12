@@ -93,7 +93,7 @@ let StockTransferService = class StockTransferService {
         const lots = await this.prisma.$queryRaw `
       SELECT slt_id, slt_item_id, slt_company_id
         FROM stock.stock_lot
-       WHERE slt_id IN (${client_1.Prisma.join(lotIds)})
+       WHERE slt_id = ANY(ARRAY[${client_1.Prisma.join(lotIds)}]::uuid[])
     `;
         const lotById = new Map(lots.map((lot) => [lot.slt_id, lot]));
         const balances = await this.prisma.$queryRaw `
@@ -101,7 +101,7 @@ let StockTransferService = class StockTransferService {
         FROM stock.stock_balance
        WHERE sbl_company_id = ${header.companyId}::uuid
          AND sbl_branch_id  = ${header.branchId}::uuid
-         AND sbl_lot_id IN (${client_1.Prisma.join(lotIds)})
+         AND sbl_lot_id = ANY(ARRAY[${client_1.Prisma.join(lotIds)}]::uuid[])
     `;
         const onHand = new Map(balances.map((row) => [
             this.holdingKey(row.sbl_lot_id, row.sbl_godown_id, row.sbl_bucket),
@@ -448,7 +448,7 @@ let StockTransferService = class StockTransferService {
          AND t.stt_is_deleted = false
          AND (${openOnly}::boolean = false
               OR t.stt_sent_qty - t.stt_received_qty - t.stt_damage_qty > 0)
-       ORDER BY i.item_name, t.stt_bucket
+       ORDER BY i.item_name_en, t.stt_bucket
     `;
         return rows.map((row) => this.toTransitRow(row));
     }

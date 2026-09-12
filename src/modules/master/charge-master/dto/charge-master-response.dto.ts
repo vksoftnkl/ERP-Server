@@ -54,18 +54,6 @@ export class ChargeMasterPayloadDto {
     description: 'HSN/SAC code of the mapped GL ledger',
   })
   ledHsnSac!: string | null;
-  @ApiPropertyOptional({
-    type: Number,
-    nullable: true,
-    description: 'GST rate of the mapped GL ledger',
-  })
-  ledGstRate!: number | null;
-  @ApiPropertyOptional({
-    maxLength: 15,
-    nullable: true,
-    description: 'Taxability of the mapped GL ledger',
-  })
-  ledTaxability!: string | null;
   @ApiProperty()
   chgTaxApl!: boolean;
   @ApiProperty()

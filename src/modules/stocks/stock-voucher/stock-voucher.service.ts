@@ -20,10 +20,12 @@ import {
 } from './stock-voucher-numbering.helper';
 import { resolveImportedLines } from './stock-voucher-import.helper';
 import {
+  cancelDraftVoucher,
   cancelStockVoucher,
   effectivePolicyCte,
   lotIdentityKeyColumns,
   postStockVoucher,
+  unreversedLedgerRow,
   usesInProcessPosting,
 } from './stock-voucher-posting.helper';
 import {
@@ -57,16 +59,13 @@ import {
   type StockVoucherTypeRules,
   type StockVarianceRow,
 } from './types/stock-voucher.types';
-
 const STOCK_VOUCHER_TABLE_NAME = 'stock_voucher';
 const STOCK_VOUCHER_ITEM_TABLE_NAME = 'stock_voucher_item';
-
 /** §10 — both reports can cover a 40,000-row item master, so they page. */
 const DEFAULT_REPORT_LIMIT = 200;
 const MAX_REPORT_LIMIT = 1000;
 const DEFAULT_LIST_LIMIT = 50;
 const MAX_LIST_LIMIT = 500;
-
 interface ListStockVouchersQuery {
   companyId: string;
   branchId: string;
@@ -78,7 +77,6 @@ interface ListStockVouchersQuery {
   limit?: number;
   offset?: number;
 }
-
 /** §4 — one raw row of the generated count sheet. */
 interface CountSheetRow {
   sbl_item_id: string;
@@ -101,7 +99,6 @@ interface CountSheetRow {
   sbl_avg_cost_rate: Prisma.Decimal;
   sbl_stock_value: Prisma.Decimal;
 }
-
 /** §12 — one raw ledger row of the variance report. */
 interface VarianceRow {
   sml_line_no: number;
@@ -119,7 +116,6 @@ interface VarianceRow {
   sml_reason_id: string | null;
   reason_name: string | null;
 }
-
 /** §4 — what the count sheet is generated for. */
 export interface CountSheetQuery {
   companyId: string;
@@ -136,7 +132,6 @@ export interface CountSheetQuery {
   limit?: number;
   offset?: number;
 }
-
 /** What stock_balance answers for one holding a count line names — §3.4. */
 interface CountHoldingRow {
   sbl_lot_id: string;
@@ -153,7 +148,6 @@ interface CountHoldingRow {
   slt_mfg_date: Date | null;
   slt_serial_no: string | null;
 }
-
 /** The same row as the line writer needs it. */
 interface CountHolding {
   itemId: string;
@@ -167,7 +161,6 @@ interface CountHolding {
   serialNo: string | null;
   supplierId: string | null;
 }
-
 interface HeaderRow {
   svh_id: string;
   svh_acc_year: string;
@@ -216,7 +209,6 @@ interface HeaderRow {
   svh_remarks: string | null;
   svh_is_deleted: boolean;
 }
-
 interface LineRow {
   svi_id: string;
   svi_line_no: number;
@@ -260,7 +252,6 @@ interface LineRow {
   svi_lot_id: string | null;
   svi_remarks: string | null;
 }
-
 /**
  * The type-agnostic half of every stock document screen.
  *
@@ -285,11 +276,9 @@ export class StockVoucherService {
     private readonly auditLogService: AuditLogService,
     private readonly requestContextService: RequestContextService,
   ) {}
-
   // ──────────────────────────────────────────────────────────────────────────
   // §4 — save a draft
   // ──────────────────────────────────────────────────────────────────────────
-
   /**
    * Create when `header.svhId` is absent, update when present.
    *
@@ -304,7 +293,6 @@ export class StockVoucherService {
   ): Promise<StockVoucherSaveResult> {
     const { header } = dto;
     const actor = resolveActor(header.userId, this.requestContextService.getUserId());
-
     this.assertPayloadRules(rules, dto);
     await this.assertReasons(rules, dto);
     // NOTHING HERE READS inventory.item_unit_conversion ANY MORE. uomId,
@@ -319,21 +307,17 @@ export class StockVoucherService {
     // factor are read from the balance row's sbl_base_uom_id with factor 1,
     // because the book figure the count is measured against is in the base
     // unit. Its route has its own line DTO, which omits all three.
-
     // 'POSTED' on the payload is an INSTRUCTION, not a column value — see the
     // DTO's status field. Anything else, including nothing, saves a draft.
     const postAfterSave = header.status === 'POSTED';
     const postedOn = new Date();
-
     const { svhId, rowsPosted } = await this.prisma.$transaction(async (tx) => {
       const id = header.svhId
         ? await this.updateDraft(tx, rules, dto, actor)
         : await this.createDraft(tx, rules, dto, actor);
-
       if (!postAfterSave) {
         return { svhId: id, rowsPosted: null as number | null };
       }
-
       // IN THE SAME TRANSACTION AS THE SAVE, and that is the whole point of
       // doing it here rather than calling post() afterwards: a document that
       // saved and then failed to post would be a draft the user believes is
@@ -371,7 +355,6 @@ export class StockVoucherService {
       });
       return { svhId: id, rowsPosted: posted as number | null };
     });
-
     const document = await this.getById(
       rules,
       svhId,
@@ -381,7 +364,6 @@ export class StockVoucherService {
     );
     return { ...document, rowsPosted };
   }
-
   /** The printed number, for a trail row written in the same breath as the post. */
   private async loadRefno(
     tx: Prisma.TransactionClient,
@@ -394,7 +376,6 @@ export class StockVoucherService {
     });
     return row?.svhRefno ?? null;
   }
-
   /**
    * Everything the engine would refuse, refused here first.
    *
@@ -408,7 +389,6 @@ export class StockVoucherService {
   private assertPayloadRules(rules: StockVoucherTypeRules, dto: SaveStockVoucherDto): void {
     const { header, lines } = dto;
     const errors: StockErrorDetail[] = [];
-
     if (rules.refuseTypes?.length) {
       // Belt and braces behind the controller's @IsIn: this service is exported
       // and the next five screens import it.
@@ -421,7 +401,6 @@ export class StockVoucherService {
         }
       }
     }
-
     // ck_svh_godowns will NOT catch a missing to-godown on an OPENING: it is
     // satisfied by a from-godown alone, because an ISSUE has no to-godown at
     // all. The engine catches it much later, as a not_null_violation.
@@ -437,7 +416,6 @@ export class StockVoucherService {
         message: `A ${rules.displayName} must name the godown the stock leaves from.`,
       });
     }
-
     // The DTO is shared by all eleven document types, so the fields that belong
     // to only one of them are gated here rather than being absent from it.
     if (!rules.allowsToBranch && header.toBranchId) {
@@ -479,7 +457,6 @@ export class StockVoucherService {
           'A freeze needs both freezeFrom and freezeTo — without a window the count measures a moving target.',
       });
     }
-
     // ck_svh_link is all-or-nothing across the four source columns.
     const linkParts = [
       header.linkSrcModule,
@@ -497,14 +474,12 @@ export class StockVoucherService {
           'The source document is all four of linkSrcModule, linkSrcDocType, linkSrcDocId and linkSrcAccYear, or none of them (ck_svh_link).',
       });
     }
-
     if (!lines.length) {
       // A draft with no lines is allowed to EXIST — a user opens the screen,
       // fills the header and walks away — but not to be created empty by an
       // importer that resolved nothing.
       errors.push({ field: 'lines', message: 'A document must have at least one line.' });
     }
-
     // ck_svh_freeze refuses a freeze with no window, and it refuses it from
     // Postgres with a constraint name. Caught here it is a 422 that says which
     // two fields are missing, BEFORE the check fires.
@@ -522,21 +497,17 @@ export class StockVoucherService {
     if (freezeFrom !== null && freezeTo !== null && freezeTo <= freezeFrom) {
       errors.push({ field: 'freezeTo', message: 'freezeTo must be after freezeFrom.' });
     }
-
     const isCount = rules.quantityMode === 'COUNT';
-
     // §17 open item 1: the counted godown is named ONCE, on the header, and
     // every line must be in it. Whichever side fn_svh_post reads, a count sheet
     // whose lines span two godowns is a sheet that counted one of them by
     // halves — and stock_balance is keyed per godown, so the book figures would
     // come from a different shelf than the header claims to have frozen.
     const countedGodownId = isCount ? (header.toGodownId ?? header.fromGodownId ?? null) : null;
-
     const derivableSource =
       header.rateSource !== null &&
       header.rateSource !== undefined &&
       (DERIVABLE_RATE_SOURCES as readonly string[]).includes(header.rateSource);
-
     const seen = new Map<string, number>();
     lines.forEach((line, index) => {
       const field = `lines.${index}`;
@@ -553,10 +524,8 @@ export class StockVoucherService {
       } else {
         seen.set(key, index);
       }
-
       const qty = this.toDecimalNumber(line.qty);
       const freeQty = this.toDecimalNumber(line.freeQty ?? 0);
-
       if (qty < 0 || freeQty < 0) {
         // ck_svi_qty_sign. Quantities are MAGNITUDES — direction comes from the
         // voucher type. A negative opening is an ADJUSTMENT, not an opening.
@@ -573,7 +542,6 @@ export class StockVoucherService {
           message: `Line ${line.lineNo} has no quantity.`,
         });
       }
-
       if (!isCount && !line.uomId) {
         // uomId is optional on the SHARED DTO so that a count can omit it —
         // see SaveStockVoucherItemDto. On every other type svi_uom_id is NOT
@@ -584,7 +552,6 @@ export class StockVoucherService {
           message: `Line ${line.lineNo} names no unit. uomId is an item_unit_conversion iuc_id, not a unit_id.`,
         });
       }
-
       if (isCount) {
         if (line.uomId) {
           // A count is taken in the BASE unit, because the book figure it is
@@ -653,7 +620,6 @@ export class StockVoucherService {
           });
         }
       }
-
       // THE SAME COLUMN, REFUSED ON ONE TYPE AND REQUIRED ON THE NEXT.
       // fn_slt_resolve owns lot identity on an OPENING, so a client-chosen lot
       // there lets two documents open one holding under two lots. A TRANSFER is
@@ -673,14 +639,12 @@ export class StockVoucherService {
           message: `Line ${line.lineNo}: a ${rules.displayName.toLowerCase()} does not choose its own lot. The engine resolves it at post.`,
         });
       }
-
       if (this.toDecimalNumber(line.weightQty ?? 0) < 0) {
         errors.push({
           field,
           message: `Line ${line.lineNo}: weight is a magnitude and cannot be negative.`,
         });
       }
-
       if (splitNo > 1 && !line.batchNo?.trim()) {
         // ck_svi_batch_split — a split only means anything when the line is
         // split BY BATCH.
@@ -689,7 +653,6 @@ export class StockVoucherService {
           message: `Line ${line.lineNo} split ${splitNo} needs a batch number.`,
         });
       }
-
       if (line.mfgDate && line.expiryDate && line.expiryDate < line.mfgDate) {
         // ck_svi_expiry_order
         errors.push({
@@ -697,7 +660,6 @@ export class StockVoucherService {
           message: `Line ${line.lineNo}: expiry ${line.expiryDate} is before manufacture ${line.mfgDate}.`,
         });
       }
-
       // Stripped in replaceLines, and REPORTED here — silently zeroing a rate
       // the user typed would leave the screen showing a cost the document does
       // not have. On a transfer there is nothing to type: the engine stamps the
@@ -714,7 +676,6 @@ export class StockVoucherService {
           message: `Line ${line.lineNo}: a ${rules.displayName.toLowerCase()} carries no cost rate. The stock is valued at what it cost where it came from, stamped by the engine, and that figure travels with it.`,
         });
       }
-
       // MANUAL does NOT excuse a zero cost — see DERIVABLE_RATE_SOURCES. The
       // plan words this check as "no cost rate and no rate source", which reads
       // as though all five sources excuse it; MANUAL derives nothing, so a
@@ -748,7 +709,6 @@ export class StockVoucherService {
         });
       }
     });
-
     if (errors.length) {
       throwStockUnprocessable<StockErrorDetail, StockErrorResponse>(
         `This ${rules.displayName.toLowerCase()} cannot be saved`,
@@ -756,7 +716,6 @@ export class StockVoucherService {
       );
     }
   }
-
   /**
    * Validates every `reasonId` the payload cites, header and lines together.
    *
@@ -806,7 +765,6 @@ export class StockVoucherService {
     if (!cited.size) {
       return;
     }
-
     const rows = await this.prisma.stockReasonMaster.findMany({
       where: {
         srmId: { in: [...cited.keys()] },
@@ -825,7 +783,6 @@ export class StockVoucherService {
     });
     const byId = new Map(rows.map((row) => [row.srmId, row]));
     const errors: StockErrorDetail[] = [];
-
     for (const [reasonId, citations] of cited) {
       const [first] = citations;
       const reason = byId.get(reasonId);
@@ -880,7 +837,6 @@ export class StockVoucherService {
         }
       }
     }
-
     if (errors.length) {
       throwStockUnprocessable<StockErrorDetail, StockErrorResponse>(
         'This document cites a stock reason it may not use',
@@ -888,7 +844,6 @@ export class StockVoucherService {
       );
     }
   }
-
   private async createDraft(
     tx: Prisma.TransactionClient,
     rules: StockVoucherTypeRules,
@@ -910,7 +865,6 @@ export class StockVoucherService {
       { slno: header.slno, refno: header.refno },
       rules.refnoVchrTypeId,
     );
-
     const created = await tx.stockVoucher.create({
       data: {
         // svh_line_count / svh_total_qty / svh_total_value / svh_total_value_wot
@@ -958,10 +912,8 @@ export class StockVoucherService {
       },
       select: { svhId: true, svhAccYear: true, svhRefno: true },
     });
-
     await this.replaceLines(tx, rules, dto, created.svhId, actor, header.createdBy);
     await this.writeHeaderTotals(tx, created.svhId, header);
-
     await this.auditLogService.logEntityChange(
       {
         action: 'insert',
@@ -977,7 +929,6 @@ export class StockVoucherService {
       },
       tx,
     );
-
     // The first row of the voucher's trail. fromStatus NULL says the document
     // did not exist before this step; tslToStatus says what it was born as.
     await this.logStatusChange(tx, {
@@ -996,10 +947,8 @@ export class StockVoucherService {
       deviceId: header.deviceId,
       sessionId: header.sessionId ?? null,
     });
-
     return created.svhId;
   }
-
   /**
    * THE TOTALS ARE THE SCREEN'S. Nothing here counts the lines or sums the grid.
    *
@@ -1042,13 +991,11 @@ export class StockVoucherService {
     if (!Object.keys(data).length) {
       return;
     }
-
     await tx.stockVoucher.update({
       where: { svhId_svhAccYear: { svhId, svhAccYear: header.accYear } },
       data,
     });
   }
-
   private async updateDraft(
     tx: Prisma.TransactionClient,
     rules: StockVoucherTypeRules,
@@ -1058,13 +1005,11 @@ export class StockVoucherService {
     const { header } = dto;
     const svhId = header.svhId as string;
     const existing = await this.loadForWrite(tx, rules, svhId, header.accYear);
-
     // tr_svh_post_lock and tr_svi_post_lock refuse every edit once the status
     // leaves DRAFT, and tr_sml_immutable refuses every UPDATE and DELETE of the
     // ledger. Checking here is what turns a 500 from a trigger into a 409 that
     // says which status the document is actually in.
     this.assertDraft(rules, existing);
-
     await tx.stockVoucher.update({
       where: { svhId_svhAccYear: { svhId, svhAccYear: header.accYear } },
       data: {
@@ -1092,10 +1037,8 @@ export class StockVoucherService {
         svhModifiedBy: this.actorFor(header.modifiedBy, actor),
       },
     });
-
     await this.replaceLines(tx, rules, dto, svhId, actor, header.modifiedBy);
     await this.writeHeaderTotals(tx, svhId, header);
-
     await this.auditLogService.logEntityChange(
       {
         action: 'update',
@@ -1111,10 +1054,8 @@ export class StockVoucherService {
       },
       tx,
     );
-
     return svhId;
   }
-
   /**
    * Deletes and re-inserts the lines. See save() for why a replace rather than
    * a merge.
@@ -1149,11 +1090,9 @@ export class StockVoucherService {
     if (!lines.length) {
       return;
     }
-
     const isCount = rules.quantityMode === 'COUNT';
     const zeroCost = isCount || rules.zeroesLineCost === true;
     const holdings = isCount ? await this.loadCountHoldings(tx, header, lines) : null;
-
     const data = lines.map((line) => {
       const holding = holdings?.get(this.holdingKey(line.lotId, line.godownId, line.bucket));
       const qty = isCount ? 0 : this.toDecimalNumber(line.qty);
@@ -1281,9 +1220,7 @@ export class StockVoucherService {
         // any write to them, including a write of the value it would compute.
       };
     });
-
     await tx.stockVoucherItem.createMany({ data });
-
     await this.auditLogService.logEntityChange(
       {
         // 'insert', not 'update', even though this replaced a line set: the
@@ -1304,7 +1241,6 @@ export class StockVoucherService {
       tx,
     );
   }
-
   /**
    * §3.4 — the holdings a count's lines name, read back from `stock_balance`
    * in ONE query, inside the same transaction that writes the lines.
@@ -1355,7 +1291,6 @@ export class StockVoucherService {
              AND sbl.sbl_is_deleted = false
         `
       : [];
-
     const byHolding = new Map<string, CountHolding>();
     for (const row of rows) {
       byHolding.set(this.holdingKey(row.sbl_lot_id, row.sbl_godown_id, row.sbl_bucket), {
@@ -1373,7 +1308,6 @@ export class StockVoucherService {
         supplierId: row.sbl_supplier_id,
       });
     }
-
     const errors: StockErrorDetail[] = [];
     lines.forEach((line, index) => {
       const holding = byHolding.get(this.holdingKey(line.lotId, line.godownId, line.bucket));
@@ -1399,10 +1333,8 @@ export class StockVoucherService {
         errors,
       );
     }
-
     return byHolding;
   }
-
   /** stock_balance's own grain: one holding per godown × lot × bucket. */
   private holdingKey(
     lotId: string | null | undefined,
@@ -1411,11 +1343,9 @@ export class StockVoucherService {
   ): string {
     return `${lotId ?? ''}|${godownId}|${bucket ?? 'SALEABLE'}`;
   }
-
   // ──────────────────────────────────────────────────────────────────────────
   // §5 — list and load
   // ──────────────────────────────────────────────────────────────────────────
-
   /**
    * Q1. Scoped by company + branch + acc_year and ordered
    * (svh_doc_date DESC, svh_slno DESC) so it rides ix_svh_list.
@@ -1434,7 +1364,6 @@ export class StockVoucherService {
     const limit = this.clamp(query.limit, DEFAULT_LIST_LIMIT, MAX_LIST_LIMIT);
     const offset = Math.max(query.offset ?? 0, 0);
     const search = query.search?.trim();
-
     const rows = await this.prisma.$queryRaw<
       Array<
         Pick<
@@ -1505,7 +1434,6 @@ export class StockVoucherService {
        ORDER BY svh.svh_doc_date DESC, svh.svh_slno DESC
        LIMIT ${limit} OFFSET ${offset}
     `;
-
     return {
       items: rows.map((row) => ({
         svhId: row.svh_id,
@@ -1527,7 +1455,6 @@ export class StockVoucherService {
       meta: { limit, offset, count: rows.length },
     };
   }
-
   /** The header row plus Q2 for its lines (ux_svi_line ordering). */
   async getById(
     rules: StockVoucherTypeRules,
@@ -1619,7 +1546,6 @@ export class StockVoucherService {
          AND svh.svh_branch_id   = ${branchId}::uuid
          AND svh.svh_voucher_type = ${rules.voucherType}
     `;
-
     if (!header) {
       throwStockNotFound<StockErrorDetail, StockErrorResponse>(
         `${rules.displayName} not found`,
@@ -1627,7 +1553,6 @@ export class StockVoucherService {
         `No ${rules.voucherType} voucher ${svhId} in ${accYear} for this company and branch.`,
       );
     }
-
     const lines = await this.prisma.$queryRaw<LineRow[]>`
       SELECT svi.svi_id,
              svi.svi_line_no,
@@ -1682,17 +1607,14 @@ export class StockVoucherService {
          AND svi.svi_is_deleted = false
        ORDER BY svi.svi_line_no, svi.svi_split_no
     `;
-
     return {
       header: this.toHeaderPayload(header),
       lines: lines.map((row) => this.toLinePayload(row)),
     };
   }
-
   // ──────────────────────────────────────────────────────────────────────────
   // §6 — the preflight
   // ──────────────────────────────────────────────────────────────────────────
-
   /**
    * Q3. The query that makes this screen usable.
    *
@@ -1720,9 +1642,7 @@ export class StockVoucherService {
     // Presence check first: Q3 on a voucher that does not exist returns zero
     // rows, which reads identically to "no problems".
     await this.loadHeaderOrThrow(rules, svhId, accYear, companyId, branchId, tx);
-
     const isCount = rules.quantityMode === 'COUNT';
-
     return (tx ?? this.prisma).$queryRaw<StockVoucherLineProblem[]>`
       WITH doc AS (
         SELECT svh.svh_id,
@@ -1792,7 +1712,11 @@ export class StockVoucherService {
                     AND sml.sml_acc_year    = keyed.svi_acc_year
                     AND sml.sml_godown_id   = keyed.svi_godown_id
                     AND sml.sml_txn_type    = 'OPENING'
-                    AND sml.sml_is_deleted  = false
+                    -- LIVE, FORWARD AND NOT REVERSED. A cancel leaves the
+                    -- original row where it is and mirrors it; reading the
+                    -- forward side alone made a cancelled opening hold its
+                    -- holding for ever. See unreversedLedgerRow.
+                    AND ${unreversedLedgerRow()}
                     AND sml.sml_src_doc_id <> keyed.svi_voucher_id
                ) ELSE false END AS already_opened
           FROM keyed
@@ -1926,11 +1850,9 @@ export class StockVoucherService {
        ORDER BY keyed.svi_line_no, keyed.svi_split_no
     `;
   }
-
   // ──────────────────────────────────────────────────────────────────────────
   // §7 — post
   // ──────────────────────────────────────────────────────────────────────────
-
   /**
    * The whole engine, one statement.
    *
@@ -1979,7 +1901,6 @@ export class StockVoucherService {
       );
     }
   }
-
   async post(
     rules: StockVoucherTypeRules,
     svhId: string,
@@ -2008,18 +1929,15 @@ export class StockVoucherService {
     const actor = resolveActor(userId, this.requestContextService.getUserId());
     const existing = await this.loadHeaderOrThrow(rules, svhId, accYear, companyId, branchId);
     this.assertDraft(rules, existing);
-
     // Q3 first, and refuse without calling the function when any row has a
     // problem. Post is the button a user presses forty lines in; letting the
     // engine raise on the first bad one and roll back the rest hands them one
     // error at a time.
     await this.assertPostable(rules, svhId, accYear, companyId, branchId);
-
     // One instant for the ledger rows, the balance rows, the header stamp and
     // the status-trail row alike, so a trail sorts unambiguously against the
     // movements that produced it.
     const postedOn = new Date();
-
     const rowsPosted = await this.prisma.$transaction(async (tx) => {
       let posted: number;
       if (usesInProcessPosting(rules)) {
@@ -2061,11 +1979,9 @@ export class StockVoucherService {
       });
       return posted;
     });
-
     // Reload: the post changed lotId, costRateWot and every total on rows the
     // client is still holding.
     const document = await this.getById(rules, svhId, accYear, companyId, branchId);
-
     await this.auditLogService.logEntityChange({
       action: 'update',
       tableName: STOCK_VOUCHER_TABLE_NAME,
@@ -2078,7 +1994,6 @@ export class StockVoucherService {
       userId: actor,
       notes: `${rules.displayName} posted — ${rowsPosted} ledger rows`,
     });
-
     return {
       ...document,
       rowsPosted,
@@ -2086,24 +2001,36 @@ export class StockVoucherService {
       postedOn: document.header.postedOn,
     };
   }
-
   // ──────────────────────────────────────────────────────────────────────────
   // §8 — cancel
   // ──────────────────────────────────────────────────────────────────────────
 
   /**
-   * Reversal rows, never a delete. Two properties worth holding on to:
+   * Cancels a DRAFT or a POSTED voucher. Never a delete, in either case — the
+   * document stays listed, numbered and readable, with the reason on the trail.
    *
-   *   * A reversal carries the ORIGINAL doc_date and acc_year, so an
-   *     as-on-date report reads "this document never moved stock".
-   *     sml_posted_on is the audit trail of when the cancellation happened.
-   *   * It can LEGITIMATELY fail. Cancelling an opening after stock has been
-   *     sold from it drives the holding negative, and the engine refuses that
-   *     under stp_allow_negative = 'BLOCK'. That is correct behaviour, not a
-   *     bug to route around — it surfaces as a 409 naming the item, and the fix
-   *     is an ADJUSTMENT with a reason.
+   * WHICH WORK IS DONE DEPENDS ON THE STATUS, and only on the status:
    *
-   * WHO REVERSES: the generic types are reversed IN PROCESS by
+   *   * DRAFT — nothing has been written to stock_ledger, so there is nothing
+   *     to reverse: `cancelDraftVoucher` moves the header and reports
+   *     `rowsReversed: 0`. See that function for why a draft cancel is not the
+   *     same act as `softDelete`, and for the freeze it releases on an
+   *     abandoned PHYSICAL count. The TRANSFER routes are the exception and
+   *     still refuse it — see the check itself.
+   *   * POSTED — reversal rows. Two properties worth holding on to:
+   *       - A reversal carries the ORIGINAL doc_date and acc_year, so an
+   *         as-on-date report reads "this document never moved stock".
+   *         sml_posted_on is the audit trail of when the cancellation happened.
+   *       - It can LEGITIMATELY fail. Cancelling an opening after stock has
+   *         been sold from it drives the holding negative, and the engine
+   *         refuses that under stp_allow_negative = 'BLOCK'. That is correct
+   *         behaviour, not a bug to route around — it surfaces as a 409 naming
+   *         the item, and the fix is an ADJUSTMENT with a reason.
+   *
+   * An already-CANCELLED document is refused before any of that, with the date
+   * it was cancelled on.
+   *
+   * WHO REVERSES A POSTED ONE: the generic types are reversed IN PROCESS by
    * `cancelStockVoucher`, for the same reason `post()` runs `postStockVoucher`
    * — stock.fn_svh_cancel does not exist on this deployment, and a cancel that
    * called it answered every request with a 500. The transfer types keep
@@ -2134,7 +2061,6 @@ export class StockVoucherService {
         },
       ]);
     }
-
     const existing = await this.loadHeaderOrThrow(rules, svhId, accYear, companyId, branchId);
     if (existing.svhStatus === 'CANCELLED') {
       // WHEN it was cancelled is on the trail, not on the header — one extra
@@ -2151,20 +2077,38 @@ export class StockVoucherService {
         ],
       );
     }
-    if (existing.svhStatus === 'DRAFT') {
+    // A DRAFT has written no ledger row, so it is cancelled by moving the
+    // header: no reversal, no engine, nothing to fail on.
+    //
+    // NOT ON THE TRANSFER ROUTES, and `usesInProcessPosting` is the right
+    // discriminator for the same reason it is the right one on the posting
+    // split: a transfer draft is not a document this service knows the whole
+    // of. A draft TRANSFER_IN is the receipt half of a despatch that has
+    // ALREADY moved stock into stock_transit, and cancelling it would strand
+    // those rows with no document left to settle them. Those routes keep
+    // saying "delete it instead", which for them remains true.
+    const isDraft = existing.svhStatus === 'DRAFT';
+    if (isDraft && !usesInProcessPosting(rules)) {
       throwStockConflict<StockErrorDetail, StockErrorResponse>(`${rules.displayName} is a draft`, [
         {
           field: 'svhId',
-          message: `${existing.svhRefno} is DRAFT and has moved no stock, so there is nothing to reverse. Delete it instead.`,
+          message: `${existing.svhRefno} is DRAFT and has moved no stock of its own, so there is nothing to reverse. Delete it instead — cancelling it would strand the despatch it settles.`,
         },
       ]);
     }
-
     const cancelledOn = new Date();
-
     const rowsReversed = await this.prisma.$transaction(async (tx) => {
       let reversed: number;
-      if (usesInProcessPosting(rules)) {
+      if (isDraft) {
+        reversed = await cancelDraftVoucher(tx, {
+          rules,
+          svhId,
+          accYear,
+          actor,
+          reason: trimmedReason,
+          cancelledOn,
+        });
+      } else if (usesInProcessPosting(rules)) {
         reversed = await cancelStockVoucher(tx, {
           rules,
           svhId,
@@ -2179,9 +2123,10 @@ export class StockVoucherService {
         `;
         reversed = Number(row?.rows ?? 0);
       }
-      // Inside the reversal's own transaction: a cancellation whose ledger
-      // reversal committed and whose trail row did not is a document that says
-      // CANCELLED with nothing saying who cancelled it or why.
+      // Inside the cancellation's own transaction: a cancellation whose header
+      // move (and, on a posted document, whose ledger reversal) committed and
+      // whose trail row did not is a document that says CANCELLED with nothing
+      // saying who cancelled it or why.
       await this.logStatusChange(tx, {
         rules,
         svhId,
@@ -2202,9 +2147,7 @@ export class StockVoucherService {
       });
       return reversed;
     });
-
     const document = await this.getById(rules, svhId, accYear, companyId, branchId);
-
     await this.auditLogService.logEntityChange({
       action: 'cancel',
       tableName: STOCK_VOUCHER_TABLE_NAME,
@@ -2215,9 +2158,10 @@ export class StockVoucherService {
       originalRecord: { svhId, svhStatus: existing.svhStatus },
       modifiedRecord: { svhId, svhStatus: document.header.status, rowsReversed },
       userId: actor,
-      notes: `${rules.displayName} cancelled: ${trimmedReason}`,
+      notes: isDraft
+        ? `${rules.displayName} draft cancelled: ${trimmedReason}`
+        : `${rules.displayName} cancelled: ${trimmedReason}`,
     });
-
     return {
       ...document,
       rowsReversed,
@@ -2225,11 +2169,9 @@ export class StockVoucherService {
       cancelledOn: document.header.cancelledOn,
     };
   }
-
   // ──────────────────────────────────────────────────────────────────────────
   // §9 — soft delete
   // ──────────────────────────────────────────────────────────────────────────
-
   /**
    * DRAFT only.
    *
@@ -2255,12 +2197,17 @@ export class StockVoucherService {
         [
           {
             field: 'svhId',
-            message: `${existing.svhRefno} is ${existing.svhStatus} and has ledger rows. Cancel it — a cancellation reverses the movement; a soft delete would only hide the document while its stock stayed.`,
+            message:
+              existing.svhStatus === 'CANCELLED'
+                ? // Reached by a cancelled DRAFT too, which has no ledger rows
+                  // at all — but it is out of play either way, and deleting it
+                  // would only take the reason off the list with it.
+                  `${existing.svhRefno} is already cancelled, which is as far out of play as a document goes. There is nothing left to delete.`
+                : `${existing.svhRefno} is ${existing.svhStatus} and has ledger rows. Cancel it — a cancellation reverses the movement; a soft delete would only hide the document while its stock stayed.`,
           },
         ],
       );
     }
-
     const modifiedOn = new Date();
     await this.prisma.$transaction(async (tx) => {
       await tx.stockVoucher.update({
@@ -2490,7 +2437,9 @@ export class StockVoucherService {
               AND sml.sml_branch_id  = ${branchId}::uuid
               AND sml.sml_acc_year   = ${accYear}::bpchar
               AND sml.sml_txn_type   = ANY (${rules.ledgerTxnTypes as string[]}::text[])
-              AND sml.sml_is_deleted = false
+              -- Same rule as the preflight's: a cancelled opening is not an
+              -- opening, so its item belongs back on this work list.
+              AND ${unreversedLedgerRow()}
          )
        ORDER BY itm.item_code NULLS LAST, itm.item_name_en
        LIMIT ${take} OFFSET ${skip}
@@ -2722,7 +2671,6 @@ export class StockVoucherService {
     // Presence check first, and scoped: an empty result must mean "every line
     // agreed", not "that document belongs to another branch".
     await this.loadHeaderOrThrow(rules, svhId, accYear, companyId, branchId);
-
     const take = this.clamp(limit, DEFAULT_REPORT_LIMIT, MAX_REPORT_LIMIT);
     const skip = Math.max(offset ?? 0, 0);
     const rows = await this.prisma.$queryRaw<VarianceRow[]>`
@@ -2892,7 +2840,6 @@ export class StockVoucherService {
       select: { tslChangedOn: true, tslChangedBy: true, tslRemarks: true },
     });
   }
-
   private toStatusEvent(fromStatus: string | null, toStatus: StockVoucherStatus): TxnStatusEvent {
     if (fromStatus === null) {
       // First row of the trail. Whether the voucher was born DRAFT or straight
@@ -2954,7 +2901,6 @@ export class StockVoucherService {
     }
     return existing;
   }
-
   /**
    * The three engine entry points, by name.
    *
@@ -2973,7 +2919,6 @@ export class StockVoucherService {
     }
     return rules.postFunction;
   }
-
   private assertDraft(
     rules: StockVoucherTypeRules,
     existing: { svhRefno: string; svhStatus: string; svhIsDeleted: boolean },
@@ -2995,7 +2940,6 @@ export class StockVoucherService {
       );
     }
   }
-
   private toHeaderPayload(row: HeaderRow): StockVoucherHeaderPayload {
     return {
       svhId: row.svh_id,
@@ -3046,7 +2990,6 @@ export class StockVoucherService {
       isDeleted: row.svh_is_deleted,
     };
   }
-
   private toLinePayload(row: LineRow): StockVoucherLinePayload {
     return {
       sviId: row.svi_id,
@@ -3093,7 +3036,6 @@ export class StockVoucherService {
       remarks: row.svi_remarks,
     };
   }
-
   /**
    * resolveActor never returns null — it falls back to the nil-uuid
    * DEFAULT_ACTOR so callers always have a string. The audit columns want the
@@ -3108,7 +3050,6 @@ export class StockVoucherService {
   private auditActor(actor: string): string | null {
     return actor === DEFAULT_ACTOR ? null : actor;
   }
-
   /**
    * The payload's own answer to "who", falling back to the resolved actor.
    *
@@ -3123,7 +3064,6 @@ export class StockVoucherService {
     const trimmed = supplied?.trim();
     return trimmed ? trimmed : this.auditActor(actor);
   }
-
   /**
    * svi_modified_by is OMITTED rather than nulled when nothing supplies one, so
    * a create leaves the column alone. Mirrors docDatetimeData.
@@ -3132,7 +3072,6 @@ export class StockVoucherService {
     const trimmed = supplied?.trim();
     return trimmed ? { sviModifiedBy: trimmed } : {};
   }
-
   /**
    * svh_doc_datetime defaults to now() in the database, so it is only sent when
    * the caller actually named one. A device syncing a week of offline documents
@@ -3144,7 +3083,6 @@ export class StockVoucherService {
   } {
     return header.docDatetime ? { svhDocDatetime: new Date(header.docDatetime) } : {};
   }
-
   /** The (module, docType, docId, year) source triple — all four or none. */
   private linkSourceData(header: {
     linkSrcModule?: string | null;
@@ -3159,7 +3097,6 @@ export class StockVoucherService {
       svhLinkSrcAccYear: header.linkSrcAccYear ?? null,
     };
   }
-
   /** PHYSICAL's freeze window. Refused for every other type in assertPayloadRules. */
   private freezeData(header: {
     freezeStock?: boolean;
@@ -3172,7 +3109,6 @@ export class StockVoucherService {
       svhFreezeTo: header.freezeTo ? new Date(header.freezeTo) : null,
     };
   }
-
   /** `yyyy-MM-dd` — NexJson::date on the Qt side reads the first ten characters. */
   /**
    * §3.3 — the type's default rate source, applied HERE and not in the DTO.
@@ -3201,11 +3137,9 @@ export class StockVoucherService {
     }
     return rules.defaultRateSource ?? null;
   }
-
   private toIsoDate(value: Date | null): string | null {
     return value ? value.toISOString().slice(0, 10) : null;
   }
-
   private toDecimalNumber(value: string | number | null | undefined): number {
     if (value === null || value === undefined || value === '') {
       return 0;
@@ -3213,7 +3147,6 @@ export class StockVoucherService {
     const parsed = typeof value === 'number' ? value : Number(value);
     return Number.isFinite(parsed) ? parsed : 0;
   }
-
   /** An ISO instant as epoch millis, or null when absent or unparseable. */
   private toInstant(value: string | null | undefined): number | null {
     if (!value) {
@@ -3222,7 +3155,6 @@ export class StockVoucherService {
     const parsed = Date.parse(value);
     return Number.isNaN(parsed) ? null : parsed;
   }
-
   /**
    * `bookQty` is deliberately absent from SaveStockVoucherItemDto — the API
    * refuses it at the boundary, since `forbidNonWhitelisted` answers 400 for
@@ -3234,7 +3166,6 @@ export class StockVoucherService {
   private readRefusedBookQty(line: SaveStockVoucherItemDto): unknown {
     return (line as SaveStockVoucherItemDto & { bookQty?: unknown }).bookQty;
   }
-
   private toNullableDecimal(value: string | number | null | undefined): Prisma.Decimal | null {
     if (value === null || value === undefined || value === '') {
       return null;
@@ -3242,7 +3173,6 @@ export class StockVoucherService {
     const parsed = typeof value === 'number' ? value : Number(value);
     return Number.isFinite(parsed) ? new Prisma.Decimal(parsed) : null;
   }
-
   private clamp(value: number | undefined, fallback: number, max: number): number {
     if (value === undefined || !Number.isFinite(value) || value <= 0) {
       return fallback;

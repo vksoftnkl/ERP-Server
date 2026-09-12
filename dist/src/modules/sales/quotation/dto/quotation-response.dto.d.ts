@@ -117,6 +117,7 @@ export declare class QuotationItemPayloadDto {
     sqiCashDiscPerc: number;
     sqiCashDiscAmt: number;
     sqiGrossAmt: number;
+    sqiTaxId: string | null;
     sqiTaxableAmt: number;
     sqiTaxPerc: number;
     sqiTaxAmt: number;

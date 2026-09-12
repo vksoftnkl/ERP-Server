@@ -18,6 +18,7 @@ import {
   NullableDate,
   NullableEmail,
   NullableString,
+  NullableUuid,
   OptionalBoolean,
   OptionalInteger,
   OptionalUuid,
@@ -273,15 +274,17 @@ export class SaveAccountLedgerMasterDto {
   @NullableString(10)
   ledHsnSac?: string | null;
 
-  @ApiPropertyOptional({ nullable: true })
-  @IsOptional()
-  @Type(() => Number)
-  @IsNumber({ allowNaN: false, allowInfinity: false })
-  ledGstRate?: number;
-
-  @ApiPropertyOptional({ maxLength: 15, nullable: true })
-  @NullableString(15)
-  ledTaxability?: string | null;
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description:
+      'The inventory.tax_rate_master row this ledger carries when it appears as a taxable ' +
+      'line — a service ledger such as freight or packing. Replaces ledGstRate / ledTaxability ' +
+      '/ ledTaxRate, which held a bare percentage and could express neither cess nor ' +
+      'taxability. Null on a party or bank ledger.',
+  })
+  @NullableUuid()
+  ledTaxId?: string | null;
 
   @ApiPropertyOptional({ maxLength: 30, nullable: true })
   @NullableString(30)
@@ -315,12 +318,6 @@ export class SaveAccountLedgerMasterDto {
   @ApiPropertyOptional({ maxLength: 20, nullable: true })
   @NullableString(20)
   ledGstDutyHead?: string | null;
-
-  @ApiPropertyOptional({ nullable: true })
-  @IsOptional()
-  @Type(() => Number)
-  @IsNumber({ allowNaN: false, allowInfinity: false })
-  ledTaxRate?: number;
 
   @ApiPropertyOptional({ maxLength: 15, nullable: true })
   @NullableString(15)

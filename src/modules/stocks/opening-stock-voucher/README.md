@@ -21,7 +21,7 @@ of what this one does.
 | `GET /stock/opening` | `svhId` present loads one document; absent lists them |
 | `GET /stock/opening/validate` | the preflight — every line, `problem` null on the clean ones |
 | `POST /stock/opening/post` | the whole engine, one statement |
-| `POST /stock/opening/cancel` | reversal rows, never a delete. `reason` required. |
+| `POST /stock/opening/cancel` | cancels a **DRAFT or a POSTED** opening, never a delete. A posted one is reversed; a draft moves the header alone. `reason` required on both. |
 | `POST /stock/opening/import` | replace an existing DRAFT's lines from a CSV. Never posts, never creates. |
 | `GET /stock/opening/reconcile` | what the branch started with, what it holds now, the difference |
 | `GET /stock/opening/item-lookup` | the item picker — one round trip fills a line: unit, base unit, factor, tax, tracking signature. **No cost.** |
@@ -209,18 +209,37 @@ visible to the company (its own rows and the shared ones merge), active, and
 permitted for this voucher type by `srm_allowed_txn_types`. That is not cosmetic:
 `fn_svh_txn_map` reads the reason to decide what the ledger records.
 
-## Cancelling can legitimately fail
+## Cancel takes a draft as well as a posted opening
+
+One route, two amounts of work, decided by the status and nothing else:
+
+* **DRAFT** — no `stock_ledger` row was ever written, so there is nothing to
+  reverse. The header moves to CANCELLED and the answer says
+  `rowsReversed: 0`. This path cannot fail on stock.
+* **POSTED** — reversal rows, and see below for how that can legitimately fail.
+
+An already-CANCELLED opening is refused with **409** and the date it was
+cancelled on.
+
+Cancelling a draft is **not** the same act as deleting one, which is why both
+exist. A soft-deleted draft leaves the list as though it had never been raised;
+a cancelled draft stays on the list, numbered, with the reason on its trail.
+That is the whole reason `reason` is required even on a draft, where there is no
+ledger row to explain — for an opening abandoned because the count was wrong or
+the branch was wrong, the sentence is the point.
+
+## Cancelling a posted opening can legitimately fail
 
 Cancelling an opening after stock has been sold from it drives the holding
 negative, and `fn_sml_apply` refuses that under `stp_allow_negative = 'BLOCK'`.
 That surfaces as **409 naming the item**. It is correct behaviour, not a bug to
 retry around: the fix is an ADJUSTMENT with a reason.
 
-A POSTED voucher is likewise **cancelled, never deleted**. `svh_is_deleted` is
-not read by `fn_svh_cancel`'s ledger scan, so soft-deleting a posted document
-would hide it from every list while its ledger rows went on affecting stock for
-ever. This screen exposes no delete route at all; a draft that is not wanted is
-simply never posted.
+A POSTED voucher is **cancelled, never deleted**. `svh_is_deleted` is not read
+by the cancellation's ledger scan, so soft-deleting a posted document would hide
+it from every list while its ledger rows went on affecting stock for ever. This
+screen exposes no delete route at all, so on this screen cancel is the only way
+to take a draft out of play too.
 
 ## Importing from a file
 

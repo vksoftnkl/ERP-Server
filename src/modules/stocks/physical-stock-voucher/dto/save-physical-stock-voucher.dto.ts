@@ -15,6 +15,7 @@ import {
   NullableUuid,
   OptionalBoolean,
   OptionalInteger,
+  OptionalNumber,
   OptionalNumberString,
   OptionalTrimmedString,
   OptionalUuid,
@@ -189,15 +190,6 @@ export class SavePhysicalStockVoucherItemDto {
  *                       after fn_svh_post_transfer. A count despatches nothing,
  *                       so there is no transit row for them to land on; sent
  *                       here they were accepted and SILENTLY DISCARDED
- *   lineCount / totalQty / totalValue / totalValueWot
- *                       the shared header takes all four from the payload,
- *                       because on a QTY document the screen has summed the
- *                       grid. A COUNT is not that document: its header carries
- *                       the NET VARIANCE, read off the LEDGER by
- *                       fn_svh_recompute at post, and three lines totalling 236
- *                       counted units can total +1 there. Nothing the counter
- *                       can see adds up to it, so a client-supplied total is a
- *                       number that would be silently replaced
  *
  * WHAT THIS COSTS: drift. A column added to the shared header no longer reaches
  * this route on its own. That is the trade, and it is why the shared class
@@ -214,7 +206,6 @@ export class SavePhysicalStockVoucherHeaderDto {
   })
   @OptionalUuid()
   svhId?: string;
-
   @ApiPropertyOptional({
     enum: ['PHYSICAL'],
     description: 'Optional, and only ever "PHYSICAL". The route decides the type.',
@@ -225,7 +216,6 @@ export class SavePhysicalStockVoucherHeaderDto {
       'voucherType must be PHYSICAL on this route. Other document types have their own routes because they state a quantity to move rather than what was found.',
   })
   voucherType?: 'PHYSICAL';
-
   @ApiProperty({
     minLength: 9,
     maxLength: 9,
@@ -236,19 +226,15 @@ export class SavePhysicalStockVoucherHeaderDto {
   @TrimmedString(9)
   @Matches(ACC_YEAR_PATTERN, { message: 'accYear must be YYYY-YYYY, e.g. 2026-2027' })
   accYear!: string;
-
   @ApiProperty({ format: 'uuid' })
   @RequiredUuid()
   companyId!: string;
-
   @ApiProperty({ format: 'uuid' })
   @RequiredUuid()
   branchId!: string;
-
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   @NullableUuid()
   tenantId?: string | null;
-
   @ApiProperty({
     format: 'uuid',
     description:
@@ -256,18 +242,15 @@ export class SavePhysicalStockVoucherHeaderDto {
   })
   @RequiredUuid()
   deviceId!: string;
-
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   @NullableUuid()
   sessionId?: string | null;
-
   @ApiPropertyOptional({
     description:
       'The serial this device already assigned offline. Generated when absent; honoured verbatim when present, because the device has already printed it.',
   })
   @OptionalNumberString()
   slno?: string;
-
   @ApiPropertyOptional({
     maxLength: 100,
     description:
@@ -275,16 +258,13 @@ export class SavePhysicalStockVoucherHeaderDto {
   })
   @OptionalTrimmedString(100)
   refno?: string;
-
   @ApiPropertyOptional({ maxLength: 100, nullable: true, description: "The user's own reference" })
   @NullableStringStrict(100)
   usrRefno?: string | null;
-
   @ApiProperty({ type: 'string', format: 'date', example: '2026-06-30' })
   @TrimmedString(10)
   @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'docDate must be yyyy-MM-dd' })
   docDate!: string;
-
   @ApiPropertyOptional({
     type: 'string',
     format: 'date-time',
@@ -294,7 +274,6 @@ export class SavePhysicalStockVoucherHeaderDto {
   })
   @NullableDateString()
   docDatetime?: string | null;
-
   /**
    * THE COUNTED GODOWN, and required — which extending could never make it.
    *
@@ -309,7 +288,6 @@ export class SavePhysicalStockVoucherHeaderDto {
   })
   @RequiredUuid()
   toGodownId!: string;
-
   @ApiPropertyOptional({
     format: 'uuid',
     nullable: true,
@@ -318,7 +296,6 @@ export class SavePhysicalStockVoucherHeaderDto {
   })
   @NullableUuid()
   reasonId?: string | null;
-
   // ── The freeze window. THE COUNT IS THE ONLY TYPE THAT HAS ONE ──────────
   //
   // ck_svh_freeze refuses a freeze with no window: without one the difference
@@ -329,15 +306,12 @@ export class SavePhysicalStockVoucherHeaderDto {
   })
   @OptionalBoolean()
   freezeStock?: boolean;
-
   @ApiPropertyOptional({ type: 'string', format: 'date-time', nullable: true })
   @NullableDateString()
   freezeFrom?: string | null;
-
   @ApiPropertyOptional({ type: 'string', format: 'date-time', nullable: true })
   @NullableDateString()
   freezeTo?: string | null;
-
   @ApiPropertyOptional({
     type: 'string',
     format: 'date-time',
@@ -347,7 +321,60 @@ export class SavePhysicalStockVoucherHeaderDto {
   })
   @NullableDateString()
   syncDate?: string | null;
-
+  // THE TOTALS ARE THE SCREEN'S, on this route as on every other: nothing
+  // server-side counts the lines or sums the grid. All four are written
+  // verbatim from this payload, AFTER the lines, and each is optional because
+  // its column is NOT NULL DEFAULT 0 — omitting one on a create takes that
+  // default, omitting it on an update leaves the stored value alone.
+  //
+  // WHAT THEY MEAN ON A COUNT IS THE SCREEN'S DECISION, and it is not the
+  // decision an opening makes. A count sheet has two defensible totals — the
+  // COUNTED figures (236 units on the shelf) and the NET VARIANCE (+1 against
+  // the book) — and they are not the same number. The response DTO labels
+  // these columns "the net variance", so send the variance if the screen shows
+  // one figure; a screen that shows counted totals should say so in its own
+  // heading rather than quietly redefining the column.
+  //
+  // WHICH IS WHY totalQty / totalValue / totalValueWot TAKE A NEGATIVE HERE and
+  // the opening's do not: a shortage is a real net variance and the column has
+  // no >= 0 constraint. lineCount is still floored at 0 — a sheet cannot have
+  // fewer than no lines.
+  //
+  // NOTE FOR ANY ENVIRONMENT CARRYING THE ENGINE DDL, which this deployment
+  // does NOT: stock.tr_svi_refresh_header re-sums these on every line write —
+  // the API writes them after the lines, so the payload still wins at save
+  // time — and stock.fn_svh_recompute overwrites them at post with the figures
+  // read off the ledger. Here, nothing does either, so what is sent is what a
+  // posted count keeps.
+  @ApiPropertyOptional({
+    minimum: 0,
+    default: 0,
+    description:
+      'How many lines the sheet has, as the screen counted them — including the ones that agreed with the book. svh_line_count is NOT NULL DEFAULT 0; omit to take the default.',
+  })
+  @OptionalInteger(0)
+  lineCount?: number;
+  @ApiPropertyOptional({
+    default: 0,
+    description:
+      'The sheet total quantity, as the screen summed it. MAY BE NEGATIVE — on a count this column is read back as the net variance, and a shortage is negative. numeric(18,6), NOT NULL DEFAULT 0.',
+  })
+  @OptionalNumber()
+  totalQty?: number;
+  @ApiPropertyOptional({
+    default: 0,
+    description:
+      'The sheet total value, inclusive of tax, as the screen summed it. May be negative — see totalQty. numeric(18,2), NOT NULL DEFAULT 0.',
+  })
+  @OptionalNumber()
+  totalValue?: number;
+  @ApiPropertyOptional({
+    default: 0,
+    description:
+      'The sheet total value excluding tax, as the screen summed it. May be negative — see totalQty. numeric(18,2), NOT NULL DEFAULT 0.',
+  })
+  @OptionalNumber()
+  totalValueWot?: number;
   @ApiPropertyOptional({
     enum: STOCK_RATE_SOURCES,
     nullable: true,
@@ -359,7 +386,6 @@ export class SavePhysicalStockVoucherHeaderDto {
     message: `rateSource must be one of ${STOCK_RATE_SOURCES.join(', ')}`,
   })
   rateSource?: StockRateSource | null;
-
   @ApiPropertyOptional({
     enum: SAVEABLE_STOCK_VOUCHER_STATUSES,
     default: 'DRAFT',
@@ -371,18 +397,15 @@ export class SavePhysicalStockVoucherHeaderDto {
     message: `status must be one of ${SAVEABLE_STOCK_VOUCHER_STATUSES.join(', ')} — a document is cancelled by cancelling it, never by saving`,
   })
   status?: SaveableStockVoucherStatus;
-
   @ApiPropertyOptional({ maxLength: 250, nullable: true })
   @NullableStringStrict(250)
   remarks?: string | null;
-
   @ApiPropertyOptional({
     format: 'uuid',
     description: 'Falls back to the authenticated user from the request context.',
   })
   @OptionalUuid()
   userId?: string;
-
   @ApiPropertyOptional({
     maxLength: 100,
     nullable: true,
@@ -391,7 +414,6 @@ export class SavePhysicalStockVoucherHeaderDto {
   })
   @NullableStringStrict(100)
   createdBy?: string | null;
-
   @ApiPropertyOptional({
     maxLength: 100,
     nullable: true,
@@ -401,7 +423,6 @@ export class SavePhysicalStockVoucherHeaderDto {
   @NullableStringStrict(100)
   modifiedBy?: string | null;
 }
-
 /**
  * A NARROWER SHAPE than SaveStockVoucherDto, which is what
  * StockVoucherService.save takes — narrower on both halves now that the header

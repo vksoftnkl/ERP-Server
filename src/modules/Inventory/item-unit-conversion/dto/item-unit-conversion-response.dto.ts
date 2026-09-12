@@ -31,25 +31,25 @@ export class ItemUnitConversionPayloadDto {
   iuc_is_big_unit!: boolean;
   @ApiProperty({ example: 0 })
   iuc_uom_weight!: number;
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: String, nullable: true })
   iuc_uom_remarks!: string | null;
   @ApiProperty({ example: true })
   iuc_is_active!: boolean;
   @ApiProperty({ example: false })
   iuc_is_deleted!: boolean;
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: String, nullable: true })
   iuc_sync_date!: string | null;
   @ApiProperty()
   iuc_created_on!: string;
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: String, nullable: true })
   iuc_created_by!: string | null;
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: String, nullable: true })
   iuc_updated_on!: string | null;
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: String, nullable: true })
   iuc_updated_by!: string | null;
-  @ApiPropertyOptional({ nullable: true, description: 'Name of the linked unit (resolved on the item composite get endpoint)' })
+  @ApiPropertyOptional({ type: String, nullable: true, description: 'Name of the linked unit (resolved on the item composite get endpoint)' })
   iuc_unit_name?: string | null;
-  @ApiPropertyOptional({ nullable: true, description: 'Name of the linked base unit (resolved on the item composite get endpoint)' })
+  @ApiPropertyOptional({ type: String, nullable: true, description: 'Name of the linked base unit (resolved on the item composite get endpoint)' })
   iuc_base_unit_name?: string | null;
 }
 export class ItemUnitConversionDeleteResultDto {

@@ -97,19 +97,19 @@ __decorate([
     __metadata("design:type", String)
 ], ItemPayloadDto.prototype, "item_id", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ format: 'uuid', nullable: true }),
+    (0, swagger_1.ApiPropertyOptional)({ type: String, format: 'uuid', nullable: true }),
     __metadata("design:type", Object)
 ], ItemPayloadDto.prototype, "item_company_id", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ format: 'uuid', nullable: true }),
+    (0, swagger_1.ApiPropertyOptional)({ type: String, format: 'uuid', nullable: true }),
     __metadata("design:type", Object)
 ], ItemPayloadDto.prototype, "item_branch_id", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
+    (0, swagger_1.ApiPropertyOptional)({ type: String, nullable: true }),
     __metadata("design:type", Object)
 ], ItemPayloadDto.prototype, "item_code", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
+    (0, swagger_1.ApiPropertyOptional)({ type: String, nullable: true }),
     __metadata("design:type", Object)
 ], ItemPayloadDto.prototype, "item_sku", void 0);
 __decorate([
@@ -117,11 +117,11 @@ __decorate([
     __metadata("design:type", String)
 ], ItemPayloadDto.prototype, "item_name_en", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
+    (0, swagger_1.ApiPropertyOptional)({ type: String, nullable: true }),
     __metadata("design:type", Object)
 ], ItemPayloadDto.prototype, "item_name_ta", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
+    (0, swagger_1.ApiPropertyOptional)({ type: String, nullable: true }),
     __metadata("design:type", Object)
 ], ItemPayloadDto.prototype, "item_alias", void 0);
 __decorate([
@@ -129,7 +129,7 @@ __decorate([
     __metadata("design:type", String)
 ], ItemPayloadDto.prototype, "item_stock_type", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
+    (0, swagger_1.ApiPropertyOptional)({ type: String, nullable: true }),
     __metadata("design:type", Object)
 ], ItemPayloadDto.prototype, "item_default_barcode", void 0);
 __decorate([
@@ -137,35 +137,35 @@ __decorate([
     __metadata("design:type", String)
 ], ItemPayloadDto.prototype, "item_group_id", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ format: 'uuid', nullable: true }),
+    (0, swagger_1.ApiPropertyOptional)({ type: String, format: 'uuid', nullable: true }),
     __metadata("design:type", Object)
 ], ItemPayloadDto.prototype, "item_category_id", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ format: 'uuid', nullable: true }),
+    (0, swagger_1.ApiPropertyOptional)({ type: String, format: 'uuid', nullable: true }),
     __metadata("design:type", Object)
 ], ItemPayloadDto.prototype, "item_brand_id", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ format: 'uuid', nullable: true }),
+    (0, swagger_1.ApiPropertyOptional)({ type: String, format: 'uuid', nullable: true }),
     __metadata("design:type", Object)
 ], ItemPayloadDto.prototype, "item_section_id", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ format: 'uuid', nullable: true }),
+    (0, swagger_1.ApiPropertyOptional)({ type: String, format: 'uuid', nullable: true }),
     __metadata("design:type", Object)
 ], ItemPayloadDto.prototype, "item_company_category_id", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ format: 'uuid', nullable: true }),
+    (0, swagger_1.ApiPropertyOptional)({ type: String, format: 'uuid', nullable: true }),
     __metadata("design:type", Object)
 ], ItemPayloadDto.prototype, "item_mfgr_id", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ format: 'uuid', nullable: true }),
+    (0, swagger_1.ApiPropertyOptional)({ type: String, format: 'uuid', nullable: true }),
     __metadata("design:type", Object)
 ], ItemPayloadDto.prototype, "item_supplier_id", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ format: 'uuid', nullable: true }),
+    (0, swagger_1.ApiPropertyOptional)({ type: String, format: 'uuid', nullable: true }),
     __metadata("design:type", Object)
 ], ItemPayloadDto.prototype, "item_cust_group", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ format: 'uuid', nullable: true }),
+    (0, swagger_1.ApiPropertyOptional)({ type: String, format: 'uuid', nullable: true }),
     __metadata("design:type", Object)
 ], ItemPayloadDto.prototype, "item_base_unit_id", void 0);
 __decorate([
@@ -181,11 +181,11 @@ __decorate([
     __metadata("design:type", Boolean)
 ], ItemPayloadDto.prototype, "item_is_expiry_item", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
+    (0, swagger_1.ApiPropertyOptional)({ type: Number, nullable: true }),
     __metadata("design:type", Object)
 ], ItemPayloadDto.prototype, "item_expiry_days", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
+    (0, swagger_1.ApiPropertyOptional)({ type: Number, nullable: true }),
     __metadata("design:type", Object)
 ], ItemPayloadDto.prototype, "item_intimate_before_days", void 0);
 __decorate([
@@ -277,15 +277,15 @@ __decorate([
     __metadata("design:type", Boolean)
 ], ItemPayloadDto.prototype, "item_barcode_sticker", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ format: 'uuid', nullable: true }),
+    (0, swagger_1.ApiPropertyOptional)({ type: String, format: 'uuid', nullable: true }),
     __metadata("design:type", Object)
 ], ItemPayloadDto.prototype, "item_barcode_sticker_id", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ format: 'uuid', nullable: true }),
+    (0, swagger_1.ApiPropertyOptional)({ type: String, format: 'uuid', nullable: true }),
     __metadata("design:type", Object)
 ], ItemPayloadDto.prototype, "item_default_tax_id", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
+    (0, swagger_1.ApiPropertyOptional)({ type: String, nullable: true }),
     __metadata("design:type", Object)
 ], ItemPayloadDto.prototype, "item_hsn_code", void 0);
 __decorate([
@@ -294,6 +294,7 @@ __decorate([
 ], ItemPayloadDto.prototype, "item_batch_config", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({
+        type: String,
         format: 'uuid',
         nullable: true,
         description: 'stock.stock_track_preset the item\'s track policy is derived from; null = derived from the item\'s own flags',
@@ -302,29 +303,30 @@ __decorate([
 ], ItemPayloadDto.prototype, "item_track_preset_id", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({
+        type: String,
         nullable: true,
         description: 'Name of the stock.stock_track_preset named by item_track_preset_id; null when no preset is set',
     }),
     __metadata("design:type", Object)
 ], ItemPayloadDto.prototype, "item_track_preset_name", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
+    (0, swagger_1.ApiPropertyOptional)({ type: Number, nullable: true }),
     __metadata("design:type", Object)
 ], ItemPayloadDto.prototype, "item_sort_order", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true, description: 'Base64-encoded image bytes' }),
+    (0, swagger_1.ApiPropertyOptional)({ type: String, nullable: true, description: 'Base64-encoded image bytes' }),
     __metadata("design:type", Object)
 ], ItemPayloadDto.prototype, "item_photo", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
+    (0, swagger_1.ApiPropertyOptional)({ type: String, nullable: true }),
     __metadata("design:type", Object)
 ], ItemPayloadDto.prototype, "item_image_url", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
+    (0, swagger_1.ApiPropertyOptional)({ type: String, nullable: true }),
     __metadata("design:type", Object)
 ], ItemPayloadDto.prototype, "item_notes", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
+    (0, swagger_1.ApiPropertyOptional)({ type: String, nullable: true }),
     __metadata("design:type", Object)
 ], ItemPayloadDto.prototype, "item_storage_location", void 0);
 __decorate([
@@ -348,7 +350,7 @@ __decorate([
     __metadata("design:type", String)
 ], ItemPayloadDto.prototype, "item_created_on", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
+    (0, swagger_1.ApiPropertyOptional)({ type: String, nullable: true }),
     __metadata("design:type", Object)
 ], ItemPayloadDto.prototype, "item_created_by", void 0);
 __decorate([
@@ -356,47 +358,47 @@ __decorate([
     __metadata("design:type", String)
 ], ItemPayloadDto.prototype, "item_modified_on", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
+    (0, swagger_1.ApiPropertyOptional)({ type: String, nullable: true }),
     __metadata("design:type", Object)
 ], ItemPayloadDto.prototype, "item_modified_by", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true, description: 'Name of the linked company (resolved on the composite get endpoint)' }),
+    (0, swagger_1.ApiPropertyOptional)({ type: String, nullable: true, description: 'Name of the linked company (resolved on the composite get endpoint)' }),
     __metadata("design:type", Object)
 ], ItemPayloadDto.prototype, "item_company_name", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true, description: 'Name of the linked branch (resolved on the composite get endpoint)' }),
+    (0, swagger_1.ApiPropertyOptional)({ type: String, nullable: true, description: 'Name of the linked branch (resolved on the composite get endpoint)' }),
     __metadata("design:type", Object)
 ], ItemPayloadDto.prototype, "item_branch_name", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true, description: 'Name of the linked item group (resolved on the composite get endpoint)' }),
+    (0, swagger_1.ApiPropertyOptional)({ type: String, nullable: true, description: 'Name of the linked item group (resolved on the composite get endpoint)' }),
     __metadata("design:type", Object)
 ], ItemPayloadDto.prototype, "item_group_name", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true, description: 'Name of the linked category (resolved on the composite get endpoint)' }),
+    (0, swagger_1.ApiPropertyOptional)({ type: String, nullable: true, description: 'Name of the linked category (resolved on the composite get endpoint)' }),
     __metadata("design:type", Object)
 ], ItemPayloadDto.prototype, "item_category_name", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true, description: 'Name of the linked brand (resolved on the composite get endpoint)' }),
+    (0, swagger_1.ApiPropertyOptional)({ type: String, nullable: true, description: 'Name of the linked brand (resolved on the composite get endpoint)' }),
     __metadata("design:type", Object)
 ], ItemPayloadDto.prototype, "item_brand_name", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true, description: 'Name of the linked section (resolved on the composite get endpoint)' }),
+    (0, swagger_1.ApiPropertyOptional)({ type: String, nullable: true, description: 'Name of the linked section (resolved on the composite get endpoint)' }),
     __metadata("design:type", Object)
 ], ItemPayloadDto.prototype, "item_section_name", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true, description: 'Name of the linked supplier (resolved on the composite get endpoint)' }),
+    (0, swagger_1.ApiPropertyOptional)({ type: String, nullable: true, description: 'Name of the linked supplier (resolved on the composite get endpoint)' }),
     __metadata("design:type", Object)
 ], ItemPayloadDto.prototype, "item_supplier_name", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true, description: 'Name of the linked customer group (resolved on the composite get endpoint)' }),
+    (0, swagger_1.ApiPropertyOptional)({ type: String, nullable: true, description: 'Name of the linked customer group (resolved on the composite get endpoint)' }),
     __metadata("design:type", Object)
 ], ItemPayloadDto.prototype, "item_cust_group_name", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true, description: 'Name of the linked base unit (resolved on the composite get endpoint)' }),
+    (0, swagger_1.ApiPropertyOptional)({ type: String, nullable: true, description: 'Name of the linked base unit (resolved on the composite get endpoint)' }),
     __metadata("design:type", Object)
 ], ItemPayloadDto.prototype, "item_base_unit_name", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true, description: 'Name of the linked default tax (resolved on the composite get endpoint)' }),
+    (0, swagger_1.ApiPropertyOptional)({ type: String, nullable: true, description: 'Name of the linked default tax (resolved on the composite get endpoint)' }),
     __metadata("design:type", Object)
 ], ItemPayloadDto.prototype, "item_default_tax_name", void 0);
 class ItemDeleteResultDto {

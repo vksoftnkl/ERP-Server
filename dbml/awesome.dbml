@@ -187,6 +187,35 @@ Table acc_group_master {
   ledgers acc_ledger_master [not null]
 }
 
+Table acc_ledger_map {
+  almId String [pk]
+  almCompanyId String [note: 'RESERVED — always NULL today and no screen sets it. Present so one company
+or branch can be given its own ledger for a role later without a
+migration: fn_ledger_for already prefers a scoped row. Do NOT surface it.']
+  almBranchId String [note: 'RESERVED — see almCompanyId. No FK: branch scoping is not in use yet.']
+  almRole String [not null]
+  almSupplyNature String [note: 'NULL = both natures, the normal case. Only roles with alrBySupply may set
+it — that rule lives on the role, checked by the guard.
+INTRA | INTER (ck_alm_supply_nature)']
+  almLedgerId String [not null]
+  almRemarks String
+  almIsActive Boolean [not null, default: true]
+  almIsDeleted Boolean [not null, default: false]
+  almSyncDate DateTime
+  almCreatedOn DateTime [default: `now()`, not null]
+  almCreatedBy String
+  almModifiedOn DateTime
+  almModifiedBy String
+  company companys
+  role acc_ledger_role [not null]
+  ledger acc_ledger_master [not null]
+
+  Note: 'Role -> ledger. Posting resolves a role here instead of naming a ledger, so
+the chart of accounts can be renamed or restructured without touching code.
+Per-GST-rate overrides live in inventory.tax_rate_ledger; tender and charge
+ledgers are owned by acc_tender_master and charge_master, not by this table.'
+}
+
 Table acc_ledger_master {
   ledId String [pk]
   ledCompanyId String
@@ -238,15 +267,13 @@ Table acc_ledger_master {
   ledIsSez Boolean [not null, default: false]
   ledTypeOfSupply String
   ledHsnSac String
-  ledGstRate Decimal
-  ledTaxability String
+  ledTaxId String
   ledGstPartyType String
   ledTanNo String
   ledCin String
   ledUdyamNo String
   ledMsmeType String
   ledGstDutyHead String
-  ledTaxRate Decimal
   ledRoundingMethod String
   ledRoundingLimit Decimal
   ledIsTdsApplicable Boolean [not null, default: false]
@@ -297,11 +324,38 @@ Table acc_ledger_master {
   chargeDetails txn_charge_detail [not null]
   saleOrderAdvanceLedgers sale_order [not null]
   stockReasonGlLedgers stock_reason_master [not null]
+  taxRateLedgers tax_rate_ledger [not null]
+  ledgerMaps acc_ledger_map [not null]
 
   indexes {
     (ledCompanyId, ledName) [unique]
     (ledCompanyId, ledTallyName) [unique]
   }
+}
+
+Table acc_ledger_role {
+  alrRole String [pk]
+  alrLabel String [not null, note: 'What the Posting Ledgers screen shows']
+  alrGroup String [not null, note: 'How that screen groups it.
+REVENUE | OUTPUT_TAX | PURCHASE | INPUT_TAX | SHARED | FUTURE (ck_alr_group)']
+  alrWantType String [note: 'Expected acc_ledger_master.led_ledger_type']
+  alrWantDuty String [note: 'Expected acc_ledger_master.led_gst_duty_head (ck_alr_duty)']
+  alrWantNature String [note: 'Expected acc_group_master.acc_group_nature (ck_alr_nature)']
+  alrBySupply Boolean [not null, default: false, note: 'May carry INTRA / INTER. Only revenue and purchase roles can — a tax role
+already says the supply nature by which it is used.']
+  alrByRate Boolean [not null, default: false, note: 'May be overridden per GST rate. Round-off, discount, write-off and
+advances cannot — they have nothing to do with a rate.']
+  alrSortOrder Int [not null, default: 0]
+  alrIsActive Boolean [not null, default: true]
+  alrRemarks String
+  ledgerMaps acc_ledger_map [not null, note: 'The role -> ledger rows that name this role.']
+  taxRateLedgers tax_rate_ledger [not null, note: 'The per-GST-rate overrides that name this role.']
+
+  Note: 'Every posting role, what kind of ledger it may take, and which dimensions it
+may be varied along. The single definition that acc_ledger_map and
+inventory.tax_rate_ledger both validate against, via
+accounts.fn_check_role_ledger — so adding a role (TCS, composition, an RCM
+variant) is one INSERT here, not an ALTER on every table that lists roles.'
 }
 
 Table acc_opening_balance {
@@ -954,7 +1008,8 @@ Table acc_vouchers {
   avDocAccYear String
   avDrCr String [not null]
   avLedgerId String [not null]
-  avOppLedgerId String [not null]
+  avOppLedgerId String [note: 'Two-leg vouchers only. NULL on a multi-leg voucher such as a sale:
+there is no single opposite side to name.']
   avAmount Decimal [not null, default: 0]
   avSignedAmount Decimal
   avCostCentreId String
@@ -973,7 +1028,7 @@ Table acc_vouchers {
   avModifiedBy String
   voucherHeader acc_voucher_header [not null]
   ledger acc_ledger_master [not null]
-  oppositeLedger acc_ledger_master [not null]
+  oppositeLedger acc_ledger_master
   voucherType acc_voucher_types [not null]
   bill acc_bill_balance
 
@@ -1794,6 +1849,10 @@ changes nothing until this item is explicitly re-saved.']
   itemStorageLocation String
   itemPackingItemIds String[] [not null]
   itemInclTax Boolean [not null, default: true]
+  itemTallyName String
+  itemTallyGuid String
+  itemTallyMasterId BigInt
+  itemTallyAlterId BigInt
   itemIsActive Boolean [not null, default: true]
   itemIsDeleted Boolean [not null, default: false]
   itemCreatedOn DateTime [default: `now()`, not null]
@@ -2205,6 +2264,10 @@ Table item_unit_master {
   unit_conversion Decimal
   unit_is_active Boolean [not null, default: true]
   unit_is_deleted Boolean [not null, default: false]
+  unit_tally_name String
+  unit_tally_guid String
+  unit_tally_master_id BigInt
+  unit_tally_alter_id BigInt
   unit_sync_date DateTime
   unit_created_on DateTime [default: `now()`, not null]
   unit_created_by String
@@ -2215,6 +2278,79 @@ Table item_unit_master {
   iucUnits item_unit_conversion [not null]
   iucBaseUnits item_unit_conversion [not null]
   itemMasters item_master [not null]
+}
+
+Table tax_rate_master {
+  taxId String [pk]
+  taxName String [not null]
+  taxCode String
+  taxSortOrder Int [not null, default: 0]
+  taxTaxability String [not null, default: 'TAXABLE', note: 'Same vocabulary as accounts."VoucherDocDetailTaxability", minus MIXED — a
+rate is never mixed; a DOCUMENT is, when its lines disagree.
+TAXABLE | EXEMPT | NIL_RATED | NON_GST | ZERO_RATED (ck_tax_taxability)']
+  taxIsReverseCharge Boolean [not null, default: false]
+  taxRatePerc Decimal [not null, default: 0, note: 'The total GST rate: 18 means 18%, charged as 9+9 locally or 18 inter-state.']
+  taxCgstPerc Decimal
+  taxSgstPerc Decimal
+  taxIgstPerc Decimal
+  taxCessBasis String [not null, default: 'NONE', note: 'NONE | PERCENT (taxCessPerc) | PER_UNIT (taxCessPerUnit) | BOTH. Says
+which figure is in play, so a zero is never ambiguous (ck_tax_cess_basis).']
+  taxCessPerc Decimal [not null, default: 0]
+  taxCessPerUnit Decimal [not null, default: 0]
+  taxAcessBasis String [not null, default: 'NONE', note: 'A SECOND cess, because sale_bill_item (sbi_acess_*), acc_voucher_doc_register
+(gdr_state_cess_value) and the \'State Cess\' duty head all expect one. Same
+shape as the block above, so a line can carry both independently — Kerala
+flood cess beside compensation cess is the standard example.']
+  taxAcessPerc Decimal [not null, default: 0]
+  taxAcessPerUnit Decimal [not null, default: 0]
+  taxSupersedesId String [note: 'The rate this one replaced. A rate change makes a NEW row and re-points
+items (see ItemTaxHistory); this keeps the chain followable. NULL on an
+original rate.']
+  taxIsActive Boolean [not null, default: true]
+  taxIsDeleted Boolean [not null, default: false]
+  taxSyncDate DateTime
+  taxCreatedOn DateTime [default: `now()`, not null]
+  taxCreatedBy String
+  taxModifiedOn DateTime
+  taxModifiedBy String
+  supersedes tax_rate_master
+  supersededBy tax_rate_master [not null]
+  ledgerOverrides tax_rate_ledger [not null]
+  billItems sale_bill_item [not null]
+  orderItems sale_order_item [not null]
+  quotationItems sale_quotation_item [not null]
+
+  Note: 'GST rate master. One row per rate, shared by every company — a rate is
+statutory and national, so the ledgers it names must be global too.
+
+Replaces the eighteen ledger columns of inventory.item_tax_master with rows
+in TaxRateLedger; see that model.'
+}
+
+Table tax_rate_ledger {
+  trlId String [pk]
+  trlTaxId String [not null]
+  trlRole String [not null]
+  trlSupplyNature String [note: 'NULL = both natures. Only roles with alrBySupply may set it.
+INTRA | INTER (ck_trl_supply_nature)']
+  trlLedgerId String [not null]
+  trlRemarks String
+  trlIsActive Boolean [not null, default: true]
+  trlIsDeleted Boolean [not null, default: false]
+  trlSyncDate DateTime
+  trlCreatedOn DateTime [default: `now()`, not null]
+  trlCreatedBy String
+  trlModifiedOn DateTime
+  trlModifiedBy String
+  taxRate tax_rate_master [not null]
+  role acc_ledger_role [not null]
+  ledger acc_ledger_master [not null]
+
+  Note: 'Per-GST-rate ledger overrides. One row per (rate, role, supply nature) that
+actually differs from the default — a rate that posts wherever
+accounts.acc_ledger_map says has no rows here at all, which is a complete
+configuration. Same (scope, role, nature) -> ledger shape as the map; the
+map\'s scope is company and branch, this one\'s is the rate.'
 }
 
 Table app_setting_def {
@@ -2406,6 +2542,7 @@ Table charge_master {
   chgLedgerCode String [not null]
   chgTaxApl Boolean [not null, default: false]
   chgBeforeTax Boolean [not null, default: false]
+  chgTaxId String
   chgSepPost Boolean [not null, default: false]
   chgManParty Boolean [not null, default: false]
   chgDispOrder Int [default: 0]
@@ -2498,6 +2635,7 @@ Table companys {
   branches branch_master [not null]
   accGroupMasters acc_group_master [not null]
   ledgers acc_ledger_master [not null]
+  ledgerMaps acc_ledger_map [not null]
   employees employee_master [not null]
   ledgerBankAccounts acc_ledger_bank_accounts [not null]
   gspCompanyServices gsp_company_service [not null]
@@ -4812,6 +4950,7 @@ Table sale_bill_item {
   sbiNetGross Decimal
   sbiChrgBeforeTax Decimal
   sbiChrgAfterTax Decimal
+  sbiTaxId String
   sbiTaxableAmt Decimal [not null, default: 0]
   sbiTaxPerc Decimal [not null, default: 0]
   sbiTaxAmt Decimal [not null, default: 0]
@@ -4854,6 +4993,7 @@ Table sale_bill_item {
   sbiModifiedBy String
   bill sale_bill [not null]
   item item_master [not null]
+  tax tax_rate_master
   priceLevel item_price_levels [not null]
   itemUnitConversion item_unit_conversion [not null]
 
@@ -5122,6 +5262,7 @@ Table sale_order_item {
   soiNetGross Decimal
   soiChrgBeforeTax Decimal
   soiChrgAfterTax Decimal
+  soiTaxId String
   soiTaxableAmt Decimal [not null, default: 0]
   soiTaxPerc Decimal [not null, default: 0]
   soiTaxAmt Decimal [not null, default: 0]
@@ -5166,6 +5307,7 @@ Table sale_order_item {
   soiModifiedBy String
   order sale_order [not null]
   item item_master [not null]
+  tax tax_rate_master
   priceLevel item_price_levels [not null]
   itemUnitConversion item_unit_conversion [not null]
 
@@ -5344,6 +5486,7 @@ Table sale_quotation_item {
   sqiCashDiscPerc Decimal [not null, default: 0]
   sqiCashDiscAmt Decimal [not null, default: 0]
   sqiGrossAmt Decimal [not null, default: 0]
+  sqiTaxId String
   sqiTaxableAmt Decimal [not null, default: 0]
   sqiTaxPerc Decimal [not null, default: 0]
   sqiTaxAmt Decimal [not null, default: 0]
@@ -5397,6 +5540,7 @@ Table sale_quotation_item {
   sqiSizeUom String
   quote sale_quotation [not null]
   item item_master [not null]
+  tax tax_rate_master
   priceLevel item_price_levels [not null]
   itemUnitConversion item_unit_conversion [not null]
 
@@ -7533,6 +7677,12 @@ Ref: acc_group_master.accGroupParentId - acc_group_master.accGroupId
 
 Ref: acc_group_master.accGroupCompanyId > companys.compId [delete: Restrict]
 
+Ref: acc_ledger_map.almCompanyId > companys.compId [delete: Restrict]
+
+Ref: acc_ledger_map.almRole > acc_ledger_role.alrRole [delete: Restrict]
+
+Ref: acc_ledger_map.almLedgerId > acc_ledger_master.ledId [delete: Restrict]
+
 Ref: acc_ledger_master.ledCompanyId > companys.compId [delete: Restrict]
 
 Ref: acc_ledger_master.ledGroupId > acc_group_master.accGroupId [delete: Restrict]
@@ -7744,6 +7894,14 @@ Ref: item_unit_conversion.iucBaseUnitId > item_unit_master.unit_id [delete: Rest
 Ref: item_unit_master.unit_code > item_gst_units.itemGstUnitCode [delete: Set Null]
 
 Ref: item_unit_master.unit_base_unit_id - item_unit_master.unit_id [delete: Restrict]
+
+Ref: tax_rate_master.taxSupersedesId - tax_rate_master.taxId [delete: Set Null]
+
+Ref: tax_rate_ledger.trlTaxId > tax_rate_master.taxId [delete: Cascade]
+
+Ref: tax_rate_ledger.trlRole > acc_ledger_role.alrRole [delete: Restrict]
+
+Ref: tax_rate_ledger.trlLedgerId > acc_ledger_master.ledId [delete: Restrict]
 
 Ref: app_setting_value.asvSettingKey > app_setting_def.asdKey [delete: Restrict]
 
@@ -7981,6 +8139,8 @@ Ref: sale_bill_item.(sbiBillId, sbiAccYear) > sale_bill.(sbId, sbAccYear) [delet
 
 Ref: sale_bill_item.sbiItemId > item_master.itemId [delete: Restrict]
 
+Ref: sale_bill_item.sbiTaxId > tax_rate_master.taxId [delete: Restrict]
+
 Ref: sale_bill_item.sbiPriceLevel > item_price_levels.iplId [delete: Restrict]
 
 Ref: sale_bill_item.sbiItemUnitId > item_unit_conversion.iucId [delete: Restrict]
@@ -8011,6 +8171,8 @@ Ref: sale_order_item.(soiOrderId, soiAccYear) > sale_order.(soId, soAccYear) [de
 
 Ref: sale_order_item.soiItemId > item_master.itemId [delete: Restrict]
 
+Ref: sale_order_item.soiTaxId > tax_rate_master.taxId [delete: Restrict]
+
 Ref: sale_order_item.soiPriceLevel > item_price_levels.iplId [delete: Restrict]
 
 Ref: sale_order_item.soiItemUnitId > item_unit_conversion.iucId [delete: Restrict]
@@ -8030,6 +8192,8 @@ Ref: sale_quotation.sqSalesmanId > employee_master.empId [delete: Restrict]
 Ref: sale_quotation_item.(sqiQuoteId, sqiAccYear) > sale_quotation.(sqId, sqAccYear) [delete: No Action]
 
 Ref: sale_quotation_item.sqiItemId > item_master.itemId [delete: Restrict]
+
+Ref: sale_quotation_item.sqiTaxId > tax_rate_master.taxId [delete: Restrict]
 
 Ref: sale_quotation_item.sqiPriceLevel > item_price_levels.iplId [delete: Restrict]
 

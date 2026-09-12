@@ -16,6 +16,7 @@ const request_context_service_1 = require("../../../common/request-context/reque
 const audit_log_service_1 = require("../../audit-log/audit-log.service");
 const charge_detail_api_types_1 = require("./types/charge-detail-api.types");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
+const tax_rate_reference_helper_1 = require("../../Inventory/tax-rate-master/utils/tax-rate-reference.helper");
 const CHARGE_DETAIL_TABLE_NAME = 'sale charge detail';
 const CHARGE_DETAIL_AUDIT_SCREEN_NAME = 'Charge Detail';
 const CHARGE_DETAIL_AUDIT = {
@@ -272,6 +273,9 @@ let ChargeDetailService = class ChargeDetailService {
         const ledgerCode = this.requireField(saveChargeDetailDto.cdLedgerCode, 'cdLedgerCode');
         const ledgerName = await this.ensureLedgerExists(tx, ledgerCode);
         await this.ensureChargeExists(tx, chgId);
+        if (saveChargeDetailDto.cdTaxCode) {
+            await this.ensureTaxRateExists(tx, saveChargeDetailDto.cdTaxCode);
+        }
         const data = {
             cdDocType: scope.cdDocType,
             cdDocId: scope.cdDocId,
@@ -311,6 +315,12 @@ let ChargeDetailService = class ChargeDetailService {
         const ledgerName = await this.ensureLedgerExists(tx, nextLedgerCode);
         if (nextChgId !== existing.cdChgId) {
             await this.ensureChargeExists(tx, nextChgId);
+        }
+        const nextTaxCode = (0, module_service_utils_1.hasOwnProperty)(saveChargeDetailDto, 'cdTaxCode')
+            ? saveChargeDetailDto.cdTaxCode
+            : existing.cdTaxCode;
+        if (nextTaxCode && nextTaxCode !== existing.cdTaxCode) {
+            await this.ensureTaxRateExists(tx, nextTaxCode);
         }
         const data = {
             cdSlno: slno,
@@ -422,6 +432,9 @@ let ChargeDetailService = class ChargeDetailService {
         }
         return ledger.ledName;
     }
+    async ensureTaxRateExists(tx, taxId) {
+        await (0, tax_rate_reference_helper_1.assertTaxRateRefs)(tx, [{ taxId, field: 'cdTaxCode' }], 'Invalid charge tax rate');
+    }
     async ensureChargeExists(tx, chgId) {
         const charge = await tx.chargeMaster.findFirst({
             where: { chgId, chgIsDeleted: false },
@@ -495,6 +508,15 @@ let ChargeDetailService = class ChargeDetailService {
             details.push({
                 field: 'cdTaxApl',
                 message: 'cdTaxApl and cdBeforeTax are mutually exclusive: a charge is either taxed at the item rate or carries its own GST',
+            });
+        }
+        const taxCode = (0, module_service_utils_1.hasOwnProperty)(saveChargeDetailDto, 'cdTaxCode')
+            ? saveChargeDetailDto.cdTaxCode
+            : existing?.cdTaxCode;
+        if (taxCode && (!taxApl || beforeTax)) {
+            details.push({
+                field: 'cdTaxCode',
+                message: 'cdTaxCode is only meaningful on a charge that carries its own GST — set cdTaxApl and leave cdBeforeTax false, or clear cdTaxCode',
             });
         }
         if (details.length > 0) {

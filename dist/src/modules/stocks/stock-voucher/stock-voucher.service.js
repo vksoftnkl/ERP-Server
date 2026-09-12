@@ -979,7 +979,11 @@ let StockVoucherService = class StockVoucherService {
                     AND sml.sml_acc_year    = keyed.svi_acc_year
                     AND sml.sml_godown_id   = keyed.svi_godown_id
                     AND sml.sml_txn_type    = 'OPENING'
-                    AND sml.sml_is_deleted  = false
+                    -- LIVE, FORWARD AND NOT REVERSED. A cancel leaves the
+                    -- original row where it is and mirrors it; reading the
+                    -- forward side alone made a cancelled opening hold its
+                    -- holding for ever. See unreversedLedgerRow.
+                    AND ${(0, stock_voucher_posting_helper_1.unreversedLedgerRow)()}
                     AND sml.sml_src_doc_id <> keyed.svi_voucher_id
                ) ELSE false END AS already_opened
           FROM keyed
@@ -1198,18 +1202,29 @@ let StockVoucherService = class StockVoucherService {
                 },
             ]);
         }
-        if (existing.svhStatus === 'DRAFT') {
+        const isDraft = existing.svhStatus === 'DRAFT';
+        if (isDraft && !(0, stock_voucher_posting_helper_1.usesInProcessPosting)(rules)) {
             (0, module_service_utils_1.throwStockConflict)(`${rules.displayName} is a draft`, [
                 {
                     field: 'svhId',
-                    message: `${existing.svhRefno} is DRAFT and has moved no stock, so there is nothing to reverse. Delete it instead.`,
+                    message: `${existing.svhRefno} is DRAFT and has moved no stock of its own, so there is nothing to reverse. Delete it instead — cancelling it would strand the despatch it settles.`,
                 },
             ]);
         }
         const cancelledOn = new Date();
         const rowsReversed = await this.prisma.$transaction(async (tx) => {
             let reversed;
-            if ((0, stock_voucher_posting_helper_1.usesInProcessPosting)(rules)) {
+            if (isDraft) {
+                reversed = await (0, stock_voucher_posting_helper_1.cancelDraftVoucher)(tx, {
+                    rules,
+                    svhId,
+                    accYear,
+                    actor,
+                    reason: trimmedReason,
+                    cancelledOn,
+                });
+            }
+            else if ((0, stock_voucher_posting_helper_1.usesInProcessPosting)(rules)) {
                 reversed = await (0, stock_voucher_posting_helper_1.cancelStockVoucher)(tx, {
                     rules,
                     svhId,
@@ -1254,7 +1269,9 @@ let StockVoucherService = class StockVoucherService {
             originalRecord: { svhId, svhStatus: existing.svhStatus },
             modifiedRecord: { svhId, svhStatus: document.header.status, rowsReversed },
             userId: actor,
-            notes: `${rules.displayName} cancelled: ${trimmedReason}`,
+            notes: isDraft
+                ? `${rules.displayName} draft cancelled: ${trimmedReason}`
+                : `${rules.displayName} cancelled: ${trimmedReason}`,
         });
         return {
             ...document,
@@ -1270,7 +1287,10 @@ let StockVoucherService = class StockVoucherService {
             (0, module_service_utils_1.throwStockConflict)(`${rules.displayName} is ${existing.svhStatus}`, [
                 {
                     field: 'svhId',
-                    message: `${existing.svhRefno} is ${existing.svhStatus} and has ledger rows. Cancel it — a cancellation reverses the movement; a soft delete would only hide the document while its stock stayed.`,
+                    message: existing.svhStatus === 'CANCELLED'
+                        ?
+                            `${existing.svhRefno} is already cancelled, which is as far out of play as a document goes. There is nothing left to delete.`
+                        : `${existing.svhRefno} is ${existing.svhStatus} and has ledger rows. Cancel it — a cancellation reverses the movement; a soft delete would only hide the document while its stock stayed.`,
                 },
             ]);
         }
@@ -1430,7 +1450,9 @@ let StockVoucherService = class StockVoucherService {
               AND sml.sml_branch_id  = ${branchId}::uuid
               AND sml.sml_acc_year   = ${accYear}::bpchar
               AND sml.sml_txn_type   = ANY (${rules.ledgerTxnTypes}::text[])
-              AND sml.sml_is_deleted = false
+              -- Same rule as the preflight's: a cancelled opening is not an
+              -- opening, so its item belongs back on this work list.
+              AND ${(0, stock_voucher_posting_helper_1.unreversedLedgerRow)()}
          )
        ORDER BY itm.item_code NULLS LAST, itm.item_name_en
        LIMIT ${take} OFFSET ${skip}

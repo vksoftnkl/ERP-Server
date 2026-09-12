@@ -19,6 +19,7 @@ export declare function effectivePolicyLateral(scope: {
 }): Prisma.Sql;
 export declare function effectivePolicyCte(): Prisma.Sql;
 export declare function lotIdentityKeyColumns(): Prisma.Sql;
+export declare function unreversedLedgerRow(): Prisma.Sql;
 export interface CancelStockVoucherParams {
     rules: StockVoucherTypeRules;
     svhId: string;
@@ -28,3 +29,4 @@ export interface CancelStockVoucherParams {
     cancelledOn: Date;
 }
 export declare function cancelStockVoucher(tx: Prisma.TransactionClient, params: CancelStockVoucherParams): Promise<number>;
+export declare function cancelDraftVoucher(tx: Prisma.TransactionClient, params: CancelStockVoucherParams): Promise<number>;

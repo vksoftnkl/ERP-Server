@@ -25,6 +25,13 @@ model Unit {
   unit_is_active  Boolean @default(true)
   unit_is_deleted Boolean @default(false)
 
+  // Tally identity — unit_tally_guid is uniquely indexed in the DB
+  // (ux_unit_tally_guid, partial on NOT NULL AND NOT deleted).
+  unit_tally_name      String? @db.VarChar(100)
+  unit_tally_guid      String? @db.VarChar(64)
+  unit_tally_master_id BigInt? @db.BigInt
+  unit_tally_alter_id  BigInt? @db.BigInt
+
   // Audit / Sync
   unit_sync_date   DateTime? @db.Timestamptz(6)
   unit_created_on  DateTime  @default(now()) @db.Timestamptz(6)
