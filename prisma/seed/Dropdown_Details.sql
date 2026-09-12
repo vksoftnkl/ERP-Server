@@ -196,9 +196,9 @@ ORDER BY sup_name;$seed$, NULL)
     ,(36, 'TAXES'                   , NULL, 'tax_name'            , 'asc', 10, false, 0   , 'Desktop', 'tax_name'          , 'system', $seed$SELECT
 	tax_id,
 	tax_name
-FROM inventory.item_tax_master
+FROM inventory.tax_rate_master
 WHERE tax_is_active = true AND tax_is_deleted = false
-ORDER BY tax_name;$seed$, NULL)
+ORDER BY tax_sort_order, tax_name;$seed$, NULL)
     ,(37, 'HSN/SAC CODES'           , NULL, 'hsn_code'            , 'asc', 10, false, 0   , 'Desktop', 'hsn_code'          , 'system', $seed$SELECT
 	hsn_id,
 	hsn_code,
