@@ -16,10 +16,31 @@
 --  migrated (verified: 0 ids in common). So until this runs, the item entry
 --  screen cannot be pointed at the new master at all:
 --    · its Default Tax dropdown would offer ids the FK then refuses on save;
---    · /tax-rates/get answers 404 for every id the 10,034 existing items
---      carry, so merely OPENING an item would raise an error.
+--    · /tax-rates/get answers 404 for every id the existing items carry, so
+--      merely OPENING an item would raise an error.
 --
---  ── WHAT THE DATA LOOKS LIKE (live, 2026-09-12) ─────────────────────────
+--  ── HOW AN OLD ROW IS MATCHED TO A NEW ONE ──────────────────────────────
+--  In two passes, section 1a then 1b, and a row is only ever mapped once:
+--
+--   1a BY NAME, from the reviewed table below. These are the judgement calls
+--      — the two cess-bearing rows in particular (see below) — and they are
+--      settled here rather than derived, so that they can be read and argued
+--      with. A name that no longer resolves simply matches nothing and falls
+--      through to 1b; it cannot silently move rows to the wrong rate.
+--
+--   1b BY TAXABILITY AND RATE, for anything 1a did not cover: an old row is
+--      matched to the single live tax_rate_master row with the same
+--      tax_taxability and the same total rate. This is the same equivalence
+--      the named mapping expresses, just computed, and it is what lets this
+--      migration run on a database whose operators typed their own names into
+--      the old master. Rows carrying cess are excluded from 1b on purpose —
+--      dropping a cess is a decision, so it belongs in 1a by name.
+--
+--   1c Then: every old row that CARRIES DATA must have come out of 1a or 1b.
+--      Unmatched, ambiguous or cess-bearing leftovers abort the migration
+--      with the row named, before anything has been written.
+--
+--  ── WHAT THE DATA LOOKED LIKE ON 192.168.0.106, 2026-09-12 ──────────────
 --  10,034 items carry a tax id; 55 carry none; 0 are orphaned.
 --  item_tax_history is EMPTY (0 rows), so only item_master holds real data.
 --
@@ -34,11 +55,25 @@
 --      GST @ 5% + Cess @ 3%           3   ->  GST 5%    (cess dropped — see below)
 --      test2 / test / tax 10%         0   ->  nothing to move
 --
+--  ── AND ON THE VPS (169.58.213.171), WHICH IS WHY 1b EXISTS ─────────────
+--  That server was seeded separately and its old master holds two rows of its
+--  own, neither of which appears in the named mapping above:
+--
+--      old row                    items   ->  new row      matched by
+--      ─────────────────────────────────────────────────────────────────
+--      Exempted    EXEMPT 0%         12   ->  Exempt       1b
+--      test        EXEMPT 0%          1   ->  Exempt       1b
+--
+--  Both are EXEMPT at 0% with no cess, so 'Exempt' is the only live row they
+--  can mean and no rate or cess information is lost. Before 1b existed this
+--  migration aborted here on every deploy (P3009, 2026-09-12) — correctly,
+--  since a hardcoded list of one database's names is not a mapping.
+--
 --  ── NINETEEN ITEMS CARRY CESS; THE CESS IS DROPPED ──────────────────────
 --  tax_rate_master has no cess-bearing row — the seeded slabs are the seven
 --  statutory rates plus the four non-taxable kinds. Nineteen items sit on two
 --  old rows that do carry cess ('GST @ 18%' with 5 per unit, 'GST @ 5% + Cess
---  @ 3%'), and this maps them to the plain rate and drops the cess.
+--  @ 3%'), and 1a maps them to the plain rate and drops the cess.
 --
 --  Confirmed with the user 2026-09-12: the existing figures are test data, not
 --  a tax position, so there is nothing to preserve. It shows in the rows —
@@ -48,21 +83,20 @@
 --  drinks, coal and motor vehicles.
 --
 --  If a real cess-bearing item ever needs one: create the rate on the GST Rate
---  screen first, then add its name to the mapping in section 2. Section 4 will
---  not let a wrong answer through quietly — the FK refuses to be added while
---  any item still points at the old table.
+--  screen first, then name it in the 1a mapping. Nothing will slip through in
+--  the meantime — 1b refuses cess-bearing rows, and 1c then names them.
 --
---  ── THREE CHANGES MADE WHEN THIS BECAME A PRISMA MIGRATION (2026-09-12) ──
+--  ── FOUR CHANGES MADE WHEN THIS BECAME A PRISMA MIGRATION (2026-09-12) ───
 --  a) Sections 1 and 5 were bare SELECTs, written to be eyeballed in psql. A
---     migration has nobody reading its output, so they are DO blocks that
---     RAISE EXCEPTION instead: an unmapped old row, or a mapping name that
---     does not resolve to exactly one live rate, now aborts the migration
---     rather than scrolling past. Section 5 reports its tallies as NOTICEs.
+--     migration has nobody reading its output, so the checks RAISE EXCEPTION
+--     instead: an old row with items on it that cannot be matched now aborts
+--     the migration rather than scrolling past. Section 5 reports its tallies
+--     as NOTICEs.
 --  b) Section 2b was added. inventory.item_group_master.itg_default_tax_id
 --     holds the same old ids on 30 groups and has NO foreign key, so section 4
 --     cannot catch it — the group default would keep handing the item screen
---     ids the FK refuses. All 30 sit on GST 18/5/12/0%, already in the
---     mapping, and no cess is involved.
+--     ids the FK refuses. All 30 sit on GST 18/5/12/0%, already in 1a, and no
+--     cess is involved.
 --  c) The constraint swap was split in two. Section 4a drops the old pair
 --     BEFORE the updates — as written, the FK to item_tax_master was still in
 --     force while section 2 wrote tax_rate_master ids, so the first row was
@@ -70,67 +104,110 @@
 --     the new pair after, in the same transaction, and is still what proves
 --     the data. DROP also gained IF EXISTS so a database already repointed by
 --     hand does not halt here.
+--  d) The mapping was resolved ONCE into the tax_id_map temp table, instead of
+--     the same seven-row VALUES list being repeated in each of sections 2, 2b
+--     and 3. Three copies of a mapping is three chances for them to disagree,
+--     and section 1 could only ever have vouched for its own copy.
 -- ═══════════════════════════════════════════════════════════════════════════
 
 BEGIN;
 
--- ── 1 · Prove the mapping covers everything, BEFORE touching a row ────────
---  Anything caught here is an old tax row with items on it and no answer in
---  the mapping below, or a mapping target that does not resolve to exactly
---  one live rate. Either way: stop, do not update anything.
+-- ── 1 · Resolve old id -> new id, and prove it, BEFORE touching a row ─────
+CREATE TEMP TABLE tax_id_map (
+    old_id   uuid PRIMARY KEY,
+    new_id   uuid NOT NULL,
+    matched  text NOT NULL
+) ON COMMIT DROP;
+
+-- ── 1a · By name: the reviewed decisions ──────────────────────────────────
+--  By NAME on both sides, not by pasted uuid: the names are what this mapping
+--  was reviewed against, and the ids differ per database anyway.
+INSERT INTO tax_id_map (old_id, new_id, matched)
+SELECT o.tax_id, n.tax_id, format('name %L -> %L', o.tax_name, n.tax_name)
+  FROM (VALUES
+        ('GST 18%',              'GST 18%'),
+        ('GST 5%',               'GST 5%'),
+        ('GST 12%',              'GST 12%'),
+        ('GST 0%',               'GST 0%'),
+        ('GST @ 18%',            'GST 18%'),
+        ('Excempted (GST @ 0%)', 'Exempt'),
+        ('GST @ 5% + Cess @ 3%', 'GST 5%')
+       ) AS m(old_name, new_name)
+  JOIN inventory.item_tax_master o ON o.tax_name = m.old_name
+  JOIN inventory.tax_rate_master n ON n.tax_name = m.new_name
+                                  AND NOT n.tax_is_deleted;
+
+-- ── 1b · By taxability and rate: everything else ──────────────────────────
+--  Only where exactly ONE live rate can be meant. Ambiguity is left for 1c to
+--  report by name rather than resolved by luck of the sort order.
+INSERT INTO tax_id_map (old_id, new_id, matched)
+SELECT o.tax_id, c.tax_id,
+       format('rate %s @ %s%% -> %L', o.tax_taxability_type,
+              o.tax_gst_rate_total, c.tax_name)
+  FROM inventory.item_tax_master o
+  JOIN LATERAL (
+        SELECT n.tax_id, n.tax_name, count(*) OVER () AS candidates
+          FROM inventory.tax_rate_master n
+         WHERE NOT n.tax_is_deleted
+           AND n.tax_taxability  = upper(btrim(o.tax_taxability_type))
+           AND n.tax_rate_perc   = o.tax_gst_rate_total
+       ) c ON c.candidates = 1
+ WHERE NOT EXISTS (SELECT 1 FROM tax_id_map t WHERE t.old_id = o.tax_id)
+   AND o.tax_cess_perc     = 0 AND o.tax_cess_unit     = 0
+   AND o.tax_cess_pur_perc = 0 AND o.tax_cess_pur_unit = 0;
+
+-- ── 1c · Anything that carries data and did not match: stop ───────────────
+--  Caught here: an old tax row with items, groups or history on it that 1a
+--  does not name and 1b cannot resolve. The message says which of the three
+--  reasons it was, because the remedy differs — a cess-bearing row needs a
+--  decision in 1a, an ambiguous one needs the duplicate rates cleaned up on
+--  the GST Rate screen, and a missing one needs the rate created.
 DO $$
 DECLARE
     bad text;
 BEGIN
-    WITH mapping(old_name, new_name) AS (VALUES
-            ('GST 18%',              'GST 18%'),
-            ('GST 5%',               'GST 5%'),
-            ('GST 12%',              'GST 12%'),
-            ('GST 0%',               'GST 0%'),
-            ('GST @ 18%',            'GST 18%'),
-            ('Excempted (GST @ 0%)', 'Exempt'),
-            ('GST @ 5% + Cess @ 3%', 'GST 5%')
-    )
-    SELECT string_agg(format('%s (%s rows)', t.tax_name, t.n), ', ' ORDER BY t.tax_name)
+    SELECT string_agg(
+               format('%L (%s items, %s groups, %s history; %s @ %s%%): %s',
+                      t.tax_name, t.items, t.groups, t.history,
+                      t.tax_taxability_type, t.tax_gst_rate_total, t.reason),
+               E'\n  ' ORDER BY t.tax_name)
       INTO bad
       FROM (
-            SELECT o.tax_name, count(*) AS n
+            SELECT o.tax_name, o.tax_taxability_type, o.tax_gst_rate_total,
+                   (SELECT count(*) FROM inventory.item_master i
+                     WHERE i.item_default_tax_id = o.tax_id)        AS items,
+                   (SELECT count(*) FROM inventory.item_group_master g
+                     WHERE g.itg_default_tax_id = o.tax_id)         AS groups,
+                   (SELECT count(*) FROM inventory.item_tax_history h
+                     WHERE h.ith_tax_id = o.tax_id)                 AS history,
+                   CASE
+                     WHEN o.tax_cess_perc > 0 OR o.tax_cess_unit > 0
+                       OR o.tax_cess_pur_perc > 0 OR o.tax_cess_pur_unit > 0
+                       THEN 'carries cess, so needs a decision by name in section 1a'
+                     WHEN (SELECT count(*) FROM inventory.tax_rate_master n
+                            WHERE NOT n.tax_is_deleted
+                              AND n.tax_taxability = upper(btrim(o.tax_taxability_type))
+                              AND n.tax_rate_perc  = o.tax_gst_rate_total) > 1
+                       THEN 'more than one live tax_rate_master row has this taxability and rate'
+                     ELSE 'no live tax_rate_master row has this taxability and rate'
+                   END AS reason
               FROM inventory.item_tax_master o
-             WHERE o.tax_name NOT IN (SELECT old_name FROM mapping)
+             WHERE NOT EXISTS (SELECT 1 FROM tax_id_map t WHERE t.old_id = o.tax_id)
                AND (EXISTS (SELECT 1 FROM inventory.item_master i
                              WHERE i.item_default_tax_id = o.tax_id)
                  OR EXISTS (SELECT 1 FROM inventory.item_tax_history h
                              WHERE h.ith_tax_id = o.tax_id)
                  OR EXISTS (SELECT 1 FROM inventory.item_group_master g
                              WHERE g.itg_default_tax_id = o.tax_id))
-             GROUP BY o.tax_name
            ) t;
 
     IF bad IS NOT NULL THEN
-        RAISE EXCEPTION
-          'item_tax_master rows still carry data and are not in the mapping: %'
-          '  — add them to section 2 of this migration and re-run.', bad;
+        RAISE EXCEPTION E'item_tax_master rows still carry data and cannot be mapped onto tax_rate_master:\n  %', bad;
     END IF;
 
-    WITH mapping(new_name) AS (VALUES
-            ('GST 18%'), ('GST 5%'), ('GST 12%'), ('GST 0%'), ('Exempt')
-    )
-    SELECT string_agg(format('%s -> %s live rows', m.new_name, c.found), ', '
-                      ORDER BY m.new_name)
-      INTO bad
-      FROM mapping m
-      CROSS JOIN LATERAL (
-            SELECT count(*) AS found
-              FROM inventory.tax_rate_master n
-             WHERE n.tax_name = m.new_name AND NOT n.tax_is_deleted
-           ) c
-     WHERE c.found <> 1;
-
-    IF bad IS NOT NULL THEN
-        RAISE EXCEPTION
-          'every mapping target must resolve to exactly one live tax_rate_master row: %',
-          bad;
-    END IF;
+    FOR bad IN SELECT matched FROM tax_id_map ORDER BY matched LOOP
+        RAISE NOTICE 'mapping: %', bad;
+    END LOOP;
 END $$;
 
 -- ── 4a · Drop the old constraints FIRST ───────────────────────────────────
@@ -146,72 +223,34 @@ ALTER TABLE inventory.item_tax_history
   DROP CONSTRAINT IF EXISTS item_tax_history_ith_tax_id_fkey;
 
 -- ── 2 · Repoint the items ─────────────────────────────────────────────────
---  By NAME on both sides, not by pasted uuid: the names are what the mapping
---  above was reviewed against, and a name that stops resolving fails loudly
---  in step 1 rather than updating the wrong rows here.
-WITH mapping(old_name, new_name) AS (VALUES
-        ('GST 18%','GST 18%'), ('GST 5%','GST 5%'), ('GST 12%','GST 12%'),
-        ('GST 0%','GST 0%'),   ('GST @ 18%','GST 18%'),
-        ('Excempted (GST @ 0%)','Exempt'), ('GST @ 5% + Cess @ 3%','GST 5%')
-),
-resolved AS (
-    SELECT o.tax_id AS old_id, n.tax_id AS new_id
-      FROM mapping m
-      JOIN inventory.item_tax_master o ON o.tax_name = m.old_name
-      JOIN inventory.tax_rate_master n ON n.tax_name = m.new_name
-                                      AND NOT n.tax_is_deleted
-)
 UPDATE inventory.item_master i
-   SET item_default_tax_id = r.new_id
-  FROM resolved r
- WHERE i.item_default_tax_id = r.old_id;
--- expect: UPDATE 10034   (10,030 of them on live items; the other 4 are on
---                         deleted items and are carried along by the same
---                         match; 55 items have no tax id at all and are left
---                         alone)
+   SET item_default_tax_id = m.new_id
+  FROM tax_id_map m
+ WHERE i.item_default_tax_id = m.old_id;
+-- expect: 192.168.0.106 -> UPDATE 10034   (10,030 of them on live items; the
+--                         other 4 are on deleted items and are carried along
+--                         by the same match; 55 items have no tax id at all
+--                         and are left alone)
+--         169.58.213.171 -> UPDATE 13
 
 -- ── 2b · Repoint the item GROUPS ──────────────────────────────────────────
 --  itg_default_tax_id has no FK, so nothing downstream would ever complain —
 --  the group would simply keep offering the item screen an id the item FK
---  refuses. Same mapping, same reasoning.
-WITH mapping(old_name, new_name) AS (VALUES
-        ('GST 18%','GST 18%'), ('GST 5%','GST 5%'), ('GST 12%','GST 12%'),
-        ('GST 0%','GST 0%'),   ('GST @ 18%','GST 18%'),
-        ('Excempted (GST @ 0%)','Exempt'), ('GST @ 5% + Cess @ 3%','GST 5%')
-),
-resolved AS (
-    SELECT o.tax_id AS old_id, n.tax_id AS new_id
-      FROM mapping m
-      JOIN inventory.item_tax_master o ON o.tax_name = m.old_name
-      JOIN inventory.tax_rate_master n ON n.tax_name = m.new_name
-                                      AND NOT n.tax_is_deleted
-)
+--  refuses. Same map, same reasoning.
 UPDATE inventory.item_group_master g
-   SET itg_default_tax_id = r.new_id
-  FROM resolved r
- WHERE g.itg_default_tax_id = r.old_id;
--- expect: UPDATE 30
+   SET itg_default_tax_id = m.new_id
+  FROM tax_id_map m
+ WHERE g.itg_default_tax_id = m.old_id;
+-- expect: 192.168.0.106 -> UPDATE 30      169.58.213.171 -> UPDATE 0
 
 -- ── 3 · item_tax_history ──────────────────────────────────────────────────
---  Empty today, so there is nothing to move. The same mapping is applied
---  anyway, so that a database which has since grown rows is repointed rather
---  than stopped by the FK in step 4.
-WITH mapping(old_name, new_name) AS (VALUES
-        ('GST 18%','GST 18%'), ('GST 5%','GST 5%'), ('GST 12%','GST 12%'),
-        ('GST 0%','GST 0%'),   ('GST @ 18%','GST 18%'),
-        ('Excempted (GST @ 0%)','Exempt'), ('GST @ 5% + Cess @ 3%','GST 5%')
-),
-resolved AS (
-    SELECT o.tax_id AS old_id, n.tax_id AS new_id
-      FROM mapping m
-      JOIN inventory.item_tax_master o ON o.tax_name = m.old_name
-      JOIN inventory.tax_rate_master n ON n.tax_name = m.new_name
-                                      AND NOT n.tax_is_deleted
-)
+--  Empty on both databases today, so there is nothing to move. The same map
+--  is applied anyway, so that a database which has since grown rows is
+--  repointed rather than stopped by the FK in section 4b.
 UPDATE inventory.item_tax_history h
-   SET ith_tax_id = r.new_id
-  FROM resolved r
- WHERE h.ith_tax_id = r.old_id;
+   SET ith_tax_id = m.new_id
+  FROM tax_id_map m
+ WHERE h.ith_tax_id = m.old_id;
 -- expect: UPDATE 0
 
 -- ── 4b · Add the new constraints (§4c of 20_tax_rate_master.sql) ──────────
@@ -232,7 +271,7 @@ ALTER TABLE inventory.item_tax_history
        ON UPDATE CASCADE ON DELETE RESTRICT;
 
 -- ── 5 · Verify before committing ──────────────────────────────────────────
---  The FK in section 4 already proves every item is on SOME row of the new
+--  The FK in section 4b already proves every item is on SOME row of the new
 --  master. What it cannot prove is that the row is live, or that the groups
 --  of section 2b (which have no FK) came along — so both are checked here,
 --  and the resulting spread is reported as a NOTICE for the deploy log.
