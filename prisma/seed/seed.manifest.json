@@ -109,6 +109,10 @@
     {
       "file": "Quotation_Charges_Grid_Web.sql",
       "description": "fixed.ui_tables / ui_table_columns — the web additional-charges grid (id 26); after Ui_Tables.sql and Ui_Table_Columns.sql, which leave the pinned id free"
+    },
+    {
+      "file": "Sale_Bill_Widget_Config_Menu12.sql",
+      "description": "fixed.form_section + fixed.form_field for menu 12 (Sales Entry) — the sale bill's Visible Settings config; targeted because Form_Section.sql skips a menu that already has any section, so it never adds a newly built screen to a laid-out database"
     }
   ]
 }

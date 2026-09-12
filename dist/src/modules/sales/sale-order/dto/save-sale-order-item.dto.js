@@ -84,6 +84,7 @@ class SaveSaleOrderItemDto {
     soiNetGross;
     soiChrgBeforeTax;
     soiChrgAfterTax;
+    soiTaxId;
     soiTaxableAmt;
     soiTaxPerc;
     soiTaxAmt;
@@ -517,6 +518,18 @@ __decorate([
     (0, dtoDecorators_1.NullableNumber)(),
     __metadata("design:type", Object)
 ], SaveSaleOrderItemDto.prototype, "soiChrgAfterTax", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        format: 'uuid',
+        nullable: true,
+        description: 'The inventory.tax_rate_master row this line was taxed under, snapshotted at save. The ' +
+            'percentages below are what was CHARGED; this is where they came from, and posting ' +
+            "resolves the line's ledgers through it rather than re-reading the item default, which " +
+            'is mutable. Null falls through to accounts.acc_ledger_map.',
+    }),
+    (0, dtoDecorators_1.NullableUuid)(),
+    __metadata("design:type", Object)
+], SaveSaleOrderItemDto.prototype, "soiTaxId", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ description: 'On the POST-charge taxable' }),
     (0, dtoDecorators_1.OptionalNumber)(),

@@ -70,6 +70,7 @@ export declare class SaveSaleOrderItemDto {
     soiNetGross?: string | number | null;
     soiChrgBeforeTax?: string | number | null;
     soiChrgAfterTax?: string | number | null;
+    soiTaxId?: string | null;
     soiTaxableAmt?: string | number;
     soiTaxPerc?: string | number;
     soiTaxAmt?: string | number;

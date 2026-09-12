@@ -21,6 +21,7 @@ const tender_detail_service_1 = require("../../accountsModule/tenderDetail/tende
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
 const voucher_sequence_helper_1 = require("../../../common/Sequence/voucher-sequence.helper");
+const tax_rate_reference_helper_1 = require("../../Inventory/tax-rate-master/utils/tax-rate-reference.helper");
 const order_advance_posting_helper_1 = require("./order-advance-posting.helper");
 const SALE_ORDER_VCHR_TYPE_ID = 4;
 const SALE_ORDER_TABLE_NAME = 'sale_order';
@@ -264,6 +265,7 @@ const SALE_ORDER_ITEM_OPTIONAL_FIELDS = [
     'soiNetGross',
     'soiChrgBeforeTax',
     'soiChrgAfterTax',
+    'soiTaxId',
     'soiTaxableAmt',
     'soiTaxPerc',
     'soiTaxAmt',
@@ -1284,6 +1286,7 @@ let SaleOrderService = class SaleOrderService {
         if (inputItems === undefined) {
             return existing;
         }
+        await (0, tax_rate_reference_helper_1.assertTaxRateRefs)(tx, (0, tax_rate_reference_helper_1.collectTaxRateRefs)(inputItems, (item) => item.soiTaxId, (index) => `items.${index}.soiTaxId`), 'Invalid order item tax rate');
         const existingMap = new Map(existing.map((item) => [item.soiId, item]));
         const now = new Date();
         const resolvedItems = inputItems.map((inputItem, index) => ({
