@@ -84,6 +84,8 @@ model TransactionChargeDetail {
   // The GL ledger the charge posts to. Restrict on delete: a ledger that has
   // been posted to on any document must not disappear from under it.
   ledger          AccLedgerMaster @relation(fields: [cdLedgerCode], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_cd_ledger")
+  // The rate this charge line was taxed under, snapshotted at save (fk_cd_tax).
+  tax             TaxRateMaster?  @relation(fields: [cdTaxCode], references: [taxId], onUpdate: Cascade, onDelete: Restrict, map: "fk_cd_tax")
   company         Company         @relation("CompanyChargeDetails", fields: [cdCompId], references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_cd_company")
   branch          BranchMaster    @relation("BranchChargeDetails", fields: [cdBranchId], references: [brId], onUpdate: Cascade, onDelete: Restrict, map: "fk_cd_branch")
   // The partition key completes the primary key — see the note above the model.

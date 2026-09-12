@@ -76,6 +76,13 @@ model TaxRateMaster {
   billItems          SaleBillItem[]
   orderItems         SaleOrderItem[]
   quotationItems     SaleQuotationItem[]
+  // Charges carrying their own rate, and the charge lines that recorded it —
+  // charge_master.chg_tax_id and txn_charge_detail.cd_tax_code. Both FKs were
+  // in the database from 20260912050000/20260912070000 but had no relation
+  // here, so `migrate diff` reported them as drift and `migrate dev` would
+  // have dropped them.
+  charges            ChargeMaster[]
+  chargeLines        TransactionChargeDetail[]
 
   // Partial indexes — DB-only, Prisma ignores a WHERE predicate and would keep
   // re-creating these without one:

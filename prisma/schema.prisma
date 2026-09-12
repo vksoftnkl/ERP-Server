@@ -3821,6 +3821,13 @@ model TaxRateMaster {
   billItems          SaleBillItem[]
   orderItems         SaleOrderItem[]
   quotationItems     SaleQuotationItem[]
+  // Charges carrying their own rate, and the charge lines that recorded it —
+  // charge_master.chg_tax_id and txn_charge_detail.cd_tax_code. Both FKs were
+  // in the database from 20260912050000/20260912070000 but had no relation
+  // here, so `migrate diff` reported them as drift and `migrate dev` would
+  // have dropped them.
+  charges            ChargeMaster[]
+  chargeLines        TransactionChargeDetail[]
 
   // Partial indexes — DB-only, Prisma ignores a WHERE predicate and would keep
   // re-creating these without one:
@@ -4210,6 +4217,9 @@ model ChargeMaster {
   chgModifiedBy   String?   @db.Uuid                                                @map("chg_modified_by")
   // Relations
   ledger          AccLedgerMaster @relation(fields: [chgLedgerCode], references: [ledId], onUpdate: Cascade, onDelete: Restrict)
+  // The per-charge rate override (fk_chg_tax). Restrict on delete: a rate a
+  // charge is configured on must be superseded, not removed from under it.
+  tax             TaxRateMaster?  @relation(fields: [chgTaxId], references: [taxId], onUpdate: Cascade, onDelete: Restrict, map: "fk_chg_tax")
   chargeDetails   TransactionChargeDetail[]
   @@index([chgLedgerCode], name: "idx_chg_ledger_code")
   @@map("charge_master")
@@ -5404,6 +5414,8 @@ model TransactionChargeDetail {
   // The GL ledger the charge posts to. Restrict on delete: a ledger that has
   // been posted to on any document must not disappear from under it.
   ledger          AccLedgerMaster @relation(fields: [cdLedgerCode], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_cd_ledger")
+  // The rate this charge line was taxed under, snapshotted at save (fk_cd_tax).
+  tax             TaxRateMaster?  @relation(fields: [cdTaxCode], references: [taxId], onUpdate: Cascade, onDelete: Restrict, map: "fk_cd_tax")
   company         Company         @relation("CompanyChargeDetails", fields: [cdCompId], references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_cd_company")
   branch          BranchMaster    @relation("BranchChargeDetails", fields: [cdBranchId], references: [brId], onUpdate: Cascade, onDelete: Restrict, map: "fk_cd_branch")
   // The partition key completes the primary key — see the note above the model.

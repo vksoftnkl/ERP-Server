@@ -30,6 +30,9 @@ model ChargeMaster {
   chgModifiedBy   String?   @db.Uuid                                                @map("chg_modified_by")
   // Relations
   ledger          AccLedgerMaster @relation(fields: [chgLedgerCode], references: [ledId], onUpdate: Cascade, onDelete: Restrict)
+  // The per-charge rate override (fk_chg_tax). Restrict on delete: a rate a
+  // charge is configured on must be superseded, not removed from under it.
+  tax             TaxRateMaster?  @relation(fields: [chgTaxId], references: [taxId], onUpdate: Cascade, onDelete: Restrict, map: "fk_chg_tax")
   chargeDetails   TransactionChargeDetail[]
   @@index([chgLedgerCode], name: "idx_chg_ledger_code")
   @@map("charge_master")
