@@ -76,7 +76,6 @@ function dataset(overrides: Partial<PrintTemplateDataset> = {}): PrintTemplateDa
     ptdProviderCode: 'sales.bill.items',
     ptdSql: null,
     ptdSqlNorm: null,
-    ptdRequiresCompany: true,
     ptdParentNo: null,
     ptdLinkFields: null,
     ptdRowLimit: 5000,

@@ -361,6 +361,9 @@ export class SuppliersService {
       ledName: normalized.name,
       ledStateName: normalized.stateName,
       ledStateCode: normalized.stateCode,
+      // Suppliers are always settled bill-wise, so the linked ledger is
+      // provisioned (and kept) with bill-by-bill on; the column defaults to false.
+      ledIsBillByBill: true,
     };
     const ledgerDtoRecord = ledgerDto as unknown as Record<string, unknown>;
     const supplierRecord = saveSupplierDto as unknown as Record<string, unknown>;

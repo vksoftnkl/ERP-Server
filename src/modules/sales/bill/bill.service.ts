@@ -8,6 +8,11 @@ import { CancelBillDto } from './dto/cancel-bill.dto';
 import {
   BILL_CHARGE_AUDIT,
   BILL_CHARGE_DOC_TYPE,
+  // The cancelled status, as the status trail names it. A bill only reaches it
+  // through a save that sets sbStatus — POST /bills/delete no longer puts it
+  // there, because that route cancels the ORDER behind the bill and leaves the
+  // bill itself alone.
+  BILL_STATUS_CANCELLED,
   BILL_STATUS_POSTED,
   BILL_STATUS_SRC_DOC_TYPE,
   BILL_STATUS_SRC_MODULE,
@@ -29,6 +34,11 @@ import {
   SaleOrderLineRef,
   SaleOrderSrcDocFields,
 } from '../sale-order/types/sale-order-api.types';
+import { QuotationService } from '../quotation/quotation.service';
+import {
+  QUOTATION_SRC_DOC_TYPE,
+  QuotationConversionRef,
+} from '../quotation/types/quotation-api.types';
 import { ChargeDetailService } from '../../master/charge-detail/charge-detail.service';
 import { ChargeDocumentScope } from '../../master/charge-detail/types/charge-detail-api.types';
 import { TenderDetailService } from '../../accountsModule/tenderDetail/tender-detail.service';
@@ -75,11 +85,6 @@ const BILL_AUDIT_SCREEN_NAME = 'Sale Bill';
 const BILL_DOC_TYPES = ['TAX_INVOICE', 'BILL_OF_SUPPLY'] as const;
 const BILL_TYPES = ['CASH', 'CREDIT'] as const;
 const BILL_STATUSES = ['DRAFT', 'POSTED', 'CANCELLED'] as const;
-// The cancelled status, as the status trail names it. A bill only reaches it
-// through a save that sets sbStatus — POST /bills/delete no longer puts it
-// there, because that route cancels the ORDER behind the bill and leaves the
-// bill itself alone.
-const BILL_STATUS_CANCELLED = 'CANCELLED';
 const BILL_PAY_STATUSES = ['UNPAID', 'PARTIAL', 'PAID'] as const;
 const BILL_RETURN_STATUSES = ['PARTIAL', 'FULL'] as const;
 const BILL_ITEM_FREE_TYPES = ['SCHEME', 'SAMPLE', 'REPLACEMENT'] as const;
@@ -390,8 +395,25 @@ type SaleBillItemWithNames = SaleBillItem & {
     itemBrandId: string | null;
     itemSectionId: string | null;
     itemCategoryId: string | null;
+    itemIsService: boolean;
+    itemAllowNegStock: boolean;
   } | null;
   itemUnitConversion?: { unit: { unit_name: string; unit_decimal_count: number } } | null;
+};
+// One godown a line points at. gdl_negative_stock is the godown's half of the
+// line's effective sbiAllowNegativeStock — see toItemPayload.
+type LineGodown = { gdlName: string; gdlNegativeStock: boolean };
+// What a line's read-only display fields need beyond the line row itself: the
+// godowns the bill's lines point at and the company's negative-stock switch,
+// both resolved once per GET. The create/update paths pass nothing and those
+// fields come back null.
+type BillLineContext = {
+  godownById: Map<string, LineGodown>;
+  companyAllowsNegStock: boolean | null;
+};
+const EMPTY_LINE_CONTEXT: BillLineContext = {
+  godownById: new Map(),
+  companyAllowsNegStock: null,
 };
 @Injectable()
 export class BillService {
@@ -412,6 +434,10 @@ export class BillService {
     // than updating that table itself. The dependency only points this way —
     // nothing in the sale-order module reaches back into this one.
     private readonly saleOrderService: SaleOrderService,
+    // Same arrangement for sale_quotation's conversion columns: a bill raised
+    // from a quotation hands the reference over rather than writing that table
+    // itself, and the quotation module never reaches back into this one.
+    private readonly quotationService: QuotationService,
   ) {}
   async save(saveBillDto: SaveBillDto): Promise<BillPayload> {
     this.ensureBillValuesAreAllowed(saveBillDto);
@@ -446,6 +472,10 @@ export class BillService {
                 itemBrandId: true,
                 itemSectionId: true,
                 itemCategoryId: true,
+                // Two of the three switches behind the line's effective
+                // sbiAllowNegativeStock; see toItemPayload.
+                itemIsService: true,
+                itemAllowNegStock: true,
               },
             },
             itemUnitConversion: {
@@ -477,8 +507,11 @@ export class BillService {
     // sbi_godown_id has no FK to inventory.godown_locations either, so the
     // godown name cannot ride along on the `include` the way sbiItemName does —
     // it is resolved in one batched lookup over the bill's distinct godowns.
-    const godownNameById = await this.resolveGodownNames(record.items);
-    return this.toPayload({ ...record, charges, tenders }, godownNameById);
+    const [godownById, companyAllowsNegStock] = await Promise.all([
+      this.resolveGodowns(record.items),
+      this.resolveCompanyNegStock(record.sbCompanyId),
+    ]);
+    return this.toPayload({ ...record, charges, tenders }, { godownById, companyAllowsNegStock });
   }
   // POST /bills/delete. The name is the route's history, not what it does: this
   // no longer deletes anything. sale_bill, its line items, its applied charges,
@@ -719,6 +752,15 @@ export class BillService {
           createdBy,
           now,
         );
+        // Stamps the quotation this bill was raised from as CONVERTED, naming
+        // this bill. Nothing to do on a bill that names no quotation, which is
+        // most of them.
+        await this.quotationService.syncQuotationConversion(
+          tx,
+          { refs: this.toQuotationRefs(posted) },
+          createdBy,
+          now,
+        );
         // Opens the bill's status trail: from nothing to whatever it was
         // created as (DRAFT, or POSTED when it went straight into the books).
         await this.logStatusChange(tx, posted, null, createdBy, now);
@@ -872,6 +914,16 @@ export class BillService {
               ...this.toOrderLineRefs(items),
             ],
           },
+          modifiedBy,
+          now,
+        );
+        // Re-derives the conversion stamp on both sides of the edit, exactly as
+        // the fulfilment sync above does for orders: an edit that repoints
+        // sb_src_doc_id at another quotation — or cancels the bill — hands the
+        // quotation it walked away from its old status back.
+        await this.quotationService.syncQuotationConversion(
+          tx,
+          { refs: [...this.toQuotationRefs(existing), ...this.toQuotationRefs(posted)] },
           modifiedBy,
           now,
         );
@@ -1298,6 +1350,33 @@ export class BillService {
       },
     ];
   }
+  // The quotation the bill was raised from — sb_src_doc_type / sb_src_doc_id /
+  // sb_src_doc_year again, read with the other discriminator. The header is the
+  // only grain that matters here: sq_converted_doc_id names one document, and a
+  // quotation line has no conversion columns for a bill line to move, so
+  // sbi_src_doc_* is not consulted. A bill converted from a quotation must
+  // therefore say so on its HEADER or the quotation never learns of it.
+  //
+  // Returned as an array so a caller can spread it: a walk-in bill, or one
+  // raised from a sale order instead, contributes no reference at all.
+  private toQuotationRefs(bill: SaleBill | null): QuotationConversionRef[] {
+    if (!bill || bill.sbSrcDocType !== QUOTATION_SRC_DOC_TYPE) {
+      return [];
+    }
+    // Both halves of the quotation's primary key or nothing: sale_quotation is
+    // partitioned by sq_acc_year, so an id without the year it lives in
+    // addresses no row.
+    if (!bill.sbSrcDocId || !bill.sbSrcDocYear) {
+      return [];
+    }
+    return [
+      {
+        srcDocId: bill.sbSrcDocId,
+        srcAccYear: bill.sbSrcDocYear.trim(),
+        fields: BILL_SRC_DOC_FIELDS,
+      },
+    ];
+  }
   // A missing required field is a 400. This answered 404 — the wrong helper —
   // so a bill line that left out sbiItemId / sbiItemUnitId / sbiGodownId came
   // back looking like an unrouted POST /bills/create rather than the field
@@ -1483,21 +1562,37 @@ export class BillService {
   ): void {
     applyPresentFields(data, dto, BILL_OPTIONAL_FIELDS, BILL_DATE_TRANSFORMS);
   }
-  // One batched read of the godown names the bill's lines point at, keyed by
-  // gdl_id. Empty on the create/update paths, which do not resolve display
-  // names — see toItemPayload.
-  private async resolveGodownNames(
+  // One batched read of the godowns the bill's lines point at, keyed by gdl_id.
+  // Empty on the create/update paths, which do not resolve display names — see
+  // toItemPayload.
+  private async resolveGodowns(
     items: readonly Pick<SaleBillItem, 'sbiGodownId'>[] = [],
-  ): Promise<Map<string, string>> {
+  ): Promise<Map<string, LineGodown>> {
     const godownIds = [...new Set(items.map((item) => item.sbiGodownId))];
     if (godownIds.length === 0) {
       return new Map();
     }
     const godowns = await this.prisma.godownLocation.findMany({
       where: { gdlId: { in: godownIds } },
-      select: { gdlId: true, gdlName: true },
+      select: { gdlId: true, gdlName: true, gdlNegativeStock: true },
     });
-    return new Map(godowns.map((godown) => [godown.gdlId, godown.gdlName]));
+    return new Map(
+      godowns.map((godown) => [
+        godown.gdlId,
+        { gdlName: godown.gdlName, gdlNegativeStock: godown.gdlNegativeStock },
+      ]),
+    );
+  }
+
+  // company.comp_negstk_apl, the second of the three switches behind a line's
+  // sbiAllowNegativeStock. A company row that is missing or retired is not a
+  // "no" — the godown and the item still decide — so it answers null.
+  private async resolveCompanyNegStock(companyId: string): Promise<boolean | null> {
+    const company = await this.prisma.company.findFirst({
+      where: { compId: companyId, compIsDeleted: false },
+      select: { compNegStkApl: true },
+    });
+    return company?.compNegStkApl ?? null;
   }
   private toPayload(
     record: SaleBill & {
@@ -1507,7 +1602,7 @@ export class BillService {
       charges?: BillChargePayload[];
       tenders?: BillTenderPayload[];
     },
-    godownNameById: Map<string, string> = new Map(),
+    lineContext: BillLineContext = EMPTY_LINE_CONTEXT,
   ): BillPayload {
     const {
       sbCreatedOn,
@@ -1529,15 +1624,16 @@ export class BillService {
       // bigint column — stringified here for the same reason cdVoucherNo is:
       // JSON has no bigint and res.json() throws on one.
       sbBillSlno: sbBillSlno?.toString() ?? null,
-      items: items ? items.map((item) => this.toItemPayload(item, godownNameById)) : [],
+      items: items ? items.map((item) => this.toItemPayload(item, lineContext)) : [],
       charges: charges ?? [],
       tenders: tenders ?? [],
     };
   }
   private toItemPayload(
     record: SaleBillItemWithNames,
-    godownNameById: Map<string, string> = new Map(),
+    lineContext: BillLineContext = EMPTY_LINE_CONTEXT,
   ): BillItemPayload {
+    const { godownById, companyAllowsNegStock } = lineContext;
     const { sbiCreatedOn, sbiModifiedOn, sbiSyncDate, item, itemUnitConversion, ...rest } = record;
     return {
       ...rest,
@@ -1551,7 +1647,22 @@ export class BillService {
       sbiBrandId: item?.itemBrandId ?? null,
       sbiSectionId: item?.itemSectionId ?? null,
       sbiCategoryId: item?.itemCategoryId ?? null,
-      sbiGodownName: godownNameById.get(record.sbiGodownId) ?? null,
+      sbiGodownName: godownById.get(record.sbiGodownId)?.gdlName ?? null,
+      // The effective answer to "may this line go below zero", derived the same
+      // way /item-price derives allow_negative_stock when the line is first
+      // added (see item-price.lookup.ts): a service item always may, and
+      // otherwise it is blocked only when the godown, the company AND the item
+      // all say no. Unlike a quotation's, a bill line names its OWN godown, so
+      // the godown half of the answer is that line's. Read-only and GET-only
+      // like the fields above — null when the item join was not made.
+      sbiAllowNegativeStock: item
+        ? item.itemIsService ||
+          !(
+            godownById.get(record.sbiGodownId)?.gdlNegativeStock === false &&
+            companyAllowsNegStock === false &&
+            item.itemAllowNegStock === false
+          )
+        : null,
     };
   }
 }

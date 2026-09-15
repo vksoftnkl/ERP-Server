@@ -13,7 +13,6 @@ export declare class PrintTemplateDatasetPayloadDto {
     ptdProviderCode: string | null;
     ptdSql: string | null;
     ptdSqlNorm: string | null;
-    ptdRequiresCompany: boolean;
     ptdParentNo: number | null;
     ptdLinkFields: string | null;
     ptdRowLimit: number;

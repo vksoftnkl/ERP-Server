@@ -8,7 +8,7 @@ model AccLedgerRole {
   /// What the Posting Ledgers screen shows
   alrLabel       String  @db.VarChar(60)                          @map("alr_label")
   /// How that screen groups it.
-  /// REVENUE | OUTPUT_TAX | PURCHASE | INPUT_TAX | SHARED | FUTURE (ck_alr_group)
+  /// REVENUE | OUTPUT_TAX | PURCHASE | INPUT_TAX | SHARED | RECEIPT | FUTURE (ck_alr_group)
   alrGroup       String  @db.VarChar(20)                          @map("alr_group")
 
   // What kind of ledger this role may take. NULL means "not checked on this axis".
@@ -34,6 +34,8 @@ model AccLedgerRole {
   ledgerMaps     AccLedgerMap[]
   /// The per-GST-rate overrides that name this role.
   taxRateLedgers TaxRateLedger[]
+  /// The voucher legs posted under this role (acc_vouchers.av_role).
+  voucherLines   AccVoucher[]
 
   // accounts.fn_check_role_ledger(role, ledger, company, where) validates a
   // ledger against a row of this table. It lives in raw SQL — a function is not

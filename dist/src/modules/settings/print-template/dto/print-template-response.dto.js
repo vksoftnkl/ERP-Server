@@ -27,7 +27,6 @@ class PrintTemplateDatasetPayloadDto {
     ptdProviderCode;
     ptdSql;
     ptdSqlNorm;
-    ptdRequiresCompany;
     ptdParentNo;
     ptdLinkFields;
     ptdRowLimit;
@@ -91,10 +90,6 @@ __decorate([
     }),
     __metadata("design:type", Object)
 ], PrintTemplateDatasetPayloadDto.prototype, "ptdSqlNorm", void 0);
-__decorate([
-    (0, swagger_1.ApiProperty)({ example: true }),
-    __metadata("design:type", Boolean)
-], PrintTemplateDatasetPayloadDto.prototype, "ptdRequiresCompany", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ type: Number, nullable: true }),
     __metadata("design:type", Object)

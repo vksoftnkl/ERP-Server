@@ -2,7 +2,7 @@ import { ModuleErrorDetail } from 'src/common/utils/module-service.utils';
 import { PTD_SQL_MAX_LENGTH, PTD_SQL_MIN_LENGTH } from '../print-template.constants';
 
 /**
- * The eleven stored-SQL guards of §4, ported from the CHECK constraints to
+ * The ten stored-SQL guards of §4, ported from the CHECK constraints to
  * TypeScript so a template author is refused when they SAVE rather than by a
  * constraint name when the database rejects the row.
  *
@@ -57,11 +57,7 @@ function countMatches(subject: string, pattern: RegExp): number {
  * `field` names the DTO key, not the column, because that is what the caller
  * sent — the same convention the rest of the module's errors use.
  */
-export function collectDatasetSqlErrors(
-  sql: string,
-  requiresCompany: boolean,
-  field: string,
-): ModuleErrorDetail[] {
+export function collectDatasetSqlErrors(sql: string, field: string): ModuleErrorDetail[] {
   const errors: ModuleErrorDetail[] = [];
   const norm = normalizeDatasetSql(sql);
   const push = (message: string): void => {
@@ -168,18 +164,6 @@ export function collectDatasetSqlErrors(
       'A parameter is written inside a string literal or a comment. Parameters are BOUND, not ' +
         "pasted: write  x = :company_id , never  x = ':company_id' . (A :name mentioned in a " +
         '"--" comment reads the same way to this check — move it out of the comment.)',
-    );
-  }
-
-  // ck_ptd_sql_company_scoped — THE CHECK 3.0 MOST NEEDED AND NOBODY WROTE. In
-  // a chain, a query that is not company-scoped shows one company another
-  // company's numbers.
-  if (requiresCompany && !/:company_id\b/.test(norm)) {
-    push(
-      'The query must be company-scoped: bind :company_id somewhere in it. Set ' +
-        'ptdRequiresCompany to false only for genuinely global data, such as a state-code list. ' +
-        '(If it IS scoped, check for a "--" inside a string literal — that mangles the residue ' +
-        'this check reads.)',
     );
   }
 

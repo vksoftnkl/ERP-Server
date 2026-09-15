@@ -7105,3 +7105,1244 @@ Inconsistent column data: Error creating UUID, invalid character: expected an op
     at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
     at async MenuMasterService.getUserMenu (/home/vk/Dev/erp/ERP server/src/modules/fixed/menu-master/menu-master.service.ts:62:23)
     at async MenuMasterController.getUserMenu (/home/vk/Dev/erp/ERP server/src/modules/fixed/menu-master/menu-master.controller.ts:64:20)
+2026-09-15T08:49:46.829Z ERROR [ModuleExceptionFilter] GET /api/v1/user-administration/get?usrId=019e7255-f432-78ab-8bf2-4bf382487b38
+PrismaClientKnownRequestError: 
+Invalid `this.prisma.userMaster.findFirst()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/settings/userAdministration/user-administration.service.ts:48:49
+
+  45 }
+  46 
+  47 async getById(usrId: string): Promise<UserAdminPayload> {
+→ 48   const record = await this.prisma.userMaster.findFirst(
+The column `user_menus.um_can_approve` does not exist in the current database.
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async UserAdministrationService.getById (/home/vk/Dev/erp/ERP server/src/modules/settings/userAdministration/user-administration.service.ts:48:20)
+    at async UserAdministrationController.getById (/home/vk/Dev/erp/ERP server/src/modules/settings/userAdministration/user-administration.controller.ts:76:18)
+2026-09-15T08:51:09.477Z ERROR [ModuleExceptionFilter] GET /api/v1/user-administration/get?usrId=019e7255-f432-78ab-8bf2-4bf382487b38
+PrismaClientKnownRequestError: 
+Invalid `this.prisma.userMaster.findFirst()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/settings/userAdministration/user-administration.service.ts:48:49
+
+  45 }
+  46 
+  47 async getById(usrId: string): Promise<UserAdminPayload> {
+→ 48   const record = await this.prisma.userMaster.findFirst(
+The column `user_menus.um_can_approve` does not exist in the current database.
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async UserAdministrationService.getById (/home/vk/Dev/erp/ERP server/src/modules/settings/userAdministration/user-administration.service.ts:48:20)
+    at async UserAdministrationController.getById (/home/vk/Dev/erp/ERP server/src/modules/settings/userAdministration/user-administration.controller.ts:76:18)
+2026-09-15T10:35:33.903Z ERROR [ModuleExceptionFilter] GET /api/v1/user-administration/get?usrId=019e441b-6e48-7918-b246-b857ffb35db1
+PrismaClientKnownRequestError: 
+Invalid `this.prisma.userMaster.findFirst()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/settings/userAdministration/user-administration.service.ts:48:49
+
+  45 }
+  46 
+  47 async getById(usrId: string): Promise<UserAdminPayload> {
+→ 48   const record = await this.prisma.userMaster.findFirst(
+The column `user_menus.um_can_approve` does not exist in the current database.
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async UserAdministrationService.getById (/home/vk/Dev/erp/ERP server/src/modules/settings/userAdministration/user-administration.service.ts:48:20)
+    at async UserAdministrationController.getById (/home/vk/Dev/erp/ERP server/src/modules/settings/userAdministration/user-administration.controller.ts:76:18)
+2026-09-15T11:04:09.397Z ERROR [ModuleExceptionFilter] GET /api/v1/user-administration/get?usrId=019e7255-f432-78ab-8bf2-4bf382487b38
+PrismaClientKnownRequestError: 
+Invalid `this.prisma.userMaster.findFirst()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/settings/userAdministration/user-administration.service.ts:48:49
+
+  45 }
+  46 
+  47 async getById(usrId: string): Promise<UserAdminPayload> {
+→ 48   const record = await this.prisma.userMaster.findFirst(
+The column `user_menus.um_can_approve` does not exist in the current database.
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async UserAdministrationService.getById (/home/vk/Dev/erp/ERP server/src/modules/settings/userAdministration/user-administration.service.ts:48:20)
+    at async UserAdministrationController.getById (/home/vk/Dev/erp/ERP server/src/modules/settings/userAdministration/user-administration.controller.ts:76:18)
+2026-09-15T11:04:50.614Z ERROR [ModuleExceptionFilter] GET /api/v1/user-administration/get?usrId=019e7255-f432-78ab-8bf2-4bf382487b38
+PrismaClientKnownRequestError: 
+Invalid `this.prisma.userMaster.findFirst()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/settings/userAdministration/user-administration.service.ts:48:49
+
+  45 }
+  46 
+  47 async getById(usrId: string): Promise<UserAdminPayload> {
+→ 48   const record = await this.prisma.userMaster.findFirst(
+The column `user_menus.um_can_approve` does not exist in the current database.
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async UserAdministrationService.getById (/home/vk/Dev/erp/ERP server/src/modules/settings/userAdministration/user-administration.service.ts:48:20)
+    at async UserAdministrationController.getById (/home/vk/Dev/erp/ERP server/src/modules/settings/userAdministration/user-administration.controller.ts:76:18)
+2026-09-15T11:08:03.098Z ERROR [ModuleExceptionFilter] GET /api/v1/user-administration/get?usrId=019e7255-f432-78ab-8bf2-4bf382487b38
+PrismaClientKnownRequestError: 
+Invalid `this.prisma.userMaster.findFirst()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/settings/userAdministration/user-administration.service.ts:48:49
+
+  45 }
+  46 
+  47 async getById(usrId: string): Promise<UserAdminPayload> {
+→ 48   const record = await this.prisma.userMaster.findFirst(
+The column `user_menus.um_can_approve` does not exist in the current database.
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async UserAdministrationService.getById (/home/vk/Dev/erp/ERP server/src/modules/settings/userAdministration/user-administration.service.ts:48:20)
+    at async UserAdministrationController.getById (/home/vk/Dev/erp/ERP server/src/modules/settings/userAdministration/user-administration.controller.ts:76:18)
+2026-09-15T11:09:04.747Z ERROR [ModuleExceptionFilter] GET /api/v1/user-administration/get?usrId=019e7255-f432-78ab-8bf2-4bf382487b38
+PrismaClientKnownRequestError: 
+Invalid `this.prisma.userMaster.findFirst()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/settings/userAdministration/user-administration.service.ts:48:49
+
+  45 }
+  46 
+  47 async getById(usrId: string): Promise<UserAdminPayload> {
+→ 48   const record = await this.prisma.userMaster.findFirst(
+The column `user_menus.um_can_approve` does not exist in the current database.
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async UserAdministrationService.getById (/home/vk/Dev/erp/ERP server/src/modules/settings/userAdministration/user-administration.service.ts:48:20)
+    at async UserAdministrationController.getById (/home/vk/Dev/erp/ERP server/src/modules/settings/userAdministration/user-administration.controller.ts:76:18)
+2026-09-15T11:09:12.292Z ERROR [ModuleExceptionFilter] GET /api/v1/user-administration/get?usrId=019e7255-f432-78ab-8bf2-4bf382487b38
+PrismaClientKnownRequestError: 
+Invalid `this.prisma.userMaster.findFirst()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/settings/userAdministration/user-administration.service.ts:48:49
+
+  45 }
+  46 
+  47 async getById(usrId: string): Promise<UserAdminPayload> {
+→ 48   const record = await this.prisma.userMaster.findFirst(
+The column `user_menus.um_can_approve` does not exist in the current database.
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async UserAdministrationService.getById (/home/vk/Dev/erp/ERP server/src/modules/settings/userAdministration/user-administration.service.ts:48:20)
+    at async UserAdministrationController.getById (/home/vk/Dev/erp/ERP server/src/modules/settings/userAdministration/user-administration.controller.ts:76:18)
+2026-09-15T11:09:23.312Z ERROR [ModuleExceptionFilter] GET /api/v1/user-administration/get?usrId=019e7255-f432-78ab-8bf2-4bf382487b38
+PrismaClientKnownRequestError: 
+Invalid `this.prisma.userMaster.findFirst()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/settings/userAdministration/user-administration.service.ts:48:49
+
+  45 }
+  46 
+  47 async getById(usrId: string): Promise<UserAdminPayload> {
+→ 48   const record = await this.prisma.userMaster.findFirst(
+The column `user_menus.um_can_approve` does not exist in the current database.
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async UserAdministrationService.getById (/home/vk/Dev/erp/ERP server/src/modules/settings/userAdministration/user-administration.service.ts:48:20)
+    at async UserAdministrationController.getById (/home/vk/Dev/erp/ERP server/src/modules/settings/userAdministration/user-administration.controller.ts:76:18)
+2026-09-15T11:09:27.860Z ERROR [AllExceptionsFilter] GET /api/v1/master-lookups/customer-detail?cus_id=019fef1b-cb4d-740d-ba80-05ed3376ae53&company_id=019c8ea6-19e9-78a8-b15f-749e1cde7292&branch_id=019c8ea7-b0f5-72d5-96a5-1abfc80cc8ab&regional=false
+PrismaClientKnownRequestError: 
+Invalid `this.prisma.customer.findFirst()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/master-lookup/lookups/customer-detail.lookup.ts:39:49
+
+  36 const { cus_id, company_id } = query;
+  37 const regional = query.regional ?? false;
+  38 // Customer + its area (legacy INNER JOIN area_master for distance_km).
+→ 39 const customer = await this.prisma.customer.findFirst(
+The column `customers.cus_ledger_id` does not exist in the current database.
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async CustomerDetailLookup.getCustomerDetail (/home/vk/Dev/erp/ERP server/src/modules/master-lookup/lookups/customer-detail.lookup.ts:39:22)
+    at async MasterLookupController.getCustomerDetail (/home/vk/Dev/erp/ERP server/src/modules/master-lookup/master-lookup.controller.ts:163:18)
+2026-09-15T11:09:39.169Z ERROR [ModuleExceptionFilter] GET /api/v1/user-administration/get?usrId=019e7255-f432-78ab-8bf2-4bf382487b38
+PrismaClientKnownRequestError: 
+Invalid `this.prisma.userMaster.findFirst()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/settings/userAdministration/user-administration.service.ts:48:49
+
+  45 }
+  46 
+  47 async getById(usrId: string): Promise<UserAdminPayload> {
+→ 48   const record = await this.prisma.userMaster.findFirst(
+The column `user_menus.um_can_approve` does not exist in the current database.
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async UserAdministrationService.getById (/home/vk/Dev/erp/ERP server/src/modules/settings/userAdministration/user-administration.service.ts:48:20)
+    at async UserAdministrationController.getById (/home/vk/Dev/erp/ERP server/src/modules/settings/userAdministration/user-administration.controller.ts:76:18)
+2026-09-15T11:09:39.190Z ERROR [AllExceptionsFilter] GET /api/v1/master-lookups/customer-detail?cus_id=019fef1b-cb4d-740d-ba80-05ed3376ae53&company_id=019c8ea6-19e9-78a8-b15f-749e1cde7292&branch_id=019c8ea7-b0f5-72d5-96a5-1abfc80cc8ab&regional=false
+PrismaClientKnownRequestError: 
+Invalid `this.prisma.customer.findFirst()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/master-lookup/lookups/customer-detail.lookup.ts:39:49
+
+  36 const { cus_id, company_id } = query;
+  37 const regional = query.regional ?? false;
+  38 // Customer + its area (legacy INNER JOIN area_master for distance_km).
+→ 39 const customer = await this.prisma.customer.findFirst(
+The column `customers.cus_ledger_id` does not exist in the current database.
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async CustomerDetailLookup.getCustomerDetail (/home/vk/Dev/erp/ERP server/src/modules/master-lookup/lookups/customer-detail.lookup.ts:39:22)
+    at async MasterLookupController.getCustomerDetail (/home/vk/Dev/erp/ERP server/src/modules/master-lookup/master-lookup.controller.ts:163:18)
+2026-09-15T11:09:42.472Z ERROR [AllExceptionsFilter] GET /api/v1/master-lookups/customer-detail?cus_id=01a04d68-d5aa-7990-ba4d-2fe8eb49857d&company_id=019c8ea6-19e9-78a8-b15f-749e1cde7292&branch_id=019c8ea7-b0f5-72d5-96a5-1abfc80cc8ab&regional=false
+PrismaClientKnownRequestError: 
+Invalid `this.prisma.customer.findFirst()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/master-lookup/lookups/customer-detail.lookup.ts:39:49
+
+  36 const { cus_id, company_id } = query;
+  37 const regional = query.regional ?? false;
+  38 // Customer + its area (legacy INNER JOIN area_master for distance_km).
+→ 39 const customer = await this.prisma.customer.findFirst(
+The column `customers.cus_ledger_id` does not exist in the current database.
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async CustomerDetailLookup.getCustomerDetail (/home/vk/Dev/erp/ERP server/src/modules/master-lookup/lookups/customer-detail.lookup.ts:39:22)
+    at async MasterLookupController.getCustomerDetail (/home/vk/Dev/erp/ERP server/src/modules/master-lookup/master-lookup.controller.ts:163:18)
+2026-09-15T11:09:56.133Z ERROR [ModuleExceptionFilter] GET /api/v1/user-administration/get?usrId=019e7255-f432-78ab-8bf2-4bf382487b38
+PrismaClientKnownRequestError: 
+Invalid `this.prisma.userMaster.findFirst()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/settings/userAdministration/user-administration.service.ts:48:49
+
+  45 }
+  46 
+  47 async getById(usrId: string): Promise<UserAdminPayload> {
+→ 48   const record = await this.prisma.userMaster.findFirst(
+The column `user_menus.um_can_approve` does not exist in the current database.
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async UserAdministrationService.getById (/home/vk/Dev/erp/ERP server/src/modules/settings/userAdministration/user-administration.service.ts:48:20)
+    at async UserAdministrationController.getById (/home/vk/Dev/erp/ERP server/src/modules/settings/userAdministration/user-administration.controller.ts:76:18)
+2026-09-15T11:09:56.163Z ERROR [AllExceptionsFilter] GET /api/v1/master-lookups/customer-detail?cus_id=01a04d68-d5aa-7990-ba4d-2fe8eb49857d&company_id=019c8ea6-19e9-78a8-b15f-749e1cde7292&branch_id=019c8ea7-b0f5-72d5-96a5-1abfc80cc8ab&regional=false
+PrismaClientKnownRequestError: 
+Invalid `this.prisma.customer.findFirst()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/master-lookup/lookups/customer-detail.lookup.ts:39:49
+
+  36 const { cus_id, company_id } = query;
+  37 const regional = query.regional ?? false;
+  38 // Customer + its area (legacy INNER JOIN area_master for distance_km).
+→ 39 const customer = await this.prisma.customer.findFirst(
+The column `customers.cus_ledger_id` does not exist in the current database.
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async CustomerDetailLookup.getCustomerDetail (/home/vk/Dev/erp/ERP server/src/modules/master-lookup/lookups/customer-detail.lookup.ts:39:22)
+    at async MasterLookupController.getCustomerDetail (/home/vk/Dev/erp/ERP server/src/modules/master-lookup/master-lookup.controller.ts:163:18)
+2026-09-15T11:11:45.136Z ERROR [ModuleExceptionFilter] GET /api/v1/user-administration/get?usrId=019e441b-6e48-7918-b246-b857ffb35db1
+PrismaClientKnownRequestError: 
+Invalid `this.prisma.userMaster.findFirst()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/settings/userAdministration/user-administration.service.ts:48:49
+
+  45 }
+  46 
+  47 async getById(usrId: string): Promise<UserAdminPayload> {
+→ 48   const record = await this.prisma.userMaster.findFirst(
+The column `user_menus.um_can_approve` does not exist in the current database.
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async UserAdministrationService.getById (/home/vk/Dev/erp/ERP server/src/modules/settings/userAdministration/user-administration.service.ts:48:20)
+    at async UserAdministrationController.getById (/home/vk/Dev/erp/ERP server/src/modules/settings/userAdministration/user-administration.controller.ts:76:18)
+2026-09-15T11:11:57.685Z ERROR [ModuleExceptionFilter] POST /api/v1/customers/create
+PrismaClientKnownRequestError: 
+Invalid `tx.customer.create()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/sales/customer/customer.service.ts:288:43
+
+  285 });
+  286 const ledger = await this.accountLedgerMastersService.createLedgerWithinTx(ledgerDto, tx);
+  287 data.cusId = ledger.ledId;
+→ 288 const created = await tx.customer.create(
+The column `customers.cus_ledger_id` does not exist in the current database.
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async <anonymous> (/home/vk/Dev/erp/ERP server/src/modules/sales/customer/customer.service.ts:288:25)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async CustomerService.createCustomer (/home/vk/Dev/erp/ERP server/src/modules/sales/customer/customer.service.ts:272:14)
+    at async CustomerController.save (/home/vk/Dev/erp/ERP server/src/modules/sales/customer/customer.controller.ts:57:18)
+2026-09-15T11:12:24.447Z ERROR [ModuleExceptionFilter] POST /api/v1/customers/create
+PrismaClientKnownRequestError: 
+Invalid `tx.customer.create()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/sales/customer/customer.service.ts:288:43
+
+  285 });
+  286 const ledger = await this.accountLedgerMastersService.createLedgerWithinTx(ledgerDto, tx);
+  287 data.cusId = ledger.ledId;
+→ 288 const created = await tx.customer.create(
+The column `customers.cus_ledger_id` does not exist in the current database.
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async <anonymous> (/home/vk/Dev/erp/ERP server/src/modules/sales/customer/customer.service.ts:288:25)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async CustomerService.createCustomer (/home/vk/Dev/erp/ERP server/src/modules/sales/customer/customer.service.ts:272:14)
+    at async CustomerController.save (/home/vk/Dev/erp/ERP server/src/modules/sales/customer/customer.controller.ts:57:18)
+2026-09-15T11:12:44.748Z ERROR [ModuleExceptionFilter] POST /api/v1/customers/create
+PrismaClientKnownRequestError: 
+Invalid `tx.customer.create()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/sales/customer/customer.service.ts:288:43
+
+  285 });
+  286 const ledger = await this.accountLedgerMastersService.createLedgerWithinTx(ledgerDto, tx);
+  287 data.cusId = ledger.ledId;
+→ 288 const created = await tx.customer.create(
+The column `customers.cus_ledger_id` does not exist in the current database.
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async <anonymous> (/home/vk/Dev/erp/ERP server/src/modules/sales/customer/customer.service.ts:288:25)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async CustomerService.createCustomer (/home/vk/Dev/erp/ERP server/src/modules/sales/customer/customer.service.ts:272:14)
+    at async CustomerController.save (/home/vk/Dev/erp/ERP server/src/modules/sales/customer/customer.controller.ts:57:18)
+2026-09-15T11:13:24.221Z ERROR [ModuleExceptionFilter] GET /api/v1/user-administration/get?usrId=019e7255-f432-78ab-8bf2-4bf382487b38
+PrismaClientKnownRequestError: 
+Invalid `this.prisma.userMaster.findFirst()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/settings/userAdministration/user-administration.service.ts:48:49
+
+  45 }
+  46 
+  47 async getById(usrId: string): Promise<UserAdminPayload> {
+→ 48   const record = await this.prisma.userMaster.findFirst(
+The column `user_menus.um_can_approve` does not exist in the current database.
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async UserAdministrationService.getById (/home/vk/Dev/erp/ERP server/src/modules/settings/userAdministration/user-administration.service.ts:48:20)
+    at async UserAdministrationController.getById (/home/vk/Dev/erp/ERP server/src/modules/settings/userAdministration/user-administration.controller.ts:76:18)
+2026-09-15T11:13:56.602Z ERROR [ModuleExceptionFilter] GET /api/v1/print-templates/get?ptlId=01a0a390-5d3a-7472-b743-ba0e29bd57a7
+PrismaClientKnownRequestError: 
+Invalid `client.printTemplate.findFirst()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:1292:33
+
+  1289   ptlId: string,
+  1290   includeDeletedVersions: boolean,
+  1291 ): Promise<TemplateWithChildren | null> {
+→ 1292   return client.printTemplate.findFirst(
+The column `print_template_dataset.ptd_requires_company` does not exist in the current database.
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async PrintTemplateService.getTemplateById (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:137:22)
+    at async PrintTemplateController.getTemplate (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.controller.ts:115:18)
+2026-09-15T11:14:09.583Z ERROR [ModuleExceptionFilter] GET /api/v1/print-templates/get?ptlId=01a0a390-5d3a-7472-b743-ba0e29bd57a7
+PrismaClientKnownRequestError: 
+Invalid `client.printTemplate.findFirst()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:1292:33
+
+  1289   ptlId: string,
+  1290   includeDeletedVersions: boolean,
+  1291 ): Promise<TemplateWithChildren | null> {
+→ 1292   return client.printTemplate.findFirst(
+The column `print_template_dataset.ptd_requires_company` does not exist in the current database.
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async PrintTemplateService.getTemplateById (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:137:22)
+    at async PrintTemplateController.getTemplate (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.controller.ts:115:18)
+2026-09-15T11:14:09.596Z ERROR [ModuleExceptionFilter] GET /api/v1/print-templates/list?limit=100
+PrismaClientKnownRequestError: 
+Invalid `this.prisma.printTemplate.findMany()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:195:33
+
+  192 }
+  193 
+  194 const [rows, total] = await Promise.all([
+→ 195   this.prisma.printTemplate.findMany(
+The column `print_template_dataset.ptd_requires_company` does not exist in the current database.
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async Promise.all (index 0)
+    at async PrintTemplateService.listTemplates (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:194:27)
+    at async PrintTemplateController.listTemplates (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.controller.ts:139:20)
+2026-09-15T11:14:12.840Z ERROR [ModuleExceptionFilter] GET /api/v1/print-templates/get?ptlId=01a0a390-5d3a-7472-b743-ba0e29bd57a7
+PrismaClientKnownRequestError: 
+Invalid `client.printTemplate.findFirst()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:1292:33
+
+  1289   ptlId: string,
+  1290   includeDeletedVersions: boolean,
+  1291 ): Promise<TemplateWithChildren | null> {
+→ 1292   return client.printTemplate.findFirst(
+The column `print_template_dataset.ptd_requires_company` does not exist in the current database.
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async PrintTemplateService.getTemplateById (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:137:22)
+    at async PrintTemplateController.getTemplate (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.controller.ts:115:18)
+2026-09-15T11:14:25.717Z ERROR [ModuleExceptionFilter] GET /api/v1/print-templates/get?ptlId=01a0a390-5d3a-7472-b743-ba0e29bd57a7
+PrismaClientKnownRequestError: 
+Invalid `client.printTemplate.findFirst()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:1292:33
+
+  1289   ptlId: string,
+  1290   includeDeletedVersions: boolean,
+  1291 ): Promise<TemplateWithChildren | null> {
+→ 1292   return client.printTemplate.findFirst(
+The column `print_template_dataset.ptd_requires_company` does not exist in the current database.
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async PrintTemplateService.getTemplateById (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:137:22)
+    at async PrintTemplateController.getTemplate (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.controller.ts:115:18)
+2026-09-15T11:14:25.727Z ERROR [ModuleExceptionFilter] GET /api/v1/print-templates/list?limit=100
+PrismaClientKnownRequestError: 
+Invalid `this.prisma.printTemplate.findMany()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:195:33
+
+  192 }
+  193 
+  194 const [rows, total] = await Promise.all([
+→ 195   this.prisma.printTemplate.findMany(
+The column `print_template_dataset.ptd_requires_company` does not exist in the current database.
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async Promise.all (index 0)
+    at async PrintTemplateService.listTemplates (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:194:27)
+    at async PrintTemplateController.listTemplates (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.controller.ts:139:20)
+2026-09-15T11:14:34.548Z ERROR [ModuleExceptionFilter] GET /api/v1/print-templates/list?limit=100&includeVersions=true&ptlCompanyId=019c8ea6-19e9-78a8-b15f-749e1cde7292&ptlIsActive=true
+PrismaClientKnownRequestError: 
+Invalid `this.prisma.printTemplate.findMany()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:195:33
+
+  192 }
+  193 
+  194 const [rows, total] = await Promise.all([
+→ 195   this.prisma.printTemplate.findMany(
+The column `print_template_dataset.ptd_requires_company` does not exist in the current database.
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async Promise.all (index 0)
+    at async PrintTemplateService.listTemplates (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:194:27)
+    at async PrintTemplateController.listTemplates (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.controller.ts:139:20)
+2026-09-15T11:14:50.906Z ERROR [ModuleExceptionFilter] GET /api/v1/print-templates/get?ptlId=01a0a390-5d3a-7472-b743-ba0e29bd57a7
+PrismaClientKnownRequestError: 
+Invalid `client.printTemplate.findFirst()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:1292:33
+
+  1289   ptlId: string,
+  1290   includeDeletedVersions: boolean,
+  1291 ): Promise<TemplateWithChildren | null> {
+→ 1292   return client.printTemplate.findFirst(
+The column `print_template_dataset.ptd_requires_company` does not exist in the current database.
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async PrintTemplateService.getTemplateById (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:137:22)
+    at async PrintTemplateController.getTemplate (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.controller.ts:115:18)
+2026-09-15T11:14:52.897Z ERROR [ModuleExceptionFilter] GET /api/v1/print-templates/get?ptlId=01a0a390-5d3a-7472-b743-ba0e29bd57a7
+PrismaClientKnownRequestError: 
+Invalid `client.printTemplate.findFirst()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:1292:33
+
+  1289   ptlId: string,
+  1290   includeDeletedVersions: boolean,
+  1291 ): Promise<TemplateWithChildren | null> {
+→ 1292   return client.printTemplate.findFirst(
+The column `print_template_dataset.ptd_requires_company` does not exist in the current database.
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async PrintTemplateService.getTemplateById (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:137:22)
+    at async PrintTemplateController.getTemplate (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.controller.ts:115:18)
+2026-09-15T11:14:52.911Z ERROR [ModuleExceptionFilter] GET /api/v1/print-templates/list?limit=100
+PrismaClientKnownRequestError: 
+Invalid `this.prisma.printTemplate.findMany()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:195:33
+
+  192 }
+  193 
+  194 const [rows, total] = await Promise.all([
+→ 195   this.prisma.printTemplate.findMany(
+The column `print_template_dataset.ptd_requires_company` does not exist in the current database.
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async Promise.all (index 0)
+    at async PrintTemplateService.listTemplates (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:194:27)
+    at async PrintTemplateController.listTemplates (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.controller.ts:139:20)
+2026-09-15T11:14:54.547Z ERROR [ModuleExceptionFilter] GET /api/v1/print-templates/list?limit=100&includeVersions=true&ptlCompanyId=019c8ea6-19e9-78a8-b15f-749e1cde7292&ptlIsActive=true
+PrismaClientKnownRequestError: 
+Invalid `this.prisma.printTemplate.findMany()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:195:33
+
+  192 }
+  193 
+  194 const [rows, total] = await Promise.all([
+→ 195   this.prisma.printTemplate.findMany(
+The column `print_template_dataset.ptd_requires_company` does not exist in the current database.
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async Promise.all (index 0)
+    at async PrintTemplateService.listTemplates (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:194:27)
+    at async PrintTemplateController.listTemplates (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.controller.ts:139:20)
+2026-09-15T11:14:56.954Z ERROR [ModuleExceptionFilter] GET /api/v1/print-templates/list?limit=100&includeVersions=true&ptlCompanyId=019c8ea6-19e9-78a8-b15f-749e1cde7292&ptlIsActive=true
+PrismaClientKnownRequestError: 
+Invalid `this.prisma.printTemplate.findMany()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:195:33
+
+  192 }
+  193 
+  194 const [rows, total] = await Promise.all([
+→ 195   this.prisma.printTemplate.findMany(
+The column `print_template_dataset.ptd_requires_company` does not exist in the current database.
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async Promise.all (index 0)
+    at async PrintTemplateService.listTemplates (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:194:27)
+    at async PrintTemplateController.listTemplates (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.controller.ts:139:20)
+2026-09-15T11:14:59.091Z ERROR [ModuleExceptionFilter] GET /api/v1/print-templates/get?ptlId=01a0a390-5d3a-7472-b743-ba0e29bd57a7
+PrismaClientKnownRequestError: 
+Invalid `client.printTemplate.findFirst()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:1292:33
+
+  1289   ptlId: string,
+  1290   includeDeletedVersions: boolean,
+  1291 ): Promise<TemplateWithChildren | null> {
+→ 1292   return client.printTemplate.findFirst(
+The column `print_template_dataset.ptd_requires_company` does not exist in the current database.
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async PrintTemplateService.getTemplateById (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:137:22)
+    at async PrintTemplateController.getTemplate (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.controller.ts:115:18)
+2026-09-15T11:14:59.101Z ERROR [ModuleExceptionFilter] GET /api/v1/print-templates/list?limit=100
+PrismaClientKnownRequestError: 
+Invalid `this.prisma.printTemplate.findMany()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:195:33
+
+  192 }
+  193 
+  194 const [rows, total] = await Promise.all([
+→ 195   this.prisma.printTemplate.findMany(
+The column `print_template_dataset.ptd_requires_company` does not exist in the current database.
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async Promise.all (index 0)
+    at async PrintTemplateService.listTemplates (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:194:27)
+    at async PrintTemplateController.listTemplates (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.controller.ts:139:20)
+2026-09-15T11:15:00.789Z ERROR [ModuleExceptionFilter] GET /api/v1/print-templates/get?ptlId=01a0a390-5d3a-7472-b743-ba0e29bd57a7
+PrismaClientKnownRequestError: 
+Invalid `client.printTemplate.findFirst()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:1292:33
+
+  1289   ptlId: string,
+  1290   includeDeletedVersions: boolean,
+  1291 ): Promise<TemplateWithChildren | null> {
+→ 1292   return client.printTemplate.findFirst(
+The column `print_template_dataset.ptd_requires_company` does not exist in the current database.
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async PrintTemplateService.getTemplateById (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:137:22)
+    at async PrintTemplateController.getTemplate (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.controller.ts:115:18)
+2026-09-15T11:15:01.887Z ERROR [ModuleExceptionFilter] GET /api/v1/print-templates/get?ptlId=01a0a390-5d3a-7472-b743-ba0e29bd57a7
+PrismaClientKnownRequestError: 
+Invalid `client.printTemplate.findFirst()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:1292:33
+
+  1289   ptlId: string,
+  1290   includeDeletedVersions: boolean,
+  1291 ): Promise<TemplateWithChildren | null> {
+→ 1292   return client.printTemplate.findFirst(
+The column `print_template_dataset.ptd_requires_company` does not exist in the current database.
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async PrintTemplateService.getTemplateById (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:137:22)
+    at async PrintTemplateController.getTemplate (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.controller.ts:115:18)
+2026-09-15T11:15:01.891Z ERROR [ModuleExceptionFilter] GET /api/v1/print-templates/list?limit=100
+PrismaClientKnownRequestError: 
+Invalid `this.prisma.printTemplate.findMany()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:195:33
+
+  192 }
+  193 
+  194 const [rows, total] = await Promise.all([
+→ 195   this.prisma.printTemplate.findMany(
+The column `print_template_dataset.ptd_requires_company` does not exist in the current database.
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async Promise.all (index 0)
+    at async PrintTemplateService.listTemplates (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:194:27)
+    at async PrintTemplateController.listTemplates (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.controller.ts:139:20)
+2026-09-15T11:15:05.051Z ERROR [ModuleExceptionFilter] GET /api/v1/print-templates/get?ptlId=01a0a390-5d3a-7472-b743-ba0e29bd57a7
+PrismaClientKnownRequestError: 
+Invalid `client.printTemplate.findFirst()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:1292:33
+
+  1289   ptlId: string,
+  1290   includeDeletedVersions: boolean,
+  1291 ): Promise<TemplateWithChildren | null> {
+→ 1292   return client.printTemplate.findFirst(
+The column `print_template_dataset.ptd_requires_company` does not exist in the current database.
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async PrintTemplateService.getTemplateById (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:137:22)
+    at async PrintTemplateController.getTemplate (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.controller.ts:115:18)
+2026-09-15T11:15:06.063Z ERROR [ModuleExceptionFilter] GET /api/v1/print-templates/get?ptlId=01a0a390-5d3a-7472-b743-ba0e29bd57a7
+PrismaClientKnownRequestError: 
+Invalid `client.printTemplate.findFirst()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:1292:33
+
+  1289   ptlId: string,
+  1290   includeDeletedVersions: boolean,
+  1291 ): Promise<TemplateWithChildren | null> {
+→ 1292   return client.printTemplate.findFirst(
+The column `print_template_dataset.ptd_requires_company` does not exist in the current database.
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async PrintTemplateService.getTemplateById (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:137:22)
+    at async PrintTemplateController.getTemplate (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.controller.ts:115:18)
+2026-09-15T11:15:07.581Z ERROR [ModuleExceptionFilter] GET /api/v1/print-templates/get?ptlId=01a0a390-5d3a-7472-b743-ba0e29bd57a7
+PrismaClientKnownRequestError: 
+Invalid `client.printTemplate.findFirst()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:1292:33
+
+  1289   ptlId: string,
+  1290   includeDeletedVersions: boolean,
+  1291 ): Promise<TemplateWithChildren | null> {
+→ 1292   return client.printTemplate.findFirst(
+The column `print_template_dataset.ptd_requires_company` does not exist in the current database.
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async PrintTemplateService.getTemplateById (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:137:22)
+    at async PrintTemplateController.getTemplate (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.controller.ts:115:18)
+2026-09-15T11:15:07.619Z ERROR [ModuleExceptionFilter] GET /api/v1/print-templates/list?limit=100
+PrismaClientKnownRequestError: 
+Invalid `this.prisma.printTemplate.findMany()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:195:33
+
+  192 }
+  193 
+  194 const [rows, total] = await Promise.all([
+→ 195   this.prisma.printTemplate.findMany(
+The column `print_template_dataset.ptd_requires_company` does not exist in the current database.
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async Promise.all (index 0)
+    at async PrintTemplateService.listTemplates (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:194:27)
+    at async PrintTemplateController.listTemplates (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.controller.ts:139:20)
+2026-09-15T11:19:23.482Z ERROR [ModuleExceptionFilter] GET /api/v1/print-templates/get?ptlId=01a0a390-5d3a-7472-b743-ba0e29bd57a7
+PrismaClientKnownRequestError: 
+Invalid `client.printTemplate.findFirst()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:1292:33
+
+  1289   ptlId: string,
+  1290   includeDeletedVersions: boolean,
+  1291 ): Promise<TemplateWithChildren | null> {
+→ 1292   return client.printTemplate.findFirst(
+The column `print_template_dataset.ptd_requires_company` does not exist in the current database.
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async PrintTemplateService.getTemplateById (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:137:22)
+    at async PrintTemplateController.getTemplate (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.controller.ts:115:18)
+2026-09-15T11:19:23.484Z ERROR [ModuleExceptionFilter] GET /api/v1/print-templates/list?limit=100
+PrismaClientKnownRequestError: 
+Invalid `this.prisma.printTemplate.findMany()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:195:33
+
+  192 }
+  193 
+  194 const [rows, total] = await Promise.all([
+→ 195   this.prisma.printTemplate.findMany(
+The column `print_template_dataset.ptd_requires_company` does not exist in the current database.
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async Promise.all (index 0)
+    at async PrintTemplateService.listTemplates (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:194:27)
+    at async PrintTemplateController.listTemplates (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.controller.ts:139:20)
+2026-09-15T11:19:25.333Z ERROR [ModuleExceptionFilter] GET /api/v1/print-templates/get?ptlId=01a0a390-5d3a-7472-b743-ba0e29bd57a7
+PrismaClientKnownRequestError: 
+Invalid `client.printTemplate.findFirst()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:1292:33
+
+  1289   ptlId: string,
+  1290   includeDeletedVersions: boolean,
+  1291 ): Promise<TemplateWithChildren | null> {
+→ 1292   return client.printTemplate.findFirst(
+The column `print_template_dataset.ptd_requires_company` does not exist in the current database.
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async PrintTemplateService.getTemplateById (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:137:22)
+    at async PrintTemplateController.getTemplate (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.controller.ts:115:18)
+2026-09-15T11:19:25.341Z ERROR [ModuleExceptionFilter] GET /api/v1/print-templates/list?limit=100
+PrismaClientKnownRequestError: 
+Invalid `this.prisma.printTemplate.findMany()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:195:33
+
+  192 }
+  193 
+  194 const [rows, total] = await Promise.all([
+→ 195   this.prisma.printTemplate.findMany(
+The column `print_template_dataset.ptd_requires_company` does not exist in the current database.
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async Promise.all (index 0)
+    at async PrintTemplateService.listTemplates (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:194:27)
+    at async PrintTemplateController.listTemplates (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.controller.ts:139:20)
+2026-09-15T11:19:36.038Z ERROR [ModuleExceptionFilter] GET /api/v1/print-templates/get?ptlId=01a0a390-5d3a-7472-b743-ba0e29bd57a7
+PrismaClientKnownRequestError: 
+Invalid `client.printTemplate.findFirst()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:1292:33
+
+  1289   ptlId: string,
+  1290   includeDeletedVersions: boolean,
+  1291 ): Promise<TemplateWithChildren | null> {
+→ 1292   return client.printTemplate.findFirst(
+The column `print_template_dataset.ptd_requires_company` does not exist in the current database.
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async PrintTemplateService.getTemplateById (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:137:22)
+    at async PrintTemplateController.getTemplate (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.controller.ts:115:18)
+2026-09-15T11:19:36.041Z ERROR [ModuleExceptionFilter] GET /api/v1/print-templates/list?limit=100
+PrismaClientKnownRequestError: 
+Invalid `this.prisma.printTemplate.findMany()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:195:33
+
+  192 }
+  193 
+  194 const [rows, total] = await Promise.all([
+→ 195   this.prisma.printTemplate.findMany(
+The column `print_template_dataset.ptd_requires_company` does not exist in the current database.
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async Promise.all (index 0)
+    at async PrintTemplateService.listTemplates (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:194:27)
+    at async PrintTemplateController.listTemplates (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.controller.ts:139:20)
+2026-09-15T11:19:40.109Z ERROR [ModuleExceptionFilter] GET /api/v1/print-templates/list?limit=100&includeVersions=true&ptlCompanyId=019c8ea6-19e9-78a8-b15f-749e1cde7292&ptlIsActive=true
+PrismaClientKnownRequestError: 
+Invalid `this.prisma.printTemplate.findMany()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:195:33
+
+  192 }
+  193 
+  194 const [rows, total] = await Promise.all([
+→ 195   this.prisma.printTemplate.findMany(
+The column `print_template_dataset.ptd_requires_company` does not exist in the current database.
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async Promise.all (index 0)
+    at async PrintTemplateService.listTemplates (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:194:27)
+    at async PrintTemplateController.listTemplates (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.controller.ts:139:20)
+2026-09-15T11:19:41.776Z ERROR [ModuleExceptionFilter] GET /api/v1/print-templates/list?limit=100&includeVersions=true&ptlCompanyId=019c8ea6-19e9-78a8-b15f-749e1cde7292&ptlIsActive=true
+PrismaClientKnownRequestError: 
+Invalid `this.prisma.printTemplate.findMany()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:195:33
+
+  192 }
+  193 
+  194 const [rows, total] = await Promise.all([
+→ 195   this.prisma.printTemplate.findMany(
+The column `print_template_dataset.ptd_requires_company` does not exist in the current database.
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async Promise.all (index 0)
+    at async PrintTemplateService.listTemplates (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:194:27)
+    at async PrintTemplateController.listTemplates (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.controller.ts:139:20)
+2026-09-15T11:19:44.458Z ERROR [ModuleExceptionFilter] GET /api/v1/print-templates/list?limit=100&includeVersions=true&ptlCompanyId=019c8ea6-19e9-78a8-b15f-749e1cde7292&ptlIsActive=true
+PrismaClientKnownRequestError: 
+Invalid `this.prisma.printTemplate.findMany()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:195:33
+
+  192 }
+  193 
+  194 const [rows, total] = await Promise.all([
+→ 195   this.prisma.printTemplate.findMany(
+The column `print_template_dataset.ptd_requires_company` does not exist in the current database.
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async Promise.all (index 0)
+    at async PrintTemplateService.listTemplates (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:194:27)
+    at async PrintTemplateController.listTemplates (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.controller.ts:139:20)
+2026-09-15T11:20:11.325Z ERROR [ModuleExceptionFilter] GET /api/v1/print-templates/get?ptlId=01a04c49-90ef-7176-8fa4-3aece7490900
+PrismaClientKnownRequestError: 
+Invalid `client.printTemplate.findFirst()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:1292:33
+
+  1289   ptlId: string,
+  1290   includeDeletedVersions: boolean,
+  1291 ): Promise<TemplateWithChildren | null> {
+→ 1292   return client.printTemplate.findFirst(
+The column `print_template_dataset.ptd_requires_company` does not exist in the current database.
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async PrintTemplateService.getTemplateById (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:137:22)
+    at async PrintTemplateController.getTemplate (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.controller.ts:115:18)
+2026-09-15T11:20:13.821Z ERROR [ModuleExceptionFilter] GET /api/v1/print-templates/get?ptlId=01a04c49-90ef-7176-8fa4-3aece7490900
+PrismaClientKnownRequestError: 
+Invalid `client.printTemplate.findFirst()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:1292:33
+
+  1289   ptlId: string,
+  1290   includeDeletedVersions: boolean,
+  1291 ): Promise<TemplateWithChildren | null> {
+→ 1292   return client.printTemplate.findFirst(
+The column `print_template_dataset.ptd_requires_company` does not exist in the current database.
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async PrintTemplateService.getTemplateById (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:137:22)
+    at async PrintTemplateController.getTemplate (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.controller.ts:115:18)
+2026-09-15T11:20:13.835Z ERROR [ModuleExceptionFilter] GET /api/v1/print-templates/list?limit=100
+PrismaClientKnownRequestError: 
+Invalid `this.prisma.printTemplate.findMany()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:195:33
+
+  192 }
+  193 
+  194 const [rows, total] = await Promise.all([
+→ 195   this.prisma.printTemplate.findMany(
+The column `print_template_dataset.ptd_requires_company` does not exist in the current database.
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async Promise.all (index 0)
+    at async PrintTemplateService.listTemplates (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:194:27)
+    at async PrintTemplateController.listTemplates (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.controller.ts:139:20)
+2026-09-15T11:20:20.753Z ERROR [ModuleExceptionFilter] GET /api/v1/print-templates/get?ptlId=01a04c49-90ef-7176-8fa4-3aece7490900
+PrismaClientKnownRequestError: 
+Invalid `client.printTemplate.findFirst()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:1292:33
+
+  1289   ptlId: string,
+  1290   includeDeletedVersions: boolean,
+  1291 ): Promise<TemplateWithChildren | null> {
+→ 1292   return client.printTemplate.findFirst(
+The column `print_template_dataset.ptd_requires_company` does not exist in the current database.
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async PrintTemplateService.getTemplateById (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:137:22)
+    at async PrintTemplateController.getTemplate (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.controller.ts:115:18)
+2026-09-15T11:20:21.472Z ERROR [ModuleExceptionFilter] GET /api/v1/print-templates/get?ptlId=01a04c49-90ef-7176-8fa4-3aece7490900
+PrismaClientKnownRequestError: 
+Invalid `client.printTemplate.findFirst()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:1292:33
+
+  1289   ptlId: string,
+  1290   includeDeletedVersions: boolean,
+  1291 ): Promise<TemplateWithChildren | null> {
+→ 1292   return client.printTemplate.findFirst(
+The column `print_template_dataset.ptd_requires_company` does not exist in the current database.
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async PrintTemplateService.getTemplateById (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:137:22)
+    at async PrintTemplateController.getTemplate (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.controller.ts:115:18)
+2026-09-15T11:20:22.060Z ERROR [ModuleExceptionFilter] GET /api/v1/print-templates/get?ptlId=01a04c49-90ef-7176-8fa4-3aece7490900
+PrismaClientKnownRequestError: 
+Invalid `client.printTemplate.findFirst()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:1292:33
+
+  1289   ptlId: string,
+  1290   includeDeletedVersions: boolean,
+  1291 ): Promise<TemplateWithChildren | null> {
+→ 1292   return client.printTemplate.findFirst(
+The column `print_template_dataset.ptd_requires_company` does not exist in the current database.
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async PrintTemplateService.getTemplateById (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:137:22)
+    at async PrintTemplateController.getTemplate (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.controller.ts:115:18)
+2026-09-15T11:20:22.222Z ERROR [ModuleExceptionFilter] GET /api/v1/print-templates/get?ptlId=01a04c49-90ef-7176-8fa4-3aece7490900
+PrismaClientKnownRequestError: 
+Invalid `client.printTemplate.findFirst()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:1292:33
+
+  1289   ptlId: string,
+  1290   includeDeletedVersions: boolean,
+  1291 ): Promise<TemplateWithChildren | null> {
+→ 1292   return client.printTemplate.findFirst(
+The column `print_template_dataset.ptd_requires_company` does not exist in the current database.
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async PrintTemplateService.getTemplateById (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:137:22)
+    at async PrintTemplateController.getTemplate (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.controller.ts:115:18)
+2026-09-15T11:20:22.366Z ERROR [ModuleExceptionFilter] GET /api/v1/print-templates/get?ptlId=01a04c49-90ef-7176-8fa4-3aece7490900
+PrismaClientKnownRequestError: 
+Invalid `client.printTemplate.findFirst()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:1292:33
+
+  1289   ptlId: string,
+  1290   includeDeletedVersions: boolean,
+  1291 ): Promise<TemplateWithChildren | null> {
+→ 1292   return client.printTemplate.findFirst(
+The column `print_template_dataset.ptd_requires_company` does not exist in the current database.
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async PrintTemplateService.getTemplateById (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:137:22)
+    at async PrintTemplateController.getTemplate (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.controller.ts:115:18)
+2026-09-15T11:20:22.477Z ERROR [ModuleExceptionFilter] GET /api/v1/print-templates/get?ptlId=01a04c49-90ef-7176-8fa4-3aece7490900
+PrismaClientKnownRequestError: 
+Invalid `client.printTemplate.findFirst()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:1292:33
+
+  1289   ptlId: string,
+  1290   includeDeletedVersions: boolean,
+  1291 ): Promise<TemplateWithChildren | null> {
+→ 1292   return client.printTemplate.findFirst(
+The column `print_template_dataset.ptd_requires_company` does not exist in the current database.
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async PrintTemplateService.getTemplateById (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:137:22)
+    at async PrintTemplateController.getTemplate (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.controller.ts:115:18)
+2026-09-15T11:20:22.616Z ERROR [ModuleExceptionFilter] GET /api/v1/print-templates/get?ptlId=01a04c49-90ef-7176-8fa4-3aece7490900
+PrismaClientKnownRequestError: 
+Invalid `client.printTemplate.findFirst()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:1292:33
+
+  1289   ptlId: string,
+  1290   includeDeletedVersions: boolean,
+  1291 ): Promise<TemplateWithChildren | null> {
+→ 1292   return client.printTemplate.findFirst(
+The column `print_template_dataset.ptd_requires_company` does not exist in the current database.
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async PrintTemplateService.getTemplateById (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:137:22)
+    at async PrintTemplateController.getTemplate (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.controller.ts:115:18)
+2026-09-15T11:20:29.555Z ERROR [ModuleExceptionFilter] GET /api/v1/print-templates/list?limit=100&includeVersions=true&ptlCompanyId=019c8ea6-19e9-78a8-b15f-749e1cde7292&ptlIsActive=true
+PrismaClientKnownRequestError: 
+Invalid `this.prisma.printTemplate.findMany()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:195:33
+
+  192 }
+  193 
+  194 const [rows, total] = await Promise.all([
+→ 195   this.prisma.printTemplate.findMany(
+The column `print_template_dataset.ptd_requires_company` does not exist in the current database.
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async Promise.all (index 0)
+    at async PrintTemplateService.listTemplates (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:194:27)
+    at async PrintTemplateController.listTemplates (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.controller.ts:139:20)
+2026-09-15T11:20:38.004Z ERROR [ModuleExceptionFilter] GET /api/v1/print-templates/list?limit=100&includeVersions=true&ptlCompanyId=019c8ea6-19e9-78a8-b15f-749e1cde7292&ptlIsActive=true
+PrismaClientKnownRequestError: 
+Invalid `this.prisma.printTemplate.findMany()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:195:33
+
+  192 }
+  193 
+  194 const [rows, total] = await Promise.all([
+→ 195   this.prisma.printTemplate.findMany(
+The column `print_template_dataset.ptd_requires_company` does not exist in the current database.
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async Promise.all (index 0)
+    at async PrintTemplateService.listTemplates (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:194:27)
+    at async PrintTemplateController.listTemplates (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.controller.ts:139:20)
+2026-09-15T11:20:39.772Z ERROR [ModuleExceptionFilter] GET /api/v1/print-templates/list?limit=100&includeVersions=true&ptlCompanyId=019c8ea6-19e9-78a8-b15f-749e1cde7292&ptlIsActive=true
+PrismaClientKnownRequestError: 
+Invalid `this.prisma.printTemplate.findMany()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:195:33
+
+  192 }
+  193 
+  194 const [rows, total] = await Promise.all([
+→ 195   this.prisma.printTemplate.findMany(
+The column `print_template_dataset.ptd_requires_company` does not exist in the current database.
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async Promise.all (index 0)
+    at async PrintTemplateService.listTemplates (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.service.ts:194:27)
+    at async PrintTemplateController.listTemplates (/home/vk/Dev/erp/ERP server/src/modules/settings/print-template/print-template.controller.ts:139:20)
+2026-09-15T11:28:25.835Z ERROR [ModuleExceptionFilter] GET /api/v1/user-administration/get?usrId=019e441b-6e48-7918-b246-b857ffb35db1
+PrismaClientKnownRequestError: 
+Invalid `this.prisma.userMaster.findFirst()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/settings/userAdministration/user-administration.service.ts:48:49
+
+  45 }
+  46 
+  47 async getById(usrId: string): Promise<UserAdminPayload> {
+→ 48   const record = await this.prisma.userMaster.findFirst(
+The column `user_menus.um_can_approve` does not exist in the current database.
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async UserAdministrationService.getById (/home/vk/Dev/erp/ERP server/src/modules/settings/userAdministration/user-administration.service.ts:48:20)
+    at async UserAdministrationController.getById (/home/vk/Dev/erp/ERP server/src/modules/settings/userAdministration/user-administration.controller.ts:76:18)
+2026-09-15T11:29:07.710Z ERROR [ModuleExceptionFilter] GET /api/v1/user-administration/get?usrId=019e441b-6e48-7918-b246-b857ffb35db1
+PrismaClientKnownRequestError: 
+Invalid `this.prisma.userMaster.findFirst()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/settings/userAdministration/user-administration.service.ts:48:49
+
+  45 }
+  46 
+  47 async getById(usrId: string): Promise<UserAdminPayload> {
+→ 48   const record = await this.prisma.userMaster.findFirst(
+The column `user_menus.um_can_approve` does not exist in the current database.
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async UserAdministrationService.getById (/home/vk/Dev/erp/ERP server/src/modules/settings/userAdministration/user-administration.service.ts:48:20)
+    at async UserAdministrationController.getById (/home/vk/Dev/erp/ERP server/src/modules/settings/userAdministration/user-administration.controller.ts:76:18)
+2026-09-15T11:29:36.534Z ERROR [ModuleExceptionFilter] GET /api/v1/user-administration/get?usrId=019e441b-6e48-7918-b246-b857ffb35db1
+PrismaClientKnownRequestError: 
+Invalid `this.prisma.userMaster.findFirst()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/settings/userAdministration/user-administration.service.ts:48:49
+
+  45 }
+  46 
+  47 async getById(usrId: string): Promise<UserAdminPayload> {
+→ 48   const record = await this.prisma.userMaster.findFirst(
+The column `user_menus.um_can_approve` does not exist in the current database.
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async UserAdministrationService.getById (/home/vk/Dev/erp/ERP server/src/modules/settings/userAdministration/user-administration.service.ts:48:20)
+    at async UserAdministrationController.getById (/home/vk/Dev/erp/ERP server/src/modules/settings/userAdministration/user-administration.controller.ts:76:18)
+2026-09-15T11:30:31.870Z ERROR [ModuleExceptionFilter] GET /api/v1/user-administration/get?usrId=019e441b-6e48-7918-b246-b857ffb35db1
+PrismaClientKnownRequestError: 
+Invalid `this.prisma.userMaster.findFirst()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/settings/userAdministration/user-administration.service.ts:48:49
+
+  45 }
+  46 
+  47 async getById(usrId: string): Promise<UserAdminPayload> {
+→ 48   const record = await this.prisma.userMaster.findFirst(
+The column `user_menus.um_can_approve` does not exist in the current database.
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async UserAdministrationService.getById (/home/vk/Dev/erp/ERP server/src/modules/settings/userAdministration/user-administration.service.ts:48:20)
+    at async UserAdministrationController.getById (/home/vk/Dev/erp/ERP server/src/modules/settings/userAdministration/user-administration.controller.ts:76:18)
+2026-09-15T11:31:58.384Z ERROR [ModuleExceptionFilter] GET /api/v1/user-administration/get?usrId=019e7255-f432-78ab-8bf2-4bf382487b38
+PrismaClientKnownRequestError: 
+Invalid `this.prisma.userMaster.findFirst()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/settings/userAdministration/user-administration.service.ts:48:49
+
+  45 }
+  46 
+  47 async getById(usrId: string): Promise<UserAdminPayload> {
+→ 48   const record = await this.prisma.userMaster.findFirst(
+The column `user_menus.um_can_approve` does not exist in the current database.
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async UserAdministrationService.getById (/home/vk/Dev/erp/ERP server/src/modules/settings/userAdministration/user-administration.service.ts:48:20)
+    at async UserAdministrationController.getById (/home/vk/Dev/erp/ERP server/src/modules/settings/userAdministration/user-administration.controller.ts:76:18)
+2026-09-15T11:32:04.214Z ERROR [ModuleExceptionFilter] GET /api/v1/user-administration/get?usrId=019e7255-f432-78ab-8bf2-4bf382487b38
+PrismaClientKnownRequestError: 
+Invalid `this.prisma.userMaster.findFirst()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/settings/userAdministration/user-administration.service.ts:48:49
+
+  45 }
+  46 
+  47 async getById(usrId: string): Promise<UserAdminPayload> {
+→ 48   const record = await this.prisma.userMaster.findFirst(
+The column `user_menus.um_can_approve` does not exist in the current database.
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async UserAdministrationService.getById (/home/vk/Dev/erp/ERP server/src/modules/settings/userAdministration/user-administration.service.ts:48:20)
+    at async UserAdministrationController.getById (/home/vk/Dev/erp/ERP server/src/modules/settings/userAdministration/user-administration.controller.ts:76:18)
+2026-09-15T11:32:05.022Z ERROR [ModuleExceptionFilter] GET /api/v1/user-administration/get?usrId=019e441b-6e48-7918-b246-b857ffb35db1
+PrismaClientKnownRequestError: 
+Invalid `this.prisma.userMaster.findFirst()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/settings/userAdministration/user-administration.service.ts:48:49
+
+  45 }
+  46 
+  47 async getById(usrId: string): Promise<UserAdminPayload> {
+→ 48   const record = await this.prisma.userMaster.findFirst(
+The column `user_menus.um_can_approve` does not exist in the current database.
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async UserAdministrationService.getById (/home/vk/Dev/erp/ERP server/src/modules/settings/userAdministration/user-administration.service.ts:48:20)
+    at async UserAdministrationController.getById (/home/vk/Dev/erp/ERP server/src/modules/settings/userAdministration/user-administration.controller.ts:76:18)
+2026-09-15T11:32:20.583Z ERROR [ModuleExceptionFilter] GET /api/v1/user-administration/get?usrId=019e7255-f432-78ab-8bf2-4bf382487b38
+PrismaClientKnownRequestError: 
+Invalid `this.prisma.userMaster.findFirst()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/settings/userAdministration/user-administration.service.ts:48:49
+
+  45 }
+  46 
+  47 async getById(usrId: string): Promise<UserAdminPayload> {
+→ 48   const record = await this.prisma.userMaster.findFirst(
+The column `user_menus.um_can_approve` does not exist in the current database.
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async UserAdministrationService.getById (/home/vk/Dev/erp/ERP server/src/modules/settings/userAdministration/user-administration.service.ts:48:20)
+    at async UserAdministrationController.getById (/home/vk/Dev/erp/ERP server/src/modules/settings/userAdministration/user-administration.controller.ts:76:18)
+2026-09-15T11:32:22.655Z ERROR [ModuleExceptionFilter] GET /api/v1/user-administration/get?usrId=019e7255-f432-78ab-8bf2-4bf382487b38
+PrismaClientKnownRequestError: 
+Invalid `this.prisma.userMaster.findFirst()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/settings/userAdministration/user-administration.service.ts:48:49
+
+  45 }
+  46 
+  47 async getById(usrId: string): Promise<UserAdminPayload> {
+→ 48   const record = await this.prisma.userMaster.findFirst(
+The column `user_menus.um_can_approve` does not exist in the current database.
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async UserAdministrationService.getById (/home/vk/Dev/erp/ERP server/src/modules/settings/userAdministration/user-administration.service.ts:48:20)
+    at async UserAdministrationController.getById (/home/vk/Dev/erp/ERP server/src/modules/settings/userAdministration/user-administration.controller.ts:76:18)
+2026-09-15T11:33:02.905Z ERROR [ModuleExceptionFilter] GET /api/v1/user-administration/get?usrId=019e441b-6e48-7918-b246-b857ffb35db1
+PrismaClientKnownRequestError: 
+Invalid `this.prisma.userMaster.findFirst()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/settings/userAdministration/user-administration.service.ts:48:49
+
+  45 }
+  46 
+  47 async getById(usrId: string): Promise<UserAdminPayload> {
+→ 48   const record = await this.prisma.userMaster.findFirst(
+The column `user_menus.um_can_approve` does not exist in the current database.
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async UserAdministrationService.getById (/home/vk/Dev/erp/ERP server/src/modules/settings/userAdministration/user-administration.service.ts:48:20)
+    at async UserAdministrationController.getById (/home/vk/Dev/erp/ERP server/src/modules/settings/userAdministration/user-administration.controller.ts:76:18)
+2026-09-15T11:33:21.270Z ERROR [ModuleExceptionFilter] GET /api/v1/user-administration/get?usrId=019e7255-f432-78ab-8bf2-4bf382487b38
+PrismaClientKnownRequestError: 
+Invalid `this.prisma.userMaster.findFirst()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/settings/userAdministration/user-administration.service.ts:48:49
+
+  45 }
+  46 
+  47 async getById(usrId: string): Promise<UserAdminPayload> {
+→ 48   const record = await this.prisma.userMaster.findFirst(
+The column `user_menus.um_can_approve` does not exist in the current database.
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async UserAdministrationService.getById (/home/vk/Dev/erp/ERP server/src/modules/settings/userAdministration/user-administration.service.ts:48:20)
+    at async UserAdministrationController.getById (/home/vk/Dev/erp/ERP server/src/modules/settings/userAdministration/user-administration.controller.ts:76:18)
+2026-09-15T11:33:31.151Z ERROR [ModuleExceptionFilter] GET /api/v1/user-administration/get?usrId=019e7255-f432-78ab-8bf2-4bf382487b38
+PrismaClientKnownRequestError: 
+Invalid `this.prisma.userMaster.findFirst()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/settings/userAdministration/user-administration.service.ts:48:49
+
+  45 }
+  46 
+  47 async getById(usrId: string): Promise<UserAdminPayload> {
+→ 48   const record = await this.prisma.userMaster.findFirst(
+The column `user_menus.um_can_approve` does not exist in the current database.
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async UserAdministrationService.getById (/home/vk/Dev/erp/ERP server/src/modules/settings/userAdministration/user-administration.service.ts:48:20)
+    at async UserAdministrationController.getById (/home/vk/Dev/erp/ERP server/src/modules/settings/userAdministration/user-administration.controller.ts:76:18)
+2026-09-15T11:34:15.752Z ERROR [ModuleExceptionFilter] GET /api/v1/user-administration/get?usrId=019e441b-6e48-7918-b246-b857ffb35db1
+PrismaClientKnownRequestError: 
+Invalid `this.prisma.userMaster.findFirst()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/settings/userAdministration/user-administration.service.ts:48:49
+
+  45 }
+  46 
+  47 async getById(usrId: string): Promise<UserAdminPayload> {
+→ 48   const record = await this.prisma.userMaster.findFirst(
+The column `user_menus.um_can_approve` does not exist in the current database.
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async UserAdministrationService.getById (/home/vk/Dev/erp/ERP server/src/modules/settings/userAdministration/user-administration.service.ts:48:20)
+    at async UserAdministrationController.getById (/home/vk/Dev/erp/ERP server/src/modules/settings/userAdministration/user-administration.controller.ts:76:18)

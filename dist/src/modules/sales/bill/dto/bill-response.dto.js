@@ -77,6 +77,7 @@ class BillItemPayloadDto {
     sbiSizeUom;
     sbiGodownId;
     sbiGodownName;
+    sbiAllowNegativeStock;
     sbiStockId;
     sbiBatchNo;
     sbiBatchDate;
@@ -332,6 +333,17 @@ __decorate([
     }),
     __metadata("design:type", Object)
 ], BillItemPayloadDto.prototype, "sbiGodownName", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        example: true,
+        description: 'Whether sbiItemId may be sold below zero on hand — the effective answer,' +
+            ' not item_master.item_allow_neg_stock alone: a service item always may, and' +
+            " otherwise it is blocked only when the line's godown, the company and the item" +
+            ' all disallow it; only populated on GET',
+    }),
+    __metadata("design:type", Object)
+], BillItemPayloadDto.prototype, "sbiAllowNegativeStock", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)({ format: 'uuid', description: 'The inventory batch/stock row allocated' }),
     __metadata("design:type", String)

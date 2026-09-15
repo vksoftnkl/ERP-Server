@@ -10,6 +10,10 @@ model AccOpeningBalance {
   // key.
   opAccYear       String    @db.Char(9) @map("op_acc_year")
   opLedgerId      String    @db.Uuid @map("op_ledger_id")
+  /// RESERVED — multi-tenancy, mirroring ablTenantId. No FK: there is no
+  /// tenant table yet. Added 20260915090000, which was the only partitioned
+  /// accounts table without one.
+  opTenantId      String?   @db.Uuid @map("op_tenant_id")
 
   opAmount        Decimal   @default(0) @db.Decimal(18, 2) @map("op_amount")
   // ck_op_dr_cr: D | C
@@ -22,6 +26,17 @@ model AccOpeningBalance {
 
   opIsStale       Boolean   @default(false) @map("op_is_stale")
   opStaleSince    DateTime? @db.Timestamptz(6) @map("op_stale_since")
+  // WHY it went stale, not just that it did — added 20260915090000, because
+  // "stale" alone cannot answer the only question an accountant asks.
+  /// ck_op_stale_reason: VOUCHER_POSTED | VOUCHER_CANCELLED |
+  /// SOURCE_OPENING_EDITED | YEAR_REOPENED | MANUAL
+  opStaleReason   String?   @db.VarChar(30) @map("op_stale_reason")
+  /// The row that invalidated this opening — usually a voucher. Deliberately
+  /// NOT a relation: acc_vouchers is partitioned on its own year, and a stale
+  /// marker must outlive the cancellation of the document that caused it.
+  /// ck_op_stale_ref keeps the pair set or unset together.
+  opStaleRefId    String?   @db.Uuid @map("op_stale_ref_id")
+  opStaleRefAccYear String? @db.Char(9) @map("op_stale_ref_acc_year")
   opGeneratedAt   DateTime? @db.Timestamptz(6) @map("op_generated_at")
   opGeneratedBy   String?   @db.VarChar(50) @map("op_generated_by")
   opRemarks       String?   @map("op_remarks")
@@ -31,6 +46,14 @@ model AccOpeningBalance {
   opCreatedBy     String?   @db.VarChar(50) @map("op_created_by")
   opModifiedAt    DateTime? @db.Timestamptz(6) @map("op_modified_at")
   opModifiedBy    String?   @db.VarChar(50) @map("op_modified_by")
+
+  // fk_op_ledger / fk_op_company / fk_op_branch (20260915090000). The table
+  // shipped with no referential integrity at all. ON DELETE RESTRICT: an
+  // opening balance is an accounting record, so deleting a ledger must fail
+  // while one names it rather than silently taking the opening with it.
+  ledger          AccLedgerMaster @relation(fields: [opLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_op_ledger")
+  company         Company         @relation(fields: [opCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_op_company")
+  branch          BranchMaster?   @relation(fields: [opBranchId], references: [brId], onUpdate: Cascade, onDelete: Restrict, map: "fk_op_branch")
 
   @@id([opId, opAccYear], map: "pk_acc_opening")
   @@map("acc_opening_balance")
@@ -47,7 +70,9 @@ model AccOpeningBalance {
   //     @@unique.
   //   - Partial/covering indexes ix_op_lookup, ix_op_stale.
   //   - CHECK constraints ck_op_dr_cr, ck_op_amount, ck_op_source,
-  //     ck_op_acc_year.
-  //   - No FK on op_company_id / op_branch_id / op_ledger_id: the source DDL
-  //     declares none.
+  //     ck_op_acc_year, and ck_op_stale_reason / ck_op_stale_ref /
+  //     ck_op_stale_ref_acc_year (20260915090000).
+  //   - NOT constrained: what clears op_is_stale, and therefore whether a
+  //     not-stale row may still carry stale detail. That is DECISION 5 and
+  //     still open — a CHECK now would settle it by accident.
 }

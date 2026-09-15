@@ -32,6 +32,12 @@ model AccVoucher {
   // create or update, the write will be rejected by Postgres.
   avSignedAmount     Decimal?  @default(dbgenerated()) @db.Decimal(18, 2) @map("av_signed_amount")
   avCostCentreId     String?   @db.Uuid @map("av_cost_centre_id")
+  /// accounts.acc_ledger_role.alr_role — WHY this leg exists, not merely
+  /// which ledger it hit. NULL on the party leg and on every instrument leg:
+  /// those are the party and the money, not roles. Set on every other-ledger
+  /// leg, so "TDS deducted this quarter" is a WHERE clause rather than a
+  /// lookup of whichever ledger the role happens to point at today.
+  avRole             String?   @db.VarChar(30) @map("av_role")
   avRemarks          String?   @map("av_remarks")
   avSessionId        String?   @db.Uuid @map("av_session_id")
   avUserId           String    @db.Uuid @map("av_user_id")
@@ -54,8 +60,10 @@ model AccVoucher {
   oppositeLedger     AccLedgerMaster? @relation("AccVoucherOppLedger", fields: [avOppLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_av_opp_ledger")
   voucherType        AccVoucherType   @relation(fields: [avVoucherTypeId], references: [vchrTypeId], onUpdate: Cascade, onDelete: Restrict, map: "fk_av_voucher_type")
   bill               AccBillBalance?  @relation(fields: [avDocId, avDocAccYear], references: [ablId, ablAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_av_doc")
+  role               AccLedgerRole?   @relation(fields: [avRole], references: [alrRole], onUpdate: Cascade, onDelete: Restrict, map: "fk_av_role")
   @@id([avId, avAccYear], map: "pk_acc_vouchers")
   @@index([avVoucherId, avAccYear], map: "ix_av_voucher")
+  @@index([avCompanyId, avRole, avVoucherDate], map: "ix_av_role")
   @@map("acc_vouchers")
   @@schema("accounts")
   // DB-only objects not expressible in the Prisma schema (see migration

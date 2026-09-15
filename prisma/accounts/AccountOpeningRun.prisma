@@ -1,0 +1,64 @@
+/// One row per carry-forward run, never updated — the history that
+/// fiscal_years overwrites. fyIsCarriedForward / fyCarriedForwardAt record
+/// THAT a year was carried forward and WHEN, once; a regenerate overwrites the
+/// timestamp, and the numbers that say whether the run was sound — rows
+/// created, manual openings stepped around, the Dr/Cr totals and the
+/// difference between them — were returned to the caller and then lost.
+///
+/// Deliberately NOT partitioned by accounting year: a run is keyed by the two
+/// years it spans rather than living inside either, and it grows by a handful
+/// of rows a year. Added by migration 20260915090000 (DECISION 11).
+model AccOpeningRun {
+  aorId              String   @id(map: "pk_acc_opening_run") @default(dbgenerated("uuidv7()")) @db.Uuid @map("aor_id")
+
+  aorCompanyId       String   @db.Uuid                            @map("aor_company_id")
+  /// NULL = the run covered the company as a whole, matching opBranchId.
+  aorBranchId        String?  @db.Uuid                            @map("aor_branch_id")
+
+  /// The year read from, and the year written into. ck_aor_year_order: a
+  /// carry-forward moves strictly forward.
+  aorFromAccYear     String   @db.Char(9)                         @map("aor_from_acc_year")
+  aorToAccYear       String   @db.Char(9)                         @map("aor_to_acc_year")
+
+  aorRunAt           DateTime @default(now()) @db.Timestamptz(6)  @map("aor_run_at")
+  aorRunBy           String?  @db.VarChar(50)                     @map("aor_run_by")
+
+  // What the run did.
+  aorCreated         Int      @default(0)                         @map("aor_created")
+  aorUpdated         Int      @default(0)                         @map("aor_updated")
+  /// Openings left alone because opSource was MANUAL or MIGRATION — those are
+  /// owned by a human and are never overwritten by a regenerate.
+  aorSkippedManual   Int      @default(0)                         @map("aor_skipped_manual")
+
+  // What it produced.
+  aorTotalDebit      Decimal  @default(0) @db.Decimal(18, 2)      @map("aor_total_debit")
+  aorTotalCredit     Decimal  @default(0) @db.Decimal(18, 2)      @map("aor_total_credit")
+  /// GENERATED ALWAYS AS (debit - credit) STORED — read-only. The one number
+  /// everybody reads off this table is the one nobody can write incorrectly.
+  /// Non-zero means the carried trial balance did not agree.
+  ///
+  /// dbgenerated() is the closest Prisma has to a generated column: it has no
+  /// attribute for one, and this at least keeps the field out of the create
+  /// input and the schema free of drift. Postgres rejects a write to it.
+  aorDifference      Decimal  @default(dbgenerated("(aor_total_debit - aor_total_credit)")) @db.Decimal(18, 2) @map("aor_difference")
+
+  /// Whether this run was allowed to overwrite MANUAL openings. The single
+  /// most important thing to know about a run after the fact.
+  aorOverwriteManual Boolean  @default(false)                     @map("aor_overwrite_manual")
+
+  aorRemarks         String?  @db.VarChar(500)                    @map("aor_remarks")
+
+  company            Company       @relation(fields: [aorCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_aor_company")
+  branch             BranchMaster? @relation(fields: [aorBranchId], references: [brId], onUpdate: Cascade, onDelete: Restrict, map: "fk_aor_branch")
+
+  /// "When was this year last carried forward, and what happened?" — newest
+  /// first, for one company and target year.
+  @@index([aorCompanyId, aorToAccYear, aorRunAt(sort: Desc)], map: "ix_aor_target")
+  // DB-only, not expressible here:
+  //   - aor_difference is a STORED generated column. Prisma has no attribute
+  //     for one, so it appears above as an ordinary Decimal: NEVER write it.
+  //   - CHECKs ck_aor_from_acc_year / ck_aor_to_acc_year (YYYY-YYYY, second
+  //     half = first + 1), ck_aor_year_order, ck_aor_counts, ck_aor_totals.
+  @@map("acc_opening_run")
+  @@schema("accounts")
+}

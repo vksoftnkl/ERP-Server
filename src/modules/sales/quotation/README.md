@@ -266,6 +266,51 @@ edited; correcting history means appending another row. Same arrangement as
   trail with `CREATED`, and nothing is appended to the parent's — moving the parent to `CANCELLED`
   or `CONVERTED` is a separate save, and logged as one.
 
+### Becoming a bill (`syncQuotationConversion`)
+
+`sq_status`, `sq_converted_doc_type`, `sq_converted_doc_id` and `sq_converted_on` are **not** the
+quotation screen's to set: they are derived from the bills that name the quotation. No route on this
+module writes them — `QuotationService.syncQuotationConversion` does, called by
+[../bill](../bill#converting-a-quotation) from inside the bill save's own transaction.
+
+A bill points at the quotation from its **header**:
+
+```jsonc
+{
+  "sbSrcDocType": "QUOTATION",
+  "sbSrcDocId": "<sq_id>",
+  "sbSrcDocYear": "2026-2027", // with sbSrcDocId, this quotation's primary key
+}
+```
+
+and the quotation is then `CONVERTED` — `sq_converted_doc_type = 'SALE_BILL'`,
+`sq_converted_doc_id` the bill's `sb_id`, `sq_converted_on` that bill's `sb_created_on` — for
+exactly as long as a **live** bill names it. A `DRAFT` bill counts: raising the invoice is what
+converts the quote, and posting it only puts that invoice into the books.
+
+Because the answer is derived rather than stamped once:
+
+- an edit that repoints the bill at another quotation, or moves it to `CANCELLED`, hands this one
+  its **pre-conversion** status back — read off the `CONVERTED` step in the trail above, so the
+  quote returns to the `SENT` / `ACCEPTED` / `DRAFT` it actually left, and to `ACCEPTED` only when
+  no such step is there to read;
+- a recompute that agrees with the row writes nothing — no update, no audit row, no trail step;
+- only a stamp naming a `SALE_BILL` is ever withdrawn: a quotation moved to `CONVERTED` by hand, or
+  converted into something else, is left alone;
+- a quotation billed twice keeps naming the **first** live bill raised against it.
+
+The status move is logged as a `CONVERTED` step (remark *Converted to sale bill*), and the reversal
+as a step back to the earlier status (*Sale bill conversion withdrawn*). Repointing an
+already-`CONVERTED` quotation at a different bill rewrites the columns without adding a step: the
+status did not move.
+
+**Header grain only.** `sq_converted_doc_id` names one document, and a quotation LINE has no
+conversion columns, so a bill's `sbi_src_doc_*` line references are not read here. A quotation whose
+bill names it only on the lines is never stamped.
+
+A reference to a quotation that is not there comes back as a **400 on `sbSrcDocId`** — the bill's own
+field, not this module's — and fails the bill save with it.
+
 ### Response shape
 
 Success responses follow `{ success: true, message, data }` (`QuotationSuccessResponse`), where
@@ -305,3 +350,23 @@ second round trip:
 | `sqiCategoryId` | `inventory.item_master.item_category_id` | same relation |
 | `sqiUnitName` | `inventory.item_unit_master.unit_name` | `itemUnitConversion` → `unit` on `sqiItemUnitId` |
 | `sqiDecimalCount` | `inventory.item_unit_master.unit_decimal_count` | same relation chain |
+| `sqiAllowNegativeStock` | three switches — see below | `item` relation plus one company read |
+| `sqiGodownId` | `public.branch_master.br_default_godown_id` | one read on `sqBranchId` — see below |
+| `sqiGodownName` | `inventory.godown_locations.gdl_name` | looked up from that default |
+
+`sqiAllowNegativeStock` is the **effective** answer to "may this line go below zero", not
+`item_master.item_allow_neg_stock` on its own. It applies the same rule `/item-price` applies when
+the line is first added (`item-price.lookup.ts`): a **service** item always may, and otherwise it
+is blocked only when the godown (`gdl_negative_stock`), the company (`comp_negstk_apl`) **and** the
+item (`item_allow_neg_stock`) all say no. Deriving it the same way means a reloaded quotation
+guards exactly as the entry screen did while the line was being typed. A company row that cannot be
+read is not a "no" — the godown and the item still decide — and a line whose item join is absent
+(the create/update responses) answers `null`.
+
+`sqiGodownId` / `sqiGodownName` are the odd pair out: `sale_quotation_item` has **no godown
+column** — a quotation neither moves nor reserves stock — so there is nothing stored per line to
+resolve. Every line instead carries the **branch's default godown**, read once per `/get` from
+`branch_master.br_default_godown_id`, so the entry screen has a godown to show and to carry into
+the order or bill the quote is converted to. A branch with no default, or one whose default has
+been soft-deleted, answers `null` on both fields rather than prefilling a dead location. Sending
+them on a save is ignored, like every other resolved field here.

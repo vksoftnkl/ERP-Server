@@ -504,6 +504,7 @@ let CustomerService = class CustomerService {
             ledName: normalized.name,
             ledStateName: normalized.stateName,
             ledStateCode: normalized.stateCode,
+            ledIsBillByBill: true,
         };
         const ledgerDtoRecord = ledgerDto;
         const customerRecord = saveCustomerDto;

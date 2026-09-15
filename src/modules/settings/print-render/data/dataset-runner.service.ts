@@ -303,10 +303,9 @@ export class DatasetRunnerService {
       values[name] = value ?? null;
     }
 
-    // ptd_requires_company is the flag that says a query is allowed to be
-    // global. It does not change what is bindable — a state-code list simply
-    // never mentions :company_id — so nothing is removed here; the save-time
-    // guard is where the rule lives.
+    // The dataset itself says nothing about what is bindable: every query gets
+    // the same context, and one that is global simply never mentions
+    // :company_id. The parameter is kept for the signature the callers share.
     void dataset;
 
     return values;

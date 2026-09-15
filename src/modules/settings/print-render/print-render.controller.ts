@@ -192,11 +192,14 @@ export class PrintRenderController {
    * The closed context set, assembled from the authenticated session and the
    * request.
    *
-   * The company comes from the session and CANNOT come from the body. Branch and
-   * counter come from the session TOO, and a body value overrides them rather
-   * than being required: they are claims on the access token, resolved from the
-   * `fixed.device_master` row this session logged in at, so the ordinary print
-   * says nothing about scope and gets the scope it is sitting in.
+   * Company, branch and counter all come from the session, and a body value
+   * overrides each rather than being required: they are claims on the access
+   * token, resolved from the `fixed.device_master` row this session logged in
+   * at, so the ordinary print says nothing about scope and gets the scope it is
+   * sitting in. The company is the override that matters: the token carries the
+   * user's home company, the client's header picker may be on another, and a
+   * document raised there is invisible to every dataset unless its own company
+   * is bound.
    *
    * The document id is the one thing here that is genuinely the request's — it
    * is WHAT is being printed, not who is printing — and the accounting year is
@@ -204,7 +207,10 @@ export class PrintRenderController {
    * leaves it out.
    */
   private contextFrom(dto: RenderPreviewDto | RenderDocumentDto): RenderContext {
-    const companyId = this.requestContextService.getCompanyId();
+    // The document's own company when the caller names it, else the token's —
+    // the same rule `/print-template-assignments/resolve` applies. The two differ
+    // whenever the session works in a company other than the user's home one.
+    const companyId = dto.companyId ?? this.requestContextService.getCompanyId();
 
     if (!companyId) {
       // Not an authorisation failure — the token is fine — but a render with no

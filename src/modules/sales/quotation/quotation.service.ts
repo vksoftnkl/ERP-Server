@@ -7,14 +7,24 @@ import { SaveQuotationDto } from './dto/save-quotation.dto';
 import { SaveQuotationItemDto } from './dto/save-quotation-item.dto';
 import {
   QUOTATION_CHARGE_DOC_TYPE,
+  QUOTATION_CONVERTED_DOC_TYPE_BILL,
+  QUOTATION_SRC_DOC_TYPE,
+  QUOTATION_STATUS_ACCEPTED,
+  QUOTATION_STATUS_CONVERTED,
   QUOTATION_STATUS_SRC_DOC_TYPE,
   QUOTATION_STATUS_SRC_MODULE,
   QuotationChargePayload,
+  QuotationConversionRef,
+  QuotationConversionResult,
   QuotationErrorDetail,
   QuotationErrorResponse,
   QuotationItemPayload,
   QuotationPayload,
 } from './types/quotation-api.types';
+// A types-only edge to the bill module, the mirror of the one sale-order
+// already has: this module decides what a quotation's conversion columns say,
+// and a bill that has been called off is no longer a conversion.
+import { BILL_STATUS_CANCELLED } from '../bill/types/bill-api.types';
 import {
   CHARGE_DETAIL_VALUE_GUARDS,
   ChargeDetailGuardedValues,
@@ -71,6 +81,10 @@ const QUOTATION_STATUS_EVENTS: Readonly<Record<string, TxnStatusEvent>> = {
 // column says something it does not.
 const QUOTATION_DELETED_STATUS = 'DELETED';
 const QUOTATION_DELETE_REASON = 'Quotation deleted';
+// tsl_remarks on the two steps syncQuotationConversion writes. The trail says
+// WHY sq_status moved without the reader having to go and find the bill.
+const QUOTATION_CONVERTED_REMARK = 'Converted to sale bill';
+const QUOTATION_UNCONVERTED_REMARK = 'Sale bill conversion withdrawn';
 const QUOTATION_OPTIONAL_FIELDS = [
   'sqSessionId',
   'sqCategoryId',
@@ -367,12 +381,29 @@ type SaleQuotationItemWithNames = SaleQuotationItem & {
     itemBrandId: string | null;
     itemSectionId: string | null;
     itemCategoryId: string | null;
+    itemIsService: boolean;
+    itemAllowNegStock: boolean;
   } | null;
   itemUnitConversion?: { unit: { unit_name: string; unit_decimal_count: number } } | null;
 };
 // Same idea for the header's master ids: custArea/salesman come from the
 // getById joins, `agent` from the extra lookup below (sq_agent_id has no FK).
 // Absent on the create/update paths, which pass a plain SaleQuotation row.
+// The branch's default godown, resolved once per GET and stamped onto every
+// line (see resolveDefaultGodown).
+type DefaultGodown = { gdlId: string; gdlName: string; gdlNegativeStock: boolean };
+// What a line's read-only display fields need beyond the line row itself:
+// the branch's default godown and the company's negative-stock switch, both
+// resolved once per GET. The create/update paths pass nothing and those fields
+// come back null.
+type QuotationLineContext = {
+  defaultGodown: DefaultGodown | null;
+  companyAllowsNegStock: boolean | null;
+};
+const EMPTY_LINE_CONTEXT: QuotationLineContext = {
+  defaultGodown: null,
+  companyAllowsNegStock: null,
+};
 type SaleQuotationWithNames = SaleQuotation & {
   custArea?: { armName: string; armDistanceKm: number | null } | null;
   salesman?: { empName: string } | null;
@@ -428,6 +459,10 @@ export class QuotationService {
                 itemBrandId: true,
                 itemSectionId: true,
                 itemCategoryId: true,
+                // Two of the three switches behind the line's effective
+                // sqiAllowNegativeStock; see toItemPayload.
+                itemIsService: true,
+                itemAllowNegStock: true,
               },
             },
             itemUnitConversion: {
@@ -450,9 +485,13 @@ export class QuotationService {
     }
     // txn_charge_detail is polymorphic (no FK to sale_quotation), so the
     // applied charges are fetched by discriminator rather than by `include`.
-    const charges = await this.findCharges(this.prisma, record.sqId);
-    const agent = await this.findAgent(record.sqAgentId);
-    return this.toPayload({ ...record, charges, agent });
+    const [charges, agent, defaultGodown, companyAllowsNegStock] = await Promise.all([
+      this.findCharges(this.prisma, record.sqId),
+      this.findAgent(record.sqAgentId),
+      this.resolveDefaultGodown(record.sqBranchId),
+      this.resolveCompanyNegStock(record.sqCompanyId),
+    ]);
+    return this.toPayload({ ...record, charges, agent }, { defaultGodown, companyAllowsNegStock });
   }
   async softDelete(
     sqId: string,
@@ -575,6 +614,238 @@ export class QuotationService {
         deleted: true,
       };
     });
+  }
+  // Re-derives the conversion columns of every quotation a bill save touched:
+  // sq_status, sq_converted_doc_type, sq_converted_doc_id and sq_converted_on.
+  //
+  // A quotation is CONVERTED exactly while a LIVE bill names it — sb_src_doc_type
+  // = 'QUOTATION' with sb_src_doc_id / sb_src_doc_year addressing it, on a bill
+  // that is neither soft deleted nor CANCELLED. A DRAFT bill counts: raising the
+  // invoice is what converts the quote, and posting it only puts that invoice
+  // into the books.
+  //
+  // Derived rather than incremented, for the same reason sale-order's fulfilment
+  // recompute is: the answer is a fact about the bills that exist, so an edit
+  // that repoints sb_src_doc_id at another quotation — or cancels the bill
+  // outright — hands the abandoned quote its old status back instead of leaving
+  // it frozen at CONVERTED for a bill that no longer exists. The caller passes
+  // both sides of the edit and this decides what each one now says.
+  //
+  // sq_converted_on is the converting BILL's creation time, not the moment of
+  // the recompute: running this twice over an unchanged set of bills must write
+  // nothing, and a clock reading would make every save an update.
+  //
+  // Written inside the caller's transaction, so a quotation can never claim a
+  // conversion from a bill that rolled back. Header grain only: sq_converted_*
+  // names one document, and a quotation LINE has no conversion columns for a
+  // bill line to draw down — sbi_src_doc_* is not read here.
+  async syncQuotationConversion(
+    tx: Prisma.TransactionClient,
+    request: { refs: QuotationConversionRef[] },
+    actor: string,
+    now: Date,
+  ): Promise<QuotationConversionResult[]> {
+    // Both sides of an edit routinely name the same quotation, and a repointed
+    // bill names two; each is recomputed once.
+    const targets = new Map<string, QuotationConversionRef>();
+    for (const ref of request.refs) {
+      const srcAccYear = ref.srcAccYear.trim();
+      // Both halves of the primary key or nothing: sale_quotation is
+      // partitioned by sq_acc_year, so an id without its year addresses no row.
+      if (!ref.srcDocId || !srcAccYear) {
+        continue;
+      }
+      const key = `${ref.srcDocId}|${srcAccYear}`;
+      if (!targets.has(key)) {
+        targets.set(key, { ...ref, srcAccYear });
+      }
+    }
+    const results: QuotationConversionResult[] = [];
+    for (const target of targets.values()) {
+      results.push(await this.syncOneQuotationConversion(tx, target, actor, now));
+    }
+    return results;
+  }
+  private async syncOneQuotationConversion(
+    tx: Prisma.TransactionClient,
+    ref: QuotationConversionRef,
+    actor: string,
+    now: Date,
+  ): Promise<QuotationConversionResult> {
+    const existing = await tx.saleQuotation.findFirst({
+      where: { sqId: ref.srcDocId, sqAccYear: ref.srcAccYear, sqIsDeleted: false },
+    });
+    if (!existing) {
+      // Named against the caller's own column (sbSrcDocId), so a bill quoting a
+      // quotation that is not there comes back as a 400 on the field the client
+      // actually sent rather than a 404 about a document it never addressed.
+      throwSalesBadRequest<QuotationErrorDetail, QuotationErrorResponse>('Quotation not found', [
+        {
+          field: ref.fields.docId,
+          message:
+            `No active quotation found with id ${ref.srcDocId} in accounting year ` +
+            `${ref.srcAccYear}`,
+        },
+      ]);
+    }
+    // The bill that converted it: the FIRST live one raised against it, so a
+    // quotation billed twice keeps naming the invoice it actually became and a
+    // later bill's arrival or departure does not rewrite the stamp.
+    const converter = await tx.saleBill.findFirst({
+      where: {
+        sbSrcDocType: QUOTATION_SRC_DOC_TYPE,
+        // sb_src_doc_year is not re-asserted here: sq_id is a uuid, so no two
+        // quotations share one and the year would only risk a char-padding miss.
+        sbSrcDocId: existing.sqId,
+        sbIsDeleted: false,
+        sbStatus: { not: BILL_STATUS_CANCELLED },
+      },
+      orderBy: [{ sbCreatedOn: 'asc' }, { sbId: 'asc' }],
+      select: { sbId: true, sbCreatedOn: true },
+    });
+    let desired: {
+      sqStatus: string;
+      sqConvertedDocType: string | null;
+      sqConvertedDocId: string | null;
+      sqConvertedOn: Date | null;
+    };
+    if (converter) {
+      desired = {
+        sqStatus: QUOTATION_STATUS_CONVERTED,
+        sqConvertedDocType: QUOTATION_CONVERTED_DOC_TYPE_BILL,
+        sqConvertedDocId: converter.sbId,
+        sqConvertedOn: converter.sbCreatedOn,
+      };
+    } else if (existing.sqConvertedDocType === QUOTATION_CONVERTED_DOC_TYPE_BILL) {
+      desired = {
+        // Only a stamp this module put there is taken back, and only the status
+        // that came WITH it: a quotation somebody moved to CONVERTED by hand,
+        // or converted into something that is not a bill, is left alone.
+        sqStatus:
+          existing.sqStatus === QUOTATION_STATUS_CONVERTED
+            ? await this.resolvePreConversionStatus(tx, existing)
+            : existing.sqStatus,
+        sqConvertedDocType: null,
+        sqConvertedDocId: null,
+        sqConvertedOn: null,
+      };
+    } else {
+      return this.toConversionResult(existing);
+    }
+    const changed =
+      existing.sqStatus !== desired.sqStatus ||
+      existing.sqConvertedDocType !== desired.sqConvertedDocType ||
+      existing.sqConvertedDocId !== desired.sqConvertedDocId ||
+      (existing.sqConvertedOn?.getTime() ?? null) !== (desired.sqConvertedOn?.getTime() ?? null);
+    if (!changed) {
+      // The recompute agreed with what the row already said. No write, no audit
+      // row, no status step — an ordinary re-save of a converted bill is free.
+      return this.toConversionResult(existing);
+    }
+    const data: Prisma.SaleQuotationUncheckedUpdateInput = {
+      ...desired,
+      sqModifiedOn: now,
+      sqModifiedBy: actor,
+    };
+    const result = await tx.saleQuotation.updateMany({
+      // sqIsDeleted is re-asserted rather than trusted from the read above: a
+      // concurrent delete between the two is what this catches.
+      where: { sqId: existing.sqId, sqAccYear: existing.sqAccYear, sqIsDeleted: false },
+      data,
+    });
+    if (result.count === 0) {
+      throwSalesBadRequest<QuotationErrorDetail, QuotationErrorResponse>('Quotation not found', [
+        {
+          field: ref.fields.docId,
+          message:
+            `No active quotation found with id ${existing.sqId} in accounting year ` +
+            `${existing.sqAccYear}`,
+        },
+      ]);
+    }
+    // Only a real status MOVE is a step in the trail. A bill that changes which
+    // invoice an already-CONVERTED quotation points at rewrites the columns
+    // without adding a row: the status did not move, and what changed field by
+    // field is audit.audit_log's job.
+    if (desired.sqStatus !== existing.sqStatus) {
+      await this.logStatusStep(
+        tx,
+        existing,
+        {
+          event:
+            desired.sqStatus === QUOTATION_STATUS_CONVERTED
+              ? TxnStatusEvent.CONVERTED
+              : this.toStatusEvent(existing.sqStatus, desired.sqStatus),
+          fromStatus: existing.sqStatus,
+          toStatus: desired.sqStatus,
+          remarks:
+            desired.sqStatus === QUOTATION_STATUS_CONVERTED
+              ? QUOTATION_CONVERTED_REMARK
+              : QUOTATION_UNCONVERTED_REMARK,
+        },
+        actor,
+        now,
+      );
+    }
+    const updated = { ...existing, ...desired, sqModifiedOn: now, sqModifiedBy: actor };
+    await this.auditLogService.logEntityChange(
+      {
+        action: 'update',
+        tableName: QUOTATION_TABLE_NAME,
+        screenName: QUOTATION_AUDIT_SCREEN_NAME,
+        screenType: 'transaction',
+        pk: existing.sqId,
+        displayName: existing.sqQuoteRefno || existing.sqId,
+        originalRecord: this.toPayload(existing),
+        modifiedRecord: this.toPayload(updated),
+        userId: actor,
+        notes: converter
+          ? `${QUOTATION_CONVERTED_REMARK} (${converter.sbId})`
+          : QUOTATION_UNCONVERTED_REMARK,
+      },
+      tx,
+    );
+    return this.toConversionResult(updated);
+  }
+  // Where a quotation goes when the bill that converted it walks away. The trail
+  // already knows: the CONVERTED step recorded the status it moved OFF, so the
+  // quotation is put back exactly where it was rather than at a status somebody
+  // has to guess. QUOTATION_STATUS_ACCEPTED is the fallback for a quotation
+  // whose step is missing — the trail can predate this back-write — and never
+  // CONVERTED, which would be the one answer that undoes nothing.
+  private async resolvePreConversionStatus(
+    tx: Prisma.TransactionClient,
+    quotation: SaleQuotation,
+  ): Promise<string> {
+    const step = await tx.txnStatusLog.findFirst({
+      where: {
+        tslSrcModule: QUOTATION_STATUS_SRC_MODULE,
+        tslSrcDocType: QUOTATION_STATUS_SRC_DOC_TYPE,
+        tslSrcDocId: quotation.sqId,
+        // txn_status_log is partitioned by tsl_acc_year, and a step always
+        // carries its document's year.
+        tslAccYear: quotation.sqAccYear,
+        tslToStatus: QUOTATION_STATUS_CONVERTED,
+        tslIsDeleted: false,
+      },
+      orderBy: [{ tslChangedOn: 'desc' }, { tslSeqNo: 'desc' }],
+      select: { tslFromStatus: true },
+    });
+    const fromStatus = step?.tslFromStatus;
+    if (!fromStatus || fromStatus === QUOTATION_STATUS_CONVERTED) {
+      return QUOTATION_STATUS_ACCEPTED;
+    }
+    return fromStatus;
+  }
+  private toConversionResult(quotation: SaleQuotation): QuotationConversionResult {
+    return {
+      sqId: quotation.sqId,
+      sqAccYear: quotation.sqAccYear,
+      sqStatus: quotation.sqStatus,
+      sqConvertedDocType: quotation.sqConvertedDocType,
+      sqConvertedDocId: quotation.sqConvertedDocId,
+      sqConvertedOn: quotation.sqConvertedOn?.toISOString() ?? null,
+    };
   }
   private async createQuotation(saveQuotationDto: SaveQuotationDto): Promise<QuotationPayload> {
     const normalizedCustName = normalizeRequiredText<QuotationErrorDetail, QuotationErrorResponse>(
@@ -1435,6 +1706,7 @@ export class QuotationService {
       items?: SaleQuotationItemWithNames[];
       charges?: TransactionChargeDetail[];
     },
+    lineContext: QuotationLineContext = EMPTY_LINE_CONTEXT,
   ): QuotationPayload {
     const {
       sqCreatedOn,
@@ -1462,7 +1734,7 @@ export class QuotationService {
       // bigint column — stringified here for the same reason cdVoucherNo is:
       // JSON has no bigint and res.json() throws on one.
       sqQuoteSlno: sqQuoteSlno.toString(),
-      items: items ? items.map((item) => this.toItemPayload(item)) : [],
+      items: items ? items.map((item) => this.toItemPayload(item, lineContext)) : [],
       charges: charges ? charges.map((charge) => this.toChargePayload(charge)) : [],
     };
   }
@@ -1476,7 +1748,11 @@ export class QuotationService {
       cdVoucherNo: cdVoucherNo?.toString() ?? null,
     };
   }
-  private toItemPayload(record: SaleQuotationItemWithNames): QuotationItemPayload {
+  private toItemPayload(
+    record: SaleQuotationItemWithNames,
+    lineContext: QuotationLineContext = EMPTY_LINE_CONTEXT,
+  ): QuotationItemPayload {
+    const { defaultGodown, companyAllowsNegStock } = lineContext;
     const { sqiCreatedOn, sqiModifiedOn, sqiSyncDate, item, itemUnitConversion, ...rest } = record;
     return {
       ...rest,
@@ -1491,6 +1767,57 @@ export class QuotationService {
       sqiBrandId: item?.itemBrandId ?? null,
       sqiSectionId: item?.itemSectionId ?? null,
       sqiCategoryId: item?.itemCategoryId ?? null,
+      // The effective answer to "may this line go below zero", derived the same
+      // way /item-price derives allow_negative_stock when the line is first
+      // added (see item-price.lookup.ts): a service item always may, and
+      // otherwise it is blocked only when the godown, the company AND the item
+      // all say no. Read-only and GET-only like the fields above — null when
+      // the item join was not made.
+      sqiAllowNegativeStock: item
+        ? item.itemIsService ||
+          !(
+            defaultGodown?.gdlNegativeStock === false &&
+            companyAllowsNegStock === false &&
+            item.itemAllowNegStock === false
+          )
+        : null,
+      // Not stored on the line — every line of a quotation shows the branch's
+      // default godown. See resolveDefaultGodown.
+      sqiGodownId: defaultGodown?.gdlId ?? null,
+      sqiGodownName: defaultGodown?.gdlName ?? null,
     };
+  }
+
+  // sale_quotation_item has no godown column: a quotation neither moves nor
+  // reserves stock, so there is nothing to store per line. The entry screen
+  // still needs a godown to show — and to carry into the order or bill the
+  // quote is converted to — and that is the branch's default
+  // (branch_master.br_default_godown_id). One read per GET, stamped onto every
+  // line by toItemPayload. A branch with no default, or one pointing at a
+  // deleted godown, answers null rather than prefilling a dead location.
+  private async resolveDefaultGodown(branchId: string): Promise<DefaultGodown | null> {
+    const branch = await this.prisma.branchMaster.findFirst({
+      where: { brId: branchId },
+      select: { brDefaultGodownId: true },
+    });
+    if (!branch?.brDefaultGodownId) {
+      return null;
+    }
+    const godown = await this.prisma.godownLocation.findFirst({
+      where: { gdlId: branch.brDefaultGodownId, gdlIsDeleted: false },
+      select: { gdlId: true, gdlName: true, gdlNegativeStock: true },
+    });
+    return godown ?? null;
+  }
+
+  // company.comp_negstk_apl, the second of the three switches behind a line's
+  // sqiAllowNegativeStock. A company row that is missing or retired is not a
+  // "no" — the godown and the item still decide — so it answers null.
+  private async resolveCompanyNegStock(companyId: string): Promise<boolean | null> {
+    const company = await this.prisma.company.findFirst({
+      where: { compId: companyId, compIsDeleted: false },
+      select: { compNegStkApl: true },
+    });
+    return company?.compNegStkApl ?? null;
   }
 }

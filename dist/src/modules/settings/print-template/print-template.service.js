@@ -520,7 +520,6 @@ let PrintTemplateService = class PrintTemplateService {
                 ? (row.ptdProviderCode ?? null)
                 : (existing?.ptdProviderCode ?? null),
             ptdSql: (0, module_service_utils_1.hasOwnProperty)(row, 'ptdSql') ? (row.ptdSql ?? null) : (existing?.ptdSql ?? null),
-            ptdRequiresCompany: row.ptdRequiresCompany ?? existing?.ptdRequiresCompany ?? true,
             ptdParentNo: (0, module_service_utils_1.hasOwnProperty)(row, 'ptdParentNo')
                 ? (row.ptdParentNo ?? null)
                 : (existing?.ptdParentNo ?? null),
@@ -753,7 +752,6 @@ let PrintTemplateService = class PrintTemplateService {
                 ptdSourceKind: effective.ptdSourceKind,
                 ptdProviderCode: effective.ptdProviderCode,
                 ptdSql: effective.ptdSql,
-                ptdRequiresCompany: effective.ptdRequiresCompany,
                 ptdParentNo: effective.ptdParentNo,
                 ptdLinkFields: effective.ptdLinkFields,
                 ptdRowLimit: effective.ptdRowLimit,
@@ -791,9 +789,6 @@ let PrintTemplateService = class PrintTemplateService {
             data.ptdProviderCode = effective.ptdProviderCode;
         if ((0, module_service_utils_1.hasOwnProperty)(row, 'ptdSql'))
             data.ptdSql = effective.ptdSql;
-        if ((0, module_service_utils_1.hasOwnProperty)(row, 'ptdRequiresCompany')) {
-            data.ptdRequiresCompany = effective.ptdRequiresCompany;
-        }
         if ((0, module_service_utils_1.hasOwnProperty)(row, 'ptdParentNo'))
             data.ptdParentNo = effective.ptdParentNo;
         if ((0, module_service_utils_1.hasOwnProperty)(row, 'ptdLinkFields'))

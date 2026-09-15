@@ -199,6 +199,30 @@ export class QuotationItemPayloadDto {
     description: 'item_master.item_category_id for sqiItemId — only populated on GET',
   })
   sqiCategoryId?: string | null;
+  @ApiPropertyOptional({
+    nullable: true,
+    example: true,
+    description:
+      'Whether sqiItemId may be sold below zero on hand — the effective answer,' +
+      ' not item_master.item_allow_neg_stock alone: a service item always may, and' +
+      ' otherwise it is blocked only when the godown, the company and the item all' +
+      ' disallow it; only populated on GET',
+  })
+  sqiAllowNegativeStock?: boolean | null;
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description:
+      "branch_master.br_default_godown_id for the quotation's branch — sale_quotation_item stores" +
+      ' no godown, so every line carries the branch default; only populated on GET',
+  })
+  sqiGodownId?: string | null;
+  @ApiPropertyOptional({
+    nullable: true,
+    example: 'Main Warehouse',
+    description: 'godown_locations.gdl_name for sqiGodownId — only populated on GET',
+  })
+  sqiGodownName?: string | null;
   @ApiPropertyOptional({ maxLength: 8, nullable: true })
   sqiHsnCode!: string | null;
   @ApiProperty()

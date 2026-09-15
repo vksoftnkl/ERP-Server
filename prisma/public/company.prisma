@@ -85,6 +85,8 @@ model Company {
   accGroupMasters       AccGroupMaster[]
   ledgers               AccLedgerMaster[]
   ledgerMaps            AccLedgerMap[]
+  openingBalances       AccOpeningBalance[]
+  openingRuns           AccOpeningRun[]
   employees             EmployeeMaster[]
   ledgerBankAccounts    AccLedgerBankAccount[]
   gspCompanyServices    GspCompanyService[]

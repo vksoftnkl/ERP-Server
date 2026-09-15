@@ -96,6 +96,9 @@ model AccPdcRegister {
   chargeVoucher        AccVoucherHeader? @relation("PdcChargeVoucher", fields: [apdChargeVoucherId, apdChargeAccYear], references: [avhVoucherId, avhAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_apd_charge_voucher")
   replacedBy           AccPdcRegister?   @relation("PdcReplacement", fields: [apdReplacedById, apdReplacedByAccYear], references: [apdId, apdAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_apd_replaced_by")
   replaces             AccPdcRegister[]  @relation("PdcReplacement")
+  /// The bill settlements this instrument carried (fk_abj_cheque). A bounce
+  /// on the cheque screen writes the reversal rows here.
+  billAdjustments      AccBillAdjustment[]
   @@id([apdId, apdAccYear], map: "pk_acc_pdc_register")
   @@map("acc_pdc_register")
   @@schema("accounts")

@@ -9,13 +9,14 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.BillBalanceModule = void 0;
 const common_1 = require("@nestjs/common");
 const bill_balance_service_1 = require("./bill-balance.service");
+const bill_balance_recompute_service_1 = require("./bill-balance-recompute.service");
 let BillBalanceModule = class BillBalanceModule {
 };
 exports.BillBalanceModule = BillBalanceModule;
 exports.BillBalanceModule = BillBalanceModule = __decorate([
     (0, common_1.Module)({
-        providers: [bill_balance_service_1.BillBalanceService],
-        exports: [bill_balance_service_1.BillBalanceService],
+        providers: [bill_balance_service_1.BillBalanceService, bill_balance_recompute_service_1.BillBalanceRecomputeService],
+        exports: [bill_balance_service_1.BillBalanceService, bill_balance_recompute_service_1.BillBalanceRecomputeService],
     })
 ], BillBalanceModule);
 //# sourceMappingURL=bill-balance.module.js.map

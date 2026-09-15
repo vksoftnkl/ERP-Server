@@ -88,7 +88,6 @@ const datasetRow = (overrides: Record<string, unknown> = {}) => ({
   ptdProviderCode: 'sales.bill.items',
   ptdSql: null,
   ptdSqlNorm: null,
-  ptdRequiresCompany: true,
   ptdParentNo: null,
   ptdLinkFields: null,
   ptdRowLimit: 5000,

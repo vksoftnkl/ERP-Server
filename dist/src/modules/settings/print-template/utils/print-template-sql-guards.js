@@ -15,7 +15,7 @@ function normalizeDatasetSql(sql) {
 function countMatches(subject, pattern) {
     return subject.match(pattern)?.length ?? 0;
 }
-function collectDatasetSqlErrors(sql, requiresCompany, field) {
+function collectDatasetSqlErrors(sql, field) {
     const errors = [];
     const norm = normalizeDatasetSql(sql);
     const push = (message) => {
@@ -64,12 +64,6 @@ function collectDatasetSqlErrors(sql, requiresCompany, field) {
         push('A parameter is written inside a string literal or a comment. Parameters are BOUND, not ' +
             "pasted: write  x = :company_id , never  x = ':company_id' . (A :name mentioned in a " +
             '"--" comment reads the same way to this check — move it out of the comment.)');
-    }
-    if (requiresCompany && !/:company_id\b/.test(norm)) {
-        push('The query must be company-scoped: bind :company_id somewhere in it. Set ' +
-            'ptdRequiresCompany to false only for genuinely global data, such as a state-code list. ' +
-            '(If it IS scoped, check for a "--" inside a string literal — that mangles the residue ' +
-            'this check reads.)');
     }
     return errors;
 }

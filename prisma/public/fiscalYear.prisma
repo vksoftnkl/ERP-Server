@@ -7,7 +7,9 @@ model FiscalYear {
   fyBooksBeginDate DateTime? @map("fy_books_begin_date") @db.Date // mid-year onboarding
 
   // Status / lifecycle
-  fyStatus    String    @default("OPEN") @map("fy_status") @db.VarChar(20) // OPEN | CLOSED | LOCKED
+  /// ck_fy_status (20260915090000): OPEN | CLOSED | LOCKED. Free text
+  /// until then, where carry-forward needs to be able to trust 'CLOSED'.
+  fyStatus    String    @default("OPEN") @map("fy_status") @db.VarChar(20)
   fyIsCurrent Boolean   @default(false) @map("fy_is_current")
   fyLockDate  DateTime? @map("fy_lock_date") @db.Date
   fyClosedAt  DateTime? @map("fy_closed_at") @db.Timestamptz(6)
@@ -49,9 +51,13 @@ model FiscalYear {
   //     ON public.fiscal_years (comp_id)
   //     WHERE fy_is_current = true AND is_deleted = false;
   //
-  // CHECK constraint (இதுவும் raw SQL):
+  // CHECK constraints (இதுவும் raw SQL):
   // ALTER TABLE public.fiscal_years
   //     ADD CONSTRAINT chk_fy_dates CHECK (fy_end_date > fy_begin_date);
+  //     ADD CONSTRAINT ck_fy_status CHECK (fy_status IN ('OPEN','CLOSED','LOCKED'));
+  //
+  // All four exist in the live database: the two unique indexes above
+  // predate 20260915090000, which added only ck_fy_status.
 
   @@index([compId, isDeleted], map: "idx_fiscal_years_comp")
   @@map("fiscal_years")

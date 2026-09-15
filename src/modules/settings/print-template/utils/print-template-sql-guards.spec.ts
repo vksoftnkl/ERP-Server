@@ -1,10 +1,9 @@
 import { collectDatasetSqlErrors, normalizeDatasetSql } from './print-template-sql-guards';
 
-const messages = (sql: string, requiresCompany = true): string[] =>
-  collectDatasetSqlErrors(sql, requiresCompany, 'ptdSql').map((error) => error.message);
+const messages = (sql: string): string[] =>
+  collectDatasetSqlErrors(sql, 'ptdSql').map((error) => error.message);
 
-const accepts = (sql: string, requiresCompany = true): boolean =>
-  collectDatasetSqlErrors(sql, requiresCompany, 'ptdSql').length === 0;
+const accepts = (sql: string): boolean => collectDatasetSqlErrors(sql, 'ptdSql').length === 0;
 
 /**
  * The §4 comment lists behaviour VERIFIED against PostgreSQL 18 "so the service
@@ -83,12 +82,6 @@ describe('collectDatasetSqlErrors — REFUSED, per the verified list', () => {
     );
   });
 
-  it('refuses a query with no :company_id when the dataset is company scoped', () => {
-    expect(messages('SELECT a FROM t WHERE x = 1 ORDER BY a')).toContainEqual(
-      expect.stringContaining('company-scoped'),
-    );
-  });
-
   it('refuses anything that does not start with SELECT or WITH', () => {
     expect(messages('EXPLAIN SELECT a FROM t WHERE c = :company_id')).toContainEqual(
       expect.stringContaining('must start with SELECT or WITH'),
@@ -129,21 +122,20 @@ describe('collectDatasetSqlErrors — ACCEPTED, per the verified list', () => {
     expect(accepts('SELECT a FROM t WHERE c = :company_id ORDER BY a;')).toBe(true);
   });
 
-  it('accepts a global query when ptdRequiresCompany is false', () => {
-    expect(accepts('SELECT state_code, state_name FROM fixed.state_code_master', false)).toBe(true);
+  it('accepts a query that binds no :company_id at all', () => {
+    expect(accepts('SELECT state_code, state_name FROM fixed.state_code_master')).toBe(true);
   });
 });
 
-describe('collectDatasetSqlErrors — the two known false positives are explained', () => {
+describe('collectDatasetSqlErrors — the known false positive is explained', () => {
   it('a :name inside a -- comment is refused, and the message says so', () => {
     expect(messages('SELECT a FROM t -- was :acc_year once\nWHERE c = :company_id')).toContainEqual(
       expect.stringContaining('or a comment'),
     );
   });
 
-  it("a '--' inside a literal is refused as not company-scoped, and the message says why", () => {
+  it("a '--' inside a literal swallows the rest of the line, and the message says why", () => {
     const errors = messages("SELECT a FROM t WHERE note = 'x -- y' AND comp_id = :company_id");
-    expect(errors).toContainEqual(expect.stringContaining('company-scoped'));
     expect(errors).toContainEqual(expect.stringContaining('inside a string literal'));
   });
 });

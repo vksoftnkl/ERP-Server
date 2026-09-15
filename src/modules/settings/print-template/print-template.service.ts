@@ -836,7 +836,6 @@ export class PrintTemplateService {
         ? (row.ptdProviderCode ?? null)
         : (existing?.ptdProviderCode ?? null),
       ptdSql: hasOwnProperty(row, 'ptdSql') ? (row.ptdSql ?? null) : (existing?.ptdSql ?? null),
-      ptdRequiresCompany: row.ptdRequiresCompany ?? existing?.ptdRequiresCompany ?? true,
       ptdParentNo: hasOwnProperty(row, 'ptdParentNo')
         ? (row.ptdParentNo ?? null)
         : (existing?.ptdParentNo ?? null),
@@ -1173,7 +1172,6 @@ export class PrintTemplateService {
         ptdSourceKind: effective.ptdSourceKind,
         ptdProviderCode: effective.ptdProviderCode,
         ptdSql: effective.ptdSql,
-        ptdRequiresCompany: effective.ptdRequiresCompany,
         ptdParentNo: effective.ptdParentNo,
         ptdLinkFields: effective.ptdLinkFields,
         ptdRowLimit: effective.ptdRowLimit,
@@ -1220,9 +1218,6 @@ export class PrintTemplateService {
     if (hasOwnProperty(row, 'ptdSourceKind')) data.ptdSourceKind = effective.ptdSourceKind;
     if (hasOwnProperty(row, 'ptdProviderCode')) data.ptdProviderCode = effective.ptdProviderCode;
     if (hasOwnProperty(row, 'ptdSql')) data.ptdSql = effective.ptdSql;
-    if (hasOwnProperty(row, 'ptdRequiresCompany')) {
-      data.ptdRequiresCompany = effective.ptdRequiresCompany;
-    }
     if (hasOwnProperty(row, 'ptdParentNo')) data.ptdParentNo = effective.ptdParentNo;
     if (hasOwnProperty(row, 'ptdLinkFields')) data.ptdLinkFields = effective.ptdLinkFields;
     if (hasOwnProperty(row, 'ptdRowLimit')) data.ptdRowLimit = effective.ptdRowLimit;

@@ -85,6 +85,10 @@
       "description": "accounts.acc_group_master \u2014 the reserved chart of accounts, including the Customers/Suppliers groups the state, city, area and supplier services address by hardcoded id; without it those screens 400 with 'Parent account group does not exist'"
     },
     {
+      "file": "Acc_Ledger_Map.sql",
+      "description": "accounts.acc_ledger_master + acc_ledger_map \u2014 the posting ledgers no chart has (the twelve from the sale bill, plus the receipt's five), and role -> ledger for all 27 roles in acc_ledger_role; after Account_Groups.sql, whose groups every ledger hangs under. Calls accounts.fn_seed_ledger_map(), whose catalogue is edited in a migration \u2014 20260915110000 shipped it, 20260915120000 / 20260915130000 added the RECEIPT roles"
+    },
+    {
       "file": "Acc_Tender_Types.sql",
       "description": "accounts.acc_tender_types — payment tender types; referenced by acc_tender_master/detail"
     },

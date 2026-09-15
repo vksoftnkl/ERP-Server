@@ -303,6 +303,9 @@ class QuotationItemPayloadDto {
     sqiBrandId;
     sqiSectionId;
     sqiCategoryId;
+    sqiAllowNegativeStock;
+    sqiGodownId;
+    sqiGodownName;
     sqiHsnCode;
     sqiPriceLevel;
     sqiEanCode;
@@ -514,6 +517,34 @@ __decorate([
     }),
     __metadata("design:type", Object)
 ], QuotationItemPayloadDto.prototype, "sqiCategoryId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        example: true,
+        description: 'Whether sqiItemId may be sold below zero on hand — the effective answer,' +
+            ' not item_master.item_allow_neg_stock alone: a service item always may, and' +
+            ' otherwise it is blocked only when the godown, the company and the item all' +
+            ' disallow it; only populated on GET',
+    }),
+    __metadata("design:type", Object)
+], QuotationItemPayloadDto.prototype, "sqiAllowNegativeStock", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        format: 'uuid',
+        nullable: true,
+        description: "branch_master.br_default_godown_id for the quotation's branch — sale_quotation_item stores" +
+            ' no godown, so every line carries the branch default; only populated on GET',
+    }),
+    __metadata("design:type", Object)
+], QuotationItemPayloadDto.prototype, "sqiGodownId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        example: 'Main Warehouse',
+        description: 'godown_locations.gdl_name for sqiGodownId — only populated on GET',
+    }),
+    __metadata("design:type", Object)
+], QuotationItemPayloadDto.prototype, "sqiGodownName", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ maxLength: 8, nullable: true }),
     __metadata("design:type", Object)

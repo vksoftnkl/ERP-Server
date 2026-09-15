@@ -33,7 +33,6 @@ export class PrintTemplateDatasetPayloadDto {
       'so it is what to look at when a guard refuses a query that looks fine.',
   })
   ptdSqlNorm!: string | null;
-  @ApiProperty({ example: true }) ptdRequiresCompany!: boolean;
   @ApiPropertyOptional({ type: Number, nullable: true }) ptdParentNo!: number | null;
   @ApiPropertyOptional({ type: String, nullable: true, example: 'sb_id=bill_id' })
   ptdLinkFields!: string | null;

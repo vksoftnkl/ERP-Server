@@ -1,6 +1,7 @@
 export declare class RenderDocumentDto {
     purposeId: string;
     docId: string;
+    companyId?: string;
     accYear?: string;
     srcModule?: string;
     srcDocType?: string;

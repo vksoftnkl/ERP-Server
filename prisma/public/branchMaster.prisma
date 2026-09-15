@@ -65,6 +65,8 @@ model BranchMaster {
   // Relations
   company               Company   @relation(fields: [brCompId], references: [compId])
   accountLedgerMaster   AccLedgerMaster[]
+  openingBalances       AccOpeningBalance[]
+  openingRuns           AccOpeningRun[]
   shipAddrs             AccShipAddr[]
   voucherCheques        AccVoucherCheque[]
   voucherDocDetails     AccVoucherDocDetail[]

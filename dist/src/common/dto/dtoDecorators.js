@@ -72,7 +72,7 @@ const OptionalIntegerArray = () => (0, common_1.applyDecorators)((0, class_valid
 exports.OptionalIntegerArray = OptionalIntegerArray;
 const OptionalBoolean = () => (0, common_1.applyDecorators)((0, class_validator_1.IsOptional)(), (0, class_validator_1.IsBoolean)());
 exports.OptionalBoolean = OptionalBoolean;
-const OptionalQueryBoolean = () => (0, common_1.applyDecorators)((0, class_validator_1.IsOptional)(), (0, class_transformer_1.Transform)(({ value }) => (0, DtoTransforms_1.toOptionalBoolean)(value)), (0, class_validator_1.IsBoolean)());
+const OptionalQueryBoolean = () => (0, common_1.applyDecorators)((0, class_validator_1.IsOptional)(), (0, class_transformer_1.Transform)(({ obj, key }) => (0, DtoTransforms_1.toOptionalBoolean)(obj?.[key])), (0, class_validator_1.IsBoolean)());
 exports.OptionalQueryBoolean = OptionalQueryBoolean;
 const OptionalQueryInt = (min, max) => (0, exports.OptionalInteger)(min, max);
 exports.OptionalQueryInt = OptionalQueryInt;

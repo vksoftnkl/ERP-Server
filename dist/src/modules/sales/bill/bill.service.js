@@ -17,6 +17,8 @@ const audit_log_service_1 = require("../../audit-log/audit-log.service");
 const bill_api_types_1 = require("./types/bill-api.types");
 const sale_order_service_1 = require("../sale-order/sale-order.service");
 const sale_order_api_types_1 = require("../sale-order/types/sale-order-api.types");
+const quotation_service_1 = require("../quotation/quotation.service");
+const quotation_api_types_1 = require("../quotation/types/quotation-api.types");
 const charge_detail_service_1 = require("../../master/charge-detail/charge-detail.service");
 const tender_detail_service_1 = require("../../accountsModule/tenderDetail/tender-detail.service");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
@@ -32,7 +34,6 @@ const BILL_AUDIT_SCREEN_NAME = 'Sale Bill';
 const BILL_DOC_TYPES = ['TAX_INVOICE', 'BILL_OF_SUPPLY'];
 const BILL_TYPES = ['CASH', 'CREDIT'];
 const BILL_STATUSES = ['DRAFT', 'POSTED', 'CANCELLED'];
-const BILL_STATUS_CANCELLED = 'CANCELLED';
 const BILL_PAY_STATUSES = ['UNPAID', 'PARTIAL', 'PAID'];
 const BILL_RETURN_STATUSES = ['PARTIAL', 'FULL'];
 const BILL_ITEM_FREE_TYPES = ['SCHEME', 'SAMPLE', 'REPLACEMENT'];
@@ -285,6 +286,10 @@ function buildDateTransforms(fields) {
 }
 const BILL_DATE_TRANSFORMS = buildDateTransforms(BILL_DATE_FIELDS);
 const BILL_ITEM_DATE_TRANSFORMS = buildDateTransforms(BILL_ITEM_DATE_FIELDS);
+const EMPTY_LINE_CONTEXT = {
+    godownById: new Map(),
+    companyAllowsNegStock: null,
+};
 let BillService = class BillService {
     prisma;
     auditLogService;
@@ -292,13 +297,15 @@ let BillService = class BillService {
     chargeDetailService;
     tenderDetailService;
     saleOrderService;
-    constructor(prisma, auditLogService, requestContextService, chargeDetailService, tenderDetailService, saleOrderService) {
+    quotationService;
+    constructor(prisma, auditLogService, requestContextService, chargeDetailService, tenderDetailService, saleOrderService, quotationService) {
         this.prisma = prisma;
         this.auditLogService = auditLogService;
         this.requestContextService = requestContextService;
         this.chargeDetailService = chargeDetailService;
         this.tenderDetailService = tenderDetailService;
         this.saleOrderService = saleOrderService;
+        this.quotationService = quotationService;
     }
     async save(saveBillDto) {
         this.ensureBillValuesAreAllowed(saveBillDto);
@@ -328,6 +335,8 @@ let BillService = class BillService {
                                 itemBrandId: true,
                                 itemSectionId: true,
                                 itemCategoryId: true,
+                                itemIsService: true,
+                                itemAllowNegStock: true,
                             },
                         },
                         itemUnitConversion: {
@@ -342,8 +351,11 @@ let BillService = class BillService {
         }
         const charges = await this.chargeDetailService.getByDocument(bill_api_types_1.BILL_CHARGE_DOC_TYPE, sbId);
         const tenders = await this.tenderDetailService.getByDocument(bill_api_types_1.BILL_TENDER_SRC_MODULE, bill_api_types_1.BILL_TENDER_SRC_DOC_TYPE, sbId);
-        const godownNameById = await this.resolveGodownNames(record.items);
-        return this.toPayload({ ...record, charges, tenders }, godownNameById);
+        const [godownById, companyAllowsNegStock] = await Promise.all([
+            this.resolveGodowns(record.items),
+            this.resolveCompanyNegStock(record.sbCompanyId),
+        ]);
+        return this.toPayload({ ...record, charges, tenders }, { godownById, companyAllowsNegStock });
     }
     async cancelSourceOrders(cancelDto) {
         const { sbId, sbCompanyId, sbBranchId, sbAccYear } = cancelDto;
@@ -476,6 +488,7 @@ let BillService = class BillService {
                     await this.syncAdjustments(tx, created, null, saveBillDto.adjustments, createdBy, now);
                 }
                 await this.saleOrderService.syncOrderFulfilment(tx, { refs: [...this.toOrderHeaderRefs(posted), ...this.toOrderLineRefs(items)] }, createdBy, now);
+                await this.quotationService.syncQuotationConversion(tx, { refs: this.toQuotationRefs(posted) }, createdBy, now);
                 await this.logStatusChange(tx, posted, null, createdBy, now);
                 const payload = this.toPayload({ ...posted, items, charges, tenders });
                 await this.auditLogService.logEntityChange({
@@ -565,6 +578,7 @@ let BillService = class BillService {
                         ...this.toOrderLineRefs(items),
                     ],
                 }, modifiedBy, now);
+                await this.quotationService.syncQuotationConversion(tx, { refs: [...this.toQuotationRefs(existing), ...this.toQuotationRefs(posted)] }, modifiedBy, now);
                 if (posted.sbStatus !== existing.sbStatus) {
                     await this.logStatusChange(tx, posted, existing.sbStatus, modifiedBy, now);
                 }
@@ -846,6 +860,21 @@ let BillService = class BillService {
             },
         ];
     }
+    toQuotationRefs(bill) {
+        if (!bill || bill.sbSrcDocType !== quotation_api_types_1.QUOTATION_SRC_DOC_TYPE) {
+            return [];
+        }
+        if (!bill.sbSrcDocId || !bill.sbSrcDocYear) {
+            return [];
+        }
+        return [
+            {
+                srcDocId: bill.sbSrcDocId,
+                srcAccYear: bill.sbSrcDocYear.trim(),
+                fields: BILL_SRC_DOC_FIELDS,
+            },
+        ];
+    }
     requireItemField(value, field) {
         if (!value) {
             (0, module_service_utils_1.throwSalesBadRequest)(`${field} is required for a new bill line`, [
@@ -936,7 +965,7 @@ let BillService = class BillService {
         if (fromStatus === null) {
             return txn_status_log_helper_1.TxnStatusEvent.CREATED;
         }
-        if (toStatus === BILL_STATUS_CANCELLED) {
+        if (toStatus === bill_api_types_1.BILL_STATUS_CANCELLED) {
             return txn_status_log_helper_1.TxnStatusEvent.CANCELLED;
         }
         if (toStatus === bill_api_types_1.BILL_STATUS_POSTED) {
@@ -950,18 +979,28 @@ let BillService = class BillService {
     applyOptionalFields(data, dto) {
         (0, module_service_utils_1.applyPresentFields)(data, dto, BILL_OPTIONAL_FIELDS, BILL_DATE_TRANSFORMS);
     }
-    async resolveGodownNames(items = []) {
+    async resolveGodowns(items = []) {
         const godownIds = [...new Set(items.map((item) => item.sbiGodownId))];
         if (godownIds.length === 0) {
             return new Map();
         }
         const godowns = await this.prisma.godownLocation.findMany({
             where: { gdlId: { in: godownIds } },
-            select: { gdlId: true, gdlName: true },
+            select: { gdlId: true, gdlName: true, gdlNegativeStock: true },
         });
-        return new Map(godowns.map((godown) => [godown.gdlId, godown.gdlName]));
+        return new Map(godowns.map((godown) => [
+            godown.gdlId,
+            { gdlName: godown.gdlName, gdlNegativeStock: godown.gdlNegativeStock },
+        ]));
     }
-    toPayload(record, godownNameById = new Map()) {
+    async resolveCompanyNegStock(companyId) {
+        const company = await this.prisma.company.findFirst({
+            where: { compId: companyId, compIsDeleted: false },
+            select: { compNegStkApl: true },
+        });
+        return company?.compNegStkApl ?? null;
+    }
+    toPayload(record, lineContext = EMPTY_LINE_CONTEXT) {
         const { sbCreatedOn, sbModifiedOn, sbBillDatetime, sbSyncDate, sbBillSlno, items, charges, tenders, ...rest } = record;
         return {
             ...rest,
@@ -970,12 +1009,13 @@ let BillService = class BillService {
             sbBillDatetime: sbBillDatetime?.toISOString(),
             sbSyncDate: sbSyncDate?.toISOString() ?? null,
             sbBillSlno: sbBillSlno?.toString() ?? null,
-            items: items ? items.map((item) => this.toItemPayload(item, godownNameById)) : [],
+            items: items ? items.map((item) => this.toItemPayload(item, lineContext)) : [],
             charges: charges ?? [],
             tenders: tenders ?? [],
         };
     }
-    toItemPayload(record, godownNameById = new Map()) {
+    toItemPayload(record, lineContext = EMPTY_LINE_CONTEXT) {
+        const { godownById, companyAllowsNegStock } = lineContext;
         const { sbiCreatedOn, sbiModifiedOn, sbiSyncDate, item, itemUnitConversion, ...rest } = record;
         return {
             ...rest,
@@ -989,7 +1029,13 @@ let BillService = class BillService {
             sbiBrandId: item?.itemBrandId ?? null,
             sbiSectionId: item?.itemSectionId ?? null,
             sbiCategoryId: item?.itemCategoryId ?? null,
-            sbiGodownName: godownNameById.get(record.sbiGodownId) ?? null,
+            sbiGodownName: godownById.get(record.sbiGodownId)?.gdlName ?? null,
+            sbiAllowNegativeStock: item
+                ? item.itemIsService ||
+                    !(godownById.get(record.sbiGodownId)?.gdlNegativeStock === false &&
+                        companyAllowsNegStock === false &&
+                        item.itemAllowNegStock === false)
+                : null,
         };
     }
 };
@@ -1001,6 +1047,7 @@ exports.BillService = BillService = __decorate([
         request_context_service_1.RequestContextService,
         charge_detail_service_1.ChargeDetailService,
         tender_detail_service_1.TenderDetailService,
-        sale_order_service_1.SaleOrderService])
+        sale_order_service_1.SaleOrderService,
+        quotation_service_1.QuotationService])
 ], BillService);
 //# sourceMappingURL=bill.service.js.map

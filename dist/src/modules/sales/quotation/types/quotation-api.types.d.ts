@@ -29,6 +29,9 @@ export type QuotationItemPayload = Omit<SaleQuotationItem, 'sqiCreatedOn' | 'sqi
     sqiBrandId?: string | null;
     sqiSectionId?: string | null;
     sqiCategoryId?: string | null;
+    sqiAllowNegativeStock?: boolean | null;
+    sqiGodownId?: string | null;
+    sqiGodownName?: string | null;
 };
 export type QuotationChargePayload = Omit<TransactionChargeDetail, 'cdCreatedOn' | 'cdModifiedOn' | 'cdSyncDate' | 'cdVoucherNo'> & {
     cdCreatedOn?: string;
@@ -50,4 +53,25 @@ export type QuotationSuccessResponse<T> = {
     success: true;
     message: string;
     data: T;
+};
+export declare const QUOTATION_SRC_DOC_TYPE: string;
+export declare const QUOTATION_STATUS_CONVERTED = "CONVERTED";
+export declare const QUOTATION_CONVERTED_DOC_TYPE_BILL: string;
+export declare const QUOTATION_STATUS_ACCEPTED = "ACCEPTED";
+export type QuotationSrcDocFields = {
+    docId: string;
+    accYear: string;
+};
+export type QuotationConversionRef = {
+    srcDocId: string;
+    srcAccYear: string;
+    fields: QuotationSrcDocFields;
+};
+export type QuotationConversionResult = {
+    sqId: string;
+    sqAccYear: string;
+    sqStatus: string;
+    sqConvertedDocType: string | null;
+    sqConvertedDocId: string | null;
+    sqConvertedOn: string | null;
 };

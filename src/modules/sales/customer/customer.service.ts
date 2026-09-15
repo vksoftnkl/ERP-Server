@@ -247,8 +247,11 @@ export class CustomerService {
     );
     const normalizedStateCode = this.normalizeStateCode(saveCustomerDto.cusStateCode);
     const now = new Date();
-    const createdBy = resolveActor(saveCustomerDto.cusCreatedBy, this.requestContextService.getUserId());
-     const data: Prisma.CustomerUncheckedCreateInput = {
+    const createdBy = resolveActor(
+      saveCustomerDto.cusCreatedBy,
+      this.requestContextService.getUserId(),
+    );
+    const data: Prisma.CustomerUncheckedCreateInput = {
       cusStateName: normalizedStateName,
       cusStateCode: normalizedStateCode,
       cusCompanyId: hasOwnProperty(saveCustomerDto, 'cusCompanyId')
@@ -285,6 +288,11 @@ export class CustomerService {
         });
         const ledger = await this.accountLedgerMastersService.createLedgerWithinTx(ledgerDto, tx);
         data.cusId = ledger.ledId;
+        // Nothing else to link. Because cus_id IS led_id, a customer id and a
+        // party-ledger id are the same value, and every module that needs the
+        // ledger for a customer already has it — the receipt takes ONE partyId
+        // and resolves nothing. A cus_ledger_id column was added for that
+        // purpose on 2026-09-15 and withdrawn the same day for this reason.
         const created = await tx.customer.create({ data });
         const payload = this.toPayload(created);
         await this.auditLogService.logEntityChange(
@@ -369,7 +377,10 @@ export class CustomerService {
             increment: 1,
           },
           cusModifiedOn: now,
-          cusModifiedBy: resolveActor(saveCustomerDto.cusModifiedBy, this.requestContextService.getUserId()),
+          cusModifiedBy: resolveActor(
+            saveCustomerDto.cusModifiedBy,
+            this.requestContextService.getUserId(),
+          ),
         };
         this.applyOptionalFields(data, saveCustomerDto);
         const updated = await tx.customer.update({
@@ -604,6 +615,9 @@ export class CustomerService {
       ledName: normalized.name,
       ledStateName: normalized.stateName,
       ledStateCode: normalized.stateCode,
+      // Customers are always settled bill-wise, so the linked ledger is
+      // provisioned (and kept) with bill-by-bill on; the column defaults to false.
+      ledIsBillByBill: true,
     };
     const ledgerDtoRecord = ledgerDto as unknown as Record<string, unknown>;
     const customerRecord = saveCustomerDto as unknown as Record<string, unknown>;

@@ -97,7 +97,11 @@ model AccBillAdjustment {
   settlementLedger      AccLedgerMaster?  @relation("BillAdjustmentSettleLedger", fields: [abjSettlementLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_abj_settlement_ledger")
   voucherHeader         AccVoucherHeader? @relation(fields: [abjVoucherId, abjVoucherAccYear], references: [avhVoucherId, avhAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_abj_voucher")
   tender                AccTenderDetail?  @relation(fields: [abjTenderId, abjTenderAccYear], references: [tdId, tdAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_abj_tender")
-  cheque                AccVoucherCheque? @relation(fields: [abjChequeId, abjChequeAccYear], references: [chqId, chqAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_abj_cheque")
+  /// R1: ONE cheque table. Repointed from acc_voucher_cheques to
+  /// acc_pdc_register by 20260915120000 — the register is where every cheque
+  /// this system takes now lives, and two cheque tables meant two answers to
+  /// "is it still held?".
+  cheque                AccPdcRegister?   @relation(fields: [abjChequeId, abjChequeAccYear], references: [apdId, apdAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_abj_cheque")
   @@id([abjId, abjAccYear], map: "pk_acc_bill_adjustment")
   @@map("acc_bill_adjustment")
   @@schema("accounts")

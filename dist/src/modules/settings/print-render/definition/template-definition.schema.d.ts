@@ -149,8 +149,8 @@ export declare const fieldElementSchema: z.ZodObject<{
             count: "count";
             max: "max";
             min: "min";
-            sum: "sum";
             avg: "avg";
+            sum: "sum";
         }>;
         scope: z.ZodEnum<{
             GROUP: "GROUP";
@@ -325,8 +325,8 @@ export declare const crosstabMeasureSchema: z.ZodObject<{
         count: "count";
         max: "max";
         min: "min";
-        sum: "sum";
         avg: "avg";
+        sum: "sum";
     }>>;
     format: z.ZodDefault<z.ZodString>;
     blankWhenZero: z.ZodDefault<z.ZodBoolean>;
@@ -358,8 +358,8 @@ export declare const crosstabElementSchema: z.ZodObject<{
         count: "count";
         max: "max";
         min: "min";
-        sum: "sum";
         avg: "avg";
+        sum: "sum";
     }>>;
     format: z.ZodDefault<z.ZodString>;
     blankWhenZero: z.ZodDefault<z.ZodBoolean>;
@@ -381,8 +381,8 @@ export declare const crosstabElementSchema: z.ZodObject<{
             count: "count";
             max: "max";
             min: "min";
-            sum: "sum";
             avg: "avg";
+            sum: "sum";
         }>>;
         format: z.ZodDefault<z.ZodString>;
         blankWhenZero: z.ZodDefault<z.ZodBoolean>;
@@ -518,8 +518,8 @@ export declare const elementSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
             count: "count";
             max: "max";
             min: "min";
-            sum: "sum";
             avg: "avg";
+            sum: "sum";
         }>;
         scope: z.ZodEnum<{
             GROUP: "GROUP";
@@ -702,8 +702,8 @@ export declare const elementSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         count: "count";
         max: "max";
         min: "min";
-        sum: "sum";
         avg: "avg";
+        sum: "sum";
     }>>;
     format: z.ZodDefault<z.ZodString>;
     blankWhenZero: z.ZodDefault<z.ZodBoolean>;
@@ -725,8 +725,8 @@ export declare const elementSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
             count: "count";
             max: "max";
             min: "min";
-            sum: "sum";
             avg: "avg";
+            sum: "sum";
         }>>;
         format: z.ZodDefault<z.ZodString>;
         blankWhenZero: z.ZodDefault<z.ZodBoolean>;
@@ -892,8 +892,8 @@ export declare const bandSchema: z.ZodObject<{
                 count: "count";
                 max: "max";
                 min: "min";
-                sum: "sum";
                 avg: "avg";
+                sum: "sum";
             }>;
             scope: z.ZodEnum<{
                 GROUP: "GROUP";
@@ -1076,8 +1076,8 @@ export declare const bandSchema: z.ZodObject<{
             count: "count";
             max: "max";
             min: "min";
-            sum: "sum";
             avg: "avg";
+            sum: "sum";
         }>>;
         format: z.ZodDefault<z.ZodString>;
         blankWhenZero: z.ZodDefault<z.ZodBoolean>;
@@ -1099,8 +1099,8 @@ export declare const bandSchema: z.ZodObject<{
                 count: "count";
                 max: "max";
                 min: "min";
-                sum: "sum";
                 avg: "avg";
+                sum: "sum";
             }>>;
             format: z.ZodDefault<z.ZodString>;
             blankWhenZero: z.ZodDefault<z.ZodBoolean>;
@@ -1300,8 +1300,8 @@ export declare const templateDefinitionSchema: z.ZodObject<{
                     count: "count";
                     max: "max";
                     min: "min";
-                    sum: "sum";
                     avg: "avg";
+                    sum: "sum";
                 }>;
                 scope: z.ZodEnum<{
                     GROUP: "GROUP";
@@ -1484,8 +1484,8 @@ export declare const templateDefinitionSchema: z.ZodObject<{
                 count: "count";
                 max: "max";
                 min: "min";
-                sum: "sum";
                 avg: "avg";
+                sum: "sum";
             }>>;
             format: z.ZodDefault<z.ZodString>;
             blankWhenZero: z.ZodDefault<z.ZodBoolean>;
@@ -1507,8 +1507,8 @@ export declare const templateDefinitionSchema: z.ZodObject<{
                     count: "count";
                     max: "max";
                     min: "min";
-                    sum: "sum";
                     avg: "avg";
+                    sum: "sum";
                 }>>;
                 format: z.ZodDefault<z.ZodString>;
                 blankWhenZero: z.ZodDefault<z.ZodBoolean>;

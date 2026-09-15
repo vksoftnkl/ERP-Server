@@ -33,6 +33,8 @@ const AGENT_ID = '019c6f6c-be87-7a11-8905-36092c46fe0d';
 const ACC_YEAR = '2026-2027';
 // fixed.device_master.dev_id behind a quotation's free-text sqDeviceId.
 const DEVICE_ID = '019c6f6c-be87-7a11-8905-36092c46fe14';
+// inventory.godown_locations row behind the branch's br_default_godown_id.
+const GODOWN_ID = '019c6f6c-be87-7a11-8905-36092c46fe15';
 // The quotation voucher type, and the counter it stands at before a save: the
 // next quotation therefore takes number 42 → 'quo00042'.
 const QUOTATION_VCHR_TYPE_ID = 21;
@@ -218,21 +220,47 @@ type PrismaMock = {
     create: jest.Mock<Promise<AccVoucherSeq>, [{ data: Prisma.AccVoucherSeqUncheckedCreateInput }]>;
     update: jest.Mock<Promise<AccVoucherSeq>, [SequenceUpdateArgs]>;
   };
+  // Two readers: the voucher-number build (compCode) and the negative-stock
+  // switch getById folds into every line (compNegStkApl).
   company: {
-    findFirst: jest.Mock<Promise<{ compCode: string | null } | null>, unknown[]>;
+    findFirst: jest.Mock<
+      Promise<{ compCode?: string | null; compNegStkApl?: boolean } | null>,
+      unknown[]
+    >;
   };
+  // Two readers: the voucher-number build (brCode) and the line godown default
+  // getById stamps onto every item (brDefaultGodownId).
   branchMaster: {
-    findFirst: jest.Mock<Promise<{ brCode: string | null } | null>, unknown[]>;
+    findFirst: jest.Mock<
+      Promise<{ brCode?: string | null; brDefaultGodownId?: string | null } | null>,
+      unknown[]
+    >;
+  };
+  godownLocation: {
+    findFirst: jest.Mock<
+      Promise<{ gdlId: string; gdlName: string; gdlNegativeStock: boolean } | null>,
+      unknown[]
+    >;
   };
   // sq_agent_id has no FK, so getById resolves the agent name on its own.
   saleAgent: {
     findUnique: jest.Mock<Promise<{ saName: string } | null>, unknown[]>;
   };
-  // The quotation's status trail. findFirst is the next-sequence read (the
-  // newest row of this document's trail), create is the appended step.
+  // The quotation's status trail. findFirst serves two readers — the
+  // next-sequence read (the newest row of this document's trail) and the
+  // conversion recompute's "what status did the CONVERTED step move off" —
+  // which is why the row it answers with carries both shapes.
   txnStatusLog: {
-    findFirst: jest.Mock<Promise<{ tslSeqNo: number } | null>, unknown[]>;
+    findFirst: jest.Mock<
+      Promise<{ tslSeqNo?: number; tslFromStatus?: string | null } | null>,
+      unknown[]
+    >;
     create: jest.Mock<Promise<unknown>, [StatusLogCreateArgs]>;
+  };
+  // The downstream document the conversion recompute reads: is a live bill
+  // still naming this quotation?
+  saleBill: {
+    findFirst: jest.Mock<Promise<{ sbId: string; sbCreatedOn: Date } | null>, unknown[]>;
   };
   // sq_device_id is free text, so the trail resolves it against device_master
   // before writing tsl_device_id (a uuid with an FK).
@@ -325,10 +353,15 @@ const makePrismaMock = (): PrismaMock => {
       }),
     },
     company: {
-      findFirst: jest.fn(() => Promise.resolve({ compCode: 'ABC123' })),
+      findFirst: jest.fn(() => Promise.resolve({ compCode: 'ABC123', compNegStkApl: true })),
     },
     branchMaster: {
-      findFirst: jest.fn(() => Promise.resolve({ brCode: null })),
+      findFirst: jest.fn(() => Promise.resolve({ brCode: null, brDefaultGodownId: GODOWN_ID })),
+    },
+    godownLocation: {
+      findFirst: jest.fn(() =>
+        Promise.resolve({ gdlId: GODOWN_ID, gdlName: 'Main Warehouse', gdlNegativeStock: true }),
+      ),
     },
     saleAgent: {
       findUnique: jest.fn(() => Promise.resolve({ saName: 'Agent One' })),
@@ -337,6 +370,11 @@ const makePrismaMock = (): PrismaMock => {
       // Default: the document has no trail yet, so the appended step is seq 1.
       findFirst: jest.fn(() => Promise.resolve(null)),
       create: jest.fn(({ data }: StatusLogCreateArgs) => Promise.resolve(data)),
+    },
+    // Default: no bill names the quotation, so a conversion recompute finds
+    // nothing to stamp it with.
+    saleBill: {
+      findFirst: jest.fn(() => Promise.resolve(null)),
     },
     // Default: 'till-1' is a registered device, so the step carries its uuid.
     deviceMaster: {
@@ -614,6 +652,137 @@ describe('QuotationService — applied charges', () => {
     expect(line?.sqiBrandId).toBeNull();
     expect(line?.sqiSectionId).toBeNull();
     expect(line?.sqiCategoryId).toBeNull();
+    expect(line?.sqiAllowNegativeStock).toBeNull();
+  });
+
+  it("stamps the branch's default godown onto every line on getById", async () => {
+    prisma.saleQuotation.findFirst.mockResolvedValue(
+      makeQuotation({
+        items: [makeItem({ sqiId: LINE_A_ID }), makeItem({ sqiId: LINE_B_ID })],
+      } as unknown as Partial<SaleQuotation>),
+    );
+
+    const payload = await service.getById(QUOTE_ID, undefined, COMPANY_ID, BRANCH_ID, ACC_YEAR);
+
+    expect(payload.items).toHaveLength(2);
+    for (const line of payload.items ?? []) {
+      expect(line.sqiGodownId).toBe(GODOWN_ID);
+      expect(line.sqiGodownName).toBe('Main Warehouse');
+    }
+    expect(prisma.godownLocation.findFirst).toHaveBeenCalledWith(
+      containing({ where: containing({ gdlId: GODOWN_ID, gdlIsDeleted: false }) }),
+    );
+  });
+
+  it('leaves the line godown null when the branch has no default set', async () => {
+    prisma.branchMaster.findFirst.mockResolvedValue({ brCode: null, brDefaultGodownId: null });
+    prisma.saleQuotation.findFirst.mockResolvedValue(
+      makeQuotation({ items: [makeItem()] } as unknown as Partial<SaleQuotation>),
+    );
+
+    const line = (await service.getById(QUOTE_ID, undefined, COMPANY_ID, BRANCH_ID, ACC_YEAR))
+      .items?.[0];
+
+    expect(line?.sqiGodownId).toBeNull();
+    expect(line?.sqiGodownName).toBeNull();
+    // No default to resolve, so the godown master is never read.
+    expect(prisma.godownLocation.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('leaves the line godown null when the default points at a deleted godown', async () => {
+    prisma.godownLocation.findFirst.mockResolvedValue(null);
+    prisma.saleQuotation.findFirst.mockResolvedValue(
+      makeQuotation({ items: [makeItem()] } as unknown as Partial<SaleQuotation>),
+    );
+
+    const line = (await service.getById(QUOTE_ID, undefined, COMPANY_ID, BRANCH_ID, ACC_YEAR))
+      .items?.[0];
+
+    expect(line?.sqiGodownId).toBeNull();
+    expect(line?.sqiGodownName).toBeNull();
+  });
+
+  // sqiAllowNegativeStock is the effective answer, not item_allow_neg_stock on
+  // its own: the same three-switch rule /item-price applies when the line is
+  // first added, so a reloaded quotation guards exactly as the entry screen did.
+  describe('sqiAllowNegativeStock', () => {
+    const ITEM_GROUP_ID = '019c6f6c-be87-7a11-8905-36092c46fe20';
+    const lineWithItem = (item: Partial<Record<string, unknown>>) =>
+      makeQuotation({
+        items: [
+          {
+            ...makeItem(),
+            item: {
+              itemNameEn: 'Cement OPC 53',
+              itemBatchConfig: 2,
+              itemGroupId: ITEM_GROUP_ID,
+              itemBrandId: null,
+              itemSectionId: null,
+              itemCategoryId: null,
+              itemIsService: false,
+              itemAllowNegStock: true,
+              ...item,
+            },
+          },
+        ],
+      } as unknown as Partial<SaleQuotation>);
+
+    const getLine = async () =>
+      (await service.getById(QUOTE_ID, undefined, COMPANY_ID, BRANCH_ID, ACC_YEAR)).items?.[0];
+
+    it('blocks the line only when godown, company and item all disallow it', async () => {
+      prisma.godownLocation.findFirst.mockResolvedValue({
+        gdlId: GODOWN_ID,
+        gdlName: 'Main Warehouse',
+        gdlNegativeStock: false,
+      });
+      prisma.company.findFirst.mockResolvedValue({ compCode: 'ABC123', compNegStkApl: false });
+      prisma.saleQuotation.findFirst.mockResolvedValue(lineWithItem({ itemAllowNegStock: false }));
+
+      expect((await getLine())?.sqiAllowNegativeStock).toBe(false);
+      expect(prisma.company.findFirst).toHaveBeenCalledWith(
+        containing({ where: containing({ compId: COMPANY_ID, compIsDeleted: false }) }),
+      );
+    });
+
+    it('allows the line when any one of the three still permits it', async () => {
+      prisma.godownLocation.findFirst.mockResolvedValue({
+        gdlId: GODOWN_ID,
+        gdlName: 'Main Warehouse',
+        gdlNegativeStock: false,
+      });
+      prisma.company.findFirst.mockResolvedValue({ compCode: 'ABC123', compNegStkApl: false });
+      prisma.saleQuotation.findFirst.mockResolvedValue(lineWithItem({ itemAllowNegStock: true }));
+
+      expect((await getLine())?.sqiAllowNegativeStock).toBe(true);
+    });
+
+    it('always allows a service item, whatever the godown and company say', async () => {
+      prisma.godownLocation.findFirst.mockResolvedValue({
+        gdlId: GODOWN_ID,
+        gdlName: 'Main Warehouse',
+        gdlNegativeStock: false,
+      });
+      prisma.company.findFirst.mockResolvedValue({ compCode: 'ABC123', compNegStkApl: false });
+      prisma.saleQuotation.findFirst.mockResolvedValue(
+        lineWithItem({ itemIsService: true, itemAllowNegStock: false }),
+      );
+
+      expect((await getLine())?.sqiAllowNegativeStock).toBe(true);
+    });
+
+    // A company row that cannot be read is not a "no" — the item still decides.
+    it('leaves the company out of the decision when its row is missing', async () => {
+      prisma.godownLocation.findFirst.mockResolvedValue({
+        gdlId: GODOWN_ID,
+        gdlName: 'Main Warehouse',
+        gdlNegativeStock: false,
+      });
+      prisma.company.findFirst.mockResolvedValue(null);
+      prisma.saleQuotation.findFirst.mockResolvedValue(lineWithItem({ itemAllowNegStock: false }));
+
+      expect((await getLine())?.sqiAllowNegativeStock).toBe(true);
+    });
   });
 
   it("logs soft deletes as 'cancel', the action audit.audit_log_action actually has", async () => {
@@ -1063,6 +1232,237 @@ describe('QuotationService — status trail', () => {
       tslChangedBy: '00000000-0000-0000-0000-000000000000',
       // The free-text column keeps what the payload actually said.
       tslCreatedBy: 'admin',
+    });
+  });
+});
+
+// The back-write a bill save drives: sale_quotation's conversion columns are
+// derived from the bills that name the quotation, not incremented by whichever
+// save happened to run last.
+describe('QuotationService.syncQuotationConversion', () => {
+  const BILL_ID = '019c6f6c-be87-7a11-8905-36092c46fe20';
+  const OTHER_BILL_ID = '019c6f6c-be87-7a11-8905-36092c46fe21';
+  const BILL_CREATED_ON = new Date('2026-08-01T09:30:00.000Z');
+  const NOW = new Date('2026-08-02T11:00:00.000Z');
+  // How the BILL names its own source-doc columns, so a rejection comes back on
+  // the field the client actually sent.
+  const REF = {
+    srcDocId: QUOTE_ID,
+    srcAccYear: ACC_YEAR,
+    fields: { docId: 'sbSrcDocId', accYear: 'sbSrcDocYear' },
+  };
+
+  let service: QuotationService;
+  let prisma: PrismaMock;
+  let auditLogService: { logEntityChange: jest.Mock };
+
+  const sync = (refs = [REF]) =>
+    service.syncQuotationConversion(
+      prisma as unknown as Prisma.TransactionClient,
+      { refs },
+      USER_ID,
+      NOW,
+    );
+
+  const written = () =>
+    prisma.saleQuotation.updateMany.mock.calls[0][0] as { data: Record<string, unknown> };
+
+  beforeEach(() => {
+    prisma = makePrismaMock();
+    auditLogService = { logEntityChange: jest.fn(() => Promise.resolve(undefined)) };
+    service = new QuotationService(
+      prisma as unknown as PrismaService,
+      auditLogService as unknown as AuditLogService,
+      { getUserId: () => USER_ID } as unknown as RequestContextService,
+    );
+    prisma.saleQuotation.findFirst.mockResolvedValue(makeQuotation({ sqStatus: 'SENT' }));
+  });
+
+  it('stamps the quotation CONVERTED against the live bill that names it', async () => {
+    prisma.saleBill.findFirst.mockResolvedValue({
+      sbId: BILL_ID,
+      sbCreatedOn: BILL_CREATED_ON,
+    });
+
+    const [result] = await sync();
+
+    expect(written().data).toMatchObject({
+      sqStatus: 'CONVERTED',
+      sqConvertedDocType: 'SALE_BILL',
+      sqConvertedDocId: BILL_ID,
+      // The BILL's creation time, not the moment of the recompute — running it
+      // again over the same bills must write nothing.
+      sqConvertedOn: BILL_CREATED_ON,
+      sqModifiedOn: NOW,
+      sqModifiedBy: USER_ID,
+    });
+    expect(result).toMatchObject({
+      sqId: QUOTE_ID,
+      sqStatus: 'CONVERTED',
+      sqConvertedDocId: BILL_ID,
+      sqConvertedOn: BILL_CREATED_ON.toISOString(),
+    });
+  });
+
+  it('records the move as a CONVERTED step on the status trail', async () => {
+    prisma.saleBill.findFirst.mockResolvedValue({
+      sbId: BILL_ID,
+      sbCreatedOn: BILL_CREATED_ON,
+    });
+
+    await sync();
+
+    expect(prisma.txnStatusLog.create.mock.calls[0][0].data).toMatchObject({
+      tslEvent: 'CONVERTED',
+      tslFromStatus: 'SENT',
+      tslToStatus: 'CONVERTED',
+      tslRemarks: 'Converted to sale bill',
+    });
+  });
+
+  it('reads the live bill by the quotation discriminator, ignoring cancelled ones', async () => {
+    await sync();
+
+    expect(prisma.saleBill.findFirst).toHaveBeenCalledWith(
+      containing({
+        where: containing({
+          sbSrcDocType: 'QUOTATION',
+          sbSrcDocId: QUOTE_ID,
+          sbIsDeleted: false,
+          sbStatus: { not: 'CANCELLED' },
+        }),
+      }),
+    );
+  });
+
+  it('writes nothing when the row already says what the recompute derives', async () => {
+    prisma.saleQuotation.findFirst.mockResolvedValue(
+      makeQuotation({
+        sqStatus: 'CONVERTED',
+        sqConvertedDocType: 'SALE_BILL',
+        sqConvertedDocId: BILL_ID,
+        sqConvertedOn: BILL_CREATED_ON,
+      }),
+    );
+    prisma.saleBill.findFirst.mockResolvedValue({
+      sbId: BILL_ID,
+      sbCreatedOn: BILL_CREATED_ON,
+    });
+
+    await sync();
+
+    expect(prisma.saleQuotation.updateMany).not.toHaveBeenCalled();
+    expect(prisma.txnStatusLog.create).not.toHaveBeenCalled();
+    expect(auditLogService.logEntityChange).not.toHaveBeenCalled();
+  });
+
+  it('repoints the stamp at the first live bill without adding a trail step', async () => {
+    prisma.saleQuotation.findFirst.mockResolvedValue(
+      makeQuotation({
+        sqStatus: 'CONVERTED',
+        sqConvertedDocType: 'SALE_BILL',
+        sqConvertedDocId: OTHER_BILL_ID,
+        sqConvertedOn: new Date('2026-07-30T09:00:00.000Z'),
+      }),
+    );
+    prisma.saleBill.findFirst.mockResolvedValue({
+      sbId: BILL_ID,
+      sbCreatedOn: BILL_CREATED_ON,
+    });
+
+    await sync();
+
+    expect(written().data).toMatchObject({ sqConvertedDocId: BILL_ID });
+    // The status did not move, so the trail has nothing to say.
+    expect(prisma.txnStatusLog.create).not.toHaveBeenCalled();
+  });
+
+  it('hands the quotation back its pre-conversion status when the last live bill goes', async () => {
+    prisma.saleQuotation.findFirst.mockResolvedValue(
+      makeQuotation({
+        sqStatus: 'CONVERTED',
+        sqConvertedDocType: 'SALE_BILL',
+        sqConvertedDocId: BILL_ID,
+        sqConvertedOn: BILL_CREATED_ON,
+      }),
+    );
+    // The trail remembers what the CONVERTED step moved off.
+    prisma.txnStatusLog.findFirst.mockImplementation((args: unknown) => {
+      const where = (args as { where?: { tslToStatus?: string } }).where ?? {};
+      return Promise.resolve(where.tslToStatus === 'CONVERTED' ? { tslFromStatus: 'SENT' } : null);
+    });
+
+    await sync();
+
+    expect(written().data).toMatchObject({
+      sqStatus: 'SENT',
+      sqConvertedDocType: null,
+      sqConvertedDocId: null,
+      sqConvertedOn: null,
+    });
+    expect(prisma.txnStatusLog.create.mock.calls[0][0].data).toMatchObject({
+      tslFromStatus: 'CONVERTED',
+      tslToStatus: 'SENT',
+      tslRemarks: 'Sale bill conversion withdrawn',
+    });
+  });
+
+  it('falls back to ACCEPTED when the trail has no CONVERTED step to read', async () => {
+    prisma.saleQuotation.findFirst.mockResolvedValue(
+      makeQuotation({
+        sqStatus: 'CONVERTED',
+        sqConvertedDocType: 'SALE_BILL',
+        sqConvertedDocId: BILL_ID,
+        sqConvertedOn: BILL_CREATED_ON,
+      }),
+    );
+
+    await sync();
+
+    expect(written().data).toMatchObject({ sqStatus: 'ACCEPTED' });
+  });
+
+  it('leaves a conversion this module did not make alone', async () => {
+    prisma.saleQuotation.findFirst.mockResolvedValue(
+      makeQuotation({
+        sqStatus: 'CONVERTED',
+        // Converted into something that is not a sale bill: not ours to undo.
+        sqConvertedDocType: 'SALES_ORDER',
+        sqConvertedDocId: OTHER_BILL_ID,
+      }),
+    );
+
+    await sync();
+
+    expect(prisma.saleQuotation.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('recomputes a quotation named on both sides of an edit exactly once', async () => {
+    prisma.saleBill.findFirst.mockResolvedValue({
+      sbId: BILL_ID,
+      sbCreatedOn: BILL_CREATED_ON,
+    });
+
+    // The same quotation, spelled with a padded year the way a CHAR(9) column
+    // hands it back.
+    await sync([REF, { ...REF, srcAccYear: `${ACC_YEAR} ` }]);
+
+    expect(prisma.saleQuotation.findFirst).toHaveBeenCalledTimes(1);
+    expect(prisma.saleQuotation.updateMany).toHaveBeenCalledTimes(1);
+  });
+
+  it('skips a reference missing half the quotation primary key', async () => {
+    await sync([{ ...REF, srcAccYear: '' }]);
+
+    expect(prisma.saleQuotation.findFirst).not.toHaveBeenCalled();
+  });
+
+  it("rejects an unknown quotation on the caller's own field", async () => {
+    prisma.saleQuotation.findFirst.mockResolvedValue(null);
+
+    await expect(sync()).rejects.toBeInstanceOf(BadRequestException);
+    await expect(sync()).rejects.toMatchObject({
+      response: { errors: [containing({ field: 'sbSrcDocId' })] },
     });
   });
 });

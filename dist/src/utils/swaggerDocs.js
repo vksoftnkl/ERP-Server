@@ -24,6 +24,8 @@ const tender_master_module_1 = require("../modules/accountsModule/tenderMaster/t
 const tender_type_master_module_1 = require("../modules/accountsModule/tenderTypeMaster/tender-type-master.module");
 const tender_detail_module_1 = require("../modules/accountsModule/tenderDetail/tender-detail.module");
 const transaction_module_1 = require("../modules/accountsModule/transaction/transaction.module");
+const opening_balance_module_1 = require("../modules/accountsModule/openingBalance/opening-balance.module");
+const receipt_module_1 = require("../modules/accountsModule/receipt/receipt.module");
 const auth_module_1 = require("../modules/auth/auth.module");
 const area_module_1 = require("../modules/sales/area/area.module");
 const sale_freight_charges_module_1 = require("../modules/sales/sale-freight-charges/sale-freight-charges.module");
@@ -343,6 +345,23 @@ exports.swaggerModuleDocuments = [
         description: 'Settlement reads over acc_bill_balance — the unspent credits (ADVANCE / SALES_RETURN) a ' +
             'party holds, which the adjustment panel offers and acc_bill_adjustment is posted from',
         include: [transaction_module_1.TransactionModule],
+    },
+    {
+        path: 'receipts',
+        title: 'Receipt API',
+        description: 'Money received from a party, split across instruments and allocated due-date-first against ' +
+            "their open bills and any credit they hold. One voucher carries today's money; each " +
+            'post-dated cheque gets a voucher of its own dated the cheque, and its bills settle on ' +
+            'maturity. The remainder is always held as an ADVANCE bill',
+        include: [receipt_module_1.ReceiptModule],
+    },
+    {
+        path: 'opening-balances',
+        title: 'Opening Balance API',
+        description: 'What each balance-sheet ledger was worth on the day the books begin — one row per ledger ' +
+            "per company-year in acc_opening_balance, the bill-by-bill breakup that owns a party's " +
+            "figure, and the carry-forward that derives one year from the previous year's closings",
+        include: [opening_balance_module_1.OpeningBalanceModule],
     },
     {
         path: 'sequences',

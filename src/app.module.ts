@@ -27,6 +27,7 @@ import { AccessTokenGuard } from './modules/auth/guards/access-token.guard';
 import { ItemsCustRatesMasterModule } from './modules/items-cust-rates-master/items-cust-rates-master.module';
 import { ItemPriceDetailsModule } from './modules/Inventory/item-price-details/item-price-details.module';
 import { AccGroupMasterModule } from './modules/accountsModule/accGroupMaster/acc-group-master.module';
+import { OpeningBalanceModule } from './modules/accountsModule/openingBalance/opening-balance.module';
 import { AccountLedgerMastersModule } from './modules/accountsModule/accountLedgerMasters/account-ledger-masters.module';
 import { LedgerBankAccountModule } from './modules/accountsModule/ledgerBankAccount/ledger-bank-account.module';
 import { BranchMasterModule } from './modules/settings/branchMaster/branch-master.module';
@@ -43,6 +44,8 @@ import { TenderMasterModule } from './modules/accountsModule/tenderMaster/tender
 import { TenderTypeMasterModule } from './modules/accountsModule/tenderTypeMaster/tender-type-master.module';
 import { TenderDetailModule } from './modules/accountsModule/tenderDetail/tender-detail.module';
 import { TransactionModule } from './modules/accountsModule/transaction/transaction.module';
+import { ReceiptModule } from './modules/accountsModule/receipt/receipt.module';
+import { BillBalanceModule } from './modules/accountsModule/billBalance/bill-balance.module';
 import { LedgerShippingAddressModule } from './modules/accountsModule/ledgerShippingAddress/ledger-shipping-address.module';
 import { GspProviderMasterModule } from './modules/accountsModule/gspProviderMaster/gsp-provider-master.module';
 import { GspCompanyServiceModule } from './modules/settings/gspCompanyService/gsp-company-service.module';
@@ -159,6 +162,7 @@ const isThrottlerEnabled = parseBoolean(process.env.THROTTLE_ENABLED, true);
     ItemsTaxHistoryMasterModule,
     ItemsMasterModule,
     AccGroupMasterModule,
+    OpeningBalanceModule,
     AccountLedgerMastersModule,
     LedgerBankAccountModule,
     LedgerShippingAddressModule,
@@ -176,6 +180,8 @@ const isThrottlerEnabled = parseBoolean(process.env.THROTTLE_ENABLED, true);
     TenderTypeMasterModule,
     TenderDetailModule,
     TransactionModule,
+    BillBalanceModule,
+    ReceiptModule,
     GspProviderMasterModule,
     GspCompanyServiceModule,
     SupplierGroupModule,

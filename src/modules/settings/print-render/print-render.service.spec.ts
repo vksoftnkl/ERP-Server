@@ -92,7 +92,6 @@ function datasetsFor(fixture: FixtureShape): PrintTemplateDataset[] {
     ptdProviderCode: `test.${entry.name}`,
     ptdSql: null,
     ptdSqlNorm: null,
-    ptdRequiresCompany: true,
     ptdParentNo: null,
     ptdLinkFields: null,
     ptdRowLimit: 5000,

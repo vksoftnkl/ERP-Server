@@ -123,7 +123,11 @@ model AccBillAdjustment {
   settlementLedger      AccLedgerMaster?  @relation("BillAdjustmentSettleLedger", fields: [abjSettlementLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_abj_settlement_ledger")
   voucherHeader         AccVoucherHeader? @relation(fields: [abjVoucherId, abjVoucherAccYear], references: [avhVoucherId, avhAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_abj_voucher")
   tender                AccTenderDetail?  @relation(fields: [abjTenderId, abjTenderAccYear], references: [tdId, tdAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_abj_tender")
-  cheque                AccVoucherCheque? @relation(fields: [abjChequeId, abjChequeAccYear], references: [chqId, chqAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_abj_cheque")
+  /// R1: ONE cheque table. Repointed from acc_voucher_cheques to
+  /// acc_pdc_register by 20260915120000 — the register is where every cheque
+  /// this system takes now lives, and two cheque tables meant two answers to
+  /// "is it still held?".
+  cheque                AccPdcRegister?   @relation(fields: [abjChequeId, abjChequeAccYear], references: [apdId, apdAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_abj_cheque")
   @@id([abjId, abjAccYear], map: "pk_acc_bill_adjustment")
   @@map("acc_bill_adjustment")
   @@schema("accounts")
@@ -356,7 +360,19 @@ model AccGroupMaster {
   // is managed in raw SQL — Prisma can't express it. Allowed-value validation for
   // acc_group_type / acc_group_nature / acc_ledger_profile lives in the app layer
   // (accGroupMaster enums); the old chk_* CHECK constraints were dropped in migration
-  // 20260623100000_remove_acc_group_check_constraints_to_app_layer.
+  // 20260623100000_remove_acc_group_check_constraints_to_app_layer. That decision
+  // still stands: a CHECK re-added here would turn the exception filter's 400 into
+  // an opaque 500, and AccGroupMasterNature already holds the same four values.
+  //
+  // Trigger tr_acc_group_inherit_nature (20260915090000) fills acc_group_nature
+  // from the nearest ANCESTOR that has one when an insert leaves it NULL, and
+  // never overrides one given explicitly. It does not duplicate the service,
+  // which copies the immediate parent's nature on create: it covers the inserts
+  // the service never sees — seeds, Tally imports, fixes typed into psql — which
+  // is how the eight NULL-natured groups in the live database got there. It also
+  // walks past a NULL parent to a natured grandparent, which a single-hop copy
+  // cannot. The two NULL-natured ROOT groups ('Corporate Accounts', 'Office
+  // accounts') are beyond it: with no ancestor, nothing can infer their nature.
   @@map("acc_group_master")
   @@schema("accounts")
 }
@@ -538,6 +554,7 @@ model AccLedgerMaster {
   taxRate                  TaxRateMaster?         @relation(fields: [ledTaxId], references: [taxId], onUpdate: Cascade, onDelete: Restrict, map: "fk_led_tax")
   taxRateLedgers           TaxRateLedger[]
   ledgerMaps               AccLedgerMap[]
+  openingBalances          AccOpeningBalance[]
   @@unique([ledCompanyId, ledName], name: "uq_led_name_per_company")
   @@unique([ledCompanyId, ledTallyName], name: "uq_led_tally_name_per_company")
   @@index([ledCompanyId], name: "idx_led_company_id")
@@ -564,7 +581,7 @@ model AccLedgerRole {
   /// What the Posting Ledgers screen shows
   alrLabel       String  @db.VarChar(60)                          @map("alr_label")
   /// How that screen groups it.
-  /// REVENUE | OUTPUT_TAX | PURCHASE | INPUT_TAX | SHARED | FUTURE (ck_alr_group)
+  /// REVENUE | OUTPUT_TAX | PURCHASE | INPUT_TAX | SHARED | RECEIPT | FUTURE (ck_alr_group)
   alrGroup       String  @db.VarChar(20)                          @map("alr_group")
 
   // What kind of ledger this role may take. NULL means "not checked on this axis".
@@ -590,6 +607,8 @@ model AccLedgerRole {
   ledgerMaps     AccLedgerMap[]
   /// The per-GST-rate overrides that name this role.
   taxRateLedgers TaxRateLedger[]
+  /// The voucher legs posted under this role (acc_vouchers.av_role).
+  voucherLines   AccVoucher[]
 
   // accounts.fn_check_role_ledger(role, ledger, company, where) validates a
   // ledger against a row of this table. It lives in raw SQL — a function is not
@@ -611,6 +630,10 @@ model AccOpeningBalance {
   // key.
   opAccYear       String    @db.Char(9) @map("op_acc_year")
   opLedgerId      String    @db.Uuid @map("op_ledger_id")
+  /// RESERVED — multi-tenancy, mirroring ablTenantId. No FK: there is no
+  /// tenant table yet. Added 20260915090000, which was the only partitioned
+  /// accounts table without one.
+  opTenantId      String?   @db.Uuid @map("op_tenant_id")
 
   opAmount        Decimal   @default(0) @db.Decimal(18, 2) @map("op_amount")
   // ck_op_dr_cr: D | C
@@ -623,6 +646,17 @@ model AccOpeningBalance {
 
   opIsStale       Boolean   @default(false) @map("op_is_stale")
   opStaleSince    DateTime? @db.Timestamptz(6) @map("op_stale_since")
+  // WHY it went stale, not just that it did — added 20260915090000, because
+  // "stale" alone cannot answer the only question an accountant asks.
+  /// ck_op_stale_reason: VOUCHER_POSTED | VOUCHER_CANCELLED |
+  /// SOURCE_OPENING_EDITED | YEAR_REOPENED | MANUAL
+  opStaleReason   String?   @db.VarChar(30) @map("op_stale_reason")
+  /// The row that invalidated this opening — usually a voucher. Deliberately
+  /// NOT a relation: acc_vouchers is partitioned on its own year, and a stale
+  /// marker must outlive the cancellation of the document that caused it.
+  /// ck_op_stale_ref keeps the pair set or unset together.
+  opStaleRefId    String?   @db.Uuid @map("op_stale_ref_id")
+  opStaleRefAccYear String? @db.Char(9) @map("op_stale_ref_acc_year")
   opGeneratedAt   DateTime? @db.Timestamptz(6) @map("op_generated_at")
   opGeneratedBy   String?   @db.VarChar(50) @map("op_generated_by")
   opRemarks       String?   @map("op_remarks")
@@ -632,6 +666,14 @@ model AccOpeningBalance {
   opCreatedBy     String?   @db.VarChar(50) @map("op_created_by")
   opModifiedAt    DateTime? @db.Timestamptz(6) @map("op_modified_at")
   opModifiedBy    String?   @db.VarChar(50) @map("op_modified_by")
+
+  // fk_op_ledger / fk_op_company / fk_op_branch (20260915090000). The table
+  // shipped with no referential integrity at all. ON DELETE RESTRICT: an
+  // opening balance is an accounting record, so deleting a ledger must fail
+  // while one names it rather than silently taking the opening with it.
+  ledger          AccLedgerMaster @relation(fields: [opLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_op_ledger")
+  company         Company         @relation(fields: [opCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_op_company")
+  branch          BranchMaster?   @relation(fields: [opBranchId], references: [brId], onUpdate: Cascade, onDelete: Restrict, map: "fk_op_branch")
 
   @@id([opId, opAccYear], map: "pk_acc_opening")
   @@map("acc_opening_balance")
@@ -648,9 +690,77 @@ model AccOpeningBalance {
   //     @@unique.
   //   - Partial/covering indexes ix_op_lookup, ix_op_stale.
   //   - CHECK constraints ck_op_dr_cr, ck_op_amount, ck_op_source,
-  //     ck_op_acc_year.
-  //   - No FK on op_company_id / op_branch_id / op_ledger_id: the source DDL
-  //     declares none.
+  //     ck_op_acc_year, and ck_op_stale_reason / ck_op_stale_ref /
+  //     ck_op_stale_ref_acc_year (20260915090000).
+  //   - NOT constrained: what clears op_is_stale, and therefore whether a
+  //     not-stale row may still carry stale detail. That is DECISION 5 and
+  //     still open — a CHECK now would settle it by accident.
+}
+
+// ----- prisma/accounts/AccountOpeningRun.prisma -----
+/// One row per carry-forward run, never updated — the history that
+/// fiscal_years overwrites. fyIsCarriedForward / fyCarriedForwardAt record
+/// THAT a year was carried forward and WHEN, once; a regenerate overwrites the
+/// timestamp, and the numbers that say whether the run was sound — rows
+/// created, manual openings stepped around, the Dr/Cr totals and the
+/// difference between them — were returned to the caller and then lost.
+///
+/// Deliberately NOT partitioned by accounting year: a run is keyed by the two
+/// years it spans rather than living inside either, and it grows by a handful
+/// of rows a year. Added by migration 20260915090000 (DECISION 11).
+model AccOpeningRun {
+  aorId              String   @id(map: "pk_acc_opening_run") @default(dbgenerated("uuidv7()")) @db.Uuid @map("aor_id")
+
+  aorCompanyId       String   @db.Uuid                            @map("aor_company_id")
+  /// NULL = the run covered the company as a whole, matching opBranchId.
+  aorBranchId        String?  @db.Uuid                            @map("aor_branch_id")
+
+  /// The year read from, and the year written into. ck_aor_year_order: a
+  /// carry-forward moves strictly forward.
+  aorFromAccYear     String   @db.Char(9)                         @map("aor_from_acc_year")
+  aorToAccYear       String   @db.Char(9)                         @map("aor_to_acc_year")
+
+  aorRunAt           DateTime @default(now()) @db.Timestamptz(6)  @map("aor_run_at")
+  aorRunBy           String?  @db.VarChar(50)                     @map("aor_run_by")
+
+  // What the run did.
+  aorCreated         Int      @default(0)                         @map("aor_created")
+  aorUpdated         Int      @default(0)                         @map("aor_updated")
+  /// Openings left alone because opSource was MANUAL or MIGRATION — those are
+  /// owned by a human and are never overwritten by a regenerate.
+  aorSkippedManual   Int      @default(0)                         @map("aor_skipped_manual")
+
+  // What it produced.
+  aorTotalDebit      Decimal  @default(0) @db.Decimal(18, 2)      @map("aor_total_debit")
+  aorTotalCredit     Decimal  @default(0) @db.Decimal(18, 2)      @map("aor_total_credit")
+  /// GENERATED ALWAYS AS (debit - credit) STORED — read-only. The one number
+  /// everybody reads off this table is the one nobody can write incorrectly.
+  /// Non-zero means the carried trial balance did not agree.
+  ///
+  /// dbgenerated() is the closest Prisma has to a generated column: it has no
+  /// attribute for one, and this at least keeps the field out of the create
+  /// input and the schema free of drift. Postgres rejects a write to it.
+  aorDifference      Decimal  @default(dbgenerated("(aor_total_debit - aor_total_credit)")) @db.Decimal(18, 2) @map("aor_difference")
+
+  /// Whether this run was allowed to overwrite MANUAL openings. The single
+  /// most important thing to know about a run after the fact.
+  aorOverwriteManual Boolean  @default(false)                     @map("aor_overwrite_manual")
+
+  aorRemarks         String?  @db.VarChar(500)                    @map("aor_remarks")
+
+  company            Company       @relation(fields: [aorCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_aor_company")
+  branch             BranchMaster? @relation(fields: [aorBranchId], references: [brId], onUpdate: Cascade, onDelete: Restrict, map: "fk_aor_branch")
+
+  /// "When was this year last carried forward, and what happened?" — newest
+  /// first, for one company and target year.
+  @@index([aorCompanyId, aorToAccYear, aorRunAt(sort: Desc)], map: "ix_aor_target")
+  // DB-only, not expressible here:
+  //   - aor_difference is a STORED generated column. Prisma has no attribute
+  //     for one, so it appears above as an ordinary Decimal: NEVER write it.
+  //   - CHECKs ck_aor_from_acc_year / ck_aor_to_acc_year (YYYY-YYYY, second
+  //     half = first + 1), ck_aor_year_order, ck_aor_counts, ck_aor_totals.
+  @@map("acc_opening_run")
+  @@schema("accounts")
 }
 
 // ----- prisma/accounts/AccountPdcRegister.prisma -----
@@ -752,6 +862,9 @@ model AccPdcRegister {
   chargeVoucher        AccVoucherHeader? @relation("PdcChargeVoucher", fields: [apdChargeVoucherId, apdChargeAccYear], references: [avhVoucherId, avhAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_apd_charge_voucher")
   replacedBy           AccPdcRegister?   @relation("PdcReplacement", fields: [apdReplacedById, apdReplacedByAccYear], references: [apdId, apdAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_apd_replaced_by")
   replaces             AccPdcRegister[]  @relation("PdcReplacement")
+  /// The bill settlements this instrument carried (fk_abj_cheque). A bounce
+  /// on the cheque screen writes the reversal rows here.
+  billAdjustments      AccBillAdjustment[]
   @@id([apdId, apdAccYear], map: "pk_acc_pdc_register")
   @@map("acc_pdc_register")
   @@schema("accounts")
@@ -1102,9 +1215,10 @@ model AccVoucherCheque {
   voucherType          AccVoucherType        @relation(fields: [chqVoucherTypeId], references: [vchrTypeId], map: "fk_acc_cheques_voucher_type")
   company              Company               @relation(fields: [chqCompanyId], references: [compId], map: "fk_acc_cheques_voucher_company")
   branch               BranchMaster          @relation(fields: [chqBranchId], references: [brId], map: "fk_acc_cheques_voucher_branch")
-  // The settlement rows this instrument carried. A bounce here writes the
-  // reversal row there.
-  billAdjustments      AccBillAdjustment[]
+  // fk_abj_cheque was repointed to accounts.acc_pdc_register by
+  // 20260915120000, so this table no longer has settlement rows pointing at
+  // it. Existing rows keep theirs; nothing new arrives. Dropping the table is
+  // a separate decision.
 
   // Target for fk_abj_cheque, which names the cheque by (id, year) the same
   // way a settlement names its tender. Redundant with the primary key on
@@ -1670,6 +1784,10 @@ model AccVoucherHeader {
   avhDocAmount           Decimal   @default(0) @db.Decimal(18, 2) @map("avh_doc_amount")
   avhAdjustAmount        Decimal   @default(0) @db.Decimal(18, 2) @map("avh_adjust_amount")
   avhRoundOff            Decimal   @default(0) @db.Decimal(18, 2) @map("avh_round_off")
+  /// DERIVED by tr_av_refresh_totals from accounts.acc_vouchers — never
+  /// written by an application. ck_avh_balanced compares the two on a POSTED
+  /// header, so a stamped value would make that check compare a writer's own
+  /// claim with itself (migration 20260915120000, §2.4).
   avhTotalDebit          Decimal   @default(0) @db.Decimal(18, 2) @map("avh_total_debit")
   avhTotalCredit         Decimal   @default(0) @db.Decimal(18, 2) @map("avh_total_credit")
   avhPartyId             String    @db.Uuid @map("avh_party_id")
@@ -1677,6 +1795,12 @@ model AccVoucherHeader {
   // Scalar list: Prisma rejects null here, so normalise to [] in the DTO.
   avhEmployeeId          String[]  @db.Uuid @map("avh_employee_id")
   avhRemarks             String?   @map("avh_remarks")
+  /// The other-ledger lines of a DRAFT / APPROVED receipt, held as the
+  /// request's own otherLines[] until they become acc_vouchers legs at post.
+  /// R10 keeps a draft off the bill tables and off the voucher tables, so
+  /// without this a re-opened draft would have lost them. Cleared to NULL at
+  /// post; nothing reads it but /receipts/get.
+  avhDraftLines          Json?     @map("avh_draft_lines")
   // Document lineage: credit note -> original invoice, debit note ->
   // original bill; reversal is the contra voucher raised on cancellation.
   avhAgainstVoucherId    String?   @db.Uuid @map("avh_against_voucher_id")
@@ -1787,6 +1911,12 @@ model AccVoucher {
   // create or update, the write will be rejected by Postgres.
   avSignedAmount     Decimal?  @default(dbgenerated()) @db.Decimal(18, 2) @map("av_signed_amount")
   avCostCentreId     String?   @db.Uuid @map("av_cost_centre_id")
+  /// accounts.acc_ledger_role.alr_role — WHY this leg exists, not merely
+  /// which ledger it hit. NULL on the party leg and on every instrument leg:
+  /// those are the party and the money, not roles. Set on every other-ledger
+  /// leg, so "TDS deducted this quarter" is a WHERE clause rather than a
+  /// lookup of whichever ledger the role happens to point at today.
+  avRole             String?   @db.VarChar(30) @map("av_role")
   avRemarks          String?   @map("av_remarks")
   avSessionId        String?   @db.Uuid @map("av_session_id")
   avUserId           String    @db.Uuid @map("av_user_id")
@@ -1809,8 +1939,10 @@ model AccVoucher {
   oppositeLedger     AccLedgerMaster? @relation("AccVoucherOppLedger", fields: [avOppLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_av_opp_ledger")
   voucherType        AccVoucherType   @relation(fields: [avVoucherTypeId], references: [vchrTypeId], onUpdate: Cascade, onDelete: Restrict, map: "fk_av_voucher_type")
   bill               AccBillBalance?  @relation(fields: [avDocId, avDocAccYear], references: [ablId, ablAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_av_doc")
+  role               AccLedgerRole?   @relation(fields: [avRole], references: [alrRole], onUpdate: Cascade, onDelete: Restrict, map: "fk_av_role")
   @@id([avId, avAccYear], map: "pk_acc_vouchers")
   @@index([avVoucherId, avAccYear], map: "ix_av_voucher")
+  @@index([avCompanyId, avRole, avVoucherDate], map: "ix_av_role")
   @@map("acc_vouchers")
   @@schema("accounts")
   // DB-only objects not expressible in the Prisma schema (see migration
@@ -4136,6 +4268,8 @@ model BranchMaster {
   // Relations
   company               Company   @relation(fields: [brCompId], references: [compId])
   accountLedgerMaster   AccLedgerMaster[]
+  openingBalances       AccOpeningBalance[]
+  openingRuns           AccOpeningRun[]
   shipAddrs             AccShipAddr[]
   voucherCheques        AccVoucherCheque[]
   voucherDocDetails     AccVoucherDocDetail[]
@@ -4324,6 +4458,8 @@ model Company {
   accGroupMasters       AccGroupMaster[]
   ledgers               AccLedgerMaster[]
   ledgerMaps            AccLedgerMap[]
+  openingBalances       AccOpeningBalance[]
+  openingRuns           AccOpeningRun[]
   employees             EmployeeMaster[]
   ledgerBankAccounts    AccLedgerBankAccount[]
   gspCompanyServices    GspCompanyService[]
@@ -4419,7 +4555,9 @@ model FiscalYear {
   fyBooksBeginDate DateTime? @map("fy_books_begin_date") @db.Date // mid-year onboarding
 
   // Status / lifecycle
-  fyStatus    String    @default("OPEN") @map("fy_status") @db.VarChar(20) // OPEN | CLOSED | LOCKED
+  /// ck_fy_status (20260915090000): OPEN | CLOSED | LOCKED. Free text
+  /// until then, where carry-forward needs to be able to trust 'CLOSED'.
+  fyStatus    String    @default("OPEN") @map("fy_status") @db.VarChar(20)
   fyIsCurrent Boolean   @default(false) @map("fy_is_current")
   fyLockDate  DateTime? @map("fy_lock_date") @db.Date
   fyClosedAt  DateTime? @map("fy_closed_at") @db.Timestamptz(6)
@@ -4461,9 +4599,13 @@ model FiscalYear {
   //     ON public.fiscal_years (comp_id)
   //     WHERE fy_is_current = true AND is_deleted = false;
   //
-  // CHECK constraint (இதுவும் raw SQL):
+  // CHECK constraints (இதுவும் raw SQL):
   // ALTER TABLE public.fiscal_years
   //     ADD CONSTRAINT chk_fy_dates CHECK (fy_end_date > fy_begin_date);
+  //     ADD CONSTRAINT ck_fy_status CHECK (fy_status IN ('OPEN','CLOSED','LOCKED'));
+  //
+  // All four exist in the live database: the two unique indexes above
+  // predate 20260915090000, which added only ck_fy_status.
 
   @@index([compId, isDeleted], map: "idx_fiscal_years_comp")
   @@map("fiscal_years")
@@ -5129,9 +5271,10 @@ model PrintTemplateDataset {
   // (:company_id, :branch_id, :acc_year, :doc_id, :user_id, :device_id) are a
   // closed set the server finds by reading the query text.
 
-  /// A report that is not company-scoped shows one company another's numbers.
-  /// Set false only for genuinely global data, such as a state-code list.
-  ptdRequiresCompany  Boolean   @default(false)                               @map("ptd_requires_company")
+  // There is deliberately NO ptd_requires_company flag: migration
+  // 20260915100000 dropped it together with ck_ptd_sql_company_scoped, the only
+  // guard that read it. Company scoping is enforced by the bound :company_id
+  // parameter, the READ ONLY transaction and the no-write role instead.
 
   /// Nested detail, which 3.0 could not express at all: this dataset's rows are
   /// the children of the current row of the dataset numbered ptdParentNo.
@@ -7408,6 +7551,11 @@ model SaleBill {
   // and are enforced in the application layer instead
   // (BillService.ensureBillValuesAreAllowed).
   @@id([sbId, sbAccYear], map: "pk_sale_bill")
+  // "which bills were raised from this document" — the read the quotation
+  // module's conversion recompute runs on every save of a bill that names a
+  // quotation. Without it that is a sequential scan of every sale_bill
+  // partition. The mirror of sale_bill_item's ix_sbi_src_doc.
+  @@index([sbSrcDocId, sbSrcDocYear], map: "ix_sb_src_doc")
   @@map("sale_bill")
   @@schema("sales")
 }

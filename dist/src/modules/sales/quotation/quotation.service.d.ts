@@ -1,7 +1,8 @@
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import { SaveQuotationDto } from './dto/save-quotation.dto';
-import { QuotationPayload } from './types/quotation-api.types';
+import { QuotationConversionRef, QuotationConversionResult, QuotationPayload } from './types/quotation-api.types';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
 export declare class QuotationService {
     private readonly prisma;
@@ -14,6 +15,12 @@ export declare class QuotationService {
         sqId: string;
         deleted: true;
     }>;
+    syncQuotationConversion(tx: Prisma.TransactionClient, request: {
+        refs: QuotationConversionRef[];
+    }, actor: string, now: Date): Promise<QuotationConversionResult[]>;
+    private syncOneQuotationConversion;
+    private resolvePreConversionStatus;
+    private toConversionResult;
     private createQuotation;
     private updateQuotation;
     private syncItems;
@@ -34,4 +41,6 @@ export declare class QuotationService {
     private toPayload;
     private toChargePayload;
     private toItemPayload;
+    private resolveDefaultGodown;
+    private resolveCompanyNegStock;
 }

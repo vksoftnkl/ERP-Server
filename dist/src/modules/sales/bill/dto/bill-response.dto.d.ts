@@ -42,6 +42,7 @@ export declare class BillItemPayloadDto {
     sbiSizeUom: string | null;
     sbiGodownId: string;
     sbiGodownName?: string | null;
+    sbiAllowNegativeStock?: boolean | null;
     sbiStockId: string;
     sbiBatchNo: string | null;
     sbiBatchDate: string | null;

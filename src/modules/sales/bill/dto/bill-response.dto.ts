@@ -124,6 +124,16 @@ export class BillItemPayloadDto {
     description: 'godown_locations.gdl_name for sbiGodownId — only populated on GET',
   })
   sbiGodownName?: string | null;
+  @ApiPropertyOptional({
+    nullable: true,
+    example: true,
+    description:
+      'Whether sbiItemId may be sold below zero on hand — the effective answer,' +
+      ' not item_master.item_allow_neg_stock alone: a service item always may, and' +
+      " otherwise it is blocked only when the line's godown, the company and the item" +
+      ' all disallow it; only populated on GET',
+  })
+  sbiAllowNegativeStock?: boolean | null;
   @ApiProperty({ format: 'uuid', description: 'The inventory batch/stock row allocated' })
   sbiStockId!: string;
   @ApiPropertyOptional({ maxLength: 100, nullable: true })

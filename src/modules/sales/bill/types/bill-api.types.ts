@@ -58,6 +58,11 @@ export const BILL_STATUS_SRC_DOC_TYPE = TxnStatusDocType.SALE_BILL;
 // sale-order module reads it too — only a POSTED bill draws quantity down off an
 // order line, so its fulfilment recompute has to know which bills count.
 export const BILL_STATUS_POSTED = 'POSTED';
+// The status a bill reaches when it is called off. It lives out here for the
+// same reason BILL_STATUS_POSTED does — the quotation module reads it: a
+// CANCELLED bill no longer converts the quotation it was raised from, so the
+// conversion recompute has to know which bills stopped counting.
+export const BILL_STATUS_CANCELLED = 'CANCELLED';
 // sbBillSlno is a nullable bigint column; it is emitted as a string because
 // JSON has no bigint. Leaving it a bigint makes res.json() throw AFTER the save
 // transaction has committed, so the caller sees a 500 for a bill that was in
@@ -95,6 +100,11 @@ export type BillItemPayload = Omit<
   // Same idea for the line's sbiGodownId, except sale_bill_item has no FK to
   // inventory.godown_locations, so it is looked up rather than joined.
   sbiGodownName?: string | null;
+  // May this line's item go below zero on hand — the effective answer, not the
+  // item master flag alone: a service item always may, and otherwise it is
+  // blocked only when the line's godown, the company AND the item all disallow
+  // it. The same rule /item-price answers with when the line is first added.
+  sbiAllowNegativeStock?: boolean | null;
 };
 // An applied charge line is exactly what the charge-detail module answers with,
 // whether it was read through this module or its own: decimals as numbers,

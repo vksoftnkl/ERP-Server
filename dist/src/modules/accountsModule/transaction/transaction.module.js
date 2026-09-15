@@ -8,6 +8,7 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.TransactionModule = void 0;
 const common_1 = require("@nestjs/common");
+const receipt_module_1 = require("../receipt/receipt.module");
 const transaction_controller_1 = require("./transaction.controller");
 const transaction_exception_filter_1 = require("./transaction-exception.filter");
 const transaction_service_1 = require("./transaction.service");
@@ -16,6 +17,7 @@ let TransactionModule = class TransactionModule {
 exports.TransactionModule = TransactionModule;
 exports.TransactionModule = TransactionModule = __decorate([
     (0, common_1.Module)({
+        imports: [receipt_module_1.ReceiptModule],
         controllers: [transaction_controller_1.TransactionController],
         providers: [transaction_service_1.TransactionService, transaction_exception_filter_1.TransactionExceptionFilter],
         exports: [transaction_service_1.TransactionService],

@@ -43,7 +43,6 @@ function toDatasetPayload(row) {
         ptdProviderCode: row.ptdProviderCode,
         ptdSql: row.ptdSql,
         ptdSqlNorm: row.ptdSqlNorm,
-        ptdRequiresCompany: row.ptdRequiresCompany,
         ptdParentNo: row.ptdParentNo,
         ptdLinkFields: row.ptdLinkFields,
         ptdRowLimit: row.ptdRowLimit,

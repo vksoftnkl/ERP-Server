@@ -367,7 +367,7 @@ function collectDatasetInvariantErrors(dataset, path = '') {
     checkDatasetLinkFields(dataset, path, errors);
     checkDatasetLimits(dataset, path, errors);
     if (dataset.ptdSourceKind === 'SQL' && dataset.ptdSql !== null) {
-        errors.push(...(0, print_template_sql_guards_1.collectDatasetSqlErrors)(dataset.ptdSql, dataset.ptdRequiresCompany, at(path, 'ptdSql')));
+        errors.push(...(0, print_template_sql_guards_1.collectDatasetSqlErrors)(dataset.ptdSql, at(path, 'ptdSql')));
     }
     return errors;
 }

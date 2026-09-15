@@ -83,7 +83,7 @@ let PrintRenderController = class PrintRenderController {
         };
     }
     contextFrom(dto) {
-        const companyId = this.requestContextService.getCompanyId();
+        const companyId = dto.companyId ?? this.requestContextService.getCompanyId();
         if (!companyId) {
             (0, module_service_utils_1.throwSettingsBadRequest)('No company in the request context', [
                 {

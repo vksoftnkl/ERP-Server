@@ -14,6 +14,7 @@ export declare const BILL_TENDER_AUDIT: TenderDocumentAudit;
 export declare const BILL_STATUS_SRC_MODULE = TxnStatusSrcModule.SALES;
 export declare const BILL_STATUS_SRC_DOC_TYPE = TxnStatusDocType.SALE_BILL;
 export declare const BILL_STATUS_POSTED = "POSTED";
+export declare const BILL_STATUS_CANCELLED = "CANCELLED";
 export type BillPayload = Omit<SaleBill, 'sbCreatedOn' | 'sbModifiedOn' | 'sbBillDatetime' | 'sbSyncDate' | 'sbBillSlno'> & {
     sbCreatedOn?: string;
     sbModifiedOn?: string | null;
@@ -36,6 +37,7 @@ export type BillItemPayload = Omit<SaleBillItem, 'sbiCreatedOn' | 'sbiModifiedOn
     sbiSectionId?: string | null;
     sbiCategoryId?: string | null;
     sbiGodownName?: string | null;
+    sbiAllowNegativeStock?: boolean | null;
 };
 export type BillChargePayload = ChargeDetailPayload;
 export type BillTenderPayload = TenderDetailPayload;

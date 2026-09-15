@@ -317,6 +317,7 @@ let SuppliersService = class SuppliersService {
             ledName: normalized.name,
             ledStateName: normalized.stateName,
             ledStateCode: normalized.stateCode,
+            ledIsBillByBill: true,
         };
         const ledgerDtoRecord = ledgerDto;
         const supplierRecord = saveSupplierDto;

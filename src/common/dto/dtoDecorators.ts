@@ -225,10 +225,23 @@ export const OptionalIntegerArray = () =>
     IsInt({ each: true }),
   );
 export const OptionalBoolean = () => applyDecorators(IsOptional(), IsBoolean());
+/**
+ * An optional boolean that may arrive as a query string.
+ *
+ * Reads `obj[key]` — the RAW source value — and not `value`. The global
+ * ValidationPipe runs with `enableImplicitConversion: true`, which coerces a
+ * query string to the property's declared type BEFORE this transform sees it,
+ * and `Boolean('false')` is `true`. So `?flag=false`, `?flag=0` and `?flag=no`
+ * all arrived here as `true`, and every string branch in toOptionalBoolean was
+ * dead code. Taking the value from `obj` sidesteps the coercion entirely.
+ *
+ * Body DTOs are unaffected: a real boolean in JSON is already the right type
+ * and toOptionalBoolean returns it unchanged.
+ */
 export const OptionalQueryBoolean = () =>
   applyDecorators(
     IsOptional(),
-    Transform(({ value }) => toOptionalBoolean(value)),
+    Transform(({ obj, key }) => toOptionalBoolean((obj as Record<string, unknown> | undefined)?.[key])),
     IsBoolean(),
   );
 export const OptionalQueryInt = (min?: number, max?: number) => OptionalInteger(min, max);

@@ -17,6 +17,7 @@ const print_render_constants_1 = require("../print-render.constants");
 class RenderDocumentDto {
     purposeId;
     docId;
+    companyId;
     accYear;
     srcModule;
     srcDocType;
@@ -48,6 +49,18 @@ __decorate([
     (0, class_validator_1.IsUUID)(),
     __metadata("design:type", String)
 ], RenderDocumentDto.prototype, "docId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        format: 'uuid',
+        description: "The DOCUMENT's company. Binds :company_id, scopes the purpose and the design, and is " +
+            "what the print log records. Defaults to the session's company; name it where the " +
+            "session works in a company other than the one on its token — the client's header " +
+            'picker — or every company-scoped dataset reads nothing and the paper comes out blank.',
+    }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsUUID)(),
+    __metadata("design:type", String)
+], RenderDocumentDto.prototype, "companyId", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({
         description: "The DOCUMENT's accounting year — the partition it lives in. OPTIONAL: leave it out and " +

@@ -8,7 +8,6 @@ export declare class SavePrintTemplateDatasetDto {
     ptdSourceKind?: string;
     ptdProviderCode?: string | null;
     ptdSql?: string | null;
-    ptdRequiresCompany?: boolean;
     ptdParentNo?: number | null;
     ptdLinkFields?: string | null;
     ptdRowLimit?: number;

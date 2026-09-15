@@ -36,6 +36,7 @@ const access_token_guard_1 = require("./modules/auth/guards/access-token.guard")
 const items_cust_rates_master_module_1 = require("./modules/items-cust-rates-master/items-cust-rates-master.module");
 const item_price_details_module_1 = require("./modules/Inventory/item-price-details/item-price-details.module");
 const acc_group_master_module_1 = require("./modules/accountsModule/accGroupMaster/acc-group-master.module");
+const opening_balance_module_1 = require("./modules/accountsModule/openingBalance/opening-balance.module");
 const account_ledger_masters_module_1 = require("./modules/accountsModule/accountLedgerMasters/account-ledger-masters.module");
 const ledger_bank_account_module_1 = require("./modules/accountsModule/ledgerBankAccount/ledger-bank-account.module");
 const branch_master_module_1 = require("./modules/settings/branchMaster/branch-master.module");
@@ -52,6 +53,8 @@ const tender_master_module_1 = require("./modules/accountsModule/tenderMaster/te
 const tender_type_master_module_1 = require("./modules/accountsModule/tenderTypeMaster/tender-type-master.module");
 const tender_detail_module_1 = require("./modules/accountsModule/tenderDetail/tender-detail.module");
 const transaction_module_1 = require("./modules/accountsModule/transaction/transaction.module");
+const receipt_module_1 = require("./modules/accountsModule/receipt/receipt.module");
+const bill_balance_module_1 = require("./modules/accountsModule/billBalance/bill-balance.module");
 const ledger_shipping_address_module_1 = require("./modules/accountsModule/ledgerShippingAddress/ledger-shipping-address.module");
 const gsp_provider_master_module_1 = require("./modules/accountsModule/gspProviderMaster/gsp-provider-master.module");
 const gsp_company_service_module_1 = require("./modules/settings/gspCompanyService/gsp-company-service.module");
@@ -175,6 +178,7 @@ exports.AppModule = AppModule = __decorate([
             items_tax_history_master_module_1.ItemsTaxHistoryMasterModule,
             items_master_module_1.ItemsMasterModule,
             acc_group_master_module_1.AccGroupMasterModule,
+            opening_balance_module_1.OpeningBalanceModule,
             account_ledger_masters_module_1.AccountLedgerMastersModule,
             ledger_bank_account_module_1.LedgerBankAccountModule,
             ledger_shipping_address_module_1.LedgerShippingAddressModule,
@@ -192,6 +196,8 @@ exports.AppModule = AppModule = __decorate([
             tender_type_master_module_1.TenderTypeMasterModule,
             tender_detail_module_1.TenderDetailModule,
             transaction_module_1.TransactionModule,
+            bill_balance_module_1.BillBalanceModule,
+            receipt_module_1.ReceiptModule,
             gsp_provider_master_module_1.GspProviderMasterModule,
             gsp_company_service_module_1.GspCompanyServiceModule,
             supplier_group_module_1.SupplierGroupModule,

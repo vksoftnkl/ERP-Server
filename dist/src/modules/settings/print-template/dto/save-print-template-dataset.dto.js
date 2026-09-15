@@ -24,7 +24,6 @@ class SavePrintTemplateDatasetDto {
     ptdSourceKind;
     ptdProviderCode;
     ptdSql;
-    ptdRequiresCompany;
     ptdParentNo;
     ptdLinkFields;
     ptdRowLimit;
@@ -119,15 +118,6 @@ __decorate([
     (0, dtoDecorators_1.NullableString)(),
     __metadata("design:type", Object)
 ], SavePrintTemplateDatasetDto.prototype, "ptdSql", void 0);
-__decorate([
-    (0, swagger_1.ApiPropertyOptional)({
-        default: true,
-        description: 'false only for genuinely global data, such as a state-code list. Leaving it true is what ' +
-            "stops one company seeing another's numbers.",
-    }),
-    (0, dtoDecorators_1.OptionalBoolean)(),
-    __metadata("design:type", Boolean)
-], SavePrintTemplateDatasetDto.prototype, "ptdRequiresCompany", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({
         nullable: true,

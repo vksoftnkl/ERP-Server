@@ -17,10 +17,16 @@ import { IMPLEMENTED_RENDERERS } from '../print-render.constants';
 /**
  * What a preview needs to know.
  *
- * The COMPANY is deliberately absent: it comes from the authenticated request
- * context and never from the body. A render reads a company's documents, and a
- * caller-supplied company id would make this endpoint a cross-tenant read with
- * a friendly name.
+ * The COMPANY defaults to the authenticated request context, and a caller may
+ * name one — then it wins, exactly as it does on `/print-template-assignments/
+ * resolve`. It was once absent on purpose (a caller-supplied company reads
+ * another tenant's documents), but the access token carries the USER's home
+ * company (`user_master.usr_company_id`) while the client's header picker lets a
+ * session work in any company it lists — and every other screen scopes its
+ * reads by that working company (`grid_param`, `ptlCompanyId`, `companyId` on
+ * `/resolve`). A render that bound only the token's company printed BLANK paper
+ * for any document raised in the working company: every dataset filters on
+ * `:company_id`, so the header, the lines and the totals all came back empty.
  *
  * The branch, the counter and the accounting year come from the session too, and
  * are OPTIONAL rather than absent — a caller may still name one, and then it
@@ -46,6 +52,18 @@ export class RenderPreviewDto {
   @IsOptional()
   @IsUUID()
   docId?: string;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      "The DOCUMENT's company. Binds :company_id, scopes the purpose and the design, and is " +
+      "what the print log records. Defaults to the session's company; name it where the " +
+      "session works in a company other than the one on its token — the client's header " +
+      'picker — or every company-scoped dataset reads nothing and the paper comes out blank.',
+  })
+  @IsOptional()
+  @IsUUID()
+  companyId?: string;
 
   @ApiPropertyOptional({
     description:

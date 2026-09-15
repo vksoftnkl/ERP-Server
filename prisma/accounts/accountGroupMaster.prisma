@@ -60,7 +60,19 @@ model AccGroupMaster {
   // is managed in raw SQL — Prisma can't express it. Allowed-value validation for
   // acc_group_type / acc_group_nature / acc_ledger_profile lives in the app layer
   // (accGroupMaster enums); the old chk_* CHECK constraints were dropped in migration
-  // 20260623100000_remove_acc_group_check_constraints_to_app_layer.
+  // 20260623100000_remove_acc_group_check_constraints_to_app_layer. That decision
+  // still stands: a CHECK re-added here would turn the exception filter's 400 into
+  // an opaque 500, and AccGroupMasterNature already holds the same four values.
+  //
+  // Trigger tr_acc_group_inherit_nature (20260915090000) fills acc_group_nature
+  // from the nearest ANCESTOR that has one when an insert leaves it NULL, and
+  // never overrides one given explicitly. It does not duplicate the service,
+  // which copies the immediate parent's nature on create: it covers the inserts
+  // the service never sees — seeds, Tally imports, fixes typed into psql — which
+  // is how the eight NULL-natured groups in the live database got there. It also
+  // walks past a NULL parent to a natured grandparent, which a single-hop copy
+  // cannot. The two NULL-natured ROOT groups ('Corporate Accounts', 'Office
+  // accounts') are beyond it: with no ancestor, nothing can infer their nature.
   @@map("acc_group_master")
   @@schema("accounts")
 }

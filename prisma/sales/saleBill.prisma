@@ -147,6 +147,11 @@ model SaleBill {
   // and are enforced in the application layer instead
   // (BillService.ensureBillValuesAreAllowed).
   @@id([sbId, sbAccYear], map: "pk_sale_bill")
+  // "which bills were raised from this document" — the read the quotation
+  // module's conversion recompute runs on every save of a bill that names a
+  // quotation. Without it that is a sequential scan of every sale_bill
+  // partition. The mirror of sale_bill_item's ix_sbi_src_doc.
+  @@index([sbSrcDocId, sbSrcDocYear], map: "ix_sb_src_doc")
   @@map("sale_bill")
   @@schema("sales")
 }

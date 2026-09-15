@@ -100,9 +100,10 @@ model PrintTemplateDataset {
   // (:company_id, :branch_id, :acc_year, :doc_id, :user_id, :device_id) are a
   // closed set the server finds by reading the query text.
 
-  /// A report that is not company-scoped shows one company another's numbers.
-  /// Set false only for genuinely global data, such as a state-code list.
-  ptdRequiresCompany  Boolean   @default(false)                               @map("ptd_requires_company")
+  // There is deliberately NO ptd_requires_company flag: migration
+  // 20260915100000 dropped it together with ck_ptd_sql_company_scoped, the only
+  // guard that read it. Company scoping is enforced by the bound :company_id
+  // parameter, the READ ONLY transaction and the no-write role instead.
 
   /// Nested detail, which 3.0 could not express at all: this dataset's rows are
   /// the children of the current row of the dataset numbered ptdParentNo.

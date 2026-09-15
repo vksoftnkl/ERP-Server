@@ -18,12 +18,15 @@ import { ACC_YEAR_PATTERN, IMPLEMENTED_RENDERERS, MAX_COPIES } from '../print-re
 /**
  * What printing a real document needs to know.
  *
- * Note what is NOT REQUIRED here: a company (it is the session's, and cannot be
- * sent at all), a branch, a counter or an accounting year. The first three are
- * claims on the access token and the fourth is the company's current fiscal
- * year; a screen printing what it is looking at supplies none of them. They stay
- * ACCEPTED because a document can belong to a scope the session does not —
- * that, and only that, is what naming one is for.
+ * Note what is NOT REQUIRED here: a company, a branch, a counter or an
+ * accounting year. The first three are claims on the access token and the
+ * fourth is the company's current fiscal year; a screen printing what it is
+ * looking at supplies none of them. They stay ACCEPTED because a document can
+ * belong to a scope the session does not — that, and only that, is what naming
+ * one is for. The company is the one that bites in practice: the token carries
+ * the user's HOME company while the client's header picker lets the session
+ * work in another, and a document raised there prints blank unless its own
+ * company is named (see RenderPreviewDto).
  *
  * Note what is NOT here at all: a template id. Which design wins for this counter is
  * §5's question, already answered by data — "one row IS one choice" — so a
@@ -47,6 +50,18 @@ export class RenderDocumentDto {
   })
   @IsUUID()
   docId!: string;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      "The DOCUMENT's company. Binds :company_id, scopes the purpose and the design, and is " +
+      "what the print log records. Defaults to the session's company; name it where the " +
+      "session works in a company other than the one on its token — the client's header " +
+      'picker — or every company-scoped dataset reads nothing and the paper comes out blank.',
+  })
+  @IsOptional()
+  @IsUUID()
+  companyId?: string;
 
   @ApiPropertyOptional({
     description:

@@ -21,6 +21,8 @@ import { TenderMasterModule } from '../modules/accountsModule/tenderMaster/tende
 import { TenderTypeMasterModule } from '../modules/accountsModule/tenderTypeMaster/tender-type-master.module';
 import { TenderDetailModule } from '../modules/accountsModule/tenderDetail/tender-detail.module';
 import { TransactionModule } from '../modules/accountsModule/transaction/transaction.module';
+import { OpeningBalanceModule } from '../modules/accountsModule/openingBalance/opening-balance.module';
+import { ReceiptModule } from '../modules/accountsModule/receipt/receipt.module';
 import { AuthModule } from '../modules/auth/auth.module';
 import { AreaModule } from '../modules/sales/area/area.module';
 import { SaleFreightChargeModule } from '../modules/sales/sale-freight-charges/sale-freight-charges.module';
@@ -347,6 +349,25 @@ export const swaggerModuleDocuments = [
       'Settlement reads over acc_bill_balance — the unspent credits (ADVANCE / SALES_RETURN) a ' +
       'party holds, which the adjustment panel offers and acc_bill_adjustment is posted from',
     include: [TransactionModule],
+  },
+  {
+    path: 'receipts',
+    title: 'Receipt API',
+    description:
+      'Money received from a party, split across instruments and allocated due-date-first against ' +
+      "their open bills and any credit they hold. One voucher carries today's money; each " +
+      'post-dated cheque gets a voucher of its own dated the cheque, and its bills settle on ' +
+      'maturity. The remainder is always held as an ADVANCE bill',
+    include: [ReceiptModule],
+  },
+  {
+    path: 'opening-balances',
+    title: 'Opening Balance API',
+    description:
+      'What each balance-sheet ledger was worth on the day the books begin — one row per ledger ' +
+      "per company-year in acc_opening_balance, the bill-by-bill breakup that owns a party's " +
+      "figure, and the carry-forward that derives one year from the previous year's closings",
+    include: [OpeningBalanceModule],
   },
   {
     path: 'sequences',

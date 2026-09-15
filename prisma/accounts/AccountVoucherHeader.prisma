@@ -31,6 +31,10 @@ model AccVoucherHeader {
   avhDocAmount           Decimal   @default(0) @db.Decimal(18, 2) @map("avh_doc_amount")
   avhAdjustAmount        Decimal   @default(0) @db.Decimal(18, 2) @map("avh_adjust_amount")
   avhRoundOff            Decimal   @default(0) @db.Decimal(18, 2) @map("avh_round_off")
+  /// DERIVED by tr_av_refresh_totals from accounts.acc_vouchers — never
+  /// written by an application. ck_avh_balanced compares the two on a POSTED
+  /// header, so a stamped value would make that check compare a writer's own
+  /// claim with itself (migration 20260915120000, §2.4).
   avhTotalDebit          Decimal   @default(0) @db.Decimal(18, 2) @map("avh_total_debit")
   avhTotalCredit         Decimal   @default(0) @db.Decimal(18, 2) @map("avh_total_credit")
   avhPartyId             String    @db.Uuid @map("avh_party_id")
@@ -38,6 +42,12 @@ model AccVoucherHeader {
   // Scalar list: Prisma rejects null here, so normalise to [] in the DTO.
   avhEmployeeId          String[]  @db.Uuid @map("avh_employee_id")
   avhRemarks             String?   @map("avh_remarks")
+  /// The other-ledger lines of a DRAFT / APPROVED receipt, held as the
+  /// request's own otherLines[] until they become acc_vouchers legs at post.
+  /// R10 keeps a draft off the bill tables and off the voucher tables, so
+  /// without this a re-opened draft would have lost them. Cleared to NULL at
+  /// post; nothing reads it but /receipts/get.
+  avhDraftLines          Json?     @map("avh_draft_lines")
   // Document lineage: credit note -> original invoice, debit note ->
   // original bill; reversal is the contra voucher raised on cancellation.
   avhAgainstVoucherId    String?   @db.Uuid @map("avh_against_voucher_id")

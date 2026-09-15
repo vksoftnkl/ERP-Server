@@ -203,7 +203,6 @@ const dataset: EffectiveDataset = {
   ptdSourceKind: 'PROVIDER',
   ptdProviderCode: 'sales.bill.items',
   ptdSql: null,
-  ptdRequiresCompany: true,
   ptdParentNo: null,
   ptdLinkFields: null,
   ptdRowLimit: 5000,
@@ -298,12 +297,12 @@ describe('collectDatasetInvariantErrors', () => {
         ...dataset,
         ptdSourceKind: 'SQL',
         ptdProviderCode: null,
-        ptdSql: 'SELECT a FROM t WHERE x = 1 ORDER BY a',
+        ptdSql: 'EXPLAIN SELECT a FROM t WHERE x = 1 ORDER BY a',
       },
       'versions[0].datasets[1]',
     );
     expect(fields(errors)).toEqual(['versions[0].datasets[1].ptdSql']);
-    expect(errors[0].message).toContain('company-scoped');
+    expect(errors[0].message).toContain('must start with SELECT or WITH');
   });
 });
 

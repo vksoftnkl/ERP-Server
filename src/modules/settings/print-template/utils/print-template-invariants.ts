@@ -410,7 +410,6 @@ export interface EffectiveDataset {
   ptdSourceKind: string;
   ptdProviderCode: string | null;
   ptdSql: string | null;
-  ptdRequiresCompany: boolean;
   ptdParentNo: number | null;
   ptdLinkFields: string | null;
   ptdRowLimit: number;
@@ -642,9 +641,7 @@ export function collectDatasetInvariantErrors(
   checkDatasetLinkFields(dataset, path, errors);
   checkDatasetLimits(dataset, path, errors);
   if (dataset.ptdSourceKind === 'SQL' && dataset.ptdSql !== null) {
-    errors.push(
-      ...collectDatasetSqlErrors(dataset.ptdSql, dataset.ptdRequiresCompany, at(path, 'ptdSql')),
-    );
+    errors.push(...collectDatasetSqlErrors(dataset.ptdSql, at(path, 'ptdSql')));
   }
   return errors;
 }

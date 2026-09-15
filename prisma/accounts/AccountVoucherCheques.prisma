@@ -103,9 +103,10 @@ model AccVoucherCheque {
   voucherType          AccVoucherType        @relation(fields: [chqVoucherTypeId], references: [vchrTypeId], map: "fk_acc_cheques_voucher_type")
   company              Company               @relation(fields: [chqCompanyId], references: [compId], map: "fk_acc_cheques_voucher_company")
   branch               BranchMaster          @relation(fields: [chqBranchId], references: [brId], map: "fk_acc_cheques_voucher_branch")
-  // The settlement rows this instrument carried. A bounce here writes the
-  // reversal row there.
-  billAdjustments      AccBillAdjustment[]
+  // fk_abj_cheque was repointed to accounts.acc_pdc_register by
+  // 20260915120000, so this table no longer has settlement rows pointing at
+  // it. Existing rows keep theirs; nothing new arrives. Dropping the table is
+  // a separate decision.
 
   // Target for fk_abj_cheque, which names the cheque by (id, year) the same
   // way a settlement names its tender. Redundant with the primary key on

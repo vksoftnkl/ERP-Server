@@ -14,6 +14,7 @@ const common_1 = require("@nestjs/common");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const audit_log_service_1 = require("../../audit-log/audit-log.service");
 const quotation_api_types_1 = require("./types/quotation-api.types");
+const bill_api_types_1 = require("../bill/types/bill-api.types");
 const charge_master_api_types_1 = require("../../master/charge-master/types/charge-master-api.types");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
@@ -36,6 +37,8 @@ const QUOTATION_STATUS_EVENTS = {
 };
 const QUOTATION_DELETED_STATUS = 'DELETED';
 const QUOTATION_DELETE_REASON = 'Quotation deleted';
+const QUOTATION_CONVERTED_REMARK = 'Converted to sale bill';
+const QUOTATION_UNCONVERTED_REMARK = 'Sale bill conversion withdrawn';
 const QUOTATION_OPTIONAL_FIELDS = [
     'sqSessionId',
     'sqCategoryId',
@@ -289,6 +292,10 @@ function uniqueConstraintTarget(error) {
     }
     return typeof target === 'string' ? target : '';
 }
+const EMPTY_LINE_CONTEXT = {
+    defaultGodown: null,
+    companyAllowsNegStock: null,
+};
 let QuotationService = class QuotationService {
     prisma;
     auditLogService;
@@ -330,6 +337,8 @@ let QuotationService = class QuotationService {
                                 itemBrandId: true,
                                 itemSectionId: true,
                                 itemCategoryId: true,
+                                itemIsService: true,
+                                itemAllowNegStock: true,
                             },
                         },
                         itemUnitConversion: {
@@ -346,9 +355,13 @@ let QuotationService = class QuotationService {
                 ? `No active quotation found with id ${sqId}`
                 : `No active quotation found with quote no ${sqQuoteNo}`);
         }
-        const charges = await this.findCharges(this.prisma, record.sqId);
-        const agent = await this.findAgent(record.sqAgentId);
-        return this.toPayload({ ...record, charges, agent });
+        const [charges, agent, defaultGodown, companyAllowsNegStock] = await Promise.all([
+            this.findCharges(this.prisma, record.sqId),
+            this.findAgent(record.sqAgentId),
+            this.resolveDefaultGodown(record.sqBranchId),
+            this.resolveCompanyNegStock(record.sqCompanyId),
+        ]);
+        return this.toPayload({ ...record, charges, agent }, { defaultGodown, companyAllowsNegStock });
     }
     async softDelete(sqId, sqCompanyId, sqBranchId, sqAccYear) {
         return this.prisma.$transaction(async (tx) => {
@@ -437,6 +450,152 @@ let QuotationService = class QuotationService {
                 deleted: true,
             };
         });
+    }
+    async syncQuotationConversion(tx, request, actor, now) {
+        const targets = new Map();
+        for (const ref of request.refs) {
+            const srcAccYear = ref.srcAccYear.trim();
+            if (!ref.srcDocId || !srcAccYear) {
+                continue;
+            }
+            const key = `${ref.srcDocId}|${srcAccYear}`;
+            if (!targets.has(key)) {
+                targets.set(key, { ...ref, srcAccYear });
+            }
+        }
+        const results = [];
+        for (const target of targets.values()) {
+            results.push(await this.syncOneQuotationConversion(tx, target, actor, now));
+        }
+        return results;
+    }
+    async syncOneQuotationConversion(tx, ref, actor, now) {
+        const existing = await tx.saleQuotation.findFirst({
+            where: { sqId: ref.srcDocId, sqAccYear: ref.srcAccYear, sqIsDeleted: false },
+        });
+        if (!existing) {
+            (0, module_service_utils_1.throwSalesBadRequest)('Quotation not found', [
+                {
+                    field: ref.fields.docId,
+                    message: `No active quotation found with id ${ref.srcDocId} in accounting year ` +
+                        `${ref.srcAccYear}`,
+                },
+            ]);
+        }
+        const converter = await tx.saleBill.findFirst({
+            where: {
+                sbSrcDocType: quotation_api_types_1.QUOTATION_SRC_DOC_TYPE,
+                sbSrcDocId: existing.sqId,
+                sbIsDeleted: false,
+                sbStatus: { not: bill_api_types_1.BILL_STATUS_CANCELLED },
+            },
+            orderBy: [{ sbCreatedOn: 'asc' }, { sbId: 'asc' }],
+            select: { sbId: true, sbCreatedOn: true },
+        });
+        let desired;
+        if (converter) {
+            desired = {
+                sqStatus: quotation_api_types_1.QUOTATION_STATUS_CONVERTED,
+                sqConvertedDocType: quotation_api_types_1.QUOTATION_CONVERTED_DOC_TYPE_BILL,
+                sqConvertedDocId: converter.sbId,
+                sqConvertedOn: converter.sbCreatedOn,
+            };
+        }
+        else if (existing.sqConvertedDocType === quotation_api_types_1.QUOTATION_CONVERTED_DOC_TYPE_BILL) {
+            desired = {
+                sqStatus: existing.sqStatus === quotation_api_types_1.QUOTATION_STATUS_CONVERTED
+                    ? await this.resolvePreConversionStatus(tx, existing)
+                    : existing.sqStatus,
+                sqConvertedDocType: null,
+                sqConvertedDocId: null,
+                sqConvertedOn: null,
+            };
+        }
+        else {
+            return this.toConversionResult(existing);
+        }
+        const changed = existing.sqStatus !== desired.sqStatus ||
+            existing.sqConvertedDocType !== desired.sqConvertedDocType ||
+            existing.sqConvertedDocId !== desired.sqConvertedDocId ||
+            (existing.sqConvertedOn?.getTime() ?? null) !== (desired.sqConvertedOn?.getTime() ?? null);
+        if (!changed) {
+            return this.toConversionResult(existing);
+        }
+        const data = {
+            ...desired,
+            sqModifiedOn: now,
+            sqModifiedBy: actor,
+        };
+        const result = await tx.saleQuotation.updateMany({
+            where: { sqId: existing.sqId, sqAccYear: existing.sqAccYear, sqIsDeleted: false },
+            data,
+        });
+        if (result.count === 0) {
+            (0, module_service_utils_1.throwSalesBadRequest)('Quotation not found', [
+                {
+                    field: ref.fields.docId,
+                    message: `No active quotation found with id ${existing.sqId} in accounting year ` +
+                        `${existing.sqAccYear}`,
+                },
+            ]);
+        }
+        if (desired.sqStatus !== existing.sqStatus) {
+            await this.logStatusStep(tx, existing, {
+                event: desired.sqStatus === quotation_api_types_1.QUOTATION_STATUS_CONVERTED
+                    ? txn_status_log_helper_1.TxnStatusEvent.CONVERTED
+                    : this.toStatusEvent(existing.sqStatus, desired.sqStatus),
+                fromStatus: existing.sqStatus,
+                toStatus: desired.sqStatus,
+                remarks: desired.sqStatus === quotation_api_types_1.QUOTATION_STATUS_CONVERTED
+                    ? QUOTATION_CONVERTED_REMARK
+                    : QUOTATION_UNCONVERTED_REMARK,
+            }, actor, now);
+        }
+        const updated = { ...existing, ...desired, sqModifiedOn: now, sqModifiedBy: actor };
+        await this.auditLogService.logEntityChange({
+            action: 'update',
+            tableName: QUOTATION_TABLE_NAME,
+            screenName: QUOTATION_AUDIT_SCREEN_NAME,
+            screenType: 'transaction',
+            pk: existing.sqId,
+            displayName: existing.sqQuoteRefno || existing.sqId,
+            originalRecord: this.toPayload(existing),
+            modifiedRecord: this.toPayload(updated),
+            userId: actor,
+            notes: converter
+                ? `${QUOTATION_CONVERTED_REMARK} (${converter.sbId})`
+                : QUOTATION_UNCONVERTED_REMARK,
+        }, tx);
+        return this.toConversionResult(updated);
+    }
+    async resolvePreConversionStatus(tx, quotation) {
+        const step = await tx.txnStatusLog.findFirst({
+            where: {
+                tslSrcModule: quotation_api_types_1.QUOTATION_STATUS_SRC_MODULE,
+                tslSrcDocType: quotation_api_types_1.QUOTATION_STATUS_SRC_DOC_TYPE,
+                tslSrcDocId: quotation.sqId,
+                tslAccYear: quotation.sqAccYear,
+                tslToStatus: quotation_api_types_1.QUOTATION_STATUS_CONVERTED,
+                tslIsDeleted: false,
+            },
+            orderBy: [{ tslChangedOn: 'desc' }, { tslSeqNo: 'desc' }],
+            select: { tslFromStatus: true },
+        });
+        const fromStatus = step?.tslFromStatus;
+        if (!fromStatus || fromStatus === quotation_api_types_1.QUOTATION_STATUS_CONVERTED) {
+            return quotation_api_types_1.QUOTATION_STATUS_ACCEPTED;
+        }
+        return fromStatus;
+    }
+    toConversionResult(quotation) {
+        return {
+            sqId: quotation.sqId,
+            sqAccYear: quotation.sqAccYear,
+            sqStatus: quotation.sqStatus,
+            sqConvertedDocType: quotation.sqConvertedDocType,
+            sqConvertedDocId: quotation.sqConvertedDocId,
+            sqConvertedOn: quotation.sqConvertedOn?.toISOString() ?? null,
+        };
     }
     async createQuotation(saveQuotationDto) {
         const normalizedCustName = (0, module_service_utils_1.normalizeRequiredText)(saveQuotationDto.sqCustName ?? '', 'sqCustName');
@@ -1011,7 +1170,7 @@ let QuotationService = class QuotationService {
         data.sqParentQuoteId = dto.sqParentQuoteId;
         data.sqParentAccYear = dto.sqParentAccYear ?? accYear;
     }
-    toPayload(record) {
+    toPayload(record, lineContext = EMPTY_LINE_CONTEXT) {
         const { sqCreatedOn, sqModifiedOn, sqQuoteDatetime, sqSyncDate, sqQuoteSlno, items, charges, custArea, salesman, agent, ...rest } = record;
         return {
             ...rest,
@@ -1024,7 +1183,7 @@ let QuotationService = class QuotationService {
             sqQuoteDatetime: sqQuoteDatetime?.toISOString(),
             sqSyncDate: sqSyncDate?.toISOString() ?? null,
             sqQuoteSlno: sqQuoteSlno.toString(),
-            items: items ? items.map((item) => this.toItemPayload(item)) : [],
+            items: items ? items.map((item) => this.toItemPayload(item, lineContext)) : [],
             charges: charges ? charges.map((charge) => this.toChargePayload(charge)) : [],
         };
     }
@@ -1038,7 +1197,8 @@ let QuotationService = class QuotationService {
             cdVoucherNo: cdVoucherNo?.toString() ?? null,
         };
     }
-    toItemPayload(record) {
+    toItemPayload(record, lineContext = EMPTY_LINE_CONTEXT) {
+        const { defaultGodown, companyAllowsNegStock } = lineContext;
         const { sqiCreatedOn, sqiModifiedOn, sqiSyncDate, item, itemUnitConversion, ...rest } = record;
         return {
             ...rest,
@@ -1053,7 +1213,36 @@ let QuotationService = class QuotationService {
             sqiBrandId: item?.itemBrandId ?? null,
             sqiSectionId: item?.itemSectionId ?? null,
             sqiCategoryId: item?.itemCategoryId ?? null,
+            sqiAllowNegativeStock: item
+                ? item.itemIsService ||
+                    !(defaultGodown?.gdlNegativeStock === false &&
+                        companyAllowsNegStock === false &&
+                        item.itemAllowNegStock === false)
+                : null,
+            sqiGodownId: defaultGodown?.gdlId ?? null,
+            sqiGodownName: defaultGodown?.gdlName ?? null,
         };
+    }
+    async resolveDefaultGodown(branchId) {
+        const branch = await this.prisma.branchMaster.findFirst({
+            where: { brId: branchId },
+            select: { brDefaultGodownId: true },
+        });
+        if (!branch?.brDefaultGodownId) {
+            return null;
+        }
+        const godown = await this.prisma.godownLocation.findFirst({
+            where: { gdlId: branch.brDefaultGodownId, gdlIsDeleted: false },
+            select: { gdlId: true, gdlName: true, gdlNegativeStock: true },
+        });
+        return godown ?? null;
+    }
+    async resolveCompanyNegStock(companyId) {
+        const company = await this.prisma.company.findFirst({
+            where: { compId: companyId, compIsDeleted: false },
+            select: { compNegStkApl: true },
+        });
+        return company?.compNegStkApl ?? null;
     }
 };
 exports.QuotationService = QuotationService;

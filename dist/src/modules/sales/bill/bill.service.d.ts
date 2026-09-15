@@ -4,6 +4,7 @@ import { SaveBillDto } from './dto/save-bill.dto';
 import { CancelBillDto } from './dto/cancel-bill.dto';
 import { BillCancelResult, BillPayload } from './types/bill-api.types';
 import { SaleOrderService } from '../sale-order/sale-order.service';
+import { QuotationService } from '../quotation/quotation.service';
 import { ChargeDetailService } from '../../master/charge-detail/charge-detail.service';
 import { TenderDetailService } from '../../accountsModule/tenderDetail/tender-detail.service';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
@@ -14,7 +15,8 @@ export declare class BillService {
     private readonly chargeDetailService;
     private readonly tenderDetailService;
     private readonly saleOrderService;
-    constructor(prisma: PrismaService, auditLogService: AuditLogService, requestContextService: RequestContextService, chargeDetailService: ChargeDetailService, tenderDetailService: TenderDetailService, saleOrderService: SaleOrderService);
+    private readonly quotationService;
+    constructor(prisma: PrismaService, auditLogService: AuditLogService, requestContextService: RequestContextService, chargeDetailService: ChargeDetailService, tenderDetailService: TenderDetailService, saleOrderService: SaleOrderService, quotationService: QuotationService);
     save(saveBillDto: SaveBillDto): Promise<BillPayload>;
     getById(sbId: string, sbCompanyId: string, sbBranchId: string, sbAccYear: string): Promise<BillPayload>;
     cancelSourceOrders(cancelDto: CancelBillDto): Promise<BillCancelResult>;
@@ -28,6 +30,7 @@ export declare class BillService {
     private ensureBillItemValuesAreAllowed;
     private toOrderLineRefs;
     private toOrderHeaderRefs;
+    private toQuotationRefs;
     private requireItemField;
     private toChargeScope;
     private toTenderScope;
@@ -35,7 +38,8 @@ export declare class BillService {
     private logStatusChange;
     private toStatusEvent;
     private applyOptionalFields;
-    private resolveGodownNames;
+    private resolveGodowns;
+    private resolveCompanyNegStock;
     private toPayload;
     private toItemPayload;
 }

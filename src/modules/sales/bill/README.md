@@ -268,6 +268,55 @@ one of them: the order is revised up to what went out.
 A bill with no `sbiSrcDocType` on any line and no `sbSrcDocType` on its header — a walk-in sale,
 which is most of them — never reaches the sale-order module at all.
 
+### Converting a quotation
+
+A bill raised from a quotation says so on its **header**, and the quotation is stamped with what it
+became:
+
+```jsonc
+{
+  "sbSrcDocType": "QUOTATION", // the discriminator — nothing happens without it
+  "sbSrcDocId": "<sq_id>", // the QUOTATION's own id
+  "sbSrcDocYear": "2026-2027", // with sbSrcDocId, the quotation's primary key
+  "sbSrcDocRefno": "quo00007", // sq_quote_refno, for display / reprint only
+  "sbSrcDocDate": "2026-07-20",
+}
+```
+
+**What the quotation gets.** `BillService` hands `QuotationService.syncQuotationConversion` the
+reference, inside the same transaction as the save, and the quote's four conversion columns are
+re-derived:
+
+| column                  | becomes                     |
+| ----------------------- | --------------------------- |
+| `sq_status`             | `CONVERTED`                 |
+| `sq_converted_doc_type` | `SALE_BILL`                 |
+| `sq_converted_doc_id`   | the `sb_id` of the bill     |
+| `sq_converted_on`       | that bill's `sb_created_on` |
+
+**Header grain only.** `sq_converted_doc_id` names one document and a quotation LINE has no
+conversion columns, so `sbi_src_doc_*` is **not** read for this — a bill that names the quotation
+only on its lines leaves the quote exactly where it was. This is the one place the quotation chain
+and the sale-order chain differ: an order is converted line by line, a quotation as a whole.
+
+**A DRAFT bill converts it.** Raising the invoice is what turns the quote into one; posting it only
+puts that invoice into the books. This is deliberately _unlike_ the sale-order fulfilment sync
+above, where only a `POSTED` bill draws quantity down.
+
+**Derived, not stamped once.** A quotation is `CONVERTED` exactly while a live bill names it — one
+that is neither soft deleted nor `CANCELLED`. So an edit that repoints `sbSrcDocId` at another
+quotation, or a save that moves the bill to `CANCELLED`, hands the abandoned quote its **previous**
+status back, read off the `CONVERTED` step in its own status trail (`ACCEPTED` if the trail has no
+such step to read). Both sides of an edit are recomputed, exactly as the order fulfilment sync does.
+
+Two safeguards on that reversal: only a stamp naming a `SALE_BILL` is ever taken back — a quotation
+converted by hand, or into something else, is left alone — and a recompute that agrees with what the
+row already says writes nothing at all, so re-saving a converted bill costs no update, no audit row
+and no trail step. A quotation billed twice keeps naming the **first** live bill raised against it.
+
+**Rejections**: `sbSrcDocId` — a 400 — when the id and year name no active quotation. A reference
+missing either half of that pair is ignored rather than rejected, the same way the order refs are.
+
 ### Nested applied charges
 
 Freight / loading / packing / cash-discount lines are still sent as the `charges[]` array on the
@@ -560,10 +609,20 @@ via the identical `item` / `itemUnitConversion` → `unit` relations:
 | `sbiUnitName`     | `inventory.item_unit_master.unit_name`          | `itemUnitConversion` → `unit` on `sbiItemUnitId`         |
 | `sbiDecimalCount` | `inventory.item_unit_master.unit_decimal_count` | same relation chain                                      |
 | `sbiGodownName`   | `inventory.godown_locations.gdl_name`           | batched `findMany` on the bill's distinct `sbiGodownId`s |
+| `sbiAllowNegativeStock` | three switches — see below                | `item` relation plus that `findMany` and one company read |
 
 `sbi_godown_id` has no FK to `godown_locations`, so there is no relation to `include` — `getById`
 issues one extra `godownLocation.findMany` over the distinct godown ids on the bill and maps the
 names back onto the lines. A line whose godown row no longer exists comes back with
 `sbiGodownName: null`.
+
+`sbiAllowNegativeStock` is the **effective** answer to "may this line go below zero", not
+`item_master.item_allow_neg_stock` on its own. It applies the same rule `/item-price` applies when
+the line is first added (`item-price.lookup.ts`): a **service** item always may, and otherwise it
+is blocked only when the godown (`gdl_negative_stock`), the company (`comp_negstk_apl`) **and** the
+item (`item_allow_neg_stock`) all say no. Deriving it the same way means a reloaded bill guards
+exactly as the entry screen did while the line was being typed. Unlike a quotation's, a bill line
+names its **own** godown, so the godown half of the answer is that line's — two lines on one bill
+can disagree. A godown or company row that cannot be read is not a "no"; the item still decides.
 
 These are read-only — never accepted on `/create` — and are `null` on the create/update responses.

@@ -79,6 +79,9 @@ export declare class QuotationItemPayloadDto {
     sqiBrandId?: string | null;
     sqiSectionId?: string | null;
     sqiCategoryId?: string | null;
+    sqiAllowNegativeStock?: boolean | null;
+    sqiGodownId?: string | null;
+    sqiGodownName?: string | null;
     sqiHsnCode: string | null;
     sqiPriceLevel: number;
     sqiEanCode: string | null;

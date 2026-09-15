@@ -4,7 +4,6 @@ import {
   NullableInteger,
   NullableLowerMaxString,
   NullableString,
-  OptionalBoolean,
   OptionalInteger,
   OptionalUuid,
   NullableUuid,
@@ -118,15 +117,6 @@ export class SavePrintTemplateDatasetDto {
   })
   @NullableString()
   ptdSql?: string | null;
-
-  @ApiPropertyOptional({
-    default: true,
-    description:
-      'false only for genuinely global data, such as a state-code list. Leaving it true is what ' +
-      "stops one company seeing another's numbers.",
-  })
-  @OptionalBoolean()
-  ptdRequiresCompany?: boolean;
 
   @ApiPropertyOptional({
     nullable: true,

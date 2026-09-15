@@ -15,12 +15,19 @@ const bill_controller_1 = require("./bill.controller");
 const bill_exception_filter_1 = require("./bill-exception.filter");
 const bill_service_1 = require("./bill.service");
 const sale_order_module_1 = require("../sale-order/sale-order.module");
+const quotation_module_1 = require("../quotation/quotation.module");
 let BillModule = class BillModule {
 };
 exports.BillModule = BillModule;
 exports.BillModule = BillModule = __decorate([
     (0, common_1.Module)({
-        imports: [audit_log_module_1.AuditLogModule, charge_detail_module_1.ChargeDetailModule, tender_detail_module_1.TenderDetailModule, sale_order_module_1.SaleOrderModule],
+        imports: [
+            audit_log_module_1.AuditLogModule,
+            charge_detail_module_1.ChargeDetailModule,
+            tender_detail_module_1.TenderDetailModule,
+            sale_order_module_1.SaleOrderModule,
+            quotation_module_1.QuotationModule,
+        ],
         controllers: [bill_controller_1.BillController],
         providers: [bill_service_1.BillService, bill_exception_filter_1.BillExceptionFilter],
         exports: [bill_service_1.BillService],

@@ -23,7 +23,6 @@ export interface PrintTemplateDatasetPayload {
   /// reads this and not ptdSql, so it is the text an author needs to see when
   /// a guard refuses a query that looks fine.
   ptdSqlNorm: string | null;
-  ptdRequiresCompany: boolean;
   ptdParentNo: number | null;
   ptdLinkFields: string | null;
   ptdRowLimit: number;
