@@ -466,10 +466,18 @@ export class OpenItemsService {
 }
 
 /**
- * How each kind of credit settles. The same table as
- * `CREDIT_ADJUSTMENT_ROUTING` in the transaction module, restated here because
- * this module owns the write side: `ck_abj_adj_type` is the authority, and an
- * advance posts as ADVANCE_ADJUST while a credit note posts as NOTE_ADJUST.
+ * How each kind of credit settles. A superset of `CREDIT_ADJUSTMENT_ROUTING`
+ * in the transaction module, restated here because this module owns the write
+ * side: `ck_abj_adj_type` is the authority, and an advance posts as
+ * ADVANCE_ADJUST while a credit note posts as NOTE_ADJUST.
+ *
+ * SALES_RETURN is a note — there is a document the customer was handed, and
+ * NOTE_ADJUST / CREDIT_NOTE is what a credit-note register reports on.
+ * Everything else in `CREDIT_BILL_TYPES` is money the company holds and has
+ * not earned, which is what an advance IS whether a receipt, an opening
+ * balance or a journal put it there — so ADVANCE, OPENING and JOURNAL all post
+ * as ADVANCE_ADJUST / ADVANCE. Both routes name the opposite bill, so both
+ * satisfy `ck_abj_against` with no migration.
  */
 function creditRouting(billType: BillType): {
   adjType: BillAdjType;

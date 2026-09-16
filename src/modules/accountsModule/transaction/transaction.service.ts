@@ -49,12 +49,12 @@ export class TransactionService {
     const side = query.type ?? DEFAULT_ADJUSTABLE_CREDIT_SIDE;
     const credits = await this.openItemsService.loadCredits(query.companyId, query.partyId, side);
 
-    // open-items admits exactly the two types this endpoint has always offered
-    // (ADVANCE, SALES_RETURN) — CREDIT_BILL_TYPES and AdjustableCreditBillType
-    // are the same list — so the narrowing below is a cast, not a filter. The
-    // guard stays anyway: the day a third type is admitted there, this is where
-    // it has to be admitted here too, and a silent widening would send a
-    // billType the routing map has no entry for.
+    // A REAL filter, and load-bearing since open-items widened
+    // CREDIT_BILL_TYPES to all four: it now also returns OPENING and JOURNAL
+    // credits, which the receipt screen spends but this panel has never
+    // offered. Admitting them here is a separate decision — add the value to
+    // AdjustableCreditBillType and its CREDIT_ADJUSTMENT_ROUTING entry
+    // together, or this map is indexed by a billType it has no route for.
     return credits
       .filter((credit) =>
         (Object.values(AdjustableCreditBillType) as string[]).includes(credit.billType),

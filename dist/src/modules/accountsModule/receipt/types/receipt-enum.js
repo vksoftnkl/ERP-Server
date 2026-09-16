@@ -46,7 +46,12 @@ exports.RECEIVABLE_BILL_TYPES = [
     BillType.JOURNAL,
     BillType.PURCHASE_RETURN,
 ];
-exports.CREDIT_BILL_TYPES = [BillType.ADVANCE, BillType.SALES_RETURN];
+exports.CREDIT_BILL_TYPES = [
+    BillType.ADVANCE,
+    BillType.SALES_RETURN,
+    BillType.OPENING,
+    BillType.JOURNAL,
+];
 var BillAdjType;
 (function (BillAdjType) {
     BillAdjType["ALLOCATION"] = "ALLOCATION";

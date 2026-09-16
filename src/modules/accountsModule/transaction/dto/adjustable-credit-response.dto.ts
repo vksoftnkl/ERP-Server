@@ -6,11 +6,9 @@ import {
   BillAdjType,
   BillSettlementMode,
 } from '../types/transaction-api.types';
-
 export class TransactionErrorFieldDto {
   @ApiProperty({ example: 'partyId' })
   field!: string;
-
   @ApiProperty({ example: 'partyId must be a UUID' })
   message!: string;
 }

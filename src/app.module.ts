@@ -45,6 +45,7 @@ import { TenderTypeMasterModule } from './modules/accountsModule/tenderTypeMaste
 import { TenderDetailModule } from './modules/accountsModule/tenderDetail/tender-detail.module';
 import { TransactionModule } from './modules/accountsModule/transaction/transaction.module';
 import { ReceiptModule } from './modules/accountsModule/receipt/receipt.module';
+import { ChequesModule } from './modules/accountsModule/cheques/cheques.module';
 import { BillBalanceModule } from './modules/accountsModule/billBalance/bill-balance.module';
 import { LedgerShippingAddressModule } from './modules/accountsModule/ledgerShippingAddress/ledger-shipping-address.module';
 import { GspProviderMasterModule } from './modules/accountsModule/gspProviderMaster/gsp-provider-master.module';
@@ -182,6 +183,7 @@ const isThrottlerEnabled = parseBoolean(process.env.THROTTLE_ENABLED, true);
     TransactionModule,
     BillBalanceModule,
     ReceiptModule,
+    ChequesModule,
     GspProviderMasterModule,
     GspCompanyServiceModule,
     SupplierGroupModule,

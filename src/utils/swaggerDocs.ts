@@ -23,6 +23,7 @@ import { TenderDetailModule } from '../modules/accountsModule/tenderDetail/tende
 import { TransactionModule } from '../modules/accountsModule/transaction/transaction.module';
 import { OpeningBalanceModule } from '../modules/accountsModule/openingBalance/opening-balance.module';
 import { ReceiptModule } from '../modules/accountsModule/receipt/receipt.module';
+import { ChequesModule } from '../modules/accountsModule/cheques/cheques.module';
 import { AuthModule } from '../modules/auth/auth.module';
 import { AreaModule } from '../modules/sales/area/area.module';
 import { SaleFreightChargeModule } from '../modules/sales/sale-freight-charges/sale-freight-charges.module';
@@ -359,6 +360,16 @@ export const swaggerModuleDocuments = [
       'post-dated cheque gets a voucher of its own dated the cheque, and its bills settle on ' +
       'maturity. The remainder is always held as an ADVANCE bill',
     include: [ReceiptModule],
+  },
+  {
+    path: 'cheques',
+    title: 'Received Cheques API',
+    description:
+      'A received cheque through HELD -> DEPOSITED -> CLEARED | BOUNCED -> re-presented | '  +
+      'REPLACED, or HELD -> RETURNED | CANCELLED. Each step writes one register update, one ' +
+      'status-log row and — when money moves — one voucher, never editing a row. The posting ' +
+      'mode is honoured per ROW, and Cheques in Hand comes from the cheque\'s own tender row',
+    include: [ChequesModule],
   },
   {
     path: 'opening-balances',

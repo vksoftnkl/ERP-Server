@@ -8346,3 +8346,4 @@ The column `user_menus.um_can_approve` does not exist in the current database.
     at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
     at async UserAdministrationService.getById (/home/vk/Dev/erp/ERP server/src/modules/settings/userAdministration/user-administration.service.ts:48:20)
     at async UserAdministrationController.getById (/home/vk/Dev/erp/ERP server/src/modules/settings/userAdministration/user-administration.controller.ts:76:18)
+2026-09-16T13:08:28.326Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011

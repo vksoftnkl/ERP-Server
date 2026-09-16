@@ -86,13 +86,31 @@ export const RECEIVABLE_BILL_TYPES: readonly BillType[] = [
 /**
  * The bill types a party's HELD CREDITS are drawn from — the right-hand list.
  *
- * Deliberately identical to `AdjustableCreditBillType` in the transaction
- * module: `ck_abj_against` only lets ADVANCE_ADJUST / NOTE_ADJUST / TRANSFER
- * name an opposite bill, and which of those an OPENING credit should post as
- * is an accounting decision, not one to guess. Admitting a third type is that
- * enum, this list, and `CREDIT_ADJUSTMENT_ROUTING` — all three, or none.
+ * All four credit types, and OPENING is the one that matters most: a go-live
+ * loads every balance a party already held as an OPENING row, so a list
+ * without it leaves the credit panel empty at EVERY new client, not just the
+ * ones with an unusual ledger. The same is true of a JOURNAL credit passed by
+ * a journal voucher.
+ *
+ * The routing question this list used to defer — `ck_abj_against` lets only
+ * ADVANCE_ADJUST / NOTE_ADJUST / TRANSFER name an opposite bill, and which of
+ * those an OPENING credit posts as — is settled in `creditRouting`: money the
+ * company holds and has not earned is an advance whatever raised it, so
+ * OPENING and JOURNAL post as ADVANCE_ADJUST / ADVANCE, exactly as ADVANCE
+ * does. The constraint is satisfied because the credit bill IS the opposite
+ * bill, so no migration is involved.
+ *
+ * This list is no longer identical to `AdjustableCreditBillType` in the
+ * transaction module, which still offers the original two: the receipt screen
+ * spends a credit, while the sale bill's panel adjusts one against an invoice
+ * being raised, and widening that is a separate decision taken there.
  */
-export const CREDIT_BILL_TYPES: readonly BillType[] = [BillType.ADVANCE, BillType.SALES_RETURN];
+export const CREDIT_BILL_TYPES: readonly BillType[] = [
+  BillType.ADVANCE,
+  BillType.SALES_RETURN,
+  BillType.OPENING,
+  BillType.JOURNAL,
+];
 
 // ─── accounts.acc_bill_adjustment ────────────────────────────────────────────
 

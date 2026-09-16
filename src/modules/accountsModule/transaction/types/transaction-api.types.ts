@@ -3,7 +3,6 @@ import type {
   ModuleApiErrorResponse,
   ModuleApiSuccessResponse,
 } from 'src/common/types/module-api.types';
-
 export type TransactionErrorDetail = ModuleApiErrorDetail;
 export type TransactionErrorResponse = ModuleApiErrorResponse<TransactionErrorDetail>;
 export type TransactionSuccessResponse<
@@ -11,21 +10,21 @@ export type TransactionSuccessResponse<
   TMeta = Record<string, unknown>,
   TStyles = unknown,
 > = ModuleApiSuccessResponse<T, TMeta, TStyles>;
-
 /**
  * The `abl_bill_type` values a party's credit may currently be offered from.
  *
- * OPENING and JOURNAL credits are deliberately absent: `ck_abj_against` only
- * lets ADVANCE_ADJUST / NOTE_ADJUST / TRANSFER name an opposite bill, and which
- * of those an opening credit should post as is an accounting decision, not one
- * to guess here. Adding one is this enum plus its {@link CREDIT_ADJUSTMENT_ROUTING}
+ * OPENING and JOURNAL credits are absent HERE only. The receipt module admits
+ * all four (`CREDIT_BILL_TYPES`) and routes an opening or journal credit as
+ * ADVANCE_ADJUST / ADVANCE, so the routing question is answered; what is left
+ * is whether this panel — which sets a credit off against an invoice being
+ * raised, rather than spending it — should offer them, and that has not been
+ * asked for. Adding one is this enum plus its {@link CREDIT_ADJUSTMENT_ROUTING}
  * entry — the SQL builds its IN list from the enum.
  */
 export enum AdjustableCreditBillType {
   ADVANCE = 'ADVANCE',
   SALES_RETURN = 'SALES_RETURN',
 }
-
 /** `acc_bill_adjustment.abj_adj_type` — the settlement event (`ck_abj_adj_type`). */
 export enum BillAdjType {
   /** An advance already held, being applied to the bill. */
@@ -33,13 +32,11 @@ export enum BillAdjType {
   /** A credit / debit note set off against the bill. */
   NOTE_ADJUST = 'NOTE_ADJUST',
 }
-
 /** `acc_bill_adjustment.abj_settlement_mode` — how the money moved (`ck_abj_settlement_mode`). */
 export enum BillSettlementMode {
   ADVANCE = 'ADVANCE',
   CREDIT_NOTE = 'CREDIT_NOTE',
 }
-
 /**
  * `abl_dr_cr` — which side of the party's account the open amount sits on.
  *
@@ -54,16 +51,13 @@ export enum AdjustableCreditSide {
   CR = 'CR',
   DR = 'DR',
 }
-
 /** What the read defaults to when `type` is omitted — the credit side, which is what the adjustment panel asks for. */
 export const DEFAULT_ADJUSTABLE_CREDIT_SIDE = AdjustableCreditSide.CR;
-
 /** `abl_status`, the generated column. CLOSED never reaches the client — a bill with nothing left is not offered. */
 export enum AdjustableCreditStatus {
   OPEN = 'OPEN',
   PARTIAL = 'PARTIAL',
 }
-
 /**
  * How a credit of each kind settles. This is why `billType` comes back on every
  * row rather than being dropped after the filter: the type decides the
@@ -86,7 +80,6 @@ export const CREDIT_ADJUSTMENT_ROUTING: Readonly<
     settlementMode: BillSettlementMode.CREDIT_NOTE,
   },
 };
-
 /**
  * One credit the party holds and has not spent: an advance taken against a sale
  * order, or a sales return not yet set off. Everything the adjustment panel
@@ -129,7 +122,6 @@ export interface AdjustableCredit {
   /** GENERATED: bill − alloc − disc − writeoff. The ceiling for this row's adjustment. */
   pendingAmount: number;
   status: AdjustableCreditStatus;
-
   /**
    * Which document the credit came from. `srcDocId` is the sale order (or sales
    * return) id, and it is what the bill screen matches on to pre-fill the panel
@@ -140,9 +132,7 @@ export interface AdjustableCredit {
   srcDocType: string | null;
   srcDocId: string | null;
   srcAccYear: string | null;
-
   narration: string | null;
-
   /** `abj_adj_type` to post for this row. Derived from `billType`. */
   adjType: BillAdjType;
   /** `abj_settlement_mode` to post for this row. Derived from `billType`. */
