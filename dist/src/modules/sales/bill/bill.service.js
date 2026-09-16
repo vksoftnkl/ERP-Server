@@ -471,7 +471,7 @@ let BillService = class BillService {
                 };
                 const items = await this.syncItems(tx, scope, saveBillDto.items, createdBy);
                 const charges = await this.chargeDetailService.syncDocumentCharges(tx, this.toChargeScope(scope), saveBillDto.charges, createdBy, bill_api_types_1.BILL_CHARGE_AUDIT);
-                const tenders = await this.tenderDetailService.syncDocumentTenders(tx, this.toTenderScope(scope), saveBillDto.tenders, createdBy, bill_api_types_1.BILL_TENDER_AUDIT);
+                const tenders = await this.tenderDetailService.syncDocumentTenders(tx, this.toTenderScope(scope, saveBillDto.tenders), saveBillDto.tenders, createdBy, bill_api_types_1.BILL_TENDER_AUDIT);
                 let posted = created;
                 if (created.sbStatus === bill_api_types_1.BILL_STATUS_POSTED) {
                     const postingResult = await (0, bill_posting_helper_1.postBillToAccounts)(tx, created, BILL_VCHR_TYPE_ID, createdBy, now);
@@ -556,7 +556,7 @@ let BillService = class BillService {
                 });
                 const items = await this.syncItems(tx, scope, saveBillDto.items, modifiedBy);
                 const charges = await this.chargeDetailService.syncDocumentCharges(tx, this.toChargeScope(scope), saveBillDto.charges, modifiedBy, bill_api_types_1.BILL_CHARGE_AUDIT);
-                const tenders = await this.tenderDetailService.syncDocumentTenders(tx, this.toTenderScope(scope), saveBillDto.tenders, modifiedBy, bill_api_types_1.BILL_TENDER_AUDIT);
+                const tenders = await this.tenderDetailService.syncDocumentTenders(tx, this.toTenderScope(scope, saveBillDto.tenders), saveBillDto.tenders, modifiedBy, bill_api_types_1.BILL_TENDER_AUDIT);
                 const posting = await (0, bill_posting_helper_1.syncBillPosting)(tx, updated, BILL_VCHR_TYPE_ID, modifiedBy, now);
                 await this.syncAdjustments(tx, updated, posting.billId, saveBillDto.adjustments, modifiedBy, now);
                 let posted = updated;
@@ -896,7 +896,7 @@ let BillService = class BillService {
             cdVoucherNo: scope.sbBillSlno,
         };
     }
-    toTenderScope(scope) {
+    toTenderScope(scope, tenders) {
         return {
             tdSrcModule: bill_api_types_1.BILL_TENDER_SRC_MODULE,
             tdSrcDocType: bill_api_types_1.BILL_TENDER_SRC_DOC_TYPE,
@@ -906,12 +906,26 @@ let BillService = class BillService {
             tdTenantId: scope.sbTenantId,
             tdAccYear: scope.sbAccYear,
             tdDocDate: scope.sbBillDate,
-            tdPartyLedgerId: scope.sbCustId,
+            tdPartyLedgerId: tenders === undefined || tenders.length === 0
+                ? scope.sbCustId
+                : this.requireCustomerLedgerId(scope.sbCustId, 'tenders'),
             tdUserId: scope.sbUserId,
             tdSessionId: scope.sbSessionId,
             tdDeviceId: scope.sbDeviceId,
             tdDrCr: bill_api_types_1.BILL_TENDER_DR_CR,
         };
+    }
+    requireCustomerLedgerId(sbCustId, field) {
+        if (sbCustId === null) {
+            (0, module_service_utils_1.throwSalesBadRequest)('Bill cannot be saved', [
+                {
+                    field,
+                    message: 'This bill names no customer (sbCustId), so there is no account ledger to raise ' +
+                        'these rows against. Pick a customer, or drop them from the payload.',
+                },
+            ]);
+        }
+        return sbCustId;
     }
     async syncAdjustments(tx, bill, billId, adjustments, actor, now) {
         if (billId === null) {
@@ -935,7 +949,7 @@ let BillService = class BillService {
             branchId: bill.sbBranchId,
             tenantId: bill.sbTenantId,
             accYear: bill.sbAccYear,
-            partyId: bill.sbCustId,
+            partyId: this.requireCustomerLedgerId(bill.sbCustId, 'adjustments'),
             adjDate: bill.sbBillDate,
             userId: bill.sbUserId,
             sessionId: bill.sbSessionId,

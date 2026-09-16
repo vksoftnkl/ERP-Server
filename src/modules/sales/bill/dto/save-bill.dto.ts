@@ -182,9 +182,14 @@ export class SaveBillDto {
   })
   @NullableStringStrict(9)
   sbSrcDocYear?: string | null;
-  @ApiProperty({ format: 'uuid' })
-  @RequiredUuid()
-  sbCustId!: string;
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description:
+      'Customer master row this bill was billed to. NULL for a walk-in: the name is still snapshotted in sbCustName, but there is no ledger to post a credit against',
+  })
+  @NullableUuid()
+  sbCustId?: string | null;
   @ApiProperty({ maxLength: 200 })
   @TrimmedString(200)
   @IsNotEmpty()

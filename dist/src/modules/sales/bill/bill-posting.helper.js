@@ -21,6 +21,18 @@ const VOUCHER_STATUS_CANCELLED = 'CANCELLED';
 const DEFAULT_CANCEL_REASON = 'Sale bill is no longer posted';
 const DELETE_CANCEL_REASON = 'Sale bill deleted';
 const CANCEL_REASON_MAX_LENGTH = 250;
+function requirePartyLedgerId(bill) {
+    if (bill.sbCustId === null) {
+        (0, module_service_utils_1.throwSalesBadRequest)('Bill cannot be posted', [
+            {
+                field: 'sbCustId',
+                message: 'A POSTED bill must name a customer: its voucher and receivable are raised against ' +
+                    "the customer's account ledger, which a walk-in does not have.",
+            },
+        ]);
+    }
+    return bill.sbCustId;
+}
 async function postBillToAccounts(tx, bill, vchrTypeId, actor, postedOn) {
     if (bill.sbBillSlno === null || !bill.sbBillRefno) {
         (0, module_service_utils_1.throwSalesBadRequest)('Bill cannot be posted', [
@@ -55,7 +67,7 @@ async function postBillToAccounts(tx, bill, vchrTypeId, actor, postedOn) {
             avhRoundOff: bill.sbRoundOff ?? 0,
             avhTotalDebit: billAmount,
             avhTotalCredit: billAmount,
-            avhPartyId: bill.sbCustId,
+            avhPartyId: requirePartyLedgerId(bill),
             avhOppositeLedgerId: null,
             avhEmployeeId: bill.sbSalesmanId ?? [],
             avhRemarks: bill.sbRemarks,
@@ -82,7 +94,7 @@ async function postBillToAccounts(tx, bill, vchrTypeId, actor, postedOn) {
                 ablBranchId: bill.sbBranchId,
                 ablTenantId: bill.sbTenantId,
                 ablAccYear: bill.sbAccYear,
-                ablPartyId: bill.sbCustId,
+                ablPartyId: requirePartyLedgerId(bill),
                 ablSalesmanId: bill.sbSalesmanId?.[0] ?? null,
                 ablAgentId: bill.sbAgentId,
                 ablBillType: BILL_REF_TYPE,
@@ -278,7 +290,7 @@ async function syncPostedVoucher(tx, bill, live, vchrTypeId, actor, now) {
             avhRoundOff: bill.sbRoundOff ?? 0,
             avhTotalDebit: billAmount,
             avhTotalCredit: billAmount,
-            avhPartyId: bill.sbCustId,
+            avhPartyId: requirePartyLedgerId(bill),
             avhEmployeeId: bill.sbSalesmanId ?? [],
             avhRemarks: bill.sbRemarks,
             avhDeviceType: mapDeviceType(bill.sbDeviceType),
@@ -318,7 +330,7 @@ async function syncReceivable(tx, bill, live, vchrTypeId, actor, now, billAmount
     await tx.accBillBalance.update({
         where: { ablId_ablAccYear: { ablId: existing.ablId, ablAccYear: existing.ablAccYear } },
         data: {
-            ablPartyId: bill.sbCustId,
+            ablPartyId: requirePartyLedgerId(bill),
             ablSalesmanId: bill.sbSalesmanId?.[0] ?? null,
             ablAgentId: bill.sbAgentId,
             ablDocDate: bill.sbBillDate,
@@ -363,7 +375,7 @@ async function createReceivable(tx, bill, live, vchrTypeId, actor, now, billAmou
             ablBranchId: bill.sbBranchId,
             ablTenantId: bill.sbTenantId,
             ablAccYear: bill.sbAccYear,
-            ablPartyId: bill.sbCustId,
+            ablPartyId: requirePartyLedgerId(bill),
             ablSalesmanId: bill.sbSalesmanId?.[0] ?? null,
             ablAgentId: bill.sbAgentId,
             ablBillType: BILL_REF_TYPE,

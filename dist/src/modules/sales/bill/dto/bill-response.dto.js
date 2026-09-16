@@ -930,8 +930,8 @@ __decorate([
     __metadata("design:type", Object)
 ], BillPayloadDto.prototype, "sbSrcDocYear", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ format: 'uuid' }),
-    __metadata("design:type", String)
+    (0, swagger_1.ApiPropertyOptional)({ format: 'uuid', nullable: true }),
+    __metadata("design:type", Object)
 ], BillPayloadDto.prototype, "sbCustId", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)({ maxLength: 200 }),

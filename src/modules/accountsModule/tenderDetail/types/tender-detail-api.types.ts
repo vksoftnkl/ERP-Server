@@ -150,8 +150,11 @@ export interface TenderDocumentScope {
   // Snapshot of the document's date — td_src_doc_id is polymorphic, so the
   // date cannot be joined back from the parent.
   tdDocDate: Date;
-  // The customer / supplier ledger the document is raised against.
-  tdPartyLedgerId: string;
+  // The customer / supplier ledger the document is raised against. Nullable
+  // because an owning document need not have one — a walk-in sale bill names no
+  // customer master row — but td_party_ledger_id itself is NOT NULL, so a
+  // document with no party can only be synced while it carries no tender lines.
+  tdPartyLedgerId: string | null;
   // Who tendered, and where.
   tdUserId: string;
   tdSessionId: string | null;

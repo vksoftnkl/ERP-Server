@@ -1017,6 +1017,30 @@ describe('BillService', () => {
       expect(prisma.accBillBalance.create).not.toHaveBeenCalled();
     });
 
+    // sb_cust_id is nullable — a walk-in is billed to a name and nothing else —
+    // but avh_party_id and abl_party_id are not: a voucher and a receivable are
+    // raised AGAINST somebody. So such a bill can be kept, but never posted.
+    it('refuses to post a bill that names no customer, and writes nothing to accounts', async () => {
+      prisma.saleBill.create.mockResolvedValueOnce(postedBill({ sbCustId: null }));
+
+      await expect(
+        service.save(postedDto({ sbCustId: null } as Partial<SaveBillDto>)),
+      ).rejects.toThrow(BadRequestException);
+      expect(prisma.accVoucherHeader.create).not.toHaveBeenCalled();
+      expect(prisma.accBillBalance.create).not.toHaveBeenCalled();
+    });
+
+    it('keeps a DRAFT walk-in that names no customer', async () => {
+      prisma.saleBill.create.mockResolvedValueOnce(
+        makeBill({ sbCustId: null } as unknown as Partial<SaleBill>),
+      );
+
+      await expect(
+        service.save(baseDto({ sbCustId: null } as Partial<SaveBillDto>)),
+      ).resolves.toBeDefined();
+      expect(prisma.accVoucherHeader.create).not.toHaveBeenCalled();
+    });
+
     it('writes a POSTED voucher header carrying the bill number and a fresh company serial', async () => {
       prisma.saleBill.create.mockResolvedValueOnce(postedBill());
 

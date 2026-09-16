@@ -14,7 +14,7 @@ export interface BillPostingSource extends BillPostingRef {
     sbBillDatetime: Date;
     sbDueDate: Date | null;
     sbDueDays: number | null;
-    sbCustId: string;
+    sbCustId: string | null;
     sbUserId: string;
     sbSessionId: string | null;
     sbDeviceType: string | null;

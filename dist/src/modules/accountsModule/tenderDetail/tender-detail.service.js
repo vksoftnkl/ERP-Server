@@ -282,7 +282,7 @@ let TenderDetailService = class TenderDetailService {
         }
         const tenderLedgerId = saveTenderDetailDto.tdTenderLedgerId ?? tender.tndLedgerId;
         const ledgerName = await this.ensureLedgerExists(tx, tenderLedgerId, 'tdTenderLedgerId');
-        const partyLedgerId = saveTenderDetailDto.tdPartyLedgerId ?? scope.tdPartyLedgerId;
+        const partyLedgerId = this.requireField(saveTenderDetailDto.tdPartyLedgerId ?? scope.tdPartyLedgerId, 'tdPartyLedgerId');
         await this.ensureLedgerExists(tx, partyLedgerId, 'tdPartyLedgerId');
         if (saveTenderDetailDto.tdSettleLedgerId) {
             await this.ensureLedgerExists(tx, saveTenderDetailDto.tdSettleLedgerId, 'tdSettleLedgerId');

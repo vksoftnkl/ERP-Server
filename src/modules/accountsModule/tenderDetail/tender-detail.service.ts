@@ -458,7 +458,13 @@ export class TenderDetailService {
     }
     const tenderLedgerId = saveTenderDetailDto.tdTenderLedgerId ?? tender.tndLedgerId;
     const ledgerName = await this.ensureLedgerExists(tx, tenderLedgerId, 'tdTenderLedgerId');
-    const partyLedgerId = saveTenderDetailDto.tdPartyLedgerId ?? scope.tdPartyLedgerId;
+    // The line's own party wins; otherwise the document's. Required here rather
+    // than on the scope: the scope is built once per save, and a document with
+    // no party of its own is legal right up until it tries to file a tender.
+    const partyLedgerId = this.requireField(
+      saveTenderDetailDto.tdPartyLedgerId ?? scope.tdPartyLedgerId,
+      'tdPartyLedgerId',
+    );
     await this.ensureLedgerExists(tx, partyLedgerId, 'tdPartyLedgerId');
     if (saveTenderDetailDto.tdSettleLedgerId) {
       await this.ensureLedgerExists(tx, saveTenderDetailDto.tdSettleLedgerId, 'tdSettleLedgerId');
@@ -1011,7 +1017,7 @@ export class TenderDetailService {
   }
   // Generic in the value so an enum-typed DTO field survives the check as its
   // enum rather than widening to string.
-  private requireField<T extends string>(value: T | undefined, field: string): T {
+  private requireField<T extends string>(value: T | null | undefined, field: string): T {
     if (!value) {
       throwAccountsBadRequest<TenderDetailErrorDetail>(`${field} is required`, [
         { field, message: `${field} must be provided when creating a tender line` },

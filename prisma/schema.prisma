@@ -7433,7 +7433,7 @@ model SaleBill {
   sbSrcDocDate       DateTime? @db.Date @map("sb_src_doc_date")
   sbSrcDocYear       String?   @db.VarChar(9) @map("sb_src_doc_year")
   // Customer, snapshotted at billing time
-  sbCustId           String    @db.Uuid @map("sb_cust_id")
+  sbCustId           String?   @db.Uuid @map("sb_cust_id")
   sbCustName         String    @db.VarChar(200) @map("sb_cust_name")
   sbCustAddr         String?   @db.VarChar(500) @map("sb_cust_addr")
   sbCustPlace        String?   @db.VarChar(100) @map("sb_cust_place")
@@ -7543,7 +7543,7 @@ model SaleBill {
   sbModifiedBy       String?   @db.VarChar @map("sb_modified_by")
   // Relations
   items      SaleBillItem[]
-  customer   Customer       @relation(fields: [sbCustId], references: [cusId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sb_cust")
+  customer   Customer?      @relation(fields: [sbCustId], references: [cusId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sb_cust")
   posState   StateCode?     @relation(fields: [sbPosStcd], references: [stateCode], onDelete: Restrict, onUpdate: Cascade, map: "fk_sb_pos_state")
   priceLevel ItemPriceLevel @relation("SaleBillPriceLevel", fields: [sbPriceLevel], references: [iplId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sb_price_level")
   // ck_sb_doc_type, ck_sb_bill_type, ck_sb_status, ck_sb_pay_status and

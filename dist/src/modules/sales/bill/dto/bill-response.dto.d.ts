@@ -158,7 +158,7 @@ export declare class BillPayloadDto {
     sbSrcDocRefno: string | null;
     sbSrcDocDate: string | null;
     sbSrcDocYear: string | null;
-    sbCustId: string;
+    sbCustId: string | null;
     sbCustName: string;
     sbCustAddr: string | null;
     sbCustPlace: string | null;

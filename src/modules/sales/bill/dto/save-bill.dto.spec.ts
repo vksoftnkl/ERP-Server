@@ -81,3 +81,29 @@ describe('SaveBillDto — uuid[] fields never carry null', () => {
     await expect(transform({ sbSalesmanId: ['not-a-uuid'] })).rejects.toThrow();
   });
 });
+
+// sb_cust_id became nullable so a walk-in sale can be billed to a name with no
+// customer master row behind it. sbCustName did not — a bill always says who it
+// was billed to. See the migration 20260916100000_sale_bill_customer_optional
+// for what that does NOT relax: everything in accounts still needs a party.
+describe('SaveBillDto — sbCustId is optional', () => {
+  it('accepts an omitted customer', async () => {
+    const result = await transform({ sbCustId: undefined });
+
+    expect(result.sbCustId).toBeUndefined();
+  });
+
+  it('accepts an explicit null, which clears the customer', async () => {
+    const result = await transform({ sbCustId: null });
+
+    expect(result.sbCustId).toBeNull();
+  });
+
+  it('still rejects a non-uuid customer', async () => {
+    await expect(transform({ sbCustId: 'not-a-uuid' })).rejects.toThrow();
+  });
+
+  it('still demands the snapshotted name', async () => {
+    await expect(transform({ sbCustId: null, sbCustName: '' })).rejects.toThrow();
+  });
+});

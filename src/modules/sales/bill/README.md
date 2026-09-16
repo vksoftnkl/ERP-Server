@@ -375,7 +375,8 @@ transaction, so header + items + charges + tenders remain all-or-nothing.
   `tdPartyLedgerId = sbCustId`. That last default holds because a customer and its account ledger
   **share one primary key** — every customer is mirrored into `acc_ledger_master` under the same id
   — so the bill's customer _is_ the ledger the money is owed by. Any of these may be overridden per
-  line except the document itself, which is a 400 if it names another document.
+  line except the document itself, which is a 400 if it names another document. A bill that names
+  no customer at all cannot carry tenders — see [Bills with no customer](#bills-with-no-customer).
 - `tdTenderTypeId` / `tdTenderLedgerId` are snapshotted from the picked tender master when the line
   does not carry them, `tdTotalAmt` is derived as `round(tdAmount + tdSurchargeAmt, 2)`, and the
   remaining `ck_td_*` rules are enforced app-side on the merged row — see the tender module's
@@ -462,10 +463,33 @@ saying they do not want the _rest_. So what the bill delivered stays delivered, 
   `tdIsDeleted = false`) — nothing about the soft-delete _reads_ changed, only the route that used
   to set the flag.
 
+### Bills with no customer
+
+`sb_cust_id` is nullable (migration `20260916100000_sale_bill_customer_optional`). A **walk-in** is
+billed to a name and nothing else: the operator types who the goods went to, and there is no
+customer to create, no ledger to open and no outstanding to track. `sb_cust_name` stays NOT NULL —
+a bill always says who it was billed to, even when nobody is on file.
+
+Nothing in accounts is relaxed by that. `acc_voucher_header.avh_party_id`,
+`acc_bill_balance.abl_party_id`, `acc_tender_detail.td_party_ledger_id` and
+`acc_bill_adjustment.abj_party_id` are all still NOT NULL, because each of them is money owed by or
+to somebody. So a bill with no customer:
+
+- can be **kept and edited** as a `DRAFT`, with items, charges and everything else;
+- **cannot be POSTED** — 400 `Bill cannot be posted` on `sbCustId`
+  (`requirePartyLedgerId` in [bill-posting.helper.ts](./bill-posting.helper.ts));
+- **cannot carry tenders** — 400 `Bill cannot be saved` on `tenders`;
+- **cannot be settled against a credit** — 400 `Bill cannot be saved` on `adjustments`
+  (both from `BillService.requireCustomerLedgerId`).
+
+All four are answered as a 400 naming the field rather than being left to Postgres, which would
+come back as a raw 23502 on a column the client never sent.
+
 ### Validation
 
 - Enforced by the DTO decorators under the global `ValidationPipe`: `sbCompanyId`, `sbBranchId`,
-  `sbCounterId`, `sbCustId`, `sbUserId` are required UUIDs; `sbAccYear` is a fixed 9-char string;
+  `sbCounterId`, `sbUserId` are required UUIDs; `sbCustId` is an **optional** UUID (see
+  [Bills with no customer](#bills-with-no-customer)); `sbAccYear` is a fixed 9-char string;
   `sbDeviceType` / `sbDeviceId` are required (non-uuid) strings; `sbPriceLevel` is a required
   integer; `sbBillSlno` and `sbBillRefno` are optional and **ignored** (server-assigned — see
   [Bill numbering](#bill-numbering)); `sbCustName` (max 200) is a required non-empty string;

@@ -34,6 +34,7 @@ export declare class BillService {
     private requireItemField;
     private toChargeScope;
     private toTenderScope;
+    private requireCustomerLedgerId;
     private syncAdjustments;
     private logStatusChange;
     private toStatusEvent;

@@ -325,9 +325,13 @@ __decorate([
     __metadata("design:type", Object)
 ], SaveBillDto.prototype, "sbSrcDocYear", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ format: 'uuid' }),
-    (0, dtoDecorators_1.RequiredUuid)(),
-    __metadata("design:type", String)
+    (0, swagger_1.ApiPropertyOptional)({
+        format: 'uuid',
+        nullable: true,
+        description: 'Customer master row this bill was billed to. NULL for a walk-in: the name is still snapshotted in sbCustName, but there is no ledger to post a credit against',
+    }),
+    (0, dtoDecorators_1.NullableUuid)(),
+    __metadata("design:type", Object)
 ], SaveBillDto.prototype, "sbCustId", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)({ maxLength: 200 }),

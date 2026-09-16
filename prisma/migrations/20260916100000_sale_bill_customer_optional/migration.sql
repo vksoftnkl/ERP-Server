@@ -1,0 +1,29 @@
+-- A bill need not name a customer master row.
+--
+-- A walk-in sale is billed to a name and nothing else: the operator types who
+-- the goods went to, and there is no customer to create, no ledger to open and
+-- no outstanding to track. sb_cust_name already carries that snapshot, but
+-- sb_cust_id demanded a master row, so the counter had to invent one -- or fall
+-- back on a shared "CASH CUSTOMER" whose ledger accumulates every walk-in in
+-- the branch as a single unreconcilable balance.
+--
+-- sb_cust_name stays NOT NULL: a bill always says who it was billed to, even
+-- when nobody is on file.
+--
+-- fk_sb_cust is untouched -- a nullable foreign key is simply not checked when
+-- the column is NULL -- and so is the index behind it.
+--
+-- sale_bill is LIST-partitioned by sb_acc_year. Dropping NOT NULL on the
+-- partitioned parent drops it on every existing partition and on every
+-- partition ensure_acc_year_partitions creates afterwards.
+--
+-- Nothing in accounts is relaxed by this. acc_voucher_header.avh_party_id,
+-- acc_bill_balance.abl_party_id, acc_tender_detail.td_party_ledger_id and
+-- acc_bill_adjustment.abj_party_id are all still NOT NULL, because each of them
+-- is money owed by or to somebody. A bill with no customer can therefore be
+-- kept and edited but never POSTED, never carry a tender and never be settled
+-- against a credit -- the sales module answers all three as a 400 naming
+-- sbCustId (BillService.requireCustomerLedgerId, requirePartyLedgerId in
+-- bill-posting.helper.ts) rather than letting Postgres raise a 23502.
+ALTER TABLE sales.sale_bill
+    ALTER COLUMN sb_cust_id DROP NOT NULL;

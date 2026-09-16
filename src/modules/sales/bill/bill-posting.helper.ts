@@ -57,7 +57,9 @@ export interface BillPostingSource extends BillPostingRef {
   sbBillDatetime: Date;
   sbDueDate: Date | null;
   sbDueDays: number | null;
-  sbCustId: string;
+  // Nullable since sb_cust_id became nullable: a walk-in bill carries only the
+  // snapshotted name. requirePartyLedgerId is what stops one reaching the books.
+  sbCustId: string | null;
   sbUserId: string;
   sbSessionId: string | null;
   sbDeviceType: string | null;
@@ -73,6 +75,27 @@ export interface BillPostingSource extends BillPostingRef {
   // reaches once it has already decided the bill is POSTED.
   sbStatus: string;
   sbCancelReason: string | null;
+}
+/// accounts.acc_voucher_header.avh_party_id and acc_bill_balance.abl_party_id
+/// are both NOT NULL: every accounting row a bill raises is raised AGAINST
+/// somebody, and a receivable nobody owes is not a receivable. sale_bill's
+/// sb_cust_id is nullable — a walk-in keeps the snapshotted sb_cust_name and no
+/// master row — so such a bill can be kept as a DRAFT but can never be posted.
+///
+/// Answered as a 400 naming sbCustId rather than left to Postgres, which would
+/// come back as a raw 23502 on a column the client never sent.
+function requirePartyLedgerId(bill: BillPostingSource): string {
+  if (bill.sbCustId === null) {
+    throwSalesBadRequest<BillErrorDetail, BillErrorResponse>('Bill cannot be posted', [
+      {
+        field: 'sbCustId',
+        message:
+          'A POSTED bill must name a customer: its voucher and receivable are raised against ' +
+          "the customer's account ledger, which a walk-in does not have.",
+      },
+    ]);
+  }
+  return bill.sbCustId;
 }
 export interface BillPostingResult {
   // accounts.acc_voucher_header.avh_voucher_id — written back to
@@ -141,7 +164,7 @@ export async function postBillToAccounts(
       avhTotalCredit: billAmount,
       // Customer and ledger share a primary key, so sbCustId is already the
       // acc_ledger_master id.
-      avhPartyId: bill.sbCustId,
+      avhPartyId: requirePartyLedgerId(bill),
       // Left NULL deliberately: the sales ledger is per line (item tax master's
       // taxSalesLedgerId), so a mixed-rate bill has no single contra ledger.
       avhOppositeLedgerId: null,
@@ -177,7 +200,7 @@ export async function postBillToAccounts(
         ablBranchId: bill.sbBranchId,
         ablTenantId: bill.sbTenantId,
         ablAccYear: bill.sbAccYear,
-        ablPartyId: bill.sbCustId,
+        ablPartyId: requirePartyLedgerId(bill),
         // acc_bills carries a single salesman; the bill carries an array.
         ablSalesmanId: bill.sbSalesmanId?.[0] ?? null,
         ablAgentId: bill.sbAgentId,
@@ -496,7 +519,7 @@ async function syncPostedVoucher(
       // ck_avh_balanced again — an edited total has to stay balanced.
       avhTotalDebit: billAmount,
       avhTotalCredit: billAmount,
-      avhPartyId: bill.sbCustId,
+      avhPartyId: requirePartyLedgerId(bill),
       avhEmployeeId: bill.sbSalesmanId ?? [],
       avhRemarks: bill.sbRemarks,
       avhDeviceType: mapDeviceType(bill.sbDeviceType),
@@ -552,7 +575,7 @@ async function syncReceivable(
     // is the pair — the bill's own year, which is the one it was raised in.
     where: { ablId_ablAccYear: { ablId: existing.ablId, ablAccYear: existing.ablAccYear } },
     data: {
-      ablPartyId: bill.sbCustId,
+      ablPartyId: requirePartyLedgerId(bill),
       ablSalesmanId: bill.sbSalesmanId?.[0] ?? null,
       ablAgentId: bill.sbAgentId,
       ablDocDate: bill.sbBillDate,
@@ -626,7 +649,7 @@ async function createReceivable(
       ablBranchId: bill.sbBranchId,
       ablTenantId: bill.sbTenantId,
       ablAccYear: bill.sbAccYear,
-      ablPartyId: bill.sbCustId,
+      ablPartyId: requirePartyLedgerId(bill),
       ablSalesmanId: bill.sbSalesmanId?.[0] ?? null,
       ablAgentId: bill.sbAgentId,
       ablBillType: BILL_REF_TYPE,

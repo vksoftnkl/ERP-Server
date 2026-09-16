@@ -43,6 +43,7 @@ import { ChargeDetailService } from '../../master/charge-detail/charge-detail.se
 import { ChargeDocumentScope } from '../../master/charge-detail/types/charge-detail-api.types';
 import { TenderDetailService } from '../../accountsModule/tenderDetail/tender-detail.service';
 import { TenderDocumentScope } from '../../accountsModule/tenderDetail/types/tender-detail-api.types';
+import { SaveTenderDetailDto } from '../../accountsModule/tenderDetail/dto/save-tender-detail.dto';
 import {
   PresentFieldTransform,
   SalesWriteClient,
@@ -380,7 +381,10 @@ interface BillScope {
   // number series yet saves the draft unnumbered.
   sbBillSlno: bigint | null;
   sbBillDate: Date;
-  sbCustId: string;
+  // Nullable since sb_cust_id became nullable: a walk-in bill carries only the
+  // snapshotted sb_cust_name. Everything in accounts still needs a party — see
+  // requireCustomerLedgerId.
+  sbCustId: string | null;
   sbUserId: string;
   sbSessionId: string | null;
   sbDeviceId: string;
@@ -702,7 +706,7 @@ export class BillService {
         );
         const tenders = await this.tenderDetailService.syncDocumentTenders(
           tx,
-          this.toTenderScope(scope),
+          this.toTenderScope(scope, saveBillDto.tenders),
           saveBillDto.tenders,
           createdBy,
           BILL_TENDER_AUDIT,
@@ -859,7 +863,7 @@ export class BillService {
         );
         const tenders = await this.tenderDetailService.syncDocumentTenders(
           tx,
-          this.toTenderScope(scope),
+          this.toTenderScope(scope, saveBillDto.tenders),
           saveBillDto.tenders,
           modifiedBy,
           BILL_TENDER_AUDIT,
@@ -976,7 +980,7 @@ export class BillService {
     scope: BillScope,
     inputItems: SaveBillItemDto[] | undefined,
     actorId: string,
-   ): Promise<SaleBillItem[]> {
+  ): Promise<SaleBillItem[]> {
     const existing = await tx.saleBillItem.findMany({
       where: { sbiBillId: scope.sbId, sbiIsDeleted: false },
       orderBy: { sbiLineNo: 'asc' },
@@ -1420,7 +1424,10 @@ export class BillService {
   // acc_ledger_master under the same id), so the bill's customer IS the ledger
   // the money is owed by. A line may still name a different party ledger, and
   // the tender module verifies whichever id it gets.
-  private toTenderScope(scope: BillScope): TenderDocumentScope {
+  private toTenderScope(
+    scope: BillScope,
+    tenders: SaveTenderDetailDto[] | undefined,
+  ): TenderDocumentScope {
     return {
       tdSrcModule: BILL_TENDER_SRC_MODULE,
       tdSrcDocType: BILL_TENDER_SRC_DOC_TYPE,
@@ -1430,12 +1437,39 @@ export class BillService {
       tdTenantId: scope.sbTenantId,
       tdAccYear: scope.sbAccYear,
       tdDocDate: scope.sbBillDate,
-      tdPartyLedgerId: scope.sbCustId,
+      // Demanded only when there is money to file: syncDocumentTenders reads the
+      // scope's party solely to stamp a line it writes, so a walk-in bill with
+      // no tenders saves with a null party and no tender row to hang off it.
+      tdPartyLedgerId:
+        tenders === undefined || tenders.length === 0
+          ? scope.sbCustId
+          : this.requireCustomerLedgerId(scope.sbCustId, 'tenders'),
       tdUserId: scope.sbUserId,
       tdSessionId: scope.sbSessionId,
       tdDeviceId: scope.sbDeviceId,
       tdDrCr: BILL_TENDER_DR_CR,
     };
+  }
+  // Every accounting row a bill raises — the voucher's avh_party_id, the
+  // receivable's abl_party_id, a tender's td_party_ledger_id, an adjustment's
+  // abj_party_id — is NOT NULL, because each of them is money owed by or to
+  // somebody. sb_cust_id is nullable, so a walk-in bill that names no customer
+  // master row can be kept and edited but cannot carry any of them.
+  //
+  // `field` is whichever part of the payload asked for accounts, so the
+  // operator is told what to drop rather than just that the save failed.
+  private requireCustomerLedgerId(sbCustId: string | null, field: string): string {
+    if (sbCustId === null) {
+      throwSalesBadRequest<BillErrorDetail, BillErrorResponse>('Bill cannot be saved', [
+        {
+          field,
+          message:
+            'This bill names no customer (sbCustId), so there is no account ledger to raise ' +
+            'these rows against. Pick a customer, or drop them from the payload.',
+        },
+      ]);
+    }
+    return sbCustId;
   }
   // Posts the credits the customer already holds — order advances, sale-return
   // credit notes — against this bill's receivable.
@@ -1485,7 +1519,7 @@ export class BillService {
         // Customer and ledger share a primary key, so sbCustId is already the
         // acc_ledger_master id abl_party_id / abj_party_id want — the same
         // identity toTenderScope hands the tender module.
-        partyId: bill.sbCustId,
+        partyId: this.requireCustomerLedgerId(bill.sbCustId, 'adjustments'),
         adjDate: bill.sbBillDate,
         userId: bill.sbUserId,
         sessionId: bill.sbSessionId,

@@ -118,7 +118,7 @@ export interface TenderDocumentScope {
     tdTenantId: string | null;
     tdAccYear: string;
     tdDocDate: Date;
-    tdPartyLedgerId: string;
+    tdPartyLedgerId: string | null;
     tdUserId: string;
     tdSessionId: string | null;
     tdDeviceId: string | null;
