@@ -2,7 +2,7 @@ import type { AccLedgerProfile, AccGroupMasterNature, AccGroupMasterType } from 
 export type { AccountsErrorDetail as AccGroupMasterErrorDetail } from "../../../../common/types/module-api.types";
 export type { AccountsErrorResponse as AccGroupMasterErrorResponse } from "../../../../common/types/module-api.types";
 export type { AccountsSuccessResponse as AccGroupMasterSuccessResponse } from "../../../../common/types/module-api.types";
-export { AccLedgerProfile, AccGroupMasterNature, AccGroupMasterType } from './acc-group-master-enum';
+export { AccLedgerProfile, AccGroupMasterNature, AccGroupMasterType, } from './acc-group-master-enum';
 export interface AccGroupMasterPayload {
     accGroupId: string;
     accGroupCompanyId: string | null;
@@ -21,7 +21,6 @@ export interface AccGroupMasterPayload {
     accGroupParentId: string | null;
     accGroupParentName: string | null;
     accGroupSort: number | null;
-    accGroupChildIds: string[];
     accGroupType: AccGroupMasterType;
     accGroupIsDefault: boolean;
     accGroupIsReserved: boolean;

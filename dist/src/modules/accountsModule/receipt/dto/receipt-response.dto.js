@@ -9,7 +9,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.RegularisePdcSuccessDto = exports.RegularisePdcPayloadDto = exports.ReceiptCancelSuccessDto = exports.ReceiptCancelPayloadDto = exports.ReceiptBillReopenedDto = exports.ReceiptReversalDto = exports.ReceiptStatusPayloadDto = exports.ReceiptPostSuccessDto = exports.ReceiptPostPayloadDto = exports.ReceiptBillAfterDto = exports.ReceiptNumberedVoucherDto = exports.ReceiptSuccessDto = exports.ReceiptHeaderSuccessDto = exports.ReceiptPayloadDto = exports.ReceiptDraftSuccessDto = exports.ReceiptDraftPayloadDto = exports.ReceiptHeaderDto = exports.ReceiptAdvanceBillDto = exports.ReceiptPdcVoucherDto = exports.ReceiptChequeDto = exports.ReceiptAllocationDto = exports.ReceiptLegDto = exports.ReceiptOtherLineDto = exports.ReceiptTenderDto = exports.PartyContextSuccessDto = exports.PartyContextPayloadDto = exports.PartyPendingChequeDto = exports.PartyRecentReceiptDto = exports.OpenItemsSuccessDto = exports.OpenItemsPayloadDto = exports.OpenItemsPartyDto = exports.OpenItemsSummaryDto = exports.OpenCreditDto = exports.OpenBillDto = exports.ReceiptErrorResponseDto = exports.ReceiptErrorFieldDto = void 0;
+exports.RegularisePdcSuccessDto = exports.RegularisePdcPayloadDto = exports.ReceiptDeleteSuccessDto = exports.ReceiptDeletePayloadDto = exports.ReceiptCancelSuccessDto = exports.ReceiptCancelPayloadDto = exports.ReceiptBillReopenedDto = exports.ReceiptReversalDto = exports.ReceiptStatusPayloadDto = exports.ReceiptAmendSuccessDto = exports.ReceiptAmendPayloadDto = exports.ReceiptAmendUnwoundDto = exports.ReceiptPostSuccessDto = exports.ReceiptPostPayloadDto = exports.ReceiptBillAfterDto = exports.ReceiptNumberedVoucherDto = exports.ReceiptSuccessDto = exports.ReceiptHeaderSuccessDto = exports.ReceiptPayloadDto = exports.ReceiptDraftSuccessDto = exports.ReceiptDraftPayloadDto = exports.ReceiptHeaderDto = exports.ReceiptAdvanceBillDto = exports.ReceiptPdcVoucherDto = exports.ReceiptChequeDto = exports.ReceiptAllocationDto = exports.ReceiptLegDto = exports.ReceiptOtherLineDto = exports.ReceiptTenderDto = exports.PartyContextSuccessDto = exports.PartyContextPayloadDto = exports.PartyPendingChequeDto = exports.PartyRecentReceiptDto = exports.OpenItemsSuccessDto = exports.OpenItemsPayloadDto = exports.OpenItemsPartyDto = exports.OpenItemsSummaryDto = exports.OpenCreditDto = exports.OpenBillDto = exports.ReceiptErrorResponseDto = exports.ReceiptErrorFieldDto = void 0;
 const swagger_1 = require("@nestjs/swagger");
 const receipt_enum_1 = require("../types/receipt-enum");
 class ReceiptErrorFieldDto {
@@ -65,6 +65,8 @@ class OpenBillDto {
     daysOverdue;
     pdcHeld;
     ppdSuggested;
+    tcsAmount;
+    tcsPending;
 }
 exports.OpenBillDto = OpenBillDto;
 __decorate([
@@ -131,6 +133,26 @@ __decorate([
     }),
     __metadata("design:type", Number)
 ], OpenBillDto.prototype, "ppdSuggested", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        example: 0,
+        description: "§2.13 — TCS under 206C(1H) already charged INSIDE this bill's amount. **0 unless " +
+            'accounts.tcs_basis is SALES**: on the RECEIPT basis the invoice carries no TCS and the ' +
+            'receipt collects it as a TCS_PAYABLE leg instead. The two never both apply, so a non-zero ' +
+            'figure here is what tells the screen not to expect that leg.',
+    }),
+    __metadata("design:type", Number)
+], OpenBillDto.prototype, "tcsAmount", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        example: 0,
+        description: 'How much of tcsAmount has not been collected yet — pro-rata of what is still pending on ' +
+            'the bill (accounts.v_bill_tcs). Pro-rata because a part payment pays the WHOLE bill ' +
+            'proportionally: the customer does not get to pay for the goods and withhold the tax. ' +
+            'This is the figure that makes bill-wise TCS outstanding answerable.',
+    }),
+    __metadata("design:type", Number)
+], OpenBillDto.prototype, "tcsPending", void 0);
 class OpenCreditDto {
     billId;
     billAccYear;
@@ -988,6 +1010,7 @@ class ReceiptHeaderDto {
     avhStatusBy;
     avhPostedOn;
     avhCancelReason;
+    avhRevisionNo;
     avhReversalVoucherId;
     avhAgainstVoucherId;
     avhPrintCount;
@@ -1132,6 +1155,16 @@ __decorate([
     (0, swagger_1.ApiProperty)({ nullable: true }),
     __metadata("design:type", Object)
 ], ReceiptHeaderDto.prototype, "avhCancelReason", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        example: 0,
+        description: 'R20 — how many times this POSTED receipt has been restated in place by /receipts/amend. ' +
+            '0 is "as first posted". A client that intends to amend HOLDS this value and sends it ' +
+            'straight back as baseRevision: it is the optimistic lock, and an amend carries the whole ' +
+            'document, so without it one correction silently undoes another.',
+    }),
+    __metadata("design:type", Number)
+], ReceiptHeaderDto.prototype, "avhRevisionNo", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)({ nullable: true, format: 'uuid' }),
     __metadata("design:type", Object)
@@ -1452,6 +1485,96 @@ __decorate([
     (0, swagger_1.ApiProperty)({ type: ReceiptPostPayloadDto }),
     __metadata("design:type", ReceiptPostPayloadDto)
 ], ReceiptPostSuccessDto.prototype, "data", void 0);
+class ReceiptAmendUnwoundDto {
+    adjustmentsReversed;
+    legsRemoved;
+    pdcVouchersRemoved;
+    chequesRemoved;
+    advanceBillsRemoved;
+    tendersRemoved;
+}
+exports.ReceiptAmendUnwoundDto = ReceiptAmendUnwoundDto;
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        example: 3,
+        description: 'Negative rows written — one per live adjustment the old post made.',
+    }),
+    __metadata("design:type", Number)
+], ReceiptAmendUnwoundDto.prototype, "adjustmentsReversed", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        example: 4,
+        description: 'Legs retired, across the receipt and its old PDC vouchers.',
+    }),
+    __metadata("design:type", Number)
+], ReceiptAmendUnwoundDto.prototype, "legsRemoved", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        example: 1,
+        description: 'Old post-dated cheque vouchers retired. Their numbers are NOT reused.',
+    }),
+    __metadata("design:type", Number)
+], ReceiptAmendUnwoundDto.prototype, "pdcVouchersRemoved", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        example: 1,
+        description: 'Old acc_pdc_register rows retired — freeing their instrument numbers, which is what lets ' +
+            'the corrected cheque be keyed as the number it should have been.',
+    }),
+    __metadata("design:type", Number)
+], ReceiptAmendUnwoundDto.prototype, "chequesRemoved", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        example: 1,
+        description: 'Old ADVANCE bills retired. Each was proven unspent first.',
+    }),
+    __metadata("design:type", Number)
+], ReceiptAmendUnwoundDto.prototype, "advanceBillsRemoved", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 2, description: 'Tender rows the new payload replaced.' }),
+    __metadata("design:type", Number)
+], ReceiptAmendUnwoundDto.prototype, "tendersRemoved", void 0);
+class ReceiptAmendPayloadDto extends ReceiptPostPayloadDto {
+    fromRevision;
+    toRevision;
+    editRemark;
+    unwound;
+}
+exports.ReceiptAmendPayloadDto = ReceiptAmendPayloadDto;
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 1, description: 'The revision the client sent as baseRevision.' }),
+    __metadata("design:type", Number)
+], ReceiptAmendPayloadDto.prototype, "fromRevision", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 2, description: 'Always fromRevision + 1. The slip prints "rev 2".' }),
+    __metadata("design:type", Number)
+], ReceiptAmendPayloadDto.prototype, "toRevision", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 'cheque no keyed 55491, actual 55419' }),
+    __metadata("design:type", String)
+], ReceiptAmendPayloadDto.prototype, "editRemark", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ type: ReceiptAmendUnwoundDto }),
+    __metadata("design:type", ReceiptAmendUnwoundDto)
+], ReceiptAmendPayloadDto.prototype, "unwound", void 0);
+class ReceiptAmendSuccessDto {
+    success;
+    message;
+    data;
+}
+exports.ReceiptAmendSuccessDto = ReceiptAmendSuccessDto;
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: true }),
+    __metadata("design:type", Boolean)
+], ReceiptAmendSuccessDto.prototype, "success", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 'Receipt rct00018 amended — now revision 2' }),
+    __metadata("design:type", String)
+], ReceiptAmendSuccessDto.prototype, "message", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ type: ReceiptAmendPayloadDto }),
+    __metadata("design:type", ReceiptAmendPayloadDto)
+], ReceiptAmendSuccessDto.prototype, "data", void 0);
 class ReceiptStatusPayloadDto {
     avhVoucherId;
     avhAccYear;
@@ -1596,6 +1719,77 @@ __decorate([
     (0, swagger_1.ApiProperty)({ type: ReceiptCancelPayloadDto }),
     __metadata("design:type", ReceiptCancelPayloadDto)
 ], ReceiptCancelSuccessDto.prototype, "data", void 0);
+class ReceiptDeletePayloadDto {
+    avhVoucherId;
+    avhAccYear;
+    avhVoucherRefno;
+    status;
+    deletedOn;
+    deletedBy;
+    tendersDeleted;
+    otherLinesDeleted;
+}
+exports.ReceiptDeletePayloadDto = ReceiptDeletePayloadDto;
+__decorate([
+    (0, swagger_1.ApiProperty)({ format: 'uuid' }),
+    __metadata("design:type", String)
+], ReceiptDeletePayloadDto.prototype, "avhVoucherId", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: '2026-2027' }),
+    __metadata("design:type", String)
+], ReceiptDeletePayloadDto.prototype, "avhAccYear", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        type: String,
+        nullable: true,
+        example: null,
+        description: 'Always null — a draft never took a number, which is the whole of R10.',
+    }),
+    __metadata("design:type", Object)
+], ReceiptDeletePayloadDto.prototype, "avhVoucherRefno", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        enum: receipt_enum_1.VoucherStatus,
+        example: receipt_enum_1.VoucherStatus.DRAFT,
+        description: 'DRAFT, unchanged. A delete is not a status move: the row leaves play through ' +
+            'avh_is_deleted and avh_voucher_status has no DELETED value to stamp.',
+    }),
+    __metadata("design:type", String)
+], ReceiptDeletePayloadDto.prototype, "status", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: '2026-09-17T13:40:02.000Z' }),
+    __metadata("design:type", String)
+], ReceiptDeletePayloadDto.prototype, "deletedOn", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ format: 'uuid' }),
+    __metadata("design:type", String)
+], ReceiptDeletePayloadDto.prototype, "deletedBy", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 2, description: 'Tender rows soft-deleted with the header.' }),
+    __metadata("design:type", Number)
+], ReceiptDeletePayloadDto.prototype, "tendersDeleted", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 1, description: 'Other-ledger lines that were in avh_draft_lines.' }),
+    __metadata("design:type", Number)
+], ReceiptDeletePayloadDto.prototype, "otherLinesDeleted", void 0);
+class ReceiptDeleteSuccessDto {
+    success;
+    message;
+    data;
+}
+exports.ReceiptDeleteSuccessDto = ReceiptDeleteSuccessDto;
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: true }),
+    __metadata("design:type", Boolean)
+], ReceiptDeleteSuccessDto.prototype, "success", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 'Draft receipt deleted — 2 tender row(s) removed' }),
+    __metadata("design:type", String)
+], ReceiptDeleteSuccessDto.prototype, "message", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ type: ReceiptDeletePayloadDto }),
+    __metadata("design:type", ReceiptDeletePayloadDto)
+], ReceiptDeleteSuccessDto.prototype, "data", void 0);
 class RegularisePdcPayloadDto {
     asOf;
     billsRegularised;

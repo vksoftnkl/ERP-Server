@@ -23,8 +23,10 @@ const receipt_exception_filter_1 = require("./receipt-exception.filter");
 const receipt_service_1 = require("./receipt.service");
 const receipt_posting_service_1 = require("./receipt-posting.service");
 const receipt_cancel_service_1 = require("./receipt-cancel.service");
+const receipt_amend_service_1 = require("./receipt-amend.service");
 const open_items_service_1 = require("./open-items.service");
 const open_item_dto_1 = require("./dto/open-item.dto");
+const amend_receipt_dto_1 = require("./dto/amend-receipt.dto");
 const save_receipt_dto_1 = require("./dto/save-receipt.dto");
 const post_receipt_dto_1 = require("./dto/post-receipt.dto");
 const receipt_response_dto_1 = require("./dto/receipt-response.dto");
@@ -33,12 +35,14 @@ let ReceiptController = class ReceiptController {
     receiptService;
     postingService;
     cancelService;
+    amendService;
     openItemsService;
     recompute;
-    constructor(receiptService, postingService, cancelService, openItemsService, recompute) {
+    constructor(receiptService, postingService, cancelService, amendService, openItemsService, recompute) {
         this.receiptService = receiptService;
         this.postingService = postingService;
         this.cancelService = cancelService;
+        this.amendService = amendService;
         this.openItemsService = openItemsService;
         this.recompute = recompute;
     }
@@ -87,6 +91,24 @@ let ReceiptController = class ReceiptController {
         return {
             success: true,
             message: `Receipt ${data.avhVoucherRefno} cancelled — ${data.reversals.length} voucher(s) reversed`,
+            data,
+        };
+    }
+    async delete(dto) {
+        const data = await this.receiptService.deleteDraft(dto);
+        return {
+            success: true,
+            message: 'Draft receipt deleted' +
+                (data.tendersDeleted > 0 ? ` — ${data.tendersDeleted} tender row(s) removed` : ''),
+            data,
+        };
+    }
+    async amend(dto) {
+        const data = await this.amendService.amend(dto);
+        return {
+            success: true,
+            message: `Receipt ${data.header.avhVoucherRefno ?? data.header.avhVoucherId} amended — now ` +
+                `revision ${data.toRevision}`,
             data,
         };
     }
@@ -243,6 +265,70 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], ReceiptController.prototype, "cancel", null);
 __decorate([
+    (0, common_1.Post)('delete'),
+    (0, common_1.Version)(api_version_1.API_VERSION),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Throw a draft away',
+        description: 'DRAFT only, and the four keys only — there is no reason field, because there is nothing ' +
+            'to justify. A draft took no number, touched no bill and wrote nothing into acc_vouchers ' +
+            '(R10), so abandoning one is abandoning a piece of paper on a desk.\n\n' +
+            'Soft-deletes the header, its tender rows and the other-ledger lines in one transaction. ' +
+            'avh_voucher_status is left at DRAFT: the row leaves play through avh_is_deleted, and the ' +
+            'trail is a DELETED event in txn_status_log, which is the distinction that keeps an ' +
+            'abandoned draft out of the cancelled list.\n\n' +
+            'A POSTED receipt is a 409 naming /cancel — money in the books is reversed, never removed ' +
+            '— and a CANCELLED one is a 409 too. This route exists because /cancel refuses a DRAFT, ' +
+            'correctly, and without it an abandoned draft would be permanent.',
+    }),
+    (0, swagger_1.ApiCreatedResponse)({ type: receipt_response_dto_1.ReceiptDeleteSuccessDto }),
+    (0, swagger_1.ApiConflictResponse)({ type: receipt_response_dto_1.ReceiptErrorResponseDto }),
+    (0, swagger_1.ApiNotFoundResponse)({ type: receipt_response_dto_1.ReceiptErrorResponseDto }),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [post_receipt_dto_1.DeleteReceiptDto]),
+    __metadata("design:returntype", Promise)
+], ReceiptController.prototype, "delete", null);
+__decorate([
+    (0, common_1.Post)('amend'),
+    (0, common_1.Version)(api_version_1.API_VERSION),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Restate a posted receipt in place — behind a company setting, default OFF',
+        description: 'R20. Takes EXACTLY what /create and /post take together — the same object the screen ' +
+            'already assembles — plus the four keys, a baseRevision and an editRemark. ONE ' +
+            'transaction: the old money is unwound in place, the bills are recomputed, and §5.2’s ' +
+            'fifteen steps re-run from the new payload.\n\n' +
+            '**Not a second way to post.** It calls /post’s own transaction rather than reproducing ' +
+            'it, so everything /post validates is validated here — including the identity to the ' +
+            'paisa and an onAccount that must agree with the server’s own, recomputed against the ' +
+            'REOPENED bills.\n\n' +
+            '**The document keeps its identity**: same avhVoucherId, same avhVoucherNo, same ' +
+            'avhVoucherRefno, POSTED before and POSTED after. No reversal voucher is written and the ' +
+            'status never becomes CANCELLED — that is the whole difference from /cancel. ' +
+            'avh_revision_no carries the change instead, because a receipt is not a GST document and ' +
+            'the customer is holding a slip with that number on it.\n\n' +
+            '**baseRevision is mandatory** and is the avhRevisionNo /receipts/get returned. A ' +
+            'mismatch is a 409 naming the current revision: an amend carries the WHOLE document, so ' +
+            'last-writer-wins would silently undo somebody else’s correction — on ledger legs, not ' +
+            'on a master record. Reload on that 409; never retry with the number you were just told.\n\n' +
+            '**Refused on exactly what /cancel is refused on**, and no setting makes these ' +
+            'negotiable: a cheque DEPOSITED or later, an on-account balance already spent, a locked ' +
+            'period or closed year, a receipt that is not POSTED. And refused as a 409 naming the ' +
+            'setting key when accounts.allow_posted_amend is off — which is the default, and is the ' +
+            'current cancel-and-re-enter model unchanged.\n\n' +
+            'audit.audit_log carries the before and after of acc_voucher_header, acc_vouchers, ' +
+            'acc_bill_adjustment and acc_pdc_register; txn_status_log reads POSTED → AMENDED → ' +
+            'POSTED, carrying the editRemark.',
+    }),
+    (0, swagger_1.ApiCreatedResponse)({ type: receipt_response_dto_1.ReceiptAmendSuccessDto }),
+    (0, swagger_1.ApiBadRequestResponse)({ type: receipt_response_dto_1.ReceiptErrorResponseDto }),
+    (0, swagger_1.ApiConflictResponse)({ type: receipt_response_dto_1.ReceiptErrorResponseDto }),
+    (0, swagger_1.ApiNotFoundResponse)({ type: receipt_response_dto_1.ReceiptErrorResponseDto }),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [amend_receipt_dto_1.AmendReceiptDto]),
+    __metadata("design:returntype", Promise)
+], ReceiptController.prototype, "amend", null);
+__decorate([
     (0, common_1.Post)('regularise-pdc'),
     (0, common_1.Version)(api_version_1.API_VERSION),
     (0, swagger_1.ApiOperation)({
@@ -271,6 +357,7 @@ exports.ReceiptController = ReceiptController = __decorate([
     __metadata("design:paramtypes", [receipt_service_1.ReceiptService,
         receipt_posting_service_1.ReceiptPostingService,
         receipt_cancel_service_1.ReceiptCancelService,
+        receipt_amend_service_1.ReceiptAmendService,
         open_items_service_1.OpenItemsService,
         bill_balance_recompute_service_1.BillBalanceRecomputeService])
 ], ReceiptController);

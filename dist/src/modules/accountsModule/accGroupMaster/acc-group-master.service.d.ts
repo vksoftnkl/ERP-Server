@@ -19,15 +19,7 @@ export declare class AccGroupMasterService {
     private ensureParentExists;
     private ensureNameIsUnique;
     private applyOptionalFields;
-    private getAncestorIds;
     private getActiveSubtreeIds;
-    private appendChildIds;
-    private removeChildIds;
-    private ensureSelfInChildIds;
-    private mergeChildIds;
-    private excludeChildIds;
-    private toUniqueIds;
-    private areSameIds;
     private getParentName;
     private getCompanyName;
     private toPayload;

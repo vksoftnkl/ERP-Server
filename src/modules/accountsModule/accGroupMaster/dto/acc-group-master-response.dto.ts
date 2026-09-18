@@ -90,8 +90,10 @@ export class AccGroupMasterPayloadDto {
   @ApiPropertyOptional({ nullable: true })
   accGroupSort!: number | null;
 
-  @ApiProperty({ type: [String], example: [] })
-  accGroupChildIds!: string[];
+  // accGroupChildIds was removed with acc_group_child_ids (20260917140000). It was
+  // marked REQUIRED here while being maintained by one service and nothing else, so
+  // any consumer that trusted it built the wrong tree — an export most of all, since
+  // it has to emit parents before children. Walk accGroupParentId instead.
 
   @ApiProperty({ enum: AccGroupMasterType, enumName: 'AccountGroupType', maxLength: 20 })
   accGroupType!: string;
@@ -100,9 +102,26 @@ export class AccGroupMasterPayloadDto {
   accGroupIsDefault!: boolean;
 
   @ApiProperty()
+  accGroupIsReserved!: boolean;
+
+  @ApiProperty()
   accLedgerProfile!: string;
 
+  // The four Tally behaviour flags — settable since 20260917 and read back here.
+  @ApiProperty({ description: 'Tally ISSUBLEDGER' })
+  accGroupBehaveAsSubledger!: boolean;
 
+  @ApiProperty({ description: 'Tally NETDEBITCREDITFORREPORTING' })
+  accGroupNetDebitCredit!: boolean;
+
+  @ApiProperty({ description: 'Tally USEDFORCALCULATION' })
+  accGroupUsedForCalculation!: boolean;
+
+  @ApiProperty({ description: 'Tally AFFECTSGROSSPROFIT' })
+  accGroupAffectsGrossProfit!: boolean;
+
+  @ApiProperty()
+  accGroupIsActive!: boolean;
 }
 
 export class AccGroupMasterDeleteResultDto {

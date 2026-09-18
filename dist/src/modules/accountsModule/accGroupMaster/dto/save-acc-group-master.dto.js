@@ -21,6 +21,11 @@ class SaveAccGroupMasterDto {
     accGroupDescription;
     accGroupParentId;
     accGroupSort;
+    accGroupBehaveAsSubledger;
+    accGroupNetDebitCredit;
+    accGroupUsedForCalculation;
+    accGroupAffectsGrossProfit;
+    accGroupIsActive;
 }
 exports.SaveAccGroupMasterDto = SaveAccGroupMasterDto;
 __decorate([
@@ -62,4 +67,41 @@ __decorate([
     (0, dtoDecorators_1.OptionalInteger)(),
     __metadata("design:type", Number)
 ], SaveAccGroupMasterDto.prototype, "accGroupSort", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        description: 'Tally ISSUBLEDGER. The group behaves as a sub-ledger of its parent: balances ' +
+            'report against the parent while each ledger keeps its own identity.',
+    }),
+    (0, dtoDecorators_1.OptionalBoolean)(),
+    __metadata("design:type", Boolean)
+], SaveAccGroupMasterDto.prototype, "accGroupBehaveAsSubledger", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        description: 'Tally NETDEBITCREDITFORREPORTING. Report one net figure for the group instead of ' +
+            'separate debit and credit totals.',
+    }),
+    (0, dtoDecorators_1.OptionalBoolean)(),
+    __metadata("design:type", Boolean)
+], SaveAccGroupMasterDto.prototype, "accGroupNetDebitCredit", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        description: 'Tally USEDFORCALCULATION. The group holds duty/tax ledgers whose values feed ' +
+            'invoice calculation rather than standing on their own.',
+    }),
+    (0, dtoDecorators_1.OptionalBoolean)(),
+    __metadata("design:type", Boolean)
+], SaveAccGroupMasterDto.prototype, "accGroupUsedForCalculation", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        description: 'Tally AFFECTSGROSSPROFIT. The group counts toward gross profit rather than only ' +
+            'net profit — direct expenses and direct income.',
+    }),
+    (0, dtoDecorators_1.OptionalBoolean)(),
+    __metadata("design:type", Boolean)
+], SaveAccGroupMasterDto.prototype, "accGroupAffectsGrossProfit", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ default: true }),
+    (0, dtoDecorators_1.OptionalBoolean)(),
+    __metadata("design:type", Boolean)
+], SaveAccGroupMasterDto.prototype, "accGroupIsActive", void 0);
 //# sourceMappingURL=save-acc-group-master.dto.js.map

@@ -78,6 +78,9 @@ export interface ChargeLedgerDetail {
     ledName: string;
     ledHsnSac: string | null;
 }
+export interface ChargeTaxDetail {
+    taxName: string;
+}
 export interface ChargeMasterPayload {
     chgId: string;
     chgName: string;
@@ -95,6 +98,8 @@ export interface ChargeMasterPayload {
     ledHsnSac: string | null;
     chgTaxApl: boolean;
     chgBeforeTax: boolean;
+    chgTaxId: string | null;
+    chgTaxName: string | null;
     chgSepPost: boolean;
     chgManParty: boolean;
     chgDispOrder: number | null;

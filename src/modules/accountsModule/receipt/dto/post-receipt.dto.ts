@@ -202,3 +202,24 @@ export class CancelReceiptDto extends ReceiptKeysDto {
 
 /** §4.5 — get. */
 export class GetReceiptQueryDto extends ReceiptKeysDto {}
+
+/**
+ * `POST /receipts/delete` — throw a DRAFT away.
+ *
+ * **The four keys and nothing else.** There is deliberately no `reason`, and
+ * that is the whole difference between this route and `/cancel`:
+ *
+ *   · `/cancel` unwinds a POSTED receipt. It took a number, it wrote legs into
+ *     the day book and adjustment rows against bills, and all of that has to be
+ *     answered for — so `ck_avh_cancel` refuses a CANCELLED voucher without a
+ *     reason, and the reversal is a real numbered voucher of its own.
+ *
+ *   · This throws away a piece of paper on a desk. A DRAFT took no number
+ *     (R10 — an abandoned draft must leave no gap in the series), touched no
+ *     bill and wrote nothing into `acc_vouchers`. Asking an operator to justify
+ *     abandoning a half-keyed receipt is asking them to justify a typo.
+ *
+ * `/cancel` refuses a DRAFT — correctly, there is nothing to reverse — so
+ * without this route an abandoned draft is permanent.
+ */
+export class DeleteReceiptDto extends ReceiptKeysDto {}

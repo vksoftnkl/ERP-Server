@@ -18,14 +18,23 @@ import { ReceiptExceptionFilter } from './receipt-exception.filter';
 import { ReceiptService } from './receipt.service';
 import { ReceiptPostingService } from './receipt-posting.service';
 import { ReceiptCancelService } from './receipt-cancel.service';
+import { ReceiptAmendService } from './receipt-amend.service';
 import { OpenItemsService } from './open-items.service';
 import { ListOpenItemsQueryDto, PartyContextQueryDto } from './dto/open-item.dto';
+import { AmendReceiptDto } from './dto/amend-receipt.dto';
 import { RegularisePdcDto, SaveReceiptDto, UpdateReceiptHeaderDto } from './dto/save-receipt.dto';
-import { CancelReceiptDto, GetReceiptQueryDto, PostReceiptDto } from './dto/post-receipt.dto';
+import {
+  CancelReceiptDto,
+  DeleteReceiptDto,
+  GetReceiptQueryDto,
+  PostReceiptDto,
+} from './dto/post-receipt.dto';
 import {
   OpenItemsSuccessDto,
   PartyContextSuccessDto,
+  ReceiptAmendSuccessDto,
   ReceiptCancelSuccessDto,
+  ReceiptDeleteSuccessDto,
   ReceiptDraftSuccessDto,
   ReceiptErrorResponseDto,
   ReceiptHeaderSuccessDto,
@@ -37,7 +46,9 @@ import { toDateOnly } from './receipt.utils';
 import type {
   OpenItemsPayload,
   PartyContextPayload,
+  ReceiptAmendPayload,
   ReceiptCancelPayload,
+  ReceiptDeletePayload,
   ReceiptDraftPayload,
   ReceiptHeader,
   ReceiptPayload,
@@ -51,14 +62,32 @@ import type {
  * first against their open bills and any credit they hold.
  *
  * ── The surface, and what is deliberately not on it ──────────────────────
- * SIX routes, plus `/update-header` (header editing on a posted receipt) and
- * `/regularise-pdc` (the maintenance sweep). There is:
+ * SIX routes, plus `/delete` (throw a draft away), `/update-header` (header
+ * editing on a posted receipt), `/amend` (R20 — restate a posted receipt whole,
+ * behind a company setting, default OFF) and `/regularise-pdc` (the maintenance
+ * sweep). There is:
  *
  *   · no `/approve` and no `/reject` — a receipt is DRAFT, then POSTED, then
  *     CANCELLED, and `/post` runs straight from the DRAFT;
  *   · no `/list` — the list is a REGISTERED GRID served by
  *     `/configured-grid-sql`, which is how every other main list here works
  *     and what makes the operator's saved columns and filters apply to it.
+ *
+ * ── `/amend` is not a second `/post`, and not a mode on `/create` ────────
+ * It is the ONE route here gated by a setting (`accounts.allow_posted_amend`,
+ * default off), and it exists separately because `/create` is what the screen
+ * calls on every draft save, every retry and every double-submit — so a POSTED
+ * voucher reaching `/create` must stay a 409 rather than silently restating a
+ * posted document. Amend calls `/post`'s own transaction rather than
+ * reproducing it, and refuses on exactly what `/cancel` refuses on.
+ *
+ * ── `/delete` and `/cancel` are not two names for one thing ─────────────
+ * They apply to disjoint statuses and do opposite things. `/cancel` takes a
+ * POSTED receipt and REVERSES it — a numbered reversal voucher, negative
+ * adjustment rows, a mandatory reason — because money in the books is answered
+ * for, never removed. `/delete` takes a DRAFT, which wrote no accounting at
+ * all, and simply retires the row. Neither will do the other's job, and each
+ * refuses the other's status with a 409 naming the route that applies.
  *
  * ── The four keys ────────────────────────────────────────────────────────
  * Every route that acts on an existing voucher takes
@@ -76,6 +105,7 @@ export class ReceiptController {
     private readonly receiptService: ReceiptService,
     private readonly postingService: ReceiptPostingService,
     private readonly cancelService: ReceiptCancelService,
+    private readonly amendService: ReceiptAmendService,
     private readonly openItemsService: OpenItemsService,
     private readonly recompute: BillBalanceRecomputeService,
   ) {}
@@ -270,6 +300,86 @@ export class ReceiptController {
     return {
       success: true,
       message: `Receipt ${data.avhVoucherRefno} cancelled — ${data.reversals.length} voucher(s) reversed`,
+      data,
+    };
+  }
+
+  @Post('delete')
+  @Version(API_VERSION)
+  @ApiOperation({
+    summary: 'Throw a draft away',
+    description:
+      'DRAFT only, and the four keys only — there is no reason field, because there is nothing ' +
+      'to justify. A draft took no number, touched no bill and wrote nothing into acc_vouchers ' +
+      '(R10), so abandoning one is abandoning a piece of paper on a desk.\n\n' +
+      'Soft-deletes the header, its tender rows and the other-ledger lines in one transaction. ' +
+      'avh_voucher_status is left at DRAFT: the row leaves play through avh_is_deleted, and the ' +
+      'trail is a DELETED event in txn_status_log, which is the distinction that keeps an ' +
+      'abandoned draft out of the cancelled list.\n\n' +
+      'A POSTED receipt is a 409 naming /cancel — money in the books is reversed, never removed ' +
+      '— and a CANCELLED one is a 409 too. This route exists because /cancel refuses a DRAFT, ' +
+      'correctly, and without it an abandoned draft would be permanent.',
+  })
+  @ApiCreatedResponse({ type: ReceiptDeleteSuccessDto })
+  @ApiConflictResponse({ type: ReceiptErrorResponseDto })
+  @ApiNotFoundResponse({ type: ReceiptErrorResponseDto })
+  async delete(
+    @Body() dto: DeleteReceiptDto,
+  ): Promise<ReceiptSuccessResponse<ReceiptDeletePayload>> {
+    const data = await this.receiptService.deleteDraft(dto);
+
+    return {
+      success: true,
+      message:
+        'Draft receipt deleted' +
+        (data.tendersDeleted > 0 ? ` — ${data.tendersDeleted} tender row(s) removed` : ''),
+      data,
+    };
+  }
+
+  @Post('amend')
+  @Version(API_VERSION)
+  @ApiOperation({
+    summary: 'Restate a posted receipt in place — behind a company setting, default OFF',
+    description:
+      'R20. Takes EXACTLY what /create and /post take together — the same object the screen ' +
+      'already assembles — plus the four keys, a baseRevision and an editRemark. ONE ' +
+      'transaction: the old money is unwound in place, the bills are recomputed, and §5.2’s ' +
+      'fifteen steps re-run from the new payload.\n\n' +
+      '**Not a second way to post.** It calls /post’s own transaction rather than reproducing ' +
+      'it, so everything /post validates is validated here — including the identity to the ' +
+      'paisa and an onAccount that must agree with the server’s own, recomputed against the ' +
+      'REOPENED bills.\n\n' +
+      '**The document keeps its identity**: same avhVoucherId, same avhVoucherNo, same ' +
+      'avhVoucherRefno, POSTED before and POSTED after. No reversal voucher is written and the ' +
+      'status never becomes CANCELLED — that is the whole difference from /cancel. ' +
+      'avh_revision_no carries the change instead, because a receipt is not a GST document and ' +
+      'the customer is holding a slip with that number on it.\n\n' +
+      '**baseRevision is mandatory** and is the avhRevisionNo /receipts/get returned. A ' +
+      'mismatch is a 409 naming the current revision: an amend carries the WHOLE document, so ' +
+      'last-writer-wins would silently undo somebody else’s correction — on ledger legs, not ' +
+      'on a master record. Reload on that 409; never retry with the number you were just told.\n\n' +
+      '**Refused on exactly what /cancel is refused on**, and no setting makes these ' +
+      'negotiable: a cheque DEPOSITED or later, an on-account balance already spent, a locked ' +
+      'period or closed year, a receipt that is not POSTED. And refused as a 409 naming the ' +
+      'setting key when accounts.allow_posted_amend is off — which is the default, and is the ' +
+      'current cancel-and-re-enter model unchanged.\n\n' +
+      'audit.audit_log carries the before and after of acc_voucher_header, acc_vouchers, ' +
+      'acc_bill_adjustment and acc_pdc_register; txn_status_log reads POSTED → AMENDED → ' +
+      'POSTED, carrying the editRemark.',
+  })
+  @ApiCreatedResponse({ type: ReceiptAmendSuccessDto })
+  @ApiBadRequestResponse({ type: ReceiptErrorResponseDto })
+  @ApiConflictResponse({ type: ReceiptErrorResponseDto })
+  @ApiNotFoundResponse({ type: ReceiptErrorResponseDto })
+  async amend(@Body() dto: AmendReceiptDto): Promise<ReceiptSuccessResponse<ReceiptAmendPayload>> {
+    const data = await this.amendService.amend(dto);
+
+    return {
+      success: true,
+      message:
+        `Receipt ${data.header.avhVoucherRefno ?? data.header.avhVoucherId} amended — now ` +
+        `revision ${data.toRevision}`,
       data,
     };
   }

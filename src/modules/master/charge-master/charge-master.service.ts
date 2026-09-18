@@ -14,8 +14,10 @@ import {
   ChargeMasterDeleteResult,
   ChargeMasterErrorDetail,
   ChargeMasterPayload,
+  ChargeTaxDetail,
   resolveChargeModules,
 } from './types/charge-master-api.types';
+import { assertTaxRateRefs } from '../../Inventory/tax-rate-master/utils/tax-rate-reference.helper';
 import {
   DEFAULT_ACTOR,
   MasterWriteClient,
@@ -44,6 +46,7 @@ const CHARGE_OPTIONAL_FIELDS = [
   'chgCostAlloc',
   'chgTaxApl',
   'chgBeforeTax',
+  'chgTaxId',
   'chgSepPost',
   'chgManParty',
   'chgDispOrder',
@@ -58,6 +61,15 @@ const CHARGE_LEDGER_SELECT = {
   ledName: true,
   ledHsnSac: true,
 } as const satisfies Prisma.AccLedgerMasterSelect;
+// The rate chg_tax_id points at, echoed on the payload as chgTaxName.
+const CHARGE_TAX_SELECT = {
+  taxName: true,
+} as const satisfies Prisma.TaxRateMasterSelect;
+// Both relations a read resolves alongside the charge row.
+const CHARGE_RELATIONS = {
+  ledger: { select: CHARGE_LEDGER_SELECT },
+  tax: { select: CHARGE_TAX_SELECT },
+} satisfies Prisma.ChargeMasterInclude;
 type ChargeMasterWriteClient = MasterWriteClient;
 @Injectable()
 export class ChargeMasterService {
@@ -97,12 +109,12 @@ export class ChargeMasterService {
   async getById(chgId: string): Promise<ChargeMasterPayload> {
     const record = await this.prisma.chargeMaster.findFirst({
       where: { chgId, chgIsDeleted: false },
-      include: { ledger: { select: CHARGE_LEDGER_SELECT } },
+      include: CHARGE_RELATIONS,
     });
     if (!record) {
       this.throwNotFound(chgId);
     }
-    return this.toPayload(record, record.ledger ?? null);
+    return this.toPayload(record, record.ledger ?? null, record.tax ?? null);
   }
   // Lookup for the purchase / sales entry screens: only charges that are usable
   // right now, so soft-deleted and inactive rows are left out. Ordered by the
@@ -114,10 +126,12 @@ export class ChargeMasterService {
         chgIsActive: true,
         chgModule: { in: [...resolveChargeModules(chgModule)] },
       },
-      include: { ledger: { select: CHARGE_LEDGER_SELECT } },
+      include: CHARGE_RELATIONS,
       orderBy: [{ chgDispOrder: { sort: 'asc', nulls: 'last' } }, { chgName: 'asc' }],
     });
-    return records.map((record) => this.toPayload(record, record.ledger ?? null));
+    return records.map((record) =>
+      this.toPayload(record, record.ledger ?? null, record.tax ?? null),
+    );
   }
   async softDelete(chgId: string): Promise<ChargeMasterDeleteResult> {
     return this.prisma.$transaction(async (tx) => {
@@ -178,7 +192,13 @@ export class ChargeMasterService {
     const normalizedCode = normalizeNullableString(saveChargeMasterDto.chgCode) ?? null;
     const role = saveChargeMasterDto.chgRole ?? null;
     const module = saveChargeMasterDto.chgModule;
+    const taxId = saveChargeMasterDto.chgTaxId ?? null;
     this.ensureValuesAreAllowed(this.guardedValues(saveChargeMasterDto));
+    this.ensureTaxIdIsApplicable(
+      taxId,
+      saveChargeMasterDto.chgTaxApl ?? false,
+      saveChargeMasterDto.chgBeforeTax ?? false,
+    );
     const data: Prisma.ChargeMasterUncheckedCreateInput = {
       chgName: normalizedName,
       chgModule: module,
@@ -195,10 +215,11 @@ export class ChargeMasterService {
     try {
       return await this.prisma.$transaction(async (tx) => {
         const ledgerName = await this.ensureLedgerExists(tx, saveChargeMasterDto.chgLedgerCode);
+        const tax = await this.resolveTaxRate(tx, taxId, true);
         await this.ensureCodeIsUnique(tx, normalizedCode);
         await this.ensureRoleIsUnique(tx, role, module);
         const created = await tx.chargeMaster.create({ data });
-        const payload = this.toPayload(created, ledgerName);
+        const payload = this.toPayload(created, ledgerName, tax);
         await this.auditLogService.logEntityChange(
           {
             action: 'New',
@@ -245,10 +266,24 @@ export class ChargeMasterService {
         const nextRole = hasOwnProperty(saveChargeMasterDto, 'chgRole')
           ? (saveChargeMasterDto.chgRole ?? null)
           : existing.chgRole;
+        const nextTaxId = hasOwnProperty(saveChargeMasterDto, 'chgTaxId')
+          ? (saveChargeMasterDto.chgTaxId ?? null)
+          : existing.chgTaxId;
+        const nextTaxApl = hasOwnProperty(saveChargeMasterDto, 'chgTaxApl')
+          ? (saveChargeMasterDto.chgTaxApl ?? false)
+          : existing.chgTaxApl;
+        const nextBeforeTax = hasOwnProperty(saveChargeMasterDto, 'chgBeforeTax')
+          ? (saveChargeMasterDto.chgBeforeTax ?? false)
+          : existing.chgBeforeTax;
         this.ensureValuesAreAllowed(
           this.guardedValues(saveChargeMasterDto, { chgModule: nextModule, chgRole: nextRole }),
         );
+        this.ensureTaxIdIsApplicable(nextTaxId, nextTaxApl, nextBeforeTax);
         const ledgerName = await this.ensureLedgerExists(tx, saveChargeMasterDto.chgLedgerCode);
+        // Only a rate the request itself names is checked for being live: a
+        // stored rate that has since been retired must not block an edit that
+        // leaves it alone.
+        const tax = await this.resolveTaxRate(tx, nextTaxId, nextTaxId !== existing.chgTaxId);
         await this.ensureCodeIsUnique(tx, nextCode, chgId);
         await this.ensureRoleIsUnique(tx, nextRole, nextModule, chgId);
         const data: Prisma.ChargeMasterUncheckedUpdateInput = {
@@ -263,7 +298,7 @@ export class ChargeMasterService {
         this.applyOptionalFields(data, saveChargeMasterDto);
         data.chgCode = nextCode;
         const updated = await tx.chargeMaster.update({ where: { chgId }, data });
-        const payload = this.toPayload(updated, ledgerName);
+        const payload = this.toPayload(updated, ledgerName, tax);
         await this.auditLogService.logEntityChange(
           {
             action: 'update',
@@ -272,9 +307,10 @@ export class ChargeMasterService {
             screenType: 'master',
             pk: chgId,
             displayName: payload.chgName,
-            // Audit tracks stored columns only; chgLedgerName and the led*
-            // tax fields are derived from the ledger, so keep them out of both
-            // snapshots to avoid a spurious "changed" diff on every update.
+            // Audit tracks stored columns only; chgLedgerName, ledHsnSac and
+            // chgTaxName are derived from the ledger and the rate, so keep them
+            // out of both snapshots to avoid a spurious "changed" diff on every
+            // update. chgTaxId itself IS stored, so it is diffed like any column.
             originalRecord: this.toPayload(existing),
             modifiedRecord: this.toPayload(updated),
             userId: actor,
@@ -307,6 +343,43 @@ export class ChargeMasterService {
       ]);
     }
     return ledger;
+  }
+  // fk_chg_tax proves the rate EXISTS and nothing more: a soft-deleted rate
+  // still satisfies it, and so does one withdrawn from new documents. Check
+  // both when the request names a rate, so a bad reference is a 400 naming
+  // chgTaxId rather than a P2003 surfacing as a 500. The rate's name comes
+  // back so the payload can echo it.
+  private async resolveTaxRate(
+    tx: ChargeMasterWriteClient,
+    taxId: string | null,
+    validate: boolean,
+  ): Promise<ChargeTaxDetail | null> {
+    if (taxId === null) {
+      return null;
+    }
+    if (validate) {
+      await assertTaxRateRefs(tx, [{ taxId, field: 'chgTaxId' }], 'Invalid charge tax rate');
+    }
+    return tx.taxRateMaster.findUnique({ where: { taxId }, select: CHARGE_TAX_SELECT });
+  }
+  // Mirrors the DB CHECK ck_chg_tax_id (migration 20260912070000_add_chg_tax_id).
+  // A before-tax charge is taxed at the ITEM's rate inside the item line and a
+  // non-taxable charge is never taxed, so either way a rate here would be one
+  // nothing reads. Same rule txn_charge_detail restates for cdTaxCode.
+  private ensureTaxIdIsApplicable(
+    taxId: string | null,
+    taxApl: boolean,
+    beforeTax: boolean,
+  ): void {
+    if (taxId !== null && (!taxApl || beforeTax)) {
+      throwMasterBadRequest<ChargeMasterErrorDetail>('Invalid charge tax rate', [
+        {
+          field: 'chgTaxId',
+          message:
+            'chgTaxId is only meaningful on a charge that carries its own GST — set chgTaxApl and leave chgBeforeTax false, or clear chgTaxId',
+        },
+      ]);
+    }
   }
   private async ensureCodeIsUnique(
     tx: ChargeMasterWriteClient,
@@ -429,7 +502,7 @@ export class ChargeMasterService {
     ]);
     if (isForeignKeyConstraintError(error)) {
       throwMasterBadRequest<ChargeMasterErrorDetail>('Invalid relation reference', [
-        { field: 'request', message: 'Referenced ledger does not exist' },
+        { field: 'request', message: 'Referenced ledger or tax rate does not exist' },
       ]);
     }
   }
@@ -443,6 +516,7 @@ export class ChargeMasterService {
   private toPayload(
     record: ChargeMaster,
     ledger: ChargeLedgerDetail | null = null,
+    tax: ChargeTaxDetail | null = null,
   ): ChargeMasterPayload {
     return {
       chgId: record.chgId,
@@ -461,6 +535,8 @@ export class ChargeMasterService {
       ledHsnSac: ledger?.ledHsnSac ?? null,
       chgTaxApl: record.chgTaxApl,
       chgBeforeTax: record.chgBeforeTax,
+      chgTaxId: record.chgTaxId,
+      chgTaxName: tax?.taxName ?? null,
       chgSepPost: record.chgSepPost,
       chgManParty: record.chgManParty,
       chgDispOrder: record.chgDispOrder,

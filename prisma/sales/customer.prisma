@@ -85,6 +85,12 @@ model Customer {
   cusModifiedOn        DateTime  @default(now()) @db.Timestamptz                  @map("cus_modified_on")
   cusModifiedBy        String?   @db.VarChar(100)                                 @map("cus_modified_by")
   // Relations
+  // cus_id IS the linked ledger's led_id: one identity, two masters. Every module
+  // that needs a customer's ledger already has it — the receipt takes ONE partyId and
+  // resolves nothing. fk_cus_ledger (20260917100000) is what makes that load-bearing
+  // convention enforceable; RESTRICT because a ledger with a customer on it must not
+  // vanish underneath acc_bill_balance / acc_vouchers, which FK their party to led_id.
+  ledger               AccLedgerMaster @relation("CustomerLedger", fields: [cusId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_cus_ledger")
   area                 AreaMaster     @relation(fields: [cusAreaId],  references: [armId])
   custGroup            CustGroup      @relation(fields: [cusGroupId], references: [cgrId])
   company              Company?       @relation(fields: [cusCompanyId], references: [compId])

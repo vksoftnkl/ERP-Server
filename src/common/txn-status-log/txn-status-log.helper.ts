@@ -64,6 +64,14 @@ export enum TxnStatusEvent {
   POSTED = 'POSTED',
   // Taken back out of them, the document itself staying alive.
   UNPOSTED = 'UNPOSTED',
+  // Restated in place: the document was POSTED, its money was unwound and
+  // re-applied from a new payload, and it is POSTED again — same id, same
+  // number, one higher revision. Distinct from CANCELLED (which unmakes the
+  // document and leaves a reversal voucher) and from UNPOSTED (which takes it
+  // out of the books and leaves it out). The trail reads POSTED -> AMENDED ->
+  // POSTED, because both halves really happened and a single row would hide
+  // the fact that the old money left before the new money arrived.
+  AMENDED = 'AMENDED',
   CANCELLED = 'CANCELLED',
   CLOSED = 'CLOSED',
   REOPENED = 'REOPENED',

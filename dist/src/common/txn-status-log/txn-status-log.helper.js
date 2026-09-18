@@ -42,6 +42,7 @@ var TxnStatusEvent;
     TxnStatusEvent["CONVERTED"] = "CONVERTED";
     TxnStatusEvent["POSTED"] = "POSTED";
     TxnStatusEvent["UNPOSTED"] = "UNPOSTED";
+    TxnStatusEvent["AMENDED"] = "AMENDED";
     TxnStatusEvent["CANCELLED"] = "CANCELLED";
     TxnStatusEvent["CLOSED"] = "CLOSED";
     TxnStatusEvent["REOPENED"] = "REOPENED";

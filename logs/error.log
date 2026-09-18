@@ -8347,3 +8347,136 @@ The column `user_menus.um_can_approve` does not exist in the current database.
     at async UserAdministrationService.getById (/home/vk/Dev/erp/ERP server/src/modules/settings/userAdministration/user-administration.service.ts:48:20)
     at async UserAdministrationController.getById (/home/vk/Dev/erp/ERP server/src/modules/settings/userAdministration/user-administration.controller.ts:76:18)
 2026-09-16T13:08:28.326Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-09-17T05:54:07.495Z ERROR [ModuleExceptionFilter] POST /api/v1/cheques/bounce
+PrismaClientKnownRequestError: 
+Invalid `tx.accBillAdjustment.createMany()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/accountsModule/cheques/cheque-reversal.helper.ts:326:30
+
+  323   abjCreatedBy: scope.actor,
+  324 }));
+  325 
+→ 326 await tx.accBillAdjustment.createMany(
+Unique constraint failed on the fields: (`abj_reversal_of_id`,`abj_acc_year`)
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async writeReversals (/home/vk/Dev/erp/ERP server/src/modules/accountsModule/cheques/cheque-reversal.helper.ts:326:3)
+    at async reverseChequeAdjustments (/home/vk/Dev/erp/ERP server/src/modules/accountsModule/cheques/cheque-reversal.helper.ts:82:21)
+    at async <anonymous> (/home/vk/Dev/erp/ERP server/src/modules/accountsModule/cheques/cheque-bounce.service.ts:215:24)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async ChequesController.bounce (/home/vk/Dev/erp/ERP server/src/modules/accountsModule/cheques/cheques.controller.ts:257:18)
+2026-09-17T05:54:26.578Z ERROR [ModuleExceptionFilter] POST /api/v1/cheques/bounce
+PrismaClientKnownRequestError: 
+Invalid `tx.accBillAdjustment.createMany()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/accountsModule/cheques/cheque-reversal.helper.ts:326:30
+
+  323   abjCreatedBy: scope.actor,
+  324 }));
+  325 
+→ 326 await tx.accBillAdjustment.createMany(
+Unique constraint failed on the fields: (`abj_reversal_of_id`,`abj_acc_year`)
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async writeReversals (/home/vk/Dev/erp/ERP server/src/modules/accountsModule/cheques/cheque-reversal.helper.ts:326:3)
+    at async reverseChequeAdjustments (/home/vk/Dev/erp/ERP server/src/modules/accountsModule/cheques/cheque-reversal.helper.ts:82:21)
+    at async <anonymous> (/home/vk/Dev/erp/ERP server/src/modules/accountsModule/cheques/cheque-bounce.service.ts:215:24)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async ChequesController.bounce (/home/vk/Dev/erp/ERP server/src/modules/accountsModule/cheques/cheques.controller.ts:257:18)
+2026-09-17T11:48:07.376Z ERROR [ModuleExceptionFilter] POST /api/v1/account-ledger-masters/create
+PrismaClientUnknownRequestError: 
+Invalid `tx.accLedgerMaster.create()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/accountsModule/accountLedgerMasters/account-ledger-masters.service.ts:242:46
+
+  239   ledCreatedBy: createdBy,
+  240 };
+  241 this.applyOptionalFields(data, saveAccountLedgerMasterDto);
+→ 242 const created = await tx.accLedgerMaster.create(
+Error occurred during query execution:
+ConnectorError(ConnectorError { user_facing_error: None, kind: QueryError(PostgresError { code: "23514", message: "new row for relation \"acc_ledger_master\" violates check constraint \"chk_led_ledger_type\"", severity: "ERROR", detail: Some("Failing row contains (01a0af32-0a3a-734b-a418-b1e15a5a6a25, 019eee86-f34b-7e71-af77-a714f77b1ea2, ZZ X3, null, null, null, null, null, GENERAL, f, f, f, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, India, null, null, null, null, null, null, India, null, null, null, null, f, 0, null, t, f, f, f, f, null, null, 2026-09-17 17:18:07.352+05:30, 019e441b-6e48-7918-b246-b857ffb35db1, 2026-09-17 17:18:07.353+05:30, null, null, null, null, 0, 0, 0, null, DR, null, null, NONSENSE, null, null, null, null, null, null, null, f, null, null, f, null, null, null, null, null, null)."), column: None, hint: None }), transient: false })
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:237:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async AccountLedgerMastersService.createLedgerWithinTx (/home/vk/Dev/erp/ERP server/src/modules/accountsModule/accountLedgerMasters/account-ledger-masters.service.ts:242:21)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async AccountLedgerMastersService.createLedger (/home/vk/Dev/erp/ERP server/src/modules/accountsModule/accountLedgerMasters/account-ledger-masters.service.ts:198:14)
+    at async AccountLedgerMastersController.save (/home/vk/Dev/erp/ERP server/src/modules/accountsModule/accountLedgerMasters/account-ledger-masters.controller.ts:122:18)
+2026-09-17T14:42:49.695Z ERROR [ModuleExceptionFilter] POST /api/v1/receipts/amend
+PrismaClientValidationError: 
+Invalid `client.accVoucherHeader.findUnique()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/accountsModule/receipt/receipt.service.ts:851:50
+
+  848   voucherId: string,
+  849   accYear: string,
+  850 ): Promise<StoredHeader> {
+→ 851   const header = await client.accVoucherHeader.findUnique({
+          where: {
+            avhVoucherId_avhAccYear: {
+              avhAccYear: "2026-2027",
+        +     avhVoucherId: String
+            }
+          },
+          select: {
+            avhVoucherId: true,
+            avhCompanyId: true,
+            avhBranchId: true,
+            avhTenantId: true,
+            avhAccYear: true,
+            avhVoucherTypeId: true,
+            avhVoucherNo: true,
+            avhVoucherSlno: true,
+            avhVoucherRefno: true,
+            avhVoucherDate: true,
+            avhSrcModule: true,
+            avhSrcDocType: true,
+            avhSrcDocId: true,
+            avhPartyId: true,
+            avhEmployeeId: true,
+            avhUsrRefno: true,
+            avhDocRefno: true,
+            avhDocDate: true,
+            avhDocAmount: true,
+            avhAdjustAmount: true,
+            avhRoundOff: true,
+            avhTotalDebit: true,
+            avhTotalCredit: true,
+            avhRemarks: true,
+            avhVoucherStatus: true,
+            avhStatusOn: true,
+            avhStatusBy: true,
+            avhPostedOn: true,
+            avhCancelReason: true,
+            avhRevisionNo: true,
+            avhReversalVoucherId: true,
+            avhReversalAccYear: true,
+            avhAgainstVoucherId: true,
+            avhAgainstAccYear: true,
+            avhPrintCount: true,
+            avhDeviceType: true,
+            avhDeviceId: true,
+            avhSessionId: true,
+            avhUserId: true,
+            avhDraftLines: true,
+            avhIsDeleted: true,
+            avhCreatedOn: true,
+            avhCreatedBy: true,
+            avhModifiedOn: true,
+            avhModifiedBy: true
+          }
+        })
+
+Argument `avhVoucherId` is missing.
+    at throwValidationException (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/core/errorRendering/throwValidationException.ts:45:9)
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:202:7)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async ReceiptService.loadHeaderOrThrow (/home/vk/Dev/erp/ERP server/src/modules/accountsModule/receipt/receipt.service.ts:851:20)
+    at async ReceiptAmendService.amendInTransaction (/home/vk/Dev/erp/ERP server/src/modules/accountsModule/receipt/receipt-amend.service.ts:203:20)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async ReceiptAmendService.amend (/home/vk/Dev/erp/ERP server/src/modules/accountsModule/receipt/receipt-amend.service.ts:178:14)
+    at async ReceiptController.amend (/home/vk/Dev/erp/ERP server/src/modules/accountsModule/receipt/receipt.controller.ts:376:18)
+2026-09-18T04:03:43.202Z ERROR [Seed] ✖ Account_Groups.sql: column "acc_group_child_ids" of relation "acc_group_master" does not exist

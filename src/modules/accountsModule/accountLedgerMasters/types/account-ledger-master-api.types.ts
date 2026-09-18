@@ -1,10 +1,24 @@
-import type { LedGstPartyRegType, LedObType } from './account-ledger-master-enum';
+import type {
+  LedGstPartyRegType,
+  LedItcEligibility,
+  LedObType,
+} from './account-ledger-master-enum';
 import type { AccLedgerProfile } from '../../accGroupMaster/types/acc-group-master-enum';
 import type { LedgerBankAccountPayload } from '../../ledgerBankAccount/types/ledger-bank-account-api.types';
 export type { AccountsErrorDetail as AccountLedgerMasterErrorDetail } from 'src/common/types/module-api.types';
 export type { AccountsErrorResponse as AccountLedgerMasterErrorResponse } from 'src/common/types/module-api.types';
 export type { AccountsSuccessResponse as AccountLedgerMasterSuccessResponse } from 'src/common/types/module-api.types';
-export { LedGstPartyRegType, LedObType, BankAccountType } from './account-ledger-master-enum';
+export {
+  LedGstPartyRegType,
+  LedGstDutyHead,
+  LedItcEligibility,
+  LedLedgerType,
+  LedMsmeType,
+  LedObType,
+  LedRoundingMethod,
+  LedTypeOfSupply,
+  BankAccountType,
+} from './account-ledger-master-enum';
 export type { LedgerBankAccountPayload } from '../../ledgerBankAccount/types/ledger-bank-account-api.types';
 export interface AccountLedgerMasterPayload {
   ledId: string;
@@ -79,6 +93,12 @@ export interface AccountLedgerMasterPayload {
   ledTdsDeducteeType: string | null;
   ledTdsNatureOfPayment: string | null;
   ledIsTcsApplicable: boolean;
+  ledItcEligibility: LedItcEligibility | null;
+  ledIsReverseCharge: boolean;
+  // Read-only from here on. §3.1 took all six out of the save DTO: a shared
+  // ledger spans every company, so one opening balance on its row cannot be
+  // right. accounts.acc_opening_balance (company + branch + acc_year) is the
+  // only place that can hold one.
   ledObAmount: number;
   ledObType: LedObType;
   ledObAsOn: string | null;

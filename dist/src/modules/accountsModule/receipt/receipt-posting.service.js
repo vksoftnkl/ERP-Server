@@ -10,6 +10,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ReceiptPostingService = void 0;
+exports.rethrowAllocationError = rethrowAllocationError;
 const common_1 = require("@nestjs/common");
 const client_1 = require("@prisma/client");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
@@ -47,13 +48,7 @@ let ReceiptPostingService = class ReceiptPostingService {
             return await this.prisma.$transaction((tx) => this.postInTransaction(tx, dto, actor), POST_TRANSACTION_OPTIONS);
         }
         catch (error) {
-            if (error instanceof allocation_engine_1.AllocationError) {
-                if (error.kind === 'CONFLICT') {
-                    (0, module_service_utils_1.throwAccountsConflict)(error.message, error.details);
-                }
-                (0, module_service_utils_1.throwAccountsBadRequest)(error.message, error.details);
-            }
-            throw error;
+            throw rethrowAllocationError(error);
         }
     }
     async postInTransaction(tx, dto, actor) {
@@ -715,6 +710,15 @@ exports.ReceiptPostingService = ReceiptPostingService = __decorate([
         open_items_service_1.OpenItemsService,
         bill_balance_recompute_service_1.BillBalanceRecomputeService])
 ], ReceiptPostingService);
+function rethrowAllocationError(error) {
+    if (error instanceof allocation_engine_1.AllocationError) {
+        if (error.kind === 'CONFLICT') {
+            (0, module_service_utils_1.throwAccountsConflict)(error.message, error.details);
+        }
+        (0, module_service_utils_1.throwAccountsBadRequest)(error.message, error.details);
+    }
+    return error;
+}
 function startOfDay(value) {
     return new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate(), 0, 0, 0, 0));
 }

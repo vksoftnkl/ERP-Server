@@ -57,7 +57,7 @@ import {
   ZERO,
 } from './receipt.utils';
 import { SaveReceiptDto, UpdateReceiptHeaderDto } from './dto/save-receipt.dto';
-import { GetReceiptQueryDto } from './dto/post-receipt.dto';
+import { DeleteReceiptDto, GetReceiptQueryDto } from './dto/post-receipt.dto';
 import {
   PdcPostingMode,
   ReceiptLedgerRole,
@@ -65,6 +65,7 @@ import {
   VoucherStatus,
 } from './types/receipt-enum';
 import type {
+  ReceiptDeletePayload,
   ReceiptDraftPayload,
   ReceiptErrorDetail,
   ReceiptHeader,
@@ -121,6 +122,34 @@ export class ReceiptService {
    */
   async save(dto: SaveReceiptDto): Promise<ReceiptDraftPayload> {
     const actor = resolveActor(dto.avhUserId, this.requestContext.getUserId()) ?? DEFAULT_ACTOR;
+
+    return this.prisma.$transaction(
+      (tx) => this.saveInTransaction(tx, dto, actor),
+      RECEIPT_TRANSACTION_OPTIONS,
+    );
+  }
+
+  /**
+   * §5.1's body, inside a transaction the CALLER owns.
+   *
+   * Public for `/receipts/amend` (R20 §2 step 4), which rewrites the header,
+   * the tender rows and the draft lines from the new payload and then posts
+   * them — all in the ONE transaction that also did the unwind. It calls this
+   * rather than reproducing it, so a rule added to the draft (a new
+   * normalisation, a new guard) reaches the amended receipt too.
+   *
+   * There is NO "allow a posted voucher" option here, and there must not be.
+   * `isEditableStatus` still admits DRAFT alone, and amend satisfies it
+   * honestly: by the time it calls this, its unwind has put the header back to
+   * DRAFT. A flag that let a POSTED header through would be the same mistake
+   * as folding amend into `/create` — see the 409 below, which is what the
+   * screen's every draft save, every retry and every double-submit relies on.
+   */
+  async saveInTransaction(
+    tx: Prisma.TransactionClient,
+    dto: SaveReceiptDto,
+    actor: string,
+  ): Promise<ReceiptDraftPayload> {
     const receiptDate = toDateOnly(dto.avhVoucherDate);
     const replace = dto.replace ?? true;
 
@@ -137,7 +166,7 @@ export class ReceiptService {
       ]);
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    {
       await assertAccYearWritable(tx, dto.avhCompanyId, dto.avhAccYear, 'avhAccYear');
 
       // ONE partyId. cus_id IS led_id and sup_id IS led_id, so a customer, a
@@ -274,7 +303,7 @@ export class ReceiptService {
         otherLines: lines.map(toOtherLinePayload),
         expectedRoles: expected.missing,
       };
-    }, RECEIPT_TRANSACTION_OPTIONS);
+    }
   }
 
   // ═════════════════════════════════════════════════════════════════════════
@@ -601,6 +630,213 @@ export class ReceiptService {
       const updated = await this.loadHeaderOrThrow(tx, dto.avhVoucherId, dto.avhAccYear);
       return this.toHeaderPayload(tx, updated);
     }, RECEIPT_TRANSACTION_OPTIONS);
+  }
+
+  // ═════════════════════════════════════════════════════════════════════════
+  //  DELETE — throw a DRAFT away
+  // ═════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Soft-delete a DRAFT receipt: the header, its tender rows and the
+   * other-ledger lines sitting in `avh_draft_lines`, in one transaction.
+   *
+   * ── Why this route exists at all ─────────────────────────────────────────
+   * `/cancel` refuses a DRAFT, and it is right to: a draft has no legs to
+   * mirror, no adjustment rows to negate and no number to keep, so there is
+   * literally nothing to reverse. But nothing was built to take its place,
+   * which made an abandoned draft PERMANENT — it sat in the list for ever,
+   * and the only way past it was to post a receipt nobody wanted.
+   *
+   * ── Why DRAFT and nothing else ───────────────────────────────────────────
+   * The status check is the whole safety of this route. A DRAFT wrote no
+   * accounting (R10): no `acc_vouchers` legs, no `acc_bill_adjustment` rows,
+   * no `acc_pdc_register` entry — `receipt-draft-lines.ts` says why the
+   * register row in particular waits for the post — and no number. So nothing
+   * it leaves behind has to be answered for, and the row can simply go out of
+   * play.
+   *
+   * A POSTED receipt is the opposite of all of that and is CANCELLED, which
+   * writes a reversal voucher the day book can show. A CANCELLED one has
+   * already been answered for. Both are a 409 here, naming the route that does
+   * apply, rather than a silent no-op.
+   *
+   * ── Soft, not hard ───────────────────────────────────────────────────────
+   * `avh_is_deleted`, never a `DELETE`. Two reasons beyond the usual one:
+   *
+   *   · `TxnStatusEvent.DELETED` files a row in `txn_status_log` pointing at
+   *     `avh_voucher_id`, and a trail pointing at a row that no longer exists
+   *     is not a trail.
+   *   · "Who threw away the 40,000 receipt I keyed this morning" is a question
+   *     that gets asked, and `avh_modified_by` is the only thing that answers
+   *     it.
+   *
+   * The status column is left at DRAFT on purpose. `DELETED` is an EVENT here,
+   * not a status — `avh_voucher_status` has no such value, and stamping
+   * CANCELLED instead would put a receipt that was never posted into the
+   * cancelled list beside receipts that were, with no reason against it and
+   * `ck_avh_cancel` rightly refusing the write.
+   *
+   * `avh_draft_lines` is deliberately left INTACT rather than nulled. The
+   * other-ledger lines and cheque details are the deleted draft's contents;
+   * a "soft" delete that destroys them is a hard delete that kept the key. The
+   * header's `avh_is_deleted` already takes them out of play — every reader in
+   * this module goes through `loadHeaderOrThrow`, which refuses a deleted row.
+   */
+  async deleteDraft(dto: DeleteReceiptDto): Promise<ReceiptDeletePayload> {
+    const actor = this.requestContext.getUserId() ?? DEFAULT_ACTOR;
+
+    return this.prisma.$transaction(async (tx) => {
+      // The same lock /post and /cancel take, and for the same reason: without
+      // it a delete and a post racing on one draft both read DRAFT, and the
+      // post writes legs against a header the delete is about to retire.
+      await tx.$queryRaw`
+        SELECT avh_voucher_id
+          FROM accounts.acc_voucher_header
+         WHERE avh_voucher_id = ${dto.avhVoucherId}::uuid
+           AND avh_acc_year   = ${dto.avhAccYear}::bpchar
+           FOR UPDATE`;
+
+      const header = await this.loadHeaderOrThrow(tx, dto.avhVoucherId, dto.avhAccYear);
+      assertHeaderScope(header, {
+        companyId: dto.avhCompanyId,
+        branchId: dto.avhBranchId,
+        accYear: dto.avhAccYear,
+        voucherId: dto.avhVoucherId,
+      });
+
+      const status = statusOf(header);
+      if (status !== VoucherStatus.DRAFT) {
+        throwAccountsConflict<ReceiptErrorDetail>('Receipt cannot be deleted', [
+          {
+            field: 'avhVoucherId',
+            message:
+              `${header.avhVoucherRefno ?? dto.avhVoucherId} is ${header.avhVoucherStatus}. ` +
+              (status === VoucherStatus.POSTED
+                ? 'A posted receipt is money in the books — cancel it, which reverses it and ' +
+                  'leaves the trail. Only a DRAFT is deleted.'
+                : 'It has already been cancelled, and its reversal is what the books stand on. ' +
+                  'Only a DRAFT is deleted.'),
+          },
+        ]);
+      }
+      if (header.avhAgainstVoucherId) {
+        // Can only happen if something has gone wrong: a post-dated cheque's
+        // voucher is written POSTED by /post and never exists as a draft. Say
+        // so rather than quietly retiring half of a posted receipt.
+        throwAccountsConflict<ReceiptErrorDetail>('Receipt cannot be deleted', [
+          {
+            field: 'avhVoucherId',
+            message:
+              'This is a post-dated cheque voucher, not a receipt. It belongs to the receipt ' +
+              `${header.avhAgainstVoucherId} and leaves play only when that one is cancelled.`,
+          },
+        ]);
+      }
+      await assertAccYearWritable(tx, header.avhCompanyId, header.avhAccYear, 'avhAccYear');
+
+      // R10 says a draft writes no accounting. If it somehow has, deleting the
+      // header would orphan legs and adjustment rows that nothing can then find
+      // — so refuse and say what was found, instead of making it worse.
+      await this.assertDraftWroteNoAccounting(tx, header);
+
+      const now = new Date();
+      const otherLinesDeleted = rehydrateDraft(header.avhDraftLines).otherLines.length;
+
+      const tenders = await tx.accTenderDetail.updateMany({
+        where: { tdSrcDocId: header.avhVoucherId, tdIsDeleted: false },
+        data: { tdIsDeleted: true, tdModifiedOn: now, tdModifiedBy: actor },
+      });
+
+      await tx.accVoucherHeader.update({
+        where: {
+          avhVoucherId_avhAccYear: {
+            avhVoucherId: header.avhVoucherId,
+            avhAccYear: header.avhAccYear,
+          },
+        },
+        data: {
+          avhIsDeleted: true,
+          avhIsActive: false,
+          // avh_voucher_status stays DRAFT. See the note above: DELETED is an
+          // event, not a status this column has a value for.
+          avhModifiedOn: now,
+          avhModifiedBy: actor,
+        },
+      });
+
+      await appendTxnStatusLog(tx, {
+        companyId: header.avhCompanyId,
+        branchId: header.avhBranchId,
+        tenantId: header.avhTenantId,
+        accYear: header.avhAccYear,
+        srcModule: TxnStatusSrcModule.ACCOUNTS,
+        srcDocType: TxnStatusDocType.RECEIPT,
+        srcDocId: header.avhVoucherId,
+        srcDocRefno: header.avhVoucherRefno,
+        event: TxnStatusEvent.DELETED,
+        fromStatus: header.avhVoucherStatus,
+        toStatus: header.avhVoucherStatus,
+        changedBy: actor,
+        changedOn: now,
+      });
+
+      return {
+        avhVoucherId: header.avhVoucherId,
+        avhAccYear: header.avhAccYear,
+        avhVoucherRefno: header.avhVoucherRefno,
+        status,
+        deletedOn: toIsoString(now)!,
+        deletedBy: actor,
+        tendersDeleted: tenders.count,
+        otherLinesDeleted,
+      };
+    }, RECEIPT_TRANSACTION_OPTIONS);
+  }
+
+  /**
+   * A DRAFT must have written nothing into the books (R10). This is the check
+   * that the delete is safe to do at all.
+   *
+   * It is not defensive padding: `avh_voucher_status` is the only thing
+   * separating "a piece of paper on a desk" from "money in the day book", and
+   * if the two ever came apart — a post that failed between writing legs and
+   * flipping the status, a row edited by hand — the delete would hide legs that
+   * `acc_vouchers` still holds and adjustment rows that bills are still netting
+   * against. Refusing with counts is recoverable; deleting is not.
+   */
+  private async assertDraftWroteNoAccounting(
+    tx: Prisma.TransactionClient,
+    header: StoredHeader,
+  ): Promise<void> {
+    const [legs, adjustments] = await Promise.all([
+      tx.accVoucher.count({
+        where: {
+          avVoucherId: header.avhVoucherId,
+          avAccYear: header.avhAccYear,
+          avIsDeleted: false,
+        },
+      }),
+      tx.accBillAdjustment.count({
+        where: {
+          abjVoucherId: header.avhVoucherId,
+          abjVoucherAccYear: header.avhAccYear,
+          abjIsDeleted: false,
+        },
+      }),
+    ]);
+
+    if (legs > 0 || adjustments > 0) {
+      throwAccountsConflict<ReceiptErrorDetail>('Receipt cannot be deleted', [
+        {
+          field: 'avhVoucherId',
+          message:
+            `This draft has ${legs} voucher leg(s) and ${adjustments} bill adjustment row(s) ` +
+            'against it, which a draft cannot have (R10). Deleting it would orphan them. It has ' +
+            'most likely been posted without its status following — have the voucher looked at ' +
+            'before it is removed.',
+        },
+      ]);
+    }
   }
 
   // ═════════════════════════════════════════════════════════════════════════
@@ -1017,6 +1253,11 @@ export class ReceiptService {
       avhStatusBy: header.avhStatusBy,
       avhPostedOn: toIsoString(header.avhPostedOn),
       avhCancelReason: header.avhCancelReason,
+      // R20 §3 item 1b — WITHOUT this the client has no baseRevision to send
+      // back and the optimistic lock on /receipts/amend cannot work. It is
+      // read straight off the header the client loaded, held, and returned
+      // verbatim; the client never computes or increments it.
+      avhRevisionNo: header.avhRevisionNo,
       avhReversalVoucherId: header.avhReversalVoucherId,
       avhAgainstVoucherId: header.avhAgainstVoucherId,
       avhPrintCount: header.avhPrintCount,
@@ -1062,6 +1303,7 @@ export const STORED_HEADER_SELECT = {
   avhStatusBy: true,
   avhPostedOn: true,
   avhCancelReason: true,
+  avhRevisionNo: true,
   avhReversalVoucherId: true,
   avhReversalAccYear: true,
   avhAgainstVoucherId: true,

@@ -21,7 +21,12 @@ model AccGroupMaster {
   // Hierarchy
   accGroupParentId            String?        @db.Uuid                                       @map("acc_group_parent_id")
   accGroupSort                Int?                                                          @map("acc_group_sort")
-  accGroupChildIds            String[]       @db.Uuid                                       @map("acc_group_child_ids")
+  // acc_group_child_ids was dropped in 20260917140000. It was a denormalised copy of
+  // the subtree that only the account-group service maintained, so every row a seed,
+  // a Tally import or a psql fix created went stale on the spot — 21 of 48 groups were
+  // NULL and 14 empty, while 'Customers' claimed 1 child against 11 real ones. The GET
+  // marked it REQUIRED, so anything that trusted it built the wrong tree. Walk
+  // acc_group_parent_id (indexed) with a recursive CTE instead; it cannot go stale.
 
   // Classification
   accGroupType                String         @db.VarChar(20)                                @map("acc_group_type")
@@ -56,6 +61,18 @@ model AccGroupMaster {
   @@index([accGroupCompanyId], name: "idx_acc_group_company_id")
   @@index([accGroupParentId],  name: "idx_acc_group_parent_id")
   @@index([accGroupType],      name: "idx_acc_group_type")
+  //
+  // NAME UNIQUENESS is three rules, and an index can express only two of them
+  // (20260917110000). NULL acc_group_company_id means SHARED BY EVERY COMPANY and is
+  // deliberate — both scopes are in use — but Postgres treats NULLs as distinct, so a
+  // plain UNIQUE (company_id, name) is inert for exactly the rows most groups use:
+  //   uq_acc_group_name_shared   UNIQUE (lower(name)) WHERE company_id IS NULL     AND NOT is_deleted
+  //   uq_acc_group_name_company  UNIQUE (company_id, lower(name)) WHERE company_id IS NOT NULL AND NOT is_deleted
+  //   tr_acc_group_name_scope    BEFORE INSERT/UPDATE — a scoped group must not collide
+  //                              with a SHARED one, which no index can say.
+  // lower() on purpose: Tally matches master names case-insensitively, so two spellings
+  // are one group there and must be one here. Exporting a company emits the shared rows
+  // PLUS its own into one file, and Tally silently merges same-named entries.
   // Partial unique index uq_acc_group_tally_guid (WHERE acc_group_tally_guid IS NOT NULL)
   // is managed in raw SQL — Prisma can't express it. Allowed-value validation for
   // acc_group_type / acc_group_nature / acc_ledger_profile lives in the app layer

@@ -45,6 +45,9 @@ let ReceiptService = class ReceiptService {
     }
     async save(dto) {
         const actor = (0, module_service_utils_1.resolveActor)(dto.avhUserId, this.requestContext.getUserId()) ?? module_service_utils_1.DEFAULT_ACTOR;
+        return this.prisma.$transaction((tx) => this.saveInTransaction(tx, dto, actor), RECEIPT_TRANSACTION_OPTIONS);
+    }
+    async saveInTransaction(tx, dto, actor) {
         const receiptDate = (0, receipt_utils_1.toDateOnly)(dto.avhVoucherDate);
         const replace = dto.replace ?? true;
         const derivedYear = (0, receipt_guards_1.accYearOf)(receiptDate);
@@ -56,7 +59,7 @@ let ReceiptService = class ReceiptService {
                 },
             ]);
         }
-        return this.prisma.$transaction(async (tx) => {
+        {
             await (0, receipt_guards_1.assertAccYearWritable)(tx, dto.avhCompanyId, dto.avhAccYear, 'avhAccYear');
             const partyId = dto.avhPartyId;
             const [party, voucherType, settings] = await Promise.all([
@@ -163,7 +166,7 @@ let ReceiptService = class ReceiptService {
                 otherLines: lines.map(toOtherLinePayload),
                 expectedRoles: expected.missing,
             };
-        }, RECEIPT_TRANSACTION_OPTIONS);
+        }
     }
     async get(query) {
         const header = await this.loadHeaderOrThrow(this.prisma, query.avhVoucherId, query.avhAccYear);
@@ -434,6 +437,123 @@ let ReceiptService = class ReceiptService {
             const updated = await this.loadHeaderOrThrow(tx, dto.avhVoucherId, dto.avhAccYear);
             return this.toHeaderPayload(tx, updated);
         }, RECEIPT_TRANSACTION_OPTIONS);
+    }
+    async deleteDraft(dto) {
+        const actor = this.requestContext.getUserId() ?? module_service_utils_1.DEFAULT_ACTOR;
+        return this.prisma.$transaction(async (tx) => {
+            await tx.$queryRaw `
+        SELECT avh_voucher_id
+          FROM accounts.acc_voucher_header
+         WHERE avh_voucher_id = ${dto.avhVoucherId}::uuid
+           AND avh_acc_year   = ${dto.avhAccYear}::bpchar
+           FOR UPDATE`;
+            const header = await this.loadHeaderOrThrow(tx, dto.avhVoucherId, dto.avhAccYear);
+            (0, receipt_guards_1.assertHeaderScope)(header, {
+                companyId: dto.avhCompanyId,
+                branchId: dto.avhBranchId,
+                accYear: dto.avhAccYear,
+                voucherId: dto.avhVoucherId,
+            });
+            const status = statusOf(header);
+            if (status !== receipt_enum_1.VoucherStatus.DRAFT) {
+                (0, module_service_utils_1.throwAccountsConflict)('Receipt cannot be deleted', [
+                    {
+                        field: 'avhVoucherId',
+                        message: `${header.avhVoucherRefno ?? dto.avhVoucherId} is ${header.avhVoucherStatus}. ` +
+                            (status === receipt_enum_1.VoucherStatus.POSTED
+                                ? 'A posted receipt is money in the books — cancel it, which reverses it and ' +
+                                    'leaves the trail. Only a DRAFT is deleted.'
+                                : 'It has already been cancelled, and its reversal is what the books stand on. ' +
+                                    'Only a DRAFT is deleted.'),
+                    },
+                ]);
+            }
+            if (header.avhAgainstVoucherId) {
+                (0, module_service_utils_1.throwAccountsConflict)('Receipt cannot be deleted', [
+                    {
+                        field: 'avhVoucherId',
+                        message: 'This is a post-dated cheque voucher, not a receipt. It belongs to the receipt ' +
+                            `${header.avhAgainstVoucherId} and leaves play only when that one is cancelled.`,
+                    },
+                ]);
+            }
+            await (0, receipt_guards_1.assertAccYearWritable)(tx, header.avhCompanyId, header.avhAccYear, 'avhAccYear');
+            await this.assertDraftWroteNoAccounting(tx, header);
+            const now = new Date();
+            const otherLinesDeleted = (0, receipt_draft_lines_1.rehydrateDraft)(header.avhDraftLines).otherLines.length;
+            const tenders = await tx.accTenderDetail.updateMany({
+                where: { tdSrcDocId: header.avhVoucherId, tdIsDeleted: false },
+                data: { tdIsDeleted: true, tdModifiedOn: now, tdModifiedBy: actor },
+            });
+            await tx.accVoucherHeader.update({
+                where: {
+                    avhVoucherId_avhAccYear: {
+                        avhVoucherId: header.avhVoucherId,
+                        avhAccYear: header.avhAccYear,
+                    },
+                },
+                data: {
+                    avhIsDeleted: true,
+                    avhIsActive: false,
+                    avhModifiedOn: now,
+                    avhModifiedBy: actor,
+                },
+            });
+            await (0, txn_status_log_helper_1.appendTxnStatusLog)(tx, {
+                companyId: header.avhCompanyId,
+                branchId: header.avhBranchId,
+                tenantId: header.avhTenantId,
+                accYear: header.avhAccYear,
+                srcModule: txn_status_log_helper_1.TxnStatusSrcModule.ACCOUNTS,
+                srcDocType: txn_status_log_helper_1.TxnStatusDocType.RECEIPT,
+                srcDocId: header.avhVoucherId,
+                srcDocRefno: header.avhVoucherRefno,
+                event: txn_status_log_helper_1.TxnStatusEvent.DELETED,
+                fromStatus: header.avhVoucherStatus,
+                toStatus: header.avhVoucherStatus,
+                changedBy: actor,
+                changedOn: now,
+            });
+            return {
+                avhVoucherId: header.avhVoucherId,
+                avhAccYear: header.avhAccYear,
+                avhVoucherRefno: header.avhVoucherRefno,
+                status,
+                deletedOn: (0, receipt_utils_1.toIsoString)(now),
+                deletedBy: actor,
+                tendersDeleted: tenders.count,
+                otherLinesDeleted,
+            };
+        }, RECEIPT_TRANSACTION_OPTIONS);
+    }
+    async assertDraftWroteNoAccounting(tx, header) {
+        const [legs, adjustments] = await Promise.all([
+            tx.accVoucher.count({
+                where: {
+                    avVoucherId: header.avhVoucherId,
+                    avAccYear: header.avhAccYear,
+                    avIsDeleted: false,
+                },
+            }),
+            tx.accBillAdjustment.count({
+                where: {
+                    abjVoucherId: header.avhVoucherId,
+                    abjVoucherAccYear: header.avhAccYear,
+                    abjIsDeleted: false,
+                },
+            }),
+        ]);
+        if (legs > 0 || adjustments > 0) {
+            (0, module_service_utils_1.throwAccountsConflict)('Receipt cannot be deleted', [
+                {
+                    field: 'avhVoucherId',
+                    message: `This draft has ${legs} voucher leg(s) and ${adjustments} bill adjustment row(s) ` +
+                        'against it, which a draft cannot have (R10). Deleting it would orphan them. It has ' +
+                        'most likely been posted without its status following — have the voucher looked at ' +
+                        'before it is removed.',
+                },
+            ]);
+        }
     }
     async loadHeaderOrThrow(client, voucherId, accYear) {
         const header = await client.accVoucherHeader.findUnique({
@@ -711,6 +831,7 @@ let ReceiptService = class ReceiptService {
             avhStatusBy: header.avhStatusBy,
             avhPostedOn: (0, receipt_utils_1.toIsoString)(header.avhPostedOn),
             avhCancelReason: header.avhCancelReason,
+            avhRevisionNo: header.avhRevisionNo,
             avhReversalVoucherId: header.avhReversalVoucherId,
             avhAgainstVoucherId: header.avhAgainstVoucherId,
             avhPrintCount: header.avhPrintCount,
@@ -761,6 +882,7 @@ exports.STORED_HEADER_SELECT = {
     avhStatusBy: true,
     avhPostedOn: true,
     avhCancelReason: true,
+    avhRevisionNo: true,
     avhReversalVoucherId: true,
     avhReversalAccYear: true,
     avhAgainstVoucherId: true,

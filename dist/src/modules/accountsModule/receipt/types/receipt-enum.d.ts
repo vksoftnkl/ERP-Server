@@ -106,7 +106,8 @@ export declare enum ReceiptSettingKey {
     SALESMAN_MANDATORY = "accounts.receipt_salesman_mandatory",
     WRITEOFF_APPROVAL_ABOVE = "accounts.writeoff_approval_above",
     TCS_BASIS = "accounts.tcs_basis",
-    PPD_SLABS = "accounts.ppd_slabs"
+    PPD_SLABS = "accounts.ppd_slabs",
+    ALLOW_POSTED_AMEND = "accounts.allow_posted_amend"
 }
 export declare enum ReceiptBillSort {
     DUE_DATE = "DUE_DATE",

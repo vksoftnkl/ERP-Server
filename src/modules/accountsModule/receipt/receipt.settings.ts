@@ -33,6 +33,16 @@ export interface ReceiptSettings {
   tcsBasis: TcsBasis;
   /** R16 — what the prompt-payment discount suggests. */
   ppdSlabs: PpdSlab[];
+  /**
+   * R20 — whether a POSTED receipt may be restated in place by
+   * `/receipts/amend`, or must be cancelled and re-entered.
+   *
+   * The ONLY setting in this module that decides whether a ROUTE exists rather
+   * than how one behaves, which is why amend is its own route and not a mode
+   * on `/create`: a switch is easier to reason about than a flag inside a DTO
+   * every client already sends.
+   */
+  allowPostedAmend: boolean;
 }
 
 export const RECEIPT_SETTING_DEFAULTS: ReceiptSettings = {
@@ -44,6 +54,11 @@ export const RECEIPT_SETTING_DEFAULTS: ReceiptSettings = {
   writeoffApprovalAbove: new Prisma.Decimal(0),
   tcsBasis: TcsBasis.RECEIPT,
   ppdSlabs: [],
+  // OFF, and the safe end of this one is not a matter of taste: off is the
+  // model every client has today, and a database one migration behind — which
+  // has no row for this key at all — must not silently acquire the right to
+  // rewrite posted money.
+  allowPostedAmend: false,
 };
 
 /**
@@ -83,6 +98,10 @@ export function readReceiptSettings(
       RECEIPT_SETTING_DEFAULTS.tcsBasis,
     ),
     ppdSlabs: parsePpdSlabs(byKey.get(ReceiptSettingKey.PPD_SLABS) ?? null),
+    allowPostedAmend: pickBoolean(
+      byKey.get(ReceiptSettingKey.ALLOW_POSTED_AMEND),
+      RECEIPT_SETTING_DEFAULTS.allowPostedAmend,
+    ),
   };
 }
 

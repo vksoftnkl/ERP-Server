@@ -1,10 +1,10 @@
-import type { LedGstPartyRegType, LedObType } from './account-ledger-master-enum';
+import type { LedGstPartyRegType, LedItcEligibility, LedObType } from './account-ledger-master-enum';
 import type { AccLedgerProfile } from '../../accGroupMaster/types/acc-group-master-enum';
 import type { LedgerBankAccountPayload } from '../../ledgerBankAccount/types/ledger-bank-account-api.types';
 export type { AccountsErrorDetail as AccountLedgerMasterErrorDetail } from "../../../../common/types/module-api.types";
 export type { AccountsErrorResponse as AccountLedgerMasterErrorResponse } from "../../../../common/types/module-api.types";
 export type { AccountsSuccessResponse as AccountLedgerMasterSuccessResponse } from "../../../../common/types/module-api.types";
-export { LedGstPartyRegType, LedObType, BankAccountType } from './account-ledger-master-enum';
+export { LedGstPartyRegType, LedGstDutyHead, LedItcEligibility, LedLedgerType, LedMsmeType, LedObType, LedRoundingMethod, LedTypeOfSupply, BankAccountType, } from './account-ledger-master-enum';
 export type { LedgerBankAccountPayload } from '../../ledgerBankAccount/types/ledger-bank-account-api.types';
 export interface AccountLedgerMasterPayload {
     ledId: string;
@@ -77,6 +77,8 @@ export interface AccountLedgerMasterPayload {
     ledTdsDeducteeType: string | null;
     ledTdsNatureOfPayment: string | null;
     ledIsTcsApplicable: boolean;
+    ledItcEligibility: LedItcEligibility | null;
+    ledIsReverseCharge: boolean;
     ledObAmount: number;
     ledObType: LedObType;
     ledObAsOn: string | null;

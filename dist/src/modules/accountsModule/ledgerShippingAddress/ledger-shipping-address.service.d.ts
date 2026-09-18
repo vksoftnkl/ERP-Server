@@ -10,6 +10,10 @@ export declare class LedgerShippingAddressService {
     constructor(prisma: PrismaService, auditLogService: AuditLogService, requestContextService: RequestContextService);
     save(saveLedgerShippingAddressDto: SaveLedgerShippingAddressDto): Promise<LedgerShippingAddressPayload>;
     getById(saaId: string): Promise<LedgerShippingAddressPayload>;
+    listByLedger(ledgerId: string): Promise<{
+        data: LedgerShippingAddressPayload[];
+        total: number;
+    }>;
     softDelete(saaId: string): Promise<{
         saaId: string;
         deleted: true;

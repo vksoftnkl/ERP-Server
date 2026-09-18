@@ -22,13 +22,22 @@ import {
   type StoredHeader,
 } from './receipt.service';
 import { assertAccYearWritable, assertHeaderScope } from './receipt.guards';
-import { flipSide, toAmount, todayUtc, ZERO } from './receipt.utils';
+import { assertAdvancesUntouched, assertChequesStillHeld } from './receipt-unwind.guards';
+import { flipSide, toAmount, todayUtc } from './receipt.utils';
 import { CancelReceiptDto } from './dto/post-receipt.dto';
-import { CANCELLABLE_PDC_STATUSES, DrCr, PdcStatus, VoucherStatus } from './types/receipt-enum';
+import { DrCr, PdcStatus, VoucherStatus } from './types/receipt-enum';
 import type { ReceiptCancelPayload, ReceiptErrorDetail } from './types/receipt-api.types';
 
 /**
- * §5.3 — cancel, which is the only way money on a posted receipt changes (R3).
+ * §5.3 — cancel: unmaking a posted receipt.
+ *
+ * It was the ONLY way money on a posted receipt changed (R3) until R20 added
+ * `/receipts/amend`, and it is still the only way for a client that leaves
+ * `accounts.allow_posted_amend` off — which is the default. The two are not
+ * alternatives to each other: **a receipt taken from the wrong party is
+ * cancelled, not restated.** Amend rewrites what a document says; cancel says
+ * the document should not have existed, and only cancel leaves the reversal
+ * voucher that proves it.
  *
  * ═══════════════════════════════════════════════════════════════════════════
  *  REVERSE, NEVER DELETE
@@ -60,6 +69,13 @@ import type { ReceiptCancelPayload, ReceiptErrorDetail } from './types/receipt-a
  *
  *   · A locked or closed accounting year, for the receipt AND for every
  *     post-dated cheque's voucher — the reversal has to land somewhere.
+ *
+ * The first two live in `receipt-unwind.guards.ts` because `/receipts/amend`
+ * must refuse on EXACTLY the same facts (R20 §4). They are facts about the
+ * world rather than rules about the software, so no company setting can make
+ * them negotiable — and one definition is what stops a second copy drifting
+ * until `allow_posted_amend` quietly becomes a way around a rule cancel still
+ * enforces.
  *
  * ═══════════════════════════════════════════════════════════════════════════
  *  THE POST-DATED MIRROR, WHICH IS EASY TO GET WRONG
@@ -143,8 +159,11 @@ export class ReceiptCancelService {
       const voucherIds = vouchers.map((voucher) => voucher.avhVoucherId);
       const years = [...new Set(vouchers.map((voucher) => voucher.avhAccYear))];
 
-      await this.assertChequesStillHeld(tx, voucherIds);
-      const advanceBills = await this.assertAdvancesUntouched(tx, voucherIds, years);
+      // Shared with /receipts/amend — see receipt-unwind.guards.ts. R20 keeps
+      // the two lists identical on purpose, so no setting can let an amend
+      // past an instrument a cancel would be refused on.
+      await assertChequesStillHeld(tx, voucherIds, 'cancelled');
+      const advanceBills = await assertAdvancesUntouched(tx, voucherIds, years, 'cancelled');
 
       const reversals: ReceiptCancelPayload['reversals'] = [];
       const touchedBills: Array<{ billId: string; accYear: string }> = [];
@@ -239,78 +258,6 @@ export class ReceiptCancelService {
         advanceBillsRemoved: advanceBills.map((bill) => bill.ablId),
       };
     }, CANCEL_TRANSACTION_OPTIONS);
-  }
-
-  // ─── The refusals ──────────────────────────────────────────────────────────
-
-  private async assertChequesStillHeld(
-    tx: Prisma.TransactionClient,
-    voucherIds: readonly string[],
-  ): Promise<void> {
-    const moved = await tx.accPdcRegister.findMany({
-      where: {
-        apdVoucherId: { in: [...voucherIds] },
-        apdIsDeleted: false,
-        apdStatus: { notIn: [...CANCELLABLE_PDC_STATUSES] },
-      },
-      select: { apdInstrumentNo: true, apdStatus: true },
-    });
-
-    if (moved.length > 0) {
-      const first = moved[0];
-      throwAccountsConflict<ReceiptErrorDetail>('Receipt cannot be cancelled', [
-        {
-          field: 'avhVoucherId',
-          message:
-            `Cheque ${first.apdInstrumentNo} is ${first.apdStatus}. Once an instrument has left ` +
-            'the drawer the receipt behind it cannot be unmade — unwind it on the Received ' +
-            'Cheques screen first.',
-        },
-      ]);
-    }
-  }
-
-  private async assertAdvancesUntouched(
-    tx: Prisma.TransactionClient,
-    voucherIds: readonly string[],
-    years: readonly string[],
-  ): Promise<Array<{ ablId: string; ablAccYear: string; ablDocRefno: string }>> {
-    const advances = await tx.accBillBalance.findMany({
-      where: {
-        ablVoucherId: { in: [...voucherIds] },
-        ablAccYear: { in: [...years] },
-        ablBillType: 'ADVANCE',
-        ablIsDeleted: false,
-      },
-      select: {
-        ablId: true,
-        ablAccYear: true,
-        ablDocRefno: true,
-        ablBillAmount: true,
-        ablPendingAmount: true,
-      },
-    });
-
-    for (const advance of advances) {
-      const pending = advance.ablPendingAmount ?? ZERO;
-      if (!pending.equals(advance.ablBillAmount)) {
-        throwAccountsConflict<ReceiptErrorDetail>('Receipt cannot be cancelled', [
-          {
-            field: 'avhVoucherId',
-            message:
-              `The on-account balance from ${advance.ablDocRefno} has already been used — ` +
-              `${advance.ablBillAmount.minus(pending).toFixed(2)} of it is settling another bill. ` +
-              'Reverse that settlement first.',
-          },
-        ]);
-      }
-    }
-
-    return advances.map((advance) => ({
-      ablId: advance.ablId,
-      ablAccYear: advance.ablAccYear,
-      ablDocRefno: advance.ablDocRefno,
-    }));
   }
 
   // ─── The reversal ──────────────────────────────────────────────────────────

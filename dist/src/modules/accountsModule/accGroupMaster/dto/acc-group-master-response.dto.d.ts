@@ -24,10 +24,15 @@ export declare class AccGroupMasterPayloadDto {
     accGroupParentId: string | null;
     accGroupParentName: string | null;
     accGroupSort: number | null;
-    accGroupChildIds: string[];
     accGroupType: string;
     accGroupIsDefault: boolean;
+    accGroupIsReserved: boolean;
     accLedgerProfile: string;
+    accGroupBehaveAsSubledger: boolean;
+    accGroupNetDebitCredit: boolean;
+    accGroupUsedForCalculation: boolean;
+    accGroupAffectsGrossProfit: boolean;
+    accGroupIsActive: boolean;
 }
 export declare class AccGroupMasterDeleteResultDto {
     accGroupId: string;

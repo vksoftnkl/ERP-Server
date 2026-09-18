@@ -11,8 +11,6 @@ export declare class ReceiptCancelService {
     private readonly recompute;
     constructor(prisma: PrismaService, requestContext: RequestContextService, receiptService: ReceiptService, recompute: BillBalanceRecomputeService);
     cancel(dto: CancelReceiptDto): Promise<ReceiptCancelPayload>;
-    private assertChequesStillHeld;
-    private assertAdvancesUntouched;
     private reverseVoucher;
     private cancelCheques;
     private softDeleteTenders;

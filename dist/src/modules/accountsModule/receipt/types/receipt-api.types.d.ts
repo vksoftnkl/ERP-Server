@@ -16,6 +16,8 @@ export interface OpenBill {
     daysOverdue: number;
     pdcHeld: number;
     ppdSuggested: number;
+    tcsAmount: number;
+    tcsPending: number;
 }
 export interface OpenCredit {
     billId: string;
@@ -208,6 +210,7 @@ export interface ReceiptHeader {
     avhStatusBy: string | null;
     avhPostedOn: string | null;
     avhCancelReason: string | null;
+    avhRevisionNo: number;
     avhReversalVoucherId: string | null;
     avhAgainstVoucherId: string | null;
     avhPrintCount: number;
@@ -282,7 +285,30 @@ export interface ReceiptCancelPayload extends ReceiptStatusPayload {
     chequesCancelled: string[];
     advanceBillsRemoved: string[];
 }
+export interface ReceiptAmendPayload extends ReceiptPostPayload {
+    fromRevision: number;
+    toRevision: number;
+    editRemark: string;
+    unwound: {
+        adjustmentsReversed: number;
+        legsRemoved: number;
+        pdcVouchersRemoved: number;
+        chequesRemoved: number;
+        advanceBillsRemoved: number;
+        tendersRemoved: number;
+    };
+}
 export interface RegularisePdcPayload {
     asOf: string;
     billsRegularised: number;
+}
+export interface ReceiptDeletePayload {
+    avhVoucherId: string;
+    avhAccYear: string;
+    avhVoucherRefno: string | null;
+    status: VoucherStatus;
+    deletedOn: string;
+    deletedBy: string;
+    tendersDeleted: number;
+    otherLinesDeleted: number;
 }

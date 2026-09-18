@@ -47,6 +47,15 @@ export declare class LedgerShippingAddressSuccessSingleDto {
     message: string;
     data: LedgerShippingAddressPayloadDto;
 }
+export declare class LedgerShippingAddressListDto {
+    data: LedgerShippingAddressPayloadDto[];
+    total: number;
+}
+export declare class LedgerShippingAddressSuccessListDto {
+    success: true;
+    message: string;
+    data: LedgerShippingAddressListDto;
+}
 export declare class LedgerShippingAddressSuccessDeleteDto {
     success: true;
     message: string;

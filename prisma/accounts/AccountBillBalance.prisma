@@ -78,6 +78,17 @@ model AccBillBalance {
   ablAllocAmount      Decimal   @default(0) @db.Decimal(18, 2) @map("abl_alloc_amount")
   ablDiscAmount       Decimal   @default(0) @db.Decimal(18, 2) @map("abl_disc_amount")
   ablWriteoffAmount   Decimal   @default(0) @db.Decimal(18, 2) @map("abl_writeoff_amount")
+  // §2.13 — TCS under 206C(1H) that is already INSIDE ablBillAmount, carried
+  // here so bill-wise TCS outstanding is answerable without re-deriving it from
+  // the invoice. Stamped by the document that raises the bill, from the same
+  // figure it puts in AccVoucherDocRegister.gdrTcsValue; 0 on every bill raised
+  // on the RECEIPT basis, where the TCS is collected by the receipt instead.
+  //
+  // NOT a second amount: it is a SLICE of ablBillAmount, so it is never added
+  // to anything and never enters abl_pending_amount. What has been collected of
+  // it is pro-rata of what has been allocated, which is what accounts.v_bill_tcs
+  // computes.
+  ablTcsAmount        Decimal   @default(0) @db.Decimal(14, 2) @map("abl_tcs_amount")
   // GENERATED ALWAYS ... STORED in the DB. Read-only: never send either on a
   // create or update, the write will be rejected by Postgres.
   // @default(dbgenerated()) marks the value as DB-owned so migrate never emits
@@ -132,6 +143,11 @@ model AccBillBalance {
   //     ck_abl_amount, ck_abl_due_date, ck_abl_days, and ck_abl_settled — the
   //     over-settlement guard: a bill can never be edited down below what has
   //     already been settled, discounted or written off against it.
+  //   - View accounts.v_bill_tcs (20260917160000) — collected / pending TCS per
+  //     bill, pro-rata of the allocation. A view and not two more columns:
+  //     collected TCS is a function of abl_alloc_amount, which the recompute
+  //     already owns, so a stored column would be a second copy of a derived
+  //     number and would go stale the moment a reversal landed.
   //   - The roll-up trigger that maintains abl_alloc_amount / abl_disc_amount /
   //     abl_writeoff_amount / abl_settled_on from acc_bill_adjustment is NOT
   //     yet written; until it is, the posting code owns those columns.

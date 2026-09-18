@@ -1,0 +1,29 @@
+import { PrismaService } from '../../../database/prisma/prisma.service';
+import { RequestContextService } from '../../../common/request-context/request-context.service';
+import { BillBalanceRecomputeService } from '../billBalance/bill-balance-recompute.service';
+import { AuditLogService } from '../../audit-log/audit-log.service';
+import { OpenItemsService } from './open-items.service';
+import { ReceiptService } from './receipt.service';
+import { ReceiptPostingService } from './receipt-posting.service';
+import { AmendReceiptDto } from './dto/amend-receipt.dto';
+import type { ReceiptAmendPayload } from './types/receipt-api.types';
+export declare class ReceiptAmendService {
+    private readonly prisma;
+    private readonly requestContext;
+    private readonly receiptService;
+    private readonly postingService;
+    private readonly openItemsService;
+    private readonly recompute;
+    private readonly auditLogService;
+    constructor(prisma: PrismaService, requestContext: RequestContextService, receiptService: ReceiptService, postingService: ReceiptPostingService, openItemsService: OpenItemsService, recompute: BillBalanceRecomputeService, auditLogService: AuditLogService);
+    amend(dto: AmendReceiptDto): Promise<ReceiptAmendPayload>;
+    private amendInTransaction;
+    private assertAmendPermitted;
+    private assertStatusMayAmend;
+    private assertRevisionIsCurrent;
+    private unwind;
+    private reverseAdjustments;
+    private billsTouchedBy;
+    private writeTrail;
+    private writeAuditRows;
+}

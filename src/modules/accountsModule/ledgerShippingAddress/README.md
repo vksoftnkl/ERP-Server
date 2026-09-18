@@ -29,13 +29,17 @@ invoices and dispatch documents.
 | Method | Path | Description |
 | --- | --- | --- |
 | `POST` | `/create` | Create **or** update a shipping address (single object; branch decided by `saaId` presence). |
-| `GET` | `/get` | Fetch one active shipping address by `saaId` (required UUID query param). |
+| `GET` | `/get` | Fetch one active shipping address by `saaId`, **or** list every active address on a ledger with `ledgerId` (default first, then oldest first). Exactly one of the two is required. |
 | `DELETE` | `/delete` | Soft-delete a shipping address by `saaId` (required UUID query param). |
 
 ### Create / update semantics
 
 - **Omit `saaId` → create; include `saaId` → update** the existing address
   ([`save` dispatch](ledger-shipping-address.service.ts)).
+- The `ledgerId` list shape exists because a bill-to / ship-to screen needs it: `saa_gstin`,
+  `saa_state_code` and `saa_distance_km` are **place of supply** for a bill-to / ship-to split and
+  the **e-way bill distance** — compliance, not convenience — and `saaId` could only ever answer
+  for an address whose id the caller already had.
 - `saaId` on `GET /get` and `DELETE /delete` is validated as a **UUID v7** query param via
   `ParseUUIDPipe`.
 - Each mutation runs inside a `$transaction`, covering existence checks, the write and its

@@ -60,6 +60,11 @@ model AccVoucherHeader {
   avhStatusBy            String?   @db.Uuid @map("avh_status_by")
   avhPostedOn            DateTime? @db.Timestamptz(6) @map("avh_posted_on")
   avhCancelReason        String?   @db.VarChar(250) @map("avh_cancel_reason")
+  // R20 — how many times this POSTED voucher has been restated in place by
+  // /receipts/amend. 0 is "as first posted"; the slip prints "rev n" and the
+  // client sends the value it loaded back as baseRevision, which is the
+  // optimistic lock that stops one amend silently undoing another.
+  avhRevisionNo          Int       @default(0) @map("avh_revision_no")
   // Where / who — ck_avh_device_type: PC | WEB | MOBILE | POS | DESKTOP
   // (DESKTOP added by 20260806120000_widen_avh_device_type)
   avhUserId              String    @db.Uuid @map("avh_user_id")

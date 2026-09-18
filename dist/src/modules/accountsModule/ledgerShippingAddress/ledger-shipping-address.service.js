@@ -47,6 +47,19 @@ let LedgerShippingAddressService = class LedgerShippingAddressService {
         }
         return this.toPayload(record);
     }
+    async listByLedger(ledgerId) {
+        const records = await this.prisma.accShipAddr.findMany({
+            where: {
+                saaLedgerId: ledgerId,
+                saaIsDeleted: false,
+            },
+            orderBy: [{ saaIsDefault: 'desc' }, { saaCreatedOn: 'asc' }],
+        });
+        return {
+            data: records.map((record) => this.toPayload(record)),
+            total: records.length,
+        };
+    }
     async softDelete(saaId) {
         return this.prisma.$transaction(async (tx) => {
             const existing = await tx.accShipAddr.findFirst({

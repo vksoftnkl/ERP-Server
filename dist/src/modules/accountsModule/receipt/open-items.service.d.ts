@@ -11,6 +11,7 @@ export declare class OpenItemsService {
     listOpenItems(query: ListOpenItemsQueryDto): Promise<OpenItemsPayload>;
     private loadBills;
     private loadPostDatedHeld;
+    private loadBillTcs;
     loadCredits(companyId: string, partyId: string, side?: 'CR' | 'DR'): Promise<OpenCredit[]>;
     partyContext(query: PartyContextQueryDto): Promise<PartyContextPayload>;
     private loadRecentReceipts;

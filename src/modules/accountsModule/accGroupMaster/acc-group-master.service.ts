@@ -3,7 +3,10 @@ import { AccGroupMaster, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import { SaveAccGroupMasterDto } from './dto/save-acc-group-master.dto';
-import { AccGroupMasterErrorDetail, AccGroupMasterPayload } from './types/acc-group-master-api.types';
+import {
+  AccGroupMasterErrorDetail,
+  AccGroupMasterPayload,
+} from './types/acc-group-master-api.types';
 import {
   DEFAULT_ACTOR,
   hasOwnProperty,
@@ -16,7 +19,11 @@ import {
 } from 'src/common/utils/module-service.utils';
 import type { AccountsWriteClient } from 'src/common/utils/module-service.utils';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
-import { AccLedgerProfile, AccGroupMasterNature, AccGroupMasterType } from './types/acc-group-master-enum';
+import {
+  AccLedgerProfile,
+  AccGroupMasterNature,
+  AccGroupMasterType,
+} from './types/acc-group-master-enum';
 const ACC_GROUP_MASTER_TABLE_NAME = 'account groups';
 const ACC_GROUP_MASTER_AUDIT_SCREEN_NAME = 'Account Group Master';
 type AccGroupMasterWriteClient = AccountsWriteClient;
@@ -74,12 +81,15 @@ export class AccGroupMasterService {
         );
       }
       if (existing.accGroupIsReserved) {
-        throwAccountsBadRequest<AccGroupMasterErrorDetail>('Reserved account group cannot be deleted', [
-          {
-            field: 'accGroupId',
-            message: `Account group ${accGroupId} is reserved and cannot be deleted`,
-          },
-        ]);
+        throwAccountsBadRequest<AccGroupMasterErrorDetail>(
+          'Reserved account group cannot be deleted',
+          [
+            {
+              field: 'accGroupId',
+              message: `Account group ${accGroupId} is reserved and cannot be deleted`,
+            },
+          ],
+        );
       }
       const hasChildren = await tx.accGroupMaster.count({
         where: {
@@ -115,7 +125,6 @@ export class AccGroupMasterService {
           ],
         );
       }
-      const ancestorIds = await this.getAncestorIds(tx, existing.accGroupParentId);
       const modifiedOn = new Date();
       const result = await tx.accGroupMaster.updateMany({
         where: {
@@ -136,7 +145,6 @@ export class AccGroupMasterService {
           `No active account group found with id ${accGroupId}`,
         );
       }
-      await this.removeChildIds(tx, ancestorIds, [accGroupId]);
       const originalRecord = this.toPayload(existing);
       const modifiedRecord = this.toPayload({
         ...existing,
@@ -196,31 +204,13 @@ export class AccGroupMasterService {
           accGroupType: parent.accGroupType,
           accLedgerProfile: parent.accLedgerProfile,
           accGroupNature: parent.accGroupNature,
-          accGroupChildIds: [],
           accGroupCreatedOn: now,
           accGroupCreatedBy: createdBy,
         };
         this.applyOptionalFields(data, saveAccGroupMasterDto);
         const created = await tx.accGroupMaster.create({ data });
-        await this.ensureSelfInChildIds(tx, created.accGroupId);
-        if (created.accGroupParentId) {
-          const ancestorIds = await this.getAncestorIds(tx, created.accGroupParentId);
-          await this.appendChildIds(tx, ancestorIds, [created.accGroupId]);
-        }
-        const refreshed = await tx.accGroupMaster.findFirst({
-          where: {
-            accGroupId: created.accGroupId,
-            accGroupIsDeleted: false,
-          },
-        });
-        const finalRecord =
-          refreshed ??
-          ({
-            ...created,
-            accGroupChildIds: this.mergeChildIds(created.accGroupChildIds, [created.accGroupId]),
-          } as AccGroupMaster);
-        const parentName = await this.getParentName(finalRecord.accGroupParentId, tx);
-        const payload = this.toPayload(finalRecord, parentName);
+        const parentName = await this.getParentName(created.accGroupParentId, tx);
+        const payload = this.toPayload(created, parentName);
         await this.auditLogService.logEntityChange(
           {
             action: 'New',
@@ -239,9 +229,11 @@ export class AccGroupMasterService {
         return payload;
       });
     } catch (error: unknown) {
-      throwOnUniqueConstraintError<AccGroupMasterErrorDetail>(error, 'Account group already exists', [
-        { field: 'accGroupName', message: 'Duplicate accGroupName is not allowed' },
-      ]);
+      throwOnUniqueConstraintError<AccGroupMasterErrorDetail>(
+        error,
+        'Account group already exists',
+        [{ field: 'accGroupName', message: 'Duplicate accGroupName is not allowed' }],
+      );
       if (isForeignKeyConstraintError(error)) {
         throwAccountsBadRequest<AccGroupMasterErrorDetail>('Invalid reference value provided', [
           {
@@ -273,12 +265,15 @@ export class AccGroupMasterService {
           );
         }
         if (existing.accGroupIsReserved) {
-          throwAccountsBadRequest<AccGroupMasterErrorDetail>('Reserved account group cannot be edited', [
-            {
-              field: 'accGroupId',
-              message: `Account group ${accGroupId} is reserved and cannot be edited`,
-            },
-          ]);
+          throwAccountsBadRequest<AccGroupMasterErrorDetail>(
+            'Reserved account group cannot be edited',
+            [
+              {
+                field: 'accGroupId',
+                message: `Account group ${accGroupId} is reserved and cannot be edited`,
+              },
+            ],
+          );
         }
         const normalizedName = normalizeRequiredText<AccGroupMasterErrorDetail>(
           saveAccGroupMasterDto.accGroupName,
@@ -300,6 +295,8 @@ export class AccGroupMasterService {
           ? (saveAccGroupMasterDto.accGroupParentId ?? null)
           : existing.accGroupParentId;
         const isParentChanged = hasParentField && nextParentId !== existing.accGroupParentId;
+        // Still needed, and only for this: a group cannot be reparented under one of
+        // its own descendants. Nothing here maintains a stored child array any more.
         const subtreeIds = isParentChanged ? await this.getActiveSubtreeIds(tx, accGroupId) : [];
         if (isParentChanged && nextParentId && subtreeIds.includes(nextParentId)) {
           throwAccountsBadRequest<AccGroupMasterErrorDetail>('Circular hierarchy is not allowed', [
@@ -313,10 +310,10 @@ export class AccGroupMasterService {
         // Company, type, ledger profile, and nature all mirror the effective parent — never
         // supplied by the client. A root (no parent) keeps its existing values for all four.
         const nextCompanyId = parent ? parent.accGroupCompanyId : existing.accGroupCompanyId;
-        await this.ensureNameIsUnique(tx, normalizedName, nextCompanyId, accGroupId);
-        const oldAncestorIds = isParentChanged
-          ? await this.getAncestorIds(tx, existing.accGroupParentId)
-          : [];
+        await this.ensureNameIsUnique(tx, normalizedName, nextCompanyId, accGroupId, {
+          accGroupName: existing.accGroupName,
+          accGroupCompanyId: existing.accGroupCompanyId,
+        });
         const data: Prisma.AccGroupMasterUncheckedUpdateInput = {
           accGroupCompanyId: nextCompanyId,
           accGroupName: normalizedName,
@@ -336,22 +333,9 @@ export class AccGroupMasterService {
           },
           data,
         });
-        await this.ensureSelfInChildIds(tx, accGroupId);
-        if (isParentChanged) {
-          const newAncestorIds = await this.getAncestorIds(tx, nextParentId);
-          await this.removeChildIds(tx, oldAncestorIds, subtreeIds);
-          await this.appendChildIds(tx, newAncestorIds, subtreeIds);
-        }
-        const refreshed = await tx.accGroupMaster.findFirst({
-          where: {
-            accGroupId,
-            accGroupIsDeleted: false,
-          },
-        });
-        const finalRecord = refreshed ?? updated;
         const originalParentName = await this.getParentName(existing.accGroupParentId, tx);
-        const parentName = await this.getParentName(finalRecord.accGroupParentId, tx);
-        const payload = this.toPayload(finalRecord, parentName);
+        const parentName = await this.getParentName(updated.accGroupParentId, tx);
+        const payload = this.toPayload(updated, parentName);
         await this.auditLogService.logEntityChange(
           {
             action: 'update',
@@ -370,9 +354,11 @@ export class AccGroupMasterService {
         return payload;
       });
     } catch (error: unknown) {
-      throwOnUniqueConstraintError<AccGroupMasterErrorDetail>(error, 'Account group already exists', [
-        { field: 'accGroupName', message: 'Duplicate accGroupName is not allowed' },
-      ]);
+      throwOnUniqueConstraintError<AccGroupMasterErrorDetail>(
+        error,
+        'Account group already exists',
+        [{ field: 'accGroupName', message: 'Duplicate accGroupName is not allowed' }],
+      );
       if (isForeignKeyConstraintError(error)) {
         throwAccountsBadRequest<AccGroupMasterErrorDetail>('Invalid reference value provided', [
           {
@@ -411,16 +397,44 @@ export class AccGroupMasterService {
     }
     return parent;
   }
+  // "Unique within what ONE COMPANY CAN SEE" — three rules, not one:
+  //   1 · no two SHARED groups (company_id NULL) share a name;
+  //   2 · no two groups in the SAME company share a name;
+  //   3 · a company-scoped group must not collide with a SHARED one.
+  // Rule 3 is the one the old check missed entirely. It scoped the lookup to the
+  // company being written, so a scoped group could take a name a shared group
+  // already held — and since a shared group is visible from every company, the
+  // operator then saw two identical names and a Tally export merged them.
+  //
+  // Both scopes collapse into one filter: a SHARED write must clash with nothing
+  // at all (rules 1 + 3 together), and a SCOPED write must clash with neither its
+  // own company nor the shared pool (rules 2 + 3).
+  //
+  // `previous` grandfathers rows that already violate rule 3. If the name and the
+  // scope are both unchanged, the write introduces no collision that was not
+  // already there, and refusing it would lock a legacy pair out of every unrelated
+  // edit. The DB trigger tr_acc_group_name_scope makes the same allowance.
   private async ensureNameIsUnique(
     tx: AccGroupMasterWriteClient,
     groupName: string,
     companyId?: string | null,
     excludeId?: string,
+    previous?: { accGroupName: string; accGroupCompanyId: string | null },
   ): Promise<void> {
+    const nextCompanyId = companyId ?? null;
+    if (
+      previous &&
+      previous.accGroupName.trim().toLowerCase() === groupName.trim().toLowerCase() &&
+      previous.accGroupCompanyId === nextCompanyId
+    ) {
+      return;
+    }
     const existing = await tx.accGroupMaster.findFirst({
       where: {
         accGroupIsDeleted: false,
-        accGroupCompanyId: companyId,
+        ...(nextCompanyId === null
+          ? {}
+          : { OR: [{ accGroupCompanyId: nextCompanyId }, { accGroupCompanyId: null }] }),
         accGroupName: {
           equals: groupName,
           mode: 'insensitive',
@@ -435,18 +449,25 @@ export class AccGroupMasterService {
       },
       select: {
         accGroupId: true,
+        accGroupCompanyId: true,
       },
     });
     if (existing) {
-      throwAccountsConflict<AccGroupMasterErrorDetail>(
-        'Account group name already exists for this company',
-        [
-          {
-            field: 'accGroupName',
-            message: 'Duplicate accGroupName is not allowed for this company',
-          },
-        ],
-      );
+      const clashCompanyId = existing.accGroupCompanyId ?? null;
+      let message: string;
+      if (clashCompanyId === nextCompanyId) {
+        message =
+          nextCompanyId === null
+            ? `Account group "${groupName}" already exists as a shared group`
+            : 'Duplicate accGroupName is not allowed for this company';
+      } else if (nextCompanyId === null) {
+        message = `Account group "${groupName}" already exists in one company, and a shared group is visible from every company`;
+      } else {
+        message = `Account group "${groupName}" already exists as a shared group, which this company also sees`;
+      }
+      throwAccountsConflict<AccGroupMasterErrorDetail>('Account group name already exists', [
+        { field: 'accGroupName', message },
+      ]);
     }
   }
   private applyOptionalFields(
@@ -468,36 +489,24 @@ export class AccGroupMasterService {
     if (hasOwnProperty(saveAccGroupMasterDto, 'accGroupSort')) {
       data.accGroupSort = saveAccGroupMasterDto.accGroupSort;
     }
-  }
-  private async getAncestorIds(
-    tx: AccGroupMasterWriteClient,
-    startParentId: string | null | undefined,
-  ): Promise<string[]> {
-    const ancestorIds: string[] = [];
-    const visited = new Set<string>();
-    let currentParentId = startParentId;
-    while (currentParentId) {
-      if (visited.has(currentParentId)) {
-        break;
-      }
-      visited.add(currentParentId);
-      const parent = await tx.accGroupMaster.findFirst({
-        where: {
-          accGroupId: currentParentId,
-          accGroupIsDeleted: false,
-        },
-        select: {
-          accGroupId: true,
-          accGroupParentId: true,
-        },
-      });
-      if (!parent) {
-        break;
-      }
-      ancestorIds.push(parent.accGroupId);
-      currentParentId = parent.accGroupParentId;
+    // The four Tally behaviour flags (§1.3) plus is-active. The columns have always
+    // been there, NOT NULL DEFAULT false; until now no payload could reach them, so
+    // every export emitted Tally's default for all four.
+    if (hasOwnProperty(saveAccGroupMasterDto, 'accGroupBehaveAsSubledger')) {
+      data.accGroupBehaveAsSubledger = saveAccGroupMasterDto.accGroupBehaveAsSubledger;
     }
-    return ancestorIds;
+    if (hasOwnProperty(saveAccGroupMasterDto, 'accGroupNetDebitCredit')) {
+      data.accGroupNetDebitCredit = saveAccGroupMasterDto.accGroupNetDebitCredit;
+    }
+    if (hasOwnProperty(saveAccGroupMasterDto, 'accGroupUsedForCalculation')) {
+      data.accGroupUsedForCalculation = saveAccGroupMasterDto.accGroupUsedForCalculation;
+    }
+    if (hasOwnProperty(saveAccGroupMasterDto, 'accGroupAffectsGrossProfit')) {
+      data.accGroupAffectsGrossProfit = saveAccGroupMasterDto.accGroupAffectsGrossProfit;
+    }
+    if (hasOwnProperty(saveAccGroupMasterDto, 'accGroupIsActive')) {
+      data.accGroupIsActive = saveAccGroupMasterDto.accGroupIsActive;
+    }
   }
   private async getActiveSubtreeIds(
     tx: AccGroupMasterWriteClient,
@@ -541,118 +550,6 @@ export class AccGroupMasterService {
       }
     }
     return subtreeIds;
-  }
-  private async appendChildIds(
-    tx: AccGroupMasterWriteClient,
-    targetIds: string[],
-    idsToAdd: string[],
-  ): Promise<void> {
-    const normalizedTargetIds = this.toUniqueIds(targetIds);
-    const normalizedIdsToAdd = this.toUniqueIds(idsToAdd);
-    if (normalizedTargetIds.length === 0 || normalizedIdsToAdd.length === 0) {
-      return;
-    }
-    const records = await tx.accGroupMaster.findMany({
-      where: {
-        accGroupId: {
-          in: normalizedTargetIds,
-        },
-        accGroupIsDeleted: false,
-      },
-      select: {
-        accGroupId: true,
-        accGroupChildIds: true,
-      },
-    });
-    for (const record of records) {
-      const nextChildIds = this.mergeChildIds(record.accGroupChildIds, normalizedIdsToAdd);
-      if (this.areSameIds(record.accGroupChildIds, nextChildIds)) {
-        continue;
-      }
-      await tx.accGroupMaster.update({
-        where: {
-          accGroupId: record.accGroupId,
-        },
-        data: {
-          accGroupChildIds: nextChildIds,
-        },
-      });
-    }
-  }
-  private async removeChildIds(
-    tx: AccGroupMasterWriteClient,
-    targetIds: string[],
-    idsToRemove: string[],
-  ): Promise<void> {
-    const normalizedTargetIds = this.toUniqueIds(targetIds);
-    const normalizedIdsToRemove = this.toUniqueIds(idsToRemove);
-    if (normalizedTargetIds.length === 0 || normalizedIdsToRemove.length === 0) {
-      return;
-    }
-    const records = await tx.accGroupMaster.findMany({
-      where: {
-        accGroupId: {
-          in: normalizedTargetIds,
-        },
-        accGroupIsDeleted: false,
-      },
-      select: {
-        accGroupId: true,
-        accGroupChildIds: true,
-      },
-    });
-    for (const record of records) {
-      const nextChildIds = this.excludeChildIds(record.accGroupChildIds, normalizedIdsToRemove);
-      if (this.areSameIds(record.accGroupChildIds, nextChildIds)) {
-        continue;
-      }
-      await tx.accGroupMaster.update({
-        where: {
-          accGroupId: record.accGroupId,
-        },
-        data: {
-          accGroupChildIds: nextChildIds,
-        },
-      });
-    }
-  }
-  private async ensureSelfInChildIds(
-    tx: AccGroupMasterWriteClient,
-    accGroupId: string,
-  ): Promise<void> {
-    await this.appendChildIds(tx, [accGroupId], [accGroupId]);
-  }
-  private mergeChildIds(existingIds: readonly string[], idsToAdd: readonly string[]): string[] {
-    return this.toUniqueIds([...existingIds, ...idsToAdd]);
-  }
-  private excludeChildIds(
-    existingIds: readonly string[],
-    idsToRemove: readonly string[],
-  ): string[] {
-    const removeSet = new Set(idsToRemove);
-    return existingIds.filter((id) => !removeSet.has(id));
-  }
-  private toUniqueIds(ids: readonly string[]): string[] {
-    const uniqueIds: string[] = [];
-    const seen = new Set<string>();
-    for (const id of ids) {
-      if (!seen.has(id)) {
-        seen.add(id);
-        uniqueIds.push(id);
-      }
-    }
-    return uniqueIds;
-  }
-  private areSameIds(left: readonly string[], right: readonly string[]): boolean {
-    if (left.length !== right.length) {
-      return false;
-    }
-    for (let index = 0; index < left.length; index += 1) {
-      if (left[index] !== right[index]) {
-        return false;
-      }
-    }
-    return true;
   }
   private async getParentName(
     parentId: string | null,
@@ -712,7 +609,6 @@ export class AccGroupMasterService {
       accGroupParentId: record.accGroupParentId,
       accGroupParentName,
       accGroupSort: record.accGroupSort,
-      accGroupChildIds: record.accGroupChildIds,
       accGroupType: record.accGroupType as AccGroupMasterType,
       accGroupIsDefault: record.accGroupIsDefault,
       accGroupIsReserved: record.accGroupIsReserved,

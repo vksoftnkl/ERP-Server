@@ -24,6 +24,8 @@ export declare class ChargeMasterPayloadDto {
     ledHsnSac: string | null;
     chgTaxApl: boolean;
     chgBeforeTax: boolean;
+    chgTaxId: string | null;
+    chgTaxName: string | null;
     chgSepPost: boolean;
     chgManParty: boolean;
     chgDispOrder: number | null;

@@ -136,20 +136,26 @@ export class ReceiptPostingService {
         POST_TRANSACTION_OPTIONS,
       );
     } catch (error) {
-      // The engine is pure and knows nothing about HTTP, so its two failure
-      // kinds are mapped here — once — rather than being thrown as status codes
-      // from inside arithmetic.
-      if (error instanceof AllocationError) {
-        if (error.kind === 'CONFLICT') {
-          throwAccountsConflict<ReceiptErrorDetail>(error.message, error.details);
-        }
-        throwAccountsBadRequest<ReceiptErrorDetail>(error.message, error.details);
-      }
-      throw error;
+      throw rethrowAllocationError(error);
     }
   }
 
-  private async postInTransaction(
+  /**
+   * The fifteen steps, inside a transaction the CALLER owns.
+   *
+   * Public because `/receipts/amend` re-applies a posted receipt from a new
+   * payload and must do it in the same transaction as the unwind that made
+   * room for it (R20 §2 step 4). It calls this rather than reproducing the
+   * steps, which is the whole reason amend is safe to have: there is one
+   * definition of what posting a receipt means, and an amended receipt is
+   * posted by it.
+   *
+   * The caller is responsible for `rethrowAllocationError`, and for the
+   * header being a DRAFT by the time it gets here — `assertStatusMayPost` is
+   * not relaxed for amend, because by then the unwind genuinely has put the
+   * header back to DRAFT.
+   */
+  async postInTransaction(
     tx: Prisma.TransactionClient,
     dto: PostReceiptDto,
     actor: string,
@@ -1234,6 +1240,28 @@ export class ReceiptPostingService {
     }
     return held;
   }
+}
+
+/**
+ * The engine is pure and knows nothing about HTTP, so its two failure kinds are
+ * mapped here — ONCE — rather than being thrown as status codes from inside
+ * arithmetic.
+ *
+ * Shared with `/receipts/amend`, whose re-apply runs the same engine and must
+ * answer with the same 400 or 409 rather than a 500 that says `AllocationError`.
+ *
+ * Returns `never` in practice: both branches throw. It is typed as returning
+ * the error so a caller can write `throw rethrowAllocationError(error)` and
+ * keep TypeScript's control-flow analysis, which a bare `void` call loses.
+ */
+export function rethrowAllocationError(error: unknown): unknown {
+  if (error instanceof AllocationError) {
+    if (error.kind === 'CONFLICT') {
+      throwAccountsConflict<ReceiptErrorDetail>(error.message, error.details);
+    }
+    throwAccountsBadRequest<ReceiptErrorDetail>(error.message, error.details);
+  }
+  return error;
 }
 
 /** A `timestamptz` column holding a document DATE, read as the date it is. */

@@ -56,7 +56,27 @@ migration `20260724120000_create_charge_master`).
   `charge_master`, and are deliberately excluded from the audit snapshots so
   they never show up as a change. `ledGstRate` / `ledTaxability` were echoed
   here until 20260912100000 dropped those columns in favour of `led_tax_id`;
-  echoing the rate behind that id is still to be done.
+  echoing the rate behind the *ledger's* id is still to be done.
+- **`chgTaxId`** — the per-charge GST rate override
+  (`chg_tax_id` -> `inventory.tax_rate_master`, migration
+  `20260912070000_add_chg_tax_id`). Accepted on create and update, and echoed
+  back with `chgTaxName` (the rate's `tax_name`, a read-only display value
+  resolved through the `tax` relation and kept out of the audit snapshots —
+  `chgTaxId` itself is a stored column and is audited normally).
+  - `null` — the normal case — inherits the posting ledger's `led_tax_id`, so
+    several charges can share one revenue ledger and still differ on rate.
+  - It must be `null` unless `chgTaxApl` is true **and** `chgBeforeTax` is
+    false: a before-tax charge is taxed at the *item's* rate inside the item
+    line and a non-taxable charge is never taxed, so a rate here would be one
+    nothing reads. This is the DB CHECK `ck_chg_tax_id`, restated in
+    `ensureTaxIdIsApplicable` (against the values an update *resolves* to, not
+    just the ones it sends) so it comes back as a 400 naming `chgTaxId` rather
+    than a raw 23514. `txn_charge_detail` restates the same rule for
+    `cdTaxCode`.
+  - `fk_chg_tax` only proves the row exists, so a rate the request names is
+    also checked for being live (`assertTaxRateRefs`: not soft-deleted, not
+    deactivated). An update that leaves `chgTaxId` untouched skips that check —
+    a rate retired after the fact must not block an unrelated edit.
 - Audit entries are written under screen name **"Charge Master"** (auto-created
   on first write). Add an entry to `audit-screen-sql.constants.ts` if you want
   field-level projection/snapshots.

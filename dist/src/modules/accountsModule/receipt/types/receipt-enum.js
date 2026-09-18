@@ -151,6 +151,7 @@ var ReceiptSettingKey;
     ReceiptSettingKey["WRITEOFF_APPROVAL_ABOVE"] = "accounts.writeoff_approval_above";
     ReceiptSettingKey["TCS_BASIS"] = "accounts.tcs_basis";
     ReceiptSettingKey["PPD_SLABS"] = "accounts.ppd_slabs";
+    ReceiptSettingKey["ALLOW_POSTED_AMEND"] = "accounts.allow_posted_amend";
 })(ReceiptSettingKey || (exports.ReceiptSettingKey = ReceiptSettingKey = {}));
 var ReceiptBillSort;
 (function (ReceiptBillSort) {

@@ -236,6 +236,17 @@ model AccBillBalance {
   ablAllocAmount      Decimal   @default(0) @db.Decimal(18, 2) @map("abl_alloc_amount")
   ablDiscAmount       Decimal   @default(0) @db.Decimal(18, 2) @map("abl_disc_amount")
   ablWriteoffAmount   Decimal   @default(0) @db.Decimal(18, 2) @map("abl_writeoff_amount")
+  // §2.13 — TCS under 206C(1H) that is already INSIDE ablBillAmount, carried
+  // here so bill-wise TCS outstanding is answerable without re-deriving it from
+  // the invoice. Stamped by the document that raises the bill, from the same
+  // figure it puts in AccVoucherDocRegister.gdrTcsValue; 0 on every bill raised
+  // on the RECEIPT basis, where the TCS is collected by the receipt instead.
+  //
+  // NOT a second amount: it is a SLICE of ablBillAmount, so it is never added
+  // to anything and never enters abl_pending_amount. What has been collected of
+  // it is pro-rata of what has been allocated, which is what accounts.v_bill_tcs
+  // computes.
+  ablTcsAmount        Decimal   @default(0) @db.Decimal(14, 2) @map("abl_tcs_amount")
   // GENERATED ALWAYS ... STORED in the DB. Read-only: never send either on a
   // create or update, the write will be rejected by Postgres.
   // @default(dbgenerated()) marks the value as DB-owned so migrate never emits
@@ -290,6 +301,11 @@ model AccBillBalance {
   //     ck_abl_amount, ck_abl_due_date, ck_abl_days, and ck_abl_settled — the
   //     over-settlement guard: a bill can never be edited down below what has
   //     already been settled, discounted or written off against it.
+  //   - View accounts.v_bill_tcs (20260917160000) — collected / pending TCS per
+  //     bill, pro-rata of the allocation. A view and not two more columns:
+  //     collected TCS is a function of abl_alloc_amount, which the recompute
+  //     already owns, so a stored column would be a second copy of a derived
+  //     number and would go stale the moment a reversal landed.
   //   - The roll-up trigger that maintains abl_alloc_amount / abl_disc_amount /
   //     abl_writeoff_amount / abl_settled_on from acc_bill_adjustment is NOT
   //     yet written; until it is, the posting code owns those columns.
@@ -321,7 +337,12 @@ model AccGroupMaster {
   // Hierarchy
   accGroupParentId            String?        @db.Uuid                                       @map("acc_group_parent_id")
   accGroupSort                Int?                                                          @map("acc_group_sort")
-  accGroupChildIds            String[]       @db.Uuid                                       @map("acc_group_child_ids")
+  // acc_group_child_ids was dropped in 20260917140000. It was a denormalised copy of
+  // the subtree that only the account-group service maintained, so every row a seed,
+  // a Tally import or a psql fix created went stale on the spot — 21 of 48 groups were
+  // NULL and 14 empty, while 'Customers' claimed 1 child against 11 real ones. The GET
+  // marked it REQUIRED, so anything that trusted it built the wrong tree. Walk
+  // acc_group_parent_id (indexed) with a recursive CTE instead; it cannot go stale.
 
   // Classification
   accGroupType                String         @db.VarChar(20)                                @map("acc_group_type")
@@ -356,6 +377,18 @@ model AccGroupMaster {
   @@index([accGroupCompanyId], name: "idx_acc_group_company_id")
   @@index([accGroupParentId],  name: "idx_acc_group_parent_id")
   @@index([accGroupType],      name: "idx_acc_group_type")
+  //
+  // NAME UNIQUENESS is three rules, and an index can express only two of them
+  // (20260917110000). NULL acc_group_company_id means SHARED BY EVERY COMPANY and is
+  // deliberate — both scopes are in use — but Postgres treats NULLs as distinct, so a
+  // plain UNIQUE (company_id, name) is inert for exactly the rows most groups use:
+  //   uq_acc_group_name_shared   UNIQUE (lower(name)) WHERE company_id IS NULL     AND NOT is_deleted
+  //   uq_acc_group_name_company  UNIQUE (company_id, lower(name)) WHERE company_id IS NOT NULL AND NOT is_deleted
+  //   tr_acc_group_name_scope    BEFORE INSERT/UPDATE — a scoped group must not collide
+  //                              with a SHARED one, which no index can say.
+  // lower() on purpose: Tally matches master names case-insensitively, so two spellings
+  // are one group there and must be one here. Exporting a company emits the shared rows
+  // PLUS its own into one file, and Tally silently merges same-named entries.
   // Partial unique index uq_acc_group_tally_guid (WHERE acc_group_tally_guid IS NOT NULL)
   // is managed in raw SQL — Prisma can't express it. Allowed-value validation for
   // acc_group_type / acc_group_nature / acc_ledger_profile lives in the app layer
@@ -499,6 +532,19 @@ model AccLedgerMaster {
   ledTdsDeducteeType       String?   @db.VarChar(40)                                  @map("led_tds_deductee_type")
   ledTdsNatureOfPayment    String?   @db.VarChar(80)                                  @map("led_tds_nature_of_payment")
   ledIsTcsApplicable       Boolean   @default(false)                                   @map("led_is_tcs_applicable")
+  // Input tax credit. Allowed values (ELIGIBLE / INELIGIBLE_17_5 / INELIGIBLE_OTHER /
+  // CAPITAL_GOODS / INPUT_SERVICES) are behind chk_led_itc_eligibility (20260917120000)
+  // AND the app-layer LedItcEligibility enum, which is what turns a bad value into a
+  // 400 instead of a raw 23514. Tally's equivalent is the ledger's "Eligibility for
+  // input credit". Without it GSTR-3B table 4(D) cannot be produced and 4(A) is
+  // overstated by every blocked s.17(5) credit.
+  ledItcEligibility        String?   @db.VarChar(20)                                  @map("led_itc_eligibility")
+  // Reverse charge is decided by WHO you buy from and WHAT (unregistered purchase,
+  // GTA, legal services, director's fees, import of services) — not by the rate row,
+  // which is shared with ordinary forward-charge sales at the same percentage. So it
+  // lives here, on the party or expense ledger, and the document flag
+  // (acc_voucher_doc_register.gdr_is_reverse_charge) defaults from it.
+  ledIsReverseCharge       Boolean   @default(false)                                   @map("led_is_reverse_charge")
   // 9) Opening / Running Balance
   ledObAmount              Decimal   @default(0) @db.Decimal                          @map("led_ob_amount")
   // Allowed values (DR/CR) validated in the app layer (accountLedgerMasters
@@ -545,6 +591,11 @@ model AccLedgerMaster {
   billAdjustmentSettleLedgers AccBillAdjustment[] @relation("BillAdjustmentSettleLedger")
   pdcParties               AccPdcRegister[]       @relation("PdcParty")
   pdcBankLedgers           AccPdcRegister[]       @relation("PdcBankLedger")
+  // §2.14 — the quarterly return registers. Back-relations only; nothing reads
+  // a ledger's register rows through the ledger, but Prisma requires the
+  // opposite side of every relation to be declared.
+  tcsCollections           AccTcsRegister[]       @relation("TcsCollectee")
+  tdsEntries               AccTdsRegister[]       @relation("TdsParty")
   chargeMasters            ChargeMaster[]
   chargeDetails            TransactionChargeDetail[]
   saleOrderAdvanceLedgers  SaleOrder[]              @relation("SaleOrderAdvanceLedger")
@@ -555,6 +606,14 @@ model AccLedgerMaster {
   taxRateLedgers           TaxRateLedger[]
   ledgerMaps               AccLedgerMap[]
   openingBalances          AccOpeningBalance[]
+  // cus_id IS led_id and sup_id IS led_id — a 1:1 identity link, not a lookup.
+  // fk_cus_ledger / fk_sup_ledger (20260917100000) are what finally say so; before
+  // them four live parties had no ledger row at all and could not be posted to.
+  customer                 Customer?              @relation("CustomerLedger")
+  supplier                 Supplier?              @relation("SupplierLedger")
+  // Kept for the exact-case scoped case; the three rules below are what actually hold,
+  // because this one is INERT for shared rows (led_company_id IS NULL — 50 of 61
+  // ledgers) and case-sensitive besides.
   @@unique([ledCompanyId, ledName], name: "uq_led_name_per_company")
   @@unique([ledCompanyId, ledTallyName], name: "uq_led_tally_name_per_company")
   @@index([ledCompanyId], name: "idx_led_company_id")
@@ -566,6 +625,17 @@ model AccLedgerMaster {
   // Partial unique indexes — enforced via raw SQL migration, not expressible in Prisma schema:
   //   uq_led_tally_guid       UNIQUE (led_tally_guid)                       WHERE led_tally_guid IS NOT NULL
   //   uq_led_tally_master_id  UNIQUE (led_company_id, led_tally_master_id)  WHERE led_tally_master_id IS NOT NULL
+  //
+  // NAME UNIQUENESS — the same three rules as acc_group_master (20260917110000):
+  //   uq_led_name_shared   UNIQUE (lower(led_name)) WHERE led_company_id IS NULL     AND NOT led_is_deleted
+  //   uq_led_name_company  UNIQUE (led_company_id, lower(led_name)) WHERE led_company_id IS NOT NULL AND NOT led_is_deleted
+  //   tr_led_name_scope    BEFORE INSERT/UPDATE — a company-scoped ledger must not
+  //                        collide with a SHARED one.
+  // The trigger fires only when the name or the scope actually CHANGES, which
+  // grandfathers the one live cross-scope pair ('VAPI BATTERY & AUTO ELECTRICALS',
+  // shared + Acme Foods) — the same trade partner as both customer and supplier —
+  // rather than locking both rows out of every unrelated edit. Resolving that pair is
+  // a naming decision, not a schema one.
   @@map("acc_ledger_master")
   @@schema("accounts")
 }
@@ -885,6 +955,237 @@ model AccPdcRegister {
   //     ck_apd_self, ck_apd_posting, ck_apd_seq.
   //   - No FK on apd_company_id / apd_branch_id / apd_salesman_id /
   //     apd_tender_id.
+}
+
+// ----- prisma/accounts/AccountTaxCollectionRegister.prisma -----
+/// §2.14 — the 27EQ / 26Q projection.
+///
+/// Two tables, one shape. `acc_tcs_register` is tax this company COLLECTED
+/// from a customer (TCS, filed on Form 27EQ); `acc_tds_register` is tax a
+/// party WITHHELD from this company, or that this company withheld from a
+/// supplier (TDS, filed on Form 26Q). They are kept apart rather than folded
+/// into one table with a direction flag because they file on different forms,
+/// on different due dates, with different section vocabularies — and every
+/// query against them is for one form or the other, never both.
+///
+/// ═══════════════════════════════════════════════════════════════════════════
+///  WRITTEN AT POST, NEVER EDITED, NEVER RE-SUMMED
+/// ═══════════════════════════════════════════════════════════════════════════
+///
+/// A row is a statement about a moment: at the instant this document posted,
+/// this much tax was collected at this rate on this base, for this party's PAN.
+/// A quarterly return is `SELECT` over these rows, not a re-derivation from
+/// the invoices — because the rate that applied in July is not the rate that
+/// applies in November, and a return that re-computed would silently restate
+/// a quarter already filed with the department.
+///
+/// This is why there is no update path and no roll-up column. A document that
+/// is cancelled or amended gets a NEW row carrying the reversal, the way
+/// `acc_bill_adjustment` does; the original stays, because the return that
+/// quoted it was filed.
+///
+/// ═══════════════════════════════════════════════════════════════════════════
+///  WHICH DOCUMENT RAISES THE ROW DEPENDS ON accounts.tcs_basis
+/// ═══════════════════════════════════════════════════════════════════════════
+///
+/// 206C(1H) liability arises on RECEIPT of the money, not on the invoice. So:
+///
+///   · `tcs_basis = 'RECEIPT'` — the receipt raises a TCS_PAYABLE leg and the
+///     register row, for the whole receipt.
+///   · `tcs_basis = 'SALES'`   — the invoice already carries the TCS inside
+///     its bill amount (`acc_bill_balance.abl_tcs_amount`), so the RECEIPT
+///     raises no TCS leg at all, and the register row is raised AT THE RECEIPT
+///     for the TCS slice of that allocation — pro-rata, which is what
+///     `accounts.v_bill_tcs` computes.
+///
+/// The two never both apply, and `atcRateSource` is what makes an audit able
+/// to tell afterwards which rule produced the figure.
+///
+/// ═══════════════════════════════════════════════════════════════════════════
+///  NOT PARTITIONED, unlike the money tables
+/// ═══════════════════════════════════════════════════════════════════════════
+///
+/// `acc_bill_balance`, `acc_voucher_header`, `acc_vouchers`, `acc_pdc_register`
+/// and `acc_tender_detail` are all LIST-partitioned on their accounting year.
+/// These two deliberately are not:
+///
+///   · every read is `WHERE company AND fy AND quarter [AND section]` — a
+///     return for one quarter — which an index serves exactly; there is no
+///     scan-every-partition read like "this party's outstanding across all
+///     years" that made partitioning worth it for the bill;
+///   · nothing addresses a register row by `(id, year)`, so the composite key
+///     that partitioning forces would buy nothing and would have to be
+///     threaded through every reference;
+///   · nobody detaches a filed quarter — the department can ask for it years
+///     later.
+///
+/// The practical consequence is that these two tables do NOT need
+/// `public.ensure_acc_year_partitions` to have run for a year before they can
+/// be written, which is one less way for a receipt to fail at the moment an
+/// operator is taking money.
+model AccTcsRegister {
+  atcId               String    @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("atc_id")
+  atcCompanyId        String    @db.Uuid @map("atc_company_id")
+  atcBranchId         String    @db.Uuid @map("atc_branch_id")
+  atcTenantId         String?   @db.Uuid @map("atc_tenant_id")
+  // The FY the collection falls in — a plain column here, not a partition key.
+  atcAccYear          String    @db.Char(9) @map("atc_acc_year")
+  // ck_atc_quarter: Q1 | Q2 | Q3 | Q4, the RETURN quarter, which is the FY's
+  // quarter (Q1 = Apr-Jun) and not the calendar's.
+  atcQuarter          String    @db.Char(2) @map("atc_quarter")
+  // Collectee — the customer the tax was collected from. Shares its id with
+  // the ledger and the customer master.
+  atcPartyId          String    @db.Uuid @map("atc_party_id")
+  // Stamped, not joined. A PAN correction next year must not retrospectively
+  // change what a filed return said, and a party may be deleted.
+  atcPan              String?   @db.VarChar(10) @map("atc_pan")
+  atcPartyName        String    @db.VarChar(150) @map("atc_party_name")
+  // The section the collection is made under — '206C(1H)' for the sale of
+  // goods, which is the only one this system raises today. VarChar and not an
+  // enum: the sections change by Finance Act, and a CHECK would need a
+  // migration every budget.
+  atcSection          String    @db.VarChar(20) @map("atc_section")
+  // The rate actually applied, as a percentage: 0.100 is 206C(1H)'s 0.1%.
+  atcRate             Decimal   @db.Decimal(6, 3) @map("atc_rate")
+  // ck_atc_rate_source — WHY that rate. Four values, of which only three can
+  // occur until a lower-deduction certificate can be recorded against a party:
+  //   MASTER           the party's / section's configured rate
+  //   CERTIFICATE      a 197 / 206C(9) lower-collection certificate
+  //   NO_PAN           206CC's higher rate, because no PAN was furnished
+  //   BELOW_THRESHOLD  the 50 lakh threshold was not crossed, so the rate is 0
+  // CERTIFICATE is declared now rather than added later because a rate of
+  // 0.05% with no recorded reason is indistinguishable from a keying error
+  // when the department asks two years on.
+  atcRateSource       String    @db.VarChar(20) @map("atc_rate_source")
+  // What the rate was applied to, and what came out. Kept as two columns and
+  // never as a computed one: a rounded collection is what was actually taken
+  // from the customer, and base x rate does not always reproduce it.
+  atcBaseAmount       Decimal   @db.Decimal(18, 2) @map("atc_base_amount")
+  atcTaxAmount        Decimal   @db.Decimal(18, 2) @map("atc_tax_amount")
+  // The document that raised it — the receipt on the RECEIPT basis, the
+  // receipt again on the SALES basis (for the TCS slice of the allocation).
+  atcVoucherId        String?   @db.Uuid @map("atc_voucher_id")
+  atcVoucherAccYear   String?   @db.Char(9) @map("atc_voucher_acc_year")
+  atcDocRefno         String?   @db.VarChar(50) @map("atc_doc_refno")
+  atcDocDate          DateTime  @db.Date @map("atc_doc_date")
+  // The bill the slice belongs to, on the SALES basis. Null on the RECEIPT
+  // basis, where the collection is against the receipt as a whole and not
+  // against any one invoice. No FK: acc_bill_balance is partitioned and this
+  // pair is nullable.
+  atcBillId           String?   @db.Uuid @map("atc_bill_id")
+  atcBillAccYear      String?   @db.Char(9) @map("atc_bill_acc_year")
+  // Reversal of an earlier row, when the document behind it was cancelled or
+  // amended. ck_atc_reversal_sign forces a negative tax amount, exactly as
+  // ck_abj_reversal_sign does on the bill adjustment.
+  atcReversalOfId     String?   @db.Uuid @map("atc_reversal_of_id")
+  // Remittance — filled in when the challan is paid, which is the one thing
+  // about a register row that is not known when it is written.
+  atcChallanNo        String?   @db.VarChar(30) @map("atc_challan_no")
+  atcChallanDate      DateTime? @db.Date @map("atc_challan_date")
+  atcChallanBsr       String?   @db.VarChar(7) @map("atc_challan_bsr")
+  // Form 27D, issued to the collectee after the return is filed.
+  atcCertificateNo    String?   @db.VarChar(30) @map("atc_certificate_no")
+  atcCertificateDate  DateTime? @db.Date @map("atc_certificate_date")
+  atcRemarks          String?   @db.VarChar(250) @map("atc_remarks")
+  // Audit
+  atcIsActive         Boolean   @default(true) @map("atc_is_active")
+  atcIsDeleted        Boolean   @default(false) @map("atc_is_deleted")
+  atcCreatedOn        DateTime  @default(now()) @db.Timestamptz(6) @map("atc_created_on")
+  atcCreatedBy        String?   @db.VarChar(50) @map("atc_created_by")
+  atcModifiedOn       DateTime? @db.Timestamptz(6) @map("atc_modified_on")
+  atcModifiedBy       String?   @db.VarChar(50) @map("atc_modified_by")
+  // Relations
+  party               AccLedgerMaster @relation("TcsCollectee", fields: [atcPartyId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_atc_party")
+  reversalOf          AccTcsRegister? @relation("TcsReversal", fields: [atcReversalOfId], references: [atcId], onUpdate: Cascade, onDelete: Restrict, map: "fk_atc_reversal_of")
+  reversals           AccTcsRegister[] @relation("TcsReversal")
+  @@map("acc_tcs_register")
+  @@schema("accounts")
+  // DB-only objects (migration 20260917160000_receipt_tcs_tds_registers):
+  //   - CHECK ck_atc_quarter, ck_atc_rate_source, ck_atc_acc_year,
+  //     ck_atc_rate (0-100), ck_atc_base (non-negative), ck_atc_voucher
+  //     (id and year null-or-set together), ck_atc_bill (likewise),
+  //     ck_atc_reversal_sign (a reversal's tax amount is negative, an
+  //     original's is not), ck_atc_challan (no/date/bsr together or none).
+  //   - Indexes ix_atc_return (company, acc_year, quarter, section) — the
+  //     return itself; ix_atc_party (party, acc_year); ix_atc_voucher
+  //     (voucher_id, voucher_acc_year); ix_atc_bill (bill_id, bill_acc_year);
+  //     ix_atc_unremitted, partial on challan_no IS NULL — what has been
+  //     collected but not yet paid over, which is the question that carries a
+  //     penalty.
+  //   - No FK on atc_company_id / atc_branch_id: consistent with every other
+  //     table in this schema, whose source DDL declares none.
+}
+
+/// The 26Q side. Same shape, same rules, different form — see the header
+/// comment on `AccTcsRegister` above, which covers both.
+///
+/// The one structural difference is `atdDeducteeType`: 26Q reports a company
+/// and a non-company deductee under different codes, and
+/// `acc_ledger_master.led_tds_deductee_type` is where that comes from. TCS has
+/// no equivalent, which is why it is here and not on both.
+model AccTdsRegister {
+  atdId               String    @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("atd_id")
+  atdCompanyId        String    @db.Uuid @map("atd_company_id")
+  atdBranchId         String    @db.Uuid @map("atd_branch_id")
+  atdTenantId         String?   @db.Uuid @map("atd_tenant_id")
+  atdAccYear          String    @db.Char(9) @map("atd_acc_year")
+  atdQuarter          String    @db.Char(2) @map("atd_quarter")
+  // ck_atd_direction — which way the withholding went:
+  //   DEDUCTED   this company withheld from a supplier (we file 26Q)
+  //   WITHHELD   a customer withheld from us (their 26Q; ours is a credit to
+  //              claim, and the receipt is where it is recorded)
+  // Both live in one table because both are TDS at the same section and rate,
+  // and a party is routinely on both sides across a year.
+  atdDirection        String    @db.VarChar(10) @map("atd_direction")
+  atdPartyId          String    @db.Uuid @map("atd_party_id")
+  atdPan              String?   @db.VarChar(10) @map("atd_pan")
+  atdPartyName        String    @db.VarChar(150) @map("atd_party_name")
+  // ck_atd_deductee_type: COMPANY | NON_COMPANY, from
+  // acc_ledger_master.led_tds_deductee_type.
+  atdDeducteeType     String?   @db.VarChar(20) @map("atd_deductee_type")
+  // '194Q', '194C', '194J' … VarChar for the same reason as TCS's.
+  atdSection          String    @db.VarChar(20) @map("atd_section")
+  atdRate             Decimal   @db.Decimal(6, 3) @map("atd_rate")
+  // MASTER | CERTIFICATE | NO_PAN | BELOW_THRESHOLD — NO_PAN here is 206AA's
+  // 20%, which is the one that hurts and the one an audit always asks about.
+  atdRateSource       String    @db.VarChar(20) @map("atd_rate_source")
+  atdBaseAmount       Decimal   @db.Decimal(18, 2) @map("atd_base_amount")
+  atdTaxAmount        Decimal   @db.Decimal(18, 2) @map("atd_tax_amount")
+  atdVoucherId        String?   @db.Uuid @map("atd_voucher_id")
+  atdVoucherAccYear   String?   @db.Char(9) @map("atd_voucher_acc_year")
+  atdDocRefno         String?   @db.VarChar(50) @map("atd_doc_refno")
+  atdDocDate          DateTime  @db.Date @map("atd_doc_date")
+  atdBillId           String?   @db.Uuid @map("atd_bill_id")
+  atdBillAccYear      String?   @db.Char(9) @map("atd_bill_acc_year")
+  atdReversalOfId     String?   @db.Uuid @map("atd_reversal_of_id")
+  atdChallanNo        String?   @db.VarChar(30) @map("atd_challan_no")
+  atdChallanDate      DateTime? @db.Date @map("atd_challan_date")
+  atdChallanBsr       String?   @db.VarChar(7) @map("atd_challan_bsr")
+  // Form 16A. On the WITHHELD side this is the certificate the CUSTOMER gives
+  // us, and it is what turns a deduction we absorbed into a credit we can
+  // claim — which is why the column is on both directions.
+  atdCertificateNo    String?   @db.VarChar(30) @map("atd_certificate_no")
+  atdCertificateDate  DateTime? @db.Date @map("atd_certificate_date")
+  atdRemarks          String?   @db.VarChar(250) @map("atd_remarks")
+  atdIsActive         Boolean   @default(true) @map("atd_is_active")
+  atdIsDeleted        Boolean   @default(false) @map("atd_is_deleted")
+  atdCreatedOn        DateTime  @default(now()) @db.Timestamptz(6) @map("atd_created_on")
+  atdCreatedBy        String?   @db.VarChar(50) @map("atd_created_by")
+  atdModifiedOn       DateTime? @db.Timestamptz(6) @map("atd_modified_on")
+  atdModifiedBy       String?   @db.VarChar(50) @map("atd_modified_by")
+  party               AccLedgerMaster @relation("TdsParty", fields: [atdPartyId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_atd_party")
+  reversalOf          AccTdsRegister? @relation("TdsReversal", fields: [atdReversalOfId], references: [atdId], onUpdate: Cascade, onDelete: Restrict, map: "fk_atd_reversal_of")
+  reversals           AccTdsRegister[] @relation("TdsReversal")
+  @@map("acc_tds_register")
+  @@schema("accounts")
+  // DB-only objects (migration 20260917160000_receipt_tcs_tds_registers):
+  //   - CHECK ck_atd_quarter, ck_atd_direction, ck_atd_deductee_type,
+  //     ck_atd_rate_source, ck_atd_acc_year, ck_atd_rate, ck_atd_base,
+  //     ck_atd_voucher, ck_atd_bill, ck_atd_reversal_sign, ck_atd_challan.
+  //   - Indexes ix_atd_return (company, acc_year, quarter, direction,
+  //     section), ix_atd_party, ix_atd_voucher, ix_atd_bill, and
+  //     ix_atd_unremitted (partial on challan_no IS NULL, DEDUCTED only —
+  //     nothing is remitted on the WITHHELD side, the customer does that).
 }
 
 // ----- prisma/accounts/accountTenderDetail.prisma -----
@@ -1813,6 +2114,11 @@ model AccVoucherHeader {
   avhStatusBy            String?   @db.Uuid @map("avh_status_by")
   avhPostedOn            DateTime? @db.Timestamptz(6) @map("avh_posted_on")
   avhCancelReason        String?   @db.VarChar(250) @map("avh_cancel_reason")
+  // R20 — how many times this POSTED voucher has been restated in place by
+  // /receipts/amend. 0 is "as first posted"; the slip prints "rev n" and the
+  // client sends the value it loaded back as baseRevision, which is the
+  // optimistic lock that stops one amend silently undoing another.
+  avhRevisionNo          Int       @default(0) @map("avh_revision_no")
   // Where / who — ck_avh_device_type: PC | WEB | MOBILE | POS | DESKTOP
   // (DESKTOP added by 20260806120000_widen_avh_device_type)
   avhUserId              String    @db.Uuid @map("avh_user_id")
@@ -6107,6 +6413,9 @@ model Supplier {
   // 11) FK fields + relations
   // NOTE: sup_state_id column was missing in your DDL snippet, but FK references it.
  
+  // sup_id IS the linked ledger's led_id — same 1:1 identity as sales.customers.
+  // fk_sup_ledger (20260917100000).
+  ledger               AccLedgerMaster @relation("SupplierLedger", fields: [supId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_sup_ledger")
   group                SupplierGroup   @relation(fields: [supGroupId], references: [spgId], onUpdate: Cascade, onDelete: Restrict)
   stockLots           StockLot[]       @relation("StockLotSupplier")
   stockBalances       StockBalance[]   @relation("StockBalanceSupplier")
@@ -6290,6 +6599,12 @@ model Customer {
   cusModifiedOn        DateTime  @default(now()) @db.Timestamptz                  @map("cus_modified_on")
   cusModifiedBy        String?   @db.VarChar(100)                                 @map("cus_modified_by")
   // Relations
+  // cus_id IS the linked ledger's led_id: one identity, two masters. Every module
+  // that needs a customer's ledger already has it — the receipt takes ONE partyId and
+  // resolves nothing. fk_cus_ledger (20260917100000) is what makes that load-bearing
+  // convention enforceable; RESTRICT because a ledger with a customer on it must not
+  // vanish underneath acc_bill_balance / acc_vouchers, which FK their party to led_id.
+  ledger               AccLedgerMaster @relation("CustomerLedger", fields: [cusId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_cus_ledger")
   area                 AreaMaster     @relation(fields: [cusAreaId],  references: [armId])
   custGroup            CustGroup      @relation(fields: [cusGroupId], references: [cgrId])
   company              Company?       @relation(fields: [cusCompanyId], references: [compId])

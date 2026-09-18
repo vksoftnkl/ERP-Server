@@ -127,6 +127,25 @@ export class LedgerShippingAddressSuccessSingleDto {
   data!: LedgerShippingAddressPayloadDto;
 }
 
+export class LedgerShippingAddressListDto {
+  @ApiProperty({ type: LedgerShippingAddressPayloadDto, isArray: true })
+  data!: LedgerShippingAddressPayloadDto[];
+
+  @ApiProperty({ example: 2 })
+  total!: number;
+}
+
+export class LedgerShippingAddressSuccessListDto {
+  @ApiProperty({ example: true })
+  success!: true;
+
+  @ApiProperty({ example: 'Ledger shipping addresses fetched successfully' })
+  message!: string;
+
+  @ApiProperty({ type: LedgerShippingAddressListDto })
+  data!: LedgerShippingAddressListDto;
+}
+
 export class LedgerShippingAddressSuccessDeleteDto {
   @ApiProperty({ example: true })
   success!: true;

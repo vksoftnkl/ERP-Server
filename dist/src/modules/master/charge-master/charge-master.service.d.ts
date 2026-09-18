@@ -19,6 +19,8 @@ export declare class ChargeMasterService {
     private createCharge;
     private updateCharge;
     private ensureLedgerExists;
+    private resolveTaxRate;
+    private ensureTaxIdIsApplicable;
     private ensureCodeIsUnique;
     private ensureValuesAreAllowed;
     private guardedValues;

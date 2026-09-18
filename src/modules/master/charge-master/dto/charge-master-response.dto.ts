@@ -58,6 +58,19 @@ export class ChargeMasterPayloadDto {
   chgTaxApl!: boolean;
   @ApiProperty()
   chgBeforeTax!: boolean;
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description:
+      "Per-charge override of the posting ledger's ledTaxId. Null inherits the ledger's rate.",
+  })
+  chgTaxId!: string | null;
+  @ApiPropertyOptional({
+    maxLength: 100,
+    nullable: true,
+    description: 'Name of the tax rate chgTaxId points at',
+  })
+  chgTaxName!: string | null;
   @ApiProperty()
   chgSepPost!: boolean;
   @ApiProperty()

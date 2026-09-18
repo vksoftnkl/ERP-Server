@@ -99,12 +99,8 @@ class SaveAccountLedgerMasterDto {
     ledTdsDeducteeType;
     ledTdsNatureOfPayment;
     ledIsTcsApplicable;
-    ledObAmount;
-    ledObType;
-    ledObAsOn;
-    ledTotalDr;
-    ledTotalCr;
-    ledTotalBalance;
+    ledItcEligibility;
+    ledIsReverseCharge;
     ledSortOrder;
     ledIsActive;
     ledAllowEdit;
@@ -175,8 +171,15 @@ __decorate([
     __metadata("design:type", String)
 ], SaveAccountLedgerMasterDto.prototype, "ledCategory", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ maxLength: 20, nullable: true }),
-    (0, dtoDecorators_1.NullableString)(20),
+    (0, swagger_1.ApiPropertyOptional)({
+        enum: account_ledger_master_enum_1.LedLedgerType,
+        enumName: 'LedLedgerType',
+        nullable: true,
+    }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_transformer_2.Transform)(({ value }) => (0, DtoTransforms_1.toNullableUpperString)(value)),
+    (0, dtoDecorators_1.SkipOnNullish)(),
+    (0, class_validator_1.IsEnum)(account_ledger_master_enum_1.LedLedgerType),
     __metadata("design:type", Object)
 ], SaveAccountLedgerMasterDto.prototype, "ledLedgerType", void 0);
 __decorate([
@@ -371,8 +374,14 @@ __decorate([
     __metadata("design:type", Boolean)
 ], SaveAccountLedgerMasterDto.prototype, "ledIsSez", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ maxLength: 10, nullable: true }),
-    (0, dtoDecorators_1.NullableString)(10),
+    (0, swagger_1.ApiPropertyOptional)({
+        enum: account_ledger_master_enum_1.LedTypeOfSupply,
+        enumName: 'LedTypeOfSupply',
+        nullable: true,
+    }),
+    (0, class_validator_1.IsOptional)(),
+    (0, dtoDecorators_1.SkipOnNullish)(),
+    (0, class_validator_1.IsEnum)(account_ledger_master_enum_1.LedTypeOfSupply),
     __metadata("design:type", Object)
 ], SaveAccountLedgerMasterDto.prototype, "ledTypeOfSupply", void 0);
 __decorate([
@@ -422,18 +431,36 @@ __decorate([
     __metadata("design:type", Object)
 ], SaveAccountLedgerMasterDto.prototype, "ledUdyamNo", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ maxLength: 10, nullable: true }),
-    (0, dtoDecorators_1.NullableString)(10),
+    (0, swagger_1.ApiPropertyOptional)({
+        enum: account_ledger_master_enum_1.LedMsmeType,
+        enumName: 'LedMsmeType',
+        nullable: true,
+    }),
+    (0, class_validator_1.IsOptional)(),
+    (0, dtoDecorators_1.SkipOnNullish)(),
+    (0, class_validator_1.IsEnum)(account_ledger_master_enum_1.LedMsmeType),
     __metadata("design:type", Object)
 ], SaveAccountLedgerMasterDto.prototype, "ledMsmeType", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ maxLength: 20, nullable: true }),
-    (0, dtoDecorators_1.NullableString)(20),
+    (0, swagger_1.ApiPropertyOptional)({
+        enum: account_ledger_master_enum_1.LedGstDutyHead,
+        enumName: 'LedGstDutyHead',
+        nullable: true,
+    }),
+    (0, class_validator_1.IsOptional)(),
+    (0, dtoDecorators_1.SkipOnNullish)(),
+    (0, class_validator_1.IsEnum)(account_ledger_master_enum_1.LedGstDutyHead),
     __metadata("design:type", Object)
 ], SaveAccountLedgerMasterDto.prototype, "ledGstDutyHead", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ maxLength: 15, nullable: true }),
-    (0, dtoDecorators_1.NullableString)(15),
+    (0, swagger_1.ApiPropertyOptional)({
+        enum: account_ledger_master_enum_1.LedRoundingMethod,
+        enumName: 'LedRoundingMethod',
+        nullable: true,
+    }),
+    (0, class_validator_1.IsOptional)(),
+    (0, dtoDecorators_1.SkipOnNullish)(),
+    (0, class_validator_1.IsEnum)(account_ledger_master_enum_1.LedRoundingMethod),
     __metadata("design:type", Object)
 ], SaveAccountLedgerMasterDto.prototype, "ledRoundingMethod", void 0);
 __decorate([
@@ -464,52 +491,34 @@ __decorate([
     __metadata("design:type", Boolean)
 ], SaveAccountLedgerMasterDto.prototype, "ledIsTcsApplicable", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ minimum: 0, default: 0 }),
-    (0, class_validator_1.IsOptional)(),
-    (0, class_transformer_1.Type)(() => Number),
-    (0, class_validator_1.IsNumber)({ allowNaN: false, allowInfinity: false }),
-    (0, class_validator_1.Min)(0),
-    __metadata("design:type", Number)
-], SaveAccountLedgerMasterDto.prototype, "ledObAmount", void 0);
-__decorate([
     (0, swagger_1.ApiPropertyOptional)({
-        enum: account_ledger_master_enum_1.LedObType,
-        enumName: 'LedObType',
+        enum: account_ledger_master_enum_1.LedItcEligibility,
+        enumName: 'LedItcEligibility',
+        nullable: true,
+        description: 'GST input tax credit eligibility for this purchase or expense ledger. Drives ' +
+            'GSTR-3B 4(A) vs 4(D) "Ineligible ITC": without it a blocked s.17(5) credit — ' +
+            'motor vehicles, food and beverage, works contract, personal consumption — ' +
+            'cannot be told apart from an eligible one, and 4(A) is overstated by exactly ' +
+            'that amount. Null on a ledger with no ITC question to answer (bank, cash, ' +
+            'party, income). Tally: ledger GST details -> Eligibility for input credit.',
     }),
     (0, class_validator_1.IsOptional)(),
-    (0, class_transformer_2.Transform)(({ value }) => (0, DtoTransforms_1.toUpperTrimmed)(value)),
-    (0, class_validator_1.IsEnum)(account_ledger_master_enum_1.LedObType),
-    __metadata("design:type", String)
-], SaveAccountLedgerMasterDto.prototype, "ledObType", void 0);
-__decorate([
-    (0, swagger_1.ApiPropertyOptional)({ type: String, format: 'date', nullable: true }),
-    (0, dtoDecorators_1.NullableDate)(),
-    (0, class_validator_1.ValidateIf)((_, value) => value !== null && value !== undefined),
-    (0, class_transformer_1.Type)(() => Date),
-    (0, class_validator_1.IsDate)(),
+    (0, class_transformer_2.Transform)(({ value }) => (0, DtoTransforms_1.toNullableUpperString)(value)),
+    (0, dtoDecorators_1.SkipOnNullish)(),
+    (0, class_validator_1.IsEnum)(account_ledger_master_enum_1.LedItcEligibility),
     __metadata("design:type", Object)
-], SaveAccountLedgerMasterDto.prototype, "ledObAsOn", void 0);
+], SaveAccountLedgerMasterDto.prototype, "ledItcEligibility", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ default: 0 }),
-    (0, class_validator_1.IsOptional)(),
-    (0, class_transformer_1.Type)(() => Number),
-    (0, class_validator_1.IsNumber)({ allowNaN: false, allowInfinity: false }),
-    __metadata("design:type", Number)
-], SaveAccountLedgerMasterDto.prototype, "ledTotalDr", void 0);
-__decorate([
-    (0, swagger_1.ApiPropertyOptional)({ default: 0 }),
-    (0, class_validator_1.IsOptional)(),
-    (0, class_transformer_1.Type)(() => Number),
-    (0, class_validator_1.IsNumber)({ allowNaN: false, allowInfinity: false }),
-    __metadata("design:type", Number)
-], SaveAccountLedgerMasterDto.prototype, "ledTotalCr", void 0);
-__decorate([
-    (0, swagger_1.ApiPropertyOptional)({ default: 0 }),
-    (0, class_validator_1.IsOptional)(),
-    (0, class_transformer_1.Type)(() => Number),
-    (0, class_validator_1.IsNumber)({ allowNaN: false, allowInfinity: false }),
-    __metadata("design:type", Number)
-], SaveAccountLedgerMasterDto.prototype, "ledTotalBalance", void 0);
+    (0, swagger_1.ApiPropertyOptional)({
+        description: 'This party or expense attracts reverse charge — unregistered purchase, GTA, ' +
+            "legal services, director's fees, import of services. It belongs here and not " +
+            'on inventory.tax_rate_master, because a rate row is shared with ordinary ' +
+            'forward-charge sales at the same percentage; the document flag ' +
+            'gdr_is_reverse_charge defaults from this one.',
+    }),
+    (0, dtoDecorators_1.OptionalBoolean)(),
+    __metadata("design:type", Boolean)
+], SaveAccountLedgerMasterDto.prototype, "ledIsReverseCharge", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)(),
     (0, dtoDecorators_1.OptionalInteger)(),

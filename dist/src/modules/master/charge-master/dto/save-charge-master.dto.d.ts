@@ -13,6 +13,7 @@ export declare class SaveChargeMasterDto {
     chgLedgerCode: string;
     chgTaxApl?: boolean;
     chgBeforeTax?: boolean;
+    chgTaxId?: string | null;
     chgSepPost?: boolean;
     chgManParty?: boolean;
     chgDispOrder?: number | null;

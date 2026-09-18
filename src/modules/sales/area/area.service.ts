@@ -113,7 +113,6 @@ export class AreaService {
           accGroupType: parent.accGroupType,
           accLedgerProfile: parent.accLedgerProfile,
           accGroupNature: parent.accGroupNature,
-          accGroupChildIds: [],
           accGroupIsActive: !isDeleted,
           accGroupIsDeleted: isDeleted,
           accGroupCreatedOn: now,

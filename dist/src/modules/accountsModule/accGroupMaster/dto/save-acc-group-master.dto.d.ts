@@ -6,4 +6,9 @@ export declare class SaveAccGroupMasterDto {
     accGroupDescription?: string | null;
     accGroupParentId?: string | null;
     accGroupSort?: number;
+    accGroupBehaveAsSubledger?: boolean;
+    accGroupNetDebitCredit?: boolean;
+    accGroupUsedForCalculation?: boolean;
+    accGroupAffectsGrossProfit?: boolean;
+    accGroupIsActive?: boolean;
 }

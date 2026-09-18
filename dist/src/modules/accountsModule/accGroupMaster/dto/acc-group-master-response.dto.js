@@ -60,10 +60,15 @@ class AccGroupMasterPayloadDto {
     accGroupParentId;
     accGroupParentName;
     accGroupSort;
-    accGroupChildIds;
     accGroupType;
     accGroupIsDefault;
+    accGroupIsReserved;
     accLedgerProfile;
+    accGroupBehaveAsSubledger;
+    accGroupNetDebitCredit;
+    accGroupUsedForCalculation;
+    accGroupAffectsGrossProfit;
+    accGroupIsActive;
 }
 exports.AccGroupMasterPayloadDto = AccGroupMasterPayloadDto;
 __decorate([
@@ -152,10 +157,6 @@ __decorate([
     __metadata("design:type", Object)
 ], AccGroupMasterPayloadDto.prototype, "accGroupSort", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ type: [String], example: [] }),
-    __metadata("design:type", Array)
-], AccGroupMasterPayloadDto.prototype, "accGroupChildIds", void 0);
-__decorate([
     (0, swagger_1.ApiProperty)({ enum: acc_group_master_enum_1.AccGroupMasterType, enumName: 'AccountGroupType', maxLength: 20 }),
     __metadata("design:type", String)
 ], AccGroupMasterPayloadDto.prototype, "accGroupType", void 0);
@@ -165,8 +166,32 @@ __decorate([
 ], AccGroupMasterPayloadDto.prototype, "accGroupIsDefault", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)(),
+    __metadata("design:type", Boolean)
+], AccGroupMasterPayloadDto.prototype, "accGroupIsReserved", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)(),
     __metadata("design:type", String)
 ], AccGroupMasterPayloadDto.prototype, "accLedgerProfile", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ description: 'Tally ISSUBLEDGER' }),
+    __metadata("design:type", Boolean)
+], AccGroupMasterPayloadDto.prototype, "accGroupBehaveAsSubledger", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ description: 'Tally NETDEBITCREDITFORREPORTING' }),
+    __metadata("design:type", Boolean)
+], AccGroupMasterPayloadDto.prototype, "accGroupNetDebitCredit", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ description: 'Tally USEDFORCALCULATION' }),
+    __metadata("design:type", Boolean)
+], AccGroupMasterPayloadDto.prototype, "accGroupUsedForCalculation", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ description: 'Tally AFFECTSGROSSPROFIT' }),
+    __metadata("design:type", Boolean)
+], AccGroupMasterPayloadDto.prototype, "accGroupAffectsGrossProfit", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)(),
+    __metadata("design:type", Boolean)
+], AccGroupMasterPayloadDto.prototype, "accGroupIsActive", void 0);
 class AccGroupMasterDeleteResultDto {
     accGroupId;
     deleted;

@@ -1,5 +1,9 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { LedGstPartyRegType, LedObType } from '../types/account-ledger-master-enum';
+import {
+  LedGstPartyRegType,
+  LedItcEligibility,
+  LedObType,
+} from '../types/account-ledger-master-enum';
 import { AccLedgerProfile } from '../../accGroupMaster/types/acc-group-master-enum';
 import { LedgerBankAccountPayloadDto } from '../../ledgerBankAccount/dto/ledger-bank-account-response.dto';
 export class AccountLedgerMasterErrorFieldDto {
@@ -211,6 +215,25 @@ export class AccountLedgerMasterPayloadDto {
   @ApiProperty()
   ledIsTcsApplicable!: boolean;
 
+  @ApiPropertyOptional({
+    enum: LedItcEligibility,
+    enumName: 'LedItcEligibility',
+    nullable: true,
+    description:
+      'GST input tax credit eligibility. Drives GSTR-3B 4(A) vs 4(D). Null on a ledger ' +
+      'with no ITC question to answer.',
+  })
+  ledItcEligibility!: LedItcEligibility | null;
+
+  @ApiProperty({
+    description:
+      'This party or expense attracts reverse charge; the document flag defaults from it.',
+  })
+  ledIsReverseCharge!: boolean;
+
+  // The six below are READ-ONLY (§3.1): they are absent from the save DTO because a
+  // shared ledger spans every company and cannot carry one balance. Opening balances
+  // live in accounts.acc_opening_balance, keyed on company + branch + acc_year.
   @ApiProperty()
   ledObAmount!: number;
 

@@ -58,6 +58,9 @@ model Supplier {
   // 11) FK fields + relations
   // NOTE: sup_state_id column was missing in your DDL snippet, but FK references it.
  
+  // sup_id IS the linked ledger's led_id — same 1:1 identity as sales.customers.
+  // fk_sup_ledger (20260917100000).
+  ledger               AccLedgerMaster @relation("SupplierLedger", fields: [supId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_sup_ledger")
   group                SupplierGroup   @relation(fields: [supGroupId], references: [spgId], onUpdate: Cascade, onDelete: Restrict)
   stockLots           StockLot[]       @relation("StockLotSupplier")
   stockBalances       StockBalance[]   @relation("StockBalanceSupplier")

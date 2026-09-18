@@ -35,6 +35,7 @@ export declare enum TxnStatusEvent {
     CONVERTED = "CONVERTED",
     POSTED = "POSTED",
     UNPOSTED = "UNPOSTED",
+    AMENDED = "AMENDED",
     CANCELLED = "CANCELLED",
     CLOSED = "CLOSED",
     REOPENED = "REOPENED",

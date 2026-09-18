@@ -34,3 +34,5 @@ export declare class CancelReceiptDto extends ReceiptKeysDto {
 }
 export declare class GetReceiptQueryDto extends ReceiptKeysDto {
 }
+export declare class DeleteReceiptDto extends ReceiptKeysDto {
+}

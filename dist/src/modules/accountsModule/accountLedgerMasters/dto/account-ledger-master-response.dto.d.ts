@@ -1,4 +1,4 @@
-import { LedGstPartyRegType, LedObType } from '../types/account-ledger-master-enum';
+import { LedGstPartyRegType, LedItcEligibility, LedObType } from '../types/account-ledger-master-enum';
 import { AccLedgerProfile } from '../../accGroupMaster/types/acc-group-master-enum';
 import { LedgerBankAccountPayloadDto } from '../../ledgerBankAccount/dto/ledger-bank-account-response.dto';
 export declare class AccountLedgerMasterErrorFieldDto {
@@ -81,6 +81,8 @@ export declare class AccountLedgerMasterPayloadDto {
     ledTdsDeducteeType: string | null;
     ledTdsNatureOfPayment: string | null;
     ledIsTcsApplicable: boolean;
+    ledItcEligibility: LedItcEligibility | null;
+    ledIsReverseCharge: boolean;
     ledObAmount: number;
     ledObType: LedObType;
     ledObAsOn: string | null;

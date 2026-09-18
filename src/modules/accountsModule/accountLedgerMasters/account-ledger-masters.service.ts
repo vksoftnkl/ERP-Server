@@ -9,6 +9,7 @@ import {
   AccountLedgerMasterPayload,
   LedgerBankAccountPayload,
   LedGstPartyRegType,
+  LedItcEligibility,
   LedObType,
 } from './types/account-ledger-master-api.types';
 import {
@@ -316,7 +317,10 @@ export class AccountLedgerMastersService {
     const nextCompanyId = hasOwnProperty(saveAccountLedgerMasterDto, 'ledCompanyId')
       ? (saveAccountLedgerMasterDto.ledCompanyId ?? null)
       : existing.ledCompanyId;
-    await this.ensureNameIsUnique(tx, normalizedName, nextCompanyId, ledId);
+    await this.ensureNameIsUnique(tx, normalizedName, nextCompanyId, ledId, {
+      ledName: existing.ledName,
+      ledCompanyId: existing.ledCompanyId,
+    });
     const data: Prisma.AccLedgerMasterUncheckedUpdateInput = {
       ledBranchId: saveAccountLedgerMasterDto.ledBranchId,
       ledGroupId: nextGroupId,
@@ -390,16 +394,48 @@ export class AccountLedgerMastersService {
     await assertTaxRateRefs(tx, [{ taxId, field: 'ledTaxId' }], 'Invalid ledger tax rate');
   }
 
+  // "Unique within what ONE COMPANY CAN SEE" — three rules, not one:
+  //   1 · no two SHARED ledgers (led_company_id NULL) share a name;
+  //   2 · no two ledgers in the SAME company share a name;
+  //   3 · a company-scoped ledger must not collide with a SHARED one.
+  //
+  // The old check was rule 2 only, and scoped at that, so it passed the whole of
+  // rule 3 — which is how 'VAPI BATTERY & AUTO ELECTRICALS' came to exist twice,
+  // once shared and once under Acme Foods, for a trade partner that is both a
+  // customer and a supplier. Working in Acme you see both, and a Tally export
+  // merges two <LEDGER> entries with the same NAME into one and combines their
+  // balances, silently.
+  //
+  // Both scopes collapse into one filter: a SHARED write must clash with nothing at
+  // all (rules 1 + 3 together), and a SCOPED write must clash with neither its own
+  // company nor the shared pool (rules 2 + 3). Matching is case-insensitive because
+  // Tally matches master names case-insensitively.
+  //
+  // `previous` grandfathers rows that ALREADY violate rule 3: if neither the name
+  // nor the scope is changing, this write introduces no collision that was not
+  // there before, and refusing it would lock the legacy pair out of every unrelated
+  // edit — an address change, a phone number. The DB trigger tr_led_name_scope
+  // makes exactly the same allowance, so the two cannot disagree.
   private async ensureNameIsUnique(
     tx: AccountLedgerWriteClient,
     ledgerName: string,
     companyId: string | null,
     excludeId?: string,
+    previous?: { ledName: string; ledCompanyId: string | null },
   ): Promise<void> {
+    if (
+      previous &&
+      previous.ledName.trim().toLowerCase() === ledgerName.trim().toLowerCase() &&
+      previous.ledCompanyId === companyId
+    ) {
+      return;
+    }
     const existing = await tx.accLedgerMaster.findFirst({
       where: {
         ledIsDeleted: false,
-        ledCompanyId: companyId,
+        ...(companyId === null
+          ? {}
+          : { OR: [{ ledCompanyId: companyId }, { ledCompanyId: null }] }),
         ledName: {
           equals: ledgerName,
           mode: 'insensitive',
@@ -414,13 +450,25 @@ export class AccountLedgerMastersService {
       },
       select: {
         ledId: true,
+        ledCompanyId: true,
       },
     });
     if (existing) {
-      throwAccountsConflict<AccountLedgerMasterErrorDetail>(
-        'Account ledger name already exists for this company',
-        [{ field: 'ledName', message: 'Duplicate ledName is not allowed for this company' }],
-      );
+      const clashCompanyId = existing.ledCompanyId ?? null;
+      let message: string;
+      if (clashCompanyId === companyId) {
+        message =
+          companyId === null
+            ? `Ledger "${ledgerName}" already exists as a shared ledger`
+            : 'Duplicate ledName is not allowed for this company';
+      } else if (companyId === null) {
+        message = `Ledger "${ledgerName}" already exists in one company, and a shared ledger is visible from every company`;
+      } else {
+        message = `Ledger "${ledgerName}" already exists as a shared ledger, which this company also sees`;
+      }
+      throwAccountsConflict<AccountLedgerMasterErrorDetail>('Account ledger name already exists', [
+        { field: 'ledName', message },
+      ]);
     }
   }
   private applyOptionalFields(
@@ -601,24 +649,18 @@ export class AccountLedgerMastersService {
     if (hasOwnProperty(saveAccountLedgerMasterDto, 'ledIsTcsApplicable')) {
       data.ledIsTcsApplicable = saveAccountLedgerMasterDto.ledIsTcsApplicable;
     }
-    if (hasOwnProperty(saveAccountLedgerMasterDto, 'ledObAmount')) {
-      data.ledObAmount = saveAccountLedgerMasterDto.ledObAmount;
+    // §2.1 / §2.2 — GST input tax credit and reverse charge.
+    if (hasOwnProperty(saveAccountLedgerMasterDto, 'ledItcEligibility')) {
+      data.ledItcEligibility = saveAccountLedgerMasterDto.ledItcEligibility;
     }
-    if (hasOwnProperty(saveAccountLedgerMasterDto, 'ledObType')) {
-      data.ledObType = saveAccountLedgerMasterDto.ledObType;
+    if (hasOwnProperty(saveAccountLedgerMasterDto, 'ledIsReverseCharge')) {
+      data.ledIsReverseCharge = saveAccountLedgerMasterDto.ledIsReverseCharge;
     }
-    if (hasOwnProperty(saveAccountLedgerMasterDto, 'ledObAsOn')) {
-      data.ledObAsOn = saveAccountLedgerMasterDto.ledObAsOn;
-    }
-    if (hasOwnProperty(saveAccountLedgerMasterDto, 'ledTotalDr')) {
-      data.ledTotalDr = saveAccountLedgerMasterDto.ledTotalDr;
-    }
-    if (hasOwnProperty(saveAccountLedgerMasterDto, 'ledTotalCr')) {
-      data.ledTotalCr = saveAccountLedgerMasterDto.ledTotalCr;
-    }
-    if (hasOwnProperty(saveAccountLedgerMasterDto, 'ledTotalBalance')) {
-      data.ledTotalBalance = saveAccountLedgerMasterDto.ledTotalBalance;
-    }
+    // ledObAmount / ledObType / ledObAsOn / ledTotalDr / ledTotalCr /
+    // ledTotalBalance are intentionally absent (§3.1). A shared ledger spans every
+    // company, so one balance on its row cannot be right; accounts.acc_opening_balance
+    // keys on company + branch + accounting year and is the only place that can hold
+    // one. They stay readable in toPayload, and unwritable here.
     if (hasOwnProperty(saveAccountLedgerMasterDto, 'ledSortOrder')) {
       data.ledSortOrder = saveAccountLedgerMasterDto.ledSortOrder;
     }
@@ -711,6 +753,8 @@ export class AccountLedgerMastersService {
       ledTdsDeducteeType: record.ledTdsDeducteeType,
       ledTdsNatureOfPayment: record.ledTdsNatureOfPayment,
       ledIsTcsApplicable: record.ledIsTcsApplicable,
+      ledItcEligibility: record.ledItcEligibility as LedItcEligibility | null,
+      ledIsReverseCharge: record.ledIsReverseCharge,
       ledObAmount: toNumber(record.ledObAmount),
       ledObType: record.ledObType as LedObType,
       ledObAsOn: record.ledObAsOn ? record.ledObAsOn.toISOString() : null,

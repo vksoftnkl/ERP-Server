@@ -2,18 +2,21 @@ import { BillBalanceRecomputeService } from '../billBalance/bill-balance-recompu
 import { ReceiptService } from './receipt.service';
 import { ReceiptPostingService } from './receipt-posting.service';
 import { ReceiptCancelService } from './receipt-cancel.service';
+import { ReceiptAmendService } from './receipt-amend.service';
 import { OpenItemsService } from './open-items.service';
 import { ListOpenItemsQueryDto, PartyContextQueryDto } from './dto/open-item.dto';
+import { AmendReceiptDto } from './dto/amend-receipt.dto';
 import { RegularisePdcDto, SaveReceiptDto, UpdateReceiptHeaderDto } from './dto/save-receipt.dto';
-import { CancelReceiptDto, GetReceiptQueryDto, PostReceiptDto } from './dto/post-receipt.dto';
-import type { OpenItemsPayload, PartyContextPayload, ReceiptCancelPayload, ReceiptDraftPayload, ReceiptHeader, ReceiptPayload, ReceiptPostPayload, ReceiptSuccessResponse, RegularisePdcPayload } from './types/receipt-api.types';
+import { CancelReceiptDto, DeleteReceiptDto, GetReceiptQueryDto, PostReceiptDto } from './dto/post-receipt.dto';
+import type { OpenItemsPayload, PartyContextPayload, ReceiptAmendPayload, ReceiptCancelPayload, ReceiptDeletePayload, ReceiptDraftPayload, ReceiptHeader, ReceiptPayload, ReceiptPostPayload, ReceiptSuccessResponse, RegularisePdcPayload } from './types/receipt-api.types';
 export declare class ReceiptController {
     private readonly receiptService;
     private readonly postingService;
     private readonly cancelService;
+    private readonly amendService;
     private readonly openItemsService;
     private readonly recompute;
-    constructor(receiptService: ReceiptService, postingService: ReceiptPostingService, cancelService: ReceiptCancelService, openItemsService: OpenItemsService, recompute: BillBalanceRecomputeService);
+    constructor(receiptService: ReceiptService, postingService: ReceiptPostingService, cancelService: ReceiptCancelService, amendService: ReceiptAmendService, openItemsService: OpenItemsService, recompute: BillBalanceRecomputeService);
     openItems(query: ListOpenItemsQueryDto): Promise<ReceiptSuccessResponse<OpenItemsPayload>>;
     partyContext(query: PartyContextQueryDto): Promise<ReceiptSuccessResponse<PartyContextPayload>>;
     get(query: GetReceiptQueryDto): Promise<ReceiptSuccessResponse<ReceiptPayload>>;
@@ -21,5 +24,7 @@ export declare class ReceiptController {
     postReceipt(dto: PostReceiptDto): Promise<ReceiptSuccessResponse<ReceiptPostPayload>>;
     updateHeader(dto: UpdateReceiptHeaderDto, body: Record<string, unknown>): Promise<ReceiptSuccessResponse<ReceiptHeader>>;
     cancel(dto: CancelReceiptDto): Promise<ReceiptSuccessResponse<ReceiptCancelPayload>>;
+    delete(dto: DeleteReceiptDto): Promise<ReceiptSuccessResponse<ReceiptDeletePayload>>;
+    amend(dto: AmendReceiptDto): Promise<ReceiptSuccessResponse<ReceiptAmendPayload>>;
     regularise(dto: RegularisePdcDto): Promise<ReceiptSuccessResponse<RegularisePdcPayload>>;
 }

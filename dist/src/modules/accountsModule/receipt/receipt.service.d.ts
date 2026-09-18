@@ -7,9 +7,9 @@ import { type NormalisedOtherLine } from './receipt-lines';
 import type { ReceiptSettings } from './receipt.settings';
 import { money, sum, ZERO } from './receipt.utils';
 import { SaveReceiptDto, UpdateReceiptHeaderDto } from './dto/save-receipt.dto';
-import { GetReceiptQueryDto } from './dto/post-receipt.dto';
+import { DeleteReceiptDto, GetReceiptQueryDto } from './dto/post-receipt.dto';
 import { VoucherStatus } from './types/receipt-enum';
-import type { ReceiptDraftPayload, ReceiptHeader, ReceiptOtherLine, ReceiptPayload, ReceiptTender } from './types/receipt-api.types';
+import type { ReceiptDeletePayload, ReceiptDraftPayload, ReceiptHeader, ReceiptOtherLine, ReceiptPayload, ReceiptTender } from './types/receipt-api.types';
 export declare class ReceiptService {
     private readonly prisma;
     private readonly requestContext;
@@ -17,9 +17,12 @@ export declare class ReceiptService {
     private readonly openItemsService;
     constructor(prisma: PrismaService, requestContext: RequestContextService, tenderDetailService: TenderDetailService, openItemsService: OpenItemsService);
     save(dto: SaveReceiptDto): Promise<ReceiptDraftPayload>;
+    saveInTransaction(tx: Prisma.TransactionClient, dto: SaveReceiptDto, actor: string): Promise<ReceiptDraftPayload>;
     get(query: GetReceiptQueryDto): Promise<ReceiptPayload>;
     loadFullReceipt(client: Prisma.TransactionClient | PrismaService, header: StoredHeader): Promise<ReceiptPayload>;
     updateHeader(dto: UpdateReceiptHeaderDto, body: Record<string, unknown>): Promise<ReceiptHeader>;
+    deleteDraft(dto: DeleteReceiptDto): Promise<ReceiptDeletePayload>;
+    private assertDraftWroteNoAccounting;
     loadHeaderOrThrow(client: Prisma.TransactionClient | PrismaService, voucherId: string, accYear: string): Promise<StoredHeader>;
     allocateNumber(tx: Prisma.TransactionClient, scope: {
         companyId: string;
@@ -72,6 +75,7 @@ export declare const STORED_HEADER_SELECT: {
     avhStatusBy: true;
     avhPostedOn: true;
     avhCancelReason: true;
+    avhRevisionNo: true;
     avhReversalVoucherId: true;
     avhReversalAccYear: true;
     avhAgainstVoucherId: true;

@@ -60,6 +60,8 @@ class ChargeMasterPayloadDto {
     ledHsnSac;
     chgTaxApl;
     chgBeforeTax;
+    chgTaxId;
+    chgTaxName;
     chgSepPost;
     chgManParty;
     chgDispOrder;
@@ -141,6 +143,22 @@ __decorate([
     (0, swagger_1.ApiProperty)(),
     __metadata("design:type", Boolean)
 ], ChargeMasterPayloadDto.prototype, "chgBeforeTax", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        format: 'uuid',
+        nullable: true,
+        description: "Per-charge override of the posting ledger's ledTaxId. Null inherits the ledger's rate.",
+    }),
+    __metadata("design:type", Object)
+], ChargeMasterPayloadDto.prototype, "chgTaxId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        maxLength: 100,
+        nullable: true,
+        description: 'Name of the tax rate chgTaxId points at',
+    }),
+    __metadata("design:type", Object)
+], ChargeMasterPayloadDto.prototype, "chgTaxName", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)(),
     __metadata("design:type", Boolean)

@@ -1,4 +1,4 @@
-import { LedGstPartyRegType, LedObType } from '../types/account-ledger-master-enum';
+import { LedGstDutyHead, LedGstPartyRegType, LedItcEligibility, LedLedgerType, LedMsmeType, LedRoundingMethod, LedTypeOfSupply } from '../types/account-ledger-master-enum';
 import { LedgerBankAccountItemDto } from './ledger-bank-account-item.dto';
 export declare const normalizeBankAccountItems: (value: unknown) => unknown;
 export declare class SaveAccountLedgerMasterDto {
@@ -13,7 +13,7 @@ export declare class SaveAccountLedgerMasterDto {
     ledTallyGroupName?: string | null;
     ledTallyGuid?: string | null;
     ledCategory?: string;
-    ledLedgerType?: string | null;
+    ledLedgerType?: LedLedgerType | null;
     ledMailingName?: string | null;
     ledIsBillByBill?: boolean;
     ledIsCostCenterReq?: boolean;
@@ -48,27 +48,23 @@ export declare class SaveAccountLedgerMasterDto {
     ledAadharNo?: string | null;
     ledEcommerceGstin?: string | null;
     ledIsSez?: boolean;
-    ledTypeOfSupply?: string | null;
+    ledTypeOfSupply?: LedTypeOfSupply | null;
     ledHsnSac?: string | null;
     ledTaxId?: string | null;
     ledGstPartyType?: string | null;
     ledTanNo?: string | null;
     ledCin?: string | null;
     ledUdyamNo?: string | null;
-    ledMsmeType?: string | null;
-    ledGstDutyHead?: string | null;
-    ledRoundingMethod?: string | null;
+    ledMsmeType?: LedMsmeType | null;
+    ledGstDutyHead?: LedGstDutyHead | null;
+    ledRoundingMethod?: LedRoundingMethod | null;
     ledRoundingLimit?: number;
     ledIsTdsApplicable?: boolean;
     ledTdsDeducteeType?: string | null;
     ledTdsNatureOfPayment?: string | null;
     ledIsTcsApplicable?: boolean;
-    ledObAmount?: number;
-    ledObType?: LedObType;
-    ledObAsOn?: Date | null;
-    ledTotalDr?: number;
-    ledTotalCr?: number;
-    ledTotalBalance?: number;
+    ledItcEligibility?: LedItcEligibility | null;
+    ledIsReverseCharge?: boolean;
     ledSortOrder?: number;
     ledIsActive?: boolean;
     ledAllowEdit?: boolean;

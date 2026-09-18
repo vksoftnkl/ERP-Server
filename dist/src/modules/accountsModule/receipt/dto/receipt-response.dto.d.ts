@@ -1,5 +1,5 @@
 import { BillAdjType, BillSettlementMode, BillStatus, BillType, DrCr, PdcStatus, TcsBasis, VoucherStatus } from '../types/receipt-enum';
-import type { OpenBill, OpenCredit, OpenItemsParty, OpenItemsPayload, OpenItemsSummary, PartyContextPayload, PartyPendingCheque, PartyRecentReceipt, ReceiptAdvanceBill, ReceiptAllocation, ReceiptCancelPayload, ReceiptCheque, ReceiptDraftPayload, ReceiptHeader, ReceiptLeg, ReceiptOtherLine, ReceiptPayload, ReceiptPdcVoucher, ReceiptPostPayload, ReceiptStatusPayload, ReceiptTender, RegularisePdcPayload } from '../types/receipt-api.types';
+import type { OpenBill, OpenCredit, OpenItemsParty, OpenItemsPayload, OpenItemsSummary, PartyContextPayload, PartyPendingCheque, PartyRecentReceipt, ReceiptAdvanceBill, ReceiptAllocation, ReceiptAmendPayload, ReceiptCancelPayload, ReceiptCheque, ReceiptDeletePayload, ReceiptDraftPayload, ReceiptHeader, ReceiptLeg, ReceiptOtherLine, ReceiptPayload, ReceiptPdcVoucher, ReceiptPostPayload, ReceiptStatusPayload, ReceiptTender, RegularisePdcPayload } from '../types/receipt-api.types';
 export declare class ReceiptErrorFieldDto {
     field: string;
     message: string;
@@ -22,6 +22,8 @@ export declare class OpenBillDto implements OpenBill {
     daysOverdue: number;
     pdcHeld: number;
     ppdSuggested: number;
+    tcsAmount: number;
+    tcsPending: number;
 }
 export declare class OpenCreditDto implements OpenCredit {
     billId: string;
@@ -224,6 +226,7 @@ export declare class ReceiptHeaderDto implements ReceiptHeader {
     avhStatusBy: string | null;
     avhPostedOn: string | null;
     avhCancelReason: string | null;
+    avhRevisionNo: number;
     avhReversalVoucherId: string | null;
     avhAgainstVoucherId: string | null;
     avhPrintCount: number;
@@ -293,6 +296,25 @@ export declare class ReceiptPostSuccessDto {
     message: string;
     data: ReceiptPostPayloadDto;
 }
+export declare class ReceiptAmendUnwoundDto {
+    adjustmentsReversed: number;
+    legsRemoved: number;
+    pdcVouchersRemoved: number;
+    chequesRemoved: number;
+    advanceBillsRemoved: number;
+    tendersRemoved: number;
+}
+export declare class ReceiptAmendPayloadDto extends ReceiptPostPayloadDto implements ReceiptAmendPayload {
+    fromRevision: number;
+    toRevision: number;
+    editRemark: string;
+    unwound: ReceiptAmendUnwoundDto;
+}
+export declare class ReceiptAmendSuccessDto {
+    success: true;
+    message: string;
+    data: ReceiptAmendPayloadDto;
+}
 export declare class ReceiptStatusPayloadDto implements ReceiptStatusPayload {
     avhVoucherId: string;
     avhAccYear: string;
@@ -326,6 +348,21 @@ export declare class ReceiptCancelSuccessDto {
     success: true;
     message: string;
     data: ReceiptCancelPayloadDto;
+}
+export declare class ReceiptDeletePayloadDto implements ReceiptDeletePayload {
+    avhVoucherId: string;
+    avhAccYear: string;
+    avhVoucherRefno: string | null;
+    status: VoucherStatus;
+    deletedOn: string;
+    deletedBy: string;
+    tendersDeleted: number;
+    otherLinesDeleted: number;
+}
+export declare class ReceiptDeleteSuccessDto {
+    success: true;
+    message: string;
+    data: ReceiptDeletePayloadDto;
 }
 export declare class RegularisePdcPayloadDto implements RegularisePdcPayload {
     asOf: string;

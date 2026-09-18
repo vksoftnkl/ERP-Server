@@ -118,6 +118,11 @@ export interface ChargeLedgerDetail {
   ledName: string;
   ledHsnSac: string | null;
 }
+// Subset of inventory.tax_rate_master selected alongside a charge so the
+// payload can name the rate chg_tax_id points at.
+export interface ChargeTaxDetail {
+  taxName: string;
+}
 export interface ChargeMasterPayload {
   chgId: string;
   chgName: string;
@@ -137,6 +142,11 @@ export interface ChargeMasterPayload {
   ledHsnSac: string | null;
   chgTaxApl: boolean;
   chgBeforeTax: boolean;
+  // Per-charge override of the posting ledger's led_tax_id; null inherits it.
+  chgTaxId: string | null;
+  // Name of the rate chgTaxId points at, read from inventory.tax_rate_master.
+  // Derived display value, never stored on charge_master itself.
+  chgTaxName: string | null;
   chgSepPost: boolean;
   chgManParty: boolean;
   chgDispOrder: number | null;

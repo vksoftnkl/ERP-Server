@@ -9,6 +9,7 @@ export interface ReceiptSettings {
     writeoffApprovalAbove: Prisma.Decimal;
     tcsBasis: TcsBasis;
     ppdSlabs: PpdSlab[];
+    allowPostedAmend: boolean;
 }
 export declare const RECEIPT_SETTING_DEFAULTS: ReceiptSettings;
 export declare function readReceiptSettings(effective: readonly AppSettingEffectiveItem[]): ReceiptSettings;

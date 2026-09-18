@@ -29,6 +29,7 @@ class SaveChargeMasterDto {
     chgLedgerCode;
     chgTaxApl;
     chgBeforeTax;
+    chgTaxId;
     chgSepPost;
     chgManParty;
     chgDispOrder;
@@ -118,6 +119,19 @@ __decorate([
     (0, dtoDecorators_1.OptionalBoolean)(),
     __metadata("design:type", Boolean)
 ], SaveChargeMasterDto.prototype, "chgBeforeTax", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        format: 'uuid',
+        nullable: true,
+        description: 'Per-charge override of the posting ledger\'s ledTaxId: the inventory.tax_rate_master ' +
+            'row this charge is taxed under, so two charges may share one revenue ledger and still ' +
+            'differ on rate. Null — the normal case — inherits the ledger\'s rate. Only meaningful ' +
+            'on a charge that carries its own GST, so it must be null unless chgTaxApl is true and ' +
+            'chgBeforeTax is false (DB CHECK ck_chg_tax_id).',
+    }),
+    (0, dtoDecorators_1.NullableUuid)(),
+    __metadata("design:type", Object)
+], SaveChargeMasterDto.prototype, "chgTaxId", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ default: false, description: 'Post to own ledger vs absorb' }),
     (0, dtoDecorators_1.OptionalBoolean)(),

@@ -222,7 +222,10 @@ let AccountLedgerMastersService = class AccountLedgerMastersService {
         const nextCompanyId = (0, module_service_utils_1.hasOwnProperty)(saveAccountLedgerMasterDto, 'ledCompanyId')
             ? (saveAccountLedgerMasterDto.ledCompanyId ?? null)
             : existing.ledCompanyId;
-        await this.ensureNameIsUnique(tx, normalizedName, nextCompanyId, ledId);
+        await this.ensureNameIsUnique(tx, normalizedName, nextCompanyId, ledId, {
+            ledName: existing.ledName,
+            ledCompanyId: existing.ledCompanyId,
+        });
         const data = {
             ledBranchId: saveAccountLedgerMasterDto.ledBranchId,
             ledGroupId: nextGroupId,
@@ -280,11 +283,18 @@ let AccountLedgerMastersService = class AccountLedgerMastersService {
         }
         await (0, tax_rate_reference_helper_1.assertTaxRateRefs)(tx, [{ taxId, field: 'ledTaxId' }], 'Invalid ledger tax rate');
     }
-    async ensureNameIsUnique(tx, ledgerName, companyId, excludeId) {
+    async ensureNameIsUnique(tx, ledgerName, companyId, excludeId, previous) {
+        if (previous &&
+            previous.ledName.trim().toLowerCase() === ledgerName.trim().toLowerCase() &&
+            previous.ledCompanyId === companyId) {
+            return;
+        }
         const existing = await tx.accLedgerMaster.findFirst({
             where: {
                 ledIsDeleted: false,
-                ledCompanyId: companyId,
+                ...(companyId === null
+                    ? {}
+                    : { OR: [{ ledCompanyId: companyId }, { ledCompanyId: null }] }),
                 ledName: {
                     equals: ledgerName,
                     mode: 'insensitive',
@@ -299,10 +309,27 @@ let AccountLedgerMastersService = class AccountLedgerMastersService {
             },
             select: {
                 ledId: true,
+                ledCompanyId: true,
             },
         });
         if (existing) {
-            (0, module_service_utils_1.throwAccountsConflict)('Account ledger name already exists for this company', [{ field: 'ledName', message: 'Duplicate ledName is not allowed for this company' }]);
+            const clashCompanyId = existing.ledCompanyId ?? null;
+            let message;
+            if (clashCompanyId === companyId) {
+                message =
+                    companyId === null
+                        ? `Ledger "${ledgerName}" already exists as a shared ledger`
+                        : 'Duplicate ledName is not allowed for this company';
+            }
+            else if (companyId === null) {
+                message = `Ledger "${ledgerName}" already exists in one company, and a shared ledger is visible from every company`;
+            }
+            else {
+                message = `Ledger "${ledgerName}" already exists as a shared ledger, which this company also sees`;
+            }
+            (0, module_service_utils_1.throwAccountsConflict)('Account ledger name already exists', [
+                { field: 'ledName', message },
+            ]);
         }
     }
     applyOptionalFields(data, saveAccountLedgerMasterDto) {
@@ -480,23 +507,11 @@ let AccountLedgerMastersService = class AccountLedgerMastersService {
         if ((0, module_service_utils_1.hasOwnProperty)(saveAccountLedgerMasterDto, 'ledIsTcsApplicable')) {
             data.ledIsTcsApplicable = saveAccountLedgerMasterDto.ledIsTcsApplicable;
         }
-        if ((0, module_service_utils_1.hasOwnProperty)(saveAccountLedgerMasterDto, 'ledObAmount')) {
-            data.ledObAmount = saveAccountLedgerMasterDto.ledObAmount;
+        if ((0, module_service_utils_1.hasOwnProperty)(saveAccountLedgerMasterDto, 'ledItcEligibility')) {
+            data.ledItcEligibility = saveAccountLedgerMasterDto.ledItcEligibility;
         }
-        if ((0, module_service_utils_1.hasOwnProperty)(saveAccountLedgerMasterDto, 'ledObType')) {
-            data.ledObType = saveAccountLedgerMasterDto.ledObType;
-        }
-        if ((0, module_service_utils_1.hasOwnProperty)(saveAccountLedgerMasterDto, 'ledObAsOn')) {
-            data.ledObAsOn = saveAccountLedgerMasterDto.ledObAsOn;
-        }
-        if ((0, module_service_utils_1.hasOwnProperty)(saveAccountLedgerMasterDto, 'ledTotalDr')) {
-            data.ledTotalDr = saveAccountLedgerMasterDto.ledTotalDr;
-        }
-        if ((0, module_service_utils_1.hasOwnProperty)(saveAccountLedgerMasterDto, 'ledTotalCr')) {
-            data.ledTotalCr = saveAccountLedgerMasterDto.ledTotalCr;
-        }
-        if ((0, module_service_utils_1.hasOwnProperty)(saveAccountLedgerMasterDto, 'ledTotalBalance')) {
-            data.ledTotalBalance = saveAccountLedgerMasterDto.ledTotalBalance;
+        if ((0, module_service_utils_1.hasOwnProperty)(saveAccountLedgerMasterDto, 'ledIsReverseCharge')) {
+            data.ledIsReverseCharge = saveAccountLedgerMasterDto.ledIsReverseCharge;
         }
         if ((0, module_service_utils_1.hasOwnProperty)(saveAccountLedgerMasterDto, 'ledSortOrder')) {
             data.ledSortOrder = saveAccountLedgerMasterDto.ledSortOrder;
@@ -589,6 +604,8 @@ let AccountLedgerMastersService = class AccountLedgerMastersService {
             ledTdsDeducteeType: record.ledTdsDeducteeType,
             ledTdsNatureOfPayment: record.ledTdsNatureOfPayment,
             ledIsTcsApplicable: record.ledIsTcsApplicable,
+            ledItcEligibility: record.ledItcEligibility,
+            ledIsReverseCharge: record.ledIsReverseCharge,
             ledObAmount: (0, module_service_utils_1.toNumber)(record.ledObAmount),
             ledObType: record.ledObType,
             ledObAsOn: record.ledObAsOn ? record.ledObAsOn.toISOString() : null,

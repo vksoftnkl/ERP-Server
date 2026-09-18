@@ -1,21 +1,18 @@
 import { Type } from 'class-transformer';
-import { LedGstPartyRegType, LedObType } from '../types/account-ledger-master-enum';
-import { LedgerBankAccountItemDto } from './ledger-bank-account-item.dto';
 import {
-  IsArray,
-  IsDate,
-  IsEnum,
-  IsNotEmpty,
-  IsNumber,
-  IsOptional,
-  Min,
-  ValidateIf,
-  ValidateNested,
-} from 'class-validator';
+  LedGstDutyHead,
+  LedGstPartyRegType,
+  LedItcEligibility,
+  LedLedgerType,
+  LedMsmeType,
+  LedRoundingMethod,
+  LedTypeOfSupply,
+} from '../types/account-ledger-master-enum';
+import { LedgerBankAccountItemDto } from './ledger-bank-account-item.dto';
+import { IsArray, IsEnum, IsNotEmpty, IsNumber, IsOptional, ValidateNested } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import {
-  NullableDate,
   NullableEmail,
   NullableString,
   NullableUuid,
@@ -26,7 +23,7 @@ import {
   SkipOnNullish,
   TrimmedString,
 } from 'src/common/dto/dtoDecorators';
-import { toNullableUpperString, toUpperTrimmed } from 'src/common/dto/DtoTransforms';
+import { toNullableUpperString } from 'src/common/dto/DtoTransforms';
 // A bank-account entry is "blank" when it is null/undefined, not an object, or an
 // object whose every value is null/undefined/empty string (e.g. an untouched grid row).
 // Such entries are dropped so a stray {} or null doesn't fail validation or insert garbage.
@@ -35,7 +32,8 @@ const isBlankBankAccountItem = (item: unknown): boolean => {
     return true;
   }
   return Object.values(item as Record<string, unknown>).every(
-    (value) => value === null || value === undefined || (typeof value === 'string' && value.trim() === ''),
+    (value) =>
+      value === null || value === undefined || (typeof value === 'string' && value.trim() === ''),
   );
 };
 
@@ -105,9 +103,20 @@ export class SaveAccountLedgerMasterDto {
   @TrimmedString(30)
   ledCategory?: string;
 
-  @ApiPropertyOptional({ maxLength: 20, nullable: true })
-  @NullableString(20)
-  ledLedgerType?: string | null;
+  // §3.4 — this was @NullableString(20) against a live CHECK, so
+  // {"ledLedgerType": "NONSENSE"} produced a 500 with errors: [] while every other
+  // bad value on this endpoint gave a clean 400 with a field. Same for the four
+  // below.
+  @ApiPropertyOptional({
+    enum: LedLedgerType,
+    enumName: 'LedLedgerType',
+    nullable: true,
+  })
+  @IsOptional()
+  @Transform(({ value }) => toNullableUpperString(value))
+  @SkipOnNullish()
+  @IsEnum(LedLedgerType)
+  ledLedgerType?: LedLedgerType | null;
 
   @ApiPropertyOptional({ maxLength: 200, nullable: true })
   @NullableString(200)
@@ -266,9 +275,15 @@ export class SaveAccountLedgerMasterDto {
   @OptionalBoolean()
   ledIsSez?: boolean;
 
-  @ApiPropertyOptional({ maxLength: 10, nullable: true })
-  @NullableString(10)
-  ledTypeOfSupply?: string | null;
+  @ApiPropertyOptional({
+    enum: LedTypeOfSupply,
+    enumName: 'LedTypeOfSupply',
+    nullable: true,
+  })
+  @IsOptional()
+  @SkipOnNullish()
+  @IsEnum(LedTypeOfSupply)
+  ledTypeOfSupply?: LedTypeOfSupply | null;
 
   @ApiPropertyOptional({ maxLength: 10, nullable: true })
   @NullableString(10)
@@ -311,17 +326,35 @@ export class SaveAccountLedgerMasterDto {
   @TrimmedString(25)
   ledUdyamNo?: string | null;
 
-  @ApiPropertyOptional({ maxLength: 10, nullable: true })
-  @NullableString(10)
-  ledMsmeType?: string | null;
+  @ApiPropertyOptional({
+    enum: LedMsmeType,
+    enumName: 'LedMsmeType',
+    nullable: true,
+  })
+  @IsOptional()
+  @SkipOnNullish()
+  @IsEnum(LedMsmeType)
+  ledMsmeType?: LedMsmeType | null;
 
-  @ApiPropertyOptional({ maxLength: 20, nullable: true })
-  @NullableString(20)
-  ledGstDutyHead?: string | null;
+  @ApiPropertyOptional({
+    enum: LedGstDutyHead,
+    enumName: 'LedGstDutyHead',
+    nullable: true,
+  })
+  @IsOptional()
+  @SkipOnNullish()
+  @IsEnum(LedGstDutyHead)
+  ledGstDutyHead?: LedGstDutyHead | null;
 
-  @ApiPropertyOptional({ maxLength: 15, nullable: true })
-  @NullableString(15)
-  ledRoundingMethod?: string | null;
+  @ApiPropertyOptional({
+    enum: LedRoundingMethod,
+    enumName: 'LedRoundingMethod',
+    nullable: true,
+  })
+  @IsOptional()
+  @SkipOnNullish()
+  @IsEnum(LedRoundingMethod)
+  ledRoundingMethod?: LedRoundingMethod | null;
 
   @ApiPropertyOptional({ nullable: true })
   @IsOptional()
@@ -345,46 +378,47 @@ export class SaveAccountLedgerMasterDto {
   @OptionalBoolean()
   ledIsTcsApplicable?: boolean;
 
-  @ApiPropertyOptional({ minimum: 0, default: 0 })
-  @IsOptional()
-  @Type(() => Number)
-  @IsNumber({ allowNaN: false, allowInfinity: false })
-  @Min(0)
-  ledObAmount?: number;
-
   @ApiPropertyOptional({
-    enum: LedObType,
-    enumName: 'LedObType',
+    enum: LedItcEligibility,
+    enumName: 'LedItcEligibility',
+    nullable: true,
+    description:
+      'GST input tax credit eligibility for this purchase or expense ledger. Drives ' +
+      'GSTR-3B 4(A) vs 4(D) "Ineligible ITC": without it a blocked s.17(5) credit — ' +
+      'motor vehicles, food and beverage, works contract, personal consumption — ' +
+      'cannot be told apart from an eligible one, and 4(A) is overstated by exactly ' +
+      'that amount. Null on a ledger with no ITC question to answer (bank, cash, ' +
+      'party, income). Tally: ledger GST details -> Eligibility for input credit.',
   })
   @IsOptional()
-  @Transform(({ value }) => toUpperTrimmed(value))
-  @IsEnum(LedObType)
-  ledObType?: LedObType;
+  @Transform(({ value }) => toNullableUpperString(value))
+  @SkipOnNullish()
+  @IsEnum(LedItcEligibility)
+  ledItcEligibility?: LedItcEligibility | null;
 
-  @ApiPropertyOptional({ type: String, format: 'date', nullable: true })
-  @NullableDate()
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @Type(() => Date)
-  @IsDate()
-  ledObAsOn?: Date | null;
+  @ApiPropertyOptional({
+    description:
+      'This party or expense attracts reverse charge — unregistered purchase, GTA, ' +
+      "legal services, director's fees, import of services. It belongs here and not " +
+      'on inventory.tax_rate_master, because a rate row is shared with ordinary ' +
+      'forward-charge sales at the same percentage; the document flag ' +
+      'gdr_is_reverse_charge defaults from this one.',
+  })
+  @OptionalBoolean()
+  ledIsReverseCharge?: boolean;
 
-  @ApiPropertyOptional({ default: 0 })
-  @IsOptional()
-  @Type(() => Number)
-  @IsNumber({ allowNaN: false, allowInfinity: false })
-  ledTotalDr?: number;
-
-  @ApiPropertyOptional({ default: 0 })
-  @IsOptional()
-  @Type(() => Number)
-  @IsNumber({ allowNaN: false, allowInfinity: false })
-  ledTotalCr?: number;
-
-  @ApiPropertyOptional({ default: 0 })
-  @IsOptional()
-  @Type(() => Number)
-  @IsNumber({ allowNaN: false, allowInfinity: false })
-  ledTotalBalance?: number;
+  // §3.1 — ledObAmount / ledObType / ledObAsOn / ledTotalDr / ledTotalCr /
+  // ledTotalBalance are GONE from this payload, deliberately.
+  //
+  // A SHARED ledger (led_company_id IS NULL — 50 of 61 rows) spans every company,
+  // so a single opening balance sitting on its row cannot be right for all of
+  // them. accounts.acc_opening_balance already keys on
+  // op_company_id + op_branch_id + op_acc_year, which is the correct grain, and it
+  // is built and working behind menu 55.
+  //
+  // The six columns remain on the table and remain in the GET payload — they are 0
+  // on every row today, so nothing depended on them — but a client must not be able
+  // to write them. Same treatment led_is_deleted already had.
 
   @ApiPropertyOptional()
   @OptionalInteger()

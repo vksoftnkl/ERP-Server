@@ -112,6 +112,7 @@ Table acc_bill_balance {
   ablAllocAmount Decimal [not null, default: 0]
   ablDiscAmount Decimal [not null, default: 0]
   ablWriteoffAmount Decimal [not null, default: 0]
+  ablTcsAmount Decimal [not null, default: 0]
   ablPendingAmount Decimal
   ablStatus String
   ablSettledOn DateTime
@@ -169,7 +170,6 @@ Table acc_group_master {
   accGroupTallyAlterId BigInt
   accGroupParentId String
   accGroupSort Int
-  accGroupChildIds String[] [not null]
   accGroupType String [not null]
   accGroupIsDefault Boolean [not null, default: false]
   accGroupIsReserved Boolean [not null, default: false]
@@ -283,6 +283,8 @@ Table acc_ledger_master {
   ledTdsDeducteeType String
   ledTdsNatureOfPayment String
   ledIsTcsApplicable Boolean [not null, default: false]
+  ledItcEligibility String
+  ledIsReverseCharge Boolean [not null, default: false]
   ledObAmount Decimal [not null, default: 0]
   ledObType String [not null, default: 'DR']
   ledObAsOn DateTime
@@ -316,8 +318,6 @@ Table acc_ledger_master {
   voucherDocRegisterParties acc_voucher_doc_register [not null]
   voucherHeaderParties acc_voucher_header [not null]
   voucherHeaderOppLedgers acc_voucher_header [not null]
-  customer customers [note: 'R9 — the customer this ledger is the control account for, if any.
-At most one: ux_cus_ledger makes sales.customers.cus_ledger_id unique.']
   accountingEntries acc_vouchers [not null]
   oppositeAccountingEntries acc_vouchers [not null]
   billParties acc_bill_balance [not null]
@@ -325,6 +325,8 @@ At most one: ux_cus_ledger makes sales.customers.cus_ledger_id unique.']
   billAdjustmentSettleLedgers acc_bill_adjustment [not null]
   pdcParties acc_pdc_register [not null]
   pdcBankLedgers acc_pdc_register [not null]
+  tcsCollections acc_tcs_register [not null]
+  tdsEntries acc_tds_register [not null]
   chargeMasters charge_master [not null]
   chargeDetails txn_charge_detail [not null]
   saleOrderAdvanceLedgers sale_order [not null]
@@ -333,6 +335,8 @@ At most one: ux_cus_ledger makes sales.customers.cus_ledger_id unique.']
   taxRateLedgers tax_rate_ledger [not null]
   ledgerMaps acc_ledger_map [not null]
   openingBalances acc_opening_balance [not null]
+  customer customers
+  supplier suppliers
 
   indexes {
     (ledCompanyId, ledName) [unique]
@@ -533,6 +537,160 @@ record.
 Lifecycle: HELD -> DEPOSITED -> CLEARED
 -> BOUNCED -> (re-present or REPLACED)
 HELD -> RETURNED / CANCELLED / REPLACED'
+}
+
+Table acc_tcs_register {
+  atcId String [pk]
+  atcCompanyId String [not null]
+  atcBranchId String [not null]
+  atcTenantId String
+  atcAccYear String [not null]
+  atcQuarter String [not null]
+  atcPartyId String [not null]
+  atcPan String
+  atcPartyName String [not null]
+  atcSection String [not null]
+  atcRate Decimal [not null]
+  atcRateSource String [not null]
+  atcBaseAmount Decimal [not null]
+  atcTaxAmount Decimal [not null]
+  atcVoucherId String
+  atcVoucherAccYear String
+  atcDocRefno String
+  atcDocDate DateTime [not null]
+  atcBillId String
+  atcBillAccYear String
+  atcReversalOfId String
+  atcChallanNo String
+  atcChallanDate DateTime
+  atcChallanBsr String
+  atcCertificateNo String
+  atcCertificateDate DateTime
+  atcRemarks String
+  atcIsActive Boolean [not null, default: true]
+  atcIsDeleted Boolean [not null, default: false]
+  atcCreatedOn DateTime [default: `now()`, not null]
+  atcCreatedBy String
+  atcModifiedOn DateTime
+  atcModifiedBy String
+  party acc_ledger_master [not null]
+  reversalOf acc_tcs_register
+  reversals acc_tcs_register [not null]
+
+  Note: '§2.14 — the 27EQ / 26Q projection.
+
+Two tables, one shape. `acc_tcs_register` is tax this company COLLECTED
+from a customer (TCS, filed on Form 27EQ); `acc_tds_register` is tax a
+party WITHHELD from this company, or that this company withheld from a
+supplier (TDS, filed on Form 26Q). They are kept apart rather than folded
+into one table with a direction flag because they file on different forms,
+on different due dates, with different section vocabularies — and every
+query against them is for one form or the other, never both.
+
+═══════════════════════════════════════════════════════════════════════════
+WRITTEN AT POST, NEVER EDITED, NEVER RE-SUMMED
+═══════════════════════════════════════════════════════════════════════════
+
+A row is a statement about a moment: at the instant this document posted,
+this much tax was collected at this rate on this base, for this party\'s PAN.
+A quarterly return is `SELECT` over these rows, not a re-derivation from
+the invoices — because the rate that applied in July is not the rate that
+applies in November, and a return that re-computed would silently restate
+a quarter already filed with the department.
+
+This is why there is no update path and no roll-up column. A document that
+is cancelled or amended gets a NEW row carrying the reversal, the way
+`acc_bill_adjustment` does; the original stays, because the return that
+quoted it was filed.
+
+═══════════════════════════════════════════════════════════════════════════
+WHICH DOCUMENT RAISES THE ROW DEPENDS ON accounts.tcs_basis
+═══════════════════════════════════════════════════════════════════════════
+
+206C(1H) liability arises on RECEIPT of the money, not on the invoice. So:
+
+· `tcs_basis = \'RECEIPT\'` — the receipt raises a TCS_PAYABLE leg and the
+register row, for the whole receipt.
+· `tcs_basis = \'SALES\'`   — the invoice already carries the TCS inside
+its bill amount (`acc_bill_balance.abl_tcs_amount`), so the RECEIPT
+raises no TCS leg at all, and the register row is raised AT THE RECEIPT
+for the TCS slice of that allocation — pro-rata, which is what
+`accounts.v_bill_tcs` computes.
+
+The two never both apply, and `atcRateSource` is what makes an audit able
+to tell afterwards which rule produced the figure.
+
+═══════════════════════════════════════════════════════════════════════════
+NOT PARTITIONED, unlike the money tables
+═══════════════════════════════════════════════════════════════════════════
+
+`acc_bill_balance`, `acc_voucher_header`, `acc_vouchers`, `acc_pdc_register`
+and `acc_tender_detail` are all LIST-partitioned on their accounting year.
+These two deliberately are not:
+
+· every read is `WHERE company AND fy AND quarter [AND section]` — a
+return for one quarter — which an index serves exactly; there is no
+scan-every-partition read like "this party\'s outstanding across all
+years" that made partitioning worth it for the bill;
+· nothing addresses a register row by `(id, year)`, so the composite key
+that partitioning forces would buy nothing and would have to be
+threaded through every reference;
+· nobody detaches a filed quarter — the department can ask for it years
+later.
+
+The practical consequence is that these two tables do NOT need
+`public.ensure_acc_year_partitions` to have run for a year before they can
+be written, which is one less way for a receipt to fail at the moment an
+operator is taking money.'
+}
+
+Table acc_tds_register {
+  atdId String [pk]
+  atdCompanyId String [not null]
+  atdBranchId String [not null]
+  atdTenantId String
+  atdAccYear String [not null]
+  atdQuarter String [not null]
+  atdDirection String [not null]
+  atdPartyId String [not null]
+  atdPan String
+  atdPartyName String [not null]
+  atdDeducteeType String
+  atdSection String [not null]
+  atdRate Decimal [not null]
+  atdRateSource String [not null]
+  atdBaseAmount Decimal [not null]
+  atdTaxAmount Decimal [not null]
+  atdVoucherId String
+  atdVoucherAccYear String
+  atdDocRefno String
+  atdDocDate DateTime [not null]
+  atdBillId String
+  atdBillAccYear String
+  atdReversalOfId String
+  atdChallanNo String
+  atdChallanDate DateTime
+  atdChallanBsr String
+  atdCertificateNo String
+  atdCertificateDate DateTime
+  atdRemarks String
+  atdIsActive Boolean [not null, default: true]
+  atdIsDeleted Boolean [not null, default: false]
+  atdCreatedOn DateTime [default: `now()`, not null]
+  atdCreatedBy String
+  atdModifiedOn DateTime
+  atdModifiedBy String
+  party acc_ledger_master [not null]
+  reversalOf acc_tds_register
+  reversals acc_tds_register [not null]
+
+  Note: 'The 26Q side. Same shape, same rules, different form — see the header
+comment on `AccTcsRegister` above, which covers both.
+
+The one structural difference is `atdDeducteeType`: 26Q reports a company
+and a non-company deductee under different codes, and
+`acc_ledger_master.led_tds_deductee_type` is where that comes from. TCS has
+no equivalent, which is why it is here and not on both.'
 }
 
 Table acc_tender_detail {
@@ -986,7 +1144,10 @@ Table acc_voucher_header {
   avhDocAmount Decimal [not null, default: 0]
   avhAdjustAmount Decimal [not null, default: 0]
   avhRoundOff Decimal [not null, default: 0]
-  avhTotalDebit Decimal [not null, default: 0]
+  avhTotalDebit Decimal [not null, default: 0, note: 'DERIVED by tr_av_refresh_totals from accounts.acc_vouchers — never
+written by an application. ck_avh_balanced compares the two on a POSTED
+header, so a stamped value would make that check compare a writer\'s own
+claim with itself (migration 20260915120000, §2.4).']
   avhTotalCredit Decimal [not null, default: 0]
   avhPartyId String [not null]
   avhOppositeLedgerId String
@@ -1006,6 +1167,7 @@ post; nothing reads it but /receipts/get.']
   avhStatusBy String
   avhPostedOn DateTime
   avhCancelReason String
+  avhRevisionNo Int [not null, default: 0]
   avhUserId String [not null]
   avhSessionId String
   avhDeviceType String
@@ -3740,8 +3902,6 @@ Table user_menus {
   umCanDelete Boolean [not null, default: false]
   umCanPrint Boolean [not null, default: false]
   umCanExport Boolean [not null, default: false]
-  umCanApprove Boolean [not null, default: false, note: 'The seventh verb. /receipts/approve and /receipts/reject demand it on
-menu 99; false by default, so the right is granted deliberately.']
   umVisibility Boolean [not null, default: true]
   umIsFavourite Boolean [not null, default: false]
   umIsPinned Boolean [not null, default: false]
@@ -3809,6 +3969,7 @@ Table suppliers {
   supCreatedBy String
   supModifiedOn DateTime [not null]
   supModifiedBy String
+  ledger acc_ledger_master [not null]
   group supplier_groups [not null]
   stockLots stock_lot [not null]
   stockBalances stock_balance [not null]
@@ -3947,12 +4108,6 @@ Table customers {
   cusBranchId String
   cusAreaId String [not null]
   cusGroupId String [not null]
-  cusLedgerId String [unique, note: 'R9 — the customer\'s control ledger in accounts.acc_ledger_master. One
-customer, one ledger (ux_cus_ledger). Everything that needed this link
-before — party-balance, the sale bill\'s tdPartyLedgerId, every receipt —
-matched BY NAME, which is wrong the moment two customers share one and
-silently wrong forever after a rename. NULL until back-filled, and
-/receipts/open-items 404s naming the customer while it is.']
   cusIsActive Boolean [not null, default: true]
   cusIsDeleted Boolean [not null, default: false]
   cusSyncDate DateTime
@@ -3960,8 +4115,8 @@ silently wrong forever after a rename. NULL until back-filled, and
   cusCreatedBy String
   cusModifiedOn DateTime [default: `now()`, not null]
   cusModifiedBy String
+  ledger acc_ledger_master [not null]
   area area_master [not null]
-  ledger acc_ledger_master
   custGroup cust_groups [not null]
   company companys
   priceLevel item_price_levels [not null]
@@ -4864,7 +5019,7 @@ Table sale_bill {
   sbSrcDocRefno String
   sbSrcDocDate DateTime
   sbSrcDocYear String
-  sbCustId String [not null]
+  sbCustId String
   sbCustName String [not null]
   sbCustAddr String
   sbCustPlace String
@@ -4958,7 +5113,7 @@ Table sale_bill {
   sbModifiedOn DateTime
   sbModifiedBy String
   items sale_bill_item [not null]
-  customer customers [not null]
+  customer customers
   posState state_codes
   priceLevel item_price_levels [not null]
 
@@ -7805,6 +7960,14 @@ Ref: acc_pdc_register.(apdChargeVoucherId, apdChargeAccYear) > acc_voucher_heade
 
 Ref: acc_pdc_register.(apdReplacedById, apdReplacedByAccYear) - acc_pdc_register.(apdId, apdAccYear) [delete: Restrict]
 
+Ref: acc_tcs_register.atcPartyId > acc_ledger_master.ledId [delete: Restrict]
+
+Ref: acc_tcs_register.atcReversalOfId - acc_tcs_register.atcId [delete: Restrict]
+
+Ref: acc_tds_register.atdPartyId > acc_ledger_master.ledId [delete: Restrict]
+
+Ref: acc_tds_register.atdReversalOfId - acc_tds_register.atdId [delete: Restrict]
+
 Ref: acc_tender_detail.tdCompanyId > companys.compId [delete: Restrict]
 
 Ref: acc_tender_detail.tdBranchId > branch_master.brId [delete: Restrict]
@@ -8123,15 +8286,17 @@ Ref: user_menus.umUserId > user_master.usrId
 
 Ref: user_menus.umMenuId > menu_master.menuId
 
+Ref: suppliers.supId - acc_ledger_master.ledId [delete: Restrict]
+
 Ref: suppliers.supGroupId > supplier_groups.spgId [delete: Restrict]
 
 Ref: area_master.armCityId > city_master.ctmId
 
 Ref: city_master.ctmStateId > state_master.stmId
 
-Ref: customers.cusAreaId > area_master.armId
+Ref: customers.cusId - acc_ledger_master.ledId [delete: Restrict]
 
-Ref: customers.cusLedgerId - acc_ledger_master.ledId [delete: Restrict]
+Ref: customers.cusAreaId > area_master.armId
 
 Ref: customers.cusGroupId > cust_groups.cgrId
 

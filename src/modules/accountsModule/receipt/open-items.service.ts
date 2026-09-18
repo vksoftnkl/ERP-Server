@@ -10,6 +10,7 @@ import {
   RECEIPT_VOUCHER_TYPE_CODE,
   RECEIVABLE_BILL_TYPES,
   ReceiptBillSort,
+  TcsBasis,
 } from './types/receipt-enum';
 import type {
   OpenBill,
@@ -157,10 +158,11 @@ export class OpenItemsService {
       },
     });
 
-    const pdcByBill = await this.loadPostDatedHeld(
-      bills.map((bill) => ({ billId: bill.ablId, accYear: bill.ablAccYear })),
-      onDate,
-    );
+    const billKeys = bills.map((bill) => ({ billId: bill.ablId, accYear: bill.ablAccYear }));
+    const [pdcByBill, tcsByBill] = await Promise.all([
+      this.loadPostDatedHeld(billKeys, onDate),
+      this.loadBillTcs(billKeys, settings),
+    ]);
 
     const rows = bills.map((bill) => {
       const pending = bill.ablPendingAmount ?? ZERO;
@@ -184,6 +186,10 @@ export class OpenItemsService {
             slabs: settings.ppdSlabs,
           }),
         ),
+        // §2.13. Both 0 on the RECEIPT basis, where the invoice carries no TCS
+        // and the receipt collects it instead.
+        tcsAmount: toAmount(tcsByBill.get(`${bill.ablId}|${bill.ablAccYear}`)?.amount ?? ZERO),
+        tcsPending: toAmount(tcsByBill.get(`${bill.ablId}|${bill.ablAccYear}`)?.pending ?? ZERO),
       };
     });
 
@@ -248,6 +254,63 @@ export class OpenItemsService {
       held.set(key, (held.get(key) ?? ZERO).plus(row.abjAmount));
     }
     return held;
+  }
+
+  /**
+   * §2.13 — bill-wise TCS: how much is charged inside each bill, and how much
+   * of it has not been collected yet.
+   *
+   * ── Why this reads a VIEW and not the column ─────────────────────────────
+   * `abl_tcs_amount` is the charge; the PENDING half is a function of
+   * `abl_alloc_amount`, which the recompute service rewrites on every post,
+   * cancel and PDC maturity. `accounts.v_bill_tcs` derives both in one place,
+   * pro-rata, so this screen and any TCS report cannot come to different
+   * answers about the same bill — the same rule §12 applies to "what does this
+   * party owe".
+   *
+   * Pro-rata is the only defensible split: a part payment pays the WHOLE bill
+   * proportionally, because the customer does not get to pay for the goods and
+   * withhold the tax, and the department does not accept that they did.
+   *
+   * ── Why it returns nothing on the RECEIPT basis ──────────────────────────
+   * On `accounts.tcs_basis = 'RECEIPT'` the invoice carries no TCS: the receipt
+   * collects it, as a TCS_PAYABLE leg. Every bill would answer 0, so the query
+   * is skipped entirely rather than run to produce a map of zeroes — and the
+   * two bases never both apply.
+   */
+  private async loadBillTcs(
+    bills: readonly { billId: string; accYear: string }[],
+    settings: ReceiptSettings,
+  ): Promise<Map<string, { amount: Prisma.Decimal; pending: Prisma.Decimal }>> {
+    if (bills.length === 0 || settings.tcsBasis !== TcsBasis.SALES) {
+      return new Map();
+    }
+
+    // Raw, because the view is not a Prisma model. Parameterised as two arrays
+    // zipped by ordinality — never interpolated — so a bill id can carry no SQL.
+    const rows = await this.prisma.$queryRaw<
+      Array<{
+        bill_id: string;
+        bill_acc_year: string;
+        abl_tcs_amount: Prisma.Decimal;
+        tcs_pending: Prisma.Decimal;
+      }>
+    >`
+      SELECT v.bill_id, v.bill_acc_year, v.abl_tcs_amount, v.tcs_pending
+        FROM accounts.v_bill_tcs v
+        JOIN unnest(${bills.map((bill) => bill.billId)}::uuid[],
+                    ${bills.map((bill) => bill.accYear)}::bpchar[]) AS k(bill_id, acc_year)
+          ON k.bill_id = v.bill_id AND k.acc_year = v.bill_acc_year
+       WHERE v.abl_tcs_amount > 0`;
+
+    const tcs = new Map<string, { amount: Prisma.Decimal; pending: Prisma.Decimal }>();
+    for (const row of rows) {
+      tcs.set(`${row.bill_id}|${row.bill_acc_year}`, {
+        amount: row.abl_tcs_amount,
+        pending: row.tcs_pending,
+      });
+    }
+    return tcs;
   }
 
   /**

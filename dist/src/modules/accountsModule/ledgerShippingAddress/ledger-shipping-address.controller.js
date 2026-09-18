@@ -21,6 +21,7 @@ const ledger_shipping_address_response_dto_1 = require("./dto/ledger-shipping-ad
 const save_ledger_shipping_address_dto_1 = require("./dto/save-ledger-shipping-address.dto");
 const ledger_shipping_address_exception_filter_1 = require("./ledger-shipping-address-exception.filter");
 const ledger_shipping_address_service_1 = require("./ledger-shipping-address.service");
+const module_service_utils_1 = require("../../../common/utils/module-service.utils");
 const api_version_1 = require("../../../common/constants/api-version");
 let LedgerShippingAddressController = class LedgerShippingAddressController {
     ledgerShippingAddressService;
@@ -37,11 +38,27 @@ let LedgerShippingAddressController = class LedgerShippingAddressController {
             data,
         };
     }
-    async getById(saaId) {
-        const data = await this.ledgerShippingAddressService.getById(saaId);
+    async getById(saaId, ledgerId) {
+        if (saaId) {
+            const data = await this.ledgerShippingAddressService.getById(saaId);
+            return {
+                success: true,
+                message: 'Ledger shipping address fetched successfully',
+                data,
+            };
+        }
+        if (!ledgerId) {
+            (0, module_service_utils_1.throwAccountsBadRequest)('Either saaId or ledgerId is required', [
+                {
+                    field: 'ledgerId',
+                    message: "Pass saaId to fetch one address, or ledgerId to list a ledger's addresses",
+                },
+            ]);
+        }
+        const data = await this.ledgerShippingAddressService.listByLedger(ledgerId);
         return {
             success: true,
-            message: 'Ledger shipping address fetched successfully',
+            message: 'Ledger shipping addresses fetched successfully',
             data,
         };
     }
@@ -71,14 +88,28 @@ __decorate([
 __decorate([
     (0, common_1.Get)('get'),
     (0, common_1.Version)(api_version_1.API_VERSION),
-    (0, swagger_1.ApiOperation)({ summary: 'Get ledger shipping address by id' }),
-    (0, swagger_1.ApiQuery)({ name: 'saaId', schema: { type: 'string', format: 'uuid' } }),
-    (0, swagger_1.ApiOkResponse)({ type: ledger_shipping_address_response_dto_1.LedgerShippingAddressSuccessSingleDto }),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Get ledger shipping address by id, or list every address on one ledger',
+        description: "Pass saaId to fetch a single address, or ledgerId to list that ledger's addresses " +
+            '(default first, then oldest first). Exactly one of the two is required.',
+    }),
+    (0, swagger_1.ApiQuery)({ name: 'saaId', schema: { type: 'string', format: 'uuid' }, required: false }),
+    (0, swagger_1.ApiQuery)({ name: 'ledgerId', schema: { type: 'string', format: 'uuid' }, required: false }),
+    (0, swagger_1.ApiExtraModels)(ledger_shipping_address_response_dto_1.LedgerShippingAddressSuccessSingleDto, ledger_shipping_address_response_dto_1.LedgerShippingAddressSuccessListDto),
+    (0, swagger_1.ApiOkResponse)({
+        schema: {
+            oneOf: [
+                { $ref: (0, swagger_1.getSchemaPath)(ledger_shipping_address_response_dto_1.LedgerShippingAddressSuccessSingleDto) },
+                { $ref: (0, swagger_1.getSchemaPath)(ledger_shipping_address_response_dto_1.LedgerShippingAddressSuccessListDto) },
+            ],
+        },
+    }),
     (0, swagger_1.ApiBadRequestResponse)({ type: ledger_shipping_address_response_dto_1.LedgerShippingAddressErrorResponseDto }),
     (0, swagger_1.ApiNotFoundResponse)({ type: ledger_shipping_address_response_dto_1.LedgerShippingAddressErrorResponseDto }),
-    __param(0, (0, common_1.Query)('saaId', new common_1.ParseUUIDPipe({ version: '7' }))),
+    __param(0, (0, common_1.Query)('saaId', new common_1.DefaultValuePipe(undefined), new common_1.ParseUUIDPipe({ version: '7', optional: true }))),
+    __param(1, (0, common_1.Query)('ledgerId', new common_1.DefaultValuePipe(undefined), new common_1.ParseUUIDPipe({ version: '7', optional: true }))),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String]),
+    __metadata("design:paramtypes", [Object, Object]),
     __metadata("design:returntype", Promise)
 ], LedgerShippingAddressController.prototype, "getById", null);
 __decorate([

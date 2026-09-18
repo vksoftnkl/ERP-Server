@@ -283,6 +283,15 @@ export enum ReceiptSettingKey {
   WRITEOFF_APPROVAL_ABOVE = 'accounts.writeoff_approval_above',
   TCS_BASIS = 'accounts.tcs_basis',
   PPD_SLABS = 'accounts.ppd_slabs',
+  /**
+   * R20 — whether POST /receipts/amend exists for this client at all.
+   *
+   * COMPANY scope, not BRANCH like the six above: those are operating
+   * decisions a branch may reasonably differ on, this is a decision about how
+   * the business is CONTROLLED, and a BRANCH ceiling would let a branch switch
+   * on for itself what head office turned off.
+   */
+  ALLOW_POSTED_AMEND = 'accounts.allow_posted_amend',
 }
 
 /** `accounts.receipt_bill_sort` (R12). */

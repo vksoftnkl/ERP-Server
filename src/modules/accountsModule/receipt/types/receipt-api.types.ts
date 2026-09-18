@@ -49,6 +49,25 @@ export interface OpenBill {
   pdcHeld: number;
   /** R16 — what the slabs suggest at `onDate`. 0 when nothing qualifies. */
   ppdSuggested: number;
+  /**
+   * §2.13 — TCS under 206C(1H) already charged INSIDE this bill's amount.
+   *
+   * **0 unless `accounts.tcs_basis` is SALES.** On the RECEIPT basis the
+   * invoice carries no TCS at all; the receipt collects it, as a TCS_PAYABLE
+   * leg. The two never both apply, and a non-zero figure here is what tells
+   * the screen not to expect that leg.
+   */
+  tcsAmount: number;
+  /**
+   * How much of `tcsAmount` has not yet been collected — pro-rata of what is
+   * still pending on the bill, which is what `accounts.v_bill_tcs` computes.
+   *
+   * Pro-rata because a part payment pays the WHOLE bill proportionally: the
+   * customer does not choose to pay for the goods and withhold the tax. It is
+   * the figure that makes bill-wise TCS outstanding answerable, which is the
+   * question §2.13 exists for.
+   */
+  tcsPending: number;
 }
 
 /** One credit the party holds. */
@@ -287,6 +306,17 @@ export interface ReceiptHeader {
   avhStatusBy: string | null;
   avhPostedOn: string | null;
   avhCancelReason: string | null;
+  /**
+   * R20 — how many times this POSTED receipt has been restated in place.
+   *
+   * 0 is "as first posted". The slip prints "rev n" so a customer holding an
+   * older copy can be answered, and a client that intends to amend must hold
+   * this value and send it straight back as `baseRevision`: it is the
+   * optimistic lock, and an amend carries the WHOLE document, so without it
+   * the second of two clients silently undoes the first one's correction — on
+   * ledger legs, not on a master record.
+   */
+  avhRevisionNo: number;
   avhReversalVoucherId: string | null;
   avhAgainstVoucherId: string | null;
   avhPrintCount: number;
@@ -399,8 +429,76 @@ export interface ReceiptCancelPayload extends ReceiptStatusPayload {
   advanceBillsRemoved: string[];
 }
 
+/**
+ * R20 — `POST /receipts/amend`, a POSTED receipt restated in place.
+ *
+ * It extends `ReceiptPostPayload` because that is what an amend PRODUCES: the
+ * document is posted, by the same fifteen steps, from the new payload. The
+ * extra fields are what distinguishes a restatement from a first post —
+ * everything the unwind took apart, so a client (and a reviewer) can see that
+ * the old money went before the new money arrived.
+ *
+ * What is deliberately NOT here: a reversal voucher, and a status move. An
+ * amended receipt is POSTED before and POSTED after, keeping its
+ * `avh_voucher_id`, its `avh_voucher_no` and its `avh_voucher_refno`. The
+ * document is not being unmade, it is being restated, and the revision counter
+ * is what carries the change.
+ */
+export interface ReceiptAmendPayload extends ReceiptPostPayload {
+  /** What the client sent as `baseRevision`, and what it now is — always +1. */
+  fromRevision: number;
+  toRevision: number;
+  /** Why, as the operator typed it. The trail has to say why (§1). */
+  editRemark: string;
+  /**
+   * What the unwind took apart before the re-apply, counted.
+   *
+   * Counts rather than rows: the detail is in `audit.audit_log`, which holds
+   * the before and the after of every row touched, and duplicating it here
+   * would be a second account of the same event that could disagree with it.
+   */
+  unwound: {
+    /** Negative rows written — one per live adjustment the old post made. */
+    adjustmentsReversed: number;
+    /** Legs soft-deleted, across the receipt and every old PDC voucher. */
+    legsRemoved: number;
+    /** Old PDC voucher headers retired. Their numbers are not reused. */
+    pdcVouchersRemoved: number;
+    /** Old `acc_pdc_register` rows retired, freeing their instrument numbers. */
+    chequesRemoved: number;
+    /** Old ADVANCE bills soft-deleted. Each was proven unspent first. */
+    advanceBillsRemoved: number;
+    /** Old tender rows soft-deleted. */
+    tendersRemoved: number;
+  };
+}
+
 /** The regularise sweep (§2.1's cron half, as an endpoint). */
 export interface RegularisePdcPayload {
   asOf: string;
   billsRegularised: number;
+}
+
+/**
+ * `POST /receipts/delete` — a DRAFT thrown away.
+ *
+ * Not a `ReceiptStatusPayload`, because a delete is NOT a status move. The
+ * status column is left alone at DRAFT and the row goes out of play through
+ * `avh_is_deleted` — which is exactly the distinction `TxnStatusEvent.DELETED`
+ * exists to draw against `CANCELLED`. A payload claiming `toStatus: DELETED`
+ * would be reporting a status this schema has no value for.
+ */
+export interface ReceiptDeletePayload {
+  avhVoucherId: string;
+  avhAccYear: string;
+  /** Always null. A draft never took a number — that is what R10 is about. */
+  avhVoucherRefno: string | null;
+  /** DRAFT, unchanged. The row left play; it did not change its mind. */
+  status: VoucherStatus;
+  deletedOn: string;
+  deletedBy: string;
+  /** Tender rows soft-deleted with it. */
+  tendersDeleted: number;
+  /** Other-ledger lines that were sitting in `avh_draft_lines`. */
+  otherLinesDeleted: number;
 }

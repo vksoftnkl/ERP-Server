@@ -9,7 +9,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.LedgerShippingAddressSuccessDeleteDto = exports.LedgerShippingAddressSuccessSingleDto = exports.LedgerShippingAddressDeleteResultDto = exports.LedgerShippingAddressPayloadDto = exports.LedgerShippingAddressErrorResponseDto = exports.LedgerShippingAddressErrorFieldDto = void 0;
+exports.LedgerShippingAddressSuccessDeleteDto = exports.LedgerShippingAddressSuccessListDto = exports.LedgerShippingAddressListDto = exports.LedgerShippingAddressSuccessSingleDto = exports.LedgerShippingAddressDeleteResultDto = exports.LedgerShippingAddressPayloadDto = exports.LedgerShippingAddressErrorResponseDto = exports.LedgerShippingAddressErrorFieldDto = void 0;
 const swagger_1 = require("@nestjs/swagger");
 class LedgerShippingAddressErrorFieldDto {
     field;
@@ -221,6 +221,37 @@ __decorate([
     (0, swagger_1.ApiProperty)({ type: LedgerShippingAddressPayloadDto }),
     __metadata("design:type", LedgerShippingAddressPayloadDto)
 ], LedgerShippingAddressSuccessSingleDto.prototype, "data", void 0);
+class LedgerShippingAddressListDto {
+    data;
+    total;
+}
+exports.LedgerShippingAddressListDto = LedgerShippingAddressListDto;
+__decorate([
+    (0, swagger_1.ApiProperty)({ type: LedgerShippingAddressPayloadDto, isArray: true }),
+    __metadata("design:type", Array)
+], LedgerShippingAddressListDto.prototype, "data", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 2 }),
+    __metadata("design:type", Number)
+], LedgerShippingAddressListDto.prototype, "total", void 0);
+class LedgerShippingAddressSuccessListDto {
+    success;
+    message;
+    data;
+}
+exports.LedgerShippingAddressSuccessListDto = LedgerShippingAddressSuccessListDto;
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: true }),
+    __metadata("design:type", Boolean)
+], LedgerShippingAddressSuccessListDto.prototype, "success", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 'Ledger shipping addresses fetched successfully' }),
+    __metadata("design:type", String)
+], LedgerShippingAddressSuccessListDto.prototype, "message", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ type: LedgerShippingAddressListDto }),
+    __metadata("design:type", LedgerShippingAddressListDto)
+], LedgerShippingAddressSuccessListDto.prototype, "data", void 0);
 class LedgerShippingAddressSuccessDeleteDto {
     success;
     message;

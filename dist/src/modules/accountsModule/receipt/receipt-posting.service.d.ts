@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
 import { BillBalanceRecomputeService } from '../billBalance/bill-balance-recompute.service';
@@ -13,7 +14,7 @@ export declare class ReceiptPostingService {
     private readonly recompute;
     constructor(prisma: PrismaService, requestContext: RequestContextService, receiptService: ReceiptService, openItemsService: OpenItemsService, recompute: BillBalanceRecomputeService);
     post(dto: PostReceiptDto): Promise<ReceiptPostPayload>;
-    private postInTransaction;
+    postInTransaction(tx: Prisma.TransactionClient, dto: PostReceiptDto, actor: string): Promise<ReceiptPostPayload>;
     private lockHeader;
     private assertStatusMayPost;
     private assertWriteoffsApproved;
@@ -29,3 +30,4 @@ export declare class ReceiptPostingService {
     private postHeaders;
     private postDatedHeldByBill;
 }
+export declare function rethrowAllocationError(error: unknown): unknown;

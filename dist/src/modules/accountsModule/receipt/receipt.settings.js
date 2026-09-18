@@ -12,6 +12,7 @@ exports.RECEIPT_SETTING_DEFAULTS = {
     writeoffApprovalAbove: new client_1.Prisma.Decimal(0),
     tcsBasis: receipt_enum_1.TcsBasis.RECEIPT,
     ppdSlabs: [],
+    allowPostedAmend: false,
 };
 function readReceiptSettings(effective) {
     const byKey = new Map(effective.map((item) => [item.asdKey, item.value]));
@@ -22,6 +23,7 @@ function readReceiptSettings(effective) {
         writeoffApprovalAbove: pickDecimal(byKey.get(receipt_enum_1.ReceiptSettingKey.WRITEOFF_APPROVAL_ABOVE), exports.RECEIPT_SETTING_DEFAULTS.writeoffApprovalAbove),
         tcsBasis: pickEnum(byKey.get(receipt_enum_1.ReceiptSettingKey.TCS_BASIS), Object.values(receipt_enum_1.TcsBasis), exports.RECEIPT_SETTING_DEFAULTS.tcsBasis),
         ppdSlabs: (0, ppd_slab_1.parsePpdSlabs)(byKey.get(receipt_enum_1.ReceiptSettingKey.PPD_SLABS) ?? null),
+        allowPostedAmend: pickBoolean(byKey.get(receipt_enum_1.ReceiptSettingKey.ALLOW_POSTED_AMEND), exports.RECEIPT_SETTING_DEFAULTS.allowPostedAmend),
     };
 }
 function pickEnum(value, allowed, fallback) {

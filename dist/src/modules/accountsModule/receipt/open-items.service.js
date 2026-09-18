@@ -84,7 +84,11 @@ let OpenItemsService = class OpenItemsService {
                 ablStatus: true,
             },
         });
-        const pdcByBill = await this.loadPostDatedHeld(bills.map((bill) => ({ billId: bill.ablId, accYear: bill.ablAccYear })), onDate);
+        const billKeys = bills.map((bill) => ({ billId: bill.ablId, accYear: bill.ablAccYear }));
+        const [pdcByBill, tcsByBill] = await Promise.all([
+            this.loadPostDatedHeld(billKeys, onDate),
+            this.loadBillTcs(billKeys, settings),
+        ]);
         const rows = bills.map((bill) => {
             const pending = bill.ablPendingAmount ?? receipt_utils_1.ZERO;
             return {
@@ -105,6 +109,8 @@ let OpenItemsService = class OpenItemsService {
                     pendingAmount: (0, receipt_utils_1.money)(pending),
                     slabs: settings.ppdSlabs,
                 })),
+                tcsAmount: (0, receipt_utils_1.toAmount)(tcsByBill.get(`${bill.ablId}|${bill.ablAccYear}`)?.amount ?? receipt_utils_1.ZERO),
+                tcsPending: (0, receipt_utils_1.toAmount)(tcsByBill.get(`${bill.ablId}|${bill.ablAccYear}`)?.pending ?? receipt_utils_1.ZERO),
             };
         });
         const sortKeys = new Map(bills.map((bill) => [
@@ -138,6 +144,26 @@ let OpenItemsService = class OpenItemsService {
             held.set(key, (held.get(key) ?? receipt_utils_1.ZERO).plus(row.abjAmount));
         }
         return held;
+    }
+    async loadBillTcs(bills, settings) {
+        if (bills.length === 0 || settings.tcsBasis !== receipt_enum_1.TcsBasis.SALES) {
+            return new Map();
+        }
+        const rows = await this.prisma.$queryRaw `
+      SELECT v.bill_id, v.bill_acc_year, v.abl_tcs_amount, v.tcs_pending
+        FROM accounts.v_bill_tcs v
+        JOIN unnest(${bills.map((bill) => bill.billId)}::uuid[],
+                    ${bills.map((bill) => bill.accYear)}::bpchar[]) AS k(bill_id, acc_year)
+          ON k.bill_id = v.bill_id AND k.acc_year = v.bill_acc_year
+       WHERE v.abl_tcs_amount > 0`;
+        const tcs = new Map();
+        for (const row of rows) {
+            tcs.set(`${row.bill_id}|${row.bill_acc_year}`, {
+                amount: row.abl_tcs_amount,
+                pending: row.tcs_pending,
+            });
+        }
+        return tcs;
     }
     async loadCredits(companyId, partyId, side = 'CR') {
         const credits = await this.prisma.accBillBalance.findMany({

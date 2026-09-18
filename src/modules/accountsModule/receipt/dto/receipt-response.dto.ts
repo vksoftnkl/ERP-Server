@@ -20,8 +20,10 @@ import type {
   PartyRecentReceipt,
   ReceiptAdvanceBill,
   ReceiptAllocation,
+  ReceiptAmendPayload,
   ReceiptCancelPayload,
   ReceiptCheque,
+  ReceiptDeletePayload,
   ReceiptDraftPayload,
   ReceiptHeader,
   ReceiptLeg,
@@ -148,6 +150,26 @@ export class OpenBillDto implements OpenBill {
       'posts, and the server never re-seeds it.',
   })
   ppdSuggested!: number;
+
+  @ApiProperty({
+    example: 0,
+    description:
+      "§2.13 — TCS under 206C(1H) already charged INSIDE this bill's amount. **0 unless " +
+      'accounts.tcs_basis is SALES**: on the RECEIPT basis the invoice carries no TCS and the ' +
+      'receipt collects it as a TCS_PAYABLE leg instead. The two never both apply, so a non-zero ' +
+      'figure here is what tells the screen not to expect that leg.',
+  })
+  tcsAmount!: number;
+
+  @ApiProperty({
+    example: 0,
+    description:
+      'How much of tcsAmount has not been collected yet — pro-rata of what is still pending on ' +
+      'the bill (accounts.v_bill_tcs). Pro-rata because a part payment pays the WHOLE bill ' +
+      'proportionally: the customer does not get to pay for the goods and withhold the tax. ' +
+      'This is the figure that makes bill-wise TCS outstanding answerable.',
+  })
+  tcsPending!: number;
 }
 
 export class OpenCreditDto implements OpenCredit {
@@ -804,6 +826,16 @@ export class ReceiptHeaderDto implements ReceiptHeader {
   @ApiProperty({ nullable: true })
   avhCancelReason!: string | null;
 
+  @ApiProperty({
+    example: 0,
+    description:
+      'R20 — how many times this POSTED receipt has been restated in place by /receipts/amend. ' +
+      '0 is "as first posted". A client that intends to amend HOLDS this value and sends it ' +
+      'straight back as baseRevision: it is the optimistic lock, and an amend carries the whole ' +
+      'document, so without it one correction silently undoes another.',
+  })
+  avhRevisionNo!: number;
+
   @ApiProperty({ nullable: true, format: 'uuid' })
   avhReversalVoucherId!: string | null;
 
@@ -1044,6 +1076,77 @@ export class ReceiptPostSuccessDto {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+//  R20  the amend
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** What the unwind took apart before the re-apply put the receipt back. */
+export class ReceiptAmendUnwoundDto {
+  @ApiProperty({
+    example: 3,
+    description: 'Negative rows written — one per live adjustment the old post made.',
+  })
+  adjustmentsReversed!: number;
+
+  @ApiProperty({
+    example: 4,
+    description: 'Legs retired, across the receipt and its old PDC vouchers.',
+  })
+  legsRemoved!: number;
+
+  @ApiProperty({
+    example: 1,
+    description: 'Old post-dated cheque vouchers retired. Their numbers are NOT reused.',
+  })
+  pdcVouchersRemoved!: number;
+
+  @ApiProperty({
+    example: 1,
+    description:
+      'Old acc_pdc_register rows retired — freeing their instrument numbers, which is what lets ' +
+      'the corrected cheque be keyed as the number it should have been.',
+  })
+  chequesRemoved!: number;
+
+  @ApiProperty({
+    example: 1,
+    description: 'Old ADVANCE bills retired. Each was proven unspent first.',
+  })
+  advanceBillsRemoved!: number;
+
+  @ApiProperty({ example: 2, description: 'Tender rows the new payload replaced.' })
+  tendersRemoved!: number;
+}
+
+/**
+ * The amend answers with everything a POST answers with — because that is what
+ * it did — plus what it took apart to make room, and the revision it moved to.
+ */
+export class ReceiptAmendPayloadDto extends ReceiptPostPayloadDto implements ReceiptAmendPayload {
+  @ApiProperty({ example: 1, description: 'The revision the client sent as baseRevision.' })
+  fromRevision!: number;
+
+  @ApiProperty({ example: 2, description: 'Always fromRevision + 1. The slip prints "rev 2".' })
+  toRevision!: number;
+
+  @ApiProperty({ example: 'cheque no keyed 55491, actual 55419' })
+  editRemark!: string;
+
+  @ApiProperty({ type: ReceiptAmendUnwoundDto })
+  unwound!: ReceiptAmendUnwoundDto;
+}
+
+export class ReceiptAmendSuccessDto {
+  @ApiProperty({ example: true })
+  success!: true;
+
+  @ApiProperty({ example: 'Receipt rct00018 amended — now revision 2' })
+  message!: string;
+
+  @ApiProperty({ type: ReceiptAmendPayloadDto })
+  data!: ReceiptAmendPayloadDto;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 //  §4.8  the cancel
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -1139,6 +1242,58 @@ export class ReceiptCancelSuccessDto {
 
   @ApiProperty({ type: ReceiptCancelPayloadDto })
   data!: ReceiptCancelPayloadDto;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  Delete — a DRAFT thrown away
+// ═══════════════════════════════════════════════════════════════════════════
+
+export class ReceiptDeletePayloadDto implements ReceiptDeletePayload {
+  @ApiProperty({ format: 'uuid' })
+  avhVoucherId!: string;
+
+  @ApiProperty({ example: '2026-2027' })
+  avhAccYear!: string;
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    example: null,
+    description: 'Always null — a draft never took a number, which is the whole of R10.',
+  })
+  avhVoucherRefno!: string | null;
+
+  @ApiProperty({
+    enum: VoucherStatus,
+    example: VoucherStatus.DRAFT,
+    description:
+      'DRAFT, unchanged. A delete is not a status move: the row leaves play through ' +
+      'avh_is_deleted and avh_voucher_status has no DELETED value to stamp.',
+  })
+  status!: VoucherStatus;
+
+  @ApiProperty({ example: '2026-09-17T13:40:02.000Z' })
+  deletedOn!: string;
+
+  @ApiProperty({ format: 'uuid' })
+  deletedBy!: string;
+
+  @ApiProperty({ example: 2, description: 'Tender rows soft-deleted with the header.' })
+  tendersDeleted!: number;
+
+  @ApiProperty({ example: 1, description: 'Other-ledger lines that were in avh_draft_lines.' })
+  otherLinesDeleted!: number;
+}
+
+export class ReceiptDeleteSuccessDto {
+  @ApiProperty({ example: true })
+  success!: true;
+
+  @ApiProperty({ example: 'Draft receipt deleted — 2 tender row(s) removed' })
+  message!: string;
+
+  @ApiProperty({ type: ReceiptDeletePayloadDto })
+  data!: ReceiptDeletePayloadDto;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

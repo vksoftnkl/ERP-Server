@@ -16,6 +16,7 @@ const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
 const audit_log_service_1 = require("../../audit-log/audit-log.service");
 const charge_master_api_types_1 = require("./types/charge-master-api.types");
+const tax_rate_reference_helper_1 = require("../../Inventory/tax-rate-master/utils/tax-rate-reference.helper");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
 const CHARGE_MASTER_TABLE_NAME = 'charge master';
 const CHARGE_MASTER_AUDIT_SCREEN_NAME = 'Charge Master';
@@ -28,6 +29,7 @@ const CHARGE_OPTIONAL_FIELDS = [
     'chgCostAlloc',
     'chgTaxApl',
     'chgBeforeTax',
+    'chgTaxId',
     'chgSepPost',
     'chgManParty',
     'chgDispOrder',
@@ -37,6 +39,13 @@ const CHARGE_OPTIONAL_FIELDS = [
 const CHARGE_LEDGER_SELECT = {
     ledName: true,
     ledHsnSac: true,
+};
+const CHARGE_TAX_SELECT = {
+    taxName: true,
+};
+const CHARGE_RELATIONS = {
+    ledger: { select: CHARGE_LEDGER_SELECT },
+    tax: { select: CHARGE_TAX_SELECT },
 };
 let ChargeMasterService = class ChargeMasterService {
     prisma;
@@ -75,12 +84,12 @@ let ChargeMasterService = class ChargeMasterService {
     async getById(chgId) {
         const record = await this.prisma.chargeMaster.findFirst({
             where: { chgId, chgIsDeleted: false },
-            include: { ledger: { select: CHARGE_LEDGER_SELECT } },
+            include: CHARGE_RELATIONS,
         });
         if (!record) {
             this.throwNotFound(chgId);
         }
-        return this.toPayload(record, record.ledger ?? null);
+        return this.toPayload(record, record.ledger ?? null, record.tax ?? null);
     }
     async getByModule(chgModule) {
         const records = await this.prisma.chargeMaster.findMany({
@@ -89,10 +98,10 @@ let ChargeMasterService = class ChargeMasterService {
                 chgIsActive: true,
                 chgModule: { in: [...(0, charge_master_api_types_1.resolveChargeModules)(chgModule)] },
             },
-            include: { ledger: { select: CHARGE_LEDGER_SELECT } },
+            include: CHARGE_RELATIONS,
             orderBy: [{ chgDispOrder: { sort: 'asc', nulls: 'last' } }, { chgName: 'asc' }],
         });
-        return records.map((record) => this.toPayload(record, record.ledger ?? null));
+        return records.map((record) => this.toPayload(record, record.ledger ?? null, record.tax ?? null));
     }
     async softDelete(chgId) {
         return this.prisma.$transaction(async (tx) => {
@@ -145,7 +154,9 @@ let ChargeMasterService = class ChargeMasterService {
         const normalizedCode = (0, module_service_utils_1.normalizeNullableString)(saveChargeMasterDto.chgCode) ?? null;
         const role = saveChargeMasterDto.chgRole ?? null;
         const module = saveChargeMasterDto.chgModule;
+        const taxId = saveChargeMasterDto.chgTaxId ?? null;
         this.ensureValuesAreAllowed(this.guardedValues(saveChargeMasterDto));
+        this.ensureTaxIdIsApplicable(taxId, saveChargeMasterDto.chgTaxApl ?? false, saveChargeMasterDto.chgBeforeTax ?? false);
         const data = {
             chgName: normalizedName,
             chgModule: module,
@@ -162,10 +173,11 @@ let ChargeMasterService = class ChargeMasterService {
         try {
             return await this.prisma.$transaction(async (tx) => {
                 const ledgerName = await this.ensureLedgerExists(tx, saveChargeMasterDto.chgLedgerCode);
+                const tax = await this.resolveTaxRate(tx, taxId, true);
                 await this.ensureCodeIsUnique(tx, normalizedCode);
                 await this.ensureRoleIsUnique(tx, role, module);
                 const created = await tx.chargeMaster.create({ data });
-                const payload = this.toPayload(created, ledgerName);
+                const payload = this.toPayload(created, ledgerName, tax);
                 await this.auditLogService.logEntityChange({
                     action: 'New',
                     tableName: CHARGE_MASTER_TABLE_NAME,
@@ -205,8 +217,19 @@ let ChargeMasterService = class ChargeMasterService {
                 const nextRole = (0, module_service_utils_1.hasOwnProperty)(saveChargeMasterDto, 'chgRole')
                     ? (saveChargeMasterDto.chgRole ?? null)
                     : existing.chgRole;
+                const nextTaxId = (0, module_service_utils_1.hasOwnProperty)(saveChargeMasterDto, 'chgTaxId')
+                    ? (saveChargeMasterDto.chgTaxId ?? null)
+                    : existing.chgTaxId;
+                const nextTaxApl = (0, module_service_utils_1.hasOwnProperty)(saveChargeMasterDto, 'chgTaxApl')
+                    ? (saveChargeMasterDto.chgTaxApl ?? false)
+                    : existing.chgTaxApl;
+                const nextBeforeTax = (0, module_service_utils_1.hasOwnProperty)(saveChargeMasterDto, 'chgBeforeTax')
+                    ? (saveChargeMasterDto.chgBeforeTax ?? false)
+                    : existing.chgBeforeTax;
                 this.ensureValuesAreAllowed(this.guardedValues(saveChargeMasterDto, { chgModule: nextModule, chgRole: nextRole }));
+                this.ensureTaxIdIsApplicable(nextTaxId, nextTaxApl, nextBeforeTax);
                 const ledgerName = await this.ensureLedgerExists(tx, saveChargeMasterDto.chgLedgerCode);
+                const tax = await this.resolveTaxRate(tx, nextTaxId, nextTaxId !== existing.chgTaxId);
                 await this.ensureCodeIsUnique(tx, nextCode, chgId);
                 await this.ensureRoleIsUnique(tx, nextRole, nextModule, chgId);
                 const data = {
@@ -221,7 +244,7 @@ let ChargeMasterService = class ChargeMasterService {
                 this.applyOptionalFields(data, saveChargeMasterDto);
                 data.chgCode = nextCode;
                 const updated = await tx.chargeMaster.update({ where: { chgId }, data });
-                const payload = this.toPayload(updated, ledgerName);
+                const payload = this.toPayload(updated, ledgerName, tax);
                 await this.auditLogService.logEntityChange({
                     action: 'update',
                     tableName: CHARGE_MASTER_TABLE_NAME,
@@ -253,6 +276,25 @@ let ChargeMasterService = class ChargeMasterService {
             ]);
         }
         return ledger;
+    }
+    async resolveTaxRate(tx, taxId, validate) {
+        if (taxId === null) {
+            return null;
+        }
+        if (validate) {
+            await (0, tax_rate_reference_helper_1.assertTaxRateRefs)(tx, [{ taxId, field: 'chgTaxId' }], 'Invalid charge tax rate');
+        }
+        return tx.taxRateMaster.findUnique({ where: { taxId }, select: CHARGE_TAX_SELECT });
+    }
+    ensureTaxIdIsApplicable(taxId, taxApl, beforeTax) {
+        if (taxId !== null && (!taxApl || beforeTax)) {
+            (0, module_service_utils_1.throwMasterBadRequest)('Invalid charge tax rate', [
+                {
+                    field: 'chgTaxId',
+                    message: 'chgTaxId is only meaningful on a charge that carries its own GST — set chgTaxApl and leave chgBeforeTax false, or clear chgTaxId',
+                },
+            ]);
+        }
     }
     async ensureCodeIsUnique(tx, chargeCode, excludeId) {
         if (chargeCode === null) {
@@ -344,14 +386,14 @@ let ChargeMasterService = class ChargeMasterService {
         ]);
         if ((0, module_service_utils_1.isForeignKeyConstraintError)(error)) {
             (0, module_service_utils_1.throwMasterBadRequest)('Invalid relation reference', [
-                { field: 'request', message: 'Referenced ledger does not exist' },
+                { field: 'request', message: 'Referenced ledger or tax rate does not exist' },
             ]);
         }
     }
     throwNotFound(chgId) {
         (0, module_service_utils_1.throwMasterNotFound)('Charge not found', 'chgId', `No active charge found with id ${chgId}`);
     }
-    toPayload(record, ledger = null) {
+    toPayload(record, ledger = null, tax = null) {
         return {
             chgId: record.chgId,
             chgName: record.chgName,
@@ -369,6 +411,8 @@ let ChargeMasterService = class ChargeMasterService {
             ledHsnSac: ledger?.ledHsnSac ?? null,
             chgTaxApl: record.chgTaxApl,
             chgBeforeTax: record.chgBeforeTax,
+            chgTaxId: record.chgTaxId,
+            chgTaxName: tax?.taxName ?? null,
             chgSepPost: record.chgSepPost,
             chgManParty: record.chgManParty,
             chgDispOrder: record.chgDispOrder,

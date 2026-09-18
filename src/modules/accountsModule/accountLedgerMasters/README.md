@@ -43,8 +43,23 @@ that sit under an account group in the chart of accounts — together with each 
   resolved DTO ([controller `validateBody`](account-ledger-masters.controller.ts)).
 - **Batch mode is all-or-nothing:** the whole array runs in one `$transaction`; if any entry
   fails, nothing is saved.
-- On create, `ledLedgerType` is forced to `'PARTY'` to satisfy the `chk_led_ledger_type`
-  DB check constraint (which only permits uppercase domain values).
+- On create, `ledLedgerType` defaults to `'PARTY'` to satisfy the `chk_led_ledger_type`
+  DB check constraint (which only permits uppercase domain values); a payload may still
+  send any member of `LedLedgerType`.
+- **Five columns that carry a live DB CHECK are now validated as enums** —
+  `ledLedgerType`, `ledTypeOfSupply`, `ledMsmeType`, `ledGstDutyHead`, `ledRoundingMethod`.
+  They were plain strings, so a bad value reached Postgres and came back as a raw `23514`:
+  a `500` with `errors: []`, the one response on this endpoint that told you nothing. Enum
+  members are copied from the constraint *including case* — the CHECK is case-sensitive, so
+  `'Goods'` passes and `'goods'` does not.
+- **Six balance columns are not writable.** `ledObAmount`, `ledObType`, `ledObAsOn`,
+  `ledTotalDr`, `ledTotalCr` and `ledTotalBalance` were removed from the save DTO on
+  2026-09-17; sending any of them is a `400` ("property … should not exist"). A **shared**
+  ledger (`ledCompanyId` NULL) spans every company, so one balance on its row cannot be right
+  for all of them. `accounts.acc_opening_balance` keys on
+  `op_company_id + op_branch_id + op_acc_year`, which is the correct grain, and it is built and
+  working behind menu 55. All six stay in the GET payload, read-only, the way `ledIsDeleted`
+  already was.
 
 ## Nested bank accounts
 
@@ -64,7 +79,24 @@ create/update payload:
 
 ## Business rules
 
-- **Ledger name uniqueness** is per company, case-insensitive (`ensureNameIsUnique`).
+- **Ledger name uniqueness** is *unique within what one company can see*, which is three rules,
+  not one (`ensureNameIsUnique`, and `20260917110000` behind it):
+
+  1. no two **shared** ledgers (`ledCompanyId` NULL) share a name — `uq_led_name_shared`;
+  2. no two ledgers in the **same company** share a name — `uq_led_name_company`;
+  3. a company-scoped ledger must not collide with a **shared** one — enforced by the trigger
+     `tr_led_name_scope`, because no index can say "must not match a row in the other scope".
+
+  NULL `ledCompanyId` means *shared by every company* and is deliberate: one customer billed in
+  four companies is one ledger. Postgres treats NULLs as distinct, so the older
+  `uq_led_name_per_company` is inert for exactly those rows — 50 of 61 ledgers on the live box.
+  Matching is case-insensitive (`lower()`) because Tally matches master names that way, and a
+  Tally company file receives the shared ledgers **plus** that company's own; Tally merges two
+  `<LEDGER>` entries with the same `NAME` into one and combines their balances, silently.
+
+  Rule 3 is skipped — by the service and by the trigger alike — when neither the name nor the
+  scope is changing, so a row that already violates it (there is one such pair on the live box,
+  a trade partner that is both a customer and a supplier) stays editable.
 - **Bank account number uniqueness** is per ledger, case-insensitive
   (`ensureBankAccountNumberIsUnique`).
 - The target **account group must exist and be active** (`ensureGroupExists`, validates
@@ -76,6 +108,23 @@ create/update payload:
   `20260912100000_retire_ledger_gst_columns`). `fk_led_tax` only proves the row exists, so
   `ensureTaxRateExists` additionally rejects a soft-deleted or inactive rate with a 400 on
   `ledTaxId`.
+- **`ledItcEligibility`** — GST input tax credit eligibility (`ELIGIBLE`, `INELIGIBLE_17_5`,
+  `INELIGIBLE_OTHER`, `CAPITAL_GOODS`, `INPUT_SERVICES`; `chk_led_itc_eligibility`). Without it
+  a blocked s.17(5) credit — motor vehicles, food and beverage, works contract, personal
+  consumption — cannot be told apart from an eligible one, **GSTR-3B table 4(D) "Ineligible ITC"
+  cannot be produced at all**, and 4(A) is overstated by exactly those amounts. NULL means *not
+  stated*, which is correct for a bank, cash, party or income ledger. Tally's equivalent is the
+  ledger's "Eligibility for input credit".
+- **`ledIsReverseCharge`** — this party or expense attracts RCM. It lives on the ledger and not
+  on `inventory.tax_rate_master`, because reverse charge is decided by who you buy from and what
+  (unregistered purchase, GTA, legal services, director's fees, import of services), while a rate
+  row is shared with ordinary forward-charge sales at the same percentage. The document flag
+  `acc_voucher_doc_register.gdr_is_reverse_charge` defaults from it.
+- **`ledId` is also the party's id.** `sales.customers.cus_id` and `purchase.suppliers.sup_id`
+  hold the same uuid as the ledger they are linked to, and since `20260917100000` `fk_cus_ledger`
+  / `fk_sup_ledger` say so. Creating a ledger for a party goes through
+  `createLedgerWithinTx` / `updateLedgerWithinTx`, which those two services compose into their own
+  transaction.
 - **Soft delete only** — for GST / audit retention, rows are never hard-deleted. Deleting flags
   `ledIsDeleted = true` / `ledIsActive = false` (and clears `lbaIsDefault` for bank accounts).
 - **Every mutation is audited** via `AuditLogService.logEntityChange` (`New` / `update` /

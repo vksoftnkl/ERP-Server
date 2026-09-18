@@ -116,6 +116,8 @@ class AccountLedgerMasterPayloadDto {
     ledTdsDeducteeType;
     ledTdsNatureOfPayment;
     ledIsTcsApplicable;
+    ledItcEligibility;
+    ledIsReverseCharge;
     ledObAmount;
     ledObType;
     ledObAsOn;
@@ -446,6 +448,22 @@ __decorate([
     (0, swagger_1.ApiProperty)(),
     __metadata("design:type", Boolean)
 ], AccountLedgerMasterPayloadDto.prototype, "ledIsTcsApplicable", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        enum: account_ledger_master_enum_1.LedItcEligibility,
+        enumName: 'LedItcEligibility',
+        nullable: true,
+        description: 'GST input tax credit eligibility. Drives GSTR-3B 4(A) vs 4(D). Null on a ledger ' +
+            'with no ITC question to answer.',
+    }),
+    __metadata("design:type", Object)
+], AccountLedgerMasterPayloadDto.prototype, "ledItcEligibility", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        description: 'This party or expense attracts reverse charge; the document flag defaults from it.',
+    }),
+    __metadata("design:type", Boolean)
+], AccountLedgerMasterPayloadDto.prototype, "ledIsReverseCharge", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)(),
     __metadata("design:type", Number)

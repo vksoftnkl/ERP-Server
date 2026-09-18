@@ -76,6 +76,19 @@ model AccLedgerMaster {
   ledTdsDeducteeType       String?   @db.VarChar(40)                                  @map("led_tds_deductee_type")
   ledTdsNatureOfPayment    String?   @db.VarChar(80)                                  @map("led_tds_nature_of_payment")
   ledIsTcsApplicable       Boolean   @default(false)                                   @map("led_is_tcs_applicable")
+  // Input tax credit. Allowed values (ELIGIBLE / INELIGIBLE_17_5 / INELIGIBLE_OTHER /
+  // CAPITAL_GOODS / INPUT_SERVICES) are behind chk_led_itc_eligibility (20260917120000)
+  // AND the app-layer LedItcEligibility enum, which is what turns a bad value into a
+  // 400 instead of a raw 23514. Tally's equivalent is the ledger's "Eligibility for
+  // input credit". Without it GSTR-3B table 4(D) cannot be produced and 4(A) is
+  // overstated by every blocked s.17(5) credit.
+  ledItcEligibility        String?   @db.VarChar(20)                                  @map("led_itc_eligibility")
+  // Reverse charge is decided by WHO you buy from and WHAT (unregistered purchase,
+  // GTA, legal services, director's fees, import of services) — not by the rate row,
+  // which is shared with ordinary forward-charge sales at the same percentage. So it
+  // lives here, on the party or expense ledger, and the document flag
+  // (acc_voucher_doc_register.gdr_is_reverse_charge) defaults from it.
+  ledIsReverseCharge       Boolean   @default(false)                                   @map("led_is_reverse_charge")
   // 9) Opening / Running Balance
   ledObAmount              Decimal   @default(0) @db.Decimal                          @map("led_ob_amount")
   // Allowed values (DR/CR) validated in the app layer (accountLedgerMasters
@@ -122,6 +135,11 @@ model AccLedgerMaster {
   billAdjustmentSettleLedgers AccBillAdjustment[] @relation("BillAdjustmentSettleLedger")
   pdcParties               AccPdcRegister[]       @relation("PdcParty")
   pdcBankLedgers           AccPdcRegister[]       @relation("PdcBankLedger")
+  // §2.14 — the quarterly return registers. Back-relations only; nothing reads
+  // a ledger's register rows through the ledger, but Prisma requires the
+  // opposite side of every relation to be declared.
+  tcsCollections           AccTcsRegister[]       @relation("TcsCollectee")
+  tdsEntries               AccTdsRegister[]       @relation("TdsParty")
   chargeMasters            ChargeMaster[]
   chargeDetails            TransactionChargeDetail[]
   saleOrderAdvanceLedgers  SaleOrder[]              @relation("SaleOrderAdvanceLedger")
@@ -132,6 +150,14 @@ model AccLedgerMaster {
   taxRateLedgers           TaxRateLedger[]
   ledgerMaps               AccLedgerMap[]
   openingBalances          AccOpeningBalance[]
+  // cus_id IS led_id and sup_id IS led_id — a 1:1 identity link, not a lookup.
+  // fk_cus_ledger / fk_sup_ledger (20260917100000) are what finally say so; before
+  // them four live parties had no ledger row at all and could not be posted to.
+  customer                 Customer?              @relation("CustomerLedger")
+  supplier                 Supplier?              @relation("SupplierLedger")
+  // Kept for the exact-case scoped case; the three rules below are what actually hold,
+  // because this one is INERT for shared rows (led_company_id IS NULL — 50 of 61
+  // ledgers) and case-sensitive besides.
   @@unique([ledCompanyId, ledName], name: "uq_led_name_per_company")
   @@unique([ledCompanyId, ledTallyName], name: "uq_led_tally_name_per_company")
   @@index([ledCompanyId], name: "idx_led_company_id")
@@ -143,6 +169,17 @@ model AccLedgerMaster {
   // Partial unique indexes — enforced via raw SQL migration, not expressible in Prisma schema:
   //   uq_led_tally_guid       UNIQUE (led_tally_guid)                       WHERE led_tally_guid IS NOT NULL
   //   uq_led_tally_master_id  UNIQUE (led_company_id, led_tally_master_id)  WHERE led_tally_master_id IS NOT NULL
+  //
+  // NAME UNIQUENESS — the same three rules as acc_group_master (20260917110000):
+  //   uq_led_name_shared   UNIQUE (lower(led_name)) WHERE led_company_id IS NULL     AND NOT led_is_deleted
+  //   uq_led_name_company  UNIQUE (led_company_id, lower(led_name)) WHERE led_company_id IS NOT NULL AND NOT led_is_deleted
+  //   tr_led_name_scope    BEFORE INSERT/UPDATE — a company-scoped ledger must not
+  //                        collide with a SHARED one.
+  // The trigger fires only when the name or the scope actually CHANGES, which
+  // grandfathers the one live cross-scope pair ('VAPI BATTERY & AUTO ELECTRICALS',
+  // shared + Acme Foods) — the same trade partner as both customer and supplier —
+  // rather than locking both rows out of every unrelated edit. Resolving that pair is
+  // a naming decision, not a schema one.
   @@map("acc_ledger_master")
   @@schema("accounts")
 }

@@ -67,6 +67,31 @@ export class LedgerShippingAddressService {
     return this.toPayload(record);
   }
 
+  // §2.6 — every shipping address on one ledger. The table carries saa_gstin,
+  // saa_state_code and saa_distance_km, which is PLACE OF SUPPLY for a bill-to /
+  // ship-to split and the e-way bill distance: compliance, not convenience. The
+  // screen that edits them needs the list, and getById could only ever answer for
+  // an address whose id the caller already had.
+  //
+  // Default-first then oldest-first, matching idx_saa_ledger_default and the order
+  // the ledger's bank accounts already come back in, so the two nested grids agree.
+  async listByLedger(
+    ledgerId: string,
+  ): Promise<{ data: LedgerShippingAddressPayload[]; total: number }> {
+    const records = await this.prisma.accShipAddr.findMany({
+      where: {
+        saaLedgerId: ledgerId,
+        saaIsDeleted: false,
+      },
+      orderBy: [{ saaIsDefault: 'desc' }, { saaCreatedOn: 'asc' }],
+    });
+
+    return {
+      data: records.map((record) => this.toPayload(record)),
+      total: records.length,
+    };
+  }
+
   async softDelete(saaId: string): Promise<{ saaId: string; deleted: true }> {
     return this.prisma.$transaction(async (tx) => {
       const existing = await tx.accShipAddr.findFirst({
