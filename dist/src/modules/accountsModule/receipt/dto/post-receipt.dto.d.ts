@@ -10,6 +10,7 @@ export declare class PostReceiptAllocationDto {
     amount: number;
     discount?: number;
     writeoff?: number;
+    roundoff?: number;
     writeoffApprovedBy?: string | null;
 }
 export declare class PostReceiptCreditDto {

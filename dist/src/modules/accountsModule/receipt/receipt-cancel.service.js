@@ -230,7 +230,7 @@ let ReceiptCancelService = class ReceiptCancelService {
                 })),
             });
         }
-        const adjustments = await tx.accBillAdjustment.findMany({
+        const forward = await tx.accBillAdjustment.findMany({
             where: {
                 abjVoucherId: voucher.avhVoucherId,
                 abjVoucherAccYear: voucher.avhAccYear,
@@ -238,6 +238,15 @@ let ReceiptCancelService = class ReceiptCancelService {
                 abjReversalOfId: null,
             },
         });
+        const reversed = await tx.accBillAdjustment.findMany({
+            where: {
+                abjReversalOfId: { in: forward.map((row) => row.abjId) },
+                abjIsDeleted: false,
+            },
+            select: { abjReversalOfId: true },
+        });
+        const alreadyReversed = new Set(reversed.map((row) => row.abjReversalOfId).filter((id) => id !== null));
+        const adjustments = forward.filter((row) => !alreadyReversed.has(row.abjId));
         if (adjustments.length > 0) {
             await tx.accBillAdjustment.createMany({
                 data: adjustments.map((row, index) => ({
@@ -306,7 +315,7 @@ let ReceiptCancelService = class ReceiptCancelService {
                 legCount: legs.length,
                 adjustmentCount: adjustments.length,
             },
-            bills: adjustments.map((row) => ({
+            bills: forward.map((row) => ({
                 billId: row.abjBillId,
                 accYear: row.abjBillAccYear,
             })),

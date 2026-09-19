@@ -72,10 +72,46 @@ export interface RecomputedBill extends BillKey {
   writeoffAmount: Prisma.Decimal;
   pendingAmount: Prisma.Decimal;
   settledOn: Date | null;
+  /**
+   * Did this bill's stored figures actually MOVE?
+   *
+   * The recompute is idempotent, which is what makes it safe to call from the
+   * posting path, from a cron and from a repair script without any of them
+   * knowing about the others — but it also means "how many bills did I look at"
+   * and "how many bills changed" are different questions, and only the second
+   * one tells an operator whether a sweep did anything. `regularisePostDated`
+   * reports on this rather than on the size of its batch.
+   *
+   * It is also what keeps a no-op sweep from touching the row: an UPDATE that
+   * writes the figures a bill already has still bumps `abl_modified_on` and
+   * still takes a row lock, and a nightly cron doing that to every bill holding
+   * a matured cheque is a night of write traffic that changes nothing.
+   */
+  changed: boolean;
 }
 
 /** ck_abj_adj_type — the four that fold into abl_alloc_amount. */
 const ALLOCATING_TYPES = ['ALLOCATION', 'ADVANCE_ADJUST', 'NOTE_ADJUST', 'TRANSFER'];
+
+/**
+ * The two that fold into `abl_disc_amount`.
+ *
+ * ROUND_OFF is a distinct `abj_adj_type` — its leg is debited to the Round Off
+ * ledger and a discount's to Discount Allowed, and the row has to say what the
+ * leg says — but it shares this CACHE column rather than getting one of its
+ * own.
+ *
+ * Why: `abl_pending_amount` and `abl_status` are GENERATED from
+ * (bill − alloc − disc − writeoff), so a fourth bucket means dropping and
+ * recreating both expressions on a LIST-partitioned table. That is a rewrite of
+ * every partition to split a cache that nothing reads as "discounts" — every
+ * consumer in this codebase adds `abl_disc_amount` to `abl_writeoff_amount` and
+ * asks "how much of this bill is already accounted for". A round-off is.
+ *
+ * The exact split is always available from `acc_bill_adjustment.abj_adj_type`,
+ * which is the authoritative record; this column is a running total.
+ */
+const DISCOUNTING_TYPES = ['DISCOUNT', 'ROUND_OFF'];
 
 const ZERO = new Prisma.Decimal(0);
 
@@ -151,7 +187,7 @@ export class BillBalanceRecomputeService {
       }
       if (ALLOCATING_TYPES.includes(row.abjAdjType)) {
         bucket.alloc = bucket.alloc.plus(row.abjAmount);
-      } else if (row.abjAdjType === 'DISCOUNT') {
+      } else if (DISCOUNTING_TYPES.includes(row.abjAdjType)) {
         bucket.disc = bucket.disc.plus(row.abjAmount);
       } else if (row.abjAdjType === 'WRITEOFF') {
         bucket.writeoff = bucket.writeoff.plus(row.abjAmount);
@@ -161,11 +197,23 @@ export class BillBalanceRecomputeService {
       }
     }
 
+    // The four cached columns come back as well as the bill amount: they are
+    // what the freshly-derived figures are compared against, and without them
+    // there is no way to tell a sweep that moved something from one that did
+    // not.
     const stored = await client.accBillBalance.findMany({
       where: {
         OR: unique.map((bill) => ({ ablId: bill.billId, ablAccYear: bill.accYear })),
       },
-      select: { ablId: true, ablAccYear: true, ablBillAmount: true },
+      select: {
+        ablId: true,
+        ablAccYear: true,
+        ablBillAmount: true,
+        ablAllocAmount: true,
+        ablDiscAmount: true,
+        ablWriteoffAmount: true,
+        ablSettledOn: true,
+      },
     });
 
     const now = new Date();
@@ -183,24 +231,39 @@ export class BillBalanceRecomputeService {
       // which is why this is recomputed rather than stamped once.
       const settledOn = pending.lessThanOrEqualTo(0) ? bucket.lastOn : null;
 
-      await client.accBillBalance.update({
-        where: { ablId_ablAccYear: { ablId: bill.ablId, ablAccYear: bill.ablAccYear } },
-        data: {
-          ablAllocAmount: bucket.alloc.toDecimalPlaces(2),
-          ablDiscAmount: bucket.disc.toDecimalPlaces(2),
-          ablWriteoffAmount: bucket.writeoff.toDecimalPlaces(2),
-          ablSettledOn: settledOn,
-          ablModifiedOn: now,
-        },
-      });
+      const alloc = bucket.alloc.toDecimalPlaces(2);
+      const disc = bucket.disc.toDecimalPlaces(2);
+      const writeoff = bucket.writeoff.toDecimalPlaces(2);
+      const changed =
+        !bill.ablAllocAmount.equals(alloc) ||
+        !bill.ablDiscAmount.equals(disc) ||
+        !bill.ablWriteoffAmount.equals(writeoff) ||
+        sameDay(bill.ablSettledOn, settledOn) === false;
+
+      // Only when something moved. A no-op UPDATE writes the same figures back,
+      // bumps abl_modified_on and takes a row lock for nothing — and on the
+      // nightly sweep that is every bill that ever held a cheque.
+      if (changed) {
+        await client.accBillBalance.update({
+          where: { ablId_ablAccYear: { ablId: bill.ablId, ablAccYear: bill.ablAccYear } },
+          data: {
+            ablAllocAmount: alloc,
+            ablDiscAmount: disc,
+            ablWriteoffAmount: writeoff,
+            ablSettledOn: settledOn,
+            ablModifiedOn: now,
+          },
+        });
+      }
 
       results.push({
         billId: bill.ablId,
         accYear: bill.ablAccYear,
+        changed,
         billAmount: bill.ablBillAmount,
-        allocAmount: bucket.alloc.toDecimalPlaces(2),
-        discAmount: bucket.disc.toDecimalPlaces(2),
-        writeoffAmount: bucket.writeoff.toDecimalPlaces(2),
+        allocAmount: alloc,
+        discAmount: disc,
+        writeoffAmount: writeoff,
         pendingAmount: pending,
         settledOn,
       });
@@ -231,13 +294,20 @@ export class BillBalanceRecomputeService {
    * night for no gain.
    */
   async regularisePostDated(
+    scope: RegulariseScope,
     asOf: Date = new Date(),
     batchSize = 500,
-  ): Promise<{ asOf: string; billsRegularised: number }> {
+  ): Promise<RegulariseResult> {
     const asOfDate = startOfDayUtc(asOf);
 
     const due = await this.prisma.accBillAdjustment.findMany({
       where: {
+        // R-B1 — the sweep is SCOPED. Without this the route regularised every
+        // company in the database on one authenticated call: idempotent, so it
+        // corrupted nothing, and still a write across a tenant boundary.
+        abjCompanyId: scope.companyId,
+        ...(scope.branchId ? { abjBranchId: scope.branchId } : {}),
+        ...(scope.accYear ? { abjAccYear: scope.accYear } : {}),
         abjIsPostDated: true,
         abjIsDeleted: false,
         abjAdjDate: { lte: asOfDate },
@@ -247,27 +317,78 @@ export class BillBalanceRecomputeService {
     });
 
     const bills = due.map((row) => ({ billId: row.abjBillId, accYear: row.abjBillAccYear }));
-    let count = 0;
+    let examined = 0;
+    let regularised = 0;
 
     for (let offset = 0; offset < bills.length; offset += batchSize) {
       const batch = bills.slice(offset, offset + batchSize);
-      await this.prisma.$transaction(
+      const moved = await this.prisma.$transaction(
         async (tx) => {
-          await this.recomputeBills(tx, batch, asOfDate);
+          const recomputed = await this.recomputeBills(tx, batch, asOfDate);
+          return recomputed.filter((bill) => bill.changed).length;
         },
         { maxWait: 10_000, timeout: 60_000 },
       );
-      count += batch.length;
+      examined += batch.length;
+      regularised += moved;
     }
 
     this.logger.log(
-      `Regularised ${count} bill(s) holding matured post-dated settlements as at ${asOfDate
-        .toISOString()
-        .slice(0, 10)}`,
+      `Regularised ${regularised} of ${examined} bill(s) holding matured post-dated ` +
+        `settlements as at ${asOfDate.toISOString().slice(0, 10)}`,
     );
 
-    return { asOf: asOfDate.toISOString().slice(0, 10), billsRegularised: count };
+    return {
+      asOf: asOfDate.toISOString().slice(0, 10),
+      billsRegularised: regularised,
+      billsExamined: examined,
+    };
   }
+}
+
+/**
+ * Who the sweep is run for.
+ *
+ * ── Why the company is required and the other two are not ────────────────
+ * The company is a TENANT BOUNDARY: a sweep is a write, and no authenticated
+ * caller has business writing another company's bills. It is not negotiable and
+ * there is no "all companies" value.
+ *
+ * The branch and the year are FILTERS, and requiring them would be actively
+ * wrong rather than merely strict — the same reason `/receipts/open-items`
+ * takes neither:
+ *
+ *   · `acc_bill_balance` is partitioned by the year the bill ORIGINATED in and
+ *     is never carried forward, so a sweep pinned to this year would walk past
+ *     every bill raised before it — which, on 2 April, is nearly all of them.
+ *
+ *   · A bill raised at one branch is settled at another all the time, and
+ *     outstanding is company-wide by construction (`ux_abl_doc_refno` carries
+ *     no branch column). Pinning the sweep to a branch would leave a matured
+ *     cheque uncounted because it was collected on a different beat.
+ *
+ * So both narrow the sweep when the caller means to narrow it, and the default
+ * — the whole company — is the one a nightly cron wants.
+ */
+export interface RegulariseScope {
+  companyId: string;
+  branchId?: string | null;
+  accYear?: string | null;
+}
+
+export interface RegulariseResult {
+  asOf: string;
+  /**
+   * Bills whose stored figures actually MOVED. This is the number that answers
+   * "did the run do anything", and it is 0 on a second run over the same data.
+   */
+  billsRegularised: number;
+  /**
+   * Bills the sweep looked at — every bill holding a matured post-dated row in
+   * scope, whether or not it needed changing. Reported beside the first figure
+   * so a 0 reads as "nothing left to do" rather than as "nothing was checked".
+   */
+  billsExamined: number;
 }
 
 interface Totals {
@@ -291,6 +412,18 @@ function dedupe(bills: readonly BillKey[]): BillKey[] {
     seen.set(keyOf(bill), bill);
   }
   return [...seen.values()];
+}
+
+/**
+ * Two nullable dates, compared as dates. `abl_settled_on` is a `date` column, so
+ * `===` on the two `Date` objects Prisma hands back is always false and would
+ * report every bill as changed on every sweep.
+ */
+function sameDay(left: Date | null, right: Date | null): boolean {
+  if (left === null || right === null) {
+    return left === right;
+  }
+  return startOfDayUtc(left).getTime() === startOfDayUtc(right).getTime();
 }
 
 /**

@@ -16,6 +16,7 @@ export interface AllocationBill {
     amount: Prisma.Decimal;
     discount: Prisma.Decimal;
     writeoff: Prisma.Decimal;
+    roundoff: Prisma.Decimal;
     pendingAmount: Prisma.Decimal;
     writeoffApprovedBy: string | null;
 }

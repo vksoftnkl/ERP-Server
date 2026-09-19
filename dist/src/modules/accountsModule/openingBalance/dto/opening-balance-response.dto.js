@@ -62,7 +62,10 @@ __decorate([
     __metadata("design:type", Number)
 ], TrialBalanceDto.prototype, "totalCredit", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ example: 0, description: 'debit - credit. Signed, so it says which side is short.' }),
+    (0, swagger_1.ApiProperty)({
+        example: 0,
+        description: 'debit - credit. Signed, so it says which side is short.',
+    }),
     __metadata("design:type", Number)
 ], TrialBalanceDto.prototype, "difference", void 0);
 __decorate([
@@ -105,7 +108,11 @@ class OpeningBalanceRowDto {
 }
 exports.OpeningBalanceRowDto = OpeningBalanceRowDto;
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ format: 'uuid', nullable: true, description: 'Null = this ledger has no opening yet.' }),
+    (0, swagger_1.ApiPropertyOptional)({
+        format: 'uuid',
+        nullable: true,
+        description: 'Null = this ledger has no opening yet.',
+    }),
     __metadata("design:type", Object)
 ], OpeningBalanceRowDto.prototype, "opId", void 0);
 __decorate([
@@ -125,7 +132,9 @@ __decorate([
     __metadata("design:type", Object)
 ], OpeningBalanceRowDto.prototype, "groupNature", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ description: 'When true the bills own the figure and the screen shows it read-only.' }),
+    (0, swagger_1.ApiProperty)({
+        description: 'When true the bills own the figure and the screen shows it read-only.',
+    }),
     __metadata("design:type", Boolean)
 ], OpeningBalanceRowDto.prototype, "ledIsBillByBill", void 0);
 __decorate([
@@ -537,7 +546,9 @@ __decorate([
     __metadata("design:type", Number)
 ], CarryForwardPayloadDto.prototype, "updated", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ description: 'MANUAL / MIGRATION rows left alone. Always reported, even when zero.' }),
+    (0, swagger_1.ApiProperty)({
+        description: 'MANUAL / MIGRATION rows left alone. Always reported, even when zero.',
+    }),
     __metadata("design:type", Number)
 ], CarryForwardPayloadDto.prototype, "skippedManual", void 0);
 __decorate([

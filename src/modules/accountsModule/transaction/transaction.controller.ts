@@ -26,7 +26,7 @@ import { AdjustableCredit, TransactionSuccessResponse } from './types/transactio
 @Controller('transactions')
 @UseFilters(TransactionExceptionFilter)
 export class TransactionController {
-  constructor(private readonly transactionService: TransactionService) { }
+  constructor(private readonly transactionService: TransactionService) {}
   @Get('party-balance')
   @Version(API_VERSION)
   @ApiOperation({

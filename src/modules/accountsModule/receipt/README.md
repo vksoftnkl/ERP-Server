@@ -25,7 +25,9 @@ All under `/api/v1/receipts`.
 | # | Method | Path | What it does |
 |---|---|---|---|
 | 1 | `GET` | `/open-items` | Everything a party owes and everything of theirs the company holds |
-| 2 | `GET` | `/party-context` | Their last ten receipts, and their cheques still in flight |
+| 2 | `GET` | `/party-context` | Their last ten receipts, their cheques still in flight, and their totals |
+| 2a | `GET` | `/adjacent` | The receipt entered just before or just after this one (R-B4) |
+| 2b | `GET` | `/duplicate-check` | "Has this party already paid this much today?" A warning, never a refusal (R-B6) |
 | 3 | `POST` | `/create` | Save a draft. Upsert on `avhVoucherId` |
 | 4 | `POST` | `/post` | The one-way door. One transaction, fifteen ordered steps |
 | 5 | `GET` | `/get` | One receipt in full — also the print dataset |
@@ -132,7 +134,7 @@ naming no live ledger is simply not a party, and `loadParty` says that.
 | `receipt.service.ts` | §5.1 draft, §4.3a approve/reject, §4.5 get, §5.4 header edit |
 | `open-items.service.ts` | §4.1 and §4.2 — everything the screen reads before a figure is keyed |
 | `receipt-lines.ts` | §5.1 rules 3–4 — tenders and other-ledger lines, normalised. Shared by draft and post |
-| `receipt-draft-lines.ts` | What `avh_draft_lines` holds, and why it holds two things |
+| `receipt-draft-lines.ts` | What `avh_draft_lines` holds — other lines, cheque detail, and the remembered settlement |
 | `receipt.guards.ts` | The checks no single endpoint owns — the year, the party, the row locks |
 | `receipt.settings.ts` | §2.8's seven settings, read through the resolver |
 | `receipt-ledger-roles.ts` | Every ledger found by ROLE, never by name |
@@ -394,8 +396,25 @@ master exists.
 
 ```
 5 0 * * *  curl -fsS -X POST https://<host>/api/v1/receipts/regularise-pdc \
-             -H 'Authorization: Bearer <token>' -H 'Content-Type: application/json' -d '{}'
+             -H 'Authorization: Bearer <token>' -H 'Content-Type: application/json' \
+             -d '{"companyId":"<company uuid>"}'
 ```
+
+**One call per company.** `companyId` is required (R-B1): the route used to take
+nothing but `asOf`, so a single authenticated call regularised every company in
+the database — idempotent, and still a write across a tenant boundary.
+
+`branchId` and `accYear` are filters and are **not** the house keys here. Leave
+both out of the cron. Outstanding is company-wide and a bill raised at one
+branch is settled at another; and `acc_bill_balance` is partitioned by the year
+the bill *originated* in and is never carried forward, so a sweep pinned to this
+year walks past nearly everything it exists to find.
+
+`billsRegularised` counts bills whose stored figures actually **moved**, so a
+second run over the same data reports `0`. It used to report the size of the
+batch, which told an operator nothing about whether the run had done anything.
+`billsExamined` sits beside it so a `0` reads as "nothing left to do" rather
+than as "nothing ran".
 
 It sweeps everything maturing **on or before** the date, not only on it, so a
 run after an outage repairs every day that was missed. Idempotent. `/post` also
@@ -405,6 +424,105 @@ midnight.
 ---
 
 ## Seven things that are easy to get wrong
+
+### 0. A DRAFT remembers its allocation, and still touches no bill
+
+Reopening a draft used to lose the bill-wise settlement — the tenders and the
+other lines came back, the allocation did not — so every reopened draft was
+re-settled by hand. Alt+A covers "spread down the bills, oldest first" and
+nothing else: not a split, and not a deliberate out-of-order settlement, which
+is exactly the receipt somebody saves as a draft to think about.
+
+`/receipts/create` now takes optional `allocations[]` and `creditsApplied[]` in
+the same shape `/post` takes them, stores them in `avh_draft_lines` beside
+`cheques` and `otherLines`, and `/receipts/get` hands them back **for a DRAFT
+only**.
+
+**R10 is not undone.** No `acc_bill_adjustment` row is written and no
+`abl_pending_amount` moves. The allocation is *remembered*, not applied — which
+is what keeps two people able to hold drafts against the same party without
+reserving each other's outstanding, and what keeps an abandoned draft free of
+cleanup.
+
+**It is a suggestion, and it is deliberately not validated** — on the way in or
+the way out. Somebody else may settle the same bill between the save and the
+reopen, so a remembered 5,000 against a bill now showing 1,200 pending is
+stale, and it is handed back stale. The screen re-reads `/receipts/open-items`
+on reopen and clamps. Refusing the load would cost the operator the whole draft
+to save one figure.
+
+`/post` and `/amend` never read it. They use the payload they are given, and
+`/post` nulls the column at step 15.
+
+Three things the client should know about the shape:
+
+- **`abjId` is `null`** on every remembered row. Nothing is written until the
+  receipt posts, and that null is the signal. Never send it back.
+- **Discount and write-off come back as their own DISCOUNT and WRITEOFF rows**,
+  because that is what a post writes — so one rendering path paints a reopened
+  draft and a posted receipt.
+- **A `creditsApplied` row names the CREDIT in `billId`, with `againstBillId`
+  null.** On a POSTED receipt the two are the other way round. That is not an
+  inconsistency to be smoothed over: which invoices a credit settles is the
+  allocation engine's decision at post, and a draft has not run it.
+
+`docRefno` and `docDate` are filled by one lookup of the named bills. That is a
+convenience so a row can label itself, not a check: a row whose bill has been
+deleted still comes back, with a blank refno and a null date — and that is
+precisely the row the operator needs to see.
+
+### 0b. A receipt may round a bill off
+
+Reported as "received 10, disc 1, r.off 1 but i cant post", and it was exactly
+that: the round-off had nowhere to go. `PostReceiptAllocationDto` carried
+`amount`, `discount` and `writeoff` and nothing else, so a client folded the
+round-off into `amount` — which the engine reads as **money** — and §5.2 step 4
+refused the receipt as *"Out by -1.00"*. The figure was right; there was no box
+for it. `ROUND_OFF` was not an acceptable other-line role either, so both doors
+were shut.
+
+`roundoff` now sits beside `discount` on the allocation and behaves exactly
+like it: it settles the bill, posts its own DR leg to the ROUND_OFF ledger
+(which `accounts.acc_ledger_map` has pointed at a real "Round Off" account all
+along), and is **not** money received. So `10` received with `discount: 1` and
+`roundoff: 1` settles the bill by 12 and posts DR Cash 10 / DR Discount Allowed
+1 / DR Round Off 1 / CR party 12.
+
+**Positive only.** Not an oversight: `ck_abj_reversal_sign` refuses a negative
+non-reversal adjustment row, so a round-off is a reduction in the customer's
+favour or it is nothing. Collecting *more* than the bill is already what
+`onAccount` is for.
+
+**No approver, unlike a write-off.** A write-off forgives a balance somebody
+decided to stop chasing. Rounding 4,999.60 to 5,000 is what the counter does to
+make change, and an approval gate on forty paise only teaches the operator to
+route around it.
+
+#### Why ROUND_OFF is its own `abj_adj_type`
+
+Reusing DISCOUNT would have needed no migration and was rejected: the leg is
+debited to **Round Off** and a discount's to **Discount Allowed**, so a row
+saying DISCOUNT beside a leg saying Round Off leaves anyone reconciling the two
+with an unexplained gap, and inflates every discount report built on
+`abj_adj_type`. A discount is a concession somebody decided to give; a round-off
+is arithmetic.
+
+It nevertheless folds into **`abl_disc_amount`**, not a fourth column.
+`abl_pending_amount` and `abl_status` are GENERATED from
+`(bill − alloc − disc − writeoff)`, so a new bucket means dropping and
+recreating both expressions on a LIST-partitioned table — a rewrite of every
+partition — to split a cache that nothing reads as "discounts": every consumer
+in this codebase adds it to `abl_writeoff_amount` and asks *how much of this
+bill is already accounted for*. A round-off is. The exact split stays on the
+rows, where `abj_adj_type` answers it precisely.
+
+#### `ck_abj_against` enumerates every type, on both sides
+
+Worth knowing before adding a seventh: `ck_abj_adj_type` is not the only
+constraint that lists them. `ck_abj_against` names all six — the three that must
+point at an opposite bill and the three that must not — so a new type is refused
+by it outright rather than falling through to a default. Migration
+`20260918120000` widens both, plus `ck_abj_settlement_mode`.
 
 ### 1. A credit applied posts NO voucher leg
 
@@ -504,7 +622,7 @@ They are left empty, and kept for the collection import
 | 5.2 step 5 | credits → deductions → money | deductions reserved first, then that order | Pro-rata deductions are otherwise unsatisfiable. See §4 above |
 | 2.1 | plpgsql trigger | TypeScript service, called explicitly | Asked for. Cost stated above. **§2.4 is a trigger** |
 | 5.1 rule 4 | Server seeds a TDS / TCS line | Server **reports** the expectation; seeds only the instrument splits | There is no TDS or TCS **rate** anywhere in this schema — only `led_is_tds_applicable`, `led_tds_deductee_type`, `led_is_tcs_applicable` and `comp_tds_applicable`. No rate, no amount to seed. `expectedRoles` on the draft payload names them and the screen prompts |
-| 2.6 | `avh_draft_lines` holds the other-ledger lines | It holds `{ otherLines, cheques }` | A draft cheque's branch, IFSC, MICR, drawer and deposit bank have no columns on `acc_tender_detail` and are needed by `acc_pdc_register` at post. See `receipt-draft-lines.ts` for the two alternatives and why both are worse. The bare-array form is still read |
+| 2.6 | `avh_draft_lines` holds the other-ledger lines | It holds `{ otherLines, cheques, allocations, creditsApplied }` | A draft cheque's branch, IFSC, MICR, drawer and deposit bank have no columns on `acc_tender_detail` and are needed by `acc_pdc_register` at post. See `receipt-draft-lines.ts` for the two alternatives and why both are worse. The bare-array form is still read |
 | 2.12 | A new "CUSTOMERS BY AREA" dropdown | Done, id **54**. Dropdown 39 untouched | Narrowing 39 would narrow every other screen using it |
 | 2.7 | Five new roles | Five new roles, plus `ck_alr_group` widened with a `RECEIPT` band | The existing CHECK admits six group names and none of them fits. The payment voucher adds `PAYMENT` the same way |
 | R3 | Money on a posted receipt changes ONLY by cancel and re-enter | That, **plus** `/amend` behind `accounts.allow_posted_amend` | R20, 2026-09-17, on a client request. The setting is OFF by default, so R3 is unchanged for every client that does not ask for this. The refusal list is identical either way |
@@ -636,11 +754,71 @@ still enforces.
 | the **on-account ADVANCE has been spent** | the money is already settling somebody else's invoice |
 | `baseRevision` **≠ `avh_revision_no`** | somebody amended it since this client loaded it |
 | the receipt is **not POSTED** | a DRAFT is edited by `/create`; a CANCELLED one is history |
+| **`avhPartyId` differs from the stored one** | who paid is not a detail of the restatement — see below |
 | the **period is locked / the year is closed** | for the receipt *and* every PDC voucher |
 | `accounts.allow_posted_amend` is **off** | the business has not chosen this way of working |
 
 The window amend actually serves is the one that matters: a cheque still in the
 drawer, minutes after entry. That is where the reported pain is.
+
+### The party is not amendable, and it is not self-enforcing
+
+It was assumed a party change failed on its own — the allocations would still
+name the OLD party's bills, and a bill cannot be settled by a stranger. **That
+is wrong, and it was verified wrong on 2026-09-18.** Send the NEW party *and*
+that party's own bills and the payload is internally consistent, so every
+downstream check is satisfied and the amend is accepted.
+
+Afterwards nothing looks broken: the old party's bill reopens, the new party's
+bill is settled, the legs and adjustment rows net exactly. That is what makes it
+dangerous. **The receipt keeps its number** — the whole point of an amend — and
+the first customer is holding a slip with that number on it, so a well-formed
+amend could make the ledger say their slip was somebody else's money, leaving no
+anomaly for anyone to notice.
+
+`assertPartyUnchanged` refuses it with a 409 naming both customers. Changing the
+party is what `/cancel` plus a new receipt is for.
+
+### Cancel had to learn about amend
+
+An amend does not delete the post it replaces — it reverses it in place and
+leaves both on the voucher, because the trail is the whole argument for allowing
+an in-place edit of posted money. The voucher id never changes, so after one
+amend the receipt carries the first post's rows, their negatives, and the second
+post's rows, and **only the last of those is still live money**.
+
+`/cancel` reversed all of them. That was wrong twice: it would have taken out
+three times the money on a twice-amended receipt, and it never got that far
+because `ux_abj_reversal` permits one live reversal per row and refused the
+second with a 23505 — surfacing as
+`{"success":false,"message":"Internal server error","errors":[]}`. Amend was a
+one-way door: amend a receipt once and it could never be cancelled.
+
+`reverseVoucher` now asks the database which rows already have a live reversal
+(`abj_reversal_of_id`) and skips them. It asks rather than inferring from the
+rows in hand, because **an amend files its negatives against the RECEIPT even
+when they undo a row a post-dated cheque's voucher wrote** — so a per-voucher
+scan would not see them while reversing that child.
+
+### `AmendReceiptDto.avhVoucherId` — why it carries `= ''`
+
+Because `declare avhVoucherId: string` — TypeScript's own suggestion for
+narrowing a base property (TS2612) — silently broke the field. **TypeScript
+emits nothing for a `declare` field, decorators included**, so neither
+`@ApiProperty` nor `@RequiredUuid` ever reached the metadata: the field was
+absent from Swagger's `required` list, the ValidationPipe had no rule, and a
+body with no id reached the raw SQL and came back a 500.
+
+An initializer is the only other thing TS2612 accepts, and it must not be null
+or undefined: `SaveReceiptDto` marks the property `@IsOptional()`, which
+class-validator inherits, and that skips every validator on a null or undefined
+value. `''` is neither, so the rule runs.
+
+The two halves of that defect have **opposite** causes, which is why the
+`@ApiProperty` also says `required: true` explicitly — the Swagger CLI plugin
+reads the AST and treats a property with an initializer as optional, so the
+initializer that fixes the validator would, on its own, leave the field out of
+`required` all over again. `dto/amend-receipt.dto.spec.ts` pins both.
 
 ### Two things that look wrong and are not
 
@@ -793,6 +971,103 @@ is the narrowest scope that cannot be overridden from below.
 - **No `/list` route**, and no second query for the list — the grid is it.
 - **No stamped `avh_total_*`.** The trigger owns them; writing them would put
   `ck_avh_balanced` back to comparing a writer's claim with itself.
+
+---
+
+## The 2026-09-18 backend gaps (R-B1 … R-B9)
+
+The client's route test of 2026-09-18 raised nine items and one incident. What
+each of them turned out to be, so none of it is re-raised:
+
+| | Item | Outcome |
+|---|---|---|
+| **1a** | Cancel leaves the PDC voucher posted | **Not a defect** — see below |
+| **R-B1** | `/regularise-pdc` has no tenant scope; counts rows considered | Fixed. `companyId` required; `billsRegularised` now counts rows *changed* |
+| **R-B2** | `/update-header` took two collectors | Fixed. Calls `/create`'s own `assertSalesman`, not a second copy of it |
+| **R-B3** | `/party-context` 200s on a party that does not exist | Fixed. `loadParty` first, so it 404s exactly as `/open-items` does |
+| **R-B4** | No previous / next voucher | Added: `GET /receipts/adjacent` |
+| **R-B5** | Deposit account not choosable per tender row | **Already built** — see below |
+| **R-B6** | No duplicate-receipt guard | Added: `GET /receipts/duplicate-check` |
+| **R-B7** | No profit per bill | Derivable, with caveats — see below |
+| **R-B8** | No customer reference per bill | Added: `usrRefno` on `open-items` `bills[]` |
+| **R-B9** | Party totals the band needs | Added: `summary` on `party-context` |
+
+### 1a — cancel does reverse the PDC voucher
+
+The report found nine POSTED vouchers whose parent is CANCELLED and concluded
+that cancel abandons the post-dated child. It does not: `receipt-cancel.service`
+loads every child through `avh_against_voucher_id` and reverses each one in the
+same transaction, before the parent is marked CANCELLED.
+
+**The diagnostic query cannot tell a PDC child from a reversal.**
+`avh_against_voucher_id` carries both relationships — a post-dated cheque's
+voucher points at its receipt, and *so does the reversal voucher that cancel
+writes*. A reversal is a real, numbered, POSTED voucher by design (the day book
+for the day of the cancellation has to show it), so every cancelled receipt
+leaves exactly one row matching that query, forever and correctly.
+
+Checked against the same data: all nine rows satisfy
+`parent.avh_reversal_voucher_id = child.avh_voucher_id`. The count of genuine
+orphans is **zero**:
+
+```sql
+SELECT count(*)
+  FROM accounts.acc_voucher_header c
+  JOIN accounts.acc_voucher_header p ON p.avh_voucher_id = c.avh_against_voucher_id
+ WHERE p.avh_voucher_status = 'CANCELLED'
+   AND c.avh_voucher_status = 'POSTED'
+   AND p.avh_reversal_voucher_id IS DISTINCT FROM c.avh_voucher_id;
+```
+
+Use that form. The 5,400.00 the original query totalled is the reversals' own
+debits, which offset 5,400.00 of cancelled receipts rather than stranding it.
+
+### R-B5 — already built, both halves
+
+`receipt-lines.ts` has honoured `tnd_edit_ledger` since the module was written:
+a tender row's `tdTenderLedgerId` is taken when the master allows an override
+and *refused* — rather than silently ignored — when it does not. The flag is on
+the tender master's response DTO as `tndEditLedger`. Nothing was needed.
+
+### R-B7 — derivable, but read this before shipping it
+
+**Nothing stores a profit per bill.** `open-items` now answers `billProfit` and
+`billProfitPreTax`, and both are derived, per request, from the invoice behind
+the bill. Three things the client must know:
+
+- **The stored figure is PER UNIT.** `sbi_item_profit` and `sbi_profit_pre_tax`
+  are `numeric(15,2)` like the line amounts beside them, which makes this easy
+  to get wrong — but the data settles it: two lines of the same item at the same
+  rate, one for 3 units and one for 10, both carry `25.23`. So the bill's margin
+  is `Σ (per-unit profit × sbi_net_qty)`.
+- **The server never computes it.** It arrives on `/bills/create` from the
+  billing screen and is stored as sent, so the figure is only as good as what
+  that screen put there.
+- **`null` means "not answerable" and must render blank, never as 0.** Either
+  the bill has no sale bill behind it (OPENING, JOURNAL, ADVANCE, a return), or
+  at least one live line was never costed. A partial sum understates the margin,
+  and the one decision this figure exists to inform is whether a discount can be
+  afforded — an understated margin talks the operator out of one they could have
+  given, silently.
+
+Both figures are returned because they answer different questions: a settlement
+discount comes off the gross, so `billProfit` is what it eats into, while
+`billProfitPreTax` is what a margin report means by profit.
+
+### Where `branchId` is a key and where it is a filter
+
+Not arbitrary, and the three routes differ on purpose:
+
+- `/adjacent` **requires** it. It walks a *list*, and that list is one branch's
+  register; a walk that wandered into another branch's receipts would not match
+  what is on screen.
+- `/duplicate-check` takes it **optionally**. It asks whether the company has
+  already taken this money, and the answer does not stop being yes because the
+  first receipt was keyed on another beat — that is the duplicate an operator is
+  least likely to find alone.
+- `/regularise-pdc` takes it **optionally, and the cron omits it.** Outstanding
+  is company-wide; pinning the sweep to a branch leaves matured cheques
+  uncounted.
 
 ---
 

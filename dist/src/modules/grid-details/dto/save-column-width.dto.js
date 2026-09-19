@@ -17,6 +17,7 @@ const dtoDecorators_1 = require("../../../common/dto/dtoDecorators");
 class ColumnWidthItemDto {
     grid_column_id;
     grid_column_width;
+    grid_column_px;
 }
 exports.ColumnWidthItemDto = ColumnWidthItemDto;
 __decorate([
@@ -25,10 +26,15 @@ __decorate([
     __metadata("design:type", String)
 ], ColumnWidthItemDto.prototype, "grid_column_id", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ nullable: true, type: Number }),
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true, type: Number }),
     (0, dtoDecorators_1.NullableNumber)(),
     __metadata("design:type", Object)
 ], ColumnWidthItemDto.prototype, "grid_column_width", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true, maxLength: 100, type: String, example: '180px' }),
+    (0, dtoDecorators_1.NullableString)(100),
+    __metadata("design:type", Object)
+], ColumnWidthItemDto.prototype, "grid_column_px", void 0);
 class SaveColumnWidthDto {
     columns;
 }

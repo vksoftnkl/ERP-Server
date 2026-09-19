@@ -9,7 +9,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.RegularisePdcDto = exports.UpdateReceiptHeaderDto = exports.SaveReceiptDto = exports.SaveReceiptOtherLineDto = exports.SaveReceiptTenderDto = exports.SaveReceiptChequeDto = void 0;
+exports.RegularisePdcDto = exports.UpdateReceiptHeaderDto = exports.SaveDraftReceiptDto = exports.SaveReceiptDto = exports.SaveReceiptOtherLineDto = exports.SaveReceiptTenderDto = exports.SaveReceiptChequeDto = void 0;
 const swagger_1 = require("@nestjs/swagger");
 const class_transformer_1 = require("class-transformer");
 const class_validator_1 = require("class-validator");
@@ -410,6 +410,48 @@ __decorate([
     (0, dtoDecorators_1.OptionalBoolean)(),
     __metadata("design:type", Boolean)
 ], SaveReceiptDto.prototype, "replace", void 0);
+class SaveDraftReceiptDto extends SaveReceiptDto {
+    allocations;
+    creditsApplied;
+}
+exports.SaveDraftReceiptDto = SaveDraftReceiptDto;
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        type: () => post_receipt_dto_1.PostReceiptAllocationDto,
+        isArray: true,
+        description: 'The bill-wise settlement as the operator left it, REMEMBERED so reopening the draft does ' +
+            'not lose it. Same shape /receipts/post takes.\n\n' +
+            '**Nothing is applied.** No acc_bill_adjustment row is written and no abl_pending_amount ' +
+            'moves (R10) — a draft still touches no bill, which is what lets two people hold drafts ' +
+            "against the same party without reserving each other's outstanding.\n\n" +
+            '**Nothing is validated.** A remembered figure can go stale between saving and reopening ' +
+            'if somebody else settles the same bill, and it is handed back exactly as it was stored. ' +
+            'Re-read /receipts/open-items on reopen and clamp each figure to what the bill can still ' +
+            'take — refusing the load here would cost the whole draft to save one number.\n\n' +
+            'OMIT the key to leave whatever is already remembered alone; send `[]` to clear it. A ' +
+            'client that has never heard of this field cannot wipe it.',
+    }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsArray)(),
+    (0, class_validator_1.ArrayMaxSize)(1000),
+    (0, class_validator_1.ValidateNested)({ each: true }),
+    (0, class_transformer_1.Type)(() => post_receipt_dto_1.PostReceiptAllocationDto),
+    __metadata("design:type", Array)
+], SaveDraftReceiptDto.prototype, "allocations", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        type: () => post_receipt_dto_1.PostReceiptCreditDto,
+        isArray: true,
+        description: 'The credits the operator had ticked, remembered on the same terms as `allocations` — not ' +
+            'applied, not validated, and omitted rather than emptied to leave them alone.',
+    }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsArray)(),
+    (0, class_validator_1.ArrayMaxSize)(500),
+    (0, class_validator_1.ValidateNested)({ each: true }),
+    (0, class_transformer_1.Type)(() => post_receipt_dto_1.PostReceiptCreditDto),
+    __metadata("design:type", Array)
+], SaveDraftReceiptDto.prototype, "creditsApplied", void 0);
 class UpdateReceiptHeaderDto extends post_receipt_dto_1.ReceiptKeysDto {
     avhRemarks;
     avhUsrRefno;
@@ -440,7 +482,13 @@ __decorate([
     __metadata("design:type", Object)
 ], UpdateReceiptHeaderDto.prototype, "avhDocDate", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ type: [String], format: 'uuid' }),
+    (0, swagger_1.ApiPropertyOptional)({
+        type: [String],
+        format: 'uuid',
+        description: 'Collected by (R6). **One id, exactly as /receipts/create requires** — the column is an ' +
+            "array because every voucher header's is, not because a collection may be shared. Sending " +
+            'an empty array clears it, and is refused when accounts.receipt_salesman_mandatory is on.',
+    }),
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsArray)(),
     (0, class_validator_1.ArrayMaxSize)(5),
@@ -455,9 +503,41 @@ __decorate([
     __metadata("design:type", String)
 ], UpdateReceiptHeaderDto.prototype, "editRemark", void 0);
 class RegularisePdcDto {
+    companyId;
+    branchId;
+    accYear;
     asOf;
 }
 exports.RegularisePdcDto = RegularisePdcDto;
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        format: 'uuid',
+        description: 'The company to sweep. Required: a sweep is a write, and writes are scoped.',
+    }),
+    (0, dtoDecorators_1.RequiredUuid)(),
+    __metadata("design:type", String)
+], RegularisePdcDto.prototype, "companyId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        format: 'uuid',
+        description: 'Narrow the sweep to one branch. **Omit it for the nightly run.** A bill raised at one ' +
+            'branch is settled at another all the time and outstanding is company-wide, so a sweep ' +
+            'pinned to a branch leaves matured cheques uncounted.',
+    }),
+    (0, dtoDecorators_1.OptionalUuid)(),
+    __metadata("design:type", String)
+], RegularisePdcDto.prototype, "branchId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        example: '2026-2027',
+        description: 'Narrow the sweep to settlements booked in one accounting year. **Omit it for the nightly ' +
+            'run.** acc_bill_balance is partitioned by the year a bill ORIGINATED in and is never ' +
+            'carried forward, so a sweep pinned to this year walks past every bill raised before it.',
+    }),
+    (0, class_validator_1.IsOptional)(),
+    (0, dtoDecorators_1.UpperMaxString)(9),
+    __metadata("design:type", String)
+], RegularisePdcDto.prototype, "accYear", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({
         example: '2026-09-20',

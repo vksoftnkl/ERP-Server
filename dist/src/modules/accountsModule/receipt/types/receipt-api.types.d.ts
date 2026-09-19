@@ -8,12 +8,15 @@ export interface OpenBill {
     billAccYear: string;
     billType: BillType;
     docRefno: string;
+    usrRefno: string | null;
     docDate: string;
     dueDate: string | null;
     billAmount: number;
     pendingAmount: number;
     status: BillStatus;
     daysOverdue: number;
+    billProfit: number | null;
+    billProfitPreTax: number | null;
     pdcHeld: number;
     ppdSuggested: number;
     tcsAmount: number;
@@ -81,10 +84,50 @@ export interface PartyPendingCheque {
     voucherId: string | null;
     voucherRefno: string | null;
 }
+export interface PartyContextSummary {
+    totalBalance: number;
+    totalOutstanding: number;
+    totalCredits: number;
+    chequesOutstanding: number;
+}
 export interface PartyContextPayload {
     partyId: string;
+    partyName: string;
+    summary: PartyContextSummary;
     lastReceipts: PartyRecentReceipt[];
     pendingCheques: PartyPendingCheque[];
+}
+export interface AdjacentVoucher {
+    voucherId: string;
+    accYear: string;
+    companyId: string;
+    branchId: string;
+    voucherRefno: string | null;
+    voucherDate: string;
+    partyId: string;
+    partyName: string | null;
+    docAmount: number;
+    status: VoucherStatus;
+}
+export interface AdjacentVoucherPayload {
+    direction: 'prev' | 'next';
+    fromVoucherId: string;
+    voucher: AdjacentVoucher | null;
+}
+export interface DuplicateReceipt {
+    voucherId: string;
+    accYear: string;
+    branchId: string;
+    voucherRefno: string | null;
+    voucherDate: string;
+    docAmount: number;
+    status: VoucherStatus;
+    createdBy: string | null;
+    createdOn: string;
+}
+export interface DuplicateCheckPayload {
+    isDuplicate: boolean;
+    matches: DuplicateReceipt[];
 }
 export interface ReceiptTender {
     tdId: string;
@@ -127,11 +170,11 @@ export interface ReceiptLeg {
     avRemarks: string | null;
 }
 export interface ReceiptAllocation {
-    abjId: string;
+    abjId: string | null;
     billId: string;
     billAccYear: string;
     docRefno: string;
-    docDate: string;
+    docDate: string | null;
     adjType: BillAdjType;
     settlementMode: BillSettlementMode | null;
     drCr: DrCr;
@@ -301,6 +344,8 @@ export interface ReceiptAmendPayload extends ReceiptPostPayload {
 export interface RegularisePdcPayload {
     asOf: string;
     billsRegularised: number;
+    billsExamined: number;
+    companyId: string;
 }
 export interface ReceiptDeletePayload {
     avhVoucherId: string;

@@ -1838,7 +1838,9 @@ describe('SaleOrderService', () => {
       // Only the cancelled quantity is written: moving pending into it is what
       // drives the two GENERATED columns, which the DB answers back with.
       expect(lineUpdate(LINE_A_ID)).toEqual(containing({ soiCancelledQty: 10 }));
-      expect(result.lines).toEqual([containing({ soiCancelledQty: 10, soiLineStatus: 'CANCELLED' })]);
+      expect(result.lines).toEqual([
+        containing({ soiCancelledQty: 10, soiLineStatus: 'CANCELLED' }),
+      ]);
       expect(headerUpdate()).toEqual(
         containing({
           soStatus: 'CANCELLED',

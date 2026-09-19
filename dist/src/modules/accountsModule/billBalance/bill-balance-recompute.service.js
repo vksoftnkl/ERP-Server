@@ -15,6 +15,7 @@ const common_1 = require("@nestjs/common");
 const client_1 = require("@prisma/client");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const ALLOCATING_TYPES = ['ALLOCATION', 'ADVANCE_ADJUST', 'NOTE_ADJUST', 'TRANSFER'];
+const DISCOUNTING_TYPES = ['DISCOUNT', 'ROUND_OFF'];
 const ZERO = new client_1.Prisma.Decimal(0);
 let BillBalanceRecomputeService = BillBalanceRecomputeService_1 = class BillBalanceRecomputeService {
     prisma;
@@ -60,7 +61,7 @@ let BillBalanceRecomputeService = BillBalanceRecomputeService_1 = class BillBala
             if (ALLOCATING_TYPES.includes(row.abjAdjType)) {
                 bucket.alloc = bucket.alloc.plus(row.abjAmount);
             }
-            else if (row.abjAdjType === 'DISCOUNT') {
+            else if (DISCOUNTING_TYPES.includes(row.abjAdjType)) {
                 bucket.disc = bucket.disc.plus(row.abjAmount);
             }
             else if (row.abjAdjType === 'WRITEOFF') {
@@ -74,7 +75,15 @@ let BillBalanceRecomputeService = BillBalanceRecomputeService_1 = class BillBala
             where: {
                 OR: unique.map((bill) => ({ ablId: bill.billId, ablAccYear: bill.accYear })),
             },
-            select: { ablId: true, ablAccYear: true, ablBillAmount: true },
+            select: {
+                ablId: true,
+                ablAccYear: true,
+                ablBillAmount: true,
+                ablAllocAmount: true,
+                ablDiscAmount: true,
+                ablWriteoffAmount: true,
+                ablSettledOn: true,
+            },
         });
         const now = new Date();
         const results = [];
@@ -86,33 +95,46 @@ let BillBalanceRecomputeService = BillBalanceRecomputeService_1 = class BillBala
             const settled = bucket.alloc.plus(bucket.disc).plus(bucket.writeoff).toDecimalPlaces(2);
             const pending = bill.ablBillAmount.minus(settled).toDecimalPlaces(2);
             const settledOn = pending.lessThanOrEqualTo(0) ? bucket.lastOn : null;
-            await client.accBillBalance.update({
-                where: { ablId_ablAccYear: { ablId: bill.ablId, ablAccYear: bill.ablAccYear } },
-                data: {
-                    ablAllocAmount: bucket.alloc.toDecimalPlaces(2),
-                    ablDiscAmount: bucket.disc.toDecimalPlaces(2),
-                    ablWriteoffAmount: bucket.writeoff.toDecimalPlaces(2),
-                    ablSettledOn: settledOn,
-                    ablModifiedOn: now,
-                },
-            });
+            const alloc = bucket.alloc.toDecimalPlaces(2);
+            const disc = bucket.disc.toDecimalPlaces(2);
+            const writeoff = bucket.writeoff.toDecimalPlaces(2);
+            const changed = !bill.ablAllocAmount.equals(alloc) ||
+                !bill.ablDiscAmount.equals(disc) ||
+                !bill.ablWriteoffAmount.equals(writeoff) ||
+                sameDay(bill.ablSettledOn, settledOn) === false;
+            if (changed) {
+                await client.accBillBalance.update({
+                    where: { ablId_ablAccYear: { ablId: bill.ablId, ablAccYear: bill.ablAccYear } },
+                    data: {
+                        ablAllocAmount: alloc,
+                        ablDiscAmount: disc,
+                        ablWriteoffAmount: writeoff,
+                        ablSettledOn: settledOn,
+                        ablModifiedOn: now,
+                    },
+                });
+            }
             results.push({
                 billId: bill.ablId,
                 accYear: bill.ablAccYear,
+                changed,
                 billAmount: bill.ablBillAmount,
-                allocAmount: bucket.alloc.toDecimalPlaces(2),
-                discAmount: bucket.disc.toDecimalPlaces(2),
-                writeoffAmount: bucket.writeoff.toDecimalPlaces(2),
+                allocAmount: alloc,
+                discAmount: disc,
+                writeoffAmount: writeoff,
                 pendingAmount: pending,
                 settledOn,
             });
         }
         return results;
     }
-    async regularisePostDated(asOf = new Date(), batchSize = 500) {
+    async regularisePostDated(scope, asOf = new Date(), batchSize = 500) {
         const asOfDate = startOfDayUtc(asOf);
         const due = await this.prisma.accBillAdjustment.findMany({
             where: {
+                abjCompanyId: scope.companyId,
+                ...(scope.branchId ? { abjBranchId: scope.branchId } : {}),
+                ...(scope.accYear ? { abjAccYear: scope.accYear } : {}),
                 abjIsPostDated: true,
                 abjIsDeleted: false,
                 abjAdjDate: { lte: asOfDate },
@@ -121,18 +143,24 @@ let BillBalanceRecomputeService = BillBalanceRecomputeService_1 = class BillBala
             distinct: ['abjBillId', 'abjBillAccYear'],
         });
         const bills = due.map((row) => ({ billId: row.abjBillId, accYear: row.abjBillAccYear }));
-        let count = 0;
+        let examined = 0;
+        let regularised = 0;
         for (let offset = 0; offset < bills.length; offset += batchSize) {
             const batch = bills.slice(offset, offset + batchSize);
-            await this.prisma.$transaction(async (tx) => {
-                await this.recomputeBills(tx, batch, asOfDate);
+            const moved = await this.prisma.$transaction(async (tx) => {
+                const recomputed = await this.recomputeBills(tx, batch, asOfDate);
+                return recomputed.filter((bill) => bill.changed).length;
             }, { maxWait: 10_000, timeout: 60_000 });
-            count += batch.length;
+            examined += batch.length;
+            regularised += moved;
         }
-        this.logger.log(`Regularised ${count} bill(s) holding matured post-dated settlements as at ${asOfDate
-            .toISOString()
-            .slice(0, 10)}`);
-        return { asOf: asOfDate.toISOString().slice(0, 10), billsRegularised: count };
+        this.logger.log(`Regularised ${regularised} of ${examined} bill(s) holding matured post-dated ` +
+            `settlements as at ${asOfDate.toISOString().slice(0, 10)}`);
+        return {
+            asOf: asOfDate.toISOString().slice(0, 10),
+            billsRegularised: regularised,
+            billsExamined: examined,
+        };
     }
 };
 exports.BillBalanceRecomputeService = BillBalanceRecomputeService;
@@ -152,6 +180,12 @@ function dedupe(bills) {
         seen.set(keyOf(bill), bill);
     }
     return [...seen.values()];
+}
+function sameDay(left, right) {
+    if (left === null || right === null) {
+        return left === right;
+    }
+    return startOfDayUtc(left).getTime() === startOfDayUtc(right).getTime();
 }
 function startOfDayUtc(value) {
     return new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate(), 0, 0, 0, 0));

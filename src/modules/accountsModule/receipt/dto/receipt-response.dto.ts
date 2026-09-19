@@ -10,12 +10,17 @@ import {
   VoucherStatus,
 } from '../types/receipt-enum';
 import type {
+  AdjacentVoucher,
+  AdjacentVoucherPayload,
+  DuplicateCheckPayload,
+  DuplicateReceipt,
   OpenBill,
   OpenCredit,
   OpenItemsParty,
   OpenItemsPayload,
   OpenItemsSummary,
   PartyContextPayload,
+  PartyContextSummary,
   PartyPendingCheque,
   PartyRecentReceipt,
   ReceiptAdvanceBill,
@@ -112,6 +117,17 @@ export class OpenBillDto implements OpenBill {
   @ApiProperty({ example: 'bil00031' })
   docRefno!: string;
 
+  @ApiProperty({
+    nullable: true,
+    example: 'PO/2026/1187',
+    description:
+      "R-B8 — the CUSTOMER's own reference, from the invoice behind the bill. docRefno is OURS; " +
+      'this is theirs, and it is what an operator holding a remittance advice matches on. Null ' +
+      'when the bill has no source document to read it from — an OPENING balance, a JOURNAL ' +
+      'reference, an ADVANCE.',
+  })
+  usrRefno!: string | null;
+
   @ApiProperty({ example: '2026-09-08' })
   docDate!: string;
 
@@ -132,6 +148,33 @@ export class OpenBillDto implements OpenBill {
     description: '0 when the bill has no due date — nothing to be late against.',
   })
   daysOverdue!: number;
+
+  @ApiProperty({
+    nullable: true,
+    example: 1841.25,
+    description:
+      'R-B7 — the margin this bill earned, TAX INCLUSIVE, so the operator can see whether the ' +
+      'settlement discount they are about to type costs it.\n\n' +
+      '**Derived, not stored.** Nothing holds a profit per bill: sale_bill_item holds ' +
+      "sbi_item_profit PER UNIT, and this is Σ (per-unit profit × net qty) over the invoice's " +
+      'live lines. The per-unit figure is not computed by the server either — it arrives on ' +
+      '/bills/create from the billing screen and is stored as sent.\n\n' +
+      '**null means "not answerable" — show it blank, never as 0.** Either the bill has no sale ' +
+      'bill behind it (OPENING, JOURNAL, ADVANCE, a return), or at least one live line carries no ' +
+      'profit figure. A partial sum is worse than none: it UNDERSTATES the margin, and would talk ' +
+      'an operator out of a discount they could afford.',
+  })
+  billProfit!: number | null;
+
+  @ApiProperty({
+    nullable: true,
+    example: 1560.38,
+    description:
+      'The same figure PRE-TAX, null on exactly the same terms. Both are given because they ' +
+      'answer different questions: a settlement discount comes off the gross, so billProfit is ' +
+      'what it eats into, while this is what a margin report means by profit.',
+  })
+  billProfitPreTax!: number | null;
 
   @ApiProperty({
     example: 0,
@@ -375,9 +418,43 @@ export class PartyPendingChequeDto implements PartyPendingCheque {
   voucherRefno!: string | null;
 }
 
+export class PartyContextSummaryDto implements PartyContextSummary {
+  @ApiProperty({
+    example: 56750,
+    description:
+      'R-B9 — what the party owes NET across everything, whatever year each row was raised in: ' +
+      'every open receivable less every credit of theirs the company holds. Negative when we ' +
+      'hold more of their money than they owe, which is ordinary after an advance.\n\n' +
+      'Not derivable from /receipts/open-items, which answers the narrower question of what a ' +
+      'RECEIPT may settle and spend.',
+  })
+  totalBalance!: number;
+
+  @ApiProperty({ example: 60750, description: 'Σ pending on the open receivables.' })
+  totalOutstanding!: number;
+
+  @ApiProperty({ example: 4000, description: 'Σ pending on the credits the company holds.' })
+  totalCredits!: number;
+
+  @ApiProperty({
+    example: 50000,
+    description:
+      'Money promised by post-dated instruments that have NOT matured — what the bill-wise ' +
+      "pdcHeld column adds up to. Counted from the party's own adjustment rows, so it stays " +
+      'right whatever bills the open-items list happens to contain.',
+  })
+  chequesOutstanding!: number;
+}
+
 export class PartyContextPayloadDto implements PartyContextPayload {
   @ApiProperty({ format: 'uuid' })
   partyId!: string;
+
+  @ApiProperty({ example: 'Sri Krishna Traders' })
+  partyName!: string;
+
+  @ApiProperty({ type: PartyContextSummaryDto })
+  summary!: PartyContextSummaryDto;
 
   @ApiProperty({
     type: PartyRecentReceiptDto,
@@ -547,8 +624,14 @@ export class ReceiptLegDto implements ReceiptLeg {
 }
 
 export class ReceiptAllocationDto implements ReceiptAllocation {
-  @ApiProperty({ format: 'uuid' })
-  abjId!: string;
+  @ApiProperty({
+    format: 'uuid',
+    nullable: true,
+    description:
+      '**Null on a DRAFT** — the settlement is remembered, not written, and no ' +
+      'acc_bill_adjustment row exists for it. Never send that null back.',
+  })
+  abjId!: string | null;
 
   @ApiProperty({ format: 'uuid' })
   billId!: string;
@@ -559,8 +642,12 @@ export class ReceiptAllocationDto implements ReceiptAllocation {
   @ApiProperty({ example: 'bil00031' })
   docRefno!: string;
 
-  @ApiProperty({ example: '2026-09-08' })
-  docDate!: string;
+  @ApiProperty({
+    nullable: true,
+    example: '2026-09-08',
+    description: 'Null when the bill behind a remembered DRAFT row can no longer be read.',
+  })
+  docDate!: string | null;
 
   @ApiProperty({ enum: BillAdjType, example: BillAdjType.ALLOCATION })
   adjType!: BillAdjType;
@@ -1308,17 +1395,169 @@ export class RegularisePdcPayloadDto implements RegularisePdcPayload {
   @ApiProperty({ example: '2026-09-20' })
   asOf!: string;
 
-  @ApiProperty({ example: 3 })
+  @ApiProperty({
+    example: 3,
+    description:
+      'R-B1 — bills whose stored figures actually MOVED. **0 on a second run over the same ' +
+      'data**, which is how an operator tells a real run from a repeat. It used to be the size ' +
+      'of the batch, so a no-op sweep reported work it had not done.',
+  })
   billsRegularised!: number;
+
+  @ApiProperty({
+    example: 3,
+    description:
+      'Bills examined — every bill in scope holding a matured post-dated row, changed or not. ' +
+      'Here so that a 0 above reads as "nothing left to do" rather than as "nothing ran".',
+  })
+  billsExamined!: number;
+
+  @ApiProperty({
+    format: 'uuid',
+    description: 'The company swept. Echoed because scope is the point.',
+  })
+  companyId!: string;
 }
 
 export class RegularisePdcSuccessDto {
   @ApiProperty({ example: true })
   success!: true;
 
-  @ApiProperty({ example: '3 bill(s) regularised as at 2026-09-20' })
+  @ApiProperty({ example: '3 of 3 bill(s) regularised as at 2026-09-20' })
   message!: string;
 
   @ApiProperty({ type: RegularisePdcPayloadDto })
   data!: RegularisePdcPayloadDto;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  R-B4  adjacent
+// ═══════════════════════════════════════════════════════════════════════════
+
+export class AdjacentVoucherDto implements AdjacentVoucher {
+  @ApiProperty({ format: 'uuid' })
+  voucherId!: string;
+
+  @ApiProperty({ example: '2026-2027' })
+  accYear!: string;
+
+  @ApiProperty({ format: 'uuid' })
+  companyId!: string;
+
+  @ApiProperty({ format: 'uuid' })
+  branchId!: string;
+
+  @ApiProperty({ nullable: true, example: 'rct00051' })
+  voucherRefno!: string | null;
+
+  @ApiProperty({ example: '2026-09-17' })
+  voucherDate!: string;
+
+  @ApiProperty({ format: 'uuid' })
+  partyId!: string;
+
+  @ApiProperty({ nullable: true, example: 'Sri Krishna Traders' })
+  partyName!: string | null;
+
+  @ApiProperty({ example: 5000 })
+  docAmount!: number;
+
+  @ApiProperty({ enum: VoucherStatus, example: VoucherStatus.POSTED })
+  status!: VoucherStatus;
+}
+
+export class AdjacentVoucherPayloadDto implements AdjacentVoucherPayload {
+  @ApiProperty({ enum: ['prev', 'next'], example: 'prev' })
+  direction!: 'prev' | 'next';
+
+  @ApiProperty({ format: 'uuid', description: 'Echoed, so a reply about a stale row is obvious.' })
+  fromVoucherId!: string;
+
+  @ApiProperty({
+    type: AdjacentVoucherDto,
+    nullable: true,
+    description:
+      'Null at the end of the register under the filters that were applied — and that null is ' +
+      'what greys the key out.',
+  })
+  voucher!: AdjacentVoucherDto | null;
+}
+
+export class AdjacentVoucherSuccessDto {
+  @ApiProperty({ example: true })
+  success!: true;
+
+  @ApiProperty({ example: 'rct00051 is the prev receipt' })
+  message!: string;
+
+  @ApiProperty({ type: AdjacentVoucherPayloadDto })
+  data!: AdjacentVoucherPayloadDto;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  R-B6  duplicate-check
+// ═══════════════════════════════════════════════════════════════════════════
+
+export class DuplicateReceiptDto implements DuplicateReceipt {
+  @ApiProperty({ format: 'uuid' })
+  voucherId!: string;
+
+  @ApiProperty({ example: '2026-2027' })
+  accYear!: string;
+
+  @ApiProperty({
+    format: 'uuid',
+    description: 'So a match keyed on another beat is visible as one.',
+  })
+  branchId!: string;
+
+  @ApiProperty({ nullable: true, example: 'rct00052' })
+  voucherRefno!: string | null;
+
+  @ApiProperty({ example: '2026-09-18' })
+  voucherDate!: string;
+
+  @ApiProperty({ example: 5000 })
+  docAmount!: number;
+
+  @ApiProperty({
+    enum: VoucherStatus,
+    example: VoucherStatus.POSTED,
+    description: 'DRAFT, APPROVED or POSTED. CANCELLED never matches — it is not money paid.',
+  })
+  status!: VoucherStatus;
+
+  @ApiProperty({ nullable: true, description: 'Who keyed it. Often the whole answer.' })
+  createdBy!: string | null;
+
+  @ApiProperty({ example: '2026-09-18T09:14:03.412Z' })
+  createdOn!: string;
+}
+
+export class DuplicateCheckPayloadDto implements DuplicateCheckPayload {
+  @ApiProperty({
+    example: false,
+    description: 'matches.length > 0 — the one thing the client branches on.',
+  })
+  isDuplicate!: boolean;
+
+  @ApiProperty({
+    type: DuplicateReceiptDto,
+    isArray: true,
+    description:
+      'At most ten. Anything past a handful is the same answer: go and look. **A warning for the ' +
+      'client to raise, never a refusal** — two equal cheques on one day is ordinary business.',
+  })
+  matches!: DuplicateReceiptDto[];
+}
+
+export class DuplicateCheckSuccessDto {
+  @ApiProperty({ example: true })
+  success!: true;
+
+  @ApiProperty({ example: 'No matching receipt — this does not look like a duplicate' })
+  message!: string;
+
+  @ApiProperty({ type: DuplicateCheckPayloadDto })
+  data!: DuplicateCheckPayloadDto;
 }

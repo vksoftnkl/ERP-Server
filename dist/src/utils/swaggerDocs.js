@@ -27,6 +27,7 @@ const transaction_module_1 = require("../modules/accountsModule/transaction/tran
 const opening_balance_module_1 = require("../modules/accountsModule/openingBalance/opening-balance.module");
 const receipt_module_1 = require("../modules/accountsModule/receipt/receipt.module");
 const cheques_module_1 = require("../modules/accountsModule/cheques/cheques.module");
+const ledger_map_module_1 = require("../modules/accountsModule/ledgerMap/ledger-map.module");
 const auth_module_1 = require("../modules/auth/auth.module");
 const area_module_1 = require("../modules/sales/area/area.module");
 const sale_freight_charges_module_1 = require("../modules/sales/sale-freight-charges/sale-freight-charges.module");
@@ -364,6 +365,16 @@ exports.swaggerModuleDocuments = [
             'status-log row and — when money moves — one voucher, never editing a row. The posting ' +
             'mode is honoured per ROW, and Cheques in Hand comes from the cheque\'s own tender row',
         include: [cheques_module_1.ChequesModule],
+    },
+    {
+        path: 'ledger-map',
+        title: 'Posting Ledger Map API',
+        description: 'Role -> ledger: the table every posting engine resolves a DISCOUNT_ALLOWED, an OUTPUT_CGST ' +
+            'or a ROUND_OFF through. One shared mapping per role, the same for every company; the ' +
+            'catalogue of roles is the server\'s, so a role with no ledger is reported as loudly as a ' +
+            'mapped one, and a ledger that cannot hold its role is refused when it is typed rather than ' +
+            'when money is taken',
+        include: [ledger_map_module_1.LedgerMapModule],
     },
     {
         path: 'opening-balances',

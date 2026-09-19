@@ -17,6 +17,7 @@ const dtoDecorators_1 = require("../../../../common/dto/dtoDecorators");
 const save_receipt_dto_1 = require("./save-receipt.dto");
 const post_receipt_dto_1 = require("./post-receipt.dto");
 class AmendReceiptDto extends save_receipt_dto_1.SaveReceiptDto {
+    avhVoucherId = '';
     allocations;
     creditsApplied = [];
     otherLineBills = [];
@@ -28,6 +29,7 @@ exports.AmendReceiptDto = AmendReceiptDto;
 __decorate([
     (0, swagger_1.ApiProperty)({
         format: 'uuid',
+        required: true,
         description: 'The POSTED receipt being restated. Its id, number and refno all survive.',
     }),
     (0, dtoDecorators_1.RequiredUuid)(),

@@ -79,12 +79,16 @@ function assertBillsFit(bills) {
             ]);
         }
         seen.add(key);
-        const settled = (0, receipt_utils_1.money)(bill.amount).plus(bill.discount).plus(bill.writeoff);
-        if (bill.amount.isNegative() || bill.discount.isNegative() || bill.writeoff.isNegative()) {
+        const settled = (0, receipt_utils_1.money)(bill.amount).plus(bill.discount).plus(bill.writeoff).plus(bill.roundoff);
+        if (bill.amount.isNegative() ||
+            bill.discount.isNegative() ||
+            bill.writeoff.isNegative() ||
+            bill.roundoff.isNegative()) {
             invalid('Validation failed', [
                 {
                     field: `allocations.${index}.amount`,
-                    message: `Bill ${bill.docRefno}: amount, discount and write-off are all positive figures`,
+                    message: `Bill ${bill.docRefno}: amount, discount, write-off and round-off are all ` +
+                        'positive figures',
                 },
             ]);
         }
@@ -443,6 +447,26 @@ function addReductions(input, bills, out) {
                 otherLineNo: null,
                 againstBill: null,
                 approvedBy: bill.writeoffApprovedBy,
+                countsToAdjustAmount: true,
+                remarks: null,
+            });
+        }
+        const roundoff = (0, receipt_utils_1.money)(bill.roundoff);
+        if (roundoff.greaterThan(0)) {
+            out.push({
+                billId: bill.billId,
+                billAccYear: bill.billAccYear,
+                adjType: receipt_enum_1.BillAdjType.ROUND_OFF,
+                settlementMode: receipt_enum_1.BillSettlementMode.ROUND_OFF,
+                drCr: receipt_enum_1.DrCr.CR,
+                amount: roundoff,
+                adjDate: input.receiptDate,
+                isPostDated: false,
+                voucherKey: exports.RECEIPT_VOUCHER_KEY,
+                tenderRowNo: null,
+                otherLineNo: null,
+                againstBill: null,
+                approvedBy: null,
                 countsToAdjustAmount: true,
                 remarks: null,
             });

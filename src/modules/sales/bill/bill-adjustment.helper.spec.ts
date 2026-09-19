@@ -72,11 +72,13 @@ interface Harness {
 // A transaction client with just the four surfaces the helper touches. The
 // adjustment findMany is answered by call order: the helper reads the live rows
 // first and the already-reversed set second.
-const makeTx = (options: {
-  credits?: CreditRow[];
-  live?: Record<string, unknown>[];
-  reversed?: { abjReversalOfId: string }[];
-} = {}): Harness => {
+const makeTx = (
+  options: {
+    credits?: CreditRow[];
+    live?: Record<string, unknown>[];
+    reversed?: { abjReversalOfId: string }[];
+  } = {},
+): Harness => {
   const credits = options.credits ?? [makeCredit()];
   const live = options.live ?? [];
   const reversed = options.reversed ?? [];
@@ -239,7 +241,13 @@ describe('syncBillAdjustments', () => {
       await syncBillAdjustments(
         tx,
         makeContext(),
-        [adjust({ billType: 'SALES_RETURN', adjType: 'NOTE_ADJUST', settlementMode: 'CREDIT_NOTE' })],
+        [
+          adjust({
+            billType: 'SALES_RETURN',
+            adjType: 'NOTE_ADJUST',
+            settlementMode: 'CREDIT_NOTE',
+          }),
+        ],
         ACTOR,
         NOW,
       );
@@ -374,7 +382,7 @@ describe('syncBillAdjustments', () => {
       const live = makeLiveRow();
       const { tx, created } = makeTx({
         live: [live],
-        reversed: [{ abjReversalOfId: live.abjId as string }],
+        reversed: [{ abjReversalOfId: live.abjId }],
       });
       // The live read discounts it too, so this is a first post, not a replace.
       const result = await syncBillAdjustments(tx, makeContext(), [adjust()], ACTOR, NOW);

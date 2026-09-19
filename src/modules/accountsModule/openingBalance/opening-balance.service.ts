@@ -719,7 +719,8 @@ export class OpeningBalanceService {
       return existing.opSource as OpeningSource;
     }
 
-    const figureChanged = !money(existing.opAmount).equals(amount) || existing.opDrCr !== row.opDrCr;
+    const figureChanged =
+      !money(existing.opAmount).equals(amount) || existing.opDrCr !== row.opDrCr;
     if (figureChanged) {
       flippedToManual.push(existing.opId);
       return OpeningSource.MANUAL;
@@ -816,7 +817,9 @@ export class OpeningBalanceService {
       return created.opId;
     } catch (error) {
       if (isForeignKeyConstraintError(error)) {
-        const message = String((error as { meta?: { constraint?: string } }).meta?.constraint ?? '');
+        const message = String(
+          (error as { meta?: { constraint?: string } }).meta?.constraint ?? '',
+        );
         throwAccountsBadRequest<OpeningBalanceErrorDetail>('Validation failed', [
           message.includes('branch')
             ? { field: 'opBranchId', message: 'Branch not found' }

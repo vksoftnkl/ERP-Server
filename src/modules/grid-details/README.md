@@ -40,7 +40,7 @@ All routes are `@Version(API_VERSION)`.
 | --- | --- | --- |
 | `POST` | `/create` | Create **or** update a grid config plus its nested columns. |
 | `GET` | `/get` | List grid configs (each with active columns). Filter by grid id and/or search. |
-| `PUT` | `/column-width` | Bulk-set `grid_column_width` for one or more columns (by `grid_column_id`). |
+| `PUT` | `/column-width` | Set a column's width (by `grid_column_id`). Both fields are optional and each is written only when sent: `grid_column_px` is the laid-out width (`"180px"`) the browser sizes from, `grid_column_width` the desktop client's Qt fraction. A field left out keeps its stored value, so neither client overwrites the other's sizing. |
 | `PUT` | `/filter-settings` | Bulk-set `grid_column_filter` for one or more columns. |
 | `PUT` | `/visibility-settings` | Bulk-set `grid_column_visibility` for one or more columns. |
 | `DELETE` | `/column-delete` | Soft-delete a single column by `grid_column_id` (UUID query param). |

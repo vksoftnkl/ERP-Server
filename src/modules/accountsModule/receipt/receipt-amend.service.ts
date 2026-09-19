@@ -218,6 +218,7 @@ export class ReceiptAmendService {
     );
     this.assertAmendPermitted(settings.allowPostedAmend);
     this.assertStatusMayAmend(header);
+    await this.assertPartyUnchanged(tx, header, dto.avhPartyId);
     this.assertRevisionIsCurrent(header, dto.baseRevision);
 
     // ── 2 · Everything refused on the FACTS, before anything is written ────
@@ -394,6 +395,77 @@ export class ReceiptAmendService {
         },
       ]);
     }
+  }
+
+  /**
+   * **The party is not amendable.** Changing it is what `/cancel` plus a new
+   * receipt is for.
+   *
+   * ═══════════════════════════════════════════════════════════════════════
+   *  WHY THIS NEEDS ITS OWN GATE, WHEN NOTHING ELSE BREAKS
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * It was assumed this failed on its own: an amend that names a different
+   * party would surely be caught by the allocation engine, because the
+   * allocations still point at the OLD party's bills and a bill cannot be
+   * settled by a stranger. That assumption is wrong, and it was verified
+   * wrong — send the NEW party's bills in `allocations[]` and every downstream
+   * check is satisfied, because at that point the payload is internally
+   * consistent. The amend is accepted, and afterwards nothing looks broken:
+   * the old party's bill is reopened, the new party's bill is settled, the
+   * legs and the adjustment rows all net exactly.
+   *
+   * That consistency is precisely what makes it dangerous. The receipt KEEPS
+   * ITS NUMBER — that is the whole point of an amend, and the customer is
+   * holding a slip with that number on it. So a correctly-formed amend can
+   * make the ledger say that A's slip was B's money, and leave no anomaly for
+   * anybody to notice.
+   *
+   * ── Why it is refused rather than made to work ───────────────────────────
+   * An amend RESTATES a document. Who paid is not a detail of the
+   * restatement — it is a different document, about a different person's
+   * account, and the right party's account would be left never having been
+   * credited at all. This service's own header note has always said so ("a
+   * receipt taken from the WRONG PARTY is cancelled, not restated"); this is
+   * that sentence, enforced.
+   *
+   * ── Why 409 and not 400 ────────────────────────────────────────────────
+   * The payload is well formed. What is refused is what it would DO to a
+   * document in this state, which is the same family as the status gate and
+   * the revision gate above it, and they all answer 409. The message names
+   * both parties, because an operator who has picked the wrong customer needs
+   * to see which two are involved to understand what they nearly did.
+   */
+  private async assertPartyUnchanged(
+    tx: Prisma.TransactionClient,
+    header: StoredHeader,
+    partyId: string,
+  ): Promise<void> {
+    if (header.avhPartyId === partyId) {
+      return;
+    }
+
+    // Both names, so the refusal reads as a sentence about two customers
+    // rather than as two uuids. A name that cannot be resolved falls back to
+    // the id — the refusal must not itself fail.
+    const names = await tx.accLedgerMaster.findMany({
+      where: { ledId: { in: [header.avhPartyId, partyId] } },
+      select: { ledId: true, ledName: true },
+    });
+    const nameOf = (id: string): string => names.find((row) => row.ledId === id)?.ledName ?? id;
+
+    throwAccountsConflict<ReceiptErrorDetail>('Receipt cannot be amended', [
+      {
+        field: 'avhPartyId',
+        message:
+          `${header.avhVoucherRefno ?? header.avhVoucherId} was received from ` +
+          `"${nameOf(header.avhPartyId)}" and an amend cannot move it to ` +
+          `"${nameOf(partyId)}". The receipt keeps its number, and that number is on a slip ` +
+          'the first customer is holding — restating it would make the ledger say their slip ' +
+          "was somebody else's money. Cancel this receipt and enter a new one for the right " +
+          'customer.',
+      },
+    ]);
   }
 
   /**

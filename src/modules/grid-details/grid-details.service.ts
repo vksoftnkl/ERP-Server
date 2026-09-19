@@ -86,10 +86,22 @@ export class GridDetailsService {
             `No active grid column found with id ${item.grid_column_id}`,
           );
         }
-        await tx.gridColumn.update({
-          where: { gridColumnId: serialId },
-          data: { gridColumnWidth: item.grid_column_width },
-        });
+        // Each width is written only when the caller actually sent it. The
+        // browser sends `grid_column_px` alone — the width it laid the column
+        // out at — and must not overwrite the desktop client's Qt fraction with
+        // a number derived from a browser window; an older caller sending the
+        // fraction alone must likewise leave a stored px value intact.
+        const data: Prisma.GridColumnUncheckedUpdateInput = {};
+        if (hasOwnProperty(item, 'grid_column_width')) {
+          data.gridColumnWidth = item.grid_column_width;
+        }
+        if (hasOwnProperty(item, 'grid_column_px')) {
+          data.gridColumnPx = item.grid_column_px;
+        }
+        if (Object.keys(data).length === 0) {
+          continue;
+        }
+        await tx.gridColumn.update({ where: { gridColumnId: serialId }, data });
         count++;
       }
     });

@@ -23,4 +23,3 @@ export interface CustomerGroupPayload {
   cgrCreatedOn: string;
   cgrModifiedOn: string;
 }
-

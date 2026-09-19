@@ -14,7 +14,7 @@ import {
   UpperMaxString,
 } from 'src/common/dto/dtoDecorators';
 import { DrCr, VoucherDeviceType } from '../types/receipt-enum';
-import { ReceiptKeysDto } from './post-receipt.dto';
+import { PostReceiptAllocationDto, PostReceiptCreditDto, ReceiptKeysDto } from './post-receipt.dto';
 
 /**
  * §4.3 — `POST /receipts/create`, the DRAFT.
@@ -356,6 +356,66 @@ export class SaveReceiptDto {
 }
 
 /**
+ * What `POST /receipts/create` actually takes: everything a draft is, plus the
+ * bill-wise settlement the operator had arranged when they saved it.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  WHY THIS IS A SUBCLASS AND NOT TWO MORE FIELDS ON SaveReceiptDto
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * `AmendReceiptDto extends SaveReceiptDto` and re-declares `allocations` as
+ * REQUIRED. Adding an optional `allocations` to the base would collide with
+ * that (TS2612), and the two ways out of TS2612 are both traps this module has
+ * already been bitten by: `declare` silently strips every decorator, and an
+ * initializer would quietly turn a dropped `allocations` array on an amend
+ * into "settle nothing, hold it all on account".
+ *
+ * The split is also honest rather than merely convenient. **The two arrays
+ * mean different things on the two routes.** On `/post` and `/amend` an
+ * allocation is an INSTRUCTION, checked to the paisa and refused on a
+ * mismatch. Here it is a NOTE — what the operator had arranged when they
+ * walked away — and it is neither checked nor applied.
+ */
+export class SaveDraftReceiptDto extends SaveReceiptDto {
+  @ApiPropertyOptional({
+    type: () => PostReceiptAllocationDto,
+    isArray: true,
+    description:
+      'The bill-wise settlement as the operator left it, REMEMBERED so reopening the draft does ' +
+      'not lose it. Same shape /receipts/post takes.\n\n' +
+      '**Nothing is applied.** No acc_bill_adjustment row is written and no abl_pending_amount ' +
+      'moves (R10) — a draft still touches no bill, which is what lets two people hold drafts ' +
+      "against the same party without reserving each other's outstanding.\n\n" +
+      '**Nothing is validated.** A remembered figure can go stale between saving and reopening ' +
+      'if somebody else settles the same bill, and it is handed back exactly as it was stored. ' +
+      'Re-read /receipts/open-items on reopen and clamp each figure to what the bill can still ' +
+      'take — refusing the load here would cost the whole draft to save one number.\n\n' +
+      'OMIT the key to leave whatever is already remembered alone; send `[]` to clear it. A ' +
+      'client that has never heard of this field cannot wipe it.',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(1000)
+  @ValidateNested({ each: true })
+  @Type(() => PostReceiptAllocationDto)
+  allocations?: PostReceiptAllocationDto[];
+
+  @ApiPropertyOptional({
+    type: () => PostReceiptCreditDto,
+    isArray: true,
+    description:
+      'The credits the operator had ticked, remembered on the same terms as `allocations` — not ' +
+      'applied, not validated, and omitted rather than emptied to leave them alone.',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(500)
+  @ValidateNested({ each: true })
+  @Type(() => PostReceiptCreditDto)
+  creditsApplied?: PostReceiptCreditDto[];
+}
+
+/**
  * §4.7 — `PUT /receipts/update-header`, the optional seventh route.
  *
  * Takes the four keys and the four editable fields. Nothing else is accepted,
@@ -379,7 +439,14 @@ export class UpdateReceiptHeaderDto extends ReceiptKeysDto {
   @NullableDateString()
   avhDocDate?: string | null;
 
-  @ApiPropertyOptional({ type: [String], format: 'uuid' })
+  @ApiPropertyOptional({
+    type: [String],
+    format: 'uuid',
+    description:
+      'Collected by (R6). **One id, exactly as /receipts/create requires** — the column is an ' +
+      "array because every voucher header's is, not because a collection may be shared. Sending " +
+      'an empty array clears it, and is refused when accounts.receipt_salesman_mandatory is on.',
+  })
   @IsOptional()
   @IsArray()
   @ArrayMaxSize(5)
@@ -397,8 +464,48 @@ export class UpdateReceiptHeaderDto extends ReceiptKeysDto {
   // the money must be told that it did not.
 }
 
-/** The regularise sweep, for a cron caller. */
+/**
+ * The regularise sweep, for a cron caller.
+ *
+ * ── R-B1: the company is not optional ────────────────────────────────────
+ * This is a WRITE, and it used to take nothing but `asOf` — so one
+ * authenticated call regularised every company in the database. The effect was
+ * idempotent and corrupted nothing, and it was still a write across a tenant
+ * boundary, which is the one thing no route here may do.
+ *
+ * The branch and the year are filters rather than keys, and that is deliberate
+ * — see `RegulariseScope` for why requiring them would make the sweep miss the
+ * bills it exists to find.
+ */
 export class RegularisePdcDto {
+  @ApiProperty({
+    format: 'uuid',
+    description: 'The company to sweep. Required: a sweep is a write, and writes are scoped.',
+  })
+  @RequiredUuid()
+  companyId!: string;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      'Narrow the sweep to one branch. **Omit it for the nightly run.** A bill raised at one ' +
+      'branch is settled at another all the time and outstanding is company-wide, so a sweep ' +
+      'pinned to a branch leaves matured cheques uncounted.',
+  })
+  @OptionalUuid()
+  branchId?: string;
+
+  @ApiPropertyOptional({
+    example: '2026-2027',
+    description:
+      'Narrow the sweep to settlements booked in one accounting year. **Omit it for the nightly ' +
+      'run.** acc_bill_balance is partitioned by the year a bill ORIGINATED in and is never ' +
+      'carried forward, so a sweep pinned to this year walks past every bill raised before it.',
+  })
+  @IsOptional()
+  @UpperMaxString(9)
+  accYear?: string;
+
   @ApiPropertyOptional({
     example: '2026-09-20',
     description:

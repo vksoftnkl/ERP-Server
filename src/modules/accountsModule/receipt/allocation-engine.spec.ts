@@ -39,6 +39,7 @@ function bill(
     amount: d(amount),
     discount: d(0),
     writeoff: d(0),
+    roundoff: d(0),
     pendingAmount: d(pending),
     writeoffApprovedBy: null,
     ...extra,

@@ -32,6 +32,22 @@ export interface OpenBill {
   billAccYear: string;
   billType: BillType;
   docRefno: string;
+  /**
+   * R-B8 — the CUSTOMER's own reference for this bill, as they printed it on
+   * their purchase order or their remittance advice.
+   *
+   * `docRefno` is OUR number. This is theirs, and it is how an operator holding
+   * a customer's advice finds the bill it names — matching on our number means
+   * reading it off their paperwork, which is the thing they did not send.
+   *
+   * Null whenever the bill has no source document to read it from: an OPENING
+   * balance, a JOURNAL reference, an ADVANCE. `acc_bill_balance` carries no
+   * reference of its own, so this is fetched from the document that raised the
+   * bill (`abl_src_doc_id` → `sales.sale_bill.sb_usr_refno`) rather than
+   * duplicated onto the balance row, where it would go stale the first time the
+   * invoice was corrected.
+   */
+  usrRefno: string | null;
   docDate: string;
   dueDate: string | null;
   billAmount: number;
@@ -39,6 +55,42 @@ export interface OpenBill {
   status: BillStatus;
   /** 0 when the bill has no due date — it has nothing to be late against. */
   daysOverdue: number;
+  /**
+   * R-B7 — the margin earned on this bill, tax inclusive, so the operator can
+   * see whether the settlement discount they are about to type costs it.
+   *
+   * ── Read this before using it ────────────────────────────────────────────
+   * **Nothing stores a profit per bill.** `sales.sale_bill_item` stores
+   * `sbi_item_profit` PER UNIT per line — verified against the data: two lines
+   * with the same rate and quantities of 3 and 10 both carry 25.23 — so this is
+   * `Σ (sbi_item_profit × sbi_net_qty)` over the source bill's live lines, and
+   * it is a DERIVED figure, not a stored one.
+   *
+   * **The server never computes the per-unit figure either.** It arrives on
+   * `/bills/create` from the client and is stored as sent, so this is only as
+   * good as what the billing screen put there.
+   *
+   * `null` means "not answerable", and the client must show it as blank rather
+   * than as zero:
+   *
+   *   · the bill has no sale bill behind it (OPENING, JOURNAL, ADVANCE, a
+   *     return), so there are no lines to sum; or
+   *   · at least one live line carries no profit figure. A partial sum is worse
+   *     than no sum here — it UNDERSTATES the margin, and the one decision this
+   *     field exists to inform is whether a discount can be afforded.
+   */
+  billProfit: number | null;
+  /**
+   * The same figure PRE-TAX — `Σ (sbi_profit_pre_tax × sbi_net_qty)`, null on
+   * exactly the same terms as `billProfit`.
+   *
+   * Both are given because the two answer different questions and the schema
+   * holds both: a settlement discount comes off the gross the customer pays, so
+   * `billProfit` is what it eats into, while `billProfitPreTax` is what a
+   * margin report means by profit. Picking one server-side would be guessing
+   * which of the two the screen is for.
+   */
+  billProfitPreTax: number | null;
   /**
    * Post-dated money already promised against this bill, not yet matured.
    *
@@ -153,10 +205,123 @@ export interface PartyPendingCheque {
   voucherRefno: string | null;
 }
 
+/**
+ * R-B9 — the figures the party band shows that cannot be added up from
+ * anything else in this payload.
+ */
+export interface PartyContextSummary {
+  /**
+   * What the party owes, NET, across everything — every open receivable less
+   * every credit of theirs the company is holding, whatever year each was
+   * raised in.
+   *
+   * Positive: they owe us. Negative: we are holding more of their money than
+   * they owe, which is a real and common state after an advance.
+   *
+   * Not derivable on the client from `/receipts/open-items`, which answers a
+   * narrower question: it lists the RECEIVABLE types a receipt may settle and
+   * the CREDIT types it may spend, and a party's balance includes rows that are
+   * neither.
+   */
+  totalBalance: number;
+  /** Σ pending on the party's open receivables. The positive half of the net. */
+  totalOutstanding: number;
+  /** Σ pending on the credits the company holds for them. The negative half. */
+  totalCredits: number;
+  /**
+   * Money promised to this party's bills by post-dated instruments that have
+   * NOT yet matured — the total the bill-wise `pdcHeld` column adds up to.
+   *
+   * Given here rather than left to the client because it is counted from the
+   * party's adjustment rows directly, so it stays right no matter which bills
+   * the open-items list happens to contain.
+   */
+  chequesOutstanding: number;
+}
+
 export interface PartyContextPayload {
   partyId: string;
+  /** The party's name, so the band has something to label itself with. */
+  partyName: string;
+  summary: PartyContextSummary;
   lastReceipts: PartyRecentReceipt[];
   pendingCheques: PartyPendingCheque[];
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  R-B4  GET /receipts/adjacent
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** One neighbour in the register, with enough on it to label a button. */
+export interface AdjacentVoucher {
+  voucherId: string;
+  accYear: string;
+  companyId: string;
+  branchId: string;
+  voucherRefno: string | null;
+  voucherDate: string;
+  partyId: string;
+  partyName: string | null;
+  docAmount: number;
+  status: VoucherStatus;
+}
+
+/**
+ * R-B4 — the receipt before or after this one, in the register's own order.
+ *
+ * ── What "before" and "after" mean here ──────────────────────────────────
+ * The register orders on `(avh_voucher_date, avh_voucher_slno)` and RENDERS it
+ * descending, newest at the top. This route talks about the ORDERING KEY, not
+ * about the rendered list, because "the row above" reverses meaning the moment
+ * somebody adds an ascending sort:
+ *
+ *   · `prev` — the greatest key strictly BELOW this voucher's: the receipt
+ *     entered just before it. Further DOWN the register as it is drawn today.
+ *   · `next` — the least key strictly ABOVE it: the receipt entered just after.
+ *     Further UP the register as it is drawn today.
+ *
+ * `voucher` is null at the end of the walk, and that null is the signal to grey
+ * the key out — there is no separate `hasNext`, because a second flag saying
+ * the same thing is a second thing to keep true.
+ */
+export interface AdjacentVoucherPayload {
+  direction: 'prev' | 'next';
+  /** The voucher the caller walked from, echoed so a stale reply is obvious. */
+  fromVoucherId: string;
+  /** Null at the end of the register under the filters that were applied. */
+  voucher: AdjacentVoucher | null;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  R-B6  GET /receipts/duplicate-check
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** One receipt that looks like the one being keyed. */
+export interface DuplicateReceipt {
+  voucherId: string;
+  accYear: string;
+  branchId: string;
+  voucherRefno: string | null;
+  voucherDate: string;
+  docAmount: number;
+  status: VoucherStatus;
+  /** So the operator can see it was keyed on another beat, or by someone else. */
+  createdBy: string | null;
+  createdOn: string;
+}
+
+/**
+ * R-B6 — "has this party already paid this much today?"
+ *
+ * **A WARNING, never a refusal.** A customer settling two invoices with two
+ * equal cheques on one day is ordinary, and a server that refused the second
+ * would be wrong about the business. The route answers 200 with whatever it
+ * found and the operator decides; it has no opinion and writes nothing.
+ */
+export interface DuplicateCheckPayload {
+  /** True when `matches` is non-empty — the one thing the client branches on. */
+  isDuplicate: boolean;
+  matches: DuplicateReceipt[];
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -211,13 +376,42 @@ export interface ReceiptLeg {
   avRemarks: string | null;
 }
 
-/** One `acc_bill_adjustment` row, joined to the bill it names. */
+/**
+ * One `acc_bill_adjustment` row, joined to the bill it names — **or, on a
+ * DRAFT, one settlement the operator arranged and the draft merely remembers.**
+ *
+ * ── Which one you are holding ────────────────────────────────────────────
+ * `header.avhVoucherStatus` says, and so does `abjId`: a remembered row has
+ * **`abjId: null`**, because no `acc_bill_adjustment` row exists for it and
+ * none ever will until the receipt is posted. Never send that null back
+ * anywhere.
+ *
+ * The rows are otherwise shaped exactly as a posted one — same `adjType`, same
+ * `drCr`, discount and write-off expanded into their own DISCOUNT and WRITEOFF
+ * rows — so a screen that can paint a posted receipt paints a reopened draft
+ * with the same code.
+ *
+ * ── One difference that cannot be smoothed over ──────────────────────────
+ * On a POSTED receipt a `creditsApplied` row names the INVOICE it settled in
+ * `billId` and the credit it spent in `againstBillId`. On a DRAFT, `billId` is
+ * the CREDIT and `againstBillId` is null — because that is genuinely all the
+ * operator has chosen. Which invoices a credit ends up settling is decided by
+ * the allocation engine at post, and a draft has not run it.
+ *
+ * ── A remembered row is a SUGGESTION ─────────────────────────────────────
+ * It is handed back exactly as it was stored and is never re-checked, so its
+ * amount may exceed what the bill can now take, or name a bill somebody else
+ * has since closed. Re-read `/receipts/open-items` on reopen and clamp. See
+ * `receipt-draft-lines.ts` for why refusing it here would be the wrong trade.
+ */
 export interface ReceiptAllocation {
-  abjId: string;
+  /** **Null on a DRAFT** — nothing is written until the receipt posts. */
+  abjId: string | null;
   billId: string;
   billAccYear: string;
   docRefno: string;
-  docDate: string;
+  /** Null when the bill behind a remembered row can no longer be read. */
+  docDate: string | null;
   adjType: BillAdjType;
   settlementMode: BillSettlementMode | null;
   drCr: DrCr;
@@ -476,7 +670,17 @@ export interface ReceiptAmendPayload extends ReceiptPostPayload {
 /** The regularise sweep (§2.1's cron half, as an endpoint). */
 export interface RegularisePdcPayload {
   asOf: string;
+  /**
+   * R-B1 — bills whose stored figures actually MOVED, which is 0 on a second
+   * run over the same data. It used to be the size of the batch, so a no-op
+   * sweep reported work it had not done and an operator could not tell a real
+   * run from a repeat.
+   */
   billsRegularised: number;
+  /** Bills examined, so a 0 above reads as "nothing left to do", not "nothing ran". */
+  billsExamined: number;
+  /** The company the sweep was scoped to. Echoed because the scope is the point. */
+  companyId: string;
 }
 
 /**

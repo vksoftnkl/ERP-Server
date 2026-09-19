@@ -644,7 +644,8 @@ describe('QuotationService — applied charges', () => {
       makeQuotation({ items: [makeItem()] } as unknown as Partial<SaleQuotation>),
     );
 
-    const line = (await service.getById(QUOTE_ID, undefined, COMPANY_ID, BRANCH_ID, ACC_YEAR)).items?.[0];
+    const line = (await service.getById(QUOTE_ID, undefined, COMPANY_ID, BRANCH_ID, ACC_YEAR))
+      .items?.[0];
 
     expect(line?.sqiDecimalCount).toBeNull();
     expect(line?.sqiBatchConfig).toBeNull();

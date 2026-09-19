@@ -1,5 +1,10 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { NullableUuid, OptionalBoolean, RequiredUuid, UpperMaxString } from 'src/common/dto/dtoDecorators';
+import {
+  NullableUuid,
+  OptionalBoolean,
+  RequiredUuid,
+  UpperMaxString,
+} from 'src/common/dto/dtoDecorators';
 
 /**
  * §4.5. One transaction over a whole company-year.
@@ -17,11 +22,18 @@ export class CarryForwardDto {
   @UpperMaxString(9)
   fromAccYear!: string;
 
-  @ApiProperty({ example: '2026-2027', description: 'The year being opened — written into. Must follow fromAccYear.' })
+  @ApiProperty({
+    example: '2026-2027',
+    description: 'The year being opened — written into. Must follow fromAccYear.',
+  })
   @UpperMaxString(9)
   toAccYear!: string;
 
-  @ApiPropertyOptional({ format: 'uuid', nullable: true, description: 'null = the company-level set.' })
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description: 'null = the company-level set.',
+  })
   @NullableUuid()
   branchId?: string | null;
 

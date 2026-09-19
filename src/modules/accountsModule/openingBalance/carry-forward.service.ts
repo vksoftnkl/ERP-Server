@@ -2,10 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
-import {
-  DEFAULT_ACTOR,
-  throwAccountsBadRequest,
-} from 'src/common/utils/module-service.utils';
+import { DEFAULT_ACTOR, throwAccountsBadRequest } from 'src/common/utils/module-service.utils';
 import { OpeningBalanceService } from './opening-balance.service';
 import { resolveRetainedEarningsLedger } from './ledger-roles';
 import {
@@ -311,7 +308,9 @@ export class CarryForwardService {
     accYear: string,
     ledgers: ReadonlyMap<string, VisibleLedger>,
   ): Promise<Prisma.Decimal> {
-    const movements = await client.$queryRaw<Array<{ led_id: string; signed: Prisma.Decimal | null }>>`
+    const movements = await client.$queryRaw<
+      Array<{ led_id: string; signed: Prisma.Decimal | null }>
+    >`
       SELECT v.av_ledger_id AS led_id,
              SUM(v.av_signed_amount) AS signed
         FROM accounts.acc_vouchers v
@@ -443,7 +442,10 @@ export class CarryForwardService {
     });
     const carriedByParent = new Map(
       existingCarried
-        .filter((bill): bill is typeof bill & { ablParentBillId: string } => bill.ablParentBillId !== null)
+        .filter(
+          (bill): bill is typeof bill & { ablParentBillId: string } =>
+            bill.ablParentBillId !== null,
+        )
         .map((bill) => [bill.ablParentBillId, { ablId: bill.ablId, frozen: isBillFrozen(bill) }]),
     );
 
@@ -550,7 +552,9 @@ export class CarryForwardService {
             continue;
           }
           await client.accBillBalance.update({
-            where: { ablId_ablAccYear: { ablId: alreadyCarried.ablId, ablAccYear: params.toAccYear } },
+            where: {
+              ablId_ablAccYear: { ablId: alreadyCarried.ablId, ablAccYear: params.toAccYear },
+            },
             data: {
               ablBillAmount: bill.ablPendingAmount!,
               ablDrCr: bill.ablDrCr,

@@ -1,8 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import {
-  SalesErrorFieldDto,
-  SalesErrorResponseDto,
-} from 'src/common/utils/module-response.dto';
+import { SalesErrorFieldDto, SalesErrorResponseDto } from 'src/common/utils/module-response.dto';
 
 export { SalesErrorFieldDto as CityErrorFieldDto };
 export { SalesErrorResponseDto as CityErrorResponseDto };
@@ -59,7 +56,6 @@ export class CitySuccessSingleDto {
   @ApiProperty({ type: CityPayloadDto })
   data!: CityPayloadDto;
 }
-
 
 export class CitySuccessDeleteDto {
   @ApiProperty({ example: true })

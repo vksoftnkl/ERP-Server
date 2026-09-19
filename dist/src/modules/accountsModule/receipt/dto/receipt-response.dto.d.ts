@@ -1,5 +1,5 @@
 import { BillAdjType, BillSettlementMode, BillStatus, BillType, DrCr, PdcStatus, TcsBasis, VoucherStatus } from '../types/receipt-enum';
-import type { OpenBill, OpenCredit, OpenItemsParty, OpenItemsPayload, OpenItemsSummary, PartyContextPayload, PartyPendingCheque, PartyRecentReceipt, ReceiptAdvanceBill, ReceiptAllocation, ReceiptAmendPayload, ReceiptCancelPayload, ReceiptCheque, ReceiptDeletePayload, ReceiptDraftPayload, ReceiptHeader, ReceiptLeg, ReceiptOtherLine, ReceiptPayload, ReceiptPdcVoucher, ReceiptPostPayload, ReceiptStatusPayload, ReceiptTender, RegularisePdcPayload } from '../types/receipt-api.types';
+import type { AdjacentVoucher, AdjacentVoucherPayload, DuplicateCheckPayload, DuplicateReceipt, OpenBill, OpenCredit, OpenItemsParty, OpenItemsPayload, OpenItemsSummary, PartyContextPayload, PartyContextSummary, PartyPendingCheque, PartyRecentReceipt, ReceiptAdvanceBill, ReceiptAllocation, ReceiptAmendPayload, ReceiptCancelPayload, ReceiptCheque, ReceiptDeletePayload, ReceiptDraftPayload, ReceiptHeader, ReceiptLeg, ReceiptOtherLine, ReceiptPayload, ReceiptPdcVoucher, ReceiptPostPayload, ReceiptStatusPayload, ReceiptTender, RegularisePdcPayload } from '../types/receipt-api.types';
 export declare class ReceiptErrorFieldDto {
     field: string;
     message: string;
@@ -14,12 +14,15 @@ export declare class OpenBillDto implements OpenBill {
     billAccYear: string;
     billType: BillType;
     docRefno: string;
+    usrRefno: string | null;
     docDate: string;
     dueDate: string | null;
     billAmount: number;
     pendingAmount: number;
     status: BillStatus;
     daysOverdue: number;
+    billProfit: number | null;
+    billProfitPreTax: number | null;
     pdcHeld: number;
     ppdSuggested: number;
     tcsAmount: number;
@@ -92,8 +95,16 @@ export declare class PartyPendingChequeDto implements PartyPendingCheque {
     voucherId: string | null;
     voucherRefno: string | null;
 }
+export declare class PartyContextSummaryDto implements PartyContextSummary {
+    totalBalance: number;
+    totalOutstanding: number;
+    totalCredits: number;
+    chequesOutstanding: number;
+}
 export declare class PartyContextPayloadDto implements PartyContextPayload {
     partyId: string;
+    partyName: string;
+    summary: PartyContextSummaryDto;
     lastReceipts: PartyRecentReceiptDto[];
     pendingCheques: PartyPendingChequeDto[];
 }
@@ -143,11 +154,11 @@ export declare class ReceiptLegDto implements ReceiptLeg {
     avRemarks: string | null;
 }
 export declare class ReceiptAllocationDto implements ReceiptAllocation {
-    abjId: string;
+    abjId: string | null;
     billId: string;
     billAccYear: string;
     docRefno: string;
-    docDate: string;
+    docDate: string | null;
     adjType: BillAdjType;
     settlementMode: BillSettlementMode | null;
     drCr: DrCr;
@@ -367,9 +378,53 @@ export declare class ReceiptDeleteSuccessDto {
 export declare class RegularisePdcPayloadDto implements RegularisePdcPayload {
     asOf: string;
     billsRegularised: number;
+    billsExamined: number;
+    companyId: string;
 }
 export declare class RegularisePdcSuccessDto {
     success: true;
     message: string;
     data: RegularisePdcPayloadDto;
+}
+export declare class AdjacentVoucherDto implements AdjacentVoucher {
+    voucherId: string;
+    accYear: string;
+    companyId: string;
+    branchId: string;
+    voucherRefno: string | null;
+    voucherDate: string;
+    partyId: string;
+    partyName: string | null;
+    docAmount: number;
+    status: VoucherStatus;
+}
+export declare class AdjacentVoucherPayloadDto implements AdjacentVoucherPayload {
+    direction: 'prev' | 'next';
+    fromVoucherId: string;
+    voucher: AdjacentVoucherDto | null;
+}
+export declare class AdjacentVoucherSuccessDto {
+    success: true;
+    message: string;
+    data: AdjacentVoucherPayloadDto;
+}
+export declare class DuplicateReceiptDto implements DuplicateReceipt {
+    voucherId: string;
+    accYear: string;
+    branchId: string;
+    voucherRefno: string | null;
+    voucherDate: string;
+    docAmount: number;
+    status: VoucherStatus;
+    createdBy: string | null;
+    createdOn: string;
+}
+export declare class DuplicateCheckPayloadDto implements DuplicateCheckPayload {
+    isDuplicate: boolean;
+    matches: DuplicateReceiptDto[];
+}
+export declare class DuplicateCheckSuccessDto {
+    success: true;
+    message: string;
+    data: DuplicateCheckPayloadDto;
 }

@@ -1,5 +1,10 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { OptionalQueryBoolean, OptionalUuid, RequiredUuid, UpperMaxString } from 'src/common/dto/dtoDecorators';
+import {
+  OptionalQueryBoolean,
+  OptionalUuid,
+  RequiredUuid,
+  UpperMaxString,
+} from 'src/common/dto/dtoDecorators';
 
 /**
  * §4.1 / §4.3. Company and year are required because an opening balance has no

@@ -87,6 +87,7 @@ let ReceiptPostingService = class ReceiptPostingService {
                 amount: (0, receipt_utils_1.money)(row.amount),
                 discount: (0, receipt_utils_1.money)(row.discount ?? 0),
                 writeoff: (0, receipt_utils_1.money)(row.writeoff ?? 0),
+                roundoff: (0, receipt_utils_1.money)(row.roundoff ?? 0),
                 pendingAmount: bill.ablPendingAmount,
                 writeoffApprovedBy: row.writeoffApprovedBy ?? null,
             };
@@ -298,6 +299,7 @@ let ReceiptPostingService = class ReceiptPostingService {
         roles.add(receipt_enum_1.ReceiptLedgerRole.SURCHARGE_RECOVERED);
         roles.add(receipt_enum_1.ReceiptLedgerRole.DISCOUNT_ALLOWED);
         roles.add(receipt_enum_1.ReceiptLedgerRole.WRITE_OFF);
+        roles.add(receipt_enum_1.ReceiptLedgerRole.ROUND_OFF);
         const roleLedgers = await (0, receipt_ledger_roles_1.requireReceiptRoleLedgers)(tx, [...roles], {
             companyId: header.avhCompanyId,
             branchId: header.avhBranchId,
@@ -508,6 +510,7 @@ let ReceiptPostingService = class ReceiptPostingService {
                 }
                 await this.pushReduction(tx, push, params, receipt_enum_1.ReceiptLedgerRole.DISCOUNT_ALLOWED, (bill) => bill.discount);
                 await this.pushReduction(tx, push, params, receipt_enum_1.ReceiptLedgerRole.WRITE_OFF, (bill) => bill.writeoff);
+                await this.pushReduction(tx, push, params, receipt_enum_1.ReceiptLedgerRole.ROUND_OFF, (bill) => bill.roundoff);
             }
             push(receipt_enum_1.DrCr.CR, header.avhPartyId, plan.partyCreditByVoucher.get(voucher.key) ?? receipt_utils_1.ZERO, null, null);
             if (rows.length > 0) {

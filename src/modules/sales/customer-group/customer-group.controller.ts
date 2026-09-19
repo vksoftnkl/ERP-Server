@@ -44,7 +44,7 @@ import { API_VERSION } from '../../../common/constants/api-version';
 @Controller('customer-groups')
 @UseFilters(CustomerGroupExceptionFilter)
 export class CustomerGroupController {
-  constructor(private readonly customerGroupService: CustomerGroupService) { }
+  constructor(private readonly customerGroupService: CustomerGroupService) {}
 
   @Post('create')
   @Version(API_VERSION)

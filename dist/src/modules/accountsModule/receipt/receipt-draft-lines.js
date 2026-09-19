@@ -5,12 +5,14 @@ exports.buildDraftLines = buildDraftLines;
 exports.rehydrateDraft = rehydrateDraft;
 const receipt_enum_1 = require("./types/receipt-enum");
 function emptyDraft() {
-    return { otherLines: [], cheques: {} };
+    return { otherLines: [], cheques: {}, allocations: [], creditsApplied: [] };
 }
-function buildDraftLines(otherLines, cheques) {
+function buildDraftLines(otherLines, cheques, allocations, creditsApplied) {
     return {
         otherLines: otherLines,
         cheques: Object.fromEntries(Object.entries(cheques).filter(([, detail]) => detail !== null)),
+        allocations: allocations,
+        creditsApplied: creditsApplied,
     };
 }
 function rehydrateDraft(value) {
@@ -18,7 +20,7 @@ function rehydrateDraft(value) {
         return emptyDraft();
     }
     if (Array.isArray(value)) {
-        return { otherLines: readOtherLines(value), cheques: {} };
+        return { ...emptyDraft(), otherLines: readOtherLines(value) };
     }
     if (typeof value !== 'object') {
         return emptyDraft();
@@ -27,7 +29,51 @@ function rehydrateDraft(value) {
     return {
         otherLines: Array.isArray(record.otherLines) ? readOtherLines(record.otherLines) : [],
         cheques: readCheques(record.cheques),
+        allocations: Array.isArray(record.allocations) ? readAllocations(record.allocations) : [],
+        creditsApplied: Array.isArray(record.creditsApplied) ? readCredits(record.creditsApplied) : [],
     };
+}
+function readAllocations(value) {
+    const rows = [];
+    for (const entry of value) {
+        const row = asRecord(entry);
+        if (!row || typeof row.billId !== 'string' || typeof row.billAccYear !== 'string') {
+            continue;
+        }
+        rows.push({
+            billId: row.billId,
+            billAccYear: row.billAccYear,
+            amount: num(row.amount),
+            discount: num(row.discount),
+            writeoff: num(row.writeoff),
+            roundoff: num(row.roundoff),
+            writeoffApprovedBy: str(row.writeoffApprovedBy),
+        });
+    }
+    return rows;
+}
+function readCredits(value) {
+    const rows = [];
+    for (const entry of value) {
+        const row = asRecord(entry);
+        if (!row || typeof row.billId !== 'string' || typeof row.billAccYear !== 'string') {
+            continue;
+        }
+        rows.push({
+            billId: row.billId,
+            billAccYear: row.billAccYear,
+            amount: num(row.amount),
+        });
+    }
+    return rows;
+}
+function asRecord(value) {
+    return typeof value === 'object' && value !== null && !Array.isArray(value)
+        ? value
+        : null;
+}
+function num(value) {
+    return typeof value === 'number' && Number.isFinite(value) ? value : 0;
 }
 function readOtherLines(value) {
     const lines = [];

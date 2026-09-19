@@ -47,7 +47,14 @@ model AccBillAdjustment {
   //   ADVANCE_ADJUST an advance already held being applied to the bill
   //   NOTE_ADJUST    a credit / debit note set off against the bill
   //   DISCOUNT       settlement discount allowed at collection time
-  //   WRITEOFF       bad debt or rounding, written off
+  //   WRITEOFF       bad debt written off
+  //   ROUND_OFF      the paise a counter rounds a bill off by. Kept distinct
+  //                  from DISCOUNT although it behaves identically against the
+  //                  bill, because its LEG is debited to the Round Off ledger
+  //                  and a discount's to Discount Allowed — the row has to say
+  //                  what the leg says. Folds into abl_disc_amount all the
+  //                  same; that column is a cache meaning "already accounted
+  //                  for", and this column is where the exact split lives.
   //   TRANSFER       balance moved to another bill / party
   abjAdjType            String    @db.VarChar(20) @map("abj_adj_type")
   abjAdjDate            DateTime  @db.Date @map("abj_adj_date")
@@ -59,7 +66,7 @@ model AccBillAdjustment {
   abjAmount             Decimal   @db.Decimal(18, 2) @map("abj_amount")
   // How the money moved — ck_abj_settlement_mode: CASH | CARD | UPI | WALLET |
   // CHEQUE | BANK | CREDIT_NOTE | ADVANCE | LOYALTY | VOUCHER | JOURNAL |
-  // DISCOUNT | WRITEOFF | MIXED.
+  // DISCOUNT | WRITEOFF | ROUND_OFF | MIXED | TDS | CLAIM.
   abjSettlementMode     String?   @db.VarChar(20) @map("abj_settlement_mode")
   abjSettlementLedgerId String?   @db.Uuid @map("abj_settlement_ledger_id")
   // The tender row this settlement came from — one tender, one row, which is

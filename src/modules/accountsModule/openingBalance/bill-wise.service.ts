@@ -161,7 +161,8 @@ export class BillWiseService {
           await tx.accBillBalance.update({
             where: { ablId_ablAccYear: { ablId: existing.ablId, ablAccYear: accYear } },
             data: {
-              ablDueDate: row.ablDueDate === undefined ? undefined : this.toNullableDate(row.ablDueDate),
+              ablDueDate:
+                row.ablDueDate === undefined ? undefined : this.toNullableDate(row.ablDueDate),
               ablCreditDays: row.ablCreditDays ?? undefined,
               ablGraceDays: row.ablGraceDays ?? undefined,
               ablNarration: normalizeNullableString(row.ablNarration),
@@ -236,7 +237,9 @@ export class BillWiseService {
         created += 1;
       }
 
-      const deleted = replace ? await this.deleteAbsentBills(tx, stored, seen, accYear, actor, now) : 0;
+      const deleted = replace
+        ? await this.deleteAbsentBills(tx, stored, seen, accYear, actor, now)
+        : 0;
 
       // §5.5 rule 2 — the bills have moved, so the party's figure moves with
       // them, in this same transaction. Nothing else may write it.
@@ -355,7 +358,13 @@ export class BillWiseService {
       return { opId: named.opId };
     }
 
-    const existing = await this.findOpening(client, dto.companyId, dto.branchId, accYear, dto.partyId);
+    const existing = await this.findOpening(
+      client,
+      dto.companyId,
+      dto.branchId,
+      accYear,
+      dto.partyId,
+    );
     if (existing) {
       return { opId: existing.opId };
     }

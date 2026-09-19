@@ -14,6 +14,8 @@ type PrismaMock = {
   };
   gridColumn: {
     updateMany: jest.Mock;
+    findFirst: jest.Mock;
+    update: jest.Mock;
   };
   $transaction: jest.Mock;
 };
@@ -39,6 +41,9 @@ const makeRecord = (overrides: Partial<GridDetails> = {}): GridDetails => ({
   ...overrides,
 });
 
+/** Any real uuid; the mock only has to recognise it. */
+const COLUMN_ID = '019f07d3-a1e0-7d2f-9d64-1d566dec2cff';
+
 const makeAuditLogService = () => ({
   logEntityChange: jest.fn().mockResolvedValue(undefined),
 });
@@ -63,6 +68,8 @@ describe('GridDetailsService', () => {
       },
       gridColumn: {
         updateMany: jest.fn(),
+        findFirst: jest.fn().mockResolvedValue({ gridColumnId: COLUMN_ID }),
+        update: jest.fn().mockResolvedValue({}),
       },
       $transaction: jest.fn(async (callback: (tx: PrismaMock) => unknown) => callback(prisma)),
     };
@@ -180,4 +187,41 @@ describe('GridDetailsService', () => {
     expect(pg.query).not.toHaveBeenCalled();
     expect(prisma.gridDetails.create).not.toHaveBeenCalled();
   });
+
+  it('stores the pixel width a dragged column was left at, and nothing else', async () => {
+    // What the browser sends: the width it laid the column out at, on its own.
+    await service.updateColumnWidths({
+      columns: [{ grid_column_id: COLUMN_ID, grid_column_px: '246px' }],
+    });
+
+    expect(prisma.gridColumn.update).toHaveBeenCalledWith({
+      where: { gridColumnId: COLUMN_ID },
+      data: { gridColumnPx: '246px' },
+    });
+  });
+
+  it('writes both widths when a caller sends both', async () => {
+    await service.updateColumnWidths({
+      columns: [{ grid_column_id: COLUMN_ID, grid_column_width: 30.75, grid_column_px: '246px' }],
+    });
+
+    expect(prisma.gridColumn.update).toHaveBeenCalledWith({
+      where: { gridColumnId: COLUMN_ID },
+      data: { gridColumnWidth: 30.75, gridColumnPx: '246px' },
+    });
+  });
+
+  it('leaves a stored pixel width alone when the caller sends the fraction only', async () => {
+    // The desktop client posts `grid_column_width` by itself; that must not wipe
+    // the exact width the browser saved.
+    await service.updateColumnWidths({
+      columns: [{ grid_column_id: COLUMN_ID, grid_column_width: 31.5 }],
+    });
+
+    expect(prisma.gridColumn.update).toHaveBeenCalledWith({
+      where: { gridColumnId: COLUMN_ID },
+      data: { gridColumnWidth: 31.5 },
+    });
+  });
+
 });

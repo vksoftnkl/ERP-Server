@@ -9,7 +9,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.RegularisePdcSuccessDto = exports.RegularisePdcPayloadDto = exports.ReceiptDeleteSuccessDto = exports.ReceiptDeletePayloadDto = exports.ReceiptCancelSuccessDto = exports.ReceiptCancelPayloadDto = exports.ReceiptBillReopenedDto = exports.ReceiptReversalDto = exports.ReceiptStatusPayloadDto = exports.ReceiptAmendSuccessDto = exports.ReceiptAmendPayloadDto = exports.ReceiptAmendUnwoundDto = exports.ReceiptPostSuccessDto = exports.ReceiptPostPayloadDto = exports.ReceiptBillAfterDto = exports.ReceiptNumberedVoucherDto = exports.ReceiptSuccessDto = exports.ReceiptHeaderSuccessDto = exports.ReceiptPayloadDto = exports.ReceiptDraftSuccessDto = exports.ReceiptDraftPayloadDto = exports.ReceiptHeaderDto = exports.ReceiptAdvanceBillDto = exports.ReceiptPdcVoucherDto = exports.ReceiptChequeDto = exports.ReceiptAllocationDto = exports.ReceiptLegDto = exports.ReceiptOtherLineDto = exports.ReceiptTenderDto = exports.PartyContextSuccessDto = exports.PartyContextPayloadDto = exports.PartyPendingChequeDto = exports.PartyRecentReceiptDto = exports.OpenItemsSuccessDto = exports.OpenItemsPayloadDto = exports.OpenItemsPartyDto = exports.OpenItemsSummaryDto = exports.OpenCreditDto = exports.OpenBillDto = exports.ReceiptErrorResponseDto = exports.ReceiptErrorFieldDto = void 0;
+exports.DuplicateCheckSuccessDto = exports.DuplicateCheckPayloadDto = exports.DuplicateReceiptDto = exports.AdjacentVoucherSuccessDto = exports.AdjacentVoucherPayloadDto = exports.AdjacentVoucherDto = exports.RegularisePdcSuccessDto = exports.RegularisePdcPayloadDto = exports.ReceiptDeleteSuccessDto = exports.ReceiptDeletePayloadDto = exports.ReceiptCancelSuccessDto = exports.ReceiptCancelPayloadDto = exports.ReceiptBillReopenedDto = exports.ReceiptReversalDto = exports.ReceiptStatusPayloadDto = exports.ReceiptAmendSuccessDto = exports.ReceiptAmendPayloadDto = exports.ReceiptAmendUnwoundDto = exports.ReceiptPostSuccessDto = exports.ReceiptPostPayloadDto = exports.ReceiptBillAfterDto = exports.ReceiptNumberedVoucherDto = exports.ReceiptSuccessDto = exports.ReceiptHeaderSuccessDto = exports.ReceiptPayloadDto = exports.ReceiptDraftSuccessDto = exports.ReceiptDraftPayloadDto = exports.ReceiptHeaderDto = exports.ReceiptAdvanceBillDto = exports.ReceiptPdcVoucherDto = exports.ReceiptChequeDto = exports.ReceiptAllocationDto = exports.ReceiptLegDto = exports.ReceiptOtherLineDto = exports.ReceiptTenderDto = exports.PartyContextSuccessDto = exports.PartyContextPayloadDto = exports.PartyContextSummaryDto = exports.PartyPendingChequeDto = exports.PartyRecentReceiptDto = exports.OpenItemsSuccessDto = exports.OpenItemsPayloadDto = exports.OpenItemsPartyDto = exports.OpenItemsSummaryDto = exports.OpenCreditDto = exports.OpenBillDto = exports.ReceiptErrorResponseDto = exports.ReceiptErrorFieldDto = void 0;
 const swagger_1 = require("@nestjs/swagger");
 const receipt_enum_1 = require("../types/receipt-enum");
 class ReceiptErrorFieldDto {
@@ -57,12 +57,15 @@ class OpenBillDto {
     billAccYear;
     billType;
     docRefno;
+    usrRefno;
     docDate;
     dueDate;
     billAmount;
     pendingAmount;
     status;
     daysOverdue;
+    billProfit;
+    billProfitPreTax;
     pdcHeld;
     ppdSuggested;
     tcsAmount;
@@ -88,6 +91,17 @@ __decorate([
     (0, swagger_1.ApiProperty)({ example: 'bil00031' }),
     __metadata("design:type", String)
 ], OpenBillDto.prototype, "docRefno", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        nullable: true,
+        example: 'PO/2026/1187',
+        description: "R-B8 — the CUSTOMER's own reference, from the invoice behind the bill. docRefno is OURS; " +
+            'this is theirs, and it is what an operator holding a remittance advice matches on. Null ' +
+            'when the bill has no source document to read it from — an OPENING balance, a JOURNAL ' +
+            'reference, an ADVANCE.',
+    }),
+    __metadata("design:type", Object)
+], OpenBillDto.prototype, "usrRefno", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)({ example: '2026-09-08' }),
     __metadata("design:type", String)
@@ -115,6 +129,33 @@ __decorate([
     }),
     __metadata("design:type", Number)
 ], OpenBillDto.prototype, "daysOverdue", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        nullable: true,
+        example: 1841.25,
+        description: 'R-B7 — the margin this bill earned, TAX INCLUSIVE, so the operator can see whether the ' +
+            'settlement discount they are about to type costs it.\n\n' +
+            '**Derived, not stored.** Nothing holds a profit per bill: sale_bill_item holds ' +
+            "sbi_item_profit PER UNIT, and this is Σ (per-unit profit × net qty) over the invoice's " +
+            'live lines. The per-unit figure is not computed by the server either — it arrives on ' +
+            '/bills/create from the billing screen and is stored as sent.\n\n' +
+            '**null means "not answerable" — show it blank, never as 0.** Either the bill has no sale ' +
+            'bill behind it (OPENING, JOURNAL, ADVANCE, a return), or at least one live line carries no ' +
+            'profit figure. A partial sum is worse than none: it UNDERSTATES the margin, and would talk ' +
+            'an operator out of a discount they could afford.',
+    }),
+    __metadata("design:type", Object)
+], OpenBillDto.prototype, "billProfit", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        nullable: true,
+        example: 1560.38,
+        description: 'The same figure PRE-TAX, null on exactly the same terms. Both are given because they ' +
+            'answer different questions: a settlement discount comes off the gross, so billProfit is ' +
+            'what it eats into, while this is what a margin report means by profit.',
+    }),
+    __metadata("design:type", Object)
+], OpenBillDto.prototype, "billProfitPreTax", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)({
         example: 0,
@@ -463,8 +504,45 @@ __decorate([
     (0, swagger_1.ApiProperty)({ nullable: true, example: 'rct00018' }),
     __metadata("design:type", Object)
 ], PartyPendingChequeDto.prototype, "voucherRefno", void 0);
+class PartyContextSummaryDto {
+    totalBalance;
+    totalOutstanding;
+    totalCredits;
+    chequesOutstanding;
+}
+exports.PartyContextSummaryDto = PartyContextSummaryDto;
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        example: 56750,
+        description: 'R-B9 — what the party owes NET across everything, whatever year each row was raised in: ' +
+            'every open receivable less every credit of theirs the company holds. Negative when we ' +
+            'hold more of their money than they owe, which is ordinary after an advance.\n\n' +
+            'Not derivable from /receipts/open-items, which answers the narrower question of what a ' +
+            'RECEIPT may settle and spend.',
+    }),
+    __metadata("design:type", Number)
+], PartyContextSummaryDto.prototype, "totalBalance", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 60750, description: 'Σ pending on the open receivables.' }),
+    __metadata("design:type", Number)
+], PartyContextSummaryDto.prototype, "totalOutstanding", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 4000, description: 'Σ pending on the credits the company holds.' }),
+    __metadata("design:type", Number)
+], PartyContextSummaryDto.prototype, "totalCredits", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        example: 50000,
+        description: 'Money promised by post-dated instruments that have NOT matured — what the bill-wise ' +
+            "pdcHeld column adds up to. Counted from the party's own adjustment rows, so it stays " +
+            'right whatever bills the open-items list happens to contain.',
+    }),
+    __metadata("design:type", Number)
+], PartyContextSummaryDto.prototype, "chequesOutstanding", void 0);
 class PartyContextPayloadDto {
     partyId;
+    partyName;
+    summary;
     lastReceipts;
     pendingCheques;
 }
@@ -473,6 +551,14 @@ __decorate([
     (0, swagger_1.ApiProperty)({ format: 'uuid' }),
     __metadata("design:type", String)
 ], PartyContextPayloadDto.prototype, "partyId", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 'Sri Krishna Traders' }),
+    __metadata("design:type", String)
+], PartyContextPayloadDto.prototype, "partyName", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ type: PartyContextSummaryDto }),
+    __metadata("design:type", PartyContextSummaryDto)
+], PartyContextPayloadDto.prototype, "summary", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)({
         type: PartyRecentReceiptDto,
@@ -734,8 +820,13 @@ class ReceiptAllocationDto {
 }
 exports.ReceiptAllocationDto = ReceiptAllocationDto;
 __decorate([
-    (0, swagger_1.ApiProperty)({ format: 'uuid' }),
-    __metadata("design:type", String)
+    (0, swagger_1.ApiProperty)({
+        format: 'uuid',
+        nullable: true,
+        description: '**Null on a DRAFT** — the settlement is remembered, not written, and no ' +
+            'acc_bill_adjustment row exists for it. Never send that null back.',
+    }),
+    __metadata("design:type", Object)
 ], ReceiptAllocationDto.prototype, "abjId", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)({ format: 'uuid' }),
@@ -750,8 +841,12 @@ __decorate([
     __metadata("design:type", String)
 ], ReceiptAllocationDto.prototype, "docRefno", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ example: '2026-09-08' }),
-    __metadata("design:type", String)
+    (0, swagger_1.ApiProperty)({
+        nullable: true,
+        example: '2026-09-08',
+        description: 'Null when the bill behind a remembered DRAFT row can no longer be read.',
+    }),
+    __metadata("design:type", Object)
 ], ReceiptAllocationDto.prototype, "docDate", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)({ enum: receipt_enum_1.BillAdjType, example: receipt_enum_1.BillAdjType.ALLOCATION }),
@@ -1793,6 +1888,8 @@ __decorate([
 class RegularisePdcPayloadDto {
     asOf;
     billsRegularised;
+    billsExamined;
+    companyId;
 }
 exports.RegularisePdcPayloadDto = RegularisePdcPayloadDto;
 __decorate([
@@ -1800,9 +1897,29 @@ __decorate([
     __metadata("design:type", String)
 ], RegularisePdcPayloadDto.prototype, "asOf", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ example: 3 }),
+    (0, swagger_1.ApiProperty)({
+        example: 3,
+        description: 'R-B1 — bills whose stored figures actually MOVED. **0 on a second run over the same ' +
+            'data**, which is how an operator tells a real run from a repeat. It used to be the size ' +
+            'of the batch, so a no-op sweep reported work it had not done.',
+    }),
     __metadata("design:type", Number)
 ], RegularisePdcPayloadDto.prototype, "billsRegularised", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        example: 3,
+        description: 'Bills examined — every bill in scope holding a matured post-dated row, changed or not. ' +
+            'Here so that a 0 above reads as "nothing left to do" rather than as "nothing ran".',
+    }),
+    __metadata("design:type", Number)
+], RegularisePdcPayloadDto.prototype, "billsExamined", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        format: 'uuid',
+        description: 'The company swept. Echoed because scope is the point.',
+    }),
+    __metadata("design:type", String)
+], RegularisePdcPayloadDto.prototype, "companyId", void 0);
 class RegularisePdcSuccessDto {
     success;
     message;
@@ -1814,11 +1931,199 @@ __decorate([
     __metadata("design:type", Boolean)
 ], RegularisePdcSuccessDto.prototype, "success", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ example: '3 bill(s) regularised as at 2026-09-20' }),
+    (0, swagger_1.ApiProperty)({ example: '3 of 3 bill(s) regularised as at 2026-09-20' }),
     __metadata("design:type", String)
 ], RegularisePdcSuccessDto.prototype, "message", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)({ type: RegularisePdcPayloadDto }),
     __metadata("design:type", RegularisePdcPayloadDto)
 ], RegularisePdcSuccessDto.prototype, "data", void 0);
+class AdjacentVoucherDto {
+    voucherId;
+    accYear;
+    companyId;
+    branchId;
+    voucherRefno;
+    voucherDate;
+    partyId;
+    partyName;
+    docAmount;
+    status;
+}
+exports.AdjacentVoucherDto = AdjacentVoucherDto;
+__decorate([
+    (0, swagger_1.ApiProperty)({ format: 'uuid' }),
+    __metadata("design:type", String)
+], AdjacentVoucherDto.prototype, "voucherId", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: '2026-2027' }),
+    __metadata("design:type", String)
+], AdjacentVoucherDto.prototype, "accYear", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ format: 'uuid' }),
+    __metadata("design:type", String)
+], AdjacentVoucherDto.prototype, "companyId", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ format: 'uuid' }),
+    __metadata("design:type", String)
+], AdjacentVoucherDto.prototype, "branchId", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ nullable: true, example: 'rct00051' }),
+    __metadata("design:type", Object)
+], AdjacentVoucherDto.prototype, "voucherRefno", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: '2026-09-17' }),
+    __metadata("design:type", String)
+], AdjacentVoucherDto.prototype, "voucherDate", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ format: 'uuid' }),
+    __metadata("design:type", String)
+], AdjacentVoucherDto.prototype, "partyId", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ nullable: true, example: 'Sri Krishna Traders' }),
+    __metadata("design:type", Object)
+], AdjacentVoucherDto.prototype, "partyName", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 5000 }),
+    __metadata("design:type", Number)
+], AdjacentVoucherDto.prototype, "docAmount", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ enum: receipt_enum_1.VoucherStatus, example: receipt_enum_1.VoucherStatus.POSTED }),
+    __metadata("design:type", String)
+], AdjacentVoucherDto.prototype, "status", void 0);
+class AdjacentVoucherPayloadDto {
+    direction;
+    fromVoucherId;
+    voucher;
+}
+exports.AdjacentVoucherPayloadDto = AdjacentVoucherPayloadDto;
+__decorate([
+    (0, swagger_1.ApiProperty)({ enum: ['prev', 'next'], example: 'prev' }),
+    __metadata("design:type", String)
+], AdjacentVoucherPayloadDto.prototype, "direction", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ format: 'uuid', description: 'Echoed, so a reply about a stale row is obvious.' }),
+    __metadata("design:type", String)
+], AdjacentVoucherPayloadDto.prototype, "fromVoucherId", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        type: AdjacentVoucherDto,
+        nullable: true,
+        description: 'Null at the end of the register under the filters that were applied — and that null is ' +
+            'what greys the key out.',
+    }),
+    __metadata("design:type", Object)
+], AdjacentVoucherPayloadDto.prototype, "voucher", void 0);
+class AdjacentVoucherSuccessDto {
+    success;
+    message;
+    data;
+}
+exports.AdjacentVoucherSuccessDto = AdjacentVoucherSuccessDto;
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: true }),
+    __metadata("design:type", Boolean)
+], AdjacentVoucherSuccessDto.prototype, "success", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 'rct00051 is the prev receipt' }),
+    __metadata("design:type", String)
+], AdjacentVoucherSuccessDto.prototype, "message", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ type: AdjacentVoucherPayloadDto }),
+    __metadata("design:type", AdjacentVoucherPayloadDto)
+], AdjacentVoucherSuccessDto.prototype, "data", void 0);
+class DuplicateReceiptDto {
+    voucherId;
+    accYear;
+    branchId;
+    voucherRefno;
+    voucherDate;
+    docAmount;
+    status;
+    createdBy;
+    createdOn;
+}
+exports.DuplicateReceiptDto = DuplicateReceiptDto;
+__decorate([
+    (0, swagger_1.ApiProperty)({ format: 'uuid' }),
+    __metadata("design:type", String)
+], DuplicateReceiptDto.prototype, "voucherId", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: '2026-2027' }),
+    __metadata("design:type", String)
+], DuplicateReceiptDto.prototype, "accYear", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        format: 'uuid',
+        description: 'So a match keyed on another beat is visible as one.',
+    }),
+    __metadata("design:type", String)
+], DuplicateReceiptDto.prototype, "branchId", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ nullable: true, example: 'rct00052' }),
+    __metadata("design:type", Object)
+], DuplicateReceiptDto.prototype, "voucherRefno", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: '2026-09-18' }),
+    __metadata("design:type", String)
+], DuplicateReceiptDto.prototype, "voucherDate", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 5000 }),
+    __metadata("design:type", Number)
+], DuplicateReceiptDto.prototype, "docAmount", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        enum: receipt_enum_1.VoucherStatus,
+        example: receipt_enum_1.VoucherStatus.POSTED,
+        description: 'DRAFT, APPROVED or POSTED. CANCELLED never matches — it is not money paid.',
+    }),
+    __metadata("design:type", String)
+], DuplicateReceiptDto.prototype, "status", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ nullable: true, description: 'Who keyed it. Often the whole answer.' }),
+    __metadata("design:type", Object)
+], DuplicateReceiptDto.prototype, "createdBy", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: '2026-09-18T09:14:03.412Z' }),
+    __metadata("design:type", String)
+], DuplicateReceiptDto.prototype, "createdOn", void 0);
+class DuplicateCheckPayloadDto {
+    isDuplicate;
+    matches;
+}
+exports.DuplicateCheckPayloadDto = DuplicateCheckPayloadDto;
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        example: false,
+        description: 'matches.length > 0 — the one thing the client branches on.',
+    }),
+    __metadata("design:type", Boolean)
+], DuplicateCheckPayloadDto.prototype, "isDuplicate", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        type: DuplicateReceiptDto,
+        isArray: true,
+        description: 'At most ten. Anything past a handful is the same answer: go and look. **A warning for the ' +
+            'client to raise, never a refusal** — two equal cheques on one day is ordinary business.',
+    }),
+    __metadata("design:type", Array)
+], DuplicateCheckPayloadDto.prototype, "matches", void 0);
+class DuplicateCheckSuccessDto {
+    success;
+    message;
+    data;
+}
+exports.DuplicateCheckSuccessDto = DuplicateCheckSuccessDto;
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: true }),
+    __metadata("design:type", Boolean)
+], DuplicateCheckSuccessDto.prototype, "success", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 'No matching receipt — this does not look like a duplicate' }),
+    __metadata("design:type", String)
+], DuplicateCheckSuccessDto.prototype, "message", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ type: DuplicateCheckPayloadDto }),
+    __metadata("design:type", DuplicateCheckPayloadDto)
+], DuplicateCheckSuccessDto.prototype, "data", void 0);
 //# sourceMappingURL=receipt-response.dto.js.map

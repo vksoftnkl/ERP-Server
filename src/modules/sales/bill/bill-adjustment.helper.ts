@@ -597,10 +597,7 @@ async function settleInvoiceAllocation(
   actor: string,
   now: Date,
 ): Promise<void> {
-  const adjusted = posted.reduce(
-    (total, row) => total.plus(row.amount),
-    new Prisma.Decimal(0),
-  );
+  const adjusted = posted.reduce((total, row) => total.plus(row.amount), new Prisma.Decimal(0));
   const total = ctx.paidAmount.plus(adjusted);
   // ck_abl_settled: allocation can never exceed the bill. Overpayment lives on
   // the tender, not here — mirror resolveAllocation and cap rather than reject.

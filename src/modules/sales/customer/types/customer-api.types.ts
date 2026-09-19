@@ -1,7 +1,15 @@
-import type { ModuleApiErrorDetail, ModuleApiErrorResponse, ModuleApiSuccessResponse } from 'src/common/types/module-api.types';
+import type {
+  ModuleApiErrorDetail,
+  ModuleApiErrorResponse,
+  ModuleApiSuccessResponse,
+} from 'src/common/types/module-api.types';
 export type CustomerErrorDetail = ModuleApiErrorDetail;
 export type CustomerErrorResponse = ModuleApiErrorResponse<CustomerErrorDetail>;
-export type CustomerSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> = ModuleApiSuccessResponse<T, TMeta, TStyles>;
+export type CustomerSuccessResponse<
+  T,
+  TMeta = Record<string, unknown>,
+  TStyles = unknown,
+> = ModuleApiSuccessResponse<T, TMeta, TStyles>;
 
 export interface CustomerPayload {
   cusId: string;
@@ -86,5 +94,3 @@ export interface CustomerPayload {
   cusModifiedOn: string;
   cusModifiedBy: string | null;
 }
-
-

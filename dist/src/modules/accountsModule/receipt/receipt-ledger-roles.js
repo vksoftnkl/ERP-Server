@@ -25,6 +25,8 @@ function roleFieldName(role) {
             return 'allocations.discount';
         case receipt_enum_1.ReceiptLedgerRole.WRITE_OFF:
             return 'allocations.writeoff';
+        case receipt_enum_1.ReceiptLedgerRole.ROUND_OFF:
+            return 'allocations.roundoff';
         case receipt_enum_1.ReceiptLedgerRole.BANK_CHARGES:
             return 'tenders.tdMdrAmt';
         case receipt_enum_1.ReceiptLedgerRole.SURCHARGE_RECOVERED:

@@ -59,6 +59,7 @@ var BillAdjType;
     BillAdjType["NOTE_ADJUST"] = "NOTE_ADJUST";
     BillAdjType["DISCOUNT"] = "DISCOUNT";
     BillAdjType["WRITEOFF"] = "WRITEOFF";
+    BillAdjType["ROUND_OFF"] = "ROUND_OFF";
     BillAdjType["TRANSFER"] = "TRANSFER";
 })(BillAdjType || (exports.BillAdjType = BillAdjType = {}));
 exports.ALLOCATING_ADJ_TYPES = [
@@ -82,6 +83,7 @@ var BillSettlementMode;
     BillSettlementMode["JOURNAL"] = "JOURNAL";
     BillSettlementMode["DISCOUNT"] = "DISCOUNT";
     BillSettlementMode["WRITEOFF"] = "WRITEOFF";
+    BillSettlementMode["ROUND_OFF"] = "ROUND_OFF";
     BillSettlementMode["MIXED"] = "MIXED";
     BillSettlementMode["TDS"] = "TDS";
     BillSettlementMode["CLAIM"] = "CLAIM";
@@ -126,6 +128,7 @@ var ReceiptLedgerRole;
     ReceiptLedgerRole["INTEREST_INCOME"] = "INTEREST_INCOME";
     ReceiptLedgerRole["DISCOUNT_ALLOWED"] = "DISCOUNT_ALLOWED";
     ReceiptLedgerRole["WRITE_OFF"] = "WRITE_OFF";
+    ReceiptLedgerRole["ROUND_OFF"] = "ROUND_OFF";
     ReceiptLedgerRole["TCS_PAYABLE"] = "TCS_PAYABLE";
 })(ReceiptLedgerRole || (exports.ReceiptLedgerRole = ReceiptLedgerRole = {}));
 exports.ROLE_SIDE = {
@@ -136,6 +139,7 @@ exports.ROLE_SIDE = {
     [ReceiptLedgerRole.INTEREST_INCOME]: DrCr.CR,
     [ReceiptLedgerRole.DISCOUNT_ALLOWED]: DrCr.DR,
     [ReceiptLedgerRole.WRITE_OFF]: DrCr.DR,
+    [ReceiptLedgerRole.ROUND_OFF]: DrCr.DR,
     [ReceiptLedgerRole.TCS_PAYABLE]: DrCr.CR,
 };
 exports.ROLE_SETTLEMENT_MODE = {

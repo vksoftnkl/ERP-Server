@@ -418,7 +418,11 @@ __decorate([
     __metadata("design:type", Object)
 ], SaveSaleOrderDto.prototype, "soPosStcd", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ maxLength: 100, nullable: true, description: 'Snapshot of the state name' }),
+    (0, swagger_1.ApiPropertyOptional)({
+        maxLength: 100,
+        nullable: true,
+        description: 'Snapshot of the state name',
+    }),
     (0, dtoDecorators_1.NullableStringStrict)(100),
     __metadata("design:type", Object)
 ], SaveSaleOrderDto.prototype, "soStateName", void 0);

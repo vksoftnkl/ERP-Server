@@ -60,10 +60,7 @@ export function signedOpening(
 }
 
 /** Same, for acc_bill_balance's two-character flag. */
-export function signedBill(
-  amount: Prisma.Decimal | string | number,
-  drCr: string,
-): Prisma.Decimal {
+export function signedBill(amount: Prisma.Decimal | string | number, drCr: string): Prisma.Decimal {
   const value = new Prisma.Decimal(amount);
   return drCr === BillDrCr.DEBIT ? value : value.negated();
 }

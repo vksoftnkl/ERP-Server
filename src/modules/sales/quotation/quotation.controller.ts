@@ -87,7 +87,13 @@ export class QuotationController {
     @Query('sqBranchId', new ParseUUIDPipe({ version: '7' })) sqBranchId: string,
     @Query('sqAccYear') sqAccYear: string,
   ): Promise<QuotationSuccessResponse<QuotationPayload>> {
-    const data = await this.quotationService.getById(sqId, sqQuoteNo, sqCompanyId, sqBranchId, sqAccYear);
+    const data = await this.quotationService.getById(
+      sqId,
+      sqQuoteNo,
+      sqCompanyId,
+      sqBranchId,
+      sqAccYear,
+    );
     return {
       success: true,
       message: 'Quotation fetched successfully',
@@ -110,12 +116,7 @@ export class QuotationController {
     @Query('sqBranchId', new ParseUUIDPipe({ version: '7' })) sqBranchId: string,
     @Query('sqAccYear') sqAccYear: string,
   ): Promise<QuotationSuccessResponse<{ sqId: string; deleted: true }>> {
-    const data = await this.quotationService.softDelete(
-      sqId,
-      sqCompanyId,
-      sqBranchId,
-      sqAccYear,
-    );
+    const data = await this.quotationService.softDelete(sqId, sqCompanyId, sqBranchId, sqAccYear);
     return {
       success: true,
       message: 'Quotation deleted successfully',

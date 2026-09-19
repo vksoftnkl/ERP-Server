@@ -62,6 +62,26 @@ let ReceiptController = class ReceiptController {
         const data = await this.receiptService.get(query);
         return { success: true, message: 'Receipt fetched successfully', data };
     }
+    async adjacent(query) {
+        const data = await this.openItemsService.adjacent(query);
+        return {
+            success: true,
+            message: data.voucher
+                ? `${data.voucher.voucherRefno ?? data.voucher.voucherId} is the ${query.direction} receipt`
+                : `No ${query.direction} receipt — this is the end of the register`,
+            data,
+        };
+    }
+    async duplicateCheck(query) {
+        const data = await this.openItemsService.duplicateCheck(query);
+        return {
+            success: true,
+            message: data.isDuplicate
+                ? `${data.matches.length} receipt(s) already taken from this party for this amount on this date`
+                : 'No matching receipt — this does not look like a duplicate',
+            data,
+        };
+    }
     async create(dto) {
         const data = await this.receiptService.save(dto);
         return {
@@ -113,10 +133,11 @@ let ReceiptController = class ReceiptController {
         };
     }
     async regularise(dto) {
-        const data = await this.recompute.regularisePostDated(dto.asOf ? (0, receipt_utils_1.toDateOnly)(dto.asOf) : new Date());
+        const result = await this.recompute.regularisePostDated({ companyId: dto.companyId, branchId: dto.branchId, accYear: dto.accYear }, dto.asOf ? (0, receipt_utils_1.toDateOnly)(dto.asOf) : new Date());
+        const data = { ...result, companyId: dto.companyId };
         return {
             success: true,
-            message: `${data.billsRegularised} bill(s) regularised as at ${data.asOf}`,
+            message: `${data.billsRegularised} of ${data.billsExamined} bill(s) regularised as at ${data.asOf}`,
             data,
         };
     }
@@ -168,6 +189,12 @@ __decorate([
         description: 'Header, tenders, other-ledger lines, legs (each with avRole), allocations, credits ' +
             'applied, cheques, the post-dated vouchers and the advance bills. A POSTED receipt paints ' +
             'read-only from this, and it is what the RECEIPT_VOUCHER print purpose reads.\n\n' +
+            'On a **DRAFT**, allocations[] and creditsApplied[] are what /receipts/create REMEMBERED — ' +
+            'no adjustment row exists, so every row carries `abjId: null`. They are a suggestion: ' +
+            'nothing re-checks them, so an amount may exceed what its bill can still take. Re-read ' +
+            '/receipts/open-items and clamp. One more difference on a draft — a creditsApplied row ' +
+            'names the CREDIT in billId with againstBillId null, because which invoices it settles is ' +
+            "the allocation engine's decision at post.\n\n" +
             'avhAccYear is not optional: acc_voucher_header is partitioned on the year, so an id alone ' +
             'does not name a row.',
     }),
@@ -178,6 +205,62 @@ __decorate([
     __metadata("design:paramtypes", [post_receipt_dto_1.GetReceiptQueryDto]),
     __metadata("design:returntype", Promise)
 ], ReceiptController.prototype, "get", null);
+__decorate([
+    (0, common_1.Get)('adjacent'),
+    (0, common_1.Version)(api_version_1.API_VERSION),
+    (0, cache_manager_1.CacheTTL)(0),
+    (0, swagger_1.ApiOperation)({
+        summary: 'The receipt entered just before or just after this one',
+        description: "R-B4 — 3.0's Ctrl+PgUp / Ctrl+PgDown. Without it every reopen is a search.\n\n" +
+            'Returns a KEY, not a receipt: the client calls /receipts/get with it, which is what it ' +
+            'was going to do next anyway, and the walk stays cheap enough to hold a key down on.\n\n' +
+            '**prev is the receipt entered BEFORE this one; next is the one entered after.** Both are ' +
+            'named for the ordering key — (voucher date, then voucher no) — and not for the direction ' +
+            'the register happens to be drawn in, which is descending today and is a display choice.\n\n' +
+            'Pass back the same `status` and date window the register was run with, so the walk visits ' +
+            'exactly the rows the operator can see. The structural filters are always applied: receipt ' +
+            'vouchers only, not deleted, and post-dated cheque vouchers excluded — those belong under ' +
+            'their receipt and are not rows of the register.\n\n' +
+            '`voucher` is **null at the end of the walk**, and that null is what greys the key out. ' +
+            'There is no separate hasNext flag: a second thing saying the same thing is a second thing ' +
+            'to keep true.',
+    }),
+    (0, swagger_1.ApiOkResponse)({ type: receipt_response_dto_1.AdjacentVoucherSuccessDto }),
+    (0, swagger_1.ApiBadRequestResponse)({ type: receipt_response_dto_1.ReceiptErrorResponseDto }),
+    (0, swagger_1.ApiNotFoundResponse)({ type: receipt_response_dto_1.ReceiptErrorResponseDto }),
+    __param(0, (0, common_1.Query)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [open_item_dto_1.AdjacentVoucherQueryDto]),
+    __metadata("design:returntype", Promise)
+], ReceiptController.prototype, "adjacent", null);
+__decorate([
+    (0, common_1.Get)('duplicate-check'),
+    (0, common_1.Version)(api_version_1.API_VERSION),
+    (0, cache_manager_1.CacheTTL)(0),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Has this party already paid this amount on this date?',
+        description: 'R-B6. On a beat run this is the only thing between a re-key and a double receipt.\n\n' +
+            '**A WARNING, never a refusal.** It writes nothing and has no opinion: a customer settling ' +
+            'two invoices with two equal cheques on one day is ordinary, so the answer goes to the ' +
+            'operator and the operator decides. A 200 with an empty `matches` is the common case.\n\n' +
+            'The amount is matched EXACTLY — Σ of the tender rows, the figure that becomes ' +
+            'avh_doc_amount. A tolerance sounds safer and is not: on a beat where the day is 500, 1000 ' +
+            'and 2000 over and over it would fire on nearly every row, and a prompt that fires on ' +
+            'nearly every row is one nobody reads.\n\n' +
+            'Scoped to the company and the year; `branchId` narrows it only if you send it, because a ' +
+            're-key that landed on another branch is still a duplicate and is the one hardest to find ' +
+            'by hand. CANCELLED receipts and post-dated cheque vouchers are excluded.\n\n' +
+            'Send `excludeVoucherId` as soon as /create has returned one, or the draft on screen ' +
+            'reports itself on every re-check.',
+    }),
+    (0, swagger_1.ApiOkResponse)({ type: receipt_response_dto_1.DuplicateCheckSuccessDto }),
+    (0, swagger_1.ApiBadRequestResponse)({ type: receipt_response_dto_1.ReceiptErrorResponseDto }),
+    (0, swagger_1.ApiNotFoundResponse)({ type: receipt_response_dto_1.ReceiptErrorResponseDto }),
+    __param(0, (0, common_1.Query)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [open_item_dto_1.DuplicateCheckQueryDto]),
+    __metadata("design:returntype", Promise)
+], ReceiptController.prototype, "duplicateCheck", null);
 __decorate([
     (0, common_1.Post)('create'),
     (0, common_1.Version)(api_version_1.API_VERSION),
@@ -190,7 +273,18 @@ __decorate([
             'post, against what is pending then.\n\n' +
             'tdIsPdc is never sent — it is computed from tdInstrumentDate against the receipt date. ' +
             'BANK_CHARGES and SURCHARGE_RECOVERED lines are seeded from the tenders if the client omits ' +
-            'them, and refused if the client sends figures that disagree.',
+            'them, and refused if the client sends figures that disagree.\n\n' +
+            '**allocations[] and creditsApplied[] are REMEMBERED, not applied.** Send the bill-wise ' +
+            'settlement as the operator left it and /receipts/get hands it back when the draft is ' +
+            'reopened, so a split or a deliberately out-of-order settlement is not re-keyed by hand. ' +
+            'Still no acc_bill_adjustment row and still no movement in abl_pending_amount — R10 is ' +
+            'unchanged, and two people may hold drafts against the same party without reserving each ' +
+            "other's outstanding.\n\n" +
+            '**Nothing about them is validated, deliberately.** A remembered figure goes stale if ' +
+            'somebody else settles the same bill in the meantime, and it is handed back exactly as ' +
+            'stored: re-read /receipts/open-items on reopen and clamp. Refusing the load would cost the ' +
+            'operator the whole draft to save one number. Omit either key to leave what is already ' +
+            'remembered alone; send [] to clear it.',
     }),
     (0, swagger_1.ApiCreatedResponse)({ type: receipt_response_dto_1.ReceiptDraftSuccessDto }),
     (0, swagger_1.ApiBadRequestResponse)({ type: receipt_response_dto_1.ReceiptErrorResponseDto }),
@@ -198,7 +292,7 @@ __decorate([
     (0, swagger_1.ApiNotFoundResponse)({ type: receipt_response_dto_1.ReceiptErrorResponseDto }),
     __param(0, (0, common_1.Body)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [save_receipt_dto_1.SaveReceiptDto]),
+    __metadata("design:paramtypes", [save_receipt_dto_1.SaveDraftReceiptDto]),
     __metadata("design:returntype", Promise)
 ], ReceiptController.prototype, "create", null);
 __decorate([
@@ -337,12 +431,24 @@ __decorate([
             'counts only once its date arrives, so a bill settled by a cheque maturing today becomes ' +
             'CLOSED without anybody posting anything — this is what makes that visible in the stored ' +
             'columns.\n\n' +
-            'Run it from cron just after midnight:\n' +
-            "`curl -X POST https://host/api/v1/receipts/regularise-pdc -d '{}'`\n\n" +
+            'Run it from cron just after midnight, **once per company**:\n' +
+            '`curl -X POST https://host/api/v1/receipts/regularise-pdc -d \'{"companyId":"…"}\'`\n\n' +
             'It sweeps everything maturing ON OR BEFORE the date, not only on it, so a run after an ' +
-            'outage repairs every day that was missed. Idempotent.',
+            'outage repairs every day that was missed. Idempotent.\n\n' +
+            '**companyId is required** (R-B1). This route used to take nothing but `asOf`, so one ' +
+            'authenticated call regularised every company in the database — idempotent, and still a ' +
+            'write across a tenant boundary.\n\n' +
+            '`branchId` and `accYear` are FILTERS and are not the house keys here: omit both on the ' +
+            'nightly run. Outstanding is company-wide and a bill raised at one branch is settled at ' +
+            'another; and acc_bill_balance is partitioned by the year the bill ORIGINATED in and is ' +
+            'never carried forward, so a sweep pinned to this year walks past almost everything.\n\n' +
+            '`billsRegularised` counts bills whose stored figures actually MOVED, so a second run over ' +
+            'the same data reports 0 — it used to report the size of the batch, which told an operator ' +
+            'nothing. `billsExamined` is beside it so that 0 reads as "nothing left to do" rather than ' +
+            'as "nothing ran".',
     }),
     (0, swagger_1.ApiCreatedResponse)({ type: receipt_response_dto_1.RegularisePdcSuccessDto }),
+    (0, swagger_1.ApiBadRequestResponse)({ type: receipt_response_dto_1.ReceiptErrorResponseDto }),
     __param(0, (0, common_1.Body)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [save_receipt_dto_1.RegularisePdcDto]),

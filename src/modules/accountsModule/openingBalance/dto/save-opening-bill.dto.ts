@@ -33,11 +33,18 @@ export class SaveOpeningBillRowDto {
   @UpperMaxString(50)
   ablDocRefno!: string;
 
-  @ApiProperty({ example: '2026-01-12', description: 'The ORIGINAL invoice date — what ageing measures from.' })
+  @ApiProperty({
+    example: '2026-01-12',
+    description: 'The ORIGINAL invoice date — what ageing measures from.',
+  })
   @UpperMaxString(10)
   ablDocDate!: string;
 
-  @ApiPropertyOptional({ nullable: true, example: '2026-02-11', description: 'Must be >= ablDocDate (ck_abl_due_date).' })
+  @ApiPropertyOptional({
+    nullable: true,
+    example: '2026-02-11',
+    description: 'Must be >= ablDocDate (ck_abl_due_date).',
+  })
   @NullableDateString()
   ablDueDate?: string | null;
 
@@ -51,7 +58,7 @@ export class SaveOpeningBillRowDto {
 
   @ApiProperty({
     enum: BillDrCr,
-    description: "TWO characters here — acc_opening_balance uses one. Do not unify them.",
+    description: 'TWO characters here — acc_opening_balance uses one. Do not unify them.',
   })
   @IsIn(Object.values(BillDrCr))
   ablDrCr!: BillDrCr;
@@ -122,7 +129,8 @@ export class SaveOpeningBillsDto {
 
   @ApiPropertyOptional({
     default: false,
-    description: 'true = bills absent from the array are soft deleted, unless they are frozen (§5.5 rule 3).',
+    description:
+      'true = bills absent from the array are soft deleted, unless they are frozen (§5.5 rule 3).',
   })
   @OptionalBoolean()
   replace?: boolean;

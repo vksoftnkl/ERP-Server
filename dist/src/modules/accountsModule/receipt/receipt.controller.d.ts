@@ -4,11 +4,11 @@ import { ReceiptPostingService } from './receipt-posting.service';
 import { ReceiptCancelService } from './receipt-cancel.service';
 import { ReceiptAmendService } from './receipt-amend.service';
 import { OpenItemsService } from './open-items.service';
-import { ListOpenItemsQueryDto, PartyContextQueryDto } from './dto/open-item.dto';
+import { AdjacentVoucherQueryDto, DuplicateCheckQueryDto, ListOpenItemsQueryDto, PartyContextQueryDto } from './dto/open-item.dto';
 import { AmendReceiptDto } from './dto/amend-receipt.dto';
-import { RegularisePdcDto, SaveReceiptDto, UpdateReceiptHeaderDto } from './dto/save-receipt.dto';
+import { RegularisePdcDto, SaveDraftReceiptDto, UpdateReceiptHeaderDto } from './dto/save-receipt.dto';
 import { CancelReceiptDto, DeleteReceiptDto, GetReceiptQueryDto, PostReceiptDto } from './dto/post-receipt.dto';
-import type { OpenItemsPayload, PartyContextPayload, ReceiptAmendPayload, ReceiptCancelPayload, ReceiptDeletePayload, ReceiptDraftPayload, ReceiptHeader, ReceiptPayload, ReceiptPostPayload, ReceiptSuccessResponse, RegularisePdcPayload } from './types/receipt-api.types';
+import type { AdjacentVoucherPayload, DuplicateCheckPayload, OpenItemsPayload, PartyContextPayload, ReceiptAmendPayload, ReceiptCancelPayload, ReceiptDeletePayload, ReceiptDraftPayload, ReceiptHeader, ReceiptPayload, ReceiptPostPayload, ReceiptSuccessResponse, RegularisePdcPayload } from './types/receipt-api.types';
 export declare class ReceiptController {
     private readonly receiptService;
     private readonly postingService;
@@ -20,7 +20,9 @@ export declare class ReceiptController {
     openItems(query: ListOpenItemsQueryDto): Promise<ReceiptSuccessResponse<OpenItemsPayload>>;
     partyContext(query: PartyContextQueryDto): Promise<ReceiptSuccessResponse<PartyContextPayload>>;
     get(query: GetReceiptQueryDto): Promise<ReceiptSuccessResponse<ReceiptPayload>>;
-    create(dto: SaveReceiptDto): Promise<ReceiptSuccessResponse<ReceiptDraftPayload>>;
+    adjacent(query: AdjacentVoucherQueryDto): Promise<ReceiptSuccessResponse<AdjacentVoucherPayload>>;
+    duplicateCheck(query: DuplicateCheckQueryDto): Promise<ReceiptSuccessResponse<DuplicateCheckPayload>>;
+    create(dto: SaveDraftReceiptDto): Promise<ReceiptSuccessResponse<ReceiptDraftPayload>>;
     postReceipt(dto: PostReceiptDto): Promise<ReceiptSuccessResponse<ReceiptPostPayload>>;
     updateHeader(dto: UpdateReceiptHeaderDto, body: Record<string, unknown>): Promise<ReceiptSuccessResponse<ReceiptHeader>>;
     cancel(dto: CancelReceiptDto): Promise<ReceiptSuccessResponse<ReceiptCancelPayload>>;

@@ -226,10 +226,7 @@ export class SaleLoadingChargeService {
 
         const data: Prisma.SaleLoadingChargeUncheckedUpdateInput = {
           ilcModifiedOn: new Date(),
-          ilcModifiedBy: resolveActor(
-            dto.ilcModifiedBy,
-            this.requestContextService.getUserId(),
-          ),
+          ilcModifiedBy: resolveActor(dto.ilcModifiedBy, this.requestContextService.getUserId()),
         };
 
         this.applyOptionalFields(data, dto);

@@ -75,10 +75,17 @@ let GridDetailsService = class GridDetailsService {
                 if (!existing) {
                     (0, module_service_utils_1.throwFixedNotFound)('Grid column not found', 'grid_column_id', `No active grid column found with id ${item.grid_column_id}`);
                 }
-                await tx.gridColumn.update({
-                    where: { gridColumnId: serialId },
-                    data: { gridColumnWidth: item.grid_column_width },
-                });
+                const data = {};
+                if ((0, module_service_utils_1.hasOwnProperty)(item, 'grid_column_width')) {
+                    data.gridColumnWidth = item.grid_column_width;
+                }
+                if ((0, module_service_utils_1.hasOwnProperty)(item, 'grid_column_px')) {
+                    data.gridColumnPx = item.grid_column_px;
+                }
+                if (Object.keys(data).length === 0) {
+                    continue;
+                }
+                await tx.gridColumn.update({ where: { gridColumnId: serialId }, data });
                 count++;
             }
         });

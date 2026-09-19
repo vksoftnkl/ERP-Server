@@ -44,7 +44,7 @@ import { API_VERSION } from '../../../common/constants/api-version';
 @Controller('tender-type-masters')
 @UseFilters(TenderTypeMasterExceptionFilter)
 export class TenderTypeMasterController {
-  constructor(private readonly tenderTypeMasterService: TenderTypeMasterService) { }
+  constructor(private readonly tenderTypeMasterService: TenderTypeMasterService) {}
 
   @Post('create')
   @Version(API_VERSION)

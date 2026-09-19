@@ -8480,3 +8480,119 @@ Argument `avhVoucherId` is missing.
     at async ReceiptAmendService.amend (/home/vk/Dev/erp/ERP server/src/modules/accountsModule/receipt/receipt-amend.service.ts:178:14)
     at async ReceiptController.amend (/home/vk/Dev/erp/ERP server/src/modules/accountsModule/receipt/receipt.controller.ts:376:18)
 2026-09-18T04:03:43.202Z ERROR [Seed] ✖ Account_Groups.sql: column "acc_group_child_ids" of relation "acc_group_master" does not exist
+2026-09-18T07:09:55.447Z ERROR [ModuleExceptionFilter] POST /api/v1/receipts/amend
+PrismaClientValidationError: 
+Invalid `client.accVoucherHeader.findUnique()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/accountsModule/receipt/receipt.service.ts:870:50
+
+  867   voucherId: string,
+  868   accYear: string,
+  869 ): Promise<StoredHeader> {
+→ 870   const header = await client.accVoucherHeader.findUnique({
+          where: {
+            avhVoucherId_avhAccYear: {
+              avhAccYear: "2026-2027",
+        +     avhVoucherId: String
+            }
+          },
+          select: {
+            avhVoucherId: true,
+            avhCompanyId: true,
+            avhBranchId: true,
+            avhTenantId: true,
+            avhAccYear: true,
+            avhVoucherTypeId: true,
+            avhVoucherNo: true,
+            avhVoucherSlno: true,
+            avhVoucherRefno: true,
+            avhVoucherDate: true,
+            avhSrcModule: true,
+            avhSrcDocType: true,
+            avhSrcDocId: true,
+            avhPartyId: true,
+            avhEmployeeId: true,
+            avhUsrRefno: true,
+            avhDocRefno: true,
+            avhDocDate: true,
+            avhDocAmount: true,
+            avhAdjustAmount: true,
+            avhRoundOff: true,
+            avhTotalDebit: true,
+            avhTotalCredit: true,
+            avhRemarks: true,
+            avhVoucherStatus: true,
+            avhStatusOn: true,
+            avhStatusBy: true,
+            avhPostedOn: true,
+            avhCancelReason: true,
+            avhRevisionNo: true,
+            avhReversalVoucherId: true,
+            avhReversalAccYear: true,
+            avhAgainstVoucherId: true,
+            avhAgainstAccYear: true,
+            avhPrintCount: true,
+            avhDeviceType: true,
+            avhDeviceId: true,
+            avhSessionId: true,
+            avhUserId: true,
+            avhDraftLines: true,
+            avhIsDeleted: true,
+            avhCreatedOn: true,
+            avhCreatedBy: true,
+            avhModifiedOn: true,
+            avhModifiedBy: true
+          }
+        })
+
+Argument `avhVoucherId` is missing.
+    at throwValidationException (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/core/errorRendering/throwValidationException.ts:45:9)
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:202:7)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async ReceiptService.loadHeaderOrThrow (/home/vk/Dev/erp/ERP server/src/modules/accountsModule/receipt/receipt.service.ts:870:20)
+    at async ReceiptAmendService.amendInTransaction (/home/vk/Dev/erp/ERP server/src/modules/accountsModule/receipt/receipt-amend.service.ts:203:20)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async ReceiptAmendService.amend (/home/vk/Dev/erp/ERP server/src/modules/accountsModule/receipt/receipt-amend.service.ts:178:14)
+    at async ReceiptController.amend (/home/vk/Dev/erp/ERP server/src/modules/accountsModule/receipt/receipt.controller.ts:461:18)
+2026-09-18T07:11:18.637Z ERROR [ModuleExceptionFilter] POST /api/v1/receipts/cancel
+PrismaClientKnownRequestError: 
+Invalid `tx.accBillAdjustment.createMany()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/accountsModule/receipt/receipt-cancel.service.ts:374:34
+
+  371 });
+  372 
+  373 if (adjustments.length > 0) {
+→ 374   await tx.accBillAdjustment.createMany(
+Unique constraint failed on the fields: (`abj_reversal_of_id`,`abj_acc_year`)
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async ReceiptCancelService.reverseVoucher (/home/vk/Dev/erp/ERP server/src/modules/accountsModule/receipt/receipt-cancel.service.ts:374:7)
+    at async <anonymous> (/home/vk/Dev/erp/ERP server/src/modules/accountsModule/receipt/receipt-cancel.service.ts:172:24)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async ReceiptController.cancel (/home/vk/Dev/erp/ERP server/src/modules/accountsModule/receipt/receipt.controller.ts:383:18)
+2026-09-18T07:11:33.136Z ERROR [ModuleExceptionFilter] POST /api/v1/receipts/cancel
+PrismaClientKnownRequestError: 
+Invalid `tx.accBillAdjustment.createMany()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/accountsModule/receipt/receipt-cancel.service.ts:374:34
+
+  371 });
+  372 
+  373 if (adjustments.length > 0) {
+→ 374   await tx.accBillAdjustment.createMany(
+Unique constraint failed on the fields: (`abj_reversal_of_id`,`abj_acc_year`)
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async ReceiptCancelService.reverseVoucher (/home/vk/Dev/erp/ERP server/src/modules/accountsModule/receipt/receipt-cancel.service.ts:374:7)
+    at async <anonymous> (/home/vk/Dev/erp/ERP server/src/modules/accountsModule/receipt/receipt-cancel.service.ts:172:24)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async ReceiptController.cancel (/home/vk/Dev/erp/ERP server/src/modules/accountsModule/receipt/receipt.controller.ts:383:18)
+2026-09-18T07:31:40.174Z ERROR [Seed] ✖ Account_Groups.sql: column "acc_group_child_ids" of relation "acc_group_master" does not exist
+2026-09-18T13:25:31.025Z ERROR [Seed] ✖ Account_Groups.sql: column "acc_group_child_ids" of relation "acc_group_master" does not exist
+2026-09-18T13:37:05.840Z ERROR [Seed] ✖ Account_Groups.sql: column "acc_group_child_ids" of relation "acc_group_master" does not exist
+2026-09-18T13:52:42.888Z ERROR [Seed] ✖ Account_Groups.sql: column "acc_group_child_ids" of relation "acc_group_master" does not exist
+2026-09-19T04:53:47.224Z ERROR [Seed] ✖ Account_Groups.sql: column "acc_group_child_ids" of relation "acc_group_master" does not exist

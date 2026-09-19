@@ -1,5 +1,10 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { BillDrCr, OpeningDrCr, OpeningSource, OpeningStaleReason } from '../types/opening-balance-enum';
+import {
+  BillDrCr,
+  OpeningDrCr,
+  OpeningSource,
+  OpeningStaleReason,
+} from '../types/opening-balance-enum';
 
 export class OpeningBalanceErrorFieldDto {
   @ApiProperty({ example: 'rows.3.opAmount' })
@@ -27,7 +32,10 @@ export class TrialBalanceDto {
   @ApiProperty({ example: 2184000.0 })
   totalCredit!: number;
 
-  @ApiProperty({ example: 0, description: 'debit - credit. Signed, so it says which side is short.' })
+  @ApiProperty({
+    example: 0,
+    description: 'debit - credit. Signed, so it says which side is short.',
+  })
   difference!: number;
 
   @ApiProperty({ example: true })
@@ -48,7 +56,11 @@ export class TrialBalanceDto {
 }
 
 export class OpeningBalanceRowDto {
-  @ApiPropertyOptional({ format: 'uuid', nullable: true, description: 'Null = this ledger has no opening yet.' })
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description: 'Null = this ledger has no opening yet.',
+  })
   opId!: string | null;
 
   @ApiProperty({ format: 'uuid' })
@@ -63,7 +75,9 @@ export class OpeningBalanceRowDto {
   @ApiPropertyOptional({ nullable: true, example: 'Assets' })
   groupNature!: string | null;
 
-  @ApiProperty({ description: 'When true the bills own the figure and the screen shows it read-only.' })
+  @ApiProperty({
+    description: 'When true the bills own the figure and the screen shows it read-only.',
+  })
   ledIsBillByBill!: boolean;
 
   @ApiProperty({ example: 124500.0, description: 'Always positive.' })
@@ -183,7 +197,8 @@ export class OpeningBalanceSavePayloadDto {
   @ApiProperty({
     type: String,
     isArray: true,
-    description: 'opIds whose source flipped CARRY_FORWARD -> MANUAL because the figure was edited.',
+    description:
+      'opIds whose source flipped CARRY_FORWARD -> MANUAL because the figure was edited.',
   })
   flippedToManual!: string[];
 
@@ -322,7 +337,9 @@ export class CarryForwardPayloadDto {
   @ApiProperty()
   updated!: number;
 
-  @ApiProperty({ description: 'MANUAL / MIGRATION rows left alone. Always reported, even when zero.' })
+  @ApiProperty({
+    description: 'MANUAL / MIGRATION rows left alone. Always reported, even when zero.',
+  })
   skippedManual!: number;
 
   @ApiProperty({ description: 'OPENING bills written for bill-wise parties (§5.2 step 4).' })

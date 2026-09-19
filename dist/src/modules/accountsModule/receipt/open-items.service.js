@@ -12,10 +12,12 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.OpenItemsService = void 0;
 exports.creditRouting = creditRouting;
 const common_1 = require("@nestjs/common");
+const client_1 = require("@prisma/client");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const app_setting_value_service_1 = require("../../settings/appSettings/app-setting-value.service");
 const receipt_enum_1 = require("./types/receipt-enum");
 const receipt_guards_1 = require("./receipt.guards");
+const module_service_utils_1 = require("../../../common/utils/module-service.utils");
 const receipt_settings_1 = require("./receipt.settings");
 const ppd_slab_1 = require("./ppd-slab");
 const receipt_utils_1 = require("./receipt.utils");
@@ -82,20 +84,29 @@ let OpenItemsService = class OpenItemsService {
                 ablBillAmount: true,
                 ablPendingAmount: true,
                 ablStatus: true,
+                ablSrcModule: true,
+                ablSrcDocType: true,
+                ablSrcDocId: true,
+                ablSrcAccYear: true,
             },
         });
         const billKeys = bills.map((bill) => ({ billId: bill.ablId, accYear: bill.ablAccYear }));
-        const [pdcByBill, tcsByBill] = await Promise.all([
+        const [pdcByBill, tcsByBill, sourceByBill] = await Promise.all([
             this.loadPostDatedHeld(billKeys, onDate),
             this.loadBillTcs(billKeys, settings),
+            this.loadSourceBillFacts(bills),
         ]);
         const rows = bills.map((bill) => {
             const pending = bill.ablPendingAmount ?? receipt_utils_1.ZERO;
+            const source = sourceByBill.get(`${bill.ablId}|${bill.ablAccYear}`);
             return {
                 billId: bill.ablId,
                 billAccYear: bill.ablAccYear,
                 billType: bill.ablBillType,
                 docRefno: bill.ablDocRefno,
+                usrRefno: source?.usrRefno ?? null,
+                billProfit: (0, receipt_utils_1.toNullableAmount)(source?.profit ?? null),
+                billProfitPreTax: (0, receipt_utils_1.toNullableAmount)(source?.profitPreTax ?? null),
                 docDate: (0, receipt_utils_1.toDateString)(bill.ablDocDate),
                 dueDate: (0, receipt_utils_1.toDateString)(bill.ablDueDate),
                 billAmount: (0, receipt_utils_1.toAmount)(bill.ablBillAmount),
@@ -144,6 +155,80 @@ let OpenItemsService = class OpenItemsService {
             held.set(key, (held.get(key) ?? receipt_utils_1.ZERO).plus(row.abjAmount));
         }
         return held;
+    }
+    async loadSourceBillFacts(bills) {
+        const sourced = bills.filter((bill) => bill.ablSrcModule === SALE_BILL_SRC_MODULE &&
+            bill.ablSrcDocType === SALE_BILL_SRC_DOC_TYPE &&
+            bill.ablSrcDocId !== null &&
+            bill.ablSrcAccYear !== null);
+        if (sourced.length === 0) {
+            return new Map();
+        }
+        const sourceKeys = new Map();
+        for (const bill of sourced) {
+            sourceKeys.set(`${bill.ablSrcDocId}|${bill.ablSrcAccYear}`, {
+                docId: bill.ablSrcDocId,
+                accYear: bill.ablSrcAccYear,
+            });
+        }
+        const keys = [...sourceKeys.values()];
+        const [saleBills, items] = await Promise.all([
+            this.prisma.saleBill.findMany({
+                where: { OR: keys.map((key) => ({ sbId: key.docId, sbAccYear: key.accYear })) },
+                select: { sbId: true, sbAccYear: true, sbUsrRefno: true },
+            }),
+            this.prisma.saleBillItem.findMany({
+                where: {
+                    sbiIsDeleted: false,
+                    OR: keys.map((key) => ({ sbiBillId: key.docId, sbiAccYear: key.accYear })),
+                },
+                select: {
+                    sbiBillId: true,
+                    sbiAccYear: true,
+                    sbiNetQty: true,
+                    sbiItemProfit: true,
+                    sbiProfitPreTax: true,
+                },
+            }),
+        ]);
+        const refnoBySource = new Map();
+        for (const bill of saleBills) {
+            refnoBySource.set(`${bill.sbId}|${bill.sbAccYear}`, bill.sbUsrRefno);
+        }
+        const marginBySource = new Map();
+        for (const item of items) {
+            const key = `${item.sbiBillId}|${item.sbiAccYear}`;
+            const margin = marginBySource.get(key) ?? {
+                profit: receipt_utils_1.ZERO,
+                profitPreTax: receipt_utils_1.ZERO,
+                profitComplete: true,
+                profitPreTaxComplete: true,
+            };
+            if (item.sbiItemProfit === null) {
+                margin.profitComplete = false;
+            }
+            else {
+                margin.profit = margin.profit.plus(item.sbiItemProfit.times(item.sbiNetQty));
+            }
+            if (item.sbiProfitPreTax === null) {
+                margin.profitPreTaxComplete = false;
+            }
+            else {
+                margin.profitPreTax = margin.profitPreTax.plus(item.sbiProfitPreTax.times(item.sbiNetQty));
+            }
+            marginBySource.set(key, margin);
+        }
+        const facts = new Map();
+        for (const bill of sourced) {
+            const sourceKey = `${bill.ablSrcDocId}|${bill.ablSrcAccYear}`;
+            const margin = marginBySource.get(sourceKey);
+            facts.set(`${bill.ablId}|${bill.ablAccYear}`, {
+                usrRefno: refnoBySource.get(sourceKey) ?? null,
+                profit: margin && margin.profitComplete ? margin.profit.toDecimalPlaces(2) : null,
+                profitPreTax: margin && margin.profitPreTaxComplete ? margin.profitPreTax.toDecimalPlaces(2) : null,
+            });
+        }
+        return facts;
     }
     async loadBillTcs(bills, settings) {
         if (bills.length === 0 || settings.tcsBasis !== receipt_enum_1.TcsBasis.SALES) {
@@ -217,11 +302,52 @@ let OpenItemsService = class OpenItemsService {
         });
     }
     async partyContext(query) {
-        const [receipts, cheques] = await Promise.all([
+        const party = await (0, receipt_guards_1.loadParty)(this.prisma, query.companyId, query.partyId, 'partyId');
+        const [receipts, cheques, summary] = await Promise.all([
             this.loadRecentReceipts(query.companyId, query.partyId),
             this.loadPendingCheques(query.companyId, query.partyId),
+            this.loadPartySummary(query.companyId, query.partyId),
         ]);
-        return { partyId: query.partyId, lastReceipts: receipts, pendingCheques: cheques };
+        return {
+            partyId: query.partyId,
+            partyName: party.ledName,
+            summary,
+            lastReceipts: receipts,
+            pendingCheques: cheques,
+        };
+    }
+    async loadPartySummary(companyId, partyId) {
+        const [sides, postDated] = await Promise.all([
+            this.prisma.accBillBalance.groupBy({
+                by: ['ablDrCr'],
+                where: {
+                    ablCompanyId: companyId,
+                    ablPartyId: partyId,
+                    ablIsDeleted: false,
+                    ablIsActive: true,
+                },
+                _sum: { ablPendingAmount: true },
+            }),
+            this.prisma.accBillAdjustment.aggregate({
+                where: {
+                    abjCompanyId: companyId,
+                    abjPartyId: partyId,
+                    abjIsDeleted: false,
+                    abjIsPostDated: true,
+                    abjAdjDate: { gt: (0, receipt_utils_1.todayUtc)() },
+                },
+                _sum: { abjAmount: true },
+            }),
+        ]);
+        const bySide = new Map(sides.map((row) => [row.ablDrCr, row._sum.ablPendingAmount ?? receipt_utils_1.ZERO]));
+        const outstanding = bySide.get('DR') ?? receipt_utils_1.ZERO;
+        const credits = bySide.get('CR') ?? receipt_utils_1.ZERO;
+        return {
+            totalBalance: (0, receipt_utils_1.toAmount)(outstanding.minus(credits)),
+            totalOutstanding: (0, receipt_utils_1.toAmount)(outstanding),
+            totalCredits: (0, receipt_utils_1.toAmount)(credits),
+            chequesOutstanding: (0, receipt_utils_1.toAmount)(postDated._sum.abjAmount ?? receipt_utils_1.ZERO),
+        };
     }
     async loadRecentReceipts(companyId, partyId) {
         const headers = await this.prisma.accVoucherHeader.findMany({
@@ -307,6 +433,113 @@ let OpenItemsService = class OpenItemsService {
             voucherRefno: cheque.receiptVoucher?.avhVoucherRefno ?? null,
         }));
     }
+    async adjacent(query) {
+        const current = await this.prisma.accVoucherHeader.findFirst({
+            where: {
+                avhVoucherId: query.voucherId,
+                avhAccYear: query.accYear,
+                avhCompanyId: query.companyId,
+                avhBranchId: query.branchId,
+                avhIsDeleted: false,
+            },
+            select: { avhVoucherDate: true, avhVoucherSlno: true, avhCreatedOn: true },
+        });
+        if (!current) {
+            (0, module_service_utils_1.throwAccountsNotFound)('Receipt not found', 'voucherId', `No receipt ${query.voucherId} in ${query.accYear} for this company and branch`);
+        }
+        const isPrev = query.direction === 'prev';
+        const comparison = client_1.Prisma.raw(isPrev ? '<' : '>');
+        const order = client_1.Prisma.raw(isPrev ? 'DESC' : 'ASC');
+        const status = query.status ?? null;
+        const fromDate = query.fromDate ? (0, receipt_utils_1.toDateOnly)(query.fromDate) : null;
+        const toDate = query.toDate ? (0, receipt_utils_1.toDateOnly)(query.toDate) : null;
+        const rows = await this.prisma.$queryRaw `
+      SELECT h.avh_voucher_id,
+             h.avh_acc_year,
+             h.avh_company_id,
+             h.avh_branch_id,
+             h.avh_voucher_refno,
+             h.avh_voucher_date,
+             h.avh_party_id,
+             p.led_name,
+             h.avh_doc_amount,
+             h.avh_voucher_status
+        FROM accounts.acc_voucher_header h
+        JOIN accounts.acc_voucher_types vt ON vt.vchr_type_id = h.avh_voucher_type_id
+        LEFT JOIN accounts.acc_ledger_master p ON p.led_id = h.avh_party_id
+       WHERE h.avh_company_id = ${query.companyId}::uuid
+         AND h.avh_branch_id  = ${query.branchId}::uuid
+         AND h.avh_acc_year   = ${query.accYear}::bpchar
+         AND vt.vchr_type_code = ${receipt_enum_1.RECEIPT_VOUCHER_TYPE_CODE}
+         AND h.avh_is_deleted = false
+         AND h.avh_against_voucher_id IS NULL
+         AND (${status}::varchar IS NULL OR h.avh_voucher_status = ${status}::varchar)
+         AND (${fromDate}::timestamptz IS NULL OR h.avh_voucher_date >= ${fromDate}::timestamptz)
+         AND (${toDate}::timestamptz   IS NULL OR h.avh_voucher_date <= ${toDate}::timestamptz)
+         AND (h.avh_voucher_date,
+              COALESCE(h.avh_voucher_slno, ${DRAFT_SLNO_SENTINEL}),
+              h.avh_created_on,
+              h.avh_voucher_id)
+             ${comparison}
+             (${current.avhVoucherDate}::timestamptz,
+              COALESCE(${current.avhVoucherSlno}::bigint, ${DRAFT_SLNO_SENTINEL}),
+              ${current.avhCreatedOn}::timestamptz,
+              ${query.voucherId}::uuid)
+       ORDER BY h.avh_voucher_date ${order},
+                COALESCE(h.avh_voucher_slno, ${DRAFT_SLNO_SENTINEL}) ${order},
+                h.avh_created_on ${order},
+                h.avh_voucher_id ${order}
+       LIMIT 1`;
+        const row = rows[0];
+        return {
+            direction: query.direction,
+            fromVoucherId: query.voucherId,
+            voucher: row ? toAdjacentVoucher(row) : null,
+        };
+    }
+    async duplicateCheck(query) {
+        await (0, receipt_guards_1.loadParty)(this.prisma, query.companyId, query.partyId, 'partyId');
+        const matches = await this.prisma.accVoucherHeader.findMany({
+            where: {
+                avhCompanyId: query.companyId,
+                avhAccYear: query.accYear,
+                avhPartyId: query.partyId,
+                ...(query.branchId ? { avhBranchId: query.branchId } : {}),
+                avhVoucherDate: (0, receipt_utils_1.toDateOnly)(query.voucherDate),
+                avhDocAmount: (0, receipt_utils_1.money)(query.amount),
+                avhIsDeleted: false,
+                avhVoucherStatus: { not: receipt_enum_1.VoucherStatus.CANCELLED },
+                avhAgainstVoucherId: null,
+                voucherType: { vchrTypeCode: receipt_enum_1.RECEIPT_VOUCHER_TYPE_CODE },
+                ...(query.excludeVoucherId ? { avhVoucherId: { not: query.excludeVoucherId } } : {}),
+            },
+            select: {
+                avhVoucherId: true,
+                avhAccYear: true,
+                avhBranchId: true,
+                avhVoucherRefno: true,
+                avhVoucherDate: true,
+                avhDocAmount: true,
+                avhVoucherStatus: true,
+                avhCreatedBy: true,
+                avhCreatedOn: true,
+            },
+            orderBy: [{ avhCreatedOn: 'desc' }],
+            take: 10,
+        });
+        const rows = matches.map((match) => ({
+            voucherId: match.avhVoucherId,
+            accYear: match.avhAccYear,
+            branchId: match.avhBranchId,
+            voucherRefno: match.avhVoucherRefno,
+            voucherDate: (0, receipt_utils_1.toDateString)(match.avhVoucherDate),
+            docAmount: (0, receipt_utils_1.toAmount)(match.avhDocAmount),
+            status: match.avhVoucherStatus,
+            createdBy: match.avhCreatedBy,
+            createdOn: (0, receipt_utils_1.toIsoString)(match.avhCreatedOn),
+        }));
+        return { isDuplicate: rows.length > 0, matches: rows };
+    }
     async loadSettings(companyId, branchId) {
         const effective = await this.appSettingValueService.resolveEffective({
             companyId,
@@ -325,5 +558,22 @@ function creditRouting(billType) {
     return billType === receipt_enum_1.BillType.SALES_RETURN
         ? { adjType: receipt_enum_1.BillAdjType.NOTE_ADJUST, settlementMode: receipt_enum_1.BillSettlementMode.CREDIT_NOTE }
         : { adjType: receipt_enum_1.BillAdjType.ADVANCE_ADJUST, settlementMode: receipt_enum_1.BillSettlementMode.ADVANCE };
+}
+const SALE_BILL_SRC_MODULE = 'SALES';
+const SALE_BILL_SRC_DOC_TYPE = 'BILL';
+const DRAFT_SLNO_SENTINEL = 9223372036854775807n;
+function toAdjacentVoucher(row) {
+    return {
+        voucherId: row.avh_voucher_id,
+        accYear: row.avh_acc_year,
+        companyId: row.avh_company_id,
+        branchId: row.avh_branch_id,
+        voucherRefno: row.avh_voucher_refno,
+        voucherDate: (0, receipt_utils_1.toDateString)(row.avh_voucher_date),
+        partyId: row.avh_party_id,
+        partyName: row.led_name,
+        docAmount: (0, receipt_utils_1.toAmount)(row.avh_doc_amount),
+        status: row.avh_voucher_status,
+    };
 }
 //# sourceMappingURL=open-items.service.js.map

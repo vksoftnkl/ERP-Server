@@ -43,12 +43,19 @@ __decorate([
     __metadata("design:type", String)
 ], SaveOpeningBillRowDto.prototype, "ablDocRefno", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ example: '2026-01-12', description: 'The ORIGINAL invoice date — what ageing measures from.' }),
+    (0, swagger_1.ApiProperty)({
+        example: '2026-01-12',
+        description: 'The ORIGINAL invoice date — what ageing measures from.',
+    }),
     (0, dtoDecorators_1.UpperMaxString)(10),
     __metadata("design:type", String)
 ], SaveOpeningBillRowDto.prototype, "ablDocDate", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true, example: '2026-02-11', description: 'Must be >= ablDocDate (ck_abl_due_date).' }),
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        example: '2026-02-11',
+        description: 'Must be >= ablDocDate (ck_abl_due_date).',
+    }),
     (0, dtoDecorators_1.NullableDateString)(),
     __metadata("design:type", Object)
 ], SaveOpeningBillRowDto.prototype, "ablDueDate", void 0);
@@ -65,7 +72,7 @@ __decorate([
 __decorate([
     (0, swagger_1.ApiProperty)({
         enum: opening_balance_enum_1.BillDrCr,
-        description: "TWO characters here — acc_opening_balance uses one. Do not unify them.",
+        description: 'TWO characters here — acc_opening_balance uses one. Do not unify them.',
     }),
     (0, class_validator_1.IsIn)(Object.values(opening_balance_enum_1.BillDrCr)),
     __metadata("design:type", String)

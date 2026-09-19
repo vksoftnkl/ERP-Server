@@ -725,8 +725,7 @@ export class SaleOrderSuccessSingleDto {
   message!: string;
   @ApiProperty({
     type: SaleOrderPayloadDto,
-    description:
-      'Order record including its line items, applied charges and tendered amounts',
+    description: 'Order record including its line items, applied charges and tendered amounts',
   })
   data!: SaleOrderPayloadDto;
 }

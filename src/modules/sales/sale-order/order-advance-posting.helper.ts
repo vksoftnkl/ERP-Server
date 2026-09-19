@@ -535,7 +535,8 @@ async function resolveSurchargeLedgers(
   const byId = new Map(masters.map((master) => [master.tndId, master]));
   const ledgers = new Map<string, string>();
   for (const tender of surcharged) {
-    const ledgerId = tender.tdSurchargeLedgerId ?? byId.get(tender.tdTenderId)?.tndSurchargeLedgerId;
+    const ledgerId =
+      tender.tdSurchargeLedgerId ?? byId.get(tender.tdTenderId)?.tndSurchargeLedgerId;
     if (!ledgerId) {
       throwSalesBadRequest<SaleOrderErrorDetail, SaleOrderErrorResponse>(
         'Order advance cannot be posted',

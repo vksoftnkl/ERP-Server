@@ -151,7 +151,9 @@ let BillWiseService = class BillWiseService {
                 seen.add(inserted.ablId);
                 created += 1;
             }
-            const deleted = replace ? await this.deleteAbsentBills(tx, stored, seen, accYear, actor, now) : 0;
+            const deleted = replace
+                ? await this.deleteAbsentBills(tx, stored, seen, accYear, actor, now)
+                : 0;
             const after = await tx.accBillBalance.findMany({
                 where: this.billScope(opening.opId, accYear),
                 select: BILL_SELECT,

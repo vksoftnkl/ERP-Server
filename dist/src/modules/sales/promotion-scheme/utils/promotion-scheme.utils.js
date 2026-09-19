@@ -28,7 +28,13 @@ const module_service_utils_1 = require("../../../../common/utils/module-service.
 exports.UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 exports.PRM_STATUSES = ['DRAFT', 'APPROVED', 'SUSPENDED', 'CLOSED'];
 exports.PRM_APPLY_ON = ['BILL_AMOUNT', 'BILL_QTY', 'ITEM_AMOUNT', 'ITEM_QTY'];
-exports.PRM_BENEFITS = ['FREE_ITEM', 'DISC_PERC', 'DISC_AMT', 'FIXED_PRICE', 'DISC_PER_ITEM'];
+exports.PRM_BENEFITS = [
+    'FREE_ITEM',
+    'DISC_PERC',
+    'DISC_AMT',
+    'FIXED_PRICE',
+    'DISC_PER_ITEM',
+];
 exports.PRM_STACK_MODES = ['EXCLUSIVE', 'STACKABLE'];
 exports.PRM_CALC_ON = ['GROSS_AMOUNT', 'NET_AMOUNT', 'TAXABLE_AMOUNT'];
 exports.PRM_BILL_TYPES = ['ALL', 'CASH', 'CREDIT'];

@@ -121,6 +121,21 @@ export enum BillAdjType {
   NOTE_ADJUST = 'NOTE_ADJUST',
   DISCOUNT = 'DISCOUNT',
   WRITEOFF = 'WRITEOFF',
+  /**
+   * The paise a counter rounds off a bill by — 4,999.60 collected as 5,000.
+   *
+   * NOT folded into DISCOUNT, although it behaves identically against the
+   * bill, because its LEG is debited to the Round Off ledger and a discount's
+   * is debited to Discount Allowed. A row saying DISCOUNT beside a leg saying
+   * Round Off would leave anyone reconciling the two with an unexplained gap,
+   * and would inflate every discount report built on this column. A discount
+   * is a concession somebody decided to give; a round-off is arithmetic.
+   *
+   * `BillBalanceRecomputeService` nevertheless folds it into
+   * `abl_disc_amount`: that column is a CACHE meaning "already accounted for",
+   * every consumer reads it that way, and the exact split lives here.
+   */
+  ROUND_OFF = 'ROUND_OFF',
   TRANSFER = 'TRANSFER',
 }
 
@@ -150,6 +165,8 @@ export enum BillSettlementMode {
   JOURNAL = 'JOURNAL',
   DISCOUNT = 'DISCOUNT',
   WRITEOFF = 'WRITEOFF',
+  /** The counter's rounding. ck_abj_settlement_mode, widened 20260918120000. */
+  ROUND_OFF = 'ROUND_OFF',
   MIXED = 'MIXED',
   /** Added 20260915120000 — a customer withheld tax at source. */
   TDS = 'TDS',
@@ -230,6 +247,18 @@ export enum ReceiptLedgerRole {
   DISCOUNT_ALLOWED = 'DISCOUNT_ALLOWED',
   /** Pre-existing — where a written-off balance is expensed. */
   WRITE_OFF = 'WRITE_OFF',
+  /**
+   * Pre-existing in `accounts.acc_ledger_map` — where the counter's rounding
+   * lands. The receipt route simply did not know about it until 2026-09-18.
+   *
+   * Listed here so `pushReduction` can resolve the ledger, exactly as it does
+   * for DISCOUNT_ALLOWED. It is deliberately absent from
+   * `ROLE_SETTLEMENT_MODE`, which means an other-line naming this role with
+   * `settlesBill` is refused — the per-bill `roundoff` on the allocation
+   * already carries it, and two ways to say the same thing is how they come to
+   * disagree.
+   */
+  ROUND_OFF = 'ROUND_OFF',
   /** Pre-existing — TCS collected under 206C(1H) when tcs_basis is RECEIPT. */
   TCS_PAYABLE = 'TCS_PAYABLE',
 }
@@ -248,6 +277,11 @@ export const ROLE_SIDE: Readonly<Record<ReceiptLedgerRole, DrCr>> = {
   [ReceiptLedgerRole.INTEREST_INCOME]: DrCr.CR,
   [ReceiptLedgerRole.DISCOUNT_ALLOWED]: DrCr.DR,
   [ReceiptLedgerRole.WRITE_OFF]: DrCr.DR,
+  // A round-off in a customer's favour is an expense, like a discount. The
+  // other direction — collecting MORE than the bill — cannot arise here:
+  // ck_abj_reversal_sign refuses a negative non-reversal adjustment row, so a
+  // round-off is a positive reduction or it is nothing.
+  [ReceiptLedgerRole.ROUND_OFF]: DrCr.DR,
   [ReceiptLedgerRole.TCS_PAYABLE]: DrCr.CR,
 };
 

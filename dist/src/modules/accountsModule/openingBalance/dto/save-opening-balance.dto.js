@@ -48,7 +48,10 @@ __decorate([
     __metadata("design:type", Number)
 ], SaveOpeningBalanceRowDto.prototype, "opAmount", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ enum: opening_balance_enum_1.OpeningDrCr, description: "ONE character. acc_bill_balance uses two — do not unify them." }),
+    (0, swagger_1.ApiProperty)({
+        enum: opening_balance_enum_1.OpeningDrCr,
+        description: 'ONE character. acc_bill_balance uses two — do not unify them.',
+    }),
     (0, class_validator_1.IsIn)(Object.values(opening_balance_enum_1.OpeningDrCr)),
     __metadata("design:type", String)
 ], SaveOpeningBalanceRowDto.prototype, "opDrCr", void 0);
@@ -98,7 +101,11 @@ __decorate([
     __metadata("design:type", String)
 ], SaveOpeningBalanceDto.prototype, "opAccYear", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ format: 'uuid', nullable: true, description: 'Stamped onto every row written.' }),
+    (0, swagger_1.ApiPropertyOptional)({
+        format: 'uuid',
+        nullable: true,
+        description: 'Stamped onto every row written.',
+    }),
     (0, dtoDecorators_1.NullableUuid)(),
     __metadata("design:type", Object)
 ], SaveOpeningBalanceDto.prototype, "opTenantId", void 0);

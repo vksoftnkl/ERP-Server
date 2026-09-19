@@ -71,13 +71,44 @@ export class AmendReceiptDto extends SaveReceiptDto {
    * `/create` may be handed no id — that is how a new draft is born. An amend
    * always names an existing POSTED receipt, so an absent id is not "make me a
    * new one", it is a malformed request.
+   *
+   * ═══════════════════════════════════════════════════════════════════════
+   *  THE `= ''` IS LOAD-BEARING. DO NOT "TIDY" IT.
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * This was written `declare avhVoucherId: string` — which is what TypeScript
+   * itself suggests for a narrowed base property (TS2612), and which silently
+   * broke both halves of the rule. **TypeScript emits nothing at all for a
+   * `declare` field, decorators included**, so neither `@ApiProperty` nor
+   * `@RequiredUuid` ever reached the metadata: the field was missing from
+   * Swagger's `required` list, the ValidationPipe had no rule to apply, and a
+   * body with no `avhVoucherId` sailed through to the raw SQL below and came
+   * back as a 500 instead of a 400.
+   *
+   * An initializer is the only other thing TS2612 accepts — and it has to be a
+   * value that is NOT null or undefined, which is the part that is easy to get
+   * wrong. `SaveReceiptDto` marks this property `@IsOptional()`, class-validator
+   * inherits that from the base class, and `@IsOptional()` means "skip EVERY
+   * validator on this property when the value is null or undefined". So
+   * `= undefined!` would reinstate exactly the bug it is meant to fix.
+   *
+   * `''` is neither, so the inherited skip does not fire and `@RequiredUuid`
+   * runs and rejects it. Checked on all four cases — absent, explicit null,
+   * a non-uuid string, and a real id — in `amend-receipt.dto.spec.ts`, which
+   * exists to keep this from regressing.
    */
   @ApiProperty({
     format: 'uuid',
+    // Stated, not inferred. The Swagger CLI plugin reads the AST and treats a
+    // property with an initializer as optional — so the `= ''` that makes the
+    // VALIDATOR fire would, on its own, leave the field out of `required` all
+    // over again. The two halves of this bug have opposite causes and both
+    // need saying out loud.
+    required: true,
     description: 'The POSTED receipt being restated. Its id, number and refno all survive.',
   })
   @RequiredUuid()
-  declare avhVoucherId: string;
+  avhVoucherId: string = '';
 
   // ── The /post half ────────────────────────────────────────────────────────
 

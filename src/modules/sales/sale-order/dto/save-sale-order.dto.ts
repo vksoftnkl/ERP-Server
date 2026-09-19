@@ -177,7 +177,8 @@ export class SaveSaleOrderDto {
     minLength: 9,
     maxLength: 9,
     nullable: true,
-    description: "The source document's OWN accounting year — a March quotation can become an April order",
+    description:
+      "The source document's OWN accounting year — a March quotation can become an April order",
   })
   @NullableStringStrict(9)
   soSrcDocAccYear?: string | null;
@@ -235,7 +236,11 @@ export class SaveSaleOrderDto {
   })
   @NullableStringStrict(2)
   soPosStcd?: string | null;
-  @ApiPropertyOptional({ maxLength: 100, nullable: true, description: 'Snapshot of the state name' })
+  @ApiPropertyOptional({
+    maxLength: 100,
+    nullable: true,
+    description: 'Snapshot of the state name',
+  })
   @NullableStringStrict(100)
   soStateName?: string | null;
   @ApiPropertyOptional({ maxLength: 150, nullable: true })
@@ -539,16 +544,14 @@ export class SaveSaleOrderDto {
   @ApiPropertyOptional({
     nullable: true,
     example: 'fixed',
-    description:
-      'How the freight charge is computed (snapshot of the charge master method)',
+    description: 'How the freight charge is computed (snapshot of the charge master method)',
   })
   @NullableStringStrict(12)
   soFreightCalcType?: string | null;
   @ApiPropertyOptional({
     nullable: true,
     example: 'fixed',
-    description:
-      'How the loading charge is computed (snapshot of the charge master method)',
+    description: 'How the loading charge is computed (snapshot of the charge master method)',
   })
   @NullableStringStrict(12)
   soLoadingCalcType?: string | null;

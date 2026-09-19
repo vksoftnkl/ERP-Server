@@ -39,6 +39,7 @@ export declare enum BillAdjType {
     NOTE_ADJUST = "NOTE_ADJUST",
     DISCOUNT = "DISCOUNT",
     WRITEOFF = "WRITEOFF",
+    ROUND_OFF = "ROUND_OFF",
     TRANSFER = "TRANSFER"
 }
 export declare const ALLOCATING_ADJ_TYPES: readonly BillAdjType[];
@@ -56,6 +57,7 @@ export declare enum BillSettlementMode {
     JOURNAL = "JOURNAL",
     DISCOUNT = "DISCOUNT",
     WRITEOFF = "WRITEOFF",
+    ROUND_OFF = "ROUND_OFF",
     MIXED = "MIXED",
     TDS = "TDS",
     CLAIM = "CLAIM"
@@ -95,6 +97,7 @@ export declare enum ReceiptLedgerRole {
     INTEREST_INCOME = "INTEREST_INCOME",
     DISCOUNT_ALLOWED = "DISCOUNT_ALLOWED",
     WRITE_OFF = "WRITE_OFF",
+    ROUND_OFF = "ROUND_OFF",
     TCS_PAYABLE = "TCS_PAYABLE"
 }
 export declare const ROLE_SIDE: Readonly<Record<ReceiptLedgerRole, DrCr>>;

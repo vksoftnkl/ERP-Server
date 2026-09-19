@@ -20,6 +20,7 @@ export declare class ReceiptAmendService {
     private amendInTransaction;
     private assertAmendPermitted;
     private assertStatusMayAmend;
+    private assertPartyUnchanged;
     private assertRevisionIsCurrent;
     private unwind;
     private reverseAdjustments;

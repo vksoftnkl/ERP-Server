@@ -1,8 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import {
-  SalesErrorFieldDto,
-  SalesErrorResponseDto,
-} from 'src/common/utils/module-response.dto';
+import { SalesErrorFieldDto, SalesErrorResponseDto } from 'src/common/utils/module-response.dto';
 export { SalesErrorFieldDto as SaleFreightChargeErrorFieldDto };
 export { SalesErrorResponseDto as SaleFreightChargeErrorResponseDto };
 export class SaleFreightChargePayloadDto {

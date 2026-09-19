@@ -80,7 +80,9 @@ async function staleLaterYears(client, params) {
             opIsDeleted: false,
             opSource: opening_balance_enum_1.OpeningSource.CARRY_FORWARD,
             opIsStale: false,
-            ...(params.branchId === null ? {} : { OR: [{ opBranchId: params.branchId }, { opBranchId: null }] }),
+            ...(params.branchId === null
+                ? {}
+                : { OR: [{ opBranchId: params.branchId }, { opBranchId: null }] }),
         },
         select: { opAccYear: true },
         distinct: ['opAccYear'],
@@ -98,7 +100,9 @@ async function staleLaterYears(client, params) {
             opIsDeleted: false,
             opSource: opening_balance_enum_1.OpeningSource.CARRY_FORWARD,
             opIsStale: false,
-            ...(params.branchId === null ? {} : { OR: [{ opBranchId: params.branchId }, { opBranchId: null }] }),
+            ...(params.branchId === null
+                ? {}
+                : { OR: [{ opBranchId: params.branchId }, { opBranchId: null }] }),
         },
         data: {
             opIsStale: true,

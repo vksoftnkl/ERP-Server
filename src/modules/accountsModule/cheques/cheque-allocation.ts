@@ -217,6 +217,10 @@ async function loadNamedBills(
       amount: money(row.amount),
       discount: money(row.discount ?? 0),
       writeoff: money(row.writeoff ?? 0),
+      // A cheque does not round anything off. Rounding happens at the counter
+      // when the money is taken; clearing an instrument weeks later settles
+      // the face value or it does not settle at all.
+      roundoff: ZERO,
       pendingAmount: bill.ablPendingAmount,
       writeoffApprovedBy: row.writeoffApprovedBy ?? null,
     };
@@ -280,6 +284,7 @@ async function autoFifoBills(
       docRefno: bill.ablDocRefno,
       amount: take,
       discount: ZERO,
+      roundoff: ZERO,
       writeoff: ZERO,
       pendingAmount: bill.ablPendingAmount,
       writeoffApprovedBy: null,

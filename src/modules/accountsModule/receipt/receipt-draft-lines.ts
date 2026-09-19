@@ -37,6 +37,41 @@ import { DrCr } from './types/receipt-enum';
  * A bare ARRAY is also accepted, and read as `otherLines` with no cheque
  * detail. That is the shape §2.6 describes, so a row written by anything that
  * followed the plan literally still opens.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  AND SINCE 2026-09-18, THE BILL-WISE SETTLEMENT — AS A NOTE, NOT A FACT
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Reopening a draft used to lose the allocation: the tenders and the other
+ * lines came back, the bill-wise settlement did not, so every reopened draft
+ * was re-settled by hand. Alt+A covers "spread down the bills, oldest first"
+ * and nothing else — not a split, and not a deliberate out-of-order
+ * settlement, which is precisely the receipt somebody saves as a draft to
+ * think about.
+ *
+ * `allocations` and `creditsApplied` now sit in this object beside the other
+ * two, in the shape `/receipts/post` takes them.
+ *
+ * ── R10 is NOT being undone ──────────────────────────────────────────────
+ * **Nothing here writes `acc_bill_adjustment` and nothing moves
+ * `abl_pending_amount`.** A draft still touches no bill, which is what lets
+ * two people hold drafts against the same party without reserving each other's
+ * outstanding, and what lets a draft be abandoned with no cleanup. The
+ * allocation is REMEMBERED, not applied.
+ *
+ * ── It is a SUGGESTION, and is deliberately not validated ────────────────
+ * Between saving the draft and reopening it somebody else may have settled the
+ * same bills, so a remembered 5,000 against a bill that now has 1,200 pending
+ * is stale. That is expected, and it is given back exactly as it was stored:
+ * the screen re-reads `/receipts/open-items` on reopen and clamps each figure
+ * to what the bill can still take. Validating it here would turn a recoverable
+ * situation into a refused load — the operator would lose the whole draft
+ * rather than one figure.
+ *
+ * So: no bill is looked up on the way in, nothing is refused on the way out,
+ * and a remembered row naming a bill that has since been deleted still comes
+ * back. `/post` and `/amend` ignore all of it and use the payload they are
+ * given — this is a note to the screen, never an input to posting.
  */
 
 /** The cheque fields `acc_tender_detail` has no columns for. */
@@ -48,26 +83,55 @@ export interface DraftChequeDetail {
   bankLedgerId: string | null;
 }
 
+/**
+ * One remembered bill settlement, in exactly the shape `/receipts/post` takes
+ * it — so the screen sends the same object to `/create` that it will send to
+ * `/post`, and gets the same one back.
+ */
+export interface DraftAllocation {
+  billId: string;
+  billAccYear: string;
+  amount: number;
+  discount: number;
+  writeoff: number;
+  roundoff: number;
+  writeoffApprovedBy: string | null;
+}
+
+/** One remembered credit the operator ticked. `billId` is the CREDIT bill. */
+export interface DraftCredit {
+  billId: string;
+  billAccYear: string;
+  amount: number;
+}
+
 export interface DraftLines {
   otherLines: ReceiptOtherLine[];
   /** Keyed by `td_row_no`, which is what the tender row is identified by here. */
   cheques: Record<number, DraftChequeDetail | undefined>;
+  /** Remembered, never applied. See the header note. */
+  allocations: DraftAllocation[];
+  creditsApplied: DraftCredit[];
 }
 
 export function emptyDraft(): DraftLines {
-  return { otherLines: [], cheques: {} };
+  return { otherLines: [], cheques: {}, allocations: [], creditsApplied: [] };
 }
 
 /** Build the value to store. */
 export function buildDraftLines(
   otherLines: readonly ReceiptOtherLine[],
   cheques: Record<number, DraftChequeDetail | null>,
+  allocations: readonly DraftAllocation[],
+  creditsApplied: readonly DraftCredit[],
 ): Prisma.InputJsonValue {
   return {
     otherLines: otherLines as unknown as Prisma.InputJsonValue,
     cheques: Object.fromEntries(
       Object.entries(cheques).filter(([, detail]) => detail !== null),
     ) as unknown as Prisma.InputJsonValue,
+    allocations: allocations as unknown as Prisma.InputJsonValue,
+    creditsApplied: creditsApplied as unknown as Prisma.InputJsonValue,
   } as Prisma.InputJsonValue;
 }
 
@@ -83,7 +147,7 @@ export function rehydrateDraft(value: Prisma.JsonValue | null | undefined): Draf
     return emptyDraft();
   }
   if (Array.isArray(value)) {
-    return { otherLines: readOtherLines(value), cheques: {} };
+    return { ...emptyDraft(), otherLines: readOtherLines(value) };
   }
   if (typeof value !== 'object') {
     return emptyDraft();
@@ -93,7 +157,71 @@ export function rehydrateDraft(value: Prisma.JsonValue | null | undefined): Draf
   return {
     otherLines: Array.isArray(record.otherLines) ? readOtherLines(record.otherLines) : [],
     cheques: readCheques(record.cheques),
+    // Absent on every row written before 2026-09-18 — 342 of them carried
+    // `{"cheques":{},"otherLines":[]}` — which reads as "nothing was
+    // remembered", exactly as it should.
+    allocations: Array.isArray(record.allocations) ? readAllocations(record.allocations) : [],
+    creditsApplied: Array.isArray(record.creditsApplied) ? readCredits(record.creditsApplied) : [],
   };
+}
+
+/**
+ * Read back the remembered settlement.
+ *
+ * Structurally defensive — a bill id that is not a string, or an amount that is
+ * not a number, is a row this cannot describe and it is dropped — but NOT
+ * semantically. A bill that no longer exists, an amount larger than the bill
+ * can now take, a bill belonging to somebody else: all of those come back
+ * unchanged. They are the screen's problem to reconcile against a fresh
+ * `/receipts/open-items`, and refusing them here would cost the operator the
+ * whole draft to save them one figure.
+ */
+function readAllocations(value: readonly unknown[]): DraftAllocation[] {
+  const rows: DraftAllocation[] = [];
+  for (const entry of value) {
+    const row = asRecord(entry);
+    if (!row || typeof row.billId !== 'string' || typeof row.billAccYear !== 'string') {
+      continue;
+    }
+    rows.push({
+      billId: row.billId,
+      billAccYear: row.billAccYear,
+      amount: num(row.amount),
+      discount: num(row.discount),
+      writeoff: num(row.writeoff),
+      // Absent on a draft saved before the round-off column existed, which
+      // reads as 0 — exactly what it was.
+      roundoff: num(row.roundoff),
+      writeoffApprovedBy: str(row.writeoffApprovedBy),
+    });
+  }
+  return rows;
+}
+
+function readCredits(value: readonly unknown[]): DraftCredit[] {
+  const rows: DraftCredit[] = [];
+  for (const entry of value) {
+    const row = asRecord(entry);
+    if (!row || typeof row.billId !== 'string' || typeof row.billAccYear !== 'string') {
+      continue;
+    }
+    rows.push({
+      billId: row.billId,
+      billAccYear: row.billAccYear,
+      amount: num(row.amount),
+    });
+  }
+  return rows;
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function num(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
 }
 
 function readOtherLines(value: readonly unknown[]): ReceiptOtherLine[] {

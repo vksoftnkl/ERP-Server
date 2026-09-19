@@ -217,6 +217,7 @@ export class ReceiptPostingService {
         amount: money(row.amount),
         discount: money(row.discount ?? 0),
         writeoff: money(row.writeoff ?? 0),
+        roundoff: money(row.roundoff ?? 0),
         pendingAmount: bill.ablPendingAmount,
         writeoffApprovedBy: row.writeoffApprovedBy ?? null,
       };
@@ -525,6 +526,7 @@ export class ReceiptPostingService {
     roles.add(ReceiptLedgerRole.SURCHARGE_RECOVERED);
     roles.add(ReceiptLedgerRole.DISCOUNT_ALLOWED);
     roles.add(ReceiptLedgerRole.WRITE_OFF);
+    roles.add(ReceiptLedgerRole.ROUND_OFF);
 
     const roleLedgers = await requireReceiptRoleLedgers(tx, [...roles], {
       companyId: header.avhCompanyId,
@@ -894,6 +896,13 @@ export class ReceiptPostingService {
           params,
           ReceiptLedgerRole.WRITE_OFF,
           (bill) => bill.writeoff,
+        );
+        await this.pushReduction(
+          tx,
+          push,
+          params,
+          ReceiptLedgerRole.ROUND_OFF,
+          (bill) => bill.roundoff,
         );
       }
 

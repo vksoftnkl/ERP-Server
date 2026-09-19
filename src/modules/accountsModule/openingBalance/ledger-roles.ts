@@ -1,8 +1,5 @@
 import { Prisma } from '@prisma/client';
-import {
-  resolveRoleLedger,
-  type ResolvedRoleLedger,
-} from '../ledgerRole/ledger-map.helper';
+import { resolveRoleLedger, type ResolvedRoleLedger } from '../ledgerRole/ledger-map.helper';
 import { OpeningLedgerRole } from './types/opening-balance-enum';
 
 /**

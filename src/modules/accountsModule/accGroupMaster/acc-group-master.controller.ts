@@ -31,7 +31,10 @@ import {
 } from './dto/acc-group-master-response.dto';
 import { SaveAccGroupMasterDto } from './dto/save-acc-group-master.dto';
 import { AccGroupMasterService } from './acc-group-master.service';
-import { AccGroupMasterPayload, AccGroupMasterSuccessResponse } from './types/acc-group-master-api.types';
+import {
+  AccGroupMasterPayload,
+  AccGroupMasterSuccessResponse,
+} from './types/acc-group-master-api.types';
 import { API_VERSION } from '../../../common/constants/api-version';
 
 @ApiTags('Account Groups')

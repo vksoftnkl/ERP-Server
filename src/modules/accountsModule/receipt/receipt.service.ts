@@ -28,7 +28,15 @@ import {
   throwAccountsNotFound,
 } from 'src/common/utils/module-service.utils';
 import { OpenItemsService } from './open-items.service';
-import { buildDraftLines, rehydrateDraft, type DraftChequeDetail } from './receipt-draft-lines';
+import {
+  buildDraftLines,
+  rehydrateDraft,
+  type DraftAllocation,
+  type DraftChequeDetail,
+  type DraftCredit,
+  type DraftLines,
+} from './receipt-draft-lines';
+import { creditRouting } from './open-items.service';
 import { describeReceiptRoleLedgers, ledgerForRole } from './receipt-ledger-roles';
 import {
   normaliseOtherLines,
@@ -42,6 +50,7 @@ import {
   assertHeaderScope,
   loadParty,
   loadReceiptVoucherType,
+  type ReceiptWriteClient,
 } from './receipt.guards';
 import type { ReceiptSettings } from './receipt.settings';
 import {
@@ -56,15 +65,24 @@ import {
   trimOrNull,
   ZERO,
 } from './receipt.utils';
-import { SaveReceiptDto, UpdateReceiptHeaderDto } from './dto/save-receipt.dto';
+import {
+  SaveDraftReceiptDto,
+  SaveReceiptDto,
+  UpdateReceiptHeaderDto,
+} from './dto/save-receipt.dto';
 import { DeleteReceiptDto, GetReceiptQueryDto } from './dto/post-receipt.dto';
 import {
+  BillAdjType,
+  BillSettlementMode,
+  BillType,
+  DrCr,
   PdcPostingMode,
   ReceiptLedgerRole,
   VOUCHER_STATUSES,
   VoucherStatus,
 } from './types/receipt-enum';
 import type {
+  ReceiptAllocation,
   ReceiptDeletePayload,
   ReceiptDraftPayload,
   ReceiptErrorDetail,
@@ -120,7 +138,7 @@ export class ReceiptService {
    * draft is a piece of paper on a desk, and an abandoned one must leave no
    * trace in the books and no gap in the number series.
    */
-  async save(dto: SaveReceiptDto): Promise<ReceiptDraftPayload> {
+  async save(dto: SaveDraftReceiptDto): Promise<ReceiptDraftPayload> {
     const actor = resolveActor(dto.avhUserId, this.requestContext.getUserId()) ?? DEFAULT_ACTOR;
 
     return this.prisma.$transaction(
@@ -147,7 +165,7 @@ export class ReceiptService {
    */
   async saveInTransaction(
     tx: Prisma.TransactionClient,
-    dto: SaveReceiptDto,
+    dto: SaveDraftReceiptDto,
     actor: string,
   ): Promise<ReceiptDraftPayload> {
     const receiptDate = toDateOnly(dto.avhVoucherDate);
@@ -191,6 +209,11 @@ export class ReceiptService {
               avhVoucherStatus: true,
               avhIsDeleted: true,
               avhVoucherRefno: true,
+              // Needed to honour "omit the key to leave it alone": without the
+              // stored blob there is nothing to fall back to, and a client
+              // that has never heard of `allocations` would wipe them on every
+              // ordinary save.
+              avhDraftLines: true,
             },
           })
         : null;
@@ -266,6 +289,10 @@ export class ReceiptService {
         docAmount,
         draftLines: lines,
         cheques: chequeDetailByRow(tenders),
+        // R10 is untouched: this is stored on the header and applied to
+        // nothing. See receipt-draft-lines.ts.
+        allocations: rememberedAllocations(dto, existing?.avhDraftLines),
+        creditsApplied: rememberedCredits(dto, existing?.avhDraftLines),
         actor,
       });
 
@@ -484,15 +511,28 @@ export class ReceiptService {
       );
     }
 
+    const draft = rehydrateDraft(header.avhDraftLines);
+    // A DRAFT has no adjustment rows at all (R10), so its two arrays come from
+    // what the last save REMEMBERED. A posted receipt ignores the blob — and
+    // carries none anyway, because /post clears the column.
+    const remembered =
+      statusOf(header) === VoucherStatus.DRAFT
+        ? await this.rememberedSettlement(client, header, draft)
+        : null;
+
     return {
       header: await this.toHeaderPayload(client, header),
       tenders: await this.loadTenderPayload(client, header.avhVoucherId),
-      otherLines: rehydrateDraft(header.avhDraftLines).otherLines,
+      otherLines: draft.otherLines,
       legs: legsFor(header.avhVoucherId),
       // A credit pair's rows are exactly the ones naming an opposite bill, so
       // the split is a property of the data and not a flag anybody has to set.
-      allocations: adjustments.filter((row) => row.abjAgainstBillId === null).map(toAllocation),
-      creditsApplied: adjustments.filter((row) => row.abjAgainstBillId !== null).map(toAllocation),
+      allocations:
+        remembered?.allocations ??
+        adjustments.filter((row) => row.abjAgainstBillId === null).map(toAllocation),
+      creditsApplied:
+        remembered?.creditsApplied ??
+        adjustments.filter((row) => row.abjAgainstBillId !== null).map(toAllocation),
       cheques: cheques.map((cheque) => ({
         pdcId: cheque.apdId,
         accYear: cheque.apdAccYear,
@@ -530,6 +570,143 @@ export class ReceiptService {
         voucherId: bill.ablVoucherId,
       })),
     };
+  }
+
+  /**
+   * The bill-wise settlement a DRAFT remembers, shaped like the adjustment rows
+   * a post would write — so one rendering path paints both.
+   *
+   * ═══════════════════════════════════════════════════════════════════════
+   *  WHAT IS SYNTHESISED, AND WHAT IS REAL
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * Real: `billId`, `billAccYear`, `amount`, the discount and the write-off —
+   * all of it exactly as the last save stored it, unchanged and unchecked.
+   *
+   * Derived from the BILL, by one lookup: `docRefno`, `docDate`, and (for a
+   * credit) the `adjType` / `settlementMode` that `creditRouting` decides from
+   * its type. The lookup is a convenience, **not a validation**: a row whose
+   * bill has been deleted still comes back, with a blank refno and a null date.
+   * Nothing is dropped and nothing is refused — that row is precisely the one
+   * the operator needs to see, because it is the one that will not settle.
+   *
+   * Synthesised: `abjId` is **null**, which is the signal that no row exists.
+   * `adjDate` is the receipt's own date, which is what a post would stamp.
+   * `isPostDated` is false and `matured` true because a draft records nothing
+   * about post-datedness — the tender decides that at post, not the allocation.
+   *
+   * ── Discount and write-off become their own rows ────────────────────────
+   * A post writes DISCOUNT and WRITEOFF as separate `acc_bill_adjustment` rows
+   * (see `addReductions`), and this mirrors that. Folding them into one row
+   * would be a shape only a draft ever produces, and the screen would need a
+   * second way to read it.
+   */
+  private async rememberedSettlement(
+    client: ReceiptWriteClient,
+    header: StoredHeader,
+    draft: DraftLines,
+  ): Promise<{ allocations: ReceiptAllocation[]; creditsApplied: ReceiptAllocation[] } | null> {
+    if (draft.allocations.length === 0 && draft.creditsApplied.length === 0) {
+      return null;
+    }
+
+    const keys = [...draft.allocations, ...draft.creditsApplied];
+    const bills = await client.accBillBalance.findMany({
+      where: {
+        OR: keys.map((row) => ({ ablId: row.billId, ablAccYear: row.billAccYear })),
+      },
+      select: {
+        ablId: true,
+        ablAccYear: true,
+        ablDocRefno: true,
+        ablDocDate: true,
+        ablBillType: true,
+      },
+    });
+    const billByKey = new Map(bills.map((bill) => [`${bill.ablId}|${bill.ablAccYear}`, bill]));
+
+    const adjDate = toDateString(header.avhVoucherDate)!;
+    const base = (row: {
+      billId: string;
+      billAccYear: string;
+    }): Omit<ReceiptAllocation, 'adjType' | 'settlementMode' | 'amount' | 'approvedBy'> => {
+      const bill = billByKey.get(`${row.billId}|${row.billAccYear}`);
+      return {
+        // No row exists. This null is the whole signal.
+        abjId: null,
+        billId: row.billId,
+        billAccYear: row.billAccYear,
+        docRefno: bill?.ablDocRefno ?? '',
+        docDate: toDateString(bill?.ablDocDate),
+        drCr: DrCr.CR,
+        adjDate,
+        isPostDated: false,
+        matured: true,
+        voucherId: null,
+        chequeId: null,
+        againstBillId: null,
+        againstBillRefno: null,
+        remarks: null,
+      };
+    };
+
+    const allocations: ReceiptAllocation[] = [];
+    for (const row of draft.allocations) {
+      allocations.push({
+        ...base(row),
+        adjType: BillAdjType.ALLOCATION,
+        settlementMode: null,
+        amount: row.amount,
+        approvedBy: null,
+      });
+      if (row.discount > 0) {
+        allocations.push({
+          ...base(row),
+          adjType: BillAdjType.DISCOUNT,
+          settlementMode: BillSettlementMode.DISCOUNT,
+          amount: row.discount,
+          approvedBy: null,
+        });
+      }
+      if (row.writeoff > 0) {
+        allocations.push({
+          ...base(row),
+          adjType: BillAdjType.WRITEOFF,
+          settlementMode: BillSettlementMode.WRITEOFF,
+          amount: row.writeoff,
+          // Remembered as the operator left it. A write-off with no approver is
+          // refused at POST, where it matters, not on the way out of a draft.
+          approvedBy: row.writeoffApprovedBy,
+        });
+      }
+      if (row.roundoff > 0) {
+        allocations.push({
+          ...base(row),
+          adjType: BillAdjType.ROUND_OFF,
+          settlementMode: BillSettlementMode.ROUND_OFF,
+          amount: row.roundoff,
+          approvedBy: null,
+        });
+      }
+    }
+
+    const creditsApplied: ReceiptAllocation[] = draft.creditsApplied.map((row) => {
+      const bill = billByKey.get(`${row.billId}|${row.billAccYear}`);
+      // Which invoices a credit ends up settling is the allocation engine's
+      // decision at post, so `billId` is the CREDIT here and `againstBillId`
+      // stays null. On a POSTED receipt the two are the other way round; see
+      // ReceiptAllocation.
+      const routing = bill ? creditRouting(bill.ablBillType as BillType) : null;
+      return {
+        ...base(row),
+        adjType: routing?.adjType ?? BillAdjType.ADVANCE_ADJUST,
+        settlementMode: routing?.settlementMode ?? null,
+        amount: row.amount,
+        approvedBy: null,
+      };
+    });
+
+    return { allocations, creditsApplied };
   }
 
   // ═════════════════════════════════════════════════════════════════════════
@@ -588,6 +765,25 @@ export class ReceiptService {
         ]);
       }
       await assertAccYearWritable(tx, header.avhCompanyId, header.avhAccYear, 'avhAccYear');
+
+      // R-B2. `/create` refuses two collectors and this route used to take
+      // them, so the same receipt could be keyed with one salesman and then
+      // edited to have two — the rule was enforced on the way in and not on the
+      // way past. It is the SAME check, called from here, rather than a second
+      // copy of it: two copies are how the two routes came to disagree.
+      //
+      // Only when the caller actually sent the field. A header edit that says
+      // nothing about the collector must not be refused because
+      // accounts.receipt_salesman_mandatory came on after the receipt was
+      // posted — that is a rule about keying a receipt, not about correcting
+      // its narration.
+      if (has(body, 'avhEmployeeId')) {
+        const settings = await this.openItemsService.loadSettings(
+          header.avhCompanyId,
+          header.avhBranchId,
+        );
+        this.assertSalesman(dto.avhEmployeeId ?? [], settings);
+      }
 
       const now = new Date();
       await tx.accVoucherHeader.update({
@@ -990,7 +1186,7 @@ export class ReceiptService {
   private async upsertDraftHeader(
     tx: Prisma.TransactionClient,
     params: {
-      dto: SaveReceiptDto;
+      dto: SaveDraftReceiptDto;
       existingId: string | null;
       voucherTypeId: number;
       partyId: string;
@@ -998,6 +1194,8 @@ export class ReceiptService {
       docAmount: Prisma.Decimal;
       draftLines: readonly NormalisedOtherLine[];
       cheques: Record<number, DraftChequeDetail | null>;
+      allocations: readonly DraftAllocation[];
+      creditsApplied: readonly DraftCredit[];
       actor: string;
     },
   ): Promise<{ avhVoucherId: string }> {
@@ -1034,7 +1232,12 @@ export class ReceiptService {
       avhDeviceId: trimOrNull(dto.avhDeviceId),
       avhSessionId: dto.avhSessionId ?? null,
       avhUserId: params.actor,
-      avhDraftLines: buildDraftLines(params.draftLines.map(toOtherLinePayload), params.cheques),
+      avhDraftLines: buildDraftLines(
+        params.draftLines.map(toOtherLinePayload),
+        params.cheques,
+        params.allocations,
+        params.creditsApplied,
+      ),
     };
 
     if (params.existingId) {
@@ -1272,6 +1475,50 @@ export class ReceiptService {
 }
 
 // ─── Shapes shared with the posting / cancelling services ────────────────────
+
+/**
+ * What to remember as this draft's settlement.
+ *
+ * **Omitted means "leave it alone", `[]` means "clear it".** The distinction
+ * matters because the field is new: a client that has never heard of it sends
+ * an ordinary save with no `allocations` key, and that must not wipe what the
+ * operator arranged on the last one. Only a client that explicitly sends an
+ * empty array is saying there is nothing to remember.
+ *
+ * Nothing here looks at a bill. The figures are stored as they arrive — see
+ * `receipt-draft-lines.ts` for why validating them would be the wrong trade.
+ */
+function rememberedAllocations(
+  dto: SaveDraftReceiptDto,
+  stored: Prisma.JsonValue | null | undefined,
+): DraftAllocation[] {
+  if (dto.allocations === undefined) {
+    return rehydrateDraft(stored).allocations;
+  }
+  return dto.allocations.map((row) => ({
+    billId: row.billId,
+    billAccYear: row.billAccYear,
+    amount: row.amount,
+    discount: row.discount ?? 0,
+    writeoff: row.writeoff ?? 0,
+    roundoff: row.roundoff ?? 0,
+    writeoffApprovedBy: row.writeoffApprovedBy ?? null,
+  }));
+}
+
+function rememberedCredits(
+  dto: SaveDraftReceiptDto,
+  stored: Prisma.JsonValue | null | undefined,
+): DraftCredit[] {
+  if (dto.creditsApplied === undefined) {
+    return rehydrateDraft(stored).creditsApplied;
+  }
+  return dto.creditsApplied.map((row) => ({
+    billId: row.billId,
+    billAccYear: row.billAccYear,
+    amount: row.amount,
+  }));
+}
 
 export const STORED_HEADER_SELECT = {
   avhVoucherId: true,

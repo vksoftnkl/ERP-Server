@@ -69,6 +69,7 @@ let ReceiptAmendService = class ReceiptAmendService {
         const settings = await this.openItemsService.loadSettings(header.avhCompanyId, header.avhBranchId);
         this.assertAmendPermitted(settings.allowPostedAmend);
         this.assertStatusMayAmend(header);
+        await this.assertPartyUnchanged(tx, header, dto.avhPartyId);
         this.assertRevisionIsCurrent(header, dto.baseRevision);
         const pdcHeaders = await tx.accVoucherHeader.findMany({
             where: { avhAgainstVoucherId: header.avhVoucherId, avhIsDeleted: false },
@@ -169,6 +170,27 @@ let ReceiptAmendService = class ReceiptAmendService {
                 },
             ]);
         }
+    }
+    async assertPartyUnchanged(tx, header, partyId) {
+        if (header.avhPartyId === partyId) {
+            return;
+        }
+        const names = await tx.accLedgerMaster.findMany({
+            where: { ledId: { in: [header.avhPartyId, partyId] } },
+            select: { ledId: true, ledName: true },
+        });
+        const nameOf = (id) => names.find((row) => row.ledId === id)?.ledName ?? id;
+        (0, module_service_utils_1.throwAccountsConflict)('Receipt cannot be amended', [
+            {
+                field: 'avhPartyId',
+                message: `${header.avhVoucherRefno ?? header.avhVoucherId} was received from ` +
+                    `"${nameOf(header.avhPartyId)}" and an amend cannot move it to ` +
+                    `"${nameOf(partyId)}". The receipt keeps its number, and that number is on a slip ` +
+                    'the first customer is holding — restating it would make the ledger say their slip ' +
+                    "was somebody else's money. Cancel this receipt and enter a new one for the right " +
+                    'customer.',
+            },
+        ]);
     }
     assertRevisionIsCurrent(header, baseRevision) {
         if (header.avhRevisionNo === baseRevision) {

@@ -359,7 +359,7 @@ export class ReceiptCancelService {
       });
     }
 
-    const adjustments = await tx.accBillAdjustment.findMany({
+    const forward = await tx.accBillAdjustment.findMany({
       where: {
         abjVoucherId: voucher.avhVoucherId,
         abjVoucherAccYear: voucher.avhAccYear,
@@ -369,6 +369,41 @@ export class ReceiptCancelService {
         abjReversalOfId: null,
       },
     });
+
+    // ── Rows a /receipts/amend has ALREADY reversed are left alone ─────────
+    //
+    // This is what made cancelling an amended receipt impossible. An amend
+    // does not delete the post it replaces: it reverses it in place, with a
+    // negative row per adjustment, and leaves BOTH on the voucher — which is
+    // right, because the trail is the whole argument for allowing an in-place
+    // edit of posted money. The voucher id never changes, so after one amend
+    // the receipt carries the first post's rows, their negatives, and the
+    // second post's rows, and only the last of those is still live money.
+    //
+    // Reversing all of them, as this did, is wrong twice over. It took out
+    // three times the money on a twice-amended receipt; and it never got that
+    // far, because `ux_abj_reversal` allows one live reversal per row and
+    // refused the second with a 23505 — surfacing as
+    // `{"success":false,"message":"Internal server error","errors":[]}`, which
+    // is a 500 with nothing in it that anybody could act on.
+    //
+    // Asked of the database rather than inferred from the rows in hand: an
+    // amend files its negatives against the RECEIPT even when they undo a row
+    // a post-dated cheque's voucher wrote, so a per-voucher scan would not see
+    // them while reversing that child. `abj_reversal_of_id` is the only
+    // reliable answer to "has this row already been reversed".
+    const reversed = await tx.accBillAdjustment.findMany({
+      where: {
+        abjReversalOfId: { in: forward.map((row) => row.abjId) },
+        abjIsDeleted: false,
+      },
+      select: { abjReversalOfId: true },
+    });
+    const alreadyReversed = new Set(
+      reversed.map((row) => row.abjReversalOfId).filter((id): id is string => id !== null),
+    );
+
+    const adjustments = forward.filter((row) => !alreadyReversed.has(row.abjId));
 
     if (adjustments.length > 0) {
       await tx.accBillAdjustment.createMany({
@@ -450,7 +485,11 @@ export class ReceiptCancelService {
         legCount: legs.length,
         adjustmentCount: adjustments.length,
       },
-      bills: adjustments.map((row) => ({
+      // Every bill the voucher's forward rows name — not only the ones just
+      // reversed. A superseded row's bill is already square (the amend
+      // recomputed it), so re-deriving it is a no-op; missing one would not
+      // be. `recomputeBills` de-duplicates and skips bills that do not move.
+      bills: forward.map((row) => ({
         billId: row.abjBillId,
         accYear: row.abjBillAccYear,
       })),

@@ -34,7 +34,7 @@ visibility, focus, position, necessity, and next/previous links).
 | --- | --- | --- |
 | `POST` | `/create` | Create **or** update a table (chosen by `uiTblId` presence), including its nested columns. |
 | `GET` | `/get` | List active tables with their active columns; filter by `uiTableId`/`uiTblId` or `search` (name). |
-| `PUT` | `/column-width` | Batch-update `uiTblClmColumnWidth` for one or more columns. |
+| `PUT` | `/column-width` | Set a column's width. Both fields are optional and each is written only when sent: `uiTblClmPx` is the laid-out width (`"212px"`) the browser grids size from, `uiTblClmColumnWidth` the desktop client's Qt fraction. A field left out keeps its stored value, so neither client overwrites the other's sizing. |
 | `PUT` | `/visibility-settings` | Batch-update column display settings (width, visibility, focus, position, necessity, next/previous) for one or more columns. |
 | `DELETE` | `/column-delete` | Soft-delete a single column by `uiTblClmId` (query param). |
 | `DELETE` | `/delete` | Soft-delete a table by `uiTblId` (query param). |

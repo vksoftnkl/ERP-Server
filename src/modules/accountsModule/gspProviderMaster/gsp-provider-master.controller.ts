@@ -43,7 +43,7 @@ import { API_VERSION } from '../../../common/constants/api-version';
 @Controller('gsp-provider-masters')
 @UseFilters(GspProviderMasterExceptionFilter)
 export class GspProviderMasterController {
-  constructor(private readonly gspProviderMasterService: GspProviderMasterService) { }
+  constructor(private readonly gspProviderMasterService: GspProviderMasterService) {}
   @Post('create')
   @Version(API_VERSION)
   @ApiOperation({ summary: 'Create or update GSP provider (by gspProviderId presence)' })

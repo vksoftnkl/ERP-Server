@@ -177,7 +177,9 @@ export async function staleLaterYears(
       opIsDeleted: false,
       opSource: OpeningSource.CARRY_FORWARD,
       opIsStale: false,
-      ...(params.branchId === null ? {} : { OR: [{ opBranchId: params.branchId }, { opBranchId: null }] }),
+      ...(params.branchId === null
+        ? {}
+        : { OR: [{ opBranchId: params.branchId }, { opBranchId: null }] }),
     },
     select: { opAccYear: true },
     distinct: ['opAccYear'],
@@ -198,7 +200,9 @@ export async function staleLaterYears(
       opIsDeleted: false,
       opSource: OpeningSource.CARRY_FORWARD,
       opIsStale: false,
-      ...(params.branchId === null ? {} : { OR: [{ opBranchId: params.branchId }, { opBranchId: null }] }),
+      ...(params.branchId === null
+        ? {}
+        : { OR: [{ opBranchId: params.branchId }, { opBranchId: null }] }),
     },
     data: {
       opIsStale: true,

@@ -78,6 +78,7 @@ async function loadNamedBills(tx, scope, requested) {
             amount: (0, receipt_utils_1.money)(row.amount),
             discount: (0, receipt_utils_1.money)(row.discount ?? 0),
             writeoff: (0, receipt_utils_1.money)(row.writeoff ?? 0),
+            roundoff: receipt_utils_1.ZERO,
             pendingAmount: bill.ablPendingAmount,
             writeoffApprovedBy: row.writeoffApprovedBy ?? null,
         };
@@ -115,6 +116,7 @@ async function autoFifoBills(tx, scope, amount) {
             docRefno: bill.ablDocRefno,
             amount: take,
             discount: receipt_utils_1.ZERO,
+            roundoff: receipt_utils_1.ZERO,
             writeoff: receipt_utils_1.ZERO,
             pendingAmount: bill.ablPendingAmount,
             writeoffApprovedBy: null,

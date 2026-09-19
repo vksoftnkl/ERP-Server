@@ -356,7 +356,9 @@ let CarryForwardService = class CarryForwardService {
                         continue;
                     }
                     await client.accBillBalance.update({
-                        where: { ablId_ablAccYear: { ablId: alreadyCarried.ablId, ablAccYear: params.toAccYear } },
+                        where: {
+                            ablId_ablAccYear: { ablId: alreadyCarried.ablId, ablAccYear: params.toAccYear },
+                        },
                         data: {
                             ablBillAmount: bill.ablPendingAmount,
                             ablDrCr: bill.ablDrCr,

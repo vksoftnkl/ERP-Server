@@ -10,9 +10,14 @@ export class UiTableColumnWidthItemDto {
   @IsNumberString({ no_symbols: true })
   uiTblClmId!: string;
 
-  @ApiProperty({ nullable: true, type: Number })
+  /**
+   * The legacy Qt fraction. Optional, and normally not sent at all: the browser
+   * sizes its grids from `uiTblClmPx` and has no business restating the desktop
+   * client's sizing. Omitted leaves whatever is stored untouched.
+   */
+  @ApiPropertyOptional({ nullable: true, type: Number })
   @NullableNumber()
-  uiTblClmColumnWidth!: number | null;
+  uiTblClmColumnWidth?: number | null;
 
   @ApiPropertyOptional({ nullable: true, maxLength: 100, type: String, example: '120px' })
   @NullableString(100)

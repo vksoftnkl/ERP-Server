@@ -31,7 +31,13 @@ export const UUID_PATTERN =
 // scheme nobody can evaluate. Keep them in step with the .prisma headers.
 export const PRM_STATUSES = ['DRAFT', 'APPROVED', 'SUSPENDED', 'CLOSED'] as const;
 export const PRM_APPLY_ON = ['BILL_AMOUNT', 'BILL_QTY', 'ITEM_AMOUNT', 'ITEM_QTY'] as const;
-export const PRM_BENEFITS = ['FREE_ITEM', 'DISC_PERC', 'DISC_AMT', 'FIXED_PRICE','DISC_PER_ITEM'] as const;
+export const PRM_BENEFITS = [
+  'FREE_ITEM',
+  'DISC_PERC',
+  'DISC_AMT',
+  'FIXED_PRICE',
+  'DISC_PER_ITEM',
+] as const;
 export const PRM_STACK_MODES = ['EXCLUSIVE', 'STACKABLE'] as const;
 export const PRM_CALC_ON = ['GROSS_AMOUNT', 'NET_AMOUNT', 'TAXABLE_AMOUNT'] as const;
 export const PRM_BILL_TYPES = ['ALL', 'CASH', 'CREDIT'] as const;

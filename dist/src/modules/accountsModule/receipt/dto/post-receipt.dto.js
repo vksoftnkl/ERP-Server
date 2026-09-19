@@ -47,6 +47,7 @@ class PostReceiptAllocationDto {
     amount;
     discount;
     writeoff;
+    roundoff;
     writeoffApprovedBy;
 }
 exports.PostReceiptAllocationDto = PostReceiptAllocationDto;
@@ -89,6 +90,24 @@ __decorate([
     (0, dtoDecorators_1.OptionalNumber)(0),
     __metadata("design:type", Number)
 ], PostReceiptAllocationDto.prototype, "writeoff", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        default: 0,
+        minimum: 0,
+        example: 0.4,
+        description: 'The paise this bill is rounded off by — 4,999.60 collected as 5,000. Sits beside ' +
+            '`discount` and behaves exactly like it: it SETTLES the bill, it posts its own leg to the ' +
+            'ROUND_OFF ledger, and it is **not money received**.\n\n' +
+            '**Do not fold it into `amount`.** `amount` is money, and a round-off folded into it makes ' +
+            'the receipt claim to have collected more than it did — which §5.2 step 4 refuses, out by ' +
+            'exactly the round-off.\n\n' +
+            "Positive only, in the customer's favour. Collecting MORE than the bill is not expressible " +
+            'here and is not meant to be: ck_abj_reversal_sign refuses a negative adjustment row, and ' +
+            'an overpayment is already what `onAccount` is for.',
+    }),
+    (0, dtoDecorators_1.OptionalNumber)(0),
+    __metadata("design:type", Number)
+], PostReceiptAllocationDto.prototype, "roundoff", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({
         format: 'uuid',

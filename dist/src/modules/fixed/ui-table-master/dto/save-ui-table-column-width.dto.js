@@ -28,7 +28,7 @@ __decorate([
     __metadata("design:type", String)
 ], UiTableColumnWidthItemDto.prototype, "uiTblClmId", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ nullable: true, type: Number }),
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true, type: Number }),
     (0, dtoDecorators_1.NullableNumber)(),
     __metadata("design:type", Object)
 ], UiTableColumnWidthItemDto.prototype, "uiTblClmColumnWidth", void 0);

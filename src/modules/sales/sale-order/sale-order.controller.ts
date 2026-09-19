@@ -49,7 +49,7 @@ import { API_VERSION } from '../../../common/constants/api-version';
 @Controller('sale-orders')
 @UseFilters(SaleOrderExceptionFilter)
 export class SaleOrderController {
-  constructor(private readonly orderService: SaleOrderService) { }
+  constructor(private readonly orderService: SaleOrderService) {}
   @Post('create')
   @Version(API_VERSION)
   @ApiOperation({ summary: 'Create or update a sales order (by soId presence)' })
@@ -57,7 +57,9 @@ export class SaleOrderController {
   @ApiBadRequestResponse({ type: SaleOrderErrorResponseDto })
   @ApiConflictResponse({ type: SaleOrderErrorResponseDto })
   @ApiNotFoundResponse({ type: SaleOrderErrorResponseDto })
-  async save(@Body() saveOrderDto: SaveSaleOrderDto): Promise<SaleOrderSuccessResponse<SaleOrderPayload>> {
+  async save(
+    @Body() saveOrderDto: SaveSaleOrderDto,
+  ): Promise<SaleOrderSuccessResponse<SaleOrderPayload>> {
     const data = await this.orderService.save(saveOrderDto);
     return {
       success: true,

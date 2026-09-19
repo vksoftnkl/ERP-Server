@@ -11,18 +11,31 @@ import {
   RECEIVABLE_BILL_TYPES,
   ReceiptBillSort,
   TcsBasis,
+  VoucherStatus,
 } from './types/receipt-enum';
 import type {
+  AdjacentVoucher,
+  AdjacentVoucherPayload,
+  DuplicateCheckPayload,
+  DuplicateReceipt,
   OpenBill,
   OpenCredit,
   OpenItemsPayload,
   OpenItemsParty,
   PartyContextPayload,
+  PartyContextSummary,
   PartyPendingCheque,
   PartyRecentReceipt,
+  ReceiptErrorDetail,
 } from './types/receipt-api.types';
-import { ListOpenItemsQueryDto, PartyContextQueryDto } from './dto/open-item.dto';
+import {
+  AdjacentVoucherQueryDto,
+  DuplicateCheckQueryDto,
+  ListOpenItemsQueryDto,
+  PartyContextQueryDto,
+} from './dto/open-item.dto';
 import { loadParty } from './receipt.guards';
+import { throwAccountsNotFound } from 'src/common/utils/module-service.utils';
 import { readReceiptSettings, type ReceiptSettings } from './receipt.settings';
 import { suggestPpdDiscount } from './ppd-slab';
 import {
@@ -32,7 +45,9 @@ import {
   toAmount,
   toDateOnly,
   toDateString,
+  toIsoString,
   todayUtc,
+  toNullableAmount,
   ZERO,
 } from './receipt.utils';
 
@@ -155,22 +170,33 @@ export class OpenItemsService {
         ablBillAmount: true,
         ablPendingAmount: true,
         ablStatus: true,
+        ablSrcModule: true,
+        ablSrcDocType: true,
+        ablSrcDocId: true,
+        ablSrcAccYear: true,
       },
     });
 
     const billKeys = bills.map((bill) => ({ billId: bill.ablId, accYear: bill.ablAccYear }));
-    const [pdcByBill, tcsByBill] = await Promise.all([
+    const [pdcByBill, tcsByBill, sourceByBill] = await Promise.all([
       this.loadPostDatedHeld(billKeys, onDate),
       this.loadBillTcs(billKeys, settings),
+      this.loadSourceBillFacts(bills),
     ]);
 
     const rows = bills.map((bill) => {
       const pending = bill.ablPendingAmount ?? ZERO;
+      const source = sourceByBill.get(`${bill.ablId}|${bill.ablAccYear}`);
       return {
         billId: bill.ablId,
         billAccYear: bill.ablAccYear,
         billType: bill.ablBillType as BillType,
         docRefno: bill.ablDocRefno,
+        // R-B8 / R-B7. Null when the bill has no invoice behind it to read
+        // them off — an OPENING balance has no lines and no customer reference.
+        usrRefno: source?.usrRefno ?? null,
+        billProfit: toNullableAmount(source?.profit ?? null),
+        billProfitPreTax: toNullableAmount(source?.profitPreTax ?? null),
         docDate: toDateString(bill.ablDocDate)!,
         dueDate: toDateString(bill.ablDueDate),
         billAmount: toAmount(bill.ablBillAmount),
@@ -254,6 +280,153 @@ export class OpenItemsService {
       held.set(key, (held.get(key) ?? ZERO).plus(row.abjAmount));
     }
     return held;
+  }
+
+  /**
+   * R-B7 and R-B8 — the two things the screen wants that live on the INVOICE
+   * rather than on the outstanding row: the customer's own reference, and the
+   * margin the bill earned.
+   *
+   * ═══════════════════════════════════════════════════════════════════════
+   *  WHY THESE ARE FETCHED AND NOT STORED
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * `acc_bill_balance` is a BALANCE. It carries the bill's identity and what is
+   * left on it, and `bill-posting.helper.ts` says so where it fills the row:
+   * "sb_usr_refno is not carried here". Copying either field onto the balance
+   * would make it a second copy of a fact the invoice owns — stale the first
+   * time the invoice is corrected, and on a screen whose whole job is to be
+   * right about what is pending RIGHT NOW.
+   *
+   * So the balance row points at its source (`abl_src_module` /
+   * `abl_src_doc_type` / `abl_src_doc_id` / `abl_src_acc_year`, which
+   * `ck_abl_src_doc` keeps together), and this follows the pointer.
+   *
+   * ═══════════════════════════════════════════════════════════════════════
+   *  ONLY A SALES BILL HAS EITHER
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * `RECEIVABLE_BILL_TYPES` also contains OPENING, JOURNAL, INTEREST and
+   * PURCHASE_RETURN. None of those has a sale bill behind it — an OPENING
+   * balance is a lump-sum legacy figure with no lines at all — so all three
+   * fields stay null and the client shows them blank. A zero would be a claim
+   * that the bill earned nothing, which is a different and wrong statement.
+   *
+   * ═══════════════════════════════════════════════════════════════════════
+   *  THE PROFIT ARITHMETIC, AND ITS ONE TRAP
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * `sbi_item_profit` and `sbi_profit_pre_tax` are PER UNIT. This is easy to
+   * get wrong because both are `numeric(15,2)` like the line amounts beside
+   * them, and the schema comment that says so sits three fields above them —
+   * but the data settles it: two lines of the same item at the same rate, one
+   * for 3 units and one for 10, both carry `sbi_item_profit = 25.23`. So the
+   * bill's margin is `Σ (per-unit profit × sbi_net_qty)`, and summing the
+   * column on its own would understate a ten-unit line by ninety per cent.
+   *
+   * **A line with no profit figure poisons the bill's total.** Neither column
+   * is NOT NULL and neither is computed server-side — `/bills/create` stores
+   * what the billing screen sent — so a bill can perfectly well hold three
+   * costed lines and one that was never costed. Summing the three would report
+   * a margin lower than the real one, and the single decision this figure
+   * exists to inform is whether a discount can be afforded. An understated
+   * margin talks the operator out of a discount they could have given, and
+   * quietly: there is nothing on the screen to say the figure was partial. So
+   * the bill answers null unless EVERY live line carries the figure.
+   */
+  private async loadSourceBillFacts(
+    bills: readonly {
+      ablId: string;
+      ablAccYear: string;
+      ablSrcModule: string | null;
+      ablSrcDocType: string | null;
+      ablSrcDocId: string | null;
+      ablSrcAccYear: string | null;
+    }[],
+  ): Promise<Map<string, SourceBillFacts>> {
+    const sourced = bills.filter(
+      (bill) =>
+        bill.ablSrcModule === SALE_BILL_SRC_MODULE &&
+        bill.ablSrcDocType === SALE_BILL_SRC_DOC_TYPE &&
+        bill.ablSrcDocId !== null &&
+        bill.ablSrcAccYear !== null,
+    );
+    if (sourced.length === 0) {
+      return new Map();
+    }
+
+    // De-duplicated: two bills cannot share a source document today, but the
+    // key is what the two queries are addressed by and a duplicate in the OR
+    // list is a duplicate row back.
+    const sourceKeys = new Map<string, { docId: string; accYear: string }>();
+    for (const bill of sourced) {
+      sourceKeys.set(`${bill.ablSrcDocId!}|${bill.ablSrcAccYear!}`, {
+        docId: bill.ablSrcDocId!,
+        accYear: bill.ablSrcAccYear!,
+      });
+    }
+    const keys = [...sourceKeys.values()];
+
+    const [saleBills, items] = await Promise.all([
+      this.prisma.saleBill.findMany({
+        where: { OR: keys.map((key) => ({ sbId: key.docId, sbAccYear: key.accYear })) },
+        select: { sbId: true, sbAccYear: true, sbUsrRefno: true },
+      }),
+      this.prisma.saleBillItem.findMany({
+        where: {
+          sbiIsDeleted: false,
+          OR: keys.map((key) => ({ sbiBillId: key.docId, sbiAccYear: key.accYear })),
+        },
+        select: {
+          sbiBillId: true,
+          sbiAccYear: true,
+          sbiNetQty: true,
+          sbiItemProfit: true,
+          sbiProfitPreTax: true,
+        },
+      }),
+    ]);
+
+    const refnoBySource = new Map<string, string | null>();
+    for (const bill of saleBills) {
+      refnoBySource.set(`${bill.sbId}|${bill.sbAccYear}`, bill.sbUsrRefno);
+    }
+
+    const marginBySource = new Map<string, Margin>();
+    for (const item of items) {
+      const key = `${item.sbiBillId}|${item.sbiAccYear}`;
+      const margin = marginBySource.get(key) ?? {
+        profit: ZERO,
+        profitPreTax: ZERO,
+        profitComplete: true,
+        profitPreTaxComplete: true,
+      };
+      if (item.sbiItemProfit === null) {
+        margin.profitComplete = false;
+      } else {
+        margin.profit = margin.profit.plus(item.sbiItemProfit.times(item.sbiNetQty));
+      }
+      if (item.sbiProfitPreTax === null) {
+        margin.profitPreTaxComplete = false;
+      } else {
+        margin.profitPreTax = margin.profitPreTax.plus(item.sbiProfitPreTax.times(item.sbiNetQty));
+      }
+      marginBySource.set(key, margin);
+    }
+
+    const facts = new Map<string, SourceBillFacts>();
+    for (const bill of sourced) {
+      const sourceKey = `${bill.ablSrcDocId!}|${bill.ablSrcAccYear!}`;
+      const margin = marginBySource.get(sourceKey);
+      facts.set(`${bill.ablId}|${bill.ablAccYear}`, {
+        usrRefno: refnoBySource.get(sourceKey) ?? null,
+        // No lines at all is "not answerable" too, not "earned nothing".
+        profit: margin && margin.profitComplete ? margin.profit.toDecimalPlaces(2) : null,
+        profitPreTax:
+          margin && margin.profitPreTaxComplete ? margin.profitPreTax.toDecimalPlaces(2) : null,
+      });
+    }
+    return facts;
   }
 
   /**
@@ -403,12 +576,94 @@ export class OpenItemsService {
    * behind a "more" button.
    */
   async partyContext(query: PartyContextQueryDto): Promise<PartyContextPayload> {
-    const [receipts, cheques] = await Promise.all([
+    // R-B3 — the party is resolved FIRST, and an unknown id is a 404 here
+    // exactly as it is on /receipts/open-items.
+    //
+    // It used to answer 200 with two empty lists, which reads identically to a
+    // real party who has never paid before — so a client holding a stale or
+    // mistyped id was shown an empty panel and had no way to tell that it was
+    // looking at nothing rather than at a new customer. The two routes are
+    // called together by the same screen; they cannot disagree about whether
+    // the party exists.
+    const party = await loadParty(this.prisma, query.companyId, query.partyId, 'partyId');
+
+    const [receipts, cheques, summary] = await Promise.all([
       this.loadRecentReceipts(query.companyId, query.partyId),
       this.loadPendingCheques(query.companyId, query.partyId),
+      this.loadPartySummary(query.companyId, query.partyId),
     ]);
 
-    return { partyId: query.partyId, lastReceipts: receipts, pendingCheques: cheques };
+    return {
+      partyId: query.partyId,
+      partyName: party.ledName,
+      summary,
+      lastReceipts: receipts,
+      pendingCheques: cheques,
+    };
+  }
+
+  /**
+   * R-B9 — the party's position in three figures, plus the cheques still out.
+   *
+   * ── Why the balance is not summed from open-items ────────────────────────
+   * `/receipts/open-items` answers a narrower question than "what is this
+   * party's balance". It lists `RECEIVABLE_BILL_TYPES` on the left and
+   * `CREDIT_BILL_TYPES` on the right, because those are the rows a RECEIPT may
+   * settle and the credits it may spend. A party's actual balance includes
+   * every live bill of theirs — a PURCHASE row on a party who is also a
+   * supplier, for one — so a client adding up the two panels would show a
+   * number that is right for the entry grid and wrong for the band above it.
+   *
+   * Hence one query over every live bill, grouped by side, with no bill-type
+   * filter at all.
+   *
+   * ── No accounting year, again ───────────────────────────────────────────
+   * Same reason as everywhere else here: `acc_bill_balance` is partitioned by
+   * the year the bill originated in and is never carried forward. A balance
+   * pinned to this year is not a balance.
+   */
+  private async loadPartySummary(companyId: string, partyId: string): Promise<PartyContextSummary> {
+    const [sides, postDated] = await Promise.all([
+      this.prisma.accBillBalance.groupBy({
+        by: ['ablDrCr'],
+        where: {
+          ablCompanyId: companyId,
+          ablPartyId: partyId,
+          ablIsDeleted: false,
+          ablIsActive: true,
+        },
+        _sum: { ablPendingAmount: true },
+      }),
+      // Σ of every post-dated row against this party that has not matured —
+      // the figure the bill-wise pdcHeld column adds up to.
+      //
+      // Counted from the party's OWN adjustment rows rather than from the bills
+      // open-items happened to return, so it stays right whatever that list
+      // contains. The reversal rows are included and are negative, which is
+      // what makes a cancelled cheque net itself back out instead of being
+      // counted as still in flight.
+      this.prisma.accBillAdjustment.aggregate({
+        where: {
+          abjCompanyId: companyId,
+          abjPartyId: partyId,
+          abjIsDeleted: false,
+          abjIsPostDated: true,
+          abjAdjDate: { gt: todayUtc() },
+        },
+        _sum: { abjAmount: true },
+      }),
+    ]);
+
+    const bySide = new Map(sides.map((row) => [row.ablDrCr, row._sum.ablPendingAmount ?? ZERO]));
+    const outstanding = bySide.get('DR') ?? ZERO;
+    const credits = bySide.get('CR') ?? ZERO;
+
+    return {
+      totalBalance: toAmount(outstanding.minus(credits)),
+      totalOutstanding: toAmount(outstanding),
+      totalCredits: toAmount(credits),
+      chequesOutstanding: toAmount(postDated._sum.abjAmount ?? ZERO),
+    };
   }
 
   private async loadRecentReceipts(
@@ -516,6 +771,218 @@ export class OpenItemsService {
     }));
   }
 
+  // ─── R-B4 ──────────────────────────────────────────────────────────────────
+
+  /**
+   * The receipt entered just before or just after this one, in the register's
+   * own order — 3.0's Ctrl+PgUp / Ctrl+PgDown, which is why every reopen is
+   * currently a search.
+   *
+   * ═══════════════════════════════════════════════════════════════════════
+   *  THE WALK KEY, AND WHY IT IS NOT JUST (DATE, SLNO)
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * The register orders on `(avh_voucher_date, avh_voucher_slno)`. That pair is
+   * not a TOTAL order over what the register shows, and a walk needs one — a
+   * walk on a key with ties either stalls on the tie or steps over it.
+   *
+   * `ck_avh_no` gives every non-DRAFT a slno and leaves it NULL on a DRAFT, so
+   * every draft on a given day ties with every other. Two things follow:
+   *
+   *   · NULL sorts as the GREATEST slno, not the least. The register's
+   *     `ORDER BY ... DESC` takes Postgres's NULLS FIRST, so drafts render at
+   *     the top of their date — the high end of an ascending key. Coalescing to
+   *     0 would put them at the wrong end of the day and the walk would visit
+   *     them in an order nobody can see on screen.
+   *
+   *   · `avh_created_on` then `avh_voucher_id` break the remaining ties. The
+   *     register does not carry those columns, so two drafts keyed in the same
+   *     second may render in the opposite order to the one they are walked in.
+   *     That is the honest limit of this: the walk is TOTAL and STABLE, and it
+   *     agrees with the register everywhere the register itself is decided.
+   *
+   * ═══════════════════════════════════════════════════════════════════════
+   *  WHY THE FILTERS COME BACK IN
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * The walk has to agree with the list the operator is looking at. A register
+   * filtered to POSTED that skipped three drafts to reach the next posted
+   * receipt is right; one that stopped on a draft the list does not show is a
+   * bug the operator cannot account for. So the same `status` and date window
+   * the grid was run with are passed here, and the same four structural
+   * predicates the grid has are applied unconditionally: the receipt voucher
+   * type, not deleted, and `avh_against_voucher_id IS NULL` — a post-dated
+   * cheque's own voucher belongs under its receipt and is not a row of the
+   * register.
+   */
+  async adjacent(query: AdjacentVoucherQueryDto): Promise<AdjacentVoucherPayload> {
+    const current = await this.prisma.accVoucherHeader.findFirst({
+      where: {
+        avhVoucherId: query.voucherId,
+        avhAccYear: query.accYear,
+        avhCompanyId: query.companyId,
+        avhBranchId: query.branchId,
+        avhIsDeleted: false,
+      },
+      select: { avhVoucherDate: true, avhVoucherSlno: true, avhCreatedOn: true },
+    });
+
+    if (!current) {
+      // The four keys, all four checked, and a miss on any of them is a 404
+      // rather than a 403 — a caller scoped elsewhere does not learn that this
+      // receipt exists. Same rule as every other route here.
+      throwAccountsNotFound<ReceiptErrorDetail>(
+        'Receipt not found',
+        'voucherId',
+        `No receipt ${query.voucherId} in ${query.accYear} for this company and branch`,
+      );
+    }
+
+    const isPrev = query.direction === 'prev';
+    // Both come from a closed set the DTO has already validated against, so
+    // neither can carry anything but the token written here.
+    const comparison = Prisma.raw(isPrev ? '<' : '>');
+    const order = Prisma.raw(isPrev ? 'DESC' : 'ASC');
+
+    const status = query.status ?? null;
+    const fromDate = query.fromDate ? toDateOnly(query.fromDate) : null;
+    const toDate = query.toDate ? toDateOnly(query.toDate) : null;
+
+    const rows = await this.prisma.$queryRaw<AdjacentRow[]>`
+      SELECT h.avh_voucher_id,
+             h.avh_acc_year,
+             h.avh_company_id,
+             h.avh_branch_id,
+             h.avh_voucher_refno,
+             h.avh_voucher_date,
+             h.avh_party_id,
+             p.led_name,
+             h.avh_doc_amount,
+             h.avh_voucher_status
+        FROM accounts.acc_voucher_header h
+        JOIN accounts.acc_voucher_types vt ON vt.vchr_type_id = h.avh_voucher_type_id
+        LEFT JOIN accounts.acc_ledger_master p ON p.led_id = h.avh_party_id
+       WHERE h.avh_company_id = ${query.companyId}::uuid
+         AND h.avh_branch_id  = ${query.branchId}::uuid
+         AND h.avh_acc_year   = ${query.accYear}::bpchar
+         AND vt.vchr_type_code = ${RECEIPT_VOUCHER_TYPE_CODE}
+         AND h.avh_is_deleted = false
+         AND h.avh_against_voucher_id IS NULL
+         AND (${status}::varchar IS NULL OR h.avh_voucher_status = ${status}::varchar)
+         AND (${fromDate}::timestamptz IS NULL OR h.avh_voucher_date >= ${fromDate}::timestamptz)
+         AND (${toDate}::timestamptz   IS NULL OR h.avh_voucher_date <= ${toDate}::timestamptz)
+         AND (h.avh_voucher_date,
+              COALESCE(h.avh_voucher_slno, ${DRAFT_SLNO_SENTINEL}),
+              h.avh_created_on,
+              h.avh_voucher_id)
+             ${comparison}
+             (${current.avhVoucherDate}::timestamptz,
+              COALESCE(${current.avhVoucherSlno}::bigint, ${DRAFT_SLNO_SENTINEL}),
+              ${current.avhCreatedOn}::timestamptz,
+              ${query.voucherId}::uuid)
+       ORDER BY h.avh_voucher_date ${order},
+                COALESCE(h.avh_voucher_slno, ${DRAFT_SLNO_SENTINEL}) ${order},
+                h.avh_created_on ${order},
+                h.avh_voucher_id ${order}
+       LIMIT 1`;
+
+    const row = rows[0];
+
+    return {
+      direction: query.direction,
+      fromVoucherId: query.voucherId,
+      voucher: row ? toAdjacentVoucher(row) : null,
+    };
+  }
+
+  // ─── R-B6 ──────────────────────────────────────────────────────────────────
+
+  /**
+   * "Has this party already paid this much on this date?"
+   *
+   * ═══════════════════════════════════════════════════════════════════════
+   *  A WARNING, AND NEVER ANYTHING MORE
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * This route has no opinion and writes nothing. A customer settling two
+   * invoices with two equal cheques on one day is ordinary business, and on a
+   * beat run where most collections are round figures it will happen most days
+   * — so a server that refused the second, or that made the client refuse it,
+   * would simply be wrong about the trade. What it is for is the OTHER case:
+   * the same receipt keyed twice because the first one was not seen to save.
+   * The operator is the one who can tell those apart, and this gives them what
+   * they need to.
+   *
+   * ── Exactly, not approximately ──────────────────────────────────────────
+   * The amount is matched exactly. A tolerance sounds safer and is not: on a
+   * beat where the day's collections are 500, 1000 and 2000 over and over, a
+   * ±5% window warns on nearly every row, and a warning that fires on nearly
+   * every row is one the operator learns to dismiss without reading — which
+   * costs exactly the receipt this was built to catch.
+   *
+   * ── What is in scope ────────────────────────────────────────────────────
+   * The company and the year; the branch only if the caller asks for it. A
+   * re-key that landed on another branch is still a duplicate, and is the one
+   * an operator is least likely to find by themselves.
+   *
+   * CANCELLED receipts are excluded — a reversed receipt is not money the party
+   * has paid — and so are post-dated cheque vouchers, which are part of a
+   * receipt rather than receipts of their own and would otherwise report their
+   * parent's collection a second time.
+   */
+  async duplicateCheck(query: DuplicateCheckQueryDto): Promise<DuplicateCheckPayload> {
+    // The party is resolved for the same reason party-context resolves it: an
+    // id that names nothing must not come back as a confident "no duplicates".
+    await loadParty(this.prisma, query.companyId, query.partyId, 'partyId');
+
+    const matches = await this.prisma.accVoucherHeader.findMany({
+      where: {
+        avhCompanyId: query.companyId,
+        avhAccYear: query.accYear,
+        avhPartyId: query.partyId,
+        ...(query.branchId ? { avhBranchId: query.branchId } : {}),
+        avhVoucherDate: toDateOnly(query.voucherDate),
+        avhDocAmount: money(query.amount),
+        avhIsDeleted: false,
+        avhVoucherStatus: { not: VoucherStatus.CANCELLED },
+        avhAgainstVoucherId: null,
+        voucherType: { vchrTypeCode: RECEIPT_VOUCHER_TYPE_CODE },
+        // The draft being keyed must not report itself. Without this, every
+        // re-check after the first save warns about the receipt on screen.
+        ...(query.excludeVoucherId ? { avhVoucherId: { not: query.excludeVoucherId } } : {}),
+      },
+      select: {
+        avhVoucherId: true,
+        avhAccYear: true,
+        avhBranchId: true,
+        avhVoucherRefno: true,
+        avhVoucherDate: true,
+        avhDocAmount: true,
+        avhVoucherStatus: true,
+        avhCreatedBy: true,
+        avhCreatedOn: true,
+      },
+      orderBy: [{ avhCreatedOn: 'desc' }],
+      // A bound, because this is on the keystroke path. Anything past a handful
+      // is the same answer: the operator is being told to go and look.
+      take: 10,
+    });
+
+    const rows: DuplicateReceipt[] = matches.map((match) => ({
+      voucherId: match.avhVoucherId,
+      accYear: match.avhAccYear,
+      branchId: match.avhBranchId,
+      voucherRefno: match.avhVoucherRefno,
+      voucherDate: toDateString(match.avhVoucherDate)!,
+      docAmount: toAmount(match.avhDocAmount),
+      status: match.avhVoucherStatus as VoucherStatus,
+      createdBy: match.avhCreatedBy,
+      createdOn: toIsoString(match.avhCreatedOn)!,
+    }));
+
+    return { isDuplicate: rows.length > 0, matches: rows };
+  }
+
   // ─── Shared ────────────────────────────────────────────────────────────────
 
   /** The seven settings, resolved once, through the resolver and never around it. */
@@ -552,3 +1019,67 @@ function creditRouting(billType: BillType): {
 }
 
 export { creditRouting };
+
+/**
+ * `abl_src_module` / `abl_src_doc_type` as `sales/bill/bill-posting.helper.ts`
+ * stamps them when an invoice opens an outstanding row. Restated rather than
+ * imported so this module does not take a dependency on the sales module for
+ * two string constants — and asserted against in that module's own tests.
+ */
+const SALE_BILL_SRC_MODULE = 'SALES';
+const SALE_BILL_SRC_DOC_TYPE = 'BILL';
+
+/**
+ * A DRAFT has no `avh_voucher_slno` (`ck_avh_no`), and the register sorts those
+ * NULLs to the TOP of their date — Postgres's `DESC` default is NULLS FIRST, so
+ * on the ascending key a draft is the GREATEST row of its day. This is that
+ * position as a value the walk can compare against: `bigint`'s maximum.
+ *
+ * Coalescing to 0 instead would file every draft at the bottom of its day, and
+ * the walk would step through them in an order the register never shows.
+ */
+const DRAFT_SLNO_SENTINEL = 9223372036854775807n;
+
+/** One neighbouring register row, as the raw query hands it back. */
+interface AdjacentRow {
+  avh_voucher_id: string;
+  avh_acc_year: string;
+  avh_company_id: string;
+  avh_branch_id: string;
+  avh_voucher_refno: string | null;
+  avh_voucher_date: Date;
+  avh_party_id: string;
+  led_name: string | null;
+  avh_doc_amount: Prisma.Decimal;
+  avh_voucher_status: string;
+}
+
+function toAdjacentVoucher(row: AdjacentRow): AdjacentVoucher {
+  return {
+    voucherId: row.avh_voucher_id,
+    accYear: row.avh_acc_year,
+    companyId: row.avh_company_id,
+    branchId: row.avh_branch_id,
+    voucherRefno: row.avh_voucher_refno,
+    voucherDate: toDateString(row.avh_voucher_date)!,
+    partyId: row.avh_party_id,
+    partyName: row.led_name,
+    docAmount: toAmount(row.avh_doc_amount),
+    status: row.avh_voucher_status as VoucherStatus,
+  };
+}
+
+/** What the invoice behind a bill contributes to the open-items row. */
+interface SourceBillFacts {
+  usrRefno: string | null;
+  profit: Prisma.Decimal | null;
+  profitPreTax: Prisma.Decimal | null;
+}
+
+/** One bill's margin as its lines are walked, and whether every line had one. */
+interface Margin {
+  profit: Prisma.Decimal;
+  profitPreTax: Prisma.Decimal;
+  profitComplete: boolean;
+  profitPreTaxComplete: boolean;
+}

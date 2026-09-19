@@ -22,6 +22,7 @@ const voucher_sequence_helper_1 = require("../../../common/Sequence/voucher-sequ
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
 const open_items_service_1 = require("./open-items.service");
 const receipt_draft_lines_1 = require("./receipt-draft-lines");
+const open_items_service_2 = require("./open-items.service");
 const receipt_ledger_roles_1 = require("./receipt-ledger-roles");
 const receipt_lines_1 = require("./receipt-lines");
 const receipt_guards_1 = require("./receipt.guards");
@@ -80,6 +81,7 @@ let ReceiptService = class ReceiptService {
                         avhVoucherStatus: true,
                         avhIsDeleted: true,
                         avhVoucherRefno: true,
+                        avhDraftLines: true,
                     },
                 })
                 : null;
@@ -132,6 +134,8 @@ let ReceiptService = class ReceiptService {
                 docAmount,
                 draftLines: lines,
                 cheques: chequeDetailByRow(tenders),
+                allocations: rememberedAllocations(dto, existing?.avhDraftLines),
+                creditsApplied: rememberedCredits(dto, existing?.avhDraftLines),
                 actor,
             });
             await this.syncTenders(tx, {
@@ -315,13 +319,19 @@ let ReceiptService = class ReceiptService {
         for (const cheque of cheques) {
             tenderRowByPdc.set(cheque.apdId, cheque.apdTenderId ? (rowNoByTenderId.get(cheque.apdTenderId) ?? null) : null);
         }
+        const draft = (0, receipt_draft_lines_1.rehydrateDraft)(header.avhDraftLines);
+        const remembered = statusOf(header) === receipt_enum_1.VoucherStatus.DRAFT
+            ? await this.rememberedSettlement(client, header, draft)
+            : null;
         return {
             header: await this.toHeaderPayload(client, header),
             tenders: await this.loadTenderPayload(client, header.avhVoucherId),
-            otherLines: (0, receipt_draft_lines_1.rehydrateDraft)(header.avhDraftLines).otherLines,
+            otherLines: draft.otherLines,
             legs: legsFor(header.avhVoucherId),
-            allocations: adjustments.filter((row) => row.abjAgainstBillId === null).map(toAllocation),
-            creditsApplied: adjustments.filter((row) => row.abjAgainstBillId !== null).map(toAllocation),
+            allocations: remembered?.allocations ??
+                adjustments.filter((row) => row.abjAgainstBillId === null).map(toAllocation),
+            creditsApplied: remembered?.creditsApplied ??
+                adjustments.filter((row) => row.abjAgainstBillId !== null).map(toAllocation),
             cheques: cheques.map((cheque) => ({
                 pdcId: cheque.apdId,
                 accYear: cheque.apdAccYear,
@@ -359,6 +369,94 @@ let ReceiptService = class ReceiptService {
                 voucherId: bill.ablVoucherId,
             })),
         };
+    }
+    async rememberedSettlement(client, header, draft) {
+        if (draft.allocations.length === 0 && draft.creditsApplied.length === 0) {
+            return null;
+        }
+        const keys = [...draft.allocations, ...draft.creditsApplied];
+        const bills = await client.accBillBalance.findMany({
+            where: {
+                OR: keys.map((row) => ({ ablId: row.billId, ablAccYear: row.billAccYear })),
+            },
+            select: {
+                ablId: true,
+                ablAccYear: true,
+                ablDocRefno: true,
+                ablDocDate: true,
+                ablBillType: true,
+            },
+        });
+        const billByKey = new Map(bills.map((bill) => [`${bill.ablId}|${bill.ablAccYear}`, bill]));
+        const adjDate = (0, receipt_utils_1.toDateString)(header.avhVoucherDate);
+        const base = (row) => {
+            const bill = billByKey.get(`${row.billId}|${row.billAccYear}`);
+            return {
+                abjId: null,
+                billId: row.billId,
+                billAccYear: row.billAccYear,
+                docRefno: bill?.ablDocRefno ?? '',
+                docDate: (0, receipt_utils_1.toDateString)(bill?.ablDocDate),
+                drCr: receipt_enum_1.DrCr.CR,
+                adjDate,
+                isPostDated: false,
+                matured: true,
+                voucherId: null,
+                chequeId: null,
+                againstBillId: null,
+                againstBillRefno: null,
+                remarks: null,
+            };
+        };
+        const allocations = [];
+        for (const row of draft.allocations) {
+            allocations.push({
+                ...base(row),
+                adjType: receipt_enum_1.BillAdjType.ALLOCATION,
+                settlementMode: null,
+                amount: row.amount,
+                approvedBy: null,
+            });
+            if (row.discount > 0) {
+                allocations.push({
+                    ...base(row),
+                    adjType: receipt_enum_1.BillAdjType.DISCOUNT,
+                    settlementMode: receipt_enum_1.BillSettlementMode.DISCOUNT,
+                    amount: row.discount,
+                    approvedBy: null,
+                });
+            }
+            if (row.writeoff > 0) {
+                allocations.push({
+                    ...base(row),
+                    adjType: receipt_enum_1.BillAdjType.WRITEOFF,
+                    settlementMode: receipt_enum_1.BillSettlementMode.WRITEOFF,
+                    amount: row.writeoff,
+                    approvedBy: row.writeoffApprovedBy,
+                });
+            }
+            if (row.roundoff > 0) {
+                allocations.push({
+                    ...base(row),
+                    adjType: receipt_enum_1.BillAdjType.ROUND_OFF,
+                    settlementMode: receipt_enum_1.BillSettlementMode.ROUND_OFF,
+                    amount: row.roundoff,
+                    approvedBy: null,
+                });
+            }
+        }
+        const creditsApplied = draft.creditsApplied.map((row) => {
+            const bill = billByKey.get(`${row.billId}|${row.billAccYear}`);
+            const routing = bill ? (0, open_items_service_2.creditRouting)(bill.ablBillType) : null;
+            return {
+                ...base(row),
+                adjType: routing?.adjType ?? receipt_enum_1.BillAdjType.ADVANCE_ADJUST,
+                settlementMode: routing?.settlementMode ?? null,
+                amount: row.amount,
+                approvedBy: null,
+            };
+        });
+        return { allocations, creditsApplied };
     }
     async updateHeader(dto, body) {
         const actor = this.requestContext.getUserId() ?? module_service_utils_1.DEFAULT_ACTOR;
@@ -398,6 +496,10 @@ let ReceiptService = class ReceiptService {
                 ]);
             }
             await (0, receipt_guards_1.assertAccYearWritable)(tx, header.avhCompanyId, header.avhAccYear, 'avhAccYear');
+            if (has(body, 'avhEmployeeId')) {
+                const settings = await this.openItemsService.loadSettings(header.avhCompanyId, header.avhBranchId);
+                this.assertSalesman(dto.avhEmployeeId ?? [], settings);
+            }
             const now = new Date();
             await tx.accVoucherHeader.update({
                 where: {
@@ -668,7 +770,7 @@ let ReceiptService = class ReceiptService {
             avhDeviceId: (0, receipt_utils_1.trimOrNull)(dto.avhDeviceId),
             avhSessionId: dto.avhSessionId ?? null,
             avhUserId: params.actor,
-            avhDraftLines: (0, receipt_draft_lines_1.buildDraftLines)(params.draftLines.map(toOtherLinePayload), params.cheques),
+            avhDraftLines: (0, receipt_draft_lines_1.buildDraftLines)(params.draftLines.map(toOtherLinePayload), params.cheques, params.allocations, params.creditsApplied),
         };
         if (params.existingId) {
             const updated = await tx.accVoucherHeader.update({
@@ -852,6 +954,30 @@ exports.ReceiptService = ReceiptService = __decorate([
         tender_detail_service_1.TenderDetailService,
         open_items_service_1.OpenItemsService])
 ], ReceiptService);
+function rememberedAllocations(dto, stored) {
+    if (dto.allocations === undefined) {
+        return (0, receipt_draft_lines_1.rehydrateDraft)(stored).allocations;
+    }
+    return dto.allocations.map((row) => ({
+        billId: row.billId,
+        billAccYear: row.billAccYear,
+        amount: row.amount,
+        discount: row.discount ?? 0,
+        writeoff: row.writeoff ?? 0,
+        roundoff: row.roundoff ?? 0,
+        writeoffApprovedBy: row.writeoffApprovedBy ?? null,
+    }));
+}
+function rememberedCredits(dto, stored) {
+    if (dto.creditsApplied === undefined) {
+        return (0, receipt_draft_lines_1.rehydrateDraft)(stored).creditsApplied;
+    }
+    return dto.creditsApplied.map((row) => ({
+        billId: row.billId,
+        billAccYear: row.billAccYear,
+        amount: row.amount,
+    }));
+}
 exports.STORED_HEADER_SELECT = {
     avhVoucherId: true,
     avhCompanyId: true,

@@ -139,13 +139,18 @@ export class UiTableMasterService {
             `No active UI table column found with id ${item.uiTblClmId}`,
           );
         }
+        // Each width is written only when the caller actually sent it. The browser
+        // sends `uiTblClmPx` alone — the width it laid the column out at — and must
+        // not overwrite the desktop client's Qt fraction with a number taken from a
+        // browser window; a caller sending the fraction alone must likewise leave a
+        // stored px value intact.
         const data: Prisma.UitableColumnsUncheckedUpdateInput = {
-          uiTblClmColumnWidth: item.uiTblClmColumnWidth,
           uiTblClmModifiedOn: new Date(),
           uiTblClmModifiedBy: actor,
         };
-        // Only touch the px sizing when the caller actually sent it, so a client that
-        // still posts width alone leaves an existing px value intact.
+        if (hasOwnProperty(item, 'uiTblClmColumnWidth')) {
+          data.uiTblClmColumnWidth = item.uiTblClmColumnWidth;
+        }
         if (hasOwnProperty(item, 'uiTblClmPx')) {
           data.uiTblClmPx = item.uiTblClmPx;
         }

@@ -202,10 +202,7 @@ export class SaleFreightChargeService {
         }
         const data: Prisma.SaleFreightChargeUncheckedUpdateInput = {
           frModifiedOn: new Date(),
-          frModifiedBy: resolveActor(
-            dto.frModifiedBy,
-            this.requestContextService.getUserId(),
-          ),
+          frModifiedBy: resolveActor(dto.frModifiedBy, this.requestContextService.getUserId()),
         };
         this.applyOptionalFields(data, dto);
         const updated = await tx.saleFreightCharge.update({

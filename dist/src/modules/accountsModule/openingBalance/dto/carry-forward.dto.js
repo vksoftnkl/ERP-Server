@@ -31,12 +31,19 @@ __decorate([
     __metadata("design:type", String)
 ], CarryForwardDto.prototype, "fromAccYear", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ example: '2026-2027', description: 'The year being opened — written into. Must follow fromAccYear.' }),
+    (0, swagger_1.ApiProperty)({
+        example: '2026-2027',
+        description: 'The year being opened — written into. Must follow fromAccYear.',
+    }),
     (0, dtoDecorators_1.UpperMaxString)(9),
     __metadata("design:type", String)
 ], CarryForwardDto.prototype, "toAccYear", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ format: 'uuid', nullable: true, description: 'null = the company-level set.' }),
+    (0, swagger_1.ApiPropertyOptional)({
+        format: 'uuid',
+        nullable: true,
+        description: 'null = the company-level set.',
+    }),
     (0, dtoDecorators_1.NullableUuid)(),
     __metadata("design:type", Object)
 ], CarryForwardDto.prototype, "branchId", void 0);

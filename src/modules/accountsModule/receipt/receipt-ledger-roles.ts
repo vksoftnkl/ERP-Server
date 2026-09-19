@@ -91,6 +91,8 @@ function roleFieldName(role: string): string {
       return 'allocations.discount';
     case ReceiptLedgerRole.WRITE_OFF:
       return 'allocations.writeoff';
+    case ReceiptLedgerRole.ROUND_OFF:
+      return 'allocations.roundoff';
     case ReceiptLedgerRole.BANK_CHARGES:
       return 'tenders.tdMdrAmt';
     case ReceiptLedgerRole.SURCHARGE_RECOVERED:

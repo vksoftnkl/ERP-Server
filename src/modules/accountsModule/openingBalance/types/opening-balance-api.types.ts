@@ -1,4 +1,9 @@
-import type { BillDrCr, OpeningDrCr, OpeningSource, OpeningStaleReason } from './opening-balance-enum';
+import type {
+  BillDrCr,
+  OpeningDrCr,
+  OpeningSource,
+  OpeningStaleReason,
+} from './opening-balance-enum';
 
 export type { AccountsErrorDetail as OpeningBalanceErrorDetail } from 'src/common/types/module-api.types';
 export type { AccountsErrorResponse as OpeningBalanceErrorResponse } from 'src/common/types/module-api.types';

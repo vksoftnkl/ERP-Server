@@ -28,4 +28,3 @@ export interface AreaMasterCreateResult {
   areaMaster: AreaPayload;
   accGroupId: string;
 }
-

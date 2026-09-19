@@ -125,13 +125,18 @@ export interface AllocationBill {
   billAccYear: string;
   docRefno: string;
   /**
-   * The bill's TOTAL settlement by this receipt EXCLUDING discount and
-   * write-off — money, deductions and credits together. The engine splits it
-   * into rows; the caller does not say which source pays which part.
+   * The bill's TOTAL settlement by this receipt EXCLUDING discount, write-off
+   * and round-off — money, deductions and credits together. The engine splits
+   * it into rows; the caller does not say which source pays which part.
    */
   amount: Prisma.Decimal;
   discount: Prisma.Decimal;
   writeoff: Prisma.Decimal;
+  /**
+   * The counter's rounding. A reduction of the bill exactly like `discount`,
+   * expensed to a different ledger — see `BillAdjType.ROUND_OFF`.
+   */
+  roundoff: Prisma.Decimal;
   /** What is pending RIGHT NOW, read under the row lock. */
   pendingAmount: Prisma.Decimal;
   /** Set on a write-off; the service has already checked the threshold. */
@@ -326,7 +331,7 @@ export function allocate(input: AllocationInput): AllocationResult {
     ]);
   }
 
-  // ── 3 · Discount and write-off, per bill ─────────────────────────────────
+  // ── 3 · Discount, write-off and round-off, per bill ──────────────────────
   addReductions(input, bills, adjustments);
 
   // ── 4 · What is left is held on account ──────────────────────────────────
@@ -370,12 +375,19 @@ function assertBillsFit(bills: readonly AllocationBill[]): void {
     }
     seen.add(key);
 
-    const settled = money(bill.amount).plus(bill.discount).plus(bill.writeoff);
-    if (bill.amount.isNegative() || bill.discount.isNegative() || bill.writeoff.isNegative()) {
+    const settled = money(bill.amount).plus(bill.discount).plus(bill.writeoff).plus(bill.roundoff);
+    if (
+      bill.amount.isNegative() ||
+      bill.discount.isNegative() ||
+      bill.writeoff.isNegative() ||
+      bill.roundoff.isNegative()
+    ) {
       invalid('Validation failed', [
         {
           field: `allocations.${index}.amount`,
-          message: `Bill ${bill.docRefno}: amount, discount and write-off are all positive figures`,
+          message:
+            `Bill ${bill.docRefno}: amount, discount, write-off and round-off are all ` +
+            'positive figures',
         },
       ]);
     }
@@ -447,9 +459,14 @@ function assertCreditsFit(credits: readonly AllocationCredit[]): void {
  * not extra value arriving — it is a slice of `tdAmount`, which the left-hand
  * side has already counted.
  *
- * Discount and write-off are NOT in this identity. They reduce what the bill
- * demands; they are not money, and adding them to both sides would only make
- * the equation longer.
+ * Discount, write-off and round-off are NOT in this identity. They reduce what
+ * the bill demands; they are not money, and adding them to both sides would
+ * only make the equation longer.
+ *
+ * This is the whole of the 2026-09-18 round-off defect. With no `roundoff`
+ * field a client had to fold it into `amount`, which IS in the identity as
+ * money allocated — so a receipt of 10 settling a bill by 11 came back "Out by
+ * -1.00". The figure was right; there was nowhere to put it.
  */
 function assertIdentity(input: AllocationInput): void {
   const moneyIn = sum(input.tenders.map((tender) => money(tender.amount)));
@@ -835,7 +852,7 @@ function settlementRows(
   ];
 }
 
-// ─── Step 3: discount and write-off ──────────────────────────────────────────
+// ─── Step 3: discount, write-off and round-off ───────────────────────────────
 
 function addReductions(
   input: AllocationInput,
@@ -891,6 +908,36 @@ function addReductions(
         otherLineNo: null,
         againstBill: null,
         approvedBy: bill.writeoffApprovedBy,
+        countsToAdjustAmount: true,
+        remarks: null,
+      });
+    }
+
+    // The counter's rounding. Identical in every respect to the discount row
+    // above except the adj type — and that difference is the point: the leg it
+    // pairs with is debited to Round Off, not to Discount Allowed, and the row
+    // has to say the same thing the leg does.
+    //
+    // No approver, unlike a write-off. A write-off forgives a balance somebody
+    // decided to stop chasing; rounding 4,999.60 to 5,000 is what the counter
+    // does to make change, and an approval gate on forty paise would only
+    // teach the operator to route around it.
+    const roundoff = money(bill.roundoff);
+    if (roundoff.greaterThan(0)) {
+      out.push({
+        billId: bill.billId,
+        billAccYear: bill.billAccYear,
+        adjType: BillAdjType.ROUND_OFF,
+        settlementMode: BillSettlementMode.ROUND_OFF,
+        drCr: DrCr.CR,
+        amount: roundoff,
+        adjDate: input.receiptDate,
+        isPostDated: false,
+        voucherKey: RECEIPT_VOUCHER_KEY,
+        tenderRowNo: null,
+        otherLineNo: null,
+        againstBill: null,
+        approvedBy: null,
         countsToAdjustAmount: true,
         remarks: null,
       });

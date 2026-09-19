@@ -55,6 +55,7 @@ const tender_detail_module_1 = require("./modules/accountsModule/tenderDetail/te
 const transaction_module_1 = require("./modules/accountsModule/transaction/transaction.module");
 const receipt_module_1 = require("./modules/accountsModule/receipt/receipt.module");
 const cheques_module_1 = require("./modules/accountsModule/cheques/cheques.module");
+const ledger_map_module_1 = require("./modules/accountsModule/ledgerMap/ledger-map.module");
 const bill_balance_module_1 = require("./modules/accountsModule/billBalance/bill-balance.module");
 const ledger_shipping_address_module_1 = require("./modules/accountsModule/ledgerShippingAddress/ledger-shipping-address.module");
 const gsp_provider_master_module_1 = require("./modules/accountsModule/gspProviderMaster/gsp-provider-master.module");
@@ -200,6 +201,7 @@ exports.AppModule = AppModule = __decorate([
             bill_balance_module_1.BillBalanceModule,
             receipt_module_1.ReceiptModule,
             cheques_module_1.ChequesModule,
+            ledger_map_module_1.LedgerMapModule,
             gsp_provider_master_module_1.GspProviderMasterModule,
             gsp_company_service_module_1.GspCompanyServiceModule,
             supplier_group_module_1.SupplierGroupModule,

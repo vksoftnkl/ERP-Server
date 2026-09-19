@@ -38,7 +38,10 @@ export class SaveOpeningBalanceRowDto {
   @RequiredNumber()
   opAmount!: number;
 
-  @ApiProperty({ enum: OpeningDrCr, description: "ONE character. acc_bill_balance uses two — do not unify them." })
+  @ApiProperty({
+    enum: OpeningDrCr,
+    description: 'ONE character. acc_bill_balance uses two — do not unify them.',
+  })
   @IsIn(Object.values(OpeningDrCr))
   opDrCr!: OpeningDrCr;
 
@@ -84,7 +87,11 @@ export class SaveOpeningBalanceDto {
   @UpperMaxString(9)
   opAccYear!: string;
 
-  @ApiPropertyOptional({ format: 'uuid', nullable: true, description: 'Stamped onto every row written.' })
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description: 'Stamped onto every row written.',
+  })
   @NullableUuid()
   opTenantId?: string | null;
 
