@@ -136,6 +136,10 @@ model LoyaltyCoupon {
   //   ck_lcp_src_doc, ck_lcp_code_shape, ck_lcp_status, ck_lcp_cancel,
   //   ck_lcp_validity, ck_lcp_issue_amount, ck_lcp_face
 
+  // ── Promotion usage (20260921180000) ────────────────────────────────────
+  // When a campaign was coupon-gated, the code that unlocked it.
+  promotionUsages       PromotionUsage[]          @relation("PromotionUsageCoupon")
+
   @@map("loyalty_coupon")
   @@schema("sales")
 }

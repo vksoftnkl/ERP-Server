@@ -148,13 +148,9 @@ const BILL_OPTIONAL_FIELDS = [
     'sbDiscAlterBase',
     'sbRoundOffStep',
     'sbStatus',
-    'sbPostedOn',
     'sbPostedVoucherId',
     'sbApprovedOn',
     'sbApprovedBy',
-    'sbCancelledOn',
-    'sbCancelledBy',
-    'sbCancelReason',
     'sbVersionNo',
     'sbPrintCount',
 ];
@@ -258,9 +254,7 @@ const BILL_DATE_FIELDS = [
     'sbBillDatetime',
     'sbDueDate',
     'sbSrcDocDate',
-    'sbPostedOn',
     'sbApprovedOn',
-    'sbCancelledOn',
 ];
 const BILL_ITEM_DATE_FIELDS = ['sbiBatchDate', 'sbiExpiryDate'];
 function toDateOrNull(value, field) {
@@ -479,7 +473,6 @@ let BillService = class BillService {
                         where: { sbId_sbAccYear: { sbId: created.sbId, sbAccYear: created.sbAccYear } },
                         data: {
                             sbPostedVoucherId: postingResult.voucherId,
-                            sbPostedOn: postingResult.postedOn,
                         },
                     });
                     await this.syncAdjustments(tx, posted, postingResult.billId, saveBillDto.adjustments, createdBy, now);
@@ -489,7 +482,7 @@ let BillService = class BillService {
                 }
                 await this.saleOrderService.syncOrderFulfilment(tx, { refs: [...this.toOrderHeaderRefs(posted), ...this.toOrderLineRefs(items)] }, createdBy, now);
                 await this.quotationService.syncQuotationConversion(tx, { refs: this.toQuotationRefs(posted) }, createdBy, now);
-                await this.logStatusChange(tx, posted, null, createdBy, now);
+                await this.logStatusChange(tx, posted, null, createdBy, now, saveBillDto.sbCancelReason ?? null);
                 const payload = this.toPayload({ ...posted, items, charges, tenders });
                 await this.auditLogService.logEntityChange({
                     action: 'New',
@@ -557,16 +550,15 @@ let BillService = class BillService {
                 const items = await this.syncItems(tx, scope, saveBillDto.items, modifiedBy);
                 const charges = await this.chargeDetailService.syncDocumentCharges(tx, this.toChargeScope(scope), saveBillDto.charges, modifiedBy, bill_api_types_1.BILL_CHARGE_AUDIT);
                 const tenders = await this.tenderDetailService.syncDocumentTenders(tx, this.toTenderScope(scope, saveBillDto.tenders), saveBillDto.tenders, modifiedBy, bill_api_types_1.BILL_TENDER_AUDIT);
-                const posting = await (0, bill_posting_helper_1.syncBillPosting)(tx, updated, BILL_VCHR_TYPE_ID, modifiedBy, now);
+                const cancelReason = saveBillDto.sbCancelReason ?? null;
+                const posting = await (0, bill_posting_helper_1.syncBillPosting)(tx, updated, BILL_VCHR_TYPE_ID, modifiedBy, now, cancelReason);
                 await this.syncAdjustments(tx, updated, posting.billId, saveBillDto.adjustments, modifiedBy, now);
                 let posted = updated;
-                if (updated.sbPostedVoucherId !== posting.voucherId ||
-                    updated.sbPostedOn?.getTime() !== posting.postedOn?.getTime()) {
+                if (updated.sbPostedVoucherId !== posting.voucherId) {
                     posted = await tx.saleBill.update({
                         where: { sbId_sbAccYear: { sbId: updated.sbId, sbAccYear: updated.sbAccYear } },
                         data: {
                             sbPostedVoucherId: posting.voucherId,
-                            sbPostedOn: posting.postedOn,
                         },
                     });
                 }
@@ -580,7 +572,7 @@ let BillService = class BillService {
                 }, modifiedBy, now);
                 await this.quotationService.syncQuotationConversion(tx, { refs: [...this.toQuotationRefs(existing), ...this.toQuotationRefs(posted)] }, modifiedBy, now);
                 if (posted.sbStatus !== existing.sbStatus) {
-                    await this.logStatusChange(tx, posted, existing.sbStatus, modifiedBy, now);
+                    await this.logStatusChange(tx, posted, existing.sbStatus, modifiedBy, now, cancelReason);
                 }
                 const payload = this.toPayload({ ...posted, items, charges, tenders });
                 await this.auditLogService.logEntityChange({
@@ -970,7 +962,7 @@ let BillService = class BillService {
             toStatus: bill.sbStatus,
             changedOn,
             changedBy: actor,
-            remarks: remarks ?? bill.sbCancelReason,
+            remarks,
             deviceId: bill.sbDeviceId,
             sessionId: bill.sbSessionId,
         });

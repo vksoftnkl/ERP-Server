@@ -88,6 +88,10 @@ model StockReasonMaster {
   vouchers             StockVoucher[]     @relation("StockVoucherReason")
   voucherItems         StockVoucherItem[] @relation("StockVoucherItemReason")
 
+  // ── Sales documents (20260921200000) ────────────────────────────────────
+  saleReturns           SaleReturn[]              @relation("SaleReturnReason")
+  saleDcReturns         SaleDcReturn[]            @relation("SaleDcReturnReason")
+
   @@map("stock_reason_master")
   @@schema("stock")
 }

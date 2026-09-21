@@ -18,7 +18,9 @@
 model TransactionChargeDetail {
   cdId            String    @default(dbgenerated("gen_random_uuid()")) @db.Uuid @map("cd_id")
   // -- Parent document (polymorphic — no single FK possible) ----------------
-  cdDocType       String    @db.VarChar(12)                                @map("cd_doc_type")   // which module's document
+  /// Widened from varchar(12) by 20260921220000: 'DELIVERY_CHALLAN' does
+  /// not fit in twelve characters.
+  cdDocType       String    @db.VarChar(30)                                @map("cd_doc_type")   // which module's document
   cdDocId         String    @db.Uuid                                       @map("cd_doc_id")     // parent document id
   cdSlno          Int?                                                     @map("cd_slno")       // line order within the document
   // -- Denormalised context (lets the table be queried/reported without
@@ -73,6 +75,19 @@ model TransactionChargeDetail {
   // -- Status + audit -------------------------------------------------------
   cdRemarks       String?   @db.VarChar(255)                               @map("cd_remarks")
   cdIsActive      Boolean   @default(true)                                 @map("cd_is_active")
+  // ── Charges across part deliveries (20260921220000) ──────────────────
+  // An ORDER's charge row is the SOURCE. Each bill raised against the order
+  // carries its own charge rows pointing back at it, saying how much they
+  // took. PRORATA (the default) is the bill's share of the order's
+  // delivered value, with the final bill taking the remainder so the sum
+  // closes exactly.
+  cdSrcCdId       String?   @db.Uuid                                       @map("cd_src_cd_id")
+  cdSrcAccYear    String?   @db.Char(9)                                    @map("cd_src_acc_year")
+  /// PRORATA | FULL | MANUAL | NONE
+  cdCarryBasis    String?   @db.VarChar(10)                                @map("cd_carry_basis")
+  /// On the SOURCE row: how much has been taken so far. A cache.
+  cdCarriedAmt    Decimal   @default(0) @db.Decimal(15, 2)                 @map("cd_carried_amt")
+
   cdIsDeleted     Boolean   @default(false)                                @map("cd_is_deleted")
   cdSyncDate      DateTime? @db.Timestamptz                                @map("cd_sync_date")
   cdCreatedOn     DateTime  @default(now()) @db.Timestamptz                @map("cd_created_on")
@@ -96,6 +111,10 @@ model TransactionChargeDetail {
   @@index([cdLedgerCode], map: "ix_txn_charge_detail_ledger")
   @@index([cdCompId], map: "ix_txn_charge_detail_comp")
   @@index([cdBranchId], map: "ix_txn_charge_detail_branch")
+  // ── Charges across part deliveries (20260921220000) ──────────────────
+  sourceCharge    TransactionChargeDetail?  @relation("ChargeCarry", fields: [cdSrcCdId, cdSrcAccYear], references: [cdId, cdAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_cd_src")
+  carriedCharges  TransactionChargeDetail[] @relation("ChargeCarry")
+
   @@map("txn_charge_detail")
   @@schema("public")
   // The table began life as sales.sale_charge_detail (created in

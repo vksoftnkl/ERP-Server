@@ -35,10 +35,12 @@ let PrintRenderController = class PrintRenderController {
         this.requestContextService = requestContextService;
     }
     async preview(dto, response) {
+        const docIds = this.batchFrom(dto);
         const outcome = await this.printRenderService.preview({
             versionId: dto.versionId,
             context: this.contextFrom(dto),
             params: dto.params ?? {},
+            ...(docIds.length > 0 ? { docIds } : {}),
             ...(dto.outputMode ? { outputMode: dto.outputMode } : {}),
             ...(dto.copies ? { copies: dto.copies } : {}),
             ...(dto.body ? { body: dto.body } : {}),
@@ -101,6 +103,21 @@ let PrintRenderController = class PrintRenderController {
             userId: this.requestContextService.getUserId(),
             deviceId: dto.deviceId ?? this.requestContextService.getDeviceId(),
         };
+    }
+    batchFrom(dto) {
+        if (dto.docId && dto.docIds) {
+            (0, module_service_utils_1.throwSettingsBadRequest)('Send either docId or docIds, not both', [
+                {
+                    field: 'docIds',
+                    message: 'They name the same thing: docId is one document and docIds is a list of them. ' +
+                        'A render carrying both cannot say which one it used, so drop whichever is not ' +
+                        'meant — a single-document render sends docId, a batch sends docIds.',
+                },
+            ]);
+        }
+        if (dto.docIds)
+            return [...dto.docIds];
+        return dto.docId ? [dto.docId] : [];
     }
     send(response, outcome, stem) {
         const safeStem = stem.replace(/[^A-Za-z0-9._-]+/g, '-').slice(0, 80) || 'print';

@@ -1,0 +1,32 @@
+/// Aggregate annual turnover per company per financial year.
+///
+/// The figure e-invoice applicability (₹5 crore since 2023-08-01) and the AATO
+/// class are read from. Kept by the year-end job and editable by the
+/// accountant — a figure somebody SIGNS, not a running total, which is why
+/// caaSource distinguishes COMPUTED from DECLARED.
+model CompanyAato {
+  caaId             String    @id(map: "pk_company_aato") @default(dbgenerated("uuidv7()")) @db.Uuid @map("caa_id")
+  caaCompanyId      String    @db.Uuid                                 @map("caa_company_id")
+  /// The year the turnover BELONGS to, not the year it was computed in.
+  caaFinYear        String    @db.Char(9)                              @map("caa_fin_year")
+  caaAatoAmount     Decimal   @default(0) @db.Decimal(18, 2)           @map("caa_aato_amount")
+  /// COMPUTED | DECLARED
+  caaSource         String    @default("COMPUTED") @db.VarChar(10)     @map("caa_source")
+  caaDeclaredBy     String?   @db.VarChar(50)                          @map("caa_declared_by")
+  caaDeclaredOn     DateTime? @db.Date                                 @map("caa_declared_on")
+  caaRemarks        String?   @db.VarChar(250)                         @map("caa_remarks")
+  caaIsDeleted      Boolean   @default(false)                          @map("caa_is_deleted")
+  caaCreatedOn      DateTime  @default(now()) @db.Timestamptz(6)       @map("caa_created_on")
+  caaCreatedBy      String?   @db.VarChar(50)                          @map("caa_created_by")
+  caaModifiedOn     DateTime? @db.Timestamptz(6)                       @map("caa_modified_on")
+  caaModifiedBy     String?   @db.VarChar(50)                          @map("caa_modified_by")
+
+  company           Company   @relation("CompanyAatoCompany", fields: [caaCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_caa_company")
+
+  @@unique([caaCompanyId, caaFinYear], map: "ux_company_aato")
+
+  // CHECK constraints (DB-only): ck_caa_source, ck_caa_fin_year
+
+  @@map("company_aato")
+  @@schema("public")
+}

@@ -16,6 +16,7 @@ export interface PreviewRequest {
     readonly copies?: number;
     readonly copyLabels?: readonly string[];
     readonly body?: Record<string, unknown>;
+    readonly docIds?: readonly string[];
 }
 export interface PrintRequest {
     readonly purposeId: string;

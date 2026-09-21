@@ -1,6 +1,7 @@
 export declare class RenderPreviewDto {
     versionId: string;
     docId?: string;
+    docIds?: string[];
     companyId?: string;
     accYear?: string;
     branchId?: string;

@@ -13,6 +13,22 @@ model UserMenus {
   umCanDelete   Boolean   @default(false) @map("um_can_delete")
   umCanPrint    Boolean   @default(false) @map("um_can_print")
   umCanExport   Boolean   @default(false) @map("um_can_export")
+  // ── Transaction rights (20260921220000) ──────────────────────────────
+  // A transaction screen asks four more questions than a master screen.
+  // Default FALSE: these are GRANTED, never assumed.
+  //
+  // NOTE: a user_menus save is a FULL REPLACE — the client must send all
+  // ten flags or it silently revokes these four.
+  umCanPost     Boolean   @default(false) @map("um_can_post")
+  umCanCancel   Boolean   @default(false) @map("um_can_cancel")
+  umCanAmend    Boolean   @default(false) @map("um_can_amend")
+  /// Passes a WARN-level guard: discount cap, credit limit, back-date, rate
+  /// below minimum.
+  umCanOverride Boolean   @default(false) @map("um_can_override")
+  /// May change how a POSTED bill was paid. Separate from umCanAmend: the
+  /// sale is not being edited, only the tender — but it moves money between
+  /// ledgers, so it is grantable on its own.
+  umCanRetender Boolean   @default(false) @map("um_can_retender")
 
   // ── User preferences (user-controlled) ─────────────────────────────────────
   umVisibility  Boolean   @default(true)  @map("um_visibility")

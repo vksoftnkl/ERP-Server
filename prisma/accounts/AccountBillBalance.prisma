@@ -118,6 +118,11 @@ model AccBillBalance {
   againstAdjustments  AccBillAdjustment[] @relation("BillAdjustmentAgainstBill")
   voucherLines        AccVoucher[]
   @@id([ablId, ablAccYear], map: "pk_acc_bill_balance")
+  // ── Temp credit (20260922000000) ────────────────────────────────────────
+  // The outstanding lives HERE; the temp-credit row rides on it and mirrors
+  // ablPendingAmount into its own atcBalanceAmount.
+  tempCredits           AccTempCredit[]           @relation("TempCreditBalance")
+
   @@map("acc_bill_balance")
   @@schema("accounts")
   // DB-only objects not expressible in the Prisma schema (see migrations

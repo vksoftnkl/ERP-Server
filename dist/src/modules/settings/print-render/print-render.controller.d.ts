@@ -18,6 +18,7 @@ export declare class PrintRenderController {
         cardinality: string;
     }>>;
     private contextFrom;
+    private batchFrom;
     private send;
     private inspect;
 }

@@ -1297,9 +1297,11 @@ describe('BillService', () => {
       expect(prisma.accBillBalance.update.mock.calls[0][0]).toMatchObject({
         data: { ablIsDeleted: true, ablIsActive: false },
       });
-      // The bill no longer points at a voucher.
+      // The bill no longer points at a voucher. sbPostedOn is not asserted:
+      // 20260921220000 dropped it, and the post TIME now lives on the
+      // public.txn_status_log row for the step.
       expect(prisma.saleBill.update).toHaveBeenCalledWith(
-        containing({ data: containing({ sbPostedVoucherId: null, sbPostedOn: null }) }),
+        containing({ data: containing({ sbPostedVoucherId: null }) }),
       );
     });
 

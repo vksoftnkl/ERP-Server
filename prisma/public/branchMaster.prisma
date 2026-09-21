@@ -132,6 +132,9 @@ model BranchMaster {
   couponsIssued         LoyaltyCoupon[]           @relation("CouponBranch")
   couponTxns            LoyaltyCouponTxn[]        @relation("CouponTxnBranch")
 
+  // ── Promotion usage (20260921180000) ────────────────────────────────────
+  promotionUsages       PromotionUsage[]          @relation("PromotionUsageBranch")
+
   @@map("branch_master")
   @@schema("public")
 }

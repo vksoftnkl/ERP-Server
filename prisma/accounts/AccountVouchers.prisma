@@ -11,9 +11,12 @@ model AccVoucher {
   avVoucherTypeId    Int       @map("av_voucher_type_id")
   avVoucherNo        BigInt    @map("av_voucher_no")
   avRowNo            Int       @map("av_row_no")
-  avVoucherDate      DateTime  @db.Timestamptz(6) @map("av_voucher_date")
+  /// A DATE, not a timestamptz. Stored with a zone, 2026-04-01 became
+  /// 2026-03-31T18:30Z and landed in the wrong day of every date-bounded
+  /// report — and, on the first day of a financial year, the wrong YEAR.
+  avVoucherDate      DateTime  @db.Date @map("av_voucher_date")
   avVoucherRefno     String?   @db.VarChar(50) @map("av_voucher_refno")
-  avDocDate         DateTime? @db.Timestamptz(6) @map("av_doc_date")
+  avDocDate         DateTime? @db.Date @map("av_doc_date")
   avDocRefno        String?   @db.VarChar(100) @map("av_doc_refno")
   // avDocAccYear is the FY of the BILL in avDocId — the bill's own year, not
   // avAccYear. Set exactly when avDocId is (ck_av_doc_pair), and the second

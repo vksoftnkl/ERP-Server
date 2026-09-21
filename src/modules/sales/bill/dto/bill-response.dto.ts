@@ -538,8 +538,6 @@ export class BillPayloadDto {
   sbRoundOffStep!: number;
   @ApiProperty({ maxLength: 20 })
   sbStatus!: string;
-  @ApiPropertyOptional({ nullable: true, format: 'date-time' })
-  sbPostedOn!: string | null;
   @ApiPropertyOptional({
     format: 'uuid',
     nullable: true,
@@ -550,12 +548,6 @@ export class BillPayloadDto {
   sbApprovedOn!: string | null;
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   sbApprovedBy!: string | null;
-  @ApiPropertyOptional({ nullable: true, format: 'date-time' })
-  sbCancelledOn!: string | null;
-  @ApiPropertyOptional({ format: 'uuid', nullable: true })
-  sbCancelledBy!: string | null;
-  @ApiPropertyOptional({ maxLength: 250, nullable: true })
-  sbCancelReason!: string | null;
   @ApiProperty()
   sbVersionNo!: number;
   @ApiProperty()

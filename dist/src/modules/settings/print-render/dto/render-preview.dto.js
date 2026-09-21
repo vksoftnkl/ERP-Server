@@ -17,6 +17,7 @@ const print_render_constants_2 = require("../print-render.constants");
 class RenderPreviewDto {
     versionId;
     docId;
+    docIds;
     companyId;
     accYear;
     branchId;
@@ -49,6 +50,25 @@ __decorate([
     (0, class_validator_1.IsUUID)(),
     __metadata("design:type", String)
 ], RenderPreviewDto.prototype, "docId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        type: [String],
+        format: 'uuid',
+        maxItems: print_render_constants_1.MAX_BATCH_DOCS,
+        description: 'SEVERAL documents, rendered back to back into ONE file — the list screen ticking five ' +
+            'bills and getting a single PDF. Each id gets its own dataset pass, so each binds its ' +
+            'own :doc_id, and the resulting pages are merged exactly the way copies already are. ' +
+            'Mutually exclusive with docId: send one or the other, never both, because a render ' +
+            'that was told the subject twice has no way to say which answer it used. Everything ' +
+            'else — the company, the year, the design — is one value for the whole batch, so every ' +
+            'document in it must belong to the same company and the same accounting year.',
+    }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsArray)(),
+    (0, class_validator_1.ArrayMaxSize)(print_render_constants_1.MAX_BATCH_DOCS),
+    (0, class_validator_1.IsUUID)(undefined, { each: true }),
+    __metadata("design:type", Array)
+], RenderPreviewDto.prototype, "docIds", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({
         format: 'uuid',

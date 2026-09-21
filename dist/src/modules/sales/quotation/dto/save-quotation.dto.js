@@ -101,7 +101,6 @@ class SaveQuotationDto {
     sqConvertedOn;
     sqApprovedOn;
     sqApprovedBy;
-    sqCancelledOn;
     sqCancelledBy;
     sqCancelReason;
     sqMrpSavings;
@@ -572,11 +571,6 @@ __decorate([
     (0, dtoDecorators_1.NullableUuid)(),
     __metadata("design:type", Object)
 ], SaveQuotationDto.prototype, "sqApprovedBy", void 0);
-__decorate([
-    (0, swagger_1.ApiPropertyOptional)({ type: 'string', format: 'date-time', nullable: true }),
-    (0, dtoDecorators_1.NullableDateString)(),
-    __metadata("design:type", Object)
-], SaveQuotationDto.prototype, "sqCancelledOn", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ format: 'uuid', nullable: true }),
     (0, dtoDecorators_1.NullableUuid)(),

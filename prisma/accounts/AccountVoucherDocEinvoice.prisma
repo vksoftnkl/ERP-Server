@@ -27,7 +27,11 @@ model AccVoucherDocEinvoice {
   gdeSignedQrcode   String?              @map("gde_signed_qrcode")
 
   gdeCancelReason   String?              @db.VarChar(200) @map("gde_cancel_reason")
-  gdeCanceledOn     DateTime?            @db.Timestamptz(6) @map("gde_canceled_on")
+  /// TWO l's, as of 20260922020000. The deployed table used to spell it
+  /// with one while every other table in this schema used two; a rename
+  /// here is also a DATA change in gst_provider_field_map, which stores
+  /// this name as a target column.
+  gdeCancelledOn    DateTime?            @db.Timestamptz(6) @map("gde_cancelled_on")
 
   gdeLastErrorCode  String?              @db.VarChar(50) @map("gde_last_error_code")
   gdeLastMessage    String?              @db.VarChar(500) @map("gde_last_message")
@@ -58,8 +62,20 @@ model AccVoucherDocEinvoice {
   gdeSyncDate       DateTime?            @db.Timestamptz(6) @map("gde_sync_date")
   gdeCreatedOn      DateTime             @default(now()) @db.Timestamptz(6) @map("gde_created_on")
   gdeCreatedBy      String?              @db.Uuid @map("gde_created_by")
-  gdeUpdatedOn      DateTime?            @db.Timestamptz(6) @map("gde_updated_on")
-  gdeUpdatedBy      String?              @db.Uuid @map("gde_updated_by")
+  // The house audit pair, renamed from gde_updated_* by 20260922020000.
+  gdeModifiedOn     DateTime?            @db.Timestamptz(6) @map("gde_modified_on")
+  gdeModifiedBy     String?              @db.Uuid @map("gde_modified_by")
+
+  // ── Reconciled with the doc-register design (20260922020000) ─────────
+  gdeTenantId       String?              @db.Uuid @map("gde_tenant_id")
+  /// How many times the IRP has been asked for this IRN, and when last.
+  gdeAttemptCount   Int                  @default(0) @map("gde_attempt_count")
+  gdeLastAttemptOn  DateTime?            @db.Timestamptz(6) @map("gde_last_attempt_on")
+  /// Exactly what was sent to the IRP, and exactly what it said back. Once
+  /// the document has been amended these two are the ONLY answer to "what
+  /// did we declare on that date".
+  gdeRequestPayload  Json?               @map("gde_request_payload")
+  gdeResponsePayload Json?               @map("gde_response_payload")
 
   // Relations
   docRegister       AccVoucherDocRegister @relation(fields: [gdeGdrId], references: [gdrId], onDelete: Cascade, map: "fk_gde_gdr")

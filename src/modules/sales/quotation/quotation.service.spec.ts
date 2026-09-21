@@ -553,14 +553,17 @@ describe('QuotationService — applied charges', () => {
     expect(payload.charges?.[0].cdCreatedOn).toBe('2026-07-28T10:00:00.000Z');
   });
 
-  it('resolves the area, salesman and agent names on getById', async () => {
+  // sqSalesmanName is gone: 20260921220000 made sq_salesman_id a uuid[] team
+  // and dropped fk_sq_salesman, so there is no relation left to read a name
+  // through. A caller that needs names resolves the array against
+  // EmployeeMaster, as sale_bill and sale_order already do.
+  it('resolves the area and agent names on getById', async () => {
     prisma.saleQuotation.findFirst.mockResolvedValue(
       makeQuotation({
         sqCustAreaId: AREA_ID,
-        sqSalesmanId: SALESMAN_ID,
+        sqSalesmanId: [SALESMAN_ID],
         sqAgentId: AGENT_ID,
         custArea: { armName: 'North Zone', armDistanceKm: 12 },
-        salesman: { empName: 'Ravi Kumar' },
       } as unknown as Partial<SaleQuotation>),
     );
 
@@ -570,7 +573,6 @@ describe('QuotationService — applied charges', () => {
       containing({
         include: containing({
           custArea: { select: { armName: true, armDistanceKm: true } },
-          salesman: { select: { empName: true } },
         }),
       }),
     );
@@ -581,21 +583,18 @@ describe('QuotationService — applied charges', () => {
     });
     expect(payload.sqCustAreaName).toBe('North Zone');
     expect(payload.sqCustAreaDistanceKm).toBe(12);
-    expect(payload.sqSalesmanName).toBe('Ravi Kumar');
     expect(payload.sqAgentName).toBe('Agent One');
     // The joined relations themselves must not leak into the payload.
     expect(payload).not.toHaveProperty('custArea');
-    expect(payload).not.toHaveProperty('salesman');
     expect(payload).not.toHaveProperty('agent');
   });
 
-  it('leaves the master names null when the header carries no area/salesman/agent', async () => {
+  it('leaves the master names null when the header carries no area/agent', async () => {
     const payload = await service.getById(QUOTE_ID, undefined, COMPANY_ID, BRANCH_ID, ACC_YEAR);
 
     expect(prisma.saleAgent.findUnique).not.toHaveBeenCalled();
     expect(payload.sqCustAreaName).toBeNull();
     expect(payload.sqCustAreaDistanceKm).toBeNull();
-    expect(payload.sqSalesmanName).toBeNull();
     expect(payload.sqAgentName).toBeNull();
   });
 

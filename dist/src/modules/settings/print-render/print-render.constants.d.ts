@@ -14,4 +14,5 @@ export type PlgStatus = (typeof PLG_STATUSES)[number];
 export declare const RENDER_TIMEOUT_MS = 30000;
 export declare const RENDER_COPY_TIMEOUT_MS = 15000;
 export declare const MAX_COPIES = 10;
+export declare const MAX_BATCH_DOCS = 50;
 export declare const ACC_YEAR_PATTERN: RegExp;

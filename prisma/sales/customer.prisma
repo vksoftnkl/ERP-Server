@@ -58,6 +58,9 @@ model Customer {
   // 6) GST / Tax
   cusGstNo             String?   @db.VarChar(15)                                   @map("cus_gst_no")
   cusPanNo             String?   @db.VarChar(10)                                   @map("cus_pan_no")
+  /// Form 60 stands in for a PAN on a cash sale over the rule 114B limit.
+  cusForm60On          DateTime? @db.Date                                          @map("cus_form60_on")
+  cusPanVerifiedOn     DateTime? @db.Date                                          @map("cus_pan_verified_on")
   cusGstType           String?   @db.VarChar(30)                                   @map("cus_gst_type")
   cusEcommerceGstin    String?   @db.VarChar(15)                                   @map("cus_ecommerce_gstin")
   cusTcsApplicable     Boolean   @default(false)                                   @map("cus_tcs_applicable")
@@ -113,6 +116,14 @@ model Customer {
   // ── Coupons and gift vouchers (20260921160000) ──────────────────────────
   coupons               LoyaltyCoupon[]           @relation("CouponCustomer")
   couponTxns            LoyaltyCouponTxn[]        @relation("CouponTxnCustomer")
+
+  // ── Promotion usage (20260921180000) ────────────────────────────────────
+  promotionUsages       PromotionUsage[]          @relation("PromotionUsageCustomer")
+
+  // ── Sales documents (20260921200000) ────────────────────────────────────
+  saleReturns           SaleReturn[]              @relation("SaleReturnCustomer")
+  saleDcs               SaleDc[]                  @relation("SaleDcCustomer")
+  saleDcReturns         SaleDcReturn[]            @relation("SaleDcReturnCustomer")
 
   @@map("customers")
   @@schema("sales")

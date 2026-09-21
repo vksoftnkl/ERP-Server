@@ -47,6 +47,36 @@ model SaleBill {
   sbHasPromo         Boolean   @default(false) @map("sb_has_promo")
   sbHasComm          Boolean   @default(false) @map("sb_has_comm")
   sbHasLoyalty       Boolean   @default(false) @map("sb_has_loyalty")
+  // ── Sales plan (20260921220000) ───────────────────────────────────────
+  /// POS | WHOLESALE. The MODE owns the number series: POS draws from the
+  /// device series, WHOLESALE from the branch MAIN series.
+  sbBillMode         String    @default("WHOLESALE") @db.VarChar(10) @map("sb_bill_mode")
+  sbUsrRefdate       DateTime? @db.Date @map("sb_usr_refdate")
+  /// How much of this bill came in under a challan. Stock and COGS for that
+  /// part were posted AT THE DC; the bill posts them only for direct lines.
+  sbHasDc            Boolean   @default(false) @map("sb_has_dc")
+  sbDcTaxableAmt     Decimal   @default(0) @db.Decimal(15, 2) @map("sb_dc_taxable_amt")
+  /// What THIS bill posted as COGS.
+  sbCogsAmt          Decimal   @default(0) @db.Decimal(15, 2) @map("sb_cogs_amt")
+  /// NA | PENDING | PACKED | DISPATCHED | DELIVERED | RETURNED. A CACHE —
+  /// the events themselves are TxnStatusLog rows.
+  sbDeliveryStatus   String    @default("NA") @db.VarChar(20) @map("sb_delivery_status")
+  sbDeliveredOn      DateTime? @db.Timestamptz(6) @map("sb_delivered_on")
+  /// The identity stamp on a cash sale over the rule 114B limit: what was
+  /// shown at the counter, kept WITH the bill and never re-derived.
+  sbCustPan          String?   @db.VarChar(10) @map("sb_cust_pan")
+  sbForm60Ref        String?   @db.VarChar(50) @map("sb_form60_ref")
+  /// TCS infrastructure, rate 0 today — 206C(1H) was removed 2025-04-01.
+  sbTcsPerc          Decimal   @default(0) @db.Decimal(6, 3) @map("sb_tcs_perc")
+  sbTcsAmt           Decimal   @default(0) @db.Decimal(15, 2) @map("sb_tcs_amt")
+  /// Loyalty caches; the detail is the LoyaltyLedger rows keyed by this bill.
+  sbLoyaltyMemberId  String?   @db.Uuid @map("sb_loyalty_member_id")
+  sbLoyaltyEarned    Decimal   @default(0) @db.Decimal(15, 2) @map("sb_loyalty_earned")
+  sbLoyaltyRedeemed  Decimal   @default(0) @db.Decimal(15, 2) @map("sb_loyalty_redeemed")
+  sbRevisionNo       Int       @default(1) @map("sb_revision_no")
+  /// The doc-register row this bill owns. Server-owned, like
+  /// sbPostedVoucherId — the DTO never carries either.
+  sbDocRegisterId    String?   @db.Uuid @map("sb_doc_register_id")
   // ── Loyalty points (20260921140000) ──────────────────────────────────
   // SNAPSHOTS, not caches. A sale return must reverse WHAT THIS BILL
   // ACTUALLY AWARDED, not what re-running today's scheme would award —
@@ -134,14 +164,20 @@ model SaleBill {
   sbDiscAlterBase    Boolean?  @map("sb_disc_alter_base")
   sbRoundOffStep     Decimal   @default(1) @db.Decimal(15, 2) @map("sb_round_off_step")
   // Lifecycle
+  /// DRAFT | POSTED | CANCELLED (ck_sb_status).
+  ///
+  /// WHEN, WHO and WHY it changed are NOT here any more. TxnStatusLog holds
+  /// every transition — changed-on, changed-by, the cancel reason, the
+  /// from-status, the device and the session — one appended row per step.
+  /// A second copy on the header meant the reason was written twice and the
+  /// two could disagree, and an amendment overwrote the previous cancel
+  /// instead of leaving a trail. It matters for the offline push too: two
+  /// devices APPENDING cannot conflict the way two UPDATEing one header row
+  /// can. sbPostedVoucherId stays because it is a RELATIONSHIP, not an event.
   sbStatus           String    @default("DRAFT") @db.VarChar(20) @map("sb_status")
-  sbPostedOn         DateTime? @db.Timestamptz(6) @map("sb_posted_on")
   sbPostedVoucherId  String?   @db.Uuid @map("sb_posted_voucher_id") // accounts.acc_voucher_header
   sbApprovedOn       DateTime? @db.Timestamptz(6) @map("sb_approved_on")
   sbApprovedBy       String?   @db.Uuid @map("sb_approved_by")
-  sbCancelledOn      DateTime? @db.Timestamptz(6) @map("sb_cancelled_on")
-  sbCancelledBy      String?   @db.Uuid @map("sb_cancelled_by")
-  sbCancelReason     String?   @db.VarChar(250) @map("sb_cancel_reason")
   sbVersionNo        Int       @default(1) @map("sb_version_no")
   sbPrintCount       Int       @default(0) @map("sb_print_count")
   // Audit
@@ -166,6 +202,21 @@ model SaleBill {
   // quotation. Without it that is a sequential scan of every sale_bill
   // partition. The mirror of sale_bill_item's ix_sbi_src_doc.
   @@index([sbSrcDocId, sbSrcDocYear], map: "ix_sb_src_doc")
+  // ── Sales documents (20260921200000) ────────────────────────────────────
+  returns               SaleReturn[]              @relation("SaleReturnBill")
+
+  // ── Crew and vehicle (20260921220000) ─────────────────────────────────
+  // These stay on the DOCUMENT rather than moving to a shared transport
+  // band: they exist whenever goods move, even with no consignment — a
+  // home delivery has a driver and a van and no transporter, no LR and no
+  // e-way bill. sbLoadmanId is uuid[] and cannot carry an FK.
+  driver             EmployeeMaster? @relation("SaleBillDriver",     fields: [sbDriverId],     references: [empId], onUpdate: Cascade, onDelete: Restrict, map: "fk_sb_driver")
+  supervisor         EmployeeMaster? @relation("SaleBillSupervisor", fields: [sbSupervisorId], references: [empId], onUpdate: Cascade, onDelete: Restrict, map: "fk_sb_supervisor")
+  vehicle            VehicleMaster?  @relation("SaleBillVehicle",    fields: [sbVehicleId],    references: [vehId], onUpdate: Cascade, onDelete: Restrict, map: "fk_sb_vehicle")
+
+  // ── Temp credit (20260922000000) ────────────────────────────────────────
+  tempCredits        AccTempCredit[] @relation("TempCreditBill")
+
   @@map("sale_bill")
   @@schema("sales")
 }

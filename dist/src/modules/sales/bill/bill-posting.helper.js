@@ -124,7 +124,7 @@ async function postBillToAccounts(tx, bill, vchrTypeId, actor, postedOn) {
     }
     return { voucherId: header.avhVoucherId, billId, postedOn };
 }
-async function syncBillPosting(tx, bill, vchrTypeId, actor, now) {
+async function syncBillPosting(tx, bill, vchrTypeId, actor, now, cancelReason) {
     const live = await findLiveVoucher(tx, bill);
     if (bill.sbStatus === BILL_STATUS_POSTED) {
         if (live) {
@@ -146,7 +146,7 @@ async function syncBillPosting(tx, bill, vchrTypeId, actor, now) {
         };
     }
     if (live) {
-        await cancelPostedVoucher(tx, bill, live, actor, now);
+        await cancelPostedVoucher(tx, bill, live, actor, now, cancelReason);
         return { action: 'cancelled', voucherId: null, billId: null, postedOn: null };
     }
     return { action: 'unchanged', voucherId: null, billId: null, postedOn: null };
@@ -430,7 +430,7 @@ async function retireReceivable(tx, receivable, actor, now) {
         },
     });
 }
-async function cancelPostedVoucher(tx, bill, live, actor, now) {
+async function cancelPostedVoucher(tx, bill, live, actor, now, cancelReason) {
     const receivable = await tx.accBillBalance.findFirst({
         where: {
             ablVoucherId: live.avhVoucherId,
@@ -458,7 +458,7 @@ async function cancelPostedVoucher(tx, bill, live, actor, now) {
         },
         data: {
             avhVoucherStatus: VOUCHER_STATUS_CANCELLED,
-            avhCancelReason: (bill.sbCancelReason ?? DEFAULT_CANCEL_REASON).slice(0, CANCEL_REASON_MAX_LENGTH),
+            avhCancelReason: (cancelReason ?? DEFAULT_CANCEL_REASON).slice(0, CANCEL_REASON_MAX_LENGTH),
             avhStatusOn: now,
             avhStatusBy: bill.sbUserId,
             avhModifiedOn: now,

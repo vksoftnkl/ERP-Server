@@ -74,7 +74,6 @@ export interface BillPostingSource extends BillPostingRef {
   // this bill at all. Unused by postBillToAccounts, which the caller only
   // reaches once it has already decided the bill is POSTED.
   sbStatus: string;
-  sbCancelReason: string | null;
 }
 /// accounts.acc_voucher_header.avh_party_id and acc_bill_balance.abl_party_id
 /// are both NOT NULL: every accounting row a bill raises is raised AGAINST
@@ -248,7 +247,8 @@ export type BillPostingAction = 'created' | 'updated' | 'cancelled' | 'unchanged
 export interface BillPostingSyncResult {
   action: BillPostingAction;
   // Both null once the bill is no longer posted, so the caller can clear
-  // sale_bill.sb_posted_voucher_id / sb_posted_on in the same write.
+  // sale_bill.sb_posted_voucher_id in the same write. (sb_posted_on was
+  // dropped by 20260921220000 — the post TIME lives in txn_status_log.)
   voucherId: string | null;
   billId: string | null;
   postedOn: Date | null;
@@ -267,12 +267,18 @@ export interface BillPostingSyncResult {
 ///
 /// Must run inside the caller's transaction, for the same reason as
 /// postBillToAccounts.
+/// `cancelReason` is what the operator typed on the save that unposted the
+/// bill. It is a PARAMETER rather than a column because 20260921220000 took
+/// sb_cancel_reason off sale_bill: the reason now lives on the
+/// public.txn_status_log row for the step, and the voucher gets its own copy
+/// from the same source instead of from a second column that could disagree.
 export async function syncBillPosting(
   tx: Prisma.TransactionClient,
   bill: BillPostingSource,
   vchrTypeId: number,
   actor: string,
   now: Date,
+  cancelReason?: string | null,
 ): Promise<BillPostingSyncResult> {
   const live = await findLiveVoucher(tx, bill);
   if (bill.sbStatus === BILL_STATUS_POSTED) {
@@ -298,7 +304,7 @@ export async function syncBillPosting(
     };
   }
   if (live) {
-    await cancelPostedVoucher(tx, bill, live, actor, now);
+    await cancelPostedVoucher(tx, bill, live, actor, now, cancelReason);
     return { action: 'cancelled', voucherId: null, billId: null, postedOn: null };
   }
   return { action: 'unchanged', voucherId: null, billId: null, postedOn: null };
@@ -729,6 +735,7 @@ async function cancelPostedVoucher(
   live: { avhVoucherId: string; avhAccYear: string },
   actor: string,
   now: Date,
+  cancelReason?: string | null,
 ): Promise<void> {
   const receivable = await tx.accBillBalance.findFirst({
     where: {
@@ -760,7 +767,7 @@ async function cancelPostedVoucher(
     data: {
       avhVoucherStatus: VOUCHER_STATUS_CANCELLED,
       // ck_avh_cancel: a cancellation must say why.
-      avhCancelReason: (bill.sbCancelReason ?? DEFAULT_CANCEL_REASON).slice(
+      avhCancelReason: (cancelReason ?? DEFAULT_CANCEL_REASON).slice(
         0,
         CANCEL_REASON_MAX_LENGTH,
       ),

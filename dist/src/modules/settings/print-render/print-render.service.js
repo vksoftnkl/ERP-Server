@@ -56,6 +56,7 @@ let PrintRenderService = PrintRenderService_1 = class PrintRenderService {
             copies: request.copies ?? 1,
             copyLabels: request.copyLabels ?? [],
             docType: 'PREVIEW',
+            ...(request.docIds && request.docIds.length > 0 ? { docIds: request.docIds } : {}),
         });
     }
     async print(request) {
@@ -154,45 +155,53 @@ let PrintRenderService = PrintRenderService_1 = class PrintRenderService {
             throw new common_1.InternalServerErrorException(`No renderer registered for ${outputMode}`);
         }
         const params = this.resolveParams(bundle.version, input.params);
-        const started = Date.now();
-        const { data, resolved, warnings } = await this.runDatasets(bundle, context, params);
+        const docs = input.docIds && input.docIds.length > 0 ? input.docIds : [context.docId];
         const copies = Math.max(1, Math.min(input.copies, print_render_constants_1.MAX_COPIES));
         const labels = this.labelsFor(copies, input.copyLabels);
+        const started = Date.now();
         const trees = [];
-        for (const [index, label] of labels.entries()) {
-            trees.push(this.layout.render({
-                definition,
-                datasets: data,
-                ctx: {
-                    ...params,
-                    companyId: context.companyId,
-                    branchId: context.branchId,
-                    accYear: context.accYear,
-                    docId: context.docId,
-                    docType: input.docType,
-                    userId: context.userId,
-                    deviceId: context.deviceId,
-                    lang: bundle.version.ptvLang,
-                    copyNo: index + 1,
-                    copyLabel: label,
-                    copies,
-                    params,
-                },
-                sys: {
-                    now: new Date().toISOString(),
-                    template: bundle.template.ptlName,
-                    templateCode: bundle.template.ptlCode,
-                    revNo: bundle.version.ptvRevNo,
-                },
-            }));
+        let resolved = [];
+        const warnings = [];
+        for (const docId of docs) {
+            const pass = await this.runDatasets(bundle, { ...context, docId }, params);
+            resolved = pass.resolved;
+            warnings.push(...pass.warnings);
+            for (const [index, label] of labels.entries()) {
+                trees.push(this.layout.render({
+                    definition,
+                    datasets: pass.data,
+                    ctx: {
+                        ...params,
+                        companyId: context.companyId,
+                        branchId: context.branchId,
+                        accYear: context.accYear,
+                        docId,
+                        docType: input.docType,
+                        userId: context.userId,
+                        deviceId: context.deviceId,
+                        lang: bundle.version.ptvLang,
+                        copyNo: index + 1,
+                        copyLabel: label,
+                        copies,
+                        params,
+                    },
+                    sys: {
+                        now: new Date().toISOString(),
+                        template: bundle.template.ptlName,
+                        templateCode: bundle.template.ptlCode,
+                        revNo: bundle.version.ptvRevNo,
+                    },
+                }));
+            }
         }
         const layoutMs = Date.now() - started;
         const merged = this.mergeTrees(trees);
         const renderStarted = Date.now();
         const rendered = await this.withTimeout(renderer.render(merged, {
             creationDate: new Date(),
-            timeoutMs: print_render_constants_1.RENDER_COPY_TIMEOUT_MS * copies,
-        }), print_render_constants_1.RENDER_TIMEOUT_MS, `${bundle.template.ptlCode} rev ${bundle.version.ptvRevNo}`);
+            timeoutMs: print_render_constants_1.RENDER_COPY_TIMEOUT_MS * trees.length,
+        }), print_render_constants_1.RENDER_TIMEOUT_MS * docs.length, `${bundle.template.ptlCode} rev ${bundle.version.ptvRevNo}` +
+            (docs.length > 1 ? ` (${docs.length} documents)` : ''));
         const allWarnings = [
             ...warnings,
             ...merged.warnings.map((warning) => ({ kind: warning.kind, message: warning.message })),
@@ -206,6 +215,7 @@ let PrintRenderService = PrintRenderService_1 = class PrintRenderService {
                     .join(' | ')}`);
         }
         this.logger.log(`Rendered ${bundle.template.ptlCode} rev ${bundle.version.ptvRevNo} · ${outputMode} · ` +
+            (docs.length > 1 ? `${docs.length} docs · ` : '') +
             `${copies} cop${copies === 1 ? 'y' : 'ies'} · ${merged.pageCount}p · ` +
             `layout ${layoutMs}ms · render ${rendered.durationMs}ms · ` +
             `${(rendered.bytes.length / 1024).toFixed(0)}KB`);

@@ -603,8 +603,6 @@ export class QuotationPayloadDto {
   sqApprovedOn!: string | null;
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   sqApprovedBy!: string | null;
-  @ApiPropertyOptional({ nullable: true, format: 'date-time' })
-  sqCancelledOn!: string | null;
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   sqCancelledBy!: string | null;
   @ApiPropertyOptional({ maxLength: 250, nullable: true })

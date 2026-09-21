@@ -26,7 +26,6 @@ export interface BillPostingSource extends BillPostingRef {
     sbPaidAmt: Prisma.Decimal;
     sbRemarks: string | null;
     sbStatus: string;
-    sbCancelReason: string | null;
 }
 export interface BillPostingResult {
     voucherId: string;
@@ -41,7 +40,7 @@ export interface BillPostingSyncResult {
     billId: string | null;
     postedOn: Date | null;
 }
-export declare function syncBillPosting(tx: Prisma.TransactionClient, bill: BillPostingSource, vchrTypeId: number, actor: string, now: Date): Promise<BillPostingSyncResult>;
+export declare function syncBillPosting(tx: Prisma.TransactionClient, bill: BillPostingSource, vchrTypeId: number, actor: string, now: Date, cancelReason?: string | null): Promise<BillPostingSyncResult>;
 export interface BillPostingDeleteResult {
     voucherIds: string[];
     billIds: string[];

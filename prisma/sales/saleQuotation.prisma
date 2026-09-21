@@ -33,7 +33,10 @@ model SaleQuotation {
   sqSrcDocType       String?   @db.VarChar(30) @map("sq_src_doc_type")
   sqSrcDocId         String?   @db.Uuid @map("sq_src_doc_id")
   sqSrcDocRefno      String?   @db.VarChar(100) @map("sq_src_doc_refno")
-  sqSrcDocDate       DateTime? @db.Timestamptz(6) @map("sq_src_doc_date")
+  /// A DATE, not a timestamptz: stored with a zone, 2026-04-01 became
+  /// 2026-03-31T18:30Z and landed in the wrong day — and, on the first day
+  /// of a financial year, the wrong YEAR — of every date-bounded report.
+  sqSrcDocDate       DateTime? @db.Date @map("sq_src_doc_date")
   // customer / prospect snapshot (sq_cust_id nullable: may be a prospect)
   sqCustId           String?   @db.Uuid @map("sq_cust_id")
   sqCustAreaId       String?   @db.Uuid @map("sq_cust_area_id")
@@ -57,7 +60,13 @@ model SaleQuotation {
   sqHasComm          Boolean   @default(false) @map("sq_has_comm")
   // people
   sqUserId           String    @db.Uuid @map("sq_user_id")
-  sqSalesmanId       String?   @db.Uuid @map("sq_salesman_id")
+  /// uuid[], like sale_bill, sale_order and sale_dc. It was the last
+  /// singular one, so a dual-salesman quote could not be recorded and the
+  /// second name was lost the moment it converted. PostgreSQL cannot FK the
+  /// ELEMENTS of an array, so the service validates each id against
+  /// EmployeeMaster before it writes, and lookups go through the GIN index:
+  ///     WHERE sq_salesman_id @> ARRAY[:salesman]::uuid[]
+  sqSalesmanId       String[]  @db.Uuid @map("sq_salesman_id")
   sqAgentId          String?   @db.Uuid @map("sq_agent_id")
   // counts / weight
   sqTotItems         Int       @default(0) @map("sq_tot_items")
@@ -105,7 +114,6 @@ model SaleQuotation {
   // approval / cancel
   sqApprovedOn       DateTime? @db.Timestamptz(6) @map("sq_approved_on")
   sqApprovedBy       String?   @db.Uuid @map("sq_approved_by")
-  sqCancelledOn      DateTime? @db.Timestamptz(6) @map("sq_cancelled_on")
   sqCancelledBy      String?   @db.Uuid @map("sq_cancelled_by")
   sqCancelReason     String?   @db.VarChar(250) @map("sq_cancel_reason")
   sqMrpSavings       Decimal?   @default(0) @db.Decimal(15,3) @map("sq_mrp_savings")
@@ -137,7 +145,8 @@ model SaleQuotation {
   custArea    AreaMaster?         @relation(fields: [sqCustAreaId], references: [armId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sq_cust_area")
   priceLevel  ItemPriceLevel      @relation(fields: [sqPriceLevel], references: [iplId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sq_price_level")
   posState    StateCode?          @relation(fields: [sqPosStcd], references: [stateCode], onDelete: Restrict, onUpdate: Cascade, map: "fk_sq_pos_state")
-  salesman    EmployeeMaster?     @relation(fields: [sqSalesmanId], references: [empId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sq_salesman")
+  // No `salesman` relation: sqSalesmanId is now uuid[] and fk_sq_salesman
+  // was dropped with it — an array cannot carry a foreign key.
   // DB-only partial indexes (migration 20260708120000): ux_sq_quote_no and
   // ux_sq_slno (unique per company/branch/year among non-deleted rows),
   // ix_sq_cust, ix_sq_status, ix_sq_valid, ix_sq_conv, ix_sq_parent.

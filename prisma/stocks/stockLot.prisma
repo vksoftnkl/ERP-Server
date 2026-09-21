@@ -159,6 +159,15 @@ model StockLot {
   transits              StockTransit[]     @relation("StockTransitLot")
   valuationSnaps        StockValuationSnap[] @relation("StockValuationSnapLot")
 
+  // ── Sales documents (20260921200000) ────────────────────────────────────
+  // Goods come back to the lot they left from, which is what keeps a
+  // returned unit valued at what it actually cost.
+  saleReturnItems       SaleReturnItem[]          @relation("SaleReturnItemLot")
+  saleDcItems           SaleDcItem[]              @relation("SaleDcItemLot")
+  saleDcReturnItems     SaleDcReturnItem[]        @relation("SaleDcReturnItemLot")
+
+  saleBillItems         SaleBillItem[]            @relation("SaleBillItemLot")
+
   @@map("stock_lot")
   @@schema("stock")
 }

@@ -1,0 +1,56 @@
+/// The transporter on an e-way bill.
+///
+/// sale_bill.sb_vehicle_id has existed in this database with NO referenced
+/// table — and so have sb_driver_id, sb_supervisor_id and sb_loadman_id. This
+/// master and VehicleMaster are what those columns should have pointed at.
+///
+/// trnGstin holds either a GSTIN or a 15-character transporter ENROLMENT id
+/// (TRANSIN), which is why trnIsEnrolmentId exists: the two are the same
+/// length and the portal treats them differently.
+///
+/// NULL trnCompanyId = shared by every company, the house convention for a
+/// master that is not company-specific.
+model TransporterMaster {
+  trnId             String    @id(map: "pk_transporter_master") @default(dbgenerated("uuidv7()")) @db.Uuid @map("trn_id")
+  /// NULL = every company.
+  trnCompanyId      String?   @db.Uuid                                 @map("trn_company_id")
+  trnCode           String?   @db.VarChar(30)                          @map("trn_code")
+  trnName           String    @db.VarChar(200)                         @map("trn_name")
+  /// GSTIN or 15-char enrolment id (TRANSIN) — ck_trn_gstin_len enforces the
+  /// length either way.
+  trnGstin          String?   @db.VarChar(15)                          @map("trn_gstin")
+  trnIsEnrolmentId  Boolean   @default(false)                          @map("trn_is_enrolment_id")
+  /// ROAD | RAIL | AIR | SHIP
+  trnMode           String    @default("ROAD") @db.VarChar(10)         @map("trn_mode")
+  /// Freight payable ledger, optional. No FK: a transporter may be recorded
+  /// long before anybody decides which ledger their freight posts to.
+  trnLedgerId       String?   @db.Uuid                                 @map("trn_ledger_id")
+  trnPhone          String?   @db.VarChar(20)                          @map("trn_phone")
+  trnEmail          String?   @db.VarChar(150)                         @map("trn_email")
+  trnAddr           String?   @db.VarChar(500)                         @map("trn_addr")
+  trnPlace          String?   @db.VarChar(100)                         @map("trn_place")
+  trnPin            String?   @db.VarChar(10)                          @map("trn_pin")
+  trnStateCode      String?   @db.Char(2)                              @map("trn_state_code")
+  trnRemarks        String?   @db.VarChar(250)                         @map("trn_remarks")
+  trnIsActive       Boolean   @default(true)                           @map("trn_is_active")
+  trnIsDeleted      Boolean   @default(false)                          @map("trn_is_deleted")
+  trnSyncDate       DateTime? @db.Timestamptz(6)                       @map("trn_sync_date")
+  trnCreatedOn      DateTime  @default(now()) @db.Timestamptz(6)       @map("trn_created_on")
+  trnCreatedBy      String?   @db.VarChar(50)                          @map("trn_created_by")
+  trnModifiedOn     DateTime? @db.Timestamptz(6)                       @map("trn_modified_on")
+  trnModifiedBy     String?   @db.VarChar(50)                          @map("trn_modified_by")
+
+  vehicles          VehicleMaster[] @relation("VehicleTransporter")
+
+  // DB-only (expression key, NULLS NOT DISTINCT, partial):
+  //   CREATE UNIQUE INDEX ux_trn_name ON public.transporter_master
+  //       (trn_company_id, lower(trn_name)) NULLS NOT DISTINCT
+  //       WHERE trn_is_deleted = false;
+  //
+  // CHECK constraints (DB-only): ck_trn_mode, ck_trn_gstin_len
+
+  transportBands    TxnTransportDetail[] @relation("TransportBandTransporter")
+
+  @@map("transporter_master")
+  @@schema("public")
+}

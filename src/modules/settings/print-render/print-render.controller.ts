@@ -99,10 +99,13 @@ export class PrintRenderController {
     @Body() dto: RenderPreviewDto,
     @Res({ passthrough: true }) response: Response,
   ): Promise<PrintRenderSuccessResponse<RenderInspection> | void> {
+    const docIds = this.batchFrom(dto);
+
     const outcome = await this.printRenderService.preview({
       versionId: dto.versionId,
       context: this.contextFrom(dto),
       params: dto.params ?? {},
+      ...(docIds.length > 0 ? { docIds } : {}),
       ...(dto.outputMode ? { outputMode: dto.outputMode as OutputMode } : {}),
       ...(dto.copies ? { copies: dto.copies } : {}),
       ...(dto.body ? { body: dto.body } : {}),
@@ -236,6 +239,41 @@ export class PrintRenderController {
       userId: this.requestContextService.getUserId(),
       deviceId: dto.deviceId ?? this.requestContextService.getDeviceId(),
     };
+  }
+
+  /**
+   * WHICH documents this render is of — one, several, or none.
+   *
+   * `docId` and `docIds` are the same question asked two ways, so asking both is
+   * refused rather than resolved: a render told its subject twice has no way to
+   * report which answer it used, and the caller that sent both is a caller with
+   * a bug it would never see. Neither is also legitimate — a report whose
+   * subject is its parameters names no document at all — and that comes back as
+   * an empty list, which the service reads as the single no-document render it
+   * has always done.
+   *
+   * Duplicates are kept. Ticking the same bill twice is a strange thing to do,
+   * but it is not ambiguous, and silently collapsing it would hand back fewer
+   * pages than the operator counted on screen.
+   */
+  private batchFrom(dto: RenderPreviewDto): string[] {
+    if (dto.docId && dto.docIds) {
+      throwSettingsBadRequest<PrintRenderErrorDetail, PrintRenderErrorResponse>(
+        'Send either docId or docIds, not both',
+        [
+          {
+            field: 'docIds',
+            message:
+              'They name the same thing: docId is one document and docIds is a list of them. ' +
+              'A render carrying both cannot say which one it used, so drop whichever is not ' +
+              'meant — a single-document render sends docId, a batch sends docIds.',
+          },
+        ],
+      );
+    }
+
+    if (dto.docIds) return [...dto.docIds];
+    return dto.docId ? [dto.docId] : [];
   }
 
   /**

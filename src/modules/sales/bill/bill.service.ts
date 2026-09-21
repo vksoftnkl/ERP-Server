@@ -217,13 +217,12 @@ const BILL_OPTIONAL_FIELDS = [
   'sbDiscAlterBase',
   'sbRoundOffStep',
   'sbStatus',
-  'sbPostedOn',
   'sbPostedVoucherId',
   'sbApprovedOn',
   'sbApprovedBy',
-  'sbCancelledOn',
-  'sbCancelledBy',
-  'sbCancelReason',
+  // sbPostedOn / sbCancelledOn / sbCancelledBy / sbCancelReason were dropped
+  // by 20260921220000: WHEN, WHO and WHY a status changed live on
+  // public.txn_status_log, one appended row per step.
   'sbVersionNo',
   'sbPrintCount',
 ];
@@ -334,9 +333,7 @@ const BILL_DATE_FIELDS = [
   'sbBillDatetime',
   'sbDueDate',
   'sbSrcDocDate',
-  'sbPostedOn',
   'sbApprovedOn',
-  'sbCancelledOn',
 ];
 const BILL_ITEM_DATE_FIELDS = ['sbiBatchDate', 'sbiExpiryDate'];
 function toDateOrNull(value: unknown, field: string): Date | null | undefined {
@@ -728,7 +725,6 @@ export class BillService {
             where: { sbId_sbAccYear: { sbId: created.sbId, sbAccYear: created.sbAccYear } },
             data: {
               sbPostedVoucherId: postingResult.voucherId,
-              sbPostedOn: postingResult.postedOn,
             },
           });
           await this.syncAdjustments(
@@ -767,7 +763,7 @@ export class BillService {
         );
         // Opens the bill's status trail: from nothing to whatever it was
         // created as (DRAFT, or POSTED when it went straight into the books).
-        await this.logStatusChange(tx, posted, null, createdBy, now);
+        await this.logStatusChange(tx, posted, null, createdBy, now, saveBillDto.sbCancelReason ?? null);
         const payload = this.toPayload({ ...posted, items, charges, tenders });
         await this.auditLogService.logEntityChange(
           {
@@ -872,7 +868,18 @@ export class BillService {
         // DRAFT writes the voucher and receivable, saving an already-posted bill
         // re-syncs them, and moving it out of POSTED cancels the voucher and
         // retires the receivable.
-        const posting = await syncBillPosting(tx, updated, BILL_VCHR_TYPE_ID, modifiedBy, now);
+        // sbCancelReason is a TRANSIENT input since 20260921220000 — it is no
+        // longer a column on sale_bill, so it has to be handed to the two
+        // places that record it: the cancelled voucher and the status log.
+        const cancelReason = saveBillDto.sbCancelReason ?? null;
+        const posting = await syncBillPosting(
+          tx,
+          updated,
+          BILL_VCHR_TYPE_ID,
+          modifiedBy,
+          now,
+          cancelReason,
+        );
         // After the posting sync, for the same reason the create path runs it
         // there: posting.billId is the receivable these rows are written
         // against, and moving a bill out of POSTED retires it.
@@ -884,20 +891,16 @@ export class BillService {
           modifiedBy,
           now,
         );
-        // sbPostedVoucherId / sbPostedOn are in BILL_OPTIONAL_FIELDS, so the
+        // sbPostedVoucherId is in BILL_OPTIONAL_FIELDS, so the
         // payload can carry them — but the posting result is what decides what
         // they say. Written back only when they actually differ, so an ordinary
         // DRAFT save does not pay for a second update.
         let posted = updated;
-        if (
-          updated.sbPostedVoucherId !== posting.voucherId ||
-          updated.sbPostedOn?.getTime() !== posting.postedOn?.getTime()
-        ) {
+        if (updated.sbPostedVoucherId !== posting.voucherId) {
           posted = await tx.saleBill.update({
             where: { sbId_sbAccYear: { sbId: updated.sbId, sbAccYear: updated.sbAccYear } },
             data: {
               sbPostedVoucherId: posting.voucherId,
-              sbPostedOn: posting.postedOn,
             },
           });
         }
@@ -934,7 +937,7 @@ export class BillService {
         // A status STEP, not the save itself: an edit that leaves sbStatus alone
         // adds no row to the trail.
         if (posted.sbStatus !== existing.sbStatus) {
-          await this.logStatusChange(tx, posted, existing.sbStatus, modifiedBy, now);
+          await this.logStatusChange(tx, posted, existing.sbStatus, modifiedBy, now, cancelReason);
         }
         const payload = this.toPayload({ ...posted, items, charges, tenders });
         await this.auditLogService.logEntityChange(
@@ -1560,9 +1563,11 @@ export class BillService {
       toStatus: bill.sbStatus,
       changedOn,
       changedBy: actor,
-      // ck_tsl_reason_required wants one on a cancellation; the bill's own
-      // reason is it, and the helper falls back rather than failing the save.
-      remarks: remarks ?? bill.sbCancelReason,
+      // ck_tsl_reason_required wants one on a cancellation. The bill no longer
+      // carries a fallback copy (20260921220000 dropped sb_cancel_reason), so
+      // this row IS the reason's only home — the caller must supply it, and the
+      // helper falls back rather than failing the save.
+      remarks,
       // Free text on the bill (a device CODE in practice), a device_master uuid
       // on the log — the helper resolves it either way round.
       deviceId: bill.sbDeviceId,

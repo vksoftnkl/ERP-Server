@@ -160,7 +160,8 @@ const QUOTATION_OPTIONAL_FIELDS = [
   'sqConvertedOn',
   'sqApprovedOn',
   'sqApprovedBy',
-  'sqCancelledOn',
+  // sqCancelledOn was dropped by 20260921220000 — the cancel TIME lives on
+  // public.txn_status_log. sqCancelledBy / sqCancelReason remain columns.
   'sqCancelledBy',
   'sqCancelReason',
   'sqMrpSavings',
@@ -315,7 +316,6 @@ const QUOTATION_DATE_FIELDS = [
   'sqRejectedOn',
   'sqConvertedOn',
   'sqApprovedOn',
-  'sqCancelledOn',
 ];
 const QUOTATION_ITEM_DATE_FIELDS = ['sqiBatchDate', 'sqiExpiryDate'];
 function toDateOrNull(value: unknown, field: string): Date | null | undefined {
@@ -471,7 +471,9 @@ export class QuotationService {
           },
         },
         custArea: { select: { armName: true, armDistanceKm: true } },
-        salesman: { select: { empName: true } },
+        // No `salesman` include: 20260921220000 made sq_salesman_id a uuid[]
+        // (a quote may be credited to a TEAM) and dropped fk_sq_salesman with
+        // it — PostgreSQL cannot key the elements of an array.
       },
     });
     if (!record) {
@@ -1717,7 +1719,6 @@ export class QuotationService {
       items,
       charges,
       custArea,
-      salesman,
       agent,
       ...rest
     } = record;
@@ -1725,7 +1726,9 @@ export class QuotationService {
       ...rest,
       sqCustAreaName: custArea?.armName ?? null,
       sqCustAreaDistanceKm: custArea?.armDistanceKm ?? null,
-      sqSalesmanName: salesman?.empName ?? null,
+      // sqSalesmanName is no longer derivable from a relation: the column is a
+      // uuid[] team. A caller that needs names resolves the array against
+      // EmployeeMaster, the same way sale_bill and sale_order already do.
       sqAgentName: agent?.saName ?? null,
       sqCreatedOn: sqCreatedOn?.toISOString(),
       sqModifiedOn: sqModifiedOn?.toISOString() ?? null,

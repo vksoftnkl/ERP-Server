@@ -47,6 +47,9 @@ model DeviceMaster {
   // ── Coupons and gift vouchers (20260921160000) ──────────────────────────
   couponTxns            LoyaltyCouponTxn[]        @relation("CouponTxnDevice")
 
+  // ── Promotion usage (20260921180000) ────────────────────────────────────
+  promotionUsages       PromotionUsage[]          @relation("PromotionUsageDevice")
+
   @@map("device_master")
   @@schema("fixed")
 }

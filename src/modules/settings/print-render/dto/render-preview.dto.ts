@@ -1,5 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
+  ArrayMaxSize,
+  IsArray,
   IsBoolean,
   IsIn,
   IsInt,
@@ -11,7 +13,7 @@ import {
   Max,
   Min,
 } from 'class-validator';
-import { ACC_YEAR_PATTERN, MAX_COPIES } from '../print-render.constants';
+import { ACC_YEAR_PATTERN, MAX_BATCH_DOCS, MAX_COPIES } from '../print-render.constants';
 import { IMPLEMENTED_RENDERERS } from '../print-render.constants';
 
 /**
@@ -52,6 +54,25 @@ export class RenderPreviewDto {
   @IsOptional()
   @IsUUID()
   docId?: string;
+
+  @ApiPropertyOptional({
+    type: [String],
+    format: 'uuid',
+    maxItems: MAX_BATCH_DOCS,
+    description:
+      'SEVERAL documents, rendered back to back into ONE file — the list screen ticking five ' +
+      'bills and getting a single PDF. Each id gets its own dataset pass, so each binds its ' +
+      'own :doc_id, and the resulting pages are merged exactly the way copies already are. ' +
+      'Mutually exclusive with docId: send one or the other, never both, because a render ' +
+      'that was told the subject twice has no way to say which answer it used. Everything ' +
+      'else — the company, the year, the design — is one value for the whole batch, so every ' +
+      'document in it must belong to the same company and the same accounting year.',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(MAX_BATCH_DOCS)
+  @IsUUID(undefined, { each: true })
+  docIds?: string[];
 
   @ApiPropertyOptional({
     format: 'uuid',

@@ -733,8 +733,7 @@ ORDER BY chg_name$seed$)
      
      
     q.sq_is_deleted,
-    q.sq_converted_doc_id,
-    q.sq_cancelled_on
+    q.sq_converted_doc_id
 
 FROM sales.sale_quotation q
 
@@ -767,8 +766,7 @@ ORDER BY q.sq_quote_date DESC, q.sq_quote_slno DESC$seed$)
     q.sq_status,
     q.sq_created_by,       
     q.sq_is_deleted,
-    q.sq_converted_doc_id,
-    q.sq_cancelled_on
+    q.sq_converted_doc_id
 FROM sales.sale_quotation q
  WHERE q.sq_company_id = 'icompany_id'::uuid
   AND q.sq_branch_id  = 'ibranch_id'::uuid

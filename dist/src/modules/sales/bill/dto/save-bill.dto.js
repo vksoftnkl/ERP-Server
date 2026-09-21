@@ -142,12 +142,9 @@ class SaveBillDto {
     sbDiscAlterBase;
     sbRoundOffStep;
     sbStatus;
-    sbPostedOn;
     sbPostedVoucherId;
     sbApprovedOn;
     sbApprovedBy;
-    sbCancelledOn;
-    sbCancelledBy;
     sbCancelReason;
     sbVersionNo;
     sbPrintCount;
@@ -752,11 +749,6 @@ __decorate([
     __metadata("design:type", Object)
 ], SaveBillDto.prototype, "sbStatus", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ type: 'string', format: 'date-time', nullable: true }),
-    (0, dtoDecorators_1.NullableDateString)(),
-    __metadata("design:type", Object)
-], SaveBillDto.prototype, "sbPostedOn", void 0);
-__decorate([
     (0, swagger_1.ApiPropertyOptional)({
         format: 'uuid',
         nullable: true,
@@ -775,16 +767,6 @@ __decorate([
     (0, dtoDecorators_1.NullableUuid)(),
     __metadata("design:type", Object)
 ], SaveBillDto.prototype, "sbApprovedBy", void 0);
-__decorate([
-    (0, swagger_1.ApiPropertyOptional)({ type: 'string', format: 'date-time', nullable: true }),
-    (0, dtoDecorators_1.NullableDateString)(),
-    __metadata("design:type", Object)
-], SaveBillDto.prototype, "sbCancelledOn", void 0);
-__decorate([
-    (0, swagger_1.ApiPropertyOptional)({ format: 'uuid', nullable: true }),
-    (0, dtoDecorators_1.NullableUuid)(),
-    __metadata("design:type", Object)
-], SaveBillDto.prototype, "sbCancelledBy", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ maxLength: 250, nullable: true }),
     (0, dtoDecorators_1.NullableStringStrict)(250),

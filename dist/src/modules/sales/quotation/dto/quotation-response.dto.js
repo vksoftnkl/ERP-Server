@@ -1004,7 +1004,6 @@ class QuotationPayloadDto {
     sqConvertedOn;
     sqApprovedOn;
     sqApprovedBy;
-    sqCancelledOn;
     sqCancelledBy;
     sqCancelReason;
     sqMrpSavings;
@@ -1390,10 +1389,6 @@ __decorate([
     (0, swagger_1.ApiPropertyOptional)({ format: 'uuid', nullable: true }),
     __metadata("design:type", Object)
 ], QuotationPayloadDto.prototype, "sqApprovedBy", void 0);
-__decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true, format: 'date-time' }),
-    __metadata("design:type", Object)
-], QuotationPayloadDto.prototype, "sqCancelledOn", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ format: 'uuid', nullable: true }),
     __metadata("design:type", Object)

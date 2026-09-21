@@ -236,13 +236,9 @@ export declare class BillPayloadDto {
     sbDiscAlterBase: boolean | null;
     sbRoundOffStep: number;
     sbStatus: string;
-    sbPostedOn: string | null;
     sbPostedVoucherId: string | null;
     sbApprovedOn: string | null;
     sbApprovedBy: string | null;
-    sbCancelledOn: string | null;
-    sbCancelledBy: string | null;
-    sbCancelReason: string | null;
     sbVersionNo: number;
     sbPrintCount: number;
     sbIsDeleted: boolean;

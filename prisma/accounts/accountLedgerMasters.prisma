@@ -188,6 +188,14 @@ model AccLedgerMaster {
   // ── Coupons and gift vouchers (20260921160000) ──────────────────────────
   coupons               LoyaltyCoupon[]           @relation("CouponPartyLedger")
 
+  // ── Sales documents (20260921200000) ────────────────────────────────────
+  taxCertificates       AccPartyTaxCertificate[]  @relation("PartyTaxCertificateParty")
+
+  // ── Temp credit (20260922000000) ────────────────────────────────────────
+  // The walk-in ledger carries a thousand bills; these rows say WHO took
+  // each small counter loan against it.
+  tempCredits           AccTempCredit[]           @relation("TempCreditParty")
+
   @@map("acc_ledger_master")
   @@schema("accounts")
 }

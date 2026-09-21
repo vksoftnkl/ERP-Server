@@ -456,9 +456,6 @@ export class SaveBillDto {
   })
   @NullableStringStrict(20)
   sbStatus?: string | null;
-  @ApiPropertyOptional({ type: 'string', format: 'date-time', nullable: true })
-  @NullableDateString()
-  sbPostedOn?: string | null;
   @ApiPropertyOptional({
     format: 'uuid',
     nullable: true,
@@ -472,14 +469,13 @@ export class SaveBillDto {
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   @NullableUuid()
   sbApprovedBy?: string | null;
-  @ApiPropertyOptional({ type: 'string', format: 'date-time', nullable: true })
-  @NullableDateString()
-  sbCancelledOn?: string | null;
-  @ApiPropertyOptional({ format: 'uuid', nullable: true })
-  @NullableUuid()
-  sbCancelledBy?: string | null;
   @ApiPropertyOptional({ maxLength: 250, nullable: true })
   @NullableStringStrict(250)
+  /// TRANSIENT. 20260921220000 dropped sale_bill.sb_cancel_reason: the
+  /// reason is recorded on the public.txn_status_log row for the step and
+  /// on the cancelled voucher, not on the bill header. Still accepted here
+  /// because it is what the operator types; it is simply not persisted to
+  /// sale_bill any more.
   sbCancelReason?: string | null;
   @ApiPropertyOptional()
   @OptionalInteger()

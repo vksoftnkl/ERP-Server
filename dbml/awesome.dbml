@@ -131,6 +131,7 @@ Table acc_bill_balance {
   adjustments acc_bill_adjustment [not null]
   againstAdjustments acc_bill_adjustment [not null]
   voucherLines acc_vouchers [not null]
+  tempCredits acc_temp_credit [not null]
 
   indexes {
     (ablId, ablAccYear) [pk]
@@ -339,6 +340,8 @@ Table acc_ledger_master {
   supplier suppliers
   loyaltyMembers loyalty_member [not null]
   coupons loyalty_coupon [not null]
+  taxCertificates acc_party_tax_certificate [not null]
+  tempCredits acc_temp_credit [not null]
 
   indexes {
     (ledCompanyId, ledName) [unique]
@@ -452,6 +455,39 @@ difference between them — were returned to the caller and then lost.
 Deliberately NOT partitioned by accounting year: a run is keyed by the two
 years it spans rather than living inside either, and it grows by a handful
 of rows a year. Added by migration 20260915090000 (DECISION 11).'
+}
+
+Table acc_party_tax_certificate {
+  ptcId String [pk]
+  ptcCompanyId String [not null]
+  ptcPartyId String [not null, note: 'accounts.acc_ledger_master — the accounting identity of the party.']
+  ptcKind String [not null, note: 'PAN | FORM60 | LDC_197 | NO_DEDUCTION_206C | LUT | COMPOSITION | TAN']
+  ptcNumber String
+  ptcRatePerc Decimal [note: 'For an LDC: the lower rate certified.']
+  ptcLimitAmount Decimal [note: 'For an LDC: the certified ceiling.']
+  ptcIssuedOn DateTime
+  ptcValidFrom DateTime [not null]
+  ptcValidTo DateTime
+  ptcVerifiedOn DateTime
+  ptcVerifiedBy String
+  ptcFileRef String
+  ptcRemarks String
+  ptcIsActive Boolean [not null, default: true]
+  ptcIsDeleted Boolean [not null, default: false]
+  ptcSyncDate DateTime
+  ptcCreatedOn DateTime [default: `now()`, not null]
+  ptcCreatedBy String
+  ptcModifiedOn DateTime
+  ptcModifiedBy String
+  party acc_ledger_master [not null]
+  company companys [not null]
+
+  Note: 'The party\'s paper: what a party has shown us that changes a rate or a
+refusal. One row per certificate, windowed by validity.
+
+Read by the TDS/TCS rate resolver and by the PAN / Form-60 guard on a cash
+sale above the 269ST limit. LDC_197 is the one that carries numbers of its
+own: a lower rate certified, and a ceiling up to which it applies.'
 }
 
 Table acc_pdc_register {
@@ -695,6 +731,86 @@ and a non-company deductee under different codes, and
 no equivalent, which is why it is here and not on both.'
 }
 
+Table acc_temp_credit {
+  atcId String [not null]
+  atcCompanyId String [not null]
+  atcBranchId String [not null]
+  atcTenantId String
+  atcAccYear String [not null]
+  atcPartyId String [not null, note: 'The ledger the sales screen chose — the walk-in one, usually, which is
+exactly why this table has to exist.']
+  atcSrcDocType String [not null, default: 'SALE_BILL']
+  atcSrcDocId String [not null]
+  atcBillRefno String
+  atcBillDate DateTime [not null]
+  atcBillAmount Decimal [not null, default: 0]
+  atcAblId String [not null, note: 'The bill\'s AccBillBalance row: where the outstanding actually lives.']
+  atcAblAccYear String [not null]
+  atcTenderId String [note: 'The TEMP_CR AccTenderDetail row (tender type 8).']
+  atcTenderAccYear String
+  atcName String [not null]
+  atcMobile String [not null, note: 'How the counter finds them again (ix_atc_mobile). NOT NULL and
+shape-checked: a loan to somebody you cannot ring is not a loan.']
+  atcPlace String
+  atcAddr String
+  atcIdRef String [note: 'Any id shown at the counter. Optional.']
+  atcDays Int [not null, default: 0]
+  atcDueDate DateTime [not null]
+  atcCreditAmount Decimal [not null, note: 'What was lent. Set once, when the tender is taken, and guarded.']
+  atcBalanceAmount Decimal [not null, note: 'A MAINTAINED copy of AccBillBalance.ablPendingAmount — itself a GENERATED
+column — refreshed by BillBalanceRecomputeService whenever the balance row
+moves: a receipt allocation, a write-off, a credit-note set-off. Never
+written by hand.
+
+It carries no non-negativity guard: a receipt raised on another device may
+move the balance before this row syncs, so an over-draw is RECORDED and
+found by ix_atc_overdrawn rather than refused.']
+  atcStatus String [not null, default: 'OPEN', note: 'OPEN | PARTIAL | SETTLED | WRITTEN_OFF | CANCELLED. A cancelled bill sets
+CANCELLED and KEEPS the row — a reversal, never a delete.']
+  atcSettledOn DateTime
+  atcLastReceiptId String
+  atcPromiseDate DateTime [note: 'Re-promised on a follow-up call.']
+  atcFollowupOn DateTime
+  atcFollowupBy String
+  atcReminderSentOn DateTime
+  atcRemarks String
+  atcUserId String
+  atcCounterId String
+  atcSessionId String
+  atcIsDeleted Boolean [not null, default: false]
+  atcSyncDate DateTime
+  atcCreatedOn DateTime [default: `now()`, not null]
+  atcCreatedBy String
+  atcModifiedOn DateTime
+  atcModifiedBy String
+  party acc_ledger_master [not null]
+  bill sale_bill [not null]
+  billBalance acc_bill_balance [not null]
+  tender acc_tender_detail
+
+  indexes {
+    (atcId, atcAccYear) [pk]
+  }
+
+  Note: 'TEMP CREDIT — a small loan at the counter to somebody who is NOT a credit
+party.
+
+A walk-in takes goods and pays part now, the rest "in a few days". The bill
+is raised on the party the sales screen chose — the walk-in ledger, usually
+— and the unpaid part is a TEMP_CR tender (acc_tender_types id 8). Like
+CREDIT, that tender writes NO leg and leaves the bill\'s AccBillBalance row
+OPEN for the amount.
+
+So the OUTSTANDING is already where every receipt looks. What the ledger
+cannot tell you is WHO: the walk-in ledger has a thousand bills against it.
+THIS TABLE IS THE WHO — name, mobile, place, promise — one row per TEMP_CR
+tender, riding on the bill\'s balance row.
+
+LIST-partitioned by atcAccYear, which fk_atc_bill also uses as the BILL\'s
+year: a temp credit belongs to the year of the bill that created it, so the
+two cannot diverge.'
+}
+
 Table acc_tender_detail {
   tdId String [not null]
   tdCompanyId String [not null]
@@ -758,6 +874,20 @@ Table acc_tender_detail {
   billAdjustments acc_bill_adjustment [not null]
   loyaltyLedgerRows loyalty_ledger [not null]
   couponTxns loyalty_coupon_txn [not null]
+  tempCredits acc_temp_credit [not null]
+  tdIsVoided Boolean [not null, default: false, note: 'This tender did NOT happen — the UPI failed, the card was declined. The
+row STAYS so a till review can see it: tdIsDeleted would say "keyed
+wrong" when the truth is "payment failed", and the difference is exactly
+what is worth reviewing. Every till and day-book report filters
+NOT tdIsVoided; audit reads both halves.']
+  tdVoidReason String [note: 'UPI_FAILED | CARD_DECLINED | CHEQUE_REFUSED | KEYED_WRONG |
+CUSTOMER_CHANGED | OTHER. ck_td_void_pair: a voided row must say WHEN
+and WHY, a live row must say neither.']
+  tdVoidedOn DateTime
+  tdVoidedBy String
+  tdReplacesId String [note: 'On the REPLACEMENT row: the tdId it stands in for. Gives the pair
+without a join through the voucher. No FK — the pair may span
+partitions and the replacement is written before anything validates it.']
 
   indexes {
     (tdId, tdAccYear) [pk]
@@ -987,7 +1117,10 @@ Table acc_voucher_doc_einvoice {
   gdeSignedInvoice String
   gdeSignedQrcode String
   gdeCancelReason String
-  gdeCanceledOn DateTime
+  gdeCancelledOn DateTime [note: 'TWO l\'s, as of 20260922020000. The deployed table used to spell it
+with one while every other table in this schema used two; a rename
+here is also a DATA change in gst_provider_field_map, which stores
+this name as a target column.']
   gdeLastErrorCode String
   gdeLastMessage String
   gdeGccId String [note: 'public.gst_company_credential that generated this IRN. A cancellation
@@ -1010,8 +1143,15 @@ notice. Drives the ix_gde_retry worklist.']
   gdeSyncDate DateTime
   gdeCreatedOn DateTime [default: `now()`, not null]
   gdeCreatedBy String
-  gdeUpdatedOn DateTime
-  gdeUpdatedBy String
+  gdeModifiedOn DateTime
+  gdeModifiedBy String
+  gdeTenantId String
+  gdeAttemptCount Int [not null, default: 0, note: 'How many times the IRP has been asked for this IRN, and when last.']
+  gdeLastAttemptOn DateTime
+  gdeRequestPayload Json [note: 'Exactly what was sent to the IRP, and exactly what it said back. Once
+the document has been amended these two are the ONLY answer to "what
+did we declare on that date".']
+  gdeResponsePayload Json
   docRegister acc_voucher_doc_register [not null]
 }
 
@@ -1027,10 +1167,15 @@ Table acc_voucher_doc_ewaybill {
   gdwGeneratedOn DateTime
   gdwValidUpto DateTime
   gdwCancelReason String
-  gdwCanceledOn DateTime
+  gdwCancelledOn DateTime [note: 'TWO l\'s, as of 20260922020000. The deployed table used to spell it
+with one while every other table in this schema used two; a rename
+here is also a DATA change in gst_provider_field_map, which stores
+this name as a target column.']
   gdwVehicleNo String
   gdwTransportMode GdwTransportMode
-  gdwTransporterId String
+  gdwTransporterId String [note: 'The PORTAL\'s transporterId, which IS a 15-character GSTIN — not our
+TransporterMaster uuid. The document\'s transporter uuid maps to its
+GSTIN, and THAT is what lands here.']
   gdwTransporterName String
   gdwDistanceKm Int
   gdwDocNo String
@@ -1055,9 +1200,22 @@ derivable from the number.']
   gdwSyncDate DateTime
   gdwCreatedOn DateTime [default: `now()`, not null]
   gdwCreatedBy String
-  gdwUpdatedOn DateTime
-  gdwUpdatedBy String
+  gdwModifiedOn DateTime
+  gdwModifiedBy String
+  gdwTenantId String
+  gdwAttemptCount Int [not null, default: 0]
+  gdwLastAttemptOn DateTime
+  gdwRequestPayload Json
+  gdwResponsePayload Json
+  gdwTransportDocNo String [note: 'Part-B transDocNo / transDocDate — the LR or consignment note, sent to
+the portal on every vehicle update. What was DECLARED, so it is not
+re-derived from a document that may since have been amended.']
+  gdwTransportDocDate DateTime
+  gdwVehicleId String [note: 'The vehicle as OUR master knows it, beside gdwVehicleNo which is the
+plate exactly as the portal received it.']
+  gdwExtendedUpto DateTime [note: 'An e-way bill may be extended; the portal returns a new validity.']
   docRegister acc_voucher_doc_register [not null]
+  vehicle vehicle_master
 }
 
 Table acc_voucher_doc_register {
@@ -1106,24 +1264,6 @@ Table acc_voucher_doc_register {
   gdrPartyGstType String
   gdrPartyGstin String
   gdrPartyEcomGstin String
-  gdrShipName String
-  gdrShipAddr1 String
-  gdrShipAddr2 String
-  gdrShipAddr3 String
-  gdrShipLocation String
-  gdrShipPin String
-  gdrShipStateCode String
-  gdrShipStateName String
-  gdrShipGstin String
-  gdrDispatchName String
-  gdrDispatchAddr1 String
-  gdrDispatchAddr2 String
-  gdrDispatchAddr3 String
-  gdrDispatchLocation String
-  gdrDispatchPin String
-  gdrDispatchStateCode String
-  gdrDispatchStateName String
-  gdrDispatchGstin String
   gdrGrossValue Decimal [not null, default: 0]
   gdrDiscountValue Decimal [not null, default: 0]
   gdrTaxableValue Decimal [not null, default: 0]
@@ -1138,6 +1278,9 @@ Table acc_voucher_doc_register {
   gdrBillValue Decimal [not null, default: 0]
   gdrRemarks String
   gdrIsActive Boolean [not null, default: true]
+  gdrIgstOnIntra Boolean [not null, default: false, note: 'IGST charged on an INTRA-state supply: an SEZ unit in the same state,
+and the s.10(1)(b) bill-to/ship-to cases. The one TranDtls flag the
+register lacked.']
   gdrIsDeleted Boolean [not null, default: false]
   gdrSyncDate DateTime
   gdrCreatedOn DateTime [default: `now()`, not null]
@@ -1164,7 +1307,9 @@ Table acc_voucher_header {
   avhVoucherNo BigInt
   avhVoucherSlno BigInt
   avhVoucherRefno String
-  avhVoucherDate DateTime [not null]
+  avhVoucherDate DateTime [not null, note: 'A DATE, not a timestamptz. Stored with a zone, 2026-04-01 became
+2026-03-31T18:30Z and landed in the wrong day of every date-bounded
+report — and, on the first day of a financial year, the wrong YEAR.']
   avhSrcModule String
   avhSrcDocType String
   avhSrcDocId String
@@ -1259,7 +1404,9 @@ Table acc_vouchers {
   avVoucherTypeId Int [not null]
   avVoucherNo BigInt [not null]
   avRowNo Int [not null]
-  avVoucherDate DateTime [not null]
+  avVoucherDate DateTime [not null, note: 'A DATE, not a timestamptz. Stored with a zone, 2026-04-01 became
+2026-03-31T18:30Z and landed in the wrong day of every date-bounded
+report — and, on the first day of a financial year, the wrong YEAR.']
   avVoucherRefno String
   avDocDate DateTime
   avDocRefno String
@@ -1591,6 +1738,7 @@ Table device_master {
   loyaltyLedgerRows loyalty_ledger [not null]
   loyaltyGiftRedeems loyalty_gift_redeem [not null]
   couponTxns loyalty_coupon_txn [not null]
+  promotionUsages promotion_usage [not null]
 }
 
 Table form_section {
@@ -1770,6 +1918,8 @@ Table state_codes {
   saleBills sale_bill [not null]
   saleOrderPosStates sale_order [not null]
   saleOrderShipStates sale_order [not null]
+  saleReturnsPos sale_return [not null]
+  saleDcsPos sale_dc [not null]
 }
 
 Table stock_adj_reasons {
@@ -1888,6 +2038,11 @@ Table godown_locations {
   stockValuationSnaps stock_valuation_snap [not null]
   stockReorderPolicies stock_reorder_policy [not null]
   loyaltyGiftItems loyalty_gift_redeem_item [not null]
+  saleReturnItems sale_return_item [not null]
+  saleDcItems sale_dc_item [not null]
+  saleDcReturnItems sale_dc_return_item [not null]
+  transportBandsFrom txn_transport_detail [not null]
+  transportBandsTo txn_transport_detail [not null]
 
   indexes {
     (gdlBranchId, gdlParentId, gdlName) [unique]
@@ -2162,6 +2317,9 @@ changes nothing until this item is explicitly re-saved.']
   stockForecasts stock_forecast [not null]
   stockMovementClasses stock_movement_class [not null]
   loyaltyGiftItems loyalty_gift_redeem_item [not null]
+  saleReturnItems sale_return_item [not null]
+  saleDcItems sale_dc_item [not null]
+  saleDcReturnItems sale_dc_return_item [not null]
 }
 
 Table item_price_levels {
@@ -2515,6 +2673,9 @@ Table item_unit_conversion {
   stockReorderPolicyUom stock_reorder_policy [not null]
   stockForecastBaseUom stock_forecast [not null]
   loyaltyGiftItems loyalty_gift_redeem_item [not null]
+  saleReturnItems sale_return_item [not null]
+  saleDcItems sale_dc_item [not null]
+  saleDcReturnItems sale_dc_return_item [not null]
 }
 
 Table item_unit_master {
@@ -2548,6 +2709,8 @@ Table item_unit_master {
   iucUnits item_unit_conversion [not null]
   iucBaseUnits item_unit_conversion [not null]
   itemMasters item_master [not null]
+  unitUqc String [note: 'The three-letter GST Unit Quantity Code, for the e-invoice, the e-way
+bill and the GSTR-1 HSN summary. The table had a Tally name and no UQC.']
 }
 
 Table tax_rate_master {
@@ -2810,6 +2973,7 @@ Table branch_master {
   couponBatches loyalty_coupon_batch [not null]
   couponsIssued loyalty_coupon [not null]
   couponTxns loyalty_coupon_txn [not null]
+  promotionUsages promotion_usage [not null]
 }
 
 Table charge_master {
@@ -2886,6 +3050,10 @@ Table companys {
   compTcsApplicable Boolean [not null, default: false]
   compSmsApplicable Boolean [not null, default: false]
   compEinvoiceApplicable Boolean [not null, default: false]
+  compAatoClass String [not null, default: 'LE_5CR', note: 'LE_1_5CR | LE_5CR | LE_10CR | GT_10CR. Set by the accountant each April
+from CompanyAato. It picks the HSN digits, the IRN reporting window and
+the e-invoice applicability rows in StatutoryLimit.']
+  compDcPurposes String[] [not null, note: 'Which delivery-challan purposes this company uses.']
   compEwayApplicable Boolean [not null, default: false]
   compEwayDate DateTime
   compEwayInterLimit Decimal
@@ -2978,6 +3146,37 @@ Table companys {
   couponBatches loyalty_coupon_batch [not null]
   coupons loyalty_coupon [not null]
   couponTxns loyalty_coupon_txn [not null]
+  promotionUsages promotion_usage [not null]
+  aatoYears company_aato [not null]
+  partyTaxCertificates acc_party_tax_certificate [not null]
+}
+
+Table company_aato {
+  caaId String [pk]
+  caaCompanyId String [not null]
+  caaFinYear String [not null, note: 'The year the turnover BELONGS to, not the year it was computed in.']
+  caaAatoAmount Decimal [not null, default: 0]
+  caaSource String [not null, default: 'COMPUTED', note: 'COMPUTED | DECLARED']
+  caaDeclaredBy String
+  caaDeclaredOn DateTime
+  caaRemarks String
+  caaIsDeleted Boolean [not null, default: false]
+  caaCreatedOn DateTime [default: `now()`, not null]
+  caaCreatedBy String
+  caaModifiedOn DateTime
+  caaModifiedBy String
+  company companys [not null]
+
+  indexes {
+    (caaCompanyId, caaFinYear) [unique]
+  }
+
+  Note: 'Aggregate annual turnover per company per financial year.
+
+The figure e-invoice applicability (₹5 crore since 2023-08-01) and the AATO
+class are read from. Kept by the year-end job and editable by the
+accountant — a figure somebody SIGNS, not a running total, which is why
+caaSource distinguishes COMPUTED from DECLARED.'
 }
 
 Table company_group_master {
@@ -3511,8 +3710,10 @@ gfmTargetColumn is what closes the loop to the ERP. It names the actual
 destination — gde_irn, gde_ack_no, gdw_no, gdw_valid_upto — so the write
 back into AccVoucherDocEinvoice / AccVoucherDocEwaybill is data-driven
 too, not a switch statement that has to be edited per provider. It is a
-physical column name, spelled exactly as the table spells it (gde_canceled_on
-carries one \'l\').'
+physical column name, spelled exactly as the table spells it. A schema
+rename is therefore a DATA change here too — see
+20260922020000_reconcile_doc_einvoice_ewaybill, which renamed
+gde_canceled_on to gde_cancelled_on and repointed the seeded rows.'
 }
 
 Table gst_provider_service {
@@ -4246,9 +4447,78 @@ It holds no business data — one row per seed file, recording what ran, the
 checksum it ran with, how long it took and how it ended.'
 }
 
+Table statutory_limits {
+  stlId String [pk]
+  stlCompanyId String [note: 'NULL = the shipped pack, applying to every company. A company that
+differs adds its OWN row; it never edits a pack row.']
+  stlCode String [not null, note: 'The application\'s handle: CASH_TXN_LIMIT_269ST, EWAY_VALUE_LIMIT, …']
+  stlLaw String [not null, note: 'GST | IT | COMPANIES | OTHER']
+  stlSection String [note: '\'269ST\', \'206C(1H)\', \'R138(1)\', …']
+  stlLabel String [not null]
+  stlValueType String [not null, note: 'AMOUNT | PERCENT | DAYS | HOURS | KM | BOOL | TEXT']
+  stlValue Decimal
+  stlValueText String
+  stlAppliesTo String [not null, default: 'ALL', note: 'ALL | INTRA_STATE | INTER_STATE | B2B | B2C | a two-character state code.
+A specific value outranks \'ALL\' in the resolver.']
+  stlAatoClass String [note: 'NULL = any turnover class; else LE_1_5CR | LE_5CR | LE_10CR | GT_10CR.']
+  stlEffectiveFrom DateTime [not null]
+  stlEffectiveTo DateTime [note: 'NULL = still in force. A CLOSED row is kept on purpose so a document
+dated inside the old window still resolves.']
+  stlEnforce String [not null, default: 'WARN', note: 'WARN | REFUSE | INFO — what the guard does when the figure is exceeded.']
+  stlSourceRef String [note: 'The notification or Finance Act citation. Shown to the operator so the
+refusal names its authority.']
+  stlRemarks String
+  stlIsActive Boolean [not null, default: true]
+  stlIsDeleted Boolean [not null, default: false]
+  stlSyncDate DateTime
+  stlCreatedOn DateTime [default: `now()`, not null]
+  stlCreatedBy String
+  stlModifiedOn DateTime
+  stlModifiedBy String
+
+  Note: 'Every rupee figure, percentage, day count and hour count that comes from an
+Act — per company, with an effective window.
+
+Nothing in code may hard-code one of these, and nothing may read this table
+WITHOUT A DATE. That is the entire reason it exists: a bill dated before a
+threshold changed must still resolve to the threshold that was in force
+when it was raised.
+
+THE RESOLVER IS NOT A DATABASE FUNCTION. StatutoryService.limit() in NestJS
+owns it. It is a read, so it is not dangerous the way a trigger is — but it
+is the one piece of law the OFFLINE TILL must also apply, by itself, with
+no server in reach: the cash limit under 269ST, the PAN / Form 60
+threshold, the e-way bill floor. The resolution order therefore has to
+exist in TypeScript no matter what, and a second copy in plpgsql would be
+two implementations of one statute, drifting, with the server silently
+overruling what the counter told the customer.
+
+limit(companyId, code, onDate, appliesTo = \'ALL\', aatoClass = null)
+
+FILTER  stl_code = code
+AND NOT stl_is_deleted AND stl_is_active
+AND (stl_company_id IS NULL OR stl_company_id = companyId)
+AND (stl_applies_to = \'ALL\' OR stl_applies_to = appliesTo)
+AND (stl_aato_class IS NULL OR stl_aato_class = aatoClass)
+AND stl_effective_from <= onDate
+AND (stl_effective_to IS NULL OR stl_effective_to >= onDate)
+
+ORDER BY — this precedence IS the rule, so keep it exactly:
+1  stl_company_id IS NOT NULL  DESC   -- a company override beats the pack
+2  stl_applies_to <> \'ALL\'     DESC   -- a specific applies_to beats ALL
+3  stl_aato_class IS NOT NULL  DESC   -- a turnover-class row beats any-class
+4  stl_effective_from          DESC   -- the latest in force on that date
+LIMIT 1
+
+No row means NOT APPLICABLE, and a guard must say so out loud rather than
+defaulting to a number. Cache per REQUEST, never per process — the answer
+changes with the DOCUMENT\'s date, not with today\'s.'
+}
+
 Table txn_charge_detail {
   cdId String [not null]
-  cdDocType String [not null]
+  cdDocType String [not null, note: 'Widened from varchar(12) by 20260921220000: \'DELIVERY_CHALLAN\' does
+not fit in twelve characters.']
   cdDocId String [not null]
   cdSlno Int
   cdCompId String [not null]
@@ -4287,6 +4557,10 @@ Table txn_charge_detail {
   cdNetAmt Decimal
   cdRemarks String
   cdIsActive Boolean [not null, default: true]
+  cdSrcCdId String
+  cdSrcAccYear String
+  cdCarryBasis String [note: 'PRORATA | FULL | MANUAL | NONE']
+  cdCarriedAmt Decimal [not null, default: 0, note: 'On the SOURCE row: how much has been taken so far. A cache.']
   cdIsDeleted Boolean [not null, default: false]
   cdSyncDate DateTime
   cdCreatedOn DateTime [default: `now()`, not null]
@@ -4298,6 +4572,8 @@ Table txn_charge_detail {
   tax tax_rate_master
   company companys [not null]
   branch branch_master [not null]
+  sourceCharge txn_charge_detail
+  carriedCharges txn_charge_detail [not null]
 
   indexes {
     (cdId, cdAccYear) [pk]
@@ -4320,6 +4596,143 @@ year is opened, or every insert fails with "no partition of relation
 constraint on a partitioned table to contain the partition key, the primary
 key is the pair (cdId, cdAccYear): a row is addressed by both, never by the
 id alone.'
+}
+
+Table txn_transport_detail {
+  ttdId String [not null]
+  ttdCompanyId String [not null]
+  ttdBranchId String [not null]
+  ttdTenantId String
+  ttdAccYear String [not null]
+  ttdDocType String [not null, note: 'SALE_BILL | DELIVERY_CHALLAN | SALE_RETURN | DC_RETURN | STOCK_TRANSFER.
+Widened per module as each arrives — PURCHASE_BILL and PURCHASE_RETURN
+join when those are built.']
+  ttdDocId String [not null, note: 'Polymorphic: NO relation field and no FK, because a child cannot key four
+different partitioned parents. The service is what stops a band outliving
+its document — the same price TransactionChargeDetail and TxnStatusLog
+already pay.']
+  ttdDocRefno String [note: 'Snapshot, so a row reads alone.']
+  ttdDirection String [not null, note: 'OUTWARD | INWARD — what FROM and TO mean on this row.']
+  ttdFromGodownId String [note: 'Set when the FROM side is ours.']
+  ttdFromBranchId String
+  ttdFromAddrId String [note: 'A listed ship address, when it is one. No FK: the address masters are
+company-scoped and a band must survive one being retired.']
+  ttdFromName String
+  ttdFromAddr String
+  ttdFromPlace String
+  ttdFromPin String
+  ttdFromPhone String
+  ttdFromStcd String
+  ttdFromGstin String
+  ttdToGodownId String [note: 'Set when the TO side is ours.']
+  ttdToBranchId String
+  ttdToAddrId String
+  ttdToName String
+  ttdToAddr String
+  ttdToPlace String
+  ttdToPin String
+  ttdToPhone String
+  ttdToStcd String
+  ttdToGstin String
+  ttdTransportMode String [note: 'ROAD | RAIL | AIR | SHIP']
+  ttdTransporterId String
+  ttdTransporterName String
+  ttdTransporterGstin String [note: 'The PORTAL\'s transporterId: a 15-character GSTIN or enrolment id, NOT the
+TransporterMaster uuid in ttdTransporterId.']
+  ttdLrNo String [note: 'e-way Part-B transDocNo / transDocDate.']
+  ttdLrDate DateTime
+  ttdDistanceKm Int
+  ttdRemarks String
+  ttdIsDeleted Boolean [not null, default: false]
+  ttdSyncDate DateTime
+  ttdCreatedOn DateTime [default: `now()`, not null]
+  ttdCreatedBy String [not null]
+  ttdModifiedOn DateTime
+  ttdModifiedBy String
+  transporter transporter_master
+  fromGodown godown_locations
+  toGodown godown_locations
+
+  indexes {
+    (ttdId, ttdAccYear) [pk]
+  }
+
+  Note: 'ONE transport band for every document that moves goods.
+
+The band used to be 22 columns repeated on sale_bill, sale_dc, sale_return
+and sale_dc_return — 88 definitions of the same 22 facts, which had ALREADY
+drifted before anyone noticed: vehicle_id was missing from the DC return and
+supervisor_id existed only on the bill. Every future e-way field would have
+been four ALTERs, and the fourth is the one that gets forgotten.
+
+NOT for storage. That argument was measured and does not hold: 22 NULL
+columns cost about 8 bytes a row, because PostgreSQL keeps NULLs as one bit
+each in a row bitmap. One definition instead of four is the whole reason.
+
+Same shape as TransactionChargeDetail and TxnStatusLog — a polymorphic child
+keyed by (docType, docId, accYear), LIST-partitioned on the year.
+
+── FROM and TO are POSITIONAL; ttdDirection says what they mean ─────────
+
+OUTWARD (sale bill, delivery challan)
+FROM = our godown / branch      TO = the customer\'s address
+INWARD  (sale return, DC return)
+FROM = the customer\'s address   TO = our godown / branch
+
+The doc register then maps straight across, with no per-document branch:
+gdr_dispatch_*  <-  ttd_from_*
+gdr_ship_*      <-  ttd_to_*
+
+Whichever side is OURS fills the godown / branch columns; whichever side is
+the party\'s fills the address block. Both sides carry both, so a
+branch-to-branch move needs no third shape.
+
+The VEHICLE and the CREW are deliberately NOT here — they stay on the
+document, because they exist whenever goods move even with no consignment
+at all: a POS home delivery has a driver and a van and no transporter, no
+LR, no distance, no e-way bill.'
+}
+
+Table transporter_master {
+  trnId String [pk]
+  trnCompanyId String [note: 'NULL = every company.']
+  trnCode String
+  trnName String [not null]
+  trnGstin String [note: 'GSTIN or 15-char enrolment id (TRANSIN) — ck_trn_gstin_len enforces the
+length either way.']
+  trnIsEnrolmentId Boolean [not null, default: false]
+  trnMode String [not null, default: 'ROAD', note: 'ROAD | RAIL | AIR | SHIP']
+  trnLedgerId String [note: 'Freight payable ledger, optional. No FK: a transporter may be recorded
+long before anybody decides which ledger their freight posts to.']
+  trnPhone String
+  trnEmail String
+  trnAddr String
+  trnPlace String
+  trnPin String
+  trnStateCode String
+  trnRemarks String
+  trnIsActive Boolean [not null, default: true]
+  trnIsDeleted Boolean [not null, default: false]
+  trnSyncDate DateTime
+  trnCreatedOn DateTime [default: `now()`, not null]
+  trnCreatedBy String
+  trnModifiedOn DateTime
+  trnModifiedBy String
+  vehicles vehicle_master [not null]
+  transportBands txn_transport_detail [not null]
+
+  Note: 'The transporter on an e-way bill.
+
+sale_bill.sb_vehicle_id has existed in this database with NO referenced
+table — and so have sb_driver_id, sb_supervisor_id and sb_loadman_id. This
+master and VehicleMaster are what those columns should have pointed at.
+
+trnGstin holds either a GSTIN or a 15-character transporter ENROLMENT id
+(TRANSIN), which is why trnIsEnrolmentId exists: the two are the same
+length and the portal treats them differently.
+
+NULL trnCompanyId = shared by every company, the house convention for a
+master that is not company-specific.'
 }
 
 Table txn_hold {
@@ -4486,6 +4899,7 @@ Table user_master {
   couponsCancelled loyalty_coupon [not null]
   couponTxns loyalty_coupon_txn [not null]
   couponTxnsApproved loyalty_coupon_txn [not null]
+  promotionUsages promotion_usage [not null]
 }
 
 Table user_menus {
@@ -4498,6 +4912,14 @@ Table user_menus {
   umCanDelete Boolean [not null, default: false]
   umCanPrint Boolean [not null, default: false]
   umCanExport Boolean [not null, default: false]
+  umCanPost Boolean [not null, default: false]
+  umCanCancel Boolean [not null, default: false]
+  umCanAmend Boolean [not null, default: false]
+  umCanOverride Boolean [not null, default: false, note: 'Passes a WARN-level guard: discount cap, credit limit, back-date, rate
+below minimum.']
+  umCanRetender Boolean [not null, default: false, note: 'May change how a POSTED bill was paid. Separate from umCanAmend: the
+sale is not being edited, only the tender — but it moves money between
+ledgers, so it is grantable on its own.']
   umVisibility Boolean [not null, default: true]
   umIsFavourite Boolean [not null, default: false]
   umIsPinned Boolean [not null, default: false]
@@ -4514,6 +4936,40 @@ Table user_menus {
   indexes {
     (umUserId, umMenuId) [unique]
   }
+}
+
+Table vehicle_master {
+  vehId String [pk]
+  vehCompanyId String [note: 'NULL = every company.']
+  vehBranchId String
+  vehVehicleNo String [not null, note: 'As printed on the e-way bill: upper case, no spaces (ck_veh_no).']
+  vehType String [not null, default: 'REGULAR', note: 'REGULAR | ODC (over-dimensional cargo — a different validity ladder,
+20 km per day instead of 200).']
+  vehDescription String
+  vehCapacityKg Decimal
+  vehIsOwn Boolean [not null, default: true]
+  vehTransporterId String
+  vehDriverId String
+  vehIsActive Boolean [not null, default: true]
+  vehIsDeleted Boolean [not null, default: false]
+  vehSyncDate DateTime
+  vehCreatedOn DateTime [default: `now()`, not null]
+  vehCreatedBy String
+  vehModifiedOn DateTime
+  vehModifiedBy String
+  transporter transporter_master
+  driver employee_master
+  saleReturns sale_return [not null]
+  saleDcs sale_dc [not null]
+  saleDcReturns sale_dc_return [not null]
+  saleBills sale_bill [not null]
+  ewayBills acc_voucher_doc_ewaybill [not null]
+
+  Note: 'Vehicle numbers, validated once rather than typed on every document.
+
+ck_veh_no keeps the number in exactly the form the e-way bill portal
+stores it — upper case, no spaces — because a number that differs by a
+space is a number the portal will not match.'
 }
 
 Table suppliers {
@@ -4688,6 +5144,8 @@ Table customers {
   cusUnloadingCharge Boolean [not null, default: false]
   cusGstNo String
   cusPanNo String
+  cusForm60On DateTime [note: 'Form 60 stands in for a PAN on a cash sale over the rule 114B limit.']
+  cusPanVerifiedOn DateTime
   cusGstType String
   cusEcommerceGstin String
   cusTcsApplicable Boolean [not null, default: false]
@@ -4727,6 +5185,10 @@ Table customers {
   loyaltyGiftRedeems loyalty_gift_redeem [not null]
   coupons loyalty_coupon [not null]
   couponTxns loyalty_coupon_txn [not null]
+  promotionUsages promotion_usage [not null]
+  saleReturns sale_return [not null]
+  saleDcs sale_dc [not null]
+  saleDcReturns sale_dc_return [not null]
 }
 
 Table cust_groups {
@@ -4846,10 +5308,18 @@ Table employee_master {
   company companys
   designation employee_designations
   department employee_departments
-  saleQuotations sale_quotation [not null]
+  saleBillsDriven sale_bill [not null]
+  saleBillsSupervised sale_bill [not null]
   saleOrderAgents sale_order [not null]
   txnHolds txn_hold [not null]
   loyaltyGiftRedeems loyalty_gift_redeem [not null]
+  vehiclesDriven vehicle_master [not null]
+  saleReturnsDriven sale_return [not null]
+  saleReturnsSupervised sale_return [not null]
+  saleDcsDriven sale_dc [not null]
+  saleDcsSupervised sale_dc [not null]
+  saleDcReturnsDriven sale_dc_return [not null]
+  saleDcReturnsSupervised sale_dc_return [not null]
 }
 
 Table cust_item_rates {
@@ -4942,6 +5412,7 @@ comes back to life.']
   cancelledByUser user_master
   partyLedger acc_ledger_master
   txns loyalty_coupon_txn [not null]
+  promotionUsages promotion_usage [not null]
 
   Note: 'One ISSUED coupon.
 
@@ -5879,6 +6350,7 @@ Table promotion_scheme {
   parties promotion_scheme_party [not null]
   items promotion_scheme_item [not null]
   slabs promotion_scheme_slab [not null]
+  usages promotion_usage [not null]
 
   indexes {
     (prmId, prmBenefit) [unique]
@@ -6155,6 +6627,91 @@ ix_prs_scheme    (prm_id, benefit, exceeds) INCLUDE (...), partial
 ix_prs_free_item / ix_prs_free_unit, partial'
 }
 
+Table promotion_usage {
+  pruId String [not null]
+  pruAccYear String [not null, note: 'FY of the EVENT, and the partition key.']
+  pruCompId String [not null]
+  pruBranchId String
+  pruPrmId String [not null]
+  pruCustId String [note: 'NULL = walk-in / cash sale, which is also why the per-customer cap index
+is partial on this column: an anonymous sale has no cap to check.']
+  pruSchemeCode String
+  pruSchemeName String
+  pruBenefit String [note: 'Snapshot of promotion_scheme.prmBenefit: FREE_ITEM | DISC_PERC |
+DISC_AMT | DISC_PER_ITEM | FIXED_PRICE. ck_pru_benefit must cover every
+value that column can hold — prmBenefit itself carries no CHECK, so a
+new value added there needs one added here in the same migration.']
+  pruSrcModule String [not null, default: 'SALES']
+  pruSrcDocType String [not null, default: 'SALE_BILL']
+  pruSrcDocId String [not null]
+  pruSrcAccYear String [note: 'The SOURCE\'s FY, not this row\'s.']
+  pruSrcDocRefno String [note: 'Snapshot, so a campaign report prints the bill number without joining a
+partitioned table across every year the campaign ran.']
+  pruDocDate DateTime [not null]
+  pruBaseAmount Decimal [not null, default: 0, note: 'Value the benefit came off.']
+  pruBaseQty Decimal [not null, default: 0]
+  pruBenefitAmt Decimal [not null, default: 0, note: 'Rupees given away. POSITIVE on a normal row, NEGATIVE on a reversal
+(ck_pru_sign).']
+  pruFreeQty Decimal [not null, default: 0, note: 'Units given away, same sign rule.']
+  pruLineCount Int [not null, default: 0, note: 'Lines the scheme touched.']
+  pruCouponId String [note: 'The coupon presented, when the campaign was coupon-gated.']
+  pruIsReversal Boolean [not null, default: false]
+  pruReversalOfId String
+  pruReversalOfAccYear String
+  pruReversalReason String
+  pruUserId String
+  pruDeviceId String
+  pruRemarks String
+  pruIsActive Boolean [not null, default: true]
+  pruIsDeleted Boolean [not null, default: false]
+  pruSyncDate DateTime
+  pruCreatedOn DateTime [default: `now()`, not null]
+  pruCreatedBy String
+  pruModifiedOn DateTime
+  pruModifiedBy String
+  company companys [not null]
+  branch branch_master
+  scheme promotion_scheme [not null, note: 'Restrict, not Cascade: a campaign that has already given something away
+must not be deletable. Close it instead.']
+  customer customers
+  coupon loyalty_coupon
+  device device_master
+  user user_master
+  reversalOf promotion_usage
+  reversedBy promotion_usage [not null]
+
+  indexes {
+    (pruId, pruAccYear) [pk]
+  }
+
+  Note: 'What a promotion campaign actually GAVE AWAY — one row per (document,
+scheme, direction).
+
+The PromotionScheme masters say what a campaign PROMISES; nothing until now
+recorded what it DELIVERED. Without that, two questions have no answer, and
+both are asked at the till in the moment, before the benefit is applied:
+
+the CAP     "has this customer already used this campaign twice?"
+-> ix_pru_cust_scheme
+the BUDGET  "what has this campaign given away in total, everywhere?"
+-> ix_pru_scheme_total
+
+LIST-partitioned by pruAccYear, the year of the EVENT, like LoyaltyLedger
+and LoyaltyCouponTxn — hence the composite PK. Partitions
+(sales.promotion_usage_2026_2027) come from
+public.ensure_acc_year_partitions(\'YYYY-YYYY\'), which
+20260921180000_add_promotion_usage taught about this table.
+
+Scheme identity is SNAPSHOTTED (pruSchemeCode / _Name / _Benefit) so a
+campaign report does not change meaning when the scheme is renamed or
+retyped next season.
+
+A reversal is a row of the same shape with NEGATIVE amounts and
+pruIsReversal = true, naming the row it undoes — the AccBillAdjustment and
+LoyaltyLedger discipline, and what makes every running total a plain SUM
+with no CASE in it.'
+}
+
 Table sale_agents {
   saId String [pk]
   saCompanyId String [not null]
@@ -6245,6 +6802,27 @@ Table sale_bill {
   sbHasPromo Boolean [not null, default: false]
   sbHasComm Boolean [not null, default: false]
   sbHasLoyalty Boolean [not null, default: false]
+  sbBillMode String [not null, default: 'WHOLESALE', note: 'POS | WHOLESALE. The MODE owns the number series: POS draws from the
+device series, WHOLESALE from the branch MAIN series.']
+  sbUsrRefdate DateTime
+  sbHasDc Boolean [not null, default: false, note: 'How much of this bill came in under a challan. Stock and COGS for that
+part were posted AT THE DC; the bill posts them only for direct lines.']
+  sbDcTaxableAmt Decimal [not null, default: 0]
+  sbCogsAmt Decimal [not null, default: 0, note: 'What THIS bill posted as COGS.']
+  sbDeliveryStatus String [not null, default: 'NA', note: 'NA | PENDING | PACKED | DISPATCHED | DELIVERED | RETURNED. A CACHE —
+the events themselves are TxnStatusLog rows.']
+  sbDeliveredOn DateTime
+  sbCustPan String [note: 'The identity stamp on a cash sale over the rule 114B limit: what was
+shown at the counter, kept WITH the bill and never re-derived.']
+  sbForm60Ref String
+  sbTcsPerc Decimal [not null, default: 0, note: 'TCS infrastructure, rate 0 today — 206C(1H) was removed 2025-04-01.']
+  sbTcsAmt Decimal [not null, default: 0]
+  sbLoyaltyMemberId String [note: 'Loyalty caches; the detail is the LoyaltyLedger rows keyed by this bill.']
+  sbLoyaltyEarned Decimal [not null, default: 0]
+  sbLoyaltyRedeemed Decimal [not null, default: 0]
+  sbRevisionNo Int [not null, default: 1]
+  sbDocRegisterId String [note: 'The doc-register row this bill owns. Server-owned, like
+sbPostedVoucherId — the DTO never carries either.']
   sbLscId String
   sbLoyaltyEarnPoints Decimal [not null, default: 0]
   sbLoyaltyRedeemPoints Decimal [not null, default: 0]
@@ -6308,14 +6886,19 @@ Table sale_bill {
   sbLoadingCalcType String
   sbDiscAlterBase Boolean
   sbRoundOffStep Decimal [not null, default: 1]
-  sbStatus String [not null, default: 'DRAFT']
-  sbPostedOn DateTime
+  sbStatus String [not null, default: 'DRAFT', note: 'DRAFT | POSTED | CANCELLED (ck_sb_status).
+
+WHEN, WHO and WHY it changed are NOT here any more. TxnStatusLog holds
+every transition — changed-on, changed-by, the cancel reason, the
+from-status, the device and the session — one appended row per step.
+A second copy on the header meant the reason was written twice and the
+two could disagree, and an amendment overwrote the previous cancel
+instead of leaving a trail. It matters for the offline push too: two
+devices APPENDING cannot conflict the way two UPDATEing one header row
+can. sbPostedVoucherId stays because it is a RELATIONSHIP, not an event.']
   sbPostedVoucherId String
   sbApprovedOn DateTime
   sbApprovedBy String
-  sbCancelledOn DateTime
-  sbCancelledBy String
-  sbCancelReason String
   sbVersionNo Int [not null, default: 1]
   sbPrintCount Int [not null, default: 0]
   sbIsDeleted Boolean [not null, default: false]
@@ -6328,6 +6911,11 @@ Table sale_bill {
   customer customers
   posState state_codes
   priceLevel item_price_levels [not null]
+  returns sale_return [not null]
+  driver employee_master
+  supervisor employee_master
+  vehicle vehicle_master
+  tempCredits acc_temp_credit [not null]
 
   indexes {
     (sbId, sbAccYear) [pk]
@@ -6360,6 +6948,13 @@ Table sale_bill_item {
   sbiSizeUom String
   sbiGodownId String [not null]
   sbiStockId String
+  sbiLotId String [note: 'The stock engine keys on the LOT, not the legacy sbiStockId.']
+  sbiBucket String [not null, default: 'SALEABLE', note: 'SALEABLE | DAMAGED | QUARANTINE | EXPIRED | SAMPLE']
+  sbiSrcItemId String [note: 'The source LINE (soiId or sdiId). sbiSrcDocId is the HEADER, and
+sbiSrcDocLineNo is not a key across an amend.']
+  sbiCogsAmt Decimal [not null, default: 0, note: 'What this line posted as COGS — ZERO on a line that came via a DC,
+because the challan already posted it.']
+  sbiPromoUsageId String [note: 'Which promotion gave a free item, so the claw-back knows what to undo.']
   sbiBatchNo String
   sbiBatchDate DateTime
   sbiExpiryDate DateTime
@@ -6455,10 +7050,415 @@ Table sale_bill_item {
   tax tax_rate_master
   priceLevel item_price_levels [not null]
   itemUnitConversion item_unit_conversion [not null]
+  returnItems sale_return_item [not null]
+  lot stock_lot
 
   indexes {
     (sbiId, sbiAccYear) [pk]
   }
+}
+
+Table sale_dc {
+  sdcId String [not null]
+  sdcCompanyId String [not null]
+  sdcBranchId String [not null]
+  sdcTenantId String
+  sdcAccYear String [not null]
+  sdcSessionId String
+  sdcCounterId String [not null]
+  sdcDeviceType String
+  sdcDeviceId String
+  sdcDocType String [not null, default: 'DELIVERY_CHALLAN']
+  sdcPurpose String [not null, default: 'SUPPLY', note: 'SUPPLY | JOB_WORK | APPROVAL | EXHIBITION | OWN_USE | LINE_SALES | OTHER']
+  sdcDcSlno BigInt [not null]
+  sdcDcRefno String [not null]
+  sdcUsrRefno String
+  sdcUsrRefdate DateTime
+  sdcDcDate DateTime [not null]
+  sdcDcDatetime DateTime [default: `now()`, not null]
+  sdcPriceLevel Int [not null, default: 1]
+  sdcSrcDocType String
+  sdcSrcDocId String
+  sdcSrcDocAccYear String
+  sdcSrcDocRefno String
+  sdcSrcDocDate DateTime
+  sdcCustId String [not null]
+  sdcCustName String [not null]
+  sdcCustAddr String
+  sdcCustPlace String
+  sdcCustPin String
+  sdcCustPhone String
+  sdcCustGstin String
+  sdcCustGstType String
+  sdcCustStcd String
+  sdcPosStcd String
+  sdcStateName String
+  sdcDriverId String
+  sdcSupervisorId String
+  sdcLoadmanId String[] [not null]
+  sdcVehicleId String
+  sdcVehicleNo String
+  sdcUserId String [not null]
+  sdcSalesmanId String[] [not null, note: 'uuid[] — no FK on array elements; the service validates each id.']
+  sdcAgentId String
+  sdcTotItems Int [not null, default: 0]
+  sdcTotWeight Decimal [not null, default: 0]
+  sdcTotBags Decimal [not null, default: 0]
+  sdcGrossAmt Decimal [not null, default: 0]
+  sdcDiscAmt Decimal [not null, default: 0]
+  sdcTaxableAmt Decimal [not null, default: 0]
+  sdcCgstAmt Decimal [not null, default: 0]
+  sdcSgstAmt Decimal [not null, default: 0]
+  sdcIgstAmt Decimal [not null, default: 0]
+  sdcCessAmt Decimal [not null, default: 0]
+  sdcTaxAmt Decimal [not null, default: 0]
+  sdcOtherAmt Decimal [not null, default: 0]
+  sdcRoundOff Decimal [not null, default: 0]
+  sdcDcAmt Decimal [not null, default: 0]
+  sdcTotalCost Decimal [not null, default: 0, note: 'The COGS posted AT the challan, under perpetual costing.']
+  sdcBilledAmt Decimal [not null, default: 0]
+  sdcReturnedAmt Decimal [not null, default: 0]
+  sdcFulfilStatus String [not null, default: 'OPEN', note: 'OPEN | PARTIAL | BILLED | RETURNED | CLOSED']
+  sdcHasLoad Boolean [not null, default: false]
+  sdcHasUnload Boolean [not null, default: false]
+  sdcHasFreight Boolean [not null, default: false]
+  sdcHasPromo Boolean [not null, default: false]
+  sdcPackedId String[] [not null]
+  sdcItemDisc Decimal [not null, default: 0]
+  sdcSplDisc Decimal [not null, default: 0]
+  sdcSchDisc Decimal [not null, default: 0]
+  sdcFreightAmt Decimal [not null, default: 0]
+  sdcLoadAmt Decimal [not null, default: 0]
+  sdcUnloadAmt Decimal [not null, default: 0]
+  sdcFreightCalcType String
+  sdcLoadingCalcType String
+  sdcDiscAlterBase Boolean
+  sdcRoundOffStep Decimal [not null, default: 1]
+  sdcPaymentTerms String
+  sdcDeliveryTerms String
+  sdcRemarks String
+  sdcStatus String [not null, default: 'DRAFT', note: 'DRAFT | POSTED | CANCELLED. WHEN / WHO / WHY a status changed is NOT
+here: TxnStatusLog holds every transition, one row per step, appended
+and never updated — which is also the only shape that survives an
+offline push, because two devices appending cannot conflict the way two
+devices UPDATEing one header row can.']
+  sdcPostedVoucherId String [note: 'The COGS voucher. No FK: SERVER-owned and written long after an offline
+counter created this row.']
+  sdcRevisionNo Int [not null, default: 1]
+  sdcPrintCount Int [not null, default: 0]
+  sdcIsDeleted Boolean [not null, default: false]
+  sdcSyncDate DateTime
+  sdcCreatedOn DateTime [default: `now()`, not null]
+  sdcCreatedBy String [not null]
+  sdcModifiedOn DateTime
+  sdcModifiedBy String
+  customer customers [not null]
+  posState state_codes
+  driver employee_master
+  supervisor employee_master
+  vehicle vehicle_master
+  items sale_dc_item [not null]
+  dcReturns sale_dc_return [not null]
+
+  indexes {
+    (sdcId, sdcAccYear) [pk]
+    (sdcCompanyId, sdcBranchId, sdcAccYear, sdcDcRefno) [unique]
+    (sdcCompanyId, sdcBranchId, sdcAccYear, sdcCounterId, sdcDcSlno) [unique]
+  }
+
+  Note: 'Delivery challan: goods OUT before the invoice.
+
+* a STOCK document — posting writes DC_ISSUE stock rows and, under
+perpetual costing, DR COGS / CR INVENTORY at cost;
+* a GST document with NO TAX LIABILITY. It carries prices and GST columns
+only because rule 138(1) reads the VALUE of the goods for the e-way
+bill, and because the challan has to print. Never an IRN;
+* the SOURCE of a bill — a bill against a DC consumes sdiBilledQty and
+posts revenue only, because the stock already left. Many DCs to one
+bill, one DC to many bills, and mixed DC + direct lines on one bill are
+all allowed.
+
+sdcPurpose decides its GST reading: SUPPLY converts into a bill; the others
+(JOB_WORK, APPROVAL, EXHIBITION, OWN_USE, LINE_SALES, OTHER) may only come
+back via a DC return or be converted after the fact.
+
+LIST-partitioned by sdcAccYear, PK (sdcId, sdcAccYear).'
+}
+
+Table sale_dc_item {
+  sdiId String [not null]
+  sdiDcId String [not null]
+  sdiCompanyId String [not null]
+  sdiBranchId String [not null]
+  sdiTenantId String
+  sdiAccYear String [not null]
+  sdiLineNo Int [not null]
+  sdiSplitNo Int [not null, default: 1]
+  sdiSrcDocType String
+  sdiSrcDocId String
+  sdiSrcDocAccYear String
+  sdiSrcDocRefno String
+  sdiSrcLineNo Int
+  sdiSrcItemId String [note: 'sale_order_item.soi_id. No FK: polymorphic with sdiSrcDocType.']
+  sdiItemId String [not null]
+  sdiItemUnitId String [not null]
+  sdiToBaseFactor Decimal [not null, default: 0]
+  sdiHsnCode String
+  sdiTaxId String
+  sdiPriceLevel Int
+  sdiEanCode String
+  sdiSize String
+  sdiSizeUom String
+  sdiGodownId String [not null]
+  sdiLotId String
+  sdiBucket String [not null, default: 'SALEABLE', note: 'SALEABLE | DAMAGED | QUARANTINE | EXPIRED | SAMPLE']
+  sdiBatchNo String
+  sdiBatchDate DateTime
+  sdiExpiryDate DateTime
+  sdiSerialNo String
+  sdiIsFree Boolean [not null, default: false]
+  sdiFreeType String
+  sdiIsService Boolean [not null, default: false]
+  sdiCaseQty Decimal [not null, default: 0]
+  sdiDcQty Decimal [not null, default: 0]
+  sdiFreeQty Decimal [not null, default: 0]
+  sdiNetQty Decimal [not null, default: 0]
+  sdiWeightQty Decimal [default: 0]
+  sdiBilledQty Decimal [not null, default: 0]
+  sdiReturnedQty Decimal [not null, default: 0]
+  sdiOpenQty Decimal [note: 'GENERATED ALWAYS ... STORED: dcQty - billedQty - returnedQty. Read-only —
+never send it on a create or update.
+
+Allowed to go NEGATIVE. The challan\'s own quantities may be guarded, but
+billed and returned are written by other documents — a bill and a DC
+return, either of which may have been raised offline — so an over-draw
+is RECORDED (ix_sdi_overdrawn) rather than refused, because refusing it
+would abort a sync batch for goods that already moved.']
+  sdiLineStatus String [not null, default: 'OPEN', note: 'OPEN | PARTIAL | BILLED | RETURNED | CLOSED']
+  sdiRate Decimal [not null, default: 0]
+  sdiRatePreTax Decimal [not null, default: 0]
+  sdiMaxPrice Decimal
+  sdiCostPrice Decimal [note: 'Resolved lot cost at post: the COGS rate.']
+  sdiIsTaxIncl Boolean [not null, default: false]
+  sdiDiscPerc Decimal [not null, default: 0]
+  sdiDiscAmt Decimal [not null, default: 0]
+  sdiGrossAmt Decimal [not null, default: 0]
+  sdiTaxableAmt Decimal [not null, default: 0]
+  sdiTaxPerc Decimal [not null, default: 0]
+  sdiCgstPerc Decimal [not null, default: 0]
+  sdiCgstAmt Decimal [not null, default: 0]
+  sdiSgstPerc Decimal [not null, default: 0]
+  sdiSgstAmt Decimal [not null, default: 0]
+  sdiIgstPerc Decimal [not null, default: 0]
+  sdiIgstAmt Decimal [not null, default: 0]
+  sdiCessPerc Decimal [not null, default: 0]
+  sdiCessAmt Decimal [not null, default: 0]
+  sdiTaxAmt Decimal [not null, default: 0]
+  sdiNetAmt Decimal [not null, default: 0]
+  sdiIsPromo Boolean [not null, default: false]
+  sdiActPrice Decimal
+  sdiMinPrice Decimal
+  sdiItemDiscPerc Decimal [not null, default: 0]
+  sdiItemDiscAmt Decimal [not null, default: 0]
+  sdiSplDiscPerc Decimal [not null, default: 0]
+  sdiSplDiscAmt Decimal [not null, default: 0]
+  sdiSchDiscPerc Decimal [not null, default: 0]
+  sdiSchDiscAmt Decimal [not null, default: 0]
+  sdiChrgBeforeTax Decimal
+  sdiChrgAfterTax Decimal
+  sdiCessPerUnit Decimal [not null, default: 0]
+  sdiSalesmanId String
+  sdiSchemeId String
+  sdiSchemeName String
+  sdiRemarks String
+  sdiIsDeleted Boolean [not null, default: false]
+  sdiSyncDate DateTime
+  sdiCreatedOn DateTime [default: `now()`, not null]
+  sdiCreatedBy String [not null]
+  sdiModifiedOn DateTime
+  sdiModifiedBy String
+  dc sale_dc [not null]
+  item item_master [not null]
+  unit item_unit_conversion [not null]
+  godown godown_locations [not null]
+  lot stock_lot
+  dcReturnItems sale_dc_return_item [not null]
+
+  indexes {
+    (sdiId, sdiAccYear) [pk]
+  }
+
+  Note: 'A challan line. The LOT leaves here, and the bill inherits it.
+
+sdiItemUnitId is inventory.item_unit_conversion(iuc_id), exactly as
+SaleBillItem.sbiItemUnitId — the bill line inherits this value unchanged,
+so the two must share an id space.
+
+Fulfilment is tracked on the LINE: sdiBilledQty and sdiReturnedQty are
+written by OTHER documents (a bill and a DC return), which is why the
+remainder is generated rather than guarded.'
+}
+
+Table sale_dc_return {
+  sdrId String [not null]
+  sdrCompanyId String [not null]
+  sdrBranchId String [not null]
+  sdrTenantId String
+  sdrAccYear String [not null]
+  sdrSessionId String
+  sdrCounterId String [not null]
+  sdrDeviceType String
+  sdrDeviceId String
+  sdrDocType String [not null, default: 'DC_RETURN']
+  sdrReturnSlno BigInt [not null]
+  sdrReturnRefno String [not null]
+  sdrUsrRefno String
+  sdrUsrRefdate DateTime
+  sdrReturnDate DateTime [not null]
+  sdrReturnDatetime DateTime [default: `now()`, not null]
+  sdrDcId String [not null]
+  sdrDcAccYear String [not null]
+  sdrDcRefno String
+  sdrDcDate DateTime
+  sdrReasonId String
+  sdrReturnReason String
+  sdrCustId String [not null]
+  sdrCustName String [not null]
+  sdrCustGstin String
+  sdrCustStcd String
+  sdrPosStcd String
+  sdrDriverId String
+  sdrSupervisorId String
+  sdrLoadmanId String[] [not null]
+  sdrVehicleId String
+  sdrVehicleNo String
+  sdrUserId String [not null]
+  sdrSalesmanId String[] [not null, note: 'The challan this reverses carries sdcSalesmanId, so the return of it
+carries the same team — otherwise a delivery and its reversal cannot be
+put side by side in any salesman report. uuid[], no FK on elements.']
+  sdrTotItems Int [not null, default: 0]
+  sdrTotWeight Decimal [not null, default: 0]
+  sdrGrossAmt Decimal [not null, default: 0]
+  sdrTaxableAmt Decimal [not null, default: 0]
+  sdrTaxAmt Decimal [not null, default: 0]
+  sdrReturnAmt Decimal [not null, default: 0]
+  sdrTotalCost Decimal [not null, default: 0, note: 'The COGS reversed.']
+  sdrRemarks String
+  sdrStatus String [not null, default: 'DRAFT', note: 'DRAFT | POSTED | CANCELLED. Transitions live in TxnStatusLog.']
+  sdrPostedVoucherId String [note: 'No FK: SERVER-owned, written after an offline counter created this row.']
+  sdrPrintCount Int [not null, default: 0]
+  sdrIsDeleted Boolean [not null, default: false]
+  sdrSyncDate DateTime
+  sdrCreatedOn DateTime [default: `now()`, not null]
+  sdrCreatedBy String [not null]
+  sdrModifiedOn DateTime
+  sdrModifiedBy String
+  dc sale_dc [not null]
+  customer customers [not null]
+  reason stock_reason_master
+  driver employee_master
+  supervisor employee_master
+  vehicle vehicle_master
+  items sale_dc_return_item [not null]
+
+  indexes {
+    (sdrId, sdrAccYear) [pk]
+    (sdrCompanyId, sdrBranchId, sdrAccYear, sdrReturnRefno) [unique]
+  }
+
+  Note: 'Un-billed goods coming back off a challan.
+
+Only the DC\'s OPEN quantity (sdiOpenQty) may return here; BILLED goods come
+back through a SaleReturn. Posting writes DC_RETURN stock rows, reverses
+COGS at the DC line\'s cost, writes an INWARD challan register row and an
+e-way bill when the goods travel by a transporter.
+
+NO party leg — nothing was ever owed, so there is nothing to credit.
+
+ONE challan per DC return, which is why sdrDcId is a plain NOT NULL pair
+rather than a per-line reference.'
+}
+
+Table sale_dc_return_item {
+  sdriId String [not null]
+  sdriReturnId String [not null]
+  sdriCompanyId String [not null]
+  sdriBranchId String [not null]
+  sdriTenantId String
+  sdriAccYear String [not null]
+  sdriLineNo Int [not null]
+  sdriDcItemId String [not null]
+  sdriDcAccYear String [not null]
+  sdriDcLineNo Int
+  sdriItemId String [not null]
+  sdriItemUnitId String [not null, note: 'item_unit_conversion, matching the DC line it reverses.']
+  sdriToBaseFactor Decimal [not null, default: 0]
+  sdriHsnCode String
+  sdriGodownId String [not null]
+  sdriLotId String [note: 'The DC line\'s lot: it goes back where it came from.']
+  sdriCondition String [not null, default: 'RESTOCK', note: 'RESTOCK | DAMAGED | EXPIRED | SCRAP']
+  sdriBucket String [not null, default: 'SALEABLE', note: 'SALEABLE | DAMAGED | QUARANTINE | EXPIRED | SAMPLE']
+  sdriBatchNo String
+  sdriExpiryDate DateTime
+  sdriSerialNo String
+  sdriReturnQty Decimal [not null, default: 0]
+  sdriFreeQty Decimal [not null, default: 0]
+  sdriNetQty Decimal [not null, default: 0]
+  sdriWeightQty Decimal [default: 0]
+  sdriRate Decimal [not null, default: 0]
+  sdriCostPrice Decimal [note: 'The DC line\'s cost: what COGS reverses at.']
+  sdriTaxableAmt Decimal [not null, default: 0]
+  sdriTaxPerc Decimal [not null, default: 0]
+  sdriTaxAmt Decimal [not null, default: 0]
+  sdriNetAmt Decimal [not null, default: 0]
+  sdriPriceLevel Int [not null]
+  sdriEanCode String
+  sdriIsTaxIncl Boolean [not null, default: false]
+  sdriIsService Boolean [not null, default: false]
+  sdriRatePreTax Decimal [not null, default: 0]
+  sdriMaxPrice Decimal
+  sdriItemDiscPerc Decimal [not null, default: 0]
+  sdriItemDiscAmt Decimal [not null, default: 0]
+  sdriSchDiscAmt Decimal [not null, default: 0]
+  sdriGrossAmt Decimal [not null, default: 0]
+  sdriCgstPerc Decimal [not null, default: 0]
+  sdriCgstAmt Decimal [not null, default: 0]
+  sdriSgstPerc Decimal [not null, default: 0]
+  sdriSgstAmt Decimal [not null, default: 0]
+  sdriIgstPerc Decimal [not null, default: 0]
+  sdriIgstAmt Decimal [not null, default: 0]
+  sdriCessPerc Decimal [not null, default: 0]
+  sdriCessPerUnit Decimal [not null, default: 0]
+  sdriCessAmt Decimal [not null, default: 0]
+  sdriSize String
+  sdriSizeUom String
+  sdriTaxId String
+  sdriRemarks String
+  sdriIsDeleted Boolean [not null, default: false]
+  sdriSyncDate DateTime
+  sdriCreatedOn DateTime [default: `now()`, not null]
+  sdriCreatedBy String [not null]
+  sdriModifiedOn DateTime
+  sdriModifiedBy String
+  dcReturn sale_dc_return [not null]
+  dcItem sale_dc_item [not null]
+  item item_master [not null]
+  unit item_unit_conversion [not null]
+  godown godown_locations [not null]
+  lot stock_lot
+
+  indexes {
+    (sdriId, sdriAccYear) [pk]
+  }
+
+  Note: 'A DC-return line. The DC line is MANDATORY — a DC return is never free, so
+unlike SaleReturnItem there is no nullable source.
+
+The lot goes back where it came from, which is why sdriLotId is the DC
+line\'s lot rather than a fresh one.
+
+The money columns are the DC line\'s figures, carried for the INWARD e-way
+bill: goods coming back still have a value the portal wants.'
 }
 
 Table sale_freight_charges {
@@ -6643,6 +7643,9 @@ Table sale_order {
   agent employee_master
   advanceLedger acc_ledger_master
   device device_master [not null]
+  soRevisionNo Int [not null, default: 1, note: 'Amend counter: an in-place amendment re-posts against the same number
+and bumps this.']
+  soUsrRefdate DateTime
 
   indexes {
     (soId, soAccYear) [pk]
@@ -6798,7 +7801,9 @@ Table sale_quotation {
   sqSrcDocType String
   sqSrcDocId String
   sqSrcDocRefno String
-  sqSrcDocDate DateTime
+  sqSrcDocDate DateTime [note: 'A DATE, not a timestamptz: stored with a zone, 2026-04-01 became
+2026-03-31T18:30Z and landed in the wrong day — and, on the first day
+of a financial year, the wrong YEAR — of every date-bounded report.']
   sqCustId String
   sqCustAreaId String
   sqCustName String [not null]
@@ -6819,7 +7824,12 @@ Table sale_quotation {
   sqHasPromo Boolean [not null, default: false]
   sqHasComm Boolean [not null, default: false]
   sqUserId String [not null]
-  sqSalesmanId String
+  sqSalesmanId String[] [not null, note: 'uuid[], like sale_bill, sale_order and sale_dc. It was the last
+singular one, so a dual-salesman quote could not be recorded and the
+second name was lost the moment it converted. PostgreSQL cannot FK the
+ELEMENTS of an array, so the service validates each id against
+EmployeeMaster before it writes, and lookups go through the GIN index:
+WHERE sq_salesman_id @> ARRAY[:salesman]::uuid[]']
   sqAgentId String
   sqTotItems Int [not null, default: 0]
   sqTotWeight Decimal [not null, default: 0]
@@ -6860,7 +7870,6 @@ Table sale_quotation {
   sqConvertedOn DateTime
   sqApprovedOn DateTime
   sqApprovedBy String
-  sqCancelledOn DateTime
   sqCancelledBy String
   sqCancelReason String
   sqMrpSavings Decimal [default: 0]
@@ -6885,7 +7894,6 @@ Table sale_quotation {
   custArea area_master
   priceLevel item_price_levels [not null]
   posState state_codes
-  salesman employee_master
 
   indexes {
     (sqId, sqAccYear) [pk]
@@ -7006,6 +8014,248 @@ Table sale_quotation_item {
   indexes {
     (sqiId, sqiAccYear) [pk]
   }
+}
+
+Table sale_return {
+  srId String [not null]
+  srCompanyId String [not null]
+  srBranchId String [not null]
+  srTenantId String
+  srAccYear String [not null]
+  srSessionId String
+  srCounterId String [not null]
+  srDeviceType String
+  srDeviceId String
+  srDocType String [not null, default: 'CREDIT_NOTE']
+  srBillMode String [not null, default: 'WHOLESALE', note: 'POS | WHOLESALE, inherited from the bill.']
+  srReturnSlno BigInt [not null]
+  srReturnRefno String [not null]
+  srUsrRefno String
+  srUsrRefdate DateTime
+  srReturnDate DateTime [not null]
+  srReturnDatetime DateTime [default: `now()`, not null]
+  srIsAgainstBill Boolean [not null, default: true]
+  srBillId String
+  srBillAccYear String
+  srBillRefno String
+  srBillDate DateTime
+  srReasonId String
+  srReturnReason String
+  srCustId String [not null]
+  srCustName String [not null]
+  srCustAddr String
+  srCustPlace String
+  srCustPin String
+  srCustPhone String
+  srCustGstin String
+  srCustGstType String
+  srCustStcd String
+  srPosStcd String
+  srStateName String
+  srPriceLevel Int
+  srUserId String [not null]
+  srSalesmanId String[] [not null, note: 'uuid[]: a document is credited to a TEAM, and a return inherits its
+salesmen from the bill it returns. PostgreSQL cannot FK the ELEMENTS of
+an array, so the service validates each id against EmployeeMaster before
+it writes. Do not make this singular — a company may credit two
+salesmen, and a third later. The LINE stays one person.']
+  srTotItems Int [not null, default: 0]
+  srTotWeight Decimal [not null, default: 0]
+  srGrossAmt Decimal [not null, default: 0]
+  srDiscAmt Decimal [not null, default: 0]
+  srTaxableAmt Decimal [not null, default: 0]
+  srCgstAmt Decimal [not null, default: 0]
+  srSgstAmt Decimal [not null, default: 0]
+  srIgstAmt Decimal [not null, default: 0]
+  srCessAmt Decimal [not null, default: 0]
+  srTaxAmt Decimal [not null, default: 0]
+  srOtherAmt Decimal [not null, default: 0]
+  srRoundOff Decimal [not null, default: 0]
+  srReturnAmt Decimal [not null, default: 0]
+  srTotalCost Decimal [not null, default: 0, note: 'The COGS reversed, under perpetual costing.']
+  srSettleMode String [not null, default: 'ADJUST', note: 'CASH | ADJUST | ADVANCE']
+  srRefundAmt Decimal [not null, default: 0]
+  srAdjustedAmt Decimal [not null, default: 0]
+  srCreditAmt Decimal [not null, default: 0, note: 'What became a credit note the party holds.']
+  srSettleStatus String [not null, default: 'PENDING', note: 'PENDING | REFUNDED | ADJUSTED | CREDITED | PARTIAL']
+  srLoyaltyReversePoints Decimal [not null, default: 0, note: 'POINTS, numeric(18,4) like every other points column — not money\'s
+(15,2). A cache; the detail is the LoyaltyLedger rows this return
+writes. Declared by the migration that CREATES this table, because the
+loyalty migration\'s ALTERs were written against a sale_return that did
+not exist and were deliberately skipped.']
+  srPromoClawbackAmt Decimal [not null, default: 0]
+  srHasLoad Boolean [not null, default: false]
+  srHasUnload Boolean [not null, default: false]
+  srHasFreight Boolean [not null, default: false]
+  srHasPromo Boolean [not null, default: false]
+  srHasLoyalty Boolean [not null, default: false]
+  srAgentId String
+  srAgentCommAmt Decimal
+  srDriverId String
+  srSupervisorId String
+  srLoadmanId String[] [not null, note: 'Open-ended crew; no FK on array elements.']
+  srVehicleId String
+  srVehicleNo String
+  srTotBags Decimal [not null, default: 0]
+  srItemDisc Decimal [not null, default: 0]
+  srSplDisc Decimal [not null, default: 0]
+  srSchDisc Decimal [not null, default: 0]
+  srBillSchDisc Decimal [not null, default: 0]
+  srCashDisc Decimal [not null, default: 0]
+  srFreightAmt Decimal [not null, default: 0]
+  srLoadAmt Decimal [not null, default: 0]
+  srUnloadAmt Decimal [not null, default: 0]
+  srDiscAlterBase Boolean
+  srRoundOffStep Decimal [not null, default: 1]
+  srRemarks String
+  srStatus String [not null, default: 'DRAFT', note: 'DRAFT | POSTED | CANCELLED. WHEN / WHO / WHY a status changed lives in
+TxnStatusLog, one appended row per transition; the header keeps only the
+CURRENT status.']
+  srPostedVoucherId String [note: 'accounts.acc_voucher_header. No FK: SERVER-owned and written long after
+an offline counter created this row.']
+  srRevisionNo Int [not null, default: 1]
+  srPrintCount Int [not null, default: 0]
+  srIsDeleted Boolean [not null, default: false]
+  srSyncDate DateTime
+  srCreatedOn DateTime [default: `now()`, not null]
+  srCreatedBy String [not null]
+  srModifiedOn DateTime
+  srModifiedBy String
+  bill sale_bill
+  customer customers [not null]
+  posState state_codes
+  reason stock_reason_master
+  driver employee_master
+  supervisor employee_master
+  vehicle vehicle_master
+  items sale_return_item [not null]
+
+  indexes {
+    (srId, srAccYear) [pk]
+    (srCompanyId, srBranchId, srAccYear, srReturnRefno) [unique]
+    (srCompanyId, srBranchId, srAccYear, srCounterId, srReturnSlno) [unique]
+  }
+
+  Note: 'The credit note.
+
+LIST-partitioned by srAccYear, PK (srId, srAccYear). Partitions come from
+public.ensure_acc_year_partitions, which 20260921200000 taught about this
+table.
+
+srIsAgainstBill = false is the FREE return: allowed, flagged, priced at the
+current selling price, NO COGS reversal (there is no cost to reverse), and
+it is the row every audit report lists first.
+
+Settlement has three modes and no fourth:
+CASH     refund now; rows in AccTenderDetail
+ADJUST   against the party\'s open bills — the ORIGINAL bill first, then
+the rest by due date; the remainder becomes a credit note
+ADVANCE  the whole amount becomes a credit note the party holds'
+}
+
+Table sale_return_item {
+  sriId String [not null]
+  sriReturnId String [not null]
+  sriCompanyId String [not null]
+  sriBranchId String [not null]
+  sriTenantId String
+  sriAccYear String [not null]
+  sriLineNo Int [not null]
+  sriSplitNo Int [not null, default: 1]
+  sriBillItemId String
+  sriBillAccYear String
+  sriBillLineNo Int
+  sriItemId String [not null]
+  sriItemUnitId String [not null]
+  sriToBaseFactor Decimal [not null, default: 0]
+  sriHsnCode String
+  sriTaxId String
+  sriGodownId String [not null]
+  sriLotId String [note: 'The ORIGINAL lot when known, so it goes back where it came from.']
+  sriBatchNo String
+  sriBatchDate DateTime
+  sriExpiryDate DateTime
+  sriSerialNo String
+  sriCondition String [not null, default: 'RESTOCK', note: 'RESTOCK | DAMAGED | EXPIRED | SCRAP']
+  sriBucket String [not null, default: 'SALEABLE', note: 'SALEABLE | DAMAGED | QUARANTINE | EXPIRED | SAMPLE — mirrors sml_bucket,
+so damaged goods come back into the damaged bucket and not into stock.']
+  sriCaseQty Decimal [not null, default: 0]
+  sriReturnQty Decimal [not null, default: 0]
+  sriFreeQty Decimal [not null, default: 0, note: 'Free goods coming back.']
+  sriNetQty Decimal [not null, default: 0]
+  sriWeightQty Decimal [default: 0]
+  sriRate Decimal [not null, default: 0]
+  sriRatePreTax Decimal [not null, default: 0]
+  sriMaxPrice Decimal
+  sriCostPrice Decimal [note: 'The BILL line\'s cost: what COGS reverses at, not today\'s cost.']
+  sriGrossAmt Decimal [not null, default: 0]
+  sriDiscAmt Decimal [not null, default: 0]
+  sriTaxableAmt Decimal [not null, default: 0]
+  sriTaxPerc Decimal [not null, default: 0]
+  sriCgstPerc Decimal [not null, default: 0]
+  sriCgstAmt Decimal [not null, default: 0]
+  sriSgstPerc Decimal [not null, default: 0]
+  sriSgstAmt Decimal [not null, default: 0]
+  sriIgstPerc Decimal [not null, default: 0]
+  sriIgstAmt Decimal [not null, default: 0]
+  sriCessPerc Decimal [not null, default: 0]
+  sriCessAmt Decimal [not null, default: 0]
+  sriTaxAmt Decimal [not null, default: 0]
+  sriRoundOff Decimal [not null, default: 0]
+  sriNetAmt Decimal [not null, default: 0]
+  sriPriceLevel Int [not null]
+  sriEanCode String
+  sriIsTaxIncl Boolean [not null, default: false]
+  sriIsPromo Boolean [not null, default: false]
+  sriIsFree Boolean [not null, default: false]
+  sriFreeType String
+  sriIsService Boolean [not null, default: false]
+  sriActPrice Decimal
+  sriMinPrice Decimal
+  sriItemDiscPerc Decimal [not null, default: 0]
+  sriItemDiscAmt Decimal [not null, default: 0]
+  sriSplDiscPerc Decimal [not null, default: 0]
+  sriSplDiscAmt Decimal [not null, default: 0]
+  sriSchDiscPerc Decimal [not null, default: 0]
+  sriSchDiscAmt Decimal [not null, default: 0]
+  sriBillSchAmt Decimal [not null, default: 0, note: 'The BILL-level scheme share this line reverses.']
+  sriChrgBeforeTax Decimal
+  sriChrgAfterTax Decimal
+  sriCessPerUnit Decimal [not null, default: 0]
+  sriSalesmanId String
+  sriSchemeId String
+  sriSchemeName String
+  sriLoyaltyPoints Decimal [not null, default: 0, note: 'The per-line POINTS the bill awarded, so the claw-back share can be
+worked out line by line. numeric(18,4), like every points column.']
+  sriSize String
+  sriSizeUom String
+  sriRemarks String
+  sriIsDeleted Boolean [not null, default: false]
+  sriSyncDate DateTime
+  sriCreatedOn DateTime [default: `now()`, not null]
+  sriCreatedBy String [not null]
+  sriModifiedOn DateTime
+  sriModifiedBy String
+  saleReturn sale_return [not null]
+  billItem sale_bill_item
+  item item_master [not null]
+  unit item_unit_conversion [not null]
+  godown godown_locations [not null]
+  lot stock_lot
+
+  indexes {
+    (sriId, sriAccYear) [pk]
+  }
+
+  Note: 'A credit note line: one bill line coming back, reversed tier by tier.
+
+sriBillItemId is NULL on a FREE return (srIsAgainstBill = false) — there is
+no bill line to point at, and no cost to reverse.
+
+sriItemUnitId is inventory.item_unit_conversion(iuc_id), exactly as
+SaleBillItem.sbiItemUnitId. Every transaction line in this database uses
+that table; a line pointing at item_unit_master instead would carry an id
+from the wrong space and be rejected the moment it met a bill.'
 }
 
 Table state_master {
@@ -7788,6 +9038,10 @@ StockLedger by fn_sml_apply(). NEVER written from application code.']
   reservations stock_reservation [not null]
   transits stock_transit [not null]
   valuationSnaps stock_valuation_snap [not null]
+  saleReturnItems sale_return_item [not null]
+  saleDcItems sale_dc_item [not null]
+  saleDcReturnItems sale_dc_return_item [not null]
+  saleBillItems sale_bill_item [not null]
 
   Note: 'stock.stock_lot — the IDENTITY of a holding. Never its quantity.
 
@@ -7978,6 +9232,8 @@ anybody reports on. NEVER null — see WRITE RULES above.']
   ledgerEntries stock_ledger [not null]
   vouchers stock_voucher [not null]
   voucherItems stock_voucher_item [not null]
+  saleReturns sale_return [not null]
+  saleDcReturns sale_dc_return [not null]
 
   Note: 'stock.stock_reason_master — WHY stock moved when no trade document explains
 it. A receipt says "we bought it" and an invoice says "we sold it"; an
@@ -9160,6 +10416,10 @@ Ref: acc_opening_run.aorCompanyId > companys.compId [delete: Restrict]
 
 Ref: acc_opening_run.aorBranchId > branch_master.brId [delete: Restrict]
 
+Ref: acc_party_tax_certificate.ptcPartyId > acc_ledger_master.ledId [delete: Restrict]
+
+Ref: acc_party_tax_certificate.ptcCompanyId > companys.compId [delete: Restrict]
+
 Ref: acc_pdc_register.apdPartyId > acc_ledger_master.ledId [delete: Restrict]
 
 Ref: acc_pdc_register.apdBankLedgerId > acc_ledger_master.ledId [delete: Restrict]
@@ -9181,6 +10441,14 @@ Ref: acc_tcs_register.atcReversalOfId - acc_tcs_register.atcId [delete: Restrict
 Ref: acc_tds_register.atdPartyId > acc_ledger_master.ledId [delete: Restrict]
 
 Ref: acc_tds_register.atdReversalOfId - acc_tds_register.atdId [delete: Restrict]
+
+Ref: acc_temp_credit.atcPartyId > acc_ledger_master.ledId [delete: Restrict]
+
+Ref: acc_temp_credit.(atcSrcDocId, atcAccYear) > sale_bill.(sbId, sbAccYear) [delete: Restrict]
+
+Ref: acc_temp_credit.(atcAblId, atcAblAccYear) > acc_bill_balance.(ablId, ablAccYear) [delete: Restrict]
+
+Ref: acc_temp_credit.(atcTenderId, atcTenderAccYear) > acc_tender_detail.(tdId, tdAccYear) [delete: Restrict]
 
 Ref: acc_tender_detail.tdCompanyId > companys.compId [delete: Restrict]
 
@@ -9231,6 +10499,8 @@ Ref: acc_voucher_doc_detail.vtxGdrId > acc_voucher_doc_register.gdrId [delete: C
 Ref: acc_voucher_doc_einvoice.gdeGdrId - acc_voucher_doc_register.gdrId [delete: Cascade]
 
 Ref: acc_voucher_doc_ewaybill.gdwGdrId - acc_voucher_doc_register.gdrId [delete: Cascade]
+
+Ref: acc_voucher_doc_ewaybill.gdwVehicleId > vehicle_master.vehId [delete: Restrict]
 
 Ref: acc_voucher_doc_register.gdrCompanyId > companys.compId
 
@@ -9402,6 +10672,8 @@ Ref: charge_master.chgTaxId > tax_rate_master.taxId [delete: Restrict]
 
 Ref: companys.compStylesheetId > app_theme_master.thmId
 
+Ref: company_aato.caaCompanyId > companys.compId [delete: Restrict]
+
 Ref: fiscal_years.fyPrevFyId - fiscal_years.fyId [delete: No Action]
 
 Ref: gst_auth_session.gasGccId > gst_company_credential.gccId [delete: Cascade]
@@ -9506,6 +10778,14 @@ Ref: txn_charge_detail.cdCompId > companys.compId [delete: Restrict]
 
 Ref: txn_charge_detail.cdBranchId > branch_master.brId [delete: Restrict]
 
+Ref: txn_charge_detail.(cdSrcCdId, cdSrcAccYear) - txn_charge_detail.(cdId, cdAccYear) [delete: Restrict]
+
+Ref: txn_transport_detail.ttdTransporterId > transporter_master.trnId [delete: Restrict]
+
+Ref: txn_transport_detail.ttdFromGodownId > godown_locations.gdlId [delete: Restrict]
+
+Ref: txn_transport_detail.ttdToGodownId > godown_locations.gdlId [delete: Restrict]
+
 Ref: txn_hold.txhDeviceId > device_master.devId [delete: Restrict]
 
 Ref: txn_hold.txhLockedDeviceId > device_master.devId [delete: Restrict]
@@ -9517,6 +10797,10 @@ Ref: txn_status_log.tslDeviceId > device_master.devId [delete: Set Null]
 Ref: user_menus.umUserId > user_master.usrId
 
 Ref: user_menus.umMenuId > menu_master.menuId
+
+Ref: vehicle_master.vehTransporterId > transporter_master.trnId [delete: Restrict]
+
+Ref: vehicle_master.vehDriverId > employee_master.empId [delete: Restrict]
 
 Ref: suppliers.supId - acc_ledger_master.ledId [delete: Restrict]
 
@@ -9748,6 +11032,22 @@ Ref: promotion_scheme_slab.prsFreeItemId > item_master.itemId [delete: Restrict]
 
 Ref: promotion_scheme_slab.prsFreeUnitId > item_unit_conversion.iucId [delete: Restrict]
 
+Ref: promotion_usage.pruCompId > companys.compId [delete: Restrict]
+
+Ref: promotion_usage.pruBranchId > branch_master.brId [delete: Restrict]
+
+Ref: promotion_usage.pruPrmId > promotion_scheme.prmId [delete: Restrict]
+
+Ref: promotion_usage.pruCustId > customers.cusId [delete: Restrict]
+
+Ref: promotion_usage.pruCouponId > loyalty_coupon.lcpId [delete: Restrict]
+
+Ref: promotion_usage.pruDeviceId > device_master.devId [delete: Restrict]
+
+Ref: promotion_usage.pruUserId > user_master.usrId [delete: Restrict]
+
+Ref: promotion_usage.(pruReversalOfId, pruReversalOfAccYear) - promotion_usage.(pruId, pruAccYear) [delete: Restrict]
+
 Ref: sale_agents.saCompanyId > companys.compId [delete: Restrict]
 
 Ref: sale_agents.saBranchId > branch_master.brId [delete: Restrict]
@@ -9760,6 +11060,12 @@ Ref: sale_bill.sbPosStcd > state_codes.stateCode [delete: Restrict]
 
 Ref: sale_bill.sbPriceLevel > item_price_levels.iplId [delete: Restrict]
 
+Ref: sale_bill.sbDriverId > employee_master.empId [delete: Restrict]
+
+Ref: sale_bill.sbSupervisorId > employee_master.empId [delete: Restrict]
+
+Ref: sale_bill.sbVehicleId > vehicle_master.vehId [delete: Restrict]
+
 Ref: sale_bill_item.(sbiBillId, sbiAccYear) > sale_bill.(sbId, sbAccYear) [delete: Cascade]
 
 Ref: sale_bill_item.sbiItemId > item_master.itemId [delete: Restrict]
@@ -9769,6 +11075,52 @@ Ref: sale_bill_item.sbiTaxId > tax_rate_master.taxId [delete: Restrict]
 Ref: sale_bill_item.sbiPriceLevel > item_price_levels.iplId [delete: Restrict]
 
 Ref: sale_bill_item.sbiItemUnitId > item_unit_conversion.iucId [delete: Restrict]
+
+Ref: sale_bill_item.sbiLotId > stock_lot.sltId [delete: Restrict]
+
+Ref: sale_dc.sdcCustId > customers.cusId [delete: Restrict]
+
+Ref: sale_dc.sdcPosStcd > state_codes.stateCode [delete: Restrict]
+
+Ref: sale_dc.sdcDriverId > employee_master.empId [delete: Restrict]
+
+Ref: sale_dc.sdcSupervisorId > employee_master.empId [delete: Restrict]
+
+Ref: sale_dc.sdcVehicleId > vehicle_master.vehId [delete: Restrict]
+
+Ref: sale_dc_item.(sdiDcId, sdiAccYear) > sale_dc.(sdcId, sdcAccYear) [delete: Restrict]
+
+Ref: sale_dc_item.sdiItemId > item_master.itemId [delete: Restrict]
+
+Ref: sale_dc_item.sdiItemUnitId > item_unit_conversion.iucId [delete: Restrict]
+
+Ref: sale_dc_item.sdiGodownId > godown_locations.gdlId [delete: Restrict]
+
+Ref: sale_dc_item.sdiLotId > stock_lot.sltId [delete: Restrict]
+
+Ref: sale_dc_return.(sdrDcId, sdrDcAccYear) > sale_dc.(sdcId, sdcAccYear) [delete: Restrict]
+
+Ref: sale_dc_return.sdrCustId > customers.cusId [delete: Restrict]
+
+Ref: sale_dc_return.sdrReasonId > stock_reason_master.srmId [delete: Restrict]
+
+Ref: sale_dc_return.sdrDriverId > employee_master.empId [delete: Restrict]
+
+Ref: sale_dc_return.sdrSupervisorId > employee_master.empId [delete: Restrict]
+
+Ref: sale_dc_return.sdrVehicleId > vehicle_master.vehId [delete: Restrict]
+
+Ref: sale_dc_return_item.(sdriReturnId, sdriAccYear) > sale_dc_return.(sdrId, sdrAccYear) [delete: Restrict]
+
+Ref: sale_dc_return_item.(sdriDcItemId, sdriDcAccYear) > sale_dc_item.(sdiId, sdiAccYear) [delete: Restrict]
+
+Ref: sale_dc_return_item.sdriItemId > item_master.itemId [delete: Restrict]
+
+Ref: sale_dc_return_item.sdriItemUnitId > item_unit_conversion.iucId [delete: Restrict]
+
+Ref: sale_dc_return_item.sdriGodownId > godown_locations.gdlId [delete: Restrict]
+
+Ref: sale_dc_return_item.sdriLotId > stock_lot.sltId [delete: Restrict]
 
 Ref: sale_freight_charges.frCompanyId > companys.compId [delete: Restrict]
 
@@ -9812,8 +11164,6 @@ Ref: sale_quotation.sqPriceLevel > item_price_levels.iplId [delete: Restrict]
 
 Ref: sale_quotation.sqPosStcd > state_codes.stateCode [delete: Restrict]
 
-Ref: sale_quotation.sqSalesmanId > employee_master.empId [delete: Restrict]
-
 Ref: sale_quotation_item.(sqiQuoteId, sqiAccYear) > sale_quotation.(sqId, sqAccYear) [delete: No Action]
 
 Ref: sale_quotation_item.sqiItemId > item_master.itemId [delete: Restrict]
@@ -9823,6 +11173,32 @@ Ref: sale_quotation_item.sqiTaxId > tax_rate_master.taxId [delete: Restrict]
 Ref: sale_quotation_item.sqiPriceLevel > item_price_levels.iplId [delete: Restrict]
 
 Ref: sale_quotation_item.sqiItemUnitId > item_unit_conversion.iucId [delete: Restrict]
+
+Ref: sale_return.(srBillId, srBillAccYear) > sale_bill.(sbId, sbAccYear) [delete: Restrict]
+
+Ref: sale_return.srCustId > customers.cusId [delete: Restrict]
+
+Ref: sale_return.srPosStcd > state_codes.stateCode [delete: Restrict]
+
+Ref: sale_return.srReasonId > stock_reason_master.srmId [delete: Restrict]
+
+Ref: sale_return.srDriverId > employee_master.empId [delete: Restrict]
+
+Ref: sale_return.srSupervisorId > employee_master.empId [delete: Restrict]
+
+Ref: sale_return.srVehicleId > vehicle_master.vehId [delete: Restrict]
+
+Ref: sale_return_item.(sriReturnId, sriAccYear) > sale_return.(srId, srAccYear) [delete: Restrict]
+
+Ref: sale_return_item.(sriBillItemId, sriBillAccYear) > sale_bill_item.(sbiId, sbiAccYear) [delete: Restrict]
+
+Ref: sale_return_item.sriItemId > item_master.itemId [delete: Restrict]
+
+Ref: sale_return_item.sriItemUnitId > item_unit_conversion.iucId [delete: Restrict]
+
+Ref: sale_return_item.sriGodownId > godown_locations.gdlId [delete: Restrict]
+
+Ref: sale_return_item.sriLotId > stock_lot.sltId [delete: Restrict]
 
 Ref: stock_ageing_slab.sagCompanyId > companys.compId [delete: Restrict]
 

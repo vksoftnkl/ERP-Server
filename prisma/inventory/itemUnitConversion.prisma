@@ -48,6 +48,14 @@ model ItemUnitConversion {
   // ── Loyalty points engine (20260921140000) ─────────────────────────────
   loyaltyGiftItems      LoyaltyGiftRedeemItem[]   @relation("LoyaltyGiftItemUnit")
 
+  // ── Sales documents (20260921200000) ────────────────────────────────────
+  // Every transaction LINE in this schema points here, not at
+  // item_unit_master — a DC line becomes a bill line, so the two must
+  // share an id space.
+  saleReturnItems       SaleReturnItem[]          @relation("SaleReturnItemUnit")
+  saleDcItems           SaleDcItem[]              @relation("SaleDcItemUnit")
+  saleDcReturnItems     SaleDcReturnItem[]        @relation("SaleDcReturnItemUnit")
+
   @@map("item_unit_conversion")
   @@schema("inventory")
   // Partial unique indexes uq_item_unit_conversion, uq_item_unit_conversion_default,

@@ -45,6 +45,12 @@ model Company {
   compTcsApplicable     Boolean   @default(false)                                   @map("comp_tcs_applicable")
   compSmsApplicable     Boolean   @default(false)                                   @map("comp_sms_applicable")
   compEinvoiceApplicable Boolean  @default(false)                                   @map("comp_einvoice_applicable")
+  /// LE_1_5CR | LE_5CR | LE_10CR | GT_10CR. Set by the accountant each April
+  /// from CompanyAato. It picks the HSN digits, the IRN reporting window and
+  /// the e-invoice applicability rows in StatutoryLimit.
+  compAatoClass         String    @default("LE_5CR") @db.VarChar(10)                @map("comp_aato_class")
+  /// Which delivery-challan purposes this company uses.
+  compDcPurposes        String[]  @default(["SUPPLY", "APPROVAL", "JOB_WORK", "OTHER"]) @db.VarChar(20) @map("comp_dc_purposes")
   compEwayApplicable    Boolean   @default(false)                                   @map("comp_eway_applicable")
   // 8) E-Way / E-Invoice Settings
   compEwayDate          DateTime? @db.Date                                          @map("comp_eway_date")
@@ -152,6 +158,13 @@ model Company {
   couponBatches         LoyaltyCouponBatch[]      @relation("CouponBatchCompany")
   coupons               LoyaltyCoupon[]           @relation("CouponCompany")
   couponTxns            LoyaltyCouponTxn[]        @relation("CouponTxnCompany")
+
+  // ── Promotion usage (20260921180000) ────────────────────────────────────
+  promotionUsages       PromotionUsage[]          @relation("PromotionUsageCompany")
+
+  // ── Sales documents (20260921200000) ────────────────────────────────────
+  aatoYears             CompanyAato[]             @relation("CompanyAatoCompany")
+  partyTaxCertificates  AccPartyTaxCertificate[]  @relation("PartyTaxCertificateCompany")
 
   @@map("companys")
   @@schema("public")

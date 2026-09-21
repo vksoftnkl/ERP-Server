@@ -163,17 +163,21 @@ BEGIN
          v_user)
     RETURNING gpe_id INTO v_cancel_id;
 
-    -- NOTE: gde_canceled_on, one 'l'. That is the spelling
-    -- accounts.acc_voucher_doc_einvoice actually uses; gfm_target_column is read
-    -- straight into an UPDATE, so the British spelling would fail at run time on
-    -- the one call nobody exercises until a bill has to be pulled back.
+    -- NOTE: gde_cancelled_on, TWO l's, as of
+    -- 20260922020000_reconcile_doc_einvoice_ewaybill. The deployed table used
+    -- to spell it with one, which is why this seed once said gde_canceled_on;
+    -- that migration renamed the column to the house spelling every other
+    -- table in the schema uses, and repointed the row this seed had already
+    -- written. gfm_target_column is read straight into an UPDATE, so the wrong
+    -- spelling fails at run time on the one call nobody exercises until a bill
+    -- has to be pulled back.
     INSERT INTO public.gst_provider_field_map
         (gfm_gpe_id, gfm_direction, gfm_our_field, gfm_their_path,
          gfm_data_type, gfm_transform, gfm_is_required,
          gfm_target_column, gfm_sort_order, gfm_created_by)
     VALUES
         (v_cancel_id, 'RESPONSE', 'irn',          '$.Irn',         'TEXT',     'NONE',         true,  'gde_irn',         10, v_user),
-        (v_cancel_id, 'RESPONSE', 'cancelled_on', '$.CancelDate',  'DATETIME', 'DATETIME_NIC', false, 'gde_canceled_on', 20, v_user);
+        (v_cancel_id, 'RESPONSE', 'cancelled_on', '$.CancelDate',  'DATETIME', 'DATETIME_NIC', false, 'gde_cancelled_on', 20, v_user);
 
     -- ── Error map ────────────────────────────────────────────────────────
     -- 2150 is the one that matters: the IRP refuses the duplicate AND hands

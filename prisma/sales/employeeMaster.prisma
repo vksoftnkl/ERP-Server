@@ -71,7 +71,10 @@ model EmployeeMaster {
   company              Company?              @relation(fields: [empCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict)
   designation          EmployeeDesignation? @relation(fields: [empDesignationId], references: [edId])
   department           EmployeeDepartment? @relation(fields: [empDepartmentId], references: [edptId])
-  saleQuotations       SaleQuotation[]
+  // saleQuotations is gone: sq_salesman_id became uuid[] (20260921220000)
+  // and an array cannot carry a foreign key.
+  saleBillsDriven      SaleBill[]                @relation("SaleBillDriver")
+  saleBillsSupervised  SaleBill[]                @relation("SaleBillSupervisor")
   saleOrderAgents      SaleOrder[]          @relation("SaleOrderAgent")
   txnHolds             TxnHold[]
   @@index([empCompanyId],    name: "idx_emp_company")
@@ -80,6 +83,19 @@ model EmployeeMaster {
   @@index([empDesignationId],name: "idx_emp_designation")
   // ── Loyalty points engine (20260921140000) ─────────────────────────────
   loyaltyGiftRedeems    LoyaltyGiftRedeem[]       @relation("LoyaltyGiftRedeemEmployee")
+
+  // ── Sales documents (20260921200000) ────────────────────────────────────
+  // The delivery crew. These sit on the DOCUMENT rather than in a shared
+  // transport band because they exist whenever goods move, even with no
+  // consignment at all — a home delivery has a driver and a van and no
+  // transporter, no LR and no e-way bill.
+  vehiclesDriven        VehicleMaster[]           @relation("VehicleDriver")
+  saleReturnsDriven     SaleReturn[]              @relation("SaleReturnDriver")
+  saleReturnsSupervised SaleReturn[]              @relation("SaleReturnSupervisor")
+  saleDcsDriven         SaleDc[]                  @relation("SaleDcDriver")
+  saleDcsSupervised     SaleDc[]                  @relation("SaleDcSupervisor")
+  saleDcReturnsDriven   SaleDcReturn[]            @relation("SaleDcReturnDriver")
+  saleDcReturnsSupervised SaleDcReturn[]          @relation("SaleDcReturnSupervisor")
 
   @@map("employee_master")
   @@schema("public")

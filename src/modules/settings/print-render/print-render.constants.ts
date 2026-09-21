@@ -106,5 +106,18 @@ export const RENDER_COPY_TIMEOUT_MS = 15_000;
  */
 export const MAX_COPIES = 10;
 
+/**
+ * How many documents one render may carry.
+ *
+ * A batch is the list screen's "print these five bills as one PDF": the same
+ * design, laid out once per document, merged into a single file. It costs a
+ * full dataset pass per document — the whole point is that each one binds its
+ * own `:doc_id` — so the ceiling is there for the same reason `MAX_COPIES` is.
+ * An operator who ticks a page of fifty is asking for something reasonable; one
+ * who ticks a year of them is asking for a report, and that is a different
+ * feature with a different shape.
+ */
+export const MAX_BATCH_DOCS = 50;
+
 /** The accounting-year shape ck_plg_acc_year_shape enforces. */
 export const ACC_YEAR_PATTERN = /^[0-9]{4}-[0-9]{4}$/;

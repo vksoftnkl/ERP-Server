@@ -40,10 +40,17 @@ model AccVoucherDocEwaybill {
   gdwValidUpto        DateTime?         @db.Timestamptz(6) @map("gdw_valid_upto")
 
   gdwCancelReason     String?           @db.VarChar(200) @map("gdw_cancel_reason")
-  gdwCanceledOn       DateTime?         @db.Timestamptz(6) @map("gdw_canceled_on")
+  /// TWO l's, as of 20260922020000. The deployed table used to spell it
+  /// with one while every other table in this schema used two; a rename
+  /// here is also a DATA change in gst_provider_field_map, which stores
+  /// this name as a target column.
+  gdwCancelledOn      DateTime?         @db.Timestamptz(6) @map("gdw_cancelled_on")
 
   gdwVehicleNo        String?           @db.VarChar(20) @map("gdw_vehicle_no")
   gdwTransportMode    GdwTransportMode? @map("gdw_transport_mode")
+  /// The PORTAL's transporterId, which IS a 15-character GSTIN — not our
+  /// TransporterMaster uuid. The document's transporter uuid maps to its
+  /// GSTIN, and THAT is what lands here.
   gdwTransporterId    String?           @db.VarChar(15) @map("gdw_transporter_id")
   gdwTransporterName  String?           @db.VarChar(150) @map("gdw_transporter_name")
   gdwDistanceKm       Int?              @map("gdw_distance_km")
@@ -77,11 +84,30 @@ model AccVoucherDocEwaybill {
   gdwSyncDate         DateTime?         @db.Timestamptz(6) @map("gdw_sync_date")
   gdwCreatedOn        DateTime          @default(now()) @db.Timestamptz(6) @map("gdw_created_on")
   gdwCreatedBy        String?           @db.Uuid @map("gdw_created_by")
-  gdwUpdatedOn        DateTime?         @db.Timestamptz(6) @map("gdw_updated_on")
-  gdwUpdatedBy        String?           @db.Uuid @map("gdw_updated_by")
+  // The house audit pair, renamed from gdw_updated_* by 20260922020000.
+  gdwModifiedOn       DateTime?         @db.Timestamptz(6) @map("gdw_modified_on")
+  gdwModifiedBy       String?           @db.Uuid @map("gdw_modified_by")
+
+  // ── Reconciled with the doc-register design (20260922020000) ─────────
+  gdwTenantId         String?           @db.Uuid @map("gdw_tenant_id")
+  gdwAttemptCount     Int               @default(0) @map("gdw_attempt_count")
+  gdwLastAttemptOn    DateTime?         @db.Timestamptz(6) @map("gdw_last_attempt_on")
+  gdwRequestPayload   Json?             @map("gdw_request_payload")
+  gdwResponsePayload  Json?             @map("gdw_response_payload")
+  /// Part-B transDocNo / transDocDate — the LR or consignment note, sent to
+  /// the portal on every vehicle update. What was DECLARED, so it is not
+  /// re-derived from a document that may since have been amended.
+  gdwTransportDocNo   String?           @db.VarChar(50) @map("gdw_transport_doc_no")
+  gdwTransportDocDate DateTime?         @db.Date @map("gdw_transport_doc_date")
+  /// The vehicle as OUR master knows it, beside gdwVehicleNo which is the
+  /// plate exactly as the portal received it.
+  gdwVehicleId        String?           @db.Uuid @map("gdw_vehicle_id")
+  /// An e-way bill may be extended; the portal returns a new validity.
+  gdwExtendedUpto     DateTime?         @db.Timestamptz(6) @map("gdw_extended_upto")
 
   // Relations
   docRegister         AccVoucherDocRegister @relation(fields: [gdwGdrId], references: [gdrId], onDelete: Cascade, map: "fk_gdw_gdr")
+  vehicle             VehicleMaster?        @relation("EwayBillVehicle", fields: [gdwVehicleId], references: [vehId], onUpdate: Cascade, onDelete: Restrict, map: "fk_gdw_vehicle")
 
   @@unique([gdwGdrId], map: "uq_gdw_gdr")
   @@map("acc_voucher_doc_ewaybill")

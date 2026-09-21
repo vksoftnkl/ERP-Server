@@ -38,6 +38,19 @@ model SaleBillItem {
   // what to put back.
   sbiGodownId        String    @db.Uuid @map("sbi_godown_id")
   sbiStockId         String?   @db.Uuid @map("sbi_stock_id")
+  // ── Sales plan (20260921220000) ───────────────────────────────────────
+  /// The stock engine keys on the LOT, not the legacy sbiStockId.
+  sbiLotId           String?   @db.Uuid @map("sbi_lot_id")
+  /// SALEABLE | DAMAGED | QUARANTINE | EXPIRED | SAMPLE
+  sbiBucket          String    @default("SALEABLE") @db.VarChar(20) @map("sbi_bucket")
+  /// The source LINE (soiId or sdiId). sbiSrcDocId is the HEADER, and
+  /// sbiSrcDocLineNo is not a key across an amend.
+  sbiSrcItemId       String?   @db.Uuid @map("sbi_src_item_id")
+  /// What this line posted as COGS — ZERO on a line that came via a DC,
+  /// because the challan already posted it.
+  sbiCogsAmt         Decimal   @default(0) @db.Decimal(15, 2) @map("sbi_cogs_amt")
+  /// Which promotion gave a free item, so the claw-back knows what to undo.
+  sbiPromoUsageId    String?   @db.Uuid @map("sbi_promo_usage_id")
   sbiBatchNo         String?   @db.VarChar(100) @map("sbi_batch_no")
   sbiBatchDate       DateTime? @db.Date @map("sbi_batch_date")
   sbiExpiryDate      DateTime? @db.Date @map("sbi_expiry_date")
@@ -171,6 +184,12 @@ model SaleBillItem {
   // ix_sbi_tax (sbi_tax_id) WHERE sbi_tax_id IS NOT NULL is a DB-only partial index
   // (migration 20260912050000). Prisma cannot express the predicate and
   // would re-create it without one. Do NOT add @@index for it.
+  // ── Sales documents (20260921200000) ────────────────────────────────────
+  returnItems           SaleReturnItem[]          @relation("SaleReturnItemBill")
+
+  // ── Sales plan (20260921220000) ───────────────────────────────────────
+  lot                StockLot? @relation("SaleBillItemLot", fields: [sbiLotId], references: [sltId], onUpdate: Cascade, onDelete: Restrict, map: "fk_sbi_lot")
+
   @@map("sale_bill_item")
   @@schema("sales")
 }

@@ -102,6 +102,29 @@ model AccTenderDetail {
   // VOUCHER), and a PERCENT coupon arrives here already resolved to rupees.
   couponTxns            LoyaltyCouponTxn[]        @relation("CouponTxnTender")
 
+  // ── Temp credit (20260922000000) ────────────────────────────────────────
+  // A TEMP_CR tender (type 8) writes no leg and leaves the bill open; the
+  // temp-credit row is the name and mobile behind it.
+  tempCredits           AccTempCredit[]           @relation("TempCreditTender")
+
+  // ── Re-tender (20260922040000) ──────────────────────────────────────────
+  /// This tender did NOT happen — the UPI failed, the card was declined. The
+  /// row STAYS so a till review can see it: tdIsDeleted would say "keyed
+  /// wrong" when the truth is "payment failed", and the difference is exactly
+  /// what is worth reviewing. Every till and day-book report filters
+  /// NOT tdIsVoided; audit reads both halves.
+  tdIsVoided            Boolean   @default(false)                    @map("td_is_voided")
+  /// UPI_FAILED | CARD_DECLINED | CHEQUE_REFUSED | KEYED_WRONG |
+  /// CUSTOMER_CHANGED | OTHER. ck_td_void_pair: a voided row must say WHEN
+  /// and WHY, a live row must say neither.
+  tdVoidReason          String?   @db.VarChar(30)                    @map("td_void_reason")
+  tdVoidedOn            DateTime? @db.Timestamptz(6)                 @map("td_voided_on")
+  tdVoidedBy            String?   @db.Uuid                           @map("td_voided_by")
+  /// On the REPLACEMENT row: the tdId it stands in for. Gives the pair
+  /// without a join through the voucher. No FK — the pair may span
+  /// partitions and the replacement is written before anything validates it.
+  tdReplacesId          String?   @db.Uuid                           @map("td_replaces_id")
+
   @@map("acc_tender_detail")
   @@schema("accounts")
 }

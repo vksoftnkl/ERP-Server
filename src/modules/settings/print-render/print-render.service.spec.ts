@@ -186,7 +186,7 @@ const SAMPLE_DATA: Record<string, unknown> = {
 function buildService(options: {
   version: PrintTemplateVersion;
   datasets: PrintTemplateDataset[];
-}): { service: PrintRenderService; logged: unknown[] } {
+}): { service: PrintRenderService; logged: unknown[]; datasetCalls: (string | null)[] } {
   const fonts = new FontRegistry();
   fonts.load();
   const measurer = new TextMeasurer(fonts);
@@ -210,9 +210,15 @@ function buildService(options: {
     },
   } as unknown as PrismaService;
 
+  // Which document each dataset pass was run for, in order. A batch's whole
+  // correctness rests on this list, so the fake records it rather than the
+  // assertions having to infer it from the bytes.
+  const datasetCalls: (string | null)[] = [];
+
   const datasetRunner = {
-    run: () =>
-      Promise.resolve({
+    run: (request: { context: { docId: string | null } }) => {
+      datasetCalls.push(request.context.docId);
+      return Promise.resolve({
         data: SAMPLE_DATA,
         resolved: Object.keys(SAMPLE_DATA).map((name, index) => ({
           name,
@@ -225,7 +231,8 @@ function buildService(options: {
           truncated: false,
         })),
         warnings: [],
-      }),
+      });
+    },
   } as unknown as DatasetRunnerService;
 
   const logged: unknown[] = [];
@@ -248,7 +255,7 @@ function buildService(options: {
     new EscPRenderer(),
   );
 
-  return { service, logged };
+  return { service, logged, datasetCalls };
 }
 
 const context = {
@@ -300,6 +307,78 @@ describe('PrintRenderService.preview — a page design', () => {
     // The copies are one stream: three copies of a one-page invoice is a
     // three-page document, which is what the paper tray sees.
     expect(outcome.pageCount).toBe(outcome.pagesPerCopy.reduce((sum, count) => sum + count, 0));
+  });
+
+  it('reads the document once when only one is asked for', async () => {
+    const { service, datasetCalls } = buildService({
+      version: versionFor(fixture),
+      datasets: datasetsFor(fixture),
+    });
+
+    await service.preview({ versionId: '0196-version', context, params: {} });
+
+    // The batch loop must not cost the ordinary render a second dataset pass.
+    expect(datasetCalls).toEqual(['0196-bill']);
+  });
+
+  it('renders several documents into one file, each read on its own', async () => {
+    const { service, datasetCalls } = buildService({
+      version: versionFor(fixture),
+      datasets: datasetsFor(fixture),
+    });
+
+    const outcome = await service.preview({
+      versionId: '0196-version',
+      // A batch carries no single document, so the context names none — the
+      // ids arrive beside it, exactly as the controller assembles them.
+      context: { ...context, docId: null },
+      params: {},
+      docIds: ['bill-a', 'bill-b', 'bill-c'],
+    });
+
+    // THE assertion this feature turns on: one dataset pass per document, each
+    // bound to its own id. Hoisting the pass out of the loop reads bill-a three
+    // times and still produces a perfectly valid PDF, so the bytes cannot catch
+    // it and this can.
+    expect(datasetCalls).toEqual(['bill-a', 'bill-b', 'bill-c']);
+
+    expect(outcome.bytes.subarray(0, 5).toString('latin1')).toBe('%PDF-');
+    expect(outcome.pagesPerCopy).toHaveLength(3);
+    expect(outcome.pageCount).toBe(outcome.pagesPerCopy.reduce((sum, count) => sum + count, 0));
+  });
+
+  it('gives every document in a batch its copies, document by document', async () => {
+    const { service, datasetCalls } = buildService({
+      version: versionFor(fixture),
+      datasets: datasetsFor(fixture),
+    });
+
+    const outcome = await service.preview({
+      versionId: '0196-version',
+      context: { ...context, docId: null },
+      params: {},
+      docIds: ['bill-a', 'bill-b'],
+      copies: 2,
+      copyLabels: ['ORIGINAL', 'DUPLICATE'],
+    });
+
+    // Two documents, two copies each: four layouts, and still ONE dataset pass
+    // per document — the copies of a bill read the same rows.
+    expect(datasetCalls).toEqual(['bill-a', 'bill-b']);
+    expect(outcome.pagesPerCopy).toHaveLength(4);
+    expect(outcome.copies).toBe(2);
+    expect(outcome.pageCount).toBe(outcome.pagesPerCopy.reduce((sum, count) => sum + count, 0));
+  });
+
+  it('falls back to the context document when the batch is empty', async () => {
+    const { service, datasetCalls } = buildService({
+      version: versionFor(fixture),
+      datasets: datasetsFor(fixture),
+    });
+
+    await service.preview({ versionId: '0196-version', context, params: {}, docIds: [] });
+
+    expect(datasetCalls).toEqual(['0196-bill']);
   });
 
   it('runs out of labels rather than inventing one', async () => {

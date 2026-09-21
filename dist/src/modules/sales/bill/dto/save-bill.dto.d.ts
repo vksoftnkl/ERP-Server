@@ -106,12 +106,9 @@ export declare class SaveBillDto {
     sbDiscAlterBase?: boolean | null;
     sbRoundOffStep?: string | number;
     sbStatus?: string | null;
-    sbPostedOn?: string | null;
     sbPostedVoucherId?: string | null;
     sbApprovedOn?: string | null;
     sbApprovedBy?: string | null;
-    sbCancelledOn?: string | null;
-    sbCancelledBy?: string | null;
     sbCancelReason?: string | null;
     sbVersionNo?: number;
     sbPrintCount?: number;

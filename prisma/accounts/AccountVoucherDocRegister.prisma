@@ -154,30 +154,17 @@ model AccVoucherDocRegister {
   gdrPartyStateCode        String?           @db.Char(2) @map("gdr_party_state_code")
   gdrPartyStateName        String?           @db.VarChar(100) @map("gdr_party_state_name")
   gdrPartyGstType          String?           @db.VarChar(30) @map("gdr_party_gst_type")
+  // The ship-to and dispatch-from blocks (18 columns) were dropped by
+  // 20260922020000: neither appears in GSTR-1 or GSTR-3B, and both exist
+  // only to build the e-invoice and e-way payloads, which read them from
+  // the shared transport band instead. gdr_party_* stays — GSTR-1 B2B
+  // needs the recipient.
   gdrPartyGstin            String?           @db.VarChar(15) @map("gdr_party_gstin")
   gdrPartyEcomGstin        String?           @db.VarChar(15) @map("gdr_party_ecom_gstin")
 
   // Ship-to snapshot
-  gdrShipName              String?           @db.VarChar(200) @map("gdr_ship_name")
-  gdrShipAddr1             String?           @db.VarChar(200) @map("gdr_ship_addr1")
-  gdrShipAddr2             String?           @db.VarChar(200) @map("gdr_ship_addr2")
-  gdrShipAddr3             String?           @db.VarChar(200) @map("gdr_ship_addr3")
-  gdrShipLocation          String?           @db.VarChar(100) @map("gdr_ship_location")
-  gdrShipPin               String?           @db.VarChar(10) @map("gdr_ship_pin")
-  gdrShipStateCode         String?           @db.Char(2) @map("gdr_ship_state_code")
-  gdrShipStateName         String?           @db.VarChar(100) @map("gdr_ship_state_name")
-  gdrShipGstin             String?           @db.VarChar(15) @map("gdr_ship_gstin")
 
   // Dispatch-from snapshot
-  gdrDispatchName          String?           @db.VarChar(200) @map("gdr_dispatch_name")
-  gdrDispatchAddr1         String?           @db.VarChar(200) @map("gdr_dispatch_addr1")
-  gdrDispatchAddr2         String?           @db.VarChar(200) @map("gdr_dispatch_addr2")
-  gdrDispatchAddr3         String?           @db.VarChar(200) @map("gdr_dispatch_addr3")
-  gdrDispatchLocation      String?           @db.VarChar(100) @map("gdr_dispatch_location")
-  gdrDispatchPin           String?           @db.VarChar(10) @map("gdr_dispatch_pin")
-  gdrDispatchStateCode     String?           @db.Char(2) @map("gdr_dispatch_state_code")
-  gdrDispatchStateName     String?           @db.VarChar(100) @map("gdr_dispatch_state_name")
-  gdrDispatchGstin         String?           @db.VarChar(15) @map("gdr_dispatch_gstin")
 
   // Amount summary
   gdrGrossValue            Decimal           @default(0) @db.Decimal(18, 2) @map("gdr_gross_value")
@@ -197,6 +184,10 @@ model AccVoucherDocRegister {
 
   // Lifecycle / audit
   gdrIsActive              Boolean           @default(true) @map("gdr_is_active")
+  /// IGST charged on an INTRA-state supply: an SEZ unit in the same state,
+  /// and the s.10(1)(b) bill-to/ship-to cases. The one TranDtls flag the
+  /// register lacked.
+  gdrIgstOnIntra           Boolean           @default(false) @map("gdr_igst_on_intra")
   gdrIsDeleted             Boolean           @default(false) @map("gdr_is_deleted")
   gdrSyncDate              DateTime?         @db.Timestamptz(6) @map("gdr_sync_date")
   gdrCreatedOn             DateTime          @default(now()) @db.Timestamptz(6) @map("gdr_created_on")

@@ -314,9 +314,6 @@ export class SaveQuotationDto {
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   @NullableUuid()
   sqApprovedBy?: string | null;
-  @ApiPropertyOptional({ type: 'string', format: 'date-time', nullable: true })
-  @NullableDateString()
-  sqCancelledOn?: string | null;
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   @NullableUuid()
   sqCancelledBy?: string | null;

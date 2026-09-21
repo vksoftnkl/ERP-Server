@@ -112,7 +112,6 @@ const QUOTATION_OPTIONAL_FIELDS = [
     'sqConvertedOn',
     'sqApprovedOn',
     'sqApprovedBy',
-    'sqCancelledOn',
     'sqCancelledBy',
     'sqCancelReason',
     'sqMrpSavings',
@@ -257,7 +256,6 @@ const QUOTATION_DATE_FIELDS = [
     'sqRejectedOn',
     'sqConvertedOn',
     'sqApprovedOn',
-    'sqCancelledOn',
 ];
 const QUOTATION_ITEM_DATE_FIELDS = ['sqiBatchDate', 'sqiExpiryDate'];
 function toDateOrNull(value, field) {
@@ -347,7 +345,6 @@ let QuotationService = class QuotationService {
                     },
                 },
                 custArea: { select: { armName: true, armDistanceKm: true } },
-                salesman: { select: { empName: true } },
             },
         });
         if (!record) {
@@ -1171,12 +1168,11 @@ let QuotationService = class QuotationService {
         data.sqParentAccYear = dto.sqParentAccYear ?? accYear;
     }
     toPayload(record, lineContext = EMPTY_LINE_CONTEXT) {
-        const { sqCreatedOn, sqModifiedOn, sqQuoteDatetime, sqSyncDate, sqQuoteSlno, items, charges, custArea, salesman, agent, ...rest } = record;
+        const { sqCreatedOn, sqModifiedOn, sqQuoteDatetime, sqSyncDate, sqQuoteSlno, items, charges, custArea, agent, ...rest } = record;
         return {
             ...rest,
             sqCustAreaName: custArea?.armName ?? null,
             sqCustAreaDistanceKm: custArea?.armDistanceKm ?? null,
-            sqSalesmanName: salesman?.empName ?? null,
             sqAgentName: agent?.saName ?? null,
             sqCreatedOn: sqCreatedOn?.toISOString(),
             sqModifiedOn: sqModifiedOn?.toISOString() ?? null,

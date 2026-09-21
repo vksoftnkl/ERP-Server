@@ -42,6 +42,16 @@ model GodownLocation {
   // ── Loyalty points engine (20260921140000) ─────────────────────────────
   loyaltyGiftItems      LoyaltyGiftRedeemItem[]   @relation("LoyaltyGiftItemGodown")
 
+  // ── Sales documents (20260921200000) ────────────────────────────────────
+  saleReturnItems       SaleReturnItem[]          @relation("SaleReturnItemGodown")
+  saleDcItems           SaleDcItem[]              @relation("SaleDcItemGodown")
+  saleDcReturnItems     SaleDcReturnItem[]        @relation("SaleDcReturnItemGodown")
+
+  // The transport band: one end of a goods movement is ours, and which end
+  // it is depends on ttdDirection.
+  transportBandsFrom    TxnTransportDetail[]      @relation("TransportBandFromGodown")
+  transportBandsTo      TxnTransportDetail[]      @relation("TransportBandToGodown")
+
   @@map("godown_locations")
    @@schema("inventory")
   // Indexes

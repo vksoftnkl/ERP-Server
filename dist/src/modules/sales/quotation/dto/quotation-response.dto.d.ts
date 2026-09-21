@@ -262,7 +262,6 @@ export declare class QuotationPayloadDto {
     sqConvertedOn: string | null;
     sqApprovedOn: string | null;
     sqApprovedBy: string | null;
-    sqCancelledOn: string | null;
     sqCancelledBy: string | null;
     sqCancelReason: string | null;
     sqMrpSavings: number | null;

@@ -53,6 +53,10 @@ model Unit {
   // Back-relations — others
   itemMasters  ItemMaster[]
 
+  /// The three-letter GST Unit Quantity Code, for the e-invoice, the e-way
+  /// bill and the GSTR-1 HSN summary. The table had a Tally name and no UQC.
+  unitUqc       String?   @db.Char(3)                                      @map("unit_uqc")
+
   @@map("item_unit_master")
   @@schema("inventory")
   @@index([unit_is_active], map: "idx_unit_active")

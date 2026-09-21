@@ -19,7 +19,10 @@ model AccVoucherHeader {
   avhVoucherNo           BigInt?   @map("avh_voucher_no")
   avhVoucherSlno         BigInt?   @map("avh_voucher_slno")
   avhVoucherRefno        String?   @db.VarChar(50) @map("avh_voucher_refno")
-  avhVoucherDate         DateTime  @db.Timestamptz(6) @map("avh_voucher_date")
+  /// A DATE, not a timestamptz. Stored with a zone, 2026-04-01 became
+  /// 2026-03-31T18:30Z and landed in the wrong day of every date-bounded
+  /// report — and, on the first day of a financial year, the wrong YEAR.
+  avhVoucherDate         DateTime  @db.Date @map("avh_voucher_date")
   // Source document. src_* is the machine link (posting idempotency,
   // ux_avh_src); doc_* is the human-readable face of the same document.
   avhSrcModule           String?   @db.VarChar(20) @map("avh_src_module")

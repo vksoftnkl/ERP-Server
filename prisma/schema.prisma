@@ -283,6 +283,11 @@ model AccBillBalance {
   againstAdjustments  AccBillAdjustment[] @relation("BillAdjustmentAgainstBill")
   voucherLines        AccVoucher[]
   @@id([ablId, ablAccYear], map: "pk_acc_bill_balance")
+  // ── Temp credit (20260922000000) ────────────────────────────────────────
+  // The outstanding lives HERE; the temp-credit row rides on it and mirrors
+  // ablPendingAmount into its own atcBalanceAmount.
+  tempCredits           AccTempCredit[]           @relation("TempCreditBalance")
+
   @@map("acc_bill_balance")
   @@schema("accounts")
   // DB-only objects not expressible in the Prisma schema (see migrations
@@ -651,6 +656,14 @@ model AccLedgerMaster {
   // ── Coupons and gift vouchers (20260921160000) ──────────────────────────
   coupons               LoyaltyCoupon[]           @relation("CouponPartyLedger")
 
+  // ── Sales documents (20260921200000) ────────────────────────────────────
+  taxCertificates       AccPartyTaxCertificate[]  @relation("PartyTaxCertificateParty")
+
+  // ── Temp credit (20260922000000) ────────────────────────────────────────
+  // The walk-in ledger carries a thousand bills; these rows say WHO took
+  // each small counter loan against it.
+  tempCredits           AccTempCredit[]           @relation("TempCreditParty")
+
   @@map("acc_ledger_master")
   @@schema("accounts")
 }
@@ -845,6 +858,54 @@ model AccOpeningRun {
   //   - CHECKs ck_aor_from_acc_year / ck_aor_to_acc_year (YYYY-YYYY, second
   //     half = first + 1), ck_aor_year_order, ck_aor_counts, ck_aor_totals.
   @@map("acc_opening_run")
+  @@schema("accounts")
+}
+
+// ----- prisma/accounts/AccountPartyTaxCertificate.prisma -----
+/// The party's paper: what a party has shown us that changes a rate or a
+/// refusal. One row per certificate, windowed by validity.
+///
+/// Read by the TDS/TCS rate resolver and by the PAN / Form-60 guard on a cash
+/// sale above the 269ST limit. LDC_197 is the one that carries numbers of its
+/// own: a lower rate certified, and a ceiling up to which it applies.
+model AccPartyTaxCertificate {
+  ptcId             String    @id(map: "pk_acc_party_tax_certificate") @default(dbgenerated("uuidv7()")) @db.Uuid @map("ptc_id")
+  ptcCompanyId      String    @db.Uuid                                 @map("ptc_company_id")
+  /// accounts.acc_ledger_master — the accounting identity of the party.
+  ptcPartyId        String    @db.Uuid                                 @map("ptc_party_id")
+  /// PAN | FORM60 | LDC_197 | NO_DEDUCTION_206C | LUT | COMPOSITION | TAN
+  ptcKind           String    @db.VarChar(20)                          @map("ptc_kind")
+  ptcNumber         String?   @db.VarChar(50)                          @map("ptc_number")
+  /// For an LDC: the lower rate certified.
+  ptcRatePerc       Decimal?  @db.Decimal(6, 3)                        @map("ptc_rate_perc")
+  /// For an LDC: the certified ceiling.
+  ptcLimitAmount    Decimal?  @db.Decimal(18, 2)                       @map("ptc_limit_amount")
+  ptcIssuedOn       DateTime? @db.Date                                 @map("ptc_issued_on")
+  ptcValidFrom      DateTime  @db.Date                                 @map("ptc_valid_from")
+  ptcValidTo        DateTime? @db.Date                                 @map("ptc_valid_to")
+  ptcVerifiedOn     DateTime? @db.Date                                 @map("ptc_verified_on")
+  ptcVerifiedBy     String?   @db.VarChar(50)                          @map("ptc_verified_by")
+  ptcFileRef        String?   @db.VarChar(250)                         @map("ptc_file_ref")
+  ptcRemarks        String?   @db.VarChar(250)                         @map("ptc_remarks")
+  ptcIsActive       Boolean   @default(true)                           @map("ptc_is_active")
+  ptcIsDeleted      Boolean   @default(false)                          @map("ptc_is_deleted")
+  ptcSyncDate       DateTime? @db.Timestamptz(6)                       @map("ptc_sync_date")
+  ptcCreatedOn      DateTime  @default(now()) @db.Timestamptz(6)       @map("ptc_created_on")
+  ptcCreatedBy      String?   @db.VarChar(50)                          @map("ptc_created_by")
+  ptcModifiedOn     DateTime? @db.Timestamptz(6)                       @map("ptc_modified_on")
+  ptcModifiedBy     String?   @db.VarChar(50)                          @map("ptc_modified_by")
+
+  party             AccLedgerMaster @relation("PartyTaxCertificateParty",   fields: [ptcPartyId],   references: [ledId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_ptc_party")
+  company           Company         @relation("PartyTaxCertificateCompany", fields: [ptcCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_ptc_company")
+
+  // DB-only:
+  //   CREATE INDEX ix_ptc_party_kind ON accounts.acc_party_tax_certificate
+  //       (ptc_company_id, ptc_party_id, ptc_kind, ptc_valid_from DESC)
+  //       WHERE ptc_is_deleted = false AND ptc_is_active = true;
+  //
+  // CHECK constraints (DB-only): ck_ptc_kind, ck_ptc_window
+
+  @@map("acc_party_tax_certificate")
   @@schema("accounts")
 }
 
@@ -1203,6 +1264,138 @@ model AccTdsRegister {
   //     nothing is remitted on the WITHHELD side, the customer does that).
 }
 
+// ----- prisma/accounts/AccountTempCredit.prisma -----
+/// TEMP CREDIT — a small loan at the counter to somebody who is NOT a credit
+/// party.
+///
+/// A walk-in takes goods and pays part now, the rest "in a few days". The bill
+/// is raised on the party the sales screen chose — the walk-in ledger, usually
+/// — and the unpaid part is a TEMP_CR tender (acc_tender_types id 8). Like
+/// CREDIT, that tender writes NO leg and leaves the bill's AccBillBalance row
+/// OPEN for the amount.
+///
+/// So the OUTSTANDING is already where every receipt looks. What the ledger
+/// cannot tell you is WHO: the walk-in ledger has a thousand bills against it.
+/// THIS TABLE IS THE WHO — name, mobile, place, promise — one row per TEMP_CR
+/// tender, riding on the bill's balance row.
+///
+/// LIST-partitioned by atcAccYear, which fk_atc_bill also uses as the BILL's
+/// year: a temp credit belongs to the year of the bill that created it, so the
+/// two cannot diverge.
+model AccTempCredit {
+  atcId               String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("atc_id")
+  atcCompanyId        String    @db.Uuid                             @map("atc_company_id")
+  atcBranchId         String    @db.Uuid                             @map("atc_branch_id")
+  atcTenantId         String?   @db.Uuid                             @map("atc_tenant_id")
+  atcAccYear          String    @db.Char(9)                          @map("atc_acc_year")
+
+  // ── The bill, and the party it was raised on ─────────────────────────
+  /// The ledger the sales screen chose — the walk-in one, usually, which is
+  /// exactly why this table has to exist.
+  atcPartyId          String    @db.Uuid                             @map("atc_party_id")
+  atcSrcDocType       String    @default("SALE_BILL") @db.VarChar(30) @map("atc_src_doc_type")
+  atcSrcDocId         String    @db.Uuid                             @map("atc_src_doc_id")
+  atcBillRefno        String?   @db.VarChar(100)                     @map("atc_bill_refno")
+  atcBillDate         DateTime  @db.Date                             @map("atc_bill_date")
+  atcBillAmount       Decimal   @default(0) @db.Decimal(15, 2)       @map("atc_bill_amount")
+  /// The bill's AccBillBalance row: where the outstanding actually lives.
+  atcAblId            String    @db.Uuid                             @map("atc_abl_id")
+  atcAblAccYear       String    @db.Char(9)                          @map("atc_abl_acc_year")
+  /// The TEMP_CR AccTenderDetail row (tender type 8).
+  atcTenderId         String?   @db.Uuid                             @map("atc_tender_id")
+  atcTenderAccYear    String?   @db.Char(9)                          @map("atc_tender_acc_year")
+
+  // ── The borrower, typed at the counter (from BILL-TO by default) ─────
+  atcName             String    @db.VarChar(200)                     @map("atc_name")
+  /// How the counter finds them again (ix_atc_mobile). NOT NULL and
+  /// shape-checked: a loan to somebody you cannot ring is not a loan.
+  atcMobile           String    @db.VarChar(20)                      @map("atc_mobile")
+  atcPlace            String?   @db.VarChar(100)                     @map("atc_place")
+  atcAddr             String?   @db.VarChar(250)                     @map("atc_addr")
+  /// Any id shown at the counter. Optional.
+  atcIdRef            String?   @db.VarChar(50)                      @map("atc_id_ref")
+
+  // ── The promise ──────────────────────────────────────────────────────
+  atcDays             Int       @default(0)                          @map("atc_days")
+  atcDueDate          DateTime  @db.Date                             @map("atc_due_date")
+  /// What was lent. Set once, when the tender is taken, and guarded.
+  atcCreditAmount     Decimal   @db.Decimal(15, 2)                   @map("atc_credit_amount")
+  /// A MAINTAINED copy of AccBillBalance.ablPendingAmount — itself a GENERATED
+  /// column — refreshed by BillBalanceRecomputeService whenever the balance row
+  /// moves: a receipt allocation, a write-off, a credit-note set-off. Never
+  /// written by hand.
+  ///
+  /// It carries no non-negativity guard: a receipt raised on another device may
+  /// move the balance before this row syncs, so an over-draw is RECORDED and
+  /// found by ix_atc_overdrawn rather than refused.
+  atcBalanceAmount    Decimal   @db.Decimal(15, 2)                   @map("atc_balance_amount")
+  /// OPEN | PARTIAL | SETTLED | WRITTEN_OFF | CANCELLED. A cancelled bill sets
+  /// CANCELLED and KEEPS the row — a reversal, never a delete.
+  atcStatus           String    @default("OPEN") @db.VarChar(20)     @map("atc_status")
+  atcSettledOn        DateTime? @db.Date                             @map("atc_settled_on")
+  atcLastReceiptId    String?   @db.Uuid                             @map("atc_last_receipt_id")
+  /// Re-promised on a follow-up call.
+  atcPromiseDate      DateTime? @db.Date                             @map("atc_promise_date")
+  atcFollowupOn       DateTime? @db.Timestamptz(6)                   @map("atc_followup_on")
+  atcFollowupBy       String?   @db.Uuid                             @map("atc_followup_by")
+  atcReminderSentOn   DateTime? @db.Timestamptz(6)                   @map("atc_reminder_sent_on")
+  atcRemarks          String?   @db.VarChar(500)                     @map("atc_remarks")
+
+  // ── Who / where ──────────────────────────────────────────────────────
+  atcUserId           String?   @db.Uuid                             @map("atc_user_id")
+  atcCounterId        String?   @db.Uuid                             @map("atc_counter_id")
+  atcSessionId        String?   @db.Uuid                             @map("atc_session_id")
+
+  atcIsDeleted        Boolean   @default(false)                      @map("atc_is_deleted")
+  atcSyncDate         DateTime? @db.Timestamptz(6)                   @map("atc_sync_date")
+  atcCreatedOn        DateTime  @default(now()) @db.Timestamptz(6)   @map("atc_created_on")
+  atcCreatedBy        String?   @db.VarChar(50)                      @map("atc_created_by")
+  atcModifiedOn       DateTime? @db.Timestamptz(6)                   @map("atc_modified_on")
+  atcModifiedBy       String?   @db.VarChar(50)                      @map("atc_modified_by")
+
+  // Relations
+  party               AccLedgerMaster  @relation("TempCreditParty",   fields: [atcPartyId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_atc_party")
+  bill                SaleBill         @relation("TempCreditBill",    fields: [atcSrcDocId, atcAccYear],     references: [sbId, sbAccYear],   onUpdate: Cascade, onDelete: Restrict, map: "fk_atc_bill")
+  billBalance         AccBillBalance   @relation("TempCreditBalance", fields: [atcAblId, atcAblAccYear],     references: [ablId, ablAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_atc_abl")
+  tender              AccTenderDetail? @relation("TempCreditTender",  fields: [atcTenderId, atcTenderAccYear], references: [tdId, tdAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_atc_tender")
+
+  @@id([atcId, atcAccYear], map: "pk_acc_temp_credit")
+
+  // Partial indexes are DB-only — Prisma ignores WHERE predicates:
+  //
+  //   -- the follow-up worklist: who owes, and by when
+  //   CREATE INDEX ix_atc_open ON accounts.acc_temp_credit
+  //       (atc_company_id, atc_branch_id, atc_status, atc_due_date)
+  //       WHERE atc_is_deleted = false AND atc_status IN ('OPEN','PARTIAL');
+  //
+  //   -- THE COUNTER LOOKUP: a receipt finds the borrower by the number given
+  //   CREATE INDEX ix_atc_mobile ON accounts.acc_temp_credit (atc_company_id, atc_mobile)
+  //       WHERE atc_is_deleted = false;
+  //
+  //   -- reconciliation: a balance below zero, or above the credit taken
+  //   CREATE INDEX ix_atc_overdrawn ON accounts.acc_temp_credit (atc_company_id, atc_branch_id)
+  //       WHERE atc_is_deleted = false
+  //         AND (atc_balance_amount < 0 OR atc_balance_amount > atc_credit_amount + 0.01);
+  //
+  //   -- one row per TEMP_CR tender; atc_acc_year is in the key because a
+  //   -- unique index on a partitioned table must carry the partition key
+  //   CREATE UNIQUE INDEX ux_atc_tender ON accounts.acc_temp_credit
+  //       (atc_tender_id, atc_tender_acc_year, atc_acc_year)
+  //       WHERE atc_is_deleted = false AND atc_tender_id IS NOT NULL;
+  //
+  //   -- ix_atc_abl, and FK-covering ix_atc_ledger / ix_atc_src_bill. Those
+  //   -- two are NOT called ix_atc_party / ix_atc_bill: accounts.acc_tcs_register
+  //   -- also uses the atc_ prefix and already owns both names, and INDEX names
+  //   -- are scoped to the SCHEMA rather than the table — so IF NOT EXISTS
+  //   -- matches the TCS register's index and skips SILENTLY.
+  //
+  // CHECK constraints (DB-only): ck_atc_status, ck_atc_amounts, ck_atc_due,
+  //   ck_atc_mobile, ck_atc_tender_pair
+
+  @@map("acc_temp_credit")
+  @@schema("accounts")
+}
+
 // ----- prisma/accounts/accountTenderDetail.prisma -----
 // Tender rows for a document (works for DRAFT docs too, before posting).
 // LIST-partitioned by tdAccYear — partitions (e.g. acc_tender_detail_2026_2027)
@@ -1307,6 +1500,29 @@ model AccTenderDetail {
   // Coupon redemption is a tender line too (td_tender_type_id = 11,
   // VOUCHER), and a PERCENT coupon arrives here already resolved to rupees.
   couponTxns            LoyaltyCouponTxn[]        @relation("CouponTxnTender")
+
+  // ── Temp credit (20260922000000) ────────────────────────────────────────
+  // A TEMP_CR tender (type 8) writes no leg and leaves the bill open; the
+  // temp-credit row is the name and mobile behind it.
+  tempCredits           AccTempCredit[]           @relation("TempCreditTender")
+
+  // ── Re-tender (20260922040000) ──────────────────────────────────────────
+  /// This tender did NOT happen — the UPI failed, the card was declined. The
+  /// row STAYS so a till review can see it: tdIsDeleted would say "keyed
+  /// wrong" when the truth is "payment failed", and the difference is exactly
+  /// what is worth reviewing. Every till and day-book report filters
+  /// NOT tdIsVoided; audit reads both halves.
+  tdIsVoided            Boolean   @default(false)                    @map("td_is_voided")
+  /// UPI_FAILED | CARD_DECLINED | CHEQUE_REFUSED | KEYED_WRONG |
+  /// CUSTOMER_CHANGED | OTHER. ck_td_void_pair: a voided row must say WHEN
+  /// and WHY, a live row must say neither.
+  tdVoidReason          String?   @db.VarChar(30)                    @map("td_void_reason")
+  tdVoidedOn            DateTime? @db.Timestamptz(6)                 @map("td_voided_on")
+  tdVoidedBy            String?   @db.Uuid                           @map("td_voided_by")
+  /// On the REPLACEMENT row: the tdId it stands in for. Gives the pair
+  /// without a join through the voucher. No FK — the pair may span
+  /// partitions and the replacement is written before anything validates it.
+  tdReplacesId          String?   @db.Uuid                           @map("td_replaces_id")
 
   @@map("acc_tender_detail")
   @@schema("accounts")
@@ -1754,7 +1970,11 @@ model AccVoucherDocEinvoice {
   gdeSignedQrcode   String?              @map("gde_signed_qrcode")
 
   gdeCancelReason   String?              @db.VarChar(200) @map("gde_cancel_reason")
-  gdeCanceledOn     DateTime?            @db.Timestamptz(6) @map("gde_canceled_on")
+  /// TWO l's, as of 20260922020000. The deployed table used to spell it
+  /// with one while every other table in this schema used two; a rename
+  /// here is also a DATA change in gst_provider_field_map, which stores
+  /// this name as a target column.
+  gdeCancelledOn    DateTime?            @db.Timestamptz(6) @map("gde_cancelled_on")
 
   gdeLastErrorCode  String?              @db.VarChar(50) @map("gde_last_error_code")
   gdeLastMessage    String?              @db.VarChar(500) @map("gde_last_message")
@@ -1785,8 +2005,20 @@ model AccVoucherDocEinvoice {
   gdeSyncDate       DateTime?            @db.Timestamptz(6) @map("gde_sync_date")
   gdeCreatedOn      DateTime             @default(now()) @db.Timestamptz(6) @map("gde_created_on")
   gdeCreatedBy      String?              @db.Uuid @map("gde_created_by")
-  gdeUpdatedOn      DateTime?            @db.Timestamptz(6) @map("gde_updated_on")
-  gdeUpdatedBy      String?              @db.Uuid @map("gde_updated_by")
+  // The house audit pair, renamed from gde_updated_* by 20260922020000.
+  gdeModifiedOn     DateTime?            @db.Timestamptz(6) @map("gde_modified_on")
+  gdeModifiedBy     String?              @db.Uuid @map("gde_modified_by")
+
+  // ── Reconciled with the doc-register design (20260922020000) ─────────
+  gdeTenantId       String?              @db.Uuid @map("gde_tenant_id")
+  /// How many times the IRP has been asked for this IRN, and when last.
+  gdeAttemptCount   Int                  @default(0) @map("gde_attempt_count")
+  gdeLastAttemptOn  DateTime?            @db.Timestamptz(6) @map("gde_last_attempt_on")
+  /// Exactly what was sent to the IRP, and exactly what it said back. Once
+  /// the document has been amended these two are the ONLY answer to "what
+  /// did we declare on that date".
+  gdeRequestPayload  Json?               @map("gde_request_payload")
+  gdeResponsePayload Json?               @map("gde_response_payload")
 
   // Relations
   docRegister       AccVoucherDocRegister @relation(fields: [gdeGdrId], references: [gdrId], onDelete: Cascade, map: "fk_gde_gdr")
@@ -1846,10 +2078,17 @@ model AccVoucherDocEwaybill {
   gdwValidUpto        DateTime?         @db.Timestamptz(6) @map("gdw_valid_upto")
 
   gdwCancelReason     String?           @db.VarChar(200) @map("gdw_cancel_reason")
-  gdwCanceledOn       DateTime?         @db.Timestamptz(6) @map("gdw_canceled_on")
+  /// TWO l's, as of 20260922020000. The deployed table used to spell it
+  /// with one while every other table in this schema used two; a rename
+  /// here is also a DATA change in gst_provider_field_map, which stores
+  /// this name as a target column.
+  gdwCancelledOn      DateTime?         @db.Timestamptz(6) @map("gdw_cancelled_on")
 
   gdwVehicleNo        String?           @db.VarChar(20) @map("gdw_vehicle_no")
   gdwTransportMode    GdwTransportMode? @map("gdw_transport_mode")
+  /// The PORTAL's transporterId, which IS a 15-character GSTIN — not our
+  /// TransporterMaster uuid. The document's transporter uuid maps to its
+  /// GSTIN, and THAT is what lands here.
   gdwTransporterId    String?           @db.VarChar(15) @map("gdw_transporter_id")
   gdwTransporterName  String?           @db.VarChar(150) @map("gdw_transporter_name")
   gdwDistanceKm       Int?              @map("gdw_distance_km")
@@ -1883,11 +2122,30 @@ model AccVoucherDocEwaybill {
   gdwSyncDate         DateTime?         @db.Timestamptz(6) @map("gdw_sync_date")
   gdwCreatedOn        DateTime          @default(now()) @db.Timestamptz(6) @map("gdw_created_on")
   gdwCreatedBy        String?           @db.Uuid @map("gdw_created_by")
-  gdwUpdatedOn        DateTime?         @db.Timestamptz(6) @map("gdw_updated_on")
-  gdwUpdatedBy        String?           @db.Uuid @map("gdw_updated_by")
+  // The house audit pair, renamed from gdw_updated_* by 20260922020000.
+  gdwModifiedOn       DateTime?         @db.Timestamptz(6) @map("gdw_modified_on")
+  gdwModifiedBy       String?           @db.Uuid @map("gdw_modified_by")
+
+  // ── Reconciled with the doc-register design (20260922020000) ─────────
+  gdwTenantId         String?           @db.Uuid @map("gdw_tenant_id")
+  gdwAttemptCount     Int               @default(0) @map("gdw_attempt_count")
+  gdwLastAttemptOn    DateTime?         @db.Timestamptz(6) @map("gdw_last_attempt_on")
+  gdwRequestPayload   Json?             @map("gdw_request_payload")
+  gdwResponsePayload  Json?             @map("gdw_response_payload")
+  /// Part-B transDocNo / transDocDate — the LR or consignment note, sent to
+  /// the portal on every vehicle update. What was DECLARED, so it is not
+  /// re-derived from a document that may since have been amended.
+  gdwTransportDocNo   String?           @db.VarChar(50) @map("gdw_transport_doc_no")
+  gdwTransportDocDate DateTime?         @db.Date @map("gdw_transport_doc_date")
+  /// The vehicle as OUR master knows it, beside gdwVehicleNo which is the
+  /// plate exactly as the portal received it.
+  gdwVehicleId        String?           @db.Uuid @map("gdw_vehicle_id")
+  /// An e-way bill may be extended; the portal returns a new validity.
+  gdwExtendedUpto     DateTime?         @db.Timestamptz(6) @map("gdw_extended_upto")
 
   // Relations
   docRegister         AccVoucherDocRegister @relation(fields: [gdwGdrId], references: [gdrId], onDelete: Cascade, map: "fk_gdw_gdr")
+  vehicle             VehicleMaster?        @relation("EwayBillVehicle", fields: [gdwVehicleId], references: [vehId], onUpdate: Cascade, onDelete: Restrict, map: "fk_gdw_vehicle")
 
   @@unique([gdwGdrId], map: "uq_gdw_gdr")
   @@map("acc_voucher_doc_ewaybill")
@@ -2058,30 +2316,17 @@ model AccVoucherDocRegister {
   gdrPartyStateCode        String?           @db.Char(2) @map("gdr_party_state_code")
   gdrPartyStateName        String?           @db.VarChar(100) @map("gdr_party_state_name")
   gdrPartyGstType          String?           @db.VarChar(30) @map("gdr_party_gst_type")
+  // The ship-to and dispatch-from blocks (18 columns) were dropped by
+  // 20260922020000: neither appears in GSTR-1 or GSTR-3B, and both exist
+  // only to build the e-invoice and e-way payloads, which read them from
+  // the shared transport band instead. gdr_party_* stays — GSTR-1 B2B
+  // needs the recipient.
   gdrPartyGstin            String?           @db.VarChar(15) @map("gdr_party_gstin")
   gdrPartyEcomGstin        String?           @db.VarChar(15) @map("gdr_party_ecom_gstin")
 
   // Ship-to snapshot
-  gdrShipName              String?           @db.VarChar(200) @map("gdr_ship_name")
-  gdrShipAddr1             String?           @db.VarChar(200) @map("gdr_ship_addr1")
-  gdrShipAddr2             String?           @db.VarChar(200) @map("gdr_ship_addr2")
-  gdrShipAddr3             String?           @db.VarChar(200) @map("gdr_ship_addr3")
-  gdrShipLocation          String?           @db.VarChar(100) @map("gdr_ship_location")
-  gdrShipPin               String?           @db.VarChar(10) @map("gdr_ship_pin")
-  gdrShipStateCode         String?           @db.Char(2) @map("gdr_ship_state_code")
-  gdrShipStateName         String?           @db.VarChar(100) @map("gdr_ship_state_name")
-  gdrShipGstin             String?           @db.VarChar(15) @map("gdr_ship_gstin")
 
   // Dispatch-from snapshot
-  gdrDispatchName          String?           @db.VarChar(200) @map("gdr_dispatch_name")
-  gdrDispatchAddr1         String?           @db.VarChar(200) @map("gdr_dispatch_addr1")
-  gdrDispatchAddr2         String?           @db.VarChar(200) @map("gdr_dispatch_addr2")
-  gdrDispatchAddr3         String?           @db.VarChar(200) @map("gdr_dispatch_addr3")
-  gdrDispatchLocation      String?           @db.VarChar(100) @map("gdr_dispatch_location")
-  gdrDispatchPin           String?           @db.VarChar(10) @map("gdr_dispatch_pin")
-  gdrDispatchStateCode     String?           @db.Char(2) @map("gdr_dispatch_state_code")
-  gdrDispatchStateName     String?           @db.VarChar(100) @map("gdr_dispatch_state_name")
-  gdrDispatchGstin         String?           @db.VarChar(15) @map("gdr_dispatch_gstin")
 
   // Amount summary
   gdrGrossValue            Decimal           @default(0) @db.Decimal(18, 2) @map("gdr_gross_value")
@@ -2101,6 +2346,10 @@ model AccVoucherDocRegister {
 
   // Lifecycle / audit
   gdrIsActive              Boolean           @default(true) @map("gdr_is_active")
+  /// IGST charged on an INTRA-state supply: an SEZ unit in the same state,
+  /// and the s.10(1)(b) bill-to/ship-to cases. The one TranDtls flag the
+  /// register lacked.
+  gdrIgstOnIntra           Boolean           @default(false) @map("gdr_igst_on_intra")
   gdrIsDeleted             Boolean           @default(false) @map("gdr_is_deleted")
   gdrSyncDate              DateTime?         @db.Timestamptz(6) @map("gdr_sync_date")
   gdrCreatedOn             DateTime          @default(now()) @db.Timestamptz(6) @map("gdr_created_on")
@@ -2151,7 +2400,10 @@ model AccVoucherHeader {
   avhVoucherNo           BigInt?   @map("avh_voucher_no")
   avhVoucherSlno         BigInt?   @map("avh_voucher_slno")
   avhVoucherRefno        String?   @db.VarChar(50) @map("avh_voucher_refno")
-  avhVoucherDate         DateTime  @db.Timestamptz(6) @map("avh_voucher_date")
+  /// A DATE, not a timestamptz. Stored with a zone, 2026-04-01 became
+  /// 2026-03-31T18:30Z and landed in the wrong day of every date-bounded
+  /// report — and, on the first day of a financial year, the wrong YEAR.
+  avhVoucherDate         DateTime  @db.Date @map("avh_voucher_date")
   // Source document. src_* is the machine link (posting idempotency,
   // ux_avh_src); doc_* is the human-readable face of the same document.
   avhSrcModule           String?   @db.VarChar(20) @map("avh_src_module")
@@ -2274,9 +2526,12 @@ model AccVoucher {
   avVoucherTypeId    Int       @map("av_voucher_type_id")
   avVoucherNo        BigInt    @map("av_voucher_no")
   avRowNo            Int       @map("av_row_no")
-  avVoucherDate      DateTime  @db.Timestamptz(6) @map("av_voucher_date")
+  /// A DATE, not a timestamptz. Stored with a zone, 2026-04-01 became
+  /// 2026-03-31T18:30Z and landed in the wrong day of every date-bounded
+  /// report — and, on the first day of a financial year, the wrong YEAR.
+  avVoucherDate      DateTime  @db.Date @map("av_voucher_date")
   avVoucherRefno     String?   @db.VarChar(50) @map("av_voucher_refno")
-  avDocDate         DateTime? @db.Timestamptz(6) @map("av_doc_date")
+  avDocDate         DateTime? @db.Date @map("av_doc_date")
   avDocRefno        String?   @db.VarChar(100) @map("av_doc_refno")
   // avDocAccYear is the FY of the BILL in avDocId — the bill's own year, not
   // avAccYear. Set exactly when avDocId is (ck_av_doc_pair), and the second
@@ -2883,6 +3138,9 @@ model DeviceMaster {
   // ── Coupons and gift vouchers (20260921160000) ──────────────────────────
   couponTxns            LoyaltyCouponTxn[]        @relation("CouponTxnDevice")
 
+  // ── Promotion usage (20260921180000) ────────────────────────────────────
+  promotionUsages       PromotionUsage[]          @relation("PromotionUsageDevice")
+
   @@map("device_master")
   @@schema("fixed")
 }
@@ -3121,6 +3379,11 @@ model StateCode {
 
   @@index([isActive],  name: "idx_state_codes_active")
   @@index([stateName], name: "idx_state_codes_name")
+  // ── Sales documents (20260921200000) ────────────────────────────────────
+  // Place of supply on the two documents that carry one.
+  saleReturnsPos        SaleReturn[]              @relation("SaleReturnPosState")
+  saleDcsPos            SaleDc[]                  @relation("SaleDcPosState")
+
   @@map("state_codes")
   @@schema("fixed")
 }
@@ -3269,6 +3532,16 @@ model GodownLocation {
   stockReorderPolicies StockReorderPolicy[] @relation("StockReorderPolicyGodown")
   // ── Loyalty points engine (20260921140000) ─────────────────────────────
   loyaltyGiftItems      LoyaltyGiftRedeemItem[]   @relation("LoyaltyGiftItemGodown")
+
+  // ── Sales documents (20260921200000) ────────────────────────────────────
+  saleReturnItems       SaleReturnItem[]          @relation("SaleReturnItemGodown")
+  saleDcItems           SaleDcItem[]              @relation("SaleDcItemGodown")
+  saleDcReturnItems     SaleDcReturnItem[]        @relation("SaleDcReturnItemGodown")
+
+  // The transport band: one end of a goods movement is ours, and which end
+  // it is depends on ttdDirection.
+  transportBandsFrom    TxnTransportDetail[]      @relation("TransportBandFromGodown")
+  transportBandsTo      TxnTransportDetail[]      @relation("TransportBandToGodown")
 
   @@map("godown_locations")
    @@schema("inventory")
@@ -3676,6 +3949,11 @@ model ItemMaster {
   stockMovementClasses StockMovementClass[]  @relation("StockMovementClassItem")
   // ── Loyalty points engine (20260921140000) ─────────────────────────────
   loyaltyGiftItems      LoyaltyGiftRedeemItem[]   @relation("LoyaltyGiftItemItem")
+
+  // ── Sales documents (20260921200000) ────────────────────────────────────
+  saleReturnItems       SaleReturnItem[]          @relation("SaleReturnItemItem")
+  saleDcItems           SaleDcItem[]              @relation("SaleDcItemItem")
+  saleDcReturnItems     SaleDcReturnItem[]        @relation("SaleDcReturnItemItem")
 
   @@map("item_master")
   @@schema("inventory")
@@ -4208,6 +4486,14 @@ model ItemUnitConversion {
   // ── Loyalty points engine (20260921140000) ─────────────────────────────
   loyaltyGiftItems      LoyaltyGiftRedeemItem[]   @relation("LoyaltyGiftItemUnit")
 
+  // ── Sales documents (20260921200000) ────────────────────────────────────
+  // Every transaction LINE in this schema points here, not at
+  // item_unit_master — a DC line becomes a bill line, so the two must
+  // share an id space.
+  saleReturnItems       SaleReturnItem[]          @relation("SaleReturnItemUnit")
+  saleDcItems           SaleDcItem[]              @relation("SaleDcItemUnit")
+  saleDcReturnItems     SaleDcReturnItem[]        @relation("SaleDcReturnItemUnit")
+
   @@map("item_unit_conversion")
   @@schema("inventory")
   // Partial unique indexes uq_item_unit_conversion, uq_item_unit_conversion_default,
@@ -4272,6 +4558,10 @@ model Unit {
 
   // Back-relations — others
   itemMasters  ItemMaster[]
+
+  /// The three-letter GST Unit Quantity Code, for the e-invoice, the e-way
+  /// bill and the GSTR-1 HSN summary. The table had a Tally name and no UQC.
+  unitUqc       String?   @db.Char(3)                                      @map("unit_uqc")
 
   @@map("item_unit_master")
   @@schema("inventory")
@@ -4740,6 +5030,9 @@ model BranchMaster {
   couponsIssued         LoyaltyCoupon[]           @relation("CouponBranch")
   couponTxns            LoyaltyCouponTxn[]        @relation("CouponTxnBranch")
 
+  // ── Promotion usage (20260921180000) ────────────────────────────────────
+  promotionUsages       PromotionUsage[]          @relation("PromotionUsageBranch")
+
   @@map("branch_master")
   @@schema("public")
 }
@@ -4844,6 +5137,12 @@ model Company {
   compTcsApplicable     Boolean   @default(false)                                   @map("comp_tcs_applicable")
   compSmsApplicable     Boolean   @default(false)                                   @map("comp_sms_applicable")
   compEinvoiceApplicable Boolean  @default(false)                                   @map("comp_einvoice_applicable")
+  /// LE_1_5CR | LE_5CR | LE_10CR | GT_10CR. Set by the accountant each April
+  /// from CompanyAato. It picks the HSN digits, the IRN reporting window and
+  /// the e-invoice applicability rows in StatutoryLimit.
+  compAatoClass         String    @default("LE_5CR") @db.VarChar(10)                @map("comp_aato_class")
+  /// Which delivery-challan purposes this company uses.
+  compDcPurposes        String[]  @default(["SUPPLY", "APPROVAL", "JOB_WORK", "OTHER"]) @db.VarChar(20) @map("comp_dc_purposes")
   compEwayApplicable    Boolean   @default(false)                                   @map("comp_eway_applicable")
   // 8) E-Way / E-Invoice Settings
   compEwayDate          DateTime? @db.Date                                          @map("comp_eway_date")
@@ -4952,7 +5251,48 @@ model Company {
   coupons               LoyaltyCoupon[]           @relation("CouponCompany")
   couponTxns            LoyaltyCouponTxn[]        @relation("CouponTxnCompany")
 
+  // ── Promotion usage (20260921180000) ────────────────────────────────────
+  promotionUsages       PromotionUsage[]          @relation("PromotionUsageCompany")
+
+  // ── Sales documents (20260921200000) ────────────────────────────────────
+  aatoYears             CompanyAato[]             @relation("CompanyAatoCompany")
+  partyTaxCertificates  AccPartyTaxCertificate[]  @relation("PartyTaxCertificateCompany")
+
   @@map("companys")
+  @@schema("public")
+}
+
+// ----- prisma/public/companyAato.prisma -----
+/// Aggregate annual turnover per company per financial year.
+///
+/// The figure e-invoice applicability (₹5 crore since 2023-08-01) and the AATO
+/// class are read from. Kept by the year-end job and editable by the
+/// accountant — a figure somebody SIGNS, not a running total, which is why
+/// caaSource distinguishes COMPUTED from DECLARED.
+model CompanyAato {
+  caaId             String    @id(map: "pk_company_aato") @default(dbgenerated("uuidv7()")) @db.Uuid @map("caa_id")
+  caaCompanyId      String    @db.Uuid                                 @map("caa_company_id")
+  /// The year the turnover BELONGS to, not the year it was computed in.
+  caaFinYear        String    @db.Char(9)                              @map("caa_fin_year")
+  caaAatoAmount     Decimal   @default(0) @db.Decimal(18, 2)           @map("caa_aato_amount")
+  /// COMPUTED | DECLARED
+  caaSource         String    @default("COMPUTED") @db.VarChar(10)     @map("caa_source")
+  caaDeclaredBy     String?   @db.VarChar(50)                          @map("caa_declared_by")
+  caaDeclaredOn     DateTime? @db.Date                                 @map("caa_declared_on")
+  caaRemarks        String?   @db.VarChar(250)                         @map("caa_remarks")
+  caaIsDeleted      Boolean   @default(false)                          @map("caa_is_deleted")
+  caaCreatedOn      DateTime  @default(now()) @db.Timestamptz(6)       @map("caa_created_on")
+  caaCreatedBy      String?   @db.VarChar(50)                          @map("caa_created_by")
+  caaModifiedOn     DateTime? @db.Timestamptz(6)                       @map("caa_modified_on")
+  caaModifiedBy     String?   @db.VarChar(50)                          @map("caa_modified_by")
+
+  company           Company   @relation("CompanyAatoCompany", fields: [caaCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_caa_company")
+
+  @@unique([caaCompanyId, caaFinYear], map: "ux_company_aato")
+
+  // CHECK constraints (DB-only): ck_caa_source, ck_caa_fin_year
+
+  @@map("company_aato")
   @@schema("public")
 }
 
@@ -5811,8 +6151,10 @@ model GstProviderErrorMap {
 /// destination — gde_irn, gde_ack_no, gdw_no, gdw_valid_upto — so the write
 /// back into AccVoucherDocEinvoice / AccVoucherDocEwaybill is data-driven
 /// too, not a switch statement that has to be edited per provider. It is a
-/// physical column name, spelled exactly as the table spells it (gde_canceled_on
-/// carries one 'l').
+/// physical column name, spelled exactly as the table spells it. A schema
+/// rename is therefore a DATA change here too — see
+/// 20260922020000_reconcile_doc_einvoice_ewaybill, which renamed
+/// gde_canceled_on to gde_cancelled_on and repointed the seeded rows.
 model GstProviderFieldMap {
   gfmId             String    @id(map: "pk_gst_provider_field_map") @default(dbgenerated("uuidv7()")) @db.Uuid @map("gfm_id")
   gfmGpeId          String    @db.Uuid                                 @map("gfm_gpe_id")
@@ -6836,6 +7178,101 @@ model SeedHistory {
   @@schema("public")
 }
 
+// ----- prisma/public/statutoryLimits.prisma -----
+/// Every rupee figure, percentage, day count and hour count that comes from an
+/// Act — per company, with an effective window.
+///
+/// Nothing in code may hard-code one of these, and nothing may read this table
+/// WITHOUT A DATE. That is the entire reason it exists: a bill dated before a
+/// threshold changed must still resolve to the threshold that was in force
+/// when it was raised.
+///
+/// THE RESOLVER IS NOT A DATABASE FUNCTION. StatutoryService.limit() in NestJS
+/// owns it. It is a read, so it is not dangerous the way a trigger is — but it
+/// is the one piece of law the OFFLINE TILL must also apply, by itself, with
+/// no server in reach: the cash limit under 269ST, the PAN / Form 60
+/// threshold, the e-way bill floor. The resolution order therefore has to
+/// exist in TypeScript no matter what, and a second copy in plpgsql would be
+/// two implementations of one statute, drifting, with the server silently
+/// overruling what the counter told the customer.
+///
+///   limit(companyId, code, onDate, appliesTo = 'ALL', aatoClass = null)
+///
+///   FILTER  stl_code = code
+///       AND NOT stl_is_deleted AND stl_is_active
+///       AND (stl_company_id IS NULL OR stl_company_id = companyId)
+///       AND (stl_applies_to = 'ALL' OR stl_applies_to = appliesTo)
+///       AND (stl_aato_class IS NULL OR stl_aato_class = aatoClass)
+///       AND stl_effective_from <= onDate
+///       AND (stl_effective_to IS NULL OR stl_effective_to >= onDate)
+///
+///   ORDER BY — this precedence IS the rule, so keep it exactly:
+///       1  stl_company_id IS NOT NULL  DESC   -- a company override beats the pack
+///       2  stl_applies_to <> 'ALL'     DESC   -- a specific applies_to beats ALL
+///       3  stl_aato_class IS NOT NULL  DESC   -- a turnover-class row beats any-class
+///       4  stl_effective_from          DESC   -- the latest in force on that date
+///      LIMIT 1
+///
+/// No row means NOT APPLICABLE, and a guard must say so out loud rather than
+/// defaulting to a number. Cache per REQUEST, never per process — the answer
+/// changes with the DOCUMENT's date, not with today's.
+model StatutoryLimit {
+  stlId             String    @id(map: "pk_statutory_limits") @default(dbgenerated("uuidv7()")) @db.Uuid @map("stl_id")
+  /// NULL = the shipped pack, applying to every company. A company that
+  /// differs adds its OWN row; it never edits a pack row.
+  stlCompanyId      String?   @db.Uuid                                 @map("stl_company_id")
+  /// The application's handle: CASH_TXN_LIMIT_269ST, EWAY_VALUE_LIMIT, …
+  stlCode           String    @db.VarChar(40)                          @map("stl_code")
+  /// GST | IT | COMPANIES | OTHER
+  stlLaw            String    @db.VarChar(10)                          @map("stl_law")
+  /// '269ST', '206C(1H)', 'R138(1)', …
+  stlSection        String?   @db.VarChar(40)                          @map("stl_section")
+  stlLabel          String    @db.VarChar(200)                         @map("stl_label")
+  /// AMOUNT | PERCENT | DAYS | HOURS | KM | BOOL | TEXT
+  stlValueType      String    @db.VarChar(10)                          @map("stl_value_type")
+  stlValue          Decimal?  @db.Decimal(18, 4)                       @map("stl_value")
+  stlValueText      String?   @db.VarChar(100)                         @map("stl_value_text")
+  /// ALL | INTRA_STATE | INTER_STATE | B2B | B2C | a two-character state code.
+  /// A specific value outranks 'ALL' in the resolver.
+  stlAppliesTo      String    @default("ALL") @db.VarChar(20)          @map("stl_applies_to")
+  /// NULL = any turnover class; else LE_1_5CR | LE_5CR | LE_10CR | GT_10CR.
+  stlAatoClass      String?   @db.VarChar(10)                          @map("stl_aato_class")
+  stlEffectiveFrom  DateTime  @db.Date                                 @map("stl_effective_from")
+  /// NULL = still in force. A CLOSED row is kept on purpose so a document
+  /// dated inside the old window still resolves.
+  stlEffectiveTo    DateTime? @db.Date                                 @map("stl_effective_to")
+  /// WARN | REFUSE | INFO — what the guard does when the figure is exceeded.
+  stlEnforce        String    @default("WARN") @db.VarChar(10)         @map("stl_enforce")
+  /// The notification or Finance Act citation. Shown to the operator so the
+  /// refusal names its authority.
+  stlSourceRef      String?   @db.VarChar(250)                         @map("stl_source_ref")
+  stlRemarks        String?   @db.VarChar(250)                         @map("stl_remarks")
+  stlIsActive       Boolean   @default(true)                           @map("stl_is_active")
+  stlIsDeleted      Boolean   @default(false)                          @map("stl_is_deleted")
+  stlSyncDate       DateTime? @db.Timestamptz(6)                       @map("stl_sync_date")
+  stlCreatedOn      DateTime  @default(now()) @db.Timestamptz(6)       @map("stl_created_on")
+  stlCreatedBy      String?   @db.VarChar(50)                          @map("stl_created_by")
+  stlModifiedOn     DateTime? @db.Timestamptz(6)                       @map("stl_modified_on")
+  stlModifiedBy     String?   @db.VarChar(50)                          @map("stl_modified_by")
+
+  // No relation on stlCompanyId: a NULL there is the SHIPPED PACK, not a
+  // missing company, and the resolver reads the two cases together.
+
+  // DB-only (NULLS NOT DISTINCT + partial):
+  //   CREATE UNIQUE INDEX ux_stl_row ON public.statutory_limits
+  //       (stl_code, stl_company_id, stl_applies_to, stl_aato_class, stl_effective_from)
+  //       NULLS NOT DISTINCT WHERE stl_is_deleted = false;
+  //   CREATE INDEX ix_stl_lookup ON public.statutory_limits
+  //       (stl_code, stl_company_id, stl_applies_to, stl_effective_from DESC)
+  //       WHERE stl_is_deleted = false AND stl_is_active = true;
+  //
+  // CHECK constraints (DB-only): ck_stl_law, ck_stl_value_type,
+  //   ck_stl_enforce, ck_stl_window
+
+  @@map("statutory_limits")
+  @@schema("public")
+}
+
 // ----- prisma/public/transactionChargeDetail.prisma -----
 /// Per-document applied charges — freight, loading, packing, cash discount, etc.
 /// One row per charge line on a document, shared by every module (sales,
@@ -6857,7 +7294,9 @@ model SeedHistory {
 model TransactionChargeDetail {
   cdId            String    @default(dbgenerated("gen_random_uuid()")) @db.Uuid @map("cd_id")
   // -- Parent document (polymorphic — no single FK possible) ----------------
-  cdDocType       String    @db.VarChar(12)                                @map("cd_doc_type")   // which module's document
+  /// Widened from varchar(12) by 20260921220000: 'DELIVERY_CHALLAN' does
+  /// not fit in twelve characters.
+  cdDocType       String    @db.VarChar(30)                                @map("cd_doc_type")   // which module's document
   cdDocId         String    @db.Uuid                                       @map("cd_doc_id")     // parent document id
   cdSlno          Int?                                                     @map("cd_slno")       // line order within the document
   // -- Denormalised context (lets the table be queried/reported without
@@ -6912,6 +7351,19 @@ model TransactionChargeDetail {
   // -- Status + audit -------------------------------------------------------
   cdRemarks       String?   @db.VarChar(255)                               @map("cd_remarks")
   cdIsActive      Boolean   @default(true)                                 @map("cd_is_active")
+  // ── Charges across part deliveries (20260921220000) ──────────────────
+  // An ORDER's charge row is the SOURCE. Each bill raised against the order
+  // carries its own charge rows pointing back at it, saying how much they
+  // took. PRORATA (the default) is the bill's share of the order's
+  // delivered value, with the final bill taking the remainder so the sum
+  // closes exactly.
+  cdSrcCdId       String?   @db.Uuid                                       @map("cd_src_cd_id")
+  cdSrcAccYear    String?   @db.Char(9)                                    @map("cd_src_acc_year")
+  /// PRORATA | FULL | MANUAL | NONE
+  cdCarryBasis    String?   @db.VarChar(10)                                @map("cd_carry_basis")
+  /// On the SOURCE row: how much has been taken so far. A cache.
+  cdCarriedAmt    Decimal   @default(0) @db.Decimal(15, 2)                 @map("cd_carried_amt")
+
   cdIsDeleted     Boolean   @default(false)                                @map("cd_is_deleted")
   cdSyncDate      DateTime? @db.Timestamptz                                @map("cd_sync_date")
   cdCreatedOn     DateTime  @default(now()) @db.Timestamptz                @map("cd_created_on")
@@ -6935,6 +7387,10 @@ model TransactionChargeDetail {
   @@index([cdLedgerCode], map: "ix_txn_charge_detail_ledger")
   @@index([cdCompId], map: "ix_txn_charge_detail_comp")
   @@index([cdBranchId], map: "ix_txn_charge_detail_branch")
+  // ── Charges across part deliveries (20260921220000) ──────────────────
+  sourceCharge    TransactionChargeDetail?  @relation("ChargeCarry", fields: [cdSrcCdId, cdSrcAccYear], references: [cdId, cdAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_cd_src")
+  carriedCharges  TransactionChargeDetail[] @relation("ChargeCarry")
+
   @@map("txn_charge_detail")
   @@schema("public")
   // The table began life as sales.sale_charge_detail (created in
@@ -6961,6 +7417,203 @@ model TransactionChargeDetail {
   // cd_ledger_code / cd_comp_id / cd_branch_id gained their FKs in migration
   // 20260728150000_sale_charge_detail_relations. cd_tax_code still carries NO
   // FK: the value is a snapshot and no module writes it from a tax master yet.
+}
+
+// ----- prisma/public/transactionTransportDetail.prisma -----
+/// ONE transport band for every document that moves goods.
+///
+/// The band used to be 22 columns repeated on sale_bill, sale_dc, sale_return
+/// and sale_dc_return — 88 definitions of the same 22 facts, which had ALREADY
+/// drifted before anyone noticed: vehicle_id was missing from the DC return and
+/// supervisor_id existed only on the bill. Every future e-way field would have
+/// been four ALTERs, and the fourth is the one that gets forgotten.
+///
+/// NOT for storage. That argument was measured and does not hold: 22 NULL
+/// columns cost about 8 bytes a row, because PostgreSQL keeps NULLs as one bit
+/// each in a row bitmap. One definition instead of four is the whole reason.
+///
+/// Same shape as TransactionChargeDetail and TxnStatusLog — a polymorphic child
+/// keyed by (docType, docId, accYear), LIST-partitioned on the year.
+///
+/// ── FROM and TO are POSITIONAL; ttdDirection says what they mean ─────────
+///
+///   OUTWARD (sale bill, delivery challan)
+///       FROM = our godown / branch      TO = the customer's address
+///   INWARD  (sale return, DC return)
+///       FROM = the customer's address   TO = our godown / branch
+///
+///   The doc register then maps straight across, with no per-document branch:
+///       gdr_dispatch_*  <-  ttd_from_*
+///       gdr_ship_*      <-  ttd_to_*
+///
+/// Whichever side is OURS fills the godown / branch columns; whichever side is
+/// the party's fills the address block. Both sides carry both, so a
+/// branch-to-branch move needs no third shape.
+///
+/// The VEHICLE and the CREW are deliberately NOT here — they stay on the
+/// document, because they exist whenever goods move even with no consignment
+/// at all: a POS home delivery has a driver and a van and no transporter, no
+/// LR, no distance, no e-way bill.
+model TxnTransportDetail {
+  ttdId               String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("ttd_id")
+  ttdCompanyId        String    @db.Uuid                             @map("ttd_company_id")
+  ttdBranchId         String    @db.Uuid                             @map("ttd_branch_id")
+  ttdTenantId         String?   @db.Uuid                             @map("ttd_tenant_id")
+  ttdAccYear          String    @db.Char(9)                          @map("ttd_acc_year")
+
+  // ── Which document ───────────────────────────────────────────────────
+  /// SALE_BILL | DELIVERY_CHALLAN | SALE_RETURN | DC_RETURN | STOCK_TRANSFER.
+  /// Widened per module as each arrives — PURCHASE_BILL and PURCHASE_RETURN
+  /// join when those are built.
+  ttdDocType          String    @db.VarChar(30)                      @map("ttd_doc_type")
+  /// Polymorphic: NO relation field and no FK, because a child cannot key four
+  /// different partitioned parents. The service is what stops a band outliving
+  /// its document — the same price TransactionChargeDetail and TxnStatusLog
+  /// already pay.
+  ttdDocId            String    @db.Uuid                             @map("ttd_doc_id")
+  /// Snapshot, so a row reads alone.
+  ttdDocRefno         String?   @db.VarChar(100)                     @map("ttd_doc_refno")
+
+  /// OUTWARD | INWARD — what FROM and TO mean on this row.
+  ttdDirection        String    @db.VarChar(10)                      @map("ttd_direction")
+
+  // ── FROM ─────────────────────────────────────────────────────────────
+  /// Set when the FROM side is ours.
+  ttdFromGodownId     String?   @db.Uuid                             @map("ttd_from_godown_id")
+  ttdFromBranchId     String?   @db.Uuid                             @map("ttd_from_branch_id")
+  /// A listed ship address, when it is one. No FK: the address masters are
+  /// company-scoped and a band must survive one being retired.
+  ttdFromAddrId       String?   @db.Uuid                             @map("ttd_from_addr_id")
+  ttdFromName         String?   @db.VarChar(200)                     @map("ttd_from_name")
+  ttdFromAddr         String?   @db.VarChar(500)                     @map("ttd_from_addr")
+  ttdFromPlace        String?   @db.VarChar(100)                     @map("ttd_from_place")
+  ttdFromPin          String?   @db.VarChar(10)                      @map("ttd_from_pin")
+  ttdFromPhone        String?   @db.VarChar(20)                      @map("ttd_from_phone")
+  ttdFromStcd         String?   @db.Char(2)                          @map("ttd_from_stcd")
+  ttdFromGstin        String?   @db.VarChar(15)                      @map("ttd_from_gstin")
+
+  // ── TO ───────────────────────────────────────────────────────────────
+  /// Set when the TO side is ours.
+  ttdToGodownId       String?   @db.Uuid                             @map("ttd_to_godown_id")
+  ttdToBranchId       String?   @db.Uuid                             @map("ttd_to_branch_id")
+  ttdToAddrId         String?   @db.Uuid                             @map("ttd_to_addr_id")
+  ttdToName           String?   @db.VarChar(200)                     @map("ttd_to_name")
+  ttdToAddr           String?   @db.VarChar(500)                     @map("ttd_to_addr")
+  ttdToPlace          String?   @db.VarChar(100)                     @map("ttd_to_place")
+  ttdToPin            String?   @db.VarChar(10)                      @map("ttd_to_pin")
+  ttdToPhone          String?   @db.VarChar(20)                      @map("ttd_to_phone")
+  ttdToStcd           String?   @db.Char(2)                          @map("ttd_to_stcd")
+  ttdToGstin          String?   @db.VarChar(15)                      @map("ttd_to_gstin")
+
+  // ── Carriage ─────────────────────────────────────────────────────────
+  /// ROAD | RAIL | AIR | SHIP
+  ttdTransportMode    String?   @db.VarChar(10)                      @map("ttd_transport_mode")
+  ttdTransporterId    String?   @db.Uuid                             @map("ttd_transporter_id")
+  ttdTransporterName  String?   @db.VarChar(200)                     @map("ttd_transporter_name")
+  /// The PORTAL's transporterId: a 15-character GSTIN or enrolment id, NOT the
+  /// TransporterMaster uuid in ttdTransporterId.
+  ttdTransporterGstin String?   @db.VarChar(15)                      @map("ttd_transporter_gstin")
+  /// e-way Part-B transDocNo / transDocDate.
+  ttdLrNo             String?   @db.VarChar(50)                      @map("ttd_lr_no")
+  ttdLrDate           DateTime? @db.Date                             @map("ttd_lr_date")
+  ttdDistanceKm       Int?                                           @map("ttd_distance_km")
+
+  ttdRemarks          String?   @db.VarChar(250)                     @map("ttd_remarks")
+
+  // ── Audit ────────────────────────────────────────────────────────────
+  ttdIsDeleted        Boolean   @default(false)                      @map("ttd_is_deleted")
+  ttdSyncDate         DateTime? @db.Timestamptz(6)                   @map("ttd_sync_date")
+  ttdCreatedOn        DateTime  @default(now()) @db.Timestamptz(6)   @map("ttd_created_on")
+  ttdCreatedBy        String    @db.VarChar(50)                      @map("ttd_created_by")
+  ttdModifiedOn       DateTime? @db.Timestamptz(6)                   @map("ttd_modified_on")
+  ttdModifiedBy       String?   @db.VarChar(50)                      @map("ttd_modified_by")
+
+  // Relations
+  transporter         TransporterMaster? @relation("TransportBandTransporter", fields: [ttdTransporterId], references: [trnId], onUpdate: Cascade, onDelete: Restrict, map: "fk_ttd_transporter")
+  fromGodown          GodownLocation?    @relation("TransportBandFromGodown",  fields: [ttdFromGodownId],  references: [gdlId], onUpdate: Cascade, onDelete: Restrict, map: "fk_ttd_from_godown")
+  toGodown            GodownLocation?    @relation("TransportBandToGodown",    fields: [ttdToGodownId],    references: [gdlId], onUpdate: Cascade, onDelete: Restrict, map: "fk_ttd_to_godown")
+
+  @@id([ttdId, ttdAccYear], map: "pk_txn_transport_detail")
+
+  // Partial indexes are DB-only — Prisma ignores WHERE predicates:
+  //
+  //   -- 1:1 with its document. The entry screen, the print template and the
+  //   -- e-way builder all read by this one.
+  //   CREATE UNIQUE INDEX ux_ttd_doc ON public.txn_transport_detail
+  //       (ttd_doc_type, ttd_doc_id, ttd_acc_year) WHERE ttd_is_deleted = false;
+  //
+  //   -- "what did this transporter carry" — leads on the COMPANY, so it is a
+  //   -- report index and NOT a cover for fk_ttd_transporter
+  //   CREATE INDEX ix_ttd_transporter ON public.txn_transport_detail
+  //       (ttd_company_id, ttd_transporter_id)
+  //       WHERE ttd_is_deleted = false AND ttd_transporter_id IS NOT NULL;
+  //
+  //   -- FK-covering: ix_ttd_transporter_fk, ix_ttd_from_godown, ix_ttd_to_godown
+  //
+  // CHECK constraints (DB-only): ck_ttd_doc_type, ck_ttd_direction,
+  //   ck_ttd_transport_mode, and ck_ttd_has_an_end — a row that names neither
+  //   end is a row that says nothing.
+
+  @@map("txn_transport_detail")
+  @@schema("public")
+}
+
+// ----- prisma/public/transporterMaster.prisma -----
+/// The transporter on an e-way bill.
+///
+/// sale_bill.sb_vehicle_id has existed in this database with NO referenced
+/// table — and so have sb_driver_id, sb_supervisor_id and sb_loadman_id. This
+/// master and VehicleMaster are what those columns should have pointed at.
+///
+/// trnGstin holds either a GSTIN or a 15-character transporter ENROLMENT id
+/// (TRANSIN), which is why trnIsEnrolmentId exists: the two are the same
+/// length and the portal treats them differently.
+///
+/// NULL trnCompanyId = shared by every company, the house convention for a
+/// master that is not company-specific.
+model TransporterMaster {
+  trnId             String    @id(map: "pk_transporter_master") @default(dbgenerated("uuidv7()")) @db.Uuid @map("trn_id")
+  /// NULL = every company.
+  trnCompanyId      String?   @db.Uuid                                 @map("trn_company_id")
+  trnCode           String?   @db.VarChar(30)                          @map("trn_code")
+  trnName           String    @db.VarChar(200)                         @map("trn_name")
+  /// GSTIN or 15-char enrolment id (TRANSIN) — ck_trn_gstin_len enforces the
+  /// length either way.
+  trnGstin          String?   @db.VarChar(15)                          @map("trn_gstin")
+  trnIsEnrolmentId  Boolean   @default(false)                          @map("trn_is_enrolment_id")
+  /// ROAD | RAIL | AIR | SHIP
+  trnMode           String    @default("ROAD") @db.VarChar(10)         @map("trn_mode")
+  /// Freight payable ledger, optional. No FK: a transporter may be recorded
+  /// long before anybody decides which ledger their freight posts to.
+  trnLedgerId       String?   @db.Uuid                                 @map("trn_ledger_id")
+  trnPhone          String?   @db.VarChar(20)                          @map("trn_phone")
+  trnEmail          String?   @db.VarChar(150)                         @map("trn_email")
+  trnAddr           String?   @db.VarChar(500)                         @map("trn_addr")
+  trnPlace          String?   @db.VarChar(100)                         @map("trn_place")
+  trnPin            String?   @db.VarChar(10)                          @map("trn_pin")
+  trnStateCode      String?   @db.Char(2)                              @map("trn_state_code")
+  trnRemarks        String?   @db.VarChar(250)                         @map("trn_remarks")
+  trnIsActive       Boolean   @default(true)                           @map("trn_is_active")
+  trnIsDeleted      Boolean   @default(false)                          @map("trn_is_deleted")
+  trnSyncDate       DateTime? @db.Timestamptz(6)                       @map("trn_sync_date")
+  trnCreatedOn      DateTime  @default(now()) @db.Timestamptz(6)       @map("trn_created_on")
+  trnCreatedBy      String?   @db.VarChar(50)                          @map("trn_created_by")
+  trnModifiedOn     DateTime? @db.Timestamptz(6)                       @map("trn_modified_on")
+  trnModifiedBy     String?   @db.VarChar(50)                          @map("trn_modified_by")
+
+  vehicles          VehicleMaster[] @relation("VehicleTransporter")
+
+  // DB-only (expression key, NULLS NOT DISTINCT, partial):
+  //   CREATE UNIQUE INDEX ux_trn_name ON public.transporter_master
+  //       (trn_company_id, lower(trn_name)) NULLS NOT DISTINCT
+  //       WHERE trn_is_deleted = false;
+  //
+  // CHECK constraints (DB-only): ck_trn_mode, ck_trn_gstin_len
+
+  transportBands    TxnTransportDetail[] @relation("TransportBandTransporter")
+
+  @@map("transporter_master")
+  @@schema("public")
 }
 
 // ----- prisma/public/txnHold.prisma -----
@@ -7374,6 +8027,9 @@ model UserMaster {
   // Voiding a live voucher needs a signature (ck_lct_cancel_approval).
   couponTxnsApproved    LoyaltyCouponTxn[]        @relation("CouponTxnApprover")
 
+  // ── Promotion usage (20260921180000) ────────────────────────────────────
+  promotionUsages       PromotionUsage[]          @relation("PromotionUsageUser")
+
   @@map("user_master")
   @@schema("public")
 }
@@ -7394,6 +8050,22 @@ model UserMenus {
   umCanDelete   Boolean   @default(false) @map("um_can_delete")
   umCanPrint    Boolean   @default(false) @map("um_can_print")
   umCanExport   Boolean   @default(false) @map("um_can_export")
+  // ── Transaction rights (20260921220000) ──────────────────────────────
+  // A transaction screen asks four more questions than a master screen.
+  // Default FALSE: these are GRANTED, never assumed.
+  //
+  // NOTE: a user_menus save is a FULL REPLACE — the client must send all
+  // ten flags or it silently revokes these four.
+  umCanPost     Boolean   @default(false) @map("um_can_post")
+  umCanCancel   Boolean   @default(false) @map("um_can_cancel")
+  umCanAmend    Boolean   @default(false) @map("um_can_amend")
+  /// Passes a WARN-level guard: discount cap, credit limit, back-date, rate
+  /// below minimum.
+  umCanOverride Boolean   @default(false) @map("um_can_override")
+  /// May change how a POSTED bill was paid. Separate from umCanAmend: the
+  /// sale is not being edited, only the tender — but it moves money between
+  /// ledgers, so it is grantable on its own.
+  umCanRetender Boolean   @default(false) @map("um_can_retender")
 
   // ── User preferences (user-controlled) ─────────────────────────────────────
   umVisibility  Boolean   @default(true)  @map("um_visibility")
@@ -7423,6 +8095,58 @@ model UserMenus {
   @@index([umUserId, umIsFavourite, umIsPinned])
 
   @@map("user_menus")
+  @@schema("public")
+}
+
+// ----- prisma/public/vehicleMaster.prisma -----
+/// Vehicle numbers, validated once rather than typed on every document.
+///
+/// ck_veh_no keeps the number in exactly the form the e-way bill portal
+/// stores it — upper case, no spaces — because a number that differs by a
+/// space is a number the portal will not match.
+model VehicleMaster {
+  vehId             String    @id(map: "pk_vehicle_master") @default(dbgenerated("uuidv7()")) @db.Uuid @map("veh_id")
+  /// NULL = every company.
+  vehCompanyId      String?   @db.Uuid                                 @map("veh_company_id")
+  vehBranchId       String?   @db.Uuid                                 @map("veh_branch_id")
+  /// As printed on the e-way bill: upper case, no spaces (ck_veh_no).
+  vehVehicleNo      String    @db.VarChar(20)                          @map("veh_vehicle_no")
+  /// REGULAR | ODC (over-dimensional cargo — a different validity ladder,
+  /// 20 km per day instead of 200).
+  vehType           String    @default("REGULAR") @db.VarChar(10)      @map("veh_type")
+  vehDescription    String?   @db.VarChar(150)                         @map("veh_description")
+  vehCapacityKg     Decimal?  @db.Decimal(12, 3)                       @map("veh_capacity_kg")
+  vehIsOwn          Boolean   @default(true)                           @map("veh_is_own")
+  vehTransporterId  String?   @db.Uuid                                 @map("veh_transporter_id")
+  vehDriverId       String?   @db.Uuid                                 @map("veh_driver_id")
+  vehIsActive       Boolean   @default(true)                           @map("veh_is_active")
+  vehIsDeleted      Boolean   @default(false)                          @map("veh_is_deleted")
+  vehSyncDate       DateTime? @db.Timestamptz(6)                       @map("veh_sync_date")
+  vehCreatedOn      DateTime  @default(now()) @db.Timestamptz(6)       @map("veh_created_on")
+  vehCreatedBy      String?   @db.VarChar(50)                          @map("veh_created_by")
+  vehModifiedOn     DateTime? @db.Timestamptz(6)                       @map("veh_modified_on")
+  vehModifiedBy     String?   @db.VarChar(50)                          @map("veh_modified_by")
+
+  transporter       TransporterMaster? @relation("VehicleTransporter", fields: [vehTransporterId], references: [trnId], onUpdate: Cascade, onDelete: Restrict, map: "fk_veh_transporter")
+  driver            EmployeeMaster?    @relation("VehicleDriver",      fields: [vehDriverId],      references: [empId], onUpdate: Cascade, onDelete: Restrict, map: "fk_veh_driver")
+
+  saleReturns       SaleReturn[]       @relation("SaleReturnVehicle")
+  saleDcs           SaleDc[]           @relation("SaleDcVehicle")
+  saleDcReturns     SaleDcReturn[]     @relation("SaleDcReturnVehicle")
+
+  // DB-only:
+  //   CREATE UNIQUE INDEX ux_veh_no ON public.vehicle_master
+  //       (veh_company_id, veh_vehicle_no) NULLS NOT DISTINCT
+  //       WHERE veh_is_deleted = false;
+  //   ix_veh_transporter, ix_veh_driver  (FK-covering, partial)
+  //
+  // CHECK constraints (DB-only): ck_veh_type, ck_veh_no
+
+  saleBills         SaleBill[]         @relation("SaleBillVehicle")
+
+  ewayBills         AccVoucherDocEwaybill[] @relation("EwayBillVehicle")
+
+  @@map("vehicle_master")
   @@schema("public")
 }
 
@@ -7646,6 +8370,9 @@ model Customer {
   // 6) GST / Tax
   cusGstNo             String?   @db.VarChar(15)                                   @map("cus_gst_no")
   cusPanNo             String?   @db.VarChar(10)                                   @map("cus_pan_no")
+  /// Form 60 stands in for a PAN on a cash sale over the rule 114B limit.
+  cusForm60On          DateTime? @db.Date                                          @map("cus_form60_on")
+  cusPanVerifiedOn     DateTime? @db.Date                                          @map("cus_pan_verified_on")
   cusGstType           String?   @db.VarChar(30)                                   @map("cus_gst_type")
   cusEcommerceGstin    String?   @db.VarChar(15)                                   @map("cus_ecommerce_gstin")
   cusTcsApplicable     Boolean   @default(false)                                   @map("cus_tcs_applicable")
@@ -7701,6 +8428,14 @@ model Customer {
   // ── Coupons and gift vouchers (20260921160000) ──────────────────────────
   coupons               LoyaltyCoupon[]           @relation("CouponCustomer")
   couponTxns            LoyaltyCouponTxn[]        @relation("CouponTxnCustomer")
+
+  // ── Promotion usage (20260921180000) ────────────────────────────────────
+  promotionUsages       PromotionUsage[]          @relation("PromotionUsageCustomer")
+
+  // ── Sales documents (20260921200000) ────────────────────────────────────
+  saleReturns           SaleReturn[]              @relation("SaleReturnCustomer")
+  saleDcs               SaleDc[]                  @relation("SaleDcCustomer")
+  saleDcReturns         SaleDcReturn[]            @relation("SaleDcReturnCustomer")
 
   @@map("customers")
   @@schema("sales")
@@ -7874,7 +8609,10 @@ model EmployeeMaster {
   company              Company?              @relation(fields: [empCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict)
   designation          EmployeeDesignation? @relation(fields: [empDesignationId], references: [edId])
   department           EmployeeDepartment? @relation(fields: [empDepartmentId], references: [edptId])
-  saleQuotations       SaleQuotation[]
+  // saleQuotations is gone: sq_salesman_id became uuid[] (20260921220000)
+  // and an array cannot carry a foreign key.
+  saleBillsDriven      SaleBill[]                @relation("SaleBillDriver")
+  saleBillsSupervised  SaleBill[]                @relation("SaleBillSupervisor")
   saleOrderAgents      SaleOrder[]          @relation("SaleOrderAgent")
   txnHolds             TxnHold[]
   @@index([empCompanyId],    name: "idx_emp_company")
@@ -7883,6 +8621,19 @@ model EmployeeMaster {
   @@index([empDesignationId],name: "idx_emp_designation")
   // ── Loyalty points engine (20260921140000) ─────────────────────────────
   loyaltyGiftRedeems    LoyaltyGiftRedeem[]       @relation("LoyaltyGiftRedeemEmployee")
+
+  // ── Sales documents (20260921200000) ────────────────────────────────────
+  // The delivery crew. These sit on the DOCUMENT rather than in a shared
+  // transport band because they exist whenever goods move, even with no
+  // consignment at all — a home delivery has a driver and a van and no
+  // transporter, no LR and no e-way bill.
+  vehiclesDriven        VehicleMaster[]           @relation("VehicleDriver")
+  saleReturnsDriven     SaleReturn[]              @relation("SaleReturnDriver")
+  saleReturnsSupervised SaleReturn[]              @relation("SaleReturnSupervisor")
+  saleDcsDriven         SaleDc[]                  @relation("SaleDcDriver")
+  saleDcsSupervised     SaleDc[]                  @relation("SaleDcSupervisor")
+  saleDcReturnsDriven   SaleDcReturn[]            @relation("SaleDcReturnDriver")
+  saleDcReturnsSupervised SaleDcReturn[]          @relation("SaleDcReturnSupervisor")
 
   @@map("employee_master")
   @@schema("public")
@@ -8062,6 +8813,10 @@ model LoyaltyCoupon {
   // CHECK constraints (DB-only): ck_lcp_acc_year, ck_lcp_src_acc_year,
   //   ck_lcp_src_doc, ck_lcp_code_shape, ck_lcp_status, ck_lcp_cancel,
   //   ck_lcp_validity, ck_lcp_issue_amount, ck_lcp_face
+
+  // ── Promotion usage (20260921180000) ────────────────────────────────────
+  // When a campaign was coupon-gated, the code that unlocked it.
+  promotionUsages       PromotionUsage[]          @relation("PromotionUsageCoupon")
 
   @@map("loyalty_coupon")
   @@schema("sales")
@@ -9554,6 +10309,11 @@ model PromotionScheme {
   // the target of the slab's composite FK, and therefore the only way to make
   // the database refuse a free-item band on a percentage scheme.
   @@unique([prmId, prmBenefit], map: "uq_prm_benefit")
+  // ── Promotion usage (20260921180000) ────────────────────────────────────
+  // What this campaign actually gave away. RESTRICT on delete: a campaign
+  // that has already given something away must be closed, not deleted.
+  usages                PromotionUsage[]          @relation("PromotionUsageScheme")
+
   @@map("promotion_scheme")
   @@schema("sales")
 }
@@ -9847,6 +10607,160 @@ model PromotionSchemeSlab {
   @@schema("sales")
 }
 
+// ----- prisma/sales/promotionUsage.prisma -----
+/// What a promotion campaign actually GAVE AWAY — one row per (document,
+/// scheme, direction).
+///
+/// The PromotionScheme masters say what a campaign PROMISES; nothing until now
+/// recorded what it DELIVERED. Without that, two questions have no answer, and
+/// both are asked at the till in the moment, before the benefit is applied:
+///
+///     the CAP     "has this customer already used this campaign twice?"
+///                 -> ix_pru_cust_scheme
+///     the BUDGET  "what has this campaign given away in total, everywhere?"
+///                 -> ix_pru_scheme_total
+///
+/// LIST-partitioned by pruAccYear, the year of the EVENT, like LoyaltyLedger
+/// and LoyaltyCouponTxn — hence the composite PK. Partitions
+/// (sales.promotion_usage_2026_2027) come from
+/// public.ensure_acc_year_partitions('YYYY-YYYY'), which
+/// 20260921180000_add_promotion_usage taught about this table.
+///
+/// Scheme identity is SNAPSHOTTED (pruSchemeCode / _Name / _Benefit) so a
+/// campaign report does not change meaning when the scheme is renamed or
+/// retyped next season.
+///
+/// A reversal is a row of the same shape with NEGATIVE amounts and
+/// pruIsReversal = true, naming the row it undoes — the AccBillAdjustment and
+/// LoyaltyLedger discipline, and what makes every running total a plain SUM
+/// with no CASE in it.
+model PromotionUsage {
+  pruId                 String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("pru_id")
+  /// FY of the EVENT, and the partition key.
+  pruAccYear            String    @db.Char(9)                            @map("pru_acc_year")
+  pruCompId             String    @db.Uuid                               @map("pru_comp_id")
+  pruBranchId           String?   @db.Uuid                               @map("pru_branch_id")
+  pruPrmId              String    @db.Uuid                               @map("pru_prm_id")
+  /// NULL = walk-in / cash sale, which is also why the per-customer cap index
+  /// is partial on this column: an anonymous sale has no cap to check.
+  pruCustId             String?   @db.Uuid                               @map("pru_cust_id")
+
+  // ── Snapshot of the campaign as it stood ─────────────────────────────
+  // Widths match promotion_scheme.prm_code (30) and prm_name (150).
+  pruSchemeCode         String?   @db.VarChar(30)                        @map("pru_scheme_code")
+  pruSchemeName         String?   @db.VarChar(150)                       @map("pru_scheme_name")
+  /// Snapshot of promotion_scheme.prmBenefit: FREE_ITEM | DISC_PERC |
+  /// DISC_AMT | DISC_PER_ITEM | FIXED_PRICE. ck_pru_benefit must cover every
+  /// value that column can hold — prmBenefit itself carries no CHECK, so a
+  /// new value added there needs one added here in the same migration.
+  pruBenefit            String?   @db.VarChar(20)                        @map("pru_benefit")
+
+  // ── Source document ──────────────────────────────────────────────────
+  // The same four-part polymorphic identifier AccTenderDetail,
+  // AccBillBalance, TxnStatusLog and LoyaltyLedger use. No relation field for
+  // pruSrcDocId: the target table varies by module/type.
+  pruSrcModule          String    @default("SALES") @db.VarChar(20)      @map("pru_src_module")
+  pruSrcDocType         String    @default("SALE_BILL") @db.VarChar(30)  @map("pru_src_doc_type")
+  pruSrcDocId           String    @db.Uuid                               @map("pru_src_doc_id")
+  /// The SOURCE's FY, not this row's.
+  pruSrcAccYear         String?   @db.Char(9)                            @map("pru_src_acc_year")
+  /// Snapshot, so a campaign report prints the bill number without joining a
+  /// partitioned table across every year the campaign ran.
+  pruSrcDocRefno        String?   @db.VarChar(100)                       @map("pru_src_doc_refno")
+  pruDocDate            DateTime  @db.Date                               @map("pru_doc_date")
+
+  // ── What it gave ─────────────────────────────────────────────────────
+  /// Value the benefit came off.
+  pruBaseAmount         Decimal   @default(0) @db.Decimal(18, 2)         @map("pru_base_amount")
+  pruBaseQty            Decimal   @default(0) @db.Decimal(18, 3)         @map("pru_base_qty")
+  /// Rupees given away. POSITIVE on a normal row, NEGATIVE on a reversal
+  /// (ck_pru_sign).
+  pruBenefitAmt         Decimal   @default(0) @db.Decimal(18, 2)         @map("pru_benefit_amt")
+  /// Units given away, same sign rule.
+  pruFreeQty            Decimal   @default(0) @db.Decimal(18, 3)         @map("pru_free_qty")
+  /// Lines the scheme touched.
+  pruLineCount          Int       @default(0)                            @map("pru_line_count")
+
+  /// The coupon presented, when the campaign was coupon-gated.
+  pruCouponId           String?   @db.Uuid                               @map("pru_coupon_id")
+
+  // ── Reversal ─────────────────────────────────────────────────────────
+  // Carries a real FK because this table has the year to complete the
+  // composite key with.
+  pruIsReversal         Boolean   @default(false)                        @map("pru_is_reversal")
+  pruReversalOfId       String?   @db.Uuid                               @map("pru_reversal_of_id")
+  pruReversalOfAccYear  String?   @db.Char(9)                            @map("pru_reversal_of_acc_year")
+  pruReversalReason     String?   @db.VarChar(250)                       @map("pru_reversal_reason")
+
+  pruUserId             String?   @db.Uuid                               @map("pru_user_id")
+  pruDeviceId           String?   @db.Uuid                               @map("pru_device_id")
+  pruRemarks            String?                                          @map("pru_remarks")
+
+  pruIsActive           Boolean   @default(true)                         @map("pru_is_active")
+  pruIsDeleted          Boolean   @default(false)                        @map("pru_is_deleted")
+  pruSyncDate           DateTime? @db.Timestamptz(6)                     @map("pru_sync_date")
+  pruCreatedOn          DateTime  @default(now()) @db.Timestamptz(6)     @map("pru_created_on")
+  pruCreatedBy          String?   @db.VarChar(50)                        @map("pru_created_by")
+  pruModifiedOn         DateTime? @db.Timestamptz(6)                     @map("pru_modified_on")
+  pruModifiedBy         String?   @db.VarChar(50)                        @map("pru_modified_by")
+
+  // Relations
+  company               Company         @relation("PromotionUsageCompany",  fields: [pruCompId],   references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_pru_company")
+  branch                BranchMaster?   @relation("PromotionUsageBranch",   fields: [pruBranchId], references: [brId],   onUpdate: Cascade, onDelete: Restrict, map: "fk_pru_branch")
+  /// Restrict, not Cascade: a campaign that has already given something away
+  /// must not be deletable. Close it instead.
+  scheme                PromotionScheme @relation("PromotionUsageScheme",   fields: [pruPrmId],    references: [prmId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_pru_scheme")
+  customer              Customer?       @relation("PromotionUsageCustomer", fields: [pruCustId],   references: [cusId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_pru_cust")
+  coupon                LoyaltyCoupon?  @relation("PromotionUsageCoupon",   fields: [pruCouponId], references: [lcpId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_pru_coupon")
+  device                DeviceMaster?   @relation("PromotionUsageDevice",   fields: [pruDeviceId], references: [devId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_pru_device")
+  user                  UserMaster?     @relation("PromotionUsageUser",     fields: [pruUserId],   references: [usrId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_pru_user")
+
+  reversalOf            PromotionUsage?  @relation("PromotionUsageReversal", fields: [pruReversalOfId, pruReversalOfAccYear], references: [pruId, pruAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_pru_reversal")
+  reversedBy            PromotionUsage[] @relation("PromotionUsageReversal")
+
+  @@id([pruId, pruAccYear], map: "pk_promotion_usage")
+
+  // Partial indexes are DB-only — Prisma ignores WHERE predicates and
+  // INCLUDE, so declaring them here would produce phantom drift on every
+  // migrate dev:
+  //
+  //   -- one usage row per document per scheme per DIRECTION. pru_is_reversal
+  //   -- is a key column, so a bill may carry the original and its reversal
+  //   -- and no more: two originals for one scheme on one bill collide, and a
+  //   -- replayed offline push therefore cannot double-count a campaign's
+  //   -- spend. All four key columns are NOT NULL.
+  //   CREATE UNIQUE INDEX ux_pru_doc_scheme ON sales.promotion_usage
+  //       (pru_src_doc_id, pru_prm_id, pru_is_reversal, pru_acc_year)
+  //       WHERE pru_is_deleted = false;
+  //
+  //   -- THE CAP CHECK, asked at the till before the benefit is applied
+  //   CREATE INDEX ix_pru_cust_scheme ON sales.promotion_usage
+  //       (pru_prm_id, pru_cust_id, pru_doc_date)
+  //       INCLUDE (pru_benefit_amt, pru_free_qty, pru_is_reversal)
+  //       WHERE pru_is_deleted = false AND pru_cust_id IS NOT NULL;
+  //
+  //   -- THE BUDGET CHECK and the campaign report
+  //   CREATE INDEX ix_pru_scheme_total ON sales.promotion_usage
+  //       (pru_prm_id, pru_doc_date)
+  //       INCLUDE (pru_branch_id, pru_benefit_amt, pru_free_qty, pru_is_reversal)
+  //       WHERE pru_is_deleted = false;
+  //
+  //   -- branch performance; reconciliation back to the document
+  //   CREATE INDEX ix_pru_branch  ON sales.promotion_usage (pru_branch_id, pru_doc_date) …
+  //   CREATE INDEX ix_pru_src_doc ON sales.promotion_usage (pru_src_doc_id, pru_src_acc_year) …
+  //
+  //   -- FK-covering: ix_pru_company, ix_pru_scheme, ix_pru_cust,
+  //   -- ix_pru_coupon, ix_pru_device, ix_pru_user, ix_pru_reversal
+  //
+  // CHECK constraints (DB-only): ck_pru_acc_year, ck_pru_src_acc_year,
+  //   ck_pru_src_module, ck_pru_src_doc_type, ck_pru_benefit,
+  //   ck_pru_gave_something, ck_pru_sign, ck_pru_reversal_pair,
+  //   ck_pru_line_count, ck_pru_base
+
+  @@map("promotion_usage")
+  @@schema("sales")
+}
+
 // ----- prisma/sales/saleAgent.prisma -----
 model SaleAgent {
   saId          String    @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("sa_id")
@@ -9961,6 +10875,36 @@ model SaleBill {
   sbHasPromo         Boolean   @default(false) @map("sb_has_promo")
   sbHasComm          Boolean   @default(false) @map("sb_has_comm")
   sbHasLoyalty       Boolean   @default(false) @map("sb_has_loyalty")
+  // ── Sales plan (20260921220000) ───────────────────────────────────────
+  /// POS | WHOLESALE. The MODE owns the number series: POS draws from the
+  /// device series, WHOLESALE from the branch MAIN series.
+  sbBillMode         String    @default("WHOLESALE") @db.VarChar(10) @map("sb_bill_mode")
+  sbUsrRefdate       DateTime? @db.Date @map("sb_usr_refdate")
+  /// How much of this bill came in under a challan. Stock and COGS for that
+  /// part were posted AT THE DC; the bill posts them only for direct lines.
+  sbHasDc            Boolean   @default(false) @map("sb_has_dc")
+  sbDcTaxableAmt     Decimal   @default(0) @db.Decimal(15, 2) @map("sb_dc_taxable_amt")
+  /// What THIS bill posted as COGS.
+  sbCogsAmt          Decimal   @default(0) @db.Decimal(15, 2) @map("sb_cogs_amt")
+  /// NA | PENDING | PACKED | DISPATCHED | DELIVERED | RETURNED. A CACHE —
+  /// the events themselves are TxnStatusLog rows.
+  sbDeliveryStatus   String    @default("NA") @db.VarChar(20) @map("sb_delivery_status")
+  sbDeliveredOn      DateTime? @db.Timestamptz(6) @map("sb_delivered_on")
+  /// The identity stamp on a cash sale over the rule 114B limit: what was
+  /// shown at the counter, kept WITH the bill and never re-derived.
+  sbCustPan          String?   @db.VarChar(10) @map("sb_cust_pan")
+  sbForm60Ref        String?   @db.VarChar(50) @map("sb_form60_ref")
+  /// TCS infrastructure, rate 0 today — 206C(1H) was removed 2025-04-01.
+  sbTcsPerc          Decimal   @default(0) @db.Decimal(6, 3) @map("sb_tcs_perc")
+  sbTcsAmt           Decimal   @default(0) @db.Decimal(15, 2) @map("sb_tcs_amt")
+  /// Loyalty caches; the detail is the LoyaltyLedger rows keyed by this bill.
+  sbLoyaltyMemberId  String?   @db.Uuid @map("sb_loyalty_member_id")
+  sbLoyaltyEarned    Decimal   @default(0) @db.Decimal(15, 2) @map("sb_loyalty_earned")
+  sbLoyaltyRedeemed  Decimal   @default(0) @db.Decimal(15, 2) @map("sb_loyalty_redeemed")
+  sbRevisionNo       Int       @default(1) @map("sb_revision_no")
+  /// The doc-register row this bill owns. Server-owned, like
+  /// sbPostedVoucherId — the DTO never carries either.
+  sbDocRegisterId    String?   @db.Uuid @map("sb_doc_register_id")
   // ── Loyalty points (20260921140000) ──────────────────────────────────
   // SNAPSHOTS, not caches. A sale return must reverse WHAT THIS BILL
   // ACTUALLY AWARDED, not what re-running today's scheme would award —
@@ -10048,14 +10992,20 @@ model SaleBill {
   sbDiscAlterBase    Boolean?  @map("sb_disc_alter_base")
   sbRoundOffStep     Decimal   @default(1) @db.Decimal(15, 2) @map("sb_round_off_step")
   // Lifecycle
+  /// DRAFT | POSTED | CANCELLED (ck_sb_status).
+  ///
+  /// WHEN, WHO and WHY it changed are NOT here any more. TxnStatusLog holds
+  /// every transition — changed-on, changed-by, the cancel reason, the
+  /// from-status, the device and the session — one appended row per step.
+  /// A second copy on the header meant the reason was written twice and the
+  /// two could disagree, and an amendment overwrote the previous cancel
+  /// instead of leaving a trail. It matters for the offline push too: two
+  /// devices APPENDING cannot conflict the way two UPDATEing one header row
+  /// can. sbPostedVoucherId stays because it is a RELATIONSHIP, not an event.
   sbStatus           String    @default("DRAFT") @db.VarChar(20) @map("sb_status")
-  sbPostedOn         DateTime? @db.Timestamptz(6) @map("sb_posted_on")
   sbPostedVoucherId  String?   @db.Uuid @map("sb_posted_voucher_id") // accounts.acc_voucher_header
   sbApprovedOn       DateTime? @db.Timestamptz(6) @map("sb_approved_on")
   sbApprovedBy       String?   @db.Uuid @map("sb_approved_by")
-  sbCancelledOn      DateTime? @db.Timestamptz(6) @map("sb_cancelled_on")
-  sbCancelledBy      String?   @db.Uuid @map("sb_cancelled_by")
-  sbCancelReason     String?   @db.VarChar(250) @map("sb_cancel_reason")
   sbVersionNo        Int       @default(1) @map("sb_version_no")
   sbPrintCount       Int       @default(0) @map("sb_print_count")
   // Audit
@@ -10080,6 +11030,21 @@ model SaleBill {
   // quotation. Without it that is a sequential scan of every sale_bill
   // partition. The mirror of sale_bill_item's ix_sbi_src_doc.
   @@index([sbSrcDocId, sbSrcDocYear], map: "ix_sb_src_doc")
+  // ── Sales documents (20260921200000) ────────────────────────────────────
+  returns               SaleReturn[]              @relation("SaleReturnBill")
+
+  // ── Crew and vehicle (20260921220000) ─────────────────────────────────
+  // These stay on the DOCUMENT rather than moving to a shared transport
+  // band: they exist whenever goods move, even with no consignment — a
+  // home delivery has a driver and a van and no transporter, no LR and no
+  // e-way bill. sbLoadmanId is uuid[] and cannot carry an FK.
+  driver             EmployeeMaster? @relation("SaleBillDriver",     fields: [sbDriverId],     references: [empId], onUpdate: Cascade, onDelete: Restrict, map: "fk_sb_driver")
+  supervisor         EmployeeMaster? @relation("SaleBillSupervisor", fields: [sbSupervisorId], references: [empId], onUpdate: Cascade, onDelete: Restrict, map: "fk_sb_supervisor")
+  vehicle            VehicleMaster?  @relation("SaleBillVehicle",    fields: [sbVehicleId],    references: [vehId], onUpdate: Cascade, onDelete: Restrict, map: "fk_sb_vehicle")
+
+  // ── Temp credit (20260922000000) ────────────────────────────────────────
+  tempCredits        AccTempCredit[] @relation("TempCreditBill")
+
   @@map("sale_bill")
   @@schema("sales")
 }
@@ -10125,6 +11090,19 @@ model SaleBillItem {
   // what to put back.
   sbiGodownId        String    @db.Uuid @map("sbi_godown_id")
   sbiStockId         String?   @db.Uuid @map("sbi_stock_id")
+  // ── Sales plan (20260921220000) ───────────────────────────────────────
+  /// The stock engine keys on the LOT, not the legacy sbiStockId.
+  sbiLotId           String?   @db.Uuid @map("sbi_lot_id")
+  /// SALEABLE | DAMAGED | QUARANTINE | EXPIRED | SAMPLE
+  sbiBucket          String    @default("SALEABLE") @db.VarChar(20) @map("sbi_bucket")
+  /// The source LINE (soiId or sdiId). sbiSrcDocId is the HEADER, and
+  /// sbiSrcDocLineNo is not a key across an amend.
+  sbiSrcItemId       String?   @db.Uuid @map("sbi_src_item_id")
+  /// What this line posted as COGS — ZERO on a line that came via a DC,
+  /// because the challan already posted it.
+  sbiCogsAmt         Decimal   @default(0) @db.Decimal(15, 2) @map("sbi_cogs_amt")
+  /// Which promotion gave a free item, so the claw-back knows what to undo.
+  sbiPromoUsageId    String?   @db.Uuid @map("sbi_promo_usage_id")
   sbiBatchNo         String?   @db.VarChar(100) @map("sbi_batch_no")
   sbiBatchDate       DateTime? @db.Date @map("sbi_batch_date")
   sbiExpiryDate      DateTime? @db.Date @map("sbi_expiry_date")
@@ -10258,7 +11236,548 @@ model SaleBillItem {
   // ix_sbi_tax (sbi_tax_id) WHERE sbi_tax_id IS NOT NULL is a DB-only partial index
   // (migration 20260912050000). Prisma cannot express the predicate and
   // would re-create it without one. Do NOT add @@index for it.
+  // ── Sales documents (20260921200000) ────────────────────────────────────
+  returnItems           SaleReturnItem[]          @relation("SaleReturnItemBill")
+
+  // ── Sales plan (20260921220000) ───────────────────────────────────────
+  lot                StockLot? @relation("SaleBillItemLot", fields: [sbiLotId], references: [sltId], onUpdate: Cascade, onDelete: Restrict, map: "fk_sbi_lot")
+
   @@map("sale_bill_item")
+  @@schema("sales")
+}
+
+// ----- prisma/sales/saleDc.prisma -----
+/// Delivery challan: goods OUT before the invoice.
+///
+///  * a STOCK document — posting writes DC_ISSUE stock rows and, under
+///    perpetual costing, DR COGS / CR INVENTORY at cost;
+///  * a GST document with NO TAX LIABILITY. It carries prices and GST columns
+///    only because rule 138(1) reads the VALUE of the goods for the e-way
+///    bill, and because the challan has to print. Never an IRN;
+///  * the SOURCE of a bill — a bill against a DC consumes sdiBilledQty and
+///    posts revenue only, because the stock already left. Many DCs to one
+///    bill, one DC to many bills, and mixed DC + direct lines on one bill are
+///    all allowed.
+///
+/// sdcPurpose decides its GST reading: SUPPLY converts into a bill; the others
+/// (JOB_WORK, APPROVAL, EXHIBITION, OWN_USE, LINE_SALES, OTHER) may only come
+/// back via a DC return or be converted after the fact.
+///
+/// LIST-partitioned by sdcAccYear, PK (sdcId, sdcAccYear).
+model SaleDc {
+  sdcId                 String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("sdc_id")
+  sdcCompanyId          String    @db.Uuid                             @map("sdc_company_id")
+  sdcBranchId           String    @db.Uuid                             @map("sdc_branch_id")
+  sdcTenantId           String?   @db.Uuid                             @map("sdc_tenant_id")
+  sdcAccYear            String    @db.Char(9)                          @map("sdc_acc_year")
+
+  sdcSessionId          String?   @db.Uuid                             @map("sdc_session_id")
+  sdcCounterId          String    @db.Uuid                             @map("sdc_counter_id")
+  sdcDeviceType         String?   @db.VarChar(20)                      @map("sdc_device_type")
+  sdcDeviceId           String?                                        @map("sdc_device_id")
+
+  // ── Identity ─────────────────────────────────────────────────────────
+  sdcDocType            String    @default("DELIVERY_CHALLAN") @db.VarChar(30) @map("sdc_doc_type")
+  /// SUPPLY | JOB_WORK | APPROVAL | EXHIBITION | OWN_USE | LINE_SALES | OTHER
+  sdcPurpose            String    @default("SUPPLY") @db.VarChar(20)   @map("sdc_purpose")
+  sdcDcSlno             BigInt                                         @map("sdc_dc_slno")
+  sdcDcRefno            String    @db.VarChar(100)                     @map("sdc_dc_refno")
+  sdcUsrRefno           String?   @db.VarChar(100)                     @map("sdc_usr_refno")
+  sdcUsrRefdate         DateTime? @db.Date                             @map("sdc_usr_refdate")
+  sdcDcDate             DateTime  @db.Date                             @map("sdc_dc_date")
+  sdcDcDatetime         DateTime  @default(now()) @db.Timestamptz(6)   @map("sdc_dc_datetime")
+  sdcPriceLevel         Int       @default(1)                          @map("sdc_price_level")
+
+  // ── Source: a sales order (line-level in SaleDcItem) ─────────────────
+  sdcSrcDocType         String?   @db.VarChar(30)                      @map("sdc_src_doc_type")
+  sdcSrcDocId           String?   @db.Uuid                             @map("sdc_src_doc_id")
+  sdcSrcDocAccYear      String?   @db.Char(9)                          @map("sdc_src_doc_acc_year")
+  sdcSrcDocRefno        String?   @db.VarChar(100)                     @map("sdc_src_doc_refno")
+  sdcSrcDocDate         DateTime? @db.Date                             @map("sdc_src_doc_date")
+
+  // ── Customer, snapshotted (bill-to) ──────────────────────────────────
+  sdcCustId             String    @db.Uuid                             @map("sdc_cust_id")
+  sdcCustName           String    @db.VarChar(200)                     @map("sdc_cust_name")
+  sdcCustAddr           String?   @db.VarChar(500)                     @map("sdc_cust_addr")
+  sdcCustPlace          String?   @db.VarChar(100)                     @map("sdc_cust_place")
+  sdcCustPin            String?   @db.VarChar(10)                      @map("sdc_cust_pin")
+  sdcCustPhone          String?   @db.VarChar(20)                      @map("sdc_cust_phone")
+  sdcCustGstin          String?   @db.VarChar(15)                      @map("sdc_cust_gstin")
+  sdcCustGstType        String?   @db.VarChar(20)                      @map("sdc_cust_gst_type")
+  sdcCustStcd           String?   @db.Char(2)                          @map("sdc_cust_stcd")
+  sdcPosStcd            String?   @db.Char(2)                          @map("sdc_pos_stcd")
+  sdcStateName          String?   @db.VarChar(100)                     @map("sdc_state_name")
+
+  // ── Delivery crew and vehicle — OURS, on the document on purpose ─────
+  sdcDriverId           String?   @db.Uuid                             @map("sdc_driver_id")
+  sdcSupervisorId       String?   @db.Uuid                             @map("sdc_supervisor_id")
+  sdcLoadmanId          String[]  @db.Uuid                             @map("sdc_loadman_id")
+  sdcVehicleId          String?   @db.Uuid                             @map("sdc_vehicle_id")
+  sdcVehicleNo          String?   @db.VarChar(20)                      @map("sdc_vehicle_no")
+
+  // ── People ───────────────────────────────────────────────────────────
+  sdcUserId             String    @db.Uuid                             @map("sdc_user_id")
+  /// uuid[] — no FK on array elements; the service validates each id.
+  sdcSalesmanId         String[]  @db.Uuid                             @map("sdc_salesman_id")
+  sdcAgentId            String?   @db.Uuid                             @map("sdc_agent_id")
+
+  // ── Quantities / money. The prices are for the e-way bill and the print;
+  //    NO tax liability is posted from them. ─────────────────────────────
+  sdcTotItems           Int       @default(0)                          @map("sdc_tot_items")
+  sdcTotWeight          Decimal   @default(0) @db.Decimal(15, 3)       @map("sdc_tot_weight")
+  sdcTotBags            Decimal   @default(0) @db.Decimal(15, 3)       @map("sdc_tot_bags")
+  sdcGrossAmt           Decimal   @default(0) @db.Decimal(15, 2)       @map("sdc_gross_amt")
+  sdcDiscAmt            Decimal   @default(0) @db.Decimal(15, 2)       @map("sdc_disc_amt")
+  sdcTaxableAmt         Decimal   @default(0) @db.Decimal(15, 2)       @map("sdc_taxable_amt")
+  sdcCgstAmt            Decimal   @default(0) @db.Decimal(15, 2)       @map("sdc_cgst_amt")
+  sdcSgstAmt            Decimal   @default(0) @db.Decimal(15, 2)       @map("sdc_sgst_amt")
+  sdcIgstAmt            Decimal   @default(0) @db.Decimal(15, 2)       @map("sdc_igst_amt")
+  sdcCessAmt            Decimal   @default(0) @db.Decimal(15, 2)       @map("sdc_cess_amt")
+  sdcTaxAmt             Decimal   @default(0) @db.Decimal(15, 2)       @map("sdc_tax_amt")
+  sdcOtherAmt           Decimal   @default(0) @db.Decimal(15, 2)       @map("sdc_other_amt")
+  sdcRoundOff           Decimal   @default(0) @db.Decimal(15, 2)       @map("sdc_round_off")
+  sdcDcAmt              Decimal   @default(0) @db.Decimal(15, 2)       @map("sdc_dc_amt")
+  /// The COGS posted AT the challan, under perpetual costing.
+  sdcTotalCost          Decimal   @default(0) @db.Decimal(15, 2)       @map("sdc_total_cost")
+
+  // ── Fulfilment caches (detail on the lines) ──────────────────────────
+  sdcBilledAmt          Decimal   @default(0) @db.Decimal(15, 2)       @map("sdc_billed_amt")
+  sdcReturnedAmt        Decimal   @default(0) @db.Decimal(15, 2)       @map("sdc_returned_amt")
+  /// OPEN | PARTIAL | BILLED | RETURNED | CLOSED
+  sdcFulfilStatus       String    @default("OPEN") @db.VarChar(20)     @map("sdc_fulfil_status")
+
+  // ── Roll-ups from the bill that a challan carries ────────────────────
+  sdcHasLoad            Boolean   @default(false)                      @map("sdc_has_load")
+  sdcHasUnload          Boolean   @default(false)                      @map("sdc_has_unload")
+  sdcHasFreight         Boolean   @default(false)                      @map("sdc_has_freight")
+  sdcHasPromo           Boolean   @default(false)                      @map("sdc_has_promo")
+  sdcPackedId           String[]  @db.Uuid                             @map("sdc_packed_id")
+  sdcItemDisc           Decimal   @default(0) @db.Decimal(15, 2)       @map("sdc_item_disc")
+  sdcSplDisc            Decimal   @default(0) @db.Decimal(15, 2)       @map("sdc_spl_disc")
+  sdcSchDisc            Decimal   @default(0) @db.Decimal(15, 2)       @map("sdc_sch_disc")
+  sdcFreightAmt         Decimal   @default(0) @db.Decimal(15, 2)       @map("sdc_freight_amt")
+  sdcLoadAmt            Decimal   @default(0) @db.Decimal(15, 2)       @map("sdc_load_amt")
+  sdcUnloadAmt          Decimal   @default(0) @db.Decimal(15, 2)       @map("sdc_unload_amt")
+  sdcFreightCalcType    String?   @db.VarChar(12)                      @map("sdc_freight_calc_type")
+  sdcLoadingCalcType    String?   @db.VarChar(12)                      @map("sdc_loading_calc_type")
+  sdcDiscAlterBase      Boolean?                                       @map("sdc_disc_alter_base")
+  sdcRoundOffStep       Decimal   @default(1) @db.Decimal(15, 2)       @map("sdc_round_off_step")
+
+  sdcPaymentTerms       String?   @db.VarChar(250)                     @map("sdc_payment_terms")
+  sdcDeliveryTerms      String?   @db.VarChar(250)                     @map("sdc_delivery_terms")
+  sdcRemarks            String?   @db.VarChar(500)                     @map("sdc_remarks")
+
+  // ── Lifecycle ────────────────────────────────────────────────────────
+  /// DRAFT | POSTED | CANCELLED. WHEN / WHO / WHY a status changed is NOT
+  /// here: TxnStatusLog holds every transition, one row per step, appended
+  /// and never updated — which is also the only shape that survives an
+  /// offline push, because two devices appending cannot conflict the way two
+  /// devices UPDATEing one header row can.
+  sdcStatus             String    @default("DRAFT") @db.VarChar(20)    @map("sdc_status")
+  /// The COGS voucher. No FK: SERVER-owned and written long after an offline
+  /// counter created this row.
+  sdcPostedVoucherId    String?   @db.Uuid                             @map("sdc_posted_voucher_id")
+  sdcRevisionNo         Int       @default(1)                          @map("sdc_revision_no")
+  sdcPrintCount         Int       @default(0)                          @map("sdc_print_count")
+
+  sdcIsDeleted          Boolean   @default(false)                      @map("sdc_is_deleted")
+  sdcSyncDate           DateTime? @db.Timestamptz(6)                   @map("sdc_sync_date")
+  sdcCreatedOn          DateTime  @default(now()) @db.Timestamptz(6)   @map("sdc_created_on")
+  sdcCreatedBy          String    @db.VarChar(50)                      @map("sdc_created_by")
+  sdcModifiedOn         DateTime? @db.Timestamptz(6)                   @map("sdc_modified_on")
+  sdcModifiedBy         String?   @db.VarChar(50)                      @map("sdc_modified_by")
+
+  // Relations
+  customer              Customer        @relation("SaleDcCustomer",   fields: [sdcCustId],       references: [cusId],     onUpdate: Cascade, onDelete: Restrict, map: "fk_sdc_cust")
+  posState              StateCode?      @relation("SaleDcPosState",   fields: [sdcPosStcd],      references: [stateCode], onUpdate: Cascade, onDelete: Restrict, map: "fk_sdc_pos_state")
+  driver                EmployeeMaster? @relation("SaleDcDriver",     fields: [sdcDriverId],     references: [empId],     onUpdate: Cascade, onDelete: Restrict, map: "fk_sdc_driver")
+  supervisor            EmployeeMaster? @relation("SaleDcSupervisor", fields: [sdcSupervisorId], references: [empId],     onUpdate: Cascade, onDelete: Restrict, map: "fk_sdc_supervisor")
+  vehicle               VehicleMaster?  @relation("SaleDcVehicle",    fields: [sdcVehicleId],    references: [vehId],     onUpdate: Cascade, onDelete: Restrict, map: "fk_sdc_vehicle")
+
+  items                 SaleDcItem[]    @relation("SaleDcItems")
+  dcReturns             SaleDcReturn[]  @relation("SaleDcReturnDc")
+
+  @@id([sdcId, sdcAccYear], map: "pk_sale_dc")
+
+  @@unique([sdcCompanyId, sdcBranchId, sdcAccYear, sdcDcRefno], map: "ux_sdc_refno")
+  @@unique([sdcCompanyId, sdcBranchId, sdcAccYear, sdcCounterId, sdcDcSlno], map: "ux_sdc_counter_slno")
+
+  // Partial indexes are DB-only:
+  //   ix_sdc_company_branch_date
+  //   ix_sdc_cust_open  -- "what is still out on challan for this customer",
+  //                        which is what the billing screen asks before it
+  //                        offers DC lines to pull in:
+  //       (sdc_cust_id, sdc_fulfil_status) WHERE NOT deleted
+  //         AND sdc_status = 'POSTED' AND sdc_fulfil_status IN ('OPEN','PARTIAL')
+  //   FK-covering: ix_sdc_pos_state, ix_sdc_driver, ix_sdc_supervisor,
+  //                ix_sdc_vehicle
+  //
+  // CHECK constraints (DB-only): ck_sdc_doc_type, ck_sdc_purpose,
+  //   ck_sdc_status, ck_sdc_fulfil_status
+
+  @@map("sale_dc")
+  @@schema("sales")
+}
+
+// ----- prisma/sales/saleDcItem.prisma -----
+/// A challan line. The LOT leaves here, and the bill inherits it.
+///
+/// sdiItemUnitId is inventory.item_unit_conversion(iuc_id), exactly as
+/// SaleBillItem.sbiItemUnitId — the bill line inherits this value unchanged,
+/// so the two must share an id space.
+///
+/// Fulfilment is tracked on the LINE: sdiBilledQty and sdiReturnedQty are
+/// written by OTHER documents (a bill and a DC return), which is why the
+/// remainder is generated rather than guarded.
+model SaleDcItem {
+  sdiId                 String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("sdi_id")
+  sdiDcId               String    @db.Uuid                             @map("sdi_dc_id")
+  sdiCompanyId          String    @db.Uuid                             @map("sdi_company_id")
+  sdiBranchId           String    @db.Uuid                             @map("sdi_branch_id")
+  sdiTenantId           String?   @db.Uuid                             @map("sdi_tenant_id")
+  sdiAccYear            String    @db.Char(9)                          @map("sdi_acc_year")
+  sdiLineNo             Int                                            @map("sdi_line_no")
+  sdiSplitNo            Int       @default(1)                          @map("sdi_split_no")
+
+  // ── Source order line (partial delivery of an order) ─────────────────
+  sdiSrcDocType         String?   @db.VarChar(30)                      @map("sdi_src_doc_type")
+  sdiSrcDocId           String?   @db.Uuid                             @map("sdi_src_doc_id")
+  sdiSrcDocAccYear      String?   @db.Char(9)                          @map("sdi_src_doc_acc_year")
+  sdiSrcDocRefno        String?   @db.VarChar(100)                     @map("sdi_src_doc_refno")
+  sdiSrcLineNo          Int?                                           @map("sdi_src_line_no")
+  /// sale_order_item.soi_id. No FK: polymorphic with sdiSrcDocType.
+  sdiSrcItemId          String?   @db.Uuid                             @map("sdi_src_item_id")
+
+  sdiItemId             String    @db.Uuid                             @map("sdi_item_id")
+  sdiItemUnitId         String    @db.Uuid                             @map("sdi_item_unit_id")
+  sdiToBaseFactor       Decimal   @default(0) @db.Decimal(15, 6)       @map("sdi_to_base_factor")
+  sdiHsnCode            String?   @db.VarChar(8)                       @map("sdi_hsn_code")
+  sdiTaxId              String?   @db.Uuid                             @map("sdi_tax_id")
+  sdiPriceLevel         Int?                                           @map("sdi_price_level")
+  sdiEanCode            String?   @db.VarChar(100)                     @map("sdi_ean_code")
+  sdiSize               String?   @db.VarChar(50)                      @map("sdi_size")
+  sdiSizeUom            String?   @db.VarChar(20)                      @map("sdi_size_uom")
+
+  // ── Stock identity ───────────────────────────────────────────────────
+  sdiGodownId           String    @db.Uuid                             @map("sdi_godown_id")
+  sdiLotId              String?   @db.Uuid                             @map("sdi_lot_id")
+  /// SALEABLE | DAMAGED | QUARANTINE | EXPIRED | SAMPLE
+  sdiBucket             String    @default("SALEABLE") @db.VarChar(20) @map("sdi_bucket")
+  sdiBatchNo            String?   @db.VarChar(100)                     @map("sdi_batch_no")
+  sdiBatchDate          DateTime? @db.Date                             @map("sdi_batch_date")
+  sdiExpiryDate         DateTime? @db.Date                             @map("sdi_expiry_date")
+  sdiSerialNo           String?   @db.VarChar(100)                     @map("sdi_serial_no")
+
+  sdiIsFree             Boolean   @default(false)                      @map("sdi_is_free")
+  sdiFreeType           String?   @db.VarChar(20)                      @map("sdi_free_type")
+  sdiIsService          Boolean   @default(false)                      @map("sdi_is_service")
+
+  sdiCaseQty            Decimal   @default(0) @db.Decimal(15, 3)       @map("sdi_case_qty")
+  sdiDcQty              Decimal   @default(0) @db.Decimal(15, 3)       @map("sdi_dc_qty")
+  sdiFreeQty            Decimal   @default(0) @db.Decimal(15, 3)       @map("sdi_free_qty")
+  sdiNetQty             Decimal   @default(0) @db.Decimal(15, 3)       @map("sdi_net_qty")
+  sdiWeightQty          Decimal?  @default(0) @db.Decimal(15, 3)       @map("sdi_weight_qty")
+
+  // ── Fulfilment, line level ───────────────────────────────────────────
+  sdiBilledQty          Decimal   @default(0) @db.Decimal(15, 3)       @map("sdi_billed_qty")
+  sdiReturnedQty        Decimal   @default(0) @db.Decimal(15, 3)       @map("sdi_returned_qty")
+  /// GENERATED ALWAYS ... STORED: dcQty - billedQty - returnedQty. Read-only —
+  /// never send it on a create or update.
+  ///
+  /// Allowed to go NEGATIVE. The challan's own quantities may be guarded, but
+  /// billed and returned are written by other documents — a bill and a DC
+  /// return, either of which may have been raised offline — so an over-draw
+  /// is RECORDED (ix_sdi_overdrawn) rather than refused, because refusing it
+  /// would abort a sync batch for goods that already moved.
+  sdiOpenQty            Decimal?  @default(dbgenerated()) @db.Decimal(15, 3) @map("sdi_open_qty")
+  /// OPEN | PARTIAL | BILLED | RETURNED | CLOSED
+  sdiLineStatus         String    @default("OPEN") @db.VarChar(20)     @map("sdi_line_status")
+
+  // ── Prices (e-way bill + print; the bill may re-price, with a warning) ─
+  sdiRate               Decimal   @default(0) @db.Decimal(15, 4)       @map("sdi_rate")
+  sdiRatePreTax         Decimal   @default(0) @db.Decimal(15, 4)       @map("sdi_rate_pre_tax")
+  sdiMaxPrice           Decimal?  @db.Decimal(15, 4)                   @map("sdi_max_price")
+  /// Resolved lot cost at post: the COGS rate.
+  sdiCostPrice          Decimal?  @db.Decimal(15, 4)                   @map("sdi_cost_price")
+  sdiIsTaxIncl          Boolean   @default(false)                      @map("sdi_is_tax_incl")
+  sdiDiscPerc           Decimal   @default(0) @db.Decimal(15, 4)       @map("sdi_disc_perc")
+  sdiDiscAmt            Decimal   @default(0) @db.Decimal(15, 2)       @map("sdi_disc_amt")
+  sdiGrossAmt           Decimal   @default(0) @db.Decimal(15, 2)       @map("sdi_gross_amt")
+  sdiTaxableAmt         Decimal   @default(0) @db.Decimal(15, 2)       @map("sdi_taxable_amt")
+  sdiTaxPerc            Decimal   @default(0) @db.Decimal(15, 4)       @map("sdi_tax_perc")
+  sdiCgstPerc           Decimal   @default(0) @db.Decimal(15, 4)       @map("sdi_cgst_perc")
+  sdiCgstAmt            Decimal   @default(0) @db.Decimal(15, 2)       @map("sdi_cgst_amt")
+  sdiSgstPerc           Decimal   @default(0) @db.Decimal(15, 4)       @map("sdi_sgst_perc")
+  sdiSgstAmt            Decimal   @default(0) @db.Decimal(15, 2)       @map("sdi_sgst_amt")
+  sdiIgstPerc           Decimal   @default(0) @db.Decimal(15, 4)       @map("sdi_igst_perc")
+  sdiIgstAmt            Decimal   @default(0) @db.Decimal(15, 2)       @map("sdi_igst_amt")
+  sdiCessPerc           Decimal   @default(0) @db.Decimal(15, 4)       @map("sdi_cess_perc")
+  sdiCessAmt            Decimal   @default(0) @db.Decimal(15, 2)       @map("sdi_cess_amt")
+  sdiTaxAmt             Decimal   @default(0) @db.Decimal(15, 2)       @map("sdi_tax_amt")
+  sdiNetAmt             Decimal   @default(0) @db.Decimal(15, 2)       @map("sdi_net_amt")
+
+  // ── Pricing: the essentials of SaleBillItem, same name/type/default, so
+  //    the bill line inherits them ────────────────────────────────────────
+  sdiIsPromo            Boolean   @default(false)                      @map("sdi_is_promo")
+  sdiActPrice           Decimal?  @db.Decimal(15, 4)                   @map("sdi_act_price")
+  sdiMinPrice           Decimal?  @db.Decimal(15, 4)                   @map("sdi_min_price")
+  sdiItemDiscPerc       Decimal   @default(0) @db.Decimal(15, 4)       @map("sdi_item_disc_perc")
+  sdiItemDiscAmt        Decimal   @default(0) @db.Decimal(15, 2)       @map("sdi_item_disc_amt")
+  sdiSplDiscPerc        Decimal   @default(0) @db.Decimal(15, 4)       @map("sdi_spl_disc_perc")
+  sdiSplDiscAmt         Decimal   @default(0) @db.Decimal(15, 2)       @map("sdi_spl_disc_amt")
+  sdiSchDiscPerc        Decimal   @default(0) @db.Decimal(15, 4)       @map("sdi_sch_disc_perc")
+  sdiSchDiscAmt         Decimal   @default(0) @db.Decimal(15, 2)       @map("sdi_sch_disc_amt")
+  sdiChrgBeforeTax      Decimal?  @db.Decimal(14, 4)                   @map("sdi_chrg_before_tax")
+  sdiChrgAfterTax       Decimal?  @db.Decimal(14, 4)                   @map("sdi_chrg_after_tax")
+  sdiCessPerUnit        Decimal   @default(0) @db.Decimal(15, 4)       @map("sdi_cess_per_unit")
+  sdiSalesmanId         String?   @db.Uuid                             @map("sdi_salesman_id")
+  sdiSchemeId           String?   @db.Uuid                             @map("sdi_scheme_id")
+  sdiSchemeName         String?   @db.VarChar(150)                     @map("sdi_scheme_name")
+
+  sdiRemarks            String?   @db.VarChar(250)                     @map("sdi_remarks")
+
+  sdiIsDeleted          Boolean   @default(false)                      @map("sdi_is_deleted")
+  sdiSyncDate           DateTime? @db.Timestamptz(6)                   @map("sdi_sync_date")
+  sdiCreatedOn          DateTime  @default(now()) @db.Timestamptz(6)   @map("sdi_created_on")
+  sdiCreatedBy          String    @db.VarChar(50)                      @map("sdi_created_by")
+  sdiModifiedOn         DateTime? @db.Timestamptz(6)                   @map("sdi_modified_on")
+  sdiModifiedBy         String?   @db.VarChar(50)                      @map("sdi_modified_by")
+
+  // Relations
+  dc                    SaleDc             @relation("SaleDcItems",    fields: [sdiDcId, sdiAccYear], references: [sdcId, sdcAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_sdi_dc")
+  item                  ItemMaster         @relation("SaleDcItemItem", fields: [sdiItemId],     references: [itemId], onUpdate: Cascade, onDelete: Restrict, map: "fk_sdi_item")
+  unit                  ItemUnitConversion @relation("SaleDcItemUnit", fields: [sdiItemUnitId], references: [iucId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_sdi_item_unit")
+  godown                GodownLocation     @relation("SaleDcItemGodown", fields: [sdiGodownId], references: [gdlId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_sdi_godown")
+  lot                   StockLot?          @relation("SaleDcItemLot",  fields: [sdiLotId],      references: [sltId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_sdi_lot")
+
+  dcReturnItems         SaleDcReturnItem[] @relation("SaleDcReturnItemDcItem")
+
+  @@id([sdiId, sdiAccYear], map: "pk_sale_dc_item")
+
+  // Partial indexes are DB-only:
+  //   ix_sdi_dc, ix_sdi_src_item
+  //   ix_sdi_open      -- the billing screen's own read: challan lines with
+  //                       something still open, index-only
+  //   ix_sdi_overdrawn -- the reconciliation report, and what the dropped
+  //                       clause of ck_sdi_qty became
+  //   FK-covering: ix_sdi_item, ix_sdi_item_unit, ix_sdi_godown, ix_sdi_lot
+  //
+  // CHECK constraints (DB-only): ck_sdi_split_no, ck_sdi_qty, ck_sdi_bucket,
+  //   ck_sdi_line_status
+
+  @@map("sale_dc_item")
+  @@schema("sales")
+}
+
+// ----- prisma/sales/saleDcReturn.prisma -----
+/// Un-billed goods coming back off a challan.
+///
+/// Only the DC's OPEN quantity (sdiOpenQty) may return here; BILLED goods come
+/// back through a SaleReturn. Posting writes DC_RETURN stock rows, reverses
+/// COGS at the DC line's cost, writes an INWARD challan register row and an
+/// e-way bill when the goods travel by a transporter.
+///
+/// NO party leg — nothing was ever owed, so there is nothing to credit.
+///
+/// ONE challan per DC return, which is why sdrDcId is a plain NOT NULL pair
+/// rather than a per-line reference.
+model SaleDcReturn {
+  sdrId                 String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("sdr_id")
+  sdrCompanyId          String    @db.Uuid                             @map("sdr_company_id")
+  sdrBranchId           String    @db.Uuid                             @map("sdr_branch_id")
+  sdrTenantId           String?   @db.Uuid                             @map("sdr_tenant_id")
+  sdrAccYear            String    @db.Char(9)                          @map("sdr_acc_year")
+
+  sdrSessionId          String?   @db.Uuid                             @map("sdr_session_id")
+  sdrCounterId          String    @db.Uuid                             @map("sdr_counter_id")
+  sdrDeviceType         String?   @db.VarChar(20)                      @map("sdr_device_type")
+  sdrDeviceId           String?                                        @map("sdr_device_id")
+
+  sdrDocType            String    @default("DC_RETURN") @db.VarChar(30) @map("sdr_doc_type")
+  sdrReturnSlno         BigInt                                         @map("sdr_return_slno")
+  sdrReturnRefno        String    @db.VarChar(100)                     @map("sdr_return_refno")
+  sdrUsrRefno           String?   @db.VarChar(100)                     @map("sdr_usr_refno")
+  sdrUsrRefdate         DateTime? @db.Date                             @map("sdr_usr_refdate")
+  sdrReturnDate         DateTime  @db.Date                             @map("sdr_return_date")
+  sdrReturnDatetime     DateTime  @default(now()) @db.Timestamptz(6)   @map("sdr_return_datetime")
+
+  // ── The challan it reverses ──────────────────────────────────────────
+  sdrDcId               String    @db.Uuid                             @map("sdr_dc_id")
+  sdrDcAccYear          String    @db.Char(9)                          @map("sdr_dc_acc_year")
+  sdrDcRefno            String?   @db.VarChar(100)                     @map("sdr_dc_refno")
+  sdrDcDate             DateTime? @db.Date                             @map("sdr_dc_date")
+  sdrReasonId           String?   @db.Uuid                             @map("sdr_reason_id")
+  sdrReturnReason       String?   @db.VarChar(250)                     @map("sdr_return_reason")
+
+  sdrCustId             String    @db.Uuid                             @map("sdr_cust_id")
+  sdrCustName           String    @db.VarChar(200)                     @map("sdr_cust_name")
+  sdrCustGstin          String?   @db.VarChar(15)                      @map("sdr_cust_gstin")
+  sdrCustStcd           String?   @db.Char(2)                          @map("sdr_cust_stcd")
+  sdrPosStcd            String?   @db.Char(2)                          @map("sdr_pos_stcd")
+
+  // ── Delivery crew and vehicle — OURS, on the document on purpose ─────
+  sdrDriverId           String?   @db.Uuid                             @map("sdr_driver_id")
+  sdrSupervisorId       String?   @db.Uuid                             @map("sdr_supervisor_id")
+  sdrLoadmanId          String[]  @db.Uuid                             @map("sdr_loadman_id")
+  sdrVehicleId          String?   @db.Uuid                             @map("sdr_vehicle_id")
+  sdrVehicleNo          String?   @db.VarChar(20)                      @map("sdr_vehicle_no")
+
+  sdrUserId             String    @db.Uuid                             @map("sdr_user_id")
+  /// The challan this reverses carries sdcSalesmanId, so the return of it
+  /// carries the same team — otherwise a delivery and its reversal cannot be
+  /// put side by side in any salesman report. uuid[], no FK on elements.
+  sdrSalesmanId         String[]  @db.Uuid                             @map("sdr_salesman_id")
+
+  sdrTotItems           Int       @default(0)                          @map("sdr_tot_items")
+  sdrTotWeight          Decimal   @default(0) @db.Decimal(15, 3)       @map("sdr_tot_weight")
+  sdrGrossAmt           Decimal   @default(0) @db.Decimal(15, 2)       @map("sdr_gross_amt")
+  sdrTaxableAmt         Decimal   @default(0) @db.Decimal(15, 2)       @map("sdr_taxable_amt")
+  sdrTaxAmt             Decimal   @default(0) @db.Decimal(15, 2)       @map("sdr_tax_amt")
+  sdrReturnAmt          Decimal   @default(0) @db.Decimal(15, 2)       @map("sdr_return_amt")
+  /// The COGS reversed.
+  sdrTotalCost          Decimal   @default(0) @db.Decimal(15, 2)       @map("sdr_total_cost")
+
+  sdrRemarks            String?   @db.VarChar(500)                     @map("sdr_remarks")
+
+  /// DRAFT | POSTED | CANCELLED. Transitions live in TxnStatusLog.
+  sdrStatus             String    @default("DRAFT") @db.VarChar(20)    @map("sdr_status")
+  /// No FK: SERVER-owned, written after an offline counter created this row.
+  sdrPostedVoucherId    String?   @db.Uuid                             @map("sdr_posted_voucher_id")
+  sdrPrintCount         Int       @default(0)                          @map("sdr_print_count")
+
+  sdrIsDeleted          Boolean   @default(false)                      @map("sdr_is_deleted")
+  sdrSyncDate           DateTime? @db.Timestamptz(6)                   @map("sdr_sync_date")
+  sdrCreatedOn          DateTime  @default(now()) @db.Timestamptz(6)   @map("sdr_created_on")
+  sdrCreatedBy          String    @db.VarChar(50)                      @map("sdr_created_by")
+  sdrModifiedOn         DateTime? @db.Timestamptz(6)                   @map("sdr_modified_on")
+  sdrModifiedBy         String?   @db.VarChar(50)                      @map("sdr_modified_by")
+
+  // Relations
+  dc                    SaleDc             @relation("SaleDcReturnDc",         fields: [sdrDcId, sdrDcAccYear], references: [sdcId, sdcAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_sdr_dc")
+  customer              Customer           @relation("SaleDcReturnCustomer",   fields: [sdrCustId],       references: [cusId], onUpdate: Cascade, onDelete: Restrict, map: "fk_sdr_cust")
+  reason                StockReasonMaster? @relation("SaleDcReturnReason",     fields: [sdrReasonId],     references: [srmId], onUpdate: Cascade, onDelete: Restrict, map: "fk_sdr_reason")
+  driver                EmployeeMaster?    @relation("SaleDcReturnDriver",     fields: [sdrDriverId],     references: [empId], onUpdate: Cascade, onDelete: Restrict, map: "fk_sdr_driver")
+  supervisor            EmployeeMaster?    @relation("SaleDcReturnSupervisor", fields: [sdrSupervisorId], references: [empId], onUpdate: Cascade, onDelete: Restrict, map: "fk_sdr_supervisor")
+  vehicle               VehicleMaster?     @relation("SaleDcReturnVehicle",    fields: [sdrVehicleId],    references: [vehId], onUpdate: Cascade, onDelete: Restrict, map: "fk_sdr_vehicle")
+
+  items                 SaleDcReturnItem[] @relation("SaleDcReturnItems")
+
+  @@id([sdrId, sdrAccYear], map: "pk_sale_dc_return")
+
+  @@unique([sdrCompanyId, sdrBranchId, sdrAccYear, sdrReturnRefno], map: "ux_sdr_refno")
+
+  // Partial indexes are DB-only: ix_sdr_dc, ix_sdr_company_branch_date, and
+  // FK-covering ix_sdr_cust / ix_sdr_reason / ix_sdr_driver /
+  // ix_sdr_supervisor / ix_sdr_vehicle.
+  //
+  // CHECK constraints (DB-only): ck_sdr_doc_type, ck_sdr_status
+
+  @@map("sale_dc_return")
+  @@schema("sales")
+}
+
+// ----- prisma/sales/saleDcReturnItem.prisma -----
+/// A DC-return line. The DC line is MANDATORY — a DC return is never free, so
+/// unlike SaleReturnItem there is no nullable source.
+///
+/// The lot goes back where it came from, which is why sdriLotId is the DC
+/// line's lot rather than a fresh one.
+///
+/// The money columns are the DC line's figures, carried for the INWARD e-way
+/// bill: goods coming back still have a value the portal wants.
+model SaleDcReturnItem {
+  sdriId                String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("sdri_id")
+  sdriReturnId          String    @db.Uuid                             @map("sdri_return_id")
+  sdriCompanyId         String    @db.Uuid                             @map("sdri_company_id")
+  sdriBranchId          String    @db.Uuid                             @map("sdri_branch_id")
+  sdriTenantId          String?   @db.Uuid                             @map("sdri_tenant_id")
+  sdriAccYear           String    @db.Char(9)                          @map("sdri_acc_year")
+  sdriLineNo            Int                                            @map("sdri_line_no")
+
+  // ── The DC line (mandatory) ──────────────────────────────────────────
+  sdriDcItemId          String    @db.Uuid                             @map("sdri_dc_item_id")
+  sdriDcAccYear         String    @db.Char(9)                          @map("sdri_dc_acc_year")
+  sdriDcLineNo          Int?                                           @map("sdri_dc_line_no")
+
+  sdriItemId            String    @db.Uuid                             @map("sdri_item_id")
+  /// item_unit_conversion, matching the DC line it reverses.
+  sdriItemUnitId        String    @db.Uuid                             @map("sdri_item_unit_id")
+  sdriToBaseFactor      Decimal   @default(0) @db.Decimal(15, 6)       @map("sdri_to_base_factor")
+  sdriHsnCode           String?   @db.VarChar(8)                       @map("sdri_hsn_code")
+
+  sdriGodownId          String    @db.Uuid                             @map("sdri_godown_id")
+  /// The DC line's lot: it goes back where it came from.
+  sdriLotId             String?   @db.Uuid                             @map("sdri_lot_id")
+  /// RESTOCK | DAMAGED | EXPIRED | SCRAP
+  sdriCondition         String    @default("RESTOCK") @db.VarChar(20)  @map("sdri_condition")
+  /// SALEABLE | DAMAGED | QUARANTINE | EXPIRED | SAMPLE
+  sdriBucket            String    @default("SALEABLE") @db.VarChar(20) @map("sdri_bucket")
+  sdriBatchNo           String?   @db.VarChar(100)                     @map("sdri_batch_no")
+  sdriExpiryDate        DateTime? @db.Date                             @map("sdri_expiry_date")
+  sdriSerialNo          String?   @db.VarChar(100)                     @map("sdri_serial_no")
+
+  sdriReturnQty         Decimal   @default(0) @db.Decimal(15, 3)       @map("sdri_return_qty")
+  sdriFreeQty           Decimal   @default(0) @db.Decimal(15, 3)       @map("sdri_free_qty")
+  sdriNetQty            Decimal   @default(0) @db.Decimal(15, 3)       @map("sdri_net_qty")
+  sdriWeightQty         Decimal?  @default(0) @db.Decimal(15, 3)       @map("sdri_weight_qty")
+
+  sdriRate              Decimal   @default(0) @db.Decimal(15, 4)       @map("sdri_rate")
+  /// The DC line's cost: what COGS reverses at.
+  sdriCostPrice         Decimal?  @db.Decimal(15, 4)                   @map("sdri_cost_price")
+  sdriTaxableAmt        Decimal   @default(0) @db.Decimal(15, 2)       @map("sdri_taxable_amt")
+  sdriTaxPerc           Decimal   @default(0) @db.Decimal(15, 4)       @map("sdri_tax_perc")
+  sdriTaxAmt            Decimal   @default(0) @db.Decimal(15, 2)       @map("sdri_tax_amt")
+  sdriNetAmt            Decimal   @default(0) @db.Decimal(15, 2)       @map("sdri_net_amt")
+
+  // ── Value of the goods coming back (inward e-way bill) ───────────────
+  sdriPriceLevel        Int                                            @map("sdri_price_level")
+  sdriEanCode           String?   @db.VarChar(100)                     @map("sdri_ean_code")
+  sdriIsTaxIncl         Boolean   @default(false)                      @map("sdri_is_tax_incl")
+  sdriIsService         Boolean   @default(false)                      @map("sdri_is_service")
+  sdriRatePreTax        Decimal   @default(0) @db.Decimal(15, 4)       @map("sdri_rate_pre_tax")
+  sdriMaxPrice          Decimal?  @db.Decimal(15, 4)                   @map("sdri_max_price")
+  sdriItemDiscPerc      Decimal   @default(0) @db.Decimal(15, 4)       @map("sdri_item_disc_perc")
+  sdriItemDiscAmt       Decimal   @default(0) @db.Decimal(15, 2)       @map("sdri_item_disc_amt")
+  sdriSchDiscAmt        Decimal   @default(0) @db.Decimal(15, 2)       @map("sdri_sch_disc_amt")
+  sdriGrossAmt          Decimal   @default(0) @db.Decimal(15, 2)       @map("sdri_gross_amt")
+  sdriCgstPerc          Decimal   @default(0) @db.Decimal(15, 4)       @map("sdri_cgst_perc")
+  sdriCgstAmt           Decimal   @default(0) @db.Decimal(15, 2)       @map("sdri_cgst_amt")
+  sdriSgstPerc          Decimal   @default(0) @db.Decimal(15, 4)       @map("sdri_sgst_perc")
+  sdriSgstAmt           Decimal   @default(0) @db.Decimal(15, 2)       @map("sdri_sgst_amt")
+  sdriIgstPerc          Decimal   @default(0) @db.Decimal(15, 4)       @map("sdri_igst_perc")
+  sdriIgstAmt           Decimal   @default(0) @db.Decimal(15, 2)       @map("sdri_igst_amt")
+  sdriCessPerc          Decimal   @default(0) @db.Decimal(15, 4)       @map("sdri_cess_perc")
+  sdriCessPerUnit       Decimal   @default(0) @db.Decimal(15, 4)       @map("sdri_cess_per_unit")
+  sdriCessAmt           Decimal   @default(0) @db.Decimal(15, 2)       @map("sdri_cess_amt")
+  sdriSize              String?   @db.VarChar(50)                      @map("sdri_size")
+  sdriSizeUom           String?   @db.VarChar(20)                      @map("sdri_size_uom")
+  sdriTaxId             String?   @db.Uuid                             @map("sdri_tax_id")
+
+  sdriRemarks           String?   @db.VarChar(250)                     @map("sdri_remarks")
+
+  sdriIsDeleted         Boolean   @default(false)                      @map("sdri_is_deleted")
+  sdriSyncDate          DateTime? @db.Timestamptz(6)                   @map("sdri_sync_date")
+  sdriCreatedOn         DateTime  @default(now()) @db.Timestamptz(6)   @map("sdri_created_on")
+  sdriCreatedBy         String    @db.VarChar(50)                      @map("sdri_created_by")
+  sdriModifiedOn        DateTime? @db.Timestamptz(6)                   @map("sdri_modified_on")
+  sdriModifiedBy        String?   @db.VarChar(50)                      @map("sdri_modified_by")
+
+  // Relations
+  dcReturn              SaleDcReturn       @relation("SaleDcReturnItems",       fields: [sdriReturnId, sdriAccYear], references: [sdrId, sdrAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_sdri_return")
+  dcItem                SaleDcItem         @relation("SaleDcReturnItemDcItem",  fields: [sdriDcItemId, sdriDcAccYear], references: [sdiId, sdiAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_sdri_dc_item")
+  item                  ItemMaster         @relation("SaleDcReturnItemItem",    fields: [sdriItemId],     references: [itemId], onUpdate: Cascade, onDelete: Restrict, map: "fk_sdri_item")
+  unit                  ItemUnitConversion @relation("SaleDcReturnItemUnit",    fields: [sdriItemUnitId], references: [iucId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_sdri_item_unit")
+  godown                GodownLocation     @relation("SaleDcReturnItemGodown",  fields: [sdriGodownId],   references: [gdlId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_sdri_godown")
+  lot                   StockLot?          @relation("SaleDcReturnItemLot",     fields: [sdriLotId],      references: [sltId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_sdri_lot")
+
+  @@id([sdriId, sdriAccYear], map: "pk_sale_dc_return_item")
+
+  // Partial indexes are DB-only: ix_sdri_return, ix_sdri_dc_item, and
+  // FK-covering ix_sdri_item / ix_sdri_item_unit / ix_sdri_godown / ix_sdri_lot.
+  //
+  // CHECK constraints (DB-only): ck_sdri_qty, ck_sdri_condition, ck_sdri_bucket
+
+  @@map("sale_dc_return_item")
   @@schema("sales")
 }
 
@@ -10556,6 +12075,12 @@ model SaleOrder {
   // ck_so_advance_amounts, ck_so_advance_balance, ck_so_advance_policy_input.
   @@id([soId, soAccYear], map: "pk_sale_order")
   @@index([soCustId], map: "ix_so_cust")
+  // ── Sales plan (20260921220000) ───────────────────────────────────────
+  /// Amend counter: an in-place amendment re-posts against the same number
+  /// and bumps this.
+  soRevisionNo       Int       @default(1) @map("so_revision_no")
+  soUsrRefdate       DateTime? @db.Date @map("so_usr_refdate")
+
   @@map("sale_order")
   @@schema("sales")
 }
@@ -10772,7 +12297,10 @@ model SaleQuotation {
   sqSrcDocType       String?   @db.VarChar(30) @map("sq_src_doc_type")
   sqSrcDocId         String?   @db.Uuid @map("sq_src_doc_id")
   sqSrcDocRefno      String?   @db.VarChar(100) @map("sq_src_doc_refno")
-  sqSrcDocDate       DateTime? @db.Timestamptz(6) @map("sq_src_doc_date")
+  /// A DATE, not a timestamptz: stored with a zone, 2026-04-01 became
+  /// 2026-03-31T18:30Z and landed in the wrong day — and, on the first day
+  /// of a financial year, the wrong YEAR — of every date-bounded report.
+  sqSrcDocDate       DateTime? @db.Date @map("sq_src_doc_date")
   // customer / prospect snapshot (sq_cust_id nullable: may be a prospect)
   sqCustId           String?   @db.Uuid @map("sq_cust_id")
   sqCustAreaId       String?   @db.Uuid @map("sq_cust_area_id")
@@ -10796,7 +12324,13 @@ model SaleQuotation {
   sqHasComm          Boolean   @default(false) @map("sq_has_comm")
   // people
   sqUserId           String    @db.Uuid @map("sq_user_id")
-  sqSalesmanId       String?   @db.Uuid @map("sq_salesman_id")
+  /// uuid[], like sale_bill, sale_order and sale_dc. It was the last
+  /// singular one, so a dual-salesman quote could not be recorded and the
+  /// second name was lost the moment it converted. PostgreSQL cannot FK the
+  /// ELEMENTS of an array, so the service validates each id against
+  /// EmployeeMaster before it writes, and lookups go through the GIN index:
+  ///     WHERE sq_salesman_id @> ARRAY[:salesman]::uuid[]
+  sqSalesmanId       String[]  @db.Uuid @map("sq_salesman_id")
   sqAgentId          String?   @db.Uuid @map("sq_agent_id")
   // counts / weight
   sqTotItems         Int       @default(0) @map("sq_tot_items")
@@ -10844,7 +12378,6 @@ model SaleQuotation {
   // approval / cancel
   sqApprovedOn       DateTime? @db.Timestamptz(6) @map("sq_approved_on")
   sqApprovedBy       String?   @db.Uuid @map("sq_approved_by")
-  sqCancelledOn      DateTime? @db.Timestamptz(6) @map("sq_cancelled_on")
   sqCancelledBy      String?   @db.Uuid @map("sq_cancelled_by")
   sqCancelReason     String?   @db.VarChar(250) @map("sq_cancel_reason")
   sqMrpSavings       Decimal?   @default(0) @db.Decimal(15,3) @map("sq_mrp_savings")
@@ -10876,7 +12409,8 @@ model SaleQuotation {
   custArea    AreaMaster?         @relation(fields: [sqCustAreaId], references: [armId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sq_cust_area")
   priceLevel  ItemPriceLevel      @relation(fields: [sqPriceLevel], references: [iplId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sq_price_level")
   posState    StateCode?          @relation(fields: [sqPosStcd], references: [stateCode], onDelete: Restrict, onUpdate: Cascade, map: "fk_sq_pos_state")
-  salesman    EmployeeMaster?     @relation(fields: [sqSalesmanId], references: [empId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sq_salesman")
+  // No `salesman` relation: sqSalesmanId is now uuid[] and fk_sq_salesman
+  // was dropped with it — an array cannot carry a foreign key.
   // DB-only partial indexes (migration 20260708120000): ux_sq_quote_no and
   // ux_sq_slno (unique per company/branch/year among non-deleted rows),
   // ix_sq_cust, ix_sq_status, ix_sq_valid, ix_sq_conv, ix_sq_parent.
@@ -11045,6 +12579,329 @@ model SaleQuotationItem {
   // (migration 20260912050000). Prisma cannot express the predicate and
   // would re-create it without one. Do NOT add @@index for it.
   @@map("sale_quotation_item")
+  @@schema("sales")
+}
+
+// ----- prisma/sales/saleReturn.prisma -----
+/// The credit note.
+///
+/// LIST-partitioned by srAccYear, PK (srId, srAccYear). Partitions come from
+/// public.ensure_acc_year_partitions, which 20260921200000 taught about this
+/// table.
+///
+/// srIsAgainstBill = false is the FREE return: allowed, flagged, priced at the
+/// current selling price, NO COGS reversal (there is no cost to reverse), and
+/// it is the row every audit report lists first.
+///
+/// Settlement has three modes and no fourth:
+///   CASH     refund now; rows in AccTenderDetail
+///   ADJUST   against the party's open bills — the ORIGINAL bill first, then
+///            the rest by due date; the remainder becomes a credit note
+///   ADVANCE  the whole amount becomes a credit note the party holds
+model SaleReturn {
+  srId                  String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("sr_id")
+  srCompanyId           String    @db.Uuid                             @map("sr_company_id")
+  srBranchId            String    @db.Uuid                             @map("sr_branch_id")
+  srTenantId            String?   @db.Uuid                             @map("sr_tenant_id")
+  srAccYear             String    @db.Char(9)                          @map("sr_acc_year")
+
+  srSessionId           String?   @db.Uuid                             @map("sr_session_id")
+  srCounterId           String    @db.Uuid                             @map("sr_counter_id")
+  srDeviceType          String?   @db.VarChar(20)                      @map("sr_device_type")
+  srDeviceId            String?                                        @map("sr_device_id")
+
+  // ── Document identity ────────────────────────────────────────────────
+  srDocType             String    @default("CREDIT_NOTE") @db.VarChar(30) @map("sr_doc_type")
+  /// POS | WHOLESALE, inherited from the bill.
+  srBillMode            String    @default("WHOLESALE") @db.VarChar(10) @map("sr_bill_mode")
+  srReturnSlno          BigInt                                         @map("sr_return_slno")
+  srReturnRefno         String    @db.VarChar(100)                     @map("sr_return_refno")
+  srUsrRefno            String?   @db.VarChar(100)                     @map("sr_usr_refno")
+  srUsrRefdate          DateTime? @db.Date                             @map("sr_usr_refdate")
+  srReturnDate          DateTime  @db.Date                             @map("sr_return_date")
+  srReturnDatetime      DateTime  @default(now()) @db.Timestamptz(6)   @map("sr_return_datetime")
+
+  // ── Source invoice ───────────────────────────────────────────────────
+  srIsAgainstBill       Boolean   @default(true)                       @map("sr_is_against_bill")
+  srBillId              String?   @db.Uuid                             @map("sr_bill_id")
+  srBillAccYear         String?   @db.Char(9)                          @map("sr_bill_acc_year")
+  srBillRefno           String?   @db.VarChar(100)                     @map("sr_bill_refno")
+  srBillDate            DateTime? @db.Date                             @map("sr_bill_date")
+  srReasonId            String?   @db.Uuid                             @map("sr_reason_id")
+  srReturnReason        String?   @db.VarChar(250)                     @map("sr_return_reason")
+
+  // ── Customer, snapshotted ────────────────────────────────────────────
+  srCustId              String    @db.Uuid                             @map("sr_cust_id")
+  srCustName            String    @db.VarChar(200)                     @map("sr_cust_name")
+  srCustAddr            String?   @db.VarChar(500)                     @map("sr_cust_addr")
+  srCustPlace           String?   @db.VarChar(100)                     @map("sr_cust_place")
+  srCustPin             String?   @db.VarChar(10)                      @map("sr_cust_pin")
+  srCustPhone           String?   @db.VarChar(20)                      @map("sr_cust_phone")
+  srCustGstin           String?   @db.VarChar(15)                      @map("sr_cust_gstin")
+  srCustGstType         String?   @db.VarChar(20)                      @map("sr_cust_gst_type")
+  srCustStcd            String?   @db.Char(2)                          @map("sr_cust_stcd")
+  srPosStcd             String?   @db.Char(2)                          @map("sr_pos_stcd")
+  srStateName           String?   @db.VarChar(100)                     @map("sr_state_name")
+
+  srPriceLevel          Int?                                           @map("sr_price_level")
+
+  srUserId              String    @db.Uuid                             @map("sr_user_id")
+  /// uuid[]: a document is credited to a TEAM, and a return inherits its
+  /// salesmen from the bill it returns. PostgreSQL cannot FK the ELEMENTS of
+  /// an array, so the service validates each id against EmployeeMaster before
+  /// it writes. Do not make this singular — a company may credit two
+  /// salesmen, and a third later. The LINE stays one person.
+  srSalesmanId          String[]  @db.Uuid                             @map("sr_salesman_id")
+
+  srTotItems            Int       @default(0)                          @map("sr_tot_items")
+  srTotWeight           Decimal   @default(0) @db.Decimal(15, 3)       @map("sr_tot_weight")
+
+  // ── Money ────────────────────────────────────────────────────────────
+  srGrossAmt            Decimal   @default(0) @db.Decimal(15, 2)       @map("sr_gross_amt")
+  srDiscAmt             Decimal   @default(0) @db.Decimal(15, 2)       @map("sr_disc_amt")
+  srTaxableAmt          Decimal   @default(0) @db.Decimal(15, 2)       @map("sr_taxable_amt")
+  srCgstAmt             Decimal   @default(0) @db.Decimal(15, 2)       @map("sr_cgst_amt")
+  srSgstAmt             Decimal   @default(0) @db.Decimal(15, 2)       @map("sr_sgst_amt")
+  srIgstAmt             Decimal   @default(0) @db.Decimal(15, 2)       @map("sr_igst_amt")
+  srCessAmt             Decimal   @default(0) @db.Decimal(15, 2)       @map("sr_cess_amt")
+  srTaxAmt              Decimal   @default(0) @db.Decimal(15, 2)       @map("sr_tax_amt")
+  srOtherAmt            Decimal   @default(0) @db.Decimal(15, 2)       @map("sr_other_amt")
+  srRoundOff            Decimal   @default(0) @db.Decimal(15, 2)       @map("sr_round_off")
+  srReturnAmt           Decimal   @default(0) @db.Decimal(15, 2)       @map("sr_return_amt")
+  /// The COGS reversed, under perpetual costing.
+  srTotalCost           Decimal   @default(0) @db.Decimal(15, 2)       @map("sr_total_cost")
+
+  // ── Settlement ───────────────────────────────────────────────────────
+  /// CASH | ADJUST | ADVANCE
+  srSettleMode          String    @default("ADJUST") @db.VarChar(10)   @map("sr_settle_mode")
+  srRefundAmt           Decimal   @default(0) @db.Decimal(15, 2)       @map("sr_refund_amt")
+  srAdjustedAmt         Decimal   @default(0) @db.Decimal(15, 2)       @map("sr_adjusted_amt")
+  /// What became a credit note the party holds.
+  srCreditAmt           Decimal   @default(0) @db.Decimal(15, 2)       @map("sr_credit_amt")
+  /// PENDING | REFUNDED | ADJUSTED | CREDITED | PARTIAL
+  srSettleStatus        String    @default("PENDING") @db.VarChar(20)  @map("sr_settle_status")
+
+  // ── Loyalty / promotion claw-back ────────────────────────────────────
+  /// POINTS, numeric(18,4) like every other points column — not money's
+  /// (15,2). A cache; the detail is the LoyaltyLedger rows this return
+  /// writes. Declared by the migration that CREATES this table, because the
+  /// loyalty migration's ALTERs were written against a sale_return that did
+  /// not exist and were deliberately skipped.
+  srLoyaltyReversePoints Decimal  @default(0) @db.Decimal(18, 4)       @map("sr_loyalty_reverse_points")
+  srPromoClawbackAmt    Decimal   @default(0) @db.Decimal(15, 2)       @map("sr_promo_clawback_amt")
+
+  // ── Roll-ups from the bill that a credit note reverses ───────────────
+  srHasLoad             Boolean   @default(false)                      @map("sr_has_load")
+  srHasUnload           Boolean   @default(false)                      @map("sr_has_unload")
+  srHasFreight          Boolean   @default(false)                      @map("sr_has_freight")
+  srHasPromo            Boolean   @default(false)                      @map("sr_has_promo")
+  srHasLoyalty          Boolean   @default(false)                      @map("sr_has_loyalty")
+  srAgentId             String?   @db.Uuid                             @map("sr_agent_id")
+  srAgentCommAmt        Decimal?  @db.Decimal(15, 2)                   @map("sr_agent_comm_amt")
+
+  // ── Delivery crew and vehicle — OURS, on the document on purpose ─────
+  // These exist whenever goods move, even with no consignment at all: a home
+  // delivery has a driver and a van and no transporter, no LR and no e-way
+  // bill. Identical on all four goods-moving documents.
+  srDriverId            String?   @db.Uuid                             @map("sr_driver_id")
+  srSupervisorId        String?   @db.Uuid                             @map("sr_supervisor_id")
+  /// Open-ended crew; no FK on array elements.
+  srLoadmanId           String[]  @db.Uuid                             @map("sr_loadman_id")
+  srVehicleId           String?   @db.Uuid                             @map("sr_vehicle_id")
+  srVehicleNo           String?   @db.VarChar(20)                      @map("sr_vehicle_no")
+
+  srTotBags             Decimal   @default(0) @db.Decimal(15, 3)       @map("sr_tot_bags")
+  srItemDisc            Decimal   @default(0) @db.Decimal(15, 2)       @map("sr_item_disc")
+  srSplDisc             Decimal   @default(0) @db.Decimal(15, 2)       @map("sr_spl_disc")
+  srSchDisc             Decimal   @default(0) @db.Decimal(15, 2)       @map("sr_sch_disc")
+  srBillSchDisc         Decimal   @default(0) @db.Decimal(15, 2)       @map("sr_bill_sch_disc")
+  srCashDisc            Decimal   @default(0) @db.Decimal(15, 2)       @map("sr_cash_disc")
+  srFreightAmt          Decimal   @default(0) @db.Decimal(15, 2)       @map("sr_freight_amt")
+  srLoadAmt             Decimal   @default(0) @db.Decimal(15, 2)       @map("sr_load_amt")
+  srUnloadAmt           Decimal   @default(0) @db.Decimal(15, 2)       @map("sr_unload_amt")
+  srDiscAlterBase       Boolean?                                       @map("sr_disc_alter_base")
+  srRoundOffStep        Decimal   @default(1) @db.Decimal(15, 2)       @map("sr_round_off_step")
+
+  srRemarks             String?   @db.VarChar(500)                     @map("sr_remarks")
+
+  // ── Lifecycle ────────────────────────────────────────────────────────
+  /// DRAFT | POSTED | CANCELLED. WHEN / WHO / WHY a status changed lives in
+  /// TxnStatusLog, one appended row per transition; the header keeps only the
+  /// CURRENT status.
+  srStatus              String    @default("DRAFT") @db.VarChar(20)    @map("sr_status")
+  /// accounts.acc_voucher_header. No FK: SERVER-owned and written long after
+  /// an offline counter created this row.
+  srPostedVoucherId     String?   @db.Uuid                             @map("sr_posted_voucher_id")
+  srRevisionNo          Int       @default(1)                          @map("sr_revision_no")
+  srPrintCount          Int       @default(0)                          @map("sr_print_count")
+
+  srIsDeleted           Boolean   @default(false)                      @map("sr_is_deleted")
+  srSyncDate            DateTime? @db.Timestamptz(6)                   @map("sr_sync_date")
+  srCreatedOn           DateTime  @default(now()) @db.Timestamptz(6)   @map("sr_created_on")
+  srCreatedBy           String    @db.VarChar(50)                      @map("sr_created_by")
+  srModifiedOn          DateTime? @db.Timestamptz(6)                   @map("sr_modified_on")
+  srModifiedBy          String?   @db.VarChar(50)                      @map("sr_modified_by")
+
+  // Relations
+  bill                  SaleBill?          @relation("SaleReturnBill",       fields: [srBillId, srBillAccYear], references: [sbId, sbAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_sr_bill")
+  customer              Customer           @relation("SaleReturnCustomer",   fields: [srCustId],      references: [cusId],     onUpdate: Cascade, onDelete: Restrict, map: "fk_sr_cust")
+  posState              StateCode?         @relation("SaleReturnPosState",   fields: [srPosStcd],     references: [stateCode], onUpdate: Cascade, onDelete: Restrict, map: "fk_sr_pos_state")
+  reason                StockReasonMaster? @relation("SaleReturnReason",     fields: [srReasonId],    references: [srmId],     onUpdate: Cascade, onDelete: Restrict, map: "fk_sr_reason")
+  driver                EmployeeMaster?    @relation("SaleReturnDriver",     fields: [srDriverId],    references: [empId],     onUpdate: Cascade, onDelete: Restrict, map: "fk_sr_driver")
+  supervisor            EmployeeMaster?    @relation("SaleReturnSupervisor", fields: [srSupervisorId], references: [empId],    onUpdate: Cascade, onDelete: Restrict, map: "fk_sr_supervisor")
+  vehicle               VehicleMaster?     @relation("SaleReturnVehicle",    fields: [srVehicleId],   references: [vehId],     onUpdate: Cascade, onDelete: Restrict, map: "fk_sr_vehicle")
+
+  items                 SaleReturnItem[]   @relation("SaleReturnItems")
+
+  // No relation fields for srCompanyId / srBranchId: the DDL declares no FKs
+  // for them, matching sale_bill.
+
+  @@id([srId, srAccYear], map: "pk_sale_return")
+
+  @@unique([srCompanyId, srBranchId, srAccYear, srReturnRefno], map: "ux_sr_refno")
+  @@unique([srCompanyId, srBranchId, srAccYear, srCounterId, srReturnSlno], map: "ux_sr_counter_slno")
+
+  // Partial indexes are DB-only: ix_sr_company_branch_date, ix_sr_bill,
+  // ix_sr_cust, and FK-covering ix_sr_pos_state / ix_sr_reason / ix_sr_driver
+  // / ix_sr_supervisor / ix_sr_vehicle.
+  //
+  // CHECK constraints (DB-only): ck_sr_doc_type, ck_sr_bill_mode,
+  //   ck_sr_status, ck_sr_settle_mode, ck_sr_settle_status,
+  //   ck_sr_against_bill, ck_sr_settle_sum
+
+  @@map("sale_return")
+  @@schema("sales")
+}
+
+// ----- prisma/sales/saleReturnItem.prisma -----
+/// A credit note line: one bill line coming back, reversed tier by tier.
+///
+/// sriBillItemId is NULL on a FREE return (srIsAgainstBill = false) — there is
+/// no bill line to point at, and no cost to reverse.
+///
+/// sriItemUnitId is inventory.item_unit_conversion(iuc_id), exactly as
+/// SaleBillItem.sbiItemUnitId. Every transaction line in this database uses
+/// that table; a line pointing at item_unit_master instead would carry an id
+/// from the wrong space and be rejected the moment it met a bill.
+model SaleReturnItem {
+  sriId                 String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("sri_id")
+  sriReturnId           String    @db.Uuid                             @map("sri_return_id")
+  sriCompanyId          String    @db.Uuid                             @map("sri_company_id")
+  sriBranchId           String    @db.Uuid                             @map("sri_branch_id")
+  sriTenantId           String?   @db.Uuid                             @map("sri_tenant_id")
+  sriAccYear            String    @db.Char(9)                          @map("sri_acc_year")
+  sriLineNo             Int                                            @map("sri_line_no")
+  sriSplitNo            Int       @default(1)                          @map("sri_split_no")
+
+  // ── The bill line this comes back against (NULL on a free return) ────
+  sriBillItemId         String?   @db.Uuid                             @map("sri_bill_item_id")
+  sriBillAccYear        String?   @db.Char(9)                          @map("sri_bill_acc_year")
+  sriBillLineNo         Int?                                           @map("sri_bill_line_no")
+
+  sriItemId             String    @db.Uuid                             @map("sri_item_id")
+  sriItemUnitId         String    @db.Uuid                             @map("sri_item_unit_id")
+  sriToBaseFactor       Decimal   @default(0) @db.Decimal(15, 6)       @map("sri_to_base_factor")
+  sriHsnCode            String?   @db.VarChar(8)                       @map("sri_hsn_code")
+  sriTaxId              String?   @db.Uuid                             @map("sri_tax_id")
+
+  // ── Where it goes back, and in what state ────────────────────────────
+  sriGodownId           String    @db.Uuid                             @map("sri_godown_id")
+  /// The ORIGINAL lot when known, so it goes back where it came from.
+  sriLotId              String?   @db.Uuid                             @map("sri_lot_id")
+  sriBatchNo            String?   @db.VarChar(100)                     @map("sri_batch_no")
+  sriBatchDate          DateTime? @db.Date                             @map("sri_batch_date")
+  sriExpiryDate         DateTime? @db.Date                             @map("sri_expiry_date")
+  sriSerialNo           String?   @db.VarChar(100)                     @map("sri_serial_no")
+  /// RESTOCK | DAMAGED | EXPIRED | SCRAP
+  sriCondition          String    @default("RESTOCK") @db.VarChar(20)  @map("sri_condition")
+  /// SALEABLE | DAMAGED | QUARANTINE | EXPIRED | SAMPLE — mirrors sml_bucket,
+  /// so damaged goods come back into the damaged bucket and not into stock.
+  sriBucket             String    @default("SALEABLE") @db.VarChar(20) @map("sri_bucket")
+
+  sriCaseQty            Decimal   @default(0) @db.Decimal(15, 3)       @map("sri_case_qty")
+  sriReturnQty          Decimal   @default(0) @db.Decimal(15, 3)       @map("sri_return_qty")
+  /// Free goods coming back.
+  sriFreeQty            Decimal   @default(0) @db.Decimal(15, 3)       @map("sri_free_qty")
+  sriNetQty             Decimal   @default(0) @db.Decimal(15, 3)       @map("sri_net_qty")
+  sriWeightQty          Decimal?  @default(0) @db.Decimal(15, 3)       @map("sri_weight_qty")
+
+  sriRate               Decimal   @default(0) @db.Decimal(15, 4)       @map("sri_rate")
+  sriRatePreTax         Decimal   @default(0) @db.Decimal(15, 4)       @map("sri_rate_pre_tax")
+  sriMaxPrice           Decimal?  @db.Decimal(15, 4)                   @map("sri_max_price")
+  /// The BILL line's cost: what COGS reverses at, not today's cost.
+  sriCostPrice          Decimal?  @db.Decimal(15, 4)                   @map("sri_cost_price")
+  sriGrossAmt           Decimal   @default(0) @db.Decimal(15, 2)       @map("sri_gross_amt")
+  sriDiscAmt            Decimal   @default(0) @db.Decimal(15, 2)       @map("sri_disc_amt")
+  sriTaxableAmt         Decimal   @default(0) @db.Decimal(15, 2)       @map("sri_taxable_amt")
+  sriTaxPerc            Decimal   @default(0) @db.Decimal(15, 4)       @map("sri_tax_perc")
+  sriCgstPerc           Decimal   @default(0) @db.Decimal(15, 4)       @map("sri_cgst_perc")
+  sriCgstAmt            Decimal   @default(0) @db.Decimal(15, 2)       @map("sri_cgst_amt")
+  sriSgstPerc           Decimal   @default(0) @db.Decimal(15, 4)       @map("sri_sgst_perc")
+  sriSgstAmt            Decimal   @default(0) @db.Decimal(15, 2)       @map("sri_sgst_amt")
+  sriIgstPerc           Decimal   @default(0) @db.Decimal(15, 4)       @map("sri_igst_perc")
+  sriIgstAmt            Decimal   @default(0) @db.Decimal(15, 2)       @map("sri_igst_amt")
+  sriCessPerc           Decimal   @default(0) @db.Decimal(15, 4)       @map("sri_cess_perc")
+  sriCessAmt            Decimal   @default(0) @db.Decimal(15, 2)       @map("sri_cess_amt")
+  sriTaxAmt             Decimal   @default(0) @db.Decimal(15, 2)       @map("sri_tax_amt")
+  sriRoundOff           Decimal   @default(0) @db.Decimal(15, 2)       @map("sri_round_off")
+  sriNetAmt             Decimal   @default(0) @db.Decimal(15, 2)       @map("sri_net_amt")
+
+  // ── Pricing: the essentials of SaleBillItem, tier by tier ────────────
+  sriPriceLevel         Int                                            @map("sri_price_level")
+  sriEanCode            String?   @db.VarChar(100)                     @map("sri_ean_code")
+  sriIsTaxIncl          Boolean   @default(false)                      @map("sri_is_tax_incl")
+  sriIsPromo            Boolean   @default(false)                      @map("sri_is_promo")
+  sriIsFree             Boolean   @default(false)                      @map("sri_is_free")
+  sriFreeType           String?   @db.VarChar(20)                      @map("sri_free_type")
+  sriIsService          Boolean   @default(false)                      @map("sri_is_service")
+  sriActPrice           Decimal?  @db.Decimal(15, 4)                   @map("sri_act_price")
+  sriMinPrice           Decimal?  @db.Decimal(15, 4)                   @map("sri_min_price")
+  sriItemDiscPerc       Decimal   @default(0) @db.Decimal(15, 4)       @map("sri_item_disc_perc")
+  sriItemDiscAmt        Decimal   @default(0) @db.Decimal(15, 2)       @map("sri_item_disc_amt")
+  sriSplDiscPerc        Decimal   @default(0) @db.Decimal(15, 4)       @map("sri_spl_disc_perc")
+  sriSplDiscAmt         Decimal   @default(0) @db.Decimal(15, 2)       @map("sri_spl_disc_amt")
+  sriSchDiscPerc        Decimal   @default(0) @db.Decimal(15, 4)       @map("sri_sch_disc_perc")
+  sriSchDiscAmt         Decimal   @default(0) @db.Decimal(15, 2)       @map("sri_sch_disc_amt")
+  /// The BILL-level scheme share this line reverses.
+  sriBillSchAmt         Decimal   @default(0) @db.Decimal(15, 2)       @map("sri_bill_sch_amt")
+  sriChrgBeforeTax      Decimal?  @db.Decimal(14, 4)                   @map("sri_chrg_before_tax")
+  sriChrgAfterTax       Decimal?  @db.Decimal(14, 4)                   @map("sri_chrg_after_tax")
+  sriCessPerUnit        Decimal   @default(0) @db.Decimal(15, 4)       @map("sri_cess_per_unit")
+  sriSalesmanId         String?   @db.Uuid                             @map("sri_salesman_id")
+  sriSchemeId           String?   @db.Uuid                             @map("sri_scheme_id")
+  sriSchemeName         String?   @db.VarChar(150)                     @map("sri_scheme_name")
+  /// The per-line POINTS the bill awarded, so the claw-back share can be
+  /// worked out line by line. numeric(18,4), like every points column.
+  sriLoyaltyPoints      Decimal   @default(0) @db.Decimal(18, 4)       @map("sri_loyalty_points")
+  sriSize               String?   @db.VarChar(50)                      @map("sri_size")
+  sriSizeUom            String?   @db.VarChar(20)                      @map("sri_size_uom")
+
+  sriRemarks            String?   @db.VarChar(250)                     @map("sri_remarks")
+
+  sriIsDeleted          Boolean   @default(false)                      @map("sri_is_deleted")
+  sriSyncDate           DateTime? @db.Timestamptz(6)                   @map("sri_sync_date")
+  sriCreatedOn          DateTime  @default(now()) @db.Timestamptz(6)   @map("sri_created_on")
+  sriCreatedBy          String    @db.VarChar(50)                      @map("sri_created_by")
+  sriModifiedOn         DateTime? @db.Timestamptz(6)                   @map("sri_modified_on")
+  sriModifiedBy         String?   @db.VarChar(50)                      @map("sri_modified_by")
+
+  // Relations
+  saleReturn            SaleReturn         @relation("SaleReturnItems",     fields: [sriReturnId, sriAccYear],      references: [srId, srAccYear],      onUpdate: Cascade, onDelete: Restrict, map: "fk_sri_return")
+  billItem              SaleBillItem?      @relation("SaleReturnItemBill",  fields: [sriBillItemId, sriBillAccYear], references: [sbiId, sbiAccYear],   onUpdate: Cascade, onDelete: Restrict, map: "fk_sri_bill_item")
+  item                  ItemMaster         @relation("SaleReturnItemItem",  fields: [sriItemId],     references: [itemId], onUpdate: Cascade, onDelete: Restrict, map: "fk_sri_item")
+  unit                  ItemUnitConversion @relation("SaleReturnItemUnit",  fields: [sriItemUnitId], references: [iucId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_sri_item_unit")
+  godown                GodownLocation     @relation("SaleReturnItemGodown", fields: [sriGodownId],  references: [gdlId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_sri_godown")
+  lot                   StockLot?          @relation("SaleReturnItemLot",   fields: [sriLotId],      references: [sltId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_sri_lot")
+
+  @@id([sriId, sriAccYear], map: "pk_sale_return_item")
+
+  // Partial indexes are DB-only: ix_sri_return, ix_sri_bill_item, and
+  // FK-covering ix_sri_item / ix_sri_item_unit / ix_sri_godown / ix_sri_lot.
+  //
+  // CHECK constraints (DB-only): ck_sri_split_no, ck_sri_condition,
+  //   ck_sri_bucket, ck_sri_return_qty
+
+  @@map("sale_return_item")
   @@schema("sales")
 }
 
@@ -12074,6 +13931,15 @@ model StockLot {
   transits              StockTransit[]     @relation("StockTransitLot")
   valuationSnaps        StockValuationSnap[] @relation("StockValuationSnapLot")
 
+  // ── Sales documents (20260921200000) ────────────────────────────────────
+  // Goods come back to the lot they left from, which is what keeps a
+  // returned unit valued at what it actually cost.
+  saleReturnItems       SaleReturnItem[]          @relation("SaleReturnItemLot")
+  saleDcItems           SaleDcItem[]              @relation("SaleDcItemLot")
+  saleDcReturnItems     SaleDcReturnItem[]        @relation("SaleDcReturnItemLot")
+
+  saleBillItems         SaleBillItem[]            @relation("SaleBillItemLot")
+
   @@map("stock_lot")
   @@schema("stock")
 }
@@ -12289,6 +14155,10 @@ model StockReasonMaster {
   ledgerEntries        StockLedger[]    @relation("StockLedgerReason")
   vouchers             StockVoucher[]     @relation("StockVoucherReason")
   voucherItems         StockVoucherItem[] @relation("StockVoucherItemReason")
+
+  // ── Sales documents (20260921200000) ────────────────────────────────────
+  saleReturns           SaleReturn[]              @relation("SaleReturnReason")
+  saleDcReturns         SaleDcReturn[]            @relation("SaleDcReturnReason")
 
   @@map("stock_reason_master")
   @@schema("stock")

@@ -95,6 +95,11 @@ model PromotionScheme {
   // the target of the slab's composite FK, and therefore the only way to make
   // the database refuse a free-item band on a percentage scheme.
   @@unique([prmId, prmBenefit], map: "uq_prm_benefit")
+  // ── Promotion usage (20260921180000) ────────────────────────────────────
+  // What this campaign actually gave away. RESTRICT on delete: a campaign
+  // that has already given something away must be closed, not deleted.
+  usages                PromotionUsage[]          @relation("PromotionUsageScheme")
+
   @@map("promotion_scheme")
   @@schema("sales")
 }

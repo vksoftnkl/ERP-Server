@@ -224,6 +224,12 @@ model SaleOrder {
   // ck_so_advance_amounts, ck_so_advance_balance, ck_so_advance_policy_input.
   @@id([soId, soAccYear], map: "pk_sale_order")
   @@index([soCustId], map: "ix_so_cust")
+  // ── Sales plan (20260921220000) ───────────────────────────────────────
+  /// Amend counter: an in-place amendment re-posts against the same number
+  /// and bumps this.
+  soRevisionNo       Int       @default(1) @map("so_revision_no")
+  soUsrRefdate       DateTime? @db.Date @map("so_usr_refdate")
+
   @@map("sale_order")
   @@schema("sales")
 }

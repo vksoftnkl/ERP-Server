@@ -85,7 +85,6 @@ export declare class SaveQuotationDto {
     sqConvertedOn?: string | null;
     sqApprovedOn?: string | null;
     sqApprovedBy?: string | null;
-    sqCancelledOn?: string | null;
     sqCancelledBy?: string | null;
     sqCancelReason?: string | null;
     sqMrpSavings?: string | number | null;

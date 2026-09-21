@@ -112,6 +112,9 @@ model UserMaster {
   // Voiding a live voucher needs a signature (ck_lct_cancel_approval).
   couponTxnsApproved    LoyaltyCouponTxn[]        @relation("CouponTxnApprover")
 
+  // ── Promotion usage (20260921180000) ────────────────────────────────────
+  promotionUsages       PromotionUsage[]          @relation("PromotionUsageUser")
+
   @@map("user_master")
   @@schema("public")
 }

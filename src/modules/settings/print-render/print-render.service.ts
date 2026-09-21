@@ -82,6 +82,16 @@ export interface PreviewRequest {
   readonly copyLabels?: readonly string[];
   /** An unsaved body, allowed only against a DRAFT revision. */
   readonly body?: Record<string, unknown>;
+  /**
+   * SEVERAL documents in one file — a list screen printing what it has ticked.
+   *
+   * Left out, the render is of `context.docId`, which is the single-document
+   * case and by far the common one. Given, it replaces it: each id gets its own
+   * dataset pass and its own layout, and the pages are merged the way copies
+   * already are. The company, the year and the design are one value for the
+   * whole batch, so every document in it has to share them.
+   */
+  readonly docIds?: readonly string[];
 }
 
 export interface PrintRequest {
@@ -161,6 +171,7 @@ export class PrintRenderService {
       copies: request.copies ?? 1,
       copyLabels: request.copyLabels ?? [],
       docType: 'PREVIEW',
+      ...(request.docIds && request.docIds.length > 0 ? { docIds: request.docIds } : {}),
     });
   }
 
@@ -318,6 +329,8 @@ export class PrintRenderService {
     copies: number;
     copyLabels: readonly string[];
     docType: string;
+    /** A BATCH: one layout pass per id, merged into one file. See `docs` below. */
+    docIds?: readonly string[];
   }): Promise<RenderOutcome> {
     const { bundle, definition, layoutMode, context } = input;
     const outputMode = this.chooseRenderer(layoutMode, input.requestedMode);
@@ -331,57 +344,108 @@ export class PrintRenderService {
 
     const params = this.resolveParams(bundle.version, input.params);
 
-    const started = Date.now();
-    const { data, resolved, warnings } = await this.runDatasets(bundle, context, params);
+    /*
+     * WHICH documents this render is of.
+     *
+     * One element for the ordinary render — the document the context names, or
+     * null for a report whose subject is its parameters. Several for a BATCH:
+     * the list screen ticking five bills and asking for one PDF.
+     *
+     * A batch is not a new pipeline. It is this one, walked once per document,
+     * and the reason it can be is `mergeTrees` below: laying out several trees
+     * and emitting them as a single stream is already how copies work, and a
+     * document is a coarser version of the same idea.
+     */
+    const docs: readonly (string | null)[] =
+      input.docIds && input.docIds.length > 0 ? input.docIds : [context.docId];
 
     const copies = Math.max(1, Math.min(input.copies, MAX_COPIES));
     const labels = this.labelsFor(copies, input.copyLabels);
 
-    // Each copy is laid out SEPARATELY, because it is a different document: its
-    // copy label is in scope, so a design that prints 'ORIGINAL FOR RECIPIENT'
-    // renders different text, and its page numbering has to start again at one.
+    const started = Date.now();
+
     const trees: LayoutTree[] = [];
-    for (const [index, label] of labels.entries()) {
-      trees.push(
-        this.layout.render({
-          definition,
-          datasets: data,
-          ctx: {
-            ...params,
-            companyId: context.companyId,
-            branchId: context.branchId,
-            accYear: context.accYear,
-            docId: context.docId,
-            docType: input.docType,
-            userId: context.userId,
-            deviceId: context.deviceId,
-            lang: bundle.version.ptvLang,
-            copyNo: index + 1,
-            copyLabel: label,
-            copies,
-            params,
-          },
-          sys: {
-            now: new Date().toISOString(),
-            template: bundle.template.ptlName,
-            templateCode: bundle.template.ptlCode,
-            revNo: bundle.version.ptvRevNo,
-          },
-        }),
-      );
+    let resolved: readonly ResolvedDataset[] = [];
+    const warnings: RenderWarning[] = [];
+
+    for (const docId of docs) {
+      /*
+       * A dataset pass PER DOCUMENT, because `:doc_id` is what the queries bind.
+       *
+       * This sits inside the loop rather than above it, which is the one thing
+       * about a batch that is easy to get wrong: hoisting it would read the
+       * first document's rows and then lay them out once per id, producing a
+       * perfectly valid PDF of the same bill N times.
+       *
+       * A single-document render still makes exactly one pass — the loop is
+       * over a one-element list — so nothing about the ordinary path changes.
+       */
+      const pass = await this.runDatasets(bundle, { ...context, docId }, params);
+
+      // The LAST document's datasets are what `inspect` reports. A batch has no
+      // single answer to "which datasets ran", and reporting the first would be
+      // no more true than reporting the last; what matters is that one of them
+      // is real. Warnings, in contrast, are collected from every pass — a
+      // document that read nothing is exactly what an operator needs told.
+      resolved = pass.resolved;
+      warnings.push(...pass.warnings);
+
+      // Each copy is laid out SEPARATELY, because it is a different document:
+      // its copy label is in scope, so a design that prints 'ORIGINAL FOR
+      // RECIPIENT' renders different text, and its page numbering has to start
+      // again at one.
+      for (const [index, label] of labels.entries()) {
+        trees.push(
+          this.layout.render({
+            definition,
+            datasets: pass.data,
+            ctx: {
+              ...params,
+              companyId: context.companyId,
+              branchId: context.branchId,
+              accYear: context.accYear,
+              // THIS document's id, not the context's. The context carries null
+              // for a batch, and binding it here would blank every reference a
+              // design makes to the document it is printing.
+              docId,
+              docType: input.docType,
+              userId: context.userId,
+              deviceId: context.deviceId,
+              lang: bundle.version.ptvLang,
+              copyNo: index + 1,
+              copyLabel: label,
+              copies,
+              params,
+            },
+            sys: {
+              now: new Date().toISOString(),
+              template: bundle.template.ptlName,
+              templateCode: bundle.template.ptlCode,
+              revNo: bundle.version.ptvRevNo,
+            },
+          }),
+        );
+      }
     }
 
     const layoutMs = Date.now() - started;
     const merged = this.mergeTrees(trees);
 
+    /*
+     * The budget scales with the work, because a flat one is a ceiling on the
+     * feature rather than on a pathological design. Fifty bills at three copies
+     * each is 150 layouts through one renderer, and the 30s that comfortably
+     * covers a single invoice would fail it for being large rather than wrong.
+     */
     const renderStarted = Date.now();
     const rendered = await this.withTimeout(
       renderer.render(merged, {
         creationDate: new Date(),
-        timeoutMs: RENDER_COPY_TIMEOUT_MS * copies,
+        timeoutMs: RENDER_COPY_TIMEOUT_MS * trees.length,
       }),
-      RENDER_TIMEOUT_MS,
-      `${bundle.template.ptlCode} rev ${bundle.version.ptvRevNo}`,
+      RENDER_TIMEOUT_MS * docs.length,
+      `${bundle.template.ptlCode} rev ${bundle.version.ptvRevNo}` +
+        (docs.length > 1 ? ` (${docs.length} documents)` : ''),
     );
 
     const allWarnings: RenderWarning[] = [
@@ -405,6 +469,7 @@ export class PrintRenderService {
 
     this.logger.log(
       `Rendered ${bundle.template.ptlCode} rev ${bundle.version.ptvRevNo} · ${outputMode} · ` +
+        (docs.length > 1 ? `${docs.length} docs · ` : '') +
         `${copies} cop${copies === 1 ? 'y' : 'ies'} · ${merged.pageCount}p · ` +
         `layout ${layoutMs}ms · render ${rendered.durationMs}ms · ` +
         `${(rendered.bytes.length / 1024).toFixed(0)}KB`,
@@ -416,6 +481,10 @@ export class PrintRenderService {
       extension: rendered.extension,
       outputMode,
       pageCount: merged.pageCount,
+      // One entry per LAYOUT, which for a single-document render is one per copy
+      // — the meaning `print_log` writes a row from. A batch has `docs × copies`
+      // of them, in document-then-copy order; `print` never sends `docIds`, so
+      // the log never sees that shape.
       pagesPerCopy: trees.map((tree) => tree.pageCount),
       copies,
       copyLabels: labels,

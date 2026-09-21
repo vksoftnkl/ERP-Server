@@ -16,8 +16,10 @@
 /// destination — gde_irn, gde_ack_no, gdw_no, gdw_valid_upto — so the write
 /// back into AccVoucherDocEinvoice / AccVoucherDocEwaybill is data-driven
 /// too, not a switch statement that has to be edited per provider. It is a
-/// physical column name, spelled exactly as the table spells it (gde_canceled_on
-/// carries one 'l').
+/// physical column name, spelled exactly as the table spells it. A schema
+/// rename is therefore a DATA change here too — see
+/// 20260922020000_reconcile_doc_einvoice_ewaybill, which renamed
+/// gde_canceled_on to gde_cancelled_on and repointed the seeded rows.
 model GstProviderFieldMap {
   gfmId             String    @id(map: "pk_gst_provider_field_map") @default(dbgenerated("uuidv7()")) @db.Uuid @map("gfm_id")
   gfmGpeId          String    @db.Uuid                                 @map("gfm_gpe_id")

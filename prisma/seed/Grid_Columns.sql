@@ -633,10 +633,6 @@ SELECT v.* FROM (VALUES
     ,('019fb17c-e1a3-7e6f-b340-44e5a765a000', 83, 17, 'By'                 , 'sq_created_by'             , 'Text'         , 10.00 , 16.00, 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019fb17c-e1a4-7c22-926a-d41dc0fef5b0', 83, 18, 'Deleted'            , 'sq_is_deleted'             , 'Text'         , 10.00 , 17.00, 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019fb17c-e1a5-72de-97a7-82d159ecd990', 83, 19, 'Doc#'               , 'sq_converted_doc_id'       , 'Text'         , 10.00 , 18.00, 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
-    ,('019fb17c-e1a5-7a39-9cbf-4da90df97738', 83, 20, 'Cancelled On'       , 'sq_cancelled_on'           , 'Text'         , 10.00 , 19.00, 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
-    ,('019fb17c-e1a6-720d-b8aa-e296426d2d99', 83, 21, 'sq_cancelled_on'    , 'sq_cancelled_on'           , 'Text'         , 10.00 , 20.00, 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
-    ,('019fb17c-e1a6-7912-bf68-8be1a957fe28', 83, 22, 'sq_cancelled_on'    , 'sq_cancelled_on'           , 'Text'         , 10.00 , 21.00, 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
-    ,('019fb17c-e1a7-703d-9447-6c7f8631ce0e', 83, 23, 'sq_cancelled_on'    , 'sq_cancelled_on'           , 'Text'         , 10.00 , 22.00, 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
     -- ============ Quotation (id 84) ============
     ,('019fb2b9-c873-78eb-b266-f75a4b631329', 84, 1 , '#'                  , 'sq_id'                     , 'Text'         , 10.00 , 1.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019fb2b9-c874-7855-83ed-ac40245ed264', 84, 2 , 'Comp#'              , 'sq_company_id'             , 'Text'         , 10.00 , 2.00 , 'Center', false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
@@ -657,7 +653,6 @@ SELECT v.* FROM (VALUES
     ,('019fb2b9-c87d-7695-a183-c4f3f5b30a0e', 84, 17, 'By'                 , 'sq_created_by'             , 'Text'         , 35.35 , 17.00, 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019fb2b9-c87d-7e63-ac9b-0630e796b912', 84, 18, 'Deleted'            , 'sq_is_deleted'             , 'Text'         , 10.00 , 18.00, 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019fb2b9-c87e-75ef-96ed-ee1d93159d36', 84, 19, 'Doc#'               , 'sq_converted_doc_id'       , 'Text'         , 10.00 , 19.00, 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
-    ,('019fb2b9-c87e-7f23-9381-4996cb4d0443', 84, 20, 'Cancelled On'       , 'sq_cancelled_on'           , 'Text'         , 10.00 , 20.00, 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     -- ============ MAIN LIST - TENDERS (id 85) ============
     ,('019fbbcd-97f1-7bf0-8e8d-b76c13d27a51', 85, 1 , '#'                  , 'tnd_id'                    , 'Text'         , 10.00 , 1.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019fbbcd-97f3-74c5-a190-e8b622c90d6b', 85, 2 , 'Position'           , 'tnd_display_position'      , 'Text'         , 5.00  , 2.00 , 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
