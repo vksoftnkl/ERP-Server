@@ -38,8 +38,12 @@ say "Installing dependencies"
 ( cd "$APP_DIR" && sudo -u erp env -u NODE_ENV HOME=/opt/erp-server \
     npm ci --include=dev --no-audit --fund=false )
 
+# Type-checking the whole project against the generated Prisma client (167
+# schema files) needs more heap than node's default ~2 GB on this 8 GB box, so
+# the build dies with "Ineffective mark-compacts near heap limit" without this.
 say "Building"
-( cd "$APP_DIR" && sudo -u erp env -u NODE_ENV HOME=/opt/erp-server npm run build )
+( cd "$APP_DIR" && sudo -u erp env -u NODE_ENV HOME=/opt/erp-server \
+    NODE_OPTIONS=--max-old-space-size=4096 npm run build )
 
 # ---------------------------------------------------------------------------
 # Seven migrations carry `ALTER TABLE ... OWNER to postgres`, so migrations can

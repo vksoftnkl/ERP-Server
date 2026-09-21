@@ -433,7 +433,6 @@ export const AUDIT_SCREEN_SQL_BY_NAME = new Map<string, string>([
       ['acc_group_type', 'Type'],
       ['acc_group_parent_id', 'Parent Group ID'],
       ['acc_group_sort', 'Sort Order'],
-      ['acc_group_child_ids', 'Child IDs'],
       ['acc_group_company_id', 'Company ID'],
       ['acc_group_is_default', 'Is Default'],
       ['acc_group_is_reserved', 'Is Reserved'],
