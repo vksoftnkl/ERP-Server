@@ -175,6 +175,11 @@ export interface ReceiptAllocation {
     billAccYear: string;
     docRefno: string;
     docDate: string | null;
+    billType: BillType | null;
+    billAmount: number | null;
+    pendingAmount: number | null;
+    dueDate: string | null;
+    status: BillStatus | null;
     adjType: BillAdjType;
     settlementMode: BillSettlementMode | null;
     drCr: DrCr;
@@ -186,6 +191,8 @@ export interface ReceiptAllocation {
     chequeId: string | null;
     againstBillId: string | null;
     againstBillRefno: string | null;
+    reversalOfId: string | null;
+    isReversed: boolean;
     approvedBy: string | null;
     remarks: string | null;
 }

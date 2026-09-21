@@ -226,7 +226,12 @@ __decorate([
             'Under ON_CLEARING only the charge legs, because nothing was posted when it arrived.\n\n' +
             'A bounce is **never refused because an advance was spent** (§10): the bank has returned ' +
             'the cheque and that has to be recordable. The cascade unwinds the applications instead.\n\n' +
-            'A charge with no role mapped is refused BY ROLE NAME before anything is written.',
+            'A charge with no role mapped is refused BY ROLE NAME before anything is written.\n\n' +
+            'The body fields are `reason`, `bankCharge` and `partyCharge` — NOT `bounceReason` or ' +
+            '`bounceCharges`, which is what the `apd_bounce_*` columns they land in would suggest. ' +
+            '`bankCharge` is what the bank charged US and is our expense; `partyCharge` is what WE ' +
+            'charge the party and raises a bill they owe. They are two different numbers, and both ' +
+            'default to 0.',
     }),
     (0, swagger_1.ApiOkResponse)({ type: cheque_response_dto_1.ChequeBounceSuccessDto }),
     (0, swagger_1.ApiBadRequestResponse)({ type: cheque_response_dto_1.ChequeErrorResponseDto }),
@@ -248,6 +253,16 @@ __decorate([
             'against the bounce voucher, fresh allocations, then the deposit with ' +
             '`apd_present_count` going to 2.\n\n' +
             'The bounce columns are LEFT ALONE — that it bounced on the 14th stays true.\n\n' +
+            '**The bills come back as they were.** With no `allocations` in the body, the re-issued ' +
+            'credit is restored to the bills the bounce reversed, with the amounts it reversed — read ' +
+            'out of those very reversal rows, which are the only place the per-bill split survives. ' +
+            'It is not auto-FIFO: the same money is settling the same debt, and picking the oldest ' +
+            'open invoice instead would pay a bill this cheque was never against. Send `allocations` ' +
+            'to override that deliberately.\n\n' +
+            'If a bill cannot take its share back — removed, or paid by something else since the ' +
+            'bounce — the re-presentation is refused with a **409 naming the bill**, and nothing is ' +
+            'written. Re-present again with explicit `allocations` once it is decided where that ' +
+            'money should go.\n\n' +
             "The bounce-charge bill is in the party's open items and may be allocated to.",
     }),
     (0, swagger_1.ApiOkResponse)({ type: cheque_response_dto_1.ChequeRepresentSuccessDto }),

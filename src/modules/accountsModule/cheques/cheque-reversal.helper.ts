@@ -1,6 +1,6 @@
 import { Prisma } from '@prisma/client';
 import { BillAdjType, BillType, DrCr } from '../receipt/types/receipt-enum';
-import { flipSide } from '../receipt/receipt.utils';
+import { flipSide, ZERO } from '../receipt/receipt.utils';
 import type { LockedCheque } from './cheques.guards';
 import type { ChequeCascadeReport } from './types/cheque-api.types';
 
@@ -51,17 +51,61 @@ export interface ReversedRows {
 }
 
 /**
- * §4.4 step 5 — a negative row for every live adjustment this cheque wrote.
+ * Every live `acc_bill_adjustment` row this cheque wrote, split into the ones
+ * still STANDING and the reversals that cancelled the rest.
  *
  * "This cheque wrote" is `abj_cheque_id = <this>`, which is precisely the link
  * the receipt's posting path set for exactly this moment: a receipt that took
  * three cheques and some cash wrote rows for all four, and only this cheque's
- * come back.
+ * come back. A reversal COPIES that column from the row it reverses, so both
+ * halves of every pair come back in the one read.
+ */
+async function loadChequeAdjustments(
+  tx: Prisma.TransactionClient,
+  cheque: LockedCheque,
+): Promise<{
+  /** Positive rows that have NOT been reversed — what is still settling bills. */
+  standing: Prisma.AccBillAdjustmentGetPayload<object>[];
+  /** The negative rows, in the order they were written. */
+  reversals: Prisma.AccBillAdjustmentGetPayload<object>[];
+}> {
+  const rows = await tx.accBillAdjustment.findMany({
+    where: {
+      abjChequeId: cheque.apdId,
+      abjChequeAccYear: cheque.apdAccYear,
+      abjIsDeleted: false,
+    },
+    orderBy: [{ abjVoucherId: 'asc' }, { abjRowNo: 'asc' }],
+  });
+
+  const reversals = rows.filter((row) => row.abjReversalOfId !== null);
+  const alreadyReversed = new Set(reversals.map((row) => row.abjReversalOfId!));
+
+  return {
+    standing: rows.filter((row) => row.abjReversalOfId === null && !alreadyReversed.has(row.abjId)),
+    reversals,
+  };
+}
+
+/**
+ * §4.4 step 5 — a negative row for every live adjustment this cheque wrote and
+ * has not already had reversed.
  *
- * Rows that are THEMSELVES reversals are skipped. Sweeping one up would cancel
- * the cancellation and re-settle a bill that had already been reopened — which
- * is the shape of bug that shows up as an invoice quietly closing itself
- * months later.
+ * ── Why "and has not already had reversed" is load-bearing ────────────────
+ *
+ * `abj_reversal_of_id IS NULL` means "this row is not itself a reversal". It
+ * does NOT mean "this row still stands", and reading it that way is the bug a
+ * cheque goes looking for the second time round: bounce → re-present → bounce
+ * again. The first bounce reversed the receipt's rows and left them in place
+ * (reverse, never delete — see the header), the re-presentation wrote a fresh
+ * positive set, and a second bounce that swept up everything with a null
+ * `abj_reversal_of_id` would reverse the FIRST set a second time. The bill's
+ * `abl_alloc_amount` then falls by twice what the cheque ever settled, which
+ * the recompute writes straight into the column.
+ *
+ * The register invites exactly this: `apd_present_count` exists because a
+ * cheque can go to the bank again, and §7 says a second bounce is "a real
+ * separate event, not a duplicate".
  */
 export async function reverseChequeAdjustments(
   tx: Prisma.TransactionClient,
@@ -69,23 +113,157 @@ export async function reverseChequeAdjustments(
   scope: ReversalVoucherScope,
   startRowNo = 1,
 ): Promise<ReversedRows & { nextRowNo: number }> {
-  const originals = await tx.accBillAdjustment.findMany({
+  const { standing } = await loadChequeAdjustments(tx, cheque);
+
+  const nextRowNo = await writeReversals(tx, standing, scope, startRowNo);
+
+  return {
+    bills: standing.map((row) => ({ billId: row.abjBillId, accYear: row.abjBillAccYear })),
+    count: standing.length,
+    nextRowNo,
+  };
+}
+
+/**
+ * One bill's share of what a bounce took back, ready to be put back exactly
+ * where it came from.
+ *
+ * Decimals rather than the DTO's numbers, and a `roundoff` the DTO has no
+ * field for: this is not a request being re-parsed, it is rows being read back
+ * off the ledger, and every component the original settlement had has to
+ * survive the round trip. A receipt that rounded 4,999.60 off to 5,000 wrote a
+ * ROUND_OFF row; the bounce reversed it; the re-presentation owes the bill
+ * that paisa back.
+ */
+export interface RestoredAllocation {
+  billId: string;
+  billAccYear: string;
+  amount: Prisma.Decimal;
+  discount: Prisma.Decimal;
+  writeoff: Prisma.Decimal;
+  roundoff: Prisma.Decimal;
+  writeoffApprovedBy: string | null;
+}
+
+/** The adjustment types a cheque's own settlement is made of. */
+const SETTLEMENT_ADJ_TYPES: readonly BillAdjType[] = [
+  BillAdjType.ALLOCATION,
+  BillAdjType.DISCOUNT,
+  BillAdjType.WRITEOFF,
+  BillAdjType.ROUND_OFF,
+];
+
+/**
+ * §4.5 — what the bounce took off the bills, so the re-presentation can put it
+ * back on the SAME ones.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  WHY THIS EXISTS AT ALL
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * A re-presentation is the same money for the same debt. The cheque did not
+ * become a fresh payment when the bank returned it — it is the original
+ * settlement being attempted again. So which bills it settles is not a choice
+ * anybody is making; it is a fact this table already holds, in the very rows
+ * the bounce reversed.
+ *
+ * Auto-FIFO is the right answer for money whose destination nobody has decided
+ * (a cheque clearing under ON_CLEARING, §4.3). It is never the right answer
+ * here, because it silently moves a customer's money onto whichever of their
+ * debts happens to sort first — a bill this cheque was never against.
+ *
+ * And the client cannot supply the split itself: once the rows are reversed,
+ * `/cheques/get` reports every bill as settled 0 by this cheque, which is
+ * true. The per-bill amounts exist ONLY here.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  WHICH ROWS
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * The reversals written BY THE BOUNCE VOUCHER, and only this cheque's own
+ * settlement types. Two exclusions do real work:
+ *
+ *   · the bounce voucher, not "every reversal", because a cheque that has been
+ *     round the loop before carries the older cycle's pairs too, and it is the
+ *     LAST bounce that has to be undone;
+ *   · the settlement types, because the C4 cascade writes its advance
+ *     unwinding onto the same voucher, and an ADVANCE_ADJUST row is a credit
+ *     being spent elsewhere rather than this cheque settling a bill.
+ *
+ * An EMPTY result is an answer, not a failure: a cheque whose money went
+ * entirely on account settled no bill, and the re-presentation should put it
+ * entirely on account again. That is why the caller must not read `[]` as
+ * "nobody decided, go FIFO".
+ */
+export async function allocationsReversedBy(
+  tx: Prisma.TransactionClient,
+  cheque: LockedCheque,
+  bounce: { voucherId: string; accYear: string },
+): Promise<RestoredAllocation[]> {
+  const reversed = await tx.accBillAdjustment.findMany({
     where: {
       abjChequeId: cheque.apdId,
       abjChequeAccYear: cheque.apdAccYear,
       abjIsDeleted: false,
-      abjReversalOfId: null,
+      abjReversalOfId: { not: null },
+      abjVoucherId: bounce.voucherId,
+      abjVoucherAccYear: bounce.accYear,
+      abjAdjType: { in: [...SETTLEMENT_ADJ_TYPES] },
     },
-    orderBy: [{ abjVoucherId: 'asc' }, { abjRowNo: 'asc' }],
+    orderBy: [{ abjRowNo: 'asc' }],
   });
 
-  const nextRowNo = await writeReversals(tx, originals, scope, startRowNo);
+  // One entry per bill, in the order the bounce met them — which is the order
+  // the original settlement was written in, so the re-presentation fills the
+  // bills back up the way they were filled the first time.
+  const byBill = new Map<string, RestoredAllocation>();
 
-  return {
-    bills: originals.map((row) => ({ billId: row.abjBillId, accYear: row.abjBillAccYear })),
-    count: originals.length,
-    nextRowNo,
-  };
+  for (const row of reversed) {
+    const key = `${row.abjBillId}|${row.abjBillAccYear}`;
+    let entry = byBill.get(key);
+    if (!entry) {
+      entry = {
+        billId: row.abjBillId,
+        billAccYear: row.abjBillAccYear,
+        amount: ZERO,
+        discount: ZERO,
+        writeoff: ZERO,
+        roundoff: ZERO,
+        writeoffApprovedBy: null,
+      };
+      byBill.set(key, entry);
+    }
+
+    // The reversal rows are NEGATIVE (ck_abj_reversal_sign). What was taken
+    // off the bill is their magnitude.
+    const amount = row.abjAmount.negated();
+
+    // The column is a plain string in the client; BillAdjType is what the
+    // check constraint actually allows in it.
+    switch (row.abjAdjType as BillAdjType) {
+      case BillAdjType.ALLOCATION:
+        entry.amount = entry.amount.plus(amount);
+        break;
+      case BillAdjType.DISCOUNT:
+        entry.discount = entry.discount.plus(amount);
+        break;
+      case BillAdjType.WRITEOFF:
+        entry.writeoff = entry.writeoff.plus(amount);
+        // ck_abj_writeoff_approval: a WRITEOFF row names who allowed it, and
+        // the row going back on carries the SAME approval. Asking for it again
+        // would make a re-presentation need a manager for a write-off that was
+        // already authorised once.
+        entry.writeoffApprovedBy = row.abjApprovedBy ?? entry.writeoffApprovedBy;
+        break;
+      case BillAdjType.ROUND_OFF:
+        entry.roundoff = entry.roundoff.plus(amount);
+        break;
+      default:
+        break;
+    }
+  }
+
+  return [...byBill.values()];
 }
 
 /**

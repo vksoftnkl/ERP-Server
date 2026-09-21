@@ -1,0 +1,242 @@
+/// One row per point movement against one wallet, drawn from ONE lot.
+///
+/// LIST-partitioned by lldAccYear — the year the EVENT happened, not the year
+/// the points were earned. That is the whole trick: July's redemption of
+/// April's points lands in July's partition and April's earn row never moves.
+/// Hence the composite PK (lldId, lldAccYear). Partitions
+/// (sales.loyalty_ledger_2026_2027) come from
+/// public.ensure_acc_year_partitions('YYYY-YYYY'), which
+/// 20260921140000_add_loyalty_points_engine taught about this table.
+///
+/// A row is never edited and never deleted. Everything is undone by a NEW row
+/// of opposite sign naming the row it undoes (lldReversalOfId) — so a plain
+/// SUM per txn type nets reversals out and no caller special-cases them.
+///
+/// EARN rows ARE the lots. They carry lldExpiresOn, lldActiveFrom and
+/// lldConsumedPoints; lldLotBalance is what is left. Consuming rows
+/// (REDEEM / GIFT / EXPIRE) carry lldLotId pointing back at the lot they came
+/// out of, so a redemption spanning three lots is THREE rows sharing ONE
+/// tender. It costs rows and buys expiry that is exact and reversible.
+///
+/// FIFO, defined in ONE place (LoyaltyLedgerService.lots()) and nowhere else:
+///     ORDER BY lld_expires_on NULLS LAST, lld_txn_date, lld_id
+/// Oldest expiry first; within one expiry date, oldest earned first; lots that
+/// never expire last of all — the customer-favourable order, because it spends
+/// what would otherwise lapse.
+///
+/// WRITE RULE: exactly one private method of LoyaltyLedgerService may INSERT,
+/// UPDATE or soft-delete this table. It writes the rows, then recomputes the
+/// touched LOTS and then the touched MEMBERS, in that order, before returning.
+/// Nothing else touches it — not a repository, not the sync handler, not a
+/// migration script. There is no trigger to fall back on.
+model LoyaltyLedger {
+  lldId                 String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("lld_id")
+  lldCompId             String    @db.Uuid                                 @map("lld_comp_id")
+  /// WHERE THE EVENT HAPPENED. Points earned at one branch and spent at
+  /// another are the normal case for a chain; this column is what makes
+  /// "who gave them, who honoured them" answerable, and it is the whole basis
+  /// of inter-branch settlement between franchisees.
+  lldBranchId           String    @db.Uuid                                 @map("lld_branch_id")
+  lldTenantId           String?   @db.Uuid                                 @map("lld_tenant_id")
+  /// FY of the EVENT, and the partition key.
+  lldAccYear            String    @db.Char(9)                              @map("lld_acc_year")
+
+  // ── Whose points ─────────────────────────────────────────────────────
+  // Single-column FK: LoyaltyMember is not partitioned, which is precisely
+  // what makes earning in one year and spending in another a plain foreign key.
+  lldMemberId           String    @db.Uuid                                 @map("lld_member_id")
+  /// Snapshot; every report groups by it.
+  lldCustId             String    @db.Uuid                                 @map("lld_cust_id")
+
+  // ── Which rule produced this ─────────────────────────────────────────
+  // The "why did I get 37 points" answer, without re-running the engine
+  // against a scheme that may since have been edited.
+  lldLscId              String?   @db.Uuid                                 @map("lld_lsc_id")
+  lldLssId              String?   @db.Uuid                                 @map("lld_lss_id")
+  lldLsiId              String?   @db.Uuid                                 @map("lld_lsi_id")
+
+  // ── The event ────────────────────────────────────────────────────────
+  /// EARN | REDEEM | GIFT | EXPIRE | ADJUST | TRANSFER | OPENING
+  lldTxnType            String    @db.VarChar(20)                          @map("lld_txn_type")
+  lldRowNo              Int       @default(1)                              @map("lld_row_no")
+  /// SIGNED. EARN/OPENING positive, REDEEM/GIFT/EXPIRE negative,
+  /// ADJUST/TRANSFER either. A reversal repeats the type with the opposite
+  /// sign (ck_lld_sign enforces the pairing).
+  lldPoints             Decimal   @db.Decimal(18, 4)                       @map("lld_points")
+  lldTxnDate            DateTime  @db.Date                                 @map("lld_txn_date")
+  /// Which side of a happy-hour boundary the till was on. Without it, a
+  /// double-points window is unauditable the morning after.
+  lldTxnTime            DateTime? @db.Time(6)                              @map("lld_txn_time")
+
+  // ── FIFO lot ─────────────────────────────────────────────────────────
+  /// On a consuming row: the EARN row these points came out of. Travels as a
+  /// pair because this table is partitioned.
+  lldLotId              String?   @db.Uuid                                 @map("lld_lot_id")
+  lldLotAccYear         String?   @db.Char(9)                              @map("lld_lot_acc_year")
+  /// On the LOT row only: how much of it has been spent, expired or moved
+  /// away. Recomputed by LoyaltyLedgerService.recomputeLots(); there is no
+  /// trigger and no other code may write it.
+  lldConsumedPoints     Decimal   @default(0) @db.Decimal(18, 4)           @map("lld_consumed_points")
+  /// GENERATED ALWAYS ... STORED: lldPoints - lldConsumedPoints on a lot row,
+  /// ZERO (not NULL) on a consuming row — which is what keeps the "> 0" index
+  /// predicates cheap and total. Read-only: never send it on a create or
+  /// update, and @default(dbgenerated()) keeps migrate from emitting a default.
+  lldLotBalance         Decimal?  @default(dbgenerated()) @db.Decimal(18, 4) @map("lld_lot_balance")
+  /// When this lot lapses, from lsc_points_valid_days / lsc_expiry_basis at
+  /// earn time. NULL = never expires, and such lots are consumed LAST.
+  lldExpiresOn          DateTime? @db.Date                                 @map("lld_expires_on")
+  /// When this lot becomes REDEEMABLE: bill date + lsc_activation_days. Before
+  /// it, the points exist and show in the balance but cannot be spent — the
+  /// return-window defence against clawing back points already spent.
+  /// NULL = redeemable at once.
+  lldActiveFrom         DateTime? @db.Date                                 @map("lld_active_from")
+
+  // ── Source document ──────────────────────────────────────────────────
+  // The same four-part polymorphic identifier AccTenderDetail,
+  // AccBillBalance and TxnStatusLog use. All three of module/type/id or none
+  // (ck_lld_src_doc).
+  lldSrcModule          String?   @db.VarChar(20)                          @map("lld_src_module")
+  lldSrcDocType         String?   @db.VarChar(30)                          @map("lld_src_doc_type")
+  lldSrcDocId           String?   @db.Uuid                                 @map("lld_src_doc_id")
+  /// The SOURCE's FY, not this row's.
+  lldSrcAccYear         String?   @db.Char(9)                              @map("lld_src_acc_year")
+  /// Snapshot, so a member statement prints the bill number without joining a
+  /// partitioned table across every year the customer has traded.
+  lldSrcDocRefno        String?   @db.VarChar(100)                         @map("lld_src_doc_refno")
+  lldSrcRowNo           Int?                                               @map("lld_src_row_no")
+
+  // ── How it was computed ──────────────────────────────────────────────
+  lldBaseAmount         Decimal   @default(0) @db.Decimal(18, 2)           @map("lld_base_amount")
+  lldBaseQty            Decimal   @default(0) @db.Decimal(18, 3)           @map("lld_base_qty")
+  /// Points per slab on an earn, or INR per point on a redeem. Snapshotted so
+  /// a historic redemption stays re-derivable whichever of
+  /// lsc_redeem_value_per_point or tnd_conversion_rate was in play.
+  lldRate               Decimal   @default(0) @db.Decimal(18, 4)           @map("lld_rate")
+  lldFactor             Decimal   @default(1) @db.Decimal(18, 4)           @map("lld_factor")
+  /// What they were worth, in INR.
+  lldMoneyValue         Decimal   @default(0) @db.Decimal(18, 2)           @map("lld_money_value")
+
+  // ── The tender ───────────────────────────────────────────────────────
+  /// Redemption is a TENDER LINE: AccTenderDetail with td_tender_type_id = 10
+  /// (LOYALTY), td_units_used = the points, td_conversion_rate = rupees per
+  /// point. This pair is what ties the two sides together, and it is the ONLY
+  /// route by which a redemption reaches the GL and then Tally — earning posts
+  /// nothing at all, being statistical.
+  lldTenderId           String?   @db.Uuid                                 @map("lld_tender_id")
+  lldTenderAccYear      String?   @db.Char(9)                              @map("lld_tender_acc_year")
+
+  // ── Reversal ─────────────────────────────────────────────────────────
+  /// Carries a real FK, unlike abj_reversal_of_id, because this table has the
+  /// year to complete the composite key with.
+  lldReversalOfId       String?   @db.Uuid                                 @map("lld_reversal_of_id")
+  lldReversalOfAccYear  String?   @db.Char(9)                              @map("lld_reversal_of_acc_year")
+  lldReversalReason     String?   @db.VarChar(250)                         @map("lld_reversal_reason")
+
+  // ── Who ──────────────────────────────────────────────────────────────
+  /// A manual adjustment is somebody's decision, not a keying accident —
+  /// ck_lld_adjust_approval makes ADJUST require this.
+  lldApprovedBy         String?   @db.Uuid                                 @map("lld_approved_by")
+  lldUserId             String?   @db.Uuid                                 @map("lld_user_id")
+  lldSessionId          String?   @db.Uuid                                 @map("lld_session_id")
+  lldDeviceId           String?   @db.Uuid                                 @map("lld_device_id")
+
+  lldRemarks            String?   @db.VarChar(250)                         @map("lld_remarks")
+  lldIsDeleted          Boolean   @default(false)                          @map("lld_is_deleted")
+
+  // ── Audit ────────────────────────────────────────────────────────────
+  lldSyncDate           DateTime? @db.Timestamptz(6)                       @map("lld_sync_date")
+  lldCreatedOn          DateTime  @default(now()) @db.Timestamptz(6)       @map("lld_created_on")
+  lldCreatedBy          String?   @db.VarChar(50)                          @map("lld_created_by")
+  lldModifiedOn         DateTime? @db.Timestamptz(6)                       @map("lld_modified_on")
+  lldModifiedBy         String?   @db.VarChar(50)                          @map("lld_modified_by")
+
+  // Relations
+  member                LoyaltyMember      @relation("LoyaltyLedgerMember",   fields: [lldMemberId], references: [lmbId], onUpdate: Cascade, onDelete: Restrict, map: "fk_lld_member")
+  customer              Customer           @relation("LoyaltyLedgerCustomer", fields: [lldCustId],   references: [cusId], onUpdate: Cascade, onDelete: Restrict, map: "fk_lld_cust")
+  company               Company            @relation("LoyaltyLedgerCompany",  fields: [lldCompId],   references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_lld_company")
+  branch                BranchMaster       @relation("LoyaltyLedgerBranch",   fields: [lldBranchId], references: [brId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_lld_branch")
+  scheme                LoyaltyScheme?     @relation("LoyaltyLedgerScheme",   fields: [lldLscId],    references: [lscId], onUpdate: Cascade, onDelete: Restrict, map: "fk_lld_scheme")
+  slab                  LoyaltySchemeSlab? @relation("LoyaltyLedgerSlab",     fields: [lldLssId],    references: [lssId], onUpdate: Cascade, onDelete: Restrict, map: "fk_lld_slab")
+  itemRule              LoyaltySchemeItem? @relation("LoyaltyLedgerItemRule", fields: [lldLsiId],    references: [lsiId], onUpdate: Cascade, onDelete: Restrict, map: "fk_lld_item_rule")
+  user                  UserMaster?        @relation("LoyaltyLedgerUser",     fields: [lldUserId],   references: [usrId], onUpdate: Cascade, onDelete: Restrict, map: "fk_lld_user")
+  approver              UserMaster?        @relation("LoyaltyLedgerApprover", fields: [lldApprovedBy], references: [usrId], onUpdate: Cascade, onDelete: Restrict, map: "fk_lld_approved_by")
+  device                DeviceMaster?      @relation("LoyaltyLedgerDevice",   fields: [lldDeviceId], references: [devId], onUpdate: Cascade, onDelete: Restrict, map: "fk_lld_device")
+
+  lot                   LoyaltyLedger?  @relation("LoyaltyLedgerLot",      fields: [lldLotId, lldLotAccYear],           references: [lldId, lldAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_lld_lot")
+  lotConsumers          LoyaltyLedger[] @relation("LoyaltyLedgerLot")
+  reversalOf            LoyaltyLedger?  @relation("LoyaltyLedgerReversal", fields: [lldReversalOfId, lldReversalOfAccYear], references: [lldId, lldAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_lld_reversal")
+  reversedBy            LoyaltyLedger[] @relation("LoyaltyLedgerReversal")
+
+  tender                AccTenderDetail? @relation("LoyaltyLedgerTender", fields: [lldTenderId, lldTenderAccYear], references: [tdId, tdAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_lld_tender")
+
+  // No relation field for lldSrcDocId — polymorphic by design, the target
+  // table varies by lldSrcModule/lldSrcDocType. Nor for lldTenantId (no Tenant
+  // model) or lldSessionId (not a unique FK target).
+
+  @@id([lldId, lldAccYear], map: "pk_loyalty_ledger")
+
+  // Partial indexes are DB-only — Prisma ignores WHERE predicates, so
+  // declaring them here would produce phantom drift on every migrate dev:
+  //
+  //   -- THE IDEMPOTENCY GUARD, and the most important index of the set.
+  //   -- Points earn on bill save at a counter that may be offline; that bill
+  //   -- will be re-sent, possibly twice. Without this, every replay mints
+  //   -- points again and nothing notices until a customer redeems money the
+  //   -- shop never owed them. The expiry run leans on it too, via its
+  //   -- deterministic runId.
+  //   CREATE UNIQUE INDEX ux_lld_src_row ON sales.loyalty_ledger
+  //       (lld_src_doc_type, lld_src_doc_id, lld_acc_year, lld_txn_type, lld_row_no)
+  //       WHERE lld_src_doc_id IS NOT NULL AND lld_is_deleted = false;
+  //
+  //   -- THE FIFO INDEX. Both the redeem path and the expiry run live on it;
+  //   -- INCLUDE keeps a till walking a member's lots off the heap.
+  //   CREATE INDEX ix_lld_open_lots ON sales.loyalty_ledger
+  //       (lld_member_id, lld_expires_on, lld_txn_date, lld_id)
+  //       INCLUDE (lld_points, lld_consumed_points, lld_active_from, lld_lot_balance)
+  //       WHERE lld_is_deleted = false AND lld_lot_balance > 0;
+  //
+  //   -- a row may be reversed once. CAVEAT: a unique index on a partitioned
+  //   -- table must include the partition key, so this is unique per YEAR — a
+  //   -- reversal in March and another in April of the same row would both be
+  //   -- accepted. The posting code must check before it writes.
+  //   CREATE UNIQUE INDEX ux_lld_reversal ON sales.loyalty_ledger
+  //       (lld_reversal_of_id, lld_acc_year)
+  //       WHERE lld_reversal_of_id IS NOT NULL AND lld_is_deleted = false;
+  //
+  //   -- the member statement; the nightly expiry sweep; the lot recompute's
+  //   -- own path; bill -> the points it earned (the claw-back path)
+  //   CREATE INDEX ix_lld_member  ON sales.loyalty_ledger (lld_member_id, lld_txn_date) …
+  //   CREATE INDEX ix_lld_expiry  ON sales.loyalty_ledger (lld_comp_id, lld_expires_on) …
+  //   CREATE INDEX ix_lld_lot     ON sales.loyalty_ledger (lld_lot_id, lld_lot_acc_year) …
+  //   CREATE INDEX ix_lld_src_doc ON sales.loyalty_ledger (lld_src_doc_type, lld_src_doc_id) …
+  //
+  //   -- INTER-BRANCH SETTLEMENT: points issued by branch A, honoured by
+  //   -- branch B. For a franchise chain this report is why lld_branch_id exists.
+  //   CREATE INDEX ix_lld_branch_period ON sales.loyalty_ledger
+  //       (lld_comp_id, lld_branch_id, lld_txn_date, lld_txn_type)
+  //       INCLUDE (lld_points, lld_money_value) WHERE lld_is_deleted = false;
+  //
+  //   -- the other half of the reconciliation report. No per-lot over-draw
+  //   -- CHECK exists: two tills offline can each draw the last of one lot and
+  //   -- the batch that syncs second must be RECORDED, not refused.
+  //   CREATE INDEX ix_lld_lot_overdrawn ON sales.loyalty_ledger
+  //       (lld_comp_id, lld_member_id)
+  //       WHERE lld_is_deleted = false AND lld_lot_balance < 0;
+  //
+  //   -- FK-covering: ix_lld_scheme, ix_lld_slab, ix_lld_item_rule,
+  //   -- ix_lld_cust, ix_lld_user, ix_lld_device, ix_lld_tender,
+  //   -- ix_lld_branch, ix_lld_approved_by, ix_lld_reversal_fk. Note that
+  //   -- ux_lld_reversal does NOT cover fk_lld_reversal — different second
+  //   -- column — which is why ix_lld_reversal_fk exists beside it.
+  //
+  // CHECK constraints (DB-only): ck_lld_acc_year, ck_lld_src_acc_year,
+  //   ck_lld_txn_type, ck_lld_src_module, ck_lld_src_doc_type, ck_lld_src_doc,
+  //   ck_lld_points_nonzero, ck_lld_sign, ck_lld_lot_pair,
+  //   ck_lld_lot_required, ck_lld_no_self_lot, ck_lld_lot_dates,
+  //   ck_lld_tender_pair, ck_lld_reversal_pair, ck_lld_no_self_reversal,
+  //   ck_lld_redeem_tender, ck_lld_gift_no_tender, ck_lld_adjust_approval,
+  //   ck_lld_row_no, ck_lld_factor
+
+  @@map("loyalty_ledger")
+  @@schema("sales")
+}

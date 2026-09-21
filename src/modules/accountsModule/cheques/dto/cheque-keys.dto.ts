@@ -67,9 +67,16 @@ export class ChequeRefDto {
  * because silently discarding them would let a screen believe it had moved
  * money it had not.
  *
- * An EMPTY array is not "allocate nothing": it means auto-FIFO, the same rule
- * `open-items` lists bills under. Money that arrives always goes somewhere,
- * and the remainder becomes an ADVANCE.
+ * An EMPTY array is never "allocate nothing" — money that arrives always goes
+ * somewhere, and the remainder becomes an ADVANCE. What it DOES mean depends on
+ * whether this money has been placed before:
+ *
+ *   · on `/clear`, auto-FIFO — the same rule `open-items` lists bills under,
+ *     because an ON_CLEARING cheque is landing for the first time;
+ *   · on `/re-present`, the bills the bounce reversed, with the amounts it
+ *     reversed. The same money for the same debt; see `RepresentChequeDto`;
+ *   · on `/replace`, auto-FIFO again, because the new cheque may be for a
+ *     different amount and there is nothing to restore it to exactly.
  */
 export class ChequeAllocationDto {
   @ApiProperty({ format: 'uuid', description: 'accounts.acc_bill_balance.abl_id.' })

@@ -130,9 +130,17 @@ export class RepresentChequeDto extends ChequeKeysDto {
     type: () => ChequeAllocationDto,
     isArray: true,
     description:
-      'ON_RECEIPT only, and optional. The re-issue credits the party again, and these say which ' +
-      'bills that credit settles. Empty means auto-FIFO — and the bounce-charge bill is in the ' +
-      "party's open items, so it may be allocated to like any other.",
+      'ON_RECEIPT only, and optional — an OVERRIDE, for the rare case where the operator really ' +
+      'is re-pointing the money at different bills.\n\n' +
+      'LEAVE IT OUT and the re-issued credit goes back on the bills the bounce took it off, ' +
+      'with the amounts it took — a re-presentation is the same money for the same debt, and ' +
+      'the per-bill split lives in the reversed adjustment rows. It is NOT auto-FIFO: settling ' +
+      "whichever of the party's invoices sorts first would pay a bill this cheque was never " +
+      'against. If a bill cannot take its share back — deleted, or paid by something else since ' +
+      'the bounce — the whole re-presentation is refused with a 409 naming that bill, rather ' +
+      'than the money landing somewhere else.\n\n' +
+      "The bounce-charge bill is in the party's open items, so it may be named here like any " +
+      'other.',
   })
   @IsArray()
   @ArrayMaxSize(1000)

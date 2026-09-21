@@ -180,6 +180,14 @@ model AccLedgerMaster {
   // shared + Acme Foods) — the same trade partner as both customer and supplier —
   // rather than locking both rows out of every unrelated edit. Resolving that pair is
   // a naming decision, not a schema one.
+  // ── Loyalty points engine (20260921140000) ─────────────────────────────
+  // Snapshot on the wallet, so a points-liability report can join accounts
+  // without a hop through the customer master.
+  loyaltyMembers        LoyaltyMember[]           @relation("LoyaltyMemberPartyLedger")
+
+  // ── Coupons and gift vouchers (20260921160000) ──────────────────────────
+  coupons               LoyaltyCoupon[]           @relation("CouponPartyLedger")
+
   @@map("acc_ledger_master")
   @@schema("accounts")
 }

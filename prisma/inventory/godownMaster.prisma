@@ -39,6 +39,9 @@ model GodownLocation {
   stockTransitsTo     StockTransit[]   @relation("StockTransitToGodown")
   stockValuationSnaps StockValuationSnap[] @relation("StockValuationSnapGodown")
   stockReorderPolicies StockReorderPolicy[] @relation("StockReorderPolicyGodown")
+  // ── Loyalty points engine (20260921140000) ─────────────────────────────
+  loyaltyGiftItems      LoyaltyGiftRedeemItem[]   @relation("LoyaltyGiftItemGodown")
+
   @@map("godown_locations")
    @@schema("inventory")
   // Indexes

@@ -69,6 +69,9 @@ model LoyaltySchemeItem {
   itemBrand        ItemBrandMaster?   @relation("LoyaltyItemBrand",    fields: [lsiBrandId],    references: [brand_id],   onUpdate: NoAction, onDelete: Restrict, map: "fk_lsi_brand")
   itemSection      ItemSectionMaster? @relation("LoyaltyItemSection",  fields: [lsiSectionId],  references: [secId],      onUpdate: NoAction, onDelete: Restrict, map: "fk_lsi_section")
 
+  // ── Loyalty points engine (20260921140000) ─────────────────────────────
+  loyaltyLedgerRows     LoyaltyLedger[]           @relation("LoyaltyLedgerItemRule")
+
   @@map("loyalty_scheme_item")
   @@schema("sales")
 }

@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 import { throwAccountsConflict } from 'src/common/utils/module-service.utils';
 import { BillType, CANCELLABLE_PDC_STATUSES } from './types/receipt-enum';
+import { receiptChequeFilter, type ReceiptChequeScope } from './receipt-cheque-links';
 import { ZERO } from './receipt.utils';
 import type { ReceiptErrorDetail } from './types/receipt-api.types';
 
@@ -47,15 +48,23 @@ function refusal(verb: UnwindVerb): string {
  * This is the refusal that defines the window amend actually serves, and the
  * window is the one that matters: a cheque still in the drawer, minutes after
  * entry. That is where the reported pain is.
+ *
+ * ── Which cheques are "the receipt's" ─────────────────────────────────────
+ *
+ * `receiptChequeFilter`, and NOT `apd_voucher_id` on its own. A re-presented
+ * cheque has that column repointed at its re-issue voucher, and a guard reading
+ * it alone decided the receipt had no cheque at all — then let an amend through
+ * that reversed nothing and settled a second bill with money the customer never
+ * paid twice. See `receipt-cheque-links.ts` for the measured case.
  */
 export async function assertChequesStillHeld(
   tx: Prisma.TransactionClient,
-  voucherIds: readonly string[],
+  scope: ReceiptChequeScope,
   verb: UnwindVerb,
 ): Promise<void> {
   const moved = await tx.accPdcRegister.findMany({
     where: {
-      apdVoucherId: { in: [...voucherIds] },
+      ...(await receiptChequeFilter(tx, scope)),
       apdIsDeleted: false,
       apdStatus: { notIn: [...CANCELLABLE_PDC_STATUSES] },
     },

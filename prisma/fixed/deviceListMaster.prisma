@@ -38,6 +38,15 @@ model DeviceMaster {
   printLogs        PrintLog[]                @relation("PrintLogDevice")
 
   @@index([devDeviceUid], name: "idx_device_uid")
+  // ── Loyalty points engine (20260921140000) ─────────────────────────────
+  loyaltyLedgerRows     LoyaltyLedger[]           @relation("LoyaltyLedgerDevice")
+  // The device owns the gift-slip serial series, so an offline till can
+  // number a slip with no server round trip (ux_lgr_slno).
+  loyaltyGiftRedeems    LoyaltyGiftRedeem[]       @relation("LoyaltyGiftRedeemDevice")
+
+  // ── Coupons and gift vouchers (20260921160000) ──────────────────────────
+  couponTxns            LoyaltyCouponTxn[]        @relation("CouponTxnDevice")
+
   @@map("device_master")
   @@schema("fixed")
 }

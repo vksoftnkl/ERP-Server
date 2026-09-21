@@ -22,6 +22,19 @@ export interface ReversedRows {
 export declare function reverseChequeAdjustments(tx: Prisma.TransactionClient, cheque: LockedCheque, scope: ReversalVoucherScope, startRowNo?: number): Promise<ReversedRows & {
     nextRowNo: number;
 }>;
+export interface RestoredAllocation {
+    billId: string;
+    billAccYear: string;
+    amount: Prisma.Decimal;
+    discount: Prisma.Decimal;
+    writeoff: Prisma.Decimal;
+    roundoff: Prisma.Decimal;
+    writeoffApprovedBy: string | null;
+}
+export declare function allocationsReversedBy(tx: Prisma.TransactionClient, cheque: LockedCheque, bounce: {
+    voucherId: string;
+    accYear: string;
+}): Promise<RestoredAllocation[]>;
 export declare function cascadeAdvances(tx: Prisma.TransactionClient, cheque: LockedCheque, scope: ReversalVoucherScope, startRowNo?: number): Promise<{
     report: ChequeCascadeReport;
     bills: Array<{

@@ -643,6 +643,14 @@ model AccLedgerMaster {
   // shared + Acme Foods) — the same trade partner as both customer and supplier —
   // rather than locking both rows out of every unrelated edit. Resolving that pair is
   // a naming decision, not a schema one.
+  // ── Loyalty points engine (20260921140000) ─────────────────────────────
+  // Snapshot on the wallet, so a points-liability report can join accounts
+  // without a hop through the customer master.
+  loyaltyMembers        LoyaltyMember[]           @relation("LoyaltyMemberPartyLedger")
+
+  // ── Coupons and gift vouchers (20260921160000) ──────────────────────────
+  coupons               LoyaltyCoupon[]           @relation("CouponPartyLedger")
+
   @@map("acc_ledger_master")
   @@schema("accounts")
 }
@@ -1289,6 +1297,17 @@ model AccTenderDetail {
   //   ck_td_settle_status, ck_td_amounts, ck_td_row_no, ck_td_total_amt,
   //   ck_td_cash_change, ck_td_units, ck_td_settle_amount, ck_td_mdr,
   //   ck_td_settled_on, ck_td_pdc, ck_td_card_last4
+  // ── Loyalty points engine (20260921140000) ─────────────────────────────
+  // Redemption is a tender line (td_tender_type_id = 10, LOYALTY). Several
+  // REDEEM rows of one redemption share ONE tender, one per lot consumed —
+  // and this is the only route by which points reach the GL and then Tally.
+  loyaltyLedgerRows     LoyaltyLedger[]           @relation("LoyaltyLedgerTender")
+
+  // ── Coupons and gift vouchers (20260921160000) ──────────────────────────
+  // Coupon redemption is a tender line too (td_tender_type_id = 11,
+  // VOUCHER), and a PERCENT coupon arrives here already resolved to rupees.
+  couponTxns            LoyaltyCouponTxn[]        @relation("CouponTxnTender")
+
   @@map("acc_tender_detail")
   @@schema("accounts")
 }
@@ -1383,6 +1402,11 @@ model AccTenderMaster {
   // CHECK constraints (DB-only): ck_tnd_amount_range, ck_tnd_min_amount, ck_tnd_daily_limit,
   //   ck_tnd_surcharge_perc, ck_tnd_surcharge_amt, ck_tnd_settlement_days, ck_tnd_conversion_rate,
   //   ck_tnd_effective_range, ck_tnd_colour
+  // ── Coupons and gift vouchers (20260921160000) ──────────────────────────
+  // The VOUCHER tender (type 11) a batch settles through. NULL on the batch
+  // means the branch default; the rate and the floor stay owned here.
+  couponBatches         LoyaltyCouponBatch[]      @relation("CouponBatchRedeemTender")
+
   @@map("acc_tender_master")
   @@schema("accounts")
 }
@@ -1735,6 +1759,27 @@ model AccVoucherDocEinvoice {
   gdeLastErrorCode  String?              @db.VarChar(50) @map("gde_last_error_code")
   gdeLastMessage    String?              @db.VarChar(500) @map("gde_last_message")
 
+  // ── Provenance (20260921120000_add_gst_provider_integration) ──────────
+  /// public.gst_company_credential that generated this IRN. A cancellation
+  /// must be sent through the same provider and GSTIN, and with two providers
+  /// configured there is no way to work out which one it was after the fact.
+  /// No FK: the credential is a master that may legitimately be retired while
+  /// old documents keep pointing at it.
+  gdeGccId          String?              @db.Uuid @map("gde_gcc_id")
+  /// Frozen snapshot beside the id, the way the doc register freezes party
+  /// name and GSTIN next to theirs: an id pointing at a row somebody deleted
+  /// answers no questions at all.
+  gdeGpvCode        String?              @db.VarChar(20) @map("gde_gpv_code")
+  /// The Invoice Registration Portal that issued the IRN (NIC1, NIC2, CLEAR,
+  /// CYGNET, EY, IRIS) — NOT the same thing as the GSP. A cancellation must
+  /// reach this portal; the GSP used to reach it may differ. On a NIC-style
+  /// reply the first character of AckNo gives it away: 1 = NIC1, 2 = NIC2.
+  gdeIrpCode        String?              @db.VarChar(10) @map("gde_irp_code")
+  /// When to try again. Without it a failed IRN either retries in a tight
+  /// loop against a portal that is rate limiting us, or waits for a person to
+  /// notice. Drives the ix_gde_retry worklist.
+  gdeNextAttemptOn  DateTime?            @db.Timestamptz(6) @map("gde_next_attempt_on")
+
   gdeIsActive       Boolean              @default(true) @map("gde_is_active")
   gdeIsDeleted      Boolean              @default(false) @map("gde_is_deleted")
   gdeSyncDate       DateTime?            @db.Timestamptz(6) @map("gde_sync_date")
@@ -1750,7 +1795,12 @@ model AccVoucherDocEinvoice {
   @@map("acc_voucher_doc_einvoice")
   @@schema("accounts")
   // Partial unique index uq_acc_voucher_doc_einvoice_irn and partial index
-  // idx_gde_status are not expressible in Prisma schema.
+  // idx_gde_status are not expressible in Prisma schema. Nor is the retry
+  // worklist added by 20260921120000:
+  //
+  //   CREATE INDEX ix_gde_retry
+  //       ON accounts.acc_voucher_doc_einvoice (gde_company_id, gde_next_attempt_on)
+  //       WHERE gde_is_deleted = false AND gde_status = 'FAILED';
 }
 
 // ----- prisma/accounts/AccountVoucherDocEwayBill.prisma -----
@@ -1812,6 +1862,22 @@ model AccVoucherDocEwaybill {
   gdwLastErrorCode    String?           @db.VarChar(50) @map("gdw_last_error_code")
   gdwLastMessage      String?           @db.VarChar(500) @map("gdw_last_message")
 
+  // ── Provenance (20260921120000_add_gst_provider_integration) ──────────
+  /// public.gst_company_credential that generated this e-way bill. Part-B
+  /// updates, extensions and cancellation must go through the same provider.
+  /// No FK, for the same reason as gde_gcc_id.
+  gdwGccId            String?           @db.Uuid @map("gdw_gcc_id")
+  /// Frozen provider code beside the id, readable after the credential is
+  /// rotated or retired.
+  gdwGpvCode          String?           @db.VarChar(20) @map("gdw_gpv_code")
+  /// EWB_PORTAL | IRP_WITH_IRN | IRP_BY_IRN — where it was raised. An e-way
+  /// bill generated at the IRP alongside the IRN cannot have its Part-B
+  /// updated at the IRP; that goes to the e-way portal. The route out is not
+  /// derivable from the number.
+  gdwGeneratedVia     String?           @db.VarChar(20) @map("gdw_generated_via")
+  /// When to try again; drives the ix_gdw_retry worklist.
+  gdwNextAttemptOn    DateTime?         @db.Timestamptz(6) @map("gdw_next_attempt_on")
+
   gdwIsActive         Boolean           @default(true) @map("gdw_is_active")
   gdwIsDeleted        Boolean           @default(false) @map("gdw_is_deleted")
   gdwSyncDate         DateTime?         @db.Timestamptz(6) @map("gdw_sync_date")
@@ -1827,7 +1893,12 @@ model AccVoucherDocEwaybill {
   @@map("acc_voucher_doc_ewaybill")
   @@schema("accounts")
   // Partial unique index uq_acc_voucher_doc_ewaybill_no and partial index
-  // idx_gdw_status are not expressible in Prisma schema.
+  // idx_gdw_status are not expressible in Prisma schema. Nor is the retry
+  // worklist added by 20260921120000:
+  //
+  //   CREATE INDEX ix_gdw_retry
+  //       ON accounts.acc_voucher_doc_ewaybill (gdw_company_id, gdw_next_attempt_on)
+  //       WHERE gdw_is_deleted = false AND gdw_status = 'FAILED';
 }
 
 // ----- prisma/accounts/AccountVoucherDocRegister.prisma -----
@@ -2803,6 +2874,15 @@ model DeviceMaster {
   printLogs        PrintLog[]                @relation("PrintLogDevice")
 
   @@index([devDeviceUid], name: "idx_device_uid")
+  // ── Loyalty points engine (20260921140000) ─────────────────────────────
+  loyaltyLedgerRows     LoyaltyLedger[]           @relation("LoyaltyLedgerDevice")
+  // The device owns the gift-slip serial series, so an offline till can
+  // number a slip with no server round trip (ux_lgr_slno).
+  loyaltyGiftRedeems    LoyaltyGiftRedeem[]       @relation("LoyaltyGiftRedeemDevice")
+
+  // ── Coupons and gift vouchers (20260921160000) ──────────────────────────
+  couponTxns            LoyaltyCouponTxn[]        @relation("CouponTxnDevice")
+
   @@map("device_master")
   @@schema("fixed")
 }
@@ -3187,6 +3267,9 @@ model GodownLocation {
   stockTransitsTo     StockTransit[]   @relation("StockTransitToGodown")
   stockValuationSnaps StockValuationSnap[] @relation("StockValuationSnapGodown")
   stockReorderPolicies StockReorderPolicy[] @relation("StockReorderPolicyGodown")
+  // ── Loyalty points engine (20260921140000) ─────────────────────────────
+  loyaltyGiftItems      LoyaltyGiftRedeemItem[]   @relation("LoyaltyGiftItemGodown")
+
   @@map("godown_locations")
    @@schema("inventory")
   // Indexes
@@ -3239,6 +3322,9 @@ model ItemBatchMaster {
   // Expression/partial indexes are maintained in SQL because Prisma schema
   // cannot express `lower(trim(...))` or filtered uniqueness/indexes.
   @@index([btmCompanyId, btmItemId], map: "idx_btm_item")
+  // ── Loyalty points engine (20260921140000) ─────────────────────────────
+  loyaltyGiftItems      LoyaltyGiftRedeemItem[]   @relation("LoyaltyGiftItemBatch")
+
   @@map("item_batch_master")
   @@schema("inventory")
 }
@@ -3588,6 +3674,9 @@ model ItemMaster {
   stockReorderPolicies StockReorderPolicy[]  @relation("StockReorderPolicyItem")
   stockForecasts       StockForecast[]       @relation("StockForecastItem")
   stockMovementClasses StockMovementClass[]  @relation("StockMovementClassItem")
+  // ── Loyalty points engine (20260921140000) ─────────────────────────────
+  loyaltyGiftItems      LoyaltyGiftRedeemItem[]   @relation("LoyaltyGiftItemItem")
+
   @@map("item_master")
   @@schema("inventory")
   // UNIQUE item_name_en globally (since company removed)
@@ -4116,6 +4205,9 @@ model ItemUnitConversion {
   stockReorderPolicyUom StockReorderPolicy[] @relation("StockReorderPolicyUom")
   stockForecastBaseUom StockForecast[]       @relation("StockForecastBaseUom")
   @@index([iucItemId, iucUnitSlno], map: "idx_item_unit_conversion_item")
+  // ── Loyalty points engine (20260921140000) ─────────────────────────────
+  loyaltyGiftItems      LoyaltyGiftRedeemItem[]   @relation("LoyaltyGiftItemUnit")
+
   @@map("item_unit_conversion")
   @@schema("inventory")
   // Partial unique indexes uq_item_unit_conversion, uq_item_unit_conversion_default,
@@ -4625,8 +4717,29 @@ model BranchMaster {
   printerProfiles       PrinterProfile[]          @relation("PrinterProfileBranch")
   printLogs             PrintLog[]                @relation("PrintLogBranch")
 
+  // ── GST provider integration ───────────────────────────────────────────
+  // Only a branch that holds its OWN registration (br_gstin_no) is named on a
+  // credential; the rest file under the company's.
+  gstCredentials        GstCompanyCredential[]    @relation("GstCredentialBranch")
+
   @@index([brCompId],    name: "idx_branch_comp_id")
   @@index([brStateCode], name: "idx_branch_state_code")
+  // ── Loyalty points engine (20260921140000) ─────────────────────────────
+  // A wallet is company-scoped; a branch only ENROLS one. Every LEDGER row,
+  // though, records the branch the event happened at — that is what makes
+  // inter-branch settlement between franchisees answerable.
+  loyaltyMembersEnrolled LoyaltyMember[]          @relation("LoyaltyMemberBranch")
+  loyaltyLedgerRows     LoyaltyLedger[]           @relation("LoyaltyLedgerBranch")
+  loyaltyGiftRedeems    LoyaltyGiftRedeem[]       @relation("LoyaltyGiftRedeemBranch")
+  loyaltyGiftItems      LoyaltyGiftRedeemItem[]   @relation("LoyaltyGiftItemBranch")
+
+  // ── Coupons and gift vouchers (20260921160000) ──────────────────────────
+  // A batch may be branch-less (every branch) and so may a coupon; a
+  // MOVEMENT always records the branch it was presented at.
+  couponBatches         LoyaltyCouponBatch[]      @relation("CouponBatchBranch")
+  couponsIssued         LoyaltyCoupon[]           @relation("CouponBranch")
+  couponTxns            LoyaltyCouponTxn[]        @relation("CouponTxnBranch")
+
   @@map("branch_master")
   @@schema("public")
 }
@@ -4823,6 +4936,22 @@ model Company {
   printerProfiles       PrinterProfile[]          @relation("PrinterProfileCompany")
   printLogs             PrintLog[]                @relation("PrintLogCompany")
 
+  // ── GST provider integration ───────────────────────────────────────────
+  // comp_gstin_no is UNIQUE, so a company row IS a GSTIN registration: the
+  // credential hangs off it rather than carrying a second copy of the number.
+  gstCredentials        GstCompanyCredential[]    @relation("GstCredentialCompany")
+
+  // ── Loyalty points engine (20260921140000) ─────────────────────────────
+  loyaltyMembers        LoyaltyMember[]           @relation("LoyaltyMemberCompany")
+  loyaltyLedgerRows     LoyaltyLedger[]           @relation("LoyaltyLedgerCompany")
+  loyaltyGiftRedeems    LoyaltyGiftRedeem[]       @relation("LoyaltyGiftRedeemCompany")
+  loyaltyGiftItems      LoyaltyGiftRedeemItem[]   @relation("LoyaltyGiftItemCompany")
+
+  // ── Coupons and gift vouchers (20260921160000) ──────────────────────────
+  couponBatches         LoyaltyCouponBatch[]      @relation("CouponBatchCompany")
+  coupons               LoyaltyCoupon[]           @relation("CouponCompany")
+  couponTxns            LoyaltyCouponTxn[]        @relation("CouponTxnCompany")
+
   @@map("companys")
   @@schema("public")
 }
@@ -4922,6 +5051,930 @@ model FiscalYear {
 
   @@index([compId, isDeleted], map: "idx_fiscal_years_comp")
   @@map("fiscal_years")
+  @@schema("public")
+}
+
+// ----- prisma/public/gstApiLog.prisma -----
+/// Append-only call log: one row per HTTP attempt at a GSP, including the
+/// ones that failed.
+///
+/// This is a transaction table, not configuration, so it lives in `public`
+/// (like TxnStatusLog) and is LIST-partitioned by galAccYear — which is why
+/// the primary key is the composite (galId, galAccYear). Partitions
+/// (public.gst_api_log_2026_2027) are created by
+/// public.ensure_acc_year_partitions('YYYY-YYYY'), which
+/// 20260921120000_add_gst_provider_integration taught about this table. Run
+/// it whenever a fiscal year is opened, or every insert fails with
+/// "no partition of relation ...".
+///
+/// AccVoucherDocApiLog holds the LAST exchange for a document. This holds
+/// EVERY exchange, for every document and for the calls that belong to no
+/// document at all (auth, GSTIN lookup). The two are not redundant: one
+/// answers "what does this bill look like at the IRP", the other answers
+/// "what happened at 10:42 when the counter froze".
+///
+/// Rows are written once — no modifiedOn/By, same as TxnStatusLog.
+model GstApiLog {
+  galId               String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("gal_id")
+  galCompanyId        String    @db.Uuid                             @map("gal_company_id")
+  galBranchId         String?   @db.Uuid                             @map("gal_branch_id")
+  galTenantId         String?   @db.Uuid                             @map("gal_tenant_id")
+  galAccYear          String    @db.Char(9)                          @map("gal_acc_year")
+
+  /// Which credential (hence which provider) served the attempt. Nullable
+  /// because a call can fail before a credential is even resolved.
+  galGccId            String?   @db.Uuid                             @map("gal_gcc_id")
+  galGpvId            String?   @db.Uuid                             @map("gal_gpv_id")
+
+  galService          String    @db.VarChar(20)                      @map("gal_service")
+  galAction           String    @db.VarChar(30)                      @map("gal_action")
+  galEnvironment      String    @db.VarChar(10)                      @map("gal_environment")
+
+  // ── What it was for ──────────────────────────────────────────────────
+  // Same src-doc pattern as AccTenderDetail and TxnStatusLog.
+  galSrcModule        String?   @db.VarChar(20)                      @map("gal_src_module")
+  galSrcDocType       String?   @db.VarChar(30)                      @map("gal_src_doc_type")
+  galSrcDocId         String?   @db.Uuid                             @map("gal_src_doc_id")
+  galGdrId            String?   @db.Uuid                             @map("gal_gdr_id")
+
+  /// Our key for the attempt. A retry after a timeout reuses it, so a
+  /// generate that already succeeded upstream cannot mint a second IRN.
+  galIdempotencyKey   String?   @db.VarChar(100)                     @map("gal_idempotency_key")
+  galAttemptNo        Int       @default(1) @db.SmallInt             @map("gal_attempt_no")
+
+  // ── The exchange ─────────────────────────────────────────────────────
+  /// Headers are stored REDACTED per gpeRedactPaths: an auth token in a log
+  /// is a credential with a longer life than the session that issued it.
+  galRequestUrl       String?                                        @map("gal_request_url")
+  galRequestHeaders   Json?                                          @map("gal_request_headers")
+  galRequestPayload   Json?                                          @map("gal_request_payload")
+
+  galHttpStatus       Int?      @db.SmallInt                         @map("gal_http_status")
+  galResponsePayload  Json?                                          @map("gal_response_payload")
+
+  /// Their code, and what GstProviderErrorMap turned it into.
+  galProviderCode     String?   @db.VarChar(50)                      @map("gal_provider_code")
+  galOurCode          String?   @db.VarChar(30)                      @map("gal_our_code")
+
+  galIsSuccess        Boolean                                        @map("gal_is_success")
+  galMessage          String?   @db.VarChar(500)                     @map("gal_message")
+
+  galStartedOn        DateTime  @default(now()) @db.Timestamptz(6)   @map("gal_started_on")
+  galFinishedOn       DateTime? @db.Timestamptz(6)                   @map("gal_finished_on")
+  galDurationMs       Int?                                           @map("gal_duration_ms")
+
+  // ── Audit (write-once) ───────────────────────────────────────────────
+  galIsDeleted        Boolean   @default(false)                      @map("gal_is_deleted")
+  galSyncDate         DateTime? @db.Timestamptz(6)                   @map("gal_sync_date")
+  galCreatedOn        DateTime  @default(now()) @db.Timestamptz(6)   @map("gal_created_on")
+  galCreatedBy        String?   @db.VarChar(50)                      @map("gal_created_by")
+
+  // No relation fields. The DDL declares no FKs here, deliberately:
+  //   galCompanyId / galBranchId — a log row must survive a reorganisation of
+  //                                the masters it names.
+  //   galGccId / galGpvId        — the credential or provider may legitimately
+  //                                be retired while the attempt it served is
+  //                                still the answer to a support question.
+  //   galSrcDocId                — polymorphic; the target table varies by
+  //                                galSrcModule / galSrcDocType.
+  //   galTenantId                — no Tenant model exists in this schema.
+
+  @@id([galId, galAccYear], map: "pk_gst_api_log")
+
+  // Partial indexes are DB-only — Prisma ignores WHERE predicates:
+  //
+  //   -- one row per idempotency key per year: the guard that makes a retry safe
+  //   CREATE UNIQUE INDEX ux_gal_idempotency
+  //       ON public.gst_api_log (gal_idempotency_key, gal_acc_year)
+  //       WHERE gal_idempotency_key IS NOT NULL AND gal_is_deleted = false;
+  //
+  //   -- "what happened to this bill" — the support question
+  //   CREATE INDEX ix_gal_src_doc
+  //       ON public.gst_api_log (gal_src_doc_type, gal_src_doc_id, gal_acc_year)
+  //       WHERE gal_is_deleted = false;
+  //
+  //   -- "what is this provider doing today" — the monitoring question
+  //   CREATE INDEX ix_gal_activity
+  //       ON public.gst_api_log (gal_company_id, gal_service, gal_action, gal_started_on)
+  //       WHERE gal_is_deleted = false;
+  //
+  //   -- the failure queue
+  //   CREATE INDEX ix_gal_failures
+  //       ON public.gst_api_log (gal_company_id, gal_started_on)
+  //       WHERE gal_is_success = false AND gal_is_deleted = false;
+  //
+  // CHECK constraints (DB-only): ck_gal_acc_year, ck_gal_service,
+  //   ck_gal_environment, ck_gal_src_module, ck_gal_headers, ck_gal_attempt,
+  //   ck_gal_duration
+
+  @@map("gst_api_log")
+  @@schema("public")
+}
+
+// ----- prisma/public/gstAuthSession.prisma -----
+/// The live session with a provider.
+///
+/// Separate from the credential on purpose. A token rotates every six hours;
+/// writing it back onto the credential row would churn a master's audit trail
+/// four times a day, and would put a live bearer token in the same SELECT the
+/// configuration screen runs. Nothing in this model is ever returned to the
+/// client.
+///
+/// Rows are written once and never edited, so there is no modifiedOn/By — the
+/// same reasoning as TxnStatusLog. Renewal inserts a new row and retires the
+/// old one.
+model GstAuthSession {
+  gasId               String    @id(map: "pk_gst_auth_session") @default(dbgenerated("uuidv7()")) @db.Uuid @map("gas_id")
+  gasGccId            String    @db.Uuid                             @map("gas_gcc_id")
+
+  /// Encrypted with the same application key as the credential's secrets. A
+  /// bearer token in a readable column is a password with a shorter life, not
+  /// something less than one.
+  gasAuthTokenEnc     String                                         @map("gas_auth_token_enc")
+
+  /// NIC's Sek — the AES session key every subsequent payload is encrypted
+  /// with. Without a column for it the NIC_SEK scheme cannot work at all,
+  /// which is why the token column alone was not enough in the first draft.
+  gasSessionKeyEnc    String?                                        @map("gas_session_key_enc")
+  gasRefreshTokenEnc  String?                                        @map("gas_refresh_token_enc")
+
+  gasKeyVersion       Int       @default(1) @db.SmallInt             @map("gas_key_version")
+  gasTokenType        String    @default("AuthToken") @db.VarChar(20) @map("gas_token_type")
+
+  gasIssuedOn         DateTime  @default(now()) @db.Timestamptz(6)   @map("gas_issued_on")
+  gasExpiresOn        DateTime  @db.Timestamptz(6)                   @map("gas_expires_on")
+
+  /// What the provider literally sent. NIC returns TokenExpiry as IST local
+  /// time with no zone on it; keeping the raw string is the only way to prove
+  /// clock skew later.
+  gasExpiryRaw        String?   @db.VarChar(40)                      @map("gas_expiry_raw")
+
+  // ── Single-flight refresh ────────────────────────────────────────────
+  /// Four tills notice the same expiry in the same second. Without a lease
+  /// all four call /auth, which NIC rate-limits hard and the e-way portal
+  /// answers by blocking the account. A LEASE and not an advisory lock,
+  /// because the auth call is external HTTP and no transaction should be held
+  /// open across one: claim in a short transaction, call outside any
+  /// transaction, write the result in a second short transaction.
+  ///
+  ///   UPDATE public.gst_auth_session
+  ///      SET gas_lock_by = :worker, gas_lock_upto = now() + interval '60 seconds'
+  ///    WHERE gas_gcc_id = :cred
+  ///      AND gas_expires_on <= now() + make_interval(secs => :margin)
+  ///      AND (gas_lock_upto IS NULL OR gas_lock_upto < now())
+  ///   RETURNING gas_id, gas_token_version;
+  ///
+  /// One row back and you are the refresher; none and somebody else is, so
+  /// wait and re-read. gasLockUpto expiring is what stops a worker that died
+  /// mid-call from freezing every counter behind it.
+  gasLockBy           String?   @db.Uuid                             @map("gas_lock_by")
+  gasLockOn           DateTime? @db.Timestamptz(6)                   @map("gas_lock_on")
+  gasLockUpto         DateTime? @db.Timestamptz(6)                   @map("gas_lock_upto")
+
+  /// Bumped on every successful refresh. Workers cache the token in memory; a
+  /// rejection means "re-read", and a version higher than the cached one
+  /// means somebody already fixed it — retry rather than refresh again. This
+  /// is also what keeps the Sek from tearing: a payload encrypted with the
+  /// previous session key is detectable instead of merely rejected.
+  gasTokenVersion     Int       @default(0)                          @map("gas_token_version")
+
+  gasIsActive         Boolean   @default(true)                       @map("gas_is_active")
+
+  // ── Audit (write-once) ───────────────────────────────────────────────
+  gasIsDeleted        Boolean   @default(false)                      @map("gas_is_deleted")
+  gasSyncDate         DateTime? @db.Timestamptz(6)                   @map("gas_sync_date")
+  gasCreatedOn        DateTime  @default(now()) @db.Timestamptz(6)   @map("gas_created_on")
+  gasCreatedBy        String    @db.VarChar(50)                      @map("gas_created_by")
+
+  // Relations
+  credential          GstCompanyCredential @relation("GstCredentialSessions", fields: [gasGccId], references: [gccId], onUpdate: Cascade, onDelete: Cascade, map: "fk_gas_credential")
+
+  // Partial indexes are DB-only:
+  //
+  //   -- one live session per credential. The lease above serialises the
+  //   -- refresh; this guarantees there is only ever one row to lease.
+  //   CREATE UNIQUE INDEX ux_gas_live
+  //       ON public.gst_auth_session (gas_gcc_id)
+  //       WHERE gas_is_active = true AND gas_is_deleted = false;
+  //
+  //   CREATE INDEX ix_gas_expiry
+  //       ON public.gst_auth_session (gas_expires_on)
+  //       WHERE gas_is_active = true AND gas_is_deleted = false;
+  //
+  // The table is created WITH (fillfactor=70), a deliberate deviation from
+  // the fillfactor=100 used everywhere else: this row is UPDATEd on every
+  // token refresh and every lease claim, and packing it full guarantees
+  // non-HOT updates and index bloat on a table whose whole job is to be
+  // written. Storage parameters are not expressible in Prisma schema.
+  //
+  // CHECK constraints (DB-only): ck_gas_expiry, ck_gas_key_ver, ck_gas_lease
+
+  @@map("gst_auth_session")
+  @@schema("public")
+}
+
+// ----- prisma/public/gstCompanyCredential.prisma -----
+/// The taxpayer's login — per company, or per branch that files its own
+/// return. CREDENTIAL #2 of two.
+///
+/// GstProviderAccount holds the GSP's own account (this ERP → their gateway).
+/// This model holds the taxpayer's portal user (that GSTIN → the IRP, through
+/// the GSP). Most GSPs need both, and they rotate on different schedules,
+/// which is why they are not on one row.
+///
+/// The GSTIN is NOT stored here. Company.compGstinNo is already UNIQUE, so a
+/// company row IS a registration; a branch with its own registration carries
+/// it on BranchMaster.brGstinNo. It resolves as
+/// COALESCE(branch GSTIN, comp_gstin_no) at call time, which is also what
+/// makes gccBranchId meaningful rather than decorative:
+///     NULL -> files under the company's own registration
+///     set  -> files under that branch's registration
+/// Repeating the number here would be a second copy free to drift from the
+/// first, and a credential silently authenticating as a GSTIN the company no
+/// longer has is worse than any join. public.vw_gst_credential does the
+/// COALESCE once so no caller has to remember which table it came from.
+///
+/// How MANY rows a company needs is decided by the provider's auth model, not
+/// by how many services it uses:
+///     gateway GSP (one token for everything) -> ONE row, gccService NULL
+///     direct NIC (token per registration)    -> one row per service
+/// GstAuthSession hangs off this row, so that choice also decides how many
+/// live tokens exist and how many calls to /auth get made.
+///
+/// gccPriority is the answer to "what happens when there are two providers".
+/// Priority 1 is the primary and there may be only one per
+/// company/branch/service/environment (ux_gcc_primary). Priority 2+ are
+/// failovers, tried in order when the primary maps to UPSTREAM_DOWN or
+/// RATE_LIMITED. Which one actually served a document is recorded on the
+/// document (gdeGccId) and on every attempt (galGccId), so a failover is
+/// auditable rather than mysterious.
+///
+/// Secrets are application-encrypted ciphertext (_enc), not plaintext and not
+/// pgcrypto — a key that lives in the same database as the data it protects
+/// is decoration. gccKeyVersion records which application key wrapped the
+/// values so rotation does not require a flag day.
+model GstCompanyCredential {
+  gccId                 String    @id(map: "pk_gst_company_credential") @default(dbgenerated("uuidv7()")) @db.Uuid @map("gcc_id")
+
+  gccCompanyId          String    @db.Uuid                             @map("gcc_company_id")
+  /// NULL = every branch that files under this GSTIN. A branch is named only
+  /// when it holds its own registration.
+  gccBranchId           String?   @db.Uuid                             @map("gcc_branch_id")
+  gccGpvId              String    @db.Uuid                             @map("gcc_gpv_id")
+
+  /// NULL is the common case for a commercial GSP: ONE login covering every
+  /// service they sell you, on one token. Direct NIC is the "set" case —
+  /// e-invoice and e-way bill are separate API registrations on the portal
+  /// and their tokens are not interchangeable. Forcing this NOT NULL would
+  /// have made every gateway provider look like NIC.
+  gccService            String?   @db.VarChar(20)                      @map("gcc_service")
+  /// SANDBOX | PRODUCTION
+  gccEnvironment        String    @db.VarChar(10)                      @map("gcc_environment")
+
+  /// 1 = primary, 2+ = failover order.
+  gccPriority           Int       @default(1) @db.SmallInt             @map("gcc_priority")
+
+  // ── Secrets ──────────────────────────────────────────────────────────
+  /// The API user of the taxpayer's portal registration. Deliberately NOT
+  /// encrypted: it is not a secret, and support has to be able to see WHICH
+  /// login is failing without holding the decryption key — the same reason a
+  /// database user name is not hashed while its password is.
+  gccLoginId            String                                         @map("gcc_login_id")
+  gccPasswordEnc        String                                         @map("gcc_password_enc")
+
+  /// Normally NULL. OAuth-style app credentials at the TAXPAYER level, which
+  /// only some GSPs issue — a reseller that bills per GSTIN may hand you a
+  /// client id and secret for each one. For every other provider the app
+  /// credentials belong to the installation and live on GstProviderAccount,
+  /// and the more specific one wins:
+  ///   client_id = COALESCE(gcc_client_id_enc, gpa_client_id_enc)
+  /// Filling only one of the pair is meaningless, so ck_gcc_client_pair
+  /// refuses it rather than letting a half-configured login reach the gateway.
+  gccClientIdEnc        String?                                        @map("gcc_client_id_enc")
+  gccClientSecretEnc    String?                                        @map("gcc_client_secret_enc")
+
+  /// NIC's AppKey: 32 random bytes, RSA-encrypted with the IRP public key at
+  /// auth time and used to unwrap the Sek that comes back.
+  gccAppKeyEnc          String?                                        @map("gcc_app_key_enc")
+
+  /// Which IRP/GSP public key or certificate the payload encryption uses.
+  /// They rotate, and a stale one fails with an opaque decrypt error.
+  gccPublicKeyRef       String?   @db.VarChar(100)                     @map("gcc_public_key_ref")
+
+  /// Which application key encrypted the _enc columns above.
+  gccKeyVersion         Int       @default(1) @db.SmallInt             @map("gcc_key_version")
+
+  /// The static IPs registered with the GSP / on the e-invoice portal for
+  /// this GSTIN. OURS, not the provider's — the first draft had a single inet
+  /// on the PROVIDER row, where it described nothing. An array because a
+  /// chain files one GSTIN from many outlets, each on its own broadband: the
+  /// portal whitelist is a list, and so is this.
+  gccWhitelistedIps     String[]  @db.Inet                             @map("gcc_whitelisted_ips")
+
+  // ── Validity ─────────────────────────────────────────────────────────
+  /// Portal passwords expire. A credential that silently went stale at
+  /// midnight is otherwise discovered by a queue of failed bills.
+  gccValidFrom          DateTime? @db.Date                             @map("gcc_valid_from")
+  gccValidUpto          DateTime? @db.Date                             @map("gcc_valid_upto")
+  gccPasswordChangedOn  DateTime? @db.Timestamptz(6)                   @map("gcc_password_changed_on")
+
+  /// Stamped by the master screen's Test Connection button and by the first
+  /// successful call of the day.
+  gccLastVerifiedOn     DateTime? @db.Timestamptz(6)                   @map("gcc_last_verified_on")
+  gccLastErrorMessage   String?   @db.VarChar(500)                     @map("gcc_last_error_message")
+
+  gccRemarks            String?   @db.VarChar(500)                     @map("gcc_remarks")
+  gccIsActive           Boolean   @default(true)                       @map("gcc_is_active")
+
+  // ── Audit ────────────────────────────────────────────────────────────
+  gccIsDeleted          Boolean   @default(false)                      @map("gcc_is_deleted")
+  gccSyncDate           DateTime? @db.Timestamptz(6)                   @map("gcc_sync_date")
+  gccCreatedOn          DateTime  @default(now()) @db.Timestamptz(6)   @map("gcc_created_on")
+  gccCreatedBy          String    @db.VarChar(50)                      @map("gcc_created_by")
+  gccModifiedOn         DateTime? @db.Timestamptz(6)                   @map("gcc_modified_on")
+  gccModifiedBy         String?   @db.VarChar(50)                      @map("gcc_modified_by")
+
+  // Relations
+  company               Company       @relation("GstCredentialCompany",  fields: [gccCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_gcc_company")
+  branch                BranchMaster? @relation("GstCredentialBranch",   fields: [gccBranchId],  references: [brId],   onUpdate: Cascade, onDelete: Restrict, map: "fk_gcc_branch")
+  /// The foreign key the first draft simply did not have.
+  provider              GstProvider   @relation("GstCredentialProvider", fields: [gccGpvId],     references: [gpvId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_gcc_provider")
+
+  sessions              GstAuthSession[] @relation("GstCredentialSessions")
+
+  // Partial indexes are DB-only — Prisma ignores WHERE predicates and
+  // NULLS NOT DISTINCT, so declaring them here would produce phantom drift on
+  // every migrate dev:
+  //
+  //   -- one primary per company/branch/service/environment
+  //   CREATE UNIQUE INDEX ux_gcc_primary
+  //       ON public.gst_company_credential
+  //          (gcc_company_id, gcc_branch_id, gcc_service, gcc_environment)
+  //       NULLS NOT DISTINCT
+  //       WHERE gcc_priority = 1 AND gcc_is_active = true AND gcc_is_deleted = false;
+  //
+  //   -- failovers are unconstrained in count but unique in order
+  //   CREATE UNIQUE INDEX ux_gcc_order
+  //       ON public.gst_company_credential
+  //          (gcc_company_id, gcc_branch_id, gcc_service, gcc_environment, gcc_priority)
+  //       NULLS NOT DISTINCT
+  //       WHERE gcc_is_deleted = false;
+  //
+  //   -- the dispatcher's own lookup: live credentials for this company and
+  //   -- service, best first
+  //   CREATE INDEX ix_gcc_lookup
+  //       ON public.gst_company_credential
+  //          (gcc_company_id, gcc_service, gcc_environment, gcc_priority)
+  //       INCLUDE (gcc_branch_id, gcc_gpv_id, gcc_login_id)
+  //       WHERE gcc_is_active = true AND gcc_is_deleted = false;
+  //
+  //   -- FK-covering
+  //   CREATE INDEX ix_gcc_branch   ON public.gst_company_credential (gcc_branch_id)
+  //       WHERE gcc_branch_id IS NOT NULL AND gcc_is_deleted = false;
+  //   CREATE INDEX ix_gcc_provider ON public.gst_company_credential (gcc_gpv_id)
+  //       WHERE gcc_is_deleted = false;
+  //
+  // CHECK constraints (DB-only): ck_gcc_service, ck_gcc_environment,
+  //   ck_gcc_client_pair, ck_gcc_priority, ck_gcc_key_ver, ck_gcc_validity
+  //
+  // The read boundary public.vw_gst_credential is a VIEW and is not modelled
+  // here (Prisma views are still a preview feature): it selects not one _enc
+  // column, so a read-only role can be granted it and physically cannot
+  // return ciphertext.
+
+  @@map("gst_company_credential")
+  @@schema("public")
+}
+
+// ----- prisma/public/gstProvider.prisma -----
+/// One row per GST Suvidha Provider, and nothing that varies per company, per
+/// service or per environment. In particular NO base url and NO credentials:
+/// the first draft (fixed.gsp_provider_master) put both here, and both are
+/// wrong at this grain — a provider serves several services from several
+/// hosts, and its credentials belong to the GSTIN that logs in, not to the
+/// provider.
+///
+/// Adding a SECOND provider must be an INSERT, not a deployment. That is the
+/// constraint the whole gst_* family is shaped by: the route of every call
+/// (GstProviderEndpoint), the shape of every reply (GstProviderFieldMap) and
+/// the meaning of every error code (GstProviderErrorMap) are rows, not code.
+model GstProvider {
+  gpvId               String    @id(map: "pk_gst_provider") @default(dbgenerated("uuidv7()")) @db.Uuid @map("gpv_id")
+
+  /// Short stable handle used in seeds, logs and support calls: 'NIC',
+  /// 'CYGNET', 'CLEARTAX'. Never renamed — retire the row instead, which is
+  /// why this is a real UNIQUE constraint and not a partial index.
+  gpvCode             String    @unique(map: "ux_gst_provider_code") @db.VarChar(20) @map("gpv_code")
+  gpvName             String    @db.VarChar(150)                             @map("gpv_name")
+
+  // Where a human goes when the integration misbehaves. Not used by code.
+  gpvPortalUrl        String?                                                @map("gpv_portal_url")
+  gpvSupportEmail     String?   @db.VarChar(120)                             @map("gpv_support_email")
+  gpvSupportPhone     String?   @db.VarChar(20)                              @map("gpv_support_phone")
+
+  // Defaults inherited by every service and endpoint below unless they
+  // override. Per-call tuning is still possible further down.
+  gpvTimeoutMs        Int       @default(30000)                              @map("gpv_timeout_ms")
+  gpvMaxRetries       Int       @default(2) @db.SmallInt                     @map("gpv_max_retries")
+
+  /// Calls per minute the contract allows, NULL = unmetered. A shop with four
+  /// tills can trip a limit that no single till would notice.
+  gpvRateLimitPerMin  Int?      @db.SmallInt                                 @map("gpv_rate_limit_per_min")
+
+  gpvRemarks          String?   @db.VarChar(500)                             @map("gpv_remarks")
+
+  // ── Lifecycle ────────────────────────────────────────────────────────
+  gpvIsActive         Boolean   @default(true)                               @map("gpv_is_active")
+
+  // ── Audit ────────────────────────────────────────────────────────────
+  gpvIsDeleted        Boolean   @default(false)                              @map("gpv_is_deleted")
+  gpvSyncDate         DateTime? @db.Timestamptz(6)                           @map("gpv_sync_date")
+  gpvCreatedOn        DateTime  @default(now()) @db.Timestamptz(6)           @map("gpv_created_on")
+  gpvCreatedBy        String    @db.VarChar(50)                              @map("gpv_created_by")
+  gpvModifiedOn       DateTime? @db.Timestamptz(6)                           @map("gpv_modified_on")
+  gpvModifiedBy       String?   @db.VarChar(50)                              @map("gpv_modified_by")
+
+  // Relations
+  services            GstProviderService[]    @relation("GstProviderServices")
+  accounts            GstProviderAccount[]    @relation("GstProviderAccounts")
+  errorMaps           GstProviderErrorMap[]   @relation("GstProviderErrorMaps")
+  credentials         GstCompanyCredential[]  @relation("GstCredentialProvider")
+
+  // CHECK constraints (DB-only): ck_gpv_code_shape, ck_gpv_timeout,
+  //   ck_gpv_retries, ck_gpv_rate_limit
+
+  @@map("gst_provider")
+  @@schema("public")
+}
+
+// ----- prisma/public/gstProviderAccount.prisma -----
+/// The GSP's own account — CREDENTIAL #1 of two.
+///
+/// This is the API credential the GSP (Chartered, Cygnet, ClearTax …) issues
+/// to identify THIS ERP INSTALLATION to their gateway. The second — the
+/// taxpayer's own portal user, per GSTIN — is GstCompanyCredential. Most GSPs
+/// need both, and they rotate on different schedules, which is the whole
+/// reason they are not one row.
+///
+/// Grain is provider × ENVIRONMENT, not per service. A GSP that sells
+/// e-invoice, e-way bill and returns issues ONE account for all of it; the
+/// sandbox account is a different one. Keying it per service would copy the
+/// same secret across four rows and make rotation a hunt.
+///
+/// gpaService is nevertheless present and NULLABLE, because a few providers
+/// do issue separate accounts per service:
+///     NULL -> covers every service this provider offers   (the norm)
+///     set  -> overrides the NULL row for that one service (the exception)
+/// Resolution is most-specific-wins:
+///
+///     ORDER BY gpa_service NULLS LAST LIMIT 1
+///
+/// A direct-to-NIC provider has NO row here at all: there is no middleman to
+/// authenticate to, only the per-GSTIN AppKey on GstCompanyCredential.
+model GstProviderAccount {
+  gpaId               String    @id(map: "pk_gst_provider_account") @default(dbgenerated("uuidv7()")) @db.Uuid @map("gpa_id")
+  gpaGpvId            String    @db.Uuid                                 @map("gpa_gpv_id")
+
+  /// SANDBOX | PRODUCTION
+  gpaEnvironment      String    @db.VarChar(10)                          @map("gpa_environment")
+  /// NULL = every service this provider offers.
+  gpaService          String?   @db.VarChar(20)                          @map("gpa_service")
+
+  /// Your customer / account number with the GSP. Not a secret, and the first
+  /// thing their support desk asks for.
+  gpaAccountRef       String?   @db.VarChar(100)                         @map("gpa_account_ref")
+
+  // Application-encrypted, same scheme and key as every other _enc column.
+  // Never written from SQL: only the application holds the key.
+  gpaClientIdEnc      String?                                            @map("gpa_client_id_enc")
+  gpaClientSecretEnc  String?                                            @map("gpa_client_secret_enc")
+  gpaApiKeyEnc        String?                                            @map("gpa_api_key_enc")
+  gpaKeyVersion       Int       @default(1) @db.SmallInt                 @map("gpa_key_version")
+
+  /// Contract window. A GSP contract lapses on a date somebody agreed to a
+  /// year ago; without this the first anybody knows is bills not printing.
+  gpaValidFrom        DateTime? @db.Date                                 @map("gpa_valid_from")
+  gpaValidUpto        DateTime? @db.Date                                 @map("gpa_valid_upto")
+
+  /// Most GSPs sell IRNs in blocks. Running the balance down mid-morning
+  /// stops every counter at once, so it is worth a column and an alert rather
+  /// than a phone call from the shop floor. Refreshed by GET_API_BALANCE.
+  gpaCreditBalance    Decimal?  @db.Decimal(14, 2)                       @map("gpa_credit_balance")
+  gpaBalanceCheckedOn DateTime? @db.Timestamptz(6)                       @map("gpa_balance_checked_on")
+
+  gpaLastVerifiedOn   DateTime? @db.Timestamptz(6)                       @map("gpa_last_verified_on")
+  gpaRemarks          String?   @db.VarChar(500)                         @map("gpa_remarks")
+  gpaIsActive         Boolean   @default(true)                           @map("gpa_is_active")
+
+  // ── Audit ────────────────────────────────────────────────────────────
+  gpaIsDeleted        Boolean   @default(false)                          @map("gpa_is_deleted")
+  gpaSyncDate         DateTime? @db.Timestamptz(6)                       @map("gpa_sync_date")
+  gpaCreatedOn        DateTime  @default(now()) @db.Timestamptz(6)       @map("gpa_created_on")
+  gpaCreatedBy        String    @db.VarChar(50)                          @map("gpa_created_by")
+  gpaModifiedOn       DateTime? @db.Timestamptz(6)                       @map("gpa_modified_on")
+  gpaModifiedBy       String?   @db.VarChar(50)                          @map("gpa_modified_by")
+
+  // Relations
+  provider            GstProvider @relation("GstProviderAccounts", fields: [gpaGpvId], references: [gpvId], onUpdate: Cascade, onDelete: Cascade, map: "fk_gpa_provider")
+
+  @@index([gpaGpvId], map: "ix_gpa_provider")
+
+  // Partial indexes are DB-only:
+  //
+  //   CREATE UNIQUE INDEX ux_gpa_provider_env_service
+  //       ON public.gst_provider_account (gpa_gpv_id, gpa_environment, gpa_service)
+  //       NULLS NOT DISTINCT
+  //       WHERE gpa_is_deleted = false;
+  //
+  // NULLS NOT DISTINCT is load-bearing: without it two "covers every service"
+  // rows for the same provider and environment — both with a NULL service —
+  // would each be treated as unique, and the resolution above would pick one
+  // of them at random.
+  //
+  // CHECK constraints (DB-only): ck_gpa_environment, ck_gpa_service,
+  //   ck_gpa_key_ver, ck_gpa_validity, ck_gpa_balance
+
+  @@map("gst_provider_account")
+  @@schema("public")
+}
+
+// ----- prisma/public/gstProviderEndpoint.prisma -----
+/// One row per CALL. This is what the first draft's single `gsp_route` column
+/// was trying to be.
+///
+/// gpeAction is the vocabulary the application speaks — the sale bill asks
+/// for GENERATE_IRN and does not know, or care, what path that is on this
+/// provider. Adding a provider must never add an action; adding a CAPABILITY
+/// may.
+///
+/// The envelope columns are the other half of provider independence. Every
+/// GSP wraps the same NIC payload differently: {"Status":1,"Data":{…}} here,
+/// {"success":true,"result":{…}} there. Describing the envelope as four paths
+/// means the dispatcher can find the payload, decide success and read an
+/// error code without knowing whose reply it is holding.
+model GstProviderEndpoint {
+  gpeId               String    @id(map: "pk_gst_provider_endpoint") @default(dbgenerated("uuidv7()")) @db.Uuid @map("gpe_id")
+  gpeGpsId            String    @db.Uuid                                 @map("gpe_gps_id")
+
+  /// AUTH | GENERATE_IRN | CANCEL_IRN | GET_IRN | … — see ck_gpe_action for
+  /// the full, finite vocabulary (e-invoice, the whole e-way bill surface,
+  /// the lookups, the returns, and the two housekeeping calls).
+  gpeAction           String    @db.VarChar(30)                          @map("gpe_action")
+
+  gpeHttpMethod       String    @default("POST") @db.VarChar(6)          @map("gpe_http_method")
+
+  /// Appended to gpsBaseUrl. May carry {placeholders} filled from the request
+  /// context: {irn}, {gstin}, {ewbNo}, {period}.
+  gpePathTemplate     String                                             @map("gpe_path_template")
+  gpeQueryTemplate    String?                                            @map("gpe_query_template")
+
+  gpeContentType      String    @default("application/json") @db.VarChar(60) @map("gpe_content_type")
+
+  /// Static/templated headers, e.g.
+  ///   {"Gstin":"{gstin}","user_name":"{loginId}","AuthToken":"{authToken}"}
+  /// Json because the header SET differs per provider, not just the values.
+  gpeHeaders          Json?                                              @map("gpe_headers")
+
+  /// The key the body is nested under, if any: 'Data' for NIC-style
+  /// wrappers, NULL when the body is posted bare.
+  gpeRequestWrapper   String?   @db.VarChar(30)                          @map("gpe_request_wrapper")
+
+  /// JSONPaths blanked before the exchange is written to GstApiLog. The AUTH
+  /// request body literally contains the portal password, and the headers of
+  /// every other call carry a live AuthToken — logged verbatim they become
+  /// credentials with a longer life than the session that issued them.
+  /// Redaction is a config row and not a code branch precisely so that adding
+  /// a provider cannot forget it.
+  gpeRedactPaths      Json?                                              @map("gpe_redact_paths")
+
+  // ── Envelope descriptors ─────────────────────────────────────────────
+  // Where the useful object starts, how to tell success, and where the error
+  // code and message live when it is not.
+  gpeResponseRootPath String?                                            @map("gpe_response_root_path")
+  gpeSuccessPath      String?                                            @map("gpe_success_path")
+  gpeSuccessValue     String?   @db.VarChar(20)                          @map("gpe_success_value")
+  gpeErrorCodePath    String?                                            @map("gpe_error_code_path")
+  gpeErrorMessagePath String?                                            @map("gpe_error_message_path")
+
+  // NULL = inherit the service, which inherits the provider.
+  gpeTimeoutMs        Int?                                               @map("gpe_timeout_ms")
+  gpeMaxRetries       Int?      @db.SmallInt                             @map("gpe_max_retries")
+
+  /// Safe to send again after a timeout. FALSE for GENERATE_IRN: a reply that
+  /// never arrived may still have minted an IRN, and the correct recovery is
+  /// GET_IRN_BY_DOC, not a second generate.
+  gpeIsIdempotent     Boolean   @default(false)                          @map("gpe_is_idempotent")
+
+  gpeRemarks          String?   @db.VarChar(500)                         @map("gpe_remarks")
+  gpeIsActive         Boolean   @default(true)                           @map("gpe_is_active")
+
+  // ── Audit ────────────────────────────────────────────────────────────
+  gpeIsDeleted        Boolean   @default(false)                          @map("gpe_is_deleted")
+  gpeSyncDate         DateTime? @db.Timestamptz(6)                       @map("gpe_sync_date")
+  gpeCreatedOn        DateTime  @default(now()) @db.Timestamptz(6)       @map("gpe_created_on")
+  gpeCreatedBy        String    @db.VarChar(50)                          @map("gpe_created_by")
+  gpeModifiedOn       DateTime? @db.Timestamptz(6)                       @map("gpe_modified_on")
+  gpeModifiedBy       String?   @db.VarChar(50)                          @map("gpe_modified_by")
+
+  // Relations
+  service             GstProviderService @relation("GstServiceEndpoints", fields: [gpeGpsId], references: [gpsId], onUpdate: Cascade, onDelete: Cascade, map: "fk_gpe_service")
+  fieldMaps           GstProviderFieldMap[] @relation("GstEndpointFieldMaps")
+
+  @@index([gpeGpsId], map: "ix_gpe_service")
+
+  // Partial indexes are DB-only:
+  //
+  //   CREATE UNIQUE INDEX ux_gpe_service_action
+  //       ON public.gst_provider_endpoint (gpe_gps_id, gpe_action)
+  //       WHERE gpe_is_deleted = false;
+  //
+  // One live route per action per service — a second GENERATE_IRN row would
+  // make dispatch a coin toss.
+  //
+  // CHECK constraints (DB-only): ck_gpe_action, ck_gpe_http_method,
+  //   ck_gpe_path, ck_gpe_headers, ck_gpe_redact, ck_gpe_timeout,
+  //   ck_gpe_retries, ck_gpe_success_pair
+
+  @@map("gst_provider_endpoint")
+  @@schema("public")
+}
+
+// ----- prisma/public/gstProviderErrorMap.prisma -----
+/// Error mapping.
+///
+/// Provider error codes are the other thing that changes when the provider
+/// does, and the one place where guessing is expensive. NIC's 2150 means
+/// "duplicate IRN" and carries the EXISTING IRN in the error payload — the
+/// correct response is to store that IRN and carry on, not to show a red
+/// dialog to a person holding a printed bill.
+///
+/// gemShouldReauth is what turns an expired token into a silent retry.
+/// gemIsRetryable is what keeps a validation error from being retried three
+/// times before failing anyway.
+model GstProviderErrorMap {
+  gemId                 String    @id(map: "pk_gst_provider_error_map") @default(dbgenerated("uuidv7()")) @db.Uuid @map("gem_id")
+  gemGpvId              String    @db.Uuid                             @map("gem_gpv_id")
+
+  /// NULL = applies to every service of this provider.
+  gemService            String?   @db.VarChar(20)                      @map("gem_service")
+
+  /// The provider's own code: '2150', 'GSP022', '429'.
+  gemTheirCode          String    @db.VarChar(50)                      @map("gem_their_code")
+
+  /// Our vocabulary — DUPLICATE_IRN, TOKEN_EXPIRED, CREDIT_EXHAUSTED,
+  /// ENV_MISMATCH, … The application branches on THESE, never on a
+  /// provider's number.
+  gemOurCode            String    @db.VarChar(30)                      @map("gem_our_code")
+
+  /// Shown to the counter operator. Deliberately not the provider's text,
+  /// which is written for a developer.
+  gemMessage            String?   @db.VarChar(500)                     @map("gem_message")
+
+  /// ERROR | SUCCESS | WARNING — what this code MEANS to us, which is not
+  /// always "a failure". NIC's 2150 refuses a duplicate and hands back the
+  /// IRN it issued the first time: treated as an error it strands a printed
+  /// bill at the counter, treated as SUCCESS it completes the document with
+  /// the IRN that already exists.
+  gemTreatAs            String    @default("ERROR") @db.VarChar(10)    @map("gem_treat_as")
+
+  /// Where that already-issued value hides in the ERROR payload, and which
+  /// canonical field it becomes. Without these, gemTreatAs = 'SUCCESS' would
+  /// complete a document with no IRN at all — which ck_gem_extract_pair
+  /// refuses outright.
+  gemExtractPath        String?                                        @map("gem_extract_path")
+  gemCanonicalField     String?   @db.VarChar(60)                      @map("gem_canonical_field")
+
+  gemIsRetryable        Boolean   @default(false)                      @map("gem_is_retryable")
+  gemRetryAfterSeconds  Int?                                           @map("gem_retry_after_seconds")
+
+  /// Open a fresh session and replay once. Distinct from retryable: the same
+  /// request with the same dead token will fail forever.
+  gemShouldReauth       Boolean   @default(false)                      @map("gem_should_reauth")
+
+  /// NONE | REAUTH | BACKOFF | FETCH_BY_DOC | FAILOVER | MANUAL — what to do
+  /// next, so the handler branches on our word and not on a provider's
+  /// number. FETCH_BY_DOC is the safe recovery after an ambiguous timeout on
+  /// a generate: ask what exists before making more.
+  gemRecoveryAction     String    @default("NONE") @db.VarChar(20)     @map("gem_recovery_action")
+
+  /// INFO | WARN | ERROR
+  gemSeverity           String    @default("ERROR") @db.VarChar(10)    @map("gem_severity")
+
+  // ── Audit ────────────────────────────────────────────────────────────
+  gemIsDeleted          Boolean   @default(false)                      @map("gem_is_deleted")
+  gemSyncDate           DateTime? @db.Timestamptz(6)                   @map("gem_sync_date")
+  gemCreatedOn          DateTime  @default(now()) @db.Timestamptz(6)   @map("gem_created_on")
+  gemCreatedBy          String    @db.VarChar(50)                      @map("gem_created_by")
+  gemModifiedOn         DateTime? @db.Timestamptz(6)                   @map("gem_modified_on")
+  gemModifiedBy         String?   @db.VarChar(50)                      @map("gem_modified_by")
+
+  // Relations
+  provider              GstProvider @relation("GstProviderErrorMaps", fields: [gemGpvId], references: [gpvId], onUpdate: Cascade, onDelete: Cascade, map: "fk_gem_provider")
+
+  @@index([gemGpvId], map: "ix_gem_provider")
+
+  // Partial indexes are DB-only:
+  //
+  //   CREATE UNIQUE INDEX ux_gem_provider_code
+  //       ON public.gst_provider_error_map (gem_gpv_id, gem_service, gem_their_code)
+  //       NULLS NOT DISTINCT
+  //       WHERE gem_is_deleted = false;
+  //
+  // NULLS NOT DISTINCT: without it, two rows for the same code with a NULL
+  // service (the "all services" case) would both be accepted and the lookup
+  // would pick one at random.
+  //
+  // CHECK constraints (DB-only): ck_gem_service, ck_gem_our_code,
+  //   ck_gem_severity, ck_gem_treat_as, ck_gem_recovery_action,
+  //   ck_gem_extract_pair, ck_gem_extract_path, ck_gem_retry_after
+
+  @@map("gst_provider_error_map")
+  @@schema("public")
+}
+
+// ----- prisma/public/gstProviderFieldMap.prisma -----
+/// Field mapping — the half that fills our columns.
+///
+/// RESPONSE rows are the point of this model. They say: whatever this
+/// provider calls the IRN, and wherever it buries it, put it in gde_irn. That
+/// is what makes provider #2 an INSERT.
+///
+/// REQUEST rows exist but are deliberately narrow — headers, auth
+/// substitution, per-provider wrapper quirks. The invoice body itself is
+/// built in code from one canonical DTO, because the NIC schema is ~140
+/// nested, conditional, arithmetic-checked fields; expressing that as a flat
+/// path map would move a validation problem into data, where nothing can
+/// type-check it. Providers differ in how they wrap and encrypt the body.
+/// They do not differ in the body: that one belongs to the government.
+///
+/// gfmTargetColumn is what closes the loop to the ERP. It names the actual
+/// destination — gde_irn, gde_ack_no, gdw_no, gdw_valid_upto — so the write
+/// back into AccVoucherDocEinvoice / AccVoucherDocEwaybill is data-driven
+/// too, not a switch statement that has to be edited per provider. It is a
+/// physical column name, spelled exactly as the table spells it (gde_canceled_on
+/// carries one 'l').
+model GstProviderFieldMap {
+  gfmId             String    @id(map: "pk_gst_provider_field_map") @default(dbgenerated("uuidv7()")) @db.Uuid @map("gfm_id")
+  gfmGpeId          String    @db.Uuid                                 @map("gfm_gpe_id")
+
+  /// REQUEST | RESPONSE
+  gfmDirection      String    @db.VarChar(10)                          @map("gfm_direction")
+
+  /// Our canonical name, the contract between the mapping engine and the rest
+  /// of the server: 'irn', 'ack_no', 'ack_on', 'signed_invoice',
+  /// 'signed_qrcode', 'ewb_no', 'ewb_valid_upto', 'auth_token',
+  /// 'session_key', 'expires_on', 'legal_name', 'state_code'.
+  gfmOurField       String    @db.VarChar(60)                          @map("gfm_our_field")
+
+  /// JSONPath into the reply, evaluated from gpeResponseRootPath when that is
+  /// set: '$.Irn', '$.AckDt', '$.data.result.irn'.
+  gfmTheirPath      String                                             @map("gfm_their_path")
+
+  /// TEXT | INT | DECIMAL | BOOL | DATE | DATETIME | JSON
+  gfmDataType       String    @default("TEXT") @db.VarChar(10)         @map("gfm_data_type")
+
+  /// Applied after extraction. NIC dates arrive as 'dd/MM/yyyy HH:mm:ss', the
+  /// signed invoice is a JWT whose payload holds the real object, and the QR
+  /// is base64 — none of which a path expression can undo. DATETIME_MASK
+  /// parses using gfmFormatMask, which exists because one provider is not
+  /// internally consistent: Chartered's e-invoice returns AckDt on a 24-hour
+  /// clock while its e-way bill returns '16/09/2017 10:30:00 AM'.
+  gfmTransform      String    @default("NONE") @db.VarChar(30)         @map("gfm_transform")
+  gfmFormatMask     String?   @db.VarChar(40)                          @map("gfm_format_mask")
+
+  /// A required field that does not arrive fails the call loudly rather than
+  /// writing a half-populated e-invoice row — which is why a required field
+  /// may not also carry a default (ck_gfm_required_default): the default
+  /// would silence exactly the absence the flag exists to catch.
+  gfmIsRequired     Boolean   @default(false)                          @map("gfm_is_required")
+  gfmDefaultValue   String?                                            @map("gfm_default_value")
+
+  /// The physical destination, when this field is persisted: 'gde_irn',
+  /// 'gde_ack_no', 'gdw_no', … NULL for values that are only used in-flight
+  /// (auth_token, session_key).
+  gfmTargetColumn   String?   @db.VarChar(64)                          @map("gfm_target_column")
+
+  gfmSortOrder      Int       @default(0) @db.SmallInt                 @map("gfm_sort_order")
+
+  // ── Audit ────────────────────────────────────────────────────────────
+  gfmIsDeleted      Boolean   @default(false)                          @map("gfm_is_deleted")
+  gfmSyncDate       DateTime? @db.Timestamptz(6)                       @map("gfm_sync_date")
+  gfmCreatedOn      DateTime  @default(now()) @db.Timestamptz(6)       @map("gfm_created_on")
+  gfmCreatedBy      String    @db.VarChar(50)                          @map("gfm_created_by")
+  gfmModifiedOn     DateTime? @db.Timestamptz(6)                       @map("gfm_modified_on")
+  gfmModifiedBy     String?   @db.VarChar(50)                          @map("gfm_modified_by")
+
+  // Relations
+  endpoint          GstProviderEndpoint @relation("GstEndpointFieldMaps", fields: [gfmGpeId], references: [gpeId], onUpdate: Cascade, onDelete: Cascade, map: "fk_gfm_endpoint")
+
+  // Partial indexes are DB-only:
+  //
+  //   CREATE UNIQUE INDEX ux_gfm_endpoint_field
+  //       ON public.gst_provider_field_map (gfm_gpe_id, gfm_direction, gfm_our_field)
+  //       WHERE gfm_is_deleted = false;
+  //
+  //   -- the mapping engine's own read: one endpoint's rows, in order
+  //   CREATE INDEX ix_gfm_endpoint
+  //       ON public.gst_provider_field_map (gfm_gpe_id, gfm_direction, gfm_sort_order)
+  //       WHERE gfm_is_deleted = false;
+  //
+  // CHECK constraints (DB-only): ck_gfm_direction, ck_gfm_data_type,
+  //   ck_gfm_transform, ck_gfm_path, ck_gfm_required_default
+
+  @@map("gst_provider_field_map")
+  @@schema("public")
+}
+
+// ----- prisma/public/gstProviderService.prisma -----
+/// Provider × service × environment — one row per (GSP, service, SANDBOX or
+/// PRODUCTION).
+///
+/// This model exists because a base url is NOT a property of a provider. NIC
+/// serves e-invoice from einvapi and e-way bill from ewaybillapi — two hosts,
+/// one provider — and every GSP publishes a sandbox host beside the
+/// production one. Three facts vary together, so they are one row.
+///
+/// Switching a company from sandbox to production is therefore a credential
+/// edit, not a config rewrite: the sandbox rows stay exactly where they are.
+///
+/// There is deliberately no gpsAuthPath. Authenticating is a call like any
+/// other, so it is described where every other call is described: the AUTH
+/// row in GstProviderEndpoint, which also carries the headers, the envelope
+/// descriptors and the redact-before-logging paths that an auth call needs
+/// more than most.
+model GstProviderService {
+  gpsId                   String    @id(map: "pk_gst_provider_service") @default(dbgenerated("uuidv7()")) @db.Uuid @map("gps_id")
+  gpsGpvId                String    @db.Uuid                                 @map("gps_gpv_id")
+
+  /// EINVOICE | EWAYBILL | GSTIN_VERIFY | GSTR | ASP_ADMIN. The last is the
+  /// provider's own account surface (/aspapi/…) — not a statutory service,
+  /// but it has its own host and endpoints, so it is a service row like any
+  /// other.
+  gpsService              String    @db.VarChar(20)                          @map("gps_service")
+  /// SANDBOX | PRODUCTION
+  gpsEnvironment          String    @db.VarChar(10)                          @map("gps_environment")
+
+  /// Scheme + host, no trailing slash. Paths come from the endpoint rows,
+  /// version included — Chartered versions eivital (v1.04) and eicore (v1.03)
+  /// independently, so the version cannot live up here.
+  gpsBaseUrl              String                                             @map("gps_base_url")
+
+  /// Alternate hosts the GSP publishes for the SAME service — Chartered's
+  /// Mumbai and Delhi clusters, say. Trying them in order is cheaper than a
+  /// failover to a different PROVIDER, which is what gccPriority does; this
+  /// is the same provider, another door.
+  gpsFallbackUrls         String[]                                           @map("gps_fallback_urls")
+
+  /// NIC_SEK | OAUTH2 | API_KEY | BASIC | BEARER_STATIC | CUSTOM.
+  /// NIC_SEK is the government's own scheme (AppKey encrypted with the IRP
+  /// public key, reply carries AuthToken plus a Sek session key); the rest
+  /// are ordinary API styles a wrapper GSP puts in front of it.
+  gpsAuthScheme           String    @db.VarChar(20)                          @map("gps_auth_scheme")
+
+  /// How long a token lives when the reply does not say. NIC issues six
+  /// hours. The margin is how early to renew — renewing exactly at expiry
+  /// races every in-flight request against the clock.
+  gpsTokenTtlMinutes      Int       @default(360) @db.SmallInt               @map("gps_token_ttl_minutes")
+  gpsRefreshMarginMinutes Int       @default(15)  @db.SmallInt               @map("gps_refresh_margin_minutes")
+
+  /// NONE | AES_SEK | RSA — whether WE encrypt the payload or the GSP does it
+  /// for us. The single biggest behavioural difference between talking to NIC
+  /// directly and talking to a wrapper, and not derivable from anything else.
+  gpsPayloadEncryption    String    @default("NONE") @db.VarChar(10)         @map("gps_payload_encryption")
+
+  // NULL = inherit the provider's value.
+  gpsTimeoutMs            Int?                                               @map("gps_timeout_ms")
+  gpsMaxRetries           Int?      @db.SmallInt                             @map("gps_max_retries")
+
+  gpsRemarks              String?   @db.VarChar(500)                         @map("gps_remarks")
+  gpsIsActive             Boolean   @default(true)                           @map("gps_is_active")
+
+  // ── Audit ────────────────────────────────────────────────────────────
+  gpsIsDeleted            Boolean   @default(false)                          @map("gps_is_deleted")
+  gpsSyncDate             DateTime? @db.Timestamptz(6)                       @map("gps_sync_date")
+  gpsCreatedOn            DateTime  @default(now()) @db.Timestamptz(6)       @map("gps_created_on")
+  gpsCreatedBy            String    @db.VarChar(50)                          @map("gps_created_by")
+  gpsModifiedOn           DateTime? @db.Timestamptz(6)                       @map("gps_modified_on")
+  gpsModifiedBy           String?   @db.VarChar(50)                          @map("gps_modified_by")
+
+  // Relations
+  provider                GstProvider  @relation("GstProviderServices", fields: [gpsGpvId], references: [gpvId], onUpdate: Cascade, onDelete: Cascade, map: "fk_gps_provider")
+  endpoints               GstProviderEndpoint[] @relation("GstServiceEndpoints")
+
+  @@index([gpsGpvId], map: "ix_gps_provider")
+
+  // Partial indexes are DB-only — Prisma ignores WHERE predicates, so
+  // declaring them here would produce phantom drift on every migrate dev:
+  //
+  //   CREATE UNIQUE INDEX ux_gps_provider_service_env
+  //       ON public.gst_provider_service (gps_gpv_id, gps_service, gps_environment)
+  //       WHERE gps_is_deleted = false;
+  //
+  // CHECK constraints (DB-only): ck_gps_service, ck_gps_environment,
+  //   ck_gps_auth_scheme, ck_gps_payload_encryption, ck_gps_base_url,
+  //   ck_gps_ttl, ck_gps_margin, ck_gps_timeout, ck_gps_retries
+
+  @@map("gst_provider_service")
   @@schema("public")
 }
 
@@ -6307,6 +7360,20 @@ model UserMaster {
   //       ON public.user_master (usr_is_active)
   //       WHERE usr_is_deleted = false;
 
+  // ── Loyalty points engine (20260921140000) ─────────────────────────────
+  loyaltyLedgerRows     LoyaltyLedger[]           @relation("LoyaltyLedgerUser")
+  // Manual ADJUST rows need a signature (ck_lld_adjust_approval), as does a
+  // cancelled gift slip (ck_lgr_cancel).
+  loyaltyLedgerApproved LoyaltyLedger[]           @relation("LoyaltyLedgerApprover")
+  loyaltyGiftRedeems    LoyaltyGiftRedeem[]       @relation("LoyaltyGiftRedeemUser")
+  loyaltyGiftApproved   LoyaltyGiftRedeem[]       @relation("LoyaltyGiftRedeemApprover")
+
+  // ── Coupons and gift vouchers (20260921160000) ──────────────────────────
+  couponsCancelled      LoyaltyCoupon[]           @relation("CouponCancelledBy")
+  couponTxns            LoyaltyCouponTxn[]        @relation("CouponTxnUser")
+  // Voiding a live voucher needs a signature (ck_lct_cancel_approval).
+  couponTxnsApproved    LoyaltyCouponTxn[]        @relation("CouponTxnApprover")
+
   @@map("user_master")
   @@schema("public")
 }
@@ -6626,6 +7693,15 @@ model Customer {
   @@index([cusPhone1],   name: "idx_cus_phone1")
   @@index([cusGstNo],    name: "idx_cus_gst_no")
   @@index([cusIsActive], name: "idx_cus_active")
+  // ── Loyalty points engine (20260921140000) ─────────────────────────────
+  loyaltyMembers        LoyaltyMember[]           @relation("LoyaltyMemberCustomer")
+  loyaltyLedgerRows     LoyaltyLedger[]           @relation("LoyaltyLedgerCustomer")
+  loyaltyGiftRedeems    LoyaltyGiftRedeem[]       @relation("LoyaltyGiftRedeemCustomer")
+
+  // ── Coupons and gift vouchers (20260921160000) ──────────────────────────
+  coupons               LoyaltyCoupon[]           @relation("CouponCustomer")
+  couponTxns            LoyaltyCouponTxn[]        @relation("CouponTxnCustomer")
+
   @@map("customers")
   @@schema("sales")
 }
@@ -6667,6 +7743,10 @@ model CustGroup {
   customers          Customer[]
   promotionSchemeParties PromotionSchemeParty[] @relation("PromotionPartyCustGroup")
   loyaltySchemeParties   LoyaltySchemeParty[]   @relation("LoyaltyPartyCustGroup")
+
+  // ── Coupons and gift vouchers (20260921160000) ──────────────────────────
+  // A batch may be restricted to one customer group.
+  couponBatches         LoyaltyCouponBatch[]      @relation("CouponBatchCustGroup")
 
   @@map("cust_groups")
   @@index([cgrCompanyId], map: "idx_cgr_company")
@@ -6801,6 +7881,9 @@ model EmployeeMaster {
   @@index([empIsActive],     name: "idx_emp_active")
   @@index([empDepartmentId], name: "idx_emp_department")
   @@index([empDesignationId],name: "idx_emp_designation")
+  // ── Loyalty points engine (20260921140000) ─────────────────────────────
+  loyaltyGiftRedeems    LoyaltyGiftRedeem[]       @relation("LoyaltyGiftRedeemEmployee")
+
   @@map("employee_master")
   @@schema("public")
 }
@@ -6839,6 +7922,1095 @@ model CustItemRate {
   @@index([csrUnitRateId], map: "idx_csr_unit_rate")
   @@index([csrBranchId], map: "idx_csr_branch")
   @@index([csrIsDeleted, csrIsActive], map: "idx_csr_active_deleted")
+}
+
+// ----- prisma/sales/loyaltyCoupon.prisma -----
+/// One ISSUED coupon.
+///
+/// NOT partitioned, and never carried forward at year end. A voucher issued in
+/// 2025-2026 and spent in 2027-2028 is the SAME row throughout — which is what
+/// makes LoyaltyCouponTxn's reference to it a plain foreign key. lcpAccYear is
+/// the FY of ISSUE and a reporting filter only, never a partition key.
+///
+/// lcpFaceValue is a SNAPSHOT taken at issue. Re-pricing a batch must not
+/// re-price the cards already in customers' wallets — the same reason
+/// AccTenderDetail snapshots its ledger and its rate.
+model LoyaltyCoupon {
+  lcpId               String    @id(map: "pk_loyalty_coupon") @default(dbgenerated("uuidv7()")) @db.Uuid @map("lcp_id")
+  lcpCompId           String    @db.Uuid                                 @map("lcp_comp_id")
+  /// Branch that ISSUED it.
+  lcpBranchId         String?   @db.Uuid                                 @map("lcp_branch_id")
+  lcpTenantId         String?   @db.Uuid                                 @map("lcp_tenant_id")
+  /// FY of issue. Reporting filter only.
+  lcpAccYear          String    @db.Char(9)                              @map("lcp_acc_year")
+
+  lcpLcbId            String    @db.Uuid                                 @map("lcp_lcb_id")
+  /// What the counter scans or types.
+  lcpCode             String    @db.VarChar(40)                          @map("lcp_code")
+  /// So a code photographed off someone's phone screen is not by itself
+  /// spendable.
+  lcpPin              String?   @db.VarChar(10)                          @map("lcp_pin")
+
+  /// NULL = bearer instrument. Non-null and a non-transferable batch means
+  /// this customer alone may spend it.
+  lcpCustId           String?   @db.Uuid                                 @map("lcp_cust_id")
+  /// If the holder is also a points member.
+  lcpMemberId         String?   @db.Uuid                                 @map("lcp_member_id")
+  lcpPartyLedgerId    String?   @db.Uuid                                 @map("lcp_party_ledger_id")
+
+  lcpIssuedOn         DateTime  @default(dbgenerated("CURRENT_DATE")) @db.Date @map("lcp_issued_on")
+  lcpValidFrom        DateTime? @db.Date                                 @map("lcp_valid_from")
+  lcpValidUpto        DateTime? @db.Date                                 @map("lcp_valid_upto")
+
+  // ── The bill that SOLD it, when it was sold rather than given away ───
+  // All three of module/type/id or none (ck_lcp_src_doc). No relation field:
+  // polymorphic by design.
+  lcpSrcModule        String?   @db.VarChar(20)                          @map("lcp_src_module")
+  lcpSrcDocType       String?   @db.VarChar(30)                          @map("lcp_src_doc_type")
+  lcpSrcDocId         String?   @db.Uuid                                 @map("lcp_src_doc_id")
+  lcpSrcAccYear       String?   @db.Char(9)                              @map("lcp_src_acc_year")
+  lcpSrcDocRefno      String?   @db.VarChar(100)                         @map("lcp_src_doc_refno")
+
+  /// Snapshot at issue, and must be POSITIVE (ck_lcp_face) — so an uncapped
+  /// PERCENT batch cannot issue a coupon. Give such a batch an lcbMaxValue and
+  /// snapshot that as the face.
+  lcpFaceValue        Decimal   @db.Decimal(18, 2)                       @map("lcp_face_value")
+  /// What was actually PAID for it: 0 for a giveaway, face value for a sold
+  /// card, something between for a discounted promotion. Breakage — vouchers
+  /// sold and never spent — has no other source.
+  lcpIssueAmount      Decimal   @default(0) @db.Decimal(18, 2)           @map("lcp_issue_amount")
+
+  // ── Caches of LoyaltyCouponTxn ───────────────────────────────────────
+  // Recomputed by LoyaltyCouponService.recomputeCoupons(). There is no
+  // trigger; no other code may write them. A coupon movement is an AMOUNT and
+  // the TYPE carries the sign, so these are plain sums — the OPPOSITE of the
+  // points ledger, where a spend is negative.
+  lcpUsedValue        Decimal   @default(0) @db.Decimal(18, 2)           @map("lcp_used_value")
+  lcpTopupValue       Decimal   @default(0) @db.Decimal(18, 2)           @map("lcp_topup_value")
+  lcpUseCount         Int       @default(0)                              @map("lcp_use_count")
+  /// MAX(lctTxnDate) over this coupon's movements, recomputed with the value
+  /// buckets. Added by this migration and not by the design note, whose
+  /// recompute contract writes it against a column it never declared.
+  lcpLastUsedOn       DateTime? @db.Date                                 @map("lcp_last_used_on")
+
+  /// GENERATED ALWAYS ... STORED: face + topup - used. Read-only — never send
+  /// it on a create or update, and @default(dbgenerated()) marks it DB-owned
+  /// so migrate never emits a default of its own.
+  lcpBalanceValue     Decimal?  @default(dbgenerated()) @db.Decimal(18, 2) @map("lcp_balance_value")
+
+  /// ISSUED | PARTIAL | REDEEMED | EXPIRED | CANCELLED | BLOCKED.
+  ///
+  /// Deliberately NOT a generated column. The first three are arithmetic, but
+  /// EXPIRED, CANCELLED and BLOCKED are DECISIONS and cannot be derived from
+  /// the amounts — and expiry additionally depends on today's date, which a
+  /// generated column may not read. recomputeCoupons() moves it between the
+  /// first three ONLY; the admin path and couponExpiryRun() own the rest.
+  /// Writing a decision from a recompute is how a cancelled voucher silently
+  /// comes back to life.
+  lcpStatus           String    @default("ISSUED") @db.VarChar(20)       @map("lcp_status")
+  lcpRedeemedOn       DateTime? @db.Date                                 @map("lcp_redeemed_on")
+  lcpCancelledOn      DateTime? @db.Date                                 @map("lcp_cancelled_on")
+  lcpCancelledBy      String?   @db.Uuid                                 @map("lcp_cancelled_by")
+  lcpCancelReason     String?   @db.VarChar(250)                         @map("lcp_cancel_reason")
+
+  lcpRemarks          String?   @db.VarChar(250)                         @map("lcp_remarks")
+  lcpIsActive         Boolean   @default(true)                           @map("lcp_is_active")
+  lcpIsDeleted        Boolean   @default(false)                          @map("lcp_is_deleted")
+
+  lcpSyncDate         DateTime? @db.Timestamptz(6)                       @map("lcp_sync_date")
+  lcpCreatedOn        DateTime  @default(now()) @db.Timestamptz(6)       @map("lcp_created_on")
+  lcpCreatedBy        String?   @db.VarChar(50)                          @map("lcp_created_by")
+  lcpModifiedOn       DateTime? @db.Timestamptz(6)                       @map("lcp_modified_on")
+  lcpModifiedBy       String?   @db.VarChar(50)                          @map("lcp_modified_by")
+
+  // Relations
+  batch               LoyaltyCouponBatch @relation("CouponBatchCoupons",   fields: [lcpLcbId],         references: [lcbId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_lcp_batch")
+  company             Company            @relation("CouponCompany",        fields: [lcpCompId],        references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_lcp_company")
+  branch              BranchMaster?      @relation("CouponBranch",         fields: [lcpBranchId],      references: [brId],   onUpdate: Cascade, onDelete: Restrict, map: "fk_lcp_branch")
+  customer            Customer?          @relation("CouponCustomer",       fields: [lcpCustId],        references: [cusId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_lcp_cust")
+  member              LoyaltyMember?     @relation("CouponMember",         fields: [lcpMemberId],      references: [lmbId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_lcp_member")
+  cancelledByUser     UserMaster?        @relation("CouponCancelledBy",    fields: [lcpCancelledBy],   references: [usrId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_lcp_cancelled_by")
+  partyLedger         AccLedgerMaster?   @relation("CouponPartyLedger",    fields: [lcpPartyLedgerId], references: [ledId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_lcp_party_ledger")
+
+  txns                LoyaltyCouponTxn[] @relation("CouponTxnCoupon")
+
+  // Partial indexes are DB-only — Prisma ignores WHERE predicates and
+  // expression keys:
+  //
+  //   -- THE SCAN AT THE COUNTER. Company-scoped rather than batch-scoped,
+  //   -- because a cashier types a code, not a code and the batch it came from.
+  //   CREATE UNIQUE INDEX ux_lcp_code ON sales.loyalty_coupon
+  //       (lcp_comp_id, upper(lcp_code::text)) WHERE lcp_is_deleted = false;
+  //
+  //   -- the expiry sweep and the outstanding-voucher liability report
+  //   CREATE INDEX ix_lcp_open ON sales.loyalty_coupon (lcp_comp_id, lcp_valid_upto)
+  //       INCLUDE (lcp_code, lcp_face_value, lcp_balance_value, lcp_cust_id)
+  //       WHERE lcp_is_deleted = false AND lcp_balance_value > 0
+  //         AND lcp_status IN ('ISSUED','PARTIAL');
+  //
+  //   -- reconciliation. No over-spend CHECK exists: movements sync in pieces
+  //   -- and the guard is the service's at post. The over-draw is RECORDED and
+  //   -- found here the next morning rather than by a customer.
+  //   CREATE INDEX ix_lcp_overdrawn ON sales.loyalty_coupon
+  //       (lcp_comp_id, lcp_balance_value)
+  //       WHERE lcp_is_deleted = false AND lcp_balance_value < 0;
+  //
+  //   -- ix_lcp_batch, ix_lcp_cust, ix_lcp_src_doc, and FK-covering
+  //   -- ix_lcp_member, ix_lcp_party_ledger, ix_lcp_branch, ix_lcp_cust_fk,
+  //   -- ix_lcp_cancelled_by
+  //
+  // CHECK constraints (DB-only): ck_lcp_acc_year, ck_lcp_src_acc_year,
+  //   ck_lcp_src_doc, ck_lcp_code_shape, ck_lcp_status, ck_lcp_cancel,
+  //   ck_lcp_validity, ck_lcp_issue_amount, ck_lcp_face
+
+  @@map("loyalty_coupon")
+  @@schema("sales")
+}
+
+// ----- prisma/sales/loyaltyCouponBatch.prisma -----
+/// The coupon batch — what a coupon of this kind is worth and how it behaves.
+///
+/// A coupon is a MONEY instrument with a code on it. It is not points, it
+/// shares no ledger with points, and it redeems through its own tender type
+/// (accounts.acc_tender_types 11, VOUCHER).
+///
+/// Two sources, and only two:
+///   SOLD      a gift voucher the customer bought. May be RELOADED
+///             (lcbAllowTopup), which is what makes it a gift CARD rather
+///             than a one-shot slip.
+///   CAMPAIGN  codes issued in bulk and handed out or mailed. Not reloadable
+///             (ck_lcb_topup) — a campaign code is not a wallet.
+///
+/// A PERCENT batch ("20% off, up to 500") resolves against the bill at the
+/// moment of redemption and only the RESOLVED RUPEE AMOUNT reaches
+/// lctAmount and acc_tender_detail.td_amount. The percentage never leaves
+/// this row.
+model LoyaltyCouponBatch {
+  lcbId               String    @id(map: "pk_loyalty_coupon_batch") @default(dbgenerated("uuidv7()")) @db.Uuid @map("lcb_id")
+  lcbCompId           String    @db.Uuid                                 @map("lcb_comp_id")
+  /// NULL = every branch.
+  lcbBranchId         String?   @db.Uuid                                 @map("lcb_branch_id")
+  lcbTenantId         String?   @db.Uuid                                 @map("lcb_tenant_id")
+
+  /// Stable handle, never renamed — retire the batch instead.
+  lcbCode             String    @db.VarChar(20)                          @map("lcb_code")
+  lcbName             String    @db.VarChar(150)                         @map("lcb_name")
+  /// SOLD | CAMPAIGN
+  lcbSource           String    @db.VarChar(15)                          @map("lcb_source")
+
+  // ── What it is worth ─────────────────────────────────────────────────
+  /// AMOUNT | PERCENT
+  lcbValueType        String    @default("AMOUNT") @db.VarChar(10)       @map("lcb_value_type")
+  lcbFaceValue        Decimal   @default(0) @db.Decimal(18, 2)           @map("lcb_face_value")
+  lcbPercent          Decimal   @default(0) @db.Decimal(6, 3)            @map("lcb_percent")
+  /// Cap on a PERCENT coupon, and the only case where a cap means anything
+  /// (ck_lcb_cap_percent). An uncapped PERCENT batch cannot issue a coupon,
+  /// because ck_lcp_face demands a positive face value to snapshot — so give
+  /// a PERCENT batch a cap and use it as the face.
+  lcbMaxValue         Decimal?  @db.Decimal(18, 2)                       @map("lcb_max_value")
+  lcbMinBillAmount    Decimal   @default(0) @db.Decimal(18, 2)           @map("lcb_min_bill_amount")
+
+  // ── How it may be spent ──────────────────────────────────────────────
+  /// May a 500 voucher go 300 now and 200 next week. This is what decides
+  /// whether lcpUsedValue behaves as a balance or as a switch.
+  lcbAllowPartial     Boolean   @default(false)                          @map("lcb_allow_partial")
+  /// Reloadable gift card. SOLD only.
+  lcbAllowTopup       Boolean   @default(false)                          @map("lcb_allow_topup")
+  lcbMaxPerBill       Int       @default(1) @db.SmallInt                 @map("lcb_max_per_bill")
+  /// false = bound to lcpCustId.
+  lcbIsTransferable   Boolean   @default(true)                           @map("lcb_is_transferable")
+  lcbPinRequired      Boolean   @default(false)                          @map("lcb_pin_required")
+
+  // ── Code generation (CAMPAIGN) ───────────────────────────────────────
+  lcbPrefix           String?   @db.VarChar(10)                          @map("lcb_prefix")
+  lcbCodeLength       Int       @default(12) @db.SmallInt                @map("lcb_code_length")
+  /// NULL = unlimited. Checked by the service WHEN IT ISSUES, not by the
+  /// recompute — a recompute reports, it does not refuse.
+  lcbMaxIssueCount    Int?                                               @map("lcb_max_issue_count")
+  /// Caches of LoyaltyCoupon, recomputed by
+  /// LoyaltyCouponService.recomputeCouponBatches(). There is no trigger; no
+  /// other code may write these.
+  lcbIssuedCount      Int       @default(0)                              @map("lcb_issued_count")
+  lcbRedeemedCount    Int       @default(0)                              @map("lcb_redeemed_count")
+
+  // ── Validity ─────────────────────────────────────────────────────────
+  lcbValidFrom        DateTime? @db.Date                                 @map("lcb_valid_from")
+  lcbValidUpto        DateTime? @db.Date                                 @map("lcb_valid_upto")
+  /// SOLD vouchers usually expire N days after THEIR OWN issue rather than on
+  /// a batch-wide date; this is that N.
+  lcbValidityDays     Int?                                               @map("lcb_validity_days")
+
+  /// ALL | LIST
+  lcbBranchScope      String    @default("ALL") @db.VarChar(10)          @map("lcb_branch_scope")
+  lcbCustGroupId      String?   @db.Uuid                                 @map("lcb_cust_group_id")
+
+  /// The VOUCHER tender (type 11) redemption settles through. NULL = the
+  /// branch's default. The rate and the floor stay owned by the tender
+  /// master, exactly as they do for points.
+  lcbRedeemTenderId   String?   @db.Uuid                                 @map("lcb_redeem_tender_id")
+
+  lcbRemarks          String?   @db.VarChar(500)                         @map("lcb_remarks")
+  lcbIsActive         Boolean   @default(true)                           @map("lcb_is_active")
+  lcbIsDeleted        Boolean   @default(false)                          @map("lcb_is_deleted")
+
+  lcbSyncDate         DateTime? @db.Timestamptz(6)                       @map("lcb_sync_date")
+  lcbCreatedOn        DateTime  @default(now()) @db.Timestamptz(6)       @map("lcb_created_on")
+  lcbCreatedBy        String?   @db.VarChar(50)                          @map("lcb_created_by")
+  lcbModifiedOn       DateTime? @db.Timestamptz(6)                       @map("lcb_modified_on")
+  lcbModifiedBy       String?   @db.VarChar(50)                          @map("lcb_modified_by")
+
+  // Relations
+  company             Company          @relation("CouponBatchCompany",     fields: [lcbCompId],         references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_lcb_company")
+  branch              BranchMaster?    @relation("CouponBatchBranch",      fields: [lcbBranchId],       references: [brId],   onUpdate: Cascade, onDelete: Restrict, map: "fk_lcb_branch")
+  redeemTender        AccTenderMaster? @relation("CouponBatchRedeemTender", fields: [lcbRedeemTenderId], references: [tndId], onUpdate: Cascade, onDelete: Restrict, map: "fk_lcb_redeem_tender")
+  custGroup           CustGroup?       @relation("CouponBatchCustGroup",   fields: [lcbCustGroupId],    references: [cgrId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_lcb_cust_group")
+
+  coupons             LoyaltyCoupon[]    @relation("CouponBatchCoupons")
+  couponTxns          LoyaltyCouponTxn[] @relation("CouponTxnBatch")
+
+  // Partial indexes are DB-only — Prisma ignores WHERE predicates and
+  // expression keys:
+  //
+  //   CREATE UNIQUE INDEX ux_lcb_code ON sales.loyalty_coupon_batch
+  //       (lcb_comp_id, upper(lcb_code::text)) WHERE lcb_is_deleted = false;
+  //
+  //   CREATE INDEX ix_lcb_lookup ON sales.loyalty_coupon_batch
+  //       (lcb_comp_id, lcb_branch_id, lcb_valid_from, lcb_valid_upto)
+  //       WHERE lcb_is_active = true AND lcb_is_deleted = false;
+  //
+  //   -- reconciliation. There is deliberately no "redeemed <= issued" CHECK:
+  //   -- a sync batch may carry the redemption before the issue, and two tills
+  //   -- offline can both issue the last voucher of a batch. Recorded, not
+  //   -- refused.
+  //   CREATE INDEX ix_lcb_overdrawn ON sales.loyalty_coupon_batch (lcb_comp_id)
+  //       WHERE lcb_is_deleted = false AND lcb_redeemed_count > lcb_issued_count;
+  //
+  //   -- FK-covering: ix_lcb_branch, ix_lcb_cust_group, ix_lcb_redeem_tender
+  //
+  // CHECK constraints (DB-only): ck_lcb_code_shape, ck_lcb_source,
+  //   ck_lcb_value_type, ck_lcb_value, ck_lcb_max_value, ck_lcb_min_bill,
+  //   ck_lcb_code_length, ck_lcb_max_issue, ck_lcb_max_per_bill,
+  //   ck_lcb_validity, ck_lcb_validity_days, ck_lcb_branch_scope,
+  //   ck_lcb_topup, ck_lcb_cap_percent
+
+  @@map("loyalty_coupon_batch")
+  @@schema("sales")
+}
+
+// ----- prisma/sales/loyaltyCouponTxn.prisma -----
+/// One movement against one coupon.
+///
+/// LIST-partitioned by lctAccYear — the year of the MOVEMENT, not of the
+/// issue: a 2027 spend of a 2025 voucher lands in 2027 and the voucher row
+/// never moves. Hence the composite PK. Partitions
+/// (sales.loyalty_coupon_txn_2026_2027) come from
+/// public.ensure_acc_year_partitions('YYYY-YYYY'), which
+/// 20260921160000_add_coupon_voucher_engine taught about this table.
+///
+/// lctAmount is SIGNED and always means "what this event does to the
+/// voucher": REDEEM / EXPIRE / CANCEL consume it, TOPUP adds to it (into its
+/// own bucket). A reversal repeats its TYPE with the opposite sign and names
+/// the row it undoes — there is no REVERSAL type, so each bucket needs one
+/// summing rule rather than two.
+///
+/// BEWARE, because it is the opposite of the points ledger and the two live in
+/// the same schema: HERE a spend is POSITIVE and the type carries the
+/// direction. In LoyaltyLedger a spend is NEGATIVE. Do not copy one recompute
+/// into the other.
+///
+/// WRITE RULE: exactly one private method of LoyaltyCouponService may write
+/// this table. It writes the rows, then recomputes the touched COUPONS and
+/// then their BATCHES, in that order, before returning — lcbRedeemedCount
+/// counts vouchers by STATUS, so a batch re-counted first counts a status
+/// that is about to change.
+model LoyaltyCouponTxn {
+  lctId                 String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("lct_id")
+  lctCompId             String    @db.Uuid                               @map("lct_comp_id")
+  /// Where it was presented. NOT NULL — the expiry sweep must therefore fall
+  /// back to the batch's branch when the voucher has none.
+  lctBranchId           String    @db.Uuid                               @map("lct_branch_id")
+  lctTenantId           String?   @db.Uuid                               @map("lct_tenant_id")
+  lctAccYear            String    @db.Char(9)                            @map("lct_acc_year")
+
+  // Single-column FK: LoyaltyCoupon is not partitioned, which is what makes
+  // redeeming a two-year-old voucher a plain foreign key.
+  lctLcpId              String    @db.Uuid                               @map("lct_lcp_id")
+  /// Snapshot, so batch reports need no hop through the coupon.
+  lctLcbId              String    @db.Uuid                               @map("lct_lcb_id")
+  lctCustId             String?   @db.Uuid                               @map("lct_cust_id")
+  lctMemberId           String?   @db.Uuid                               @map("lct_member_id")
+
+  /// REDEEM | TOPUP | CANCEL | EXPIRE
+  lctTxnType            String    @db.VarChar(20)                        @map("lct_txn_type")
+  lctRowNo              Int       @default(1)                            @map("lct_row_no")
+  /// Positive unless it is a reversal, whatever the type (ck_lct_sign).
+  lctAmount             Decimal   @db.Decimal(18, 2)                     @map("lct_amount")
+  lctTxnDate            DateTime  @db.Date                               @map("lct_txn_date")
+
+  /// For a PERCENT batch: the bill it was measured against, and the rate that
+  /// produced lctAmount. Without these the resolved figure is unexplainable
+  /// afterwards.
+  lctBillAmount         Decimal   @default(0) @db.Decimal(18, 2)         @map("lct_bill_amount")
+  lctPercentApplied     Decimal   @default(0) @db.Decimal(6, 3)          @map("lct_percent_applied")
+
+  // All three of module/type/id or none (ck_lct_src_doc). No relation field:
+  // polymorphic by design.
+  lctSrcModule          String?   @db.VarChar(20)                        @map("lct_src_module")
+  lctSrcDocType         String?   @db.VarChar(30)                        @map("lct_src_doc_type")
+  lctSrcDocId           String?   @db.Uuid                               @map("lct_src_doc_id")
+  lctSrcAccYear         String?   @db.Char(9)                            @map("lct_src_acc_year")
+  lctSrcDocRefno        String?   @db.VarChar(100)                       @map("lct_src_doc_refno")
+
+  /// The tender line (type 11, VOUCHER) the money went out on. Required on a
+  /// REDEEM (ck_lct_redeem_tender) and forbidden on EXPIRE or CANCEL
+  /// (ck_lct_no_tender) — nothing was paid out. This is also the only route by
+  /// which a redemption reaches the GL and then Tally.
+  lctTenderId           String?   @db.Uuid                               @map("lct_tender_id")
+  lctTenderAccYear      String?   @db.Char(9)                            @map("lct_tender_acc_year")
+
+  lctReversalOfId       String?   @db.Uuid                               @map("lct_reversal_of_id")
+  lctReversalOfAccYear  String?   @db.Char(9)                            @map("lct_reversal_of_acc_year")
+  lctReversalReason     String?   @db.VarChar(250)                       @map("lct_reversal_reason")
+
+  /// Voiding a live voucher is somebody's decision — ck_lct_cancel_approval
+  /// makes CANCEL require this.
+  lctApprovedBy         String?   @db.Uuid                               @map("lct_approved_by")
+  lctUserId             String?   @db.Uuid                               @map("lct_user_id")
+  lctSessionId          String?   @db.Uuid                               @map("lct_session_id")
+  lctDeviceId           String?   @db.Uuid                               @map("lct_device_id")
+
+  lctRemarks            String?   @db.VarChar(250)                       @map("lct_remarks")
+  lctIsDeleted          Boolean   @default(false)                        @map("lct_is_deleted")
+
+  lctSyncDate           DateTime? @db.Timestamptz(6)                     @map("lct_sync_date")
+  lctCreatedOn          DateTime  @default(now()) @db.Timestamptz(6)     @map("lct_created_on")
+  lctCreatedBy          String?   @db.VarChar(50)                        @map("lct_created_by")
+  lctModifiedOn         DateTime? @db.Timestamptz(6)                     @map("lct_modified_on")
+  lctModifiedBy         String?   @db.VarChar(50)                        @map("lct_modified_by")
+
+  // Relations
+  coupon                LoyaltyCoupon      @relation("CouponTxnCoupon",   fields: [lctLcpId],     references: [lcpId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_lct_coupon")
+  batch                 LoyaltyCouponBatch @relation("CouponTxnBatch",    fields: [lctLcbId],     references: [lcbId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_lct_batch")
+  customer              Customer?          @relation("CouponTxnCustomer", fields: [lctCustId],    references: [cusId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_lct_cust")
+  member                LoyaltyMember?     @relation("CouponTxnMember",   fields: [lctMemberId],  references: [lmbId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_lct_member")
+  company               Company            @relation("CouponTxnCompany",  fields: [lctCompId],    references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_lct_company")
+  branch                BranchMaster       @relation("CouponTxnBranch",   fields: [lctBranchId],  references: [brId],   onUpdate: Cascade, onDelete: Restrict, map: "fk_lct_branch")
+  user                  UserMaster?        @relation("CouponTxnUser",     fields: [lctUserId],    references: [usrId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_lct_user")
+  approver              UserMaster?        @relation("CouponTxnApprover", fields: [lctApprovedBy], references: [usrId], onUpdate: Cascade, onDelete: Restrict, map: "fk_lct_approved_by")
+  device                DeviceMaster?      @relation("CouponTxnDevice",   fields: [lctDeviceId],  references: [devId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_lct_device")
+
+  tender                AccTenderDetail?   @relation("CouponTxnTender",   fields: [lctTenderId, lctTenderAccYear], references: [tdId, tdAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_lct_tender")
+
+  reversalOf            LoyaltyCouponTxn?  @relation("CouponTxnReversal", fields: [lctReversalOfId, lctReversalOfAccYear], references: [lctId, lctAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_lct_reversal")
+  reversedBy            LoyaltyCouponTxn[] @relation("CouponTxnReversal")
+
+  @@id([lctId, lctAccYear], map: "pk_loyalty_coupon_txn")
+
+  // Partial indexes are DB-only — Prisma ignores WHERE predicates:
+  //
+  //   -- one voucher cannot be spent twice on the same bill by an offline
+  //   -- re-sync. This is also what makes couponExpiryRun() safe to re-run on
+  //   -- the same date: its deterministic runId lands here as lct_src_doc_id,
+  //   -- and that runId must carry a '|coupon|' segment so it cannot collide
+  //   -- with the points sweep's.
+  //   CREATE UNIQUE INDEX ux_lct_src_row ON sales.loyalty_coupon_txn
+  //       (lct_lcp_id, lct_src_doc_type, lct_src_doc_id, lct_acc_year, lct_row_no)
+  //       WHERE lct_src_doc_id IS NOT NULL AND lct_is_deleted = false;
+  //
+  //   -- unique per YEAR only, the usual partition-key caveat. A cross-year
+  //   -- double reversal is the posting code's job to prevent.
+  //   CREATE UNIQUE INDEX ux_lct_reversal ON sales.loyalty_coupon_txn
+  //       (lct_reversal_of_id, lct_acc_year)
+  //       WHERE lct_reversal_of_id IS NOT NULL AND lct_is_deleted = false;
+  //
+  //   CREATE INDEX ix_lct_coupon ON sales.loyalty_coupon_txn (lct_lcp_id, lct_txn_date) …
+  //   CREATE INDEX ix_lct_batch_period ON sales.loyalty_coupon_txn
+  //       (lct_comp_id, lct_lcb_id, lct_txn_date)
+  //       INCLUDE (lct_amount, lct_txn_type) WHERE lct_is_deleted = false;
+  //   CREATE INDEX ix_lct_src_doc, ix_lct_tender …
+  //
+  //   -- FK-covering: ix_lct_member, ix_lct_cust, ix_lct_user, ix_lct_device,
+  //   -- ix_lct_batch_fk, ix_lct_branch, ix_lct_approved_by,
+  //   -- ix_lct_reversal_fk. ux_lct_reversal does NOT cover fk_lct_reversal —
+  //   -- different second column — which is why ix_lct_reversal_fk exists.
+  //
+  // CHECK constraints (DB-only): ck_lct_acc_year, ck_lct_src_acc_year,
+  //   ck_lct_src_doc, ck_lct_txn_type, ck_lct_amount_nonzero, ck_lct_sign,
+  //   ck_lct_percent, ck_lct_bill_amount, ck_lct_tender_pair,
+  //   ck_lct_reversal_pair, ck_lct_no_self_reversal, ck_lct_redeem_tender,
+  //   ck_lct_no_tender, ck_lct_cancel_approval, ck_lct_row_no
+
+  @@map("loyalty_coupon_txn")
+  @@schema("sales")
+}
+
+// ----- prisma/sales/loyaltyGiftRedeem.prisma -----
+/// A gift redemption slip — A DOCUMENT IN ITS OWN RIGHT.
+///
+/// A customer walks up with points and walks away with goods and a printed
+/// slip. No money crosses the counter, so this cannot be an AccTenderDetail
+/// row. And it is not a line on a sale bill either: it has its own number
+/// series, its own status, its own print count, and frequently no bill at all.
+///
+/// Shape follows SaleBill: a partitioned header with an offline-safe number
+/// pair (a per-device serial plus the printed refno that embeds it), and a
+/// partitioned detail carrying the stock movement.
+///
+/// The POINTS side is not stored here. LoyaltyLedger holds the GIFT rows — one
+/// per lot consumed, named by lldSrcDocId — and the wallet balance follows
+/// from them. lgrOpeningPoints / lgrRedeemPoints / lgrClosingPoints are
+/// SNAPSHOTS for the printed slip; the ledger remains the authority.
+model LoyaltyGiftRedeem {
+  lgrId                 String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("lgr_id")
+  lgrCompId             String    @db.Uuid                                 @map("lgr_comp_id")
+  lgrBranchId           String    @db.Uuid                                 @map("lgr_branch_id")
+  lgrTenantId           String?   @db.Uuid                                 @map("lgr_tenant_id")
+  lgrAccYear            String    @db.Char(9)                              @map("lgr_acc_year")
+
+  // ── Document identity ────────────────────────────────────────────────
+  // Offline-safe, the SaleBill pattern: the DEVICE owns the series, so a till
+  // with no network can still number a slip.
+  lgrDeviceId           String?   @db.Uuid                                 @map("lgr_device_id")
+  /// Raw per-device serial — no server round trip needed to allocate one.
+  lgrRedeemSlno         BigInt                                             @map("lgr_redeem_slno")
+  /// The printed number, which embeds the counter series.
+  lgrRedeemRefno        String    @db.VarChar(100)                         @map("lgr_redeem_refno")
+  lgrRedeemDate         DateTime  @db.Date                                 @map("lgr_redeem_date")
+  lgrRedeemTime         DateTime? @db.Time(6)                              @map("lgr_redeem_time")
+
+  // ── Who ──────────────────────────────────────────────────────────────
+  lgrMemberId           String    @db.Uuid                                 @map("lgr_member_id")
+  lgrCustId             String    @db.Uuid                                 @map("lgr_cust_id")
+  /// Scheme it was claimed under.
+  lgrLscId              String?   @db.Uuid                                 @map("lgr_lsc_id")
+  /// The login that saved it.
+  lgrUserId             String?   @db.Uuid                                 @map("lgr_user_id")
+  /// The person who served, if different from the login.
+  lgrEmpId              String?   @db.Uuid                                 @map("lgr_emp_id")
+
+  // ── Points, as printed on the slip ───────────────────────────────────
+  lgrOpeningPoints      Decimal   @default(0) @db.Decimal(18, 4)           @map("lgr_opening_points")
+  lgrRedeemPoints       Decimal   @default(0) @db.Decimal(18, 4)           @map("lgr_redeem_points")
+  lgrClosingPoints      Decimal   @default(0) @db.Decimal(18, 4)           @map("lgr_closing_points")
+
+  // ── What it cost the shop ────────────────────────────────────────────
+  lgrTotalQty           Decimal   @default(0) @db.Decimal(18, 3)           @map("lgr_total_qty")
+  /// At MRP / issue rate.
+  lgrTotalValue         Decimal   @default(0) @db.Decimal(18, 2)           @map("lgr_total_value")
+  /// At cost, for the giveaway P&L.
+  lgrTotalCost          Decimal   @default(0) @db.Decimal(18, 2)           @map("lgr_total_cost")
+
+  // ── Authorisation ────────────────────────────────────────────────────
+  /// One-time code that authorised the redemption. Points are bearer value;
+  /// a counter able to spend them unchallenged is a fraud route.
+  lgrOtpNo              String?   @db.VarChar(10)                          @map("lgr_otp_no")
+  lgrApprovedBy         String?   @db.Uuid                                 @map("lgr_approved_by")
+  /// DRAFT | CONFIRMED | CANCELLED. A cancelled slip must name who authorised
+  /// the cancellation (ck_lgr_cancel), and may never carry a live voucher.
+  lgrStatus             String    @default("DRAFT") @db.VarChar(20)        @map("lgr_status")
+  lgrPrintCount         Int       @default(0)                              @map("lgr_print_count")
+
+  // ── Accounting / Tally ───────────────────────────────────────────────
+  /// The AccVoucherHeader this slip posted to, once the server has posted it.
+  ///
+  /// NO FOREIGN KEY, deliberately, and for the same reason
+  /// sale_bill.sb_posted_voucher_id has none: this is a counter document
+  /// created OFFLINE, so the row exists long before the voucher does. An FK
+  /// would make the counter's insert depend on a server-side write it cannot
+  /// see. The accounts-side documents (AccBillBalance, AccPdcRegister) DO
+  /// carry the FK, because they are only ever written server-side after
+  /// posting — a different lifecycle, a different rule.
+  ///
+  /// This is the ONLY route by which a gift redemption reaches Tally: export
+  /// happens at the voucher layer, never from a source document. The
+  /// accounting year travels with the id so the lookup hits one partition.
+  lgrPostedVoucherId    String?   @db.Uuid                                 @map("lgr_posted_voucher_id")
+  lgrVoucherAccYear     String?   @db.Char(9)                              @map("lgr_voucher_acc_year")
+
+  lgrReversalOfId       String?   @db.Uuid                                 @map("lgr_reversal_of_id")
+  lgrReversalOfAccYear  String?   @db.Char(9)                              @map("lgr_reversal_of_acc_year")
+  lgrReversalReason     String?   @db.VarChar(250)                         @map("lgr_reversal_reason")
+
+  lgrRemarks            String?   @db.VarChar(500)                         @map("lgr_remarks")
+  lgrIsDeleted          Boolean   @default(false)                          @map("lgr_is_deleted")
+  lgrSyncDate           DateTime? @db.Timestamptz(6)                       @map("lgr_sync_date")
+  lgrCreatedOn          DateTime  @default(now()) @db.Timestamptz(6)       @map("lgr_created_on")
+  lgrCreatedBy          String?   @db.VarChar(50)                          @map("lgr_created_by")
+  lgrModifiedOn         DateTime? @db.Timestamptz(6)                       @map("lgr_modified_on")
+  lgrModifiedBy         String?   @db.VarChar(50)                          @map("lgr_modified_by")
+
+  // Relations
+  company               Company        @relation("LoyaltyGiftRedeemCompany",  fields: [lgrCompId],    references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_lgr_company")
+  branch                BranchMaster   @relation("LoyaltyGiftRedeemBranch",   fields: [lgrBranchId],  references: [brId],   onUpdate: Cascade, onDelete: Restrict, map: "fk_lgr_branch")
+  device                DeviceMaster?  @relation("LoyaltyGiftRedeemDevice",   fields: [lgrDeviceId],  references: [devId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_lgr_device")
+  member                LoyaltyMember  @relation("LoyaltyGiftRedeemMember",   fields: [lgrMemberId],  references: [lmbId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_lgr_member")
+  customer              Customer       @relation("LoyaltyGiftRedeemCustomer", fields: [lgrCustId],    references: [cusId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_lgr_cust")
+  scheme                LoyaltyScheme? @relation("LoyaltyGiftRedeemScheme",   fields: [lgrLscId],     references: [lscId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_lgr_scheme")
+  user                  UserMaster?    @relation("LoyaltyGiftRedeemUser",     fields: [lgrUserId],    references: [usrId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_lgr_user")
+  employee              EmployeeMaster? @relation("LoyaltyGiftRedeemEmployee", fields: [lgrEmpId],    references: [empId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_lgr_emp")
+  approver              UserMaster?    @relation("LoyaltyGiftRedeemApprover", fields: [lgrApprovedBy], references: [usrId], onUpdate: Cascade, onDelete: Restrict, map: "fk_lgr_approved_by")
+
+  reversalOf            LoyaltyGiftRedeem?  @relation("LoyaltyGiftRedeemReversal", fields: [lgrReversalOfId, lgrReversalOfAccYear], references: [lgrId, lgrAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_lgr_reversal")
+  reversedBy            LoyaltyGiftRedeem[] @relation("LoyaltyGiftRedeemReversal")
+
+  items                 LoyaltyGiftRedeemItem[] @relation("LoyaltyGiftRedeemItems")
+
+  // No relation field for lgrPostedVoucherId — the DDL declares no FK (see
+  // the column comment above), and lgrTenantId has no Tenant model.
+
+  @@id([lgrId, lgrAccYear], map: "pk_loyalty_gift_redeem")
+
+  // Partial indexes are DB-only — Prisma ignores WHERE predicates and
+  // NULLS NOT DISTINCT:
+  //
+  //   -- the printed number is unique per branch and year …
+  //   CREATE UNIQUE INDEX ux_lgr_refno ON sales.loyalty_gift_redeem
+  //       (lgr_comp_id, lgr_branch_id, lgr_acc_year, lgr_redeem_refno)
+  //       WHERE lgr_is_deleted = false;
+  //   -- … the raw serial is unique per DEVICE, which is what lets an offline
+  //   -- till number without asking. NULLS NOT DISTINCT so the "no device"
+  //   -- case is one series rather than an unconstrained free-for-all.
+  //   CREATE UNIQUE INDEX ux_lgr_slno ON sales.loyalty_gift_redeem
+  //       (lgr_comp_id, lgr_branch_id, lgr_acc_year, lgr_device_id, lgr_redeem_slno)
+  //       NULLS NOT DISTINCT WHERE lgr_is_deleted = false;
+  //
+  //   CREATE INDEX ix_lgr_list ON sales.loyalty_gift_redeem
+  //       (lgr_comp_id, lgr_branch_id, lgr_redeem_date)
+  //       INCLUDE (lgr_redeem_refno, lgr_cust_id, lgr_redeem_points, lgr_status)
+  //       WHERE lgr_is_deleted = false;
+  //
+  //   -- THE POSTING QUEUE: confirmed slips the server has not yet turned into
+  //   -- a voucher. Partial, so it stays small however long the table grows.
+  //   CREATE INDEX ix_lgr_unposted ON sales.loyalty_gift_redeem
+  //       (lgr_comp_id, lgr_redeem_date)
+  //       WHERE lgr_posted_voucher_id IS NULL AND lgr_status = 'CONFIRMED'
+  //         AND lgr_is_deleted = false;
+  //
+  //   -- FK-covering and lookup: ix_lgr_member, ix_lgr_cust, ix_lgr_branch,
+  //   -- ix_lgr_scheme, ix_lgr_device, ix_lgr_user, ix_lgr_emp,
+  //   -- ix_lgr_approved_by, ix_lgr_voucher, ix_lgr_reversal
+  //
+  // CHECK constraints (DB-only): ck_lgr_acc_year, ck_lgr_status, ck_lgr_slno,
+  //   ck_lgr_refno, ck_lgr_points, ck_lgr_totals, ck_lgr_print_count,
+  //   ck_lgr_voucher_pair, ck_lgr_voucher_acc_year, ck_lgr_voucher_status,
+  //   ck_lgr_reversal_pair, ck_lgr_no_self_reversal, ck_lgr_cancel
+  //
+  // STILL NEEDED elsewhere: a row in accounts.acc_voucher_types for the gift
+  // redemption, with Tally export and inventory-affecting flags set. Its
+  // vchr_type_id is a small integer assigned by hand, so it is left to whoever
+  // owns that master rather than guessed here.
+
+  @@map("loyalty_gift_redeem")
+  @@schema("sales")
+}
+
+// ----- prisma/sales/loyaltyGiftRedeemItem.prisma -----
+/// The goods issued against a redemption slip.
+///
+/// ONE detail table, not two. The legacy pair (loy_item_rdm_items and
+/// loy_item_rdm_itm_det) held identical column sets against the same header
+/// and only one was live, so only one is rebuilt.
+///
+/// Carries the full stock movement — godown, batch, serial, expiry — because a
+/// gift relieves inventory exactly as a sale does, and a batch-tracked shop
+/// cannot post the issue without them. Cost is snapshotted alongside the issue
+/// rate so the giveaway can be valued afterwards without re-pricing history.
+///
+/// Partitioned on its own lgdAccYear, which ck_lgd_same_year pins to the
+/// header's — the composite FK requires it and the CHECK makes it readable.
+model LoyaltyGiftRedeemItem {
+  lgdId             String    @default(dbgenerated("uuidv7()")) @db.Uuid   @map("lgd_id")
+  lgdCompId         String    @db.Uuid                                     @map("lgd_comp_id")
+  lgdBranchId       String    @db.Uuid                                     @map("lgd_branch_id")
+  lgdTenantId       String?   @db.Uuid                                     @map("lgd_tenant_id")
+  lgdAccYear        String    @db.Char(9)                                  @map("lgd_acc_year")
+
+  lgdLgrId          String    @db.Uuid                                     @map("lgd_lgr_id")
+  lgdLgrAccYear     String    @db.Char(9)                                  @map("lgd_lgr_acc_year")
+  lgdRowNo          Int       @default(1)                                  @map("lgd_row_no")
+
+  /// The catalogue row claimed, when the gift came from a scheme's list.
+  lgdLsgId          String?   @db.Uuid                                     @map("lgd_lsg_id")
+  lgdItemId         String    @db.Uuid                                     @map("lgd_item_id")
+  /// item_unit_conversion, as on a bill line.
+  lgdUnitId         String    @db.Uuid                                     @map("lgd_unit_id")
+  lgdGodownId       String?   @db.Uuid                                     @map("lgd_godown_id")
+  lgdBarcode        String?   @db.VarChar(30)                              @map("lgd_barcode")
+
+  // Batch / serial. The id is the link; the rest are snapshots so a reprint of
+  // last year's slip does not depend on the batch row still existing.
+  lgdBatchId        String?   @db.Uuid                                     @map("lgd_batch_id")
+  lgdBatchNo        String?   @db.VarChar(50)                              @map("lgd_batch_no")
+  lgdSerialNo       String?   @db.VarChar(50)                              @map("lgd_serial_no")
+  lgdBatchDate      DateTime? @db.Date                                     @map("lgd_batch_date")
+  lgdExpiryDate     DateTime? @db.Date                                     @map("lgd_expiry_date")
+
+  /// No database default: ck_lgd_qty demands it be positive, so a row that
+  /// omits it must fail rather than silently issue nothing.
+  lgdQty            Decimal   @db.Decimal(18, 3)                           @map("lgd_qty")
+  /// On hand at the moment of issue.
+  lgdStockQty       Decimal   @default(0) @db.Decimal(18, 3)               @map("lgd_stock_qty")
+  /// Issue rate.
+  lgdRate           Decimal   @default(0) @db.Decimal(18, 4)               @map("lgd_rate")
+  lgdTotal          Decimal   @default(0) @db.Decimal(18, 2)               @map("lgd_total")
+  /// Points this line cost.
+  lgdPoints         Decimal   @default(0) @db.Decimal(18, 4)               @map("lgd_points")
+  lgdMaxPrice       Decimal   @default(0) @db.Decimal(18, 4)               @map("lgd_max_price")
+  /// The giveaway's cost — what a Tally Stock Journal posts against.
+  lgdCostPrice      Decimal   @default(0) @db.Decimal(18, 4)               @map("lgd_cost_price")
+  /// Cost excluding tax.
+  lgdCostWot        Decimal   @default(0) @db.Decimal(18, 4)               @map("lgd_cost_wot")
+
+  lgdNotes          String?   @db.VarChar(250)                             @map("lgd_notes")
+  lgdIsDeleted      Boolean   @default(false)                              @map("lgd_is_deleted")
+  lgdSyncDate       DateTime? @db.Timestamptz(6)                           @map("lgd_sync_date")
+  lgdCreatedOn      DateTime  @default(now()) @db.Timestamptz(6)           @map("lgd_created_on")
+  lgdCreatedBy      String?   @db.VarChar(50)                              @map("lgd_created_by")
+  lgdModifiedOn     DateTime? @db.Timestamptz(6)                           @map("lgd_modified_on")
+  lgdModifiedBy     String?   @db.VarChar(50)                              @map("lgd_modified_by")
+
+  // Relations
+  header            LoyaltyGiftRedeem @relation("LoyaltyGiftRedeemItems", fields: [lgdLgrId, lgdLgrAccYear], references: [lgrId, lgrAccYear], onUpdate: Cascade, onDelete: Cascade, map: "fk_lgd_header")
+  company           Company            @relation("LoyaltyGiftItemCompany", fields: [lgdCompId],   references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_lgd_company")
+  branch            BranchMaster       @relation("LoyaltyGiftItemBranch",  fields: [lgdBranchId], references: [brId],   onUpdate: Cascade, onDelete: Restrict, map: "fk_lgd_branch")
+  gift              LoyaltySchemeGift? @relation("LoyaltyGiftItemGift",    fields: [lgdLsgId],    references: [lsgId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_lgd_gift")
+  item              ItemMaster         @relation("LoyaltyGiftItemItem",    fields: [lgdItemId],   references: [itemId], onUpdate: Cascade, onDelete: Restrict, map: "fk_lgd_item")
+  unit              ItemUnitConversion @relation("LoyaltyGiftItemUnit",    fields: [lgdUnitId],   references: [iucId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_lgd_unit")
+  godown            GodownLocation?    @relation("LoyaltyGiftItemGodown",  fields: [lgdGodownId], references: [gdlId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_lgd_godown")
+  batch             ItemBatchMaster?   @relation("LoyaltyGiftItemBatch",   fields: [lgdBatchId],  references: [btmId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_lgd_batch")
+
+  @@id([lgdId, lgdAccYear], map: "pk_loyalty_gift_redeem_item")
+
+  // Partial indexes are DB-only:
+  //
+  //   CREATE UNIQUE INDEX ux_lgd_row ON sales.loyalty_gift_redeem_item
+  //       (lgd_lgr_id, lgd_acc_year, lgd_row_no) WHERE lgd_is_deleted = false;
+  //
+  //   -- what the giveaway cost, by item and period
+  //   CREATE INDEX ix_lgd_item_period ON sales.loyalty_gift_redeem_item
+  //       (lgd_comp_id, lgd_item_id, lgd_acc_year)
+  //       INCLUDE (lgd_qty, lgd_points, lgd_total, lgd_cost_price)
+  //       WHERE lgd_is_deleted = false;
+  //
+  //   -- FK-covering: ix_lgd_header, ix_lgd_branch, ix_lgd_item, ix_lgd_unit,
+  //   -- ix_lgd_gift, ix_lgd_godown, ix_lgd_batch
+  //
+  // CHECK constraints (DB-only): ck_lgd_acc_year, ck_lgd_same_year,
+  //   ck_lgd_row_no, ck_lgd_qty, ck_lgd_amounts, ck_lgd_batch_dates
+
+  @@map("loyalty_gift_redeem_item")
+  @@schema("sales")
+}
+
+// ----- prisma/sales/loyaltyLedger.prisma -----
+/// One row per point movement against one wallet, drawn from ONE lot.
+///
+/// LIST-partitioned by lldAccYear — the year the EVENT happened, not the year
+/// the points were earned. That is the whole trick: July's redemption of
+/// April's points lands in July's partition and April's earn row never moves.
+/// Hence the composite PK (lldId, lldAccYear). Partitions
+/// (sales.loyalty_ledger_2026_2027) come from
+/// public.ensure_acc_year_partitions('YYYY-YYYY'), which
+/// 20260921140000_add_loyalty_points_engine taught about this table.
+///
+/// A row is never edited and never deleted. Everything is undone by a NEW row
+/// of opposite sign naming the row it undoes (lldReversalOfId) — so a plain
+/// SUM per txn type nets reversals out and no caller special-cases them.
+///
+/// EARN rows ARE the lots. They carry lldExpiresOn, lldActiveFrom and
+/// lldConsumedPoints; lldLotBalance is what is left. Consuming rows
+/// (REDEEM / GIFT / EXPIRE) carry lldLotId pointing back at the lot they came
+/// out of, so a redemption spanning three lots is THREE rows sharing ONE
+/// tender. It costs rows and buys expiry that is exact and reversible.
+///
+/// FIFO, defined in ONE place (LoyaltyLedgerService.lots()) and nowhere else:
+///     ORDER BY lld_expires_on NULLS LAST, lld_txn_date, lld_id
+/// Oldest expiry first; within one expiry date, oldest earned first; lots that
+/// never expire last of all — the customer-favourable order, because it spends
+/// what would otherwise lapse.
+///
+/// WRITE RULE: exactly one private method of LoyaltyLedgerService may INSERT,
+/// UPDATE or soft-delete this table. It writes the rows, then recomputes the
+/// touched LOTS and then the touched MEMBERS, in that order, before returning.
+/// Nothing else touches it — not a repository, not the sync handler, not a
+/// migration script. There is no trigger to fall back on.
+model LoyaltyLedger {
+  lldId                 String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("lld_id")
+  lldCompId             String    @db.Uuid                                 @map("lld_comp_id")
+  /// WHERE THE EVENT HAPPENED. Points earned at one branch and spent at
+  /// another are the normal case for a chain; this column is what makes
+  /// "who gave them, who honoured them" answerable, and it is the whole basis
+  /// of inter-branch settlement between franchisees.
+  lldBranchId           String    @db.Uuid                                 @map("lld_branch_id")
+  lldTenantId           String?   @db.Uuid                                 @map("lld_tenant_id")
+  /// FY of the EVENT, and the partition key.
+  lldAccYear            String    @db.Char(9)                              @map("lld_acc_year")
+
+  // ── Whose points ─────────────────────────────────────────────────────
+  // Single-column FK: LoyaltyMember is not partitioned, which is precisely
+  // what makes earning in one year and spending in another a plain foreign key.
+  lldMemberId           String    @db.Uuid                                 @map("lld_member_id")
+  /// Snapshot; every report groups by it.
+  lldCustId             String    @db.Uuid                                 @map("lld_cust_id")
+
+  // ── Which rule produced this ─────────────────────────────────────────
+  // The "why did I get 37 points" answer, without re-running the engine
+  // against a scheme that may since have been edited.
+  lldLscId              String?   @db.Uuid                                 @map("lld_lsc_id")
+  lldLssId              String?   @db.Uuid                                 @map("lld_lss_id")
+  lldLsiId              String?   @db.Uuid                                 @map("lld_lsi_id")
+
+  // ── The event ────────────────────────────────────────────────────────
+  /// EARN | REDEEM | GIFT | EXPIRE | ADJUST | TRANSFER | OPENING
+  lldTxnType            String    @db.VarChar(20)                          @map("lld_txn_type")
+  lldRowNo              Int       @default(1)                              @map("lld_row_no")
+  /// SIGNED. EARN/OPENING positive, REDEEM/GIFT/EXPIRE negative,
+  /// ADJUST/TRANSFER either. A reversal repeats the type with the opposite
+  /// sign (ck_lld_sign enforces the pairing).
+  lldPoints             Decimal   @db.Decimal(18, 4)                       @map("lld_points")
+  lldTxnDate            DateTime  @db.Date                                 @map("lld_txn_date")
+  /// Which side of a happy-hour boundary the till was on. Without it, a
+  /// double-points window is unauditable the morning after.
+  lldTxnTime            DateTime? @db.Time(6)                              @map("lld_txn_time")
+
+  // ── FIFO lot ─────────────────────────────────────────────────────────
+  /// On a consuming row: the EARN row these points came out of. Travels as a
+  /// pair because this table is partitioned.
+  lldLotId              String?   @db.Uuid                                 @map("lld_lot_id")
+  lldLotAccYear         String?   @db.Char(9)                              @map("lld_lot_acc_year")
+  /// On the LOT row only: how much of it has been spent, expired or moved
+  /// away. Recomputed by LoyaltyLedgerService.recomputeLots(); there is no
+  /// trigger and no other code may write it.
+  lldConsumedPoints     Decimal   @default(0) @db.Decimal(18, 4)           @map("lld_consumed_points")
+  /// GENERATED ALWAYS ... STORED: lldPoints - lldConsumedPoints on a lot row,
+  /// ZERO (not NULL) on a consuming row — which is what keeps the "> 0" index
+  /// predicates cheap and total. Read-only: never send it on a create or
+  /// update, and @default(dbgenerated()) keeps migrate from emitting a default.
+  lldLotBalance         Decimal?  @default(dbgenerated()) @db.Decimal(18, 4) @map("lld_lot_balance")
+  /// When this lot lapses, from lsc_points_valid_days / lsc_expiry_basis at
+  /// earn time. NULL = never expires, and such lots are consumed LAST.
+  lldExpiresOn          DateTime? @db.Date                                 @map("lld_expires_on")
+  /// When this lot becomes REDEEMABLE: bill date + lsc_activation_days. Before
+  /// it, the points exist and show in the balance but cannot be spent — the
+  /// return-window defence against clawing back points already spent.
+  /// NULL = redeemable at once.
+  lldActiveFrom         DateTime? @db.Date                                 @map("lld_active_from")
+
+  // ── Source document ──────────────────────────────────────────────────
+  // The same four-part polymorphic identifier AccTenderDetail,
+  // AccBillBalance and TxnStatusLog use. All three of module/type/id or none
+  // (ck_lld_src_doc).
+  lldSrcModule          String?   @db.VarChar(20)                          @map("lld_src_module")
+  lldSrcDocType         String?   @db.VarChar(30)                          @map("lld_src_doc_type")
+  lldSrcDocId           String?   @db.Uuid                                 @map("lld_src_doc_id")
+  /// The SOURCE's FY, not this row's.
+  lldSrcAccYear         String?   @db.Char(9)                              @map("lld_src_acc_year")
+  /// Snapshot, so a member statement prints the bill number without joining a
+  /// partitioned table across every year the customer has traded.
+  lldSrcDocRefno        String?   @db.VarChar(100)                         @map("lld_src_doc_refno")
+  lldSrcRowNo           Int?                                               @map("lld_src_row_no")
+
+  // ── How it was computed ──────────────────────────────────────────────
+  lldBaseAmount         Decimal   @default(0) @db.Decimal(18, 2)           @map("lld_base_amount")
+  lldBaseQty            Decimal   @default(0) @db.Decimal(18, 3)           @map("lld_base_qty")
+  /// Points per slab on an earn, or INR per point on a redeem. Snapshotted so
+  /// a historic redemption stays re-derivable whichever of
+  /// lsc_redeem_value_per_point or tnd_conversion_rate was in play.
+  lldRate               Decimal   @default(0) @db.Decimal(18, 4)           @map("lld_rate")
+  lldFactor             Decimal   @default(1) @db.Decimal(18, 4)           @map("lld_factor")
+  /// What they were worth, in INR.
+  lldMoneyValue         Decimal   @default(0) @db.Decimal(18, 2)           @map("lld_money_value")
+
+  // ── The tender ───────────────────────────────────────────────────────
+  /// Redemption is a TENDER LINE: AccTenderDetail with td_tender_type_id = 10
+  /// (LOYALTY), td_units_used = the points, td_conversion_rate = rupees per
+  /// point. This pair is what ties the two sides together, and it is the ONLY
+  /// route by which a redemption reaches the GL and then Tally — earning posts
+  /// nothing at all, being statistical.
+  lldTenderId           String?   @db.Uuid                                 @map("lld_tender_id")
+  lldTenderAccYear      String?   @db.Char(9)                              @map("lld_tender_acc_year")
+
+  // ── Reversal ─────────────────────────────────────────────────────────
+  /// Carries a real FK, unlike abj_reversal_of_id, because this table has the
+  /// year to complete the composite key with.
+  lldReversalOfId       String?   @db.Uuid                                 @map("lld_reversal_of_id")
+  lldReversalOfAccYear  String?   @db.Char(9)                              @map("lld_reversal_of_acc_year")
+  lldReversalReason     String?   @db.VarChar(250)                         @map("lld_reversal_reason")
+
+  // ── Who ──────────────────────────────────────────────────────────────
+  /// A manual adjustment is somebody's decision, not a keying accident —
+  /// ck_lld_adjust_approval makes ADJUST require this.
+  lldApprovedBy         String?   @db.Uuid                                 @map("lld_approved_by")
+  lldUserId             String?   @db.Uuid                                 @map("lld_user_id")
+  lldSessionId          String?   @db.Uuid                                 @map("lld_session_id")
+  lldDeviceId           String?   @db.Uuid                                 @map("lld_device_id")
+
+  lldRemarks            String?   @db.VarChar(250)                         @map("lld_remarks")
+  lldIsDeleted          Boolean   @default(false)                          @map("lld_is_deleted")
+
+  // ── Audit ────────────────────────────────────────────────────────────
+  lldSyncDate           DateTime? @db.Timestamptz(6)                       @map("lld_sync_date")
+  lldCreatedOn          DateTime  @default(now()) @db.Timestamptz(6)       @map("lld_created_on")
+  lldCreatedBy          String?   @db.VarChar(50)                          @map("lld_created_by")
+  lldModifiedOn         DateTime? @db.Timestamptz(6)                       @map("lld_modified_on")
+  lldModifiedBy         String?   @db.VarChar(50)                          @map("lld_modified_by")
+
+  // Relations
+  member                LoyaltyMember      @relation("LoyaltyLedgerMember",   fields: [lldMemberId], references: [lmbId], onUpdate: Cascade, onDelete: Restrict, map: "fk_lld_member")
+  customer              Customer           @relation("LoyaltyLedgerCustomer", fields: [lldCustId],   references: [cusId], onUpdate: Cascade, onDelete: Restrict, map: "fk_lld_cust")
+  company               Company            @relation("LoyaltyLedgerCompany",  fields: [lldCompId],   references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_lld_company")
+  branch                BranchMaster       @relation("LoyaltyLedgerBranch",   fields: [lldBranchId], references: [brId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_lld_branch")
+  scheme                LoyaltyScheme?     @relation("LoyaltyLedgerScheme",   fields: [lldLscId],    references: [lscId], onUpdate: Cascade, onDelete: Restrict, map: "fk_lld_scheme")
+  slab                  LoyaltySchemeSlab? @relation("LoyaltyLedgerSlab",     fields: [lldLssId],    references: [lssId], onUpdate: Cascade, onDelete: Restrict, map: "fk_lld_slab")
+  itemRule              LoyaltySchemeItem? @relation("LoyaltyLedgerItemRule", fields: [lldLsiId],    references: [lsiId], onUpdate: Cascade, onDelete: Restrict, map: "fk_lld_item_rule")
+  user                  UserMaster?        @relation("LoyaltyLedgerUser",     fields: [lldUserId],   references: [usrId], onUpdate: Cascade, onDelete: Restrict, map: "fk_lld_user")
+  approver              UserMaster?        @relation("LoyaltyLedgerApprover", fields: [lldApprovedBy], references: [usrId], onUpdate: Cascade, onDelete: Restrict, map: "fk_lld_approved_by")
+  device                DeviceMaster?      @relation("LoyaltyLedgerDevice",   fields: [lldDeviceId], references: [devId], onUpdate: Cascade, onDelete: Restrict, map: "fk_lld_device")
+
+  lot                   LoyaltyLedger?  @relation("LoyaltyLedgerLot",      fields: [lldLotId, lldLotAccYear],           references: [lldId, lldAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_lld_lot")
+  lotConsumers          LoyaltyLedger[] @relation("LoyaltyLedgerLot")
+  reversalOf            LoyaltyLedger?  @relation("LoyaltyLedgerReversal", fields: [lldReversalOfId, lldReversalOfAccYear], references: [lldId, lldAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_lld_reversal")
+  reversedBy            LoyaltyLedger[] @relation("LoyaltyLedgerReversal")
+
+  tender                AccTenderDetail? @relation("LoyaltyLedgerTender", fields: [lldTenderId, lldTenderAccYear], references: [tdId, tdAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_lld_tender")
+
+  // No relation field for lldSrcDocId — polymorphic by design, the target
+  // table varies by lldSrcModule/lldSrcDocType. Nor for lldTenantId (no Tenant
+  // model) or lldSessionId (not a unique FK target).
+
+  @@id([lldId, lldAccYear], map: "pk_loyalty_ledger")
+
+  // Partial indexes are DB-only — Prisma ignores WHERE predicates, so
+  // declaring them here would produce phantom drift on every migrate dev:
+  //
+  //   -- THE IDEMPOTENCY GUARD, and the most important index of the set.
+  //   -- Points earn on bill save at a counter that may be offline; that bill
+  //   -- will be re-sent, possibly twice. Without this, every replay mints
+  //   -- points again and nothing notices until a customer redeems money the
+  //   -- shop never owed them. The expiry run leans on it too, via its
+  //   -- deterministic runId.
+  //   CREATE UNIQUE INDEX ux_lld_src_row ON sales.loyalty_ledger
+  //       (lld_src_doc_type, lld_src_doc_id, lld_acc_year, lld_txn_type, lld_row_no)
+  //       WHERE lld_src_doc_id IS NOT NULL AND lld_is_deleted = false;
+  //
+  //   -- THE FIFO INDEX. Both the redeem path and the expiry run live on it;
+  //   -- INCLUDE keeps a till walking a member's lots off the heap.
+  //   CREATE INDEX ix_lld_open_lots ON sales.loyalty_ledger
+  //       (lld_member_id, lld_expires_on, lld_txn_date, lld_id)
+  //       INCLUDE (lld_points, lld_consumed_points, lld_active_from, lld_lot_balance)
+  //       WHERE lld_is_deleted = false AND lld_lot_balance > 0;
+  //
+  //   -- a row may be reversed once. CAVEAT: a unique index on a partitioned
+  //   -- table must include the partition key, so this is unique per YEAR — a
+  //   -- reversal in March and another in April of the same row would both be
+  //   -- accepted. The posting code must check before it writes.
+  //   CREATE UNIQUE INDEX ux_lld_reversal ON sales.loyalty_ledger
+  //       (lld_reversal_of_id, lld_acc_year)
+  //       WHERE lld_reversal_of_id IS NOT NULL AND lld_is_deleted = false;
+  //
+  //   -- the member statement; the nightly expiry sweep; the lot recompute's
+  //   -- own path; bill -> the points it earned (the claw-back path)
+  //   CREATE INDEX ix_lld_member  ON sales.loyalty_ledger (lld_member_id, lld_txn_date) …
+  //   CREATE INDEX ix_lld_expiry  ON sales.loyalty_ledger (lld_comp_id, lld_expires_on) …
+  //   CREATE INDEX ix_lld_lot     ON sales.loyalty_ledger (lld_lot_id, lld_lot_acc_year) …
+  //   CREATE INDEX ix_lld_src_doc ON sales.loyalty_ledger (lld_src_doc_type, lld_src_doc_id) …
+  //
+  //   -- INTER-BRANCH SETTLEMENT: points issued by branch A, honoured by
+  //   -- branch B. For a franchise chain this report is why lld_branch_id exists.
+  //   CREATE INDEX ix_lld_branch_period ON sales.loyalty_ledger
+  //       (lld_comp_id, lld_branch_id, lld_txn_date, lld_txn_type)
+  //       INCLUDE (lld_points, lld_money_value) WHERE lld_is_deleted = false;
+  //
+  //   -- the other half of the reconciliation report. No per-lot over-draw
+  //   -- CHECK exists: two tills offline can each draw the last of one lot and
+  //   -- the batch that syncs second must be RECORDED, not refused.
+  //   CREATE INDEX ix_lld_lot_overdrawn ON sales.loyalty_ledger
+  //       (lld_comp_id, lld_member_id)
+  //       WHERE lld_is_deleted = false AND lld_lot_balance < 0;
+  //
+  //   -- FK-covering: ix_lld_scheme, ix_lld_slab, ix_lld_item_rule,
+  //   -- ix_lld_cust, ix_lld_user, ix_lld_device, ix_lld_tender,
+  //   -- ix_lld_branch, ix_lld_approved_by, ix_lld_reversal_fk. Note that
+  //   -- ux_lld_reversal does NOT cover fk_lld_reversal — different second
+  //   -- column — which is why ix_lld_reversal_fk exists beside it.
+  //
+  // CHECK constraints (DB-only): ck_lld_acc_year, ck_lld_src_acc_year,
+  //   ck_lld_txn_type, ck_lld_src_module, ck_lld_src_doc_type, ck_lld_src_doc,
+  //   ck_lld_points_nonzero, ck_lld_sign, ck_lld_lot_pair,
+  //   ck_lld_lot_required, ck_lld_no_self_lot, ck_lld_lot_dates,
+  //   ck_lld_tender_pair, ck_lld_reversal_pair, ck_lld_no_self_reversal,
+  //   ck_lld_redeem_tender, ck_lld_gift_no_tender, ck_lld_adjust_approval,
+  //   ck_lld_row_no, ck_lld_factor
+
+  @@map("loyalty_ledger")
+  @@schema("sales")
+}
+
+// ----- prisma/sales/loyaltyMember.prisma -----
+/// The points wallet: ONE per (company, customer).
+///
+/// NOT partitioned, and never carried forward at year end — this is
+/// AccBillBalance applied to points. A customer who earned in 2025-2026 and
+/// spends in 2027-2028 is the SAME row throughout, which is precisely what
+/// makes LoyaltyLedger's reference to it a plain foreign key instead of a
+/// composite one that has to carry a year around.
+///
+/// lmbAccYear records the year they ENROLLED and is a reporting filter only.
+/// Making it a partition key is exactly the mistake the bill-balance
+/// repartitioning exists to undo.
+///
+/// Keyed by company and customer, never by branch: that single index
+/// (ux_lmb_cust) is the chain-store guarantee that points earned at one branch
+/// spend at another. lmbCardNo and lmbMobile are ALTERNATE HANDLES for finding
+/// this row, not identities — the identity is lmbCustId.
+model LoyaltyMember {
+  lmbId               String    @id(map: "pk_loyalty_member") @default(dbgenerated("uuidv7()")) @db.Uuid @map("lmb_id")
+  lmbCompId           String    @db.Uuid                                   @map("lmb_comp_id")
+  /// Branch that ENROLLED them. Never a scope — a wallet belongs to the company.
+  lmbBranchId         String?   @db.Uuid                                   @map("lmb_branch_id")
+  lmbTenantId         String?   @db.Uuid                                   @map("lmb_tenant_id")
+  /// FY of enrolment. Reporting filter only, never a partition key.
+  lmbAccYear          String    @db.Char(9)                                @map("lmb_acc_year")
+
+  // ── Identity ─────────────────────────────────────────────────────────
+  lmbCustId           String    @db.Uuid                                   @map("lmb_cust_id")
+  /// The accounting party, snapshotted so a points-liability report can join
+  /// accounts without a hop through the customer master. Nullable: a cash
+  /// customer may have no ledger row yet.
+  lmbPartyLedgerId    String?   @db.Uuid                                   @map("lmb_party_ledger_id")
+  lmbLscId            String?   @db.Uuid                                   @map("lmb_lsc_id")
+  lmbCardNo           String?   @db.VarChar(30)                            @map("lmb_card_no")
+  /// Snapshot of customers.cus_phone1 — the supermarket lookup handle.
+  lmbMobile           String?   @db.VarChar(20)                            @map("lmb_mobile")
+  lmbEnrolledOn       DateTime  @default(dbgenerated("CURRENT_DATE")) @db.Date @map("lmb_enrolled_on")
+
+  // ── Roll-ups ─────────────────────────────────────────────────────────
+  // CACHES of LoyaltyLedger, recomputed by
+  // LoyaltyLedgerService.recomputeMembers(). There is no trigger; no other
+  // code may write them. All stored positive except lmbAdjustedPoints, signed.
+  lmbEarnedPoints     Decimal   @default(0) @db.Decimal(18, 4)             @map("lmb_earned_points")
+  lmbRedeemedPoints   Decimal   @default(0) @db.Decimal(18, 4)             @map("lmb_redeemed_points")
+  lmbExpiredPoints    Decimal   @default(0) @db.Decimal(18, 4)             @map("lmb_expired_points")
+  lmbGiftPoints       Decimal   @default(0) @db.Decimal(18, 4)             @map("lmb_gift_points")
+  lmbAdjustedPoints   Decimal   @default(0) @db.Decimal(18, 4)             @map("lmb_adjusted_points")
+
+  /// GENERATED ALWAYS ... STORED in the DB:
+  ///   earned + adjusted - redeemed - expired - gift
+  /// Read-only: never send it on a create or update — Postgres rejects it, and
+  /// @default(dbgenerated()) marks it DB-owned so migrate never emits a
+  /// default of its own.
+  ///
+  /// This is what the bill screen shows. It is NOT what the customer may spend
+  /// today: cooling lots and unswept lapsed lots make those differ, and
+  /// LoyaltyLedgerService.redeemable() answers that instead.
+  lmbBalancePoints    Decimal?  @default(dbgenerated()) @db.Decimal(18, 4) @map("lmb_balance_points")
+
+  /// Lifetime trading, which points alone cannot answer: lmbEarnedPoints is
+  /// already "everything ever earned" (redemption never touches that bucket),
+  /// so a lifetime-points column would just be a second copy of it. These two
+  /// are not derivable from the point columns at all.
+  lmbLifetimeBillAmt  Decimal   @default(0) @db.Decimal(18, 2)             @map("lmb_lifetime_bill_amt")
+  lmbLifetimeBillCnt  Int       @default(0)                                @map("lmb_lifetime_bill_cnt")
+
+  lmbLastEarnOn       DateTime? @db.Date                                   @map("lmb_last_earn_on")
+  lmbLastRedeemOn     DateTime? @db.Date                                   @map("lmb_last_redeem_on")
+  /// The dormant-member report and lsc_expiry_basis = 'LAST_TXN' have no other
+  /// source once the row simply stays open across years.
+  lmbLastActivityOn   DateTime? @db.Date                                   @map("lmb_last_activity_on")
+  /// Earliest open lot, so the till can say "480 points expire in 9 days"
+  /// without a scan of the ledger. Recomputed AFTER the lots — it reads
+  /// lldLotBalance, so the other order publishes a wrong date silently.
+  lmbNextExpiryOn     DateTime? @db.Date                                   @map("lmb_next_expiry_on")
+
+  // There is deliberately NO stored "redeemable points" column. With a cooling
+  // period, redeemable is not the same number as balance — but it is
+  // date-dependent, and a cached copy would go stale at midnight with nobody
+  // writing to it.
+
+  // ── Status ───────────────────────────────────────────────────────────
+  /// ACTIVE | SUSPENDED | CLOSED | MERGED. MERGED is two wallets that turn out
+  /// to be one person: the loser is marked MERGED and its points move by a
+  /// PAIR of ADJUST ledger rows — never by editing a balance, which would
+  /// leave the trail with a hole in it.
+  lmbStatus           String    @default("ACTIVE") @db.VarChar(20)         @map("lmb_status")
+  lmbMergedIntoId     String?   @db.Uuid                                   @map("lmb_merged_into_id")
+  lmbBlockReason      String?   @db.VarChar(250)                           @map("lmb_block_reason")
+
+  lmbRemarks          String?   @db.VarChar(250)                           @map("lmb_remarks")
+  lmbIsActive         Boolean   @default(true)                             @map("lmb_is_active")
+  lmbIsDeleted        Boolean   @default(false)                            @map("lmb_is_deleted")
+
+  // ── Audit ────────────────────────────────────────────────────────────
+  lmbSyncDate         DateTime? @db.Timestamptz(6)                         @map("lmb_sync_date")
+  lmbCreatedOn        DateTime  @default(now()) @db.Timestamptz(6)         @map("lmb_created_on")
+  lmbCreatedBy        String?   @db.VarChar(50)                            @map("lmb_created_by")
+  lmbModifiedOn       DateTime? @db.Timestamptz(6)                         @map("lmb_modified_on")
+  lmbModifiedBy       String?   @db.VarChar(50)                            @map("lmb_modified_by")
+
+  // Relations
+  company             Company        @relation("LoyaltyMemberCompany",     fields: [lmbCompId],        references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_lmb_company")
+  branch              BranchMaster?  @relation("LoyaltyMemberBranch",      fields: [lmbBranchId],      references: [brId],   onUpdate: Cascade, onDelete: Restrict, map: "fk_lmb_branch")
+  customer            Customer       @relation("LoyaltyMemberCustomer",    fields: [lmbCustId],        references: [cusId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_lmb_cust")
+  partyLedger         AccLedgerMaster? @relation("LoyaltyMemberPartyLedger", fields: [lmbPartyLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_lmb_party_ledger")
+  scheme              LoyaltyScheme? @relation("LoyaltyMemberScheme",      fields: [lmbLscId],         references: [lscId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_lmb_scheme")
+  mergedInto          LoyaltyMember? @relation("LoyaltyMemberMerge",       fields: [lmbMergedIntoId],  references: [lmbId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_lmb_merged_into")
+  mergedFrom          LoyaltyMember[] @relation("LoyaltyMemberMerge")
+
+  ledgerRows          LoyaltyLedger[]     @relation("LoyaltyLedgerMember")
+  giftRedeems         LoyaltyGiftRedeem[] @relation("LoyaltyGiftRedeemMember")
+
+  // Partial indexes are DB-only — Prisma ignores WHERE predicates and
+  // expression keys, so declaring them here would produce phantom drift on
+  // every migrate dev:
+  //
+  //   -- ONE wallet per customer per company: the chain-store guarantee
+  //   CREATE UNIQUE INDEX ux_lmb_cust ON sales.loyalty_member
+  //       (lmb_comp_id, lmb_cust_id) WHERE lmb_is_deleted = false;
+  //
+  //   CREATE UNIQUE INDEX ux_lmb_card_no ON sales.loyalty_member
+  //       (lmb_comp_id, upper(lmb_card_no::text))
+  //       WHERE lmb_card_no IS NOT NULL AND lmb_is_deleted = false;
+  //
+  //   -- the cashier types a phone number and the balance must be on screen
+  //   -- before the next item is scanned; INCLUDE makes it index-only
+  //   CREATE INDEX ix_lmb_mobile ON sales.loyalty_member (lmb_comp_id, lmb_mobile)
+  //       INCLUDE (lmb_cust_id, lmb_balance_points, lmb_status)
+  //       WHERE lmb_mobile IS NOT NULL AND lmb_is_deleted = false;
+  //
+  //   -- the liability report and the top-members list
+  //   CREATE INDEX ix_lmb_balance ON sales.loyalty_member
+  //       (lmb_comp_id, lmb_balance_points DESC)
+  //       INCLUDE (lmb_cust_id, lmb_card_no, lmb_next_expiry_on, lmb_last_activity_on)
+  //       WHERE lmb_is_deleted = false AND lmb_balance_points <> 0;
+  //
+  //   CREATE INDEX ix_lmb_expiry ON sales.loyalty_member (lmb_comp_id, lmb_next_expiry_on)
+  //       WHERE lmb_is_deleted = false AND lmb_balance_points > 0
+  //         AND lmb_next_expiry_on IS NOT NULL;
+  //
+  //   -- THE RECONCILIATION REPORT. There is deliberately no non-negativity
+  //   -- CHECK on the buckets or the balance: under offline sync a reversal can
+  //   -- land before the row it reverses and a CHECK would abort the batch. The
+  //   -- over-draw guard is LoyaltyLedgerService's, at post; this index is how
+  //   -- an over-draw that got past it is found the next morning rather than by
+  //   -- a customer.
+  //   CREATE INDEX ix_lmb_overdrawn ON sales.loyalty_member
+  //       (lmb_comp_id, lmb_balance_points)
+  //       WHERE lmb_is_deleted = false AND lmb_balance_points < 0;
+  //
+  //   -- FK-covering: ix_lmb_branch, ix_lmb_scheme, ix_lmb_party_ledger,
+  //   -- ix_lmb_cust_fk, ix_lmb_merged_into
+  //
+  // CHECK constraints (DB-only): ck_lmb_acc_year, ck_lmb_status,
+  //   ck_lmb_merged, ck_lmb_no_self_merge, ck_lmb_card_shape
+
+  // ── Coupons and gift vouchers (20260921160000) ──────────────────────────
+  // A coupon holder may also be a points member. The two are separate
+  // instruments — a coupon is money with a code on it — but the same person.
+  coupons               LoyaltyCoupon[]           @relation("CouponMember")
+  couponTxns            LoyaltyCouponTxn[]        @relation("CouponTxnMember")
+
+  @@map("loyalty_member")
+  @@schema("sales")
 }
 
 // ----- prisma/sales/loyaltyScheme.prisma -----
@@ -6967,6 +9139,11 @@ model LoyaltyScheme {
   slabs                     LoyaltySchemeSlab[]   @relation("LoyaltySchemeSlabs")
   gifts                     LoyaltySchemeGift[]   @relation("LoyaltySchemeGifts")
 
+  // ── Loyalty points engine (20260921140000) ─────────────────────────────
+  loyaltyMembers        LoyaltyMember[]           @relation("LoyaltyMemberScheme")
+  loyaltyLedgerRows     LoyaltyLedger[]           @relation("LoyaltyLedgerScheme")
+  loyaltyGiftRedeems    LoyaltyGiftRedeem[]       @relation("LoyaltyGiftRedeemScheme")
+
   @@map("loyalty_scheme")
   @@schema("sales")
 }
@@ -7052,6 +9229,9 @@ model LoyaltySchemeGift {
   item              ItemMaster         @relation("LoyaltyGiftItem",    fields: [lsgItemId], references: [itemId], onUpdate: Cascade, onDelete: Restrict, map: "fk_lsg_item")
   unit              ItemUnitConversion @relation("LoyaltyGiftUnit",    fields: [lsgUnitId], references: [iucId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_lsg_unit")
 
+  // ── Loyalty points engine (20260921140000) ─────────────────────────────
+  loyaltyGiftItems      LoyaltyGiftRedeemItem[]   @relation("LoyaltyGiftItemGift")
+
   @@map("loyalty_scheme_gift")
   @@schema("sales")
 }
@@ -7127,6 +9307,9 @@ model LoyaltySchemeItem {
   itemCategory     categoryMaster?    @relation("LoyaltyItemCategory", fields: [lsiCategoryId], references: [categoryId], onUpdate: NoAction, onDelete: Restrict, map: "fk_lsi_category")
   itemBrand        ItemBrandMaster?   @relation("LoyaltyItemBrand",    fields: [lsiBrandId],    references: [brand_id],   onUpdate: NoAction, onDelete: Restrict, map: "fk_lsi_brand")
   itemSection      ItemSectionMaster? @relation("LoyaltyItemSection",  fields: [lsiSectionId],  references: [secId],      onUpdate: NoAction, onDelete: Restrict, map: "fk_lsi_section")
+
+  // ── Loyalty points engine (20260921140000) ─────────────────────────────
+  loyaltyLedgerRows     LoyaltyLedger[]           @relation("LoyaltyLedgerItemRule")
 
   @@map("loyalty_scheme_item")
   @@schema("sales")
@@ -7263,6 +9446,11 @@ model LoyaltySchemeSlab {
   scheme         LoyaltyScheme       @relation("LoyaltySchemeSlabs", fields: [lssLscId],  references: [lscId],  onUpdate: Cascade, onDelete: Cascade,  map: "fk_lss_scheme")
   item           ItemMaster?         @relation("LoyaltySlabItem",    fields: [lssItemId], references: [itemId], onUpdate: Cascade, onDelete: Restrict, map: "fk_lss_item")
   unit           ItemUnitConversion? @relation("LoyaltySlabUnit",    fields: [lssUnitId], references: [iucId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_lss_unit")
+
+  // ── Loyalty points engine (20260921140000) ─────────────────────────────
+  // The earn slab that fired, recorded on the ledger row so "why did I get
+  // 37 points" survives a later edit to the scheme.
+  loyaltyLedgerRows     LoyaltyLedger[]           @relation("LoyaltyLedgerSlab")
 
   @@map("loyalty_scheme_slab")
   @@schema("sales")
@@ -7773,6 +9961,20 @@ model SaleBill {
   sbHasPromo         Boolean   @default(false) @map("sb_has_promo")
   sbHasComm          Boolean   @default(false) @map("sb_has_comm")
   sbHasLoyalty       Boolean   @default(false) @map("sb_has_loyalty")
+  // ── Loyalty points (20260921140000) ──────────────────────────────────
+  // SNAPSHOTS, not caches. A sale return must reverse WHAT THIS BILL
+  // ACTUALLY AWARDED, not what re-running today's scheme would award —
+  // schemes get edited, bills do not. The authority for any balance remains
+  // sales.loyalty_ledger; these are what the invoice printed.
+  //
+  // No FK on sbLscId, matching the DDL: a bill must stay readable after a
+  // scheme is retired.
+  sbLscId            String?   @db.Uuid @map("sb_lsc_id")
+  sbLoyaltyEarnPoints   Decimal @default(0) @db.Decimal(18, 4) @map("sb_loyalty_earn_points")
+  sbLoyaltyRedeemPoints Decimal @default(0) @db.Decimal(18, 4) @map("sb_loyalty_redeem_points")
+  // There is deliberately no sb_loyalty_gift_points: a gift redemption is its
+  // own document (LoyaltyGiftRedeem) with its own number series and stock
+  // movement, so it never appears as a line on a bill.
   // People
   sbUserId           String    @db.Uuid @map("sb_user_id")
   sbSalesmanId       String[]  @db.Uuid @map("sb_salesman_id")
@@ -8018,6 +10220,16 @@ model SaleBillItem {
   sbiSalesmanId      String?   @db.Uuid @map("sbi_salesman_id")
   sbiSchemeId        String?   @db.Uuid @map("sbi_scheme_id")
   sbiSchemeName      String?   @db.VarChar(150) @map("sbi_scheme_name")
+  // ── Loyalty points (20260921140000) ──────────────────────────────────
+  // The client already computed these per line and threw them away for want
+  // of a column. Snapshots of the rule that ran, so a later scheme edit
+  // cannot rewrite history.
+  //
+  // sbiSchemeId / sbiSchemeName above belong to the PROMOTION scheme and are
+  // deliberately NOT reused here — welding the two features together is how
+  // one of them becomes impossible to change.
+  sbiLoyaltyPv       Decimal   @default(0) @db.Decimal(18, 4) @map("sbi_loyalty_pv")
+  sbiLoyaltyPoints   Decimal   @default(0) @db.Decimal(18, 4) @map("sbi_loyalty_points")
   sbiRemarks         String?   @db.VarChar(250) @map("sbi_remarks")
   // Audit
   sbiIsDeleted       Boolean   @default(false) @map("sbi_is_deleted")

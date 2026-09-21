@@ -31,7 +31,12 @@ import {
 } from './cheques.guards';
 import { logChequeStatus, reloadChequeRow } from './cheques.utils';
 import { loadVoucherRef, writeChequeVoucher, type ChequeLegSpec } from './cheque-voucher.helper';
-import { allocateChequeMoney } from './cheque-allocation';
+import {
+  allocateChequeMoney,
+  namedOrAutoFifo,
+  type ChequeAllocationRequest,
+} from './cheque-allocation';
+import { allocationsReversedBy } from './cheque-reversal.helper';
 import { ChequeReturnService } from './cheque-return.service';
 import {
   RECEIPT_VOUCHER_TYPE_CODE,
@@ -39,6 +44,7 @@ import {
   REPRESENTABLE_STATUSES,
 } from './types/cheque-enum';
 import { RepresentChequeDto, ReplaceChequeDto } from './dto/cheque-actions.dto';
+import type { ChequeAllocationDto } from './dto/cheque-keys.dto';
 import type {
   ChequeBillRef,
   ChequeErrorDetail,
@@ -140,6 +146,18 @@ export class ChequeReissueService {
         againstVoucherId: cheque.apdBounceVoucherId,
         againstAccYear: cheque.apdBounceAccYear,
         allocations: dto.allocations,
+        // ── The fix at the heart of §4.5 ────────────────────────────────
+        // With no `allocations` the money goes back on the bills the BOUNCE
+        // took it off, to the paisa, and not onto whatever the party's oldest
+        // open invoice happens to be. A re-presentation is the same money for
+        // the same debt; the bills are not a choice the caller is making, they
+        // are a fact the reversal rows already hold. `allocations` stays as the
+        // explicit override for the rare case where the operator really is
+        // re-pointing it.
+        restoreReversedBy: {
+          voucherId: cheque.apdBounceVoucherId,
+          accYear: cheque.apdBounceAccYear,
+        },
         registerRow: { apdId: cheque.apdId, apdAccYear: cheque.apdAccYear },
         actor,
         what: 're-presented',
@@ -443,7 +461,23 @@ export class ChequeReissueService {
       voucherDate: Date;
       againstVoucherId: string | null;
       againstAccYear: string | null;
-      allocations: readonly { billId: string; billAccYear: string; amount: number }[];
+      allocations: readonly ChequeAllocationDto[];
+      /**
+       * The bounce whose reversal is to be UNDONE when `allocations` is empty —
+       * §4.5, and the difference between the two re-issues.
+       *
+       * Re-present gives it: the same paper for the same debt, so an empty list
+       * means "back where it was", and the rows that bounce wrote are the only
+       * record of the per-bill split.
+       *
+       * Replace does NOT, and that is not an oversight. The new cheque may be
+       * for a DIFFERENT amount — a party very often replaces a bounced 18,500
+       * with 12,000 and pays the rest another way — so there is no arithmetic
+       * that puts "what the bounce reversed" back without inventing which bill
+       * loses the difference. An empty list there stays auto-FIFO, and an
+       * operator who wants the old split sends it.
+       */
+      restoreReversedBy?: { voucherId: string | null; accYear: string | null } | null;
       /**
        * The register row the voucher belongs to. Given directly by re-present,
        * where the row already exists; created by `onVoucherWritten` in replace,
@@ -534,6 +568,8 @@ export class ChequeReissueService {
       legs,
     });
 
+    const request = await this.allocationRequest(tx, params);
+
     // The register row: either the one the caller already has, or the one the
     // hook creates now that there is a voucher for it to name.
     const placed = params.onVoucherWritten
@@ -568,7 +604,7 @@ export class ChequeReissueService {
         tenderId: cheque.apdTenderId,
         tenderAccYear: cheque.apdTenderId ? cheque.apdAccYear : null,
       },
-      params.allocations as never,
+      request,
     );
 
     // Re-present's row predates its voucher, so it is pointed at it here. A
@@ -600,6 +636,49 @@ export class ChequeReissueService {
           billAmount: bill ? toAmount(bill.billAmount) : 0,
           pendingAmount: bill ? toAmount(bill.pendingAmount) : 0,
         };
+      }),
+    };
+  }
+
+  /**
+   * Where this re-issue's bills come from — the one decision `allocateChequeMoney`
+   * refuses to make for itself.
+   *
+   * Sent allocations win, always: an operator who has named the bills is
+   * re-pointing the money on purpose, and §4.5 keeps that door open.
+   *
+   * Otherwise a re-present restores what its bounce reversed. Note that an
+   * empty restore is passed THROUGH as a restore rather than collapsing back to
+   * auto-FIFO: a cheque whose money went wholly on account settled no bill the
+   * first time, and it settles none this time either. Falling back to FIFO on
+   * an empty result would put that cheque on somebody's oldest invoice, which
+   * is the bug this whole path is here to prevent.
+   */
+  private async allocationRequest(
+    tx: Prisma.TransactionClient,
+    params: {
+      cheque: LockedCheque;
+      allocations: readonly ChequeAllocationDto[];
+      restoreReversedBy?: { voucherId: string | null; accYear: string | null } | null;
+    },
+  ): Promise<ChequeAllocationRequest> {
+    if (params.allocations.length > 0) {
+      return { mode: 'NAMED', rows: params.allocations };
+    }
+
+    const bounce = params.restoreReversedBy;
+    if (!bounce?.voucherId || !bounce.accYear) {
+      // Replace, or a BOUNCED row whose bounce wrote no voucher — which under
+      // ON_RECEIPT cannot happen, since the bounce posts five legs before it
+      // touches a single adjustment row.
+      return namedOrAutoFifo(params.allocations);
+    }
+
+    return {
+      mode: 'RESTORE',
+      rows: await allocationsReversedBy(tx, params.cheque, {
+        voucherId: bounce.voucherId,
+        accYear: bounce.accYear,
       }),
     };
   }

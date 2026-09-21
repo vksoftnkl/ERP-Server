@@ -4,6 +4,7 @@ import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import { AccountLedgerMastersService } from '../../accountsModule/accountLedgerMasters/account-ledger-masters.service';
 import { SaveAccountLedgerMasterDto } from '../../accountsModule/accountLedgerMasters/dto/save-account-ledger-master.dto';
+import { LedGstPartyRegType } from '../../accountsModule/accountLedgerMasters/types/account-ledger-master-enum';
 import { SaveCustomerDto } from './dto/save-customer.dto';
 import {
   CustomerErrorDetail,
@@ -124,8 +125,63 @@ const CUSTOMER_TO_LEDGER_FIELD_MAP: ReadonlyArray<
   ['cusAadharNo', 'ledAadharNo'],
   ['cusEcommerceGstin', 'ledEcommerceGstin'],
   ['cusNotes', 'ledRemarks'],
+  ['cusEnableSms', 'ledAllowSms'],
+  ['cusSortOrder', 'ledSortOrder'],
   ['cusIsActive', 'ledIsActive'],
 ];
+// cus_gst_type is a free-text VarChar(30); the ledger's led_gst_party_reg_type is
+// one of REGULAR / COMPOSITION / UNREGISTERED, behind the LedGstPartyRegType
+// vocabulary the GST engine reads. Match case- and separator-insensitively;
+// anything outside that vocabulary (or blank) syncs as NULL, so a free-text GST
+// type on the customer can never fail the customer's own save.
+function toLedgerGstPartyRegType(cusGstType: string | null | undefined): LedGstPartyRegType | null {
+  if (typeof cusGstType !== 'string') {
+    return null;
+  }
+  const normalized = cusGstType
+    .trim()
+    .toUpperCase()
+    .replace(/[\s_-]+/g, '');
+  return (
+    Object.values(LedGstPartyRegType).find(
+      (value) => value.replace(/[\s_-]+/g, '') === normalized,
+    ) ?? null
+  );
+}
+// Income-tax collection. The ledger's TCS/TDS applicability (which
+// receipt-lines.ts reads to require the TCS / TDS_RECEIVABLE legs) comes from
+// cusTcsApplicable plus the legacy cus_itcoll_* pair — a 'TCS' / 'TDS' type and
+// an exemption flag, the same pair customer-detail.lookup reads as tcs_customer.
+// An explicit exemption vetoes both. Note that neither column describes GST
+// input credit, so led_itc_eligibility is deliberately left alone.
+// A flag is returned only when the payload carries a column that decides it, so
+// a partial update can't clobber the ledger's current value.
+function toLedgerItCollectionFlags(saveCustomerDto: SaveCustomerDto): {
+  tcs?: boolean;
+  tds?: boolean;
+} {
+  const hasTcsFlag = hasOwnProperty(saveCustomerDto, 'cusTcsApplicable');
+  const hasItcollType = hasOwnProperty(saveCustomerDto, 'cusItcollType');
+  const hasItcollExempted = hasOwnProperty(saveCustomerDto, 'cusItcollExempted');
+  if (!hasTcsFlag && !hasItcollType && !hasItcollExempted) {
+    return {};
+  }
+  if (saveCustomerDto.cusItcollExempted === true) {
+    return { tcs: false, tds: false };
+  }
+  const itcollType =
+    typeof saveCustomerDto.cusItcollType === 'string'
+      ? saveCustomerDto.cusItcollType.trim().toUpperCase()
+      : null;
+  const flags: { tcs?: boolean; tds?: boolean } = {};
+  if (hasTcsFlag || hasItcollType) {
+    flags.tcs = saveCustomerDto.cusTcsApplicable === true || itcollType === 'TCS';
+  }
+  if (hasItcollType) {
+    flags.tds = itcollType === 'TDS';
+  }
+  return flags;
+}
 type CustomerWriteClient = SalesWriteClient;
 @Injectable()
 export class CustomerService {
@@ -625,6 +681,18 @@ export class CustomerService {
       if (hasOwnProperty(saveCustomerDto, cusField)) {
         ledgerDtoRecord[ledField] = customerRecord[cusField];
       }
+    }
+    // The statutory fields the map can't carry one-to-one: the customer stores
+    // free text, the ledger stores a CHECK-backed vocabulary or a pair of flags.
+    if (hasOwnProperty(saveCustomerDto, 'cusGstType')) {
+      ledgerDto.ledGstPartyRegType = toLedgerGstPartyRegType(saveCustomerDto.cusGstType);
+    }
+    const itCollectionFlags = toLedgerItCollectionFlags(saveCustomerDto);
+    if (itCollectionFlags.tcs !== undefined) {
+      ledgerDto.ledIsTcsApplicable = itCollectionFlags.tcs;
+    }
+    if (itCollectionFlags.tds !== undefined) {
+      ledgerDto.ledIsTdsApplicable = itCollectionFlags.tds;
     }
     return ledgerDto;
   }

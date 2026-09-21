@@ -98,6 +98,20 @@ model UserMaster {
   //       ON public.user_master (usr_is_active)
   //       WHERE usr_is_deleted = false;
 
+  // ── Loyalty points engine (20260921140000) ─────────────────────────────
+  loyaltyLedgerRows     LoyaltyLedger[]           @relation("LoyaltyLedgerUser")
+  // Manual ADJUST rows need a signature (ck_lld_adjust_approval), as does a
+  // cancelled gift slip (ck_lgr_cancel).
+  loyaltyLedgerApproved LoyaltyLedger[]           @relation("LoyaltyLedgerApprover")
+  loyaltyGiftRedeems    LoyaltyGiftRedeem[]       @relation("LoyaltyGiftRedeemUser")
+  loyaltyGiftApproved   LoyaltyGiftRedeem[]       @relation("LoyaltyGiftRedeemApprover")
+
+  // ── Coupons and gift vouchers (20260921160000) ──────────────────────────
+  couponsCancelled      LoyaltyCoupon[]           @relation("CouponCancelledBy")
+  couponTxns            LoyaltyCouponTxn[]        @relation("CouponTxnUser")
+  // Voiding a live voucher needs a signature (ck_lct_cancel_approval).
+  couponTxnsApproved    LoyaltyCouponTxn[]        @relation("CouponTxnApprover")
+
   @@map("user_master")
   @@schema("public")
 }

@@ -196,7 +196,7 @@ let ChequeClearService = class ChequeClearService {
             cheque,
             tenderId: cheque.apdTenderId,
             tenderAccYear: cheque.apdTenderId ? cheque.apdAccYear : null,
-        }, params.dto.allocations);
+        }, (0, cheque_allocation_1.namedOrAutoFifo)(params.dto.allocations));
         const recomputed = await this.recompute.recomputeBills(tx, outcome.bills, (0, receipt_utils_1.todayUtc)());
         const pendingByBill = new Map(recomputed.map((bill) => [`${bill.billId}|${bill.accYear}`, bill]));
         await tx.accPdcRegister.update({

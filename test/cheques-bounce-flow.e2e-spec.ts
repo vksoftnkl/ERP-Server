@@ -170,7 +170,6 @@ beforeAll(async () => {
   });
   app.setGlobalPrefix((process.env.API_PREFIX ?? 'api').replace(/^\/+|\/+$/g, ''));
   await app.init();
-
 }, 120_000);
 
 afterAll(async () => {
@@ -446,11 +445,18 @@ describe('Received cheques — deposit, bounce, re-present (e2e, live DB, mutati
     });
     expect(bounceLegs).toBe(5);
 
-    // Auto-FIFO put the money back on bills — including, possibly, the
-    // bounce-charge bill, which is an ordinary open receivable.
-    expect(data.billsAllocated.length).toBeGreaterThan(0);
+    // §4.5 — the money goes back on the bills the BOUNCE took it off, with the
+    // amounts it took. Not auto-FIFO: a re-presentation is the same money for
+    // the same debt, and the bounce-charge bill — an ordinary open receivable
+    // that FIFO would happily dip into — is left alone.
+    const restored = new Map(
+      data.billsAllocated.map((bill) => [bill.billId, bill.settledByThisCheque]),
+    );
+    expect(restored.size).toBe(2);
+    expect(restored.get(fixture.billA)).toBeCloseTo(BILL_A_AMOUNT, 2);
+    expect(restored.get(fixture.billB)).toBeCloseTo(BILL_B_AMOUNT, 2);
     const allocated = data.billsAllocated.reduce((acc, bill) => acc + bill.settledByThisCheque, 0);
-    expect(allocated).toBeLessThanOrEqual(CHEQUE_AMOUNT + 0.01);
+    expect(allocated).toBeCloseTo(CHEQUE_AMOUNT, 2);
   }, 120_000);
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -520,17 +526,14 @@ describe('Received cheques — clear, return, replace (e2e, live DB, mutating)',
     const cheque = await seedChequeAsReceiptWouldHave();
     await deposit(cheque);
 
-    const res = await api()
-      .post('/api/v1/cheques/clear')
-      .set('Authorization', BEARER)
-      .send({
-        apdId: cheque.apdId,
-        apdAccYear: ACC_YEAR,
-        apdCompanyId: COMPANY,
-        apdBranchId: BRANCH,
-        clearDate: CLEAR_DATE,
-        bankDate: BANK_DATE,
-      });
+    const res = await api().post('/api/v1/cheques/clear').set('Authorization', BEARER).send({
+      apdId: cheque.apdId,
+      apdAccYear: ACC_YEAR,
+      apdCompanyId: COMPANY,
+      apdBranchId: BRANCH,
+      clearDate: CLEAR_DATE,
+      bankDate: BANK_DATE,
+    });
 
     expect(res.status).toBe(201);
     const data = payload<ChequeClearPayload>(res);
@@ -590,16 +593,13 @@ describe('Received cheques — clear, return, replace (e2e, live DB, mutating)',
     await deposit(cheque);
 
     const send = () =>
-      api()
-        .post('/api/v1/cheques/clear')
-        .set('Authorization', BEARER)
-        .send({
-          apdId: cheque.apdId,
-          apdAccYear: ACC_YEAR,
-          apdCompanyId: COMPANY,
-          apdBranchId: BRANCH,
-          clearDate: CLEAR_DATE,
-        });
+      api().post('/api/v1/cheques/clear').set('Authorization', BEARER).send({
+        apdId: cheque.apdId,
+        apdAccYear: ACC_YEAR,
+        apdCompanyId: COMPANY,
+        apdBranchId: BRANCH,
+        clearDate: CLEAR_DATE,
+      });
 
     const first = await send();
     expect(first.status).toBe(201);
@@ -620,17 +620,14 @@ describe('Received cheques — clear, return, replace (e2e, live DB, mutating)',
   it('returns a HELD cheque, reverses the receipt and reopens the bills', async () => {
     const cheque = await seedChequeAsReceiptWouldHave();
 
-    const res = await api()
-      .post('/api/v1/cheques/return')
-      .set('Authorization', BEARER)
-      .send({
-        apdId: cheque.apdId,
-        apdAccYear: ACC_YEAR,
-        apdCompanyId: COMPANY,
-        apdBranchId: BRANCH,
-        action: 'RETURNED',
-        reason: 'Party asked for the paper back',
-      });
+    const res = await api().post('/api/v1/cheques/return').set('Authorization', BEARER).send({
+      apdId: cheque.apdId,
+      apdAccYear: ACC_YEAR,
+      apdCompanyId: COMPANY,
+      apdBranchId: BRANCH,
+      action: 'RETURNED',
+      reason: 'Party asked for the paper back',
+    });
 
     expect(res.status).toBe(201);
     const data = payload<ChequeReturnPayload>(res);
@@ -662,17 +659,14 @@ describe('Received cheques — clear, return, replace (e2e, live DB, mutating)',
   it('CANCELLED frees the cheque number, RETURNED does not', async () => {
     const cheque = await seedChequeAsReceiptWouldHave();
 
-    const res = await api()
-      .post('/api/v1/cheques/return')
-      .set('Authorization', BEARER)
-      .send({
-        apdId: cheque.apdId,
-        apdAccYear: ACC_YEAR,
-        apdCompanyId: COMPANY,
-        apdBranchId: BRANCH,
-        action: 'CANCELLED',
-        reason: 'Keyed against the wrong party',
-      });
+    const res = await api().post('/api/v1/cheques/return').set('Authorization', BEARER).send({
+      apdId: cheque.apdId,
+      apdAccYear: ACC_YEAR,
+      apdCompanyId: COMPANY,
+      apdBranchId: BRANCH,
+      action: 'CANCELLED',
+      reason: 'Keyed against the wrong party',
+    });
 
     expect(res.status).toBe(201);
     created.vouchers.push(payload<ChequeReturnPayload>(res).reversalVoucher!.voucherId);
@@ -796,14 +790,257 @@ describe('Received cheques — clear, return, replace (e2e, live DB, mutating)',
  * failure here ambiguous between the two modules, and the receipt has its own
  * suites.
  */
+// ═══════════════════════════════════════════════════════════════════════════
+//  §4.5 — a re-presented cheque settles THE BILLS IT CAME OFF
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * The defect these four cover, in one line: `POST /cheques/re-present` with no
+ * `allocations` used to auto-allocate FIFO, which moved a customer's money onto
+ * whichever of their debts sorted first — a bill the cheque was never against —
+ * and `/cheques/get` then reported that as fact.
+ *
+ * Every test here seeds a DECOY: an older, larger, wide-open invoice for the
+ * same party. Auto-FIFO would swallow the whole cheque into it. Nothing may.
+ */
+describe('Received cheques — re-presentation restores the bounced allocation (e2e, live DB, mutating)', () => {
+  const SECOND_BOUNCE_DATE = '2026-09-16';
+  const DECOY_DATES = { docDate: '2026-05-02', dueDate: '2026-06-01' };
+  const DECOY_AMOUNT = 30000;
+
+  /** A cheque taken in, banked and returned — the state re-present starts from. */
+  async function seedBouncedCheque(): Promise<Fixture> {
+    const cheque = await seedChequeAsReceiptWouldHave();
+
+    const deposit = await api()
+      .post('/api/v1/cheques/deposit')
+      .set('Authorization', BEARER)
+      .send({
+        cheques: [{ apdId: cheque.apdId, apdAccYear: ACC_YEAR }],
+        apdCompanyId: COMPANY,
+        apdBranchId: BRANCH,
+        bankLedgerId: cheque.bankLedgerId,
+        depositDate: DEPOSIT_DATE,
+        slipNo: `E2E-D-${cheque.instrumentNo}`,
+      });
+    expect(deposit.status).toBe(201);
+
+    const bounce = await api().post('/api/v1/cheques/bounce').set('Authorization', BEARER).send({
+      apdId: cheque.apdId,
+      apdAccYear: ACC_YEAR,
+      apdCompanyId: COMPANY,
+      apdBranchId: BRANCH,
+      bounceDate: BOUNCE_DATE,
+      reason: 'Funds insufficient',
+      // No charges: this suite is about where the money lands, and the five
+      // legs are the bounce suite's business.
+      bankCharge: 0,
+      partyCharge: 0,
+    });
+    expect(bounce.status).toBe(201);
+    created.vouchers.push(payload<ChequeBouncePayload>(bounce).voucher.voucherId);
+
+    return cheque;
+  }
+
+  /**
+   * The bill auto-FIFO would reach for first: due three months before the two
+   * the cheque actually settled, and big enough to swallow it whole.
+   */
+  async function seedDecoyBill(cheque: Fixture, refno: string): Promise<string> {
+    const type = await prisma.accVoucherType.findFirstOrThrow({
+      where: { vchrTypeCode: 'Rct' },
+      select: { vchrTypeId: true },
+    });
+    const bill = await createBill(
+      prisma,
+      `${refno}-${Date.now().toString().slice(-6)}`,
+      DECOY_AMOUNT,
+      cheque.voucherId,
+      type.vchrTypeId,
+      DECOY_DATES,
+    );
+    return bill.id;
+  }
+
+  const represent = (cheque: Fixture, body: Record<string, unknown> = {}) =>
+    api()
+      .post('/api/v1/cheques/re-present')
+      .set('Authorization', BEARER)
+      .send({
+        apdId: cheque.apdId,
+        apdAccYear: ACC_YEAR,
+        apdCompanyId: COMPANY,
+        apdBranchId: BRANCH,
+        bankLedgerId: cheque.bankLedgerId,
+        depositDate: REPRESENT_DATE,
+        slipNo: `E2E-RP2-${cheque.instrumentNo}`,
+        ...body,
+      });
+
+  it('puts the money back on the bills it came off, and not on the older open one', async () => {
+    const cheque = await seedBouncedCheque();
+    const decoy = await seedDecoyBill(cheque, 'E2E-DECOY');
+
+    const res = await represent(cheque);
+    expect(res.status).toBe(201);
+    const data = payload<ChequeRepresentPayload>(res);
+    created.vouchers.push(data.reissueVoucher!.voucherId);
+
+    // The response says the two bills the cheque was always against.
+    const byBill = new Map(
+      data.billsAllocated.map((bill) => [bill.billId, bill.settledByThisCheque]),
+    );
+    expect(byBill.get(cheque.billA)).toBeCloseTo(BILL_A_AMOUNT, 2);
+    expect(byBill.get(cheque.billB)).toBeCloseTo(BILL_B_AMOUNT, 2);
+    expect(byBill.has(decoy)).toBe(false);
+
+    // And so do the rows, which is the half the old behaviour got wrong: the
+    // +2,000-shaped row used to be real, live and against a bill the cheque had
+    // never touched.
+    const written = await prisma.accBillAdjustment.findMany({
+      where: {
+        abjChequeId: cheque.apdId,
+        abjVoucherId: data.reissueVoucher!.voucherId,
+        abjIsDeleted: false,
+      },
+      select: { abjBillId: true, abjAmount: true },
+    });
+    expect(written.map((row) => row.abjBillId).sort()).toEqual([cheque.billA, cheque.billB].sort());
+
+    // The decoy never moved a paisa.
+    const decoyRow = await prisma.accBillBalance.findUniqueOrThrow({
+      where: { ablId_ablAccYear: { ablId: decoy, ablAccYear: ACC_YEAR } },
+    });
+    expect(Number(decoyRow.ablAllocAmount)).toBeCloseTo(0, 2);
+
+    // Each bill is settled again, to the paisa, by the sum of its LIVE rows —
+    // §7's reconciliation, on the bills this cheque is responsible for.
+    for (const [billId, amount] of [
+      [cheque.billA, BILL_A_AMOUNT],
+      [cheque.billB, BILL_B_AMOUNT],
+    ] as const) {
+      const rows = await prisma.accBillAdjustment.findMany({
+        where: { abjBillId: billId, abjBillAccYear: ACC_YEAR, abjIsDeleted: false },
+        select: { abjAmount: true },
+      });
+      const live = rows.reduce((acc, row) => acc + Number(row.abjAmount), 0);
+      expect(live).toBeCloseTo(amount, 2);
+
+      const bill = await prisma.accBillBalance.findUniqueOrThrow({
+        where: { ablId_ablAccYear: { ablId: billId, ablAccYear: ACC_YEAR } },
+      });
+      expect(Number(bill.ablAllocAmount)).toBeCloseTo(amount, 2);
+    }
+  }, 180_000);
+
+  it('still sends it wherever explicit allocations say, which is the override', async () => {
+    const cheque = await seedBouncedCheque();
+    const decoy = await seedDecoyBill(cheque, 'E2E-OVERRIDE');
+
+    const res = await represent(cheque, {
+      allocations: [{ billId: decoy, billAccYear: ACC_YEAR, amount: CHEQUE_AMOUNT }],
+    });
+    expect(res.status).toBe(201);
+    const data = payload<ChequeRepresentPayload>(res);
+    created.vouchers.push(data.reissueVoucher!.voucherId);
+
+    // The operator re-pointed it on purpose, and that is honoured in full.
+    expect(data.billsAllocated).toHaveLength(1);
+    expect(data.billsAllocated[0].billId).toBe(decoy);
+    expect(data.billsAllocated[0].settledByThisCheque).toBeCloseTo(CHEQUE_AMOUNT, 2);
+
+    // The bills the cheque came off stay open, because nobody asked for them.
+    const billA = await prisma.accBillBalance.findUniqueOrThrow({
+      where: { ablId_ablAccYear: { ablId: cheque.billA, ablAccYear: ACC_YEAR } },
+    });
+    expect(Number(billA.ablAllocAmount)).toBeCloseTo(0, 2);
+  }, 180_000);
+
+  it('refuses, naming the bill, when one cannot take its share back', async () => {
+    const cheque = await seedBouncedCheque();
+    await seedDecoyBill(cheque, 'E2E-REFUSE');
+
+    const gone = await prisma.accBillBalance.update({
+      where: { ablId_ablAccYear: { ablId: cheque.billB, ablAccYear: ACC_YEAR } },
+      data: { ablIsDeleted: true, ablIsActive: false },
+      select: { ablDocRefno: true },
+    });
+
+    const res = await represent(cheque);
+
+    // A 409 naming the bill, NOT a silent re-pointing at the decoy. The world
+    // moved after the settlement was made, and choosing a different bill is
+    // exactly the behaviour this endpoint is not allowed to have.
+    expect(res.status).toBe(409);
+    expect(JSON.stringify(res.body)).toContain(gone.ablDocRefno);
+
+    // Nothing was written: one transaction, and it rolled back.
+    const row = await prisma.accPdcRegister.findUniqueOrThrow({
+      where: { apdId_apdAccYear: { apdId: cheque.apdId, apdAccYear: ACC_YEAR } },
+    });
+    expect(row.apdStatus).toBe('BOUNCED');
+    expect(row.apdPresentCount).toBe(1);
+
+    const billA = await prisma.accBillBalance.findUniqueOrThrow({
+      where: { ablId_ablAccYear: { ablId: cheque.billA, ablAccYear: ACC_YEAR } },
+    });
+    expect(Number(billA.ablAllocAmount)).toBeCloseTo(0, 2);
+  }, 180_000);
+
+  it('bounces a re-presented cheque without reversing the first settlement twice', async () => {
+    const cheque = await seedBouncedCheque();
+
+    const first = await represent(cheque);
+    expect(first.status).toBe(201);
+    created.vouchers.push(payload<ChequeRepresentPayload>(first).reissueVoucher!.voucherId);
+
+    // §7 — a second bounce is a real separate event, not a duplicate.
+    const second = await api().post('/api/v1/cheques/bounce').set('Authorization', BEARER).send({
+      apdId: cheque.apdId,
+      apdAccYear: ACC_YEAR,
+      apdCompanyId: COMPANY,
+      apdBranchId: BRANCH,
+      bounceDate: SECOND_BOUNCE_DATE,
+      reason: 'Funds insufficient',
+      bankCharge: 0,
+      partyCharge: 0,
+    });
+    expect(second.status).toBe(201);
+    created.vouchers.push(payload<ChequeBouncePayload>(second).voucher.voucherId);
+
+    // The bills are open again — ONCE. `abj_reversal_of_id IS NULL` means "not
+    // itself a reversal", not "still stands": sweeping up the first cycle's
+    // already-reversed rows would take the allocation down to -12,500 and leave
+    // the bill reading as 25,000 outstanding on a 12,500 invoice.
+    for (const [billId, amount] of [
+      [cheque.billA, BILL_A_AMOUNT],
+      [cheque.billB, BILL_B_AMOUNT],
+    ] as const) {
+      const bill = await prisma.accBillBalance.findUniqueOrThrow({
+        where: { ablId_ablAccYear: { ablId: billId, ablAccYear: ACC_YEAR } },
+      });
+      expect(Number(bill.ablAllocAmount)).toBeCloseTo(0, 2);
+      expect(Number(bill.ablBillAmount) - Number(bill.ablAllocAmount)).toBeCloseTo(amount, 2);
+
+      const rows = await prisma.accBillAdjustment.findMany({
+        where: { abjBillId: billId, abjBillAccYear: ACC_YEAR, abjIsDeleted: false },
+        select: { abjAmount: true },
+      });
+      expect(rows.reduce((acc, row) => acc + Number(row.abjAmount), 0)).toBeCloseTo(0, 2);
+      // Two cycles: settle, reverse, settle, reverse.
+      expect(rows).toHaveLength(4);
+    }
+  }, 180_000);
+});
+
 async function seedChequeAsReceiptWouldHave(
   options: { instrumentDate?: string; instrumentNo?: string } = {},
 ): Promise<Fixture> {
   const instrumentDate = new Date(`${options.instrumentDate ?? INSTRUMENT_DATE}T00:00:00Z`);
   const receivedOn = new Date(`${RECEIVED_ON}T00:00:00Z`);
   const stamp = Date.now().toString().slice(-6);
-  const instrumentNo =
-    options.instrumentNo ?? `E2E${stamp}${Math.floor(Math.random() * 90 + 10)}`;
+  const instrumentNo = options.instrumentNo ?? `E2E${stamp}${Math.floor(Math.random() * 90 + 10)}`;
 
   const tender = await prisma.accTenderMaster.findFirstOrThrow({
     where: { tndTypeId: 5, tndCompanyId: COMPANY, tndIsDeleted: false },
@@ -1015,6 +1252,11 @@ async function createBill(
   amount: number,
   voucherId: string,
   voucherTypeId: number,
+  // An EARLIER due date is what makes a bill the one auto-FIFO would reach for
+  // first, which is how the re-presentation suite below proves it does not. The
+  // document date moves with it: ck_abl_due_date will not have a bill falling
+  // due before it was raised.
+  dates: { docDate: string; dueDate: string } = { docDate: BILL_DOC_DATE, dueDate: BILL_DUE_DATE },
 ): Promise<{ id: string; amount: number }> {
   const bill = await tx.accBillBalance.create({
     data: {
@@ -1031,10 +1273,10 @@ async function createBill(
       // ck_abl_voucher: a non-OPENING bill names its voucher AND its type.
       ablVoucherId: voucherId,
       ablVoucherTypeId: voucherTypeId,
-      ablVoucherDate: new Date(`${BILL_DOC_DATE}T00:00:00Z`),
+      ablVoucherDate: new Date(`${dates.docDate}T00:00:00Z`),
       ablDocRefno: refno,
-      ablDocDate: new Date(`${BILL_DOC_DATE}T00:00:00Z`),
-      ablDueDate: new Date(`${BILL_DUE_DATE}T00:00:00Z`),
+      ablDocDate: new Date(`${dates.docDate}T00:00:00Z`),
+      ablDueDate: new Date(`${dates.dueDate}T00:00:00Z`),
       ablDrCr: 'DR',
       ablBillAmount: amount,
       ablCreatedBy: ACTOR,

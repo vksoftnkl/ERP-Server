@@ -45,6 +45,9 @@ model ItemUnitConversion {
   stockReorderPolicyUom StockReorderPolicy[] @relation("StockReorderPolicyUom")
   stockForecastBaseUom StockForecast[]       @relation("StockForecastBaseUom")
   @@index([iucItemId, iucUnitSlno], map: "idx_item_unit_conversion_item")
+  // ── Loyalty points engine (20260921140000) ─────────────────────────────
+  loyaltyGiftItems      LoyaltyGiftRedeemItem[]   @relation("LoyaltyGiftItemUnit")
+
   @@map("item_unit_conversion")
   @@schema("inventory")
   // Partial unique indexes uq_item_unit_conversion, uq_item_unit_conversion_default,

@@ -23,6 +23,7 @@ const cheques_guards_1 = require("./cheques.guards");
 const cheques_utils_1 = require("./cheques.utils");
 const cheque_voucher_helper_1 = require("./cheque-voucher.helper");
 const cheque_allocation_1 = require("./cheque-allocation");
+const cheque_reversal_helper_1 = require("./cheque-reversal.helper");
 const cheque_return_service_1 = require("./cheque-return.service");
 const cheque_enum_1 = require("./types/cheque-enum");
 const REISSUE_TRANSACTION_OPTIONS = { maxWait: 15_000, timeout: 120_000 };
@@ -56,6 +57,10 @@ let ChequeReissueService = class ChequeReissueService {
                 againstVoucherId: cheque.apdBounceVoucherId,
                 againstAccYear: cheque.apdBounceAccYear,
                 allocations: dto.allocations,
+                restoreReversedBy: {
+                    voucherId: cheque.apdBounceVoucherId,
+                    accYear: cheque.apdBounceAccYear,
+                },
                 registerRow: { apdId: cheque.apdId, apdAccYear: cheque.apdAccYear },
                 actor,
                 what: 're-presented',
@@ -300,6 +305,7 @@ let ChequeReissueService = class ChequeReissueService {
             actor: params.actor,
             legs,
         });
+        const request = await this.allocationRequest(tx, params);
         const placed = params.onVoucherWritten
             ? await params.onVoucherWritten({
                 voucherId: written.ref.voucherId,
@@ -325,7 +331,7 @@ let ChequeReissueService = class ChequeReissueService {
             cheque: { ...placed.cheque, apdAmount: params.amount },
             tenderId: cheque.apdTenderId,
             tenderAccYear: cheque.apdTenderId ? cheque.apdAccYear : null,
-        }, params.allocations);
+        }, request);
         if (!params.onVoucherWritten) {
             await tx.accPdcRegister.update({
                 where: {
@@ -349,6 +355,22 @@ let ChequeReissueService = class ChequeReissueService {
                     billAmount: bill ? (0, receipt_utils_1.toAmount)(bill.billAmount) : 0,
                     pendingAmount: bill ? (0, receipt_utils_1.toAmount)(bill.pendingAmount) : 0,
                 };
+            }),
+        };
+    }
+    async allocationRequest(tx, params) {
+        if (params.allocations.length > 0) {
+            return { mode: 'NAMED', rows: params.allocations };
+        }
+        const bounce = params.restoreReversedBy;
+        if (!bounce?.voucherId || !bounce.accYear) {
+            return (0, cheque_allocation_1.namedOrAutoFifo)(params.allocations);
+        }
+        return {
+            mode: 'RESTORE',
+            rows: await (0, cheque_reversal_helper_1.allocationsReversedBy)(tx, params.cheque, {
+                voucherId: bounce.voucherId,
+                accYear: bounce.accYear,
             }),
         };
     }

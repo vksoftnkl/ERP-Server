@@ -123,6 +123,11 @@ model LoyaltyScheme {
   slabs                     LoyaltySchemeSlab[]   @relation("LoyaltySchemeSlabs")
   gifts                     LoyaltySchemeGift[]   @relation("LoyaltySchemeGifts")
 
+  // ── Loyalty points engine (20260921140000) ─────────────────────────────
+  loyaltyMembers        LoyaltyMember[]           @relation("LoyaltyMemberScheme")
+  loyaltyLedgerRows     LoyaltyLedger[]           @relation("LoyaltyLedgerScheme")
+  loyaltyGiftRedeems    LoyaltyGiftRedeem[]       @relation("LoyaltyGiftRedeemScheme")
+
   @@map("loyalty_scheme")
   @@schema("sales")
 }

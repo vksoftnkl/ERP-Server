@@ -133,6 +133,16 @@ model SaleBillItem {
   sbiSalesmanId      String?   @db.Uuid @map("sbi_salesman_id")
   sbiSchemeId        String?   @db.Uuid @map("sbi_scheme_id")
   sbiSchemeName      String?   @db.VarChar(150) @map("sbi_scheme_name")
+  // ── Loyalty points (20260921140000) ──────────────────────────────────
+  // The client already computed these per line and threw them away for want
+  // of a column. Snapshots of the rule that ran, so a later scheme edit
+  // cannot rewrite history.
+  //
+  // sbiSchemeId / sbiSchemeName above belong to the PROMOTION scheme and are
+  // deliberately NOT reused here — welding the two features together is how
+  // one of them becomes impossible to change.
+  sbiLoyaltyPv       Decimal   @default(0) @db.Decimal(18, 4) @map("sbi_loyalty_pv")
+  sbiLoyaltyPoints   Decimal   @default(0) @db.Decimal(18, 4) @map("sbi_loyalty_points")
   sbiRemarks         String?   @db.VarChar(250) @map("sbi_remarks")
   // Audit
   sbiIsDeleted       Boolean   @default(false) @map("sbi_is_deleted")

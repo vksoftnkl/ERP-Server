@@ -16,7 +16,7 @@ import {
 } from './cheques.guards';
 import { logChequeStatus, reloadChequeRow } from './cheques.utils';
 import { writeChequeVoucher } from './cheque-voucher.helper';
-import { allocateChequeMoney } from './cheque-allocation';
+import { allocateChequeMoney, namedOrAutoFifo } from './cheque-allocation';
 import {
   CLEARABLE_STATUSES,
   CLEARING_VOUCHER_TYPE_CODE,
@@ -328,7 +328,11 @@ export class ChequeClearService {
         tenderId: cheque.apdTenderId,
         tenderAccYear: cheque.apdTenderId ? cheque.apdAccYear : null,
       },
-      params.dto.allocations,
+      // §4.3 — this money is landing for the FIRST time, so an empty list is
+      // "nobody decided" and auto-FIFO is the answer. The re-issue paths read
+      // the same empty list differently, and deliberately: see
+      // `ChequeAllocationRequest`.
+      namedOrAutoFifo(params.dto.allocations),
     );
 
     // §5.2 step 14's TypeScript replacement, run inside the same transaction

@@ -649,6 +649,51 @@ export class ReceiptAllocationDto implements ReceiptAllocation {
   })
   docDate!: string | null;
 
+  @ApiProperty({
+    nullable: true,
+    enum: BillType,
+    example: BillType.SALES,
+    description:
+      "The bill's own type, read from acc_bill_balance at the moment of this read. Null only " +
+      'when the bill can no longer be read, which on a POSTED row cannot happen.',
+  })
+  billType!: BillType | null;
+
+  @ApiProperty({
+    nullable: true,
+    example: 15500,
+    description:
+      "The bill's full value. Here because a POSTED receipt is painted from this payload alone " +
+      '— the screen does not call /receipts/open-items for one, since what a receipt shows is ' +
+      'what it DID, not what the party owes today.',
+  })
+  billAmount!: number | null;
+
+  @ApiProperty({
+    nullable: true,
+    example: 14500,
+    description:
+      'Pending **as it stands NOW**, after this receipt. The client derives what it was before ' +
+      "by adding this row's own settlement back; deriving it the other way round is impossible, " +
+      'which is why this is the figure sent.',
+  })
+  pendingAmount!: number | null;
+
+  @ApiProperty({
+    nullable: true,
+    example: '2026-10-18',
+    description: 'Null when the bill has no due date — there is nothing for it to be late against.',
+  })
+  dueDate!: string | null;
+
+  @ApiProperty({
+    nullable: true,
+    enum: BillStatus,
+    example: BillStatus.PARTIAL,
+    description: 'abl_status as it stands now — OPEN / PARTIAL / CLOSED.',
+  })
+  status!: BillStatus | null;
+
   @ApiProperty({ enum: BillAdjType, example: BillAdjType.ALLOCATION })
   adjType!: BillAdjType;
 
@@ -698,6 +743,26 @@ export class ReceiptAllocationDto implements ReceiptAllocation {
 
   @ApiProperty({ nullable: true })
   againstBillRefno!: string | null;
+
+  @ApiProperty({
+    nullable: true,
+    format: 'uuid',
+    description:
+      'The row this one RETRACTS. acc_bill_adjustment never rewrites a row and never soft-deletes ' +
+      'one: an amend or a cancel inserts the exact negative of it, so an amended receipt answers ' +
+      'with the original row, its negative AND the replacement, and netting per bill is the ' +
+      "reader's job. Null on every ordinary row.",
+  })
+  reversalOfId!: string | null;
+
+  @ApiProperty({
+    example: false,
+    description:
+      'This row has been retracted by a later one. Asked of the database, not inferred from the ' +
+      'rows in this payload: an AMEND files its negatives on the receipt itself, but a CANCEL ' +
+      'files them on the reversal voucher, which is not in this payload at all.',
+  })
+  isReversed!: boolean;
 
   @ApiProperty({ nullable: true, format: 'uuid' })
   approvedBy!: string | null;

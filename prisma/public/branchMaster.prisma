@@ -109,8 +109,29 @@ model BranchMaster {
   printerProfiles       PrinterProfile[]          @relation("PrinterProfileBranch")
   printLogs             PrintLog[]                @relation("PrintLogBranch")
 
+  // ── GST provider integration ───────────────────────────────────────────
+  // Only a branch that holds its OWN registration (br_gstin_no) is named on a
+  // credential; the rest file under the company's.
+  gstCredentials        GstCompanyCredential[]    @relation("GstCredentialBranch")
+
   @@index([brCompId],    name: "idx_branch_comp_id")
   @@index([brStateCode], name: "idx_branch_state_code")
+  // ── Loyalty points engine (20260921140000) ─────────────────────────────
+  // A wallet is company-scoped; a branch only ENROLS one. Every LEDGER row,
+  // though, records the branch the event happened at — that is what makes
+  // inter-branch settlement between franchisees answerable.
+  loyaltyMembersEnrolled LoyaltyMember[]          @relation("LoyaltyMemberBranch")
+  loyaltyLedgerRows     LoyaltyLedger[]           @relation("LoyaltyLedgerBranch")
+  loyaltyGiftRedeems    LoyaltyGiftRedeem[]       @relation("LoyaltyGiftRedeemBranch")
+  loyaltyGiftItems      LoyaltyGiftRedeemItem[]   @relation("LoyaltyGiftItemBranch")
+
+  // ── Coupons and gift vouchers (20260921160000) ──────────────────────────
+  // A batch may be branch-less (every branch) and so may a coupon; a
+  // MOVEMENT always records the branch it was presented at.
+  couponBatches         LoyaltyCouponBatch[]      @relation("CouponBatchBranch")
+  couponsIssued         LoyaltyCoupon[]           @relation("CouponBranch")
+  couponTxns            LoyaltyCouponTxn[]        @relation("CouponTxnBranch")
+
   @@map("branch_master")
   @@schema("public")
 }

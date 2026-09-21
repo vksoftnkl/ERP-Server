@@ -13,6 +13,7 @@ export declare class ChequeReissueService {
     represent(dto: RepresentChequeDto): Promise<ChequeRepresentPayload>;
     replace(dto: ReplaceChequeDto): Promise<ChequeReplacePayload>;
     private reissue;
+    private allocationRequest;
     private assertInstrumentDateUsable;
     private reloadLocked;
 }

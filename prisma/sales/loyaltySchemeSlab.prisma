@@ -56,6 +56,11 @@ model LoyaltySchemeSlab {
   item           ItemMaster?         @relation("LoyaltySlabItem",    fields: [lssItemId], references: [itemId], onUpdate: Cascade, onDelete: Restrict, map: "fk_lss_item")
   unit           ItemUnitConversion? @relation("LoyaltySlabUnit",    fields: [lssUnitId], references: [iucId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_lss_unit")
 
+  // ── Loyalty points engine (20260921140000) ─────────────────────────────
+  // The earn slab that fired, recorded on the ledger row so "why did I get
+  // 37 points" survives a later edit to the scheme.
+  loyaltyLedgerRows     LoyaltyLedger[]           @relation("LoyaltyLedgerSlab")
+
   @@map("loyalty_scheme_slab")
   @@schema("sales")
 }

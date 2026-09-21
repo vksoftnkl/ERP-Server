@@ -105,6 +105,15 @@ model Customer {
   @@index([cusPhone1],   name: "idx_cus_phone1")
   @@index([cusGstNo],    name: "idx_cus_gst_no")
   @@index([cusIsActive], name: "idx_cus_active")
+  // ── Loyalty points engine (20260921140000) ─────────────────────────────
+  loyaltyMembers        LoyaltyMember[]           @relation("LoyaltyMemberCustomer")
+  loyaltyLedgerRows     LoyaltyLedger[]           @relation("LoyaltyLedgerCustomer")
+  loyaltyGiftRedeems    LoyaltyGiftRedeem[]       @relation("LoyaltyGiftRedeemCustomer")
+
+  // ── Coupons and gift vouchers (20260921160000) ──────────────────────────
+  coupons               LoyaltyCoupon[]           @relation("CouponCustomer")
+  couponTxns            LoyaltyCouponTxn[]        @relation("CouponTxnCustomer")
+
   @@map("customers")
   @@schema("sales")
 }

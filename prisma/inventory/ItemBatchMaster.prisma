@@ -36,6 +36,9 @@ model ItemBatchMaster {
   // Expression/partial indexes are maintained in SQL because Prisma schema
   // cannot express `lower(trim(...))` or filtered uniqueness/indexes.
   @@index([btmCompanyId, btmItemId], map: "idx_btm_item")
+  // ── Loyalty points engine (20260921140000) ─────────────────────────────
+  loyaltyGiftItems      LoyaltyGiftRedeemItem[]   @relation("LoyaltyGiftItemBatch")
+
   @@map("item_batch_master")
   @@schema("inventory")
 }

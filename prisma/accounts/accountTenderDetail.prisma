@@ -91,6 +91,17 @@ model AccTenderDetail {
   //   ck_td_settle_status, ck_td_amounts, ck_td_row_no, ck_td_total_amt,
   //   ck_td_cash_change, ck_td_units, ck_td_settle_amount, ck_td_mdr,
   //   ck_td_settled_on, ck_td_pdc, ck_td_card_last4
+  // ── Loyalty points engine (20260921140000) ─────────────────────────────
+  // Redemption is a tender line (td_tender_type_id = 10, LOYALTY). Several
+  // REDEEM rows of one redemption share ONE tender, one per lot consumed —
+  // and this is the only route by which points reach the GL and then Tally.
+  loyaltyLedgerRows     LoyaltyLedger[]           @relation("LoyaltyLedgerTender")
+
+  // ── Coupons and gift vouchers (20260921160000) ──────────────────────────
+  // Coupon redemption is a tender line too (td_tender_type_id = 11,
+  // VOUCHER), and a PERCENT coupon arrives here already resolved to rupees.
+  couponTxns            LoyaltyCouponTxn[]        @relation("CouponTxnTender")
+
   @@map("acc_tender_detail")
   @@schema("accounts")
 }

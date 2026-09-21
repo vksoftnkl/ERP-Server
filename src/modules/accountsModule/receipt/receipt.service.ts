@@ -38,6 +38,7 @@ import {
 } from './receipt-draft-lines';
 import { creditRouting } from './open-items.service';
 import { describeReceiptRoleLedgers, ledgerForRole } from './receipt-ledger-roles';
+import { receiptChequeFilter, receiptPdcVoucherWhere } from './receipt-cheque-links';
 import {
   normaliseOtherLines,
   normaliseTenders,
@@ -74,6 +75,7 @@ import { DeleteReceiptDto, GetReceiptQueryDto } from './dto/post-receipt.dto';
 import {
   BillAdjType,
   BillSettlementMode,
+  BillStatus,
   BillType,
   DrCr,
   PdcPostingMode,
@@ -361,17 +363,31 @@ export class ReceiptService {
     client: Prisma.TransactionClient | PrismaService,
     header: StoredHeader,
   ): Promise<ReceiptPayload> {
+    // The receipt's OWN post-dated cheque vouchers — not everything filed
+    // against it. A ChqBnc names the receipt too, and folding one in here put
+    // the bounce's reversal rows into the receipt's `allocations` and listed
+    // the bounce under `pdcVouchers`. See `receipt-cheque-links.ts`.
     const pdcHeaders = await client.accVoucherHeader.findMany({
-      where: {
-        avhAgainstVoucherId: header.avhVoucherId,
-        avhIsDeleted: false,
-      },
+      where: receiptPdcVoucherWhere(header),
       select: STORED_HEADER_SELECT,
       orderBy: { avhVoucherDate: 'asc' },
     });
 
     const voucherIds = [header.avhVoucherId, ...pdcHeaders.map((row) => row.avhVoucherId)];
     const years = [...new Set([header.avhAccYear, ...pdcHeaders.map((row) => row.avhAccYear)])];
+
+    // Read before the parallel block because the cheque query needs it: a
+    // receipt's instruments are found by the tender row they came in on as well
+    // as by the voucher they currently hang off, or a re-presented cheque drops
+    // off its own receipt's strip. See `receipt-cheque-links.ts`.
+    const tenderRows = await client.accTenderDetail.findMany({
+      where: { tdSrcDocId: header.avhVoucherId, tdIsDeleted: false },
+      select: { tdId: true, tdRowNo: true },
+    });
+    const chequeFilter = await receiptChequeFilter(client, {
+      receiptVoucherId: header.avhVoucherId,
+      voucherIds,
+    });
 
     const [legs, adjustments, cheques, advanceBills] = await Promise.all([
       client.accVoucher.findMany({
@@ -410,14 +426,31 @@ export class ReceiptService {
           abjAgainstBillId: true,
           abjApprovedBy: true,
           abjRemarks: true,
-          bill: { select: { ablDocRefno: true, ablDocDate: true, ablBillType: true } },
+          abjReversalOfId: true,
+          // The bill's OWN figures travel with every allocation row (N36 §3).
+          // A posted receipt is painted from this payload alone — the screen
+          // does not call /receipts/open-items for one, because what a receipt
+          // shows is what it did, not what the party owes today — so without
+          // these the grid has no bill amount and no pending figure, and its
+          // "after settlement" column reads minus the settlement on every line.
+          bill: {
+            select: {
+              ablDocRefno: true,
+              ablDocDate: true,
+              ablBillType: true,
+              ablBillAmount: true,
+              ablPendingAmount: true,
+              ablDueDate: true,
+              ablStatus: true,
+            },
+          },
           againstBill: { select: { ablDocRefno: true } },
         },
         orderBy: [{ abjAdjDate: 'asc' }, { abjRowNo: 'asc' }],
       }),
       client.accPdcRegister.findMany({
         where: {
-          apdVoucherId: { in: voucherIds },
+          ...chequeFilter,
           apdIsDeleted: false,
         },
         select: {
@@ -458,6 +491,24 @@ export class ReceiptService {
       }),
     ]);
 
+    // Which of these rows a later row has RETRACTED. Asked of the database
+    // rather than inferred from the rows in hand: an amend files its negatives
+    // on the receipt itself, but a CANCEL files them on the reversal voucher,
+    // which is not in `voucherIds` and so never reaches `adjustments`.
+    const reversedIds = new Set<string>(
+      adjustments.length === 0
+        ? []
+        : (
+            await client.accBillAdjustment.findMany({
+              where: {
+                abjReversalOfId: { in: adjustments.map((row) => row.abjId) },
+                abjIsDeleted: false,
+              },
+              select: { abjReversalOfId: true },
+            })
+          ).map((row) => row.abjReversalOfId as string),
+    );
+
     const today = todayUtc();
     const legsFor = (voucherId: string) =>
       legs
@@ -479,6 +530,14 @@ export class ReceiptService {
       billAccYear: row.abjBillAccYear,
       docRefno: row.bill?.ablDocRefno ?? '',
       docDate: toDateString(row.bill?.ablDocDate ?? null) ?? '',
+      // `fk_abj_bill` makes the bill mandatory on a written row, so none of
+      // these five is ever null here. They are nullable on the type because a
+      // remembered DRAFT row can name a bill that has since been deleted.
+      billType: (row.bill?.ablBillType as BillType | undefined) ?? null,
+      billAmount: row.bill ? toAmount(row.bill.ablBillAmount) : null,
+      pendingAmount: row.bill ? toAmount(row.bill.ablPendingAmount) : null,
+      dueDate: toDateString(row.bill?.ablDueDate ?? null),
+      status: (row.bill?.ablStatus as BillStatus | undefined) ?? null,
       adjType: row.abjAdjType as ReceiptPayload['allocations'][number]['adjType'],
       settlementMode:
         row.abjSettlementMode as ReceiptPayload['allocations'][number]['settlementMode'],
@@ -494,15 +553,13 @@ export class ReceiptService {
       chequeId: row.abjChequeId,
       againstBillId: row.abjAgainstBillId,
       againstBillRefno: row.againstBill?.ablDocRefno ?? null,
+      reversalOfId: row.abjReversalOfId,
+      isReversed: reversedIds.has(row.abjId),
       approvedBy: row.abjApprovedBy,
       remarks: row.abjRemarks,
     });
 
     const tenderRowByPdc = new Map<string, number | null>();
-    const tenderRows = await client.accTenderDetail.findMany({
-      where: { tdSrcDocId: header.avhVoucherId, tdIsDeleted: false },
-      select: { tdId: true, tdRowNo: true },
-    });
     const rowNoByTenderId = new Map(tenderRows.map((row) => [row.tdId, row.tdRowNo]));
     for (const cheque of cheques) {
       tenderRowByPdc.set(
@@ -621,6 +678,10 @@ export class ReceiptService {
         ablDocRefno: true,
         ablDocDate: true,
         ablBillType: true,
+        ablBillAmount: true,
+        ablPendingAmount: true,
+        ablDueDate: true,
+        ablStatus: true,
       },
     });
     const billByKey = new Map(bills.map((bill) => [`${bill.ablId}|${bill.ablAccYear}`, bill]));
@@ -638,6 +699,15 @@ export class ReceiptService {
         billAccYear: row.billAccYear,
         docRefno: bill?.ablDocRefno ?? '',
         docDate: toDateString(bill?.ablDocDate),
+        // Null here means the remembered row names a bill that can no longer
+        // be read — the same signal `docDate` already carries. The figures are
+        // the bill's as it stands NOW, which on a draft is also as it stands
+        // BEFORE this settlement, since a draft has written nothing.
+        billType: (bill?.ablBillType as BillType | undefined) ?? null,
+        billAmount: bill ? toAmount(bill.ablBillAmount) : null,
+        pendingAmount: bill ? toAmount(bill.ablPendingAmount) : null,
+        dueDate: toDateString(bill?.ablDueDate),
+        status: (bill?.ablStatus as BillStatus | undefined) ?? null,
         drCr: DrCr.CR,
         adjDate,
         isPostDated: false,
@@ -646,6 +716,9 @@ export class ReceiptService {
         chequeId: null,
         againstBillId: null,
         againstBillRefno: null,
+        // Nothing is written for a draft, so nothing can have been reversed.
+        reversalOfId: null,
+        isReversed: false,
         remarks: null,
       };
     };

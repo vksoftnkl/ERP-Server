@@ -195,6 +195,19 @@ __decorate([
             '/receipts/open-items and clamp. One more difference on a draft — a creditsApplied row ' +
             'names the CREDIT in billId with againstBillId null, because which invoices it settles is ' +
             "the allocation engine's decision at post.\n\n" +
+            'Each allocations[] / creditsApplied[] row carries the BILL it names — `billAmount`, ' +
+            '`pendingAmount` (as it stands NOW, after this receipt), `dueDate`, `billType` and ' +
+            '`status` — because a posted receipt is painted from this payload alone and must not call ' +
+            '/receipts/open-items: what a receipt shows is what it DID, not what the party owes ' +
+            'today.\n\n' +
+            "allocations[] is the voucher's HISTORY, not its current state. acc_bill_adjustment never " +
+            'rewrites a row and never soft-deletes one, so an AMENDED receipt answers with the ' +
+            'original row, its exact negative and the replacement — three rows against one bill. NET ' +
+            'PER BILL before painting; `reversalOfId` and `isReversed` say which row retracted ' +
+            'which.\n\n' +
+            'A settlement, its discount, its write-off and its round-off are four rows against ONE ' +
+            'bill, each with its own `adjType`. Route by it — there are no `discount` / `writeoff` ' +
+            'fields.\n\n' +
             'avhAccYear is not optional: acc_voucher_header is partitioned on the year, so an id alone ' +
             'does not name a row.',
     }),

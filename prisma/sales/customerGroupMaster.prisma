@@ -35,6 +35,10 @@ model CustGroup {
   promotionSchemeParties PromotionSchemeParty[] @relation("PromotionPartyCustGroup")
   loyaltySchemeParties   LoyaltySchemeParty[]   @relation("LoyaltyPartyCustGroup")
 
+  // ── Coupons and gift vouchers (20260921160000) ──────────────────────────
+  // A batch may be restricted to one customer group.
+  couponBatches         LoyaltyCouponBatch[]      @relation("CouponBatchCustGroup")
+
   @@map("cust_groups")
   @@index([cgrCompanyId], map: "idx_cgr_company")
   @@index([cgrCompanyId, cgrIsActive], map: "idx_cgr_active")

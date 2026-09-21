@@ -23,6 +23,11 @@ import {
 } from './receipt.service';
 import { assertAccYearWritable, assertHeaderScope } from './receipt.guards';
 import { assertAdvancesUntouched, assertChequesStillHeld } from './receipt-unwind.guards';
+import {
+  receiptChequeFilter,
+  receiptPdcVoucherWhere,
+  type ReceiptChequeScope,
+} from './receipt-cheque-links';
 import { flipSide, toAmount, todayUtc } from './receipt.utils';
 import { CancelReceiptDto } from './dto/post-receipt.dto';
 import { DrCr, PdcStatus, VoucherStatus } from './types/receipt-enum';
@@ -146,8 +151,11 @@ export class ReceiptCancelService {
         ]);
       }
 
+      // Only the vouchers this receipt RAISED — a bounce filed against it is
+      // not one of them, and reversing one would undo the entry that took the
+      // money back off the party. See `receipt-cheque-links.ts`.
       const pdcVouchers = await tx.accVoucherHeader.findMany({
-        where: { avhAgainstVoucherId: header.avhVoucherId, avhIsDeleted: false },
+        where: receiptPdcVoucherWhere(header),
         select: STORED_HEADER_SELECT,
       });
       const vouchers = [header, ...pdcVouchers];
@@ -162,7 +170,11 @@ export class ReceiptCancelService {
       // Shared with /receipts/amend — see receipt-unwind.guards.ts. R20 keeps
       // the two lists identical on purpose, so no setting can let an amend
       // past an instrument a cancel would be refused on.
-      await assertChequesStillHeld(tx, voucherIds, 'cancelled');
+      await assertChequesStillHeld(
+        tx,
+        { receiptVoucherId: header.avhVoucherId, voucherIds },
+        'cancelled',
+      );
       const advanceBills = await assertAdvancesUntouched(tx, voucherIds, years, 'cancelled');
 
       const reversals: ReceiptCancelPayload['reversals'] = [];
@@ -191,7 +203,13 @@ export class ReceiptCancelService {
         });
       }
 
-      const cancelledCheques = await this.cancelCheques(tx, voucherIds, dto.reason, actor, now);
+      const cancelledCheques = await this.cancelCheques(
+        tx,
+        { receiptVoucherId: header.avhVoucherId, voucherIds },
+        dto.reason,
+        actor,
+        now,
+      );
       await this.softDeleteTenders(tx, header.avhVoucherId, actor, now);
 
       // The bills the reversal rows touched, brought back up to date. The
@@ -500,14 +518,17 @@ export class ReceiptCancelService {
 
   private async cancelCheques(
     tx: Prisma.TransactionClient,
-    voucherIds: readonly string[],
+    scope: ReceiptChequeScope,
     reason: string,
     actor: string,
     now: Date,
   ): Promise<string[]> {
+    // The SAME set the guard above checked. Reading it differently here is how
+    // a row survives a cancel still settling a bill: the guard passes because
+    // it found nothing past HELD, and the update misses the row entirely.
     const cheques = await tx.accPdcRegister.findMany({
       where: {
-        apdVoucherId: { in: [...voucherIds] },
+        ...(await receiptChequeFilter(tx, scope)),
         apdIsDeleted: false,
         apdStatus: PdcStatus.HELD,
       },

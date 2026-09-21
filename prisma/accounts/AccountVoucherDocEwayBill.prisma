@@ -56,6 +56,22 @@ model AccVoucherDocEwaybill {
   gdwLastErrorCode    String?           @db.VarChar(50) @map("gdw_last_error_code")
   gdwLastMessage      String?           @db.VarChar(500) @map("gdw_last_message")
 
+  // ── Provenance (20260921120000_add_gst_provider_integration) ──────────
+  /// public.gst_company_credential that generated this e-way bill. Part-B
+  /// updates, extensions and cancellation must go through the same provider.
+  /// No FK, for the same reason as gde_gcc_id.
+  gdwGccId            String?           @db.Uuid @map("gdw_gcc_id")
+  /// Frozen provider code beside the id, readable after the credential is
+  /// rotated or retired.
+  gdwGpvCode          String?           @db.VarChar(20) @map("gdw_gpv_code")
+  /// EWB_PORTAL | IRP_WITH_IRN | IRP_BY_IRN — where it was raised. An e-way
+  /// bill generated at the IRP alongside the IRN cannot have its Part-B
+  /// updated at the IRP; that goes to the e-way portal. The route out is not
+  /// derivable from the number.
+  gdwGeneratedVia     String?           @db.VarChar(20) @map("gdw_generated_via")
+  /// When to try again; drives the ix_gdw_retry worklist.
+  gdwNextAttemptOn    DateTime?         @db.Timestamptz(6) @map("gdw_next_attempt_on")
+
   gdwIsActive         Boolean           @default(true) @map("gdw_is_active")
   gdwIsDeleted        Boolean           @default(false) @map("gdw_is_deleted")
   gdwSyncDate         DateTime?         @db.Timestamptz(6) @map("gdw_sync_date")
@@ -71,5 +87,10 @@ model AccVoucherDocEwaybill {
   @@map("acc_voucher_doc_ewaybill")
   @@schema("accounts")
   // Partial unique index uq_acc_voucher_doc_ewaybill_no and partial index
-  // idx_gdw_status are not expressible in Prisma schema.
+  // idx_gdw_status are not expressible in Prisma schema. Nor is the retry
+  // worklist added by 20260921120000:
+  //
+  //   CREATE INDEX ix_gdw_retry
+  //       ON accounts.acc_voucher_doc_ewaybill (gdw_company_id, gdw_next_attempt_on)
+  //       WHERE gdw_is_deleted = false AND gdw_status = 'FAILED';
 }

@@ -137,6 +137,22 @@ model Company {
   printerProfiles       PrinterProfile[]          @relation("PrinterProfileCompany")
   printLogs             PrintLog[]                @relation("PrintLogCompany")
 
+  // ── GST provider integration ───────────────────────────────────────────
+  // comp_gstin_no is UNIQUE, so a company row IS a GSTIN registration: the
+  // credential hangs off it rather than carrying a second copy of the number.
+  gstCredentials        GstCompanyCredential[]    @relation("GstCredentialCompany")
+
+  // ── Loyalty points engine (20260921140000) ─────────────────────────────
+  loyaltyMembers        LoyaltyMember[]           @relation("LoyaltyMemberCompany")
+  loyaltyLedgerRows     LoyaltyLedger[]           @relation("LoyaltyLedgerCompany")
+  loyaltyGiftRedeems    LoyaltyGiftRedeem[]       @relation("LoyaltyGiftRedeemCompany")
+  loyaltyGiftItems      LoyaltyGiftRedeemItem[]   @relation("LoyaltyGiftItemCompany")
+
+  // ── Coupons and gift vouchers (20260921160000) ──────────────────────────
+  couponBatches         LoyaltyCouponBatch[]      @relation("CouponBatchCompany")
+  coupons               LoyaltyCoupon[]           @relation("CouponCompany")
+  couponTxns            LoyaltyCouponTxn[]        @relation("CouponTxnCompany")
+
   @@map("companys")
   @@schema("public")
 }

@@ -8596,3 +8596,6 @@ Unique constraint failed on the fields: (`abj_reversal_of_id`,`abj_acc_year`)
 2026-09-18T13:37:05.840Z ERROR [Seed] ✖ Account_Groups.sql: column "acc_group_child_ids" of relation "acc_group_master" does not exist
 2026-09-18T13:52:42.888Z ERROR [Seed] ✖ Account_Groups.sql: column "acc_group_child_ids" of relation "acc_group_master" does not exist
 2026-09-19T04:53:47.224Z ERROR [Seed] ✖ Account_Groups.sql: column "acc_group_child_ids" of relation "acc_group_master" does not exist
+2026-09-19T05:16:36.202Z ERROR [Seed] ✖ Account_Groups.sql: column "acc_group_child_ids" of relation "acc_group_master" does not exist
+2026-09-20T04:34:25.276Z ERROR [Seed] ✖ Account_Groups.sql: column "acc_group_child_ids" of relation "acc_group_master" does not exist
+2026-09-21T03:59:57.671Z ERROR [Seed] ✖ Account_Groups.sql: column "acc_group_child_ids" of relation "acc_group_master" does not exist

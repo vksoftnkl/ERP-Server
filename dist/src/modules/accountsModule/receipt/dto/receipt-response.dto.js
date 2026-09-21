@@ -804,6 +804,11 @@ class ReceiptAllocationDto {
     billAccYear;
     docRefno;
     docDate;
+    billType;
+    billAmount;
+    pendingAmount;
+    dueDate;
+    status;
     adjType;
     settlementMode;
     drCr;
@@ -815,6 +820,8 @@ class ReceiptAllocationDto {
     chequeId;
     againstBillId;
     againstBillRefno;
+    reversalOfId;
+    isReversed;
     approvedBy;
     remarks;
 }
@@ -848,6 +855,53 @@ __decorate([
     }),
     __metadata("design:type", Object)
 ], ReceiptAllocationDto.prototype, "docDate", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        nullable: true,
+        enum: receipt_enum_1.BillType,
+        example: receipt_enum_1.BillType.SALES,
+        description: "The bill's own type, read from acc_bill_balance at the moment of this read. Null only " +
+            'when the bill can no longer be read, which on a POSTED row cannot happen.',
+    }),
+    __metadata("design:type", Object)
+], ReceiptAllocationDto.prototype, "billType", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        nullable: true,
+        example: 15500,
+        description: "The bill's full value. Here because a POSTED receipt is painted from this payload alone " +
+            '— the screen does not call /receipts/open-items for one, since what a receipt shows is ' +
+            'what it DID, not what the party owes today.',
+    }),
+    __metadata("design:type", Object)
+], ReceiptAllocationDto.prototype, "billAmount", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        nullable: true,
+        example: 14500,
+        description: 'Pending **as it stands NOW**, after this receipt. The client derives what it was before ' +
+            "by adding this row's own settlement back; deriving it the other way round is impossible, " +
+            'which is why this is the figure sent.',
+    }),
+    __metadata("design:type", Object)
+], ReceiptAllocationDto.prototype, "pendingAmount", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        nullable: true,
+        example: '2026-10-18',
+        description: 'Null when the bill has no due date — there is nothing for it to be late against.',
+    }),
+    __metadata("design:type", Object)
+], ReceiptAllocationDto.prototype, "dueDate", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        nullable: true,
+        enum: receipt_enum_1.BillStatus,
+        example: receipt_enum_1.BillStatus.PARTIAL,
+        description: 'abl_status as it stands now — OPEN / PARTIAL / CLOSED.',
+    }),
+    __metadata("design:type", Object)
+], ReceiptAllocationDto.prototype, "status", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)({ enum: receipt_enum_1.BillAdjType, example: receipt_enum_1.BillAdjType.ALLOCATION }),
     __metadata("design:type", String)
@@ -907,6 +961,26 @@ __decorate([
     (0, swagger_1.ApiProperty)({ nullable: true }),
     __metadata("design:type", Object)
 ], ReceiptAllocationDto.prototype, "againstBillRefno", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        nullable: true,
+        format: 'uuid',
+        description: 'The row this one RETRACTS. acc_bill_adjustment never rewrites a row and never soft-deletes ' +
+            'one: an amend or a cancel inserts the exact negative of it, so an amended receipt answers ' +
+            'with the original row, its negative AND the replacement, and netting per bill is the ' +
+            "reader's job. Null on every ordinary row.",
+    }),
+    __metadata("design:type", Object)
+], ReceiptAllocationDto.prototype, "reversalOfId", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        example: false,
+        description: 'This row has been retracted by a later one. Asked of the database, not inferred from the ' +
+            'rows in this payload: an AMEND files its negatives on the receipt itself, but a CANCEL ' +
+            'files them on the reversal voucher, which is not in this payload at all.',
+    }),
+    __metadata("design:type", Boolean)
+], ReceiptAllocationDto.prototype, "isReversed", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)({ nullable: true, format: 'uuid' }),
     __metadata("design:type", Object)

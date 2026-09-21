@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ADVANCE_ADJ_TYPE = void 0;
+exports.namedOrAutoFifo = namedOrAutoFifo;
 exports.allocateChequeMoney = allocateChequeMoney;
 const client_1 = require("@prisma/client");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
@@ -8,13 +9,28 @@ const allocation_engine_1 = require("../receipt/allocation-engine");
 const receipt_guards_1 = require("../receipt/receipt.guards");
 const receipt_enum_1 = require("../receipt/types/receipt-enum");
 const receipt_utils_1 = require("../receipt/receipt.utils");
-async function allocateChequeMoney(tx, scope, requested) {
+function namedOrAutoFifo(rows) {
+    return rows.length > 0 ? { mode: 'NAMED', rows } : { mode: 'AUTO_FIFO' };
+}
+async function allocateChequeMoney(tx, scope, request) {
     const amount = (0, receipt_utils_1.money)(scope.cheque.apdAmount);
-    const bills = requested.length > 0
-        ? await loadNamedBills(tx, scope, requested)
-        : await autoFifoBills(tx, scope, amount);
+    const bills = request.mode === 'NAMED'
+        ? await loadNamedBills(tx, scope, request.rows)
+        : request.mode === 'RESTORE'
+            ? await loadRestoredBills(tx, scope, request.rows)
+            : await autoFifoBills(tx, scope, amount);
     const allocated = (0, receipt_utils_1.sum)(bills.map((bill) => bill.amount));
     if (allocated.greaterThan(amount)) {
+        if (request.mode === 'RESTORE') {
+            (0, module_service_utils_1.throwAccountsConflict)('Cannot restore the allocation', [
+                {
+                    field: 'allocations',
+                    message: `The bounce of ${scope.cheque.apdInstrumentNo} took ${allocated.toFixed(2)} off the ` +
+                        `bills, but the cheque is for ${amount.toFixed(2)}. Re-present it with explicit ` +
+                        'allocations.',
+                },
+            ]);
+        }
         (0, module_service_utils_1.throwAccountsBadRequest)('Validation failed', [
             {
                 field: 'allocations',
@@ -81,6 +97,55 @@ async function loadNamedBills(tx, scope, requested) {
             roundoff: receipt_utils_1.ZERO,
             pendingAmount: bill.ablPendingAmount,
             writeoffApprovedBy: row.writeoffApprovedBy ?? null,
+        };
+    });
+}
+async function loadRestoredBills(tx, scope, restored) {
+    if (restored.length === 0) {
+        return [];
+    }
+    const locked = await (0, receipt_guards_1.lockBills)(tx, restored.map((row) => ({ billId: row.billId, billAccYear: row.billAccYear })));
+    return restored.map((row, index) => {
+        const bill = locked.get(`${row.billId}|${row.billAccYear}`);
+        const settled = row.amount.plus(row.discount).plus(row.writeoff).plus(row.roundoff);
+        if (!bill || bill.ablIsDeleted) {
+            (0, module_service_utils_1.throwAccountsConflict)('Cannot restore the allocation', [
+                {
+                    field: `allocations.${index}.billId`,
+                    message: `${scope.cheque.apdInstrumentNo} settled ${settled.toFixed(2)} against bill ` +
+                        `${bill?.ablDocRefno ?? row.billId}, which no longer exists. Re-present it with ` +
+                        'explicit allocations saying where that money should go instead.',
+                },
+            ]);
+        }
+        (0, receipt_guards_1.assertBillUsable)(bill, {
+            billId: row.billId,
+            partyId: scope.partyId,
+            companyId: scope.companyId,
+            kind: 'RECEIVABLE',
+            field: `allocations.${index}.billId`,
+        });
+        if (settled.greaterThan(bill.ablPendingAmount)) {
+            (0, module_service_utils_1.throwAccountsConflict)('Cannot restore the allocation', [
+                {
+                    field: `allocations.${index}.amount`,
+                    message: `${scope.cheque.apdInstrumentNo} settled ${settled.toFixed(2)} against bill ` +
+                        `${bill.ablDocRefno}, which now has only ${bill.ablPendingAmount.toFixed(2)} ` +
+                        'pending — something else has paid it since the bounce. Re-present it with ' +
+                        'explicit allocations.',
+                },
+            ]);
+        }
+        return {
+            billId: bill.ablId,
+            billAccYear: bill.ablAccYear,
+            docRefno: bill.ablDocRefno,
+            amount: row.amount,
+            discount: row.discount,
+            writeoff: row.writeoff,
+            roundoff: row.roundoff,
+            pendingAmount: bill.ablPendingAmount,
+            writeoffApprovedBy: row.writeoffApprovedBy,
         };
     });
 }

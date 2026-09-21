@@ -119,6 +119,9 @@ model ItemMaster {
   stockReorderPolicies StockReorderPolicy[]  @relation("StockReorderPolicyItem")
   stockForecasts       StockForecast[]       @relation("StockForecastItem")
   stockMovementClasses StockMovementClass[]  @relation("StockMovementClassItem")
+  // ── Loyalty points engine (20260921140000) ─────────────────────────────
+  loyaltyGiftItems      LoyaltyGiftRedeemItem[]   @relation("LoyaltyGiftItemItem")
+
   @@map("item_master")
   @@schema("inventory")
   // UNIQUE item_name_en globally (since company removed)

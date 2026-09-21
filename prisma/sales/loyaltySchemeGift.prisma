@@ -45,6 +45,9 @@ model LoyaltySchemeGift {
   item              ItemMaster         @relation("LoyaltyGiftItem",    fields: [lsgItemId], references: [itemId], onUpdate: Cascade, onDelete: Restrict, map: "fk_lsg_item")
   unit              ItemUnitConversion @relation("LoyaltyGiftUnit",    fields: [lsgUnitId], references: [iucId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_lsg_unit")
 
+  // ── Loyalty points engine (20260921140000) ─────────────────────────────
+  loyaltyGiftItems      LoyaltyGiftRedeemItem[]   @relation("LoyaltyGiftItemGift")
+
   @@map("loyalty_scheme_gift")
   @@schema("sales")
 }

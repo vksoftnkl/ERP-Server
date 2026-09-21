@@ -87,6 +87,11 @@ model AccTenderMaster {
   // CHECK constraints (DB-only): ck_tnd_amount_range, ck_tnd_min_amount, ck_tnd_daily_limit,
   //   ck_tnd_surcharge_perc, ck_tnd_surcharge_amt, ck_tnd_settlement_days, ck_tnd_conversion_rate,
   //   ck_tnd_effective_range, ck_tnd_colour
+  // ── Coupons and gift vouchers (20260921160000) ──────────────────────────
+  // The VOUCHER tender (type 11) a batch settles through. NULL on the batch
+  // means the branch default; the rate and the floor stay owned here.
+  couponBatches         LoyaltyCouponBatch[]      @relation("CouponBatchRedeemTender")
+
   @@map("acc_tender_master")
   @@schema("accounts")
 }

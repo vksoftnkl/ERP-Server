@@ -337,6 +337,8 @@ Table acc_ledger_master {
   openingBalances acc_opening_balance [not null]
   customer customers
   supplier suppliers
+  loyaltyMembers loyalty_member [not null]
+  coupons loyalty_coupon [not null]
 
   indexes {
     (ledCompanyId, ledName) [unique]
@@ -754,6 +756,8 @@ Table acc_tender_detail {
   partyLedger acc_ledger_master [not null]
   surchargeLedger acc_ledger_master
   billAdjustments acc_bill_adjustment [not null]
+  loyaltyLedgerRows loyalty_ledger [not null]
+  couponTxns loyalty_coupon_txn [not null]
 
   indexes {
     (tdId, tdAccYear) [pk]
@@ -811,6 +815,7 @@ Table acc_tender_master {
   bankAccount acc_ledger_bank_accounts
   tenderDetails acc_tender_detail [not null]
   loyaltySchemes loyalty_scheme [not null]
+  couponBatches loyalty_coupon_batch [not null]
 }
 
 Table acc_tender_types {
@@ -985,6 +990,21 @@ Table acc_voucher_doc_einvoice {
   gdeCanceledOn DateTime
   gdeLastErrorCode String
   gdeLastMessage String
+  gdeGccId String [note: 'public.gst_company_credential that generated this IRN. A cancellation
+must be sent through the same provider and GSTIN, and with two providers
+configured there is no way to work out which one it was after the fact.
+No FK: the credential is a master that may legitimately be retired while
+old documents keep pointing at it.']
+  gdeGpvCode String [note: 'Frozen snapshot beside the id, the way the doc register freezes party
+name and GSTIN next to theirs: an id pointing at a row somebody deleted
+answers no questions at all.']
+  gdeIrpCode String [note: 'The Invoice Registration Portal that issued the IRN (NIC1, NIC2, CLEAR,
+CYGNET, EY, IRIS) — NOT the same thing as the GSP. A cancellation must
+reach this portal; the GSP used to reach it may differ. On a NIC-style
+reply the first character of AckNo gives it away: 1 = NIC1, 2 = NIC2.']
+  gdeNextAttemptOn DateTime [note: 'When to try again. Without it a failed IRN either retries in a tight
+loop against a portal that is rate limiting us, or waits for a person to
+notice. Drives the ix_gde_retry worklist.']
   gdeIsActive Boolean [not null, default: true]
   gdeIsDeleted Boolean [not null, default: false]
   gdeSyncDate DateTime
@@ -1020,6 +1040,16 @@ Table acc_voucher_doc_ewaybill {
   gdwSubSupplyType String
   gdwLastErrorCode String
   gdwLastMessage String
+  gdwGccId String [note: 'public.gst_company_credential that generated this e-way bill. Part-B
+updates, extensions and cancellation must go through the same provider.
+No FK, for the same reason as gde_gcc_id.']
+  gdwGpvCode String [note: 'Frozen provider code beside the id, readable after the credential is
+rotated or retired.']
+  gdwGeneratedVia String [note: 'EWB_PORTAL | IRP_WITH_IRN | IRP_BY_IRN — where it was raised. An e-way
+bill generated at the IRP alongside the IRN cannot have its Part-B
+updated at the IRP; that goes to the e-way portal. The route out is not
+derivable from the number.']
+  gdwNextAttemptOn DateTime [note: 'When to try again; drives the ix_gdw_retry worklist.']
   gdwIsActive Boolean [not null, default: true]
   gdwIsDeleted Boolean [not null, default: false]
   gdwSyncDate DateTime
@@ -1558,6 +1588,9 @@ Table device_master {
   printAssignments print_template_assignment [not null]
   printerProfiles printer_profile [not null]
   printLogs print_log [not null]
+  loyaltyLedgerRows loyalty_ledger [not null]
+  loyaltyGiftRedeems loyalty_gift_redeem [not null]
+  couponTxns loyalty_coupon_txn [not null]
 }
 
 Table form_section {
@@ -1854,6 +1887,7 @@ Table godown_locations {
   stockTransitsTo stock_transit [not null]
   stockValuationSnaps stock_valuation_snap [not null]
   stockReorderPolicies stock_reorder_policy [not null]
+  loyaltyGiftItems loyalty_gift_redeem_item [not null]
 
   indexes {
     (gdlBranchId, gdlParentId, gdlName) [unique]
@@ -1884,6 +1918,7 @@ Table item_batch_master {
   btmUpdatedOn DateTime
   btmUpdatedBy String
   batchStocks item_batch_stock [not null]
+  loyaltyGiftItems loyalty_gift_redeem_item [not null]
 }
 
 Table item_batch_stock {
@@ -2126,6 +2161,7 @@ changes nothing until this item is explicitly re-saved.']
   stockReorderPolicies stock_reorder_policy [not null]
   stockForecasts stock_forecast [not null]
   stockMovementClasses stock_movement_class [not null]
+  loyaltyGiftItems loyalty_gift_redeem_item [not null]
 }
 
 Table item_price_levels {
@@ -2478,6 +2514,7 @@ Table item_unit_conversion {
   stockDemandDailyBaseUom stock_demand_daily [not null]
   stockReorderPolicyUom stock_reorder_policy [not null]
   stockForecastBaseUom stock_forecast [not null]
+  loyaltyGiftItems loyalty_gift_redeem_item [not null]
 }
 
 Table item_unit_master {
@@ -2765,6 +2802,14 @@ Table branch_master {
   printAssignments print_template_assignment [not null]
   printerProfiles printer_profile [not null]
   printLogs print_log [not null]
+  gstCredentials gst_company_credential [not null]
+  loyaltyMembersEnrolled loyalty_member [not null]
+  loyaltyLedgerRows loyalty_ledger [not null]
+  loyaltyGiftRedeems loyalty_gift_redeem [not null]
+  loyaltyGiftItems loyalty_gift_redeem_item [not null]
+  couponBatches loyalty_coupon_batch [not null]
+  couponsIssued loyalty_coupon [not null]
+  couponTxns loyalty_coupon_txn [not null]
 }
 
 Table charge_master {
@@ -2925,6 +2970,14 @@ Table companys {
   printAssignments print_template_assignment [not null]
   printerProfiles printer_profile [not null]
   printLogs print_log [not null]
+  gstCredentials gst_company_credential [not null]
+  loyaltyMembers loyalty_member [not null]
+  loyaltyLedgerRows loyalty_ledger [not null]
+  loyaltyGiftRedeems loyalty_gift_redeem [not null]
+  loyaltyGiftItems loyalty_gift_redeem_item [not null]
+  couponBatches loyalty_coupon_batch [not null]
+  coupons loyalty_coupon [not null]
+  couponTxns loyalty_coupon_txn [not null]
 }
 
 Table company_group_master {
@@ -2981,6 +3034,542 @@ until then, where carry-forward needs to be able to trust \'CLOSED\'.']
   deletedBy String
   prevFiscalYear fiscal_years
   nextFiscalYears fiscal_years [not null]
+}
+
+Table gst_api_log {
+  galId String [not null]
+  galCompanyId String [not null]
+  galBranchId String
+  galTenantId String
+  galAccYear String [not null]
+  galGccId String [note: 'Which credential (hence which provider) served the attempt. Nullable
+because a call can fail before a credential is even resolved.']
+  galGpvId String
+  galService String [not null]
+  galAction String [not null]
+  galEnvironment String [not null]
+  galSrcModule String
+  galSrcDocType String
+  galSrcDocId String
+  galGdrId String
+  galIdempotencyKey String [note: 'Our key for the attempt. A retry after a timeout reuses it, so a
+generate that already succeeded upstream cannot mint a second IRN.']
+  galAttemptNo Int [not null, default: 1]
+  galRequestUrl String [note: 'Headers are stored REDACTED per gpeRedactPaths: an auth token in a log
+is a credential with a longer life than the session that issued it.']
+  galRequestHeaders Json
+  galRequestPayload Json
+  galHttpStatus Int
+  galResponsePayload Json
+  galProviderCode String [note: 'Their code, and what GstProviderErrorMap turned it into.']
+  galOurCode String
+  galIsSuccess Boolean [not null]
+  galMessage String
+  galStartedOn DateTime [default: `now()`, not null]
+  galFinishedOn DateTime
+  galDurationMs Int
+  galIsDeleted Boolean [not null, default: false]
+  galSyncDate DateTime
+  galCreatedOn DateTime [default: `now()`, not null]
+  galCreatedBy String
+
+  indexes {
+    (galId, galAccYear) [pk]
+  }
+
+  Note: 'Append-only call log: one row per HTTP attempt at a GSP, including the
+ones that failed.
+
+This is a transaction table, not configuration, so it lives in `public`
+(like TxnStatusLog) and is LIST-partitioned by galAccYear — which is why
+the primary key is the composite (galId, galAccYear). Partitions
+(public.gst_api_log_2026_2027) are created by
+public.ensure_acc_year_partitions(\'YYYY-YYYY\'), which
+20260921120000_add_gst_provider_integration taught about this table. Run
+it whenever a fiscal year is opened, or every insert fails with
+"no partition of relation ...".
+
+AccVoucherDocApiLog holds the LAST exchange for a document. This holds
+EVERY exchange, for every document and for the calls that belong to no
+document at all (auth, GSTIN lookup). The two are not redundant: one
+answers "what does this bill look like at the IRP", the other answers
+"what happened at 10:42 when the counter froze".
+
+Rows are written once — no modifiedOn/By, same as TxnStatusLog.'
+}
+
+Table gst_auth_session {
+  gasId String [pk]
+  gasGccId String [not null]
+  gasAuthTokenEnc String [not null, note: 'Encrypted with the same application key as the credential\'s secrets. A
+bearer token in a readable column is a password with a shorter life, not
+something less than one.']
+  gasSessionKeyEnc String [note: 'NIC\'s Sek — the AES session key every subsequent payload is encrypted
+with. Without a column for it the NIC_SEK scheme cannot work at all,
+which is why the token column alone was not enough in the first draft.']
+  gasRefreshTokenEnc String
+  gasKeyVersion Int [not null, default: 1]
+  gasTokenType String [not null, default: 'AuthToken']
+  gasIssuedOn DateTime [default: `now()`, not null]
+  gasExpiresOn DateTime [not null]
+  gasExpiryRaw String [note: 'What the provider literally sent. NIC returns TokenExpiry as IST local
+time with no zone on it; keeping the raw string is the only way to prove
+clock skew later.']
+  gasLockBy String [note: 'Four tills notice the same expiry in the same second. Without a lease
+all four call /auth, which NIC rate-limits hard and the e-way portal
+answers by blocking the account. A LEASE and not an advisory lock,
+because the auth call is external HTTP and no transaction should be held
+open across one: claim in a short transaction, call outside any
+transaction, write the result in a second short transaction.
+
+UPDATE public.gst_auth_session
+SET gas_lock_by = :worker, gas_lock_upto = now() + interval \'60 seconds\'
+WHERE gas_gcc_id = :cred
+AND gas_expires_on <= now() + make_interval(secs => :margin)
+AND (gas_lock_upto IS NULL OR gas_lock_upto < now())
+RETURNING gas_id, gas_token_version;
+
+One row back and you are the refresher; none and somebody else is, so
+wait and re-read. gasLockUpto expiring is what stops a worker that died
+mid-call from freezing every counter behind it.']
+  gasLockOn DateTime
+  gasLockUpto DateTime
+  gasTokenVersion Int [not null, default: 0, note: 'Bumped on every successful refresh. Workers cache the token in memory; a
+rejection means "re-read", and a version higher than the cached one
+means somebody already fixed it — retry rather than refresh again. This
+is also what keeps the Sek from tearing: a payload encrypted with the
+previous session key is detectable instead of merely rejected.']
+  gasIsActive Boolean [not null, default: true]
+  gasIsDeleted Boolean [not null, default: false]
+  gasSyncDate DateTime
+  gasCreatedOn DateTime [default: `now()`, not null]
+  gasCreatedBy String [not null]
+  credential gst_company_credential [not null]
+
+  Note: 'The live session with a provider.
+
+Separate from the credential on purpose. A token rotates every six hours;
+writing it back onto the credential row would churn a master\'s audit trail
+four times a day, and would put a live bearer token in the same SELECT the
+configuration screen runs. Nothing in this model is ever returned to the
+client.
+
+Rows are written once and never edited, so there is no modifiedOn/By — the
+same reasoning as TxnStatusLog. Renewal inserts a new row and retires the
+old one.'
+}
+
+Table gst_company_credential {
+  gccId String [pk]
+  gccCompanyId String [not null]
+  gccBranchId String [note: 'NULL = every branch that files under this GSTIN. A branch is named only
+when it holds its own registration.']
+  gccGpvId String [not null]
+  gccService String [note: 'NULL is the common case for a commercial GSP: ONE login covering every
+service they sell you, on one token. Direct NIC is the "set" case —
+e-invoice and e-way bill are separate API registrations on the portal
+and their tokens are not interchangeable. Forcing this NOT NULL would
+have made every gateway provider look like NIC.']
+  gccEnvironment String [not null, note: 'SANDBOX | PRODUCTION']
+  gccPriority Int [not null, default: 1, note: '1 = primary, 2+ = failover order.']
+  gccLoginId String [not null, note: 'The API user of the taxpayer\'s portal registration. Deliberately NOT
+encrypted: it is not a secret, and support has to be able to see WHICH
+login is failing without holding the decryption key — the same reason a
+database user name is not hashed while its password is.']
+  gccPasswordEnc String [not null]
+  gccClientIdEnc String [note: 'Normally NULL. OAuth-style app credentials at the TAXPAYER level, which
+only some GSPs issue — a reseller that bills per GSTIN may hand you a
+client id and secret for each one. For every other provider the app
+credentials belong to the installation and live on GstProviderAccount,
+and the more specific one wins:
+client_id = COALESCE(gcc_client_id_enc, gpa_client_id_enc)
+Filling only one of the pair is meaningless, so ck_gcc_client_pair
+refuses it rather than letting a half-configured login reach the gateway.']
+  gccClientSecretEnc String
+  gccAppKeyEnc String [note: 'NIC\'s AppKey: 32 random bytes, RSA-encrypted with the IRP public key at
+auth time and used to unwrap the Sek that comes back.']
+  gccPublicKeyRef String [note: 'Which IRP/GSP public key or certificate the payload encryption uses.
+They rotate, and a stale one fails with an opaque decrypt error.']
+  gccKeyVersion Int [not null, default: 1, note: 'Which application key encrypted the _enc columns above.']
+  gccWhitelistedIps String[] [not null, note: 'The static IPs registered with the GSP / on the e-invoice portal for
+this GSTIN. OURS, not the provider\'s — the first draft had a single inet
+on the PROVIDER row, where it described nothing. An array because a
+chain files one GSTIN from many outlets, each on its own broadband: the
+portal whitelist is a list, and so is this.']
+  gccValidFrom DateTime [note: 'Portal passwords expire. A credential that silently went stale at
+midnight is otherwise discovered by a queue of failed bills.']
+  gccValidUpto DateTime
+  gccPasswordChangedOn DateTime
+  gccLastVerifiedOn DateTime [note: 'Stamped by the master screen\'s Test Connection button and by the first
+successful call of the day.']
+  gccLastErrorMessage String
+  gccRemarks String
+  gccIsActive Boolean [not null, default: true]
+  gccIsDeleted Boolean [not null, default: false]
+  gccSyncDate DateTime
+  gccCreatedOn DateTime [default: `now()`, not null]
+  gccCreatedBy String [not null]
+  gccModifiedOn DateTime
+  gccModifiedBy String
+  company companys [not null]
+  branch branch_master
+  provider gst_provider [not null, note: 'The foreign key the first draft simply did not have.']
+  sessions gst_auth_session [not null]
+
+  Note: 'The taxpayer\'s login — per company, or per branch that files its own
+return. CREDENTIAL #2 of two.
+
+GstProviderAccount holds the GSP\'s own account (this ERP → their gateway).
+This model holds the taxpayer\'s portal user (that GSTIN → the IRP, through
+the GSP). Most GSPs need both, and they rotate on different schedules,
+which is why they are not on one row.
+
+The GSTIN is NOT stored here. Company.compGstinNo is already UNIQUE, so a
+company row IS a registration; a branch with its own registration carries
+it on BranchMaster.brGstinNo. It resolves as
+COALESCE(branch GSTIN, comp_gstin_no) at call time, which is also what
+makes gccBranchId meaningful rather than decorative:
+NULL -> files under the company\'s own registration
+set  -> files under that branch\'s registration
+Repeating the number here would be a second copy free to drift from the
+first, and a credential silently authenticating as a GSTIN the company no
+longer has is worse than any join. public.vw_gst_credential does the
+COALESCE once so no caller has to remember which table it came from.
+
+How MANY rows a company needs is decided by the provider\'s auth model, not
+by how many services it uses:
+gateway GSP (one token for everything) -> ONE row, gccService NULL
+direct NIC (token per registration)    -> one row per service
+GstAuthSession hangs off this row, so that choice also decides how many
+live tokens exist and how many calls to /auth get made.
+
+gccPriority is the answer to "what happens when there are two providers".
+Priority 1 is the primary and there may be only one per
+company/branch/service/environment (ux_gcc_primary). Priority 2+ are
+failovers, tried in order when the primary maps to UPSTREAM_DOWN or
+RATE_LIMITED. Which one actually served a document is recorded on the
+document (gdeGccId) and on every attempt (galGccId), so a failover is
+auditable rather than mysterious.
+
+Secrets are application-encrypted ciphertext (_enc), not plaintext and not
+pgcrypto — a key that lives in the same database as the data it protects
+is decoration. gccKeyVersion records which application key wrapped the
+values so rotation does not require a flag day.'
+}
+
+Table gst_provider {
+  gpvId String [pk]
+  gpvCode String [unique, not null, note: 'Short stable handle used in seeds, logs and support calls: \'NIC\',
+\'CYGNET\', \'CLEARTAX\'. Never renamed — retire the row instead, which is
+why this is a real UNIQUE constraint and not a partial index.']
+  gpvName String [not null]
+  gpvPortalUrl String
+  gpvSupportEmail String
+  gpvSupportPhone String
+  gpvTimeoutMs Int [not null, default: 30000]
+  gpvMaxRetries Int [not null, default: 2]
+  gpvRateLimitPerMin Int [note: 'Calls per minute the contract allows, NULL = unmetered. A shop with four
+tills can trip a limit that no single till would notice.']
+  gpvRemarks String
+  gpvIsActive Boolean [not null, default: true]
+  gpvIsDeleted Boolean [not null, default: false]
+  gpvSyncDate DateTime
+  gpvCreatedOn DateTime [default: `now()`, not null]
+  gpvCreatedBy String [not null]
+  gpvModifiedOn DateTime
+  gpvModifiedBy String
+  services gst_provider_service [not null]
+  accounts gst_provider_account [not null]
+  errorMaps gst_provider_error_map [not null]
+  credentials gst_company_credential [not null]
+
+  Note: 'One row per GST Suvidha Provider, and nothing that varies per company, per
+service or per environment. In particular NO base url and NO credentials:
+the first draft (fixed.gsp_provider_master) put both here, and both are
+wrong at this grain — a provider serves several services from several
+hosts, and its credentials belong to the GSTIN that logs in, not to the
+provider.
+
+Adding a SECOND provider must be an INSERT, not a deployment. That is the
+constraint the whole gst_* family is shaped by: the route of every call
+(GstProviderEndpoint), the shape of every reply (GstProviderFieldMap) and
+the meaning of every error code (GstProviderErrorMap) are rows, not code.'
+}
+
+Table gst_provider_account {
+  gpaId String [pk]
+  gpaGpvId String [not null]
+  gpaEnvironment String [not null, note: 'SANDBOX | PRODUCTION']
+  gpaService String [note: 'NULL = every service this provider offers.']
+  gpaAccountRef String [note: 'Your customer / account number with the GSP. Not a secret, and the first
+thing their support desk asks for.']
+  gpaClientIdEnc String
+  gpaClientSecretEnc String
+  gpaApiKeyEnc String
+  gpaKeyVersion Int [not null, default: 1]
+  gpaValidFrom DateTime [note: 'Contract window. A GSP contract lapses on a date somebody agreed to a
+year ago; without this the first anybody knows is bills not printing.']
+  gpaValidUpto DateTime
+  gpaCreditBalance Decimal [note: 'Most GSPs sell IRNs in blocks. Running the balance down mid-morning
+stops every counter at once, so it is worth a column and an alert rather
+than a phone call from the shop floor. Refreshed by GET_API_BALANCE.']
+  gpaBalanceCheckedOn DateTime
+  gpaLastVerifiedOn DateTime
+  gpaRemarks String
+  gpaIsActive Boolean [not null, default: true]
+  gpaIsDeleted Boolean [not null, default: false]
+  gpaSyncDate DateTime
+  gpaCreatedOn DateTime [default: `now()`, not null]
+  gpaCreatedBy String [not null]
+  gpaModifiedOn DateTime
+  gpaModifiedBy String
+  provider gst_provider [not null]
+
+  Note: 'The GSP\'s own account — CREDENTIAL #1 of two.
+
+This is the API credential the GSP (Chartered, Cygnet, ClearTax …) issues
+to identify THIS ERP INSTALLATION to their gateway. The second — the
+taxpayer\'s own portal user, per GSTIN — is GstCompanyCredential. Most GSPs
+need both, and they rotate on different schedules, which is the whole
+reason they are not one row.
+
+Grain is provider × ENVIRONMENT, not per service. A GSP that sells
+e-invoice, e-way bill and returns issues ONE account for all of it; the
+sandbox account is a different one. Keying it per service would copy the
+same secret across four rows and make rotation a hunt.
+
+gpaService is nevertheless present and NULLABLE, because a few providers
+do issue separate accounts per service:
+NULL -> covers every service this provider offers   (the norm)
+set  -> overrides the NULL row for that one service (the exception)
+Resolution is most-specific-wins:
+
+ORDER BY gpa_service NULLS LAST LIMIT 1
+
+A direct-to-NIC provider has NO row here at all: there is no middleman to
+authenticate to, only the per-GSTIN AppKey on GstCompanyCredential.'
+}
+
+Table gst_provider_endpoint {
+  gpeId String [pk]
+  gpeGpsId String [not null]
+  gpeAction String [not null, note: 'AUTH | GENERATE_IRN | CANCEL_IRN | GET_IRN | … — see ck_gpe_action for
+the full, finite vocabulary (e-invoice, the whole e-way bill surface,
+the lookups, the returns, and the two housekeeping calls).']
+  gpeHttpMethod String [not null, default: 'POST']
+  gpePathTemplate String [not null, note: 'Appended to gpsBaseUrl. May carry {placeholders} filled from the request
+context: {irn}, {gstin}, {ewbNo}, {period}.']
+  gpeQueryTemplate String
+  gpeContentType String [not null, default: 'application/json']
+  gpeHeaders Json [note: 'Static/templated headers, e.g.
+{"Gstin":"{gstin}","user_name":"{loginId}","AuthToken":"{authToken}"}
+Json because the header SET differs per provider, not just the values.']
+  gpeRequestWrapper String [note: 'The key the body is nested under, if any: \'Data\' for NIC-style
+wrappers, NULL when the body is posted bare.']
+  gpeRedactPaths Json [note: 'JSONPaths blanked before the exchange is written to GstApiLog. The AUTH
+request body literally contains the portal password, and the headers of
+every other call carry a live AuthToken — logged verbatim they become
+credentials with a longer life than the session that issued them.
+Redaction is a config row and not a code branch precisely so that adding
+a provider cannot forget it.']
+  gpeResponseRootPath String
+  gpeSuccessPath String
+  gpeSuccessValue String
+  gpeErrorCodePath String
+  gpeErrorMessagePath String
+  gpeTimeoutMs Int
+  gpeMaxRetries Int
+  gpeIsIdempotent Boolean [not null, default: false, note: 'Safe to send again after a timeout. FALSE for GENERATE_IRN: a reply that
+never arrived may still have minted an IRN, and the correct recovery is
+GET_IRN_BY_DOC, not a second generate.']
+  gpeRemarks String
+  gpeIsActive Boolean [not null, default: true]
+  gpeIsDeleted Boolean [not null, default: false]
+  gpeSyncDate DateTime
+  gpeCreatedOn DateTime [default: `now()`, not null]
+  gpeCreatedBy String [not null]
+  gpeModifiedOn DateTime
+  gpeModifiedBy String
+  service gst_provider_service [not null]
+  fieldMaps gst_provider_field_map [not null]
+
+  Note: 'One row per CALL. This is what the first draft\'s single `gsp_route` column
+was trying to be.
+
+gpeAction is the vocabulary the application speaks — the sale bill asks
+for GENERATE_IRN and does not know, or care, what path that is on this
+provider. Adding a provider must never add an action; adding a CAPABILITY
+may.
+
+The envelope columns are the other half of provider independence. Every
+GSP wraps the same NIC payload differently: {"Status":1,"Data":{…}} here,
+{"success":true,"result":{…}} there. Describing the envelope as four paths
+means the dispatcher can find the payload, decide success and read an
+error code without knowing whose reply it is holding.'
+}
+
+Table gst_provider_error_map {
+  gemId String [pk]
+  gemGpvId String [not null]
+  gemService String [note: 'NULL = applies to every service of this provider.']
+  gemTheirCode String [not null, note: 'The provider\'s own code: \'2150\', \'GSP022\', \'429\'.']
+  gemOurCode String [not null, note: 'Our vocabulary — DUPLICATE_IRN, TOKEN_EXPIRED, CREDIT_EXHAUSTED,
+ENV_MISMATCH, … The application branches on THESE, never on a
+provider\'s number.']
+  gemMessage String [note: 'Shown to the counter operator. Deliberately not the provider\'s text,
+which is written for a developer.']
+  gemTreatAs String [not null, default: 'ERROR', note: 'ERROR | SUCCESS | WARNING — what this code MEANS to us, which is not
+always "a failure". NIC\'s 2150 refuses a duplicate and hands back the
+IRN it issued the first time: treated as an error it strands a printed
+bill at the counter, treated as SUCCESS it completes the document with
+the IRN that already exists.']
+  gemExtractPath String [note: 'Where that already-issued value hides in the ERROR payload, and which
+canonical field it becomes. Without these, gemTreatAs = \'SUCCESS\' would
+complete a document with no IRN at all — which ck_gem_extract_pair
+refuses outright.']
+  gemCanonicalField String
+  gemIsRetryable Boolean [not null, default: false]
+  gemRetryAfterSeconds Int
+  gemShouldReauth Boolean [not null, default: false, note: 'Open a fresh session and replay once. Distinct from retryable: the same
+request with the same dead token will fail forever.']
+  gemRecoveryAction String [not null, default: 'NONE', note: 'NONE | REAUTH | BACKOFF | FETCH_BY_DOC | FAILOVER | MANUAL — what to do
+next, so the handler branches on our word and not on a provider\'s
+number. FETCH_BY_DOC is the safe recovery after an ambiguous timeout on
+a generate: ask what exists before making more.']
+  gemSeverity String [not null, default: 'ERROR', note: 'INFO | WARN | ERROR']
+  gemIsDeleted Boolean [not null, default: false]
+  gemSyncDate DateTime
+  gemCreatedOn DateTime [default: `now()`, not null]
+  gemCreatedBy String [not null]
+  gemModifiedOn DateTime
+  gemModifiedBy String
+  provider gst_provider [not null]
+
+  Note: 'Error mapping.
+
+Provider error codes are the other thing that changes when the provider
+does, and the one place where guessing is expensive. NIC\'s 2150 means
+"duplicate IRN" and carries the EXISTING IRN in the error payload — the
+correct response is to store that IRN and carry on, not to show a red
+dialog to a person holding a printed bill.
+
+gemShouldReauth is what turns an expired token into a silent retry.
+gemIsRetryable is what keeps a validation error from being retried three
+times before failing anyway.'
+}
+
+Table gst_provider_field_map {
+  gfmId String [pk]
+  gfmGpeId String [not null]
+  gfmDirection String [not null, note: 'REQUEST | RESPONSE']
+  gfmOurField String [not null, note: 'Our canonical name, the contract between the mapping engine and the rest
+of the server: \'irn\', \'ack_no\', \'ack_on\', \'signed_invoice\',
+\'signed_qrcode\', \'ewb_no\', \'ewb_valid_upto\', \'auth_token\',
+\'session_key\', \'expires_on\', \'legal_name\', \'state_code\'.']
+  gfmTheirPath String [not null, note: 'JSONPath into the reply, evaluated from gpeResponseRootPath when that is
+set: \'$.Irn\', \'$.AckDt\', \'$.data.result.irn\'.']
+  gfmDataType String [not null, default: 'TEXT', note: 'TEXT | INT | DECIMAL | BOOL | DATE | DATETIME | JSON']
+  gfmTransform String [not null, default: 'NONE', note: 'Applied after extraction. NIC dates arrive as \'dd/MM/yyyy HH:mm:ss\', the
+signed invoice is a JWT whose payload holds the real object, and the QR
+is base64 — none of which a path expression can undo. DATETIME_MASK
+parses using gfmFormatMask, which exists because one provider is not
+internally consistent: Chartered\'s e-invoice returns AckDt on a 24-hour
+clock while its e-way bill returns \'16/09/2017 10:30:00 AM\'.']
+  gfmFormatMask String
+  gfmIsRequired Boolean [not null, default: false, note: 'A required field that does not arrive fails the call loudly rather than
+writing a half-populated e-invoice row — which is why a required field
+may not also carry a default (ck_gfm_required_default): the default
+would silence exactly the absence the flag exists to catch.']
+  gfmDefaultValue String
+  gfmTargetColumn String [note: 'The physical destination, when this field is persisted: \'gde_irn\',
+\'gde_ack_no\', \'gdw_no\', … NULL for values that are only used in-flight
+(auth_token, session_key).']
+  gfmSortOrder Int [not null, default: 0]
+  gfmIsDeleted Boolean [not null, default: false]
+  gfmSyncDate DateTime
+  gfmCreatedOn DateTime [default: `now()`, not null]
+  gfmCreatedBy String [not null]
+  gfmModifiedOn DateTime
+  gfmModifiedBy String
+  endpoint gst_provider_endpoint [not null]
+
+  Note: 'Field mapping — the half that fills our columns.
+
+RESPONSE rows are the point of this model. They say: whatever this
+provider calls the IRN, and wherever it buries it, put it in gde_irn. That
+is what makes provider #2 an INSERT.
+
+REQUEST rows exist but are deliberately narrow — headers, auth
+substitution, per-provider wrapper quirks. The invoice body itself is
+built in code from one canonical DTO, because the NIC schema is ~140
+nested, conditional, arithmetic-checked fields; expressing that as a flat
+path map would move a validation problem into data, where nothing can
+type-check it. Providers differ in how they wrap and encrypt the body.
+They do not differ in the body: that one belongs to the government.
+
+gfmTargetColumn is what closes the loop to the ERP. It names the actual
+destination — gde_irn, gde_ack_no, gdw_no, gdw_valid_upto — so the write
+back into AccVoucherDocEinvoice / AccVoucherDocEwaybill is data-driven
+too, not a switch statement that has to be edited per provider. It is a
+physical column name, spelled exactly as the table spells it (gde_canceled_on
+carries one \'l\').'
+}
+
+Table gst_provider_service {
+  gpsId String [pk]
+  gpsGpvId String [not null]
+  gpsService String [not null, note: 'EINVOICE | EWAYBILL | GSTIN_VERIFY | GSTR | ASP_ADMIN. The last is the
+provider\'s own account surface (/aspapi/…) — not a statutory service,
+but it has its own host and endpoints, so it is a service row like any
+other.']
+  gpsEnvironment String [not null, note: 'SANDBOX | PRODUCTION']
+  gpsBaseUrl String [not null, note: 'Scheme + host, no trailing slash. Paths come from the endpoint rows,
+version included — Chartered versions eivital (v1.04) and eicore (v1.03)
+independently, so the version cannot live up here.']
+  gpsFallbackUrls String[] [not null, note: 'Alternate hosts the GSP publishes for the SAME service — Chartered\'s
+Mumbai and Delhi clusters, say. Trying them in order is cheaper than a
+failover to a different PROVIDER, which is what gccPriority does; this
+is the same provider, another door.']
+  gpsAuthScheme String [not null, note: 'NIC_SEK | OAUTH2 | API_KEY | BASIC | BEARER_STATIC | CUSTOM.
+NIC_SEK is the government\'s own scheme (AppKey encrypted with the IRP
+public key, reply carries AuthToken plus a Sek session key); the rest
+are ordinary API styles a wrapper GSP puts in front of it.']
+  gpsTokenTtlMinutes Int [not null, default: 360, note: 'How long a token lives when the reply does not say. NIC issues six
+hours. The margin is how early to renew — renewing exactly at expiry
+races every in-flight request against the clock.']
+  gpsRefreshMarginMinutes Int [not null, default: 15]
+  gpsPayloadEncryption String [not null, default: 'NONE', note: 'NONE | AES_SEK | RSA — whether WE encrypt the payload or the GSP does it
+for us. The single biggest behavioural difference between talking to NIC
+directly and talking to a wrapper, and not derivable from anything else.']
+  gpsTimeoutMs Int
+  gpsMaxRetries Int
+  gpsRemarks String
+  gpsIsActive Boolean [not null, default: true]
+  gpsIsDeleted Boolean [not null, default: false]
+  gpsSyncDate DateTime
+  gpsCreatedOn DateTime [default: `now()`, not null]
+  gpsCreatedBy String [not null]
+  gpsModifiedOn DateTime
+  gpsModifiedBy String
+  provider gst_provider [not null]
+  endpoints gst_provider_endpoint [not null]
+
+  Note: 'Provider × service × environment — one row per (GSP, service, SANDBOX or
+PRODUCTION).
+
+This model exists because a base url is NOT a property of a provider. NIC
+serves e-invoice from einvapi and e-way bill from ewaybillapi — two hosts,
+one provider — and every GSP publishes a sandbox host beside the
+production one. Three facts vary together, so they are one row.
+
+Switching a company from sandbox to production is therefore a credential
+edit, not a config rewrite: the sandbox rows stay exactly where they are.
+
+There is deliberately no gpsAuthPath. Authenticating is a call like any
+other, so it is described where every other call is described: the AUTH
+row in GstProviderEndpoint, which also carries the headers, the envelope
+descriptors and the redact-before-logging paths that an auth call needs
+more than most.'
 }
 
 Table printer_profile {
@@ -3890,6 +4479,13 @@ Table user_master {
   printerProfilesCreated printer_profile [not null]
   printerProfilesModified printer_profile [not null]
   printLogs print_log [not null]
+  loyaltyLedgerRows loyalty_ledger [not null]
+  loyaltyLedgerApproved loyalty_ledger [not null]
+  loyaltyGiftRedeems loyalty_gift_redeem [not null]
+  loyaltyGiftApproved loyalty_gift_redeem [not null]
+  couponsCancelled loyalty_coupon [not null]
+  couponTxns loyalty_coupon_txn [not null]
+  couponTxnsApproved loyalty_coupon_txn [not null]
 }
 
 Table user_menus {
@@ -4126,6 +4722,11 @@ Table customers {
   itemQtyPrices item_qty_price [not null]
   promotionSchemeParties promotion_scheme_party [not null]
   loyaltySchemeParties loyalty_scheme_party [not null]
+  loyaltyMembers loyalty_member [not null]
+  loyaltyLedgerRows loyalty_ledger [not null]
+  loyaltyGiftRedeems loyalty_gift_redeem [not null]
+  coupons loyalty_coupon [not null]
+  couponTxns loyalty_coupon_txn [not null]
 }
 
 Table cust_groups {
@@ -4152,6 +4753,7 @@ Table cust_groups {
   customers customers [not null]
   promotionSchemeParties promotion_scheme_party [not null]
   loyaltySchemeParties loyalty_scheme_party [not null]
+  couponBatches loyalty_coupon_batch [not null]
 }
 
 Table employee_departments {
@@ -4247,6 +4849,7 @@ Table employee_master {
   saleQuotations sale_quotation [not null]
   saleOrderAgents sale_order [not null]
   txnHolds txn_hold [not null]
+  loyaltyGiftRedeems loyalty_gift_redeem [not null]
 }
 
 Table cust_item_rates {
@@ -4271,6 +4874,606 @@ Table cust_item_rates {
   csrUploadedAt DateTime
   csrUploadedBy String
   csrRemarks String
+}
+
+Table loyalty_coupon {
+  lcpId String [pk]
+  lcpCompId String [not null]
+  lcpBranchId String [note: 'Branch that ISSUED it.']
+  lcpTenantId String
+  lcpAccYear String [not null, note: 'FY of issue. Reporting filter only.']
+  lcpLcbId String [not null]
+  lcpCode String [not null, note: 'What the counter scans or types.']
+  lcpPin String [note: 'So a code photographed off someone\'s phone screen is not by itself
+spendable.']
+  lcpCustId String [note: 'NULL = bearer instrument. Non-null and a non-transferable batch means
+this customer alone may spend it.']
+  lcpMemberId String [note: 'If the holder is also a points member.']
+  lcpPartyLedgerId String
+  lcpIssuedOn DateTime [not null]
+  lcpValidFrom DateTime
+  lcpValidUpto DateTime
+  lcpSrcModule String
+  lcpSrcDocType String
+  lcpSrcDocId String
+  lcpSrcAccYear String
+  lcpSrcDocRefno String
+  lcpFaceValue Decimal [not null, note: 'Snapshot at issue, and must be POSITIVE (ck_lcp_face) — so an uncapped
+PERCENT batch cannot issue a coupon. Give such a batch an lcbMaxValue and
+snapshot that as the face.']
+  lcpIssueAmount Decimal [not null, default: 0, note: 'What was actually PAID for it: 0 for a giveaway, face value for a sold
+card, something between for a discounted promotion. Breakage — vouchers
+sold and never spent — has no other source.']
+  lcpUsedValue Decimal [not null, default: 0]
+  lcpTopupValue Decimal [not null, default: 0]
+  lcpUseCount Int [not null, default: 0]
+  lcpLastUsedOn DateTime [note: 'MAX(lctTxnDate) over this coupon\'s movements, recomputed with the value
+buckets. Added by this migration and not by the design note, whose
+recompute contract writes it against a column it never declared.']
+  lcpBalanceValue Decimal [note: 'GENERATED ALWAYS ... STORED: face + topup - used. Read-only — never send
+it on a create or update, and @default(dbgenerated()) marks it DB-owned
+so migrate never emits a default of its own.']
+  lcpStatus String [not null, default: 'ISSUED', note: 'ISSUED | PARTIAL | REDEEMED | EXPIRED | CANCELLED | BLOCKED.
+
+Deliberately NOT a generated column. The first three are arithmetic, but
+EXPIRED, CANCELLED and BLOCKED are DECISIONS and cannot be derived from
+the amounts — and expiry additionally depends on today\'s date, which a
+generated column may not read. recomputeCoupons() moves it between the
+first three ONLY; the admin path and couponExpiryRun() own the rest.
+Writing a decision from a recompute is how a cancelled voucher silently
+comes back to life.']
+  lcpRedeemedOn DateTime
+  lcpCancelledOn DateTime
+  lcpCancelledBy String
+  lcpCancelReason String
+  lcpRemarks String
+  lcpIsActive Boolean [not null, default: true]
+  lcpIsDeleted Boolean [not null, default: false]
+  lcpSyncDate DateTime
+  lcpCreatedOn DateTime [default: `now()`, not null]
+  lcpCreatedBy String
+  lcpModifiedOn DateTime
+  lcpModifiedBy String
+  batch loyalty_coupon_batch [not null]
+  company companys [not null]
+  branch branch_master
+  customer customers
+  member loyalty_member
+  cancelledByUser user_master
+  partyLedger acc_ledger_master
+  txns loyalty_coupon_txn [not null]
+
+  Note: 'One ISSUED coupon.
+
+NOT partitioned, and never carried forward at year end. A voucher issued in
+2025-2026 and spent in 2027-2028 is the SAME row throughout — which is what
+makes LoyaltyCouponTxn\'s reference to it a plain foreign key. lcpAccYear is
+the FY of ISSUE and a reporting filter only, never a partition key.
+
+lcpFaceValue is a SNAPSHOT taken at issue. Re-pricing a batch must not
+re-price the cards already in customers\' wallets — the same reason
+AccTenderDetail snapshots its ledger and its rate.'
+}
+
+Table loyalty_coupon_batch {
+  lcbId String [pk]
+  lcbCompId String [not null]
+  lcbBranchId String [note: 'NULL = every branch.']
+  lcbTenantId String
+  lcbCode String [not null, note: 'Stable handle, never renamed — retire the batch instead.']
+  lcbName String [not null]
+  lcbSource String [not null, note: 'SOLD | CAMPAIGN']
+  lcbValueType String [not null, default: 'AMOUNT', note: 'AMOUNT | PERCENT']
+  lcbFaceValue Decimal [not null, default: 0]
+  lcbPercent Decimal [not null, default: 0]
+  lcbMaxValue Decimal [note: 'Cap on a PERCENT coupon, and the only case where a cap means anything
+(ck_lcb_cap_percent). An uncapped PERCENT batch cannot issue a coupon,
+because ck_lcp_face demands a positive face value to snapshot — so give
+a PERCENT batch a cap and use it as the face.']
+  lcbMinBillAmount Decimal [not null, default: 0]
+  lcbAllowPartial Boolean [not null, default: false, note: 'May a 500 voucher go 300 now and 200 next week. This is what decides
+whether lcpUsedValue behaves as a balance or as a switch.']
+  lcbAllowTopup Boolean [not null, default: false, note: 'Reloadable gift card. SOLD only.']
+  lcbMaxPerBill Int [not null, default: 1]
+  lcbIsTransferable Boolean [not null, default: true, note: 'false = bound to lcpCustId.']
+  lcbPinRequired Boolean [not null, default: false]
+  lcbPrefix String
+  lcbCodeLength Int [not null, default: 12]
+  lcbMaxIssueCount Int [note: 'NULL = unlimited. Checked by the service WHEN IT ISSUES, not by the
+recompute — a recompute reports, it does not refuse.']
+  lcbIssuedCount Int [not null, default: 0, note: 'Caches of LoyaltyCoupon, recomputed by
+LoyaltyCouponService.recomputeCouponBatches(). There is no trigger; no
+other code may write these.']
+  lcbRedeemedCount Int [not null, default: 0]
+  lcbValidFrom DateTime
+  lcbValidUpto DateTime
+  lcbValidityDays Int [note: 'SOLD vouchers usually expire N days after THEIR OWN issue rather than on
+a batch-wide date; this is that N.']
+  lcbBranchScope String [not null, default: 'ALL', note: 'ALL | LIST']
+  lcbCustGroupId String
+  lcbRedeemTenderId String [note: 'The VOUCHER tender (type 11) redemption settles through. NULL = the
+branch\'s default. The rate and the floor stay owned by the tender
+master, exactly as they do for points.']
+  lcbRemarks String
+  lcbIsActive Boolean [not null, default: true]
+  lcbIsDeleted Boolean [not null, default: false]
+  lcbSyncDate DateTime
+  lcbCreatedOn DateTime [default: `now()`, not null]
+  lcbCreatedBy String
+  lcbModifiedOn DateTime
+  lcbModifiedBy String
+  company companys [not null]
+  branch branch_master
+  redeemTender acc_tender_master
+  custGroup cust_groups
+  coupons loyalty_coupon [not null]
+  couponTxns loyalty_coupon_txn [not null]
+
+  Note: 'The coupon batch — what a coupon of this kind is worth and how it behaves.
+
+A coupon is a MONEY instrument with a code on it. It is not points, it
+shares no ledger with points, and it redeems through its own tender type
+(accounts.acc_tender_types 11, VOUCHER).
+
+Two sources, and only two:
+SOLD      a gift voucher the customer bought. May be RELOADED
+(lcbAllowTopup), which is what makes it a gift CARD rather
+than a one-shot slip.
+CAMPAIGN  codes issued in bulk and handed out or mailed. Not reloadable
+(ck_lcb_topup) — a campaign code is not a wallet.
+
+A PERCENT batch ("20% off, up to 500") resolves against the bill at the
+moment of redemption and only the RESOLVED RUPEE AMOUNT reaches
+lctAmount and acc_tender_detail.td_amount. The percentage never leaves
+this row.'
+}
+
+Table loyalty_coupon_txn {
+  lctId String [not null]
+  lctCompId String [not null]
+  lctBranchId String [not null, note: 'Where it was presented. NOT NULL — the expiry sweep must therefore fall
+back to the batch\'s branch when the voucher has none.']
+  lctTenantId String
+  lctAccYear String [not null]
+  lctLcpId String [not null]
+  lctLcbId String [not null, note: 'Snapshot, so batch reports need no hop through the coupon.']
+  lctCustId String
+  lctMemberId String
+  lctTxnType String [not null, note: 'REDEEM | TOPUP | CANCEL | EXPIRE']
+  lctRowNo Int [not null, default: 1]
+  lctAmount Decimal [not null, note: 'Positive unless it is a reversal, whatever the type (ck_lct_sign).']
+  lctTxnDate DateTime [not null]
+  lctBillAmount Decimal [not null, default: 0, note: 'For a PERCENT batch: the bill it was measured against, and the rate that
+produced lctAmount. Without these the resolved figure is unexplainable
+afterwards.']
+  lctPercentApplied Decimal [not null, default: 0]
+  lctSrcModule String
+  lctSrcDocType String
+  lctSrcDocId String
+  lctSrcAccYear String
+  lctSrcDocRefno String
+  lctTenderId String [note: 'The tender line (type 11, VOUCHER) the money went out on. Required on a
+REDEEM (ck_lct_redeem_tender) and forbidden on EXPIRE or CANCEL
+(ck_lct_no_tender) — nothing was paid out. This is also the only route by
+which a redemption reaches the GL and then Tally.']
+  lctTenderAccYear String
+  lctReversalOfId String
+  lctReversalOfAccYear String
+  lctReversalReason String
+  lctApprovedBy String [note: 'Voiding a live voucher is somebody\'s decision — ck_lct_cancel_approval
+makes CANCEL require this.']
+  lctUserId String
+  lctSessionId String
+  lctDeviceId String
+  lctRemarks String
+  lctIsDeleted Boolean [not null, default: false]
+  lctSyncDate DateTime
+  lctCreatedOn DateTime [default: `now()`, not null]
+  lctCreatedBy String
+  lctModifiedOn DateTime
+  lctModifiedBy String
+  coupon loyalty_coupon [not null]
+  batch loyalty_coupon_batch [not null]
+  customer customers
+  member loyalty_member
+  company companys [not null]
+  branch branch_master [not null]
+  user user_master
+  approver user_master
+  device device_master
+  tender acc_tender_detail
+  reversalOf loyalty_coupon_txn
+  reversedBy loyalty_coupon_txn [not null]
+
+  indexes {
+    (lctId, lctAccYear) [pk]
+  }
+
+  Note: 'One movement against one coupon.
+
+LIST-partitioned by lctAccYear — the year of the MOVEMENT, not of the
+issue: a 2027 spend of a 2025 voucher lands in 2027 and the voucher row
+never moves. Hence the composite PK. Partitions
+(sales.loyalty_coupon_txn_2026_2027) come from
+public.ensure_acc_year_partitions(\'YYYY-YYYY\'), which
+20260921160000_add_coupon_voucher_engine taught about this table.
+
+lctAmount is SIGNED and always means "what this event does to the
+voucher": REDEEM / EXPIRE / CANCEL consume it, TOPUP adds to it (into its
+own bucket). A reversal repeats its TYPE with the opposite sign and names
+the row it undoes — there is no REVERSAL type, so each bucket needs one
+summing rule rather than two.
+
+BEWARE, because it is the opposite of the points ledger and the two live in
+the same schema: HERE a spend is POSITIVE and the type carries the
+direction. In LoyaltyLedger a spend is NEGATIVE. Do not copy one recompute
+into the other.
+
+WRITE RULE: exactly one private method of LoyaltyCouponService may write
+this table. It writes the rows, then recomputes the touched COUPONS and
+then their BATCHES, in that order, before returning — lcbRedeemedCount
+counts vouchers by STATUS, so a batch re-counted first counts a status
+that is about to change.'
+}
+
+Table loyalty_gift_redeem {
+  lgrId String [not null]
+  lgrCompId String [not null]
+  lgrBranchId String [not null]
+  lgrTenantId String
+  lgrAccYear String [not null]
+  lgrDeviceId String
+  lgrRedeemSlno BigInt [not null, note: 'Raw per-device serial — no server round trip needed to allocate one.']
+  lgrRedeemRefno String [not null, note: 'The printed number, which embeds the counter series.']
+  lgrRedeemDate DateTime [not null]
+  lgrRedeemTime DateTime
+  lgrMemberId String [not null]
+  lgrCustId String [not null]
+  lgrLscId String [note: 'Scheme it was claimed under.']
+  lgrUserId String [note: 'The login that saved it.']
+  lgrEmpId String [note: 'The person who served, if different from the login.']
+  lgrOpeningPoints Decimal [not null, default: 0]
+  lgrRedeemPoints Decimal [not null, default: 0]
+  lgrClosingPoints Decimal [not null, default: 0]
+  lgrTotalQty Decimal [not null, default: 0]
+  lgrTotalValue Decimal [not null, default: 0, note: 'At MRP / issue rate.']
+  lgrTotalCost Decimal [not null, default: 0, note: 'At cost, for the giveaway P&L.']
+  lgrOtpNo String [note: 'One-time code that authorised the redemption. Points are bearer value;
+a counter able to spend them unchallenged is a fraud route.']
+  lgrApprovedBy String
+  lgrStatus String [not null, default: 'DRAFT', note: 'DRAFT | CONFIRMED | CANCELLED. A cancelled slip must name who authorised
+the cancellation (ck_lgr_cancel), and may never carry a live voucher.']
+  lgrPrintCount Int [not null, default: 0]
+  lgrPostedVoucherId String [note: 'The AccVoucherHeader this slip posted to, once the server has posted it.
+
+NO FOREIGN KEY, deliberately, and for the same reason
+sale_bill.sb_posted_voucher_id has none: this is a counter document
+created OFFLINE, so the row exists long before the voucher does. An FK
+would make the counter\'s insert depend on a server-side write it cannot
+see. The accounts-side documents (AccBillBalance, AccPdcRegister) DO
+carry the FK, because they are only ever written server-side after
+posting — a different lifecycle, a different rule.
+
+This is the ONLY route by which a gift redemption reaches Tally: export
+happens at the voucher layer, never from a source document. The
+accounting year travels with the id so the lookup hits one partition.']
+  lgrVoucherAccYear String
+  lgrReversalOfId String
+  lgrReversalOfAccYear String
+  lgrReversalReason String
+  lgrRemarks String
+  lgrIsDeleted Boolean [not null, default: false]
+  lgrSyncDate DateTime
+  lgrCreatedOn DateTime [default: `now()`, not null]
+  lgrCreatedBy String
+  lgrModifiedOn DateTime
+  lgrModifiedBy String
+  company companys [not null]
+  branch branch_master [not null]
+  device device_master
+  member loyalty_member [not null]
+  customer customers [not null]
+  scheme loyalty_scheme
+  user user_master
+  employee employee_master
+  approver user_master
+  reversalOf loyalty_gift_redeem
+  reversedBy loyalty_gift_redeem [not null]
+  items loyalty_gift_redeem_item [not null]
+
+  indexes {
+    (lgrId, lgrAccYear) [pk]
+  }
+
+  Note: 'A gift redemption slip — A DOCUMENT IN ITS OWN RIGHT.
+
+A customer walks up with points and walks away with goods and a printed
+slip. No money crosses the counter, so this cannot be an AccTenderDetail
+row. And it is not a line on a sale bill either: it has its own number
+series, its own status, its own print count, and frequently no bill at all.
+
+Shape follows SaleBill: a partitioned header with an offline-safe number
+pair (a per-device serial plus the printed refno that embeds it), and a
+partitioned detail carrying the stock movement.
+
+The POINTS side is not stored here. LoyaltyLedger holds the GIFT rows — one
+per lot consumed, named by lldSrcDocId — and the wallet balance follows
+from them. lgrOpeningPoints / lgrRedeemPoints / lgrClosingPoints are
+SNAPSHOTS for the printed slip; the ledger remains the authority.'
+}
+
+Table loyalty_gift_redeem_item {
+  lgdId String [not null]
+  lgdCompId String [not null]
+  lgdBranchId String [not null]
+  lgdTenantId String
+  lgdAccYear String [not null]
+  lgdLgrId String [not null]
+  lgdLgrAccYear String [not null]
+  lgdRowNo Int [not null, default: 1]
+  lgdLsgId String [note: 'The catalogue row claimed, when the gift came from a scheme\'s list.']
+  lgdItemId String [not null]
+  lgdUnitId String [not null, note: 'item_unit_conversion, as on a bill line.']
+  lgdGodownId String
+  lgdBarcode String
+  lgdBatchId String
+  lgdBatchNo String
+  lgdSerialNo String
+  lgdBatchDate DateTime
+  lgdExpiryDate DateTime
+  lgdQty Decimal [not null, note: 'No database default: ck_lgd_qty demands it be positive, so a row that
+omits it must fail rather than silently issue nothing.']
+  lgdStockQty Decimal [not null, default: 0, note: 'On hand at the moment of issue.']
+  lgdRate Decimal [not null, default: 0, note: 'Issue rate.']
+  lgdTotal Decimal [not null, default: 0]
+  lgdPoints Decimal [not null, default: 0, note: 'Points this line cost.']
+  lgdMaxPrice Decimal [not null, default: 0]
+  lgdCostPrice Decimal [not null, default: 0, note: 'The giveaway\'s cost — what a Tally Stock Journal posts against.']
+  lgdCostWot Decimal [not null, default: 0, note: 'Cost excluding tax.']
+  lgdNotes String
+  lgdIsDeleted Boolean [not null, default: false]
+  lgdSyncDate DateTime
+  lgdCreatedOn DateTime [default: `now()`, not null]
+  lgdCreatedBy String
+  lgdModifiedOn DateTime
+  lgdModifiedBy String
+  header loyalty_gift_redeem [not null]
+  company companys [not null]
+  branch branch_master [not null]
+  gift loyalty_scheme_gift
+  item item_master [not null]
+  unit item_unit_conversion [not null]
+  godown godown_locations
+  batch item_batch_master
+
+  indexes {
+    (lgdId, lgdAccYear) [pk]
+  }
+
+  Note: 'The goods issued against a redemption slip.
+
+ONE detail table, not two. The legacy pair (loy_item_rdm_items and
+loy_item_rdm_itm_det) held identical column sets against the same header
+and only one was live, so only one is rebuilt.
+
+Carries the full stock movement — godown, batch, serial, expiry — because a
+gift relieves inventory exactly as a sale does, and a batch-tracked shop
+cannot post the issue without them. Cost is snapshotted alongside the issue
+rate so the giveaway can be valued afterwards without re-pricing history.
+
+Partitioned on its own lgdAccYear, which ck_lgd_same_year pins to the
+header\'s — the composite FK requires it and the CHECK makes it readable.'
+}
+
+Table loyalty_ledger {
+  lldId String [not null]
+  lldCompId String [not null]
+  lldBranchId String [not null, note: 'WHERE THE EVENT HAPPENED. Points earned at one branch and spent at
+another are the normal case for a chain; this column is what makes
+"who gave them, who honoured them" answerable, and it is the whole basis
+of inter-branch settlement between franchisees.']
+  lldTenantId String
+  lldAccYear String [not null, note: 'FY of the EVENT, and the partition key.']
+  lldMemberId String [not null]
+  lldCustId String [not null, note: 'Snapshot; every report groups by it.']
+  lldLscId String
+  lldLssId String
+  lldLsiId String
+  lldTxnType String [not null, note: 'EARN | REDEEM | GIFT | EXPIRE | ADJUST | TRANSFER | OPENING']
+  lldRowNo Int [not null, default: 1]
+  lldPoints Decimal [not null, note: 'SIGNED. EARN/OPENING positive, REDEEM/GIFT/EXPIRE negative,
+ADJUST/TRANSFER either. A reversal repeats the type with the opposite
+sign (ck_lld_sign enforces the pairing).']
+  lldTxnDate DateTime [not null]
+  lldTxnTime DateTime [note: 'Which side of a happy-hour boundary the till was on. Without it, a
+double-points window is unauditable the morning after.']
+  lldLotId String [note: 'On a consuming row: the EARN row these points came out of. Travels as a
+pair because this table is partitioned.']
+  lldLotAccYear String
+  lldConsumedPoints Decimal [not null, default: 0, note: 'On the LOT row only: how much of it has been spent, expired or moved
+away. Recomputed by LoyaltyLedgerService.recomputeLots(); there is no
+trigger and no other code may write it.']
+  lldLotBalance Decimal [note: 'GENERATED ALWAYS ... STORED: lldPoints - lldConsumedPoints on a lot row,
+ZERO (not NULL) on a consuming row — which is what keeps the "> 0" index
+predicates cheap and total. Read-only: never send it on a create or
+update, and @default(dbgenerated()) keeps migrate from emitting a default.']
+  lldExpiresOn DateTime [note: 'When this lot lapses, from lsc_points_valid_days / lsc_expiry_basis at
+earn time. NULL = never expires, and such lots are consumed LAST.']
+  lldActiveFrom DateTime [note: 'When this lot becomes REDEEMABLE: bill date + lsc_activation_days. Before
+it, the points exist and show in the balance but cannot be spent — the
+return-window defence against clawing back points already spent.
+NULL = redeemable at once.']
+  lldSrcModule String
+  lldSrcDocType String
+  lldSrcDocId String
+  lldSrcAccYear String [note: 'The SOURCE\'s FY, not this row\'s.']
+  lldSrcDocRefno String [note: 'Snapshot, so a member statement prints the bill number without joining a
+partitioned table across every year the customer has traded.']
+  lldSrcRowNo Int
+  lldBaseAmount Decimal [not null, default: 0]
+  lldBaseQty Decimal [not null, default: 0]
+  lldRate Decimal [not null, default: 0, note: 'Points per slab on an earn, or INR per point on a redeem. Snapshotted so
+a historic redemption stays re-derivable whichever of
+lsc_redeem_value_per_point or tnd_conversion_rate was in play.']
+  lldFactor Decimal [not null, default: 1]
+  lldMoneyValue Decimal [not null, default: 0, note: 'What they were worth, in INR.']
+  lldTenderId String [note: 'Redemption is a TENDER LINE: AccTenderDetail with td_tender_type_id = 10
+(LOYALTY), td_units_used = the points, td_conversion_rate = rupees per
+point. This pair is what ties the two sides together, and it is the ONLY
+route by which a redemption reaches the GL and then Tally — earning posts
+nothing at all, being statistical.']
+  lldTenderAccYear String
+  lldReversalOfId String [note: 'Carries a real FK, unlike abj_reversal_of_id, because this table has the
+year to complete the composite key with.']
+  lldReversalOfAccYear String
+  lldReversalReason String
+  lldApprovedBy String [note: 'A manual adjustment is somebody\'s decision, not a keying accident —
+ck_lld_adjust_approval makes ADJUST require this.']
+  lldUserId String
+  lldSessionId String
+  lldDeviceId String
+  lldRemarks String
+  lldIsDeleted Boolean [not null, default: false]
+  lldSyncDate DateTime
+  lldCreatedOn DateTime [default: `now()`, not null]
+  lldCreatedBy String
+  lldModifiedOn DateTime
+  lldModifiedBy String
+  member loyalty_member [not null]
+  customer customers [not null]
+  company companys [not null]
+  branch branch_master [not null]
+  scheme loyalty_scheme
+  slab loyalty_scheme_slab
+  itemRule loyalty_scheme_item
+  user user_master
+  approver user_master
+  device device_master
+  lot loyalty_ledger
+  lotConsumers loyalty_ledger [not null]
+  reversalOf loyalty_ledger
+  reversedBy loyalty_ledger [not null]
+  tender acc_tender_detail
+
+  indexes {
+    (lldId, lldAccYear) [pk]
+  }
+
+  Note: 'One row per point movement against one wallet, drawn from ONE lot.
+
+LIST-partitioned by lldAccYear — the year the EVENT happened, not the year
+the points were earned. That is the whole trick: July\'s redemption of
+April\'s points lands in July\'s partition and April\'s earn row never moves.
+Hence the composite PK (lldId, lldAccYear). Partitions
+(sales.loyalty_ledger_2026_2027) come from
+public.ensure_acc_year_partitions(\'YYYY-YYYY\'), which
+20260921140000_add_loyalty_points_engine taught about this table.
+
+A row is never edited and never deleted. Everything is undone by a NEW row
+of opposite sign naming the row it undoes (lldReversalOfId) — so a plain
+SUM per txn type nets reversals out and no caller special-cases them.
+
+EARN rows ARE the lots. They carry lldExpiresOn, lldActiveFrom and
+lldConsumedPoints; lldLotBalance is what is left. Consuming rows
+(REDEEM / GIFT / EXPIRE) carry lldLotId pointing back at the lot they came
+out of, so a redemption spanning three lots is THREE rows sharing ONE
+tender. It costs rows and buys expiry that is exact and reversible.
+
+FIFO, defined in ONE place (LoyaltyLedgerService.lots()) and nowhere else:
+ORDER BY lld_expires_on NULLS LAST, lld_txn_date, lld_id
+Oldest expiry first; within one expiry date, oldest earned first; lots that
+never expire last of all — the customer-favourable order, because it spends
+what would otherwise lapse.
+
+WRITE RULE: exactly one private method of LoyaltyLedgerService may INSERT,
+UPDATE or soft-delete this table. It writes the rows, then recomputes the
+touched LOTS and then the touched MEMBERS, in that order, before returning.
+Nothing else touches it — not a repository, not the sync handler, not a
+migration script. There is no trigger to fall back on.'
+}
+
+Table loyalty_member {
+  lmbId String [pk]
+  lmbCompId String [not null]
+  lmbBranchId String [note: 'Branch that ENROLLED them. Never a scope — a wallet belongs to the company.']
+  lmbTenantId String
+  lmbAccYear String [not null, note: 'FY of enrolment. Reporting filter only, never a partition key.']
+  lmbCustId String [not null]
+  lmbPartyLedgerId String [note: 'The accounting party, snapshotted so a points-liability report can join
+accounts without a hop through the customer master. Nullable: a cash
+customer may have no ledger row yet.']
+  lmbLscId String
+  lmbCardNo String
+  lmbMobile String [note: 'Snapshot of customers.cus_phone1 — the supermarket lookup handle.']
+  lmbEnrolledOn DateTime [not null]
+  lmbEarnedPoints Decimal [not null, default: 0]
+  lmbRedeemedPoints Decimal [not null, default: 0]
+  lmbExpiredPoints Decimal [not null, default: 0]
+  lmbGiftPoints Decimal [not null, default: 0]
+  lmbAdjustedPoints Decimal [not null, default: 0]
+  lmbBalancePoints Decimal [note: 'GENERATED ALWAYS ... STORED in the DB:
+earned + adjusted - redeemed - expired - gift
+Read-only: never send it on a create or update — Postgres rejects it, and
+@default(dbgenerated()) marks it DB-owned so migrate never emits a
+default of its own.
+
+This is what the bill screen shows. It is NOT what the customer may spend
+today: cooling lots and unswept lapsed lots make those differ, and
+LoyaltyLedgerService.redeemable() answers that instead.']
+  lmbLifetimeBillAmt Decimal [not null, default: 0, note: 'Lifetime trading, which points alone cannot answer: lmbEarnedPoints is
+already "everything ever earned" (redemption never touches that bucket),
+so a lifetime-points column would just be a second copy of it. These two
+are not derivable from the point columns at all.']
+  lmbLifetimeBillCnt Int [not null, default: 0]
+  lmbLastEarnOn DateTime
+  lmbLastRedeemOn DateTime
+  lmbLastActivityOn DateTime [note: 'The dormant-member report and lsc_expiry_basis = \'LAST_TXN\' have no other
+source once the row simply stays open across years.']
+  lmbNextExpiryOn DateTime [note: 'Earliest open lot, so the till can say "480 points expire in 9 days"
+without a scan of the ledger. Recomputed AFTER the lots — it reads
+lldLotBalance, so the other order publishes a wrong date silently.']
+  lmbStatus String [not null, default: 'ACTIVE', note: 'ACTIVE | SUSPENDED | CLOSED | MERGED. MERGED is two wallets that turn out
+to be one person: the loser is marked MERGED and its points move by a
+PAIR of ADJUST ledger rows — never by editing a balance, which would
+leave the trail with a hole in it.']
+  lmbMergedIntoId String
+  lmbBlockReason String
+  lmbRemarks String
+  lmbIsActive Boolean [not null, default: true]
+  lmbIsDeleted Boolean [not null, default: false]
+  lmbSyncDate DateTime
+  lmbCreatedOn DateTime [default: `now()`, not null]
+  lmbCreatedBy String
+  lmbModifiedOn DateTime
+  lmbModifiedBy String
+  company companys [not null]
+  branch branch_master
+  customer customers [not null]
+  partyLedger acc_ledger_master
+  scheme loyalty_scheme
+  mergedInto loyalty_member
+  mergedFrom loyalty_member [not null]
+  ledgerRows loyalty_ledger [not null]
+  giftRedeems loyalty_gift_redeem [not null]
+  coupons loyalty_coupon [not null]
+  couponTxns loyalty_coupon_txn [not null]
+
+  Note: 'The points wallet: ONE per (company, customer).
+
+NOT partitioned, and never carried forward at year end — this is
+AccBillBalance applied to points. A customer who earned in 2025-2026 and
+spends in 2027-2028 is the SAME row throughout, which is precisely what
+makes LoyaltyLedger\'s reference to it a plain foreign key instead of a
+composite one that has to carry a year around.
+
+lmbAccYear records the year they ENROLLED and is a reporting filter only.
+Making it a partition key is exactly the mistake the bill-balance
+repartitioning exists to undo.
+
+Keyed by company and customer, never by branch: that single index
+(ux_lmb_cust) is the chain-store guarantee that points earned at one branch
+spend at another. lmbCardNo and lmbMobile are ALTERNATE HANDLES for finding
+this row, not identities — the identity is lmbCustId.'
 }
 
 Table loyalty_scheme {
@@ -4346,6 +5549,9 @@ return window to close. 0 = redeemable immediately.']
   items loyalty_scheme_item [not null]
   slabs loyalty_scheme_slab [not null]
   gifts loyalty_scheme_gift [not null]
+  loyaltyMembers loyalty_member [not null]
+  loyaltyLedgerRows loyalty_ledger [not null]
+  loyaltyGiftRedeems loyalty_gift_redeem [not null]
 
   Note: 'sales.loyalty_scheme — §1, the loyalty campaign header.
 
@@ -4425,6 +5631,7 @@ gift the shop cannot hand over is worse than one it never offered.']
   scheme loyalty_scheme [not null]
   item item_master [not null]
   unit item_unit_conversion [not null]
+  loyaltyGiftItems loyalty_gift_redeem_item [not null]
 
   Note: 'sales.loyalty_scheme_gift — §6, points buy an ITEM.
 
@@ -4472,6 +5679,7 @@ Table loyalty_scheme_item {
   itemCategory item_category_master
   itemBrand item_brand_master
   itemSection item_section_master
+  loyaltyLedgerRows loyalty_ledger [not null]
 
   Note: 'sales.loyalty_scheme_item — §4, which stock the campaign applies to.
 
@@ -4593,6 +5801,7 @@ Table loyalty_scheme_slab {
   scheme loyalty_scheme [not null]
   item item_master
   unit item_unit_conversion
+  loyaltyLedgerRows loyalty_ledger [not null]
 
   Note: 'sales.loyalty_scheme_slab — §5, the earn rates.
 
@@ -5036,6 +6245,9 @@ Table sale_bill {
   sbHasPromo Boolean [not null, default: false]
   sbHasComm Boolean [not null, default: false]
   sbHasLoyalty Boolean [not null, default: false]
+  sbLscId String
+  sbLoyaltyEarnPoints Decimal [not null, default: 0]
+  sbLoyaltyRedeemPoints Decimal [not null, default: 0]
   sbUserId String [not null]
   sbSalesmanId String[] [not null]
   sbAgentId String
@@ -5229,6 +6441,8 @@ Table sale_bill_item {
   sbiSalesmanId String
   sbiSchemeId String
   sbiSchemeName String
+  sbiLoyaltyPv Decimal [not null, default: 0]
+  sbiLoyaltyPoints Decimal [not null, default: 0]
   sbiRemarks String
   sbiIsDeleted Boolean [not null, default: false]
   sbiSyncDate DateTime
@@ -8190,6 +9404,24 @@ Ref: companys.compStylesheetId > app_theme_master.thmId
 
 Ref: fiscal_years.fyPrevFyId - fiscal_years.fyId [delete: No Action]
 
+Ref: gst_auth_session.gasGccId > gst_company_credential.gccId [delete: Cascade]
+
+Ref: gst_company_credential.gccCompanyId > companys.compId [delete: Restrict]
+
+Ref: gst_company_credential.gccBranchId > branch_master.brId [delete: Restrict]
+
+Ref: gst_company_credential.gccGpvId > gst_provider.gpvId [delete: Restrict]
+
+Ref: gst_provider_account.gpaGpvId > gst_provider.gpvId [delete: Cascade]
+
+Ref: gst_provider_endpoint.gpeGpsId > gst_provider_service.gpsId [delete: Cascade]
+
+Ref: gst_provider_error_map.gemGpvId > gst_provider.gpvId [delete: Cascade]
+
+Ref: gst_provider_field_map.gfmGpeId > gst_provider_endpoint.gpeId [delete: Cascade]
+
+Ref: gst_provider_service.gpsGpvId > gst_provider.gpvId [delete: Cascade]
+
 Ref: printer_profile.prfCompanyId > companys.compId [delete: Restrict]
 
 Ref: printer_profile.prfBranchId > branch_master.brId [delete: Restrict]
@@ -8311,6 +9543,124 @@ Ref: employee_master.empCompanyId > companys.compId [delete: Restrict]
 Ref: employee_master.empDesignationId > employee_designations.edId
 
 Ref: employee_master.empDepartmentId > employee_departments.edptId
+
+Ref: loyalty_coupon.lcpLcbId > loyalty_coupon_batch.lcbId [delete: Restrict]
+
+Ref: loyalty_coupon.lcpCompId > companys.compId [delete: Restrict]
+
+Ref: loyalty_coupon.lcpBranchId > branch_master.brId [delete: Restrict]
+
+Ref: loyalty_coupon.lcpCustId > customers.cusId [delete: Restrict]
+
+Ref: loyalty_coupon.lcpMemberId > loyalty_member.lmbId [delete: Restrict]
+
+Ref: loyalty_coupon.lcpCancelledBy > user_master.usrId [delete: Restrict]
+
+Ref: loyalty_coupon.lcpPartyLedgerId > acc_ledger_master.ledId [delete: Restrict]
+
+Ref: loyalty_coupon_batch.lcbCompId > companys.compId [delete: Restrict]
+
+Ref: loyalty_coupon_batch.lcbBranchId > branch_master.brId [delete: Restrict]
+
+Ref: loyalty_coupon_batch.lcbRedeemTenderId > acc_tender_master.tndId [delete: Restrict]
+
+Ref: loyalty_coupon_batch.lcbCustGroupId > cust_groups.cgrId [delete: Restrict]
+
+Ref: loyalty_coupon_txn.lctLcpId > loyalty_coupon.lcpId [delete: Restrict]
+
+Ref: loyalty_coupon_txn.lctLcbId > loyalty_coupon_batch.lcbId [delete: Restrict]
+
+Ref: loyalty_coupon_txn.lctCustId > customers.cusId [delete: Restrict]
+
+Ref: loyalty_coupon_txn.lctMemberId > loyalty_member.lmbId [delete: Restrict]
+
+Ref: loyalty_coupon_txn.lctCompId > companys.compId [delete: Restrict]
+
+Ref: loyalty_coupon_txn.lctBranchId > branch_master.brId [delete: Restrict]
+
+Ref: loyalty_coupon_txn.lctUserId > user_master.usrId [delete: Restrict]
+
+Ref: loyalty_coupon_txn.lctApprovedBy > user_master.usrId [delete: Restrict]
+
+Ref: loyalty_coupon_txn.lctDeviceId > device_master.devId [delete: Restrict]
+
+Ref: loyalty_coupon_txn.(lctTenderId, lctTenderAccYear) > acc_tender_detail.(tdId, tdAccYear) [delete: Restrict]
+
+Ref: loyalty_coupon_txn.(lctReversalOfId, lctReversalOfAccYear) - loyalty_coupon_txn.(lctId, lctAccYear) [delete: Restrict]
+
+Ref: loyalty_gift_redeem.lgrCompId > companys.compId [delete: Restrict]
+
+Ref: loyalty_gift_redeem.lgrBranchId > branch_master.brId [delete: Restrict]
+
+Ref: loyalty_gift_redeem.lgrDeviceId > device_master.devId [delete: Restrict]
+
+Ref: loyalty_gift_redeem.lgrMemberId > loyalty_member.lmbId [delete: Restrict]
+
+Ref: loyalty_gift_redeem.lgrCustId > customers.cusId [delete: Restrict]
+
+Ref: loyalty_gift_redeem.lgrLscId > loyalty_scheme.lscId [delete: Restrict]
+
+Ref: loyalty_gift_redeem.lgrUserId > user_master.usrId [delete: Restrict]
+
+Ref: loyalty_gift_redeem.lgrEmpId > employee_master.empId [delete: Restrict]
+
+Ref: loyalty_gift_redeem.lgrApprovedBy > user_master.usrId [delete: Restrict]
+
+Ref: loyalty_gift_redeem.(lgrReversalOfId, lgrReversalOfAccYear) - loyalty_gift_redeem.(lgrId, lgrAccYear) [delete: Restrict]
+
+Ref: loyalty_gift_redeem_item.(lgdLgrId, lgdLgrAccYear) > loyalty_gift_redeem.(lgrId, lgrAccYear) [delete: Cascade]
+
+Ref: loyalty_gift_redeem_item.lgdCompId > companys.compId [delete: Restrict]
+
+Ref: loyalty_gift_redeem_item.lgdBranchId > branch_master.brId [delete: Restrict]
+
+Ref: loyalty_gift_redeem_item.lgdLsgId > loyalty_scheme_gift.lsgId [delete: Restrict]
+
+Ref: loyalty_gift_redeem_item.lgdItemId > item_master.itemId [delete: Restrict]
+
+Ref: loyalty_gift_redeem_item.lgdUnitId > item_unit_conversion.iucId [delete: Restrict]
+
+Ref: loyalty_gift_redeem_item.lgdGodownId > godown_locations.gdlId [delete: Restrict]
+
+Ref: loyalty_gift_redeem_item.lgdBatchId > item_batch_master.btmId [delete: Restrict]
+
+Ref: loyalty_ledger.lldMemberId > loyalty_member.lmbId [delete: Restrict]
+
+Ref: loyalty_ledger.lldCustId > customers.cusId [delete: Restrict]
+
+Ref: loyalty_ledger.lldCompId > companys.compId [delete: Restrict]
+
+Ref: loyalty_ledger.lldBranchId > branch_master.brId [delete: Restrict]
+
+Ref: loyalty_ledger.lldLscId > loyalty_scheme.lscId [delete: Restrict]
+
+Ref: loyalty_ledger.lldLssId > loyalty_scheme_slab.lssId [delete: Restrict]
+
+Ref: loyalty_ledger.lldLsiId > loyalty_scheme_item.lsiId [delete: Restrict]
+
+Ref: loyalty_ledger.lldUserId > user_master.usrId [delete: Restrict]
+
+Ref: loyalty_ledger.lldApprovedBy > user_master.usrId [delete: Restrict]
+
+Ref: loyalty_ledger.lldDeviceId > device_master.devId [delete: Restrict]
+
+Ref: loyalty_ledger.(lldLotId, lldLotAccYear) - loyalty_ledger.(lldId, lldAccYear) [delete: Restrict]
+
+Ref: loyalty_ledger.(lldReversalOfId, lldReversalOfAccYear) - loyalty_ledger.(lldId, lldAccYear) [delete: Restrict]
+
+Ref: loyalty_ledger.(lldTenderId, lldTenderAccYear) > acc_tender_detail.(tdId, tdAccYear) [delete: Restrict]
+
+Ref: loyalty_member.lmbCompId > companys.compId [delete: Restrict]
+
+Ref: loyalty_member.lmbBranchId > branch_master.brId [delete: Restrict]
+
+Ref: loyalty_member.lmbCustId > customers.cusId [delete: Restrict]
+
+Ref: loyalty_member.lmbPartyLedgerId > acc_ledger_master.ledId [delete: Restrict]
+
+Ref: loyalty_member.lmbLscId > loyalty_scheme.lscId [delete: Restrict]
+
+Ref: loyalty_member.lmbMergedIntoId - loyalty_member.lmbId [delete: Restrict]
 
 Ref: loyalty_scheme.lscCompId > companys.compId [delete: Restrict]
 

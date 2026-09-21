@@ -21,6 +21,7 @@ const open_items_service_1 = require("./open-items.service");
 const receipt_service_1 = require("./receipt.service");
 const receipt_posting_service_1 = require("./receipt-posting.service");
 const receipt_unwind_guards_1 = require("./receipt-unwind.guards");
+const receipt_cheque_links_1 = require("./receipt-cheque-links");
 const receipt_guards_1 = require("./receipt.guards");
 const receipt_utils_1 = require("./receipt.utils");
 const receipt_enum_1 = require("./types/receipt-enum");
@@ -72,7 +73,7 @@ let ReceiptAmendService = class ReceiptAmendService {
         await this.assertPartyUnchanged(tx, header, dto.avhPartyId);
         this.assertRevisionIsCurrent(header, dto.baseRevision);
         const pdcHeaders = await tx.accVoucherHeader.findMany({
-            where: { avhAgainstVoucherId: header.avhVoucherId, avhIsDeleted: false },
+            where: (0, receipt_cheque_links_1.receiptPdcVoucherWhere)(header),
             select: receipt_service_1.STORED_HEADER_SELECT,
         });
         const vouchers = [header, ...pdcHeaders];
@@ -81,7 +82,7 @@ let ReceiptAmendService = class ReceiptAmendService {
         for (const voucher of vouchers) {
             await (0, receipt_guards_1.assertAccYearWritable)(tx, voucher.avhCompanyId, voucher.avhAccYear, 'avhAccYear');
         }
-        await (0, receipt_unwind_guards_1.assertChequesStillHeld)(tx, voucherIds, 'amended');
+        await (0, receipt_unwind_guards_1.assertChequesStillHeld)(tx, { receiptVoucherId: header.avhVoucherId, voucherIds }, 'amended');
         const advanceBills = await (0, receipt_unwind_guards_1.assertAdvancesUntouched)(tx, voucherIds, years, 'amended');
         const before = await this.receiptService.loadFullReceipt(tx, header);
         const tendersBefore = await tx.accTenderDetail.findMany({
@@ -240,7 +241,13 @@ let ReceiptAmendService = class ReceiptAmendService {
             });
         }
         const chequesRemoved = await tx.accPdcRegister.updateMany({
-            where: { apdVoucherId: { in: voucherIds }, apdIsDeleted: false },
+            where: {
+                ...(await (0, receipt_cheque_links_1.receiptChequeFilter)(tx, {
+                    receiptVoucherId: header.avhVoucherId,
+                    voucherIds,
+                })),
+                apdIsDeleted: false,
+            },
             data: { apdIsDeleted: true, apdModifiedOn: now, apdModifiedBy: actor },
         });
         const legsRemoved = await tx.accVoucher.updateMany({

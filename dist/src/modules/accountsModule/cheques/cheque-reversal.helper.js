@@ -1,25 +1,90 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.reverseChequeAdjustments = reverseChequeAdjustments;
+exports.allocationsReversedBy = allocationsReversedBy;
 exports.cascadeAdvances = cascadeAdvances;
 const receipt_enum_1 = require("../receipt/types/receipt-enum");
 const receipt_utils_1 = require("../receipt/receipt.utils");
-async function reverseChequeAdjustments(tx, cheque, scope, startRowNo = 1) {
-    const originals = await tx.accBillAdjustment.findMany({
+async function loadChequeAdjustments(tx, cheque) {
+    const rows = await tx.accBillAdjustment.findMany({
         where: {
             abjChequeId: cheque.apdId,
             abjChequeAccYear: cheque.apdAccYear,
             abjIsDeleted: false,
-            abjReversalOfId: null,
         },
         orderBy: [{ abjVoucherId: 'asc' }, { abjRowNo: 'asc' }],
     });
-    const nextRowNo = await writeReversals(tx, originals, scope, startRowNo);
+    const reversals = rows.filter((row) => row.abjReversalOfId !== null);
+    const alreadyReversed = new Set(reversals.map((row) => row.abjReversalOfId));
     return {
-        bills: originals.map((row) => ({ billId: row.abjBillId, accYear: row.abjBillAccYear })),
-        count: originals.length,
+        standing: rows.filter((row) => row.abjReversalOfId === null && !alreadyReversed.has(row.abjId)),
+        reversals,
+    };
+}
+async function reverseChequeAdjustments(tx, cheque, scope, startRowNo = 1) {
+    const { standing } = await loadChequeAdjustments(tx, cheque);
+    const nextRowNo = await writeReversals(tx, standing, scope, startRowNo);
+    return {
+        bills: standing.map((row) => ({ billId: row.abjBillId, accYear: row.abjBillAccYear })),
+        count: standing.length,
         nextRowNo,
     };
+}
+const SETTLEMENT_ADJ_TYPES = [
+    receipt_enum_1.BillAdjType.ALLOCATION,
+    receipt_enum_1.BillAdjType.DISCOUNT,
+    receipt_enum_1.BillAdjType.WRITEOFF,
+    receipt_enum_1.BillAdjType.ROUND_OFF,
+];
+async function allocationsReversedBy(tx, cheque, bounce) {
+    const reversed = await tx.accBillAdjustment.findMany({
+        where: {
+            abjChequeId: cheque.apdId,
+            abjChequeAccYear: cheque.apdAccYear,
+            abjIsDeleted: false,
+            abjReversalOfId: { not: null },
+            abjVoucherId: bounce.voucherId,
+            abjVoucherAccYear: bounce.accYear,
+            abjAdjType: { in: [...SETTLEMENT_ADJ_TYPES] },
+        },
+        orderBy: [{ abjRowNo: 'asc' }],
+    });
+    const byBill = new Map();
+    for (const row of reversed) {
+        const key = `${row.abjBillId}|${row.abjBillAccYear}`;
+        let entry = byBill.get(key);
+        if (!entry) {
+            entry = {
+                billId: row.abjBillId,
+                billAccYear: row.abjBillAccYear,
+                amount: receipt_utils_1.ZERO,
+                discount: receipt_utils_1.ZERO,
+                writeoff: receipt_utils_1.ZERO,
+                roundoff: receipt_utils_1.ZERO,
+                writeoffApprovedBy: null,
+            };
+            byBill.set(key, entry);
+        }
+        const amount = row.abjAmount.negated();
+        switch (row.abjAdjType) {
+            case receipt_enum_1.BillAdjType.ALLOCATION:
+                entry.amount = entry.amount.plus(amount);
+                break;
+            case receipt_enum_1.BillAdjType.DISCOUNT:
+                entry.discount = entry.discount.plus(amount);
+                break;
+            case receipt_enum_1.BillAdjType.WRITEOFF:
+                entry.writeoff = entry.writeoff.plus(amount);
+                entry.writeoffApprovedBy = row.abjApprovedBy ?? entry.writeoffApprovedBy;
+                break;
+            case receipt_enum_1.BillAdjType.ROUND_OFF:
+                entry.roundoff = entry.roundoff.plus(amount);
+                break;
+            default:
+                break;
+        }
+    }
+    return [...byBill.values()];
 }
 async function cascadeAdvances(tx, cheque, scope, startRowNo = 1) {
     const report = {

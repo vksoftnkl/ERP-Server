@@ -131,6 +131,7 @@ naming no live ledger is simply not a party, and `loadParty` says that.
 | `receipt-cancel.service.ts` | §5.3 — the mirror of it |
 | `receipt-amend.service.ts` | R20 — the unwind-and-re-apply. Orchestrates the two above; reimplements neither |
 | `receipt-unwind.guards.ts` | The two refusals `/cancel` and `/amend` MUST share, in one place |
+| `receipt-cheque-links.ts` | "What belongs to this receipt?" — its cheques, and the vouchers it raised. Neither is answered by a column pointing at it |
 | `receipt.service.ts` | §5.1 draft, §4.3a approve/reject, §4.5 get, §5.4 header edit |
 | `open-items.service.ts` | §4.1 and §4.2 — everything the screen reads before a figure is keyed |
 | `receipt-lines.ts` | §5.1 rules 3–4 — tenders and other-ledger lines, normalised. Shared by draft and post |
@@ -423,7 +424,7 @@ midnight.
 
 ---
 
-## Seven things that are easy to get wrong
+## Nine things that are easy to get wrong
 
 ### 0. A DRAFT remembers its allocation, and still touches no bill
 
@@ -600,7 +601,71 @@ the dev box and the live one. The receipt voucher type is resolved by
 `grid_name = 'MAIN LIST - RECEIPTS'`. A hard-coded id would post receipts as
 whatever document type happens to hold that number in production.
 
-### 7. `avh_src_*` stays empty on a keyed receipt
+### 7. A cheque's `apd_voucher_id` MOVES, so it cannot answer "whose cheque is this?"
+
+`acc_pdc_register.apd_voucher_id` names the voucher the instrument is
+**currently** carried by. `/cheques/re-present` repoints it at the re-issue
+voucher it writes — correctly, because a bounced cheque going back to the bank
+is a fresh act of taking a cheque in — and from that moment the receipt that
+actually took the cheque in owns nothing by that column.
+
+Every query that asked "which cheques belong to this receipt?" through it was
+therefore wrong from the day re-presentation shipped, and two of them were the
+refusals above:
+
+```
+rct00821 posted, cheque 500 -> bill A78561
+bounce / re-present / clear         apd_voucher_id now names the re-issue
+amend cheque -> cash                201, and NOTHING was reversed
+-> bill A78561 settled 1,000 on a payment of 500
+```
+
+`/cancel` had the same hole, leaving a CANCELLED receipt whose CLEARED cheque
+was still settling a bill. Both measured on live `rct00819`, 2026-09-19.
+
+`receipt-cheque-links.ts` answers it once, from what the cheque was **taken in
+on**: the union of the receipt's vouchers and the receipt's **tender rows**
+(`apd_tender_id`, which nothing repoints). Four callers share it — both unwind
+guards, the amend's register retire, the cancel's, and the detail read that
+paints the screen and feeds the print dataset — because a set the guard checks
+and a set the unwind updates that differ is the same bug wearing a different
+hat. `sale-order/order-pdc-posting.helper.ts` has always resolved its
+instruments this way, which is why that module never had the hole.
+
+### 8. `avh_against_voucher_id` is an "answers" link, not a parent link
+
+`/post` raises one voucher per post-dated cheque and points it at the receipt
+through `avh_against_voucher_id`, which is what keeps it off the receipt list
+and under its parent (§4.6). Reading that backwards — *everything pointing at me
+is one of mine* — is wrong, because the cheques module files vouchers that
+**answer** a receipt without being part of it. A `ChqBnc` names the voucher the
+cheque was carried by, and that is the receipt.
+
+Two things followed:
+
+- **`/receipts/get`** listed the bounce under `pdcVouchers` and folded the
+  bounce's reversal rows into the receipt's own `allocations` — a receipt that
+  settled 500 once painted a +500 and a −500, and a post-dated cheque voucher it
+  never had.
+- **the `/amend` unwind** swept it into the vouchers it takes apart: DRAFT, legs
+  soft-deleted, header soft-deleted, while its bill rows kept counting. Three
+  bounce vouchers on the dev box are in exactly that state (`chqbnc00017`,
+  `00061`, `00062`) — each against a receipt that had been amended through the
+  §7 hole, which is the only way an amend ever got that far.
+
+The discriminator is the voucher **TYPE**: `receipt-posting.service.ts` raises a
+post-dated cheque's voucher with the receipt's own `avh_voucher_type_id`,
+deliberately, because it *is* another receipt document for the same money
+arriving later. Everything the cheques module writes has a type of its own —
+`ChqClr`, `ChqBnc`. `receiptPdcVoucherWhere` is same-type + pointed-at-me +
+alive, and the three readers share it.
+
+A re-presentation itself never touched the bounce: §4.5 of the cheques module
+adds the re-issue voucher and changes nothing behind it, which is what the
+bounce columns already do (*"that it bounced on the 14th stays true"*). The
+bounce stays **POSTED**, with its totals stamped off its legs.
+
+### 9. `avh_src_*` stays empty on a keyed receipt
 
 `avh_src_module` / `_doc_type` / `_doc_id` are covered by a UNIQUE index
 (`ux_avh_src`) for every non-cancelled row, because they exist to make posting
@@ -750,7 +815,7 @@ still enforces.
 
 | refuse when | why |
 |---|---|
-| any cheque is **DEPOSITED or later** | the bank has acted on it — unwind it on Received Cheques first |
+| any cheque is **DEPOSITED or later** | the bank has acted on it — unwind it on Received Cheques first. "Any cheque" is resolved by `receipt-cheque-links.ts`, never by `apd_voucher_id` alone — see §7 above |
 | the **on-account ADVANCE has been spent** | the money is already settling somebody else's invoice |
 | `baseRevision` **≠ `avh_revision_no`** | somebody amended it since this client loaded it |
 | the receipt is **not POSTED** | a DRAFT is edited by `/create`; a CANCELLED one is history |

@@ -412,6 +412,33 @@ export interface ReceiptAllocation {
   docRefno: string;
   /** Null when the bill behind a remembered row can no longer be read. */
   docDate: string | null;
+  /*
+   * ── The bill's own figures ──────────────────────────────────────────────
+   *
+   * Read straight off `acc_bill_balance` at the moment of the read, and NOT a
+   * snapshot of what the bill looked like when this row was written.
+   *
+   * They are here because a POSTED receipt is painted from this payload alone:
+   * the screen deliberately does not call `/receipts/open-items` for one, since
+   * what a receipt shows is what it DID, not what the party owes today. Without
+   * them the grid has no bill amount and no pending figure to put an
+   * "after settlement" column against, and every line reads minus its own
+   * settlement.
+   *
+   * All five are null only when the bill cannot be read, which on a POSTED row
+   * cannot happen — `fk_abj_bill` guarantees it — and on a remembered DRAFT row
+   * means the bill has since been deleted.
+   */
+  billType: BillType | null;
+  billAmount: number | null;
+  /**
+   * Pending **as it stands now**, after this receipt. The client derives what
+   * it was before by adding this receipt's own settlement back; deriving it the
+   * other way round is impossible, which is why this is the figure sent.
+   */
+  pendingAmount: number | null;
+  dueDate: string | null;
+  status: BillStatus | null;
   adjType: BillAdjType;
   settlementMode: BillSettlementMode | null;
   drCr: DrCr;
@@ -424,6 +451,30 @@ export interface ReceiptAllocation {
   chequeId: string | null;
   againstBillId: string | null;
   againstBillRefno: string | null;
+  /**
+   * `abj_reversal_of_id` — the row this one RETRACTS, when it is a reversal.
+   *
+   * `acc_bill_adjustment` never rewrites a row and never soft-deletes one: an
+   * amend or a cancel retracts by inserting the exact negative of it
+   * (`ck_abj_reversal_sign` makes that the only legal shape). So an amended
+   * receipt answers with the original row, its negative, AND the replacement,
+   * and netting per bill is the reader's job.
+   *
+   * Null on every ordinary row. It is not needed for that netting — a reversal
+   * is by constraint the precise negative of its target — but it is the only
+   * thing that lets a history view SHOW which correction undid which line.
+   */
+  reversalOfId: string | null;
+  /**
+   * This row has been retracted by a later one. Asked of the database, not
+   * inferred from the rows in hand: an AMEND files its negatives on the receipt
+   * itself, but a CANCEL files them on the reversal voucher, which is not in
+   * this payload at all.
+   *
+   * Always false on a remembered DRAFT row — nothing is written, so nothing can
+   * have been reversed.
+   */
+  isReversed: boolean;
   approvedBy: string | null;
   remarks: string | null;
 }

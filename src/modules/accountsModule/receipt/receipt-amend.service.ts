@@ -20,6 +20,7 @@ import {
 } from './receipt.service';
 import { ReceiptPostingService, rethrowAllocationError } from './receipt-posting.service';
 import { assertAdvancesUntouched, assertChequesStillHeld } from './receipt-unwind.guards';
+import { receiptChequeFilter, receiptPdcVoucherWhere } from './receipt-cheque-links';
 import { assertAccYearWritable, assertHeaderScope } from './receipt.guards';
 import { flipSide, todayUtc } from './receipt.utils';
 import { AmendReceiptDto } from './dto/amend-receipt.dto';
@@ -222,8 +223,13 @@ export class ReceiptAmendService {
     this.assertRevisionIsCurrent(header, dto.baseRevision);
 
     // ── 2 · Everything refused on the FACTS, before anything is written ────
+    // Only the vouchers this receipt RAISED. A bounce voucher is filed against
+    // the receipt as well, and taking one apart here left it DRAFT with its
+    // legs soft-deleted while its bill rows kept counting — the entry that
+    // re-debited the party silently out of the books. See
+    // `receipt-cheque-links.ts`.
     const pdcHeaders = await tx.accVoucherHeader.findMany({
-      where: { avhAgainstVoucherId: header.avhVoucherId, avhIsDeleted: false },
+      where: receiptPdcVoucherWhere(header),
       select: STORED_HEADER_SELECT,
     });
     const vouchers = [header, ...pdcHeaders];
@@ -240,7 +246,11 @@ export class ReceiptAmendService {
       await assertAccYearWritable(tx, voucher.avhCompanyId, voucher.avhAccYear, 'avhAccYear');
     }
 
-    await assertChequesStillHeld(tx, voucherIds, 'amended');
+    await assertChequesStillHeld(
+      tx,
+      { receiptVoucherId: header.avhVoucherId, voucherIds },
+      'amended',
+    );
     const advanceBills = await assertAdvancesUntouched(tx, voucherIds, years, 'amended');
 
     // ── 3 · The unwind, in place ───────────────────────────────────────────
@@ -571,8 +581,19 @@ export class ReceiptAmendService {
     // same cheque number, which is the commonest reason to amend at all.
     // `ux_apd_instrument` excludes deleted rows as well as cancelled ones, so
     // the number is free either way and this is the honest one.
+    // Resolved the way the guard above resolved them — by what the cheque was
+    // taken in ON, not by the voucher it currently hangs off. A re-presented
+    // cheque's `apd_voucher_id` names its re-issue voucher, and a row this
+    // query missed would outlive the receipt that raised it and go on settling
+    // a bill the amend believes it has re-stated.
     const chequesRemoved = await tx.accPdcRegister.updateMany({
-      where: { apdVoucherId: { in: voucherIds }, apdIsDeleted: false },
+      where: {
+        ...(await receiptChequeFilter(tx, {
+          receiptVoucherId: header.avhVoucherId,
+          voucherIds,
+        })),
+        apdIsDeleted: false,
+      },
       data: { apdIsDeleted: true, apdModifiedOn: now, apdModifiedBy: actor },
     });
 

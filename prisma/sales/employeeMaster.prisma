@@ -78,6 +78,9 @@ model EmployeeMaster {
   @@index([empIsActive],     name: "idx_emp_active")
   @@index([empDepartmentId], name: "idx_emp_department")
   @@index([empDesignationId],name: "idx_emp_designation")
+  // ── Loyalty points engine (20260921140000) ─────────────────────────────
+  loyaltyGiftRedeems    LoyaltyGiftRedeem[]       @relation("LoyaltyGiftRedeemEmployee")
+
   @@map("employee_master")
   @@schema("public")
 }

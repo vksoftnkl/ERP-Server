@@ -32,6 +32,27 @@ model AccVoucherDocEinvoice {
   gdeLastErrorCode  String?              @db.VarChar(50) @map("gde_last_error_code")
   gdeLastMessage    String?              @db.VarChar(500) @map("gde_last_message")
 
+  // ── Provenance (20260921120000_add_gst_provider_integration) ──────────
+  /// public.gst_company_credential that generated this IRN. A cancellation
+  /// must be sent through the same provider and GSTIN, and with two providers
+  /// configured there is no way to work out which one it was after the fact.
+  /// No FK: the credential is a master that may legitimately be retired while
+  /// old documents keep pointing at it.
+  gdeGccId          String?              @db.Uuid @map("gde_gcc_id")
+  /// Frozen snapshot beside the id, the way the doc register freezes party
+  /// name and GSTIN next to theirs: an id pointing at a row somebody deleted
+  /// answers no questions at all.
+  gdeGpvCode        String?              @db.VarChar(20) @map("gde_gpv_code")
+  /// The Invoice Registration Portal that issued the IRN (NIC1, NIC2, CLEAR,
+  /// CYGNET, EY, IRIS) — NOT the same thing as the GSP. A cancellation must
+  /// reach this portal; the GSP used to reach it may differ. On a NIC-style
+  /// reply the first character of AckNo gives it away: 1 = NIC1, 2 = NIC2.
+  gdeIrpCode        String?              @db.VarChar(10) @map("gde_irp_code")
+  /// When to try again. Without it a failed IRN either retries in a tight
+  /// loop against a portal that is rate limiting us, or waits for a person to
+  /// notice. Drives the ix_gde_retry worklist.
+  gdeNextAttemptOn  DateTime?            @db.Timestamptz(6) @map("gde_next_attempt_on")
+
   gdeIsActive       Boolean              @default(true) @map("gde_is_active")
   gdeIsDeleted      Boolean              @default(false) @map("gde_is_deleted")
   gdeSyncDate       DateTime?            @db.Timestamptz(6) @map("gde_sync_date")
@@ -47,5 +68,10 @@ model AccVoucherDocEinvoice {
   @@map("acc_voucher_doc_einvoice")
   @@schema("accounts")
   // Partial unique index uq_acc_voucher_doc_einvoice_irn and partial index
-  // idx_gde_status are not expressible in Prisma schema.
+  // idx_gde_status are not expressible in Prisma schema. Nor is the retry
+  // worklist added by 20260921120000:
+  //
+  //   CREATE INDEX ix_gde_retry
+  //       ON accounts.acc_voucher_doc_einvoice (gde_company_id, gde_next_attempt_on)
+  //       WHERE gde_is_deleted = false AND gde_status = 'FAILED';
 }

@@ -20,6 +20,7 @@ const module_service_utils_1 = require("../../../common/utils/module-service.uti
 const receipt_service_1 = require("./receipt.service");
 const receipt_guards_1 = require("./receipt.guards");
 const receipt_unwind_guards_1 = require("./receipt-unwind.guards");
+const receipt_cheque_links_1 = require("./receipt-cheque-links");
 const receipt_utils_1 = require("./receipt.utils");
 const receipt_enum_1 = require("./types/receipt-enum");
 const CANCEL_TRANSACTION_OPTIONS = { maxWait: 15_000, timeout: 120_000 };
@@ -69,7 +70,7 @@ let ReceiptCancelService = class ReceiptCancelService {
                 ]);
             }
             const pdcVouchers = await tx.accVoucherHeader.findMany({
-                where: { avhAgainstVoucherId: header.avhVoucherId, avhIsDeleted: false },
+                where: (0, receipt_cheque_links_1.receiptPdcVoucherWhere)(header),
                 select: receipt_service_1.STORED_HEADER_SELECT,
             });
             const vouchers = [header, ...pdcVouchers];
@@ -78,7 +79,7 @@ let ReceiptCancelService = class ReceiptCancelService {
             }
             const voucherIds = vouchers.map((voucher) => voucher.avhVoucherId);
             const years = [...new Set(vouchers.map((voucher) => voucher.avhAccYear))];
-            await (0, receipt_unwind_guards_1.assertChequesStillHeld)(tx, voucherIds, 'cancelled');
+            await (0, receipt_unwind_guards_1.assertChequesStillHeld)(tx, { receiptVoucherId: header.avhVoucherId, voucherIds }, 'cancelled');
             const advanceBills = await (0, receipt_unwind_guards_1.assertAdvancesUntouched)(tx, voucherIds, years, 'cancelled');
             const reversals = [];
             const touchedBills = [];
@@ -101,7 +102,7 @@ let ReceiptCancelService = class ReceiptCancelService {
                     },
                 });
             }
-            const cancelledCheques = await this.cancelCheques(tx, voucherIds, dto.reason, actor, now);
+            const cancelledCheques = await this.cancelCheques(tx, { receiptVoucherId: header.avhVoucherId, voucherIds }, dto.reason, actor, now);
             await this.softDeleteTenders(tx, header.avhVoucherId, actor, now);
             const recomputed = await this.recompute.recomputeBills(tx, touchedBills, (0, receipt_utils_1.todayUtc)());
             for (const voucher of vouchers) {
@@ -321,10 +322,10 @@ let ReceiptCancelService = class ReceiptCancelService {
             })),
         };
     }
-    async cancelCheques(tx, voucherIds, reason, actor, now) {
+    async cancelCheques(tx, scope, reason, actor, now) {
         const cheques = await tx.accPdcRegister.findMany({
             where: {
-                apdVoucherId: { in: [...voucherIds] },
+                ...(await (0, receipt_cheque_links_1.receiptChequeFilter)(tx, scope)),
                 apdIsDeleted: false,
                 apdStatus: receipt_enum_1.PdcStatus.HELD,
             },

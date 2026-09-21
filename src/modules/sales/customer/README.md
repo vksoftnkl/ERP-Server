@@ -68,7 +68,22 @@ Every customer is backed by a row in `acc_ledger_master` that uses the **same id
   from `cusAreaId` (the area shares its id with a linked account group), and the remaining shared
   fields are copied through `CUSTOMER_TO_LEDGER_FIELD_MAP` **only when present** on the customer
   payload (e.g. `cusEmail → ledEmail`, `cusGstNo → ledGstinNo`, `cusNotes → ledRemarks`,
-  `cusIsActive → ledIsActive`).
+  `cusEnableSms → ledAllowSms`, `cusSortOrder → ledSortOrder`, `cusIsActive → ledIsActive`).
+- Three statutory fields can't be copied one-to-one, so `buildLinkedLedgerDto` derives them after
+  the map (again, only when the payload carries the deciding column):
+  - `cusGstType` (free-text `VarChar(30)`) → `ledGstPartyRegType`, matched case- and
+    separator-insensitively against `REGULAR` / `COMPOSITION` / `UNREGISTERED`. A value outside that
+    vocabulary syncs as `NULL` — the customer keeps its raw text and its save never fails over it.
+  - `cusTcsApplicable` and the legacy `cusItcollType` / `cusItcollExempted` pair →
+    `ledIsTcsApplicable` / `ledIsTdsApplicable`, which is what
+    [`receipt-lines.ts`](../../accountsModule/receipt/receipt-lines.ts) reads to require the TCS and
+    `TDS_RECEIVABLE` legs. TCS is on when the flag is set **or** the IT-collection type is `TCS`;
+    TDS when that type is `TDS`; `cusItcollExempted = true` vetoes both — the same reading
+    [`customer-detail.lookup.ts`](../../master-lookup/lookups/customer-detail.lookup.ts) uses for
+    `tcs_customer`.
+  - `ledItcEligibility` is **not** synced: it is GST input-credit eligibility
+    (`ELIGIBLE` / `INELIGIBLE_17_5` / …, behind `chk_led_itc_eligibility`), and no customer column
+    describes it. `cus_itcoll_*` is income-tax collection, a different tax.
 - On update, a name collision raised by the ledger write (`ConflictException`, from the ledger's
   company-scoped name uniqueness) is re-surfaced in the customer's vocabulary as a `cusName`
   conflict rather than leaking the `ledName` field.

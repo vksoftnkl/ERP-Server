@@ -14,6 +14,7 @@ const common_1 = require("@nestjs/common");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const audit_log_service_1 = require("../../audit-log/audit-log.service");
 const account_ledger_masters_service_1 = require("../../accountsModule/accountLedgerMasters/account-ledger-masters.service");
+const account_ledger_master_enum_1 = require("../../accountsModule/accountLedgerMasters/types/account-ledger-master-enum");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
 const CUSTOMER_TABLE_NAME = 'customers';
@@ -112,8 +113,42 @@ const CUSTOMER_TO_LEDGER_FIELD_MAP = [
     ['cusAadharNo', 'ledAadharNo'],
     ['cusEcommerceGstin', 'ledEcommerceGstin'],
     ['cusNotes', 'ledRemarks'],
+    ['cusEnableSms', 'ledAllowSms'],
+    ['cusSortOrder', 'ledSortOrder'],
     ['cusIsActive', 'ledIsActive'],
 ];
+function toLedgerGstPartyRegType(cusGstType) {
+    if (typeof cusGstType !== 'string') {
+        return null;
+    }
+    const normalized = cusGstType
+        .trim()
+        .toUpperCase()
+        .replace(/[\s_-]+/g, '');
+    return (Object.values(account_ledger_master_enum_1.LedGstPartyRegType).find((value) => value.replace(/[\s_-]+/g, '') === normalized) ?? null);
+}
+function toLedgerItCollectionFlags(saveCustomerDto) {
+    const hasTcsFlag = (0, module_service_utils_1.hasOwnProperty)(saveCustomerDto, 'cusTcsApplicable');
+    const hasItcollType = (0, module_service_utils_1.hasOwnProperty)(saveCustomerDto, 'cusItcollType');
+    const hasItcollExempted = (0, module_service_utils_1.hasOwnProperty)(saveCustomerDto, 'cusItcollExempted');
+    if (!hasTcsFlag && !hasItcollType && !hasItcollExempted) {
+        return {};
+    }
+    if (saveCustomerDto.cusItcollExempted === true) {
+        return { tcs: false, tds: false };
+    }
+    const itcollType = typeof saveCustomerDto.cusItcollType === 'string'
+        ? saveCustomerDto.cusItcollType.trim().toUpperCase()
+        : null;
+    const flags = {};
+    if (hasTcsFlag || hasItcollType) {
+        flags.tcs = saveCustomerDto.cusTcsApplicable === true || itcollType === 'TCS';
+    }
+    if (hasItcollType) {
+        flags.tds = itcollType === 'TDS';
+    }
+    return flags;
+}
 let CustomerService = class CustomerService {
     prisma;
     auditLogService;
@@ -512,6 +547,16 @@ let CustomerService = class CustomerService {
             if ((0, module_service_utils_1.hasOwnProperty)(saveCustomerDto, cusField)) {
                 ledgerDtoRecord[ledField] = customerRecord[cusField];
             }
+        }
+        if ((0, module_service_utils_1.hasOwnProperty)(saveCustomerDto, 'cusGstType')) {
+            ledgerDto.ledGstPartyRegType = toLedgerGstPartyRegType(saveCustomerDto.cusGstType);
+        }
+        const itCollectionFlags = toLedgerItCollectionFlags(saveCustomerDto);
+        if (itCollectionFlags.tcs !== undefined) {
+            ledgerDto.ledIsTcsApplicable = itCollectionFlags.tcs;
+        }
+        if (itCollectionFlags.tds !== undefined) {
+            ledgerDto.ledIsTdsApplicable = itCollectionFlags.tds;
         }
         return ledgerDto;
     }

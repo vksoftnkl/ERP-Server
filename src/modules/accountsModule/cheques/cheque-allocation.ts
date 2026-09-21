@@ -1,5 +1,8 @@
 import { Prisma } from '@prisma/client';
-import { throwAccountsBadRequest } from 'src/common/utils/module-service.utils';
+import {
+  throwAccountsBadRequest,
+  throwAccountsConflict,
+} from 'src/common/utils/module-service.utils';
 import {
   allocate,
   RECEIPT_VOUCHER_KEY,
@@ -19,6 +22,7 @@ import {
 import { money, sum, toAmount, toDateString, ZERO } from '../receipt/receipt.utils';
 import type { ChequeBillRef, ChequeErrorDetail } from './types/cheque-api.types';
 import type { LockedCheque } from './cheques.guards';
+import type { RestoredAllocation } from './cheque-reversal.helper';
 import type { ChequeAllocationDto } from './dto/cheque-keys.dto';
 
 /**
@@ -48,14 +52,28 @@ import type { ChequeAllocationDto } from './dto/cheque-keys.dto';
  *     what `claimedOnAccount` is computed as rather than asked for.
  *
  * ═══════════════════════════════════════════════════════════════════════════
- *  AN EMPTY `allocations` MEANS AUTO-FIFO, NOT "SETTLE NOTHING"
+ *  WHAT AN EMPTY `allocations` MEANS IS THE CALLER'S TO SAY
  * ═══════════════════════════════════════════════════════════════════════════
  *
- * Money that has arrived always goes somewhere. A screen that sends no
- * allocations has not decided; it has not declined. So the party's open
- * receivables are read in due-date order and filled until the cheque runs out,
- * and whatever is left becomes an ADVANCE — the same answer the operator would
- * have got by pressing "auto" on the receipt screen.
+ * It is never "settle nothing" — money that has arrived always goes somewhere,
+ * and a screen that sends no allocations has not decided, it has not declined.
+ * But there are two different ways of not deciding, and this file will not
+ * guess between them, which is why `ChequeAllocationRequest` is a union rather
+ * than an array that may be empty:
+ *
+ *   · `AUTO_FIFO` — nobody has EVER decided. A cheque clearing under
+ *     ON_CLEARING (§4.3) is money landing for the first time, so the party's
+ *     open receivables are read in due-date order and filled until it runs
+ *     out. The same answer the operator would have got by pressing "auto".
+ *
+ *   · `RESTORE` — somebody decided already, and a bounce undid it. A
+ *     re-presentation (§4.5) is the same money for the same debt, so the bills
+ *     come from the rows the bounce reversed and NOT from a fresh FIFO pass.
+ *     Filling somebody's oldest invoice with a cheque that was never against
+ *     it is a wrong answer, not a default one.
+ *
+ * An empty `RESTORE` is therefore a real instruction: a cheque whose money went
+ * wholly on account settled no bill, and it goes wholly on account again.
  */
 
 export interface ChequeAllocationScope {
@@ -94,6 +112,26 @@ export interface ChequeAllocationScope {
   tenderAccYear: string | null;
 }
 
+/**
+ * Where the bills come from — see the header. The caller says which, because
+ * only the caller knows whether this money has ever been placed before.
+ */
+export type ChequeAllocationRequest =
+  /** The operator named the bills. Their word, always. */
+  | { mode: 'NAMED'; rows: readonly ChequeAllocationDto[] }
+  /** Nobody ever decided: due-date order until the cheque runs out. */
+  | { mode: 'AUTO_FIFO' }
+  /** It was decided once and a bounce undid it: put it back, to the paisa. */
+  | { mode: 'RESTORE'; rows: readonly RestoredAllocation[] };
+
+/**
+ * The reading of an empty `allocations` that `/cheques/clear` has always had,
+ * spelled out at the call site so the other one cannot be reached by accident.
+ */
+export function namedOrAutoFifo(rows: readonly ChequeAllocationDto[]): ChequeAllocationRequest {
+  return rows.length > 0 ? { mode: 'NAMED', rows } : { mode: 'AUTO_FIFO' };
+}
+
 export interface ChequeAllocationOutcome {
   plan: AllocationResult;
   /** Which bills were touched, for the recompute the caller runs. */
@@ -116,17 +154,34 @@ export interface ChequeAllocationOutcome {
 export async function allocateChequeMoney(
   tx: Prisma.TransactionClient,
   scope: ChequeAllocationScope,
-  requested: readonly ChequeAllocationDto[],
+  request: ChequeAllocationRequest,
 ): Promise<ChequeAllocationOutcome> {
   const amount = money(scope.cheque.apdAmount);
 
   const bills =
-    requested.length > 0
-      ? await loadNamedBills(tx, scope, requested)
-      : await autoFifoBills(tx, scope, amount);
+    request.mode === 'NAMED'
+      ? await loadNamedBills(tx, scope, request.rows)
+      : request.mode === 'RESTORE'
+        ? await loadRestoredBills(tx, scope, request.rows)
+        : await autoFifoBills(tx, scope, amount);
 
   const allocated = sum(bills.map((bill) => bill.amount));
   if (allocated.greaterThan(amount)) {
+    if (request.mode === 'RESTORE') {
+      // Unreachable by any route a client can take — the rows being put back
+      // were written against this same instrument for this same amount. If it
+      // ever fires, the register and the sub-ledger disagree about what the
+      // cheque is worth, and allocating on a guess would bury that.
+      throwAccountsConflict<ChequeErrorDetail>('Cannot restore the allocation', [
+        {
+          field: 'allocations',
+          message:
+            `The bounce of ${scope.cheque.apdInstrumentNo} took ${allocated.toFixed(2)} off the ` +
+            `bills, but the cheque is for ${amount.toFixed(2)}. Re-present it with explicit ` +
+            'allocations.',
+        },
+      ]);
+    }
     throwAccountsBadRequest<ChequeErrorDetail>('Validation failed', [
       {
         field: 'allocations',
@@ -223,6 +278,102 @@ async function loadNamedBills(
       roundoff: ZERO,
       pendingAmount: bill.ablPendingAmount,
       writeoffApprovedBy: row.writeoffApprovedBy ?? null,
+    };
+  });
+}
+
+/**
+ * §4.5 — the bills the bounce reversed, put back exactly as they were.
+ *
+ * The amounts are not re-derived from anything: they are the magnitudes of the
+ * reversal rows, read straight off `acc_bill_adjustment`. The only question
+ * this function asks is whether each bill can still TAKE its share back, and
+ * when one cannot it refuses and NAMES it — rather than quietly re-pointing a
+ * customer's money at a different debt, which is the whole reason this path
+ * exists.
+ *
+ * ── The three ways it can be refused ──────────────────────────────────────
+ *
+ *   · the bill is gone — soft-deleted, or its document cancelled, since the
+ *     bounce;
+ *   · the bill has less pending than the cheque took off it, because somebody
+ *     else paid it in the meantime;
+ *   · the bill is no longer this party's receivable at all, which
+ *     `assertBillUsable` catches and which would mean the sub-ledger had been
+ *     rewritten underneath us.
+ *
+ * All three are a 409 and not a 400: the request was right when it was made
+ * and the world moved. The operator re-presents again with explicit
+ * `allocations` once they have decided where the money should go instead.
+ */
+async function loadRestoredBills(
+  tx: Prisma.TransactionClient,
+  scope: ChequeAllocationScope,
+  restored: readonly RestoredAllocation[],
+): Promise<AllocationBill[]> {
+  if (restored.length === 0) {
+    return [];
+  }
+
+  const locked = await lockBills(
+    tx,
+    restored.map((row) => ({ billId: row.billId, billAccYear: row.billAccYear })),
+  );
+
+  return restored.map((row, index) => {
+    const bill = locked.get(`${row.billId}|${row.billAccYear}`);
+    const settled = row.amount.plus(row.discount).plus(row.writeoff).plus(row.roundoff);
+
+    if (!bill || bill.ablIsDeleted) {
+      throwAccountsConflict<ChequeErrorDetail>('Cannot restore the allocation', [
+        {
+          field: `allocations.${index}.billId`,
+          message:
+            `${scope.cheque.apdInstrumentNo} settled ${settled.toFixed(2)} against bill ` +
+            `${bill?.ablDocRefno ?? row.billId}, which no longer exists. Re-present it with ` +
+            'explicit allocations saying where that money should go instead.',
+        },
+      ]);
+    }
+
+    // The same four checks a named allocation gets. They cannot fail on rows
+    // this cheque itself wrote unless the sub-ledger has been rewritten, and
+    // if that has happened the last thing to do is settle on the strength of
+    // it.
+    assertBillUsable(bill, {
+      billId: row.billId,
+      partyId: scope.partyId,
+      companyId: scope.companyId,
+      kind: 'RECEIVABLE',
+      field: `allocations.${index}.billId`,
+    });
+
+    if (settled.greaterThan(bill.ablPendingAmount)) {
+      throwAccountsConflict<ChequeErrorDetail>('Cannot restore the allocation', [
+        {
+          field: `allocations.${index}.amount`,
+          message:
+            `${scope.cheque.apdInstrumentNo} settled ${settled.toFixed(2)} against bill ` +
+            `${bill.ablDocRefno}, which now has only ${bill.ablPendingAmount.toFixed(2)} ` +
+            'pending — something else has paid it since the bounce. Re-present it with ' +
+            'explicit allocations.',
+        },
+      ]);
+    }
+
+    return {
+      billId: bill.ablId,
+      billAccYear: bill.ablAccYear,
+      docRefno: bill.ablDocRefno,
+      amount: row.amount,
+      discount: row.discount,
+      writeoff: row.writeoff,
+      // Restored, not zeroed. A cheque does not decide to round anything off
+      // (see `loadNamedBills`), but the receipt that took this one in may have,
+      // and the bounce reversed that row along with the rest.
+      roundoff: row.roundoff,
+      pendingAmount: bill.ablPendingAmount,
+      writeoffApprovedBy: row.writeoffApprovedBy,
     };
   });
 }

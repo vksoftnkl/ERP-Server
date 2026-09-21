@@ -47,6 +47,20 @@ model SaleBill {
   sbHasPromo         Boolean   @default(false) @map("sb_has_promo")
   sbHasComm          Boolean   @default(false) @map("sb_has_comm")
   sbHasLoyalty       Boolean   @default(false) @map("sb_has_loyalty")
+  // ── Loyalty points (20260921140000) ──────────────────────────────────
+  // SNAPSHOTS, not caches. A sale return must reverse WHAT THIS BILL
+  // ACTUALLY AWARDED, not what re-running today's scheme would award —
+  // schemes get edited, bills do not. The authority for any balance remains
+  // sales.loyalty_ledger; these are what the invoice printed.
+  //
+  // No FK on sbLscId, matching the DDL: a bill must stay readable after a
+  // scheme is retired.
+  sbLscId            String?   @db.Uuid @map("sb_lsc_id")
+  sbLoyaltyEarnPoints   Decimal @default(0) @db.Decimal(18, 4) @map("sb_loyalty_earn_points")
+  sbLoyaltyRedeemPoints Decimal @default(0) @db.Decimal(18, 4) @map("sb_loyalty_redeem_points")
+  // There is deliberately no sb_loyalty_gift_points: a gift redemption is its
+  // own document (LoyaltyGiftRedeem) with its own number series and stock
+  // movement, so it never appears as a line on a bill.
   // People
   sbUserId           String    @db.Uuid @map("sb_user_id")
   sbSalesmanId       String[]  @db.Uuid @map("sb_salesman_id")

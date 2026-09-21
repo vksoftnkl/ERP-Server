@@ -24,6 +24,7 @@ const open_items_service_1 = require("./open-items.service");
 const receipt_draft_lines_1 = require("./receipt-draft-lines");
 const open_items_service_2 = require("./open-items.service");
 const receipt_ledger_roles_1 = require("./receipt-ledger-roles");
+const receipt_cheque_links_1 = require("./receipt-cheque-links");
 const receipt_lines_1 = require("./receipt-lines");
 const receipt_guards_1 = require("./receipt.guards");
 const receipt_utils_1 = require("./receipt.utils");
@@ -184,15 +185,20 @@ let ReceiptService = class ReceiptService {
     }
     async loadFullReceipt(client, header) {
         const pdcHeaders = await client.accVoucherHeader.findMany({
-            where: {
-                avhAgainstVoucherId: header.avhVoucherId,
-                avhIsDeleted: false,
-            },
+            where: (0, receipt_cheque_links_1.receiptPdcVoucherWhere)(header),
             select: exports.STORED_HEADER_SELECT,
             orderBy: { avhVoucherDate: 'asc' },
         });
         const voucherIds = [header.avhVoucherId, ...pdcHeaders.map((row) => row.avhVoucherId)];
         const years = [...new Set([header.avhAccYear, ...pdcHeaders.map((row) => row.avhAccYear)])];
+        const tenderRows = await client.accTenderDetail.findMany({
+            where: { tdSrcDocId: header.avhVoucherId, tdIsDeleted: false },
+            select: { tdId: true, tdRowNo: true },
+        });
+        const chequeFilter = await (0, receipt_cheque_links_1.receiptChequeFilter)(client, {
+            receiptVoucherId: header.avhVoucherId,
+            voucherIds,
+        });
         const [legs, adjustments, cheques, advanceBills] = await Promise.all([
             client.accVoucher.findMany({
                 where: { avVoucherId: { in: voucherIds }, avAccYear: { in: years }, avIsDeleted: false },
@@ -230,14 +236,25 @@ let ReceiptService = class ReceiptService {
                     abjAgainstBillId: true,
                     abjApprovedBy: true,
                     abjRemarks: true,
-                    bill: { select: { ablDocRefno: true, ablDocDate: true, ablBillType: true } },
+                    abjReversalOfId: true,
+                    bill: {
+                        select: {
+                            ablDocRefno: true,
+                            ablDocDate: true,
+                            ablBillType: true,
+                            ablBillAmount: true,
+                            ablPendingAmount: true,
+                            ablDueDate: true,
+                            ablStatus: true,
+                        },
+                    },
                     againstBill: { select: { ablDocRefno: true } },
                 },
                 orderBy: [{ abjAdjDate: 'asc' }, { abjRowNo: 'asc' }],
             }),
             client.accPdcRegister.findMany({
                 where: {
-                    apdVoucherId: { in: voucherIds },
+                    ...chequeFilter,
                     apdIsDeleted: false,
                 },
                 select: {
@@ -277,6 +294,15 @@ let ReceiptService = class ReceiptService {
                 },
             }),
         ]);
+        const reversedIds = new Set(adjustments.length === 0
+            ? []
+            : (await client.accBillAdjustment.findMany({
+                where: {
+                    abjReversalOfId: { in: adjustments.map((row) => row.abjId) },
+                    abjIsDeleted: false,
+                },
+                select: { abjReversalOfId: true },
+            })).map((row) => row.abjReversalOfId));
         const today = (0, receipt_utils_1.todayUtc)();
         const legsFor = (voucherId) => legs
             .filter((leg) => leg.avVoucherId === voucherId)
@@ -296,6 +322,11 @@ let ReceiptService = class ReceiptService {
             billAccYear: row.abjBillAccYear,
             docRefno: row.bill?.ablDocRefno ?? '',
             docDate: (0, receipt_utils_1.toDateString)(row.bill?.ablDocDate ?? null) ?? '',
+            billType: row.bill?.ablBillType ?? null,
+            billAmount: row.bill ? (0, receipt_utils_1.toAmount)(row.bill.ablBillAmount) : null,
+            pendingAmount: row.bill ? (0, receipt_utils_1.toAmount)(row.bill.ablPendingAmount) : null,
+            dueDate: (0, receipt_utils_1.toDateString)(row.bill?.ablDueDate ?? null),
+            status: row.bill?.ablStatus ?? null,
             adjType: row.abjAdjType,
             settlementMode: row.abjSettlementMode,
             drCr: row.abjDrCr,
@@ -307,14 +338,12 @@ let ReceiptService = class ReceiptService {
             chequeId: row.abjChequeId,
             againstBillId: row.abjAgainstBillId,
             againstBillRefno: row.againstBill?.ablDocRefno ?? null,
+            reversalOfId: row.abjReversalOfId,
+            isReversed: reversedIds.has(row.abjId),
             approvedBy: row.abjApprovedBy,
             remarks: row.abjRemarks,
         });
         const tenderRowByPdc = new Map();
-        const tenderRows = await client.accTenderDetail.findMany({
-            where: { tdSrcDocId: header.avhVoucherId, tdIsDeleted: false },
-            select: { tdId: true, tdRowNo: true },
-        });
         const rowNoByTenderId = new Map(tenderRows.map((row) => [row.tdId, row.tdRowNo]));
         for (const cheque of cheques) {
             tenderRowByPdc.set(cheque.apdId, cheque.apdTenderId ? (rowNoByTenderId.get(cheque.apdTenderId) ?? null) : null);
@@ -385,6 +414,10 @@ let ReceiptService = class ReceiptService {
                 ablDocRefno: true,
                 ablDocDate: true,
                 ablBillType: true,
+                ablBillAmount: true,
+                ablPendingAmount: true,
+                ablDueDate: true,
+                ablStatus: true,
             },
         });
         const billByKey = new Map(bills.map((bill) => [`${bill.ablId}|${bill.ablAccYear}`, bill]));
@@ -397,6 +430,11 @@ let ReceiptService = class ReceiptService {
                 billAccYear: row.billAccYear,
                 docRefno: bill?.ablDocRefno ?? '',
                 docDate: (0, receipt_utils_1.toDateString)(bill?.ablDocDate),
+                billType: bill?.ablBillType ?? null,
+                billAmount: bill ? (0, receipt_utils_1.toAmount)(bill.ablBillAmount) : null,
+                pendingAmount: bill ? (0, receipt_utils_1.toAmount)(bill.ablPendingAmount) : null,
+                dueDate: (0, receipt_utils_1.toDateString)(bill?.ablDueDate),
+                status: bill?.ablStatus ?? null,
                 drCr: receipt_enum_1.DrCr.CR,
                 adjDate,
                 isPostDated: false,
@@ -405,6 +443,8 @@ let ReceiptService = class ReceiptService {
                 chequeId: null,
                 againstBillId: null,
                 againstBillRefno: null,
+                reversalOfId: null,
+                isReversed: false,
                 remarks: null,
             };
         };

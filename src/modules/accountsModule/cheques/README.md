@@ -60,8 +60,8 @@ cheque. A mismatch is a **404, not a 403**.
 | `cheque-reissue.service.ts` | §4.5 / §4.6 — re-present and replace, which share the re-issue |
 | `cheque-return.service.ts` | §4.7 — and `unwind()`, which replace-from-HELD reuses |
 | `cheque-voucher.helper.ts` | **The only way a voucher is written here.** DRAFT → legs → totals → POSTED |
-| `cheque-reversal.helper.ts` | Negative rows, and the C4 cascade |
-| `cheque-allocation.ts` | The adapter onto the receipt's `allocation-engine.ts` |
+| `cheque-reversal.helper.ts` | Negative rows, the C4 cascade, and reading a bounce back out for a re-presentation |
+| `cheque-allocation.ts` | The adapter onto the receipt's `allocation-engine.ts`, and the three ways bills are chosen |
 | `cheques.guards.ts` | The row locks, the status refusals, the dates, Cheques in Hand |
 | `cheque-ledger-roles.ts` | The two roles, resolved late and conditionally |
 | `cheques.settings.ts` | §2.2's two settings, through the resolver |
@@ -156,7 +156,7 @@ charge has its own CR leg, its own `av_role`, and its own JOURNAL bill.
 
 ---
 
-## Six things that are easy to get wrong
+## Eight things that are easy to get wrong
 
 ### 1. `avh_src_*` is the clearing's idempotency key, and the bounce must NOT use it
 
@@ -218,6 +218,70 @@ Everything that is history survives: `apd_bounce_voucher_id`,
 untouched, and `txn_status_log` still holds the BOUNCED step with its date, its
 reason and who recorded it.
 
+**`apd_voucher_id` moves too, and other modules depend on that.** The
+re-presentation writes a re-issue voucher and points the register row at it,
+because that voucher is what now carries the instrument. Anything asking "which
+cheques belong to document X?" must therefore NOT read that column: it names who
+owns the cheque now, not what it was taken in on. The receipt module learned
+this the expensive way — `/receipts/amend` and `/receipts/cancel` waved a
+re-presented cheque's receipt through and settled a bill twice — and now resolves
+it through `apd_tender_id`, which nothing here repoints. See
+`receipt/receipt-cheque-links.ts`. Keep it that way: if a future route in this
+module moves `apd_voucher_id` again, nothing outside has to change.
+
+### 7. An empty `allocations` means something DIFFERENT on `/re-present`
+
+On `/clear` it means auto-FIFO, and that is right: an ON_CLEARING cheque is money
+landing for the **first** time, nobody has decided where it goes, and due-date
+order is the same answer the operator would get by pressing *auto*.
+
+On `/re-present` auto-FIFO is never right. A re-presentation is **the same money
+for the same debt** — the cheque did not become a fresh payment when the bank
+returned it — so the bills are not a choice the caller is making. They are a fact
+the sub-ledger already holds, in the very rows the bounce reversed. Filling the
+party's oldest open invoice instead moves a customer's money onto a debt they did
+not pay, silently, and `/cheques/get` then reports it as fact.
+
+So with no `allocations`, `represent` reads back what the **bounce voucher**
+reversed — `allocationsReversedBy` — and restores it bill by bill, amount,
+discount, write-off and round-off alike. `allocations` remains the explicit
+override. The two readings cannot be reached by accident because
+`allocateChequeMoney` no longer takes an array that might be empty; it takes a
+`ChequeAllocationRequest`, and the caller has to say which kind of empty it means.
+
+**An empty restore is a real instruction.** A cheque whose money went wholly on
+account settled no bill the first time and settles none this time either —
+collapsing `[]` back to auto-FIFO there would reintroduce the whole bug for
+exactly the cheques nobody looked at.
+
+And the client cannot do this for itself: after a bounce every bill correctly
+reports `settledByThisCheque: 0`, so a cheque split across several bills leaves
+no client-visible record of how much went to each. The split exists only in the
+reversal rows.
+
+**Refusing beats re-pointing.** If a bill cannot take its share back — removed
+since, or paid by something else — the whole re-presentation is refused with a
+409 naming that bill, and nothing is written.
+
+`/replace` keeps auto-FIFO, deliberately: the replacement cheque may be for a
+different amount, and there is no arithmetic that restores an 18,500 split out of
+12,000 without inventing which bill loses the difference.
+
+### 8. `abj_reversal_of_id IS NULL` is not "this row still stands"
+
+It means "this row is not itself a reversal", which is a different claim, and the
+gap between them opens on the second trip to the bank: bounce → re-present →
+bounce again. The first bounce reversed the receipt's rows and **left them in
+place** (reverse, never delete — §2 above). The re-presentation wrote a fresh
+positive set. A second bounce that swept up everything with a null
+`abj_reversal_of_id` would reverse the first set a **second** time, and
+`abl_alloc_amount` would fall by twice what the cheque ever settled.
+
+`reverseChequeAdjustments` therefore reads both halves in one query and reverses
+only the rows that nothing already points at. The register invites this path —
+`apd_present_count` exists because a cheque can go back, and §1 above says a
+second bounce is a real separate event.
+
 ---
 
 ## The C4 cascade, and the one judgment in this module
@@ -272,6 +336,7 @@ the one place its absence forced a decision rather than a reading.
 | 2.4 | A `cheque_deposit_slip` print DATASET | The print PURPOSE, + `GET /deposit-slip` | `print_template_dataset` rows hang off a `print_template_version` — a dataset cannot exist alone, so "register the dataset" means shipping a whole template with its layout, which is the printing module's work. §4.8 explicitly allows the endpoint |
 | 4.1 | `/cheques/list` is "the grid" | BOTH: the grid for TxnMainView, this route for the summary strip | The strip is an aggregate over the whole register, not the page the grid returned, and §7's "IN HAND + WITH THE BANK equals the Cheques In Hand ledger" is about that total |
 | 4.5 | (not mentioned) | `apd_bounce_date` clears on re-present | `ck_apd_seq` will not have it beside a later deposit date. See §6 above — every link and the reason survive |
+| 4.5 | "fresh allocations" | With none sent, the allocation the BOUNCE reversed is restored | "Fresh" reads as auto-FIFO and auto-FIFO settles a bill the cheque was never against. The same money is settling the same debt, and the per-bill split survives nowhere but those reversal rows. See §7 above |
 | 3 | Module at `src/modules/accounts/cheques/` | `src/modules/accountsModule/cheques/` | That is where the accounts module lives in this repo |
 | 4.4 | `avh_src_*` unstated for the bounce | Left empty | `ux_avh_src` would refuse the second bounce of a re-presented cheque, which is a real event |
 
