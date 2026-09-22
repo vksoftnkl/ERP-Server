@@ -17,6 +17,7 @@ import {
   TxnStatusDocType,
   TxnStatusSrcModule,
 } from '../../../../common/txn-status-log/txn-status-log.helper';
+import type { TenderTempCreditDto } from '../../../accountsModule/tenderDetail/dto/save-tender-detail.dto';
 import type { LocksBlock, PostingBlock, RightsBlock } from '../../posting/types/posting.types';
 import type { TransportBandRow } from '../../posting/transport-band.service';
 // txn_charge_detail is polymorphic — a bill's applied charges are the rows
@@ -168,7 +169,14 @@ export type BillItemPayload = Omit<
 export type BillChargePayload = ChargeDetailPayload;
 // Likewise for a tendered amount: the tender-detail module's payload verbatim,
 // whether it was read through this module or its own.
-export type BillTenderPayload = TenderDetailPayload;
+/**
+ * A tender row as the bill answers it. On a TEMP_CR row the WHO behind the
+ * credit — parked on the row's spare columns between /create and /post (see
+ * bill-temp-credit.ts) — is echoed back decoded as `tempCredit`.
+ */
+export type BillTenderPayload = TenderDetailPayload & {
+  tempCredit?: TenderTempCreditDto | null;
+};
 export type BillErrorDetail = {
   field: string;
   message: string;

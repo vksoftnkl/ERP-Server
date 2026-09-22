@@ -68,7 +68,7 @@ export async function assertAccYearWritable(
     return;
   }
 
-  if (year.fyStatus !== FiscalYearStatus.OPEN) {
+  if (year.fyStatus !== (FiscalYearStatus.OPEN as string)) {
     throwAccountsBadRequest<OpeningBalanceErrorDetail>('Validation failed', [
       {
         field,

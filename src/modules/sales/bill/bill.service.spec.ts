@@ -561,6 +561,10 @@ type PrismaMock = {
 
 // expect.objectContaining() is typed `any`; wrapping it keeps the nested
 // matchers below out of no-unsafe-assignment's way.
+// The order's fulfilment columns take Prisma.Decimal — money and quantity never
+// pass through a float64 on their way to a numeric column (§3a rule 1) — so the
+// write assertions compare against one. Response payloads stay plain numbers.
+const dec = (value: number | string): Prisma.Decimal => new Prisma.Decimal(value);
 const containing = (value: Record<string, unknown>): unknown => expect.objectContaining(value);
 
 const makePrismaMock = (): PrismaMock => {
@@ -1741,7 +1745,7 @@ describe('BillService', () => {
       expect(prisma.saleOrderItem.update).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { soiId_soiAccYear: { soiId: ORDER_LINE_ID, soiAccYear: ACC_YEAR } },
-          data: containing({ soiNetQty: 10, soiDeliveredQty: 4, soiBilledAmt: 400 }),
+          data: containing({ soiNetQty: dec(10), soiDeliveredQty: dec(4), soiBilledAmt: dec(400) }),
         }),
       );
       const written = prisma.saleOrderItem.update.mock.calls[0][0].data;
@@ -1810,8 +1814,8 @@ describe('BillService', () => {
           // Part delivered, so the order stays open: soFulfilStatus moves but
           // so_status is left as the CONFIRMED it already was.
           data: containing({
-            soBilledAmt: 400,
-            soPendingAmt: 600,
+            soBilledAmt: dec(400),
+            soPendingAmt: dec(600),
             soDeliveredItems: 0,
             soFulfilStatus: 'PARTIAL',
           }),
@@ -1832,8 +1836,8 @@ describe('BillService', () => {
       await service.save(convertedDto());
 
       expect(prisma.saleOrderItem.update.mock.calls[0][0].data).toMatchObject({
-        soiNetQty: 10,
-        soiDeliveredQty: 10,
+        soiNetQty: dec(10),
+        soiDeliveredQty: dec(10),
       });
       expect(prisma.saleOrder.updateMany.mock.calls[0][0]).toMatchObject({
         data: {
@@ -1873,8 +1877,8 @@ describe('BillService', () => {
           soTotItems: 2,
           // One delivered, one cancelled — both settled.
           soDeliveredItems: 2,
-          soPendingAmt: 0,
-          soCancelledAmt: 500,
+          soPendingAmt: dec(0),
+          soCancelledAmt: dec(500),
         },
       });
     });
@@ -1934,8 +1938,8 @@ describe('BillService', () => {
       await service.save(convertedDto());
 
       expect(prisma.saleOrderItem.update.mock.calls[0][0].data).toMatchObject({
-        soiNetQty: 12,
-        soiDeliveredQty: 12,
+        soiNetQty: dec(12),
+        soiDeliveredQty: dec(12),
       });
       expect(prisma.saleOrderItem.update.mock.calls[0][0].data).not.toHaveProperty('soiOrderQty');
       expect(prisma.saleOrder.updateMany.mock.calls[0][0]).toMatchObject({
@@ -1955,8 +1959,8 @@ describe('BillService', () => {
       await service.save(convertedDto());
 
       expect(prisma.saleOrderItem.update.mock.calls[0][0].data).toMatchObject({
-        soiNetQty: 11,
-        soiDeliveredQty: 5,
+        soiNetQty: dec(11),
+        soiDeliveredQty: dec(5),
       });
     });
 
@@ -1970,12 +1974,12 @@ describe('BillService', () => {
       await service.save(convertedDto());
 
       expect(prisma.saleOrderItem.update.mock.calls[0][0].data).toMatchObject({
-        soiNetQty: 10,
-        soiDeliveredQty: 4,
+        soiNetQty: dec(10),
+        soiDeliveredQty: dec(4),
       });
       // ... and the 6 that is left over is the DB's to derive.
       expect(prisma.saleOrder.updateMany.mock.calls[0][0]).toMatchObject({
-        data: { soPendingAmt: 600, soFulfilStatus: 'PARTIAL' },
+        data: { soPendingAmt: dec(600), soFulfilStatus: 'PARTIAL' },
       });
     });
 
@@ -2037,7 +2041,7 @@ describe('BillService', () => {
       expect(prisma.saleOrderItem.update).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { soiId_soiAccYear: { soiId: ORDER_LINE_ID, soiAccYear: ACC_YEAR } },
-          data: containing({ soiDeliveredQty: 4, soiBilledAmt: 400 }),
+          data: containing({ soiDeliveredQty: dec(4), soiBilledAmt: dec(400) }),
         }),
       );
     });
@@ -2060,8 +2064,8 @@ describe('BillService', () => {
       await service.save(convertedDto());
 
       expect(prisma.saleOrderItem.update.mock.calls[0][0].data).toMatchObject({
-        soiDeliveredQty: 6,
-        soiNetQty: 10,
+        soiDeliveredQty: dec(6),
+        soiNetQty: dec(10),
       });
     });
 
@@ -2144,8 +2148,8 @@ describe('BillService', () => {
 
       expect(prisma.saleOrder.findFirst).toHaveBeenCalled();
       expect(prisma.saleOrderItem.update.mock.calls[0][0].data).toMatchObject({
-        soiDeliveredQty: 4,
-        soiBilledAmt: 400,
+        soiDeliveredQty: dec(4),
+        soiBilledAmt: dec(400),
       });
       expect(prisma.saleOrder.updateMany.mock.calls[0][0]).toMatchObject({
         data: { soFulfilStatus: 'PARTIAL' },
@@ -2163,8 +2167,8 @@ describe('BillService', () => {
       // 10 billable - 4 delivered - 2 cancelled leaves 4 for the DB to derive,
       // and soi_cancelled_qty is not among the columns written.
       expect(prisma.saleOrderItem.update.mock.calls[0][0].data).toMatchObject({
-        soiNetQty: 10,
-        soiDeliveredQty: 4,
+        soiNetQty: dec(10),
+        soiDeliveredQty: dec(4),
       });
       expect(prisma.saleOrderItem.update.mock.calls[0][0].data).not.toHaveProperty(
         'soiCancelledQty',

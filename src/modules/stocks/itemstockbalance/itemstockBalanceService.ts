@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { ItemPriceMaster, ItemStockBalance, Prisma } from '@prisma/client';
+import { ItemStockBalance, Prisma } from '@prisma/client';
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import type { ItemPricePayload } from 'src/modules/Inventory/items-price-master/types/item-price-api.types';
 import { GetItemBatchStockOptionsQueryDto } from './dto/get-item-batch-stock-options-query.dto';
@@ -367,7 +367,6 @@ export class ItemStockBalanceService {
     };
   }
   private toItemPricePayload(record: ItemPriceMasterWithConversion): ItemPricePayload {
-    const conversion = record.itemUnitConversion;
     return {
       ipm_id: record.ipmId,
       ipm_company_id: record.ipmCompanyId,

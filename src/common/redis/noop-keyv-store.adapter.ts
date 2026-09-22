@@ -3,14 +3,16 @@ import { KeyvStoreAdapter, StoredData } from 'keyv';
 export class NoopKeyvStoreAdapter extends EventEmitter implements KeyvStoreAdapter {
   public readonly opts = {};
   public namespace?: string;
-  async get<Value>(_key: string): Promise<StoredData<Value> | undefined> {
-    return undefined;
+  get<Value>(): Promise<StoredData<Value> | undefined> {
+    return Promise.resolve(undefined);
   }
-  async set(_key: string, _value: unknown, _ttl?: number): Promise<boolean> {
-    return true;
+  set(): Promise<boolean> {
+    return Promise.resolve(true);
   }
-  async delete(_key: string): Promise<boolean> {
-    return true;
+  delete(): Promise<boolean> {
+    return Promise.resolve(true);
   }
-  async clear(): Promise<void> {}
+  clear(): Promise<void> {
+    return Promise.resolve();
+  }
 }

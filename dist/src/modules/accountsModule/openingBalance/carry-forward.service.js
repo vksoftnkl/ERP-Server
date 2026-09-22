@@ -94,7 +94,9 @@ let CarryForwardService = class CarryForwardService {
             let skippedManual = 0;
             for (const [ledgerId, closing] of carried) {
                 const existing = existingByLedger.get(ledgerId);
-                if (existing && existing.opSource !== opening_balance_api_types_1.OpeningSource.CARRY_FORWARD && !overwriteManual) {
+                if (existing &&
+                    existing.opSource !== opening_balance_api_types_1.OpeningSource.CARRY_FORWARD &&
+                    !overwriteManual) {
                     skippedManual += 1;
                     sparedLedgerIds.add(ledgerId);
                     continue;
@@ -138,7 +140,8 @@ let CarryForwardService = class CarryForwardService {
                 });
                 created += 1;
             }
-            const stale = existingRows.filter((row) => row.opSource === opening_balance_api_types_1.OpeningSource.CARRY_FORWARD && !carried.has(row.opLedgerId));
+            const stale = existingRows.filter((row) => row.opSource === opening_balance_api_types_1.OpeningSource.CARRY_FORWARD &&
+                !carried.has(row.opLedgerId));
             if (stale.length > 0) {
                 await tx.accOpeningBalance.updateMany({
                     where: { opId: { in: stale.map((row) => row.opId) }, opAccYear: toAccYear },

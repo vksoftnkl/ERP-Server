@@ -52,7 +52,6 @@ describe('opening-balances (e2e — live DB)', () => {
   let assetsGroupId: string;
   let liabilitiesGroupId: string;
   let incomeGroupId: string;
-  let expensesGroupId: string;
   let noNatureGroupId: string;
 
   let cashLedgerId: string; // Assets
@@ -219,7 +218,7 @@ describe('opening-balances (e2e — live DB)', () => {
     assetsGroupId = await makeGroup('E2E_OB_Assets', 'Assets');
     liabilitiesGroupId = await makeGroup('E2E_OB_Liabilities', 'Liabilities');
     incomeGroupId = await makeGroup('E2E_OB_Income', 'Income');
-    expensesGroupId = await makeGroup('E2E_OB_Expenses', 'Expenses');
+    await makeGroup('E2E_OB_Expenses', 'Expenses');
     // The trigger from 20260915090000 inherits a nature from the parent chain,
     // so a genuinely nature-less group has to be a ROOT with none.
     noNatureGroupId = await makeGroup('E2E_OB_NoNature', null);

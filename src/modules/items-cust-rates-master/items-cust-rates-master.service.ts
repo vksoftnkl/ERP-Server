@@ -139,7 +139,6 @@ export class ItemsCustRatesMasterService {
       saveItemCustRateDto.csr_created_by,
       this.requestContextService.getUserId(),
     );
-    const modifiedBy = resolveActor(saveItemCustRateDto.csr_modified_by, createdBy);
     const data: Prisma.CustItemRateUncheckedCreateInput = {
       csrCustomerId: saveItemCustRateDto.csr_customer_id,
       csrUnitRateId: saveItemCustRateDto.csr_unit_rate_id,

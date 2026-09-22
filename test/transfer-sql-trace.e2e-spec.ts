@@ -4,6 +4,7 @@ import { INestApplication, ValidationPipe, VersioningType } from '@nestjs/common
 import { Test } from '@nestjs/testing';
 import { PrismaClient } from '@prisma/client';
 import * as request from 'supertest';
+import { writeFileSync } from 'fs';
 
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/database/prisma/prisma.service';
@@ -126,14 +127,18 @@ describe('TRACE /stock/transfer — statements, tables, functions', () => {
     await app.init();
     http = request(app.getHttpServer());
 
-    const svc = app.get(PrismaService);
+    // PrismaService picks its log level at runtime, so the generated client
+    // cannot type the 'query' event; the cast says what the event carries.
+    const svc = app.get<{ $on(event: 'query', cb: (ev: { query: string }) => void): void }>(
+      PrismaService,
+    );
     svc.$on('query', (ev) => {
       if (capture) capture.push(classify(ev.query));
     });
   }, 120_000);
 
   afterAll(async () => {
-    require('fs').writeFileSync(process.env.TRACE_OUT ?? '/dev/null', out.join('\n') + '\n');
+    writeFileSync(process.env.TRACE_OUT ?? '/dev/null', out.join('\n') + '\n');
     await app?.close();
     await prisma.$disconnect();
   }, 60_000);

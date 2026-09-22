@@ -139,6 +139,17 @@ class SalesDocStore {
         (0, module_service_utils_1.applyPresentFields)(data, dto, this.spec.optionalFields, this.dateTransforms(this.spec.dateFields));
         let row;
         if (!existing) {
+            for (const k of this.spec.headerRequired) {
+                if (dto[k] === undefined || dto[k] === null || dto[k] === '') {
+                    (0, module_service_utils_1.throwSalesBadRequest)(`${k} is required`, [
+                        {
+                            field: k,
+                            message: `${k} must be provided when creating a ${this.spec.screenName.toLowerCase()}`,
+                        },
+                    ]);
+                }
+                data[k] = dto[k];
+            }
             const docDate = dto[this.spec.dateField]
                 ? new Date(dto[this.spec.dateField])
                 : now;
@@ -337,6 +348,13 @@ class SalesDocStore {
                     ]);
                 }
                 data[r] = it[r];
+            }
+            if (this.spec.itemDefaults) {
+                for (const [k, v] of Object.entries(this.spec.itemDefaults(row))) {
+                    if (data[k] === undefined || data[k] === null) {
+                        data[k] = v;
+                    }
+                }
             }
             Object.assign(data, {
                 [this.spec.itemFk]: row[this.f('Id')],

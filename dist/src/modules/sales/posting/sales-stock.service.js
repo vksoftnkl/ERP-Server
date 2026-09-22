@@ -14,6 +14,7 @@ const common_1 = require("@nestjs/common");
 const common_2 = require("@nestjs/common");
 const client_1 = require("@prisma/client");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
+const request_context_service_1 = require("../../../common/request-context/request-context.service");
 const txn_status_log_helper_1 = require("../../../common/txn-status-log/txn-status-log.helper");
 const stock_posting_service_1 = require("../../stocks/posting/stock-posting.service");
 const stock_voucher_source_1 = require("../../stocks/posting/stock-voucher.source");
@@ -23,12 +24,17 @@ const sales_doc_utils_1 = require("./sales-doc.utils");
 let SalesStockService = class SalesStockService {
     prisma;
     stockPosting;
-    constructor(prisma, stockPosting) {
+    requestContext;
+    constructor(prisma, stockPosting, requestContext) {
         this.prisma = prisma;
         this.stockPosting = stockPosting;
+        this.requestContext = requestContext;
     }
     async post(tx, doc, actor, postedOn) {
-        const lines = doc.lines.filter((l) => !l.isService && (0, sales_doc_utils_1.round4)(l.qty + (l.freeQty ?? 0)) > 0);
+        const lines = doc.lines.filter((l) => !l.isService &&
+            decQty(l.qty)
+                .plus(decQty(l.freeQty ?? 0))
+                .greaterThan(0));
         if (lines.length === 0) {
             return {
                 svhId: null,
@@ -63,11 +69,23 @@ let SalesStockService = class SalesStockService {
           FROM stock.stock_ledger
          WHERE sml_src_doc_id = ${svhId}::uuid AND sml_acc_year = ${doc.accYear}::bpchar
            AND sml_is_reversal = false AND sml_is_deleted = false`;
-            const expected = (0, sales_doc_utils_1.round4)(lines.reduce((s, l) => s + l.qty + (l.freeQty ?? 0), 0));
-            const got = (0, sales_doc_utils_1.round4)(Number(sum?.qty ?? 0));
-            if (Math.abs(expected - got) > 0.0005) {
-                throw new Error(`${posting_types_1.SALES_ERROR_CODES.STOCK_QTY_MISMATCH}: ${doc.docType} ${doc.refno} moved ${got} against ${expected} on its lines`);
+            const expected = totalQtyOf(lines);
+            const got = decQty(sum?.qty);
+            if (!expected.equals(got)) {
+                throw new Error(`${posting_types_1.SALES_ERROR_CODES.STOCK_QTY_MISMATCH}: ${doc.docType} ${doc.refno} moved ${got.toString()} against ${expected.toString()} on its lines`);
             }
+            await tx.$executeRaw `
+        UPDATE stock.stock_voucher svh
+           SET svh_total_value     = COALESCE(t.v, 0),
+               svh_total_value_wot = COALESCE(t.vw, 0)
+          FROM (SELECT SUM(sml_cost_value)     AS v,
+                       SUM(sml_cost_value_wot) AS vw
+                  FROM stock.stock_ledger
+                 WHERE sml_src_doc_id  = ${svhId}::uuid
+                   AND sml_acc_year    = ${doc.accYear}::bpchar
+                   AND sml_is_deleted  = false
+                   AND sml_is_reversal = false) t
+         WHERE svh.svh_id = ${svhId}::uuid AND svh.svh_acc_year = ${doc.accYear}::bpchar`;
             const costs = await tx.$queryRaw `
         SELECT svi.svi_line_no, svi.svi_lot_id, SUM(sml.sml_cost_value) AS cost
           FROM stock.stock_voucher_item svi
@@ -148,12 +166,33 @@ let SalesStockService = class SalesStockService {
             statusDocType: STATUS_DOC_TYPE[doc.docType],
         };
     }
+    async shadowDevice(tx, doc) {
+        const candidates = [doc.deviceId?.trim(), this.requestContext.getDeviceId()].filter(isUuid);
+        if (candidates.length > 0) {
+            const rows = await tx.$queryRaw `
+        SELECT dev_id FROM fixed.device_master
+         WHERE dev_id = ANY(${candidates}::uuid[]) AND dev_is_deleted = false`;
+            const live = new Set(rows.map((r) => r.dev_id));
+            const hit = candidates.find((c) => live.has(c));
+            if (hit) {
+                return hit;
+            }
+        }
+        (0, sales_errors_1.throwSalesRefused)(`${DISPLAY_NAME[doc.docType]} ${doc.refno} cannot move stock: its device (${doc.deviceId ?? 'none'}) is not a registered device and the session has no counter`, posting_types_1.SALES_ERROR_CODES.DEVICE_UNREGISTERED, 'deviceId');
+    }
     async units(tx, iucIds) {
         const ids = [...new Set(iucIds)];
         const rows = await tx.$queryRaw `
-      SELECT iuc_id, iuc_unit_id, iuc_base_unit_id, iuc_to_base_factor
-        FROM inventory.item_unit_conversion
-       WHERE iuc_id = ANY(${ids}::uuid[])`;
+      SELECT iuc.iuc_id, iuc.iuc_unit_id, iuc.iuc_base_unit_id, iuc.iuc_to_base_factor,
+             COALESCE(base.iuc_id, iuc.iuc_id) AS base_iuc_id
+        FROM inventory.item_unit_conversion iuc
+        LEFT JOIN LATERAL (
+          SELECT b.iuc_id FROM inventory.item_unit_conversion b
+           WHERE b.iuc_item_id = iuc.iuc_item_id AND b.iuc_is_base_unit = true
+             AND b.iuc_is_deleted = false
+           ORDER BY b.iuc_unit_slno LIMIT 1
+        ) base ON true
+       WHERE iuc.iuc_id = ANY(${ids}::uuid[])`;
         const by = new Map(rows.map((r) => [r.iuc_id, r]));
         const missing = ids.filter((id) => !by.has(id));
         if (missing.length > 0) {
@@ -162,13 +201,13 @@ let SalesStockService = class SalesStockService {
         return by;
     }
     async writeShadow(tx, doc, lines, units, rules, actor, now) {
-        const deviceId = doc.deviceId?.trim() || 'SERVER';
+        const deviceId = await this.shadowDevice(tx, doc);
         const [slno] = await tx.$queryRaw `
       SELECT COALESCE(MAX(svh_slno), 0) + 1 AS next
         FROM stock.stock_voucher
        WHERE svh_acc_year = ${doc.accYear}::bpchar AND svh_company_id = ${doc.companyId}::uuid
          AND svh_branch_id = ${doc.branchId}::uuid AND svh_voucher_type = ${rules.voucherType}
-         AND svh_device_id = ${deviceId}`;
+         AND svh_device_id = ${deviceId}::uuid`;
         const refno = `${doc.docType}/${doc.refno}/r${doc.revision}`;
         const godowns = [...new Set(lines.map((l) => l.godownId))];
         const inward = doc.direction === 'IN';
@@ -181,13 +220,13 @@ let SalesStockService = class SalesStockService {
         svh_line_count, svh_total_qty, svh_status, svh_rate_source, svh_remarks, svh_created_on, svh_created_by
       ) VALUES (
         ${doc.companyId}::uuid, ${doc.branchId}::uuid, ${doc.tenantId ?? null}::uuid, ${doc.accYear}::bpchar,
-        ${deviceId}, ${doc.sessionId ?? null}::uuid,
+        ${deviceId}::uuid, ${doc.sessionId ?? null}::uuid,
         ${rules.voucherType}, ${Number(slno?.next ?? 1)}::bigint, ${refno}, ${doc.refno},
         ${doc.docDate}::date, ${doc.docDatetime},
         ${inward ? null : godowns[0]}::uuid, ${inward ? godowns[0] : null}::uuid,
         ${doc.partyId ?? null},
         'SALES', ${doc.docType}, ${doc.docId}::uuid, ${doc.accYear}::bpchar,
-        ${lines.length}::int, ${(0, sales_doc_utils_1.round4)(lines.reduce((s, l) => s + l.qty + (l.freeQty ?? 0), 0))}::numeric,
+        ${lines.length}::int, ${totalQtyOf(lines)}::numeric,
         'DRAFT', 'AVG_COST', ${doc.remarks ?? `${DISPLAY_NAME[doc.docType]} ${doc.refno}`},
         ${now}, ${actor === '00000000-0000-0000-0000-000000000000' ? null : actor}
       )
@@ -196,16 +235,17 @@ let SalesStockService = class SalesStockService {
         const values = lines.map((l) => {
             const u = units.get(l.itemUnitId);
             const factor = l.toBaseFactor && l.toBaseFactor > 0 ? l.toBaseFactor : Number(u.iuc_to_base_factor) || 1;
-            const qty = (0, sales_doc_utils_1.round4)(l.qty);
-            const free = (0, sales_doc_utils_1.round4)(l.freeQty ?? 0);
+            const qty = decQty(l.qty);
+            const free = decQty(l.freeQty ?? 0);
             return client_1.Prisma.sql `(
         ${svhId}::uuid, ${doc.companyId}::uuid, ${doc.branchId}::uuid, ${doc.tenantId ?? null}::uuid,
         ${doc.accYear}::bpchar, ${l.lineNo}::int, 1,
-        ${l.itemId}::uuid, ${u.iuc_unit_id}::uuid, ${u.iuc_base_unit_id}::uuid, ${factor}::numeric,
+        ${l.itemId}::uuid, ${u.iuc_id}::uuid, ${u.base_iuc_id}::uuid, ${factor}::numeric,
         ${l.godownId}::uuid, ${l.lotId ?? null}::uuid, ${l.bucket ?? 'SALEABLE'},
         ${l.batchNo ?? null}, ${l.batchDate ?? null}::date, ${l.expiryDate ?? null}::date,
         ${l.mrp ?? null}::numeric, ${l.rate ?? null}::numeric, ${l.serialNo ?? null},
-        ${qty}::numeric, ${(0, sales_doc_utils_1.round4)(qty * factor)}::numeric, ${free}::numeric, ${(0, sales_doc_utils_1.round4)(free * factor)}::numeric,
+        ${qty}::numeric, ${decQty(qty.times(factor))}::numeric,
+        ${free}::numeric, ${decQty(free.times(factor))}::numeric,
         ${l.weightQty ?? 0}::numeric,
         ${l.costRate ?? 0}::numeric, ${l.costRate ?? 0}::numeric, ${l.taxPerc ?? 0}::numeric,
         ${now}, ${actor === '00000000-0000-0000-0000-000000000000' ? null : actor}
@@ -231,8 +271,32 @@ exports.SalesStockService = SalesStockService;
 exports.SalesStockService = SalesStockService = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [prisma_service_1.PrismaService,
-        stock_posting_service_1.StockPostingService])
+        stock_posting_service_1.StockPostingService,
+        request_context_service_1.RequestContextService])
 ], SalesStockService);
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function isUuid(v) {
+    return !!v && UUID.test(v);
+}
+const QTY_SCALE = 4;
+function decQty(v) {
+    if (v === null || v === undefined || v === '') {
+        return new client_1.Prisma.Decimal(0);
+    }
+    let d;
+    try {
+        d = v instanceof client_1.Prisma.Decimal ? v : new client_1.Prisma.Decimal(v);
+    }
+    catch {
+        return new client_1.Prisma.Decimal(0);
+    }
+    return d.isFinite()
+        ? d.toDecimalPlaces(QTY_SCALE, client_1.Prisma.Decimal.ROUND_HALF_UP)
+        : new client_1.Prisma.Decimal(0);
+}
+function totalQtyOf(lines) {
+    return lines.reduce((total, l) => total.plus(decQty(l.qty)).plus(decQty(l.freeQty ?? 0)), new client_1.Prisma.Decimal(0));
+}
 const DISPLAY_NAME = {
     SALE_BILL: 'Sale bill',
     DELIVERY_CHALLAN: 'Delivery challan',

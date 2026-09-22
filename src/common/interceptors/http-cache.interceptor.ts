@@ -20,11 +20,16 @@ const CACHE_SKIP_PATH_SEGMENTS = new Set(['auth', 'profile', 'health']);
 const isNil = (value: unknown): value is null | undefined => value === null || value === undefined;
 const isFunction = (value: unknown): value is (...args: unknown[]) => unknown =>
   typeof value === 'function';
+/** What `@CacheTTL()` stores: seconds, or a factory that resolves them per request. */
+type CacheTtlMetadata = number | ((context: ExecutionContext) => number | Promise<number>);
 @Injectable()
 export class HttpCacheInterceptor extends CacheInterceptor {
   private readonly logger = new Logger(HttpCacheInterceptor.name);
+  /** The base class keeps its copy as `any`; this one keeps the type. */
+  private readonly cache: Cache;
   constructor(@Inject(CACHE_MANAGER) cacheManager: Cache, reflector: Reflector) {
     super(cacheManager, reflector);
+    this.cache = cacheManager;
   }
   override async intercept(
     context: ExecutionContext,
@@ -35,8 +40,8 @@ export class HttpCacheInterceptor extends CacheInterceptor {
     }
     const key = this.trackBy(context);
     const ttlValueOrFactory =
-      this.reflector.get(CACHE_TTL_METADATA, context.getHandler()) ??
-      this.reflector.get(CACHE_TTL_METADATA, context.getClass()) ??
+      this.reflector.get<CacheTtlMetadata | undefined>(CACHE_TTL_METADATA, context.getHandler()) ??
+      this.reflector.get<CacheTtlMetadata | undefined>(CACHE_TTL_METADATA, context.getClass()) ??
       null;
     const ttlSeconds = isFunction(ttlValueOrFactory)
       ? await ttlValueOrFactory(context)
@@ -51,7 +56,7 @@ export class HttpCacheInterceptor extends CacheInterceptor {
     }
     const ttlMilliseconds = ttlSeconds * 1000;
     try {
-      const cachedValue = await this.cacheManager.get(key);
+      const cachedValue = await this.cache.get<unknown>(key);
       this.setCacheHeader(context, isNil(cachedValue) ? 'MISS' : 'HIT');
       if (!isNil(cachedValue)) {
         return of(cachedValue);
@@ -68,7 +73,7 @@ export class HttpCacheInterceptor extends CacheInterceptor {
           return;
         }
         try {
-          await this.cacheManager.set(key, response, ttlMilliseconds);
+          await this.cache.set(key, response, ttlMilliseconds);
         } catch (error) {
           const message = error instanceof Error ? error.message : 'Unknown cache write error';
           this.logger.warn(`Cache write failed for "${key}": ${message}`);

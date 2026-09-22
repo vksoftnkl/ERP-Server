@@ -226,7 +226,7 @@ let GridDetailsService = class GridDetailsService {
             gridCreatedBy: actor,
             gridModifiedBy: null,
         };
-        await this.applyOptionalGridFields(data, saveGridDetailDto);
+        this.applyOptionalGridFields(data, saveGridDetailDto);
         return this.prisma.$transaction(async (tx) => {
             const created = await tx.gridDetails.create({ data });
             if (saveGridDetailDto.grid_columns?.length) {
@@ -272,7 +272,7 @@ let GridDetailsService = class GridDetailsService {
                 gridName: saveGridDetailDto.grid_name.trim(),
                 gridModifiedBy: actor,
             };
-            await this.applyOptionalGridFields(data, saveGridDetailDto);
+            this.applyOptionalGridFields(data, saveGridDetailDto);
             await tx.gridDetails.update({ where: { gridId: parsedGridId }, data });
             if (saveGridDetailDto.grid_columns !== undefined) {
                 await this.saveColumnsInTx(saveGridDetailDto.grid_columns, parsedGridId, actor, tx);
@@ -380,7 +380,7 @@ let GridDetailsService = class GridDetailsService {
         if ((0, module_service_utils_1.hasOwnProperty)(dto, 'grid_column_sql_field_name'))
             data.gridColumnSqlFieldName = dto.grid_column_sql_field_name;
     }
-    async applyOptionalGridFields(data, dto) {
+    applyOptionalGridFields(data, dto) {
         if ((0, module_service_utils_1.hasOwnProperty)(dto, 'grid_description'))
             data.gridDescription = dto.grid_description;
         if ((0, module_service_utils_1.hasOwnProperty)(dto, 'grid_sort_column'))
@@ -388,13 +388,13 @@ let GridDetailsService = class GridDetailsService {
         if ((0, module_service_utils_1.hasOwnProperty)(dto, 'grid_sort_order'))
             data.gridSortOrder = dto.grid_sort_order;
         if ((0, module_service_utils_1.hasOwnProperty)(dto, 'grid_sql'))
-            data.gridSql = await this.normalizeGridSql(dto.grid_sql);
+            data.gridSql = this.normalizeGridSql(dto.grid_sql);
         if ((0, module_service_utils_1.hasOwnProperty)(dto, 'grid_status'))
             data.gridStatus = dto.grid_status;
         if ((0, module_service_utils_1.hasOwnProperty)(dto, 'grid_device_type'))
             data.gridDeviceType = dto.grid_device_type;
     }
-    async normalizeGridSql(gridSql) {
+    normalizeGridSql(gridSql) {
         if (gridSql === undefined || gridSql === null)
             return gridSql;
         const normalized = this.configuredGridSqlService.stripSqlComments(gridSql).trim();

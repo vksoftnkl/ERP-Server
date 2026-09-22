@@ -66,6 +66,14 @@ Menu-level access is managed through the `menus[]` array on the create/update pa
   reviving any previously soft-deleted row).
 - **Omitting `menus` on update leaves existing assignments unchanged**; sending an **empty
   array clears all** of them. On create, an absent array defaults to none.
+- Each entry carries eleven permission flags: the six CRUD/print/export ones plus the five
+  **transaction rights** — `umCanPost`, `umCanCancel`, `umCanAmend`, `umCanOverride`,
+  `umCanRetender`. The five are meaningful only where `fixed.menu_master.menu_verbs` says the
+  screen can do it: a grid should render a cell only for a verb the menu holds, and a `true`
+  flag on a menu without that verb is a stale grant rather than a capability.
+- Because the array is a full replacement set, **omitting a transaction flag revokes it**.
+  A client that sends only the six CRUD flags silently takes Post / Cancel / Amend / Override /
+  Re-tender away. Send all eleven.
 - Each entry carries CRUD/print/export permission flags (`umCanView` defaults `true`, the rest
   default `false`) plus user preferences (`umVisibility`, `umIsFavourite`, `umIsPinned`,
   `umSortOrder`).

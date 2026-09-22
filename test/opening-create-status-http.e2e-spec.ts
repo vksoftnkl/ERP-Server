@@ -160,7 +160,9 @@ describe('POST /stock/opening/create — status DRAFT vs POSTED (e2e, live DB)',
   /** Prisma Decimals and BigInts do not survive JSON.stringify on their own. */
   function jsonSafe(_key: string, value: unknown): unknown {
     if (typeof value === 'bigint') return value.toString();
-    if (value && typeof value === 'object' && 'toFixed' in value) return String(value);
+    if (value && typeof value === 'object' && 'toFixed' in value) {
+      return (value as { toString(): string }).toString();
+    }
     return value;
   }
 

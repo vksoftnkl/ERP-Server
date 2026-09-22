@@ -4,6 +4,7 @@ import type { ChargeDetailPayload, ChargeDocumentAudit } from '../../../master/c
 import { TenderDrCr, TenderSrcDocType, TenderSrcModule } from '../../../accountsModule/tenderDetail/types/tender-detail-api.types';
 import type { TenderDetailPayload, TenderDocumentAudit } from '../../../accountsModule/tenderDetail/types/tender-detail-api.types';
 import { TxnStatusDocType, TxnStatusSrcModule } from '../../../../common/txn-status-log/txn-status-log.helper';
+import type { TenderTempCreditDto } from '../../../accountsModule/tenderDetail/dto/save-tender-detail.dto';
 import type { LocksBlock, PostingBlock, RightsBlock } from '../../posting/types/posting.types';
 import type { TransportBandRow } from '../../posting/transport-band.service';
 export declare const BILL_CHARGE_DOC_TYPE = ChargeDocType.INVOICE;
@@ -91,7 +92,9 @@ export type BillItemPayload = Omit<SaleBillItem, 'sbiCreatedOn' | 'sbiModifiedOn
     sbiAllowNegativeStock?: boolean | null;
 };
 export type BillChargePayload = ChargeDetailPayload;
-export type BillTenderPayload = TenderDetailPayload;
+export type BillTenderPayload = TenderDetailPayload & {
+    tempCredit?: TenderTempCreditDto | null;
+};
 export type BillErrorDetail = {
     field: string;
     message: string;

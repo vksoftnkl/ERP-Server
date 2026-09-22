@@ -186,7 +186,7 @@ export class SaleLoadingChargeService {
           screenName: SALE_LOADING_CHARGE_AUDIT_SCREEN_NAME,
           screenType: 'master',
           pk: ilcId,
-          displayName: `ILC-${existing.ilcFromWeight}-${existing.ilcToWeight}`,
+          displayName: `ILC-${existing.ilcFromWeight?.toString() ?? ''}-${existing.ilcToWeight?.toString() ?? ''}`,
           originalRecord,
           modifiedRecord,
           userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,

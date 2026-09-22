@@ -180,11 +180,18 @@ const SALE_ORDER_VALUE_GUARDS = [
 }>;
 type SaleOrderGuardedField = (typeof SALE_ORDER_VALUE_GUARDS)[number]['field'];
 type SaleOrderGuardedValues = Partial<Record<SaleOrderGuardedField, string | null | undefined>>;
-// Tolerances for the cross-field equations mirrored from the DB: the CHECKs
-// compare round(x, 2) / round(x, 3) exactly, so the app-side judgment allows
-// only float noise below the last kept digit.
-const AMOUNT_EPSILON = 0.005; // numeric(15,2) columns
-const QTY_EPSILON = 0.0005; // numeric(15,3) columns
+// The two scales this table keeps: money in numeric(15,2), quantity in
+// numeric(15,3). Every figure below is rounded to its column's scale ONCE and
+// then compared exactly.
+//
+// THERE ARE NO EPSILONS HERE ANY MORE, and that is the point. This module used
+// to carry `AMOUNT_EPSILON = 0.005`, which is a system saying out loud that its
+// own arithmetic drifts: float64 holds 1.005 as 1.00499999…, so
+// `Math.round(1.005 * 100) / 100` is 1.00 and not 1.01. Decimal arithmetic does
+// not drift, so equality is equality and the mirrored CHECKs agree with the
+// database's own `round(x, n)` exactly rather than approximately.
+const AMOUNT_SCALE = 2;
+const QTY_SCALE = 3;
 // Header fields copied straight through when present on the payload. The
 // partition/scope keys (soCompanyId, soBranchId, soTenantId, soAccYear,
 // soPriceLevel, soUserId) and the server-assigned number (soOrderSlno /
@@ -461,24 +468,39 @@ function buildDateTransforms(
 const SALE_ORDER_DATE_TRANSFORMS = buildDateTransforms(SALE_ORDER_DATE_FIELDS);
 const SALE_ORDER_ITEM_DATE_TRANSFORMS = buildDateTransforms(SALE_ORDER_ITEM_DATE_FIELDS);
 // Payload values arrive as string | number, existing rows carry Prisma.Decimal;
-// the cross-field equations below need plain numbers. null/undefined → 0, which
-// matches every DEFAULT 0 column involved.
-function asNumber(value: unknown): number {
+// the cross-field equations below work in Decimal from end to end. null,
+// undefined and '' answer 0, which matches every DEFAULT 0 column involved, and
+// so does anything that is not a number at all — a refusal belongs in the
+// validator, not in a coercion helper.
+//
+// The string form matters: `new Prisma.Decimal(Number(v))` puts the value
+// through float64 BEFORE it becomes a Decimal, so the Decimal faithfully stores
+// whatever float64 already lost. Handed the string, Decimal keeps it exactly.
+function dec(value: unknown): Prisma.Decimal {
   if (value === null || value === undefined || value === '') {
-    return 0;
+    return new Prisma.Decimal(0);
   }
-  const parsed = Number(value);
-  return Number.isNaN(parsed) ? 0 : parsed;
+  if (value instanceof Prisma.Decimal) {
+    return value;
+  }
+  try {
+    const decimal = new Prisma.Decimal(value as string | number);
+    return decimal.isFinite() ? decimal : new Prisma.Decimal(0);
+  } catch {
+    return new Prisma.Decimal(0);
+  }
 }
-// Rounded to the last digit the column actually stores, so a computed value
-// never carries float noise into a numeric(15,3) / numeric(15,2) column and the
-// DB's own round(x, n) comparisons agree with ours.
-function roundQty(value: number): number {
-  return Math.round(value * 1000) / 1000;
+// Rounded to the last digit the column actually stores — once, at the column,
+// half-up — so a computed value never carries more precision into a
+// numeric(15,3) / numeric(15,2) column than the column keeps, and the DB's own
+// round(x, n) comparisons agree with ours exactly.
+function roundQty(value: unknown): Prisma.Decimal {
+  return dec(value).toDecimalPlaces(QTY_SCALE, Prisma.Decimal.ROUND_HALF_UP);
 }
-function roundAmount(value: number): number {
-  return Math.round(value * 100) / 100;
+function roundAmount(value: unknown): Prisma.Decimal {
+  return dec(value).toDecimalPlaces(AMOUNT_SCALE, Prisma.Decimal.ROUND_HALF_UP);
 }
+const ZERO = new Prisma.Decimal(0);
 // payload-first, falling back to the existing row: the merged value the DB
 // would actually end up with, which is what the mirrored CHECKs must judge.
 // Two type parameters because the two sides differ — the payload carries
@@ -717,10 +739,11 @@ export class SaleOrderService {
         ablIsDeleted: false,
       },
     });
-    // _sum is null when nothing matched, which asNumber turns into the 0 this
-    // answers with. Rounded to the two decimals abl_pending_amount stores, so
-    // the JSON number can never carry float noise the column does not have.
-    return { ablPendingAmount: roundAmount(asNumber(totals._sum.ablPendingAmount)) };
+    // _sum is null when nothing matched, which `dec` turns into the 0 this
+    // answers with. Rounded to the two decimals abl_pending_amount stores, then
+    // handed to JSON as a number: the wire is the one place a plain number is
+    // right, and at two decimals it round-trips exactly.
+    return { ablPendingAmount: roundAmount(totals._sum.ablPendingAmount).toNumber() };
   }
   async softDelete(
     soId: string,
@@ -749,7 +772,7 @@ export class SaleOrderService {
       // balance is not zero must first refund, forfeit or transfer what it took
       // (which also updates the roll-ups), or the liability would vanish from
       // every list while the customer's money stays in the till.
-      if (asNumber(existing.soAdvanceBalanceAmt) > 0) {
+      if (dec(existing.soAdvanceBalanceAmt).greaterThan(0)) {
         throwSalesBadRequest<SaleOrderErrorDetail, SaleOrderErrorResponse>(
           'Order holds an unsettled advance',
           [
@@ -1063,26 +1086,26 @@ export class SaleOrderService {
     // wide open — it still counts towards the header roll-ups below, which is
     // how a one-line cancel leaves the order PARTIAL rather than settled.
     const settledLines = lines.map((line) => {
-      const delivered = asNumber(line.soiDeliveredQty);
-      const billedAmt = asNumber(line.soiBilledAmt);
-      const pending = asNumber(line.soiPendingQty);
-      if (pending <= QTY_EPSILON || (targetLineId !== null && line.soiId !== targetLineId)) {
+      const delivered = roundQty(line.soiDeliveredQty);
+      const billedAmt = roundAmount(line.soiBilledAmt);
+      const pending = roundQty(line.soiPendingQty);
+      if (pending.lessThanOrEqualTo(0) || (targetLineId !== null && line.soiId !== targetLineId)) {
         return {
           line,
           delivered,
-          cancelled: asNumber(line.soiCancelledQty),
+          cancelled: roundQty(line.soiCancelledQty),
           pending,
           billedAmt,
-          moved: 0,
+          moved: ZERO,
         };
       }
       return {
         line,
         delivered,
-        cancelled: roundQty(asNumber(line.soiCancelledQty) + pending),
-        pending: 0,
+        cancelled: roundQty(roundQty(line.soiCancelledQty).plus(pending)),
+        pending: ZERO,
         billedAmt,
-        moved: roundQty(pending),
+        moved: pending,
       };
     });
     const rollup = this.summariseOrderLines(settledLines);
@@ -1094,7 +1117,7 @@ export class SaleOrderService {
     // roll-up. It is also what keeps the advance posting honest, see below.
     if (
       rollup.fulfilStatus === SALE_ORDER_FULFIL_CANCELLED &&
-      asNumber(existing.soAdvanceBalanceAmt) > 0
+      dec(existing.soAdvanceBalanceAmt).greaterThan(0)
     ) {
       throwSalesBadRequest<SaleOrderErrorDetail, SaleOrderErrorResponse>(
         'Order holds an unsettled advance',
@@ -1131,7 +1154,7 @@ export class SaleOrderService {
     // reason it was given then.
     const cancelReason = request.cancelReason;
     for (const settled of settledLines) {
-      if (settled.moved <= 0) {
+      if (settled.moved.lessThanOrEqualTo(0)) {
         continue;
       }
       const { line } = settled;
@@ -1163,7 +1186,9 @@ export class SaleOrderService {
       cancelledLines.push({
         soiId: line.soiId,
         soiLineNo: line.soiLineNo,
-        soiCancelledQty: settled.moved,
+        // The API payload is JSON, where a plain number at the column's own
+        // scale round-trips exactly; the arithmetic that produced it was Decimal.
+        soiCancelledQty: settled.moved.toNumber(),
         // Read back off the row the write returned rather than predicted here:
         // the DB is what decides this column now, so what the caller is told is
         // what the row actually holds.
@@ -1265,10 +1290,10 @@ export class SaleOrderService {
       soFulfilStatus: rollup.fulfilStatus,
       cancelledLines: cancelledLines.length,
       cancelledQty: roundQty(
-        cancelledLines.reduce((total, line) => total + line.soiCancelledQty, 0),
-      ),
-      soCancelledAmt: rollup.cancelledAmt,
-      soPendingAmt: rollup.pendingAmt,
+        cancelledLines.reduce((total, line) => total.plus(dec(line.soiCancelledQty)), ZERO),
+      ).toNumber(),
+      soCancelledAmt: rollup.cancelledAmt.toNumber(),
+      soPendingAmt: rollup.pendingAmt.toNumber(),
       lines: cancelledLines,
     };
   }
@@ -1294,26 +1319,26 @@ export class SaleOrderService {
       // generated from — as the line will hold it once the caller's write lands,
       // which is not line.soiNetQty on a line an over-delivery just revised
       // upwards. Left off by the cancel path, which never moves it.
-      netQty?: number;
-      delivered: number;
-      cancelled: number;
-      pending: number;
-      billedAmt: number;
+      netQty?: Prisma.Decimal;
+      delivered: Prisma.Decimal;
+      cancelled: Prisma.Decimal;
+      pending: Prisma.Decimal;
+      billedAmt: Prisma.Decimal;
     }[],
   ): {
-    billedAmt: number;
-    cancelledAmt: number;
-    pendingAmt: number;
+    billedAmt: Prisma.Decimal;
+    cancelledAmt: Prisma.Decimal;
+    pendingAmt: Prisma.Decimal;
     totItems: number;
     deliveredItems: number;
     fulfilStatus: string;
     headerStatus: string | null;
   } {
-    let totalBilledAmt = 0;
-    let cancelledAmt = 0;
-    let pendingAmt = 0;
+    let totalBilledAmt = ZERO;
+    let cancelledAmt = ZERO;
+    let pendingAmt = ZERO;
     let deliveredItems = 0;
-    let deliveredQty = 0;
+    let deliveredQty = ZERO;
     for (const {
       line,
       netQty: settledQty,
@@ -1322,19 +1347,23 @@ export class SaleOrderService {
       pending,
       billedAmt,
     } of settledLines) {
-      const netQty = settledQty ?? asNumber(line.soiNetQty);
+      const netQty = settledQty ?? roundQty(line.soiNetQty);
       // soi_net_amt is the only line-level money covering the whole line (after
       // discount, tax and the per-line charges), so the cancelled / pending
       // split is taken pro-rata from it. A zero-quantity line contributes
       // nothing rather than dividing by zero.
-      const unitShare = netQty > 0 ? asNumber(line.soiNetAmt) / netQty : 0;
-      cancelledAmt += cancelled * unitShare;
-      pendingAmt += pending * unitShare;
+      //
+      // The share is NOT rounded per line: it is a ratio, not money, and the
+      // sum it feeds is rounded once at the end. Rounding each line's share
+      // would lose or invent paise across a long order.
+      const unitShare = netQty.greaterThan(0) ? dec(line.soiNetAmt).div(netQty) : ZERO;
+      cancelledAmt = cancelledAmt.plus(cancelled.times(unitShare));
+      pendingAmt = pendingAmt.plus(pending.times(unitShare));
       // soi_billed_amt is a maintained cache, so it is summed as-is rather than
       // re-derived from soi_delivered_qty: a bill that priced differently from
       // the order must not be silently overwritten with the order's own rate.
-      totalBilledAmt += billedAmt;
-      deliveredQty += delivered;
+      totalBilledAmt = totalBilledAmt.plus(billedAmt);
+      deliveredQty = deliveredQty.plus(delivered);
       // so_delivered_items counts every SETTLED line — soi_line_status
       // DELIVERED or CANCELLED — not only the ones that shipped. A line the
       // customer withdrew has nothing more to come off it, so counting it is
@@ -1372,18 +1401,20 @@ export class SaleOrderService {
   // and tests the result against zero, so rounding the same way is exact rather
   // than approximately right.
   private deriveLineStatus(
-    netQty: number,
-    delivered: number,
-    cancelled: number,
+    netQty: Prisma.Decimal,
+    delivered: Prisma.Decimal,
+    cancelled: Prisma.Decimal,
   ): SaleOrderLineStatus {
-    const pending = roundQty(netQty - delivered - cancelled);
-    if (roundQty(netQty) <= 0) {
+    const pending = roundQty(netQty.minus(delivered).minus(cancelled));
+    if (roundQty(netQty).lessThanOrEqualTo(0)) {
       return SALE_ORDER_LINE_PENDING;
     }
-    if (pending <= 0) {
-      return roundQty(delivered) <= 0 ? SALE_ORDER_LINE_CANCELLED : SALE_ORDER_LINE_DELIVERED;
+    if (pending.lessThanOrEqualTo(0)) {
+      return roundQty(delivered).lessThanOrEqualTo(0)
+        ? SALE_ORDER_LINE_CANCELLED
+        : SALE_ORDER_LINE_DELIVERED;
     }
-    if (roundQty(delivered + cancelled) > 0) {
+    if (roundQty(delivered.plus(cancelled)).greaterThan(0)) {
       return SALE_ORDER_LINE_PARTIAL;
     }
     return SALE_ORDER_LINE_PENDING;
@@ -1401,9 +1432,9 @@ export class SaleOrderService {
   private deriveOrderStatus(
     totItems: number,
     deliveredItems: number,
-    deliveredQty: number,
+    deliveredQty: Prisma.Decimal,
   ): { fulfilStatus: string; headerStatus: string | null } {
-    const delivered = deliveredQty > QTY_EPSILON;
+    const delivered = roundQty(deliveredQty).greaterThan(0);
     if (deliveredItems >= totItems) {
       // Every line settled — including the degenerate empty order, which has
       // nothing left to settle either.
@@ -1677,7 +1708,7 @@ export class SaleOrderService {
     // Summed per ORDER line, not per bill line: one order line routinely becomes
     // several bill lines — a batch split within one bill, or a part delivery
     // spread across several.
-    const billedByLineNo = new Map<number, { qty: number; amt: number }>();
+    const billedByLineNo = new Map<number, { qty: Prisma.Decimal; amt: Prisma.Decimal }>();
     for (const item of billedItems) {
       // The id first, exactly as the reference was resolved: a bill line holding
       // a soi_id has already said which line it drew down, and its
@@ -1689,22 +1720,27 @@ export class SaleOrderService {
         // client that fills only that in lands here.
         continue;
       }
-      const total = billedByLineNo.get(lineNo) ?? { qty: 0, amt: 0 };
+      const total = billedByLineNo.get(lineNo) ?? { qty: ZERO, amt: ZERO };
       // sbi_net_qty, not sbi_bill_qty: the quantity in the order line's own
       // terms — what soi_delivered_qty and soi_net_qty are counted in — after the
       // bill line has resolved its case / length / pack into them.
-      total.qty += asNumber(item.sbiNetQty);
-      total.amt += asNumber(item.sbiNetAmt);
-      billedByLineNo.set(lineNo, total);
+      //
+      // Summed in Decimal across every bill line that drew on this order line:
+      // a twenty-bill order accumulating in float64 lands a fraction off the
+      // quantity its own bills say went out.
+      billedByLineNo.set(lineNo, {
+        qty: total.qty.plus(dec(item.sbiNetQty)),
+        amt: total.amt.plus(dec(item.sbiNetAmt)),
+      });
     }
     const settledLines = lines.map((line) => {
       const stored = {
         line,
-        netQty: asNumber(line.soiNetQty),
-        delivered: asNumber(line.soiDeliveredQty),
-        cancelled: asNumber(line.soiCancelledQty),
-        pending: asNumber(line.soiPendingQty),
-        billedAmt: asNumber(line.soiBilledAmt),
+        netQty: roundQty(line.soiNetQty),
+        delivered: roundQty(line.soiDeliveredQty),
+        cancelled: roundQty(line.soiCancelledQty),
+        pending: roundQty(line.soiPendingQty),
+        billedAmt: roundAmount(line.soiBilledAmt),
         changed: false,
       };
       // Recomputed for the lines this call was handed AND for any line that
@@ -1715,7 +1751,7 @@ export class SaleOrderService {
       if (!lineNos.has(line.soiLineNo) && !billedByLineNo.has(line.soiLineNo)) {
         return stored;
       }
-      const billed = billedByLineNo.get(line.soiLineNo) ?? { qty: 0, amt: 0 };
+      const billed = billedByLineNo.get(line.soiLineNo) ?? { qty: ZERO, amt: ZERO };
       const delivered = roundQty(billed.qty);
       const billedAmt = roundAmount(billed.amt);
       const cancelled = stored.cancelled;
@@ -1724,8 +1760,10 @@ export class SaleOrderService {
       // only to know what the row will hold, which the header roll-up needs
       // before the write returns.
       let netQty = stored.netQty;
-      let pending = roundQty(netQty - delivered - cancelled);
-      if (pending < -QTY_EPSILON) {
+      let pending = roundQty(netQty.minus(delivered).minus(cancelled));
+      // Below zero is below zero: with Decimal there is no noise to allow for,
+      // so any negative pending is a real over-delivery.
+      if (pending.isNegative()) {
         // More went out than the line ever had to give — the customer took the
         // extra at the counter, or the order was keyed short. The bill is the
         // record of what physically moved, so the LINE is revised up to it rather
@@ -1738,25 +1776,25 @@ export class SaleOrderService {
         // asked for, in the unit they asked for it in, and no longer takes part
         // in the fulfilment identity. Without this the generated pending would go
         // negative and ck_soi_qty_signs would refuse the write.
-        netQty = roundQty(delivered + cancelled);
-        pending = 0;
+        netQty = roundQty(delivered.plus(cancelled));
+        pending = ZERO;
       }
-      // Only float noise can be left below zero once the branch above has run.
-      const pendingQty = Math.max(pending, 0);
       return {
         line,
         netQty,
         delivered,
         cancelled,
-        pending: pendingQty,
+        pending,
         billedAmt,
         // The three written columns are what decide the two generated ones, so
         // comparing them is the whole test: a line whose net / delivered / billed
         // amount all still stand cannot have a stale pending or status either.
+        // Each side is already at its column's scale, so this is equality and
+        // not a tolerance.
         changed:
-          Math.abs(netQty - stored.netQty) > QTY_EPSILON ||
-          Math.abs(delivered - stored.delivered) > QTY_EPSILON ||
-          Math.abs(billedAmt - stored.billedAmt) > AMOUNT_EPSILON,
+          !netQty.equals(stored.netQty) ||
+          !delivered.equals(stored.delivered) ||
+          !billedAmt.equals(stored.billedAmt),
       };
     });
     const fulfilledLines: SaleOrderFulfilledLine[] = [];
@@ -1794,16 +1832,18 @@ export class SaleOrderService {
         },
         tx,
       );
+      // The payload is JSON, so the Decimals become numbers HERE and nowhere
+      // earlier: at each column's own scale that conversion is exact.
       fulfilledLines.push({
         soiId: line.soiId,
         soiLineNo: line.soiLineNo,
-        soiNetQty: settled.netQty,
-        soiDeliveredQty: settled.delivered,
-        soiCancelledQty: settled.cancelled,
+        soiNetQty: settled.netQty.toNumber(),
+        soiDeliveredQty: settled.delivered.toNumber(),
+        soiCancelledQty: settled.cancelled.toNumber(),
         // The two generated columns come off the row the write returned, not off
         // the prediction above: what the caller is told is what the DB derived.
-        soiPendingQty: asNumber(updated.soiPendingQty),
-        soiBilledAmt: settled.billedAmt,
+        soiPendingQty: dec(updated.soiPendingQty).toNumber(),
+        soiBilledAmt: settled.billedAmt.toNumber(),
         soiLineStatus: updated.soiLineStatus,
       });
     }
@@ -1816,9 +1856,9 @@ export class SaleOrderService {
     // and must not leave an audit row and a bumped so_modified_on each time.
     const headerChanged =
       fulfilledLines.length > 0 ||
-      Math.abs(rollup.billedAmt - asNumber(order.soBilledAmt)) > AMOUNT_EPSILON ||
-      Math.abs(rollup.cancelledAmt - asNumber(order.soCancelledAmt)) > AMOUNT_EPSILON ||
-      Math.abs(rollup.pendingAmt - asNumber(order.soPendingAmt)) > AMOUNT_EPSILON ||
+      !rollup.billedAmt.equals(roundAmount(order.soBilledAmt)) ||
+      !rollup.cancelledAmt.equals(roundAmount(order.soCancelledAmt)) ||
+      !rollup.pendingAmt.equals(roundAmount(order.soPendingAmt)) ||
       rollup.totItems !== order.soTotItems ||
       rollup.deliveredItems !== order.soDeliveredItems ||
       rollup.fulfilStatus !== order.soFulfilStatus ||
@@ -2425,7 +2465,11 @@ export class SaleOrderService {
   // apart by name — only the line index (a different table) can.
   private describeDuplicate(error: unknown): { message: string; errors: SaleOrderErrorDetail[] } {
     const target = (error as { meta?: { target?: unknown } } | null)?.meta?.target;
-    const targetText = Array.isArray(target) ? target.join(',') : String(target ?? '');
+    const targetText = Array.isArray(target)
+      ? target.join(',')
+      : typeof target === 'string'
+        ? target
+        : '';
     if (targetText.includes('sale_order_item')) {
       return {
         message: 'Duplicate order line number is not allowed',
@@ -2506,12 +2550,12 @@ export class SaleOrderService {
     existing: SaleOrder | undefined,
   ): void {
     const details: SaleOrderErrorDetail[] = [];
-    const recd = asNumber(merged(dto.soAdvanceRecdAmt, existing?.soAdvanceRecdAmt));
-    const adjusted = asNumber(merged(dto.soAdvanceAdjustedAmt, existing?.soAdvanceAdjustedAmt));
-    const refund = asNumber(merged(dto.soAdvanceRefundAmt, existing?.soAdvanceRefundAmt));
-    const forfeit = asNumber(merged(dto.soAdvanceForfeitAmt, existing?.soAdvanceForfeitAmt));
-    const required = asNumber(merged(dto.soAdvanceRequired, existing?.soAdvanceRequired));
-    const amounts: Array<[string, number]> = [
+    const recd = roundAmount(merged(dto.soAdvanceRecdAmt, existing?.soAdvanceRecdAmt));
+    const adjusted = roundAmount(merged(dto.soAdvanceAdjustedAmt, existing?.soAdvanceAdjustedAmt));
+    const refund = roundAmount(merged(dto.soAdvanceRefundAmt, existing?.soAdvanceRefundAmt));
+    const forfeit = roundAmount(merged(dto.soAdvanceForfeitAmt, existing?.soAdvanceForfeitAmt));
+    const required = roundAmount(merged(dto.soAdvanceRequired, existing?.soAdvanceRequired));
+    const amounts: Array<[string, Prisma.Decimal]> = [
       ['soAdvanceRequired', required],
       ['soAdvanceRecdAmt', recd],
       ['soAdvanceAdjustedAmt', adjusted],
@@ -2519,20 +2563,22 @@ export class SaleOrderService {
       ['soAdvanceForfeitAmt', forfeit],
     ];
     for (const [field, amount] of amounts) {
-      if (amount < 0) {
+      if (amount.isNegative()) {
         details.push({ field, message: `${field} must not be negative` });
       }
     }
-    const expectedBalance = recd - adjusted - refund - forfeit;
+    const expectedBalance = roundAmount(recd.minus(adjusted).minus(refund).minus(forfeit));
     if (dto.soAdvanceBalanceAmt !== undefined) {
-      const balance = asNumber(dto.soAdvanceBalanceAmt);
-      if (balance < 0) {
+      const balance = roundAmount(dto.soAdvanceBalanceAmt);
+      if (balance.isNegative()) {
         details.push({
           field: 'soAdvanceBalanceAmt',
           message: 'soAdvanceBalanceAmt must not be negative',
         });
       }
-      if (Math.abs(balance - expectedBalance) > AMOUNT_EPSILON) {
+      // Both sides rounded to the paisa the column keeps, then compared for
+      // equality: ck_so_advance_balance is an equation, not an approximation.
+      if (!balance.equals(expectedBalance)) {
         details.push({
           field: 'soAdvanceBalanceAmt',
           message:
@@ -2540,7 +2586,7 @@ export class SaleOrderService {
             'soAdvanceRefundAmt − soAdvanceForfeitAmt (ck_so_advance_balance)',
         });
       }
-    } else if (expectedBalance < -AMOUNT_EPSILON) {
+    } else if (expectedBalance.isNegative()) {
       // The derived balance would be negative, which ck_so_advance_amounts
       // rejects: more money was used than was ever received.
       details.push({
@@ -2552,14 +2598,14 @@ export class SaleOrderService {
     }
     // A percentage policy needs a percentage; a fixed one needs an amount.
     const policy = merged(dto.soAdvancePolicy, existing?.soAdvancePolicy) ?? 'NONE';
-    const perc = asNumber(merged(dto.soAdvancePerc, existing?.soAdvancePerc));
-    if (policy === 'PERC' && perc <= 0) {
+    const perc = dec(merged(dto.soAdvancePerc, existing?.soAdvancePerc));
+    if (policy === 'PERC' && perc.lessThanOrEqualTo(0)) {
       details.push({
         field: 'soAdvancePerc',
         message: "soAdvancePerc must be greater than 0 when soAdvancePolicy is 'PERC'",
       });
     }
-    if (policy === 'FIXED' && required <= 0) {
+    if (policy === 'FIXED' && required.lessThanOrEqualTo(0)) {
       details.push({
         field: 'soAdvanceRequired',
         message: "soAdvanceRequired must be greater than 0 when soAdvancePolicy is 'FIXED'",
@@ -2574,12 +2620,15 @@ export class SaleOrderService {
   }
   // What the company still holds = taken − used − given back − kept, rounded to
   // the paisa exactly as ck_so_advance_balance demands.
-  private deriveAdvanceBalance(dto: SaveSaleOrderDto, existing: SaleOrder | undefined): number {
-    const recd = asNumber(merged(dto.soAdvanceRecdAmt, existing?.soAdvanceRecdAmt));
-    const adjusted = asNumber(merged(dto.soAdvanceAdjustedAmt, existing?.soAdvanceAdjustedAmt));
-    const refund = asNumber(merged(dto.soAdvanceRefundAmt, existing?.soAdvanceRefundAmt));
-    const forfeit = asNumber(merged(dto.soAdvanceForfeitAmt, existing?.soAdvanceForfeitAmt));
-    return Math.round((recd - adjusted - refund - forfeit) * 100) / 100;
+  private deriveAdvanceBalance(
+    dto: SaveSaleOrderDto,
+    existing: SaleOrder | undefined,
+  ): Prisma.Decimal {
+    const recd = dec(merged(dto.soAdvanceRecdAmt, existing?.soAdvanceRecdAmt));
+    const adjusted = dec(merged(dto.soAdvanceAdjustedAmt, existing?.soAdvanceAdjustedAmt));
+    const refund = dec(merged(dto.soAdvanceRefundAmt, existing?.soAdvanceRefundAmt));
+    const forfeit = dec(merged(dto.soAdvanceForfeitAmt, existing?.soAdvanceForfeitAmt));
+    return roundAmount(recd.minus(adjusted).minus(refund).minus(forfeit));
   }
   // Mirrors the DB CHECK constraints on sale_order_item (ck_soi_free_type /
   // ck_soi_line_status / ck_soi_qty_signs / ck_soi_reserved / ck_soi_size),
@@ -2623,23 +2672,23 @@ export class SaleOrderService {
         });
       }
     }
-    const orderQty = asNumber(merged(inputItem.soiOrderQty, existingItem?.soiOrderQty));
-    const deliveredQty = asNumber(merged(inputItem.soiDeliveredQty, existingItem?.soiDeliveredQty));
-    const cancelledQty = asNumber(merged(inputItem.soiCancelledQty, existingItem?.soiCancelledQty));
-    const reservedQty = asNumber(merged(inputItem.soiReservedQty, existingItem?.soiReservedQty));
+    const orderQty = roundQty(merged(inputItem.soiOrderQty, existingItem?.soiOrderQty));
+    const deliveredQty = roundQty(merged(inputItem.soiDeliveredQty, existingItem?.soiDeliveredQty));
+    const cancelledQty = roundQty(merged(inputItem.soiCancelledQty, existingItem?.soiCancelledQty));
+    const reservedQty = roundQty(merged(inputItem.soiReservedQty, existingItem?.soiReservedQty));
     for (const [field, qty] of [
       ['soiOrderQty', orderQty],
       ['soiDeliveredQty', deliveredQty],
       ['soiCancelledQty', cancelledQty],
-    ] as Array<[string, number]>) {
-      if (qty < 0) {
+    ] as Array<[string, Prisma.Decimal]>) {
+      if (qty.isNegative()) {
         details.push({ field, message: `${field} must not be negative` });
       }
     }
-    if (inputItem.soiPendingQty !== undefined && asNumber(inputItem.soiPendingQty) < 0) {
+    if (inputItem.soiPendingQty !== undefined && dec(inputItem.soiPendingQty).isNegative()) {
       details.push({ field: 'soiPendingQty', message: 'soiPendingQty must not be negative' });
     }
-    if (reservedQty < 0 || reservedQty > orderQty + QTY_EPSILON) {
+    if (reservedQty.isNegative() || reservedQty.greaterThan(orderQty)) {
       details.push({
         field: 'soiReservedQty',
         message: 'soiReservedQty must be between 0 and soiOrderQty (ck_soi_reserved)',
@@ -2669,22 +2718,22 @@ export class SaleOrderService {
     inputItem: SaveSaleOrderItemDto,
     existingItem: SaleOrderItem | undefined,
   ): void {
-    const orderQty = asNumber(merged(inputItem.soiOrderQty, existingItem?.soiOrderQty));
+    const orderQty = roundQty(merged(inputItem.soiOrderQty, existingItem?.soiOrderQty));
     if (!existingItem && inputItem.soiNetQty === undefined) {
       data.soiNetQty = orderQty;
     }
     const netQty =
       inputItem.soiNetQty !== undefined
-        ? asNumber(inputItem.soiNetQty)
+        ? roundQty(inputItem.soiNetQty)
         : existingItem
-          ? asNumber(existingItem.soiNetQty)
+          ? roundQty(existingItem.soiNetQty)
           : orderQty;
-    const deliveredQty = asNumber(merged(inputItem.soiDeliveredQty, existingItem?.soiDeliveredQty));
-    const cancelledQty = asNumber(merged(inputItem.soiCancelledQty, existingItem?.soiCancelledQty));
+    const deliveredQty = roundQty(merged(inputItem.soiDeliveredQty, existingItem?.soiDeliveredQty));
+    const cancelledQty = roundQty(merged(inputItem.soiCancelledQty, existingItem?.soiCancelledQty));
     // Rounded to the milli-unit exactly as the numeric(15,3) column stores it,
     // which is also how the generated column rounds.
-    const derivedPending = Math.round((netQty - deliveredQty - cancelledQty) * 1000) / 1000;
-    if (derivedPending < -QTY_EPSILON) {
+    const derivedPending = roundQty(netQty.minus(deliveredQty).minus(cancelledQty));
+    if (derivedPending.isNegative()) {
       throwSalesBadRequest<SaleOrderErrorDetail, SaleOrderErrorResponse>(
         'Invalid order item value',
         [
@@ -2703,7 +2752,7 @@ export class SaleOrderService {
     // something that silently disagrees with what it displayed.
     if (
       inputItem.soiPendingQty !== undefined &&
-      Math.abs(asNumber(inputItem.soiPendingQty) - derivedPending) > QTY_EPSILON
+      !roundQty(inputItem.soiPendingQty).equals(derivedPending)
     ) {
       throwSalesBadRequest<SaleOrderErrorDetail, SaleOrderErrorResponse>(
         'Invalid order item value',

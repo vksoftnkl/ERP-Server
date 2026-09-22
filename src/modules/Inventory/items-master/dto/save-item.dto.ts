@@ -8,7 +8,6 @@ import {
   OptionalInteger,
   OptionalTrimmedString,
   OptionalUuid,
-  RequiredUuid,
   toTrimmedString,
 } from 'src/common/dto/dtoDecorators';
 

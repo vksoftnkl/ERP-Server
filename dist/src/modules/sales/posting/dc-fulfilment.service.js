@@ -80,8 +80,14 @@ let DcFulfilmentService = class DcFulfilmentService {
                SELECT CASE
                         WHEN COUNT(*) = 0 THEN 'OPEN'
                         WHEN bool_and(d.sdi_line_status = 'OPEN') THEN 'OPEN'
-                        WHEN bool_and(d.sdi_line_status IN ('BILLED', 'CLOSED')) THEN 'BILLED'
-                        WHEN bool_and(d.sdi_line_status IN ('RETURNED', 'CLOSED')) THEN 'RETURNED'
+                        -- Every line disposed of. BILLED / RETURNED only when
+                        -- that is the ONLY way any line went; a line that was
+                        -- part billed and part returned is CLOSED, and so is
+                        -- a challan made of them.
+                        WHEN bool_and(d.sdi_line_status IN ('BILLED', 'CLOSED'))
+                             AND bool_or(d.sdi_line_status = 'BILLED') THEN 'BILLED'
+                        WHEN bool_and(d.sdi_line_status IN ('RETURNED', 'CLOSED'))
+                             AND bool_or(d.sdi_line_status = 'RETURNED') THEN 'RETURNED'
                         WHEN bool_and(d.sdi_line_status <> 'OPEN' AND d.sdi_line_status <> 'PARTIAL') THEN 'CLOSED'
                         ELSE 'PARTIAL' END
                  FROM sales.sale_dc_item d

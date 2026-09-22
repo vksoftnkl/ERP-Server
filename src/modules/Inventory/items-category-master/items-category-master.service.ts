@@ -136,7 +136,6 @@ export class ItemsCategoryMasterService {
         }
         const now = new Date();
         const createdBy = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
-        const modifiedBy = createdBy;
         const data: Prisma.categoryMasterUncheckedCreateInput = {
           categoryName: saveItemCategoryDto.category_name.trim(),
           categoryCreatedOn: now,

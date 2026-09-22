@@ -1,5 +1,4 @@
 import { EventEmitter } from 'node:events';
-import { redisStore } from 'cache-manager-redis-store';
 import { KeyvStoreAdapter, StoredData } from 'keyv';
 type LegacyRedisStore = {
   get(key: string, options?: unknown, cb?: unknown): Promise<unknown>;

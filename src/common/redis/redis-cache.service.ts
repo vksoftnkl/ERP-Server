@@ -106,7 +106,7 @@ export class RedisCacheService implements OnModuleDestroy {
     }
     return response as string[];
   }
-  async onModuleDestroy(): Promise<void> {
+  onModuleDestroy(): void {
     if (!this.socket || this.socket.destroyed) {
       return;
     }
@@ -160,8 +160,8 @@ export class RedisCacheService implements OnModuleDestroy {
         socket.setTimeout(0);
         socket.off('error', rejectConnection);
         socket.removeAllListeners('close');
-        socket.on('data', (chunk) => this.handleData(chunk));
-        socket.on('error', (error) => this.handleSocketTermination(socket, error));
+        socket.on('data', (chunk: Buffer) => this.handleData(chunk));
+        socket.on('error', (error: Error) => this.handleSocketTermination(socket, error));
         socket.on('close', () => this.handleSocketTermination(socket));
         this.socket = socket;
         this.readBuffer = Buffer.alloc(0);

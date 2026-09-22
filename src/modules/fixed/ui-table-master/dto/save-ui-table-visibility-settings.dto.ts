@@ -18,7 +18,7 @@ import {
 
 export class UiTableVisibilitySettingItemDto {
   @ApiProperty({ type: String, description: 'UI table column id to update' })
-  @Transform(({ value }) => (value != null ? String(value).trim() : value))
+  @Transform(({ value }) => (value != null ? String(value).trim() : (value as unknown)))
   @IsNotEmpty()
   @IsNumberString({ no_symbols: true })
   uiTblClmId!: string;

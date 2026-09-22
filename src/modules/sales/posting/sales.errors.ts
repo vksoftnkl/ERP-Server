@@ -5,7 +5,7 @@ import {
   throwUnprocessable,
   type SalesErrorDetail,
 } from 'src/common/utils/module-service.utils';
-import type { SalesErrorCode, SalesRefusal, SalesStatutoryRef } from './types/posting.types';
+import type { SalesErrorCodeLike, SalesRefusal, SalesStatutoryRef } from './types/posting.types';
 
 /**
  * One throw site per HTTP status, so every sales refusal reaches the client in
@@ -18,7 +18,7 @@ import type { SalesErrorCode, SalesRefusal, SalesStatutoryRef } from './types/po
  * already serialise `ModuleErrorDetail[]` and pass unknown keys through.
  */
 export interface SalesCodedErrorDetail extends SalesErrorDetail {
-  code: SalesErrorCode | string;
+  code: SalesErrorCodeLike;
   line?: number;
   statutory?: SalesStatutoryRef;
 }
@@ -26,7 +26,7 @@ export interface SalesCodedErrorDetail extends SalesErrorDetail {
 /** 409 — the row exists and the request is well formed; its STATE refuses. */
 export function throwSalesLocked(
   message: string,
-  code: SalesErrorCode | string,
+  code: SalesErrorCodeLike,
   field: string,
   detail?: Partial<SalesCodedErrorDetail>,
 ): never {
@@ -40,7 +40,7 @@ export function throwSalesLocked(
  */
 export function throwSalesRefused(
   message: string,
-  code: SalesErrorCode | string,
+  code: SalesErrorCodeLike,
   field: string,
   detail?: Partial<SalesCodedErrorDetail>,
 ): never {
@@ -64,17 +64,13 @@ export function throwSalesRefusals(message: string, refusals: SalesRefusal[]): n
 /** 403 — a `user_menus` flag is false. Retrying will not help. */
 export function throwSalesRight(
   message: string,
-  code: SalesErrorCode | string,
+  code: SalesErrorCodeLike,
   field = 'userId',
 ): never {
   throwSalesForbidden<SalesCodedErrorDetail>(message, [{ field, message, code }]);
 }
 
 /** 400 — the request itself is wrong (a bad acc year, a missing key). */
-export function throwSalesInvalid(
-  message: string,
-  code: SalesErrorCode | string,
-  field: string,
-): never {
+export function throwSalesInvalid(message: string, code: SalesErrorCodeLike, field: string): never {
   throwSalesBadRequest<SalesCodedErrorDetail>(message, [{ field, message, code }]);
 }

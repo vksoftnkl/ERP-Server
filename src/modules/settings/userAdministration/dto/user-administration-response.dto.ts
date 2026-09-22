@@ -48,6 +48,21 @@ export class UserMenuPayloadDto {
   @ApiProperty()
   umCanExport!: boolean;
 
+  @ApiProperty({ description: 'May /post. Transaction screens only.' })
+  umCanPost!: boolean;
+
+  @ApiProperty({ description: 'May /cancel a posted document.' })
+  umCanCancel!: boolean;
+
+  @ApiProperty({ description: 'May /amend a posted document.' })
+  umCanAmend!: boolean;
+
+  @ApiProperty({ description: 'May pass a WARN-level guard.' })
+  umCanOverride!: boolean;
+
+  @ApiProperty({ description: 'May re-tender a posted bill. Sales Entry only.' })
+  umCanRetender!: boolean;
+
   @ApiProperty()
   umVisibility!: boolean;
 

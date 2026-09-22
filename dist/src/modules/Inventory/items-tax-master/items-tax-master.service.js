@@ -132,7 +132,6 @@ let ItemsTaxMasterService = class ItemsTaxMasterService {
         }
         const now = new Date();
         const createdBy = (0, module_service_utils_1.resolveActor)(saveItemTaxDto.tax_created_by, this.requestContextService.getUserId());
-        const modifiedBy = (0, module_service_utils_1.resolveActor)(saveItemTaxDto.tax_modified_by, createdBy);
         const data = {
             taxName,
             taxCreatedOn: now,

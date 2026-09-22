@@ -19,7 +19,7 @@ export class SaveUiTableMasterDto {
 
   @ApiProperty({ description: 'UI table name', example: 'Item Master Grid' })
   @TrimmedString(500)
-  @ValidateIf((o) => !o.uiTblId)
+  @ValidateIf((o: SaveUiTableMasterDto) => !o.uiTblId)
   @IsNotEmpty()
   uiTblName!: string;
 

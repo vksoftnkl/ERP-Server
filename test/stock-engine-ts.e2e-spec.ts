@@ -621,8 +621,6 @@ describe('Stock engine in TypeScript (e2e — one rolled-back transaction)', () 
        ORDER BY sml_line_no
     `;
 
-  let firstOpeningId: string;
-
   // ── 1. the average is seeded by the first receipt ────────────────────────
 
   it('1. an opening seeds stock_item_cost and stamps the holding: 10 @ 15', async () => {
@@ -631,7 +629,6 @@ describe('Stock engine in TypeScript (e2e — one rolled-back transaction)', () 
     const saved = await opening(fixture.godownA, [
       { itemId: fixture.saltId, iuc: fixture.saltPieceIuc, qty: 10, costRate: 15 },
     ]);
-    firstOpeningId = saved.header.svhId;
     const posted = await post(OPENING_RULES, saved.header.svhId);
 
     expect(posted.rowsPosted).toBe(1);

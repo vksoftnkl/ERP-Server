@@ -531,7 +531,6 @@ export class ItemsMasterService {
       saveItemDto.item_created_by,
       this.requestContextService.getUserId(),
     );
-    const modifiedBy = resolveActor(saveItemDto.item_modified_by, createdBy);
     const data: Prisma.ItemMasterUncheckedCreateInput = {
       itemCompanyId: companyId,
       itemNameEn,

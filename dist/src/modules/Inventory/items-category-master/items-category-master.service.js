@@ -123,7 +123,6 @@ let ItemsCategoryMasterService = class ItemsCategoryMasterService {
                 }
                 const now = new Date();
                 const createdBy = this.requestContextService.getUserId() ?? module_service_utils_1.DEFAULT_ACTOR;
-                const modifiedBy = createdBy;
                 const data = {
                     categoryName: saveItemCategoryDto.category_name.trim(),
                     categoryCreatedOn: now,

@@ -11,7 +11,6 @@ import {
   DEFAULT_ACTOR,
   hasOwnProperty,
   normalizeRequiredText,
-  throwAccountsBadRequest,
   throwAccountsConflict,
   throwAccountsNotFound,
   throwOnUniqueConstraintError,

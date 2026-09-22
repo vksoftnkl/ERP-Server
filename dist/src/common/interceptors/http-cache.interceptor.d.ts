@@ -5,6 +5,7 @@ import { Observable } from 'rxjs';
 import { Reflector } from '@nestjs/core';
 export declare class HttpCacheInterceptor extends CacheInterceptor {
     private readonly logger;
+    private readonly cache;
     constructor(cacheManager: Cache, reflector: Reflector);
     intercept(context: ExecutionContext, next: CallHandler): Promise<Observable<unknown>>;
     trackBy(context: ExecutionContext): string | undefined;

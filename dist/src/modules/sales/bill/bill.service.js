@@ -1114,7 +1114,10 @@ let BillService = class BillService {
             sbBillSlno: sbBillSlno?.toString() ?? null,
             items: items ? items.map((item) => this.toItemPayload(item, lineContext)) : [],
             charges: charges ?? [],
-            tenders: tenders ?? [],
+            tenders: (tenders ?? []).map((t) => {
+                const tc = (0, bill_temp_credit_1.decodeTempCredit)(t);
+                return { ...t, tempCredit: tc ? (0, bill_temp_credit_1.toTempCreditDto)(tc) : null };
+            }),
         };
     }
     toItemPayload(record, lineContext = EMPTY_LINE_CONTEXT) {

@@ -53,6 +53,50 @@ export class SaveUserMenuDto {
   @OptionalBoolean()
   umCanExport?: boolean;
 
+  // ── the five transaction rights ─────────────────────────────────────────
+  //
+  // A posting screen asks five questions a master screen does not, and until
+  // these reached the DTO there was no way to grant them: the columns existed
+  // (migration 20260921220000) and every one of the 1,111 rows was false, so
+  // /bills/get answered `rights` all-false and the screen greyed every verb.
+  //
+  // A SAVE IS A FULL REPLACE. Omitting one of these is not "leave it alone",
+  // it is "revoke it" — the client sends all eleven flags or it takes rights
+  // away by silence. That is the same contract the six above already have.
+  @ApiPropertyOptional({
+    description: 'May put the document into the books (/post). Transaction screens only.',
+  })
+  @OptionalBoolean()
+  umCanPost?: boolean;
+
+  @ApiPropertyOptional({
+    description: 'May take a POSTED document back out by reversal (/cancel).',
+  })
+  @OptionalBoolean()
+  umCanCancel?: boolean;
+
+  @ApiPropertyOptional({
+    description: 'May restate a POSTED document in place (/amend) — unwind, re-apply, re-post.',
+  })
+  @OptionalBoolean()
+  umCanAmend?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      'May pass a WARN-level guard: discount cap, credit limit, back-date, rate below minimum. ' +
+      'The server re-checks this flag as well as the overrides[] the request names.',
+  })
+  @OptionalBoolean()
+  umCanOverride?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      'May change how a POSTED bill was paid (/bills/retender). Separate from umCanAmend: the ' +
+      'sale is not edited, only the tender — but it moves money between ledgers. Sales Entry only.',
+  })
+  @OptionalBoolean()
+  umCanRetender?: boolean;
+
   @ApiPropertyOptional()
   @OptionalBoolean()
   umVisibility?: boolean;
@@ -144,7 +188,7 @@ export class SaveUserAdministrationDto {
   @ApiPropertyOptional({ enum: UserType, enumName: 'UserType', nullable: true })
   @IsOptional()
   @Transform(({ value }) =>
-    value === '' || value === undefined ? undefined : value === null ? null : value,
+    value === '' || value === undefined ? undefined : value === null ? null : (value as unknown),
   )
   @ValidateIf((_, v) => v !== null && v !== undefined)
   @IsEnum(UserType)

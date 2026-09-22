@@ -5,7 +5,7 @@ import { NullableNumber, NullableString } from '../../../../common/dto/dtoDecora
 
 export class UiTableColumnWidthItemDto {
   @ApiProperty({ type: String, description: 'UI table column id to update' })
-  @Transform(({ value }) => (value != null ? String(value).trim() : value))
+  @Transform(({ value }) => (value != null ? String(value).trim() : (value as unknown)))
   @IsNotEmpty()
   @IsNumberString({ no_symbols: true })
   uiTblClmId!: string;

@@ -11,7 +11,6 @@ import {
   DEFAULT_ACTOR,
   hasOwnProperty,
   throwAccountsBadRequest,
-  throwAccountsConflict,
   throwAccountsNotFound,
   throwOnUniqueConstraintError,
 } from 'src/common/utils/module-service.utils';

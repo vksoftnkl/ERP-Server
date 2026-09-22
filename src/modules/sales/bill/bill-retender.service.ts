@@ -115,7 +115,9 @@ export class BillRetenderService {
          WHERE t.td_id = ANY(${voidIds}::uuid[]) AND t.td_acc_year = ${bill.sbAccYear}::char(9)
            AND t.td_src_module = 'SALES' AND t.td_src_doc_type = 'SALE_BILL' AND t.td_src_doc_id = ${bill.sbId}::uuid
            AND t.td_is_deleted = false
-         FOR UPDATE`;
+         -- Lock the tender rows only: the master is on the nullable side of the
+         -- join, and Postgres refuses FOR UPDATE there (0A000).
+         FOR UPDATE OF t`;
       if (rows.length !== voidIds.length) {
         throwSalesRefused(
           'One or more tender rows are not on this bill',
@@ -298,9 +300,12 @@ export class BillRetenderService {
         });
         // The receivable follows: a credit tender now leaves a balance; a cash one settles it.
         const creditTypes: number[] = [TENDER_TYPE.CREDIT, TENDER_TYPE.TEMP_CREDIT];
+        // The sync answers the voided rows too, and its payload does not carry
+        // td_is_voided — so the rows this call voided are excluded by id, or
+        // the money that did not happen settles the bill a second time.
         const settled = round2(
           created
-            .filter((t) => !t.tdIsDeleted && !isVoided(t as unknown as { tdIsVoided?: boolean }))
+            .filter((t) => !t.tdIsDeleted && !voidIds.includes(t.tdId))
             .filter((t) => !creditTypes.includes(Number(t.tdTenderTypeId)))
             .reduce((s, t) => s + num(t.tdAmount), 0),
         );
@@ -399,10 +404,6 @@ export class BillRetenderService {
       tdDrCr: TenderDrCr.DR,
     };
   }
-}
-
-function isVoided(t: { tdIsVoided?: boolean }): boolean {
-  return t.tdIsVoided === true;
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

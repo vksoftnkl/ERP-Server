@@ -71,7 +71,9 @@ let BillRetenderService = class BillRetenderService {
          WHERE t.td_id = ANY(${voidIds}::uuid[]) AND t.td_acc_year = ${bill.sbAccYear}::char(9)
            AND t.td_src_module = 'SALES' AND t.td_src_doc_type = 'SALE_BILL' AND t.td_src_doc_id = ${bill.sbId}::uuid
            AND t.td_is_deleted = false
-         FOR UPDATE`;
+         -- Lock the tender rows only: the master is on the nullable side of the
+         -- join, and Postgres refuses FOR UPDATE there (0A000).
+         FOR UPDATE OF t`;
             if (rows.length !== voidIds.length) {
                 (0, sales_errors_1.throwSalesRefused)('One or more tender rows are not on this bill', posting_types_1.SALES_ERROR_CODES.RETENDER_AMOUNT_MISMATCH, 'voids');
             }
@@ -214,7 +216,7 @@ let BillRetenderService = class BillRetenderService {
                 });
                 const creditTypes = [sales_doc_utils_1.TENDER_TYPE.CREDIT, sales_doc_utils_1.TENDER_TYPE.TEMP_CREDIT];
                 const settled = (0, sales_doc_utils_1.round2)(created
-                    .filter((t) => !t.tdIsDeleted && !isVoided(t))
+                    .filter((t) => !t.tdIsDeleted && !voidIds.includes(t.tdId))
                     .filter((t) => !creditTypes.includes(Number(t.tdTenderTypeId)))
                     .reduce((s, t) => s + (0, sales_doc_utils_1.num)(t.tdAmount), 0));
                 await tx.$executeRaw `
@@ -316,9 +318,6 @@ exports.BillRetenderService = BillRetenderService = __decorate([
         loyalty_ledger_service_1.LoyaltyLedgerService,
         audit_log_service_1.AuditLogService])
 ], BillRetenderService);
-function isVoided(t) {
-    return t.tdIsVoided === true;
-}
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 function isUuid(v) {
     return !!v && UUID.test(v);

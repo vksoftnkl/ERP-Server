@@ -476,13 +476,13 @@ let StockVoucherService = class StockVoucherService {
             data.svhLineCount = header.lineCount;
         }
         if (header.totalQty !== undefined) {
-            data.svhTotalQty = new client_1.Prisma.Decimal(this.toDecimalNumber(header.totalQty));
+            data.svhTotalQty = this.toDecimalColumn(header.totalQty);
         }
         if (header.totalValue !== undefined) {
-            data.svhTotalValue = new client_1.Prisma.Decimal(this.toDecimalNumber(header.totalValue));
+            data.svhTotalValue = this.toDecimalColumn(header.totalValue);
         }
         if (header.totalValueWot !== undefined) {
-            data.svhTotalValueWot = new client_1.Prisma.Decimal(this.toDecimalNumber(header.totalValueWot));
+            data.svhTotalValueWot = this.toDecimalColumn(header.totalValueWot);
         }
         if (!Object.keys(data).length) {
             return;
@@ -551,8 +551,6 @@ let StockVoucherService = class StockVoucherService {
         const holdings = isCount ? await this.loadCountHoldings(tx, header, lines) : null;
         const data = lines.map((line) => {
             const holding = holdings?.get(this.holdingKey(line.lotId, line.godownId, line.bucket));
-            const qty = isCount ? 0 : this.toDecimalNumber(line.qty);
-            const freeQty = isCount ? 0 : this.toDecimalNumber(line.freeQty ?? 0);
             return {
                 sviVoucherId: svhId,
                 sviCompanyId: header.companyId,
@@ -564,7 +562,7 @@ let StockVoucherService = class StockVoucherService {
                 sviItemId: line.itemId,
                 sviUomId: isCount ? holding.baseUomId : line.uomId,
                 sviBaseUomId: isCount ? holding.baseUomId : line.baseUomId,
-                sviToBaseFactor: new client_1.Prisma.Decimal(isCount ? 1 : this.toDecimalNumber(line.toBaseFactor)),
+                sviToBaseFactor: isCount ? new client_1.Prisma.Decimal(1) : this.toDecimalColumn(line.toBaseFactor),
                 sviGodownId: line.godownId,
                 sviLotId: isCount || rules.requiresLot ? (line.lotId ?? null) : null,
                 sviBucket: (line.bucket ?? 'SALEABLE'),
@@ -586,23 +584,27 @@ let StockVoucherService = class StockVoucherService {
                     : this.toNullableDecimal(line.salePrice),
                 sviSerialNo: isCount ? holding.serialNo : (line.serialNo ?? null),
                 sviSupplierId: isCount ? holding.supplierId : (line.supplierId ?? null),
-                sviQty: new client_1.Prisma.Decimal(qty),
-                sviBaseQty: new client_1.Prisma.Decimal(isCount ? 0 : this.toDecimalNumber(line.baseQty)),
-                sviFreeQty: new client_1.Prisma.Decimal(freeQty),
+                sviQty: isCount ? new client_1.Prisma.Decimal(0) : this.toDecimalColumn(line.qty),
+                sviBaseQty: isCount ? new client_1.Prisma.Decimal(0) : this.toDecimalColumn(line.baseQty),
+                sviFreeQty: isCount ? new client_1.Prisma.Decimal(0) : this.toDecimalColumn(line.freeQty ?? 0),
                 ...(isCount
                     ? { sviFreeBaseQty: new client_1.Prisma.Decimal(0) }
                     : line.freeBaseQty === undefined
                         ? {}
-                        : { sviFreeBaseQty: new client_1.Prisma.Decimal(this.toDecimalNumber(line.freeBaseQty)) }),
-                sviWeightQty: new client_1.Prisma.Decimal(this.toDecimalNumber(line.weightQty ?? 0)),
+                        : { sviFreeBaseQty: this.toDecimalColumn(line.freeBaseQty) }),
+                sviWeightQty: this.toDecimalColumn(line.weightQty ?? 0),
                 sviBookQty: isCount
                     ? holding.bookQty
                     : this.toNullableDecimal(line.bookQty),
                 sviCountedQty: this.toNullableDecimal(line.countedQty),
-                sviCostRate: new client_1.Prisma.Decimal(zeroCost ? 0 : this.toDecimalNumber(line.costRate)),
-                sviCostRateWot: new client_1.Prisma.Decimal(zeroCost ? 0 : this.toDecimalNumber(line.costRateWot ?? 0)),
-                sviLandedRate: new client_1.Prisma.Decimal(zeroCost ? 0 : this.toDecimalNumber(line.landedRate ?? 0)),
-                sviTaxPerc: new client_1.Prisma.Decimal(zeroCost ? 0 : this.toDecimalNumber(line.taxPerc ?? 0)),
+                sviCostRate: zeroCost ? new client_1.Prisma.Decimal(0) : this.toDecimalColumn(line.costRate),
+                sviCostRateWot: zeroCost
+                    ? new client_1.Prisma.Decimal(0)
+                    : this.toDecimalColumn(line.costRateWot ?? 0),
+                sviLandedRate: zeroCost
+                    ? new client_1.Prisma.Decimal(0)
+                    : this.toDecimalColumn(line.landedRate ?? 0),
+                sviTaxPerc: zeroCost ? new client_1.Prisma.Decimal(0) : this.toDecimalColumn(line.taxPerc ?? 0),
                 sviReasonId: line.reasonId ?? null,
                 sviSyncDate: line.syncDate ? new Date(line.syncDate) : null,
                 sviRemarks: line.remarks ?? null,
@@ -1906,6 +1908,18 @@ let StockVoucherService = class StockVoucherService {
         }
         const parsed = typeof value === 'number' ? value : Number(value);
         return Number.isFinite(parsed) ? parsed : 0;
+    }
+    toDecimalColumn(value) {
+        if (value === null || value === undefined || value === '') {
+            return new client_1.Prisma.Decimal(0);
+        }
+        try {
+            const decimal = new client_1.Prisma.Decimal(value);
+            return decimal.isFinite() ? decimal : new client_1.Prisma.Decimal(0);
+        }
+        catch {
+            return new client_1.Prisma.Decimal(0);
+        }
     }
     toInstant(value) {
         if (!value) {

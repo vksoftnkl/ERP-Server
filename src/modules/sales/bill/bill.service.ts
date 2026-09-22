@@ -70,7 +70,7 @@ import { throwSalesLocked } from '../posting/sales.errors';
 import { SALES_ERROR_CODES } from '../posting/types/posting.types';
 import { num } from '../posting/sales-doc.utils';
 import { BillReadService } from './bill-read.service';
-import { encodeTempCreditTenders } from './bill-temp-credit';
+import { decodeTempCredit, encodeTempCreditTenders, toTempCreditDto } from './bill-temp-credit';
 import {
   TxnStatusEvent,
   appendTxnStatusLog,
@@ -1754,7 +1754,11 @@ export class BillService {
       sbBillSlno: sbBillSlno?.toString() ?? null,
       items: items ? items.map((item) => this.toItemPayload(item, lineContext)) : [],
       charges: charges ?? [],
-      tenders: tenders ?? [],
+      // A TEMP_CR row's parked details come back decoded, as the DTO took them.
+      tenders: (tenders ?? []).map((t) => {
+        const tc = decodeTempCredit(t);
+        return { ...t, tempCredit: tc ? toTempCreditDto(tc) : null };
+      }),
     };
   }
   private toItemPayload(

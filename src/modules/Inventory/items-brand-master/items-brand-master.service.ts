@@ -134,7 +134,6 @@ export class ItemsBrandMasterService {
         }
         const now = new Date();
         const createdBy = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
-        const modifiedBy = createdBy;
         const data: Prisma.ItemBrandMasterUncheckedCreateInput = {
           brand_name: saveItemBrandDto.brand_name.trim(),
           brand_created_on: now,

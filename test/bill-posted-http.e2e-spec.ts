@@ -1,455 +1,599 @@
-// Preload .env exactly like src/main.ts so API_VERSION, DATABASE_URL, JWT_SECRET
-// etc. are present before the AppModule graph (and API-version decorators) load.
-import '../src/env.preload';
-
-import { INestApplication, ValidationPipe, VersioningType } from '@nestjs/common';
-import { Test } from '@nestjs/testing';
-import { PrismaClient } from '@prisma/client';
-import * as request from 'supertest';
-
-import { AppModule } from '../src/app.module';
-import { TokenService, type AccessTokenPayload } from '../src/modules/auth/token.service';
-import { AuthSessionService } from '../src/modules/auth/auth-session.service';
+import {
+  ACC_YEAR,
+  API,
+  BEARER,
+  GODOWN,
+  LISTED_CUSTOMER,
+  LISTED_CUSTOMER_NAME,
+  TENDER_LEDGER,
+  VCHR,
+  WALK_IN,
+  WALK_IN_NAME,
+  billBody,
+  billKeys,
+  bootApp,
+  codesOf,
+  explain,
+  grantSalesRights,
+  makeItem,
+  num,
+  postOpeningStock,
+  probes,
+  revokeSalesRights,
+  runTag,
+  shutdown,
+  type Harness,
+  type Item,
+  type RightsMemo,
+} from './sales/sales-e2e.harness';
 
 /**
- * HTTP-level test for POSTING a sale bill — the DRAFT -> POSTED transition and
- * a bill created straight into the books — proving what reaches accounts:
- * accounts.acc_voucher_header, accounts.acc_bill_balance, the status trail, and
- * the abl_alloc_amount seeding that makes posting effectively one-way for a
- * bill that was paid.
+ * The sale bill, end to end, against the live database — HANDOVER §4 item 2.
  *
- * Auth is stubbed at the PROVIDER level (TokenService + AuthSessionService),
- * never at the guard. See memory: erp-server-http-testing-without-credentials.
+ *   opening stock → /bills/create (DRAFT) → /bills/validate → /bills/post →
+ *   /bills/cancel
  *
- * Drives the SAME database the live server uses. There is no route that deletes
- * a bill, so every fixture is permanent; all are labelled E2E-POST* in
- * sb_usr_refno. Nothing pre-existing is ever posted, unposted or cancelled —
- * this suite only ever touches bills it created itself.
+ * and after each door, the ROWS: the shadow stock voucher and its ledger
+ * rows, `acc_voucher_header` AND its legs in `acc_vouchers`, the GST register
+ * row, `acc_bill_balance`, `sb_posted_voucher_id`, and the status trail —
+ * then every one of them reversed by the cancel.
+ *
+ * This replaces the create-only spec that used to live here. That spec was
+ * written when `/bills/create` accepted `sbStatus: POSTED` and wrote the
+ * header alone; it asserted "did NOT write acc_vouchers — the per-ledger split
+ * is absent" and read `sb_posted_on`, a column migration 30 dropped. Both
+ * were true of the old path and false of the one that ships: `sbStatus` in a
+ * create body is ignored, only `/bills/post` posts, and a post that writes no
+ * legs is the defect this file exists to catch.
+ *
+ * Figures: one fresh item opened at 100 pcs @ 20.00. A bill of 10 @ 100.00
+ * + 18% GST = 1,180.00, so COGS is exactly 200.00 and the eight legs are
+ *
+ *   DR party 1180 | CR SALES 1000 | CR OUTPUT_CGST 90 | CR OUTPUT_SGST 90 |
+ *   DR COGS 200 | CR INVENTORY 200 | DR cash 1180 | CR party 1180
+ *
+ * Σ DR = Σ CR = 2,560.00.
  */
 
-const CREATE = '/api/v1/bills/create';
-const BEARER = 'Bearer dummy-test-token';
+const tag = runTag();
+const SALE_BILL = 'SALE_BILL';
 
-const COMPANY = '019c8ea6-19e9-78a8-b15f-749e1cde7292'; // Acme Foods Pvt Ltd
-const BRANCH = '019c8ea7-b0f5-72d5-96a5-1abfc80cc8ab';
-const ACC_YEAR = '2026-2027';
-const CUSTOMER = '019f659c-3942-7237-89b0-c4899603dd7a'; // MADHAVAN
-const USER = '019e441b-6e48-7918-b246-b857ffb35db1';
-const DEVICE_ID = '019e4e4c-9f08-7211-afe0-409b88a62180';
-const ITEM = '019fa296-42f8-758d-bbe4-f07c7305b077';
-const ITEM_UNIT = '019fa296-4321-720d-b3bf-55121479c180';
-const GODOWN = '019e9c9d-74c6-703c-8d34-e3bc78e03d95';
-const TENDER_CASH = '019fbbd0-9a8e-73db-b762-175dda2e1762';
-const ACTOR = '019e4f64-1d3f-7717-b252-cbe2b6ce0f8d'; // tester1 (SUPER ADMIN)
+describe('Sale bill — DRAFT → /validate → /post → /cancel (e2e, live DB)', () => {
+  let h: Harness;
+  let rights: RightsMemo;
+  let p: ReturnType<typeof probes>;
+  let item: Item;
 
-const BILL_VCHR_TYPE_ID = 3;
+  let cashBill: Record<string, any>;
+  let creditBill: Record<string, any>;
+  let postedVoucherId: string;
 
-const prisma = new PrismaClient();
-
-// 10 @ 100 = 1000 taxable + 18% GST = 1180 total.
-function body(overrides: Record<string, unknown> = {}): Record<string, unknown> {
-  return {
-    sbCompanyId: COMPANY,
-    sbBranchId: BRANCH,
-    sbAccYear: ACC_YEAR,
-    sbDeviceType: 'PC',
-    sbDeviceId: DEVICE_ID,
-    sbPriceLevel: 1,
-    sbCustId: CUSTOMER,
-    sbCustName: 'MADHAVAN',
-    sbCustStcd: '33',
-    sbPosStcd: '33',
-    sbUserId: USER,
-    sbBillDate: '2026-09-11',
-    sbDueDays: 30,
-    sbDueDate: '2026-10-11',
-    sbTotItems: 1,
-    sbGrossAmt: 1000,
-    sbTaxableAmt: 1000,
-    sbCgstAmt: 90,
-    sbSgstAmt: 90,
-    sbTaxAmt: 180,
-    sbBillAmt: 1180,
-    sbBillType: 'CASH',
-    sbDocType: 'TAX_INVOICE',
-    items: [
-      {
-        sbiItemId: ITEM,
-        sbiItemUnitId: ITEM_UNIT,
-        sbiGodownId: GODOWN,
-        sbiBillQty: 10,
-        sbiNetQty: 10,
-        sbiRate: 100,
-        sbiGrossAmt: 1000,
-        sbiTaxableAmt: 1000,
-        sbiTaxPerc: 18,
-        sbiCgstPerc: 9,
-        sbiCgstAmt: 90,
-        sbiSgstPerc: 9,
-        sbiSgstAmt: 90,
-        sbiTaxAmt: 180,
-        sbiNetAmt: 1180,
-      },
-    ],
-    ...overrides,
-  };
-}
-
-// A fully-tendered cash bill: sbPaidAmt seeds abl_alloc_amount at post time.
-function paidBody(overrides: Record<string, unknown> = {}): Record<string, unknown> {
-  return body({
-    sbPayStatus: 'PAID',
-    sbTenderAmt: 1180,
-    sbPaidAmt: 1180,
-    sbBalanceAmt: 0,
-    tenders: [{ tdTenderId: TENDER_CASH, tdAmount: 1180 }],
-    ...overrides,
-  });
-}
-
-// A credit bill: nothing tendered, so the whole amount stays outstanding.
-function creditBody(overrides: Record<string, unknown> = {}): Record<string, unknown> {
-  return body({
-    sbBillType: 'CREDIT',
-    sbPayStatus: 'UNPAID',
-    sbPaidAmt: 0,
-    sbBalanceAmt: 1180,
-    ...overrides,
-  });
-}
-
-async function one<T extends Record<string, unknown>>(
-  sql: string,
-  ...p: unknown[]
-): Promise<T | undefined> {
-  return (await prisma.$queryRawUnsafe<T[]>(sql, ...p))[0];
-}
-async function all<T extends Record<string, unknown>>(sql: string, ...p: unknown[]): Promise<T[]> {
-  return prisma.$queryRawUnsafe<T[]>(sql, ...p);
-}
-
-function voucherOf(sbId: string) {
-  return all<Record<string, any>>(
-    `SELECT * FROM accounts.acc_voucher_header
-      WHERE avh_src_module = 'SALES' AND avh_src_doc_type = 'BILL'
-        AND avh_src_doc_id = $1::uuid AND avh_is_deleted = false`,
-    sbId,
-  );
-}
-function receivableOf(sbId: string) {
-  return all<Record<string, any>>(
-    `SELECT * FROM accounts.acc_bill_balance
-      WHERE abl_src_module = 'SALES' AND abl_src_doc_type = 'BILL'
-        AND abl_src_doc_id = $1::uuid AND abl_is_deleted = false`,
-    sbId,
-  );
-}
-function trailOf(sbId: string) {
-  return all<Record<string, any>>(
-    `SELECT tsl_seq_no, tsl_event, tsl_from_status, tsl_to_status
-       FROM public.txn_status_log WHERE tsl_src_doc_id = $1::uuid ORDER BY tsl_seq_no`,
-    sbId,
-  );
-}
-async function seqLastNo(): Promise<bigint> {
-  const row = await one<{ seq_last_no: bigint }>(
-    `SELECT seq_last_no FROM accounts.acc_voucher_seq
-      WHERE seq_vchr_type_id = $1 AND seq_company_id = $2::uuid
-        AND seq_branch_id = $3::uuid AND seq_acc_year = $4 AND seq_device_code = 'MAIN'`,
-    BILL_VCHR_TYPE_ID,
-    COMPANY,
-    BRANCH,
-    ACC_YEAR,
-  );
-  return row!.seq_last_no;
-}
-
-async function post(payload: Record<string, unknown>, app: INestApplication) {
-  const res = await request(app.getHttpServer())
-    .post(CREATE)
-    .set('Authorization', BEARER)
-    .send(payload);
-  if (res.status !== 201) {
-    // eslint-disable-next-line no-console
-    console.error('[bill post e2e] save failed:', res.status, JSON.stringify(res.body, null, 2));
-  }
-  return res;
-}
-
-describe('POST /bills/create — posting to accounts (e2e, live DB)', () => {
-  let app: INestApplication;
-  // Fixture A: created DRAFT, then posted. Fully paid cash bill.
-  let draftThenPosted: Record<string, any>;
-  // Fixture B: created straight into POSTED.
-  let bornPosted: Record<string, any>;
-  // Fixture C: credit bill, nothing paid — the only one that can be unposted.
-  let creditPosted: Record<string, any>;
+  const post = (path: string, body: Record<string, unknown>) =>
+    h.http.post(`${API}/bills/${path}`).set('Authorization', BEARER).send(body);
 
   beforeAll(async () => {
-    const claims: AccessTokenPayload = {
-      sub: ACTOR,
-      user_name: 'tester1',
-      sid: 'e2e-bill-post-session',
-      user_type: 'SUPER ADMIN',
-      company_id: COMPANY,
-      branch_id: BRANCH,
-      device_id: null,
-      iat: Math.floor(Date.now() / 1000),
-      exp: Math.floor(Date.now() / 1000) + 3600,
-      typ: 'access',
-    };
-
-    const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
-      .overrideProvider(TokenService)
-      .useValue({ verifyAccessToken: (_t: string): AccessTokenPayload => claims })
-      .overrideProvider(AuthSessionService)
-      .useValue({ assertAccessTokenIsActive: async (): Promise<void> => undefined })
-      .compile();
-
-    app = moduleRef.createNestApplication();
-    app.useGlobalPipes(
-      new ValidationPipe({
-        whitelist: true,
-        forbidNonWhitelisted: true,
-        transform: true,
-        transformOptions: { enableImplicitConversion: true },
-      }),
-    );
-    app.enableVersioning({
-      type: VersioningType.URI,
-      defaultVersion: process.env.API_VERSION ?? '1',
-    });
-    app.setGlobalPrefix((process.env.API_PREFIX ?? 'api').replace(/^\/+|\/+$/g, ''));
-    await app.init();
-  });
+    h = await bootApp(`e2e-bill-${tag}`);
+    p = probes(h.prisma);
+    rights = await grantSalesRights(h.prisma);
+    item = await makeItem(h.prisma, `E2E-BILL-${tag}`);
+    await postOpeningStock(h, item, 100, 20, `E2E-BILL-${tag} opening`);
+  }, 180_000);
 
   afterAll(async () => {
-    await app?.close();
-    await prisma.$disconnect();
+    if (h?.prisma && rights) {
+      await revokeSalesRights(h.prisma, rights);
+    }
+    await shutdown(h);
+  }, 60_000);
+
+  // ────────────────────────────────────────────────────────── opening stock
+
+  it('opening stock is on the shelf before any bill: 100 @ 20.00', async () => {
+    const bal = await p.balance(item.itemId);
+    expect(bal).toBeDefined();
+    expect(num(bal!.sbl_on_hand_qty)).toBe(100);
+    expect(num(bal!.sbl_available_qty)).toBe(100);
+    expect(num(bal!.sbl_avg_cost_rate)).toBe(20);
+    expect(num(bal!.sbl_stock_value)).toBe(2000);
+    const cost = await p.itemCost(item.itemId);
+    expect(num(cost!.sic_avg_cost_rate)).toBe(20);
   });
 
-  // ---------------------------------------------------------------- DRAFT -> POSTED
+  // ────────────────────────────────────────────────────────────────── DRAFT
 
-  it('creates a DRAFT with no accounting effect', async () => {
-    const res = await post(paidBody({ sbUsrRefno: 'E2E-POST-A' }), app);
-    expect(res.status).toBe(201);
-    draftThenPosted = res.body.data;
-
-    expect(draftThenPosted.sbStatus).toBe('DRAFT');
-    expect(await voucherOf(draftThenPosted.sbId)).toHaveLength(0);
-    expect(await receivableOf(draftThenPosted.sbId)).toHaveLength(0);
-  });
-
-  it('posts that draft — same sbId, same bill number, no sequence movement', async () => {
-    const seqBefore = await seqLastNo();
-
-    const res = await post(
-      paidBody({
-        sbId: draftThenPosted.sbId,
-        sbUsrRefno: 'E2E-POST-A',
-        sbStatus: 'POSTED',
-      }),
-      app,
+  it('/bills/create makes a DRAFT — nothing in accounts, nothing in stock', async () => {
+    const res = explain(
+      'create',
+      await post(
+        'create',
+        billBody({
+          custId: WALK_IN,
+          custName: WALK_IN_NAME,
+          lines: [{ item, qty: 10, rate: 100 }],
+          usrRefno: `E2E-BILL-${tag}-CASH`,
+        }),
+      ),
+      201,
     );
     expect(res.status).toBe(201);
-    const posted = res.body.data;
+    cashBill = res.body.data;
+    expect(cashBill.sbStatus).toBe('DRAFT');
+    expect(cashBill.sbBillRefno).toBeTruthy();
+    expect(cashBill.sbPostedVoucherId).toBeNull();
+    expect(cashBill.tenders).toHaveLength(1);
 
-    expect(posted.sbId).toBe(draftThenPosted.sbId);
-    expect(posted.sbStatus).toBe('POSTED');
-    // An update never renumbers and never draws from the sequence.
-    expect(posted.sbBillRefno).toBe(draftThenPosted.sbBillRefno);
-    expect(String(await seqLastNo())).toBe(String(seqBefore));
+    expect(await p.vouchers(SALE_BILL, cashBill.sbId)).toHaveLength(0);
+    expect(await p.balanceRows(SALE_BILL, cashBill.sbId)).toHaveLength(0);
+    expect(await p.stockShadows(SALE_BILL, cashBill.sbId)).toHaveLength(0);
+    expect(await p.register(cashBill.sbId)).toHaveLength(0);
+    expect(num((await p.balance(item.itemId))!.sbl_on_hand_qty)).toBe(100);
 
-    draftThenPosted = posted;
-
-    // eslint-disable-next-line no-console
-    console.log(`\n[bill post e2e] posted ${posted.sbBillRefno} (${posted.sbId})\n`);
+    const trail = await p.trail(cashBill.sbId);
+    expect(trail).toHaveLength(1);
+    expect(trail[0].tsl_event.trim()).toBe('CREATED');
+    expect(trail[0].tsl_from_status).toBeNull();
+    expect(trail[0].tsl_to_status.trim()).toBe('DRAFT');
   });
 
-  it('wrote accounts.acc_voucher_header reusing the bill number', async () => {
-    const vouchers = await voucherOf(draftThenPosted.sbId);
+  it('sbStatus: POSTED in a create body is ignored — the bill stays a DRAFT', async () => {
+    const res = await post('create', {
+      ...billBody({
+        custId: WALK_IN,
+        custName: WALK_IN_NAME,
+        lines: [{ item, qty: 10, rate: 100 }],
+        usrRefno: `E2E-BILL-${tag}-CASH`,
+      }),
+      sbId: cashBill.sbId,
+      sbStatus: 'POSTED',
+    });
+    expect(res.status).toBe(201);
+    expect(res.body.data.sbStatus).toBe('DRAFT');
+    expect(res.body.data.sbBillRefno).toBe(cashBill.sbBillRefno);
+    expect(await p.vouchers(SALE_BILL, cashBill.sbId)).toHaveLength(0);
+  });
+
+  // ─────────────────────────────────────────────────────────────── validate
+
+  it('/bills/validate dry-runs the post: ok, no refusals, nothing written', async () => {
+    const res = explain(
+      'validate',
+      await post('validate', {
+        ...billBody({
+          custId: WALK_IN,
+          custName: WALK_IN_NAME,
+          lines: [{ item, qty: 10, rate: 100 }],
+          usrRefno: `E2E-BILL-${tag}-CASH`,
+        }),
+        sbId: cashBill.sbId,
+      }),
+      201,
+    );
+    expect(res.status).toBe(201);
+    expect(res.body.data.ok).toBe(true);
+    expect(res.body.data.refusals).toEqual([]);
+    // Every warning that survives a clean bill is informational.
+    for (const w of res.body.data.warnings ?? []) {
+      expect(w.level).toBe('INFO');
+    }
+    expect(res.body.data.rights.post).toBe(true);
+    expect(await p.vouchers(SALE_BILL, cashBill.sbId)).toHaveLength(0);
+    expect(await p.stockShadows(SALE_BILL, cashBill.sbId)).toHaveLength(0);
+  });
+
+  it('/bills/validate lists a refusal instead of throwing — a bill that does not add up', async () => {
+    const res = await post('validate', {
+      ...billBody({
+        custId: WALK_IN,
+        custName: WALK_IN_NAME,
+        lines: [{ item, qty: 10, rate: 100 }],
+        usrRefno: `E2E-BILL-${tag}-CASH`,
+      }),
+      sbBillAmt: 1200,
+    });
+    expect(res.status).toBe(201);
+    expect(res.body.data.ok).toBe(false);
+    const codes = (res.body.data.refusals as { code: string }[]).map((r) => r.code);
+    expect(codes).toContain('SALES_AMOUNT_MISMATCH');
+  });
+
+  // ─────────────────────────────────────────────────────────────────── post
+
+  it('/bills/post moves the goods: one ledger row OUT at the opening cost', async () => {
+    const res = explain('post', await post('post', billKeys(cashBill.sbId)), 201);
+    expect(res.status).toBe(201);
+    cashBill = res.body.data;
+    expect(cashBill.sbStatus).toBe('POSTED');
+    expect(cashBill.sbPostedVoucherId).toBeTruthy();
+    postedVoucherId = cashBill.sbPostedVoucherId;
+
+    const shadows = await p.stockShadows(SALE_BILL, cashBill.sbId);
+    expect(shadows).toHaveLength(1);
+    expect(shadows[0].svh_status).toBe('POSTED');
+    expect(shadows[0].svh_voucher_type).toBe('ISSUE');
+    expect(num(shadows[0].svh_total_qty)).toBe(10);
+    // Rolled up from the ledger once the engine priced the line: 10 × 20.
+    expect(num(shadows[0].svh_total_value)).toBe(200);
+    expect(num(shadows[0].svh_total_value_wot)).toBe(200);
+
+    const ledger = await p.stockLedger(SALE_BILL, cashBill.sbId);
+    expect(ledger).toHaveLength(1);
+    expect(ledger[0].sml_txn_type).toBe('SALE');
+    expect(Number(ledger[0].sml_direction)).toBe(-1);
+    expect(num(ledger[0].sml_qty)).toBe(10);
+    expect(num(ledger[0].sml_signed_base_qty)).toBe(-10);
+    expect(num(ledger[0].sml_cost_rate)).toBe(20);
+    expect(num(ledger[0].sml_cost_value)).toBe(200);
+    expect(ledger[0].sml_is_reversal).toBe(false);
+    // The engine labelled the row as the SALE, not as a stock issue.
+    expect(ledger[0].sml_src_module).toBe('SALES');
+    expect(ledger[0].sml_src_doc_type).toBe('SALE_BILL');
+    expect(ledger[0].sml_src_refno).toBe(cashBill.sbBillRefno);
+    expect(ledger[0].sml_party_id).toBe(WALK_IN);
+
+    const bal = await p.balance(item.itemId);
+    expect(num(bal!.sbl_out_qty)).toBe(10);
+    expect(num(bal!.sbl_on_hand_qty)).toBe(90);
+    expect(num(bal!.sbl_stock_value)).toBe(1800);
+  });
+
+  it('wrote accounts.acc_voucher_header AND its eight legs, balanced to the paisa', async () => {
+    const vouchers = await p.vouchers(SALE_BILL, cashBill.sbId);
     expect(vouchers).toHaveLength(1);
     const v = vouchers[0];
-
+    expect(v.avh_voucher_id).toBe(postedVoucherId);
     expect(v.avh_voucher_status.trim()).toBe('POSTED');
-    expect(v.avh_voucher_type_id).toBe(BILL_VCHR_TYPE_ID);
-    // The voucher IS the invoice: same number, same refno.
-    expect(String(v.avh_voucher_no)).toBe(String(draftThenPosted.sbBillSlno));
-    expect(v.avh_voucher_refno).toBe(draftThenPosted.sbBillRefno);
-    // Balanced: bill total on both sides.
-    expect(Number(v.avh_total_debit)).toBe(1180);
-    expect(Number(v.avh_total_credit)).toBe(1180);
-    expect(Number(v.avh_doc_amount)).toBe(1180);
-    // Party is the customer — customer and ledger share one primary key.
-    expect(v.avh_party_id).toBe(CUSTOMER);
-    // Deliberately NULL: the sales ledger is per line, so no single contra.
-    expect(v.avh_opposite_ledger_id).toBeNull();
+    expect(v.avh_voucher_type_id).toBe(VCHR.BILL);
+    // The voucher IS the invoice: the bill's own number.
+    expect(v.avh_voucher_refno).toBe(cashBill.sbBillRefno);
+    expect(num(v.avh_doc_amount)).toBe(1180);
+    expect(v.avh_party_id).toBe(WALK_IN);
     expect(v.avh_posted_on).not.toBeNull();
-    // avh_voucher_slno is the company-wide serial, separate from avh_voucher_no.
-    expect(Number(v.avh_voucher_slno)).toBeGreaterThan(0);
+    // tr_av_refresh_totals derives these from the legs — never written by hand.
+    expect(num(v.avh_total_debit)).toBe(2560);
+    expect(num(v.avh_total_credit)).toBe(2560);
+
+    const legs = await p.legs(postedVoucherId);
+    expect(legs.map((l) => l.av_row_no)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+    const sales = await p.ledgerOfRole('SALES');
+    const cgst = await p.ledgerOfRole('OUTPUT_CGST');
+    const sgst = await p.ledgerOfRole('OUTPUT_SGST');
+    const cogs = await p.ledgerOfRole('COGS');
+    const inventory = await p.ledgerOfRole('INVENTORY');
+    expect(
+      legs.map((l) => [l.av_dr_cr.trim(), l.av_ledger_id, num(l.av_amount), l.av_role]),
+    ).toEqual([
+      ['DR', WALK_IN, 1180, null],
+      ['CR', sales, 1000, 'SALES'],
+      ['CR', cgst, 90, 'OUTPUT_CGST'],
+      ['CR', sgst, 90, 'OUTPUT_SGST'],
+      ['DR', cogs, 200, 'COGS'],
+      ['CR', inventory, 200, 'INVENTORY'],
+      ['DR', TENDER_LEDGER.CASH, 1180, null],
+      ['CR', WALK_IN, 1180, null],
+    ]);
+    // The customer owes nothing: debited for the bill, credited by the cash.
+    expect(await p.partyNet(WALK_IN, cashBill.sbId)).toBe(0);
   });
 
-  it('wrote accounts.acc_bill_balance, seeding abl_alloc_amount from sbPaidAmt', async () => {
-    const rows = await receivableOf(draftThenPosted.sbId);
+  it('wrote the GST register row and linked the bill to it', async () => {
+    const reg = await p.register(cashBill.sbId);
+    expect(reg).toHaveLength(1);
+    const r = reg[0];
+    expect(r.gdr_doc_type).toBe('INVOICE');
+    expect(r.gdr_doc_status).toBe('POSTED');
+    expect(r.gdr_tran_nature).toBe('SALE');
+    expect(r.gdr_doc_flow).toBe('OUTWARD');
+    expect(r.gdr_doc_sign).toBe(1);
+    expect(r.gdr_supply_nature).toBe('INTRA_STATE');
+    expect(num(r.gdr_taxable_value)).toBe(1000);
+    expect(num(r.gdr_cgst_value)).toBe(90);
+    expect(num(r.gdr_sgst_value)).toBe(90);
+    expect(num(r.gdr_bill_value)).toBe(1180);
+    expect(r.gdr_party_id).toBe(WALK_IN);
+    expect(r.gdr_voucher_id).toBe(postedVoucherId);
+    expect(r.gdr_voucher_type_id).toBe(VCHR.BILL);
+    // 1,180 intra-state in TN is far below the e-way bill line.
+    expect(r.gdr_is_ewaybill_applicable).toBe(false);
+
+    const bill = await p.saleBill(cashBill.sbId);
+    expect(bill.sb_doc_register_id).toBe(r.gdr_id);
+    expect(cashBill.sbDocRegisterId).toBe(r.gdr_id);
+    // Nothing was declared: the register is open, so the bill can still be cancelled.
+    expect(cashBill.locks.irnLive).toBe(false);
+    expect(cashBill.locks.ewbLive).toBe(false);
+  });
+
+  it('wrote accounts.acc_bill_balance, settled in full by the cash tender', async () => {
+    const rows = await p.balanceRows(SALE_BILL, cashBill.sbId);
     expect(rows).toHaveLength(1);
     const r = rows[0];
-
     expect(r.abl_bill_type.trim()).toBe('SALES');
     expect(r.abl_dr_cr.trim()).toBe('DR');
-    expect(r.abl_party_id).toBe(CUSTOMER);
-    expect(Number(r.abl_bill_amount)).toBe(1180);
-    // Seeded with min(sbPaidAmt, sbBillAmt) — a fully paid cash bill.
-    expect(Number(r.abl_alloc_amount)).toBe(1180);
-    // GENERATED: bill - alloc - disc - writeoff.
-    expect(Number(r.abl_pending_amount)).toBe(0);
-    expect(Number(r.abl_credit_days)).toBe(30);
-    expect(r.abl_doc_refno).toBe(draftThenPosted.sbBillRefno);
+    expect(r.abl_party_id).toBe(WALK_IN);
+    expect(num(r.abl_bill_amount)).toBe(1180);
+    expect(num(r.abl_alloc_amount)).toBe(1180);
+    // GENERATED: bill − alloc − disc − writeoff.
+    expect(num(r.abl_pending_amount)).toBe(0);
+    expect(r.abl_status.trim()).toBe('CLOSED');
+    expect(r.abl_voucher_id).toBe(postedVoucherId);
+    expect(r.abl_credit_days).toBe(30);
+    expect(r.abl_doc_refno).toBe(cashBill.sbBillRefno);
   });
 
-  it('wrote sb_posted_voucher_id / sb_posted_on back onto the bill', async () => {
-    const row = await one<Record<string, any>>(
-      `SELECT sb_status, sb_posted_voucher_id, sb_posted_on FROM sales.sale_bill
-        WHERE sb_id = $1::uuid AND sb_acc_year = $2`,
-      draftThenPosted.sbId,
-      ACC_YEAR,
-    );
-    const vouchers = await voucherOf(draftThenPosted.sbId);
-    expect(row!.sb_status).toBe('POSTED');
-    expect(row!.sb_posted_voucher_id).toBe(vouchers[0].avh_voucher_id);
-    expect(row!.sb_posted_on).not.toBeNull();
+  it('wrote sb_posted_voucher_id, the COGS and the paid figures back onto the bill', async () => {
+    const bill = await p.saleBill(cashBill.sbId);
+    expect(bill.sb_status).toBe('POSTED');
+    expect(bill.sb_posted_voucher_id).toBe(postedVoucherId);
+    expect(num(bill.sb_cogs_amt)).toBe(200);
+    expect(num(bill.sb_total_cost)).toBe(200);
+    expect(num(bill.sb_paid_amt)).toBe(1180);
+    expect(num(bill.sb_balance_amt)).toBe(0);
+    expect(bill.sb_pay_status).toBe('PAID');
+    expect(bill.sb_has_dc).toBe(false);
+    expect(bill.sb_revision_no).toBe(1);
+
+    const items = await p.saleBillItems(cashBill.sbId);
+    expect(items).toHaveLength(1);
+    expect(num(items[0].sbi_cogs_amt)).toBe(200);
+    // The engine resolved the lot and stamped it on the bill line.
+    expect(items[0].sbi_lot_id).not.toBeNull();
+    const ledger = await p.stockLedger(SALE_BILL, cashBill.sbId);
+    expect(ledger[0].sml_lot_id).toBe(items[0].sbi_lot_id);
+
+    // And the /get shape says the same.
+    expect(num(cashBill.sbCogsAmt)).toBe(200);
+    expect(cashBill.sbPayStatus).toBe('PAID');
+    expect(cashBill.posting.voucherId).toBe(postedVoucherId);
+    expect(cashBill.posting.voucherRefno).toBe(cashBill.sbBillRefno);
+    expect(num(cashBill.posting.cogsAmt)).toBe(200);
   });
 
   it('appended a POSTED step to the status trail', async () => {
-    const trail = await trailOf(draftThenPosted.sbId);
+    const trail = await p.trail(cashBill.sbId);
     expect(trail).toHaveLength(2);
-    expect(trail[0].tsl_event.trim()).toBe('CREATED');
-    expect(trail[0].tsl_to_status.trim()).toBe('DRAFT');
     expect(trail[1].tsl_seq_no).toBe(2);
     expect(trail[1].tsl_event.trim()).toBe('POSTED');
     expect(trail[1].tsl_from_status.trim()).toBe('DRAFT');
     expect(trail[1].tsl_to_status.trim()).toBe('POSTED');
+    expect(trail[1].tsl_src_doc_type.trim()).toBe('SALE_BILL');
   });
 
-  it('did NOT write accounts.acc_vouchers — the per-ledger split is absent', async () => {
-    const vouchers = await voucherOf(draftThenPosted.sbId);
-    const lines = await all(
-      `SELECT av_id FROM accounts.acc_vouchers WHERE av_voucher_id = $1::uuid`,
-      vouchers[0].avh_voucher_id,
-    );
-    expect(lines).toHaveLength(0);
+  it('/bills/post on a POSTED id is idempotent — same voucher, no second set of rows', async () => {
+    const res = await post('post', billKeys(cashBill.sbId));
+    expect(res.status).toBe(201);
+    expect(res.body.data.sbPostedVoucherId).toBe(postedVoucherId);
+    expect(await p.vouchers(SALE_BILL, cashBill.sbId)).toHaveLength(1);
+    expect(await p.stockLedger(SALE_BILL, cashBill.sbId)).toHaveLength(1);
+    expect(await p.balanceRows(SALE_BILL, cashBill.sbId)).toHaveLength(1);
+    expect(await p.trail(cashBill.sbId)).toHaveLength(2);
   });
 
-  it('re-saving a POSTED bill updates the voucher in place — no second voucher', async () => {
-    const before = (await voucherOf(draftThenPosted.sbId))[0];
-
-    const res = await post(
-      paidBody({
-        sbId: draftThenPosted.sbId,
-        sbUsrRefno: 'E2E-POST-A',
-        sbStatus: 'POSTED',
-        sbRemarks: 'E2E-POST re-saved',
+  it('a POSTED bill refuses /create (409 SALES_BILL_POSTED) and /delete (409)', async () => {
+    const edit = await post('create', {
+      ...billBody({
+        custId: WALK_IN,
+        custName: WALK_IN_NAME,
+        lines: [{ item, qty: 10, rate: 100 }],
+        usrRefno: `E2E-BILL-${tag}-CASH`,
       }),
-      app,
+      sbId: cashBill.sbId,
+    });
+    expect(edit.status).toBe(409);
+    expect(codesOf(edit)).toContain('SALES_BILL_POSTED');
+
+    const del = await post('delete', billKeys(cashBill.sbId));
+    expect(del.status).toBe(409);
+    expect(codesOf(del)).toContain('SALES_BILL_POSTED');
+  });
+
+  // ────────────────────────────────────────────────────────── a credit bill
+
+  it('an unpaid CREDIT bill on a listed customer leaves the whole amount outstanding and writes no tender leg', async () => {
+    const created = explain(
+      'create credit',
+      await post(
+        'create',
+        billBody({
+          custId: LISTED_CUSTOMER,
+          custName: LISTED_CUSTOMER_NAME,
+          lines: [{ item, qty: 10, rate: 100 }],
+          tenders: [],
+          usrRefno: `E2E-BILL-${tag}-CREDIT`,
+        }),
+      ),
+      201,
+    );
+    expect(created.status).toBe(201);
+    const posted = explain(
+      'post credit',
+      await post('post', billKeys(created.body.data.sbId)),
+      201,
+    );
+    expect(posted.status).toBe(201);
+    creditBill = posted.body.data;
+    expect(creditBill.sbStatus).toBe('POSTED');
+    expect(creditBill.sbPayStatus).toBe('UNPAID');
+
+    const [abl] = await p.balanceRows(SALE_BILL, creditBill.sbId);
+    expect(num(abl.abl_bill_amount)).toBe(1180);
+    expect(num(abl.abl_alloc_amount)).toBe(0);
+    expect(num(abl.abl_pending_amount)).toBe(1180);
+    expect(abl.abl_status.trim()).toBe('OPEN');
+
+    // Party, sales, two taxes, the COGS pair — and NOTHING settling the party.
+    const legs = await p.legs(creditBill.sbPostedVoucherId);
+    expect(legs).toHaveLength(6);
+    expect(legs.filter((l) => l.av_ledger_id === LISTED_CUSTOMER)).toHaveLength(1);
+    expect(await p.partyNet(LISTED_CUSTOMER, creditBill.sbId)).toBe(1180);
+
+    // Second sale off the same holding: 90 − 10, still at the opening cost.
+    const bal = await p.balance(item.itemId);
+    expect(num(bal!.sbl_on_hand_qty)).toBe(80);
+    expect(num(bal!.sbl_stock_value)).toBe(1600);
+  });
+
+  // ───────────────────────────────────────────────────────────────── cancel
+
+  it('/bills/cancel reverses the voucher: original CANCELLED, a POSTED mirror with every leg flipped', async () => {
+    const res = explain(
+      'cancel',
+      await post('cancel', { ...billKeys(cashBill.sbId), reason: `E2E-BILL-${tag} cancel` }),
+      201,
     );
     expect(res.status).toBe(201);
+    expect(res.body.data.sbStatus).toBe('CANCELLED');
+    expect(res.body.data.reversalVoucherRefno).toBeTruthy();
+    expect(res.body.data.cancelledOn).toBeTruthy();
 
-    const after = await voucherOf(draftThenPosted.sbId);
-    expect(after).toHaveLength(1);
-    expect(after[0].avh_voucher_id).toBe(before.avh_voucher_id);
-    expect(after[0].avh_remarks).toBe('E2E-POST re-saved');
-    expect(after[0].avh_modified_on).not.toBeNull();
-    // No extra trail row: the status did not move.
-    expect(await trailOf(draftThenPosted.sbId)).toHaveLength(2);
+    // The document still owns ONE voucher — the original, now CANCELLED. The
+    // mirror answers it through avh_against_voucher_id and carries no source
+    // pointer of its own (ux_avh_src admits one live voucher per document).
+    const vouchers = await p.vouchers(SALE_BILL, cashBill.sbId);
+    expect(vouchers).toHaveLength(1);
+    const original = vouchers[0];
+    expect(original.avh_voucher_id).toBe(postedVoucherId);
+    expect(original.avh_voucher_status.trim()).toBe('CANCELLED');
+    expect(original.avh_cancel_reason).toBe(`E2E-BILL-${tag} cancel`);
+    expect(original.avh_reversal_voucher_id).toBeTruthy();
+    // The original keeps its number: bil00042 stays bil00042.
+    expect(original.avh_voucher_refno).toBe(cashBill.sbBillRefno);
+
+    const mirror = (await p.voucherById(original.avh_reversal_voucher_id))!;
+    expect(mirror.avh_voucher_status.trim()).toBe('POSTED');
+    expect(mirror.avh_against_voucher_id).toBe(postedVoucherId);
+    expect(mirror.avh_voucher_type_id).toBe(VCHR.BILL);
+    expect(mirror.avh_voucher_refno).toBe(res.body.data.reversalVoucherRefno);
+    // A number of its own — ux_avh_voucher_no keeps a cancelled number taken.
+    expect(mirror.avh_voucher_refno).not.toBe(original.avh_voucher_refno);
+    expect(mirror.avh_src_doc_id).toBeNull();
+    expect(mirror.avh_doc_refno).toBeNull();
+    expect(mirror.avh_remarks).toContain(cashBill.sbBillRefno);
+    // Dated the original, not today.
+    expect(String(mirror.avh_voucher_date)).toBe(String(original.avh_voucher_date));
+    expect(num(mirror.avh_total_debit)).toBe(2560);
+    expect(num(mirror.avh_total_credit)).toBe(2560);
+
+    const before = await p.legs(postedVoucherId);
+    const after = await p.legs(mirror.avh_voucher_id);
+    expect(after).toHaveLength(8);
+    expect(
+      after.map((l) => [l.av_row_no, l.av_dr_cr.trim(), l.av_ledger_id, num(l.av_amount)]),
+    ).toEqual(
+      before.map((l) => [
+        l.av_row_no,
+        l.av_dr_cr.trim() === 'DR' ? 'CR' : 'DR',
+        l.av_ledger_id,
+        num(l.av_amount),
+      ]),
+    );
+    // The two together net every ledger to zero.
+    expect(await p.partyNet(WALK_IN, cashBill.sbId)).toBe(0);
   });
 
-  it('refuses to unpost a bill that was paid — 400 on sbBillAmt', async () => {
-    const res = await request(app.getHttpServer())
-      .post(CREATE)
-      .set('Authorization', BEARER)
-      .send(paidBody({ sbId: draftThenPosted.sbId, sbUsrRefno: 'E2E-POST-A', sbStatus: 'DRAFT' }));
+  it('/bills/cancel brings the goods back: a reversal row IN at the cost they left at', async () => {
+    const ledger = await p.stockLedger(SALE_BILL, cashBill.sbId);
+    expect(ledger).toHaveLength(2);
+    const [out, back] = ledger;
+    expect(back.sml_is_reversal).toBe(true);
+    expect(Number(back.sml_direction)).toBe(1);
+    expect(num(back.sml_qty)).toBe(10);
+    expect(num(back.sml_signed_base_qty)).toBe(10);
+    expect(num(back.sml_cost_rate)).toBe(num(out.sml_cost_rate));
+    expect(num(back.sml_cost_value)).toBe(200);
+    expect(back.sml_lot_id).toBe(out.sml_lot_id);
 
-    expect(res.status).toBe(400);
-    expect(res.body.errors?.[0]?.field).toBe('sbBillAmt');
-    // eslint-disable-next-line no-console
-    console.log(`\n[bill post e2e] unpost refusal: ${res.body.errors?.[0]?.message}\n`);
+    const shadows = await p.stockShadows(SALE_BILL, cashBill.sbId);
+    expect(shadows[0].svh_status).toBe('CANCELLED');
 
-    // Nothing moved: still POSTED, still one live voucher.
-    expect(await voucherOf(draftThenPosted.sbId)).toHaveLength(1);
+    // 100 opened − 10 (credit bill, still posted) = 90; the cash bill's 10 are back.
+    const bal = await p.balance(item.itemId);
+    expect(num(bal!.sbl_on_hand_qty)).toBe(90);
+    expect(num(bal!.sbl_avg_cost_rate)).toBe(20);
+    expect(num(bal!.sbl_stock_value)).toBe(1800);
   });
 
-  // ------------------------------------------------------- created straight into POSTED
+  it('/bills/cancel retires the register row, the receivable and the bill, and logs why', async () => {
+    const [reg] = await p.register(cashBill.sbId);
+    expect(reg.gdr_doc_status).toBe('CANCELED');
+    expect(reg.gdr_doc_cancel_reason).toBe(`E2E-BILL-${tag} cancel`);
 
-  it('creates a bill straight into POSTED — trail opens at NULL -> POSTED', async () => {
-    const res = await post(paidBody({ sbUsrRefno: 'E2E-POST-B', sbStatus: 'POSTED' }), app);
-    expect(res.status).toBe(201);
-    bornPosted = res.body.data;
+    expect(await p.balanceRows(SALE_BILL, cashBill.sbId)).toHaveLength(0);
 
-    expect(bornPosted.sbStatus).toBe('POSTED');
-    expect(bornPosted.sbPostedVoucherId).toBeTruthy();
-    expect(await voucherOf(bornPosted.sbId)).toHaveLength(1);
-    expect(await receivableOf(bornPosted.sbId)).toHaveLength(1);
+    const bill = await p.saleBill(cashBill.sbId);
+    expect(bill.sb_status).toBe('CANCELLED');
+    // The header keeps its posting pointer — the voucher stays on record, CANCELLED.
+    expect(bill.sb_posted_voucher_id).toBe(postedVoucherId);
 
-    const trail = await trailOf(bornPosted.sbId);
-    expect(trail).toHaveLength(1);
-    expect(trail[0].tsl_event.trim()).toBe('CREATED');
-    expect(trail[0].tsl_from_status).toBeNull();
-    expect(trail[0].tsl_to_status.trim()).toBe('POSTED');
+    const trail = await p.trail(cashBill.sbId);
+    expect(trail).toHaveLength(3);
+    expect(trail[2].tsl_event.trim()).toBe('CANCELLED');
+    expect(trail[2].tsl_from_status.trim()).toBe('POSTED');
+    expect(trail[2].tsl_to_status.trim()).toBe('CANCELLED');
+    expect(trail[2].tsl_remarks).toBe(`E2E-BILL-${tag} cancel`);
   });
 
-  // ------------------------------------------------------------ credit bill / unposting
+  it('cancel is idempotent; post, create and delete on a CANCELLED bill are refused', async () => {
+    const again = await post('cancel', { ...billKeys(cashBill.sbId), reason: 'again' });
+    expect(again.status).toBe(201);
+    expect(again.body.data.sbStatus).toBe('CANCELLED');
+    // No second mirror, no second reversal row.
+    const [original] = await p.vouchers(SALE_BILL, cashBill.sbId);
+    expect(original.avh_cancel_reason).toBe(`E2E-BILL-${tag} cancel`);
+    expect(await p.stockLedger(SALE_BILL, cashBill.sbId)).toHaveLength(2);
 
-  it('an unpaid CREDIT bill leaves the full amount outstanding', async () => {
-    const res = await post(creditBody({ sbUsrRefno: 'E2E-POST-C', sbStatus: 'POSTED' }), app);
-    expect(res.status).toBe(201);
-    creditPosted = res.body.data;
+    const rePost = await post('post', billKeys(cashBill.sbId));
+    expect(rePost.status).toBe(409);
+    expect(codesOf(rePost)).toContain('SALES_BILL_CANCELLED');
 
-    const r = (await receivableOf(creditPosted.sbId))[0];
-    expect(Number(r.abl_bill_amount)).toBe(1180);
-    expect(Number(r.abl_alloc_amount)).toBe(0);
-    expect(Number(r.abl_pending_amount)).toBe(1180);
+    const del = await post('delete', billKeys(cashBill.sbId));
+    expect(del.status).toBe(409);
+    expect(codesOf(del)).toContain('SALES_BILL_CANCELLED');
   });
 
-  it('unposts the unpaid credit bill — voucher CANCELLED, receivable retired', async () => {
-    const res = await post(
-      creditBody({
-        sbId: creditPosted.sbId,
-        sbUsrRefno: 'E2E-POST-C',
-        sbStatus: 'DRAFT',
-        sbCancelReason: 'E2E-POST unpost check',
+  it('a DRAFT is not cancelled but deleted — and the delete leaves no live rows', async () => {
+    const created = await post(
+      'create',
+      billBody({
+        custId: WALK_IN,
+        custName: WALK_IN_NAME,
+        lines: [{ item, qty: 1, rate: 100 }],
+        usrRefno: `E2E-BILL-${tag}-DRAFT`,
       }),
-      app,
     );
-    expect(res.status).toBe(201);
-    expect(res.body.data.sbStatus).toBe('DRAFT');
-    // Posting columns cleared on the way out.
-    expect(res.body.data.sbPostedVoucherId).toBeNull();
+    expect(created.status).toBe(201);
+    const sbId = created.body.data.sbId as string;
 
-    // No LIVE voucher and no LIVE receivable any more...
-    expect(await receivableOf(creditPosted.sbId)).toHaveLength(0);
-    const cancelled = await all<Record<string, any>>(
-      `SELECT avh_voucher_status, avh_cancel_reason FROM accounts.acc_voucher_header
-        WHERE avh_src_doc_id = $1::uuid AND avh_is_deleted = false`,
-      creditPosted.sbId,
+    const cancel = await post('cancel', { ...billKeys(sbId), reason: 'a draft' });
+    expect(cancel.status).toBe(409);
+    expect(codesOf(cancel)).toContain('SALES_DOC_NOT_DRAFT');
+
+    const del = await post('delete', billKeys(sbId));
+    expect(del.status).toBe(201);
+    expect(del.body.data).toEqual({ sbId, deleted: true });
+    const [row] = await h.prisma.$queryRawUnsafe<{ sb_is_deleted: boolean }[]>(
+      `SELECT sb_is_deleted FROM sales.sale_bill WHERE sb_id = $1::uuid AND sb_acc_year = $2`,
+      sbId,
+      ACC_YEAR,
     );
-    // ...but the voucher row survives, CANCELLED, with a reason.
-    expect(cancelled).toHaveLength(1);
-    expect(cancelled[0].avh_voucher_status.trim()).toBe('CANCELLED');
-    expect(cancelled[0].avh_cancel_reason).toBe('E2E-POST unpost check');
-
-    const trail = await trailOf(creditPosted.sbId);
-    expect(trail[trail.length - 1].tsl_event.trim()).toBe('UNPOSTED');
-    expect(trail[trail.length - 1].tsl_to_status.trim()).toBe('DRAFT');
+    expect(row.sb_is_deleted).toBe(true);
+    expect(await p.tenders(SALE_BILL, sbId)).toHaveLength(0);
   });
 
-  it('refuses to re-post a bill whose voucher was cancelled — 400 on sbStatus', async () => {
-    const res = await request(app.getHttpServer())
-      .post(CREATE)
-      .set('Authorization', BEARER)
-      .send(creditBody({ sbId: creditPosted.sbId, sbUsrRefno: 'E2E-POST-C', sbStatus: 'POSTED' }));
+  it('cancelling the credit bill too returns the holding to exactly the opening', async () => {
+    const res = await post('cancel', {
+      ...billKeys(creditBill.sbId),
+      reason: `E2E-BILL-${tag} cancel credit`,
+    });
+    expect(res.status).toBe(201);
+    expect(await p.balanceRows(SALE_BILL, creditBill.sbId)).toHaveLength(0);
+    expect(await p.partyNet(LISTED_CUSTOMER, creditBill.sbId)).toBe(0);
 
-    expect(res.status).toBe(400);
-    expect(res.body.errors?.[0]?.field).toBe('sbStatus');
-    // eslint-disable-next-line no-console
-    console.log(`\n[bill post e2e] re-post refusal: ${res.body.errors?.[0]?.message}\n`);
+    const bal = await p.balance(item.itemId);
+    expect(num(bal!.sbl_in_qty)).toBe(120); // 100 opened + 10 + 10 reversed
+    expect(num(bal!.sbl_out_qty)).toBe(20);
+    expect(num(bal!.sbl_on_hand_qty)).toBe(100);
+    expect(num(bal!.sbl_stock_value)).toBe(2000);
+    expect(bal!.sbl_bucket).toBe('SALEABLE');
+    expect(GODOWN).toBeTruthy();
   });
 });

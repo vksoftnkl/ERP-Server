@@ -21,6 +21,7 @@ type BaseMenuFields = Pick<
   | 'menuIconLocationMobile'
   | 'menuSeparator'
   | 'menuIsActive'
+  | 'menuVerbs'
 >;
 @Injectable()
 export class MenuMasterService {
@@ -50,6 +51,7 @@ export class MenuMasterService {
         menuIconLocationMobile: true,
         menuSeparator: true,
         menuIsActive: true,
+        menuVerbs: true,
       },
     });
     return this.buildResponse(records, visibleOnly, (r, bp) => this.toSimplePayload(r, bp, true));
@@ -73,6 +75,11 @@ export class MenuMasterService {
         umCanDelete: true,
         umCanPrint: true,
         umCanExport: true,
+        umCanPost: true,
+        umCanCancel: true,
+        umCanAmend: true,
+        umCanOverride: true,
+        umCanRetender: true,
         umVisibility: true,
         umIsFavourite: true,
         umIsPinned: true,
@@ -90,6 +97,7 @@ export class MenuMasterService {
             menuIconLocationMobile: true,
             menuSeparator: true,
             menuIsActive: true,
+            menuVerbs: true,
           },
         },
       },
@@ -109,6 +117,11 @@ export class MenuMasterService {
           canDelete: userMenu.umCanDelete,
           canPrint: userMenu.umCanPrint,
           canExport: userMenu.umCanExport,
+          canPost: userMenu.umCanPost,
+          canCancel: userMenu.umCanCancel,
+          canAmend: userMenu.umCanAmend,
+          canOverride: userMenu.umCanOverride,
+          canRetender: userMenu.umCanRetender,
           isVisible: userMenu.umVisibility,
           isFavourite: userMenu.umIsFavourite,
           isPinned: userMenu.umIsPinned,
@@ -213,6 +226,7 @@ export class MenuMasterService {
       menuIconLocationMobile: record.menuIconLocationMobile,
       menuSeparator: record.menuSeparator,
       menuIsActive: record.menuIsActive,
+      menuVerbs: record.menuVerbs,
       permissions: permissionsByMenuId?.get(record.menuId) ?? null,
     };
     if (!includeChildren || visited.has(record.menuId)) {

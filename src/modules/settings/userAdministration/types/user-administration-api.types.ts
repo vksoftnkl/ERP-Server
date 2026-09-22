@@ -23,6 +23,12 @@ export interface UserMenuPayload {
   umCanDelete: boolean;
   umCanPrint: boolean;
   umCanExport: boolean;
+  /** The five transaction rights. Meaningful only on a posting screen. */
+  umCanPost: boolean;
+  umCanCancel: boolean;
+  umCanAmend: boolean;
+  umCanOverride: boolean;
+  umCanRetender: boolean;
   umVisibility: boolean;
   umIsFavourite: boolean;
   umIsPinned: boolean;

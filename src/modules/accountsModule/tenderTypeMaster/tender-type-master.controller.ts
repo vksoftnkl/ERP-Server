@@ -1,15 +1,5 @@
 import { CacheTTL } from '@nestjs/cache-manager';
-import {
-  Body,
-  Controller,
-  Delete,
-  Get,
-  ParseUUIDPipe,
-  Post,
-  Query,
-  UseFilters,
-  Version,
-} from '@nestjs/common';
+import { Body, Controller, Delete, Get, Post, Query, UseFilters, Version } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
   ApiBearerAuth,

@@ -163,7 +163,6 @@ export class BankListService {
       saveBankListDto.bnkCreatedBy,
       this.requestContextService.getUserId(),
     );
-    const modifiedBy = resolveActor(saveBankListDto.bnkModifiedBy, createdBy);
     const data: Prisma.BankMasterUncheckedCreateInput = {
       bnkName: normalizedName,
       bnkCreatedOn: now,

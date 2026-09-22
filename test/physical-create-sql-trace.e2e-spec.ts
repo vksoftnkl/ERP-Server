@@ -4,6 +4,7 @@ import { INestApplication, ValidationPipe, VersioningType } from '@nestjs/common
 import { Test } from '@nestjs/testing';
 import { PrismaClient } from '@prisma/client';
 import * as request from 'supertest';
+import { appendFileSync } from 'fs';
 
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/database/prisma/prisma.service';
@@ -91,7 +92,11 @@ describe('DEBUG POST /stock/physical/create', () => {
     http = request(app.getHttpServer());
 
     // Tap the app's OWN client, so what is captured is what the route runs.
-    const svc = app.get(PrismaService);
+    // PrismaService picks its log level at runtime, so the generated client
+    // cannot type the 'query' event; the cast says what the event carries.
+    const svc = app.get<{ $on(event: 'query', cb: (ev: { query: string }) => void): void }>(
+      PrismaService,
+    );
     svc.$on('query', (ev) => {
       if (!capture) return;
       const { verb, target } = classify(ev.query);
@@ -115,7 +120,7 @@ describe('DEBUG POST /stock/physical/create', () => {
       lines.push(`  ${String(i + 1).padStart(2)}. ${s.verb.padEnd(11)} ${s.target}`);
       lines.push(`      ${s.sql}`);
     });
-    require('fs').appendFileSync(process.env.TRACE_OUT!, lines.join('\n') + '\n\n');
+    appendFileSync(process.env.TRACE_OUT!, lines.join('\n') + '\n\n');
     return res;
   }
 

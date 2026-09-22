@@ -4,6 +4,7 @@ import { INestApplication, ValidationPipe, VersioningType } from '@nestjs/common
 import { Test } from '@nestjs/testing';
 import { PrismaClient } from '@prisma/client';
 import * as request from 'supertest';
+import { writeFileSync } from 'fs';
 
 import { AppModule } from '../src/app.module';
 import { TokenService, type AccessTokenPayload } from '../src/modules/auth/token.service';
@@ -71,7 +72,12 @@ async function dump(title: string, sql: string, params: unknown[] = []): Promise
     if (rows.length > 1) out.push(`  [row ${i + 1}]`);
     for (const [col, val] of Object.entries(row)) {
       if (val === null || val === undefined) continue;
-      const text = val instanceof Date ? val.toISOString() : String(val);
+      const text =
+        val instanceof Date
+          ? val.toISOString()
+          : typeof val === 'object'
+            ? (val as { toString(): string }).toString()
+            : String(val as string | number | bigint | boolean);
       if (text === '0' || text === '0.000000' || text === '0.00' || text === 'false') continue;
       out.push(`    ${col.padEnd(26)} ${text}`);
     }
@@ -153,7 +159,7 @@ describe('COLUMN MAP — POST /stock/opening/create', () => {
   }, 120_000);
 
   afterAll(async () => {
-    require('fs').writeFileSync(process.env.MAP_OUT ?? '/dev/null', out.join('\n') + '\n');
+    writeFileSync(process.env.MAP_OUT ?? '/dev/null', out.join('\n') + '\n');
     await app?.close();
     await prisma.$disconnect();
   }, 120_000);

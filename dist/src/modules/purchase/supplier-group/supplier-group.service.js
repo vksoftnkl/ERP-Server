@@ -100,7 +100,6 @@ let SupplierGroupService = class SupplierGroupService {
     async createSupplierGroup(saveSupplierGroupDto) {
         const now = new Date();
         const createdBy = (0, module_service_utils_1.resolveActor)(saveSupplierGroupDto.spgCreatedBy, this.requestContextService.getUserId());
-        const modifiedBy = (0, module_service_utils_1.resolveActor)(saveSupplierGroupDto.spgModifiedBy, createdBy);
         const normalizedName = (0, module_service_utils_1.normalizeRequiredText)(saveSupplierGroupDto.spgName, 'spgName');
         const data = {
             spgName: normalizedName,

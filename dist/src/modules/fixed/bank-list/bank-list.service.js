@@ -126,7 +126,6 @@ let BankListService = class BankListService {
         const normalizedName = (0, module_service_utils_1.normalizeRequiredText)(saveBankListDto.bnkName, 'bnkName');
         const now = new Date();
         const createdBy = (0, module_service_utils_1.resolveActor)(saveBankListDto.bnkCreatedBy, this.requestContextService.getUserId());
-        const modifiedBy = (0, module_service_utils_1.resolveActor)(saveBankListDto.bnkModifiedBy, createdBy);
         const data = {
             bnkName: normalizedName,
             bnkCreatedOn: now,

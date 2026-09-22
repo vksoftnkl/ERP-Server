@@ -19,7 +19,7 @@ const LOOKUP_MODULE_ALIAS_MAP: Record<string, LookupModuleKey> = Object.fromEntr
     ]),
   ),
 ) as Record<string, LookupModuleKey>;
-const toOptionalLookupModule = (value: unknown): LookupModuleKey | string | undefined => {
+const toOptionalLookupModule = (value: unknown): string | undefined => {
   if (value === undefined || value === null) {
     return undefined;
   }

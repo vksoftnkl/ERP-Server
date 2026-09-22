@@ -67,8 +67,10 @@ export declare const SALES_ERROR_CODES: {
     readonly SALESMAN_INVALID: "SALES_SALESMAN_INVALID";
     readonly STOCK_QTY_MISMATCH: "SALES_STOCK_QTY_MISMATCH";
     readonly AMOUNT_MISMATCH: "SALES_AMOUNT_MISMATCH";
+    readonly DEVICE_UNREGISTERED: "SALES_DEVICE_UNREGISTERED";
 };
 export type SalesErrorCode = (typeof SALES_ERROR_CODES)[keyof typeof SALES_ERROR_CODES];
+export type SalesErrorCodeLike = SalesErrorCode | (string & {});
 export type SalesWarningLevel = 'INFO' | 'WARN' | 'REFUSE';
 export interface SalesStatutoryRef {
     code: string;
@@ -77,7 +79,7 @@ export interface SalesStatutoryRef {
     isCompanyOverride: boolean;
 }
 export interface SalesWarning {
-    code: SalesErrorCode | string;
+    code: SalesErrorCodeLike;
     level: SalesWarningLevel;
     message: string;
     field?: string;
@@ -86,7 +88,7 @@ export interface SalesWarning {
     statutory?: SalesStatutoryRef;
 }
 export interface SalesRefusal {
-    code: SalesErrorCode | string;
+    code: SalesErrorCodeLike;
     message: string;
     field?: string;
     line?: number;

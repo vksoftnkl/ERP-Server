@@ -40,6 +40,8 @@ export interface DocSpec {
     itemOptionalFields: readonly string[];
     itemDateFields: readonly string[];
     itemRequired: readonly string[];
+    headerRequired: readonly string[];
+    itemDefaults?: (header: DocRow) => DocRow;
     headerWhereUnique: string;
     itemWhereUnique: string;
 }

@@ -142,7 +142,7 @@ let SaleLoadingChargeService = class SaleLoadingChargeService {
                 screenName: SALE_LOADING_CHARGE_AUDIT_SCREEN_NAME,
                 screenType: 'master',
                 pk: ilcId,
-                displayName: `ILC-${existing.ilcFromWeight}-${existing.ilcToWeight}`,
+                displayName: `ILC-${existing.ilcFromWeight?.toString() ?? ''}-${existing.ilcToWeight?.toString() ?? ''}`,
                 originalRecord,
                 modifiedRecord,
                 userId: this.requestContextService.getUserId() ?? module_service_utils_1.DEFAULT_ACTOR,

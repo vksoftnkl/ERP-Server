@@ -94,6 +94,11 @@ export const DCR_SPEC: DocSpec = {
   itemOptionalFields: SDRI_OPTIONAL_FIELDS,
   itemDateFields: SDRI_DATE_FIELDS,
   itemRequired: ['sdriDcItemId', 'sdriItemId', 'sdriItemUnitId', 'sdriGodownId'],
+  // sdrDcId / sdrDcAccYear are the challan the return answers: required by
+  // the DTO, NOT NULL on the table, and not among the optional fields the
+  // store copies — so they are named here or Prisma asks for the `dc` relation.
+  headerRequired: ['sdrCounterId', 'sdrDcId', 'sdrDcAccYear'],
+  itemDefaults: (h) => ({ sdriPriceLevel: 1, sdriDcAccYear: h.sdrDcAccYear }),
   headerWhereUnique: 'sdrId_sdrAccYear',
   itemWhereUnique: 'sdriId_sdriAccYear',
 };

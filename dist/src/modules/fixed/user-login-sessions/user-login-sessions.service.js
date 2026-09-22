@@ -128,7 +128,6 @@ let UserLoginSessionsService = class UserLoginSessionsService {
     async createSession(saveUserLoginSessionDto) {
         const now = new Date();
         const createdBy = (0, module_service_utils_1.resolveActor)(saveUserLoginSessionDto.ulsCreatedBy, this.requestContextService.getUserId());
-        const modifiedBy = (0, module_service_utils_1.resolveActor)(saveUserLoginSessionDto.ulsModifiedBy, createdBy);
         const data = {
             ulsCompanyId: saveUserLoginSessionDto.ulsCompanyId,
             ulsBranchId: saveUserLoginSessionDto.ulsBranchId,

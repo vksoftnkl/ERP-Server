@@ -23,6 +23,11 @@ class SaveUserMenuDto {
     umCanDelete;
     umCanPrint;
     umCanExport;
+    umCanPost;
+    umCanCancel;
+    umCanAmend;
+    umCanOverride;
+    umCanRetender;
     umVisibility;
     umIsFavourite;
     umIsPinned;
@@ -65,6 +70,43 @@ __decorate([
     (0, dtoDecorators_1.OptionalBoolean)(),
     __metadata("design:type", Boolean)
 ], SaveUserMenuDto.prototype, "umCanExport", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        description: 'May put the document into the books (/post). Transaction screens only.',
+    }),
+    (0, dtoDecorators_1.OptionalBoolean)(),
+    __metadata("design:type", Boolean)
+], SaveUserMenuDto.prototype, "umCanPost", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        description: 'May take a POSTED document back out by reversal (/cancel).',
+    }),
+    (0, dtoDecorators_1.OptionalBoolean)(),
+    __metadata("design:type", Boolean)
+], SaveUserMenuDto.prototype, "umCanCancel", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        description: 'May restate a POSTED document in place (/amend) — unwind, re-apply, re-post.',
+    }),
+    (0, dtoDecorators_1.OptionalBoolean)(),
+    __metadata("design:type", Boolean)
+], SaveUserMenuDto.prototype, "umCanAmend", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        description: 'May pass a WARN-level guard: discount cap, credit limit, back-date, rate below minimum. ' +
+            'The server re-checks this flag as well as the overrides[] the request names.',
+    }),
+    (0, dtoDecorators_1.OptionalBoolean)(),
+    __metadata("design:type", Boolean)
+], SaveUserMenuDto.prototype, "umCanOverride", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        description: 'May change how a POSTED bill was paid (/bills/retender). Separate from umCanAmend: the ' +
+            'sale is not edited, only the tender — but it moves money between ledgers. Sales Entry only.',
+    }),
+    (0, dtoDecorators_1.OptionalBoolean)(),
+    __metadata("design:type", Boolean)
+], SaveUserMenuDto.prototype, "umCanRetender", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)(),
     (0, dtoDecorators_1.OptionalBoolean)(),

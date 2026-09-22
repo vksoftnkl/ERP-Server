@@ -3,8 +3,8 @@ import { KeyvStoreAdapter, StoredData } from 'keyv';
 export declare class NoopKeyvStoreAdapter extends EventEmitter implements KeyvStoreAdapter {
     readonly opts: {};
     namespace?: string;
-    get<Value>(_key: string): Promise<StoredData<Value> | undefined>;
-    set(_key: string, _value: unknown, _ttl?: number): Promise<boolean>;
-    delete(_key: string): Promise<boolean>;
+    get<Value>(): Promise<StoredData<Value> | undefined>;
+    set(): Promise<boolean>;
+    delete(): Promise<boolean>;
     clear(): Promise<void>;
 }

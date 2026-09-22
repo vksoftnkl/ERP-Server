@@ -995,13 +995,13 @@ export class StockVoucherService {
       data.svhLineCount = header.lineCount;
     }
     if (header.totalQty !== undefined) {
-      data.svhTotalQty = new Prisma.Decimal(this.toDecimalNumber(header.totalQty));
+      data.svhTotalQty = this.toDecimalColumn(header.totalQty);
     }
     if (header.totalValue !== undefined) {
-      data.svhTotalValue = new Prisma.Decimal(this.toDecimalNumber(header.totalValue));
+      data.svhTotalValue = this.toDecimalColumn(header.totalValue);
     }
     if (header.totalValueWot !== undefined) {
-      data.svhTotalValueWot = new Prisma.Decimal(this.toDecimalNumber(header.totalValueWot));
+      data.svhTotalValueWot = this.toDecimalColumn(header.totalValueWot);
     }
     if (!Object.keys(data).length) {
       return;
@@ -1110,8 +1110,6 @@ export class StockVoucherService {
     const holdings = isCount ? await this.loadCountHoldings(tx, header, lines) : null;
     const data = lines.map((line) => {
       const holding = holdings?.get(this.holdingKey(line.lotId, line.godownId, line.bucket));
-      const qty = isCount ? 0 : this.toDecimalNumber(line.qty);
-      const freeQty = isCount ? 0 : this.toDecimalNumber(line.freeQty ?? 0);
       return {
         sviVoucherId: svhId,
         // Scope is copied from the HEADER, never read off the line: a line
@@ -1130,7 +1128,7 @@ export class StockVoucherService {
         // A count is still the exception in both columns — it names no unit,
         // and is taken in the base unit the book figure is held in, at factor 1.
         sviBaseUomId: isCount ? (holding as CountHolding).baseUomId : line.baseUomId,
-        sviToBaseFactor: new Prisma.Decimal(isCount ? 1 : this.toDecimalNumber(line.toBaseFactor)),
+        sviToBaseFactor: isCount ? new Prisma.Decimal(1) : this.toDecimalColumn(line.toBaseFactor),
         sviGodownId: line.godownId,
         // svi_lot_id is ALWAYS NULL on save. fn_slt_resolve owns lot identity,
         // and only at post time: a client-chosen lot would let two documents
@@ -1169,13 +1167,13 @@ export class StockVoucherService {
           : this.toNullableDecimal(line.salePrice),
         sviSerialNo: isCount ? (holding as CountHolding).serialNo : (line.serialNo ?? null),
         sviSupplierId: isCount ? (holding as CountHolding).supplierId : (line.supplierId ?? null),
-        sviQty: new Prisma.Decimal(qty),
+        sviQty: isCount ? new Prisma.Decimal(0) : this.toDecimalColumn(line.qty),
         // NOT qty x factor. The base quantities come from the payload as the
         // grid computed them — svi_value is GENERATED from these two, so they
         // are what the document is valued on. A count carries neither: its
         // quantity is the variance, and svi_diff_qty is GENERATED.
-        sviBaseQty: new Prisma.Decimal(isCount ? 0 : this.toDecimalNumber(line.baseQty)),
-        sviFreeQty: new Prisma.Decimal(freeQty),
+        sviBaseQty: isCount ? new Prisma.Decimal(0) : this.toDecimalColumn(line.baseQty),
+        sviFreeQty: isCount ? new Prisma.Decimal(0) : this.toDecimalColumn(line.freeQty ?? 0),
         // On a QTY document this is OMITTED rather than defaulted when the
         // payload does not send it, so the column's own DEFAULT 0 applies. A
         // server-side `?? 0` here would be exactly the fallback that hides a
@@ -1186,10 +1184,10 @@ export class StockVoucherService {
           ? { sviFreeBaseQty: new Prisma.Decimal(0) }
           : line.freeBaseQty === undefined
             ? {}
-            : { sviFreeBaseQty: new Prisma.Decimal(this.toDecimalNumber(line.freeBaseQty)) }),
+            : { sviFreeBaseQty: this.toDecimalColumn(line.freeBaseQty) }),
         // Weight is NOT derived from the quantity: a 10kg bag that weighs 9.7kg
         // opens at what the scale said, and no conversion factor knows that.
-        sviWeightQty: new Prisma.Decimal(this.toDecimalNumber(line.weightQty ?? 0)),
+        sviWeightQty: this.toDecimalColumn(line.weightQty ?? 0),
         // PHYSICAL only, and refused for every other type in assertPayloadRules.
         // svi_diff_qty is GENERATED from the pair and is never sent.
         //
@@ -1212,16 +1210,16 @@ export class StockVoucherService {
         // fn_sml_cost_default bail — it only fills gaps — and 20's OUT insert
         // omits the value columns, so the ledger row lands at the typed rate
         // with value 0. Cost travels with the stock; nobody re-enters it.
-        sviCostRate: new Prisma.Decimal(zeroCost ? 0 : this.toDecimalNumber(line.costRate)),
+        sviCostRate: zeroCost ? new Prisma.Decimal(0) : this.toDecimalColumn(line.costRate),
         // Left at 0 when not sent: the engine derives it from svi_tax_perc at
         // post and writes it back (20 ÷ 1.05 = 19.047619).
-        sviCostRateWot: new Prisma.Decimal(
-          zeroCost ? 0 : this.toDecimalNumber(line.costRateWot ?? 0),
-        ),
-        sviLandedRate: new Prisma.Decimal(
-          zeroCost ? 0 : this.toDecimalNumber(line.landedRate ?? 0),
-        ),
-        sviTaxPerc: new Prisma.Decimal(zeroCost ? 0 : this.toDecimalNumber(line.taxPerc ?? 0)),
+        sviCostRateWot: zeroCost
+          ? new Prisma.Decimal(0)
+          : this.toDecimalColumn(line.costRateWot ?? 0),
+        sviLandedRate: zeroCost
+          ? new Prisma.Decimal(0)
+          : this.toDecimalColumn(line.landedRate ?? 0),
+        sviTaxPerc: zeroCost ? new Prisma.Decimal(0) : this.toDecimalColumn(line.taxPerc ?? 0),
         sviReasonId: line.reasonId ?? null,
         sviSyncDate: line.syncDate ? new Date(line.syncDate) : null,
         sviRemarks: line.remarks ?? null,
@@ -3170,12 +3168,41 @@ export class StockVoucherService {
   private toIsoDate(value: Date | null): string | null {
     return value ? value.toISOString().slice(0, 10) : null;
   }
+  /**
+   * A payload figure as a plain number, for COMPARISONS only (`qty < 0`,
+   * `costRate !== 0`). Never for a column: see `toDecimalColumn`.
+   */
   private toDecimalNumber(value: string | number | null | undefined): number {
     if (value === null || value === undefined || value === '') {
       return 0;
     }
     const parsed = typeof value === 'number' ? value : Number(value);
     return Number.isFinite(parsed) ? parsed : 0;
+  }
+
+  /**
+   * A payload figure on its way into a `numeric` column — §3a rule 1.
+   *
+   * `new Prisma.Decimal(this.toDecimalNumber(v))` looks equivalent and is not:
+   * the value passes through float64 BEFORE it becomes a Decimal, so the
+   * Decimal faithfully stores whatever float64 already lost. `svh_total_qty` is
+   * `numeric(18,6)` — eighteen significant digits, past float64's ~15.95 — and
+   * a quantity keyed on the far side of that is silently changed on its way in.
+   * `Prisma.Decimal` takes the string as it stands and keeps it exactly.
+   *
+   * A value that is not a number at all still answers 0, as the old helper did:
+   * this is a write path, and a refusal belongs in the validator, not here.
+   */
+  private toDecimalColumn(value: string | number | null | undefined): Prisma.Decimal {
+    if (value === null || value === undefined || value === '') {
+      return new Prisma.Decimal(0);
+    }
+    try {
+      const decimal = new Prisma.Decimal(value);
+      return decimal.isFinite() ? decimal : new Prisma.Decimal(0);
+    } catch {
+      return new Prisma.Decimal(0);
+    }
   }
   /** An ISO instant as epoch millis, or null when absent or unparseable. */
   private toInstant(value: string | null | undefined): number | null {

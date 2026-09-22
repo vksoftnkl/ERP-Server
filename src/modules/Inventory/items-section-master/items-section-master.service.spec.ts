@@ -27,13 +27,6 @@ type PrismaMock = {
   $transaction: jest.Mock<Promise<unknown>, [(tx: Prisma.TransactionClient) => Promise<unknown>]>;
 };
 
-type ConfiguredGridSqlServiceMock = {
-  loadCandidates: jest.Mock;
-  filterPrimaryFromTable: jest.Mock;
-  validateBaseSql: jest.Mock;
-  runPagedQuery: jest.Mock;
-};
-
 const makeRecord = (overrides: Partial<ItemSectionMaster> = {}): ItemSectionMaster =>
   ({
     secId: ITEM_SECTION_ID,
@@ -64,7 +57,6 @@ describe('ItemsSectionMasterService', () => {
   let service: ItemsSectionMasterService;
   let prisma: PrismaMock;
   let auditLogService: Pick<AuditLogService, 'logEntityChange'>;
-  let configuredGridSqlService: ConfiguredGridSqlServiceMock;
   let requestContextService: { getUserId: jest.Mock };
 
   beforeEach(() => {
@@ -96,12 +88,6 @@ describe('ItemsSectionMasterService', () => {
     );
     auditLogService = {
       logEntityChange: jest.fn().mockResolvedValue(undefined),
-    };
-    configuredGridSqlService = {
-      loadCandidates: jest.fn().mockResolvedValue([]),
-      filterPrimaryFromTable: jest.fn().mockImplementation((candidates: unknown[]) => candidates),
-      validateBaseSql: jest.fn(),
-      runPagedQuery: jest.fn(),
     };
 
     requestContextService = {

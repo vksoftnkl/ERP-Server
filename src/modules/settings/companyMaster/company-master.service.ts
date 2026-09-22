@@ -24,7 +24,6 @@ import {
 import { RequestContextService } from '../../../common/request-context/request-context.service';
 
 const COMPANY_MASTER_TABLE_NAME = 'companys';
-const COMPANY_MASTER_TABLE_SCHEMA = 'public';
 const COMPANY_MASTER_AUDIT_SCREEN_NAME = 'Company Master';
 const COMPANY_MASTER_OPTIONAL_FIELDS = [
   'compCode',

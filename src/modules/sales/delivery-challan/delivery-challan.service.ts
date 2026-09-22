@@ -103,6 +103,7 @@ export const DC_SPEC: DocSpec = {
   itemOptionalFields: SDI_OPTIONAL_FIELDS,
   itemDateFields: SDI_DATE_FIELDS,
   itemRequired: ['sdiItemId', 'sdiItemUnitId', 'sdiGodownId'],
+  headerRequired: ['sdcCounterId'],
   headerWhereUnique: 'sdcId_sdcAccYear',
   itemWhereUnique: 'sdiId_sdiAccYear',
 };

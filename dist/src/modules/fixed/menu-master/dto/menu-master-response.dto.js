@@ -48,6 +48,11 @@ class MenuMasterUserPermissionsDto {
     canDelete;
     canPrint;
     canExport;
+    canPost;
+    canCancel;
+    canAmend;
+    canOverride;
+    canRetender;
     isVisible;
     isFavourite;
     isPinned;
@@ -74,6 +79,30 @@ __decorate([
     (0, swagger_1.ApiProperty)({ example: false }),
     __metadata("design:type", Boolean)
 ], MenuMasterUserPermissionsDto.prototype, "canExport", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        example: false,
+        description: 'The five transaction rights. Read them WITH menuVerbs: a true flag on a menu whose verbs ' +
+            'do not include the verb is a stale grant, not a capability.',
+    }),
+    __metadata("design:type", Boolean)
+], MenuMasterUserPermissionsDto.prototype, "canPost", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: false }),
+    __metadata("design:type", Boolean)
+], MenuMasterUserPermissionsDto.prototype, "canCancel", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: false }),
+    __metadata("design:type", Boolean)
+], MenuMasterUserPermissionsDto.prototype, "canAmend", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: false }),
+    __metadata("design:type", Boolean)
+], MenuMasterUserPermissionsDto.prototype, "canOverride", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: false }),
+    __metadata("design:type", Boolean)
+], MenuMasterUserPermissionsDto.prototype, "canRetender", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)({ example: true }),
     __metadata("design:type", Boolean)
@@ -102,6 +131,7 @@ class MenuMasterPayloadDto {
     menuIconLocationMobile;
     menuSeparator;
     menuIsActive;
+    menuVerbs;
     permissions;
     children;
 }
@@ -150,6 +180,15 @@ __decorate([
     (0, swagger_1.ApiProperty)({ example: true }),
     __metadata("design:type", Boolean)
 ], MenuMasterPayloadDto.prototype, "menuIsActive", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        type: [String],
+        example: ['VIEW', 'CREATE', 'EDIT', 'DELETE', 'PRINT', 'EXPORT', 'POST', 'CANCEL', 'AMEND'],
+        description: 'What this screen can do. Render a permission cell ONLY for a verb listed here — a verb ' +
+            'that is absent gets no checkbox at all, not a greyed one.',
+    }),
+    __metadata("design:type", Array)
+], MenuMasterPayloadDto.prototype, "menuVerbs", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ type: MenuMasterUserPermissionsDto, nullable: true }),
     __metadata("design:type", Object)

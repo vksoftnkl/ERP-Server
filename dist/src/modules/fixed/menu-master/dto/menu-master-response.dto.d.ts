@@ -13,6 +13,11 @@ export declare class MenuMasterUserPermissionsDto {
     canDelete: boolean;
     canPrint: boolean;
     canExport: boolean;
+    canPost: boolean;
+    canCancel: boolean;
+    canAmend: boolean;
+    canOverride: boolean;
+    canRetender: boolean;
     isVisible: boolean;
     isFavourite: boolean;
     isPinned: boolean;
@@ -30,6 +35,7 @@ export declare class MenuMasterPayloadDto {
     menuIconLocationMobile: string | null;
     menuSeparator: boolean;
     menuIsActive: boolean;
+    menuVerbs: string[];
     permissions: MenuMasterUserPermissionsDto | null;
     children?: MenuMasterPayloadDto[];
 }

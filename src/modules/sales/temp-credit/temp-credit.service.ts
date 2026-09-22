@@ -4,7 +4,7 @@ import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import { throwSalesNotFound } from 'src/common/utils/module-service.utils';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
-import { daysBetween, isoDate, isoToday, num } from '../posting/sales-doc.utils';
+import { daysBetween, isoDate, isoToday } from '../posting/sales-doc.utils';
 import type { OpenTempCreditsQueryDto, TempCreditFollowUpDto } from './dto/temp-credit.dto';
 
 /**
@@ -73,19 +73,21 @@ export class TempCreditService {
       billId: r.atc_src_doc_id,
       billRefno: r.atc_bill_refno,
       billDate: isoDate(r.atc_bill_date),
-      billAmount: num(r.atc_bill_amount),
+      // The wire is the one place a plain number is right — JSON has no decimal
+      // type, and at the column's own scale the conversion is exact. It happens
+      // HERE, on the way out, and never before an arithmetic step: §3a rule 1.
+      billAmount: r.atc_bill_amount.toNumber(),
       name: r.atc_name,
       mobile: r.atc_mobile,
       place: r.atc_place,
       days: r.atc_days,
       dueDate: isoDate(r.atc_due_date),
-      creditAmount: num(r.atc_credit_amount),
-      balance: num(r.atc_balance_amount),
+      creditAmount: r.atc_credit_amount.toNumber(),
+      balance: r.atc_balance_amount.toNumber(),
       status: r.atc_status,
-      daysOverdue:
-        num(r.atc_balance_amount) > 0
-          ? Math.max(0, daysBetween(isoDate(r.atc_due_date)!, today))
-          : 0,
+      daysOverdue: r.atc_balance_amount.greaterThan(0)
+        ? Math.max(0, daysBetween(isoDate(r.atc_due_date)!, today))
+        : 0,
       promiseDate: isoDate(r.atc_promise_date),
       followupOn: r.atc_followup_on?.toISOString() ?? null,
       remarks: r.atc_remarks,

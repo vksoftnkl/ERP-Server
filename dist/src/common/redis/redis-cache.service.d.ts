@@ -22,7 +22,7 @@ export declare class RedisCacheService implements OnModuleDestroy {
     del(key: string): Promise<number>;
     delMany(keys: string[]): Promise<number>;
     keys(pattern: string): Promise<string[]>;
-    onModuleDestroy(): Promise<void>;
+    onModuleDestroy(): void;
     private runCommand;
     private ensureConnected;
     private openConnection;

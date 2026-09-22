@@ -212,7 +212,7 @@ export class OpeningBalanceService {
       let updated = 0;
       let skippedZero = 0;
 
-      for (const [index, row] of dto.rows.entries()) {
+      for (const row of dto.rows) {
         const existing = storedByLedger.get(row.opLedgerId) ?? null;
         const amount = money(row.opAmount);
 
@@ -500,7 +500,7 @@ export class OpeningBalanceService {
         unmappedCount += 1;
         continue;
       }
-      if (opening.opDrCr === OpeningDrCr.DEBIT) {
+      if (opening.opDrCr === (OpeningDrCr.DEBIT as string)) {
         totalDebit = totalDebit.plus(opening.opAmount);
       } else {
         totalCredit = totalCredit.plus(opening.opAmount);
@@ -714,13 +714,13 @@ export class OpeningBalanceService {
       return row.opSource ?? OpeningSource.MANUAL;
     }
 
-    if (existing.opSource !== OpeningSource.CARRY_FORWARD) {
+    if (existing.opSource !== (OpeningSource.CARRY_FORWARD as string)) {
       // MIGRATION rows stay MIGRATION — typing them is what migration IS.
       return existing.opSource as OpeningSource;
     }
 
     const figureChanged =
-      !money(existing.opAmount).equals(amount) || existing.opDrCr !== row.opDrCr;
+      !money(existing.opAmount).equals(amount) || existing.opDrCr !== (row.opDrCr as string);
     if (figureChanged) {
       flippedToManual.push(existing.opId);
       return OpeningSource.MANUAL;

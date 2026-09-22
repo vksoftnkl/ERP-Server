@@ -35,6 +35,26 @@ export class MenuMasterUserPermissionsDto {
   @ApiProperty({ example: false })
   canExport!: boolean;
 
+  @ApiProperty({
+    example: false,
+    description:
+      'The five transaction rights. Read them WITH menuVerbs: a true flag on a menu whose verbs ' +
+      'do not include the verb is a stale grant, not a capability.',
+  })
+  canPost!: boolean;
+
+  @ApiProperty({ example: false })
+  canCancel!: boolean;
+
+  @ApiProperty({ example: false })
+  canAmend!: boolean;
+
+  @ApiProperty({ example: false })
+  canOverride!: boolean;
+
+  @ApiProperty({ example: false })
+  canRetender!: boolean;
+
   @ApiProperty({ example: true })
   isVisible!: boolean;
 
@@ -81,6 +101,15 @@ export class MenuMasterPayloadDto {
 
   @ApiProperty({ example: true })
   menuIsActive!: boolean;
+
+  @ApiProperty({
+    type: [String],
+    example: ['VIEW', 'CREATE', 'EDIT', 'DELETE', 'PRINT', 'EXPORT', 'POST', 'CANCEL', 'AMEND'],
+    description:
+      'What this screen can do. Render a permission cell ONLY for a verb listed here — a verb ' +
+      'that is absent gets no checkbox at all, not a greyed one.',
+  })
+  menuVerbs!: string[];
 
   @ApiPropertyOptional({ type: MenuMasterUserPermissionsDto, nullable: true })
   permissions!: MenuMasterUserPermissionsDto | null;

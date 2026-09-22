@@ -66,6 +66,8 @@ exports.DCR_SPEC = {
     itemOptionalFields: save_dc_return_item_dto_1.SDRI_OPTIONAL_FIELDS,
     itemDateFields: save_dc_return_item_dto_1.SDRI_DATE_FIELDS,
     itemRequired: ['sdriDcItemId', 'sdriItemId', 'sdriItemUnitId', 'sdriGodownId'],
+    headerRequired: ['sdrCounterId', 'sdrDcId', 'sdrDcAccYear'],
+    itemDefaults: (h) => ({ sdriPriceLevel: 1, sdriDcAccYear: h.sdrDcAccYear }),
     headerWhereUnique: 'sdrId_sdrAccYear',
     itemWhereUnique: 'sdriId_sdriAccYear',
 };

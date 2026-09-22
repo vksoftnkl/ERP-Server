@@ -17,7 +17,6 @@ const module_service_utils_1 = require("../../../common/utils/module-service.uti
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
 const UNIT_TABLE_NAME = 'item_unit_master';
 const UNIT_AUDIT_SCREEN_NAME = 'Units Master';
-const LEGACY_UNIT_UUID_NUMERIC_COMPARISON_PATTERN = /\b(?:[a-z_][a-z0-9_$]*\s*\.\s*)?(unit_id|unit_base_unit_id)\s*=\s*[-+]?\d+\b/i;
 let UnitsMasterService = class UnitsMasterService {
     prisma;
     auditLogService;
@@ -119,7 +118,6 @@ let UnitsMasterService = class UnitsMasterService {
         this.validateConversionRules(baseUnitId, conversion);
         const now = new Date();
         const createdBy = (0, module_service_utils_1.resolveActor)(saveUnitDto.unit_created_by, this.requestContextService.getUserId());
-        const modifiedBy = (0, module_service_utils_1.resolveActor)(saveUnitDto.unit_modified_by, createdBy);
         const data = {
             unit_name: saveUnitDto.unit_name.trim(),
             unit_created_on: now,

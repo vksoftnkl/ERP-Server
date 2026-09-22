@@ -487,7 +487,7 @@ export class BillWiseService {
       // every other row saves as normal and this one rides along unchanged.
       const settled = settledTotal(existing);
       const amountChanged = !money(row.ablBillAmount).equals(money(existing.ablBillAmount));
-      const sideChanged = row.ablDrCr !== existing.ablDrCr;
+      const sideChanged = (row.ablDrCr as string) !== existing.ablDrCr;
       const refnoChanged = refno !== existing.ablDocRefno;
       const dateChanged = row.ablDocDate !== toDateString(existing.ablDocDate);
 

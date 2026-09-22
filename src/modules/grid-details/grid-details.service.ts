@@ -276,7 +276,7 @@ export class GridDetailsService {
       gridCreatedBy: actor,
       gridModifiedBy: null,
     };
-    await this.applyOptionalGridFields(data, saveGridDetailDto);
+    this.applyOptionalGridFields(data, saveGridDetailDto);
     return this.prisma.$transaction(async (tx) => {
       const created = await tx.gridDetails.create({ data });
       if (saveGridDetailDto.grid_columns?.length) {
@@ -331,7 +331,7 @@ export class GridDetailsService {
         gridName: saveGridDetailDto.grid_name.trim(),
         gridModifiedBy: actor,
       };
-      await this.applyOptionalGridFields(data, saveGridDetailDto);
+      this.applyOptionalGridFields(data, saveGridDetailDto);
       await tx.gridDetails.update({ where: { gridId: parsedGridId }, data });
       if (saveGridDetailDto.grid_columns !== undefined) {
         await this.saveColumnsInTx(saveGridDetailDto.grid_columns, parsedGridId, actor, tx);
@@ -447,20 +447,18 @@ export class GridDetailsService {
     if (hasOwnProperty(dto, 'grid_column_sql_field_name'))
       data.gridColumnSqlFieldName = dto.grid_column_sql_field_name;
   }
-  private async applyOptionalGridFields(
+  private applyOptionalGridFields(
     data: Prisma.GridDetailsUncheckedCreateInput | Prisma.GridDetailsUncheckedUpdateInput,
     dto: SaveGridDetailDto,
-  ): Promise<void> {
+  ): void {
     if (hasOwnProperty(dto, 'grid_description')) data.gridDescription = dto.grid_description;
     if (hasOwnProperty(dto, 'grid_sort_column')) data.gridSortColumn = dto.grid_sort_column;
     if (hasOwnProperty(dto, 'grid_sort_order')) data.gridSortOrder = dto.grid_sort_order;
-    if (hasOwnProperty(dto, 'grid_sql')) data.gridSql = await this.normalizeGridSql(dto.grid_sql);
+    if (hasOwnProperty(dto, 'grid_sql')) data.gridSql = this.normalizeGridSql(dto.grid_sql);
     if (hasOwnProperty(dto, 'grid_status')) data.gridStatus = dto.grid_status;
     if (hasOwnProperty(dto, 'grid_device_type')) data.gridDeviceType = dto.grid_device_type;
   }
-  private async normalizeGridSql(
-    gridSql: string | null | undefined,
-  ): Promise<string | null | undefined> {
+  private normalizeGridSql(gridSql: string | null | undefined): string | null | undefined {
     if (gridSql === undefined || gridSql === null) return gridSql;
     // Strip SQL comments up front so configured queries containing inline `--`/`/* */` notes
     // (e.g. "-- your acc year") are accepted and stored clean, rather than rejected by

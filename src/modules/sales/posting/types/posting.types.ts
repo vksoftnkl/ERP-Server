@@ -122,9 +122,25 @@ export const SALES_ERROR_CODES = {
    * silently re-derived. Tell the Qt side.
    */
   AMOUNT_MISMATCH: 'SALES_AMOUNT_MISMATCH',
+  /**
+   * NOT in HANDOVER §9's table — the goods cannot move because no registered
+   * device stands behind the document. A sales document's device id is free
+   * text (a fingerprint or hostname), but the shadow stock voucher it posts
+   * through carries `svh_device_id uuid NOT NULL` with a foreign key to
+   * `fixed.device_master`. The document's own id is tried first, then the
+   * counter the session logged in at; neither being a registered device is
+   * refused here rather than surfacing as a 23503 the operator cannot read.
+   */
+  DEVICE_UNREGISTERED: 'SALES_DEVICE_UNREGISTERED',
 } as const;
 
 export type SalesErrorCode = (typeof SALES_ERROR_CODES)[keyof typeof SALES_ERROR_CODES];
+
+/**
+ * A known code, or any other string. `string & {}` keeps the known members
+ * visible to autocomplete where a bare `string` would swallow them.
+ */
+export type SalesErrorCodeLike = SalesErrorCode | (string & {});
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  §1.5 — warnings and refusals
@@ -142,7 +158,7 @@ export interface SalesStatutoryRef {
 }
 
 export interface SalesWarning {
-  code: SalesErrorCode | string;
+  code: SalesErrorCodeLike;
   level: SalesWarningLevel;
   message: string;
   field?: string;
@@ -157,7 +173,7 @@ export interface SalesWarning {
 }
 
 export interface SalesRefusal {
-  code: SalesErrorCode | string;
+  code: SalesErrorCodeLike;
   message: string;
   field?: string;
   line?: number;

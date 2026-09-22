@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
+import { RequestContextService } from '../../../common/request-context/request-context.service';
 import { StockPostingService } from '../../stocks/posting/stock-posting.service';
 export type SalesStockDocType = 'SALE_BILL' | 'DELIVERY_CHALLAN' | 'SALE_RETURN' | 'DC_RETURN';
 export type SalesStockTxnType = 'SALE' | 'DC_ISSUE' | 'SALE_RETURN' | 'DC_RETURN';
@@ -54,10 +55,12 @@ export interface SalesStockResult {
 export declare class SalesStockService {
     private readonly prisma;
     private readonly stockPosting;
-    constructor(prisma: PrismaService, stockPosting: StockPostingService);
+    private readonly requestContext;
+    constructor(prisma: PrismaService, stockPosting: StockPostingService, requestContext: RequestContextService);
     post(tx: Prisma.TransactionClient, doc: SalesStockDoc, actor: string, postedOn: Date): Promise<SalesStockResult>;
     cancel(tx: Prisma.TransactionClient, doc: Pick<SalesStockDoc, 'docType' | 'docId' | 'accYear' | 'companyId' | 'branchId' | 'direction' | 'txnType'>, actor: string, reason: string, cancelledOn: Date): Promise<number>;
     private rules;
+    private shadowDevice;
     private units;
     private writeShadow;
 }

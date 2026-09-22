@@ -115,7 +115,7 @@ let OpeningBalanceService = class OpeningBalanceService {
             let created = 0;
             let updated = 0;
             let skippedZero = 0;
-            for (const [index, row] of dto.rows.entries()) {
+            for (const row of dto.rows) {
                 const existing = storedByLedger.get(row.opLedgerId) ?? null;
                 const amount = (0, opening_balance_utils_1.money)(row.opAmount);
                 if (amount.isZero()) {

@@ -139,7 +139,6 @@ let SuppliersService = class SuppliersService {
         const normalizedGstType = (0, module_service_utils_1.normalizeRequiredText)(saveSupplierDto.supGstType, 'supGstType');
         const now = new Date();
         const createdBy = (0, module_service_utils_1.resolveActor)(saveSupplierDto.supCreatedBy, this.requestContextService.getUserId());
-        const modifiedBy = (0, module_service_utils_1.resolveActor)(saveSupplierDto.supModifiedBy, createdBy);
         const data = {
             supGroupId: saveSupplierDto.supGroupId,
             supPurchaseType: normalizedPurchaseType,

@@ -68,6 +68,7 @@ exports.DC_SPEC = {
     itemOptionalFields: save_delivery_challan_item_dto_1.SDI_OPTIONAL_FIELDS,
     itemDateFields: save_delivery_challan_item_dto_1.SDI_DATE_FIELDS,
     itemRequired: ['sdiItemId', 'sdiItemUnitId', 'sdiGodownId'],
+    headerRequired: ['sdcCounterId'],
     headerWhereUnique: 'sdcId_sdcAccYear',
     itemWhereUnique: 'sdiId_sdiAccYear',
 };

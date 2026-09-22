@@ -171,7 +171,6 @@ export class SuppliersService {
       saveSupplierDto.supCreatedBy,
       this.requestContextService.getUserId(),
     );
-    const modifiedBy = resolveActor(saveSupplierDto.supModifiedBy, createdBy);
     const data: Prisma.SupplierUncheckedCreateInput = {
       supGroupId: saveSupplierDto.supGroupId,
       supPurchaseType: normalizedPurchaseType,

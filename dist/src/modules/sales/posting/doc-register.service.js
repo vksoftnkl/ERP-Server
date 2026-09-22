@@ -85,7 +85,7 @@ let DocRegisterService = class DocRegisterService {
         ${money(doc.tcsValue)}::numeric,
         ${money(doc.otherCharge)}::numeric, ${money(doc.roundOff)}::numeric,
         ${money(doc.billValue)}::numeric,
-        ${doc.remarks ?? null}, ${doc.igstOnIntra ?? false}, ${doc.createdBy ?? 'SYSTEM'}
+        ${doc.remarks ?? null}, ${doc.igstOnIntra ?? false}, ${uuidOrNull(doc.createdBy)}::uuid
       )
       RETURNING gdr_id`;
         const gdrId = row.gdr_id;
@@ -113,7 +113,7 @@ let DocRegisterService = class DocRegisterService {
              gdr_doc_cancel_reason = ${reason},
              gdr_doc_canceled_on   = now(),
              gdr_updated_on        = now(),
-             gdr_updated_by        = ${actor}
+             gdr_updated_by        = ${uuidOrNull(actor)}::uuid
        WHERE gdr_id       = ${gdrId}::uuid
          AND gdr_acc_year = ${accYear}::char(9)
          AND gdr_doc_status <> 'CANCELED'::accounts."GdrDocStatus"`;
@@ -129,8 +129,10 @@ let DocRegisterService = class DocRegisterService {
         const values = doc.lines.map((l) => client_1.Prisma.sql `(
         ${gdrId}::uuid, ${doc.voucherId}::uuid, ${l.rowNo}::int,
         ${doc.accYear}::char(9), ${doc.companyId}::uuid, ${doc.branchId}::uuid,
-        ${l.taxability}::accounts."GdrTaxability",
-        ${l.supplyNature}::accounts."GdrSupplyNature",
+        -- The detail table has its own two enums, label-compatible with the
+        -- register's but distinct types: a GdrTaxability cast here is a 42804.
+        ${l.taxability}::accounts."VoucherDocDetailTaxability",
+        ${l.supplyNature}::accounts."VoucherDocDetailSupplyNature",
         ${l.itemId ?? null}::uuid, ${l.itemCode ?? null}, ${l.itemName ?? null},
         ${l.description ?? null}, ${l.hsnCode ?? null}, ${l.unitId ?? null}::uuid,
         ${num(l.qty, 4)}::numeric, ${money(l.rate)}::numeric, ${money(l.discount)}::numeric,
@@ -142,7 +144,7 @@ let DocRegisterService = class DocRegisterService {
         ${money(l.igstAmount)}::numeric, ${money(l.cessAmount)}::numeric,
         ${money(l.cgstAmount + l.sgstAmount + l.igstAmount + l.cessAmount)}::numeric,
         ${money(l.otherAmount)}::numeric, ${money(l.totalValue)}::numeric,
-        ${money(l.billValue)}::numeric, ${doc.createdBy ?? 'SYSTEM'}
+        ${money(l.billValue)}::numeric, ${uuidOrNull(doc.createdBy)}::uuid
       )`);
         return tx.$executeRaw `
       INSERT INTO accounts.acc_voucher_doc_detail (
@@ -170,6 +172,10 @@ exports.DocRegisterService = DocRegisterService = __decorate([
 ], DocRegisterService);
 function money(v) {
     return num(v, 2);
+}
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function uuidOrNull(v) {
+    return v && UUID.test(v) && v !== '00000000-0000-0000-0000-000000000000' ? v : null;
 }
 function num(v, decimals) {
     const f = Math.pow(10, decimals);

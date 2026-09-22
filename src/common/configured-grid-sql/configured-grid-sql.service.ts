@@ -554,7 +554,7 @@ export class ConfiguredGridSqlService {
     if (value instanceof Date) {
       return value;
     }
-    const prototype = Object.getPrototypeOf(value);
+    const prototype: unknown = Object.getPrototypeOf(value);
     if (prototype !== Object.prototype && prototype !== null) {
       return value;
     }

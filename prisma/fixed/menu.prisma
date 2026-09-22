@@ -14,6 +14,15 @@ model Menu {
   menuIconLocationMobile  String? @db.Text @map("menu_icon_location_mobile")
   menuSeparator Boolean  @default(false) @map("menu_separator")
   menuIsActive  Boolean  @default(true)  @map("menu_is_active")
+  /// What this screen can DO (migration 20260922170000). The permissions grid
+  /// renders a cell only for a verb listed here — no checkbox at all for one
+  /// that is absent, because an unchecked box means DENIED and that is a
+  /// different statement from "this screen has nothing to post".
+  ///
+  /// VIEW CREATE EDIT DELETE PRINT EXPORT · every screen
+  /// POST CANCEL AMEND OVERRIDE           · documents that reach the ledger
+  /// RETENDER                             · Sales Entry (12) alone
+  menuVerbs     String[] @default(["VIEW", "CREATE", "EDIT", "DELETE", "PRINT", "EXPORT"]) @map("menu_verbs")
   menuCreatedOn  DateTime  @default(now()) @db.Timestamptz(6) @map("menu_created_on")
   menuModifiedOn DateTime? @updatedAt      @db.Timestamptz(6) @map("menu_modified_on")
   menuSyncDate   DateTime?               @db.Timestamptz(6) @map("menu_sync_date")

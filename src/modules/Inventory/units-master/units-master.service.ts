@@ -17,8 +17,6 @@ import { RequestContextService } from '../../../common/request-context/request-c
 
 const UNIT_TABLE_NAME = 'item_unit_master';
 const UNIT_AUDIT_SCREEN_NAME = 'Units Master';
-const LEGACY_UNIT_UUID_NUMERIC_COMPARISON_PATTERN =
-  /\b(?:[a-z_][a-z0-9_$]*\s*\.\s*)?(unit_id|unit_base_unit_id)\s*=\s*[-+]?\d+\b/i;
 
 @Injectable()
 export class UnitsMasterService {
@@ -145,7 +143,6 @@ export class UnitsMasterService {
       saveUnitDto.unit_created_by,
       this.requestContextService.getUserId(),
     );
-    const modifiedBy = resolveActor(saveUnitDto.unit_modified_by, createdBy);
     const data: Prisma.UnitUncheckedCreateInput = {
       unit_name: saveUnitDto.unit_name.trim(),
       unit_created_on: now,

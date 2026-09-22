@@ -53,6 +53,11 @@ class UserMenuPayloadDto {
     umCanDelete;
     umCanPrint;
     umCanExport;
+    umCanPost;
+    umCanCancel;
+    umCanAmend;
+    umCanOverride;
+    umCanRetender;
     umVisibility;
     umIsFavourite;
     umIsPinned;
@@ -101,6 +106,26 @@ __decorate([
     (0, swagger_1.ApiProperty)(),
     __metadata("design:type", Boolean)
 ], UserMenuPayloadDto.prototype, "umCanExport", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ description: 'May /post. Transaction screens only.' }),
+    __metadata("design:type", Boolean)
+], UserMenuPayloadDto.prototype, "umCanPost", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ description: 'May /cancel a posted document.' }),
+    __metadata("design:type", Boolean)
+], UserMenuPayloadDto.prototype, "umCanCancel", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ description: 'May /amend a posted document.' }),
+    __metadata("design:type", Boolean)
+], UserMenuPayloadDto.prototype, "umCanAmend", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ description: 'May pass a WARN-level guard.' }),
+    __metadata("design:type", Boolean)
+], UserMenuPayloadDto.prototype, "umCanOverride", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ description: 'May re-tender a posted bill. Sales Entry only.' }),
+    __metadata("design:type", Boolean)
+], UserMenuPayloadDto.prototype, "umCanRetender", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)(),
     __metadata("design:type", Boolean)

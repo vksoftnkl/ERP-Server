@@ -150,7 +150,6 @@ let ItemPriceDetailsService = class ItemPriceDetailsService {
         };
     }
     toItemPricePayload(record) {
-        const conversion = record.itemUnitConversion;
         return {
             ipm_id: record.ipmId,
             ipm_company_id: record.ipmCompanyId,

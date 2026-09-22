@@ -158,7 +158,11 @@ export class CarryForwardService {
         for (const [ledgerId, closing] of carried) {
           const existing = existingByLedger.get(ledgerId);
 
-          if (existing && existing.opSource !== OpeningSource.CARRY_FORWARD && !overwriteManual) {
+          if (
+            existing &&
+            existing.opSource !== (OpeningSource.CARRY_FORWARD as string) &&
+            !overwriteManual
+          ) {
             // §7.3 — a MANUAL or MIGRATION row is a human's own figure. A
             // regenerate that quietly replaced it would undo a correction with
             // no trace at all, so it is skipped and counted.
@@ -214,7 +218,9 @@ export class CarryForwardService {
         // is removed, or a regenerate would leave last run's figure standing
         // for a ledger that has since gone to zero.
         const stale = existingRows.filter(
-          (row) => row.opSource === OpeningSource.CARRY_FORWARD && !carried.has(row.opLedgerId),
+          (row) =>
+            row.opSource === (OpeningSource.CARRY_FORWARD as string) &&
+            !carried.has(row.opLedgerId),
         );
         if (stale.length > 0) {
           await tx.accOpeningBalance.updateMany({
@@ -496,7 +502,7 @@ export class CarryForwardService {
       // with it.
       if (
         existingOpening &&
-        existingOpening.opSource !== OpeningSource.CARRY_FORWARD &&
+        existingOpening.opSource !== (OpeningSource.CARRY_FORWARD as string) &&
         !params.overwriteManual
       ) {
         skippedManual += 1;
@@ -672,7 +678,7 @@ export class CarryForwardService {
       if (!ledgers.has(row.opLedgerId)) {
         continue;
       }
-      if (row.opDrCr === OpeningDrCr.DEBIT) {
+      if (row.opDrCr === (OpeningDrCr.DEBIT as string)) {
         debit = debit.plus(row.opAmount);
       } else {
         credit = credit.plus(row.opAmount);

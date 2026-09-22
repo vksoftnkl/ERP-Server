@@ -1,5 +1,5 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsEnum, IsIP, IsNotEmpty, ValidateIf } from 'class-validator';
+import { ApiPropertyOptional } from '@nestjs/swagger';
+import { IsEnum, IsNotEmpty, ValidateIf } from 'class-validator';
 import {
   NullableString,
   NullableUuid,

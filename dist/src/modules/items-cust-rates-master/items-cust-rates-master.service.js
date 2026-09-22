@@ -103,7 +103,6 @@ let ItemsCustRatesMasterService = class ItemsCustRatesMasterService {
         this.validateDateRange(this.parseOptionalDate(saveItemCustRateDto.csr_valid_from, 'csr_valid_from') ?? null, this.parseOptionalDate(saveItemCustRateDto.csr_valid_to, 'csr_valid_to') ?? null);
         const now = new Date();
         const createdBy = (0, module_service_utils_1.resolveActor)(saveItemCustRateDto.csr_created_by, this.requestContextService.getUserId());
-        const modifiedBy = (0, module_service_utils_1.resolveActor)(saveItemCustRateDto.csr_modified_by, createdBy);
         const data = {
             csrCustomerId: saveItemCustRateDto.csr_customer_id,
             csrUnitRateId: saveItemCustRateDto.csr_unit_rate_id,

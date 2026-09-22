@@ -87,6 +87,15 @@ export interface DocSpec {
   itemOptionalFields: readonly string[];
   itemDateFields: readonly string[];
   itemRequired: readonly string[];
+  /**
+   * Header fields the TABLE demands on create beyond the keys the store fills
+   * itself — `sdc_counter_id` and its two siblings are NOT NULL with no
+   * default, while the DTOs (and `sale_bill.sb_counter_id`) treat the counter
+   * as optional. Refused as a 400 naming the field, not a Prisma 500.
+   */
+  headerRequired: readonly string[];
+  /** Defaults a NEW line takes from its header (`sri_price_level` is NOT NULL). */
+  itemDefaults?: (header: DocRow) => DocRow;
   /** The composite unique input name Prisma generated, e.g. `sdcId_sdcAccYear`. */
   headerWhereUnique: string;
   itemWhereUnique: string;
@@ -278,6 +287,17 @@ export class SalesDocStore {
     );
     let row: DocRow;
     if (!existing) {
+      for (const k of this.spec.headerRequired) {
+        if (dto[k] === undefined || dto[k] === null || dto[k] === '') {
+          throwSalesBadRequest(`${k} is required`, [
+            {
+              field: k,
+              message: `${k} must be provided when creating a ${this.spec.screenName.toLowerCase()}`,
+            },
+          ]);
+        }
+        data[k] = dto[k];
+      }
       const docDate = (dto[this.spec.dateField] as string | undefined)
         ? new Date(dto[this.spec.dateField] as string)
         : now;
@@ -534,6 +554,13 @@ export class SalesDocStore {
           ]);
         }
         data[r] = it[r];
+      }
+      if (this.spec.itemDefaults) {
+        for (const [k, v] of Object.entries(this.spec.itemDefaults(row))) {
+          if (data[k] === undefined || data[k] === null) {
+            data[k] = v;
+          }
+        }
       }
       Object.assign(data, {
         [this.spec.itemFk]: row[this.f('Id')],

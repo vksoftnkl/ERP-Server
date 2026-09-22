@@ -7,6 +7,11 @@ export interface MenuMasterUserPermissions {
     canDelete: boolean;
     canPrint: boolean;
     canExport: boolean;
+    canPost: boolean;
+    canCancel: boolean;
+    canAmend: boolean;
+    canOverride: boolean;
+    canRetender: boolean;
     isVisible: boolean;
     isFavourite: boolean;
     isPinned: boolean;
@@ -24,6 +29,7 @@ export interface MenuMasterPayload {
     menuIconLocationMobile: string | null;
     menuSeparator: boolean;
     menuIsActive: boolean;
+    menuVerbs: string[];
     permissions: MenuMasterUserPermissions | null;
     children?: MenuMasterPayload[];
 }

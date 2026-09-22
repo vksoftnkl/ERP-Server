@@ -409,7 +409,6 @@ let ItemsMasterService = class ItemsMasterService {
         const companyId = saveItemDto.item_company_id ?? null;
         const now = new Date();
         const createdBy = (0, module_service_utils_2.resolveActor)(saveItemDto.item_created_by, this.requestContextService.getUserId());
-        const modifiedBy = (0, module_service_utils_2.resolveActor)(saveItemDto.item_modified_by, createdBy);
         const data = {
             itemCompanyId: companyId,
             itemNameEn,

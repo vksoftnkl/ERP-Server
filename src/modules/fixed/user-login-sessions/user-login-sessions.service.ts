@@ -166,7 +166,6 @@ export class UserLoginSessionsService {
       saveUserLoginSessionDto.ulsCreatedBy,
       this.requestContextService.getUserId(),
     );
-    const modifiedBy = resolveActor(saveUserLoginSessionDto.ulsModifiedBy, createdBy);
     const data: Prisma.UserLoginSessionUncheckedCreateInput = {
       ulsCompanyId: saveUserLoginSessionDto.ulsCompanyId,
       ulsBranchId: saveUserLoginSessionDto.ulsBranchId,

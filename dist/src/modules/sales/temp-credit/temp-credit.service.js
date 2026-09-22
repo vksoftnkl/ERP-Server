@@ -52,16 +52,16 @@ let TempCreditService = class TempCreditService {
             billId: r.atc_src_doc_id,
             billRefno: r.atc_bill_refno,
             billDate: (0, sales_doc_utils_1.isoDate)(r.atc_bill_date),
-            billAmount: (0, sales_doc_utils_1.num)(r.atc_bill_amount),
+            billAmount: r.atc_bill_amount.toNumber(),
             name: r.atc_name,
             mobile: r.atc_mobile,
             place: r.atc_place,
             days: r.atc_days,
             dueDate: (0, sales_doc_utils_1.isoDate)(r.atc_due_date),
-            creditAmount: (0, sales_doc_utils_1.num)(r.atc_credit_amount),
-            balance: (0, sales_doc_utils_1.num)(r.atc_balance_amount),
+            creditAmount: r.atc_credit_amount.toNumber(),
+            balance: r.atc_balance_amount.toNumber(),
             status: r.atc_status,
-            daysOverdue: (0, sales_doc_utils_1.num)(r.atc_balance_amount) > 0
+            daysOverdue: r.atc_balance_amount.greaterThan(0)
                 ? Math.max(0, (0, sales_doc_utils_1.daysBetween)((0, sales_doc_utils_1.isoDate)(r.atc_due_date), today))
                 : 0,
             promiseDate: (0, sales_doc_utils_1.isoDate)(r.atc_promise_date),

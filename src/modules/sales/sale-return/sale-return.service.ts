@@ -111,6 +111,8 @@ export const SR_SPEC: DocSpec = {
   itemOptionalFields: SRI_OPTIONAL_FIELDS,
   itemDateFields: SRI_DATE_FIELDS,
   itemRequired: ['sriItemId', 'sriItemUnitId', 'sriGodownId'],
+  headerRequired: ['srCounterId'],
+  itemDefaults: (h) => ({ sriPriceLevel: (h.srPriceLevel as number | null) ?? 1 }),
   headerWhereUnique: 'srId_srAccYear',
   itemWhereUnique: 'sriId_sriAccYear',
 };
@@ -833,7 +835,10 @@ export class SaleReturnService {
             billId: billAbl.abl_id,
             billAccYear: bill.sb_acc_year,
             billAmount: billAbl.abl_bill_amount,
-            paidAmount: billAbl.abl_alloc_amount,
+            // The helper rewrites abl_alloc_amount as paid + Σ adjustments, so
+            // "paid" is the tenders alone: the allocation with the set-offs it
+            // already carries taken back out.
+            paidAmount: paidBaseOf(billAbl.abl_alloc_amount, live),
             companyId: keys.companyId,
             branchId: keys.branchId,
             tenantId: row.srTenantId as string | null,
@@ -1458,16 +1463,18 @@ export class SaleReturnService {
              WHERE abl_src_doc_id = ${bill.sb_id}::uuid AND abl_acc_year = ${bill.sb_acc_year}::char(9) AND abl_src_doc_type = 'SALE_BILL' AND abl_is_deleted = false FOR UPDATE`
         : [];
       if (bill && billAbl) {
-        const live = (await this.liveAdjustments(tx, billAbl.abl_id, bill.sb_acc_year)).filter(
-          (a) => a.againstBillId !== cn.ablId,
-        );
+        const all = await this.liveAdjustments(tx, billAbl.abl_id, bill.sb_acc_year);
+        const live = all.filter((a) => a.againstBillId !== cn.ablId);
         await syncBillAdjustments(
           tx,
           {
             billId: billAbl.abl_id,
             billAccYear: bill.sb_acc_year,
             billAmount: billAbl.abl_bill_amount,
-            paidAmount: billAbl.abl_alloc_amount,
+            // Tenders only — see postCore. Every set-off still live, this
+            // note's included, comes out of the allocation before the helper
+            // adds back the ones that survive.
+            paidAmount: paidBaseOf(billAbl.abl_alloc_amount, all),
             companyId: keys.companyId,
             branchId: keys.branchId,
             tenantId: row.srTenantId as string | null,
@@ -1565,4 +1572,22 @@ export class SaleReturnService {
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 function isUuid(v: string | null | undefined): v is string {
   return !!v && UUID.test(v);
+}
+
+/**
+ * What the bill's tenders settled: its allocation less the set-offs it already
+ * carries. `syncBillAdjustments` writes `abl_alloc_amount = paid + Σ adjust`,
+ * so handing it the whole allocation as "paid" counts every existing set-off
+ * twice — and on an unwind leaves the bill CLOSED after its credit is gone.
+ */
+function paidBaseOf(
+  allocation: Prisma.Decimal,
+  live: readonly { amount: number | string }[],
+): Prisma.Decimal {
+  const adjusted = live.reduce(
+    (t, a) => t.plus(new Prisma.Decimal(a.amount)),
+    new Prisma.Decimal(0),
+  );
+  const base = new Prisma.Decimal(allocation).minus(adjusted);
+  return base.lessThan(0) ? new Prisma.Decimal(0) : base;
 }

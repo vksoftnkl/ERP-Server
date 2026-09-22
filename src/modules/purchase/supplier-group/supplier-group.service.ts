@@ -127,7 +127,6 @@ export class SupplierGroupService {
       saveSupplierGroupDto.spgCreatedBy,
       this.requestContextService.getUserId(),
     );
-    const modifiedBy = resolveActor(saveSupplierGroupDto.spgModifiedBy, createdBy);
     const normalizedName = normalizeRequiredText(saveSupplierGroupDto.spgName, 'spgName');
     const data: Prisma.SupplierGroupUncheckedCreateInput = {
       spgName: normalizedName,

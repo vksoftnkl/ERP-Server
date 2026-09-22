@@ -5,16 +5,18 @@ const node_events_1 = require("node:events");
 class NoopKeyvStoreAdapter extends node_events_1.EventEmitter {
     opts = {};
     namespace;
-    async get(_key) {
-        return undefined;
+    get() {
+        return Promise.resolve(undefined);
     }
-    async set(_key, _value, _ttl) {
-        return true;
+    set() {
+        return Promise.resolve(true);
     }
-    async delete(_key) {
-        return true;
+    delete() {
+        return Promise.resolve(true);
     }
-    async clear() { }
+    clear() {
+        return Promise.resolve();
+    }
 }
 exports.NoopKeyvStoreAdapter = NoopKeyvStoreAdapter;
 //# sourceMappingURL=noop-keyv-store.adapter.js.map

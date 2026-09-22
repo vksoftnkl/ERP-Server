@@ -9,7 +9,7 @@ export class BarcodeLookupQueryDto {
     description:
       'Barcode / EAN code to resolve (legacy iflag=10). Matched case-insensitively against item_ean_codes.ean_code.',
   })
-  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : (value as unknown)))
   @IsString()
   @IsNotEmpty()
   @MaxLength(64)

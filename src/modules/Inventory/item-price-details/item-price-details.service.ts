@@ -151,8 +151,6 @@ export class ItemPriceDetailsService {
     };
   }
   private toItemPricePayload(record: ItemPriceMasterWithConversion): ItemPricePayload {
-    // The unit shape now lives on the conversion row the price points at.
-    const conversion = record.itemUnitConversion;
     return {
       ipm_id: record.ipmId,
       ipm_company_id: record.ipmCompanyId,

@@ -69,6 +69,8 @@ exports.SR_SPEC = {
     itemOptionalFields: save_sale_return_item_dto_1.SRI_OPTIONAL_FIELDS,
     itemDateFields: save_sale_return_item_dto_1.SRI_DATE_FIELDS,
     itemRequired: ['sriItemId', 'sriItemUnitId', 'sriGodownId'],
+    headerRequired: ['srCounterId'],
+    itemDefaults: (h) => ({ sriPriceLevel: h.srPriceLevel ?? 1 }),
     headerWhereUnique: 'srId_srAccYear',
     itemWhereUnique: 'sriId_sriAccYear',
 };
@@ -585,7 +587,7 @@ let SaleReturnService = class SaleReturnService {
                     billId: billAbl.abl_id,
                     billAccYear: bill.sb_acc_year,
                     billAmount: billAbl.abl_bill_amount,
-                    paidAmount: billAbl.abl_alloc_amount,
+                    paidAmount: paidBaseOf(billAbl.abl_alloc_amount, live),
                     companyId: keys.companyId,
                     branchId: keys.branchId,
                     tenantId: row.srTenantId,
@@ -975,12 +977,13 @@ let SaleReturnService = class SaleReturnService {
              WHERE abl_src_doc_id = ${bill.sb_id}::uuid AND abl_acc_year = ${bill.sb_acc_year}::char(9) AND abl_src_doc_type = 'SALE_BILL' AND abl_is_deleted = false FOR UPDATE`
                 : [];
             if (bill && billAbl) {
-                const live = (await this.liveAdjustments(tx, billAbl.abl_id, bill.sb_acc_year)).filter((a) => a.againstBillId !== cn.ablId);
+                const all = await this.liveAdjustments(tx, billAbl.abl_id, bill.sb_acc_year);
+                const live = all.filter((a) => a.againstBillId !== cn.ablId);
                 await (0, bill_adjustment_helper_1.syncBillAdjustments)(tx, {
                     billId: billAbl.abl_id,
                     billAccYear: bill.sb_acc_year,
                     billAmount: billAbl.abl_bill_amount,
-                    paidAmount: billAbl.abl_alloc_amount,
+                    paidAmount: paidBaseOf(billAbl.abl_alloc_amount, all),
                     companyId: keys.companyId,
                     branchId: keys.branchId,
                     tenantId: row.srTenantId,
@@ -1063,5 +1066,10 @@ exports.SaleReturnService = SaleReturnService = __decorate([
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 function isUuid(v) {
     return !!v && UUID.test(v);
+}
+function paidBaseOf(allocation, live) {
+    const adjusted = live.reduce((t, a) => t.plus(new client_1.Prisma.Decimal(a.amount)), new client_1.Prisma.Decimal(0));
+    const base = new client_1.Prisma.Decimal(allocation).minus(adjusted);
+    return base.lessThan(0) ? new client_1.Prisma.Decimal(0) : base;
 }
 //# sourceMappingURL=sale-return.service.js.map

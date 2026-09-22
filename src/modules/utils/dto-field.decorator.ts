@@ -26,7 +26,7 @@ export function OptionalUuidField(options?: { description?: string; example?: st
       example: options?.example ?? UUID_EXAMPLE,
       description: options?.description,
     }),
-    Transform(({ value }) => UuidUtil.toOptional(value)),
+    Transform(({ value }) => UuidUtil.toOptional(value as string)),
     IsOptional(),
     IsUUID('all'),
   );
@@ -40,7 +40,7 @@ export function RequiredUuidField(options?: { description?: string; example?: st
       example: options?.example ?? UUID_EXAMPLE,
       description: options?.description,
     }),
-    Transform(({ value }) => UuidUtil.toOptional(value)),
+    Transform(({ value }) => UuidUtil.toOptional(value as string)),
     IsNotEmpty(),
     IsUUID('all'),
   );
@@ -82,7 +82,7 @@ export function RequiredStringField(options?: {
       example: options?.example,
       description: options?.description,
     }),
-    Transform(({ value }) => (typeof value === 'string' ? value.trim() : value)),
+    Transform(({ value }) => (typeof value === 'string' ? value.trim() : (value as unknown))),
     IsString(),
     IsNotEmpty(),
   ];

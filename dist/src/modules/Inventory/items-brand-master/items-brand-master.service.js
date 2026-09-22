@@ -123,7 +123,6 @@ let ItemsBrandMasterService = class ItemsBrandMasterService {
                 }
                 const now = new Date();
                 const createdBy = this.requestContextService.getUserId() ?? module_service_utils_1.DEFAULT_ACTOR;
-                const modifiedBy = createdBy;
                 const data = {
                     brand_name: saveItemBrandDto.brand_name.trim(),
                     brand_created_on: now,

@@ -2,13 +2,14 @@ import { Injectable } from '@nestjs/common';
 import { ConflictException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
+import { RequestContextService } from '../../../common/request-context/request-context.service';
 import { TxnStatusDocType } from 'src/common/txn-status-log/txn-status-log.helper';
 import { StockPostingService } from '../../stocks/posting/stock-posting.service';
 import { StockVoucherSource } from '../../stocks/posting/stock-voucher.source';
 import type { StockVoucherTypeRules } from '../../stocks/stock-voucher/types/stock-voucher.types';
 import { throwSalesRefused } from './sales.errors';
 import { SALES_ERROR_CODES } from './types/posting.types';
-import { round2, round4 } from './sales-doc.utils';
+import { round2 } from './sales-doc.utils';
 
 /**
  * §3.1 — how a sales document moves stock.
@@ -91,6 +92,8 @@ interface UnitRow {
   iuc_unit_id: string;
   iuc_base_unit_id: string;
   iuc_to_base_factor: Prisma.Decimal;
+  /** The item's BASE conversion row — what `svi_base_uom_id` keys on. */
+  base_iuc_id: string;
 }
 
 @Injectable()
@@ -98,6 +101,7 @@ export class SalesStockService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly stockPosting: StockPostingService,
+    private readonly requestContext: RequestContextService,
   ) {}
 
   /** Move the goods. Returns the cost the engine settled on, per line. */
@@ -107,7 +111,15 @@ export class SalesStockService {
     actor: string,
     postedOn: Date,
   ): Promise<SalesStockResult> {
-    const lines = doc.lines.filter((l) => !l.isService && round4(l.qty + (l.freeQty ?? 0)) > 0);
+    // Filtered by the SAME rounding the line will be stored at, so a line that
+    // survives here is a line the engine will find a movement on.
+    const lines = doc.lines.filter(
+      (l) =>
+        !l.isService &&
+        decQty(l.qty)
+          .plus(decQty(l.freeQty ?? 0))
+          .greaterThan(0),
+    );
     if (lines.length === 0) {
       return {
         svhId: null,
@@ -155,13 +167,39 @@ export class SalesStockService {
           FROM stock.stock_ledger
          WHERE sml_src_doc_id = ${svhId}::uuid AND sml_acc_year = ${doc.accYear}::bpchar
            AND sml_is_reversal = false AND sml_is_deleted = false`;
-      const expected = round4(lines.reduce((s, l) => s + l.qty + (l.freeQty ?? 0), 0));
-      const got = round4(Number(sum?.qty ?? 0));
-      if (Math.abs(expected - got) > 0.0005) {
+      // Both sides in Decimal, and EQUAL rather than within a tolerance: the
+      // expected total is summed from the very values `writeShadow` stored, so
+      // any difference is a lost line and not a rounding artefact.
+      const expected = totalQtyOf(lines);
+      const got = decQty(sum?.qty);
+      if (!expected.equals(got)) {
         throw new Error(
-          `${SALES_ERROR_CODES.STOCK_QTY_MISMATCH}: ${doc.docType} ${doc.refno} moved ${got} against ${expected} on its lines`,
+          `${SALES_ERROR_CODES.STOCK_QTY_MISMATCH}: ${doc.docType} ${doc.refno} moved ${got.toString()} against ${expected.toString()} on its lines`,
         );
       }
+
+      // The header's VALUE totals, rolled up from the ledger.
+      //
+      // They cannot be written when the shadow is: a line's cost is not known
+      // until the engine resolves it at post (AVG_COST prices it in phase 2),
+      // so the INSERT would store zeros with extra steps. The sum is taken in
+      // the database and never round-trips through a JS number.
+      //
+      // `sml_is_reversal = false` is the whole of it: without that predicate a
+      // cancelled voucher sums its own reversals back in and lands on zero for
+      // a different reason.
+      await tx.$executeRaw`
+        UPDATE stock.stock_voucher svh
+           SET svh_total_value     = COALESCE(t.v, 0),
+               svh_total_value_wot = COALESCE(t.vw, 0)
+          FROM (SELECT SUM(sml_cost_value)     AS v,
+                       SUM(sml_cost_value_wot) AS vw
+                  FROM stock.stock_ledger
+                 WHERE sml_src_doc_id  = ${svhId}::uuid
+                   AND sml_acc_year    = ${doc.accYear}::bpchar
+                   AND sml_is_deleted  = false
+                   AND sml_is_reversal = false) t
+         WHERE svh.svh_id = ${svhId}::uuid AND svh.svh_acc_year = ${doc.accYear}::bpchar`;
 
       const costs = await tx.$queryRaw<
         { svi_line_no: number; svi_lot_id: string | null; cost: Prisma.Decimal | null }[]
@@ -267,15 +305,54 @@ export class SalesStockService {
     } as StockVoucherTypeRules;
   }
 
+  /**
+   * The device the shadow voucher is filed under.
+   *
+   * `svh_device_id` is `uuid NOT NULL` with a foreign key to
+   * `fixed.device_master`; a sales document's device id is free text (a
+   * fingerprint or a hostname). So the document's id is used when it IS a
+   * registered device, the session's counter otherwise, and a document with
+   * neither is refused with a code the screen can read — the 'SERVER' literal
+   * this used to fall back to could never have satisfied the column.
+   */
+  private async shadowDevice(tx: Prisma.TransactionClient, doc: SalesStockDoc): Promise<string> {
+    const candidates = [doc.deviceId?.trim(), this.requestContext.getDeviceId()].filter(isUuid);
+    if (candidates.length > 0) {
+      const rows = await tx.$queryRaw<{ dev_id: string }[]>`
+        SELECT dev_id FROM fixed.device_master
+         WHERE dev_id = ANY(${candidates}::uuid[]) AND dev_is_deleted = false`;
+      const live = new Set(rows.map((r) => r.dev_id));
+      const hit = candidates.find((c) => live.has(c));
+      if (hit) {
+        return hit;
+      }
+    }
+    throwSalesRefused(
+      `${DISPLAY_NAME[doc.docType]} ${doc.refno} cannot move stock: its device (${doc.deviceId ?? 'none'}) is not a registered device and the session has no counter`,
+      SALES_ERROR_CODES.DEVICE_UNREGISTERED,
+      'deviceId',
+    );
+  }
+
   private async units(
     tx: Prisma.TransactionClient,
     iucIds: string[],
   ): Promise<Map<string, UnitRow>> {
     const ids = [...new Set(iucIds)];
+    // `svi_uom_id` / `svi_base_uom_id` (and the ledger's) are foreign keys to
+    // item_unit_conversion, NOT to the unit master: the line's own conversion
+    // row is the unit, the item's base row (factor 1) is the base unit.
     const rows = await tx.$queryRaw<UnitRow[]>`
-      SELECT iuc_id, iuc_unit_id, iuc_base_unit_id, iuc_to_base_factor
-        FROM inventory.item_unit_conversion
-       WHERE iuc_id = ANY(${ids}::uuid[])`;
+      SELECT iuc.iuc_id, iuc.iuc_unit_id, iuc.iuc_base_unit_id, iuc.iuc_to_base_factor,
+             COALESCE(base.iuc_id, iuc.iuc_id) AS base_iuc_id
+        FROM inventory.item_unit_conversion iuc
+        LEFT JOIN LATERAL (
+          SELECT b.iuc_id FROM inventory.item_unit_conversion b
+           WHERE b.iuc_item_id = iuc.iuc_item_id AND b.iuc_is_base_unit = true
+             AND b.iuc_is_deleted = false
+           ORDER BY b.iuc_unit_slno LIMIT 1
+        ) base ON true
+       WHERE iuc.iuc_id = ANY(${ids}::uuid[])`;
     const by = new Map(rows.map((r) => [r.iuc_id, r]));
     const missing = ids.filter((id) => !by.has(id));
     if (missing.length > 0) {
@@ -297,13 +374,13 @@ export class SalesStockService {
     actor: string,
     now: Date,
   ): Promise<string> {
-    const deviceId = doc.deviceId?.trim() || 'SERVER';
+    const deviceId = await this.shadowDevice(tx, doc);
     const [slno] = await tx.$queryRaw<{ next: bigint }[]>`
       SELECT COALESCE(MAX(svh_slno), 0) + 1 AS next
         FROM stock.stock_voucher
        WHERE svh_acc_year = ${doc.accYear}::bpchar AND svh_company_id = ${doc.companyId}::uuid
          AND svh_branch_id = ${doc.branchId}::uuid AND svh_voucher_type = ${rules.voucherType}
-         AND svh_device_id = ${deviceId}`;
+         AND svh_device_id = ${deviceId}::uuid`;
     const refno = `${doc.docType}/${doc.refno}/r${doc.revision}`;
     const godowns = [...new Set(lines.map((l) => l.godownId))];
     const inward = doc.direction === 'IN';
@@ -317,13 +394,13 @@ export class SalesStockService {
         svh_line_count, svh_total_qty, svh_status, svh_rate_source, svh_remarks, svh_created_on, svh_created_by
       ) VALUES (
         ${doc.companyId}::uuid, ${doc.branchId}::uuid, ${doc.tenantId ?? null}::uuid, ${doc.accYear}::bpchar,
-        ${deviceId}, ${doc.sessionId ?? null}::uuid,
+        ${deviceId}::uuid, ${doc.sessionId ?? null}::uuid,
         ${rules.voucherType}, ${Number(slno?.next ?? 1)}::bigint, ${refno}, ${doc.refno},
         ${doc.docDate}::date, ${doc.docDatetime},
         ${inward ? null : godowns[0]}::uuid, ${inward ? godowns[0] : null}::uuid,
         ${doc.partyId ?? null},
         'SALES', ${doc.docType}, ${doc.docId}::uuid, ${doc.accYear}::bpchar,
-        ${lines.length}::int, ${round4(lines.reduce((s, l) => s + l.qty + (l.freeQty ?? 0), 0))}::numeric,
+        ${lines.length}::int, ${totalQtyOf(lines)}::numeric,
         'DRAFT', 'AVG_COST', ${doc.remarks ?? `${DISPLAY_NAME[doc.docType]} ${doc.refno}`},
         ${now}, ${actor === '00000000-0000-0000-0000-000000000000' ? null : actor}
       )
@@ -334,16 +411,17 @@ export class SalesStockService {
       const u = units.get(l.itemUnitId)!;
       const factor =
         l.toBaseFactor && l.toBaseFactor > 0 ? l.toBaseFactor : Number(u.iuc_to_base_factor) || 1;
-      const qty = round4(l.qty);
-      const free = round4(l.freeQty ?? 0);
+      const qty = decQty(l.qty);
+      const free = decQty(l.freeQty ?? 0);
       return Prisma.sql`(
         ${svhId}::uuid, ${doc.companyId}::uuid, ${doc.branchId}::uuid, ${doc.tenantId ?? null}::uuid,
         ${doc.accYear}::bpchar, ${l.lineNo}::int, 1,
-        ${l.itemId}::uuid, ${u.iuc_unit_id}::uuid, ${u.iuc_base_unit_id}::uuid, ${factor}::numeric,
+        ${l.itemId}::uuid, ${u.iuc_id}::uuid, ${u.base_iuc_id}::uuid, ${factor}::numeric,
         ${l.godownId}::uuid, ${l.lotId ?? null}::uuid, ${l.bucket ?? 'SALEABLE'},
         ${l.batchNo ?? null}, ${l.batchDate ?? null}::date, ${l.expiryDate ?? null}::date,
         ${l.mrp ?? null}::numeric, ${l.rate ?? null}::numeric, ${l.serialNo ?? null},
-        ${qty}::numeric, ${round4(qty * factor)}::numeric, ${free}::numeric, ${round4(free * factor)}::numeric,
+        ${qty}::numeric, ${decQty(qty.times(factor))}::numeric,
+        ${free}::numeric, ${decQty(free.times(factor))}::numeric,
         ${l.weightQty ?? 0}::numeric,
         ${l.costRate ?? 0}::numeric, ${l.costRate ?? 0}::numeric, ${l.taxPerc ?? 0}::numeric,
         ${now}, ${actor === '00000000-0000-0000-0000-000000000000' ? null : actor}
@@ -366,6 +444,51 @@ export class SalesStockService {
 
     return svhId;
   }
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function isUuid(v: string | null | undefined): v is string {
+  return !!v && UUID.test(v);
+}
+
+/**
+ * The scale a shadow line's quantity is held at.
+ *
+ * `svi_qty` and `sml_qty` are `numeric(18,6)`; four places is what this module
+ * has always stored and is kept so a re-post writes what it wrote before. What
+ * matters is that ONE scale is applied in ONE place: the per-line values and
+ * the header total below are rounded by the same function, so the total is Σ of
+ * exactly the values that were stored and the reconciliation can demand
+ * equality instead of a tolerance.
+ */
+const QTY_SCALE = 4;
+
+/** A quantity as a Decimal at the line scale. Never through a float. */
+function decQty(v: number | string | Prisma.Decimal | null | undefined): Prisma.Decimal {
+  if (v === null || v === undefined || v === '') {
+    return new Prisma.Decimal(0);
+  }
+  let d: Prisma.Decimal;
+  try {
+    d = v instanceof Prisma.Decimal ? v : new Prisma.Decimal(v);
+  } catch {
+    return new Prisma.Decimal(0);
+  }
+  return d.isFinite()
+    ? d.toDecimalPlaces(QTY_SCALE, Prisma.Decimal.ROUND_HALF_UP)
+    : new Prisma.Decimal(0);
+}
+
+/**
+ * What the document moves, summed in Decimal — rule 1 of §3a. Adding the lines
+ * in float64 and rounding at the end is how a twenty-line document ends up a
+ * paise-equivalent short of the ledger it just wrote.
+ */
+function totalQtyOf(lines: readonly SalesStockLine[]): Prisma.Decimal {
+  return lines.reduce(
+    (total, l) => total.plus(decQty(l.qty)).plus(decQty(l.freeQty ?? 0)),
+    new Prisma.Decimal(0),
+  );
 }
 
 const DISPLAY_NAME: Record<SalesStockDocType, string> = {

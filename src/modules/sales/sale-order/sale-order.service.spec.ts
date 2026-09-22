@@ -47,8 +47,6 @@ const ITEM_MASTER_ID = '019c6f6c-be87-7a11-8905-36092c46fb12';
 const ITEM_UNIT_ID = '019c6f6c-be87-7a11-8905-36092c46fb13';
 const GODOWN_ID = '019c6f6c-be87-7a11-8905-36092c46fb14';
 const SEQ_ID = '019c6f6c-be87-7a11-8905-36092c46fb16';
-const BILL_ID = '019c6f6c-be87-7a11-8905-36092c46fb18';
-const OTHER_ORDER_ID = '019c6f6c-be87-7a11-8905-36092c46fb19';
 // so_salesman_id is a uuid[]: an order can be credited to more than one person.
 const SALESMAN_A_ID = '019c6f6c-be87-7a11-8905-36092c46fb1a';
 const SALESMAN_B_ID = '019c6f6c-be87-7a11-8905-36092c46fb1b';
@@ -506,6 +504,11 @@ type PrismaMock = {
 
 // expect.objectContaining() is typed `any`; wrapping it keeps the nested
 // matchers below out of no-unsafe-assignment's way.
+// Money and quantity reach their columns as Prisma.Decimal — never through a
+// float64 — so the write assertions below compare against one. The API payloads
+// they sit beside stay plain numbers: JSON has no decimal type, and at the
+// column's own scale a number round-trips exactly.
+const dec = (value: number | string): Prisma.Decimal => new Prisma.Decimal(value);
 const containing = (value: Record<string, unknown>): unknown => expect.objectContaining(value);
 
 const makePrismaMock = (): PrismaMock => {
@@ -762,7 +765,9 @@ describe('SaleOrderService', () => {
           soiOrderId: SALE_ORDER_ID,
           soiAccYear: ACC_YEAR,
           soiLineNo: 1,
-          soiNetQty: 10,
+          // A Decimal, not a number: the billable quantity reaches the column
+          // without passing through float64 (§3a rule 1).
+          soiNetQty: new Prisma.Decimal(10),
         }),
       });
       const created = prisma.saleOrderItem.create.mock.calls[0][0].data;
@@ -839,7 +844,7 @@ describe('SaleOrderService', () => {
     it('derives the advance balance when the payload moves the components without it', async () => {
       await service.save(baseDto({ soAdvanceRecdAmt: 500, soAdvanceRefundAmt: 100 }));
       expect(prisma.saleOrder.create).toHaveBeenCalledWith({
-        data: containing({ soAdvanceBalanceAmt: 400 }),
+        data: containing({ soAdvanceBalanceAmt: new Prisma.Decimal(400) }),
       });
     });
 
@@ -1837,7 +1842,7 @@ describe('SaleOrderService', () => {
       });
       // Only the cancelled quantity is written: moving pending into it is what
       // drives the two GENERATED columns, which the DB answers back with.
-      expect(lineUpdate(LINE_A_ID)).toEqual(containing({ soiCancelledQty: 10 }));
+      expect(lineUpdate(LINE_A_ID)).toEqual(containing({ soiCancelledQty: dec(10) }));
       expect(result.lines).toEqual([
         containing({ soiCancelledQty: 10, soiLineStatus: 'CANCELLED' }),
       ]);
@@ -1845,8 +1850,8 @@ describe('SaleOrderService', () => {
         containing({
           soStatus: 'CANCELLED',
           soFulfilStatus: 'CANCELLED',
-          soCancelledAmt: 1000,
-          soPendingAmt: 0,
+          soCancelledAmt: dec(1000),
+          soPendingAmt: dec(0),
         }),
       );
       expect(result).toEqual(
@@ -1884,7 +1889,7 @@ describe('SaleOrderService', () => {
         soiCancelReason: 'Item discontinued',
       });
       expect(lineUpdate(LINE_A_ID)).toEqual(
-        containing({ soiCancelReason: 'Item discontinued', soiCancelledQty: 10 }),
+        containing({ soiCancelReason: 'Item discontinued', soiCancelledQty: dec(10) }),
       );
       expect(appendTxnStatusLog).toHaveBeenCalledWith(
         expect.anything(),
@@ -1914,16 +1919,16 @@ describe('SaleOrderService', () => {
         } as Partial<SaleOrderItem>),
       ]);
       const result = await service.cancelOpenLines('SALES', SALE_ORDER_ID, ACC_YEAR, {});
-      expect(lineUpdate(LINE_A_ID)).toEqual(containing({ soiCancelledQty: 8 }));
+      expect(lineUpdate(LINE_A_ID)).toEqual(containing({ soiCancelledQty: dec(8) }));
       expect(result.lines).toEqual([containing({ soiLineStatus: 'PARTIAL' })]);
       expect(headerUpdate()).toEqual(
         containing({
           soStatus: 'COMPLETED',
           soFulfilStatus: 'COMPLETED',
           // 8 of 10 units of a 1000.00 line.
-          soCancelledAmt: 800,
-          soPendingAmt: 0,
-          soBilledAmt: 200,
+          soCancelledAmt: dec(800),
+          soPendingAmt: dec(0),
+          soBilledAmt: dec(200),
           // Delivered 2 and wrote off the rest: the line has nothing left to
           // settle, so it counts.
           soDeliveredItems: 1,
@@ -1959,14 +1964,14 @@ describe('SaleOrderService', () => {
       ]);
       const result = await service.cancelOpenLines('SALES', SALE_ORDER_ID, ACC_YEAR, {});
       expect(lineUpdate(LINE_A_ID)).toBeUndefined();
-      expect(lineUpdate(LINE_B_ID)).toEqual(containing({ soiCancelledQty: 5 }));
+      expect(lineUpdate(LINE_B_ID)).toEqual(containing({ soiCancelledQty: dec(5) }));
       expect(headerUpdate()).toEqual(
         containing({
           soStatus: 'COMPLETED',
           soFulfilStatus: 'COMPLETED',
           soTotItems: 2,
           soDeliveredItems: 2,
-          soCancelledAmt: 500,
+          soCancelledAmt: dec(500),
         }),
       );
       expect(result.cancelledLines).toBe(1);
@@ -1991,7 +1996,9 @@ describe('SaleOrderService', () => {
       // The header caches are still reconciled — they were caller-stated until
       // this endpoint existed — but nothing moved, so soStatus is unchanged and
       // the trail gains no second row.
-      expect(headerUpdate()).toEqual(containing({ soStatus: 'CANCELLED', soCancelledAmt: 1000 }));
+      expect(headerUpdate()).toEqual(
+        containing({ soStatus: 'CANCELLED', soCancelledAmt: dec(1000) }),
+      );
       expect(appendTxnStatusLog).not.toHaveBeenCalled();
     });
 
@@ -2032,8 +2039,8 @@ describe('SaleOrderService', () => {
           soStatus: 'COMPLETED',
           soFulfilStatus: 'COMPLETED',
           soDeliveredItems: 1,
-          soCancelledAmt: 0,
-          soBilledAmt: 1000,
+          soCancelledAmt: dec(0),
+          soBilledAmt: dec(1000),
           soCompletedOn: expect.any(Date),
         }),
       );
@@ -2123,7 +2130,7 @@ describe('SaleOrderService', () => {
       });
 
       expect(lineUpdate(LINE_A_ID)).toEqual(
-        containing({ soiCancelledQty: 10, soiCancelReason: 'Line withdrawn' }),
+        containing({ soiCancelledQty: dec(10), soiCancelReason: 'Line withdrawn' }),
       );
       expect(result.lines).toEqual([containing({ soiLineStatus: 'CANCELLED' })]);
       // The sibling is wide open and stays that way.
@@ -2145,8 +2152,8 @@ describe('SaleOrderService', () => {
           soFulfilStatus: 'PARTIAL',
           soDeliveredItems: 1,
           soTotItems: 2,
-          soCancelledAmt: 1000,
-          soPendingAmt: 500,
+          soCancelledAmt: dec(1000),
+          soPendingAmt: dec(500),
         }),
       );
       expect(headerUpdate()).not.toHaveProperty('soStatus');

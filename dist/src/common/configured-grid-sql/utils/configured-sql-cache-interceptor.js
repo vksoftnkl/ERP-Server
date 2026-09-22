@@ -9,6 +9,18 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.ConfiguredGridCacheInterceptor = void 0;
 const common_1 = require("@nestjs/common");
 const cache_manager_1 = require("@nestjs/cache-manager");
+const text = (value) => {
+    if (value === undefined || value === null)
+        return '';
+    if (typeof value === 'string')
+        return value;
+    if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') {
+        return String(value);
+    }
+    if (Array.isArray(value))
+        return value.map(text).join(',');
+    return JSON.stringify(value) ?? '';
+};
 let ConfiguredGridCacheInterceptor = class ConfiguredGridCacheInterceptor extends cache_manager_1.CacheInterceptor {
     trackBy(context) {
         const req = context.switchToHttp().getRequest();
@@ -17,12 +29,12 @@ let ConfiguredGridCacheInterceptor = class ConfiguredGridCacheInterceptor extend
         }
         const q = req.query ?? {};
         const key = [
-            req.path,
-            `grid_id=${q.grid_id ?? ''}`,
-            `page=${q.page ?? 1}`,
-            `limit=${q.limit ?? 20}`,
-            `search=${(q.search ?? '').toString().trim().toLowerCase()}`,
-            `grid_param=${q.grid_param ?? ''}`,
+            req.path ?? '',
+            `grid_id=${text(q.grid_id)}`,
+            `page=${text(q.page ?? 1)}`,
+            `limit=${text(q.limit ?? 20)}`,
+            `search=${text(q.search).trim().toLowerCase()}`,
+            `grid_param=${text(q.grid_param)}`,
         ].join('|');
         return key;
     }

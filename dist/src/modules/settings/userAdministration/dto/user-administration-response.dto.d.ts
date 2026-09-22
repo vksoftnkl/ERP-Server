@@ -18,6 +18,11 @@ export declare class UserMenuPayloadDto {
     umCanDelete: boolean;
     umCanPrint: boolean;
     umCanExport: boolean;
+    umCanPost: boolean;
+    umCanCancel: boolean;
+    umCanAmend: boolean;
+    umCanOverride: boolean;
+    umCanRetender: boolean;
     umVisibility: boolean;
     umIsFavourite: boolean;
     umIsPinned: boolean;

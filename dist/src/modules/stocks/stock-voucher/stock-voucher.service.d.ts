@@ -73,6 +73,7 @@ export declare class StockVoucherService {
     private resolveRateSource;
     private toIsoDate;
     private toDecimalNumber;
+    private toDecimalColumn;
     private toInstant;
     private readRefusedBookQty;
     private toNullableDecimal;

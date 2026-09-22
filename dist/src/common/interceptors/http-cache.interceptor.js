@@ -25,8 +25,10 @@ const isNil = (value) => value === null || value === undefined;
 const isFunction = (value) => typeof value === 'function';
 let HttpCacheInterceptor = HttpCacheInterceptor_1 = class HttpCacheInterceptor extends cache_manager_1.CacheInterceptor {
     logger = new common_1.Logger(HttpCacheInterceptor_1.name);
+    cache;
     constructor(cacheManager, reflector) {
         super(cacheManager, reflector);
+        this.cache = cacheManager;
     }
     async intercept(context, next) {
         if (context.getType() !== 'http') {
@@ -49,7 +51,7 @@ let HttpCacheInterceptor = HttpCacheInterceptor_1 = class HttpCacheInterceptor e
         }
         const ttlMilliseconds = ttlSeconds * 1000;
         try {
-            const cachedValue = await this.cacheManager.get(key);
+            const cachedValue = await this.cache.get(key);
             this.setCacheHeader(context, isNil(cachedValue) ? 'MISS' : 'HIT');
             if (!isNil(cachedValue)) {
                 return (0, rxjs_1.of)(cachedValue);
@@ -66,7 +68,7 @@ let HttpCacheInterceptor = HttpCacheInterceptor_1 = class HttpCacheInterceptor e
                 return;
             }
             try {
-                await this.cacheManager.set(key, response, ttlMilliseconds);
+                await this.cache.set(key, response, ttlMilliseconds);
             }
             catch (error) {
                 const message = error instanceof Error ? error.message : 'Unknown cache write error';

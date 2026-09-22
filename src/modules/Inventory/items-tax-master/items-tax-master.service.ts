@@ -171,7 +171,6 @@ export class ItemsTaxMasterService {
       saveItemTaxDto.tax_created_by,
       this.requestContextService.getUserId(),
     );
-    const modifiedBy = resolveActor(saveItemTaxDto.tax_modified_by, createdBy);
     const data: Prisma.ItemTaxMasterUncheckedCreateInput = {
       taxName,
       taxCreatedOn: now,

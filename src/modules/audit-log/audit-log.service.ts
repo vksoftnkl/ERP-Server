@@ -310,7 +310,7 @@ export class AuditLogService {
     };
 
     const [records, total] = await Promise.all([
-      this.prisma.auditLog.findMany(findArgs) as unknown as AuditLogListRecord[],
+      this.prisma.auditLog.findMany(findArgs) as unknown as Promise<AuditLogListRecord[]>,
       includeTotal ? this.prisma.auditLog.count({ where }) : Promise.resolve(null),
     ]);
 
@@ -1719,7 +1719,7 @@ export class AuditLogService {
   }
   private normalizeJsonValue(value: unknown): Prisma.JsonValue {
     return JSON.parse(
-      JSON.stringify(value, (_key, nestedValue) =>
+      JSON.stringify(value, (_key, nestedValue: unknown) =>
         typeof nestedValue === 'bigint' ? nestedValue.toString() : nestedValue,
       ),
     ) as Prisma.JsonValue;

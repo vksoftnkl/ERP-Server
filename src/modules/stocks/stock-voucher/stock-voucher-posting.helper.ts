@@ -613,8 +613,10 @@ async function writeLedger(
            c.svi_mrp, c.svi_batch_no, c.svi_expiry_date,
            COALESCE(c.svi_reason_id, c.svh_reason_id),
            -- What the owning document charged (a sale's rate): the moving
-           -- average's last-sale stamp reads it. Stock vouchers have none.
-           NULLIF(c.svi_sale_price, 0),
+           -- average's last-sale stamp reads it. Stock vouchers have none, and
+           -- the column is NOT NULL DEFAULT 0, so "none" is written as 0 and
+           -- phase 5 reads 0 as "no rate" (NULLIF there), never as a price.
+           COALESCE(c.svi_sale_price, 0),
            ${ledgerSource?.partyId ?? null}::uuid,
            ${auditColumnActor(actor)}
       FROM costed c
@@ -798,7 +800,9 @@ async function applyItemCost(tx: Prisma.TransactionClient, params: ApplyParams):
              (array_agg(sml.sml_cost_rate_wot ORDER BY sml.sml_line_no DESC, sml.sml_split_no DESC)
                  FILTER (WHERE sml.sml_direction < 0))[1]                                                   AS last_out_rate_wot,
              -- An outward SALE stamps the last sale, from the DOCUMENT rate.
-             (array_agg(sml.sml_doc_rate      ORDER BY sml.sml_line_no DESC, sml.sml_split_no DESC)
+             -- 0 is "no rate" (the column is NOT NULL): it must not overwrite
+             -- the stamp a priced sale left, so it reads as NULL here.
+             (array_agg(NULLIF(sml.sml_doc_rate, 0) ORDER BY sml.sml_line_no DESC, sml.sml_split_no DESC)
                  FILTER (WHERE sml.sml_direction < 0 AND sml.sml_txn_type = 'SALE'))[1]                     AS last_sale_rate,
              (array_agg(sml.sml_doc_date      ORDER BY sml.sml_line_no DESC, sml.sml_split_no DESC)
                  FILTER (WHERE sml.sml_direction < 0 AND sml.sml_txn_type = 'SALE'))[1]                     AS last_sale_date

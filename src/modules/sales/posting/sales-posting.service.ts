@@ -92,7 +92,7 @@ export class SalesPostingService {
       ) VALUES (
         ${doc.header.companyId}::uuid, ${doc.header.branchId}::uuid,
         ${doc.header.tenantId ?? null}::uuid, ${doc.header.accYear}::char(9),
-        ${doc.header.voucherTypeId}::int, ${number.refno}, ${slno}::bigint, ${number.refno},
+        ${doc.header.voucherTypeId}::int, ${number.lastNo}::bigint, ${slno}::bigint, ${number.refno},
         ${doc.header.voucherDate}::date,
         'SALES', ${doc.header.srcDocType}, ${doc.header.srcDocId}::uuid,
         ${doc.header.usrRefno ?? null}, ${doc.header.docRefno ?? null},
@@ -113,7 +113,7 @@ export class SalesPostingService {
       (leg, i) => Prisma.sql`(
         ${voucherId}::uuid, ${doc.header.companyId}::uuid, ${doc.header.branchId}::uuid,
         ${doc.header.tenantId ?? null}::uuid, ${doc.header.accYear}::char(9),
-        ${doc.header.voucherTypeId}::int, ${number.refno}, ${i + 1}::int,
+        ${doc.header.voucherTypeId}::int, ${number.lastNo}::bigint, ${i + 1}::int,
         ${doc.header.voucherDate}::date, ${number.refno},
         ${doc.header.docDate ?? doc.header.voucherDate}::date,
         ${leg.drCr}::bpchar, ${ledgerByLeg[i]}::uuid,
@@ -165,6 +165,23 @@ export class SalesPostingService {
    * Never a delete and never an edit. The original keeps its number, its legs
    * and its audit trail; `avh_reversal_voucher_id` links the pair, so a
    * statement shows both and a total nets to zero.
+   *
+   * Three things the database dictates, all learned from the receipt module's
+   * reversal (`receipt-cancel.service.ts`), which is the house precedent:
+   *
+   *  * the mirror takes a NUMBER OF ITS OWN. `ux_avh_voucher_no` keeps a
+   *    CANCELLED voucher's number taken (it excludes only DRAFT and deleted
+   *    rows), so "same number" is a 23505;
+   *  * the original is marked CANCELLED BEFORE the mirror is written.
+   *    `ux_avh_src` and `ux_avh_doc_refno` admit one live voucher per source
+   *    document / per party+refno, and they exclude CANCELLED rows only;
+   *  * the mirror carries NO `avh_src_*` and no `avh_doc_refno` of its own —
+   *    it answers the original through `avh_against_voucher_id`. A POSTED
+   *    mirror that still pointed at the document would block the re-post an
+   *    amend makes moments later, on those same two indexes.
+   *
+   * Dated the ORIGINAL, not today: a reversal dated today leaves the original
+   * month overstated and this month understated.
    */
   async reverseLegs(
     tx: Prisma.TransactionClient,
@@ -176,16 +193,23 @@ export class SalesPostingService {
     const [original] = await tx.$queryRaw<
       {
         avh_voucher_id: string;
+        avh_company_id: string;
+        avh_branch_id: string;
+        avh_voucher_type_id: number;
         avh_acc_year: string;
+        avh_voucher_refno: string | null;
+        avh_voucher_date: Date;
         avh_voucher_status: string;
         avh_reversal_voucher_id: string | null;
       }[]
     >`
-      SELECT avh_voucher_id, avh_acc_year, avh_voucher_status, avh_reversal_voucher_id
+      SELECT avh_voucher_id, avh_company_id, avh_branch_id, avh_voucher_type_id, avh_acc_year,
+             avh_voucher_refno, avh_voucher_date, avh_voucher_status, avh_reversal_voucher_id
         FROM accounts.acc_voucher_header
        WHERE avh_voucher_id = ${voucherId}::uuid
          AND avh_acc_year   = ${accYear}::char(9)
-         AND avh_is_deleted = false`;
+         AND avh_is_deleted = false
+         FOR UPDATE`;
     if (!original) {
       return null;
     }
@@ -194,32 +218,49 @@ export class SalesPostingService {
       return null;
     }
 
-    const slno = await tx.$queryRaw<{ next_slno: bigint }[]>`
-      SELECT COALESCE(MAX(avh_voucher_slno), 0) + 1 AS next_slno
-        FROM accounts.acc_voucher_header
-       WHERE avh_company_id = (SELECT avh_company_id FROM accounts.acc_voucher_header
-                                WHERE avh_voucher_id = ${voucherId}::uuid
-                                  AND avh_acc_year = ${accYear}::char(9))
-         AND avh_acc_year = ${accYear}::char(9)`;
+    // 1 · the original leaves the live set first (see the class note).
+    await tx.$executeRaw`
+      UPDATE accounts.acc_voucher_header
+         SET avh_voucher_status = 'CANCELLED',
+             -- ck_avh_cancel: a cancellation must always carry a reason.
+             avh_cancel_reason  = ${reason},
+             avh_status_on      = now(),
+             avh_modified_on    = now(),
+             avh_modified_by    = ${actor}
+       WHERE avh_voucher_id = ${voucherId}::uuid
+         AND avh_acc_year   = ${accYear}::char(9)`;
+
+    // 2 · a number of its own, in the original's series and on the original's date.
+    const number = await allocateVoucherNumber(tx, {
+      vchrTypeId: original.avh_voucher_type_id,
+      companyId: original.avh_company_id,
+      branchId: original.avh_branch_id,
+      accYear: original.avh_acc_year.trim(),
+      deviceCode: null,
+      documentDate: original.avh_voucher_date,
+    });
+    const slno = await allocateVoucherSlno(
+      tx,
+      original.avh_company_id,
+      original.avh_acc_year.trim(),
+    );
+    const remarks = `Reversal of ${original.avh_voucher_refno ?? voucherId}: ${reason}`;
 
     const [mirror] = await tx.$queryRaw<{ avh_voucher_id: string }[]>`
       INSERT INTO accounts.acc_voucher_header (
         avh_company_id, avh_branch_id, avh_tenant_id, avh_acc_year,
         avh_voucher_type_id, avh_voucher_no, avh_voucher_slno, avh_voucher_refno,
-        avh_voucher_date, avh_src_module, avh_src_doc_type, avh_src_doc_id,
-        avh_usr_refno, avh_doc_refno, avh_doc_date,
+        avh_voucher_date, avh_doc_date,
         avh_doc_amount, avh_round_off, avh_party_id,
         avh_remarks, avh_against_voucher_id, avh_against_acc_year,
         avh_voucher_status, avh_status_on, avh_status_by, avh_posted_on,
         avh_user_id, avh_session_id, avh_device_type, avh_device_id, avh_created_by
       )
       SELECT o.avh_company_id, o.avh_branch_id, o.avh_tenant_id, o.avh_acc_year,
-             o.avh_voucher_type_id, o.avh_voucher_no, ${slno[0].next_slno}::bigint,
-             o.avh_voucher_refno,
-             o.avh_voucher_date, o.avh_src_module, o.avh_src_doc_type, o.avh_src_doc_id,
-             o.avh_usr_refno, o.avh_doc_refno, o.avh_doc_date,
+             o.avh_voucher_type_id, ${number.lastNo}::bigint, ${slno}::bigint, ${number.refno},
+             o.avh_voucher_date, o.avh_doc_date,
              o.avh_doc_amount, o.avh_round_off, o.avh_party_id,
-             ${reason}, o.avh_voucher_id, o.avh_acc_year,
+             ${remarks}, o.avh_voucher_id, o.avh_acc_year,
              'POSTED', now(), o.avh_user_id, now(),
              o.avh_user_id, o.avh_session_id, o.avh_device_type, o.avh_device_id, ${actor}
         FROM accounts.acc_voucher_header o
@@ -227,7 +268,7 @@ export class SalesPostingService {
          AND o.avh_acc_year   = ${accYear}::char(9)
       RETURNING avh_voucher_id`;
 
-    // Every leg mirrored: same ledger, same amount, the other side.
+    // 3 · every leg mirrored: same ledger, same amount, the other side.
     const legCount = await tx.$executeRaw`
       INSERT INTO accounts.acc_vouchers (
         av_voucher_id, av_company_id, av_branch_id, av_tenant_id, av_acc_year,
@@ -238,11 +279,11 @@ export class SalesPostingService {
       )
       SELECT ${mirror.avh_voucher_id}::uuid, o.av_company_id, o.av_branch_id,
              o.av_tenant_id, o.av_acc_year,
-             o.av_voucher_type_id, o.av_voucher_no, o.av_row_no, o.av_voucher_date,
-             o.av_voucher_refno, o.av_doc_date,
+             o.av_voucher_type_id, ${number.lastNo}::bigint, o.av_row_no, o.av_voucher_date,
+             ${number.refno}, o.av_doc_date,
              CASE WHEN o.av_dr_cr = 'DR' THEN 'CR'::bpchar ELSE 'DR'::bpchar END,
              o.av_ledger_id, o.av_opp_ledger_id,
-             o.av_amount, o.av_cost_centre_id, ${reason}, o.av_session_id, o.av_user_id,
+             o.av_amount, o.av_cost_centre_id, ${remarks}, o.av_session_id, o.av_user_id,
              o.av_doc_id, o.av_doc_refno, o.av_doc_acc_year, o.av_role, ${actor}
         FROM accounts.acc_vouchers o
        WHERE o.av_voucher_id = ${voucherId}::uuid
@@ -250,16 +291,11 @@ export class SalesPostingService {
          AND o.av_is_deleted = false
        ORDER BY o.av_row_no`;
 
+    // 4 · the link, both ways readable.
     await tx.$executeRaw`
       UPDATE accounts.acc_voucher_header
-         SET avh_voucher_status      = 'CANCELLED',
-             -- ck_avh_cancel: a cancellation must always carry a reason.
-             avh_cancel_reason       = ${reason},
-             avh_reversal_voucher_id = ${mirror.avh_voucher_id}::uuid,
-             avh_reversal_acc_year   = ${accYear}::char(9),
-             avh_status_on           = now(),
-             avh_modified_on         = now(),
-             avh_modified_by         = ${actor}
+         SET avh_reversal_voucher_id = ${mirror.avh_voucher_id}::uuid,
+             avh_reversal_acc_year   = ${accYear}::char(9)
        WHERE avh_voucher_id = ${voucherId}::uuid
          AND avh_acc_year   = ${accYear}::char(9)`;
 

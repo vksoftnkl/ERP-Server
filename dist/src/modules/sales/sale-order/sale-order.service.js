@@ -11,6 +11,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.SaleOrderService = void 0;
 const common_1 = require("@nestjs/common");
+const client_1 = require("@prisma/client");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const audit_log_service_1 = require("../../audit-log/audit-log.service");
 const sale_order_api_types_1 = require("./types/sale-order-api.types");
@@ -81,8 +82,8 @@ const SALE_ORDER_VALUE_GUARDS = [
     { field: 'soAdvancePolicy', allowed: SALE_ORDER_ADVANCE_POLICIES, nullable: false },
     { field: 'soAdvanceStatus', allowed: SALE_ORDER_ADVANCE_STATUSES, nullable: true },
 ];
-const AMOUNT_EPSILON = 0.005;
-const QTY_EPSILON = 0.0005;
+const AMOUNT_SCALE = 2;
+const QTY_SCALE = 3;
 const SALE_ORDER_OPTIONAL_FIELDS = [
     'soSessionId',
     'soDeviceId',
@@ -336,19 +337,28 @@ function buildDateTransforms(fields) {
 }
 const SALE_ORDER_DATE_TRANSFORMS = buildDateTransforms(SALE_ORDER_DATE_FIELDS);
 const SALE_ORDER_ITEM_DATE_TRANSFORMS = buildDateTransforms(SALE_ORDER_ITEM_DATE_FIELDS);
-function asNumber(value) {
+function dec(value) {
     if (value === null || value === undefined || value === '') {
-        return 0;
+        return new client_1.Prisma.Decimal(0);
     }
-    const parsed = Number(value);
-    return Number.isNaN(parsed) ? 0 : parsed;
+    if (value instanceof client_1.Prisma.Decimal) {
+        return value;
+    }
+    try {
+        const decimal = new client_1.Prisma.Decimal(value);
+        return decimal.isFinite() ? decimal : new client_1.Prisma.Decimal(0);
+    }
+    catch {
+        return new client_1.Prisma.Decimal(0);
+    }
 }
 function roundQty(value) {
-    return Math.round(value * 1000) / 1000;
+    return dec(value).toDecimalPlaces(QTY_SCALE, client_1.Prisma.Decimal.ROUND_HALF_UP);
 }
 function roundAmount(value) {
-    return Math.round(value * 100) / 100;
+    return dec(value).toDecimalPlaces(AMOUNT_SCALE, client_1.Prisma.Decimal.ROUND_HALF_UP);
 }
+const ZERO = new client_1.Prisma.Decimal(0);
 function merged(inputValue, existingValue) {
     if (inputValue !== undefined) {
         return inputValue;
@@ -459,7 +469,7 @@ let SaleOrderService = class SaleOrderService {
                 ablIsDeleted: false,
             },
         });
-        return { ablPendingAmount: roundAmount(asNumber(totals._sum.ablPendingAmount)) };
+        return { ablPendingAmount: roundAmount(totals._sum.ablPendingAmount).toNumber() };
     }
     async softDelete(soId, soCompanyId, soBranchId, soAccYear) {
         return this.prisma.$transaction(async (tx) => {
@@ -475,7 +485,7 @@ let SaleOrderService = class SaleOrderService {
             if (!existing) {
                 (0, module_service_utils_1.throwSalesNotFound)('Order not found', 'soId', `No active order found with id ${soId}`);
             }
-            if (asNumber(existing.soAdvanceBalanceAmt) > 0) {
+            if (dec(existing.soAdvanceBalanceAmt).greaterThan(0)) {
                 (0, module_service_utils_1.throwSalesBadRequest)('Order holds an unsettled advance', [
                     {
                         field: 'soAdvanceBalanceAmt',
@@ -631,31 +641,31 @@ let SaleOrderService = class SaleOrderService {
             orderBy: { soiLineNo: 'asc' },
         });
         const settledLines = lines.map((line) => {
-            const delivered = asNumber(line.soiDeliveredQty);
-            const billedAmt = asNumber(line.soiBilledAmt);
-            const pending = asNumber(line.soiPendingQty);
-            if (pending <= QTY_EPSILON || (targetLineId !== null && line.soiId !== targetLineId)) {
+            const delivered = roundQty(line.soiDeliveredQty);
+            const billedAmt = roundAmount(line.soiBilledAmt);
+            const pending = roundQty(line.soiPendingQty);
+            if (pending.lessThanOrEqualTo(0) || (targetLineId !== null && line.soiId !== targetLineId)) {
                 return {
                     line,
                     delivered,
-                    cancelled: asNumber(line.soiCancelledQty),
+                    cancelled: roundQty(line.soiCancelledQty),
                     pending,
                     billedAmt,
-                    moved: 0,
+                    moved: ZERO,
                 };
             }
             return {
                 line,
                 delivered,
-                cancelled: roundQty(asNumber(line.soiCancelledQty) + pending),
-                pending: 0,
+                cancelled: roundQty(roundQty(line.soiCancelledQty).plus(pending)),
+                pending: ZERO,
                 billedAmt,
-                moved: roundQty(pending),
+                moved: pending,
             };
         });
         const rollup = this.summariseOrderLines(settledLines);
         if (rollup.fulfilStatus === SALE_ORDER_FULFIL_CANCELLED &&
-            asNumber(existing.soAdvanceBalanceAmt) > 0) {
+            dec(existing.soAdvanceBalanceAmt).greaterThan(0)) {
             (0, module_service_utils_1.throwSalesBadRequest)('Order holds an unsettled advance', [
                 {
                     field: 'soAdvanceBalanceAmt',
@@ -667,7 +677,7 @@ let SaleOrderService = class SaleOrderService {
         const cancelledLines = [];
         const cancelReason = request.cancelReason;
         for (const settled of settledLines) {
-            if (settled.moved <= 0) {
+            if (settled.moved.lessThanOrEqualTo(0)) {
                 continue;
             }
             const { line } = settled;
@@ -696,7 +706,7 @@ let SaleOrderService = class SaleOrderService {
             cancelledLines.push({
                 soiId: line.soiId,
                 soiLineNo: line.soiLineNo,
-                soiCancelledQty: settled.moved,
+                soiCancelledQty: settled.moved.toNumber(),
                 soiLineStatus: updated.soiLineStatus,
             });
         }
@@ -758,25 +768,25 @@ let SaleOrderService = class SaleOrderService {
             soStatus,
             soFulfilStatus: rollup.fulfilStatus,
             cancelledLines: cancelledLines.length,
-            cancelledQty: roundQty(cancelledLines.reduce((total, line) => total + line.soiCancelledQty, 0)),
-            soCancelledAmt: rollup.cancelledAmt,
-            soPendingAmt: rollup.pendingAmt,
+            cancelledQty: roundQty(cancelledLines.reduce((total, line) => total.plus(dec(line.soiCancelledQty)), ZERO)).toNumber(),
+            soCancelledAmt: rollup.cancelledAmt.toNumber(),
+            soPendingAmt: rollup.pendingAmt.toNumber(),
             lines: cancelledLines,
         };
     }
     summariseOrderLines(settledLines) {
-        let totalBilledAmt = 0;
-        let cancelledAmt = 0;
-        let pendingAmt = 0;
+        let totalBilledAmt = ZERO;
+        let cancelledAmt = ZERO;
+        let pendingAmt = ZERO;
         let deliveredItems = 0;
-        let deliveredQty = 0;
+        let deliveredQty = ZERO;
         for (const { line, netQty: settledQty, delivered, cancelled, pending, billedAmt, } of settledLines) {
-            const netQty = settledQty ?? asNumber(line.soiNetQty);
-            const unitShare = netQty > 0 ? asNumber(line.soiNetAmt) / netQty : 0;
-            cancelledAmt += cancelled * unitShare;
-            pendingAmt += pending * unitShare;
-            totalBilledAmt += billedAmt;
-            deliveredQty += delivered;
+            const netQty = settledQty ?? roundQty(line.soiNetQty);
+            const unitShare = netQty.greaterThan(0) ? dec(line.soiNetAmt).div(netQty) : ZERO;
+            cancelledAmt = cancelledAmt.plus(cancelled.times(unitShare));
+            pendingAmt = pendingAmt.plus(pending.times(unitShare));
+            totalBilledAmt = totalBilledAmt.plus(billedAmt);
+            deliveredQty = deliveredQty.plus(delivered);
             const lineStatus = this.deriveLineStatus(netQty, delivered, cancelled);
             if (lineStatus === SALE_ORDER_LINE_DELIVERED || lineStatus === SALE_ORDER_LINE_CANCELLED) {
                 deliveredItems += 1;
@@ -792,20 +802,22 @@ let SaleOrderService = class SaleOrderService {
         };
     }
     deriveLineStatus(netQty, delivered, cancelled) {
-        const pending = roundQty(netQty - delivered - cancelled);
-        if (roundQty(netQty) <= 0) {
+        const pending = roundQty(netQty.minus(delivered).minus(cancelled));
+        if (roundQty(netQty).lessThanOrEqualTo(0)) {
             return SALE_ORDER_LINE_PENDING;
         }
-        if (pending <= 0) {
-            return roundQty(delivered) <= 0 ? SALE_ORDER_LINE_CANCELLED : SALE_ORDER_LINE_DELIVERED;
+        if (pending.lessThanOrEqualTo(0)) {
+            return roundQty(delivered).lessThanOrEqualTo(0)
+                ? SALE_ORDER_LINE_CANCELLED
+                : SALE_ORDER_LINE_DELIVERED;
         }
-        if (roundQty(delivered + cancelled) > 0) {
+        if (roundQty(delivered.plus(cancelled)).greaterThan(0)) {
             return SALE_ORDER_LINE_PARTIAL;
         }
         return SALE_ORDER_LINE_PENDING;
     }
     deriveOrderStatus(totItems, deliveredItems, deliveredQty) {
-        const delivered = deliveredQty > QTY_EPSILON;
+        const delivered = roundQty(deliveredQty).greaterThan(0);
         if (deliveredItems >= totItems) {
             if (!delivered) {
                 return {
@@ -951,45 +963,45 @@ let SaleOrderService = class SaleOrderService {
             if (lineNo === null) {
                 continue;
             }
-            const total = billedByLineNo.get(lineNo) ?? { qty: 0, amt: 0 };
-            total.qty += asNumber(item.sbiNetQty);
-            total.amt += asNumber(item.sbiNetAmt);
-            billedByLineNo.set(lineNo, total);
+            const total = billedByLineNo.get(lineNo) ?? { qty: ZERO, amt: ZERO };
+            billedByLineNo.set(lineNo, {
+                qty: total.qty.plus(dec(item.sbiNetQty)),
+                amt: total.amt.plus(dec(item.sbiNetAmt)),
+            });
         }
         const settledLines = lines.map((line) => {
             const stored = {
                 line,
-                netQty: asNumber(line.soiNetQty),
-                delivered: asNumber(line.soiDeliveredQty),
-                cancelled: asNumber(line.soiCancelledQty),
-                pending: asNumber(line.soiPendingQty),
-                billedAmt: asNumber(line.soiBilledAmt),
+                netQty: roundQty(line.soiNetQty),
+                delivered: roundQty(line.soiDeliveredQty),
+                cancelled: roundQty(line.soiCancelledQty),
+                pending: roundQty(line.soiPendingQty),
+                billedAmt: roundAmount(line.soiBilledAmt),
                 changed: false,
             };
             if (!lineNos.has(line.soiLineNo) && !billedByLineNo.has(line.soiLineNo)) {
                 return stored;
             }
-            const billed = billedByLineNo.get(line.soiLineNo) ?? { qty: 0, amt: 0 };
+            const billed = billedByLineNo.get(line.soiLineNo) ?? { qty: ZERO, amt: ZERO };
             const delivered = roundQty(billed.qty);
             const billedAmt = roundAmount(billed.amt);
             const cancelled = stored.cancelled;
             let netQty = stored.netQty;
-            let pending = roundQty(netQty - delivered - cancelled);
-            if (pending < -QTY_EPSILON) {
-                netQty = roundQty(delivered + cancelled);
-                pending = 0;
+            let pending = roundQty(netQty.minus(delivered).minus(cancelled));
+            if (pending.isNegative()) {
+                netQty = roundQty(delivered.plus(cancelled));
+                pending = ZERO;
             }
-            const pendingQty = Math.max(pending, 0);
             return {
                 line,
                 netQty,
                 delivered,
                 cancelled,
-                pending: pendingQty,
+                pending,
                 billedAmt,
-                changed: Math.abs(netQty - stored.netQty) > QTY_EPSILON ||
-                    Math.abs(delivered - stored.delivered) > QTY_EPSILON ||
-                    Math.abs(billedAmt - stored.billedAmt) > AMOUNT_EPSILON,
+                changed: !netQty.equals(stored.netQty) ||
+                    !delivered.equals(stored.delivered) ||
+                    !billedAmt.equals(stored.billedAmt),
             };
         });
         const fulfilledLines = [];
@@ -1023,20 +1035,20 @@ let SaleOrderService = class SaleOrderService {
             fulfilledLines.push({
                 soiId: line.soiId,
                 soiLineNo: line.soiLineNo,
-                soiNetQty: settled.netQty,
-                soiDeliveredQty: settled.delivered,
-                soiCancelledQty: settled.cancelled,
-                soiPendingQty: asNumber(updated.soiPendingQty),
-                soiBilledAmt: settled.billedAmt,
+                soiNetQty: settled.netQty.toNumber(),
+                soiDeliveredQty: settled.delivered.toNumber(),
+                soiCancelledQty: settled.cancelled.toNumber(),
+                soiPendingQty: dec(updated.soiPendingQty).toNumber(),
+                soiBilledAmt: settled.billedAmt.toNumber(),
                 soiLineStatus: updated.soiLineStatus,
             });
         }
         const rollup = this.summariseOrderLines(settledLines);
         const soStatus = rollup.headerStatus ?? order.soStatus;
         const headerChanged = fulfilledLines.length > 0 ||
-            Math.abs(rollup.billedAmt - asNumber(order.soBilledAmt)) > AMOUNT_EPSILON ||
-            Math.abs(rollup.cancelledAmt - asNumber(order.soCancelledAmt)) > AMOUNT_EPSILON ||
-            Math.abs(rollup.pendingAmt - asNumber(order.soPendingAmt)) > AMOUNT_EPSILON ||
+            !rollup.billedAmt.equals(roundAmount(order.soBilledAmt)) ||
+            !rollup.cancelledAmt.equals(roundAmount(order.soCancelledAmt)) ||
+            !rollup.pendingAmt.equals(roundAmount(order.soPendingAmt)) ||
             rollup.totItems !== order.soTotItems ||
             rollup.deliveredItems !== order.soDeliveredItems ||
             rollup.fulfilStatus !== order.soFulfilStatus ||
@@ -1421,7 +1433,11 @@ let SaleOrderService = class SaleOrderService {
     }
     describeDuplicate(error) {
         const target = error?.meta?.target;
-        const targetText = Array.isArray(target) ? target.join(',') : String(target ?? '');
+        const targetText = Array.isArray(target)
+            ? target.join(',')
+            : typeof target === 'string'
+                ? target
+                : '';
         if (targetText.includes('sale_order_item')) {
             return {
                 message: 'Duplicate order line number is not allowed',
@@ -1480,11 +1496,11 @@ let SaleOrderService = class SaleOrderService {
     }
     ensureAdvanceRollupsAreConsistent(dto, existing) {
         const details = [];
-        const recd = asNumber(merged(dto.soAdvanceRecdAmt, existing?.soAdvanceRecdAmt));
-        const adjusted = asNumber(merged(dto.soAdvanceAdjustedAmt, existing?.soAdvanceAdjustedAmt));
-        const refund = asNumber(merged(dto.soAdvanceRefundAmt, existing?.soAdvanceRefundAmt));
-        const forfeit = asNumber(merged(dto.soAdvanceForfeitAmt, existing?.soAdvanceForfeitAmt));
-        const required = asNumber(merged(dto.soAdvanceRequired, existing?.soAdvanceRequired));
+        const recd = roundAmount(merged(dto.soAdvanceRecdAmt, existing?.soAdvanceRecdAmt));
+        const adjusted = roundAmount(merged(dto.soAdvanceAdjustedAmt, existing?.soAdvanceAdjustedAmt));
+        const refund = roundAmount(merged(dto.soAdvanceRefundAmt, existing?.soAdvanceRefundAmt));
+        const forfeit = roundAmount(merged(dto.soAdvanceForfeitAmt, existing?.soAdvanceForfeitAmt));
+        const required = roundAmount(merged(dto.soAdvanceRequired, existing?.soAdvanceRequired));
         const amounts = [
             ['soAdvanceRequired', required],
             ['soAdvanceRecdAmt', recd],
@@ -1493,20 +1509,20 @@ let SaleOrderService = class SaleOrderService {
             ['soAdvanceForfeitAmt', forfeit],
         ];
         for (const [field, amount] of amounts) {
-            if (amount < 0) {
+            if (amount.isNegative()) {
                 details.push({ field, message: `${field} must not be negative` });
             }
         }
-        const expectedBalance = recd - adjusted - refund - forfeit;
+        const expectedBalance = roundAmount(recd.minus(adjusted).minus(refund).minus(forfeit));
         if (dto.soAdvanceBalanceAmt !== undefined) {
-            const balance = asNumber(dto.soAdvanceBalanceAmt);
-            if (balance < 0) {
+            const balance = roundAmount(dto.soAdvanceBalanceAmt);
+            if (balance.isNegative()) {
                 details.push({
                     field: 'soAdvanceBalanceAmt',
                     message: 'soAdvanceBalanceAmt must not be negative',
                 });
             }
-            if (Math.abs(balance - expectedBalance) > AMOUNT_EPSILON) {
+            if (!balance.equals(expectedBalance)) {
                 details.push({
                     field: 'soAdvanceBalanceAmt',
                     message: 'soAdvanceBalanceAmt must equal soAdvanceRecdAmt − soAdvanceAdjustedAmt − ' +
@@ -1514,7 +1530,7 @@ let SaleOrderService = class SaleOrderService {
                 });
             }
         }
-        else if (expectedBalance < -AMOUNT_EPSILON) {
+        else if (expectedBalance.isNegative()) {
             details.push({
                 field: 'soAdvanceBalanceAmt',
                 message: 'The advance roll-ups use more than was received: received − adjusted − refunded − ' +
@@ -1522,14 +1538,14 @@ let SaleOrderService = class SaleOrderService {
             });
         }
         const policy = merged(dto.soAdvancePolicy, existing?.soAdvancePolicy) ?? 'NONE';
-        const perc = asNumber(merged(dto.soAdvancePerc, existing?.soAdvancePerc));
-        if (policy === 'PERC' && perc <= 0) {
+        const perc = dec(merged(dto.soAdvancePerc, existing?.soAdvancePerc));
+        if (policy === 'PERC' && perc.lessThanOrEqualTo(0)) {
             details.push({
                 field: 'soAdvancePerc',
                 message: "soAdvancePerc must be greater than 0 when soAdvancePolicy is 'PERC'",
             });
         }
-        if (policy === 'FIXED' && required <= 0) {
+        if (policy === 'FIXED' && required.lessThanOrEqualTo(0)) {
             details.push({
                 field: 'soAdvanceRequired',
                 message: "soAdvanceRequired must be greater than 0 when soAdvancePolicy is 'FIXED'",
@@ -1540,11 +1556,11 @@ let SaleOrderService = class SaleOrderService {
         }
     }
     deriveAdvanceBalance(dto, existing) {
-        const recd = asNumber(merged(dto.soAdvanceRecdAmt, existing?.soAdvanceRecdAmt));
-        const adjusted = asNumber(merged(dto.soAdvanceAdjustedAmt, existing?.soAdvanceAdjustedAmt));
-        const refund = asNumber(merged(dto.soAdvanceRefundAmt, existing?.soAdvanceRefundAmt));
-        const forfeit = asNumber(merged(dto.soAdvanceForfeitAmt, existing?.soAdvanceForfeitAmt));
-        return Math.round((recd - adjusted - refund - forfeit) * 100) / 100;
+        const recd = dec(merged(dto.soAdvanceRecdAmt, existing?.soAdvanceRecdAmt));
+        const adjusted = dec(merged(dto.soAdvanceAdjustedAmt, existing?.soAdvanceAdjustedAmt));
+        const refund = dec(merged(dto.soAdvanceRefundAmt, existing?.soAdvanceRefundAmt));
+        const forfeit = dec(merged(dto.soAdvanceForfeitAmt, existing?.soAdvanceForfeitAmt));
+        return roundAmount(recd.minus(adjusted).minus(refund).minus(forfeit));
     }
     ensureOrderItemValuesAreAllowed(inputItem, existingItem) {
         const details = [];
@@ -1573,23 +1589,23 @@ let SaleOrderService = class SaleOrderService {
                 });
             }
         }
-        const orderQty = asNumber(merged(inputItem.soiOrderQty, existingItem?.soiOrderQty));
-        const deliveredQty = asNumber(merged(inputItem.soiDeliveredQty, existingItem?.soiDeliveredQty));
-        const cancelledQty = asNumber(merged(inputItem.soiCancelledQty, existingItem?.soiCancelledQty));
-        const reservedQty = asNumber(merged(inputItem.soiReservedQty, existingItem?.soiReservedQty));
+        const orderQty = roundQty(merged(inputItem.soiOrderQty, existingItem?.soiOrderQty));
+        const deliveredQty = roundQty(merged(inputItem.soiDeliveredQty, existingItem?.soiDeliveredQty));
+        const cancelledQty = roundQty(merged(inputItem.soiCancelledQty, existingItem?.soiCancelledQty));
+        const reservedQty = roundQty(merged(inputItem.soiReservedQty, existingItem?.soiReservedQty));
         for (const [field, qty] of [
             ['soiOrderQty', orderQty],
             ['soiDeliveredQty', deliveredQty],
             ['soiCancelledQty', cancelledQty],
         ]) {
-            if (qty < 0) {
+            if (qty.isNegative()) {
                 details.push({ field, message: `${field} must not be negative` });
             }
         }
-        if (inputItem.soiPendingQty !== undefined && asNumber(inputItem.soiPendingQty) < 0) {
+        if (inputItem.soiPendingQty !== undefined && dec(inputItem.soiPendingQty).isNegative()) {
             details.push({ field: 'soiPendingQty', message: 'soiPendingQty must not be negative' });
         }
-        if (reservedQty < 0 || reservedQty > orderQty + QTY_EPSILON) {
+        if (reservedQty.isNegative() || reservedQty.greaterThan(orderQty)) {
             details.push({
                 field: 'soiReservedQty',
                 message: 'soiReservedQty must be between 0 and soiOrderQty (ck_soi_reserved)',
@@ -1600,19 +1616,19 @@ let SaleOrderService = class SaleOrderService {
         }
     }
     applyDerivedItemQuantities(data, inputItem, existingItem) {
-        const orderQty = asNumber(merged(inputItem.soiOrderQty, existingItem?.soiOrderQty));
+        const orderQty = roundQty(merged(inputItem.soiOrderQty, existingItem?.soiOrderQty));
         if (!existingItem && inputItem.soiNetQty === undefined) {
             data.soiNetQty = orderQty;
         }
         const netQty = inputItem.soiNetQty !== undefined
-            ? asNumber(inputItem.soiNetQty)
+            ? roundQty(inputItem.soiNetQty)
             : existingItem
-                ? asNumber(existingItem.soiNetQty)
+                ? roundQty(existingItem.soiNetQty)
                 : orderQty;
-        const deliveredQty = asNumber(merged(inputItem.soiDeliveredQty, existingItem?.soiDeliveredQty));
-        const cancelledQty = asNumber(merged(inputItem.soiCancelledQty, existingItem?.soiCancelledQty));
-        const derivedPending = Math.round((netQty - deliveredQty - cancelledQty) * 1000) / 1000;
-        if (derivedPending < -QTY_EPSILON) {
+        const deliveredQty = roundQty(merged(inputItem.soiDeliveredQty, existingItem?.soiDeliveredQty));
+        const cancelledQty = roundQty(merged(inputItem.soiCancelledQty, existingItem?.soiCancelledQty));
+        const derivedPending = roundQty(netQty.minus(deliveredQty).minus(cancelledQty));
+        if (derivedPending.isNegative()) {
             (0, module_service_utils_1.throwSalesBadRequest)('Invalid order item value', [
                 {
                     field: 'soiNetQty',
@@ -1622,7 +1638,7 @@ let SaleOrderService = class SaleOrderService {
             ]);
         }
         if (inputItem.soiPendingQty !== undefined &&
-            Math.abs(asNumber(inputItem.soiPendingQty) - derivedPending) > QTY_EPSILON) {
+            !roundQty(inputItem.soiPendingQty).equals(derivedPending)) {
             (0, module_service_utils_1.throwSalesBadRequest)('Invalid order item value', [
                 {
                     field: 'soiPendingQty',

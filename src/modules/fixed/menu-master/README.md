@@ -45,6 +45,23 @@ permission overlays.
 - Every response includes a `meta` object: `{ visibleOnly, count }`, where `count` is the number
   of **root** items returned.
 
+## `menu_verbs` — what a screen can DO
+
+Every menu carries `menuVerbs: string[]` (migration `20260922170000`), returned on **both**
+routes. It is the capability of the screen, not a permission of the user:
+
+| verbs | menus |
+| --- | --- |
+| `VIEW CREATE EDIT DELETE PRINT EXPORT` | every ordinary master (205 active) |
+| `… POST CANCEL AMEND OVERRIDE` | the 20 documents that reach the ledger |
+| `… RETENDER` | Sales Entry (12) alone |
+| `VIEW PRINT` | read-only screens (249 Stock Track Policy, 250 Ledger mapping) |
+
+**Render a permission cell only for a verb listed here** — a verb that is absent gets *no
+checkbox at all*, not a greyed one. An unchecked box says *denied*, which is a different
+statement from *this screen has nothing to post*, and across ~2,167 cells nobody can tell those
+apart. Following the verbs takes the grid to 1,255 cells and puts Re-tender on one row.
+
 ## User menus & permissions
 
 - `GET /usermenu` resolves the caller via `RequestContextService.getUserId()`; if no user id can
@@ -53,7 +70,8 @@ permission overlays.
   `umIsDeleted = false`, and only active parent menus (`menu.menuIsActive = true`).
 - Each returned menu carries a `permissions` object mapped from the user-menu row —
   `canCreate`, `canEdit`, `canDelete`, `canPrint`, `canExport`, `isVisible`, `isFavourite`,
-  `isPinned`, `sortOrder`. On the plain `GET /get` route `permissions` is `null`.
+  `isPinned`, `sortOrder`, and the five transaction rights `canPost`, `canCancel`, `canAmend`,
+  `canOverride`, `canRetender`. On the plain `GET /get` route `permissions` is `null`.
 
 ## Visibility updates
 

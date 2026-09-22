@@ -109,7 +109,7 @@ let RedisCacheService = class RedisCacheService {
         }
         return response;
     }
-    async onModuleDestroy() {
+    onModuleDestroy() {
         if (!this.socket || this.socket.destroyed) {
             return;
         }
