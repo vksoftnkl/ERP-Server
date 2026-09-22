@@ -10,7 +10,11 @@ export class UiTableColumnPayloadDto {
   @ApiPropertyOptional({ example: 'Item Name', nullable: true })
   uiTblClmName!: string | null;
 
-  @ApiPropertyOptional({ example: '1', nullable: true, description: 'Related UI table id serialized as string' })
+  @ApiPropertyOptional({
+    example: '1',
+    nullable: true,
+    description: 'Related UI table id serialized as string',
+  })
   uiTblClmTableId!: string | null;
 
   @ApiPropertyOptional({ example: 100, nullable: true })
@@ -43,7 +47,12 @@ export class UiTableColumnPayloadDto {
   @ApiProperty({ example: false })
   uiTblClmIsDeleted!: boolean;
 
-  @ApiPropertyOptional({ example: '2026-03-12T06:34:47.000Z', nullable: true, type: String, format: 'date-time' })
+  @ApiPropertyOptional({
+    example: '2026-03-12T06:34:47.000Z',
+    nullable: true,
+    type: String,
+    format: 'date-time',
+  })
   uiTblClmSyncDate!: string | null;
 
   @ApiProperty({ example: '2026-03-12T06:34:47.000Z', type: String, format: 'date-time' })

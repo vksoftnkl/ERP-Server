@@ -1,4 +1,8 @@
-import type { ModuleApiErrorDetail, ModuleApiErrorResponse, ModuleApiSuccessResponse } from 'src/common/types/module-api.types';
+import type {
+  ModuleApiErrorDetail,
+  ModuleApiErrorResponse,
+  ModuleApiSuccessResponse,
+} from 'src/common/types/module-api.types';
 export type ItemStockBalanceErrorDetail = ModuleApiErrorDetail;
 export type ItemStockBalanceErrorResponse = ModuleApiErrorResponse<ItemStockBalanceErrorDetail>;
 export type ItemStockBalanceSuccessResponse<T> = ModuleApiSuccessResponse<T, never, never>;

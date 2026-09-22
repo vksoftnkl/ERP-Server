@@ -1,5 +1,8 @@
 import { Injectable } from '@nestjs/common';
-import { ConfiguredGridListResult, ConfiguredGridSqlService } from '../../../common/configured-grid-sql/configured-grid-sql.service';
+import {
+  ConfiguredGridListResult,
+  ConfiguredGridSqlService,
+} from '../../../common/configured-grid-sql/configured-grid-sql.service';
 import { BankMaster, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
@@ -27,7 +30,13 @@ import { resolvePagination, runConfiguredGridQuery } from 'src/common/utils/modu
 import { RequestContextService } from '../../../common/request-context/request-context.service';
 const BANK_LIST_TABLE_NAME = 'bank master';
 const BANK_LIST_AUDIT_SCREEN_NAME = 'Bank List Master';
-const BANK_LIST_OPTIONAL_FIELDS = ['bnkShortName', 'bnkAlias', 'bnkRbiCode', 'bnkIbanSupported', 'bnkIsActive'];
+const BANK_LIST_OPTIONAL_FIELDS = [
+  'bnkShortName',
+  'bnkAlias',
+  'bnkRbiCode',
+  'bnkIbanSupported',
+  'bnkIsActive',
+];
 @Injectable()
 export class BankListService {
   constructor(
@@ -46,12 +55,19 @@ export class BankListService {
     queryDto: ListBankListQueryDto,
   ): Promise<ConfiguredGridListResult<BankListItem, BankListMeta>> {
     const { page, limit, skip } = resolvePagination(queryDto);
-    const result = await runConfiguredGridQuery<BankListItem>(
-      this.configuredGridSqlService,
-      { tableName: BANK_LIST_TABLE_NAME, alias: 'bank_list_grid', search: queryDto.search, page, limit, skip },
-    );
+    const result = await runConfiguredGridQuery<BankListItem>(this.configuredGridSqlService, {
+      tableName: BANK_LIST_TABLE_NAME,
+      alias: 'bank_list_grid',
+      search: queryDto.search,
+      page,
+      limit,
+      skip,
+    });
     if (!result) {
-      throwFixedBadRequest<BankListErrorDetail, BankListErrorResponse>('No configured grid found for bank list', []);
+      throwFixedBadRequest<BankListErrorDetail, BankListErrorResponse>(
+        'No configured grid found for bank list',
+        [],
+      );
     }
     return result;
   }
@@ -86,7 +102,12 @@ export class BankListService {
       if (bankUsageCount > 0) {
         throwFixedBadRequest<BankListErrorDetail, BankListErrorResponse>(
           'Cannot delete bank with active bank-account mappings',
-          [{ field: 'bnkId', message: `Bank ${bnkId} is used in ${bankUsageCount} ledger bank account(s).` }],
+          [
+            {
+              field: 'bnkId',
+              message: `Bank ${bnkId} is used in ${bankUsageCount} ledger bank account(s).`,
+            },
+          ],
         );
       }
       const modifiedOn = new Date();
@@ -138,7 +159,10 @@ export class BankListService {
       'bnkName',
     );
     const now = new Date();
-    const createdBy = resolveActor(saveBankListDto.bnkCreatedBy, this.requestContextService.getUserId());
+    const createdBy = resolveActor(
+      saveBankListDto.bnkCreatedBy,
+      this.requestContextService.getUserId(),
+    );
     const modifiedBy = resolveActor(saveBankListDto.bnkModifiedBy, createdBy);
     const data: Prisma.BankMasterUncheckedCreateInput = {
       bnkName: normalizedName,
@@ -199,7 +223,10 @@ export class BankListService {
         const data: Prisma.BankMasterUncheckedUpdateInput = {
           bnkName: normalizedName,
           bnkModifiedOn: new Date(),
-          bnkModifiedBy: resolveActor(saveBankListDto.bnkModifiedBy, this.requestContextService.getUserId()),
+          bnkModifiedBy: resolveActor(
+            saveBankListDto.bnkModifiedBy,
+            this.requestContextService.getUserId(),
+          ),
         };
         applyPresentFields(data, saveBankListDto, BANK_LIST_OPTIONAL_FIELDS);
         const updated = await tx.bankMaster.update({ where: { bnkId }, data });
@@ -214,7 +241,10 @@ export class BankListService {
             displayName: payload.bnkName,
             originalRecord: this.toPayload(existing),
             modifiedRecord: payload,
-            userId: resolveActor(saveBankListDto.bnkModifiedBy, this.requestContextService.getUserId()),
+            userId: resolveActor(
+              saveBankListDto.bnkModifiedBy,
+              this.requestContextService.getUserId(),
+            ),
             notes: 'Bank updated',
           },
           tx,
@@ -244,10 +274,9 @@ export class BankListService {
       select: { bnkId: true },
     });
     if (existing) {
-      throwFixedConflict<BankListErrorDetail, BankListErrorResponse>(
-        'Bank name already exists',
-        [{ field: 'bnkName', message: 'Duplicate bank name is not allowed' }],
-      );
+      throwFixedConflict<BankListErrorDetail, BankListErrorResponse>('Bank name already exists', [
+        { field: 'bnkName', message: 'Duplicate bank name is not allowed' },
+      ]);
     }
   }
   private toPayload(record: BankMaster): BankListPayload {

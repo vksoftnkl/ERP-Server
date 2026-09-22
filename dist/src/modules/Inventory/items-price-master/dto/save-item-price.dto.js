@@ -82,7 +82,10 @@ __decorate([
     __metadata("design:type", String)
 ], SaveItemPriceDto.prototype, "ipm_item_id", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ format: 'uuid', description: 'Item unit conversion id (iuc_id) this price applies to' }),
+    (0, swagger_1.ApiProperty)({
+        format: 'uuid',
+        description: 'Item unit conversion id (iuc_id) this price applies to',
+    }),
     (0, class_transformer_1.Transform)(({ value }) => (0, dtoDecorators_1.toTrimmedString)(value)),
     (0, class_validator_1.IsString)(),
     (0, class_validator_1.IsNotEmpty)(),

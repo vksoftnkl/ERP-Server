@@ -124,7 +124,11 @@ __decorate([
     __metadata("design:type", String)
 ], ChargeMasterPayloadDto.prototype, "chgLedgerCode", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ maxLength: 200, nullable: true, description: 'Name of the mapped GL ledger' }),
+    (0, swagger_1.ApiPropertyOptional)({
+        maxLength: 200,
+        nullable: true,
+        description: 'Name of the mapped GL ledger',
+    }),
     __metadata("design:type", Object)
 ], ChargeMasterPayloadDto.prototype, "chgLedgerName", void 0);
 __decorate([

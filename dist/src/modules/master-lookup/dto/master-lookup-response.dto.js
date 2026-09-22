@@ -732,7 +732,9 @@ __decorate([
     __metadata("design:type", Object)
 ], ItemPriceLookupPayloadDto.prototype, "item_code", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ description: 'Regional name (item_name_ta) when regional=true, else the English name.' }),
+    (0, swagger_1.ApiProperty)({
+        description: 'Regional name (item_name_ta) when regional=true, else the English name.',
+    }),
     __metadata("design:type", String)
 ], ItemPriceLookupPayloadDto.prototype, "item_name", void 0);
 __decorate([
@@ -819,7 +821,10 @@ __decorate([
     __metadata("design:type", Number)
 ], ItemPriceLookupPayloadDto.prototype, "disc_qty", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ nullable: true, description: 'Legacy group scheme discount — no column in current schema, always null' }),
+    (0, swagger_1.ApiProperty)({
+        nullable: true,
+        description: 'Legacy group scheme discount — no column in current schema, always null',
+    }),
     __metadata("design:type", Object)
 ], ItemPriceLookupPayloadDto.prototype, "sch_discount", void 0);
 __decorate([

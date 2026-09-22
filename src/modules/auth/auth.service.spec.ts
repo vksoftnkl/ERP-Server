@@ -16,14 +16,28 @@ type TokenServiceMock = {
   signAccessToken: jest.Mock<
     {
       token: string;
-      payload: { sub: string; user_name: string; sid: string; iat: number; exp: number; typ: 'access' };
+      payload: {
+        sub: string;
+        user_name: string;
+        sid: string;
+        iat: number;
+        exp: number;
+        typ: 'access';
+      };
     },
     [{ sub: string; user_name: string; sid: string }]
   >;
   signRefreshToken: jest.Mock<
     {
       token: string;
-      payload: { sub: string; user_name: string; sid: string; iat: number; exp: number; typ: 'refresh' };
+      payload: {
+        sub: string;
+        user_name: string;
+        sid: string;
+        iat: number;
+        exp: number;
+        typ: 'refresh';
+      };
     },
     [{ sub: string; user_name: string; sid: string }]
   >;
@@ -32,7 +46,10 @@ type AuthSessionServiceMock = {
   createSessionId: jest.Mock<string, []>;
   storeAccessTokenSession: jest.Mock<
     Promise<void>,
-    [string, { sub: string; user_name: string; sid: string; iat: number; exp: number; typ: 'access' }]
+    [
+      string,
+      { sub: string; user_name: string; sid: string; iat: number; exp: number; typ: 'access' },
+    ]
   >;
   storeTokenSession: jest.Mock<
     Promise<void>,
@@ -162,11 +179,23 @@ describe('AuthService', () => {
         }),
     };
     authSessionService = {
-      createSessionId: jest.fn<string, []>().mockReturnValue('4e457f70-cc9b-4e8f-b7e4-35cc3f588c22'),
+      createSessionId: jest
+        .fn<string, []>()
+        .mockReturnValue('4e457f70-cc9b-4e8f-b7e4-35cc3f588c22'),
       storeAccessTokenSession: jest
         .fn<
           Promise<void>,
-          [string, { sub: string; user_name: string; sid: string; iat: number; exp: number; typ: 'access' }]
+          [
+            string,
+            {
+              sub: string;
+              user_name: string;
+              sid: string;
+              iat: number;
+              exp: number;
+              typ: 'access';
+            },
+          ]
         >()
         .mockResolvedValue(undefined),
       storeTokenSession: jest
@@ -174,7 +203,14 @@ describe('AuthService', () => {
           Promise<void>,
           [
             string,
-            { sub: string; user_name: string; sid: string; iat: number; exp: number; typ: 'access' },
+            {
+              sub: string;
+              user_name: string;
+              sid: string;
+              iat: number;
+              exp: number;
+              typ: 'access';
+            },
             string,
           ]
         >()

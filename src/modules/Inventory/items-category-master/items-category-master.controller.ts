@@ -48,7 +48,7 @@ type UploadedPhotoFile = {
 @Controller('item-categories')
 @UseFilters(ItemCategoryExceptionFilter)
 export class ItemsCategoryMasterController {
-  constructor(private readonly itemsCategoryMasterService: ItemsCategoryMasterService) { }
+  constructor(private readonly itemsCategoryMasterService: ItemsCategoryMasterService) {}
   @Post('create')
   @Version(API_VERSION)
   @UseInterceptors(FileInterceptor('category_photo'))

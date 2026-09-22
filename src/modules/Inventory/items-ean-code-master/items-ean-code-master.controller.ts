@@ -70,7 +70,7 @@ import { API_VERSION } from '../../../common/constants/api-version';
 @Controller('item-ean-codes')
 @UseFilters(ItemEanCodeExceptionFilter)
 export class ItemsEanCodeMasterController {
-  constructor(private readonly itemsEanCodeMasterService: ItemsEanCodeMasterService) { }
+  constructor(private readonly itemsEanCodeMasterService: ItemsEanCodeMasterService) {}
 
   @Post('create')
   @Version(API_VERSION)
@@ -129,9 +129,9 @@ export class ItemsEanCodeMasterController {
     | ItemEanCodeSuccessResponse<ItemEanCodePayload>
     | ItemEanCodeSuccessResponse<ItemEanCodeListItem[], ItemEanCodeListMeta>
   > {
-    const queryDto = (await validateDto(query, GetItemEanCodeQueryDto, {
+    const queryDto = await validateDto(query, GetItemEanCodeQueryDto, {
       type: 'query',
-    })) as GetItemEanCodeQueryDto;
+    });
 
     if (queryDto.ean_id) {
       const data = await this.itemsEanCodeMasterService.getById(queryDto.ean_id);
@@ -205,9 +205,7 @@ export class ItemsEanCodeMasterController {
     eanId?: string,
   ): Promise<DeleteItemEanCodeDto | DeleteItemEanCodeDto[]> {
     if (hasRequestPayload(body)) {
-      return (await validateSingleOrArrayDto(body, DeleteItemEanCodeDto)) as
-        | DeleteItemEanCodeDto
-        | DeleteItemEanCodeDto[];
+      return await validateSingleOrArrayDto(body, DeleteItemEanCodeDto);
     }
 
     if (!eanId?.trim()) {
@@ -216,7 +214,7 @@ export class ItemsEanCodeMasterController {
       });
     }
 
-    return (await validateDto(
+    return await validateDto(
       {
         ean_id: eanId,
       },
@@ -224,6 +222,6 @@ export class ItemsEanCodeMasterController {
       {
         type: 'query',
       },
-    )) as DeleteItemEanCodeDto;
+    );
   }
 }

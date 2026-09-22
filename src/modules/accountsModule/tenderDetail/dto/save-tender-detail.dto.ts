@@ -1,6 +1,8 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsEnum } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsEnum, IsOptional, ValidateNested } from 'class-validator';
 import {
+  TrimmedString,
   NullableDateString,
   NullableNumber,
   NullableStringStrict,
@@ -23,7 +25,57 @@ import {
 // fields that change, so "required on create" is enforced in the service
 // (TenderDetailService.requireField) where the stored row and the parent
 // document's scope are available to fill the gaps.
+/**
+ * HANDOVER §2.1 — the WHO behind a TEMP_CR (type 8) tender row. The bill's
+ * balance row carries the debt; this names the person who walked out with the
+ * goods, and it becomes the `accounts.acc_temp_credit` row when the bill posts.
+ */
+export class TenderTempCreditDto {
+  @ApiPropertyOptional({ maxLength: 100 })
+  @TrimmedString(100)
+  name!: string;
+
+  @ApiPropertyOptional({ maxLength: 15 })
+  @TrimmedString(15)
+  mobile!: string;
+
+  @ApiPropertyOptional({ maxLength: 100, nullable: true })
+  @NullableStringStrict(100)
+  place?: string | null;
+
+  @ApiPropertyOptional({ maxLength: 250, nullable: true })
+  @NullableStringStrict(250)
+  addr?: string | null;
+
+  @ApiPropertyOptional({
+    maxLength: 50,
+    nullable: true,
+    description: 'An id reference (Aadhaar last 4, licence…)',
+  })
+  @NullableStringStrict(50)
+  idRef?: string | null;
+
+  @ApiPropertyOptional({ description: 'Days until the promise falls due' })
+  @OptionalInteger(0)
+  days?: number;
+
+  @ApiPropertyOptional({ maxLength: 250, nullable: true })
+  @NullableStringStrict(250)
+  notes?: string | null;
+}
+
 export class SaveTenderDetailDto {
+  @ApiPropertyOptional({
+    type: TenderTempCreditDto,
+    nullable: true,
+    description:
+      'Only on a TEMP_CR (type 8) row: who owes, and until when. Not a column — it becomes accounts.acc_temp_credit on post.',
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => TenderTempCreditDto)
+  tempCredit?: TenderTempCreditDto | null;
+
   @ApiPropertyOptional({
     format: 'uuid',
     description: 'When provided, updates that tender line; otherwise a new line is created',

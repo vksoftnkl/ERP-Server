@@ -41,7 +41,7 @@ import { API_VERSION } from '../../../common/constants/api-version';
 @Controller('branch-masters')
 @UseFilters(BranchMasterExceptionFilter)
 export class BranchMasterController {
-  constructor(private readonly branchMasterService: BranchMasterService) { }
+  constructor(private readonly branchMasterService: BranchMasterService) {}
 
   @Post('create')
   @Version(API_VERSION)

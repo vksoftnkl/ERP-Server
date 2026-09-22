@@ -122,9 +122,7 @@ let TokenService = class TokenService {
         if (typeof sessionId !== 'string' || sessionId.length === 0) {
             throw new common_1.UnauthorizedException('Invalid access token');
         }
-        if (typeof issuedAt !== 'number' ||
-            !Number.isInteger(issuedAt) ||
-            issuedAt < 0) {
+        if (typeof issuedAt !== 'number' || !Number.isInteger(issuedAt) || issuedAt < 0) {
             throw new common_1.UnauthorizedException('Invalid access token');
         }
         if (typeof expiresAt !== 'number' ||

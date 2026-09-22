@@ -14,8 +14,13 @@ const tender_detail_module_1 = require("../../accountsModule/tenderDetail/tender
 const bill_controller_1 = require("./bill.controller");
 const bill_exception_filter_1 = require("./bill-exception.filter");
 const bill_service_1 = require("./bill.service");
+const bill_lifecycle_service_1 = require("./bill-lifecycle.service");
+const bill_read_service_1 = require("./bill-read.service");
+const bill_band_service_1 = require("./bill-band.service");
+const bill_retender_service_1 = require("./bill-retender.service");
 const sale_order_module_1 = require("../sale-order/sale-order.module");
 const quotation_module_1 = require("../quotation/quotation.module");
+const posting_module_1 = require("../posting/posting.module");
 let BillModule = class BillModule {
 };
 exports.BillModule = BillModule;
@@ -27,10 +32,18 @@ exports.BillModule = BillModule = __decorate([
             tender_detail_module_1.TenderDetailModule,
             sale_order_module_1.SaleOrderModule,
             quotation_module_1.QuotationModule,
+            posting_module_1.SalesPostingModule,
         ],
         controllers: [bill_controller_1.BillController],
-        providers: [bill_service_1.BillService, bill_exception_filter_1.BillExceptionFilter],
-        exports: [bill_service_1.BillService],
+        providers: [
+            bill_service_1.BillService,
+            bill_read_service_1.BillReadService,
+            bill_lifecycle_service_1.BillLifecycleService,
+            bill_band_service_1.BillBandService,
+            bill_retender_service_1.BillRetenderService,
+            bill_exception_filter_1.BillExceptionFilter,
+        ],
+        exports: [bill_service_1.BillService, bill_read_service_1.BillReadService],
     })
 ], BillModule);
 //# sourceMappingURL=bill.module.js.map

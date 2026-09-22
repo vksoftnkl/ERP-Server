@@ -219,7 +219,8 @@ function postingCte(svhId, accYear, isCount) {
     )
   `;
 }
-async function resolveLots(tx, { rules, svhId, accYear, actor }) {
+async function resolveLots(tx, params) {
+    const { rules, svhId, accYear, actor } = params;
     const isCount = rules.quantityMode === 'COUNT';
     await tx.$executeRaw `
     WITH ${postingCte(svhId, accYear, isCount)}
@@ -241,8 +242,9 @@ async function resolveLots(tx, { rules, svhId, accYear, actor }) {
            -- The CHAIN's ageing anchor, from the document's own date rather than
            -- today's: a March opening keyed in April is March-old stock.
            c.svh_doc_date, c.svh_branch_id,
-           ${exports.STOCK_LEDGER_SRC_MODULE}, ${rules.voucherType}, c.svi_voucher_id,
-           c.svi_acc_year, c.svh_refno,
+           ${params.ledgerSource?.srcModule ?? exports.STOCK_LEDGER_SRC_MODULE},
+           ${params.ledgerSource?.srcDocType ?? rules.voucherType}, c.svi_voucher_id,
+           c.svi_acc_year, COALESCE(${params.ledgerSource?.srcRefno ?? null}::varchar, c.svh_refno),
            c.line_cost_rate, c.line_cost_rate, c.line_cost_rate_wot, c.svi_landed_rate, c.svi_tax_perc,
            ${auditColumnActor(actor)}
       FROM costed c
@@ -277,7 +279,8 @@ async function attachLotsToLines(tx, { rules, svhId, accYear, postedOn, actor })
        AND svi.svi_acc_year = c.svi_acc_year
   `;
 }
-async function writeLedger(tx, { rules, svhId, accYear, actor, postedOn }) {
+async function writeLedger(tx, params) {
+    const { rules, svhId, accYear, actor, postedOn, ledgerSource } = params;
     const isCount = rules.quantityMode === 'COUNT';
     const [plusTxnType, minusTxnType] = isCount
         ? [rules.ledgerTxnTypes[0], rules.ledgerTxnTypes[1] ?? rules.ledgerTxnTypes[0]]
@@ -296,11 +299,13 @@ async function writeLedger(tx, { rules, svhId, accYear, actor, postedOn }) {
       sml_cost_rate, sml_cost_value, sml_cost_rate_wot, sml_cost_value_wot,
       sml_landed_rate, sml_landed_value,
       sml_mrp, sml_batch_no, sml_expiry_date,
-      sml_reason_id, sml_created_by
+      sml_reason_id, sml_doc_rate, sml_party_id, sml_created_by
     )
     SELECT c.svh_company_id, c.svh_branch_id, c.svh_tenant_id, c.svi_acc_year, c.svi_godown_id,
            c.svi_item_id, svi.svi_lot_id, c.svi_uom_id, c.svi_base_uom_id, c.svi_to_base_factor,
-           ${exports.STOCK_LEDGER_SRC_MODULE}, ${rules.voucherType}, c.svi_voucher_id, c.svi_acc_year, c.svh_refno,
+           ${ledgerSource?.srcModule ?? exports.STOCK_LEDGER_SRC_MODULE},
+           ${ledgerSource?.srcDocType ?? rules.voucherType}, c.svi_voucher_id, c.svi_acc_year,
+           COALESCE(${ledgerSource?.srcRefno ?? null}::varchar, c.svh_refno),
            c.svi_line_no, c.svi_split_no,
            CASE WHEN ${isCount}::boolean
                 THEN CASE WHEN COALESCE(c.svi_diff_qty, 0) >= 0 THEN ${plusTxnType} ELSE ${minusTxnType} END
@@ -315,7 +320,12 @@ async function writeLedger(tx, { rules, svhId, accYear, actor, postedOn }) {
            c.line_cost_rate_wot, ROUND(c.line_cost_rate_wot * (c.move_base_qty + c.move_free_base_qty), 2),
            c.svi_landed_rate,    ROUND(c.svi_landed_rate    * (c.move_base_qty + c.move_free_base_qty), 2),
            c.svi_mrp, c.svi_batch_no, c.svi_expiry_date,
-           COALESCE(c.svi_reason_id, c.svh_reason_id), ${auditColumnActor(actor)}
+           COALESCE(c.svi_reason_id, c.svh_reason_id),
+           -- What the owning document charged (a sale's rate): the moving
+           -- average's last-sale stamp reads it. Stock vouchers have none.
+           NULLIF(c.svi_sale_price, 0),
+           ${ledgerSource?.partyId ?? null}::uuid,
+           ${auditColumnActor(actor)}
       FROM costed c
       JOIN stock.stock_voucher_item svi
         ON svi.svi_id = c.svi_id AND svi.svi_acc_year = c.svi_acc_year

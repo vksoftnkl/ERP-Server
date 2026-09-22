@@ -45,9 +45,9 @@ let ItemsReorderMasterController = class ItemsReorderMasterController {
         };
     }
     async getById(query) {
-        const queryDto = (await (0, request_payload_validation_util_1.validateDto)(query, get_item_reorder_query_dto_1.GetItemReorderQueryDto, {
+        const queryDto = await (0, request_payload_validation_util_1.validateDto)(query, get_item_reorder_query_dto_1.GetItemReorderQueryDto, {
             type: 'query',
-        }));
+        });
         if (queryDto.ir_id) {
             const data = await this.itemsReorderMasterService.getById(queryDto.ir_id);
             return { success: true, message: 'Item reorder fetched successfully', data };
@@ -86,18 +86,18 @@ let ItemsReorderMasterController = class ItemsReorderMasterController {
     }
     async resolveDeletePayload(body, irId) {
         if ((0, request_payload_validation_util_1.hasRequestPayload)(body)) {
-            return (await (0, request_payload_validation_util_1.validateSingleOrArrayDto)(body, delete_item_reorder_dto_1.DeleteItemReorderDto));
+            return await (0, request_payload_validation_util_1.validateSingleOrArrayDto)(body, delete_item_reorder_dto_1.DeleteItemReorderDto);
         }
         if (!irId?.trim()) {
             throw new common_1.BadRequestException({
                 message: ['ir_id is required'],
             });
         }
-        return (await (0, request_payload_validation_util_1.validateDto)({
+        return await (0, request_payload_validation_util_1.validateDto)({
             ir_id: irId,
         }, delete_item_reorder_dto_1.DeleteItemReorderDto, {
             type: 'query',
-        }));
+        });
     }
 };
 exports.ItemsReorderMasterController = ItemsReorderMasterController;

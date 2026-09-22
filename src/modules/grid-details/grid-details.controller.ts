@@ -1,5 +1,15 @@
 import { CacheTTL } from '@nestjs/cache-manager';
-import { Body, Controller, Delete, Get, Post, Put, Query, UseFilters, Version } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Post,
+  Put,
+  Query,
+  UseFilters,
+  Version,
+} from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiBody,
@@ -72,7 +82,7 @@ const gridDetailsCreateExample = {
 @Controller('grid-details')
 @UseFilters(GridDetailExceptionFilter)
 export class GridDetailsController {
-  constructor(private readonly gridDetailsService: GridDetailsService) { }
+  constructor(private readonly gridDetailsService: GridDetailsService) {}
   @Post('create')
   @Version(API_VERSION)
   @ApiOperation({

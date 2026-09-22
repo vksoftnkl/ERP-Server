@@ -280,7 +280,10 @@ export async function resolveImportedLines(
     if (!unitMatches.length) {
       fail(
         `"${item.itemNameEn}" has no unit named "${unitName}". Its units are: ${
-          item.unitConversions.map((c) => c.unit?.unit_name).filter(Boolean).join(', ') || '(none)'
+          item.unitConversions
+            .map((c) => c.unit?.unit_name)
+            .filter(Boolean)
+            .join(', ') || '(none)'
         }.`,
       );
       return;

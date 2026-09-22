@@ -21,13 +21,16 @@ import {
 import { resolveImportedLines } from './stock-voucher-import.helper';
 import {
   cancelDraftVoucher,
-  cancelStockVoucher,
   effectivePolicyCte,
   lotIdentityKeyColumns,
-  postStockVoucher,
   unreversedLedgerRow,
   usesInProcessPosting,
 } from './stock-voucher-posting.helper';
+// §3.1 — the one stock engine. postStockVoucher / cancelStockVoucher are no
+// longer called from here: StockPostingService owns the phases AND the freeze
+// guard, so every document that moves stock goes through the same door.
+import { StockPostingService } from '../posting/stock-posting.service';
+import { StockVoucherSource } from '../posting/stock-voucher.source';
 import {
   appendTxnStatusLog,
   TxnStatusEvent,
@@ -275,6 +278,14 @@ export class StockVoucherService {
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
     private readonly requestContextService: RequestContextService,
+    /**
+     * §3.1 — the ONE stock engine. This module hands it a
+     * `StockVoucherSource` and the service runs the seven phases, so a
+     * delivery challan and a stock voucher move stock through exactly the
+     * same code. The freeze guard lives there too, and now tests the
+     * MOVEMENT's own timestamp rather than `now()`.
+     */
+    private readonly stockPosting: StockPostingService,
   ) {}
   // ──────────────────────────────────────────────────────────────────────────
   // §4 — save a draft
@@ -327,13 +338,17 @@ export class StockVoucherService {
       // Both reads below are handed the transaction because the draft they are
       // about to check has not committed yet.
       await this.assertPostable(rules, id, header.accYear, header.companyId, header.branchId, tx);
-      const posted = await postStockVoucher(tx, {
-        rules,
-        svhId: id,
-        accYear: header.accYear,
-        actor,
-        postedOn,
-      });
+      const posted = await this.stockPosting.post(
+        tx,
+        new StockVoucherSource({
+          svhId: id,
+          accYear: header.accYear,
+          companyId: header.companyId,
+          branchId: header.branchId,
+          rules,
+        }),
+        { actor, postedOn },
+      );
       await this.logStatusChange(tx, {
         rules,
         svhId: id,
@@ -1650,13 +1665,17 @@ export class StockVoucherService {
                svh.svh_company_id,
                svh.svh_branch_id,
                svh.svh_doc_date,
+               svh.svh_doc_datetime,
                svh.svh_rate_source
           FROM stock.stock_voucher svh
          WHERE svh.svh_id       = ${svhId}::uuid
            AND svh.svh_acc_year = ${accYear}::bpchar
       ),
       line AS (
-        SELECT svi.*, doc.svh_doc_date, doc.svh_rate_source, doc.svh_company_id, doc.svh_branch_id
+        -- svh_doc_datetime rides along for the freeze check below: the window
+        -- is tested against the MOVEMENT's timestamp, not now().
+        SELECT svi.*, doc.svh_doc_date, doc.svh_doc_datetime, doc.svh_rate_source,
+               doc.svh_company_id, doc.svh_branch_id
           FROM stock.stock_voucher_item svi
           JOIN doc ON doc.svh_id = svi.svi_voucher_id AND doc.svh_acc_year = svi.svi_acc_year
          WHERE svi.svi_is_deleted = false
@@ -1743,11 +1762,19 @@ export class StockVoucherService {
       ),
       -- §11 — THE FREEZE, SEEN BEFORE THE POST. tr_sml_freeze_guard refuses the
       -- ledger row regardless, but as one 409 for the whole document; this
-      -- names the line and the count that holds the shelf. Wall clock, like
-      -- the guard: a back-dated document posted now still changes today's
-      -- on-hand. A count never trips over its own freeze, and a second DRAFT
-      -- count of the same godown is refused by the first's — one sheet holds
-      -- a shelf at a time.
+      -- names the line and the count that holds the shelf. A count never trips
+      -- over its own freeze, and a second DRAFT count of the same godown is
+      -- refused by the first's — one sheet holds a shelf at a time.
+      --
+      -- THE WINDOW IS TESTED AGAINST svh_doc_datetime, NOT now(), and that
+      -- changed on 2026-09-21. The old rule was wall clock, matching the
+      -- dropped fn_sml_freeze_guard — but the till posts OFFLINE and pushes on
+      -- reconnect, so wall clock refuses a sale made at 10:00, before the count
+      -- began, that arrives at 14:00 during it. The shelf was already short
+      -- when the counter started counting; the count reconciles it. A movement
+      -- that HAPPENED inside the window is still refused.
+      -- offline-sync-invariants.md §7b, and StockPostingService.assertNotFrozen
+      -- is the other half of the same rule.
       frozen AS (
         SELECT keyed.svi_id,
                f.svh_refno     AS frozen_by,
@@ -1763,7 +1790,8 @@ export class StockVoucherService {
                AND svh.svh_company_id   = keyed.svh_company_id
                AND svh.svh_branch_id    = keyed.svh_branch_id
                AND COALESCE(svh.svh_from_godown_id, svh.svh_to_godown_id) = keyed.svi_godown_id
-               AND now() BETWEEN svh.svh_freeze_from AND svh.svh_freeze_to
+               -- THE MOVEMENT'S OWN TIMESTAMP, not now(). See the note above.
+               AND keyed.svh_doc_datetime BETWEEN svh.svh_freeze_from AND svh.svh_freeze_to
                AND svh.svh_id <> keyed.svi_voucher_id
              LIMIT 1
           ) f ON true
@@ -1945,7 +1973,11 @@ export class StockVoucherService {
         // does not exist on this deployment — see stock-voucher-posting.helper
         // for what that costs and what has to change if the engine share is ever
         // installed.
-        posted = await postStockVoucher(tx, { rules, svhId, accYear, actor, postedOn });
+        posted = await this.stockPosting.post(
+          tx,
+          new StockVoucherSource({ svhId, accYear, companyId, branchId, rules }),
+          { actor, postedOn },
+        );
       } else {
         // The transfer paths still belong to the engine. The FUNCTION NAME comes
         // from the rule record, not from a branch here — see
@@ -2031,7 +2063,8 @@ export class StockVoucherService {
    * it was cancelled on.
    *
    * WHO REVERSES A POSTED ONE: the generic types are reversed IN PROCESS by
-   * `cancelStockVoucher`, for the same reason `post()` runs `postStockVoucher`
+   * `StockPostingService.cancel`, for the same reason `post()` runs the same
+   * service's `post`
    * — stock.fn_svh_cancel does not exist on this deployment, and a cancel that
    * called it answered every request with a 500. The transfer types keep
    * calling the engine function, as their post does, because a transfer's
@@ -2109,14 +2142,11 @@ export class StockVoucherService {
           cancelledOn,
         });
       } else if (usesInProcessPosting(rules)) {
-        reversed = await cancelStockVoucher(tx, {
-          rules,
-          svhId,
-          accYear,
-          actor,
-          reason: trimmedReason,
-          cancelledOn,
-        });
+        reversed = await this.stockPosting.cancel(
+          tx,
+          new StockVoucherSource({ svhId, accYear, companyId, branchId, rules }),
+          { actor, reason: trimmedReason, cancelledOn },
+        );
       } else {
         const [row] = await tx.$queryRaw<Array<{ rows: number }>>`
           SELECT stock.fn_svh_cancel(${svhId}::uuid, ${accYear}::bpchar, ${trimmedReason}, ${actor}::uuid) AS rows

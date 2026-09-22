@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
+  NullableUpperMaxString,
   NullableDateString,
   NullableInteger,
   NullableNumber,
@@ -78,6 +79,35 @@ export class SaveBillItemDto {
   @ApiPropertyOptional({ nullable: true })
   @NullableNumber()
   sbiSrcFreeQty?: string | number | null;
+  // ── HANDOVER §2.1 — source line, bucket, lot proposal, promo usage ─────────
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description: 'The source LINE this bill line consumes: soi_id (order) or sdi_id (challan)',
+  })
+  @NullableUuid()
+  sbiSrcItemId?: string | null;
+  @ApiPropertyOptional({
+    maxLength: 20,
+    nullable: true,
+    description: 'SALEABLE | DAMAGED | QUARANTINE | EXPIRED | SAMPLE',
+  })
+  @NullableUpperMaxString(20)
+  sbiBucket?: string | null;
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description: 'A PROPOSAL — the stock engine decides',
+  })
+  @NullableUuid()
+  sbiLotId?: string | null;
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  @NullableUuid()
+  sbiPromoUsageId?: string | null;
+  @ApiPropertyOptional({ readOnly: true, nullable: true, description: 'Ignored — server-owned' })
+  @NullableNumber()
+  sbiCogsAmt?: string | number | null;
+
   @ApiProperty({ format: 'uuid' })
   @RequiredUuid()
   sbiItemId!: string;

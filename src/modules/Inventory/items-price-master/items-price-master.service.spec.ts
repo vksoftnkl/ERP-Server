@@ -116,7 +116,10 @@ describe('ItemsPriceMasterService', () => {
     prisma = {
       itemPriceMaster: {
         create: jest.fn<Promise<ItemPriceMaster>, [Prisma.ItemPriceMasterCreateArgs]>(),
-        findFirst: jest.fn<Promise<ItemPriceMaster | null>, [Prisma.ItemPriceMasterFindFirstArgs]>(),
+        findFirst: jest.fn<
+          Promise<ItemPriceMaster | null>,
+          [Prisma.ItemPriceMasterFindFirstArgs]
+        >(),
         update: jest.fn<Promise<ItemPriceMaster>, [Prisma.ItemPriceMasterUpdateArgs]>(),
       },
       itemUnitConversion: {
@@ -206,7 +209,7 @@ describe('ItemsPriceMasterService', () => {
       expect(result).not.toHaveProperty(field);
     }
   });
-  it('keeps an explicit UOM remark instead of the conversion row\'s on update', async () => {
+  it("keeps an explicit UOM remark instead of the conversion row's on update", async () => {
     prisma.itemUnitConversion.findFirst.mockResolvedValue(makeItemUnitConversionRecord());
     prisma.itemPriceMaster.findFirst.mockResolvedValueOnce(
       makeItemPriceRecord({ ipmUomRemarks: null }),

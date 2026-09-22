@@ -10,11 +10,12 @@
 /// it whenever a fiscal year is opened, or every insert fails with
 /// "no partition of relation ...".
 ///
-/// AccVoucherDocApiLog holds the LAST exchange for a document. This holds
-/// EVERY exchange, for every document and for the calls that belong to no
-/// document at all (auth, GSTIN lookup). The two are not redundant: one
-/// answers "what does this bill look like at the IRP", the other answers
-/// "what happened at 10:42 when the counter froze".
+/// This is the only record of what crossed the wire. It holds EVERY exchange,
+/// for every document and for the calls that belong to no document at all
+/// (auth, GSTIN lookup). The per-document summary lives on
+/// acc_voucher_doc_register itself; accounts.acc_voucher_doc_api_log, which
+/// used to hold the LAST exchange per document, was dropped unused by
+/// 20260922080000.
 ///
 /// Rows are written once — no modifiedOn/By, same as TxnStatusLog.
 model GstApiLog {

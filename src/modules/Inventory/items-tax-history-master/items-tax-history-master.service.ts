@@ -94,7 +94,10 @@ export class ItemsTaxHistoryMasterService {
       'ith_effective_to',
     );
     this.validateDateRange(effectiveFrom, effectiveTo);
-    const createdBy = resolveActor(saveItemTaxHistoryDto.ith_created_by, this.requestContextService.getUserId());
+    const createdBy = resolveActor(
+      saveItemTaxHistoryDto.ith_created_by,
+      this.requestContextService.getUserId(),
+    );
     const data: Prisma.ItemTaxHistoryUncheckedCreateInput = {
       ithItemId: saveItemTaxHistoryDto.ith_item_id,
       ithTaxId: saveItemTaxHistoryDto.ith_tax_id,

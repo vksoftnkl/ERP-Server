@@ -35,10 +35,11 @@ let OpenItemsService = class OpenItemsService {
             (0, receipt_guards_1.loadParty)(this.prisma, query.companyId, partyId, 'partyId'),
             this.loadSettings(query.companyId),
         ]);
-        const [bills, credits] = await Promise.all([
+        const [loadedBills, credits] = await Promise.all([
             this.loadBills(query.companyId, partyId, onDate, settings),
             this.loadCredits(query.companyId, partyId),
         ]);
+        const bills = await this.attachTempCredits(loadedBills, query.mobile?.trim() || null);
         const partyPayload = {
             ledId: party.ledId,
             ledName: party.ledName,
@@ -62,6 +63,34 @@ let OpenItemsService = class OpenItemsService {
             },
             party: partyPayload,
         };
+    }
+    async attachTempCredits(bills, mobile) {
+        if (bills.length === 0) {
+            return bills;
+        }
+        const rows = await this.prisma.$queryRaw `
+      SELECT atc_id, atc_abl_id, atc_abl_acc_year, atc_name, atc_mobile, atc_due_date, atc_balance_amount, atc_status
+        FROM accounts.acc_temp_credit
+       WHERE atc_is_deleted = false AND atc_status <> 'CANCELLED'
+         AND (atc_abl_id, atc_abl_acc_year) IN (${client_1.Prisma.join(bills.map((b) => client_1.Prisma.sql `(${b.billId}::uuid, ${b.billAccYear}::char(9))`))})`;
+        const by = new Map(rows.map((r) => [`${r.atc_abl_id}|${r.atc_abl_acc_year.trim()}`, r]));
+        const out = bills.map((b) => {
+            const r = by.get(`${b.billId}|${b.billAccYear.trim()}`);
+            return {
+                ...b,
+                tempCredit: r
+                    ? {
+                        atcId: r.atc_id,
+                        name: r.atc_name,
+                        mobile: r.atc_mobile,
+                        dueDate: r.atc_due_date ? r.atc_due_date.toISOString().slice(0, 10) : null,
+                        balance: Number(r.atc_balance_amount.toString()),
+                        status: r.atc_status,
+                    }
+                    : null,
+            };
+        });
+        return mobile ? out.filter((b) => b.tempCredit?.mobile === mobile) : out;
     }
     async loadBills(companyId, partyId, onDate, settings) {
         const bills = await this.prisma.accBillBalance.findMany({

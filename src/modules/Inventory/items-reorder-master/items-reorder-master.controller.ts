@@ -128,9 +128,9 @@ export class ItemsReorderMasterController {
     | ItemReorderSuccessResponse<ItemReorderPayload>
     | ItemReorderSuccessResponse<ItemReorderListItem[], ItemReorderListMeta>
   > {
-    const queryDto = (await validateDto(query, GetItemReorderQueryDto, {
+    const queryDto = await validateDto(query, GetItemReorderQueryDto, {
       type: 'query',
-    })) as GetItemReorderQueryDto;
+    });
 
     if (queryDto.ir_id) {
       const data = await this.itemsReorderMasterService.getById(queryDto.ir_id);
@@ -204,9 +204,7 @@ export class ItemsReorderMasterController {
     irId?: string,
   ): Promise<DeleteItemReorderDto | DeleteItemReorderDto[]> {
     if (hasRequestPayload(body)) {
-      return (await validateSingleOrArrayDto(body, DeleteItemReorderDto)) as
-        | DeleteItemReorderDto
-        | DeleteItemReorderDto[];
+      return await validateSingleOrArrayDto(body, DeleteItemReorderDto);
     }
 
     if (!irId?.trim()) {
@@ -215,7 +213,7 @@ export class ItemsReorderMasterController {
       });
     }
 
-    return (await validateDto(
+    return await validateDto(
       {
         ir_id: irId,
       },
@@ -223,6 +221,6 @@ export class ItemsReorderMasterController {
       {
         type: 'query',
       },
-    )) as DeleteItemReorderDto;
+    );
   }
 }

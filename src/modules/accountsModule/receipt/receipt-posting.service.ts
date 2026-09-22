@@ -328,6 +328,15 @@ export class ReceiptPostingService {
       ...credits.map((credit) => ({ billId: credit.billId, accYear: credit.billAccYear })),
     ];
     const recomputed = await this.recompute.recomputeBills(tx, touched, todayUtc());
+    // HANDOVER 2026-09-20 §7: a receipt against a temp-credit bill is the
+    // follow-up's evidence — the WHO row remembers the last receipt that paid it.
+    if (bills.length > 0) {
+      await tx.$executeRaw`
+        UPDATE accounts.acc_temp_credit
+           SET atc_last_receipt_id = ${header.avhVoucherId}::uuid, atc_modified_on = now()
+         WHERE atc_is_deleted = false
+           AND (atc_abl_id, atc_abl_acc_year) IN (${Prisma.join(bills.map((b) => Prisma.sql`(${b.billId}::uuid, ${b.billAccYear}::char(9))`))})`;
+    }
 
     // ── 15 · POSTED, last ──────────────────────────────────────────────────
     await this.postHeaders(tx, { header, vouchers, plan, tenders, otherLines, actor });

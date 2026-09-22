@@ -87,7 +87,6 @@ export class BatchPrefixSuccessListDto {
 
   @ApiProperty({ type: BatchPrefixListMetaDto })
   meta!: BatchPrefixListMetaDto;
-
 }
 
 export class BatchPrefixSuccessDeleteDto {

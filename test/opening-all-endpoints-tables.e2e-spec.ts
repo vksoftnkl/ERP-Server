@@ -255,19 +255,23 @@ describe('/stock/opening — all 8 routes, which tables each one writes', () => 
     itemB = await makeItem(`E2E-ALL-B-${tag}`);
 
     const ok = await probe('GET /item-lookup', 'a pickable item', () =>
-      http
-        .get(`${BASE}/item-lookup`)
-        .set('Authorization', BEARER)
-        .query({ companyId: SCOPE.companyId, branchId: SCOPE.branchId, itemId: itemA.itemId, onDate: DOC_DATE }),
+      http.get(`${BASE}/item-lookup`).set('Authorization', BEARER).query({
+        companyId: SCOPE.companyId,
+        branchId: SCOPE.branchId,
+        itemId: itemA.itemId,
+        onDate: DOC_DATE,
+      }),
     );
     expect(ok.status).toBe(200);
     expect(ok.body.data.alreadyOpened).toBe(false);
 
     const missing = await probe('GET /item-lookup', 'an item that does not exist', () =>
-      http
-        .get(`${BASE}/item-lookup`)
-        .set('Authorization', BEARER)
-        .query({ companyId: SCOPE.companyId, branchId: SCOPE.branchId, itemId: MISSING_UUID, onDate: DOC_DATE }),
+      http.get(`${BASE}/item-lookup`).set('Authorization', BEARER).query({
+        companyId: SCOPE.companyId,
+        branchId: SCOPE.branchId,
+        itemId: MISSING_UUID,
+        onDate: DOC_DATE,
+      }),
     );
     expect(missing.status).toBe(404);
   }, 60_000);
@@ -275,13 +279,19 @@ describe('/stock/opening — all 8 routes, which tables each one writes', () => 
   // ── 2. POST /create ─────────────────────────────────────────────────────
   it('POST /create — the document tables, and the number series', async () => {
     const res = await probe('POST /create', 'create a DRAFT', () =>
-      http.post(`${BASE}/create`).set('Authorization', BEARER).send(createBody([itemA])),
+      http
+        .post(`${BASE}/create`)
+        .set('Authorization', BEARER)
+        .send(createBody([itemA])),
     );
     expect(res.status).toBe(201);
     svhId = res.body.data.header.svhId;
 
     const second = await probe('POST /create', 'create a second DRAFT (cancelled later)', () =>
-      http.post(`${BASE}/create`).set('Authorization', BEARER).send(createBody([itemB])),
+      http
+        .post(`${BASE}/create`)
+        .set('Authorization', BEARER)
+        .send(createBody([itemB])),
     );
     expect(second.status).toBe(201);
     draftOnlyId = second.body.data.header.svhId;
@@ -290,7 +300,10 @@ describe('/stock/opening — all 8 routes, which tables each one writes', () => 
   // ── 3. GET /get ─────────────────────────────────────────────────────────
   it('GET /get — reads one document, writes nothing', async () => {
     const res = await probe('GET /get', 'load the draft by svhId', () =>
-      http.get(`${BASE}/get`).set('Authorization', BEARER).query({ ...scopeQuery, svhId }),
+      http
+        .get(`${BASE}/get`)
+        .set('Authorization', BEARER)
+        .query({ ...scopeQuery, svhId }),
     );
     expect(res.status).toBe(200);
     expect(res.body.data.header.svhId).toBe(svhId);
@@ -309,7 +322,11 @@ describe('/stock/opening — all 8 routes, which tables each one writes', () => 
     const res = await probe(
       'GET /validate',
       'preflight a clean draft',
-      () => http.get(`${BASE}/validate`).set('Authorization', BEARER).query({ ...scopeQuery, svhId }),
+      () =>
+        http
+          .get(`${BASE}/validate`)
+          .set('Authorization', BEARER)
+          .query({ ...scopeQuery, svhId }),
       'resolves the lot the way the engine would, WITHOUT creating it',
     );
     expect(res.status).toBe(200);
@@ -456,10 +473,12 @@ describe('/stock/opening — all 8 routes, which tables each one writes', () => 
       'GET /item-lookup',
       'the item whose opening was cancelled',
       () =>
-        http
-          .get(`${BASE}/item-lookup`)
-          .set('Authorization', BEARER)
-          .query({ companyId: SCOPE.companyId, branchId: SCOPE.branchId, itemId: itemA.itemId, onDate: DOC_DATE }),
+        http.get(`${BASE}/item-lookup`).set('Authorization', BEARER).query({
+          companyId: SCOPE.companyId,
+          branchId: SCOPE.branchId,
+          itemId: itemA.itemId,
+          onDate: DOC_DATE,
+        }),
       'alreadyOpened reads the LEDGER, so a reversed opening frees the holding',
     );
     expect(res.status).toBe(200);

@@ -33,9 +33,12 @@ export class ConfiguredGridSqlService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly pg: PgService,
-  ) { }
+  ) {}
   private normalizeRelationName(value: string): string {
-    return value.trim().toLowerCase().replace(/[\s-]+/g, '_');
+    return value
+      .trim()
+      .toLowerCase()
+      .replace(/[\s-]+/g, '_');
   }
   private buildTableNameSearchTerms(tableName: string): string[] {
     const trimmed = tableName.trim();
@@ -143,7 +146,7 @@ export class ConfiguredGridSqlService {
         if (
           primaryRelation !== null &&
           this.normalizeRelationName(primaryRelation.tableName) ===
-          this.normalizeRelationName(options.tableName) &&
+            this.normalizeRelationName(options.tableName) &&
           primaryRelation.schemaName !== null &&
           primaryRelation.schemaName !== options.primaryTableSchema.toLowerCase()
         ) {
@@ -200,8 +203,9 @@ export class ConfiguredGridSqlService {
     const orderByClause = options.sortBy
       ? ` ORDER BY "${options.sortBy.replace(/"/g, '""')}" ${options.sortDir === 'desc' ? 'DESC' : 'ASC'}`
       : '';
-    const rowsSql = `SELECT * FROM (${baseSql}) AS ${options.alias}_rows${orderByClause} LIMIT $${params.length + 1
-      } OFFSET $${params.length + 2}`;
+    const rowsSql = `SELECT * FROM (${baseSql}) AS ${options.alias}_rows${orderByClause} LIMIT $${
+      params.length + 1
+    } OFFSET $${params.length + 2}`;
     const [countResult, rowsResult] = await Promise.all([
       this.pg.queryReadOnly<{ total: bigint | number | string }>(countSql, params),
       this.pg.queryReadOnly(rowsSql, [...params, options.limit, options.skip]),
@@ -219,7 +223,7 @@ export class ConfiguredGridSqlService {
     const columns = await this.prisma.gridColumn.findMany({
       where: {
         gridId,
-        gridColumnIsDeleted: false
+        gridColumnIsDeleted: false,
       },
       orderBy: { gridColumnNumber: 'asc' },
       select: {
@@ -247,8 +251,7 @@ export class ConfiguredGridSqlService {
       grid_column_number: col.gridColumnNumber,
       grid_column_name: col.gridColumnName,
       grid_column_width: col.gridColumnWidth !== null ? Number(col.gridColumnWidth) : null,
-      grid_column_position:
-        col.gridColumnPosition !== null ? Number(col.gridColumnPosition) : null,
+      grid_column_position: col.gridColumnPosition !== null ? Number(col.gridColumnPosition) : null,
       grid_column_alignment: col.gridColumnAlignment,
       grid_column_visibility: col.gridColumnVisibility,
       grid_column_filter: col.gridColumnFilter,
@@ -419,10 +422,10 @@ export class ConfiguredGridSqlService {
           const valueParamIndex = params.length;
           searchConditions.push(
             `EXISTS (` +
-            `SELECT 1 FROM jsonb_each_text(row_to_json(${options.alias})::jsonb) AS grid_kv(key, value) ` +
-            `WHERE grid_kv.key = $${columnParamIndex} ` +
-            `AND grid_kv.value ILIKE $${valueParamIndex}` +
-            `)`,
+              `SELECT 1 FROM jsonb_each_text(row_to_json(${options.alias})::jsonb) AS grid_kv(key, value) ` +
+              `WHERE grid_kv.key = $${columnParamIndex} ` +
+              `AND grid_kv.value ILIKE $${valueParamIndex}` +
+              `)`,
           );
         }
         conditions.push(`(${searchConditions.join(' OR ')})`);
@@ -479,10 +482,7 @@ export class ConfiguredGridSqlService {
    * appear many times in the SQL; every occurrence is bound to the same $N. Keys that never appear
    * in the SQL contribute no parameter (so an extra/unused param adds no constraint).
    */
-  bindGridParams(
-    sql: string,
-    prm: Record<string, unknown>,
-  ): { sql: string; params: unknown[] } {
+  bindGridParams(sql: string, prm: Record<string, unknown>): { sql: string; params: unknown[] } {
     let boundSql = sql;
     const params: unknown[] = [];
     for (const [key, value] of Object.entries(prm)) {
@@ -559,10 +559,7 @@ export class ConfiguredGridSqlService {
       return value;
     }
     return Object.fromEntries(
-      Object.entries(value).map(([key, item]) => [
-        key,
-        this.serializeRawQueryValue(item),
-      ]),
+      Object.entries(value).map(([key, item]) => [key, this.serializeRawQueryValue(item)]),
     );
   }
   private prepareBaseSql(sql: string): string {
@@ -928,9 +925,7 @@ export class ConfiguredGridSqlService {
         if (!relationMatch) {
           return null;
         }
-        const schemaName = relationMatch[1]
-          ? this.parseSqlIdentifierToken(relationMatch[1])
-          : null;
+        const schemaName = relationMatch[1] ? this.parseSqlIdentifierToken(relationMatch[1]) : null;
         const tableName = this.parseSqlIdentifierToken(relationMatch[2]);
         if (!tableName) {
           return null;

@@ -15,7 +15,11 @@ import {
   BatchPrefixListMeta,
   BatchPrefixPayload,
 } from './types/batch-prefix-api.types';
-import { resolvePagination, runConfiguredGridQuery, runMasterListQuery } from 'src/common/utils/module-list.utils';
+import {
+  resolvePagination,
+  runConfiguredGridQuery,
+  runMasterListQuery,
+} from 'src/common/utils/module-list.utils';
 import {
   DEFAULT_ACTOR,
   MasterWriteClient,
@@ -62,21 +66,31 @@ export class BatchPrefixService {
         { modifiedBy: { contains: search, mode: 'insensitive' } },
       ];
     }
-    return runMasterListQuery({ page, limit }, {
-      configuredGridFn: () => runConfiguredGridQuery<BatchPrefixListItem>(
-        this.configuredGridSqlService,
-        { tableName: BATCH_PREFIX_TABLE_NAME, alias: 'batch_prefix_grid', search: queryDto.search, page, limit, skip },
-      ),
-      countFn: () => this.prisma.batchPrefix.count({ where }),
-      findManyFn: () => this.prisma.batchPrefix.findMany({
-        where,
-        orderBy: [{ prefixUsed: 'asc' }, { id: 'asc' }],
-        skip,
-        take: limit,
-      }),
-      toItemFn: (record) => this.toPayload(record),
-      loadStylesFn: () => this.configuredGridSqlService.loadPrimaryGridStyles(BATCH_PREFIX_TABLE_NAME),
-    });
+    return runMasterListQuery(
+      { page, limit },
+      {
+        configuredGridFn: () =>
+          runConfiguredGridQuery<BatchPrefixListItem>(this.configuredGridSqlService, {
+            tableName: BATCH_PREFIX_TABLE_NAME,
+            alias: 'batch_prefix_grid',
+            search: queryDto.search,
+            page,
+            limit,
+            skip,
+          }),
+        countFn: () => this.prisma.batchPrefix.count({ where }),
+        findManyFn: () =>
+          this.prisma.batchPrefix.findMany({
+            where,
+            orderBy: [{ prefixUsed: 'asc' }, { id: 'asc' }],
+            skip,
+            take: limit,
+          }),
+        toItemFn: (record) => this.toPayload(record),
+        loadStylesFn: () =>
+          this.configuredGridSqlService.loadPrimaryGridStyles(BATCH_PREFIX_TABLE_NAME),
+      },
+    );
   }
 
   async getById(id: string): Promise<BatchPrefixPayload> {
@@ -118,7 +132,9 @@ export class BatchPrefixService {
     }
   }
 
-  private async createBatchPrefix(saveBatchPrefixDto: SaveBatchPrefixDto): Promise<BatchPrefixPayload> {
+  private async createBatchPrefix(
+    saveBatchPrefixDto: SaveBatchPrefixDto,
+  ): Promise<BatchPrefixPayload> {
     try {
       return await this.prisma.$transaction(async (tx) => {
         const prefixUsed = this.normalizeRequiredPrefix(saveBatchPrefixDto.prefixUsed);
@@ -156,7 +172,9 @@ export class BatchPrefixService {
     }
   }
 
-  private async updateBatchPrefix(saveBatchPrefixDto: SaveBatchPrefixDto): Promise<BatchPrefixPayload> {
+  private async updateBatchPrefix(
+    saveBatchPrefixDto: SaveBatchPrefixDto,
+  ): Promise<BatchPrefixPayload> {
     const id = saveBatchPrefixDto.id!;
     try {
       return await this.prisma.$transaction(async (tx) => {
@@ -229,7 +247,10 @@ export class BatchPrefixService {
     return trimmed;
   }
 
-  private parseNullableDate(value: string | null | undefined, field: string): Date | null | undefined {
+  private parseNullableDate(
+    value: string | null | undefined,
+    field: string,
+  ): Date | null | undefined {
     if (value === undefined) return undefined;
     if (value === null) return null;
     const parsed = new Date(value);
@@ -270,6 +291,10 @@ export class BatchPrefixService {
   }
 
   private throwNotFound(id: string): never {
-    throwMasterNotFound<BatchPrefixErrorDetail>('Batch prefix not found', 'id', `No batch prefix found with id ${id}`);
+    throwMasterNotFound<BatchPrefixErrorDetail>(
+      'Batch prefix not found',
+      'id',
+      `No batch prefix found with id ${id}`,
+    );
   }
 }

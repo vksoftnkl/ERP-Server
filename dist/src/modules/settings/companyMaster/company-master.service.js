@@ -444,9 +444,7 @@ let CompanyMasterService = class CompanyMasterService {
             compBooksBeginFrom: record.compBooksBeginFrom
                 ? record.compBooksBeginFrom.toISOString()
                 : null,
-            compBooksLockDate: record.compBooksLockDate
-                ? record.compBooksLockDate.toISOString()
-                : null,
+            compBooksLockDate: record.compBooksLockDate ? record.compBooksLockDate.toISOString() : null,
             compGstApplicable: record.compGstApplicable,
             compTcsApplicable: record.compTcsApplicable,
             compSmsApplicable: record.compSmsApplicable,

@@ -46,7 +46,6 @@ const employee_department_master_module_1 = require("./modules/settings/employee
 const employee_designation_master_module_1 = require("./modules/settings/employeeDesignationMaster/employee-designation-master.module");
 const employee_master_module_1 = require("./modules/settings/employeeMaster/employee-master.module");
 const user_administration_module_1 = require("./modules/settings/userAdministration/user-administration.module");
-const configs_module_1 = require("./modules/settings/configs/configs.module");
 const app_settings_module_1 = require("./modules/settings/appSettings/app-settings.module");
 const print_template_module_1 = require("./modules/settings/print-template/print-template.module");
 const tender_master_module_1 = require("./modules/accountsModule/tenderMaster/tender-master.module");
@@ -72,7 +71,12 @@ const customer_group_module_1 = require("./modules/sales/customer-group/customer
 const sale_agent_module_1 = require("./modules/sales/sale-agent/sale-agent.module");
 const quotation_module_1 = require("./modules/sales/quotation/quotation.module");
 const bill_module_1 = require("./modules/sales/bill/bill.module");
+const posting_module_1 = require("./modules/sales/posting/posting.module");
 const sale_order_module_1 = require("./modules/sales/sale-order/sale-order.module");
+const delivery_challan_module_1 = require("./modules/sales/delivery-challan/delivery-challan.module");
+const dc_return_module_1 = require("./modules/sales/dc-return/dc-return.module");
+const sale_return_module_1 = require("./modules/sales/sale-return/sale-return.module");
+const temp_credit_module_1 = require("./modules/sales/temp-credit/temp-credit.module");
 const txn_hold_module_1 = require("./modules/sales/txn-hold/txn-hold.module");
 const bank_list_module_1 = require("./modules/fixed/bank-list/bank-list.module");
 const device_list_master_module_1 = require("./modules/fixed/device-list-master/device-list-master.module");
@@ -191,7 +195,6 @@ exports.AppModule = AppModule = __decorate([
             employee_designation_master_module_1.EmployeeDesignationMasterModule,
             employee_master_module_1.EmployeeMasterModule,
             user_administration_module_1.UserAdministrationModule,
-            configs_module_1.ConfigsModule,
             app_settings_module_1.AppSettingsModule,
             print_template_module_1.PrintTemplateModule,
             tender_master_module_1.TenderMasterModule,
@@ -215,8 +218,13 @@ exports.AppModule = AppModule = __decorate([
             customer_group_module_1.CustomerGroupModule,
             sale_agent_module_1.SaleAgentModule,
             quotation_module_1.QuotationModule,
+            posting_module_1.SalesPostingModule,
             bill_module_1.BillModule,
             sale_order_module_1.SaleOrderModule,
+            delivery_challan_module_1.DeliveryChallanModule,
+            dc_return_module_1.DcReturnModule,
+            sale_return_module_1.SaleReturnModule,
+            temp_credit_module_1.TempCreditModule,
             txn_hold_module_1.TxnHoldModule,
             bank_list_module_1.BankListModule,
             device_list_master_module_1.DeviceListMasterModule,

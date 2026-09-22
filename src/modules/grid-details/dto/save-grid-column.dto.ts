@@ -10,7 +10,10 @@ import {
 } from '../../../common/dto/dtoDecorators';
 
 export class SaveGridColumnDto {
-  @ApiPropertyOptional({ description: 'When provided, request updates grid column by UUID', type: String })
+  @ApiPropertyOptional({
+    description: 'When provided, request updates grid column by UUID',
+    type: String,
+  })
   @OptionalUuid()
   grid_column_id?: string;
 

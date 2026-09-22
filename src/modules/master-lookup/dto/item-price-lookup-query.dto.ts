@@ -58,7 +58,7 @@ export class ItemPriceLookupQueryDto {
   @ApiPropertyOptional({
     format: 'uuid',
     description:
-      'Sale godown override (legacy isale_no). When supplied, resolves the godown row and scopes stock to this godown instead of the rate\'s own godown.',
+      "Sale godown override (legacy isale_no). When supplied, resolves the godown row and scopes stock to this godown instead of the rate's own godown.",
   })
   @OptionalUuid()
   godown_id?: string;
@@ -66,7 +66,8 @@ export class ItemPriceLookupQueryDto {
   @OptionalTrimmedString(9)
   acccyear?: string;
   @ApiPropertyOptional({
-    description: 'Regional name (legacy iregional). When true, returns item_name_ta, else the English name.',
+    description:
+      'Regional name (legacy iregional). When true, returns item_name_ta, else the English name.',
   })
   @OptionalQueryBoolean()
   regional?: boolean;

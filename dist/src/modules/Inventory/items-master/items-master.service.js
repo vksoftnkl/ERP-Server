@@ -26,7 +26,9 @@ const ITEM_TABLE_NAME = 'item master';
 const ITEM_AUDIT_SCREEN_NAME = 'Item Master';
 const BASE64_PATTERN = /^[A-Za-z0-9+/]+={0,2}$/;
 const COMPOSITE_TRANSACTION_OPTIONS = { maxWait: 10_000, timeout: 30_000 };
-const TRACK_PRESET_INCLUDE = { trackPreset: { select: { sptName: true } } };
+const TRACK_PRESET_INCLUDE = {
+    trackPreset: { select: { sptName: true } },
+};
 let ItemsMasterService = class ItemsMasterService {
     prisma;
     auditLogService;
@@ -100,7 +102,7 @@ let ItemsMasterService = class ItemsMasterService {
         const supplierIds = collect(item.item_supplier_id);
         const custGroupIds = collect(item.item_cust_group);
         const taxIds = collect(item.item_default_tax_id);
-        const [companies, branches, units, godowns, groups, categories, brands, sections, suppliers, custGroups, taxes] = await Promise.all([
+        const [companies, branches, units, godowns, groups, categories, brands, sections, suppliers, custGroups, taxes,] = await Promise.all([
             companyIds.length
                 ? this.prisma.company.findMany({
                     where: { compId: { in: companyIds } },
@@ -262,19 +264,23 @@ let ItemsMasterService = class ItemsMasterService {
             return [];
         const taxIds = Array.from(new Set(items.map((i) => i.itemDefaultTaxId).filter((id) => id !== null)));
         const taxRecords = taxIds.length > 0
-            ? await this.prisma.itemTaxMaster.findMany({ where: { taxId: { in: taxIds }, taxIsDeleted: false } })
+            ? await this.prisma.itemTaxMaster.findMany({
+                where: { taxId: { in: taxIds }, taxIsDeleted: false },
+            })
             : [];
         const taxById = new Map(taxRecords.map((t) => [t.taxId, t]));
         return items.map((item) => {
             const p = (params.godownId
                 ? item.prices.find((r) => r.ipmGodownId === params.godownId)
-                : undefined)
-                ?? item.prices.find((r) => r.itemUnitConversion.iucIsDefaultUnit)
-                ?? item.prices[0]
-                ?? null;
+                : undefined) ??
+                item.prices.find((r) => r.itemUnitConversion.iucIsDefaultUnit) ??
+                item.prices[0] ??
+                null;
             const tax = item.itemDefaultTaxId ? (taxById.get(item.itemDefaultTaxId) ?? null) : null;
-            const trackingType = item.itemBatchConfig === 1 ? 'MRP'
-                : item.itemBatchConfig === 2 || item.itemIsBatchBased || item.itemIsExpiryItem ? 'BATCH'
+            const trackingType = item.itemBatchConfig === 1
+                ? 'MRP'
+                : item.itemBatchConfig === 2 || item.itemIsBatchBased || item.itemIsExpiryItem
+                    ? 'BATCH'
                     : 'NONE';
             return {
                 item_id: item.itemId,

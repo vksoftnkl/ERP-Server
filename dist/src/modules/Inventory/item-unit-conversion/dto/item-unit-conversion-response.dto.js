@@ -116,11 +116,19 @@ __decorate([
     __metadata("design:type", Object)
 ], ItemUnitConversionPayloadDto.prototype, "iuc_updated_by", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ type: String, nullable: true, description: 'Name of the linked unit (resolved on the item composite get endpoint)' }),
+    (0, swagger_1.ApiPropertyOptional)({
+        type: String,
+        nullable: true,
+        description: 'Name of the linked unit (resolved on the item composite get endpoint)',
+    }),
     __metadata("design:type", Object)
 ], ItemUnitConversionPayloadDto.prototype, "iuc_unit_name", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ type: String, nullable: true, description: 'Name of the linked base unit (resolved on the item composite get endpoint)' }),
+    (0, swagger_1.ApiPropertyOptional)({
+        type: String,
+        nullable: true,
+        description: 'Name of the linked base unit (resolved on the item composite get endpoint)',
+    }),
     __metadata("design:type", Object)
 ], ItemUnitConversionPayloadDto.prototype, "iuc_base_unit_name", void 0);
 class ItemUnitConversionDeleteResultDto {

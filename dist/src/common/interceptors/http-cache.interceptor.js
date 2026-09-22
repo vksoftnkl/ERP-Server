@@ -92,7 +92,9 @@ let HttpCacheInterceptor = HttpCacheInterceptor_1 = class HttpCacheInterceptor e
         return searchParams ? `${url.pathname}?${searchParams}` : url.pathname;
     }
     setCacheHeader(context, value) {
-        const response = context.switchToHttp().getResponse();
+        const response = context
+            .switchToHttp()
+            .getResponse();
         response?.setHeader?.('X-Cache', value);
     }
 };

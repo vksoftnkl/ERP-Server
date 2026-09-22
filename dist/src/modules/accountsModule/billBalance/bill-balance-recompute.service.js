@@ -126,6 +126,22 @@ let BillBalanceRecomputeService = BillBalanceRecomputeService_1 = class BillBala
                 settledOn,
             });
         }
+        if (unique.length > 0) {
+            await client.$executeRaw `
+        UPDATE accounts.acc_temp_credit t
+           SET atc_balance_amount = LEAST(t.atc_credit_amount, GREATEST(0, b.abl_pending_amount)),
+               atc_status = CASE
+                              WHEN t.atc_status IN ('WRITTEN_OFF', 'CANCELLED') THEN t.atc_status
+                              WHEN b.abl_pending_amount <= 0 THEN 'SETTLED'
+                              WHEN b.abl_pending_amount < t.atc_credit_amount THEN 'PARTIAL'
+                              ELSE 'OPEN' END,
+               atc_settled_on = CASE WHEN b.abl_pending_amount <= 0 THEN COALESCE(t.atc_settled_on, ${asOfDate}::date) ELSE NULL END,
+               atc_modified_on = ${now}
+          FROM accounts.acc_bill_balance b
+         WHERE b.abl_id = t.atc_abl_id AND b.abl_acc_year = t.atc_abl_acc_year
+           AND t.atc_is_deleted = false
+           AND (t.atc_abl_id, t.atc_abl_acc_year) IN (${client_1.Prisma.join(unique.map((u) => client_1.Prisma.sql `(${u.billId}::uuid, ${u.accYear}::char(9))`))})`;
+        }
         return results;
     }
     async regularisePostDated(scope, asOf = new Date(), batchSize = 500) {

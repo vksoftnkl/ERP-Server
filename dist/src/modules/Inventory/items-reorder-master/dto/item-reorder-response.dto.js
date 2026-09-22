@@ -132,15 +132,27 @@ __decorate([
     __metadata("design:type", Object)
 ], ItemReorderPayloadDto.prototype, "ir_modified_by", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ type: String, nullable: true, description: 'Name of the linked branch (resolved on the item composite get endpoint)' }),
+    (0, swagger_1.ApiPropertyOptional)({
+        type: String,
+        nullable: true,
+        description: 'Name of the linked branch (resolved on the item composite get endpoint)',
+    }),
     __metadata("design:type", Object)
 ], ItemReorderPayloadDto.prototype, "ir_branch_name", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ type: String, nullable: true, description: 'Name of the linked unit (resolved on the item composite get endpoint)' }),
+    (0, swagger_1.ApiPropertyOptional)({
+        type: String,
+        nullable: true,
+        description: 'Name of the linked unit (resolved on the item composite get endpoint)',
+    }),
     __metadata("design:type", Object)
 ], ItemReorderPayloadDto.prototype, "ir_unit_name", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ type: String, nullable: true, description: 'Name of the linked godown (resolved on the item composite get endpoint)' }),
+    (0, swagger_1.ApiPropertyOptional)({
+        type: String,
+        nullable: true,
+        description: 'Name of the linked godown (resolved on the item composite get endpoint)',
+    }),
     __metadata("design:type", Object)
 ], ItemReorderPayloadDto.prototype, "ir_godown_name", void 0);
 class ItemReorderDeleteResultDto {

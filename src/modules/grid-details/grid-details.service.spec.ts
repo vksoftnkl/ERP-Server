@@ -112,7 +112,8 @@ describe('GridDetailsService', () => {
   });
 
   it('preserves valid raw sql formatting when saving', async () => {
-    const sql = 'SELECT brand_id,\n       brand_name\nFROM inventory.item_brand_master\nORDER BY brand_name';
+    const sql =
+      'SELECT brand_id,\n       brand_name\nFROM inventory.item_brand_master\nORDER BY brand_name';
     const record = makeRecord({ gridSql: sql });
     prisma.gridDetails.create.mockResolvedValueOnce(record);
     prisma.gridDetails.findFirstOrThrow.mockResolvedValueOnce({ ...record, columns: [] });
@@ -223,5 +224,4 @@ describe('GridDetailsService', () => {
       data: { gridColumnWidth: 31.5 },
     });
   });
-
 });

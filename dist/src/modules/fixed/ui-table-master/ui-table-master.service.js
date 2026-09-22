@@ -66,7 +66,7 @@ let UiTableMasterService = class UiTableMasterService {
         const columnWhere = {
             uiTblClmIsDeleted: false,
         };
-        const records = await this.prisma.uitable.findMany({
+        const records = (await this.prisma.uitable.findMany({
             where: tableWhere,
             orderBy: { uiTblId: 'asc' },
             include: {
@@ -75,7 +75,7 @@ let UiTableMasterService = class UiTableMasterService {
                     orderBy: [{ uiTblClmNo: 'asc' }, { uiTblClmId: 'asc' }],
                 },
             },
-        });
+        }));
         return { items: records.map((record) => this.toPayload(record)) };
     }
     async getById(uiTblId) {
@@ -428,7 +428,8 @@ let UiTableMasterService = class UiTableMasterService {
             uiTblEditable: record.uiTblEditable,
             uiTblIsActive: record.uiTblIsActive,
             uiTblIsDeleted: record.uiTblIsDeleted,
-            uiTblDeviceType: record['uiTblDeviceType'] ?? null,
+            uiTblDeviceType: record['uiTblDeviceType'] ??
+                null,
             uiTblSyncDate: record.uiTblSyncDate ? record.uiTblSyncDate.toISOString() : null,
             uiTblSyncOn: record.uiTblSyncOn ? record.uiTblSyncOn.toISOString() : null,
             uiTblCreatedOn: record.uiTblCreatedOn.toISOString(),

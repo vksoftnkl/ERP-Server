@@ -18,9 +18,7 @@ export class ItemBatchStockService {
       queryDto.ibs_item_id,
       queryDto.ibs_unit_id,
     );
-    const stockUnitIds = Array.from(
-      new Set([queryDto.ibs_unit_id, ...unitFactorsByUnitId.keys()]),
-    );
+    const stockUnitIds = Array.from(new Set([queryDto.ibs_unit_id, ...unitFactorsByUnitId.keys()]));
     const where: Prisma.ItemBatchStockWhereInput = {
       ibsAccYear: queryDto.ibs_acc_year,
       ibsCompanyId: queryDto.ibs_company_id,
@@ -68,10 +66,7 @@ export class ItemBatchStockService {
       this.toPayload(record, this.getUnitFactorForStockUnit(record, queryDto, unitFactorsByUnitId)),
     );
   }
-  private toPayload(
-    record: ItemBatchStockWithBatchMaster,
-    unitFactor = 1,
-  ): ItemBatchStockPayload {
+  private toPayload(record: ItemBatchStockWithBatchMaster, unitFactor = 1): ItemBatchStockPayload {
     const closingQty = this.toNumber(record.ibsClosingQty);
     const freeClosingQty = this.toNumber(record.ibsFreeClosingQty);
     const reservedQty = this.toNumber(record.ibsReservedQty);
@@ -174,8 +169,7 @@ export class ItemBatchStockService {
     unitFactorsByUnitId: Map<string, number>,
   ): number {
     const unitFactor =
-      unitFactorsByUnitId.get(record.ibsUnitId) ??
-      unitFactorsByUnitId.get(queryDto.ibs_unit_id);
+      unitFactorsByUnitId.get(record.ibsUnitId) ?? unitFactorsByUnitId.get(queryDto.ibs_unit_id);
     if (unitFactor === undefined) {
       this.throwItemPriceMasterNotFound(record.ibsItemId, record.ibsUnitId);
     }

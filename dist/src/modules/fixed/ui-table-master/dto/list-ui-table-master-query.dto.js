@@ -19,7 +19,9 @@ class ListUiTableMasterQueryDto {
 }
 exports.ListUiTableMasterQueryDto = ListUiTableMasterQueryDto;
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ description: 'UI table id — selects a specific configured grid for display' }),
+    (0, swagger_1.ApiPropertyOptional)({
+        description: 'UI table id — selects a specific configured grid for display',
+    }),
     (0, dtoDecorators_1.OptionalNumberString)(),
     __metadata("design:type", String)
 ], ListUiTableMasterQueryDto.prototype, "uiTableId", void 0);

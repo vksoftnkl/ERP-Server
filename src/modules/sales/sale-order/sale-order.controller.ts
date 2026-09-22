@@ -26,6 +26,12 @@ import {
 import { HttpErrorResponseDto } from '../../../common/dto/http-error-response.dto';
 import { SaleOrderExceptionFilter } from './sale-order-exception.filter';
 import { SaleOrderService } from './sale-order.service';
+import { SaleOrderLifecycleService } from './sale-order-lifecycle.service';
+import {
+  AmendSaleOrderDto,
+  CancelSaleOrderDto,
+  PostSaleOrderDto,
+} from './dto/sale-order-lifecycle.dto';
 import { SaveSaleOrderDto } from './dto/save-sale-order.dto';
 import { CancelSaleOrderLinesDto } from './dto/cancel-sale-order-lines.dto';
 import {
@@ -49,7 +55,10 @@ import { API_VERSION } from '../../../common/constants/api-version';
 @Controller('sale-orders')
 @UseFilters(SaleOrderExceptionFilter)
 export class SaleOrderController {
-  constructor(private readonly orderService: SaleOrderService) {}
+  constructor(
+    private readonly orderService: SaleOrderService,
+    private readonly lifecycle: SaleOrderLifecycleService,
+  ) {}
   @Post('create')
   @Version(API_VERSION)
   @ApiOperation({ summary: 'Create or update a sales order (by soId presence)' })
@@ -219,11 +228,58 @@ export class SaleOrderController {
     @Query('soBranchId', new ParseUUIDPipe({ version: '7' })) soBranchId: string,
     @Query('soAccYear') soAccYear: string,
   ): Promise<SaleOrderSuccessResponse<{ soId: string; deleted: true }>> {
-    const data = await this.orderService.softDelete(soId, soCompanyId, soBranchId, soAccYear);
+    // DRAFT only (HANDOVER §3) — a CONFIRMED order answers 409 SALES_ORDER_CONFIRMED.
+    const data = await this.lifecycle.deleteDraft({ soId, soCompanyId, soBranchId, soAccYear });
     return {
       success: true,
       message: 'Order deleted successfully',
       data,
     };
+  }
+  // ── HANDOVER §3 — the lifecycle verbs ─────────────────────────────────────
+  @Post('post')
+  @Version(API_VERSION)
+  @ApiOperation({
+    summary: 'Confirm a DRAFT order and reserve its stock',
+    description:
+      'DRAFT → CONFIRMED plus stock.stock_reservation rows per line, FEFO over the godown. A line the ' +
+      'shelf cannot cover comes back as warnings[] { code: SALES_RESERVE_SHORT, line, short } — never a refusal.',
+  })
+  @ApiOkResponse({ description: '{ soStatus, warnings[] }' })
+  async postOrder(
+    @Body() dto: PostSaleOrderDto,
+  ): Promise<SaleOrderSuccessResponse<{ soStatus: string; warnings: unknown[] }>> {
+    const data = await this.lifecycle.post(dto);
+    return { success: true, message: 'Order confirmed successfully', data };
+  }
+  @Post('cancel')
+  @Version(API_VERSION)
+  @ApiOperation({
+    summary: 'Cancel an order (reason mandatory)',
+    description:
+      '409 SALES_ORDER_DELIVERED when any line has been delivered; otherwise releases the reservations ' +
+      'and writes off every open line.',
+  })
+  @ApiOkResponse({ description: '{ soStatus, cancelledLines }' })
+  async cancelOrder(
+    @Body() dto: CancelSaleOrderDto,
+  ): Promise<SaleOrderSuccessResponse<{ soStatus: string; cancelledLines: number }>> {
+    const data = await this.lifecycle.cancel(dto);
+    return { success: true, message: 'Order cancelled successfully', data };
+  }
+  @Post('amend')
+  @Version(API_VERSION)
+  @ApiOperation({
+    summary: 'Amend an order (full create body + baseRevision + editRemark)',
+    description:
+      '409 SALES_REVISION_STALE when baseRevision is not current; after a partial delivery only ' +
+      'undelivered lines may change (409 SALES_ORDER_LINE_DELIVERED). soRevisionNo + 1.',
+  })
+  @ApiOkResponse({ type: SaleOrderSuccessSingleDto })
+  async amendOrder(
+    @Body() dto: AmendSaleOrderDto,
+  ): Promise<SaleOrderSuccessResponse<SaleOrderPayload>> {
+    const data = await this.lifecycle.amend(dto);
+    return { success: true, message: 'Order amended successfully', data };
   }
 }

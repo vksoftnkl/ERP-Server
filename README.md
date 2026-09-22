@@ -216,3 +216,32 @@ Full guide: `docs/performance-load-testing.md`
 - Add structured logging (Pino/Winston + request ID)
 - Add OpenAPI docs + schema governance
 - Add CI pipeline (lint, test, build, migration checks)
+
+## Where logic lives
+
+**Business logic lives in the NestJS services, never in the database.** The
+schema holds tables, constraints and indexes, plus two DDL partition helpers
+(`stock.fn_create_stock_partitions`, `public.ensure_acc_year_partitions`).
+No other function and no trigger may be added, and migrations
+`20260922060000` / `20260922120000` assert that for schema `stock`.
+
+The reason is the offline rider: a till posts offline and pushes to the cloud
+on reconnect. A trigger fires on the **server** during that push, on rows
+written hours earlier, per statement of a sync batch, in a language nobody
+here debugs — so the freeze guard, the append-only ledger, the loyalty
+recomputes and every over-draw refusal moved into services that can see the
+true balance at post time and record, rather than refuse, what an offline till
+already did.
+
+The shared posting layer every document goes through:
+
+| service | folder | owns |
+|---|---|---|
+| `StockPostingService` | `src/modules/stocks/posting/` | the one stock engine: seven phases, freeze guard on the movement's own timestamp, cancel by reversal |
+| `SalesPostingService`, `DocRegisterService`, `LoyaltyLedgerService`, `PromotionUsageService`, `StatutoryService`, `ChargeCarryService`, `sales.guards.ts` | `src/modules/sales/posting/` | account legs, the doc register, wallets and coupons, scheme usage, statutory limits, carried charges, the posting guards |
+
+Two source tests keep the funnels honest and need no database:
+`test/sales/loyalty-single-writer.e2e-spec.ts` (only `LoyaltyLedgerService`
+writes the loyalty tables) and `test/stock-ledger-single-writer.e2e-spec.ts`
+(only the posting helper inserts `stock.stock_ledger`, and nothing updates,
+deletes or truncates it).

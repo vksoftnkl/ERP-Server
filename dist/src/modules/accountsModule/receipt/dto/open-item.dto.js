@@ -18,6 +18,7 @@ class ListOpenItemsQueryDto {
     partyId;
     companyId;
     onDate;
+    mobile;
 }
 exports.ListOpenItemsQueryDto = ListOpenItemsQueryDto;
 __decorate([
@@ -44,6 +45,16 @@ __decorate([
     (0, dtoDecorators_1.OptionalDateString)(),
     __metadata("design:type", String)
 ], ListOpenItemsQueryDto.prototype, "onDate", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        maxLength: 20,
+        description: 'HANDOVER 2026-09-20 §7 — keep only the bills whose temporary credit was given to this ' +
+            'mobile number (accounts.acc_temp_credit.atc_mobile). The person at the counter says who ' +
+            'they are, not which bill.',
+    }),
+    (0, dtoDecorators_1.OptionalTrimmedString)(20),
+    __metadata("design:type", String)
+], ListOpenItemsQueryDto.prototype, "mobile", void 0);
 class PartyContextQueryDto {
     partyId;
     companyId;

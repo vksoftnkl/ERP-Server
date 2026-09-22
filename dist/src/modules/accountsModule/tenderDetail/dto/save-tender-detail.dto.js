@@ -9,12 +9,63 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.SaveTenderDetailDto = void 0;
+exports.SaveTenderDetailDto = exports.TenderTempCreditDto = void 0;
 const swagger_1 = require("@nestjs/swagger");
+const class_transformer_1 = require("class-transformer");
 const class_validator_1 = require("class-validator");
 const dtoDecorators_1 = require("../../../../common/dto/dtoDecorators");
 const tender_detail_api_types_1 = require("../types/tender-detail-api.types");
+class TenderTempCreditDto {
+    name;
+    mobile;
+    place;
+    addr;
+    idRef;
+    days;
+    notes;
+}
+exports.TenderTempCreditDto = TenderTempCreditDto;
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ maxLength: 100 }),
+    (0, dtoDecorators_1.TrimmedString)(100),
+    __metadata("design:type", String)
+], TenderTempCreditDto.prototype, "name", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ maxLength: 15 }),
+    (0, dtoDecorators_1.TrimmedString)(15),
+    __metadata("design:type", String)
+], TenderTempCreditDto.prototype, "mobile", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ maxLength: 100, nullable: true }),
+    (0, dtoDecorators_1.NullableStringStrict)(100),
+    __metadata("design:type", Object)
+], TenderTempCreditDto.prototype, "place", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ maxLength: 250, nullable: true }),
+    (0, dtoDecorators_1.NullableStringStrict)(250),
+    __metadata("design:type", Object)
+], TenderTempCreditDto.prototype, "addr", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        maxLength: 50,
+        nullable: true,
+        description: 'An id reference (Aadhaar last 4, licence…)',
+    }),
+    (0, dtoDecorators_1.NullableStringStrict)(50),
+    __metadata("design:type", Object)
+], TenderTempCreditDto.prototype, "idRef", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ description: 'Days until the promise falls due' }),
+    (0, dtoDecorators_1.OptionalInteger)(0),
+    __metadata("design:type", Number)
+], TenderTempCreditDto.prototype, "days", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ maxLength: 250, nullable: true }),
+    (0, dtoDecorators_1.NullableStringStrict)(250),
+    __metadata("design:type", Object)
+], TenderTempCreditDto.prototype, "notes", void 0);
 class SaveTenderDetailDto {
+    tempCredit;
     tdId;
     tdSrcModule;
     tdSrcDocType;
@@ -63,6 +114,17 @@ class SaveTenderDetailDto {
     tdModifiedBy;
 }
 exports.SaveTenderDetailDto = SaveTenderDetailDto;
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        type: TenderTempCreditDto,
+        nullable: true,
+        description: 'Only on a TEMP_CR (type 8) row: who owes, and until when. Not a column — it becomes accounts.acc_temp_credit on post.',
+    }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.ValidateNested)(),
+    (0, class_transformer_1.Type)(() => TenderTempCreditDto),
+    __metadata("design:type", Object)
+], SaveTenderDetailDto.prototype, "tempCredit", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({
         format: 'uuid',

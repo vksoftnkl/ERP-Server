@@ -4,6 +4,8 @@ import { PrismaService } from '../src/database/prisma/prisma.service';
 import { AuditLogService } from '../src/modules/audit-log/audit-log.service';
 import { RequestContextService } from '../src/common/request-context/request-context.service';
 import { StockVoucherService } from '../src/modules/stocks/stock-voucher/stock-voucher.service';
+import { StockPostingService } from '../src/modules/stocks/posting/stock-posting.service';
+import { StockVoucherSource } from '../src/modules/stocks/posting/stock-voucher.source';
 import type { StockVoucherTypeRules } from '../src/modules/stocks/stock-voucher/types/stock-voucher.types';
 
 /**
@@ -13,8 +15,12 @@ import type { StockVoucherTypeRules } from '../src/modules/stocks/stock-voucher/
  * `fn_sml_apply` on this deployment, and the two engine e2e files beside this
  * one skip because they look for those functions. This file is the acceptance
  * test for what IS here: the seven posting phases, the moving average, the
- * negative-stock policy, and the three rules migration 20260908110000 put in
- * the database (append-only ledger, the freeze guard, folded lot keys).
+ * negative-stock policy, the folded lot keys migration 20260908110000 put in
+ * the database, and the two guards that moved OUT of it on 2026-09-21: the
+ * freeze (now `StockPostingService.assertNotFrozen`, tested against the
+ * movement's own timestamp — offline-sync-invariants.md §7b) and the
+ * append-only ledger (now structural: one INSERT site, no UPDATE or DELETE,
+ * asserted by test/stock-ledger-single-writer.e2e-spec.ts).
  *
  * ONE TRANSACTION, ROLLED BACK. Every statement — fixtures, documents, posts,
  * assertions — runs inside a single interactive transaction that is thrown
@@ -130,14 +136,22 @@ const prisma = new PrismaClient();
 class Rollback extends Error {}
 
 /**
- * Is the migration here? Checked by the three things it adds, not by the
- * tables: a database with the engine tables but without the guards would run
- * this file and fail it for the wrong reason.
+ * Is the database at the state this file describes? Two things, checked
+ * rather than assumed, because each has been wrong on a real box:
+ *
+ *  * the folded lot key of 20260908110000 is IN — without it case 9 fails for
+ *    the wrong reason;
+ *  * the ledger triggers of 20260907090000 / 20260908110000 are OUT
+ *    (20260922060000 / 20260922120000) — with them still there, case 6 would
+ *    be refused by the trigger's wall-clock rule before the service's
+ *    doc-datetime rule ever ran, and case 8 would be testing plpgsql.
  */
 async function detectBuild(): Promise<{ ready: boolean; missing: string[] }> {
   try {
     const triggers = await prisma.$queryRaw<Array<{ tgname: string }>>`
-      SELECT tgname FROM pg_trigger WHERE tgname IN ('tr_sml_freeze_guard', 'tr_sml_immutable')
+      SELECT DISTINCT tgname FROM pg_trigger
+       WHERE tgname IN ('tr_sml_freeze_guard', 'tr_sml_immutable',
+                        'tr_sml_forbid_delete', 'tr_sml_forbid_truncate')
     `;
     const [key] = await prisma.$queryRaw<Array<{ expr: string }>>`
       SELECT pg_get_expr(d.adbin, d.adrelid) AS expr
@@ -145,11 +159,9 @@ async function detectBuild(): Promise<{ ready: boolean; missing: string[] }> {
         JOIN pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum
        WHERE a.attrelid = 'stock.stock_lot'::regclass AND a.attname = 'slt_key_batch'
     `;
-    const names = new Set(triggers.map((row) => row.tgname));
-    const missing: string[] = [];
-    for (const name of ['tr_sml_freeze_guard', 'tr_sml_immutable']) {
-      if (!names.has(name)) missing.push(name);
-    }
+    const missing: string[] = triggers.map(
+      (row) => `${row.tgname} is still on stock.stock_ledger (run migration 20260922120000)`,
+    );
     if (!key?.expr.includes('upper(btrim(')) missing.push('folded slt_key_batch');
     return { ready: missing.length === 0, missing };
   } catch (error) {
@@ -193,7 +205,7 @@ describe('Stock engine in TypeScript (e2e — one rolled-back transaction)', () 
     build = await detectBuild();
     if (!build.ready) {
       console.warn(
-        `\n[stock-engine-ts e2e] SKIPPED — migration 20260908110000 is not on this database.\n` +
+        `\n[stock-engine-ts e2e] SKIPPED — this database is not at the 2026-09-21 state.\n` +
           `  Missing: ${build.missing.join(', ')}\n`,
       );
       return;
@@ -226,6 +238,9 @@ describe('Stock engine in TypeScript (e2e — one rolled-back transaction)', () 
       transactional(tx),
       { logEntityChange: jest.fn().mockResolvedValue(undefined) } as unknown as AuditLogService,
       { getUserId: () => fixture?.userId ?? null } as unknown as RequestContextService,
+      // §3.1 — the one stock engine, injected. Handed the same client, so a
+      // posting call still runs inside whatever transaction the test opened.
+      new StockPostingService(transactional(tx)),
     );
     fixture = await createFixture();
   });
@@ -406,9 +421,13 @@ describe('Stock engine in TypeScript (e2e — one rolled-back transaction)', () 
     mrp?: number;
   }
 
-  async function opening(godownId: string, lines: OpeningLine[]) {
+  async function opening(
+    godownId: string,
+    lines: OpeningLine[],
+    extra: Record<string, unknown> = {},
+  ) {
     return service.save(OPENING_RULES, {
-      header: header(godownId),
+      header: header(godownId, extra),
       lines: lines.map((line, index) => ({
         lineNo: index + 1,
         itemId: line.itemId,
@@ -812,33 +831,48 @@ describe('Stock engine in TypeScript (e2e — one rolled-back transaction)', () 
       (await validate(OPENING_RULES, intoB.header.svhId)).every((row) => row.problem === null),
     ).toBe(true);
 
-    // (b) The database refuses a row that bypasses the preflight altogether.
+    // (b) The guard that used to be tr_sml_freeze_guard is now
+    // StockPostingService.assertNotFrozen. Calling the engine DIRECTLY — no
+    // preflight, exactly what a sync push does — is refused with a 409 and not
+    // one ledger row is written. intoA carries no docDatetime, so it took the
+    // database default, now(), which is inside the window.
+    const stockPosting = new StockPostingService(transactional(tx));
+    const sourceOf = (svhId: string) =>
+      new StockVoucherSource({
+        svhId,
+        accYear: ACC_YEAR,
+        companyId: fixture.companyId,
+        branchId: fixture.branchId,
+        rules: OPENING_RULES,
+      });
     await expect(
-      attempt(
-        () => tx.$executeRaw`
-          INSERT INTO stock.stock_ledger (
-            sml_company_id, sml_branch_id, sml_tenant_id, sml_acc_year, sml_godown_id,
-            sml_item_id, sml_lot_id, sml_uom_id, sml_base_uom_id, sml_to_base_factor,
-            sml_src_module, sml_src_doc_type, sml_src_doc_id, sml_src_acc_year, sml_src_refno,
-            sml_line_no, sml_split_no, sml_txn_type, sml_direction, sml_bucket,
-            sml_doc_date, sml_doc_datetime, sml_posted_on,
-            sml_qty, sml_base_qty, sml_free_qty, sml_free_base_qty, sml_weight_qty,
-            sml_cost_rate, sml_cost_value, sml_cost_rate_wot, sml_cost_value_wot,
-            sml_landed_rate, sml_landed_value)
-          SELECT sml_company_id, sml_branch_id, sml_tenant_id, sml_acc_year, sml_godown_id,
-                 sml_item_id, sml_lot_id, sml_uom_id, sml_base_uom_id, sml_to_base_factor,
-                 'STOCK', 'ADJUSTMENT', gen_random_uuid(), sml_src_acc_year, 'BYPASS',
-                 1, 1, 'ADJUST_PLUS', 1, sml_bucket,
-                 sml_doc_date, sml_doc_datetime, now(),
-                 1, 1, 0, 0, 0,
-                 15, 15, 0, 0,
-                 0, 0
-            FROM stock.stock_ledger
-           WHERE sml_src_doc_id = ${firstOpeningId}::uuid
-           LIMIT 1
-        `,
+      attempt(() =>
+        stockPosting.post(tx, sourceOf(intoA.header.svhId), {
+          actor: fixture.userId,
+          postedOn: new Date(),
+        }),
       ),
-    ).rejects.toMatchObject({ meta: { code: '23001' } });
+    ).rejects.toMatchObject({ status: 409 });
+    expect(await ledger(intoA.header.svhId)).toHaveLength(0);
+
+    // (b′) …and this is the part the trigger got WRONG. The window is tested
+    // against the MOVEMENT's timestamp, not the wall clock: a movement that
+    // happened before the count began is let through for the count to
+    // reconcile, even though it arrives while the freeze is on
+    // (offline-sync-invariants.md §7b). Undone afterwards so the tea holding
+    // does not leak into case 10.
+    await undone(async () => {
+      const earlier = await opening(
+        fixture.godownA,
+        [{ itemId: fixture.teaId, iuc: fixture.teaPieceIuc, qty: 1, costRate: 10 }],
+        { docDatetime: `${DOC_DATE}T10:00:00.000Z` },
+      );
+      expect(
+        (await validate(OPENING_RULES, earlier.header.svhId)).every((row) => row.problem === null),
+      ).toBe(true);
+      expect((await post(OPENING_RULES, earlier.header.svhId)).rowsPosted).toBe(1);
+      expect(await holding(fixture.teaId, fixture.godownA)).toMatchObject({ onHand: 1 });
+    });
 
     // (c) The count's own posting passes the guard, and posting lifts the freeze.
     const posted = await post(PHYSICAL_RULES, frozenCount.header.svhId);
@@ -909,33 +943,77 @@ describe('Stock engine in TypeScript (e2e — one rolled-back transaction)', () 
 
   // ── 8. the ledger is append-only ─────────────────────────────────────────
 
-  it('8. a movement column cannot be updated and a row cannot be deleted', async () => {
+  it('8. a cancel MIRRORS every row and edits none — the ledger is append-only by construction', async () => {
     if (!requireBuild()) return;
 
-    await expect(
-      attempt(
-        () => tx.$executeRaw`
-          UPDATE stock.stock_ledger SET sml_base_qty = 1 WHERE sml_src_doc_id = ${firstOpeningId}::uuid
-        `,
-      ),
-    ).rejects.toMatchObject({ meta: { code: '23001' } });
+    // tr_sml_immutable and tr_sml_forbid_delete used to refuse an UPDATE or a
+    // DELETE here. They are gone (20260922060000 / 20260922120000): the till
+    // posts offline and a server-side trigger fires on rows written hours
+    // earlier. The rule is now structural — one INSERT site, no UPDATE or
+    // DELETE anywhere, which test/stock-ledger-single-writer.e2e-spec.ts
+    // asserts against the source — and THIS is what the service does when
+    // asked to undo a posting: it writes mirrors and touches the originals
+    // not at all. Undone afterwards: milk must still be untouched for case 9.
+    await undone(async () => {
+      const rowsOf = (svhId: string) =>
+        tx.$queryRaw<
+          Array<{
+            sml_id: string;
+            line_no: number;
+            direction: number;
+            qty: string;
+            cost_value: string;
+            is_reversal: boolean;
+            reverses_id: string | null;
+          }>
+        >`
+          SELECT sml_id, sml_line_no AS line_no, sml_direction AS direction,
+                 sml_base_qty::text AS qty, sml_cost_value::text AS cost_value,
+                 sml_is_reversal AS is_reversal, sml_reverses_id AS reverses_id
+            FROM stock.stock_ledger
+           WHERE sml_src_doc_id = ${svhId}::uuid
+           ORDER BY sml_is_reversal, sml_line_no
+        `;
 
-    // A label is not a movement.
-    await expect(
-      attempt(
-        () => tx.$executeRaw`
-          UPDATE stock.stock_ledger SET sml_narration = 'relabelled' WHERE sml_src_doc_id = ${firstOpeningId}::uuid
-        `,
-      ),
-    ).resolves.toBe(1);
+      const milk = await opening(fixture.godownB, [
+        { itemId: fixture.milkId, iuc: fixture.milkPieceIuc, qty: 5, costRate: 28 },
+        { itemId: fixture.milkId, iuc: fixture.milkPieceIuc, qty: 2, costRate: 30 },
+      ]);
+      expect((await post(OPENING_RULES, milk.header.svhId)).rowsPosted).toBe(2);
+      const originals = await rowsOf(milk.header.svhId);
+      expect(originals).toHaveLength(2);
+      expect(originals.every((row) => !row.is_reversal && row.direction === 1)).toBe(true);
 
-    await expect(
-      attempt(
-        () => tx.$executeRaw`
-          DELETE FROM stock.stock_ledger WHERE sml_src_doc_id = ${firstOpeningId}::uuid
-        `,
-      ),
-    ).rejects.toMatchObject({ meta: { code: '23514' } });
+      await attempt(() =>
+        service.cancel(
+          OPENING_RULES,
+          milk.header.svhId,
+          ACC_YEAR,
+          'keyed twice — stock-engine-ts e2e',
+          fixture.companyId,
+          fixture.branchId,
+          fixture.userId,
+        ),
+      );
+
+      const after = await rowsOf(milk.header.svhId);
+      expect(after).toHaveLength(4);
+      // The originals: same ids, same quantities, same values, same direction.
+      expect(after.filter((row) => !row.is_reversal)).toEqual(originals);
+      // The mirrors: one per original, pointing back at it, opposite direction,
+      // identical magnitude — so the sum of the document is exactly zero.
+      const mirrors = after.filter((row) => row.is_reversal);
+      expect(mirrors.map((row) => row.reverses_id).sort()).toEqual(
+        originals.map((row) => row.sml_id).sort(),
+      );
+      for (const mirror of mirrors) {
+        const of = originals.find((row) => row.sml_id === mirror.reverses_id);
+        expect(mirror.direction).toBe(-(of?.direction ?? 0));
+        expect(mirror.qty).toBe(of?.qty);
+        expect(mirror.cost_value).toBe(of?.cost_value);
+      }
+      expect(await holding(fixture.milkId, fixture.godownB)).toMatchObject({ onHand: 0 });
+    });
   });
 
   // ── 9. batch identity folds case and whitespace ───────────────────────────

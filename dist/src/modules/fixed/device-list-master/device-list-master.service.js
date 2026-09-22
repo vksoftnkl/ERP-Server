@@ -123,7 +123,14 @@ let DeviceListMasterService = class DeviceListMasterService {
     }
     async list(queryDto) {
         const { page, limit, skip } = (0, module_list_utils_1.resolvePagination)(queryDto);
-        const result = await (0, module_list_utils_1.runConfiguredGridQuery)(this.configuredGridSqlService, { tableName: DEVICE_LIST_MASTER_TABLE_NAME, alias: 'device_list_master_grid', search: queryDto.search, page, limit, skip });
+        const result = await (0, module_list_utils_1.runConfiguredGridQuery)(this.configuredGridSqlService, {
+            tableName: DEVICE_LIST_MASTER_TABLE_NAME,
+            alias: 'device_list_master_grid',
+            search: queryDto.search,
+            page,
+            limit,
+            skip,
+        });
         if (!result) {
             (0, module_service_utils_1.throwFixedBadRequest)('No configured grid found for device list master', []);
         }
@@ -179,7 +186,12 @@ let DeviceListMasterService = class DeviceListMasterService {
                 where: { ulsDeviceId: devId, ulsIsDeleted: false },
             });
             if (sessionCount > 0) {
-                (0, module_service_utils_1.throwFixedBadRequest)('Cannot delete device with active login sessions', [{ field: 'devId', message: `Device ${devId} is used in ${sessionCount} login session(s).` }]);
+                (0, module_service_utils_1.throwFixedBadRequest)('Cannot delete device with active login sessions', [
+                    {
+                        field: 'devId',
+                        message: `Device ${devId} is used in ${sessionCount} login session(s).`,
+                    },
+                ]);
             }
             const modifiedOn = new Date();
             const result = await tx.deviceMaster.updateMany({
@@ -269,7 +281,8 @@ let DeviceListMasterService = class DeviceListMasterService {
                 if (!existing) {
                     (0, module_service_utils_1.throwFixedNotFound)('Device not found', 'devId', `No active device found with id ${devId}`);
                 }
-                const normalizedDeviceType = normalizeDeviceType(saveDeviceListMasterDto.devDeviceType) ?? toDeviceType(existing.devDeviceType);
+                const normalizedDeviceType = normalizeDeviceType(saveDeviceListMasterDto.devDeviceType) ??
+                    toDeviceType(existing.devDeviceType);
                 const normalizedDeviceUid = normalizeDeviceUid(saveDeviceListMasterDto.devDeviceUid, normalizedDeviceType);
                 const nextDeviceUid = normalizedDeviceUid ?? existing.devDeviceUid;
                 const nextCompanyId = (0, module_service_utils_1.hasOwnProperty)(saveDeviceListMasterDto, 'devCompanyId')

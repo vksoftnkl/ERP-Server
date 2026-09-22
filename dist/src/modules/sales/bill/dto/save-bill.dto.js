@@ -150,6 +150,38 @@ class SaveBillDto {
     sbPrintCount;
     sbCreatedBy;
     sbModifiedBy;
+    sbBillMode;
+    sbUsrRefdate;
+    custOverride;
+    sbShipAddrId;
+    sbShipName;
+    sbShipAddr;
+    sbShipPlace;
+    sbShipPin;
+    sbShipPhone;
+    sbShipStcd;
+    sbShipGstin;
+    sbDispatchGodownId;
+    sbDispatchBranchId;
+    sbTransportMode;
+    sbTransporterId;
+    sbTransporterName;
+    sbTransporterGstin;
+    sbLrNo;
+    sbLrDate;
+    sbDistanceKm;
+    sbCustPan;
+    sbForm60Ref;
+    sbLoyaltyMemberId;
+    sbTcsPerc;
+    sbTcsAmt;
+    sbHasDc;
+    sbRevisionNo;
+    sbDocRegisterId;
+    sbCogsAmt;
+    sbDeliveryStatus;
+    sbLoyaltyEarned;
+    sbLoyaltyRedeemed;
     items;
     charges;
     tenders;
@@ -792,6 +824,177 @@ __decorate([
     (0, dtoDecorators_1.NullableStringStrict)(),
     __metadata("design:type", Object)
 ], SaveBillDto.prototype, "sbModifiedBy", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        description: 'POS | WHOLESALE — from the launching screen',
+        default: 'WHOLESALE',
+    }),
+    (0, dtoDecorators_1.NullableUpperMaxString)(10),
+    __metadata("design:type", Object)
+], SaveBillDto.prototype, "sbBillMode", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ type: 'string', format: 'date', nullable: true }),
+    (0, dtoDecorators_1.NullableDateString)(),
+    __metadata("design:type", Object)
+], SaveBillDto.prototype, "sbUsrRefdate", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        default: false,
+        description: 'true = the BILL-TO band was edited for a listed customer; otherwise sbCust* are copied from the master',
+    }),
+    (0, dtoDecorators_1.OptionalBoolean)(),
+    __metadata("design:type", Boolean)
+], SaveBillDto.prototype, "custOverride", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ format: 'uuid', nullable: true }),
+    (0, dtoDecorators_1.NullableUuid)(),
+    __metadata("design:type", Object)
+], SaveBillDto.prototype, "sbShipAddrId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ maxLength: 200, nullable: true }),
+    (0, dtoDecorators_1.NullableStringStrict)(200),
+    __metadata("design:type", Object)
+], SaveBillDto.prototype, "sbShipName", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ maxLength: 500, nullable: true }),
+    (0, dtoDecorators_1.NullableStringStrict)(500),
+    __metadata("design:type", Object)
+], SaveBillDto.prototype, "sbShipAddr", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ maxLength: 100, nullable: true }),
+    (0, dtoDecorators_1.NullableStringStrict)(100),
+    __metadata("design:type", Object)
+], SaveBillDto.prototype, "sbShipPlace", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ maxLength: 10, nullable: true }),
+    (0, dtoDecorators_1.NullableStringStrict)(10),
+    __metadata("design:type", Object)
+], SaveBillDto.prototype, "sbShipPin", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ maxLength: 20, nullable: true }),
+    (0, dtoDecorators_1.NullableStringStrict)(20),
+    __metadata("design:type", Object)
+], SaveBillDto.prototype, "sbShipPhone", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ minLength: 2, maxLength: 2, nullable: true }),
+    (0, dtoDecorators_1.NullableStringStrict)(2),
+    __metadata("design:type", Object)
+], SaveBillDto.prototype, "sbShipStcd", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ maxLength: 15, nullable: true }),
+    (0, dtoDecorators_1.NullableStringStrict)(15),
+    __metadata("design:type", Object)
+], SaveBillDto.prototype, "sbShipGstin", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ format: 'uuid', nullable: true }),
+    (0, dtoDecorators_1.NullableUuid)(),
+    __metadata("design:type", Object)
+], SaveBillDto.prototype, "sbDispatchGodownId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ format: 'uuid', nullable: true }),
+    (0, dtoDecorators_1.NullableUuid)(),
+    __metadata("design:type", Object)
+], SaveBillDto.prototype, "sbDispatchBranchId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ maxLength: 10, nullable: true, description: 'ROAD | RAIL | AIR | SHIP' }),
+    (0, dtoDecorators_1.NullableUpperMaxString)(10),
+    __metadata("design:type", Object)
+], SaveBillDto.prototype, "sbTransportMode", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ format: 'uuid', nullable: true }),
+    (0, dtoDecorators_1.NullableUuid)(),
+    __metadata("design:type", Object)
+], SaveBillDto.prototype, "sbTransporterId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ maxLength: 200, nullable: true }),
+    (0, dtoDecorators_1.NullableStringStrict)(200),
+    __metadata("design:type", Object)
+], SaveBillDto.prototype, "sbTransporterName", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ maxLength: 15, nullable: true }),
+    (0, dtoDecorators_1.NullableStringStrict)(15),
+    __metadata("design:type", Object)
+], SaveBillDto.prototype, "sbTransporterGstin", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ maxLength: 50, nullable: true }),
+    (0, dtoDecorators_1.NullableStringStrict)(50),
+    __metadata("design:type", Object)
+], SaveBillDto.prototype, "sbLrNo", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ type: 'string', format: 'date', nullable: true }),
+    (0, dtoDecorators_1.NullableDateString)(),
+    __metadata("design:type", Object)
+], SaveBillDto.prototype, "sbLrDate", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
+    (0, dtoDecorators_1.NullableInteger)(0),
+    __metadata("design:type", Object)
+], SaveBillDto.prototype, "sbDistanceKm", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ maxLength: 10, nullable: true }),
+    (0, dtoDecorators_1.NullableUpperMaxString)(10),
+    __metadata("design:type", Object)
+], SaveBillDto.prototype, "sbCustPan", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ maxLength: 50, nullable: true }),
+    (0, dtoDecorators_1.NullableStringStrict)(50),
+    __metadata("design:type", Object)
+], SaveBillDto.prototype, "sbForm60Ref", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ format: 'uuid', nullable: true }),
+    (0, dtoDecorators_1.NullableUuid)(),
+    __metadata("design:type", Object)
+], SaveBillDto.prototype, "sbLoyaltyMemberId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
+    (0, dtoDecorators_1.NullableNumber)(),
+    __metadata("design:type", Object)
+], SaveBillDto.prototype, "sbTcsPerc", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
+    (0, dtoDecorators_1.NullableNumber)(),
+    __metadata("design:type", Object)
+], SaveBillDto.prototype, "sbTcsAmt", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)(),
+    (0, dtoDecorators_1.OptionalBoolean)(),
+    __metadata("design:type", Boolean)
+], SaveBillDto.prototype, "sbHasDc", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ readOnly: true, description: 'Ignored — server-owned' }),
+    (0, dtoDecorators_1.OptionalInteger)(),
+    __metadata("design:type", Number)
+], SaveBillDto.prototype, "sbRevisionNo", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        readOnly: true,
+        format: 'uuid',
+        nullable: true,
+        description: 'Ignored — server-owned',
+    }),
+    (0, dtoDecorators_1.NullableUuid)(),
+    __metadata("design:type", Object)
+], SaveBillDto.prototype, "sbDocRegisterId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ readOnly: true, nullable: true, description: 'Ignored — server-owned' }),
+    (0, dtoDecorators_1.NullableNumber)(),
+    __metadata("design:type", Object)
+], SaveBillDto.prototype, "sbCogsAmt", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ readOnly: true, nullable: true, description: 'Ignored — server-owned' }),
+    (0, dtoDecorators_1.NullableStringStrict)(20),
+    __metadata("design:type", Object)
+], SaveBillDto.prototype, "sbDeliveryStatus", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ readOnly: true, nullable: true, description: 'Ignored — server-owned' }),
+    (0, dtoDecorators_1.NullableNumber)(),
+    __metadata("design:type", Object)
+], SaveBillDto.prototype, "sbLoyaltyEarned", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ readOnly: true, nullable: true, description: 'Ignored — server-owned' }),
+    (0, dtoDecorators_1.NullableNumber)(),
+    __metadata("design:type", Object)
+], SaveBillDto.prototype, "sbLoyaltyRedeemed", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({
         type: save_bill_item_dto_1.SaveBillItemDto,

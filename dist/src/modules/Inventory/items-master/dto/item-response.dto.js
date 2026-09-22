@@ -297,7 +297,7 @@ __decorate([
         type: String,
         format: 'uuid',
         nullable: true,
-        description: 'stock.stock_track_preset the item\'s track policy is derived from; null = derived from the item\'s own flags',
+        description: "stock.stock_track_preset the item's track policy is derived from; null = derived from the item's own flags",
     }),
     __metadata("design:type", Object)
 ], ItemPayloadDto.prototype, "item_track_preset_id", void 0);
@@ -362,43 +362,83 @@ __decorate([
     __metadata("design:type", Object)
 ], ItemPayloadDto.prototype, "item_modified_by", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ type: String, nullable: true, description: 'Name of the linked company (resolved on the composite get endpoint)' }),
+    (0, swagger_1.ApiPropertyOptional)({
+        type: String,
+        nullable: true,
+        description: 'Name of the linked company (resolved on the composite get endpoint)',
+    }),
     __metadata("design:type", Object)
 ], ItemPayloadDto.prototype, "item_company_name", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ type: String, nullable: true, description: 'Name of the linked branch (resolved on the composite get endpoint)' }),
+    (0, swagger_1.ApiPropertyOptional)({
+        type: String,
+        nullable: true,
+        description: 'Name of the linked branch (resolved on the composite get endpoint)',
+    }),
     __metadata("design:type", Object)
 ], ItemPayloadDto.prototype, "item_branch_name", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ type: String, nullable: true, description: 'Name of the linked item group (resolved on the composite get endpoint)' }),
+    (0, swagger_1.ApiPropertyOptional)({
+        type: String,
+        nullable: true,
+        description: 'Name of the linked item group (resolved on the composite get endpoint)',
+    }),
     __metadata("design:type", Object)
 ], ItemPayloadDto.prototype, "item_group_name", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ type: String, nullable: true, description: 'Name of the linked category (resolved on the composite get endpoint)' }),
+    (0, swagger_1.ApiPropertyOptional)({
+        type: String,
+        nullable: true,
+        description: 'Name of the linked category (resolved on the composite get endpoint)',
+    }),
     __metadata("design:type", Object)
 ], ItemPayloadDto.prototype, "item_category_name", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ type: String, nullable: true, description: 'Name of the linked brand (resolved on the composite get endpoint)' }),
+    (0, swagger_1.ApiPropertyOptional)({
+        type: String,
+        nullable: true,
+        description: 'Name of the linked brand (resolved on the composite get endpoint)',
+    }),
     __metadata("design:type", Object)
 ], ItemPayloadDto.prototype, "item_brand_name", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ type: String, nullable: true, description: 'Name of the linked section (resolved on the composite get endpoint)' }),
+    (0, swagger_1.ApiPropertyOptional)({
+        type: String,
+        nullable: true,
+        description: 'Name of the linked section (resolved on the composite get endpoint)',
+    }),
     __metadata("design:type", Object)
 ], ItemPayloadDto.prototype, "item_section_name", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ type: String, nullable: true, description: 'Name of the linked supplier (resolved on the composite get endpoint)' }),
+    (0, swagger_1.ApiPropertyOptional)({
+        type: String,
+        nullable: true,
+        description: 'Name of the linked supplier (resolved on the composite get endpoint)',
+    }),
     __metadata("design:type", Object)
 ], ItemPayloadDto.prototype, "item_supplier_name", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ type: String, nullable: true, description: 'Name of the linked customer group (resolved on the composite get endpoint)' }),
+    (0, swagger_1.ApiPropertyOptional)({
+        type: String,
+        nullable: true,
+        description: 'Name of the linked customer group (resolved on the composite get endpoint)',
+    }),
     __metadata("design:type", Object)
 ], ItemPayloadDto.prototype, "item_cust_group_name", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ type: String, nullable: true, description: 'Name of the linked base unit (resolved on the composite get endpoint)' }),
+    (0, swagger_1.ApiPropertyOptional)({
+        type: String,
+        nullable: true,
+        description: 'Name of the linked base unit (resolved on the composite get endpoint)',
+    }),
     __metadata("design:type", Object)
 ], ItemPayloadDto.prototype, "item_base_unit_name", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ type: String, nullable: true, description: 'Name of the linked default tax (resolved on the composite get endpoint)' }),
+    (0, swagger_1.ApiPropertyOptional)({
+        type: String,
+        nullable: true,
+        description: 'Name of the linked default tax (resolved on the composite get endpoint)',
+    }),
     __metadata("design:type", Object)
 ], ItemPayloadDto.prototype, "item_default_tax_name", void 0);
 class ItemDeleteResultDto {

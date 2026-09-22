@@ -48,7 +48,11 @@ export class ItemEanCodePayloadDto {
   @ApiPropertyOptional({ type: String, nullable: true })
   ean_remarks!: string | null;
 
-  @ApiPropertyOptional({ type: String, nullable: true, description: 'Name of the linked unit (resolved on the item composite get endpoint)' })
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    description: 'Name of the linked unit (resolved on the item composite get endpoint)',
+  })
   ean_unit_name?: string | null;
 }
 
@@ -105,7 +109,6 @@ export class ItemEanCodeSuccessListDto {
 
   @ApiProperty({ type: InventoryListMetaDto })
   meta!: InventoryListMetaDto;
-
 }
 
 export class ItemEanCodeSuccessDeleteDto {

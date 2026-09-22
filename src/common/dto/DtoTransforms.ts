@@ -403,11 +403,7 @@ export const toOptionalTrimmedString = (value: unknown): string | undefined => {
 
 export const toUpper = toUpperTrimmed;
 
-export const resolveAliasValue = (
-  value: unknown,
-  obj: unknown,
-  aliases: string[],
-): unknown => {
+export const resolveAliasValue = (value: unknown, obj: unknown, aliases: string[]): unknown => {
   if (value !== undefined) {
     return value;
   }

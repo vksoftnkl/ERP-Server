@@ -215,7 +215,7 @@ describe('ItemPriceDetailsService', () => {
     );
   });
 
-  it('returns the item\'s unit conversions alongside the prices', async () => {
+  it("returns the item's unit conversions alongside the prices", async () => {
     // A price row only points at a conversion (ipm_uc_unit_id) and carries none
     // of its shape, so callers doing unit math need both halves in one response.
     const conversions = [

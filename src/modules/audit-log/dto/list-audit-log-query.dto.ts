@@ -1,5 +1,11 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { OptionalDateString, OptionalQueryBoolean, OptionalQueryInt, OptionalTrimmedString, OptionalUuid } from '../../../common/dto/dtoDecorators';
+import {
+  OptionalDateString,
+  OptionalQueryBoolean,
+  OptionalQueryInt,
+  OptionalTrimmedString,
+  OptionalUuid,
+} from '../../../common/dto/dtoDecorators';
 import { ModuleListQueryBaseDto } from '../../../common/utils/module-list-query.base.dto';
 
 export class ListAuditLogQueryDto extends ModuleListQueryBaseDto {

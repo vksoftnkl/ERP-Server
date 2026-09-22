@@ -51,9 +51,7 @@ let ItemsGroupMasterController = class ItemsGroupMasterController {
         const { itg_id, deleted } = await this.itemsGroupMasterService.toggleDelete(itgId);
         return {
             success: true,
-            message: deleted
-                ? 'Item group deleted successfully'
-                : 'Item group restored successfully',
+            message: deleted ? 'Item group deleted successfully' : 'Item group restored successfully',
             data: { itg_id },
         };
     }

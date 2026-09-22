@@ -160,7 +160,7 @@ describe('POST /stock/opening/create — status DRAFT vs POSTED (e2e, live DB)',
   /** Prisma Decimals and BigInts do not survive JSON.stringify on their own. */
   function jsonSafe(_key: string, value: unknown): unknown {
     if (typeof value === 'bigint') return value.toString();
-    if (value && typeof value === 'object' && 'toFixed' in (value as object)) return String(value);
+    if (value && typeof value === 'object' && 'toFixed' in value) return String(value);
     return value;
   }
 
@@ -305,19 +305,20 @@ describe('POST /stock/opening/create — status DRAFT vs POSTED (e2e, live DB)',
       ],
     };
 
-    const res = await http
-      .post(`${BASE}/create`)
-      .set('Authorization', BEARER)
-      .send(swaggerSample);
-    record('0. swagger sample verbatim', { status: res.status, body: res.body }, {
-      voucher: undefined,
-      lines: [],
-      ledger: [],
-      balance: [],
-      lot: [],
-      itemCost: [],
-      trail: [],
-    });
+    const res = await http.post(`${BASE}/create`).set('Authorization', BEARER).send(swaggerSample);
+    record(
+      '0. swagger sample verbatim',
+      { status: res.status, body: res.body },
+      {
+        voucher: undefined,
+        lines: [],
+        ledger: [],
+        balance: [],
+        lot: [],
+        itemCost: [],
+        trail: [],
+      },
+    );
     expect(res.status).toBe(400);
   }, 60_000);
 
@@ -393,16 +394,13 @@ describe('POST /stock/opening/create — status DRAFT vs POSTED (e2e, live DB)',
   // 3. The other road to the same place: DRAFT then /post
   // ────────────────────────────────────────────────────────────────────────
   it('the draft posted afterwards through /post ends in the same state', async () => {
-    const res = await http
-      .post(`${BASE}/post`)
-      .set('Authorization', BEARER)
-      .send({
-        svhId: draftSvhId,
-        accYear: ACC_YEAR,
-        companyId: SCOPE.companyId,
-        branchId: SCOPE.branchId,
-        userId: ACTOR,
-      });
+    const res = await http.post(`${BASE}/post`).set('Authorization', BEARER).send({
+      svhId: draftSvhId,
+      accYear: ACC_YEAR,
+      companyId: SCOPE.companyId,
+      branchId: SCOPE.branchId,
+      userId: ACTOR,
+    });
 
     const db = await probe(draftSvhId, draftItem.itemId);
     record('3. /post the draft from step 1', { status: res.status, body: res.body }, db);
@@ -417,19 +415,26 @@ describe('POST /stock/opening/create — status DRAFT vs POSTED (e2e, live DB)',
   // 4. Re-posting, and the second opening of the same holding
   // ────────────────────────────────────────────────────────────────────────
   it('a POSTED document refuses a second post', async () => {
-    const res = await http
-      .post(`${BASE}/post`)
-      .set('Authorization', BEARER)
-      .send({
-        svhId: postedSvhId,
-        accYear: ACC_YEAR,
-        companyId: SCOPE.companyId,
-        branchId: SCOPE.branchId,
-        userId: ACTOR,
-      });
-    record('4. double post', { status: res.status, body: res.body }, {
-      voucher: undefined, lines: [], ledger: [], balance: [], lot: [], itemCost: [], trail: [],
+    const res = await http.post(`${BASE}/post`).set('Authorization', BEARER).send({
+      svhId: postedSvhId,
+      accYear: ACC_YEAR,
+      companyId: SCOPE.companyId,
+      branchId: SCOPE.branchId,
+      userId: ACTOR,
     });
+    record(
+      '4. double post',
+      { status: res.status, body: res.body },
+      {
+        voucher: undefined,
+        lines: [],
+        ledger: [],
+        balance: [],
+        lot: [],
+        itemCost: [],
+        trail: [],
+      },
+    );
     expect(res.status).toBeGreaterThanOrEqual(400);
   }, 60_000);
 
@@ -438,9 +443,19 @@ describe('POST /stock/opening/create — status DRAFT vs POSTED (e2e, live DB)',
       .post(`${BASE}/create`)
       .set('Authorization', BEARER)
       .send(payload(postedItem, 'POSTED'));
-    record('5. re-open the same holding', { status: res.status, body: res.body }, {
-      voucher: undefined, lines: [], ledger: [], balance: [], lot: [], itemCost: [], trail: [],
-    });
+    record(
+      '5. re-open the same holding',
+      { status: res.status, body: res.body },
+      {
+        voucher: undefined,
+        lines: [],
+        ledger: [],
+        balance: [],
+        lot: [],
+        itemCost: [],
+        trail: [],
+      },
+    );
     expect(res.status).toBeGreaterThanOrEqual(400);
   }, 60_000);
 
@@ -452,17 +467,14 @@ describe('POST /stock/opening/create — status DRAFT vs POSTED (e2e, live DB)',
       ['6a. cancel the save-and-post document', postedSvhId, postedItem.itemId],
       ['6b. cancel the draft-then-post document', draftSvhId, draftItem.itemId],
     ] as const) {
-      const res = await http
-        .post(`${BASE}/cancel`)
-        .set('Authorization', BEARER)
-        .send({
-          svhId,
-          accYear: ACC_YEAR,
-          companyId: SCOPE.companyId,
-          branchId: SCOPE.branchId,
-          userId: ACTOR,
-          reason: 'E2E status test — reversing so the branch nets to zero',
-        });
+      const res = await http.post(`${BASE}/cancel`).set('Authorization', BEARER).send({
+        svhId,
+        accYear: ACC_YEAR,
+        companyId: SCOPE.companyId,
+        branchId: SCOPE.branchId,
+        userId: ACTOR,
+        reason: 'E2E status test — reversing so the branch nets to zero',
+      });
       const db = await probe(svhId, itemId);
       record(label, { status: res.status, body: res.body }, db);
       expect(res.status).toBe(201);

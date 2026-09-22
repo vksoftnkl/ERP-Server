@@ -50,7 +50,7 @@ import { API_VERSION } from '../../../common/constants/api-version';
 @Controller('widget-masters')
 @UseFilters(WidgetMasterExceptionFilter)
 export class WidgetMasterController {
-  constructor(private readonly widgetMasterService: WidgetMasterService) { }
+  constructor(private readonly widgetMasterService: WidgetMasterService) {}
   @Post('create')
   @Version(API_VERSION)
   @ApiOperation({
@@ -59,7 +59,7 @@ export class WidgetMasterController {
       'Upserts a single form section (heading row) together with its nested fields.',
       '',
       '- Omit `sectionId` to create a new section; include it to update the existing one.',
-      '- `fields` is a full-sync of the section\'s children: fields with a `fieldId` are updated, fields without one are created, and any existing field not present in the array is deleted.',
+      "- `fields` is a full-sync of the section's children: fields with a `fieldId` are updated, fields without one are created, and any existing field not present in the array is deleted.",
       '- Omit `fields` entirely to leave the existing fields untouched; send `[]` to remove all fields.',
       '- Section names and field names are not enforced unique — duplicate `sectionName` (per menu/platform) and duplicate `fieldName` within a section are allowed.',
     ].join('\n'),
@@ -288,7 +288,8 @@ export class WidgetMasterController {
   @Version(API_VERSION)
   @ApiOperation({
     summary: 'Delete a widget section by id',
-    description: 'Deletes the section identified by `sectionId`. All of its fields are removed automatically via the database cascade.',
+    description:
+      'Deletes the section identified by `sectionId`. All of its fields are removed automatically via the database cascade.',
   })
   @ApiQuery({ name: 'sectionId', type: Number, example: 1 })
   @ApiOkResponse({ type: WidgetMasterSuccessDeleteDto })

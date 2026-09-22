@@ -19,7 +19,13 @@ const module_list_utils_1 = require("../../../common/utils/module-list.utils");
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
 const BANK_LIST_TABLE_NAME = 'bank master';
 const BANK_LIST_AUDIT_SCREEN_NAME = 'Bank List Master';
-const BANK_LIST_OPTIONAL_FIELDS = ['bnkShortName', 'bnkAlias', 'bnkRbiCode', 'bnkIbanSupported', 'bnkIsActive'];
+const BANK_LIST_OPTIONAL_FIELDS = [
+    'bnkShortName',
+    'bnkAlias',
+    'bnkRbiCode',
+    'bnkIbanSupported',
+    'bnkIsActive',
+];
 let BankListService = class BankListService {
     prisma;
     auditLogService;
@@ -39,7 +45,14 @@ let BankListService = class BankListService {
     }
     async list(queryDto) {
         const { page, limit, skip } = (0, module_list_utils_1.resolvePagination)(queryDto);
-        const result = await (0, module_list_utils_1.runConfiguredGridQuery)(this.configuredGridSqlService, { tableName: BANK_LIST_TABLE_NAME, alias: 'bank_list_grid', search: queryDto.search, page, limit, skip });
+        const result = await (0, module_list_utils_1.runConfiguredGridQuery)(this.configuredGridSqlService, {
+            tableName: BANK_LIST_TABLE_NAME,
+            alias: 'bank_list_grid',
+            search: queryDto.search,
+            page,
+            limit,
+            skip,
+        });
         if (!result) {
             (0, module_service_utils_1.throwFixedBadRequest)('No configured grid found for bank list', []);
         }
@@ -66,7 +79,12 @@ let BankListService = class BankListService {
                 where: { lbaBankName: existing.bnkName, lbaIsDeleted: false },
             });
             if (bankUsageCount > 0) {
-                (0, module_service_utils_1.throwFixedBadRequest)('Cannot delete bank with active bank-account mappings', [{ field: 'bnkId', message: `Bank ${bnkId} is used in ${bankUsageCount} ledger bank account(s).` }]);
+                (0, module_service_utils_1.throwFixedBadRequest)('Cannot delete bank with active bank-account mappings', [
+                    {
+                        field: 'bnkId',
+                        message: `Bank ${bnkId} is used in ${bankUsageCount} ledger bank account(s).`,
+                    },
+                ]);
             }
             const modifiedOn = new Date();
             const result = await tx.bankMaster.updateMany({
@@ -190,7 +208,9 @@ let BankListService = class BankListService {
             select: { bnkId: true },
         });
         if (existing) {
-            (0, module_service_utils_1.throwFixedConflict)('Bank name already exists', [{ field: 'bnkName', message: 'Duplicate bank name is not allowed' }]);
+            (0, module_service_utils_1.throwFixedConflict)('Bank name already exists', [
+                { field: 'bnkName', message: 'Duplicate bank name is not allowed' },
+            ]);
         }
     }
     toPayload(record) {

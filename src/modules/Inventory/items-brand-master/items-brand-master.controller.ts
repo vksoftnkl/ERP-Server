@@ -48,7 +48,7 @@ type UploadedPhotoFile = {
 @Controller('item-brands')
 @UseFilters(ItemBrandExceptionFilter)
 export class ItemsBrandMasterController {
-  constructor(private readonly itemsBrandMasterService: ItemsBrandMasterService) { }
+  constructor(private readonly itemsBrandMasterService: ItemsBrandMasterService) {}
   @Post('create')
   @Version(API_VERSION)
   @UseInterceptors(FileInterceptor('brand_photo'))

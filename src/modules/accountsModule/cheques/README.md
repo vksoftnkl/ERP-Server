@@ -434,7 +434,8 @@ faults that no amount of re-reading the code would have shown:
 - **No edit of a register row's cheque facts.** Return it and re-key, or replace
   it.
 - **No delete.** CANCELLED is the deletion, and it keeps the history.
-- **No second cheque table.** `acc_voucher_cheques` stays empty.
+- **No second cheque table.** `acc_voucher_cheques` never took a row and was
+  dropped by 20260922080000.
 - **No clearing straight to the party after a bounce** — re-issue first (C5), so
   `/clear` has one shape. Without it, clearing would have to ask "was this
   bounced before?" and post a different voucher if so, and every later report

@@ -58,7 +58,8 @@ export class ItemStockBalanceController {
   @Get('bulk-list')
   @Version(API_VERSION)
   @ApiOperation({
-    summary: 'Bulk list item stock balances with optional filters for group, brand, section, category, godown, and stock type',
+    summary:
+      'Bulk list item stock balances with optional filters for group, brand, section, category, godown, and stock type',
   })
   @ApiOkResponse({ description: 'Bulk item stock list fetched successfully' })
   @ApiBadRequestResponse({ type: ItemStockBalanceErrorResponseDto })

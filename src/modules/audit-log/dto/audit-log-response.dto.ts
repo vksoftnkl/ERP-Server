@@ -1,7 +1,13 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { ModuleErrorFieldDto, ModuleErrorResponseDto } from '../../../common/utils/module-response.dto';
+import {
+  ModuleErrorFieldDto,
+  ModuleErrorResponseDto,
+} from '../../../common/utils/module-response.dto';
 
-export { ModuleErrorFieldDto as AuditLogErrorFieldDto, ModuleErrorResponseDto as AuditLogErrorResponseDto };
+export {
+  ModuleErrorFieldDto as AuditLogErrorFieldDto,
+  ModuleErrorResponseDto as AuditLogErrorResponseDto,
+};
 
 export class AuditLogListItemDto {
   @ApiProperty({ format: 'uuid' })
@@ -66,7 +72,11 @@ export class AuditLogListMetaDto {
   @ApiPropertyOptional({ example: 5, nullable: true })
   total_pages!: number | null;
 
-  @ApiPropertyOptional({ nullable: true, format: 'uuid', description: 'Pass as cursor for next page' })
+  @ApiPropertyOptional({
+    nullable: true,
+    format: 'uuid',
+    description: 'Pass as cursor for next page',
+  })
   next_cursor!: string | null;
 }
 

@@ -38,7 +38,7 @@ import { API_VERSION } from '../../../common/constants/api-version';
 @Controller('state-code-masters')
 @UseFilters(StateCodeMasterExceptionFilter)
 export class StateCodeMasterController {
-  constructor(private readonly stateCodeMasterService: StateCodeMasterService) { }
+  constructor(private readonly stateCodeMasterService: StateCodeMasterService) {}
 
   @Post('create')
   @Version(API_VERSION)

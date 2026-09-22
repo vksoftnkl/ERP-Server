@@ -16,7 +16,7 @@ export class ConfiguredGridCacheInterceptor extends CacheInterceptor {
 
     // Build a deterministic key from ALL params that affect the result
     const key = [
-      req.path,                       // e.g. /v1/configured-grid-sql/run
+      req.path, // e.g. /v1/configured-grid-sql/run
       `grid_id=${q.grid_id ?? ''}`,
       `page=${q.page ?? 1}`,
       `limit=${q.limit ?? 20}`,

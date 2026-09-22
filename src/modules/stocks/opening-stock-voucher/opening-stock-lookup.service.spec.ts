@@ -130,28 +130,31 @@ describe('OpeningStockLookupService', () => {
   it.each([
     ['omitted', {}],
     ['null', { companyId: null, branchId: null }],
-  ])('binds a null company and branch when they are %s, so both predicates switch off', async (_label, scope) => {
-    gateway.isDeployed = true;
-    gateway.findOpeningSeedBucket.mockResolvedValueOnce(null);
-    queryRaw.mockResolvedValueOnce([saltRow()]);
+  ])(
+    'binds a null company and branch when they are %s, so both predicates switch off',
+    async (_label, scope) => {
+      gateway.isDeployed = true;
+      gateway.findOpeningSeedBucket.mockResolvedValueOnce(null);
+      queryRaw.mockResolvedValueOnce([saltRow()]);
 
-    const result = await service.lookupItem({ itemId: ITEM_ID, onDate: ON_DATE, ...scope });
+      const result = await service.lookupItem({ itemId: ITEM_ID, onDate: ON_DATE, ...scope });
 
-    const statement = assemble(queryRaw.mock.calls[0] as unknown[]);
-    // The same statement shape as with a scope — the null travels as a bound
-    // parameter and the "?::uuid IS NULL OR" arm is what makes it match.
-    expect(statement.sql).toContain("AND (NULLIF(?::text, '') IS NULL");
-    expect(statement.values).toEqual(expect.arrayContaining([null, ITEM_ID, ON_DATE]));
-    expect(statement.values).not.toEqual(expect.arrayContaining([undefined]));
-    expect(gateway.findOpeningSeedBucket).toHaveBeenCalledWith({
-      companyId: null,
-      branchId: null,
-      itemId: ITEM_ID,
-      uomId: UOM_ID,
-      onDate: ON_DATE,
-    });
-    expect(result.itemId).toBe(ITEM_ID);
-  });
+      const statement = assemble(queryRaw.mock.calls[0] as unknown[]);
+      // The same statement shape as with a scope — the null travels as a bound
+      // parameter and the "?::uuid IS NULL OR" arm is what makes it match.
+      expect(statement.sql).toContain("AND (NULLIF(?::text, '') IS NULL");
+      expect(statement.values).toEqual(expect.arrayContaining([null, ITEM_ID, ON_DATE]));
+      expect(statement.values).not.toEqual(expect.arrayContaining([undefined]));
+      expect(gateway.findOpeningSeedBucket).toHaveBeenCalledWith({
+        companyId: null,
+        branchId: null,
+        itemId: ITEM_ID,
+        uomId: UOM_ID,
+        onDate: ON_DATE,
+      });
+      expect(result.itemId).toBe(ITEM_ID);
+    },
+  );
 
   it('restricts by whichever of company / branch is given when only one is', async () => {
     queryRaw.mockResolvedValueOnce([saltRow()]);

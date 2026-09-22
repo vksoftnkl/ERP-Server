@@ -1024,7 +1024,8 @@ is the narrowest scope that cannot be overridden from below.
 - **No allocation logic in two places.** `allocation-engine.ts` is the only one;
   the client previews with a port of it.
 - **No ledger-name lookups.** Roles through the map, `av_role` on the leg.
-- **No `acc_voucher_cheques` rows.** One cheque table: `acc_pdc_register`.
+- **One cheque table: `acc_pdc_register`.** `acc_voucher_cheques` was dropped by
+  20260922080000 without ever holding a row.
 - **No second SELECT for "what does this party owe".** `open-items` is it, and
   `/transactions/party-balance` calls it.
 - **No paging on `open-items`.** A capped list is a wrong collection, not a slow

@@ -178,6 +178,13 @@ let ReceiptPostingService = class ReceiptPostingService {
             ...credits.map((credit) => ({ billId: credit.billId, accYear: credit.billAccYear })),
         ];
         const recomputed = await this.recompute.recomputeBills(tx, touched, (0, receipt_utils_1.todayUtc)());
+        if (bills.length > 0) {
+            await tx.$executeRaw `
+        UPDATE accounts.acc_temp_credit
+           SET atc_last_receipt_id = ${header.avhVoucherId}::uuid, atc_modified_on = now()
+         WHERE atc_is_deleted = false
+           AND (atc_abl_id, atc_abl_acc_year) IN (${client_1.Prisma.join(bills.map((b) => client_1.Prisma.sql `(${b.billId}::uuid, ${b.billAccYear}::char(9))`))})`;
+        }
         await this.postHeaders(tx, { header, vouchers, plan, tenders, otherLines, actor });
         await (0, txn_status_log_helper_1.appendTxnStatusLog)(tx, {
             companyId: header.avhCompanyId,

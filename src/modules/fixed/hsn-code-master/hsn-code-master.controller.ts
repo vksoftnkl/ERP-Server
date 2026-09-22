@@ -29,7 +29,7 @@ import { API_VERSION } from '../../../common/constants/api-version';
 @CacheTTL(1)
 @Controller('hsn-code-masters')
 export class HsnCodeMasterController {
-  constructor(private readonly hsnCodeMasterService: HsnCodeMasterService) { }
+  constructor(private readonly hsnCodeMasterService: HsnCodeMasterService) {}
 
   @Get('get')
   @Version(API_VERSION)

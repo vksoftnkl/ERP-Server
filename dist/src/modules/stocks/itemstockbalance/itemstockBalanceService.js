@@ -100,7 +100,13 @@ let ItemStockBalanceService = class ItemStockBalanceService {
         const [items, units, godowns, priceMasters] = await Promise.all([
             this.prisma.itemMaster.findMany({
                 where: { itemId: { in: allItemIds }, itemIsDeleted: false },
-                select: { itemId: true, itemNameEn: true, itemCode: true, itemDefaultBarcode: true, itemBaseUnitId: true },
+                select: {
+                    itemId: true,
+                    itemNameEn: true,
+                    itemCode: true,
+                    itemDefaultBarcode: true,
+                    itemBaseUnitId: true,
+                },
             }),
             this.prisma.unit.findMany({
                 where: { unit_id: { in: allUnitIds } },
@@ -112,7 +118,23 @@ let ItemStockBalanceService = class ItemStockBalanceService {
             }),
             this.prisma.itemPriceMaster.findMany({
                 where: { ipmItemId: { in: allItemIds }, ipmIsDeleted: false },
-                select: { ipmItemId: true, ipmId: true, ipmUcUnitId: true, ipmGodownId: true, ipmCostPrice: true, ipmCostWot: true, ipmMaxPrice: true, itemUnitConversion: { select: { iucUnitId: true, iucBaseUnitId: true, iucToBaseFactor: true, iucUnitFactor: true } } },
+                select: {
+                    ipmItemId: true,
+                    ipmId: true,
+                    ipmUcUnitId: true,
+                    ipmGodownId: true,
+                    ipmCostPrice: true,
+                    ipmCostWot: true,
+                    ipmMaxPrice: true,
+                    itemUnitConversion: {
+                        select: {
+                            iucUnitId: true,
+                            iucBaseUnitId: true,
+                            iucToBaseFactor: true,
+                            iucUnitFactor: true,
+                        },
+                    },
+                },
             }),
         ]);
         if (items.length === 0)
@@ -379,8 +401,7 @@ let ItemStockBalanceService = class ItemStockBalanceService {
         return factorsByUnitId;
     }
     getUnitFactorForStockUnit(record, queryDto, unitFactorsByUnitId) {
-        const unitFactor = unitFactorsByUnitId.get(record.isbUnitId) ??
-            unitFactorsByUnitId.get(queryDto.isb_unit_id);
+        const unitFactor = unitFactorsByUnitId.get(record.isbUnitId) ?? unitFactorsByUnitId.get(queryDto.isb_unit_id);
         if (unitFactor === undefined) {
             this.throwItemPriceMasterNotFound(record.isbItemId, record.isbUnitId);
         }

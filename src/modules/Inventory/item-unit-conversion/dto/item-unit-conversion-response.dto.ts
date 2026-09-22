@@ -47,9 +47,17 @@ export class ItemUnitConversionPayloadDto {
   iuc_updated_on!: string | null;
   @ApiPropertyOptional({ type: String, nullable: true })
   iuc_updated_by!: string | null;
-  @ApiPropertyOptional({ type: String, nullable: true, description: 'Name of the linked unit (resolved on the item composite get endpoint)' })
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    description: 'Name of the linked unit (resolved on the item composite get endpoint)',
+  })
   iuc_unit_name?: string | null;
-  @ApiPropertyOptional({ type: String, nullable: true, description: 'Name of the linked base unit (resolved on the item composite get endpoint)' })
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    description: 'Name of the linked base unit (resolved on the item composite get endpoint)',
+  })
   iuc_base_unit_name?: string | null;
 }
 export class ItemUnitConversionDeleteResultDto {

@@ -78,7 +78,12 @@ let DropdownDetailsService = class DropdownDetailsService {
         }
         const baseSql = dropdown.dropdownSql?.trim();
         if (!baseSql) {
-            (0, module_service_utils_1.throwFixedBadRequest)('Invalid dropdown SQL configuration', [{ field: 'dropdown_sql', message: `Dropdown ${queryDto.dropdown_id} has no configured SQL` }]);
+            (0, module_service_utils_1.throwFixedBadRequest)('Invalid dropdown SQL configuration', [
+                {
+                    field: 'dropdown_sql',
+                    message: `Dropdown ${queryDto.dropdown_id} has no configured SQL`,
+                },
+            ]);
         }
         const tableName = this.configuredGridSqlService.extractTopLevelFromTableName(baseSql) ?? '';
         const validation = this.configuredGridSqlService.validateBaseSql({ sql: baseSql, tableName });
@@ -385,7 +390,12 @@ let DropdownDetailsService = class DropdownDetailsService {
         }
         const normalizedDataType = colDto.dropdown_columns_data_type?.trim();
         if (!normalizedDataType) {
-            (0, module_service_utils_1.throwFixedBadRequest)('Validation failed', [{ field: 'dropdown_columns_data_type', message: 'dropdown_columns_data_type must not be empty' }]);
+            (0, module_service_utils_1.throwFixedBadRequest)('Validation failed', [
+                {
+                    field: 'dropdown_columns_data_type',
+                    message: 'dropdown_columns_data_type must not be empty',
+                },
+            ]);
         }
         if (colDto.dropdown_columns_id) {
             const parsedId = this.parseUuidId('dropdown_columns_id', colDto.dropdown_columns_id);
@@ -505,14 +515,24 @@ let DropdownDetailsService = class DropdownDetailsService {
         const prm = parsed;
         for (const [key, val] of Object.entries(prm)) {
             if (!/^[a-z_][a-z0-9_]*$/i.test(key)) {
-                (0, module_service_utils_1.throwFixedBadRequest)('Validation error', [{ field: 'dropdown_param', message: `Invalid parameter name in dropdown_param: "${key}"` }]);
+                (0, module_service_utils_1.throwFixedBadRequest)('Validation error', [
+                    {
+                        field: 'dropdown_param',
+                        message: `Invalid parameter name in dropdown_param: "${key}"`,
+                    },
+                ]);
             }
             if (val !== null &&
                 val !== undefined &&
                 typeof val !== 'boolean' &&
                 typeof val !== 'number' &&
                 typeof val !== 'string') {
-                (0, module_service_utils_1.throwFixedBadRequest)('Validation error', [{ field: 'dropdown_param', message: `Unsupported value type for dropdown_param.${key}: ${typeof val}` }]);
+                (0, module_service_utils_1.throwFixedBadRequest)('Validation error', [
+                    {
+                        field: 'dropdown_param',
+                        message: `Unsupported value type for dropdown_param.${key}: ${typeof val}`,
+                    },
+                ]);
             }
             if (typeof val === 'number' && !Number.isFinite(val)) {
                 (0, module_service_utils_1.throwFixedBadRequest)('Validation error', [{ field: 'dropdown_param', message: `Non-finite number for dropdown_param.${key}` }]);

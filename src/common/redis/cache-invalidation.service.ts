@@ -41,7 +41,9 @@ export class CacheInvalidationService {
     }
     try {
       const keyArrays = await Promise.all(
-        patterns.map((pattern) => this.redisCacheService.keys(buildHttpCacheStoragePattern(pattern))),
+        patterns.map((pattern) =>
+          this.redisCacheService.keys(buildHttpCacheStoragePattern(pattern)),
+        ),
       );
       const keys = [...new Set(keyArrays.flat())];
       if (keys.length === 0) {
@@ -51,9 +53,7 @@ export class CacheInvalidationService {
     } catch (error) {
       const message =
         error instanceof Error ? error.message : 'Unknown cache pattern invalidation error';
-      this.logger.warn(
-        `Failed to invalidate cache patterns "${patterns.join(', ')}": ${message}`,
-      );
+      this.logger.warn(`Failed to invalidate cache patterns "${patterns.join(', ')}": ${message}`);
     }
   }
   async clearAll(): Promise<void> {

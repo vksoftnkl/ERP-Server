@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { AuditLogModule } from 'src/modules/audit-log/audit-log.module';
+import { StockPostingModule } from '../posting/stock-posting.module';
 import { StockVoucherExceptionFilter } from './stock-voucher-exception.filter';
 import { StockVoucherService } from './stock-voucher.service';
 
@@ -13,7 +14,7 @@ import { StockVoucherService } from './stock-voucher.service';
  * imports it today and the next five screens import the same one.
  */
 @Module({
-  imports: [AuditLogModule],
+  imports: [AuditLogModule, StockPostingModule],
   providers: [StockVoucherService, StockVoucherExceptionFilter],
   exports: [StockVoucherService, StockVoucherExceptionFilter],
 })

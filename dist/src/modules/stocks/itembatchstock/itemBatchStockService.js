@@ -157,8 +157,7 @@ let ItemBatchStockService = class ItemBatchStockService {
         return factorsByUnitId;
     }
     getUnitFactorForStockUnit(record, queryDto, unitFactorsByUnitId) {
-        const unitFactor = unitFactorsByUnitId.get(record.ibsUnitId) ??
-            unitFactorsByUnitId.get(queryDto.ibs_unit_id);
+        const unitFactor = unitFactorsByUnitId.get(record.ibsUnitId) ?? unitFactorsByUnitId.get(queryDto.ibs_unit_id);
         if (unitFactor === undefined) {
             this.throwItemPriceMasterNotFound(record.ibsItemId, record.ibsUnitId);
         }

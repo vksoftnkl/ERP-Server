@@ -44,7 +44,7 @@ import { API_VERSION } from '../../../common/constants/api-version';
 @Controller('device-list-masters')
 @UseFilters(DeviceListMasterExceptionFilter)
 export class DeviceListMasterController {
-  constructor(private readonly deviceListMasterService: DeviceListMasterService) { }
+  constructor(private readonly deviceListMasterService: DeviceListMasterService) {}
   @Post('create')
   @Version(API_VERSION)
   @ApiOperation({ summary: 'Create or update device (by devId presence)' })

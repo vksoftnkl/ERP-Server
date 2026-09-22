@@ -288,7 +288,8 @@ export class ItemUnitConversionService {
     this.assertItemUnitConversionConstraints({
       unitId: saveItemUnitConversionDto.iuc_unit_id ?? existing.iucUnitId,
       baseUnitId,
-      toBaseFactor: saveItemUnitConversionDto.iuc_to_base_factor ?? toNumber(existing.iucToBaseFactor),
+      toBaseFactor:
+        saveItemUnitConversionDto.iuc_to_base_factor ?? toNumber(existing.iucToBaseFactor),
       uomWeight: saveItemUnitConversionDto.iuc_uom_weight ?? toNumber(existing.iucUomWeight),
       isBaseUnit: saveItemUnitConversionDto.iuc_is_base_unit ?? existing.iucIsBaseUnit,
     });

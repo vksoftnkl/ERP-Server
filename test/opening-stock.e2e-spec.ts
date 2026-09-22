@@ -4,6 +4,7 @@ import { PrismaService } from '../src/database/prisma/prisma.service';
 import { AuditLogService } from '../src/modules/audit-log/audit-log.service';
 import { RequestContextService } from '../src/common/request-context/request-context.service';
 import { StockVoucherService } from '../src/modules/stocks/stock-voucher/stock-voucher.service';
+import { StockPostingService } from '../src/modules/stocks/posting/stock-posting.service';
 import type { StockVoucherTypeRules } from '../src/modules/stocks/stock-voucher/types/stock-voucher.types';
 
 /**
@@ -139,6 +140,9 @@ describe('Opening stock (e2e — needs the stock engine)', () => {
       prisma as unknown as PrismaService,
       { logEntityChange: jest.fn().mockResolvedValue(undefined) } as unknown as AuditLogService,
       { getUserId: () => fixture?.userId ?? null } as unknown as RequestContextService,
+      // §3.1 — the one stock engine, injected. Handed the same client, so a
+      // posting call still runs inside whatever transaction the test opened.
+      new StockPostingService(prisma as unknown as PrismaService),
     );
     fixture = await createFixture();
   });
@@ -445,9 +449,7 @@ describe('Opening stock (e2e — needs the stock engine)', () => {
     // 50 keyed + 5 free — free goods sit on the shelf and get sold.
     expect(onHand.get(fixture.milkId)).toBeCloseTo(55, 6);
 
-    const [milkCost] = await prisma.$queryRaw<
-      Array<{ avg: string; total_value_wot: string }>
-    >`
+    const [milkCost] = await prisma.$queryRaw<Array<{ avg: string; total_value_wot: string }>>`
       SELECT sic_avg_cost_rate::text AS avg, sic_total_value_wot::text AS total_value_wot
         FROM stock.stock_item_cost
        WHERE sic_item_id = ${fixture.milkId}::uuid
@@ -663,7 +665,7 @@ describe('Opening stock (e2e — needs the stock engine)', () => {
     expect((fulfilled[0] as PromiseFulfilledResult<{ rowsPosted: number }>).value.rowsPosted).toBe(
       2,
     );
-    expect((rejected[0] as PromiseRejectedResult).reason).toMatchObject({ status: 409 });
+    expect(rejected[0].reason).toMatchObject({ status: 409 });
   });
 
   it('refuses a reconcile-breaking cancel once stock has left the holding', async () => {

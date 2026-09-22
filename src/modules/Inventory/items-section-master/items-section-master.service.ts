@@ -143,7 +143,7 @@ export class ItemsSectionMasterService {
           secName: saveItemSectionDto.sec_name.trim(),
           secLevel: this.resolveSectionLevel(saveItemSectionDto.sec_parent_id, parentLevel),
           secCreatedOn: now,
-          secCreatedBy: createdBy,      
+          secCreatedBy: createdBy,
         };
 
         this.applyOptionalFields(data, saveItemSectionDto);
@@ -498,7 +498,10 @@ export class ItemsSectionMasterService {
     return new Uint8Array(Buffer.from(normalized, 'base64'));
   }
 
-  private toPayload(record: ItemSectionMaster, parentName: string | null = null): ItemSectionPayload {
+  private toPayload(
+    record: ItemSectionMaster,
+    parentName: string | null = null,
+  ): ItemSectionPayload {
     return {
       sec_id: record.secId,
       sec_name: record.secName,

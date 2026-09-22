@@ -141,7 +141,11 @@ describe('opening-balances swagger', () => {
       { include: entry()!.include },
     );
 
-    const list = (doc.paths['/api/v1/opening-balances/list'] as { get: { security?: unknown[]; tags?: string[] } }).get;
+    const list = (
+      doc.paths['/api/v1/opening-balances/list'] as {
+        get: { security?: unknown[]; tags?: string[] };
+      }
+    ).get;
     expect(list.tags).toContain('Opening Balances');
     expect(JSON.stringify(list.security)).toContain('access-token');
   });

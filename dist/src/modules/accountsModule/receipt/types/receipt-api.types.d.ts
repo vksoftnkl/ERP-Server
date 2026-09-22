@@ -3,9 +3,18 @@ import type { BillAdjType, BillSettlementMode, BillStatus, BillType, DrCr, PdcSt
 export type ReceiptErrorDetail = ModuleApiErrorDetail;
 export type ReceiptErrorResponse = ModuleApiErrorResponse<ReceiptErrorDetail>;
 export type ReceiptSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> = ModuleApiSuccessResponse<T, TMeta, TStyles>;
+export interface OpenBillTempCredit {
+    atcId: string;
+    name: string;
+    mobile: string;
+    dueDate: string | null;
+    balance: number;
+    status: string;
+}
 export interface OpenBill {
     billId: string;
     billAccYear: string;
+    tempCredit?: OpenBillTempCredit | null;
     billType: BillType;
     docRefno: string;
     usrRefno: string | null;

@@ -767,10 +767,7 @@ async function cancelPostedVoucher(
     data: {
       avhVoucherStatus: VOUCHER_STATUS_CANCELLED,
       // ck_avh_cancel: a cancellation must say why.
-      avhCancelReason: (cancelReason ?? DEFAULT_CANCEL_REASON).slice(
-        0,
-        CANCEL_REASON_MAX_LENGTH,
-      ),
+      avhCancelReason: (cancelReason ?? DEFAULT_CANCEL_REASON).slice(0, CANCEL_REASON_MAX_LENGTH),
       // ck_avh_status_on: anything past DRAFT must say when and by whom.
       avhStatusOn: now,
       avhStatusBy: bill.sbUserId,

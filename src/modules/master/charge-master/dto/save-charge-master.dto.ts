@@ -63,7 +63,9 @@ export class SaveChargeMasterDto {
   chgLandingCost?: boolean;
   @ApiPropertyOptional({ enum: CHARGE_COST_ALLOCS, nullable: true })
   @NullableUpperMaxString(10)
-  @IsIn(CHARGE_COST_ALLOCS, { message: `chgCostAlloc must be one of: ${CHARGE_COST_ALLOCS.join(', ')}` })
+  @IsIn(CHARGE_COST_ALLOCS, {
+    message: `chgCostAlloc must be one of: ${CHARGE_COST_ALLOCS.join(', ')}`,
+  })
   chgCostAlloc?: string | null;
   @ApiProperty({ format: 'uuid', description: 'GL ledger mapping' })
   @RequiredUuid()
@@ -78,9 +80,9 @@ export class SaveChargeMasterDto {
     format: 'uuid',
     nullable: true,
     description:
-      'Per-charge override of the posting ledger\'s ledTaxId: the inventory.tax_rate_master ' +
+      "Per-charge override of the posting ledger's ledTaxId: the inventory.tax_rate_master " +
       'row this charge is taxed under, so two charges may share one revenue ledger and still ' +
-      'differ on rate. Null — the normal case — inherits the ledger\'s rate. Only meaningful ' +
+      "differ on rate. Null — the normal case — inherits the ledger's rate. Only meaningful " +
       'on a charge that carries its own GST, so it must be null unless chgTaxApl is true and ' +
       'chgBeforeTax is false (DB CHECK ck_chg_tax_id).',
   })
@@ -104,14 +106,16 @@ export class SaveChargeMasterDto {
   @ApiPropertyOptional({
     format: 'uuid',
     nullable: true,
-    description: 'Audit user who created the charge; defaults to the authenticated user when omitted',
+    description:
+      'Audit user who created the charge; defaults to the authenticated user when omitted',
   })
   @OptionalUuid()
   chgCreatedBy?: string;
   @ApiPropertyOptional({
     format: 'uuid',
     nullable: true,
-    description: 'Audit user who last modified the charge; defaults to the authenticated user when omitted',
+    description:
+      'Audit user who last modified the charge; defaults to the authenticated user when omitted',
   })
   @OptionalUuid()
   chgModifiedBy?: string;

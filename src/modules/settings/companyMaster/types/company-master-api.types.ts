@@ -5,8 +5,11 @@ import type {
 } from 'src/common/types/module-api.types';
 export type CompanyMasterErrorDetail = ModuleApiErrorDetail;
 export type CompanyMasterErrorResponse = ModuleApiErrorResponse<CompanyMasterErrorDetail>;
-export type CompanyMasterSuccessResponse<T,TMeta = Record<string, unknown>, TStyles = unknown> =
-ModuleApiSuccessResponse<T,TMeta,TStyles>;
+export type CompanyMasterSuccessResponse<
+  T,
+  TMeta = Record<string, unknown>,
+  TStyles = unknown,
+> = ModuleApiSuccessResponse<T, TMeta, TStyles>;
 export interface CompanyMasterPayload {
   compId: string;
   compCode: string | null;

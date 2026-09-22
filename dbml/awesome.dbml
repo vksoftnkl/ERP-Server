@@ -52,8 +52,9 @@ Table acc_bill_adjustment {
   voucherHeader acc_voucher_header
   tender acc_tender_detail
   cheque acc_pdc_register [note: 'R1: ONE cheque table. Repointed from acc_voucher_cheques to
-acc_pdc_register by 20260915120000 — the register is where every cheque
-this system takes now lives, and two cheque tables meant two answers to
+acc_pdc_register by 20260915120000, and acc_voucher_cheques itself was
+dropped by 20260922080000 — the register is where every cheque this
+system takes now lives, and two cheque tables meant two answers to
 "is it still held?".']
 
   indexes {
@@ -970,87 +971,8 @@ Table acc_tender_types {
   tenderDetails acc_tender_detail [not null]
 }
 
-Table acc_voucher_cheques {
-  chqId String [pk]
-  chqVoucherId String [not null]
-  chqVoucherLineId String
-  chqBillId String
-  chqAccYear String [not null]
-  chqCompanyId String [not null]
-  chqBranchId String [not null]
-  chqVoucherTypeId Int [not null]
-  chqVoucherNo BigInt [not null]
-  chqVoucherDate DateTime [not null]
-  chqVoucherRefno String
-  chqPartyId String [not null]
-  chqSalesmanId String
-  chqUserId String
-  chqSessionId String
-  chqTraType ChequeTraType [not null]
-  chqInstrumentType ChequeInstrumentType [not null, default: 'CHEQUE']
-  chqIsPostDated Boolean [not null, default: false]
-  chqIsAccountPayee Boolean [not null, default: false]
-  chqChequeNo String [not null]
-  chqChequeDate DateTime [not null]
-  chqChequeAmount Decimal [not null, default: 0]
-  chqBankLedgerId String
-  chqBankName String
-  chqBankBranch String
-  chqBankIfsc String
-  chqPayeeName String
-  chqDrawerName String
-  chqIsPrinted Boolean [not null, default: false]
-  chqPrintedOn DateTime
-  chqReceivedOn DateTime
-  chqIssuedOn DateTime
-  chqDepositDate DateTime
-  chqClearDate DateTime
-  chqBounceDate DateTime
-  chqReturnDate DateTime
-  chqCancelledOn DateTime
-  chqStatus ChequeStatus [not null]
-  chqNotes String
-  chqLogText String
-  chqIsActive Boolean [not null, default: true]
-  chqIsDeleted Boolean [not null, default: false]
-  chqSyncDate DateTime
-  chqCreatedOn DateTime [default: `now()`, not null]
-  chqCreatedBy String
-  chqUpdatedOn DateTime
-  chqUpdatedBy String
-  voucherType acc_voucher_types [not null]
-  company companys [not null]
-  branch branch_master [not null]
-
-  indexes {
-    (chqId, chqAccYear) [unique]
-  }
-}
-
-Table acc_voucher_doc_api_log {
-  gdlId String [pk]
-  gdlGdrId String [not null]
-  gdlApiName GdlApiName [not null]
-  gdlActionName GdlActionName [not null]
-  gdlStatus GdlStatus [not null]
-  gdlAttemptNo Int [not null, default: 1]
-  gdlRequestRefNo String
-  gdlExternalRefNo String
-  gdlHttpStatus Int
-  gdlErrorCode String
-  gdlErrorMessage String
-  gdlResponseMessage String
-  gdlRequestPayload Json
-  gdlResponsePayload Json
-  gdlRequestedOn DateTime [default: `now()`, not null]
-  gdlRespondedOn DateTime
-  gdlCreatedOn DateTime [default: `now()`, not null]
-  gdlCreatedBy String
-  docRegister acc_voucher_doc_register [not null]
-}
-
 Table acc_voucher_doc_detail {
-  vtxId String [pk]
+  vtxId String [not null]
   vtxGdrId String [not null]
   vtxVoucherId String [not null]
   vtxRowNo Int [not null]
@@ -1100,11 +1022,15 @@ Table acc_voucher_doc_detail {
   company companys [not null]
   branch branch_master [not null]
   docRegister acc_voucher_doc_register [not null]
+
+  indexes {
+    (vtxId, vtxAccYear) [pk]
+  }
 }
 
 Table acc_voucher_doc_einvoice {
-  gdeId String [pk]
-  gdeGdrId String [unique, not null]
+  gdeId String [not null]
+  gdeGdrId String [not null]
   gdeVoucherId String [not null]
   gdeAccYear String [not null]
   gdeCompanyId String [not null]
@@ -1153,11 +1079,16 @@ the document has been amended these two are the ONLY answer to "what
 did we declare on that date".']
   gdeResponsePayload Json
   docRegister acc_voucher_doc_register [not null]
+
+  indexes {
+    (gdeId, gdeAccYear) [pk]
+    (gdeGdrId, gdeAccYear) [unique]
+  }
 }
 
 Table acc_voucher_doc_ewaybill {
-  gdwId String [pk]
-  gdwGdrId String [unique, not null]
+  gdwId String [not null]
+  gdwGdrId String [not null]
   gdwVoucherId String [not null]
   gdwAccYear String [not null]
   gdwCompanyId String [not null]
@@ -1216,10 +1147,15 @@ plate exactly as the portal received it.']
   gdwExtendedUpto DateTime [note: 'An e-way bill may be extended; the portal returns a new validity.']
   docRegister acc_voucher_doc_register [not null]
   vehicle vehicle_master
+
+  indexes {
+    (gdwId, gdwAccYear) [pk]
+    (gdwGdrId, gdwAccYear) [unique]
+  }
 }
 
 Table acc_voucher_doc_register {
-  gdrId String [pk]
+  gdrId String [not null]
   gdrSourceModule GdrSourceModule [not null]
   gdrTranNature GdrTranNature [not null]
   gdrDocFlow GdrDocFlow [not null]
@@ -1291,10 +1227,13 @@ register lacked.']
   branch branch_master [not null]
   party acc_ledger_master [not null]
   voucherType acc_voucher_types [not null]
-  apiLogs acc_voucher_doc_api_log [not null]
   details acc_voucher_doc_detail [not null]
   einvoice acc_voucher_doc_einvoice
   ewaybill acc_voucher_doc_ewaybill
+
+  indexes {
+    (gdrId, gdrAccYear) [pk]
+  }
 }
 
 Table acc_voucher_header {
@@ -1512,7 +1451,6 @@ Table acc_voucher_types {
   vchrCreatedBy String
   vchrUpdatedOn DateTime
   vchrUpdatedBy String
-  voucherCheques acc_voucher_cheques [not null]
   voucherDocRegisters acc_voucher_doc_register [not null]
   voucherSequences acc_voucher_seq [not null]
   voucherHeaders acc_voucher_header [not null]
@@ -2928,7 +2866,6 @@ Table branch_master {
   openingBalances acc_opening_balance [not null]
   openingRuns acc_opening_run [not null]
   shipAddrs acc_ship_addrs [not null]
-  voucherCheques acc_voucher_cheques [not null]
   voucherDocDetails acc_voucher_doc_detail [not null]
   voucherDocRegisters acc_voucher_doc_register [not null]
   voucherSequences acc_voucher_seq [not null]
@@ -3105,7 +3042,6 @@ the e-invoice applicability rows in StatutoryLimit.']
   deviceMasters device_master [not null]
   UserLoginSession user_login_sessions [not null]
   customers customers [not null]
-  voucherCheques acc_voucher_cheques [not null]
   voucherDocDetails acc_voucher_doc_detail [not null]
   voucherDocRegisters acc_voucher_doc_register [not null]
   voucherSequences acc_voucher_seq [not null]
@@ -3190,17 +3126,6 @@ Table company_group_master {
   cogCreatedBy String
   cogModifiedOn DateTime [default: `now()`, not null]
   cogModifiedBy String
-}
-
-Table configs {
-  configId Int [pk]
-  configName String
-  configValue String
-  configSyncDate DateTime
-  configCreatedBy String
-  configCreatedOn DateTime
-  configModifiedBy String
-  configModifiedOn DateTime
 }
 
 Table fiscal_years {
@@ -3288,11 +3213,12 @@ public.ensure_acc_year_partitions(\'YYYY-YYYY\'), which
 it whenever a fiscal year is opened, or every insert fails with
 "no partition of relation ...".
 
-AccVoucherDocApiLog holds the LAST exchange for a document. This holds
-EVERY exchange, for every document and for the calls that belong to no
-document at all (auth, GSTIN lookup). The two are not redundant: one
-answers "what does this bill look like at the IRP", the other answers
-"what happened at 10:42 when the counter froze".
+This is the only record of what crossed the wire. It holds EVERY exchange,
+for every document and for the calls that belong to no document at all
+(auth, GSTIN lookup). The per-document summary lives on
+acc_voucher_doc_register itself; accounts.acc_voucher_doc_api_log, which
+used to hold the LAST exchange per document, was dropped unused by
+20260922080000.
 
 Rows are written once — no modifiedOn/By, same as TxnStatusLog.'
 }
@@ -10143,51 +10069,6 @@ ix_svi_item     item-wise across vouchers
 ix_svi_lot      which documents touched a lot'
 }
 
-Enum ChequeTraType {
-  R
-  P
-}
-
-Enum ChequeInstrumentType {
-  CHEQUE
-  PDC
-}
-
-Enum ChequeStatus {
-  PENDING
-  IN_HAND
-  ISSUED
-  DEPOSITED
-  CLEARED
-  BOUNCED
-  RETURNED
-  CANCELLED
-}
-
-Enum GdlApiName {
-  EINVOICE
-  EWAYBILL
-  GST
-  OTHER
-}
-
-Enum GdlActionName {
-  GENERATE
-  CANCEL
-  GET_DETAILS
-  UPDATE_VEHICLE
-  EXTEND_VALIDITY
-  PRINT
-  SYNC
-  OTHER
-}
-
-Enum GdlStatus {
-  SUCCESS
-  FAILED
-  PENDING
-}
-
 Enum VoucherDocDetailTaxability {
   TAXABLE
   EXEMPT
@@ -10482,23 +10363,15 @@ Ref: acc_tender_master.tndSurchargeLedgerId > acc_ledger_master.ledId [delete: R
 
 Ref: acc_tender_master.tndBankAccountId > acc_ledger_bank_accounts.lbaId [delete: Restrict]
 
-Ref: acc_voucher_cheques.chqVoucherTypeId > acc_voucher_types.vchrTypeId
-
-Ref: acc_voucher_cheques.chqCompanyId > companys.compId
-
-Ref: acc_voucher_cheques.chqBranchId > branch_master.brId
-
-Ref: acc_voucher_doc_api_log.gdlGdrId > acc_voucher_doc_register.gdrId [delete: Cascade]
-
 Ref: acc_voucher_doc_detail.vtxCompanyId > companys.compId
 
 Ref: acc_voucher_doc_detail.vtxBranchId > branch_master.brId
 
-Ref: acc_voucher_doc_detail.vtxGdrId > acc_voucher_doc_register.gdrId [delete: Cascade]
+Ref: acc_voucher_doc_detail.(vtxGdrId, vtxAccYear) > acc_voucher_doc_register.(gdrId, gdrAccYear) [delete: Cascade]
 
-Ref: acc_voucher_doc_einvoice.gdeGdrId - acc_voucher_doc_register.gdrId [delete: Cascade]
+Ref: acc_voucher_doc_einvoice.(gdeGdrId, gdeAccYear) - acc_voucher_doc_register.(gdrId, gdrAccYear) [delete: Cascade]
 
-Ref: acc_voucher_doc_ewaybill.gdwGdrId - acc_voucher_doc_register.gdrId [delete: Cascade]
+Ref: acc_voucher_doc_ewaybill.(gdwGdrId, gdwAccYear) - acc_voucher_doc_register.(gdrId, gdrAccYear) [delete: Cascade]
 
 Ref: acc_voucher_doc_ewaybill.gdwVehicleId > vehicle_master.vehId [delete: Restrict]
 

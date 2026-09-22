@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsIn, IsOptional } from 'class-validator';
 import {
+  OptionalTrimmedString,
   OptionalDateString,
   OptionalUuid,
   RequiredNumber,
@@ -55,6 +56,16 @@ export class ListOpenItemsQueryDto {
   })
   @OptionalDateString()
   onDate?: string;
+
+  @ApiPropertyOptional({
+    maxLength: 20,
+    description:
+      'HANDOVER 2026-09-20 §7 — keep only the bills whose temporary credit was given to this ' +
+      'mobile number (accounts.acc_temp_credit.atc_mobile). The person at the counter says who ' +
+      'they are, not which bill.',
+  })
+  @OptionalTrimmedString(20)
+  mobile?: string;
 }
 
 /** §4.2 — `GET /receipts/party-context`. Read-only; no paging needed. */

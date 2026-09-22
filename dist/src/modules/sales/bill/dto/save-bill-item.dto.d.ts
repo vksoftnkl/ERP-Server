@@ -14,6 +14,11 @@ export declare class SaveBillItemDto {
     sbiSrcDocLineNo?: number | null;
     sbiSrcItemQty?: string | number | null;
     sbiSrcFreeQty?: string | number | null;
+    sbiSrcItemId?: string | null;
+    sbiBucket?: string | null;
+    sbiLotId?: string | null;
+    sbiPromoUsageId?: string | null;
+    sbiCogsAmt?: string | number | null;
     sbiItemId: string;
     sbiItemUnitId: string;
     sbiToBaseFactor?: string | number;

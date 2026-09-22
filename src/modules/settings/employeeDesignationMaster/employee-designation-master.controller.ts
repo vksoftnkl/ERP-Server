@@ -46,7 +46,7 @@ import { API_VERSION } from '../../../common/constants/api-version';
 export class EmployeeDesignationMasterController {
   constructor(
     private readonly employeeDesignationMasterService: EmployeeDesignationMasterService,
-  ) { }
+  ) {}
 
   @Post('create')
   @Version(API_VERSION)

@@ -161,7 +161,10 @@ describe('POST /stock/opening/create — which tables does it fill', () => {
     await prisma.$disconnect();
   }, 120_000);
 
-  async function makeItem(code: string, batchBased = false): Promise<{ itemId: string; iucId: string }> {
+  async function makeItem(
+    code: string,
+    batchBased = false,
+  ): Promise<{ itemId: string; iucId: string }> {
     const [group] = await prisma.$queryRaw<Array<{ itg_id: string }>>`
       SELECT itg_id FROM inventory.item_group_master LIMIT 1`;
     const [unit] = await prisma.$queryRaw<Array<{ unit_id: string }>>`

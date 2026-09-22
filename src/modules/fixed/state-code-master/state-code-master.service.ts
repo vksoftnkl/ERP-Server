@@ -1,5 +1,8 @@
 import { Injectable } from '@nestjs/common';
-import { ConfiguredGridListResult, ConfiguredGridSqlService } from '../../../common/configured-grid-sql/configured-grid-sql.service';
+import {
+  ConfiguredGridListResult,
+  ConfiguredGridSqlService,
+} from '../../../common/configured-grid-sql/configured-grid-sql.service';
 import { Prisma, StateCode } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
@@ -57,10 +60,20 @@ export class StateCodeMasterService {
     const { page, limit, skip } = resolvePagination(queryDto);
     const result = await runConfiguredGridQuery<StateCodeMasterListItem>(
       this.configuredGridSqlService,
-      { tableName: STATE_CODE_MASTER_TABLE_NAME, alias: 'state_code_master_grid', search: queryDto.search, page, limit, skip },
+      {
+        tableName: STATE_CODE_MASTER_TABLE_NAME,
+        alias: 'state_code_master_grid',
+        search: queryDto.search,
+        page,
+        limit,
+        skip,
+      },
     );
     if (!result) {
-      throwFixedBadRequest<StateCodeMasterErrorDetail, StateCodeMasterErrorResponse>('No configured grid found for state code master list', []);
+      throwFixedBadRequest<StateCodeMasterErrorDetail, StateCodeMasterErrorResponse>(
+        'No configured grid found for state code master list',
+        [],
+      );
     }
     return result;
   }
@@ -141,12 +154,15 @@ export class StateCodeMasterService {
     saveStateCodeMasterDto: SaveStateCodeMasterDto,
     stateCode: string,
   ): Promise<StateCodeMasterPayload> {
-    const normalizedName = normalizeRequiredText<StateCodeMasterErrorDetail, StateCodeMasterErrorResponse>(
-      saveStateCodeMasterDto.stateName,
-      'stateName',
-    );
+    const normalizedName = normalizeRequiredText<
+      StateCodeMasterErrorDetail,
+      StateCodeMasterErrorResponse
+    >(saveStateCodeMasterDto.stateName, 'stateName');
     const now = new Date();
-    const createdBy = resolveActor(saveStateCodeMasterDto.createdBy, this.requestContextService.getUserId());
+    const createdBy = resolveActor(
+      saveStateCodeMasterDto.createdBy,
+      this.requestContextService.getUserId(),
+    );
     const data: Prisma.StateCodeUncheckedCreateInput = {
       stateCode,
       stateName: normalizedName,
@@ -200,16 +216,19 @@ export class StateCodeMasterService {
             `No active state code found with code ${stateCode}`,
           );
         }
-        const normalizedName = normalizeRequiredText<StateCodeMasterErrorDetail, StateCodeMasterErrorResponse>(
-          saveStateCodeMasterDto.stateName,
-          'stateName',
-        );
+        const normalizedName = normalizeRequiredText<
+          StateCodeMasterErrorDetail,
+          StateCodeMasterErrorResponse
+        >(saveStateCodeMasterDto.stateName, 'stateName');
         await this.ensureStateNameIsUnique(tx, normalizedName, stateCode);
         const data: Prisma.StateCodeUncheckedUpdateInput = {
           stateName: normalizedName,
           isDeleted: false,
           modifiedOn: new Date(),
-          modifiedBy: resolveActor(saveStateCodeMasterDto.modifiedBy, this.requestContextService.getUserId()),
+          modifiedBy: resolveActor(
+            saveStateCodeMasterDto.modifiedBy,
+            this.requestContextService.getUserId(),
+          ),
         };
         applyPresentFields(data, saveStateCodeMasterDto, STATE_CODE_MASTER_OPTIONAL_FIELDS);
         const updated = await tx.stateCode.update({ where: { stateCode }, data });
@@ -224,7 +243,10 @@ export class StateCodeMasterService {
             displayName: payload.stateName,
             originalRecord: this.toPayload(existing),
             modifiedRecord: payload,
-            userId: resolveActor(saveStateCodeMasterDto.modifiedBy, this.requestContextService.getUserId()),
+            userId: resolveActor(
+              saveStateCodeMasterDto.modifiedBy,
+              this.requestContextService.getUserId(),
+            ),
             notes: existing.isDeleted ? 'State code restored and updated' : 'State code updated',
           },
           tx,

@@ -43,16 +43,31 @@ export class ItemsTaxMasterService {
     const payload = this.toPayload(record);
     const ledgerNames = await this.loadLedgerNameMap(record);
     payload.tax_sales_ledger_name = this.ledgerName(ledgerNames, record.taxSalesLedgerId);
-    payload.tax_sales_return_ledger_name = this.ledgerName(ledgerNames, record.taxSalesReturnLedgerId);
+    payload.tax_sales_return_ledger_name = this.ledgerName(
+      ledgerNames,
+      record.taxSalesReturnLedgerId,
+    );
     payload.tax_purchase_ledger_name = this.ledgerName(ledgerNames, record.taxPurchaseLedgerId);
     payload.tax_purchase_return_ledger_name = this.ledgerName(
       ledgerNames,
       record.taxPurchaseReturnLedgerId,
     );
-    payload.tax_cgst_output_ledger_name = this.ledgerName(ledgerNames, record.taxCgstOutputLedgerId);
-    payload.tax_sgst_output_ledger_name = this.ledgerName(ledgerNames, record.taxSgstOutputLedgerId);
-    payload.tax_igst_output_ledger_name = this.ledgerName(ledgerNames, record.taxIgstOutputLedgerId);
-    payload.tax_cess_output_ledger_name = this.ledgerName(ledgerNames, record.taxCessOutputLedgerId);
+    payload.tax_cgst_output_ledger_name = this.ledgerName(
+      ledgerNames,
+      record.taxCgstOutputLedgerId,
+    );
+    payload.tax_sgst_output_ledger_name = this.ledgerName(
+      ledgerNames,
+      record.taxSgstOutputLedgerId,
+    );
+    payload.tax_igst_output_ledger_name = this.ledgerName(
+      ledgerNames,
+      record.taxIgstOutputLedgerId,
+    );
+    payload.tax_cess_output_ledger_name = this.ledgerName(
+      ledgerNames,
+      record.taxCessOutputLedgerId,
+    );
     payload.tax_cgst_input_ledger_name = this.ledgerName(ledgerNames, record.taxCgstInputLedgerId);
     payload.tax_sgst_input_ledger_name = this.ledgerName(ledgerNames, record.taxSgstInputLedgerId);
     payload.tax_igst_input_ledger_name = this.ledgerName(ledgerNames, record.taxIgstInputLedgerId);
@@ -152,7 +167,10 @@ export class ItemsTaxMasterService {
       ]);
     }
     const now = new Date();
-    const createdBy = resolveActor(saveItemTaxDto.tax_created_by, this.requestContextService.getUserId());
+    const createdBy = resolveActor(
+      saveItemTaxDto.tax_created_by,
+      this.requestContextService.getUserId(),
+    );
     const modifiedBy = resolveActor(saveItemTaxDto.tax_modified_by, createdBy);
     const data: Prisma.ItemTaxMasterUncheckedCreateInput = {
       taxName,
@@ -209,7 +227,10 @@ export class ItemsTaxMasterService {
         const data: Prisma.ItemTaxMasterUncheckedUpdateInput = {
           taxName,
           taxModifiedOn: new Date(),
-          taxModifiedBy: resolveActor(saveItemTaxDto.tax_modified_by, this.requestContextService.getUserId()),
+          taxModifiedBy: resolveActor(
+            saveItemTaxDto.tax_modified_by,
+            this.requestContextService.getUserId(),
+          ),
         };
         this.applyOptionalFields(data, saveItemTaxDto);
         const updated = await tx.itemTaxMaster.update({ where: { taxId }, data });
@@ -224,7 +245,8 @@ export class ItemsTaxMasterService {
             displayName: payload.tax_name,
             originalRecord: this.toPayload(existing),
             modifiedRecord: payload,
-            userId: payload.tax_modified_by ?? this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
+            userId:
+              payload.tax_modified_by ?? this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
             notes: 'Item tax updated',
           },
           tx,

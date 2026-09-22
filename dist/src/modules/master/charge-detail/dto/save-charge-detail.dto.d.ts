@@ -40,6 +40,9 @@ export declare class SaveChargeDetailDto {
     cdNetAmt?: string | number | null;
     cdRemarks?: string | null;
     cdIsActive?: boolean;
+    cdSrcCdId?: string | null;
+    cdSrcAccYear?: string | null;
+    cdCarryBasis?: string | null;
     cdCreatedBy?: string | null;
     cdModifiedBy?: string | null;
 }

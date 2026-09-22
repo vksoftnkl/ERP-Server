@@ -36,7 +36,7 @@ export class ItemPriceDetailsService {
         `No active item found with barcode ${barcode}`,
       );
     }
-    return this.getByItemId(itemRecord!.itemId);
+    return this.getByItemId(itemRecord.itemId);
   }
   async getByItemId(itemId: string): Promise<ItemPriceDetailPayload> {
     const itemRecord = await this.prisma.itemMaster.findFirst({
@@ -79,7 +79,9 @@ export class ItemPriceDetailsService {
       item_tax: taxRecord ? this.toItemTaxPayload(taxRecord) : null,
     };
   }
-  private toItemPayload(record: ItemMaster & { trackPreset?: { sptName: string } | null }): ItemPayload {
+  private toItemPayload(
+    record: ItemMaster & { trackPreset?: { sptName: string } | null },
+  ): ItemPayload {
     return {
       item_id: record.itemId,
       item_company_id: record.itemCompanyId,

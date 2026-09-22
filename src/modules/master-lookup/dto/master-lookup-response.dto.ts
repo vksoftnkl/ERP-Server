@@ -283,7 +283,9 @@ export class ItemPriceLookupPayloadDto {
   godown_name!: string;
   @ApiProperty({ nullable: true })
   item_code!: string | null;
-  @ApiProperty({ description: 'Regional name (item_name_ta) when regional=true, else the English name.' })
+  @ApiProperty({
+    description: 'Regional name (item_name_ta) when regional=true, else the English name.',
+  })
   item_name!: string;
   @ApiProperty({ nullable: true })
   item_com_code!: string | null;
@@ -328,7 +330,10 @@ export class ItemPriceLookupPayloadDto {
   disc_perc!: number;
   @ApiProperty({ example: 0 })
   disc_qty!: number;
-  @ApiProperty({ nullable: true, description: 'Legacy group scheme discount — no column in current schema, always null' })
+  @ApiProperty({
+    nullable: true,
+    description: 'Legacy group scheme discount — no column in current schema, always null',
+  })
   sch_discount!: number | null;
   @ApiProperty({ example: 0 })
   addl_cess!: number;

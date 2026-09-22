@@ -5,29 +5,44 @@ import { TenderDetailModule } from '../../accountsModule/tenderDetail/tender-det
 import { BillController } from './bill.controller';
 import { BillExceptionFilter } from './bill-exception.filter';
 import { BillService } from './bill.service';
+import { BillLifecycleService } from './bill-lifecycle.service';
+import { BillReadService } from './bill-read.service';
+import { BillBandService } from './bill-band.service';
+import { BillRetenderService } from './bill-retender.service';
 import { SaleOrderModule } from '../sale-order/sale-order.module';
 import { QuotationModule } from '../quotation/quotation.module';
+import { SalesPostingModule } from '../posting/posting.module';
+
+/**
+ * ChargeDetailModule / TenderDetailModule export the services that own the
+ * bill's applied charge lines (txn_charge_detail) and its tendered amounts
+ * (acc_tender_detail).
+ *
+ * SaleOrderModule owns sale_order_item's fulfilment caches; QuotationModule
+ * owns sale_quotation's conversion columns. Both edges point one way.
+ *
+ * SalesPostingModule (A2) is where the legs, the register, the stock movement,
+ * the loyalty ledger, the guards and the settings resolver live — the bill
+ * posts THROUGH it and never grows an engine of its own.
+ */
 @Module({
-  // ChargeDetailModule / TenderDetailModule export the services that own the
-  // bill's applied charge lines (txn_charge_detail) and its tendered amounts
-  // (acc_tender_detail).
-  //
-  // SaleOrderModule exports the service that owns sale_order_item's fulfilment
-  // caches: a bill converted from an order hands it the lines it drew down. The
-  // edge points one way only, so no forwardRef is needed.
-  //
-  // QuotationModule is the same shape: it owns sale_quotation's conversion
-  // columns, and a bill raised from a quotation hands it the reference so the
-  // quote can be stamped CONVERTED.
   imports: [
     AuditLogModule,
     ChargeDetailModule,
     TenderDetailModule,
     SaleOrderModule,
     QuotationModule,
+    SalesPostingModule,
   ],
   controllers: [BillController],
-  providers: [BillService, BillExceptionFilter],
-  exports: [BillService],
+  providers: [
+    BillService,
+    BillReadService,
+    BillLifecycleService,
+    BillBandService,
+    BillRetenderService,
+    BillExceptionFilter,
+  ],
+  exports: [BillService, BillReadService],
 })
 export class BillModule {}

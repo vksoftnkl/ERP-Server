@@ -51,7 +51,7 @@ let GridDetailsService = class GridDetailsService {
                 }
                 : {}),
         };
-        const records = await this.prisma.gridDetails.findMany({
+        const records = (await this.prisma.gridDetails.findMany({
             where,
             orderBy: [{ gridSortOrder: 'asc' }, { gridName: 'asc' }],
             include: {
@@ -60,7 +60,7 @@ let GridDetailsService = class GridDetailsService {
                     orderBy: [{ gridColumnNumber: 'asc' }, { gridColumnId: 'asc' }],
                 },
             },
-        });
+        }));
         return { items: records.map((record) => this.toPayload(record)) };
     }
     async updateColumnWidths(dto) {
@@ -178,7 +178,12 @@ let GridDetailsService = class GridDetailsService {
                 pk: gridId,
                 displayName: existing.gridName ?? `Grid ${gridId}`,
                 originalRecord: this.toPayload({ ...existing, columns: [] }),
-                modifiedRecord: this.toPayload({ ...existing, gridIsDeleted: true, gridStatus: false, columns: [] }),
+                modifiedRecord: this.toPayload({
+                    ...existing,
+                    gridIsDeleted: true,
+                    gridStatus: false,
+                    columns: [],
+                }),
                 userId: actor,
                 notes: 'Grid details soft deleted',
             }, tx);
@@ -318,7 +323,9 @@ let GridDetailsService = class GridDetailsService {
     async upsertColumnInTx(colDto, gridId, actor, tx) {
         const normalizedName = colDto.grid_column_name?.trim();
         if (!normalizedName) {
-            (0, module_service_utils_1.throwFixedBadRequest)('Validation failed', [{ field: 'grid_column_name', message: 'grid_column_name must not be empty' }]);
+            (0, module_service_utils_1.throwFixedBadRequest)('Validation failed', [
+                { field: 'grid_column_name', message: 'grid_column_name must not be empty' },
+            ]);
         }
         if (colDto.grid_column_id) {
             const parsedId = this.parseUuidId('grid_column_id', colDto.grid_column_id);
@@ -395,7 +402,12 @@ let GridDetailsService = class GridDetailsService {
             return null;
         const topLevelTableName = this.configuredGridSqlService.extractTopLevelFromTableName(normalized);
         if (!topLevelTableName) {
-            (0, module_service_utils_1.throwFixedBadRequest)('Invalid grid_sql configuration', [{ field: 'grid_sql', message: 'grid_sql must be a SELECT query with a top-level FROM table' }]);
+            (0, module_service_utils_1.throwFixedBadRequest)('Invalid grid_sql configuration', [
+                {
+                    field: 'grid_sql',
+                    message: 'grid_sql must be a SELECT query with a top-level FROM table',
+                },
+            ]);
         }
         const validation = this.configuredGridSqlService.validateBaseSql({
             sql: normalized,
@@ -456,7 +468,7 @@ let GridDetailsService = class GridDetailsService {
     parseUuidId(field, value) {
         const normalized = value.trim();
         if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(normalized)) {
-            (0, module_service_utils_1.throwFixedBadRequest)("Validation error", [
+            (0, module_service_utils_1.throwFixedBadRequest)('Validation error', [
                 { field, message: `${field} must be a valid UUID` },
             ]);
         }

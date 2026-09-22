@@ -55,13 +55,21 @@ let SupplierGroupService = class SupplierGroupService {
             });
             if (supplierCount > 0) {
                 (0, module_service_utils_1.throwPurchaseBadRequest)('Cannot delete supplier group with active suppliers', [
-                    { field: 'spgId', message: `Supplier group ${spgId} is used by ${supplierCount} supplier(s).` },
+                    {
+                        field: 'spgId',
+                        message: `Supplier group ${spgId} is used by ${supplierCount} supplier(s).`,
+                    },
                 ]);
             }
             const modifiedOn = new Date();
             const result = await tx.supplierGroup.updateMany({
                 where: { spgId, spgIsDeleted: false },
-                data: { spgIsDeleted: true, spgIsActive: false, spgModifiedOn: modifiedOn, spgModifiedBy: this.requestContextService.getUserId() ?? module_service_utils_1.DEFAULT_ACTOR },
+                data: {
+                    spgIsDeleted: true,
+                    spgIsActive: false,
+                    spgModifiedOn: modifiedOn,
+                    spgModifiedBy: this.requestContextService.getUserId() ?? module_service_utils_1.DEFAULT_ACTOR,
+                },
             });
             if (result.count === 0) {
                 (0, module_service_utils_1.throwPurchaseNotFound)('Supplier group not found', 'spgId', `No active supplier group found with id ${spgId}`);

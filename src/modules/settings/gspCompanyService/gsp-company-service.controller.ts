@@ -43,7 +43,7 @@ import { API_VERSION } from '../../../common/constants/api-version';
 @Controller('gsp-company-services')
 @UseFilters(GspCompanyServiceExceptionFilter)
 export class GspCompanyServiceController {
-  constructor(private readonly gspCompanyServiceService: GspCompanyServiceService) { }
+  constructor(private readonly gspCompanyServiceService: GspCompanyServiceService) {}
   @Post('create')
   @Version(API_VERSION)
   @ApiOperation({

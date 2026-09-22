@@ -5,6 +5,7 @@ import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
 import { StockVoucherService } from './stock-voucher.service';
+import { StockPostingService } from '../posting/stock-posting.service';
 import { StockVoucherExceptionFilter } from './stock-voucher-exception.filter';
 import { SaveStockVoucherDto } from './dto/save-stock-voucher.dto';
 import type { StockVoucherTypeRules } from './types/stock-voucher.types';
@@ -187,6 +188,9 @@ describe('StockVoucherService', () => {
       client as unknown as PrismaService,
       auditLogService as unknown as AuditLogService,
       { getUserId: () => USER_ID } as unknown as RequestContextService,
+      // §3.1 — the one stock engine, injected. Handed the same client, so a
+      // posting call still runs inside whatever transaction the test opened.
+      new StockPostingService(client as unknown as PrismaService),
     );
     // Every save reloads the document at the end; the reload itself is raw SQL
     // against tables a unit test has no business standing up.
@@ -2148,7 +2152,7 @@ describe('StockVoucherExceptionFilter — the SQLSTATE map', () => {
     ['23503', 'no item_unit_conversion row for svi_uom_id', 422],
     ['0A000', 'TRANSFER_OUT cannot be posted through fn_svh_post', 409],
   ])('maps meta.code %s to HTTP %i', (sqlState, message, expected) => {
-    filter.catch(engineError(sqlState as string, message as string), host);
+    filter.catch(engineError(sqlState, message), host);
 
     expect(status).toHaveBeenCalledWith(expected);
     // The engine's own wording is passed through: it already names the refno

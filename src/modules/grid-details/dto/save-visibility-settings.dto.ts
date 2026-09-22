@@ -1,7 +1,7 @@
 import { IsArray, IsBoolean, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
-import { RequiredUuid } from "../../../common/dto/dtoDecorators";
+import { RequiredUuid } from '../../../common/dto/dtoDecorators';
 
 export class VisibilitySettingItemDto {
   @ApiProperty({ type: String, description: 'Column serial id to update' })

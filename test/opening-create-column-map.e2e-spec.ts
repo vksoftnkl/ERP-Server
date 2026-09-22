@@ -89,16 +89,32 @@ describe('COLUMN MAP — POST /stock/opening/create', () => {
 
   beforeAll(async () => {
     const claims: AccessTokenPayload = {
-      sub: ACTOR, user_name: 'tester1', sid: 'e2e-colmap', user_type: 'SUPER ADMIN',
-      company_id: SCOPE.companyId, branch_id: SCOPE.branchId, device_id: SCOPE.deviceId,
-      iat: Math.floor(Date.now() / 1000), exp: Math.floor(Date.now() / 1000) + 3600, typ: 'access',
+      sub: ACTOR,
+      user_name: 'tester1',
+      sid: 'e2e-colmap',
+      user_type: 'SUPER ADMIN',
+      company_id: SCOPE.companyId,
+      branch_id: SCOPE.branchId,
+      device_id: SCOPE.deviceId,
+      iat: Math.floor(Date.now() / 1000),
+      exp: Math.floor(Date.now() / 1000) + 3600,
+      typ: 'access',
     };
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
-      .overrideProvider(TokenService).useValue({ verifyAccessToken: (): AccessTokenPayload => claims })
-      .overrideProvider(AuthSessionService).useValue({ assertAccessTokenIsActive: async (): Promise<void> => undefined })
+      .overrideProvider(TokenService)
+      .useValue({ verifyAccessToken: (): AccessTokenPayload => claims })
+      .overrideProvider(AuthSessionService)
+      .useValue({ assertAccessTokenIsActive: async (): Promise<void> => undefined })
       .compile();
     app = moduleRef.createNestApplication();
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true, transformOptions: { enableImplicitConversion: true } }));
+    app.useGlobalPipes(
+      new ValidationPipe({
+        whitelist: true,
+        forbidNonWhitelisted: true,
+        transform: true,
+        transformOptions: { enableImplicitConversion: true },
+      }),
+    );
     app.enableVersioning({ type: VersioningType.URI });
     app.setGlobalPrefix('api');
     await app.init();
@@ -110,17 +126,26 @@ describe('COLUMN MAP — POST /stock/opening/create', () => {
       SELECT unit_id FROM inventory.item_unit_master WHERE unit_name = 'PCS' LIMIT 1`;
     const item = await prisma.itemMaster.create({
       data: {
-        itemCode: `E2E-COLMAP-${tag}`, itemNameEn: `E2E-COLMAP-${tag} (e2e)`,
-        itemGroupId: group.itg_id, itemCompanyId: SCOPE.companyId, itemBranchId: SCOPE.branchId,
-        itemIsBatchBased: true, itemIsExpiryItem: true,
+        itemCode: `E2E-COLMAP-${tag}`,
+        itemNameEn: `E2E-COLMAP-${tag} (e2e)`,
+        itemGroupId: group.itg_id,
+        itemCompanyId: SCOPE.companyId,
+        itemBranchId: SCOPE.branchId,
+        itemIsBatchBased: true,
+        itemIsExpiryItem: true,
       },
       select: { itemId: true },
     });
     itemId = item.itemId;
     const iuc = await prisma.itemUnitConversion.create({
       data: {
-        iucItemId: itemId, iucUnitId: unit.unit_id, iucBaseUnitId: unit.unit_id,
-        iucToBaseFactor: V.toBaseFactor, iucUnitSlno: 1, iucIsBaseUnit: true, iucIsDefaultUnit: true,
+        iucItemId: itemId,
+        iucUnitId: unit.unit_id,
+        iucBaseUnitId: unit.unit_id,
+        iucToBaseFactor: V.toBaseFactor,
+        iucUnitSlno: 1,
+        iucIsBaseUnit: true,
+        iucIsDefaultUnit: true,
       },
       select: { iucId: true },
     });
@@ -155,18 +180,34 @@ describe('COLUMN MAP — POST /stock/opening/create', () => {
         voucherType: 'OPENING',
         ...(status ? { status } : {}),
       },
-      lines: [{
-        lineNo: 1, splitNo: 1,
-        itemId, uomId: iucId, baseUomId: iucId, toBaseFactor: V.toBaseFactor,
-        godownId: SCOPE.godownId, bucket: 'SALEABLE',
-        barcode: V.barcode, batchNo: V.batchNo,
-        mfgDate: V.mfgDate, expiryDate: V.expiryDate,
-        mrp: V.mrp, salePrice: V.salePrice,
-        qty: V.qty, baseQty: V.baseQty,
-        freeQty: V.freeQty, freeBaseQty: V.freeBaseQty, weightQty: V.weightQty,
-        costRate: V.costRate, costRateWot: 0, landedRate: V.landedRate, taxPerc: V.taxPerc,
-        remarks: V.lineRemarks,
-      }],
+      lines: [
+        {
+          lineNo: 1,
+          splitNo: 1,
+          itemId,
+          uomId: iucId,
+          baseUomId: iucId,
+          toBaseFactor: V.toBaseFactor,
+          godownId: SCOPE.godownId,
+          bucket: 'SALEABLE',
+          barcode: V.barcode,
+          batchNo: V.batchNo,
+          mfgDate: V.mfgDate,
+          expiryDate: V.expiryDate,
+          mrp: V.mrp,
+          salePrice: V.salePrice,
+          qty: V.qty,
+          baseQty: V.baseQty,
+          freeQty: V.freeQty,
+          freeBaseQty: V.freeBaseQty,
+          weightQty: V.weightQty,
+          costRate: V.costRate,
+          costRateWot: 0,
+          landedRate: V.landedRate,
+          taxPerc: V.taxPerc,
+          remarks: V.lineRemarks,
+        },
+      ],
     };
   }
 
@@ -189,16 +230,32 @@ describe('COLUMN MAP — POST /stock/opening/create', () => {
     out.push(`--- accounts.acc_voucher_seq (UPDATE, not insert)`);
     out.push(`    seq_last_no                ${seqBefore.n} → ${seqAfter.n}`);
     out.push(`    seq_last_refno             ${seqBefore.r} → ${seqAfter.r}\n`);
-    await dump('stock.stock_voucher', 'SELECT * FROM stock.stock_voucher WHERE svh_id = $1::uuid', [draftId]);
-    await dump('stock.stock_voucher_item', 'SELECT * FROM stock.stock_voucher_item WHERE svi_voucher_id = $1::uuid', [draftId]);
-    await dump('public.txn_status_log', 'SELECT * FROM public.txn_status_log WHERE tsl_src_doc_id = $1::uuid ORDER BY tsl_seq_no', [draftId]);
-    await dump('audit.audit_log', 'SELECT log_action, log_table_name, log_pk, log_display_name, log_notes, log_user_id FROM audit.audit_log WHERE log_pk = $1 ORDER BY log_date', [draftId]);
-    await dump('stock.stock_ledger / stock_lot / stock_balance / stock_item_cost',
+    await dump('stock.stock_voucher', 'SELECT * FROM stock.stock_voucher WHERE svh_id = $1::uuid', [
+      draftId,
+    ]);
+    await dump(
+      'stock.stock_voucher_item',
+      'SELECT * FROM stock.stock_voucher_item WHERE svi_voucher_id = $1::uuid',
+      [draftId],
+    );
+    await dump(
+      'public.txn_status_log',
+      'SELECT * FROM public.txn_status_log WHERE tsl_src_doc_id = $1::uuid ORDER BY tsl_seq_no',
+      [draftId],
+    );
+    await dump(
+      'audit.audit_log',
+      'SELECT log_action, log_table_name, log_pk, log_display_name, log_notes, log_user_id FROM audit.audit_log WHERE log_pk = $1 ORDER BY log_date',
+      [draftId],
+    );
+    await dump(
+      'stock.stock_ledger / stock_lot / stock_balance / stock_item_cost',
       `SELECT 'ledger' AS t, count(*)::text AS rows FROM stock.stock_ledger WHERE sml_src_doc_id = $1::uuid
        UNION ALL SELECT 'lot',      count(*)::text FROM stock.stock_lot      WHERE slt_item_id = $2::uuid
        UNION ALL SELECT 'balance',  count(*)::text FROM stock.stock_balance  WHERE sbl_item_id = $2::uuid
        UNION ALL SELECT 'itemcost', count(*)::text FROM stock.stock_item_cost WHERE sic_item_id = $2::uuid`,
-      [draftId, itemId]);
+      [draftId, itemId],
+    );
   }, 90_000);
 
   it('POSTED — dumps every column the post added', async () => {
@@ -207,19 +264,46 @@ describe('COLUMN MAP — POST /stock/opening/create', () => {
     postedId = res.body.data.header.svhId;
 
     out.push('================ B. status POSTED ================\n');
-    await dump('stock.stock_voucher', 'SELECT * FROM stock.stock_voucher WHERE svh_id = $1::uuid', [postedId]);
-    await dump('stock.stock_voucher_item', 'SELECT * FROM stock.stock_voucher_item WHERE svi_voucher_id = $1::uuid', [postedId]);
-    await dump('stock.stock_ledger', 'SELECT * FROM stock.stock_ledger WHERE sml_src_doc_id = $1::uuid', [postedId]);
-    await dump('stock.stock_lot', 'SELECT * FROM stock.stock_lot WHERE slt_item_id = $1::uuid', [itemId]);
-    await dump('stock.stock_balance', 'SELECT * FROM stock.stock_balance WHERE sbl_item_id = $1::uuid', [itemId]);
-    await dump('stock.stock_item_cost', 'SELECT * FROM stock.stock_item_cost WHERE sic_item_id = $1::uuid', [itemId]);
-    await dump('public.txn_status_log', 'SELECT tsl_seq_no, tsl_event, tsl_from_status, tsl_to_status, tsl_src_doc_refno, tsl_remarks, tsl_changed_by FROM public.txn_status_log WHERE tsl_src_doc_id = $1::uuid ORDER BY tsl_seq_no', [postedId]);
+    await dump('stock.stock_voucher', 'SELECT * FROM stock.stock_voucher WHERE svh_id = $1::uuid', [
+      postedId,
+    ]);
+    await dump(
+      'stock.stock_voucher_item',
+      'SELECT * FROM stock.stock_voucher_item WHERE svi_voucher_id = $1::uuid',
+      [postedId],
+    );
+    await dump(
+      'stock.stock_ledger',
+      'SELECT * FROM stock.stock_ledger WHERE sml_src_doc_id = $1::uuid',
+      [postedId],
+    );
+    await dump('stock.stock_lot', 'SELECT * FROM stock.stock_lot WHERE slt_item_id = $1::uuid', [
+      itemId,
+    ]);
+    await dump(
+      'stock.stock_balance',
+      'SELECT * FROM stock.stock_balance WHERE sbl_item_id = $1::uuid',
+      [itemId],
+    );
+    await dump(
+      'stock.stock_item_cost',
+      'SELECT * FROM stock.stock_item_cost WHERE sic_item_id = $1::uuid',
+      [itemId],
+    );
+    await dump(
+      'public.txn_status_log',
+      'SELECT tsl_seq_no, tsl_event, tsl_from_status, tsl_to_status, tsl_src_doc_refno, tsl_remarks, tsl_changed_by FROM public.txn_status_log WHERE tsl_src_doc_id = $1::uuid ORDER BY tsl_seq_no',
+      [postedId],
+    );
   }, 90_000);
 
   it('puts the stock back', async () => {
     const res = await http.post(`${BASE}/cancel`).set('Authorization', BEARER).send({
-      svhId: postedId, accYear: ACC_YEAR, companyId: SCOPE.companyId,
-      branchId: SCOPE.branchId, userId: ACTOR,
+      svhId: postedId,
+      accYear: ACC_YEAR,
+      companyId: SCOPE.companyId,
+      branchId: SCOPE.branchId,
+      userId: ACTOR,
       reason: 'E2E column map — reversing so the branch nets to zero',
     });
     expect(res.status).toBe(201);

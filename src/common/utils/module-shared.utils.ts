@@ -24,9 +24,7 @@ export interface ModuleErrorDetail {
   field: string;
   message: string;
 }
-export interface ModuleErrorResponse<
-  TErrorDetail extends ModuleErrorDetail = ModuleErrorDetail,
-> {
+export interface ModuleErrorResponse<TErrorDetail extends ModuleErrorDetail = ModuleErrorDetail> {
   success: false;
   message: string;
   errors: TErrorDetail[];
@@ -166,7 +164,7 @@ export function toNumber(value: Prisma.Decimal | number): number {
   if (typeof value === 'number') {
     return value;
   }
-  
+
   return Number(value.toString());
 }
 export function toNullableNumber(value: Prisma.Decimal | number | null): number | null {

@@ -9,8 +9,7 @@ import {
   TrimmedString,
 } from 'src/common/dto/dtoDecorators';
 import { DevicePlatform, DeviceType } from '../types/device-list-master-enum';
-const isDeviceUidRequired = (deviceType?: DeviceType): boolean =>
-  deviceType === DeviceType.DESKTOP;
+const isDeviceUidRequired = (deviceType?: DeviceType): boolean => deviceType === DeviceType.DESKTOP;
 export class SaveDeviceListMasterDto {
   @ApiPropertyOptional({
     format: 'uuid',
@@ -31,7 +30,9 @@ export class SaveDeviceListMasterDto {
     maxLength: 120,
     description: 'Required when devDeviceType is Desktop',
   })
-  @ValidateIf((dto: SaveDeviceListMasterDto) => isDeviceUidRequired(dto.devDeviceType ?? DeviceType.DESKTOP))
+  @ValidateIf((dto: SaveDeviceListMasterDto) =>
+    isDeviceUidRequired(dto.devDeviceType ?? DeviceType.DESKTOP),
+  )
   @TrimmedString(120)
   @IsNotEmpty({ message: 'devDeviceUid is required when devDeviceType is Desktop' })
   devDeviceUid?: string;

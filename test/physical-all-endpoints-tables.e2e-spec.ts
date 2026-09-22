@@ -247,7 +247,8 @@ describe('/stock/physical — all 7 routes, which tables each one writes', () =>
     const res = await probe(
       'POST /create',
       `DRAFT count (${lines.length} line${lines.length > 1 ? 's' : ''}: +${VARIANCE}${shortage ? ', −1' : ''})`,
-      () => http.post(`${BASE}/create`).set('Authorization', BEARER).send({ header: header(), lines }),
+      () =>
+        http.post(`${BASE}/create`).set('Authorization', BEARER).send({ header: header(), lines }),
       'svi_book_qty is READ from stock_balance, never taken from the payload',
     );
     expect(res.status).toBe(201);
@@ -293,13 +294,20 @@ describe('/stock/physical — all 7 routes, which tables each one writes', () =>
     const list = await probe(
       'GET /get',
       'list counts for the scope (no svhId)',
-      () => http.get(`${BASE}/get`).set('Authorization', BEARER).query({ ...scopeQuery, limit: 5 }),
+      () =>
+        http
+          .get(`${BASE}/get`)
+          .set('Authorization', BEARER)
+          .query({ ...scopeQuery, limit: 5 }),
       'this route lists as well as loads — the opening route does not',
     );
     expect(list.status).toBe(200);
 
     const one = await probe('GET /get', 'load one count by svhId', () =>
-      http.get(`${BASE}/get`).set('Authorization', BEARER).query({ ...scopeQuery, svhId: draftId }),
+      http
+        .get(`${BASE}/get`)
+        .set('Authorization', BEARER)
+        .query({ ...scopeQuery, svhId: draftId }),
     );
     expect(one.status).toBe(200);
     expect(one.body.data.header.svhId).toBe(draftId);
@@ -414,24 +422,30 @@ describe('/stock/physical — all 7 routes, which tables each one writes', () =>
   // ── The drift check, on purpose ─────────────────────────────────────────
   it('POST /post — refuses a sheet whose book figure moved under it', async () => {
     // Draft D counts lot X at its current book figure...
-    const drifted = await probe('POST /create', 'DRAFT counting a lot at book (for the drift case)', () =>
-      http
-        .post(`${BASE}/create`)
-        .set('Authorization', BEARER)
-        .send({ header: header(), lines: [countLine(shortage!, 1, Number(shortage!.bookQty))] }),
+    const drifted = await probe(
+      'POST /create',
+      'DRAFT counting a lot at book (for the drift case)',
+      () =>
+        http
+          .post(`${BASE}/create`)
+          .set('Authorization', BEARER)
+          .send({ header: header(), lines: [countLine(shortage!, 1, Number(shortage!.bookQty))] }),
     );
     expect(drifted.status).toBe(201);
     const driftedId = drifted.body.data.header.svhId;
 
     // ...then a second count moves the same holding and posts.
-    const mover = await probe('POST /create', 'a second count posts a variance on that same lot', () =>
-      http
-        .post(`${BASE}/create`)
-        .set('Authorization', BEARER)
-        .send({
-          header: header({ status: 'POSTED' }),
-          lines: [countLine(shortage!, 1, Number(shortage!.bookQty) + 1)],
-        }),
+    const mover = await probe(
+      'POST /create',
+      'a second count posts a variance on that same lot',
+      () =>
+        http
+          .post(`${BASE}/create`)
+          .set('Authorization', BEARER)
+          .send({
+            header: header({ status: 'POSTED' }),
+            lines: [countLine(shortage!, 1, Number(shortage!.bookQty) + 1)],
+          }),
     );
     expect(mover.status).toBe(201);
     const moverId = mover.body.data.header.svhId;
@@ -455,7 +469,12 @@ describe('/stock/physical — all 7 routes, which tables each one writes', () =>
       await http
         .post(`${BASE}/cancel`)
         .set('Authorization', BEARER)
-        .send({ svhId: id, ...scopeQuery, userId: ACTOR, reason: 'E2E-PHY drift probe — reversing' });
+        .send({
+          svhId: id,
+          ...scopeQuery,
+          userId: ACTOR,
+          reason: 'E2E-PHY drift probe — reversing',
+        });
     }
   }, 120_000);
 

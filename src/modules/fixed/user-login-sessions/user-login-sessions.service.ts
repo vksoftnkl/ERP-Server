@@ -1,5 +1,8 @@
 import { Injectable } from '@nestjs/common';
-import { ConfiguredGridListResult, ConfiguredGridSqlService } from '../../../common/configured-grid-sql/configured-grid-sql.service';
+import {
+  ConfiguredGridListResult,
+  ConfiguredGridSqlService,
+} from '../../../common/configured-grid-sql/configured-grid-sql.service';
 import { Prisma, UserLoginSession } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
@@ -62,10 +65,21 @@ export class UserLoginSessionsService {
     const { page, limit, skip } = resolvePagination(queryDto);
     const result = await runConfiguredGridQuery<UserLoginSessionsListItem>(
       this.configuredGridSqlService,
-      { tableName: USER_LOGIN_SESSIONS_TABLE_NAME, alias: 'user_login_sessions_grid', search: queryDto.search, page, limit, skip },
+      {
+        tableName: USER_LOGIN_SESSIONS_TABLE_NAME,
+        alias: 'user_login_sessions_grid',
+        search: queryDto.search,
+        page,
+        limit,
+        skip,
+      },
     );
     if (!result) {
-      throwFixedNotFound<UserLoginSessionsErrorDetail, UserLoginSessionsErrorResponse>('No configured grid found for user login sessions list', 'list', 'No configured grid found');
+      throwFixedNotFound<UserLoginSessionsErrorDetail, UserLoginSessionsErrorResponse>(
+        'No configured grid found for user login sessions list',
+        'list',
+        'No configured grid found',
+      );
     }
     return result;
   }
@@ -148,7 +162,10 @@ export class UserLoginSessionsService {
     saveUserLoginSessionDto: SaveUserLoginSessionDto,
   ): Promise<UserLoginSessionsPayload> {
     const now = new Date();
-    const createdBy = resolveActor(saveUserLoginSessionDto.ulsCreatedBy, this.requestContextService.getUserId());
+    const createdBy = resolveActor(
+      saveUserLoginSessionDto.ulsCreatedBy,
+      this.requestContextService.getUserId(),
+    );
     const modifiedBy = resolveActor(saveUserLoginSessionDto.ulsModifiedBy, createdBy);
     const data: Prisma.UserLoginSessionUncheckedCreateInput = {
       ulsCompanyId: saveUserLoginSessionDto.ulsCompanyId,
@@ -210,7 +227,10 @@ export class UserLoginSessionsService {
           ulsBranchId: saveUserLoginSessionDto.ulsBranchId,
           ulsUserId: saveUserLoginSessionDto.ulsUserId,
           ulsModifiedOn: new Date(),
-          ulsModifiedBy: resolveActor(saveUserLoginSessionDto.ulsModifiedBy, this.requestContextService.getUserId()),
+          ulsModifiedBy: resolveActor(
+            saveUserLoginSessionDto.ulsModifiedBy,
+            this.requestContextService.getUserId(),
+          ),
         };
         applyPresentFields(data, saveUserLoginSessionDto, USER_LOGIN_SESSION_OPTIONAL_FIELDS);
         const updated = await tx.userLoginSession.update({ where: { ulsId }, data });
@@ -225,7 +245,10 @@ export class UserLoginSessionsService {
             displayName: payload.ulsSessionId ?? payload.ulsId,
             originalRecord: this.toPayload(existing),
             modifiedRecord: payload,
-            userId: resolveActor(saveUserLoginSessionDto.ulsModifiedBy, this.requestContextService.getUserId()),
+            userId: resolveActor(
+              saveUserLoginSessionDto.ulsModifiedBy,
+              this.requestContextService.getUserId(),
+            ),
             notes: 'User login session updated',
           },
           tx,

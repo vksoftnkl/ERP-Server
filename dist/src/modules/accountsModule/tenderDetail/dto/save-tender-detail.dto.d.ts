@@ -1,5 +1,15 @@
 import { TenderDrCr, TenderSettleStatus, TenderSrcDocType, TenderSrcModule } from '../types/tender-detail-api.types';
+export declare class TenderTempCreditDto {
+    name: string;
+    mobile: string;
+    place?: string | null;
+    addr?: string | null;
+    idRef?: string | null;
+    days?: number;
+    notes?: string | null;
+}
 export declare class SaveTenderDetailDto {
+    tempCredit?: TenderTempCreditDto | null;
     tdId?: string;
     tdSrcModule?: TenderSrcModule;
     tdSrcDocType?: TenderSrcDocType;

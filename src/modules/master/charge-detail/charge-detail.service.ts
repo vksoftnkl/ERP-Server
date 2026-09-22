@@ -52,6 +52,9 @@ const CHARGE_DETAIL_AUDIT: ChargeDocumentAudit = {
 // references (cdChgId / cdLedgerCode) and cdVoucherNo are set explicitly, so
 // they are intentionally excluded here.
 const CHARGE_DETAIL_OPTIONAL_FIELDS = [
+  'cdSrcCdId',
+  'cdSrcAccYear',
+  'cdCarryBasis',
   'cdChgName',
   'cdRole',
   'cdMethod',

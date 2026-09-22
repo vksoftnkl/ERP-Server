@@ -55,14 +55,14 @@ describe('opening-balances (e2e — live DB)', () => {
   let expensesGroupId: string;
   let noNatureGroupId: string;
 
-  let cashLedgerId: string;      // Assets
-  let capitalLedgerId: string;   // Liabilities
-  let debtorLedgerId: string;    // Assets, bill-by-bill
-  let salesLedgerId: string;     // Income  — must be refused an opening
-  let retainedLedgerId: string;  // Liabilities — the RETAINED_EARNINGS role
-  let diffLedgerId: string;      // Liabilities — the OPENING_DIFFERENCE role
+  let cashLedgerId: string; // Assets
+  let capitalLedgerId: string; // Liabilities
+  let debtorLedgerId: string; // Assets, bill-by-bill
+  let salesLedgerId: string; // Income  — must be refused an opening
+  let retainedLedgerId: string; // Liabilities — the RETAINED_EARNINGS role
+  let diffLedgerId: string; // Liabilities — the OPENING_DIFFERENCE role
   let unclassifiedLedgerId: string;
-  let foreignLedgerId: string;   // owned by otherCompanyId
+  let foreignLedgerId: string; // owned by otherCompanyId
 
   const post = (path: string, body: Record<string, unknown>) =>
     request(app.getHttpServer()).post(`${BASE}/${path}`).set('Authorization', BEARER).send(body);
@@ -80,7 +80,13 @@ describe('opening-balances (e2e — live DB)', () => {
         ablBillType: 'OPENING',
         ablIsDeleted: false,
       },
-      select: { ablId: true, ablDocRefno: true, ablDocDate: true, ablDrCr: true, ablBillAmount: true },
+      select: {
+        ablId: true,
+        ablDocRefno: true,
+        ablDocDate: true,
+        ablDrCr: true,
+        ablBillAmount: true,
+      },
       orderBy: { ablDocRefno: 'asc' },
     });
     return bills.map((bill) => ({
@@ -225,7 +231,9 @@ describe('opening-balances (e2e — live DB)', () => {
     retainedLedgerId = await makeLedger('E2E_OB_Retained', liabilitiesGroupId);
     diffLedgerId = await makeLedger('E2E_OB_Difference', liabilitiesGroupId);
     unclassifiedLedgerId = await makeLedger('E2E_OB_Unclassified', noNatureGroupId);
-    foreignLedgerId = await makeLedger('E2E_OB_Foreign', assetsGroupId, { ownerId: otherCompanyId });
+    foreignLedgerId = await makeLedger('E2E_OB_Foreign', assetsGroupId, {
+      ownerId: otherCompanyId,
+    });
 
     // The two roles, mapped for this company only — seeded by 20260915090000.
     await prisma.accLedgerMap.createMany({
@@ -378,7 +386,12 @@ describe('opening-balances (e2e — live DB)', () => {
     expect(res.body.data.created).toBe(1);
 
     const rows = await prisma.accOpeningBalance.findMany({
-      where: { opCompanyId: companyId, opAccYear: FROM_YEAR, opLedgerId: cashLedgerId, opIsDeleted: false },
+      where: {
+        opCompanyId: companyId,
+        opAccYear: FROM_YEAR,
+        opLedgerId: cashLedgerId,
+        opIsDeleted: false,
+      },
       select: { opBranchId: true, opAmount: true },
     });
     expect(rows).toHaveLength(2);
@@ -439,8 +452,14 @@ describe('opening-balances (e2e — live DB)', () => {
     // true unless the transform reads the raw value. Every ?flag=false in this
     // API depended on that being got right.
     const absent = await get('list', `companyId=${companyId}&accYear=${FROM_YEAR}`);
-    const explicitTrue = await get('list', `companyId=${companyId}&accYear=${FROM_YEAR}&includeZero=true`);
-    const explicitFalse = await get('list', `companyId=${companyId}&accYear=${FROM_YEAR}&includeZero=false`);
+    const explicitTrue = await get(
+      'list',
+      `companyId=${companyId}&accYear=${FROM_YEAR}&includeZero=true`,
+    );
+    const explicitFalse = await get(
+      'list',
+      `companyId=${companyId}&accYear=${FROM_YEAR}&includeZero=false`,
+    );
 
     // Absent defaults to the whole chart, and matches an explicit true.
     expect(absent.body.data.rows.length).toBe(explicitTrue.body.data.rows.length);
@@ -487,7 +506,12 @@ describe('opening-balances (e2e — live DB)', () => {
     expect(cleared.body.data.deleted).toBe(1);
 
     const left = await prisma.accOpeningBalance.count({
-      where: { opCompanyId: companyId, opAccYear: FROM_YEAR, opBranchId: branchId, opIsDeleted: false },
+      where: {
+        opCompanyId: companyId,
+        opAccYear: FROM_YEAR,
+        opBranchId: branchId,
+        opIsDeleted: false,
+      },
     });
     expect(left).toBe(0);
   });
@@ -584,7 +608,9 @@ describe('opening-balances (e2e — live DB)', () => {
       accYear: FROM_YEAR,
       partyId: debtorLedgerId,
       // No ablId, so this is an insert — and the reference is already taken.
-      bills: [{ ablDocRefno: 'E2E/OB/1', ablDocDate: '2026-05-10', ablDrCr: 'DR', ablBillAmount: 1 }],
+      bills: [
+        { ablDocRefno: 'E2E/OB/1', ablDocDate: '2026-05-10', ablDrCr: 'DR', ablBillAmount: 1 },
+      ],
     });
 
     expect(res.status).toBe(400);
@@ -629,7 +655,12 @@ describe('opening-balances (e2e — live DB)', () => {
 
   it("refuses an opId that names another party's opening", async () => {
     const otherOpening = await prisma.accOpeningBalance.findFirst({
-      where: { opCompanyId: companyId, opAccYear: FROM_YEAR, opLedgerId: cashLedgerId, opIsDeleted: false },
+      where: {
+        opCompanyId: companyId,
+        opAccYear: FROM_YEAR,
+        opLedgerId: cashLedgerId,
+        opIsDeleted: false,
+      },
       select: { opId: true },
     });
 
@@ -706,7 +737,12 @@ describe('opening-balances (e2e — live DB)', () => {
 
   it('refuses deleting an opening that still has bills', async () => {
     const opening = await prisma.accOpeningBalance.findFirst({
-      where: { opCompanyId: companyId, opAccYear: FROM_YEAR, opLedgerId: debtorLedgerId, opIsDeleted: false },
+      where: {
+        opCompanyId: companyId,
+        opAccYear: FROM_YEAR,
+        opLedgerId: debtorLedgerId,
+        opIsDeleted: false,
+      },
       select: { opId: true },
     });
 
@@ -773,7 +809,12 @@ describe('opening-balances (e2e — live DB)', () => {
 
     // The party's carried opening is the total of its carried bills.
     const partyOpening = await prisma.accOpeningBalance.findFirst({
-      where: { opCompanyId: companyId, opAccYear: TO_YEAR, opLedgerId: debtorLedgerId, opIsDeleted: false },
+      where: {
+        opCompanyId: companyId,
+        opAccYear: TO_YEAR,
+        opLedgerId: debtorLedgerId,
+        opIsDeleted: false,
+      },
       select: { opId: true, opAmount: true, opDrCr: true },
     });
     // 100000 + 98400 - 2300 + 50000
@@ -815,7 +856,12 @@ describe('opening-balances (e2e — live DB)', () => {
     // company-level ledger loop — its protection has to come from the bill
     // carry itself.
     const opening = await prisma.accOpeningBalance.findFirst({
-      where: { opCompanyId: companyId, opAccYear: TO_YEAR, opLedgerId: debtorLedgerId, opIsDeleted: false },
+      where: {
+        opCompanyId: companyId,
+        opAccYear: TO_YEAR,
+        opLedgerId: debtorLedgerId,
+        opIsDeleted: false,
+      },
       select: { opId: true },
     });
     await prisma.accOpeningBalance.update({
@@ -848,14 +894,27 @@ describe('opening-balances (e2e — live DB)', () => {
 
   it('flips an edited CARRY_FORWARD row to MANUAL, and the next run then spares it', async () => {
     const carried = await prisma.accOpeningBalance.findFirst({
-      where: { opCompanyId: companyId, opAccYear: TO_YEAR, opLedgerId: cashLedgerId, opIsDeleted: false },
+      where: {
+        opCompanyId: companyId,
+        opAccYear: TO_YEAR,
+        opLedgerId: cashLedgerId,
+        opIsDeleted: false,
+      },
       select: { opId: true },
     });
 
     const edited = await post('create', {
       opCompanyId: companyId,
       opAccYear: TO_YEAR,
-      rows: [{ opId: carried!.opId, opLedgerId: cashLedgerId, opAmount: 95000, opDrCr: 'D', opSource: 'CARRY_FORWARD' }],
+      rows: [
+        {
+          opId: carried!.opId,
+          opLedgerId: cashLedgerId,
+          opAmount: 95000,
+          opDrCr: 'D',
+          opSource: 'CARRY_FORWARD',
+        },
+      ],
     });
 
     expect(edited.status).toBe(201);
@@ -887,7 +946,12 @@ describe('opening-balances (e2e — live DB)', () => {
 
   it('re-saving a CARRY_FORWARD row unchanged keeps it CARRY_FORWARD', async () => {
     const row = await prisma.accOpeningBalance.findFirst({
-      where: { opCompanyId: companyId, opAccYear: TO_YEAR, opLedgerId: capitalLedgerId, opIsDeleted: false },
+      where: {
+        opCompanyId: companyId,
+        opAccYear: TO_YEAR,
+        opLedgerId: capitalLedgerId,
+        opIsDeleted: false,
+      },
       select: { opId: true, opAmount: true, opDrCr: true },
     });
 

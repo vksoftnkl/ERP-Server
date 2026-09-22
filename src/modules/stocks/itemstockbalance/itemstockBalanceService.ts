@@ -32,16 +32,12 @@ const MAX_BATCH_OPTION_LIMIT = 100;
 export class ItemStockBalanceService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async getByScope(
-    queryDto: GetItemStockBalanceQueryDto,
-  ): Promise<ItemStockBalancePayload[]> {
+  async getByScope(queryDto: GetItemStockBalanceQueryDto): Promise<ItemStockBalancePayload[]> {
     const unitFactorsByUnitId = await this.getItemPriceUnitFactors(
       queryDto.isb_item_id,
       queryDto.isb_unit_id,
     );
-    const stockUnitIds = Array.from(
-      new Set([queryDto.isb_unit_id, ...unitFactorsByUnitId.keys()]),
-    );
+    const stockUnitIds = Array.from(new Set([queryDto.isb_unit_id, ...unitFactorsByUnitId.keys()]));
     const where: Prisma.ItemStockBalanceWhereInput = {
       isbAccYear: queryDto.isb_acc_year,
       isbCompanyId: queryDto.isb_company_id,
@@ -125,7 +121,13 @@ export class ItemStockBalanceService {
     const [items, units, godowns, priceMasters] = await Promise.all([
       this.prisma.itemMaster.findMany({
         where: { itemId: { in: allItemIds }, itemIsDeleted: false },
-        select: { itemId: true, itemNameEn: true, itemCode: true, itemDefaultBarcode: true, itemBaseUnitId: true },
+        select: {
+          itemId: true,
+          itemNameEn: true,
+          itemCode: true,
+          itemDefaultBarcode: true,
+          itemBaseUnitId: true,
+        },
       }),
       this.prisma.unit.findMany({
         where: { unit_id: { in: allUnitIds } },
@@ -137,7 +139,23 @@ export class ItemStockBalanceService {
       }),
       this.prisma.itemPriceMaster.findMany({
         where: { ipmItemId: { in: allItemIds }, ipmIsDeleted: false },
-        select: { ipmItemId: true, ipmId: true, ipmUcUnitId: true, ipmGodownId: true, ipmCostPrice: true, ipmCostWot: true, ipmMaxPrice: true, itemUnitConversion: { select: { iucUnitId: true, iucBaseUnitId: true, iucToBaseFactor: true, iucUnitFactor: true } } },
+        select: {
+          ipmItemId: true,
+          ipmId: true,
+          ipmUcUnitId: true,
+          ipmGodownId: true,
+          ipmCostPrice: true,
+          ipmCostWot: true,
+          ipmMaxPrice: true,
+          itemUnitConversion: {
+            select: {
+              iucUnitId: true,
+              iucBaseUnitId: true,
+              iucToBaseFactor: true,
+              iucUnitFactor: true,
+            },
+          },
+        },
       }),
     ]);
 
@@ -165,7 +183,9 @@ export class ItemStockBalanceService {
       .map((balance) => {
         const item = itemsById.get(balance.isbItemId)!;
         const price =
-          priceByItemUnitGodown.get(`${balance.isbItemId}:${balance.isbUnitId}:${balance.isbGodownId}`) ??
+          priceByItemUnitGodown.get(
+            `${balance.isbItemId}:${balance.isbUnitId}:${balance.isbGodownId}`,
+          ) ??
           priceByItemUnit.get(`${balance.isbItemId}:${balance.isbUnitId}`) ??
           null;
         const toBaseFactor = price
@@ -208,9 +228,7 @@ export class ItemStockBalanceService {
       queryDto.ibs_item_id,
       queryDto.ibs_unit_id,
     );
-    const stockUnitIds = Array.from(
-      new Set([queryDto.ibs_unit_id, ...unitFactorsByUnitId.keys()]),
-    );
+    const stockUnitIds = Array.from(new Set([queryDto.ibs_unit_id, ...unitFactorsByUnitId.keys()]));
     const where: Prisma.ItemBatchStockWhereInput = {
       ibsAccYear: queryDto.ibs_acc_year,
       ibsCompanyId: queryDto.ibs_company_id,
@@ -249,10 +267,7 @@ export class ItemStockBalanceService {
       ),
     );
   }
-  async getPriceMasterByItemAndUnit(
-    itemId: string,
-    unitId: string,
-  ): Promise<ItemPricePayload[]> {
+  async getPriceMasterByItemAndUnit(itemId: string, unitId: string): Promise<ItemPricePayload[]> {
     const records = await this.prisma.itemPriceMaster.findMany({
       where: {
         ipmItemId: itemId,
@@ -439,8 +454,7 @@ export class ItemStockBalanceService {
     unitFactorsByUnitId: Map<string, number>,
   ): number {
     const unitFactor =
-      unitFactorsByUnitId.get(record.isbUnitId) ??
-      unitFactorsByUnitId.get(queryDto.isb_unit_id);
+      unitFactorsByUnitId.get(record.isbUnitId) ?? unitFactorsByUnitId.get(queryDto.isb_unit_id);
     if (unitFactor === undefined) {
       this.throwItemPriceMasterNotFound(record.isbItemId, record.isbUnitId);
     }

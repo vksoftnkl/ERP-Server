@@ -77,12 +77,7 @@ const SCREEN_AUDIT_FIELD_REFERENCE_TYPES = new Map([
             ['Parent Group ID', 'accountGroup'],
         ]),
     ],
-    [
-        'Account Ledger Master',
-        createAuditReferenceTypeMap([
-            ['Group ID', 'accountGroup'],
-        ]),
-    ],
+    ['Account Ledger Master', createAuditReferenceTypeMap([['Group ID', 'accountGroup']])],
     [
         'Category Master',
         createAuditReferenceTypeMap([
@@ -232,21 +227,21 @@ let AuditLogService = class AuditLogService {
         };
         const [records, total] = await Promise.all([
             this.prisma.auditLog.findMany(findArgs),
-            includeTotal
-                ? this.prisma.auditLog.count({ where })
-                : Promise.resolve(null),
+            includeTotal ? this.prisma.auditLog.count({ where }) : Promise.resolve(null),
         ]);
         const preparedRecords = records.map((r) => this.prepareAuditLogListRecord(r));
-        const userIds = [...new Set(records.map((r) => r.logUserId).filter((id) => id !== null))];
-        const branchIds = [...new Set(records.map((r) => r.logBranchId).filter((id) => id !== null))];
+        const userIds = [
+            ...new Set(records.map((r) => r.logUserId).filter((id) => id !== null)),
+        ];
+        const branchIds = [
+            ...new Set(records.map((r) => r.logBranchId).filter((id) => id !== null)),
+        ];
         const [userNameById, branchNameById, auditReferenceNameLookup] = await Promise.all([
             this.getUserNameByIds(userIds),
             this.getBranchNameByIds(branchIds),
             this.getAuditReferenceNameLookup(preparedRecords),
         ]);
-        const nextCursor = records.length === limit
-            ? (records[records.length - 1]?.logId ?? null)
-            : null;
+        const nextCursor = records.length === limit ? (records[records.length - 1]?.logId ?? null) : null;
         return {
             items: preparedRecords.map((r) => this.toListItem(r, userNameById, branchNameById, auditReferenceNameLookup)),
             meta: {
@@ -273,9 +268,7 @@ let AuditLogService = class AuditLogService {
         const dateFrom = queryDto.date_from
             ? this.parseDateBoundary(queryDto.date_from, 'start')
             : undefined;
-        const dateTo = queryDto.date_to
-            ? this.parseDateBoundary(queryDto.date_to, 'end')
-            : undefined;
+        const dateTo = queryDto.date_to ? this.parseDateBoundary(queryDto.date_to, 'end') : undefined;
         if (dateFrom && dateTo && dateFrom > dateTo) {
             throw new common_1.BadRequestException('date_from must be less than or equal to date_to');
         }
@@ -593,10 +586,7 @@ let AuditLogService = class AuditLogService {
             return null;
         }
         for (const auditField of auditFields) {
-            const candidateFieldNames = [
-                auditField.sourceFieldName,
-                auditField.targetFieldName,
-            ].filter((fieldName) => Boolean(fieldName));
+            const candidateFieldNames = [auditField.sourceFieldName, auditField.targetFieldName].filter((fieldName) => Boolean(fieldName));
             for (const candidateFieldName of candidateFieldNames) {
                 const candidateTokens = this.buildAuditFieldLookupTokens(candidateFieldName);
                 if (candidateTokens.some((token) => lookupTokens.has(token))) {

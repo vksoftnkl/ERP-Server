@@ -44,7 +44,14 @@ let StateCodeMasterService = class StateCodeMasterService {
     }
     async list(queryDto) {
         const { page, limit, skip } = (0, module_list_utils_1.resolvePagination)(queryDto);
-        const result = await (0, module_list_utils_1.runConfiguredGridQuery)(this.configuredGridSqlService, { tableName: STATE_CODE_MASTER_TABLE_NAME, alias: 'state_code_master_grid', search: queryDto.search, page, limit, skip });
+        const result = await (0, module_list_utils_1.runConfiguredGridQuery)(this.configuredGridSqlService, {
+            tableName: STATE_CODE_MASTER_TABLE_NAME,
+            alias: 'state_code_master_grid',
+            search: queryDto.search,
+            page,
+            limit,
+            skip,
+        });
         if (!result) {
             (0, module_service_utils_1.throwFixedBadRequest)('No configured grid found for state code master list', []);
         }

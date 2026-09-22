@@ -258,7 +258,10 @@ export class ItemsReorderMasterService {
     this.validateReorderRange(saveItemReorderDto);
 
     const now = new Date();
-    const createdBy = resolveActor(saveItemReorderDto.ir_created_by, this.requestContextService.getUserId());
+    const createdBy = resolveActor(
+      saveItemReorderDto.ir_created_by,
+      this.requestContextService.getUserId(),
+    );
     const modifiedBy = resolveActor(saveItemReorderDto.ir_modified_by, createdBy);
     const data: Prisma.ItemReorderUncheckedCreateInput = {
       irItemId: saveItemReorderDto.ir_item_id,
@@ -314,7 +317,10 @@ export class ItemsReorderMasterService {
       irItemId: saveItemReorderDto.ir_item_id,
       irUcUnitId: saveItemReorderDto.ir_unit_id ?? null,
       irModifiedOn: new Date(),
-      irModifiedBy: resolveActor(saveItemReorderDto.ir_modified_by, this.requestContextService.getUserId()),
+      irModifiedBy: resolveActor(
+        saveItemReorderDto.ir_modified_by,
+        this.requestContextService.getUserId(),
+      ),
     };
     this.applyOptionalFields(data, saveItemReorderDto);
 
@@ -347,8 +353,7 @@ export class ItemsReorderMasterService {
       data.irBranchId = saveItemReorderDto.ir_branch_id;
     if (hasOwnProperty(saveItemReorderDto, 'ir_godown_id'))
       data.irGodownId = saveItemReorderDto.ir_godown_id;
-    if (hasOwnProperty(saveItemReorderDto, 'ir_sl_no'))
-      data.irSlNo = saveItemReorderDto.ir_sl_no;
+    if (hasOwnProperty(saveItemReorderDto, 'ir_sl_no')) data.irSlNo = saveItemReorderDto.ir_sl_no;
     if (hasOwnProperty(saveItemReorderDto, 'ir_min_level'))
       data.irMinLevel = saveItemReorderDto.ir_min_level;
     if (hasOwnProperty(saveItemReorderDto, 'ir_max_level'))

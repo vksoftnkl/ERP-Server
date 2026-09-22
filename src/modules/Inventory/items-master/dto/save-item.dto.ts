@@ -63,7 +63,11 @@ export class SaveItemDto {
   @OptionalUuid()
   item_id?: string;
 
-  @ApiPropertyOptional({ format: 'uuid', nullable: true, description: 'Company UUID this item belongs to.' })
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description: 'Company UUID this item belongs to.',
+  })
   @OptionalUuid()
   item_company_id?: string;
 

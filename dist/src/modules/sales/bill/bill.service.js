@@ -10,8 +10,8 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.BillService = void 0;
+exports.flatTransportOf = flatTransportOf;
 const common_1 = require("@nestjs/common");
-const client_1 = require("@prisma/client");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const audit_log_service_1 = require("../../audit-log/audit-log.service");
 const bill_api_types_1 = require("./types/bill-api.types");
@@ -24,8 +24,14 @@ const tender_detail_service_1 = require("../../accountsModule/tenderDetail/tende
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
 const voucher_sequence_helper_1 = require("../../../common/Sequence/voucher-sequence.helper");
-const bill_posting_helper_1 = require("./bill-posting.helper");
-const bill_adjustment_helper_1 = require("./bill-adjustment.helper");
+const sales_context_service_1 = require("../posting/sales-context.service");
+const sales_doc_blocks_service_1 = require("../posting/sales-doc-blocks.service");
+const transport_band_service_1 = require("../posting/transport-band.service");
+const sales_errors_1 = require("../posting/sales.errors");
+const posting_types_1 = require("../posting/types/posting.types");
+const sales_doc_utils_1 = require("../posting/sales-doc.utils");
+const bill_read_service_1 = require("./bill-read.service");
+const bill_temp_credit_1 = require("./bill-temp-credit");
 const txn_status_log_helper_1 = require("../../../common/txn-status-log/txn-status-log.helper");
 const BILL_VCHR_TYPE_ID = 3;
 const BILL_TABLE_NAME = 'sale_bill';
@@ -33,7 +39,6 @@ const BILL_ITEM_TABLE_NAME = 'sale_bill_item';
 const BILL_AUDIT_SCREEN_NAME = 'Sale Bill';
 const BILL_DOC_TYPES = ['TAX_INVOICE', 'BILL_OF_SUPPLY'];
 const BILL_TYPES = ['CASH', 'CREDIT'];
-const BILL_STATUSES = ['DRAFT', 'POSTED', 'CANCELLED'];
 const BILL_PAY_STATUSES = ['UNPAID', 'PARTIAL', 'PAID'];
 const BILL_RETURN_STATUSES = ['PARTIAL', 'FULL'];
 const BILL_ITEM_FREE_TYPES = ['SCHEME', 'SAMPLE', 'REPLACEMENT'];
@@ -49,7 +54,6 @@ const BILL_SRC_DOC_FIELDS = {
 const BILL_VALUE_GUARDS = [
     { field: 'sbDocType', allowed: BILL_DOC_TYPES, nullable: false },
     { field: 'sbBillType', allowed: BILL_TYPES, nullable: false },
-    { field: 'sbStatus', allowed: BILL_STATUSES, nullable: false },
     { field: 'sbPayStatus', allowed: BILL_PAY_STATUSES, nullable: false },
     { field: 'sbReturnStatus', allowed: BILL_RETURN_STATUSES, nullable: true },
 ];
@@ -147,14 +151,24 @@ const BILL_OPTIONAL_FIELDS = [
     'sbLoadingCalcType',
     'sbDiscAlterBase',
     'sbRoundOffStep',
-    'sbStatus',
-    'sbPostedVoucherId',
+    'sbBillMode',
+    'sbUsrRefdate',
+    'sbCustPan',
+    'sbForm60Ref',
+    'sbLoyaltyMemberId',
+    'sbTcsPerc',
+    'sbTcsAmt',
+    'sbHasDc',
     'sbApprovedOn',
     'sbApprovedBy',
     'sbVersionNo',
     'sbPrintCount',
 ];
 const BILL_ITEM_OPTIONAL_FIELDS = [
+    'sbiSrcItemId',
+    'sbiBucket',
+    'sbiLotId',
+    'sbiPromoUsageId',
     'sbiSrcDocType',
     'sbiSrcDocId',
     'sbiSrcDocYear',
@@ -250,6 +264,7 @@ const BILL_ITEM_OPTIONAL_FIELDS = [
     'sbiRemarks',
 ];
 const BILL_DATE_FIELDS = [
+    'sbUsrRefdate',
     'sbBillDate',
     'sbBillDatetime',
     'sbDueDate',
@@ -292,7 +307,11 @@ let BillService = class BillService {
     tenderDetailService;
     saleOrderService;
     quotationService;
-    constructor(prisma, auditLogService, requestContextService, chargeDetailService, tenderDetailService, saleOrderService, quotationService) {
+    transportBand;
+    salesContext;
+    docBlocks;
+    billRead;
+    constructor(prisma, auditLogService, requestContextService, chargeDetailService, tenderDetailService, saleOrderService, quotationService, transportBand, salesContext, docBlocks, billRead) {
         this.prisma = prisma;
         this.auditLogService = auditLogService;
         this.requestContextService = requestContextService;
@@ -300,13 +319,18 @@ let BillService = class BillService {
         this.tenderDetailService = tenderDetailService;
         this.saleOrderService = saleOrderService;
         this.quotationService = quotationService;
+        this.transportBand = transportBand;
+        this.salesContext = salesContext;
+        this.docBlocks = docBlocks;
+        this.billRead = billRead;
     }
     async save(saveBillDto) {
         this.ensureBillValuesAreAllowed(saveBillDto);
-        if (saveBillDto.sbId) {
-            return this.updateBill(saveBillDto);
-        }
-        return this.createBill(saveBillDto);
+        stripServerOwned(saveBillDto);
+        const saved = saveBillDto.sbId
+            ? await this.updateBill(saveBillDto)
+            : await this.createBill(saveBillDto);
+        return this.getById(saved.sbId, saved.sbCompanyId, saved.sbBranchId, saved.sbAccYear);
     }
     async getById(sbId, sbCompanyId, sbBranchId, sbAccYear) {
         const record = await this.prisma.saleBill.findFirst({
@@ -349,67 +373,106 @@ let BillService = class BillService {
             this.resolveGodowns(record.items),
             this.resolveCompanyNegStock(record.sbCompanyId),
         ]);
-        return this.toPayload({ ...record, charges, tenders }, { godownById, companyAllowsNegStock });
+        const payload = this.toPayload({ ...record, charges, tenders }, { godownById, companyAllowsNegStock });
+        return this.billRead.decorate(record, payload);
     }
-    async cancelSourceOrders(cancelDto) {
-        const { sbId, sbCompanyId, sbBranchId, sbAccYear } = cancelDto;
+    async lockHeader(tx, keys) {
+        const rows = await tx.$queryRaw `
+      SELECT sb_id FROM sales.sale_bill
+       WHERE sb_id = ${keys.sbId}::uuid AND sb_acc_year = ${keys.sbAccYear}::char(9)
+         AND sb_company_id = ${keys.sbCompanyId}::uuid AND sb_branch_id = ${keys.sbBranchId}::uuid
+         AND sb_is_deleted = false
+       FOR UPDATE`;
+        if (rows.length === 0) {
+            (0, module_service_utils_1.throwSalesNotFound)('Bill not found', 'sbId', `No active bill found with id ${keys.sbId}`);
+        }
+        const record = await tx.saleBill.findFirst({
+            where: { sbId: keys.sbId, sbAccYear: keys.sbAccYear, sbIsDeleted: false },
+        });
+        return record;
+    }
+    async loadParts(tx, bill) {
+        const [items, charges, tenders] = await Promise.all([
+            tx.saleBillItem.findMany({
+                where: { sbiBillId: bill.sbId, sbiAccYear: bill.sbAccYear, sbiIsDeleted: false },
+                orderBy: [{ sbiLineNo: 'asc' }, { sbiSplitNo: 'asc' }],
+            }),
+            this.chargeDetailService.getByDocument(bill_api_types_1.BILL_CHARGE_DOC_TYPE, bill.sbId),
+            this.tenderDetailService.getByDocument(bill_api_types_1.BILL_TENDER_SRC_MODULE, bill_api_types_1.BILL_TENDER_SRC_DOC_TYPE, bill.sbId),
+        ]);
+        return { items, charges, tenders };
+    }
+    async deleteDraft(dto) {
+        const actor = this.salesContext.actor();
+        const now = new Date();
         return this.prisma.$transaction(async (tx) => {
-            const existing = await tx.saleBill.findFirst({
-                where: {
-                    sbId,
-                    sbCompanyId,
-                    sbBranchId,
-                    sbAccYear,
-                    sbIsDeleted: false,
-                },
-            });
-            if (!existing) {
-                (0, module_service_utils_1.throwSalesNotFound)('Bill not found', 'sbId', `No active bill found with id ${sbId}`);
+            const existing = await this.lockHeader(tx, dto);
+            if (existing.sbStatus === bill_api_types_1.BILL_STATUS_POSTED) {
+                (0, sales_errors_1.throwSalesLocked)('This bill is POSTED — use /bills/cancel', posting_types_1.SALES_ERROR_CODES.BILL_POSTED, 'sbId');
             }
-            const now = new Date();
-            const actor = (0, module_service_utils_1.resolveActor)(cancelDto.username, this.requestContextService.getUserId());
-            const remarks = cancelDto.remarks.trim();
+            if (existing.sbStatus === bill_api_types_1.BILL_STATUS_CANCELLED) {
+                (0, sales_errors_1.throwSalesLocked)('This bill is CANCELLED and stays on record', posting_types_1.SALES_ERROR_CODES.BILL_CANCELLED, 'sbId');
+            }
             const items = await tx.saleBillItem.findMany({
-                where: {
-                    sbiBillId: sbId,
-                    sbiAccYear: sbAccYear,
-                    sbiIsDeleted: false,
-                },
+                where: { sbiBillId: existing.sbId, sbiAccYear: existing.sbAccYear, sbiIsDeleted: false },
             });
-            const refs = [...this.toOrderHeaderRefs(existing), ...this.toOrderLineRefs(items)];
-            if (refs.length === 0) {
-                (0, module_service_utils_1.throwSalesBadRequest)('Bill was not raised against a sale order', [
-                    {
-                        field: 'sbSrcDocId',
-                        message: `Bill ${existing.sbBillRefno || sbId} references no sale order, on its header ` +
-                            '(sbSrcDocType / sbSrcDocId / sbSrcDocYear) or on any of its lines ' +
-                            '(sbiSrcDocType / sbiSrcDocId / sbiSrcDocYear), so there is nothing to cancel',
-                    },
-                ]);
-            }
-            const orders = await this.saleOrderService.cancelOpenLinesForRefs(tx, refs, remarks, actor, now);
-            const record = this.toPayload(existing);
+            await this.softDeleteItems(tx, items, actor, now);
+            const scope = this.toScope(existing);
+            await this.chargeDetailService.syncDocumentCharges(tx, this.toChargeScope(scope), [], actor, bill_api_types_1.BILL_CHARGE_AUDIT);
+            await this.tenderDetailService.syncDocumentTenders(tx, this.toTenderScope(scope, []), [], actor, bill_api_types_1.BILL_TENDER_AUDIT);
+            await this.transportBand.remove(tx, { docType: 'SALE_BILL', docId: existing.sbId, accYear: existing.sbAccYear }, actor);
+            await tx.saleBill.update({
+                where: { sbId_sbAccYear: { sbId: existing.sbId, sbAccYear: existing.sbAccYear } },
+                data: { sbIsDeleted: true, sbModifiedOn: now, sbModifiedBy: actor },
+            });
+            await this.saleOrderService.syncOrderFulfilment(tx, { refs: [...this.toOrderHeaderRefs(existing), ...this.toOrderLineRefs(items)] }, actor, now);
+            await (0, txn_status_log_helper_1.appendTxnStatusLog)(tx, {
+                companyId: existing.sbCompanyId,
+                branchId: existing.sbBranchId,
+                tenantId: existing.sbTenantId,
+                accYear: existing.sbAccYear,
+                srcModule: bill_api_types_1.BILL_STATUS_SRC_MODULE,
+                srcDocType: bill_api_types_1.BILL_STATUS_SRC_DOC_TYPE,
+                srcDocId: existing.sbId,
+                srcDocRefno: existing.sbBillRefno,
+                event: txn_status_log_helper_1.TxnStatusEvent.DELETED,
+                fromStatus: existing.sbStatus,
+                toStatus: existing.sbStatus,
+                changedOn: now,
+                changedBy: actor,
+                deviceId: existing.sbDeviceId,
+                sessionId: existing.sbSessionId,
+            });
             await this.auditLogService.logEntityChange({
                 action: 'cancel',
                 tableName: BILL_TABLE_NAME,
                 screenName: BILL_AUDIT_SCREEN_NAME,
                 screenType: 'transaction',
-                pk: sbId,
-                displayName: existing.sbBillRefno || sbId,
-                originalRecord: record,
-                modifiedRecord: record,
+                pk: existing.sbId,
+                displayName: existing.sbBillRefno || existing.sbId,
+                originalRecord: this.toPayload(existing),
+                modifiedRecord: null,
                 userId: actor,
-                notes: `Sale order cancelled from bill (${orders.length}): ${remarks}`,
+                notes: 'Draft bill deleted',
             }, tx);
-            return {
-                sbId,
-                cancelled: true,
-                remarks,
-                username: actor,
-                cancelledOn: now.toISOString(),
-                orders,
-            };
+            return { sbId: existing.sbId, deleted: true };
         });
+    }
+    toScope(bill) {
+        return {
+            sbId: bill.sbId,
+            sbCompanyId: bill.sbCompanyId,
+            sbBranchId: bill.sbBranchId,
+            sbTenantId: bill.sbTenantId,
+            sbAccYear: bill.sbAccYear,
+            sbPriceLevel: bill.sbPriceLevel,
+            sbBillSlno: bill.sbBillSlno,
+            sbBillDate: bill.sbBillDate,
+            sbCustId: bill.sbCustId,
+            sbUserId: bill.sbUserId,
+            sbSessionId: bill.sbSessionId,
+            sbDeviceId: bill.sbDeviceId,
+        };
     }
     async createBill(saveBillDto) {
         const normalizedCustName = (0, module_service_utils_1.normalizeRequiredText)(saveBillDto.sbCustName ?? '', 'sbCustName');
@@ -419,11 +482,14 @@ let BillService = class BillService {
         try {
             return await this.prisma.$transaction(async (tx) => {
                 await this.ensurePosStateExists(tx, saveBillDto);
+                const settings = await this.salesContext.settings(saveBillDto.sbCompanyId, saveBillDto.sbBranchId);
+                const posSeries = (saveBillDto.sbBillMode ?? 'WHOLESALE') === 'POS' && settings.posSeriesPerDevice;
                 const billNumber = await (0, voucher_sequence_helper_1.allocateVoucherNumber)(tx, {
                     vchrTypeId: BILL_VCHR_TYPE_ID,
                     companyId: saveBillDto.sbCompanyId,
                     branchId: saveBillDto.sbBranchId,
                     accYear: saveBillDto.sbAccYear,
+                    deviceCode: posSeries ? saveBillDto.sbDeviceId : null,
                     documentDate: billDate,
                 });
                 const data = {
@@ -443,47 +509,24 @@ let BillService = class BillService {
                     sbUserId: saveBillDto.sbUserId,
                     sbCreatedOn: now,
                     sbCreatedBy: createdBy,
-                    sbStatus: saveBillDto.sbStatus || 'DRAFT',
+                    sbStatus: bill_api_types_1.BILL_STATUS_DRAFT,
+                    sbRevisionNo: 1,
                 };
                 this.applyOptionalFields(data, saveBillDto);
                 data.sbCustName = normalizedCustName;
                 data.sbBillDate = billDate;
+                await this.applyCustomerSnapshot(tx, data, saveBillDto, settings.defaultCustomerId);
                 const created = await tx.saleBill.create({ data });
-                const scope = {
-                    sbId: created.sbId,
-                    sbCompanyId: created.sbCompanyId,
-                    sbBranchId: created.sbBranchId,
-                    sbTenantId: created.sbTenantId,
-                    sbAccYear: created.sbAccYear,
-                    sbPriceLevel: created.sbPriceLevel,
-                    sbBillSlno: created.sbBillSlno,
-                    sbBillDate: created.sbBillDate,
-                    sbCustId: created.sbCustId,
-                    sbUserId: created.sbUserId,
-                    sbSessionId: created.sbSessionId,
-                    sbDeviceId: created.sbDeviceId,
-                };
+                const scope = this.toScope(created);
                 const items = await this.syncItems(tx, scope, saveBillDto.items, createdBy);
                 const charges = await this.chargeDetailService.syncDocumentCharges(tx, this.toChargeScope(scope), saveBillDto.charges, createdBy, bill_api_types_1.BILL_CHARGE_AUDIT);
-                const tenders = await this.tenderDetailService.syncDocumentTenders(tx, this.toTenderScope(scope, saveBillDto.tenders), saveBillDto.tenders, createdBy, bill_api_types_1.BILL_TENDER_AUDIT);
-                let posted = created;
-                if (created.sbStatus === bill_api_types_1.BILL_STATUS_POSTED) {
-                    const postingResult = await (0, bill_posting_helper_1.postBillToAccounts)(tx, created, BILL_VCHR_TYPE_ID, createdBy, now);
-                    posted = await tx.saleBill.update({
-                        where: { sbId_sbAccYear: { sbId: created.sbId, sbAccYear: created.sbAccYear } },
-                        data: {
-                            sbPostedVoucherId: postingResult.voucherId,
-                        },
-                    });
-                    await this.syncAdjustments(tx, posted, postingResult.billId, saveBillDto.adjustments, createdBy, now);
-                }
-                else {
-                    await this.syncAdjustments(tx, created, null, saveBillDto.adjustments, createdBy, now);
-                }
-                await this.saleOrderService.syncOrderFulfilment(tx, { refs: [...this.toOrderHeaderRefs(posted), ...this.toOrderLineRefs(items)] }, createdBy, now);
-                await this.quotationService.syncQuotationConversion(tx, { refs: this.toQuotationRefs(posted) }, createdBy, now);
-                await this.logStatusChange(tx, posted, null, createdBy, now, saveBillDto.sbCancelReason ?? null);
-                const payload = this.toPayload({ ...posted, items, charges, tenders });
+                const tenders = await this.tenderDetailService.syncDocumentTenders(tx, this.toTenderScope(scope, saveBillDto.tenders), (0, bill_temp_credit_1.encodeTempCreditTenders)(saveBillDto.tenders), createdBy, bill_api_types_1.BILL_TENDER_AUDIT);
+                await this.validateDraftAdjustments(tx, created, saveBillDto.adjustments);
+                await this.writeTransportBand(tx, created, saveBillDto, createdBy, now);
+                await this.saleOrderService.syncOrderFulfilment(tx, { refs: [...this.toOrderHeaderRefs(created), ...this.toOrderLineRefs(items)] }, createdBy, now);
+                await this.quotationService.syncQuotationConversion(tx, { refs: this.toQuotationRefs(created) }, createdBy, now);
+                await this.logStatusChange(tx, created, null, createdBy, now, null);
+                const payload = this.toPayload({ ...created, items, charges, tenders });
                 await this.auditLogService.logEntityChange({
                     action: 'New',
                     tableName: BILL_TABLE_NAME,
@@ -496,7 +539,7 @@ let BillService = class BillService {
                     userId: createdBy,
                     notes: 'Bill created',
                 }, tx);
-                return payload;
+                return created;
             });
         }
         catch (error) {
@@ -510,90 +553,170 @@ let BillService = class BillService {
         try {
             return await this.prisma.$transaction(async (tx) => {
                 const existing = await tx.saleBill.findFirst({
-                    where: {
-                        sbId,
-                        sbIsDeleted: false,
-                    },
+                    where: { sbId, sbIsDeleted: false },
                 });
                 if (!existing) {
                     (0, module_service_utils_1.throwSalesNotFound)('Bill not found', 'sbId', `No active bill found with id ${sbId}`);
                 }
+                if (existing.sbStatus === bill_api_types_1.BILL_STATUS_POSTED) {
+                    (0, sales_errors_1.throwSalesLocked)('This bill is POSTED — use /bills/amend', posting_types_1.SALES_ERROR_CODES.BILL_POSTED, 'sbId');
+                }
+                if (existing.sbStatus === bill_api_types_1.BILL_STATUS_CANCELLED) {
+                    (0, sales_errors_1.throwSalesLocked)('This bill is CANCELLED and cannot be edited', posting_types_1.SALES_ERROR_CODES.BILL_CANCELLED, 'sbId');
+                }
                 const now = new Date();
                 const modifiedBy = (0, module_service_utils_1.resolveActor)(saveBillDto.sbModifiedBy, this.requestContextService.getUserId());
-                const data = {
-                    sbModifiedOn: now,
-                    sbModifiedBy: modifiedBy,
-                };
-                this.applyOptionalFields(data, saveBillDto);
-                await this.ensurePosStateExists(tx, saveBillDto);
-                const updated = await tx.saleBill.update({
-                    where: { sbId_sbAccYear: { sbId: existing.sbId, sbAccYear: existing.sbAccYear } },
-                    data,
-                });
-                const scope = {
-                    sbId: updated.sbId,
-                    sbCompanyId: updated.sbCompanyId,
-                    sbBranchId: updated.sbBranchId,
-                    sbTenantId: updated.sbTenantId,
-                    sbAccYear: updated.sbAccYear,
-                    sbPriceLevel: updated.sbPriceLevel,
-                    sbBillSlno: updated.sbBillSlno,
-                    sbBillDate: updated.sbBillDate,
-                    sbCustId: updated.sbCustId,
-                    sbUserId: updated.sbUserId,
-                    sbSessionId: updated.sbSessionId,
-                    sbDeviceId: updated.sbDeviceId,
-                };
-                const priorItems = await tx.saleBillItem.findMany({
-                    where: { sbiBillId: sbId, sbiIsDeleted: false },
-                });
-                const items = await this.syncItems(tx, scope, saveBillDto.items, modifiedBy);
-                const charges = await this.chargeDetailService.syncDocumentCharges(tx, this.toChargeScope(scope), saveBillDto.charges, modifiedBy, bill_api_types_1.BILL_CHARGE_AUDIT);
-                const tenders = await this.tenderDetailService.syncDocumentTenders(tx, this.toTenderScope(scope, saveBillDto.tenders), saveBillDto.tenders, modifiedBy, bill_api_types_1.BILL_TENDER_AUDIT);
-                const cancelReason = saveBillDto.sbCancelReason ?? null;
-                const posting = await (0, bill_posting_helper_1.syncBillPosting)(tx, updated, BILL_VCHR_TYPE_ID, modifiedBy, now, cancelReason);
-                await this.syncAdjustments(tx, updated, posting.billId, saveBillDto.adjustments, modifiedBy, now);
-                let posted = updated;
-                if (updated.sbPostedVoucherId !== posting.voucherId) {
-                    posted = await tx.saleBill.update({
-                        where: { sbId_sbAccYear: { sbId: updated.sbId, sbAccYear: updated.sbAccYear } },
-                        data: {
-                            sbPostedVoucherId: posting.voucherId,
-                        },
-                    });
-                }
-                await this.saleOrderService.syncOrderFulfilment(tx, {
-                    refs: [
-                        ...this.toOrderHeaderRefs(existing),
-                        ...this.toOrderHeaderRefs(posted),
-                        ...this.toOrderLineRefs(priorItems),
-                        ...this.toOrderLineRefs(items),
-                    ],
-                }, modifiedBy, now);
-                await this.quotationService.syncQuotationConversion(tx, { refs: [...this.toQuotationRefs(existing), ...this.toQuotationRefs(posted)] }, modifiedBy, now);
-                if (posted.sbStatus !== existing.sbStatus) {
-                    await this.logStatusChange(tx, posted, existing.sbStatus, modifiedBy, now, cancelReason);
-                }
-                const payload = this.toPayload({ ...posted, items, charges, tenders });
-                await this.auditLogService.logEntityChange({
-                    action: 'update',
-                    tableName: BILL_TABLE_NAME,
-                    screenName: BILL_AUDIT_SCREEN_NAME,
-                    screenType: 'transaction',
-                    pk: sbId,
-                    displayName: payload.sbBillRefno || payload.sbId,
-                    originalRecord: this.toPayload(existing),
-                    modifiedRecord: payload,
-                    userId: payload.sbModifiedBy || payload.sbCreatedBy,
-                    notes: 'Bill updated',
-                }, tx);
-                return payload;
+                const { updated } = await this.applySaveInTx(tx, existing, saveBillDto, modifiedBy, now);
+                return updated;
             });
         }
         catch (error) {
             const duplicate = this.describeDuplicate(error);
             (0, module_service_utils_1.throwOnUniqueConstraintError)(error, duplicate.message, duplicate.errors);
             throw error;
+        }
+    }
+    async applySaveInTx(tx, existing, saveBillDto, modifiedBy, now, opts = {}) {
+        const settings = await this.salesContext.settings(existing.sbCompanyId, existing.sbBranchId);
+        const data = {
+            sbModifiedOn: now,
+            sbModifiedBy: modifiedBy,
+        };
+        this.applyOptionalFields(data, saveBillDto);
+        await this.ensurePosStateExists(tx, saveBillDto);
+        await this.applyCustomerSnapshot(tx, data, saveBillDto, settings.defaultCustomerId);
+        const updated = await tx.saleBill.update({
+            where: { sbId_sbAccYear: { sbId: existing.sbId, sbAccYear: existing.sbAccYear } },
+            data,
+        });
+        const scope = this.toScope(updated);
+        const priorItems = await tx.saleBillItem.findMany({
+            where: { sbiBillId: existing.sbId, sbiIsDeleted: false },
+        });
+        const items = await this.syncItems(tx, scope, saveBillDto.items, modifiedBy);
+        const charges = await this.chargeDetailService.syncDocumentCharges(tx, this.toChargeScope(scope), saveBillDto.charges, modifiedBy, bill_api_types_1.BILL_CHARGE_AUDIT);
+        const tenders = await this.tenderDetailService.syncDocumentTenders(tx, this.toTenderScope(scope, saveBillDto.tenders), (0, bill_temp_credit_1.encodeTempCreditTenders)(saveBillDto.tenders), modifiedBy, bill_api_types_1.BILL_TENDER_AUDIT);
+        await this.validateDraftAdjustments(tx, updated, saveBillDto.adjustments);
+        await this.writeTransportBand(tx, updated, saveBillDto, modifiedBy, now);
+        await this.saleOrderService.syncOrderFulfilment(tx, {
+            refs: [
+                ...this.toOrderHeaderRefs(existing),
+                ...this.toOrderHeaderRefs(updated),
+                ...this.toOrderLineRefs(priorItems),
+                ...this.toOrderLineRefs(items),
+            ],
+        }, modifiedBy, now);
+        await this.quotationService.syncQuotationConversion(tx, { refs: [...this.toQuotationRefs(existing), ...this.toQuotationRefs(updated)] }, modifiedBy, now);
+        const payload = this.toPayload({ ...updated, items, charges, tenders });
+        await this.auditLogService.logEntityChange({
+            action: 'update',
+            tableName: BILL_TABLE_NAME,
+            screenName: BILL_AUDIT_SCREEN_NAME,
+            screenType: 'transaction',
+            pk: existing.sbId,
+            displayName: payload.sbBillRefno || payload.sbId,
+            originalRecord: this.toPayload(existing),
+            modifiedRecord: payload,
+            userId: modifiedBy,
+            notes: opts.notes ?? 'Bill updated',
+        }, tx);
+        return { updated, items };
+    }
+    async applyCustomerSnapshot(tx, data, dto, walkInCustomerId) {
+        const custId = dto.sbCustId;
+        if (!custId || dto.custOverride || custId === walkInCustomerId) {
+            return;
+        }
+        const cus = await tx.customer.findFirst({
+            where: { cusId: custId },
+            select: {
+                cusName: true,
+                cusAddr1: true,
+                cusAddr2: true,
+                cusAddr3: true,
+                cusCity: true,
+                cusPin: true,
+                cusPhone1: true,
+                cusGstNo: true,
+                cusGstType: true,
+                cusStateCode: true,
+                cusStateName: true,
+                cusPanNo: true,
+            },
+        });
+        if (!cus) {
+            (0, module_service_utils_1.throwSalesBadRequest)('Customer does not exist', [
+                { field: 'sbCustId', message: `No customer found with id ${custId}` },
+            ]);
+        }
+        const addr = [cus.cusAddr1, cus.cusAddr2, cus.cusAddr3].filter((a) => a?.trim()).join(', ');
+        const d = data;
+        d.sbCustName = cus.cusName ?? d.sbCustName;
+        d.sbCustAddr = addr || null;
+        d.sbCustPlace = cus.cusCity ?? null;
+        d.sbCustPin = cus.cusPin ?? null;
+        d.sbCustPhone = cus.cusPhone1 ?? null;
+        d.sbCustGstin = cus.cusGstNo ?? null;
+        d.sbCustGstType = cus.cusGstType ?? null;
+        d.sbCustStcd = cus.cusStateCode ?? null;
+        d.sbStateName = cus.cusStateName ?? null;
+        if (dto.sbCustPan === undefined && cus.cusPanNo) {
+            d.sbCustPan = cus.cusPanNo;
+        }
+    }
+    async writeTransportBand(tx, bill, dto, actor, now) {
+        const input = flatTransportOf(dto);
+        if (!transport_band_service_1.TransportBandService.hasContent(input)) {
+            return;
+        }
+        await this.transportBand.write(tx, {
+            docType: 'SALE_BILL',
+            docId: bill.sbId,
+            accYear: bill.sbAccYear,
+            companyId: bill.sbCompanyId,
+            branchId: bill.sbBranchId,
+            tenantId: bill.sbTenantId,
+            docRefno: bill.sbBillRefno,
+        }, input, actor, { gdrId: bill.sbDocRegisterId, now });
+    }
+    async validateDraftAdjustments(tx, bill, adjustments) {
+        if (adjustments === undefined || adjustments.length === 0) {
+            return;
+        }
+        const partyId = this.requireCustomerLedgerId(bill.sbCustId, 'adjustments');
+        let total = 0;
+        for (const [index, adj] of adjustments.entries()) {
+            const [credit] = await tx.$queryRaw `
+        SELECT abl_party_id, abl_dr_cr, abl_pending_amount
+          FROM accounts.acc_bill_balance
+         WHERE abl_id = ${adj.againstBillId}::uuid AND abl_acc_year = ${adj.againstBillAccYear}::bpchar
+           AND abl_company_id = ${bill.sbCompanyId}::uuid AND abl_is_deleted = false AND abl_is_active = true`;
+            if (!credit || credit.abl_party_id !== partyId || credit.abl_dr_cr.trim() !== 'CR') {
+                (0, module_service_utils_1.throwSalesBadRequest)('Bill cannot be saved', [
+                    {
+                        field: `adjustments[${index}].againstBillId`,
+                        message: `No open credit ${adj.againstBillId} belongs to this customer`,
+                    },
+                ]);
+            }
+            if ((0, sales_doc_utils_1.num)(credit.abl_pending_amount) + 0.005 < (0, sales_doc_utils_1.num)(adj.amount)) {
+                (0, module_service_utils_1.throwSalesBadRequest)('Bill cannot be saved', [
+                    {
+                        field: `adjustments[${index}].amount`,
+                        message: `Credit has only ${(0, sales_doc_utils_1.num)(credit.abl_pending_amount)} pending`,
+                    },
+                ]);
+            }
+            total += (0, sales_doc_utils_1.num)(adj.amount);
+        }
+        const declared = (0, sales_doc_utils_1.num)(bill.sbAdvanceAmt);
+        if (Math.abs(declared - total) > 0.01) {
+            (0, module_service_utils_1.throwSalesBadRequest)('Bill cannot be saved', [
+                {
+                    field: 'sbAdvanceAmt',
+                    message: `adjustments total ${total.toFixed(2)} but sbAdvanceAmt says ${declared.toFixed(2)}`,
+                },
+            ]);
         }
     }
     async syncItems(tx, scope, inputItems, actorId) {
@@ -747,7 +870,6 @@ let BillService = class BillService {
         const values = {
             sbDocType: dto.sbDocType,
             sbBillType: dto.sbBillType,
-            sbStatus: dto.sbStatus,
             sbPayStatus: dto.sbPayStatus,
             sbReturnStatus: dto.sbReturnStatus,
         };
@@ -818,6 +940,9 @@ let BillService = class BillService {
         if (details.length > 0) {
             (0, module_service_utils_1.throwSalesBadRequest)('Invalid bill item value', details);
         }
+    }
+    orderRefsOf(bill, items) {
+        return [...this.toOrderHeaderRefs(bill), ...this.toOrderLineRefs(items)];
     }
     toOrderLineRefs(items) {
         const refs = [];
@@ -918,34 +1043,6 @@ let BillService = class BillService {
             ]);
         }
         return sbCustId;
-    }
-    async syncAdjustments(tx, bill, billId, adjustments, actor, now) {
-        if (billId === null) {
-            if (adjustments === undefined || adjustments.length === 0) {
-                return;
-            }
-            (0, module_service_utils_1.throwSalesBadRequest)('Bill cannot be saved', [
-                {
-                    field: 'adjustments',
-                    message: 'This bill carries no receivable in accounts — it is not POSTED, or its value is ' +
-                        'zero — so there is nothing for a credit to be adjusted against.',
-                },
-            ]);
-        }
-        await (0, bill_adjustment_helper_1.syncBillAdjustments)(tx, {
-            billId,
-            billAccYear: bill.sbAccYear,
-            billAmount: bill.sbBillAmt ?? new client_1.Prisma.Decimal(0),
-            paidAmount: bill.sbPaidAmt ?? new client_1.Prisma.Decimal(0),
-            companyId: bill.sbCompanyId,
-            branchId: bill.sbBranchId,
-            tenantId: bill.sbTenantId,
-            accYear: bill.sbAccYear,
-            partyId: this.requireCustomerLedgerId(bill.sbCustId, 'adjustments'),
-            adjDate: bill.sbBillDate,
-            userId: bill.sbUserId,
-            sessionId: bill.sbSessionId,
-        }, adjustments, actor, now);
     }
     async logStatusChange(tx, bill, fromStatus, actor, changedOn, remarks) {
         await (0, txn_status_log_helper_1.appendTxnStatusLog)(tx, {
@@ -1054,6 +1151,58 @@ exports.BillService = BillService = __decorate([
         charge_detail_service_1.ChargeDetailService,
         tender_detail_service_1.TenderDetailService,
         sale_order_service_1.SaleOrderService,
-        quotation_service_1.QuotationService])
+        quotation_service_1.QuotationService,
+        transport_band_service_1.TransportBandService,
+        sales_context_service_1.SalesContextService,
+        sales_doc_blocks_service_1.SalesDocBlocksService,
+        bill_read_service_1.BillReadService])
 ], BillService);
+function stripServerOwned(dto) {
+    const d = dto;
+    for (const key of [
+        'sbStatus',
+        'sbPostedVoucherId',
+        'sbDocRegisterId',
+        'sbRevisionNo',
+        'sbCogsAmt',
+        'sbDeliveryStatus',
+        'sbLoyaltyEarned',
+        'sbLoyaltyRedeemed',
+        'sbReturnedAmt',
+        'sbReturnStatus',
+        'sbBillSlno',
+        'sbBillRefno',
+    ]) {
+        delete d[key];
+    }
+    for (const item of dto.items ?? []) {
+        delete item.sbiCogsAmt;
+    }
+}
+function flatTransportOf(dto) {
+    return {
+        direction: 'OUTWARD',
+        from: {
+            godownId: dto.sbDispatchGodownId ?? null,
+            branchId: dto.sbDispatchBranchId ?? null,
+        },
+        to: {
+            addrId: dto.sbShipAddrId ?? null,
+            name: dto.sbShipName ?? null,
+            addr: dto.sbShipAddr ?? null,
+            place: dto.sbShipPlace ?? null,
+            pin: dto.sbShipPin ?? null,
+            phone: dto.sbShipPhone ?? null,
+            stcd: dto.sbShipStcd ?? null,
+            gstin: dto.sbShipGstin ?? null,
+        },
+        mode: dto.sbTransportMode ?? null,
+        transporterId: dto.sbTransporterId ?? null,
+        transporterName: dto.sbTransporterName ?? null,
+        transporterGstin: dto.sbTransporterGstin ?? null,
+        lrNo: dto.sbLrNo ?? null,
+        lrDate: dto.sbLrDate ?? null,
+        distanceKm: dto.sbDistanceKm ?? null,
+    };
+}
 //# sourceMappingURL=bill.service.js.map

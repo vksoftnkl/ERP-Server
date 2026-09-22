@@ -93,7 +93,7 @@ __decorate([
             'Upserts a single form section (heading row) together with its nested fields.',
             '',
             '- Omit `sectionId` to create a new section; include it to update the existing one.',
-            '- `fields` is a full-sync of the section\'s children: fields with a `fieldId` are updated, fields without one are created, and any existing field not present in the array is deleted.',
+            "- `fields` is a full-sync of the section's children: fields with a `fieldId` are updated, fields without one are created, and any existing field not present in the array is deleted.",
             '- Omit `fields` entirely to leave the existing fields untouched; send `[]` to remove all fields.',
             '- Section names and field names are not enforced unique — duplicate `sectionName` (per menu/platform) and duplicate `fieldName` within a section are allowed.',
         ].join('\n'),

@@ -6,7 +6,8 @@ export class FreightChargeQueryDto {
     type: Number,
     minimum: 0,
     example: 45,
-    description: 'Distance in km (legacy iflag=9). Returns freight slabs where distance is between fr_from_km and fr_to_km.',
+    description:
+      'Distance in km (legacy iflag=9). Returns freight slabs where distance is between fr_from_km and fr_to_km.',
   })
   @Type(() => Number)
   @IsInt()

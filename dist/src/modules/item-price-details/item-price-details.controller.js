@@ -32,9 +32,9 @@ let ItemPriceDetailsController = class ItemPriceDetailsController {
         this.itemPriceDetailsService = itemPriceDetailsService;
     }
     async getByItemId(query) {
-        const dto = (await (0, request_payload_validation_util_1.validateDto)(query, get_item_price_detail_query_dto_1.GetItemPriceDetailQueryDto, {
+        const dto = await (0, request_payload_validation_util_1.validateDto)(query, get_item_price_detail_query_dto_1.GetItemPriceDetailQueryDto, {
             type: 'query',
-        }));
+        });
         const data = await this.itemPriceDetailsService.getByItemId(dto.item_id);
         return {
             success: true,

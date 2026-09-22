@@ -50,13 +50,7 @@ export const SAVEABLE_STOCK_VOUCHER_STATUSES = [
 export type SaveableStockVoucherStatus = (typeof SAVEABLE_STOCK_VOUCHER_STATUSES)[number];
 
 /** ck_svi_bucket. */
-export const STOCK_BUCKETS = [
-  'SALEABLE',
-  'DAMAGED',
-  'QUARANTINE',
-  'EXPIRED',
-  'SAMPLE',
-] as const;
+export const STOCK_BUCKETS = ['SALEABLE', 'DAMAGED', 'QUARANTINE', 'EXPIRED', 'SAMPLE'] as const;
 export type StockBucket = (typeof STOCK_BUCKETS)[number];
 
 /** ck_svh_rate_source. */

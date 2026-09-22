@@ -20,7 +20,10 @@ export class ListWidgetQueryDto {
   @IsOptional()
   @IsEnum(WidgetPlatform)
   sectionPlatform?: WidgetPlatform;
-  @ApiPropertyOptional({ maxLength: 255, description: 'Matches section name or any of its field names' })
+  @ApiPropertyOptional({
+    maxLength: 255,
+    description: 'Matches section name or any of its field names',
+  })
   @IsOptional()
   @IsString()
   @MaxLength(255)

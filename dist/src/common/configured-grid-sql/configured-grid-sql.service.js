@@ -25,7 +25,10 @@ let ConfiguredGridSqlService = class ConfiguredGridSqlService {
         this.pg = pg;
     }
     normalizeRelationName(value) {
-        return value.trim().toLowerCase().replace(/[\s-]+/g, '_');
+        return value
+            .trim()
+            .toLowerCase()
+            .replace(/[\s-]+/g, '_');
     }
     buildTableNameSearchTerms(tableName) {
         const trimmed = tableName.trim();
@@ -190,7 +193,7 @@ let ConfiguredGridSqlService = class ConfiguredGridSqlService {
         const columns = await this.prisma.gridColumn.findMany({
             where: {
                 gridId,
-                gridColumnIsDeleted: false
+                gridColumnIsDeleted: false,
             },
             orderBy: { gridColumnNumber: 'asc' },
             select: {
@@ -462,10 +465,7 @@ let ConfiguredGridSqlService = class ConfiguredGridSqlService {
         if (prototype !== Object.prototype && prototype !== null) {
             return value;
         }
-        return Object.fromEntries(Object.entries(value).map(([key, item]) => [
-            key,
-            this.serializeRawQueryValue(item),
-        ]));
+        return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, this.serializeRawQueryValue(item)]));
     }
     prepareBaseSql(sql) {
         return sql.trim().replace(/;+\s*$/g, '');
@@ -803,9 +803,7 @@ let ConfiguredGridSqlService = class ConfiguredGridSqlService {
                 if (!relationMatch) {
                     return null;
                 }
-                const schemaName = relationMatch[1]
-                    ? this.parseSqlIdentifierToken(relationMatch[1])
-                    : null;
+                const schemaName = relationMatch[1] ? this.parseSqlIdentifierToken(relationMatch[1]) : null;
                 const tableName = this.parseSqlIdentifierToken(relationMatch[2]);
                 if (!tableName) {
                     return null;

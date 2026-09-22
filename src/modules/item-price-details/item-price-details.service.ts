@@ -7,7 +7,10 @@ type ItemPriceMasterWithConversion = Prisma.ItemPriceMasterGetPayload<{
 }>;
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import { ItemPriceDetailPayloadDto } from 'src/modules/Inventory/item-price-details/dto/item-price-detail-response.dto';
-import { ItemPriceDetailErrorDetail, ItemPriceDetailErrorResponse } from 'src/modules/Inventory/item-price-details/types/item-price-detail-api.types';
+import {
+  ItemPriceDetailErrorDetail,
+  ItemPriceDetailErrorResponse,
+} from 'src/modules/Inventory/item-price-details/types/item-price-detail-api.types';
 import { ItemPayload } from 'src/modules/Inventory/items-master/types/item-api.types';
 import { ItemPricePayload } from 'src/modules/Inventory/items-price-master/types/item-price-api.types';
 import { ItemUnitConversionPayload } from 'src/modules/Inventory/item-unit-conversion/types/item-unit-conversion-api.types';
@@ -83,7 +86,9 @@ export class ItemPriceDetailsService {
       iuc_updated_by: record.iucUpdatedBy,
     };
   }
-  private toItemPayload(record: ItemMaster & { trackPreset?: { sptName: string } | null }): ItemPayload {
+  private toItemPayload(
+    record: ItemMaster & { trackPreset?: { sptName: string } | null },
+  ): ItemPayload {
     return {
       item_id: record.itemId,
       item_company_id: record.itemCompanyId,

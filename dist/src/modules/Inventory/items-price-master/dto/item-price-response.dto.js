@@ -79,7 +79,10 @@ __decorate([
     __metadata("design:type", String)
 ], ItemPricePayloadDto.prototype, "ipm_item_id", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ format: 'uuid', description: 'Item unit conversion id (iuc_id) this price applies to' }),
+    (0, swagger_1.ApiProperty)({
+        format: 'uuid',
+        description: 'Item unit conversion id (iuc_id) this price applies to',
+    }),
     __metadata("design:type", String)
 ], ItemPricePayloadDto.prototype, "ipm_uc_unit_id", void 0);
 __decorate([
@@ -223,19 +226,35 @@ __decorate([
     __metadata("design:type", Object)
 ], ItemPricePayloadDto.prototype, "ipm_updated_by", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ type: String, nullable: true, description: 'Name of the linked company (resolved on the item composite get endpoint)' }),
+    (0, swagger_1.ApiPropertyOptional)({
+        type: String,
+        nullable: true,
+        description: 'Name of the linked company (resolved on the item composite get endpoint)',
+    }),
     __metadata("design:type", Object)
 ], ItemPricePayloadDto.prototype, "ipm_company_name", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ type: String, nullable: true, description: 'Name of the linked branch (resolved on the item composite get endpoint)' }),
+    (0, swagger_1.ApiPropertyOptional)({
+        type: String,
+        nullable: true,
+        description: 'Name of the linked branch (resolved on the item composite get endpoint)',
+    }),
     __metadata("design:type", Object)
 ], ItemPricePayloadDto.prototype, "ipm_branch_name", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ type: String, nullable: true, description: 'Name of the linked unit (resolved on the item composite get endpoint)' }),
+    (0, swagger_1.ApiPropertyOptional)({
+        type: String,
+        nullable: true,
+        description: 'Name of the linked unit (resolved on the item composite get endpoint)',
+    }),
     __metadata("design:type", Object)
 ], ItemPricePayloadDto.prototype, "ipm_unit_name", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ type: String, nullable: true, description: 'Name of the linked godown (resolved on the item composite get endpoint)' }),
+    (0, swagger_1.ApiPropertyOptional)({
+        type: String,
+        nullable: true,
+        description: 'Name of the linked godown (resolved on the item composite get endpoint)',
+    }),
     __metadata("design:type", Object)
 ], ItemPricePayloadDto.prototype, "ipm_godown_name", void 0);
 class ItemPriceDeleteResultDto {

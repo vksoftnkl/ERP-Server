@@ -36,7 +36,7 @@ export class GridDetailsService {
     private readonly configuredGridSqlService: ConfiguredGridSqlService,
     private readonly auditLogService: AuditLogService,
     private readonly requestContextService: RequestContextService,
-  ) { }
+  ) {}
   async save(saveGridDetailDto: SaveGridDetailDto): Promise<GridDetailPayload> {
     return saveGridDetailDto.grid_id
       ? this.updateGridDetails(saveGridDetailDto)
@@ -51,14 +51,14 @@ export class GridDetailsService {
       ...(fixedGridId !== undefined ? { gridId: fixedGridId } : {}),
       ...(search
         ? {
-          OR: [
-            { gridName: { contains: search, mode: 'insensitive' } },
-            { gridDescription: { contains: search, mode: 'insensitive' } },
-          ],
-        }
+            OR: [
+              { gridName: { contains: search, mode: 'insensitive' } },
+              { gridDescription: { contains: search, mode: 'insensitive' } },
+            ],
+          }
         : {}),
     };
-    const records = await this.prisma.gridDetails.findMany({
+    const records = (await this.prisma.gridDetails.findMany({
       where,
       orderBy: [{ gridSortOrder: 'asc' }, { gridName: 'asc' }],
       include: {
@@ -67,7 +67,7 @@ export class GridDetailsService {
           orderBy: [{ gridColumnNumber: 'asc' }, { gridColumnId: 'asc' }],
         },
       },
-    }) as unknown as GridDetailsWithColumns[];
+    })) as unknown as GridDetailsWithColumns[];
     return { items: records.map((record) => this.toPayload(record)) };
   }
   async updateColumnWidths(dto: SaveColumnWidthDto): Promise<{ updated: number }> {
@@ -213,9 +213,14 @@ export class GridDetailsService {
           screenName: GRID_DETAIL_AUDIT_SCREEN_NAME,
           screenType: 'master',
           pk: gridId,
-          displayName: existing!.gridName ?? `Grid ${gridId}`,
-          originalRecord: this.toPayload({ ...existing!, columns: [] }),
-          modifiedRecord: this.toPayload({ ...existing!, gridIsDeleted: true, gridStatus: false, columns: [] }),
+          displayName: existing.gridName ?? `Grid ${gridId}`,
+          originalRecord: this.toPayload({ ...existing, columns: [] }),
+          modifiedRecord: this.toPayload({
+            ...existing,
+            gridIsDeleted: true,
+            gridStatus: false,
+            columns: [],
+          }),
           userId: actor,
           notes: 'Grid details soft deleted',
         },
@@ -224,7 +229,9 @@ export class GridDetailsService {
       return { grid_id: gridId, deleted: true };
     });
   }
-  async softDeleteColumn(grid_column_id: string): Promise<{ grid_column_id: string; deleted: true }> {
+  async softDeleteColumn(
+    grid_column_id: string,
+  ): Promise<{ grid_column_id: string; deleted: true }> {
     const parsedSerialId = this.parseUuidId('grid_column_id', grid_column_id);
     const actor = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
     return this.prisma.$transaction(async (tx) => {
@@ -260,7 +267,9 @@ export class GridDetailsService {
       return { grid_column_id: grid_column_id, deleted: true };
     });
   }
-  private async createGridDetails(saveGridDetailDto: SaveGridDetailDto): Promise<GridDetailPayload> {
+  private async createGridDetails(
+    saveGridDetailDto: SaveGridDetailDto,
+  ): Promise<GridDetailPayload> {
     const actor = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
     const data: Prisma.GridDetailsUncheckedCreateInput = {
       gridName: saveGridDetailDto.grid_name.trim(),
@@ -301,7 +310,9 @@ export class GridDetailsService {
       return payload;
     });
   }
-  private async updateGridDetails(saveGridDetailDto: SaveGridDetailDto): Promise<GridDetailPayload> {
+  private async updateGridDetails(
+    saveGridDetailDto: SaveGridDetailDto,
+  ): Promise<GridDetailPayload> {
     const gridId = saveGridDetailDto.grid_id!;
     const parsedGridId = this.parseBigIntId('grid_id', gridId);
     const actor = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
@@ -356,7 +367,7 @@ export class GridDetailsService {
           screenType: 'master',
           pk: gridId,
           displayName: payload.grid_name,
-          originalRecord: this.toPayload({ ...existing!, columns: [] }),
+          originalRecord: this.toPayload({ ...existing, columns: [] }),
           modifiedRecord: payload,
           userId: actor,
           notes: 'Grid details updated',
@@ -384,10 +395,9 @@ export class GridDetailsService {
   ): Promise<void> {
     const normalizedName = colDto.grid_column_name?.trim();
     if (!normalizedName) {
-      throwFixedBadRequest<GridDetailErrorDetail, GridDetailErrorResponse>(
-        'Validation failed',
-        [{ field: 'grid_column_name', message: 'grid_column_name must not be empty' }],
-      );
+      throwFixedBadRequest<GridDetailErrorDetail, GridDetailErrorResponse>('Validation failed', [
+        { field: 'grid_column_name', message: 'grid_column_name must not be empty' },
+      ]);
     }
     if (colDto.grid_column_id) {
       const parsedId = this.parseUuidId('grid_column_id', colDto.grid_column_id);
@@ -416,19 +426,26 @@ export class GridDetailsService {
     dto: SaveGridColumnDto,
   ): void {
     if (hasOwnProperty(dto, 'grid_column_width')) data.gridColumnWidth = dto.grid_column_width;
-    if (hasOwnProperty(dto, 'grid_column_position')) data.gridColumnPosition = dto.grid_column_position;
-    if (hasOwnProperty(dto, 'grid_column_alignment')) data.gridColumnAlignment = dto.grid_column_alignment;
-    if (hasOwnProperty(dto, 'grid_column_visibility')) data.gridColumnVisibility = dto.grid_column_visibility;
+    if (hasOwnProperty(dto, 'grid_column_position'))
+      data.gridColumnPosition = dto.grid_column_position;
+    if (hasOwnProperty(dto, 'grid_column_alignment'))
+      data.gridColumnAlignment = dto.grid_column_alignment;
+    if (hasOwnProperty(dto, 'grid_column_visibility'))
+      data.gridColumnVisibility = dto.grid_column_visibility;
     if (hasOwnProperty(dto, 'grid_column_filter')) data.gridColumnFilter = dto.grid_column_filter;
-    if (hasOwnProperty(dto, 'grid_column_condition')) data.gridColumnCondition = dto.grid_column_condition;
-    if (hasOwnProperty(dto, 'grid_column_condition_color')) data.gridColumnConditionColor = dto.grid_column_condition_color;
+    if (hasOwnProperty(dto, 'grid_column_condition'))
+      data.gridColumnCondition = dto.grid_column_condition;
+    if (hasOwnProperty(dto, 'grid_column_condition_color'))
+      data.gridColumnConditionColor = dto.grid_column_condition_color;
     if (hasOwnProperty(dto, 'grid_column_group')) data.gridColumnGroup = dto.grid_column_group;
     if (hasOwnProperty(dto, 'grid_column_total')) data.gridColumnTotal = dto.grid_column_total;
-    if (hasOwnProperty(dto, 'grid_column_data_type')) data.gridColumnDataType = dto.grid_column_data_type;
+    if (hasOwnProperty(dto, 'grid_column_data_type'))
+      data.gridColumnDataType = dto.grid_column_data_type;
     if (hasOwnProperty(dto, 'grid_column_color')) data.gridColumnColor = dto.grid_column_color;
     if (hasOwnProperty(dto, 'grid_column_notes')) data.gridColumnNotes = dto.grid_column_notes;
     if (hasOwnProperty(dto, 'grid_column_px')) data.gridColumnPx = dto.grid_column_px;
-    if (hasOwnProperty(dto, 'grid_column_sql_field_name')) data.gridColumnSqlFieldName = dto.grid_column_sql_field_name;
+    if (hasOwnProperty(dto, 'grid_column_sql_field_name'))
+      data.gridColumnSqlFieldName = dto.grid_column_sql_field_name;
   }
   private async applyOptionalGridFields(
     data: Prisma.GridDetailsUncheckedCreateInput | Prisma.GridDetailsUncheckedUpdateInput,
@@ -451,11 +468,17 @@ export class GridDetailsService {
     // paren when the stored SQL is later wrapped as `SELECT * FROM (<grid_sql>) AS ...`.
     const normalized = this.configuredGridSqlService.stripSqlComments(gridSql).trim();
     if (!normalized) return null;
-    const topLevelTableName = this.configuredGridSqlService.extractTopLevelFromTableName(normalized);
+    const topLevelTableName =
+      this.configuredGridSqlService.extractTopLevelFromTableName(normalized);
     if (!topLevelTableName) {
       throwFixedBadRequest<GridDetailErrorDetail, GridDetailErrorResponse>(
         'Invalid grid_sql configuration',
-        [{ field: 'grid_sql', message: 'grid_sql must be a SELECT query with a top-level FROM table' }],
+        [
+          {
+            field: 'grid_sql',
+            message: 'grid_sql must be a SELECT query with a top-level FROM table',
+          },
+        ],
       );
     }
     const validation = this.configuredGridSqlService.validateBaseSql({
@@ -522,8 +545,10 @@ export class GridDetailsService {
   }
   private parseUuidId(field: string, value: string): string {
     const normalized = value.trim();
-    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(normalized)) {
-      throwFixedBadRequest<GridDetailErrorDetail, GridDetailErrorResponse>("Validation error", [
+    if (
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(normalized)
+    ) {
+      throwFixedBadRequest<GridDetailErrorDetail, GridDetailErrorResponse>('Validation error', [
         { field, message: `${field} must be a valid UUID` },
       ]);
     }

@@ -43,7 +43,7 @@ import { API_VERSION } from '../../../common/constants/api-version';
 @Controller('employee-department-masters')
 @UseFilters(EmployeeDepartmentMasterExceptionFilter)
 export class EmployeeDepartmentMasterController {
-  constructor(private readonly employeeDepartmentMasterService: EmployeeDepartmentMasterService) { }
+  constructor(private readonly employeeDepartmentMasterService: EmployeeDepartmentMasterService) {}
   @Post('create')
   @Version(API_VERSION)
   @ApiOperation({ summary: 'Create or update employee department (by edptId presence)' })

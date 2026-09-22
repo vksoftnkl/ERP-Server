@@ -31,10 +31,7 @@ import {
 } from './dto/supplier-response.dto';
 import { SupplierExceptionFilter } from './supplier-exception.filter';
 import { SuppliersService } from './suppliers.service';
-import {
-  SupplierPayload,
-  SupplierSuccessResponse,
-} from './types/supplier-api.types';
+import { SupplierPayload, SupplierSuccessResponse } from './types/supplier-api.types';
 import { API_VERSION } from '../../../common/constants/api-version';
 
 @ApiTags('Suppliers')
@@ -44,7 +41,7 @@ import { API_VERSION } from '../../../common/constants/api-version';
 @Controller('suppliers')
 @UseFilters(SupplierExceptionFilter)
 export class SuppliersController {
-  constructor(private readonly suppliersService: SuppliersService) { }
+  constructor(private readonly suppliersService: SuppliersService) {}
 
   @Post('create')
   @Version(API_VERSION)

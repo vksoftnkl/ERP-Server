@@ -19,6 +19,8 @@ const module_service_utils_1 = require("../../../common/utils/module-service.uti
 const stock_voucher_numbering_helper_1 = require("./stock-voucher-numbering.helper");
 const stock_voucher_import_helper_1 = require("./stock-voucher-import.helper");
 const stock_voucher_posting_helper_1 = require("./stock-voucher-posting.helper");
+const stock_posting_service_1 = require("../posting/stock-posting.service");
+const stock_voucher_source_1 = require("../posting/stock-voucher.source");
 const txn_status_log_helper_1 = require("../../../common/txn-status-log/txn-status-log.helper");
 const stock_voucher_types_1 = require("./types/stock-voucher.types");
 const STOCK_VOUCHER_TABLE_NAME = 'stock_voucher';
@@ -31,10 +33,12 @@ let StockVoucherService = class StockVoucherService {
     prisma;
     auditLogService;
     requestContextService;
-    constructor(prisma, auditLogService, requestContextService) {
+    stockPosting;
+    constructor(prisma, auditLogService, requestContextService, stockPosting) {
         this.prisma = prisma;
         this.auditLogService = auditLogService;
         this.requestContextService = requestContextService;
+        this.stockPosting = stockPosting;
     }
     async save(rules, dto) {
         const { header } = dto;
@@ -51,13 +55,13 @@ let StockVoucherService = class StockVoucherService {
                 return { svhId: id, rowsPosted: null };
             }
             await this.assertPostable(rules, id, header.accYear, header.companyId, header.branchId, tx);
-            const posted = await (0, stock_voucher_posting_helper_1.postStockVoucher)(tx, {
-                rules,
+            const posted = await this.stockPosting.post(tx, new stock_voucher_source_1.StockVoucherSource({
                 svhId: id,
                 accYear: header.accYear,
-                actor,
-                postedOn,
-            });
+                companyId: header.companyId,
+                branchId: header.branchId,
+                rules,
+            }), { actor, postedOn });
             await this.logStatusChange(tx, {
                 rules,
                 svhId: id,
@@ -917,13 +921,17 @@ let StockVoucherService = class StockVoucherService {
                svh.svh_company_id,
                svh.svh_branch_id,
                svh.svh_doc_date,
+               svh.svh_doc_datetime,
                svh.svh_rate_source
           FROM stock.stock_voucher svh
          WHERE svh.svh_id       = ${svhId}::uuid
            AND svh.svh_acc_year = ${accYear}::bpchar
       ),
       line AS (
-        SELECT svi.*, doc.svh_doc_date, doc.svh_rate_source, doc.svh_company_id, doc.svh_branch_id
+        -- svh_doc_datetime rides along for the freeze check below: the window
+        -- is tested against the MOVEMENT's timestamp, not now().
+        SELECT svi.*, doc.svh_doc_date, doc.svh_doc_datetime, doc.svh_rate_source,
+               doc.svh_company_id, doc.svh_branch_id
           FROM stock.stock_voucher_item svi
           JOIN doc ON doc.svh_id = svi.svi_voucher_id AND doc.svh_acc_year = svi.svi_acc_year
          WHERE svi.svi_is_deleted = false
@@ -1010,11 +1018,19 @@ let StockVoucherService = class StockVoucherService {
       ),
       -- §11 — THE FREEZE, SEEN BEFORE THE POST. tr_sml_freeze_guard refuses the
       -- ledger row regardless, but as one 409 for the whole document; this
-      -- names the line and the count that holds the shelf. Wall clock, like
-      -- the guard: a back-dated document posted now still changes today's
-      -- on-hand. A count never trips over its own freeze, and a second DRAFT
-      -- count of the same godown is refused by the first's — one sheet holds
-      -- a shelf at a time.
+      -- names the line and the count that holds the shelf. A count never trips
+      -- over its own freeze, and a second DRAFT count of the same godown is
+      -- refused by the first's — one sheet holds a shelf at a time.
+      --
+      -- THE WINDOW IS TESTED AGAINST svh_doc_datetime, NOT now(), and that
+      -- changed on 2026-09-21. The old rule was wall clock, matching the
+      -- dropped fn_sml_freeze_guard — but the till posts OFFLINE and pushes on
+      -- reconnect, so wall clock refuses a sale made at 10:00, before the count
+      -- began, that arrives at 14:00 during it. The shelf was already short
+      -- when the counter started counting; the count reconciles it. A movement
+      -- that HAPPENED inside the window is still refused.
+      -- offline-sync-invariants.md §7b, and StockPostingService.assertNotFrozen
+      -- is the other half of the same rule.
       frozen AS (
         SELECT keyed.svi_id,
                f.svh_refno     AS frozen_by,
@@ -1030,7 +1046,8 @@ let StockVoucherService = class StockVoucherService {
                AND svh.svh_company_id   = keyed.svh_company_id
                AND svh.svh_branch_id    = keyed.svh_branch_id
                AND COALESCE(svh.svh_from_godown_id, svh.svh_to_godown_id) = keyed.svi_godown_id
-               AND now() BETWEEN svh.svh_freeze_from AND svh.svh_freeze_to
+               -- THE MOVEMENT'S OWN TIMESTAMP, not now(). See the note above.
+               AND keyed.svh_doc_datetime BETWEEN svh.svh_freeze_from AND svh.svh_freeze_to
                AND svh.svh_id <> keyed.svi_voucher_id
              LIMIT 1
           ) f ON true
@@ -1135,7 +1152,7 @@ let StockVoucherService = class StockVoucherService {
         const rowsPosted = await this.prisma.$transaction(async (tx) => {
             let posted;
             if ((0, stock_voucher_posting_helper_1.usesInProcessPosting)(rules)) {
-                posted = await (0, stock_voucher_posting_helper_1.postStockVoucher)(tx, { rules, svhId, accYear, actor, postedOn });
+                posted = await this.stockPosting.post(tx, new stock_voucher_source_1.StockVoucherSource({ svhId, accYear, companyId, branchId, rules }), { actor, postedOn });
             }
             else {
                 const fn = client_1.Prisma.raw(this.assertPostFunction(rules));
@@ -1225,14 +1242,7 @@ let StockVoucherService = class StockVoucherService {
                 });
             }
             else if ((0, stock_voucher_posting_helper_1.usesInProcessPosting)(rules)) {
-                reversed = await (0, stock_voucher_posting_helper_1.cancelStockVoucher)(tx, {
-                    rules,
-                    svhId,
-                    accYear,
-                    actor,
-                    reason: trimmedReason,
-                    cancelledOn,
-                });
+                reversed = await this.stockPosting.cancel(tx, new stock_voucher_source_1.StockVoucherSource({ svhId, accYear, companyId, branchId, rules }), { actor, reason: trimmedReason, cancelledOn });
             }
             else {
                 const [row] = await tx.$queryRaw `
@@ -1926,6 +1936,7 @@ exports.StockVoucherService = StockVoucherService = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [prisma_service_1.PrismaService,
         audit_log_service_1.AuditLogService,
-        request_context_service_1.RequestContextService])
+        request_context_service_1.RequestContextService,
+        stock_posting_service_1.StockPostingService])
 ], StockVoucherService);
 //# sourceMappingURL=stock-voucher.service.js.map

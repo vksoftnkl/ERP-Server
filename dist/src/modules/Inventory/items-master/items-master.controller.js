@@ -76,7 +76,7 @@ __decorate([
         summary: 'Create or update an item, optionally with its unit conversions, prices, EAN codes and reorders',
         description: 'Item fields are sent at the top level (create vs update by item_id presence). Optionally include ' +
             'unit_conversions[], prices[], ean_codes[] and/or reorders[] to save them in the same call. ' +
-            'Each provided child collection is DIFF-SYNCED against the item\'s existing rows by natural key ' +
+            "Each provided child collection is DIFF-SYNCED against the item's existing rows by natural key " +
             '(EAN: ean_code; conversions: iuc_unit_id; prices: ipm_uc_unit_id+ipm_godown_id; reorders: ' +
             'ir_unit_id+ir_godown_id): new rows are created, matched rows are updated when a field differs, ' +
             'and existing rows absent from the payload are SOFT-DELETED. Omitting a child array leaves that ' +
@@ -112,16 +112,38 @@ __decorate([
     (0, common_1.Get)('bulk-load'),
     (0, common_1.Version)(api_version_1.API_VERSION),
     (0, swagger_1.ApiOperation)({ summary: 'List items with default price for bulk opening-stock load' }),
-    (0, swagger_1.ApiQuery)({ name: 'item_company_id', required: false, schema: { type: 'string', format: 'uuid' } }),
+    (0, swagger_1.ApiQuery)({
+        name: 'item_company_id',
+        required: false,
+        schema: { type: 'string', format: 'uuid' },
+    }),
     (0, swagger_1.ApiQuery)({ name: 'item_branch_id', required: false, schema: { type: 'string', format: 'uuid' } }),
     (0, swagger_1.ApiQuery)({ name: 'godown_id', required: false, schema: { type: 'string', format: 'uuid' } }),
     (0, swagger_1.ApiQuery)({ name: 'item_group_id', required: false, schema: { type: 'string', format: 'uuid' } }),
     (0, swagger_1.ApiQuery)({ name: 'item_brand_id', required: false, schema: { type: 'string', format: 'uuid' } }),
-    (0, swagger_1.ApiQuery)({ name: 'item_section_id', required: false, schema: { type: 'string', format: 'uuid' } }),
-    (0, swagger_1.ApiQuery)({ name: 'item_category_id', required: false, schema: { type: 'string', format: 'uuid' } }),
+    (0, swagger_1.ApiQuery)({
+        name: 'item_section_id',
+        required: false,
+        schema: { type: 'string', format: 'uuid' },
+    }),
+    (0, swagger_1.ApiQuery)({
+        name: 'item_category_id',
+        required: false,
+        schema: { type: 'string', format: 'uuid' },
+    }),
     (0, swagger_1.ApiQuery)({ name: 'limit', required: false, schema: { type: 'integer' } }),
-    (0, swagger_1.ApiQuery)({ name: 'ui_table_id', required: false, description: 'UI table id for column configuration', schema: { type: 'string' } }),
-    (0, swagger_1.ApiQuery)({ name: 'ui_column_id', required: false, description: 'UI column id for column configuration', schema: { type: 'string' } }),
+    (0, swagger_1.ApiQuery)({
+        name: 'ui_table_id',
+        required: false,
+        description: 'UI table id for column configuration',
+        schema: { type: 'string' },
+    }),
+    (0, swagger_1.ApiQuery)({
+        name: 'ui_column_id',
+        required: false,
+        description: 'UI column id for column configuration',
+        schema: { type: 'string' },
+    }),
     (0, swagger_1.ApiOkResponse)({ description: 'Bulk load items list' }),
     __param(0, (0, common_1.Query)('item_company_id')),
     __param(1, (0, common_1.Query)('item_branch_id')),
@@ -143,7 +165,7 @@ __decorate([
     (0, swagger_1.ApiOperation)({
         summary: 'Soft delete or restore an item by id, cascading to its unit conversions, prices, EAN codes and reorders',
         description: 'Toggles the item (delete if active, restore if deleted), then cascades the same target state to ' +
-            'all of its child rows: children currently in the item\'s old state are flipped, children already ' +
+            "all of its child rows: children currently in the item's old state are flipped, children already " +
             'in the target state are left untouched. NON-ATOMIC: the item is toggled first, then each child ' +
             'collection in its own transaction.',
     }),

@@ -50,7 +50,11 @@ __decorate([
     __metadata("design:type", String)
 ], SaveWidgetFieldDto.prototype, "fieldName", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ maxLength: 255, nullable: true, description: 'Label rendered in the tree' }),
+    (0, swagger_1.ApiPropertyOptional)({
+        maxLength: 255,
+        nullable: true,
+        description: 'Label rendered in the tree',
+    }),
     (0, class_validator_1.IsOptional)(),
     (0, class_transformer_1.Transform)(({ value }) => (0, dto_transforms_1.toNullableString)(value)),
     (0, class_validator_1.ValidateIf)((_, value) => value !== null && value !== undefined),

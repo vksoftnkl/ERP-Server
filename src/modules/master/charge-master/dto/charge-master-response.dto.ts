@@ -46,7 +46,11 @@ export class ChargeMasterPayloadDto {
   chgCostAlloc!: string | null;
   @ApiProperty({ format: 'uuid' })
   chgLedgerCode!: string;
-  @ApiPropertyOptional({ maxLength: 200, nullable: true, description: 'Name of the mapped GL ledger' })
+  @ApiPropertyOptional({
+    maxLength: 200,
+    nullable: true,
+    description: 'Name of the mapped GL ledger',
+  })
   chgLedgerName!: string | null;
   @ApiPropertyOptional({
     maxLength: 10,

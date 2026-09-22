@@ -40,7 +40,7 @@ import { API_VERSION } from '../../../common/constants/api-version';
 @Controller('item-taxes')
 @UseFilters(ItemTaxExceptionFilter)
 export class ItemsTaxMasterController {
-  constructor(private readonly itemsTaxMasterService: ItemsTaxMasterService) { }
+  constructor(private readonly itemsTaxMasterService: ItemsTaxMasterService) {}
   @Post('create')
   @Version(API_VERSION)
   @ApiOperation({ summary: 'Create or update item tax slab (by tax_id presence)' })

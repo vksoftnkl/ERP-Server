@@ -37,7 +37,7 @@ import { API_VERSION } from '../../common/constants/api-version';
 @Controller('item-price-details')
 @UseFilters(ItemPriceDetailExceptionFilter)
 export class ItemPriceDetailsController {
-  constructor(private readonly itemPriceDetailsService: ItemPriceDetailsService) { }
+  constructor(private readonly itemPriceDetailsService: ItemPriceDetailsService) {}
   @Get('get')
   @Version(API_VERSION)
   @ApiOperation({ summary: 'Get item with joined item price and item tax details' })
@@ -51,9 +51,9 @@ export class ItemPriceDetailsController {
   async getByItemId(
     @Query() query: Record<string, unknown>,
   ): Promise<ItemPriceDetailSuccessResponse<ItemPriceDetailPayload>> {
-    const dto = (await validateDto(query, GetItemPriceDetailQueryDto, {
+    const dto = await validateDto(query, GetItemPriceDetailQueryDto, {
       type: 'query',
-    })) as GetItemPriceDetailQueryDto;
+    });
     const data = await this.itemPriceDetailsService.getByItemId(dto.item_id);
     return {
       success: true,

@@ -245,8 +245,7 @@ export class StockTrackPolicyService {
     const trackExpiry = item.itemIsExpiryItem;
     // ck_stp_expiry_needs_batch: two deliveries with different expiry dates and
     // no batch number are indistinguishable on the shelf, so expiry forces batch.
-    const trackBatch =
-      item.itemBatchConfig === 2 || item.itemIsBatchBased || item.itemIsExpiryItem;
+    const trackBatch = item.itemBatchConfig === 2 || item.itemIsBatchBased || item.itemIsExpiryItem;
     return {
       trackBatch,
       trackMrp,
@@ -344,7 +343,8 @@ export class StockTrackPolicyService {
     client: Prisma.TransactionClient,
     slot: { companyId: string | null; branchId: string | null },
   ): Promise<StockTrackPolicySyncResult> {
-    const moved = existing.stpCompanyId !== slot.companyId || existing.stpBranchId !== slot.branchId;
+    const moved =
+      existing.stpCompanyId !== slot.companyId || existing.stpBranchId !== slot.branchId;
     // Remarks are compared too, not only the thirteen values: swapping BATCH
     // for a company preset that happens to carry identical flags still changes
     // where the row came from, and the row is the only place that is recorded.
@@ -485,7 +485,9 @@ export class StockTrackPolicyService {
     return this.requestContextService.getUserId() ?? null;
   }
   private positiveOrNull(value: number | null | undefined): number | null {
-    return typeof value === 'number' && Number.isFinite(value) && value > 0 ? Math.trunc(value) : null;
+    return typeof value === 'number' && Number.isFinite(value) && value > 0
+      ? Math.trunc(value)
+      : null;
   }
   private nonNegativeOr(value: number | null | undefined, fallback: number): number {
     return typeof value === 'number' && Number.isFinite(value) && value >= 0

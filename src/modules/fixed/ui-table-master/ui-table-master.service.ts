@@ -87,7 +87,7 @@ export class UiTableMasterService {
       uiTblClmIsDeleted: false,
     };
 
-    const records = await this.prisma.uitable.findMany({
+    const records = (await this.prisma.uitable.findMany({
       where: tableWhere,
       orderBy: { uiTblId: 'asc' },
       include: {
@@ -96,7 +96,7 @@ export class UiTableMasterService {
           orderBy: [{ uiTblClmNo: 'asc' }, { uiTblClmId: 'asc' }],
         },
       },
-    }) as unknown as UitableWithColumns[];
+    })) as unknown as UitableWithColumns[];
 
     return { items: records.map((record) => this.toPayload(record)) };
   }
@@ -161,7 +161,9 @@ export class UiTableMasterService {
     return { updated: count };
   }
 
-  async updateVisibilitySettings(dto: SaveUiTableVisibilitySettingsDto): Promise<{ updated: number }> {
+  async updateVisibilitySettings(
+    dto: SaveUiTableVisibilitySettingsDto,
+  ): Promise<{ updated: number }> {
     const actor = resolveActor(null, this.requestContextService.getUserId());
     let count = 0;
     await this.prisma.$transaction(async (tx) => {
@@ -320,7 +322,12 @@ export class UiTableMasterService {
         await this.ensureNameIsUnique(tx, normalizedName);
         const created = await tx.uitable.create({ data });
         if (saveUiTableMasterDto.uiTblColumns?.length) {
-          await this.saveColumnsInTx(saveUiTableMasterDto.uiTblColumns, created.uiTblId, createdBy, tx);
+          await this.saveColumnsInTx(
+            saveUiTableMasterDto.uiTblColumns,
+            created.uiTblId,
+            createdBy,
+            tx,
+          );
         }
         const full = await tx.uitable.findFirstOrThrow({
           where: { uiTblId: created.uiTblId },
@@ -540,7 +547,9 @@ export class UiTableMasterService {
       uiTblEditable: record.uiTblEditable,
       uiTblIsActive: record.uiTblIsActive,
       uiTblIsDeleted: record.uiTblIsDeleted,
-      uiTblDeviceType: (record as unknown as Record<string, unknown>)['uiTblDeviceType'] as string | null ?? null,
+      uiTblDeviceType:
+        ((record as unknown as Record<string, unknown>)['uiTblDeviceType'] as string | null) ??
+        null,
       uiTblSyncDate: record.uiTblSyncDate ? record.uiTblSyncDate.toISOString() : null,
       uiTblSyncOn: record.uiTblSyncOn ? record.uiTblSyncOn.toISOString() : null,
       uiTblCreatedOn: record.uiTblCreatedOn.toISOString(),
@@ -556,7 +565,8 @@ export class UiTableMasterService {
       uiTblClmNo: record.uiTblClmNo?.toString() ?? '',
       uiTblClmName: record.uiTblClmName,
       uiTblClmTableId: record.uiTblClmTableId?.toString() ?? null,
-      uiTblClmColumnWidth: record.uiTblClmColumnWidth === null ? null : Number(record.uiTblClmColumnWidth),
+      uiTblClmColumnWidth:
+        record.uiTblClmColumnWidth === null ? null : Number(record.uiTblClmColumnWidth),
       uiTblClmColumnVisibility: record.uiTblClmColumnVisibility,
       uiTblClmColumnFocus: record.uiTblClmColumnFocus,
       uiTblClmColumnPosition: record.uiTblClmColumnPosition,

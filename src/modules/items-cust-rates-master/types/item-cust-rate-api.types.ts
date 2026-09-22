@@ -1,8 +1,16 @@
-import type { ModuleApiErrorDetail, ModuleApiErrorResponse, ModuleApiSuccessResponse } from 'src/common/types/module-api.types';
+import type {
+  ModuleApiErrorDetail,
+  ModuleApiErrorResponse,
+  ModuleApiSuccessResponse,
+} from 'src/common/types/module-api.types';
 import type { ModuleListMeta } from 'src/common/types/module-list.types';
 export type ItemCustRateErrorDetail = ModuleApiErrorDetail;
 export type ItemCustRateErrorResponse = ModuleApiErrorResponse<ItemCustRateErrorDetail>;
-export type ItemCustRateSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> = ModuleApiSuccessResponse<T, TMeta, TStyles>;
+export type ItemCustRateSuccessResponse<
+  T,
+  TMeta = Record<string, unknown>,
+  TStyles = unknown,
+> = ModuleApiSuccessResponse<T, TMeta, TStyles>;
 export type ItemCustRateListMeta = ModuleListMeta;
 
 export interface ItemCustRatePayload {
@@ -30,4 +38,3 @@ export interface ItemCustRatePayload {
 }
 
 export type ItemCustRateListItem = ItemCustRatePayload | Record<string, unknown>;
-

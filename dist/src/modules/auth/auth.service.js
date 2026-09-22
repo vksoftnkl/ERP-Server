@@ -223,7 +223,9 @@ let AuthService = AuthService_1 = class AuthService {
             if (channel === 'mobile' && !candidate.usrMobileLogin)
                 reasons.push('mobile login is disabled');
             if (channel === 'unspecified' &&
-                !candidate.usrWebLogin && !candidate.usrDesktopLogin && !candidate.usrMobileLogin)
+                !candidate.usrWebLogin &&
+                !candidate.usrDesktopLogin &&
+                !candidate.usrMobileLogin)
                 reasons.push('all login channels are disabled');
             this.logger.warn(`Login rejected for '${normalizedUserName}' (${candidate.usrId}, device type '${channel}'): ` +
                 `${reasons.length ? reasons.join(', ') : 'user did not match the login filter'}.`);
@@ -248,10 +250,7 @@ let AuthService = AuthService_1 = class AuthService {
                     devUserId: user.usrId,
                     devDeviceType: { equals: 'Web', mode: 'insensitive' },
                 },
-                orderBy: [
-                    { devLastLogin: { sort: 'desc', nulls: 'last' } },
-                    { devCreatedOn: 'desc' },
-                ],
+                orderBy: [{ devLastLogin: { sort: 'desc', nulls: 'last' } }, { devCreatedOn: 'desc' }],
             });
             if (webDevices.length === 0) {
                 throw new common_1.UnauthorizedException('Device not registered. Please contact administrator.');

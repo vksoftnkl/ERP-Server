@@ -89,7 +89,10 @@ describe('Stock transfer module (e2e — live DB)', () => {
         transformOptions: { enableImplicitConversion: true },
       }),
     );
-    app.enableVersioning({ type: VersioningType.URI, defaultVersion: process.env.API_VERSION ?? '1' });
+    app.enableVersioning({
+      type: VersioningType.URI,
+      defaultVersion: process.env.API_VERSION ?? '1',
+    });
     app.setGlobalPrefix((process.env.API_PREFIX ?? 'api').replace(/^\/+|\/+$/g, ''));
     await app.init();
     http = request(app.getHttpServer());
@@ -100,10 +103,13 @@ describe('Stock transfer module (e2e — live DB)', () => {
   let transferSvhId: string | undefined;
   afterAll(async () => {
     if (physicalSvhId) {
-      await http.post(`${PHY}/cancel`).set('Authorization', BEARER).send({
-        ...ref(physicalSvhId),
-        reason: 'E2E-TRF teardown: reverse the setup overage',
-      });
+      await http
+        .post(`${PHY}/cancel`)
+        .set('Authorization', BEARER)
+        .send({
+          ...ref(physicalSvhId),
+          reason: 'E2E-TRF teardown: reverse the setup overage',
+        });
     }
     await app?.close();
     await prisma.$disconnect();
@@ -184,7 +190,9 @@ describe('Stock transfer module (e2e — live DB)', () => {
     // On-hand is 0 before the overage below, so moving 5 is refused.
     const res = await http.post(T).set('Authorization', BEARER).send(outLine(5, LOT));
     // eslint-disable-next-line no-console
-    console.log(`\n[transfer e2e] over-qty save → HTTP ${res.status}: ${JSON.stringify(res.body?.message)}\n`);
+    console.log(
+      `\n[transfer e2e] over-qty save → HTTP ${res.status}: ${JSON.stringify(res.body?.message)}\n`,
+    );
     expect(res.status).toBe(422);
   });
 
@@ -205,10 +213,13 @@ describe('Stock transfer module (e2e — live DB)', () => {
   });
 
   it('cancel: 404 for a non-existent svhId', async () => {
-    const res = await http.post(`${T}/cancel`).set('Authorization', BEARER).send({
-      ...ref(NIL),
-      reason: 'E2E-TRF nonexistent',
-    });
+    const res = await http
+      .post(`${T}/cancel`)
+      .set('Authorization', BEARER)
+      .send({
+        ...ref(NIL),
+        reason: 'E2E-TRF nonexistent',
+      });
     expect(res.status).toBe(404);
   });
 
@@ -229,24 +240,38 @@ describe('Stock transfer module (e2e — live DB)', () => {
 
   // ── OUT lifecycle with real stock ──────────────────────────────────────
   it('setup: seed 10 units on the lot via a physical overage', async () => {
-    const created = await http.post(`${PHY}/create`).set('Authorization', BEARER).send({
-      header: {
-        accYear: SCOPE.accYear,
-        companyId: SCOPE.companyId,
-        branchId: SCOPE.branchId,
-        deviceId: SCOPE.deviceId,
-        docDate: '2026-09-08',
-        toGodownId: SRC_GODOWN,
-        userId: ACTOR,
-        remarks: 'E2E-TRF setup overage',
-      },
-      lines: [
-        { lineNo: 1, splitNo: 1, itemId: ITEM, godownId: SRC_GODOWN, bucket: 'SALEABLE', lotId: LOT, countedQty: 10 },
-      ],
-    });
+    const created = await http
+      .post(`${PHY}/create`)
+      .set('Authorization', BEARER)
+      .send({
+        header: {
+          accYear: SCOPE.accYear,
+          companyId: SCOPE.companyId,
+          branchId: SCOPE.branchId,
+          deviceId: SCOPE.deviceId,
+          docDate: '2026-09-08',
+          toGodownId: SRC_GODOWN,
+          userId: ACTOR,
+          remarks: 'E2E-TRF setup overage',
+        },
+        lines: [
+          {
+            lineNo: 1,
+            splitNo: 1,
+            itemId: ITEM,
+            godownId: SRC_GODOWN,
+            bucket: 'SALEABLE',
+            lotId: LOT,
+            countedQty: 10,
+          },
+        ],
+      });
     expect(created.status).toBe(201);
     physicalSvhId = created.body.data.header.svhId;
-    const posted = await http.post(`${PHY}/post`).set('Authorization', BEARER).send(ref(physicalSvhId!));
+    const posted = await http
+      .post(`${PHY}/post`)
+      .set('Authorization', BEARER)
+      .send(ref(physicalSvhId!));
     expect(posted.status).toBe(201);
   });
 
@@ -254,7 +279,9 @@ describe('Stock transfer module (e2e — live DB)', () => {
     if (!physicalSvhId) return;
     const res = await http.post(T).set('Authorization', BEARER).send(outLine(4, LOT));
     // eslint-disable-next-line no-console
-    console.log(`\n[transfer e2e] save → HTTP ${res.status}, refno ${res.body?.data?.header?.refno}\n`);
+    console.log(
+      `\n[transfer e2e] save → HTTP ${res.status}, refno ${res.body?.data?.header?.refno}\n`,
+    );
     expect(res.status).toBe(201);
     expect(res.body?.data?.header?.status).toBe('DRAFT');
     expect(res.body?.data?.header?.voucherType).toBe('TRANSFER_OUT');
@@ -289,7 +316,10 @@ describe('Stock transfer module (e2e — live DB)', () => {
 
   it('despatch: is refused before moving stock (preflight, then the missing engine)', async () => {
     if (!transferSvhId) return;
-    const res = await http.post(`${T}/despatch`).set('Authorization', BEARER).send(ref(transferSvhId));
+    const res = await http
+      .post(`${T}/despatch`)
+      .set('Authorization', BEARER)
+      .send(ref(transferSvhId));
     // eslint-disable-next-line no-console
     console.log(`\n[transfer e2e] despatch → HTTP ${res.status}: ${JSON.stringify(res.body)}\n`);
     // Despatch cannot succeed on this DB: this holding trips the (mis-applied)

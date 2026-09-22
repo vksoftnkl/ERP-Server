@@ -16,7 +16,10 @@ import { validateDto } from 'src/common/utils/request-payload-validation.util';
 import { ItemPayloadDto } from '../items-master/dto/item-response.dto';
 import { ItemPricePayloadDto } from '../items-price-master/dto/item-price-response.dto';
 import { ItemTaxPayloadDto } from '../items-tax-master/dto/item-tax-response.dto';
-import { GetItemPriceDetailByBarcodeQueryDto, GetItemPriceDetailQueryDto } from './dto/get-item-price-detail-query.dto';
+import {
+  GetItemPriceDetailByBarcodeQueryDto,
+  GetItemPriceDetailQueryDto,
+} from './dto/get-item-price-detail-query.dto';
 import {
   ItemPriceDetailErrorResponseDto,
   ItemPriceDetailPayloadDto,
@@ -51,9 +54,9 @@ export class ItemPriceDetailsController {
   async getByItemId(
     @Query() query: Record<string, unknown>,
   ): Promise<ItemPriceDetailSuccessResponse<ItemPriceDetailPayload>> {
-    const dto = (await validateDto(query, GetItemPriceDetailQueryDto, {
+    const dto = await validateDto(query, GetItemPriceDetailQueryDto, {
       type: 'query',
-    })) as GetItemPriceDetailQueryDto;
+    });
     const data = await this.itemPriceDetailsService.getByItemId(dto.item_id);
     return {
       success: true,
@@ -71,9 +74,9 @@ export class ItemPriceDetailsController {
   async getByBarcode(
     @Query() query: Record<string, unknown>,
   ): Promise<ItemPriceDetailSuccessResponse<ItemPriceDetailPayload>> {
-    const dto = (await validateDto(query, GetItemPriceDetailByBarcodeQueryDto, {
+    const dto = await validateDto(query, GetItemPriceDetailByBarcodeQueryDto, {
       type: 'query',
-    })) as GetItemPriceDetailByBarcodeQueryDto;
+    });
     const data = await this.itemPriceDetailsService.getByBarcode(dto.barcode);
     return {
       success: true,

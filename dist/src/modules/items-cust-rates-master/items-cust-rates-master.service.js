@@ -38,7 +38,14 @@ let ItemsCustRatesMasterService = class ItemsCustRatesMasterService {
     }
     async list(queryDto) {
         const { page, limit, skip } = (0, module_list_utils_1.resolvePagination)(queryDto);
-        const result = await (0, module_list_utils_1.runConfiguredGridQuery)(this.configuredGridSqlService, { tableName: ITEM_CUST_RATE_TABLE_NAME, alias: 'item_cust_rate_grid', search: queryDto.search, page, limit, skip });
+        const result = await (0, module_list_utils_1.runConfiguredGridQuery)(this.configuredGridSqlService, {
+            tableName: ITEM_CUST_RATE_TABLE_NAME,
+            alias: 'item_cust_rate_grid',
+            search: queryDto.search,
+            page,
+            limit,
+            skip,
+        });
         if (!result) {
             (0, module_service_utils_1.throwMasterBadRequest)('No configured grid found for item customer rate list', []);
         }
@@ -234,7 +241,10 @@ let ItemsCustRatesMasterService = class ItemsCustRatesMasterService {
             return;
         if (validFrom.getTime() > validTo.getTime()) {
             (0, module_service_utils_1.throwMasterBadRequest)('Validation failed', [
-                { field: 'csr_valid_to', message: 'csr_valid_to must be greater than or equal to csr_valid_from' },
+                {
+                    field: 'csr_valid_to',
+                    message: 'csr_valid_to must be greater than or equal to csr_valid_from',
+                },
             ]);
         }
     }
@@ -280,9 +290,7 @@ let ItemsCustRatesMasterService = class ItemsCustRatesMasterService {
         return `${record.csrCustomerId}:${record.csrUnitRateId}`;
     }
     handleWriteError(error) {
-        (0, module_service_utils_1.throwOnUniqueConstraintError)(error, 'Item customer rate already exists', [
-            { field: 'csr_id', message: 'Duplicate item customer rate is not allowed' },
-        ]);
+        (0, module_service_utils_1.throwOnUniqueConstraintError)(error, 'Item customer rate already exists', [{ field: 'csr_id', message: 'Duplicate item customer rate is not allowed' }]);
         if ((0, module_service_utils_1.isForeignKeyConstraintError)(error)) {
             (0, module_service_utils_1.throwMasterBadRequest)('Invalid relation reference', [
                 { field: 'csr_customer_id', message: 'Referenced relation does not exist' },

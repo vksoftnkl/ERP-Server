@@ -68,7 +68,7 @@ __decorate([
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({
         format: 'uuid',
-        description: 'Sale godown override (legacy isale_no). When supplied, resolves the godown row and scopes stock to this godown instead of the rate\'s own godown.',
+        description: "Sale godown override (legacy isale_no). When supplied, resolves the godown row and scopes stock to this godown instead of the rate's own godown.",
     }),
     (0, dtoDecorators_1.OptionalUuid)(),
     __metadata("design:type", String)

@@ -43,7 +43,11 @@ export class SaveWidgetFieldDto {
   @MaxLength(255)
   fieldName!: string;
 
-  @ApiPropertyOptional({ maxLength: 255, nullable: true, description: 'Label rendered in the tree' })
+  @ApiPropertyOptional({
+    maxLength: 255,
+    nullable: true,
+    description: 'Label rendered in the tree',
+  })
   @IsOptional()
   @Transform(({ value }) => toNullableString(value))
   @ValidateIf((_, value) => value !== null && value !== undefined)

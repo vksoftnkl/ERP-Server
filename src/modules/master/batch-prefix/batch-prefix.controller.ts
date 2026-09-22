@@ -47,7 +47,7 @@ import { API_VERSION } from '../../../common/constants/api-version';
 @Controller('batch-prefixes')
 @UseFilters(BatchPrefixExceptionFilter)
 export class BatchPrefixController {
-  constructor(private readonly batchPrefixService: BatchPrefixService) { }
+  constructor(private readonly batchPrefixService: BatchPrefixService) {}
   @Post('create')
   @Version(API_VERSION)
   @ApiOperation({ summary: 'Create or update batch prefix (by id presence)' })

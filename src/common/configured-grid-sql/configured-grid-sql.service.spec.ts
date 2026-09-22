@@ -314,8 +314,7 @@ ORDER BY unit_name`,
       tableName: 'units',
       extraForbiddenPatterns: [
         {
-          pattern:
-            /\b(?:[a-z_][a-z0-9_$]*\s*\.\s*)?(unit_id|unit_base_unit_id)\s*=\s*[-+]?\d+\b/i,
+          pattern: /\b(?:[a-z_][a-z0-9_$]*\s*\.\s*)?(unit_id|unit_base_unit_id)\s*=\s*[-+]?\d+\b/i,
           message: 'Configured query compares unit UUID fields with numeric values',
         },
       ],
@@ -357,19 +356,17 @@ ORDER BY unit_name`,
 
   it('serializes bigint raw query row values before returning', async () => {
     const createdAt = new Date('2026-06-11T00:00:00.000Z');
-    pg.queryReadOnly
-      .mockResolvedValueOnce({ rows: [{ total: 1n }] })
-      .mockResolvedValueOnce({
-        rows: [
-          {
-            id: 34n,
-            name: 'Grid row',
-            nested: { version: 2n },
-            values: [3n, { child_id: 4n }],
-            createdAt,
-          },
-        ],
-      });
+    pg.queryReadOnly.mockResolvedValueOnce({ rows: [{ total: 1n }] }).mockResolvedValueOnce({
+      rows: [
+        {
+          id: 34n,
+          name: 'Grid row',
+          nested: { version: 2n },
+          values: [3n, { child_id: 4n }],
+          createdAt,
+        },
+      ],
+    });
 
     const result = await service.runPagedQuery<Record<string, unknown>>({
       baseSql: 'SELECT * FROM units',
@@ -488,7 +485,9 @@ ORDER BY unit_name`,
     });
 
     expect(result.params).toEqual(['cus_name', '%sun%']);
-    expect(result.sql).toContain('SELECT * FROM (SELECT cus_name, cus_code FROM sales.customers) AS customer_grid');
+    expect(result.sql).toContain(
+      'SELECT * FROM (SELECT cus_name, cus_code FROM sales.customers) AS customer_grid',
+    );
     expect(result.sql).toContain('grid_kv.key = $1');
     expect(result.sql).toContain('grid_kv.value ILIKE $2');
   });
@@ -555,9 +554,7 @@ ORDER BY unit_name`,
     );
 
     expect(result.params).toEqual(['ACME']);
-    expect(result.sql).toBe(
-      'SELECT * FROM units WHERE company_code = $1 OR fallback_code = $1',
-    );
+    expect(result.sql).toBe('SELECT * FROM units WHERE company_code = $1 OR fallback_code = $1');
   });
 
   it('names the legacy parameter tokens left unbound in the sql', () => {

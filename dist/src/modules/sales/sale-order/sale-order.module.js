@@ -14,14 +14,16 @@ const tender_detail_module_1 = require("../../accountsModule/tenderDetail/tender
 const sale_order_controller_1 = require("./sale-order.controller");
 const sale_order_exception_filter_1 = require("./sale-order-exception.filter");
 const sale_order_service_1 = require("./sale-order.service");
+const sale_order_lifecycle_service_1 = require("./sale-order-lifecycle.service");
+const posting_module_1 = require("../posting/posting.module");
 let SaleOrderModule = class SaleOrderModule {
 };
 exports.SaleOrderModule = SaleOrderModule;
 exports.SaleOrderModule = SaleOrderModule = __decorate([
     (0, common_1.Module)({
-        imports: [audit_log_module_1.AuditLogModule, charge_detail_module_1.ChargeDetailModule, tender_detail_module_1.TenderDetailModule],
+        imports: [audit_log_module_1.AuditLogModule, charge_detail_module_1.ChargeDetailModule, tender_detail_module_1.TenderDetailModule, posting_module_1.SalesPostingModule],
         controllers: [sale_order_controller_1.SaleOrderController],
-        providers: [sale_order_service_1.SaleOrderService, sale_order_exception_filter_1.SaleOrderExceptionFilter],
+        providers: [sale_order_service_1.SaleOrderService, sale_order_lifecycle_service_1.SaleOrderLifecycleService, sale_order_exception_filter_1.SaleOrderExceptionFilter],
         exports: [sale_order_service_1.SaleOrderService],
     })
 ], SaleOrderModule);

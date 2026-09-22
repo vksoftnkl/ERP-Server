@@ -112,10 +112,27 @@ export function usesInProcessPosting(rules: StockVoucherTypeRules): boolean {
 function auditColumnActor(actor: string): string | null {
   return actor === DEFAULT_ACTOR ? null : actor;
 }
+/**
+ * How a NON-stock document (a sale bill, a challan, a return) labels the ledger
+ * rows its shadow voucher writes. The engine keys every phase on the shadow's
+ * own `svh_id` — that never changes — but `sml_src_module` / `sml_src_doc_type`
+ * / `sml_src_refno` are what stock reports read, and a sale that showed up as
+ * `STOCK / ISSUE` would vanish from every "sales by item" report. So the sales
+ * module says who it is here and the engine writes it verbatim. Absent means
+ * the classic `STOCK / <voucherType>`.
+ */
+export interface StockLedgerSourceLabel {
+  srcModule: 'SALES' | 'PURCHASE' | 'STOCK';
+  srcDocType: string;
+  /** The printable number of the OWNING document, e.g. `bil00042`. */
+  srcRefno?: string | null;
+  partyId?: string | null;
+}
 export interface PostStockVoucherParams {
   rules: StockVoucherTypeRules;
   svhId: string;
   accYear: string;
+  ledgerSource?: StockLedgerSourceLabel;
   /**
    * The resolved actor. Never null — `resolveActor` falls back to DEFAULT_ACTOR,
    * the nil uuid — so it is passed through `auditColumnActor` before it reaches
@@ -462,8 +479,9 @@ function postingCte(svhId: string, accYear: string, isCount: boolean): Prisma.Sq
  */
 async function resolveLots(
   tx: Prisma.TransactionClient,
-  { rules, svhId, accYear, actor }: PostStockVoucherParams,
+  params: PostStockVoucherParams,
 ): Promise<void> {
+  const { rules, svhId, accYear, actor } = params;
   const isCount = rules.quantityMode === 'COUNT';
   await tx.$executeRaw`
     WITH ${postingCte(svhId, accYear, isCount)}
@@ -485,8 +503,9 @@ async function resolveLots(
            -- The CHAIN's ageing anchor, from the document's own date rather than
            -- today's: a March opening keyed in April is March-old stock.
            c.svh_doc_date, c.svh_branch_id,
-           ${STOCK_LEDGER_SRC_MODULE}, ${rules.voucherType}, c.svi_voucher_id,
-           c.svi_acc_year, c.svh_refno,
+           ${params.ledgerSource?.srcModule ?? STOCK_LEDGER_SRC_MODULE},
+           ${params.ledgerSource?.srcDocType ?? rules.voucherType}, c.svi_voucher_id,
+           c.svi_acc_year, COALESCE(${params.ledgerSource?.srcRefno ?? null}::varchar, c.svh_refno),
            c.line_cost_rate, c.line_cost_rate, c.line_cost_rate_wot, c.svi_landed_rate, c.svi_tax_perc,
            ${auditColumnActor(actor)}
       FROM costed c
@@ -548,8 +567,9 @@ async function attachLotsToLines(
  */
 async function writeLedger(
   tx: Prisma.TransactionClient,
-  { rules, svhId, accYear, actor, postedOn }: PostStockVoucherParams,
+  params: PostStockVoucherParams,
 ): Promise<number> {
+  const { rules, svhId, accYear, actor, postedOn, ledgerSource } = params;
   const isCount = rules.quantityMode === 'COUNT';
   // A count posts two txn types in one document, decided per line by the sign of
   // the variance; every other type posts one, decided by the document.
@@ -570,11 +590,13 @@ async function writeLedger(
       sml_cost_rate, sml_cost_value, sml_cost_rate_wot, sml_cost_value_wot,
       sml_landed_rate, sml_landed_value,
       sml_mrp, sml_batch_no, sml_expiry_date,
-      sml_reason_id, sml_created_by
+      sml_reason_id, sml_doc_rate, sml_party_id, sml_created_by
     )
     SELECT c.svh_company_id, c.svh_branch_id, c.svh_tenant_id, c.svi_acc_year, c.svi_godown_id,
            c.svi_item_id, svi.svi_lot_id, c.svi_uom_id, c.svi_base_uom_id, c.svi_to_base_factor,
-           ${STOCK_LEDGER_SRC_MODULE}, ${rules.voucherType}, c.svi_voucher_id, c.svi_acc_year, c.svh_refno,
+           ${ledgerSource?.srcModule ?? STOCK_LEDGER_SRC_MODULE},
+           ${ledgerSource?.srcDocType ?? rules.voucherType}, c.svi_voucher_id, c.svi_acc_year,
+           COALESCE(${ledgerSource?.srcRefno ?? null}::varchar, c.svh_refno),
            c.svi_line_no, c.svi_split_no,
            CASE WHEN ${isCount}::boolean
                 THEN CASE WHEN COALESCE(c.svi_diff_qty, 0) >= 0 THEN ${plusTxnType} ELSE ${minusTxnType} END
@@ -589,7 +611,12 @@ async function writeLedger(
            c.line_cost_rate_wot, ROUND(c.line_cost_rate_wot * (c.move_base_qty + c.move_free_base_qty), 2),
            c.svi_landed_rate,    ROUND(c.svi_landed_rate    * (c.move_base_qty + c.move_free_base_qty), 2),
            c.svi_mrp, c.svi_batch_no, c.svi_expiry_date,
-           COALESCE(c.svi_reason_id, c.svh_reason_id), ${auditColumnActor(actor)}
+           COALESCE(c.svi_reason_id, c.svh_reason_id),
+           -- What the owning document charged (a sale's rate): the moving
+           -- average's last-sale stamp reads it. Stock vouchers have none.
+           NULLIF(c.svi_sale_price, 0),
+           ${ledgerSource?.partyId ?? null}::uuid,
+           ${auditColumnActor(actor)}
       FROM costed c
       JOIN stock.stock_voucher_item svi
         ON svi.svi_id = c.svi_id AND svi.svi_acc_year = c.svi_acc_year

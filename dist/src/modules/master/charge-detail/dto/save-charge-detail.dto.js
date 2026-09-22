@@ -55,6 +55,9 @@ class SaveChargeDetailDto {
     cdNetAmt;
     cdRemarks;
     cdIsActive;
+    cdSrcCdId;
+    cdSrcAccYear;
+    cdCarryBasis;
     cdCreatedBy;
     cdModifiedBy;
 }
@@ -306,6 +309,28 @@ __decorate([
     (0, dtoDecorators_1.OptionalBoolean)(),
     __metadata("design:type", Boolean)
 ], SaveChargeDetailDto.prototype, "cdIsActive", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        format: 'uuid',
+        nullable: true,
+        description: 'The ORDER charge row (txn_charge_detail.cd_id) this bill charge carries from',
+    }),
+    (0, dtoDecorators_1.NullableUuid)(),
+    __metadata("design:type", Object)
+], SaveChargeDetailDto.prototype, "cdSrcCdId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ maxLength: 9, nullable: true, example: '2026-2027' }),
+    (0, dtoDecorators_1.NullableStringStrict)(9),
+    __metadata("design:type", Object)
+], SaveChargeDetailDto.prototype, "cdSrcAccYear", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        description: 'PRORATA | FULL | MANUAL | NONE — how much of the source charge this line takes',
+    }),
+    (0, dtoDecorators_1.NullableUpperMaxString)(10),
+    __metadata("design:type", Object)
+], SaveChargeDetailDto.prototype, "cdCarryBasis", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ nullable: true, description: 'Actor id or name; defaults to the caller' }),
     (0, dtoDecorators_1.NullableStringStrict)(),

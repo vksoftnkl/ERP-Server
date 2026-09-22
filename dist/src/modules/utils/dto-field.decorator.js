@@ -57,7 +57,7 @@ function RequiredStringField(options) {
             example: options?.example,
             description: options?.description,
         }),
-        (0, class_transformer_1.Transform)(({ value }) => typeof value === 'string' ? value.trim() : value),
+        (0, class_transformer_1.Transform)(({ value }) => (typeof value === 'string' ? value.trim() : value)),
         (0, class_validator_1.IsString)(),
         (0, class_validator_1.IsNotEmpty)(),
     ];
@@ -71,9 +71,7 @@ function OptionalDateField(options) {
         type: String,
         format: options?.format ?? 'date-time',
         example: options?.example ??
-            (options?.format === 'date'
-                ? '2026-05-07'
-                : '2026-05-07T10:30:00.000Z'),
+            (options?.format === 'date' ? '2026-05-07' : '2026-05-07T10:30:00.000Z'),
         default: options?.default,
         description: options?.description,
     }), (0, class_transformer_1.Transform)(({ value }) => constants_1.DateUtil.toOptionalDate(value)), (0, class_validator_1.IsOptional)(), (0, class_validator_1.IsDate)());

@@ -19,14 +19,18 @@ const swagger_1 = require("@nestjs/swagger");
 const http_error_response_dto_1 = require("../../../common/dto/http-error-response.dto");
 const sale_order_exception_filter_1 = require("./sale-order-exception.filter");
 const sale_order_service_1 = require("./sale-order.service");
+const sale_order_lifecycle_service_1 = require("./sale-order-lifecycle.service");
+const sale_order_lifecycle_dto_1 = require("./dto/sale-order-lifecycle.dto");
 const save_sale_order_dto_1 = require("./dto/save-sale-order.dto");
 const cancel_sale_order_lines_dto_1 = require("./dto/cancel-sale-order-lines.dto");
 const sale_order_response_dto_1 = require("./dto/sale-order-response.dto");
 const api_version_1 = require("../../../common/constants/api-version");
 let SaleOrderController = class SaleOrderController {
     orderService;
-    constructor(orderService) {
+    lifecycle;
+    constructor(orderService, lifecycle) {
         this.orderService = orderService;
+        this.lifecycle = lifecycle;
     }
     async save(saveOrderDto) {
         const data = await this.orderService.save(saveOrderDto);
@@ -61,12 +65,24 @@ let SaleOrderController = class SaleOrderController {
         };
     }
     async remove(soId, soCompanyId, soBranchId, soAccYear) {
-        const data = await this.orderService.softDelete(soId, soCompanyId, soBranchId, soAccYear);
+        const data = await this.lifecycle.deleteDraft({ soId, soCompanyId, soBranchId, soAccYear });
         return {
             success: true,
             message: 'Order deleted successfully',
             data,
         };
+    }
+    async postOrder(dto) {
+        const data = await this.lifecycle.post(dto);
+        return { success: true, message: 'Order confirmed successfully', data };
+    }
+    async cancelOrder(dto) {
+        const data = await this.lifecycle.cancel(dto);
+        return { success: true, message: 'Order cancelled successfully', data };
+    }
+    async amendOrder(dto) {
+        const data = await this.lifecycle.amend(dto);
+        return { success: true, message: 'Order amended successfully', data };
     }
 };
 exports.SaleOrderController = SaleOrderController;
@@ -210,6 +226,48 @@ __decorate([
     __metadata("design:paramtypes", [String, String, String, String]),
     __metadata("design:returntype", Promise)
 ], SaleOrderController.prototype, "remove", null);
+__decorate([
+    (0, common_1.Post)('post'),
+    (0, common_1.Version)(api_version_1.API_VERSION),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Confirm a DRAFT order and reserve its stock',
+        description: 'DRAFT → CONFIRMED plus stock.stock_reservation rows per line, FEFO over the godown. A line the ' +
+            'shelf cannot cover comes back as warnings[] { code: SALES_RESERVE_SHORT, line, short } — never a refusal.',
+    }),
+    (0, swagger_1.ApiOkResponse)({ description: '{ soStatus, warnings[] }' }),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [sale_order_lifecycle_dto_1.PostSaleOrderDto]),
+    __metadata("design:returntype", Promise)
+], SaleOrderController.prototype, "postOrder", null);
+__decorate([
+    (0, common_1.Post)('cancel'),
+    (0, common_1.Version)(api_version_1.API_VERSION),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Cancel an order (reason mandatory)',
+        description: '409 SALES_ORDER_DELIVERED when any line has been delivered; otherwise releases the reservations ' +
+            'and writes off every open line.',
+    }),
+    (0, swagger_1.ApiOkResponse)({ description: '{ soStatus, cancelledLines }' }),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [sale_order_lifecycle_dto_1.CancelSaleOrderDto]),
+    __metadata("design:returntype", Promise)
+], SaleOrderController.prototype, "cancelOrder", null);
+__decorate([
+    (0, common_1.Post)('amend'),
+    (0, common_1.Version)(api_version_1.API_VERSION),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Amend an order (full create body + baseRevision + editRemark)',
+        description: '409 SALES_REVISION_STALE when baseRevision is not current; after a partial delivery only ' +
+            'undelivered lines may change (409 SALES_ORDER_LINE_DELIVERED). soRevisionNo + 1.',
+    }),
+    (0, swagger_1.ApiOkResponse)({ type: sale_order_response_dto_1.SaleOrderSuccessSingleDto }),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [sale_order_lifecycle_dto_1.AmendSaleOrderDto]),
+    __metadata("design:returntype", Promise)
+], SaleOrderController.prototype, "amendOrder", null);
 exports.SaleOrderController = SaleOrderController = __decorate([
     (0, swagger_1.ApiTags)('Sale Orders'),
     (0, swagger_1.ApiBearerAuth)('access-token'),
@@ -217,6 +275,7 @@ exports.SaleOrderController = SaleOrderController = __decorate([
     (0, cache_manager_1.CacheTTL)(1),
     (0, common_1.Controller)('sale-orders'),
     (0, common_1.UseFilters)(sale_order_exception_filter_1.SaleOrderExceptionFilter),
-    __metadata("design:paramtypes", [sale_order_service_1.SaleOrderService])
+    __metadata("design:paramtypes", [sale_order_service_1.SaleOrderService,
+        sale_order_lifecycle_service_1.SaleOrderLifecycleService])
 ], SaleOrderController);
 //# sourceMappingURL=sale-order.controller.js.map

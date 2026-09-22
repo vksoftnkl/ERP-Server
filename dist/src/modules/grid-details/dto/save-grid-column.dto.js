@@ -34,7 +34,10 @@ class SaveGridColumnDto {
 }
 exports.SaveGridColumnDto = SaveGridColumnDto;
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ description: 'When provided, request updates grid column by UUID', type: String }),
+    (0, swagger_1.ApiPropertyOptional)({
+        description: 'When provided, request updates grid column by UUID',
+        type: String,
+    }),
     (0, dtoDecorators_1.OptionalUuid)(),
     __metadata("design:type", String)
 ], SaveGridColumnDto.prototype, "grid_column_id", void 0);

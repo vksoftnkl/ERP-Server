@@ -43,7 +43,7 @@ import { API_VERSION } from '../../../common/constants/api-version';
 @Controller('supplier-groups')
 @UseFilters(SupplierGroupExceptionFilter)
 export class SupplierGroupController {
-  constructor(private readonly supplierGroupService: SupplierGroupService) { }
+  constructor(private readonly supplierGroupService: SupplierGroupService) {}
   @Post('create')
   @Version(API_VERSION)
   @ApiOperation({ summary: 'Create or update supplier group (by spgId presence)' })

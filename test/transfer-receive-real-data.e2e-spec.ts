@@ -55,23 +55,45 @@ const prisma = new PrismaClient();
 describe('POST/GET /stock/transfer/receive — real data', () => {
   let app: INestApplication;
   let http: ReturnType<typeof request>;
-  let lot: { lotId: string; itemId: string; uomId: string; batch: string | null; expiry: string | null };
+  let lot: {
+    lotId: string;
+    itemId: string;
+    uomId: string;
+    batch: string | null;
+    expiry: string | null;
+  };
   let outId = '';
   let outRefno = '';
   let receiptId = '';
 
   beforeAll(async () => {
     const claims: AccessTokenPayload = {
-      sub: ACTOR, user_name: 'tester1', sid: 'e2e-rcv-real', user_type: 'SUPER ADMIN',
-      company_id: SCOPE.companyId, branch_id: SCOPE.branchId, device_id: SCOPE.deviceId,
-      iat: Math.floor(Date.now() / 1000), exp: Math.floor(Date.now() / 1000) + 3600, typ: 'access',
+      sub: ACTOR,
+      user_name: 'tester1',
+      sid: 'e2e-rcv-real',
+      user_type: 'SUPER ADMIN',
+      company_id: SCOPE.companyId,
+      branch_id: SCOPE.branchId,
+      device_id: SCOPE.deviceId,
+      iat: Math.floor(Date.now() / 1000),
+      exp: Math.floor(Date.now() / 1000) + 3600,
+      typ: 'access',
     };
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
-      .overrideProvider(TokenService).useValue({ verifyAccessToken: (): AccessTokenPayload => claims })
-      .overrideProvider(AuthSessionService).useValue({ assertAccessTokenIsActive: async (): Promise<void> => undefined })
+      .overrideProvider(TokenService)
+      .useValue({ verifyAccessToken: (): AccessTokenPayload => claims })
+      .overrideProvider(AuthSessionService)
+      .useValue({ assertAccessTokenIsActive: async (): Promise<void> => undefined })
       .compile();
     app = moduleRef.createNestApplication();
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true, transformOptions: { enableImplicitConversion: true } }));
+    app.useGlobalPipes(
+      new ValidationPipe({
+        whitelist: true,
+        forbidNonWhitelisted: true,
+        transform: true,
+        transformOptions: { enableImplicitConversion: true },
+      }),
+    );
     app.enableVersioning({ type: VersioningType.URI });
     app.setGlobalPrefix('api');
     await app.init();
@@ -86,7 +108,10 @@ describe('POST/GET /stock/transfer/receive — real data', () => {
        WHERE b.sbl_godown_id = ${SRC_GODOWN}::uuid AND b.sbl_on_hand_qty > 50
        ORDER BY b.sbl_on_hand_qty DESC LIMIT 1`;
     lot = {
-      lotId: row.lot, itemId: row.item, uomId: row.uom, batch: row.batch,
+      lotId: row.lot,
+      itemId: row.item,
+      uomId: row.uom,
+      batch: row.batch,
       expiry: row.expiry ? new Date(row.expiry).toISOString().slice(0, 10) : null,
     };
   }, 120_000);
@@ -107,30 +132,52 @@ describe('POST/GET /stock/transfer/receive — real data', () => {
   }, 120_000);
 
   it('creates a real inter-branch TRANSFER_OUT through the API', async () => {
-    const res = await http.post(T).set('Authorization', BEARER).send({
-      header: {
-        accYear: ACC_YEAR, companyId: SCOPE.companyId, branchId: SCOPE.branchId,
-        deviceId: SCOPE.deviceId, docDate: DOC_DATE,
-        fromGodownId: SRC_GODOWN, toGodownId: OTHER_GODOWN, toBranchId: OTHER_BRANCH,
-        userId: ACTOR, remarks: 'E2E-RCV real-data receive test',
-      },
-      // ONE line. Two lines naming the same item+lot+bucket are refused at save:
-      // "both lines would become the same transit row and the despatch would be
-      // refused. Two source godowns is two transfers." — which is correct, and
-      // is why the remainder below is made by a PART RECEIPT rather than by a
-      // second line.
-      lines: [
-        {
-          lineNo: 1, splitNo: 1, itemId: lot.itemId, godownId: SRC_GODOWN, lotId: lot.lotId,
-          bucket: 'SALEABLE', uomId: lot.uomId, baseUomId: lot.uomId, toBaseFactor: 1,
-          ...(lot.batch ? { batchNo: lot.batch } : {}),
-          ...(lot.expiry ? { expiryDate: lot.expiry } : {}),
-          qty: SENT, baseQty: SENT,
+    const res = await http
+      .post(T)
+      .set('Authorization', BEARER)
+      .send({
+        header: {
+          accYear: ACC_YEAR,
+          companyId: SCOPE.companyId,
+          branchId: SCOPE.branchId,
+          deviceId: SCOPE.deviceId,
+          docDate: DOC_DATE,
+          fromGodownId: SRC_GODOWN,
+          toGodownId: OTHER_GODOWN,
+          toBranchId: OTHER_BRANCH,
+          userId: ACTOR,
+          remarks: 'E2E-RCV real-data receive test',
         },
-      ],
-    });
+        // ONE line. Two lines naming the same item+lot+bucket are refused at save:
+        // "both lines would become the same transit row and the despatch would be
+        // refused. Two source godowns is two transfers." — which is correct, and
+        // is why the remainder below is made by a PART RECEIPT rather than by a
+        // second line.
+        lines: [
+          {
+            lineNo: 1,
+            splitNo: 1,
+            itemId: lot.itemId,
+            godownId: SRC_GODOWN,
+            lotId: lot.lotId,
+            bucket: 'SALEABLE',
+            uomId: lot.uomId,
+            baseUomId: lot.uomId,
+            toBaseFactor: 1,
+            ...(lot.batch ? { batchNo: lot.batch } : {}),
+            ...(lot.expiry ? { expiryDate: lot.expiry } : {}),
+            qty: SENT,
+            baseQty: SENT,
+          },
+        ],
+      });
     // eslint-disable-next-line no-console
-    console.log('\n  POST /transfer →', res.status, res.body?.message, JSON.stringify(res.body?.errors ?? '').slice(0, 400));
+    console.log(
+      '\n  POST /transfer →',
+      res.status,
+      res.body?.message,
+      JSON.stringify(res.body?.errors ?? '').slice(0, 400),
+    );
     expect(res.status).toBe(201);
     outId = res.body.data.header.svhId;
     outRefno = res.body.data.header.refno;
@@ -167,30 +214,45 @@ describe('POST/GET /stock/transfer/receive — real data', () => {
   }, 60_000);
 
   it('GET /receive/inbound — the consignment shows up at the receiving branch', async () => {
-    const res = await http.get(`${RCV}/inbound`).set('Authorization', BEARER)
+    const res = await http
+      .get(`${RCV}/inbound`)
+      .set('Authorization', BEARER)
       .query({ companyId: SCOPE.companyId, branchId: OTHER_BRANCH, limit: 20, offset: 0 });
     // eslint-disable-next-line no-console
     console.log('\n  inbound →', res.status, res.body?.message);
-    console.log('  ', JSON.stringify(res.body?.data?.rows ?? res.body?.data?.items ?? res.body?.data).slice(0, 700));
+    console.log(
+      '  ',
+      JSON.stringify(res.body?.data?.rows ?? res.body?.data?.items ?? res.body?.data).slice(0, 700),
+    );
     expect(res.status).toBe(200);
     expect(res.body.data.meta.count).toBeGreaterThanOrEqual(1);
   }, 60_000);
 
   it('GET /receive/inbound — the SENDING branch still sees nothing', async () => {
-    const res = await http.get(`${RCV}/inbound`).set('Authorization', BEARER)
+    const res = await http
+      .get(`${RCV}/inbound`)
+      .set('Authorization', BEARER)
       .query({ companyId: SCOPE.companyId, branchId: SCOPE.branchId, limit: 20, offset: 0 });
     expect(res.status).toBe(200);
     expect(res.body.data.meta.count).toBe(0);
   }, 60_000);
 
   it('GET /receive/prefill — opens at the REMAINDER, not at what was sent', async () => {
-    const res = await http.get(`${RCV}/prefill`).set('Authorization', BEARER)
-      .query({ companyId: SCOPE.companyId, branchId: OTHER_BRANCH, accYear: ACC_YEAR, outVoucherId: outId });
+    const res = await http.get(`${RCV}/prefill`).set('Authorization', BEARER).query({
+      companyId: SCOPE.companyId,
+      branchId: OTHER_BRANCH,
+      accYear: ACC_YEAR,
+      outVoucherId: outId,
+    });
     // eslint-disable-next-line no-console
     console.log('\n  prefill →', res.status, res.body?.message);
     console.log('  ', JSON.stringify(res.body?.data?.rows).slice(0, 800));
     expect(res.status).toBe(200);
-    const rows = res.body.data.rows as Array<{ sentQty: number; receivedQty: number; remainingQty: number }>;
+    const rows = res.body.data.rows as Array<{
+      sentQty: number;
+      receivedQty: number;
+      remainingQty: number;
+    }>;
     expect(rows).toHaveLength(1);
     // 10 sent, 4 already taken — the receipt opens at 6, NOT at 10. Prefilling
     // from the despatch's lines instead is what lets a clerk receive the same
@@ -201,31 +263,55 @@ describe('POST/GET /stock/transfer/receive — real data', () => {
   }, 60_000);
 
   it('GET /receive/prefill — refused from the wrong branch', async () => {
-    const res = await http.get(`${RCV}/prefill`).set('Authorization', BEARER)
-      .query({ companyId: SCOPE.companyId, branchId: SCOPE.branchId, accYear: ACC_YEAR, outVoucherId: outId });
+    const res = await http.get(`${RCV}/prefill`).set('Authorization', BEARER).query({
+      companyId: SCOPE.companyId,
+      branchId: SCOPE.branchId,
+      accYear: ACC_YEAR,
+      outVoucherId: outId,
+    });
     // eslint-disable-next-line no-console
     console.log('\n  prefill from the sending branch →', res.status, res.body?.message);
     expect(res.status).toBe(409);
   }, 60_000);
 
   it('POST /receive — creates the TRANSFER_IN draft against the despatch', async () => {
-    const res = await http.post(RCV).set('Authorization', BEARER).send({
-      header: {
-        accYear: ACC_YEAR, companyId: SCOPE.companyId, branchId: OTHER_BRANCH,
-        deviceId: SCOPE.deviceId, docDate: DOC_DATE, toGodownId: OTHER_GODOWN, userId: ACTOR,
-        remarks: 'E2E-RCV real-data receipt',
-        linkSrcModule: 'STOCK', linkSrcDocType: 'TRANSFER_OUT',
-        linkSrcDocId: outId, linkSrcAccYear: ACC_YEAR,
-      },
-      lines: [{
-        lineNo: 1, splitNo: 1, itemId: lot.itemId, godownId: OTHER_GODOWN, lotId: lot.lotId,
-        bucket: 'SALEABLE', uomId: lot.uomId, baseUomId: lot.uomId, toBaseFactor: 1,
-        ...(lot.batch ? { batchNo: lot.batch } : {}),
-        ...(lot.expiry ? { expiryDate: lot.expiry } : {}),
-        // The remainder the prefill offered, not what was originally sent.
-        qty: SENT - ALREADY_RECEIVED, baseQty: SENT - ALREADY_RECEIVED,
-      }],
-    });
+    const res = await http
+      .post(RCV)
+      .set('Authorization', BEARER)
+      .send({
+        header: {
+          accYear: ACC_YEAR,
+          companyId: SCOPE.companyId,
+          branchId: OTHER_BRANCH,
+          deviceId: SCOPE.deviceId,
+          docDate: DOC_DATE,
+          toGodownId: OTHER_GODOWN,
+          userId: ACTOR,
+          remarks: 'E2E-RCV real-data receipt',
+          linkSrcModule: 'STOCK',
+          linkSrcDocType: 'TRANSFER_OUT',
+          linkSrcDocId: outId,
+          linkSrcAccYear: ACC_YEAR,
+        },
+        lines: [
+          {
+            lineNo: 1,
+            splitNo: 1,
+            itemId: lot.itemId,
+            godownId: OTHER_GODOWN,
+            lotId: lot.lotId,
+            bucket: 'SALEABLE',
+            uomId: lot.uomId,
+            baseUomId: lot.uomId,
+            toBaseFactor: 1,
+            ...(lot.batch ? { batchNo: lot.batch } : {}),
+            ...(lot.expiry ? { expiryDate: lot.expiry } : {}),
+            // The remainder the prefill offered, not what was originally sent.
+            qty: SENT - ALREADY_RECEIVED,
+            baseQty: SENT - ALREADY_RECEIVED,
+          },
+        ],
+      });
     // eslint-disable-next-line no-console
     console.log('\n  POST /receive →', res.status, res.body?.message);
     if (res.body?.errors) console.log('  ', JSON.stringify(res.body.errors).slice(0, 500));
@@ -238,22 +324,42 @@ describe('POST/GET /stock/transfer/receive — real data', () => {
   }, 60_000);
 
   it('POST /receive — refuses more than is in transit', async () => {
-    const res = await http.post(RCV).set('Authorization', BEARER).send({
-      header: {
-        accYear: ACC_YEAR, companyId: SCOPE.companyId, branchId: OTHER_BRANCH,
-        deviceId: SCOPE.deviceId, docDate: DOC_DATE, toGodownId: OTHER_GODOWN, userId: ACTOR,
-        remarks: 'E2E-RCV over-receipt',
-        linkSrcModule: 'STOCK', linkSrcDocType: 'TRANSFER_OUT',
-        linkSrcDocId: outId, linkSrcAccYear: ACC_YEAR,
-      },
-      lines: [{
-        lineNo: 1, splitNo: 1, itemId: lot.itemId, godownId: OTHER_GODOWN, lotId: lot.lotId,
-        bucket: 'SALEABLE', uomId: lot.uomId, baseUomId: lot.uomId, toBaseFactor: 1,
-        ...(lot.batch ? { batchNo: lot.batch } : {}),
-        ...(lot.expiry ? { expiryDate: lot.expiry } : {}),
-        qty: 9999, baseQty: 9999,
-      }],
-    });
+    const res = await http
+      .post(RCV)
+      .set('Authorization', BEARER)
+      .send({
+        header: {
+          accYear: ACC_YEAR,
+          companyId: SCOPE.companyId,
+          branchId: OTHER_BRANCH,
+          deviceId: SCOPE.deviceId,
+          docDate: DOC_DATE,
+          toGodownId: OTHER_GODOWN,
+          userId: ACTOR,
+          remarks: 'E2E-RCV over-receipt',
+          linkSrcModule: 'STOCK',
+          linkSrcDocType: 'TRANSFER_OUT',
+          linkSrcDocId: outId,
+          linkSrcAccYear: ACC_YEAR,
+        },
+        lines: [
+          {
+            lineNo: 1,
+            splitNo: 1,
+            itemId: lot.itemId,
+            godownId: OTHER_GODOWN,
+            lotId: lot.lotId,
+            bucket: 'SALEABLE',
+            uomId: lot.uomId,
+            baseUomId: lot.uomId,
+            toBaseFactor: 1,
+            ...(lot.batch ? { batchNo: lot.batch } : {}),
+            ...(lot.expiry ? { expiryDate: lot.expiry } : {}),
+            qty: 9999,
+            baseQty: 9999,
+          },
+        ],
+      });
     // eslint-disable-next-line no-console
     console.log('\n  POST /receive (9999 units) →', res.status, res.body?.message);
     if (res.body?.errors) console.log('  ', JSON.stringify(res.body.errors).slice(0, 400));
@@ -262,8 +368,13 @@ describe('POST/GET /stock/transfer/receive — real data', () => {
 
   it('POST /receive/post — where the receipt actually stops', async () => {
     if (!receiptId) return;
-    const res = await http.post(`${RCV}/post`).set('Authorization', BEARER)
-      .send({ svhId: receiptId, accYear: ACC_YEAR, companyId: SCOPE.companyId, branchId: OTHER_BRANCH, userId: ACTOR });
+    const res = await http.post(`${RCV}/post`).set('Authorization', BEARER).send({
+      svhId: receiptId,
+      accYear: ACC_YEAR,
+      companyId: SCOPE.companyId,
+      branchId: OTHER_BRANCH,
+      userId: ACTOR,
+    });
     // eslint-disable-next-line no-console
     console.log('\n  POST /receive/post →', res.status, res.body?.message);
     if (res.body?.errors) console.log('  ', JSON.stringify(res.body.errors).slice(0, 400));

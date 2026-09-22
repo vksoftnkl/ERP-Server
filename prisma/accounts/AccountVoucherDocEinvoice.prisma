@@ -8,7 +8,7 @@ enum GdeStatus {
 }
 
 model AccVoucherDocEinvoice {
-  gdeId             String               @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("gde_id")
+  gdeId             String               @default(dbgenerated("uuidv7()")) @db.Uuid @map("gde_id")
   gdeGdrId          String               @db.Uuid @map("gde_gdr_id")
   gdeVoucherId      String               @db.Uuid @map("gde_voucher_id")
 
@@ -78,12 +78,17 @@ model AccVoucherDocEinvoice {
   gdeResponsePayload Json?               @map("gde_response_payload")
 
   // Relations
-  docRegister       AccVoucherDocRegister @relation(fields: [gdeGdrId], references: [gdrId], onDelete: Cascade, map: "fk_gde_gdr")
+  docRegister       AccVoucherDocRegister @relation(fields: [gdeGdrId, gdeAccYear], references: [gdrId, gdrAccYear], onDelete: Cascade, map: "fk_gde_gdr")
 
-  @@unique([gdeGdrId], map: "uq_gde_gdr")
+  // LIST-partitioned on gde_acc_year as of 20260922100000; both keys carry the
+  // partition key, as Postgres requires. Still one IRN row per document.
+  @@id([gdeId, gdeAccYear], map: "pk_acc_voucher_doc_einvoice")
+  @@unique([gdeGdrId, gdeAccYear], map: "uq_gde_gdr")
   @@map("acc_voucher_doc_einvoice")
   @@schema("accounts")
-  // Partial unique index uq_acc_voucher_doc_einvoice_irn and partial index
+  // Partial unique index uq_acc_voucher_doc_einvoice_irn -- (gde_irn,
+  // gde_acc_year) since 20260922100000, the year trailing so a lookup by IRN
+  // alone still uses it -- and partial index
   // idx_gde_status are not expressible in Prisma schema. Nor is the retry
   // worklist added by 20260921120000:
   //

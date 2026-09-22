@@ -106,7 +106,10 @@ describe('All endpoints smoke test (e2e — live DB)', () => {
         transformOptions: { enableImplicitConversion: true },
       }),
     );
-    app.enableVersioning({ type: VersioningType.URI, defaultVersion: process.env.API_VERSION ?? '1' });
+    app.enableVersioning({
+      type: VersioningType.URI,
+      defaultVersion: process.env.API_VERSION ?? '1',
+    });
     app.setGlobalPrefix((process.env.API_PREFIX ?? 'api').replace(/^\/+|\/+$/g, ''));
     await app.init();
     http = request(app.getHttpServer());

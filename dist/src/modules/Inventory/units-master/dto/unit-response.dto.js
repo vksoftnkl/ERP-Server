@@ -50,7 +50,11 @@ __decorate([
     __metadata("design:type", Object)
 ], UnitPayloadDto.prototype, "unit_code", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true, example: 'Kilograms', description: 'GST unit name resolved from unit_code' }),
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        example: 'Kilograms',
+        description: 'GST unit name resolved from unit_code',
+    }),
     __metadata("design:type", Object)
 ], UnitPayloadDto.prototype, "unit_code_name", void 0);
 __decorate([

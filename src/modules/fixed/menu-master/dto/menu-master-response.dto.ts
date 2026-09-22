@@ -129,4 +129,3 @@ export class MenuMasterSuccessUpdateVisibilityDto {
   @ApiProperty({ type: [MenuMasterUpdateVisibilityDataDto] })
   data!: MenuMasterUpdateVisibilityDataDto[];
 }
-

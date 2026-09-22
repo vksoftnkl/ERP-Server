@@ -2,10 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { HsnMaster, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { GetHsnCodeMasterQueryDto } from './dto/get-hsn-code-master-query.dto';
-import {
-  HsnCodeMasterGetMeta,
-  HsnCodeMasterPayload,
-} from './types/hsn-code-master-api.types';
+import { HsnCodeMasterGetMeta, HsnCodeMasterPayload } from './types/hsn-code-master-api.types';
 
 type HsnCodeRecord = Pick<
   HsnMaster,

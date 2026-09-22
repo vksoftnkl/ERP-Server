@@ -24,7 +24,10 @@ const parseNumber = (value: string | number | undefined, fallback: number): numb
       useFactory: async (configService: ConfigService) => {
         const logger = new Logger(RedisModule.name);
         const cacheEnabled = configService.get<boolean>('redis.enabled', false);
-        const ttlSeconds = parseNumber(process.env.REDIS_TTL, configService.get<number>('redis.ttl', 3600));
+        const ttlSeconds = parseNumber(
+          process.env.REDIS_TTL,
+          configService.get<number>('redis.ttl', 3600),
+        );
         const ttlMilliseconds = ttlSeconds * 1;
         if (!cacheEnabled) {
           return {
@@ -40,8 +43,12 @@ const parseNumber = (value: string | number | undefined, fallback: number): numb
         }
 
         try {
-          const host = process.env.REDIS_HOST ?? configService.get<string>('redis.host', '127.0.0.1');
-          const port = parseNumber(process.env.REDIS_PORT, configService.get<number>('redis.port', 6379));
+          const host =
+            process.env.REDIS_HOST ?? configService.get<string>('redis.host', '127.0.0.1');
+          const port = parseNumber(
+            process.env.REDIS_PORT,
+            configService.get<number>('redis.port', 6379),
+          );
           const username =
             process.env.REDIS_USERNAME ?? configService.get<string>('redis.username', '');
           const password =
@@ -95,7 +102,9 @@ const parseNumber = (value: string | number | undefined, fallback: number): numb
           };
         } catch (error) {
           const message = error instanceof Error ? error.message : 'Unknown Redis setup error';
-          logger.warn(`Redis HTTP cache unavailable. Falling back to no-op cache store. ${message}`);
+          logger.warn(
+            `Redis HTTP cache unavailable. Falling back to no-op cache store. ${message}`,
+          );
           return {
             ttl: ttlMilliseconds,
             stores: [

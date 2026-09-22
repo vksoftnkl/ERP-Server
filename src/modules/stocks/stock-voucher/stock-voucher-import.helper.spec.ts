@@ -160,7 +160,12 @@ describe('resolveImportedLines', () => {
       saltRow({
         unitConversions: [
           { iucId: BOX_IUC, iucIsBaseUnit: true, iucToBaseFactor: 1, unit: { unit_name: 'BOX' } },
-          { iucId: PIECE_IUC, iucIsBaseUnit: false, iucToBaseFactor: 12, unit: { unit_name: 'BOX' } },
+          {
+            iucId: PIECE_IUC,
+            iucIsBaseUnit: false,
+            iucToBaseFactor: 12,
+            unit: { unit_name: 'BOX' },
+          },
         ],
       }),
     ]);
@@ -223,9 +228,7 @@ describe('resolveImportedLines', () => {
       { supId: SUPPLIER_ID, supName: 'Acme Traders', supShort: 'ACME' },
     ]);
 
-    const result = await resolve(
-      'item_code,unit_name,supplier,qty,cost_rate\nSALT,BOX,ACME,10,20',
-    );
+    const result = await resolve('item_code,unit_name,supplier,qty,cost_rate\nSALT,BOX,ACME,10,20');
 
     expect(result.lines[0].supplierId).toBe(SUPPLIER_ID);
   });
@@ -281,7 +284,7 @@ describe('resolveImportedLines', () => {
     expect(result.lines[0]).toMatchObject({ weightQty: 9.7, landedRate: 22.5 });
   });
 
-  it('never resolves a lot id — that is still the save path\'s, at post time', async () => {
+  it("never resolves a lot id — that is still the save path's, at post time", async () => {
     const result = await resolve('item_code,unit_name,qty,cost_rate\nSALT,BOX,10,20');
 
     expect(result.lines[0]).not.toHaveProperty('lotId');

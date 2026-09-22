@@ -1,5 +1,8 @@
 import { Injectable } from '@nestjs/common';
-import { ConfiguredGridListResult, ConfiguredGridSqlService } from '../../../common/configured-grid-sql/configured-grid-sql.service';
+import {
+  ConfiguredGridListResult,
+  ConfiguredGridSqlService,
+} from '../../../common/configured-grid-sql/configured-grid-sql.service';
 import { DeviceMaster, Prisma } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import { PrismaService } from '../../../database/prisma/prisma.service';
@@ -149,10 +152,20 @@ export class DeviceListMasterService {
     const { page, limit, skip } = resolvePagination(queryDto);
     const result = await runConfiguredGridQuery<DeviceListMasterListItem>(
       this.configuredGridSqlService,
-      { tableName: DEVICE_LIST_MASTER_TABLE_NAME, alias: 'device_list_master_grid', search: queryDto.search, page, limit, skip },
+      {
+        tableName: DEVICE_LIST_MASTER_TABLE_NAME,
+        alias: 'device_list_master_grid',
+        search: queryDto.search,
+        page,
+        limit,
+        skip,
+      },
     );
     if (!result) {
-      throwFixedBadRequest<DeviceListMasterErrorDetail, DeviceListMasterErrorResponse>('No configured grid found for device list master', []);
+      throwFixedBadRequest<DeviceListMasterErrorDetail, DeviceListMasterErrorResponse>(
+        'No configured grid found for device list master',
+        [],
+      );
     }
     return result;
   }
@@ -224,7 +237,12 @@ export class DeviceListMasterService {
       if (sessionCount > 0) {
         throwFixedBadRequest<DeviceListMasterErrorDetail, DeviceListMasterErrorResponse>(
           'Cannot delete device with active login sessions',
-          [{ field: 'devId', message: `Device ${devId} is used in ${sessionCount} login session(s).` }],
+          [
+            {
+              field: 'devId',
+              message: `Device ${devId} is used in ${sessionCount} login session(s).`,
+            },
+          ],
         );
       }
       const modifiedOn = new Date();
@@ -273,7 +291,8 @@ export class DeviceListMasterService {
   private async createDevice(
     saveDeviceListMasterDto: SaveDeviceListMasterDto,
   ): Promise<DeviceListMasterPayload> {
-    const normalizedDeviceType = normalizeDeviceType(saveDeviceListMasterDto.devDeviceType) ?? DeviceType.DESKTOP;
+    const normalizedDeviceType =
+      normalizeDeviceType(saveDeviceListMasterDto.devDeviceType) ?? DeviceType.DESKTOP;
     const normalizedDeviceUid =
       normalizeDeviceUid(saveDeviceListMasterDto.devDeviceUid, normalizedDeviceType) ??
       buildGeneratedDeviceUid(normalizedDeviceType);
@@ -281,7 +300,10 @@ export class DeviceListMasterService {
       ? (saveDeviceListMasterDto.devCompanyId ?? null)
       : null;
     const now = new Date();
-    const createdBy = resolveActor(saveDeviceListMasterDto.devEntryBy, this.requestContextService.getUserId() ?? DEFAULT_ACTOR);
+    const createdBy = resolveActor(
+      saveDeviceListMasterDto.devEntryBy,
+      this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
+    );
     const data: Prisma.DeviceMasterUncheckedCreateInput = {
       devDeviceUid: normalizedDeviceUid,
       devCreatedOn: now,
@@ -342,8 +364,13 @@ export class DeviceListMasterService {
             `No active device found with id ${devId}`,
           );
         }
-        const normalizedDeviceType = normalizeDeviceType(saveDeviceListMasterDto.devDeviceType) ?? toDeviceType(existing.devDeviceType);
-        const normalizedDeviceUid = normalizeDeviceUid(saveDeviceListMasterDto.devDeviceUid, normalizedDeviceType);
+        const normalizedDeviceType =
+          normalizeDeviceType(saveDeviceListMasterDto.devDeviceType) ??
+          toDeviceType(existing.devDeviceType);
+        const normalizedDeviceUid = normalizeDeviceUid(
+          saveDeviceListMasterDto.devDeviceUid,
+          normalizedDeviceType,
+        );
         const nextDeviceUid = normalizedDeviceUid ?? existing.devDeviceUid;
         const nextCompanyId = hasOwnProperty(saveDeviceListMasterDto, 'devCompanyId')
           ? (saveDeviceListMasterDto.devCompanyId ?? null)
@@ -351,7 +378,10 @@ export class DeviceListMasterService {
         await this.ensureDeviceUidIsUnique(tx, nextDeviceUid, nextCompanyId, devId);
         const data: Prisma.DeviceMasterUncheckedUpdateInput = {
           devModifiedOn: new Date(),
-          devModifiedBy: resolveActor(saveDeviceListMasterDto.devEntryBy, this.requestContextService.getUserId() ?? DEFAULT_ACTOR),
+          devModifiedBy: resolveActor(
+            saveDeviceListMasterDto.devEntryBy,
+            this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
+          ),
         };
         if (normalizedDeviceUid !== undefined) {
           data.devDeviceUid = normalizedDeviceUid;
@@ -374,7 +404,10 @@ export class DeviceListMasterService {
             displayName: payload.devDeviceUid,
             originalRecord: this.toPayload(existing),
             modifiedRecord: payload,
-            userId: resolveActor(saveDeviceListMasterDto.devEntryBy, this.requestContextService.getUserId() ?? DEFAULT_ACTOR),
+            userId: resolveActor(
+              saveDeviceListMasterDto.devEntryBy,
+              this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
+            ),
             notes: 'Device updated',
           },
           tx,

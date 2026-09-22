@@ -75,11 +75,7 @@ export const toOptionalBoolean = (value: unknown): boolean | undefined => {
   }
   return value as boolean;
 };
-export const resolveAliasValue = (
-  value: unknown,
-  obj: unknown,
-  aliases: string[],
-): unknown => {
+export const resolveAliasValue = (value: unknown, obj: unknown, aliases: string[]): unknown => {
   if (value !== undefined) {
     return value;
   }

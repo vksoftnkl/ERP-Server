@@ -25,7 +25,11 @@ export class ItemSectionPayloadDto {
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   sec_parent_id!: string | null;
 
-  @ApiPropertyOptional({ maxLength: 150, nullable: true, description: 'Name of the parent section' })
+  @ApiPropertyOptional({
+    maxLength: 150,
+    nullable: true,
+    description: 'Name of the parent section',
+  })
   sec_parent_name!: string | null;
 
   @ApiPropertyOptional({ nullable: true })

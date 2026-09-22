@@ -121,7 +121,7 @@ const PHYSICAL_RULES: StockVoucherTypeRules = {
 @Controller('stock/physical')
 @UseFilters(StockVoucherExceptionFilter)
 export class PhysicalStockVoucherController {
-  constructor(private readonly stockVoucherService: StockVoucherService) { }
+  constructor(private readonly stockVoucherService: StockVoucherService) {}
   @Get('count-sheet')
   @Version(API_VERSION)
   @ApiOperation({
@@ -150,7 +150,7 @@ export class PhysicalStockVoucherController {
     description:
       'Update is a full replace of the lines. The saved status is always DRAFT — posting is a separate call, not a status field.\n\n' +
       'THE SERVER READS RATHER THAN TRUSTS: svi_book_qty comes from stock_balance for the lot the line names, and the unit, batch, expiry, MRP, sale price, serial and supplier are copied from the same holding. A lotId with no live balance row in this godown is a 422 telling you to regenerate the sheet.\n\n' +
-      "THE HEADER TOTALS ARE THE EXCEPTION — header.lineCount, totalQty, totalValue and totalValueWot are taken verbatim from the payload, because nothing server-side sums the grid. They are written AFTER the lines, each is optional against a NOT NULL DEFAULT 0 column, and on a count they may be NEGATIVE: the intended reading is the net variance, and a shortage is negative. Omit one and its stored value is left alone.",
+      'THE HEADER TOTALS ARE THE EXCEPTION — header.lineCount, totalQty, totalValue and totalValueWot are taken verbatim from the payload, because nothing server-side sums the grid. They are written AFTER the lines, each is optional against a NOT NULL DEFAULT 0 column, and on a count they may be NEGATIVE: the intended reading is the net variance, and a shortage is negative. Omit one and its stored value is left alone.',
   })
   @ApiCreatedResponse({ type: PhysicalStockDocumentSuccessDto })
   @ApiBadRequestResponse({ type: PhysicalStockErrorResponseDto })

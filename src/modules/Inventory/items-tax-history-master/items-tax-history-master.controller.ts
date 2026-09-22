@@ -43,7 +43,7 @@ import { API_VERSION } from '../../../common/constants/api-version';
 @Controller('item-tax-histories')
 @UseFilters(ItemTaxHistoryExceptionFilter)
 export class ItemsTaxHistoryMasterController {
-  constructor(private readonly itemsTaxHistoryMasterService: ItemsTaxHistoryMasterService) { }
+  constructor(private readonly itemsTaxHistoryMasterService: ItemsTaxHistoryMasterService) {}
   @Post('create')
   @Version(API_VERSION)
   @ApiOperation({ summary: 'Create or update item tax history (by ith_id presence)' })

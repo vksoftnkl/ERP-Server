@@ -103,10 +103,13 @@ export class OpenItemsService {
       this.loadSettings(query.companyId),
     ]);
 
-    const [bills, credits] = await Promise.all([
+    const [loadedBills, credits] = await Promise.all([
       this.loadBills(query.companyId, partyId, onDate, settings),
       this.loadCredits(query.companyId, partyId),
     ]);
+    // HANDOVER 2026-09-20 §7: the temp-credit WHO rides along, and `?mobile=`
+    // narrows to the bills that person owes.
+    const bills = await this.attachTempCredits(loadedBills, query.mobile?.trim() || null);
 
     const partyPayload: OpenItemsParty = {
       ledId: party.ledId,
@@ -144,6 +147,46 @@ export class OpenItemsService {
    * saying WHY, it is indistinguishable from a bill nobody has paid. The
    * operator collects it a second time.
    */
+  private async attachTempCredits(bills: OpenBill[], mobile: string | null): Promise<OpenBill[]> {
+    if (bills.length === 0) {
+      return bills;
+    }
+    const rows = await this.prisma.$queryRaw<
+      {
+        atc_id: string;
+        atc_abl_id: string;
+        atc_abl_acc_year: string;
+        atc_name: string;
+        atc_mobile: string;
+        atc_due_date: Date;
+        atc_balance_amount: Prisma.Decimal;
+        atc_status: string;
+      }[]
+    >`
+      SELECT atc_id, atc_abl_id, atc_abl_acc_year, atc_name, atc_mobile, atc_due_date, atc_balance_amount, atc_status
+        FROM accounts.acc_temp_credit
+       WHERE atc_is_deleted = false AND atc_status <> 'CANCELLED'
+         AND (atc_abl_id, atc_abl_acc_year) IN (${Prisma.join(bills.map((b) => Prisma.sql`(${b.billId}::uuid, ${b.billAccYear}::char(9))`))})`;
+    const by = new Map(rows.map((r) => [`${r.atc_abl_id}|${r.atc_abl_acc_year.trim()}`, r]));
+    const out = bills.map((b) => {
+      const r = by.get(`${b.billId}|${b.billAccYear.trim()}`);
+      return {
+        ...b,
+        tempCredit: r
+          ? {
+              atcId: r.atc_id,
+              name: r.atc_name,
+              mobile: r.atc_mobile,
+              dueDate: r.atc_due_date ? r.atc_due_date.toISOString().slice(0, 10) : null,
+              balance: Number(r.atc_balance_amount.toString()),
+              status: r.atc_status,
+            }
+          : null,
+      };
+    });
+    return mobile ? out.filter((b) => b.tempCredit?.mobile === mobile) : out;
+  }
+
   private async loadBills(
     companyId: string,
     partyId: string,

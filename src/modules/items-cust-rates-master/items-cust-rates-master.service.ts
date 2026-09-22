@@ -1,5 +1,8 @@
 import { Injectable } from '@nestjs/common';
-import { ConfiguredGridListResult, ConfiguredGridSqlService } from '../../common/configured-grid-sql/configured-grid-sql.service';
+import {
+  ConfiguredGridListResult,
+  ConfiguredGridSqlService,
+} from '../../common/configured-grid-sql/configured-grid-sql.service';
 import { CustItemRate, Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
@@ -49,10 +52,20 @@ export class ItemsCustRatesMasterService {
     const { page, limit, skip } = resolvePagination(queryDto);
     const result = await runConfiguredGridQuery<ItemCustRateListItem>(
       this.configuredGridSqlService,
-      { tableName: ITEM_CUST_RATE_TABLE_NAME, alias: 'item_cust_rate_grid', search: queryDto.search, page, limit, skip },
+      {
+        tableName: ITEM_CUST_RATE_TABLE_NAME,
+        alias: 'item_cust_rate_grid',
+        search: queryDto.search,
+        page,
+        limit,
+        skip,
+      },
     );
     if (!result) {
-      throwMasterBadRequest<ItemCustRateErrorDetail>('No configured grid found for item customer rate list', []);
+      throwMasterBadRequest<ItemCustRateErrorDetail>(
+        'No configured grid found for item customer rate list',
+        [],
+      );
     }
     return result;
   }
@@ -113,14 +126,19 @@ export class ItemsCustRatesMasterService {
     });
   }
 
-  private async createItemCustRate(saveItemCustRateDto: SaveItemCustRateDto): Promise<ItemCustRatePayload> {
+  private async createItemCustRate(
+    saveItemCustRateDto: SaveItemCustRateDto,
+  ): Promise<ItemCustRatePayload> {
     this.validateDateRange(
       this.parseOptionalDate(saveItemCustRateDto.csr_valid_from, 'csr_valid_from') ?? null,
       this.parseOptionalDate(saveItemCustRateDto.csr_valid_to, 'csr_valid_to') ?? null,
     );
 
     const now = new Date();
-    const createdBy = resolveActor(saveItemCustRateDto.csr_created_by, this.requestContextService.getUserId());
+    const createdBy = resolveActor(
+      saveItemCustRateDto.csr_created_by,
+      this.requestContextService.getUserId(),
+    );
     const modifiedBy = resolveActor(saveItemCustRateDto.csr_modified_by, createdBy);
     const data: Prisma.CustItemRateUncheckedCreateInput = {
       csrCustomerId: saveItemCustRateDto.csr_customer_id,
@@ -157,7 +175,9 @@ export class ItemsCustRatesMasterService {
     }
   }
 
-  private async updateItemCustRate(saveItemCustRateDto: SaveItemCustRateDto): Promise<ItemCustRatePayload> {
+  private async updateItemCustRate(
+    saveItemCustRateDto: SaveItemCustRateDto,
+  ): Promise<ItemCustRatePayload> {
     const csrId = saveItemCustRateDto.csr_id!;
 
     try {
@@ -181,7 +201,10 @@ export class ItemsCustRatesMasterService {
           csrCustomerId: saveItemCustRateDto.csr_customer_id,
           csrUnitRateId: saveItemCustRateDto.csr_unit_rate_id,
           csrModifiedOn: new Date(),
-          csrModifiedBy: resolveActor(saveItemCustRateDto.csr_modified_by, this.requestContextService.getUserId()),
+          csrModifiedBy: resolveActor(
+            saveItemCustRateDto.csr_modified_by,
+            this.requestContextService.getUserId(),
+          ),
         };
         this.applyOptionalFields(data, saveItemCustRateDto);
 
@@ -197,7 +220,8 @@ export class ItemsCustRatesMasterService {
             displayName: this.buildDisplayName(updated),
             originalRecord: this.toPayload(existing),
             modifiedRecord: payload,
-            userId: payload.csr_modified_by ?? this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
+            userId:
+              payload.csr_modified_by ?? this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
             notes: 'Item customer rate updated',
           },
           tx,
@@ -237,37 +261,59 @@ export class ItemsCustRatesMasterService {
     data: Prisma.CustItemRateUncheckedCreateInput | Prisma.CustItemRateUncheckedUpdateInput,
     saveItemCustRateDto: SaveItemCustRateDto,
   ): void {
-    if (hasOwnProperty(saveItemCustRateDto, 'csr_branch_id')) data.csrBranchId = saveItemCustRateDto.csr_branch_id;
-    if (hasOwnProperty(saveItemCustRateDto, 'csr_rate_type')) data.csrRateType = saveItemCustRateDto.csr_rate_type;
-    if (hasOwnProperty(saveItemCustRateDto, 'csr_item_rate')) data.csrItemRate = saveItemCustRateDto.csr_item_rate;
-    if (hasOwnProperty(saveItemCustRateDto, 'csr_disc_perc')) data.csrDiscPerc = saveItemCustRateDto.csr_disc_perc;
-    if (hasOwnProperty(saveItemCustRateDto, 'csr_disc_qty')) data.csrDiscQty = saveItemCustRateDto.csr_disc_qty;
-    if (hasOwnProperty(saveItemCustRateDto, 'csr_price_level')) data.csrPriceLevel = saveItemCustRateDto.csr_price_level;
+    if (hasOwnProperty(saveItemCustRateDto, 'csr_branch_id'))
+      data.csrBranchId = saveItemCustRateDto.csr_branch_id;
+    if (hasOwnProperty(saveItemCustRateDto, 'csr_rate_type'))
+      data.csrRateType = saveItemCustRateDto.csr_rate_type;
+    if (hasOwnProperty(saveItemCustRateDto, 'csr_item_rate'))
+      data.csrItemRate = saveItemCustRateDto.csr_item_rate;
+    if (hasOwnProperty(saveItemCustRateDto, 'csr_disc_perc'))
+      data.csrDiscPerc = saveItemCustRateDto.csr_disc_perc;
+    if (hasOwnProperty(saveItemCustRateDto, 'csr_disc_qty'))
+      data.csrDiscQty = saveItemCustRateDto.csr_disc_qty;
+    if (hasOwnProperty(saveItemCustRateDto, 'csr_price_level'))
+      data.csrPriceLevel = saveItemCustRateDto.csr_price_level;
     if (hasOwnProperty(saveItemCustRateDto, 'csr_valid_from')) {
-      data.csrValidFrom = this.parseOptionalDate(saveItemCustRateDto.csr_valid_from, 'csr_valid_from');
+      data.csrValidFrom = this.parseOptionalDate(
+        saveItemCustRateDto.csr_valid_from,
+        'csr_valid_from',
+      );
     }
     if (hasOwnProperty(saveItemCustRateDto, 'csr_valid_to')) {
       data.csrValidTo = this.parseOptionalDate(saveItemCustRateDto.csr_valid_to, 'csr_valid_to');
     }
-    if (hasOwnProperty(saveItemCustRateDto, 'csr_priority')) data.csrPriority = saveItemCustRateDto.csr_priority;
-    if (hasOwnProperty(saveItemCustRateDto, 'csr_is_active')) data.csrIsActive = saveItemCustRateDto.csr_is_active;
+    if (hasOwnProperty(saveItemCustRateDto, 'csr_priority'))
+      data.csrPriority = saveItemCustRateDto.csr_priority;
+    if (hasOwnProperty(saveItemCustRateDto, 'csr_is_active'))
+      data.csrIsActive = saveItemCustRateDto.csr_is_active;
     if (hasOwnProperty(saveItemCustRateDto, 'csr_uploaded_at')) {
-      data.csrUploadedAt = this.parseOptionalDate(saveItemCustRateDto.csr_uploaded_at, 'csr_uploaded_at');
+      data.csrUploadedAt = this.parseOptionalDate(
+        saveItemCustRateDto.csr_uploaded_at,
+        'csr_uploaded_at',
+      );
     }
-    if (hasOwnProperty(saveItemCustRateDto, 'csr_uploaded_by')) data.csrUploadedBy = saveItemCustRateDto.csr_uploaded_by;
-    if (hasOwnProperty(saveItemCustRateDto, 'csr_remarks')) data.csrRemarks = saveItemCustRateDto.csr_remarks;
+    if (hasOwnProperty(saveItemCustRateDto, 'csr_uploaded_by'))
+      data.csrUploadedBy = saveItemCustRateDto.csr_uploaded_by;
+    if (hasOwnProperty(saveItemCustRateDto, 'csr_remarks'))
+      data.csrRemarks = saveItemCustRateDto.csr_remarks;
   }
 
   private validateDateRange(validFrom: Date | null, validTo: Date | null): void {
     if (!validFrom || !validTo) return;
     if (validFrom.getTime() > validTo.getTime()) {
       throwMasterBadRequest<ItemCustRateErrorDetail>('Validation failed', [
-        { field: 'csr_valid_to', message: 'csr_valid_to must be greater than or equal to csr_valid_from' },
+        {
+          field: 'csr_valid_to',
+          message: 'csr_valid_to must be greater than or equal to csr_valid_from',
+        },
       ]);
     }
   }
 
-  private parseOptionalDate(value: string | null | undefined, fieldName: string): Date | null | undefined {
+  private parseOptionalDate(
+    value: string | null | undefined,
+    fieldName: string,
+  ): Date | null | undefined {
     if (value === undefined) return undefined;
     if (value === null) return null;
     const parsedDate = new Date(value);
@@ -310,9 +356,11 @@ export class ItemsCustRatesMasterService {
   }
 
   private handleWriteError(error: unknown): void {
-    throwOnUniqueConstraintError<ItemCustRateErrorDetail>(error, 'Item customer rate already exists', [
-      { field: 'csr_id', message: 'Duplicate item customer rate is not allowed' },
-    ]);
+    throwOnUniqueConstraintError<ItemCustRateErrorDetail>(
+      error,
+      'Item customer rate already exists',
+      [{ field: 'csr_id', message: 'Duplicate item customer rate is not allowed' }],
+    );
     if (isForeignKeyConstraintError(error)) {
       throwMasterBadRequest<ItemCustRateErrorDetail>('Invalid relation reference', [
         { field: 'csr_customer_id', message: 'Referenced relation does not exist' },

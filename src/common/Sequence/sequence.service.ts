@@ -131,7 +131,11 @@ export class SequenceService {
       },
     });
     if (!record) {
-      throwNotFound<SequenceErrorDetail>('Sequence not found', 'id', `No active sequence found with id ${id}`);
+      throwNotFound<SequenceErrorDetail>(
+        'Sequence not found',
+        'id',
+        `No active sequence found with id ${id}`,
+      );
     }
     return this.toPayload(record);
   }
@@ -149,7 +153,11 @@ export class SequenceService {
           },
         });
         if (!existing) {
-          throwNotFound<SequenceErrorDetail>('Sequence not found', 'id', `No active sequence found with id ${id}`);
+          throwNotFound<SequenceErrorDetail>(
+            'Sequence not found',
+            'id',
+            `No active sequence found with id ${id}`,
+          );
         }
         const scope = this.resolveUpdateScope(existing, updateSequenceDto);
         await this.ensureReferencesExist(tx, scope);
@@ -189,7 +197,11 @@ export class SequenceService {
       },
     });
     if (result.count === 0) {
-      throwNotFound<SequenceErrorDetail>('Sequence not found', 'id', `No active sequence found with id ${id}`);
+      throwNotFound<SequenceErrorDetail>(
+        'Sequence not found',
+        'id',
+        `No active sequence found with id ${id}`,
+      );
     }
     return {
       id: sequenceId,

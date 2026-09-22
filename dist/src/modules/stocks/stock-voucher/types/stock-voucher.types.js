@@ -25,13 +25,7 @@ exports.SAVEABLE_STOCK_VOUCHER_STATUSES = [
     'DRAFT',
     'POSTED',
 ];
-exports.STOCK_BUCKETS = [
-    'SALEABLE',
-    'DAMAGED',
-    'QUARANTINE',
-    'EXPIRED',
-    'SAMPLE',
-];
+exports.STOCK_BUCKETS = ['SALEABLE', 'DAMAGED', 'QUARANTINE', 'EXPIRED', 'SAMPLE'];
 exports.STOCK_RATE_SOURCES = [
     'AVG_COST',
     'LAST_PURCHASE',

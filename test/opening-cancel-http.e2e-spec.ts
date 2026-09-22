@@ -39,7 +39,10 @@ interface Voucher {
 
 type VStatus = 'POSTED' | 'DRAFT' | 'CANCELLED';
 
-async function findVoucher(where: string, ...params: unknown[]): Promise<(Voucher & { status: VStatus }) | null> {
+async function findVoucher(
+  where: string,
+  ...params: unknown[]
+): Promise<(Voucher & { status: VStatus }) | null> {
   const rows = await prisma.$queryRawUnsafe<
     Array<{
       svh_id: string;
@@ -113,7 +116,10 @@ describe('POST /stock/opening/cancel (e2e — live DB)', () => {
         transformOptions: { enableImplicitConversion: true },
       }),
     );
-    app.enableVersioning({ type: VersioningType.URI, defaultVersion: process.env.API_VERSION ?? '1' });
+    app.enableVersioning({
+      type: VersioningType.URI,
+      defaultVersion: process.env.API_VERSION ?? '1',
+    });
     app.setGlobalPrefix((process.env.API_PREFIX ?? 'api').replace(/^\/+|\/+$/g, ''));
     await app.init();
 
@@ -135,38 +141,35 @@ describe('POST /stock/opening/cancel (e2e — live DB)', () => {
   });
 
   it('400 when the body is empty (required fields fail validation)', async () => {
-    const res = await request(app.getHttpServer()).post(ROUTE).set('Authorization', BEARER).send({});
+    const res = await request(app.getHttpServer())
+      .post(ROUTE)
+      .set('Authorization', BEARER)
+      .send({});
     expect(res.status).toBe(400);
   });
 
   it('400 when reason is missing', async () => {
     if (!target) return;
-    const res = await request(app.getHttpServer())
-      .post(ROUTE)
-      .set('Authorization', BEARER)
-      .send({
-        svhId: target.svhId,
-        accYear: target.accYear,
-        companyId: target.companyId,
-        branchId: target.branchId,
-        userId: ACTOR,
-      });
+    const res = await request(app.getHttpServer()).post(ROUTE).set('Authorization', BEARER).send({
+      svhId: target.svhId,
+      accYear: target.accYear,
+      companyId: target.companyId,
+      branchId: target.branchId,
+      userId: ACTOR,
+    });
     expect(res.status).toBe(400);
   });
 
   it('404 when the voucher does not exist', async () => {
     if (!target) return;
-    const res = await request(app.getHttpServer())
-      .post(ROUTE)
-      .set('Authorization', BEARER)
-      .send({
-        svhId: NIL_BUT_VALID_UUID,
-        accYear: target.accYear,
-        companyId: target.companyId,
-        branchId: target.branchId,
-        userId: ACTOR,
-        reason: 'E2E-CANCEL nonexistent id',
-      });
+    const res = await request(app.getHttpServer()).post(ROUTE).set('Authorization', BEARER).send({
+      svhId: NIL_BUT_VALID_UUID,
+      accYear: target.accYear,
+      companyId: target.companyId,
+      branchId: target.branchId,
+      userId: ACTOR,
+      reason: 'E2E-CANCEL nonexistent id',
+    });
     expect(res.status).toBe(404);
   });
 
@@ -176,17 +179,14 @@ describe('POST /stock/opening/cancel (e2e — live DB)', () => {
       console.warn('  no DRAFT opening on this DB — 409 case skipped');
       return;
     }
-    const res = await request(app.getHttpServer())
-      .post(ROUTE)
-      .set('Authorization', BEARER)
-      .send({
-        svhId: draft.svhId,
-        accYear: draft.accYear,
-        companyId: draft.companyId,
-        branchId: draft.branchId,
-        userId: ACTOR,
-        reason: 'E2E-CANCEL draft attempt',
-      });
+    const res = await request(app.getHttpServer()).post(ROUTE).set('Authorization', BEARER).send({
+      svhId: draft.svhId,
+      accYear: draft.accYear,
+      companyId: draft.companyId,
+      branchId: draft.branchId,
+      userId: ACTOR,
+      reason: 'E2E-CANCEL draft attempt',
+    });
     expect(res.status).toBe(409);
   });
 
@@ -196,17 +196,14 @@ describe('POST /stock/opening/cancel (e2e — live DB)', () => {
       console.warn('  no opn0000% test voucher on this DB — happy path skipped');
       return;
     }
-    const res = await request(app.getHttpServer())
-      .post(ROUTE)
-      .set('Authorization', BEARER)
-      .send({
-        svhId: target.svhId,
-        accYear: target.accYear,
-        companyId: target.companyId,
-        branchId: target.branchId,
-        userId: ACTOR,
-        reason: 'E2E-CANCEL happy path via /stock/opening/cancel',
-      });
+    const res = await request(app.getHttpServer()).post(ROUTE).set('Authorization', BEARER).send({
+      svhId: target.svhId,
+      accYear: target.accYear,
+      companyId: target.companyId,
+      branchId: target.branchId,
+      userId: ACTOR,
+      reason: 'E2E-CANCEL happy path via /stock/opening/cancel',
+    });
 
     // eslint-disable-next-line no-console
     console.log(`\n[cancel e2e] HTTP ${res.status} — ${JSON.stringify(res.body)}\n`);

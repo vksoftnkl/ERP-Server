@@ -98,7 +98,7 @@ enum GdrPartyType {
 
 model AccVoucherDocRegister {
   // Primary
-  gdrId                    String            @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("gdr_id")
+  gdrId                    String            @default(dbgenerated("uuidv7()")) @db.Uuid @map("gdr_id")
 
   // Source mapping
   gdrSourceModule          GdrSourceModule   @map("gdr_source_module")
@@ -201,16 +201,21 @@ model AccVoucherDocRegister {
   party                    AccLedgerMaster   @relation(fields: [gdrPartyId], references: [ledId], map: "fk_gdr_voucher_party")
   // gdrVoucherId stays a plain UUID column — acc_voucher_header was dropped.
   voucherType              AccVoucherType    @relation(fields: [gdrVoucherTypeId], references: [vchrTypeId], map: "fk_gdr_voucher_type")
-  apiLogs                  AccVoucherDocApiLog[]
   details                  AccVoucherDocDetail[]
   einvoice                 AccVoucherDocEinvoice?
   ewaybill                 AccVoucherDocEwaybill?
 
+  // LIST-partitioned on gdr_acc_year as of 20260922100000, so the primary key
+  // carries the partition key and a row is addressed by the pair --
+  // `where: { gdrId_gdrAccYear: { gdrId, gdrAccYear } }` -- never by gdrId alone.
+  @@id([gdrId, gdrAccYear], map: "pk_acc_voucher_doc_register")
   @@map("acc_voucher_doc_register")
   @@schema("accounts")
   // Partial unique indexes uq_acc_voucher_doc_register_source,
   // uq_acc_voucher_doc_register_voucher, and uq_acc_voucher_doc_register_doc
-  // are not expressible in Prisma schema.
+  // are not expressible in Prisma schema. All three carry gdr_acc_year since
+  // 20260922100000 -- a unique index on a partitioned table must contain the
+  // partition key.
   // Partial indexes idx_gdr_branch_voucher_date, idx_gdr_branch_doc_date,
   // idx_gdr_party, idx_gdr_doc_class, and idx_gdr_doc_status
   // are not expressible in Prisma schema.

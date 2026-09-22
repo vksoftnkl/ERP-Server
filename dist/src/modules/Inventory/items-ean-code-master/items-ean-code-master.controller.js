@@ -45,9 +45,9 @@ let ItemsEanCodeMasterController = class ItemsEanCodeMasterController {
         };
     }
     async getById(query) {
-        const queryDto = (await (0, request_payload_validation_util_1.validateDto)(query, get_item_ean_code_query_dto_1.GetItemEanCodeQueryDto, {
+        const queryDto = await (0, request_payload_validation_util_1.validateDto)(query, get_item_ean_code_query_dto_1.GetItemEanCodeQueryDto, {
             type: 'query',
-        }));
+        });
         if (queryDto.ean_id) {
             const data = await this.itemsEanCodeMasterService.getById(queryDto.ean_id);
             return { success: true, message: 'Item EAN code fetched successfully', data };
@@ -86,18 +86,18 @@ let ItemsEanCodeMasterController = class ItemsEanCodeMasterController {
     }
     async resolveDeletePayload(body, eanId) {
         if ((0, request_payload_validation_util_1.hasRequestPayload)(body)) {
-            return (await (0, request_payload_validation_util_1.validateSingleOrArrayDto)(body, delete_item_ean_code_dto_1.DeleteItemEanCodeDto));
+            return await (0, request_payload_validation_util_1.validateSingleOrArrayDto)(body, delete_item_ean_code_dto_1.DeleteItemEanCodeDto);
         }
         if (!eanId?.trim()) {
             throw new common_1.BadRequestException({
                 message: ['ean_id is required'],
             });
         }
-        return (await (0, request_payload_validation_util_1.validateDto)({
+        return await (0, request_payload_validation_util_1.validateDto)({
             ean_id: eanId,
         }, delete_item_ean_code_dto_1.DeleteItemEanCodeDto, {
             type: 'query',
-        }));
+        });
     }
 };
 exports.ItemsEanCodeMasterController = ItemsEanCodeMasterController;

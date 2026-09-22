@@ -84,7 +84,10 @@ describe('Physical stock count (e2e — live DB, net-zero lifecycle)', () => {
         transformOptions: { enableImplicitConversion: true },
       }),
     );
-    app.enableVersioning({ type: VersioningType.URI, defaultVersion: process.env.API_VERSION ?? '1' });
+    app.enableVersioning({
+      type: VersioningType.URI,
+      defaultVersion: process.env.API_VERSION ?? '1',
+    });
     app.setGlobalPrefix((process.env.API_PREFIX ?? 'api').replace(/^\/+|\/+$/g, ''));
     await app.init();
     http = request(app.getHttpServer());
@@ -220,7 +223,9 @@ describe('Physical stock count (e2e — live DB, net-zero lifecycle)', () => {
     });
     expect(res.status).toBe(200);
     expect(res.body?.success).toBe(true);
-    const problems = (res.body?.data as Array<{ problem: unknown }>).filter((r) => r.problem !== null);
+    const problems = (res.body?.data as Array<{ problem: unknown }>).filter(
+      (r) => r.problem !== null,
+    );
     expect(problems.length).toBe(0);
   });
 
@@ -234,7 +239,9 @@ describe('Physical stock count (e2e — live DB, net-zero lifecycle)', () => {
       userId: ACTOR,
     });
     // eslint-disable-next-line no-console
-    console.log(`\n[physical e2e] post HTTP ${res.status} — ${JSON.stringify(res.body?.message)}\n`);
+    console.log(
+      `\n[physical e2e] post HTTP ${res.status} — ${JSON.stringify(res.body?.message)}\n`,
+    );
     expect(res.status).toBe(201);
     expect(res.body?.success).toBe(true);
     expect(res.body?.data?.rowsPosted).toBeGreaterThanOrEqual(1);
@@ -275,7 +282,9 @@ describe('Physical stock count (e2e — live DB, net-zero lifecycle)', () => {
       reason: 'E2E-PHY reverse the temporary overage',
     });
     // eslint-disable-next-line no-console
-    console.log(`\n[physical e2e] cancel HTTP ${res.status} — ${JSON.stringify(res.body?.message)}\n`);
+    console.log(
+      `\n[physical e2e] cancel HTTP ${res.status} — ${JSON.stringify(res.body?.message)}\n`,
+    );
     expect(res.status).toBe(201);
     expect(res.body?.success).toBe(true);
     expect(res.body?.data?.status).toBe('CANCELLED');

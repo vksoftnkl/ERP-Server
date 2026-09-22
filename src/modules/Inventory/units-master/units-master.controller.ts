@@ -41,7 +41,7 @@ import { API_VERSION } from '../../../common/constants/api-version';
 @Controller('units')
 @UseFilters(UnitExceptionFilter)
 export class UnitsMasterController {
-  constructor(private readonly unitsMasterService: UnitsMasterService) { }
+  constructor(private readonly unitsMasterService: UnitsMasterService) {}
 
   @Post('create')
   @Version(API_VERSION)

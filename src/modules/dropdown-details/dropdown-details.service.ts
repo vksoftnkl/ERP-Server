@@ -93,7 +93,12 @@ export class DropdownDetailsService {
     if (!baseSql) {
       throwFixedBadRequest<DropdownDetailErrorDetail, DropdownDetailErrorResponse>(
         'Invalid dropdown SQL configuration',
-        [{ field: 'dropdown_sql', message: `Dropdown ${queryDto.dropdown_id} has no configured SQL` }],
+        [
+          {
+            field: 'dropdown_sql',
+            message: `Dropdown ${queryDto.dropdown_id} has no configured SQL`,
+          },
+        ],
       );
     }
     const tableName = this.configuredGridSqlService.extractTopLevelFromTableName(baseSql) ?? '';
@@ -296,7 +301,9 @@ export class DropdownDetailsService {
       return { dropdown_id: dropdownId, deleted: true };
     });
   }
-  async deleteColumn(dropdown_columns_id: string): Promise<{ dropdown_columns_id: string; deleted: true }> {
+  async deleteColumn(
+    dropdown_columns_id: string,
+  ): Promise<{ dropdown_columns_id: string; deleted: true }> {
     const parsedColumnId = this.parseUuidId('dropdown_columns_id', dropdown_columns_id);
     return this.prisma.$transaction(async (tx) => {
       const existing = await tx.dropdownColumns.findFirst({
@@ -483,7 +490,12 @@ export class DropdownDetailsService {
     if (!normalizedDataType) {
       throwFixedBadRequest<DropdownDetailErrorDetail, DropdownDetailErrorResponse>(
         'Validation failed',
-        [{ field: 'dropdown_columns_data_type', message: 'dropdown_columns_data_type must not be empty' }],
+        [
+          {
+            field: 'dropdown_columns_data_type',
+            message: 'dropdown_columns_data_type must not be empty',
+          },
+        ],
       );
     }
     if (colDto.dropdown_columns_id) {
@@ -615,7 +627,12 @@ export class DropdownDetailsService {
       if (!/^[a-z_][a-z0-9_]*$/i.test(key)) {
         throwFixedBadRequest<DropdownDetailErrorDetail, DropdownDetailErrorResponse>(
           'Validation error',
-          [{ field: 'dropdown_param', message: `Invalid parameter name in dropdown_param: "${key}"` }],
+          [
+            {
+              field: 'dropdown_param',
+              message: `Invalid parameter name in dropdown_param: "${key}"`,
+            },
+          ],
         );
       }
       if (
@@ -627,7 +644,12 @@ export class DropdownDetailsService {
       ) {
         throwFixedBadRequest<DropdownDetailErrorDetail, DropdownDetailErrorResponse>(
           'Validation error',
-          [{ field: 'dropdown_param', message: `Unsupported value type for dropdown_param.${key}: ${typeof val}` }],
+          [
+            {
+              field: 'dropdown_param',
+              message: `Unsupported value type for dropdown_param.${key}: ${typeof val}`,
+            },
+          ],
         );
       }
       if (typeof val === 'number' && !Number.isFinite(val)) {

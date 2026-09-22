@@ -682,9 +682,7 @@ describe('AuditLogService', () => {
       { itgId: currentGroupId, itgName: 'Current Group' },
       { itgId: nextParentGroupId, itgName: 'Parent Group B' },
     ]);
-    prisma.itemTaxMaster.findMany.mockResolvedValue([
-      { taxId: defaultTaxId, taxName: 'GST 18%' },
-    ]);
+    prisma.itemTaxMaster.findMany.mockResolvedValue([{ taxId: defaultTaxId, taxName: 'GST 18%' }]);
     prisma.unit.findMany.mockResolvedValue([
       { unit_id: oldUnitId, unit_name: 'Box' },
       { unit_id: newUnitId, unit_name: 'Carton' },

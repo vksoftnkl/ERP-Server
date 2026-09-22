@@ -32,7 +32,9 @@ const BASE64_PATTERN = /^[A-Za-z0-9+/]+={0,2}$/;
 const COMPOSITE_TRANSACTION_OPTIONS = { maxWait: 10_000, timeout: 30_000 };
 // The payload echoes the preset's name next to item_track_preset_id, so every
 // path that builds one pulls that single column over the relation.
-const TRACK_PRESET_INCLUDE = { trackPreset: { select: { sptName: true } } } satisfies Prisma.ItemMasterInclude;
+const TRACK_PRESET_INCLUDE = {
+  trackPreset: { select: { sptName: true } },
+} satisfies Prisma.ItemMasterInclude;
 @Injectable()
 export class ItemsMasterService {
   constructor(
@@ -138,10 +140,7 @@ export class ItemsMasterService {
     const unitIdByConversionId = new Map(unit_conversions.map((r) => [r.iuc_id, r.iuc_unit_id]));
     const conversionUnitId = (iucId: string | null | undefined): string | null =>
       iucId ? (unitIdByConversionId.get(iucId) ?? null) : null;
-    const companyIds = collect(
-      item.item_company_id,
-      ...prices.map((r) => r.ipm_company_id),
-    );
+    const companyIds = collect(item.item_company_id, ...prices.map((r) => r.ipm_company_id));
     const branchIds = collect(
       item.item_branch_id,
       ...prices.map((r) => r.ipm_branch_id),
@@ -165,75 +164,86 @@ export class ItemsMasterService {
     const supplierIds = collect(item.item_supplier_id);
     const custGroupIds = collect(item.item_cust_group);
     const taxIds = collect(item.item_default_tax_id);
-    const [companies, branches, units, godowns, groups, categories, brands, sections, suppliers, custGroups, taxes] =
-      await Promise.all([
-        companyIds.length
-          ? this.prisma.company.findMany({
-              where: { compId: { in: companyIds } },
-              select: { compId: true, compName: true },
-            })
-          : [],
-        branchIds.length
-          ? this.prisma.branchMaster.findMany({
-              where: { brId: { in: branchIds } },
-              select: { brId: true, brName: true },
-            })
-          : [],
-        unitIds.length
-          ? this.prisma.unit.findMany({
-              where: { unit_id: { in: unitIds } },
-              select: { unit_id: true, unit_name: true },
-            })
-          : [],
-        godownIds.length
-          ? this.prisma.godownLocation.findMany({
-              where: { gdlId: { in: godownIds } },
-              select: { gdlId: true, gdlName: true },
-            })
-          : [],
-        groupIds.length
-          ? this.prisma.itemGroupMaster.findMany({
-              where: { itgId: { in: groupIds } },
-              select: { itgId: true, itgName: true },
-            })
-          : [],
-        categoryIds.length
-          ? this.prisma.categoryMaster.findMany({
-              where: { categoryId: { in: categoryIds } },
-              select: { categoryId: true, categoryName: true },
-            })
-          : [],
-        brandIds.length
-          ? this.prisma.itemBrandMaster.findMany({
-              where: { brand_id: { in: brandIds } },
-              select: { brand_id: true, brand_name: true },
-            })
-          : [],
-        sectionIds.length
-          ? this.prisma.itemSectionMaster.findMany({
-              where: { secId: { in: sectionIds } },
-              select: { secId: true, secName: true },
-            })
-          : [],
-        supplierIds.length
-          ? this.prisma.supplier.findMany({
-              where: { supId: { in: supplierIds } },
-              select: { supId: true, supName: true },
-            })
-          : [],
-        custGroupIds.length
-          ? this.prisma.custGroup.findMany({
-              where: { cgrId: { in: custGroupIds } },
-              select: { cgrId: true, cgrName: true },
-            })
-          : [],
-        taxIds.length
-          ? this.prisma.itemTaxMaster.findMany({
-              where: { taxId: { in: taxIds } },
-              select: { taxId: true, taxName: true },
-            })
-          : [],
-      ]);
+    const [
+      companies,
+      branches,
+      units,
+      godowns,
+      groups,
+      categories,
+      brands,
+      sections,
+      suppliers,
+      custGroups,
+      taxes,
+    ] = await Promise.all([
+      companyIds.length
+        ? this.prisma.company.findMany({
+            where: { compId: { in: companyIds } },
+            select: { compId: true, compName: true },
+          })
+        : [],
+      branchIds.length
+        ? this.prisma.branchMaster.findMany({
+            where: { brId: { in: branchIds } },
+            select: { brId: true, brName: true },
+          })
+        : [],
+      unitIds.length
+        ? this.prisma.unit.findMany({
+            where: { unit_id: { in: unitIds } },
+            select: { unit_id: true, unit_name: true },
+          })
+        : [],
+      godownIds.length
+        ? this.prisma.godownLocation.findMany({
+            where: { gdlId: { in: godownIds } },
+            select: { gdlId: true, gdlName: true },
+          })
+        : [],
+      groupIds.length
+        ? this.prisma.itemGroupMaster.findMany({
+            where: { itgId: { in: groupIds } },
+            select: { itgId: true, itgName: true },
+          })
+        : [],
+      categoryIds.length
+        ? this.prisma.categoryMaster.findMany({
+            where: { categoryId: { in: categoryIds } },
+            select: { categoryId: true, categoryName: true },
+          })
+        : [],
+      brandIds.length
+        ? this.prisma.itemBrandMaster.findMany({
+            where: { brand_id: { in: brandIds } },
+            select: { brand_id: true, brand_name: true },
+          })
+        : [],
+      sectionIds.length
+        ? this.prisma.itemSectionMaster.findMany({
+            where: { secId: { in: sectionIds } },
+            select: { secId: true, secName: true },
+          })
+        : [],
+      supplierIds.length
+        ? this.prisma.supplier.findMany({
+            where: { supId: { in: supplierIds } },
+            select: { supId: true, supName: true },
+          })
+        : [],
+      custGroupIds.length
+        ? this.prisma.custGroup.findMany({
+            where: { cgrId: { in: custGroupIds } },
+            select: { cgrId: true, cgrName: true },
+          })
+        : [],
+      taxIds.length
+        ? this.prisma.itemTaxMaster.findMany({
+            where: { taxId: { in: taxIds } },
+            select: { taxId: true, taxName: true },
+          })
+        : [],
+    ]);
     const companyName = new Map(companies.map((r) => [r.compId, r.compName]));
     const branchName = new Map(branches.map((r) => [r.brId, r.brName]));
     const unitName = new Map(units.map((r) => [r.unit_id, r.unit_name]));
@@ -342,22 +352,28 @@ export class ItemsMasterService {
     const taxIds = Array.from(
       new Set(items.map((i) => i.itemDefaultTaxId).filter((id): id is string => id !== null)),
     );
-    const taxRecords = taxIds.length > 0
-      ? await this.prisma.itemTaxMaster.findMany({ where: { taxId: { in: taxIds }, taxIsDeleted: false } })
-      : [];
+    const taxRecords =
+      taxIds.length > 0
+        ? await this.prisma.itemTaxMaster.findMany({
+            where: { taxId: { in: taxIds }, taxIsDeleted: false },
+          })
+        : [];
     const taxById = new Map(taxRecords.map((t) => [t.taxId, t]));
     return items.map((item): BulkLoadItemPayload => {
-      const p = (params.godownId
-        ? item.prices.find((r) => r.ipmGodownId === params.godownId)
-        : undefined)
-        ?? item.prices.find((r) => r.itemUnitConversion.iucIsDefaultUnit)
-        ?? item.prices[0]
-        ?? null;
+      const p =
+        (params.godownId
+          ? item.prices.find((r) => r.ipmGodownId === params.godownId)
+          : undefined) ??
+        item.prices.find((r) => r.itemUnitConversion.iucIsDefaultUnit) ??
+        item.prices[0] ??
+        null;
       const tax = item.itemDefaultTaxId ? (taxById.get(item.itemDefaultTaxId) ?? null) : null;
       const trackingType =
-        item.itemBatchConfig === 1 ? 'MRP'
-        : item.itemBatchConfig === 2 || item.itemIsBatchBased || item.itemIsExpiryItem ? 'BATCH'
-        : 'NONE';
+        item.itemBatchConfig === 1
+          ? 'MRP'
+          : item.itemBatchConfig === 2 || item.itemIsBatchBased || item.itemIsExpiryItem
+            ? 'BATCH'
+            : 'NONE';
       return {
         item_id: item.itemId,
         item_name: item.itemNameEn,
@@ -511,7 +527,10 @@ export class ItemsMasterService {
     }
     const companyId = saveItemDto.item_company_id ?? null;
     const now = new Date();
-    const createdBy = resolveActor(saveItemDto.item_created_by, this.requestContextService.getUserId());
+    const createdBy = resolveActor(
+      saveItemDto.item_created_by,
+      this.requestContextService.getUserId(),
+    );
     const modifiedBy = resolveActor(saveItemDto.item_modified_by, createdBy);
     const data: Prisma.ItemMasterUncheckedCreateInput = {
       itemCompanyId: companyId,
@@ -589,7 +608,10 @@ export class ItemsMasterService {
         itemGroupId: saveItemDto.item_group_id,
         itemBaseUnitId: saveItemDto.item_base_unit_id ?? null,
         itemModifiedOn: new Date(),
-        itemModifiedBy: resolveActor(saveItemDto.item_modified_by, this.requestContextService.getUserId()),
+        itemModifiedBy: resolveActor(
+          saveItemDto.item_modified_by,
+          this.requestContextService.getUserId(),
+        ),
       };
       this.applyOptionalFields(data, saveItemDto);
       const updated = await client.itemMaster.update({
@@ -614,7 +636,8 @@ export class ItemsMasterService {
           displayName: payload.item_name_en,
           originalRecord: this.toPayload(existing),
           modifiedRecord: payload,
-          userId: payload.item_modified_by ?? this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
+          userId:
+            payload.item_modified_by ?? this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
           notes: 'Item updated',
         },
         client,
@@ -770,7 +793,7 @@ export class ItemsMasterService {
     if (hasOwnProperty(saveItemDto, 'item_track_preset_id')) {
       data.itemTrackPresetId = saveItemDto.item_track_preset_id;
     }
-    
+
     if (hasOwnProperty(saveItemDto, 'item_sort_order')) {
       data.itemSortOrder = saveItemDto.item_sort_order;
     }
@@ -820,7 +843,9 @@ export class ItemsMasterService {
     const bytes = Uint8Array.from(Buffer.from(normalized, 'base64'));
     return bytes;
   }
-  private toPayload(record: ItemMaster & { trackPreset?: { sptName: string } | null }): ItemPayload {
+  private toPayload(
+    record: ItemMaster & { trackPreset?: { sptName: string } | null },
+  ): ItemPayload {
     return {
       item_id: record.itemId,
       item_company_id: record.itemCompanyId,

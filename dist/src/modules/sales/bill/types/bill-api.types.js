@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.BILL_STATUS_CANCELLED = exports.BILL_STATUS_POSTED = exports.BILL_STATUS_SRC_DOC_TYPE = exports.BILL_STATUS_SRC_MODULE = exports.BILL_TENDER_AUDIT = exports.BILL_TENDER_DR_CR = exports.BILL_TENDER_SRC_DOC_TYPE = exports.BILL_TENDER_SRC_MODULE = exports.BILL_CHARGE_AUDIT = exports.BILL_CHARGE_DOC_TYPE = void 0;
+exports.BILL_STATUS_CANCELLED = exports.BILL_STATUS_DRAFT = exports.BILL_STATUS_POSTED = exports.BILL_STATUS_SRC_DOC_TYPE = exports.BILL_STATUS_SRC_MODULE = exports.BILL_TENDER_AUDIT = exports.BILL_TENDER_DR_CR = exports.BILL_TENDER_SRC_DOC_TYPE = exports.BILL_TENDER_SRC_MODULE = exports.BILL_CHARGE_AUDIT = exports.BILL_CHARGE_DOC_TYPE = void 0;
 const charge_enum_1 = require("../../../master/charge-master/types/charge-enum");
 const tender_detail_api_types_1 = require("../../../accountsModule/tenderDetail/types/tender-detail-api.types");
 const txn_status_log_helper_1 = require("../../../../common/txn-status-log/txn-status-log.helper");
@@ -21,5 +21,6 @@ exports.BILL_TENDER_AUDIT = {
 exports.BILL_STATUS_SRC_MODULE = txn_status_log_helper_1.TxnStatusSrcModule.SALES;
 exports.BILL_STATUS_SRC_DOC_TYPE = txn_status_log_helper_1.TxnStatusDocType.SALE_BILL;
 exports.BILL_STATUS_POSTED = 'POSTED';
+exports.BILL_STATUS_DRAFT = 'DRAFT';
 exports.BILL_STATUS_CANCELLED = 'CANCELLED';
 //# sourceMappingURL=bill-api.types.js.map

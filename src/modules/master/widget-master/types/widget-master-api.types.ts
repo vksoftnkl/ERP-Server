@@ -1,8 +1,15 @@
-import type { ModuleApiErrorDetail, ModuleApiErrorResponse, ModuleApiSuccessResponse } from 'src/common/types/module-api.types';
+import type {
+  ModuleApiErrorDetail,
+  ModuleApiErrorResponse,
+  ModuleApiSuccessResponse,
+} from 'src/common/types/module-api.types';
 
 export type WidgetMasterErrorDetail = ModuleApiErrorDetail;
 export type WidgetMasterErrorResponse = ModuleApiErrorResponse<WidgetMasterErrorDetail>;
-export type WidgetMasterSuccessResponse<T, TMeta = Record<string, unknown>> = ModuleApiSuccessResponse<T, TMeta, never>;
+export type WidgetMasterSuccessResponse<
+  T,
+  TMeta = Record<string, unknown>,
+> = ModuleApiSuccessResponse<T, TMeta, never>;
 
 /**
  * Platform scope for a form section. The DB column is now a free `varchar(255)`,

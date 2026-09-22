@@ -25,7 +25,7 @@ enum GdwVehicleType {
 }
 
 model AccVoucherDocEwaybill {
-  gdwId               String            @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("gdw_id")
+  gdwId               String            @default(dbgenerated("uuidv7()")) @db.Uuid @map("gdw_id")
   gdwGdrId            String            @db.Uuid @map("gdw_gdr_id")
   gdwVoucherId        String            @db.Uuid @map("gdw_voucher_id")
 
@@ -106,13 +106,18 @@ model AccVoucherDocEwaybill {
   gdwExtendedUpto     DateTime?         @db.Timestamptz(6) @map("gdw_extended_upto")
 
   // Relations
-  docRegister         AccVoucherDocRegister @relation(fields: [gdwGdrId], references: [gdrId], onDelete: Cascade, map: "fk_gdw_gdr")
+  docRegister         AccVoucherDocRegister @relation(fields: [gdwGdrId, gdwAccYear], references: [gdrId, gdrAccYear], onDelete: Cascade, map: "fk_gdw_gdr")
   vehicle             VehicleMaster?        @relation("EwayBillVehicle", fields: [gdwVehicleId], references: [vehId], onUpdate: Cascade, onDelete: Restrict, map: "fk_gdw_vehicle")
 
-  @@unique([gdwGdrId], map: "uq_gdw_gdr")
+  // LIST-partitioned on gdw_acc_year as of 20260922100000; both keys carry the
+  // partition key. Still one e-way bill row per document.
+  @@id([gdwId, gdwAccYear], map: "pk_acc_voucher_doc_ewaybill")
+  @@unique([gdwGdrId, gdwAccYear], map: "uq_gdw_gdr")
   @@map("acc_voucher_doc_ewaybill")
   @@schema("accounts")
-  // Partial unique index uq_acc_voucher_doc_ewaybill_no and partial index
+  // Partial unique index uq_acc_voucher_doc_ewaybill_no -- (gdw_no,
+  // gdw_acc_year) since 20260922100000, the year trailing so a lookup by the
+  // e-way bill number alone still uses it -- and partial index
   // idx_gdw_status are not expressible in Prisma schema. Nor is the retry
   // worklist added by 20260921120000:
   //

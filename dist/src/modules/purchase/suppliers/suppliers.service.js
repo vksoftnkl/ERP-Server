@@ -89,7 +89,12 @@ let SuppliersService = class SuppliersService {
             const modifiedOn = new Date();
             const result = await tx.supplier.updateMany({
                 where: { supId, supIsDeleted: false },
-                data: { supIsDeleted: true, supIsActive: false, supModifiedOn: modifiedOn, supModifiedBy: this.requestContextService.getUserId() ?? module_service_utils_1.DEFAULT_ACTOR },
+                data: {
+                    supIsDeleted: true,
+                    supIsActive: false,
+                    supModifiedOn: modifiedOn,
+                    supModifiedBy: this.requestContextService.getUserId() ?? module_service_utils_1.DEFAULT_ACTOR,
+                },
             });
             if (result.count === 0) {
                 (0, module_service_utils_1.throwPurchaseNotFound)('Supplier not found', 'supId', `No active supplier found with id ${supId}`);
@@ -333,13 +338,39 @@ let SuppliersService = class SuppliersService {
     }
     applyOptionalFields(data, saveSupplierDto) {
         const optionalFields = [
-            'supCompanyId', 'supBranchId', 'supShort', 'supAddr1', 'supAddr2', 'supAddr3',
-            'supCity', 'supDistrict', 'supCountry', 'supPincode', 'supTel', 'supPhone',
-            'supMailId', 'supWhatsappNo', 'supWebsiteAddress', 'supChequePreName', 'supNotes',
-            'supCreditDays', 'supCashDiscPerc', 'supGstNo', 'supPanNo', 'supSupCst',
-            'supDrugLiscenceNo', 'supRegionName', 'supRegionAddr1', 'supRegionAddr2',
-            'supRegionAddr3', 'supRegionCity', 'supRegionDistrict', 'supRegionStateName',
-            'supRegionCountry', 'supSortOrder', 'supIsActive',
+            'supCompanyId',
+            'supBranchId',
+            'supShort',
+            'supAddr1',
+            'supAddr2',
+            'supAddr3',
+            'supCity',
+            'supDistrict',
+            'supCountry',
+            'supPincode',
+            'supTel',
+            'supPhone',
+            'supMailId',
+            'supWhatsappNo',
+            'supWebsiteAddress',
+            'supChequePreName',
+            'supNotes',
+            'supCreditDays',
+            'supCashDiscPerc',
+            'supGstNo',
+            'supPanNo',
+            'supSupCst',
+            'supDrugLiscenceNo',
+            'supRegionName',
+            'supRegionAddr1',
+            'supRegionAddr2',
+            'supRegionAddr3',
+            'supRegionCity',
+            'supRegionDistrict',
+            'supRegionStateName',
+            'supRegionCountry',
+            'supSortOrder',
+            'supIsActive',
         ];
         for (const field of optionalFields) {
             if ((0, module_service_utils_1.hasOwnProperty)(saveSupplierDto, field)) {

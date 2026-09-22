@@ -37,7 +37,6 @@ import { EmployeeDepartmentMasterModule } from './modules/settings/employeeDepar
 import { EmployeeDesignationMasterModule } from './modules/settings/employeeDesignationMaster/employee-designation-master.module';
 import { EmployeeMasterModule } from './modules/settings/employeeMaster/employee-master.module';
 import { UserAdministrationModule } from './modules/settings/userAdministration/user-administration.module';
-import { ConfigsModule } from './modules/settings/configs/configs.module';
 import { AppSettingsModule } from './modules/settings/appSettings/app-settings.module';
 import { PrintTemplateModule } from './modules/settings/print-template/print-template.module';
 import { TenderMasterModule } from './modules/accountsModule/tenderMaster/tender-master.module';
@@ -63,7 +62,12 @@ import { CustomerGroupModule } from './modules/sales/customer-group/customer-gro
 import { SaleAgentModule } from './modules/sales/sale-agent/sale-agent.module';
 import { QuotationModule } from './modules/sales/quotation/quotation.module';
 import { BillModule } from './modules/sales/bill/bill.module';
+import { SalesPostingModule } from './modules/sales/posting/posting.module';
 import { SaleOrderModule } from './modules/sales/sale-order/sale-order.module';
+import { DeliveryChallanModule } from './modules/sales/delivery-challan/delivery-challan.module';
+import { DcReturnModule } from './modules/sales/dc-return/dc-return.module';
+import { SaleReturnModule } from './modules/sales/sale-return/sale-return.module';
+import { TempCreditModule } from './modules/sales/temp-credit/temp-credit.module';
 import { TxnHoldModule } from './modules/sales/txn-hold/txn-hold.module';
 import { BankListModule } from './modules/fixed/bank-list/bank-list.module';
 import { DeviceListMasterModule } from './modules/fixed/device-list-master/device-list-master.module';
@@ -175,7 +179,6 @@ const isThrottlerEnabled = parseBoolean(process.env.THROTTLE_ENABLED, true);
     EmployeeDesignationMasterModule,
     EmployeeMasterModule,
     UserAdministrationModule,
-    ConfigsModule,
     AppSettingsModule,
     PrintTemplateModule,
     TenderMasterModule,
@@ -199,8 +202,16 @@ const isThrottlerEnabled = parseBoolean(process.env.THROTTLE_ENABLED, true);
     CustomerGroupModule,
     SaleAgentModule,
     QuotationModule,
+    // A2 — the shared posting services (no routes). Imported here so the DI
+    // graph is proven at boot, before A3 hangs the bill and order routes on it.
+    SalesPostingModule,
     BillModule,
     SaleOrderModule,
+    // A3 — the four documents of HANDOVER 2026-09-20 §4–§7.
+    DeliveryChallanModule,
+    DcReturnModule,
+    SaleReturnModule,
+    TempCreditModule,
     TxnHoldModule,
     BankListModule,
     DeviceListMasterModule,

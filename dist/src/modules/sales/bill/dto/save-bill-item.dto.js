@@ -28,6 +28,11 @@ class SaveBillItemDto {
     sbiSrcDocLineNo;
     sbiSrcItemQty;
     sbiSrcFreeQty;
+    sbiSrcItemId;
+    sbiBucket;
+    sbiLotId;
+    sbiPromoUsageId;
+    sbiCogsAmt;
     sbiItemId;
     sbiItemUnitId;
     sbiToBaseFactor;
@@ -216,6 +221,43 @@ __decorate([
     (0, dtoDecorators_1.NullableNumber)(),
     __metadata("design:type", Object)
 ], SaveBillItemDto.prototype, "sbiSrcFreeQty", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        format: 'uuid',
+        nullable: true,
+        description: 'The source LINE this bill line consumes: soi_id (order) or sdi_id (challan)',
+    }),
+    (0, dtoDecorators_1.NullableUuid)(),
+    __metadata("design:type", Object)
+], SaveBillItemDto.prototype, "sbiSrcItemId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        maxLength: 20,
+        nullable: true,
+        description: 'SALEABLE | DAMAGED | QUARANTINE | EXPIRED | SAMPLE',
+    }),
+    (0, dtoDecorators_1.NullableUpperMaxString)(20),
+    __metadata("design:type", Object)
+], SaveBillItemDto.prototype, "sbiBucket", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        format: 'uuid',
+        nullable: true,
+        description: 'A PROPOSAL — the stock engine decides',
+    }),
+    (0, dtoDecorators_1.NullableUuid)(),
+    __metadata("design:type", Object)
+], SaveBillItemDto.prototype, "sbiLotId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ format: 'uuid', nullable: true }),
+    (0, dtoDecorators_1.NullableUuid)(),
+    __metadata("design:type", Object)
+], SaveBillItemDto.prototype, "sbiPromoUsageId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ readOnly: true, nullable: true, description: 'Ignored — server-owned' }),
+    (0, dtoDecorators_1.NullableNumber)(),
+    __metadata("design:type", Object)
+], SaveBillItemDto.prototype, "sbiCogsAmt", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)({ format: 'uuid' }),
     (0, dtoDecorators_1.RequiredUuid)(),

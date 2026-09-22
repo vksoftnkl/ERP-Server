@@ -19,7 +19,11 @@ export class UnitPayloadDto {
   @ApiPropertyOptional({ maxLength: 30, nullable: true })
   unit_code!: string | null;
 
-  @ApiPropertyOptional({ nullable: true, example: 'Kilograms', description: 'GST unit name resolved from unit_code' })
+  @ApiPropertyOptional({
+    nullable: true,
+    example: 'Kilograms',
+    description: 'GST unit name resolved from unit_code',
+  })
   unit_code_name!: string | null;
 
   @ApiPropertyOptional({ maxLength: 100, nullable: true })

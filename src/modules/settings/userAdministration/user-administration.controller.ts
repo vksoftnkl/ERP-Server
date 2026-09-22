@@ -38,7 +38,7 @@ import { API_VERSION } from '../../../common/constants/api-version';
 @Controller('user-administration')
 @UseFilters(UserAdministrationExceptionFilter)
 export class UserAdministrationController {
-  constructor(private readonly userAdministrationService: UserAdministrationService) { }
+  constructor(private readonly userAdministrationService: UserAdministrationService) {}
 
   @Post('create')
   @Version(API_VERSION)

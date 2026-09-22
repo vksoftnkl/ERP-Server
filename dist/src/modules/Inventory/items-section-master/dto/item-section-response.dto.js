@@ -64,7 +64,11 @@ __decorate([
     __metadata("design:type", Object)
 ], ItemSectionPayloadDto.prototype, "sec_parent_id", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ maxLength: 150, nullable: true, description: 'Name of the parent section' }),
+    (0, swagger_1.ApiPropertyOptional)({
+        maxLength: 150,
+        nullable: true,
+        description: 'Name of the parent section',
+    }),
     __metadata("design:type", Object)
 ], ItemSectionPayloadDto.prototype, "sec_parent_name", void 0);
 __decorate([

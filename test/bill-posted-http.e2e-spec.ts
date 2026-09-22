@@ -118,7 +118,10 @@ function creditBody(overrides: Record<string, unknown> = {}): Record<string, unk
   });
 }
 
-async function one<T extends Record<string, unknown>>(sql: string, ...p: unknown[]): Promise<T | undefined> {
+async function one<T extends Record<string, unknown>>(
+  sql: string,
+  ...p: unknown[]
+): Promise<T | undefined> {
   return (await prisma.$queryRawUnsafe<T[]>(sql, ...p))[0];
 }
 async function all<T extends Record<string, unknown>>(sql: string, ...p: unknown[]): Promise<T[]> {
@@ -162,7 +165,10 @@ async function seqLastNo(): Promise<bigint> {
 }
 
 async function post(payload: Record<string, unknown>, app: INestApplication) {
-  const res = await request(app.getHttpServer()).post(CREATE).set('Authorization', BEARER).send(payload);
+  const res = await request(app.getHttpServer())
+    .post(CREATE)
+    .set('Authorization', BEARER)
+    .send(payload);
   if (res.status !== 201) {
     // eslint-disable-next-line no-console
     console.error('[bill post e2e] save failed:', res.status, JSON.stringify(res.body, null, 2));
@@ -209,7 +215,10 @@ describe('POST /bills/create — posting to accounts (e2e, live DB)', () => {
         transformOptions: { enableImplicitConversion: true },
       }),
     );
-    app.enableVersioning({ type: VersioningType.URI, defaultVersion: process.env.API_VERSION ?? '1' });
+    app.enableVersioning({
+      type: VersioningType.URI,
+      defaultVersion: process.env.API_VERSION ?? '1',
+    });
     app.setGlobalPrefix((process.env.API_PREFIX ?? 'api').replace(/^\/+|\/+$/g, ''));
     await app.init();
   });

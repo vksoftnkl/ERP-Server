@@ -1,5 +1,9 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { OptionalQueryBoolean, OptionalTrimmedString, OptionalUuid } from 'src/common/dto/dtoDecorators';
+import {
+  OptionalQueryBoolean,
+  OptionalTrimmedString,
+  OptionalUuid,
+} from 'src/common/dto/dtoDecorators';
 
 export class GetStockAdjReasonsQueryDto {
   @ApiPropertyOptional({

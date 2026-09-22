@@ -188,7 +188,10 @@ async function resolveImportedLines(prisma, csvText, scope) {
         const unitName = cell(row, 'unitName');
         const unitMatches = item.unitConversions.filter((conversion) => (conversion.unit?.unit_name ?? '').toLowerCase() === unitName.toLowerCase());
         if (!unitMatches.length) {
-            fail(`"${item.itemNameEn}" has no unit named "${unitName}". Its units are: ${item.unitConversions.map((c) => c.unit?.unit_name).filter(Boolean).join(', ') || '(none)'}.`);
+            fail(`"${item.itemNameEn}" has no unit named "${unitName}". Its units are: ${item.unitConversions
+                .map((c) => c.unit?.unit_name)
+                .filter(Boolean)
+                .join(', ') || '(none)'}.`);
             return;
         }
         if (unitMatches.length > 1) {

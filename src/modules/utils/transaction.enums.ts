@@ -7,7 +7,6 @@ export enum TransactionStatus {
   CANCELLED = 'CANCELLED',
 }
 
-
 export enum StockTrackingType {
   NONE = 'NONE',
   BATCH = 'BATCH',

@@ -63,7 +63,6 @@ model AccVoucherType {
   vchrCreatedBy              String?              @db.VarChar(100) @map("vchr_created_by")
   vchrUpdatedOn              DateTime?            @db.Timestamptz(6) @map("vchr_updated_on")
   vchrUpdatedBy              String?              @db.VarChar(100) @map("vchr_updated_by")
-  voucherCheques             AccVoucherCheque[]
   voucherDocRegisters        AccVoucherDocRegister[]
   voucherSequences           AccVoucherSeq[]
   voucherHeaders             AccVoucherHeader[]

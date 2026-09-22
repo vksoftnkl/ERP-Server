@@ -25,6 +25,9 @@ const CHARGE_DETAIL_AUDIT = {
     entityName: 'Charge line',
 };
 const CHARGE_DETAIL_OPTIONAL_FIELDS = [
+    'cdSrcCdId',
+    'cdSrcAccYear',
+    'cdCarryBasis',
     'cdChgName',
     'cdRole',
     'cdMethod',

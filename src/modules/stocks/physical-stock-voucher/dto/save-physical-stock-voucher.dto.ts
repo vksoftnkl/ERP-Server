@@ -1,13 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import {
-  ArrayMaxSize,
-  IsArray,
-  IsIn,
-  IsOptional,
-  Matches,
-  ValidateNested,
-} from 'class-validator';
+import { ArrayMaxSize, IsArray, IsIn, IsOptional, Matches, ValidateNested } from 'class-validator';
 import {
   NullableDateString,
   NullableNumber,
@@ -253,8 +246,7 @@ export class SavePhysicalStockVoucherHeaderDto {
   slno?: string;
   @ApiPropertyOptional({
     maxLength: 100,
-    description:
-      'The printed number. Generated as PHY/{accYear}/{deviceCode}/{slno} when absent.',
+    description: 'The printed number. Generated as PHY/{accYear}/{deviceCode}/{slno} when absent.',
   })
   @OptionalTrimmedString(100)
   refno?: string;

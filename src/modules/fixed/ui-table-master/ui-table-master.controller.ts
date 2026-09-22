@@ -1,5 +1,15 @@
 import { CacheTTL } from '@nestjs/cache-manager';
-import { Body, Controller, Delete, Get, Post, Put, Query, UseFilters, Version } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Post,
+  Put,
+  Query,
+  UseFilters,
+  Version,
+} from '@nestjs/common';
 import {
   ApiBadRequestResponse,
   ApiBearerAuth,
@@ -40,7 +50,7 @@ import { API_VERSION } from '../../../common/constants/api-version';
 @Controller('ui-table-masters')
 @UseFilters(UiTableMasterExceptionFilter)
 export class UiTableMasterController {
-  constructor(private readonly uiTableMasterService: UiTableMasterService) { }
+  constructor(private readonly uiTableMasterService: UiTableMasterService) {}
   @Post('create')
   @Version(API_VERSION)
   @ApiOperation({ summary: 'Create or update UI table (by uiTblId presence)' })

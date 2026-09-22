@@ -65,20 +65,42 @@ describe('TRANSFER_IN — what the receiving half will hit', () => {
   let app: INestApplication;
   let service: StockVoucherService;
   let svhId = '';
-  let lot: { lotId: string; itemId: string; uomId: string; batch: string | null; expiry: Date | null };
+  let lot: {
+    lotId: string;
+    itemId: string;
+    uomId: string;
+    batch: string | null;
+    expiry: Date | null;
+  };
 
   beforeAll(async () => {
     const claims: AccessTokenPayload = {
-      sub: ACTOR, user_name: 'tester1', sid: 'e2e-tri', user_type: 'SUPER ADMIN',
-      company_id: SCOPE.companyId, branch_id: SCOPE.branchId, device_id: SCOPE.deviceId,
-      iat: Math.floor(Date.now() / 1000), exp: Math.floor(Date.now() / 1000) + 3600, typ: 'access',
+      sub: ACTOR,
+      user_name: 'tester1',
+      sid: 'e2e-tri',
+      user_type: 'SUPER ADMIN',
+      company_id: SCOPE.companyId,
+      branch_id: SCOPE.branchId,
+      device_id: SCOPE.deviceId,
+      iat: Math.floor(Date.now() / 1000),
+      exp: Math.floor(Date.now() / 1000) + 3600,
+      typ: 'access',
     };
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
-      .overrideProvider(TokenService).useValue({ verifyAccessToken: (): AccessTokenPayload => claims })
-      .overrideProvider(AuthSessionService).useValue({ assertAccessTokenIsActive: async (): Promise<void> => undefined })
+      .overrideProvider(TokenService)
+      .useValue({ verifyAccessToken: (): AccessTokenPayload => claims })
+      .overrideProvider(AuthSessionService)
+      .useValue({ assertAccessTokenIsActive: async (): Promise<void> => undefined })
       .compile();
     app = moduleRef.createNestApplication();
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true, transformOptions: { enableImplicitConversion: true } }));
+    app.useGlobalPipes(
+      new ValidationPipe({
+        whitelist: true,
+        forbidNonWhitelisted: true,
+        transform: true,
+        transformOptions: { enableImplicitConversion: true },
+      }),
+    );
     app.enableVersioning({ type: VersioningType.URI });
     app.setGlobalPrefix('api');
     await app.init();
@@ -92,7 +114,13 @@ describe('TRANSFER_IN — what the receiving half will hit', () => {
         FROM stock.stock_balance b JOIN stock.stock_lot l ON l.slt_id = b.sbl_lot_id
        WHERE b.sbl_godown_id = ${SRC_GODOWN}::uuid AND b.sbl_on_hand_qty > 10
        ORDER BY b.sbl_on_hand_qty DESC LIMIT 1`;
-    lot = { lotId: row.lot, itemId: row.item, uomId: row.uom, batch: row.batch, expiry: row.expiry };
+    lot = {
+      lotId: row.lot,
+      itemId: row.item,
+      uomId: row.uom,
+      batch: row.batch,
+      expiry: row.expiry,
+    };
 
     // The receipt the API would have built: TRANSFER_IN, DRAFT, in the
     // RECEIVING branch, its line landing in the receiving godown at cost 0 —
@@ -147,7 +175,11 @@ describe('TRANSFER_IN — what the receiving half will hit', () => {
 
   it('the preflight refuses the receipt, and not for one reason but two', async () => {
     const rows = await service.validate(
-      TRANSFER_IN_RULES, svhId, ACC_YEAR, SCOPE.companyId, OTHER_BRANCH,
+      TRANSFER_IN_RULES,
+      svhId,
+      ACC_YEAR,
+      SCOPE.companyId,
+      OTHER_BRANCH,
     );
     // eslint-disable-next-line no-console
     console.log('\n  TRANSFER_IN preflight →', JSON.stringify(rows.map((r) => r.problem)));
@@ -164,10 +196,18 @@ describe('TRANSFER_IN — what the receiving half will hit', () => {
     //                        already gates its own copy of that rule
     // Isolated, so it is clear WHICH gate refuses this document.
     const onlyCost = await service.validate(
-      { ...TRANSFER_IN_RULES, isInward: false }, svhId, ACC_YEAR, SCOPE.companyId, OTHER_BRANCH,
+      { ...TRANSFER_IN_RULES, isInward: false },
+      svhId,
+      ACC_YEAR,
+      SCOPE.companyId,
+      OTHER_BRANCH,
     );
     const onlyOpening = await service.validate(
-      { ...TRANSFER_IN_RULES, allowsRepeatHolding: true }, svhId, ACC_YEAR, SCOPE.companyId, OTHER_BRANCH,
+      { ...TRANSFER_IN_RULES, allowsRepeatHolding: true },
+      svhId,
+      ACC_YEAR,
+      SCOPE.companyId,
+      OTHER_BRANCH,
     );
     // eslint-disable-next-line no-console
     console.log('  zero-cost gate corrected →', JSON.stringify(onlyCost.map((r) => r.problem)));
@@ -196,7 +236,13 @@ describe('TRANSFER_IN — what the receiving half will hit', () => {
     const res = await request(app.getHttpServer())
       .post('/api/v1/stock/transfer/receive/post')
       .set('Authorization', BEARER)
-      .send({ svhId, accYear: ACC_YEAR, companyId: SCOPE.companyId, branchId: OTHER_BRANCH, userId: ACTOR });
+      .send({
+        svhId,
+        accYear: ACC_YEAR,
+        companyId: SCOPE.companyId,
+        branchId: OTHER_BRANCH,
+        userId: ACTOR,
+      });
     // eslint-disable-next-line no-console
     console.log('  POST /receive/post on a hand-built receipt →', res.status, res.body?.message);
     expect(res.status).toBeGreaterThanOrEqual(400);

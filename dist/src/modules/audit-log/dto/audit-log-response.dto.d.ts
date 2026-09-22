@@ -1,5 +1,5 @@
 import { ModuleErrorFieldDto, ModuleErrorResponseDto } from '../../../common/utils/module-response.dto';
-export { ModuleErrorFieldDto as AuditLogErrorFieldDto, ModuleErrorResponseDto as AuditLogErrorResponseDto };
+export { ModuleErrorFieldDto as AuditLogErrorFieldDto, ModuleErrorResponseDto as AuditLogErrorResponseDto, };
 export declare class AuditLogListItemDto {
     log_id: string;
     log_date: string;

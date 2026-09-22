@@ -9,6 +9,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.StockVoucherModule = void 0;
 const common_1 = require("@nestjs/common");
 const audit_log_module_1 = require("../../audit-log/audit-log.module");
+const stock_posting_module_1 = require("../posting/stock-posting.module");
 const stock_voucher_exception_filter_1 = require("./stock-voucher-exception.filter");
 const stock_voucher_service_1 = require("./stock-voucher.service");
 let StockVoucherModule = class StockVoucherModule {
@@ -16,7 +17,7 @@ let StockVoucherModule = class StockVoucherModule {
 exports.StockVoucherModule = StockVoucherModule;
 exports.StockVoucherModule = StockVoucherModule = __decorate([
     (0, common_1.Module)({
-        imports: [audit_log_module_1.AuditLogModule],
+        imports: [audit_log_module_1.AuditLogModule, stock_posting_module_1.StockPostingModule],
         providers: [stock_voucher_service_1.StockVoucherService, stock_voucher_exception_filter_1.StockVoucherExceptionFilter],
         exports: [stock_voucher_service_1.StockVoucherService, stock_voucher_exception_filter_1.StockVoucherExceptionFilter],
     })

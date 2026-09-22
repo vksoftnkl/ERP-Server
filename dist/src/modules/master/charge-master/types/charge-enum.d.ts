@@ -4,7 +4,9 @@ export declare enum ChargeDocType {
     GRN = "GRN",
     QUOTATION = "QUOTATION",
     INVOICE = "INVOICE",
-    ORDER = "ORDER"
+    ORDER = "ORDER",
+    DELIVERY_CHALLAN = "DELIVERY_CHALLAN",
+    SALE_RETURN = "SALE_RETURN"
 }
 export declare enum ChargeRole {
     FREIGHT = "FREIGHT",

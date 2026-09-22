@@ -32,14 +32,13 @@ export class PriceLevelMasterService {
   async get(
     queryDto: GetPriceLevelMasterQueryDto,
   ): Promise<{ items: PriceLevelMasterPayload[]; meta: PriceLevelMasterGetMeta }> {
-   
     const where: Prisma.PriceLevelWhereInput = {};
     if (queryDto.priceLvlId !== undefined) {
       where.priceLvlId = queryDto.priceLvlId;
     }
     const records = await this.prisma.priceLevel.findMany({
       where,
-      orderBy: [ { priceLvlId: 'asc' }],
+      orderBy: [{ priceLvlId: 'asc' }],
       select: {
         priceLvlId: true,
         priceLvlName: true,
@@ -66,9 +65,7 @@ export class PriceLevelMasterService {
       },
     };
   }
-  async update(
-    updateDto: UpdatePriceLevelMasterDto,
-  ): Promise<PriceLevelMasterPayload[]> {
+  async update(updateDto: UpdatePriceLevelMasterDto): Promise<PriceLevelMasterPayload[]> {
     const ids = updateDto.priceLevels.map((item) => item.priceLvlId);
     const existing = await this.prisma.priceLevel.findMany({
       where: { priceLvlId: { in: ids } },
@@ -77,7 +74,9 @@ export class PriceLevelMasterService {
     const foundIds = new Set(existing.map((record) => record.priceLvlId));
     const missing = ids.filter((id) => !foundIds.has(id));
     if (missing.length > 0) {
-      throw new NotFoundException(`Price level(s) not found for priceLvlId(s): ${missing.join(', ')}`);
+      throw new NotFoundException(
+        `Price level(s) not found for priceLvlId(s): ${missing.join(', ')}`,
+      );
     }
 
     const actor = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;

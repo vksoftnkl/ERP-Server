@@ -3,6 +3,7 @@ import { PrismaService } from "../../../database/prisma/prisma.service";
 import { AuditLogService } from "../../audit-log/audit-log.service";
 import { RequestContextService } from "../../../common/request-context/request-context.service";
 import { SaveStockVoucherDto } from './dto/save-stock-voucher.dto';
+import { StockPostingService } from '../posting/stock-posting.service';
 import { type OpeningReconcileRow, type PagedResult, type PendingOpeningItem, type StockBucket, type StockCountSheetRow, type StockVoucherCancelResult, type StockVoucherDeleteResult, type StockVoucherLineProblem, type StockVoucherListResult, type StockVoucherPayload, type StockVoucherImportResult, type StockVoucherPostResult, type StockVoucherSaveResult, type StockVoucherStatus, type StockVoucherTypeRules, type StockVarianceRow } from './types/stock-voucher.types';
 interface ListStockVouchersQuery {
     companyId: string;
@@ -30,7 +31,8 @@ export declare class StockVoucherService {
     private readonly prisma;
     private readonly auditLogService;
     private readonly requestContextService;
-    constructor(prisma: PrismaService, auditLogService: AuditLogService, requestContextService: RequestContextService);
+    private readonly stockPosting;
+    constructor(prisma: PrismaService, auditLogService: AuditLogService, requestContextService: RequestContextService, stockPosting: StockPostingService);
     save(rules: StockVoucherTypeRules, dto: SaveStockVoucherDto): Promise<StockVoucherSaveResult>;
     private loadRefno;
     private assertPayloadRules;

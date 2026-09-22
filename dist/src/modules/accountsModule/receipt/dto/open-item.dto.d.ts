@@ -3,6 +3,7 @@ export declare class ListOpenItemsQueryDto {
     partyId: string;
     companyId: string;
     onDate?: string;
+    mobile?: string;
 }
 export declare class PartyContextQueryDto {
     partyId: string;

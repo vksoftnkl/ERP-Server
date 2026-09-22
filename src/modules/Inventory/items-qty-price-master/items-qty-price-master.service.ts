@@ -277,7 +277,7 @@ export class ItemsQtyPriceMasterService {
     const createdBy = resolveActor(
       saveItemQtyPriceDto.iqp_created_by,
       this.requestContextService.getUserId(),
-    );   
+    );
     const data: Prisma.ItemQtyPriceUncheckedCreateInput = {
       iqpItemId: saveItemQtyPriceDto.iqp_item_id,
       iqpItemUnitId: saveItemQtyPriceDto.iqp_item_unit_id,

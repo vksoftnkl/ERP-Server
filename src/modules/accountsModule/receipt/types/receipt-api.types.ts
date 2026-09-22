@@ -27,9 +27,21 @@ export type ReceiptSuccessResponse<
 // ═══════════════════════════════════════════════════════════════════════════
 
 /** One bill the party owes. */
+/** HANDOVER 2026-09-20 §7 — the WHO behind a temp-credit bill, when there is one. */
+export interface OpenBillTempCredit {
+  atcId: string;
+  name: string;
+  mobile: string;
+  dueDate: string | null;
+  balance: number;
+  status: string;
+}
+
 export interface OpenBill {
   billId: string;
   billAccYear: string;
+  /** Present only on a bill settled with a TEMP_CR tender. */
+  tempCredit?: OpenBillTempCredit | null;
   billType: BillType;
   docRefno: string;
   /**

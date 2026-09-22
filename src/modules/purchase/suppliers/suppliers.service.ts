@@ -5,10 +5,7 @@ import { AuditLogService } from '../../audit-log/audit-log.service';
 import { AccountLedgerMastersService } from '../../accountsModule/accountLedgerMasters/account-ledger-masters.service';
 import { SaveAccountLedgerMasterDto } from '../../accountsModule/accountLedgerMasters/dto/save-account-ledger-master.dto';
 import { SaveSupplierDto } from './dto/save-supplier.dto';
-import {
-  LedgerBankAccountPayload,
-  SupplierPayload,
-} from './types/supplier-api.types';
+import { LedgerBankAccountPayload, SupplierPayload } from './types/supplier-api.types';
 import {
   DEFAULT_ACTOR,
   PurchaseWriteClient,
@@ -79,7 +76,11 @@ export class SuppliersService {
       where: { supId, supIsDeleted: false },
     });
     if (!record) {
-      throwPurchaseNotFound('Supplier not found', 'supId', `No active supplier found with id ${supId}`);
+      throwPurchaseNotFound(
+        'Supplier not found',
+        'supId',
+        `No active supplier found with id ${supId}`,
+      );
     }
     // Bank accounts live on the linked account ledger (it shares sup_id as its PK), so load
     // them alongside the related master names and embed them in the supplier payload.
@@ -96,15 +97,28 @@ export class SuppliersService {
         where: { supId, supIsDeleted: false },
       });
       if (!existing) {
-        throwPurchaseNotFound('Supplier not found', 'supId', `No active supplier found with id ${supId}`);
+        throwPurchaseNotFound(
+          'Supplier not found',
+          'supId',
+          `No active supplier found with id ${supId}`,
+        );
       }
       const modifiedOn = new Date();
       const result = await tx.supplier.updateMany({
         where: { supId, supIsDeleted: false },
-        data: { supIsDeleted: true, supIsActive: false, supModifiedOn: modifiedOn, supModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR },
+        data: {
+          supIsDeleted: true,
+          supIsActive: false,
+          supModifiedOn: modifiedOn,
+          supModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
+        },
       });
       if (result.count === 0) {
-        throwPurchaseNotFound('Supplier not found', 'supId', `No active supplier found with id ${supId}`);
+        throwPurchaseNotFound(
+          'Supplier not found',
+          'supId',
+          `No active supplier found with id ${supId}`,
+        );
       }
       // Soft delete the linked account ledger (shares sup_id as its PK) so it can't stay active
       // while the supplier is logically deleted. No-op for legacy rows with no linked ledger.
@@ -145,12 +159,18 @@ export class SuppliersService {
   }
   private async createSupplier(saveSupplierDto: SaveSupplierDto): Promise<SupplierPayload> {
     const normalizedName = normalizeRequiredText(saveSupplierDto.supName, 'supName');
-    const normalizedPurchaseType = normalizeRequiredText(saveSupplierDto.supPurchaseType, 'supPurchaseType');
+    const normalizedPurchaseType = normalizeRequiredText(
+      saveSupplierDto.supPurchaseType,
+      'supPurchaseType',
+    );
     const normalizedStateName = normalizeRequiredText(saveSupplierDto.supStateName, 'supStateName');
     const normalizedStateCode = this.normalizeStateCode(saveSupplierDto.supStateCode);
     const normalizedGstType = normalizeRequiredText(saveSupplierDto.supGstType, 'supGstType');
     const now = new Date();
-    const createdBy = resolveActor(saveSupplierDto.supCreatedBy, this.requestContextService.getUserId());
+    const createdBy = resolveActor(
+      saveSupplierDto.supCreatedBy,
+      this.requestContextService.getUserId(),
+    );
     const modifiedBy = resolveActor(saveSupplierDto.supModifiedBy, createdBy);
     const data: Prisma.SupplierUncheckedCreateInput = {
       supGroupId: saveSupplierDto.supGroupId,
@@ -214,11 +234,21 @@ export class SuppliersService {
           where: { supId, supIsDeleted: false },
         });
         if (!existing) {
-          throwPurchaseNotFound('Supplier not found', 'supId', `No active supplier found with id ${supId}`);
+          throwPurchaseNotFound(
+            'Supplier not found',
+            'supId',
+            `No active supplier found with id ${supId}`,
+          );
         }
         const normalizedName = normalizeRequiredText(saveSupplierDto.supName, 'supName');
-        const normalizedPurchaseType = normalizeRequiredText(saveSupplierDto.supPurchaseType, 'supPurchaseType');
-        const normalizedStateName = normalizeRequiredText(saveSupplierDto.supStateName, 'supStateName');
+        const normalizedPurchaseType = normalizeRequiredText(
+          saveSupplierDto.supPurchaseType,
+          'supPurchaseType',
+        );
+        const normalizedStateName = normalizeRequiredText(
+          saveSupplierDto.supStateName,
+          'supStateName',
+        );
         const normalizedStateCode = this.normalizeStateCode(saveSupplierDto.supStateCode);
         const normalizedGstType = normalizeRequiredText(saveSupplierDto.supGstType, 'supGstType');
         await this.ensureSupplierGroupExists(tx, saveSupplierDto.supGroupId);
@@ -236,7 +266,10 @@ export class SuppliersService {
           supGstType: normalizedGstType,
           supBilledDate: now,
           supModifiedOn: now,
-          supModifiedBy: resolveActor(saveSupplierDto.supModifiedBy, this.requestContextService.getUserId()),
+          supModifiedBy: resolveActor(
+            saveSupplierDto.supModifiedBy,
+            this.requestContextService.getUserId(),
+          ),
         };
         this.applyOptionalFields(data, saveSupplierDto);
         const updated = await tx.supplier.update({ where: { supId }, data });
@@ -317,7 +350,10 @@ export class SuppliersService {
       supGroupName: group?.spgName ?? null,
     };
   }
-  private async ensureSupplierGroupExists(tx: SupplierWriteClient, supGroupId: string): Promise<void> {
+  private async ensureSupplierGroupExists(
+    tx: SupplierWriteClient,
+    supGroupId: string,
+  ): Promise<void> {
     const record = await tx.supplierGroup.findFirst({
       where: { spgId: supGroupId, spgIsDeleted: false },
       select: { spgId: true },
@@ -384,17 +420,45 @@ export class SuppliersService {
     saveSupplierDto: SaveSupplierDto,
   ): void {
     const optionalFields = [
-      'supCompanyId', 'supBranchId', 'supShort', 'supAddr1', 'supAddr2', 'supAddr3',
-      'supCity', 'supDistrict', 'supCountry', 'supPincode', 'supTel', 'supPhone',
-      'supMailId', 'supWhatsappNo', 'supWebsiteAddress', 'supChequePreName', 'supNotes',
-      'supCreditDays', 'supCashDiscPerc', 'supGstNo', 'supPanNo', 'supSupCst',
-      'supDrugLiscenceNo', 'supRegionName', 'supRegionAddr1', 'supRegionAddr2',
-      'supRegionAddr3', 'supRegionCity', 'supRegionDistrict', 'supRegionStateName',
-      'supRegionCountry', 'supSortOrder', 'supIsActive', 
+      'supCompanyId',
+      'supBranchId',
+      'supShort',
+      'supAddr1',
+      'supAddr2',
+      'supAddr3',
+      'supCity',
+      'supDistrict',
+      'supCountry',
+      'supPincode',
+      'supTel',
+      'supPhone',
+      'supMailId',
+      'supWhatsappNo',
+      'supWebsiteAddress',
+      'supChequePreName',
+      'supNotes',
+      'supCreditDays',
+      'supCashDiscPerc',
+      'supGstNo',
+      'supPanNo',
+      'supSupCst',
+      'supDrugLiscenceNo',
+      'supRegionName',
+      'supRegionAddr1',
+      'supRegionAddr2',
+      'supRegionAddr3',
+      'supRegionCity',
+      'supRegionDistrict',
+      'supRegionStateName',
+      'supRegionCountry',
+      'supSortOrder',
+      'supIsActive',
     ];
     for (const field of optionalFields) {
       if (hasOwnProperty(saveSupplierDto, field)) {
-        (data as Record<string, unknown>)[field] = (saveSupplierDto as unknown as Record<string, unknown>)[field];
+        (data as Record<string, unknown>)[field] = (
+          saveSupplierDto as unknown as Record<string, unknown>
+        )[field];
       }
     }
     if (hasOwnProperty(saveSupplierDto, 'supCollectionDays')) {

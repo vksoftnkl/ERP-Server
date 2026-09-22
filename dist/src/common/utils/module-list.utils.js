@@ -21,7 +21,7 @@ function resolvePagination(queryDto) {
     return { page, limit, skip: (page - 1) * limit };
 }
 async function runModuleListQuery(pagination, options) {
-    const { hasStructuredFilters = false, configuredGridFn, countFn, findManyFn, toItemFn, loadStylesFn } = options;
+    const { hasStructuredFilters = false, configuredGridFn, countFn, findManyFn, toItemFn, loadStylesFn, } = options;
     const { page, limit } = pagination;
     if (!hasStructuredFilters && configuredGridFn) {
         const configuredList = await configuredGridFn();
@@ -40,7 +40,7 @@ async function runModuleListQuery(pagination, options) {
     };
 }
 async function runConfiguredGridQuery(configuredGridSqlService, options) {
-    const { tableName, alias, search, page, limit, skip, fixedGridId, primaryTableSchema, extraForbiddenPatterns } = options;
+    const { tableName, alias, search, page, limit, skip, fixedGridId, primaryTableSchema, extraForbiddenPatterns, } = options;
     const configuredGrids = await configuredGridSqlService.loadCandidates({
         tableName,
         ...(fixedGridId !== undefined && { fixedGridId, applyTableNameFilter: false }),

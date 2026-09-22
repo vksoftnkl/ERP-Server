@@ -26,6 +26,10 @@ export enum ChargeDocType {
   // the order module; by then txn_charge_detail carried no ck_cd_doc_type
   // CHECK any more, so this enum alone defines the allowed set.
   ORDER = 'ORDER',
+  // HANDOVER 2026-09-20: a delivery challan's and a sale return's charges
+  // (cd_doc_id = sdc_id / sr_id). No DB CHECK any more; this enum is the set.
+  DELIVERY_CHALLAN = 'DELIVERY_CHALLAN',
+  SALE_RETURN = 'SALE_RETURN',
 }
 
 // The well-known charges a module can carry. NONE is the escape hatch for a

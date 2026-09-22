@@ -6,6 +6,7 @@ import {
   NullableDateString,
   NullableInteger,
   NullableLowerMaxString,
+  NullableUpperMaxString,
   NullableNumber,
   NullableStringStrict,
   NullableUuid,
@@ -493,6 +494,124 @@ export class SaveBillDto {
   @ApiPropertyOptional({ nullable: true, description: 'Actor id or name; defaults to the caller' })
   @NullableStringStrict()
   sbModifiedBy?: string | null;
+  // ── HANDOVER §2.1 — the new header fields (30 §1) ─────────────────────────
+  @ApiPropertyOptional({
+    description: 'POS | WHOLESALE — from the launching screen',
+    default: 'WHOLESALE',
+  })
+  @NullableUpperMaxString(10)
+  sbBillMode?: string | null;
+
+  @ApiPropertyOptional({ type: 'string', format: 'date', nullable: true })
+  @NullableDateString()
+  sbUsrRefdate?: string | null;
+
+  @ApiPropertyOptional({
+    default: false,
+    description:
+      'true = the BILL-TO band was edited for a listed customer; otherwise sbCust* are copied from the master',
+  })
+  @OptionalBoolean()
+  custOverride?: boolean;
+
+  // The ship-to and transport band. NOT columns on sale_bill: they are written
+  // to public.txn_transport_detail (direction OUTWARD) and echoed back flat.
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  @NullableUuid()
+  sbShipAddrId?: string | null;
+  @ApiPropertyOptional({ maxLength: 200, nullable: true })
+  @NullableStringStrict(200)
+  sbShipName?: string | null;
+  @ApiPropertyOptional({ maxLength: 500, nullable: true })
+  @NullableStringStrict(500)
+  sbShipAddr?: string | null;
+  @ApiPropertyOptional({ maxLength: 100, nullable: true })
+  @NullableStringStrict(100)
+  sbShipPlace?: string | null;
+  @ApiPropertyOptional({ maxLength: 10, nullable: true })
+  @NullableStringStrict(10)
+  sbShipPin?: string | null;
+  @ApiPropertyOptional({ maxLength: 20, nullable: true })
+  @NullableStringStrict(20)
+  sbShipPhone?: string | null;
+  @ApiPropertyOptional({ minLength: 2, maxLength: 2, nullable: true })
+  @NullableStringStrict(2)
+  sbShipStcd?: string | null;
+  @ApiPropertyOptional({ maxLength: 15, nullable: true })
+  @NullableStringStrict(15)
+  sbShipGstin?: string | null;
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  @NullableUuid()
+  sbDispatchGodownId?: string | null;
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  @NullableUuid()
+  sbDispatchBranchId?: string | null;
+  @ApiPropertyOptional({ maxLength: 10, nullable: true, description: 'ROAD | RAIL | AIR | SHIP' })
+  @NullableUpperMaxString(10)
+  sbTransportMode?: string | null;
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  @NullableUuid()
+  sbTransporterId?: string | null;
+  @ApiPropertyOptional({ maxLength: 200, nullable: true })
+  @NullableStringStrict(200)
+  sbTransporterName?: string | null;
+  @ApiPropertyOptional({ maxLength: 15, nullable: true })
+  @NullableStringStrict(15)
+  sbTransporterGstin?: string | null;
+  @ApiPropertyOptional({ maxLength: 50, nullable: true })
+  @NullableStringStrict(50)
+  sbLrNo?: string | null;
+  @ApiPropertyOptional({ type: 'string', format: 'date', nullable: true })
+  @NullableDateString()
+  sbLrDate?: string | null;
+  @ApiPropertyOptional({ nullable: true })
+  @NullableInteger(0)
+  sbDistanceKm?: number | null;
+
+  @ApiPropertyOptional({ maxLength: 10, nullable: true })
+  @NullableUpperMaxString(10)
+  sbCustPan?: string | null;
+  @ApiPropertyOptional({ maxLength: 50, nullable: true })
+  @NullableStringStrict(50)
+  sbForm60Ref?: string | null;
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  @NullableUuid()
+  sbLoyaltyMemberId?: string | null;
+  @ApiPropertyOptional({ nullable: true })
+  @NullableNumber()
+  sbTcsPerc?: string | number | null;
+  @ApiPropertyOptional({ nullable: true })
+  @NullableNumber()
+  sbTcsAmt?: string | number | null;
+  @ApiPropertyOptional()
+  @OptionalBoolean()
+  sbHasDc?: boolean;
+
+  // Server-owned; accepted so an echoed GET can be sent back, ignored on input.
+  @ApiPropertyOptional({ readOnly: true, description: 'Ignored — server-owned' })
+  @OptionalInteger()
+  sbRevisionNo?: number;
+  @ApiPropertyOptional({
+    readOnly: true,
+    format: 'uuid',
+    nullable: true,
+    description: 'Ignored — server-owned',
+  })
+  @NullableUuid()
+  sbDocRegisterId?: string | null;
+  @ApiPropertyOptional({ readOnly: true, nullable: true, description: 'Ignored — server-owned' })
+  @NullableNumber()
+  sbCogsAmt?: string | number | null;
+  @ApiPropertyOptional({ readOnly: true, nullable: true, description: 'Ignored — server-owned' })
+  @NullableStringStrict(20)
+  sbDeliveryStatus?: string | null;
+  @ApiPropertyOptional({ readOnly: true, nullable: true, description: 'Ignored — server-owned' })
+  @NullableNumber()
+  sbLoyaltyEarned?: string | number | null;
+  @ApiPropertyOptional({ readOnly: true, nullable: true, description: 'Ignored — server-owned' })
+  @NullableNumber()
+  sbLoyaltyRedeemed?: string | number | null;
+
   @ApiPropertyOptional({
     type: SaveBillItemDto,
     isArray: true,

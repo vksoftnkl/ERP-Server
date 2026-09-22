@@ -122,7 +122,11 @@ __decorate([
     __metadata("design:type", Object)
 ], AuditLogListMetaDto.prototype, "total_pages", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true, format: 'uuid', description: 'Pass as cursor for next page' }),
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        format: 'uuid',
+        description: 'Pass as cursor for next page',
+    }),
     __metadata("design:type", Object)
 ], AuditLogListMetaDto.prototype, "next_cursor", void 0);
 class AuditLogSuccessListDto {

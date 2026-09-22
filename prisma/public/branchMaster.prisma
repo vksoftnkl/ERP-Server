@@ -68,7 +68,6 @@ model BranchMaster {
   openingBalances       AccOpeningBalance[]
   openingRuns           AccOpeningRun[]
   shipAddrs             AccShipAddr[]
-  voucherCheques        AccVoucherCheque[]
   voucherDocDetails     AccVoucherDocDetail[]
   voucherDocRegisters   AccVoucherDocRegister[]
   voucherSequences      AccVoucherSeq[]

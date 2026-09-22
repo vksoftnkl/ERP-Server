@@ -1,8 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import {
-  FixedErrorFieldDto,
-  FixedErrorResponseDto,
-} from 'src/common/utils/module-response.dto';
+import { FixedErrorFieldDto, FixedErrorResponseDto } from 'src/common/utils/module-response.dto';
 import { UiTableColumnPayloadDto } from './ui-table-column-response.dto';
 export { FixedErrorFieldDto as UiTableMasterErrorFieldDto };
 export { FixedErrorResponseDto as UiTableMasterErrorResponseDto };
@@ -54,7 +51,10 @@ export class UiTableMasterPayloadDto {
   @ApiPropertyOptional({ example: 'mobile', nullable: true })
   uiTblDeviceType!: string | null;
 
-  @ApiProperty({ type: [UiTableColumnPayloadDto], description: 'Columns belonging to this UI table' })
+  @ApiProperty({
+    type: [UiTableColumnPayloadDto],
+    description: 'Columns belonging to this UI table',
+  })
   columns!: UiTableColumnPayloadDto[];
 }
 

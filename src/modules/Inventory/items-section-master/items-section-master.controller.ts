@@ -50,7 +50,7 @@ type UploadedPhotoFile = {
 @Controller('item-sections')
 @UseFilters(ItemSectionExceptionFilter)
 export class ItemsSectionMasterController {
-  constructor(private readonly itemsSectionMasterService: ItemsSectionMasterService) { }
+  constructor(private readonly itemsSectionMasterService: ItemsSectionMasterService) {}
 
   @Post('create')
   @Version(API_VERSION)

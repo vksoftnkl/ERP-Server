@@ -30,7 +30,7 @@ import { API_VERSION } from '../../../common/constants/api-version';
 @CacheTTL(1)
 @Controller('price-level-masters')
 export class PriceLevelMasterController {
-  constructor(private readonly priceLevelMasterService: PriceLevelMasterService) { }
+  constructor(private readonly priceLevelMasterService: PriceLevelMasterService) {}
   @Get('get')
   @Version(API_VERSION)
   @ApiOperation({

@@ -87,9 +87,7 @@ let ItemMasterUpdateService = class ItemMasterUpdateService {
             }
             toSave.push({ ...child, iuc_item_id: itemId, iuc_id: child.iuc_id ?? match?.iuc_id });
         }
-        const staleIds = existing
-            .filter((row) => !claimedIds.has(row.iuc_id))
-            .map((row) => row.iuc_id);
+        const staleIds = existing.filter((row) => !claimedIds.has(row.iuc_id)).map((row) => row.iuc_id);
         if (staleIds.length > 0) {
             await this.itemUnitConversionService.toggleDelete(staleIds, tx);
         }
@@ -122,9 +120,7 @@ let ItemMasterUpdateService = class ItemMasterUpdateService {
             }
             toSave.push({ ...resolved, ipm_item_id: itemId, ipm_id: resolved.ipm_id ?? match?.ipm_id });
         }
-        const staleIds = existing
-            .filter((row) => !claimedIds.has(row.ipm_id))
-            .map((row) => row.ipm_id);
+        const staleIds = existing.filter((row) => !claimedIds.has(row.ipm_id)).map((row) => row.ipm_id);
         if (staleIds.length > 0) {
             await this.itemsPriceMasterService.toggleDelete(staleIds, tx);
         }
@@ -157,9 +153,7 @@ let ItemMasterUpdateService = class ItemMasterUpdateService {
             }
             toSave.push({ ...resolved, ean_item_id: itemId, ean_id: resolved.ean_id ?? match?.ean_id });
         }
-        const staleIds = existing
-            .filter((row) => !claimedIds.has(row.ean_id))
-            .map((row) => row.ean_id);
+        const staleIds = existing.filter((row) => !claimedIds.has(row.ean_id)).map((row) => row.ean_id);
         if (staleIds.length > 0) {
             await this.itemsEanCodeMasterService.toggleDelete(staleIds, tx);
         }
@@ -194,9 +188,7 @@ let ItemMasterUpdateService = class ItemMasterUpdateService {
             }
             toSave.push({ ...resolved, ir_item_id: itemId, ir_id: resolved.ir_id ?? match?.ir_id });
         }
-        const staleIds = existing
-            .filter((row) => !claimedIds.has(row.ir_id))
-            .map((row) => row.ir_id);
+        const staleIds = existing.filter((row) => !claimedIds.has(row.ir_id)).map((row) => row.ir_id);
         if (staleIds.length > 0) {
             await this.itemsReorderMasterService.toggleDelete(staleIds, tx);
         }

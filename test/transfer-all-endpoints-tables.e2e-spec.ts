@@ -157,14 +157,18 @@ describe('/stock/transfer — all 8 routes, which tables each one writes', () =>
   const ref = (svhId: string) => ({ svhId, ...scopeQuery, userId: ACTOR });
 
   let lot: {
-    lotId: string; itemId: string; uomId: string; onHand: number;
-    batchNo: string | null; expiryDate: string | null;
+    lotId: string;
+    itemId: string;
+    uomId: string;
+    onHand: number;
+    batchNo: string | null;
+    expiryDate: string | null;
   };
   let draftId = '';
   let interBranchId = '';
   let receiptId = '';
-  let sameBranchDespatched = false;
-  let interBranchDespatched = false;
+  const sameBranchDespatched = false;
+  const interBranchDespatched = false;
 
   beforeAll(async () => {
     const [row] = await prisma.$queryRaw<
@@ -184,7 +188,10 @@ describe('/stock/transfer — all 8 routes, which tables each one writes', () =>
       SELECT slt_batch_no AS batch, slt_expiry_date AS exp
         FROM stock.stock_lot WHERE slt_id = ${row.lot}::uuid`;
     lot = {
-      lotId: row.lot, itemId: row.item, uomId: row.uom, onHand: Number(row.qty),
+      lotId: row.lot,
+      itemId: row.item,
+      uomId: row.uom,
+      onHand: Number(row.qty),
       batchNo: id?.batch ?? null,
       expiryDate: id?.exp ? new Date(id.exp).toISOString().slice(0, 10) : null,
     };
@@ -251,14 +258,21 @@ describe('/stock/transfer — all 8 routes, which tables each one writes', () =>
 
   it('POST / — a line that names no live lot, and one that moves more than is held', async () => {
     const noLot = await probe('POST /transfer', 'lotId that does not exist', () =>
-      http.post(T).set('Authorization', BEARER).send(outBody(1, { lotId: MISSING_UUID })),
+      http
+        .post(T)
+        .set('Authorization', BEARER)
+        .send(outBody(1, { lotId: MISSING_UUID })),
     );
     expect(noLot.status).toBe(422);
 
     const tooMuch = await probe(
       'POST /transfer',
       'moves more than the lot holds',
-      () => http.post(T).set('Authorization', BEARER).send(outBody(lot.onHand + 1000)),
+      () =>
+        http
+          .post(T)
+          .set('Authorization', BEARER)
+          .send(outBody(lot.onHand + 1000)),
       'refused at SAVE, not left for the despatch to discover',
     );
     expect(tooMuch.status).toBe(422);
@@ -282,14 +296,21 @@ describe('/stock/transfer — all 8 routes, which tables each one writes', () =>
   // ── 2. GET /stock/transfer (list / load) ────────────────────────────────
   it('GET / — lists without svhId, loads with it', async () => {
     const list = await probe('GET /transfer', 'list transfers for the scope', () =>
-      http.get(T).set('Authorization', BEARER).query({ ...scopeQuery, limit: 5 }),
+      http
+        .get(T)
+        .set('Authorization', BEARER)
+        .query({ ...scopeQuery, limit: 5 }),
     );
     expect(list.status).toBe(200);
 
     const one = await probe(
       'GET /transfer',
       'load the draft with its transit rows',
-      () => http.get(T).set('Authorization', BEARER).query({ ...scopeQuery, svhId: draftId }),
+      () =>
+        http
+          .get(T)
+          .set('Authorization', BEARER)
+          .query({ ...scopeQuery, svhId: draftId }),
       'transit is empty until the despatch writes it',
     );
     expect(one.status).toBe(200);
@@ -299,7 +320,10 @@ describe('/stock/transfer — all 8 routes, which tables each one writes', () =>
   // ── 3. GET /stock/transfer/validate ─────────────────────────────────────
   it('GET /validate — advisory preflight, writes nothing', async () => {
     const res = await probe('GET /transfer/validate', 'preflight the draft', () =>
-      http.get(`${T}/validate`).set('Authorization', BEARER).query({ ...scopeQuery, svhId: draftId }),
+      http
+        .get(`${T}/validate`)
+        .set('Authorization', BEARER)
+        .query({ ...scopeQuery, svhId: draftId }),
     );
     expect(res.status).toBe(200);
     // NOT CLEAN, AND THE REASON IS A BUG IN THE SHARED PREFLIGHT — see the
@@ -316,7 +340,12 @@ describe('/stock/transfer — all 8 routes, which tables each one writes', () =>
         http
           .post(`${T}/despatch`)
           .set('Authorization', BEARER)
-          .send({ ...ref(draftId), lrNo: 'LR-E2E-1', vehicleNo: 'TN-99-9999', expectedOn: DOC_DATE }),
+          .send({
+            ...ref(draftId),
+            lrNo: 'LR-E2E-1',
+            vehicleNo: 'TN-99-9999',
+            expectedOn: DOC_DATE,
+          }),
       'BLOCKED by the opening-uniqueness guard — see below',
     );
     // ── THE TRANSFER SCREEN CANNOT DESPATCH ORDINARY STOCK ─────────────────
@@ -351,7 +380,11 @@ describe('/stock/transfer — all 8 routes, which tables each one writes', () =>
     const created = await probe(
       'POST /transfer',
       'create an inter-branch DRAFT (toBranchId = Counter2, godown karur)',
-      () => http.post(T).set('Authorization', BEARER).send(outBody(4, { interBranch: true })),
+      () =>
+        http
+          .post(T)
+          .set('Authorization', BEARER)
+          .send(outBody(4, { interBranch: true })),
       'same payload as the same-branch form plus toBranchId — nothing else differs at save time',
     );
     expect(created.status).toBe(201);
@@ -369,7 +402,12 @@ describe('/stock/transfer — all 8 routes, which tables each one writes', () =>
         http
           .post(`${T}/despatch`)
           .set('Authorization', BEARER)
-          .send({ ...ref(interBranchId), lrNo: 'LR-E2E-2', vehicleNo: 'TN-88-8888', expectedOn: DOC_DATE }),
+          .send({
+            ...ref(interBranchId),
+            lrNo: 'LR-E2E-2',
+            vehicleNo: 'TN-88-8888',
+            expectedOn: DOC_DATE,
+          }),
       'would write stock_transit and end IN_TRANSIT — blocked by the same guard',
     );
     // Same wall, and it is reached BEFORE the engine: whether
@@ -441,13 +479,12 @@ describe('/stock/transfer — all 8 routes, which tables each one writes', () =>
       'GET /transfer/receive/prefill',
       'prefill a same-branch transfer (there is no receiving branch)',
       () =>
-        http
-          .get(`${RCV}/prefill`)
-          .set('Authorization', BEARER)
-          .query({
-            companyId: SCOPE.companyId, branchId: SCOPE.branchId,
-            accYear: ACC_YEAR, outVoucherId: draftId,
-          }),
+        http.get(`${RCV}/prefill`).set('Authorization', BEARER).query({
+          companyId: SCOPE.companyId,
+          branchId: SCOPE.branchId,
+          accYear: ACC_YEAR,
+          outVoucherId: draftId,
+        }),
       'a godown-to-godown move is never received — it has no second half',
     );
     expect(wrongBranch.status).toBeGreaterThanOrEqual(400);
@@ -456,13 +493,12 @@ describe('/stock/transfer — all 8 routes, which tables each one writes', () =>
       'GET /transfer/receive/prefill',
       'prefill the inter-branch despatch, as Counter2',
       () =>
-        http
-          .get(`${RCV}/prefill`)
-          .set('Authorization', BEARER)
-          .query({
-            companyId: SCOPE.companyId, branchId: OTHER_BRANCH,
-            accYear: ACC_YEAR, outVoucherId: interBranchId,
-          }),
+        http.get(`${RCV}/prefill`).set('Authorization', BEARER).query({
+          companyId: SCOPE.companyId,
+          branchId: OTHER_BRANCH,
+          accYear: ACC_YEAR,
+          outVoucherId: interBranchId,
+        }),
       'read from stock_transit, never from the despatch lines — that is what stops a double receipt',
     );
     if (interBranchDespatched) expect(right.status).toBe(200);
@@ -494,12 +530,19 @@ describe('/stock/transfer — all 8 routes, which tables each one writes', () =>
             },
             lines: [
               {
-                lineNo: 1, splitNo: 1, itemId: lot.itemId, godownId: OTHER_GODOWN,
-                lotId: lot.lotId, bucket: 'SALEABLE',
-                uomId: lot.uomId, baseUomId: lot.uomId, toBaseFactor: 1,
+                lineNo: 1,
+                splitNo: 1,
+                itemId: lot.itemId,
+                godownId: OTHER_GODOWN,
+                lotId: lot.lotId,
+                bucket: 'SALEABLE',
+                uomId: lot.uomId,
+                baseUomId: lot.uomId,
+                toBaseFactor: 1,
                 ...(lot.batchNo ? { batchNo: lot.batchNo } : {}),
                 ...(lot.expiryDate ? { expiryDate: lot.expiryDate } : {}),
-                qty: 4, baseQty: 4,
+                qty: 4,
+                baseQty: 4,
               },
             ],
           }),
@@ -548,14 +591,20 @@ describe('/stock/transfer — all 8 routes, which tables each one writes', () =>
     }
 
     const out = await probe('DELETE /transfer', 'soft delete a DRAFT transfer', () =>
-      http.delete(T).set('Authorization', BEARER).query({ svhId: draftId, ...scopeQuery }),
+      http
+        .delete(T)
+        .set('Authorization', BEARER)
+        .query({ svhId: draftId, ...scopeQuery }),
     );
     expect(out.status).toBeLessThan(500);
   }, 60_000);
 
   it('leaves the source holding exactly as it found it', async () => {
     // Anything that actually despatched is put back before this runs.
-    for (const [id, done] of [[draftId, sameBranchDespatched], [interBranchId, interBranchDespatched]] as const) {
+    for (const [id, done] of [
+      [draftId, sameBranchDespatched],
+      [interBranchId, interBranchDespatched],
+    ] as const) {
       if (!done) continue;
       await http
         .post(`${T}/cancel`)

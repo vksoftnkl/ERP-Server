@@ -13,7 +13,6 @@ const employee_department_master_module_1 = require("../modules/settings/employe
 const employee_designation_master_module_1 = require("../modules/settings/employeeDesignationMaster/employee-designation-master.module");
 const employee_master_module_1 = require("../modules/settings/employeeMaster/employee-master.module");
 const user_administration_module_1 = require("../modules/settings/userAdministration/user-administration.module");
-const configs_module_1 = require("../modules/settings/configs/configs.module");
 const app_settings_module_1 = require("../modules/settings/appSettings/app-settings.module");
 const print_template_assignment_module_1 = require("../modules/settings/print-template-assignment/print-template-assignment.module");
 const print_template_module_1 = require("../modules/settings/print-template/print-template.module");
@@ -39,6 +38,10 @@ const customer_module_1 = require("../modules/sales/customer/customer.module");
 const quotation_module_1 = require("../modules/sales/quotation/quotation.module");
 const bill_module_1 = require("../modules/sales/bill/bill.module");
 const sale_order_module_1 = require("../modules/sales/sale-order/sale-order.module");
+const delivery_challan_module_1 = require("../modules/sales/delivery-challan/delivery-challan.module");
+const dc_return_module_1 = require("../modules/sales/dc-return/dc-return.module");
+const sale_return_module_1 = require("../modules/sales/sale-return/sale-return.module");
+const temp_credit_module_1 = require("../modules/sales/temp-credit/temp-credit.module");
 const txn_hold_module_1 = require("../modules/sales/txn-hold/txn-hold.module");
 const grid_details_module_1 = require("../modules/grid-details/grid-details.module");
 const dropdown_details_module_1 = require("../modules/dropdown-details/dropdown-details.module");
@@ -285,12 +288,6 @@ exports.swaggerModuleDocuments = [
         include: [user_administration_module_1.UserAdministrationModule],
     },
     {
-        path: 'configs',
-        title: 'Configs API',
-        description: 'Configs module endpoints',
-        include: [configs_module_1.ConfigsModule],
-    },
-    {
         path: 'app-settings',
         title: 'App Settings API',
         description: 'Setting overrides (app_setting_value) and the GLOBAL < COMPANY < BRANCH < DEVICE < USER ' +
@@ -363,7 +360,7 @@ exports.swaggerModuleDocuments = [
         description: 'A received cheque through HELD -> DEPOSITED -> CLEARED | BOUNCED -> re-presented | ' +
             'REPLACED, or HELD -> RETURNED | CANCELLED. Each step writes one register update, one ' +
             'status-log row and — when money moves — one voucher, never editing a row. The posting ' +
-            'mode is honoured per ROW, and Cheques in Hand comes from the cheque\'s own tender row',
+            "mode is honoured per ROW, and Cheques in Hand comes from the cheque's own tender row",
         include: [cheques_module_1.ChequesModule],
     },
     {
@@ -371,7 +368,7 @@ exports.swaggerModuleDocuments = [
         title: 'Posting Ledger Map API',
         description: 'Role -> ledger: the table every posting engine resolves a DISCOUNT_ALLOWED, an OUTPUT_CGST ' +
             'or a ROUND_OFF through. One shared mapping per role, the same for every company; the ' +
-            'catalogue of roles is the server\'s, so a role with no ledger is reported as loudly as a ' +
+            "catalogue of roles is the server's, so a role with no ledger is reported as loudly as a " +
             'mapped one, and a ledger that cannot hold its role is refused when it is typed rather than ' +
             'when money is taken',
         include: [ledger_map_module_1.LedgerMapModule],
@@ -556,6 +553,30 @@ exports.swaggerModuleDocuments = [
         description: 'Single-call sale order endpoints with nested line items, applied charges, tendered ' +
             'advances and advance allocations',
         include: [sale_order_module_1.SaleOrderModule],
+    },
+    {
+        path: 'delivery-challans',
+        title: 'Delivery Challans API',
+        description: 'Delivery challan endpoints (HANDOVER §4): draft, validate, post, cancel, amend, convert-purpose, transport',
+        include: [delivery_challan_module_1.DeliveryChallanModule],
+    },
+    {
+        path: 'dc-returns',
+        title: 'DC Returns API',
+        description: 'Delivery challan return endpoints (HANDOVER §5)',
+        include: [dc_return_module_1.DcReturnModule],
+    },
+    {
+        path: 'sale-returns',
+        title: 'Sale Returns API',
+        description: 'Sale return / credit note endpoints (HANDOVER §6)',
+        include: [sale_return_module_1.SaleReturnModule],
+    },
+    {
+        path: 'temp-credits',
+        title: 'Temporary Credits API',
+        description: 'Temporary credit follow-up endpoints (HANDOVER §7)',
+        include: [temp_credit_module_1.TempCreditModule],
     },
     {
         path: 'txn-holds',

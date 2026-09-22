@@ -44,7 +44,7 @@ import { API_VERSION } from '../../../common/constants/api-version';
 @Controller('employee-masters')
 @UseFilters(EmployeeMasterExceptionFilter)
 export class EmployeeMasterController {
-  constructor(private readonly employeeMasterService: EmployeeMasterService) { }
+  constructor(private readonly employeeMasterService: EmployeeMasterService) {}
 
   @Post('create')
   @Version(API_VERSION)

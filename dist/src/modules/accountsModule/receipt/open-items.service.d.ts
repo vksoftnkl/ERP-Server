@@ -9,6 +9,7 @@ export declare class OpenItemsService {
     private readonly appSettingValueService;
     constructor(prisma: PrismaService, appSettingValueService: AppSettingValueService);
     listOpenItems(query: ListOpenItemsQueryDto): Promise<OpenItemsPayload>;
+    private attachTempCredits;
     private loadBills;
     private loadPostDatedHeld;
     private loadSourceBillFacts;

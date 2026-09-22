@@ -233,7 +233,13 @@ export class UserAdministrationService {
 
         const menus =
           dto.menus !== undefined
-            ? await this.replaceUserMenus(usrId, dto.menus, this.requestContextService.getUserId() ?? DEFAULT_ACTOR, now, tx)
+            ? await this.replaceUserMenus(
+                usrId,
+                dto.menus,
+                this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
+                now,
+                tx,
+              )
             : await tx.userMenus.findMany({
                 where: { umUserId: usrId, umIsDeleted: false },
                 orderBy: { umMenuId: 'asc' },

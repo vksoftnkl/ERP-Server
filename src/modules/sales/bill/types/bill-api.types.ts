@@ -17,7 +17,8 @@ import {
   TxnStatusDocType,
   TxnStatusSrcModule,
 } from '../../../../common/txn-status-log/txn-status-log.helper';
-import type { SaleOrderCancelLinesResult } from '../../sale-order/types/sale-order-api.types';
+import type { LocksBlock, PostingBlock, RightsBlock } from '../../posting/types/posting.types';
+import type { TransportBandRow } from '../../posting/transport-band.service';
 // txn_charge_detail is polymorphic — a bill's applied charges are the rows
 // carrying this discriminator plus cdDocId = sbId (see ck_cd_doc_type). A bill
 // IS the tax invoice, so it reuses the INVOICE discriminator rather than a new
@@ -58,6 +59,8 @@ export const BILL_STATUS_SRC_DOC_TYPE = TxnStatusDocType.SALE_BILL;
 // sale-order module reads it too — only a POSTED bill draws quantity down off an
 // order line, so its fulfilment recompute has to know which bills count.
 export const BILL_STATUS_POSTED = 'POSTED';
+// A saved bill is a DRAFT; only /bills/post moves it (HANDOVER §2.1).
+export const BILL_STATUS_DRAFT = 'DRAFT';
 // The status a bill reaches when it is called off. It lives out here for the
 // same reason BILL_STATUS_POSTED does — the quotation module reads it: a
 // CANCELLED bill no longer converts the quotation it was raised from, so the
@@ -79,7 +82,58 @@ export type BillPayload = Omit<
   items?: BillItemPayload[];
   charges?: BillChargePayload[];
   tenders?: BillTenderPayload[];
+  // ── HANDOVER §2.7 — the blocks a GET carries ─────────────────────────────
+  posting?: PostingBlock;
+  locks?: LocksBlock;
+  rights?: RightsBlock;
+  sources?: BillSourceSummary[];
+  tempCredits?: BillTempCreditSummary[];
+  adjustments?: BillAdjustmentSummary[];
+  transport?: TransportBandRow | null;
+  // The band, echoed flat as §2.1 sends it.
+  sbShipAddrId?: string | null;
+  sbShipName?: string | null;
+  sbShipAddr?: string | null;
+  sbShipPlace?: string | null;
+  sbShipPin?: string | null;
+  sbShipPhone?: string | null;
+  sbShipStcd?: string | null;
+  sbShipGstin?: string | null;
+  sbDispatchGodownId?: string | null;
+  sbDispatchBranchId?: string | null;
+  sbTransportMode?: string | null;
+  sbTransporterId?: string | null;
+  sbTransporterName?: string | null;
+  sbTransporterGstin?: string | null;
+  sbLrNo?: string | null;
+  sbLrDate?: string | null;
+  sbDistanceKm?: number | null;
 };
+export interface BillSourceSummary {
+  kind: 'DC' | 'ORDER' | 'QUOTATION';
+  docId: string;
+  accYear: string;
+  refno: string | null;
+  date: string | null;
+  lines: number;
+  takenQty: number;
+  openQtyAfter: number | null;
+}
+export interface BillTempCreditSummary {
+  atcId: string;
+  name: string;
+  mobile: string;
+  balance: number;
+  dueDate: string | null;
+  status: string;
+}
+export interface BillAdjustmentSummary {
+  againstBillId: string;
+  againstBillAccYear: string;
+  refno: string | null;
+  amount: number;
+  adjType: string;
+}
 export type BillItemPayload = Omit<
   SaleBillItem,
   'sbiCreatedOn' | 'sbiModifiedOn' | 'sbiSyncDate'
@@ -115,26 +169,6 @@ export type BillChargePayload = ChargeDetailPayload;
 // Likewise for a tendered amount: the tender-detail module's payload verbatim,
 // whether it was read through this module or its own.
 export type BillTenderPayload = TenderDetailPayload;
-// What POST /bills/delete answers with. The bill itself is not in the payload
-// because the bill is not what changed: the route cancels the SALE ORDERS the
-// bill was raised against, and `orders` is one entry per order it closed out,
-// exactly as PUT /sale-orders/cancel-lines reports a single one.
-//
-// remarks / username are echoed back so the screen can show what was recorded
-// without re-reading the trail. They are persisted too — see the DTO — this is
-// a convenience, not the storage.
-//
-// cancelledLines is 0 across the board on a repeat call: the route is
-// idempotent, and a second cancel of the same bill is a successful no-op rather
-// than an error.
-export type BillCancelResult = {
-  sbId: string;
-  cancelled: true;
-  remarks: string;
-  username: string;
-  cancelledOn: string;
-  orders: SaleOrderCancelLinesResult[];
-};
 export type BillErrorDetail = {
   field: string;
   message: string;

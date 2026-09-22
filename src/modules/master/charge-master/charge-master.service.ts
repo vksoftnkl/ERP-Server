@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ChargeMaster, Prisma } from '@prisma/client';
-import {  ConfiguredGridSqlService} from '../../../common/configured-grid-sql/configured-grid-sql.service';
+import { ConfiguredGridSqlService } from '../../../common/configured-grid-sql/configured-grid-sql.service';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
@@ -78,7 +78,7 @@ export class ChargeMasterService {
     private readonly auditLogService: AuditLogService,
     private readonly configuredGridSqlService: ConfiguredGridSqlService,
     private readonly requestContextService: RequestContextService,
-  ) { }
+  ) {}
   async save(saveChargeMasterDto: SaveChargeMasterDto): Promise<ChargeMasterPayload> {
     if (saveChargeMasterDto.chgId) {
       return this.updateCharge(saveChargeMasterDto);
@@ -366,11 +366,7 @@ export class ChargeMasterService {
   // A before-tax charge is taxed at the ITEM's rate inside the item line and a
   // non-taxable charge is never taxed, so either way a rate here would be one
   // nothing reads. Same rule txn_charge_detail restates for cdTaxCode.
-  private ensureTaxIdIsApplicable(
-    taxId: string | null,
-    taxApl: boolean,
-    beforeTax: boolean,
-  ): void {
+  private ensureTaxIdIsApplicable(taxId: string | null, taxApl: boolean, beforeTax: boolean): void {
     if (taxId !== null && (!taxApl || beforeTax)) {
       throwMasterBadRequest<ChargeMasterErrorDetail>('Invalid charge tax rate', [
         {
@@ -466,7 +462,10 @@ export class ChargeMasterService {
     module: string,
     excludeId?: string,
   ): Promise<void> {
-    if (role === null || !CHARGE_UNIQUE_ROLES.includes(role as (typeof CHARGE_UNIQUE_ROLES)[number])) {
+    if (
+      role === null ||
+      !CHARGE_UNIQUE_ROLES.includes(role as (typeof CHARGE_UNIQUE_ROLES)[number])
+    ) {
       return;
     }
     const existing = await tx.chargeMaster.findFirst({

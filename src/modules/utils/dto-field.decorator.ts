@@ -15,19 +15,10 @@ import {
   Min,
 } from 'class-validator';
 
-import {
-  BooleanUtil,
-  DateUtil,
-  NumberUtil,
-  StringUtil,
-  UuidUtil,
-} from './constants';
+import { BooleanUtil, DateUtil, NumberUtil, StringUtil, UuidUtil } from './constants';
 const UUID_EXAMPLE = '018f6f4e-91c2-7b6a-9e7d-2f8c7f2b1a11';
 type EnumLike = Record<string, string | number>;
-export function OptionalUuidField(options?: {
-  description?: string;
-  example?: string;
-}) {
+export function OptionalUuidField(options?: { description?: string; example?: string }) {
   return applyDecorators(
     ApiPropertyOptional({
       type: String,
@@ -41,10 +32,7 @@ export function OptionalUuidField(options?: {
   );
 }
 
-export function RequiredUuidField(options?: {
-  description?: string;
-  example?: string;
-}) {
+export function RequiredUuidField(options?: { description?: string; example?: string }) {
   return applyDecorators(
     ApiProperty({
       type: String,
@@ -94,9 +82,7 @@ export function RequiredStringField(options?: {
       example: options?.example,
       description: options?.description,
     }),
-    Transform(({ value }) =>
-      typeof value === 'string' ? value.trim() : value,
-    ),
+    Transform(({ value }) => (typeof value === 'string' ? value.trim() : value)),
     IsString(),
     IsNotEmpty(),
   ];
@@ -120,9 +106,7 @@ export function OptionalDateField(options?: {
       format: options?.format ?? 'date-time',
       example:
         options?.example ??
-        (options?.format === 'date'
-          ? '2026-05-07'
-          : '2026-05-07T10:30:00.000Z'),
+        (options?.format === 'date' ? '2026-05-07' : '2026-05-07T10:30:00.000Z'),
       default: options?.default,
       description: options?.description,
     }),

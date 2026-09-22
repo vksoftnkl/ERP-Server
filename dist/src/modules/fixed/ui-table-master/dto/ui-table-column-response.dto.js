@@ -46,7 +46,11 @@ __decorate([
     __metadata("design:type", Object)
 ], UiTableColumnPayloadDto.prototype, "uiTblClmName", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ example: '1', nullable: true, description: 'Related UI table id serialized as string' }),
+    (0, swagger_1.ApiPropertyOptional)({
+        example: '1',
+        nullable: true,
+        description: 'Related UI table id serialized as string',
+    }),
     __metadata("design:type", Object)
 ], UiTableColumnPayloadDto.prototype, "uiTblClmTableId", void 0);
 __decorate([
@@ -90,7 +94,12 @@ __decorate([
     __metadata("design:type", Boolean)
 ], UiTableColumnPayloadDto.prototype, "uiTblClmIsDeleted", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ example: '2026-03-12T06:34:47.000Z', nullable: true, type: String, format: 'date-time' }),
+    (0, swagger_1.ApiPropertyOptional)({
+        example: '2026-03-12T06:34:47.000Z',
+        nullable: true,
+        type: String,
+        format: 'date-time',
+    }),
     __metadata("design:type", Object)
 ], UiTableColumnPayloadDto.prototype, "uiTblClmSyncDate", void 0);
 __decorate([

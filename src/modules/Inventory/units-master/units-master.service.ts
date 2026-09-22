@@ -141,7 +141,10 @@ export class UnitsMasterService {
       : null;
     this.validateConversionRules(baseUnitId, conversion);
     const now = new Date();
-    const createdBy = resolveActor(saveUnitDto.unit_created_by, this.requestContextService.getUserId());
+    const createdBy = resolveActor(
+      saveUnitDto.unit_created_by,
+      this.requestContextService.getUserId(),
+    );
     const modifiedBy = resolveActor(saveUnitDto.unit_modified_by, createdBy);
     const data: Prisma.UnitUncheckedCreateInput = {
       unit_name: saveUnitDto.unit_name.trim(),
@@ -204,7 +207,10 @@ export class UnitsMasterService {
         const data: Prisma.UnitUncheckedUpdateInput = {
           unit_name: saveUnitDto.unit_name.trim(),
           unit_modified_on: new Date(),
-          unit_modified_by: resolveActor(saveUnitDto.unit_modified_by, this.requestContextService.getUserId()),
+          unit_modified_by: resolveActor(
+            saveUnitDto.unit_modified_by,
+            this.requestContextService.getUserId(),
+          ),
         };
         this.applyOptionalFields(data, saveUnitDto);
         const updated = await tx.unit.update({ where: { unit_id: unitId }, data });

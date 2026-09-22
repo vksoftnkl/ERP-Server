@@ -90,7 +90,10 @@ __decorate([
     __metadata("design:type", Object)
 ], UiTableMasterPayloadDto.prototype, "uiTblDeviceType", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ type: [ui_table_column_response_dto_1.UiTableColumnPayloadDto], description: 'Columns belonging to this UI table' }),
+    (0, swagger_1.ApiProperty)({
+        type: [ui_table_column_response_dto_1.UiTableColumnPayloadDto],
+        description: 'Columns belonging to this UI table',
+    }),
     __metadata("design:type", Array)
 ], UiTableMasterPayloadDto.prototype, "columns", void 0);
 class UiTableMasterDeleteResultDto {

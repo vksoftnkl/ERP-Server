@@ -36,10 +36,17 @@ const prisma = new PrismaClient();
 /** Statement → the object it touches and what it does to it. */
 function classify(sql: string): { verb: string; target: string } {
   const s = sql.replace(/\s+/g, ' ').trim();
-  const verb = (s.match(/^(SELECT|INSERT INTO|UPDATE|DELETE FROM|WITH|BEGIN|COMMIT|ROLLBACK|SET|DEALLOCATE)/i)?.[1] ?? '?').toUpperCase();
-  const tables = [...s.matchAll(/\b(?:FROM|INTO|UPDATE|JOIN)\s+"?([a-z_]+)"?\."?([a-z_]+)"?/gi)]
-    .map((m) => `${m[1]}.${m[2]}`);
-  const fns = [...s.matchAll(/\b(stock|accounts|public)\.(fn_[a-z_]+)\s*\(/gi)].map((m) => `${m[1]}.${m[2]}()`);
+  const verb = (
+    s.match(
+      /^(SELECT|INSERT INTO|UPDATE|DELETE FROM|WITH|BEGIN|COMMIT|ROLLBACK|SET|DEALLOCATE)/i,
+    )?.[1] ?? '?'
+  ).toUpperCase();
+  const tables = [
+    ...s.matchAll(/\b(?:FROM|INTO|UPDATE|JOIN)\s+"?([a-z_]+)"?\."?([a-z_]+)"?/gi),
+  ].map((m) => `${m[1]}.${m[2]}`);
+  const fns = [...s.matchAll(/\b(stock|accounts|public)\.(fn_[a-z_]+)\s*\(/gi)].map(
+    (m) => `${m[1]}.${m[2]}()`,
+  );
   const uniq = [...new Set([...fns, ...tables])];
   return { verb, target: uniq.join(', ') || '—' };
 }
@@ -51,26 +58,40 @@ describe('DEBUG POST /stock/physical/create', () => {
 
   beforeAll(async () => {
     const claims: AccessTokenPayload = {
-      sub: ACTOR, user_name: 'tester1', sid: 'e2e-phy-debug', user_type: 'SUPER ADMIN',
-      company_id: SCOPE.companyId, branch_id: SCOPE.branchId, device_id: SCOPE.deviceId,
-      iat: Math.floor(Date.now() / 1000), exp: Math.floor(Date.now() / 1000) + 3600, typ: 'access',
+      sub: ACTOR,
+      user_name: 'tester1',
+      sid: 'e2e-phy-debug',
+      user_type: 'SUPER ADMIN',
+      company_id: SCOPE.companyId,
+      branch_id: SCOPE.branchId,
+      device_id: SCOPE.deviceId,
+      iat: Math.floor(Date.now() / 1000),
+      exp: Math.floor(Date.now() / 1000) + 3600,
+      typ: 'access',
     };
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
-      .overrideProvider(TokenService).useValue({ verifyAccessToken: (): AccessTokenPayload => claims })
-      .overrideProvider(AuthSessionService).useValue({ assertAccessTokenIsActive: async (): Promise<void> => undefined })
+      .overrideProvider(TokenService)
+      .useValue({ verifyAccessToken: (): AccessTokenPayload => claims })
+      .overrideProvider(AuthSessionService)
+      .useValue({ assertAccessTokenIsActive: async (): Promise<void> => undefined })
       .compile();
 
     app = moduleRef.createNestApplication();
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true, transformOptions: { enableImplicitConversion: true } }));
+    app.useGlobalPipes(
+      new ValidationPipe({
+        whitelist: true,
+        forbidNonWhitelisted: true,
+        transform: true,
+        transformOptions: { enableImplicitConversion: true },
+      }),
+    );
     app.enableVersioning({ type: VersioningType.URI });
     app.setGlobalPrefix('api');
     await app.init();
     http = request(app.getHttpServer());
 
     // Tap the app's OWN client, so what is captured is what the route runs.
-    const svc = app.get(PrismaService) as unknown as {
-      $on: (e: string, cb: (ev: { query: string }) => void) => void;
-    };
+    const svc = app.get(PrismaService);
     svc.$on('query', (ev) => {
       if (!capture) return;
       const { verb, target } = classify(ev.query);
@@ -78,7 +99,10 @@ describe('DEBUG POST /stock/physical/create', () => {
     });
   }, 120_000);
 
-  afterAll(async () => { await app?.close(); await prisma.$disconnect(); }, 60_000);
+  afterAll(async () => {
+    await app?.close();
+    await prisma.$disconnect();
+  }, 60_000);
 
   async function trace(label: string, run: () => request.Test): Promise<any> {
     capture = [];
@@ -86,8 +110,8 @@ describe('DEBUG POST /stock/physical/create', () => {
     await new Promise((r) => setTimeout(r, 250)); // let the last events land
     const steps = capture;
     capture = null;
-    const lines = [`##### ${label} → HTTP ${res.status} — ${steps!.length} statements`];
-    steps!.forEach((s, i) => {
+    const lines = [`##### ${label} → HTTP ${res.status} — ${steps.length} statements`];
+    steps.forEach((s, i) => {
       lines.push(`  ${String(i + 1).padStart(2)}. ${s.verb.padEnd(11)} ${s.target}`);
       lines.push(`      ${s.sql}`);
     });
@@ -100,42 +124,72 @@ describe('DEBUG POST /stock/physical/create', () => {
   let lotB: any;
 
   it('captures the count sheet, then traces both forms of create', async () => {
-    const cs = await http.get(`${BASE}/count-sheet`).set('Authorization', BEARER)
-      .query({ accYear: ACC_YEAR, companyId: SCOPE.companyId, branchId: SCOPE.branchId, godownId: SCOPE.godownId });
+    const cs = await http.get(`${BASE}/count-sheet`).set('Authorization', BEARER).query({
+      accYear: ACC_YEAR,
+      companyId: SCOPE.companyId,
+      branchId: SCOPE.branchId,
+      godownId: SCOPE.godownId,
+    });
     sheet = (cs.body.data.items as any[]).filter((r) => Number(r.bookQty) >= 1);
     expect(sheet.length).toBeGreaterThanOrEqual(2);
     lotA = sheet[0];
     lotB = sheet[1];
 
     const header = (over: any = {}) => ({
-      accYear: ACC_YEAR, companyId: SCOPE.companyId, branchId: SCOPE.branchId,
-      deviceId: SCOPE.deviceId, docDate: DOC_DATE, toGodownId: SCOPE.godownId,
-      userId: ACTOR, remarks: 'E2E-PHY debug trace', ...over,
+      accYear: ACC_YEAR,
+      companyId: SCOPE.companyId,
+      branchId: SCOPE.branchId,
+      deviceId: SCOPE.deviceId,
+      docDate: DOC_DATE,
+      toGodownId: SCOPE.godownId,
+      userId: ACTOR,
+      remarks: 'E2E-PHY debug trace',
+      ...over,
     });
     const line = (row: any, counted: number) => ({
-      lineNo: 1, splitNo: row.splitNo, itemId: row.itemId,
-      godownId: row.godownId, bucket: row.bucket, lotId: row.lotId, countedQty: counted,
+      lineNo: 1,
+      splitNo: row.splitNo,
+      itemId: row.itemId,
+      godownId: row.godownId,
+      bucket: row.bucket,
+      lotId: row.lotId,
+      countedQty: counted,
     });
 
     const draft = await trace('A. create — status DRAFT (agreeing line)', () =>
-      http.post(`${BASE}/create`).set('Authorization', BEARER)
-        .send({ header: header(), lines: [line(lotA, Number(lotA.bookQty))] }));
+      http
+        .post(`${BASE}/create`)
+        .set('Authorization', BEARER)
+        .send({ header: header(), lines: [line(lotA, Number(lotA.bookQty))] }),
+    );
     expect(draft.status).toBe(201);
 
     const posted = await trace('B. create — status POSTED (+3 overage)', () =>
-      http.post(`${BASE}/create`).set('Authorization', BEARER)
-        .send({ header: header({ status: 'POSTED' }), lines: [line(lotB, Number(lotB.bookQty) + 3)] }));
+      http
+        .post(`${BASE}/create`)
+        .set('Authorization', BEARER)
+        .send({
+          header: header({ status: 'POSTED' }),
+          lines: [line(lotB, Number(lotB.bookQty) + 3)],
+        }),
+    );
     expect(posted.status).toBe(201);
 
     // Put it back.
     await http.post(`${BASE}/cancel`).set('Authorization', BEARER).send({
-      svhId: posted.body.data.header.svhId, accYear: ACC_YEAR,
-      companyId: SCOPE.companyId, branchId: SCOPE.branchId, userId: ACTOR,
+      svhId: posted.body.data.header.svhId,
+      accYear: ACC_YEAR,
+      companyId: SCOPE.companyId,
+      branchId: SCOPE.branchId,
+      userId: ACTOR,
       reason: 'E2E-PHY debug trace — reversing so the branch nets to zero',
     });
     await http.post(`${BASE}/cancel`).set('Authorization', BEARER).send({
-      svhId: draft.body.data.header.svhId, accYear: ACC_YEAR,
-      companyId: SCOPE.companyId, branchId: SCOPE.branchId, userId: ACTOR,
+      svhId: draft.body.data.header.svhId,
+      accYear: ACC_YEAR,
+      companyId: SCOPE.companyId,
+      branchId: SCOPE.branchId,
+      userId: ACTOR,
       reason: 'E2E-PHY debug trace — abandoning the draft',
     });
   }, 180_000);

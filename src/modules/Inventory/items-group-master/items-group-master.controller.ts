@@ -50,7 +50,7 @@ type UploadedPhotoFile = {
 @Controller('item-groups')
 @UseFilters(ItemGroupExceptionFilter)
 export class ItemsGroupMasterController {
-  constructor(private readonly itemsGroupMasterService: ItemsGroupMasterService) { }
+  constructor(private readonly itemsGroupMasterService: ItemsGroupMasterService) {}
 
   @Post('create')
   @Version(API_VERSION)
@@ -111,9 +111,7 @@ export class ItemsGroupMasterController {
 
     return {
       success: true,
-      message: deleted
-        ? 'Item group deleted successfully'
-        : 'Item group restored successfully',
+      message: deleted ? 'Item group deleted successfully' : 'Item group restored successfully',
       data: { itg_id },
     };
   }

@@ -494,10 +494,6 @@ SELECT v.* FROM (VALUES
     ,('019f1774-ff60-77e4-8f75-3291d06a62c8', 63, 8 , 'Phone'              , 'sup_phone'                 , 'Text'         , 10.00 , 8.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019f1774-ff61-7050-a52f-5bf090331646', 63, 9 , 'Credit Days'        , 'sup_credit_days'           , 'Text'         , 10.00 , 9.00 , 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019f1774-ff61-783e-ade5-230db8e36a61', 63, 10, 'Active'             , 'sup_is_active'             , 'Text'         , 10.00 , 10.00, 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
-    -- ============ configs (id 64) ============
-    ,('019f1c42-7419-79e0-9cc6-f6d34d62b9fc', 64, 1 , 'Id'                 , 'config_id'                 , 'Text'         , NULL  , 1.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
-    ,('019f1c42-741b-763d-9a7a-e2feb949e675', 64, 2 , 'Name'               , 'config_name'               , 'Text'         , NULL  , 2.00 , 'Left'  , true , true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
-    ,('019f1c42-741c-7f38-a050-18cccacadddb', 64, 3 , 'Value'              , 'config_value'              , 'Text'         , NULL  , 3.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     -- ============ MAIN LIST - CUSTOMERS (id 65) ============
     ,('019f1c8d-2c5a-7c99-b830-c3f237f72aa7', 65, 1 , '#'                  , 'cus_id'                    , 'Text'         , 10.00 , 1.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019f1c8d-2c5b-7b78-a088-ea64028b79a8', 65, 2 , 'Short'              , 'cus_short'                 , 'Text'         , 6.00  , 2.00 , 'Left'  , true , true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')

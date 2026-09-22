@@ -10,7 +10,6 @@ import { EmployeeDepartmentMasterModule } from '../modules/settings/employeeDepa
 import { EmployeeDesignationMasterModule } from '../modules/settings/employeeDesignationMaster/employee-designation-master.module';
 import { EmployeeMasterModule } from '../modules/settings/employeeMaster/employee-master.module';
 import { UserAdministrationModule } from '../modules/settings/userAdministration/user-administration.module';
-import { ConfigsModule } from '../modules/settings/configs/configs.module';
 import { AppSettingsModule } from '../modules/settings/appSettings/app-settings.module';
 import { PrintTemplateAssignmentModule } from '../modules/settings/print-template-assignment/print-template-assignment.module';
 import { PrintTemplateModule } from '../modules/settings/print-template/print-template.module';
@@ -36,6 +35,10 @@ import { CustomerModule } from '../modules/sales/customer/customer.module';
 import { QuotationModule } from '../modules/sales/quotation/quotation.module';
 import { BillModule } from '../modules/sales/bill/bill.module';
 import { SaleOrderModule } from '../modules/sales/sale-order/sale-order.module';
+import { DeliveryChallanModule } from '../modules/sales/delivery-challan/delivery-challan.module';
+import { DcReturnModule } from '../modules/sales/dc-return/dc-return.module';
+import { SaleReturnModule } from '../modules/sales/sale-return/sale-return.module';
+import { TempCreditModule } from '../modules/sales/temp-credit/temp-credit.module';
 import { TxnHoldModule } from '../modules/sales/txn-hold/txn-hold.module';
 import { GridDetailsModule } from '../modules/grid-details/grid-details.module';
 import { DropdownDetailsModule } from '../modules/dropdown-details/dropdown-details.module';
@@ -284,12 +287,6 @@ export const swaggerModuleDocuments = [
     include: [UserAdministrationModule],
   },
   {
-    path: 'configs',
-    title: 'Configs API',
-    description: 'Configs module endpoints',
-    include: [ConfigsModule],
-  },
-  {
     path: 'app-settings',
     title: 'App Settings API',
     description:
@@ -366,10 +363,10 @@ export const swaggerModuleDocuments = [
     path: 'cheques',
     title: 'Received Cheques API',
     description:
-      'A received cheque through HELD -> DEPOSITED -> CLEARED | BOUNCED -> re-presented | '  +
+      'A received cheque through HELD -> DEPOSITED -> CLEARED | BOUNCED -> re-presented | ' +
       'REPLACED, or HELD -> RETURNED | CANCELLED. Each step writes one register update, one ' +
       'status-log row and — when money moves — one voucher, never editing a row. The posting ' +
-      'mode is honoured per ROW, and Cheques in Hand comes from the cheque\'s own tender row',
+      "mode is honoured per ROW, and Cheques in Hand comes from the cheque's own tender row",
     include: [ChequesModule],
   },
   {
@@ -378,7 +375,7 @@ export const swaggerModuleDocuments = [
     description:
       'Role -> ledger: the table every posting engine resolves a DISCOUNT_ALLOWED, an OUTPUT_CGST ' +
       'or a ROUND_OFF through. One shared mapping per role, the same for every company; the ' +
-      'catalogue of roles is the server\'s, so a role with no ledger is reported as loudly as a ' +
+      "catalogue of roles is the server's, so a role with no ledger is reported as loudly as a " +
       'mapped one, and a ledger that cannot hold its role is refused when it is typed rather than ' +
       'when money is taken',
     include: [LedgerMapModule],
@@ -569,6 +566,31 @@ export const swaggerModuleDocuments = [
       'Single-call sale order endpoints with nested line items, applied charges, tendered ' +
       'advances and advance allocations',
     include: [SaleOrderModule],
+  },
+  {
+    path: 'delivery-challans',
+    title: 'Delivery Challans API',
+    description:
+      'Delivery challan endpoints (HANDOVER §4): draft, validate, post, cancel, amend, convert-purpose, transport',
+    include: [DeliveryChallanModule],
+  },
+  {
+    path: 'dc-returns',
+    title: 'DC Returns API',
+    description: 'Delivery challan return endpoints (HANDOVER §5)',
+    include: [DcReturnModule],
+  },
+  {
+    path: 'sale-returns',
+    title: 'Sale Returns API',
+    description: 'Sale return / credit note endpoints (HANDOVER §6)',
+    include: [SaleReturnModule],
+  },
+  {
+    path: 'temp-credits',
+    title: 'Temporary Credits API',
+    description: 'Temporary credit follow-up endpoints (HANDOVER §7)',
+    include: [TempCreditModule],
   },
   {
     path: 'txn-holds',

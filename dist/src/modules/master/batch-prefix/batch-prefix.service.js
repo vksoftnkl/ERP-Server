@@ -48,7 +48,14 @@ let BatchPrefixService = class BatchPrefixService {
             ];
         }
         return (0, module_list_utils_1.runMasterListQuery)({ page, limit }, {
-            configuredGridFn: () => (0, module_list_utils_1.runConfiguredGridQuery)(this.configuredGridSqlService, { tableName: BATCH_PREFIX_TABLE_NAME, alias: 'batch_prefix_grid', search: queryDto.search, page, limit, skip }),
+            configuredGridFn: () => (0, module_list_utils_1.runConfiguredGridQuery)(this.configuredGridSqlService, {
+                tableName: BATCH_PREFIX_TABLE_NAME,
+                alias: 'batch_prefix_grid',
+                search: queryDto.search,
+                page,
+                limit,
+                skip,
+            }),
             countFn: () => this.prisma.batchPrefix.count({ where }),
             findManyFn: () => this.prisma.batchPrefix.findMany({
                 where,

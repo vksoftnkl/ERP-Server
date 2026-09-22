@@ -124,7 +124,11 @@ __decorate([
     __metadata("design:type", String)
 ], SaveItemDto.prototype, "item_id", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ format: 'uuid', nullable: true, description: 'Company UUID this item belongs to.' }),
+    (0, swagger_1.ApiPropertyOptional)({
+        format: 'uuid',
+        nullable: true,
+        description: 'Company UUID this item belongs to.',
+    }),
     (0, dtoDecorators_1.OptionalUuid)(),
     __metadata("design:type", String)
 ], SaveItemDto.prototype, "item_company_id", void 0);

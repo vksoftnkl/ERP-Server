@@ -42,8 +42,8 @@ import { API_VERSION } from '../../../common/constants/api-version';
 @Controller('godowns')
 @UseFilters(GodownExceptionFilter)
 export class GodownsMasterController {
-  constructor(private readonly godownsMasterService: GodownsMasterService) { }
-   @Post('create')
+  constructor(private readonly godownsMasterService: GodownsMasterService) {}
+  @Post('create')
   @Version(API_VERSION)
   @ApiOperation({
     summary: 'Create or update godown location (by gdl_id presence in request body)',

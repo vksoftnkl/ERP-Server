@@ -272,8 +272,12 @@ export class AuthService {
         reasons.push('desktop login is disabled');
       if (channel === 'mobile' && !candidate.usrMobileLogin)
         reasons.push('mobile login is disabled');
-      if (channel === 'unspecified' &&
-        !candidate.usrWebLogin && !candidate.usrDesktopLogin && !candidate.usrMobileLogin)
+      if (
+        channel === 'unspecified' &&
+        !candidate.usrWebLogin &&
+        !candidate.usrDesktopLogin &&
+        !candidate.usrMobileLogin
+      )
         reasons.push('all login channels are disabled');
       this.logger.warn(
         `Login rejected for '${normalizedUserName}' (${candidate.usrId}, device type '${channel}'): ` +
@@ -293,8 +297,7 @@ export class AuthService {
     const now = new Date();
     const ip = this.requestContextService.getIpAddress();
     const resolvedType = opts.deviceType ?? 'Desktop';
-    const lookupUid =
-      resolvedType.toLowerCase() === 'web' ? `web:${user.usrId}` : deviceUid;
+    const lookupUid = resolvedType.toLowerCase() === 'web' ? `web:${user.usrId}` : deviceUid;
     if (!lookupUid) {
       throw new UnauthorizedException('Device not registered');
     }
@@ -311,10 +314,7 @@ export class AuthService {
           devUserId: user.usrId,
           devDeviceType: { equals: 'Web', mode: 'insensitive' },
         },
-        orderBy: [
-          { devLastLogin: { sort: 'desc', nulls: 'last' } },
-          { devCreatedOn: 'desc' },
-        ],
+        orderBy: [{ devLastLogin: { sort: 'desc', nulls: 'last' } }, { devCreatedOn: 'desc' }],
       });
       if (webDevices.length === 0) {
         throw new UnauthorizedException('Device not registered. Please contact administrator.');
@@ -351,7 +351,8 @@ export class AuthService {
           devModifiedBy: user.usrId,
         },
       });
-    }    const existing = await this.prisma.deviceMaster.findUnique({
+    }
+    const existing = await this.prisma.deviceMaster.findUnique({
       where: { devDeviceUid: lookupUid },
     });
     if (!existing) {
@@ -475,4 +476,5 @@ export class AuthService {
       return error.message.trim();
     }
     return 'unknown error';
-  }}
+  }
+}

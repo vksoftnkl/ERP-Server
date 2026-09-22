@@ -61,7 +61,8 @@ export class SaveStockVoucherHeaderDto {
     minLength: 9,
     maxLength: 9,
     example: '2026-2027',
-    description: 'character(9). Send all nine characters — bpchar pads, and ck_svh_acc_year rejects the padding.',
+    description:
+      'character(9). Send all nine characters — bpchar pads, and ck_svh_acc_year rejects the padding.',
   })
   @TrimmedString(9)
   @Matches(ACC_YEAR_PATTERN, {
@@ -102,7 +103,8 @@ export class SaveStockVoucherHeaderDto {
 
   @ApiPropertyOptional({
     maxLength: 100,
-    description: 'The printed number. Generated as {typeCode}/{accYear}/{deviceCode}/{slno} when absent.',
+    description:
+      'The printed number. Generated as {typeCode}/{accYear}/{deviceCode}/{slno} when absent.',
   })
   @OptionalTrimmedString(100)
   refno?: string;
@@ -159,7 +161,8 @@ export class SaveStockVoucherHeaderDto {
   @ApiPropertyOptional({
     maxLength: 100,
     nullable: true,
-    description: "The other side's own reference — a supplier's docket number, a branch's despatch note.",
+    description:
+      "The other side's own reference — a supplier's docket number, a branch's despatch note.",
   })
   @NullableStringStrict(100)
   partyRef?: string | null;
@@ -213,7 +216,8 @@ export class SaveStockVoucherHeaderDto {
     type: 'string',
     format: 'date-time',
     nullable: true,
-    description: 'When an offline device synced this document up. Set by the device, not the server.',
+    description:
+      'When an offline device synced this document up. Set by the device, not the server.',
   })
   @NullableDateString()
   syncDate?: string | null;

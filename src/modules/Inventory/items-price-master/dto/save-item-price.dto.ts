@@ -46,7 +46,10 @@ export class SaveItemPriceDto {
   ipm_item_id!: string;
   // FK to item_unit_conversion(iuc_id) — the conversion row owns the unit shape
   // (base unit, factors, slno, the is_* flags), so none of it is accepted here.
-  @ApiProperty({ format: 'uuid', description: 'Item unit conversion id (iuc_id) this price applies to' })
+  @ApiProperty({
+    format: 'uuid',
+    description: 'Item unit conversion id (iuc_id) this price applies to',
+  })
   @Transform(({ value }) => toTrimmedString(value))
   @IsString()
   @IsNotEmpty()

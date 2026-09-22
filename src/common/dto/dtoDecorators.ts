@@ -241,7 +241,9 @@ export const OptionalBoolean = () => applyDecorators(IsOptional(), IsBoolean());
 export const OptionalQueryBoolean = () =>
   applyDecorators(
     IsOptional(),
-    Transform(({ obj, key }) => toOptionalBoolean((obj as Record<string, unknown> | undefined)?.[key])),
+    Transform(({ obj, key }) =>
+      toOptionalBoolean((obj as Record<string, unknown> | undefined)?.[key]),
+    ),
     IsBoolean(),
   );
 export const OptionalQueryInt = (min?: number, max?: number) => OptionalInteger(min, max);

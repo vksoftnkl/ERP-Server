@@ -180,9 +180,7 @@ describe('StockTrackPolicyService', () => {
     });
 
     it('keeps mrp and batch together for an MRP item that also expires', () => {
-      const derived = service.deriveFromItem(
-        item({ itemBatchConfig: 1, itemIsExpiryItem: true }),
-      );
+      const derived = service.deriveFromItem(item({ itemBatchConfig: 1, itemIsExpiryItem: true }));
       expect(derived).toMatchObject({ trackMrp: true, trackBatch: true, trackExpiry: true });
     });
 
@@ -229,7 +227,10 @@ describe('StockTrackPolicyService', () => {
 
     it('leaves an admin-authored policy alone', async () => {
       client.stockTrackPolicy.findFirst.mockResolvedValueOnce(
-        policyRow({ stpRemarks: 'Set by hand for the pharmacy counter', stpIssueStrategy: 'MANUAL' }),
+        policyRow({
+          stpRemarks: 'Set by hand for the pharmacy counter',
+          stpIssueStrategy: 'MANUAL',
+        }),
       );
 
       const result = await service.syncFromItem(item({ itemIsExpiryItem: true }), tx());

@@ -138,7 +138,11 @@ __decorate([
     __metadata("design:type", Object)
 ], ItemTaxPayloadDto.prototype, "tax_sales_ledger_id", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true, example: 'Sales Account', description: 'Name of the sales ledger (resolved on the get endpoint)' }),
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        example: 'Sales Account',
+        description: 'Name of the sales ledger (resolved on the get endpoint)',
+    }),
     __metadata("design:type", Object)
 ], ItemTaxPayloadDto.prototype, "tax_sales_ledger_name", void 0);
 __decorate([
@@ -146,7 +150,11 @@ __decorate([
     __metadata("design:type", Object)
 ], ItemTaxPayloadDto.prototype, "tax_sales_return_ledger_id", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true, example: 'Sales Return Account', description: 'Name of the sales return ledger (resolved on the get endpoint)' }),
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        example: 'Sales Return Account',
+        description: 'Name of the sales return ledger (resolved on the get endpoint)',
+    }),
     __metadata("design:type", Object)
 ], ItemTaxPayloadDto.prototype, "tax_sales_return_ledger_name", void 0);
 __decorate([
@@ -154,7 +162,11 @@ __decorate([
     __metadata("design:type", Object)
 ], ItemTaxPayloadDto.prototype, "tax_purchase_ledger_id", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true, example: 'Purchase Account', description: 'Name of the purchase ledger (resolved on the get endpoint)' }),
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        example: 'Purchase Account',
+        description: 'Name of the purchase ledger (resolved on the get endpoint)',
+    }),
     __metadata("design:type", Object)
 ], ItemTaxPayloadDto.prototype, "tax_purchase_ledger_name", void 0);
 __decorate([
@@ -162,7 +174,11 @@ __decorate([
     __metadata("design:type", Object)
 ], ItemTaxPayloadDto.prototype, "tax_purchase_return_ledger_id", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true, example: 'Purchase Return Account', description: 'Name of the purchase return ledger (resolved on the get endpoint)' }),
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        example: 'Purchase Return Account',
+        description: 'Name of the purchase return ledger (resolved on the get endpoint)',
+    }),
     __metadata("design:type", Object)
 ], ItemTaxPayloadDto.prototype, "tax_purchase_return_ledger_name", void 0);
 __decorate([
@@ -170,7 +186,11 @@ __decorate([
     __metadata("design:type", Object)
 ], ItemTaxPayloadDto.prototype, "tax_cgst_output_ledger_id", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true, example: 'CGST Output', description: 'Name of the CGST output ledger (resolved on the get endpoint)' }),
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        example: 'CGST Output',
+        description: 'Name of the CGST output ledger (resolved on the get endpoint)',
+    }),
     __metadata("design:type", Object)
 ], ItemTaxPayloadDto.prototype, "tax_cgst_output_ledger_name", void 0);
 __decorate([
@@ -178,7 +198,11 @@ __decorate([
     __metadata("design:type", Object)
 ], ItemTaxPayloadDto.prototype, "tax_sgst_output_ledger_id", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true, example: 'SGST Output', description: 'Name of the SGST output ledger (resolved on the get endpoint)' }),
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        example: 'SGST Output',
+        description: 'Name of the SGST output ledger (resolved on the get endpoint)',
+    }),
     __metadata("design:type", Object)
 ], ItemTaxPayloadDto.prototype, "tax_sgst_output_ledger_name", void 0);
 __decorate([
@@ -186,7 +210,11 @@ __decorate([
     __metadata("design:type", Object)
 ], ItemTaxPayloadDto.prototype, "tax_igst_output_ledger_id", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true, example: 'IGST Output', description: 'Name of the IGST output ledger (resolved on the get endpoint)' }),
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        example: 'IGST Output',
+        description: 'Name of the IGST output ledger (resolved on the get endpoint)',
+    }),
     __metadata("design:type", Object)
 ], ItemTaxPayloadDto.prototype, "tax_igst_output_ledger_name", void 0);
 __decorate([
@@ -194,7 +222,11 @@ __decorate([
     __metadata("design:type", Object)
 ], ItemTaxPayloadDto.prototype, "tax_cess_output_ledger_id", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true, example: 'Cess Output', description: 'Name of the cess output ledger (resolved on the get endpoint)' }),
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        example: 'Cess Output',
+        description: 'Name of the cess output ledger (resolved on the get endpoint)',
+    }),
     __metadata("design:type", Object)
 ], ItemTaxPayloadDto.prototype, "tax_cess_output_ledger_name", void 0);
 __decorate([
@@ -202,7 +234,11 @@ __decorate([
     __metadata("design:type", Object)
 ], ItemTaxPayloadDto.prototype, "tax_cgst_input_ledger_id", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true, example: 'CGST Input', description: 'Name of the CGST input ledger (resolved on the get endpoint)' }),
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        example: 'CGST Input',
+        description: 'Name of the CGST input ledger (resolved on the get endpoint)',
+    }),
     __metadata("design:type", Object)
 ], ItemTaxPayloadDto.prototype, "tax_cgst_input_ledger_name", void 0);
 __decorate([
@@ -210,7 +246,11 @@ __decorate([
     __metadata("design:type", Object)
 ], ItemTaxPayloadDto.prototype, "tax_sgst_input_ledger_id", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true, example: 'SGST Input', description: 'Name of the SGST input ledger (resolved on the get endpoint)' }),
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        example: 'SGST Input',
+        description: 'Name of the SGST input ledger (resolved on the get endpoint)',
+    }),
     __metadata("design:type", Object)
 ], ItemTaxPayloadDto.prototype, "tax_sgst_input_ledger_name", void 0);
 __decorate([
@@ -218,7 +258,11 @@ __decorate([
     __metadata("design:type", Object)
 ], ItemTaxPayloadDto.prototype, "tax_igst_input_ledger_id", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true, example: 'IGST Input', description: 'Name of the IGST input ledger (resolved on the get endpoint)' }),
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        example: 'IGST Input',
+        description: 'Name of the IGST input ledger (resolved on the get endpoint)',
+    }),
     __metadata("design:type", Object)
 ], ItemTaxPayloadDto.prototype, "tax_igst_input_ledger_name", void 0);
 __decorate([
@@ -226,7 +270,11 @@ __decorate([
     __metadata("design:type", Object)
 ], ItemTaxPayloadDto.prototype, "tax_cess_input_ledger_id", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true, example: 'Cess Input', description: 'Name of the cess input ledger (resolved on the get endpoint)' }),
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        example: 'Cess Input',
+        description: 'Name of the cess input ledger (resolved on the get endpoint)',
+    }),
     __metadata("design:type", Object)
 ], ItemTaxPayloadDto.prototype, "tax_cess_input_ledger_name", void 0);
 __decorate([

@@ -193,9 +193,7 @@ export class ItemMasterUpdateService {
 
     // Soft-delete first: releasing removed rows (e.g. an old base unit) before
     // saving avoids clashes on the table's partial unique indexes.
-    const staleIds = existing
-      .filter((row) => !claimedIds.has(row.iuc_id))
-      .map((row) => row.iuc_id);
+    const staleIds = existing.filter((row) => !claimedIds.has(row.iuc_id)).map((row) => row.iuc_id);
     if (staleIds.length > 0) {
       await this.itemUnitConversionService.toggleDelete(staleIds, tx);
     }
@@ -248,9 +246,7 @@ export class ItemMasterUpdateService {
       toSave.push({ ...resolved, ipm_item_id: itemId, ipm_id: resolved.ipm_id ?? match?.ipm_id });
     }
 
-    const staleIds = existing
-      .filter((row) => !claimedIds.has(row.ipm_id))
-      .map((row) => row.ipm_id);
+    const staleIds = existing.filter((row) => !claimedIds.has(row.ipm_id)).map((row) => row.ipm_id);
     if (staleIds.length > 0) {
       await this.itemsPriceMasterService.toggleDelete(staleIds, tx);
     }
@@ -298,9 +294,7 @@ export class ItemMasterUpdateService {
 
     // Soft-delete first: ean_code is globally unique and only one default
     // barcode is allowed per scope, so removed rows must release both first.
-    const staleIds = existing
-      .filter((row) => !claimedIds.has(row.ean_id))
-      .map((row) => row.ean_id);
+    const staleIds = existing.filter((row) => !claimedIds.has(row.ean_id)).map((row) => row.ean_id);
     if (staleIds.length > 0) {
       await this.itemsEanCodeMasterService.toggleDelete(staleIds, tx);
     }
@@ -353,9 +347,7 @@ export class ItemMasterUpdateService {
       toSave.push({ ...resolved, ir_item_id: itemId, ir_id: resolved.ir_id ?? match?.ir_id });
     }
 
-    const staleIds = existing
-      .filter((row) => !claimedIds.has(row.ir_id))
-      .map((row) => row.ir_id);
+    const staleIds = existing.filter((row) => !claimedIds.has(row.ir_id)).map((row) => row.ir_id);
     if (staleIds.length > 0) {
       await this.itemsReorderMasterService.toggleDelete(staleIds, tx);
     }

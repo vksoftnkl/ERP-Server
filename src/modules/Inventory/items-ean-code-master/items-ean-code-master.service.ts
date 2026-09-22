@@ -101,17 +101,14 @@ export class ItemsEanCodeMasterService {
       { page, limit },
       {
         configuredGridFn: () =>
-          runConfiguredGridQuery<ItemEanCodeListItem>(
-            this.configuredGridSqlService,
-            {
-              tableName: ITEM_EAN_CODE_TABLE_NAME,
-              alias: 'item_ean_code_grid',
-              search: queryDto.search,
-              page,
-              limit,
-              skip,
-            },
-          ),
+          runConfiguredGridQuery<ItemEanCodeListItem>(this.configuredGridSqlService, {
+            tableName: ITEM_EAN_CODE_TABLE_NAME,
+            alias: 'item_ean_code_grid',
+            search: queryDto.search,
+            page,
+            limit,
+            skip,
+          }),
         countFn: () => this.prisma.itemEanCode.count({ where }),
         findManyFn: () =>
           this.prisma.itemEanCode.findMany({
@@ -292,7 +289,10 @@ export class ItemsEanCodeMasterService {
     }
 
     const now = new Date();
-    const createdBy = resolveActor(saveItemEanCodeDto.ean_created_by, this.requestContextService.getUserId());
+    const createdBy = resolveActor(
+      saveItemEanCodeDto.ean_created_by,
+      this.requestContextService.getUserId(),
+    );
     const modifiedBy = resolveActor(saveItemEanCodeDto.ean_modified_by, createdBy);
     const data: Prisma.ItemEanCodeUncheckedCreateInput = {
       eanItemId: saveItemEanCodeDto.ean_item_id,
@@ -363,7 +363,10 @@ export class ItemsEanCodeMasterService {
       eanUcUnitId: saveItemEanCodeDto.ean_unit_id,
       eanCode,
       eanModifiedOn: new Date(),
-      eanModifiedBy: resolveActor(saveItemEanCodeDto.ean_modified_by, this.requestContextService.getUserId()),
+      eanModifiedBy: resolveActor(
+        saveItemEanCodeDto.ean_modified_by,
+        this.requestContextService.getUserId(),
+      ),
     };
     this.applyOptionalFields(data, saveItemEanCodeDto);
 
@@ -374,7 +377,11 @@ export class ItemsEanCodeMasterService {
       data,
     });
 
-    await this.enforceSingleDefaultInScope(tx, updated, updated.eanModifiedBy ?? this.requestContextService.getUserId() ?? DEFAULT_ACTOR);
+    await this.enforceSingleDefaultInScope(
+      tx,
+      updated,
+      updated.eanModifiedBy ?? this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
+    );
 
     const payload = this.toPayload(updated);
     await this.auditLogService.logEntityChange(

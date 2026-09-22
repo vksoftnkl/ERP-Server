@@ -54,7 +54,14 @@ let UserLoginSessionsService = class UserLoginSessionsService {
     }
     async list(queryDto) {
         const { page, limit, skip } = (0, module_list_utils_1.resolvePagination)(queryDto);
-        const result = await (0, module_list_utils_1.runConfiguredGridQuery)(this.configuredGridSqlService, { tableName: USER_LOGIN_SESSIONS_TABLE_NAME, alias: 'user_login_sessions_grid', search: queryDto.search, page, limit, skip });
+        const result = await (0, module_list_utils_1.runConfiguredGridQuery)(this.configuredGridSqlService, {
+            tableName: USER_LOGIN_SESSIONS_TABLE_NAME,
+            alias: 'user_login_sessions_grid',
+            search: queryDto.search,
+            page,
+            limit,
+            skip,
+        });
         if (!result) {
             (0, module_service_utils_1.throwFixedNotFound)('No configured grid found for user login sessions list', 'list', 'No configured grid found');
         }

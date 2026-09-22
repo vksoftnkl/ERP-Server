@@ -395,7 +395,8 @@ export class EmployeeMasterService {
       value,
       field,
       `${field} must not be empty`,
-    ); }
+    );
+  }
   private decodePhoto(value: string | null | undefined): Prisma.Bytes | null | undefined {
     if (value === undefined) {
       return undefined;

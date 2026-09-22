@@ -9,6 +9,8 @@ var ChargeDocType;
     ChargeDocType["QUOTATION"] = "QUOTATION";
     ChargeDocType["INVOICE"] = "INVOICE";
     ChargeDocType["ORDER"] = "ORDER";
+    ChargeDocType["DELIVERY_CHALLAN"] = "DELIVERY_CHALLAN";
+    ChargeDocType["SALE_RETURN"] = "SALE_RETURN";
 })(ChargeDocType || (exports.ChargeDocType = ChargeDocType = {}));
 var ChargeRole;
 (function (ChargeRole) {

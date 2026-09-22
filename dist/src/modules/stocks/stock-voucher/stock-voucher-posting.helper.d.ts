@@ -2,10 +2,17 @@ import { Prisma } from '@prisma/client';
 import type { StockVoucherTypeRules } from './types/stock-voucher.types';
 export declare const STOCK_LEDGER_SRC_MODULE = "STOCK";
 export declare function usesInProcessPosting(rules: StockVoucherTypeRules): boolean;
+export interface StockLedgerSourceLabel {
+    srcModule: 'SALES' | 'PURCHASE' | 'STOCK';
+    srcDocType: string;
+    srcRefno?: string | null;
+    partyId?: string | null;
+}
 export interface PostStockVoucherParams {
     rules: StockVoucherTypeRules;
     svhId: string;
     accYear: string;
+    ledgerSource?: StockLedgerSourceLabel;
     actor: string;
     postedOn: Date;
 }

@@ -121,12 +121,18 @@ function draftBody(overrides: Record<string, unknown> = {}): Record<string, unkn
   };
 }
 
-async function one<T extends Record<string, unknown>>(sql: string, ...params: unknown[]): Promise<T | undefined> {
+async function one<T extends Record<string, unknown>>(
+  sql: string,
+  ...params: unknown[]
+): Promise<T | undefined> {
   const rows = await prisma.$queryRawUnsafe<T[]>(sql, ...params);
   return rows[0];
 }
 
-async function all<T extends Record<string, unknown>>(sql: string, ...params: unknown[]): Promise<T[]> {
+async function all<T extends Record<string, unknown>>(
+  sql: string,
+  ...params: unknown[]
+): Promise<T[]> {
   return prisma.$queryRawUnsafe<T[]>(sql, ...params);
 }
 
@@ -180,7 +186,10 @@ describe('POST /bills/create — save as DRAFT (e2e, live DB)', () => {
         transformOptions: { enableImplicitConversion: true },
       }),
     );
-    app.enableVersioning({ type: VersioningType.URI, defaultVersion: process.env.API_VERSION ?? '1' });
+    app.enableVersioning({
+      type: VersioningType.URI,
+      defaultVersion: process.env.API_VERSION ?? '1',
+    });
     app.setGlobalPrefix((process.env.API_PREFIX ?? 'api').replace(/^\/+|\/+$/g, ''));
     await app.init();
   });
@@ -200,7 +209,11 @@ describe('POST /bills/create — save as DRAFT (e2e, live DB)', () => {
 
     if (res.status !== 201) {
       // eslint-disable-next-line no-console
-      console.error('[bill draft e2e] create failed:', res.status, JSON.stringify(res.body, null, 2));
+      console.error(
+        '[bill draft e2e] create failed:',
+        res.status,
+        JSON.stringify(res.body, null, 2),
+      );
     }
     expect(res.status).toBe(201);
     expect(res.body.success).toBe(true);
@@ -227,7 +240,13 @@ describe('POST /bills/create — save as DRAFT (e2e, live DB)', () => {
     const res = await request(app.getHttpServer())
       .post(CREATE)
       .set('Authorization', BEARER)
-      .send(draftBody({ sbBillSlno: 999999, sbBillRefno: 'CLIENT-CHOSEN', sbUsrRefno: 'E2E-DRAFT-NUM' }));
+      .send(
+        draftBody({
+          sbBillSlno: 999999,
+          sbBillRefno: 'CLIENT-CHOSEN',
+          sbUsrRefno: 'E2E-DRAFT-NUM',
+        }),
+      );
 
     expect(res.status).toBe(201);
     expect(res.body.data.sbBillRefno).not.toBe('CLIENT-CHOSEN');

@@ -1,6 +1,7 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { IsEnum } from 'class-validator';
 import {
+  NullableUuid,
   NullableNumber,
   NullableStringStrict,
   NullableUpperMaxString,
@@ -236,6 +237,26 @@ export class SaveChargeDetailDto {
   // 20260729121956: the actor is whatever resolveActor settles on — a user id,
   // but equally a name or login the caller passed — so the uuid pattern no
   // longer fits. Free text, no length cap, matching the column.
+  // ── Charge carry (HANDOVER §2.1) — an order charge a bill takes a share of.
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description: 'The ORDER charge row (txn_charge_detail.cd_id) this bill charge carries from',
+  })
+  @NullableUuid()
+  cdSrcCdId?: string | null;
+
+  @ApiPropertyOptional({ maxLength: 9, nullable: true, example: '2026-2027' })
+  @NullableStringStrict(9)
+  cdSrcAccYear?: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'PRORATA | FULL | MANUAL | NONE — how much of the source charge this line takes',
+  })
+  @NullableUpperMaxString(10)
+  cdCarryBasis?: string | null;
+
   @ApiPropertyOptional({ nullable: true, description: 'Actor id or name; defaults to the caller' })
   @NullableStringStrict()
   cdCreatedBy?: string | null;

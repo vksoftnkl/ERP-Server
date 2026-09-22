@@ -3,9 +3,7 @@ import { Prisma, SupplierGroup } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import { SaveSupplierGroupDto } from './dto/save-supplier-group.dto';
-import {
-  SupplierGroupPayload,
-} from './types/supplier-group-api.types';
+import { SupplierGroupPayload } from './types/supplier-group-api.types';
 import {
   DEFAULT_ACTOR,
   PurchaseWriteClient,
@@ -45,7 +43,11 @@ export class SupplierGroupService {
       where: { spgId, spgIsDeleted: false },
     });
     if (!record) {
-      throwPurchaseNotFound('Supplier group not found', 'spgId', `No active supplier group found with id ${spgId}`);
+      throwPurchaseNotFound(
+        'Supplier group not found',
+        'spgId',
+        `No active supplier group found with id ${spgId}`,
+      );
     }
     return this.toPayload(record);
   }
@@ -56,23 +58,39 @@ export class SupplierGroupService {
         where: { spgId, spgIsDeleted: false },
       });
       if (!existing) {
-        throwPurchaseNotFound('Supplier group not found', 'spgId', `No active supplier group found with id ${spgId}`);
+        throwPurchaseNotFound(
+          'Supplier group not found',
+          'spgId',
+          `No active supplier group found with id ${spgId}`,
+        );
       }
       const supplierCount = await tx.supplier.count({
         where: { supGroupId: spgId, supIsDeleted: false },
       });
       if (supplierCount > 0) {
         throwPurchaseBadRequest('Cannot delete supplier group with active suppliers', [
-          { field: 'spgId', message: `Supplier group ${spgId} is used by ${supplierCount} supplier(s).` },
+          {
+            field: 'spgId',
+            message: `Supplier group ${spgId} is used by ${supplierCount} supplier(s).`,
+          },
         ]);
       }
       const modifiedOn = new Date();
       const result = await tx.supplierGroup.updateMany({
         where: { spgId, spgIsDeleted: false },
-        data: { spgIsDeleted: true, spgIsActive: false, spgModifiedOn: modifiedOn, spgModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR },
+        data: {
+          spgIsDeleted: true,
+          spgIsActive: false,
+          spgModifiedOn: modifiedOn,
+          spgModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
+        },
       });
       if (result.count === 0) {
-        throwPurchaseNotFound('Supplier group not found', 'spgId', `No active supplier group found with id ${spgId}`);
+        throwPurchaseNotFound(
+          'Supplier group not found',
+          'spgId',
+          `No active supplier group found with id ${spgId}`,
+        );
       }
       const originalRecord = this.toPayload(existing);
       const modifiedRecord = this.toPayload({
@@ -105,7 +123,10 @@ export class SupplierGroupService {
     saveSupplierGroupDto: SaveSupplierGroupDto,
   ): Promise<SupplierGroupPayload> {
     const now = new Date();
-    const createdBy = resolveActor(saveSupplierGroupDto.spgCreatedBy, this.requestContextService.getUserId());
+    const createdBy = resolveActor(
+      saveSupplierGroupDto.spgCreatedBy,
+      this.requestContextService.getUserId(),
+    );
     const modifiedBy = resolveActor(saveSupplierGroupDto.spgModifiedBy, createdBy);
     const normalizedName = normalizeRequiredText(saveSupplierGroupDto.spgName, 'spgName');
     const data: Prisma.SupplierGroupUncheckedCreateInput = {
@@ -154,14 +175,21 @@ export class SupplierGroupService {
           where: { spgId, spgIsDeleted: false },
         });
         if (!existing) {
-          throwPurchaseNotFound('Supplier group not found', 'spgId', `No active supplier group found with id ${spgId}`);
+          throwPurchaseNotFound(
+            'Supplier group not found',
+            'spgId',
+            `No active supplier group found with id ${spgId}`,
+          );
         }
         const normalizedName = normalizeRequiredText(saveSupplierGroupDto.spgName, 'spgName');
         await this.ensureNameIsUnique(tx, normalizedName, spgId);
         const data: Prisma.SupplierGroupUncheckedUpdateInput = {
           spgName: normalizedName,
           spgModifiedOn: new Date(),
-          spgModifiedBy: resolveActor(saveSupplierGroupDto.spgModifiedBy, this.requestContextService.getUserId()),
+          spgModifiedBy: resolveActor(
+            saveSupplierGroupDto.spgModifiedBy,
+            this.requestContextService.getUserId(),
+          ),
         };
         applyPresentFields(data, saveSupplierGroupDto, SUPPLIER_GROUP_OPTIONAL_FIELDS);
         const updated = await tx.supplierGroup.update({ where: { spgId }, data });

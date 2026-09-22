@@ -23,13 +23,13 @@ export interface ValidateConfiguredGridSqlOptions {
 }
 export type ConfiguredGridSqlValidationResult =
   | {
-    isValid: true;
-    normalizedSql: string;
-  }
+      isValid: true;
+      normalizedSql: string;
+    }
   | {
-    isValid: false;
-    message: string;
-  };
+      isValid: false;
+      message: string;
+    };
 export interface GridColumnItem {
   grid_column_id: string;
   grid_column_number: number;

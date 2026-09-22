@@ -29,7 +29,7 @@ import {
 @CacheTTL(1)
 @Controller('stock-adj-reasons')
 export class StockAdjReasonsController {
-  constructor(private readonly stockAdjReasonsService: StockAdjReasonsService) { }
+  constructor(private readonly stockAdjReasonsService: StockAdjReasonsService) {}
 
   @Get('get')
   @Version(API_VERSION)

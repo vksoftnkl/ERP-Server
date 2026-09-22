@@ -41,7 +41,10 @@ export class TokenService {
   private readonly refreshTokenTtlSeconds: number;
   constructor(private readonly configService: ConfigService) {
     this.secret = this.configService.get<string>('auth.jwtSecret', '');
-    this.accessTokenTtlSeconds = this.configService.get<number>('auth.accessTokenTtlSeconds', 15 * 60);
+    this.accessTokenTtlSeconds = this.configService.get<number>(
+      'auth.accessTokenTtlSeconds',
+      15 * 60,
+    );
     this.refreshTokenTtlSeconds = this.configService.get<number>(
       'auth.refreshTokenTtlSeconds',
       7 * 24 * 60 * 60,
@@ -75,10 +78,10 @@ export class TokenService {
     const payloadSegment = this.encodeBase64Url(payload);
     const unsignedToken = `${headerSegment}.${payloadSegment}`;
     const signature = createHmac('sha256', this.secret).update(unsignedToken).digest('base64url');
-    return ({
+    return {
       token: `${unsignedToken}.${signature}`,
       payload,
-    } as unknown) as TType extends 'access' ? SignedAccessToken : SignedRefreshToken;
+    } as unknown as TType extends 'access' ? SignedAccessToken : SignedRefreshToken;
   }
   verifyAccessToken(token: string): AccessTokenPayload {
     return this.verifyToken(token, 'access');
@@ -124,7 +127,7 @@ export class TokenService {
     } catch {
       throw new UnauthorizedException('Invalid access token');
     }
-    }
+  }
   private compareSignatures(receivedSignature: string, expectedSignature: string): boolean {
     const receivedBuffer = Buffer.from(receivedSignature, 'utf8');
     const expectedBuffer = Buffer.from(expectedSignature, 'utf8');
@@ -156,11 +159,7 @@ export class TokenService {
     if (typeof sessionId !== 'string' || sessionId.length === 0) {
       throw new UnauthorizedException('Invalid access token');
     }
-    if (
-      typeof issuedAt !== 'number' ||
-      !Number.isInteger(issuedAt) ||
-      issuedAt < 0
-    ) {
+    if (typeof issuedAt !== 'number' || !Number.isInteger(issuedAt) || issuedAt < 0) {
       throw new UnauthorizedException('Invalid access token');
     }
     if (

@@ -155,7 +155,10 @@ describe('ItemsMasterService composite endpoints', () => {
     prisma = {
       itemMaster: {
         create: jest.fn<Promise<ItemMasterWithPreset>, [Prisma.ItemMasterCreateArgs]>(),
-        findFirst: jest.fn<Promise<ItemMasterWithPreset | null>, [Prisma.ItemMasterFindFirstArgs]>(),
+        findFirst: jest.fn<
+          Promise<ItemMasterWithPreset | null>,
+          [Prisma.ItemMasterFindFirstArgs]
+        >(),
         update: jest.fn<Promise<ItemMasterWithPreset>, [Prisma.ItemMasterUpdateArgs]>(),
         updateMany: jest
           .fn<Promise<{ count: number }>, [Prisma.ItemMasterUpdateManyArgs]>()
@@ -679,7 +682,9 @@ describe('ItemsMasterService composite endpoints', () => {
     ]);
     prisma.godownLocation.findMany.mockResolvedValue([{ gdlId: GODOWN_ID, gdlName: 'Main Store' }]);
     prisma.itemGroupMaster.findMany.mockResolvedValue([{ itgId: GROUP_ID, itgName: 'Hardware' }]);
-    prisma.categoryMaster.findMany.mockResolvedValue([{ categoryId: CATEGORY_ID, categoryName: 'Tools' }]);
+    prisma.categoryMaster.findMany.mockResolvedValue([
+      { categoryId: CATEGORY_ID, categoryName: 'Tools' },
+    ]);
 
     const result = await service.getComposite(ITEM_ID);
 

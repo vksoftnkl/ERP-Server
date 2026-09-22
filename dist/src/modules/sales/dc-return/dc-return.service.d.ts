@@ -1,0 +1,45 @@
+import { PrismaService } from '../../../database/prisma/prisma.service';
+import { AuditLogService } from '../../audit-log/audit-log.service';
+import { ChargeDetailService } from '../../master/charge-detail/charge-detail.service';
+import { TenderDetailService } from '../../accountsModule/tenderDetail/tender-detail.service';
+import { DcFulfilmentService } from '../posting/dc-fulfilment.service';
+import { DocRegisterService } from '../posting/doc-register.service';
+import { GstGatewayService } from '../posting/gst-gateway.service';
+import { SalesContextService } from '../posting/sales-context.service';
+import { SalesDocBlocksService } from '../posting/sales-doc-blocks.service';
+import { type DocKeys, type DocSpec } from '../posting/sales-doc-store';
+import { SalesPostingService } from '../posting/sales-posting.service';
+import { SalesStockService } from '../posting/sales-stock.service';
+import { StatutoryService } from '../posting/statutory.service';
+import { TransportBandService } from '../posting/transport-band.service';
+import { type SaveDcReturnDto } from './dto/save-dc-return.dto';
+import type { CancelDcReturnDto, DcReturnKeysDto, DcReturnTransportDto, PostDcReturnDto } from './dto/dc-return-lifecycle.dto';
+export declare const DCR_SPEC: DocSpec;
+export declare class DcReturnService {
+    private readonly prisma;
+    private readonly salesContext;
+    private readonly statutory;
+    private readonly legs;
+    private readonly register;
+    private readonly stock;
+    private readonly blocks;
+    private readonly transportBand;
+    private readonly fulfilment;
+    private readonly gst;
+    private readonly store;
+    constructor(prisma: PrismaService, salesContext: SalesContextService, statutory: StatutoryService, legs: SalesPostingService, register: DocRegisterService, stock: SalesStockService, blocks: SalesDocBlocksService, transportBand: TransportBandService, fulfilment: DcFulfilmentService, gst: GstGatewayService, audit: AuditLogService, charges: ChargeDetailService, tenders: TenderDetailService);
+    private keys;
+    save(dto: SaveDcReturnDto): Promise<Record<string, unknown>>;
+    get(keys: DocKeys): Promise<Record<string, unknown>>;
+    delete(dto: DcReturnKeysDto): Promise<{
+        sdrId: string;
+        deleted: true;
+    }>;
+    openLines(sdcId: string, sdcAccYear: string): Promise<Record<string, unknown>[]>;
+    post(dto: PostDcReturnDto): Promise<Record<string, unknown>>;
+    private guards;
+    private postCore;
+    private registerDoc;
+    cancel(dto: CancelDcReturnDto): Promise<Record<string, unknown>>;
+    transport(dto: DcReturnTransportDto): Promise<Record<string, unknown>>;
+}

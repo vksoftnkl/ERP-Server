@@ -270,7 +270,9 @@ let StockTrackPolicyService = class StockTrackPolicyService {
         return this.requestContextService.getUserId() ?? null;
     }
     positiveOrNull(value) {
-        return typeof value === 'number' && Number.isFinite(value) && value > 0 ? Math.trunc(value) : null;
+        return typeof value === 'number' && Number.isFinite(value) && value > 0
+            ? Math.trunc(value)
+            : null;
     }
     nonNegativeOr(value, fallback) {
         return typeof value === 'number' && Number.isFinite(value) && value >= 0

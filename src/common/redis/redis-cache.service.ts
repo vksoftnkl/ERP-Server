@@ -348,10 +348,7 @@ export class RedisCacheService implements OnModuleDestroy {
       nextOffset,
     };
   }
-  private readLine(
-    buffer: Buffer,
-    offset: number,
-  ): { value: string; nextOffset: number } | null {
+  private readLine(buffer: Buffer, offset: number): { value: string; nextOffset: number } | null {
     const lineEndIndex = buffer.indexOf('\r\n', offset, 'utf8');
     if (lineEndIndex === -1) {
       return null;

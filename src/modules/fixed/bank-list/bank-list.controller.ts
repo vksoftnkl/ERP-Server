@@ -47,7 +47,7 @@ import { API_VERSION } from '../../../common/constants/api-version';
 @Controller('bank-lists')
 @UseFilters(BankListExceptionFilter)
 export class BankListController {
-  constructor(private readonly bankListService: BankListService) { }
+  constructor(private readonly bankListService: BankListService) {}
   @Post('create')
   @Version(API_VERSION)
   @ApiOperation({ summary: 'Create or update bank (by bnkId presence)' })

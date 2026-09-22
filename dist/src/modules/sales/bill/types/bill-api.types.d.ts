@@ -4,7 +4,8 @@ import type { ChargeDetailPayload, ChargeDocumentAudit } from '../../../master/c
 import { TenderDrCr, TenderSrcDocType, TenderSrcModule } from '../../../accountsModule/tenderDetail/types/tender-detail-api.types';
 import type { TenderDetailPayload, TenderDocumentAudit } from '../../../accountsModule/tenderDetail/types/tender-detail-api.types';
 import { TxnStatusDocType, TxnStatusSrcModule } from '../../../../common/txn-status-log/txn-status-log.helper';
-import type { SaleOrderCancelLinesResult } from '../../sale-order/types/sale-order-api.types';
+import type { LocksBlock, PostingBlock, RightsBlock } from '../../posting/types/posting.types';
+import type { TransportBandRow } from '../../posting/transport-band.service';
 export declare const BILL_CHARGE_DOC_TYPE = ChargeDocType.INVOICE;
 export declare const BILL_CHARGE_AUDIT: ChargeDocumentAudit;
 export declare const BILL_TENDER_SRC_MODULE = TenderSrcModule.SALES;
@@ -14,6 +15,7 @@ export declare const BILL_TENDER_AUDIT: TenderDocumentAudit;
 export declare const BILL_STATUS_SRC_MODULE = TxnStatusSrcModule.SALES;
 export declare const BILL_STATUS_SRC_DOC_TYPE = TxnStatusDocType.SALE_BILL;
 export declare const BILL_STATUS_POSTED = "POSTED";
+export declare const BILL_STATUS_DRAFT = "DRAFT";
 export declare const BILL_STATUS_CANCELLED = "CANCELLED";
 export type BillPayload = Omit<SaleBill, 'sbCreatedOn' | 'sbModifiedOn' | 'sbBillDatetime' | 'sbSyncDate' | 'sbBillSlno'> & {
     sbCreatedOn?: string;
@@ -24,7 +26,56 @@ export type BillPayload = Omit<SaleBill, 'sbCreatedOn' | 'sbModifiedOn' | 'sbBil
     items?: BillItemPayload[];
     charges?: BillChargePayload[];
     tenders?: BillTenderPayload[];
+    posting?: PostingBlock;
+    locks?: LocksBlock;
+    rights?: RightsBlock;
+    sources?: BillSourceSummary[];
+    tempCredits?: BillTempCreditSummary[];
+    adjustments?: BillAdjustmentSummary[];
+    transport?: TransportBandRow | null;
+    sbShipAddrId?: string | null;
+    sbShipName?: string | null;
+    sbShipAddr?: string | null;
+    sbShipPlace?: string | null;
+    sbShipPin?: string | null;
+    sbShipPhone?: string | null;
+    sbShipStcd?: string | null;
+    sbShipGstin?: string | null;
+    sbDispatchGodownId?: string | null;
+    sbDispatchBranchId?: string | null;
+    sbTransportMode?: string | null;
+    sbTransporterId?: string | null;
+    sbTransporterName?: string | null;
+    sbTransporterGstin?: string | null;
+    sbLrNo?: string | null;
+    sbLrDate?: string | null;
+    sbDistanceKm?: number | null;
 };
+export interface BillSourceSummary {
+    kind: 'DC' | 'ORDER' | 'QUOTATION';
+    docId: string;
+    accYear: string;
+    refno: string | null;
+    date: string | null;
+    lines: number;
+    takenQty: number;
+    openQtyAfter: number | null;
+}
+export interface BillTempCreditSummary {
+    atcId: string;
+    name: string;
+    mobile: string;
+    balance: number;
+    dueDate: string | null;
+    status: string;
+}
+export interface BillAdjustmentSummary {
+    againstBillId: string;
+    againstBillAccYear: string;
+    refno: string | null;
+    amount: number;
+    adjType: string;
+}
 export type BillItemPayload = Omit<SaleBillItem, 'sbiCreatedOn' | 'sbiModifiedOn' | 'sbiSyncDate'> & {
     sbiCreatedOn?: string;
     sbiModifiedOn?: string | null;
@@ -41,14 +92,6 @@ export type BillItemPayload = Omit<SaleBillItem, 'sbiCreatedOn' | 'sbiModifiedOn
 };
 export type BillChargePayload = ChargeDetailPayload;
 export type BillTenderPayload = TenderDetailPayload;
-export type BillCancelResult = {
-    sbId: string;
-    cancelled: true;
-    remarks: string;
-    username: string;
-    cancelledOn: string;
-    orders: SaleOrderCancelLinesResult[];
-};
 export type BillErrorDetail = {
     field: string;
     message: string;

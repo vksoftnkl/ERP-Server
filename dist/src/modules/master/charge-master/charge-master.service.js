@@ -356,7 +356,8 @@ let ChargeMasterService = class ChargeMasterService {
         };
     }
     async ensureRoleIsUnique(tx, role, module, excludeId) {
-        if (role === null || !charge_master_api_types_1.CHARGE_UNIQUE_ROLES.includes(role)) {
+        if (role === null ||
+            !charge_master_api_types_1.CHARGE_UNIQUE_ROLES.includes(role)) {
             return;
         }
         const existing = await tx.chargeMaster.findFirst({

@@ -100,7 +100,7 @@ model AccBillAdjustment {
   // than an arithmetic guess (ck_abj_tender_pair).
   abjTenderId           String?   @db.Uuid @map("abj_tender_id")
   abjTenderAccYear      String?   @db.Char(9) @map("abj_tender_acc_year")
-  // The cheque behind it, when the instrument is one. AccVoucherCheque owns
+  // The cheque behind it, when the instrument is one. AccPdcRegister owns
   // its lifecycle; a bounce there writes the reversal row here
   // (ck_abj_cheque_pair, ck_abj_cheque_mode, ck_abj_pdc).
   abjChequeId           String?   @db.Uuid @map("abj_cheque_id")
@@ -131,8 +131,9 @@ model AccBillAdjustment {
   voucherHeader         AccVoucherHeader? @relation(fields: [abjVoucherId, abjVoucherAccYear], references: [avhVoucherId, avhAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_abj_voucher")
   tender                AccTenderDetail?  @relation(fields: [abjTenderId, abjTenderAccYear], references: [tdId, tdAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_abj_tender")
   /// R1: ONE cheque table. Repointed from acc_voucher_cheques to
-  /// acc_pdc_register by 20260915120000 — the register is where every cheque
-  /// this system takes now lives, and two cheque tables meant two answers to
+  /// acc_pdc_register by 20260915120000, and acc_voucher_cheques itself was
+  /// dropped by 20260922080000 — the register is where every cheque this
+  /// system takes now lives, and two cheque tables meant two answers to
   /// "is it still held?".
   cheque                AccPdcRegister?   @relation(fields: [abjChequeId, abjChequeAccYear], references: [apdId, apdAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_abj_cheque")
   @@id([abjId, abjAccYear], map: "pk_acc_bill_adjustment")
@@ -1657,193 +1658,6 @@ model AccTenderType {
   @@schema("accounts")
 }
 
-// ----- prisma/accounts/AccountVoucherCheques.prisma -----
-enum ChequeTraType {
-  R
-  P
-  @@schema("accounts")
-}
-
-enum ChequeInstrumentType {
-  CHEQUE
-  PDC
-  @@schema("accounts")
-}
-
-enum ChequeStatus {
-  PENDING
-  IN_HAND
-  ISSUED
-  DEPOSITED
-  CLEARED
-  BOUNCED
-  RETURNED
-  CANCELLED
-  @@schema("accounts")
-}
-
-model AccVoucherCheque {
-  // Primary
-  chqId                String                @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("chq_id")
-
-  // Links
-  chqVoucherId         String                @db.Uuid @map("chq_voucher_id")
-  chqVoucherLineId     String?               @db.Uuid @map("chq_voucher_line_id")
-  chqBillId            String?               @db.Uuid @map("chq_bill_id")
-
-  // Multi-branch snapshot
-  chqAccYear           String                @db.VarChar(9) @map("chq_acc_year")
-  chqCompanyId         String                @db.Uuid @map("chq_company_id")
-  chqBranchId          String                @db.Uuid @map("chq_branch_id")
-
-  // Voucher snapshot
-  chqVoucherTypeId     Int                   @map("chq_voucher_type_id")
-  chqVoucherNo         BigInt                @map("chq_voucher_no")
-  chqVoucherDate       DateTime              @db.Date @map("chq_voucher_date")
-  chqVoucherRefno      String?               @db.VarChar(50) @map("chq_voucher_refno")
-
-  // Party / ownership
-  chqPartyId           String                @db.Uuid @map("chq_party_id")
-  chqSalesmanId        String?               @db.Uuid @map("chq_salesman_id")
-  chqUserId            String?               @db.Uuid @map("chq_user_id")
-  chqSessionId         String?               @db.Uuid @map("chq_session_id")
-
-  // Instrument classification
-  chqTraType           ChequeTraType         @map("chq_tra_type")
-  chqInstrumentType    ChequeInstrumentType  @default(CHEQUE) @map("chq_instrument_type")
-  chqIsPostDated       Boolean               @default(false) @map("chq_is_post_dated")
-  chqIsAccountPayee    Boolean               @default(false) @map("chq_is_account_payee")
-
-  // Cheque details
-  chqChequeNo          String                @db.VarChar(30) @map("chq_cheque_no")
-  chqChequeDate        DateTime              @db.Date @map("chq_cheque_date")
-  chqChequeAmount      Decimal               @default(0) @db.Decimal(15, 2) @map("chq_cheque_amount")
-
-  // Bank / payee snapshot
-  chqBankLedgerId      String?               @db.Uuid @map("chq_bank_ledger_id")
-  chqBankName          String?               @db.VarChar(500) @map("chq_bank_name")
-  chqBankBranch        String?               @db.VarChar(150) @map("chq_bank_branch")
-  chqBankIfsc          String?               @db.VarChar(20) @map("chq_bank_ifsc")
-  chqPayeeName         String?               @db.VarChar(500) @map("chq_payee_name")
-  chqDrawerName        String?               @db.VarChar(500) @map("chq_drawer_name")
-
-  // Printing
-  chqIsPrinted         Boolean               @default(false) @map("chq_is_printed")
-  chqPrintedOn         DateTime?             @db.Timestamptz(6) @map("chq_printed_on")
-
-  // Lifecycle dates
-  chqReceivedOn        DateTime?             @db.Date @map("chq_received_on")
-  chqIssuedOn          DateTime?             @db.Date @map("chq_issued_on")
-  chqDepositDate       DateTime?             @db.Date @map("chq_deposit_date")
-  chqClearDate         DateTime?             @db.Date @map("chq_clear_date")
-  chqBounceDate        DateTime?             @db.Date @map("chq_bounce_date")
-  chqReturnDate        DateTime?             @db.Date @map("chq_return_date")
-  chqCancelledOn       DateTime?             @db.Date @map("chq_cancelled_on")
-
-  // Status
-  chqStatus            ChequeStatus          @map("chq_status")
-
-  // Notes
-  chqNotes             String?               @map("chq_notes")
-  chqLogText           String?               @map("chq_log_text")
-
-  // Common status
-  chqIsActive          Boolean               @default(true) @map("chq_is_active")
-  chqIsDeleted         Boolean               @default(false) @map("chq_is_deleted")
-
-  // Audit
-  chqSyncDate          DateTime?             @db.Timestamptz(6) @map("chq_sync_date")
-  chqCreatedOn         DateTime              @default(now()) @db.Timestamptz(6) @map("chq_created_on")
-  chqCreatedBy         String?               @db.Uuid @map("chq_created_by")
-  chqUpdatedOn         DateTime?             @db.Timestamptz(6) @map("chq_updated_on")
-  chqUpdatedBy         String?               @db.Uuid @map("chq_updated_by")
-
-  // Relations
-  // chqVoucherId stays a plain UUID column — acc_voucher_header was dropped.
-  voucherType          AccVoucherType        @relation(fields: [chqVoucherTypeId], references: [vchrTypeId], map: "fk_acc_cheques_voucher_type")
-  company              Company               @relation(fields: [chqCompanyId], references: [compId], map: "fk_acc_cheques_voucher_company")
-  branch               BranchMaster          @relation(fields: [chqBranchId], references: [brId], map: "fk_acc_cheques_voucher_branch")
-  // fk_abj_cheque was repointed to accounts.acc_pdc_register by
-  // 20260915120000, so this table no longer has settlement rows pointing at
-  // it. Existing rows keep theirs; nothing new arrives. Dropping the table is
-  // a separate decision.
-
-  // Target for fk_abj_cheque, which names the cheque by (id, year) the same
-  // way a settlement names its tender. Redundant with the primary key on
-  // chqId — it exists only so the pair can be referenced.
-  @@unique([chqId, chqAccYear], map: "ux_chq_id_acc_year")
-  @@index([chqCompanyId, chqBranchId, chqPartyId], map: "idx_acc_cheques_party")
-  @@index([chqCompanyId, chqBranchId, chqStatus], map: "idx_acc_cheques_status")
-  @@index([chqCompanyId, chqBranchId, chqChequeDate, chqDepositDate, chqClearDate], map: "idx_acc_cheques_dates")
-  @@index([chqVoucherId], map: "idx_acc_cheques_voucher")
-  @@map("acc_voucher_cheques")
-  @@schema("accounts")
-  // Partial unique index uq_acc_cheques_branch_cheque
-  // WHERE chq_is_deleted = false is not expressible in Prisma schema.
-}
-
-// ----- prisma/accounts/AccountVoucherDocApiLog.prisma -----
-enum GdlApiName {
-  EINVOICE
-  EWAYBILL
-  GST
-  OTHER
-  @@schema("accounts")
-}
-
-enum GdlActionName {
-  GENERATE
-  CANCEL
-  GET_DETAILS
-  UPDATE_VEHICLE
-  EXTEND_VALIDITY
-  PRINT
-  SYNC
-  OTHER
-  @@schema("accounts")
-}
-
-enum GdlStatus {
-  SUCCESS
-  FAILED
-  PENDING
-  @@schema("accounts")
-}
-
-model AccVoucherDocApiLog {
-  gdlId                String               @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("gdl_id")
-  gdlGdrId             String               @db.Uuid @map("gdl_gdr_id")
-
-  gdlApiName           GdlApiName           @map("gdl_api_name")
-  gdlActionName        GdlActionName        @map("gdl_action_name")
-  gdlStatus            GdlStatus            @map("gdl_status")
-  gdlAttemptNo         Int                  @default(1) @map("gdl_attempt_no")
-
-  gdlRequestRefNo      String?              @db.VarChar(100) @map("gdl_request_ref_no")
-  gdlExternalRefNo     String?              @db.VarChar(100) @map("gdl_external_ref_no")
-  gdlHttpStatus        Int?                 @map("gdl_http_status")
-  gdlErrorCode         String?              @db.VarChar(50) @map("gdl_error_code")
-  gdlErrorMessage      String?              @db.VarChar(1000) @map("gdl_error_message")
-  gdlResponseMessage   String?              @db.VarChar(1000) @map("gdl_response_message")
-
-  gdlRequestPayload    Json?                @map("gdl_request_payload")
-  gdlResponsePayload   Json?                @map("gdl_response_payload")
-
-  gdlRequestedOn       DateTime             @default(now()) @db.Timestamptz(6) @map("gdl_requested_on")
-  gdlRespondedOn       DateTime?            @db.Timestamptz(6) @map("gdl_responded_on")
-
-  gdlCreatedOn         DateTime             @default(now()) @db.Timestamptz(6) @map("gdl_created_on")
-  gdlCreatedBy         String?              @db.Uuid @map("gdl_created_by")
-
-  docRegister          AccVoucherDocRegister @relation(fields: [gdlGdrId], references: [gdrId], onDelete: Cascade, map: "fk_gdl_gdr")
-
-  @@index([gdlGdrId, gdlRequestedOn(sort: Desc)], map: "idx_gdl_gdr_requested_on")
-  @@index([gdlApiName, gdlActionName, gdlStatus], map: "idx_gdl_api_action_status")
-
-  @@map("acc_voucher_doc_api_log")
-  @@schema("accounts")
-}
-
 // ----- prisma/accounts/AccountVoucherDocDetail.prisma -----
 enum VoucherDocDetailTaxability {
   TAXABLE
@@ -1862,7 +1676,7 @@ enum VoucherDocDetailSupplyNature {
 
 model AccVoucherDocDetail {
   // Primary
-  vtxId               String                         @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("vtx_id")
+  vtxId               String                         @default(dbgenerated("uuidv7()")) @db.Uuid @map("vtx_id")
 
   // Links
   vtxGdrId            String                         @db.Uuid @map("vtx_gdr_id")
@@ -1931,9 +1745,11 @@ model AccVoucherDocDetail {
   // Relations
   company             Company                        @relation(fields: [vtxCompanyId], references: [compId], map: "fk_acc_voucher_doc_detail_company")
   branch              BranchMaster                   @relation(fields: [vtxBranchId], references: [brId], map: "fk_acc_voucher_doc_detail_branch")
-  docRegister         AccVoucherDocRegister          @relation(fields: [vtxGdrId], references: [gdrId], onDelete: Cascade, map: "fk_acc_voucher_doc_detail_gdr")
+  docRegister         AccVoucherDocRegister          @relation(fields: [vtxGdrId, vtxAccYear], references: [gdrId, gdrAccYear], onDelete: Cascade, map: "fk_acc_voucher_doc_detail_gdr")
   // vtxVoucherId stays a plain UUID column — acc_voucher_header was dropped.
 
+  // LIST-partitioned on vtx_acc_year as of 20260922100000; the key is the pair.
+  @@id([vtxId, vtxAccYear], map: "pk_acc_voucher_doc_detail")
   @@map("acc_voucher_doc_detail")
   @@schema("accounts")
   // Partial index idx_acc_voucher_doc_detail_voucher
@@ -1951,7 +1767,7 @@ enum GdeStatus {
 }
 
 model AccVoucherDocEinvoice {
-  gdeId             String               @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("gde_id")
+  gdeId             String               @default(dbgenerated("uuidv7()")) @db.Uuid @map("gde_id")
   gdeGdrId          String               @db.Uuid @map("gde_gdr_id")
   gdeVoucherId      String               @db.Uuid @map("gde_voucher_id")
 
@@ -2021,12 +1837,17 @@ model AccVoucherDocEinvoice {
   gdeResponsePayload Json?               @map("gde_response_payload")
 
   // Relations
-  docRegister       AccVoucherDocRegister @relation(fields: [gdeGdrId], references: [gdrId], onDelete: Cascade, map: "fk_gde_gdr")
+  docRegister       AccVoucherDocRegister @relation(fields: [gdeGdrId, gdeAccYear], references: [gdrId, gdrAccYear], onDelete: Cascade, map: "fk_gde_gdr")
 
-  @@unique([gdeGdrId], map: "uq_gde_gdr")
+  // LIST-partitioned on gde_acc_year as of 20260922100000; both keys carry the
+  // partition key, as Postgres requires. Still one IRN row per document.
+  @@id([gdeId, gdeAccYear], map: "pk_acc_voucher_doc_einvoice")
+  @@unique([gdeGdrId, gdeAccYear], map: "uq_gde_gdr")
   @@map("acc_voucher_doc_einvoice")
   @@schema("accounts")
-  // Partial unique index uq_acc_voucher_doc_einvoice_irn and partial index
+  // Partial unique index uq_acc_voucher_doc_einvoice_irn -- (gde_irn,
+  // gde_acc_year) since 20260922100000, the year trailing so a lookup by IRN
+  // alone still uses it -- and partial index
   // idx_gde_status are not expressible in Prisma schema. Nor is the retry
   // worklist added by 20260921120000:
   //
@@ -2063,7 +1884,7 @@ enum GdwVehicleType {
 }
 
 model AccVoucherDocEwaybill {
-  gdwId               String            @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("gdw_id")
+  gdwId               String            @default(dbgenerated("uuidv7()")) @db.Uuid @map("gdw_id")
   gdwGdrId            String            @db.Uuid @map("gdw_gdr_id")
   gdwVoucherId        String            @db.Uuid @map("gdw_voucher_id")
 
@@ -2144,13 +1965,18 @@ model AccVoucherDocEwaybill {
   gdwExtendedUpto     DateTime?         @db.Timestamptz(6) @map("gdw_extended_upto")
 
   // Relations
-  docRegister         AccVoucherDocRegister @relation(fields: [gdwGdrId], references: [gdrId], onDelete: Cascade, map: "fk_gdw_gdr")
+  docRegister         AccVoucherDocRegister @relation(fields: [gdwGdrId, gdwAccYear], references: [gdrId, gdrAccYear], onDelete: Cascade, map: "fk_gdw_gdr")
   vehicle             VehicleMaster?        @relation("EwayBillVehicle", fields: [gdwVehicleId], references: [vehId], onUpdate: Cascade, onDelete: Restrict, map: "fk_gdw_vehicle")
 
-  @@unique([gdwGdrId], map: "uq_gdw_gdr")
+  // LIST-partitioned on gdw_acc_year as of 20260922100000; both keys carry the
+  // partition key. Still one e-way bill row per document.
+  @@id([gdwId, gdwAccYear], map: "pk_acc_voucher_doc_ewaybill")
+  @@unique([gdwGdrId, gdwAccYear], map: "uq_gdw_gdr")
   @@map("acc_voucher_doc_ewaybill")
   @@schema("accounts")
-  // Partial unique index uq_acc_voucher_doc_ewaybill_no and partial index
+  // Partial unique index uq_acc_voucher_doc_ewaybill_no -- (gdw_no,
+  // gdw_acc_year) since 20260922100000, the year trailing so a lookup by the
+  // e-way bill number alone still uses it -- and partial index
   // idx_gdw_status are not expressible in Prisma schema. Nor is the retry
   // worklist added by 20260921120000:
   //
@@ -2260,7 +2086,7 @@ enum GdrPartyType {
 
 model AccVoucherDocRegister {
   // Primary
-  gdrId                    String            @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("gdr_id")
+  gdrId                    String            @default(dbgenerated("uuidv7()")) @db.Uuid @map("gdr_id")
 
   // Source mapping
   gdrSourceModule          GdrSourceModule   @map("gdr_source_module")
@@ -2363,16 +2189,21 @@ model AccVoucherDocRegister {
   party                    AccLedgerMaster   @relation(fields: [gdrPartyId], references: [ledId], map: "fk_gdr_voucher_party")
   // gdrVoucherId stays a plain UUID column — acc_voucher_header was dropped.
   voucherType              AccVoucherType    @relation(fields: [gdrVoucherTypeId], references: [vchrTypeId], map: "fk_gdr_voucher_type")
-  apiLogs                  AccVoucherDocApiLog[]
   details                  AccVoucherDocDetail[]
   einvoice                 AccVoucherDocEinvoice?
   ewaybill                 AccVoucherDocEwaybill?
 
+  // LIST-partitioned on gdr_acc_year as of 20260922100000, so the primary key
+  // carries the partition key and a row is addressed by the pair --
+  // `where: { gdrId_gdrAccYear: { gdrId, gdrAccYear } }` -- never by gdrId alone.
+  @@id([gdrId, gdrAccYear], map: "pk_acc_voucher_doc_register")
   @@map("acc_voucher_doc_register")
   @@schema("accounts")
   // Partial unique indexes uq_acc_voucher_doc_register_source,
   // uq_acc_voucher_doc_register_voucher, and uq_acc_voucher_doc_register_doc
-  // are not expressible in Prisma schema.
+  // are not expressible in Prisma schema. All three carry gdr_acc_year since
+  // 20260922100000 -- a unique index on a partitioned table must contain the
+  // partition key.
   // Partial indexes idx_gdr_branch_voucher_date, idx_gdr_branch_doc_date,
   // idx_gdr_party, idx_gdr_doc_class, and idx_gdr_doc_status
   // are not expressible in Prisma schema.
@@ -2715,7 +2546,6 @@ model AccVoucherType {
   vchrCreatedBy              String?              @db.VarChar(100) @map("vchr_created_by")
   vchrUpdatedOn              DateTime?            @db.Timestamptz(6) @map("vchr_updated_on")
   vchrUpdatedBy              String?              @db.VarChar(100) @map("vchr_updated_by")
-  voucherCheques             AccVoucherCheque[]
   voucherDocRegisters        AccVoucherDocRegister[]
   voucherSequences           AccVoucherSeq[]
   voucherHeaders             AccVoucherHeader[]
@@ -4966,7 +4796,6 @@ model BranchMaster {
   openingBalances       AccOpeningBalance[]
   openingRuns           AccOpeningRun[]
   shipAddrs             AccShipAddr[]
-  voucherCheques        AccVoucherCheque[]
   voucherDocDetails     AccVoucherDocDetail[]
   voucherDocRegisters   AccVoucherDocRegister[]
   voucherSequences      AccVoucherSeq[]
@@ -5198,7 +5027,6 @@ model Company {
   deviceMasters         DeviceMaster[]
   UserLoginSession      UserLoginSession[]
   customers             Customer[]
-  voucherCheques        AccVoucherCheque[]
   voucherDocDetails     AccVoucherDocDetail[]
   voucherDocRegisters   AccVoucherDocRegister[]
   voucherSequences      AccVoucherSeq[]
@@ -5313,20 +5141,6 @@ model CompanyGroupMaster {
   @@schema("public")
 }
 
-// ----- prisma/public/configs.prisma -----
-model Configs {
-  configId            Int    @id  @map("config_id")
-  configName          String? @map("config_name") @db.Text
-  configValue         String? @map("config_value") @db.Text
-  configSyncDate     DateTime? @map("config_sync_date") @db.Timestamptz(0)
-  configCreatedBy    String?   @map("config_created_by") @db.VarChar(100)
-  configCreatedOn    DateTime? @map("config_created_on") @db.Timestamptz(0)
-  configModifiedBy   String?   @map("config_modified_by") @db.VarChar(100)
-  configModifiedOn   DateTime? @map("config_modified_on") @db.Timestamptz(0)
-  @@map("configs")
-  @@schema("public")
-}
-
 // ----- prisma/public/fiscalYear.prisma -----
 model FiscalYear {
   fyId             String    @id(map: "pkey_fiscal_years") @default(dbgenerated("uuidv7()")) @map("fy_id") @db.Uuid
@@ -5407,11 +5221,12 @@ model FiscalYear {
 /// it whenever a fiscal year is opened, or every insert fails with
 /// "no partition of relation ...".
 ///
-/// AccVoucherDocApiLog holds the LAST exchange for a document. This holds
-/// EVERY exchange, for every document and for the calls that belong to no
-/// document at all (auth, GSTIN lookup). The two are not redundant: one
-/// answers "what does this bill look like at the IRP", the other answers
-/// "what happened at 10:42 when the counter froze".
+/// This is the only record of what crossed the wire. It holds EVERY exchange,
+/// for every document and for the calls that belong to no document at all
+/// (auth, GSTIN lookup). The per-document summary lives on
+/// acc_voucher_doc_register itself; accounts.acc_voucher_doc_api_log, which
+/// used to hold the LAST exchange per document, was dropped unused by
+/// 20260922080000.
 ///
 /// Rows are written once — no modifiedOn/By, same as TxnStatusLog.
 model GstApiLog {

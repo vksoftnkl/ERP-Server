@@ -4,6 +4,7 @@ import { PrismaService } from '../src/database/prisma/prisma.service';
 import { AuditLogService } from '../src/modules/audit-log/audit-log.service';
 import { RequestContextService } from '../src/common/request-context/request-context.service';
 import { StockVoucherService } from '../src/modules/stocks/stock-voucher/stock-voucher.service';
+import { StockPostingService } from '../src/modules/stocks/posting/stock-posting.service';
 import type { StockVoucherTypeRules } from '../src/modules/stocks/stock-voucher/types/stock-voucher.types';
 
 /**
@@ -219,6 +220,9 @@ describe('Physical stock count (e2e — needs the stock engine)', () => {
       prisma as unknown as PrismaService,
       { logEntityChange: jest.fn().mockResolvedValue(undefined) } as unknown as AuditLogService,
       { getUserId: () => fixture?.userId ?? null } as unknown as RequestContextService,
+      // §3.1 — the one stock engine, injected. Handed the same client, so a
+      // posting call still runs inside whatever transaction the test opened.
+      new StockPostingService(prisma as unknown as PrismaService),
     );
     fixture = await createFixture();
   });

@@ -29,8 +29,14 @@ export async function runModuleListQuery<TRecord, TItem>(
   pagination: { page: number; limit: number },
   options: ModuleListQueryOptions<TRecord, TItem>,
 ): Promise<ConfiguredGridListResult<TItem, ModuleListMeta>> {
-  const { hasStructuredFilters = false, configuredGridFn, countFn, findManyFn, toItemFn, loadStylesFn } =
-    options;
+  const {
+    hasStructuredFilters = false,
+    configuredGridFn,
+    countFn,
+    findManyFn,
+    toItemFn,
+    loadStylesFn,
+  } = options;
   const { page, limit } = pagination;
   if (!hasStructuredFilters && configuredGridFn) {
     const configuredList = await configuredGridFn();
@@ -61,14 +67,25 @@ export async function runConfiguredGridQuery<TItem>(
     extraForbiddenPatterns?: Array<{ pattern: RegExp; message: string }>;
   },
 ): Promise<ConfiguredGridListResult<TItem, ModuleListMeta> | null> {
-  const { tableName, alias, search, page, limit, skip, fixedGridId, primaryTableSchema, extraForbiddenPatterns } = options;
+  const {
+    tableName,
+    alias,
+    search,
+    page,
+    limit,
+    skip,
+    fixedGridId,
+    primaryTableSchema,
+    extraForbiddenPatterns,
+  } = options;
   const configuredGrids = await configuredGridSqlService.loadCandidates({
     tableName,
     ...(fixedGridId !== undefined && { fixedGridId, applyTableNameFilter: false }),
   });
-  const primaryConfiguredGrids = fixedGridId !== undefined
-    ? configuredGrids
-    : configuredGridSqlService.filterPrimaryFromTable(configuredGrids, tableName);
+  const primaryConfiguredGrids =
+    fixedGridId !== undefined
+      ? configuredGrids
+      : configuredGridSqlService.filterPrimaryFromTable(configuredGrids, tableName);
   if (primaryConfiguredGrids.length === 0) {
     return null;
   }

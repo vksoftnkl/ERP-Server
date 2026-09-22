@@ -1,9 +1,17 @@
 import type { Prisma } from '@prisma/client';
-import type { ModuleApiErrorDetail, ModuleApiErrorResponse, ModuleApiSuccessResponse } from 'src/common/types/module-api.types';
+import type {
+  ModuleApiErrorDetail,
+  ModuleApiErrorResponse,
+  ModuleApiSuccessResponse,
+} from 'src/common/types/module-api.types';
 
 export type AuditLogErrorDetail = ModuleApiErrorDetail;
 export type AuditLogErrorResponse = ModuleApiErrorResponse<AuditLogErrorDetail>;
-export type AuditLogSuccessResponse<T, TMeta = Record<string, unknown>> = ModuleApiSuccessResponse<T, TMeta, never>;
+export type AuditLogSuccessResponse<T, TMeta = Record<string, unknown>> = ModuleApiSuccessResponse<
+  T,
+  TMeta,
+  never
+>;
 
 export interface AuditLogListItem {
   log_id: string;

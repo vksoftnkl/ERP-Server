@@ -49,13 +49,15 @@ export class ItemGroupPayloadDto {
   @ApiPropertyOptional({
     format: 'uuid',
     nullable: true,
-    description: 'stock.stock_track_preset the group-scope stock track policy is derived from; null = no group policy',
+    description:
+      'stock.stock_track_preset the group-scope stock track policy is derived from; null = no group policy',
   })
   itg_track_preset_id!: string | null;
 
   @ApiPropertyOptional({
     nullable: true,
-    description: 'Name of the stock.stock_track_preset named by itg_track_preset_id; null when no preset is set',
+    description:
+      'Name of the stock.stock_track_preset named by itg_track_preset_id; null when no preset is set',
   })
   itg_track_preset_name!: string | null;
 

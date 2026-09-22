@@ -45,7 +45,10 @@ __decorate([
     __metadata("design:type", String)
 ], ListWidgetQueryDto.prototype, "sectionPlatform", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ maxLength: 255, description: 'Matches section name or any of its field names' }),
+    (0, swagger_1.ApiPropertyOptional)({
+        maxLength: 255,
+        description: 'Matches section name or any of its field names',
+    }),
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsString)(),
     (0, class_validator_1.MaxLength)(255),

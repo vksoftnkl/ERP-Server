@@ -110,13 +110,15 @@ export class ItemPayloadDto {
     type: String,
     format: 'uuid',
     nullable: true,
-    description: 'stock.stock_track_preset the item\'s track policy is derived from; null = derived from the item\'s own flags',
+    description:
+      "stock.stock_track_preset the item's track policy is derived from; null = derived from the item's own flags",
   })
   item_track_preset_id!: string | null;
   @ApiPropertyOptional({
     type: String,
     nullable: true,
-    description: 'Name of the stock.stock_track_preset named by item_track_preset_id; null when no preset is set',
+    description:
+      'Name of the stock.stock_track_preset named by item_track_preset_id; null when no preset is set',
   })
   item_track_preset_name!: string | null;
   @ApiPropertyOptional({ type: Number, nullable: true })
@@ -145,25 +147,65 @@ export class ItemPayloadDto {
   item_modified_on!: string;
   @ApiPropertyOptional({ type: String, nullable: true })
   item_modified_by!: string | null;
-  @ApiPropertyOptional({ type: String, nullable: true, description: 'Name of the linked company (resolved on the composite get endpoint)' })
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    description: 'Name of the linked company (resolved on the composite get endpoint)',
+  })
   item_company_name?: string | null;
-  @ApiPropertyOptional({ type: String, nullable: true, description: 'Name of the linked branch (resolved on the composite get endpoint)' })
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    description: 'Name of the linked branch (resolved on the composite get endpoint)',
+  })
   item_branch_name?: string | null;
-  @ApiPropertyOptional({ type: String, nullable: true, description: 'Name of the linked item group (resolved on the composite get endpoint)' })
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    description: 'Name of the linked item group (resolved on the composite get endpoint)',
+  })
   item_group_name?: string | null;
-  @ApiPropertyOptional({ type: String, nullable: true, description: 'Name of the linked category (resolved on the composite get endpoint)' })
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    description: 'Name of the linked category (resolved on the composite get endpoint)',
+  })
   item_category_name?: string | null;
-  @ApiPropertyOptional({ type: String, nullable: true, description: 'Name of the linked brand (resolved on the composite get endpoint)' })
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    description: 'Name of the linked brand (resolved on the composite get endpoint)',
+  })
   item_brand_name?: string | null;
-  @ApiPropertyOptional({ type: String, nullable: true, description: 'Name of the linked section (resolved on the composite get endpoint)' })
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    description: 'Name of the linked section (resolved on the composite get endpoint)',
+  })
   item_section_name?: string | null;
-  @ApiPropertyOptional({ type: String, nullable: true, description: 'Name of the linked supplier (resolved on the composite get endpoint)' })
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    description: 'Name of the linked supplier (resolved on the composite get endpoint)',
+  })
   item_supplier_name?: string | null;
-  @ApiPropertyOptional({ type: String, nullable: true, description: 'Name of the linked customer group (resolved on the composite get endpoint)' })
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    description: 'Name of the linked customer group (resolved on the composite get endpoint)',
+  })
   item_cust_group_name?: string | null;
-  @ApiPropertyOptional({ type: String, nullable: true, description: 'Name of the linked base unit (resolved on the composite get endpoint)' })
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    description: 'Name of the linked base unit (resolved on the composite get endpoint)',
+  })
   item_base_unit_name?: string | null;
-  @ApiPropertyOptional({ type: String, nullable: true, description: 'Name of the linked default tax (resolved on the composite get endpoint)' })
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    description: 'Name of the linked default tax (resolved on the composite get endpoint)',
+  })
   item_default_tax_name?: string | null;
 }
 export class ItemDeleteResultDto {

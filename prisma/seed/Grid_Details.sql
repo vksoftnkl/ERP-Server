@@ -536,8 +536,6 @@ ORDER BY usr_display_name$seed$)
 FROM purchase.suppliers
 WHERE sup_is_deleted = isup_is_deleted
 ORDER BY sup_sort_order, sup_name$seed$)
-    ,(64, 'configs'                      , NULL, 'Id'              , 'Ascending', 'web'    , true , false, 'system', $seed$SELECT config_id, config_name, config_value
-	FROM public.configs$seed$)
     ,(65, 'MAIN LIST - CUSTOMERS'        , NULL, NULL              , 'Ascending', 'Desktop', true , false, 'system', $seed$SELECT
 	cus_id,
 	cus_short,

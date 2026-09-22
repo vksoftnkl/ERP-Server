@@ -23,13 +23,13 @@ const isFunction = (value: unknown): value is (...args: unknown[]) => unknown =>
 @Injectable()
 export class HttpCacheInterceptor extends CacheInterceptor {
   private readonly logger = new Logger(HttpCacheInterceptor.name);
-  constructor(
-    @Inject(CACHE_MANAGER) cacheManager: Cache,
-    reflector: Reflector,
-  ) {
+  constructor(@Inject(CACHE_MANAGER) cacheManager: Cache, reflector: Reflector) {
     super(cacheManager, reflector);
   }
-  override async intercept(context: ExecutionContext, next: CallHandler): Promise<Observable<unknown>> {
+  override async intercept(
+    context: ExecutionContext,
+    next: CallHandler,
+  ): Promise<Observable<unknown>> {
     if (context.getType<'http'>() !== 'http') {
       return next.handle();
     }
@@ -94,7 +94,9 @@ export class HttpCacheInterceptor extends CacheInterceptor {
     return searchParams ? `${url.pathname}?${searchParams}` : url.pathname;
   }
   private setCacheHeader(context: ExecutionContext, value: 'HIT' | 'MISS'): void {
-    const response = context.switchToHttp().getResponse<{ setHeader?: (name: string, value: string) => void }>();
+    const response = context
+      .switchToHttp()
+      .getResponse<{ setHeader?: (name: string, value: string) => void }>();
     response?.setHeader?.('X-Cache', value);
   }
 }
