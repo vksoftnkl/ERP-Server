@@ -116,6 +116,7 @@ export interface PostingEwbBlock {
     generatedOn: string | null;
     validUpto: string | null;
     message: string | null;
+    vehicleNo: string | null;
 }
 export interface PostingBlock {
     voucherId: string | null;
@@ -147,4 +148,5 @@ export interface RightsBlock {
     cancel: boolean;
     amend: boolean;
     override: boolean;
+    retender: boolean;
 }

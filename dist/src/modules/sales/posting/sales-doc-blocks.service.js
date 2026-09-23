@@ -71,7 +71,14 @@ let SalesDocBlocksService = class SalesDocBlocksService {
     async gstRows(c, gdrId, accYear) {
         const na = {
             irn: { status: 'NA', number: null, ackNo: null, ackOn: null, message: null },
-            ewb: { status: 'NA', number: null, generatedOn: null, validUpto: null, message: null },
+            ewb: {
+                status: 'NA',
+                number: null,
+                generatedOn: null,
+                validUpto: null,
+                message: null,
+                vehicleNo: null,
+            },
             irnGeneratedOn: null,
             ewbGeneratedOn: null,
             ewbValidUpto: null,
@@ -82,7 +89,7 @@ let SalesDocBlocksService = class SalesDocBlocksService {
         const [row] = await c.$queryRaw `
       SELECT e.gde_status, e.gde_irn, e.gde_ack_no, e.gde_ack_on, e.gde_last_message,
              w.gdw_status, w.gdw_no, w.gdw_generated_on, w.gdw_valid_upto, w.gdw_extended_upto,
-             w.gdw_last_message
+             w.gdw_last_message, w.gdw_vehicle_no
         FROM (SELECT 1) x
         LEFT JOIN accounts.acc_voucher_doc_einvoice e
                ON e.gde_gdr_id = ${gdrId}::uuid AND e.gde_acc_year = ${accYear}::char(9)
@@ -109,6 +116,7 @@ let SalesDocBlocksService = class SalesDocBlocksService {
                 generatedOn: (0, sales_doc_utils_1.isoDateTime)(row.gdw_generated_on),
                 validUpto: (0, sales_doc_utils_1.isoDateTime)(validUpto),
                 message: row.gdw_last_message,
+                vehicleNo: row.gdw_vehicle_no,
             },
             irnGeneratedOn: row.gde_ack_on,
             ewbGeneratedOn: row.gdw_generated_on,

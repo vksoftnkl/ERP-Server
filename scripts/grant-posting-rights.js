@@ -30,6 +30,14 @@
  * A menu only gets the rights its OWN capability allows: `menu_verbs` says what
  * a screen can do, and granting RETENDER on a screen that cannot re-tender is
  * the same lie the permissions grid used to tell. Refused, with the reason.
+ *
+ * ANCESTORS COME WITH IT. `/menu-masters/usermenu` builds the tree from the
+ * user's own rows and returns ROOTS — menus whose parent is null — with their
+ * children nested. A login granted Sales Entry but not its parent "&1 Sales"
+ * therefore sees an EMPTY tree: the right is real, the screen is unreachable,
+ * and the operator is told they have permission to something they cannot open.
+ * So every ancestor of a granted menu gets a VIEW-only row if it has none. A
+ * folder needs no rights; it needs to exist.
  */
 
 const path = require('node:path');
@@ -99,6 +107,10 @@ async function main() {
   console.log(`\n${revoke ? 'Revoking' : 'Granting'} for ${user.usrLoginName} (${user.usrId})\n`);
   const now = new Date();
 
+  if (!revoke) {
+    await ensureAncestorsVisible(user.usrId, menuIds, now);
+  }
+
   for (const menu of menus) {
     const verbs = new Set(menu.menuVerbs);
     const data = {};
@@ -160,6 +172,59 @@ async function main() {
     console.log(`  ${String(row.umMenuId).padStart(4)}  ${on.length ? on.join(', ') : '(none)'}`);
   }
   console.log('');
+}
+
+/**
+ * Every ancestor of a granted menu gets a row, VIEW only, if it has none — see
+ * the note at the top. An ancestor the user already holds is left exactly as it
+ * is: this adds navigation, it never edits a permission somebody set.
+ */
+async function ensureAncestorsVisible(usrId, menuIds, now) {
+  const ancestors = new Set();
+  let frontier = [...menuIds];
+  while (frontier.length) {
+    const rows = await prisma.menu.findMany({
+      where: { menuId: { in: frontier } },
+      select: { menuParentId: true },
+    });
+    const parents = rows
+      .map((r) => r.menuParentId)
+      .filter((id) => id !== null && id !== 0 && !ancestors.has(id));
+    parents.forEach((id) => ancestors.add(id));
+    frontier = parents;
+  }
+  if (ancestors.size === 0) {
+    return;
+  }
+
+  const existing = await prisma.userMenus.findMany({
+    where: { umUserId: usrId, umMenuId: { in: [...ancestors] }, umIsDeleted: false },
+    select: { umMenuId: true },
+  });
+  const held = new Set(existing.map((r) => r.umMenuId));
+  const toAdd = [...ancestors].filter((id) => !held.has(id));
+  if (toAdd.length === 0) {
+    return;
+  }
+
+  const named = await prisma.menu.findMany({
+    where: { menuId: { in: toAdd } },
+    select: { menuId: true, menuName: true },
+  });
+  for (const menu of named) {
+    await prisma.userMenus.upsert({
+      where: { uq_user_menus_user_menu: { umUserId: usrId, umMenuId: menu.menuId } },
+      create: {
+        umUserId: usrId,
+        umMenuId: menu.menuId,
+        umCanView: true,
+        umCreatedOn: now,
+        umCreatedBy: usrId,
+      },
+      update: { umIsDeleted: false, umModifiedOn: now, umModifiedBy: usrId },
+    });
+    console.log(`  ${String(menu.menuId).padStart(4)} ${menu.menuName.padEnd(26)} VIEW  (parent, so the screen is reachable)`);
+  }
 }
 
 main()

@@ -1,4 +1,4 @@
--- Seed: fixed.grid_columns -- the column layout of every configured grid (771 rows).
+-- Seed: fixed.grid_columns -- the column layout of every configured grid (818 rows).
 --
 -- Runs after Grid_Details.sql -- grid_id is a foreign key into it, ON DELETE CASCADE.
 --
@@ -872,6 +872,56 @@ SELECT v.* FROM (VALUES
     ,('01a0334b-046a-794b-91cd-a526ab6861ff', 95, 24, 'Active'             , 'prm_is_active'             , 'Boolean'      , 5.00  , 24.00, 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
     ,('01a0334c-aaf1-7d15-9388-420f4e17e70d', 95, 24, 'Active'             , 'prm_is_active'             , 'Boolean'      , 5.00  , 24.00, 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
     ,('01a0334d-6f72-7288-94de-5920ebc27f29', 95, 24, 'Active'             , 'prm_is_active'             , 'Boolean'      , 5.00  , 24.00, 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    -- ============ main list - bill delivery (id 113) ============
+    ,('01a0ccda-839a-7961-af95-72531ccb628b', 113, 1 , '#', 'sb_id', 'Text', 10.00, 1.00, 'left', false, false, false, false, NULL, NULL, NULL, NULL, false, '019e441b-6e48-7918-b246-b857ffb35db1')
+    ,('01a0ccda-839b-7217-8a5b-7c300f0773c7', 113, 2 , 'Comp#', 'sb_company_id', 'Text', 10.00, 2.00, 'left', false, false, false, false, NULL, NULL, NULL, NULL, false, '019e441b-6e48-7918-b246-b857ffb35db1')
+    ,('01a0ccda-839b-7903-b675-fd3c22524c83', 113, 3 , 'Branch#', 'sb_branch_id', 'Text', 10.00, 3.00, 'left', false, false, false, false, NULL, NULL, NULL, NULL, false, '019e441b-6e48-7918-b246-b857ffb35db1')
+    ,('01a0ccda-839b-7f8b-b53b-591aab1a4367', 113, 4 , 'Year#', 'sb_acc_year', 'Text', 10.00, 4.00, 'left', false, false, false, false, NULL, NULL, NULL, NULL, false, '019e441b-6e48-7918-b246-b857ffb35db1')
+    ,('01a0ccda-839c-766c-9b7f-86a6260ff0ce', 113, 5 , 'Date', 'sb_bill_date', 'Date', 10.00, 5.00, 'left', true , false, false, false, NULL, NULL, NULL, NULL, false, '019e441b-6e48-7918-b246-b857ffb35db1')
+    ,('01a0ccda-839c-7cdc-8904-940d856f7c1d', 113, 6 , 'Bill No', 'sb_bill_refno', 'Text', 9.00, 6.00, 'left', true , true , false, false, NULL, NULL, NULL, NULL, false, '019e441b-6e48-7918-b246-b857ffb35db1')
+    ,('01a0ccda-839d-7348-accd-d92cfa3cafd5', 113, 7 , 'Customer', 'sb_cust_name', 'Text', 18.00, 7.00, 'left', true , true , false, false, NULL, NULL, NULL, NULL, false, '019e441b-6e48-7918-b246-b857ffb35db1')
+    ,('01a0ccda-839d-79d5-b59e-2bde8f20058f', 113, 8 , 'Place', 'sb_cust_place', 'Text', 10.00, 8.00, 'left', true , false, false, false, NULL, NULL, NULL, NULL, false, '019e441b-6e48-7918-b246-b857ffb35db1')
+    ,('01a0ccda-839e-703e-937b-2b6b9b4c8f26', 113, 9 , 'Phone', 'sb_cust_phone', 'Text', 10.00, 9.00, 'left', true , true , false, false, NULL, NULL, NULL, NULL, false, '019e441b-6e48-7918-b246-b857ffb35db1')
+    ,('01a0ccda-839e-770b-a75d-d57b9e51f52b', 113, 10 , 'Amount', 'sb_bill_amt', 'Number', 10.00, 10.00, 'right', true , false, false, false, NULL, NULL, NULL, NULL, false, '019e441b-6e48-7918-b246-b857ffb35db1')
+    ,('01a0ccda-839e-7d87-921e-70d64b456cb2', 113, 11 , 'Delivery', 'sb_delivery_status', 'Text', 10.00, 11.00, 'center', true , false, false, false, NULL, NULL, NULL, NULL, false, '019e441b-6e48-7918-b246-b857ffb35db1')
+    ,('01a0ccda-839f-746b-9d59-e1256f3a6012', 113, 12 , 'Delivered On', 'sb_delivered_on', 'Date', 12.00, 12.00, 'left', true , false, false, false, NULL, NULL, NULL, NULL, false, '019e441b-6e48-7918-b246-b857ffb35db1')
+    ,('01a0ccda-839f-7bc3-8639-3edd921da22d', 113, 13 , 'Vehicle', 'sb_vehicle_no', 'Text', 9.00, 13.00, 'left', true , false, false, false, NULL, NULL, NULL, NULL, false, '019e441b-6e48-7918-b246-b857ffb35db1')
+    ,('01a0ccda-83a0-738e-8bbb-a648e3e4df23', 113, 14 , 'Driver', 'driver_name', 'Text', 12.00, 14.00, 'left', true , false, false, false, NULL, NULL, NULL, NULL, false, '019e441b-6e48-7918-b246-b857ffb35db1')
+    ,('01a0ccda-83a0-79fc-a207-07b8b63c8e77', 113, 15 , 'Status', 'sb_status', 'Text', 8.00, 15.00, 'left', false, false, false, false, NULL, NULL, NULL, NULL, false, '019e441b-6e48-7918-b246-b857ffb35db1')
+    ,('01a0ccda-83a1-7038-8035-190ac79ce452', 113, 16 , 'By', 'sb_created_by', 'Text', 10.00, 16.00, 'left', true , false, false, false, NULL, NULL, NULL, NULL, false, '019e441b-6e48-7918-b246-b857ffb35db1')
+    -- ============ main list - temp credits (id 114) ============
+    ,('01a0ccda-83c6-7bba-893a-2ca179a0c6f5', 114, 1 , '#', 'atc_id', 'Text', 10.00, 1.00, 'left', false, false, false, false, NULL, NULL, NULL, NULL, false, '019e441b-6e48-7918-b246-b857ffb35db1')
+    ,('01a0ccda-83c7-7573-aba2-5fa034b9d119', 114, 2 , 'Comp#', 'atc_company_id', 'Text', 10.00, 2.00, 'left', false, false, false, false, NULL, NULL, NULL, NULL, false, '019e441b-6e48-7918-b246-b857ffb35db1')
+    ,('01a0ccda-83c7-7ca7-a7b5-2e96e66627c1', 114, 3 , 'Branch#', 'atc_branch_id', 'Text', 10.00, 3.00, 'left', false, false, false, false, NULL, NULL, NULL, NULL, false, '019e441b-6e48-7918-b246-b857ffb35db1')
+    ,('01a0ccda-83c8-738e-a528-4d2189df3f9c', 114, 4 , 'Year#', 'atc_acc_year', 'Text', 10.00, 4.00, 'left', false, false, false, false, NULL, NULL, NULL, NULL, false, '019e441b-6e48-7918-b246-b857ffb35db1')
+    ,('01a0ccda-83c8-7c60-b3b7-b2d77f67fb41', 114, 5 , 'Date', 'atc_bill_date', 'Date', 10.00, 5.00, 'left', true , false, false, false, NULL, NULL, NULL, NULL, false, '019e441b-6e48-7918-b246-b857ffb35db1')
+    ,('01a0ccda-83c9-72fb-8e64-ad93d0d99097', 114, 6 , 'Bill', 'atc_bill_refno', 'Text', 9.00, 6.00, 'left', true , true , false, false, NULL, NULL, NULL, NULL, false, '019e441b-6e48-7918-b246-b857ffb35db1')
+    ,('01a0ccda-83c9-796b-b357-54f4d7e5ceef', 114, 7 , 'Name', 'atc_name', 'Text', 16.00, 7.00, 'left', true , true , false, false, NULL, NULL, NULL, NULL, false, '019e441b-6e48-7918-b246-b857ffb35db1')
+    ,('01a0ccda-83ca-71ba-8240-8d3b63c84834', 114, 8 , 'Mobile', 'atc_mobile', 'Text', 11.00, 8.00, 'left', true , true , false, false, NULL, NULL, NULL, NULL, false, '019e441b-6e48-7918-b246-b857ffb35db1')
+    ,('01a0ccda-83ca-782d-bcf7-4aea9b5998d6', 114, 9 , 'Place', 'atc_place', 'Text', 10.00, 9.00, 'left', true , false, false, false, NULL, NULL, NULL, NULL, false, '019e441b-6e48-7918-b246-b857ffb35db1')
+    ,('01a0ccda-83ca-7f97-aad7-a3eb19a29e3a', 114, 10 , 'Lent', 'atc_credit_amount', 'Number', 10.00, 10.00, 'right', true , false, false, false, NULL, NULL, NULL, NULL, false, '019e441b-6e48-7918-b246-b857ffb35db1')
+    ,('01a0ccda-83cb-7685-becb-2b09d601e262', 114, 11 , 'Balance', 'atc_balance_amount', 'Number', 10.00, 11.00, 'right', true , false, false, false, NULL, NULL, NULL, NULL, false, '019e441b-6e48-7918-b246-b857ffb35db1')
+    ,('01a0ccda-83cb-7cf8-b179-d550008cc3b3', 114, 12 , 'Due', 'atc_due_date', 'Date', 10.00, 12.00, 'left', true , false, false, false, NULL, NULL, NULL, NULL, false, '019e441b-6e48-7918-b246-b857ffb35db1')
+    ,('01a0ccda-83cc-7364-923a-c9255cb52647', 114, 13 , 'Overdue', 'days_overdue', 'Number', 7.00, 13.00, 'right', true , false, false, false, NULL, NULL, NULL, NULL, false, '019e441b-6e48-7918-b246-b857ffb35db1')
+    ,('01a0ccda-83cc-79c7-a164-bd2cc8f82574', 114, 14 , 'Status', 'atc_status', 'Text', 9.00, 14.00, 'center', true , false, false, false, NULL, NULL, NULL, NULL, false, '019e441b-6e48-7918-b246-b857ffb35db1')
+    ,('01a0ccda-83cd-7000-849d-6fb91607124d', 114, 15 , 'Promise', 'atc_promise_date', 'Date', 10.00, 15.00, 'left', true , false, false, false, NULL, NULL, NULL, NULL, false, '019e441b-6e48-7918-b246-b857ffb35db1')
+    ,('01a0ccda-83cd-768b-86e8-03b61f87723a', 114, 16 , 'Followed', 'atc_followup_on', 'Date', 10.00, 16.00, 'left', false, false, false, false, NULL, NULL, NULL, NULL, false, '019e441b-6e48-7918-b246-b857ffb35db1')
+    ,('01a0ccda-83cd-7cfd-80c7-d387cfadc52e', 114, 17 , 'Remarks', 'atc_remarks', 'Text', 16.00, 17.00, 'left', false, false, false, false, NULL, NULL, NULL, NULL, false, '019e441b-6e48-7918-b246-b857ffb35db1')
+    ,('01a0ccda-83ce-7371-8691-3d099aeb90fb', 114, 18 , 'User', 'atc_created_by', 'Text', 10.00, 18.00, 'left', true , false, false, false, NULL, NULL, NULL, NULL, false, '019e441b-6e48-7918-b246-b857ffb35db1')
+    ,('01a0ccda-83ce-7a85-9f88-8123fe0b0ca8', 114, 19 , 'Bill#', 'atc_src_doc_id', 'Text', 10.00, 19.00, 'left', false, false, false, false, NULL, NULL, NULL, NULL, false, '019e441b-6e48-7918-b246-b857ffb35db1')
+    ,('01a0ccda-83cf-71d3-9572-08a0bf8e86c8', 114, 20 , 'Bill Amt', 'atc_bill_amount', 'Number', 10.00, 20.00, 'right', false, false, false, false, NULL, NULL, NULL, NULL, false, '019e441b-6e48-7918-b246-b857ffb35db1')
+    -- ============ popup - recent bills for re-tender (id 115) ============
+    ,('01a0ccda-83eb-79eb-bb57-0c295840a443', 115, 1 , '#', 'sb_id', 'Text', 10.00, 1.00, 'left', false, false, false, false, NULL, NULL, NULL, NULL, false, '019e441b-6e48-7918-b246-b857ffb35db1')
+    ,('01a0ccda-83ec-7342-9993-965bf5f6ee77', 115, 2 , 'Comp#', 'sb_company_id', 'Text', 10.00, 2.00, 'left', false, false, false, false, NULL, NULL, NULL, NULL, false, '019e441b-6e48-7918-b246-b857ffb35db1')
+    ,('01a0ccda-83ec-7a74-97c6-64ddfbb6ab06', 115, 3 , 'Branch#', 'sb_branch_id', 'Text', 10.00, 3.00, 'left', false, false, false, false, NULL, NULL, NULL, NULL, false, '019e441b-6e48-7918-b246-b857ffb35db1')
+    ,('01a0ccda-83ed-7125-be3e-844b3465c578', 115, 4 , 'Year#', 'sb_acc_year', 'Text', 10.00, 4.00, 'left', false, false, false, false, NULL, NULL, NULL, NULL, false, '019e441b-6e48-7918-b246-b857ffb35db1')
+    ,('01a0ccda-83ed-7928-ac01-bbc2d0ce1b51', 115, 5 , 'Bill No', 'sb_bill_refno', 'Text', 9.00, 5.00, 'left', true , true , false, false, NULL, NULL, NULL, NULL, false, '019e441b-6e48-7918-b246-b857ffb35db1')
+    ,('01a0ccda-83ed-7fff-82db-1e5d8426195f', 115, 6 , 'Time', 'sb_bill_datetime', 'Date', 14.00, 6.00, 'left', true , false, false, false, NULL, NULL, NULL, NULL, false, '019e441b-6e48-7918-b246-b857ffb35db1')
+    ,('01a0ccda-83ee-76e3-b252-02d0b8d0ead8', 115, 7 , 'Customer', 'sb_cust_name', 'Text', 18.00, 7.00, 'left', true , true , false, false, NULL, NULL, NULL, NULL, false, '019e441b-6e48-7918-b246-b857ffb35db1')
+    ,('01a0ccda-83ee-7e10-9615-fd5dbff52fb4', 115, 8 , 'Amount', 'sb_bill_amt', 'Number', 10.00, 8.00, 'right', true , false, false, false, NULL, NULL, NULL, NULL, false, '019e441b-6e48-7918-b246-b857ffb35db1')
+    ,('01a0ccda-83ef-7616-af39-25f566b4d068', 115, 9 , 'Tendered as', 'tenders', 'Text', 24.00, 9.00, 'left', true , false, false, false, NULL, NULL, NULL, NULL, false, '019e441b-6e48-7918-b246-b857ffb35db1')
+    ,('01a0ccda-83ef-7d42-b8b8-99ba45c1e084', 115, 10 , 'Mode', 'sb_pay_mode', 'Text', 8.00, 10.00, 'left', false, false, false, false, NULL, NULL, NULL, NULL, false, '019e441b-6e48-7918-b246-b857ffb35db1')
+    ,('01a0ccda-83f0-74af-9832-3e9fcc7aa18d', 115, 11 , 'Status', 'sb_status', 'Text', 8.00, 11.00, 'center', true , false, false, false, NULL, NULL, NULL, NULL, false, '019e441b-6e48-7918-b246-b857ffb35db1')
 ) AS v(grid_column_id, grid_id, grid_column_number, grid_column_name, grid_column_sql_field_name, grid_column_data_type, grid_column_width, grid_column_position, grid_column_alignment, grid_column_visibility, grid_column_filter, grid_column_group, grid_column_total, grid_column_color, grid_column_condition, grid_column_condition_color, grid_column_notes, grid_column_is_deleted, grid_column_created_by)
 WHERE NOT EXISTS (
   SELECT 1 FROM fixed.grid_columns existing

@@ -334,19 +334,49 @@ export class GridDetailsService {
       this.applyOptionalGridFields(data, saveGridDetailDto);
       await tx.gridDetails.update({ where: { gridId: parsedGridId }, data });
       if (saveGridDetailDto.grid_columns !== undefined) {
+        // `replace_columns` retires the columns this save did NOT carry, so the
+        // set that was live BEFORE it has to be read before anything is written.
+        //
+        // It used to be expressed the other way round — "soft-delete everything
+        // not in keptIds" — where keptIds held only the ids the PAYLOAD sent.
+        // A replacement set sent without ids (the normal shape: here are my
+        // columns) therefore left keptIds empty, the `notIn` filter was dropped
+        // altogether, and the updateMany retired every live row of the grid
+        // INCLUDING the ones saveColumnsInTx had just inserted. Grids 113, 114
+        // and 115 were left with no live columns at all on 2026-09-23 — four
+        // saves, four full column sets, every one of them deleted three minutes
+        // later by the save after it. A grid with no live columns then answers
+        // every `search` with zero rows (buildSearchSql has nothing searchable
+        // and falls back to `1 = 0`), which is how it was reported.
+        const liveBefore =
+          saveGridDetailDto.replace_columns === true
+            ? await tx.gridColumn.findMany({
+                where: { gridId: parsedGridId, gridColumnIsDeleted: false },
+                select: { gridColumnId: true },
+              })
+            : [];
         await this.saveColumnsInTx(saveGridDetailDto.grid_columns, parsedGridId, actor, tx);
         if (saveGridDetailDto.replace_columns === true) {
-          const keptIds = saveGridDetailDto.grid_columns
-            .filter((col) => !!col.grid_column_id)
-            .map((col) => this.parseUuidId('grid_column_id', col.grid_column_id!));
-          await tx.gridColumn.updateMany({
-            where: {
-              gridId: parsedGridId,
-              gridColumnIsDeleted: false,
-              ...(keptIds.length > 0 ? { gridColumnId: { notIn: keptIds } } : {}),
-            },
-            data: { gridColumnIsDeleted: true, gridColumnModifiedBy: actor },
-          });
+          const keptIds = new Set(
+            saveGridDetailDto.grid_columns
+              .filter((col) => !!col.grid_column_id)
+              .map((col) => this.parseUuidId('grid_column_id', col.grid_column_id!)),
+          );
+          // Only rows that pre-date this save, and that it did not name, are
+          // retired. Rows it created are not in liveBefore, so they survive.
+          const retireIds = liveBefore
+            .map((col) => col.gridColumnId)
+            .filter((id) => !keptIds.has(id));
+          if (retireIds.length > 0) {
+            await tx.gridColumn.updateMany({
+              where: {
+                gridId: parsedGridId,
+                gridColumnIsDeleted: false,
+                gridColumnId: { in: retireIds },
+              },
+              data: { gridColumnIsDeleted: true, gridColumnModifiedBy: actor },
+            });
+          }
         }
       }
       const full = await tx.gridDetails.findFirstOrThrow({

@@ -238,10 +238,19 @@ let BillReadService = class BillReadService {
         const billDate = q.billDate ?? (0, sales_doc_utils_1.isoToday)();
         const settings = await this.salesContext.settings(q.companyId, q.branchId);
         const [cus] = await this.prisma.$queryRaw `
-      SELECT cus_id, cus_name, cus_gst_type, cus_gst_no, cus_state_code, cus_pan_no, cus_pan_verified_on,
-             cus_form60_on, cus_credit_allowed, cus_price_level_id, cus_credit_amt_limit,
-             cus_credit_bill_limit, cus_credit_days, cus_group_id
-        FROM sales.customers WHERE cus_id = ${q.partyId}::uuid`;
+      SELECT c.cus_id, c.cus_name, c.cus_gst_type, c.cus_gst_no, c.cus_state_code, c.cus_pan_no,
+             c.cus_pan_verified_on, c.cus_form60_on, c.cus_credit_allowed, c.cus_price_level_id,
+             c.cus_credit_amt_limit, c.cus_credit_bill_limit, c.cus_credit_days, c.cus_group_id,
+             c.cus_addr1, c.cus_addr2, c.cus_addr3, c.cus_city, c.cus_pin, c.cus_phone1,
+             c.cus_area_id, c.cus_default_salesman,
+             c.cus_freight_charge, c.cus_loading_charge, c.cus_unloading_charge,
+             c.cus_allow_discount, c.cus_allow_promotion, c.cus_allow_loyalty,
+             a.arm_name, a.arm_distance_km, e.emp_name
+        FROM sales.customers c
+        LEFT JOIN sales.area_master a ON a.arm_id = c.cus_area_id
+        LEFT JOIN public.employee_master e
+               ON e.emp_id = c.cus_default_salesman AND e.emp_is_deleted = false
+       WHERE c.cus_id = ${q.partyId}::uuid`;
         if (!cus) {
             (0, module_service_utils_1.throwSalesNotFound)('Customer not found', 'partyId', `No customer found with id ${q.partyId}`);
         }
@@ -353,6 +362,21 @@ let BillReadService = class BillReadService {
                 form60On: (0, sales_doc_utils_1.isoDate)(cus.cus_form60_on),
                 creditAllowed: cus.cus_credit_allowed,
                 defaultPriceLevel: cus.cus_price_level_id,
+                addr: [cus.cus_addr1, cus.cus_addr2, cus.cus_addr3].filter((a) => a?.trim()).join(', ') || null,
+                place: cus.cus_city,
+                pin: cus.cus_pin,
+                phone: cus.cus_phone1,
+                areaId: cus.cus_area_id,
+                areaName: cus.arm_name,
+                distanceKm: cus.arm_distance_km,
+                salesmanId: cus.cus_default_salesman,
+                salesmanName: cus.emp_name,
+                freightCharge: cus.cus_freight_charge,
+                loadingCharge: cus.cus_loading_charge,
+                unloadingCharge: cus.cus_unloading_charge,
+                allowDiscount: cus.cus_allow_discount,
+                allowPromotion: cus.cus_allow_promotion,
+                allowLoyalty: cus.cus_allow_loyalty,
             },
             credit: {
                 limitAmount,

@@ -121,7 +121,14 @@ export class SalesDocBlocksService {
   ): Promise<GstRows> {
     const na: GstRows = {
       irn: { status: 'NA', number: null, ackNo: null, ackOn: null, message: null },
-      ewb: { status: 'NA', number: null, generatedOn: null, validUpto: null, message: null },
+      ewb: {
+        status: 'NA',
+        number: null,
+        generatedOn: null,
+        validUpto: null,
+        message: null,
+        vehicleNo: null,
+      },
       irnGeneratedOn: null,
       ewbGeneratedOn: null,
       ewbValidUpto: null,
@@ -138,6 +145,7 @@ export class SalesDocBlocksService {
         gde_last_message: string | null;
         gdw_status: string | null;
         gdw_no: string | null;
+        gdw_vehicle_no: string | null;
         gdw_generated_on: Date | null;
         gdw_valid_upto: Date | null;
         gdw_extended_upto: Date | null;
@@ -146,7 +154,7 @@ export class SalesDocBlocksService {
     >`
       SELECT e.gde_status, e.gde_irn, e.gde_ack_no, e.gde_ack_on, e.gde_last_message,
              w.gdw_status, w.gdw_no, w.gdw_generated_on, w.gdw_valid_upto, w.gdw_extended_upto,
-             w.gdw_last_message
+             w.gdw_last_message, w.gdw_vehicle_no
         FROM (SELECT 1) x
         LEFT JOIN accounts.acc_voucher_doc_einvoice e
                ON e.gde_gdr_id = ${gdrId}::uuid AND e.gde_acc_year = ${accYear}::char(9)
@@ -173,6 +181,7 @@ export class SalesDocBlocksService {
         generatedOn: isoDateTime(row.gdw_generated_on),
         validUpto: isoDateTime(validUpto),
         message: row.gdw_last_message,
+        vehicleNo: row.gdw_vehicle_no,
       },
       irnGeneratedOn: row.gde_ack_on,
       ewbGeneratedOn: row.gdw_generated_on,

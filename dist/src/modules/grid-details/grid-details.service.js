@@ -275,19 +275,30 @@ let GridDetailsService = class GridDetailsService {
             this.applyOptionalGridFields(data, saveGridDetailDto);
             await tx.gridDetails.update({ where: { gridId: parsedGridId }, data });
             if (saveGridDetailDto.grid_columns !== undefined) {
+                const liveBefore = saveGridDetailDto.replace_columns === true
+                    ? await tx.gridColumn.findMany({
+                        where: { gridId: parsedGridId, gridColumnIsDeleted: false },
+                        select: { gridColumnId: true },
+                    })
+                    : [];
                 await this.saveColumnsInTx(saveGridDetailDto.grid_columns, parsedGridId, actor, tx);
                 if (saveGridDetailDto.replace_columns === true) {
-                    const keptIds = saveGridDetailDto.grid_columns
+                    const keptIds = new Set(saveGridDetailDto.grid_columns
                         .filter((col) => !!col.grid_column_id)
-                        .map((col) => this.parseUuidId('grid_column_id', col.grid_column_id));
-                    await tx.gridColumn.updateMany({
-                        where: {
-                            gridId: parsedGridId,
-                            gridColumnIsDeleted: false,
-                            ...(keptIds.length > 0 ? { gridColumnId: { notIn: keptIds } } : {}),
-                        },
-                        data: { gridColumnIsDeleted: true, gridColumnModifiedBy: actor },
-                    });
+                        .map((col) => this.parseUuidId('grid_column_id', col.grid_column_id)));
+                    const retireIds = liveBefore
+                        .map((col) => col.gridColumnId)
+                        .filter((id) => !keptIds.has(id));
+                    if (retireIds.length > 0) {
+                        await tx.gridColumn.updateMany({
+                            where: {
+                                gridId: parsedGridId,
+                                gridColumnIsDeleted: false,
+                                gridColumnId: { in: retireIds },
+                            },
+                            data: { gridColumnIsDeleted: true, gridColumnModifiedBy: actor },
+                        });
+                    }
                 }
             }
             const full = await tx.gridDetails.findFirstOrThrow({

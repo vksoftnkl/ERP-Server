@@ -24,7 +24,7 @@ export interface SalesCallContext {
   settings: SalesSettings;
   /** `accounts.cogs_mode` — PERPETUAL writes the COGS pair, PERIODIC does not. */
   cogsMode: 'PERPETUAL' | 'PERIODIC';
-  rights: RightsBlock & { retender: boolean };
+  rights: RightsBlock;
 }
 
 @Injectable()
@@ -96,14 +96,16 @@ export class SalesContextService {
     return effective.find((i) => i.asdKey === key)?.value ?? null;
   }
 
-  /** Just the four flags, for a `/get` that resolves no settings. */
+  /** All five flags, for a `/get` that resolves no settings. */
   async rights(menuId: number, client?: Prisma.TransactionClient): Promise<RightsBlock> {
     const userId = this.requestContext.getUserId();
     if (!isUuid(userId)) {
-      return { post: false, cancel: false, amend: false, override: false };
+      return { post: false, cancel: false, amend: false, override: false, retender: false };
     }
-    const r = await loadRights(client ?? this.prisma, userId, menuId);
-    return { post: r.post, cancel: r.cancel, amend: r.amend, override: r.override };
+    // Returned whole. Re-listing the keys here is what dropped `retender` from
+    // every /get: loadRights already reads all five, and a second list of them
+    // is a second place to forget one.
+    return loadRights(client ?? this.prisma, userId, menuId);
   }
 
   hasRight(ctx: SalesCallContext, right: SalesRight): boolean {

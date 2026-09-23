@@ -56,6 +56,7 @@ routes. It is the capability of the screen, not a permission of the user:
 | `… POST CANCEL AMEND OVERRIDE` | the 20 documents that reach the ledger |
 | `… RETENDER` | Sales Entry (12) alone |
 | `VIEW PRINT` | read-only screens (249 Stock Track Policy, 250 Ledger mapping) |
+| `VIEW EDIT PRINT EXPORT` | 257 Temp Credits — a list of what the bill screen created, settled or written off there; nothing is created or deleted on it |
 
 **Render a permission cell only for a verb listed here** — a verb that is absent gets *no
 checkbox at all*, not a greyed one. An unchecked box says *denied*, which is a different

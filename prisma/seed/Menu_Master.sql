@@ -1,4 +1,4 @@
--- Seed: fixed.menu_master -- the full application menu tree (226 rows).
+-- Seed: fixed.menu_master -- the full application menu tree (227 rows).
 --
 -- Exported from the reference database, so a fresh environment comes up with the
 -- same menu ids every other table points at.
@@ -105,6 +105,7 @@ VALUES
     ,( 235,   75, 'Loyalty Redemption (Item)'            , 'false'               , false,   4.00, NULL, NULL, NULL, true , true)
     ,( 236,   75, 'Loyalty Redemption Report (Item-wise)', 'false'               , false,   5.00, NULL, NULL, NULL, true , false)
     ,( 247,   66, 'Promotion Scheme'                     , NULL                  , true ,   1.00, NULL, NULL, NULL, true , false)
+    ,( 257,    1, 'Temp Credits'                         , NULL                  , true ,   6.20, NULL, NULL, NULL, true , false)
     -- ============ &2 Purchase (menu 2, 18 rows) ============
     ,(   2, NULL, '&2 Purchase'                          , NULL                  , true ,   2.00, '0', NULL, NULL, true , false)
     ,(  22,    2, 'Suppliers'                            , NULL                  , true ,   1.00, NULL, NULL, NULL, true , true)
@@ -275,6 +276,20 @@ VALUES
     ,(  94,   92, 'Monthly Attendance'                   , NULL                  , true ,   2.00, NULL, NULL, NULL, true , false)
     ,( 108,   92, 'Monthly Statement'                    , NULL                  , true ,   3.00, NULL, NULL, NULL, true , false)
 ON CONFLICT (menu_id) DO NOTHING;
+
+-- ── menu_verbs for the rows this file adds after 20260922170000 ─────────────
+-- The column defaults to '{VIEW,CREATE,EDIT,DELETE,PRINT,EXPORT}', which is
+-- right for most screens and wrong for 257: the Temp Credits list shows what
+-- the bill screen created and lets it be settled or written off. Nothing is
+-- created or deleted there, so CREATE and DELETE would be two checkboxes an
+-- administrator can tick to no effect -- exactly what menu_verbs exists to stop.
+--
+-- Guarded on the seeded default so a site that has since edited 257's verbs
+-- keeps its own answer: this runs on every deploy.
+UPDATE fixed.menu_master
+   SET menu_verbs = '{VIEW,EDIT,PRINT,EXPORT}'
+ WHERE menu_id = 257
+   AND menu_verbs = '{VIEW,CREATE,EDIT,DELETE,PRINT,EXPORT}';
 
 -- Keep the identity sequence ahead of the seeded ids, otherwise the first menu
 -- created from the UI reuses id 1 and fails on the primary key.

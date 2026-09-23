@@ -1,4 +1,4 @@
--- Seed: fixed.grid_details -- the configured list/report grids and the SQL behind them (92 rows).
+-- Seed: fixed.grid_details -- the configured list/report grids and the SQL behind them (95 rows).
 --
 -- grid_sql is user-configurable SQL executed by the grid "run" endpoint through the
 -- read-only pool, with p_* named tokens bound as parameters (bindGridParams). It is
@@ -987,6 +987,59 @@ WHERE (
          ))
       )
 ORDER BY pm.prm_start_date DESC, pm.prm_name$seed$)
+    ,(113 , 'MAIN LIST - BILL DELIVERY', 'Posted sale bills with a delivery still to move (menu 226, plan-qt-sales 1.11). Default = not NA / DELIVERED; idelivery_status narrows to one step; search on customer / bill no / phone.', 'sb_bill_date', 'Descending', 'Desktop', true , false, '019e441b-6e48-7918-b246-b857ffb35db1', $seed$SELECT b.sb_id, b.sb_company_id, b.sb_branch_id, b.sb_acc_year,
+       b.sb_bill_date, b.sb_bill_refno, b.sb_cust_name, b.sb_cust_place, b.sb_cust_phone,
+       b.sb_bill_amt, b.sb_delivery_status, b.sb_delivered_on, b.sb_vehicle_no,
+       e.emp_name AS driver_name, b.sb_status, b.sb_created_by
+  FROM sales.sale_bill b
+  LEFT JOIN public.employee_master e ON e.emp_id = b.sb_driver_id
+ WHERE b.sb_company_id = 'icompany_id'::uuid
+   AND b.sb_branch_id = 'ibranch_id'::uuid
+   AND b.sb_acc_year = 'iacc_year'
+   AND b.sb_is_deleted = false
+   AND b.sb_status = 'POSTED'
+   AND (NULLIF('ifrom_date', '') IS NULL OR b.sb_bill_date::text >= 'ifrom_date')
+   AND (NULLIF('ito_date', '') IS NULL OR b.sb_bill_date::text <= 'ito_date')
+   AND (CASE WHEN NULLIF('idelivery_status', '') IS NULL THEN b.sb_delivery_status NOT IN ('NA', 'DELIVERED')
+             WHEN 'idelivery_status' = 'ALL' THEN true
+             ELSE b.sb_delivery_status = 'idelivery_status' END)
+ ORDER BY b.sb_bill_date DESC, b.sb_bill_datetime DESC$seed$)
+    ,(114 , 'MAIN LIST - TEMP CREDITS', 'accounts.acc_temp_credit — the who-owes list (menu 257, plan-qt-sales 1.12). Default OPEN + PARTIAL; istatus = one status or ALL; ioverdue_only = true; search on name / mobile / bill no. days_overdue is computed, 0 once the balance is 0.', 'atc_due_date', 'Ascending', 'Desktop', true , false, '019e441b-6e48-7918-b246-b857ffb35db1', $seed$SELECT t.atc_id, t.atc_company_id, t.atc_branch_id, t.atc_acc_year,
+       t.atc_bill_date, t.atc_bill_refno, t.atc_name, t.atc_mobile, t.atc_place,
+       t.atc_credit_amount, t.atc_balance_amount, t.atc_due_date,
+       CASE WHEN t.atc_balance_amount > 0 AND t.atc_due_date < CURRENT_DATE
+            THEN (CURRENT_DATE - t.atc_due_date) ELSE 0 END AS days_overdue,
+       t.atc_status, t.atc_promise_date, t.atc_followup_on, t.atc_remarks, t.atc_created_by,
+       t.atc_src_doc_id, t.atc_bill_amount
+  FROM accounts.acc_temp_credit t
+ WHERE t.atc_company_id = 'icompany_id'::uuid
+   AND (NULLIF('ibranch_id', '') IS NULL OR t.atc_branch_id::text = 'ibranch_id')
+   AND t.atc_is_deleted = false
+   AND (NULLIF('ifrom_date', '') IS NULL OR t.atc_bill_date::text >= 'ifrom_date')
+   AND (NULLIF('ito_date', '') IS NULL OR t.atc_bill_date::text <= 'ito_date')
+   AND (CASE WHEN NULLIF('istatus', '') IS NULL THEN t.atc_status IN ('OPEN', 'PARTIAL')
+             WHEN 'istatus' = 'ALL' THEN true
+             ELSE t.atc_status = 'istatus' END)
+   AND (NULLIF('ioverdue_only', '') IS NULL OR 'ioverdue_only' <> 'true'
+        OR (t.atc_balance_amount > 0 AND t.atc_due_date < CURRENT_DATE))
+ ORDER BY t.atc_due_date, t.atc_created_on$seed$)
+    ,(115 , 'POPUP - RECENT BILLS FOR RE-TENDER', 'Ctrl+F6 picker (plan-qt-sales 1.7b): this device''s bills today, newest first; a typed bill no (search) reaches any bill. Shows how each was tendered (non-voided rows).', 'sb_bill_datetime', 'Descending', 'Desktop', true , false, '019e441b-6e48-7918-b246-b857ffb35db1', $seed$SELECT b.sb_id, b.sb_company_id, b.sb_branch_id, b.sb_acc_year,
+       b.sb_bill_refno, b.sb_bill_datetime, b.sb_cust_name, b.sb_bill_amt, b.sb_pay_mode, b.sb_status,
+       (SELECT string_agg(coalesce(m.tnd_name, '?') || ' ' || d.td_amount::text, ', ' ORDER BY d.td_row_no)
+          FROM accounts.acc_tender_detail d
+          LEFT JOIN accounts.acc_tender_master m ON m.tnd_id = d.td_tender_id
+         WHERE d.td_src_doc_id = b.sb_id AND d.td_acc_year = b.sb_acc_year
+           AND d.td_is_deleted = false AND d.td_is_voided = false) AS tenders
+  FROM sales.sale_bill b
+ WHERE b.sb_company_id = 'icompany_id'::uuid
+   AND b.sb_branch_id = 'ibranch_id'::uuid
+   AND b.sb_acc_year = 'iacc_year'
+   AND b.sb_is_deleted = false
+   AND b.sb_status IN ('POSTED', 'DRAFT')
+   AND ((NULLIF('idevice_id', '') IS NULL OR b.sb_device_id::text = 'idevice_id')
+            AND (NULLIF('ifrom_date', '') IS NULL OR b.sb_bill_date::text >= 'ifrom_date')
+            AND (NULLIF('ito_date', '') IS NULL OR b.sb_bill_date::text <= 'ito_date'))
+ ORDER BY b.sb_bill_datetime DESC$seed$)
 ON CONFLICT (grid_id) DO NOTHING;
 
 -- Keep the identity sequence ahead of the seeded ids, so the next row created from

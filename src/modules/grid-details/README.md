@@ -71,9 +71,24 @@ Columns are managed through the `grid_columns[]` array on the create/update payl
 - Item **with** `grid_column_id` (UUID) → updates that column; **without** → inserts a new one.
 - Each column requires `grid_column_name` (trimmed, non-empty → else `400`) and
   `grid_column_number` (integer ≥ 1); other column fields apply only when present.
-- On **update**, `replace_columns: true` soft-deletes any existing active column **not** listed in
-  `grid_columns` (full replace); when `false`/omitted, listed columns are only created/updated and
-  the rest are left untouched. On create the array is inserted as-is (empty/omitted → no columns).
+- On **update**, `replace_columns: true` soft-deletes any column that was **live before this save
+  and that the save did not carry** (full replace); when `false`/omitted, listed columns are only
+  created/updated and the rest are left untouched. On create the array is inserted as-is
+  (empty/omitted → no columns).
+
+> **"Live before this save" is the load-bearing half, and it was wrong until 2026-09-23.** The
+> retire step used to read *soft-delete every live column whose id the payload did not name*. A
+> replacement set sent **without ids** — which is the normal shape, *here are my columns* — left
+> that id list empty, so the filter was dropped altogether and the `updateMany` retired every live
+> row of the grid **including the ones the same save had just inserted**. The grid came back with
+> no columns at all, and because `buildSearchSql` has nothing searchable to bind it then answered
+> every `search` with `1 = 0` — zero rows for a value that plainly exists, with nothing in the
+> response to say why.
+>
+> Grids 113, 114 and 115 were left in exactly that state: four saves, four complete column sets,
+> every one of them deleted by the save after it. The ids that were live are now read **before**
+> anything is written, and only those are candidates for retirement — a row this save created is
+> not among them. `grid-details.service.spec.ts` pins both halves.
 
 ### `grid_sql` validation (at save time)
 

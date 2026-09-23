@@ -15,6 +15,8 @@ type PrismaMock = {
   gridColumn: {
     updateMany: jest.Mock;
     findFirst: jest.Mock;
+    findMany: jest.Mock;
+    create: jest.Mock;
     update: jest.Mock;
   };
   $transaction: jest.Mock;
@@ -69,6 +71,8 @@ describe('GridDetailsService', () => {
       gridColumn: {
         updateMany: jest.fn(),
         findFirst: jest.fn().mockResolvedValue({ gridColumnId: COLUMN_ID }),
+        findMany: jest.fn().mockResolvedValue([]),
+        create: jest.fn().mockResolvedValue({}),
         update: jest.fn().mockResolvedValue({}),
       },
       $transaction: jest.fn(async (callback: (tx: PrismaMock) => unknown) => callback(prisma)),
@@ -223,5 +227,67 @@ describe('GridDetailsService', () => {
       where: { gridColumnId: COLUMN_ID },
       data: { gridColumnWidth: 31.5 },
     });
+  });
+  // ── replace_columns ───────────────────────────────────────────────────────
+  // The defect these pin: the retire step used to soft-delete every live column
+  // NOT NAMED BY ID IN THE PAYLOAD. A replacement set sent without ids -- the
+  // normal shape -- therefore deleted the rows the same save had just inserted,
+  // leaving the grid with no live columns at all and every `search` answering
+  // zero rows. Grids 113, 114 and 115 were in exactly that state on 2026-09-23.
+  it('retires the columns a replace save did not carry, and not the ones it just created', async () => {
+    const record = makeRecord();
+    const existingId = '019f07d3-a1e0-7d2f-9d64-1d566dec2c01';
+    prisma.gridDetails.findFirst.mockResolvedValueOnce(record);
+    prisma.gridDetails.update.mockResolvedValueOnce(record);
+    // What was live BEFORE the save: one column, which this payload replaces.
+    prisma.gridColumn.findMany.mockResolvedValueOnce([{ gridColumnId: existingId }]);
+    prisma.gridDetails.findFirstOrThrow.mockResolvedValueOnce({ ...record, columns: [] });
+
+    await service.save({
+      grid_id: '7',
+      grid_name: 'Item Brand Master',
+      grid_device_type: gridDeviceTypeEnum.DESKTOP,
+      replace_columns: true,
+      grid_columns: [
+        { grid_column_number: 1, grid_column_name: 'Code' },
+        { grid_column_number: 2, grid_column_name: 'Name' },
+      ],
+    });
+
+    // Both new columns were created ...
+    expect(prisma.gridColumn.create).toHaveBeenCalledTimes(2);
+    // ... and only the pre-existing row was retired, by id.
+    expect(prisma.gridColumn.updateMany).toHaveBeenCalledTimes(1);
+    expect(prisma.gridColumn.updateMany).toHaveBeenCalledWith({
+      where: {
+        gridId: 7n,
+        gridColumnIsDeleted: false,
+        gridColumnId: { in: [existingId] },
+      },
+      data: expect.objectContaining({ gridColumnIsDeleted: true }),
+    });
+  });
+
+  it('retires nothing when a replace save carries every live column by id', async () => {
+    const record = makeRecord();
+    prisma.gridDetails.findFirst.mockResolvedValueOnce(record);
+    prisma.gridDetails.update.mockResolvedValueOnce(record);
+    prisma.gridColumn.findMany.mockResolvedValueOnce([{ gridColumnId: COLUMN_ID }]);
+    prisma.gridDetails.findFirstOrThrow.mockResolvedValueOnce({ ...record, columns: [] });
+
+    await service.save({
+      grid_id: '7',
+      grid_name: 'Item Brand Master',
+      grid_device_type: gridDeviceTypeEnum.DESKTOP,
+      replace_columns: true,
+      grid_columns: [
+        { grid_column_id: COLUMN_ID, grid_column_number: 1, grid_column_name: 'Code' },
+      ],
+    });
+
+    expect(prisma.gridColumn.update).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { gridColumnId: COLUMN_ID } }),
+    );
+    expect(prisma.gridColumn.updateMany).not.toHaveBeenCalled();
   });
 });

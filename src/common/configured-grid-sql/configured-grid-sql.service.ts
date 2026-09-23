@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import { PgService } from '../../database/pg/pg.service';
@@ -30,6 +30,7 @@ type SearchColumnDescriptor = {
 };
 @Injectable()
 export class ConfiguredGridSqlService {
+  private readonly logger = new Logger(ConfiguredGridSqlService.name);
   constructor(
     private readonly prisma: PrismaService,
     private readonly pg: PgService,
@@ -188,6 +189,18 @@ export class ConfiguredGridSqlService {
         searchableFieldNames = this.deriveSearchableFieldNames(preloadedColumns, options.baseSql);
       }
       if (searchableFieldNames !== undefined) {
+        if (searchableFieldNames.length === 0) {
+          // buildSearchSql falls back to `1 = 0` here, which is right — a grid
+          // with nothing searchable must not answer a search with everything —
+          // but it is indistinguishable from "no match" at the client, and the
+          // response carries no channel to say so. Say it in the log instead:
+          // the usual cause is that no column carries grid_column_filter, or
+          // that the grid has no live columns at all.
+          this.logger.warn(
+            `Grid ${options.gridId ?? '(none)'}: a search was requested but no column is ` +
+              'searchable (grid_column_filter), so the result is empty by construction',
+          );
+        }
         const searchableSql = this.buildSearchSql({
           baseSql: options.baseSql,
           alias: options.alias,

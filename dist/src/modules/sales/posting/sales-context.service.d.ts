@@ -10,9 +10,7 @@ export interface SalesCallContext {
     actor: string;
     settings: SalesSettings;
     cogsMode: 'PERPETUAL' | 'PERIODIC';
-    rights: RightsBlock & {
-        retender: boolean;
-    };
+    rights: RightsBlock;
 }
 export declare class SalesContextService {
     private readonly prisma;

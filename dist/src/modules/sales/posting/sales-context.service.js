@@ -73,10 +73,9 @@ let SalesContextService = class SalesContextService {
     async rights(menuId, client) {
         const userId = this.requestContext.getUserId();
         if (!isUuid(userId)) {
-            return { post: false, cancel: false, amend: false, override: false };
+            return { post: false, cancel: false, amend: false, override: false, retender: false };
         }
-        const r = await (0, sales_guards_1.loadRights)(client ?? this.prisma, userId, menuId);
-        return { post: r.post, cancel: r.cancel, amend: r.amend, override: r.override };
+        return (0, sales_guards_1.loadRights)(client ?? this.prisma, userId, menuId);
     }
     hasRight(ctx, right) {
         return ctx.rights[right] === true;

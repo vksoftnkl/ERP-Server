@@ -234,6 +234,12 @@ export interface PostingEwbBlock {
   generatedOn: string | null;
   validUpto: string | null;
   message: string | null;
+  /**
+   * §1.6a — the vehicle the e-way bill was raised against (`gdw_vehicle_no`).
+   * Null until one exists, and null on a Part-A-only bill; the band shows the
+   * number rather than only "declared".
+   */
+  vehicleNo: string | null;
 }
 
 export interface PostingBlock {
@@ -272,9 +278,21 @@ export interface LocksBlock {
   };
 }
 
+/**
+ * The five transaction rights on `public.user_menus`, exactly as `loadRights`
+ * reads them — one shape, so a caller cannot be handed four of the five.
+ *
+ * `retender` is meaningful on Sales Entry alone (`menu_verbs` holds RETENDER on
+ * menu 12 and nowhere else), and it is reported for every document anyway
+ * rather than being optional: a missing key and `false` are the same answer to
+ * "may this user re-tender here?", and only one of them is a shape the client
+ * has to defend against. It used to be dropped on the way out, which is why
+ * §1.7b's re-tender dialog could not tell a denied right from an absent one.
+ */
 export interface RightsBlock {
   post: boolean;
   cancel: boolean;
   amend: boolean;
   override: boolean;
+  retender: boolean;
 }

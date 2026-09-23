@@ -8,6 +8,7 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
+var ConfiguredGridSqlService_1;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ConfiguredGridSqlService = void 0;
 const common_1 = require("@nestjs/common");
@@ -17,9 +18,10 @@ const GRID_SQL_FORBIDDEN_TOKENS = /\b(insert|update|delete|drop|alter|truncate|c
 const GRID_SQL_COMMENT_PATTERN = /(--|\/\*)/;
 const POSITIONAL_PARAMETER_PATTERN = /\$[1-9][0-9]*/;
 const MIN_CONFIDENT_COLUMN_MATCH_SCORE = 2;
-let ConfiguredGridSqlService = class ConfiguredGridSqlService {
+let ConfiguredGridSqlService = ConfiguredGridSqlService_1 = class ConfiguredGridSqlService {
     prisma;
     pg;
+    logger = new common_1.Logger(ConfiguredGridSqlService_1.name);
     constructor(prisma, pg) {
         this.prisma = prisma;
         this.pg = pg;
@@ -160,6 +162,10 @@ let ConfiguredGridSqlService = class ConfiguredGridSqlService {
                 searchableFieldNames = this.deriveSearchableFieldNames(preloadedColumns, options.baseSql);
             }
             if (searchableFieldNames !== undefined) {
+                if (searchableFieldNames.length === 0) {
+                    this.logger.warn(`Grid ${options.gridId ?? '(none)'}: a search was requested but no column is ` +
+                        'searchable (grid_column_filter), so the result is empty by construction');
+                }
                 const searchableSql = this.buildSearchSql({
                     baseSql: options.baseSql,
                     alias: options.alias,
@@ -855,7 +861,7 @@ let ConfiguredGridSqlService = class ConfiguredGridSqlService {
     }
 };
 exports.ConfiguredGridSqlService = ConfiguredGridSqlService;
-exports.ConfiguredGridSqlService = ConfiguredGridSqlService = __decorate([
+exports.ConfiguredGridSqlService = ConfiguredGridSqlService = ConfiguredGridSqlService_1 = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [prisma_service_1.PrismaService,
         pg_service_1.PgService])

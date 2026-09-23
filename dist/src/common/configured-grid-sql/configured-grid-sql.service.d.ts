@@ -5,6 +5,7 @@ export type { ConfiguredGridListResult } from './types/configured-grid-sql.types
 export declare class ConfiguredGridSqlService {
     private readonly prisma;
     private readonly pg;
+    private readonly logger;
     constructor(prisma: PrismaService, pg: PgService);
     private normalizeRelationName;
     private buildTableNameSearchTerms;

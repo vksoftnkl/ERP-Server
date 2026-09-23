@@ -650,3 +650,63 @@ names its **own** godown, so the godown half of the answer is that line's — tw
 can disagree. A godown or company row that cannot be read is not a "no"; the item still decides.
 
 These are read-only — never accepted on `/create` — and are `null` on the create/update responses.
+---
+
+## 2026-09-23 — the party pick, the rights block and the e-way band
+
+Three gaps the client's route test of 2026-09-23 raised (*notes 40*), and what each
+one is now.
+
+### `GET /bills/party-context` carries the whole BILL-TO snapshot
+
+§1.5 of the sales plan says this route "replaces `fetchPartyCredit` +
+`fetchCustomerDetail` — one call", and it did not: `party` answered identity,
+GST, PAN and the credit flags, but **no address**, so the screen still called
+`/master-lookups/customer-detail` to fill the band. Two calls replacing two.
+
+`party` now also carries, from `sales.customers`:
+
+| key | column | note |
+| --- | --- | --- |
+| `addr` | `cus_addr1 ‖ ', ' ‖ cus_addr2 ‖ ', ' ‖ cus_addr3` | joined exactly the way `shipTo[].addr` is, so the two bands read identically |
+| `place` | `cus_city` | |
+| `pin` | `cus_pin` | |
+| `phone` | `cus_phone1` | |
+| `areaId` / `areaName` | `cus_area_id` → `sales.area_master.arm_name` | |
+| `distanceKm` | `sales.area_master.arm_distance_km` | the **area's** distance — the same figure `customer-detail` returned. `cus_distance_km` exists and is not it |
+| `salesmanId` / `salesmanName` | `cus_default_salesman` → `public.employee_master.emp_name` | the salesman join is on a live employee row |
+| `freightCharge` · `loadingCharge` · `unloadingCharge` | `cus_freight_charge` · `cus_loading_charge` · `cus_unloading_charge` | |
+| `allowDiscount` · `allowPromotion` · `allowLoyalty` | the matching `cus_allow_*` columns | |
+
+That is the whole `sb_cust_*` snapshot plus every flag the note listed, so the
+customer pick is **one call**. Two joins were added to the single customer read,
+not two more round trips.
+
+What `customer-detail` still answers and this does **not**: `state_name`,
+`cust_disc_perc`, `tcs_company` / `tcs_customer`, `local_sales`, `billed_date`
+and the regional-language name/address (`iregional`). None was asked for; say so
+and they can follow the same way.
+
+### `rights.retender`
+
+`loadRights` has always read all five flags (`um_can_post`, `_cancel`, `_amend`,
+`_override`, `_retender`), and `SalesContextService.rights()` then rebuilt the
+object naming four of them — so `/bills/get` answered four keys and §1.7b's
+re-tender dialog could not tell a **denied** right from an **absent** one.
+
+`RightsBlock` now declares all five and `rights()` returns what `loadRights`
+read, whole. Re-listing the keys was the defect; there is now one list.
+
+`retender` is reported on every document that carries a rights block, not only
+the bill. It is meaningful on Sales Entry alone — `menu_verbs` holds `RETENDER`
+on menu 12 and nowhere else — but a missing key and `false` are the same answer
+to *may this user re-tender here*, and only one of them is a shape the client has
+to defend against.
+
+### `posting.ewb.vehicleNo`
+
+§1.6a wants the vehicle shown once an e-way bill exists; the block carried
+status, number, dates and the last message, so the band could only say
+"declared". `gdw_vehicle_no` now travels with them — `null` until an e-way bill
+exists, and `null` on a Part-A-only bill, which is the honest answer rather than
+a blank the screen has to interpret.

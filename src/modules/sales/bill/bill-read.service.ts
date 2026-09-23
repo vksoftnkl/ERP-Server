@@ -348,12 +348,38 @@ export class BillReadService {
         cus_credit_bill_limit: number | null;
         cus_credit_days: number | null;
         cus_group_id: string | null;
+        cus_addr1: string | null;
+        cus_addr2: string | null;
+        cus_addr3: string | null;
+        cus_city: string | null;
+        cus_pin: string | null;
+        cus_phone1: string | null;
+        cus_area_id: string | null;
+        cus_default_salesman: string | null;
+        cus_freight_charge: boolean;
+        cus_loading_charge: boolean;
+        cus_unloading_charge: boolean;
+        cus_allow_discount: boolean;
+        cus_allow_promotion: boolean;
+        cus_allow_loyalty: boolean;
+        arm_name: string | null;
+        arm_distance_km: number | null;
+        emp_name: string | null;
       }[]
     >`
-      SELECT cus_id, cus_name, cus_gst_type, cus_gst_no, cus_state_code, cus_pan_no, cus_pan_verified_on,
-             cus_form60_on, cus_credit_allowed, cus_price_level_id, cus_credit_amt_limit,
-             cus_credit_bill_limit, cus_credit_days, cus_group_id
-        FROM sales.customers WHERE cus_id = ${q.partyId}::uuid`;
+      SELECT c.cus_id, c.cus_name, c.cus_gst_type, c.cus_gst_no, c.cus_state_code, c.cus_pan_no,
+             c.cus_pan_verified_on, c.cus_form60_on, c.cus_credit_allowed, c.cus_price_level_id,
+             c.cus_credit_amt_limit, c.cus_credit_bill_limit, c.cus_credit_days, c.cus_group_id,
+             c.cus_addr1, c.cus_addr2, c.cus_addr3, c.cus_city, c.cus_pin, c.cus_phone1,
+             c.cus_area_id, c.cus_default_salesman,
+             c.cus_freight_charge, c.cus_loading_charge, c.cus_unloading_charge,
+             c.cus_allow_discount, c.cus_allow_promotion, c.cus_allow_loyalty,
+             a.arm_name, a.arm_distance_km, e.emp_name
+        FROM sales.customers c
+        LEFT JOIN sales.area_master a ON a.arm_id = c.cus_area_id
+        LEFT JOIN public.employee_master e
+               ON e.emp_id = c.cus_default_salesman AND e.emp_is_deleted = false
+       WHERE c.cus_id = ${q.partyId}::uuid`;
     if (!cus) {
       throwSalesNotFound<BillErrorDetail, BillErrorResponse>(
         'Customer not found',
@@ -520,6 +546,27 @@ export class BillReadService {
         form60On: isoDate(cus.cus_form60_on),
         creditAllowed: cus.cus_credit_allowed,
         defaultPriceLevel: cus.cus_price_level_id,
+        // The BILL-TO snapshot the header stamps into sb_cust_*. Joined the same
+        // way `shipTo[].addr` is, so the two bands read identically.
+        addr:
+          [cus.cus_addr1, cus.cus_addr2, cus.cus_addr3].filter((a) => a?.trim()).join(', ') || null,
+        place: cus.cus_city,
+        pin: cus.cus_pin,
+        phone: cus.cus_phone1,
+        // The rest of what `/master-lookups/customer-detail` carried for this
+        // screen, so the pick is ONE call. `distanceKm` is the AREA's distance —
+        // the same figure customer-detail returned, not cus_distance_km.
+        areaId: cus.cus_area_id,
+        areaName: cus.arm_name,
+        distanceKm: cus.arm_distance_km,
+        salesmanId: cus.cus_default_salesman,
+        salesmanName: cus.emp_name,
+        freightCharge: cus.cus_freight_charge,
+        loadingCharge: cus.cus_loading_charge,
+        unloadingCharge: cus.cus_unloading_charge,
+        allowDiscount: cus.cus_allow_discount,
+        allowPromotion: cus.cus_allow_promotion,
+        allowLoyalty: cus.cus_allow_loyalty,
       },
       credit: {
         limitAmount,
