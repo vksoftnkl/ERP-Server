@@ -18,7 +18,7 @@ import { envValidationSchema } from './config/env.validation';
 import { PrismaModule } from './database/prisma/prisma.module';
 import { PgModule } from './database/pg/pg.module';
 import { HealthModule } from './modules/health/health.module';
-import { CloudSyncModule } from './modules/cloud-sync/cloud-sync.module';
+//import { CloudSyncModule } from './modules/cloud-sync/cloud-sync.module';
 import { UsersModule } from './modules/users/users.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { GridDetailsModule } from './modules/grid-details/grid-details.module';
@@ -150,7 +150,7 @@ const isThrottlerEnabled = parseBoolean(process.env.THROTTLE_ENABLED, true);
     PgModule,
     AuditLogModule,
     HealthModule,
-    CloudSyncModule,
+    //CloudSyncModule,
     UsersModule,
     ItemsGroupMasterModule,
     ItemsBrandMasterModule,
