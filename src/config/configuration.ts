@@ -101,4 +101,13 @@ export default () => ({
       connectTimeoutMs: parseNumber(process.env.REDIS_CONNECT_TIMEOUT_MS, 5000),
     };
   })(),
+  // Offline -> cloud push (src/modules/cloud-sync). Off unless this install is
+  // an offline site AND a cloud database is named; the cloud server itself
+  // leaves both unset.
+  cloudSync: {
+    enabled: parseBoolean(process.env.CLOUD_SYNC_ENABLED),
+    url: process.env.CLOUD_DATABASE_URL ?? '',
+    intervalSeconds: parseNumber(process.env.CLOUD_SYNC_INTERVAL_SECONDS, 60),
+    batchSize: parseNumber(process.env.CLOUD_SYNC_BATCH_SIZE, 500),
+  },
 });

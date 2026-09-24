@@ -152,13 +152,15 @@ export class ChargeDetailService {
   }
   // The charge lines of one document, in the order the entry screen shows them
   // (cdSlno, unnumbered rows last). Soft-deleted rows are always excluded;
-  // inactive ones only when the caller asks for active rows.
+  // inactive ones only when the caller asks for active rows. A caller inside a
+  // transaction passes its client, or it reads the rows as last committed.
   async getByDocument(
     cdDocType: ChargeDocType,
     cdDocId: string,
     isActive?: boolean,
+    client: Prisma.TransactionClient = this.prisma,
   ): Promise<ChargeDetailPayload[]> {
-    const records = await this.prisma.transactionChargeDetail.findMany({
+    const records = await client.transactionChargeDetail.findMany({
       where: {
         cdDocType,
         cdDocId,

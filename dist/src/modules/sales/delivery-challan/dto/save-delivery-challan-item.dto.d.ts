@@ -23,7 +23,7 @@ export declare class SaveDeliveryChallanItemDto {
     sdiSizeUom?: string | null;
     sdiGodownId: string;
     sdiLotId?: string | null;
-    sdiBucket?: string | null;
+    sdiBucket?: string;
     sdiBatchNo?: string | null;
     sdiBatchDate?: string | null;
     sdiExpiryDate?: string | null;

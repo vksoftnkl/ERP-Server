@@ -21,6 +21,7 @@ export declare const SALES_ERROR_CODES: {
     readonly ORDER_DELIVERED: "SALES_ORDER_DELIVERED";
     readonly ORDER_LINE_DELIVERED: "SALES_ORDER_LINE_DELIVERED";
     readonly ORDER_CONFIRMED: "SALES_ORDER_CONFIRMED";
+    readonly ORDER_NOT_OPEN: "SALES_ORDER_NOT_OPEN";
     readonly RESERVE_SHORT: "SALES_RESERVE_SHORT";
     readonly DC_PURPOSE_NOT_ALLOWED: "SALES_DC_PURPOSE_NOT_ALLOWED";
     readonly DC_REQUIRES_ORDER: "SALES_DC_REQUIRES_ORDER";
@@ -100,6 +101,7 @@ export interface SalesGuardContext {
     overrides: string[];
     canOverride: boolean;
     throwOnRefusal: boolean;
+    dryRun: boolean;
 }
 export declare function createGuardContext(opts?: Partial<SalesGuardContext>): SalesGuardContext;
 export type GstDocStatus = 'NA' | 'PENDING' | 'GENERATED' | 'FAILED' | 'CANCELLED' | 'EXPIRED' | 'REJECTED';

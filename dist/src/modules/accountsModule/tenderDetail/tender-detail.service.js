@@ -140,8 +140,8 @@ let TenderDetailService = class TenderDetailService {
         }
         return this.toPayload(record);
     }
-    async getByDocument(tdSrcModule, tdSrcDocType, tdSrcDocId) {
-        const records = await this.findDocumentTenders(this.prisma, tdSrcModule, tdSrcDocType, tdSrcDocId);
+    async getByDocument(tdSrcModule, tdSrcDocType, tdSrcDocId, client = this.prisma) {
+        const records = await this.findDocumentTenders(client, tdSrcModule, tdSrcDocType, tdSrcDocId);
         return records.map((record) => this.toPayload(record));
     }
     async softDelete(tdId) {

@@ -695,6 +695,8 @@ class ItemPriceLookupPayloadDto {
     stock;
     reorder_qty;
     item_incl_tax;
+    tax_id;
+    hsn_code;
     gst_rate;
     cess_perc;
     cess_unit;
@@ -903,6 +905,18 @@ __decorate([
     }),
     __metadata("design:type", Boolean)
 ], ItemPriceLookupPayloadDto.prototype, "item_incl_tax", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        nullable: true,
+        format: 'uuid',
+        description: 'inventory.tax_rate_master.tax_id the item defaults to.',
+    }),
+    __metadata("design:type", Object)
+], ItemPriceLookupPayloadDto.prototype, "tax_id", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ nullable: true, example: '33049990', description: 'item_master.item_hsn_code.' }),
+    __metadata("design:type", Object)
+], ItemPriceLookupPayloadDto.prototype, "hsn_code", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)({ example: 0 }),
     __metadata("design:type", Number)

@@ -7,7 +7,7 @@ model ItemPriceLevel {
   iplIsDeleted  Boolean  @default(false) @map("ipl_is_deleted")
 
   iplCreatedOn  DateTime @default(now()) @db.Timestamptz(6) @map("ipl_created_on")
-  iplSyncDate   DateTime @default(now()) @db.Timestamptz(6) @map("ipl_sync_date")
+  iplSyncDate   DateTime? @db.Timestamptz(6) @map("ipl_sync_date")
   iplCreatedBy  String     @map("ipl_created_by")
   iplModifiedOn DateTime @default(now()) @db.Timestamptz(6) @map("ipl_modified_on")
   iplModifiedBy String   @map("ipl_modified_by")

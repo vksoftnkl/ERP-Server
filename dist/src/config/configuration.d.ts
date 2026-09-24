@@ -48,5 +48,11 @@ declare const _default: () => {
         tls: boolean;
         connectTimeoutMs: number;
     };
+    cloudSync: {
+        enabled: boolean;
+        url: string;
+        intervalSeconds: number;
+        batchSize: number;
+    };
 };
 export default _default;

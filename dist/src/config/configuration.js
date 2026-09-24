@@ -97,5 +97,11 @@ exports.default = () => ({
             connectTimeoutMs: parseNumber(process.env.REDIS_CONNECT_TIMEOUT_MS, 5000),
         };
     })(),
+    cloudSync: {
+        enabled: parseBoolean(process.env.CLOUD_SYNC_ENABLED),
+        url: process.env.CLOUD_DATABASE_URL ?? '',
+        intervalSeconds: parseNumber(process.env.CLOUD_SYNC_INTERVAL_SECONDS, 60),
+        batchSize: parseNumber(process.env.CLOUD_SYNC_BATCH_SIZE, 500),
+    },
 });
 //# sourceMappingURL=configuration.js.map

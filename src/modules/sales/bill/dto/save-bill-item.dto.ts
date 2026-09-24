@@ -1,6 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
-  NullableUpperMaxString,
   NullableDateString,
   NullableInteger,
   NullableNumber,
@@ -13,6 +12,7 @@ import {
   OptionalUuid,
   RequiredUuid,
 } from 'src/common/dto/dtoDecorators';
+import { OptionalStockBucket } from '../../posting/sales-dto.decorators';
 // One batch allocation row on a bill. The printed line = GROUP BY sbiLineNo;
 // stock/GST reads rows as they are.
 export class SaveBillItemDto {
@@ -87,13 +87,8 @@ export class SaveBillItemDto {
   })
   @NullableUuid()
   sbiSrcItemId?: string | null;
-  @ApiPropertyOptional({
-    maxLength: 20,
-    nullable: true,
-    description: 'SALEABLE | DAMAGED | QUARANTINE | EXPIRED | SAMPLE',
-  })
-  @NullableUpperMaxString(20)
-  sbiBucket?: string | null;
+  @OptionalStockBucket()
+  sbiBucket?: string;
   @ApiPropertyOptional({
     format: 'uuid',
     nullable: true,

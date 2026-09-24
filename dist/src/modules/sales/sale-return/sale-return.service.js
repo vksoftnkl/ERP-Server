@@ -219,6 +219,7 @@ let SaleReturnService = class SaleReturnService {
             overrides: dto.overrides ?? [],
             canOverride: ctx.rights.override,
             throwOnRefusal: false,
+            dryRun: true,
         });
         const items = (dto.items ?? []).map((i, idx) => ({
             ...i,
@@ -395,7 +396,7 @@ let SaleReturnService = class SaleReturnService {
             (0, sales_guards_1.refuse)(g, posting_types_1.SALES_ERROR_CODES.AMOUNT_MISMATCH, 'ADJUST needs a bill to adjust against — this return is not against a bill', { field: 'srSettleMode' });
         }
         if (mode === 'CASH') {
-            const tenders = await this.store.loadTenders(row);
+            const tenders = await this.store.loadTenders(row, tx);
             const total = (0, sales_doc_utils_1.round2)(tenders.reduce((t, x) => t + (0, sales_doc_utils_1.num)(x.tdAmount), 0));
             if (Math.abs(total - (0, sales_doc_utils_1.num)(row.srReturnAmt)) > 0.01) {
                 (0, sales_guards_1.refuse)(g, posting_types_1.SALES_ERROR_CODES.AMOUNT_MISMATCH, `CASH settlement: tenders total ${total} against a return of ${(0, sales_doc_utils_1.num)(row.srReturnAmt)}`, { field: 'tenders' });
@@ -410,8 +411,8 @@ let SaleReturnService = class SaleReturnService {
         const docDate = (0, sales_doc_utils_1.isoDate)(row.srReturnDate) ?? (0, sales_doc_utils_1.isoToday)();
         const returnAmt = (0, sales_doc_utils_1.num)(row.srReturnAmt);
         const mode = (row.srSettleMode ?? 'ADJUST').toUpperCase();
-        const tenders = await this.store.loadTenders(row);
-        const charges = await this.store.loadCharges(row);
+        const tenders = await this.store.loadTenders(row, tx);
+        const charges = await this.store.loadCharges(row, tx);
         const [company] = await tx.$queryRaw `
       SELECT comp_state_code, comp_einvoice_applicable FROM public.companys WHERE comp_id = ${keys.companyId}::uuid`;
         const nature = (0, sales_doc_utils_1.supplyNatureOf)(company?.comp_state_code, row.srPosStcd);
@@ -638,7 +639,7 @@ let SaleReturnService = class SaleReturnService {
                 await tx.$executeRaw `
           UPDATE sales.sale_bill SET sb_returned_amt = ${returnedAmt}::numeric,
                  sb_return_status = CASE WHEN ${returnedAmt}::numeric >= sb_bill_amt - 0.005 THEN 'FULL' ELSE 'PARTIAL' END,
-                 sb_modified_on = ${now}, sb_modified_by = ${actor}
+                 sb_modified_on = ${now}, sb_modified_by = ${ctx.actorName}
            WHERE sb_id = ${bill.sb_id}::uuid AND sb_acc_year = ${bill.sb_acc_year}::char(9)`;
             }
         }
@@ -786,7 +787,7 @@ let SaleReturnService = class SaleReturnService {
                 (0, sales_errors_1.throwSalesRight)('This user may not cancel on this menu', posting_types_1.SALES_ERROR_CODES.RIGHT_CANCEL);
             }
             await this.assertUnwindable(tx, row, dto.reason, 'cancel');
-            const reversal = await this.unwind(tx, row, ctx.actor, dto.reason, now);
+            const reversal = await this.unwind(tx, row, ctx.actor, ctx.actorName, dto.reason, now);
             await this.store.setStatus(tx, row, 'CANCELLED', {}, ctx.actor, now);
             await this.store.trail(tx, row, txn_status_log_helper_1.TxnStatusEvent.CANCELLED, 'POSTED', 'CANCELLED', ctx.actor, now, dto.reason);
             await this.store.auditChange(tx, row, 'cancel', { srStatus: 'POSTED' }, { srStatus: 'CANCELLED' }, ctx.actor, `Sale return cancelled: ${dto.reason}`);
@@ -830,7 +831,7 @@ let SaleReturnService = class SaleReturnService {
             await (0, sales_guards_1.assertAmendable)(tx, gdrId);
             await this.assertUnwindable(tx, row, dto.editRemark, 'amend');
             const before = this.store.plain(row);
-            await this.unwind(tx, row, ctx.actor, `Amended: ${dto.editRemark}`, now);
+            await this.unwind(tx, row, ctx.actor, ctx.actorName, `Amended: ${dto.editRemark}`, now);
             const draft = await this.store.setStatus(tx, row, 'DRAFT', {
                 srPostedVoucherId: null,
                 srRefundAmt: 0,
@@ -937,7 +938,7 @@ let SaleReturnService = class SaleReturnService {
             }
         }
     }
-    async unwind(tx, row, actor, reason, now) {
+    async unwind(tx, row, actor, actorName, reason, now) {
         const keys = this.store.keysOf(row);
         let reversal = null;
         if (row.srPostedVoucherId) {
@@ -997,7 +998,7 @@ let SaleReturnService = class SaleReturnService {
                 await tx.$executeRaw `
           UPDATE sales.sale_bill SET sb_returned_amt = ${returnedAmt}::numeric,
                  sb_return_status = CASE WHEN ${returnedAmt}::numeric <= 0.005 THEN NULL WHEN ${returnedAmt}::numeric >= sb_bill_amt - 0.005 THEN 'FULL' ELSE 'PARTIAL' END,
-                 sb_modified_on = ${now}, sb_modified_by = ${actor}
+                 sb_modified_on = ${now}, sb_modified_by = ${actorName}
            WHERE sb_id = ${bill.sb_id}::uuid AND sb_acc_year = ${bill.sb_acc_year}::char(9)`;
             }
         }

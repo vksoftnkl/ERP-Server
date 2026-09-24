@@ -584,9 +584,9 @@ async function addToAllocation(
 // re-save idempotent — reverse-then-repost lands on the same number as a first
 // post of the same set.
 //
-// sbPaidAmt is expected to be tenders only, but a client may fold credit-note
-// money into it as well (the settle screen's header keeps advances out in
-// sbAdvanceAmt, but a credit note has no such field). When that happens the sum
+// sbPaidAmt is expected to be tenders only, but a client may fold set-off money
+// into it as well (the header keeps it out in sbAdvanceAmt / sbNoteAdjAmt, but
+// an older client may not). When that happens the sum
 // overshoots the bill; it is capped at the bill amount below so the save still
 // succeeds instead of ck_abl_settled failing the whole transaction with a bare
 // 23514.
@@ -619,4 +619,84 @@ async function nextRowNo(tx: Prisma.TransactionClient, billId: string): Promise<
     _max: { abjRowNo: true },
   });
   return (highest._max.abjRowNo ?? 0) + 1;
+}
+// ─── set-offs, split by the liability they relieve ──────────────────────────
+
+/// One credit a bill's set-off draws on, as far as the header and the legs care.
+export interface SetOffCredit {
+  ablId: string;
+  ablAccYear: string;
+  /// acc_bill_balance.abl_bill_type — ADVANCE or SALES_RETURN for a set-off.
+  billType: string;
+  /// The ledger the credit's money was credited to when it came in. A set-off
+  /// moves it from there onto the invoice; when it is the party itself there is
+  /// nothing to move.
+  holdingLedgerId: string;
+}
+
+/// The credits a list of set-offs names, keyed `ablId|ablAccYear`. A credit
+/// that is not found is simply absent — the caller's own guards (lockCredit,
+/// validateDraftAdjustments) name it.
+///
+/// Where each credit's money sits, which is what decides its legs:
+///   * a sale-return credit note credits the PARTY (the return's CR party leg);
+///   * a receipt advance credits the PARTY (the receipt's CR party leg);
+///   * an order advance credits `so_advance_ledger_id`, or the party when the
+///     order names none (order-advance-posting.helper, resolveCreditLedgerId).
+/// Verified 2026-09-24 against every CR balance row on the local DB: all of
+/// them sat on the party. That is why the old single DR ADVANCE_RECEIVED leg
+/// was wrong — nothing ever credited that role, so each set-off left it
+/// negative and the party short by the same amount.
+export async function loadSetOffCredits(
+  tx: Prisma.TransactionClient,
+  adjustments: readonly { againstBillId: string; againstBillAccYear: string }[],
+): Promise<Map<string, SetOffCredit>> {
+  const out = new Map<string, SetOffCredit>();
+  if (adjustments.length === 0) {
+    return out;
+  }
+  const ids = [...new Set(adjustments.map((a) => a.againstBillId))];
+  const rows = await tx.$queryRaw<
+    { abl_id: string; abl_acc_year: string; abl_bill_type: string; holding: string }[]
+  >`
+    SELECT b.abl_id, b.abl_acc_year, b.abl_bill_type,
+           COALESCE(so.so_advance_ledger_id, b.abl_party_id) AS holding
+      FROM accounts.acc_bill_balance b
+      LEFT JOIN sales.sale_order so
+             ON b.abl_src_doc_type = 'SALES_ORDER' AND so.so_id = b.abl_src_doc_id
+     WHERE b.abl_id = ANY(${ids}::uuid[])`;
+  for (const r of rows) {
+    out.set(setOffKey(r.abl_id, r.abl_acc_year), {
+      ablId: r.abl_id,
+      ablAccYear: r.abl_acc_year.trim(),
+      billType: r.abl_bill_type.trim(),
+      holdingLedgerId: r.holding,
+    });
+  }
+  return out;
+}
+
+export function setOffKey(ablId: string, ablAccYear: string): string {
+  return `${ablId}|${ablAccYear.trim()}`;
+}
+
+/// The set-offs' totals by liability: what sbAdvanceAmt and sbNoteAdjAmt must
+/// each say. A credit of any other type counts toward neither and is refused
+/// by deriveRouting when the rows are written.
+export function splitSetOffs(
+  adjustments: readonly { againstBillId: string; againstBillAccYear: string; amount: unknown }[],
+  credits: Map<string, SetOffCredit>,
+): { advance: number; note: number } {
+  let advance = new Prisma.Decimal(0);
+  let note = new Prisma.Decimal(0);
+  for (const a of adjustments) {
+    const type = credits.get(setOffKey(a.againstBillId, a.againstBillAccYear))?.billType;
+    const amount = new Prisma.Decimal(String(a.amount ?? 0));
+    if (type === 'SALES_RETURN') {
+      note = note.plus(amount);
+    } else if (type === 'ADVANCE') {
+      advance = advance.plus(amount);
+    }
+  }
+  return { advance: advance.toNumber(), note: note.toNumber() };
 }

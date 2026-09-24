@@ -12,6 +12,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.SaveBillItemDto = void 0;
 const swagger_1 = require("@nestjs/swagger");
 const dtoDecorators_1 = require("../../../../common/dto/dtoDecorators");
+const sales_dto_decorators_1 = require("../../posting/sales-dto.decorators");
 class SaveBillItemDto {
     sbiId;
     sbiBillId;
@@ -231,13 +232,8 @@ __decorate([
     __metadata("design:type", Object)
 ], SaveBillItemDto.prototype, "sbiSrcItemId", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({
-        maxLength: 20,
-        nullable: true,
-        description: 'SALEABLE | DAMAGED | QUARANTINE | EXPIRED | SAMPLE',
-    }),
-    (0, dtoDecorators_1.NullableUpperMaxString)(20),
-    __metadata("design:type", Object)
+    (0, sales_dto_decorators_1.OptionalStockBucket)(),
+    __metadata("design:type", String)
 ], SaveBillItemDto.prototype, "sbiBucket", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({

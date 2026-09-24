@@ -497,8 +497,10 @@ export class BillPayloadDto {
   sbTenderAmt!: number;
   @ApiProperty()
   sbRefundAmt!: number;
-  @ApiProperty()
+  @ApiProperty({ description: 'ADVANCE set-offs only' })
   sbAdvanceAmt!: number;
+  @ApiProperty({ description: 'Credit-note set-offs only' })
+  sbNoteAdjAmt!: number;
   @ApiProperty()
   sbPaidAmt!: number;
   @ApiProperty()

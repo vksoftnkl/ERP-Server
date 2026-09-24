@@ -86,6 +86,7 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
             overrides: dto.overrides ?? [],
             canOverride: ctx.rights.override,
             throwOnRefusal: false,
+            dryRun: true,
         });
         await this.prisma.$transaction(async (tx) => {
             await this.runGuards(tx, snap, ctx, guard, { adjustments: dto.adjustments });
@@ -157,7 +158,7 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
             const reversal = await this.unwind(tx, bill, items, ctx, dto.reason, now);
             const cancelled = await tx.saleBill.update({
                 where: { sbId_sbAccYear: { sbId: bill.sbId, sbAccYear: bill.sbAccYear } },
-                data: { sbStatus: bill_api_types_1.BILL_STATUS_CANCELLED, sbModifiedOn: now, sbModifiedBy: ctx.actor },
+                data: { sbStatus: bill_api_types_1.BILL_STATUS_CANCELLED, sbModifiedOn: now, sbModifiedBy: ctx.actorName },
             });
             await this.afterStatusChange(tx, cancelled, items, ctx.actor, now);
             await (0, txn_status_log_helper_1.appendTxnStatusLog)(tx, {
@@ -253,7 +254,7 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
                 where: { sbiBillId: bill.sbId, sbiAccYear: bill.sbAccYear, sbiIsDeleted: false },
             });
             const before = await this.bills.getById(bill.sbId, bill.sbCompanyId, bill.sbBranchId, bill.sbAccYear);
-            await this.unwind(tx, bill, priorItems, ctx, `Amended: ${dto.editRemark}`, now);
+            const { restateVoucherId } = await this.unwind(tx, bill, priorItems, ctx, `Amended: ${dto.editRemark}`, now, 'amend');
             const draft = await tx.saleBill.update({
                 where: { sbId_sbAccYear: { sbId: bill.sbId, sbAccYear: bill.sbAccYear } },
                 data: {
@@ -266,7 +267,7 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
                     sbLoyaltyEarnPoints: 0,
                     sbLoyaltyRedeemPoints: 0,
                     sbModifiedOn: now,
-                    sbModifiedBy: ctx.actor,
+                    sbModifiedBy: ctx.actorName,
                 },
             });
             await (0, txn_status_log_helper_1.appendTxnStatusLog)(tx, {
@@ -311,6 +312,7 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
                 now,
                 fromStatus: bill_api_types_1.BILL_STATUS_DRAFT,
                 revisionNo: bill.sbRevisionNo + 1,
+                restateVoucherId,
             });
             await this.audit.logEntityChange({
                 action: 'update',
@@ -433,8 +435,8 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
             (0, sales_guards_1.refuse)(g, posting_types_1.SALES_ERROR_CODES.AMOUNT_MISMATCH, `Line taxes total ${lineTax.toFixed(2)} but sbTaxAmt says ${snap.taxAmt.toFixed(2)}`, { field: 'sbTaxAmt' });
         }
         const tendered = (0, sales_doc_utils_1.round2)(snap.tenders.reduce((t, x) => t + x.amount, 0));
-        (0, sales_guards_1.assertTenderTotal)(g, tendered + snap.advanceAmt, snap.billAmt, s);
-        const settled = (0, bill_snapshot_1.settledByTenders)(snap) + snap.advanceAmt;
+        (0, sales_guards_1.assertTenderTotal)(g, tendered + (0, bill_snapshot_1.setOffAmtOf)(snap), snap.billAmt, s);
+        const settled = (0, bill_snapshot_1.settledByTenders)(snap) + (0, bill_snapshot_1.setOffAmtOf)(snap);
         const outstanding = (0, sales_doc_utils_1.round2)(snap.billAmt - settled);
         if (outstanding > 0.01 && snap.custId) {
             if (snap.custId === s.defaultCustomerId &&
@@ -568,9 +570,14 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
             }
         }
         if (opts.adjustments && opts.adjustments.length > 0 && snap.custId) {
-            const total = (0, sales_doc_utils_1.round2)(opts.adjustments.reduce((t, a) => t + (0, sales_doc_utils_1.num)(a.amount), 0));
-            if (Math.abs(total - snap.advanceAmt) > 0.01) {
-                (0, sales_guards_1.refuse)(g, posting_types_1.SALES_ERROR_CODES.AMOUNT_MISMATCH, `adjustments total ${total} but sbAdvanceAmt says ${snap.advanceAmt}`, { field: 'sbAdvanceAmt' });
+            const split = (0, bill_adjustment_helper_1.splitSetOffs)(opts.adjustments, await (0, bill_adjustment_helper_1.loadSetOffCredits)(tx, opts.adjustments));
+            for (const [field, total, declared, kind] of [
+                ['sbAdvanceAmt', (0, sales_doc_utils_1.round2)(split.advance), snap.advanceAmt, 'advance'],
+                ['sbNoteAdjAmt', (0, sales_doc_utils_1.round2)(split.note), snap.noteAdjAmt, 'credit-note'],
+            ]) {
+                if (Math.abs(total - declared) > 0.01) {
+                    (0, sales_guards_1.refuse)(g, posting_types_1.SALES_ERROR_CODES.AMOUNT_MISMATCH, `${kind} adjustments total ${total} but ${field} says ${declared}`, { field });
+                }
             }
         }
         const company = await this.company(tx, snap.companyId);
@@ -608,6 +615,26 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
     async guardSources(tx, snap, g, allowOverOrder) {
         const orderLines = snap.items.filter((i) => i.srcDocType === 'SALES_ORDER' && i.srcItemId);
         const dcLines = snap.items.filter((i) => i.srcDocType === 'DELIVERY_CHALLAN' && i.srcItemId);
+        const orderIds = [
+            ...new Set([
+                snap.srcDocType === 'SALES_ORDER' ? snap.srcDocId : null,
+                ...snap.items.map((i) => (i.srcDocType === 'SALES_ORDER' ? i.srcDocId : null)),
+            ].filter((id) => !!id)),
+        ];
+        if (orderIds.length > 0) {
+            const orders = await tx.$queryRaw `
+        SELECT so_id, so_order_refno, so_status FROM sales.sale_order
+         WHERE so_id = ANY(${orderIds}::uuid[]) AND so_is_deleted = false`;
+            const byId = new Map(orders.map((o) => [o.so_id, o]));
+            for (const id of orderIds) {
+                const o = byId.get(id);
+                if (!o || !['CONFIRMED', 'PARTIAL'].includes(o.so_status)) {
+                    (0, sales_guards_1.refuse)(g, posting_types_1.SALES_ERROR_CODES.ORDER_NOT_OPEN, o
+                        ? `Order ${o.so_order_refno ?? id} is ${o.so_status} — only a CONFIRMED or PARTIAL order can be billed`
+                        : `Order ${id} does not exist`, { field: 'items' });
+                }
+            }
+        }
         if (orderLines.length > 0) {
             const rows = await tx.$queryRaw `
         SELECT d.soi_id, d.soi_pending_qty, h.so_status
@@ -717,7 +744,17 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
         }
         const cogsAmt = ctx.cogsMode === 'PERPETUAL' ? stock.cogsTotal : 0;
         const adjustments = await this.resolveAdjustments(tx, snap, partyId, opts.adjustments);
-        const advanceAdjusted = (0, sales_doc_utils_1.round2)(adjustments.reduce((t, a) => t + (0, sales_doc_utils_1.num)(a.amount), 0));
+        const credits = await (0, bill_adjustment_helper_1.loadSetOffCredits)(tx, adjustments);
+        const split = (0, bill_adjustment_helper_1.splitSetOffs)(adjustments, credits);
+        const advanceAdjusted = (0, sales_doc_utils_1.round2)(split.advance);
+        const noteAdjusted = (0, sales_doc_utils_1.round2)(split.note);
+        const setOffs = new Map();
+        for (const a of adjustments) {
+            const credit = credits.get((0, bill_adjustment_helper_1.setOffKey)(a.againstBillId, a.againstBillAccYear));
+            if (credit && credit.holdingLedgerId !== partyId) {
+                setOffs.set(credit.holdingLedgerId, (0, sales_doc_utils_1.round2)((setOffs.get(credit.holdingLedgerId) ?? 0) + (0, sales_doc_utils_1.num)(a.amount)));
+            }
+        }
         const legs = (0, sales_leg_sources_1.buildBillLegs)({
             partyLedgerId: partyId,
             supplyNature,
@@ -744,7 +781,7 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
             schemeDiscount: ctx.settings.postSchemeDiscSeparately ? snap.schDisc + snap.billSchDisc : 0,
             roundOff: snap.roundOff,
             tcsAmount: snap.tcsAmt,
-            advanceAdjusted,
+            setOffs: [...setOffs].map(([ledgerId, amount]) => ({ ledgerId, amount })),
             tenders: snap.tenders.map((t) => ({
                 tenderTypeId: t.tenderTypeId,
                 tenderLedgerId: t.tenderLedgerId,
@@ -781,6 +818,7 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
                 createdBy: actor,
                 presetRefno: bill.sbBillRefno,
                 presetNo: bill.sbBillSlno,
+                restateVoucherId: opts.restateVoucherId ?? null,
             },
             legs,
         });
@@ -898,7 +936,7 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
             amount: c.amount,
             basis: (c.carryBasis ?? undefined),
         })), { canOverride: ctx.rights.override });
-        const paid = (0, sales_doc_utils_1.round2)(settled + advanceAdjusted);
+        const paid = (0, sales_doc_utils_1.round2)(settled + advanceAdjusted + noteAdjusted);
         const balance = (0, sales_doc_utils_1.round2)(snap.billAmt - paid);
         const revisionNo = opts.revisionNo ?? bill.sbRevisionNo;
         const posted = await tx.saleBill.update({
@@ -916,6 +954,7 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
                 sbLoyaltyRedeemPoints: new client_1.Prisma.Decimal(redeemPoints),
                 sbLscId: lscId,
                 sbAdvanceAmt: (0, bill_snapshot_1.decimal)(advanceAdjusted),
+                sbNoteAdjAmt: (0, bill_snapshot_1.decimal)(noteAdjusted),
                 sbPaidAmt: (0, bill_snapshot_1.decimal)(paid),
                 sbBalanceAmt: (0, bill_snapshot_1.decimal)(balance),
                 sbPayStatus: balance <= 0.005 ? 'PAID' : paid > 0 ? 'PARTIAL' : 'UNPAID',
@@ -923,7 +962,7 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
                 sbRevisionNo: revisionNo,
                 sbHasDc: snap.items.some((i) => i.srcDocType === 'DELIVERY_CHALLAN'),
                 sbModifiedOn: now,
-                sbModifiedBy: actor,
+                sbModifiedBy: ctx.actorName,
             },
         });
         await this.afterStatusChange(tx, posted, items, actor, now);
@@ -1014,10 +1053,16 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
         }
         void ctx;
     }
-    async unwind(tx, bill, items, ctx, reason, now) {
+    async unwind(tx, bill, items, ctx, reason, now, mode = 'cancel') {
         const actor = ctx.actor;
         let reversalRefno = null;
-        if (bill.sbPostedVoucherId) {
+        let restateVoucherId = null;
+        if (bill.sbPostedVoucherId && mode === 'amend') {
+            if (await this.legs.retireForRestate(tx, bill.sbPostedVoucherId, bill.sbAccYear, actor)) {
+                restateVoucherId = bill.sbPostedVoucherId;
+            }
+        }
+        else if (bill.sbPostedVoucherId) {
             const r = await this.legs.reverseLegs(tx, bill.sbPostedVoucherId, bill.sbAccYear, reason, actor);
             if (r) {
                 const [row] = await tx.$queryRaw `
@@ -1035,7 +1080,10 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
             direction: 'OUT',
             txnType: 'SALE',
         }, actor, reason, now);
-        if (bill.sbDocRegisterId) {
+        if (bill.sbDocRegisterId && mode === 'amend') {
+            await this.register.retire(tx, bill.sbDocRegisterId, bill.sbAccYear, actor);
+        }
+        else if (bill.sbDocRegisterId) {
             await this.register.cancel(tx, bill.sbDocRegisterId, bill.sbAccYear, reason, actor);
         }
         await this.loyalty.reverseForCancel(tx, {
@@ -1093,7 +1141,7 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
             },
         });
         void items;
-        return { reversalRefno };
+        return { reversalRefno, restateVoucherId };
     }
     async afterStatusChange(tx, bill, items, actor, now) {
         const sign = bill.sbStatus === bill_api_types_1.BILL_STATUS_POSTED ? 1 : -1;
@@ -1112,37 +1160,42 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
         if (named && named.length > 0) {
             return named;
         }
-        let want = (0, sales_doc_utils_1.round2)(snap.advanceAmt);
-        if (want <= 0) {
-            return [];
-        }
-        const credits = await tx.$queryRaw `
-      SELECT abl_id, abl_acc_year, abl_pending_amount, abl_src_doc_id
-        FROM accounts.acc_bill_balance
-       WHERE abl_company_id = ${snap.companyId}::uuid AND abl_party_id = ${partyId}::uuid
-         AND abl_dr_cr = 'CR' AND abl_pending_amount > 0 AND abl_is_deleted = false AND abl_is_active = true
-         AND abl_bill_type IN ('ADVANCE', 'SALES_RETURN')
-       ORDER BY (abl_src_doc_id = ${snap.srcDocId ?? '00000000-0000-0000-0000-000000000000'}::uuid) DESC,
-                (abl_bill_type = 'ADVANCE') DESC, abl_doc_date, abl_created_on
-       FOR UPDATE`;
         const out = [];
-        for (const c of credits) {
-            if (want <= 0.005) {
-                break;
-            }
-            const take = Math.min(want, (0, sales_doc_utils_1.num)(c.abl_pending_amount));
-            if (take <= 0) {
+        for (const [billType, field, asked] of [
+            ['ADVANCE', 'sbAdvanceAmt', (0, sales_doc_utils_1.round2)(snap.advanceAmt)],
+            ['SALES_RETURN', 'sbNoteAdjAmt', (0, sales_doc_utils_1.round2)(snap.noteAdjAmt)],
+        ]) {
+            let want = asked;
+            if (want <= 0) {
                 continue;
             }
-            out.push({
-                againstBillId: c.abl_id,
-                againstBillAccYear: c.abl_acc_year.trim(),
-                amount: (0, sales_doc_utils_1.round2)(take),
-            });
-            want = (0, sales_doc_utils_1.round2)(want - take);
-        }
-        if (want > 0.005) {
-            (0, sales_guards_1.refuse)((0, posting_types_1.createGuardContext)(), posting_types_1.SALES_ERROR_CODES.AMOUNT_MISMATCH, `sbAdvanceAmt asks to set off ${snap.advanceAmt} but the customer holds only ${(0, sales_doc_utils_1.round2)(snap.advanceAmt - want)} in open credits`, { field: 'sbAdvanceAmt' });
+            const credits = await tx.$queryRaw `
+        SELECT abl_id, abl_acc_year, abl_pending_amount
+          FROM accounts.acc_bill_balance
+         WHERE abl_company_id = ${snap.companyId}::uuid AND abl_party_id = ${partyId}::uuid
+           AND abl_dr_cr = 'CR' AND abl_pending_amount > 0 AND abl_is_deleted = false AND abl_is_active = true
+           AND abl_bill_type = ${billType}
+         ORDER BY (abl_src_doc_id = ${snap.srcDocId ?? '00000000-0000-0000-0000-000000000000'}::uuid) DESC,
+                  abl_doc_date, abl_created_on
+         FOR UPDATE`;
+            for (const c of credits) {
+                if (want <= 0.005) {
+                    break;
+                }
+                const take = Math.min(want, (0, sales_doc_utils_1.num)(c.abl_pending_amount));
+                if (take <= 0) {
+                    continue;
+                }
+                out.push({
+                    againstBillId: c.abl_id,
+                    againstBillAccYear: c.abl_acc_year.trim(),
+                    amount: (0, sales_doc_utils_1.round2)(take),
+                });
+                want = (0, sales_doc_utils_1.round2)(want - take);
+            }
+            if (want > 0.005) {
+                (0, sales_guards_1.refuse)((0, posting_types_1.createGuardContext)(), posting_types_1.SALES_ERROR_CODES.AMOUNT_MISMATCH, `${field} asks to set off ${asked} but the customer holds only ${(0, sales_doc_utils_1.round2)(asked - want)} in open ${billType === 'ADVANCE' ? 'advances' : 'credit notes'}`, { field });
+            }
         }
         return out;
     }
@@ -1434,14 +1487,20 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
                         proposed: (0, sales_doc_utils_1.round2)(proposed),
                     };
                 });
+                let wantNote = snap.noteAdjAmt;
                 out.creditNotes = credits
                     .filter((c) => c.abl_bill_type === 'SALES_RETURN')
-                    .map((c) => ({
-                    ablId: c.abl_id,
-                    ablAccYear: c.abl_acc_year.trim(),
-                    refno: c.abl_doc_refno,
-                    pending: (0, sales_doc_utils_1.num)(c.abl_pending_amount),
-                }));
+                    .map((c) => {
+                    const proposed = Math.min(Math.max(wantNote, 0), (0, sales_doc_utils_1.num)(c.abl_pending_amount));
+                    wantNote = (0, sales_doc_utils_1.round2)(wantNote - proposed);
+                    return {
+                        ablId: c.abl_id,
+                        ablAccYear: c.abl_acc_year.trim(),
+                        refno: c.abl_doc_refno,
+                        pending: (0, sales_doc_utils_1.num)(c.abl_pending_amount),
+                        proposed: (0, sales_doc_utils_1.round2)(proposed),
+                    };
+                });
                 if (snap.loyaltyMemberId || snap.custId !== ctx.settings.defaultCustomerId) {
                     const lines = await this.loyaltyLines(tx, snap);
                     const source = this.loyaltySource(snap, lines, snap.loyaltyMemberId);

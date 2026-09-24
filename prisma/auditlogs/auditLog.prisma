@@ -47,6 +47,8 @@ model AuditLog {
 
   // Notes
   logNotes          String?         @db.Text @map("log_notes")
+  /// NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).
+  logSyncDate DateTime? @db.Timestamptz(6) @map("log_sync_date")
 
 
   @@index([logDate], map: "idx_audit_log_date")

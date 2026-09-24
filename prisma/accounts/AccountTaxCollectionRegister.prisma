@@ -138,6 +138,8 @@ model AccTcsRegister {
   party               AccLedgerMaster @relation("TcsCollectee", fields: [atcPartyId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_atc_party")
   reversalOf          AccTcsRegister? @relation("TcsReversal", fields: [atcReversalOfId], references: [atcId], onUpdate: Cascade, onDelete: Restrict, map: "fk_atc_reversal_of")
   reversals           AccTcsRegister[] @relation("TcsReversal")
+  /// NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).
+  atcSyncDate DateTime? @db.Timestamptz(6) @map("atc_sync_date")
   @@map("acc_tcs_register")
   @@schema("accounts")
   // DB-only objects (migration 20260917160000_receipt_tcs_tds_registers):
@@ -216,6 +218,8 @@ model AccTdsRegister {
   party               AccLedgerMaster @relation("TdsParty", fields: [atdPartyId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_atd_party")
   reversalOf          AccTdsRegister? @relation("TdsReversal", fields: [atdReversalOfId], references: [atdId], onUpdate: Cascade, onDelete: Restrict, map: "fk_atd_reversal_of")
   reversals           AccTdsRegister[] @relation("TdsReversal")
+  /// NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).
+  atdSyncDate DateTime? @db.Timestamptz(6) @map("atd_sync_date")
   @@map("acc_tds_register")
   @@schema("accounts")
   // DB-only objects (migration 20260917160000_receipt_tcs_tds_registers):

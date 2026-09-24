@@ -78,19 +78,21 @@ function buildBillLegs(input) {
     for (const tender of input.tenders) {
         legs.push(...buildTenderLegs(tender, input.partyLedgerId));
     }
-    if (round2(input.advanceAdjusted) !== 0) {
+    for (const setOff of input.setOffs) {
+        if (setOff.ledgerId === input.partyLedgerId) {
+            continue;
+        }
         push(legs, {
-            role: 'ADVANCE_RECEIVED',
-            roleTag: 'ADVANCE_RECEIVED',
+            ledgerId: setOff.ledgerId,
             drCr: 'DR',
-            amount: input.advanceAdjusted,
-            field: 'sbAdvanceAmt',
+            amount: setOff.amount,
+            remarks: setOff.remarks ?? 'Advance adjusted',
         });
         push(legs, {
             ledgerId: input.partyLedgerId,
             drCr: 'CR',
-            amount: input.advanceAdjusted,
-            remarks: 'Advance adjusted',
+            amount: setOff.amount,
+            remarks: setOff.remarks ?? 'Advance adjusted',
         });
     }
     return legs;

@@ -266,7 +266,7 @@ describe('Temporary credit and re-tender (e2e, live DB)', () => {
     expect(tc.td_is_voided).toBe(false);
 
     // The contra: DR UPI 680 / CR cash 680, on voucher type 22, against the bill.
-    const contras = await p.vouchers('SALE_BILL_RETENDER', bill.sbId);
+    const contras = await p.retenderContras(bill.sbId);
     expect(contras).toHaveLength(1);
     expect(contras[0].avh_voucher_type_id).toBe(VCHR.TENDER_CHANGE);
     expect(contras[0].avh_voucher_status.trim()).toBe('POSTED');

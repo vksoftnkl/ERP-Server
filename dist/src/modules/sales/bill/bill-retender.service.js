@@ -124,7 +124,7 @@ let BillRetenderService = class BillRetenderService {
             }
             const replaces = rows[0].td_id;
             const scope = this.tenderScope(bill);
-            const existing = await this.tenders.getByDocument(tender_detail_api_types_1.TenderSrcModule.SALES, tender_detail_api_types_1.TenderSrcDocType.SALE_BILL, bill.sbId);
+            const existing = await this.tenders.getByDocument(tender_detail_api_types_1.TenderSrcModule.SALES, tender_detail_api_types_1.TenderSrcDocType.SALE_BILL, bill.sbId, tx);
             const keep = existing.map((t) => ({ tdId: t.tdId }));
             const created = await this.tenders.syncDocumentTenders(tx, scope, [...keep, ...((0, bill_temp_credit_1.encodeTempCreditTenders)(dto.tenders) ?? [])], actor, bill_api_types_1.BILL_TENDER_AUDIT);
             const newRows = created.filter((t) => !existing.some((e) => e.tdId === t.tdId));
@@ -191,6 +191,19 @@ let BillRetenderService = class BillRetenderService {
                         });
                     }
                 }
+                const [prior] = await tx.$queryRaw `
+          SELECT COUNT(*) AS n FROM accounts.acc_voucher_header h
+           WHERE h.avh_company_id = ${bill.sbCompanyId}::uuid
+             AND h.avh_acc_year = ${bill.sbAccYear}::char(9)
+             AND h.avh_src_module = 'SALES' AND h.avh_src_doc_type = 'SALE_BILL_RETENDER'
+             AND h.avh_is_deleted = false
+             AND (h.avh_src_doc_id = ${bill.sbId}::uuid
+                  OR h.avh_src_doc_id IN (
+                    SELECT t.td_id FROM accounts.acc_tender_detail t
+                     WHERE t.td_src_module = 'SALES' AND t.td_src_doc_type = 'SALE_BILL'
+                       AND t.td_src_doc_id = ${bill.sbId}::uuid
+                       AND t.td_acc_year = ${bill.sbAccYear}::char(9)))`;
+                const round = Number(prior?.n ?? 0) + 1;
                 await this.legs.postLegs(tx, {
                     header: {
                         companyId: bill.sbCompanyId,
@@ -201,8 +214,8 @@ let BillRetenderService = class BillRetenderService {
                         voucherDate: (0, sales_doc_utils_1.isoToday)(),
                         srcModule: 'SALES',
                         srcDocType: 'SALE_BILL_RETENDER',
-                        srcDocId: bill.sbId,
-                        docRefno: bill.sbBillRefno,
+                        srcDocId: replaces,
+                        docRefno: bill.sbBillRefno ? `${bill.sbBillRefno}/RT${round}` : null,
                         docDate: docDate,
                         docAmount: newTotal,
                         partyId: bill.sbCustId,
@@ -231,7 +244,7 @@ let BillRetenderService = class BillRetenderService {
           FROM accounts.acc_tender_detail
          WHERE td_src_module = 'SALES' AND td_src_doc_type = 'SALE_BILL' AND td_src_doc_id = ${bill.sbId}::uuid
            AND td_acc_year = ${bill.sbAccYear}::char(9) AND td_is_deleted = false AND td_is_voided = false`;
-            const paid = (0, sales_doc_utils_1.round2)((0, sales_doc_utils_1.num)(live[0]?.settled) + (0, sales_doc_utils_1.num)(bill.sbAdvanceAmt));
+            const paid = (0, sales_doc_utils_1.round2)((0, sales_doc_utils_1.num)(live[0]?.settled) + (0, sales_doc_utils_1.num)(bill.sbAdvanceAmt) + (0, sales_doc_utils_1.num)(bill.sbNoteAdjAmt));
             const balance = (0, sales_doc_utils_1.round2)((0, sales_doc_utils_1.num)(bill.sbBillAmt) - paid);
             await tx.saleBill.update({
                 where: { sbId_sbAccYear: { sbId: bill.sbId, sbAccYear: bill.sbAccYear } },
@@ -241,7 +254,7 @@ let BillRetenderService = class BillRetenderService {
                     sbBalanceAmt: new client_1.Prisma.Decimal(balance.toFixed(2)),
                     sbPayStatus: balance <= 0.005 ? 'PAID' : paid > 0 ? 'PARTIAL' : 'UNPAID',
                     sbModifiedOn: now,
-                    sbModifiedBy: actor,
+                    sbModifiedBy: ctx.actorName,
                 },
             });
             await (0, txn_status_log_helper_1.appendTxnStatusLog)(tx, {

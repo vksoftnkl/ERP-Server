@@ -49,13 +49,15 @@ export class AuthService {
       }
       throw new UnauthorizedException('Invalid credentials');
     }
-    const isWebDevice = loginAuthDto.device_type?.toLowerCase() === 'web';
-    const device =
-      loginAuthDto.device_id || isWebDevice
-        ? await this.findAndUpdateDeviceOnLogin(loginAuthDto.device_id, user, {
-            deviceType: loginAuthDto.device_type,
-          })
-        : null;
+    // Device validation disabled: login no longer checks device_master.
+    // const isWebDevice = loginAuthDto.device_type?.toLowerCase() === 'web';
+    // const device =
+    //   loginAuthDto.device_id || isWebDevice
+    //     ? await this.findAndUpdateDeviceOnLogin(loginAuthDto.device_id, user, {
+    //         deviceType: loginAuthDto.device_type,
+    //       })
+    //     : null;
+    const device = null as DeviceMaster | null;
     /*
      * The counter and its branch go INTO the token.
      *

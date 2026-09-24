@@ -708,6 +708,8 @@ model AccLedgerRole {
   taxRateLedgers TaxRateLedger[]
   /// The voucher legs posted under this role (acc_vouchers.av_role).
   voucherLines   AccVoucher[]
+  /// NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).
+  alrSyncDate DateTime? @db.Timestamptz(6) @map("alr_sync_date")
 
   // accounts.fn_check_role_ledger(role, ledger, company, where) validates a
   // ledger against a row of this table. It lives in raw SQL — a function is not
@@ -773,6 +775,8 @@ model AccOpeningBalance {
   ledger          AccLedgerMaster @relation(fields: [opLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_op_ledger")
   company         Company         @relation(fields: [opCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_op_company")
   branch          BranchMaster?   @relation(fields: [opBranchId], references: [brId], onUpdate: Cascade, onDelete: Restrict, map: "fk_op_branch")
+  /// NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).
+  opSyncDate DateTime? @db.Timestamptz(6) @map("op_sync_date")
 
   @@id([opId, opAccYear], map: "pk_acc_opening")
   @@map("acc_opening_balance")
@@ -849,6 +853,8 @@ model AccOpeningRun {
 
   company            Company       @relation(fields: [aorCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_aor_company")
   branch             BranchMaster? @relation(fields: [aorBranchId], references: [brId], onUpdate: Cascade, onDelete: Restrict, map: "fk_aor_branch")
+  /// NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).
+  aorSyncDate DateTime? @db.Timestamptz(6) @map("aor_sync_date")
 
   /// "When was this year last carried forward, and what happened?" — newest
   /// first, for one company and target year.
@@ -1175,6 +1181,8 @@ model AccTcsRegister {
   party               AccLedgerMaster @relation("TcsCollectee", fields: [atcPartyId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_atc_party")
   reversalOf          AccTcsRegister? @relation("TcsReversal", fields: [atcReversalOfId], references: [atcId], onUpdate: Cascade, onDelete: Restrict, map: "fk_atc_reversal_of")
   reversals           AccTcsRegister[] @relation("TcsReversal")
+  /// NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).
+  atcSyncDate DateTime? @db.Timestamptz(6) @map("atc_sync_date")
   @@map("acc_tcs_register")
   @@schema("accounts")
   // DB-only objects (migration 20260917160000_receipt_tcs_tds_registers):
@@ -1253,6 +1261,8 @@ model AccTdsRegister {
   party               AccLedgerMaster @relation("TdsParty", fields: [atdPartyId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_atd_party")
   reversalOf          AccTdsRegister? @relation("TdsReversal", fields: [atdReversalOfId], references: [atdId], onUpdate: Cascade, onDelete: Restrict, map: "fk_atd_reversal_of")
   reversals           AccTdsRegister[] @relation("TdsReversal")
+  /// NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).
+  atdSyncDate DateTime? @db.Timestamptz(6) @map("atd_sync_date")
   @@map("acc_tds_register")
   @@schema("accounts")
   // DB-only objects (migration 20260917160000_receipt_tcs_tds_registers):
@@ -2468,6 +2478,8 @@ model AccVoucherSeq {
   voucherType   AccVoucherType @relation(fields: [vchrTypeId], references: [vchrTypeId], map: "fk_acc_voucher_seq_type")
   company       Company        @relation(fields: [companyId], references: [compId], map: "fk_acc_voucher_seq_company")
   branch        BranchMaster   @relation(fields: [branchId], references: [brId], map: "fk_acc_voucher_seq_branch")
+  /// NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).
+  seqSyncDate DateTime? @db.Timestamptz(6) @map("seq_sync_date")
   // Main duplicate prevention constraint
   @@unique([vchrTypeId, companyId, branchId, accYear, deviceCode, periodKey], map: "uq_acc_voucher_seq_scope")
   // Useful indexes
@@ -2711,6 +2723,8 @@ model AuditLog {
 
   // Notes
   logNotes          String?         @db.Text @map("log_notes")
+  /// NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).
+  logSyncDate DateTime? @db.Timestamptz(6) @map("log_sync_date")
 
 
   @@index([logDate], map: "idx_audit_log_date")
@@ -2760,6 +2774,8 @@ model AuditScreen {
 
   // Relations
   auditLogs         AuditLog[]
+  /// NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).
+  screenSyncDate DateTime? @db.Timestamptz(6) @map("screen_sync_date")
 
   @@index([screenStatus], map: "idx_audit_screen_status")
   @@map("audit_screen")
@@ -2985,7 +3001,7 @@ model FormSection {
   sectionPosition   Int     @default(0)                        @map("section_position")    // heading order
   sectionVisibility Boolean @default(true)                     @map("section_visibility")  // the heading's own checkbox
   sectionPlatform   String  @db.VarChar(255)                   @map("section_platform")    // platform scope
-  sectionSyncDate   DateTime @default(now())                    @map("section_sync_date")   // sync date
+  sectionSyncDate   DateTime?                                   @map("section_sync_date")   // sync date; NULL = not yet pushed to the cloud DB
   sectionCreatedOn DateTime @default(now())                    @map("section_created_on")   // created date
   sectionCreatedBy  String? @db.Text                   @map("section_created_by")   // created by
   sectionUpdatedOn DateTime @default(now())                    @map("section_updated_on")   // updated date
@@ -3007,7 +3023,7 @@ model FormField {
   fieldSecondaryText String?     @db.VarChar(255)              @map("field_secondary_text")  // the "Secondary Text" column
   fieldPosition      Int         @default(0)                   @map("field_position")        // order within the section
   fieldVisibility    Boolean     @default(true)                @map("field_visibility")      // the field's checkbox
-  fieldSyncDate      DateTime @default(now())                    @map("field_sync_date")   // sync date
+  fieldSyncDate      DateTime?                                   @map("field_sync_date")   // sync date; NULL = not yet pushed to the cloud DB
   fieldCreatedOn     DateTime @default(now())                    @map("field_created_on")   // created date
   fieldCreatedBy      String? @db.Text                   @map("field_created_by")   // created by
   fieldUpdatedOn     DateTime @default(now())                    @map("field_updated_on")   // updated date
@@ -3121,6 +3137,8 @@ model GspProviderMaster {
   gspCreatedBy        String?   @db.VarChar(100)                                 @map("gsp_created_by")
   gspModifiedOn       DateTime  @default(now()) @db.Timestamptz                  @map("gsp_modified_on")
   gspModifiedBy       String?   @db.VarChar(100)                                 @map("gsp_modified_by")
+  /// NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).
+  gspSyncDate DateTime? @db.Timestamptz(6) @map("gsp_sync_date")
 
   @@index([gspIsActive], name: "idx_gsp_provider_active")
   @@map("gsp_provider_master")
@@ -3137,6 +3155,8 @@ model HsnMaster {
   hsnUqc       String? @db.VarChar(10) @map("hsn_uqc")
   hsnIsActive  Boolean @default(true)  @map("hsn_is_active")
   hsnRateOfTax Decimal @default(0) @db.Decimal(7, 4) @map("hsn_rate_of_tax")
+  /// NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).
+  hsnSyncDate DateTime? @db.Timestamptz(6) @map("hsn_sync_date")
   @@index([hsnCode])
   @@map("hsn_master")
   @@schema("fixed")
@@ -3241,6 +3261,8 @@ model StockAdjReason {
   sarCreatedBy         String?   @db.Uuid @map("sar_created_by")
   sarModifiedOn        DateTime? @db.Timestamptz @map("sar_modified_on")
   sarModifiedBy        String?   @db.Uuid @map("sar_modified_by")
+  /// NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).
+  sarSyncDate DateTime? @db.Timestamptz(6) @map("sar_sync_date")
 
   @@unique([sarCode])
   @@map("stock_adj_reasons")
@@ -3381,6 +3403,8 @@ model GodownLocation {
   // it is depends on ttdDirection.
   transportBandsFrom    TxnTransportDetail[]      @relation("TransportBandFromGodown")
   transportBandsTo      TxnTransportDetail[]      @relation("TransportBandToGodown")
+  /// NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).
+  gdlSyncDate DateTime? @db.Timestamptz(6) @map("gdl_sync_date")
 
   @@map("godown_locations")
    @@schema("inventory")
@@ -3430,6 +3454,8 @@ model ItemBatchMaster {
   btmUpdatedOn             DateTime?        @db.Timestamptz(6) @map("btm_updated_on")
   btmUpdatedBy             String?          @db.Uuid @map("btm_updated_by")
   batchStocks              ItemBatchStock[]
+  /// NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).
+  btmSyncDate DateTime? @db.Timestamptz(6) @map("btm_sync_date")
 
   // Expression/partial indexes are maintained in SQL because Prisma schema
   // cannot express `lower(trim(...))` or filtered uniqueness/indexes.
@@ -3504,6 +3530,8 @@ model ItemBatchStock {
 
   // Relations
   batch               ItemBatchMaster @relation(fields: [ibsBatchId], references: [btmId], map: "fk_ibs_batch")
+  /// NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).
+  ibsSyncDate DateTime? @db.Timestamptz(6) @map("ibs_sync_date")
 
   @@unique([ibsAccYear, ibsCompanyId, ibsBranchId, ibsGodownId, ibsItemId, ibsBatchId, ibsStockBucket], map: "uq_ibs_scope")
 
@@ -3581,6 +3609,8 @@ model ItemEanCode {
 
   // Relation — eanUcUnitId references item_unit_conversion(iuc_id)
   itemUnitConversion ItemUnitConversion @relation("ItemEanCodeUnitConversion", fields: [eanUcUnitId], references: [iucId], onUpdate: Cascade, onDelete: Restrict, map: "fk_ean_item_unit")
+  /// NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).
+  eanSyncDate DateTime? @db.Timestamptz(6) @map("ean_sync_date")
 
   @@map("item_ean_codes")
   @@schema("inventory")
@@ -3656,7 +3686,7 @@ model ItemGstUnits {
     itemGstUnitCreatedBy String? @db.Text @map("item_gst_unit_created_by")
     itemGstUnitModifiedOn DateTime @default(now()) @map("item_gst_unit_modified_on")
     itemGstUnitModifiedBy String? @db.Text @map("item_gst_unit_modified_by")
-    itemGstUnitSyncDate DateTime @default(now()) @map("item_gst_unit_sync_date")
+    itemGstUnitSyncDate DateTime? @map("item_gst_unit_sync_date")
 
     units Unit[] // back-relation
 
@@ -3793,6 +3823,8 @@ model ItemMaster {
   saleReturnItems       SaleReturnItem[]          @relation("SaleReturnItemItem")
   saleDcItems           SaleDcItem[]              @relation("SaleDcItemItem")
   saleDcReturnItems     SaleDcReturnItem[]        @relation("SaleDcReturnItemItem")
+  /// NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).
+  itemSyncDate DateTime? @db.Timestamptz(6) @map("item_sync_date")
 
   @@map("item_master")
   @@schema("inventory")
@@ -3813,7 +3845,7 @@ model ItemPriceLevel {
   iplIsDeleted  Boolean  @default(false) @map("ipl_is_deleted")
 
   iplCreatedOn  DateTime @default(now()) @db.Timestamptz(6) @map("ipl_created_on")
-  iplSyncDate   DateTime @default(now()) @db.Timestamptz(6) @map("ipl_sync_date")
+  iplSyncDate   DateTime? @db.Timestamptz(6) @map("ipl_sync_date")
   iplCreatedBy  String     @map("ipl_created_by")
   iplModifiedOn DateTime @default(now()) @db.Timestamptz(6) @map("ipl_modified_on")
   iplModifiedBy String   @map("ipl_modified_by")
@@ -3981,6 +4013,8 @@ model ItemReorder {
   item                ItemMaster @relation(fields: [irItemId], references: [itemId], onUpdate: Cascade, onDelete: Restrict)
   // irUcUnitId references item_unit_conversion(iuc_id)
   itemUnitConversion  ItemUnitConversion? @relation("ItemReorderUnitConversion", fields: [irUcUnitId], references: [iucId], onUpdate: Cascade, onDelete: Restrict, map: "fk_ir_item_unit")
+  /// NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).
+  irSyncDate DateTime? @db.Timestamptz(6) @map("ir_sync_date")
 
   @@map("item_reorders")
    @@schema("inventory")
@@ -4206,6 +4240,8 @@ model ItemTaxHistory {
   item             ItemMaster    @relation(fields: [ithItemId], references: [itemId], onUpdate: Cascade, onDelete: Restrict)
   // See the note on ItemMaster.defaultTax — same migration, same rename.
   tax              TaxRateMaster  @relation(fields: [ithTaxId], references: [taxId], onUpdate: Cascade, onDelete: Restrict)
+  /// NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).
+  ithSyncDate DateTime? @db.Timestamptz(6) @map("ith_sync_date")
 
   @@map("item_tax_history")
  @@schema("inventory")
@@ -4717,6 +4753,8 @@ model AppThemeMaster {
   thmIsActive     Boolean @default(true) @map("thm_is_active")
   thmIsDeleted    Boolean @default(false) @map("thm_is_deleted")
   company       Company[] @relation("CompanyStylesheet")
+  /// NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).
+  thmSyncDate DateTime? @db.Timestamptz(6) @map("thm_sync_date")
   @@map("app_theme_master")
   @@schema("public")
 }
@@ -5124,6 +5162,8 @@ model CompanyAato {
   caaModifiedBy     String?   @db.VarChar(50)                          @map("caa_modified_by")
 
   company           Company   @relation("CompanyAatoCompany", fields: [caaCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_caa_company")
+  /// NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).
+  caaSyncDate DateTime? @db.Timestamptz(6) @map("caa_sync_date")
 
   @@unique([caaCompanyId, caaFinYear], map: "ux_company_aato")
 
@@ -5193,6 +5233,8 @@ model FiscalYear {
   // Self-relation: previous fiscal year chain
   prevFiscalYear FiscalYear?  @relation("FiscalYearChain", fields: [fyPrevFyId], references: [fyId], onDelete: NoAction, onUpdate: NoAction)
   nextFiscalYears FiscalYear[] @relation("FiscalYearChain")
+  /// NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).
+  fySyncDate DateTime? @db.Timestamptz(6) @map("fy_sync_date")
 
   // NOTE (raw SQL migration-ல manually add பண்ணவும் — Prisma partial index support பண்ணாது):
   //
@@ -6363,6 +6405,8 @@ model PrintLog {
   version             PrintTemplateVersion @relation("PrintLogVersion",   fields: [plgVersionId],  references: [ptvId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_plg_version")
   printer             PrinterProfile?      @relation("PrintLogPrinter",   fields: [plgPrinterId],  references: [prfId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_plg_printer")
   printedByUser       UserMaster?          @relation("PrintLogPrintedBy", fields: [plgPrintedBy],  references: [usrId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_plg_printed_by")
+  /// NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).
+  plgSyncDate DateTime? @db.Timestamptz(6) @map("plg_sync_date")
 
   // Declared so `migrate dev` does not offer to drop them. The PARTIAL ones
   // (ix_plg_subject, ix_plg_printer, ix_plg_device, ix_plg_branch,
@@ -7094,6 +7138,27 @@ model StatutoryLimit {
   //   ck_stl_enforce, ck_stl_window
 
   @@map("statutory_limits")
+  @@schema("public")
+}
+
+// ----- prisma/public/syncDeletedRows.prisma -----
+/// Tombstones for offline -> cloud sync. An AFTER DELETE trigger
+/// (public.fn_sync_log_delete, installed by public.sync_install_triggers() on
+/// every table in public.v_sync_tables) writes one row per hard-deleted row;
+/// CloudSyncService replays it on the cloud DB and stamps sdrSyncDate.
+/// The partial index ix_sdr_pending (WHERE sdr_sync_date IS NULL) is DB-only.
+model SyncDeletedRow {
+  sdrId        BigInt    @id(map: "pk_sync_deleted_rows") @default(autoincrement()) @map("sdr_id")
+  /// The partitioned PARENT when the row lived in a partition.
+  sdrSchema    String    @db.VarChar(63) @map("sdr_schema")
+  sdrTable     String    @db.VarChar(63) @map("sdr_table")
+  /// {pk_column: value, ...} of the deleted row.
+  sdrPk        Json      @map("sdr_pk")
+  sdrDeletedOn DateTime  @default(now()) @db.Timestamptz(6) @map("sdr_deleted_on")
+  /// NULL until the DELETE has been replayed on the cloud DB.
+  sdrSyncDate  DateTime? @db.Timestamptz(6) @map("sdr_sync_date")
+
+  @@map("sync_deleted_rows")
   @@schema("public")
 }
 
@@ -8306,6 +8371,8 @@ model CustGroup {
   // ── Coupons and gift vouchers (20260921160000) ──────────────────────────
   // A batch may be restricted to one customer group.
   couponBatches         LoyaltyCouponBatch[]      @relation("CouponBatchCustGroup")
+  /// NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).
+  cgrSyncDate DateTime? @db.Timestamptz(6) @map("cgr_sync_date")
 
   @@map("cust_groups")
   @@index([cgrCompanyId], map: "idx_cgr_company")
@@ -8491,6 +8558,8 @@ model CustItemRate {
   csrUploadedAt  DateTime? @db.Timestamptz(6) @map("csr_uploaded_at")
   csrUploadedBy  String?   @db.VarChar(100) @map("csr_uploaded_by")
   csrRemarks     String?   @db.VarChar(250) @map("csr_remarks")
+  /// NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).
+  csrSyncDate DateTime? @db.Timestamptz(6) @map("csr_sync_date")
   @@map("cust_item_rates")
   @@schema("sales")
   @@index([csrCustomerId], map: "idx_csr_customer")
@@ -10798,7 +10867,12 @@ model SaleBill {
   sbSurchargeAmt     Decimal   @default(0) @db.Decimal(15, 2) @map("sb_surcharge_amt")
   sbTenderAmt        Decimal   @default(0) @db.Decimal(15, 2) @map("sb_tender_amt")
   sbRefundAmt        Decimal   @default(0) @db.Decimal(15, 2) @map("sb_refund_amt")
+  /// ADVANCE set-offs only — order and receipt advances (acc_bill_adjustment
+  /// ADVANCE_ADJUST). A credit note is a different liability; see sbNoteAdjAmt.
   sbAdvanceAmt       Decimal   @default(0) @db.Decimal(15, 2) @map("sb_advance_amt")
+  /// CREDIT-NOTE set-offs only — sale-return credit notes (NOTE_ADJUST).
+  /// sbAdvanceAmt + sbNoteAdjAmt is everything the bill's set-offs settle.
+  sbNoteAdjAmt       Decimal   @default(0) @db.Decimal(15, 2) @map("sb_note_adj_amt")
   sbPaidAmt          Decimal   @default(0) @db.Decimal(15, 2) @map("sb_paid_amt")
   sbBalanceAmt       Decimal   @default(0) @db.Decimal(15, 2) @map("sb_balance_amt")
   sbPayStatus        String    @default("UNPAID") @db.VarChar(20) @map("sb_pay_status")

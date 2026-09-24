@@ -128,6 +128,7 @@ class SaveBillDto {
     sbTenderAmt;
     sbRefundAmt;
     sbAdvanceAmt;
+    sbNoteAdjAmt;
     sbPaidAmt;
     sbBalanceAmt;
     sbPayStatus;
@@ -687,10 +688,19 @@ __decorate([
     __metadata("design:type", Object)
 ], SaveBillDto.prototype, "sbRefundAmt", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)(),
+    (0, swagger_1.ApiPropertyOptional)({
+        description: 'ADVANCE set-offs only (order / receipt advances). Must equal the ADVANCE-typed adjustments[].',
+    }),
     (0, dtoDecorators_1.OptionalNumber)(),
     __metadata("design:type", Object)
 ], SaveBillDto.prototype, "sbAdvanceAmt", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        description: 'Credit-note set-offs only (sale-return credit notes). Must equal the SALES_RETURN-typed adjustments[].',
+    }),
+    (0, dtoDecorators_1.OptionalNumber)(),
+    __metadata("design:type", Object)
+], SaveBillDto.prototype, "sbNoteAdjAmt", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)(),
     (0, dtoDecorators_1.OptionalNumber)(),

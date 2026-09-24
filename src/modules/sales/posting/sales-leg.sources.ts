@@ -125,20 +125,24 @@ export function buildBillLegs(input: BillLegInput): SalesLeg[] {
     legs.push(...buildTenderLegs(tender, input.partyLedgerId));
   }
 
-  // 11 — advance set-off, last, so `av_row_no` stays stable when one appears.
-  if (round2(input.advanceAdjusted) !== 0) {
+  // 11 — set-offs, last, so `av_row_no` stays stable when one appears. Only a
+  //      credit held OUTSIDE the party ledger moves: DR where it sat, CR party.
+  //      One held on the party already credited it (see SetOffLegInput).
+  for (const setOff of input.setOffs) {
+    if (setOff.ledgerId === input.partyLedgerId) {
+      continue;
+    }
     push(legs, {
-      role: 'ADVANCE_RECEIVED',
-      roleTag: 'ADVANCE_RECEIVED',
+      ledgerId: setOff.ledgerId,
       drCr: 'DR',
-      amount: input.advanceAdjusted,
-      field: 'sbAdvanceAmt',
+      amount: setOff.amount,
+      remarks: setOff.remarks ?? 'Advance adjusted',
     });
     push(legs, {
       ledgerId: input.partyLedgerId,
       drCr: 'CR',
-      amount: input.advanceAdjusted,
-      remarks: 'Advance adjusted',
+      amount: setOff.amount,
+      remarks: setOff.remarks ?? 'Advance adjusted',
     });
   }
 

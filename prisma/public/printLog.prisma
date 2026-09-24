@@ -112,6 +112,8 @@ model PrintLog {
   version             PrintTemplateVersion @relation("PrintLogVersion",   fields: [plgVersionId],  references: [ptvId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_plg_version")
   printer             PrinterProfile?      @relation("PrintLogPrinter",   fields: [plgPrinterId],  references: [prfId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_plg_printer")
   printedByUser       UserMaster?          @relation("PrintLogPrintedBy", fields: [plgPrintedBy],  references: [usrId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_plg_printed_by")
+  /// NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).
+  plgSyncDate DateTime? @db.Timestamptz(6) @map("plg_sync_date")
 
   // Declared so `migrate dev` does not offer to drop them. The PARTIAL ones
   // (ix_plg_subject, ix_plg_printer, ix_plg_device, ix_plg_branch,

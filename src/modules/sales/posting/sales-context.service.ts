@@ -21,6 +21,12 @@ export interface SalesCallContext {
   userId: string;
   /** What audit columns get: the user id, or the nil actor when unauthenticated. */
   actor: string;
+  /**
+   * What the TEXT `*_modified_by` columns get (sb_modified_by, so_modified_by):
+   * the login name, the same text `/create` stores from `sbCreatedBy`. Falls
+   * back to `actor` when the id names no user. Never write it to a uuid column.
+   */
+  actorName: string;
   settings: SalesSettings;
   /** `accounts.cogs_mode` — PERPETUAL writes the COGS pair, PERIODIC does not. */
   cogsMode: 'PERPETUAL' | 'PERIODIC';
@@ -38,6 +44,14 @@ export class SalesContextService {
   /** The caller's id, or the nil actor. Never null: every audit column wants one. */
   actor(): string {
     return this.requestContext.getUserId() ?? DEFAULT_ACTOR;
+  }
+
+  /**
+   * The caller's login name (`user_master.usr_login_name`) for a text audit
+   * column, or `actor()` when there is no such user — see SalesCallContext.
+   */
+  async actorName(client?: Prisma.TransactionClient): Promise<string> {
+    return loginNameOf(client ?? this.prisma, this.requestContext.getUserId());
   }
 
   async resolve(
@@ -64,6 +78,7 @@ export class SalesContextService {
     return {
       userId: userId ?? DEFAULT_ACTOR,
       actor: userId ?? DEFAULT_ACTOR,
+      actorName: await loginNameOf(client ?? this.prisma, userId),
       settings,
       cogsMode: cogs === 'PERIODIC' ? 'PERIODIC' : 'PERPETUAL',
       rights,
@@ -111,6 +126,20 @@ export class SalesContextService {
   hasRight(ctx: SalesCallContext, right: SalesRight): boolean {
     return ctx.rights[right] === true;
   }
+}
+
+async function loginNameOf(
+  client: Prisma.TransactionClient,
+  userId: string | null,
+): Promise<string> {
+  if (!isUuid(userId)) {
+    return userId ?? DEFAULT_ACTOR;
+  }
+  const user = await client.userMaster.findUnique({
+    where: { usrId: userId },
+    select: { usrLoginName: true },
+  });
+  return user?.usrLoginName.trim() || userId;
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

@@ -54,6 +54,8 @@ model AccOpeningBalance {
   ledger          AccLedgerMaster @relation(fields: [opLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_op_ledger")
   company         Company         @relation(fields: [opCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_op_company")
   branch          BranchMaster?   @relation(fields: [opBranchId], references: [brId], onUpdate: Cascade, onDelete: Restrict, map: "fk_op_branch")
+  /// NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).
+  opSyncDate DateTime? @db.Timestamptz(6) @map("op_sync_date")
 
   @@id([opId, opAccYear], map: "pk_acc_opening")
   @@map("acc_opening_balance")

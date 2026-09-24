@@ -28,6 +28,9 @@ let SalesPostingService = class SalesPostingService {
         }
         const ledgerByLeg = await this.resolveLegLedgers(tx, doc.header, legs);
         this.assertBalanced(doc.header, legs);
+        if (doc.header.restateVoucherId) {
+            return this.restateLegs(tx, doc, legs, ledgerByLeg, doc.header.restateVoucherId);
+        }
         const slno = await (0, voucher_sequence_helper_1.allocateVoucherSlno)(tx, doc.header.companyId, doc.header.accYear);
         const number = doc.header.presetRefno
             ? { refno: doc.header.presetRefno, lastNo: doc.header.presetNo ?? slno }
@@ -70,6 +73,99 @@ let SalesPostingService = class SalesPostingService {
       )
       RETURNING avh_voucher_id`;
         const voucherId = header.avh_voucher_id;
+        await this.insertLegs(tx, doc, legs, ledgerByLeg, voucherId, number);
+        const totals = sumSides(legs);
+        return {
+            voucherId,
+            voucherNo: number.refno,
+            voucherRefno: number.refno,
+            voucherSlno: slno,
+            voucherLastNo: number.lastNo,
+            postedOn,
+            totalDebit: totals.dr,
+            totalCredit: totals.cr,
+            legCount: legs.length,
+        };
+    }
+    async retireForRestate(tx, voucherId, accYear, actor = 'SYSTEM') {
+        const moved = await tx.$executeRaw `
+      UPDATE accounts.acc_voucher_header
+         SET avh_voucher_status = 'DRAFT',
+             avh_status_on      = now(),
+             avh_modified_on    = now(),
+             avh_modified_by    = ${actor}
+       WHERE avh_voucher_id = ${voucherId}::uuid
+         AND avh_acc_year   = ${accYear}::char(9)
+         AND avh_is_deleted = false
+         AND avh_voucher_status = 'POSTED'`;
+        if (moved === 0) {
+            return false;
+        }
+        await tx.$executeRaw `
+      UPDATE accounts.acc_vouchers
+         SET av_is_deleted   = true,
+             av_modified_on  = now(),
+             av_modified_by  = ${actor}
+       WHERE av_voucher_id = ${voucherId}::uuid
+         AND av_acc_year   = ${accYear}::char(9)
+         AND av_is_deleted = false`;
+        return true;
+    }
+    async restateLegs(tx, doc, legs, ledgerByLeg, voucherId) {
+        const accYear = doc.header.accYear;
+        const [kept] = await tx.$queryRaw `
+      SELECT avh_voucher_no, avh_voucher_slno, avh_voucher_refno
+        FROM accounts.acc_voucher_header
+       WHERE avh_voucher_id = ${voucherId}::uuid
+         AND avh_acc_year   = ${accYear}::char(9)
+         AND avh_is_deleted = false
+         AND avh_voucher_status = 'DRAFT'
+         FOR UPDATE`;
+        if (!kept) {
+            throw new Error(`${doc.header.srcDocType} ${doc.header.srcDocId}: voucher ${voucherId} is not in DRAFT — retireForRestate must run first`);
+        }
+        const number = { refno: kept.avh_voucher_refno, lastNo: kept.avh_voucher_no };
+        await tx.$executeRaw `
+      UPDATE accounts.acc_voucher_header
+         SET avh_voucher_date = ${doc.header.voucherDate}::date,
+             avh_usr_refno    = ${doc.header.usrRefno ?? null},
+             avh_doc_refno    = ${doc.header.docRefno ?? null},
+             avh_doc_date     = ${doc.header.docDate ?? doc.header.voucherDate}::date,
+             avh_doc_amount   = ${money(doc.header.docAmount)}::numeric,
+             avh_round_off    = ${money(doc.header.roundOff ?? 0)}::numeric,
+             avh_party_id     = ${doc.header.partyId}::uuid,
+             avh_remarks      = ${doc.header.remarks ?? null},
+             avh_user_id      = ${doc.header.userId}::uuid,
+             avh_session_id   = ${doc.header.sessionId ?? null}::uuid,
+             avh_revision_no  = avh_revision_no + 1,
+             avh_modified_on  = now(),
+             avh_modified_by  = ${doc.header.createdBy ?? 'SYSTEM'}
+       WHERE avh_voucher_id = ${voucherId}::uuid
+         AND avh_acc_year   = ${accYear}::char(9)`;
+        await this.insertLegs(tx, doc, legs, ledgerByLeg, voucherId, number);
+        const postedOn = new Date();
+        await tx.$executeRaw `
+      UPDATE accounts.acc_voucher_header
+         SET avh_voucher_status = 'POSTED',
+             avh_status_on      = now(),
+             avh_status_by      = ${doc.header.userId}::uuid,
+             avh_posted_on      = now()
+       WHERE avh_voucher_id = ${voucherId}::uuid
+         AND avh_acc_year   = ${accYear}::char(9)`;
+        const totals = sumSides(legs);
+        return {
+            voucherId,
+            voucherNo: number.refno,
+            voucherRefno: number.refno,
+            voucherSlno: kept.avh_voucher_slno,
+            voucherLastNo: number.lastNo,
+            postedOn,
+            totalDebit: totals.dr,
+            totalCredit: totals.cr,
+            legCount: legs.length,
+        };
+    }
+    async insertLegs(tx, doc, legs, ledgerByLeg, voucherId, number) {
         const values = legs.map((leg, i) => client_1.Prisma.sql `(
         ${voucherId}::uuid, ${doc.header.companyId}::uuid, ${doc.header.branchId}::uuid,
         ${doc.header.tenantId ?? null}::uuid, ${doc.header.accYear}::char(9),
@@ -102,18 +198,6 @@ let SalesPostingService = class SalesPostingService {
         av_created_by
       )
       VALUES ${client_1.Prisma.join(values)}`;
-        const totals = sumSides(legs);
-        return {
-            voucherId,
-            voucherNo: number.refno,
-            voucherRefno: number.refno,
-            voucherSlno: slno,
-            voucherLastNo: number.lastNo,
-            postedOn,
-            totalDebit: totals.dr,
-            totalCredit: totals.cr,
-            legCount: legs.length,
-        };
     }
     async reverseLegs(tx, voucherId, accYear, reason, actor = 'SYSTEM') {
         const [original] = await tx.$queryRaw `

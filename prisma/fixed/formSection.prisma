@@ -7,7 +7,7 @@ model FormSection {
   sectionPosition   Int     @default(0)                        @map("section_position")    // heading order
   sectionVisibility Boolean @default(true)                     @map("section_visibility")  // the heading's own checkbox
   sectionPlatform   String  @db.VarChar(255)                   @map("section_platform")    // platform scope
-  sectionSyncDate   DateTime @default(now())                    @map("section_sync_date")   // sync date
+  sectionSyncDate   DateTime?                                   @map("section_sync_date")   // sync date; NULL = not yet pushed to the cloud DB
   sectionCreatedOn DateTime @default(now())                    @map("section_created_on")   // created date
   sectionCreatedBy  String? @db.Text                   @map("section_created_by")   // created by
   sectionUpdatedOn DateTime @default(now())                    @map("section_updated_on")   // updated date
@@ -29,7 +29,7 @@ model FormField {
   fieldSecondaryText String?     @db.VarChar(255)              @map("field_secondary_text")  // the "Secondary Text" column
   fieldPosition      Int         @default(0)                   @map("field_position")        // order within the section
   fieldVisibility    Boolean     @default(true)                @map("field_visibility")      // the field's checkbox
-  fieldSyncDate      DateTime @default(now())                    @map("field_sync_date")   // sync date
+  fieldSyncDate      DateTime?                                   @map("field_sync_date")   // sync date; NULL = not yet pushed to the cloud DB
   fieldCreatedOn     DateTime @default(now())                    @map("field_created_on")   // created date
   fieldCreatedBy      String? @db.Text                   @map("field_created_by")   // created by
   fieldUpdatedOn     DateTime @default(now())                    @map("field_updated_on")   // updated date

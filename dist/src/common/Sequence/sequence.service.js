@@ -480,13 +480,12 @@ let SequenceService = class SequenceService {
     }
     async acquireLastNoScopeLock(client, scope) {
         await client.$queryRaw `
-      WITH advisory_lock AS (
-        SELECT pg_advisory_xact_lock(
-          hashtext(${SEQUENCE_LAST_NO_LOCK_NAMESPACE}),
-          hashtext(${this.buildLastNoScopeKey(scope)})
-        )
-      )
-      SELECT 1::int AS locked
+      -- The lock sits in the select list: an unreferenced CTE is never run,
+      -- so the old WITH advisory_lock AS (...) form took no lock at all.
+      SELECT count(pg_advisory_xact_lock(
+               hashtext(${SEQUENCE_LAST_NO_LOCK_NAMESPACE}),
+               hashtext(${this.buildLastNoScopeKey(scope)})
+             ))::int AS locked
     `;
     }
     async getNextLastNo(client, scope, excludeId) {

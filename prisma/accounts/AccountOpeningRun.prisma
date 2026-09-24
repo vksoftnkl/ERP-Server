@@ -50,6 +50,8 @@ model AccOpeningRun {
 
   company            Company       @relation(fields: [aorCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_aor_company")
   branch             BranchMaster? @relation(fields: [aorBranchId], references: [brId], onUpdate: Cascade, onDelete: Restrict, map: "fk_aor_branch")
+  /// NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).
+  aorSyncDate DateTime? @db.Timestamptz(6) @map("aor_sync_date")
 
   /// "When was this year last carried forward, and what happened?" — newest
   /// first, for one company and target year.

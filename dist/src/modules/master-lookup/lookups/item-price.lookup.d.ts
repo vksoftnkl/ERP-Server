@@ -9,5 +9,6 @@ export declare class ItemPriceLookup {
     private resolveNextIucId;
     private resolveLoadingCharge;
     private resolveFreightCharge;
+    private resolveTaxLedgers;
     getItemPriceLookup(query: ItemPriceLookupQueryDto): Promise<ItemPriceLookupPayload>;
 }

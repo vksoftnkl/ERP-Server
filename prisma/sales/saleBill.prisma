@@ -146,7 +146,12 @@ model SaleBill {
   sbSurchargeAmt     Decimal   @default(0) @db.Decimal(15, 2) @map("sb_surcharge_amt")
   sbTenderAmt        Decimal   @default(0) @db.Decimal(15, 2) @map("sb_tender_amt")
   sbRefundAmt        Decimal   @default(0) @db.Decimal(15, 2) @map("sb_refund_amt")
+  /// ADVANCE set-offs only — order and receipt advances (acc_bill_adjustment
+  /// ADVANCE_ADJUST). A credit note is a different liability; see sbNoteAdjAmt.
   sbAdvanceAmt       Decimal   @default(0) @db.Decimal(15, 2) @map("sb_advance_amt")
+  /// CREDIT-NOTE set-offs only — sale-return credit notes (NOTE_ADJUST).
+  /// sbAdvanceAmt + sbNoteAdjAmt is everything the bill's set-offs settle.
+  sbNoteAdjAmt       Decimal   @default(0) @db.Decimal(15, 2) @map("sb_note_adj_amt")
   sbPaidAmt          Decimal   @default(0) @db.Decimal(15, 2) @map("sb_paid_amt")
   sbBalanceAmt       Decimal   @default(0) @db.Decimal(15, 2) @map("sb_balance_amt")
   sbPayStatus        String    @default("UNPAID") @db.VarChar(20) @map("sb_pay_status")

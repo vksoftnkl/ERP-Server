@@ -15,7 +15,7 @@ export declare class SaveBillItemDto {
     sbiSrcItemQty?: string | number | null;
     sbiSrcFreeQty?: string | number | null;
     sbiSrcItemId?: string | null;
-    sbiBucket?: string | null;
+    sbiBucket?: string;
     sbiLotId?: string | null;
     sbiPromoUsageId?: string | null;
     sbiCogsAmt?: string | number | null;

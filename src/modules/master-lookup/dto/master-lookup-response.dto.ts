@@ -389,6 +389,14 @@ export class ItemPriceLookupPayloadDto {
       "Item's own item_incl_tax flag — whether the returned prices are tax-inclusive. Not affected by the company GST toggle.",
   })
   item_incl_tax!: boolean;
+  @ApiProperty({
+    nullable: true,
+    format: 'uuid',
+    description: 'inventory.tax_rate_master.tax_id the item defaults to.',
+  })
+  tax_id!: string | null;
+  @ApiProperty({ nullable: true, example: '33049990', description: 'item_master.item_hsn_code.' })
+  hsn_code!: string | null;
   @ApiProperty({ example: 0 })
   gst_rate!: number;
   @ApiProperty({ example: 0 })

@@ -6,6 +6,10 @@ import {
   toNumber,
 } from '../../../common/utils/module-service.utils';
 import { PrismaService } from '../../../database/prisma/prisma.service';
+import {
+  resolveRoleLedgers,
+  roleLedgerKey,
+} from '../../accountsModule/ledgerRole/ledger-map.helper';
 import { ItemPriceLookupQueryDto } from '../dto/item-price-lookup-query.dto';
 import { ItemPriceRefreshQueryDto } from '../dto/item-price-refresh-query.dto';
 import { DEFAULT_FREIGHT_TYPE, DEFAULT_LOADING_TYPE } from '../master-lookup.constants';
@@ -18,6 +22,21 @@ import {
   selectUnitRate,
 } from '../utils/item-price.utils';
 import { resolveLoadingWeight, selectLoadingSlab } from '../utils/loading-charge.utils';
+
+/**
+ * The posting roles the payload names a ledger for, keyed by the payload field.
+ * The ledgers are no longer columns on the rate: they resolve per role through
+ * tax_rate_ledger (the rate's override) then acc_ledger_map (the default).
+ */
+const TAX_LEDGER_ROLES = {
+  sales_ledger_id: 'SALES',
+  sgst_output_ledger_id: 'OUTPUT_SGST',
+  cgst_output_ledger_id: 'OUTPUT_CGST',
+  igst_output_ledger_id: 'OUTPUT_IGST',
+  cess_output_ledger_id: 'OUTPUT_CESS',
+} as const;
+
+type TaxLedgerResolution = Record<keyof typeof TAX_LEDGER_ROLES, string | null>;
 
 /** The loading-charge block of the payload, resolved as one unit. */
 type LoadingChargeResolution = Pick<ItemPriceLookupPayload, 'loading_charge' | 'resolved_weight'>;
@@ -210,6 +229,28 @@ export class ItemPriceLookup {
     return charge > 0 ? charge : null;
   }
 
+  /**
+   * Where a line taxed under `taxId` would post, one ledger per role. Nothing
+   * mapped is null, not an error — this is a price lookup, and posting raises
+   * the gap itself with the line it belongs to.
+   */
+  private async resolveTaxLedgers(
+    taxId: string | null,
+    query: ItemPriceLookupQueryDto,
+  ): Promise<TaxLedgerResolution> {
+    const requests = Object.values(TAX_LEDGER_ROLES).map((role) => ({ role, taxId }));
+    const resolved = await resolveRoleLedgers(this.prisma, requests, {
+      companyId: query.company_id ?? null,
+      branchId: query.branch_id ?? null,
+      where: 'item_price_lookup',
+    });
+    const entries = Object.entries(TAX_LEDGER_ROLES).map(([field, role]) => [
+      field,
+      resolved.get(roleLedgerKey({ role, taxId }))?.ledgerId ?? null,
+    ]);
+    return Object.fromEntries(entries) as TaxLedgerResolution;
+  }
+
   async getItemPriceLookup(query: ItemPriceLookupQueryDto): Promise<ItemPriceLookupPayload> {
     const { item_id, unit_id, company_id, branch_id, customer_id, acccyear } = query;
     const priceLevel = query.price_level;
@@ -268,8 +309,10 @@ export class ItemPriceLookup {
       godownId
         ? this.prisma.godownLocation.findFirst({ where: { gdlId: godownId } })
         : Promise.resolve(null),
+      // item_default_tax_id points at tax_rate_master since
+      // 20260912110000_repoint_items_to_tax_rate_master; item_tax_master is retired.
       itemRecord.itemDefaultTaxId
-        ? this.prisma.itemTaxMaster.findFirst({
+        ? this.prisma.taxRateMaster.findFirst({
             where: { taxId: itemRecord.itemDefaultTaxId, taxIsDeleted: false },
           })
         : Promise.resolve(null),
@@ -311,6 +354,7 @@ export class ItemPriceLookup {
       // resolve from what is already in hand.
       this.resolveLoadingCharge(query, rate),
     ]);
+    const taxLedgers = await this.resolveTaxLedgers(tax?.taxId ?? null, query);
     // 4. Derived values.
     // Without a company there is nothing to switch GST off, so the item's own
     // tax block stands; a supplied company still decides as before.
@@ -385,17 +429,22 @@ export class ItemPriceLookup {
       // Straight off the item — the GST toggle zeroes the perc fields below but
       // does not change whether the item's stored prices include tax.
       item_incl_tax: itemRecord.itemInclTax,
-      gst_rate: gstApplicable && tax ? toNumber(tax.taxGstRateTotal) : 0,
-      cess_perc: gstApplicable && tax ? toNumber(tax.taxCessPerc) : 0,
-      cess_unit: gstApplicable && tax ? toNumber(tax.taxCessUnit) : 0,
-      sgst_perc: gstApplicable && tax ? toNumber(tax.taxSgstPerc) : 0,
-      cgst_perc: gstApplicable && tax ? toNumber(tax.taxCgstPerc) : 0,
-      igst_perc: gstApplicable && tax ? toNumber(tax.taxIgstPerc) : 0,
-      sales_ledger_id: tax?.taxSalesLedgerId ?? null,
-      sgst_output_ledger_id: tax?.taxSgstOutputLedgerId ?? null,
-      cgst_output_ledger_id: tax?.taxCgstOutputLedgerId ?? null,
-      igst_output_ledger_id: tax?.taxIgstOutputLedgerId ?? null,
-      cess_output_ledger_id: tax?.taxCessOutputLedgerId ?? null,
+      tax_id: tax?.taxId ?? null,
+      hsn_code: itemRecord.itemHsnCode ?? null,
+      gst_rate: gstApplicable && tax ? toNumber(tax.taxRatePerc) : 0,
+      // The rate says which cess figure is in play; the other is not charged.
+      cess_perc:
+        gstApplicable && tax && ['PERCENT', 'BOTH'].includes(tax.taxCessBasis)
+          ? toNumber(tax.taxCessPerc)
+          : 0,
+      cess_unit:
+        gstApplicable && tax && ['PER_UNIT', 'BOTH'].includes(tax.taxCessBasis)
+          ? toNumber(tax.taxCessPerUnit)
+          : 0,
+      sgst_perc: gstApplicable && tax ? toNumber(tax.taxSgstPerc ?? 0) : 0,
+      cgst_perc: gstApplicable && tax ? toNumber(tax.taxCgstPerc ?? 0) : 0,
+      igst_perc: gstApplicable && tax ? toNumber(tax.taxIgstPerc ?? 0) : 0,
+      ...taxLedgers,
     };
   }
 }

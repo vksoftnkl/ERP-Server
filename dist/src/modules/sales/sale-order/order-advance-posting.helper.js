@@ -14,6 +14,7 @@ const ORDER_SRC_DOC_TYPE = 'SALES_ORDER';
 const DR = 'DR';
 const CR = 'CR';
 const VOUCHER_STATUS_POSTED = 'POSTED';
+const VOUCHER_STATUS_DRAFT = 'DRAFT';
 const VOUCHER_STATUS_CANCELLED = 'CANCELLED';
 const ORDER_STATUS_CANCELLED = 'CANCELLED';
 const UNPOST_CANCEL_REASON = 'Sale order no longer holds tendered money';
@@ -58,16 +59,11 @@ async function postOrderAdvanceToAccounts(tx, order, tenders, actor, postedOn) {
             avhDocDate: order.soOrderDate,
             avhDocAmount: order.soOrderAmt ?? ZERO,
             avhRoundOff: order.soRoundOff ?? ZERO,
-            avhTotalDebit: totalAmount,
-            avhTotalCredit: totalAmount,
             avhPartyId: order.soCustId,
             avhOppositeLedgerId: creditLedgerId,
             avhEmployeeId: order.soSalesmanId ?? [],
             avhRemarks: order.soRemarks,
-            avhVoucherStatus: VOUCHER_STATUS_POSTED,
-            avhStatusOn: postedOn,
-            avhStatusBy: order.soUserId,
-            avhPostedOn: postedOn,
+            avhVoucherStatus: VOUCHER_STATUS_DRAFT,
             avhUserId: order.soUserId,
             avhSessionId: order.soSessionId,
             avhDeviceType: null,
@@ -89,6 +85,7 @@ async function postOrderAdvanceToAccounts(tx, order, tenders, actor, postedOn) {
         actor,
         now: postedOn,
     });
+    await markPosted(tx, header.avhVoucherId, order.soAccYear, order.soUserId, postedOn);
     await stampTenderVoucher(tx, order, header.avhVoucherId);
     const pdcIds = await (0, order_pdc_posting_helper_1.syncOrderPdcRegister)(tx, order, postable, { voucherId: header.avhVoucherId, accYear: order.soAccYear }, actor, postedOn);
     const billId = await syncAdvanceBill(tx, order, {
@@ -258,6 +255,17 @@ function ensureLedgersDiffer(tenders, creditLedgerId, surchargeLedgers) {
         }
     }
 }
+async function markPosted(tx, voucherId, accYear, userId, on, opts = {}) {
+    await tx.accVoucherHeader.update({
+        where: { avhVoucherId_avhAccYear: { avhVoucherId: voucherId, avhAccYear: accYear } },
+        data: {
+            avhVoucherStatus: VOUCHER_STATUS_POSTED,
+            avhStatusOn: on,
+            avhStatusBy: userId,
+            ...(opts.keepPostedOn ? {} : { avhPostedOn: on }),
+        },
+    });
+}
 async function writeVoucherLines(tx, context) {
     const { order, creditLedgerId, surchargeLedgers } = context;
     const lineIds = [];
@@ -391,8 +399,7 @@ async function resyncPostedVoucher(tx, order, tenders, live, actor, now) {
             avhDocDate: order.soOrderDate,
             avhDocAmount: order.soOrderAmt ?? ZERO,
             avhRoundOff: order.soRoundOff ?? ZERO,
-            avhTotalDebit: totalAmount,
-            avhTotalCredit: totalAmount,
+            avhVoucherStatus: VOUCHER_STATUS_DRAFT,
             avhPartyId: order.soCustId,
             avhOppositeLedgerId: creditLedgerId,
             avhEmployeeId: order.soSalesmanId ?? [],
@@ -413,6 +420,9 @@ async function resyncPostedVoucher(tx, order, tenders, live, actor, now) {
         voucherDate: live.avhVoucherDate,
         actor,
         now,
+    });
+    await markPosted(tx, live.avhVoucherId, live.avhAccYear, order.soUserId, now, {
+        keepPostedOn: true,
     });
     await stampTenderVoucher(tx, order, live.avhVoucherId);
     const pdcIds = await (0, order_pdc_posting_helper_1.syncOrderPdcRegister)(tx, order, tenders, { voucherId: live.avhVoucherId, accYear: live.avhAccYear }, actor, now);

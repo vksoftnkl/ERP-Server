@@ -38,6 +38,7 @@ export interface SalesVoucherHeader {
     createdBy?: string;
     presetRefno?: string | null;
     presetNo?: bigint | null;
+    restateVoucherId?: string | null;
 }
 export interface SalesLegSource {
     header: SalesVoucherHeader;
@@ -91,11 +92,15 @@ export interface BillLegInput {
     schemeDiscount: number;
     roundOff: number;
     tcsAmount: number;
-    advanceAdjusted: number;
+    setOffs: SetOffLegInput[];
     tenders: TenderLegInput[];
     cogsAmount: number;
 }
-export interface ReturnLegInput extends Omit<BillLegInput, 'tcsAmount' | 'advanceAdjusted'> {
+export interface ReturnLegInput extends Omit<BillLegInput, 'tcsAmount' | 'setOffs'> {
     tcsAmount?: number;
-    advanceAdjusted?: number;
+}
+export interface SetOffLegInput {
+    ledgerId: string;
+    amount: number;
+    remarks?: string | null;
 }

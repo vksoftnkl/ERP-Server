@@ -368,6 +368,7 @@ advances cannot — they have nothing to do with a rate.']
   ledgerMaps acc_ledger_map [not null, note: 'The role -> ledger rows that name this role.']
   taxRateLedgers tax_rate_ledger [not null, note: 'The per-GST-rate overrides that name this role.']
   voucherLines acc_vouchers [not null, note: 'The voucher legs posted under this role (acc_vouchers.av_role).']
+  alrSyncDate DateTime [note: 'NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).']
 
   Note: 'Every posting role, what kind of ledger it may take, and which dimensions it
 may be varied along. The single definition that acc_ledger_map and
@@ -408,6 +409,7 @@ ck_op_stale_ref keeps the pair set or unset together.']
   ledger acc_ledger_master [not null]
   company companys [not null]
   branch branch_master
+  opSyncDate DateTime [note: 'NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).']
 
   indexes {
     (opId, opAccYear) [pk]
@@ -445,6 +447,7 @@ most important thing to know about a run after the fact.']
   aorRemarks String
   company companys [not null]
   branch branch_master
+  aorSyncDate DateTime [note: 'NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).']
 
   Note: 'One row per carry-forward run, never updated — the history that
 fiscal_years overwrites. fyIsCarriedForward / fyCarriedForwardAt record
@@ -615,6 +618,7 @@ Table acc_tcs_register {
   party acc_ledger_master [not null]
   reversalOf acc_tcs_register
   reversals acc_tcs_register [not null]
+  atcSyncDate DateTime [note: 'NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).']
 
   Note: '§2.14 — the 27EQ / 26Q projection.
 
@@ -722,6 +726,7 @@ Table acc_tds_register {
   party acc_ledger_master [not null]
   reversalOf acc_tds_register
   reversals acc_tds_register [not null]
+  atdSyncDate DateTime [note: 'NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).']
 
   Note: 'The 26Q side. Same shape, same rules, different form — see the header
 comment on `AccTcsRegister` above, which covers both.
@@ -1417,6 +1422,7 @@ Table acc_voucher_seq {
   voucherType acc_voucher_types [not null]
   company companys [not null]
   branch branch_master [not null]
+  seqSyncDate DateTime [note: 'NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).']
 
   indexes {
     (vchrTypeId, companyId, branchId, accYear, deviceCode, periodKey) [unique]
@@ -1539,6 +1545,7 @@ Table audit_log {
   logIp String
   logAppName String
   logNotes String
+  logSyncDate DateTime [note: 'NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).']
 }
 
 Table audit_screen {
@@ -1553,6 +1560,7 @@ Table audit_screen {
   screenModifiedOn DateTime
   screenModifiedBy String
   auditLogs audit_log [not null]
+  screenSyncDate DateTime [note: 'NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).']
 }
 
 Table user_login_sessions {
@@ -1687,7 +1695,7 @@ Table form_section {
   sectionPosition Int [not null, default: 0]
   sectionVisibility Boolean [not null, default: true]
   sectionPlatform String [not null]
-  sectionSyncDate DateTime [default: `now()`, not null]
+  sectionSyncDate DateTime
   sectionCreatedOn DateTime [default: `now()`, not null]
   sectionCreatedBy String
   sectionUpdatedOn DateTime [default: `now()`, not null]
@@ -1705,7 +1713,7 @@ Table form_field {
   fieldSecondaryText String
   fieldPosition Int [not null, default: 0]
   fieldVisibility Boolean [not null, default: true]
-  fieldSyncDate DateTime [default: `now()`, not null]
+  fieldSyncDate DateTime
   fieldCreatedOn DateTime [default: `now()`, not null]
   fieldCreatedBy String
   fieldUpdatedOn DateTime [default: `now()`, not null]
@@ -1792,6 +1800,7 @@ Table gsp_provider_master {
   gspCreatedBy String
   gspModifiedOn DateTime [default: `now()`, not null]
   gspModifiedBy String
+  gspSyncDate DateTime [note: 'NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).']
 }
 
 Table hsn_master {
@@ -1803,6 +1812,7 @@ Table hsn_master {
   hsnUqc String
   hsnIsActive Boolean [not null, default: true]
   hsnRateOfTax Decimal [not null, default: 0]
+  hsnSyncDate DateTime [note: 'NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).']
 }
 
 Table menu_master {
@@ -1819,6 +1829,14 @@ Table menu_master {
   menuIconLocationMobile String
   menuSeparator Boolean [not null, default: false]
   menuIsActive Boolean [not null, default: true]
+  menuVerbs String[] [not null, note: 'What this screen can DO (migration 20260922170000). The permissions grid
+renders a cell only for a verb listed here — no checkbox at all for one
+that is absent, because an unchecked box means DENIED and that is a
+different statement from "this screen has nothing to post".
+
+VIEW CREATE EDIT DELETE PRINT EXPORT · every screen
+POST CANCEL AMEND OVERRIDE           · documents that reach the ledger
+RETENDER                             · Sales Entry (12) alone']
   menuCreatedOn DateTime [default: `now()`, not null]
   menuModifiedOn DateTime
   menuSyncDate DateTime
@@ -1873,6 +1891,7 @@ Table stock_adj_reasons {
   sarCreatedBy String
   sarModifiedOn DateTime
   sarModifiedBy String
+  sarSyncDate DateTime [note: 'NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).']
 }
 
 Table ui_tables {
@@ -1981,6 +2000,7 @@ Table godown_locations {
   saleDcReturnItems sale_dc_return_item [not null]
   transportBandsFrom txn_transport_detail [not null]
   transportBandsTo txn_transport_detail [not null]
+  gdlSyncDate DateTime [note: 'NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).']
 
   indexes {
     (gdlBranchId, gdlParentId, gdlName) [unique]
@@ -2011,6 +2031,7 @@ Table item_batch_master {
   btmUpdatedOn DateTime
   btmUpdatedBy String
   batchStocks item_batch_stock [not null]
+  btmSyncDate DateTime [note: 'NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).']
   loyaltyGiftItems loyalty_gift_redeem_item [not null]
 }
 
@@ -2053,6 +2074,7 @@ Table item_batch_stock {
   ibsUpdatedOn DateTime
   ibsUpdatedBy String
   batch item_batch_master [not null]
+  ibsSyncDate DateTime [note: 'NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).']
 
   indexes {
     (ibsAccYear, ibsCompanyId, ibsBranchId, ibsGodownId, ibsItemId, ibsBatchId, ibsStockBucket) [unique]
@@ -2099,6 +2121,7 @@ Table item_ean_codes {
   eanModifiedBy String
   eanRemarks String
   itemUnitConversion item_unit_conversion [not null]
+  eanSyncDate DateTime [note: 'NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).']
 }
 
 Table item_group_master {
@@ -2145,7 +2168,7 @@ Table item_gst_units {
   itemGstUnitCreatedBy String
   itemGstUnitModifiedOn DateTime [default: `now()`, not null]
   itemGstUnitModifiedBy String
-  itemGstUnitSyncDate DateTime [default: `now()`, not null]
+  itemGstUnitSyncDate DateTime
   units item_unit_master [not null]
 }
 
@@ -2258,6 +2281,7 @@ changes nothing until this item is explicitly re-saved.']
   saleReturnItems sale_return_item [not null]
   saleDcItems sale_dc_item [not null]
   saleDcReturnItems sale_dc_return_item [not null]
+  itemSyncDate DateTime [note: 'NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).']
 }
 
 Table item_price_levels {
@@ -2268,7 +2292,7 @@ Table item_price_levels {
   iplAdmin Boolean [not null, default: false]
   iplIsDeleted Boolean [not null, default: false]
   iplCreatedOn DateTime [default: `now()`, not null]
-  iplSyncDate DateTime [default: `now()`, not null]
+  iplSyncDate DateTime
   iplCreatedBy String [not null]
   iplModifiedOn DateTime [default: `now()`, not null]
   iplModifiedBy String [not null]
@@ -2389,6 +2413,7 @@ Table item_reorders {
   irModifiedBy String
   item item_master [not null]
   itemUnitConversion item_unit_conversion
+  irSyncDate DateTime [note: 'NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).']
 
   indexes {
     (irItemId, irUcUnitId, irGodownId) [unique]
@@ -2523,6 +2548,7 @@ Table item_tax_history {
   ithCreatedBy String
   item item_master [not null]
   tax tax_rate_master [not null]
+  ithSyncDate DateTime [note: 'NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).']
 }
 
 Table item_tax_master {
@@ -2793,6 +2819,7 @@ Table app_theme_master {
   thmIsActive Boolean [not null, default: true]
   thmIsDeleted Boolean [not null, default: false]
   company companys [not null]
+  thmSyncDate DateTime [note: 'NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).']
 }
 
 Table batches_prefix {
@@ -3102,6 +3129,7 @@ Table company_aato {
   caaModifiedOn DateTime
   caaModifiedBy String
   company companys [not null]
+  caaSyncDate DateTime [note: 'NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).']
 
   indexes {
     (caaCompanyId, caaFinYear) [unique]
@@ -3158,6 +3186,7 @@ until then, where carry-forward needs to be able to trust \'CLOSED\'.']
   deletedBy String
   prevFiscalYear fiscal_years
   nextFiscalYears fiscal_years [not null]
+  fySyncDate DateTime [note: 'NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).']
 }
 
 Table gst_api_log {
@@ -3810,6 +3839,7 @@ render happened in — a reprint of last year\'s bill is logged this year.']
   version print_template_version [not null]
   printer printer_profile
   printedByUser user_master
+  plgSyncDate DateTime [note: 'NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).']
 
   indexes {
     (plgId, plgAccYear) [pk]
@@ -4439,6 +4469,21 @@ LIMIT 1
 No row means NOT APPLICABLE, and a guard must say so out loud rather than
 defaulting to a number. Cache per REQUEST, never per process — the answer
 changes with the DOCUMENT\'s date, not with today\'s.'
+}
+
+Table sync_deleted_rows {
+  sdrId BigInt [pk, increment]
+  sdrSchema String [not null, note: 'The partitioned PARENT when the row lived in a partition.']
+  sdrTable String [not null]
+  sdrPk Json [not null, note: '{pk_column: value, ...} of the deleted row.']
+  sdrDeletedOn DateTime [default: `now()`, not null]
+  sdrSyncDate DateTime [note: 'NULL until the DELETE has been replayed on the cloud DB.']
+
+  Note: 'Tombstones for offline -> cloud sync. An AFTER DELETE trigger
+(public.fn_sync_log_delete, installed by public.sync_install_triggers() on
+every table in public.v_sync_tables) writes one row per hard-deleted row;
+CloudSyncService replays it on the cloud DB and stamps sdrSyncDate.
+The partial index ix_sdr_pending (WHERE sdr_sync_date IS NULL) is DB-only.'
 }
 
 Table txn_charge_detail {
@@ -5142,6 +5187,7 @@ Table cust_groups {
   promotionSchemeParties promotion_scheme_party [not null]
   loyaltySchemeParties loyalty_scheme_party [not null]
   couponBatches loyalty_coupon_batch [not null]
+  cgrSyncDate DateTime [note: 'NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).']
 }
 
 Table employee_departments {
@@ -5270,6 +5316,7 @@ Table cust_item_rates {
   csrUploadedAt DateTime
   csrUploadedBy String
   csrRemarks String
+  csrSyncDate DateTime [note: 'NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).']
 }
 
 Table loyalty_coupon {

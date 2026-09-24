@@ -143,7 +143,10 @@ export interface BillSnapshot {
   roundOff: number;
   tcsAmt: number;
   billAmt: number;
+  /** ADVANCE set-offs (sb_advance_amt). */
   advanceAmt: number;
+  /** Credit-note set-offs (sb_note_adj_amt). */
+  noteAdjAmt: number;
   paidAmt: number;
   tenderAmt: number;
   items: BillSnapshotItem[];
@@ -210,6 +213,7 @@ export function snapshotFromRows(
     tcsAmt: num(bill.sbTcsAmt),
     billAmt: num(bill.sbBillAmt),
     advanceAmt: num(bill.sbAdvanceAmt),
+    noteAdjAmt: num(bill.sbNoteAdjAmt),
     paidAmt: num(bill.sbPaidAmt),
     tenderAmt: num(bill.sbTenderAmt),
     items: items.map((i) => ({
@@ -363,6 +367,7 @@ export function snapshotFromDto(
     tcsAmt: num(dto.sbTcsAmt),
     billAmt: num(dto.sbBillAmt),
     advanceAmt: num(dto.sbAdvanceAmt),
+    noteAdjAmt: num(dto.sbNoteAdjAmt),
     paidAmt: num(dto.sbPaidAmt),
     tenderAmt: num(dto.sbTenderAmt),
     items: (dto.items ?? []).map((i, idx) => ({
@@ -479,6 +484,11 @@ export function cashTendered(snap: BillSnapshot): number {
       .filter((t) => t.tenderTypeId === TENDER_TYPE.CASH)
       .reduce((s, t) => s + t.amount, 0),
   );
+}
+
+/** Everything the bill's set-offs settle: advances plus credit notes. */
+export function setOffAmtOf(snap: BillSnapshot): number {
+  return round2(snap.advanceAmt + snap.noteAdjAmt);
 }
 
 /** What the party is debited for — the same arithmetic as `buildBillLegs`. */

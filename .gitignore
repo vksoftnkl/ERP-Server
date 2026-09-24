@@ -20,3 +20,9 @@ release/erp-server-win.exe
 artifacts/reporting-samples
 artifacts/reporting-spikes
 artifacts/bulk-print
+
+# Cloud sync feature: kept local, not pushed to GitHub
+src/modules/cloud-sync/
+dist/src/modules/cloud-sync/
+prisma/migrations/20260923120000_offline_cloud_sync/
+prisma/public/syncDeletedRows.prisma

@@ -201,6 +201,7 @@ export class BillRetenderService {
         TenderSrcModule.SALES,
         TenderSrcDocType.SALE_BILL,
         bill.sbId,
+        tx,
       );
       const keep = existing.map((t) => ({ tdId: t.tdId }) as never);
       const created = await this.tenders.syncDocumentTenders(
@@ -275,6 +276,26 @@ export class BillRetenderService {
             });
           }
         }
+        // Each re-tender is its OWN document. `ux_avh_src` and `ux_avh_doc_refno`
+        // admit one live voucher per source and per party+refno, so a contra
+        // keyed on the bill left room for exactly one re-tender: the second
+        // answered 23505. The source is the tender row this event voided — a
+        // row can be voided once, so no two contras share it, and it leads back
+        // to the bill through td_src_doc_id — and the refno counts the bill's
+        // re-tenders. The first form (src = the bill) is still counted.
+        const [prior] = await tx.$queryRaw<{ n: bigint }[]>`
+          SELECT COUNT(*) AS n FROM accounts.acc_voucher_header h
+           WHERE h.avh_company_id = ${bill.sbCompanyId}::uuid
+             AND h.avh_acc_year = ${bill.sbAccYear}::char(9)
+             AND h.avh_src_module = 'SALES' AND h.avh_src_doc_type = 'SALE_BILL_RETENDER'
+             AND h.avh_is_deleted = false
+             AND (h.avh_src_doc_id = ${bill.sbId}::uuid
+                  OR h.avh_src_doc_id IN (
+                    SELECT t.td_id FROM accounts.acc_tender_detail t
+                     WHERE t.td_src_module = 'SALES' AND t.td_src_doc_type = 'SALE_BILL'
+                       AND t.td_src_doc_id = ${bill.sbId}::uuid
+                       AND t.td_acc_year = ${bill.sbAccYear}::char(9)))`;
+        const round = Number(prior?.n ?? 0) + 1;
         await this.legs.postLegs(tx, {
           header: {
             companyId: bill.sbCompanyId,
@@ -285,8 +306,8 @@ export class BillRetenderService {
             voucherDate: isoToday(),
             srcModule: 'SALES',
             srcDocType: 'SALE_BILL_RETENDER',
-            srcDocId: bill.sbId,
-            docRefno: bill.sbBillRefno,
+            srcDocId: replaces,
+            docRefno: bill.sbBillRefno ? `${bill.sbBillRefno}/RT${round}` : null,
             docDate: docDate,
             docAmount: newTotal,
             partyId: bill.sbCustId,
@@ -325,7 +346,9 @@ export class BillRetenderService {
           FROM accounts.acc_tender_detail
          WHERE td_src_module = 'SALES' AND td_src_doc_type = 'SALE_BILL' AND td_src_doc_id = ${bill.sbId}::uuid
            AND td_acc_year = ${bill.sbAccYear}::char(9) AND td_is_deleted = false AND td_is_voided = false`;
-      const paid = round2(num(live[0]?.settled) + num(bill.sbAdvanceAmt));
+      const paid = round2(
+        num(live[0]?.settled) + num(bill.sbAdvanceAmt) + num(bill.sbNoteAdjAmt),
+      );
       const balance = round2(num(bill.sbBillAmt) - paid);
       await tx.saleBill.update({
         where: { sbId_sbAccYear: { sbId: bill.sbId, sbAccYear: bill.sbAccYear } },
@@ -335,7 +358,7 @@ export class BillRetenderService {
           sbBalanceAmt: new Prisma.Decimal(balance.toFixed(2)),
           sbPayStatus: balance <= 0.005 ? 'PAID' : paid > 0 ? 'PARTIAL' : 'UNPAID',
           sbModifiedOn: now,
-          sbModifiedBy: actor,
+          sbModifiedBy: ctx.actorName,
         },
       });
       await appendTxnStatusLog(tx, {

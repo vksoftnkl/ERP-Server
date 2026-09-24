@@ -31,6 +31,7 @@ const sales_errors_1 = require("../posting/sales.errors");
 const posting_types_1 = require("../posting/types/posting.types");
 const sales_doc_utils_1 = require("../posting/sales-doc.utils");
 const bill_read_service_1 = require("./bill-read.service");
+const bill_adjustment_helper_1 = require("./bill-adjustment.helper");
 const bill_temp_credit_1 = require("./bill-temp-credit");
 const txn_status_log_helper_1 = require("../../../common/txn-status-log/txn-status-log.helper");
 const BILL_VCHR_TYPE_ID = 3;
@@ -138,6 +139,7 @@ const BILL_OPTIONAL_FIELDS = [
     'sbTenderAmt',
     'sbRefundAmt',
     'sbAdvanceAmt',
+    'sbNoteAdjAmt',
     'sbPaidAmt',
     'sbBalanceAmt',
     'sbPayStatus',
@@ -397,8 +399,8 @@ let BillService = class BillService {
                 where: { sbiBillId: bill.sbId, sbiAccYear: bill.sbAccYear, sbiIsDeleted: false },
                 orderBy: [{ sbiLineNo: 'asc' }, { sbiSplitNo: 'asc' }],
             }),
-            this.chargeDetailService.getByDocument(bill_api_types_1.BILL_CHARGE_DOC_TYPE, bill.sbId),
-            this.tenderDetailService.getByDocument(bill_api_types_1.BILL_TENDER_SRC_MODULE, bill_api_types_1.BILL_TENDER_SRC_DOC_TYPE, bill.sbId),
+            this.chargeDetailService.getByDocument(bill_api_types_1.BILL_CHARGE_DOC_TYPE, bill.sbId, undefined, tx),
+            this.tenderDetailService.getByDocument(bill_api_types_1.BILL_TENDER_SRC_MODULE, bill_api_types_1.BILL_TENDER_SRC_DOC_TYPE, bill.sbId, tx),
         ]);
         return { items, charges, tenders };
     }
@@ -423,7 +425,11 @@ let BillService = class BillService {
             await this.transportBand.remove(tx, { docType: 'SALE_BILL', docId: existing.sbId, accYear: existing.sbAccYear }, actor);
             await tx.saleBill.update({
                 where: { sbId_sbAccYear: { sbId: existing.sbId, sbAccYear: existing.sbAccYear } },
-                data: { sbIsDeleted: true, sbModifiedOn: now, sbModifiedBy: actor },
+                data: {
+                    sbIsDeleted: true,
+                    sbModifiedOn: now,
+                    sbModifiedBy: await this.salesContext.actorName(tx),
+                },
             });
             await this.saleOrderService.syncOrderFulfilment(tx, { refs: [...this.toOrderHeaderRefs(existing), ...this.toOrderLineRefs(items)] }, actor, now);
             await (0, txn_status_log_helper_1.appendTxnStatusLog)(tx, {
@@ -684,7 +690,6 @@ let BillService = class BillService {
             return;
         }
         const partyId = this.requireCustomerLedgerId(bill.sbCustId, 'adjustments');
-        let total = 0;
         for (const [index, adj] of adjustments.entries()) {
             const [credit] = await tx.$queryRaw `
         SELECT abl_party_id, abl_dr_cr, abl_pending_amount
@@ -707,16 +712,22 @@ let BillService = class BillService {
                     },
                 ]);
             }
-            total += (0, sales_doc_utils_1.num)(adj.amount);
         }
-        const declared = (0, sales_doc_utils_1.num)(bill.sbAdvanceAmt);
-        if (Math.abs(declared - total) > 0.01) {
-            (0, module_service_utils_1.throwSalesBadRequest)('Bill cannot be saved', [
-                {
-                    field: 'sbAdvanceAmt',
-                    message: `adjustments total ${total.toFixed(2)} but sbAdvanceAmt says ${declared.toFixed(2)}`,
-                },
-            ]);
+        const split = (0, bill_adjustment_helper_1.splitSetOffs)(adjustments, await (0, bill_adjustment_helper_1.loadSetOffCredits)(tx, adjustments));
+        const errors = [];
+        for (const [field, total, declared, kind] of [
+            ['sbAdvanceAmt', split.advance, (0, sales_doc_utils_1.num)(bill.sbAdvanceAmt), 'advance'],
+            ['sbNoteAdjAmt', split.note, (0, sales_doc_utils_1.num)(bill.sbNoteAdjAmt), 'credit-note'],
+        ]) {
+            if (Math.abs(declared - total) > 0.01) {
+                errors.push({
+                    field,
+                    message: `${kind} adjustments total ${total.toFixed(2)} but ${field} says ${declared.toFixed(2)}`,
+                });
+            }
+        }
+        if (errors.length > 0) {
+            (0, module_service_utils_1.throwSalesBadRequest)('Bill cannot be saved', errors);
         }
     }
     async syncItems(tx, scope, inputItems, actorId) {
@@ -760,6 +771,7 @@ let BillService = class BillService {
                 data: { sbiLineNo: { increment: Math.max(...seenLineNos) + 1 } },
             });
         }
+        const itemTaxIds = await this.loadItemTaxIds(tx, resolvedItems.map(({ inputItem }) => inputItem.sbiItemId));
         const persisted = [];
         for (const { inputItem, lineNo } of resolvedItems) {
             if (inputItem.sbiId) {
@@ -773,6 +785,7 @@ let BillService = class BillService {
                     sbiGodownId: inputItem.sbiGodownId ?? existingItem.sbiGodownId,
                     sbiStockId: inputItem.sbiStockId ?? existingItem.sbiStockId,
                     sbiPriceLevel: inputItem.sbiPriceLevel ?? scope.sbPriceLevel,
+                    sbiTaxId: itemTaxIds.get(inputItem.sbiItemId ?? existingItem.sbiItemId) ?? existingItem.sbiTaxId,
                     sbiModifiedOn: now,
                     sbiModifiedBy: (0, module_service_utils_1.resolveActor)(inputItem.sbiModifiedBy, actorId),
                 };
@@ -812,6 +825,7 @@ let BillService = class BillService {
                 sbiGodownId: this.requireItemField(inputItem.sbiGodownId, 'sbiGodownId'),
                 sbiStockId: inputItem.sbiStockId ?? null,
                 sbiPriceLevel: inputItem.sbiPriceLevel ?? scope.sbPriceLevel,
+                sbiTaxId: itemTaxIds.get(inputItem.sbiItemId ?? '') ?? null,
                 sbiCreatedOn: now,
                 sbiCreatedBy: (0, module_service_utils_1.resolveActor)(inputItem.sbiCreatedBy, actorId),
             };
@@ -832,6 +846,17 @@ let BillService = class BillService {
             persisted.push(created);
         }
         return persisted.sort((left, right) => left.sbiLineNo - right.sbiLineNo);
+    }
+    async loadItemTaxIds(tx, itemIds) {
+        const ids = [...new Set(itemIds.filter((id) => !!id))];
+        if (ids.length === 0) {
+            return new Map();
+        }
+        const rows = await tx.itemMaster.findMany({
+            where: { itemId: { in: ids }, itemDefaultTaxId: { not: null } },
+            select: { itemId: true, itemDefaultTaxId: true },
+        });
+        return new Map(rows.map((r) => [r.itemId, r.itemDefaultTaxId]));
     }
     async softDeleteItems(tx, removed, actorId, now) {
         for (const removedItem of removed) {

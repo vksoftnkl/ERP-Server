@@ -34,6 +34,8 @@ model AccVoucherSeq {
   voucherType   AccVoucherType @relation(fields: [vchrTypeId], references: [vchrTypeId], map: "fk_acc_voucher_seq_type")
   company       Company        @relation(fields: [companyId], references: [compId], map: "fk_acc_voucher_seq_company")
   branch        BranchMaster   @relation(fields: [branchId], references: [brId], map: "fk_acc_voucher_seq_branch")
+  /// NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).
+  seqSyncDate DateTime? @db.Timestamptz(6) @map("seq_sync_date")
   // Main duplicate prevention constraint
   @@unique([vchrTypeId, companyId, branchId, accYear, deviceCode, periodKey], map: "uq_acc_voucher_seq_scope")
   // Useful indexes

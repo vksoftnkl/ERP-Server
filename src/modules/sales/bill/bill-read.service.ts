@@ -127,7 +127,10 @@ export class BillReadService {
              ON b.abl_id = j.abj_bill_id AND b.abl_acc_year = j.abj_bill_acc_year
           WHERE b.abl_src_doc_id = ${bill.sbId}::uuid AND b.abl_acc_year = ${bill.sbAccYear}::char(9)
             AND j.abj_is_deleted = false
-            AND j.abj_adj_type <> 'ADVANCE_ADJUST' AND j.abj_adj_type <> 'NOTE_ADJUST') AS allocations`;
+            -- Same exclusion as assertCancellable: only the set-offs the bill's
+            -- own /post wrote, which carry no voucher.
+            AND NOT (j.abj_adj_type IN ('ADVANCE_ADJUST', 'NOTE_ADJUST')
+                     AND j.abj_voucher_id IS NULL)) AS allocations`;
     return { returns: Number(row?.returns ?? 0), allocations: Number(row?.allocations ?? 0) };
   }
 

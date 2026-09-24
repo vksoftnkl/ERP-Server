@@ -296,6 +296,7 @@ export class SaleReturnService {
       overrides: dto.overrides ?? [],
       canOverride: ctx.rights.override,
       throwOnRefusal: false,
+      dryRun: true,
     });
     const items = (dto.items ?? []).map((i, idx) => ({
       ...(i as unknown as DocRow),
@@ -571,7 +572,7 @@ export class SaleReturnService {
 
     // CASH: the tenders must equal the return amount.
     if (mode === 'CASH') {
-      const tenders = await this.store.loadTenders(row);
+      const tenders = await this.store.loadTenders(row, tx);
       const total = round2(tenders.reduce((t, x) => t + num(x.tdAmount), 0));
       if (Math.abs(total - num(row.srReturnAmt as Prisma.Decimal)) > 0.01) {
         refuse(
@@ -600,8 +601,8 @@ export class SaleReturnService {
     const docDate = isoDate(row.srReturnDate as Date) ?? isoToday();
     const returnAmt = num(row.srReturnAmt as Prisma.Decimal);
     const mode = ((row.srSettleMode as string | null) ?? 'ADJUST').toUpperCase();
-    const tenders = await this.store.loadTenders(row);
-    const charges = await this.store.loadCharges(row);
+    const tenders = await this.store.loadTenders(row, tx);
+    const charges = await this.store.loadCharges(row, tx);
     const [company] = await tx.$queryRaw<
       { comp_state_code: string | null; comp_einvoice_applicable: boolean }[]
     >`
@@ -913,7 +914,7 @@ export class SaleReturnService {
         await tx.$executeRaw`
           UPDATE sales.sale_bill SET sb_returned_amt = ${returnedAmt}::numeric,
                  sb_return_status = CASE WHEN ${returnedAmt}::numeric >= sb_bill_amt - 0.005 THEN 'FULL' ELSE 'PARTIAL' END,
-                 sb_modified_on = ${now}, sb_modified_by = ${actor}
+                 sb_modified_on = ${now}, sb_modified_by = ${ctx.actorName}
            WHERE sb_id = ${bill.sb_id}::uuid AND sb_acc_year = ${bill.sb_acc_year}::char(9)`;
       }
     } else {
@@ -1130,7 +1131,7 @@ export class SaleReturnService {
         throwSalesRight('This user may not cancel on this menu', SALES_ERROR_CODES.RIGHT_CANCEL);
       }
       await this.assertUnwindable(tx, row, dto.reason, 'cancel');
-      const reversal = await this.unwind(tx, row, ctx.actor, dto.reason, now);
+      const reversal = await this.unwind(tx, row, ctx.actor, ctx.actorName, dto.reason, now);
       await this.store.setStatus(tx, row, 'CANCELLED', {}, ctx.actor, now);
       await this.store.trail(
         tx,
@@ -1205,7 +1206,7 @@ export class SaleReturnService {
       await assertAmendable(tx, gdrId);
       await this.assertUnwindable(tx, row, dto.editRemark, 'amend');
       const before = this.store.plain(row);
-      await this.unwind(tx, row, ctx.actor, `Amended: ${dto.editRemark}`, now);
+      await this.unwind(tx, row, ctx.actor, ctx.actorName, `Amended: ${dto.editRemark}`, now);
       const draft = await this.store.setStatus(
         tx,
         row,
@@ -1400,6 +1401,8 @@ export class SaleReturnService {
     tx: Prisma.TransactionClient,
     row: DocRow,
     actor: string,
+    /** For the bill's text sb_modified_by — see SalesCallContext.actorName. */
+    actorName: string,
     reason: string,
     now: Date,
   ): Promise<string | null> {
@@ -1495,7 +1498,7 @@ export class SaleReturnService {
         await tx.$executeRaw`
           UPDATE sales.sale_bill SET sb_returned_amt = ${returnedAmt}::numeric,
                  sb_return_status = CASE WHEN ${returnedAmt}::numeric <= 0.005 THEN NULL WHEN ${returnedAmt}::numeric >= sb_bill_amt - 0.005 THEN 'FULL' ELSE 'PARTIAL' END,
-                 sb_modified_on = ${now}, sb_modified_by = ${actor}
+                 sb_modified_on = ${now}, sb_modified_by = ${actorName}
            WHERE sb_id = ${bill.sb_id}::uuid AND sb_acc_year = ${bill.sb_acc_year}::char(9)`;
       }
     }

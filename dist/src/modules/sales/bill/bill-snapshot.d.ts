@@ -131,6 +131,7 @@ export interface BillSnapshot {
     tcsAmt: number;
     billAmt: number;
     advanceAmt: number;
+    noteAdjAmt: number;
     paidAmt: number;
     tenderAmt: number;
     items: BillSnapshotItem[];
@@ -148,5 +149,6 @@ export declare function snapshotFromDto(dto: SaveBillDto, tenderMasters: Map<str
 export declare function isCreditTender(t: BillSnapshotTender): boolean;
 export declare function settledByTenders(snap: BillSnapshot): number;
 export declare function cashTendered(snap: BillSnapshot): number;
+export declare function setOffAmtOf(snap: BillSnapshot): number;
 export declare function partyDebitOf(snap: BillSnapshot, schemeSeparately: boolean): number;
 export declare function decimal(v: number): Prisma.Decimal;

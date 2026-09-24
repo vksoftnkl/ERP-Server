@@ -61,6 +61,7 @@ export declare class BillLifecycleService {
         now: Date;
         fromStatus: string;
         revisionNo?: number;
+        restateVoucherId?: string | null;
     }): Promise<PostResult>;
     private assertUnwindable;
     private unwind;

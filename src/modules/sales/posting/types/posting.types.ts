@@ -42,6 +42,8 @@ export const SALES_ERROR_CODES = {
   ORDER_DELIVERED: 'SALES_ORDER_DELIVERED',
   ORDER_LINE_DELIVERED: 'SALES_ORDER_LINE_DELIVERED',
   ORDER_CONFIRMED: 'SALES_ORDER_CONFIRMED',
+  /** A bill names an order that is not CONFIRMED / PARTIAL — not yet, or no longer, billable. */
+  ORDER_NOT_OPEN: 'SALES_ORDER_NOT_OPEN',
   RESERVE_SHORT: 'SALES_RESERVE_SHORT',
 
   // Challans and DC returns
@@ -194,6 +196,14 @@ export interface SalesGuardContext {
   canOverride: boolean;
   /** false on `/validate` — collect everything instead of throwing on the first. */
   throwOnRefusal: boolean;
+  /**
+   * true on `/validate` only. An overridable WARN is then reported as a WARN
+   * and NOT also as a refusal: whether it is overridden is decided at `/post`,
+   * which runs the same guard with `dryRun` false and refuses it there unless
+   * `overrides[]` names it and the user holds `um_can_override`. Reporting it
+   * as a refusal here told the client the bill could never post.
+   */
+  dryRun: boolean;
 }
 
 export function createGuardContext(opts: Partial<SalesGuardContext> = {}): SalesGuardContext {
@@ -203,6 +213,7 @@ export function createGuardContext(opts: Partial<SalesGuardContext> = {}): Sales
     overrides: [],
     canOverride: false,
     throwOnRefusal: true,
+    dryRun: false,
     ...opts,
   };
 }

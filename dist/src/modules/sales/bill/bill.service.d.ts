@@ -57,6 +57,7 @@ export declare class BillService {
     private writeTransportBand;
     private validateDraftAdjustments;
     private syncItems;
+    private loadItemTaxIds;
     private softDeleteItems;
     private describeDuplicate;
     private ensureBillValuesAreAllowed;

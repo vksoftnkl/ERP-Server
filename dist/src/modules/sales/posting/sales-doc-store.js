@@ -96,17 +96,17 @@ class SalesDocStore {
             orderBy: { [this.fi('LineNo')]: 'asc' },
         });
     }
-    async loadCharges(row) {
+    async loadCharges(row, c) {
         if (!this.spec.chargeDocType) {
             return [];
         }
-        return this.charges.getByDocument(this.spec.chargeDocType, row[this.f('Id')]);
+        return this.charges.getByDocument(this.spec.chargeDocType, row[this.f('Id')], undefined, c);
     }
-    async loadTenders(row) {
+    async loadTenders(row, c) {
         if (!this.spec.tenderDocType) {
             return [];
         }
-        return this.tenders.getByDocument(tender_detail_api_types_1.TenderSrcModule.SALES, this.spec.tenderDocType, row[this.f('Id')]);
+        return this.tenders.getByDocument(tender_detail_api_types_1.TenderSrcModule.SALES, this.spec.tenderDocType, row[this.f('Id')], c);
     }
     async loadTransport(c, row) {
         return this.transportBand.read({

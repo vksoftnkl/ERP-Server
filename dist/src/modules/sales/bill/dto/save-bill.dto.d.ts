@@ -92,6 +92,7 @@ export declare class SaveBillDto {
     sbTenderAmt?: string | number;
     sbRefundAmt?: string | number;
     sbAdvanceAmt?: string | number;
+    sbNoteAdjAmt?: string | number;
     sbPaidAmt?: string | number;
     sbBalanceAmt?: string | number;
     sbPayStatus?: string | null;

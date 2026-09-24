@@ -71,8 +71,8 @@ export declare class SalesDocStore {
     findOrThrow(c: Prisma.TransactionClient, keys: DocKeys): Promise<DocRow>;
     lock(tx: Prisma.TransactionClient, keys: DocKeys): Promise<DocRow>;
     loadItems(c: Prisma.TransactionClient, row: DocRow): Promise<DocRow[]>;
-    loadCharges(row: DocRow): Promise<import("../../master/charge-detail/types/charge-detail-api.types").ChargeDetailPayload[]>;
-    loadTenders(row: DocRow): Promise<import("../../accountsModule/tenderDetail/types/tender-detail-api.types").TenderDetailPayload[]>;
+    loadCharges(row: DocRow, c?: Prisma.TransactionClient): Promise<import("../../master/charge-detail/types/charge-detail-api.types").ChargeDetailPayload[]>;
+    loadTenders(row: DocRow, c?: Prisma.TransactionClient): Promise<import("../../accountsModule/tenderDetail/types/tender-detail-api.types").TenderDetailPayload[]>;
     loadTransport(c: Prisma.TransactionClient, row: DocRow): Promise<import("./transport-band.service").TransportBandRow | null>;
     saveDraft(tx: Prisma.TransactionClient, dto: DocRow, actor: string, now: Date, hooks?: {
         beforeWrite?: (data: DocRow, existing: DocRow | null) => Promise<void> | void;

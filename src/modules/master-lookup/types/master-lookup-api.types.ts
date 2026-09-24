@@ -193,6 +193,10 @@ export interface ItemPriceLookupPayload {
    * when the company has GST disabled.
    */
   item_incl_tax: boolean;
+  /** inventory.tax_rate_master.tax_id the item defaults to — what a line's sbi_tax_id carries. */
+  tax_id: string | null;
+  /** item_master.item_hsn_code. Not zeroed by the GST toggle: it classifies the goods. */
+  hsn_code: string | null;
   gst_rate: number;
   cess_perc: number;
   cess_unit: number;

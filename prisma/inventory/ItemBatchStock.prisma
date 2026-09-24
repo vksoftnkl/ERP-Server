@@ -60,6 +60,8 @@ model ItemBatchStock {
 
   // Relations
   batch               ItemBatchMaster @relation(fields: [ibsBatchId], references: [btmId], map: "fk_ibs_batch")
+  /// NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).
+  ibsSyncDate DateTime? @db.Timestamptz(6) @map("ibs_sync_date")
 
   @@unique([ibsAccYear, ibsCompanyId, ibsBranchId, ibsGodownId, ibsItemId, ibsBatchId, ibsStockBucket], map: "uq_ibs_scope")
 

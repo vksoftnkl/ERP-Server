@@ -2,7 +2,11 @@ import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { StatutoryService } from './statutory.service';
-import type { RegisterDoc, RegisterWriteResult } from './types/doc-register.types';
+import type {
+  RegisterDetailLine,
+  RegisterDoc,
+  RegisterWriteResult,
+} from './types/doc-register.types';
 
 /**
  * §3.3 — the GST view of a posted document (flow §5.7).
@@ -182,6 +186,34 @@ export class DocRegisterService {
   }
 
   /**
+   * Amend of a document nothing was declared for: RETIRE the row (soft delete)
+   * so the re-post can file the same document number again.
+   *
+   * Not `cancel()`: the three unique rules in the way —
+   * `uq_acc_voucher_doc_register_source`, `_doc` and `_voucher` — are partial
+   * on `gdr_is_deleted` only, so a CANCELED row still holds the number and the
+   * re-post answered 23505. And not a lie either: a CANCELED row asserts the
+   * invoice was cancelled, and an amended one was not. There is no IRN or
+   * e-way bill history to keep here — `assertAmendable` refuses the amend of a
+   * declared document before anything is unwound; that case is `reissue()`.
+   */
+  async retire(
+    tx: Prisma.TransactionClient,
+    gdrId: string,
+    accYear: string,
+    actor = 'SYSTEM',
+  ): Promise<number> {
+    return tx.$executeRaw`
+      UPDATE accounts.acc_voucher_doc_register
+         SET gdr_is_deleted = true,
+             gdr_updated_on = now(),
+             gdr_updated_by = ${uuidOrNull(actor)}::uuid
+       WHERE gdr_id         = ${gdrId}::uuid
+         AND gdr_acc_year   = ${accYear}::char(9)
+         AND gdr_is_deleted = false`;
+  }
+
+  /**
    * Amend: cancel the old row and write a new one.
    *
    * The IRN and e-way bill history stay on the OLD row — `acc_voucher_doc_
@@ -220,7 +252,7 @@ export class DocRegisterService {
       return 0;
     }
 
-    const values = doc.lines.map(
+    const values = doc.lines.map(inStateRates).map(
       (l) => Prisma.sql`(
         ${gdrId}::uuid, ${doc.voucherId}::uuid, ${l.rowNo}::int,
         ${doc.accYear}::char(9), ${doc.companyId}::uuid, ${doc.branchId}::uuid,
@@ -260,6 +292,20 @@ export class DocRegisterService {
       )
       VALUES ${Prisma.join(values)}`;
   }
+}
+
+/**
+ * The line carries the item's whole rate block — the price lookup answers
+ * cgst 9 / sgst 9 / igst 18 for an 18% item, and the screens copy all three —
+ * but the register holds only the rates the supply actually charged.
+ * chk_acc_voucher_doc_detail_supply_tax_logic refuses an INTRA_STATE row with
+ * an IGST rate (and the reverse), so the unused pair is zeroed here, once, for
+ * every document that writes the register.
+ */
+function inStateRates(l: RegisterDetailLine): RegisterDetailLine {
+  return l.supplyNature === 'INTER_STATE'
+    ? { ...l, cgstRate: 0, sgstRate: 0 }
+    : { ...l, igstRate: 0 };
 }
 
 function money(v: number): string {

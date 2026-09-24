@@ -36,6 +36,8 @@ model AccLedgerRole {
   taxRateLedgers TaxRateLedger[]
   /// The voucher legs posted under this role (acc_vouchers.av_role).
   voucherLines   AccVoucher[]
+  /// NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).
+  alrSyncDate DateTime? @db.Timestamptz(6) @map("alr_sync_date")
 
   // accounts.fn_check_role_ledger(role, ledger, company, where) validates a
   // ledger against a row of this table. It lives in raw SQL — a function is not

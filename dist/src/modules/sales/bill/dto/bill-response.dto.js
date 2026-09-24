@@ -786,6 +786,7 @@ class BillPayloadDto {
     sbTenderAmt;
     sbRefundAmt;
     sbAdvanceAmt;
+    sbNoteAdjAmt;
     sbPaidAmt;
     sbBalanceAmt;
     sbPayStatus;
@@ -1178,9 +1179,13 @@ __decorate([
     __metadata("design:type", Number)
 ], BillPayloadDto.prototype, "sbRefundAmt", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)(),
+    (0, swagger_1.ApiProperty)({ description: 'ADVANCE set-offs only' }),
     __metadata("design:type", Number)
 ], BillPayloadDto.prototype, "sbAdvanceAmt", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ description: 'Credit-note set-offs only' }),
+    __metadata("design:type", Number)
+], BillPayloadDto.prototype, "sbNoteAdjAmt", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)(),
     __metadata("design:type", Number)

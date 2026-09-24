@@ -402,6 +402,21 @@ export function probes(prisma: PrismaClient) {
       );
     },
     /** One header by id — how a reversal (which carries no source pointer) is read. */
+    /** A bill's re-tender contras: each is keyed on the tender row it voided. */
+    retenderContras(sbId: string) {
+      return all(
+        `SELECT h.avh_voucher_id, h.avh_voucher_type_id, h.avh_voucher_no, h.avh_voucher_refno,
+                h.avh_voucher_status, h.avh_doc_amount, h.avh_doc_refno, h.avh_src_doc_id
+           FROM accounts.acc_voucher_header h
+           JOIN accounts.acc_tender_detail t ON t.td_id = h.avh_src_doc_id
+          WHERE h.avh_src_module = 'SALES' AND h.avh_src_doc_type = 'SALE_BILL_RETENDER'
+            AND t.td_src_doc_type = 'SALE_BILL' AND t.td_src_doc_id = $1::uuid
+            AND h.avh_is_deleted = false
+          ORDER BY h.avh_created_on, h.avh_voucher_slno`,
+        sbId,
+      );
+    },
+
     async voucherById(voucherId: string): Promise<Row | undefined> {
       return (
         await all(

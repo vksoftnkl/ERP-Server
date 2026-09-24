@@ -171,6 +171,7 @@ let DeliveryChallanService = class DeliveryChallanService {
             overrides: dto.overrides ?? [],
             canOverride: ctx.rights.override,
             throwOnRefusal: false,
+            dryRun: true,
         });
         const items = (dto.items ?? []).map((i, idx) => ({
             ...i,

@@ -1,4 +1,4 @@
-import { AccTenderDetail } from '@prisma/client';
+import { AccTenderDetail, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
@@ -23,7 +23,7 @@ export declare class TenderDetailService {
     save(saveTenderDetailDto: SaveTenderDetailDto): Promise<TenderDetailPayload>;
     get(getTenderDetailQueryDto: GetTenderDetailQueryDto): Promise<TenderDetailPayload | TenderDetailPayload[]>;
     getById(tdId: string): Promise<TenderDetailPayload>;
-    getByDocument(tdSrcModule: TenderSrcModule, tdSrcDocType: TenderSrcDocType, tdSrcDocId: string): Promise<TenderDetailPayload[]>;
+    getByDocument(tdSrcModule: TenderSrcModule, tdSrcDocType: TenderSrcDocType, tdSrcDocId: string, client?: Prisma.TransactionClient): Promise<TenderDetailPayload[]>;
     softDelete(tdId: string): Promise<TenderDetailDeleteResult>;
     syncDocumentTenders(tx: TenderDetailWriteClient, scope: TenderDocumentScope, inputTenders: SaveTenderDetailDto[] | undefined, actorId: string, audit?: TenderDocumentAudit): Promise<TenderDetailPayload[]>;
     findDocumentTenders(client: TenderDetailWriteClient, tdSrcModule: TenderSrcModule, tdSrcDocType: TenderSrcDocType, tdSrcDocId: string): Promise<TenderDetailRecord[]>;

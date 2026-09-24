@@ -1,6 +1,9 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.syncBillAdjustments = syncBillAdjustments;
+exports.loadSetOffCredits = loadSetOffCredits;
+exports.setOffKey = setOffKey;
+exports.splitSetOffs = splitSetOffs;
 const client_1 = require("@prisma/client");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
 const CREDIT_ROUTING = {
@@ -340,5 +343,46 @@ async function nextRowNo(tx, billId) {
         _max: { abjRowNo: true },
     });
     return (highest._max.abjRowNo ?? 0) + 1;
+}
+async function loadSetOffCredits(tx, adjustments) {
+    const out = new Map();
+    if (adjustments.length === 0) {
+        return out;
+    }
+    const ids = [...new Set(adjustments.map((a) => a.againstBillId))];
+    const rows = await tx.$queryRaw `
+    SELECT b.abl_id, b.abl_acc_year, b.abl_bill_type,
+           COALESCE(so.so_advance_ledger_id, b.abl_party_id) AS holding
+      FROM accounts.acc_bill_balance b
+      LEFT JOIN sales.sale_order so
+             ON b.abl_src_doc_type = 'SALES_ORDER' AND so.so_id = b.abl_src_doc_id
+     WHERE b.abl_id = ANY(${ids}::uuid[])`;
+    for (const r of rows) {
+        out.set(setOffKey(r.abl_id, r.abl_acc_year), {
+            ablId: r.abl_id,
+            ablAccYear: r.abl_acc_year.trim(),
+            billType: r.abl_bill_type.trim(),
+            holdingLedgerId: r.holding,
+        });
+    }
+    return out;
+}
+function setOffKey(ablId, ablAccYear) {
+    return `${ablId}|${ablAccYear.trim()}`;
+}
+function splitSetOffs(adjustments, credits) {
+    let advance = new client_1.Prisma.Decimal(0);
+    let note = new client_1.Prisma.Decimal(0);
+    for (const a of adjustments) {
+        const type = credits.get(setOffKey(a.againstBillId, a.againstBillAccYear))?.billType;
+        const amount = new client_1.Prisma.Decimal(String(a.amount ?? 0));
+        if (type === 'SALES_RETURN') {
+            note = note.plus(amount);
+        }
+        else if (type === 'ADVANCE') {
+            advance = advance.plus(amount);
+        }
+    }
+    return { advance: advance.toNumber(), note: note.toNumber() };
 }
 //# sourceMappingURL=bill-adjustment.helper.js.map

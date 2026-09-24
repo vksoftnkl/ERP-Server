@@ -21,7 +21,7 @@ export declare class SaveSaleReturnItemDto {
     sriExpiryDate?: string | null;
     sriSerialNo?: string | null;
     sriCondition?: string | null;
-    sriBucket?: string | null;
+    sriBucket?: string;
     sriCaseQty?: string | number | null;
     sriReturnQty?: string | number | null;
     sriFreeQty?: string | number | null;

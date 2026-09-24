@@ -9,6 +9,7 @@ import {
   OptionalUuid,
   RequiredUuid,
 } from 'src/common/dto/dtoDecorators';
+import { OptionalStockBucket } from '../../posting/sales-dto.decorators';
 
 // GENERATED from information_schema for sales.sale_dc_return_item (2026-09-22), hand-tuned.
 export class SaveDcReturnItemDto {
@@ -60,9 +61,8 @@ export class SaveDcReturnItemDto {
   @ApiPropertyOptional({ maxLength: 20, nullable: true })
   @NullableStringStrict(20)
   sdriCondition?: string | null;
-  @ApiPropertyOptional({ maxLength: 20, nullable: true })
-  @NullableStringStrict(20)
-  sdriBucket?: string | null;
+  @OptionalStockBucket()
+  sdriBucket?: string;
   @ApiPropertyOptional({ maxLength: 100, nullable: true })
   @NullableStringStrict(100)
   sdriBatchNo?: string | null;

@@ -33,7 +33,7 @@ function warn(ctx, code, message, opts = {}) {
         overridable,
         statutory: opts.statutory,
     });
-    if (accepted) {
+    if (accepted || (overridable && ctx.dryRun)) {
         return;
     }
     refuse(ctx, code, message, opts);
@@ -247,11 +247,13 @@ async function assertCancellable(client, bill) {
         WHERE b.abl_src_doc_id = ${bill.billId}::uuid
           AND b.abl_acc_year   = ${bill.accYear}::char(9)
           AND j.abj_is_deleted = false
-          -- The bill's OWN set-offs are not somebody else's allocation: the
-          -- advance and credit-note adjustments it wrote for itself carry its
-          -- own balance row as abj_against_bill_id.
-          AND COALESCE(j.abj_against_bill_id, '00000000-0000-0000-0000-000000000000'::uuid)
-              <> b.abl_id)                                                  AS allocations`;
+          -- The bill's OWN set-offs are not somebody else's allocation. /post
+          -- writes them (bill-adjustment.helper) as ADVANCE_ADJUST /
+          -- NOTE_ADJUST with no voucher: the invoice-side row names the ADVANCE
+          -- as abj_against_bill_id, so matching on the bill's own id never
+          -- excluded anything. A receipt's rows always carry its voucher.
+          AND NOT (j.abj_adj_type IN ('ADVANCE_ADJUST', 'NOTE_ADJUST')
+                   AND j.abj_voucher_id IS NULL))                           AS allocations`;
     if (Number(row?.returns ?? 0) > 0) {
         (0, sales_errors_1.throwSalesLocked)('A sale return has been raised against this bill — cancel the return first', posting_types_1.SALES_ERROR_CODES.RETURN_LOCKS_BILL, 'sbId');
     }

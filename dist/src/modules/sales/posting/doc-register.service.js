@@ -118,6 +118,16 @@ let DocRegisterService = class DocRegisterService {
          AND gdr_acc_year = ${accYear}::char(9)
          AND gdr_doc_status <> 'CANCELED'::accounts."GdrDocStatus"`;
     }
+    async retire(tx, gdrId, accYear, actor = 'SYSTEM') {
+        return tx.$executeRaw `
+      UPDATE accounts.acc_voucher_doc_register
+         SET gdr_is_deleted = true,
+             gdr_updated_on = now(),
+             gdr_updated_by = ${uuidOrNull(actor)}::uuid
+       WHERE gdr_id         = ${gdrId}::uuid
+         AND gdr_acc_year   = ${accYear}::char(9)
+         AND gdr_is_deleted = false`;
+    }
     async reissue(tx, oldGdrId, doc, opts = {}) {
         await this.cancel(tx, oldGdrId, doc.accYear, opts.reason ?? 'Superseded by an amendment', opts.actor ?? 'SYSTEM');
         return this.write(tx, doc, opts);
@@ -126,7 +136,7 @@ let DocRegisterService = class DocRegisterService {
         if (doc.lines.length === 0) {
             return 0;
         }
-        const values = doc.lines.map((l) => client_1.Prisma.sql `(
+        const values = doc.lines.map(inStateRates).map((l) => client_1.Prisma.sql `(
         ${gdrId}::uuid, ${doc.voucherId}::uuid, ${l.rowNo}::int,
         ${doc.accYear}::char(9), ${doc.companyId}::uuid, ${doc.branchId}::uuid,
         -- The detail table has its own two enums, label-compatible with the
@@ -170,6 +180,11 @@ exports.DocRegisterService = DocRegisterService = __decorate([
     __metadata("design:paramtypes", [prisma_service_1.PrismaService,
         statutory_service_1.StatutoryService])
 ], DocRegisterService);
+function inStateRates(l) {
+    return l.supplyNature === 'INTER_STATE'
+        ? { ...l, cgstRate: 0, sgstRate: 0 }
+        : { ...l, igstRate: 0 };
+}
 function money(v) {
     return num(v, 2);
 }

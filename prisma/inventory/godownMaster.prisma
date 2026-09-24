@@ -51,6 +51,8 @@ model GodownLocation {
   // it is depends on ttdDirection.
   transportBandsFrom    TxnTransportDetail[]      @relation("TransportBandFromGodown")
   transportBandsTo      TxnTransportDetail[]      @relation("TransportBandToGodown")
+  /// NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).
+  gdlSyncDate DateTime? @db.Timestamptz(6) @map("gdl_sync_date")
 
   @@map("godown_locations")
    @@schema("inventory")

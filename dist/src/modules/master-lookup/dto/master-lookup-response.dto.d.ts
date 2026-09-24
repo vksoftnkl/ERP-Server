@@ -190,6 +190,8 @@ export declare class ItemPriceLookupPayloadDto {
     stock: number | null;
     reorder_qty: number | null;
     item_incl_tax: boolean;
+    tax_id: string | null;
+    hsn_code: string | null;
     gst_rate: number;
     cess_perc: number;
     cess_unit: number;

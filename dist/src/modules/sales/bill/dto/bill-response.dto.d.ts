@@ -222,6 +222,7 @@ export declare class BillPayloadDto {
     sbTenderAmt: number;
     sbRefundAmt: number;
     sbAdvanceAmt: number;
+    sbNoteAdjAmt: number;
     sbPaidAmt: number;
     sbBalanceAmt: number;
     sbPayStatus: string;

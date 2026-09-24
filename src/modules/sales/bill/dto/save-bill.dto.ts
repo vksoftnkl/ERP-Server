@@ -391,9 +391,18 @@ export class SaveBillDto {
   @ApiPropertyOptional()
   @OptionalNumber()
   sbRefundAmt?: string | number;
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({
+    description:
+      'ADVANCE set-offs only (order / receipt advances). Must equal the ADVANCE-typed adjustments[].',
+  })
   @OptionalNumber()
   sbAdvanceAmt?: string | number;
+  @ApiPropertyOptional({
+    description:
+      'Credit-note set-offs only (sale-return credit notes). Must equal the SALES_RETURN-typed adjustments[].',
+  })
+  @OptionalNumber()
+  sbNoteAdjAmt?: string | number;
   @ApiPropertyOptional()
   @OptionalNumber()
   sbPaidAmt?: string | number;

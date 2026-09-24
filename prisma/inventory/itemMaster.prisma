@@ -126,6 +126,8 @@ model ItemMaster {
   saleReturnItems       SaleReturnItem[]          @relation("SaleReturnItemItem")
   saleDcItems           SaleDcItem[]              @relation("SaleDcItemItem")
   saleDcReturnItems     SaleDcReturnItem[]        @relation("SaleDcReturnItemItem")
+  /// NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).
+  itemSyncDate DateTime? @db.Timestamptz(6) @map("item_sync_date")
 
   @@map("item_master")
   @@schema("inventory")

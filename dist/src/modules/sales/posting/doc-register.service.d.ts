@@ -13,6 +13,7 @@ export declare class DocRegisterService {
     }): Promise<RegisterWriteResult>;
     registerIdOf(c: Prisma.TransactionClient, sourceDocId: string, accYear: string): Promise<string | null>;
     cancel(tx: Prisma.TransactionClient, gdrId: string, accYear: string, reason: string, actor?: string): Promise<number>;
+    retire(tx: Prisma.TransactionClient, gdrId: string, accYear: string, actor?: string): Promise<number>;
     reissue(tx: Prisma.TransactionClient, oldGdrId: string, doc: RegisterDoc, opts?: {
         reason?: string;
         actor?: string;

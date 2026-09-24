@@ -12,6 +12,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.SDI_DATE_FIELDS = exports.SDI_OPTIONAL_FIELDS = exports.SaveDeliveryChallanItemDto = void 0;
 const swagger_1 = require("@nestjs/swagger");
 const dtoDecorators_1 = require("../../../../common/dto/dtoDecorators");
+const sales_dto_decorators_1 = require("../../posting/sales-dto.decorators");
 class SaveDeliveryChallanItemDto {
     sdiId;
     sdiCompanyId;
@@ -215,9 +216,8 @@ __decorate([
     __metadata("design:type", Object)
 ], SaveDeliveryChallanItemDto.prototype, "sdiLotId", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ maxLength: 20, nullable: true }),
-    (0, dtoDecorators_1.NullableStringStrict)(20),
-    __metadata("design:type", Object)
+    (0, sales_dto_decorators_1.OptionalStockBucket)(),
+    __metadata("design:type", String)
 ], SaveDeliveryChallanItemDto.prototype, "sdiBucket", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ maxLength: 100, nullable: true }),

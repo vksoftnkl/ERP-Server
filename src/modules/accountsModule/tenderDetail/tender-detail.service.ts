@@ -207,13 +207,16 @@ export class TenderDetailService {
     return this.toPayload(record);
   }
   // The tender lines of one document, in the order the tender screen shows them.
+  // A caller inside a transaction passes its client, or it reads the rows as
+  // last committed.
   async getByDocument(
     tdSrcModule: TenderSrcModule,
     tdSrcDocType: TenderSrcDocType,
     tdSrcDocId: string,
+    client: Prisma.TransactionClient = this.prisma,
   ): Promise<TenderDetailPayload[]> {
     const records = await this.findDocumentTenders(
-      this.prisma,
+      client,
       tdSrcModule,
       tdSrcDocType,
       tdSrcDocId,

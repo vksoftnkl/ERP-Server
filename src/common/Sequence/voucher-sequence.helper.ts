@@ -128,13 +128,12 @@ export async function allocateVoucherSlno(
 ): Promise<bigint> {
   const lockKey = [companyId, accYear].join('|');
   await tx.$queryRaw`
-    WITH advisory_lock AS (
-      SELECT pg_advisory_xact_lock(
-        hashtext(${VOUCHER_SLNO_LOCK_NAMESPACE}),
-        hashtext(${lockKey})
-      )
-    )
-    SELECT 1::int AS locked
+    -- The lock sits in the select list: an unreferenced CTE is never run,
+    -- so the old WITH advisory_lock AS (...) form took no lock at all.
+    SELECT count(pg_advisory_xact_lock(
+             hashtext(${VOUCHER_SLNO_LOCK_NAMESPACE}),
+             hashtext(${lockKey})
+           ))::int AS locked
   `;
   const rows = await tx.$queryRaw<Array<{ next_slno: bigint }>>`
     SELECT COALESCE(MAX(avh_voucher_slno), 0) + 1 AS next_slno
@@ -277,13 +276,12 @@ async function acquireScopeLock(
     scope.periodKey,
   ].join('|');
   await tx.$queryRaw<Array<{ locked: number }>>`
-    WITH advisory_lock AS (
-      SELECT pg_advisory_xact_lock(
-        hashtext(${VOUCHER_SEQ_LOCK_NAMESPACE}),
-        hashtext(${lockKey})
-      )
-    )
-    SELECT 1::int AS locked
+    -- The lock sits in the select list: an unreferenced CTE is never run,
+    -- so the old WITH advisory_lock AS (...) form took no lock at all.
+    SELECT count(pg_advisory_xact_lock(
+             hashtext(${VOUCHER_SEQ_LOCK_NAMESPACE}),
+             hashtext(${lockKey})
+           ))::int AS locked
   `;
 }
 function requireText(value: string | null | undefined, fieldName: string): string {

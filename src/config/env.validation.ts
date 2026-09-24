@@ -46,6 +46,17 @@ export const envValidationSchema = Joi.object({
   DB_AUTO_SEED: Joi.boolean().optional(),
   DB_SEED_FAIL_FAST: Joi.boolean().default(false),
   DB_SEED_LOCK_TIMEOUT_SECONDS: Joi.number().integer().min(1).default(60),
+  // Offline -> cloud sync (src/modules/cloud-sync).
+  CLOUD_SYNC_ENABLED: Joi.boolean().default(false),
+  CLOUD_DATABASE_URL: Joi.when('CLOUD_SYNC_ENABLED', {
+    is: true,
+    then: Joi.string()
+      .uri({ scheme: ['postgres', 'postgresql'] })
+      .required(),
+    otherwise: Joi.string().allow('').optional(),
+  }),
+  CLOUD_SYNC_INTERVAL_SECONDS: Joi.number().integer().min(5).default(60),
+  CLOUD_SYNC_BATCH_SIZE: Joi.number().integer().min(1).max(10000).default(500),
   JWT_SECRET: Joi.when('NODE_ENV', {
     is: 'test',
     then: Joi.string().min(16).default('test-jwt-secret-change-me'),

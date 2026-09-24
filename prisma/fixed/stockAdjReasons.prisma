@@ -11,6 +11,8 @@ model StockAdjReason {
   sarCreatedBy         String?   @db.Uuid @map("sar_created_by")
   sarModifiedOn        DateTime? @db.Timestamptz @map("sar_modified_on")
   sarModifiedBy        String?   @db.Uuid @map("sar_modified_by")
+  /// NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).
+  sarSyncDate DateTime? @db.Timestamptz(6) @map("sar_sync_date")
 
   @@unique([sarCode])
   @@map("stock_adj_reasons")

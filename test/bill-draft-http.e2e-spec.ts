@@ -401,8 +401,11 @@ describe('POST /bills/create — save as DRAFT (e2e, live DB)', () => {
         }),
       );
 
+    // The set-off is checked against the header figure for its KIND of credit
+    // (sbAdvanceAmt for an advance, sbNoteAdjAmt for a credit note), and the
+    // draft declares neither.
     expect(res.status).toBe(400);
-    expect(res.body.errors?.[0]?.field).toBe('adjustments');
+    expect(['sbAdvanceAmt', 'sbNoteAdjAmt', 'adjustments']).toContain(res.body.errors?.[0]?.field);
     // eslint-disable-next-line no-console
     console.log(`\n[bill draft e2e] adjustments rejection: ${res.body.errors?.[0]?.message}\n`);
   });

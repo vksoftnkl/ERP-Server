@@ -7,6 +7,8 @@ model HsnMaster {
   hsnUqc       String? @db.VarChar(10) @map("hsn_uqc")
   hsnIsActive  Boolean @default(true)  @map("hsn_is_active")
   hsnRateOfTax Decimal @default(0) @db.Decimal(7, 4) @map("hsn_rate_of_tax")
+  /// NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).
+  hsnSyncDate DateTime? @db.Timestamptz(6) @map("hsn_sync_date")
   @@index([hsnCode])
   @@map("hsn_master")
   @@schema("fixed")

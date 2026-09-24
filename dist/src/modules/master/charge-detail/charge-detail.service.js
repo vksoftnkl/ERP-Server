@@ -104,8 +104,8 @@ let ChargeDetailService = class ChargeDetailService {
         }
         return this.toPayload(record);
     }
-    async getByDocument(cdDocType, cdDocId, isActive) {
-        const records = await this.prisma.transactionChargeDetail.findMany({
+    async getByDocument(cdDocType, cdDocId, isActive, client = this.prisma) {
+        const records = await client.transactionChargeDetail.findMany({
             where: {
                 cdDocType,
                 cdDocId,

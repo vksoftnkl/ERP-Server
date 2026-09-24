@@ -8,6 +8,7 @@ import type { RightsBlock } from './types/posting.types';
 export interface SalesCallContext {
     userId: string;
     actor: string;
+    actorName: string;
     settings: SalesSettings;
     cogsMode: 'PERPETUAL' | 'PERIODIC';
     rights: RightsBlock;
@@ -18,6 +19,7 @@ export declare class SalesContextService {
     private readonly appSettings;
     constructor(prisma: PrismaService, requestContext: RequestContextService, appSettings: AppSettingValueService);
     actor(): string;
+    actorName(client?: Prisma.TransactionClient): Promise<string>;
     resolve(scope: {
         companyId: string;
         branchId: string;

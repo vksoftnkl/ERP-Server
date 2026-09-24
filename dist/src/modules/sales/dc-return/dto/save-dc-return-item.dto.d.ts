@@ -15,7 +15,7 @@ export declare class SaveDcReturnItemDto {
     sdriGodownId: string;
     sdriLotId?: string | null;
     sdriCondition?: string | null;
-    sdriBucket?: string | null;
+    sdriBucket?: string;
     sdriBatchNo?: string | null;
     sdriExpiryDate?: string | null;
     sdriSerialNo?: string | null;

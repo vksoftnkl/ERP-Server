@@ -19,7 +19,7 @@ export interface WidgetFieldPayload {
     fieldSecondaryText: string | null;
     fieldPosition: number;
     fieldVisibility: boolean;
-    fieldSyncDate: string;
+    fieldSyncDate: string | null;
     fieldCreatedOn: string;
     fieldCreatedBy: string | null;
     fieldUpdatedOn: string;
@@ -33,7 +33,7 @@ export interface WidgetMasterPayload {
     sectionPosition: number;
     sectionVisibility: boolean;
     sectionPlatform: WidgetPlatform;
-    sectionSyncDate: string;
+    sectionSyncDate: string | null;
     sectionCreatedOn: string;
     sectionCreatedBy: string | null;
     sectionUpdatedOn: string;

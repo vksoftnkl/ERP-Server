@@ -72,7 +72,7 @@ let BillBandService = class BillBandService {
                     sbDeliveredOn: next === 'DELIVERED' ? now : bill.sbDeliveredOn,
                     sbVehicleNo: dto.vehicleNo ?? bill.sbVehicleNo,
                     sbModifiedOn: now,
-                    sbModifiedBy: actor,
+                    sbModifiedBy: await this.salesContext.actorName(tx),
                 },
             });
             if (dto.lrNo) {
@@ -110,7 +110,11 @@ let BillBandService = class BillBandService {
             const actor = this.salesContext.actor();
             await tx.saleBill.update({
                 where: { sbId_sbAccYear: { sbId: bill.sbId, sbAccYear: bill.sbAccYear } },
-                data: { sbRemarks: dto.sbRemarks ?? null, sbModifiedOn: now, sbModifiedBy: actor },
+                data: {
+                    sbRemarks: dto.sbRemarks ?? null,
+                    sbModifiedOn: now,
+                    sbModifiedBy: await this.salesContext.actorName(tx),
+                },
             });
             await (0, txn_status_log_helper_1.appendTxnStatusLog)(tx, {
                 companyId: bill.sbCompanyId,

@@ -112,7 +112,7 @@ export class SaleOrderLifecycleService {
       }
       await tx.saleOrder.update({
         where: { soId_soAccYear: { soId: order.soId, soAccYear: order.soAccYear } },
-        data: { soStatus: ORDER_STATUS.CONFIRMED, soModifiedOn: now, soModifiedBy: ctx.actor },
+        data: { soStatus: ORDER_STATUS.CONFIRMED, soModifiedOn: now, soModifiedBy: ctx.actorName },
       });
       await this.trail(
         tx,
@@ -198,7 +198,11 @@ export class SaleOrderLifecycleService {
       if (after?.soStatus !== ORDER_STATUS.CANCELLED) {
         await tx.saleOrder.update({
           where: { soId_soAccYear: { soId: order.soId, soAccYear: order.soAccYear } },
-          data: { soStatus: ORDER_STATUS.CANCELLED, soModifiedOn: now, soModifiedBy: ctx.actor },
+          data: {
+            soStatus: ORDER_STATUS.CANCELLED,
+            soModifiedOn: now,
+            soModifiedBy: ctx.actorName,
+          },
         });
         await this.trail(
           tx,
@@ -313,7 +317,11 @@ export class SaleOrderLifecycleService {
       }
       await tx.saleOrder.update({
         where: { soId_soAccYear: { soId: order.soId, soAccYear: order.soAccYear } },
-        data: { soRevisionNo: order.soRevisionNo + 1, soModifiedOn: now, soModifiedBy: ctx.actor },
+        data: {
+          soRevisionNo: order.soRevisionNo + 1,
+          soModifiedOn: now,
+          soModifiedBy: ctx.actorName,
+        },
       });
       await this.trail(
         tx,

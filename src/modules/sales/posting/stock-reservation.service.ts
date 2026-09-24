@@ -68,10 +68,23 @@ export class StockReservationService {
         });
         continue;
       }
+      // srv_base_uom_id is a foreign key to item_unit_conversion, NOT to the
+      // unit master: it takes the item's BASE conversion row (factor 1), the
+      // same one sales-stock.service writes to svi_base_uom_id. Writing
+      // iuc_base_unit_id — a raw unit id — failed fk_srv_base_uom, and every
+      // /sale-orders/post with a godown answered 500.
       const [unit] = await tx.$queryRaw<
-        { iuc_base_unit_id: string; iuc_to_base_factor: Prisma.Decimal }[]
+        { base_iuc_id: string; iuc_to_base_factor: Prisma.Decimal }[]
       >`
-        SELECT iuc_base_unit_id, iuc_to_base_factor FROM inventory.item_unit_conversion WHERE iuc_id = ${line.itemUnitId}::uuid`;
+        SELECT COALESCE(base.iuc_id, iuc.iuc_id) AS base_iuc_id, iuc.iuc_to_base_factor
+          FROM inventory.item_unit_conversion iuc
+          LEFT JOIN LATERAL (
+            SELECT b.iuc_id FROM inventory.item_unit_conversion b
+             WHERE b.iuc_item_id = iuc.iuc_item_id AND b.iuc_is_base_unit = true
+               AND b.iuc_is_deleted = false
+             ORDER BY b.iuc_unit_slno LIMIT 1
+          ) base ON true
+         WHERE iuc.iuc_id = ${line.itemUnitId}::uuid`;
       const factor = Number(unit?.iuc_to_base_factor ?? 1) || 1;
       let wantBase = round4(want * factor);
       // Already open for this line (an amend re-confirms): release first, reserve fresh.
@@ -109,7 +122,7 @@ export class StockReservationService {
             srv_src_refno, srv_line_no, srv_reserved_qty, srv_reserved_on, srv_expires_on, srv_status, srv_created_on, srv_created_by
           ) VALUES (
             ${doc.companyId}::uuid, ${doc.branchId}::uuid, ${doc.tenantId ?? null}::uuid, ${doc.accYear}::char(9),
-            ${line.godownId}::uuid, ${line.itemId}::uuid, ${h.sbl_lot_id}::uuid, ${unit.iuc_base_unit_id}::uuid,
+            ${line.godownId}::uuid, ${line.itemId}::uuid, ${h.sbl_lot_id}::uuid, ${unit.base_iuc_id}::uuid,
             ${line.bucket ?? 'SALEABLE'}, 'SALES', ${doc.docType}, ${doc.docId}::uuid, ${doc.accYear}::char(9),
             ${doc.refno}, ${line.lineNo}, ${take}::numeric, ${now}, ${line.expiresOn ?? null}, 'OPEN', ${now}, ${actor}
           )`;

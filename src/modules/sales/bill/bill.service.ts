@@ -70,6 +70,7 @@ import { throwSalesLocked } from '../posting/sales.errors';
 import { SALES_ERROR_CODES } from '../posting/types/posting.types';
 import { num } from '../posting/sales-doc.utils';
 import { BillReadService } from './bill-read.service';
+import { loadSetOffCredits, splitSetOffs } from './bill-adjustment.helper';
 import { decodeTempCredit, encodeTempCreditTenders, toTempCreditDto } from './bill-temp-credit';
 import {
   TxnStatusEvent,
@@ -207,6 +208,7 @@ const BILL_OPTIONAL_FIELDS = [
   'sbTenderAmt',
   'sbRefundAmt',
   'sbAdvanceAmt',
+  'sbNoteAdjAmt',
   'sbPaidAmt',
   'sbBalanceAmt',
   'sbPayStatus',
@@ -587,11 +589,15 @@ export class BillService {
         where: { sbiBillId: bill.sbId, sbiAccYear: bill.sbAccYear, sbiIsDeleted: false },
         orderBy: [{ sbiLineNo: 'asc' }, { sbiSplitNo: 'asc' }],
       }),
-      this.chargeDetailService.getByDocument(BILL_CHARGE_DOC_TYPE, bill.sbId),
+      // Through tx: /bills/amend re-saves the charges and tenders and re-posts
+      // from them in ONE transaction, and a read outside it saw the old rows —
+      // the re-post settled the bill with the tender the amend had replaced.
+      this.chargeDetailService.getByDocument(BILL_CHARGE_DOC_TYPE, bill.sbId, undefined, tx),
       this.tenderDetailService.getByDocument(
         BILL_TENDER_SRC_MODULE,
         BILL_TENDER_SRC_DOC_TYPE,
         bill.sbId,
+        tx,
       ),
     ]);
     return { items, charges, tenders };
@@ -649,7 +655,11 @@ export class BillService {
       );
       await tx.saleBill.update({
         where: { sbId_sbAccYear: { sbId: existing.sbId, sbAccYear: existing.sbAccYear } },
-        data: { sbIsDeleted: true, sbModifiedOn: now, sbModifiedBy: actor },
+        data: {
+          sbIsDeleted: true,
+          sbModifiedOn: now,
+          sbModifiedBy: await this.salesContext.actorName(tx),
+        },
       });
       // A draft that referenced order lines hands their quantity back — only
       // POSTED bills count, so this is a no-op unless something was wrong.
@@ -783,7 +793,7 @@ export class BillService {
         );
         // A DRAFT has no receivable yet, so the set-offs are only CHECKED here
         // (the credit exists, belongs to the party, covers the amount) and their
-        // total is kept in sbAdvanceAmt; /bills/post writes the rows.
+        // totals are kept in sbAdvanceAmt / sbNoteAdjAmt; /bills/post writes the rows.
         await this.validateDraftAdjustments(tx, created, saveBillDto.adjustments);
         await this.writeTransportBand(tx, created, saveBillDto, createdBy, now);
         // Draws nothing off the order yet — only a POSTED bill counts — but the
@@ -1050,7 +1060,8 @@ export class BillService {
   /**
    * A DRAFT carries no receivable, so its set-offs cannot be written yet. They
    * are CHECKED — the credit exists, is the party's, is a CR balance — and
-   * their sum has to agree with sbAdvanceAmt, which is what /bills/post applies.
+   * their sums have to agree with sbAdvanceAmt (advances) and sbNoteAdjAmt
+   * (credit notes), which is what /bills/post applies.
    */
   private async validateDraftAdjustments(
     tx: Prisma.TransactionClient,
@@ -1061,7 +1072,6 @@ export class BillService {
       return;
     }
     const partyId = this.requireCustomerLedgerId(bill.sbCustId, 'adjustments');
-    let total = 0;
     for (const [index, adj] of adjustments.entries()) {
       const [credit] = await tx.$queryRaw<
         { abl_party_id: string; abl_dr_cr: string; abl_pending_amount: Prisma.Decimal | null }[]
@@ -1086,16 +1096,25 @@ export class BillService {
           },
         ]);
       }
-      total += num(adj.amount);
     }
-    const declared = num(bill.sbAdvanceAmt);
-    if (Math.abs(declared - total) > 0.01) {
-      throwSalesBadRequest<BillErrorDetail, BillErrorResponse>('Bill cannot be saved', [
-        {
-          field: 'sbAdvanceAmt',
-          message: `adjustments total ${total.toFixed(2)} but sbAdvanceAmt says ${declared.toFixed(2)}`,
-        },
-      ]);
+    // Each header figure answers for its own kind of credit: advances in
+    // sbAdvanceAmt, credit notes in sbNoteAdjAmt. One total across both refused
+    // every bill whose client kept the two apart.
+    const split = splitSetOffs(adjustments, await loadSetOffCredits(tx, adjustments));
+    const errors: BillErrorDetail[] = [];
+    for (const [field, total, declared, kind] of [
+      ['sbAdvanceAmt', split.advance, num(bill.sbAdvanceAmt), 'advance'],
+      ['sbNoteAdjAmt', split.note, num(bill.sbNoteAdjAmt), 'credit-note'],
+    ] as const) {
+      if (Math.abs(declared - total) > 0.01) {
+        errors.push({
+          field,
+          message: `${kind} adjustments total ${total.toFixed(2)} but ${field} says ${declared.toFixed(2)}`,
+        });
+      }
+    }
+    if (errors.length > 0) {
+      throwSalesBadRequest<BillErrorDetail, BillErrorResponse>('Bill cannot be saved', errors);
     }
   }
   // Reconciles the bill's line items with the payload array:
@@ -1179,6 +1198,13 @@ export class BillService {
         data: { sbiLineNo: { increment: Math.max(...seenLineNos) + 1 } },
       });
     }
+    // sbi_tax_id is the item's rate, stamped here rather than taken from the
+    // client: the save DTO does not carry it, and posting resolves the sales and
+    // output-GST ledgers and the register's tax id from it.
+    const itemTaxIds = await this.loadItemTaxIds(
+      tx,
+      resolvedItems.map(({ inputItem }) => inputItem.sbiItemId),
+    );
     const persisted: SaleBillItem[] = [];
     for (const { inputItem, lineNo } of resolvedItems) {
       if (inputItem.sbiId) {
@@ -1194,6 +1220,8 @@ export class BillService {
           sbiGodownId: inputItem.sbiGodownId ?? existingItem.sbiGodownId,
           sbiStockId: inputItem.sbiStockId ?? existingItem.sbiStockId,
           sbiPriceLevel: inputItem.sbiPriceLevel ?? scope.sbPriceLevel,
+          sbiTaxId:
+            itemTaxIds.get(inputItem.sbiItemId ?? existingItem.sbiItemId) ?? existingItem.sbiTaxId,
           sbiModifiedOn: now,
           sbiModifiedBy: resolveActor(inputItem.sbiModifiedBy, actorId),
         };
@@ -1242,6 +1270,7 @@ export class BillService {
         // Nullable column: a line with no batch allocation is allowed.
         sbiStockId: inputItem.sbiStockId ?? null,
         sbiPriceLevel: inputItem.sbiPriceLevel ?? scope.sbPriceLevel,
+        sbiTaxId: itemTaxIds.get(inputItem.sbiItemId ?? '') ?? null,
         sbiCreatedOn: now,
         sbiCreatedBy: resolveActor(inputItem.sbiCreatedBy, actorId),
       };
@@ -1270,6 +1299,21 @@ export class BillService {
       persisted.push(created);
     }
     return persisted.sort((left, right) => left.sbiLineNo - right.sbiLineNo);
+  }
+  /** item id → its default tax (tax_rate_master), for the ids given. */
+  private async loadItemTaxIds(
+    tx: BillWriteClient,
+    itemIds: (string | null | undefined)[],
+  ): Promise<Map<string, string>> {
+    const ids = [...new Set(itemIds.filter((id): id is string => !!id))];
+    if (ids.length === 0) {
+      return new Map();
+    }
+    const rows = await tx.itemMaster.findMany({
+      where: { itemId: { in: ids }, itemDefaultTaxId: { not: null } },
+      select: { itemId: true, itemDefaultTaxId: true },
+    });
+    return new Map(rows.map((r) => [r.itemId, r.itemDefaultTaxId!]));
   }
   // Retires the lines the payload no longer carries. Called before the payload
   // is written so the freed line numbers are available to the replacements.

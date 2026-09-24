@@ -2,9 +2,17 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ItemPriceLookup = void 0;
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
+const ledger_map_helper_1 = require("../../accountsModule/ledgerRole/ledger-map.helper");
 const master_lookup_constants_1 = require("../master-lookup.constants");
 const item_price_utils_1 = require("../utils/item-price.utils");
 const loading_charge_utils_1 = require("../utils/loading-charge.utils");
+const TAX_LEDGER_ROLES = {
+    sales_ledger_id: 'SALES',
+    sgst_output_ledger_id: 'OUTPUT_SGST',
+    cgst_output_ledger_id: 'OUTPUT_CGST',
+    igst_output_ledger_id: 'OUTPUT_IGST',
+    cess_output_ledger_id: 'OUTPUT_CESS',
+};
 class ItemPriceLookup {
     prisma;
     constructor(prisma) {
@@ -91,6 +99,19 @@ class ItemPriceLookup {
         const charge = (0, module_service_utils_1.toNumber)(rate.ipmFreightCharge);
         return charge > 0 ? charge : null;
     }
+    async resolveTaxLedgers(taxId, query) {
+        const requests = Object.values(TAX_LEDGER_ROLES).map((role) => ({ role, taxId }));
+        const resolved = await (0, ledger_map_helper_1.resolveRoleLedgers)(this.prisma, requests, {
+            companyId: query.company_id ?? null,
+            branchId: query.branch_id ?? null,
+            where: 'item_price_lookup',
+        });
+        const entries = Object.entries(TAX_LEDGER_ROLES).map(([field, role]) => [
+            field,
+            resolved.get((0, ledger_map_helper_1.roleLedgerKey)({ role, taxId }))?.ledgerId ?? null,
+        ]);
+        return Object.fromEntries(entries);
+    }
     async getItemPriceLookup(query) {
         const { item_id, unit_id, company_id, branch_id, customer_id, acccyear } = query;
         const priceLevel = query.price_level;
@@ -131,7 +152,7 @@ class ItemPriceLookup {
                 ? this.prisma.godownLocation.findFirst({ where: { gdlId: godownId } })
                 : Promise.resolve(null),
             itemRecord.itemDefaultTaxId
-                ? this.prisma.itemTaxMaster.findFirst({
+                ? this.prisma.taxRateMaster.findFirst({
                     where: { taxId: itemRecord.itemDefaultTaxId, taxIsDeleted: false },
                 })
                 : Promise.resolve(null),
@@ -166,6 +187,7 @@ class ItemPriceLookup {
                 : Promise.resolve(null),
             this.resolveLoadingCharge(query, rate),
         ]);
+        const taxLedgers = await this.resolveTaxLedgers(tax?.taxId ?? null, query);
         const gstApplicable = company_id ? (company?.compGstApplicable ?? false) : true;
         const basePrice = (0, item_price_utils_1.priceForLevel)(rate, priceLevel);
         const customerDiscQty = custRate && priceLevel >= 1 && priceLevel <= 4 ? (0, module_service_utils_1.toNumber)(custRate.csrDiscQty) : 0;
@@ -220,17 +242,19 @@ class ItemPriceLookup {
             stock,
             reorder_qty: reorderQty,
             item_incl_tax: itemRecord.itemInclTax,
-            gst_rate: gstApplicable && tax ? (0, module_service_utils_1.toNumber)(tax.taxGstRateTotal) : 0,
-            cess_perc: gstApplicable && tax ? (0, module_service_utils_1.toNumber)(tax.taxCessPerc) : 0,
-            cess_unit: gstApplicable && tax ? (0, module_service_utils_1.toNumber)(tax.taxCessUnit) : 0,
-            sgst_perc: gstApplicable && tax ? (0, module_service_utils_1.toNumber)(tax.taxSgstPerc) : 0,
-            cgst_perc: gstApplicable && tax ? (0, module_service_utils_1.toNumber)(tax.taxCgstPerc) : 0,
-            igst_perc: gstApplicable && tax ? (0, module_service_utils_1.toNumber)(tax.taxIgstPerc) : 0,
-            sales_ledger_id: tax?.taxSalesLedgerId ?? null,
-            sgst_output_ledger_id: tax?.taxSgstOutputLedgerId ?? null,
-            cgst_output_ledger_id: tax?.taxCgstOutputLedgerId ?? null,
-            igst_output_ledger_id: tax?.taxIgstOutputLedgerId ?? null,
-            cess_output_ledger_id: tax?.taxCessOutputLedgerId ?? null,
+            tax_id: tax?.taxId ?? null,
+            hsn_code: itemRecord.itemHsnCode ?? null,
+            gst_rate: gstApplicable && tax ? (0, module_service_utils_1.toNumber)(tax.taxRatePerc) : 0,
+            cess_perc: gstApplicable && tax && ['PERCENT', 'BOTH'].includes(tax.taxCessBasis)
+                ? (0, module_service_utils_1.toNumber)(tax.taxCessPerc)
+                : 0,
+            cess_unit: gstApplicable && tax && ['PER_UNIT', 'BOTH'].includes(tax.taxCessBasis)
+                ? (0, module_service_utils_1.toNumber)(tax.taxCessPerUnit)
+                : 0,
+            sgst_perc: gstApplicable && tax ? (0, module_service_utils_1.toNumber)(tax.taxSgstPerc ?? 0) : 0,
+            cgst_perc: gstApplicable && tax ? (0, module_service_utils_1.toNumber)(tax.taxCgstPerc ?? 0) : 0,
+            igst_perc: gstApplicable && tax ? (0, module_service_utils_1.toNumber)(tax.taxIgstPerc ?? 0) : 0,
+            ...taxLedgers,
         };
     }
 }

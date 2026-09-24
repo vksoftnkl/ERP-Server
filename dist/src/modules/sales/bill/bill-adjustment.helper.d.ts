@@ -26,3 +26,22 @@ export interface PostedAdjustment {
     settlementMode: string;
 }
 export declare function syncBillAdjustments(tx: Prisma.TransactionClient, ctx: BillAdjustmentContext, adjustments: SaveBillAdjustmentDto[] | undefined, actor: string, now: Date): Promise<BillAdjustmentSyncResult>;
+export interface SetOffCredit {
+    ablId: string;
+    ablAccYear: string;
+    billType: string;
+    holdingLedgerId: string;
+}
+export declare function loadSetOffCredits(tx: Prisma.TransactionClient, adjustments: readonly {
+    againstBillId: string;
+    againstBillAccYear: string;
+}[]): Promise<Map<string, SetOffCredit>>;
+export declare function setOffKey(ablId: string, ablAccYear: string): string;
+export declare function splitSetOffs(adjustments: readonly {
+    againstBillId: string;
+    againstBillAccYear: string;
+    amount: unknown;
+}[], credits: Map<string, SetOffCredit>): {
+    advance: number;
+    note: number;
+};

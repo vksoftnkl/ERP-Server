@@ -28,6 +28,7 @@ const DR = 'DR';
 const CR = 'CR';
 // ck_avh_status values this helper writes.
 const VOUCHER_STATUS_POSTED = 'POSTED';
+const VOUCHER_STATUS_DRAFT = 'DRAFT';
 const VOUCHER_STATUS_CANCELLED = 'CANCELLED';
 // sale_order.so_status that means the order is off — its advance receipt must
 // not stay live in the books.
@@ -220,12 +221,11 @@ export async function postOrderAdvanceToAccounts(
       // rounding. ck_avh_amounts only asks that they are not negative.
       avhDocAmount: order.soOrderAmt ?? ZERO,
       avhRoundOff: order.soRoundOff ?? ZERO,
-      // The totals, by contrast, are what the RECEIPT moves — the tendered
-      // money. ck_avh_balanced: a POSTED voucher must balance, and it does —
-      // every rupee debited to a tender ledger is credited to the advance or
-      // surcharge ledger.
-      avhTotalDebit: totalAmount,
-      avhTotalCredit: totalAmount,
+      // The totals are NOT written: tr_av_refresh_totals derives them from the
+      // lines, statement by statement. Each line below is its own INSERT, so a
+      // header born POSTED failed ck_avh_balanced on the very first one (DR in,
+      // CR not yet) and every order with a tender answered 500. It is born
+      // DRAFT instead, and markPosted flips it once every line is in.
       // Customer and ledger share a primary key, so soCustId is already the
       // acc_ledger_master id.
       avhPartyId: order.soCustId,
@@ -235,12 +235,7 @@ export async function postOrderAdvanceToAccounts(
       // Scalar list — Prisma rejects null here.
       avhEmployeeId: order.soSalesmanId ?? [],
       avhRemarks: order.soRemarks,
-      avhVoucherStatus: VOUCHER_STATUS_POSTED,
-      // ck_avh_status_on / ck_avh_posted_on: anything past DRAFT must say when
-      // and by whom, and POSTED must carry a posted-on.
-      avhStatusOn: postedOn,
-      avhStatusBy: order.soUserId,
-      avhPostedOn: postedOn,
+      avhVoucherStatus: VOUCHER_STATUS_DRAFT,
       avhUserId: order.soUserId,
       avhSessionId: order.soSessionId,
       // sale_order keys its device by id (fixed.device_master) and stores no
@@ -264,6 +259,7 @@ export async function postOrderAdvanceToAccounts(
     actor,
     now: postedOn,
   });
+  await markPosted(tx, header.avhVoucherId, order.soAccYear, order.soUserId, postedOn);
   await stampTenderVoucher(tx, order, header.avhVoucherId);
   // A cheque is not only money: it is an instrument the company now holds and
   // must deposit, chase and, if it bounces, reopen. That life is the cheque
@@ -583,6 +579,28 @@ function ensureLedgersDiffer(
     }
   }
 }
+// DRAFT → POSTED once the lines are in, so ck_avh_balanced judges the whole
+// voucher and not the first line of it. ck_avh_status_on / ck_avh_posted_on:
+// anything past DRAFT must say when and by whom, and POSTED needs a posted-on —
+// a re-sync keeps the original one.
+async function markPosted(
+  tx: Prisma.TransactionClient,
+  voucherId: string,
+  accYear: string,
+  userId: string,
+  on: Date,
+  opts: { keepPostedOn?: boolean } = {},
+): Promise<void> {
+  await tx.accVoucherHeader.update({
+    where: { avhVoucherId_avhAccYear: { avhVoucherId: voucherId, avhAccYear: accYear } },
+    data: {
+      avhVoucherStatus: VOUCHER_STATUS_POSTED,
+      avhStatusOn: on,
+      avhStatusBy: userId,
+      ...(opts.keepPostedOn ? {} : { avhPostedOn: on }),
+    },
+  });
+}
 // The double-entry lines, numbered from 1 across the whole voucher.
 // ux_av_voucher_row makes (voucher, acc_year, row_no) unique among live rows.
 async function writeVoucherLines(
@@ -785,9 +803,9 @@ async function resyncPostedVoucher(
       // the document's face, an edited tender moves the voucher's totals.
       avhDocAmount: order.soOrderAmt ?? ZERO,
       avhRoundOff: order.soRoundOff ?? ZERO,
-      // ck_avh_balanced again — an edited total has to stay balanced.
-      avhTotalDebit: totalAmount,
-      avhTotalCredit: totalAmount,
+      // DRAFT while the lines are rebuilt, for the reason on
+      // postOrderAdvanceToAccounts; markPosted restores POSTED below.
+      avhVoucherStatus: VOUCHER_STATUS_DRAFT,
       avhPartyId: order.soCustId,
       avhOppositeLedgerId: creditLedgerId,
       avhEmployeeId: order.soSalesmanId ?? [],
@@ -812,6 +830,9 @@ async function resyncPostedVoucher(
     voucherDate: live.avhVoucherDate,
     actor,
     now,
+  });
+  await markPosted(tx, live.avhVoucherId, live.avhAccYear, order.soUserId, now, {
+    keepPostedOn: true,
   });
   await stampTenderVoucher(tx, order, live.avhVoucherId);
   // The instruments follow the edit too: a cheque line added on this save is

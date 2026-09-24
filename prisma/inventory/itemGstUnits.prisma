@@ -6,7 +6,7 @@ model ItemGstUnits {
     itemGstUnitCreatedBy String? @db.Text @map("item_gst_unit_created_by")
     itemGstUnitModifiedOn DateTime @default(now()) @map("item_gst_unit_modified_on")
     itemGstUnitModifiedBy String? @db.Text @map("item_gst_unit_modified_by")
-    itemGstUnitSyncDate DateTime @default(now()) @map("item_gst_unit_sync_date")
+    itemGstUnitSyncDate DateTime? @map("item_gst_unit_sync_date")
 
     units Unit[] // back-relation
 

@@ -5,6 +5,7 @@ exports.snapshotFromDto = snapshotFromDto;
 exports.isCreditTender = isCreditTender;
 exports.settledByTenders = settledByTenders;
 exports.cashTendered = cashTendered;
+exports.setOffAmtOf = setOffAmtOf;
 exports.partyDebitOf = partyDebitOf;
 exports.decimal = decimal;
 const client_1 = require("@prisma/client");
@@ -64,6 +65,7 @@ function snapshotFromRows(bill, items, charges, tenders) {
         tcsAmt: (0, sales_doc_utils_1.num)(bill.sbTcsAmt),
         billAmt: (0, sales_doc_utils_1.num)(bill.sbBillAmt),
         advanceAmt: (0, sales_doc_utils_1.num)(bill.sbAdvanceAmt),
+        noteAdjAmt: (0, sales_doc_utils_1.num)(bill.sbNoteAdjAmt),
         paidAmt: (0, sales_doc_utils_1.num)(bill.sbPaidAmt),
         tenderAmt: (0, sales_doc_utils_1.num)(bill.sbTenderAmt),
         items: items.map((i) => ({
@@ -205,6 +207,7 @@ function snapshotFromDto(dto, tenderMasters) {
         tcsAmt: (0, sales_doc_utils_1.num)(dto.sbTcsAmt),
         billAmt: (0, sales_doc_utils_1.num)(dto.sbBillAmt),
         advanceAmt: (0, sales_doc_utils_1.num)(dto.sbAdvanceAmt),
+        noteAdjAmt: (0, sales_doc_utils_1.num)(dto.sbNoteAdjAmt),
         paidAmt: (0, sales_doc_utils_1.num)(dto.sbPaidAmt),
         tenderAmt: (0, sales_doc_utils_1.num)(dto.sbTenderAmt),
         items: (dto.items ?? []).map((i, idx) => ({
@@ -309,6 +312,9 @@ function cashTendered(snap) {
     return (0, sales_doc_utils_1.round2)(snap.tenders
         .filter((t) => t.tenderTypeId === sales_doc_utils_1.TENDER_TYPE.CASH)
         .reduce((s, t) => s + t.amount, 0));
+}
+function setOffAmtOf(snap) {
+    return (0, sales_doc_utils_1.round2)(snap.advanceAmt + snap.noteAdjAmt);
 }
 function partyDebitOf(snap, schemeSeparately) {
     const tax = snap.items.reduce((s, i) => s + i.cgstAmt + i.sgstAmt + i.igstAmt + i.cessAmt + i.acessAmt, 0);

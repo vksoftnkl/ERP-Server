@@ -68,6 +68,12 @@ export interface SalesVoucherHeader {
    */
   presetRefno?: string | null;
   presetNo?: bigint | null;
+  /**
+   * Amend: the voucher `retireForRestate` took back to DRAFT. The legs are
+   * written into THAT header — same id, number and refno, revision + 1 — and
+   * no number is drawn. The preset fields are ignored when this is set.
+   */
+  restateVoucherId?: string | null;
 }
 
 /** What a document hands `SalesPostingService`. */
@@ -143,14 +149,26 @@ export interface BillLegInput {
   schemeDiscount: number;
   roundOff: number;
   tcsAmount: number;
-  advanceAdjusted: number;
+  /**
+   * The bill's set-offs, one per ledger that HELD the credit being spent. A
+   * credit held on the party ledger itself (credit notes, receipt advances, an
+   * order with no advance ledger) moves nothing and is left out: the party was
+   * credited when the credit came in, and the bill debits it now.
+   */
+  setOffs: SetOffLegInput[];
   tenders: TenderLegInput[];
   /** DR COGS / CR INVENTORY, from `StockPostingService.post()`. */
   cogsAmount: number;
 }
 
 /** A sale return is the bill's mirror, and its sales leg is its own role. */
-export interface ReturnLegInput extends Omit<BillLegInput, 'tcsAmount' | 'advanceAdjusted'> {
+export interface ReturnLegInput extends Omit<BillLegInput, 'tcsAmount' | 'setOffs'> {
   tcsAmount?: number;
-  advanceAdjusted?: number;
+}
+
+/** One ledger's worth of set-off: DR it, CR the party. */
+export interface SetOffLegInput {
+  ledgerId: string;
+  amount: number;
+  remarks?: string | null;
 }

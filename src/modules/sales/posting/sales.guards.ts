@@ -37,7 +37,8 @@ export type SalesWriteClient = Prisma.TransactionClient;
 
 /**
  * Raise a WARN. It passes only when the request asked to override it AND the
- * user's `um_can_override` is true; otherwise it becomes a refusal.
+ * user's `um_can_override` is true; otherwise it becomes a refusal — except on
+ * `/validate` (`dryRun`), where an overridable WARN is reported as a WARN only.
  *
  * On `/validate` (`throwOnRefusal: false`) nothing throws at all and the whole
  * list comes back at once, which is the only way an operator can fix five
@@ -67,7 +68,8 @@ export function warn(
     statutory: opts.statutory,
   });
 
-  if (accepted) {
+  // On /validate an overridable WARN stays a WARN: /post decides the override.
+  if (accepted || (overridable && ctx.dryRun)) {
     return;
   }
   refuse(ctx, code, message, opts);
@@ -599,11 +601,13 @@ export async function assertCancellable(
         WHERE b.abl_src_doc_id = ${bill.billId}::uuid
           AND b.abl_acc_year   = ${bill.accYear}::char(9)
           AND j.abj_is_deleted = false
-          -- The bill's OWN set-offs are not somebody else's allocation: the
-          -- advance and credit-note adjustments it wrote for itself carry its
-          -- own balance row as abj_against_bill_id.
-          AND COALESCE(j.abj_against_bill_id, '00000000-0000-0000-0000-000000000000'::uuid)
-              <> b.abl_id)                                                  AS allocations`;
+          -- The bill's OWN set-offs are not somebody else's allocation. /post
+          -- writes them (bill-adjustment.helper) as ADVANCE_ADJUST /
+          -- NOTE_ADJUST with no voucher: the invoice-side row names the ADVANCE
+          -- as abj_against_bill_id, so matching on the bill's own id never
+          -- excluded anything. A receipt's rows always carry its voucher.
+          AND NOT (j.abj_adj_type IN ('ADVANCE_ADJUST', 'NOTE_ADJUST')
+                   AND j.abj_voucher_id IS NULL))                           AS allocations`;
 
   if (Number(row?.returns ?? 0) > 0) {
     throwSalesLocked(

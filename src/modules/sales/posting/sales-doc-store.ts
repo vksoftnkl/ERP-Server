@@ -206,14 +206,23 @@ export class SalesDocStore {
     });
   }
 
-  async loadCharges(row: DocRow) {
+  /**
+   * Pass the transaction's client from inside one: an amend saves and re-posts
+   * in a single transaction, and a read outside it sees the rows it replaced.
+   */
+  async loadCharges(row: DocRow, c?: Prisma.TransactionClient) {
     if (!this.spec.chargeDocType) {
       return [];
     }
-    return this.charges.getByDocument(this.spec.chargeDocType, row[this.f('Id')] as string);
+    return this.charges.getByDocument(
+      this.spec.chargeDocType,
+      row[this.f('Id')] as string,
+      undefined,
+      c,
+    );
   }
 
-  async loadTenders(row: DocRow) {
+  async loadTenders(row: DocRow, c?: Prisma.TransactionClient) {
     if (!this.spec.tenderDocType) {
       return [];
     }
@@ -221,6 +230,7 @@ export class SalesDocStore {
       TenderSrcModule.SALES,
       this.spec.tenderDocType,
       row[this.f('Id')] as string,
+      c,
     );
   }
 

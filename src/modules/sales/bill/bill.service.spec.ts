@@ -431,6 +431,9 @@ type PrismaMock = {
     update: jest.Mock<Promise<SaleBill>, [BillUpdateArgs]>;
     updateMany: jest.Mock<Promise<Prisma.BatchPayload>, unknown[]>;
   };
+  itemMaster: {
+    findMany: jest.Mock<Promise<{ itemId: string; itemDefaultTaxId: string | null }[]>, unknown[]>;
+  };
   saleBillItem: {
     findMany: jest.Mock<Promise<SaleBillItem[]>, unknown[]>;
     create: jest.Mock<Promise<SaleBillItem>, [ItemCreateArgs]>;
@@ -588,6 +591,12 @@ const makePrismaMock = (): PrismaMock => {
         Promise.resolve(makeBill(data as unknown as Partial<SaleBill>)),
       ),
       updateMany: jest.fn(() => Promise.resolve({ count: 1 })),
+    },
+    // Items carry no default tax here, so every line saves sbi_tax_id NULL.
+    itemMaster: {
+      findMany: jest.fn(() =>
+        Promise.resolve([] as { itemId: string; itemDefaultTaxId: string | null }[]),
+      ),
     },
     saleBillItem: {
       findMany: jest.fn(() => Promise.resolve([] as SaleBillItem[])),

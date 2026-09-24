@@ -25,6 +25,7 @@ exports.SALES_ERROR_CODES = {
     ORDER_DELIVERED: 'SALES_ORDER_DELIVERED',
     ORDER_LINE_DELIVERED: 'SALES_ORDER_LINE_DELIVERED',
     ORDER_CONFIRMED: 'SALES_ORDER_CONFIRMED',
+    ORDER_NOT_OPEN: 'SALES_ORDER_NOT_OPEN',
     RESERVE_SHORT: 'SALES_RESERVE_SHORT',
     DC_PURPOSE_NOT_ALLOWED: 'SALES_DC_PURPOSE_NOT_ALLOWED',
     DC_REQUIRES_ORDER: 'SALES_DC_REQUIRES_ORDER',
@@ -80,6 +81,7 @@ function createGuardContext(opts = {}) {
         overrides: [],
         canOverride: false,
         throwOnRefusal: true,
+        dryRun: false,
         ...opts,
     };
 }

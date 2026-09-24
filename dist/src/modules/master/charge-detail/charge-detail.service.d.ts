@@ -1,4 +1,4 @@
-import { TransactionChargeDetail } from '@prisma/client';
+import { Prisma, TransactionChargeDetail } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
@@ -20,7 +20,7 @@ export declare class ChargeDetailService {
     save(saveChargeDetailDto: SaveChargeDetailDto): Promise<ChargeDetailPayload>;
     get(getChargeDetailQueryDto: GetChargeDetailQueryDto): Promise<ChargeDetailPayload | ChargeDetailPayload[]>;
     getById(cdId: string): Promise<ChargeDetailPayload>;
-    getByDocument(cdDocType: ChargeDocType, cdDocId: string, isActive?: boolean): Promise<ChargeDetailPayload[]>;
+    getByDocument(cdDocType: ChargeDocType, cdDocId: string, isActive?: boolean, client?: Prisma.TransactionClient): Promise<ChargeDetailPayload[]>;
     softDelete(cdId: string): Promise<ChargeDetailDeleteResult>;
     syncDocumentCharges(tx: ChargeDetailWriteClient, scope: ChargeDocumentScope, inputCharges: SaveChargeDetailDto[] | undefined, actorId: string, audit?: ChargeDocumentAudit): Promise<ChargeDetailPayload[]>;
     findDocumentCharges(client: ChargeDetailWriteClient, cdDocType: ChargeDocType, cdDocId: string): Promise<ChargeDetailRecord[]>;

@@ -29,6 +29,9 @@ let SalesContextService = class SalesContextService {
     actor() {
         return this.requestContext.getUserId() ?? module_service_utils_1.DEFAULT_ACTOR;
     }
+    async actorName(client) {
+        return loginNameOf(client ?? this.prisma, this.requestContext.getUserId());
+    }
     async resolve(scope, menuId, client) {
         const userId = this.requestContext.getUserId();
         const effective = await this.appSettings.resolveEffective({
@@ -47,6 +50,7 @@ let SalesContextService = class SalesContextService {
         return {
             userId: userId ?? module_service_utils_1.DEFAULT_ACTOR,
             actor: userId ?? module_service_utils_1.DEFAULT_ACTOR,
+            actorName: await loginNameOf(client ?? this.prisma, userId),
             settings,
             cogsMode: cogs === 'PERIODIC' ? 'PERIODIC' : 'PERPETUAL',
             rights,
@@ -88,6 +92,16 @@ exports.SalesContextService = SalesContextService = __decorate([
         request_context_service_1.RequestContextService,
         app_setting_value_service_1.AppSettingValueService])
 ], SalesContextService);
+async function loginNameOf(client, userId) {
+    if (!isUuid(userId)) {
+        return userId ?? module_service_utils_1.DEFAULT_ACTOR;
+    }
+    const user = await client.userMaster.findUnique({
+        where: { usrId: userId },
+        select: { usrLoginName: true },
+    });
+    return user?.usrLoginName.trim() || userId;
+}
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 function isUuid(v) {
     return !!v && UUID.test(v);

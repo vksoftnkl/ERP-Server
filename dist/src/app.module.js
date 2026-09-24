@@ -27,6 +27,7 @@ const env_validation_1 = require("./config/env.validation");
 const prisma_module_1 = require("./database/prisma/prisma.module");
 const pg_module_1 = require("./database/pg/pg.module");
 const health_module_1 = require("./modules/health/health.module");
+const cloud_sync_module_1 = require("./modules/cloud-sync/cloud-sync.module");
 const users_module_1 = require("./modules/users/users.module");
 const auth_module_1 = require("./modules/auth/auth.module");
 const grid_details_module_1 = require("./modules/grid-details/grid-details.module");
@@ -165,6 +166,7 @@ exports.AppModule = AppModule = __decorate([
             pg_module_1.PgModule,
             audit_log_module_1.AuditLogModule,
             health_module_1.HealthModule,
+            cloud_sync_module_1.CloudSyncModule,
             users_module_1.UsersModule,
             items_group_master_module_1.ItemsGroupMasterModule,
             items_brand_master_module_1.ItemsBrandMasterModule,
