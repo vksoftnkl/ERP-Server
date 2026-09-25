@@ -142,9 +142,16 @@ let ChequeReturnService = class ChequeReturnService {
         const recomputed = await this.recompute.recomputeBills(tx, touched, params.asOf);
         const refs = await this.loadBillRefs(tx, touched);
         const saleBill = await (0, sale_bill_cheque_helper_1.findSaleBillOfCheque)(tx, cheque);
-        const saleBillReopened = saleBill
-            ? await (0, sale_bill_cheque_helper_1.moveSaleBillSettlement)(tx, saleBill, cheque.apdAmount.negated(), params.asOf, params.actor)
-            : null;
+        let saleBillReopened = null;
+        if (saleBill?.hasCounterRow) {
+            const given = reversed.amountByBill.get(`${saleBill.ablId}|${saleBill.ablAccYear}`);
+            if (given?.greaterThan(0)) {
+                await (0, sale_bill_cheque_helper_1.moveSaleBillHeader)(tx, saleBill, given.negated());
+            }
+        }
+        else if (saleBill) {
+            saleBillReopened = await (0, sale_bill_cheque_helper_1.moveSaleBillSettlement)(tx, saleBill, cheque.apdAmount.negated(), params.asOf, params.actor);
+        }
         return {
             voucher: written.ref,
             legs: written.legs,
@@ -160,7 +167,7 @@ let ChequeReturnService = class ChequeReturnService {
                     dueDate: ref?.dueDate ?? null,
                     billAmount: (0, receipt_utils_1.toAmount)(bill.billAmount ?? receipt_utils_1.ZERO),
                     pendingAmount: (0, receipt_utils_1.toAmount)(bill.pendingAmount),
-                    settledByThisCheque: 0,
+                    settledByThisCheque: (0, receipt_utils_1.toAmount)(reversed.amountByBill.get(`${bill.billId}|${bill.accYear}`) ?? receipt_utils_1.ZERO),
                 };
             })
                 .concat(saleBillReopened ? [saleBillReopened] : []),

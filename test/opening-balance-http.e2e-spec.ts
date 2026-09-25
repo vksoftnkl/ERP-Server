@@ -142,6 +142,7 @@ describe('opening-balances (e2e — live DB)', () => {
     if (ids.length === 0) {
       return;
     }
+    await prisma.appSettingValue.deleteMany({ where: { asvCompanyId: { in: ids } } });
     await prisma.accBillBalance.deleteMany({ where: { ablCompanyId: { in: ids } } });
     await prisma.accVoucherHeader.deleteMany({ where: { avhCompanyId: { in: ids } } });
     await prisma.accOpeningBalance.deleteMany({ where: { opCompanyId: { in: ids } } });
@@ -208,6 +209,21 @@ describe('opening-balances (e2e — live DB)', () => {
       select: { compId: true },
     });
     otherCompanyId = other.compId;
+
+    // notes (47): the trial books check refuses a post whose party's bills
+    // and ledger disagree. Several fixtures below write acc_bill_balance rows
+    // directly (a SALES bill behind a leg-less header), which is exactly that
+    // state — they exercise the opening screen, not posting, so the check is
+    // off for these two throwaway companies.
+    await prisma.appSettingValue.createMany({
+      data: [companyId, otherCompanyId].map((id) => ({
+        asvSettingKey: 'accounts.reconcile_on_post',
+        asvScope: 'COMPANY',
+        asvCompanyId: id,
+        asvValue: 'false',
+        asvCreatedBy: ACTOR,
+      })),
+    });
 
     const branch = await prisma.branchMaster.create({
       data: { brName: 'E2E_OpeningBal_Branch', brStateCode: '33', brCompId: companyId },

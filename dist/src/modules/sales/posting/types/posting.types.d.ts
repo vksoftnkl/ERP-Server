@@ -3,6 +3,12 @@ export declare const SALES_ERROR_CODES: {
     readonly BILL_CANCELLED: "SALES_BILL_CANCELLED";
     readonly REVISION_STALE: "SALES_REVISION_STALE";
     readonly AMEND_OFF: "SALES_AMEND_OFF";
+    readonly RIGHT_VIEW: "SALES_RIGHT_VIEW";
+    readonly RIGHT_CREATE: "SALES_RIGHT_CREATE";
+    readonly RIGHT_EDIT: "SALES_RIGHT_EDIT";
+    readonly RIGHT_DELETE: "SALES_RIGHT_DELETE";
+    readonly RIGHT_PRINT: "SALES_RIGHT_PRINT";
+    readonly RIGHT_EXPORT: "SALES_RIGHT_EXPORT";
     readonly RIGHT_POST: "SALES_RIGHT_POST";
     readonly RIGHT_CANCEL: "SALES_RIGHT_CANCEL";
     readonly RIGHT_AMEND: "SALES_RIGHT_AMEND";
@@ -45,6 +51,7 @@ export declare const SALES_ERROR_CODES: {
     readonly BACKDATE: "SALES_BACKDATE";
     readonly CASH_LIMIT: "SALES_CASH_LIMIT";
     readonly PAN_REQUIRED: "SALES_PAN_REQUIRED";
+    readonly CUSTOMER_REQUIRED: "SALES_CUSTOMER_REQUIRED";
     readonly HSN_DIGITS: "HSN_DIGITS";
     readonly CREDIT_LIMIT: "SALES_CREDIT_LIMIT";
     readonly RATE_BELOW_MIN: "SALES_RATE_BELOW_MIN";
@@ -147,6 +154,12 @@ export interface LocksBlock {
     };
 }
 export interface RightsBlock {
+    view: boolean;
+    create: boolean;
+    edit: boolean;
+    delete: boolean;
+    print: boolean;
+    export: boolean;
     post: boolean;
     cancel: boolean;
     amend: boolean;

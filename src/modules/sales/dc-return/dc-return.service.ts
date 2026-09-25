@@ -7,15 +7,15 @@ import { ChargeDetailService } from '../../master/charge-detail/charge-detail.se
 import { TenderDetailService } from '../../accountsModule/tenderDetail/tender-detail.service';
 import { TenderDrCr } from '../../accountsModule/tenderDetail/types/tender-detail-api.types';
 import { DcFulfilmentService } from '../posting/dc-fulfilment.service';
-import { DocRegisterService } from '../posting/doc-register.service';
+import { DocRegisterService } from '../../../common/posting/doc-register.service';
 import { GstGatewayService } from '../posting/gst-gateway.service';
 import { SalesContextService, type SalesCallContext } from '../posting/sales-context.service';
 import { SalesDocBlocksService } from '../posting/sales-doc-blocks.service';
 import { SalesDocStore, type DocKeys, type DocRow, type DocSpec } from '../posting/sales-doc-store';
 import { buildCogsLegs } from '../posting/sales-leg.sources';
-import { SalesPostingService } from '../posting/sales-posting.service';
+import { VoucherPostingService } from '../../../common/posting/voucher-posting.service';
 import { SalesStockService } from '../posting/sales-stock.service';
-import { StatutoryService } from '../posting/statutory.service';
+import { StatutoryService } from '../../../common/posting/statutory.service';
 import { TransportBandService } from '../posting/transport-band.service';
 import {
   assertAccYearWritable,
@@ -30,7 +30,7 @@ import {
   createGuardContext,
   type SalesGuardContext,
 } from '../posting/types/posting.types';
-import type { RegisterDoc } from '../posting/types/doc-register.types';
+import type { RegisterDoc } from '../../../common/posting/doc-register.types';
 import {
   SALES_MENU_ID,
   SALES_VOUCHER_TYPE,
@@ -119,7 +119,7 @@ export class DcReturnService {
     private readonly prisma: PrismaService,
     private readonly salesContext: SalesContextService,
     private readonly statutory: StatutoryService,
-    private readonly legs: SalesPostingService,
+    private readonly legs: VoucherPostingService,
     private readonly register: DocRegisterService,
     private readonly stock: SalesStockService,
     private readonly blocks: SalesDocBlocksService,

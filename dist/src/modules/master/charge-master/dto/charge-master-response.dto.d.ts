@@ -26,6 +26,16 @@ export declare class ChargeMasterPayloadDto {
     chgBeforeTax: boolean;
     chgTaxId: string | null;
     chgTaxName: string | null;
+    ledTaxId: string | null;
+    ledgerTaxPerc: number | null;
+    chgTaxSource: 'CHARGE' | 'LEDGER' | null;
+    chgTaxRate: number | null;
+    chgTaxCgstPerc: number | null;
+    chgTaxSgstPerc: number | null;
+    chgTaxIgstPerc: number | null;
+    chgTaxCessPerc: number | null;
+    chgTaxTaxability: string | null;
+    ledGstRate: number | null;
     chgSepPost: boolean;
     chgManParty: boolean;
     chgDispOrder: number | null;

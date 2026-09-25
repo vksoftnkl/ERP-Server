@@ -327,7 +327,7 @@ let ChequeReissueService = class ChequeReissueService {
         const saleBill = params.restoreReversedBy && params.allocations.length === 0 && !params.onVoucherWritten
             ? await (0, sale_bill_cheque_helper_1.findSaleBillOfCheque)(tx, cheque)
             : null;
-        if (saleBill) {
+        if (saleBill && !saleBill.hasCounterRow) {
             await tx.accPdcRegister.update({
                 where: {
                     apdId_apdAccYear: {
@@ -383,6 +383,12 @@ let ChequeReissueService = class ChequeReissueService {
             });
         }
         const recomputed = await this.recompute.recomputeBills(tx, outcome.bills, (0, receipt_utils_1.todayUtc)());
+        if (saleBill?.hasCounterRow) {
+            const back = outcome.refs.find((ref) => ref.billId === saleBill.ablId && ref.billAccYear === saleBill.ablAccYear);
+            if (back && back.settledByThisCheque > 0) {
+                await (0, sale_bill_cheque_helper_1.moveSaleBillHeader)(tx, saleBill, new client_1.Prisma.Decimal(back.settledByThisCheque));
+            }
+        }
         const pendingByBill = new Map(recomputed.map((bill) => [`${bill.billId}|${bill.accYear}`, bill]));
         return {
             voucher: await (0, cheque_voucher_helper_1.loadVoucherRef)(tx, written.ref.voucherId, voucherAccYear),

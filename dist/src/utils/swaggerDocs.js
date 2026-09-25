@@ -93,6 +93,7 @@ const itemBatchStockModule_1 = require("../modules/stocks/itembatchstock/itemBat
 const print_render_module_1 = require("../modules/settings/print-render/print-render.module");
 const widget_master_module_1 = require("../modules/master/widget-master/widget-master.module");
 const configured_grid_sql_module_1 = require("../common/configured-grid-sql/configured-grid-sql.module");
+const ledger_statement_module_1 = require("../modules/reports/ledger-statement/ledger-statement.module");
 exports.swaggerModuleDocuments = [
     {
         path: 'auth',
@@ -671,6 +672,18 @@ exports.swaggerModuleDocuments = [
             'the header scope says which one Save will touch. Prices resolve through ' +
             'fn_smp_effective and never through a second implementation here.',
         include: [selling_price_bulk_module_1.SellingPriceBulkModule],
+    },
+    {
+        path: 'reports-ledger-statement',
+        title: 'Reports — Ledger Statement API',
+        description: 'Read-only Ledger Statement report (menu 258) and Ledger Monthly Summary (menu 144) over ' +
+            'the acc_vouchers legs of ONE ledger for ONE period, starting from that year’s ' +
+            'acc_opening_balance. Seven GET routes under reports/ledger-statement: the ledger picker, ' +
+            'the header panels, the paged voucher grid with running balance, one voucher’s legs, the ' +
+            'daily and monthly tabs, and an unpaged export capped at 20,000 rows. Counts POSTED and ' +
+            'CANCELLED vouchers (a cancelled pair nets to zero), never DRAFT. Shares no URL, DTO or ' +
+            'payload with any other module.',
+        include: [ledger_statement_module_1.LedgerStatementModule],
     },
     {
         path: 'audit-logs',

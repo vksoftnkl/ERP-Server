@@ -229,6 +229,13 @@ let LoyaltyLedgerService = LoyaltyLedgerService_1 = class LoyaltyLedgerService {
         const rate = opts.rate ?? 0;
         const rows = [];
         let left = points;
+        const firstRowNo = opts.srcDocType && opts.srcDocId
+            ? ((await this.maxRowNos(tx, {
+                docType: opts.srcDocType,
+                docId: opts.srcDocId,
+                accYear: opts.accYear,
+            })).get(txnType) ?? 0) + 1
+            : 1;
         for (const lot of lots) {
             if (left <= 0) {
                 break;
@@ -244,7 +251,7 @@ let LoyaltyLedgerService = LoyaltyLedgerService_1 = class LoyaltyLedgerService {
                 branchId: opts.branchId,
                 accYear: opts.accYear,
                 txnType,
-                rowNo: rows.length + 1,
+                rowNo: firstRowNo + rows.length,
                 points: -take,
                 txnDate: opts.txnDate,
                 lotId: lot.lotId,
@@ -412,6 +419,11 @@ let LoyaltyLedgerService = LoyaltyLedgerService_1 = class LoyaltyLedgerService {
                 lines: computed.lines,
             };
         }
+        const earnRowNo = ((await this.maxRowNos(tx, {
+            docType: bill.docType,
+            docId: bill.docId,
+            accYear: bill.accYear,
+        })).get('EARN') ?? 0) + 1;
         await this.writeLedgerRows(tx, [
             {
                 compId: bill.companyId,
@@ -423,7 +435,7 @@ let LoyaltyLedgerService = LoyaltyLedgerService_1 = class LoyaltyLedgerService {
                 lssId: computed.lssId,
                 lsiId: computed.lsiId,
                 txnType: 'EARN',
-                rowNo: 1,
+                rowNo: earnRowNo,
                 points: computed.points,
                 txnDate: bill.docDate,
                 expiresOn,

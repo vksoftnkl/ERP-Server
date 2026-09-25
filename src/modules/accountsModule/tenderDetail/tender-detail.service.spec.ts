@@ -302,6 +302,7 @@ describe('TenderDetailService', () => {
           tdSrcDocType: 'SALE_BILL',
           tdSrcDocId: DOC_ID,
           tdIsDeleted: false,
+          tdIsVoided: false,
         },
       });
     });

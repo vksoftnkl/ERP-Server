@@ -28,5 +28,6 @@ export declare class ChargeMasterService {
     private applyOptionalFields;
     private handleWriteError;
     private throwNotFound;
+    private taxFields;
     private toPayload;
 }

@@ -3,8 +3,9 @@ import { AuditLogService } from '../../audit-log/audit-log.service';
 import { TenderDetailService } from '../../accountsModule/tenderDetail/tender-detail.service';
 import { LoyaltyLedgerService } from '../posting/loyalty-ledger.service';
 import { SalesContextService } from '../posting/sales-context.service';
-import { SalesPostingService } from '../posting/sales-posting.service';
+import { VoucherPostingService } from '../../../common/posting/voucher-posting.service';
 import { BillService } from './bill.service';
+import { BillBalanceRecomputeService } from '../../accountsModule/billBalance/bill-balance-recompute.service';
 import type { RetenderBillDto } from './dto/bill-lifecycle.dto';
 import { type BillPayload } from './types/bill-api.types';
 export declare class BillRetenderService {
@@ -15,7 +16,8 @@ export declare class BillRetenderService {
     private readonly legs;
     private readonly loyalty;
     private readonly audit;
-    constructor(prisma: PrismaService, bills: BillService, salesContext: SalesContextService, tenders: TenderDetailService, legs: SalesPostingService, loyalty: LoyaltyLedgerService, audit: AuditLogService);
+    private readonly recompute;
+    constructor(prisma: PrismaService, bills: BillService, salesContext: SalesContextService, tenders: TenderDetailService, legs: VoucherPostingService, loyalty: LoyaltyLedgerService, audit: AuditLogService, recompute: BillBalanceRecomputeService);
     retender(dto: RetenderBillDto): Promise<BillPayload>;
     private tenderScope;
 }

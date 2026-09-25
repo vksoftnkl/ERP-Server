@@ -93,9 +93,11 @@ export declare const STORED_HEADER_SELECT: {
     avhModifiedOn: true;
     avhModifiedBy: true;
 };
-export type StoredHeader = Prisma.AccVoucherHeaderGetPayload<{
+export type StoredHeader = Omit<Prisma.AccVoucherHeaderGetPayload<{
     select: typeof STORED_HEADER_SELECT;
-}>;
+}>, 'avhPartyId'> & {
+    avhPartyId: string;
+};
 export declare function statusOf(header: Pick<StoredHeader, 'avhVoucherStatus'>): VoucherStatus;
 export declare function toOtherLinePayload(line: NormalisedOtherLine): ReceiptOtherLine;
 export { ZERO, money, sum };

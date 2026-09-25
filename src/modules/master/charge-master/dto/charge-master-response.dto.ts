@@ -75,6 +75,47 @@ export class ChargeMasterPayloadDto {
     description: 'Name of the tax rate chgTaxId points at',
   })
   chgTaxName!: string | null;
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description: "The posting ledger's ledTaxId",
+  })
+  ledTaxId!: string | null;
+  @ApiPropertyOptional({
+    nullable: true,
+    type: Number,
+    description: "The posting ledger's own rate (%), whatever the charge overrides it with",
+  })
+  ledgerTaxPerc!: number | null;
+  @ApiPropertyOptional({
+    nullable: true,
+    enum: ['CHARGE', 'LEDGER'],
+    description: 'Where chgTaxRate came from: the charge (chgTaxId) or the ledger (ledTaxId)',
+  })
+  chgTaxSource!: 'CHARGE' | 'LEDGER' | null;
+  @ApiPropertyOptional({
+    nullable: true,
+    type: Number,
+    description:
+      'The effective GST rate (%) the entry screens price the charge at: chgTaxId when set, else the ledger rate',
+  })
+  chgTaxRate!: number | null;
+  @ApiPropertyOptional({ nullable: true, type: Number })
+  chgTaxCgstPerc!: number | null;
+  @ApiPropertyOptional({ nullable: true, type: Number })
+  chgTaxSgstPerc!: number | null;
+  @ApiPropertyOptional({ nullable: true, type: Number })
+  chgTaxIgstPerc!: number | null;
+  @ApiPropertyOptional({ nullable: true, type: Number })
+  chgTaxCessPerc!: number | null;
+  @ApiPropertyOptional({ nullable: true, description: 'Taxability of the effective rate' })
+  chgTaxTaxability!: string | null;
+  @ApiPropertyOptional({
+    nullable: true,
+    type: Number,
+    description: 'Same as chgTaxRate, under the name the Qt charge grid reads',
+  })
+  ledGstRate!: number | null;
   @ApiProperty()
   chgSepPost!: boolean;
   @ApiProperty()

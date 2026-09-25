@@ -19,17 +19,17 @@ const txn_status_log_helper_1 = require("../../../common/txn-status-log/txn-stat
 const sale_order_service_1 = require("../sale-order/sale-order.service");
 const charge_carry_service_1 = require("../posting/charge-carry.service");
 const dc_fulfilment_service_1 = require("../posting/dc-fulfilment.service");
-const doc_register_service_1 = require("../posting/doc-register.service");
+const doc_register_service_1 = require("../../../common/posting/doc-register.service");
 const gst_gateway_service_1 = require("../posting/gst-gateway.service");
 const loyalty_ledger_service_1 = require("../posting/loyalty-ledger.service");
 const promotion_usage_service_1 = require("../posting/promotion-usage.service");
 const sales_context_service_1 = require("../posting/sales-context.service");
 const sales_doc_blocks_service_1 = require("../posting/sales-doc-blocks.service");
 const sales_leg_sources_1 = require("../posting/sales-leg.sources");
-const sales_posting_service_1 = require("../posting/sales-posting.service");
+const voucher_posting_service_1 = require("../../../common/posting/voucher-posting.service");
 const sales_stock_service_1 = require("../posting/sales-stock.service");
 const stock_reservation_service_1 = require("../posting/stock-reservation.service");
-const statutory_service_1 = require("../posting/statutory.service");
+const statutory_service_1 = require("../../../common/posting/statutory.service");
 const transport_band_service_1 = require("../posting/transport-band.service");
 const sales_guards_1 = require("../posting/sales.guards");
 const sales_errors_1 = require("../posting/sales.errors");
@@ -38,8 +38,9 @@ const sales_doc_utils_1 = require("../posting/sales-doc.utils");
 const bill_service_1 = require("./bill.service");
 const books_reconcile_guard_1 = require("../../accountsModule/reconcile/books-reconcile.guard");
 const bill_cheque_details_1 = require("./bill-cheque-details");
+const bill_counter_allocation_helper_1 = require("./bill-counter-allocation.helper");
 const bill_pdc_posting_helper_1 = require("./bill-pdc-posting.helper");
-const bill_adjustment_helper_1 = require("./bill-adjustment.helper");
+const bill_adjustment_helper_1 = require("../../../common/posting/bill-adjustment.helper");
 const bill_snapshot_1 = require("./bill-snapshot");
 const bill_api_types_1 = require("./types/bill-api.types");
 const POST_TX_OPTIONS = { timeout: 60_000, maxWait: 10_000 };
@@ -368,7 +369,7 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
             (0, sales_guards_1.refuse)(g, posting_types_1.SALES_ERROR_CODES.DAY_CLOSED, `The books for ${snap.billDate} are closed at this branch`, { field: 'sbBillDate' });
         }
         if (!snap.custId) {
-            (0, sales_guards_1.refuse)(g, posting_types_1.SALES_ERROR_CODES.PAN_REQUIRED, 'A bill must name a customer to post: its voucher and receivable are raised against the customer ledger (the walk-in customer has one too)', { field: 'sbCustId' });
+            (0, sales_guards_1.refuse)(g, posting_types_1.SALES_ERROR_CODES.CUSTOMER_REQUIRED, 'A bill must name a customer to post: its voucher and receivable are raised against the customer ledger (the walk-in customer has one too)', { field: 'sbCustId' });
         }
         if (snap.items.length === 0) {
             (0, sales_guards_1.refuse)(g, posting_types_1.SALES_ERROR_CODES.STOCK_QTY_MISMATCH, 'A bill with no lines cannot be posted', {
@@ -595,9 +596,11 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
         const inter = (0, sales_doc_utils_1.supplyNatureOf)(company?.comp_state_code, snap.posStcd) === 'INTER';
         const eway = await this.statutory.ewayApplicable(snap.companyId, snap.billAmt, snap.billDate, { interState: inter, stateCode: snap.posStcd }, tx);
         if (eway.applicable && snap.billMode !== 'POS') {
-            const band = snap.sbId
-                ? await this.transportBand.read({ docType: 'SALE_BILL', docId: snap.sbId, accYear: snap.accYear }, tx)
-                : null;
+            const band = snap.transport !== undefined
+                ? snap.transport
+                : snap.sbId
+                    ? await this.transportBand.read({ docType: 'SALE_BILL', docId: snap.sbId, accYear: snap.accYear }, tx)
+                    : null;
             if (!band || (!band.transporterId && !band.transporterName && !band.lrNo)) {
                 (0, sales_guards_1.warn)(g, posting_types_1.SALES_ERROR_CODES.EWAY_TRANSPORT_MISSING, `An e-way bill is required for this consignment (${snap.billAmt} ${inter ? 'inter' : 'intra'}-state) and the transport band is empty`, { field: 'transport' });
             }
@@ -840,6 +843,16 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
         });
         const settled = (0, bill_snapshot_1.settledByTenders)(snap);
         const ablId = await this.writeBalanceRow(tx, bill, snap, partyId, voucher.voucherId, voucher.voucherLastNo, settled, actor, now);
+        const setOffTotal = adjustments.reduce((t, a) => t + (0, sales_doc_utils_1.num)(a.amount), 0);
+        await (0, bill_counter_allocation_helper_1.syncCounterAllocations)(tx, {
+            bill,
+            abl: { ablId, ablAccYear: bill.sbAccYear },
+            partyId,
+            voucherFor: () => ({ voucherId: voucher.voucherId, accYear: bill.sbAccYear }),
+            cap: (0, bill_snapshot_1.decimal)(Math.max(0, (0, sales_doc_utils_1.round2)(snap.billAmt - setOffTotal))),
+            actor,
+            now,
+        });
         if (adjustments.length > 0) {
             await (0, bill_adjustment_helper_1.syncBillAdjustments)(tx, {
                 billId: ablId,
@@ -1124,6 +1137,9 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
             },
             select: { ablId: true },
         });
+        if (abl) {
+            await (0, bill_counter_allocation_helper_1.retireCounterAllocations)(tx, bill, { ablId: abl.ablId, ablAccYear: bill.sbAccYear }, actor, now);
+        }
         if (abl && bill.sbCustId) {
             await (0, bill_adjustment_helper_1.syncBillAdjustments)(tx, {
                 billId: abl.ablId,
@@ -1576,7 +1592,7 @@ exports.BillLifecycleService = BillLifecycleService = BillLifecycleService_1 = _
         bill_service_1.BillService,
         sales_context_service_1.SalesContextService,
         statutory_service_1.StatutoryService,
-        sales_posting_service_1.SalesPostingService,
+        voucher_posting_service_1.VoucherPostingService,
         doc_register_service_1.DocRegisterService,
         sales_stock_service_1.SalesStockService,
         stock_reservation_service_1.StockReservationService,

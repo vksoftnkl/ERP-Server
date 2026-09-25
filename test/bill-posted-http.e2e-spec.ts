@@ -461,8 +461,11 @@ describe('Sale bill — DRAFT → /validate → /post → /cancel (e2e, live DB)
     const mirror = (await p.voucherById(original.avh_reversal_voucher_id))!;
     expect(mirror.avh_voucher_status.trim()).toBe('POSTED');
     expect(mirror.avh_against_voucher_id).toBe(postedVoucherId);
-    expect(mirror.avh_voucher_type_id).toBe(VCHR.BILL);
+    // notes (49) D3: numbered in the REVERSAL series (rev…), never the bill
+    // series — a mirror drawing on it left a gap in the GST invoice numbers.
+    expect(mirror.avh_voucher_type_id).not.toBe(VCHR.BILL);
     expect(mirror.avh_voucher_refno).toBe(res.body.data.reversalVoucherRefno);
+    expect(mirror.avh_voucher_refno).toMatch(/^rev/);
     // A number of its own — ux_avh_voucher_no keeps a cancelled number taken.
     expect(mirror.avh_voucher_refno).not.toBe(original.avh_voucher_refno);
     expect(mirror.avh_src_doc_id).toBeNull();

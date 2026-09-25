@@ -36,12 +36,21 @@ const CHARGE_OPTIONAL_FIELDS = [
     'chgAutoApply',
     'chgIsActive',
 ];
+const CHARGE_TAX_SELECT = {
+    taxId: true,
+    taxName: true,
+    taxRatePerc: true,
+    taxCgstPerc: true,
+    taxSgstPerc: true,
+    taxIgstPerc: true,
+    taxCessPerc: true,
+    taxTaxability: true,
+};
 const CHARGE_LEDGER_SELECT = {
     ledName: true,
     ledHsnSac: true,
-};
-const CHARGE_TAX_SELECT = {
-    taxName: true,
+    ledTaxId: true,
+    taxRate: { select: CHARGE_TAX_SELECT },
 };
 const CHARGE_RELATIONS = {
     ledger: { select: CHARGE_LEDGER_SELECT },
@@ -394,6 +403,22 @@ let ChargeMasterService = class ChargeMasterService {
     throwNotFound(chgId) {
         (0, module_service_utils_1.throwMasterNotFound)('Charge not found', 'chgId', `No active charge found with id ${chgId}`);
     }
+    taxFields(own, inherited, ledTaxId) {
+        const effective = own ?? inherited;
+        const rate = effective ? (0, module_service_utils_1.toNullableNumber)(effective.taxRatePerc) : null;
+        return {
+            ledTaxId,
+            ledgerTaxPerc: inherited ? (0, module_service_utils_1.toNullableNumber)(inherited.taxRatePerc) : null,
+            chgTaxSource: own ? 'CHARGE' : inherited ? 'LEDGER' : null,
+            chgTaxRate: rate,
+            chgTaxCgstPerc: effective ? (0, module_service_utils_1.toNullableNumber)(effective.taxCgstPerc) : null,
+            chgTaxSgstPerc: effective ? (0, module_service_utils_1.toNullableNumber)(effective.taxSgstPerc) : null,
+            chgTaxIgstPerc: effective ? (0, module_service_utils_1.toNullableNumber)(effective.taxIgstPerc) : null,
+            chgTaxCessPerc: effective ? (0, module_service_utils_1.toNullableNumber)(effective.taxCessPerc) : null,
+            chgTaxTaxability: effective?.taxTaxability ?? null,
+            ledGstRate: rate,
+        };
+    }
     toPayload(record, ledger = null, tax = null) {
         return {
             chgId: record.chgId,
@@ -414,6 +439,7 @@ let ChargeMasterService = class ChargeMasterService {
             chgBeforeTax: record.chgBeforeTax,
             chgTaxId: record.chgTaxId,
             chgTaxName: tax?.taxName ?? null,
+            ...this.taxFields(tax, ledger?.taxRate ?? null, ledger?.ledTaxId ?? null),
             chgSepPost: record.chgSepPost,
             chgManParty: record.chgManParty,
             chgDispOrder: record.chgDispOrder,

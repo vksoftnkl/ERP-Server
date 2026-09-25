@@ -19,13 +19,15 @@ const tender_detail_service_1 = require("../../accountsModule/tenderDetail/tende
 const tender_detail_api_types_1 = require("../../accountsModule/tenderDetail/types/tender-detail-api.types");
 const loyalty_ledger_service_1 = require("../posting/loyalty-ledger.service");
 const sales_context_service_1 = require("../posting/sales-context.service");
-const sales_posting_service_1 = require("../posting/sales-posting.service");
+const voucher_posting_service_1 = require("../../../common/posting/voucher-posting.service");
 const sales_guards_1 = require("../posting/sales.guards");
 const sales_errors_1 = require("../posting/sales.errors");
 const posting_types_1 = require("../posting/types/posting.types");
 const sales_doc_utils_1 = require("../posting/sales-doc.utils");
 const bill_service_1 = require("./bill.service");
 const bill_pdc_posting_helper_1 = require("./bill-pdc-posting.helper");
+const bill_counter_allocation_helper_1 = require("./bill-counter-allocation.helper");
+const bill_balance_recompute_service_1 = require("../../accountsModule/billBalance/bill-balance-recompute.service");
 const bill_cheque_details_1 = require("./bill-cheque-details");
 const books_reconcile_guard_1 = require("../../accountsModule/reconcile/books-reconcile.guard");
 const bill_temp_credit_1 = require("./bill-temp-credit");
@@ -38,7 +40,8 @@ let BillRetenderService = class BillRetenderService {
     legs;
     loyalty;
     audit;
-    constructor(prisma, bills, salesContext, tenders, legs, loyalty, audit) {
+    recompute;
+    constructor(prisma, bills, salesContext, tenders, legs, loyalty, audit, recompute) {
         this.prisma = prisma;
         this.bills = bills;
         this.salesContext = salesContext;
@@ -46,6 +49,7 @@ let BillRetenderService = class BillRetenderService {
         this.legs = legs;
         this.loyalty = loyalty;
         this.audit = audit;
+        this.recompute = recompute;
     }
     async retender(dto) {
         const now = new Date();
@@ -249,16 +253,29 @@ let BillRetenderService = class BillRetenderService {
                 });
                 await (0, bill_pdc_posting_helper_1.syncBillPdcRegister)(tx, bill, { voucherId: contra.voucherId, accYear: bill.sbAccYear }, actor, now, { keepStoredVoucher: true, details: chequeDetails });
                 contraVoucherId = contra.voucherId;
-                const creditTypes = [sales_doc_utils_1.TENDER_TYPE.CREDIT, sales_doc_utils_1.TENDER_TYPE.TEMP_CREDIT];
-                const settled = (0, sales_doc_utils_1.round2)(created
-                    .filter((t) => !t.tdIsDeleted && !voidIds.includes(t.tdId))
-                    .filter((t) => !creditTypes.includes(Number(t.tdTenderTypeId)))
-                    .reduce((s, t) => s + (0, sales_doc_utils_1.num)(t.tdAmount), 0));
-                await tx.$executeRaw `
-          UPDATE accounts.acc_bill_balance
-             SET abl_alloc_amount = LEAST(abl_bill_amount, ${settled}::numeric), abl_modified_on = ${now}, abl_modified_by = ${actor}
+                const [abl] = await tx.$queryRaw `
+          SELECT abl_id, abl_acc_year FROM accounts.acc_bill_balance
            WHERE abl_src_doc_id = ${bill.sbId}::uuid AND abl_acc_year = ${bill.sbAccYear}::char(9)
-             AND abl_src_doc_type = 'SALE_BILL' AND abl_is_deleted = false`;
+             AND abl_src_doc_type = 'SALE_BILL' AND abl_is_deleted = false
+           LIMIT 1`;
+                if (abl) {
+                    const newIds = new Set(newRows.map((t) => t.tdId));
+                    await (0, bill_counter_allocation_helper_1.syncCounterAllocations)(tx, {
+                        bill,
+                        abl: { ablId: abl.abl_id, ablAccYear: abl.abl_acc_year },
+                        partyId: bill.sbCustId,
+                        voucherFor: (tdId) => newIds.has(tdId)
+                            ? { voucherId: contra.voucherId, accYear: bill.sbAccYear }
+                            : bill.sbPostedVoucherId
+                                ? { voucherId: bill.sbPostedVoucherId, accYear: bill.sbAccYear }
+                                : null,
+                        actor,
+                        now,
+                    });
+                    await this.recompute.recomputeBills(tx, [
+                        { billId: abl.abl_id, accYear: abl.abl_acc_year },
+                    ]);
+                }
             }
             const live = await tx.$queryRaw `
         SELECT SUM(td_amount) AS tendered,
@@ -355,9 +372,10 @@ exports.BillRetenderService = BillRetenderService = __decorate([
         bill_service_1.BillService,
         sales_context_service_1.SalesContextService,
         tender_detail_service_1.TenderDetailService,
-        sales_posting_service_1.SalesPostingService,
+        voucher_posting_service_1.VoucherPostingService,
         loyalty_ledger_service_1.LoyaltyLedgerService,
-        audit_log_service_1.AuditLogService])
+        audit_log_service_1.AuditLogService,
+        bill_balance_recompute_service_1.BillBalanceRecomputeService])
 ], BillRetenderService);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 function isUuid(v) {

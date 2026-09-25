@@ -57,6 +57,31 @@ model AccVoucherType {
   vchrTallyExportEnabled     Boolean              @default(true) @map("vchr_tally_export_enabled")
   vchrTallyVoucherTypeName   String?              @db.VarChar(100) @map("vchr_tally_voucher_type_name")
   vchrTallyBaseVoucherType   String?              @db.VarChar(50) @map("vchr_tally_base_voucher_type")
+  // Voucher Register rules (20260925160000_voucher_register) — the TYPE carries the
+  // rules the register's posting routine enforces (share/accounts/voucher_register.md §5).
+  // The value sets below are CHECK constraints ck_vchr_* in the database.
+  /// NONE | ONE | MANY — how many parties a voucher of this type carries
+  vchrPartyMode              String               @default("NONE") @db.VarChar(4) @map("vchr_party_mode")
+  /// DR | CR | ANY — the side the party leg sits on
+  vchrPartySide              String               @default("ANY") @db.VarChar(3) @map("vchr_party_side")
+  /// OFF | DEMAND | RAISE | OPTIONAL — what the party leg does bill-wise
+  vchrBillwiseMode           String               @default("OFF") @db.VarChar(8) @map("vchr_billwise_mode")
+  /// The abl_bill_type a RAISE / OPTIONAL type writes: SALES | PURCHASE | JOURNAL | INTEREST
+  vchrRaiseBillType          String?              @db.VarChar(20) @map("vchr_raise_bill_type")
+  /// Account groups (acc_group_master ids) a debit leg may use; empty = any. A sub-group of a listed group counts.
+  vchrDrGroups               String[]             @default([]) @db.Uuid @map("vchr_dr_groups")
+  /// Same, for the credit legs
+  vchrCrGroups               String[]             @default([]) @db.Uuid @map("vchr_cr_groups")
+  /// NULL | GSTR1 | GSTR1_9B | GSTR2 | GSTR2_NOTE — the GST register the document feeds
+  vchrGstRegister            String?              @db.VarChar(10) @map("vchr_gst_register")
+  /// INPUT | OUTPUT — which tax roles the GST band generates; set exactly when vchrGstRegister is
+  vchrGstSide                String?              @db.VarChar(6) @map("vchr_gst_side")
+  /// OFF | DEDUCT
+  vchrTdsMode                String               @default("OFF") @db.VarChar(8) @map("vchr_tds_mode")
+  /// Rights are checked on THIS menu (decision E). NULL for Rev: a cancel is judged on the original's menu.
+  vchrMenuId                 Int?                 @map("vchr_menu_id")
+  /// Offered on the register's type band
+  vchrInRegister             Boolean              @default(false) @map("vchr_in_register")
   // Audit
   vchrSyncDate               DateTime?            @db.Timestamptz(6) @map("vchr_sync_date")
   vchrCreatedOn              DateTime             @default(now()) @db.Timestamptz(6) @map("vchr_created_on")
@@ -68,6 +93,7 @@ model AccVoucherType {
   voucherHeaders             AccVoucherHeader[]
   vouchers                   AccVoucher[]
   bills                      AccBillBalance[]
+  menu                       Menu?                @relation(fields: [vchrMenuId], references: [menuId], onDelete: Restrict, onUpdate: Cascade, map: "fk_vchr_menu")
   @@unique([vchrTypeCode], map: "uq_acc_voucher_types_code")
   @@unique([vchrTypeName], map: "uq_acc_voucher_types_name")
   @@index([vchrIsActive, vchrSortOrder, vchrTypeName], map: "idx_acc_voucher_types_active_sort")

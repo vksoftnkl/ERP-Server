@@ -1,18 +1,16 @@
 import { Module } from '@nestjs/common';
+import { CommonPostingModule } from '../../../common/posting/posting.module';
 import { StockPostingModule } from '../../stocks/posting/stock-posting.module';
 import { AppSettingsModule } from '../../settings/appSettings/app-settings.module';
 import { ChargeCarryService } from './charge-carry.service';
 import { DcFulfilmentService } from './dc-fulfilment.service';
-import { DocRegisterService } from './doc-register.service';
 import { GstGatewayService } from './gst-gateway.service';
 import { LoyaltyLedgerService } from './loyalty-ledger.service';
 import { PromotionUsageService } from './promotion-usage.service';
 import { SalesContextService } from './sales-context.service';
 import { SalesDocBlocksService } from './sales-doc-blocks.service';
-import { SalesPostingService } from './sales-posting.service';
 import { SalesStockService } from './sales-stock.service';
 import { StockReservationService } from './stock-reservation.service';
-import { StatutoryService } from './statutory.service';
 import { TransportBandService } from './transport-band.service';
 
 /**
@@ -29,14 +27,15 @@ import { TransportBandService } from './transport-band.service';
  *
  * `AppSettingsModule` supplies the resolver behind `SalesContextService`: the
  * settings are read through `fn_app_settings_effective`, never re-merged here.
+ *
+ * `CommonPostingModule` (src/common/posting) holds the pieces the Voucher
+ * Register shares with every sales document — the posting routine, the GST
+ * register writer and the statutory limits — and is re-exported for them.
  */
 const SERVICES = [
-  StatutoryService,
   LoyaltyLedgerService,
   PromotionUsageService,
   ChargeCarryService,
-  SalesPostingService,
-  DocRegisterService,
   SalesContextService,
   SalesDocBlocksService,
   TransportBandService,
@@ -47,8 +46,8 @@ const SERVICES = [
 ];
 
 @Module({
-  imports: [StockPostingModule, AppSettingsModule],
+  imports: [CommonPostingModule, StockPostingModule, AppSettingsModule],
   providers: SERVICES,
-  exports: [...SERVICES, StockPostingModule],
+  exports: [...SERVICES, CommonPostingModule, StockPostingModule],
 })
 export class SalesPostingModule {}

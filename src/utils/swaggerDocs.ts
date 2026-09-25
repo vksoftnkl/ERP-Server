@@ -90,6 +90,7 @@ import { ItemBatchStockModule } from 'src/modules/stocks/itembatchstock/itemBatc
 import { PrintRenderModule } from 'src/modules/settings/print-render/print-render.module';
 import { WidgetMasterModule } from 'src/modules/master/widget-master/widget-master.module';
 import { ConfiguredGridSqlModule } from 'src/common/configured-grid-sql/configured-grid-sql.module';
+import { LedgerStatementModule } from 'src/modules/reports/ledger-statement/ledger-statement.module';
 export const swaggerModuleDocuments = [
   {
     path: 'auth',
@@ -690,6 +691,19 @@ export const swaggerModuleDocuments = [
       'the header scope says which one Save will touch. Prices resolve through ' +
       'fn_smp_effective and never through a second implementation here.',
     include: [SellingPriceBulkModule],
+  },
+  {
+    path: 'reports-ledger-statement',
+    title: 'Reports — Ledger Statement API',
+    description:
+      'Read-only Ledger Statement report (menu 258) and Ledger Monthly Summary (menu 144) over ' +
+      'the acc_vouchers legs of ONE ledger for ONE period, starting from that year’s ' +
+      'acc_opening_balance. Seven GET routes under reports/ledger-statement: the ledger picker, ' +
+      'the header panels, the paged voucher grid with running balance, one voucher’s legs, the ' +
+      'daily and monthly tabs, and an unpaged export capped at 20,000 rows. Counts POSTED and ' +
+      'CANCELLED vouchers (a cancelled pair nets to zero), never DRAFT. Shares no URL, DTO or ' +
+      'payload with any other module.',
+    include: [LedgerStatementModule],
   },
   {
     path: 'audit-logs',

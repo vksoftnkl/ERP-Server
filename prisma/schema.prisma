@@ -542,8 +542,8 @@ model AccLedgerMaster {
   ledRoundingLimit         Decimal?  @db.Decimal                                       @map("led_rounding_limit")
   // 8) TDS / TCS
   ledIsTdsApplicable       Boolean   @default(false)                                   @map("led_is_tds_applicable")
-  ledTdsDeducteeType       String?   @db.VarChar(40)                                  @map("led_tds_deductee_type")
-  ledTdsNatureOfPayment    String?   @db.VarChar(80)                                  @map("led_tds_nature_of_payment")
+  ledTdsDeducteeType       String?   @db.VarChar(16)                                  @map("led_tds_deductee_type")
+  ledTdsNatureOfPayment    String?   @db.VarChar(16)                                  @map("led_tds_nature_of_payment")
   ledIsTcsApplicable       Boolean   @default(false)                                   @map("led_is_tcs_applicable")
   // Input tax credit. Allowed values (ELIGIBLE / INELIGIBLE_17_5 / INELIGIBLE_OTHER /
   // CAPITAL_GOODS / INPUT_SERVICES) are behind chk_led_itc_eligibility (20260917120000)
@@ -1275,6 +1275,61 @@ model AccTdsRegister {
   //     nothing is remitted on the WITHHELD side, the customer does that).
 }
 
+// ----- prisma/accounts/AccountTdsRate.prisma -----
+/// §2.9 — the TDS rate master (migration 20260925170000_tds_rates).
+///
+/// Lookup at the document date: the party ledger's `ledTdsNatureOfPayment`
+/// gives the SECTION, `ledTdsDeducteeType` the DEDUCTEE TYPE (falling back to
+/// the ANY row), and the row whose period holds the date gives the rate. No
+/// PAN → `tdrNoPanRate` (206AA). A company's own row wins over the
+/// NULL-company default.
+///
+/// Thresholds are CHECKED by the service, not stored per party: single = this
+/// payment, annual = the party's total in the financial year. 0 = none.
+///
+/// Effective-dated: a correction is a new row, never an edit.
+model TdsRate {
+  tdrId               String    @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("tdr_id")
+  // NULL = every company
+  tdrCompanyId        String?   @db.Uuid @map("tdr_company_id")
+  // '194C', '194J' … (the ledger's nature of payment)
+  tdrSection          String    @db.VarChar(16) @map("tdr_section")
+  tdrSectionName      String    @db.VarChar(120) @map("tdr_section_name")
+  // ck_tdr_deductee: COMPANY | INDIVIDUAL | HUF | FIRM | AOP | ANY
+  tdrDeducteeType     String    @db.VarChar(16) @map("tdr_deductee_type")
+  // percent
+  tdrRate             Decimal   @db.Decimal(6, 3) @map("tdr_rate")
+  // 206AA
+  tdrNoPanRate        Decimal   @default(20) @db.Decimal(6, 3) @map("tdr_no_pan_rate")
+  tdrThresholdSingle  Decimal   @default(0) @db.Decimal(14, 2) @map("tdr_threshold_single")
+  tdrThresholdAnnual  Decimal   @default(0) @db.Decimal(14, 2) @map("tdr_threshold_annual")
+  tdrEffectiveFrom    DateTime  @db.Date @map("tdr_effective_from")
+  // NULL = open ended
+  tdrEffectiveTo      DateTime? @db.Date @map("tdr_effective_to")
+  tdrIsActive         Boolean   @default(true) @map("tdr_is_active")
+  tdrRemarks          String?   @db.VarChar(250) @map("tdr_remarks")
+  tdrIsDeleted        Boolean   @default(false) @map("tdr_is_deleted")
+  /// NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).
+  tdrSyncDate         DateTime? @db.Timestamptz(6) @map("tdr_sync_date")
+  tdrCreatedOn        DateTime  @default(now()) @db.Timestamptz(6) @map("tdr_created_on")
+  tdrCreatedBy        String?   @db.VarChar(50) @map("tdr_created_by")
+  tdrModifiedOn       DateTime? @db.Timestamptz(6) @map("tdr_modified_on")
+  tdrModifiedBy       String?   @db.VarChar(50) @map("tdr_modified_by")
+  company             Company?  @relation("TdsRateCompany", fields: [tdrCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict)
+
+  @@map("tds_rates")
+  @@schema("accounts")
+  // DB-only objects (migration 20260925170000_tds_rates):
+  //   - CHECK ck_tdr_rate, ck_tdr_threshold, ck_tdr_dates, ck_tdr_deductee,
+  //     ck_tdr_section.
+  //   - EXCLUDE ex_tdr_overlap (gist): no two live rows for one company ×
+  //     section × deductee may overlap in date range.
+  //   - Partial index ix_tdr_lookup (section, deductee, effective_from) on
+  //     live rows.
+  //   - Sync triggers zz_sync_mark_dirty / zz_sync_log_delete, only where the
+  //     cloud-sync functions exist.
+}
+
 // ----- prisma/accounts/AccountTempCredit.prisma -----
 /// TEMP CREDIT — a small loan at the counter to somebody who is NOT a credit
 /// party.
@@ -1741,6 +1796,12 @@ model AccVoucherDocDetail {
   vtxSgstLedgerId     String?                        @db.Uuid @map("vtx_sgst_ledger_id")
   vtxIgstLedgerId     String?                        @db.Uuid @map("vtx_igst_ledger_id")
   vtxCessLedgerId     String?                        @db.Uuid @map("vtx_cess_ledger_id")
+
+  // GSTR-3B table 4 (20260925160000_voucher_register): where this line's ITC goes.
+  // Defaulted by the service from the expense ledger's led_itc_eligibility (whose
+  // vocabulary is the ledger's), changeable per line. CHECK ck_vtx_itc in the database.
+  /// INPUTS | INPUT_SERVICES | CAPITAL_GOODS | INELIGIBLE
+  vtxItcEligibility   String?                        @db.VarChar(16) @map("vtx_itc_eligibility")
 
   // Status / audit
   vtxIsActive         Boolean                        @default(true) @map("vtx_is_active")
@@ -2262,7 +2323,8 @@ model AccVoucherHeader {
   /// claim with itself (migration 20260915120000, §2.4).
   avhTotalDebit          Decimal   @default(0) @db.Decimal(18, 2) @map("avh_total_debit")
   avhTotalCredit         Decimal   @default(0) @db.Decimal(18, 2) @map("avh_total_credit")
-  avhPartyId             String    @db.Uuid @map("avh_party_id")
+  /// NULL for a Contra, and for a multi-party Journal (decision A, 20260925160000_voucher_register)
+  avhPartyId             String?   @db.Uuid @map("avh_party_id")
   avhOppositeLedgerId    String?   @db.Uuid @map("avh_opposite_ledger_id")
   // Scalar list: Prisma rejects null here, so normalise to [] in the DTO.
   avhEmployeeId          String[]  @db.Uuid @map("avh_employee_id")
@@ -2317,7 +2379,7 @@ model AccVoucherHeader {
   company                Company         @relation(fields: [avhCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_avh_company")
   branch                 BranchMaster    @relation(fields: [avhBranchId], references: [brId], onUpdate: Cascade, onDelete: Restrict, map: "fk_avh_branch")
   voucherType            AccVoucherType  @relation(fields: [avhVoucherTypeId], references: [vchrTypeId], onUpdate: Cascade, onDelete: Restrict, map: "fk_avh_voucher_type")
-  party                  AccLedgerMaster @relation("VoucherHeaderParty", fields: [avhPartyId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_avh_party")
+  party                  AccLedgerMaster? @relation("VoucherHeaderParty", fields: [avhPartyId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_avh_party")
   oppositeLedger         AccLedgerMaster? @relation("VoucherHeaderOppLedger", fields: [avhOppositeLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_avh_opp_ledger")
   user                   UserMaster      @relation(fields: [avhUserId], references: [usrId], onUpdate: Cascade, onDelete: Restrict, map: "fk_avh_user")
   againstVoucher         AccVoucherHeader?  @relation("VoucherHeaderAgainst", fields: [avhAgainstVoucherId, avhAgainstAccYear], references: [avhVoucherId, avhAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_avh_against")
@@ -2552,6 +2614,31 @@ model AccVoucherType {
   vchrTallyExportEnabled     Boolean              @default(true) @map("vchr_tally_export_enabled")
   vchrTallyVoucherTypeName   String?              @db.VarChar(100) @map("vchr_tally_voucher_type_name")
   vchrTallyBaseVoucherType   String?              @db.VarChar(50) @map("vchr_tally_base_voucher_type")
+  // Voucher Register rules (20260925160000_voucher_register) — the TYPE carries the
+  // rules the register's posting routine enforces (share/accounts/voucher_register.md §5).
+  // The value sets below are CHECK constraints ck_vchr_* in the database.
+  /// NONE | ONE | MANY — how many parties a voucher of this type carries
+  vchrPartyMode              String               @default("NONE") @db.VarChar(4) @map("vchr_party_mode")
+  /// DR | CR | ANY — the side the party leg sits on
+  vchrPartySide              String               @default("ANY") @db.VarChar(3) @map("vchr_party_side")
+  /// OFF | DEMAND | RAISE | OPTIONAL — what the party leg does bill-wise
+  vchrBillwiseMode           String               @default("OFF") @db.VarChar(8) @map("vchr_billwise_mode")
+  /// The abl_bill_type a RAISE / OPTIONAL type writes: SALES | PURCHASE | JOURNAL | INTEREST
+  vchrRaiseBillType          String?              @db.VarChar(20) @map("vchr_raise_bill_type")
+  /// Account groups (acc_group_master ids) a debit leg may use; empty = any. A sub-group of a listed group counts.
+  vchrDrGroups               String[]             @default([]) @db.Uuid @map("vchr_dr_groups")
+  /// Same, for the credit legs
+  vchrCrGroups               String[]             @default([]) @db.Uuid @map("vchr_cr_groups")
+  /// NULL | GSTR1 | GSTR1_9B | GSTR2 | GSTR2_NOTE — the GST register the document feeds
+  vchrGstRegister            String?              @db.VarChar(10) @map("vchr_gst_register")
+  /// INPUT | OUTPUT — which tax roles the GST band generates; set exactly when vchrGstRegister is
+  vchrGstSide                String?              @db.VarChar(6) @map("vchr_gst_side")
+  /// OFF | DEDUCT
+  vchrTdsMode                String               @default("OFF") @db.VarChar(8) @map("vchr_tds_mode")
+  /// Rights are checked on THIS menu (decision E). NULL for Rev: a cancel is judged on the original's menu.
+  vchrMenuId                 Int?                 @map("vchr_menu_id")
+  /// Offered on the register's type band
+  vchrInRegister             Boolean              @default(false) @map("vchr_in_register")
   // Audit
   vchrSyncDate               DateTime?            @db.Timestamptz(6) @map("vchr_sync_date")
   vchrCreatedOn              DateTime             @default(now()) @db.Timestamptz(6) @map("vchr_created_on")
@@ -2563,6 +2650,7 @@ model AccVoucherType {
   voucherHeaders             AccVoucherHeader[]
   vouchers                   AccVoucher[]
   bills                      AccBillBalance[]
+  menu                       Menu?                @relation(fields: [vchrMenuId], references: [menuId], onDelete: Restrict, onUpdate: Cascade, map: "fk_vchr_menu")
   @@unique([vchrTypeCode], map: "uq_acc_voucher_types_code")
   @@unique([vchrTypeName], map: "uq_acc_voucher_types_name")
   @@index([vchrIsActive, vchrSortOrder, vchrTypeName], map: "idx_acc_voucher_types_active_sort")
@@ -3193,6 +3281,8 @@ model Menu {
   menuSyncDate   DateTime?               @db.Timestamptz(6) @map("menu_sync_date")
   userMenus              UserMenus[]
   sections               FormSection[]
+  /// Voucher types whose rights are judged on this menu (acc_voucher_types.vchr_menu_id)
+  voucherTypes           AccVoucherType[]
   @@index([menuParentId])
   @@index([menuPosition])
   @@map("menu_master")
@@ -5101,6 +5191,7 @@ model Company {
   stockReorderPolicies  StockReorderPolicy[] @relation("StockReorderPolicyCompany")
   stockForecasts        StockForecast[]    @relation("StockForecastCompany")
   stockMovementClasses  StockMovementClass[] @relation("StockMovementClassCompany")
+  tdsRates              TdsRate[]          @relation("TdsRateCompany")
 
   // ── printing (17_printing.sql) ─────────────────────────────────────────
   printPurposes         PrintPurpose[]            @relation("PrintPurposeCompany")

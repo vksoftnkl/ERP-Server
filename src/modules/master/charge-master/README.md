@@ -55,8 +55,17 @@ migration `20260724120000_create_charge_master`).
   `acc_ledger_master` row. They are read-only display values, not stored on
   `charge_master`, and are deliberately excluded from the audit snapshots so
   they never show up as a change. `ledGstRate` / `ledTaxability` were echoed
-  here until 20260912100000 dropped those columns in favour of `led_tax_id`;
-  echoing the rate behind the *ledger's* id is still to be done.
+  here until 20260912100000 dropped those columns in favour of `led_tax_id`.
+- **The effective rate (CHG-TAX)** — every payload also carries the rate the
+  entry screens price the charge at, resolved through `inventory.tax_rate_master`:
+  `chgTaxRate` (total %), `chgTaxCgstPerc` / `chgTaxSgstPerc` / `chgTaxIgstPerc` /
+  `chgTaxCessPerc`, `chgTaxTaxability`, and `chgTaxSource` (`CHARGE` when
+  `chgTaxId` names it, `LEDGER` when the charge inherits the ledger's
+  `led_tax_id`, null when neither does). `ledTaxId` and `ledgerTaxPerc` carry
+  the ledger's own id and rate regardless of the override, and `ledGstRate`
+  repeats `chgTaxRate` under the name the Qt charge grid still reads. All of
+  them are derived and read-only, and like `chgLedgerName` they stay out of
+  the audit snapshots.
 - **`chgTaxId`** — the per-charge GST rate override
   (`chg_tax_id` -> `inventory.tax_rate_master`, migration
   `20260912070000_add_chg_tax_id`). Accepted on create and update, and echoed

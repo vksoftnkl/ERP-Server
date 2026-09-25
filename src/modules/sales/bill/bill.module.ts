@@ -12,6 +12,7 @@ import { BillRetenderService } from './bill-retender.service';
 import { SaleOrderModule } from '../sale-order/sale-order.module';
 import { QuotationModule } from '../quotation/quotation.module';
 import { SalesPostingModule } from '../posting/posting.module';
+import { BillBalanceModule } from '../../accountsModule/billBalance/bill-balance.module';
 
 /**
  * ChargeDetailModule / TenderDetailModule export the services that own the
@@ -33,6 +34,8 @@ import { SalesPostingModule } from '../posting/posting.module';
     SaleOrderModule,
     QuotationModule,
     SalesPostingModule,
+    // /bills/retender recomputes the receivable after moving its counter rows.
+    BillBalanceModule,
   ],
   controllers: [BillController],
   providers: [

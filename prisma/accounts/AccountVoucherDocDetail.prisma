@@ -71,6 +71,12 @@ model AccVoucherDocDetail {
   vtxIgstLedgerId     String?                        @db.Uuid @map("vtx_igst_ledger_id")
   vtxCessLedgerId     String?                        @db.Uuid @map("vtx_cess_ledger_id")
 
+  // GSTR-3B table 4 (20260925160000_voucher_register): where this line's ITC goes.
+  // Defaulted by the service from the expense ledger's led_itc_eligibility (whose
+  // vocabulary is the ledger's), changeable per line. CHECK ck_vtx_itc in the database.
+  /// INPUTS | INPUT_SERVICES | CAPITAL_GOODS | INELIGIBLE
+  vtxItcEligibility   String?                        @db.VarChar(16) @map("vtx_itc_eligibility")
+
   // Status / audit
   vtxIsActive         Boolean                        @default(true) @map("vtx_is_active")
   vtxIsDeleted        Boolean                        @default(false) @map("vtx_is_deleted")

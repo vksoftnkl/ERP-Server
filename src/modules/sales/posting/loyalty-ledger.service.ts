@@ -450,6 +450,20 @@ export class LoyaltyLedgerService {
     const rate = opts.rate ?? 0;
     const rows: LoyaltyLedgerRowInput[] = [];
     let left = points;
+    // ux_lld_src_row is (doc type, doc id, acc_year, txn type, row_no) over
+    // live rows, so the rows continue whatever the document already holds: a
+    // bill's second loyalty tender, or an amend's re-post while the original
+    // REDEEM rows (reversed, not deleted) are still there (notes 45 / 49).
+    const firstRowNo =
+      opts.srcDocType && opts.srcDocId
+        ? ((
+            await this.maxRowNos(tx, {
+              docType: opts.srcDocType,
+              docId: opts.srcDocId,
+              accYear: opts.accYear,
+            })
+          ).get(txnType) ?? 0) + 1
+        : 1;
 
     for (const lot of lots) {
       if (left <= 0) {
@@ -466,7 +480,7 @@ export class LoyaltyLedgerService {
         branchId: opts.branchId,
         accYear: opts.accYear,
         txnType,
-        rowNo: rows.length + 1,
+        rowNo: firstRowNo + rows.length,
         points: -take, // always negative: a spend
         txnDate: opts.txnDate,
         lotId: lot.lotId,
@@ -717,6 +731,19 @@ export class LoyaltyLedgerService {
       };
     }
 
+    // notes (45) / (49) item 4: an amend's re-post earns under the SAME
+    // document while the original EARN row 1 is still live (a cancel reverses
+    // it, it does not delete it), so ux_lld_src_row refused a second row 1 and
+    // every amend of a bill that had earned points answered 500. Continue the
+    // document's EARN numbering instead.
+    const earnRowNo =
+      ((
+        await this.maxRowNos(tx, {
+          docType: bill.docType,
+          docId: bill.docId,
+          accYear: bill.accYear,
+        })
+      ).get('EARN') ?? 0) + 1;
     await this.writeLedgerRows(tx, [
       {
         compId: bill.companyId,
@@ -728,7 +755,7 @@ export class LoyaltyLedgerService {
         lssId: computed.lssId,
         lsiId: computed.lsiId,
         txnType: 'EARN',
-        rowNo: 1,
+        rowNo: earnRowNo,
         points: computed.points,
         txnDate: bill.docDate,
         expiresOn,

@@ -271,7 +271,7 @@ let OpeningBalanceService = class OpeningBalanceService {
          WHERE v.av_company_id = ${companyId}::uuid
            AND v.av_acc_year   = ${accYear}
            AND v.av_is_deleted = false
-           AND h.avh_voucher_status = 'POSTED'
+           AND h.avh_voucher_status IN ('POSTED', 'CANCELLED')
            AND (${branchId}::uuid IS NULL OR v.av_branch_id = ${branchId}::uuid)
          GROUP BY v.av_ledger_id
       `,

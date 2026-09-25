@@ -152,9 +152,22 @@ function snapshotFromRows(bill, items, charges, tenders) {
         })),
     };
 }
+function transportFromDto(dto) {
+    if (dto.sbTransporterId === undefined &&
+        dto.sbTransporterName === undefined &&
+        dto.sbLrNo === undefined) {
+        return undefined;
+    }
+    return {
+        transporterId: dto.sbTransporterId ?? null,
+        transporterName: dto.sbTransporterName ?? null,
+        lrNo: dto.sbLrNo ?? null,
+    };
+}
 function snapshotFromDto(dto, tenderMasters) {
     const billDate = dto.sbBillDate ?? (0, sales_doc_utils_1.isoToday)();
     return {
+        transport: transportFromDto(dto),
         sbId: dto.sbId ?? null,
         companyId: dto.sbCompanyId,
         branchId: dto.sbBranchId,

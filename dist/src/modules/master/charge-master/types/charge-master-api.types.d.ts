@@ -1,3 +1,4 @@
+import type { Prisma } from '@prisma/client';
 import type { ModuleApiErrorDetail, ModuleApiErrorResponse, ModuleApiSuccessResponse } from "../../../../common/types/module-api.types";
 import type { ModuleListMeta } from "../../../../common/types/module-list.types";
 import { ChargeApplyOn, ChargeCostAlloc, ChargeDocType, ChargeMethod, ChargeRole, ChargeType } from './charge-enum';
@@ -74,13 +75,23 @@ export declare const CHARGE_DETAIL_VALUE_GUARDS: readonly [{
 }];
 export type ChargeDetailGuardedField = (typeof CHARGE_DETAIL_VALUE_GUARDS)[number]['field'];
 export type ChargeDetailGuardedValues = Partial<Record<ChargeDetailGuardedField, string | null | undefined>>;
+export interface ChargeTaxDetail {
+    taxId: string;
+    taxName: string;
+    taxRatePerc: Prisma.Decimal;
+    taxCgstPerc: Prisma.Decimal | null;
+    taxSgstPerc: Prisma.Decimal | null;
+    taxIgstPerc: Prisma.Decimal | null;
+    taxCessPerc: Prisma.Decimal;
+    taxTaxability: string;
+}
 export interface ChargeLedgerDetail {
     ledName: string;
     ledHsnSac: string | null;
+    ledTaxId: string | null;
+    taxRate: ChargeTaxDetail | null;
 }
-export interface ChargeTaxDetail {
-    taxName: string;
-}
+export type ChargeTaxSource = 'CHARGE' | 'LEDGER';
 export interface ChargeMasterPayload {
     chgId: string;
     chgName: string;
@@ -99,6 +110,16 @@ export interface ChargeMasterPayload {
     chgTaxApl: boolean;
     chgBeforeTax: boolean;
     chgTaxId: string | null;
+    ledTaxId: string | null;
+    ledgerTaxPerc: number | null;
+    chgTaxSource: ChargeTaxSource | null;
+    chgTaxRate: number | null;
+    chgTaxCgstPerc: number | null;
+    chgTaxSgstPerc: number | null;
+    chgTaxIgstPerc: number | null;
+    chgTaxCessPerc: number | null;
+    chgTaxTaxability: string | null;
+    ledGstRate: number | null;
     chgTaxName: string | null;
     chgSepPost: boolean;
     chgManParty: boolean;

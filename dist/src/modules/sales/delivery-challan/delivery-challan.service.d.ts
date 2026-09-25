@@ -4,14 +4,14 @@ import { ChargeDetailService } from '../../master/charge-detail/charge-detail.se
 import { TenderDetailService } from '../../accountsModule/tenderDetail/tender-detail.service';
 import { BillReadService } from '../bill/bill-read.service';
 import { DcFulfilmentService } from '../posting/dc-fulfilment.service';
-import { DocRegisterService } from '../posting/doc-register.service';
+import { DocRegisterService } from '../../../common/posting/doc-register.service';
 import { GstGatewayService } from '../posting/gst-gateway.service';
 import { SalesContextService } from '../posting/sales-context.service';
 import { SalesDocBlocksService } from '../posting/sales-doc-blocks.service';
 import { type DocKeys, type DocSpec } from '../posting/sales-doc-store';
-import { SalesPostingService } from '../posting/sales-posting.service';
+import { VoucherPostingService } from '../../../common/posting/voucher-posting.service';
 import { SalesStockService } from '../posting/sales-stock.service';
-import { StatutoryService } from '../posting/statutory.service';
+import { StatutoryService } from '../../../common/posting/statutory.service';
 import { TransportBandService } from '../posting/transport-band.service';
 import { type SaveDeliveryChallanDto } from './dto/save-delivery-challan.dto';
 import type { AmendDeliveryChallanDto, CancelDeliveryChallanDto, ConvertPurposeDto, DeliveryChallanKeysDto, DeliveryChallanTransportDto, PostDeliveryChallanDto, ValidateDeliveryChallanDto } from './dto/delivery-challan-lifecycle.dto';
@@ -29,7 +29,7 @@ export declare class DeliveryChallanService {
     private readonly gst;
     private readonly billRead;
     private readonly store;
-    constructor(prisma: PrismaService, salesContext: SalesContextService, statutory: StatutoryService, legs: SalesPostingService, register: DocRegisterService, stock: SalesStockService, blocks: SalesDocBlocksService, transportBand: TransportBandService, fulfilment: DcFulfilmentService, gst: GstGatewayService, billRead: BillReadService, audit: AuditLogService, charges: ChargeDetailService, tenders: TenderDetailService);
+    constructor(prisma: PrismaService, salesContext: SalesContextService, statutory: StatutoryService, legs: VoucherPostingService, register: DocRegisterService, stock: SalesStockService, blocks: SalesDocBlocksService, transportBand: TransportBandService, fulfilment: DcFulfilmentService, gst: GstGatewayService, billRead: BillReadService, audit: AuditLogService, charges: ChargeDetailService, tenders: TenderDetailService);
     private keys;
     save(dto: SaveDeliveryChallanDto): Promise<Record<string, unknown>>;
     get(keys: DocKeys): Promise<Record<string, unknown>>;

@@ -705,7 +705,10 @@ let ReceiptService = class ReceiptService {
         if (!header || header.avhIsDeleted) {
             (0, module_service_utils_1.throwAccountsNotFound)('Receipt not found', 'avhVoucherId', `No receipt ${voucherId} in ${accYear}`);
         }
-        return header;
+        if (header.avhPartyId === null) {
+            (0, module_service_utils_1.throwAccountsNotFound)('Receipt not found', 'avhPartyId', `Voucher ${voucherId} in ${accYear} carries no party, so it is not a receipt`);
+        }
+        return { ...header, avhPartyId: header.avhPartyId };
     }
     async allocateNumber(tx, scope) {
         const allocated = await (0, voucher_sequence_helper_1.allocateVoucherNumber)(tx, {

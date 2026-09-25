@@ -1,4 +1,4 @@
--- Seed: fixed.menu_master -- the full application menu tree (227 rows).
+-- Seed: fixed.menu_master -- the full application menu tree (228 rows).
 --
 -- Exported from the reference database, so a fresh environment comes up with the
 -- same menu ids every other table points at.
@@ -180,21 +180,26 @@ VALUES
     ,(  55,    5, 'Opening Balance'                      , NULL                  , false,   0.00, NULL, NULL, NULL, true , false)
     ,(  99,    5, 'Receipt'                              , NULL                  , false,   6.00, NULL, NULL, NULL, true , false)
     ,( 100,    5, 'Payment'                              , NULL                  , false,   7.00, NULL, NULL, NULL, true , false)
-    ,( 101,    5, 'Debit Note'                           , NULL                  , false,   8.00, NULL, NULL, NULL, true , false)
-    ,( 102,    5, 'Credit Note'                          , NULL                  , false,   9.00, NULL, NULL, NULL, true , true)
-    ,( 103,    5, 'Journal'                              , NULL                  , false,  10.00, NULL, NULL, NULL, true , false)
-    ,( 104,    5, 'Contra'                               , NULL                  , false,  11.00, NULL, NULL, NULL, true , true)
-    ,( 163,    5, 'GST Expenses'                         , NULL                  , false,  11.00, NULL, NULL, NULL, true , false)
+    ,( 101,    5, 'Debit Note'                           , NULL                  , true ,   8.00, NULL, NULL, NULL, true , false)
+    ,( 102,    5, 'Credit Note'                          , NULL                  , true ,   9.00, NULL, NULL, NULL, true , true)
+    ,( 103,    5, 'Journal'                              , NULL                  , true ,  10.00, NULL, NULL, NULL, true , false)
+    ,( 104,    5, 'Contra'                               , NULL                  , true ,  11.00, NULL, NULL, NULL, true , true)
+    ,( 163,    5, 'Purchase (Accounting)'                , NULL                  , true ,  11.00, NULL, NULL, NULL, true , false)
     ,( 179,    5, 'Claim Management'                     , NULL                  , false,  14.00, NULL, NULL, NULL, true , true)
     ,( 185,    5, 'Third Party Bills'                    , NULL                  , false,  15.00, NULL, NULL, NULL, true , false)
     ,( 187,    5, 'Collection Entry'                     , 'false'               , false,  11.10, NULL, NULL, NULL, true , false)
     ,( 188,    5, 'Collection Approval'                  , 'false'               , false,  11.20, NULL, NULL, NULL, true , true)
+    ,( 259,    5, 'Sales (Accounting)'                   , NULL                  , true ,  11.10, NULL, NULL, NULL, true , false)
+    ,( 260,    5, 'Receipt Voucher'                      , NULL                  , true ,  11.20, NULL, NULL, NULL, true , false)
+    ,( 261,    5, 'Payment Voucher'                      , NULL                  , true ,  11.30, NULL, NULL, NULL, true , false)
+    ,( 262,    5, 'Voucher Register'                     , NULL                  , true ,  11.40, NULL, NULL, NULL, true , false)
     -- ============ &6 Reports (menu 6, 21 rows) ============
     ,(   6, NULL, '&6 Reports'                           , NULL                  , true ,   6.00, '0', NULL, NULL, true , false)
     ,(  74,    6, 'Sales Reports'                        , NULL                  , false,   3.00, NULL, NULL, NULL, true , false)
     ,(  76,   74, 'Sales Bills'                          , NULL                  , false,   1.00, NULL, NULL, NULL, true , false)
     ,( 106,    6, 'Audit Logs'                           , NULL                  , true ,   1.00, NULL, NULL, NULL, true , false)
-    ,( 137,    6, 'Financial Statements'                 , NULL                  , false,   7.00, NULL, NULL, NULL, true , false)
+    ,( 137,    6, 'Financial Statements'                 , NULL                  , true ,   7.00, NULL, NULL, NULL, true , false)
+    ,( 258,  137, 'Ledger Statement'                     , NULL                  , true ,   0.50, NULL, NULL, NULL, true , false)
     ,( 138,  137, 'Trial Balance'                        , NULL                  , false,   1.00, NULL, NULL, NULL, true , false)
     ,( 139,  137, 'Balance Sheet'                        , NULL                  , false,   2.00, NULL, NULL, NULL, true , false)
     ,( 140,  137, 'Profit && Loss'                       , NULL                  , false,   3.00, NULL, NULL, NULL, true , true)
@@ -289,6 +294,25 @@ ON CONFLICT (menu_id) DO NOTHING;
 UPDATE fixed.menu_master
    SET menu_verbs = '{VIEW,EDIT,PRINT,EXPORT}'
  WHERE menu_id = 257
+   AND menu_verbs = '{VIEW,CREATE,EDIT,DELETE,PRINT,EXPORT}';
+
+-- 258 Ledger Statement is a read-only report (reports/ledger-statement): it
+-- can be viewed, printed and exported, and nothing else. Same guard as 257.
+UPDATE fixed.menu_master
+   SET menu_verbs = '{VIEW,PRINT,EXPORT}'
+ WHERE menu_id = 258
+   AND menu_verbs = '{VIEW,CREATE,EDIT,DELETE,PRINT,EXPORT}';
+
+-- The Voucher Register's screens (20260925160000_voucher_register): 101-104 (Debit
+-- Note, Credit Note, Journal, Contra), 163 (Purchase (Accounting), formerly "GST
+-- Expenses") and 259-262 (Sales (Accounting), Receipt Voucher, Payment Voucher, Voucher
+-- Register). Posting documents, so POST / CANCEL / OVERRIDE -- and no AMEND: a posted
+-- voucher is corrected by cancel + re-enter. The migration sets the same list on a
+-- database that already has the rows; this catches a fresh one, where 20260922170000
+-- ran before any menu existed. Same guard as 257.
+UPDATE fixed.menu_master
+   SET menu_verbs = '{VIEW,CREATE,EDIT,DELETE,PRINT,EXPORT,POST,CANCEL,OVERRIDE}'
+ WHERE menu_id IN (101, 102, 103, 104, 163, 259, 260, 261, 262)
    AND menu_verbs = '{VIEW,CREATE,EDIT,DELETE,PRINT,EXPORT}';
 
 -- Keep the identity sequence ahead of the seeded ids, otherwise the first menu

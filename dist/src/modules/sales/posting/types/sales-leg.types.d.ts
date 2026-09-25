@@ -1,60 +1,9 @@
 import type { SupplyNature } from '../../../accountsModule/ledgerRole/ledger-map.helper';
-export interface SalesLeg {
-    role?: string | null;
-    ledgerId?: string | null;
-    drCr: 'DR' | 'CR';
-    amount: number;
-    taxId?: string | null;
-    supplyNature?: SupplyNature | null;
-    remarks?: string | null;
-    docId?: string | null;
-    docAccYear?: string | null;
-    docRefno?: string | null;
-    field?: string;
-    roleTag?: string | null;
-}
-export interface SalesVoucherHeader {
-    companyId: string;
-    branchId: string;
-    tenantId?: string | null;
-    accYear: string;
-    voucherTypeId: number;
-    voucherDate: string;
-    srcModule: 'SALES';
-    srcDocType: string;
-    srcDocId: string;
-    docRefno?: string | null;
-    docDate?: string | null;
-    usrRefno?: string | null;
-    docAmount: number;
-    roundOff?: number;
-    partyId: string;
-    userId: string;
-    sessionId?: string | null;
-    deviceType?: string | null;
-    deviceId?: string | null;
-    remarks?: string | null;
-    deviceCode?: string | null;
-    createdBy?: string;
-    presetRefno?: string | null;
-    presetNo?: bigint | null;
-    restateVoucherId?: string | null;
-}
-export interface SalesLegSource {
-    header: SalesVoucherHeader;
-    legs: SalesLeg[];
-}
-export interface SalesPostingResult {
-    voucherId: string;
-    voucherNo: string | null;
-    voucherRefno: string | null;
-    voucherSlno: bigint;
-    voucherLastNo: bigint;
-    postedOn: Date;
-    totalDebit: number;
-    totalCredit: number;
-    legCount: number;
-}
+import type { VoucherHeaderInput, VoucherLeg, VoucherLegSource, VoucherPostingResult } from '../../../../common/posting/voucher-leg.types';
+export type SalesLeg = VoucherLeg;
+export type SalesVoucherHeader = VoucherHeaderInput;
+export type SalesLegSource = VoucherLegSource;
+export type SalesPostingResult = VoucherPostingResult;
 export interface TaxBucket {
     taxId: string | null;
     cgst: number;

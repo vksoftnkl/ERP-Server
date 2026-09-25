@@ -737,6 +737,42 @@ and a non-company deductee under different codes, and
 no equivalent, which is why it is here and not on both.'
 }
 
+Table tds_rates {
+  tdrId String [pk]
+  tdrCompanyId String
+  tdrSection String [not null]
+  tdrSectionName String [not null]
+  tdrDeducteeType String [not null]
+  tdrRate Decimal [not null]
+  tdrNoPanRate Decimal [not null, default: 20]
+  tdrThresholdSingle Decimal [not null, default: 0]
+  tdrThresholdAnnual Decimal [not null, default: 0]
+  tdrEffectiveFrom DateTime [not null]
+  tdrEffectiveTo DateTime
+  tdrIsActive Boolean [not null, default: true]
+  tdrRemarks String
+  tdrIsDeleted Boolean [not null, default: false]
+  tdrSyncDate DateTime [note: 'NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).']
+  tdrCreatedOn DateTime [default: `now()`, not null]
+  tdrCreatedBy String
+  tdrModifiedOn DateTime
+  tdrModifiedBy String
+  company companys
+
+  Note: '§2.9 — the TDS rate master (migration 20260925170000_tds_rates).
+
+Lookup at the document date: the party ledger\'s `ledTdsNatureOfPayment`
+gives the SECTION, `ledTdsDeducteeType` the DEDUCTEE TYPE (falling back to
+the ANY row), and the row whose period holds the date gives the rate. No
+PAN → `tdrNoPanRate` (206AA). A company\'s own row wins over the
+NULL-company default.
+
+Thresholds are CHECKED by the service, not stored per party: single = this
+payment, annual = the party\'s total in the financial year. 0 = none.
+
+Effective-dated: a correction is a new row, never an edit.'
+}
+
 Table acc_temp_credit {
   atcId String [not null]
   atcCompanyId String [not null]
@@ -1017,6 +1053,7 @@ Table acc_voucher_doc_detail {
   vtxSgstLedgerId String
   vtxIgstLedgerId String
   vtxCessLedgerId String
+  vtxItcEligibility String [note: 'INPUTS | INPUT_SERVICES | CAPITAL_GOODS | INELIGIBLE']
   vtxIsActive Boolean [not null, default: true]
   vtxIsDeleted Boolean [not null, default: false]
   vtxSyncDate DateTime
@@ -1268,7 +1305,7 @@ written by an application. ck_avh_balanced compares the two on a POSTED
 header, so a stamped value would make that check compare a writer\'s own
 claim with itself (migration 20260915120000, §2.4).']
   avhTotalCredit Decimal [not null, default: 0]
-  avhPartyId String [not null]
+  avhPartyId String [note: 'NULL for a Contra, and for a multi-party Journal (decision A, 20260925160000_voucher_register)']
   avhOppositeLedgerId String
   avhEmployeeId String[] [not null]
   avhRemarks String
@@ -1308,7 +1345,7 @@ post; nothing reads it but /receipts/get.']
   company companys [not null]
   branch branch_master [not null]
   voucherType acc_voucher_types [not null]
-  party acc_ledger_master [not null]
+  party acc_ledger_master
   oppositeLedger acc_ledger_master
   user user_master [not null]
   againstVoucher acc_voucher_header
@@ -1452,6 +1489,17 @@ Table acc_voucher_types {
   vchrTallyExportEnabled Boolean [not null, default: true]
   vchrTallyVoucherTypeName String
   vchrTallyBaseVoucherType String
+  vchrPartyMode String [not null, default: 'NONE', note: 'NONE | ONE | MANY — how many parties a voucher of this type carries']
+  vchrPartySide String [not null, default: 'ANY', note: 'DR | CR | ANY — the side the party leg sits on']
+  vchrBillwiseMode String [not null, default: 'OFF', note: 'OFF | DEMAND | RAISE | OPTIONAL — what the party leg does bill-wise']
+  vchrRaiseBillType String [note: 'The abl_bill_type a RAISE / OPTIONAL type writes: SALES | PURCHASE | JOURNAL | INTEREST']
+  vchrDrGroups String[] [not null, note: 'Account groups (acc_group_master ids) a debit leg may use; empty = any. A sub-group of a listed group counts.']
+  vchrCrGroups String[] [not null, note: 'Same, for the credit legs']
+  vchrGstRegister String [note: 'NULL | GSTR1 | GSTR1_9B | GSTR2 | GSTR2_NOTE — the GST register the document feeds']
+  vchrGstSide String [note: 'INPUT | OUTPUT — which tax roles the GST band generates; set exactly when vchrGstRegister is']
+  vchrTdsMode String [not null, default: 'OFF', note: 'OFF | DEDUCT']
+  vchrMenuId Int [note: 'Rights are checked on THIS menu (decision E). NULL for Rev: a cancel is judged on the original\'s menu.']
+  vchrInRegister Boolean [not null, default: false, note: 'Offered on the register\'s type band']
   vchrSyncDate DateTime
   vchrCreatedOn DateTime [default: `now()`, not null]
   vchrCreatedBy String
@@ -1462,6 +1510,7 @@ Table acc_voucher_types {
   voucherHeaders acc_voucher_header [not null]
   vouchers acc_vouchers [not null]
   bills acc_bill_balance [not null]
+  menu menu_master
 }
 
 Table acc_ship_addrs {
@@ -1842,6 +1891,7 @@ RETENDER                             · Sales Entry (12) alone']
   menuSyncDate DateTime
   userMenus user_menus [not null]
   sections form_section [not null]
+  voucherTypes acc_voucher_types [not null, note: 'Voucher types whose rights are judged on this menu (acc_voucher_types.vchr_menu_id)']
 }
 
 Table price_levels {
@@ -3096,6 +3146,7 @@ the e-invoice applicability rows in StatutoryLimit.']
   stockReorderPolicies stock_reorder_policy [not null]
   stockForecasts stock_forecast [not null]
   stockMovementClasses stock_movement_class [not null]
+  tdsRates tds_rates [not null]
   printPurposes print_purpose [not null]
   printTemplates print_template [not null]
   printAssignments print_template_assignment [not null]
@@ -10378,6 +10429,8 @@ Ref: acc_tds_register.atdPartyId > acc_ledger_master.ledId [delete: Restrict]
 
 Ref: acc_tds_register.atdReversalOfId - acc_tds_register.atdId [delete: Restrict]
 
+Ref: tds_rates.tdrCompanyId > companys.compId [delete: Restrict]
+
 Ref: acc_temp_credit.atcPartyId > acc_ledger_master.ledId [delete: Restrict]
 
 Ref: acc_temp_credit.(atcSrcDocId, atcAccYear) > sale_bill.(sbId, sbAccYear) [delete: Restrict]
@@ -10471,6 +10524,8 @@ Ref: acc_voucher_seq.vchrTypeId > acc_voucher_types.vchrTypeId
 Ref: acc_voucher_seq.companyId > companys.compId
 
 Ref: acc_voucher_seq.branchId > branch_master.brId
+
+Ref: acc_voucher_types.vchrMenuId > menu_master.menuId [delete: Restrict]
 
 Ref: acc_ship_addrs.saaCompanyId > companys.compId [delete: Restrict]
 

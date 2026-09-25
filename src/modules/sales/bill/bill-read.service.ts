@@ -6,9 +6,9 @@ import { LoyaltyLedgerService } from '../posting/loyalty-ledger.service';
 import { SalesContextService } from '../posting/sales-context.service';
 import { SalesDocBlocksService } from '../posting/sales-doc-blocks.service';
 import { loadDayClosed } from '../posting/sales.guards';
-import { StatutoryService } from '../posting/statutory.service';
+import { StatutoryService } from '../../../common/posting/statutory.service';
 import { TransportBandService } from '../posting/transport-band.service';
-import { STATUTORY_CODES } from '../posting/types/statutory.types';
+import { STATUTORY_CODES } from '../../../common/posting/statutory.types';
 import {
   SALES_MENU_ID,
   TENDER_TYPE,
@@ -130,7 +130,13 @@ export class BillReadService {
             -- Same exclusion as assertCancellable: only the set-offs the bill's
             -- own /post wrote, which carry no voucher.
             AND NOT (j.abj_adj_type IN ('ADVANCE_ADJUST', 'NOTE_ADJUST')
-                     AND j.abj_voucher_id IS NULL)) AS allocations`;
+                     AND j.abj_voucher_id IS NULL)
+            -- …and not what was paid at the counter (notes 49): rows naming the
+            -- bill's own tender rows.
+            AND NOT EXISTS (SELECT 1 FROM accounts.acc_tender_detail t
+                             WHERE t.td_id = j.abj_tender_id
+                               AND t.td_src_module = 'SALES' AND t.td_src_doc_type = 'SALE_BILL'
+                               AND t.td_src_doc_id = ${bill.sbId}::uuid)) AS allocations`;
     return { returns: Number(row?.returns ?? 0), allocations: Number(row?.allocations ?? 0) };
   }
 

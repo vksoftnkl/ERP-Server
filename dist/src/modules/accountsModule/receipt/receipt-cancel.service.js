@@ -70,10 +70,11 @@ let ReceiptCancelService = class ReceiptCancelService {
                     },
                 ]);
             }
-            const pdcVouchers = await tx.accVoucherHeader.findMany({
+            const pdcVouchers = (await tx.accVoucherHeader.findMany({
                 where: (0, receipt_cheque_links_1.receiptPdcVoucherWhere)(header),
                 select: receipt_service_1.STORED_HEADER_SELECT,
-            });
+            }))
+                .map((row) => ({ ...row, avhPartyId: row.avhPartyId ?? header.avhPartyId }));
             const vouchers = [header, ...pdcVouchers];
             for (const voucher of vouchers) {
                 await (0, receipt_guards_1.assertAccYearWritable)(tx, voucher.avhCompanyId, voucher.avhAccYear, 'avhAccYear');

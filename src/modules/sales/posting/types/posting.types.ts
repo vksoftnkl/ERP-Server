@@ -19,7 +19,15 @@ export const SALES_ERROR_CODES = {
   REVISION_STALE: 'SALES_REVISION_STALE',
   AMEND_OFF: 'SALES_AMEND_OFF',
 
-  // Rights — the four user_menus flags
+  // Rights — the user_menus flags. The six screen verbs (VIEW … EXPORT) joined
+  // the posting verbs for the Voucher Register, whose every call is judged on
+  // the voucher TYPE's menu (acc_voucher_types.vchr_menu_id).
+  RIGHT_VIEW: 'SALES_RIGHT_VIEW',
+  RIGHT_CREATE: 'SALES_RIGHT_CREATE',
+  RIGHT_EDIT: 'SALES_RIGHT_EDIT',
+  RIGHT_DELETE: 'SALES_RIGHT_DELETE',
+  RIGHT_PRINT: 'SALES_RIGHT_PRINT',
+  RIGHT_EXPORT: 'SALES_RIGHT_EXPORT',
   RIGHT_POST: 'SALES_RIGHT_POST',
   RIGHT_CANCEL: 'SALES_RIGHT_CANCEL',
   RIGHT_AMEND: 'SALES_RIGHT_AMEND',
@@ -77,6 +85,8 @@ export const SALES_ERROR_CODES = {
   // The law (§3.6 resolves the figure; the guard raises the code)
   CASH_LIMIT: 'SALES_CASH_LIMIT',
   PAN_REQUIRED: 'SALES_PAN_REQUIRED',
+  /** A bill with no customer at all: its voucher and receivable have nobody to be raised against. */
+  CUSTOMER_REQUIRED: 'SALES_CUSTOMER_REQUIRED',
   HSN_DIGITS: 'HSN_DIGITS',
 
   // Commercial
@@ -308,6 +318,12 @@ export interface LocksBlock {
  * §1.7b's re-tender dialog could not tell a denied right from an absent one.
  */
 export interface RightsBlock {
+  view: boolean;
+  create: boolean;
+  edit: boolean;
+  delete: boolean;
+  print: boolean;
+  export: boolean;
   post: boolean;
   cancel: boolean;
   amend: boolean;

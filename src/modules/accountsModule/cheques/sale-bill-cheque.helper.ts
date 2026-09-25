@@ -41,6 +41,17 @@ export interface SaleBillOfCheque {
   /** The bill's live SALES receivable. */
   ablId: string;
   ablAccYear: string;
+  /**
+   * notes (49) item 2: the bill wrote an ALLOCATION row for this cheque
+   * (`abj_tender_id`). Then the standard path — reverseChequeAdjustments on a
+   * bounce, RESTORE on a re-presentation — moves the receivable and the
+   * recompute re-derives it; only the bill header's caches are left to this
+   * helper (moveSaleBillHeader), by `counterAmount`. Without one (a bill
+   * posted before the rows existed, and not backfilled) the receivable is
+   * moved here as before.
+   */
+  hasCounterRow: boolean;
+  counterAmount: Prisma.Decimal;
 }
 
 /**
@@ -55,9 +66,19 @@ export async function findSaleBillOfCheque(
     return null;
   }
   const [row] = await tx.$queryRaw<
-    { sb_id: string; sb_acc_year: string; abl_id: string; abl_acc_year: string }[]
+    {
+      sb_id: string;
+      sb_acc_year: string;
+      abl_id: string;
+      abl_acc_year: string;
+      counter_amount: Prisma.Decimal | null;
+    }[]
   >`
-    SELECT b.sb_id, b.sb_acc_year, l.abl_id, l.abl_acc_year
+    SELECT b.sb_id, b.sb_acc_year, l.abl_id, l.abl_acc_year,
+           (SELECT SUM(a.abj_amount) FROM accounts.acc_bill_adjustment a
+             WHERE a.abj_bill_id = l.abl_id AND a.abj_bill_acc_year = l.abl_acc_year
+               AND a.abj_tender_id = t.td_id AND a.abj_adj_type = 'ALLOCATION'
+               AND a.abj_reversal_of_id IS NULL AND a.abj_is_deleted = false) AS counter_amount
       FROM accounts.acc_tender_detail t
       JOIN sales.sale_bill b
         ON b.sb_id = t.td_src_doc_id AND b.sb_acc_year = t.td_acc_year
@@ -76,6 +97,8 @@ export async function findSaleBillOfCheque(
     sbAccYear: row.sb_acc_year.trim(),
     ablId: row.abl_id,
     ablAccYear: row.abl_acc_year.trim(),
+    hasCounterRow: row.counter_amount !== null,
+    counterAmount: new Prisma.Decimal(row.counter_amount ?? 0),
   };
 }
 
@@ -139,6 +162,31 @@ export async function moveSaleBillSettlement(
   const moved = new Prisma.Decimal(abl.new_alloc).minus(abl.old_alloc);
   // The header's caches move by what the receivable actually moved, so a clamp
   // above is not overstated here.
+  await moveSaleBillHeader(tx, link, moved, now);
+  return {
+    billId: link.ablId,
+    billAccYear: link.ablAccYear,
+    billType: abl.abl_bill_type,
+    docRefno: abl.abl_doc_refno,
+    docDate: toDateString(abl.abl_doc_date) ?? '',
+    dueDate: toDateString(abl.abl_due_date),
+    billAmount: toAmount(abl.abl_bill_amount),
+    pendingAmount: toAmount(abl.abl_pending_amount),
+    settledByThisCheque: toAmount(moved.abs()),
+  };
+}
+
+/**
+ * The bill header's paid / balance / pay-status caches, moved by `delta` (−
+ * on a bounce or return, + on a re-presentation). The receivable itself is the
+ * adjustment rows' business once the bill has a counter row for the cheque.
+ */
+export async function moveSaleBillHeader(
+  tx: Prisma.TransactionClient,
+  link: Pick<SaleBillOfCheque, 'sbId' | 'sbAccYear'>,
+  moved: Prisma.Decimal,
+  now: Date = new Date(),
+): Promise<void> {
   await tx.$executeRaw`
     UPDATE sales.sale_bill
        SET sb_paid_amt    = GREATEST(0, sb_paid_amt + ${moved}::numeric),
@@ -149,15 +197,4 @@ export async function moveSaleBillSettlement(
                               ELSE 'UNPAID' END,
            sb_modified_on = ${now}
      WHERE sb_id = ${link.sbId}::uuid AND sb_acc_year = ${link.sbAccYear}::char(9)`;
-  return {
-    billId: link.ablId,
-    billAccYear: link.ablAccYear,
-    billType: abl.abl_bill_type,
-    docRefno: abl.abl_doc_refno,
-    docDate: toDateString(abl.abl_doc_date) ?? '',
-    dueDate: toDateString(abl.abl_due_date),
-    billAmount: toAmount(abl.abl_bill_amount),
-    pendingAmount: toAmount(abl.abl_pending_amount),
-    settledByThisCheque: toAmount(moved),
-  };
 }

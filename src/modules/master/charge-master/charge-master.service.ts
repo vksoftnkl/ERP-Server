@@ -53,18 +53,30 @@ const CHARGE_OPTIONAL_FIELDS = [
   'chgAutoApply',
   'chgIsActive',
 ];
+// The rate a charge is taxed at: the charge's own (chg_tax_id) or, when that
+// is null, the posting ledger's (led_tax_id). Both point at
+// inventory.tax_rate_master, and this is what a read pulls from it.
+const CHARGE_TAX_SELECT = {
+  taxId: true,
+  taxName: true,
+  taxRatePerc: true,
+  taxCgstPerc: true,
+  taxSgstPerc: true,
+  taxIgstPerc: true,
+  taxCessPerc: true,
+  taxTaxability: true,
+} as const satisfies Prisma.TaxRateMasterSelect;
 // Columns pulled from the mapped acc_ledger_master row and echoed on the
-// payload (display label + the HSN/SAC the charge inherits). ledGstRate and
-// ledTaxability used to be echoed here too; 20260912100000 dropped them in
-// favour of led_tax_id, and resolving that rate is still to be done.
+// payload: display label, the HSN/SAC the charge inherits, and the ledger's
+// rate. 20260912100000 replaced the ledger's bare ledGstRate / ledTaxability
+// with led_tax_id; the rate behind it is resolved here (CHG-TAX), so a
+// freshly picked after-tax taxable charge prices at its real rate again.
 const CHARGE_LEDGER_SELECT = {
   ledName: true,
   ledHsnSac: true,
+  ledTaxId: true,
+  taxRate: { select: CHARGE_TAX_SELECT },
 } as const satisfies Prisma.AccLedgerMasterSelect;
-// The rate chg_tax_id points at, echoed on the payload as chgTaxName.
-const CHARGE_TAX_SELECT = {
-  taxName: true,
-} as const satisfies Prisma.TaxRateMasterSelect;
 // Both relations a read resolves alongside the charge row.
 const CHARGE_RELATIONS = {
   ledger: { select: CHARGE_LEDGER_SELECT },
@@ -512,6 +524,45 @@ export class ChargeMasterService {
       `No active charge found with id ${chgId}`,
     );
   }
+  // The rate the entry screens price the charge at (CHG-TAX). The charge's own
+  // rate wins; a null chgTaxId inherits the ledger's. Read-only, derived, and
+  // like chgLedgerName kept out of the audit snapshots (a toPayload with no
+  // ledger and no tax answers null for every one of them).
+  private taxFields(
+    own: ChargeTaxDetail | null,
+    inherited: ChargeTaxDetail | null,
+    ledTaxId: string | null,
+  ): Pick<
+    ChargeMasterPayload,
+    | 'ledTaxId'
+    | 'ledgerTaxPerc'
+    | 'chgTaxSource'
+    | 'chgTaxRate'
+    | 'chgTaxCgstPerc'
+    | 'chgTaxSgstPerc'
+    | 'chgTaxIgstPerc'
+    | 'chgTaxCessPerc'
+    | 'chgTaxTaxability'
+    | 'ledGstRate'
+  > {
+    const effective = own ?? inherited;
+    const rate = effective ? toNullableNumber(effective.taxRatePerc) : null;
+    return {
+      ledTaxId,
+      ledgerTaxPerc: inherited ? toNullableNumber(inherited.taxRatePerc) : null,
+      chgTaxSource: own ? 'CHARGE' : inherited ? 'LEDGER' : null,
+      chgTaxRate: rate,
+      chgTaxCgstPerc: effective ? toNullableNumber(effective.taxCgstPerc) : null,
+      chgTaxSgstPerc: effective ? toNullableNumber(effective.taxSgstPerc) : null,
+      chgTaxIgstPerc: effective ? toNullableNumber(effective.taxIgstPerc) : null,
+      chgTaxCessPerc: effective ? toNullableNumber(effective.taxCessPerc) : null,
+      chgTaxTaxability: effective?.taxTaxability ?? null,
+      // The name the Qt charge grid still reads (it was a column until
+      // 20260912100000). Same figure as chgTaxRate; new clients read that.
+      ledGstRate: rate,
+    };
+  }
+
   private toPayload(
     record: ChargeMaster,
     ledger: ChargeLedgerDetail | null = null,
@@ -536,6 +587,7 @@ export class ChargeMasterService {
       chgBeforeTax: record.chgBeforeTax,
       chgTaxId: record.chgTaxId,
       chgTaxName: tax?.taxName ?? null,
+      ...this.taxFields(tax, ledger?.taxRate ?? null, ledger?.ledTaxId ?? null),
       chgSepPost: record.chgSepPost,
       chgManParty: record.chgManParty,
       chgDispOrder: record.chgDispOrder,

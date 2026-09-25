@@ -1,4 +1,5 @@
 import { Prisma } from '@prisma/client';
+import { loadRights, NO_RIGHTS, type MenuRight } from '../../../common/posting/rights';
 import { assertAccYearWritable, assertVoucherPartitionExists } from '../../accountsModule/receipt/receipt.guards';
 import { type SalesGuardContext } from './types/posting.types';
 import type { SalesSettings } from './sales.settings';
@@ -15,8 +16,8 @@ export declare function refuse(ctx: SalesGuardContext, code: string, message: st
     line?: number;
     statutory?: SalesGuardContext['refusals'][number]['statutory'];
 }): void;
-export type SalesRight = 'post' | 'cancel' | 'amend' | 'override' | 'retender';
-export declare function loadRights(client: SalesWriteClient, userId: string, menuId: number): Promise<Record<SalesRight, boolean>>;
+export type SalesRight = MenuRight;
+export { loadRights, NO_RIGHTS };
 export declare function assertRight(client: SalesWriteClient, userId: string, menuId: number, right: SalesRight): Promise<Record<SalesRight, boolean>>;
 export declare function assertBackdate(ctx: SalesGuardContext, docDate: string, settings: SalesSettings, today?: string, field?: string): void;
 export declare function loadDayClosed(client: SalesWriteClient, companyId: string, branchId: string, docDate: string): Promise<boolean>;

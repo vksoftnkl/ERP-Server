@@ -9,17 +9,17 @@ import {
 import { SaleOrderService } from '../sale-order/sale-order.service';
 import { ChargeCarryService } from '../posting/charge-carry.service';
 import { DcFulfilmentService } from '../posting/dc-fulfilment.service';
-import { DocRegisterService } from '../posting/doc-register.service';
+import { DocRegisterService } from '../../../common/posting/doc-register.service';
 import { GstGatewayService } from '../posting/gst-gateway.service';
 import { LoyaltyLedgerService } from '../posting/loyalty-ledger.service';
 import { PromotionUsageService } from '../posting/promotion-usage.service';
 import { SalesContextService, type SalesCallContext } from '../posting/sales-context.service';
 import { SalesDocBlocksService } from '../posting/sales-doc-blocks.service';
 import { buildBillLegs } from '../posting/sales-leg.sources';
-import { SalesPostingService } from '../posting/sales-posting.service';
+import { VoucherPostingService } from '../../../common/posting/voucher-posting.service';
 import { SalesStockService } from '../posting/sales-stock.service';
 import { StockReservationService } from '../posting/stock-reservation.service';
-import { StatutoryService } from '../posting/statutory.service';
+import { StatutoryService } from '../../../common/posting/statutory.service';
 import { TransportBandService } from '../posting/transport-band.service';
 import {
   assertAccYearWritable,
@@ -42,7 +42,7 @@ import {
   type SalesGuardContext,
   type SalesWarning,
 } from '../posting/types/posting.types';
-import type { RegisterDetailLine, RegisterDoc } from '../posting/types/doc-register.types';
+import type { RegisterDetailLine, RegisterDoc } from '../../../common/posting/doc-register.types';
 import type { LoyaltyBillSource } from '../posting/types/loyalty.types';
 import type { PromotionApplied } from '../posting/types/promotion.types';
 import {
@@ -61,6 +61,7 @@ import {
 import { BillService } from './bill.service';
 import { assertBooksReconcile } from '../../accountsModule/reconcile/books-reconcile.guard';
 import { readDraftCheques } from './bill-cheque-details';
+import { retireCounterAllocations, syncCounterAllocations } from './bill-counter-allocation.helper';
 import {
   assertBillPdcHeld,
   cancelBillPdcRegister,
@@ -71,7 +72,7 @@ import {
   setOffKey,
   splitSetOffs,
   syncBillAdjustments,
-} from './bill-adjustment.helper';
+} from '../../../common/posting/bill-adjustment.helper';
 import {
   cashTendered,
   decimal,
@@ -128,7 +129,7 @@ export class BillLifecycleService {
     private readonly bills: BillService,
     private readonly salesContext: SalesContextService,
     private readonly statutory: StatutoryService,
-    private readonly legs: SalesPostingService,
+    private readonly legs: VoucherPostingService,
     private readonly register: DocRegisterService,
     private readonly stock: SalesStockService,
     private readonly reservations: StockReservationService,
@@ -558,7 +559,7 @@ export class BillLifecycleService {
     if (!snap.custId) {
       refuse(
         g,
-        SALES_ERROR_CODES.PAN_REQUIRED,
+        SALES_ERROR_CODES.CUSTOMER_REQUIRED,
         'A bill must name a customer to post: its voucher and receivable are raised against the customer ledger (the walk-in customer has one too)',
         { field: 'sbCustId' },
       );
@@ -918,10 +919,7 @@ export class BillLifecycleService {
     // 13 · adjustments, when the post body names them — each header figure
     //      against its own kind of credit: advances, then credit notes.
     if (opts.adjustments && opts.adjustments.length > 0 && snap.custId) {
-      const split = splitSetOffs(
-        opts.adjustments,
-        await loadSetOffCredits(tx, opts.adjustments),
-      );
+      const split = splitSetOffs(opts.adjustments, await loadSetOffCredits(tx, opts.adjustments));
       for (const [field, total, declared, kind] of [
         ['sbAdvanceAmt', round2(split.advance), snap.advanceAmt, 'advance'],
         ['sbNoteAdjAmt', round2(split.note), snap.noteAdjAmt, 'credit-note'],
@@ -948,12 +946,19 @@ export class BillLifecycleService {
       tx,
     );
     if (eway.applicable && snap.billMode !== 'POS') {
-      const band = snap.sbId
-        ? await this.transportBand.read(
-            { docType: 'SALE_BILL', docId: snap.sbId, accYear: snap.accYear },
-            tx,
-          )
-        : null;
+      // The band the BODY carries wins: a /validate of a draft that has not
+      // been saved yet has no stored band, and was told "transport missing"
+      // for it (E-WAY-DB). A body that says nothing about transport reads the
+      // stored band, as post and amend do.
+      const band =
+        snap.transport !== undefined
+          ? snap.transport
+          : snap.sbId
+            ? await this.transportBand.read(
+                { docType: 'SALE_BILL', docId: snap.sbId, accYear: snap.accYear },
+                tx,
+              )
+            : null;
       if (!band || (!band.transporterId && !band.transporterName && !band.lrNo)) {
         warn(
           g,
@@ -1318,6 +1323,22 @@ export class BillLifecycleService {
       now,
     );
 
+    // 5b · what was paid at the counter, as ALLOCATION rows on the receivable
+    //      (notes 49 item 2): the recompute every receipt runs counts only
+    //      adjustment rows, and a counter payment with no row behind it was
+    //      dropped by the first receipt. Before the set-offs, and capped at
+    //      what the set-offs leave — the same figure writeBalanceRow seeded.
+    const setOffTotal = adjustments.reduce((t, a) => t + num(a.amount), 0);
+    await syncCounterAllocations(tx, {
+      bill,
+      abl: { ablId, ablAccYear: bill.sbAccYear },
+      partyId,
+      voucherFor: () => ({ voucherId: voucher.voucherId, accYear: bill.sbAccYear }),
+      cap: decimal(Math.max(0, round2(snap.billAmt - setOffTotal))),
+      actor,
+      now,
+    });
+
     // 6 · the set-offs, now that the invoice row exists.
     if (adjustments.length > 0) {
       await syncBillAdjustments(
@@ -1654,9 +1675,7 @@ export class BillLifecycleService {
     // 1 · the mirror voucher — or, on an amend, the voucher back to DRAFT with
     //     its legs retired, for the re-post to restate under the same number.
     if (bill.sbPostedVoucherId && mode === 'amend') {
-      if (
-        await this.legs.retireForRestate(tx, bill.sbPostedVoucherId, bill.sbAccYear, actor)
-      ) {
+      if (await this.legs.retireForRestate(tx, bill.sbPostedVoucherId, bill.sbAccYear, actor)) {
         restateVoucherId = bill.sbPostedVoucherId;
       }
     } else if (bill.sbPostedVoucherId) {
@@ -1722,6 +1741,16 @@ export class BillLifecycleService {
       },
       select: { ablId: true },
     });
+    if (abl) {
+      // The counter-payment rows go with the receivable they settle.
+      await retireCounterAllocations(
+        tx,
+        bill,
+        { ablId: abl.ablId, ablAccYear: bill.sbAccYear },
+        actor,
+        now,
+      );
+    }
     if (abl && bill.sbCustId) {
       await syncBillAdjustments(
         tx,

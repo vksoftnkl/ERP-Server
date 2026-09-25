@@ -18,7 +18,7 @@ import type {
  * that pre-negates an amount writes a row `ck_av_amount` refuses.
  */
 
-/** Order is the contract — `av_row_no` follows it. See `SalesPostingService`. */
+/** Order is the contract — `av_row_no` follows it. See `VoucherPostingService` (src/common/posting). */
 export function buildBillLegs(input: BillLegInput): SalesLeg[] {
   const legs: SalesLeg[] = [];
 

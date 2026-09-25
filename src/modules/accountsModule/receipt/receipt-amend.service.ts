@@ -228,10 +228,14 @@ export class ReceiptAmendService {
     // legs soft-deleted while its bill rows kept counting — the entry that
     // re-debited the party silently out of the books. See
     // `receipt-cheque-links.ts`.
-    const pdcHeaders = await tx.accVoucherHeader.findMany({
-      where: receiptPdcVoucherWhere(header),
-      select: STORED_HEADER_SELECT,
-    });
+    const pdcHeaders: StoredHeader[] = (
+      await tx.accVoucherHeader.findMany({
+        where: receiptPdcVoucherWhere(header),
+        select: STORED_HEADER_SELECT,
+      })
+    )
+      // A PDC voucher is this receipt's own instrument: same party. See StoredHeader.
+      .map((row) => ({ ...row, avhPartyId: row.avhPartyId ?? header.avhPartyId }));
     const vouchers = [header, ...pdcHeaders];
     const voucherIds = vouchers.map((voucher) => voucher.avhVoucherId);
     const years = [...new Set(vouchers.map((voucher) => voucher.avhAccYear))];

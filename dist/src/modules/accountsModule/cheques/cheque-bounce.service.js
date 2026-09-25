@@ -130,9 +130,16 @@ let ChequeBounceService = class ChequeBounceService {
             const touched = [...reversed.bills, ...cascade.bills];
             const recomputed = await this.recompute.recomputeBills(tx, touched, (0, receipt_utils_1.todayUtc)());
             const saleBill = onReceipt ? await (0, sale_bill_cheque_helper_1.findSaleBillOfCheque)(tx, cheque) : null;
-            const saleBillReopened = saleBill
-                ? await (0, sale_bill_cheque_helper_1.moveSaleBillSettlement)(tx, saleBill, cheque.apdAmount.negated(), bounceDate, actor)
-                : null;
+            let saleBillReopened = null;
+            if (saleBill?.hasCounterRow) {
+                const given = reversed.amountByBill.get(`${saleBill.ablId}|${saleBill.ablAccYear}`);
+                if (given?.greaterThan(0)) {
+                    await (0, sale_bill_cheque_helper_1.moveSaleBillHeader)(tx, saleBill, given.negated());
+                }
+            }
+            else if (saleBill) {
+                saleBillReopened = await (0, sale_bill_cheque_helper_1.moveSaleBillSettlement)(tx, saleBill, cheque.apdAmount.negated(), bounceDate, actor);
+            }
             const now = new Date();
             await tx.accPdcRegister.update({
                 where: { apdId_apdAccYear: { apdId: cheque.apdId, apdAccYear: cheque.apdAccYear } },
@@ -184,7 +191,7 @@ let ChequeBounceService = class ChequeBounceService {
                         dueDate: ref?.dueDate ?? null,
                         billAmount: (0, receipt_utils_1.toAmount)(bill.billAmount),
                         pendingAmount: (0, receipt_utils_1.toAmount)(pendingByBill.get(`${bill.billId}|${bill.accYear}`)?.pendingAmount ?? receipt_utils_1.ZERO),
-                        settledByThisCheque: 0,
+                        settledByThisCheque: (0, receipt_utils_1.toAmount)(reversed.amountByBill.get(`${bill.billId}|${bill.accYear}`) ?? receipt_utils_1.ZERO),
                     };
                 })
                     .concat(saleBillReopened ? [saleBillReopened] : []),

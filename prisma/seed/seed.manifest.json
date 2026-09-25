@@ -96,6 +96,10 @@
       "file": "Acc_Voucher_Types.sql",
       "description": "accounts.acc_voucher_types — all document series; runs before Acc_Voucher_Seq_Sale_Bill.sql"
     },
+    {
+      "file": "Acc_Voucher_Types_Register.sql",
+      "description": "accounts.acc_voucher_types — the eight Voucher Register types (Jrl, Con, DrN, CrN, PurA, SalA, RcpV, PmtV) that migration 20260925160000 skips on a fresh database; resolves account groups by name and menus by id, so after Menu_Master.sql and Account_Groups.sql, and after Acc_Voucher_Types.sql, which pins the older ids"
+    },
     { "file": "Hsn_Master.sql", "description": "fixed.hsn_master — GST HSN/SAC codes" },
     { "file": "Bank_Master.sql", "description": "fixed.bank_master — Indian banks" },
     {

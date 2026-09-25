@@ -70,7 +70,7 @@ import { throwSalesLocked } from '../posting/sales.errors';
 import { SALES_ERROR_CODES } from '../posting/types/posting.types';
 import { num, TENDER_TYPE } from '../posting/sales-doc.utils';
 import { BillReadService } from './bill-read.service';
-import { loadSetOffCredits, splitSetOffs } from './bill-adjustment.helper';
+import { loadSetOffCredits, splitSetOffs } from '../../../common/posting/bill-adjustment.helper';
 import { decodeTempCredit, encodeTempCreditTenders, toTempCreditDto } from './bill-temp-credit';
 import {
   buildDraftCheques,

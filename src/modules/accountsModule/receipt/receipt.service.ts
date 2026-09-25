@@ -1129,7 +1129,15 @@ export class ReceiptService {
         `No receipt ${voucherId} in ${accYear}`,
       );
     }
-    return header;
+    // See StoredHeader: a receipt without a party is not a case, it is a broken row.
+    if (header.avhPartyId === null) {
+      throwAccountsNotFound<ReceiptErrorDetail>(
+        'Receipt not found',
+        'avhPartyId',
+        `Voucher ${voucherId} in ${accYear} carries no party, so it is not a receipt`,
+      );
+    }
+    return { ...header, avhPartyId: header.avhPartyId };
   }
 
   /**
@@ -1641,9 +1649,17 @@ export const STORED_HEADER_SELECT = {
   avhModifiedBy: true,
 } satisfies Prisma.AccVoucherHeaderSelect;
 
-export type StoredHeader = Prisma.AccVoucherHeaderGetPayload<{
-  select: typeof STORED_HEADER_SELECT;
-}>;
+/**
+ * A receipt always carries its party (its voucher type is `vchr_party_mode =
+ * ONE`). `avh_party_id` became nullable in 20260925160000_voucher_register for
+ * the register's Contra and multi-party Journal, so the column type is now
+ * `string | null`; `loadHeaderOrThrow` narrows it back HERE, once, and a receipt
+ * header without a party is refused as corrupt rather than handled downstream.
+ */
+export type StoredHeader = Omit<
+  Prisma.AccVoucherHeaderGetPayload<{ select: typeof STORED_HEADER_SELECT }>,
+  'avhPartyId'
+> & { avhPartyId: string };
 
 /**
  * `avh_voucher_status` is VARCHAR + CHECK and not a PG enum, so Prisma hands it

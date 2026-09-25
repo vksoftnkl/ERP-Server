@@ -72,10 +72,11 @@ let ReceiptAmendService = class ReceiptAmendService {
         this.assertStatusMayAmend(header);
         await this.assertPartyUnchanged(tx, header, dto.avhPartyId);
         this.assertRevisionIsCurrent(header, dto.baseRevision);
-        const pdcHeaders = await tx.accVoucherHeader.findMany({
+        const pdcHeaders = (await tx.accVoucherHeader.findMany({
             where: (0, receipt_cheque_links_1.receiptPdcVoucherWhere)(header),
             select: receipt_service_1.STORED_HEADER_SELECT,
-        });
+        }))
+            .map((row) => ({ ...row, avhPartyId: row.avhPartyId ?? header.avhPartyId }));
         const vouchers = [header, ...pdcHeaders];
         const voucherIds = vouchers.map((voucher) => voucher.avhVoucherId);
         const years = [...new Set(vouchers.map((voucher) => voucher.avhAccYear))];

@@ -6,6 +6,9 @@ export interface SaleBillOfCheque {
     sbAccYear: string;
     ablId: string;
     ablAccYear: string;
+    hasCounterRow: boolean;
+    counterAmount: Prisma.Decimal;
 }
 export declare function findSaleBillOfCheque(tx: Prisma.TransactionClient, cheque: Pick<LockedCheque, 'apdTenderId'>): Promise<SaleBillOfCheque | null>;
 export declare function moveSaleBillSettlement(tx: Prisma.TransactionClient, link: SaleBillOfCheque, delta: Prisma.Decimal, settledOn: Date, actor: string): Promise<ChequeBillRef>;
+export declare function moveSaleBillHeader(tx: Prisma.TransactionClient, link: Pick<SaleBillOfCheque, 'sbId' | 'sbAccYear'>, moved: Prisma.Decimal, now?: Date): Promise<void>;

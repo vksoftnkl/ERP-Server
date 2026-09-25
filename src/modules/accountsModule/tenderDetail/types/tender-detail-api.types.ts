@@ -125,6 +125,12 @@ export interface TenderDetailPayload {
   tdDeviceId: string | null;
   tdUserId: string;
   tdNotes: string | null;
+  // A re-tender voids the rows that did not happen (td_is_voided); document
+  // reads leave them out, a read by id shows them as they are.
+  tdIsVoided: boolean;
+  tdVoidReason: string | null;
+  tdVoidedOn: string | null;
+  tdVoidedBy: string | null;
   tdIsDeleted: boolean;
   tdSyncDate: string | null;
   tdCreatedOn: string;

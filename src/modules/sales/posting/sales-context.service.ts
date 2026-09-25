@@ -4,7 +4,7 @@ import { PrismaService } from '../../../database/prisma/prisma.service';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
 import { DEFAULT_ACTOR } from 'src/common/utils/module-service.utils';
 import { AppSettingValueService } from '../../settings/appSettings/app-setting-value.service';
-import { loadRights, type SalesRight } from './sales.guards';
+import { loadRights, type SalesRight, NO_RIGHTS } from './sales.guards';
 import { readSalesSettings, type SalesSettings } from './sales.settings';
 import type { RightsBlock } from './types/posting.types';
 
@@ -73,7 +73,7 @@ export class SalesContextService {
 
     const rights = isUuid(userId)
       ? await loadRights(client ?? this.prisma, userId, menuId)
-      : { post: false, cancel: false, amend: false, override: false, retender: false };
+      : { ...NO_RIGHTS };
 
     return {
       userId: userId ?? DEFAULT_ACTOR,
@@ -111,11 +111,11 @@ export class SalesContextService {
     return effective.find((i) => i.asdKey === key)?.value ?? null;
   }
 
-  /** All five flags, for a `/get` that resolves no settings. */
+  /** Every flag, for a `/get` that resolves no settings. */
   async rights(menuId: number, client?: Prisma.TransactionClient): Promise<RightsBlock> {
     const userId = this.requestContext.getUserId();
     if (!isUuid(userId)) {
-      return { post: false, cancel: false, amend: false, override: false, retender: false };
+      return { ...NO_RIGHTS };
     }
     // Returned whole. Re-listing the keys here is what dropped `retender` from
     // every /get: loadRights already reads all five, and a second list of them

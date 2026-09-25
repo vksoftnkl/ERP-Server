@@ -133,6 +133,7 @@ model Company {
   stockReorderPolicies  StockReorderPolicy[] @relation("StockReorderPolicyCompany")
   stockForecasts        StockForecast[]    @relation("StockForecastCompany")
   stockMovementClasses  StockMovementClass[] @relation("StockMovementClassCompany")
+  tdsRates              TdsRate[]          @relation("TdsRateCompany")
 
   // ── printing (17_printing.sql) ─────────────────────────────────────────
   printPurposes         PrintPurpose[]            @relation("PrintPurposeCompany")

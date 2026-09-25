@@ -18,6 +18,7 @@ export interface ReversedRows {
         accYear: string;
     }>;
     count: number;
+    amountByBill: Map<string, Prisma.Decimal>;
 }
 export declare function reverseChequeAdjustments(tx: Prisma.TransactionClient, cheque: LockedCheque, scope: ReversalVoucherScope, startRowNo?: number): Promise<ReversedRows & {
     nextRowNo: number;

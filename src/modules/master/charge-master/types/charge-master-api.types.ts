@@ -1,3 +1,4 @@
+import type { Prisma } from '@prisma/client';
 import type {
   ModuleApiErrorDetail,
   ModuleApiErrorResponse,
@@ -114,15 +115,26 @@ export type ChargeDetailGuardedValues = Partial<
 >;
 // Subset of acc_ledger_master selected alongside a charge so the payload can
 // echo the mapped ledger's name and GST attributes.
+// Subset of inventory.tax_rate_master selected alongside a charge: the rate
+// chg_tax_id points at, or the one the ledger's led_tax_id points at.
+export interface ChargeTaxDetail {
+  taxId: string;
+  taxName: string;
+  taxRatePerc: Prisma.Decimal;
+  taxCgstPerc: Prisma.Decimal | null;
+  taxSgstPerc: Prisma.Decimal | null;
+  taxIgstPerc: Prisma.Decimal | null;
+  taxCessPerc: Prisma.Decimal;
+  taxTaxability: string;
+}
 export interface ChargeLedgerDetail {
   ledName: string;
   ledHsnSac: string | null;
+  ledTaxId: string | null;
+  /** The ledger's own rate (led_tax_id), inherited by a charge whose chgTaxId is null. */
+  taxRate: ChargeTaxDetail | null;
 }
-// Subset of inventory.tax_rate_master selected alongside a charge so the
-// payload can name the rate chg_tax_id points at.
-export interface ChargeTaxDetail {
-  taxName: string;
-}
+export type ChargeTaxSource = 'CHARGE' | 'LEDGER';
 export interface ChargeMasterPayload {
   chgId: string;
   chgName: string;
@@ -144,6 +156,27 @@ export interface ChargeMasterPayload {
   chgBeforeTax: boolean;
   // Per-charge override of the posting ledger's led_tax_id; null inherits it.
   chgTaxId: string | null;
+  // ── The rate the charge is priced at (CHG-TAX) ──────────────────────────
+  // Derived, read-only, never audited. chgTaxRate is the effective figure: the
+  // charge's own rate when chgTaxId is set, else the posting ledger's
+  // (led_tax_id). ledGstRate carries the same figure under the name the Qt
+  // charge grid reads.
+  /** The posting ledger's led_tax_id. */
+  ledTaxId: string | null;
+  /** The posting ledger's own rate (%), whatever the charge overrides it with. */
+  ledgerTaxPerc: number | null;
+  /** Where chgTaxRate came from; null when neither the charge nor the ledger names a rate. */
+  chgTaxSource: ChargeTaxSource | null;
+  /** The effective total rate (%). */
+  chgTaxRate: number | null;
+  chgTaxCgstPerc: number | null;
+  chgTaxSgstPerc: number | null;
+  chgTaxIgstPerc: number | null;
+  chgTaxCessPerc: number | null;
+  /** TAXABLE | EXEMPT | NIL_RATED | NON_GST of the effective rate. */
+  chgTaxTaxability: string | null;
+  /** Legacy name of chgTaxRate for the Qt charge grid. */
+  ledGstRate: number | null;
   // Name of the rate chgTaxId points at, read from inventory.tax_rate_master.
   // Derived display value, never stored on charge_master itself.
   chgTaxName: string | null;

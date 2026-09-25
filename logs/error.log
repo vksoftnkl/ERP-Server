@@ -14804,3 +14804,247 @@ Raw query failed. Code: `23505`. Message: `Key (lld_src_doc_type, lld_src_doc_id
     at async <anonymous> (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill-lifecycle.service.ts:253:24)
     at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
     at async BillController.cancel (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill.controller.ts:134:51)
+2026-09-25T13:18:13.429Z ERROR [ModuleExceptionFilter] POST /api/v1/quotations/create
+PrismaClientValidationError: 
+Invalid `tx.saleQuotation.create()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/sales/quotation/quotation.service.ts:896:48
+
+  893 this.applyParentRevision(data, saveQuotationDto, saveQuotationDto.sqAccYear);
+  894 data.sqCustName = normalizedCustName;
+  895 data.sqQuoteDate = quoteDate;
+→ 896 const created = await tx.saleQuotation.create({
+        data: {
+          sqCompanyId: "019c8ea6-19e9-78a8-b15f-749e1cde7292",
+          sqBranchId: "019c8ea7-b0f5-72d5-96a5-1abfc80cc8ab",
+          sqTenantId: undefined,
+          sqAccYear: "2026-2027",
+          sqPriceLevel: 1,
+          sqQuoteSlno: 16n,
+          sqQuoteRefno: "Q0016",
+          sqQuoteDate: new Date("2026-09-25T00:00:00.000Z"),
+          sqCustName: "MADHAVAN",
+          sqUserId: "019e7255-f432-78ab-8bf2-4bf382487b38",
+          sqCreatedOn: new Date("2026-09-25T13:18:13.399Z"),
+          sqCreatedBy: "VIJAY",
+          sqStatus: "DRAFT",
+          sqSessionId: "07e141e1-a332-431d-8b76-7758e6d0d8d9",
+          sqCategoryId: undefined,
+          sqDocType: "QUOTATION",
+          sqUsrRefno: null,
+          sqQuoteDatetime: undefined,
+          sqValidUntil: new Date("2026-10-02T00:00:00.000Z"),
+          sqValidityDays: 7,
+          sqRevisionNo: 0,
+          sqSrcDocType: undefined,
+          sqSrcDocId: undefined,
+          sqSrcDocRefno: undefined,
+          sqSrcDocDate: undefined,
+          sqCustId: "019f659c-3942-7237-89b0-c4899603dd7a",
+          sqCustAreaId: "019f1710-505d-78f8-9f58-12d242859217",
+          sqCustAddr: "55/1, METTU ST",
+          sqCustPlace: "NAMAKKAL",
+          sqCustPhone: "9865200111",
+          sqCustEmail: null,
+          sqCustGstin: "33AABCA8398K1ZA",
+          sqCustGstType: "Unregistered",
+          sqCustStcd: "33",
+          sqPosStcd: "33",
+          sqStateName: "Tamil Nadu",
+          sqContactPerson: "MADHAVAN",
+          sqContactPhone: null,
+          sqHasLoad: false,
+          sqHasUnload: false,
+          sqHasFreight: false,
+          sqHasPromo: false,
+          sqHasComm: undefined,
+          sqSalesmanId: null,
+          sqAgentId: null,
+          sqTotItems: 1,
+          sqTotWeight: 722.23,
+          sqTotBags: 28.889,
+          sqGrossAmt: 9792.88,
+          sqItemDisc: 0,
+          sqSplDisc: 0,
+          sqSchDisc: 0,
+          sqBillSchDisc: 0,
+          sqAddlDisc1: undefined,
+          sqAddlDisc2: undefined,
+          sqTaxableAmt: 9792.88,
+          sqCgstAmt: 881.36,
+          sqSgstAmt: 881.36,
+          sqIgstAmt: 0,
+          sqCessAmt: 0,
+          sqTaxAmt: 1762.72,
+          sqFreightAmt: 0,
+          sqLoadAmt: 0,
+          sqUnloadAmt: 0,
+          sqOtherAmt1: 0,
+          sqOtherAmt2: 0,
+          sqRoundOff: 0.4,
+          sqQuoteAmt: 11556,
+          sqTotalCost: 8666.79,
+          sqMarginAmt: 2448.05,
+          sqMarginPerc: 25,
+          sqPaymentTerms: null,
+          sqDeliveryTerms: null,
+          sqTermsConditions: null,
+          sqSentOn: undefined,
+          sqAcceptedOn: undefined,
+          sqRejectedOn: undefined,
+          sqRejectReason: undefined,
+          sqConvertedDocType: undefined,
+          sqConvertedDocId: undefined,
+          sqConvertedOn: undefined,
+          sqApprovedOn: undefined,
+          sqApprovedBy: undefined,
+          sqCancelledBy: undefined,
+          sqCancelReason: undefined,
+          sqMrpSavings: 8666.7,
+          sqMrpSavingsPerc: 42.86,
+          sqPrintCount: undefined,
+          sqDeviceType: null,
+          sqDeviceId: "0e0f3ac4-f8c5-4606-9258-4bba05ed6da7",
+          sqRemarks: null,
+          sqFreightCalcType: "manual",
+          sqLoadingCalcType: "manual",
+          sqDiscAlterBase: false,
+      +   priceLevel: {
+      +     create: ItemPriceLevelCreateWithoutSaleQuotationsInput | ItemPriceLevelUncheckedCreateWithoutSaleQuotationsInput,
+      +     connectOrCreate: ItemPriceLevelCreateOrConnectWithoutSaleQuotationsInput,
+      +     connect: ItemPriceLevelWhereUniqueInput
+      +   }
+        }
+      })
+
+Argument `priceLevel` is missing.
+    at throwValidationException (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/core/errorRendering/throwValidationException.ts:45:9)
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:202:7)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async <anonymous> (/home/vk/Dev/erp/ERP server/src/modules/sales/quotation/quotation.service.ts:896:25)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async QuotationService.createQuotation (/home/vk/Dev/erp/ERP server/src/modules/sales/quotation/quotation.service.ts:864:14)
+    at async QuotationController.save (/home/vk/Dev/erp/ERP server/src/modules/sales/quotation/quotation.controller.ts:55:18)
+2026-09-25T13:18:23.299Z ERROR [ModuleExceptionFilter] POST /api/v1/quotations/create
+PrismaClientValidationError: 
+Invalid `tx.saleQuotation.create()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/sales/quotation/quotation.service.ts:896:48
+
+  893 this.applyParentRevision(data, saveQuotationDto, saveQuotationDto.sqAccYear);
+  894 data.sqCustName = normalizedCustName;
+  895 data.sqQuoteDate = quoteDate;
+→ 896 const created = await tx.saleQuotation.create({
+        data: {
+          sqCompanyId: "019c8ea6-19e9-78a8-b15f-749e1cde7292",
+          sqBranchId: "019c8ea7-b0f5-72d5-96a5-1abfc80cc8ab",
+          sqTenantId: undefined,
+          sqAccYear: "2026-2027",
+          sqPriceLevel: 1,
+          sqQuoteSlno: 16n,
+          sqQuoteRefno: "Q0016",
+          sqQuoteDate: new Date("2026-09-25T00:00:00.000Z"),
+          sqCustName: "MADHAVAN",
+          sqUserId: "019e7255-f432-78ab-8bf2-4bf382487b38",
+          sqCreatedOn: new Date("2026-09-25T13:18:23.292Z"),
+          sqCreatedBy: "VIJAY",
+          sqStatus: "DRAFT",
+          sqSessionId: "07e141e1-a332-431d-8b76-7758e6d0d8d9",
+          sqCategoryId: undefined,
+          sqDocType: "QUOTATION",
+          sqUsrRefno: null,
+          sqQuoteDatetime: undefined,
+          sqValidUntil: new Date("2026-10-02T00:00:00.000Z"),
+          sqValidityDays: 7,
+          sqRevisionNo: 0,
+          sqSrcDocType: undefined,
+          sqSrcDocId: undefined,
+          sqSrcDocRefno: undefined,
+          sqSrcDocDate: undefined,
+          sqCustId: "019f659c-3942-7237-89b0-c4899603dd7a",
+          sqCustAreaId: "019f1710-505d-78f8-9f58-12d242859217",
+          sqCustAddr: "55/1, METTU ST",
+          sqCustPlace: "NAMAKKAL",
+          sqCustPhone: "9865200111",
+          sqCustEmail: null,
+          sqCustGstin: "33AABCA8398K1ZA",
+          sqCustGstType: "Unregistered",
+          sqCustStcd: "33",
+          sqPosStcd: "33",
+          sqStateName: "Tamil Nadu",
+          sqContactPerson: "MADHAVAN",
+          sqContactPhone: null,
+          sqHasLoad: false,
+          sqHasUnload: false,
+          sqHasFreight: false,
+          sqHasPromo: false,
+          sqHasComm: undefined,
+          sqSalesmanId: null,
+          sqAgentId: null,
+          sqTotItems: 1,
+          sqTotWeight: 722.23,
+          sqTotBags: 28.889,
+          sqGrossAmt: 9792.88,
+          sqItemDisc: 0,
+          sqSplDisc: 0,
+          sqSchDisc: 0,
+          sqBillSchDisc: 0,
+          sqAddlDisc1: undefined,
+          sqAddlDisc2: undefined,
+          sqTaxableAmt: 9792.88,
+          sqCgstAmt: 881.36,
+          sqSgstAmt: 881.36,
+          sqIgstAmt: 0,
+          sqCessAmt: 0,
+          sqTaxAmt: 1762.72,
+          sqFreightAmt: 0,
+          sqLoadAmt: 0,
+          sqUnloadAmt: 0,
+          sqOtherAmt1: 0,
+          sqOtherAmt2: 0,
+          sqRoundOff: 0.4,
+          sqQuoteAmt: 11556,
+          sqTotalCost: 8666.79,
+          sqMarginAmt: 2448.05,
+          sqMarginPerc: 25,
+          sqPaymentTerms: null,
+          sqDeliveryTerms: null,
+          sqTermsConditions: null,
+          sqSentOn: undefined,
+          sqAcceptedOn: undefined,
+          sqRejectedOn: undefined,
+          sqRejectReason: undefined,
+          sqConvertedDocType: undefined,
+          sqConvertedDocId: undefined,
+          sqConvertedOn: undefined,
+          sqApprovedOn: undefined,
+          sqApprovedBy: undefined,
+          sqCancelledBy: undefined,
+          sqCancelReason: undefined,
+          sqMrpSavings: 8666.7,
+          sqMrpSavingsPerc: 42.86,
+          sqPrintCount: undefined,
+          sqDeviceType: null,
+          sqDeviceId: "0e0f3ac4-f8c5-4606-9258-4bba05ed6da7",
+          sqRemarks: null,
+          sqFreightCalcType: "manual",
+          sqLoadingCalcType: "manual",
+          sqDiscAlterBase: false,
+      +   priceLevel: {
+      +     create: ItemPriceLevelCreateWithoutSaleQuotationsInput | ItemPriceLevelUncheckedCreateWithoutSaleQuotationsInput,
+      +     connectOrCreate: ItemPriceLevelCreateOrConnectWithoutSaleQuotationsInput,
+      +     connect: ItemPriceLevelWhereUniqueInput
+      +   }
+        }
+      })
+
+Argument `priceLevel` is missing.
+    at throwValidationException (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/core/errorRendering/throwValidationException.ts:45:9)
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:202:7)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async <anonymous> (/home/vk/Dev/erp/ERP server/src/modules/sales/quotation/quotation.service.ts:896:25)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async QuotationService.createQuotation (/home/vk/Dev/erp/ERP server/src/modules/sales/quotation/quotation.service.ts:864:14)
+    at async QuotationController.save (/home/vk/Dev/erp/ERP server/src/modules/sales/quotation/quotation.controller.ts:55:18)

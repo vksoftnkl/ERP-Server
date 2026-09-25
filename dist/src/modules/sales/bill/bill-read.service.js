@@ -17,9 +17,9 @@ const loyalty_ledger_service_1 = require("../posting/loyalty-ledger.service");
 const sales_context_service_1 = require("../posting/sales-context.service");
 const sales_doc_blocks_service_1 = require("../posting/sales-doc-blocks.service");
 const sales_guards_1 = require("../posting/sales.guards");
-const statutory_service_1 = require("../posting/statutory.service");
+const statutory_service_1 = require("../../../common/posting/statutory.service");
 const transport_band_service_1 = require("../posting/transport-band.service");
-const statutory_types_1 = require("../posting/types/statutory.types");
+const statutory_types_1 = require("../../../common/posting/statutory.types");
 const sales_doc_utils_1 = require("../posting/sales-doc.utils");
 let BillReadService = class BillReadService {
     prisma;
@@ -102,7 +102,13 @@ let BillReadService = class BillReadService {
             -- Same exclusion as assertCancellable: only the set-offs the bill's
             -- own /post wrote, which carry no voucher.
             AND NOT (j.abj_adj_type IN ('ADVANCE_ADJUST', 'NOTE_ADJUST')
-                     AND j.abj_voucher_id IS NULL)) AS allocations`;
+                     AND j.abj_voucher_id IS NULL)
+            -- …and not what was paid at the counter (notes 49): rows naming the
+            -- bill's own tender rows.
+            AND NOT EXISTS (SELECT 1 FROM accounts.acc_tender_detail t
+                             WHERE t.td_id = j.abj_tender_id
+                               AND t.td_src_module = 'SALES' AND t.td_src_doc_type = 'SALE_BILL'
+                               AND t.td_src_doc_id = ${bill.sbId}::uuid)) AS allocations`;
         return { returns: Number(row?.returns ?? 0), allocations: Number(row?.allocations ?? 0) };
     }
     async sources(c, bill) {

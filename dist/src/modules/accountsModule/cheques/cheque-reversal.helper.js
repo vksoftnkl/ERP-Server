@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.reverseChequeAdjustments = reverseChequeAdjustments;
 exports.allocationsReversedBy = allocationsReversedBy;
 exports.cascadeAdvances = cascadeAdvances;
+const client_1 = require("@prisma/client");
 const receipt_enum_1 = require("../receipt/types/receipt-enum");
 const receipt_utils_1 = require("../receipt/receipt.utils");
 async function loadChequeAdjustments(tx, cheque) {
@@ -24,9 +25,15 @@ async function loadChequeAdjustments(tx, cheque) {
 async function reverseChequeAdjustments(tx, cheque, scope, startRowNo = 1) {
     const { standing } = await loadChequeAdjustments(tx, cheque);
     const nextRowNo = await writeReversals(tx, standing, scope, startRowNo);
+    const amountByBill = new Map();
+    for (const row of standing) {
+        const k = `${row.abjBillId}|${row.abjBillAccYear}`;
+        amountByBill.set(k, (amountByBill.get(k) ?? new client_1.Prisma.Decimal(0)).plus(row.abjAmount));
+    }
     return {
         bills: standing.map((row) => ({ billId: row.abjBillId, accYear: row.abjBillAccYear })),
         count: standing.length,
+        amountByBill,
         nextRowNo,
     };
 }

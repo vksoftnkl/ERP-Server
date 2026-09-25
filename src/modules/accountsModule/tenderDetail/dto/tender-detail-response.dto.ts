@@ -124,6 +124,17 @@ export class TenderDetailPayloadDto {
   tdUserId!: string;
   @ApiPropertyOptional({ maxLength: 250, nullable: true })
   tdNotes!: string | null;
+  @ApiProperty({
+    description:
+      'True for a row a re-tender replaced. Document reads leave voided rows out; a read by tdId shows one as it is.',
+  })
+  tdIsVoided!: boolean;
+  @ApiPropertyOptional({ maxLength: 30, nullable: true, description: 'CUSTOMER_CHANGED | OTHER' })
+  tdVoidReason!: string | null;
+  @ApiPropertyOptional({ nullable: true, format: 'date-time' })
+  tdVoidedOn!: string | null;
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  tdVoidedBy!: string | null;
   @ApiProperty()
   tdIsDeleted!: boolean;
   @ApiPropertyOptional({ nullable: true, format: 'date-time' })

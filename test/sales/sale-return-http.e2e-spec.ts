@@ -461,10 +461,14 @@ describe('Sale return — CASH, ADJUST and ADVANCE settlements (e2e, live DB)', 
     expect(num(cn.abl_alloc_amount)).toBe(0);
     expect(num(cn.abl_pending_amount)).toBe(354);
     expect(cn.abl_status.trim()).toBe('OPEN');
-    // Bill C itself is untouched: still fully paid, nothing adjusted against it.
+    // Bill C itself is untouched: still fully paid, nothing adjusted against it
+    // beyond its own counter payment (notes 49: one ALLOCATION row per
+    // settling tender, written at /post).
     const [ablC] = await p.balanceRows(SALE_BILL, billC.sbId);
     expect(num(ablC.abl_pending_amount)).toBe(0);
-    expect(await p.adjustments(ablC.abl_id)).toHaveLength(0);
+    const adjustedC = await p.adjustments(ablC.abl_id);
+    expect(adjustedC.filter((a) => a.abj_adj_type.trim() !== 'ALLOCATION')).toHaveLength(0);
+    expect(adjustedC.map((a) => num(a.abj_amount)).reduce((t, x) => t + x, 0)).toBe(1180);
     // No tender leg either.
     expect(await p.legs(returnC.srPostedVoucherId)).toHaveLength(6);
     expect(await p.tenders(SALE_RETURN, returnC.srId)).toHaveLength(0);

@@ -17,7 +17,11 @@ import {
 import { logChequeStatus, reloadChequeRow } from './cheques.utils';
 import { writeChequeVoucher } from './cheque-voucher.helper';
 import { cascadeAdvances, reverseChequeAdjustments } from './cheque-reversal.helper';
-import { findSaleBillOfCheque, moveSaleBillSettlement } from './sale-bill-cheque.helper';
+import {
+  findSaleBillOfCheque,
+  moveSaleBillHeader,
+  moveSaleBillSettlement,
+} from './sale-bill-cheque.helper';
 import {
   CANCEL_REASON_MAX_LENGTH,
   RECEIPT_VOUCHER_TYPE_CODE,
@@ -225,19 +229,26 @@ export class ChequeReturnService {
     const touched = [...reversed.bills, ...cascade.bills];
     const recomputed = await this.recompute.recomputeBills(tx, touched, params.asOf);
     const refs = await this.loadBillRefs(tx, touched);
-    // A cheque tendered ON a sale bill wrote no adjustment row, so the reversal
-    // above cannot see it — the bill is reopened through its tender instead
+    // A cheque tendered ON a sale bill: with its ALLOCATION row (notes 49) the
+    // reversal above reopened the receivable and only the bill header moves
+    // here; a bill without one is reopened through its tender as before
     // (sale-bill-cheque.helper).
     const saleBill = await findSaleBillOfCheque(tx, cheque);
-    const saleBillReopened = saleBill
-      ? await moveSaleBillSettlement(
-          tx,
-          saleBill,
-          cheque.apdAmount.negated(),
-          params.asOf,
-          params.actor,
-        )
-      : null;
+    let saleBillReopened: Awaited<ReturnType<typeof moveSaleBillSettlement>> | null = null;
+    if (saleBill?.hasCounterRow) {
+      const given = reversed.amountByBill.get(`${saleBill.ablId}|${saleBill.ablAccYear}`);
+      if (given?.greaterThan(0)) {
+        await moveSaleBillHeader(tx, saleBill, given.negated());
+      }
+    } else if (saleBill) {
+      saleBillReopened = await moveSaleBillSettlement(
+        tx,
+        saleBill,
+        cheque.apdAmount.negated(),
+        params.asOf,
+        params.actor,
+      );
+    }
 
     return {
       voucher: written.ref,
@@ -254,7 +265,9 @@ export class ChequeReturnService {
             dueDate: ref?.dueDate ?? null,
             billAmount: toAmount(bill.billAmount ?? ZERO),
             pendingAmount: toAmount(bill.pendingAmount),
-            settledByThisCheque: 0,
+            settledByThisCheque: toAmount(
+              reversed.amountByBill.get(`${bill.billId}|${bill.accYear}`) ?? ZERO,
+            ),
           };
         })
         .concat(saleBillReopened ? [saleBillReopened] : []),

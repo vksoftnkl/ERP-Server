@@ -73,8 +73,8 @@ model AccLedgerMaster {
   ledRoundingLimit         Decimal?  @db.Decimal                                       @map("led_rounding_limit")
   // 8) TDS / TCS
   ledIsTdsApplicable       Boolean   @default(false)                                   @map("led_is_tds_applicable")
-  ledTdsDeducteeType       String?   @db.VarChar(40)                                  @map("led_tds_deductee_type")
-  ledTdsNatureOfPayment    String?   @db.VarChar(80)                                  @map("led_tds_nature_of_payment")
+  ledTdsDeducteeType       String?   @db.VarChar(16)                                  @map("led_tds_deductee_type")
+  ledTdsNatureOfPayment    String?   @db.VarChar(16)                                  @map("led_tds_nature_of_payment")
   ledIsTcsApplicable       Boolean   @default(false)                                   @map("led_is_tcs_applicable")
   // Input tax credit. Allowed values (ELIGIBLE / INELIGIBLE_17_5 / INELIGIBLE_OTHER /
   // CAPITAL_GOODS / INPUT_SERVICES) are behind chk_led_itc_eligibility (20260917120000)

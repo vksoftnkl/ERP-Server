@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
-import { StatutoryService } from './statutory.service';
+import { StatutoryService } from '../../../common/posting/statutory.service';
 import { loadDayClosed } from './sales.guards';
 import { isoDateTime } from './sales-doc.utils';
 import type { GstDocStatus, LocksBlock, PostingBlock } from './types/posting.types';

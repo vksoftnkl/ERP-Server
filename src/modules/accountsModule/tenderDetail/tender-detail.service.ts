@@ -215,12 +215,7 @@ export class TenderDetailService {
     tdSrcDocId: string,
     client: Prisma.TransactionClient = this.prisma,
   ): Promise<TenderDetailPayload[]> {
-    const records = await this.findDocumentTenders(
-      client,
-      tdSrcModule,
-      tdSrcDocType,
-      tdSrcDocId,
-    );
+    const records = await this.findDocumentTenders(client, tdSrcModule, tdSrcDocType, tdSrcDocId);
     return records.map((record) => this.toPayload(record));
   }
   async softDelete(tdId: string): Promise<TenderDetailDeleteResult> {
@@ -316,6 +311,14 @@ export class TenderDetailService {
   }
   // The stored tender lines of one document, in row order. Takes the caller's
   // client so an owning module can read them inside its own transaction.
+  //
+  // A VOIDED row is left out (T-VOID). A re-tender (/bills/retender) voids the
+  // rows that did not happen and writes the ones that did, each pointing at
+  // what it replaces; the voided row stays as the audit trail and must not be
+  // counted, kept or soft-deleted by anything that reads a document's tenders
+  // afterwards — /get, a post, an amend, a re-save. The re-tender screen reads
+  // them flagged through /bills/get (bill-read), and getById still answers for
+  // one by id, with the void columns on the payload.
   findDocumentTenders(
     client: TenderDetailWriteClient,
     tdSrcModule: TenderSrcModule,
@@ -323,7 +326,7 @@ export class TenderDetailService {
     tdSrcDocId: string,
   ): Promise<TenderDetailRecord[]> {
     return client.accTenderDetail.findMany({
-      where: { tdSrcModule, tdSrcDocType, tdSrcDocId, tdIsDeleted: false },
+      where: { tdSrcModule, tdSrcDocType, tdSrcDocId, tdIsDeleted: false, tdIsVoided: false },
       include: this.displayJoins(),
       orderBy: { tdRowNo: 'asc' },
     });
@@ -1121,6 +1124,10 @@ export class TenderDetailService {
       tdDeviceId: record.tdDeviceId,
       tdUserId: record.tdUserId,
       tdNotes: record.tdNotes,
+      tdIsVoided: record.tdIsVoided,
+      tdVoidReason: record.tdVoidReason,
+      tdVoidedOn: record.tdVoidedOn ? record.tdVoidedOn.toISOString() : null,
+      tdVoidedBy: record.tdVoidedBy,
       tdIsDeleted: record.tdIsDeleted,
       tdSyncDate: record.tdSyncDate ? record.tdSyncDate.toISOString() : null,
       tdCreatedOn: record.tdCreatedOn.toISOString(),

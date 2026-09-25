@@ -1,9 +1,8 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.assertVoucherPartitionExists = exports.assertAccYearWritable = void 0;
+exports.NO_RIGHTS = exports.loadRights = exports.assertVoucherPartitionExists = exports.assertAccYearWritable = void 0;
 exports.warn = warn;
 exports.refuse = refuse;
-exports.loadRights = loadRights;
 exports.assertRight = assertRight;
 exports.assertBackdate = assertBackdate;
 exports.loadDayClosed = loadDayClosed;
@@ -16,6 +15,9 @@ exports.loadDeclaredLocks = loadDeclaredLocks;
 exports.assertAmendable = assertAmendable;
 exports.assertBandWritable = assertBandWritable;
 exports.assertCancellable = assertCancellable;
+const rights_1 = require("../../../common/posting/rights");
+Object.defineProperty(exports, "loadRights", { enumerable: true, get: function () { return rights_1.loadRights; } });
+Object.defineProperty(exports, "NO_RIGHTS", { enumerable: true, get: function () { return rights_1.NO_RIGHTS; } });
 const receipt_guards_1 = require("../../accountsModule/receipt/receipt.guards");
 Object.defineProperty(exports, "assertAccYearWritable", { enumerable: true, get: function () { return receipt_guards_1.assertAccYearWritable; } });
 Object.defineProperty(exports, "assertVoucherPartitionExists", { enumerable: true, get: function () { return receipt_guards_1.assertVoucherPartitionExists; } });
@@ -53,41 +55,23 @@ function refuse(ctx, code, message, opts = {}) {
         });
     }
 }
-const RIGHT_COLUMN = {
-    post: 'um_can_post',
-    cancel: 'um_can_cancel',
-    amend: 'um_can_amend',
-    override: 'um_can_override',
-    retender: 'um_can_retender',
-};
 const RIGHT_CODE = {
+    view: posting_types_1.SALES_ERROR_CODES.RIGHT_VIEW,
+    create: posting_types_1.SALES_ERROR_CODES.RIGHT_CREATE,
+    edit: posting_types_1.SALES_ERROR_CODES.RIGHT_EDIT,
+    delete: posting_types_1.SALES_ERROR_CODES.RIGHT_DELETE,
+    print: posting_types_1.SALES_ERROR_CODES.RIGHT_PRINT,
+    export: posting_types_1.SALES_ERROR_CODES.RIGHT_EXPORT,
     post: posting_types_1.SALES_ERROR_CODES.RIGHT_POST,
     cancel: posting_types_1.SALES_ERROR_CODES.RIGHT_CANCEL,
     amend: posting_types_1.SALES_ERROR_CODES.RIGHT_AMEND,
     override: posting_types_1.SALES_ERROR_CODES.RIGHT_OVERRIDE,
     retender: posting_types_1.SALES_ERROR_CODES.RIGHT_RETENDER,
 };
-async function loadRights(client, userId, menuId) {
-    const rows = await client.$queryRaw `
-    SELECT um_can_post, um_can_cancel, um_can_amend, um_can_override, um_can_retender
-      FROM public.user_menus
-     WHERE um_user_id    = ${userId}::uuid
-       AND um_menu_id    = ${menuId}::int
-       AND um_is_deleted = false
-     LIMIT 1`;
-    const row = rows[0];
-    return {
-        post: row?.um_can_post ?? false,
-        cancel: row?.um_can_cancel ?? false,
-        amend: row?.um_can_amend ?? false,
-        override: row?.um_can_override ?? false,
-        retender: row?.um_can_retender ?? false,
-    };
-}
 async function assertRight(client, userId, menuId, right) {
-    const rights = await loadRights(client, userId, menuId);
+    const rights = await (0, rights_1.loadRights)(client, userId, menuId);
     if (!rights[right]) {
-        (0, sales_errors_1.throwSalesRight)(`This user may not ${right} on this menu (${RIGHT_COLUMN[right]} is false)`, RIGHT_CODE[right]);
+        (0, sales_errors_1.throwSalesRight)(`This user may not ${right} on this menu (${rights_1.RIGHT_COLUMN[right]} is false)`, RIGHT_CODE[right]);
     }
     return rights;
 }
@@ -253,7 +237,15 @@ async function assertCancellable(client, bill) {
           -- as abj_against_bill_id, so matching on the bill's own id never
           -- excluded anything. A receipt's rows always carry its voucher.
           AND NOT (j.abj_adj_type IN ('ADVANCE_ADJUST', 'NOTE_ADJUST')
-                   AND j.abj_voucher_id IS NULL))                           AS allocations`;
+                   AND j.abj_voucher_id IS NULL)
+          -- Nor is what was paid AT THE COUNTER (notes 49): /post writes an
+          -- ALLOCATION row per settling tender, naming the bill's own tender
+          -- row. Rows on the bill's own tenders — the counter rows, a bounce's
+          -- reversal of a bill cheque, its re-presentation — are the bill's.
+          AND NOT EXISTS (SELECT 1 FROM accounts.acc_tender_detail t
+                           WHERE t.td_id = j.abj_tender_id
+                             AND t.td_src_module = 'SALES' AND t.td_src_doc_type = 'SALE_BILL'
+                             AND t.td_src_doc_id = ${bill.billId}::uuid))  AS allocations`;
     if (Number(row?.returns ?? 0) > 0) {
         (0, sales_errors_1.throwSalesLocked)('A sale return has been raised against this bill — cancel the return first', posting_types_1.SALES_ERROR_CODES.RETURN_LOCKS_BILL, 'sbId');
     }

@@ -200,7 +200,7 @@ let TenderDetailService = class TenderDetailService {
     }
     findDocumentTenders(client, tdSrcModule, tdSrcDocType, tdSrcDocId) {
         return client.accTenderDetail.findMany({
-            where: { tdSrcModule, tdSrcDocType, tdSrcDocId, tdIsDeleted: false },
+            where: { tdSrcModule, tdSrcDocType, tdSrcDocId, tdIsDeleted: false, tdIsVoided: false },
             include: this.displayJoins(),
             orderBy: { tdRowNo: 'asc' },
         });
@@ -756,6 +756,10 @@ let TenderDetailService = class TenderDetailService {
             tdDeviceId: record.tdDeviceId,
             tdUserId: record.tdUserId,
             tdNotes: record.tdNotes,
+            tdIsVoided: record.tdIsVoided,
+            tdVoidReason: record.tdVoidReason,
+            tdVoidedOn: record.tdVoidedOn ? record.tdVoidedOn.toISOString() : null,
+            tdVoidedBy: record.tdVoidedBy,
             tdIsDeleted: record.tdIsDeleted,
             tdSyncDate: record.tdSyncDate ? record.tdSyncDate.toISOString() : null,
             tdCreatedOn: record.tdCreatedOn.toISOString(),

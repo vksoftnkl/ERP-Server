@@ -1,6 +1,6 @@
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
-import { StatutoryService } from './statutory.service';
+import { StatutoryService } from '../../../common/posting/statutory.service';
 import type { LocksBlock, PostingBlock } from './types/posting.types';
 export interface DocPostingFacts {
     status: string;

@@ -27,7 +27,11 @@ import {
 import { logChequeStatus, reloadChequeRow } from './cheques.utils';
 import { writeChequeVoucher, type ChequeLegSpec } from './cheque-voucher.helper';
 import { cascadeAdvances, reverseChequeAdjustments } from './cheque-reversal.helper';
-import { findSaleBillOfCheque, moveSaleBillSettlement } from './sale-bill-cheque.helper';
+import {
+  findSaleBillOfCheque,
+  moveSaleBillHeader,
+  moveSaleBillSettlement,
+} from './sale-bill-cheque.helper';
 import { ledgerForRole, requireChequeRoleLedgers } from './cheque-ledger-roles';
 import {
   BOUNCE_CHARGE_SRC_DOC_TYPE,
@@ -239,13 +243,27 @@ export class ChequeBounceService {
       const recomputed = await this.recompute.recomputeBills(tx, touched, todayUtc());
 
       // ── 6b · A cheque tendered ON a sale bill ───────────────────────────
-      // It settled the bill inside the bill's own voucher and wrote no
-      // adjustment row, so steps 5–6 cannot see it (sale-bill-cheque.helper).
+      // Since notes (49) the bill writes an ALLOCATION row for its cheque, so
+      // step 5 reversed it like any receipt's and the recompute reopened the
+      // receivable; only the bill header's caches are moved here. A bill
+      // posted before that (no row) is reopened through its tender as before.
       // Only ON_RECEIPT: under ON_CLEARING nothing was ever settled.
       const saleBill = onReceipt ? await findSaleBillOfCheque(tx, cheque) : null;
-      const saleBillReopened = saleBill
-        ? await moveSaleBillSettlement(tx, saleBill, cheque.apdAmount.negated(), bounceDate, actor)
-        : null;
+      let saleBillReopened: Awaited<ReturnType<typeof moveSaleBillSettlement>> | null = null;
+      if (saleBill?.hasCounterRow) {
+        const given = reversed.amountByBill.get(`${saleBill.ablId}|${saleBill.ablAccYear}`);
+        if (given?.greaterThan(0)) {
+          await moveSaleBillHeader(tx, saleBill, given.negated());
+        }
+      } else if (saleBill) {
+        saleBillReopened = await moveSaleBillSettlement(
+          tx,
+          saleBill,
+          cheque.apdAmount.negated(),
+          bounceDate,
+          actor,
+        );
+      }
 
       // ── 8 · The register, and the trail ─────────────────────────────────
       const now = new Date();
@@ -315,7 +333,9 @@ export class ChequeBounceService {
               pendingAmount: toAmount(
                 pendingByBill.get(`${bill.billId}|${bill.accYear}`)?.pendingAmount ?? ZERO,
               ),
-              settledByThisCheque: 0,
+              settledByThisCheque: toAmount(
+                reversed.amountByBill.get(`${bill.billId}|${bill.accYear}`) ?? ZERO,
+              ),
             };
           })
           .concat(saleBillReopened ? [saleBillReopened] : []),

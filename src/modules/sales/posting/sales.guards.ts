@@ -1,5 +1,11 @@
 import { Prisma } from '@prisma/client';
 import {
+  loadRights,
+  NO_RIGHTS,
+  RIGHT_COLUMN,
+  type MenuRight,
+} from '../../../common/posting/rights';
+import {
   assertAccYearWritable,
   assertVoucherPartitionExists,
 } from '../../accountsModule/receipt/receipt.guards';
@@ -105,58 +111,26 @@ export function refuse(
 //  1 — rights (flow §9 step 1)
 // ═══════════════════════════════════════════════════════════════════════════
 
-export type SalesRight = 'post' | 'cancel' | 'amend' | 'override' | 'retender';
-
-const RIGHT_COLUMN: Record<SalesRight, string> = {
-  post: 'um_can_post',
-  cancel: 'um_can_cancel',
-  amend: 'um_can_amend',
-  override: 'um_can_override',
-  retender: 'um_can_retender',
-};
+// `loadRights` and the right vocabulary were lifted to src/common/posting/rights.ts
+// (the Voucher Register reads the same flags on the voucher type's menu). The
+// sales names stay: `SalesRight` is `MenuRight`, and `loadRights` / `NO_RIGHTS`
+// are re-exported for the context service.
+export type SalesRight = MenuRight;
+export { loadRights, NO_RIGHTS };
 
 const RIGHT_CODE: Record<SalesRight, string> = {
+  view: SALES_ERROR_CODES.RIGHT_VIEW,
+  create: SALES_ERROR_CODES.RIGHT_CREATE,
+  edit: SALES_ERROR_CODES.RIGHT_EDIT,
+  delete: SALES_ERROR_CODES.RIGHT_DELETE,
+  print: SALES_ERROR_CODES.RIGHT_PRINT,
+  export: SALES_ERROR_CODES.RIGHT_EXPORT,
   post: SALES_ERROR_CODES.RIGHT_POST,
   cancel: SALES_ERROR_CODES.RIGHT_CANCEL,
   amend: SALES_ERROR_CODES.RIGHT_AMEND,
   override: SALES_ERROR_CODES.RIGHT_OVERRIDE,
   retender: SALES_ERROR_CODES.RIGHT_RETENDER,
 };
-
-/** All four flags for this user on this menu, in one read. */
-export async function loadRights(
-  client: SalesWriteClient,
-  userId: string,
-  // `um_menu_id` is an INTEGER (fixed.menu_master.menu_id), not a uuid.
-  menuId: number,
-): Promise<Record<SalesRight, boolean>> {
-  const rows = await client.$queryRaw<
-    {
-      um_can_post: boolean | null;
-      um_can_cancel: boolean | null;
-      um_can_amend: boolean | null;
-      um_can_override: boolean | null;
-      um_can_retender: boolean | null;
-    }[]
-  >`
-    SELECT um_can_post, um_can_cancel, um_can_amend, um_can_override, um_can_retender
-      FROM public.user_menus
-     WHERE um_user_id    = ${userId}::uuid
-       AND um_menu_id    = ${menuId}::int
-       AND um_is_deleted = false
-     LIMIT 1`;
-
-  const row = rows[0];
-  // No row means no rights. Defaulting a missing permission to TRUE is how a
-  // permission system stops being one.
-  return {
-    post: row?.um_can_post ?? false,
-    cancel: row?.um_can_cancel ?? false,
-    amend: row?.um_can_amend ?? false,
-    override: row?.um_can_override ?? false,
-    retender: row?.um_can_retender ?? false,
-  };
-}
 
 export async function assertRight(
   client: SalesWriteClient,
@@ -607,7 +581,15 @@ export async function assertCancellable(
           -- as abj_against_bill_id, so matching on the bill's own id never
           -- excluded anything. A receipt's rows always carry its voucher.
           AND NOT (j.abj_adj_type IN ('ADVANCE_ADJUST', 'NOTE_ADJUST')
-                   AND j.abj_voucher_id IS NULL))                           AS allocations`;
+                   AND j.abj_voucher_id IS NULL)
+          -- Nor is what was paid AT THE COUNTER (notes 49): /post writes an
+          -- ALLOCATION row per settling tender, naming the bill's own tender
+          -- row. Rows on the bill's own tenders — the counter rows, a bounce's
+          -- reversal of a bill cheque, its re-presentation — are the bill's.
+          AND NOT EXISTS (SELECT 1 FROM accounts.acc_tender_detail t
+                           WHERE t.td_id = j.abj_tender_id
+                             AND t.td_src_module = 'SALES' AND t.td_src_doc_type = 'SALE_BILL'
+                             AND t.td_src_doc_id = ${bill.billId}::uuid))  AS allocations`;
 
   if (Number(row?.returns ?? 0) > 0) {
     throwSalesLocked(

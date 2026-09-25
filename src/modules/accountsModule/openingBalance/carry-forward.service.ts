@@ -303,9 +303,11 @@ export class CarryForwardService {
    * negative and lands as a 'C' on retained earnings — which is what a profit
    * is: money the business owes its owners.
    *
-   * Built from POSTED vouchers only, for the same reason step 1 is
-   * (`ck_avh_balanced` only bites at POSTED). P&L ledgers carry no opening, so
-   * there is nothing to add to the movement.
+   * Built from POSTED and CANCELLED vouchers, for the reason closingByLedger
+   * gives: a cancel keeps the original's legs live and posts a POSTED mirror,
+   * so counting POSTED alone keeps the mirror and drops the original — every
+   * cancel moved the result by its full amount the wrong way. P&L ledgers carry
+   * no opening, so there is nothing to add to the movement.
    */
   private async profitAndLossResult(
     client: OpeningWriteClient,
@@ -326,7 +328,7 @@ export class CarryForwardService {
        WHERE v.av_company_id = ${companyId}::uuid
          AND v.av_acc_year   = ${accYear}
          AND v.av_is_deleted = false
-         AND h.avh_voucher_status = 'POSTED'
+         AND h.avh_voucher_status IN ('POSTED', 'CANCELLED')
          AND (${branchId}::uuid IS NULL OR v.av_branch_id = ${branchId}::uuid)
        GROUP BY v.av_ledger_id
     `;

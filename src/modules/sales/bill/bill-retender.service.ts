@@ -14,7 +14,7 @@ import {
 } from '../../accountsModule/tenderDetail/types/tender-detail-api.types';
 import { LoyaltyLedgerService } from '../posting/loyalty-ledger.service';
 import { SalesContextService } from '../posting/sales-context.service';
-import { SalesPostingService } from '../posting/sales-posting.service';
+import { VoucherPostingService } from '../../../common/posting/voucher-posting.service';
 import { loadDayClosed } from '../posting/sales.guards';
 import { throwSalesLocked, throwSalesRefused, throwSalesRight } from '../posting/sales.errors';
 import { SALES_ERROR_CODES } from '../posting/types/posting.types';
@@ -30,6 +30,8 @@ import {
 } from '../posting/sales-doc.utils';
 import { BillService } from './bill.service';
 import { syncBillPdcRegister } from './bill-pdc-posting.helper';
+import { syncCounterAllocations } from './bill-counter-allocation.helper';
+import { BillBalanceRecomputeService } from '../../accountsModule/billBalance/bill-balance-recompute.service';
 import { buildDraftCheques, readDraftCheques, toDraftChequesJson } from './bill-cheque-details';
 import type { SaveTenderDetailDto } from '../../accountsModule/tenderDetail/dto/save-tender-detail.dto';
 import { assertBooksReconcile } from '../../accountsModule/reconcile/books-reconcile.guard';
@@ -75,9 +77,10 @@ export class BillRetenderService {
     private readonly bills: BillService,
     private readonly salesContext: SalesContextService,
     private readonly tenders: TenderDetailService,
-    private readonly legs: SalesPostingService,
+    private readonly legs: VoucherPostingService,
     private readonly loyalty: LoyaltyLedgerService,
     private readonly audit: AuditLogService,
+    private readonly recompute: BillBalanceRecomputeService,
   ) {}
 
   async retender(dto: RetenderBillDto): Promise<BillPayload> {
@@ -361,22 +364,37 @@ export class BillRetenderService {
           { keepStoredVoucher: true, details: chequeDetails },
         );
         contraVoucherId = contra.voucherId;
-        // The receivable follows: a credit tender now leaves a balance; a cash one settles it.
-        const creditTypes: number[] = [TENDER_TYPE.CREDIT, TENDER_TYPE.TEMP_CREDIT];
-        // The sync answers the voided rows too, and its payload does not carry
-        // td_is_voided — so the rows this call voided are excluded by id, or
-        // the money that did not happen settles the bill a second time.
-        const settled = round2(
-          created
-            .filter((t) => !t.tdIsDeleted && !voidIds.includes(t.tdId))
-            .filter((t) => !creditTypes.includes(Number(t.tdTenderTypeId)))
-            .reduce((s, t) => s + num(t.tdAmount), 0),
-        );
-        await tx.$executeRaw`
-          UPDATE accounts.acc_bill_balance
-             SET abl_alloc_amount = LEAST(abl_bill_amount, ${settled}::numeric), abl_modified_on = ${now}, abl_modified_by = ${actor}
+        // The receivable follows: a credit tender now leaves a balance; a cash
+        // one settles it. Through the counter rows (notes 49 item 2), not by
+        // overwriting abl_alloc_amount — the old overwrite set it to the
+        // tenders alone and so also wiped every receipt and set-off already
+        // against the bill. The voided tenders' rows go, the new tenders'
+        // rows come in naming this contra, and the recompute re-derives the
+        // figure from every row.
+        const [abl] = await tx.$queryRaw<{ abl_id: string; abl_acc_year: string }[]>`
+          SELECT abl_id, abl_acc_year FROM accounts.acc_bill_balance
            WHERE abl_src_doc_id = ${bill.sbId}::uuid AND abl_acc_year = ${bill.sbAccYear}::char(9)
-             AND abl_src_doc_type = 'SALE_BILL' AND abl_is_deleted = false`;
+             AND abl_src_doc_type = 'SALE_BILL' AND abl_is_deleted = false
+           LIMIT 1`;
+        if (abl) {
+          const newIds = new Set(newRows.map((t) => t.tdId));
+          await syncCounterAllocations(tx, {
+            bill,
+            abl: { ablId: abl.abl_id, ablAccYear: abl.abl_acc_year },
+            partyId: bill.sbCustId,
+            voucherFor: (tdId) =>
+              newIds.has(tdId)
+                ? { voucherId: contra.voucherId, accYear: bill.sbAccYear }
+                : bill.sbPostedVoucherId
+                  ? { voucherId: bill.sbPostedVoucherId, accYear: bill.sbAccYear }
+                  : null,
+            actor,
+            now,
+          });
+          await this.recompute.recomputeBills(tx, [
+            { billId: abl.abl_id, accYear: abl.abl_acc_year },
+          ]);
+        }
       }
 
       // 4 · the header's tender caches, from the LIVE rows.
@@ -388,9 +406,7 @@ export class BillRetenderService {
           FROM accounts.acc_tender_detail
          WHERE td_src_module = 'SALES' AND td_src_doc_type = 'SALE_BILL' AND td_src_doc_id = ${bill.sbId}::uuid
            AND td_acc_year = ${bill.sbAccYear}::char(9) AND td_is_deleted = false AND td_is_voided = false`;
-      const paid = round2(
-        num(live[0]?.settled) + num(bill.sbAdvanceAmt) + num(bill.sbNoteAdjAmt),
-      );
+      const paid = round2(num(live[0]?.settled) + num(bill.sbAdvanceAmt) + num(bill.sbNoteAdjAmt));
       const balance = round2(num(bill.sbBillAmt) - paid);
       await tx.saleBill.update({
         where: { sbId_sbAccYear: { sbId: bill.sbId, sbAccYear: bill.sbAccYear } },

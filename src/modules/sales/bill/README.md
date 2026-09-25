@@ -770,3 +770,33 @@ The sale order takes the same object on its tender rows and writes it straight
 into its register rows (the order registers on save); its reads echo it the
 same way. The receipt's `SaveReceiptChequeDto` now extends the shared DTO, so its
 IFSC / MICR are pattern-checked too.
+
+## 2026-09-25 — counter payments are adjustment rows; cancels number as reversals (notes 49)
+
+**D1 — what was paid at the counter is an `ALLOCATION` row.** `/post` (and an
+amend's re-post) writes one `acc_bill_adjustment` row per settling tender (not
+CREDIT / TEMP_CR, not voided), after the receivable and before the set-offs,
+capped at bill − set-offs: `abj_tender_id` = the tender row, `abj_cheque_id` =
+its register row for a cheque, `abj_voucher_id` = the bill's voucher.
+[bill-counter-allocation.helper.ts](bill-counter-allocation.helper.ts). Before
+this the counter payment was only a seeded `abl_alloc_amount`, which the
+recompute every receipt runs threw away (bil00685 read 5 settled instead of
+3,773).
+
+- cancel / amend retire the rows with the receivable;
+- `/bills/retender` drops the voided tenders' rows, adds rows for the new ones
+  (naming the contra), then RECOMPUTES — it no longer overwrites
+  `abl_alloc_amount` with the tenders alone, which also wiped receipts;
+- a bounced / returned bill cheque is reversed by the standard cheque path
+  (`abj_cheque_id`) and re-presented by RESTORE; only the bill header's
+  paid / balance caches are moved by `sale-bill-cheque.helper`;
+- `assertCancellable` and the lock counts ignore these rows (they are the
+  bill's own, not somebody else's allocation).
+
+Existing bills: `npx tsx scripts/backfill-bill-counter-allocations.ts
+[--apply]` — one transaction, prints `fn_books_reconcile` before and after.
+
+**D3 — a cancel's mirror is numbered in the Reversal series** (`Rev`,
+`rev00001…`, migration `20260925150000`), for bills, sale returns, challans and
+challan returns alike. It never draws on the document's own series again.
+Mirrors written before: `npx tsx scripts/renumber-sales-reversals.ts [--apply]`.

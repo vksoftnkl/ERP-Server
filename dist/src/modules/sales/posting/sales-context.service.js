@@ -46,7 +46,7 @@ let SalesContextService = class SalesContextService {
             .toUpperCase();
         const rights = isUuid(userId)
             ? await (0, sales_guards_1.loadRights)(client ?? this.prisma, userId, menuId)
-            : { post: false, cancel: false, amend: false, override: false, retender: false };
+            : { ...sales_guards_1.NO_RIGHTS };
         return {
             userId: userId ?? module_service_utils_1.DEFAULT_ACTOR,
             actor: userId ?? module_service_utils_1.DEFAULT_ACTOR,
@@ -77,7 +77,7 @@ let SalesContextService = class SalesContextService {
     async rights(menuId, client) {
         const userId = this.requestContext.getUserId();
         if (!isUuid(userId)) {
-            return { post: false, cancel: false, amend: false, override: false, retender: false };
+            return { ...sales_guards_1.NO_RIGHTS };
         }
         return (0, sales_guards_1.loadRights)(client ?? this.prisma, userId, menuId);
     }

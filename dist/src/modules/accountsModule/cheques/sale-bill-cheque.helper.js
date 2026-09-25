@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.findSaleBillOfCheque = findSaleBillOfCheque;
 exports.moveSaleBillSettlement = moveSaleBillSettlement;
+exports.moveSaleBillHeader = moveSaleBillHeader;
 const client_1 = require("@prisma/client");
 const receipt_utils_1 = require("../receipt/receipt.utils");
 const SALE_BILL_SRC_MODULE = 'SALES';
@@ -11,7 +12,11 @@ async function findSaleBillOfCheque(tx, cheque) {
         return null;
     }
     const [row] = await tx.$queryRaw `
-    SELECT b.sb_id, b.sb_acc_year, l.abl_id, l.abl_acc_year
+    SELECT b.sb_id, b.sb_acc_year, l.abl_id, l.abl_acc_year,
+           (SELECT SUM(a.abj_amount) FROM accounts.acc_bill_adjustment a
+             WHERE a.abj_bill_id = l.abl_id AND a.abj_bill_acc_year = l.abl_acc_year
+               AND a.abj_tender_id = t.td_id AND a.abj_adj_type = 'ALLOCATION'
+               AND a.abj_reversal_of_id IS NULL AND a.abj_is_deleted = false) AS counter_amount
       FROM accounts.acc_tender_detail t
       JOIN sales.sale_bill b
         ON b.sb_id = t.td_src_doc_id AND b.sb_acc_year = t.td_acc_year
@@ -30,6 +35,8 @@ async function findSaleBillOfCheque(tx, cheque) {
         sbAccYear: row.sb_acc_year.trim(),
         ablId: row.abl_id,
         ablAccYear: row.abl_acc_year.trim(),
+        hasCounterRow: row.counter_amount !== null,
+        counterAmount: new client_1.Prisma.Decimal(row.counter_amount ?? 0),
     };
 }
 async function moveSaleBillSettlement(tx, link, delta, settledOn, actor) {
@@ -63,6 +70,20 @@ async function moveSaleBillSettlement(tx, link, delta, settledOn, actor) {
                 AS abl_pending_amount,
               locked.abl_alloc_amount AS old_alloc, l.abl_alloc_amount AS new_alloc`;
     const moved = new client_1.Prisma.Decimal(abl.new_alloc).minus(abl.old_alloc);
+    await moveSaleBillHeader(tx, link, moved, now);
+    return {
+        billId: link.ablId,
+        billAccYear: link.ablAccYear,
+        billType: abl.abl_bill_type,
+        docRefno: abl.abl_doc_refno,
+        docDate: (0, receipt_utils_1.toDateString)(abl.abl_doc_date) ?? '',
+        dueDate: (0, receipt_utils_1.toDateString)(abl.abl_due_date),
+        billAmount: (0, receipt_utils_1.toAmount)(abl.abl_bill_amount),
+        pendingAmount: (0, receipt_utils_1.toAmount)(abl.abl_pending_amount),
+        settledByThisCheque: (0, receipt_utils_1.toAmount)(moved.abs()),
+    };
+}
+async function moveSaleBillHeader(tx, link, moved, now = new Date()) {
     await tx.$executeRaw `
     UPDATE sales.sale_bill
        SET sb_paid_amt    = GREATEST(0, sb_paid_amt + ${moved}::numeric),
@@ -73,16 +94,5 @@ async function moveSaleBillSettlement(tx, link, delta, settledOn, actor) {
                               ELSE 'UNPAID' END,
            sb_modified_on = ${now}
      WHERE sb_id = ${link.sbId}::uuid AND sb_acc_year = ${link.sbAccYear}::char(9)`;
-    return {
-        billId: link.ablId,
-        billAccYear: link.ablAccYear,
-        billType: abl.abl_bill_type,
-        docRefno: abl.abl_doc_refno,
-        docDate: (0, receipt_utils_1.toDateString)(abl.abl_doc_date) ?? '',
-        dueDate: (0, receipt_utils_1.toDateString)(abl.abl_due_date),
-        billAmount: (0, receipt_utils_1.toAmount)(abl.abl_bill_amount),
-        pendingAmount: (0, receipt_utils_1.toAmount)(abl.abl_pending_amount),
-        settledByThisCheque: (0, receipt_utils_1.toAmount)(moved),
-    };
 }
 //# sourceMappingURL=sale-bill-cheque.helper.js.map

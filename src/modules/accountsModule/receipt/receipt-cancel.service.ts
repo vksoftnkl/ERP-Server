@@ -155,10 +155,14 @@ export class ReceiptCancelService {
       // Only the vouchers this receipt RAISED — a bounce filed against it is
       // not one of them, and reversing one would undo the entry that took the
       // money back off the party. See `receipt-cheque-links.ts`.
-      const pdcVouchers = await tx.accVoucherHeader.findMany({
-        where: receiptPdcVoucherWhere(header),
-        select: STORED_HEADER_SELECT,
-      });
+      const pdcVouchers: StoredHeader[] = (
+        await tx.accVoucherHeader.findMany({
+          where: receiptPdcVoucherWhere(header),
+          select: STORED_HEADER_SELECT,
+        })
+      )
+        // A PDC voucher is this receipt's own instrument: same party. See StoredHeader.
+        .map((row) => ({ ...row, avhPartyId: row.avhPartyId ?? header.avhPartyId }));
       const vouchers = [header, ...pdcVouchers];
 
       for (const voucher of vouchers) {

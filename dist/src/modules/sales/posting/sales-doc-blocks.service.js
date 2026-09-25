@@ -12,7 +12,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.SalesDocBlocksService = void 0;
 const common_1 = require("@nestjs/common");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
-const statutory_service_1 = require("./statutory.service");
+const statutory_service_1 = require("../../../common/posting/statutory.service");
 const sales_guards_1 = require("./sales.guards");
 const sales_doc_utils_1 = require("./sales-doc.utils");
 let SalesDocBlocksService = class SalesDocBlocksService {

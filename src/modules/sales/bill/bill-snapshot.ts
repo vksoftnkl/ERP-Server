@@ -152,6 +152,14 @@ export interface BillSnapshot {
   items: BillSnapshotItem[];
   charges: BillSnapshotCharge[];
   tenders: BillSnapshotTender[];
+  /**
+   * The transport band as the BODY carries it (sbTransporterId /
+   * sbTransporterName / sbLrNo), for a `/validate` of a draft not saved yet.
+   * `undefined` when the body says nothing about transport, so the e-way guard
+   * reads the stored band; all-null when the body clears it. Snapshots built
+   * from stored rows leave it undefined — their band is in txn_transport_detail.
+   */
+  transport?: { transporterId: string | null; transporterName: string | null; lrNo: string | null };
 }
 
 export function snapshotFromRows(
@@ -309,12 +317,29 @@ export interface TenderMasterRow {
   tnd_ledger_id: string | null;
 }
 
+/** The band the body carries, or `undefined` when it carries none of its keys. */
+function transportFromDto(dto: SaveBillDto): BillSnapshot['transport'] {
+  if (
+    dto.sbTransporterId === undefined &&
+    dto.sbTransporterName === undefined &&
+    dto.sbLrNo === undefined
+  ) {
+    return undefined;
+  }
+  return {
+    transporterId: dto.sbTransporterId ?? null,
+    transporterName: dto.sbTransporterName ?? null,
+    lrNo: dto.sbLrNo ?? null,
+  };
+}
+
 export function snapshotFromDto(
   dto: SaveBillDto,
   tenderMasters: Map<string, TenderMasterRow>,
 ): BillSnapshot {
   const billDate = dto.sbBillDate ?? isoToday();
   return {
+    transport: transportFromDto(dto),
     sbId: dto.sbId ?? null,
     companyId: dto.sbCompanyId,
     branchId: dto.sbBranchId,

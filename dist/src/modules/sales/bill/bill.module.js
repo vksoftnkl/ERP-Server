@@ -21,6 +21,7 @@ const bill_retender_service_1 = require("./bill-retender.service");
 const sale_order_module_1 = require("../sale-order/sale-order.module");
 const quotation_module_1 = require("../quotation/quotation.module");
 const posting_module_1 = require("../posting/posting.module");
+const bill_balance_module_1 = require("../../accountsModule/billBalance/bill-balance.module");
 let BillModule = class BillModule {
 };
 exports.BillModule = BillModule;
@@ -33,6 +34,7 @@ exports.BillModule = BillModule = __decorate([
             sale_order_module_1.SaleOrderModule,
             quotation_module_1.QuotationModule,
             posting_module_1.SalesPostingModule,
+            bill_balance_module_1.BillBalanceModule,
         ],
         controllers: [bill_controller_1.BillController],
         providers: [

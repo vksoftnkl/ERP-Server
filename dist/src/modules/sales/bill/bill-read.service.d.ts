@@ -3,7 +3,7 @@ import { PrismaService } from '../../../database/prisma/prisma.service';
 import { LoyaltyLedgerService } from '../posting/loyalty-ledger.service';
 import { SalesContextService } from '../posting/sales-context.service';
 import { SalesDocBlocksService } from '../posting/sales-doc-blocks.service';
-import { StatutoryService } from '../posting/statutory.service';
+import { StatutoryService } from '../../../common/posting/statutory.service';
 import { TransportBandService } from '../posting/transport-band.service';
 import type { BillPayload } from './types/bill-api.types';
 export declare class BillReadService {

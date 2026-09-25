@@ -62,6 +62,16 @@ class ChargeMasterPayloadDto {
     chgBeforeTax;
     chgTaxId;
     chgTaxName;
+    ledTaxId;
+    ledgerTaxPerc;
+    chgTaxSource;
+    chgTaxRate;
+    chgTaxCgstPerc;
+    chgTaxSgstPerc;
+    chgTaxIgstPerc;
+    chgTaxCessPerc;
+    chgTaxTaxability;
+    ledGstRate;
     chgSepPost;
     chgManParty;
     chgDispOrder;
@@ -163,6 +173,66 @@ __decorate([
     }),
     __metadata("design:type", Object)
 ], ChargeMasterPayloadDto.prototype, "chgTaxName", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        format: 'uuid',
+        nullable: true,
+        description: "The posting ledger's ledTaxId",
+    }),
+    __metadata("design:type", Object)
+], ChargeMasterPayloadDto.prototype, "ledTaxId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        type: Number,
+        description: "The posting ledger's own rate (%), whatever the charge overrides it with",
+    }),
+    __metadata("design:type", Object)
+], ChargeMasterPayloadDto.prototype, "ledgerTaxPerc", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        enum: ['CHARGE', 'LEDGER'],
+        description: 'Where chgTaxRate came from: the charge (chgTaxId) or the ledger (ledTaxId)',
+    }),
+    __metadata("design:type", Object)
+], ChargeMasterPayloadDto.prototype, "chgTaxSource", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        type: Number,
+        description: 'The effective GST rate (%) the entry screens price the charge at: chgTaxId when set, else the ledger rate',
+    }),
+    __metadata("design:type", Object)
+], ChargeMasterPayloadDto.prototype, "chgTaxRate", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true, type: Number }),
+    __metadata("design:type", Object)
+], ChargeMasterPayloadDto.prototype, "chgTaxCgstPerc", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true, type: Number }),
+    __metadata("design:type", Object)
+], ChargeMasterPayloadDto.prototype, "chgTaxSgstPerc", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true, type: Number }),
+    __metadata("design:type", Object)
+], ChargeMasterPayloadDto.prototype, "chgTaxIgstPerc", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true, type: Number }),
+    __metadata("design:type", Object)
+], ChargeMasterPayloadDto.prototype, "chgTaxCessPerc", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true, description: 'Taxability of the effective rate' }),
+    __metadata("design:type", Object)
+], ChargeMasterPayloadDto.prototype, "chgTaxTaxability", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        type: Number,
+        description: 'Same as chgTaxRate, under the name the Qt charge grid reads',
+    }),
+    __metadata("design:type", Object)
+], ChargeMasterPayloadDto.prototype, "ledGstRate", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)(),
     __metadata("design:type", Boolean)

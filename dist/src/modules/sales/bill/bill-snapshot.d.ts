@@ -137,6 +137,11 @@ export interface BillSnapshot {
     items: BillSnapshotItem[];
     charges: BillSnapshotCharge[];
     tenders: BillSnapshotTender[];
+    transport?: {
+        transporterId: string | null;
+        transporterName: string | null;
+        lrNo: string | null;
+    };
 }
 export declare function snapshotFromRows(bill: SaleBill, items: SaleBillItem[], charges: BillChargePayload[], tenders: BillTenderPayload[]): BillSnapshot;
 export interface TenderMasterRow {

@@ -28,6 +28,8 @@ model Menu {
   menuSyncDate   DateTime?               @db.Timestamptz(6) @map("menu_sync_date")
   userMenus              UserMenus[]
   sections               FormSection[]
+  /// Voucher types whose rights are judged on this menu (acc_voucher_types.vchr_menu_id)
+  voucherTypes           AccVoucherType[]
   @@index([menuParentId])
   @@index([menuPosition])
   @@map("menu_master")

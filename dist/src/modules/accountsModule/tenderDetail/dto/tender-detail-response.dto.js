@@ -90,6 +90,10 @@ class TenderDetailPayloadDto {
     tdDeviceId;
     tdUserId;
     tdNotes;
+    tdIsVoided;
+    tdVoidReason;
+    tdVoidedOn;
+    tdVoidedBy;
     tdIsDeleted;
     tdSyncDate;
     tdCreatedOn;
@@ -294,6 +298,24 @@ __decorate([
     (0, swagger_1.ApiPropertyOptional)({ maxLength: 250, nullable: true }),
     __metadata("design:type", Object)
 ], TenderDetailPayloadDto.prototype, "tdNotes", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        description: 'True for a row a re-tender replaced. Document reads leave voided rows out; a read by tdId shows one as it is.',
+    }),
+    __metadata("design:type", Boolean)
+], TenderDetailPayloadDto.prototype, "tdIsVoided", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ maxLength: 30, nullable: true, description: 'CUSTOMER_CHANGED | OTHER' }),
+    __metadata("design:type", Object)
+], TenderDetailPayloadDto.prototype, "tdVoidReason", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true, format: 'date-time' }),
+    __metadata("design:type", Object)
+], TenderDetailPayloadDto.prototype, "tdVoidedOn", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ format: 'uuid', nullable: true }),
+    __metadata("design:type", Object)
+], TenderDetailPayloadDto.prototype, "tdVoidedBy", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)(),
     __metadata("design:type", Boolean)

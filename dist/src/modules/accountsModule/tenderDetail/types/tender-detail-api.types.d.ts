@@ -98,6 +98,10 @@ export interface TenderDetailPayload {
     tdDeviceId: string | null;
     tdUserId: string;
     tdNotes: string | null;
+    tdIsVoided: boolean;
+    tdVoidReason: string | null;
+    tdVoidedOn: string | null;
+    tdVoidedBy: string | null;
     tdIsDeleted: boolean;
     tdSyncDate: string | null;
     tdCreatedOn: string;

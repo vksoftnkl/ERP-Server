@@ -19,8 +19,8 @@ const charge_detail_service_1 = require("../../master/charge-detail/charge-detai
 const charge_enum_1 = require("../../master/charge-master/types/charge-enum");
 const tender_detail_service_1 = require("../../accountsModule/tenderDetail/tender-detail.service");
 const tender_detail_api_types_1 = require("../../accountsModule/tenderDetail/types/tender-detail-api.types");
-const bill_adjustment_helper_1 = require("../bill/bill-adjustment.helper");
-const doc_register_service_1 = require("../posting/doc-register.service");
+const bill_adjustment_helper_1 = require("../../../common/posting/bill-adjustment.helper");
+const doc_register_service_1 = require("../../../common/posting/doc-register.service");
 const gst_gateway_service_1 = require("../posting/gst-gateway.service");
 const loyalty_ledger_service_1 = require("../posting/loyalty-ledger.service");
 const promotion_usage_service_1 = require("../posting/promotion-usage.service");
@@ -28,9 +28,9 @@ const sales_context_service_1 = require("../posting/sales-context.service");
 const sales_doc_blocks_service_1 = require("../posting/sales-doc-blocks.service");
 const sales_doc_store_1 = require("../posting/sales-doc-store");
 const sales_leg_sources_1 = require("../posting/sales-leg.sources");
-const sales_posting_service_1 = require("../posting/sales-posting.service");
+const voucher_posting_service_1 = require("../../../common/posting/voucher-posting.service");
 const sales_stock_service_1 = require("../posting/sales-stock.service");
-const statutory_service_1 = require("../posting/statutory.service");
+const statutory_service_1 = require("../../../common/posting/statutory.service");
 const transport_band_service_1 = require("../posting/transport-band.service");
 const sales_guards_1 = require("../posting/sales.guards");
 const sales_errors_1 = require("../posting/sales.errors");
@@ -1052,7 +1052,7 @@ exports.SaleReturnService = SaleReturnService = __decorate([
     __metadata("design:paramtypes", [prisma_service_1.PrismaService,
         sales_context_service_1.SalesContextService,
         statutory_service_1.StatutoryService,
-        sales_posting_service_1.SalesPostingService,
+        voucher_posting_service_1.VoucherPostingService,
         doc_register_service_1.DocRegisterService,
         sales_stock_service_1.SalesStockService,
         sales_doc_blocks_service_1.SalesDocBlocksService,

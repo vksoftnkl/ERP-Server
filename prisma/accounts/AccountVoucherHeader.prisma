@@ -40,7 +40,8 @@ model AccVoucherHeader {
   /// claim with itself (migration 20260915120000, §2.4).
   avhTotalDebit          Decimal   @default(0) @db.Decimal(18, 2) @map("avh_total_debit")
   avhTotalCredit         Decimal   @default(0) @db.Decimal(18, 2) @map("avh_total_credit")
-  avhPartyId             String    @db.Uuid @map("avh_party_id")
+  /// NULL for a Contra, and for a multi-party Journal (decision A, 20260925160000_voucher_register)
+  avhPartyId             String?   @db.Uuid @map("avh_party_id")
   avhOppositeLedgerId    String?   @db.Uuid @map("avh_opposite_ledger_id")
   // Scalar list: Prisma rejects null here, so normalise to [] in the DTO.
   avhEmployeeId          String[]  @db.Uuid @map("avh_employee_id")
@@ -95,7 +96,7 @@ model AccVoucherHeader {
   company                Company         @relation(fields: [avhCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_avh_company")
   branch                 BranchMaster    @relation(fields: [avhBranchId], references: [brId], onUpdate: Cascade, onDelete: Restrict, map: "fk_avh_branch")
   voucherType            AccVoucherType  @relation(fields: [avhVoucherTypeId], references: [vchrTypeId], onUpdate: Cascade, onDelete: Restrict, map: "fk_avh_voucher_type")
-  party                  AccLedgerMaster @relation("VoucherHeaderParty", fields: [avhPartyId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_avh_party")
+  party                  AccLedgerMaster? @relation("VoucherHeaderParty", fields: [avhPartyId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_avh_party")
   oppositeLedger         AccLedgerMaster? @relation("VoucherHeaderOppLedger", fields: [avhOppositeLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_avh_opp_ledger")
   user                   UserMaster      @relation(fields: [avhUserId], references: [usrId], onUpdate: Cascade, onDelete: Restrict, map: "fk_avh_user")
   againstVoucher         AccVoucherHeader?  @relation("VoucherHeaderAgainst", fields: [avhAgainstVoucherId, avhAgainstAccYear], references: [avhVoucherId, avhAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_avh_against")

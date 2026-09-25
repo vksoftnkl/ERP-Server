@@ -48,6 +48,12 @@ export interface ReversedRows {
   /** The bills that need recomputing, in the order they were met. */
   bills: Array<{ billId: string; accYear: string }>;
   count: number;
+  /**
+   * What the cheque had settled on each bill and has now given back, keyed
+   * `billId|accYear` — POSITIVE (notes 49 item 5: the reply reads "settled 315",
+   * not −315).
+   */
+  amountByBill: Map<string, Prisma.Decimal>;
 }
 
 /**
@@ -117,9 +123,16 @@ export async function reverseChequeAdjustments(
 
   const nextRowNo = await writeReversals(tx, standing, scope, startRowNo);
 
+  const amountByBill = new Map<string, Prisma.Decimal>();
+  for (const row of standing) {
+    const k = `${row.abjBillId}|${row.abjBillAccYear}`;
+    amountByBill.set(k, (amountByBill.get(k) ?? new Prisma.Decimal(0)).plus(row.abjAmount));
+  }
+
   return {
     bills: standing.map((row) => ({ billId: row.abjBillId, accYear: row.abjBillAccYear })),
     count: standing.length,
+    amountByBill,
     nextRowNo,
   };
 }

@@ -403,13 +403,18 @@ export class OpeningBalanceService {
 
   /**
    * The closing balance per ledger for a year: its opening plus every POSTED
-   * voucher movement. Used by the list to show last year's closing and by
+   * and CANCELLED voucher movement. Used by the list to show last year's closing and by
    * carry-forward to derive next year's opening — one definition, so the two
    * can never disagree.
    *
-   * Only POSTED. `ck_avh_balanced` requires debit = credit only AT posting, so
-   * an APPROVED voucher may be unbalanced and a closing built from one would be
-   * wrong. Never from `led_total_*`, which is stamped and derived from nothing.
+   * CANCELLED counts (Ledger Statement plan §3.2): a cancel does not remove
+   * legs — the CANCELLED original keeps them and a POSTED mirror carries the
+   * opposite, so the pair nets to zero. POSTED alone kept the mirror and
+   * dropped the original, moving the closing by every cancel's amount the wrong
+   * way, and carry-forward wrote that into next year's opening. A CANCELLED
+   * header was POSTED — and balanced — before it was cancelled, so
+   * `ck_avh_balanced` is no reason to exclude it. DRAFT / APPROVED still do not
+   * count. Never from `led_total_*`, which is stamped and derived from nothing.
    */
   async closingByLedger(
     client: OpeningWriteClient,
@@ -436,7 +441,7 @@ export class OpeningBalanceService {
          WHERE v.av_company_id = ${companyId}::uuid
            AND v.av_acc_year   = ${accYear}
            AND v.av_is_deleted = false
-           AND h.avh_voucher_status = 'POSTED'
+           AND h.avh_voucher_status IN ('POSTED', 'CANCELLED')
            AND (${branchId}::uuid IS NULL OR v.av_branch_id = ${branchId}::uuid)
          GROUP BY v.av_ledger_id
       `,

@@ -39,7 +39,11 @@ import {
 } from './cheque-allocation';
 import { allocationsReversedBy } from './cheque-reversal.helper';
 import { ChequeReturnService } from './cheque-return.service';
-import { findSaleBillOfCheque, moveSaleBillSettlement } from './sale-bill-cheque.helper';
+import {
+  findSaleBillOfCheque,
+  moveSaleBillHeader,
+  moveSaleBillSettlement,
+} from './sale-bill-cheque.helper';
 import {
   RECEIPT_VOUCHER_TYPE_CODE,
   REPLACEABLE_STATUSES,
@@ -592,16 +596,18 @@ export class ChequeReissueService {
       legs,
     });
 
-    // A re-presented cheque that was tendered ON a sale bill: its bounce
-    // reopened the bill through the tender and wrote no reversal rows, so
-    // RESTORE would find nothing and park the whole amount on account. It goes
-    // back onto the bill it came from instead (sale-bill-cheque.helper).
+    // A re-presented cheque that was tendered ON a sale bill. With its
+    // ALLOCATION row (notes 49) the bounce reversed that row, so RESTORE below
+    // puts it back like any receipt's and only the bill header is moved after.
+    // A bill without one was reopened through its tender and left no reversal
+    // rows — RESTORE would find nothing and park the amount on account — so
+    // it goes straight back onto the bill here (sale-bill-cheque.helper).
     // Explicit `allocations` still win, as for any other cheque.
     const saleBill =
       params.restoreReversedBy && params.allocations.length === 0 && !params.onVoucherWritten
         ? await findSaleBillOfCheque(tx, cheque)
         : null;
-    if (saleBill) {
+    if (saleBill && !saleBill.hasCounterRow) {
       await tx.accPdcRegister.update({
         where: {
           apdId_apdAccYear: {
@@ -679,6 +685,14 @@ export class ChequeReissueService {
     }
 
     const recomputed = await this.recompute.recomputeBills(tx, outcome.bills, todayUtc());
+    if (saleBill?.hasCounterRow) {
+      const back = outcome.refs.find(
+        (ref) => ref.billId === saleBill.ablId && ref.billAccYear === saleBill.ablAccYear,
+      );
+      if (back && back.settledByThisCheque > 0) {
+        await moveSaleBillHeader(tx, saleBill, new Prisma.Decimal(back.settledByThisCheque));
+      }
+    }
     const pendingByBill = new Map(
       recomputed.map((bill) => [`${bill.billId}|${bill.accYear}`, bill]),
     );
