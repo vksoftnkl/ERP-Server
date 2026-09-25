@@ -4,10 +4,12 @@ exports.ORDER_ADVANCE_VCHR_TYPE_ID = void 0;
 exports.postOrderAdvanceToAccounts = postOrderAdvanceToAccounts;
 exports.syncOrderAdvancePosting = syncOrderAdvancePosting;
 exports.deleteOrderAdvancePosting = deleteOrderAdvancePosting;
+exports.readOrderAdvanceBalance = readOrderAdvanceBalance;
 const client_1 = require("@prisma/client");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
 const voucher_sequence_helper_1 = require("../../../common/Sequence/voucher-sequence.helper");
 const order_pdc_posting_helper_1 = require("./order-pdc-posting.helper");
+const books_reconcile_guard_1 = require("../../accountsModule/reconcile/books-reconcile.guard");
 exports.ORDER_ADVANCE_VCHR_TYPE_ID = 5;
 const ORDER_SRC_MODULE = 'SALES';
 const ORDER_SRC_DOC_TYPE = 'SALES_ORDER';
@@ -107,6 +109,19 @@ async function postOrderAdvanceToAccounts(tx, order, tenders, actor, postedOn) {
 }
 async function syncOrderAdvancePosting(tx, order, tenders, actor, now) {
     const live = await findLiveVoucher(tx, order);
+    const result = await syncOrderAdvanceVoucher(tx, order, tenders, live, actor, now);
+    const voucherId = result.voucherId ?? live?.avhVoucherId ?? null;
+    if (result.action !== 'unchanged') {
+        await (0, books_reconcile_guard_1.assertBooksReconcile)(tx, {
+            companyId: order.soCompanyId,
+            accYear: order.soAccYear,
+            ledgerIds: [order.soCustId],
+            vouchers: voucherId ? [{ voucherId, accYear: live?.avhAccYear ?? order.soAccYear }] : [],
+        });
+    }
+    return result;
+}
+async function syncOrderAdvanceVoucher(tx, order, tenders, live, actor, now) {
     const postable = toPostableTenders(tenders);
     const shouldPost = order.soStatus !== ORDER_STATUS_CANCELLED && postable.length > 0;
     if (shouldPost) {
@@ -190,7 +205,34 @@ async function deleteOrderAdvancePosting(tx, order, actor, now) {
         voucherIds.push(header.avhVoucherId);
     }
     await clearTenderVoucher(tx, order);
+    if (headers.length > 0) {
+        await (0, books_reconcile_guard_1.assertBooksReconcile)(tx, {
+            companyId: order.soCompanyId,
+            accYear: order.soAccYear,
+            vouchers: headers.map((h) => ({ voucherId: h.avhVoucherId, accYear: h.avhAccYear })),
+        });
+    }
     return { voucherIds, billIds, pdcIds };
+}
+async function readOrderAdvanceBalance(tx, order) {
+    const totals = await tx.accBillBalance.aggregate({
+        _count: { _all: true },
+        _sum: { ablBillAmount: true, ablPendingAmount: true },
+        where: {
+            ablSrcModule: ORDER_SRC_MODULE,
+            ablSrcDocType: ORDER_SRC_DOC_TYPE,
+            ablSrcDocId: order.soId,
+            ablBillType: ADVANCE_BILL_TYPE,
+            ablIsDeleted: false,
+        },
+    });
+    if (totals._count._all === 0) {
+        return null;
+    }
+    return {
+        billAmount: toDecimal(totals._sum.ablBillAmount),
+        pendingAmount: toDecimal(totals._sum.ablPendingAmount),
+    };
 }
 function toPostableTenders(tenders) {
     return tenders

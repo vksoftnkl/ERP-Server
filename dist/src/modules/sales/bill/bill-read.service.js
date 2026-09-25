@@ -446,7 +446,12 @@ let BillReadService = class BillReadService {
         }
         const tenders = await this.prisma.$queryRaw `
       SELECT t.td_id, m.tnd_name, t.td_tender_id, t.td_tender_type_id, t.td_amount, t.td_is_pdc, t.td_settle_status,
-             t.td_is_voided, t.td_replaces_id
+             t.td_is_voided, t.td_replaces_id,
+             -- The cheque register row (notes 46): past HELD, the bank has it.
+             (SELECT p.apd_status FROM accounts.acc_pdc_register p
+               WHERE p.apd_tender_id = t.td_id AND p.apd_is_deleted = false
+                 AND p.apd_status <> 'CANCELLED'
+               LIMIT 1) AS apd_status
         FROM accounts.acc_tender_detail t
         LEFT JOIN accounts.acc_tender_master m ON m.tnd_id = t.td_tender_id
        WHERE t.td_src_module = 'SALES' AND t.td_src_doc_type = 'SALE_BILL' AND t.td_src_doc_id = ${keys.sbId}::uuid
@@ -470,7 +475,9 @@ let BillReadService = class BillReadService {
                 tdTenderTypeId: t.td_tender_type_id,
                 tdAmount: (0, sales_doc_utils_1.num)(t.td_amount),
                 tdIsPdc: t.td_is_pdc,
-                pdcMoved: t.td_is_pdc && ['SETTLED', 'PARTIAL'].includes((t.td_settle_status ?? '').toUpperCase()),
+                pdcMoved: (t.apd_status !== null && t.apd_status !== 'HELD') ||
+                    (t.td_is_pdc &&
+                        ['SETTLED', 'PARTIAL'].includes((t.td_settle_status ?? '').toUpperCase())),
                 isLoyalty: t.td_tender_type_id === sales_doc_utils_1.TENDER_TYPE.LOYALTY,
                 isTempCredit: t.td_tender_type_id === sales_doc_utils_1.TENDER_TYPE.TEMP_CREDIT,
                 isVoided: t.td_is_voided,

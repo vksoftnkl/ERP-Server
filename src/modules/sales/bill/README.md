@@ -710,3 +710,32 @@ status, number, dates and the last message, so the band could only say
 "declared". `gdw_vehicle_no` now travels with them — `null` until an e-way bill
 exists, and `null` on a Part-A-only bill, which is the honest answer rather than
 a blank the screen has to interpret.
+
+## 2026-09-25 — a CHEQUE tender reaches the cheque register (notes 46)
+
+A type-5 tender posted DR Cheques In Hand / CR party and stopped: no
+`acc_pdc_register` row, so the cheque could not be deposited, cleared or bounced,
+and the bill read PAID on a piece of paper.
+[bill-pdc-posting.helper.ts](bill-pdc-posting.helper.ts) now registers it, through
+the same mapping the sale order uses
+([../posting/pdc-register.helper.ts](../posting/pdc-register.helper.ts)): one row per
+cheque, tra type R, HELD, ON_RECEIPT naming the bill's voucher,
+`apd_tender_id` = the td row.
+
+| Path | What happens to the register |
+| --- | --- |
+| `/bills/post` (`postCore` step 3b) | one row per live, non-voided cheque tender |
+| `/bills/amend` | refused up front while any cheque is past HELD; the re-post keeps the row of every td row that kept its id, registers new ones, cancels the rest |
+| `/bills/cancel` | HELD rows → CANCELLED with the reason; refused up front (before the IRN is touched) while any is past HELD |
+| `/bills/retender` | a voided cheque's row is cancelled; a new cheque is registered against the CONTRA voucher; the others keep the bill's voucher |
+
+The refusal is **409 `SALES_BILL_PDC_MOVED`** (new, not in HANDOVER §9 — tell the
+Qt side). `/bills/retender`'s `SALES_RETENDER_PDC_MOVED` and the retender view's
+`pdcMoved` now read the register row's status as well.
+
+Unlike the order, a bill takes a cheque dated before the bill (a current cheque
+written a few days earlier); only `ck_apd_dates`' own window is enforced, as a
+400 naming the cheque. A cheque with no number or no date refuses the post (400).
+
+Bounce, return and re-present live in the cheques module — see its README.
+Existing posted bills: `npx tsx scripts/backfill-bill-pdc-register.ts [--apply]`.

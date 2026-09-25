@@ -59,6 +59,12 @@ import {
   supplyNatureOf,
 } from '../posting/sales-doc.utils';
 import { BillService } from './bill.service';
+import { assertBooksReconcile } from '../../accountsModule/reconcile/books-reconcile.guard';
+import {
+  assertBillPdcHeld,
+  cancelBillPdcRegister,
+  syncBillPdcRegister,
+} from './bill-pdc-posting.helper';
 import {
   loadSetOffCredits,
   setOffKey,
@@ -289,6 +295,16 @@ export class BillLifecycleService {
         },
         tx,
       );
+      // The trial check (notes 47), after every write. The reversal mirrors
+      // the original's legs, so the original names every ledger it moved.
+      await assertBooksReconcile(tx, {
+        companyId: bill.sbCompanyId,
+        accYear: bill.sbAccYear,
+        ledgerIds: [bill.sbCustId],
+        vouchers: bill.sbPostedVoucherId
+          ? [{ voucherId: bill.sbPostedVoucherId, accYear: bill.sbAccYear }]
+          : [],
+      });
       return {
         sbId: bill.sbId,
         sbCompanyId: bill.sbCompanyId,
@@ -1263,6 +1279,18 @@ export class BillLifecycleService {
       legs,
     });
 
+    // 3b · the cheques. A CHEQUE tender posted DR Cheques In Hand above, but
+    //      the money is still paper: the register row is what lets it be
+    //      deposited, cleared or bounced (notes 46). On an amend's re-post a
+    //      td row that kept its id keeps its register row.
+    await syncBillPdcRegister(
+      tx,
+      bill,
+      { voucherId: voucher.voucherId, accYear: bill.sbAccYear },
+      actor,
+      now,
+    );
+
     // 4 · the GST view.
     const reg = await this.register.write(
       tx,
@@ -1500,6 +1528,15 @@ export class BillLifecycleService {
       tx,
     );
 
+    // 13 · the trial check (notes 47) — LAST, after every write: the party's
+    //      bills = its ledger, Cheques In Hand = the register.
+    await assertBooksReconcile(tx, {
+      companyId: bill.sbCompanyId,
+      accYear: bill.sbAccYear,
+      ledgerIds: [partyId],
+      vouchers: [{ voucherId: voucher.voucherId, accYear: bill.sbAccYear }],
+    });
+
     return {
       bill: posted,
       gdrId: reg.gdrId,
@@ -1533,6 +1570,9 @@ export class BillLifecycleService {
       accYear: bill.sbAccYear,
       companyId: bill.sbCompanyId,
     });
+    // A cheque the bank has already seen is the Cheques screen's story now —
+    // refused here, BEFORE the IRN below is cancelled at the portal.
+    await assertBillPdcHeld(tx, bill);
 
     // Lock 2 on a cancel: inside the window the IRN is cancelled FIRST,
     // synchronously, and the cancel proceeds only on success.
@@ -1720,6 +1760,12 @@ export class BillLifecycleService {
         atcModifiedBy: actor,
       },
     });
+    // 8 · the cheques. A cancel takes them out of the register; an amend
+    //     leaves them for the re-post's sync, which keeps the row of every td
+    //     row that survives the edit and cancels the rest.
+    if (mode === 'cancel') {
+      await cancelBillPdcRegister(tx, bill, reason, actor, now);
+    }
     void items;
     return { reversalRefno, restateVoucherId };
   }

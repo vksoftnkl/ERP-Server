@@ -96,4 +96,5 @@ export declare class LoyaltyLedgerService {
     private schemeItems;
     private schemeSlabs;
     private reversedIds;
+    private maxRowNos;
 }

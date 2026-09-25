@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { assertBooksReconcile } from '../reconcile/books-reconcile.guard';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
@@ -8,7 +9,7 @@ import {
   throwAccountsNotFound,
 } from 'src/common/utils/module-service.utils';
 import { PdcStatus } from '../receipt/types/receipt-enum';
-import { assertAccYearWritable } from '../receipt/receipt.guards';
+import { accYearOf, assertAccYearWritable } from '../receipt/receipt.guards';
 import { sum, toAmount, toDateOnly, toDateString } from '../receipt/receipt.utils';
 import {
   assertDateOnOrAfter,
@@ -148,6 +149,14 @@ export class ChequeDepositService {
           changedOn: now,
         });
       }
+
+      // The trial check (notes 47): a deposit posts no voucher, so Cheques In
+      // Hand must still equal the HELD + DEPOSITED register.
+      await assertBooksReconcile(tx, {
+        companyId: dto.apdCompanyId,
+        accYear: accYearOf(depositDate),
+        cheques: cheques.map((cheque) => ({ apdId: cheque.apdId, apdAccYear: cheque.apdAccYear })),
+      });
 
       const rows = await Promise.all(
         cheques.map((cheque) => reloadChequeRow(tx, cheque.apdId, cheque.apdAccYear)),

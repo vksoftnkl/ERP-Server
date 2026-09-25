@@ -11,6 +11,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ReceiptCancelService = void 0;
 const common_1 = require("@nestjs/common");
+const books_reconcile_guard_1 = require("../reconcile/books-reconcile.guard");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
 const bill_balance_recompute_service_1 = require("../billBalance/bill-balance-recompute.service");
@@ -142,6 +143,15 @@ let ReceiptCancelService = class ReceiptCancelService {
                     remarks: dto.reason,
                 });
             }
+            await (0, books_reconcile_guard_1.assertBooksReconcile)(tx, {
+                companyId: header.avhCompanyId,
+                accYear: header.avhAccYear,
+                ledgerIds: [header.avhPartyId],
+                vouchers: vouchers.map((voucher) => ({
+                    voucherId: voucher.avhVoucherId,
+                    accYear: voucher.avhAccYear,
+                })),
+            });
             return {
                 avhVoucherId: header.avhVoucherId,
                 avhAccYear: header.avhAccYear,

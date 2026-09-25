@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { assertBooksReconcile } from '../reconcile/books-reconcile.guard';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
@@ -208,6 +209,9 @@ export class OpeningBalanceService {
       const now = new Date();
       const seen = new Set<string>();
       const flippedToManual: string[] = [];
+      // The ledgers whose figure this save actually moved — what the trial
+      // check looks at. A row echoed back unchanged is not this save's doing.
+      const moved = new Set<string>();
       let created = 0;
       let updated = 0;
       let skippedZero = 0;
@@ -215,6 +219,13 @@ export class OpeningBalanceService {
       for (const row of dto.rows) {
         const existing = storedByLedger.get(row.opLedgerId) ?? null;
         const amount = money(row.opAmount);
+        if (
+          existing
+            ? !existing.opAmount.equals(amount) || existing.opDrCr !== String(row.opDrCr)
+            : !amount.isZero()
+        ) {
+          moved.add(row.opLedgerId);
+        }
 
         if (amount.isZero()) {
           // Absence IS the zero. Writing a zero row would make ux_op_scope
@@ -288,6 +299,15 @@ export class OpeningBalanceService {
             refId: null,
           })
         : [];
+
+      // The trial check (notes 47), after every write — on the ledgers this
+      // save moved. Only the bill-by-bill ones among them are checked; a
+      // running-balance ledger has no bills to disagree with.
+      await assertBooksReconcile(tx, {
+        companyId: dto.opCompanyId,
+        accYear,
+        ledgerIds: [...moved],
+      });
 
       const [after, difference] = await Promise.all([
         tx.accOpeningBalance.findMany({
@@ -366,6 +386,13 @@ export class OpeningBalanceService {
         accYear: year,
         reason: OpeningStaleReason.SOURCE_OPENING_EDITED,
         refId: null,
+      });
+
+      // The trial check (notes 47), after every write.
+      await assertBooksReconcile(tx, {
+        companyId: existing.opCompanyId,
+        accYear: year,
+        ledgerIds: [existing.opLedgerId],
       });
 
       return { opId: existing.opId, opAccYear: year, deleted: true as const };

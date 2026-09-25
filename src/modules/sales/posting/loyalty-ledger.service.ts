@@ -1138,7 +1138,12 @@ export class LoyaltyLedgerService {
     const rows: LoyaltyLedgerRowInput[] = [];
     let earnReversed = 0;
     let redeemReversed = 0;
-    let rowNo = 0;
+    const lastRowNo = await this.maxRowNos(tx, doc);
+    const nextRowNo = (txnType: string): number => {
+      const n = (lastRowNo.get(txnType) ?? 0) + 1;
+      lastRowNo.set(txnType, n);
+      return n;
+    };
 
     for (const o of originals) {
       if (already.has(o.lld_id)) {
@@ -1174,7 +1179,7 @@ export class LoyaltyLedgerService {
         rows.push({
           ...base,
           txnType: 'EARN',
-          rowNo: ++rowNo,
+          rowNo: nextRowNo('EARN'),
           points: -take,
           remarks:
             shortfall > 0
@@ -1187,7 +1192,7 @@ export class LoyaltyLedgerService {
         rows.push({
           ...base,
           txnType: o.lld_txn_type,
-          rowNo: ++rowNo,
+          rowNo: nextRowNo(o.lld_txn_type),
           points: spent, // positive: the points come back
           lotId: o.lld_lot_id,
           lotAccYear: o.lld_lot_acc_year,
@@ -1242,7 +1247,7 @@ export class LoyaltyLedgerService {
     );
     const rows: LoyaltyLedgerRowInput[] = [];
     let restored = 0;
-    let rowNo = 0;
+    let rowNo = (await this.maxRowNos(tx, doc)).get('REDEEM') ?? 0;
     for (const o of originals) {
       if (already.has(o.lld_id)) {
         continue;
@@ -1790,6 +1795,28 @@ export class LoyaltyLedgerService {
        WHERE lld_reversal_of_id = ANY(${ids}::uuid[])
          AND lld_is_deleted = false`;
     return new Set(rows.map((r) => r.lld_reversal_of_id));
+  }
+
+  /**
+   * Highest `lld_row_no` already used per txn type under one source document.
+   *
+   * A reversal is filed under the SAME document key and txn type as the row it
+   * reverses, so `ux_lld_src_row` makes it continue that numbering: restart
+   * at 1 and the cancel collides with the original EARN/REDEEM row 1 (23505).
+   */
+  private async maxRowNos(
+    tx: Prisma.TransactionClient,
+    doc: { docId: string; accYear: string; docType: LoyaltySrcDocType },
+  ): Promise<Map<string, number>> {
+    const rows = await tx.$queryRaw<{ lld_txn_type: string; max_row_no: number }[]>`
+      SELECT lld_txn_type, MAX(lld_row_no)::int AS max_row_no
+        FROM sales.loyalty_ledger
+       WHERE lld_src_doc_type = ${doc.docType}
+         AND lld_src_doc_id   = ${doc.docId}::uuid
+         AND lld_acc_year     = ${doc.accYear}::char(9)
+         AND lld_is_deleted   = false
+       GROUP BY lld_txn_type`;
+    return new Map(rows.map((r) => [r.lld_txn_type, Number(r.max_row_no)]));
   }
 }
 

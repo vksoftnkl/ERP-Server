@@ -48,6 +48,10 @@ export declare class SaleOrderService {
     private describeDuplicate;
     private ensureOrderValuesAreAllowed;
     private ensureAdvanceRollupsAreConsistent;
+    private heldAdvanceBalance;
+    private restateAdvanceRollups;
+    private advanceRollupsFromLive;
+    private deriveAdvanceStatus;
     private deriveAdvanceBalance;
     private ensureOrderItemValuesAreAllowed;
     private applyDerivedItemQuantities;

@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { assertBooksReconcile } from '../reconcile/books-reconcile.guard';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
 import { BillBalanceRecomputeService } from '../billBalance/bill-balance-recompute.service';
@@ -161,6 +162,15 @@ export class ChequeClearService {
           (dto.remarks ? ` — ${dto.remarks}` : ''),
         actor,
         changedOn: now,
+      });
+
+      // The trial check (notes 47), after every write.
+      await assertBooksReconcile(tx, {
+        companyId: cheque.apdCompanyId,
+        accYear: voucherAccYear,
+        ledgerIds: [cheque.apdPartyId],
+        cheques: [{ apdId: cheque.apdId, apdAccYear: cheque.apdAccYear }],
+        vouchers: [payload.voucher],
       });
 
       return {

@@ -11,6 +11,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ChequeReissueService = void 0;
 const common_1 = require("@nestjs/common");
+const books_reconcile_guard_1 = require("../reconcile/books-reconcile.guard");
 const client_1 = require("@prisma/client");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
@@ -25,6 +26,7 @@ const cheque_voucher_helper_1 = require("./cheque-voucher.helper");
 const cheque_allocation_1 = require("./cheque-allocation");
 const cheque_reversal_helper_1 = require("./cheque-reversal.helper");
 const cheque_return_service_1 = require("./cheque-return.service");
+const sale_bill_cheque_helper_1 = require("./sale-bill-cheque.helper");
 const cheque_enum_1 = require("./types/cheque-enum");
 const REISSUE_TRANSACTION_OPTIONS = { maxWait: 15_000, timeout: 120_000 };
 let ChequeReissueService = class ChequeReissueService {
@@ -89,6 +91,13 @@ let ChequeReissueService = class ChequeReissueService {
                     `(presentation ${cheque.apdPresentCount + 1})`,
                 actor,
                 changedOn: now,
+            });
+            await (0, books_reconcile_guard_1.assertBooksReconcile)(tx, {
+                companyId: cheque.apdCompanyId,
+                accYear: reissue.voucher?.accYear ?? (0, receipt_guards_1.accYearOf)(depositDate),
+                ledgerIds: [cheque.apdPartyId],
+                cheques: [{ apdId: cheque.apdId, apdAccYear: cheque.apdAccYear }],
+                vouchers: reissue.voucher ? [reissue.voucher] : [],
             });
             return {
                 cheque: await (0, cheques_utils_1.reloadChequeRow)(tx, cheque.apdId, cheque.apdAccYear),
@@ -242,6 +251,16 @@ let ChequeReissueService = class ChequeReissueService {
                 actor,
                 changedOn: now,
             });
+            await (0, books_reconcile_guard_1.assertBooksReconcile)(tx, {
+                companyId: old.apdCompanyId,
+                accYear: newAccYear,
+                ledgerIds: [old.apdPartyId],
+                cheques: [
+                    { apdId: old.apdId, apdAccYear: old.apdAccYear },
+                    { apdId: created.apdId, apdAccYear: created.apdAccYear },
+                ],
+                vouchers: [reversal?.voucher, reissue.voucher],
+            });
             return {
                 oldCheque: await (0, cheques_utils_1.reloadChequeRow)(tx, old.apdId, old.apdAccYear),
                 newCheque: await (0, cheques_utils_1.reloadChequeRow)(tx, created.apdId, created.apdAccYear),
@@ -305,6 +324,26 @@ let ChequeReissueService = class ChequeReissueService {
             actor: params.actor,
             legs,
         });
+        const saleBill = params.restoreReversedBy && params.allocations.length === 0 && !params.onVoucherWritten
+            ? await (0, sale_bill_cheque_helper_1.findSaleBillOfCheque)(tx, cheque)
+            : null;
+        if (saleBill) {
+            await tx.accPdcRegister.update({
+                where: {
+                    apdId_apdAccYear: {
+                        apdId: params.registerRow.apdId,
+                        apdAccYear: params.registerRow.apdAccYear,
+                    },
+                },
+                data: { apdVoucherId: written.ref.voucherId, apdVoucherAccYear: voucherAccYear },
+            });
+            const bill = await (0, sale_bill_cheque_helper_1.moveSaleBillSettlement)(tx, saleBill, params.amount, params.voucherDate, params.actor);
+            return {
+                voucher: await (0, cheque_voucher_helper_1.loadVoucherRef)(tx, written.ref.voucherId, voucherAccYear),
+                legs: written.legs,
+                bills: [bill],
+            };
+        }
         const request = await this.allocationRequest(tx, params);
         const placed = params.onVoucherWritten
             ? await params.onVoucherWritten({

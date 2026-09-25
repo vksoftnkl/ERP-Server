@@ -12,6 +12,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.ChequeDepositService = void 0;
 exports.buildSlipSummary = buildSlipSummary;
 const common_1 = require("@nestjs/common");
+const books_reconcile_guard_1 = require("../reconcile/books-reconcile.guard");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
@@ -79,6 +80,11 @@ let ChequeDepositService = class ChequeDepositService {
                     changedOn: now,
                 });
             }
+            await (0, books_reconcile_guard_1.assertBooksReconcile)(tx, {
+                companyId: dto.apdCompanyId,
+                accYear: (0, receipt_guards_1.accYearOf)(depositDate),
+                cheques: cheques.map((cheque) => ({ apdId: cheque.apdId, apdAccYear: cheque.apdAccYear })),
+            });
             const rows = await Promise.all(cheques.map((cheque) => (0, cheques_utils_1.reloadChequeRow)(tx, cheque.apdId, cheque.apdAccYear)));
             return {
                 rows,

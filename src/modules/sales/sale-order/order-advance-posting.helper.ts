@@ -6,6 +6,7 @@ import {
 } from 'src/common/Sequence/voucher-sequence.helper';
 import { SaleOrderErrorDetail, SaleOrderErrorResponse } from './types/sale-order-api.types';
 import { cancelOrderPdcRegister, syncOrderPdcRegister } from './order-pdc-posting.helper';
+import { assertBooksReconcile } from '../../accountsModule/reconcile/books-reconcile.guard';
 // accounts.acc_voucher_types row "ARc" / Order Advance Receipt, seeded by
 // prisma/seed/Acc_Voucher_Types_Order_Advance_Receipt.sql.
 //
@@ -339,6 +340,29 @@ export async function syncOrderAdvancePosting(
   now: Date,
 ): Promise<OrderAdvancePostingSyncResult> {
   const live = await findLiveVoucher(tx, order);
+  const result = await syncOrderAdvanceVoucher(tx, order, tenders, live, actor, now);
+  // The trial check (notes 47), after the books are written: the customer's
+  // bills = its ledger, Cheques In Hand = the register. The live voucher (or
+  // the one just cancelled) names every ledger the advance moved.
+  const voucherId = result.voucherId ?? live?.avhVoucherId ?? null;
+  if (result.action !== 'unchanged') {
+    await assertBooksReconcile(tx, {
+      companyId: order.soCompanyId,
+      accYear: order.soAccYear,
+      ledgerIds: [order.soCustId],
+      vouchers: voucherId ? [{ voucherId, accYear: live?.avhAccYear ?? order.soAccYear }] : [],
+    });
+  }
+  return result;
+}
+async function syncOrderAdvanceVoucher(
+  tx: Prisma.TransactionClient,
+  order: OrderAdvancePostingSource,
+  tenders: OrderAdvanceTenderLine[],
+  live: Awaited<ReturnType<typeof findLiveVoucher>>,
+  actor: string,
+  now: Date,
+): Promise<OrderAdvancePostingSyncResult> {
   const postable = toPostableTenders(tenders);
   const shouldPost = order.soStatus !== ORDER_STATUS_CANCELLED && postable.length > 0;
   if (shouldPost) {
@@ -468,7 +492,55 @@ export async function deleteOrderAdvancePosting(
   // The tender rows are soft deleted by the caller; clearing the pointer keeps a
   // deleted voucher from being read back off them.
   await clearTenderVoucher(tx, order);
+  if (headers.length > 0) {
+    // The trial check (notes 47): with the voucher's legs and the ADVANCE row
+    // both retired, the two sides must still agree.
+    await assertBooksReconcile(tx, {
+      companyId: order.soCompanyId,
+      accYear: order.soAccYear,
+      vouchers: headers.map((h) => ({ voucherId: h.avhVoucherId, accYear: h.avhAccYear })),
+    });
+  }
   return { voucherIds, billIds, pdcIds };
+}
+/// What the order's live ADVANCE outstanding says, straight off
+/// accounts.acc_bill_balance.
+export interface OrderAdvanceLiveBalance {
+  // abl_bill_amount: what the customer handed over, net of surcharge.
+  billAmount: Prisma.Decimal;
+  // abl_pending_amount (GENERATED: bill − alloc − disc − writeoff): what no
+  // invoice, refund or forfeit has used up yet.
+  pendingAmount: Prisma.Decimal;
+}
+/// Reads the order's live ADVANCE row(s), or null when there is none — an order
+/// that took no tender, or whose receipt was cancelled.
+///
+/// This, not the header's so_advance_* roll-ups, is what the advance IS: a bill
+/// that sets the advance off writes an acc_bill_adjustment against this row and
+/// never touches the order. Keyed off the source document only, with no acc-year
+/// filter, for the reason findAdvanceBill gives.
+export async function readOrderAdvanceBalance(
+  tx: Prisma.TransactionClient,
+  order: Pick<OrderAdvancePostingRef, 'soId'>,
+): Promise<OrderAdvanceLiveBalance | null> {
+  const totals = await tx.accBillBalance.aggregate({
+    _count: { _all: true },
+    _sum: { ablBillAmount: true, ablPendingAmount: true },
+    where: {
+      ablSrcModule: ORDER_SRC_MODULE,
+      ablSrcDocType: ORDER_SRC_DOC_TYPE,
+      ablSrcDocId: order.soId,
+      ablBillType: ADVANCE_BILL_TYPE,
+      ablIsDeleted: false,
+    },
+  });
+  if (totals._count._all === 0) {
+    return null;
+  }
+  return {
+    billAmount: toDecimal(totals._sum.ablBillAmount),
+    pendingAmount: toDecimal(totals._sum.ablPendingAmount),
+  };
 }
 // ── internals ──────────────────────────────────────────────────────────────
 // The tender rows that can actually be posted. ck_av_amount insists every

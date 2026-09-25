@@ -108,6 +108,13 @@ export const SALES_ERROR_CODES = {
   // Re-tender (35)
   RETENDER_AMOUNT_MISMATCH: 'SALES_RETENDER_AMOUNT_MISMATCH',
   RETENDER_PDC_MOVED: 'SALES_RETENDER_PDC_MOVED',
+  /**
+   * NOT in HANDOVER §9's table — notes (46). A bill's cheque tender is in the
+   * cheque register, and once it is DEPOSITED / CLEARED / BOUNCED (or returned,
+   * or replaced) the bill can no longer be cancelled or amended around it.
+   * Tell the Qt side.
+   */
+  BILL_PDC_MOVED: 'SALES_BILL_PDC_MOVED',
 
   // Salesmen — the guard that replaces a foreign key (§3.7)
   SALESMAN_INVALID: 'SALES_SALESMAN_INVALID',

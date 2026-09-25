@@ -11,6 +11,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ChequeClearService = void 0;
 const common_1 = require("@nestjs/common");
+const books_reconcile_guard_1 = require("../reconcile/books-reconcile.guard");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
 const bill_balance_recompute_service_1 = require("../billBalance/bill-balance-recompute.service");
@@ -86,6 +87,13 @@ let ChequeClearService = class ChequeClearService {
                     (dto.remarks ? ` — ${dto.remarks}` : ''),
                 actor,
                 changedOn: now,
+            });
+            await (0, books_reconcile_guard_1.assertBooksReconcile)(tx, {
+                companyId: cheque.apdCompanyId,
+                accYear: voucherAccYear,
+                ledgerIds: [cheque.apdPartyId],
+                cheques: [{ apdId: cheque.apdId, apdAccYear: cheque.apdAccYear }],
+                vouchers: [payload.voucher],
             });
             return {
                 ...payload,

@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { assertBooksReconcile } from '../reconcile/books-reconcile.guard';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
@@ -38,6 +39,7 @@ import {
 } from './cheque-allocation';
 import { allocationsReversedBy } from './cheque-reversal.helper';
 import { ChequeReturnService } from './cheque-return.service';
+import { findSaleBillOfCheque, moveSaleBillSettlement } from './sale-bill-cheque.helper';
 import {
   RECEIPT_VOUCHER_TYPE_CODE,
   REPLACEABLE_STATUSES,
@@ -213,6 +215,15 @@ export class ChequeReissueService {
           `(presentation ${cheque.apdPresentCount + 1})`,
         actor,
         changedOn: now,
+      });
+
+      // The trial check (notes 47), after every write.
+      await assertBooksReconcile(tx, {
+        companyId: cheque.apdCompanyId,
+        accYear: reissue.voucher?.accYear ?? accYearOf(depositDate),
+        ledgerIds: [cheque.apdPartyId],
+        cheques: [{ apdId: cheque.apdId, apdAccYear: cheque.apdAccYear }],
+        vouchers: reissue.voucher ? [reissue.voucher] : [],
       });
 
       return {
@@ -424,6 +435,19 @@ export class ChequeReissueService {
         changedOn: now,
       });
 
+      // The trial check (notes 47), after every write — both cheques, both
+      // vouchers.
+      await assertBooksReconcile(tx, {
+        companyId: old.apdCompanyId,
+        accYear: newAccYear,
+        ledgerIds: [old.apdPartyId],
+        cheques: [
+          { apdId: old.apdId, apdAccYear: old.apdAccYear },
+          { apdId: created.apdId, apdAccYear: created.apdAccYear },
+        ],
+        vouchers: [reversal?.voucher, reissue.voucher],
+      });
+
       return {
         oldCheque: await reloadChequeRow(tx, old.apdId, old.apdAccYear),
         newCheque: await reloadChequeRow(tx, created.apdId, created.apdAccYear),
@@ -567,6 +591,39 @@ export class ChequeReissueService {
       actor: params.actor,
       legs,
     });
+
+    // A re-presented cheque that was tendered ON a sale bill: its bounce
+    // reopened the bill through the tender and wrote no reversal rows, so
+    // RESTORE would find nothing and park the whole amount on account. It goes
+    // back onto the bill it came from instead (sale-bill-cheque.helper).
+    // Explicit `allocations` still win, as for any other cheque.
+    const saleBill =
+      params.restoreReversedBy && params.allocations.length === 0 && !params.onVoucherWritten
+        ? await findSaleBillOfCheque(tx, cheque)
+        : null;
+    if (saleBill) {
+      await tx.accPdcRegister.update({
+        where: {
+          apdId_apdAccYear: {
+            apdId: params.registerRow!.apdId,
+            apdAccYear: params.registerRow!.apdAccYear,
+          },
+        },
+        data: { apdVoucherId: written.ref.voucherId, apdVoucherAccYear: voucherAccYear },
+      });
+      const bill = await moveSaleBillSettlement(
+        tx,
+        saleBill,
+        params.amount,
+        params.voucherDate,
+        params.actor,
+      );
+      return {
+        voucher: await loadVoucherRef(tx, written.ref.voucherId, voucherAccYear),
+        legs: written.legs,
+        bills: [bill],
+      };
+    }
 
     const request = await this.allocationRequest(tx, params);
 

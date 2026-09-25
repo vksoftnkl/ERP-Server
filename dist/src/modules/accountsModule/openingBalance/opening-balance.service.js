@@ -11,6 +11,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.OpeningBalanceService = void 0;
 const common_1 = require("@nestjs/common");
+const books_reconcile_guard_1 = require("../reconcile/books-reconcile.guard");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
@@ -112,12 +113,18 @@ let OpeningBalanceService = class OpeningBalanceService {
             const now = new Date();
             const seen = new Set();
             const flippedToManual = [];
+            const moved = new Set();
             let created = 0;
             let updated = 0;
             let skippedZero = 0;
             for (const row of dto.rows) {
                 const existing = storedByLedger.get(row.opLedgerId) ?? null;
                 const amount = (0, opening_balance_utils_1.money)(row.opAmount);
+                if (existing
+                    ? !existing.opAmount.equals(amount) || existing.opDrCr !== String(row.opDrCr)
+                    : !amount.isZero()) {
+                    moved.add(row.opLedgerId);
+                }
                 if (amount.isZero()) {
                     skippedZero += 1;
                     if (existing) {
@@ -174,6 +181,11 @@ let OpeningBalanceService = class OpeningBalanceService {
                     refId: null,
                 })
                 : [];
+            await (0, books_reconcile_guard_1.assertBooksReconcile)(tx, {
+                companyId: dto.opCompanyId,
+                accYear,
+                ledgerIds: [...moved],
+            });
             const [after, difference] = await Promise.all([
                 tx.accOpeningBalance.findMany({
                     where: this.scopeWhere(dto.opCompanyId, branchId, accYear),
@@ -231,6 +243,11 @@ let OpeningBalanceService = class OpeningBalanceService {
                 accYear: year,
                 reason: opening_balance_api_types_1.OpeningStaleReason.SOURCE_OPENING_EDITED,
                 refId: null,
+            });
+            await (0, books_reconcile_guard_1.assertBooksReconcile)(tx, {
+                companyId: existing.opCompanyId,
+                accYear: year,
+                ledgerIds: [existing.opLedgerId],
             });
             return { opId: existing.opId, opAccYear: year, deleted: true };
         });

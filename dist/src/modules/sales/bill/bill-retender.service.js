@@ -25,6 +25,8 @@ const sales_errors_1 = require("../posting/sales.errors");
 const posting_types_1 = require("../posting/types/posting.types");
 const sales_doc_utils_1 = require("../posting/sales-doc.utils");
 const bill_service_1 = require("./bill.service");
+const bill_pdc_posting_helper_1 = require("./bill-pdc-posting.helper");
+const books_reconcile_guard_1 = require("../../accountsModule/reconcile/books-reconcile.guard");
 const bill_temp_credit_1 = require("./bill-temp-credit");
 const bill_api_types_1 = require("./types/bill-api.types");
 let BillRetenderService = class BillRetenderService {
@@ -65,7 +67,11 @@ let BillRetenderService = class BillRetenderService {
             }
             const rows = await tx.$queryRaw `
         SELECT t.td_id, t.td_tender_id, t.td_tender_type_id, t.td_tender_ledger_id, t.td_amount, t.td_is_pdc,
-               t.td_settle_status, t.td_is_voided, m.tnd_name
+               t.td_settle_status, t.td_is_voided, m.tnd_name,
+               (SELECT p.apd_status FROM accounts.acc_pdc_register p
+                 WHERE p.apd_tender_id = t.td_id AND p.apd_is_deleted = false
+                   AND p.apd_status <> 'CANCELLED'
+                 LIMIT 1) AS apd_status
           FROM accounts.acc_tender_detail t
           LEFT JOIN accounts.acc_tender_master m ON m.tnd_id = t.td_tender_id
          WHERE t.td_id = ANY(${voidIds}::uuid[]) AND t.td_acc_year = ${bill.sbAccYear}::char(9)
@@ -81,8 +87,8 @@ let BillRetenderService = class BillRetenderService {
                 if (r.td_is_voided) {
                     (0, sales_errors_1.throwSalesLocked)(`Tender ${r.td_id} is already voided`, posting_types_1.SALES_ERROR_CODES.RETENDER_AMOUNT_MISMATCH, 'voids');
                 }
-                if (r.td_is_pdc &&
-                    ['SETTLED', 'PARTIAL'].includes((r.td_settle_status ?? '').toUpperCase())) {
+                if ((r.apd_status !== null && r.apd_status !== 'HELD') ||
+                    (r.td_is_pdc && ['SETTLED', 'PARTIAL'].includes((r.td_settle_status ?? '').toUpperCase()))) {
                     (0, sales_errors_1.throwSalesLocked)(`Tender ${r.tnd_name ?? r.td_id} is a cheque that has already moved at the bank — that is a bounce (/cheques), not a re-tender`, posting_types_1.SALES_ERROR_CODES.RETENDER_PDC_MOVED, 'voids');
                 }
             }
@@ -133,6 +139,7 @@ let BillRetenderService = class BillRetenderService {
           UPDATE accounts.acc_tender_detail SET td_replaces_id = ${replaces}::uuid
            WHERE td_id = ${t.tdId}::uuid AND td_acc_year = ${bill.sbAccYear}::char(9)`;
             }
+            let contraVoucherId = null;
             if (bill.sbStatus === 'POSTED' && bill.sbCustId) {
                 const legs = [];
                 for (const t of newRows) {
@@ -204,7 +211,7 @@ let BillRetenderService = class BillRetenderService {
                        AND t.td_src_doc_id = ${bill.sbId}::uuid
                        AND t.td_acc_year = ${bill.sbAccYear}::char(9)))`;
                 const round = Number(prior?.n ?? 0) + 1;
-                await this.legs.postLegs(tx, {
+                const contra = await this.legs.postLegs(tx, {
                     header: {
                         companyId: bill.sbCompanyId,
                         branchId: bill.sbBranchId,
@@ -227,6 +234,8 @@ let BillRetenderService = class BillRetenderService {
                     },
                     legs,
                 });
+                await (0, bill_pdc_posting_helper_1.syncBillPdcRegister)(tx, bill, { voucherId: contra.voucherId, accYear: bill.sbAccYear }, actor, now, { keepStoredVoucher: true });
+                contraVoucherId = contra.voucherId;
                 const creditTypes = [sales_doc_utils_1.TENDER_TYPE.CREDIT, sales_doc_utils_1.TENDER_TYPE.TEMP_CREDIT];
                 const settled = (0, sales_doc_utils_1.round2)(created
                     .filter((t) => !t.tdIsDeleted && !voidIds.includes(t.tdId))
@@ -299,6 +308,12 @@ let BillRetenderService = class BillRetenderService {
                 userId: actor,
                 notes: `Re-tendered: ${dto.remark}`,
             }, tx);
+            await (0, books_reconcile_guard_1.assertBooksReconcile)(tx, {
+                companyId: bill.sbCompanyId,
+                accYear: bill.sbAccYear,
+                ledgerIds: [bill.sbCustId],
+                vouchers: contraVoucherId ? [{ voucherId: contraVoucherId, accYear: bill.sbAccYear }] : [],
+            });
         });
         return this.bills.getById(dto.sbId, dto.sbCompanyId, dto.sbBranchId, dto.sbAccYear);
     }

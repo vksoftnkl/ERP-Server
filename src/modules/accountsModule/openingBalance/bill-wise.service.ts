@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { assertBooksReconcile } from '../reconcile/books-reconcile.guard';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
@@ -256,6 +257,14 @@ export class BillWiseService {
         accYear,
         reason: OpeningStaleReason.SOURCE_OPENING_EDITED,
         refId: opening.opId,
+      });
+
+      // The trial check (notes 47), after every write: the party's opening
+      // must still net its opening bills (and everything else it holds).
+      await assertBooksReconcile(tx, {
+        companyId: dto.companyId,
+        accYear,
+        ledgerIds: [dto.partyId],
       });
 
       const refreshed = await tx.accOpeningBalance.findFirst({

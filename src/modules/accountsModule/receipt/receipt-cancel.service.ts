@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { assertBooksReconcile } from '../reconcile/books-reconcile.guard';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
@@ -256,6 +257,18 @@ export class ReceiptCancelService {
           remarks: dto.reason,
         });
       }
+
+      // The trial check (notes 47), after every write. The reversals mirror
+      // the originals' legs, so the originals name every ledger moved.
+      await assertBooksReconcile(tx, {
+        companyId: header.avhCompanyId,
+        accYear: header.avhAccYear,
+        ledgerIds: [header.avhPartyId],
+        vouchers: vouchers.map((voucher) => ({
+          voucherId: voucher.avhVoucherId,
+          accYear: voucher.avhAccYear,
+        })),
+      });
 
       return {
         avhVoucherId: header.avhVoucherId,

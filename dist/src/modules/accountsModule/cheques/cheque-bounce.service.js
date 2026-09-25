@@ -11,6 +11,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ChequeBounceService = void 0;
 const common_1 = require("@nestjs/common");
+const books_reconcile_guard_1 = require("../reconcile/books-reconcile.guard");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
 const bill_balance_recompute_service_1 = require("../billBalance/bill-balance-recompute.service");
@@ -22,6 +23,7 @@ const cheques_guards_1 = require("./cheques.guards");
 const cheques_utils_1 = require("./cheques.utils");
 const cheque_voucher_helper_1 = require("./cheque-voucher.helper");
 const cheque_reversal_helper_1 = require("./cheque-reversal.helper");
+const sale_bill_cheque_helper_1 = require("./sale-bill-cheque.helper");
 const cheque_ledger_roles_1 = require("./cheque-ledger-roles");
 const cheque_enum_1 = require("./types/cheque-enum");
 const BOUNCE_TRANSACTION_OPTIONS = { maxWait: 15_000, timeout: 120_000 };
@@ -127,6 +129,10 @@ let ChequeBounceService = class ChequeBounceService {
             });
             const touched = [...reversed.bills, ...cascade.bills];
             const recomputed = await this.recompute.recomputeBills(tx, touched, (0, receipt_utils_1.todayUtc)());
+            const saleBill = onReceipt ? await (0, sale_bill_cheque_helper_1.findSaleBillOfCheque)(tx, cheque) : null;
+            const saleBillReopened = saleBill
+                ? await (0, sale_bill_cheque_helper_1.moveSaleBillSettlement)(tx, saleBill, cheque.apdAmount.negated(), bounceDate, actor)
+                : null;
             const now = new Date();
             await tx.accPdcRegister.update({
                 where: { apdId_apdAccYear: { apdId: cheque.apdId, apdAccYear: cheque.apdAccYear } },
@@ -153,13 +159,21 @@ let ChequeBounceService = class ChequeBounceService {
                 actor,
                 changedOn: now,
             });
+            await (0, books_reconcile_guard_1.assertBooksReconcile)(tx, {
+                companyId: cheque.apdCompanyId,
+                accYear: voucherAccYear,
+                ledgerIds: [cheque.apdPartyId],
+                cheques: [{ apdId: cheque.apdId, apdAccYear: cheque.apdAccYear }],
+                vouchers: [{ voucherId: written.ref.voucherId, accYear: voucherAccYear }],
+            });
             const pendingByBill = new Map(recomputed.map((bill) => [`${bill.billId}|${bill.accYear}`, bill]));
             const docRefnos = await this.loadBillRefs(tx, touched);
             return {
                 cheque: await (0, cheques_utils_1.reloadChequeRow)(tx, cheque.apdId, cheque.apdAccYear),
                 voucher: written.ref,
                 legs: written.legs,
-                billsReopened: recomputed.map((bill) => {
+                billsReopened: recomputed
+                    .map((bill) => {
                     const ref = docRefnos.get(`${bill.billId}|${bill.accYear}`);
                     return {
                         billId: bill.billId,
@@ -172,7 +186,8 @@ let ChequeBounceService = class ChequeBounceService {
                         pendingAmount: (0, receipt_utils_1.toAmount)(pendingByBill.get(`${bill.billId}|${bill.accYear}`)?.pendingAmount ?? receipt_utils_1.ZERO),
                         settledByThisCheque: 0,
                     };
-                }),
+                })
+                    .concat(saleBillReopened ? [saleBillReopened] : []),
                 cascade: cascade.report,
                 chargeBill,
                 bankCharge: (0, receipt_utils_1.toAmount)(bankCharge),

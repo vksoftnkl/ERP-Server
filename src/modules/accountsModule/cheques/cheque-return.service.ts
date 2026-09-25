@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { assertBooksReconcile } from '../reconcile/books-reconcile.guard';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
@@ -16,6 +17,7 @@ import {
 import { logChequeStatus, reloadChequeRow } from './cheques.utils';
 import { writeChequeVoucher } from './cheque-voucher.helper';
 import { cascadeAdvances, reverseChequeAdjustments } from './cheque-reversal.helper';
+import { findSaleBillOfCheque, moveSaleBillSettlement } from './sale-bill-cheque.helper';
 import {
   CANCEL_REASON_MAX_LENGTH,
   RECEIPT_VOUCHER_TYPE_CODE,
@@ -112,6 +114,15 @@ export class ChequeReturnService {
         remarks: dto.reason,
         actor,
         changedOn: now,
+      });
+
+      // The trial check (notes 47), after every write.
+      await assertBooksReconcile(tx, {
+        companyId: cheque.apdCompanyId,
+        accYear: outcome.voucher?.accYear ?? accYearOf(todayUtc()),
+        ledgerIds: [cheque.apdPartyId],
+        cheques: [{ apdId: cheque.apdId, apdAccYear: cheque.apdAccYear }],
+        vouchers: outcome.voucher ? [outcome.voucher] : [],
       });
 
       return {
@@ -214,24 +225,39 @@ export class ChequeReturnService {
     const touched = [...reversed.bills, ...cascade.bills];
     const recomputed = await this.recompute.recomputeBills(tx, touched, params.asOf);
     const refs = await this.loadBillRefs(tx, touched);
+    // A cheque tendered ON a sale bill wrote no adjustment row, so the reversal
+    // above cannot see it — the bill is reopened through its tender instead
+    // (sale-bill-cheque.helper).
+    const saleBill = await findSaleBillOfCheque(tx, cheque);
+    const saleBillReopened = saleBill
+      ? await moveSaleBillSettlement(
+          tx,
+          saleBill,
+          cheque.apdAmount.negated(),
+          params.asOf,
+          params.actor,
+        )
+      : null;
 
     return {
       voucher: written.ref,
       legs: written.legs,
-      billsReopened: recomputed.map((bill) => {
-        const ref = refs.get(`${bill.billId}|${bill.accYear}`);
-        return {
-          billId: bill.billId,
-          billAccYear: bill.accYear,
-          billType: ref?.billType ?? '',
-          docRefno: ref?.docRefno ?? '',
-          docDate: ref?.docDate ?? '',
-          dueDate: ref?.dueDate ?? null,
-          billAmount: toAmount(bill.billAmount ?? ZERO),
-          pendingAmount: toAmount(bill.pendingAmount),
-          settledByThisCheque: 0,
-        };
-      }),
+      billsReopened: recomputed
+        .map((bill) => {
+          const ref = refs.get(`${bill.billId}|${bill.accYear}`);
+          return {
+            billId: bill.billId,
+            billAccYear: bill.accYear,
+            billType: ref?.billType ?? '',
+            docRefno: ref?.docRefno ?? '',
+            docDate: ref?.docDate ?? '',
+            dueDate: ref?.dueDate ?? null,
+            billAmount: toAmount(bill.billAmount ?? ZERO),
+            pendingAmount: toAmount(bill.pendingAmount),
+            settledByThisCheque: 0,
+          };
+        })
+        .concat(saleBillReopened ? [saleBillReopened] : []),
       cascade: cascade.report,
     };
   }

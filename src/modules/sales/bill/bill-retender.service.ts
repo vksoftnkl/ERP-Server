@@ -29,6 +29,8 @@ import {
   round2,
 } from '../posting/sales-doc.utils';
 import { BillService } from './bill.service';
+import { syncBillPdcRegister } from './bill-pdc-posting.helper';
+import { assertBooksReconcile } from '../../accountsModule/reconcile/books-reconcile.guard';
 import { encodeTempCreditTenders } from './bill-temp-credit';
 import type { RetenderBillDto } from './dto/bill-lifecycle.dto';
 import {
@@ -59,6 +61,9 @@ interface TenderRow {
   td_settle_status: string | null;
   td_is_voided: boolean;
   tnd_name: string | null;
+  // The cheque register row's status, when the tender is a registered cheque
+  // (notes 46). Anything but HELD means the bank has it.
+  apd_status: string | null;
 }
 
 @Injectable()
@@ -109,7 +114,11 @@ export class BillRetenderService {
       }
       const rows = await tx.$queryRaw<TenderRow[]>`
         SELECT t.td_id, t.td_tender_id, t.td_tender_type_id, t.td_tender_ledger_id, t.td_amount, t.td_is_pdc,
-               t.td_settle_status, t.td_is_voided, m.tnd_name
+               t.td_settle_status, t.td_is_voided, m.tnd_name,
+               (SELECT p.apd_status FROM accounts.acc_pdc_register p
+                 WHERE p.apd_tender_id = t.td_id AND p.apd_is_deleted = false
+                   AND p.apd_status <> 'CANCELLED'
+                 LIMIT 1) AS apd_status
           FROM accounts.acc_tender_detail t
           LEFT JOIN accounts.acc_tender_master m ON m.tnd_id = t.td_tender_id
          WHERE t.td_id = ANY(${voidIds}::uuid[]) AND t.td_acc_year = ${bill.sbAccYear}::char(9)
@@ -134,8 +143,8 @@ export class BillRetenderService {
           );
         }
         if (
-          r.td_is_pdc &&
-          ['SETTLED', 'PARTIAL'].includes((r.td_settle_status ?? '').toUpperCase())
+          (r.apd_status !== null && r.apd_status !== 'HELD') ||
+          (r.td_is_pdc && ['SETTLED', 'PARTIAL'].includes((r.td_settle_status ?? '').toUpperCase()))
         ) {
           throwSalesLocked(
             `Tender ${r.tnd_name ?? r.td_id} is a cheque that has already moved at the bank — that is a bounce (/cheques), not a re-tender`,
@@ -219,6 +228,7 @@ export class BillRetenderService {
       }
 
       // 3 · on a POSTED bill, the CONTRA: DR the tender that happened, CR the one that did not.
+      let contraVoucherId: string | null = null;
       if (bill.sbStatus === 'POSTED' && bill.sbCustId) {
         const legs: SalesLeg[] = [];
         for (const t of newRows) {
@@ -296,7 +306,7 @@ export class BillRetenderService {
                        AND t.td_src_doc_id = ${bill.sbId}::uuid
                        AND t.td_acc_year = ${bill.sbAccYear}::char(9)))`;
         const round = Number(prior?.n ?? 0) + 1;
-        await this.legs.postLegs(tx, {
+        const contra = await this.legs.postLegs(tx, {
           header: {
             companyId: bill.sbCompanyId,
             branchId: bill.sbBranchId,
@@ -319,6 +329,19 @@ export class BillRetenderService {
           },
           legs,
         });
+        // The cheque register follows the tenders: a voided cheque's row is
+        // cancelled, a new cheque is registered against THIS contra — the
+        // voucher that debited Cheques In Hand for it — and the cheques the
+        // re-tender left alone keep the bill's voucher.
+        await syncBillPdcRegister(
+          tx,
+          bill,
+          { voucherId: contra.voucherId, accYear: bill.sbAccYear },
+          actor,
+          now,
+          { keepStoredVoucher: true },
+        );
+        contraVoucherId = contra.voucherId;
         // The receivable follows: a credit tender now leaves a balance; a cash one settles it.
         const creditTypes: number[] = [TENDER_TYPE.CREDIT, TENDER_TYPE.TEMP_CREDIT];
         // The sync answers the voided rows too, and its payload does not carry
@@ -406,6 +429,13 @@ export class BillRetenderService {
         },
         tx,
       );
+      // The trial check (notes 47), after every write.
+      await assertBooksReconcile(tx, {
+        companyId: bill.sbCompanyId,
+        accYear: bill.sbAccYear,
+        ledgerIds: [bill.sbCustId],
+        vouchers: contraVoucherId ? [{ voucherId: contraVoucherId, accYear: bill.sbAccYear }] : [],
+      });
     });
     return this.bills.getById(dto.sbId, dto.sbCompanyId, dto.sbBranchId, dto.sbAccYear);
   }

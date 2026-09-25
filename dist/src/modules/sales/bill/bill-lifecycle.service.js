@@ -36,6 +36,8 @@ const sales_errors_1 = require("../posting/sales.errors");
 const posting_types_1 = require("../posting/types/posting.types");
 const sales_doc_utils_1 = require("../posting/sales-doc.utils");
 const bill_service_1 = require("./bill.service");
+const books_reconcile_guard_1 = require("../../accountsModule/reconcile/books-reconcile.guard");
+const bill_pdc_posting_helper_1 = require("./bill-pdc-posting.helper");
 const bill_adjustment_helper_1 = require("./bill-adjustment.helper");
 const bill_snapshot_1 = require("./bill-snapshot");
 const bill_api_types_1 = require("./types/bill-api.types");
@@ -191,6 +193,14 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
                 userId: ctx.actor,
                 notes: `Bill cancelled: ${dto.reason}`,
             }, tx);
+            await (0, books_reconcile_guard_1.assertBooksReconcile)(tx, {
+                companyId: bill.sbCompanyId,
+                accYear: bill.sbAccYear,
+                ledgerIds: [bill.sbCustId],
+                vouchers: bill.sbPostedVoucherId
+                    ? [{ voucherId: bill.sbPostedVoucherId, accYear: bill.sbAccYear }]
+                    : [],
+            });
             return {
                 sbId: bill.sbId,
                 sbCompanyId: bill.sbCompanyId,
@@ -822,6 +832,7 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
             },
             legs,
         });
+        await (0, bill_pdc_posting_helper_1.syncBillPdcRegister)(tx, bill, { voucherId: voucher.voucherId, accYear: bill.sbAccYear }, actor, now);
         const reg = await this.register.write(tx, this.registerDoc(bill, snap, voucher.voucherId, voucher.voucherLastNo, supplyNature, actor), {
             companyEinvoiceFlag: company?.comp_einvoice_applicable ?? false,
             interState: supplyNature === 'INTER',
@@ -1001,6 +1012,12 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
             userId: actor,
             notes: `Bill posted (voucher ${voucher.voucherRefno})`,
         }, tx);
+        await (0, books_reconcile_guard_1.assertBooksReconcile)(tx, {
+            companyId: bill.sbCompanyId,
+            accYear: bill.sbAccYear,
+            ledgerIds: [partyId],
+            vouchers: [{ voucherId: voucher.voucherId, accYear: bill.sbAccYear }],
+        });
         return {
             bill: posted,
             gdrId: reg.gdrId,
@@ -1019,6 +1036,7 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
             accYear: bill.sbAccYear,
             companyId: bill.sbCompanyId,
         });
+        await (0, bill_pdc_posting_helper_1.assertBillPdcHeld)(tx, bill);
         const { irnLive, ewbLive } = await (0, sales_guards_1.loadDeclaredLocks)(tx, bill.sbDocRegisterId);
         if (irnLive || ewbLive) {
             const gst = await this.docBlocks.gstRows(tx, bill.sbDocRegisterId, bill.sbAccYear);
@@ -1140,6 +1158,9 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
                 atcModifiedBy: actor,
             },
         });
+        if (mode === 'cancel') {
+            await (0, bill_pdc_posting_helper_1.cancelBillPdcRegister)(tx, bill, reason, actor, now);
+        }
         void items;
         return { reversalRefno, restateVoucherId };
     }

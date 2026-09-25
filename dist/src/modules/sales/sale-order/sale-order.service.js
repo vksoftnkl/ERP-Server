@@ -432,8 +432,10 @@ let SaleOrderService = class SaleOrderService {
         const charges = await this.chargeDetailService.getByDocument(sale_order_api_types_1.SALE_ORDER_CHARGE_DOC_TYPE, soId);
         const tenders = await this.tenderDetailService.getByDocument(sale_order_api_types_1.SALE_ORDER_TENDER_SRC_MODULE, sale_order_api_types_1.SALE_ORDER_TENDER_SRC_DOC_TYPE, soId);
         const names = await this.resolveDisplayNames(record, charges, tenders);
+        const live = await (0, order_advance_posting_helper_1.readOrderAdvanceBalance)(this.prisma, record);
         return this.toPayload({
             ...record,
+            ...(live ? this.advanceRollupsFromLive(record, live) : {}),
             charges,
             tenders,
         }, names);
@@ -485,7 +487,7 @@ let SaleOrderService = class SaleOrderService {
             if (!existing) {
                 (0, module_service_utils_1.throwSalesNotFound)('Order not found', 'soId', `No active order found with id ${soId}`);
             }
-            if (dec(existing.soAdvanceBalanceAmt).greaterThan(0)) {
+            if ((await this.heldAdvanceBalance(tx, existing)).greaterThan(0)) {
                 (0, module_service_utils_1.throwSalesBadRequest)('Order holds an unsettled advance', [
                     {
                         field: 'soAdvanceBalanceAmt',
@@ -665,7 +667,7 @@ let SaleOrderService = class SaleOrderService {
         });
         const rollup = this.summariseOrderLines(settledLines);
         if (rollup.fulfilStatus === SALE_ORDER_FULFIL_CANCELLED &&
-            dec(existing.soAdvanceBalanceAmt).greaterThan(0)) {
+            (await this.heldAdvanceBalance(tx, existing)).greaterThan(0)) {
             (0, module_service_utils_1.throwSalesBadRequest)('Order holds an unsettled advance', [
                 {
                     field: 'soAdvanceBalanceAmt',
@@ -1195,8 +1197,9 @@ let SaleOrderService = class SaleOrderService {
                 const items = await this.syncItems(tx, scope, saveOrderDto.items, createdBy);
                 const charges = await this.chargeDetailService.syncDocumentCharges(tx, this.toChargeScope(scope), saveOrderDto.charges, createdBy, sale_order_api_types_1.SALE_ORDER_CHARGE_AUDIT);
                 const tenders = await this.tenderDetailService.syncDocumentTenders(tx, this.toTenderScope(scope), saveOrderDto.tenders, createdBy, sale_order_api_types_1.SALE_ORDER_TENDER_AUDIT);
-                await this.syncAdvanceVoucher(tx, created, createdBy, now);
-                const payload = this.toPayload({ ...created, items, charges, tenders });
+                const posting = await this.syncAdvanceVoucher(tx, created, createdBy, now);
+                const restated = await this.restateAdvanceRollups(tx, created, posting, saveOrderDto);
+                const payload = this.toPayload({ ...restated, items, charges, tenders });
                 await this.auditLogService.logEntityChange({
                     action: 'New',
                     tableName: SALE_ORDER_TABLE_NAME,
@@ -1267,8 +1270,12 @@ let SaleOrderService = class SaleOrderService {
                 const items = await this.syncItems(tx, scope, saveOrderDto.items, modifiedBy);
                 const charges = await this.chargeDetailService.syncDocumentCharges(tx, this.toChargeScope(scope), saveOrderDto.charges, modifiedBy, sale_order_api_types_1.SALE_ORDER_CHARGE_AUDIT);
                 const tenders = await this.tenderDetailService.syncDocumentTenders(tx, this.toTenderScope(scope), saveOrderDto.tenders, modifiedBy, sale_order_api_types_1.SALE_ORDER_TENDER_AUDIT);
-                await this.syncAdvanceVoucher(tx, updated, modifiedBy, now);
-                const payload = this.toPayload({ ...updated, items, charges, tenders });
+                const postingSource = saveOrderDto.tenders !== undefined && saveOrderDto.soAdvanceRecdAmt === undefined
+                    ? { ...updated, soAdvanceRecdAmt: ZERO }
+                    : updated;
+                const posting = await this.syncAdvanceVoucher(tx, postingSource, modifiedBy, now);
+                const restated = await this.restateAdvanceRollups(tx, updated, posting, saveOrderDto);
+                const payload = this.toPayload({ ...restated, items, charges, tenders });
                 await this.auditLogService.logEntityChange({
                     action: 'update',
                     tableName: SALE_ORDER_TABLE_NAME,
@@ -1554,6 +1561,73 @@ let SaleOrderService = class SaleOrderService {
         if (details.length > 0) {
             (0, module_service_utils_1.throwSalesBadRequest)('Invalid order value', details);
         }
+    }
+    async heldAdvanceBalance(tx, order) {
+        const live = await (0, order_advance_posting_helper_1.readOrderAdvanceBalance)(tx, order);
+        return live ? live.pendingAmount : dec(order.soAdvanceBalanceAmt);
+    }
+    async restateAdvanceRollups(tx, order, posting, dto) {
+        const live = await (0, order_advance_posting_helper_1.readOrderAdvanceBalance)(tx, order);
+        let rollups = null;
+        if (live) {
+            rollups = this.advanceRollupsFromLive(order, live);
+        }
+        else if (posting.action === 'cancelled' &&
+            order.soStatus !== SALE_ORDER_STATUS_CANCELLED &&
+            dto.soAdvanceRecdAmt === undefined &&
+            dto.soAdvanceBalanceAmt === undefined &&
+            dec(order.soAdvanceRefundAmt).isZero() &&
+            dec(order.soAdvanceForfeitAmt).isZero()) {
+            rollups = {
+                soAdvanceRecdAmt: ZERO,
+                soAdvanceAdjustedAmt: ZERO,
+                soAdvanceBalanceAmt: ZERO,
+                soAdvanceStatus: this.deriveAdvanceStatus(order, ZERO, ZERO),
+            };
+        }
+        if (!rollups ||
+            (dec(order.soAdvanceRecdAmt).equals(rollups.soAdvanceRecdAmt) &&
+                dec(order.soAdvanceAdjustedAmt).equals(rollups.soAdvanceAdjustedAmt) &&
+                dec(order.soAdvanceBalanceAmt).equals(rollups.soAdvanceBalanceAmt) &&
+                order.soAdvanceStatus === rollups.soAdvanceStatus)) {
+            return order;
+        }
+        return tx.saleOrder.update({
+            where: { soId_soAccYear: { soId: order.soId, soAccYear: order.soAccYear } },
+            data: rollups,
+        });
+    }
+    advanceRollupsFromLive(order, live) {
+        const recd = roundAmount(live.billAmount);
+        const givenBack = roundAmount(dec(order.soAdvanceRefundAmt).plus(dec(order.soAdvanceForfeitAmt)));
+        const usedUp = recd.minus(roundAmount(live.pendingAmount)).minus(givenBack);
+        const adjusted = usedUp.isNegative() ? ZERO : usedUp;
+        const balance = recd.minus(adjusted).minus(givenBack);
+        return {
+            soAdvanceRecdAmt: recd,
+            soAdvanceAdjustedAmt: adjusted,
+            soAdvanceBalanceAmt: balance.isNegative() ? ZERO : balance,
+            soAdvanceStatus: this.deriveAdvanceStatus(order, recd, balance),
+        };
+    }
+    deriveAdvanceStatus(order, recd, balance) {
+        const required = dec(order.soAdvanceRequired);
+        if (!recd.greaterThan(0)) {
+            return required.greaterThan(0) ? 'PENDING' : 'NONE';
+        }
+        if (balance.greaterThan(0)) {
+            return required.greaterThan(recd) ? 'PARTIAL' : 'RECEIVED';
+        }
+        const refund = dec(order.soAdvanceRefundAmt);
+        const forfeit = dec(order.soAdvanceForfeitAmt);
+        const adjusted = recd.minus(refund).minus(forfeit);
+        if (forfeit.greaterThan(refund) && forfeit.greaterThan(adjusted)) {
+            return 'FORFEITED';
+        }
+        if (refund.greaterThan(adjusted)) {
+            return 'REFUNDED';
+        }
+        return 'ADJUSTED';
     }
     deriveAdvanceBalance(dto, existing) {
         const recd = dec(merged(dto.soAdvanceRecdAmt, existing?.soAdvanceRecdAmt));

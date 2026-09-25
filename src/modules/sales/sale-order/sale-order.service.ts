@@ -63,8 +63,10 @@ import {
   collectTaxRateRefs,
 } from '../../Inventory/tax-rate-master/utils/tax-rate-reference.helper';
 import {
+  OrderAdvanceLiveBalance,
   OrderAdvancePostingSyncResult,
   deleteOrderAdvancePosting,
+  readOrderAdvanceBalance,
   syncOrderAdvancePosting,
 } from './order-advance-posting.helper';
 // accounts.acc_voucher_types row "SOr" / Sales Order (seeded by
@@ -501,6 +503,13 @@ function roundAmount(value: unknown): Prisma.Decimal {
   return dec(value).toDecimalPlaces(AMOUNT_SCALE, Prisma.Decimal.ROUND_HALF_UP);
 }
 const ZERO = new Prisma.Decimal(0);
+// The header advance roll-ups restateAdvanceRollups keeps in step with the books.
+type AdvanceRollups = {
+  soAdvanceRecdAmt: Prisma.Decimal;
+  soAdvanceAdjustedAmt: Prisma.Decimal;
+  soAdvanceBalanceAmt: Prisma.Decimal;
+  soAdvanceStatus: string;
+};
 // payload-first, falling back to the existing row: the merged value the DB
 // would actually end up with, which is what the mirrored CHECKs must judge.
 // Two type parameters because the two sides differ — the payload carries
@@ -653,9 +662,14 @@ export class SaleOrderService {
     // and tender rows carry — have no FK to ride an `include` on, so they are
     // resolved in one batched lookup per master over the ids this order uses.
     const names = await this.resolveDisplayNames(record, charges, tenders);
+    // The header's advance roll-ups are a cache; the ADVANCE row is the truth,
+    // and a bill setting the advance off moves only the row. A bill importing
+    // this order sets off soAdvanceBalanceAmt, so it has to be what is open.
+    const live = await readOrderAdvanceBalance(this.prisma, record);
     return this.toPayload(
       {
         ...record,
+        ...(live ? this.advanceRollupsFromLive(record, live) : {}),
         charges,
         tenders,
       },
@@ -772,7 +786,7 @@ export class SaleOrderService {
       // balance is not zero must first refund, forfeit or transfer what it took
       // (which also updates the roll-ups), or the liability would vanish from
       // every list while the customer's money stays in the till.
-      if (dec(existing.soAdvanceBalanceAmt).greaterThan(0)) {
+      if ((await this.heldAdvanceBalance(tx, existing)).greaterThan(0)) {
         throwSalesBadRequest<SaleOrderErrorDetail, SaleOrderErrorResponse>(
           'Order holds an unsettled advance',
           [
@@ -1117,7 +1131,7 @@ export class SaleOrderService {
     // roll-up. It is also what keeps the advance posting honest, see below.
     if (
       rollup.fulfilStatus === SALE_ORDER_FULFIL_CANCELLED &&
-      dec(existing.soAdvanceBalanceAmt).greaterThan(0)
+      (await this.heldAdvanceBalance(tx, existing)).greaterThan(0)
     ) {
       throwSalesBadRequest<SaleOrderErrorDetail, SaleOrderErrorResponse>(
         'Order holds an unsettled advance',
@@ -2079,8 +2093,9 @@ export class SaleOrderService {
         // The tendered money is now stored; posting it is what puts it in the
         // ledgers. On create there is never a live receipt, so this always
         // either creates one or does nothing.
-        await this.syncAdvanceVoucher(tx, created, createdBy, now);
-        const payload = this.toPayload({ ...created, items, charges, tenders });
+        const posting = await this.syncAdvanceVoucher(tx, created, createdBy, now);
+        const restated = await this.restateAdvanceRollups(tx, created, posting, saveOrderDto);
+        const payload = this.toPayload({ ...restated, items, charges, tenders });
         await this.auditLogService.logEntityChange(
           {
             action: 'New',
@@ -2183,8 +2198,18 @@ export class SaleOrderService {
         // Brings the receipt in line with whatever the edit did to the tenders:
         // creates one for money just taken, re-syncs an existing one, or cancels
         // it when the last tender is gone or the order was cancelled.
-        await this.syncAdvanceVoucher(tx, updated, modifiedBy, now);
-        const payload = this.toPayload({ ...updated, items, charges, tenders });
+        // A payload that re-sends the tenders but not soAdvanceRecdAmt lets the
+        // tenders decide what is held. The stored figure is otherwise the one
+        // restateAdvanceRollups wrote off the LAST tenders, and resolveAdvanceHeld
+        // prefers a stated figure — so an edit from 100 to 50 would go on
+        // booking 100.
+        const postingSource =
+          saveOrderDto.tenders !== undefined && saveOrderDto.soAdvanceRecdAmt === undefined
+            ? { ...updated, soAdvanceRecdAmt: ZERO }
+            : updated;
+        const posting = await this.syncAdvanceVoucher(tx, postingSource, modifiedBy, now);
+        const restated = await this.restateAdvanceRollups(tx, updated, posting, saveOrderDto);
+        const payload = this.toPayload({ ...restated, items, charges, tenders });
         await this.auditLogService.logEntityChange(
           {
             action: 'update',
@@ -2617,6 +2642,110 @@ export class SaleOrderService {
         details,
       );
     }
+  }
+  // What the order still holds for the customer: its live ADVANCE row when it
+  // has one, the header's own roll-up otherwise (an advance stated by the
+  // client with no tender behind it has no row).
+  private async heldAdvanceBalance(
+    tx: SaleOrderWriteClient,
+    order: SaleOrder,
+  ): Promise<Prisma.Decimal> {
+    const live = await readOrderAdvanceBalance(tx, order);
+    return live ? live.pendingAmount : dec(order.soAdvanceBalanceAmt);
+  }
+  // Writes the advance the posting just booked back onto the header, so
+  // soAdvanceRecdAmt / soAdvanceBalanceAmt / soAdvanceStatus say what the books
+  // say. Without it an order created with a tender and a 0 roll-up (the screen
+  // sends 0) held 100 in accounts while its header said NONE — and a bill
+  // importing it set off 0.
+  private async restateAdvanceRollups(
+    tx: SaleOrderWriteClient,
+    order: SaleOrder,
+    posting: OrderAdvancePostingSyncResult,
+    dto: SaveSaleOrderDto,
+  ): Promise<SaleOrder> {
+    const live = await readOrderAdvanceBalance(tx, order);
+    let rollups: AdvanceRollups | null = null;
+    if (live) {
+      rollups = this.advanceRollupsFromLive(order, live);
+    } else if (
+      posting.action === 'cancelled' &&
+      order.soStatus !== SALE_ORDER_STATUS_CANCELLED &&
+      dto.soAdvanceRecdAmt === undefined &&
+      dto.soAdvanceBalanceAmt === undefined &&
+      dec(order.soAdvanceRefundAmt).isZero() &&
+      dec(order.soAdvanceForfeitAmt).isZero()
+    ) {
+      // The last tender went off a live order: the receipt is cancelled and the
+      // ADVANCE row retired (which refuses once anything was set off), so the
+      // order holds nothing. A CANCELLED order keeps whatever refund / forfeit
+      // the caller stated.
+      rollups = {
+        soAdvanceRecdAmt: ZERO,
+        soAdvanceAdjustedAmt: ZERO,
+        soAdvanceBalanceAmt: ZERO,
+        soAdvanceStatus: this.deriveAdvanceStatus(order, ZERO, ZERO),
+      };
+    }
+    if (
+      !rollups ||
+      (dec(order.soAdvanceRecdAmt).equals(rollups.soAdvanceRecdAmt) &&
+        dec(order.soAdvanceAdjustedAmt).equals(rollups.soAdvanceAdjustedAmt) &&
+        dec(order.soAdvanceBalanceAmt).equals(rollups.soAdvanceBalanceAmt) &&
+        order.soAdvanceStatus === rollups.soAdvanceStatus)
+    ) {
+      return order;
+    }
+    return tx.saleOrder.update({
+      where: { soId_soAccYear: { soId: order.soId, soAccYear: order.soAccYear } },
+      data: rollups,
+    });
+  }
+  // The header roll-ups the live ADVANCE row implies. Received is the row's
+  // face; what is still open is its pending amount; refund and forfeit stay as
+  // the caller stated them, and everything else that is gone was adjusted into
+  // a bill — which keeps ck_so_advance_balance true by construction.
+  private advanceRollupsFromLive(order: SaleOrder, live: OrderAdvanceLiveBalance): AdvanceRollups {
+    const recd = roundAmount(live.billAmount);
+    const givenBack = roundAmount(
+      dec(order.soAdvanceRefundAmt).plus(dec(order.soAdvanceForfeitAmt)),
+    );
+    const usedUp = recd.minus(roundAmount(live.pendingAmount)).minus(givenBack);
+    const adjusted = usedUp.isNegative() ? ZERO : usedUp;
+    const balance = recd.minus(adjusted).minus(givenBack);
+    return {
+      soAdvanceRecdAmt: recd,
+      soAdvanceAdjustedAmt: adjusted,
+      soAdvanceBalanceAmt: balance.isNegative() ? ZERO : balance,
+      soAdvanceStatus: this.deriveAdvanceStatus(order, recd, balance),
+    };
+  }
+  // ck_so_advance_status, decided by the money rather than stated: nothing
+  // taken is PENDING against a required advance (NONE without one); something
+  // still held is RECEIVED, or PARTIAL while short of what was required; all
+  // of it gone is named after where most of it went.
+  private deriveAdvanceStatus(
+    order: SaleOrder,
+    recd: Prisma.Decimal,
+    balance: Prisma.Decimal,
+  ): string {
+    const required = dec(order.soAdvanceRequired);
+    if (!recd.greaterThan(0)) {
+      return required.greaterThan(0) ? 'PENDING' : 'NONE';
+    }
+    if (balance.greaterThan(0)) {
+      return required.greaterThan(recd) ? 'PARTIAL' : 'RECEIVED';
+    }
+    const refund = dec(order.soAdvanceRefundAmt);
+    const forfeit = dec(order.soAdvanceForfeitAmt);
+    const adjusted = recd.minus(refund).minus(forfeit);
+    if (forfeit.greaterThan(refund) && forfeit.greaterThan(adjusted)) {
+      return 'FORFEITED';
+    }
+    if (refund.greaterThan(adjusted)) {
+      return 'REFUNDED';
+    }
+    return 'ADJUSTED';
   }
   // What the company still holds = taken − used − given back − kept, rounded to
   // the paisa exactly as ck_so_advance_balance demands.

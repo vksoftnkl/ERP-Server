@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { assertBooksReconcile } from '../reconcile/books-reconcile.guard';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
@@ -356,6 +357,20 @@ export class ReceiptPostingService {
       changedBy: actor,
       deviceId: header.avhDeviceId,
       sessionId: header.avhSessionId,
+    });
+
+    // ── 16 · The trial check (notes 47), after every write ─────────────────
+    // The party's bills = its ledger; Cheques In Hand = the register. Every
+    // voucher this receipt numbered is looked at — a post-dated cheque has one
+    // of its own.
+    await assertBooksReconcile(tx, {
+      companyId: header.avhCompanyId,
+      accYear: header.avhAccYear,
+      ledgerIds: [header.avhPartyId],
+      vouchers: vouchers.map((voucher) => ({
+        voucherId: voucher.voucherId,
+        accYear: voucher.accYear,
+      })),
     });
 
     const posted = await this.receiptService.loadHeaderOrThrow(

@@ -353,6 +353,12 @@ type LiveVoucher = {
 };
 // ... and what it selects from the ADVANCE row that outstanding money leaves in
 // accounts.acc_bill_balance.
+// What accBillBalance.aggregate answers. _count and ablBillAmount are optional
+// because the getSrcDocPendingAmount cases only ever asked for the pending sum.
+type AdvanceBillTotals = {
+  _count?: { _all: number };
+  _sum: { ablPendingAmount: Prisma.Decimal | null; ablBillAmount?: Prisma.Decimal | null };
+};
 type AdvanceBill = {
   ablId: string;
   ablAccYear: string;
@@ -464,8 +470,9 @@ type PrismaMock = {
     create: jest.Mock<Promise<{ ablId: string }>, unknown[]>;
     update: jest.Mock<Promise<unknown>, unknown[]>;
     // The pending-amount read: abl_pending_amount totalled over the rows raised
-    // against one source document.
-    aggregate: jest.Mock<Promise<{ _sum: { ablPendingAmount: Prisma.Decimal | null } }>, unknown[]>;
+    // against one source document. readOrderAdvanceBalance also counts them and
+    // totals abl_bill_amount.
+    aggregate: jest.Mock<Promise<AdvanceBillTotals>, unknown[]>;
   };
   // Only counted: a real settlement against the advance is what stops it being
   // edited down or taken back out.
@@ -625,7 +632,10 @@ const makePrismaMock = (): PrismaMock => {
       // ... so nothing is pending against it either. Prisma answers a null _sum
       // when the filter matches no row at all.
       aggregate: jest.fn(() =>
-        Promise.resolve({ _sum: { ablPendingAmount: null as Prisma.Decimal | null } }),
+        Promise.resolve<AdvanceBillTotals>({
+          _count: { _all: 0 },
+          _sum: { ablPendingAmount: null, ablBillAmount: null },
+        }),
       ),
     },
     accBillAdjustment: { count: jest.fn(() => Promise.resolve(0)) },
@@ -1240,6 +1250,28 @@ describe('SaleOrderService', () => {
       });
     });
 
+    // The screen sends 0 roll-ups with a tender; the header has to learn what
+    // the books now hold, or a bill importing the order sets off nothing.
+    it('restates the header roll-ups from the ADVANCE row the tender opened', async () => {
+      prisma.accTenderDetail.findMany.mockResolvedValue([makeTender()]);
+      prisma.accBillBalance.aggregate.mockResolvedValue({
+        _count: { _all: 1 },
+        _sum: {
+          ablBillAmount: new Prisma.Decimal('100.00'),
+          ablPendingAmount: new Prisma.Decimal('100.00'),
+        },
+      });
+      const result = await service.save(baseDto());
+      const restate = prisma.saleOrder.update.mock.calls.at(-1)![0];
+      expect(restate.data).toEqual({
+        soAdvanceRecdAmt: new Prisma.Decimal('100.00'),
+        soAdvanceAdjustedAmt: new Prisma.Decimal('0'),
+        soAdvanceBalanceAmt: new Prisma.Decimal('100.00'),
+        soAdvanceStatus: 'RECEIVED',
+      });
+      expect(result.soAdvanceBalanceAmt).toEqual(new Prisma.Decimal('100.00'));
+    });
+
     // abl_pending_amount is bill − alloc − disc − writeoff, so seeding the
     // allocation with what has already been used leaves the outstanding equal to
     // the order's own so_advance_balance_amt.
@@ -1693,6 +1725,34 @@ describe('SaleOrderService', () => {
           tdCompanyName: 'Acme Traders',
           tdPartyLedgerName: 'Acme',
           tdUserName: 'Counter 1',
+        }),
+      );
+    });
+
+    // A bill setting the advance off moves only acc_bill_balance, so the read
+    // answers what the row says is still open, not the header's cache.
+    it('reads the advance roll-ups off the live ADVANCE row', async () => {
+      prisma.saleOrder.findFirst.mockResolvedValue(
+        makeOrder({
+          soAdvanceRecdAmt: new Prisma.Decimal('100.00'),
+          soAdvanceBalanceAmt: new Prisma.Decimal('100.00'),
+          soAdvanceStatus: 'RECEIVED',
+        }) as unknown as SaleOrder,
+      );
+      prisma.accBillBalance.aggregate.mockResolvedValue({
+        _count: { _all: 1 },
+        _sum: {
+          ablBillAmount: new Prisma.Decimal('100.00'),
+          ablPendingAmount: new Prisma.Decimal('0.00'),
+        },
+      });
+      const result = await service.getById(SALE_ORDER_ID, COMPANY_ID, BRANCH_ID, ACC_YEAR);
+      expect(result).toEqual(
+        containing({
+          soAdvanceRecdAmt: new Prisma.Decimal('100.00'),
+          soAdvanceAdjustedAmt: new Prisma.Decimal('100.00'),
+          soAdvanceBalanceAmt: new Prisma.Decimal('0.00'),
+          soAdvanceStatus: 'ADJUSTED',
         }),
       );
     });

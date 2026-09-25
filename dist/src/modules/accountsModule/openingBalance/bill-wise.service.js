@@ -11,6 +11,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.BillWiseService = void 0;
 const common_1 = require("@nestjs/common");
+const books_reconcile_guard_1 = require("../reconcile/books-reconcile.guard");
 const client_1 = require("@prisma/client");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
@@ -166,6 +167,11 @@ let BillWiseService = class BillWiseService {
                 accYear,
                 reason: opening_balance_api_types_1.OpeningStaleReason.SOURCE_OPENING_EDITED,
                 refId: opening.opId,
+            });
+            await (0, books_reconcile_guard_1.assertBooksReconcile)(tx, {
+                companyId: dto.companyId,
+                accYear,
+                ledgerIds: [dto.partyId],
             });
             const refreshed = await tx.accOpeningBalance.findFirst({
                 where: { opId: opening.opId, opAccYear: accYear },

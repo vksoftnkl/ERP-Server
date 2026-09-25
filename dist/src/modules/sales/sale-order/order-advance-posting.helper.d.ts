@@ -72,3 +72,8 @@ export interface OrderAdvancePostingDeleteResult {
     pdcIds: string[];
 }
 export declare function deleteOrderAdvancePosting(tx: Prisma.TransactionClient, order: OrderAdvancePostingRef, actor: string, now: Date): Promise<OrderAdvancePostingDeleteResult>;
+export interface OrderAdvanceLiveBalance {
+    billAmount: Prisma.Decimal;
+    pendingAmount: Prisma.Decimal;
+}
+export declare function readOrderAdvanceBalance(tx: Prisma.TransactionClient, order: Pick<OrderAdvancePostingRef, 'soId'>): Promise<OrderAdvanceLiveBalance | null>;

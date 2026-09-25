@@ -62,6 +62,7 @@ cheque. A mismatch is a **404, not a 403**.
 | `cheque-voucher.helper.ts` | **The only way a voucher is written here.** DRAFT → legs → totals → POSTED |
 | `cheque-reversal.helper.ts` | Negative rows, the C4 cascade, and reading a bounce back out for a re-presentation |
 | `cheque-allocation.ts` | The adapter onto the receipt's `allocation-engine.ts`, and the three ways bills are chosen |
+| `sale-bill-cheque.helper.ts` | A cheque tendered ON a sale bill: finds the bill through the tender and moves its seeded settlement |
 | `cheques.guards.ts` | The row locks, the status refusals, the dates, Cheques in Hand |
 | `cheque-ledger-roles.ts` | The two roles, resolved late and conditionally |
 | `cheques.settings.ts` | §2.2's two settings, through the resolver |
@@ -325,6 +326,25 @@ which advance that is.
 the one place its absence forced a decision rather than a reading.
 
 ---
+
+### A cheque tendered on a sale bill (notes 46)
+
+A sale bill's cheque settles the bill inside the bill's own voucher and writes
+**no** `acc_bill_adjustment` row — the bill's `abl_alloc_amount` is seeded with
+everything tendered at post. So `reverseChequeAdjustments` finds nothing for it.
+Bounce and return therefore also follow `apd_tender_id → acc_tender_detail
+(SALES / SALE_BILL) → sale_bill` and move that seeded figure down by the cheque's
+amount (plus `sb_paid_amt` / `sb_balance_amt` / `sb_pay_status`); a re-present
+with no `allocations` moves it back up instead of parking the money on account.
+The bill appears in `billsReopened` / `billsAllocated` like any other.
+
+Why not an adjustment row: `BillBalanceRecomputeService` derives
+`abl_alloc_amount` from adjustment rows only, so a bill with one row for its
+cheque and a seed for its cash would lose the cash the first time anything
+recomputed it. **The same hazard already exists** for any receipt, or a
+`/cheques/replace` auto-FIFO, that allocates against a sale bill which was
+partly settled at the counter — the recompute drops the counter's share. Not
+fixed here.
 
 ## Deviations from the plan, and why
 

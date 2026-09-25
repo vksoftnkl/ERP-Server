@@ -657,7 +657,12 @@ let LoyaltyLedgerService = LoyaltyLedgerService_1 = class LoyaltyLedgerService {
         const rows = [];
         let earnReversed = 0;
         let redeemReversed = 0;
-        let rowNo = 0;
+        const lastRowNo = await this.maxRowNos(tx, doc);
+        const nextRowNo = (txnType) => {
+            const n = (lastRowNo.get(txnType) ?? 0) + 1;
+            lastRowNo.set(txnType, n);
+            return n;
+        };
         for (const o of originals) {
             if (already.has(o.lld_id)) {
                 continue;
@@ -691,7 +696,7 @@ let LoyaltyLedgerService = LoyaltyLedgerService_1 = class LoyaltyLedgerService {
                 rows.push({
                     ...base,
                     txnType: 'EARN',
-                    rowNo: ++rowNo,
+                    rowNo: nextRowNo('EARN'),
                     points: -take,
                     remarks: shortfall > 0
                         ? `Cancelled; ${shortfall} of ${awarded} points had already been spent and could not be taken back`
@@ -704,7 +709,7 @@ let LoyaltyLedgerService = LoyaltyLedgerService_1 = class LoyaltyLedgerService {
                 rows.push({
                     ...base,
                     txnType: o.lld_txn_type,
-                    rowNo: ++rowNo,
+                    rowNo: nextRowNo(o.lld_txn_type),
                     points: spent,
                     lotId: o.lld_lot_id,
                     lotAccYear: o.lld_lot_acc_year,
@@ -739,7 +744,7 @@ let LoyaltyLedgerService = LoyaltyLedgerService_1 = class LoyaltyLedgerService {
         const already = await this.reversedIds(tx, originals.map((o) => o.lld_id));
         const rows = [];
         let restored = 0;
-        let rowNo = 0;
+        let rowNo = (await this.maxRowNos(tx, doc)).get('REDEEM') ?? 0;
         for (const o of originals) {
             if (already.has(o.lld_id)) {
                 continue;
@@ -1072,6 +1077,17 @@ let LoyaltyLedgerService = LoyaltyLedgerService_1 = class LoyaltyLedgerService {
        WHERE lld_reversal_of_id = ANY(${ids}::uuid[])
          AND lld_is_deleted = false`;
         return new Set(rows.map((r) => r.lld_reversal_of_id));
+    }
+    async maxRowNos(tx, doc) {
+        const rows = await tx.$queryRaw `
+      SELECT lld_txn_type, MAX(lld_row_no)::int AS max_row_no
+        FROM sales.loyalty_ledger
+       WHERE lld_src_doc_type = ${doc.docType}
+         AND lld_src_doc_id   = ${doc.docId}::uuid
+         AND lld_acc_year     = ${doc.accYear}::char(9)
+         AND lld_is_deleted   = false
+       GROUP BY lld_txn_type`;
+        return new Map(rows.map((r) => [r.lld_txn_type, Number(r.max_row_no)]));
     }
 };
 exports.LoyaltyLedgerService = LoyaltyLedgerService;

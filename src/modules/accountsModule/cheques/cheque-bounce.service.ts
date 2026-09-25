@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { assertBooksReconcile } from '../reconcile/books-reconcile.guard';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
@@ -26,6 +27,7 @@ import {
 import { logChequeStatus, reloadChequeRow } from './cheques.utils';
 import { writeChequeVoucher, type ChequeLegSpec } from './cheque-voucher.helper';
 import { cascadeAdvances, reverseChequeAdjustments } from './cheque-reversal.helper';
+import { findSaleBillOfCheque, moveSaleBillSettlement } from './sale-bill-cheque.helper';
 import { ledgerForRole, requireChequeRoleLedgers } from './cheque-ledger-roles';
 import {
   BOUNCE_CHARGE_SRC_DOC_TYPE,
@@ -236,6 +238,15 @@ export class ChequeBounceService {
       const touched = [...reversed.bills, ...cascade.bills];
       const recomputed = await this.recompute.recomputeBills(tx, touched, todayUtc());
 
+      // ── 6b · A cheque tendered ON a sale bill ───────────────────────────
+      // It settled the bill inside the bill's own voucher and wrote no
+      // adjustment row, so steps 5–6 cannot see it (sale-bill-cheque.helper).
+      // Only ON_RECEIPT: under ON_CLEARING nothing was ever settled.
+      const saleBill = onReceipt ? await findSaleBillOfCheque(tx, cheque) : null;
+      const saleBillReopened = saleBill
+        ? await moveSaleBillSettlement(tx, saleBill, cheque.apdAmount.negated(), bounceDate, actor)
+        : null;
+
       // ── 8 · The register, and the trail ─────────────────────────────────
       const now = new Date();
       await tx.accPdcRegister.update({
@@ -270,6 +281,17 @@ export class ChequeBounceService {
         changedOn: now,
       });
 
+      // The trial check (notes 47), after every write: the party's bills = its
+      // ledger (the bill this cheque paid is open again on both sides), and
+      // Cheques In Hand = the register.
+      await assertBooksReconcile(tx, {
+        companyId: cheque.apdCompanyId,
+        accYear: voucherAccYear,
+        ledgerIds: [cheque.apdPartyId],
+        cheques: [{ apdId: cheque.apdId, apdAccYear: cheque.apdAccYear }],
+        vouchers: [{ voucherId: written.ref.voucherId, accYear: voucherAccYear }],
+      });
+
       const pendingByBill = new Map(
         recomputed.map((bill) => [`${bill.billId}|${bill.accYear}`, bill]),
       );
@@ -279,22 +301,24 @@ export class ChequeBounceService {
         cheque: await reloadChequeRow(tx, cheque.apdId, cheque.apdAccYear),
         voucher: written.ref,
         legs: written.legs,
-        billsReopened: recomputed.map((bill) => {
-          const ref = docRefnos.get(`${bill.billId}|${bill.accYear}`);
-          return {
-            billId: bill.billId,
-            billAccYear: bill.accYear,
-            billType: ref?.billType ?? '',
-            docRefno: ref?.docRefno ?? '',
-            docDate: ref?.docDate ?? '',
-            dueDate: ref?.dueDate ?? null,
-            billAmount: toAmount(bill.billAmount),
-            pendingAmount: toAmount(
-              pendingByBill.get(`${bill.billId}|${bill.accYear}`)?.pendingAmount ?? ZERO,
-            ),
-            settledByThisCheque: 0,
-          };
-        }),
+        billsReopened: recomputed
+          .map((bill) => {
+            const ref = docRefnos.get(`${bill.billId}|${bill.accYear}`);
+            return {
+              billId: bill.billId,
+              billAccYear: bill.accYear,
+              billType: ref?.billType ?? '',
+              docRefno: ref?.docRefno ?? '',
+              docDate: ref?.docDate ?? '',
+              dueDate: ref?.dueDate ?? null,
+              billAmount: toAmount(bill.billAmount),
+              pendingAmount: toAmount(
+                pendingByBill.get(`${bill.billId}|${bill.accYear}`)?.pendingAmount ?? ZERO,
+              ),
+              settledByThisCheque: 0,
+            };
+          })
+          .concat(saleBillReopened ? [saleBillReopened] : []),
         cascade: cascade.report,
         chargeBill,
         bankCharge: toAmount(bankCharge),
