@@ -6,6 +6,7 @@ import {
 } from 'src/common/Sequence/voucher-sequence.helper';
 import { SaleOrderErrorDetail, SaleOrderErrorResponse } from './types/sale-order-api.types';
 import { cancelOrderPdcRegister, syncOrderPdcRegister } from './order-pdc-posting.helper';
+import type { PdcChequeDetail } from '../posting/pdc-register.helper';
 import { assertBooksReconcile } from '../../accountsModule/reconcile/books-reconcile.guard';
 // accounts.acc_voucher_types row "ARc" / Order Advance Receipt, seeded by
 // prisma/seed/Acc_Voucher_Types_Order_Advance_Receipt.sql.
@@ -130,6 +131,9 @@ export interface OrderAdvanceTenderLine {
   tdInstrumentDate: Date | null;
   tdBankName: string | null;
   tdSettleLedgerId: string | null;
+  // notes (48) — drawer / bank branch / IFSC / MICR from the save payload, for
+  // the cheque register. Absent = keep what the register row holds.
+  cheque?: PdcChequeDetail | null;
 }
 export interface OrderAdvancePostingResult {
   // accounts.acc_voucher_header.avh_voucher_id — also stamped onto every tender

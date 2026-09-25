@@ -45,6 +45,7 @@ export declare class SaleOrderService {
     private syncItems;
     private softDeleteItems;
     private syncAdvanceVoucher;
+    private withChequeDetails;
     private describeDuplicate;
     private ensureOrderValuesAreAllowed;
     private ensureAdvanceRollupsAreConsistent;

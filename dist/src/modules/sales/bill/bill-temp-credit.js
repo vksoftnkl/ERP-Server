@@ -11,8 +11,9 @@ function encodeTempCreditTenders(tenders) {
     }
     return tenders.map((t) => {
         const tc = t.tempCredit;
-        const { tempCredit: _drop, ...rest } = t;
+        const { tempCredit: _drop, cheque: _cheque, ...rest } = t;
         void _drop;
+        void _cheque;
         if (!tc) {
             return rest;
         }

@@ -24,7 +24,8 @@ async function syncBillPdcRegister(tx, bill, voucher, actor, now, opts = {}) {
     if (!doc) {
         return [];
     }
-    const tenders = await loadLiveTenders(tx, bill);
+    const details = opts.details ?? {};
+    const tenders = (await loadLiveTenders(tx, bill)).map((tender) => tender.tdId in details ? { ...tender, cheque: details[tender.tdId] } : tender);
     return (0, pdc_register_helper_1.syncDocPdcRegister)(tx, doc, BILL_RULES, tenders, voucher, actor, now, {
         keepStoredVoucher: opts.keepStoredVoucher,
         removedReason: TENDER_REMOVED_CANCEL_REASON,

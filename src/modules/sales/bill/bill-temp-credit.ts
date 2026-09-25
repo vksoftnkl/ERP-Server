@@ -36,8 +36,11 @@ export function encodeTempCreditTenders(
   return tenders.map((t) => {
     const tc = t.tempCredit;
     // `tempCredit` is not a column; the DTO carries it only to be folded here.
-    const { tempCredit: _drop, ...rest } = t;
+    // Nor is `cheque` (notes 48) — it goes to sb_draft_cheques, then the
+    // cheque register.
+    const { tempCredit: _drop, cheque: _cheque, ...rest } = t;
     void _drop;
+    void _cheque;
     if (!tc) {
       return rest as SaveTenderDetailDto;
     }

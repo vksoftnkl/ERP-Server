@@ -6845,7 +6845,10 @@ sbPostedVoucherId — the DTO never carries either.']
   sbSurchargeAmt Decimal [not null, default: 0]
   sbTenderAmt Decimal [not null, default: 0]
   sbRefundAmt Decimal [not null, default: 0]
-  sbAdvanceAmt Decimal [not null, default: 0]
+  sbAdvanceAmt Decimal [not null, default: 0, note: 'ADVANCE set-offs only — order and receipt advances (acc_bill_adjustment
+ADVANCE_ADJUST). A credit note is a different liability; see sbNoteAdjAmt.']
+  sbNoteAdjAmt Decimal [not null, default: 0, note: 'CREDIT-NOTE set-offs only — sale-return credit notes (NOTE_ADJUST).
+sbAdvanceAmt + sbNoteAdjAmt is everything the bill\'s set-offs settle.']
   sbPaidAmt Decimal [not null, default: 0]
   sbBalanceAmt Decimal [not null, default: 0]
   sbPayStatus String [not null, default: 'UNPAID']
@@ -6870,6 +6873,11 @@ instead of leaving a trail. It matters for the offline push too: two
 devices APPENDING cannot conflict the way two UPDATEing one header row
 can. sbPostedVoucherId stays because it is a RELATIONSHIP, not an event.']
   sbPostedVoucherId String
+  sbDraftCheques Json [note: 'notes (48) — a DRAFT\'s cheque details (drawer, bank branch, IFSC, MICR),
+keyed by td_id: acc_tender_detail has no columns for them and the
+cheque register row is not written until /bills/post. Scratch space, like
+the receipt\'s avh_draft_lines: /post copies it into acc_pdc_register and
+clears it to NULL. Nothing else reads it.']
   sbApprovedOn DateTime
   sbApprovedBy String
   sbVersionNo Int [not null, default: 1]

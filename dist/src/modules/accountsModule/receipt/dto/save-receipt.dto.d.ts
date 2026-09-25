@@ -1,10 +1,7 @@
 import { DrCr, VoucherDeviceType } from '../types/receipt-enum';
 import { PostReceiptAllocationDto, PostReceiptCreditDto, ReceiptKeysDto } from './post-receipt.dto';
-export declare class SaveReceiptChequeDto {
-    bankBranch?: string | null;
-    ifsc?: string | null;
-    micr?: string | null;
-    drawerName?: string | null;
+import { TenderChequeDetailDto } from '../../tenderDetail/dto/save-tender-detail.dto';
+export declare class SaveReceiptChequeDto extends TenderChequeDetailDto {
     bankLedgerId?: string | null;
 }
 export declare class SaveReceiptTenderDto {

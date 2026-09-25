@@ -69,6 +69,12 @@ import {
   readOrderAdvanceBalance,
   syncOrderAdvancePosting,
 } from './order-advance-posting.helper';
+import {
+  CHEQUE_TENDER_TYPE_ID,
+  matchChequeDetails,
+  readPdcChequeDetails,
+  type PdcChequeDetail,
+} from '../posting/pdc-register.helper';
 // accounts.acc_voucher_types row "SOr" / Sales Order (seeded by
 // prisma/seed/Acc_Voucher_Types_Sale_Order.sql). Its numbering format
 // (prefix / width / reset frequency) seeds the acc_voucher_seq row the order
@@ -662,6 +668,7 @@ export class SaleOrderService {
     // and tender rows carry — have no FK to ride an `include` on, so they are
     // resolved in one batched lookup per master over the ids this order uses.
     const names = await this.resolveDisplayNames(record, charges, tenders);
+    const tendersWithCheques = await this.withChequeDetails(this.prisma, tenders);
     // The header's advance roll-ups are a cache; the ADVANCE row is the truth,
     // and a bill setting the advance off moves only the row. A bill importing
     // this order sets off soAdvanceBalanceAmt, so it has to be what is open.
@@ -671,7 +678,7 @@ export class SaleOrderService {
         ...record,
         ...(live ? this.advanceRollupsFromLive(record, live) : {}),
         charges,
-        tenders,
+        tenders: tendersWithCheques,
       },
       names,
     );
@@ -2093,9 +2100,20 @@ export class SaleOrderService {
         // The tendered money is now stored; posting it is what puts it in the
         // ledgers. On create there is never a live receipt, so this always
         // either creates one or does nothing.
-        const posting = await this.syncAdvanceVoucher(tx, created, createdBy, now);
+        const posting = await this.syncAdvanceVoucher(
+          tx,
+          created,
+          createdBy,
+          now,
+          matchChequeDetails(saveOrderDto.tenders ?? [], tenders),
+        );
         const restated = await this.restateAdvanceRollups(tx, created, posting, saveOrderDto);
-        const payload = this.toPayload({ ...restated, items, charges, tenders });
+        const payload = this.toPayload({
+          ...restated,
+          items,
+          charges,
+          tenders: await this.withChequeDetails(tx, tenders),
+        });
         await this.auditLogService.logEntityChange(
           {
             action: 'New',
@@ -2207,9 +2225,20 @@ export class SaleOrderService {
           saveOrderDto.tenders !== undefined && saveOrderDto.soAdvanceRecdAmt === undefined
             ? { ...updated, soAdvanceRecdAmt: ZERO }
             : updated;
-        const posting = await this.syncAdvanceVoucher(tx, postingSource, modifiedBy, now);
+        const posting = await this.syncAdvanceVoucher(
+          tx,
+          postingSource,
+          modifiedBy,
+          now,
+          matchChequeDetails(saveOrderDto.tenders ?? [], tenders),
+        );
         const restated = await this.restateAdvanceRollups(tx, updated, posting, saveOrderDto);
-        const payload = this.toPayload({ ...restated, items, charges, tenders });
+        const payload = this.toPayload({
+          ...restated,
+          items,
+          charges,
+          tenders: await this.withChequeDetails(tx, tenders),
+        });
         await this.auditLogService.logEntityChange(
           {
             action: 'update',
@@ -2471,6 +2500,8 @@ export class SaleOrderService {
     order: SaleOrder,
     actor: string,
     now: Date,
+    // notes (48) — the payload's `cheque` objects by td_id, for the register.
+    chequeDetails: Record<string, PdcChequeDetail | null> = {},
   ): Promise<OrderAdvancePostingSyncResult> {
     const tenders = await this.tenderDetailService.findDocumentTenders(
       tx,
@@ -2478,7 +2509,33 @@ export class SaleOrderService {
       SALE_ORDER_TENDER_SRC_DOC_TYPE,
       order.soId,
     );
-    return syncOrderAdvancePosting(tx, order, tenders, actor, now);
+    return syncOrderAdvancePosting(
+      tx,
+      order,
+      tenders.map((tender) =>
+        tender.tdId in chequeDetails ? { ...tender, cheque: chequeDetails[tender.tdId] } : tender,
+      ),
+      actor,
+      now,
+    );
+  }
+  // notes (48) — a CHEQUE row echoes its drawer / bank branch / IFSC / MICR
+  // from the cheque register (the order registers on save), so an edit
+  // re-sends what was keyed. Null on every other row.
+  private async withChequeDetails(
+    client: SaleOrderWriteClient,
+    tenders: SaleOrderTenderPayload[],
+  ): Promise<SaleOrderTenderPayload[]> {
+    const isCheque = (t: SaleOrderTenderPayload) =>
+      Number(t.tdTenderTypeId) === CHEQUE_TENDER_TYPE_ID;
+    const details = await readPdcChequeDetails(
+      client as Prisma.TransactionClient,
+      tenders.filter(isCheque).map((t) => t.tdId),
+    );
+    return tenders.map((t) => ({
+      ...t,
+      cheque: isCheque(t) ? (details.get(t.tdId) ?? null) : null,
+    }));
   }
   // Names the duplicate a P2002 actually is. sale_order DOES define unique
   // indexes (ux_so_slno per device, ux_so_order_no per branch/year — both

@@ -4,7 +4,7 @@ import type { ChargeDetailPayload, ChargeDocumentAudit } from '../../../master/c
 import { TenderDrCr, TenderSrcDocType, TenderSrcModule } from '../../../accountsModule/tenderDetail/types/tender-detail-api.types';
 import type { TenderDetailPayload, TenderDocumentAudit } from '../../../accountsModule/tenderDetail/types/tender-detail-api.types';
 import { TxnStatusDocType, TxnStatusSrcModule } from '../../../../common/txn-status-log/txn-status-log.helper';
-import type { TenderTempCreditDto } from '../../../accountsModule/tenderDetail/dto/save-tender-detail.dto';
+import type { TenderChequeDetailDto, TenderTempCreditDto } from '../../../accountsModule/tenderDetail/dto/save-tender-detail.dto';
 import type { LocksBlock, PostingBlock, RightsBlock } from '../../posting/types/posting.types';
 import type { TransportBandRow } from '../../posting/transport-band.service';
 export declare const BILL_CHARGE_DOC_TYPE = ChargeDocType.INVOICE;
@@ -18,7 +18,7 @@ export declare const BILL_STATUS_SRC_DOC_TYPE = TxnStatusDocType.SALE_BILL;
 export declare const BILL_STATUS_POSTED = "POSTED";
 export declare const BILL_STATUS_DRAFT = "DRAFT";
 export declare const BILL_STATUS_CANCELLED = "CANCELLED";
-export type BillPayload = Omit<SaleBill, 'sbCreatedOn' | 'sbModifiedOn' | 'sbBillDatetime' | 'sbSyncDate' | 'sbBillSlno'> & {
+export type BillPayload = Omit<SaleBill, 'sbCreatedOn' | 'sbModifiedOn' | 'sbBillDatetime' | 'sbSyncDate' | 'sbBillSlno' | 'sbDraftCheques'> & {
     sbCreatedOn?: string;
     sbModifiedOn?: string | null;
     sbBillDatetime?: string;
@@ -94,6 +94,7 @@ export type BillItemPayload = Omit<SaleBillItem, 'sbiCreatedOn' | 'sbiModifiedOn
 export type BillChargePayload = ChargeDetailPayload;
 export type BillTenderPayload = TenderDetailPayload & {
     tempCredit?: TenderTempCreditDto | null;
+    cheque?: TenderChequeDetailDto | null;
 };
 export type BillErrorDetail = {
     field: string;

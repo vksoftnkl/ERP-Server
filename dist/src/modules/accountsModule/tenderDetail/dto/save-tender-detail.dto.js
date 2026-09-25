@@ -9,7 +9,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.SaveTenderDetailDto = exports.TenderTempCreditDto = void 0;
+exports.SaveTenderDetailDto = exports.TenderChequeDetailDto = exports.TenderTempCreditDto = void 0;
 const swagger_1 = require("@nestjs/swagger");
 const class_transformer_1 = require("class-transformer");
 const class_validator_1 = require("class-validator");
@@ -64,7 +64,49 @@ __decorate([
     (0, dtoDecorators_1.NullableStringStrict)(250),
     __metadata("design:type", Object)
 ], TenderTempCreditDto.prototype, "notes", void 0);
+class TenderChequeDetailDto {
+    drawerName;
+    bankBranch;
+    ifsc;
+    micr;
+}
+exports.TenderChequeDetailDto = TenderChequeDetailDto;
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        maxLength: 150,
+        nullable: true,
+        example: 'Sri Krishna Traders',
+        description: 'Who signed the cheque. Null → the party name.',
+    }),
+    (0, dtoDecorators_1.NullableString)(150),
+    __metadata("design:type", Object)
+], TenderChequeDetailDto.prototype, "drawerName", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ maxLength: 100, nullable: true, example: 'Anna Nagar' }),
+    (0, dtoDecorators_1.NullableString)(100),
+    __metadata("design:type", Object)
+], TenderChequeDetailDto.prototype, "bankBranch", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        maxLength: 11,
+        nullable: true,
+        example: 'SBIN0001234',
+        description: 'Upper-cased before it is checked against ^[A-Z]{4}0[A-Z0-9]{6}$.',
+    }),
+    (0, dtoDecorators_1.NullableUpperMaxString)(11),
+    (0, class_validator_1.Matches)(/^[A-Z]{4}0[A-Z0-9]{6}$/, {
+        message: '$property must be an IFSC: 4 letters, a 0, then 6 letters or digits (SBIN0001234)',
+    }),
+    __metadata("design:type", Object)
+], TenderChequeDetailDto.prototype, "ifsc", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ maxLength: 9, nullable: true, example: '600002003' }),
+    (0, dtoDecorators_1.NullableString)(9),
+    (0, class_validator_1.Matches)(/^[0-9]{9}$/, { message: '$property must be a MICR code: exactly 9 digits' }),
+    __metadata("design:type", Object)
+], TenderChequeDetailDto.prototype, "micr", void 0);
 class SaveTenderDetailDto {
+    cheque;
     tempCredit;
     tdId;
     tdSrcModule;
@@ -114,6 +156,19 @@ class SaveTenderDetailDto {
     tdModifiedBy;
 }
 exports.SaveTenderDetailDto = SaveTenderDetailDto;
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        type: TenderChequeDetailDto,
+        nullable: true,
+        description: 'Only on a CHEQUE (type 5) row: drawer, bank branch, IFSC, MICR. Not a column — it is written ' +
+            'to the cheque register (acc_pdc_register) when the cheque is registered, and /get echoes it ' +
+            'back from there. Omitted on an update = keep what the register already holds.',
+    }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.ValidateNested)(),
+    (0, class_transformer_1.Type)(() => TenderChequeDetailDto),
+    __metadata("design:type", Object)
+], SaveTenderDetailDto.prototype, "cheque", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({
         type: TenderTempCreditDto,

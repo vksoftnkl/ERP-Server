@@ -30,6 +30,8 @@ import {
 } from '../posting/sales-doc.utils';
 import { BillService } from './bill.service';
 import { syncBillPdcRegister } from './bill-pdc-posting.helper';
+import { buildDraftCheques, readDraftCheques, toDraftChequesJson } from './bill-cheque-details';
+import type { SaveTenderDetailDto } from '../../accountsModule/tenderDetail/dto/save-tender-detail.dto';
 import { assertBooksReconcile } from '../../accountsModule/reconcile/books-reconcile.guard';
 import { encodeTempCreditTenders } from './bill-temp-credit';
 import type { RetenderBillDto } from './dto/bill-lifecycle.dto';
@@ -221,6 +223,23 @@ export class BillRetenderService {
         BILL_TENDER_AUDIT,
       );
       const newRows = created.filter((t) => !existing.some((e) => e.tdId === t.tdId));
+      // notes (48) — a new cheque row's drawer / branch / IFSC / MICR, by td_id.
+      // Positions line up with the array the sync was given, so the rows kept
+      // above (no `cheque`) are skipped and each new row finds its own.
+      const chequeDetails =
+        buildDraftCheques([...keep, ...dto.tenders] as SaveTenderDetailDto[], created, {}) ?? {};
+      if (bill.sbStatus !== 'POSTED' && Object.keys(chequeDetails).length > 0) {
+        // A DRAFT registers nothing yet: the details wait for /post with the rest.
+        await tx.saleBill.update({
+          where: { sbId_sbAccYear: { sbId: bill.sbId, sbAccYear: bill.sbAccYear } },
+          data: {
+            sbDraftCheques: toDraftChequesJson({
+              ...readDraftCheques(bill.sbDraftCheques),
+              ...chequeDetails,
+            }),
+          },
+        });
+      }
       for (const t of newRows) {
         await tx.$executeRaw`
           UPDATE accounts.acc_tender_detail SET td_replaces_id = ${replaces}::uuid
@@ -339,7 +358,7 @@ export class BillRetenderService {
           { voucherId: contra.voucherId, accYear: bill.sbAccYear },
           actor,
           now,
-          { keepStoredVoucher: true },
+          { keepStoredVoucher: true, details: chequeDetails },
         );
         contraVoucherId = contra.voucherId;
         // The receivable follows: a credit tender now leaves a balance; a cash one settles it.

@@ -12,6 +12,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.BillService = void 0;
 exports.flatTransportOf = flatTransportOf;
 const common_1 = require("@nestjs/common");
+const client_1 = require("@prisma/client");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const audit_log_service_1 = require("../../audit-log/audit-log.service");
 const bill_api_types_1 = require("./types/bill-api.types");
@@ -33,6 +34,7 @@ const sales_doc_utils_1 = require("../posting/sales-doc.utils");
 const bill_read_service_1 = require("./bill-read.service");
 const bill_adjustment_helper_1 = require("./bill-adjustment.helper");
 const bill_temp_credit_1 = require("./bill-temp-credit");
+const bill_cheque_details_1 = require("./bill-cheque-details");
 const txn_status_log_helper_1 = require("../../../common/txn-status-log/txn-status-log.helper");
 const BILL_VCHR_TYPE_ID = 3;
 const BILL_TABLE_NAME = 'sale_bill';
@@ -375,7 +377,8 @@ let BillService = class BillService {
             this.resolveGodowns(record.items),
             this.resolveCompanyNegStock(record.sbCompanyId),
         ]);
-        const payload = this.toPayload({ ...record, charges, tenders }, { godownById, companyAllowsNegStock });
+        const chequeById = await (0, bill_cheque_details_1.chequeDetailsFor)(this.prisma, tenders, record.sbDraftCheques);
+        const payload = this.toPayload({ ...record, charges, tenders }, { godownById, companyAllowsNegStock }, chequeById);
         return this.billRead.decorate(record, payload);
     }
     async lockHeader(tx, keys) {
@@ -464,6 +467,18 @@ let BillService = class BillService {
             return { sbId: existing.sbId, deleted: true };
         });
     }
+    async saveDraftCheques(tx, bill, payload, persisted) {
+        const next = (0, bill_cheque_details_1.buildDraftCheques)(payload, persisted, (0, bill_cheque_details_1.readDraftCheques)(bill.sbDraftCheques));
+        if (next === undefined) {
+            return bill.sbDraftCheques;
+        }
+        const json = (0, bill_cheque_details_1.toDraftChequesJson)(next);
+        await tx.saleBill.update({
+            where: { sbId_sbAccYear: { sbId: bill.sbId, sbAccYear: bill.sbAccYear } },
+            data: { sbDraftCheques: json },
+        });
+        return json === client_1.Prisma.DbNull ? null : json;
+    }
     toScope(bill) {
         return {
             sbId: bill.sbId,
@@ -527,12 +542,19 @@ let BillService = class BillService {
                 const items = await this.syncItems(tx, scope, saveBillDto.items, createdBy);
                 const charges = await this.chargeDetailService.syncDocumentCharges(tx, this.toChargeScope(scope), saveBillDto.charges, createdBy, bill_api_types_1.BILL_CHARGE_AUDIT);
                 const tenders = await this.tenderDetailService.syncDocumentTenders(tx, this.toTenderScope(scope, saveBillDto.tenders), (0, bill_temp_credit_1.encodeTempCreditTenders)(saveBillDto.tenders), createdBy, bill_api_types_1.BILL_TENDER_AUDIT);
+                const draftCheques = await this.saveDraftCheques(tx, created, saveBillDto.tenders, tenders);
                 await this.validateDraftAdjustments(tx, created, saveBillDto.adjustments);
                 await this.writeTransportBand(tx, created, saveBillDto, createdBy, now);
                 await this.saleOrderService.syncOrderFulfilment(tx, { refs: [...this.toOrderHeaderRefs(created), ...this.toOrderLineRefs(items)] }, createdBy, now);
                 await this.quotationService.syncQuotationConversion(tx, { refs: this.toQuotationRefs(created) }, createdBy, now);
                 await this.logStatusChange(tx, created, null, createdBy, now, null);
-                const payload = this.toPayload({ ...created, items, charges, tenders });
+                const payload = this.toPayload({
+                    ...created,
+                    sbDraftCheques: draftCheques,
+                    items,
+                    charges,
+                    tenders,
+                });
                 await this.auditLogService.logEntityChange({
                     action: 'New',
                     tableName: BILL_TABLE_NAME,
@@ -602,6 +624,7 @@ let BillService = class BillService {
         const items = await this.syncItems(tx, scope, saveBillDto.items, modifiedBy);
         const charges = await this.chargeDetailService.syncDocumentCharges(tx, this.toChargeScope(scope), saveBillDto.charges, modifiedBy, bill_api_types_1.BILL_CHARGE_AUDIT);
         const tenders = await this.tenderDetailService.syncDocumentTenders(tx, this.toTenderScope(scope, saveBillDto.tenders), (0, bill_temp_credit_1.encodeTempCreditTenders)(saveBillDto.tenders), modifiedBy, bill_api_types_1.BILL_TENDER_AUDIT);
+        const draftCheques = await this.saveDraftCheques(tx, updated, saveBillDto.tenders, tenders);
         await this.validateDraftAdjustments(tx, updated, saveBillDto.adjustments);
         await this.writeTransportBand(tx, updated, saveBillDto, modifiedBy, now);
         await this.saleOrderService.syncOrderFulfilment(tx, {
@@ -613,7 +636,13 @@ let BillService = class BillService {
             ],
         }, modifiedBy, now);
         await this.quotationService.syncQuotationConversion(tx, { refs: [...this.toQuotationRefs(existing), ...this.toQuotationRefs(updated)] }, modifiedBy, now);
-        const payload = this.toPayload({ ...updated, items, charges, tenders });
+        const payload = this.toPayload({
+            ...updated,
+            sbDraftCheques: draftCheques,
+            items,
+            charges,
+            tenders,
+        });
         await this.auditLogService.logEntityChange({
             action: 'update',
             tableName: BILL_TABLE_NAME,
@@ -626,7 +655,7 @@ let BillService = class BillService {
             userId: modifiedBy,
             notes: opts.notes ?? 'Bill updated',
         }, tx);
-        return { updated, items };
+        return { updated: { ...updated, sbDraftCheques: draftCheques }, items };
     }
     async applyCustomerSnapshot(tx, data, dto, walkInCustomerId) {
         const custId = dto.sbCustId;
@@ -1128,8 +1157,10 @@ let BillService = class BillService {
         });
         return company?.compNegStkApl ?? null;
     }
-    toPayload(record, lineContext = EMPTY_LINE_CONTEXT) {
-        const { sbCreatedOn, sbModifiedOn, sbBillDatetime, sbSyncDate, sbBillSlno, items, charges, tenders, ...rest } = record;
+    toPayload(record, lineContext = EMPTY_LINE_CONTEXT, chequeById) {
+        const drafts = chequeById ? null : (0, bill_cheque_details_1.readDraftCheques)(record.sbDraftCheques);
+        const { sbDraftCheques: _draftCheques, sbCreatedOn, sbModifiedOn, sbBillDatetime, sbSyncDate, sbBillSlno, items, charges, tenders, ...rest } = record;
+        void _draftCheques;
         return {
             ...rest,
             sbCreatedOn: sbCreatedOn?.toISOString(),
@@ -1141,7 +1172,17 @@ let BillService = class BillService {
             charges: charges ?? [],
             tenders: (tenders ?? []).map((t) => {
                 const tc = (0, bill_temp_credit_1.decodeTempCredit)(t);
-                return { ...t, tempCredit: tc ? (0, bill_temp_credit_1.toTempCreditDto)(tc) : null };
+                const isCheque = Number(t.tdTenderTypeId) === sales_doc_utils_1.TENDER_TYPE.CHEQUE;
+                const cheque = !isCheque
+                    ? null
+                    : chequeById
+                        ? (chequeById.get(t.tdId) ?? null)
+                        : (drafts?.[t.tdId] ?? null);
+                return {
+                    ...t,
+                    tempCredit: tc ? (0, bill_temp_credit_1.toTempCreditDto)(tc) : null,
+                    cheque,
+                };
             }),
         };
     }

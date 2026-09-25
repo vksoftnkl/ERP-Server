@@ -18,6 +18,7 @@ import { TenderDetailService } from '../../accountsModule/tenderDetail/tender-de
 import { SaleOrderService } from '../sale-order/sale-order.service';
 import { QuotationService } from '../quotation/quotation.service';
 import { BillService } from './bill.service';
+import { readDraftCheques } from './bill-cheque-details';
 import { BillReadService } from './bill-read.service';
 import { SalesContextService } from '../posting/sales-context.service';
 import { SalesDocBlocksService } from '../posting/sales-doc-blocks.service';
@@ -1334,6 +1335,45 @@ describe('BillService', () => {
   });
 
   describe('tendered amounts', () => {
+    it('hands /bills/amend the cheque details it just saved (notes 48, bil00721)', async () => {
+      // The amend re-posts from the object applySaveInTx returns. It used to be
+      // the row as read BEFORE sb_draft_cheques was written, so the re-post
+      // registered the cheque with no drawer / branch / IFSC / MICR.
+      prisma.accTenderMaster.findFirst.mockResolvedValue({
+        tndName: 'Cheque',
+        tndTypeId: 5,
+        tndLedgerId: TENDER_LEDGER_ID,
+      });
+      prisma.accTenderType.findFirst.mockResolvedValue({ ttmTypeId: 5 });
+      const cheque = {
+        drawerName: 'ZT DRAWER',
+        bankBranch: 'ZT BRANCH',
+        ifsc: 'SBIN0001234',
+        micr: '600002003',
+      };
+
+      const { updated } = await service.applySaveInTx(
+        prisma as unknown as Prisma.TransactionClient,
+        makeBill(),
+        baseDto({
+          sbId: BILL_ID,
+          tenders: [
+            {
+              tdTenderId: TENDER_ID,
+              tdAmount: 500,
+              tdRefNo: 'KLOPA',
+              tdInstrumentDate: '2026-07-28',
+              cheque,
+            },
+          ],
+        }),
+        USER_ID,
+        new Date(),
+      );
+
+      expect(readDraftCheques(updated.sbDraftCheques)).toEqual({ [TD_ID]: cheque });
+    });
+
     it('creates tender lines under SALES / SALE_BILL, defaulting the parent scope', async () => {
       await service.save(baseDto({ tenders: [{ tdTenderId: TENDER_ID, tdAmount: 500 }] }));
 

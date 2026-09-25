@@ -26,6 +26,7 @@ const posting_types_1 = require("../posting/types/posting.types");
 const sales_doc_utils_1 = require("../posting/sales-doc.utils");
 const bill_service_1 = require("./bill.service");
 const bill_pdc_posting_helper_1 = require("./bill-pdc-posting.helper");
+const bill_cheque_details_1 = require("./bill-cheque-details");
 const books_reconcile_guard_1 = require("../../accountsModule/reconcile/books-reconcile.guard");
 const bill_temp_credit_1 = require("./bill-temp-credit");
 const bill_api_types_1 = require("./types/bill-api.types");
@@ -134,6 +135,18 @@ let BillRetenderService = class BillRetenderService {
             const keep = existing.map((t) => ({ tdId: t.tdId }));
             const created = await this.tenders.syncDocumentTenders(tx, scope, [...keep, ...((0, bill_temp_credit_1.encodeTempCreditTenders)(dto.tenders) ?? [])], actor, bill_api_types_1.BILL_TENDER_AUDIT);
             const newRows = created.filter((t) => !existing.some((e) => e.tdId === t.tdId));
+            const chequeDetails = (0, bill_cheque_details_1.buildDraftCheques)([...keep, ...dto.tenders], created, {}) ?? {};
+            if (bill.sbStatus !== 'POSTED' && Object.keys(chequeDetails).length > 0) {
+                await tx.saleBill.update({
+                    where: { sbId_sbAccYear: { sbId: bill.sbId, sbAccYear: bill.sbAccYear } },
+                    data: {
+                        sbDraftCheques: (0, bill_cheque_details_1.toDraftChequesJson)({
+                            ...(0, bill_cheque_details_1.readDraftCheques)(bill.sbDraftCheques),
+                            ...chequeDetails,
+                        }),
+                    },
+                });
+            }
             for (const t of newRows) {
                 await tx.$executeRaw `
           UPDATE accounts.acc_tender_detail SET td_replaces_id = ${replaces}::uuid
@@ -234,7 +247,7 @@ let BillRetenderService = class BillRetenderService {
                     },
                     legs,
                 });
-                await (0, bill_pdc_posting_helper_1.syncBillPdcRegister)(tx, bill, { voucherId: contra.voucherId, accYear: bill.sbAccYear }, actor, now, { keepStoredVoucher: true });
+                await (0, bill_pdc_posting_helper_1.syncBillPdcRegister)(tx, bill, { voucherId: contra.voucherId, accYear: bill.sbAccYear }, actor, now, { keepStoredVoucher: true, details: chequeDetails });
                 contraVoucherId = contra.voucherId;
                 const creditTypes = [sales_doc_utils_1.TENDER_TYPE.CREDIT, sales_doc_utils_1.TENDER_TYPE.TEMP_CREDIT];
                 const settled = (0, sales_doc_utils_1.round2)(created

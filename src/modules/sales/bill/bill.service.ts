@@ -68,10 +68,17 @@ import { SalesDocBlocksService } from '../posting/sales-doc-blocks.service';
 import { TransportBandService, type TransportBandInput } from '../posting/transport-band.service';
 import { throwSalesLocked } from '../posting/sales.errors';
 import { SALES_ERROR_CODES } from '../posting/types/posting.types';
-import { num } from '../posting/sales-doc.utils';
+import { num, TENDER_TYPE } from '../posting/sales-doc.utils';
 import { BillReadService } from './bill-read.service';
 import { loadSetOffCredits, splitSetOffs } from './bill-adjustment.helper';
 import { decodeTempCredit, encodeTempCreditTenders, toTempCreditDto } from './bill-temp-credit';
+import {
+  buildDraftCheques,
+  chequeDetailsFor,
+  readDraftCheques,
+  toDraftChequesJson,
+} from './bill-cheque-details';
+import type { TenderChequeDetailDto } from '../../accountsModule/tenderDetail/dto/save-tender-detail.dto';
 import {
   TxnStatusEvent,
   appendTxnStatusLog,
@@ -544,9 +551,17 @@ export class BillService {
       this.resolveGodowns(record.items),
       this.resolveCompanyNegStock(record.sbCompanyId),
     ]);
+    // notes (48): a cheque row echoes its drawer / branch / IFSC / MICR from
+    // the register row once posted, from the draft's scratch before that.
+    const chequeById = await chequeDetailsFor(
+      this.prisma as unknown as Prisma.TransactionClient,
+      tenders,
+      record.sbDraftCheques,
+    );
     const payload = this.toPayload(
       { ...record, charges, tenders },
       { godownById, companyAllowsNegStock },
+      chequeById,
     );
     return this.billRead.decorate(record, payload);
   }
@@ -704,6 +719,28 @@ export class BillService {
       return { sbId: existing.sbId, deleted: true as const };
     });
   }
+  /**
+   * notes (48) — the draft's cheque details after a save, written to
+   * sb_draft_cheques (keyed by td_id) and returned for the response. A payload
+   * that omitted `tenders` leaves the column as it was.
+   */
+  private async saveDraftCheques(
+    tx: Prisma.TransactionClient,
+    bill: SaleBill,
+    payload: SaveBillDto['tenders'],
+    persisted: BillTenderPayload[],
+  ): Promise<Prisma.JsonValue | null> {
+    const next = buildDraftCheques(payload, persisted, readDraftCheques(bill.sbDraftCheques));
+    if (next === undefined) {
+      return bill.sbDraftCheques;
+    }
+    const json = toDraftChequesJson(next);
+    await tx.saleBill.update({
+      where: { sbId_sbAccYear: { sbId: bill.sbId, sbAccYear: bill.sbAccYear } },
+      data: { sbDraftCheques: json },
+    });
+    return json === Prisma.DbNull ? null : (json as Prisma.JsonValue);
+  }
   private toScope(bill: SaleBill): BillScope {
     return {
       sbId: bill.sbId,
@@ -791,6 +828,8 @@ export class BillService {
           createdBy,
           BILL_TENDER_AUDIT,
         );
+        // notes (48): the cheque details wait here until /post registers them.
+        const draftCheques = await this.saveDraftCheques(tx, created, saveBillDto.tenders, tenders);
         // A DRAFT has no receivable yet, so the set-offs are only CHECKED here
         // (the credit exists, belongs to the party, covers the amount) and their
         // totals are kept in sbAdvanceAmt / sbNoteAdjAmt; /bills/post writes the rows.
@@ -811,7 +850,13 @@ export class BillService {
           now,
         );
         await this.logStatusChange(tx, created, null, createdBy, now, null);
-        const payload = this.toPayload({ ...created, items, charges, tenders });
+        const payload = this.toPayload({
+          ...created,
+          sbDraftCheques: draftCheques,
+          items,
+          charges,
+          tenders,
+        });
         await this.auditLogService.logEntityChange(
           {
             action: 'New',
@@ -933,6 +978,8 @@ export class BillService {
       modifiedBy,
       BILL_TENDER_AUDIT,
     );
+    // notes (48): the cheque details wait here until /post registers them.
+    const draftCheques = await this.saveDraftCheques(tx, updated, saveBillDto.tenders, tenders);
     await this.validateDraftAdjustments(tx, updated, saveBillDto.adjustments);
     await this.writeTransportBand(tx, updated, saveBillDto, modifiedBy, now);
     await this.saleOrderService.syncOrderFulfilment(
@@ -954,7 +1001,13 @@ export class BillService {
       modifiedBy,
       now,
     );
-    const payload = this.toPayload({ ...updated, items, charges, tenders });
+    const payload = this.toPayload({
+      ...updated,
+      sbDraftCheques: draftCheques,
+      items,
+      charges,
+      tenders,
+    });
     await this.auditLogService.logEntityChange(
       {
         action: 'update',
@@ -970,7 +1023,11 @@ export class BillService {
       },
       tx,
     );
-    return { updated, items };
+    // The row as it now stands: /bills/amend re-posts from THIS object, and the
+    // update above ran before saveDraftCheques wrote sb_draft_cheques — handing
+    // back the stale copy registered the amend's cheques with no drawer /
+    // branch / IFSC / MICR (notes 48, bil00721).
+    return { updated: { ...updated, sbDraftCheques: draftCheques }, items };
   }
   /**
    * HANDOVER §2.1: the walk-in customer keeps whatever `sbCust*` the client
@@ -1775,8 +1832,14 @@ export class BillService {
       tenders?: BillTenderPayload[];
     },
     lineContext: BillLineContext = EMPTY_LINE_CONTEXT,
+    // td_id → the cheque details to echo. Omitted → the draft's own, which is
+    // all a save's response has (nothing is registered before /post).
+    chequeById?: ReadonlyMap<string, TenderChequeDetailDto | null>,
   ): BillPayload {
+    const drafts = chequeById ? null : readDraftCheques(record.sbDraftCheques);
     const {
+      // Scratch for /post, never part of the answer.
+      sbDraftCheques: _draftCheques,
       sbCreatedOn,
       sbModifiedOn,
       sbBillDatetime,
@@ -1787,6 +1850,7 @@ export class BillService {
       tenders,
       ...rest
     } = record;
+    void _draftCheques;
     return {
       ...rest,
       sbCreatedOn: sbCreatedOn?.toISOString(),
@@ -1799,9 +1863,21 @@ export class BillService {
       items: items ? items.map((item) => this.toItemPayload(item, lineContext)) : [],
       charges: charges ?? [],
       // A TEMP_CR row's parked details come back decoded, as the DTO took them.
+      // A CHEQUE row's details come back as `cheque` (notes 48), in the shape
+      // the DTO took them, so an amend re-sends what was keyed.
       tenders: (tenders ?? []).map((t) => {
         const tc = decodeTempCredit(t);
-        return { ...t, tempCredit: tc ? toTempCreditDto(tc) : null };
+        const isCheque = Number(t.tdTenderTypeId) === TENDER_TYPE.CHEQUE;
+        const cheque = !isCheque
+          ? null
+          : chequeById
+            ? (chequeById.get(t.tdId) ?? null)
+            : (drafts?.[t.tdId] ?? null);
+        return {
+          ...t,
+          tempCredit: tc ? toTempCreditDto(tc) : null,
+          cheque,
+        };
       }),
     };
   }

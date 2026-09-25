@@ -5,6 +5,8 @@ exports.syncDocPdcRegister = syncDocPdcRegister;
 exports.cancelDocPdcRegister = cancelDocPdcRegister;
 exports.assertDocPdcHeld = assertDocPdcHeld;
 exports.findDocPdcRows = findDocPdcRows;
+exports.matchChequeDetails = matchChequeDetails;
+exports.readPdcChequeDetails = readPdcChequeDetails;
 const client_1 = require("@prisma/client");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
 exports.CHEQUE_TENDER_TYPE_ID = 5;
@@ -17,6 +19,7 @@ const PDC_POSTING_ON_CLEARING = 'ON_CLEARING';
 const INSTRUMENT_NO_MAX_LENGTH = 30;
 const BANK_NAME_MAX_LENGTH = 100;
 const DRAWER_NAME_MAX_LENGTH = 150;
+const BANK_BRANCH_MAX_LENGTH = 100;
 const CANCEL_REASON_MAX_LENGTH = 250;
 const INSTRUMENT_DATE_MONTHS_BACK = 3;
 const INSTRUMENT_DATE_YEARS_FORWARD = 1;
@@ -54,12 +57,12 @@ async function syncDocPdcRegister(tx, doc, rules, tenders, voucher, actor, now, 
             apdInstrumentDate: requireInstrumentDate(cheque, received, rules),
             apdAmount: cheque.tdTotalAmt,
             apdBankName: cheque.tdBankName?.slice(0, BANK_NAME_MAX_LENGTH) ?? null,
-            apdDrawerName: doc.partyName?.slice(0, DRAWER_NAME_MAX_LENGTH) ?? null,
             apdReceivedOn: received,
             apdBankLedgerId: cheque.tdSettleLedgerId ?? null,
             apdTenderId: cheque.tdId,
             apdRemarks: describeCheque(cheque, doc, rules),
         };
+        const detailData = stored && cheque.cheque === undefined ? {} : toDetailData(cheque.cheque ?? null, doc);
         const voucherData = {
             apdPostingMode: voucher ? PDC_POSTING_ON_RECEIPT : PDC_POSTING_ON_CLEARING,
             apdVoucherId: voucher?.voucherId ?? null,
@@ -71,6 +74,7 @@ async function syncDocPdcRegister(tx, doc, rules, tenders, voucher, actor, now, 
                 where: { apdId_apdAccYear: { apdId: stored.apdId, apdAccYear: stored.apdAccYear } },
                 data: {
                     ...data,
+                    ...detailData,
                     ...(opts.keepStoredVoucher ? {} : voucherData),
                     apdModifiedOn: now,
                     apdModifiedBy: actor,
@@ -82,6 +86,7 @@ async function syncDocPdcRegister(tx, doc, rules, tenders, voucher, actor, now, 
         const created = await tx.accPdcRegister.create({
             data: {
                 ...data,
+                ...detailData,
                 ...voucherData,
                 apdAccYear: doc.accYear,
                 apdStatus: exports.PDC_STATUS_HELD,
@@ -258,6 +263,68 @@ async function cancelPdcRow(tx, row, reason, statusBy, actor, now, deleted) {
             apdModifiedBy: actor,
         },
     });
+}
+function toDetailData(detail, doc) {
+    return {
+        apdDrawerName: (detail?.drawerName?.trim() || doc.partyName)?.slice(0, DRAWER_NAME_MAX_LENGTH) ?? null,
+        apdBankBranch: detail?.bankBranch?.trim().slice(0, BANK_BRANCH_MAX_LENGTH) || null,
+        apdIfsc: detail?.ifsc?.trim().toUpperCase() || null,
+        apdMicr: detail?.micr?.trim() || null,
+    };
+}
+function matchChequeDetails(payload, persisted) {
+    const live = persisted.filter((row) => !row.tdIsDeleted && Number(row.tdTenderTypeId) === exports.CHEQUE_TENDER_TYPE_ID);
+    const out = {};
+    payload.forEach((sent, index) => {
+        if (sent.cheque === undefined) {
+            return;
+        }
+        const rowNo = sent.tdRowNo ?? index + 1;
+        const row = sent.tdId
+            ? live.find((r) => r.tdId === sent.tdId)
+            : live.find((r) => r.tdRowNo === rowNo);
+        if (row) {
+            out[row.tdId] = sent.cheque
+                ? {
+                    drawerName: sent.cheque.drawerName ?? null,
+                    bankBranch: sent.cheque.bankBranch ?? null,
+                    ifsc: sent.cheque.ifsc ?? null,
+                    micr: sent.cheque.micr ?? null,
+                }
+                : null;
+        }
+    });
+    return out;
+}
+async function readPdcChequeDetails(client, tenderIds) {
+    if (tenderIds.length === 0) {
+        return new Map();
+    }
+    const rows = await client.accPdcRegister.findMany({
+        where: {
+            apdTenderId: { in: [...tenderIds] },
+            apdIsDeleted: false,
+            apdStatus: { not: exports.PDC_STATUS_CANCELLED },
+        },
+        select: {
+            apdTenderId: true,
+            apdDrawerName: true,
+            apdBankBranch: true,
+            apdIfsc: true,
+            apdMicr: true,
+        },
+    });
+    return new Map(rows
+        .filter((row) => row.apdTenderId !== null)
+        .map((row) => [
+        row.apdTenderId,
+        {
+            drawerName: row.apdDrawerName,
+            bankBranch: row.apdBankBranch,
+            ifsc: row.apdIfsc,
+            micr: row.apdMicr,
+        },
+    ]));
 }
 function describeCheque(cheque, doc, rules) {
     const note = cheque.tdNotes?.trim();

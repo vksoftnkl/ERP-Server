@@ -37,6 +37,7 @@ const posting_types_1 = require("../posting/types/posting.types");
 const sales_doc_utils_1 = require("../posting/sales-doc.utils");
 const bill_service_1 = require("./bill.service");
 const books_reconcile_guard_1 = require("../../accountsModule/reconcile/books-reconcile.guard");
+const bill_cheque_details_1 = require("./bill-cheque-details");
 const bill_pdc_posting_helper_1 = require("./bill-pdc-posting.helper");
 const bill_adjustment_helper_1 = require("./bill-adjustment.helper");
 const bill_snapshot_1 = require("./bill-snapshot");
@@ -832,7 +833,7 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
             },
             legs,
         });
-        await (0, bill_pdc_posting_helper_1.syncBillPdcRegister)(tx, bill, { voucherId: voucher.voucherId, accYear: bill.sbAccYear }, actor, now);
+        await (0, bill_pdc_posting_helper_1.syncBillPdcRegister)(tx, bill, { voucherId: voucher.voucherId, accYear: bill.sbAccYear }, actor, now, { details: (0, bill_cheque_details_1.readDraftCheques)(bill.sbDraftCheques) });
         const reg = await this.register.write(tx, this.registerDoc(bill, snap, voucher.voucherId, voucher.voucherLastNo, supplyNature, actor), {
             companyEinvoiceFlag: company?.comp_einvoice_applicable ?? false,
             interState: supplyNature === 'INTER',
@@ -971,6 +972,7 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
                 sbPayStatus: balance <= 0.005 ? 'PAID' : paid > 0 ? 'PARTIAL' : 'UNPAID',
                 sbDeliveryStatus: snap.billMode === 'POS' ? 'NA' : 'PENDING',
                 sbRevisionNo: revisionNo,
+                sbDraftCheques: client_1.Prisma.DbNull,
                 sbHasDc: snap.items.some((i) => i.srcDocType === 'DELIVERY_CHALLAN'),
                 sbModifiedOn: now,
                 sbModifiedBy: ctx.actorName,

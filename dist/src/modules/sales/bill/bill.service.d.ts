@@ -44,6 +44,7 @@ export declare class BillService {
         sbId: string;
         deleted: true;
     }>;
+    private saveDraftCheques;
     private toScope;
     private createBill;
     private updateBill;

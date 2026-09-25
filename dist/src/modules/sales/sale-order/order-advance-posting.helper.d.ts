@@ -1,4 +1,5 @@
 import { Prisma } from '@prisma/client';
+import type { PdcChequeDetail } from '../posting/pdc-register.helper';
 export declare const ORDER_ADVANCE_VCHR_TYPE_ID = 5;
 export interface OrderAdvancePostingRef {
     soId: string;
@@ -44,6 +45,7 @@ export interface OrderAdvanceTenderLine {
     tdInstrumentDate: Date | null;
     tdBankName: string | null;
     tdSettleLedgerId: string | null;
+    cheque?: PdcChequeDetail | null;
 }
 export interface OrderAdvancePostingResult {
     voucherId: string;

@@ -16,34 +16,11 @@ const class_validator_1 = require("class-validator");
 const dtoDecorators_1 = require("../../../../common/dto/dtoDecorators");
 const receipt_enum_1 = require("../types/receipt-enum");
 const post_receipt_dto_1 = require("./post-receipt.dto");
-class SaveReceiptChequeDto {
-    bankBranch;
-    ifsc;
-    micr;
-    drawerName;
+const save_tender_detail_dto_1 = require("../../tenderDetail/dto/save-tender-detail.dto");
+class SaveReceiptChequeDto extends save_tender_detail_dto_1.TenderChequeDetailDto {
     bankLedgerId;
 }
 exports.SaveReceiptChequeDto = SaveReceiptChequeDto;
-__decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true, maxLength: 100 }),
-    (0, dtoDecorators_1.NullableString)(100),
-    __metadata("design:type", Object)
-], SaveReceiptChequeDto.prototype, "bankBranch", void 0);
-__decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true, maxLength: 11, example: 'KVBL0001234' }),
-    (0, dtoDecorators_1.NullableString)(11),
-    __metadata("design:type", Object)
-], SaveReceiptChequeDto.prototype, "ifsc", void 0);
-__decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true, maxLength: 9 }),
-    (0, dtoDecorators_1.NullableString)(9),
-    __metadata("design:type", Object)
-], SaveReceiptChequeDto.prototype, "micr", void 0);
-__decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true, maxLength: 150, example: 'Sri Krishna Traders' }),
-    (0, dtoDecorators_1.NullableString)(150),
-    __metadata("design:type", Object)
-], SaveReceiptChequeDto.prototype, "drawerName", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({
         format: 'uuid',

@@ -4,6 +4,7 @@ import {
   cancelDocPdcRegister,
   CHEQUE_TENDER_TYPE_ID,
   syncDocPdcRegister,
+  type PdcChequeDetail,
   type PdcDocument,
   type PdcDocumentRules,
   type PdcTenderLine,
@@ -76,13 +77,21 @@ export async function syncBillPdcRegister(
   voucher: { voucherId: string; accYear: string },
   actor: string,
   now: Date,
-  opts: { keepStoredVoucher?: boolean } = {},
+  opts: {
+    keepStoredVoucher?: boolean;
+    // notes (48) — drawer / branch / IFSC / MICR by td_id. A row with no
+    // entry keeps what its register row already holds.
+    details?: Record<string, PdcChequeDetail | null>;
+  } = {},
 ): Promise<string[]> {
   const doc = toPdcDocument(bill);
   if (!doc) {
     return [];
   }
-  const tenders = await loadLiveTenders(tx, bill);
+  const details = opts.details ?? {};
+  const tenders = (await loadLiveTenders(tx, bill)).map((tender) =>
+    tender.tdId in details ? { ...tender, cheque: details[tender.tdId] } : tender,
+  );
   return syncDocPdcRegister(tx, doc, BILL_RULES, tenders, voucher, actor, now, {
     keepStoredVoucher: opts.keepStoredVoucher,
     removedReason: TENDER_REMOVED_CANCEL_REASON,

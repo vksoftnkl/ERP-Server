@@ -24,6 +24,7 @@ const request_context_service_1 = require("../../../common/request-context/reque
 const voucher_sequence_helper_1 = require("../../../common/Sequence/voucher-sequence.helper");
 const tax_rate_reference_helper_1 = require("../../Inventory/tax-rate-master/utils/tax-rate-reference.helper");
 const order_advance_posting_helper_1 = require("./order-advance-posting.helper");
+const pdc_register_helper_1 = require("../posting/pdc-register.helper");
 const SALE_ORDER_VCHR_TYPE_ID = 4;
 const SALE_ORDER_TABLE_NAME = 'sale_order';
 const SALE_ORDER_ITEM_TABLE_NAME = 'sale_order_item';
@@ -432,12 +433,13 @@ let SaleOrderService = class SaleOrderService {
         const charges = await this.chargeDetailService.getByDocument(sale_order_api_types_1.SALE_ORDER_CHARGE_DOC_TYPE, soId);
         const tenders = await this.tenderDetailService.getByDocument(sale_order_api_types_1.SALE_ORDER_TENDER_SRC_MODULE, sale_order_api_types_1.SALE_ORDER_TENDER_SRC_DOC_TYPE, soId);
         const names = await this.resolveDisplayNames(record, charges, tenders);
+        const tendersWithCheques = await this.withChequeDetails(this.prisma, tenders);
         const live = await (0, order_advance_posting_helper_1.readOrderAdvanceBalance)(this.prisma, record);
         return this.toPayload({
             ...record,
             ...(live ? this.advanceRollupsFromLive(record, live) : {}),
             charges,
-            tenders,
+            tenders: tendersWithCheques,
         }, names);
     }
     async getSrcDocPendingAmount(ablSrcDocType, ablSrcDocId, ablSrcAccYear) {
@@ -1197,9 +1199,14 @@ let SaleOrderService = class SaleOrderService {
                 const items = await this.syncItems(tx, scope, saveOrderDto.items, createdBy);
                 const charges = await this.chargeDetailService.syncDocumentCharges(tx, this.toChargeScope(scope), saveOrderDto.charges, createdBy, sale_order_api_types_1.SALE_ORDER_CHARGE_AUDIT);
                 const tenders = await this.tenderDetailService.syncDocumentTenders(tx, this.toTenderScope(scope), saveOrderDto.tenders, createdBy, sale_order_api_types_1.SALE_ORDER_TENDER_AUDIT);
-                const posting = await this.syncAdvanceVoucher(tx, created, createdBy, now);
+                const posting = await this.syncAdvanceVoucher(tx, created, createdBy, now, (0, pdc_register_helper_1.matchChequeDetails)(saveOrderDto.tenders ?? [], tenders));
                 const restated = await this.restateAdvanceRollups(tx, created, posting, saveOrderDto);
-                const payload = this.toPayload({ ...restated, items, charges, tenders });
+                const payload = this.toPayload({
+                    ...restated,
+                    items,
+                    charges,
+                    tenders: await this.withChequeDetails(tx, tenders),
+                });
                 await this.auditLogService.logEntityChange({
                     action: 'New',
                     tableName: SALE_ORDER_TABLE_NAME,
@@ -1273,9 +1280,14 @@ let SaleOrderService = class SaleOrderService {
                 const postingSource = saveOrderDto.tenders !== undefined && saveOrderDto.soAdvanceRecdAmt === undefined
                     ? { ...updated, soAdvanceRecdAmt: ZERO }
                     : updated;
-                const posting = await this.syncAdvanceVoucher(tx, postingSource, modifiedBy, now);
+                const posting = await this.syncAdvanceVoucher(tx, postingSource, modifiedBy, now, (0, pdc_register_helper_1.matchChequeDetails)(saveOrderDto.tenders ?? [], tenders));
                 const restated = await this.restateAdvanceRollups(tx, updated, posting, saveOrderDto);
-                const payload = this.toPayload({ ...restated, items, charges, tenders });
+                const payload = this.toPayload({
+                    ...restated,
+                    items,
+                    charges,
+                    tenders: await this.withChequeDetails(tx, tenders),
+                });
                 await this.auditLogService.logEntityChange({
                     action: 'update',
                     tableName: SALE_ORDER_TABLE_NAME,
@@ -1434,9 +1446,17 @@ let SaleOrderService = class SaleOrderService {
             }, tx);
         }
     }
-    async syncAdvanceVoucher(tx, order, actor, now) {
+    async syncAdvanceVoucher(tx, order, actor, now, chequeDetails = {}) {
         const tenders = await this.tenderDetailService.findDocumentTenders(tx, sale_order_api_types_1.SALE_ORDER_TENDER_SRC_MODULE, sale_order_api_types_1.SALE_ORDER_TENDER_SRC_DOC_TYPE, order.soId);
-        return (0, order_advance_posting_helper_1.syncOrderAdvancePosting)(tx, order, tenders, actor, now);
+        return (0, order_advance_posting_helper_1.syncOrderAdvancePosting)(tx, order, tenders.map((tender) => tender.tdId in chequeDetails ? { ...tender, cheque: chequeDetails[tender.tdId] } : tender), actor, now);
+    }
+    async withChequeDetails(client, tenders) {
+        const isCheque = (t) => Number(t.tdTenderTypeId) === pdc_register_helper_1.CHEQUE_TENDER_TYPE_ID;
+        const details = await (0, pdc_register_helper_1.readPdcChequeDetails)(client, tenders.filter(isCheque).map((t) => t.tdId));
+        return tenders.map((t) => ({
+            ...t,
+            cheque: isCheque(t) ? (details.get(t.tdId) ?? null) : null,
+        }));
     }
     describeDuplicate(error) {
         const target = error?.meta?.target;

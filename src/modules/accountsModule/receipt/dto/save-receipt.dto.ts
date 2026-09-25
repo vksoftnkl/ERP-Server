@@ -15,6 +15,7 @@ import {
 } from 'src/common/dto/dtoDecorators';
 import { DrCr, VoucherDeviceType } from '../types/receipt-enum';
 import { PostReceiptAllocationDto, PostReceiptCreditDto, ReceiptKeysDto } from './post-receipt.dto';
+import { TenderChequeDetailDto } from '../../tenderDetail/dto/save-tender-detail.dto';
 
 /**
  * §4.3 — `POST /receipts/create`, the DRAFT.
@@ -30,24 +31,11 @@ import { PostReceiptAllocationDto, PostReceiptCreditDto, ReceiptKeysDto } from '
  * leg (R10).
  */
 
-/** The cheque detail that does not fit on a tender row. */
-export class SaveReceiptChequeDto {
-  @ApiPropertyOptional({ nullable: true, maxLength: 100 })
-  @NullableString(100)
-  bankBranch?: string | null;
-
-  @ApiPropertyOptional({ nullable: true, maxLength: 11, example: 'KVBL0001234' })
-  @NullableString(11)
-  ifsc?: string | null;
-
-  @ApiPropertyOptional({ nullable: true, maxLength: 9 })
-  @NullableString(9)
-  micr?: string | null;
-
-  @ApiPropertyOptional({ nullable: true, maxLength: 150, example: 'Sri Krishna Traders' })
-  @NullableString(150)
-  drawerName?: string | null;
-
+/**
+ * The cheque detail that does not fit on a tender row — the shared shape the
+ * sale bill and sale order take too (notes 48), plus the deposit bank.
+ */
+export class SaveReceiptChequeDto extends TenderChequeDetailDto {
   @ApiPropertyOptional({
     format: 'uuid',
     nullable: true,

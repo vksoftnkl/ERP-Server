@@ -8,7 +8,14 @@ export declare class TenderTempCreditDto {
     days?: number;
     notes?: string | null;
 }
+export declare class TenderChequeDetailDto {
+    drawerName?: string | null;
+    bankBranch?: string | null;
+    ifsc?: string | null;
+    micr?: string | null;
+}
 export declare class SaveTenderDetailDto {
+    cheque?: TenderChequeDetailDto | null;
     tempCredit?: TenderTempCreditDto | null;
     tdId?: string;
     tdSrcModule?: TenderSrcModule;

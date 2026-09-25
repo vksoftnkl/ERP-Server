@@ -60,6 +60,7 @@ import {
 } from '../posting/sales-doc.utils';
 import { BillService } from './bill.service';
 import { assertBooksReconcile } from '../../accountsModule/reconcile/books-reconcile.guard';
+import { readDraftCheques } from './bill-cheque-details';
 import {
   assertBillPdcHeld,
   cancelBillPdcRegister,
@@ -1289,6 +1290,8 @@ export class BillLifecycleService {
       { voucherId: voucher.voucherId, accYear: bill.sbAccYear },
       actor,
       now,
+      // notes (48): drawer / branch / IFSC / MICR the draft kept for /post.
+      { details: readDraftCheques(bill.sbDraftCheques) },
     );
 
     // 4 · the GST view.
@@ -1479,6 +1482,8 @@ export class BillLifecycleService {
         sbPayStatus: balance <= 0.005 ? 'PAID' : paid > 0 ? 'PARTIAL' : 'UNPAID',
         sbDeliveryStatus: snap.billMode === 'POS' ? 'NA' : 'PENDING',
         sbRevisionNo: revisionNo,
+        // The draft's cheque details are in the register now (step 3b).
+        sbDraftCheques: Prisma.DbNull,
         sbHasDc: snap.items.some((i) => i.srcDocType === 'DELIVERY_CHALLAN'),
         sbModifiedOn: now,
         sbModifiedBy: ctx.actorName,

@@ -223,6 +223,13 @@ export type SaleOrderTenderPayload = TenderDetailPayload & {
   tdCompanyName?: string | null;
   tdPartyLedgerName?: string | null;
   tdUserName?: string | null;
+  /** notes (48) — a CHEQUE row's drawer / bank branch / IFSC / MICR, from the register. */
+  cheque?: {
+    drawerName?: string | null;
+    bankBranch?: string | null;
+    ifsc?: string | null;
+    micr?: string | null;
+  } | null;
 };
 export type SaleOrderErrorDetail = {
   field: string;

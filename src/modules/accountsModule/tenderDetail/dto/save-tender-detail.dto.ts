@@ -1,7 +1,9 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsEnum, IsOptional, ValidateNested } from 'class-validator';
+import { IsEnum, IsOptional, Matches, ValidateNested } from 'class-validator';
 import {
+  NullableString,
+  NullableUpperMaxString,
   TrimmedString,
   NullableDateString,
   NullableNumber,
@@ -64,7 +66,61 @@ export class TenderTempCreditDto {
   notes?: string | null;
 }
 
+/**
+ * notes (48) — the instrument details `acc_tender_detail` has no columns for.
+ * One shape everywhere: the sale bill and sale order tender rows carry it as
+ * `cheque`, and the receipt's `SaveReceiptChequeDto` extends it.
+ *
+ * NOT stored on the tender row — the cheque register
+ * (`acc_pdc_register.apd_drawer_name / apd_bank_branch / apd_ifsc / apd_micr`)
+ * is the cheque's home. All four nullable; a blank string reads as null.
+ */
+export class TenderChequeDetailDto {
+  @ApiPropertyOptional({
+    maxLength: 150,
+    nullable: true,
+    example: 'Sri Krishna Traders',
+    description: 'Who signed the cheque. Null → the party name.',
+  })
+  @NullableString(150)
+  drawerName?: string | null;
+
+  @ApiPropertyOptional({ maxLength: 100, nullable: true, example: 'Anna Nagar' })
+  @NullableString(100)
+  bankBranch?: string | null;
+
+  @ApiPropertyOptional({
+    maxLength: 11,
+    nullable: true,
+    example: 'SBIN0001234',
+    description: 'Upper-cased before it is checked against ^[A-Z]{4}0[A-Z0-9]{6}$.',
+  })
+  @NullableUpperMaxString(11)
+  @Matches(/^[A-Z]{4}0[A-Z0-9]{6}$/, {
+    message: '$property must be an IFSC: 4 letters, a 0, then 6 letters or digits (SBIN0001234)',
+  })
+  ifsc?: string | null;
+
+  @ApiPropertyOptional({ maxLength: 9, nullable: true, example: '600002003' })
+  @NullableString(9)
+  @Matches(/^[0-9]{9}$/, { message: '$property must be a MICR code: exactly 9 digits' })
+  micr?: string | null;
+}
+
 export class SaveTenderDetailDto {
+  @ApiPropertyOptional({
+    type: TenderChequeDetailDto,
+    nullable: true,
+    description:
+      'Only on a CHEQUE (type 5) row: drawer, bank branch, IFSC, MICR. Not a column — it is written ' +
+      'to the cheque register (acc_pdc_register) when the cheque is registered, and /get echoes it ' +
+      'back from there. Omitted on an update = keep what the register already holds.',
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => TenderChequeDetailDto)
+  cheque?: TenderChequeDetailDto | null;
+
   @ApiPropertyOptional({
     type: TenderTempCreditDto,
     nullable: true,

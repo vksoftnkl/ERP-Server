@@ -739,3 +739,34 @@ written a few days earlier); only `ck_apd_dates`' own window is enforced, as a
 
 Bounce, return and re-present live in the cheques module — see its README.
 Existing posted bills: `npx tsx scripts/backfill-bill-pdc-register.ts [--apply]`.
+
+## 2026-09-25 — cheque details on the tender row (notes 48)
+
+A CHEQUE tender row takes an optional `cheque` object, the same shape as the
+receipt's (`TenderChequeDetailDto`, shared):
+
+```json
+"cheque": { "drawerName": "…", "bankBranch": "…", "ifsc": "SBIN0001234", "micr": "600002003" }
+```
+
+All four nullable; `drawerName` ≤ 150, `bankBranch` ≤ 100, `ifsc` upper-cased then
+`^[A-Z]{4}0[A-Z0-9]{6}$`, `micr` `^[0-9]{9}$` — a malformed one is a 400 naming the
+field. They are **not** stored on `acc_tender_detail`: the cheque register row is
+their home (`apd_drawer_name / apd_bank_branch / apd_ifsc / apd_micr`).
+
+- A DRAFT keeps them in `sale_bill.sb_draft_cheques` (jsonb, keyed by td_id —
+  migration `20260925120000_sale_bill_draft_cheques`) because the register row
+  is only written at `/bills/post`. `/post` copies them in and sets the column
+  back to NULL. [bill-cheque-details.ts](bill-cheque-details.ts).
+- `/bills/get` echoes `cheque` on every CHEQUE row — from the register row once
+  posted, from the draft before — so an amend re-sends what was keyed. `null` on
+  other rows. The column itself never appears in the response.
+- Omitted on a save = keep what is already held; `null` = cleared (the register
+  row's drawer falls back to the customer name, the other three NULL).
+- `/bills/retender`: a new cheque row's `cheque` goes to the register (POSTED) or
+  the draft (DRAFT).
+
+The sale order takes the same object on its tender rows and writes it straight
+into its register rows (the order registers on save); its reads echo it the
+same way. The receipt's `SaveReceiptChequeDto` now extends the shared DTO, so its
+IFSC / MICR are pattern-checked too.

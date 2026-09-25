@@ -17,7 +17,10 @@ import {
   TxnStatusDocType,
   TxnStatusSrcModule,
 } from '../../../../common/txn-status-log/txn-status-log.helper';
-import type { TenderTempCreditDto } from '../../../accountsModule/tenderDetail/dto/save-tender-detail.dto';
+import type {
+  TenderChequeDetailDto,
+  TenderTempCreditDto,
+} from '../../../accountsModule/tenderDetail/dto/save-tender-detail.dto';
 import type { LocksBlock, PostingBlock, RightsBlock } from '../../posting/types/posting.types';
 import type { TransportBandRow } from '../../posting/transport-band.service';
 // txn_charge_detail is polymorphic — a bill's applied charges are the rows
@@ -73,7 +76,9 @@ export const BILL_STATUS_CANCELLED = 'CANCELLED';
 // fact written — the failure mode this Omit exists to prevent.
 export type BillPayload = Omit<
   SaleBill,
-  'sbCreatedOn' | 'sbModifiedOn' | 'sbBillDatetime' | 'sbSyncDate' | 'sbBillSlno'
+  // sbDraftCheques is /post's scratch (notes 48) — echoed per tender row as
+  // `cheque`, never as a header field.
+  'sbCreatedOn' | 'sbModifiedOn' | 'sbBillDatetime' | 'sbSyncDate' | 'sbBillSlno' | 'sbDraftCheques'
 > & {
   sbCreatedOn?: string;
   sbModifiedOn?: string | null;
@@ -176,6 +181,11 @@ export type BillChargePayload = ChargeDetailPayload;
  */
 export type BillTenderPayload = TenderDetailPayload & {
   tempCredit?: TenderTempCreditDto | null;
+  /**
+   * On a CHEQUE row (notes 48): drawer, bank branch, IFSC, MICR — from the
+   * cheque register once posted, from the draft before. Null on other rows.
+   */
+  cheque?: TenderChequeDetailDto | null;
 };
 export type BillErrorDetail = {
   field: string;

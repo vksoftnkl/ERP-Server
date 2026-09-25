@@ -10902,6 +10902,12 @@ model SaleBill {
   /// can. sbPostedVoucherId stays because it is a RELATIONSHIP, not an event.
   sbStatus           String    @default("DRAFT") @db.VarChar(20) @map("sb_status")
   sbPostedVoucherId  String?   @db.Uuid @map("sb_posted_voucher_id") // accounts.acc_voucher_header
+  /// notes (48) — a DRAFT's cheque details (drawer, bank branch, IFSC, MICR),
+  /// keyed by td_id: acc_tender_detail has no columns for them and the
+  /// cheque register row is not written until /bills/post. Scratch space, like
+  /// the receipt's avh_draft_lines: /post copies it into acc_pdc_register and
+  /// clears it to NULL. Nothing else reads it.
+  sbDraftCheques     Json?     @map("sb_draft_cheques")
   sbApprovedOn       DateTime? @db.Timestamptz(6) @map("sb_approved_on")
   sbApprovedBy       String?   @db.Uuid @map("sb_approved_by")
   sbVersionNo        Int       @default(1) @map("sb_version_no")

@@ -32,6 +32,7 @@ const PDC_POSTING_ON_CLEARING = 'ON_CLEARING';
 const INSTRUMENT_NO_MAX_LENGTH = 30;
 const BANK_NAME_MAX_LENGTH = 100;
 const DRAWER_NAME_MAX_LENGTH = 150;
+const BANK_BRANCH_MAX_LENGTH = 100;
 const CANCEL_REASON_MAX_LENGTH = 250;
 // ck_apd_dates: apd_instrument_date within [received − 3 months,
 // received + 1 year]. Stated here so the refusal names the cheque instead of
@@ -103,6 +104,18 @@ export interface PdcTenderLine {
   // deposited.
   tdSettleLedgerId: string | null;
   tdNotes: string | null;
+  // notes (48) — drawer / bank branch / IFSC / MICR, which the tender row has
+  // no columns for. `undefined` = not sent: a new row falls back to the party
+  // as drawer, and an existing row keeps what it holds. `null` or an object =
+  // sent: written as given (a null drawer still falls back to the party).
+  cheque?: PdcChequeDetail | null;
+}
+/// The instrument details a tender row cannot hold (TenderChequeDetailDto).
+export interface PdcChequeDetail {
+  drawerName?: string | null;
+  bankBranch?: string | null;
+  ifsc?: string | null;
+  micr?: string | null;
 }
 /// The voucher the instrument was taken through. ck_apd_posting: an ON_RECEIPT
 /// row must name its voucher, and both halves of the composite key travel
@@ -177,12 +190,15 @@ export async function syncDocPdcRegister(
       apdInstrumentDate: requireInstrumentDate(cheque, received, rules),
       apdAmount: cheque.tdTotalAmt,
       apdBankName: cheque.tdBankName?.slice(0, BANK_NAME_MAX_LENGTH) ?? null,
-      apdDrawerName: doc.partyName?.slice(0, DRAWER_NAME_MAX_LENGTH) ?? null,
       apdReceivedOn: received,
       apdBankLedgerId: cheque.tdSettleLedgerId ?? null,
       apdTenderId: cheque.tdId,
       apdRemarks: describeCheque(cheque, doc, rules),
     };
+    // Left out of an update when the caller did not send them, so an edit
+    // from a screen that never keyed them does not wipe what one did.
+    const detailData =
+      stored && cheque.cheque === undefined ? {} : toDetailData(cheque.cheque ?? null, doc);
     const voucherData = {
       apdPostingMode: voucher ? PDC_POSTING_ON_RECEIPT : PDC_POSTING_ON_CLEARING,
       apdVoucherId: voucher?.voucherId ?? null,
@@ -197,6 +213,7 @@ export async function syncDocPdcRegister(
         where: { apdId_apdAccYear: { apdId: stored.apdId, apdAccYear: stored.apdAccYear } },
         data: {
           ...data,
+          ...detailData,
           ...(opts.keepStoredVoucher ? {} : voucherData),
           apdModifiedOn: now,
           apdModifiedBy: actor,
@@ -208,6 +225,7 @@ export async function syncDocPdcRegister(
     const created = await tx.accPdcRegister.create({
       data: {
         ...data,
+        ...detailData,
         ...voucherData,
         apdAccYear: doc.accYear,
         apdStatus: PDC_STATUS_HELD,
@@ -476,6 +494,94 @@ async function cancelPdcRow(
       apdModifiedBy: actor,
     },
   });
+}
+function toDetailData(detail: PdcChequeDetail | null, doc: PdcDocument) {
+  return {
+    apdDrawerName:
+      (detail?.drawerName?.trim() || doc.partyName)?.slice(0, DRAWER_NAME_MAX_LENGTH) ?? null,
+    apdBankBranch: detail?.bankBranch?.trim().slice(0, BANK_BRANCH_MAX_LENGTH) || null,
+    apdIfsc: detail?.ifsc?.trim().toUpperCase() || null,
+    apdMicr: detail?.micr?.trim() || null,
+  };
+}
+/// notes (48) — the `cheque` objects a save payload carried, by the td_id the
+/// tender sync persisted each row under: matched by td_id when the row sent
+/// one, else by the row number the sync gave it (`tdRowNo ?? position`). Only
+/// live CHEQUE rows; a row that did not send `cheque` has no entry.
+export function matchChequeDetails(
+  payload: readonly {
+    tdId?: string;
+    tdRowNo?: number;
+    cheque?: PdcChequeDetail | null;
+  }[],
+  persisted: readonly {
+    tdId: string;
+    tdRowNo: number;
+    tdTenderTypeId: number | string;
+    tdIsDeleted?: boolean | null;
+  }[],
+): Record<string, PdcChequeDetail | null> {
+  const live = persisted.filter(
+    (row) => !row.tdIsDeleted && Number(row.tdTenderTypeId) === CHEQUE_TENDER_TYPE_ID,
+  );
+  const out: Record<string, PdcChequeDetail | null> = {};
+  payload.forEach((sent, index) => {
+    if (sent.cheque === undefined) {
+      return;
+    }
+    const rowNo = sent.tdRowNo ?? index + 1;
+    const row = sent.tdId
+      ? live.find((r) => r.tdId === sent.tdId)
+      : live.find((r) => r.tdRowNo === rowNo);
+    if (row) {
+      out[row.tdId] = sent.cheque
+        ? {
+            drawerName: sent.cheque.drawerName ?? null,
+            bankBranch: sent.cheque.bankBranch ?? null,
+            ifsc: sent.cheque.ifsc ?? null,
+            micr: sent.cheque.micr ?? null,
+          }
+        : null;
+    }
+  });
+  return out;
+}
+/// The four details as a register row holds them, for a read that echoes them
+/// back on the tender row (`/bills/get`, the order's read).
+export async function readPdcChequeDetails(
+  client: Prisma.TransactionClient,
+  tenderIds: readonly string[],
+): Promise<Map<string, Required<PdcChequeDetail>>> {
+  if (tenderIds.length === 0) {
+    return new Map();
+  }
+  const rows = await client.accPdcRegister.findMany({
+    where: {
+      apdTenderId: { in: [...tenderIds] },
+      apdIsDeleted: false,
+      apdStatus: { not: PDC_STATUS_CANCELLED },
+    },
+    select: {
+      apdTenderId: true,
+      apdDrawerName: true,
+      apdBankBranch: true,
+      apdIfsc: true,
+      apdMicr: true,
+    },
+  });
+  return new Map(
+    rows
+      .filter((row) => row.apdTenderId !== null)
+      .map((row) => [
+        row.apdTenderId!,
+        {
+          drawerName: row.apdDrawerName,
+          bankBranch: row.apdBankBranch,
+          ifsc: row.apdIfsc,
+          micr: row.apdMicr,
+        },
+      ]),
+  );
 }
 function describeCheque(cheque: PdcTenderLine, doc: PdcDocument, rules: PdcDocumentRules): string {
   const note = cheque.tdNotes?.trim();
