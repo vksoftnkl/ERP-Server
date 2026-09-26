@@ -43,6 +43,12 @@ import {
   throwSalesNotFound,
 } from 'src/common/utils/module-service.utils';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
+import {
+  resolveDefaultSaleGodowns,
+  saleGodownKey,
+  saleLineAllowsNegativeStock,
+  SaleGodown,
+} from '../../../common/utils/sale-line-godown.utils';
 import { allocateVoucherNumber } from 'src/common/Sequence/voucher-sequence.helper';
 import {
   TxnStatusEvent,
@@ -389,19 +395,17 @@ type SaleQuotationItemWithNames = SaleQuotationItem & {
 // Same idea for the header's master ids: custArea/salesman come from the
 // getById joins, `agent` from the extra lookup below (sq_agent_id has no FK).
 // Absent on the create/update paths, which pass a plain SaleQuotation row.
-// The branch's default godown, resolved once per GET and stamped onto every
-// line (see resolveDefaultGodown).
-type DefaultGodown = { gdlId: string; gdlName: string; gdlNegativeStock: boolean };
 // What a line's read-only display fields need beyond the line row itself:
-// the branch's default godown and the company's negative-stock switch, both
+// each line's default godown (keyed by saleGodownKey — see
+// resolveDefaultSaleGodowns) and the company's negative-stock switch, both
 // resolved once per GET. The create/update paths pass nothing and those fields
 // come back null.
 type QuotationLineContext = {
-  defaultGodown: DefaultGodown | null;
+  godownByLine: Map<string, SaleGodown | null>;
   companyAllowsNegStock: boolean | null;
 };
 const EMPTY_LINE_CONTEXT: QuotationLineContext = {
-  defaultGodown: null,
+  godownByLine: new Map(),
   companyAllowsNegStock: null,
 };
 type SaleQuotationWithNames = SaleQuotation & {
@@ -487,13 +491,17 @@ export class QuotationService {
     }
     // txn_charge_detail is polymorphic (no FK to sale_quotation), so the
     // applied charges are fetched by discriminator rather than by `include`.
-    const [charges, agent, defaultGodown, companyAllowsNegStock] = await Promise.all([
+    const [charges, agent, godownByLine, companyAllowsNegStock] = await Promise.all([
       this.findCharges(this.prisma, record.sqId),
       this.findAgent(record.sqAgentId),
-      this.resolveDefaultGodown(record.sqBranchId),
+      resolveDefaultSaleGodowns(
+        this.prisma,
+        record.sqBranchId,
+        (record.items ?? []).map((line) => ({ itemId: line.sqiItemId, iucId: line.sqiItemUnitId })),
+      ),
       this.resolveCompanyNegStock(record.sqCompanyId),
     ]);
-    return this.toPayload({ ...record, charges, agent }, { defaultGodown, companyAllowsNegStock });
+    return this.toPayload({ ...record, charges, agent }, { godownByLine, companyAllowsNegStock });
   }
   async softDelete(
     sqId: string,
@@ -1755,7 +1763,10 @@ export class QuotationService {
     record: SaleQuotationItemWithNames,
     lineContext: QuotationLineContext = EMPTY_LINE_CONTEXT,
   ): QuotationItemPayload {
-    const { defaultGodown, companyAllowsNegStock } = lineContext;
+    const { godownByLine, companyAllowsNegStock } = lineContext;
+    const godown =
+      godownByLine.get(saleGodownKey({ itemId: record.sqiItemId, iucId: record.sqiItemUnitId })) ??
+      null;
     const { sqiCreatedOn, sqiModifiedOn, sqiSyncDate, item, itemUnitConversion, ...rest } = record;
     return {
       ...rest,
@@ -1777,40 +1788,17 @@ export class QuotationService {
       // all say no. Read-only and GET-only like the fields above — null when
       // the item join was not made.
       sqiAllowNegativeStock: item
-        ? item.itemIsService ||
-          !(
-            defaultGodown?.gdlNegativeStock === false &&
-            companyAllowsNegStock === false &&
-            item.itemAllowNegStock === false
-          )
+        ? saleLineAllowsNegativeStock(item, godown?.gdlNegativeStock, companyAllowsNegStock)
         : null,
-      // Not stored on the line — every line of a quotation shows the branch's
-      // default godown. See resolveDefaultGodown.
-      sqiGodownId: defaultGodown?.gdlId ?? null,
-      sqiGodownName: defaultGodown?.gdlName ?? null,
+      // Not stored on the line: a quotation neither moves nor reserves stock.
+      // The entry screen still needs a godown to show — and to carry into the
+      // order or bill the quote is converted to — so each line gets the one a
+      // hand-picked line of that item would get from /item-price: the price
+      // row's godown, else the branch default (notes 51,
+      // sale-line-godown.utils). Null when neither resolves.
+      sqiGodownId: godown?.gdlId ?? null,
+      sqiGodownName: godown?.gdlName ?? null,
     };
-  }
-
-  // sale_quotation_item has no godown column: a quotation neither moves nor
-  // reserves stock, so there is nothing to store per line. The entry screen
-  // still needs a godown to show — and to carry into the order or bill the
-  // quote is converted to — and that is the branch's default
-  // (branch_master.br_default_godown_id). One read per GET, stamped onto every
-  // line by toItemPayload. A branch with no default, or one pointing at a
-  // deleted godown, answers null rather than prefilling a dead location.
-  private async resolveDefaultGodown(branchId: string): Promise<DefaultGodown | null> {
-    const branch = await this.prisma.branchMaster.findFirst({
-      where: { brId: branchId },
-      select: { brDefaultGodownId: true },
-    });
-    if (!branch?.brDefaultGodownId) {
-      return null;
-    }
-    const godown = await this.prisma.godownLocation.findFirst({
-      where: { gdlId: branch.brDefaultGodownId, gdlIsDeleted: false },
-      select: { gdlId: true, gdlName: true, gdlNegativeStock: true },
-    });
-    return godown ?? null;
   }
 
   // company.comp_negstk_apl, the second of the three switches behind a line's

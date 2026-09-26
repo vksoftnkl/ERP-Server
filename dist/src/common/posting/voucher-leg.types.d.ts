@@ -12,6 +12,7 @@ export interface VoucherLeg {
     docRefno?: string | null;
     field?: string;
     roleTag?: string | null;
+    oppLedgerId?: string | null;
 }
 export interface VoucherHeaderInput {
     companyId: string;

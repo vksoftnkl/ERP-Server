@@ -10,12 +10,32 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.SaveQuotationDto = void 0;
+const common_1 = require("@nestjs/common");
 const swagger_1 = require("@nestjs/swagger");
 const class_transformer_1 = require("class-transformer");
 const class_validator_1 = require("class-validator");
 const dtoDecorators_1 = require("../../../../common/dto/dtoDecorators");
 const save_quotation_charge_dto_1 = require("./save-quotation-charge.dto");
 const save_quotation_item_dto_1 = require("./save-quotation-item.dto");
+const toUuidArray = (value) => {
+    if (value === undefined) {
+        return undefined;
+    }
+    if (value === null || value === '') {
+        return [];
+    }
+    if (Array.isArray(value)) {
+        return value.map((entry) => (typeof entry === 'string' ? entry.trim() : String(entry)));
+    }
+    if (typeof value === 'string') {
+        return value
+            .split(',')
+            .map((entry) => entry.trim())
+            .filter((entry) => entry.length > 0);
+    }
+    return value;
+};
+const NullableUuidArray = () => (0, common_1.applyDecorators)((0, class_validator_1.IsOptional)(), (0, class_transformer_1.Transform)(({ value }) => toUuidArray(value)), (0, class_validator_1.IsArray)(), (0, class_validator_1.IsUUID)('all', { each: true }));
 class SaveQuotationDto {
     sqId;
     sqCompanyId;
@@ -359,9 +379,9 @@ __decorate([
     __metadata("design:type", String)
 ], SaveQuotationDto.prototype, "sqUserId", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ format: 'uuid', nullable: true }),
-    (0, dtoDecorators_1.NullableUuid)(),
-    __metadata("design:type", Object)
+    (0, swagger_1.ApiPropertyOptional)({ type: [String], format: 'uuid', nullable: true }),
+    NullableUuidArray(),
+    __metadata("design:type", Array)
 ], SaveQuotationDto.prototype, "sqSalesmanId", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ format: 'uuid', nullable: true }),

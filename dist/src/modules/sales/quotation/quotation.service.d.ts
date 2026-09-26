@@ -41,6 +41,5 @@ export declare class QuotationService {
     private toPayload;
     private toChargePayload;
     private toItemPayload;
-    private resolveDefaultGodown;
     private resolveCompanyNegStock;
 }

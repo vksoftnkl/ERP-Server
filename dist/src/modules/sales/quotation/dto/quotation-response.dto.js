@@ -532,8 +532,9 @@ __decorate([
     (0, swagger_1.ApiPropertyOptional)({
         format: 'uuid',
         nullable: true,
-        description: "branch_master.br_default_godown_id for the quotation's branch — sale_quotation_item stores" +
-            ' no godown, so every line carries the branch default; only populated on GET',
+        description: 'sale_quotation_item stores no godown, so each line carries the godown /item-price would' +
+            " default it to: the item's price row godown (ipm_godown_id), else the branch's" +
+            ' br_default_godown_id; only populated on GET',
     }),
     __metadata("design:type", Object)
 ], QuotationItemPayloadDto.prototype, "sqiGodownId", void 0);
@@ -1212,8 +1213,8 @@ __decorate([
     __metadata("design:type", String)
 ], QuotationPayloadDto.prototype, "sqUserId", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ format: 'uuid', nullable: true }),
-    __metadata("design:type", Object)
+    (0, swagger_1.ApiProperty)({ type: [String], format: 'uuid' }),
+    __metadata("design:type", Array)
 ], QuotationPayloadDto.prototype, "sqSalesmanId", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({

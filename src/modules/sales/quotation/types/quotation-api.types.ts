@@ -61,9 +61,10 @@ export type QuotationItemPayload = Omit<
   sqiAllowNegativeStock?: boolean | null;
   // sale_quotation_item has no godown column — a quotation reserves nothing —
   // but the entry screen still shows a godown per line, and a conversion to an
-  // order or a bill needs one. Both are the branch's default godown
-  // (branch_master.br_default_godown_id), resolved on GET like the fields
-  // above, and null when the branch has no default set.
+  // order or a bill needs one. It is the godown a hand-picked line of that
+  // item would get from /item-price (notes 51): the price row's
+  // ipm_godown_id, else the branch's br_default_godown_id — resolved on GET
+  // like the fields above, and null when neither is set.
   sqiGodownId?: string | null;
   sqiGodownName?: string | null;
 };

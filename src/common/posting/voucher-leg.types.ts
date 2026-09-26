@@ -32,6 +32,13 @@ export interface VoucherLeg {
   field?: string;
   /** Written to `av_role`, so a report can find "every sales leg" later. */
   roleTag?: string | null;
+  /**
+   * `av_opp_ledger_id` — the other side of a two-leg reading. The Voucher
+   * Register stamps the party onto every non-party leg when the voucher has
+   * exactly one party, so the day book reads "Housekeeping … Sundaram" without
+   * a join. NULL (the sales documents) leaves the column alone.
+   */
+  oppLedgerId?: string | null;
 }
 
 /** The voucher header this leg set belongs to. */

@@ -46,6 +46,7 @@ import { TenderDetailModule } from './modules/accountsModule/tenderDetail/tender
 import { TransactionModule } from './modules/accountsModule/transaction/transaction.module';
 import { ReceiptModule } from './modules/accountsModule/receipt/receipt.module';
 import { ChequesModule } from './modules/accountsModule/cheques/cheques.module';
+import { VouchersModule } from './modules/accountsModule/vouchers/vouchers.module';
 import { LedgerStatementModule } from './modules/reports/ledger-statement/ledger-statement.module';
 import { LedgerMapModule } from './modules/accountsModule/ledgerMap/ledger-map.module';
 import { BillBalanceModule } from './modules/accountsModule/billBalance/bill-balance.module';
@@ -191,6 +192,10 @@ const isThrottlerEnabled = parseBoolean(process.env.THROTTLE_ENABLED, true);
     BillBalanceModule,
     ReceiptModule,
     ChequesModule,
+    // The Voucher Register (voucher_register.md): Journal, Contra, Debit / Credit
+    // Note, Purchase / Sales (Accounting), Receipt / Payment Voucher on the ONE
+    // posting routine in common/posting.
+    VouchersModule,
     LedgerStatementModule,
     LedgerMapModule,
     GspProviderMasterModule,

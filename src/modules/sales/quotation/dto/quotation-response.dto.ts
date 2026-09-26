@@ -213,8 +213,9 @@ export class QuotationItemPayloadDto {
     format: 'uuid',
     nullable: true,
     description:
-      "branch_master.br_default_godown_id for the quotation's branch — sale_quotation_item stores" +
-      ' no godown, so every line carries the branch default; only populated on GET',
+      'sale_quotation_item stores no godown, so each line carries the godown /item-price would' +
+      " default it to: the item's price row godown (ipm_godown_id), else the branch's" +
+      ' br_default_godown_id; only populated on GET',
   })
   sqiGodownId?: string | null;
   @ApiPropertyOptional({
@@ -511,8 +512,8 @@ export class QuotationPayloadDto {
   sqHasComm!: boolean;
   @ApiProperty({ format: 'uuid' })
   sqUserId!: string;
-  @ApiPropertyOptional({ format: 'uuid', nullable: true })
-  sqSalesmanId!: string | null;
+  @ApiProperty({ type: [String], format: 'uuid' })
+  sqSalesmanId!: string[];
   @ApiPropertyOptional({
     nullable: true,
     description: 'employee_master.empName for sqSalesmanId — only populated on GET',

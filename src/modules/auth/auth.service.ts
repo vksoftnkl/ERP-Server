@@ -49,15 +49,23 @@ export class AuthService {
       }
       throw new UnauthorizedException('Invalid credentials');
     }
-    // Device validation disabled: login no longer checks device_master.
-    // const isWebDevice = loginAuthDto.device_type?.toLowerCase() === 'web';
-    // const device =
-    //   loginAuthDto.device_id || isWebDevice
-    //     ? await this.findAndUpdateDeviceOnLogin(loginAuthDto.device_id, user, {
-    //         deviceType: loginAuthDto.device_type,
-    //       })
-    //     : null;
-    const device = null as DeviceMaster | null;
+    // Device validation is disabled: an unregistered, blocked or inactive device
+    // no longer refuses the login. The lookup still runs, though, because
+    // posting needs the registered device the session logged in at — a login
+    // that matches one carries it; one that does not proceeds with none.
+    const isWebDevice = loginAuthDto.device_type?.toLowerCase() === 'web';
+    let device: DeviceMaster | null = null;
+    if (loginAuthDto.device_id || isWebDevice) {
+      try {
+        device = await this.findAndUpdateDeviceOnLogin(loginAuthDto.device_id, user, {
+          deviceType: loginAuthDto.device_type,
+        });
+      } catch (error: unknown) {
+        this.logger.warn(
+          `Login for '${user.usrLoginName}' (${user.usrId}) continues without a device: ${this.describeError(error)}`,
+        );
+      }
+    }
     /*
      * The counter and its branch go INTO the token.
      *

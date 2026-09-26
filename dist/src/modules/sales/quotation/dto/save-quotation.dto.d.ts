@@ -44,7 +44,7 @@ export declare class SaveQuotationDto {
     sqHasPromo?: boolean;
     sqHasComm?: boolean;
     sqUserId: string;
-    sqSalesmanId?: string | null;
+    sqSalesmanId?: string[];
     sqAgentId?: string | null;
     sqTotItems?: number;
     sqTotWeight?: string | number;

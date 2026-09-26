@@ -1,6 +1,7 @@
+import { applyDecorators } from '@nestjs/common';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
-import { IsArray, IsNotEmpty, IsOptional, ValidateNested } from 'class-validator';
+import { Transform, Type } from 'class-transformer';
+import { IsArray, IsNotEmpty, IsOptional, IsUUID, ValidateNested } from 'class-validator';
 import {
   NullableDateString,
   NullableInteger,
@@ -19,6 +20,40 @@ import {
 } from 'src/common/dto/dtoDecorators';
 import { SaveQuotationChargeDto } from './save-quotation-charge.dto';
 import { SaveQuotationItemDto } from './save-quotation-item.dto';
+// An array of uuids: undefined leaves the column untouched, null/'' clears it
+// to an empty array, and a non-array/non-string input is left for IsUUID to
+// reject. A single uuid string (the pre-20260921220000 shape) becomes [uuid].
+//
+// null is deliberately NOT passed through. sqSalesmanId is a uuid[] column
+// (Prisma `String[]`), and a Prisma scalar list has no nullable form: `null`
+// fails to match SaleQuotationUncheckedCreateInput, Prisma falls back to the
+// checked variant, and the save dies on the misleading "Argument `priceLevel`
+// is missing" instead.
+const toUuidArray = (value: unknown): string[] | undefined => {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (value === null || value === '') {
+    return [];
+  }
+  if (Array.isArray(value)) {
+    return value.map((entry) => (typeof entry === 'string' ? entry.trim() : String(entry)));
+  }
+  if (typeof value === 'string') {
+    return value
+      .split(',')
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0);
+  }
+  return value as string[];
+};
+const NullableUuidArray = () =>
+  applyDecorators(
+    IsOptional(),
+    Transform(({ value }: { value: unknown }) => toUuidArray(value)),
+    IsArray(),
+    IsUUID('all', { each: true }),
+  );
 export class SaveQuotationDto {
   @ApiPropertyOptional({
     format: 'uuid',
@@ -183,9 +218,9 @@ export class SaveQuotationDto {
   @ApiProperty({ format: 'uuid' })
   @RequiredUuid()
   sqUserId!: string;
-  @ApiPropertyOptional({ format: 'uuid', nullable: true })
-  @NullableUuid()
-  sqSalesmanId?: string | null;
+  @ApiPropertyOptional({ type: [String], format: 'uuid', nullable: true })
+  @NullableUuidArray()
+  sqSalesmanId?: string[];
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   @NullableUuid()
   sqAgentId?: string | null;

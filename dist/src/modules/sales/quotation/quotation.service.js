@@ -18,6 +18,7 @@ const bill_api_types_1 = require("../bill/types/bill-api.types");
 const charge_master_api_types_1 = require("../../master/charge-master/types/charge-master-api.types");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
+const sale_line_godown_utils_1 = require("../../../common/utils/sale-line-godown.utils");
 const voucher_sequence_helper_1 = require("../../../common/Sequence/voucher-sequence.helper");
 const txn_status_log_helper_1 = require("../../../common/txn-status-log/txn-status-log.helper");
 const tax_rate_reference_helper_1 = require("../../Inventory/tax-rate-master/utils/tax-rate-reference.helper");
@@ -291,7 +292,7 @@ function uniqueConstraintTarget(error) {
     return typeof target === 'string' ? target : '';
 }
 const EMPTY_LINE_CONTEXT = {
-    defaultGodown: null,
+    godownByLine: new Map(),
     companyAllowsNegStock: null,
 };
 let QuotationService = class QuotationService {
@@ -352,13 +353,13 @@ let QuotationService = class QuotationService {
                 ? `No active quotation found with id ${sqId}`
                 : `No active quotation found with quote no ${sqQuoteNo}`);
         }
-        const [charges, agent, defaultGodown, companyAllowsNegStock] = await Promise.all([
+        const [charges, agent, godownByLine, companyAllowsNegStock] = await Promise.all([
             this.findCharges(this.prisma, record.sqId),
             this.findAgent(record.sqAgentId),
-            this.resolveDefaultGodown(record.sqBranchId),
+            (0, sale_line_godown_utils_1.resolveDefaultSaleGodowns)(this.prisma, record.sqBranchId, (record.items ?? []).map((line) => ({ itemId: line.sqiItemId, iucId: line.sqiItemUnitId }))),
             this.resolveCompanyNegStock(record.sqCompanyId),
         ]);
-        return this.toPayload({ ...record, charges, agent }, { defaultGodown, companyAllowsNegStock });
+        return this.toPayload({ ...record, charges, agent }, { godownByLine, companyAllowsNegStock });
     }
     async softDelete(sqId, sqCompanyId, sqBranchId, sqAccYear) {
         return this.prisma.$transaction(async (tx) => {
@@ -1194,7 +1195,9 @@ let QuotationService = class QuotationService {
         };
     }
     toItemPayload(record, lineContext = EMPTY_LINE_CONTEXT) {
-        const { defaultGodown, companyAllowsNegStock } = lineContext;
+        const { godownByLine, companyAllowsNegStock } = lineContext;
+        const godown = godownByLine.get((0, sale_line_godown_utils_1.saleGodownKey)({ itemId: record.sqiItemId, iucId: record.sqiItemUnitId })) ??
+            null;
         const { sqiCreatedOn, sqiModifiedOn, sqiSyncDate, item, itemUnitConversion, ...rest } = record;
         return {
             ...rest,
@@ -1210,28 +1213,11 @@ let QuotationService = class QuotationService {
             sqiSectionId: item?.itemSectionId ?? null,
             sqiCategoryId: item?.itemCategoryId ?? null,
             sqiAllowNegativeStock: item
-                ? item.itemIsService ||
-                    !(defaultGodown?.gdlNegativeStock === false &&
-                        companyAllowsNegStock === false &&
-                        item.itemAllowNegStock === false)
+                ? (0, sale_line_godown_utils_1.saleLineAllowsNegativeStock)(item, godown?.gdlNegativeStock, companyAllowsNegStock)
                 : null,
-            sqiGodownId: defaultGodown?.gdlId ?? null,
-            sqiGodownName: defaultGodown?.gdlName ?? null,
+            sqiGodownId: godown?.gdlId ?? null,
+            sqiGodownName: godown?.gdlName ?? null,
         };
-    }
-    async resolveDefaultGodown(branchId) {
-        const branch = await this.prisma.branchMaster.findFirst({
-            where: { brId: branchId },
-            select: { brDefaultGodownId: true },
-        });
-        if (!branch?.brDefaultGodownId) {
-            return null;
-        }
-        const godown = await this.prisma.godownLocation.findFirst({
-            where: { gdlId: branch.brDefaultGodownId, gdlIsDeleted: false },
-            select: { gdlId: true, gdlName: true, gdlNegativeStock: true },
-        });
-        return godown ?? null;
     }
     async resolveCompanyNegStock(companyId) {
         const company = await this.prisma.company.findFirst({

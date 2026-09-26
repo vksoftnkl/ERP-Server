@@ -49,7 +49,18 @@ let AuthService = AuthService_1 = class AuthService {
             }
             throw new common_1.UnauthorizedException('Invalid credentials');
         }
-        const device = null;
+        const isWebDevice = loginAuthDto.device_type?.toLowerCase() === 'web';
+        let device = null;
+        if (loginAuthDto.device_id || isWebDevice) {
+            try {
+                device = await this.findAndUpdateDeviceOnLogin(loginAuthDto.device_id, user, {
+                    deviceType: loginAuthDto.device_type,
+                });
+            }
+            catch (error) {
+                this.logger.warn(`Login for '${user.usrLoginName}' (${user.usrId}) continues without a device: ${this.describeError(error)}`);
+            }
+        }
         const sessionScope = {
             branch_id: device?.devBranchId ?? null,
             device_id: device?.devId ?? null,

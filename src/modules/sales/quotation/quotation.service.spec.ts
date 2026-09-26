@@ -236,9 +236,26 @@ type PrismaMock = {
       unknown[]
     >;
   };
+  // findFirst checks the branch default is live; findMany reads the resolved
+  // godowns' name and negative-stock switch (sale-line-godown.utils).
   godownLocation: {
-    findFirst: jest.Mock<
-      Promise<{ gdlId: string; gdlName: string; gdlNegativeStock: boolean } | null>,
+    findFirst: jest.Mock<Promise<{ gdlId: string } | null>, unknown[]>;
+    findMany: jest.Mock<
+      Promise<{ gdlId: string; gdlName: string; gdlNegativeStock: boolean }[]>,
+      unknown[]
+    >;
+  };
+  // The price row's ipm_godown_id outranks the branch default (notes 51).
+  itemPriceMaster: {
+    findMany: jest.Mock<
+      Promise<
+        {
+          ipmItemId: string;
+          ipmUcUnitId: string;
+          ipmBranchId: string | null;
+          ipmGodownId: string | null;
+        }[]
+      >,
       unknown[]
     >;
   };
@@ -359,9 +376,14 @@ const makePrismaMock = (): PrismaMock => {
       findFirst: jest.fn(() => Promise.resolve({ brCode: null, brDefaultGodownId: GODOWN_ID })),
     },
     godownLocation: {
-      findFirst: jest.fn(() =>
-        Promise.resolve({ gdlId: GODOWN_ID, gdlName: 'Main Warehouse', gdlNegativeStock: true }),
+      findFirst: jest.fn(() => Promise.resolve({ gdlId: GODOWN_ID })),
+      findMany: jest.fn(() =>
+        Promise.resolve([{ gdlId: GODOWN_ID, gdlName: 'Main Warehouse', gdlNegativeStock: true }]),
       ),
+    },
+    itemPriceMaster: {
+      // Default: no price row names a godown, so the branch default stands.
+      findMany: jest.fn(() => Promise.resolve([])),
     },
     saleAgent: {
       findUnique: jest.fn(() => Promise.resolve({ saName: 'Agent One' })),
@@ -655,7 +677,7 @@ describe('QuotationService — applied charges', () => {
     expect(line?.sqiAllowNegativeStock).toBeNull();
   });
 
-  it("stamps the branch's default godown onto every line on getById", async () => {
+  it("stamps the branch's default godown onto lines whose price row names none", async () => {
     prisma.saleQuotation.findFirst.mockResolvedValue(
       makeQuotation({
         items: [makeItem({ sqiId: LINE_A_ID }), makeItem({ sqiId: LINE_B_ID })],
@@ -674,6 +696,39 @@ describe('QuotationService — applied charges', () => {
     );
   });
 
+  // notes (51): the same rule /item-price uses for a hand-picked line — the
+  // price row's godown first, the branch default only behind it.
+  it("prefers the price row's godown over the branch default", async () => {
+    const PRICE_GODOWN_ID = '019c6f6c-be87-7a11-8905-36092c46fe30';
+    prisma.itemPriceMaster.findMany.mockResolvedValue([
+      {
+        ipmItemId: ITEM_MASTER_ID,
+        ipmUcUnitId: ITEM_UNIT_ID,
+        ipmBranchId: null,
+        ipmGodownId: GODOWN_ID,
+      },
+      {
+        ipmItemId: ITEM_MASTER_ID,
+        ipmUcUnitId: ITEM_UNIT_ID,
+        ipmBranchId: BRANCH_ID,
+        ipmGodownId: PRICE_GODOWN_ID,
+      },
+    ]);
+    prisma.godownLocation.findMany.mockResolvedValue([
+      { gdlId: PRICE_GODOWN_ID, gdlName: 'Item Godown', gdlNegativeStock: true },
+    ]);
+    prisma.saleQuotation.findFirst.mockResolvedValue(
+      makeQuotation({ items: [makeItem()] } as unknown as Partial<SaleQuotation>),
+    );
+
+    const line = (await service.getById(QUOTE_ID, undefined, COMPANY_ID, BRANCH_ID, ACC_YEAR))
+      .items?.[0];
+
+    // The branch-specific row beats the branch-less one, as in /item-price.
+    expect(line?.sqiGodownId).toBe(PRICE_GODOWN_ID);
+    expect(line?.sqiGodownName).toBe('Item Godown');
+  });
+
   it('leaves the line godown null when the branch has no default set', async () => {
     prisma.branchMaster.findFirst.mockResolvedValue({ brCode: null, brDefaultGodownId: null });
     prisma.saleQuotation.findFirst.mockResolvedValue(
@@ -685,8 +740,8 @@ describe('QuotationService — applied charges', () => {
 
     expect(line?.sqiGodownId).toBeNull();
     expect(line?.sqiGodownName).toBeNull();
-    // No default to resolve, so the godown master is never read.
-    expect(prisma.godownLocation.findFirst).not.toHaveBeenCalled();
+    // No godown to resolve, so the godown details are never read.
+    expect(prisma.godownLocation.findMany).not.toHaveBeenCalled();
   });
 
   it('leaves the line godown null when the default points at a deleted godown', async () => {
@@ -731,11 +786,9 @@ describe('QuotationService — applied charges', () => {
       (await service.getById(QUOTE_ID, undefined, COMPANY_ID, BRANCH_ID, ACC_YEAR)).items?.[0];
 
     it('blocks the line only when godown, company and item all disallow it', async () => {
-      prisma.godownLocation.findFirst.mockResolvedValue({
-        gdlId: GODOWN_ID,
-        gdlName: 'Main Warehouse',
-        gdlNegativeStock: false,
-      });
+      prisma.godownLocation.findMany.mockResolvedValue([
+        { gdlId: GODOWN_ID, gdlName: 'Main Warehouse', gdlNegativeStock: false },
+      ]);
       prisma.company.findFirst.mockResolvedValue({ compCode: 'ABC123', compNegStkApl: false });
       prisma.saleQuotation.findFirst.mockResolvedValue(lineWithItem({ itemAllowNegStock: false }));
 
@@ -746,11 +799,9 @@ describe('QuotationService — applied charges', () => {
     });
 
     it('allows the line when any one of the three still permits it', async () => {
-      prisma.godownLocation.findFirst.mockResolvedValue({
-        gdlId: GODOWN_ID,
-        gdlName: 'Main Warehouse',
-        gdlNegativeStock: false,
-      });
+      prisma.godownLocation.findMany.mockResolvedValue([
+        { gdlId: GODOWN_ID, gdlName: 'Main Warehouse', gdlNegativeStock: false },
+      ]);
       prisma.company.findFirst.mockResolvedValue({ compCode: 'ABC123', compNegStkApl: false });
       prisma.saleQuotation.findFirst.mockResolvedValue(lineWithItem({ itemAllowNegStock: true }));
 
@@ -758,11 +809,9 @@ describe('QuotationService — applied charges', () => {
     });
 
     it('always allows a service item, whatever the godown and company say', async () => {
-      prisma.godownLocation.findFirst.mockResolvedValue({
-        gdlId: GODOWN_ID,
-        gdlName: 'Main Warehouse',
-        gdlNegativeStock: false,
-      });
+      prisma.godownLocation.findMany.mockResolvedValue([
+        { gdlId: GODOWN_ID, gdlName: 'Main Warehouse', gdlNegativeStock: false },
+      ]);
       prisma.company.findFirst.mockResolvedValue({ compCode: 'ABC123', compNegStkApl: false });
       prisma.saleQuotation.findFirst.mockResolvedValue(
         lineWithItem({ itemIsService: true, itemAllowNegStock: false }),
@@ -773,11 +822,9 @@ describe('QuotationService — applied charges', () => {
 
     // A company row that cannot be read is not a "no" — the item still decides.
     it('leaves the company out of the decision when its row is missing', async () => {
-      prisma.godownLocation.findFirst.mockResolvedValue({
-        gdlId: GODOWN_ID,
-        gdlName: 'Main Warehouse',
-        gdlNegativeStock: false,
-      });
+      prisma.godownLocation.findMany.mockResolvedValue([
+        { gdlId: GODOWN_ID, gdlName: 'Main Warehouse', gdlNegativeStock: false },
+      ]);
       prisma.company.findFirst.mockResolvedValue(null);
       prisma.saleQuotation.findFirst.mockResolvedValue(lineWithItem({ itemAllowNegStock: false }));
 

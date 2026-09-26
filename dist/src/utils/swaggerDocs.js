@@ -26,6 +26,7 @@ const transaction_module_1 = require("../modules/accountsModule/transaction/tran
 const opening_balance_module_1 = require("../modules/accountsModule/openingBalance/opening-balance.module");
 const receipt_module_1 = require("../modules/accountsModule/receipt/receipt.module");
 const cheques_module_1 = require("../modules/accountsModule/cheques/cheques.module");
+const vouchers_module_1 = require("../modules/accountsModule/vouchers/vouchers.module");
 const ledger_map_module_1 = require("../modules/accountsModule/ledgerMap/ledger-map.module");
 const auth_module_1 = require("../modules/auth/auth.module");
 const area_module_1 = require("../modules/sales/area/area.module");
@@ -354,6 +355,19 @@ exports.swaggerModuleDocuments = [
             'post-dated cheque gets a voucher of its own dated the cheque, and its bills settle on ' +
             'maturity. The remainder is always held as an ADVANCE bill',
         include: [receipt_module_1.ReceiptModule],
+    },
+    {
+        path: 'vouchers',
+        title: 'Voucher Register API',
+        description: 'One register screen for every accountant voucher — Journal, Contra, Debit Note, Credit ' +
+            'Note, Purchase (Accounting), Sales (Accounting), Receipt Voucher, Payment Voucher — and ' +
+            'ONE posting routine behind it. The voucher TYPE carries the rules; the client sends only ' +
+            'the lines the operator typed and the server works out every tax, TDS and party leg. ' +
+            'Twelve routes under /vouchers: the types the caller may view (with rights on each type’s ' +
+            'own menu), the ledger picker, a ledger balance, party facts, open bills, tax rates, ' +
+            'create (draft), validate (dry), post, cancel (a Rev reversal), delete (draft), get. No ' +
+            'list: the F8 list and the exceptions report are registered grids.',
+        include: [vouchers_module_1.VouchersModule],
     },
     {
         path: 'cheques',

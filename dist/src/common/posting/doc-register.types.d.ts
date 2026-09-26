@@ -1,9 +1,12 @@
 export type RegisterDocType = 'INVOICE' | 'CREDIT_NOTE' | 'DEBIT_NOTE' | 'BILL_OF_SUPPLY' | 'DELIVERY_CHALLAN' | 'CHALLAN' | 'ADVANCE' | 'ADV_ADJUSTMENT' | 'EXPORT_DOC' | 'IMPORT_DOC' | 'OTHER';
-export type RegisterTranNature = 'SALE' | 'SALES_RETURN' | 'DELIVERY_CHALLAN' | 'CREDIT_NOTE' | 'DEBIT_NOTE' | 'STOCK_TRANSFER' | 'OTHER';
+export type RegisterTranNature = 'SALE' | 'SALES_RETURN' | 'PURCHASE' | 'PURCHASE_RETURN' | 'DELIVERY_CHALLAN' | 'CREDIT_NOTE' | 'DEBIT_NOTE' | 'STOCK_TRANSFER' | 'OTHER';
 export type RegisterTaxability = 'TAXABLE' | 'EXEMPT' | 'NIL_RATED' | 'NON_GST' | 'MIXED';
 export type RegisterSupplyNature = 'INTRA_STATE' | 'INTER_STATE' | 'IMPORT' | 'EXPORT' | 'SEZ' | 'OTHER';
 export type RegisterSupplyClass = 'GOODS' | 'SERVICES' | 'MIXED';
 export type RegisterDocFlow = 'OUTWARD' | 'INWARD' | 'INTERNAL';
+export type RegisterSourceModule = 'SALES' | 'PURCHASE' | 'INVENTORY' | 'ACCOUNTS' | 'SERVICE' | 'JOBWORK' | 'POS' | 'OTHER';
+export type RegisterPartyType = 'CUSTOMER' | 'VENDOR' | 'BRANCH' | 'JOBWORKER' | 'TRANSPORTER' | 'OTHER';
+export type RegisterItcEligibility = 'INPUTS' | 'INPUT_SERVICES' | 'CAPITAL_GOODS' | 'INELIGIBLE';
 export interface RegisterDetailLine {
     rowNo: number;
     itemId?: string | null;
@@ -32,6 +35,12 @@ export interface RegisterDetailLine {
     billValue: number;
     taxability: RegisterTaxability;
     supplyNature: RegisterSupplyNature;
+    taxableLedgerId?: string | null;
+    cgstLedgerId?: string | null;
+    sgstLedgerId?: string | null;
+    igstLedgerId?: string | null;
+    cessLedgerId?: string | null;
+    itcEligibility?: RegisterItcEligibility | null;
 }
 export interface RegisterDoc {
     companyId: string;
@@ -42,6 +51,7 @@ export interface RegisterDoc {
     voucherNo: bigint;
     voucherDate: string;
     voucherRefno?: string | null;
+    sourceModule?: RegisterSourceModule;
     sourceDocId: string;
     docType: RegisterDocType;
     tranNature: RegisterTranNature;
@@ -57,6 +67,7 @@ export interface RegisterDoc {
     placeOfSupplyName?: string | null;
     isReverseCharge?: boolean;
     igstOnIntra?: boolean;
+    partyType?: RegisterPartyType;
     partyId: string;
     partyName?: string | null;
     partyAddr1?: string | null;

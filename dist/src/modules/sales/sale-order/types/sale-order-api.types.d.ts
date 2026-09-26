@@ -68,6 +68,7 @@ export type SaleOrderItemPayload = Omit<SaleOrderItem, 'soiCreatedOn' | 'soiModi
     soiSectionId?: string | null;
     soiCategoryId?: string | null;
     soiGodownName?: string | null;
+    soiAllowNegativeStock?: boolean | null;
     soiCompanyName?: string | null;
     soiBranchName?: string | null;
     soiSalesmanName?: string | null;

@@ -14,6 +14,7 @@ const common_1 = require("@nestjs/common");
 const client_1 = require("@prisma/client");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const audit_log_service_1 = require("../../audit-log/audit-log.service");
+const sale_line_godown_utils_1 = require("../../../common/utils/sale-line-godown.utils");
 const sale_order_api_types_1 = require("./types/sale-order-api.types");
 const bill_api_types_1 = require("../bill/types/bill-api.types");
 const txn_status_log_helper_1 = require("../../../common/txn-status-log/txn-status-log.helper");
@@ -372,7 +373,9 @@ const EMPTY_NAME_MAPS = {
     employeeNameById: new Map(),
     ledgerNameById: new Map(),
     userNameById: new Map(),
-    godownNameById: new Map(),
+    godownById: new Map(),
+    companyAllowsNegStock: null,
+    defaultGodownByLine: new Map(),
 };
 function distinctIds(values) {
     return [...new Set(values.filter((value) => !!value))];
@@ -418,6 +421,8 @@ let SaleOrderService = class SaleOrderService {
                                 itemBrandId: true,
                                 itemSectionId: true,
                                 itemCategoryId: true,
+                                itemIsService: true,
+                                itemAllowNegStock: true,
                             },
                         },
                         itemUnitConversion: {
@@ -1783,7 +1788,7 @@ let SaleOrderService = class SaleOrderService {
     applyOptionalFields(data, dto) {
         (0, module_service_utils_1.applyPresentFields)(data, dto, SALE_ORDER_OPTIONAL_FIELDS, SALE_ORDER_DATE_TRANSFORMS);
     }
-    async resolveGodownNames(items = []) {
+    async resolveGodowns(items = []) {
         const godownIds = [
             ...new Set(items
                 .map((item) => item.soiGodownId)
@@ -1794,9 +1799,12 @@ let SaleOrderService = class SaleOrderService {
         }
         const godowns = await this.prisma.godownLocation.findMany({
             where: { gdlId: { in: godownIds } },
-            select: { gdlId: true, gdlName: true },
+            select: { gdlId: true, gdlName: true, gdlNegativeStock: true },
         });
-        return new Map(godowns.map((godown) => [godown.gdlId, godown.gdlName]));
+        return new Map(godowns.map((godown) => [
+            godown.gdlId,
+            { gdlName: godown.gdlName, gdlNegativeStock: godown.gdlNegativeStock },
+        ]));
     }
     async resolveDisplayNames(record, charges, tenders) {
         const items = record.items ?? [];
@@ -1817,11 +1825,11 @@ let SaleOrderService = class SaleOrderService {
         ]);
         const ledgerIds = distinctIds(tenders.map((tender) => tender.tdPartyLedgerId));
         const userIds = distinctIds(tenders.map((tender) => tender.tdUserId));
-        const [companies, branches, employees, ledgers, users, godownNameById] = await Promise.all([
+        const [companies, branches, employees, ledgers, users, godownById, defaultGodownByLine] = await Promise.all([
             companyIds.length
                 ? this.prisma.company.findMany({
                     where: { compId: { in: companyIds } },
-                    select: { compId: true, compName: true },
+                    select: { compId: true, compName: true, compNegStkApl: true, compIsDeleted: true },
                 })
                 : [],
             branchIds.length
@@ -1848,15 +1856,21 @@ let SaleOrderService = class SaleOrderService {
                     select: { usrId: true, usrDisplayName: true },
                 })
                 : [],
-            this.resolveGodownNames(items),
+            this.resolveGodowns(items),
+            (0, sale_line_godown_utils_1.resolveDefaultSaleGodowns)(this.prisma, record.soBranchId, items
+                .filter((item) => item.soiGodownId === null)
+                .map((item) => ({ itemId: item.soiItemId, iucId: item.soiItemUnitId }))),
         ]);
+        const orderCompany = companies.find((company) => company.compId === record.soCompanyId && !company.compIsDeleted);
         return {
             companyNameById: new Map(companies.map((company) => [company.compId, company.compName])),
             branchNameById: new Map(branches.map((branch) => [branch.brId, branch.brName])),
             employeeNameById: new Map(employees.map((employee) => [employee.empId, employee.empName])),
             ledgerNameById: new Map(ledgers.map((ledger) => [ledger.ledId, ledger.ledName])),
             userNameById: new Map(users.map((user) => [user.usrId, user.usrDisplayName])),
-            godownNameById,
+            godownById,
+            companyAllowsNegStock: orderCompany?.compNegStkApl ?? null,
+            defaultGodownByLine,
         };
     }
     toPayload(record, names = EMPTY_NAME_MAPS) {
@@ -1893,7 +1907,12 @@ let SaleOrderService = class SaleOrderService {
             soiSectionId: item?.itemSectionId ?? null,
             soiCategoryId: item?.itemCategoryId ?? null,
             soiGodownName: record.soiGodownId
-                ? (names.godownNameById.get(record.soiGodownId) ?? null)
+                ? (names.godownById.get(record.soiGodownId)?.gdlName ?? null)
+                : null,
+            soiAllowNegativeStock: item
+                ? (0, sale_line_godown_utils_1.saleLineAllowsNegativeStock)(item, record.soiGodownId
+                    ? names.godownById.get(record.soiGodownId)?.gdlNegativeStock
+                    : names.defaultGodownByLine.get((0, sale_line_godown_utils_1.saleGodownKey)({ itemId: record.soiItemId, iucId: record.soiItemUnitId }))?.gdlNegativeStock, names.companyAllowsNegStock)
                 : null,
             soiCompanyName: names.companyNameById.get(record.soiCompanyId) ?? null,
             soiBranchName: names.branchNameById.get(record.soiBranchId) ?? null,

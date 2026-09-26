@@ -351,8 +351,8 @@ second round trip:
 | `sqiUnitName` | `inventory.item_unit_master.unit_name` | `itemUnitConversion` → `unit` on `sqiItemUnitId` |
 | `sqiDecimalCount` | `inventory.item_unit_master.unit_decimal_count` | same relation chain |
 | `sqiAllowNegativeStock` | three switches — see below | `item` relation plus one company read |
-| `sqiGodownId` | `public.branch_master.br_default_godown_id` | one read on `sqBranchId` — see below |
-| `sqiGodownName` | `inventory.godown_locations.gdl_name` | looked up from that default |
+| `sqiGodownId` | `item_price_master.ipm_godown_id`, else `branch_master.br_default_godown_id` | one batched read per `/get` — see below |
+| `sqiGodownName` | `inventory.godown_locations.gdl_name` | looked up from that godown |
 
 `sqiAllowNegativeStock` is the **effective** answer to "may this line go below zero", not
 `item_master.item_allow_neg_stock` on its own. It applies the same rule `/item-price` applies when
@@ -365,8 +365,11 @@ read is not a "no" — the godown and the item still decide — and a line whose
 
 `sqiGodownId` / `sqiGodownName` are the odd pair out: `sale_quotation_item` has **no godown
 column** — a quotation neither moves nor reserves stock — so there is nothing stored per line to
-resolve. Every line instead carries the **branch's default godown**, read once per `/get` from
-`branch_master.br_default_godown_id`, so the entry screen has a godown to show and to carry into
-the order or bill the quote is converted to. A branch with no default, or one whose default has
-been soft-deleted, answers `null` on both fields rather than prefilling a dead location. Sending
+resolve. Every line instead carries the godown a **hand-picked line of that item would get from
+`/master-lookups/item-price`** (notes 51 — one rule for "no godown chosen yet",
+`src/common/utils/sale-line-godown.utils.ts`): the price row's `ipm_godown_id` for the line's unit
+(a branch-specific row beating a branch-less one), else the branch's `br_default_godown_id` while
+that godown is live. So a quoted line and the same item picked by hand land in the same godown, and
+the godown half of `sqiAllowNegativeStock` is that godown's. A line where neither resolves answers
+`null` on both fields rather than prefilling a dead location. Sending
 them on a save is ignored, like every other resolved field here.

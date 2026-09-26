@@ -22,6 +22,7 @@ import {
   selectUnitRate,
 } from '../utils/item-price.utils';
 import { resolveLoadingWeight, selectLoadingSlab } from '../utils/loading-charge.utils';
+import { branchDefaultGodownId } from '../../../common/utils/sale-line-godown.utils';
 
 /**
  * The posting roles the payload names a ledger for, keyed by the payload field.
@@ -52,9 +53,10 @@ type LoadingChargeResolution = Pick<ItemPriceLookupPayload, 'loading_charge' | '
  *    wins; otherwise the unit-slno rule applies — a retail item takes the
  *    highest slno row, a non-retail item takes the base row (slno 0).
  *  - godown (legacy `isale_no`): an explicit godown_id overrides the rate's
- *    own godown for both the godown row and the stock scope.
- *  - stock: scoped to the resolved godown; a godown-less price row sums
- *    across all godowns since there is nothing to scope it to.
+ *    own godown for both the godown row and the stock scope; a godown-less
+ *    rate falls back to the branch's default godown (notes 51).
+ *  - stock: scoped to the resolved godown; only when no godown resolves at
+ *    all (no rate godown, no branch default) does it sum across godowns.
  *  - customer rate (legacy `CSR.csr_disc_qty`): the customer discount is
  *    subtracted ONLY from the A/B/C/D sales prices (levels 1–4), never from
  *    max/min/cost (levels 5/6/7).
@@ -300,7 +302,12 @@ export class ItemPriceLookup {
       );
     }
     // Legacy `isale_no`: an explicit sale godown overrides the rate's own godown.
-    const godownId = query.godown_id ?? rate.ipmGodownId;
+    // A rate with no godown falls back to the branch default — the same rule
+    // /quotations/get stamps its lines with (notes 51, sale-line-godown.utils).
+    const godownId =
+      query.godown_id ??
+      rate.ipmGodownId ??
+      (branch_id ? await branchDefaultGodownId(this.prisma, branch_id) : null);
     // 3. Everything that hangs off the chosen item / rate (legacy lateral joins).
     // The rate's unit now arrives with the row, via its conversion.
     const unit = rate.itemUnitConversion.unit;
@@ -344,8 +351,8 @@ export class ItemPriceLookup {
               // A missing company / branch widens the sum to all of them.
               ...(company_id ? { isbCompanyId: company_id } : {}),
               ...(branch_id ? { isbBranchId: branch_id } : {}),
-              // A godown-less price row is not godown-scoped, so its stock
-              // sums across all godowns.
+              // No godown resolved at all → nothing to scope the stock to,
+              // so it sums across all godowns.
               ...(godownId ? { isbGodownId: godownId } : {}),
             },
           })

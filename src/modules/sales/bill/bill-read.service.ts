@@ -275,7 +275,9 @@ export class BillReadService {
              d.sdi_item_unit_id AS unit_id, u.unit_name, d.sdi_lot_id AS lot_id, d.sdi_batch_no AS batch_no,
              d.sdi_godown_id AS godown_id, d.sdi_dc_qty AS doc_qty, d.sdi_open_qty AS open_qty,
              d.sdi_rate AS rate, d.sdi_tax_id AS tax_id, d.sdi_tax_perc AS tax_perc, d.sdi_hsn_code AS hsn_code,
-             d.sdi_free_qty AS free_qty
+             d.sdi_free_qty AS free_qty,
+             -- The challan already moved the stock; billing it takes none.
+             true AS allow_negative_stock
         FROM sales.sale_dc h
         JOIN sales.sale_dc_item d ON d.sdi_dc_id = h.sdc_id AND d.sdi_acc_year = h.sdc_acc_year AND d.sdi_is_deleted = false
         JOIN inventory.item_master im ON im.item_id = d.sdi_item_id
@@ -310,12 +312,31 @@ export class BillReadService {
              d.soi_item_unit_id AS unit_id, u.unit_name, NULL::uuid AS lot_id, NULL::text AS batch_no,
              d.soi_godown_id AS godown_id, d.soi_order_qty AS doc_qty, d.soi_pending_qty AS open_qty,
              d.soi_rate AS rate, d.soi_tax_id AS tax_id, d.soi_tax_perc AS tax_perc, d.soi_hsn_code AS hsn_code,
-             0::numeric AS free_qty
+             0::numeric AS free_qty,
+             (im.item_is_service OR NOT (g.gdl_negative_stock IS FALSE
+                                         AND c.comp_negstk_apl IS FALSE
+                                         AND im.item_allow_neg_stock IS FALSE)) AS allow_negative_stock
         FROM sales.sale_order h
         JOIN sales.sale_order_item d ON d.soi_order_id = h.so_id AND d.soi_acc_year = h.so_acc_year AND d.soi_is_deleted = false
         JOIN inventory.item_master im ON im.item_id = d.soi_item_id
         LEFT JOIN inventory.item_unit_conversion iuc ON iuc.iuc_id = d.soi_item_unit_id
         LEFT JOIN inventory.item_unit_master u ON u.unit_id = iuc.iuc_unit_id
+        -- notes (51): the line's allow-negative switch, as soiAllowNegativeStock
+        -- derives it. Its godown is the line's own; a line with none takes the
+        -- sale-line default (price row godown, else the live branch default —
+        -- sale-line-godown.utils).
+        LEFT JOIN public.companys c ON c.comp_id = h.so_company_id AND c.comp_is_deleted = false
+        LEFT JOIN LATERAL (
+          SELECT p.ipm_godown_id FROM inventory.item_price_master p
+           WHERE p.ipm_item_id = d.soi_item_id AND p.ipm_uc_unit_id = d.soi_item_unit_id
+             AND p.ipm_is_deleted = false
+             AND (p.ipm_branch_id = h.so_branch_id OR p.ipm_branch_id IS NULL)
+           ORDER BY (p.ipm_branch_id IS NULL), p.ipm_id
+           LIMIT 1) pr ON true
+        LEFT JOIN public.branch_master br ON br.br_id = h.so_branch_id
+        LEFT JOIN inventory.godown_locations bg ON bg.gdl_id = br.br_default_godown_id AND bg.gdl_is_deleted = false
+        LEFT JOIN inventory.godown_locations g
+               ON g.gdl_id = COALESCE(d.soi_godown_id, pr.ipm_godown_id, bg.gdl_id)
        WHERE h.so_company_id = ${q.companyId}::uuid AND h.so_branch_id = ${q.branchId}::uuid
          AND h.so_cust_id = ${q.partyId}::uuid AND h.so_status IN ('CONFIRMED', 'PARTIAL') AND h.so_is_deleted = false
          AND (${q.accYear ?? null}::text IS NULL OR h.so_acc_year = ${q.accYear ?? null}::char(9))
@@ -743,6 +764,7 @@ interface OpenLineRow {
   tax_perc: Prisma.Decimal | null;
   hsn_code: string | null;
   free_qty: Prisma.Decimal | null;
+  allow_negative_stock: boolean;
 }
 
 export interface OpenSourceDoc {
@@ -771,6 +793,10 @@ export interface OpenSourceDoc {
     taxId: string | null;
     taxPerc: number;
     hsnCode: string | null;
+    // notes (51): whether this line may take stock below zero. Always true for
+    // a DC line (the challan already moved the stock); an order line derives
+    // it as soiAllowNegativeStock does.
+    allowNegativeStock: boolean;
   }[];
 }
 
@@ -812,6 +838,7 @@ function groupOpen(
       taxId: r.tax_id,
       taxPerc: num(r.tax_perc),
       hsnCode: r.hsn_code,
+      allowNegativeStock: r.allow_negative_stock,
     });
   }
   return [...by.values()].map((d) => ({ ...d, ...extra(d) }));

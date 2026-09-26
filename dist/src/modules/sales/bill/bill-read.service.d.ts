@@ -71,5 +71,6 @@ export interface OpenSourceDoc {
         taxId: string | null;
         taxPerc: number;
         hsnCode: string | null;
+        allowNegativeStock: boolean;
     }[];
 }

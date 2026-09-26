@@ -2,6 +2,12 @@ import { Injectable } from '@nestjs/common';
 import { Prisma, SaleOrder, SaleOrderItem } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
+import {
+  resolveDefaultSaleGodowns,
+  saleGodownKey,
+  saleLineAllowsNegativeStock,
+  SaleGodown,
+} from '../../../common/utils/sale-line-godown.utils';
 import { SaveSaleOrderDto } from './dto/save-sale-order.dto';
 import { SaveSaleOrderItemDto } from './dto/save-sale-order-item.dto';
 import {
@@ -557,6 +563,8 @@ type SaleOrderItemWithNames = SaleOrderItem & {
     itemBrandId: string | null;
     itemSectionId: string | null;
     itemCategoryId: string | null;
+    itemIsService: boolean;
+    itemAllowNegStock: boolean;
   } | null;
   itemUnitConversion?: { unit: { unit_name: string; unit_decimal_count: number } } | null;
 };
@@ -572,15 +580,23 @@ interface SaleOrderNameMaps {
   employeeNameById: Map<string, string>;
   ledgerNameById: Map<string, string>;
   userNameById: Map<string, string>;
-  godownNameById: Map<string, string>;
+  godownById: Map<string, OrderLineGodown>;
+  // notes (51): what soiAllowNegativeStock needs beyond the line — the
+  // company's switch, and for a line with no godown of its own the godown a
+  // new bill line of that item would default to (keyed by saleGodownKey).
+  companyAllowsNegStock: boolean | null;
+  defaultGodownByLine: Map<string, SaleGodown | null>;
 }
+type OrderLineGodown = { gdlName: string; gdlNegativeStock: boolean };
 const EMPTY_NAME_MAPS: SaleOrderNameMaps = {
   companyNameById: new Map(),
   branchNameById: new Map(),
   employeeNameById: new Map(),
   ledgerNameById: new Map(),
   userNameById: new Map(),
-  godownNameById: new Map(),
+  godownById: new Map(),
+  companyAllowsNegStock: null,
+  defaultGodownByLine: new Map(),
 };
 // The distinct, present ids out of a column gathered across header, lines,
 // charges and tenders — nulls dropped, so an all-null column costs no
@@ -635,6 +651,10 @@ export class SaleOrderService {
                 itemBrandId: true,
                 itemSectionId: true,
                 itemCategoryId: true,
+                // Two of the three switches behind the line's effective
+                // soiAllowNegativeStock; see toItemPayload.
+                itemIsService: true,
+                itemAllowNegStock: true,
               },
             },
             itemUnitConversion: {
@@ -3015,13 +3035,13 @@ export class SaleOrderService {
   ): void {
     applyPresentFields(data, dto, SALE_ORDER_OPTIONAL_FIELDS, SALE_ORDER_DATE_TRANSFORMS);
   }
-  // One batched read of the godown names the order's lines point at, keyed by
-  // gdl_id. soi_godown_id is nullable (a reservation is optional), so null
-  // entries are skipped. Empty on the create/update paths, which do not resolve
-  // display names — see toItemPayload.
-  private async resolveGodownNames(
+  // One batched read of the godowns the order's lines point at (name and
+  // negative-stock switch), keyed by gdl_id. soi_godown_id is nullable (a
+  // reservation is optional), so null entries are skipped. Empty on the
+  // create/update paths, which do not resolve display names — see toItemPayload.
+  private async resolveGodowns(
     items: readonly Pick<SaleOrderItem, 'soiGodownId'>[] = [],
-  ): Promise<Map<string, string>> {
+  ): Promise<Map<string, OrderLineGodown>> {
     const godownIds = [
       ...new Set(
         items
@@ -3034,9 +3054,14 @@ export class SaleOrderService {
     }
     const godowns = await this.prisma.godownLocation.findMany({
       where: { gdlId: { in: godownIds } },
-      select: { gdlId: true, gdlName: true },
+      select: { gdlId: true, gdlName: true, gdlNegativeStock: true },
     });
-    return new Map(godowns.map((godown) => [godown.gdlId, godown.gdlName]));
+    return new Map(
+      godowns.map((godown) => [
+        godown.gdlId,
+        { gdlName: godown.gdlName, gdlNegativeStock: godown.gdlNegativeStock },
+      ]),
+    );
   }
   // One batched read per master over every id the order and its children point
   // at, run concurrently. An id column that is empty across the whole document
@@ -3066,46 +3091,64 @@ export class SaleOrderService {
     ]);
     const ledgerIds = distinctIds(tenders.map((tender) => tender.tdPartyLedgerId));
     const userIds = distinctIds(tenders.map((tender) => tender.tdUserId));
-    const [companies, branches, employees, ledgers, users, godownNameById] = await Promise.all([
-      companyIds.length
-        ? this.prisma.company.findMany({
-            where: { compId: { in: companyIds } },
-            select: { compId: true, compName: true },
-          })
-        : [],
-      branchIds.length
-        ? this.prisma.branchMaster.findMany({
-            where: { brId: { in: branchIds } },
-            select: { brId: true, brName: true },
-          })
-        : [],
-      employeeIds.length
-        ? this.prisma.employeeMaster.findMany({
-            where: { empId: { in: employeeIds } },
-            select: { empId: true, empName: true },
-          })
-        : [],
-      ledgerIds.length
-        ? this.prisma.accLedgerMaster.findMany({
-            where: { ledId: { in: ledgerIds } },
-            select: { ledId: true, ledName: true },
-          })
-        : [],
-      userIds.length
-        ? this.prisma.userMaster.findMany({
-            where: { usrId: { in: userIds } },
-            select: { usrId: true, usrDisplayName: true },
-          })
-        : [],
-      this.resolveGodownNames(items),
-    ]);
+    const [companies, branches, employees, ledgers, users, godownById, defaultGodownByLine] =
+      await Promise.all([
+        companyIds.length
+          ? this.prisma.company.findMany({
+              where: { compId: { in: companyIds } },
+              select: { compId: true, compName: true, compNegStkApl: true, compIsDeleted: true },
+            })
+          : [],
+        branchIds.length
+          ? this.prisma.branchMaster.findMany({
+              where: { brId: { in: branchIds } },
+              select: { brId: true, brName: true },
+            })
+          : [],
+        employeeIds.length
+          ? this.prisma.employeeMaster.findMany({
+              where: { empId: { in: employeeIds } },
+              select: { empId: true, empName: true },
+            })
+          : [],
+        ledgerIds.length
+          ? this.prisma.accLedgerMaster.findMany({
+              where: { ledId: { in: ledgerIds } },
+              select: { ledId: true, ledName: true },
+            })
+          : [],
+        userIds.length
+          ? this.prisma.userMaster.findMany({
+              where: { usrId: { in: userIds } },
+              select: { usrId: true, usrDisplayName: true },
+            })
+          : [],
+        this.resolveGodowns(items),
+        // A line with no godown of its own takes the one a bill line of that
+        // item would default to (notes 51, sale-line-godown.utils).
+        resolveDefaultSaleGodowns(
+          this.prisma,
+          record.soBranchId,
+          items
+            .filter((item) => item.soiGodownId === null)
+            .map((item) => ({ itemId: item.soiItemId, iucId: item.soiItemUnitId })),
+        ),
+      ]);
+    // company.comp_negstk_apl, the second of the three switches behind a
+    // line's soiAllowNegativeStock. A missing or retired company is not a
+    // "no" — the godown and the item still decide — so it answers null.
+    const orderCompany = companies.find(
+      (company) => company.compId === record.soCompanyId && !company.compIsDeleted,
+    );
     return {
       companyNameById: new Map(companies.map((company) => [company.compId, company.compName])),
       branchNameById: new Map(branches.map((branch) => [branch.brId, branch.brName])),
       employeeNameById: new Map(employees.map((employee) => [employee.empId, employee.empName])),
       ledgerNameById: new Map(ledgers.map((ledger) => [ledger.ledId, ledger.ledName])),
       userNameById: new Map(users.map((user) => [user.usrId, user.usrDisplayName])),
-      godownNameById,
+      godownById,
+      companyAllowsNegStock: orderCompany?.compNegStkApl ?? null,
+      defaultGodownByLine,
     };
   }
   private toPayload(
@@ -3169,7 +3212,24 @@ export class SaleOrderService {
       soiSectionId: item?.itemSectionId ?? null,
       soiCategoryId: item?.itemCategoryId ?? null,
       soiGodownName: record.soiGodownId
-        ? (names.godownNameById.get(record.soiGodownId) ?? null)
+        ? (names.godownById.get(record.soiGodownId)?.gdlName ?? null)
+        : null,
+      // notes (51): the effective answer to "may this line go below zero",
+      // derived as the bill derives sbiAllowNegativeStock — a service item
+      // always may, otherwise it is blocked only when the godown, the company
+      // AND the item all say no. The godown is the line's own; a line with no
+      // godown uses the one a bill line of that item defaults to. Read-only
+      // and GET-only — null when the item join was not made.
+      soiAllowNegativeStock: item
+        ? saleLineAllowsNegativeStock(
+            item,
+            record.soiGodownId
+              ? names.godownById.get(record.soiGodownId)?.gdlNegativeStock
+              : names.defaultGodownByLine.get(
+                  saleGodownKey({ itemId: record.soiItemId, iucId: record.soiItemUnitId }),
+                )?.gdlNegativeStock,
+            names.companyAllowsNegStock,
+          )
         : null,
       soiCompanyName: names.companyNameById.get(record.soiCompanyId) ?? null,
       soiBranchName: names.branchNameById.get(record.soiBranchId) ?? null,

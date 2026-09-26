@@ -76,6 +76,7 @@ class SaleOrderItemPayloadDto {
     soiSizeUom;
     soiGodownId;
     soiGodownName;
+    soiAllowNegativeStock;
     soiIsReserved;
     soiReservedQty;
     soiReserveExpiresOn;
@@ -339,6 +340,18 @@ __decorate([
     }),
     __metadata("design:type", Object)
 ], SaleOrderItemPayloadDto.prototype, "soiGodownName", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        example: true,
+        description: 'Whether soiItemId may be sold below zero on hand — the effective answer,' +
+            ' not item_master.item_allow_neg_stock alone: a service item always may, and' +
+            " otherwise it is blocked only when the line's godown (or, with none, the godown" +
+            ' /item-price defaults the item to), the company and the item all disallow it;' +
+            ' only populated on GET',
+    }),
+    __metadata("design:type", Object)
+], SaleOrderItemPayloadDto.prototype, "soiAllowNegativeStock", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)({ description: 'Soft hold; inventory owns the hard one' }),
     __metadata("design:type", Boolean)

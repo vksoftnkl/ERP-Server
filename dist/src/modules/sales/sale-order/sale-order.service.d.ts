@@ -60,7 +60,7 @@ export declare class SaleOrderService {
     private toChargeScope;
     private toTenderScope;
     private applyOptionalFields;
-    private resolveGodownNames;
+    private resolveGodowns;
     private resolveDisplayNames;
     private toPayload;
     private toItemPayload;

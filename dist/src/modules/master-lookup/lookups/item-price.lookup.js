@@ -6,6 +6,7 @@ const ledger_map_helper_1 = require("../../accountsModule/ledgerRole/ledger-map.
 const master_lookup_constants_1 = require("../master-lookup.constants");
 const item_price_utils_1 = require("../utils/item-price.utils");
 const loading_charge_utils_1 = require("../utils/loading-charge.utils");
+const sale_line_godown_utils_1 = require("../../../common/utils/sale-line-godown.utils");
 const TAX_LEDGER_ROLES = {
     sales_ledger_id: 'SALES',
     sgst_output_ledger_id: 'OUTPUT_SGST',
@@ -144,7 +145,9 @@ class ItemPriceLookup {
                 ? `No active price row found for item ${item_id} and unit ${unit_id}`
                 : `No active price row configured for item ${item_id}`);
         }
-        const godownId = query.godown_id ?? rate.ipmGodownId;
+        const godownId = query.godown_id ??
+            rate.ipmGodownId ??
+            (branch_id ? await (0, sale_line_godown_utils_1.branchDefaultGodownId)(this.prisma, branch_id) : null);
         const unit = rate.itemUnitConversion.unit;
         const rateUnitId = rate.itemUnitConversion.iucUnitId;
         const [godown, tax, company, custRate, reorder, stockSum, loading] = await Promise.all([

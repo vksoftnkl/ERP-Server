@@ -56,7 +56,7 @@ let DocRegisterService = class DocRegisterService {
         gdr_other_charge, gdr_round_off, gdr_bill_value,
         gdr_remarks, gdr_igst_on_intra, gdr_created_by
       ) VALUES (
-        'SALES'::accounts."GdrSourceModule",
+        ${doc.sourceModule ?? 'SALES'}::accounts."GdrSourceModule",
         ${doc.tranNature}::accounts."GdrTranNature",
         ${doc.docFlow}::accounts."GdrDocFlow",
         ${doc.docSign}::int,
@@ -72,7 +72,7 @@ let DocRegisterService = class DocRegisterService {
         ${doc.supplyNature ?? null}::accounts."GdrSupplyNature",
         ${doc.placeOfSupplyCode ?? null}, ${doc.placeOfSupplyName ?? null},
         ${doc.isReverseCharge ?? false}, ${einvoiceApplicable}, ${eway.applicable},
-        'CUSTOMER'::accounts."GdrPartyType", ${doc.partyId}::uuid, ${doc.partyName ?? null},
+        ${doc.partyType ?? 'CUSTOMER'}::accounts."GdrPartyType", ${doc.partyId}::uuid, ${doc.partyName ?? null},
         ${doc.partyAddr1 ?? null}, ${doc.partyAddr2 ?? null}, ${doc.partyAddr3 ?? null},
         ${doc.partyLocation ?? null}, ${doc.partyPin ?? null},
         ${doc.partyStateCode ?? null}, ${doc.partyStateName ?? null},
@@ -101,6 +101,15 @@ let DocRegisterService = class DocRegisterService {
         const rows = await c.$queryRaw `
       SELECT gdr_id FROM accounts.acc_voucher_doc_register
        WHERE gdr_source_doc_id = ${sourceDocId}::uuid AND gdr_acc_year = ${accYear}::char(9)
+         AND gdr_is_deleted = false
+       ORDER BY (gdr_doc_status <> 'CANCELED'::accounts."GdrDocStatus") DESC, gdr_created_on DESC
+       LIMIT 1`;
+        return rows[0]?.gdr_id ?? null;
+    }
+    async registerIdOfVoucher(c, voucherId, accYear) {
+        const rows = await c.$queryRaw `
+      SELECT gdr_id FROM accounts.acc_voucher_doc_register
+       WHERE gdr_voucher_id = ${voucherId}::uuid AND gdr_acc_year = ${accYear}::char(9)
          AND gdr_is_deleted = false
        ORDER BY (gdr_doc_status <> 'CANCELED'::accounts."GdrDocStatus") DESC, gdr_created_on DESC
        LIMIT 1`;
@@ -154,7 +163,11 @@ let DocRegisterService = class DocRegisterService {
         ${money(l.igstAmount)}::numeric, ${money(l.cessAmount)}::numeric,
         ${money(l.cgstAmount + l.sgstAmount + l.igstAmount + l.cessAmount)}::numeric,
         ${money(l.otherAmount)}::numeric, ${money(l.totalValue)}::numeric,
-        ${money(l.billValue)}::numeric, ${uuidOrNull(doc.createdBy)}::uuid
+        ${money(l.billValue)}::numeric,
+        ${l.taxableLedgerId ?? null}::uuid, ${l.cgstLedgerId ?? null}::uuid,
+        ${l.sgstLedgerId ?? null}::uuid, ${l.igstLedgerId ?? null}::uuid,
+        ${l.cessLedgerId ?? null}::uuid, ${l.itcEligibility ?? null},
+        ${uuidOrNull(doc.createdBy)}::uuid
       )`);
         return tx.$executeRaw `
       INSERT INTO accounts.acc_voucher_doc_detail (
@@ -169,7 +182,10 @@ let DocRegisterService = class DocRegisterService {
         vtx_cgst_rate, vtx_sgst_rate, vtx_igst_rate, vtx_cess_rate,
         vtx_cgst_amount, vtx_sgst_amount, vtx_igst_amount, vtx_cess_amount,
         vtx_total_tax_amount, vtx_other_amount, vtx_total_value,
-        vtx_bill_value, vtx_created_by
+        vtx_bill_value,
+        vtx_taxable_ledger_id, vtx_cgst_ledger_id, vtx_sgst_ledger_id, vtx_igst_ledger_id,
+        vtx_cess_ledger_id, vtx_itc_eligibility,
+        vtx_created_by
       )
       VALUES ${client_1.Prisma.join(values)}`;
     }

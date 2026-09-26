@@ -219,7 +219,7 @@ export declare class QuotationPayloadDto {
     sqHasPromo: boolean;
     sqHasComm: boolean;
     sqUserId: string;
-    sqSalesmanId: string | null;
+    sqSalesmanId: string[];
     sqSalesmanName?: string | null;
     sqAgentId: string | null;
     sqAgentName?: string | null;

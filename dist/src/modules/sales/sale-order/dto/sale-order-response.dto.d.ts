@@ -41,6 +41,7 @@ export declare class SaleOrderItemPayloadDto {
     soiSizeUom: string | null;
     soiGodownId: string | null;
     soiGodownName?: string | null;
+    soiAllowNegativeStock?: boolean | null;
     soiIsReserved: boolean;
     soiReservedQty: number;
     soiReserveExpiresOn: string | null;

@@ -128,6 +128,17 @@ export class SaleOrderItemPayloadDto {
     description: 'godown_locations.gdl_name for soiGodownId — only populated on GET',
   })
   soiGodownName?: string | null;
+  @ApiPropertyOptional({
+    nullable: true,
+    example: true,
+    description:
+      'Whether soiItemId may be sold below zero on hand — the effective answer,' +
+      ' not item_master.item_allow_neg_stock alone: a service item always may, and' +
+      " otherwise it is blocked only when the line's godown (or, with none, the godown" +
+      ' /item-price defaults the item to), the company and the item all disallow it;' +
+      ' only populated on GET',
+  })
+  soiAllowNegativeStock?: boolean | null;
   @ApiProperty({ description: 'Soft hold; inventory owns the hard one' })
   soiIsReserved!: boolean;
   @ApiProperty()

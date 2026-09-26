@@ -201,6 +201,12 @@ export type SaleOrderItemPayload = Omit<
   // Same idea for the line's soiGodownId, except sale_order_item has no FK to
   // inventory.godown_locations, so it is looked up rather than joined.
   soiGodownName?: string | null;
+  // notes (51): whether this line may take stock below zero — derived, never
+  // stored, GET-only. A service item always may; otherwise it is blocked only
+  // when the line's godown (or, with none, the godown a bill line of that item
+  // defaults to), the company AND the item all disallow it. The same rule as
+  // sbiAllowNegativeStock and /item-price's allow_negative_stock.
+  soiAllowNegativeStock?: boolean | null;
   // ... and for the line's own scope / salesman ids, which have no FKs either.
   soiCompanyName?: string | null;
   soiBranchName?: string | null;

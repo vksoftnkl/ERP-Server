@@ -23,6 +23,7 @@ import { TransactionModule } from '../modules/accountsModule/transaction/transac
 import { OpeningBalanceModule } from '../modules/accountsModule/openingBalance/opening-balance.module';
 import { ReceiptModule } from '../modules/accountsModule/receipt/receipt.module';
 import { ChequesModule } from '../modules/accountsModule/cheques/cheques.module';
+import { VouchersModule } from '../modules/accountsModule/vouchers/vouchers.module';
 import { LedgerMapModule } from '../modules/accountsModule/ledgerMap/ledger-map.module';
 import { AuthModule } from '../modules/auth/auth.module';
 import { AreaModule } from '../modules/sales/area/area.module';
@@ -359,6 +360,20 @@ export const swaggerModuleDocuments = [
       'post-dated cheque gets a voucher of its own dated the cheque, and its bills settle on ' +
       'maturity. The remainder is always held as an ADVANCE bill',
     include: [ReceiptModule],
+  },
+  {
+    path: 'vouchers',
+    title: 'Voucher Register API',
+    description:
+      'One register screen for every accountant voucher — Journal, Contra, Debit Note, Credit ' +
+      'Note, Purchase (Accounting), Sales (Accounting), Receipt Voucher, Payment Voucher — and ' +
+      'ONE posting routine behind it. The voucher TYPE carries the rules; the client sends only ' +
+      'the lines the operator typed and the server works out every tax, TDS and party leg. ' +
+      'Twelve routes under /vouchers: the types the caller may view (with rights on each type’s ' +
+      'own menu), the ledger picker, a ledger balance, party facts, open bills, tax rates, ' +
+      'create (draft), validate (dry), post, cancel (a Rev reversal), delete (draft), get. No ' +
+      'list: the F8 list and the exceptions report are registered grids.',
+    include: [VouchersModule],
   },
   {
     path: 'cheques',
