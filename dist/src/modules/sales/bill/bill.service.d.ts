@@ -1,0 +1,83 @@
+import { Prisma, SaleBill, SaleBillItem } from '@prisma/client';
+import { PrismaService } from '../../../database/prisma/prisma.service';
+import { AuditLogService } from '../../audit-log/audit-log.service';
+import { SaveBillDto } from './dto/save-bill.dto';
+import { DeleteBillDto } from './dto/bill-lifecycle.dto';
+import { BillChargePayload, BillPayload, BillTenderPayload } from './types/bill-api.types';
+import { SaleOrderService } from '../sale-order/sale-order.service';
+import { SaleOrderLineRef } from '../sale-order/types/sale-order-api.types';
+import { QuotationService } from '../quotation/quotation.service';
+import { ChargeDetailService } from '../../master/charge-detail/charge-detail.service';
+import { TenderDetailService } from '../../accountsModule/tenderDetail/tender-detail.service';
+import { RequestContextService } from '../../../common/request-context/request-context.service';
+import { SalesContextService } from '../posting/sales-context.service';
+import { SalesDocBlocksService } from '../posting/sales-doc-blocks.service';
+import { TransportBandService, type TransportBandInput } from '../posting/transport-band.service';
+import { BillReadService } from './bill-read.service';
+export declare class BillService {
+    private readonly prisma;
+    private readonly auditLogService;
+    private readonly requestContextService;
+    private readonly chargeDetailService;
+    private readonly tenderDetailService;
+    private readonly saleOrderService;
+    private readonly quotationService;
+    private readonly transportBand;
+    private readonly salesContext;
+    private readonly docBlocks;
+    private readonly billRead;
+    constructor(prisma: PrismaService, auditLogService: AuditLogService, requestContextService: RequestContextService, chargeDetailService: ChargeDetailService, tenderDetailService: TenderDetailService, saleOrderService: SaleOrderService, quotationService: QuotationService, transportBand: TransportBandService, salesContext: SalesContextService, docBlocks: SalesDocBlocksService, billRead: BillReadService);
+    save(saveBillDto: SaveBillDto): Promise<BillPayload>;
+    getById(sbId: string, sbCompanyId: string, sbBranchId: string, sbAccYear: string): Promise<BillPayload>;
+    lockHeader(tx: Prisma.TransactionClient, keys: {
+        sbId: string;
+        sbCompanyId: string;
+        sbBranchId: string;
+        sbAccYear: string;
+    }): Promise<SaleBill>;
+    loadParts(tx: Prisma.TransactionClient, bill: SaleBill): Promise<{
+        items: SaleBillItem[];
+        charges: BillChargePayload[];
+        tenders: BillTenderPayload[];
+    }>;
+    deleteDraft(dto: DeleteBillDto): Promise<{
+        sbId: string;
+        deleted: true;
+    }>;
+    private saveDraftCheques;
+    private toScope;
+    private createBill;
+    private updateBill;
+    applySaveInTx(tx: Prisma.TransactionClient, existing: SaleBill, saveBillDto: SaveBillDto, modifiedBy: string, now: Date, opts?: {
+        notes?: string;
+    }): Promise<{
+        updated: SaleBill;
+        items: SaleBillItem[];
+    }>;
+    private applyCustomerSnapshot;
+    private writeTransportBand;
+    private validateDraftAdjustments;
+    private syncItems;
+    private loadItemTaxIds;
+    private softDeleteItems;
+    private describeDuplicate;
+    private ensureBillValuesAreAllowed;
+    private ensurePosStateExists;
+    private ensureBillItemValuesAreAllowed;
+    orderRefsOf(bill: SaleBill, items: SaleBillItem[]): SaleOrderLineRef[];
+    private toOrderLineRefs;
+    private toOrderHeaderRefs;
+    private toQuotationRefs;
+    private requireItemField;
+    private toChargeScope;
+    private toTenderScope;
+    private requireCustomerLedgerId;
+    private logStatusChange;
+    private toStatusEvent;
+    private applyOptionalFields;
+    private resolveGodowns;
+    private resolveCompanyNegStock;
+    private toPayload;
+    private toItemPayload;
+}
+export declare function flatTransportOf(dto: SaveBillDto): TransportBandInput;

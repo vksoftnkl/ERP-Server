@@ -1,0 +1,47 @@
+model ItemQtyPrice {
+  iqpId           String    @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("iqp_id")
+  iqpCompanyId    String?   @db.Uuid @map("iqp_company_id")
+  iqpBranchId     String?   @db.Uuid @map("iqp_branch_id")
+  iqpPartyId      String?   @db.Uuid @map("iqp_party_id")
+  iqpPriceLevel   Int?      @map("iqp_price_level")
+  iqpItemId       String    @db.Uuid @map("iqp_item_id")
+  iqpItemUnitId   String    @db.Uuid @map("iqp_item_unit_id")
+  // slab: lower bound inclusive, upper bound exclusive (NULL = "& above")
+  iqpFromQty      Decimal   @default(0) @db.Decimal(14, 3) @map("iqp_from_qty")
+  iqpToQty        Decimal?  @db.Decimal(14, 3) @map("iqp_to_qty")
+  // discount type: P = by % | R = by qty (flat off) | F = fixed price
+  iqpPriceMode    String    @default("P") @db.Char(1) @map("iqp_price_mode")
+  iqpDiscPct      Decimal?  @db.Decimal(6, 3) @map("iqp_disc_pct")
+  iqpFlatOff      Decimal?  @db.Decimal(14, 3) @map("iqp_flat_off")
+  iqpPrice        Decimal?  @db.Decimal(14, 3) @map("iqp_price")
+  iqpIsTaxIncl    Boolean   @default(false) @map("iqp_is_tax_incl")
+  iqpEffectiveFrom DateTime @db.Date @map("iqp_effective_from")
+  iqpEffectiveTo  DateTime? @db.Date @map("iqp_effective_to")
+  iqpIsActive     Boolean   @default(true) @map("iqp_is_active")
+  iqpIsDeleted    Boolean   @default(false) @map("iqp_is_deleted")
+  iqpSyncDate     DateTime? @db.Timestamptz(6) @map("iqp_sync_date")
+  iqpCreatedBy    String?   @db.VarChar(100) @map("iqp_created_by")
+  iqpCreatedOn    DateTime  @default(now()) @db.Timestamptz(6) @map("iqp_created_on")
+  iqpModifiedBy   String?   @db.VarChar(100) @map("iqp_modified_by")
+  iqpModifiedOn   DateTime  @default(now()) @db.Timestamptz(6) @map("iqp_modified_on")
+  // Relations
+  item                ItemMaster         @relation("ItemQtyPrices", fields: [iqpItemId], references: [itemId], onUpdate: Cascade, onDelete: Restrict, map: "fk_iqp_item")
+  itemUnitConversion  ItemUnitConversion @relation("ItemQtyPriceUnitConversion", fields: [iqpItemUnitId], references: [iucId], onUpdate: Cascade, onDelete: Restrict, map: "fk_iqp_item_unit")
+  company             Company?           @relation("CompanyItemQtyPrices", fields: [iqpCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_iqp_company_id")
+  branch              BranchMaster?      @relation("BranchItemQtyPrices", fields: [iqpBranchId], references: [brId], onUpdate: Cascade, onDelete: Restrict, map: "fk_iqp_branch_id")
+  priceLevel          ItemPriceLevel?    @relation("ItemQtyPricePriceLevel", fields: [iqpPriceLevel], references: [iplId], onUpdate: Cascade, onDelete: Restrict, map: "fk_iqp_price_level")
+  party               Customer?          @relation("CustomerItemQtyPrices", fields: [iqpPartyId], references: [cusId], onUpdate: Cascade, onDelete: Restrict, map: "fk_iqp_party_id")
+  @@map("item_qty_price")
+  @@schema("inventory")
+  // iqp_item_id, iqp_item_unit_id, iqp_company_id, iqp_branch_id, iqp_price_level
+  // and iqp_party_id are now Prisma relations (see above); run a migration to
+  // create the FK constraints at the DB level.
+  // CHECK constraints (ck_iqp_qty_range, ck_iqp_qty_nonneg, ck_iqp_date_range,
+  // ck_iqp_mode) are not expressible in Prisma schema.
+  // DB-only EXCLUDE USING gist constraint ex_iqp_no_overlap (requires the
+  // btree_gist extension) prevents overlapping active qty+date slabs per
+  // company/branch/item/price_level/unit; not expressible in Prisma schema.
+  // DB-only partial index ix_iqp_lookup on (iqp_item_id, iqp_company_id,
+  // iqp_effective_from DESC) WHERE iqp_is_deleted = false AND iqp_is_active =
+  // true is not expressible in Prisma schema.
+}

@@ -1,0 +1,95 @@
+model AccGroupMaster {
+  accGroupId                  String         @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("acc_group_id")
+  accGroupCompanyId           String?        @db.Uuid                                       @map("acc_group_company_id")
+
+  // Master fields
+  accGroupName                String         @db.VarChar(150)                               @map("acc_group_name")
+  accGroupAlias               String?        @db.VarChar(100)                               @map("acc_group_alias")
+  accGroupShort               String?        @db.VarChar(50)                                @map("acc_group_short")
+  accGroupDescription         String?        @db.VarChar(250)                               @map("acc_group_description")
+
+  // Tally export mapping
+  accGroupTallyName           String?        @db.VarChar(150)                               @map("acc_group_tally_name")
+  accGroupPrimaryName         String?        @db.VarChar(150)                               @map("acc_group_primary_name")
+  accGroupNature              String?        @db.VarChar(20)                                @map("acc_group_nature")
+  accLedgerProfile            String         @default("General") @db.VarChar(16)            @map("acc_ledger_profile")
+  // Tally identity (sync round-trip)
+  accGroupTallyGuid           String?        @db.VarChar(64)                                @map("acc_group_tally_guid")
+  accGroupTallyMasterId       BigInt?                                                       @map("acc_group_tally_master_id")
+  accGroupTallyAlterId        BigInt?                                                       @map("acc_group_tally_alter_id")
+
+  // Hierarchy
+  accGroupParentId            String?        @db.Uuid                                       @map("acc_group_parent_id")
+  accGroupSort                Int?                                                          @map("acc_group_sort")
+  // acc_group_child_ids was dropped in 20260917140000. It was a denormalised copy of
+  // the subtree that only the account-group service maintained, so every row a seed,
+  // a Tally import or a psql fix created went stale on the spot — 21 of 48 groups were
+  // NULL and 14 empty, while 'Customers' claimed 1 child against 11 real ones. The GET
+  // marked it REQUIRED, so anything that trusted it built the wrong tree. Walk
+  // acc_group_parent_id (indexed) with a recursive CTE instead; it cannot go stale.
+
+  // Classification
+  accGroupType                String         @db.VarChar(20)                                @map("acc_group_type")
+  accGroupIsDefault           Boolean        @default(false)                                @map("acc_group_is_default")
+  accGroupIsReserved          Boolean        @default(false)                                @map("acc_group_is_reserved")
+
+  // Tally-like behaviour flags
+  accGroupBehaveAsSubledger   Boolean        @default(false)                                @map("acc_group_behave_as_subledger")
+  accGroupNetDebitCredit      Boolean        @default(false)                                @map("acc_group_net_debit_credit")
+  accGroupUsedForCalculation  Boolean        @default(false)                                @map("acc_group_used_for_calculation")
+  accGroupAffectsGrossProfit  Boolean        @default(false)                                @map("acc_group_affects_gross_profit")
+
+  // Status
+  accGroupIsActive            Boolean        @default(true)                                 @map("acc_group_is_active")
+  accGroupIsDeleted           Boolean        @default(false)                                @map("acc_group_is_deleted")
+
+  // Audit / Sync
+  accGroupSyncDate            DateTime?      @db.Timestamptz                                @map("acc_group_sync_date")
+  accGroupCreatedOn           DateTime       @default(now()) @db.Timestamptz                @map("acc_group_created_on")
+  accGroupCreatedBy           String?        @db.VarChar(100)                               @map("acc_group_created_by")
+  accGroupModifiedOn          DateTime       @default(now()) @db.Timestamptz                @map("acc_group_modified_on")
+  accGroupModifiedBy          String?        @db.VarChar(100)                               @map("acc_group_modified_by")
+
+  // Self-relation (hierarchy)
+  parent                      AccGroupMaster? @relation("AccGroupMasterHierarchy", fields: [accGroupParentId], references: [accGroupId])
+  children                    AccGroupMaster[] @relation("AccGroupMasterHierarchy")
+  company                     Company?       @relation(fields: [accGroupCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict)
+
+  // Back-relations
+  ledgers                     AccLedgerMaster[]
+
+  @@index([accGroupCompanyId], name: "idx_acc_group_company_id")
+  @@index([accGroupParentId],  name: "idx_acc_group_parent_id")
+  @@index([accGroupType],      name: "idx_acc_group_type")
+  //
+  // NAME UNIQUENESS is three rules, and an index can express only two of them
+  // (20260917110000). NULL acc_group_company_id means SHARED BY EVERY COMPANY and is
+  // deliberate — both scopes are in use — but Postgres treats NULLs as distinct, so a
+  // plain UNIQUE (company_id, name) is inert for exactly the rows most groups use:
+  //   uq_acc_group_name_shared   UNIQUE (lower(name)) WHERE company_id IS NULL     AND NOT is_deleted
+  //   uq_acc_group_name_company  UNIQUE (company_id, lower(name)) WHERE company_id IS NOT NULL AND NOT is_deleted
+  //   tr_acc_group_name_scope    BEFORE INSERT/UPDATE — a scoped group must not collide
+  //                              with a SHARED one, which no index can say.
+  // lower() on purpose: Tally matches master names case-insensitively, so two spellings
+  // are one group there and must be one here. Exporting a company emits the shared rows
+  // PLUS its own into one file, and Tally silently merges same-named entries.
+  // Partial unique index uq_acc_group_tally_guid (WHERE acc_group_tally_guid IS NOT NULL)
+  // is managed in raw SQL — Prisma can't express it. Allowed-value validation for
+  // acc_group_type / acc_group_nature / acc_ledger_profile lives in the app layer
+  // (accGroupMaster enums); the old chk_* CHECK constraints were dropped in migration
+  // 20260623100000_remove_acc_group_check_constraints_to_app_layer. That decision
+  // still stands: a CHECK re-added here would turn the exception filter's 400 into
+  // an opaque 500, and AccGroupMasterNature already holds the same four values.
+  //
+  // Trigger tr_acc_group_inherit_nature (20260915090000) fills acc_group_nature
+  // from the nearest ANCESTOR that has one when an insert leaves it NULL, and
+  // never overrides one given explicitly. It does not duplicate the service,
+  // which copies the immediate parent's nature on create: it covers the inserts
+  // the service never sees — seeds, Tally imports, fixes typed into psql — which
+  // is how the eight NULL-natured groups in the live database got there. It also
+  // walks past a NULL parent to a natured grandparent, which a single-hop copy
+  // cannot. The two NULL-natured ROOT groups ('Corporate Accounts', 'Office
+  // accounts') are beyond it: with no ancestor, nothing can infer their nature.
+  @@map("acc_group_master")
+  @@schema("accounts")
+}

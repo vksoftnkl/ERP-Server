@@ -1,141 +1,85 @@
-import { Transform } from 'class-transformer';
-import {
-  IsBoolean,
-  IsInt,
-  IsNotEmpty,
-  IsNumberString,
-  IsOptional,
-  IsString,
-  MaxLength,
-  Min,
-  ValidateIf,
-} from 'class-validator';
+import { IsNotEmpty, IsArray, IsOptional, ValidateNested } from 'class-validator';
+import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-const toNullableString = (value: unknown): string | null | undefined => {
-  if (value === undefined) {
-    return undefined;
-  }
-  if (value === null) {
-    return null;
-  }
-  if (typeof value !== 'string') {
-    return value as string;
-  }
-  const trimmed = value.trim();
-  return trimmed ? trimmed : null;
-};
-const toOptionalIdString = (value: unknown): string | undefined => {
-  if (value === undefined || value === null) {
-    return undefined;
-  }
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
-    return trimmed || undefined;
-  }
-  if (typeof value === 'number' || typeof value === 'bigint') {
-    return String(value);
-  }
-  return value as string;
-};
-const toOptionalInteger = (value: unknown): number | undefined => {
-  if (value === undefined || value === null || value === '') {
-    return undefined;
-  }
-  if (typeof value === 'number') {
-    return Number.isInteger(value) ? value : (value as number);
-  }
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
-    if (!trimmed) {
-      return undefined;
-    }
-    const parsed = Number(trimmed);
-    return Number.isInteger(parsed) ? parsed : (value as unknown as number);
-  }
-  return value as number;
-};
-const toNullableInteger = (value: unknown): number | null | undefined => {
-  if (value === undefined) {
-    return undefined;
-  }
-  if (value === null || value === '') {
-    return null;
-  }
-  if (typeof value === 'number') {
-    return Number.isInteger(value) ? value : (value as number);
-  }
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
-    if (!trimmed) {
-      return null;
-    }
-    const parsed = Number(trimmed);
-    return Number.isInteger(parsed) ? parsed : (value as unknown as number);
-  }
-  return value as number;
-};
+import {
+  NullableInteger,
+  NullableString,
+  OptionalBoolean,
+  OptionalInteger,
+  OptionalNumberString,
+  TrimmedString,
+} from '../../../common/dto/dtoDecorators';
+import { SaveDropdownColumnDto } from './save-dropdown-column.dto';
+
 export class SaveDropdownDetailDto {
-  @ApiPropertyOptional({ description: 'When provided, request updates dropdown details' })
-  @IsOptional()
-  @Transform(({ value }) => toOptionalIdString(value))
-  @IsNumberString({ no_symbols: true })
+  @ApiPropertyOptional({
+    description: 'When provided, request updates dropdown details',
+    type: String,
+  })
+  @OptionalNumberString()
   dropdown_id?: string;
-  @ApiProperty({ maxLength: 200 })
-  @IsString()
+
+  @ApiProperty({ maxLength: 200, type: String })
+  @TrimmedString(200)
   @IsNotEmpty()
-  @MaxLength(200)
   dropdown_name!: string;
-  @ApiProperty({ description: 'SQL query for dropdown source' })
-  @IsString()
+
+  @ApiProperty({ description: 'SQL query for dropdown source', type: String })
+  @TrimmedString()
   @IsNotEmpty()
   dropdown_sql!: string;
-  @ApiPropertyOptional({ nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
+
+  @ApiPropertyOptional({ nullable: true, type: String })
+  @NullableString()
   dropdown_description?: string | null;
-  @ApiPropertyOptional({ nullable: true, maxLength: 20 })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(20)
+
+  @ApiPropertyOptional({ nullable: true, maxLength: 20, type: String })
+  @NullableString(20)
   dropdown_sort_order?: string | null;
-  @ApiPropertyOptional({ nullable: true, maxLength: 100 })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(100)
+
+  @ApiPropertyOptional({ nullable: true, maxLength: 100, type: String })
+  @NullableString(100)
   dropdown_sort_column?: string | null;
-  @ApiPropertyOptional({ nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
+
+  @ApiPropertyOptional({ nullable: true, type: String })
+  @NullableString()
   dropdown_completion?: string | null;
-  @ApiPropertyOptional({ nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
+
+  @ApiPropertyOptional({ nullable: true, type: String })
+  @NullableString()
   dropdown_sql_regional?: string | null;
+
   @ApiPropertyOptional({ minimum: 1, default: 10 })
-  @IsOptional()
-  @Transform(({ value }) => toOptionalInteger(value))
-  @IsInt()
-  @Min(1)
+  @OptionalInteger(1)
   dropdown_max_visible_items?: number;
+
   @ApiPropertyOptional({ default: true })
-  @IsOptional()
-  @IsBoolean()
+  @OptionalBoolean()
   dropdown_show_header?: boolean;
-  @ApiPropertyOptional({ nullable: true, minimum: 1 })
-  @IsOptional()
-  @Transform(({ value }) => toNullableInteger(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsInt()
-  @Min(1)
+
+  @ApiPropertyOptional({ nullable: true, minimum: 0 })
+  @NullableInteger(0)
   dropdown_width?: number | null;
+
+  @ApiPropertyOptional({ nullable: true, type: String })
+  @NullableString()
+  dropdown_device_type?: string | null;
+
+  @ApiPropertyOptional({
+    description: 'Array of columns to create or update for this dropdown',
+    type: [SaveDropdownColumnDto],
+  })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => SaveDropdownColumnDto)
+  dropdown_columns?: SaveDropdownColumnDto[];
+
+  @ApiPropertyOptional({
+    description:
+      'When true, columns not present in dropdown_columns are deleted (full replace). When false or omitted, provided columns are only created/updated.',
+    default: false,
+  })
+  @OptionalBoolean()
+  replace_columns?: boolean;
 }

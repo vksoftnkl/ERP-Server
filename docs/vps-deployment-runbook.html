@@ -1,0 +1,822 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ERP Server — VPS Deployment Runbook</title>
+<style>
+  @page { size: A4; margin: 16mm 14mm 18mm 14mm; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: "DejaVu Sans", "Liberation Sans", Arial, sans-serif;
+    font-size: 9.6pt; line-height: 1.5; color: #1a1a1a; margin: 0;
+  }
+  code, pre, .mono { font-family: "DejaVu Sans Mono", "Liberation Mono", Consolas, monospace; }
+
+  /* ---- cover ---- */
+  .cover { text-align: center; padding-top: 55mm; page-break-after: always; }
+  .cover h1 { font-size: 26pt; margin: 0 0 6mm; letter-spacing: -0.4pt; }
+  .cover .sub { font-size: 12pt; color: #555; margin-bottom: 14mm; }
+  .cover .meta { display: inline-block; text-align: left; border: 1px solid #d0d0d0;
+                 border-radius: 4px; padding: 6mm 9mm; font-size: 9.5pt; background: #fafafa; }
+  .cover .meta b { display: inline-block; min-width: 34mm; color: #444; }
+
+  h2 { font-size: 14pt; margin: 9mm 0 3mm; padding-bottom: 1.6mm;
+       border-bottom: 2px solid #2b6cb0; color: #1a365d; page-break-after: avoid; }
+  h3 { font-size: 11pt; margin: 6mm 0 2mm; color: #2a4365; page-break-after: avoid; }
+  h4 { font-size: 9.8pt; margin: 4mm 0 1.5mm; color: #2d3748; page-break-after: avoid; }
+  p  { margin: 0 0 2.4mm; }
+  ul, ol { margin: 0 0 2.6mm; padding-left: 5.5mm; }
+  li { margin-bottom: 1.1mm; }
+
+  pre { background: #1e2430; color: #e8eaed; padding: 3mm 3.5mm; border-radius: 3px;
+        font-size: 8.1pt; line-height: 1.42; overflow-wrap: break-word; white-space: pre-wrap;
+        margin: 0 0 3mm; page-break-inside: avoid; }
+  pre .c { color: #7f9c72; }              /* comment  */
+  pre .k { color: #8ab4f8; }              /* keyword  */
+  pre .s { color: #f0b37e; }              /* string   */
+  code { background: #eef1f5; padding: 0.3mm 1mm; border-radius: 2px; font-size: 8.6pt; }
+  pre code { background: none; padding: 0; font-size: inherit; color: inherit; }
+
+  table { width: 100%; border-collapse: collapse; margin: 0 0 3mm; font-size: 8.6pt;
+          page-break-inside: avoid; }
+  th, td { border: 1px solid #cbd5e0; padding: 1.5mm 2mm; text-align: left; vertical-align: top; }
+  th { background: #edf2f7; font-weight: 600; }
+  td.mono, th.mono { font-family: "DejaVu Sans Mono", monospace; font-size: 8pt; }
+
+  .note, .warn, .tip {
+    border-left: 3px solid; padding: 2.4mm 3mm; margin: 0 0 3mm;
+    font-size: 8.9pt; page-break-inside: avoid; border-radius: 0 3px 3px 0;
+  }
+  .note { background: #ebf4ff; border-color: #3182ce; }
+  .warn { background: #fff5f5; border-color: #e53e3e; }
+  .tip  { background: #f0fff4; border-color: #38a169; }
+  .note b, .warn b, .tip b { display: block; margin-bottom: 1mm; }
+
+  .step { background: #2b6cb0; color: #fff; border-radius: 3px; padding: 0.4mm 2.2mm;
+          font-size: 9pt; margin-right: 2mm; }
+  .pb { page-break-before: always; }
+  .arch { font-family: "DejaVu Sans Mono", monospace; font-size: 8.2pt; line-height: 1.35;
+          background: #f7fafc; border: 1px solid #cbd5e0; border-radius: 3px;
+          padding: 3mm; white-space: pre; margin-bottom: 3mm; }
+  .toc ol { padding-left: 6mm; }
+  .toc > ol > li { margin-bottom: 1.4mm; font-weight: 600; }
+  .toc ol ol { padding-left: 5mm; margin-top: 0.8mm; }
+  .toc ol ol li { font-weight: 400; color: #444; }
+</style>
+</head>
+<body>
+
+<div class="cover">
+  <h1>ERP Server</h1>
+  <div class="sub">VPS Deployment Runbook &mdash; bare Ubuntu to running API</div>
+  <div class="meta">
+    <b>Target host</b> 169.58.213.171<br>
+    <b>Operating system</b> Ubuntu 24.04.4 LTS (Noble Numbat)<br>
+    <b>Application</b> NestJS 11 &middot; Prisma 6 &middot; PostgreSQL 18<br>
+    <b>Public URL</b> https://169-58-213-171.sslip.io<br>
+    <b>Repository</b> github.com/vksoftnkl/ERP-Server<br>
+    <b>Branch deployed</b> DEV-v1<br>
+    <b>Document date</b> 21 August 2026
+  </div>
+</div>
+
+<h2>1. What this document covers</h2>
+<p>
+  A complete, reproducible procedure for deploying the ERP Server API onto a bare
+  Ubuntu 24.04 virtual private server. Every command is run as <code>root</code> over SSH
+  unless stated otherwise. Following it end to end on a fresh machine takes roughly
+  25&ndash;35 minutes, most of which is package installation and the initial database migration.
+</p>
+
+<div class="warn">
+  <b>Two constraints that will break a naive deployment</b>
+  This application <i>cannot</i> be deployed with a generic "install Node, run npm start" procedure.
+  Two properties of the codebase force specific choices, and both fail in confusing ways if ignored:
+  <ol style="margin-top:1.5mm; margin-bottom:0">
+    <li><b>PostgreSQL 18 is mandatory.</b> The Prisma schema defaults columns to <code>uuidv7()</code>
+        and no migration defines that function &mdash; it relies on the native PostgreSQL&nbsp;18
+        builtin. Ubuntu 24.04 ships PostgreSQL&nbsp;16, on which <i>every insert fails</i>.
+        Section&nbsp;5 therefore installs from the PGDG repository, not the distribution.</li>
+    <li><b>Migrations require a database superuser, but the application must not be one.</b>
+        Seven migrations contain <code>ALTER TABLE ... OWNER to postgres</code>, which fails for any
+        other role with <code>42501: must be able to SET ROLE "postgres"</code>. Development never
+        reveals this because development connects as <code>postgres</code>. Sections&nbsp;7 and&nbsp;11
+        split the two roles apart.</li>
+  </ol>
+</div>
+
+<h3>Architecture</h3>
+<div class="arch">                    internet
+                       │
+                 ┌─────▼─────────────────────────────┐
+                 │  ufw : only 22, 80, 443 admitted  │
+                 └─────┬─────────────────────────────┘
+                       │
+              ┌────────▼────────┐   TLS terminates here
+              │ nginx :80 :443  │   Let's Encrypt + self-signed
+              └────────┬────────┘
+                       │  plain HTTP, loopback only
+              ┌────────▼──────────────────┐
+              │ node  127.0.0.1:3000      │  user: erp (unprivileged)
+              │ PM2 → systemd (pm2-erp)   │  connects as: erp_app
+              └────┬─────────────────┬────┘
+                   │                 │
+        ┌──────────▼──────┐   ┌──────▼────────────┐
+        │ PostgreSQL 18   │   │ Redis 7           │
+        │ 127.0.0.1:5432  │   │ 127.0.0.1:6379    │
+        └─────────────────┘   └───────────────────┘</div>
+<p>
+  PostgreSQL, Redis and the Node process all bind the loopback interface only. nginx is
+  the sole component reachable from the internet, and the firewall admits nothing else.
+</p>
+
+<h3 class="toc">Contents</h3>
+<div class="toc">
+<ol>
+  <li>What this document covers</li>
+  <li>Prerequisites</li>
+  <li>Establish SSH access</li>
+  <li>Base packages and repositories</li>
+  <li>PostgreSQL 18, Node.js 22, nginx</li>
+  <li>Redis</li>
+  <li>Database, roles and extensions</li>
+  <li>Application user and source code</li>
+  <li>Environment configuration</li>
+  <li>Install dependencies and build</li>
+  <li>Apply migrations and grant privileges</li>
+  <li>Accounting-year partitions</li>
+  <li>Run under PM2 and systemd</li>
+  <li>nginx reverse proxy and TLS</li>
+  <li>Firewall</li>
+  <li>Verification</li>
+  <li>Redeploying after a code change</li>
+  <li>Troubleshooting</li>
+  <li>Reference: files, ports and credentials</li>
+</ol>
+</div>
+
+<h2 class="pb">2. Prerequisites</h2>
+<table>
+  <tr><th style="width:32%">Requirement</th><th>Detail</th></tr>
+  <tr><td>VPS</td><td>Ubuntu 24.04 LTS, minimum 2&nbsp;vCPU / 4&nbsp;GB RAM / 20&nbsp;GB disk. The reference host is 4&nbsp;vCPU / 7.8&nbsp;GB / 96&nbsp;GB.</td></tr>
+  <tr><td>Root access</td><td>Password or SSH key for <code>root</code>. Section&nbsp;3 replaces password login with key-based access.</td></tr>
+  <tr><td>Repository access</td><td><code>github.com/vksoftnkl/ERP-Server</code> is public, so the server clones it without credentials. A private repository would need a deploy key.</td></tr>
+  <tr><td>Outbound network</td><td>The server must reach <code>apt.postgresql.org</code>, <code>deb.nodesource.com</code>, <code>registry.npmjs.org</code>, <code>github.com</code> and <code>acme-v02.api.letsencrypt.org</code>.</td></tr>
+  <tr><td>Inbound network</td><td>Ports 22, 80 and 443 must be reachable. Port 80 is required for Let's Encrypt HTTP-01 validation and for certificate renewal.</td></tr>
+</table>
+
+<div class="note">
+  <b>Conventions used below</b>
+  Commands prefixed <code>$</code> run on <i>your workstation</i>; commands with no prefix run
+  <i>on the VPS as root</i>. Placeholders in <code>ANGLE_BRACKETS</code> must be substituted.
+  Real passwords are never printed in this document &mdash; they are generated on the server in
+  step&nbsp;7 and stored in <code>/root/.erp-deploy-secrets</code>.
+</div>
+
+<h2>3. Establish SSH access</h2>
+<p>Copy your public key to the server so every later step can run non-interactively.</p>
+<pre><span class="c"># On your workstation. Creates a key only if you do not already have one.</span>
+$ ls ~/.ssh/id_ed25519.pub || ssh-keygen -t ed25519 -C "erp-deploy"
+
+<span class="c"># Prompts once for the root password, then never again.</span>
+$ ssh-copy-id root@169.58.213.171
+
+<span class="c"># Verify key-only login works.</span>
+$ ssh -o BatchMode=yes root@169.58.213.171 'echo CONNECTED; cat /etc/os-release | head -2'</pre>
+
+<div class="tip">
+  <b>Hardening (optional but recommended)</b>
+  Once key login is confirmed, disable password authentication:
+  <code>sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config &amp;&amp; systemctl reload ssh</code>.
+  Do not do this before you have tested key login, or you will lock yourself out.
+</div>
+
+<h2>4. Base packages and repositories</h2>
+<p>
+  Install the supporting tools, then register the two third-party APT repositories.
+  PGDG supplies PostgreSQL&nbsp;18 (Ubuntu only ships 16) and NodeSource supplies Node&nbsp;22 LTS
+  (Ubuntu ships 18, below the <code>engines.node &gt;=20</code> floor in <code>package.json</code>).
+</p>
+<pre>export DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a
+
+apt-get update -qq
+apt-get install -y ca-certificates curl gnupg lsb-release ufw fail2ban \
+                   build-essential openssl rsync
+
+<span class="c"># --- PGDG: PostgreSQL 18 ---</span>
+install -d /usr/share/postgresql-common/pgdg
+curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+     -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc
+echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] \
+https://apt.postgresql.org/pub/repos/apt noble-pgdg main" \
+     &gt; /etc/apt/sources.list.d/pgdg.list
+
+<span class="c"># --- NodeSource: Node.js 22 LTS ---</span>
+curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
+     | gpg --dearmor -o /usr/share/keyrings/nodesource.gpg
+echo "deb [signed-by=/usr/share/keyrings/nodesource.gpg] \
+https://deb.nodesource.com/node_22.x nodistro main" \
+     &gt; /etc/apt/sources.list.d/nodesource.list
+
+apt-get update -qq</pre>
+
+<h2>5. PostgreSQL 18, Node.js 22, nginx</h2>
+<pre>apt-get install -y postgresql-18 postgresql-contrib-18 nodejs nginx
+
+<span class="c"># Confirm the versions. PostgreSQL MUST report 18.x.</span>
+node --version      <span class="c"># v22.x</span>
+psql --version      <span class="c"># psql (PostgreSQL) 18.x</span>
+nginx -v            <span class="c"># nginx/1.24.0</span>
+
+<span class="c"># The decisive check: uuidv7() is a PostgreSQL 18 builtin.</span>
+<span class="c"># If this errors, you are on PG16 and every INSERT will fail later.</span>
+sudo -u postgres psql -tAc "select uuidv7()"</pre>
+<p><code>postgresql-contrib-18</code> is required: it provides the <code>pgcrypto</code> and
+   <code>btree_gist</code> extensions the migrations create.</p>
+
+<h2>6. Redis</h2>
+<div class="note">
+  <b>Redis is not optional</b>
+  <code>QueueModule</code> is imported unconditionally by <code>AppModule</code> and registers BullMQ
+  queues that ignore the <code>REDIS_ENABLED</code> flag &mdash; that flag only gates the HTTP cache.
+  Without a reachable Redis, BullMQ logs connection errors continuously.
+</div>
+<pre>apt-get install -y redis-server
+
+<span class="c"># Loopback only -- never expose Redis to the network.</span>
+sed -i 's/^bind .*/bind 127.0.0.1 -::1/'        /etc/redis/redis.conf
+sed -i 's/^protected-mode .*/protected-mode yes/' /etc/redis/redis.conf
+
+<span class="c"># BullMQ refuses to run against a Redis that may evict keys.</span>
+grep -q '^maxmemory-policy' /etc/redis/redis.conf \
+  &amp;&amp; sed -i 's/^maxmemory-policy .*/maxmemory-policy noeviction/' /etc/redis/redis.conf \
+  || echo 'maxmemory-policy noeviction' &gt;&gt; /etc/redis/redis.conf
+
+systemctl enable --now redis-server
+systemctl restart redis-server
+
+redis-cli ping                                  <span class="c"># PONG</span>
+redis-cli config get maxmemory-policy           <span class="c"># noeviction</span></pre>
+
+<h2 class="pb">7. Database, roles and extensions</h2>
+<p>
+  Two roles are created. <code>erp_app</code> is what the running application uses and is
+  deliberately <b>not</b> a superuser. <code>postgres</code> is used only to apply migrations.
+  Keeping them apart matters: a SQL injection under a superuser role can reach
+  <code>COPY ... PROGRAM</code>, and therefore a shell on the host.
+</p>
+<pre><span class="c"># Generate strong secrets ON THE SERVER so they never transit a chat or terminal log.</span>
+SECRETS=/root/.erp-deploy-secrets
+umask 077
+{
+  echo "DB_PASSWORD=$(openssl rand -base64 24 | tr -d '/+=' | head -c 32)"
+  echo "JWT_SECRET=$(openssl rand -base64 48  | tr -d '/+=' | head -c 64)"
+} &gt; "$SECRETS"
+chmod 600 "$SECRETS"
+. "$SECRETS"
+
+<span class="c"># Application role + database owned by postgres (migrations run as postgres).</span>
+sudo -u postgres psql -v ON_ERROR_STOP=1 &lt;&lt;SQL
+DO \$\$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'erp_app') THEN
+    CREATE ROLE erp_app LOGIN PASSWORD '${DB_PASSWORD}';
+  ELSE
+    ALTER  ROLE erp_app LOGIN PASSWORD '${DB_PASSWORD}';
+  END IF;
+END
+\$\$;
+SQL
+sudo -u postgres psql -c "CREATE DATABASE erp OWNER postgres ENCODING UTF8;"
+
+<span class="c"># Pre-create the extensions as superuser. Migrations use IF NOT EXISTS,</span>
+<span class="c"># so this makes those statements no-ops.</span>
+sudo -u postgres psql -d erp -c \
+  "CREATE EXTENSION IF NOT EXISTS pgcrypto; CREATE EXTENSION IF NOT EXISTS btree_gist;"
+
+<span class="c"># Give the postgres role a password and record a migration-only URL.</span>
+PG_SU_PW=$(openssl rand -base64 24 | tr -d '/+=' | head -c 32)
+sudo -u postgres psql -c "ALTER ROLE postgres LOGIN PASSWORD '${PG_SU_PW}';"
+echo "PG_SUPERUSER_PASSWORD=${PG_SU_PW}"                                  &gt;&gt; "$SECRETS"
+echo "MIGRATE_DATABASE_URL=postgres://postgres:${PG_SU_PW}@127.0.0.1:5432/erp" &gt;&gt; "$SECRETS"</pre>
+
+<h2>8. Application user and source code</h2>
+<p>The application runs as a dedicated unprivileged system user, never as root.</p>
+<pre>adduser --system --group --home /opt/erp-server --shell /bin/bash erp
+
+install -d -o erp -g erp /opt/erp-server
+sudo -u erp git clone --depth 1 --branch DEV-v1 \
+     https://github.com/vksoftnkl/ERP-Server.git /opt/erp-server/app
+
+install -d -o erp -g erp /opt/erp-server/app/logs
+install -d -o erp -g erp /opt/erp-server/logs
+install -d -m 750        /opt/erp-server/bin
+
+sudo -u erp git -C /opt/erp-server/app log -1 --oneline</pre>
+
+<h2>9. Environment configuration</h2>
+<p>
+  <code>src/env.preload.ts</code> runs <code>dotenv.config()</code> before anything else, which reads
+  <code>.env</code> relative to the process working directory. Because dotenv does <b>not</b> override
+  variables already present in <code>process.env</code>, this file is the single source of truth only
+  as long as nothing is pinned in the PM2 configuration.
+</p>
+<pre>. /root/.erp-deploy-secrets
+
+cat &gt; /opt/erp-server/app/.env &lt;&lt;ENVEOF
+NODE_ENV=production
+HOST=127.0.0.1                 # loopback only; nginx is the sole client
+PORT=3000
+API_PREFIX=api
+API_VERSION=1
+REQUEST_BODY_LIMIT=10mb
+
+# In production main.ts uses ONLY this list. An empty value means enableCors()
+# never runs and every browser request is blocked.
+CORS_ORIGINS=https://erp-frontend.vercel.app,https://169-58-213-171.sslip.io
+CORS_CREDENTIALS=true
+
+# TLS terminates at nginx; the app speaks plain HTTP on PORT.
+HTTPS_ENABLED=false
+
+DATABASE_URL=postgres://erp_app:${DB_PASSWORD}@127.0.0.1:5432/erp
+DB_HOST=127.0.0.1
+DB_PORT=5432
+DB_USER=erp_app
+DB_PASSWORD=${DB_PASSWORD}
+DB_NAME=erp
+DB_SSL=false
+
+# Migrations are applied by the deploy script, not at boot.
+DB_AUTO_MIGRATE=false
+DB_AUTO_SEED=true
+DB_SEED_FAIL_FAST=false
+
+JWT_SECRET=${JWT_SECRET}
+ACCESS_TOKEN_TTL_SECONDS=3600
+REFRESH_TOKEN_TTL_SECONDS=604800
+
+THROTTLE_ENABLED=true
+THROTTLE_TTL=60
+THROTTLE_LIMIT=10000
+
+REDIS_ENABLED=true
+REDIS_HOST=127.0.0.1
+REDIS_PORT=6379
+REDIS_TTL=3600
+REDIS_DB=0
+
+LOG_FILE_PATH=logs/app.log
+ERROR_LOG_FILE_PATH=logs/error.log
+ENVEOF
+
+chown erp:erp /opt/erp-server/app/.env
+chmod 600     /opt/erp-server/app/.env</pre>
+<div class="warn">
+  <b>CORS is fail-closed in production</b>
+  <code>main.ts</code> merges the localhost development defaults only when
+  <code>NODE_ENV != production</code>. In production, an origin missing from
+  <code>CORS_ORIGINS</code> is refused outright. Add every frontend origin here.
+</div>
+
+<h2>10. Install dependencies and build</h2>
+<div class="warn">
+  <b><code>NODE_ENV</code> must be unset for the install</b>
+  <code>@nestjs/cli</code> and <code>typescript</code> are <code>devDependencies</code>. With
+  <code>NODE_ENV=production</code>, npm skips them and <code>npm run build</code> fails with
+  "nest: not found". The <code>env -u NODE_ENV</code> below is deliberate.
+</div>
+<pre>cd /opt/erp-server/app
+
+<span class="c"># postinstall regenerates the Prisma schema from prisma/ fragments,</span>
+<span class="c"># then runs `prisma generate`.</span>
+sudo -u erp env -u NODE_ENV HOME=/opt/erp-server \
+     npm ci --include=dev --no-audit --fund=false
+
+sudo -u erp env -u NODE_ENV HOME=/opt/erp-server npm run build
+
+ls -l dist/src/main.js</pre>
+
+<h2 class="pb">11. Apply migrations and grant privileges</h2>
+<p>
+  Migrations must run as <code>postgres</code>. Passing <code>DATABASE_URL</code> explicitly overrides
+  the value in <code>.env</code>, because dotenv never overwrites a variable already set.
+</p>
+<pre>. /root/.erp-deploy-secrets
+cd /opt/erp-server/app
+
+sudo -u erp env -u NODE_ENV HOME=/opt/erp-server \
+     DATABASE_URL="$MIGRATE_DATABASE_URL" \
+     npm run prisma:migrate:deploy</pre>
+<p>
+  Every object the migrations create is now owned by <code>postgres</code>, so the application role
+  has no access to any of it. The following script repairs that and must be re-run after
+  <i>every</i> migration. Save it as <code>/opt/erp-server/bin/grant-app-privileges.sql</code>:
+</p>
+<pre>DO
+$$
+    DECLARE
+        v_schema text;
+    BEGIN
+        FOR v_schema IN
+            SELECT nspname FROM pg_namespace
+            WHERE nspname NOT LIKE 'pg\_%' AND nspname &lt;&gt; 'information_schema'
+        LOOP
+            <span class="c">-- CREATE, not just USAGE: the seed runner creates</span>
+            <span class="c">-- public._erp_seed_history on first boot.</span>
+            EXECUTE format('GRANT USAGE, CREATE ON SCHEMA %I TO erp_app', v_schema);
+            EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES '
+                           'ON ALL TABLES IN SCHEMA %I TO erp_app', v_schema);
+            EXECUTE format('GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA %I TO erp_app', v_schema);
+            EXECUTE format('GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA %I TO erp_app', v_schema);
+
+            <span class="c">-- Objects a FUTURE migration creates as postgres are covered</span>
+            <span class="c">-- automatically, including new accounting-year partitions.</span>
+            EXECUTE format('ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA %I '
+                           'GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES ON TABLES TO erp_app', v_schema);
+            EXECUTE format('ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA %I '
+                           'GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO erp_app', v_schema);
+            EXECUTE format('ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA %I '
+                           'GRANT EXECUTE ON FUNCTIONS TO erp_app', v_schema);
+        END LOOP;
+    END
+$$;</pre>
+<pre><span class="c"># /opt/erp-server/bin is mode 750 root:root, so the postgres OS user cannot</span>
+<span class="c"># read a path handed to psql -f. Pipe it in on stdin instead.</span>
+sudo -u postgres psql -d erp -v ON_ERROR_STOP=1 -f - \
+     &lt; /opt/erp-server/bin/grant-app-privileges.sql</pre>
+
+<h2>12. Accounting-year partitions</h2>
+<div class="warn">
+  <b>Bill saves fail without this step</b>
+  <code>sale_bill</code>, <code>sale_order</code>, <code>sale_quotation</code> and the accounting
+  tables are LIST-partitioned by accounting year. A year with no partition makes every save
+  return HTTP&nbsp;500. The bootstrap block inside the partition migration reads
+  <code>public.fiscal_years</code> &mdash; which is <b>empty after seeding</b> &mdash; so on a fresh
+  install it creates nothing at all.
+</div>
+<pre><span class="c"># Indian fiscal year runs April to March. Create the current and next year;</span>
+<span class="c"># add the previous one if you intend to import historical data.</span>
+for fy in 2025-2026 2026-2027 2027-2028; do
+  sudo -u postgres psql -d erp -v ON_ERROR_STOP=1 \
+       -c "SELECT public.ensure_acc_year_partitions('$fy'::char(9));"
+done
+
+<span class="c"># Confirm: each partitioned parent should list one child per year.</span>
+sudo -u postgres psql -d erp -c "
+SELECT p.relname AS parent, count(*) AS partitions
+FROM pg_class p
+JOIN pg_inherits i ON i.inhparent = p.oid
+WHERE p.relkind = 'p'
+GROUP BY p.relname ORDER BY 1;"</pre>
+<p>The function is idempotent &mdash; re-running it for an existing year is a no-op.</p>
+
+<h2>13. Run under PM2 and systemd</h2>
+<p>
+  The PM2 configuration lives <b>outside</b> the git working tree, because the redeploy script
+  performs <code>git reset --hard</code> and would otherwise overwrite it. Its <code>env</code> block
+  is intentionally empty so <code>.env</code> remains authoritative.
+</p>
+<pre>npm install -g pm2@latest
+
+cat &gt; /opt/erp-server/ecosystem.config.js &lt;&lt;'CFG'
+module.exports = {
+  apps: [{
+    name: 'erp-api',
+    script: 'dist/src/main.js',
+    cwd: '/opt/erp-server/app',      // dotenv resolves .env relative to CWD
+    instances: 1,
+    exec_mode: 'fork',
+    max_memory_restart: '1G',
+    autorestart: true,
+    max_restarts: 50,
+    exponential_backoff_restart_delay: 1000,  // 1s,2s,4s... not a hot loop
+    min_uptime: '60s',               // seeds run before the port opens
+    kill_timeout: 10000,
+    error_file: '/opt/erp-server/logs/pm2-error.log',
+    out_file:   '/opt/erp-server/logs/pm2-out.log',
+    merge_logs: true,
+    time: true,
+  }],
+};
+CFG
+chown erp:erp /opt/erp-server/ecosystem.config.js</pre>
+<div class="note">
+  <b>Always <code>cd</code> before running <code>sudo -u erp</code></b>
+  The root shell starts in <code>/root</code>, which is mode 0700. Spawning a process as
+  <code>erp</code> from there fails with <code>spawn /usr/bin/node EACCES</code> &mdash; the child
+  cannot access its inherited working directory. The error looks like a permissions problem
+  with Node itself, which it is not.
+</div>
+<pre>cd /opt/erp-server
+sudo -u erp HOME=/opt/erp-server pm2 start /opt/erp-server/ecosystem.config.js
+sudo -u erp HOME=/opt/erp-server pm2 save
+
+<span class="c"># Generate and enable the systemd unit that resurrects PM2 on boot.</span>
+pm2 startup systemd -u erp --hp /opt/erp-server
+systemctl enable pm2-erp
+
+<span class="c"># Order PM2 after its dependencies, or a reboot spends a minute crash-looping.</span>
+install -d /etc/systemd/system/pm2-erp.service.d
+cat &gt; /etc/systemd/system/pm2-erp.service.d/10-order.conf &lt;&lt;'UNIT'
+[Unit]
+After=postgresql.service redis-server.service
+Wants=postgresql.service redis-server.service
+UNIT
+systemctl daemon-reload
+
+<span class="c"># First boot runs the seeds before opening the port; allow ~30s.</span>
+curl -fsS http://127.0.0.1:3000/api/v1/health</pre>
+
+<h2 class="pb">14. nginx reverse proxy and TLS</h2>
+<p>
+  Two TLS server blocks are configured. A real Let's Encrypt certificate serves the hostname
+  that browsers use; a self-signed certificate serves the bare IP so <code>curl</code> and Postman
+  still work. <code>sslip.io</code> is a public wildcard DNS service that resolves an IP encoded in
+  the hostname, which makes a trusted certificate possible without buying a domain.
+</p>
+<h4>14.1 &mdash; Self-signed certificate for the bare IP</h4>
+<pre>install -d /etc/nginx/ssl /var/www/html
+openssl req -x509 -nodes -newkey rsa:2048 -days 3650 \
+  -keyout /etc/nginx/ssl/erp-selfsigned.key \
+  -out    /etc/nginx/ssl/erp-selfsigned.crt \
+  -subj   "/CN=169.58.213.171" \
+  -addext "subjectAltName=IP:169.58.213.171"
+chmod 600 /etc/nginx/ssl/erp-selfsigned.key</pre>
+
+<h4>14.2 &mdash; Shared proxy settings</h4>
+<p>Written to <code>/etc/nginx/snippets/erp-proxy.conf</code> and included by both server blocks so they cannot drift apart.</p>
+<pre>ssl_protocols       TLSv1.2 TLSv1.3;
+ssl_ciphers         HIGH:!aNULL:!MD5;
+ssl_session_cache   shared:SSL:10m;
+
+client_max_body_size 20m;        <span class="c"># REQUEST_BODY_LIMIT is 10mb; leave margin</span>
+proxy_connect_timeout 10s;
+proxy_send_timeout   120s;
+proxy_read_timeout   120s;       <span class="c"># large grid/report queries run long</span>
+
+access_log /var/log/nginx/erp-access.log;
+error_log  /var/log/nginx/erp-error.log;
+
+location / {
+    proxy_pass http://erp_api;
+    proxy_http_version 1.1;
+    proxy_set_header Host              $host;
+    proxy_set_header X-Real-IP         $remote_addr;
+    proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;   <span class="c"># else Swagger builds http:// URLs</span>
+    proxy_set_header X-Forwarded-Host  $host;
+    proxy_set_header Upgrade           $http_upgrade;
+    proxy_set_header Connection        $connection_upgrade;
+    proxy_buffering off;
+}</pre>
+
+<h4>14.3 &mdash; Site configuration</h4>
+<p>Written to <code>/etc/nginx/sites-available/erp</code>:</p>
+<pre>upstream erp_api { server 127.0.0.1:3000; keepalive 32; }
+map $http_upgrade $connection_upgrade { default upgrade; '' close; }
+
+server {
+    listen 80 default_server;
+    server_name _;
+    <span class="c"># Must stay on plain HTTP: certbot renews through this path.</span>
+    location /.well-known/acme-challenge/ { root /var/www/html; }
+    location / { return 301 https://$host$request_uri; }
+}
+
+server {                                  <span class="c"># trusted cert -- use this from browsers</span>
+    listen 443 ssl http2;
+    server_name 169-58-213-171.sslip.io;
+    ssl_certificate     /etc/letsencrypt/live/169-58-213-171.sslip.io/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/169-58-213-171.sslip.io/privkey.pem;
+    include /etc/nginx/snippets/erp-proxy.conf;
+}
+
+server {                                  <span class="c"># self-signed fallback for the bare IP</span>
+    listen 443 ssl http2 default_server;
+    server_name _;
+    ssl_certificate     /etc/nginx/ssl/erp-selfsigned.crt;
+    ssl_certificate_key /etc/nginx/ssl/erp-selfsigned.key;
+    include /etc/nginx/snippets/erp-proxy.conf;
+}</pre>
+<div class="note">
+  <b>nginx 1.24 syntax</b>
+  Ubuntu 24.04 ships nginx 1.24, which predates the standalone <code>http2 on;</code> directive
+  introduced in 1.25.1. Use <code>listen 443 ssl http2;</code> instead, or the configuration test
+  fails with <code>unknown directive "http2"</code>.
+</div>
+
+<h4>14.4 &mdash; Enable the site and issue the certificate</h4>
+<pre>ln -sf /etc/nginx/sites-available/erp /etc/nginx/sites-enabled/erp
+rm -f  /etc/nginx/sites-enabled/default
+nginx -t &amp;&amp; systemctl reload nginx &amp;&amp; systemctl enable nginx
+
+apt-get install -y certbot
+certbot certonly --webroot -w /var/www/html \
+        -d 169-58-213-171.sslip.io \
+        --non-interactive --agree-tos --register-unsafely-without-email
+
+<span class="c"># certonly does NOT reload nginx after a renewal, so a renewed certificate</span>
+<span class="c"># would sit unused on disk. This hook fixes that.</span>
+install -d /etc/letsencrypt/renewal-hooks/deploy
+printf '#!/bin/sh\nsystemctl reload nginx\n' \
+     &gt; /etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh
+chmod 750 /etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh
+
+systemctl reload nginx
+certbot renew --dry-run           <span class="c"># must report "all simulated renewals succeeded"</span></pre>
+
+<h2>15. Firewall</h2>
+<div class="warn">
+  <b>Allow port 22 before enabling ufw</b>
+  Enabling the firewall without an SSH rule terminates your session and locks you out of
+  the server permanently unless you have console access.
+</div>
+<pre>ufw allow 22/tcp
+ufw allow 80/tcp
+ufw allow 443/tcp
+ufw default deny incoming
+ufw default allow outgoing
+ufw --force enable
+systemctl enable ufw
+
+ufw status verbose
+
+<span class="c"># 3000, 5432 and 6379 must appear as 127.0.0.1 only.</span>
+ss -tlnp | grep -E ':(3000|5432|6379) '</pre>
+
+<h2 class="pb">16. Verification</h2>
+<p>Run these from your workstation. Every line must match the expected column.</p>
+<table>
+  <tr><th style="width:56%">Check</th><th>Expected</th></tr>
+  <tr><td class="mono">curl https://169-58-213-171.sslip.io/api/v1/health</td><td>200, <code>status:"ok"</code>, database and cache both <code>up</code></td></tr>
+  <tr><td class="mono">curl -o /dev/null -w '%{http_code}' http://169.58.213.171/</td><td>301 redirect to HTTPS</td></tr>
+  <tr><td class="mono">curl https://169-58-213-171.sslip.io/api/docs</td><td>200 &mdash; Swagger UI</td></tr>
+  <tr><td class="mono">curl http://169.58.213.171:3000/</td><td>connection refused / timeout</td></tr>
+  <tr><td class="mono">nc -z 169.58.213.171 5432</td><td>refused &mdash; database not exposed</td></tr>
+</table>
+<p>And on the server:</p>
+<pre><span class="c"># All five must report active + enabled.</span>
+for s in postgresql redis-server nginx pm2-erp ufw; do
+  printf '%-16s %s %s\n' "$s" "$(systemctl is-active $s)" "$(systemctl is-enabled $s)"
+done
+
+<span class="c"># Process should be online, running as erp, with a low restart count.</span>
+cd /opt/erp-server &amp;&amp; sudo -u erp HOME=/opt/erp-server pm2 list
+
+<span class="c"># Seeds: expect every row to read "success".</span>
+sudo -u postgres psql -d erp -c \
+  "SELECT last_status, count(*) FROM public._erp_seed_history GROUP BY 1;"
+
+<span class="c"># Migrations: expect 0 unfinished.</span>
+sudo -u postgres psql -d erp -c \
+  "SELECT count(*) AS applied,
+          count(*) FILTER (WHERE finished_at IS NULL) AS unfinished
+   FROM _prisma_migrations;"
+
+<span class="c"># erp_app must NOT be a superuser.</span>
+sudo -u postgres psql -c \
+  "SELECT rolname, rolsuper FROM pg_roles WHERE rolname IN ('erp_app','postgres');"</pre>
+<p>
+  A successful first deployment reports 285 migrations applied with none unfinished, 22 seeds
+  succeeded, and roughly 157 tables visible to <code>erp_app</code>.
+</p>
+
+<h2>17. Redeploying after a code change</h2>
+<div class="note">
+  <b>Deployment is manual by design</b>
+  Pushing to GitHub does <b>not</b> update the server. The redeploy script applies database
+  migrations, so it should run while someone is watching rather than on every push.
+  The full cycle is <b>commit &rarr; push &rarr; run the deploy script</b>. The script fetches from
+  GitHub, so an unpushed commit is invisible to it.
+</div>
+<pre>$ git push                                              <span class="c"># updates GitHub only</span>
+$ ssh root@169.58.213.171 /opt/erp-server/bin/deploy.sh <span class="c"># updates the live server</span></pre>
+<p><code>deploy.sh</code> performs, in order, aborting on the first failure:</p>
+<ol>
+  <li><code>git fetch</code> and <code>git reset --hard origin/&lt;branch&gt;</code></li>
+  <li><code>npm ci --include=dev</code> &mdash; with <code>NODE_ENV</code> unset</li>
+  <li><code>npm run build</code></li>
+  <li><code>prisma migrate deploy</code> using the superuser URL</li>
+  <li>re-run <code>grant-app-privileges.sql</code></li>
+  <li><code>ensure_acc_year_partitions()</code> for the current and next fiscal year</li>
+  <li><code>pm2 reload erp-api</code> and <code>pm2 save</code></li>
+  <li>poll <code>/api/v1/health</code>; on failure print the logs and the rollback command</li>
+</ol>
+<p>
+  Because the build and migrations run <i>before</i> PM2 is touched, a broken commit never
+  replaces a working process. To roll back, reset to the previous commit and redeploy:
+</p>
+<pre>sudo -u erp git -C /opt/erp-server/app reset --hard &lt;PREVIOUS_SHA&gt;
+/opt/erp-server/bin/deploy.sh</pre>
+<div class="warn">
+  <b>Never edit files inside <code>/opt/erp-server/app</code></b>
+  The deploy script runs <code>git reset --hard</code>, which destroys local edits. The two files
+  deliberately kept outside that directory &mdash; <code>/opt/erp-server/app/.env</code> (gitignored)
+  and <code>/opt/erp-server/ecosystem.config.js</code> &mdash; survive.
+</div>
+
+<h2 class="pb">18. Troubleshooting</h2>
+<table>
+  <tr><th style="width:37%">Symptom</th><th>Cause and remedy</th></tr>
+  <tr>
+    <td class="mono">ERROR: must be able to SET ROLE "postgres" (42501)</td>
+    <td>Migrations were run as <code>erp_app</code>. Seven migrations contain <code>ALTER TABLE ... OWNER to postgres</code>. Re-run with <code>DATABASE_URL="$MIGRATE_DATABASE_URL"</code>. If a migration is left half-applied on a fresh database, drop and recreate it rather than repairing by hand.</td>
+  </tr>
+  <tr>
+    <td class="mono">function uuidv7() does not exist</td>
+    <td>PostgreSQL 16 is installed. <code>uuidv7()</code> is a PostgreSQL 18 builtin and no migration defines it. Install <code>postgresql-18</code> from PGDG (section 5).</td>
+  </tr>
+  <tr>
+    <td class="mono">spawn /usr/bin/node EACCES</td>
+    <td>A process was started as <code>erp</code> from <code>/root</code>, which is mode 0700, so the child cannot access its working directory. <code>cd /opt/erp-server</code> first.</td>
+  </tr>
+  <tr>
+    <td class="mono">nest: not found</td>
+    <td><code>npm ci</code> ran with <code>NODE_ENV=production</code>, so devDependencies were skipped. Re-run with <code>env -u NODE_ENV</code>.</td>
+  </tr>
+  <tr>
+    <td class="mono">nginx: unknown directive "http2"</td>
+    <td>nginx 1.24 predates the standalone directive. Use <code>listen 443 ssl http2;</code>.</td>
+  </tr>
+  <tr>
+    <td class="mono">HTTP 500 when saving a bill or order</td>
+    <td>No partition exists for that accounting year. Run <code>SELECT public.ensure_acc_year_partitions('YYYY-YYYY');</code>. Note <code>fiscal_years</code> is empty on a fresh install, so the automatic bootstrap creates nothing.</td>
+  </tr>
+  <tr>
+    <td class="mono">permission denied for table &lt;name&gt;</td>
+    <td>A migration created an object owned by <code>postgres</code> and the grants were not re-applied. Re-run <code>grant-app-privileges.sql</code>. Add any missing grant to that file &mdash; never repoint the application at the <code>postgres</code> role.</td>
+  </tr>
+  <tr>
+    <td class="mono">CORS error in the browser</td>
+    <td>In production <code>main.ts</code> uses only <code>CORS_ORIGINS</code>; the localhost defaults are not merged in. Add the origin, then <code>pm2 reload erp-api --update-env</code>.</td>
+  </tr>
+  <tr>
+    <td>Frontend cannot reach the API although curl works</td>
+    <td>The frontend is calling the bare IP, which carries only a self-signed certificate. Browsers reject it for cross-origin requests with no click-through. Use <code>https://169-58-213-171.sslip.io</code>.</td>
+  </tr>
+  <tr>
+    <td class="mono">ECONNREFUSED 127.0.0.1:6379</td>
+    <td>Redis is down. BullMQ needs it regardless of <code>REDIS_ENABLED</code>, which gates only the HTTP cache. <code>systemctl status redis-server</code>.</td>
+  </tr>
+  <tr>
+    <td>Repeated restarts right after a reboot</td>
+    <td>PM2 started before PostgreSQL accepted connections. Install the <code>10-order.conf</code> drop-in from section 13.</td>
+  </tr>
+</table>
+<h3>Useful commands</h3>
+<pre>cd /opt/erp-server &amp;&amp; sudo -u erp HOME=/opt/erp-server pm2 logs erp-api --lines 100
+cd /opt/erp-server &amp;&amp; sudo -u erp HOME=/opt/erp-server pm2 restart erp-api
+tail -f /var/log/nginx/erp-error.log
+journalctl -u pm2-erp -n 50 --no-pager
+sudo -u postgres psql -d erp</pre>
+
+<h2>19. Reference</h2>
+<h3>Filesystem</h3>
+<table>
+  <tr><th class="mono" style="width:44%">Path</th><th>Contents</th></tr>
+  <tr><td class="mono">/opt/erp-server/app</td><td>Git working tree. Reset on every deploy.</td></tr>
+  <tr><td class="mono">/opt/erp-server/app/.env</td><td>Configuration, mode 600. Gitignored, survives deploys.</td></tr>
+  <tr><td class="mono">/opt/erp-server/ecosystem.config.js</td><td>PM2 configuration. Outside the git tree on purpose.</td></tr>
+  <tr><td class="mono">/opt/erp-server/bin/</td><td><code>deploy.sh</code>, <code>grant-app-privileges.sql</code>, <code>verify-db.sh</code></td></tr>
+  <tr><td class="mono">/opt/erp-server/logs/</td><td>PM2 stdout and stderr</td></tr>
+  <tr><td class="mono">/root/.erp-deploy-secrets</td><td>DB password, JWT secret, superuser URL. Mode 600.</td></tr>
+  <tr><td class="mono">/etc/nginx/sites-available/erp</td><td>Reverse proxy and TLS configuration</td></tr>
+  <tr><td class="mono">/etc/letsencrypt/live/&hellip;</td><td>Trusted certificate and key</td></tr>
+</table>
+<h3>Ports</h3>
+<table>
+  <tr><th style="width:14%">Port</th><th style="width:26%">Bound to</th><th>Service</th></tr>
+  <tr><td class="mono">22</td><td class="mono">0.0.0.0</td><td>SSH &mdash; open</td></tr>
+  <tr><td class="mono">80</td><td class="mono">0.0.0.0</td><td>nginx &mdash; redirects to HTTPS, serves ACME challenges</td></tr>
+  <tr><td class="mono">443</td><td class="mono">0.0.0.0</td><td>nginx &mdash; TLS termination</td></tr>
+  <tr><td class="mono">3000</td><td class="mono">127.0.0.1</td><td>Node application &mdash; not reachable externally</td></tr>
+  <tr><td class="mono">5432</td><td class="mono">127.0.0.1</td><td>PostgreSQL 18 &mdash; not reachable externally</td></tr>
+  <tr><td class="mono">6379</td><td class="mono">127.0.0.1</td><td>Redis 7 &mdash; not reachable externally</td></tr>
+</table>
+<h3>Database access from a workstation</h3>
+<p>
+  PostgreSQL is firewalled and loopback-bound, so there is no direct external connection.
+  Tunnel over SSH instead:
+</p>
+<pre>$ ssh -N -L 55432:127.0.0.1:5432 root@169.58.213.171
+$ psql "postgres://erp_app:&lt;DB_PASSWORD&gt;@127.0.0.1:55432/erp"</pre>
+<p>
+  In pgAdmin, use the <b>SSH Tunnel</b> tab rather than pasting a URL into the host field:
+  tunnel host <code>169.58.213.171</code>, user <code>root</code>, identity file; then connection
+  host <code>127.0.0.1</code>, port <code>5432</code>, database <code>erp</code>, user
+  <code>erp_app</code>. If pgAdmin was installed as a snap it cannot read <code>~/.ssh</code>
+  &mdash; snaps are denied hidden directories &mdash; so place the key in a non-hidden folder
+  such as <code>~/pgadmin-ssh/</code>.
+</p>
+<h3>Credentials</h3>
+<div class="warn">
+  <b>Passwords are intentionally omitted from this document</b>
+  They are generated on the server during step&nbsp;7 and stored in
+  <code>/root/.erp-deploy-secrets</code> (mode 600). Read them with
+  <code>ssh root@169.58.213.171 'cat /root/.erp-deploy-secrets'</code>. Never commit
+  them, and keep <code>.env</code> and every <code>.env.*</code> variant out of version control.
+</div>
+
+</body>
+</html>

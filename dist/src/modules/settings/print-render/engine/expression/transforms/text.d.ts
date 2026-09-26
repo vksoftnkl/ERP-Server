@@ -1,0 +1,12 @@
+export declare const upper: (value: unknown) => string;
+export declare const lower: (value: unknown) => string;
+export declare const trim: (value: unknown) => string;
+export declare const titleCase: (value: unknown) => string;
+export declare const padStart: (value: unknown, width: number, fill?: string) => string;
+export declare const padEnd: (value: unknown, width: number, fill?: string) => string;
+export declare const padCenter: (value: unknown, width: number, fill?: string) => string;
+export declare const truncate: (value: unknown, width: number, ellipsis?: string) => string;
+export declare const repeat: (value: unknown, count: number) => string;
+export declare const coalesce: (value: unknown, ...fallbacks: unknown[]) => string;
+export declare const wrapText: (value: unknown, width: number) => string[];
+export declare const mask: (value: unknown, visible?: number, maskChar?: string) => string;

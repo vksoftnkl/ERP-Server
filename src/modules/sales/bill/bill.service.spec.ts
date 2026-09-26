@@ -1,0 +1,2350 @@
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import {
+  AccTenderDetail,
+  AccVoucherSeq,
+  Prisma,
+  SaleBill,
+  SaleBillItem,
+  SaleOrder,
+  SaleOrderItem,
+  SaleQuotation,
+  TransactionChargeDetail,
+} from '@prisma/client';
+import { PrismaService } from '../../../database/prisma/prisma.service';
+import { RequestContextService } from '../../../common/request-context/request-context.service';
+import { AuditLogService } from '../../audit-log/audit-log.service';
+import { ChargeDetailService } from '../../master/charge-detail/charge-detail.service';
+import { TenderDetailService } from '../../accountsModule/tenderDetail/tender-detail.service';
+import { SaleOrderService } from '../sale-order/sale-order.service';
+import { QuotationService } from '../quotation/quotation.service';
+import { BillService } from './bill.service';
+import { readDraftCheques } from './bill-cheque-details';
+import { BillReadService } from './bill-read.service';
+import { SalesContextService } from '../posting/sales-context.service';
+import { SalesDocBlocksService } from '../posting/sales-doc-blocks.service';
+import { TransportBandService } from '../posting/transport-band.service';
+import { SALES_SETTING_DEFAULTS } from '../posting/sales.settings';
+import { SaveBillDto } from './dto/save-bill.dto';
+
+const BILL_ID = '019c6f6c-be87-7a11-8905-36092c46fa01';
+const COMPANY_ID = '019c6f6c-be87-7a11-8905-36092c46fa02';
+const BRANCH_ID = '019c6f6c-be87-7a11-8905-36092c46fa03';
+const TENANT_ID = '019c6f6c-be87-7a11-8905-36092c46fa04';
+const USER_ID = '019c6f6c-be87-7a11-8905-36092c46fa05';
+const COUNTER_ID = '019c6f6c-be87-7a11-8905-36092c46fa06';
+const CUST_ID = '019c6f6c-be87-7a11-8905-36092c46fa07';
+const CHARGE_ID = '019c6f6c-be87-7a11-8905-36092c46fa08';
+const LEDGER_ID = '019c6f6c-be87-7a11-8905-36092c46fa09';
+const CD_ID = '019c6f6c-be87-7a11-8905-36092c46fa0a';
+const OTHER_CD_ID = '019c6f6c-be87-7a11-8905-36092c46fa0b';
+const TENDER_ID = '019c6f6c-be87-7a11-8905-36092c46fa0c';
+const TENDER_LEDGER_ID = '019c6f6c-be87-7a11-8905-36092c46fa0d';
+const TD_ID = '019c6f6c-be87-7a11-8905-36092c46fa0e';
+const OTHER_TD_ID = '019c6f6c-be87-7a11-8905-36092c46fa0f';
+const LINE_A_ID = '019c6f6c-be87-7a11-8905-36092c46fa10';
+const LINE_B_ID = '019c6f6c-be87-7a11-8905-36092c46fa11';
+const ITEM_MASTER_ID = '019c6f6c-be87-7a11-8905-36092c46fa12';
+const ITEM_UNIT_ID = '019c6f6c-be87-7a11-8905-36092c46fa13';
+const GODOWN_ID = '019c6f6c-be87-7a11-8905-36092c46fa14';
+const STOCK_ID = '019c6f6c-be87-7a11-8905-36092c46fa15';
+const SEQ_ID = '019c6f6c-be87-7a11-8905-36092c46fa16';
+// fixed.device_master.dev_id behind the bill's free-text sbDeviceId ('till-1').
+const DEVICE_ID = '019c6f6c-be87-7a11-8905-36092c46fa17';
+// fixed.state_codes.state_code for Tamil Nadu — the place of supply sb_pos_stcd
+// points at.
+const POS_STATE_CODE = '33';
+// The sale order a converted bill draws its lines down off, and its one line.
+const ORDER_ID = '019c6f6c-be87-7a11-8905-36092c46fb01';
+const ORDER_LINE_ID = '019c6f6c-be87-7a11-8905-36092c46fb02';
+const ORDER_LINE_B_ID = '019c6f6c-be87-7a11-8905-36092c46fb03';
+const ORDER_REFNO = 'sor00042';
+const ACC_YEAR = '2026-2027';
+// The bill voucher type, and the counter it stands at before a save: the next
+// bill therefore takes number 101 → 'bil00101'.
+const BILL_VCHR_TYPE_ID = 3;
+const SEQ_LAST_NO = 100n;
+const BILL_SLNO = SEQ_LAST_NO + 1n;
+const BILL_REFNO = 'bil00101';
+// What posting a bill into the books produces: the acc_voucher_header row and
+// the acc_bills receivable behind it.
+const VOUCHER_HEADER_ID = '019f0000-0000-7000-8000-00000000ab01';
+const ACC_BILL_ID = '019f0000-0000-7000-8000-00000000ab02';
+// Company-wide voucher serial handed back by the locked max+1 query.
+const VOUCHER_SLNO = 7n;
+
+const makeSequence = (overrides: Partial<AccVoucherSeq> = {}): AccVoucherSeq =>
+  ({
+    id: SEQ_ID,
+    vchrTypeId: BILL_VCHR_TYPE_ID,
+    companyId: COMPANY_ID,
+    branchId: BRANCH_ID,
+    accYear: ACC_YEAR,
+    deviceId: null,
+    deviceCode: 'MAIN',
+    periodKey: ACC_YEAR,
+    lastNo: SEQ_LAST_NO,
+    voucherPrefix: 'bil',
+    companyCode: 'ABC123',
+    branchCode: 'BR001',
+    voucherSuffix: null,
+    noWidth: 5,
+    lastRefno: null,
+    isActive: true,
+    isDeleted: false,
+    createdOn: new Date('2026-07-28T10:00:00.000Z'),
+    createdBy: null,
+    modifiedOn: null,
+    modifiedBy: null,
+    ...overrides,
+  }) as AccVoucherSeq;
+
+const makeBill = (overrides: Partial<SaleBill> = {}): SaleBill =>
+  ({
+    sbId: BILL_ID,
+    sbCompanyId: COMPANY_ID,
+    sbBranchId: BRANCH_ID,
+    sbTenantId: TENANT_ID,
+    sbAccYear: ACC_YEAR,
+    sbCounterId: COUNTER_ID,
+    sbDeviceType: 'POS',
+    sbDeviceId: 'till-1',
+    sbPriceLevel: 1,
+    sbBillSlno: BILL_SLNO,
+    sbBillRefno: BILL_REFNO,
+    sbBillDate: new Date('2026-07-28T00:00:00.000Z'),
+    sbCustId: CUST_ID,
+    sbCustName: 'Acme',
+    sbUserId: USER_ID,
+    sbStatus: 'DRAFT',
+    sbIsDeleted: false,
+    sbCreatedOn: new Date('2026-07-28T10:00:00.000Z'),
+    sbCreatedBy: USER_ID,
+    sbModifiedOn: null,
+    sbModifiedBy: null,
+    sbBillDatetime: new Date('2026-07-28T10:00:00.000Z'),
+    sbSyncDate: null,
+    ...overrides,
+  }) as unknown as SaleBill;
+
+const makeCharge = (overrides: Partial<TransactionChargeDetail> = {}): TransactionChargeDetail =>
+  ({
+    cdId: CD_ID,
+    cdDocType: 'INVOICE',
+    cdDocId: BILL_ID,
+    cdSlno: 1,
+    cdCompId: COMPANY_ID,
+    cdBranchId: BRANCH_ID,
+    cdAccYear: ACC_YEAR,
+    cdVoucherNo: 101n,
+    cdChgId: CHARGE_ID,
+    cdChgName: 'Freight',
+    cdRole: 'FREIGHT',
+    cdMethod: 'FIXED',
+    cdType: 'ADD',
+    cdApplyOn: 'FLAT',
+    cdLedgerCode: LEDGER_ID,
+    cdLandingCost: false,
+    cdCostAlloc: null,
+    cdBeforeTax: false,
+    cdTaxApl: false,
+    cdSepPost: false,
+    cdUnit: null,
+    cdQtyVal: null,
+    cdWeight: null,
+    cdRate: new Prisma.Decimal('0.0000'),
+    cdAmount: new Prisma.Decimal('500.0000'),
+    cdTaxCode: null,
+    cdHsn: null,
+    cdTaxPerc: null,
+    cdTaxAmt: null,
+    cdSgstPerc: null,
+    cdSgstAmt: null,
+    cdCgstPerc: null,
+    cdCgstAmt: null,
+    cdIgstPerc: null,
+    cdIgstAmt: null,
+    cdCessPerc: null,
+    cdCessAmt: null,
+    cdNetAmt: new Prisma.Decimal('500.0000'),
+    cdRemarks: null,
+    cdIsActive: true,
+    cdIsDeleted: false,
+    cdSyncDate: null,
+    cdCreatedOn: new Date('2026-07-28T10:00:00.000Z'),
+    cdCreatedBy: USER_ID,
+    cdModifiedOn: null,
+    cdModifiedBy: null,
+    ...overrides,
+  }) as TransactionChargeDetail;
+
+const makeTender = (overrides: Partial<AccTenderDetail> = {}): AccTenderDetail =>
+  ({
+    tdId: TD_ID,
+    tdCompanyId: COMPANY_ID,
+    tdBranchId: BRANCH_ID,
+    tdTenantId: TENANT_ID,
+    tdAccYear: ACC_YEAR,
+    tdSrcModule: 'SALES',
+    tdSrcDocType: 'SALE_BILL',
+    tdSrcDocId: BILL_ID,
+    tdRowNo: 1,
+    tdDocDate: new Date('2026-07-28T00:00:00.000Z'),
+    tdPartyLedgerId: CUST_ID,
+    tdVoucherId: null,
+    tdTenderId: TENDER_ID,
+    tdTenderTypeId: 1,
+    tdTenderLedgerId: TENDER_LEDGER_ID,
+    tdDrCr: 'DR',
+    tdAmount: new Prisma.Decimal('500.00'),
+    tdSurchargePerc: new Prisma.Decimal('0.000'),
+    tdSurchargeAmt: new Prisma.Decimal('0.00'),
+    tdTotalAmt: new Prisma.Decimal('500.00'),
+    tdReceivedAmt: new Prisma.Decimal('500.00'),
+    tdChangeAmt: new Prisma.Decimal('0.00'),
+    tdUnitsUsed: new Prisma.Decimal('0.0000'),
+    tdConversionRate: new Prisma.Decimal('1.0000'),
+    tdRefNo: null,
+    tdAuthCode: null,
+    tdCardLast4: null,
+    tdBankName: null,
+    tdPayerVpa: null,
+    tdInstrumentDate: null,
+    tdIsPdc: false,
+    tdSettleStatus: 'NA',
+    tdSettleLedgerId: null,
+    tdExpectedSettleOn: null,
+    tdSettledOn: null,
+    tdSettleAmount: null,
+    tdMdrAmt: new Prisma.Decimal('0.00'),
+    tdSettleRefNo: null,
+    tdSettleVoucherId: null,
+    tdSessionId: null,
+    tdDeviceId: 'till-1',
+    tdUserId: USER_ID,
+    tdNotes: null,
+    tdIsDeleted: false,
+    tdSyncDate: null,
+    tdCreatedOn: new Date('2026-07-28T10:00:00.000Z'),
+    tdCreatedBy: USER_ID,
+    tdModifiedOn: null,
+    tdModifiedBy: null,
+    ...overrides,
+  }) as AccTenderDetail;
+
+const makeItem = (overrides: Partial<SaleBillItem> = {}): SaleBillItem =>
+  ({
+    sbiId: LINE_A_ID,
+    sbiBillId: BILL_ID,
+    sbiCompanyId: COMPANY_ID,
+    sbiBranchId: BRANCH_ID,
+    sbiTenantId: TENANT_ID,
+    sbiAccYear: ACC_YEAR,
+    sbiLineNo: 1,
+    sbiSplitNo: 1,
+    sbiItemId: ITEM_MASTER_ID,
+    sbiItemUnitId: ITEM_UNIT_ID,
+    sbiGodownId: GODOWN_ID,
+    sbiStockId: STOCK_ID,
+    sbiPriceLevel: 1,
+    sbiIsDeleted: false,
+    sbiSyncDate: null,
+    sbiCreatedOn: new Date('2026-07-28T10:00:00.000Z'),
+    sbiCreatedBy: USER_ID,
+    sbiModifiedOn: null,
+    sbiModifiedBy: null,
+    ...overrides,
+  }) as unknown as SaleBillItem;
+
+// A confirmed order with one line for 10, nothing delivered against it yet.
+// Overrides are loosely typed for the same reason postedBill's are: the money
+// and quantity columns come back as Decimal, and the tests state plain numbers.
+const makeOrder = (overrides: Record<string, unknown> = {}): SaleOrder =>
+  ({
+    soId: ORDER_ID,
+    soCompanyId: COMPANY_ID,
+    soBranchId: BRANCH_ID,
+    soTenantId: TENANT_ID,
+    soAccYear: ACC_YEAR,
+    soOrderRefno: ORDER_REFNO,
+    soDeviceId: 'till-1',
+    soSessionId: null,
+    soStatus: 'CONFIRMED',
+    soFulfilStatus: 'PENDING',
+    soCompletedOn: null,
+    soTotItems: 1,
+    soDeliveredItems: 0,
+    soBilledAmt: 0,
+    soCancelledAmt: 0,
+    soPendingAmt: 1000,
+    soAdvanceBalanceAmt: 0,
+    soIsDeleted: false,
+    ...overrides,
+  }) as unknown as SaleOrder;
+
+// soi_pending_qty and soi_line_status are GENERATED ALWAYS ... STORED since
+// migration 20260814060000: Postgres recomputes both from soi_net_qty and the
+// two settled quantities on every write, so the fixture does the same. A test
+// cannot pin them to something the three quantities do not say, which is exactly
+// the guarantee the real column gives.
+const withGeneratedColumns = (row: Record<string, unknown>): Record<string, unknown> => {
+  const qty = (value: unknown) => Number(value ?? 0);
+  const net = qty(row.soiNetQty);
+  const delivered = qty(row.soiDeliveredQty);
+  const cancelled = qty(row.soiCancelledQty);
+  const pending = Math.round((net - delivered - cancelled) * 1000) / 1000;
+  const status =
+    net <= 0
+      ? 'PENDING'
+      : pending <= 0 && delivered <= 0
+        ? 'CANCELLED'
+        : pending <= 0
+          ? 'DELIVERED'
+          : delivered + cancelled > 0
+            ? 'PARTIAL'
+            : 'PENDING';
+  return { ...row, soiPendingQty: pending, soiLineStatus: status };
+};
+
+const makeOrderItem = (overrides: Record<string, unknown> = {}): SaleOrderItem =>
+  withGeneratedColumns({
+    soiId: ORDER_LINE_ID,
+    soiOrderId: ORDER_ID,
+    soiCompanyId: COMPANY_ID,
+    soiBranchId: BRANCH_ID,
+    soiTenantId: TENANT_ID,
+    soiAccYear: ACC_YEAR,
+    soiLineNo: 1,
+    soiItemId: ITEM_MASTER_ID,
+    soiItemUnitId: ITEM_UNIT_ID,
+    soiOrderQty: 10,
+    // The BILLABLE quantity, and the one the fulfilment recompute works in:
+    // soi_pending_qty is generated from it, not from soi_order_qty.
+    soiNetQty: 10,
+    soiNetAmt: 1000,
+    soiDeliveredQty: 0,
+    soiCancelledQty: 0,
+    soiBilledAmt: 0,
+    soiIsDeleted: false,
+    soiCreatedOn: new Date('2026-07-28T10:00:00.000Z'),
+    soiCreatedBy: USER_ID,
+    soiModifiedOn: null,
+    soiModifiedBy: null,
+    ...overrides,
+    // The billable quantity follows the ordered one unless a test says
+    // otherwise — the same default a line created through the API gets.
+    ...(overrides.soiOrderQty !== undefined && overrides.soiNetQty === undefined
+      ? { soiNetQty: overrides.soiOrderQty }
+      : {}),
+  }) as unknown as SaleOrderItem;
+
+// The four columns a bill line carries to say "this came from order line N".
+const orderSrcDoc = (lineNo = 1) => ({
+  sbiSrcDocType: 'SALES_ORDER',
+  sbiSrcDocId: ORDER_ID,
+  sbiSrcDocYear: ACC_YEAR,
+  sbiSrcDocLineNo: lineNo,
+});
+
+// A stored bill line standing against that order line, as the order's
+// fulfilment recompute reads it back.
+// sbi_net_qty is what the order draws down — the quantity in the order line's
+// own terms — so it is the one that has to be right here. sbi_bill_qty rides
+// along at the same value, which is what a plain unit sale looks like.
+const billedLine = (lineNo: number, qty: number, amt: number): SaleBillItem =>
+  makeItem({
+    ...orderSrcDoc(lineNo),
+    sbiBillQty: qty,
+    sbiNetQty: qty,
+    sbiNetAmt: amt,
+  } as unknown as Partial<SaleBillItem>);
+
+const baseDto = (overrides: Partial<SaveBillDto> = {}): SaveBillDto =>
+  ({
+    sbCompanyId: COMPANY_ID,
+    sbBranchId: BRANCH_ID,
+    sbTenantId: TENANT_ID,
+    sbAccYear: ACC_YEAR,
+    sbCounterId: COUNTER_ID,
+    sbDeviceType: 'POS',
+    sbDeviceId: 'till-1',
+    sbPriceLevel: 1,
+    sbCustId: CUST_ID,
+    sbCustName: 'Acme',
+    sbUserId: USER_ID,
+    ...overrides,
+  }) as SaveBillDto;
+
+type BillCreateArgs = { data: Prisma.SaleBillUncheckedCreateInput };
+type BillUpdateArgs = {
+  where: { sbId_sbAccYear: { sbId: string; sbAccYear: string } };
+  data: Prisma.SaleBillUncheckedUpdateInput;
+};
+type OrderItemUpdateArgs = {
+  where: { soiId_soiAccYear: { soiId: string; soiAccYear: string } };
+  data: Prisma.SaleOrderItemUncheckedUpdateInput;
+};
+type ItemCreateArgs = { data: Prisma.SaleBillItemUncheckedCreateInput };
+type ItemUpdateArgs = {
+  where: { sbiId_sbiAccYear: { sbiId: string; sbiAccYear: string } };
+  data: Prisma.SaleBillItemUncheckedUpdateInput;
+};
+type ChargeCreateArgs = { data: Prisma.TransactionChargeDetailUncheckedCreateInput };
+type ChargeUpdateArgs = {
+  where: { cdId_cdAccYear: { cdId: string; cdAccYear: string } };
+  data: Prisma.TransactionChargeDetailUncheckedUpdateInput;
+};
+type TenderCreateArgs = { data: Prisma.AccTenderDetailUncheckedCreateInput };
+// acc_tender_detail is partitioned by td_acc_year, so a single-row update
+// addresses the compound key, the way sale_bill does.
+type TenderUpdateArgs = {
+  where: { tdId_tdAccYear: { tdId: string; tdAccYear: string } };
+  data: Prisma.AccTenderDetailUncheckedUpdateInput;
+};
+type SequenceUpdateArgs = {
+  where: { id: string };
+  data: Prisma.AccVoucherSeqUncheckedUpdateInput;
+};
+type StatusLogCreateArgs = { data: Prisma.TxnStatusLogUncheckedCreateInput };
+
+// The columns findLiveVoucher / syncReceivable actually select.
+type AccVoucherHeaderStub = {
+  avhVoucherId: string;
+  avhAccYear: string;
+  avhPostedOn: Date | null;
+};
+type AccBillStub = {
+  // acc_bill_balance is partitioned by abl_acc_year, so a bill is addressed by
+  // the pair — the year it was raised in, which it keeps for life.
+  ablId: string;
+  ablAccYear: string;
+  ablAllocAmount: Prisma.Decimal;
+  ablDiscAmount: Prisma.Decimal;
+  ablWriteoffAmount: Prisma.Decimal;
+};
+// What the delete path selects on top of AccBillStub — the refno names the bill
+// in the "already settled" error.
+type AccBillDeleteStub = AccBillStub & { ablDocRefno: string | null };
+type PrismaMock = {
+  customer: { findFirst: jest.Mock<Promise<unknown>, unknown[]> };
+  saleBill: {
+    create: jest.Mock<Promise<SaleBill>, [BillCreateArgs]>;
+    findFirst: jest.Mock<Promise<SaleBill | null>, unknown[]>;
+    update: jest.Mock<Promise<SaleBill>, [BillUpdateArgs]>;
+    updateMany: jest.Mock<Promise<Prisma.BatchPayload>, unknown[]>;
+  };
+  itemMaster: {
+    findMany: jest.Mock<Promise<{ itemId: string; itemDefaultTaxId: string | null }[]>, unknown[]>;
+  };
+  saleBillItem: {
+    findMany: jest.Mock<Promise<SaleBillItem[]>, unknown[]>;
+    create: jest.Mock<Promise<SaleBillItem>, [ItemCreateArgs]>;
+    update: jest.Mock<Promise<SaleBillItem>, [ItemUpdateArgs]>;
+    updateMany: jest.Mock<Promise<Prisma.BatchPayload>, unknown[]>;
+  };
+  transactionChargeDetail: {
+    findMany: jest.Mock<Promise<TransactionChargeDetail[]>, unknown[]>;
+    create: jest.Mock<Promise<TransactionChargeDetail>, [ChargeCreateArgs]>;
+    update: jest.Mock<Promise<TransactionChargeDetail>, [ChargeUpdateArgs]>;
+    updateMany: jest.Mock<Promise<Prisma.BatchPayload>, unknown[]>;
+  };
+  accTenderDetail: {
+    findMany: jest.Mock<Promise<AccTenderDetail[]>, unknown[]>;
+    create: jest.Mock<Promise<AccTenderDetail>, [TenderCreateArgs]>;
+    update: jest.Mock<Promise<AccTenderDetail>, [TenderUpdateArgs]>;
+    updateMany: jest.Mock<Promise<Prisma.BatchPayload>, unknown[]>;
+  };
+  // Read by ChargeDetailService, which owns the bill's charge lines: a charge
+  // may only point at an active charge master / ledger.
+  chargeMaster: { findFirst: jest.Mock<Promise<{ chgId: string } | null>, unknown[]> };
+  accLedgerMaster: { findFirst: jest.Mock<Promise<{ ledName: string } | null>, unknown[]> };
+  // The sale order a converted bill draws down, reached through the real
+  // SaleOrderService: findFirst locates the header, updateMany writes its
+  // recomputed roll-ups.
+  saleOrder: {
+    findFirst: jest.Mock<Promise<SaleOrder | null>, unknown[]>;
+    // The reference resolution's read: which of the ids a bill points at are
+    // ORDER ids rather than order LINE ids.
+    findMany: jest.Mock<Promise<{ soId: string }[]>, unknown[]>;
+    updateMany: jest.Mock<Promise<Prisma.BatchPayload>, unknown[]>;
+  };
+  saleOrderItem: {
+    findMany: jest.Mock<Promise<SaleOrderItem[]>, unknown[]>;
+    update: jest.Mock<Promise<SaleOrderItem>, [OrderItemUpdateArgs]>;
+  };
+  // The quotation a bill can be raised from. QuotationService owns
+  // sale_quotation's conversion columns; a bill save hands it the reference its
+  // header carries.
+  saleQuotation: {
+    findFirst: jest.Mock<Promise<SaleQuotation | null>, unknown[]>;
+    updateMany: jest.Mock<Promise<Prisma.BatchPayload>, unknown[]>;
+  };
+  // Likewise for TenderDetailService and the bill's tender lines.
+  accTenderMaster: {
+    findFirst: jest.Mock<
+      Promise<{ tndName: string; tndTypeId: number; tndLedgerId: string } | null>,
+      unknown[]
+    >;
+  };
+  accTenderType: { findFirst: jest.Mock<Promise<{ ttmTypeId: number } | null>, unknown[]> };
+  // Reached through allocateVoucherNumber on the create path.
+  accVoucherType: {
+    findFirst: jest.Mock<Promise<unknown>, unknown[]>;
+  };
+  accVoucherSeq: {
+    findFirst: jest.Mock<Promise<AccVoucherSeq | null>, unknown[]>;
+    create: jest.Mock<Promise<AccVoucherSeq>, [{ data: Prisma.AccVoucherSeqUncheckedCreateInput }]>;
+    update: jest.Mock<Promise<AccVoucherSeq>, [SequenceUpdateArgs]>;
+  };
+  // Two readers: the voucher-number build (compCode) and the negative-stock
+  // switch getById folds into every line (compNegStkApl).
+  company: {
+    findFirst: jest.Mock<
+      Promise<{ compCode?: string | null; compNegStkApl?: boolean } | null>,
+      unknown[]
+    >;
+  };
+  branchMaster: {
+    findFirst: jest.Mock<Promise<{ brCode: string | null } | null>, unknown[]>;
+  };
+  // sale_bill_item has no FK to godown_locations, so getById resolves the line's
+  // godown with its own batched read — the name it shows and the negative-stock
+  // switch it contributes.
+  godownLocation: {
+    findMany: jest.Mock<
+      Promise<{ gdlId: string; gdlName: string; gdlNegativeStock: boolean }[]>,
+      unknown[]
+    >;
+  };
+  // create is the first post; findFirst/update are how the update path locates
+  // the bill's live voucher (via ux_avh_src) and re-syncs or cancels it.
+  accVoucherHeader: {
+    create: jest.Mock<Promise<{ avhVoucherId: string }>, unknown[]>;
+    findFirst: jest.Mock<Promise<AccVoucherHeaderStub | null>, unknown[]>;
+    // findMany is the delete path: every non-deleted voucher raised from the
+    // bill, cancelled ones included.
+    findMany: jest.Mock<Promise<AccVoucherHeaderStub[]>, unknown[]>;
+    update: jest.Mock<Promise<unknown>, unknown[]>;
+  };
+  // The per-ledger split behind a voucher. Only the delete path touches it.
+  accVoucher: {
+    updateMany: jest.Mock<Promise<Prisma.BatchPayload>, unknown[]>;
+  };
+  accBillBalance: {
+    create: jest.Mock<Promise<{ ablId: string }>, unknown[]>;
+    findFirst: jest.Mock<Promise<AccBillStub | null>, unknown[]>;
+    findMany: jest.Mock<Promise<AccBillDeleteStub[]>, unknown[]>;
+    update: jest.Mock<Promise<unknown>, unknown[]>;
+  };
+  // Counted before an allocation is re-seeded: once a real adjustment exists,
+  // abl_alloc_amount stops being this module's to write. findMany is the
+  // adjustment sync reading what is live against the bill; [] means a save
+  // with no adjustments key leaves the balances to the posting code.
+  accBillAdjustment: {
+    count: jest.Mock<Promise<number>, unknown[]>;
+    findMany: jest.Mock<Promise<unknown[]>, unknown[]>;
+  };
+  // The bill's status trail. findFirst is the next-sequence read (the newest row
+  // of this document's trail), create is the appended step.
+  txnStatusLog: {
+    findFirst: jest.Mock<Promise<{ tslSeqNo: number } | null>, unknown[]>;
+    create: jest.Mock<Promise<unknown>, [StatusLogCreateArgs]>;
+  };
+  // sb_device_id is free text, so the trail resolves it against device_master
+  // before writing tsl_device_id (a uuid with an FK).
+  deviceMaster: {
+    findFirst: jest.Mock<Promise<{ devId: string } | null>, unknown[]>;
+  };
+  // sb_pos_stcd's FK target: checked before the write so an unknown place of
+  // supply comes back as a 400 instead of a raw fk_sb_pos_state violation.
+  stateCode: {
+    findUnique: jest.Mock<Promise<{ stateCode: string } | null>, unknown[]>;
+  };
+  $queryRaw: jest.Mock<Promise<unknown>, unknown[]>;
+  $transaction: jest.Mock<Promise<unknown>, [(tx: PrismaMock) => Promise<unknown>]>;
+};
+
+// expect.objectContaining() is typed `any`; wrapping it keeps the nested
+// matchers below out of no-unsafe-assignment's way.
+// The order's fulfilment columns take Prisma.Decimal — money and quantity never
+// pass through a float64 on their way to a numeric column (§3a rule 1) — so the
+// write assertions compare against one. Response payloads stay plain numbers.
+const dec = (value: number | string): Prisma.Decimal => new Prisma.Decimal(value);
+const containing = (value: Record<string, unknown>): unknown => expect.objectContaining(value);
+
+const makePrismaMock = (): PrismaMock => {
+  const prisma: PrismaMock = {
+    customer: {
+      findFirst: jest.fn(() => Promise.resolve(null)),
+    },
+    saleBill: {
+      // Prisma accepts a number for a BigInt column on write but always reads
+      // one back as a bigint.
+      create: jest.fn(({ data }: BillCreateArgs) =>
+        Promise.resolve(
+          makeBill({
+            ...(data as unknown as Partial<SaleBill>),
+            sbBillSlno: BigInt(data.sbBillSlno as number),
+          }),
+        ),
+      ),
+      findFirst: jest.fn(() => Promise.resolve(makeBill())),
+      update: jest.fn(({ data }: BillUpdateArgs) =>
+        Promise.resolve(makeBill(data as unknown as Partial<SaleBill>)),
+      ),
+      updateMany: jest.fn(() => Promise.resolve({ count: 1 })),
+    },
+    // Items carry no default tax here, so every line saves sbi_tax_id NULL.
+    itemMaster: {
+      findMany: jest.fn(() =>
+        Promise.resolve([] as { itemId: string; itemDefaultTaxId: string | null }[]),
+      ),
+    },
+    saleBillItem: {
+      findMany: jest.fn(() => Promise.resolve([] as SaleBillItem[])),
+      create: jest.fn(({ data }: ItemCreateArgs) =>
+        Promise.resolve(makeItem(data as unknown as Partial<SaleBillItem>)),
+      ),
+      update: jest.fn(({ where, data }: ItemUpdateArgs) =>
+        Promise.resolve(
+          makeItem({
+            ...(data as unknown as Partial<SaleBillItem>),
+            sbiId: where.sbiId_sbiAccYear.sbiId,
+          }),
+        ),
+      ),
+      updateMany: jest.fn(() => Promise.resolve({ count: 0 })),
+    },
+    // Default: no order is in play, so a bill that names one finds nothing and
+    // the tests that DO convert point these at a real order.
+    saleOrder: {
+      findFirst: jest.fn(() => Promise.resolve(null)),
+      // Answers from whatever findFirst is set to resolve, filtered by the id
+      // list — so a test that says "this order exists" says it once and both
+      // reads agree, the way one real row would make them.
+      findMany: jest.fn(async (args: unknown) => {
+        const where = (args as { where?: { soId?: { in?: string[] } } }).where ?? {};
+        const order = await prisma.saleOrder.findFirst();
+        return order && (where.soId?.in ?? []).includes(order.soId) ? [{ soId: order.soId }] : [];
+      }),
+      updateMany: jest.fn(() => Promise.resolve({ count: 1 })),
+    },
+    saleOrderItem: {
+      findMany: jest.fn(() => Promise.resolve([] as SaleOrderItem[])),
+      update: jest.fn(({ where, data }: OrderItemUpdateArgs) =>
+        Promise.resolve(
+          makeOrderItem({
+            ...(data as unknown as Partial<SaleOrderItem>),
+            soiId: where.soiId_soiAccYear.soiId,
+          }),
+        ),
+      ),
+    },
+    // Default: no quotation is in play, so a bill that names one is rejected
+    // and the tests that DO convert point this at a real quote.
+    saleQuotation: {
+      findFirst: jest.fn(() => Promise.resolve(null)),
+      updateMany: jest.fn(() => Promise.resolve({ count: 1 })),
+    },
+    transactionChargeDetail: {
+      findMany: jest.fn(() => Promise.resolve([])),
+      create: jest.fn(({ data }: ChargeCreateArgs) =>
+        Promise.resolve(makeCharge(data as unknown as Partial<TransactionChargeDetail>)),
+      ),
+      update: jest.fn(({ where, data }: ChargeUpdateArgs) =>
+        Promise.resolve(
+          makeCharge({
+            ...(data as unknown as Partial<TransactionChargeDetail>),
+            cdId: where.cdId_cdAccYear.cdId,
+            cdAccYear: where.cdId_cdAccYear.cdAccYear,
+          }),
+        ),
+      ),
+      updateMany: jest.fn(() => Promise.resolve({ count: 1 })),
+    },
+    accTenderDetail: {
+      findMany: jest.fn(() => Promise.resolve([] as AccTenderDetail[])),
+      create: jest.fn(({ data }: TenderCreateArgs) =>
+        Promise.resolve(makeTender(data as unknown as Partial<AccTenderDetail>)),
+      ),
+      update: jest.fn(({ where, data }: TenderUpdateArgs) =>
+        Promise.resolve(
+          makeTender({
+            ...(data as unknown as Partial<AccTenderDetail>),
+            tdId: where.tdId_tdAccYear.tdId,
+          }),
+        ),
+      ),
+      updateMany: jest.fn(() => Promise.resolve({ count: 1 })),
+    },
+    chargeMaster: { findFirst: jest.fn(() => Promise.resolve({ chgId: CHARGE_ID })) },
+    accLedgerMaster: { findFirst: jest.fn(() => Promise.resolve({ ledName: 'Freight Inward' })) },
+    accTenderMaster: {
+      findFirst: jest.fn(() =>
+        Promise.resolve({ tndName: 'Cash', tndTypeId: 1, tndLedgerId: TENDER_LEDGER_ID }),
+      ),
+    },
+    accTenderType: { findFirst: jest.fn(() => Promise.resolve({ ttmTypeId: 1 })) },
+    accVoucherType: {
+      findFirst: jest.fn(() =>
+        Promise.resolve({
+          vchrTypeId: BILL_VCHR_TYPE_ID,
+          vchrNoPrefix: 'bil',
+          vchrNoSuffix: null,
+          vchrNoWidth: 5,
+          vchrResetFreq: 'YEARLY',
+        }),
+      ),
+    },
+    accVoucherSeq: {
+      findFirst: jest.fn(() => Promise.resolve(makeSequence())),
+      create: jest.fn(({ data }: { data: Prisma.AccVoucherSeqUncheckedCreateInput }) =>
+        Promise.resolve(makeSequence(data as unknown as Partial<AccVoucherSeq>)),
+      ),
+      // Mirrors Postgres: the first call increments the counter and returns the
+      // consumed number, the second only stamps the printable refno onto it.
+      update: jest.fn(({ data }: SequenceUpdateArgs) => {
+        const increment = (data.lastNo as { increment?: number } | undefined)?.increment;
+        return Promise.resolve(
+          makeSequence(
+            increment === undefined
+              ? { lastRefno: data.lastRefno as string }
+              : { lastNo: SEQ_LAST_NO + BigInt(increment) },
+          ),
+        );
+      }),
+    },
+    company: {
+      findFirst: jest.fn(() => Promise.resolve({ compCode: 'ABC123', compNegStkApl: true })),
+    },
+    branchMaster: {
+      findFirst: jest.fn(() => Promise.resolve({ brCode: 'BR001' })),
+    },
+    godownLocation: {
+      findMany: jest.fn(() =>
+        Promise.resolve([{ gdlId: GODOWN_ID, gdlName: 'Main Godown', gdlNegativeStock: true }]),
+      ),
+    },
+    accVoucherHeader: {
+      create: jest.fn(() => Promise.resolve({ avhVoucherId: VOUCHER_HEADER_ID })),
+      // Default: the bill has never been posted. Tests that edit a posted bill
+      // point this at a live voucher.
+      findFirst: jest.fn(() => Promise.resolve(null)),
+      findMany: jest.fn(() => Promise.resolve([])),
+      update: jest.fn(() => Promise.resolve({})),
+    },
+    accVoucher: {
+      updateMany: jest.fn(() => Promise.resolve({ count: 0 })),
+    },
+    accBillBalance: {
+      create: jest.fn(() => Promise.resolve({ ablId: ACC_BILL_ID })),
+      findFirst: jest.fn(() => Promise.resolve(null)),
+      findMany: jest.fn(() => Promise.resolve([])),
+      update: jest.fn(() => Promise.resolve({})),
+    },
+    accBillAdjustment: {
+      count: jest.fn(() => Promise.resolve(0)),
+      findMany: jest.fn(() => Promise.resolve([])),
+    },
+    txnStatusLog: {
+      // Default: the document has no trail yet, so the appended step is seq 1.
+      findFirst: jest.fn(() => Promise.resolve(null)),
+      create: jest.fn(({ data }: StatusLogCreateArgs) => Promise.resolve(data)),
+    },
+    // Default: 'till-1' is a registered device, so the step carries its uuid.
+    deviceMaster: {
+      findFirst: jest.fn(() => Promise.resolve({ devId: DEVICE_ID })),
+    },
+    stateCode: {
+      findUnique: jest.fn(() => Promise.resolve({ stateCode: POS_STATE_CODE })),
+    },
+    // Two raw statements run while posting: the advisory lock, then the
+    // company-wide voucher serial.
+    $queryRaw: jest.fn((...args: unknown[]) =>
+      Promise.resolve(
+        (args[0] as readonly string[]).join('').includes('next_slno')
+          ? [{ next_slno: VOUCHER_SLNO }]
+          : [{ locked: 1 }],
+      ),
+    ),
+    $transaction: jest.fn((cb: (tx: PrismaMock) => Promise<unknown>) => cb(prisma)),
+  };
+  return prisma;
+};
+
+describe('BillService', () => {
+  let service: BillService;
+  let prisma: PrismaMock;
+  let auditLogService: { logEntityChange: jest.Mock };
+
+  beforeEach(() => {
+    prisma = makePrismaMock();
+    auditLogService = { logEntityChange: jest.fn(() => Promise.resolve(undefined)) };
+    const requestContextService = {
+      getUserId: () => USER_ID,
+    } as unknown as RequestContextService;
+    service = new BillService(
+      prisma as unknown as PrismaService,
+      auditLogService as unknown as AuditLogService,
+      requestContextService,
+      // The real collaborator, not a stub: the charge lines a bill saves go
+      // through it, so these tests assert on what it writes to
+      // prisma.transactionChargeDetail.
+      new ChargeDetailService(
+        prisma as unknown as PrismaService,
+        auditLogService as unknown as AuditLogService,
+        requestContextService,
+      ),
+      new TenderDetailService(
+        prisma as unknown as PrismaService,
+        auditLogService as unknown as AuditLogService,
+        requestContextService,
+      ),
+      // Also the real collaborator: converting an order to a bill is judged by
+      // what actually lands on prisma.saleOrderItem / prisma.saleOrder.
+      new SaleOrderService(
+        prisma as unknown as PrismaService,
+        auditLogService as unknown as AuditLogService,
+        requestContextService,
+        new ChargeDetailService(
+          prisma as unknown as PrismaService,
+          auditLogService as unknown as AuditLogService,
+          requestContextService,
+        ),
+        new TenderDetailService(
+          prisma as unknown as PrismaService,
+          auditLogService as unknown as AuditLogService,
+          requestContextService,
+        ),
+      ),
+      // Real too: what a bill converted from a quotation does is judged by what
+      // lands on prisma.saleQuotation.
+      new QuotationService(
+        prisma as unknown as PrismaService,
+        auditLogService as unknown as AuditLogService,
+        requestContextService,
+      ),
+      // The posting-layer collaborators (HANDOVER 2026-09-20). Stubbed: the
+      // band, the settings and the GET blocks are exercised by their own suites.
+      {
+        write: jest.fn(() => Promise.resolve(null)),
+        remove: jest.fn(() => Promise.resolve(undefined)),
+        read: jest.fn(() => Promise.resolve(null)),
+      } as unknown as TransportBandService,
+      {
+        // The tests' customer is the walk-in, so the typed sbCust* stay as sent.
+        settings: jest.fn(() =>
+          Promise.resolve({ ...SALES_SETTING_DEFAULTS, defaultCustomerId: CUST_ID }),
+        ),
+        actor: () => USER_ID,
+        rights: jest.fn(() =>
+          Promise.resolve({ post: true, cancel: true, amend: true, override: false }),
+        ),
+      } as unknown as SalesContextService,
+      {} as unknown as SalesDocBlocksService,
+      {
+        decorate: jest.fn((_bill: unknown, payload: unknown) => Promise.resolve(payload)),
+      } as unknown as BillReadService,
+    );
+  });
+
+  describe('create', () => {
+    it('numbers the bill from the voucher sequence for voucher type 22', async () => {
+      const payload = await service.save(baseDto());
+
+      expect(prisma.saleBill.create).toHaveBeenCalledTimes(1);
+      expect(prisma.saleBill.create.mock.calls[0][0].data).toMatchObject({
+        sbBillSlno: BILL_SLNO,
+        sbBillRefno: BILL_REFNO,
+        sbCustId: CUST_ID,
+        sbCustName: 'Acme',
+      });
+      expect(payload.sbBillSlno).toBe('101');
+      expect(prisma.accVoucherSeq.findFirst).toHaveBeenCalledWith(
+        containing({
+          where: {
+            vchrTypeId: BILL_VCHR_TYPE_ID,
+            companyId: COMPANY_ID,
+            branchId: BRANCH_ID,
+            accYear: ACC_YEAR,
+            deviceCode: 'MAIN',
+            // YEARLY reset → the accounting year is the period bucket.
+            periodKey: ACC_YEAR,
+          },
+        }),
+      );
+      expect(auditLogService.logEntityChange).toHaveBeenCalledWith(
+        expect.objectContaining({ tableName: 'sale_bill', action: 'New' }),
+        expect.anything(),
+      );
+    });
+
+    it('consumes the number atomically and stamps it back as the sequence last refno', async () => {
+      await service.save(baseDto());
+
+      expect(prisma.accVoucherSeq.update).toHaveBeenNthCalledWith(1, {
+        where: { id: SEQ_ID },
+        data: { lastNo: { increment: 1 } },
+      });
+      expect(prisma.accVoucherSeq.update).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({
+          where: { id: SEQ_ID },
+          data: containing({ lastRefno: BILL_REFNO }),
+        }),
+      );
+    });
+
+    it('ignores a client-supplied slno and refno — voucher type 22 forbids manual numbers', async () => {
+      await service.save(baseDto({ sbBillSlno: 7, sbBillRefno: 'HAND-WRITTEN' }));
+
+      expect(prisma.saleBill.create.mock.calls[0][0].data).toMatchObject({
+        sbBillSlno: BILL_SLNO,
+        sbBillRefno: BILL_REFNO,
+      });
+    });
+
+    it('creates the sequence row on first use, seeded from the voucher type format', async () => {
+      prisma.accVoucherSeq.findFirst.mockResolvedValue(null);
+
+      await service.save(baseDto());
+
+      expect(prisma.accVoucherSeq.create.mock.calls[0][0].data).toMatchObject({
+        vchrTypeId: BILL_VCHR_TYPE_ID,
+        companyId: COMPANY_ID,
+        branchId: BRANCH_ID,
+        accYear: ACC_YEAR,
+        deviceCode: 'MAIN',
+        periodKey: ACC_YEAR,
+        lastNo: 0n,
+        voucherPrefix: 'bil',
+        voucherSuffix: null,
+        noWidth: 5,
+        companyCode: 'ABC123',
+        branchCode: 'BR001',
+      });
+    });
+
+    it('refuses to number against a deactivated sequence rather than silently reviving it', async () => {
+      prisma.accVoucherSeq.findFirst.mockResolvedValue(makeSequence({ isActive: false }));
+
+      await expect(service.save(baseDto())).rejects.toBeInstanceOf(BadRequestException);
+      expect(prisma.saleBill.create).not.toHaveBeenCalled();
+    });
+
+    // sb_pos_stcd is the customer's state copied onto the bill, and the customer
+    // master lets any two characters through. Left to the FK, a customer holding
+    // 'TN' rather than '33' answers a raw fk_sb_pos_state violation as a 500.
+    it('rejects a place of supply that is not a known state code', async () => {
+      prisma.stateCode.findUnique.mockResolvedValue(null);
+
+      await expect(service.save(baseDto({ sbPosStcd: 'TN' }))).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(prisma.saleBill.create).not.toHaveBeenCalled();
+    });
+
+    it('checks the place of supply against fixed.state_codes before writing', async () => {
+      await service.save(baseDto({ sbPosStcd: POS_STATE_CODE }));
+
+      expect(prisma.stateCode.findUnique).toHaveBeenCalledWith(
+        containing({ where: { stateCode: POS_STATE_CODE } }),
+      );
+      expect(prisma.saleBill.create).toHaveBeenCalled();
+    });
+
+    // A payload that says nothing about the place of supply leaves the column
+    // alone, so there is nothing to check and no read to pay for.
+    it('does not look up a state when the payload omits sbPosStcd', async () => {
+      await service.save(baseDto());
+
+      expect(prisma.stateCode.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('creates a line item requiring sbiItemId, sbiItemUnitId, sbiGodownId and sbiStockId', async () => {
+      await service.save(
+        baseDto({
+          items: [
+            {
+              sbiItemId: ITEM_MASTER_ID,
+              sbiItemUnitId: ITEM_UNIT_ID,
+              sbiGodownId: GODOWN_ID,
+              sbiStockId: STOCK_ID,
+            },
+          ],
+        }),
+      );
+
+      expect(prisma.saleBillItem.create).toHaveBeenCalledTimes(1);
+      expect(prisma.saleBillItem.create.mock.calls[0][0].data).toMatchObject({
+        sbiBillId: BILL_ID,
+        sbiLineNo: 1,
+        sbiItemId: ITEM_MASTER_ID,
+        sbiItemUnitId: ITEM_UNIT_ID,
+        sbiGodownId: GODOWN_ID,
+        sbiStockId: STOCK_ID,
+      });
+    });
+
+    // A 400: the field is missing off the payload, which is a bad request, not
+    // a missing resource. This asserted NotFoundException while requireItemField
+    // reached for the wrong helper.
+    it('rejects a new line missing sbiGodownId', async () => {
+      await expect(
+        service.save(
+          baseDto({
+            items: [
+              {
+                sbiItemId: ITEM_MASTER_ID,
+                sbiItemUnitId: ITEM_UNIT_ID,
+                sbiStockId: STOCK_ID,
+              } as never,
+            ],
+          }),
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('rejects a duplicate sbiLineNo within one payload', async () => {
+      await expect(
+        service.save(
+          baseDto({
+            items: [
+              {
+                sbiLineNo: 1,
+                sbiItemId: ITEM_MASTER_ID,
+                sbiItemUnitId: ITEM_UNIT_ID,
+                sbiGodownId: GODOWN_ID,
+                sbiStockId: STOCK_ID,
+              },
+              {
+                sbiLineNo: 1,
+                sbiItemId: ITEM_MASTER_ID,
+                sbiItemUnitId: ITEM_UNIT_ID,
+                sbiGodownId: GODOWN_ID,
+                sbiStockId: STOCK_ID,
+              },
+            ],
+          }),
+        ),
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
+  });
+
+  describe('update', () => {
+    it('updates a line carrying sbiId, creates one without, and soft deletes the omitted rest', async () => {
+      prisma.saleBillItem.findMany.mockResolvedValue([
+        makeItem(),
+        makeItem({ sbiId: LINE_B_ID, sbiLineNo: 2 }),
+      ]);
+
+      await service.save(
+        baseDto({
+          sbId: BILL_ID,
+          items: [
+            {
+              sbiId: LINE_A_ID,
+              sbiItemId: ITEM_MASTER_ID,
+              sbiItemUnitId: ITEM_UNIT_ID,
+              sbiGodownId: GODOWN_ID,
+              sbiStockId: STOCK_ID,
+              sbiRate: 250,
+            },
+            {
+              sbiItemId: ITEM_MASTER_ID,
+              sbiItemUnitId: ITEM_UNIT_ID,
+              sbiGodownId: GODOWN_ID,
+              sbiStockId: STOCK_ID,
+            },
+          ],
+        }),
+      );
+
+      expect(prisma.saleBillItem.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { sbiId_sbiAccYear: { sbiId: LINE_A_ID, sbiAccYear: ACC_YEAR } },
+          data: containing({ sbiLineNo: 1, sbiRate: 250 }),
+        }),
+      );
+      expect(prisma.saleBillItem.create).toHaveBeenCalledTimes(1);
+      expect(prisma.saleBillItem.create.mock.calls[0][0].data).toMatchObject({ sbiLineNo: 2 });
+      // LINE_B_ID was absent from the payload -> soft deleted via the compound key.
+      expect(prisma.saleBillItem.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { sbiId_sbiAccYear: { sbiId: LINE_B_ID, sbiAccYear: ACC_YEAR } },
+          data: containing({ sbiIsDeleted: true }),
+        }),
+      );
+    });
+
+    it('leaves existing lines untouched when the items property is omitted', async () => {
+      prisma.saleBillItem.findMany.mockResolvedValue([makeItem()]);
+
+      const payload = await service.save(baseDto({ sbId: BILL_ID }));
+
+      expect(prisma.saleBillItem.create).not.toHaveBeenCalled();
+      expect(prisma.saleBillItem.update).not.toHaveBeenCalled();
+      // The save answers the /get shape (HANDOVER §2.1), read back after the
+      // commit — so the lines come from the GET's own include, not from the save.
+      expect(payload.items).toEqual([]);
+    });
+
+    it('rejects an sbiId that does not belong to this bill', async () => {
+      prisma.saleBillItem.findMany.mockResolvedValue([]);
+
+      await expect(
+        service.save(
+          baseDto({
+            sbId: BILL_ID,
+            items: [
+              {
+                sbiId: LINE_A_ID,
+                sbiItemId: ITEM_MASTER_ID,
+                sbiItemUnitId: ITEM_UNIT_ID,
+                sbiGodownId: GODOWN_ID,
+                sbiStockId: STOCK_ID,
+              },
+            ],
+          }),
+        ),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('updates the header via the sbId_sbAccYear compound key', async () => {
+      await service.save(baseDto({ sbId: BILL_ID, sbRemarks: 'Updated' }));
+
+      expect(prisma.saleBill.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { sbId_sbAccYear: { sbId: BILL_ID, sbAccYear: ACC_YEAR } },
+          data: containing({ sbRemarks: 'Updated' }),
+        }),
+      );
+    });
+
+    it('never renumbers sbBillSlno / sbBillRefno on update', async () => {
+      await service.save(baseDto({ sbId: BILL_ID, sbBillSlno: 999, sbBillRefno: 'B-999' }));
+
+      const data = prisma.saleBill.update.mock.calls[0][0].data as Record<string, unknown>;
+      expect(data).not.toHaveProperty('sbBillSlno');
+      expect(data).not.toHaveProperty('sbBillRefno');
+      // An update must not consume a number from the sequence either.
+      expect(prisma.accVoucherSeq.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('status trail (public.txn_status_log)', () => {
+    // The row appended by the save under test.
+    const loggedStep = () => prisma.txnStatusLog.create.mock.calls[0][0].data;
+    // Same shape as the posting tests: the row saleBill.update hands back.
+    const updatedBill = (overrides: Record<string, unknown> = {}) =>
+      makeBill(overrides as unknown as Partial<SaleBill>);
+
+    it('opens the trail when the bill is created', async () => {
+      await service.save(baseDto());
+
+      expect(prisma.txnStatusLog.create).toHaveBeenCalledTimes(1);
+      expect(loggedStep()).toMatchObject({
+        tslCompanyId: COMPANY_ID,
+        tslBranchId: BRANCH_ID,
+        tslTenantId: TENANT_ID,
+        tslAccYear: ACC_YEAR,
+        tslSrcModule: 'SALES',
+        tslSrcDocType: 'SALE_BILL',
+        tslSrcDocId: BILL_ID,
+        tslSrcDocRefno: BILL_REFNO,
+        tslSeqNo: 1,
+        tslEvent: 'CREATED',
+        tslFromStatus: null,
+        tslToStatus: 'DRAFT',
+        tslChangedBy: USER_ID,
+      });
+    });
+
+    it('records what the bill was created as, when that is straight into the books', async () => {
+      // Two writes on this path: the insert, then the voucher stamped back onto
+      // it — the status is logged from the row that survives both.
+      const posted = makeBill({
+        sbStatus: 'POSTED',
+        sbBillAmt: new Prisma.Decimal(500),
+        sbPaidAmt: new Prisma.Decimal(200),
+      } as unknown as Partial<SaleBill>);
+      prisma.saleBill.create.mockResolvedValueOnce(posted);
+      prisma.saleBill.update.mockResolvedValue(posted);
+
+      await service.save(
+        baseDto({ sbStatus: 'POSTED', sbBillAmt: 500, sbPaidAmt: 200 } as Partial<SaveBillDto>),
+      );
+
+      expect(loggedStep()).toMatchObject({
+        tslEvent: 'CREATED',
+        tslFromStatus: null,
+        tslToStatus: 'POSTED',
+      });
+    });
+
+    it('adds nothing when a save leaves the status where it was', async () => {
+      prisma.saleBill.update.mockResolvedValueOnce(updatedBill({ sbStatus: 'DRAFT' }));
+
+      await service.save(
+        baseDto({ sbId: BILL_ID, sbCustName: 'Acme Ltd' } as Partial<SaveBillDto>),
+      );
+
+      expect(prisma.txnStatusLog.create).not.toHaveBeenCalled();
+    });
+
+    // The two tests that used to sit here asserted the trail row the SOFT
+    // DELETE appended to the BILL's own trail. That route is gone: POST
+    // /bills/delete does not move sbStatus, so it writes nothing here — the row
+    // it does write belongs to the sale ORDER, and is asserted under
+    // cancelSourceOrders.
+
+    it('resolves the free-text device code to its device_master uuid', async () => {
+      await service.save(baseDto());
+
+      expect(prisma.deviceMaster.findFirst).toHaveBeenCalledWith(
+        containing({ where: { devDeviceUid: 'till-1' } }),
+      );
+      expect(loggedStep()).toMatchObject({ tslDeviceId: DEVICE_ID });
+    });
+
+    it('leaves the device NULL rather than failing the save on an unknown one', async () => {
+      prisma.deviceMaster.findFirst.mockResolvedValue(null);
+
+      await service.save(baseDto());
+
+      expect(loggedStep()).toMatchObject({ tslDeviceId: null });
+    });
+
+    it('falls back to DEFAULT_ACTOR for a non-uuid actor, which tsl_changed_by would reject', async () => {
+      await service.save(baseDto({ sbCreatedBy: 'admin' } as Partial<SaveBillDto>));
+
+      expect(loggedStep()).toMatchObject({
+        tslChangedBy: '00000000-0000-0000-0000-000000000000',
+        // The free-text column keeps what the payload actually said.
+        tslCreatedBy: 'admin',
+      });
+    });
+  });
+
+  describe('applied charges', () => {
+    it('creates charge lines under the INVOICE discriminator, defaulting the parent scope', async () => {
+      await service.save(
+        baseDto({
+          charges: [{ cdChgId: CHARGE_ID, cdLedgerCode: LEDGER_ID, cdChgName: 'Freight' }],
+        }),
+      );
+
+      expect(prisma.transactionChargeDetail.create).toHaveBeenCalledTimes(1);
+      expect(prisma.transactionChargeDetail.create.mock.calls[0][0].data).toMatchObject({
+        cdDocType: 'INVOICE',
+        cdDocId: BILL_ID,
+        cdSlno: 1,
+        cdCompId: COMPANY_ID,
+        cdBranchId: BRANCH_ID,
+        cdAccYear: ACC_YEAR,
+        cdVoucherNo: BILL_SLNO,
+        cdChgId: CHARGE_ID,
+        cdLedgerCode: LEDGER_ID,
+        cdChgName: 'Freight',
+      });
+    });
+
+    it('updates a charge carrying cdId, creates one without, and soft deletes the omitted rest', async () => {
+      prisma.transactionChargeDetail.findMany.mockResolvedValue([
+        makeCharge(),
+        makeCharge({ cdId: OTHER_CD_ID, cdSlno: 2, cdChgName: 'Loading' }),
+      ]);
+
+      await service.save(
+        baseDto({
+          sbId: BILL_ID,
+          charges: [
+            { cdId: CD_ID, cdChgId: CHARGE_ID, cdLedgerCode: LEDGER_ID, cdAmount: 750 },
+            { cdChgId: CHARGE_ID, cdLedgerCode: LEDGER_ID, cdChgName: 'Packing' },
+          ],
+        }),
+      );
+
+      expect(prisma.transactionChargeDetail.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { cdId_cdAccYear: { cdId: CD_ID, cdAccYear: ACC_YEAR } },
+          data: containing({ cdSlno: 1, cdAmount: 750 }),
+        }),
+      );
+      expect(prisma.transactionChargeDetail.create).toHaveBeenCalledTimes(1);
+      expect(prisma.transactionChargeDetail.create.mock.calls[0][0].data).toMatchObject({
+        cdSlno: 2,
+        cdChgName: 'Packing',
+      });
+      expect(prisma.transactionChargeDetail.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { cdId_cdAccYear: { cdId: OTHER_CD_ID, cdAccYear: ACC_YEAR } },
+          data: containing({ cdIsDeleted: true }),
+        }),
+      );
+    });
+
+    it('rejects a duplicate cdSlno within one payload', async () => {
+      await expect(
+        service.save(
+          baseDto({
+            charges: [
+              { cdChgId: CHARGE_ID, cdLedgerCode: LEDGER_ID, cdSlno: 1 },
+              { cdChgId: CHARGE_ID, cdLedgerCode: LEDGER_ID, cdSlno: 1 },
+            ],
+          }),
+        ),
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it('rejects a charge mapped to a soft-deleted ledger', async () => {
+      prisma.accLedgerMaster.findFirst.mockResolvedValueOnce(null);
+
+      await expect(
+        service.save(baseDto({ charges: [{ cdChgId: CHARGE_ID, cdLedgerCode: LEDGER_ID }] })),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(prisma.transactionChargeDetail.create).not.toHaveBeenCalled();
+    });
+
+    it('rejects a charge line pointing at another document', async () => {
+      await expect(
+        service.save(
+          baseDto({
+            sbId: BILL_ID,
+            charges: [{ cdChgId: CHARGE_ID, cdLedgerCode: LEDGER_ID, cdDocId: OTHER_CD_ID }],
+          }),
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('rejects cdTaxApl and cdBeforeTax set together', async () => {
+      await expect(
+        service.save(
+          baseDto({
+            charges: [
+              {
+                cdChgId: CHARGE_ID,
+                cdLedgerCode: LEDGER_ID,
+                cdTaxApl: true,
+                cdBeforeTax: true,
+              },
+            ],
+          }),
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+  });
+
+  describe('tendered amounts', () => {
+    it('hands /bills/amend the cheque details it just saved (notes 48, bil00721)', async () => {
+      // The amend re-posts from the object applySaveInTx returns. It used to be
+      // the row as read BEFORE sb_draft_cheques was written, so the re-post
+      // registered the cheque with no drawer / branch / IFSC / MICR.
+      prisma.accTenderMaster.findFirst.mockResolvedValue({
+        tndName: 'Cheque',
+        tndTypeId: 5,
+        tndLedgerId: TENDER_LEDGER_ID,
+      });
+      prisma.accTenderType.findFirst.mockResolvedValue({ ttmTypeId: 5 });
+      const cheque = {
+        drawerName: 'ZT DRAWER',
+        bankBranch: 'ZT BRANCH',
+        ifsc: 'SBIN0001234',
+        micr: '600002003',
+      };
+
+      const { updated } = await service.applySaveInTx(
+        prisma as unknown as Prisma.TransactionClient,
+        makeBill(),
+        baseDto({
+          sbId: BILL_ID,
+          tenders: [
+            {
+              tdTenderId: TENDER_ID,
+              tdAmount: 500,
+              tdRefNo: 'KLOPA',
+              tdInstrumentDate: '2026-07-28',
+              cheque,
+            },
+          ],
+        }),
+        USER_ID,
+        new Date(),
+      );
+
+      expect(readDraftCheques(updated.sbDraftCheques)).toEqual({ [TD_ID]: cheque });
+    });
+
+    it('creates tender lines under SALES / SALE_BILL, defaulting the parent scope', async () => {
+      await service.save(baseDto({ tenders: [{ tdTenderId: TENDER_ID, tdAmount: 500 }] }));
+
+      expect(prisma.accTenderDetail.create).toHaveBeenCalledTimes(1);
+      expect(prisma.accTenderDetail.create.mock.calls[0][0].data).toMatchObject({
+        tdSrcModule: 'SALES',
+        tdSrcDocType: 'SALE_BILL',
+        tdSrcDocId: BILL_ID,
+        tdRowNo: 1,
+        tdCompanyId: COMPANY_ID,
+        tdBranchId: BRANCH_ID,
+        tdTenantId: TENANT_ID,
+        tdAccYear: ACC_YEAR,
+        // Money in on a sale, against the customer's own ledger, captured by
+        // the bill's user / device.
+        tdDrCr: 'DR',
+        tdPartyLedgerId: CUST_ID,
+        tdUserId: USER_ID,
+        tdDeviceId: 'till-1',
+        tdTenderId: TENDER_ID,
+        tdAmount: 500,
+      });
+      // tdTenderTypeId / tdTenderLedgerId are snapshotted from the tender master
+      // when the payload does not carry them.
+      expect(prisma.accTenderDetail.create.mock.calls[0][0].data).toMatchObject({
+        tdTenderTypeId: 1,
+        tdTenderLedgerId: TENDER_LEDGER_ID,
+      });
+    });
+
+    it('derives tdTotalAmt from tdAmount + tdSurchargeAmt', async () => {
+      await service.save(
+        baseDto({
+          tenders: [{ tdTenderId: TENDER_ID, tdAmount: 500, tdSurchargeAmt: 12.345 }],
+        }),
+      );
+
+      const { tdTotalAmt } = prisma.accTenderDetail.create.mock.calls[0][0].data;
+      expect((tdTotalAmt as Prisma.Decimal).toString()).toBe('512.35');
+    });
+
+    it('rejects a tdTotalAmt that is not the sum of the parts', async () => {
+      await expect(
+        service.save(
+          baseDto({
+            tenders: [{ tdTenderId: TENDER_ID, tdAmount: 500, tdTotalAmt: 600 }],
+          }),
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('rejects an inactive tender master', async () => {
+      prisma.accTenderMaster.findFirst.mockResolvedValueOnce(null);
+
+      await expect(
+        service.save(baseDto({ tenders: [{ tdTenderId: TENDER_ID, tdAmount: 500 }] })),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(prisma.accTenderDetail.create).not.toHaveBeenCalled();
+    });
+
+    it('rejects change handed back that exceeds the cash received', async () => {
+      await expect(
+        service.save(
+          baseDto({
+            tenders: [
+              { tdTenderId: TENDER_ID, tdAmount: 500, tdReceivedAmt: 500, tdChangeAmt: 600 },
+            ],
+          }),
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('updates a tender carrying tdId via the compound key, and soft deletes the omitted rest', async () => {
+      prisma.accTenderDetail.findMany.mockResolvedValue([
+        makeTender(),
+        makeTender({ tdId: OTHER_TD_ID, tdRowNo: 2 }),
+      ]);
+
+      await service.save(
+        baseDto({
+          sbId: BILL_ID,
+          tenders: [{ tdId: TD_ID, tdAmount: 750 }],
+        }),
+      );
+
+      expect(prisma.accTenderDetail.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { tdId_tdAccYear: { tdId: TD_ID, tdAccYear: ACC_YEAR } },
+          data: containing({ tdRowNo: 1, tdAmount: 750 }),
+        }),
+      );
+      expect(prisma.accTenderDetail.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { tdId_tdAccYear: { tdId: OTHER_TD_ID, tdAccYear: ACC_YEAR } },
+          data: containing({ tdIsDeleted: true }),
+        }),
+      );
+    });
+
+    it('leaves the stored tenders untouched when the property is omitted', async () => {
+      prisma.accTenderDetail.findMany.mockResolvedValue([makeTender()]);
+
+      const payload = await service.save(baseDto({ sbId: BILL_ID }));
+
+      expect(prisma.accTenderDetail.create).not.toHaveBeenCalled();
+      expect(prisma.accTenderDetail.update).not.toHaveBeenCalled();
+      expect(payload.tenders).toHaveLength(1);
+    });
+
+    it('rejects a duplicate tdRowNo within one payload', async () => {
+      await expect(
+        service.save(
+          baseDto({
+            tenders: [
+              { tdTenderId: TENDER_ID, tdRowNo: 1 },
+              { tdTenderId: TENDER_ID, tdRowNo: 1 },
+            ],
+          }),
+        ),
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it('rejects a tender line pointing at another document', async () => {
+      await expect(
+        service.save(
+          baseDto({
+            tenders: [{ tdTenderId: TENDER_ID, tdSrcDocId: OTHER_CD_ID }],
+          }),
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+  });
+
+  describe('value guards (formerly DB CHECK constraints)', () => {
+    it('rejects an sbReturnStatus outside PARTIAL/FULL', async () => {
+      await expect(service.save(baseDto({ sbReturnStatus: 'BOGUS' }))).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+    });
+
+    it('accepts a null sbReturnStatus (nullable)', async () => {
+      await expect(service.save(baseDto({ sbReturnStatus: null }))).resolves.toBeDefined();
+    });
+
+    it('rejects sbDocType explicitly set to null (NOT NULL, no DB constraint left to catch it)', async () => {
+      await expect(service.save(baseDto({ sbDocType: null }))).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+    });
+
+    it('rejects an sbiFreeType outside SCHEME/SAMPLE/REPLACEMENT', async () => {
+      await expect(
+        service.save(
+          baseDto({
+            items: [
+              {
+                sbiItemId: ITEM_MASTER_ID,
+                sbiItemUnitId: ITEM_UNIT_ID,
+                sbiGodownId: GODOWN_ID,
+                sbiStockId: STOCK_ID,
+                sbiFreeType: 'BOGUS' as never,
+              },
+            ],
+          }),
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('rejects sbiSplitNo != 1 without an sbiBatchNo (ck_sbi_batch_split)', async () => {
+      await expect(
+        service.save(
+          baseDto({
+            items: [
+              {
+                sbiItemId: ITEM_MASTER_ID,
+                sbiItemUnitId: ITEM_UNIT_ID,
+                sbiGodownId: GODOWN_ID,
+                sbiStockId: STOCK_ID,
+                sbiSplitNo: 2,
+              },
+            ],
+          }),
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('allows sbiSplitNo != 1 when sbiBatchNo is provided', async () => {
+      await expect(
+        service.save(
+          baseDto({
+            items: [
+              {
+                sbiItemId: ITEM_MASTER_ID,
+                sbiItemUnitId: ITEM_UNIT_ID,
+                sbiGodownId: GODOWN_ID,
+                sbiStockId: STOCK_ID,
+                sbiSplitNo: 2,
+                sbiBatchNo: 'BATCH-1',
+              },
+            ],
+          }),
+        ),
+      ).resolves.toBeDefined();
+    });
+
+    it('judges ck_sbi_batch_split on the merged row on update, falling back to the stored sbiBatchNo', async () => {
+      prisma.saleBillItem.findMany.mockResolvedValue([makeItem({ sbiBatchNo: 'BATCH-1' })]);
+
+      await expect(
+        service.save(
+          baseDto({
+            sbId: BILL_ID,
+            items: [
+              {
+                sbiId: LINE_A_ID,
+                sbiItemId: ITEM_MASTER_ID,
+                sbiItemUnitId: ITEM_UNIT_ID,
+                sbiGodownId: GODOWN_ID,
+                sbiStockId: STOCK_ID,
+                sbiSplitNo: 2,
+              },
+            ],
+          }),
+        ),
+      ).resolves.toBeDefined();
+    });
+  });
+
+  describe('getById', () => {
+    it('resolves item/unit/godown master names and returns them alongside the raw ids', async () => {
+      prisma.saleBill.findFirst.mockResolvedValue(
+        makeBill({
+          items: [
+            {
+              ...makeItem(),
+              item: {
+                itemNameEn: 'Widget',
+                itemGroupId: 'group-1',
+                itemBrandId: null,
+                itemSectionId: null,
+                itemCategoryId: null,
+              },
+              itemUnitConversion: { unit: { unit_name: 'PCS', unit_decimal_count: 0 } },
+            },
+          ],
+        } as never),
+      );
+
+      const payload = await service.getById(BILL_ID, COMPANY_ID, BRANCH_ID, ACC_YEAR);
+
+      expect(payload.items?.[0]).toMatchObject({
+        sbiItemId: ITEM_MASTER_ID,
+        sbiItemName: 'Widget',
+        sbiUnitName: 'PCS',
+        sbiGroupId: 'group-1',
+        sbiGodownId: GODOWN_ID,
+        sbiGodownName: 'Main Godown',
+      });
+      expect(prisma.godownLocation.findMany).toHaveBeenCalledWith(
+        containing({ where: { gdlId: { in: [GODOWN_ID] } } }),
+      );
+    });
+
+    // sbiAllowNegativeStock is the effective answer, not item_allow_neg_stock on
+    // its own: the same three-switch rule /item-price applies when the line is
+    // first added, so a reloaded bill guards exactly as the entry screen did.
+    describe('sbiAllowNegativeStock', () => {
+      const billWithItem = (item: Partial<Record<string, unknown>>) =>
+        makeBill({
+          items: [
+            {
+              ...makeItem(),
+              item: {
+                itemNameEn: 'Widget',
+                itemGroupId: 'group-1',
+                itemBrandId: null,
+                itemSectionId: null,
+                itemCategoryId: null,
+                itemIsService: false,
+                itemAllowNegStock: true,
+                ...item,
+              },
+            },
+          ],
+        } as never);
+
+      const blockGodownAndCompany = () => {
+        prisma.godownLocation.findMany.mockResolvedValue([
+          { gdlId: GODOWN_ID, gdlName: 'Main Godown', gdlNegativeStock: false },
+        ]);
+        prisma.company.findFirst.mockResolvedValue({ compCode: 'ABC123', compNegStkApl: false });
+      };
+
+      const getLine = async () =>
+        (await service.getById(BILL_ID, COMPANY_ID, BRANCH_ID, ACC_YEAR)).items?.[0];
+
+      it("blocks the line only when the line's godown, the company and the item all disallow it", async () => {
+        blockGodownAndCompany();
+        prisma.saleBill.findFirst.mockResolvedValue(billWithItem({ itemAllowNegStock: false }));
+
+        expect((await getLine())?.sbiAllowNegativeStock).toBe(false);
+        expect(prisma.company.findFirst).toHaveBeenCalledWith(
+          containing({ where: containing({ compId: COMPANY_ID, compIsDeleted: false }) }),
+        );
+      });
+
+      it('allows the line when any one of the three still permits it', async () => {
+        blockGodownAndCompany();
+        prisma.saleBill.findFirst.mockResolvedValue(billWithItem({ itemAllowNegStock: true }));
+
+        expect((await getLine())?.sbiAllowNegativeStock).toBe(true);
+      });
+
+      it('always allows a service item, whatever the godown and company say', async () => {
+        blockGodownAndCompany();
+        prisma.saleBill.findFirst.mockResolvedValue(
+          billWithItem({ itemIsService: true, itemAllowNegStock: false }),
+        );
+
+        expect((await getLine())?.sbiAllowNegativeStock).toBe(true);
+      });
+
+      // A godown row that cannot be read is not a "no" — the item still decides.
+      it("leaves the godown out of the decision when the line's godown row is missing", async () => {
+        prisma.godownLocation.findMany.mockResolvedValue([]);
+        prisma.company.findFirst.mockResolvedValue({ compCode: 'ABC123', compNegStkApl: false });
+        prisma.saleBill.findFirst.mockResolvedValue(billWithItem({ itemAllowNegStock: false }));
+
+        expect((await getLine())?.sbiAllowNegativeStock).toBe(true);
+      });
+
+      it('leaves it null when the item join was not made', async () => {
+        blockGodownAndCompany();
+        prisma.saleBill.findFirst.mockResolvedValue(makeBill({ items: [makeItem()] } as never));
+
+        expect((await getLine())?.sbiAllowNegativeStock).toBeNull();
+      });
+    });
+
+    it('returns a null godown name when the godown row is missing', async () => {
+      prisma.saleBill.findFirst.mockResolvedValue(makeBill({ items: [makeItem()] } as never));
+      prisma.godownLocation.findMany.mockResolvedValue([]);
+
+      const payload = await service.getById(BILL_ID, COMPANY_ID, BRANCH_ID, ACC_YEAR);
+
+      expect(payload.items?.[0]?.sbiGodownName).toBeNull();
+    });
+
+    it('throws not found when no active bill matches', async () => {
+      prisma.saleBill.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.getById(BILL_ID, COMPANY_ID, BRANCH_ID, ACC_YEAR),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
+  // POST /bills/delete. The route stopped deleting: it now cancels the OPEN
+  // balance of the sale order the bill was raised against, and leaves the bill
+  // — header, lines, charges, tenders, voucher posting — exactly where it was.
+  describe('sale order conversion', () => {
+    // saleBillItem.findMany serves two very different reads on a converted
+    // save: the bill's OWN lines (by sbiBillId) and the order recompute's sum
+    // (by sbiSrcDocId, across every posted bill in any year). They are told
+    // apart by the where clause, the way Prisma itself would.
+    const mockBillItemReads = (options: {
+      billLines?: SaleBillItem[];
+      billedAgainstOrder?: SaleBillItem[];
+    }) => {
+      prisma.saleBillItem.findMany.mockImplementation((args: unknown) => {
+        const where = (args as { where?: Record<string, unknown> }).where ?? {};
+        return Promise.resolve(
+          where.sbiSrcDocId !== undefined
+            ? (options.billedAgainstOrder ?? [])
+            : (options.billLines ?? []),
+        );
+      });
+    };
+
+    const convertedDto = (overrides: Partial<SaveBillDto> = {}) =>
+      baseDto({
+        sbStatus: 'POSTED',
+        sbBillAmt: 400,
+        items: [
+          {
+            sbiItemId: ITEM_MASTER_ID,
+            sbiItemUnitId: ITEM_UNIT_ID,
+            sbiGodownId: GODOWN_ID,
+            sbiBillQty: 4,
+            sbiNetAmt: 400,
+            ...orderSrcDoc(),
+          },
+        ],
+        ...overrides,
+      } as Partial<SaveBillDto>);
+
+    beforeEach(() => {
+      prisma.saleOrder.findFirst.mockResolvedValue(makeOrder());
+      prisma.saleOrderItem.findMany.mockResolvedValue([makeOrderItem()]);
+      prisma.saleBill.create.mockResolvedValueOnce(
+        makeBill({
+          sbStatus: 'POSTED',
+          sbBillAmt: new Prisma.Decimal(400),
+        } as unknown as Partial<SaleBill>),
+      );
+    });
+
+    it('draws a posted bill line down off the order line it names', async () => {
+      mockBillItemReads({
+        billedAgainstOrder: [billedLine(1, 4, 400)],
+      });
+
+      await service.save(convertedDto());
+
+      // Three columns are written; soi_pending_qty (6) and soi_line_status
+      // (PARTIAL) are GENERATED from them, and naming either would be a 428C9.
+      // The header roll-up asserted next is where that derivation shows up.
+      expect(prisma.saleOrderItem.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { soiId_soiAccYear: { soiId: ORDER_LINE_ID, soiAccYear: ACC_YEAR } },
+          data: containing({ soiNetQty: dec(10), soiDeliveredQty: dec(4), soiBilledAmt: dec(400) }),
+        }),
+      );
+      const written = prisma.saleOrderItem.update.mock.calls[0][0].data;
+      expect(written).not.toHaveProperty('soiPendingQty');
+      expect(written).not.toHaveProperty('soiLineStatus');
+    });
+
+    // A 400, not a 404. The document being saved is the bill; sbiSrcDocId
+    // addressing no live order or order line is a bad field on the bill's
+    // payload, and a 404 off POST /bills/create is indistinguishable in the
+    // access log from the route not existing at all.
+    it('rejects a bill line whose sbiSrcDocId names no live order or order line', async () => {
+      prisma.saleOrder.findFirst.mockResolvedValue(null);
+      prisma.saleOrderItem.findMany.mockResolvedValue([]);
+      mockBillItemReads({});
+
+      await expect(service.save(convertedDto())).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    // The same reference resolving to a live LINE whose parent order has since
+    // been deleted: caught after the FOR UPDATE lock instead, and answered the
+    // same way.
+    it('rejects a reference whose order is gone by the time the lock is taken', async () => {
+      // Pointed at the LINE's own soi_id, so resolveOrderRefs resolves it off
+      // the default makeOrderItem() and reads soi_order_id straight off it.
+      // Only the order HEADER is missing, which is what the read after the FOR
+      // UPDATE finds — the second of the two branches, told apart here by its
+      // own wording.
+      prisma.saleOrder.findFirst.mockResolvedValue(null);
+      mockBillItemReads({});
+
+      const error = await service
+        .save(
+          convertedDto({
+            items: [
+              {
+                sbiItemId: ITEM_MASTER_ID,
+                sbiItemUnitId: ITEM_UNIT_ID,
+                sbiGodownId: GODOWN_ID,
+                sbiBillQty: 4,
+                sbiNetAmt: 400,
+                ...orderSrcDoc(),
+                sbiSrcDocId: ORDER_LINE_ID,
+              },
+            ],
+          } as Partial<SaveBillDto>),
+        )
+        .catch((thrown: unknown) => thrown);
+
+      expect(error).toBeInstanceOf(BadRequestException);
+      expect(JSON.stringify((error as BadRequestException).getResponse())).toContain(
+        `No active order found with id ${ORDER_ID}`,
+      );
+    });
+
+    it('recomputes the order header from what its lines then say', async () => {
+      mockBillItemReads({
+        billedAgainstOrder: [billedLine(1, 4, 400)],
+      });
+
+      await service.save(convertedDto());
+
+      expect(prisma.saleOrder.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { soId: ORDER_ID, soAccYear: ACC_YEAR, soIsDeleted: false },
+          // Part delivered, so the order stays open: soFulfilStatus moves but
+          // so_status is left as the CONFIRMED it already was.
+          data: containing({
+            soBilledAmt: dec(400),
+            soPendingAmt: dec(600),
+            soDeliveredItems: 0,
+            soFulfilStatus: 'PARTIAL',
+          }),
+        }),
+      );
+      expect(prisma.saleOrder.updateMany.mock.calls[0][0]).not.toMatchObject({
+        data: { soStatus: expect.anything() as unknown },
+      });
+    });
+
+    // Every ordered unit billed: the line is DELIVERED, the order COMPLETED,
+    // and so_completed_on is stamped for the first time.
+    it('completes the order when the bill covers the whole ordered quantity', async () => {
+      mockBillItemReads({
+        billedAgainstOrder: [billedLine(1, 10, 1000)],
+      });
+
+      await service.save(convertedDto());
+
+      expect(prisma.saleOrderItem.update.mock.calls[0][0].data).toMatchObject({
+        soiNetQty: dec(10),
+        soiDeliveredQty: dec(10),
+      });
+      expect(prisma.saleOrder.updateMany.mock.calls[0][0]).toMatchObject({
+        data: {
+          soStatus: 'COMPLETED',
+          soFulfilStatus: 'COMPLETED',
+          soDeliveredItems: 1,
+          soCompletedOn: expect.any(Date) as unknown,
+        },
+      });
+    });
+
+    // so_delivered_items counts SETTLED lines, delivered or cancelled alike, so
+    // a bill that fills the only line still open completes the order even though
+    // the other one was written off and never shipped.
+    it('completes the order when the bill fills the lines a cancellation left open', async () => {
+      prisma.saleOrderItem.findMany.mockResolvedValue([
+        makeOrderItem({ soiLineNo: 1 }),
+        // Withdrawn whole before this bill: nothing pending, nothing delivered.
+        makeOrderItem({
+          soiId: ORDER_LINE_B_ID,
+          soiLineNo: 2,
+          soiCancelledQty: 5,
+          soiOrderQty: 5,
+          soiNetAmt: 500,
+        }),
+      ]);
+      mockBillItemReads({
+        billedAgainstOrder: [billedLine(1, 10, 1000)],
+      });
+
+      await service.save(convertedDto());
+
+      expect(prisma.saleOrder.updateMany.mock.calls[0][0]).toMatchObject({
+        data: {
+          soStatus: 'COMPLETED',
+          soFulfilStatus: 'COMPLETED',
+          soTotItems: 2,
+          // One delivered, one cancelled — both settled.
+          soDeliveredItems: 2,
+          soPendingAmt: dec(0),
+          soCancelledAmt: dec(500),
+        },
+      });
+    });
+
+    // The mirror of that: while a line is still open, the order is PARTIAL
+    // however many of its siblings have settled — never COMPLETED.
+    it('holds the order at PARTIAL while a line is still open', async () => {
+      prisma.saleOrderItem.findMany.mockResolvedValue([
+        makeOrderItem({ soiLineNo: 1 }),
+        makeOrderItem({
+          soiId: ORDER_LINE_B_ID,
+          soiLineNo: 2,
+          soiOrderQty: 5,
+          soiNetAmt: 500,
+        }),
+      ]);
+      mockBillItemReads({
+        billedAgainstOrder: [billedLine(1, 10, 1000)],
+      });
+
+      await service.save(convertedDto());
+
+      expect(prisma.saleOrder.updateMany.mock.calls[0][0]).toMatchObject({
+        data: { soFulfilStatus: 'PARTIAL', soTotItems: 2, soDeliveredItems: 1 },
+      });
+      // Still open, so the header's own status is not the recompute's to move.
+      expect(prisma.saleOrder.updateMany.mock.calls[0][0]).not.toMatchObject({
+        data: { soStatus: expect.anything() as unknown },
+      });
+    });
+
+    // A DRAFT bill is still being keyed. It reaches the recompute — it names
+    // the order — but contributes nothing to the sum, so nothing moves and no
+    // audit row is left behind.
+    it('leaves the order untouched while the bill is still a draft', async () => {
+      prisma.saleBill.create.mockReset();
+      prisma.saleBill.create.mockResolvedValue(makeBill());
+      mockBillItemReads({ billedAgainstOrder: [] });
+
+      await service.save(convertedDto({ sbStatus: 'DRAFT' } as Partial<SaveBillDto>));
+
+      expect(prisma.saleOrderItem.update).not.toHaveBeenCalled();
+      expect(prisma.saleOrder.updateMany).not.toHaveBeenCalled();
+    });
+
+    // More went out than the line had to give. A generated soi_pending_qty
+    // leaves nowhere to put the extra — it would go negative and
+    // ck_soi_qty_signs would refuse the write — so the BILLABLE quantity is
+    // revised up to what the bill says actually moved rather than the delivery
+    // being refused, and the line closes. soi_order_qty, what the customer asked
+    // for, is not touched.
+    it('raises the billable quantity when the bill delivers more than the line had', async () => {
+      mockBillItemReads({
+        billedAgainstOrder: [billedLine(1, 12, 1200)],
+      });
+
+      await service.save(convertedDto());
+
+      expect(prisma.saleOrderItem.update.mock.calls[0][0].data).toMatchObject({
+        soiNetQty: dec(12),
+        soiDeliveredQty: dec(12),
+      });
+      expect(prisma.saleOrderItem.update.mock.calls[0][0].data).not.toHaveProperty('soiOrderQty');
+      expect(prisma.saleOrder.updateMany.mock.calls[0][0]).toMatchObject({
+        data: { soFulfilStatus: 'COMPLETED', soDeliveredItems: 1 },
+      });
+    });
+
+    // Same revision when it is the cancelled quantity the bill outruns: 6 of the
+    // 10 were written off, leaving 4, and this bill takes 5. The write-off is
+    // not reinterpreted — 5 delivered + 6 cancelled is what the line now ordered.
+    it('revises the order up rather than refusing a bill that outruns what is left', async () => {
+      prisma.saleOrderItem.findMany.mockResolvedValue([makeOrderItem({ soiCancelledQty: 6 })]);
+      mockBillItemReads({
+        billedAgainstOrder: [billedLine(1, 5, 500)],
+      });
+
+      await service.save(convertedDto());
+
+      expect(prisma.saleOrderItem.update.mock.calls[0][0].data).toMatchObject({
+        soiNetQty: dec(11),
+        soiDeliveredQty: dec(5),
+      });
+    });
+
+    // A short delivery is NOT a revision: the line carried 10 and 4 went out, so
+    // the other 6 stay pending. Only an over-delivery moves soi_net_qty.
+    it('leaves the billable quantity alone when the bill delivers less', async () => {
+      mockBillItemReads({
+        billedAgainstOrder: [billedLine(1, 4, 400)],
+      });
+
+      await service.save(convertedDto());
+
+      expect(prisma.saleOrderItem.update.mock.calls[0][0].data).toMatchObject({
+        soiNetQty: dec(10),
+        soiDeliveredQty: dec(4),
+      });
+      // ... and the 6 that is left over is the DB's to derive.
+      expect(prisma.saleOrder.updateMany.mock.calls[0][0]).toMatchObject({
+        data: { soPendingAmt: dec(600), soFulfilStatus: 'PARTIAL' },
+      });
+    });
+
+    it('refuses a bill line pointing at a line number the order does not have', async () => {
+      mockBillItemReads({ billedAgainstOrder: [] });
+
+      await expect(
+        service.save(
+          convertedDto({
+            items: [
+              {
+                sbiItemId: ITEM_MASTER_ID,
+                sbiItemUnitId: ITEM_UNIT_ID,
+                sbiGodownId: GODOWN_ID,
+                sbiBillQty: 4,
+                ...orderSrcDoc(7),
+              },
+            ],
+          } as Partial<SaveBillDto>),
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    // The grain a converted bill line actually carries: sbi_src_doc_id holds the
+    // ORDER LINE's own soi_id, which addresses one sale_order_item row on its
+    // own — no line number needed, and none sent.
+    it('draws down the order line a bill line names by its soi_id', async () => {
+      mockBillItemReads({
+        billedAgainstOrder: [
+          makeItem({
+            sbiSrcDocType: 'SALES_ORDER',
+            sbiSrcDocId: ORDER_LINE_ID,
+            sbiSrcDocYear: ACC_YEAR,
+            sbiSrcDocLineNo: null,
+            sbiNetQty: 4,
+            sbiNetAmt: 400,
+          } as unknown as Partial<SaleBillItem>),
+        ],
+      });
+
+      await service.save(
+        convertedDto({
+          items: [
+            {
+              sbiItemId: ITEM_MASTER_ID,
+              sbiItemUnitId: ITEM_UNIT_ID,
+              sbiGodownId: GODOWN_ID,
+              sbiBillQty: 4,
+              sbiNetQty: 4,
+              sbiNetAmt: 400,
+              sbiSrcDocType: 'SALES_ORDER',
+              sbiSrcDocId: ORDER_LINE_ID,
+              sbiSrcDocYear: ACC_YEAR,
+            },
+          ],
+        } as Partial<SaveBillDto>),
+      );
+
+      expect(prisma.saleOrderItem.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { soiId_soiAccYear: { soiId: ORDER_LINE_ID, soiAccYear: ACC_YEAR } },
+          data: containing({ soiDeliveredQty: dec(4), soiBilledAmt: dec(400) }),
+        }),
+      );
+    });
+
+    // sbi_net_qty is the quantity in the ORDER line's own terms, so it is what
+    // draws down — a bill keyed in cases against an order keyed in pieces is
+    // exactly the case this distinction exists for.
+    it('draws down sbi_net_qty, not sbi_bill_qty', async () => {
+      mockBillItemReads({
+        billedAgainstOrder: [
+          makeItem({
+            ...orderSrcDoc(1),
+            sbiBillQty: 1, // one case ...
+            sbiNetQty: 6, // ... of six
+            sbiNetAmt: 600,
+          } as unknown as Partial<SaleBillItem>),
+        ],
+      });
+
+      await service.save(convertedDto());
+
+      expect(prisma.saleOrderItem.update.mock.calls[0][0].data).toMatchObject({
+        soiDeliveredQty: dec(6),
+        soiNetQty: dec(10),
+      });
+    });
+
+    // A reference missing the accounting year addresses neither an order nor an
+    // order line — both are keyed by it — but it is not refused: the bill saves
+    // as sent and the order module is simply never consulted.
+    it('saves a source reference that names an order but not a line of it', async () => {
+      mockBillItemReads({ billedAgainstOrder: [] });
+
+      await service.save(
+        convertedDto({
+          items: [
+            {
+              sbiItemId: ITEM_MASTER_ID,
+              sbiItemUnitId: ITEM_UNIT_ID,
+              sbiGodownId: GODOWN_ID,
+              sbiSrcDocType: 'SALES_ORDER',
+              sbiSrcDocId: ORDER_ID,
+            },
+          ],
+        } as Partial<SaveBillDto>),
+      );
+
+      expect(prisma.saleOrder.findFirst).not.toHaveBeenCalled();
+      expect(prisma.saleOrderItem.update).not.toHaveBeenCalled();
+    });
+
+    // The HEADER's own reference. sb_src_doc_id says which order the bill was
+    // raised against; it names no line and so draws nothing down, but it does
+    // ask for the order to be re-derived — which is what keeps so_status honest
+    // on a bill that fills in only its header.
+    it('recomputes an order the bill names on its header alone', async () => {
+      prisma.saleBill.create.mockReset();
+      prisma.saleBill.create.mockResolvedValue(
+        makeBill({
+          sbStatus: 'POSTED',
+          sbBillAmt: new Prisma.Decimal(400),
+          sbSrcDocType: 'SALES_ORDER',
+          sbSrcDocId: ORDER_ID,
+          sbSrcDocYear: ACC_YEAR,
+        } as unknown as Partial<SaleBill>),
+      );
+      // A POSTED bill is written twice — the row, then its voucher id — and the
+      // reference is read off the second read-back. Real Prisma returns the
+      // whole row there; the shared mock echoes only what that write sent, so
+      // the header's reference is restated here.
+      prisma.saleBill.update.mockResolvedValueOnce(
+        makeBill({
+          sbStatus: 'POSTED',
+          sbBillAmt: new Prisma.Decimal(400),
+          sbSrcDocType: 'SALES_ORDER',
+          sbSrcDocId: ORDER_ID,
+          sbSrcDocYear: ACC_YEAR,
+        } as unknown as Partial<SaleBill>),
+      );
+      // Standing against the order from an earlier bill — this save contributes
+      // no line of its own, and the order's caches have gone stale.
+      mockBillItemReads({
+        billedAgainstOrder: [billedLine(1, 4, 400)],
+      });
+
+      await service.save(
+        baseDto({
+          sbStatus: 'POSTED',
+          sbBillAmt: 400,
+          sbSrcDocType: 'SALES_ORDER',
+          sbSrcDocId: ORDER_ID,
+          sbSrcDocYear: ACC_YEAR,
+          items: [
+            {
+              sbiItemId: ITEM_MASTER_ID,
+              sbiItemUnitId: ITEM_UNIT_ID,
+              sbiGodownId: GODOWN_ID,
+              sbiBillQty: 4,
+              sbiNetAmt: 400,
+            },
+          ],
+        } as Partial<SaveBillDto>),
+      );
+
+      expect(prisma.saleOrder.findFirst).toHaveBeenCalled();
+      expect(prisma.saleOrderItem.update.mock.calls[0][0].data).toMatchObject({
+        soiDeliveredQty: dec(4),
+        soiBilledAmt: dec(400),
+      });
+      expect(prisma.saleOrder.updateMany.mock.calls[0][0]).toMatchObject({
+        data: { soFulfilStatus: 'PARTIAL' },
+      });
+    });
+
+    it('never touches the quantity the cancel endpoint wrote off', async () => {
+      prisma.saleOrderItem.findMany.mockResolvedValue([makeOrderItem({ soiCancelledQty: 2 })]);
+      mockBillItemReads({
+        billedAgainstOrder: [billedLine(1, 4, 400)],
+      });
+
+      await service.save(convertedDto());
+
+      // 10 billable - 4 delivered - 2 cancelled leaves 4 for the DB to derive,
+      // and soi_cancelled_qty is not among the columns written.
+      expect(prisma.saleOrderItem.update.mock.calls[0][0].data).toMatchObject({
+        soiNetQty: dec(10),
+        soiDeliveredQty: dec(4),
+      });
+      expect(prisma.saleOrderItem.update.mock.calls[0][0].data).not.toHaveProperty(
+        'soiCancelledQty',
+      );
+    });
+  });
+
+  // The other half of the conversion chain: sale_quotation's own columns. The
+  // behaviour of the recompute lives in quotation.service.spec.ts — what these
+  // assert is that the bill save reaches it, with the reference its HEADER
+  // carries, and only then.
+  describe('quotation conversion', () => {
+    const QUOTE_ID = '019c6f6c-be87-7a11-8905-36092c46fc01';
+
+    const makeQuotation = (overrides: Partial<SaleQuotation> = {}): SaleQuotation =>
+      ({
+        sqId: QUOTE_ID,
+        sqCompanyId: COMPANY_ID,
+        sqBranchId: BRANCH_ID,
+        sqTenantId: TENANT_ID,
+        sqAccYear: ACC_YEAR,
+        sqQuoteRefno: 'quo00007',
+        sqQuoteSlno: 7n,
+        sqStatus: 'SENT',
+        sqConvertedDocType: null,
+        sqConvertedDocId: null,
+        sqConvertedOn: null,
+        sqIsDeleted: false,
+        ...overrides,
+      }) as unknown as SaleQuotation;
+
+    const fromQuotation = (overrides: Partial<SaveBillDto> = {}) =>
+      baseDto({
+        sbSrcDocType: 'QUOTATION',
+        sbSrcDocId: QUOTE_ID,
+        sbSrcDocYear: ACC_YEAR,
+        ...overrides,
+      } as Partial<SaveBillDto>);
+
+    beforeEach(() => {
+      prisma.saleQuotation.findFirst.mockResolvedValue(makeQuotation());
+    });
+
+    it('stamps the quotation the bill header names as CONVERTED', async () => {
+      await service.save(fromQuotation());
+
+      expect(prisma.saleQuotation.updateMany).toHaveBeenCalledWith(
+        containing({
+          where: { sqId: QUOTE_ID, sqAccYear: ACC_YEAR, sqIsDeleted: false },
+          data: containing({
+            sqStatus: 'CONVERTED',
+            sqConvertedDocType: 'SALE_BILL',
+            sqConvertedDocId: BILL_ID,
+          }),
+        }),
+      );
+    });
+
+    it('converts a DRAFT bill too — raising the invoice is what converts the quote', async () => {
+      await service.save(fromQuotation({ sbStatus: 'DRAFT' }));
+
+      expect(prisma.saleQuotation.updateMany.mock.calls[0][0]).toMatchObject({
+        data: { sqStatus: 'CONVERTED' },
+      });
+    });
+
+    it('leaves the quotation alone on a bill that names none', async () => {
+      await service.save(baseDto());
+
+      expect(prisma.saleQuotation.findFirst).not.toHaveBeenCalled();
+      expect(prisma.saleQuotation.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('ignores a header reference missing the quotation accounting year', async () => {
+      await service.save(fromQuotation({ sbSrcDocYear: null }));
+
+      expect(prisma.saleQuotation.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('rejects a header naming a quotation that is not there', async () => {
+      prisma.saleQuotation.findFirst.mockResolvedValue(null);
+
+      await expect(service.save(fromQuotation())).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('re-derives both quotations when an edit repoints the header', async () => {
+      const OTHER_QUOTE_ID = '019c6f6c-be87-7a11-8905-36092c46fc02';
+      prisma.saleBill.findFirst.mockImplementation((args: unknown) => {
+        const where = (args as { where?: { sbSrcDocType?: string } }).where ?? {};
+        // The conversion recompute's read, told apart from the update path's
+        // "load the bill I am editing" by the discriminator it filters on.
+        return Promise.resolve(
+          where.sbSrcDocType !== undefined
+            ? makeBill({
+                sbSrcDocType: 'QUOTATION',
+                sbSrcDocId: OTHER_QUOTE_ID,
+                sbSrcDocYear: ACC_YEAR,
+              })
+            : makeBill({
+                sbSrcDocType: 'QUOTATION',
+                sbSrcDocId: QUOTE_ID,
+                sbSrcDocYear: ACC_YEAR,
+              }),
+        );
+      });
+      prisma.saleBill.update.mockResolvedValue(
+        makeBill({
+          sbSrcDocType: 'QUOTATION',
+          sbSrcDocId: OTHER_QUOTE_ID,
+          sbSrcDocYear: ACC_YEAR,
+        }),
+      );
+      prisma.saleQuotation.findFirst.mockImplementation((args: unknown) => {
+        const where = (args as { where?: { sqId?: string } }).where ?? {};
+        return Promise.resolve(makeQuotation({ sqId: where.sqId }));
+      });
+
+      await service.save(
+        fromQuotation({ sbId: BILL_ID, sbSrcDocId: OTHER_QUOTE_ID } as Partial<SaveBillDto>),
+      );
+
+      // The quote it walked away from AND the one it moved to — the abandoned
+      // one must not be left frozen at CONVERTED.
+      const recomputed = prisma.saleQuotation.findFirst.mock.calls.map(
+        (call) => (call[0] as { where: { sqId: string } }).where.sqId,
+      );
+      expect(recomputed).toEqual([QUOTE_ID, OTHER_QUOTE_ID]);
+    });
+  });
+});

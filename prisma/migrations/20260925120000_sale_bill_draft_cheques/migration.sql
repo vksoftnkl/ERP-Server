@@ -1,0 +1,11 @@
+-- notes (48) — where a DRAFT sale bill keeps its cheque details (drawer, bank
+-- branch, IFSC, MICR) between /bills/create and /bills/post.
+--
+-- acc_tender_detail has no columns for them, and the register row
+-- (acc_pdc_register) that is their real home is only written at post. So the
+-- draft keeps them here, keyed by td_id — scratch space in the manner of the
+-- receipt's avh_draft_lines — and /post copies them into the register and sets
+-- this back to NULL. A posted bill echoes them from the register.
+--
+-- On the partitioned parent, so every acc_year partition gets it.
+ALTER TABLE sales.sale_bill ADD COLUMN IF NOT EXISTS sb_draft_cheques jsonb;

@@ -1,0 +1,40 @@
+import { PrismaService } from '../../../database/prisma/prisma.service';
+import { AuditLogService } from '../../audit-log/audit-log.service';
+import { SaveTenderMasterDto } from './dto/save-tender-master.dto';
+import { TenderMasterPayload } from './types/tender-master-api.types';
+import { RequestContextService } from '../../../common/request-context/request-context.service';
+export declare class TenderMasterService {
+    private readonly prisma;
+    private readonly auditLogService;
+    private readonly requestContextService;
+    constructor(prisma: PrismaService, auditLogService: AuditLogService, requestContextService: RequestContextService);
+    save(saveTenderMasterDto: SaveTenderMasterDto): Promise<TenderMasterPayload>;
+    list(): Promise<TenderMasterPayload[]>;
+    getById(tndId: string): Promise<TenderMasterPayload>;
+    softDelete(tndId: string): Promise<{
+        tndId: string;
+        deleted: true;
+    }>;
+    private createTender;
+    private updateTender;
+    private ensureCompanyExists;
+    private ensureBranchExists;
+    private ensureTenderTypeExists;
+    private ensureLedgerExists;
+    private ensureBankAccountExists;
+    private ensureNameIsUnique;
+    private ensureHotkeyIsUnique;
+    private ensureSingleDefault;
+    private validateAmountRange;
+    private validateEffectiveRange;
+    private resolveDate;
+    private buildOptionalData;
+    private parseTenderTypeId;
+    private toInputNumber;
+    private toInputNullableNumber;
+    private buildShortName;
+    private toOutputNumber;
+    private toOutputNullableNumber;
+    private toOutputDateOnly;
+    private toPayload;
+}

@@ -57,8 +57,17 @@ model Supplier {
   supModifiedBy        String?   @db.VarChar(100) @map("sup_modified_by")
   // 11) FK fields + relations
   // NOTE: sup_state_id column was missing in your DDL snippet, but FK references it.
-  supStateId           String?   @db.Uuid @map("sup_state_id")
+ 
+  // sup_id IS the linked ledger's led_id — same 1:1 identity as sales.customers.
+  // fk_sup_ledger (20260917100000).
+  ledger               AccLedgerMaster @relation("SupplierLedger", fields: [supId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_sup_ledger")
   group                SupplierGroup   @relation(fields: [supGroupId], references: [spgId], onUpdate: Cascade, onDelete: Restrict)
+  stockLots           StockLot[]       @relation("StockLotSupplier")
+  stockBalances       StockBalance[]   @relation("StockBalanceSupplier")
+  stockVouchers       StockVoucher[]   @relation("StockVoucherSupplier")
+  stockVoucherItems   StockVoucherItem[] @relation("StockVoucherItemSupplier")
+  stockReorderPolicies StockReorderPolicy[] @relation("StockReorderPolicySupplier")
+  stockForecasts      StockForecast[]  @relation("StockForecastSupplier")
   @@map("suppliers")
   @@schema("purchase")
   @@index([supCompanyId], map: "idx_sup_company")

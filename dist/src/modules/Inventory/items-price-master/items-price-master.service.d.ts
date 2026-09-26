@@ -1,0 +1,37 @@
+import { Prisma } from '@prisma/client';
+import { ConfiguredGridListResult, ConfiguredGridSqlService } from "../../../common/configured-grid-sql/configured-grid-sql.service";
+import { GetItemPriceQueryDto } from './dto/get-item-price-query.dto';
+import { SaveItemPriceDto } from './dto/save-item-price.dto';
+import { ItemPriceDeleteResult, ItemPriceListItem, ItemPriceListMeta, ItemPricePayload } from './types/item-price-api.types';
+import { PrismaService } from "../../../database/prisma/prisma.service";
+import { AuditLogService } from "../../audit-log/audit-log.service";
+import type { InventoryWriteClient } from "../../../common/utils/module-service.utils";
+export declare class ItemsPriceMasterService {
+    private readonly prisma;
+    private readonly auditLogService;
+    private readonly configuredGridSqlService;
+    constructor(prisma: PrismaService, auditLogService: AuditLogService, configuredGridSqlService: ConfiguredGridSqlService);
+    save(saveItemPriceDto: SaveItemPriceDto, tx?: Prisma.TransactionClient): Promise<ItemPricePayload>;
+    save(saveItemPriceDto: SaveItemPriceDto[], tx?: Prisma.TransactionClient): Promise<ItemPricePayload[]>;
+    save(saveItemPriceDto: SaveItemPriceDto | SaveItemPriceDto[], tx?: Prisma.TransactionClient): Promise<ItemPricePayload | ItemPricePayload[]>;
+    listPrices(queryDto: GetItemPriceQueryDto): Promise<ConfiguredGridListResult<ItemPriceListItem, ItemPriceListMeta>>;
+    getById(ipmId: string): Promise<ItemPricePayload>;
+    findByItemId(itemId: string, client?: InventoryWriteClient): Promise<ItemPricePayload[]>;
+    findIdsByItemId(itemId: string, isDeleted: boolean): Promise<string[]>;
+    toggleDelete(ipmId: string, tx?: Prisma.TransactionClient): Promise<ItemPriceDeleteResult>;
+    toggleDelete(ipmId: string[], tx?: Prisma.TransactionClient): Promise<ItemPriceDeleteResult[]>;
+    toggleDelete(ipmId: string | string[], tx?: Prisma.TransactionClient): Promise<ItemPriceDeleteResult | ItemPriceDeleteResult[]>;
+    private saveItemPrice;
+    private toggleDeleteItemPrice;
+    private createItemPrice;
+    private updateItemPrice;
+    private requireUnitConversion;
+    private applyOptionalFields;
+    private parseOptionalDate;
+    private toPayload;
+    private buildDisplayName;
+    private resolveRecordActor;
+    private resolveAuditActor;
+    private handleWriteError;
+    private handleDeleteError;
+}

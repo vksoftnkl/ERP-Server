@@ -1,0 +1,106 @@
+/// stock.stock_demand_daily — what actually sold, per branch, per day.
+///
+/// The input every forecast needs and no transactional table can serve.
+/// Aggregating a year of SaleBillItem across fifty branches on every run of a
+/// replenishment job is not a plan. This is the pre-aggregate, rebuilt by
+/// fn_sdd_rebuild() from [[StockLedger]] — which means it can ALWAYS be
+/// recomputed and never has to be trusted blindly.
+///
+/// sddStockoutFlag IS THE COLUMN THAT MAKES FORECASTS HONEST. If an item was
+/// out of stock on Tuesday it sold zero on Tuesday, and a model that reads
+/// that as "demand was zero" will under-forecast the fastest movers for ever
+/// and keep them out of stock — the failure feeds itself. Censored demand has
+/// to be MARKED at the point where it is still knowable; afterwards a zero is
+/// indistinguishable from a zero. sddStockoutHours says how much of the day
+/// was lost, so a partial day is not thrown away whole.
+///
+/// sddPromoQty exists for the same reason in the other direction: a week of
+/// buy-one-get-one is not the baseline, and a model that treats it as one will
+/// over-order for the month after. It is a subset of what sold, not an
+/// addition to it.
+///
+/// sddClosedFlag is a THIRD kind of zero. Shut is not "nobody wanted it": such
+/// a day must be EXCLUDED from a moving average, not averaged in as demand.
+/// Three different zeros, three different columns, because a forecast that
+/// cannot tell them apart is worse than no forecast.
+///
+/// sddDayOfWeek is denormalised so a weekday/seasonality model does not
+/// compute it a million times. 0 = Sunday, matching EXTRACT(dow).
+///
+/// NOT PARTITIONED. The read is a WINDOW of days for one item — "the last
+/// ninety days" crosses a year boundary four times out of five — and a
+/// partition per year would split every one of those.
+///
+/// WRITE RULES:
+///   * NEVER write sddNetQty or sddMarginWot — both are GENERATED ALWAYS ...
+///     STORED.
+///   * This table is DERIVED. Do not patch a row to make a report look right;
+///     fix the ledger and re-run fn_sdd_rebuild(), or the next rebuild silently
+///     discards the correction.
+///   * sddRebuiltOn says when the row was last recomputed — a stale date on a
+///     recent day means the job did not run, which is otherwise invisible.
+///
+/// DB-only objects Prisma cannot express — hand-authored in the migration and
+/// deliberately NOT declared here (every one carries a WHERE):
+///   ux_sdd_scope   one row per (company, branch, item, date)
+///   ix_sdd_series  the forecasting read: one item, one branch, a window of
+///                  days, in order
+///   ix_sdd_chain   chain-wide demand for one item across every branch — the
+///                  head-office allocation question
+model StockDemandDaily {
+  sddId                String    @id(map: "pk_stock_demand_daily") @default(dbgenerated("uuidv7()")) @db.Uuid @map("sdd_id")
+  sddCompanyId         String    @db.Uuid                            @map("sdd_company_id")
+  sddBranchId          String    @db.Uuid                            @map("sdd_branch_id")
+  sddTenantId          String?   @db.Uuid                            @map("sdd_tenant_id")
+  sddItemId            String    @db.Uuid                            @map("sdd_item_id")
+  sddBaseUomId         String    @db.Uuid                            @map("sdd_base_uom_id")
+  sddDemandDate        DateTime  @db.Date                            @map("sdd_demand_date")
+  /// Denormalised for seasonality models. 0 = Sunday, matching EXTRACT(dow).
+  sddDayOfWeek         Int       @default(0) @db.SmallInt            @map("sdd_day_of_week")
+
+  sddSoldQty           Decimal   @default(0) @db.Decimal(18, 6)      @map("sdd_sold_qty")
+  sddFreeQty           Decimal   @default(0) @db.Decimal(18, 6)      @map("sdd_free_qty")
+  sddReturnQty         Decimal   @default(0) @db.Decimal(18, 6)      @map("sdd_return_qty")
+  /// GENERATED ALWAYS ... STORED as sold + free - returned. Read-only.
+  sddNetQty            Decimal?  @default(dbgenerated()) @db.Decimal(18, 6) @map("sdd_net_qty")
+  /// Sold while a promotion was running: real sales, but not the baseline.
+  /// A SUBSET of sddSoldQty, not an addition to it.
+  sddPromoQty          Decimal   @default(0) @db.Decimal(18, 6)      @map("sdd_promo_qty")
+
+  sddBillCount         Int       @default(0)                         @map("sdd_bill_count")
+  sddLineCount         Int       @default(0)                         @map("sdd_line_count")
+  sddCustomerCount     Int       @default(0)                         @map("sdd_customer_count")
+
+  sddRevenueWot        Decimal   @default(0) @db.Decimal(18, 2)      @map("sdd_revenue_wot")
+  sddCogsWot           Decimal   @default(0) @db.Decimal(18, 2)      @map("sdd_cogs_wot")
+  /// GENERATED ALWAYS ... STORED as revenue - COGS. Read-only.
+  sddMarginWot         Decimal?  @default(dbgenerated()) @db.Decimal(18, 2) @map("sdd_margin_wot")
+
+  // ── Truthfulness flags ──────────────────────────────────────────────────
+  /// On hand hit zero at some point that day: demand was CENSORED, and the
+  /// figures above are a floor, not a measurement.
+  sddStockoutFlag      Boolean   @default(false)                     @map("sdd_stockout_flag")
+  sddStockoutHours     Decimal   @default(0) @db.Decimal(9, 3)       @map("sdd_stockout_hours")
+  /// The branch was SHUT. Exclude from a moving average — never read as zero
+  /// demand.
+  sddClosedFlag        Boolean   @default(false)                     @map("sdd_closed_flag")
+  sddOpenQtyStart      Decimal   @default(0) @db.Decimal(18, 6)      @map("sdd_open_qty_start")
+  sddCloseQtyEnd       Decimal   @default(0) @db.Decimal(18, 6)      @map("sdd_close_qty_end")
+
+  /// When this row was last recomputed. A stale date on a recent day means the
+  /// rebuild job did not run — otherwise invisible.
+  sddRebuiltOn         DateTime  @default(now()) @db.Timestamptz(6)  @map("sdd_rebuilt_on")
+  sddIsDeleted         Boolean   @default(false)                     @map("sdd_is_deleted")
+  sddSyncDate          DateTime? @db.Timestamptz(6)                  @map("sdd_sync_date")
+  sddCreatedOn         DateTime  @default(now()) @db.Timestamptz(6)  @map("sdd_created_on")
+
+  // ── Relations ───────────────────────────────────────────────────────────
+  // A derived table: there is no created/modified-by pair to relate.
+  company              Company            @relation("StockDemandDailyCompany", fields: [sddCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_sdd_company")
+  branch               BranchMaster       @relation("StockDemandDailyBranch",  fields: [sddBranchId],  references: [brId],   onUpdate: Cascade, onDelete: Restrict, map: "fk_sdd_branch")
+  item                 ItemMaster         @relation("StockDemandDailyItem",    fields: [sddItemId],    references: [itemId], onUpdate: Cascade, onDelete: Restrict, map: "fk_sdd_item")
+  baseUom              ItemUnitConversion @relation("StockDemandDailyBaseUom", fields: [sddBaseUomId], references: [iucId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_sdd_base_uom")
+
+  @@map("stock_demand_daily")
+  @@schema("stock")
+}

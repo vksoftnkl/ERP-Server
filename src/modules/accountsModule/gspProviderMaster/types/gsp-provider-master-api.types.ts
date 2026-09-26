@@ -1,21 +1,6 @@
-export interface GspProviderMasterErrorDetail {
-  field: string;
-  message: string;
-}
-
-export interface GspProviderMasterErrorResponse {
-  success: false;
-  message: string;
-  errors: GspProviderMasterErrorDetail[];
-}
-
-export interface GspProviderMasterSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> {
-  success: true;
-  message: string;
-  data: T;
-  meta?: TMeta;
-  styles?: TStyles;
-}
+export type { AccountsErrorDetail as GspProviderMasterErrorDetail } from 'src/common/types/module-api.types';
+export type { AccountsErrorResponse as GspProviderMasterErrorResponse } from 'src/common/types/module-api.types';
+export type { AccountsSuccessResponse as GspProviderMasterSuccessResponse } from 'src/common/types/module-api.types';
 
 export interface GspProviderMasterPayload {
   gspProviderId: string;
@@ -32,13 +17,4 @@ export interface GspProviderMasterPayload {
   gspCreatedBy: string | null;
   gspModifiedOn: string;
   gspModifiedBy: string | null;
-}
-
-export type GspProviderMasterListItem = GspProviderMasterPayload | Record<string, unknown>;
-
-export interface GspProviderMasterListMeta {
-  page: number;
-  limit: number;
-  total: number;
-  total_pages: number;
 }

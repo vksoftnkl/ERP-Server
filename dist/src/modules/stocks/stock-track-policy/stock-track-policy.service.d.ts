@@ -1,0 +1,34 @@
+import { Prisma, StockTrackPolicy, StockTrackPreset } from '@prisma/client';
+import { PrismaService } from "../../../database/prisma/prisma.service";
+import { AuditLogService } from "../../audit-log/audit-log.service";
+import { RequestContextService } from "../../../common/request-context/request-context.service";
+import { DerivedTrackPolicy, ItemGroupTrackPolicySource, ItemTrackPolicySource, StockTrackPolicySyncResult } from './types/stock-track-policy.types';
+export declare const DERIVED_FROM_ITEM_REMARK = "Auto-derived from item master";
+export declare const DERIVED_FROM_GROUP_REMARK = "Auto-derived from item group master";
+export declare class StockTrackPolicyService {
+    private readonly prisma;
+    private readonly auditLogService;
+    private readonly requestContextService;
+    constructor(prisma: PrismaService, auditLogService: AuditLogService, requestContextService: RequestContextService);
+    syncFromItem(item: ItemTrackPolicySource, tx?: Prisma.TransactionClient): Promise<StockTrackPolicySyncResult>;
+    syncFromItemGroup(group: ItemGroupTrackPolicySource, tx?: Prisma.TransactionClient): Promise<StockTrackPolicySyncResult>;
+    resolvePreset(presetId: string | null | undefined, tx?: Prisma.TransactionClient): Promise<StockTrackPreset | null>;
+    presetToDerived(preset: StockTrackPreset): DerivedTrackPolicy;
+    deriveFromItem(item: ItemTrackPolicySource): DerivedTrackPolicy;
+    findByItemId(itemId: string, tx?: Prisma.TransactionClient): Promise<StockTrackPolicy | null>;
+    findByGroupId(itgId: string, companyId: string | null, tx?: Prisma.TransactionClient): Promise<StockTrackPolicy | null>;
+    private createDerived;
+    private updateDerived;
+    private retireDerived;
+    private derivedRemark;
+    private isDerivedRemark;
+    private presetCodeFromRemark;
+    private result;
+    private toColumns;
+    private hasChanged;
+    private actor;
+    private positiveOrNull;
+    private nonNegativeOr;
+    private logChange;
+    private toAuditRecord;
+}

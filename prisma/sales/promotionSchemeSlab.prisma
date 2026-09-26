@@ -1,0 +1,80 @@
+/// sales.promotion_scheme_slab — §5, the offer bands.
+///
+/// One row = one band. Read as: when the measured value is between prsExceeds
+/// and prsUpto, give the benefit; and if prsIsRepeat, give it once per prsEach
+/// above prsExceeds instead of once in total.
+///
+/// "the measured value" is RUPEES when prm_apply_on is BILL_AMOUNT or
+/// ITEM_AMOUNT, and QUANTITY when it is BILL_QTY or ITEM_QTY — one column pair
+/// serving both, exactly as the loyalty slabs do.
+///
+/// Bands are ROWS, not columns: 0-999 -> 2%, 1000-4999 -> 5%, 5000+ -> 8% is
+/// three rows.
+///
+/// ── The benefit is ENFORCED, not merely documented ──────────────────────
+/// prsBenefit is a copy of the header's prmBenefit tied to it by a COMPOSITE
+/// foreign key (prs_prm_id, prs_benefit) -> (prm_id, prm_benefit), which is
+/// why PromotionScheme carries the otherwise-redundant
+/// @@unique([prmId, prmBenefit]). A percentage-discount scheme therefore
+/// CANNOT physically hold a free-item band. This composite FK also carries the
+/// ON DELETE CASCADE, so no second plain FK on prsPrmId is declared.
+///
+/// The other half of that pair — ck_prs_benefit_columns, "the benefit column
+/// is filled and the others are empty" — is a CHECK, so it lives in the
+/// service instead of the migration, along with ck_prs_band, ck_prs_each,
+/// ck_prs_amounts, ck_prs_free_unit_pair and ck_prs_slno. The FK still stops
+/// the header and its bands disagreeing; the service is what stops a
+/// DISC_PERC band being saved with a fixed price in it.
+///
+/// DB-only objects to hand-author:
+///   ux_prs_band      UNIQUE (prm_id, exceeds, COALESCE(free_item_id, nil uuid))
+///                    WHERE NOT deleted — so "spend 5000, get a mug AND a pen"
+///                    is two rows at one threshold, while two rows claiming the
+///                    same band with nothing to separate them stays impossible
+///   ix_prs_scheme    (prm_id, benefit, exceeds) INCLUDE (...), partial
+///   ix_prs_free_item / ix_prs_free_unit, partial
+model PromotionSchemeSlab {
+  prsId             String    @id(map: "pk_promotion_scheme_slab") @default(dbgenerated("uuidv7()")) @db.Uuid @map("prs_id")
+  prsPrmId          String    @db.Uuid                                       @map("prs_prm_id")
+  prsSlno           Int       @default(1)                                    @map("prs_slno")
+  prsBenefit        String    @db.VarChar(20)                                @map("prs_benefit")
+
+  // ── The band ────────────────────────────────────────────────────────────
+  prsExceeds        Decimal   @default(0) @db.Decimal(18, 3)                 @map("prs_exceeds")
+  prsUpto           Decimal?  @db.Decimal(18, 3)                             @map("prs_upto")
+  prsEach           Decimal   @default(1) @db.Decimal(18, 3)                 @map("prs_each")
+  prsIsRepeat       Boolean   @default(false)                                @map("prs_is_repeat")
+  prsMaxRepeats     Int       @default(0)                                    @map("prs_max_repeats")
+
+  // ── FREE_ITEM ───────────────────────────────────────────────────────────
+  prsFreeItemId     String?   @db.Uuid                                       @map("prs_free_item_id")
+  prsFreeUnitId     String?   @db.Uuid                                       @map("prs_free_unit_id")
+  prsFreeQty        Decimal   @default(0) @db.Decimal(18, 3)                 @map("prs_free_qty")
+  prsFreeStockCheck Boolean   @default(true)                                 @map("prs_free_stock_check")
+
+  // ── DISC_PERC / DISC_AMT, in the bill's idiom ───────────────────────────
+  prsDiscPerc       Decimal   @default(0) @db.Decimal(18, 4)                 @map("prs_disc_perc")
+  prsDiscQty        Decimal   @default(0) @db.Decimal(18, 4)                 @map("prs_disc_qty")
+  prsDiscAmt        Decimal   @default(0) @db.Decimal(18, 2)                 @map("prs_disc_amt")
+
+  // ── FIXED_PRICE ─────────────────────────────────────────────────────────
+  prsFixedPrice     Decimal?  @db.Decimal(18, 4)                             @map("prs_fixed_price")
+
+  prsMaxBenefitAmt  Decimal   @default(0) @db.Decimal(18, 2)                 @map("prs_max_benefit_amt")
+
+  prsNotes          String?   @db.Text                                       @map("prs_notes")
+  prsIsActive       Boolean   @default(true)                                 @map("prs_is_active")
+  prsIsDeleted      Boolean   @default(false)                                @map("prs_is_deleted")
+  prsSyncDate       DateTime? @db.Timestamptz(6)                             @map("prs_sync_date")
+  prsCreatedOn      DateTime  @default(now()) @db.Timestamptz(6)             @map("prs_created_on")
+  prsCreatedBy      String?   @db.VarChar(50)                                @map("prs_created_by")
+  prsModifiedOn     DateTime? @db.Timestamptz(6)                             @map("prs_modified_on")
+  prsModifiedBy     String?   @db.VarChar(50)                                @map("prs_modified_by")
+
+  scheme            PromotionScheme     @relation("PromotionSchemeSlabs", fields: [prsPrmId, prsBenefit], references: [prmId, prmBenefit], onUpdate: Cascade, onDelete: Cascade, map: "fk_prs_scheme_benefit")
+  freeItem          ItemMaster?         @relation("PromotionSlabFreeItem", fields: [prsFreeItemId], references: [itemId], onUpdate: Cascade, onDelete: Restrict, map: "fk_prs_free_item")
+  freeUnit          ItemUnitConversion? @relation("PromotionSlabFreeUnit", fields: [prsFreeUnitId], references: [iucId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_prs_free_unit")
+
+  @@map("promotion_scheme_slab")
+  @@schema("sales")
+}

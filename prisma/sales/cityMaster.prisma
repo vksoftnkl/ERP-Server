@@ -5,6 +5,7 @@ model CityMaster {
   ctmShort      String?   @db.VarChar(50)                                  @map("ctm_short")
   ctmStateId    String    @db.Uuid                                          @map("ctm_state_id")
   ctmOrder      Decimal   @default(0.0) @db.Decimal                        @map("ctm_order")
+  ctmDescription    String?   @db.Text                                 @map("ctm_description")
   ctmIsActive   Boolean   @default(true)                                    @map("ctm_is_active")
   ctmIsDeleted  Boolean   @default(false)                                   @map("ctm_is_deleted")
   ctmSyncDate   DateTime? @db.Timestamptz                                  @map("ctm_sync_date")
@@ -16,6 +17,7 @@ model CityMaster {
   // Relations
   state         StateMaster  @relation(fields: [ctmStateId], references: [stmId])
   areas         AreaMaster[]
+  promotionSchemeParties PromotionSchemeParty[] @relation("PromotionPartyCity")
 
   @@index([ctmStateId],  name: "idx_ctm_state")
   @@index([ctmIsActive], name: "idx_ctm_active")

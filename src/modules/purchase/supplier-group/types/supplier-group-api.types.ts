@@ -1,19 +1,6 @@
-export interface SupplierGroupErrorDetail {
-  field: string;
-  message: string;
-}
-export interface SupplierGroupErrorResponse {
-  success: false;
-  message: string;
-  errors: SupplierGroupErrorDetail[];
-}
-export interface SupplierGroupSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> {
-  success: true;
-  message: string;
-  data: T;
-  meta?: TMeta;
-  styles?: TStyles;
-}
+export type { PurchaseErrorDetail as SupplierGroupErrorDetail } from 'src/common/types/module-api.types';
+export type { PurchaseErrorResponse as SupplierGroupErrorResponse } from 'src/common/types/module-api.types';
+export type { PurchaseSuccessResponse as SupplierGroupSuccessResponse } from 'src/common/types/module-api.types';
 export interface SupplierGroupPayload {
   spgId: string;
   spgName: string;
@@ -27,11 +14,4 @@ export interface SupplierGroupPayload {
   spgCreatedBy: string | null;
   spgModifiedOn: string;
   spgModifiedBy: string | null;
-}
-export type SupplierGroupListItem = SupplierGroupPayload | Record<string, unknown>;
-export interface SupplierGroupListMeta {
-  page: number;
-  limit: number;
-  total: number;
-  total_pages: number;
 }

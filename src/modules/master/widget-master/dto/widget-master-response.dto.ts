@@ -1,11 +1,11 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { WidgetPlatform } from '@prisma/client';
+import { WidgetPlatform } from '../types/widget-master-api.types';
 
 export class WidgetMasterErrorFieldDto {
-  @ApiProperty({ example: 'widgetNo' })
+  @ApiProperty({ example: 'sectionId' })
   field!: string;
 
-  @ApiProperty({ example: 'widgetNo must be a positive integer' })
+  @ApiProperty({ example: 'sectionId must be a positive integer' })
   message!: string;
 }
 
@@ -20,49 +20,57 @@ export class WidgetMasterErrorResponseDto {
   errors!: WidgetMasterErrorFieldDto[];
 }
 
-export class WidgetMasterPayloadDto {
+export class WidgetFieldPayloadDto {
   @ApiProperty({ example: 1 })
-  widgetNo!: number;
+  fieldId!: number;
 
   @ApiProperty({ example: 10 })
-  widgetGroupId!: number;
+  fieldSectionId!: number;
 
-  @ApiProperty({ example: 'Daily Sales' })
-  widgetName!: string;
+  @ApiProperty({ example: 'item_name' })
+  fieldName!: string;
+
+  @ApiPropertyOptional({ nullable: true, example: 'English Name' })
+  fieldGuiName!: string | null;
+
+  @ApiPropertyOptional({ nullable: true, example: 'Secondary text' })
+  fieldSecondaryText!: string | null;
 
   @ApiProperty({ example: 0 })
-  widgetPosition!: number;
+  fieldPosition!: number;
 
   @ApiProperty({ example: true })
-  widgetVisibility!: boolean;
-
-  @ApiPropertyOptional({ nullable: true, example: 'sales-daily-widget' })
-  widgetGuiName!: string | null;
-
-  @ApiProperty({ enum: WidgetPlatform, enumName: 'WidgetPlatform' })
-  widgetType!: WidgetPlatform;
-
-  @ApiPropertyOptional({ nullable: true, example: 'Updated 5 minutes ago' })
-  widgetSecondaryText!: string | null;
+  fieldVisibility!: boolean;
 }
 
-export class WidgetMasterListMetaDto {
+export class WidgetMasterPayloadDto {
   @ApiProperty({ example: 1 })
-  page!: number;
+  sectionId!: number;
 
-  @ApiProperty({ example: 20 })
-  limit!: number;
+  @ApiProperty({ example: 10, description: 'Menu/screen this section belongs to' })
+  sectionMenuId!: number;
 
-  @ApiProperty({ example: 3 })
-  total!: number;
+  @ApiProperty({ example: 'Primary Information' })
+  sectionName!: string;
 
-  @ApiProperty({ example: 1 })
-  total_pages!: number;
+  @ApiProperty({ example: 'Primary Information' })
+  sectionGuiName!: string;
+
+  @ApiProperty({ example: 0 })
+  sectionPosition!: number;
+
+  @ApiProperty({ example: true })
+  sectionVisibility!: boolean;
+
+  @ApiProperty({ enum: WidgetPlatform, enumName: 'WidgetPlatform' })
+  sectionPlatform!: WidgetPlatform;
+  @ApiProperty({ type: WidgetFieldPayloadDto, isArray: true })
+  fields!: WidgetFieldPayloadDto[];
 }
 
 export class WidgetMasterDeleteResultDto {
   @ApiProperty({ example: 1 })
-  widgetNo!: number;
+  sectionId!: number;
 
   @ApiProperty({ example: true })
   deleted!: true;
@@ -72,7 +80,7 @@ export class WidgetMasterSuccessSingleDto {
   @ApiProperty({ example: true })
   success!: true;
 
-  @ApiProperty({ example: 'Widget fetched successfully' })
+  @ApiProperty({ example: 'Widget section fetched successfully' })
   message!: string;
 
   @ApiProperty({ type: WidgetMasterPayloadDto })
@@ -88,16 +96,13 @@ export class WidgetMasterSuccessListDto {
 
   @ApiProperty({ type: WidgetMasterPayloadDto, isArray: true })
   data!: WidgetMasterPayloadDto[];
-
-  @ApiProperty({ type: WidgetMasterListMetaDto })
-  meta!: WidgetMasterListMetaDto;
 }
 
 export class WidgetMasterSuccessDeleteDto {
   @ApiProperty({ example: true })
   success!: true;
 
-  @ApiProperty({ example: 'Widget deleted successfully' })
+  @ApiProperty({ example: 'Widget section deleted successfully' })
   message!: string;
 
   @ApiProperty({ type: WidgetMasterDeleteResultDto })

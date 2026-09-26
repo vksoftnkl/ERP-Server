@@ -6,19 +6,39 @@ const path = require('node:path');
 const { performance } = require('node:perf_hooks');
 const { setTimeout: sleep } = require('node:timers/promises');
 
-const DEFAULT_BASE_URL = process.env.PERF_BASE_URL || 'https://localhost:3010';
+// Default target follows the API's own .env (PORT / HTTPS_ENABLED) so the perf
+// presets hit the running server without needing --base-url on every run.
+function resolveDefaultBaseUrl() {
+  if (process.env.PERF_BASE_URL) {
+    return process.env.PERF_BASE_URL;
+  }
+  const env = { ...readEnvFile(path.resolve(__dirname, '..', '..', '.env')), ...process.env };
+  const port = env.PORT || '3000';
+  const protocol = String(env.HTTPS_ENABLED).toLowerCase() === 'true' ? 'https' : 'http';
+  return `${protocol}://localhost:${port}`;
+}
+
+function readEnvFile(filePath) {
+  try {
+    return require('dotenv').parse(fs.readFileSync(filePath));
+  } catch {
+    return {};
+  }
+}
+
+const DEFAULT_BASE_URL = resolveDefaultBaseUrl();
 const DEFAULT_MAX_FAILURE_RATE = 5;
 const MAX_LATENCY_SAMPLES = 200000;
 
 const API_MIX_ROUTES = [
   { name: 'health', method: 'GET', path: '/api/v1/health', weight: 4 },
   { name: 'users.list', method: 'GET', path: '/api/v1/users', weight: 3 },
-  { name: 'itemGroups.list', method: 'GET', path: '/api/v1/item-groups/list', weight: 2 },
-  { name: 'itemBrands.list', method: 'GET', path: '/api/v1/item-brands/list', weight: 2 },
-  { name: 'itemSections.list', method: 'GET', path: '/api/v1/item-sections/list', weight: 2 },
-  { name: 'units.list', method: 'GET', path: '/api/v1/units/list', weight: 2 },
-  { name: 'gridDetails.list', method: 'GET', path: '/api/v1/grid-details/list', weight: 1 },
-  { name: 'gridColumns.list', method: 'GET', path: '/api/v1/grid-columns/list', weight: 1 },
+  { name: 'itemGroups.list', method: 'GET', path: '/api/v1/item-groups/get', weight: 2 },
+  { name: 'itemBrands.list', method: 'GET', path: '/api/v1/item-brands/get', weight: 2 },
+  { name: 'itemSections.list', method: 'GET', path: '/api/v1/item-sections/get', weight: 2 },
+  { name: 'units.list', method: 'GET', path: '/api/v1/units/get', weight: 2 },
+  { name: 'gridDetails.list', method: 'GET', path: '/api/v1/grid-details/get', weight: 1 },
+  { name: 'gridColumns.list', method: 'GET', path: '/api/v1/grid-columns/get', weight: 1 },
 ];
 
 const SCENARIOS = {

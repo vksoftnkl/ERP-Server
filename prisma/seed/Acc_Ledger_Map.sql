@@ -1,0 +1,81 @@
+-- Seed: accounts.acc_ledger_map -- role -> ledger, all 27 posting roles.
+--
+-- accounts.acc_ledger_role lists 27 roles. Until this ran, acc_ledger_map held ZERO
+-- rows, so resolveLedgerForRole() (src/modules/accountsModule/ledgerRole/
+-- ledger-map.helper.ts) answered null for every one of them and nothing that resolves
+-- a ledger by role -- the sale bill's revenue, tax, round-off and discount legs, the
+-- receipt / payment / cheque flows, the voucher register, the opening-balance screen's
+-- plug and carry-forward's profit destination -- could find a ledger at all.
+--
+-- The five RECEIPT roles -- TDS_RECEIVABLE, BANK_CHARGES, SURCHARGE_RECOVERED,
+-- CLAIMS_ALLOWED, INTEREST_INCOME -- joined them in migrations 20260915120000 /
+-- 20260915130000 (receipt plan §2.7). receipt-lines.ts seeds those other-line roles
+-- unconditionally, so until they resolve /receipts/create 404s for EVERY receipt --
+-- including one with no TDS, no MDR and no claim on it at all.
+--
+-- ── Why this file is one line ───────────────────────────────────────────────────────
+-- The work lives in two functions, shipped by migration
+-- 20260915110000_seed_acc_ledger_map:
+--
+--   accounts.fn_ledger_map_catalogue()  role -> ledger name, plus the shape each
+--                                       ledger must have if it does not exist yet
+--                                       (led_ledger_type, led_gst_duty_head, and the
+--                                       global account group it hangs under).
+--                                       THE CONFIGURATION -- edit it there.
+--   accounts.fn_seed_ledger_map()       applies the catalogue.
+--
+-- It is written that way because migrations run BEFORE seeds (`db:deploy` = migrate
+-- deploy && seed:run) and the chart of accounts is itself a seed -- Account_Groups.sql,
+-- which the manifest puts immediately before this file. On a fresh database the
+-- account groups do not exist while the migration runs, so the migration calls the
+-- function in "skip if the chart is not there yet" mode and defers to this file. Here
+-- the groups DO exist, so this call is the one that actually maps a fresh database --
+-- and re-asserts the map on every deploy afterwards.
+--
+-- ── What it does, every time ────────────────────────────────────────────────────────
+--   1. refuses unless every account group the catalogue names resolves to exactly one
+--      global, undeleted row (missing groups, or two of the same name);
+--   2. creates any of the 27 global posting ledgers that is absent -- twelve of them
+--      have never existed anywhere (the Input taxes, Purchase / Purchase Return,
+--      Output State Cess, Difference in Opening Balances, Retained Earnings,
+--      TCS / TDS Payable), and five belong to the receipt (TDS Receivable, Bank
+--      Charges, Card Surcharge Recovered, Customer Claims Allowed, Interest on
+--      Overdue); the rest are found by name and left untouched;
+--   3. refuses if a role in acc_ledger_role is not in the catalogue, if a named ledger
+--      is missing or ambiguous, or if a ledger does not FIT its role -- there is no
+--      guard trigger on acc_ledger_map (fn_check_role_ledger was never written), so
+--      the function compares alr_want_type / alr_want_duty / alr_want_nature itself,
+--      and ABORTS rather than skipping the pair: a silently skipped role is exactly
+--      the null this fixes;
+--   4. maps every role it has not already mapped, and verifies all 27 resolve.
+--
+-- alm_company_id / alm_branch_id / alm_supply_nature are left NULL: the chart is
+-- shared, so a role has one answer for the whole business.
+--
+-- Idempotent: every insert is NOT EXISTS guarded, so re-running reports 0 and 0. It is
+-- NOT ON CONFLICT -- acc_ledger_master's unique index is (led_company_id, led_name), a
+-- plain unique, so two GLOBAL ledgers may share a name and there is nothing to target.
+--
+-- A live mapping switched off by hand (alm_is_active = false) is left off, and named
+-- in the exception the verify step then raises -- turn it back on, or delete the row.
+--
+-- Run: psql "$DATABASE_URL" -f prisma/seed/Acc_Ledger_Map.sql
+--      or: npm run seed:run -- --only=Acc_Ledger_Map.sql
+
+BEGIN;
+
+SELECT accounts.fn_seed_ledger_map();
+
+COMMIT;
+
+-- ── Read-back ──────────────────────────────────────────────────────────────────────
+--
+-- SELECT r.alr_group, r.alr_sort_order, r.alr_role, r.alr_label,
+--        l.led_name AS posts_to, g.acc_group_name AS under
+--   FROM accounts.acc_ledger_role r
+--   LEFT JOIN accounts.acc_ledger_map x ON x.alm_role = r.alr_role
+--                                      AND NOT x.alm_is_deleted AND x.alm_is_active
+--   LEFT JOIN accounts.acc_ledger_master l ON l.led_id = x.alm_ledger_id
+--   LEFT JOIN accounts.acc_group_master  g ON g.acc_group_id = l.led_group_id
+--  WHERE r.alr_is_active
+--  ORDER BY r.alr_sort_order, r.alr_role;

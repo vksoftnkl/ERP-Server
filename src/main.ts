@@ -1,3 +1,4 @@
+import './env.preload';
 import 'reflect-metadata';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, isAbsolute, resolve } from 'node:path';
@@ -11,6 +12,7 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import { FileLoggerService } from './common/logging/file-logger.service';
 import { PrismaService } from './database/prisma/prisma.service';
+import { runStartupDatabaseTasks } from './database/seed/startup-seed';
 import { swaggerModuleDocuments } from './utils/swaggerDocs';
 const parseBoolean = (value: string | undefined, defaultValue = false): boolean => {
   if (value === undefined) {
@@ -32,6 +34,8 @@ const getDefaultDevCorsOrigins = (): string[] => [
   'https://localhost:3000',
   'http://127.0.0.1:3000',
   'https://127.0.0.1:3000',
+  'https://192.168.0.101:3001',
+  'https://localhost:3001',
 ];
 const resolveFilePath = (filePath: string): string => {
   const isPkgRuntime = Boolean((process as NodeJS.Process & { pkg?: unknown }).pkg);
@@ -108,11 +112,33 @@ async function bootstrap(): Promise<void> {
   app.useLogger(logger);
   const configService = app.get(ConfigService);
   const requestBodyLimit = configService.get<string>('app.requestBodyLimit', '10mb');
+  // Migrations/seeds run before the port opens, so the first request never lands on a
+  // half-seeded database. Controlled by DB_AUTO_MIGRATE / DB_AUTO_SEED; on by default
+  // in production, which is what makes a deploy self-seeding.
+  await runStartupDatabaseTasks({
+    databaseUrl: configService.get<string>('database.url'),
+    logger,
+  });
   const swaggerModuleDocs = swaggerModuleDocuments;
   app.enableShutdownHooks();
   app.use(json({ limit: requestBodyLimit }));
   app.use(urlencoded({ extended: true, limit: requestBodyLimit }));
-  app.use(helmet());
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc: [`'self'`],
+          styleSrc: [`'self'`, `'unsafe-inline'`],
+          scriptSrc: [`'self'`, `'unsafe-inline'`],
+          imgSrc: [`'self'`, 'data:', 'validator.swagger.io'],
+          workerSrc: [`'self'`, 'blob:'],
+          // Disable upgrade-insecure-requests: this directive causes browsers to
+          // upgrade HTTP sub-resource URLs to HTTPS, breaking Swagger UI on HTTP servers.
+          upgradeInsecureRequests: null,
+        },
+      },
+    }),
+  );
   app.use(compression());
   const configuredCorsOrigins = parseCsv(process.env.CORS_ORIGINS);
   const corsOrigins =
@@ -126,6 +152,36 @@ async function bootstrap(): Promise<void> {
     app.enableCors({
       origin: allowAnyCorsOrigin ? true : corsOrigins,
       credentials: corsCredentials,
+      /*
+       * Response headers a cross-origin caller may READ.
+       *
+       * Without this list a browser hands the page the body and hides every
+       * header that is not one of the six CORS-safelisted ones — so a render's
+       * own account of itself (which revision drew it, how many pages came out,
+       * whether anything went wrong) reads as null in exactly the setup
+       * developers work in: client on :3000, API on :3011. In production nginx
+       * puts both behind one origin and the question never arises, which is the
+       * worst way for a header contract to be wrong — it works everywhere
+       * except where it is being written.
+       *
+       * `Content-Disposition` is here for the same reason: it carries the
+       * filename a print is saved under, and a download that loses its name
+       * cross-origin is a bug nobody sees until someone works off localhost.
+       */
+      exposedHeaders: [
+        'Content-Disposition',
+        'X-Print-Template-Id',
+        'X-Print-Version-Id',
+        'X-Print-Rev-No',
+        'X-Print-Output-Mode',
+        'X-Print-Pages',
+        'X-Print-Copies',
+        'X-Print-Warnings',
+        'X-Print-Log-Ids',
+        'X-Print-Scope',
+        // Set by HttpCacheInterceptor on every cacheable route.
+        'X-Cache',
+      ],
     });
   }
   app.useGlobalPipes(
@@ -140,7 +196,7 @@ async function bootstrap(): Promise<void> {
   );
   app.enableVersioning({
     type: VersioningType.URI,
-    defaultVersion: '1',
+    defaultVersion: process.env.API_VERSION ?? '1',
   });
   const rawApiPrefix = configService.get<string>('app.apiPrefix', 'api');
   const apiPrefix = rawApiPrefix.replace(/^\/+|\/+$/g, '');
@@ -154,7 +210,53 @@ async function bootstrap(): Promise<void> {
     app,
     buildSwaggerConfig('ERP Server API', 'API documentation for ERP Server'),
   );
-  SwaggerModule.setup(allDocsPath, app, allSwaggerDocument);
+  const moduleNavList = swaggerModuleDocs.map((d) => ({
+    label: d.title.replace(/ API$/, ''),
+    url: `/${apiPrefix ? `${apiPrefix}/docs/${d.path}` : `docs/${d.path}`}`,
+  }));
+  const moduleSearchJs = `
+(function () {
+  var modules = ${JSON.stringify(moduleNavList)};
+  function inject() {
+    var topbar = document.querySelector('.topbar-wrapper');
+    if (!topbar) { setTimeout(inject, 300); return; }
+    if (document.getElementById('erp-module-search')) return;
+    var wrapper = document.createElement('div');
+    wrapper.style.cssText = 'position:relative;display:flex;align-items:center;margin-left:16px;';
+    var input = document.createElement('input');
+    input.id = 'erp-module-search';
+    input.type = 'text';
+    input.placeholder = 'Search modules…';
+    input.autocomplete = 'off';
+    input.style.cssText = 'padding:6px 14px;border-radius:20px;border:none;font-size:13px;width:220px;outline:none;background:#fff;color:#333;box-shadow:0 1px 4px rgba(0,0,0,.25);';
+    var dropdown = document.createElement('div');
+    dropdown.style.cssText = 'position:absolute;top:calc(100% + 6px);left:0;width:260px;background:#fff;border:1px solid #ddd;border-radius:6px;max-height:320px;overflow-y:auto;z-index:9999;display:none;box-shadow:0 6px 16px rgba(0,0,0,.15);';
+    function renderItems(val) {
+      dropdown.innerHTML = '';
+      var list = val ? modules.filter(function(m){ return m.label.toLowerCase().includes(val.toLowerCase()); }) : modules;
+      if (!list.length) { dropdown.style.display='none'; return; }
+      list.forEach(function(m) {
+        var a = document.createElement('a');
+        a.href = m.url;
+        a.textContent = m.label;
+        a.style.cssText = 'display:block;padding:9px 14px;color:#3b4151;text-decoration:none;font-size:13px;border-bottom:1px solid #f0f0f0;';
+        a.addEventListener('mouseover', function(){ a.style.background='#f7f9fc'; });
+        a.addEventListener('mouseout',  function(){ a.style.background=''; });
+        dropdown.appendChild(a);
+      });
+      dropdown.style.display = 'block';
+    }
+    input.addEventListener('focus', function(){ renderItems(input.value); });
+    input.addEventListener('input', function(){ renderItems(input.value); });
+    document.addEventListener('click', function(e){ if (!wrapper.contains(e.target)){ dropdown.style.display='none'; } });
+    wrapper.appendChild(input);
+    wrapper.appendChild(dropdown);
+    topbar.appendChild(wrapper);
+  }
+  if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', inject); } else { inject(); }
+})();
+`;
+  SwaggerModule.setup(allDocsPath, app, allSwaggerDocument, { customJsStr: moduleSearchJs });
   for (const docs of swaggerModuleDocs) {
     const docsPath = apiPrefix ? `${apiPrefix}/docs/${docs.path}` : `docs/${docs.path}`;
     const moduleSwaggerDocument = SwaggerModule.createDocument(
@@ -164,7 +266,7 @@ async function bootstrap(): Promise<void> {
         include: docs.include,
       },
     );
-    SwaggerModule.setup(docsPath, app, moduleSwaggerDocument);
+    SwaggerModule.setup(docsPath, app, moduleSwaggerDocument, { customJsStr: moduleSearchJs });
   }
   await app.listen(port, host);
   const appUrl = await app.getUrl();
@@ -185,4 +287,9 @@ async function bootstrap(): Promise<void> {
   }
   logger.log(`DB connected: ${isDbConnected}`, 'Bootstrap');
 }
-void bootstrap();
+bootstrap().catch((error: unknown) => {
+  // Exit non-zero so the process manager can distinguish a fatal startup failure
+  // from a clean shutdown and apply its restart backoff instead of looping.
+  console.error('Fatal error during bootstrap:', error);
+  process.exit(1);
+});

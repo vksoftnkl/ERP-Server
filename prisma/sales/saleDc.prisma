@@ -1,0 +1,171 @@
+/// Delivery challan: goods OUT before the invoice.
+///
+///  * a STOCK document — posting writes DC_ISSUE stock rows and, under
+///    perpetual costing, DR COGS / CR INVENTORY at cost;
+///  * a GST document with NO TAX LIABILITY. It carries prices and GST columns
+///    only because rule 138(1) reads the VALUE of the goods for the e-way
+///    bill, and because the challan has to print. Never an IRN;
+///  * the SOURCE of a bill — a bill against a DC consumes sdiBilledQty and
+///    posts revenue only, because the stock already left. Many DCs to one
+///    bill, one DC to many bills, and mixed DC + direct lines on one bill are
+///    all allowed.
+///
+/// sdcPurpose decides its GST reading: SUPPLY converts into a bill; the others
+/// (JOB_WORK, APPROVAL, EXHIBITION, OWN_USE, LINE_SALES, OTHER) may only come
+/// back via a DC return or be converted after the fact.
+///
+/// LIST-partitioned by sdcAccYear, PK (sdcId, sdcAccYear).
+model SaleDc {
+  sdcId                 String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("sdc_id")
+  sdcCompanyId          String    @db.Uuid                             @map("sdc_company_id")
+  sdcBranchId           String    @db.Uuid                             @map("sdc_branch_id")
+  sdcTenantId           String?   @db.Uuid                             @map("sdc_tenant_id")
+  sdcAccYear            String    @db.Char(9)                          @map("sdc_acc_year")
+
+  sdcSessionId          String?   @db.Uuid                             @map("sdc_session_id")
+  sdcCounterId          String    @db.Uuid                             @map("sdc_counter_id")
+  sdcDeviceType         String?   @db.VarChar(20)                      @map("sdc_device_type")
+  sdcDeviceId           String?                                        @map("sdc_device_id")
+
+  // ── Identity ─────────────────────────────────────────────────────────
+  sdcDocType            String    @default("DELIVERY_CHALLAN") @db.VarChar(30) @map("sdc_doc_type")
+  /// SUPPLY | JOB_WORK | APPROVAL | EXHIBITION | OWN_USE | LINE_SALES | OTHER
+  sdcPurpose            String    @default("SUPPLY") @db.VarChar(20)   @map("sdc_purpose")
+  sdcDcSlno             BigInt                                         @map("sdc_dc_slno")
+  sdcDcRefno            String    @db.VarChar(100)                     @map("sdc_dc_refno")
+  sdcUsrRefno           String?   @db.VarChar(100)                     @map("sdc_usr_refno")
+  sdcUsrRefdate         DateTime? @db.Date                             @map("sdc_usr_refdate")
+  sdcDcDate             DateTime  @db.Date                             @map("sdc_dc_date")
+  sdcDcDatetime         DateTime  @default(now()) @db.Timestamptz(6)   @map("sdc_dc_datetime")
+  sdcPriceLevel         Int       @default(1)                          @map("sdc_price_level")
+
+  // ── Source: a sales order (line-level in SaleDcItem) ─────────────────
+  sdcSrcDocType         String?   @db.VarChar(30)                      @map("sdc_src_doc_type")
+  sdcSrcDocId           String?   @db.Uuid                             @map("sdc_src_doc_id")
+  sdcSrcDocAccYear      String?   @db.Char(9)                          @map("sdc_src_doc_acc_year")
+  sdcSrcDocRefno        String?   @db.VarChar(100)                     @map("sdc_src_doc_refno")
+  sdcSrcDocDate         DateTime? @db.Date                             @map("sdc_src_doc_date")
+
+  // ── Customer, snapshotted (bill-to) ──────────────────────────────────
+  sdcCustId             String    @db.Uuid                             @map("sdc_cust_id")
+  sdcCustName           String    @db.VarChar(200)                     @map("sdc_cust_name")
+  sdcCustAddr           String?   @db.VarChar(500)                     @map("sdc_cust_addr")
+  sdcCustPlace          String?   @db.VarChar(100)                     @map("sdc_cust_place")
+  sdcCustPin            String?   @db.VarChar(10)                      @map("sdc_cust_pin")
+  sdcCustPhone          String?   @db.VarChar(20)                      @map("sdc_cust_phone")
+  sdcCustGstin          String?   @db.VarChar(15)                      @map("sdc_cust_gstin")
+  sdcCustGstType        String?   @db.VarChar(20)                      @map("sdc_cust_gst_type")
+  sdcCustStcd           String?   @db.Char(2)                          @map("sdc_cust_stcd")
+  sdcPosStcd            String?   @db.Char(2)                          @map("sdc_pos_stcd")
+  sdcStateName          String?   @db.VarChar(100)                     @map("sdc_state_name")
+
+  // ── Delivery crew and vehicle — OURS, on the document on purpose ─────
+  sdcDriverId           String?   @db.Uuid                             @map("sdc_driver_id")
+  sdcSupervisorId       String?   @db.Uuid                             @map("sdc_supervisor_id")
+  sdcLoadmanId          String[]  @db.Uuid                             @map("sdc_loadman_id")
+  sdcVehicleId          String?   @db.Uuid                             @map("sdc_vehicle_id")
+  sdcVehicleNo          String?   @db.VarChar(20)                      @map("sdc_vehicle_no")
+
+  // ── People ───────────────────────────────────────────────────────────
+  sdcUserId             String    @db.Uuid                             @map("sdc_user_id")
+  /// uuid[] — no FK on array elements; the service validates each id.
+  sdcSalesmanId         String[]  @db.Uuid                             @map("sdc_salesman_id")
+  sdcAgentId            String?   @db.Uuid                             @map("sdc_agent_id")
+
+  // ── Quantities / money. The prices are for the e-way bill and the print;
+  //    NO tax liability is posted from them. ─────────────────────────────
+  sdcTotItems           Int       @default(0)                          @map("sdc_tot_items")
+  sdcTotWeight          Decimal   @default(0) @db.Decimal(15, 3)       @map("sdc_tot_weight")
+  sdcTotBags            Decimal   @default(0) @db.Decimal(15, 3)       @map("sdc_tot_bags")
+  sdcGrossAmt           Decimal   @default(0) @db.Decimal(15, 2)       @map("sdc_gross_amt")
+  sdcDiscAmt            Decimal   @default(0) @db.Decimal(15, 2)       @map("sdc_disc_amt")
+  sdcTaxableAmt         Decimal   @default(0) @db.Decimal(15, 2)       @map("sdc_taxable_amt")
+  sdcCgstAmt            Decimal   @default(0) @db.Decimal(15, 2)       @map("sdc_cgst_amt")
+  sdcSgstAmt            Decimal   @default(0) @db.Decimal(15, 2)       @map("sdc_sgst_amt")
+  sdcIgstAmt            Decimal   @default(0) @db.Decimal(15, 2)       @map("sdc_igst_amt")
+  sdcCessAmt            Decimal   @default(0) @db.Decimal(15, 2)       @map("sdc_cess_amt")
+  sdcTaxAmt             Decimal   @default(0) @db.Decimal(15, 2)       @map("sdc_tax_amt")
+  sdcOtherAmt           Decimal   @default(0) @db.Decimal(15, 2)       @map("sdc_other_amt")
+  sdcRoundOff           Decimal   @default(0) @db.Decimal(15, 2)       @map("sdc_round_off")
+  sdcDcAmt              Decimal   @default(0) @db.Decimal(15, 2)       @map("sdc_dc_amt")
+  /// The COGS posted AT the challan, under perpetual costing.
+  sdcTotalCost          Decimal   @default(0) @db.Decimal(15, 2)       @map("sdc_total_cost")
+
+  // ── Fulfilment caches (detail on the lines) ──────────────────────────
+  sdcBilledAmt          Decimal   @default(0) @db.Decimal(15, 2)       @map("sdc_billed_amt")
+  sdcReturnedAmt        Decimal   @default(0) @db.Decimal(15, 2)       @map("sdc_returned_amt")
+  /// OPEN | PARTIAL | BILLED | RETURNED | CLOSED
+  sdcFulfilStatus       String    @default("OPEN") @db.VarChar(20)     @map("sdc_fulfil_status")
+
+  // ── Roll-ups from the bill that a challan carries ────────────────────
+  sdcHasLoad            Boolean   @default(false)                      @map("sdc_has_load")
+  sdcHasUnload          Boolean   @default(false)                      @map("sdc_has_unload")
+  sdcHasFreight         Boolean   @default(false)                      @map("sdc_has_freight")
+  sdcHasPromo           Boolean   @default(false)                      @map("sdc_has_promo")
+  sdcPackedId           String[]  @db.Uuid                             @map("sdc_packed_id")
+  sdcItemDisc           Decimal   @default(0) @db.Decimal(15, 2)       @map("sdc_item_disc")
+  sdcSplDisc            Decimal   @default(0) @db.Decimal(15, 2)       @map("sdc_spl_disc")
+  sdcSchDisc            Decimal   @default(0) @db.Decimal(15, 2)       @map("sdc_sch_disc")
+  sdcFreightAmt         Decimal   @default(0) @db.Decimal(15, 2)       @map("sdc_freight_amt")
+  sdcLoadAmt            Decimal   @default(0) @db.Decimal(15, 2)       @map("sdc_load_amt")
+  sdcUnloadAmt          Decimal   @default(0) @db.Decimal(15, 2)       @map("sdc_unload_amt")
+  sdcFreightCalcType    String?   @db.VarChar(12)                      @map("sdc_freight_calc_type")
+  sdcLoadingCalcType    String?   @db.VarChar(12)                      @map("sdc_loading_calc_type")
+  sdcDiscAlterBase      Boolean?                                       @map("sdc_disc_alter_base")
+  sdcRoundOffStep       Decimal   @default(1) @db.Decimal(15, 2)       @map("sdc_round_off_step")
+
+  sdcPaymentTerms       String?   @db.VarChar(250)                     @map("sdc_payment_terms")
+  sdcDeliveryTerms      String?   @db.VarChar(250)                     @map("sdc_delivery_terms")
+  sdcRemarks            String?   @db.VarChar(500)                     @map("sdc_remarks")
+
+  // ── Lifecycle ────────────────────────────────────────────────────────
+  /// DRAFT | POSTED | CANCELLED. WHEN / WHO / WHY a status changed is NOT
+  /// here: TxnStatusLog holds every transition, one row per step, appended
+  /// and never updated — which is also the only shape that survives an
+  /// offline push, because two devices appending cannot conflict the way two
+  /// devices UPDATEing one header row can.
+  sdcStatus             String    @default("DRAFT") @db.VarChar(20)    @map("sdc_status")
+  /// The COGS voucher. No FK: SERVER-owned and written long after an offline
+  /// counter created this row.
+  sdcPostedVoucherId    String?   @db.Uuid                             @map("sdc_posted_voucher_id")
+  sdcRevisionNo         Int       @default(1)                          @map("sdc_revision_no")
+  sdcPrintCount         Int       @default(0)                          @map("sdc_print_count")
+
+  sdcIsDeleted          Boolean   @default(false)                      @map("sdc_is_deleted")
+  sdcSyncDate           DateTime? @db.Timestamptz(6)                   @map("sdc_sync_date")
+  sdcCreatedOn          DateTime  @default(now()) @db.Timestamptz(6)   @map("sdc_created_on")
+  sdcCreatedBy          String    @db.VarChar(50)                      @map("sdc_created_by")
+  sdcModifiedOn         DateTime? @db.Timestamptz(6)                   @map("sdc_modified_on")
+  sdcModifiedBy         String?   @db.VarChar(50)                      @map("sdc_modified_by")
+
+  // Relations
+  customer              Customer        @relation("SaleDcCustomer",   fields: [sdcCustId],       references: [cusId],     onUpdate: Cascade, onDelete: Restrict, map: "fk_sdc_cust")
+  posState              StateCode?      @relation("SaleDcPosState",   fields: [sdcPosStcd],      references: [stateCode], onUpdate: Cascade, onDelete: Restrict, map: "fk_sdc_pos_state")
+  driver                EmployeeMaster? @relation("SaleDcDriver",     fields: [sdcDriverId],     references: [empId],     onUpdate: Cascade, onDelete: Restrict, map: "fk_sdc_driver")
+  supervisor            EmployeeMaster? @relation("SaleDcSupervisor", fields: [sdcSupervisorId], references: [empId],     onUpdate: Cascade, onDelete: Restrict, map: "fk_sdc_supervisor")
+  vehicle               VehicleMaster?  @relation("SaleDcVehicle",    fields: [sdcVehicleId],    references: [vehId],     onUpdate: Cascade, onDelete: Restrict, map: "fk_sdc_vehicle")
+
+  items                 SaleDcItem[]    @relation("SaleDcItems")
+  dcReturns             SaleDcReturn[]  @relation("SaleDcReturnDc")
+
+  @@id([sdcId, sdcAccYear], map: "pk_sale_dc")
+
+  @@unique([sdcCompanyId, sdcBranchId, sdcAccYear, sdcDcRefno], map: "ux_sdc_refno")
+  @@unique([sdcCompanyId, sdcBranchId, sdcAccYear, sdcCounterId, sdcDcSlno], map: "ux_sdc_counter_slno")
+
+  // Partial indexes are DB-only:
+  //   ix_sdc_company_branch_date
+  //   ix_sdc_cust_open  -- "what is still out on challan for this customer",
+  //                        which is what the billing screen asks before it
+  //                        offers DC lines to pull in:
+  //       (sdc_cust_id, sdc_fulfil_status) WHERE NOT deleted
+  //         AND sdc_status = 'POSTED' AND sdc_fulfil_status IN ('OPEN','PARTIAL')
+  //   FK-covering: ix_sdc_pos_state, ix_sdc_driver, ix_sdc_supervisor,
+  //                ix_sdc_vehicle
+  //
+  // CHECK constraints (DB-only): ck_sdc_doc_type, ck_sdc_purpose,
+  //   ck_sdc_status, ck_sdc_fulfil_status
+
+  @@map("sale_dc")
+  @@schema("sales")
+}

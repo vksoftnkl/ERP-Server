@@ -1,0 +1,71 @@
+/// public.print_purpose — §1, WHAT can be printed.
+///
+/// 3.0 kept this list in C++ as a magic integer at ten call sites
+/// (PrintUtil(this, 9) = Sales Bill). It is a table now, and that is the first
+/// half of "printing is never controlled by code".
+///
+/// A purpose is (document type, what you want printed OF it): the same sale
+/// bill is a tax invoice, a delivery slip and a godown slip.
+/// ppoCompanyId NULL = shipped with the product, visible to every company.
+///
+/// Declared here WITHOUT any CHECK constraint, the same treatment
+/// promotion_scheme gets: ck_ppo_code_shape, ck_ppo_src_module, ck_ppo_copies
+/// and ck_ppo_sort live in the migration and in PrintPurposeService.
+///
+/// DB-only objects Prisma cannot express, hand-authored in the migration:
+///   ux_ppo_code    UNIQUE (ppo_company_id, lower(ppo_code)) NULLS NOT DISTINCT
+///                  WHERE NOT deleted. NOTE: NULLS NOT DISTINCT dedupes the
+///                  SHIPPED rows against each other only — a shipped
+///                  SALE_INVOICE and a company's own SALE_INVOICE coexist by
+///                  design, which is what makes forking (§2) possible.
+///   ix_ppo_doc     (ppo_src_module, ppo_doc_type, ppo_sort_order), partial on
+///                  (NOT deleted AND active)
+///   ix_ppo_company / ix_ppo_created_by / ix_ppo_modified_by
+///                  FK-covering, all partial on IS NOT NULL
+model PrintPurpose {
+  ppoId               String    @id(map: "pk_print_purpose") @default(dbgenerated("uuidv7()")) @db.Uuid @map("ppo_id")
+  /// NULL = shipped with the product, visible to every company.
+  ppoCompanyId        String?   @db.Uuid                                     @map("ppo_company_id")
+
+  ppoCode             String    @db.VarChar(40)                              @map("ppo_code")
+  ppoName             String    @db.VarChar(120)                             @map("ppo_name")
+
+  // ── The document this prints ────────────────────────────────────────────
+  // Free-form on purpose: a purpose may name a transaction (SALE_BILL), a
+  // master (ITEM_LABEL) or a report (STOCK_AGEING).
+  ppoSrcModule        String    @default("SALES") @db.VarChar(20)            @map("ppo_src_module")
+  ppoDocType          String    @db.VarChar(40)                              @map("ppo_doc_type")
+
+  // ── Copies ──────────────────────────────────────────────────────────────
+  // How many the paper normally carries, and what they are called. Deciding
+  // that the second print of a tax invoice is a DUPLICATE is a rule about
+  // GST, not about this table — the service layer labels the copies.
+  ppoCopyCount        Int       @default(1) @db.SmallInt                     @map("ppo_copy_count")
+  ppoCopyLabels       String?   @db.VarChar(120)                             @map("ppo_copy_labels")
+
+  ppoAllowReprint     Boolean   @default(true)                               @map("ppo_allow_reprint")
+
+  ppoSortOrder        Int       @default(100) @db.SmallInt                   @map("ppo_sort_order")
+  ppoNotes            String?   @db.Text                                     @map("ppo_notes")
+
+  ppoIsActive         Boolean   @default(true)                               @map("ppo_is_active")
+  ppoIsDeleted        Boolean   @default(false)                              @map("ppo_is_deleted")
+  ppoSyncDate         DateTime? @db.Timestamptz(6)                           @map("ppo_sync_date")
+  ppoCreatedOn        DateTime  @default(now()) @db.Timestamptz(6)           @map("ppo_created_on")
+  ppoCreatedBy        String?   @db.Uuid                                     @map("ppo_created_by")
+  ppoModifiedOn       DateTime? @db.Timestamptz(6)                           @map("ppo_modified_on")
+  ppoModifiedBy       String?   @db.Uuid                                     @map("ppo_modified_by")
+
+  // ── Relations ───────────────────────────────────────────────────────────
+  company             Company?    @relation("PrintPurposeCompany",    fields: [ppoCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_ppo_company")
+  createdByUser       UserMaster? @relation("PrintPurposeCreatedBy",  fields: [ppoCreatedBy], references: [usrId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_ppo_created_by")
+  modifiedByUser      UserMaster? @relation("PrintPurposeModifiedBy", fields: [ppoModifiedBy], references: [usrId], onUpdate: Cascade, onDelete: Restrict, map: "fk_ppo_modified_by")
+
+  templates           PrintTemplate[]           @relation("PrintTemplatePurpose")
+  assignments         PrintTemplateAssignment[] @relation("PrintTemplateAssignmentPurpose")
+
+  printLogs           PrintLog[]                @relation("PrintLogPurpose")
+
+  @@map("print_purpose")
+  @@schema("public")
+}

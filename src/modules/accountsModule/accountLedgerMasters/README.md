@@ -1,0 +1,159 @@
+# Account Ledger Masters
+
+CRUD API for **account ledgers** — the individual ledger accounts (party, bank, cash, etc.)
+that sit under an account group in the chart of accounts — together with each ledger's nested
+**bank accounts**.
+
+- **Base route:** `account-ledger-masters` (API-versioned via `API_VERSION`)
+- **Swagger tag:** `Account Ledger Masters`
+- **Auth:** Bearer `access-token` (required)
+- **Primary table:** `acc_ledger_master` (`accounts` schema) — PK `ledId`
+- **Nested table:** `acc_ledger_bank_accounts` — PK `lbaId`, FK `lbaLedgerId → ledId`
+
+## Files
+
+| File | Purpose |
+| --- | --- |
+| [account-ledger-masters.module.ts](account-ledger-masters.module.ts) | Module wiring — imports `AuditLogModule`, **exports the service** for reuse |
+| [account-ledger-masters.controller.ts](account-ledger-masters.controller.ts) | HTTP routes + Swagger docs |
+| [account-ledger-masters.service.ts](account-ledger-masters.service.ts) | Business logic, persistence, audit logging |
+| [account-ledger-master-exception.filter.ts](account-ledger-master-exception.filter.ts) | Maps DB/domain errors to the module's error shape (matches `led*` field names) |
+| [dto/save-account-ledger-master.dto.ts](dto/save-account-ledger-master.dto.ts) | Single create/update payload |
+| [dto/save-bulk-account-ledger-master.dto.ts](dto/save-bulk-account-ledger-master.dto.ts) | Batch upsert payload (`{ data: [...] }`) |
+| [dto/ledger-bank-account-item.dto.ts](dto/ledger-bank-account-item.dto.ts) | A single nested bank account entry |
+| [dto/account-ledger-master-response.dto.ts](dto/account-ledger-master-response.dto.ts) | Swagger response models |
+| [types/account-ledger-master-api.types.ts](types/account-ledger-master-api.types.ts) | Payload / response TypeScript contracts |
+| [types/account-ledger-master-enum.ts](types/account-ledger-master-enum.ts) | App-layer enums (see below) |
+
+## Endpoints
+
+| Method | Path | Description |
+| --- | --- | --- |
+| `POST` | `/create` | Create **or** update a ledger. Accepts a single object **or** a batch `{ "data": [ ... ] }`. |
+| `GET` | `/get` | Fetch one ledger by `ledId`, or list all active ledgers (ordered by `ledName`). |
+| `DELETE` | `/delete` | Soft-delete a ledger by `ledId`. |
+| `GET` | `/get-bank` | Fetch one bank account by `lbaId`, or list all active bank accounts for a `ledId`. |
+| `DELETE` | `/delete-bank` | Soft-delete a single bank account by `lbaId`. |
+
+### Create / update semantics
+
+- **Omit `ledId` → create; include `ledId` → update** the existing ledger.
+- The `/create` body is a union (single object or `{ data: [...] }`). Nest's global
+  `ValidationPipe` can't infer which, so the controller validates explicitly against the
+  resolved DTO ([controller `validateBody`](account-ledger-masters.controller.ts)).
+- **Batch mode is all-or-nothing:** the whole array runs in one `$transaction`; if any entry
+  fails, nothing is saved.
+- On create, `ledLedgerType` defaults to `'PARTY'` to satisfy the `chk_led_ledger_type`
+  DB check constraint (which only permits uppercase domain values); a payload may still
+  send any member of `LedLedgerType`.
+- **Five columns that carry a live DB CHECK are now validated as enums** —
+  `ledLedgerType`, `ledTypeOfSupply`, `ledMsmeType`, `ledGstDutyHead`, `ledRoundingMethod`.
+  They were plain strings, so a bad value reached Postgres and came back as a raw `23514`:
+  a `500` with `errors: []`, the one response on this endpoint that told you nothing. Enum
+  members are copied from the constraint *including case* — the CHECK is case-sensitive, so
+  `'Goods'` passes and `'goods'` does not.
+- **Six balance columns are not writable.** `ledObAmount`, `ledObType`, `ledObAsOn`,
+  `ledTotalDr`, `ledTotalCr` and `ledTotalBalance` were removed from the save DTO on
+  2026-09-17; sending any of them is a `400` ("property … should not exist"). A **shared**
+  ledger (`ledCompanyId` NULL) spans every company, so one balance on its row cannot be right
+  for all of them. `accounts.acc_opening_balance` keys on
+  `op_company_id + op_branch_id + op_acc_year`, which is the correct grain, and it is built and
+  working behind menu 55. All six stay in the GET payload, read-only, the way `ledIsDeleted`
+  already was.
+
+## Nested bank accounts
+
+A ledger's bank accounts are managed through the `ledgerBankAccount[]` array on the
+create/update payload:
+
+- Item **with** `lbaId` → updates that row (must belong to the parent ledger).
+- Item **without** `lbaId` → inserts a new row.
+- Omitting the array (or sending an empty one) leaves existing bank accounts **untouched** —
+  removal goes through `DELETE /delete-bank`.
+- `lbaLedgerId` in the item is **ignored**; the server always injects the parent ledger's id.
+- Blank rows (all-null / empty grid rows) are stripped before validation
+  (`normalizeBankAccountItems`).
+- **At most one default** (`lbaIsDefault`) per ledger — enforced both in code
+  (`assertSingleDefault`) and by a partial unique index. Marking a new default first clears the
+  existing one so the index never trips.
+
+## Business rules
+
+- **Ledger name uniqueness** is *unique within what one company can see*, which is three rules,
+  not one (`ensureNameIsUnique`, and `20260917110000` behind it):
+
+  1. no two **shared** ledgers (`ledCompanyId` NULL) share a name — `uq_led_name_shared`;
+  2. no two ledgers in the **same company** share a name — `uq_led_name_company`;
+  3. a company-scoped ledger must not collide with a **shared** one — enforced by the trigger
+     `tr_led_name_scope`, because no index can say "must not match a row in the other scope".
+
+  NULL `ledCompanyId` means *shared by every company* and is deliberate: one customer billed in
+  four companies is one ledger. Postgres treats NULLs as distinct, so the older
+  `uq_led_name_per_company` is inert for exactly those rows — 50 of 61 ledgers on the live box.
+  Matching is case-insensitive (`lower()`) because Tally matches master names that way, and a
+  Tally company file receives the shared ledgers **plus** that company's own; Tally merges two
+  `<LEDGER>` entries with the same `NAME` into one and combines their balances, silently.
+
+  Rule 3 is skipped — by the service and by the trigger alike — when neither the name nor the
+  scope is changing, so a row that already violates it (there is one such pair on the live box,
+  a trade partner that is both a customer and a supplier) stays editable.
+- **Bank account number uniqueness** is per ledger, case-insensitive
+  (`ensureBankAccountNumberIsUnique`).
+- The target **account group must exist and be active** (`ensureGroupExists`, validates
+  `ledGroupId`).
+- **`ledTaxId`** — the `inventory.tax_rate_master` row a service ledger (freight, packing,
+  labour) carries when it appears as a taxable line; NULL on a party or bank ledger. It
+  replaces `ledGstRate` / `ledTaxability` / `ledTaxRate`, which held a bare percentage and
+  could express neither cess nor taxability (columns dropped in
+  `20260912100000_retire_ledger_gst_columns`). `fk_led_tax` only proves the row exists, so
+  `ensureTaxRateExists` additionally rejects a soft-deleted or inactive rate with a 400 on
+  `ledTaxId`.
+- **`ledItcEligibility`** — GST input tax credit eligibility (`ELIGIBLE`, `INELIGIBLE_17_5`,
+  `INELIGIBLE_OTHER`, `CAPITAL_GOODS`, `INPUT_SERVICES`; `chk_led_itc_eligibility`). Without it
+  a blocked s.17(5) credit — motor vehicles, food and beverage, works contract, personal
+  consumption — cannot be told apart from an eligible one, **GSTR-3B table 4(D) "Ineligible ITC"
+  cannot be produced at all**, and 4(A) is overstated by exactly those amounts. NULL means *not
+  stated*, which is correct for a bank, cash, party or income ledger. Tally's equivalent is the
+  ledger's "Eligibility for input credit".
+- **`ledIsReverseCharge`** — this party or expense attracts RCM. It lives on the ledger and not
+  on `inventory.tax_rate_master`, because reverse charge is decided by who you buy from and what
+  (unregistered purchase, GTA, legal services, director's fees, import of services), while a rate
+  row is shared with ordinary forward-charge sales at the same percentage. The document flag
+  `acc_voucher_doc_register.gdr_is_reverse_charge` defaults from it.
+- **`ledId` is also the party's id.** `sales.customers.cus_id` and `purchase.suppliers.sup_id`
+  hold the same uuid as the ledger they are linked to, and since `20260917100000` `fk_cus_ledger`
+  / `fk_sup_ledger` say so. Creating a ledger for a party goes through
+  `createLedgerWithinTx` / `updateLedgerWithinTx`, which those two services compose into their own
+  transaction.
+- **Soft delete only** — for GST / audit retention, rows are never hard-deleted. Deleting flags
+  `ledIsDeleted = true` / `ledIsActive = false` (and clears `lbaIsDefault` for bank accounts).
+- **Every mutation is audited** via `AuditLogService.logEntityChange` (`New` / `update` /
+  `cancel`), capturing original vs. modified records. The acting user comes from
+  `RequestContextService.getUserId()`, falling back to `DEFAULT_ACTOR`.
+- List/get responses embed related names (`ledCompanyName`, `ledBranchName`, `ledGroupName`,
+  `ledGroupLedgerProfile`), the rate behind `ledTaxId` (`ledTaxName`, `ledTaxRatePerc`,
+  `ledTaxTaxability` — read-only, edited on the tax-rate master) and the active bank accounts
+  (default-first, then oldest-first).
+
+## Enums (app-layer)
+
+Validation lives in the app, not in Postgres — the equivalent native PG enum types were dropped
+(migration `20260623110000_move_acc_ledger_enums_to_app_layer`). See
+[types/account-ledger-master-enum.ts](types/account-ledger-master-enum.ts).
+
+- `LedGstPartyRegType` — `REGULAR` · `COMPOSITION` · `UNREGISTERED`
+- `LedObType` (opening balance) — `DR` · `CR`
+- `BankAccountType` — `SAVINGS` · `CURRENT` · `CASH_CREDIT` · `OVERDRAFT`
+
+## Reuse from other modules
+
+The module **exports `AccountLedgerMastersService`** because several masters share their primary
+key with a linked ledger (e.g. **customer** and **supplier**, which mirror into
+`acc_ledger_master` under the same id). Those modules compose ledger writes into their own
+transactions via the intentionally non-private methods:
+
+- `createLedgerWithinTx(dto, tx)` — provision a ledger inside a caller's transaction.
+- `updateLedgerWithinTx(dto, tx)` — keep the linked ledger in sync.
+- `listBankAccountPayloads(ledId, client?)` — embed a ledger's bank accounts in another
+  master's response without re-implementing the payload mapping (never throws on a missing
+  ledger).

@@ -1,0 +1,205 @@
+/// stock.stock_ledger — every movement. The truth.
+///
+/// APPEND-ONLY. Never updated in place, never deleted. A cancelled bill does
+/// not remove its ledger rows, it writes REVERSING ones — because a stock
+/// figure that can change retrospectively is a stock figure nobody can
+/// reconcile, and because in an offline chain the cancellation may arrive
+/// after the day was closed. A BEFORE DELETE trigger raises rather than
+/// trusting convention, so Prisma's delete/deleteMany WILL fail here by
+/// design; smlIsDeleted exists for the soft-delete predicate the partial
+/// indexes are built on, not as an escape hatch.
+///
+/// GRAIN — one row per (source document, line, split, godown, lot, direction).
+/// That is exactly the grain SaleBillItem already emits (sbiLineNo ×
+/// sbiSplitNo × sbiGodownId × sbiStockId), so posting a bill is a straight
+/// INSERT ... SELECT with no reshaping and no aggregation. A transfer writes
+/// TWO rows, not one: TRANSFER_OUT at the source and TRANSFER_IN at the
+/// destination, each with its own godown — and they are not simultaneous, see
+/// stock_transit.
+///
+/// THERE IS NO RUNNING-BALANCE COLUMN, on purpose. "Balance after this
+/// movement" is the classic stock-ledger trap: two tills posting concurrently
+/// must serialise on it, a back-dated entry invalidates every row after it,
+/// and an offline chain has no global order to compute it in. The balance is
+/// stock_balance's job and nothing else's.
+///
+/// FREE QUANTITY IS STOCK. Free goods sit on the shelf and get sold, so they
+/// are counted in on-hand — but kept in their own columns, because margin
+/// reporting must separate what was paid for from what was not.
+/// smlSignedBaseQty adds both and applies the direction; it is the one column
+/// every quantity report sums, and the only one stock_balance reads.
+///
+/// PARTITIONED BY LIST (sml_acc_year), hence the composite primary key
+/// (smlId, smlAccYear). A new fiscal year needs its partitions created before
+/// the first save of that year, or EVERY insert fails:
+///     SELECT public.ensure_acc_year_partitions('2027-2028');
+/// That helper is the ONE place a year is opened — the same call that
+/// provisions sale_bill, sale_bill_item, acc_tender_detail, txn_status_log and
+/// the rest. It does NOT know about this table until the migration that
+/// creates stock_ledger extends it (CREATE OR REPLACE, restating every
+/// existing block in order, as 20260810140000 and 20260811080000 did), so
+/// extending it is part of adding this table, not a follow-up.
+///
+/// WRITE RULES:
+///   * NEVER write smlSignedBaseQty — GENERATED ALWAYS ... STORED, and
+///     Postgres rejects any write to it.
+///   * Quantities are MAGNITUDES; the sign lives in smlDirection alone. A
+///     negative qty with a negative direction is a silent double negation, so
+///     ck_sml_qty_sign refuses it.
+///   * smlAccYear is this ROW's year; smlSrcAccYear is the DOCUMENT's, and
+///     they differ legitimately — a sale return in April against a March bill
+///     posts here in the new year.
+///   * On an outward, the cost columns are what the stock cost US (the COGS),
+///     taken from the lot or the moving average per stpValuationMethod —
+///     NEVER the selling price. The selling price goes in smlDocRate.
+///
+/// Vocabularies, enforced by CHECK constraints in the migration:
+///   smlTxnType    OPENING | PURCHASE | PURCHASE_RETURN | SALE | SALE_RETURN |
+///                 TRANSFER_OUT | TRANSFER_IN | ADJUST_PLUS | ADJUST_MINUS |
+///                 PHYSICAL_PLUS | PHYSICAL_MINUS | DAMAGE | EXPIRY_WRITEOFF |
+///                 REPACK_IN | REPACK_OUT | BUCKET_IN | BUCKET_OUT |
+///                 GIFT_ISSUE | SAMPLE_ISSUE
+///   smlDirection  1 (in) | -1 (out) — redundant against smlTxnType on
+///                 purpose: a report that sums must not have to know that
+///                 EXPIRY_WRITEOFF is an out
+///   smlBucket     SALEABLE | DAMAGED | QUARANTINE | EXPIRED | SAMPLE —
+///                 saleable stock and damaged stock are both stock, and must
+///                 never be added together by accident
+///   smlSrcModule  SALES | PURCHASE | STOCK | LOYALTY | PRODUCTION | MIGRATION
+/// plus ck_sml_acc_year (YYYY-YYYY, second = first + 1), ck_sml_qty_nonzero,
+/// ck_sml_to_base_factor and ck_sml_reversal.
+///
+/// DB-only objects Prisma cannot express — hand-authored in the migration and
+/// deliberately NOT declared here. EVERY index on this table carries a WHERE,
+/// and Prisma ignores indexes with predicates:
+///   ux_sml_source     POSTING IDEMPOTENCY. The same bill posted twice — a
+///                     retry after a timeout, a sync replaying a day — must
+///                     not move stock twice. Direction is in the key because a
+///                     transfer legitimately writes an OUT and an IN for one
+///                     source line. Partial on NOT deleted AND NOT reversal.
+///   ux_sml_reversal   REVERSAL IDEMPOTENCY. ux_sml_source excludes reversal
+///                     rows, which would otherwise have no unique constraint
+///                     at all; fn_svh_cancel guards with a NOT EXISTS, but
+///                     that is read-then-write and two concurrent cancels
+///                     could both pass it and reverse the same movement twice.
+///   ix_sml_item_date  the item ledger screen
+///   ix_sml_balance_scope  fn_sbl_rebuild and every as-on-date recomputation
+///   ix_sml_lot        lot movement history: the recall trail
+///   ix_sml_source_doc drilling from a document into what it moved
+///   ix_sml_demand     fn_sdd_rebuild: the sales-only slice, by day
+model StockLedger {
+  smlId                String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("sml_id")
+  smlCompanyId         String    @db.Uuid                            @map("sml_company_id")
+  smlBranchId          String    @db.Uuid                            @map("sml_branch_id")
+  smlTenantId          String?   @db.Uuid                            @map("sml_tenant_id")
+  /// The PARTITION KEY, and half the primary key. See PARTITIONED BY above.
+  smlAccYear           String    @db.Char(9)                         @map("sml_acc_year")
+
+  /// Where the stock physically is — an inventory.godown_locations(gdl_id),
+  /// the self-referencing WAREHOUSE/ZONE/AISLE/RACK/SHELF/BIN tree. Never
+  /// nullable: an unlocated movement cannot be reversed, counted or
+  /// transferred. BranchMaster.brDefaultGodownId resolves it for screens with
+  /// no godown selector.
+  smlGodownId          String    @db.Uuid                            @map("sml_godown_id")
+
+  // ── What moved ──────────────────────────────────────────────────────────
+  smlItemId            String    @db.Uuid                            @map("sml_item_id")
+  smlLotId             String    @db.Uuid                            @map("sml_lot_id")
+  /// The unit the document was keyed in, and the item's base unit. BOTH are
+  /// item_unit_conversion(iuc_id), NEVER item_unit_master(unit_id) — the stock
+  /// a bill consumes must be keyed the same way the bill keys it
+  /// (SaleBillItem.sbiItemUnitId). Both stored so a report can show "3 cases"
+  /// and still sum pieces.
+  smlUomId             String    @db.Uuid                            @map("sml_uom_id")
+  smlBaseUomId         String    @db.Uuid                            @map("sml_base_uom_id")
+  smlToBaseFactor      Decimal   @default(1) @db.Decimal(18, 6)      @map("sml_to_base_factor")
+
+  // ── Which document caused it ────────────────────────────────────────────
+  /// The (module, docType, docId) triple used by acc_tender_detail,
+  /// txn_status_log, txn_hold and acc_voucher_doc_register. A new document type
+  /// that moves stock costs one CHECK value and nothing else.
+  smlSrcModule         String    @db.VarChar(20)                     @map("sml_src_module")
+  smlSrcDocType        String    @db.VarChar(30)                     @map("sml_src_doc_type")
+  smlSrcDocId          String    @db.Uuid                            @map("sml_src_doc_id")
+  /// The DOCUMENT's own year, which is not always smlAccYear.
+  smlSrcAccYear        String?   @db.Char(9)                         @map("sml_src_acc_year")
+  smlSrcRefno          String?   @db.VarChar(100)                    @map("sml_src_refno")
+  smlLineNo            Int       @default(1)                         @map("sml_line_no")
+  smlSplitNo           Int       @default(1)                         @map("sml_split_no")
+
+  // ── The movement itself ─────────────────────────────────────────────────
+  smlTxnType           String    @db.VarChar(30)                     @map("sml_txn_type")
+  /// +1 in, -1 out. See the vocabulary note above for why this is redundant
+  /// against smlTxnType on purpose.
+  smlDirection         Int       @db.SmallInt                        @map("sml_direction")
+  smlBucket            String    @default("SALEABLE") @db.VarChar(20) @map("sml_bucket")
+
+  smlDocDate           DateTime  @db.Date                            @map("sml_doc_date")
+  smlDocDatetime       DateTime  @default(now()) @db.Timestamptz(6)  @map("sml_doc_datetime")
+  smlPostedOn          DateTime  @default(now()) @db.Timestamptz(6)  @map("sml_posted_on")
+
+  // ── Quantity, as keyed and in base ──────────────────────────────────────
+  smlQty               Decimal   @default(0) @db.Decimal(18, 6)      @map("sml_qty")
+  smlBaseQty           Decimal   @default(0) @db.Decimal(18, 6)      @map("sml_base_qty")
+  smlFreeQty           Decimal   @default(0) @db.Decimal(18, 6)      @map("sml_free_qty")
+  smlFreeBaseQty       Decimal   @default(0) @db.Decimal(18, 6)      @map("sml_free_base_qty")
+  smlWeightQty         Decimal   @default(0) @db.Decimal(18, 6)      @map("sml_weight_qty")
+
+  /// GENERATED ALWAYS ... STORED as direction * (baseQty + freeBaseQty). The
+  /// one column stock_balance reads and every quantity report sums. Read-only,
+  /// never sent.
+  smlSignedBaseQty     Decimal?  @default(dbgenerated()) @db.Decimal(18, 6) @map("sml_signed_base_qty")
+
+  // ── Value ───────────────────────────────────────────────────────────────
+  // On an inward these are what it cost. On an outward they are the COGS.
+  smlCostRate          Decimal   @default(0) @db.Decimal(18, 6)      @map("sml_cost_rate")
+  smlCostValue         Decimal   @default(0) @db.Decimal(18, 2)      @map("sml_cost_value")
+  smlCostRateWot       Decimal   @default(0) @db.Decimal(18, 6)      @map("sml_cost_rate_wot")
+  smlCostValueWot      Decimal   @default(0) @db.Decimal(18, 2)      @map("sml_cost_value_wot")
+  smlLandedRate        Decimal   @default(0) @db.Decimal(18, 6)      @map("sml_landed_rate")
+  smlLandedValue       Decimal   @default(0) @db.Decimal(18, 2)      @map("sml_landed_value")
+  /// What the DOCUMENT said, which is the selling price on a sale. Kept beside
+  /// cost so margin needs no join back to SaleBillItem.
+  smlDocRate           Decimal   @default(0) @db.Decimal(18, 6)      @map("sml_doc_rate")
+  smlDocRateWot        Decimal   @default(0) @db.Decimal(18, 6)      @map("sml_doc_rate_wot")
+  smlDocAmountWot      Decimal   @default(0) @db.Decimal(18, 2)      @map("sml_doc_amount_wot")
+  /// Snapshots from the lot, so batch/MRP-wise reports read one table.
+  smlMrp               Decimal?  @db.Decimal(18, 6)                  @map("sml_mrp")
+  smlBatchNo           String?   @db.VarChar(100)                    @map("sml_batch_no")
+  smlExpiryDate        DateTime? @db.Date                            @map("sml_expiry_date")
+
+  // ── Reversal ────────────────────────────────────────────────────────────
+  /// smlReversesId points at the smlId being reversed. It carries NO foreign
+  /// key — the target lives in another partition as often as not, and a
+  /// composite FK back into a partitioned parent would buy nothing that
+  /// ux_sml_reversal does not already guarantee. Both columns move together
+  /// per ck_sml_reversal.
+  smlIsReversal        Boolean   @default(false)                     @map("sml_is_reversal")
+  smlReversesId        String?   @db.Uuid                            @map("sml_reverses_id")
+
+  smlReasonId          String?   @db.Uuid                            @map("sml_reason_id")
+  /// Customer or supplier, per smlSrcModule. Polymorphic, so no foreign key.
+  smlPartyId           String?   @db.Uuid                            @map("sml_party_id")
+  smlNarration         String?   @db.Text                            @map("sml_narration")
+
+  smlIsDeleted         Boolean   @default(false)                     @map("sml_is_deleted")
+  smlSyncDate          DateTime? @db.Timestamptz(6)                  @map("sml_sync_date")
+  smlCreatedOn         DateTime  @default(now()) @db.Timestamptz(6)  @map("sml_created_on")
+  smlCreatedBy         String?   @db.Text                            @map("sml_created_by")
+
+  // ── Relations ───────────────────────────────────────────────────────────
+  // There is no smlModifiedOn/By pair: the table is append-only. smlCreatedBy
+  // carries no foreign key in the migration, so it stays scalar.
+  company              Company            @relation("StockLedgerCompany", fields: [smlCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_sml_company")
+  branch               BranchMaster       @relation("StockLedgerBranch",  fields: [smlBranchId],  references: [brId],   onUpdate: Cascade, onDelete: Restrict, map: "fk_sml_branch")
+  godown               GodownLocation     @relation("StockLedgerGodown",  fields: [smlGodownId],  references: [gdlId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_sml_godown")
+  item                 ItemMaster         @relation("StockLedgerItem",    fields: [smlItemId],    references: [itemId], onUpdate: Cascade, onDelete: Restrict, map: "fk_sml_item")
+  lot                  StockLot           @relation("StockLedgerLot",     fields: [smlLotId],     references: [sltId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_sml_lot")
+  uom                  ItemUnitConversion @relation("StockLedgerUom",     fields: [smlUomId],     references: [iucId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_sml_uom")
+  baseUom              ItemUnitConversion @relation("StockLedgerBaseUom", fields: [smlBaseUomId], references: [iucId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_sml_base_uom")
+  reason               StockReasonMaster? @relation("StockLedgerReason",  fields: [smlReasonId],  references: [srmId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_sml_reason")
+
+  @@id([smlId, smlAccYear], map: "pk_stock_ledger")
+  @@map("stock_ledger")
+  @@schema("stock")
+}

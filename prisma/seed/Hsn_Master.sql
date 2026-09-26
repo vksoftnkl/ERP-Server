@@ -1,0 +1,133 @@
+-- Seed: fixed.hsn_master
+-- Real Indian GST HSN codes (goods) and SAC codes (services).
+-- Rates follow the GST 2.0 structure effective 22-Sep-2025 (56th GST Council):
+--   slabs 0% / 5% / 18% / 40%, 3% on precious-metal jewellery.
+-- Idempotent: rows already present (same hsn_code + hsn_name) are skipped.
+-- Run: psql "$DATABASE_URL" -f prisma/seed/Hsn_Master.sql
+
+INSERT INTO fixed.hsn_master
+    (hsn_code, hsn_name, hsn_description, hsn_is_service, hsn_uqc, hsn_is_active, hsn_rate_of_tax)
+SELECT v.hsn_code, v.hsn_name, v.hsn_description, v.hsn_is_service, v.hsn_uqc, v.hsn_is_active, v.hsn_rate_of_tax
+FROM (VALUES
+    -- ============ GOODS : Food & Agri products ============
+    ('0401', 'Milk (Fresh / Pasteurised / UHT)', 'Milk and cream, not concentrated, no added sugar. Fresh and UHT milk exempt.', false, 'LTR', true, 0),
+    ('0402', 'Milk Powder / Condensed Milk', 'Milk and cream, concentrated or containing added sugar or other sweetening matter.', false, 'KGS', true, 5),
+    ('0403', 'Curd, Lassi and Buttermilk', 'Fermented milk products; pre-packaged and labelled attract 5%, otherwise exempt.', false, 'KGS', true, 5),
+    ('0405', 'Butter and Ghee', 'Butter, ghee and other fats and oils derived from milk; dairy spreads.', false, 'KGS', true, 5),
+    ('04061000', 'Paneer / Chena (Pre-packaged)', 'Fresh (unripened) cheese including paneer and chena. Exempt from 22-09-2025.', false, 'KGS', true, 0),
+    ('0406', 'Cheese', 'Cheese other than fresh paneer/chena.', false, 'KGS', true, 5),
+    ('0409', 'Natural Honey', 'Natural honey; pre-packaged and labelled attracts 5%, otherwise exempt.', false, 'KGS', true, 5),
+    ('0713', 'Pulses / Dal (Dried Leguminous Vegetables)', 'Dried leguminous vegetables, shelled; pre-packaged and labelled attract 5%, otherwise exempt.', false, 'KGS', true, 5),
+    ('0801', 'Cashew Nuts and Coconuts', 'Coconuts, Brazil nuts and cashew nuts, fresh or dried.', false, 'KGS', true, 5),
+    ('0802', 'Almonds, Walnuts and Other Nuts', 'Other nuts, fresh or dried, whether or not shelled or peeled.', false, 'KGS', true, 5),
+    ('0901', 'Coffee', 'Coffee, whether or not roasted or decaffeinated; coffee husks and skins.', false, 'KGS', true, 5),
+    ('0902', 'Tea', 'Tea, whether or not flavoured.', false, 'KGS', true, 5),
+    ('0904', 'Pepper and Chillies', 'Pepper of genus Piper; dried or crushed fruits of genus Capsicum or Pimenta.', false, 'KGS', true, 5),
+    ('0910', 'Ginger, Turmeric and Other Spices', 'Ginger, saffron, turmeric, thyme, bay leaves, curry and other spices.', false, 'KGS', true, 5),
+    ('1006', 'Rice', 'Rice; pre-packaged and labelled attracts 5%, otherwise exempt.', false, 'KGS', true, 5),
+    ('1101', 'Wheat Flour (Atta / Maida)', 'Wheat or meslin flour; pre-packaged and labelled attracts 5%, otherwise exempt.', false, 'KGS', true, 5),
+    ('1507', 'Soya-bean Oil', 'Soya-bean oil and its fractions, refined or not, not chemically modified.', false, 'LTR', true, 5),
+    ('1511', 'Palm Oil', 'Palm oil and its fractions, refined or not, not chemically modified.', false, 'LTR', true, 5),
+    ('1512', 'Sunflower / Safflower Oil', 'Sunflower-seed, safflower or cotton-seed oil and fractions thereof.', false, 'LTR', true, 5),
+    ('1701', 'Sugar', 'Cane or beet sugar and chemically pure sucrose, in solid form.', false, 'KGS', true, 5),
+    ('1704', 'Sugar Confectionery', 'Sugar confectionery not containing cocoa, including white chocolate. 18% to 5% from 22-09-2025.', false, 'KGS', true, 5),
+    ('1806', 'Chocolates and Cocoa Preparations', 'Chocolate and other food preparations containing cocoa. Reduced to 5% from 22-09-2025.', false, 'KGS', true, 5),
+    ('1902', 'Pasta and Noodles', 'Pasta, noodles, macaroni, spaghetti, couscous, whether or not cooked or stuffed.', false, 'KGS', true, 5),
+    ('1904', 'Corn Flakes and Breakfast Cereals', 'Prepared foods obtained by swelling or roasting of cereals or cereal products.', false, 'KGS', true, 5),
+    ('19051000', 'Bread', 'Bread (branded or otherwise). Exempt.', false, 'KGS', true, 0),
+    ('1905', 'Biscuits, Cakes and Bakery Products', 'Biscuits, pastries, cakes, rusks and other bakers wares. Biscuits reduced to 5% from 22-09-2025.', false, 'KGS', true, 5),
+    ('2009', 'Fruit and Vegetable Juices', 'Fruit or vegetable juices, unfermented, not containing added spirit.', false, 'LTR', true, 5),
+    ('2103', 'Sauces, Ketchup and Condiments', 'Sauces and preparations therefor; mixed condiments and seasonings; mustard.', false, 'KGS', true, 5),
+    ('2106', 'Food Preparations NES (incl. Namkeens)', 'Food preparations not elsewhere specified, incl. namkeens, bhujia and mixtures.', false, 'KGS', true, 5),
+    ('2201', 'Packaged Drinking / Mineral Water', 'Waters, natural or artificial mineral waters, not sweetened. 18% to 5% from 22-09-2025.', false, 'LTR', true, 5),
+    ('2202', 'Aerated and Carbonated Beverages', 'Waters with added sugar or flavour, aerated drinks, caffeinated beverages. Demerit rate 40%.', false, 'LTR', true, 40),
+    ('2402', 'Cigarettes and Cigars', 'Cigars, cheroots, cigarillos and cigarettes. 28% + compensation cess (transition to 40% pending cess wind-up).', false, 'PCS', true, 28),
+    -- ============ GOODS : Consumables, chemicals, FMCG ============
+    ('2523', 'Portland Cement', 'Portland cement, aluminous cement, slag cement and similar hydraulic cements. 28% to 18% from 22-09-2025.', false, 'BAG', true, 18),
+    ('2710', 'Lubricants and Petroleum Oils', 'Petroleum oils other than crude (lubricating oils, greases). Petrol/diesel outside GST.', false, 'LTR', true, 18),
+    ('3004', 'Medicaments (Retail Packs)', 'Medicaments in measured doses for retail sale. Most medicines 5%; specified life-saving drugs exempt.', false, 'BOX', true, 5),
+    ('3304', 'Beauty and Makeup Preparations', 'Beauty or make-up preparations, skin care, sunscreen, manicure/pedicure preparations.', false, 'PCS', true, 18),
+    ('3305', 'Hair Care Preparations (Shampoo, Oil)', 'Preparations for use on the hair. Shampoo and hair oil reduced to 5% from 22-09-2025.', false, 'PCS', true, 5),
+    ('3306', 'Toothpaste and Oral Hygiene', 'Preparations for oral or dental hygiene incl. toothpaste and dental floss. Reduced to 5% from 22-09-2025.', false, 'PCS', true, 5),
+    ('3401', 'Soap', 'Soap and organic surface-active products in bars, cakes or moulded shapes. Reduced to 5% from 22-09-2025.', false, 'PCS', true, 5),
+    ('3402', 'Detergents and Washing Preparations', 'Organic surface-active agents, washing and cleaning preparations.', false, 'KGS', true, 18),
+    ('3808', 'Insecticides and Pesticides', 'Insecticides, fungicides, herbicides, disinfectants. Reduced to 5% from 22-09-2025.', false, 'KGS', true, 5),
+    ('3917', 'Plastic Pipes and Fittings', 'Tubes, pipes, hoses and fittings thereof, of plastics.', false, 'MTR', true, 18),
+    ('3923', 'Plastic Packing Goods', 'Articles for conveyance or packing of goods, of plastics; stoppers, lids, caps.', false, 'PCS', true, 18),
+    ('3926', 'Other Plastic Articles', 'Other articles of plastics and articles of other materials of headings 3901 to 3914.', false, 'PCS', true, 18),
+    ('4011', 'New Pneumatic Rubber Tyres', 'New pneumatic tyres of rubber. Tractor tyres 5%.', false, 'PCS', true, 18),
+    ('4202', 'Suitcases, Handbags and Travel Goods', 'Trunks, suitcases, vanity cases, handbags, wallets and similar containers.', false, 'PCS', true, 18),
+    ('4819', 'Paper Cartons and Boxes', 'Cartons, boxes, cases, bags of paper or paperboard. Corrugated boxes 5%.', false, 'PCS', true, 5),
+    ('4820', 'Notebooks and Exercise Books', 'Exercise books, notebooks, registers, account books. Exempt from 22-09-2025.', false, 'PCS', true, 0),
+    ('4901', 'Printed Books', 'Printed books, brochures, leaflets and similar printed matter. Exempt.', false, 'PCS', true, 0),
+    -- ============ GOODS : Textiles, apparel, footwear ============
+    ('5208', 'Woven Cotton Fabrics', 'Woven fabrics of cotton, containing 85% or more by weight of cotton.', false, 'MTR', true, 5),
+    ('6109', 'T-Shirts and Vests (Knitted)', 'T-shirts, singlets and vests, knitted or crocheted. 5% up to Rs.2500/piece, 18% above.', false, 'PCS', true, 5),
+    ('6203', 'Men''s Suits, Trousers and Garments', 'Men''s or boys'' suits, jackets, trousers, shorts. 5% up to Rs.2500/piece, 18% above.', false, 'PCS', true, 5),
+    ('6204', 'Women''s Suits, Dresses and Garments', 'Women''s or girls'' suits, dresses, skirts, trousers. 5% up to Rs.2500/piece, 18% above.', false, 'PCS', true, 5),
+    ('6403', 'Leather Footwear', 'Footwear with outer soles of rubber/plastic/leather and uppers of leather. 5% up to Rs.2500/pair, 18% above.', false, 'PRS', true, 5),
+    -- ============ GOODS : Building material, metals, hardware ============
+    ('6907', 'Ceramic Tiles', 'Ceramic flags and paving, hearth or wall tiles; ceramic mosaic cubes.', false, 'SQM', true, 18),
+    ('7113', 'Gold and Precious Metal Jewellery', 'Articles of jewellery and parts thereof, of precious metal or clad with precious metal.', false, 'GMS', true, 3),
+    ('7208', 'Flat-rolled Iron / Steel Products', 'Flat-rolled products of iron or non-alloy steel, hot-rolled, width 600mm or more.', false, 'MTS', true, 18),
+    ('7214', 'Iron / Steel Bars and Rods (TMT)', 'Bars and rods of iron or non-alloy steel, hot-rolled, forged, incl. TMT bars.', false, 'MTS', true, 18),
+    ('7308', 'Steel Structures and Parts', 'Structures and parts of structures of iron or steel (bridges, towers, doors, windows).', false, 'KGS', true, 18),
+    ('7318', 'Screws, Bolts and Nuts', 'Screws, bolts, nuts, coach screws, rivets, washers of iron or steel.', false, 'KGS', true, 18),
+    ('7323', 'Steel Kitchenware and Utensils', 'Table, kitchen or other household articles of iron or steel. Reduced to 5% from 22-09-2025.', false, 'PCS', true, 5),
+    -- ============ GOODS : Machinery, electronics, electricals ============
+    ('8413', 'Water Pumps', 'Pumps for liquids incl. centrifugal and submersible pumps. Reduced to 5% from 22-09-2025.', false, 'PCS', true, 5),
+    ('8414', 'Air Compressors and Fans', 'Air or vacuum pumps, air or gas compressors, fans and ventilating hoods.', false, 'PCS', true, 18),
+    ('8415', 'Air Conditioners', 'Air conditioning machines with motor-driven fan. 28% to 18% from 22-09-2025.', false, 'PCS', true, 18),
+    ('8418', 'Refrigerators and Freezers', 'Refrigerators, freezers and other refrigerating or freezing equipment.', false, 'PCS', true, 18),
+    ('8443', 'Printers and Printing Machinery', 'Printing machinery, printers, copying and facsimile machines; ink cartridges.', false, 'PCS', true, 18),
+    ('8450', 'Washing Machines', 'Household or laundry-type washing machines, incl. machines that wash and dry.', false, 'PCS', true, 18),
+    ('8471', 'Computers and Laptops', 'Automatic data processing machines (computers, laptops) and units thereof.', false, 'PCS', true, 18),
+    ('8481', 'Taps, Valves and Cocks', 'Taps, cocks, valves for pipes, boiler shells, tanks or vats, incl. pressure-reducing valves.', false, 'PCS', true, 18),
+    ('8504', 'Transformers and Power Adapters', 'Electrical transformers, static converters (incl. UPS, chargers) and inductors.', false, 'PCS', true, 18),
+    ('8507', 'Batteries (Accumulators)', 'Electric accumulators incl. lead-acid and lithium-ion batteries.', false, 'PCS', true, 18),
+    ('8517', 'Mobile Phones and Telecom Apparatus', 'Telephone sets incl. smartphones; other apparatus for transmission of voice/data.', false, 'PCS', true, 18),
+    ('8528', 'Monitors and Televisions', 'Monitors, projectors and television reception apparatus. All TVs 18% from 22-09-2025.', false, 'PCS', true, 18),
+    ('8536', 'Switches, Relays and Fuses', 'Electrical apparatus for switching or protecting circuits, up to 1000 volts.', false, 'PCS', true, 18),
+    ('8544', 'Insulated Wires and Cables', 'Insulated wire, cable and other insulated electric conductors; optical fibre cables.', false, 'MTR', true, 18),
+    -- ============ GOODS : Vehicles and transport ============
+    ('8703', 'Small Motor Cars', 'Petrol cars up to 1200cc / diesel up to 1500cc and length up to 4m. 18% from 22-09-2025.', false, 'PCS', true, 18),
+    ('8703', 'Large Cars and SUVs', 'Motor cars above small-car limits, incl. SUVs and MUVs. Demerit rate 40% (no cess).', false, 'PCS', true, 40),
+    ('8708', 'Motor Vehicle Parts', 'Parts and accessories of motor vehicles of headings 8701 to 8705.', false, 'PCS', true, 18),
+    ('8711', 'Motorcycles (up to 350cc)', 'Motorcycles and mopeds with engine capacity up to 350cc. 18% from 22-09-2025.', false, 'PCS', true, 18),
+    ('8711', 'Motorcycles (above 350cc)', 'Motorcycles with engine capacity exceeding 350cc. Demerit rate 40%.', false, 'PCS', true, 40),
+    ('8712', 'Bicycles', 'Bicycles and other cycles (including delivery tricycles), not motorised.', false, 'PCS', true, 5),
+    -- ============ GOODS : Others ============
+    ('9018', 'Medical and Surgical Instruments', 'Instruments and appliances used in medical, surgical, dental or veterinary sciences.', false, 'PCS', true, 5),
+    ('9401', 'Seats and Chairs', 'Seats, whether or not convertible into beds, and parts thereof.', false, 'PCS', true, 18),
+    ('9403', 'Furniture', 'Other furniture (wooden, metal, plastic) and parts thereof.', false, 'PCS', true, 18),
+    ('9503', 'Toys (Non-electronic)', 'Tricycles, scooters, dolls and other toys. Non-electronic toys 5%; electronic toys 18%.', false, 'PCS', true, 5),
+    ('9608', 'Pens', 'Ball point pens, felt tipped pens, fountain pens and parts. Reduced to 5% from 22-09-2025.', false, 'PCS', true, 5),
+    -- ============ SERVICES : SAC codes ============
+    ('9954', 'Construction Services', 'Construction services of buildings and civil engineering works; works contract services.', true, NULL, true, 18),
+    ('996331', 'Restaurant Service', 'Services provided by restaurants, cafes and similar eating facilities. 5% without ITC.', true, NULL, true, 5),
+    ('996311', 'Hotel Accommodation', 'Room accommodation services. Tariff up to Rs.7500/day 5% (without ITC), above 18%.', true, NULL, true, 5),
+    ('9964', 'Passenger Transport Services', 'Local and long-distance transport of passengers. Economy air/rail/road 5%.', true, NULL, true, 5),
+    ('9965', 'Goods Transport Services (GTA)', 'Goods transport agency services. 5% without ITC or 18% with ITC.', true, NULL, true, 5),
+    ('9966', 'Vehicle Rental Services', 'Rental services of transport vehicles with operators. Passenger vehicles 5% without ITC.', true, NULL, true, 18),
+    ('9967', 'Supporting Transport Services', 'Cargo handling, storage, warehousing and support services for transport.', true, NULL, true, 18),
+    ('9971', 'Financial and Insurance Services', 'Financial services incl. banking and insurance. Individual life and health insurance exempt from 22-09-2025.', true, NULL, true, 18),
+    ('9972', 'Real Estate Services', 'Real estate services involving owned/leased property, brokerage and management.', true, NULL, true, 18),
+    ('9973', 'Leasing and Rental Services', 'Leasing or rental services with or without operator, incl. licensing of IP.', true, NULL, true, 18),
+    ('9982', 'Legal and Accounting Services', 'Legal services, accounting, auditing, book-keeping and tax consultancy services.', true, NULL, true, 18),
+    ('9983', 'Professional and Technical Services', 'Management consulting, engineering, architecture, advertising and other professional services.', true, NULL, true, 18),
+    ('998314', 'IT and Software Services', 'Information technology design, development, programming and software support services.', true, NULL, true, 18),
+    ('9984', 'Telecommunication and Broadcasting', 'Telephony, internet, broadcasting and audio-visual distribution services.', true, NULL, true, 18),
+    ('9985', 'Support Services (Manpower, Travel)', 'Employment, security, cleaning, travel arrangement and other support services.', true, NULL, true, 18),
+    ('9987', 'Maintenance and Repair Services', 'Maintenance, repair and installation (except construction) services.', true, NULL, true, 18),
+    ('9988', 'Job Work Services', 'Manufacturing services on physical inputs owned by others. Rate varies by product (mostly 5%).', true, NULL, true, 5),
+    ('9989', 'Printing and Publishing Services', 'Printing, publishing and other manufacturing-related services.', true, NULL, true, 18),
+    ('9992', 'Education Services', 'Pre-primary to higher secondary education and approved vocational courses. Exempt.', true, NULL, true, 0),
+    ('9993', 'Health Care Services', 'Human health services by clinical establishments and authorised practitioners. Exempt.', true, NULL, true, 0),
+    ('9994', 'Sewage and Waste Management Services', 'Sewage, waste collection, treatment, disposal and remediation services.', true, NULL, true, 18),
+    ('9996', 'Recreational and Sporting Services', 'Recreational, cultural, sporting services. Admission to casinos/betting/IPL-class events 40%.', true, NULL, true, 18),
+    ('9997', 'Beauty and Wellness Services', 'Salon, barber, gym, yoga and physical well-being services. 5% without ITC from 22-09-2025.', true, NULL, true, 5)
+) AS v(hsn_code, hsn_name, hsn_description, hsn_is_service, hsn_uqc, hsn_is_active, hsn_rate_of_tax)
+WHERE NOT EXISTS (
+    SELECT 1 FROM fixed.hsn_master m
+    WHERE m.hsn_code = v.hsn_code AND m.hsn_name = v.hsn_name
+);

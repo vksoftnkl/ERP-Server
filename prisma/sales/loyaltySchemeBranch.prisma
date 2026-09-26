@@ -1,0 +1,31 @@
+/// sales.loyalty_scheme_branch — §2, which branches run the campaign.
+///
+/// Read only when lsc_branch_scope = 'LIST'. lsbIsExclude makes "every branch
+/// except two" two rows rather than thirty-eight; an EXCLUDE row always beats an
+/// INCLUDE row for the same branch.
+///
+/// DB-only objects the migration hand-authors:
+///   ux_lsb_row     UNIQUE (lsb_lsc_id, lsb_branch_id) WHERE NOT deleted
+///   ix_lsb_scheme  (lsb_lsc_id), partial
+///   ix_lsb_branch  (lsb_branch_id), partial
+model LoyaltySchemeBranch {
+  lsbId          String    @id(map: "pk_loyalty_scheme_branch") @default(dbgenerated("uuidv7()")) @db.Uuid @map("lsb_id")
+  lsbLscId       String    @db.Uuid                                       @map("lsb_lsc_id")
+  lsbSlno        Int       @default(1)                                    @map("lsb_slno")
+  lsbBranchId    String    @db.Uuid                                       @map("lsb_branch_id")
+  lsbIsExclude   Boolean   @default(false)                                @map("lsb_is_exclude")
+  lsbNotes       String?   @db.Text                                       @map("lsb_notes")
+  lsbIsActive    Boolean   @default(true)                                 @map("lsb_is_active")
+  lsbIsDeleted   Boolean   @default(false)                                @map("lsb_is_deleted")
+  lsbSyncDate    DateTime? @db.Timestamptz(6)                             @map("lsb_sync_date")
+  lsbCreatedOn   DateTime  @default(now()) @db.Timestamptz(6)             @map("lsb_created_on")
+  lsbCreatedBy   String?   @db.VarChar(50)                                @map("lsb_created_by")
+  lsbModifiedOn  DateTime? @db.Timestamptz(6)                             @map("lsb_modified_on")
+  lsbModifiedBy  String?   @db.VarChar(50)                                @map("lsb_modified_by")
+
+  scheme         LoyaltyScheme @relation("LoyaltySchemeBranches",     fields: [lsbLscId],    references: [lscId], onUpdate: Cascade, onDelete: Cascade,  map: "fk_lsb_scheme")
+  branch         BranchMaster  @relation("LoyaltySchemeBranchBranch", fields: [lsbBranchId], references: [brId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_lsb_branch")
+
+  @@map("loyalty_scheme_branch")
+  @@schema("sales")
+}

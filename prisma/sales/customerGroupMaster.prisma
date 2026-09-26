@@ -32,6 +32,14 @@ model CustGroup {
   // relation (assumes you have Company model mapped to public.companys(comp_id))
   company            Company?  @relation(fields: [cgrCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict)
   customers          Customer[]
+  promotionSchemeParties PromotionSchemeParty[] @relation("PromotionPartyCustGroup")
+  loyaltySchemeParties   LoyaltySchemeParty[]   @relation("LoyaltyPartyCustGroup")
+
+  // ── Coupons and gift vouchers (20260921160000) ──────────────────────────
+  // A batch may be restricted to one customer group.
+  couponBatches         LoyaltyCouponBatch[]      @relation("CouponBatchCustGroup")
+  /// NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).
+  cgrSyncDate DateTime? @db.Timestamptz(6) @map("cgr_sync_date")
 
   @@map("cust_groups")
   @@index([cgrCompanyId], map: "idx_cgr_company")

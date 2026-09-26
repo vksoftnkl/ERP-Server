@@ -1,0 +1,15 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.LEDGER_STATEMENT_ERROR = void 0;
+exports.LEDGER_STATEMENT_ERROR = {
+    LEDGER_NOT_IN_COMPANY: 'LEDGER_NOT_IN_COMPANY',
+    LEDGER_NOT_FOUND: 'LEDGER_NOT_FOUND',
+    BRANCH_NOT_IN_COMPANY: 'BRANCH_NOT_IN_COMPANY',
+    YEAR_UNKNOWN: 'YEAR_UNKNOWN',
+    RANGE_OUTSIDE_YEAR: 'RANGE_OUTSIDE_YEAR',
+    RANGE_REVERSED: 'RANGE_REVERSED',
+    RANGE_TOO_LARGE: 'RANGE_TOO_LARGE',
+    VOUCHER_NOT_FOUND: 'VOUCHER_NOT_FOUND',
+    NO_MENU_RIGHT: 'NO_MENU_RIGHT',
+};
+//# sourceMappingURL=ledger-statement.types.js.map

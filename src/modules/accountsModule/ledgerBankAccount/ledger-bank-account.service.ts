@@ -1,35 +1,34 @@
-import {
-  BadRequestException,
-  ConflictException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
-import { ConfiguredGridListResult, ConfiguredGridSqlService } from '../../../common/configured-grid-sql/configured-grid-sql.service';
+import { Injectable } from '@nestjs/common';
 import { AccLedgerBankAccount, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
-import { ListLedgerBankAccountQueryDto } from './dto/list-ledger-bank-account-query.dto';
 import { SaveLedgerBankAccountDto } from './dto/save-ledger-bank-account.dto';
 import {
   LedgerBankAccountErrorDetail,
-  LedgerBankAccountErrorResponse,
-  LedgerBankAccountListItem,
-  LedgerBankAccountListMeta,
   LedgerBankAccountPayload,
 } from './types/ledger-bank-account-api.types';
-const DEFAULT_ACTOR = 'system';
-const DEFAULT_PAGE = 1;
-const DEFAULT_LIMIT = 20;
-const LEDGER_BANK_ACCOUNT_TABLE_NAME = 'acc_ledger_bank_accounts';
+import {
+  DEFAULT_ACTOR,
+  hasOwnProperty,
+  isForeignKeyConstraintError,
+  normalizeRequiredText,
+  throwAccountsBadRequest,
+  throwAccountsConflict,
+  throwAccountsNotFound,
+  throwOnUniqueConstraintError,
+} from 'src/common/utils/module-service.utils';
+import type { AccountsWriteClient } from 'src/common/utils/module-service.utils';
+import { RequestContextService } from '../../../common/request-context/request-context.service';
+const LEDGER_BANK_ACCOUNT_TABLE_NAME = 'acc ledger bank accounts';
 const LEDGER_BANK_ACCOUNT_AUDIT_SCREEN_NAME = 'Ledger Bank Account';
-type LedgerBankAccountWriteClient = Prisma.TransactionClient | PrismaService;
+type LedgerBankAccountWriteClient = AccountsWriteClient;
 @Injectable()
 export class LedgerBankAccountService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
-    private readonly configuredGridSqlService: ConfiguredGridSqlService,
-  ) { }
+    private readonly requestContextService: RequestContextService,
+  ) {}
   async save(
     saveLedgerBankAccountDto: SaveLedgerBankAccountDto,
   ): Promise<LedgerBankAccountPayload> {
@@ -37,123 +36,6 @@ export class LedgerBankAccountService {
       return this.updateLedgerBankAccount(saveLedgerBankAccountDto);
     }
     return this.createLedgerBankAccount(saveLedgerBankAccountDto);
-  }
-  async list(
-    queryDto: ListLedgerBankAccountQueryDto,
-  ): Promise<ConfiguredGridListResult<LedgerBankAccountListItem, LedgerBankAccountListMeta>> {
-    const page = queryDto.page ?? DEFAULT_PAGE;
-    const limit = queryDto.limit ?? DEFAULT_LIMIT;
-    const skip = (page - 1) * limit;
-    const hasStructuredFilters =
-      queryDto.lbaCompanyId !== undefined ||
-      Boolean(queryDto.lbaLedgerId?.trim()) ||
-      queryDto.lbaIsActive !== undefined ||
-      queryDto.lbaIsDefault !== undefined ||
-      Boolean(queryDto.search?.trim());
-    if (!hasStructuredFilters) {
-      const configuredList = await this.listFromConfiguredGridSql(page, limit, skip);
-      if (configuredList) {
-        return configuredList;
-      }
-    }
-    const where: Prisma.AccLedgerBankAccountWhereInput = {
-      lbaIsDeleted: false,
-    };
-    if (queryDto.lbaCompanyId !== undefined) {
-      where.lbaCompanyId = queryDto.lbaCompanyId as string | "";
-    }
-    if (queryDto.lbaLedgerId?.trim()) {
-      where.lbaLedgerId = queryDto.lbaLedgerId.trim();
-    }
-    if (queryDto.lbaIsActive !== undefined) {
-      where.lbaIsActive = queryDto.lbaIsActive;
-    }
-    if (queryDto.lbaIsDefault !== undefined) {
-      where.lbaIsDefault = queryDto.lbaIsDefault;
-    }
-    if (queryDto.search?.trim()) {
-      const search = queryDto.search.trim();
-      where.OR = [
-        { lbaAccountHolder: { contains: search, mode: 'insensitive' } },
-        { lbaBankName: { contains: search, mode: 'insensitive' } },
-        { lbaBranchName: { contains: search, mode: 'insensitive' } },
-        { lbaAccountNo: { contains: search, mode: 'insensitive' } },
-        { lbaIfscCode: { contains: search, mode: 'insensitive' } },
-        { lbaMicrCode: { contains: search, mode: 'insensitive' } },
-        { lbaAccountType: { contains: search, mode: 'insensitive' } },
-        { lbaUpiId: { contains: search, mode: 'insensitive' } },
-        { lbaChequeName: { contains: search, mode: 'insensitive' } },
-      ];
-    }
-    const [total, records] = await Promise.all([
-      this.prisma.accLedgerBankAccount.count({ where }),
-      this.prisma.accLedgerBankAccount.findMany({
-        where,
-        orderBy: [{ lbaIsDefault: 'desc' }, { lbaAccountHolder: 'asc' }, { lbaId: 'asc' }],
-        skip,
-        take: limit,
-      }),
-    ]);
-    return {
-      items: records.map((record) => this.toPayload(record)),
-      meta: {
-        page,
-        limit,
-        total,
-        total_pages: Math.ceil(total / limit),
-      },
-    };
-  }
-  private async listFromConfiguredGridSql(
-    page: number,
-    limit: number,
-    skip: number,
-  ): Promise<ConfiguredGridListResult<LedgerBankAccountListItem, LedgerBankAccountListMeta> | null> {
-    const configuredGrids = await this.configuredGridSqlService.loadCandidates({
-      tableName: LEDGER_BANK_ACCOUNT_TABLE_NAME,
-    });
-    const primaryConfiguredGrids = this.configuredGridSqlService.filterPrimaryFromTable(
-      configuredGrids,
-      LEDGER_BANK_ACCOUNT_TABLE_NAME,
-    );
-    if (primaryConfiguredGrids.length === 0) {
-      return null;
-    }
-    for (const configuredGrid of primaryConfiguredGrids) {
-      const rawGridSql = configuredGrid.gridSql?.trim();
-      if (!rawGridSql) {
-        continue;
-      }
-      const validation = this.configuredGridSqlService.validateBaseSql({
-        sql: rawGridSql,
-        tableName: LEDGER_BANK_ACCOUNT_TABLE_NAME,
-      });
-      if (!validation.isValid) {
-        continue;
-      }
-      try {
-        const result = await this.configuredGridSqlService.runPagedQuery<LedgerBankAccountListItem>({
-          baseSql: validation.normalizedSql,
-          alias: 'ledger_bank_account_grid',
-          limit,
-          skip,
-          gridId: configuredGrid.gridId,
-        });
-        return {
-          items: result.items,
-          meta: {
-            page,
-            limit,
-            total: result.total,
-            total_pages: Math.ceil(result.total / limit),
-          },
-          styles: result.styles,
-        };
-      } catch {
-        continue;
-      }
-    }
-    return null;
   }
   async getById(lbaId: string): Promise<LedgerBankAccountPayload> {
     const record = await this.prisma.accLedgerBankAccount.findFirst({
@@ -163,7 +45,11 @@ export class LedgerBankAccountService {
       },
     });
     if (!record) {
-      this.throwNotFound(lbaId);
+      throwAccountsNotFound<LedgerBankAccountErrorDetail>(
+        'Ledger bank account not found',
+        'lbaId',
+        `No active ledger bank account found with id ${lbaId}`,
+      );
     }
     return this.toPayload(record);
   }
@@ -176,7 +62,11 @@ export class LedgerBankAccountService {
         },
       });
       if (!existing) {
-        this.throwNotFound(lbaId);
+        throwAccountsNotFound<LedgerBankAccountErrorDetail>(
+          'Ledger bank account not found',
+          'lbaId',
+          `No active ledger bank account found with id ${lbaId}`,
+        );
       }
       const modifiedOn = new Date();
       const result = await tx.accLedgerBankAccount.updateMany({
@@ -188,11 +78,15 @@ export class LedgerBankAccountService {
           lbaIsDeleted: true,
           lbaIsActive: false,
           lbaModifiedOn: modifiedOn,
-          lbaModifiedBy: DEFAULT_ACTOR,
+          lbaModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         },
       });
       if (result.count === 0) {
-        this.throwNotFound(lbaId);
+        throwAccountsNotFound<LedgerBankAccountErrorDetail>(
+          'Ledger bank account not found',
+          'lbaId',
+          `No active ledger bank account found with id ${lbaId}`,
+        );
       }
       const originalRecord = this.toPayload(existing);
       const modifiedRecord = this.toPayload({
@@ -200,7 +94,7 @@ export class LedgerBankAccountService {
         lbaIsDeleted: true,
         lbaIsActive: false,
         lbaModifiedOn: modifiedOn,
-        lbaModifiedBy: DEFAULT_ACTOR,
+        lbaModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
       });
       await this.auditLogService.logEntityChange(
         {
@@ -212,7 +106,7 @@ export class LedgerBankAccountService {
           displayName: existing.lbaAccountHolder,
           originalRecord,
           modifiedRecord,
-          userId: DEFAULT_ACTOR,
+          userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
           notes: 'Ledger bank account soft deleted',
         },
         tx,
@@ -228,20 +122,20 @@ export class LedgerBankAccountService {
   ): Promise<LedgerBankAccountPayload> {
     try {
       return await this.prisma.$transaction(async (tx) => {
-        const accountHolder = this.normalizeRequiredString(
+        const accountHolder = normalizeRequiredText<LedgerBankAccountErrorDetail>(
           saveLedgerBankAccountDto.lbaAccountHolder,
           'lbaAccountHolder',
         );
-        const bankName = this.normalizeRequiredString(
+        const bankName = normalizeRequiredText<LedgerBankAccountErrorDetail>(
           saveLedgerBankAccountDto.lbaBankName,
           'lbaBankName',
         );
-        const accountNo = this.normalizeRequiredString(
+        const accountNo = normalizeRequiredText<LedgerBankAccountErrorDetail>(
           saveLedgerBankAccountDto.lbaAccountNo,
           'lbaAccountNo',
         );
         const ledger = await this.ensureLedgerExists(saveLedgerBankAccountDto.lbaLedgerId, tx);
-        const requestedCompanyId = this.hasOwnProperty(saveLedgerBankAccountDto, 'lbaCompanyId')
+        const requestedCompanyId = hasOwnProperty(saveLedgerBankAccountDto, 'lbaCompanyId')
           ? (saveLedgerBankAccountDto.lbaCompanyId ?? null)
           : undefined;
         const companyId = await this.resolveCompanyId(
@@ -262,9 +156,7 @@ export class LedgerBankAccountService {
           lbaBankName: bankName,
           lbaAccountNo: accountNo,
           lbaCreatedOn: now,
-          lbaCreatedBy: DEFAULT_ACTOR,
-          lbaModifiedOn: now,
-          lbaModifiedBy: DEFAULT_ACTOR,
+          lbaCreatedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         };
         this.applyOptionalFields(data, saveLedgerBankAccountDto);
         const created = await tx.accLedgerBankAccount.create({ data });
@@ -279,7 +171,7 @@ export class LedgerBankAccountService {
             displayName: payload.lbaAccountHolder,
             originalRecord: null,
             modifiedRecord: payload,
-            userId: DEFAULT_ACTOR,
+            userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
             notes: 'Ledger bank account created',
           },
           tx,
@@ -287,7 +179,16 @@ export class LedgerBankAccountService {
         return payload;
       });
     } catch (error: unknown) {
-      this.handleWriteError(error);
+      throwOnUniqueConstraintError<LedgerBankAccountErrorDetail>(
+        error,
+        'Ledger bank account already exists',
+        [{ field: 'lbaAccountNo', message: 'Duplicate lbaAccountNo is not allowed' }],
+      );
+      if (isForeignKeyConstraintError(error)) {
+        throwAccountsBadRequest<LedgerBankAccountErrorDetail>('Invalid reference value provided', [
+          { field: 'lbaLedgerId', message: 'Referenced ledger or company does not exist' },
+        ]);
+      }
       throw error;
     }
   }
@@ -304,22 +205,26 @@ export class LedgerBankAccountService {
           },
         });
         if (!existing) {
-          this.throwNotFound(lbaId);
+          throwAccountsNotFound<LedgerBankAccountErrorDetail>(
+            'Ledger bank account not found',
+            'lbaId',
+            `No active ledger bank account found with id ${lbaId}`,
+          );
         }
-        const accountHolder = this.normalizeRequiredString(
+        const accountHolder = normalizeRequiredText<LedgerBankAccountErrorDetail>(
           saveLedgerBankAccountDto.lbaAccountHolder,
           'lbaAccountHolder',
         );
-        const bankName = this.normalizeRequiredString(
+        const bankName = normalizeRequiredText<LedgerBankAccountErrorDetail>(
           saveLedgerBankAccountDto.lbaBankName,
           'lbaBankName',
         );
-        const accountNo = this.normalizeRequiredString(
+        const accountNo = normalizeRequiredText<LedgerBankAccountErrorDetail>(
           saveLedgerBankAccountDto.lbaAccountNo,
           'lbaAccountNo',
         );
         const ledger = await this.ensureLedgerExists(saveLedgerBankAccountDto.lbaLedgerId, tx);
-        const requestedCompanyId = this.hasOwnProperty(saveLedgerBankAccountDto, 'lbaCompanyId')
+        const requestedCompanyId = hasOwnProperty(saveLedgerBankAccountDto, 'lbaCompanyId')
           ? (saveLedgerBankAccountDto.lbaCompanyId ?? null)
           : undefined;
         const companyId = await this.resolveCompanyId(
@@ -344,7 +249,7 @@ export class LedgerBankAccountService {
           lbaBankName: bankName,
           lbaAccountNo: accountNo,
           lbaModifiedOn: new Date(),
-          lbaModifiedBy: DEFAULT_ACTOR,
+          lbaModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         };
         this.applyOptionalFields(data, saveLedgerBankAccountDto);
         const updated = await tx.accLedgerBankAccount.update({
@@ -364,7 +269,7 @@ export class LedgerBankAccountService {
             displayName: payload.lbaAccountHolder,
             originalRecord: this.toPayload(existing),
             modifiedRecord: payload,
-            userId: DEFAULT_ACTOR,
+            userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
             notes: 'Ledger bank account updated',
           },
           tx,
@@ -373,7 +278,16 @@ export class LedgerBankAccountService {
         return payload;
       });
     } catch (error: unknown) {
-      this.handleWriteError(error);
+      throwOnUniqueConstraintError<LedgerBankAccountErrorDetail>(
+        error,
+        'Ledger bank account already exists',
+        [{ field: 'lbaAccountNo', message: 'Duplicate lbaAccountNo is not allowed' }],
+      );
+      if (isForeignKeyConstraintError(error)) {
+        throwAccountsBadRequest<LedgerBankAccountErrorDetail>('Invalid reference value provided', [
+          { field: 'lbaLedgerId', message: 'Referenced ledger or company does not exist' },
+        ]);
+      }
       throw error;
     }
   }
@@ -392,7 +306,7 @@ export class LedgerBankAccountService {
       },
     });
     if (!ledger) {
-      this.throwBadRequest('Account ledger does not exist', [
+      throwAccountsBadRequest<LedgerBankAccountErrorDetail>('Account ledger does not exist', [
         {
           field: 'lbaLedgerId',
           message: `No active account ledger found with id ${lbaLedgerId}`,
@@ -415,7 +329,7 @@ export class LedgerBankAccountService {
       },
     });
     if (!company) {
-      this.throwBadRequest('Company does not exist', [
+      throwAccountsBadRequest<LedgerBankAccountErrorDetail>('Company does not exist', [
         {
           field: 'lbaCompanyId',
           message: `No active company found with id ${compId}`,
@@ -434,7 +348,7 @@ export class LedgerBankAccountService {
       if (companyId === null) {
         companyId = ledgerCompanyId;
       } else if (companyId !== ledgerCompanyId) {
-        this.throwBadRequest('Ledger company mismatch', [
+        throwAccountsBadRequest<LedgerBankAccountErrorDetail>('Ledger company mismatch', [
           {
             field: 'lbaCompanyId',
             message: `lbaCompanyId ${companyId} must match ledger company id ${ledgerCompanyId}`,
@@ -463,10 +377,10 @@ export class LedgerBankAccountService {
         },
         ...(excludeLbaId
           ? {
-            lbaId: {
-              not: excludeLbaId,
-            },
-          }
+              lbaId: {
+                not: excludeLbaId,
+              },
+            }
           : {}),
       },
       select: {
@@ -474,13 +388,14 @@ export class LedgerBankAccountService {
       },
     });
     if (existing) {
-      throw new ConflictException(
-        this.buildErrorResponse('Ledger bank account already exists for this ledger', [
+      throwAccountsConflict<LedgerBankAccountErrorDetail>(
+        'Ledger bank account already exists for this ledger',
+        [
           {
             field: 'lbaAccountNo',
             message: 'Duplicate lbaAccountNo is not allowed for this ledger',
           },
-        ]),
+        ],
       );
     }
   }
@@ -496,16 +411,16 @@ export class LedgerBankAccountService {
         lbaIsDefault: true,
         ...(excludeLbaId
           ? {
-            lbaId: {
-              not: excludeLbaId,
-            },
-          }
+              lbaId: {
+                not: excludeLbaId,
+              },
+            }
           : {}),
       },
       data: {
         lbaIsDefault: false,
         lbaModifiedOn: new Date(),
-        lbaModifiedBy: DEFAULT_ACTOR,
+        lbaModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
       },
     });
   }
@@ -516,55 +431,41 @@ export class LedgerBankAccountService {
       | Prisma.AccLedgerBankAccountUncheckedUpdateInput,
     saveLedgerBankAccountDto: SaveLedgerBankAccountDto,
   ): void {
-    if (this.hasOwnProperty(saveLedgerBankAccountDto, 'lbaBranchName')) {
+    if (hasOwnProperty(saveLedgerBankAccountDto, 'lbaBranchName')) {
       data.lbaBranchName = saveLedgerBankAccountDto.lbaBranchName;
     }
 
-    if (this.hasOwnProperty(saveLedgerBankAccountDto, 'lbaIfscCode')) {
+    if (hasOwnProperty(saveLedgerBankAccountDto, 'lbaIfscCode')) {
       data.lbaIfscCode = saveLedgerBankAccountDto.lbaIfscCode;
     }
 
-    if (this.hasOwnProperty(saveLedgerBankAccountDto, 'lbaMicrCode')) {
+    if (hasOwnProperty(saveLedgerBankAccountDto, 'lbaMicrCode')) {
       data.lbaMicrCode = saveLedgerBankAccountDto.lbaMicrCode;
     }
 
-    if (this.hasOwnProperty(saveLedgerBankAccountDto, 'lbaAccountType')) {
+    if (hasOwnProperty(saveLedgerBankAccountDto, 'lbaAccountType')) {
       data.lbaAccountType = saveLedgerBankAccountDto.lbaAccountType;
     }
 
-    if (this.hasOwnProperty(saveLedgerBankAccountDto, 'lbaUpiId')) {
+    if (hasOwnProperty(saveLedgerBankAccountDto, 'lbaUpiId')) {
       data.lbaUpiId = saveLedgerBankAccountDto.lbaUpiId;
     }
 
-    if (this.hasOwnProperty(saveLedgerBankAccountDto, 'lbaChequeName')) {
+    if (hasOwnProperty(saveLedgerBankAccountDto, 'lbaChequeName')) {
       data.lbaChequeName = saveLedgerBankAccountDto.lbaChequeName;
     }
 
-    if (this.hasOwnProperty(saveLedgerBankAccountDto, 'lbaIsDefault')) {
+    if (hasOwnProperty(saveLedgerBankAccountDto, 'lbaIsDefault')) {
       data.lbaIsDefault = saveLedgerBankAccountDto.lbaIsDefault;
     }
 
-    if (this.hasOwnProperty(saveLedgerBankAccountDto, 'lbaIsActive')) {
+    if (hasOwnProperty(saveLedgerBankAccountDto, 'lbaIsActive')) {
       data.lbaIsActive = saveLedgerBankAccountDto.lbaIsActive;
     }
 
-    if (this.hasOwnProperty(saveLedgerBankAccountDto, 'lbaRemarks')) {
+    if (hasOwnProperty(saveLedgerBankAccountDto, 'lbaRemarks')) {
       data.lbaRemarks = saveLedgerBankAccountDto.lbaRemarks;
     }
-  }
-
-  private normalizeRequiredString(value: string, field: string): string {
-    const trimmed = value.trim();
-    if (!trimmed) {
-      this.throwBadRequest('Validation failed', [
-        {
-          field,
-          message: `${field} must not be empty`,
-        },
-      ]);
-    }
-
-    return trimmed;
   }
 
   private toPayload(record: AccLedgerBankAccount): LedgerBankAccountPayload {
@@ -591,73 +492,5 @@ export class LedgerBankAccountService {
       lbaModifiedBy: record.lbaModifiedBy,
       lbaRemarks: record.lbaRemarks,
     };
-  }
-
-  private handleWriteError(error: unknown): void {
-    if (this.isUniqueConstraintError(error)) {
-      throw new ConflictException(
-        this.buildErrorResponse('Ledger bank account already exists', [
-          {
-            field: 'lbaAccountNo',
-            message: 'Duplicate lbaAccountNo is not allowed',
-          },
-        ]),
-      );
-    }
-
-    if (this.isForeignKeyConstraintError(error)) {
-      this.throwBadRequest('Invalid reference value provided', [
-        {
-          field: 'lbaLedgerId',
-          message: 'Referenced ledger or company does not exist',
-        },
-      ]);
-    }
-  }
-
-  private isUniqueConstraintError(error: unknown): boolean {
-    if (typeof error !== 'object' || error === null || !('code' in error)) {
-      return false;
-    }
-
-    return (error as { code?: string }).code === 'P2002';
-  }
-
-  private isForeignKeyConstraintError(error: unknown): boolean {
-    if (typeof error !== 'object' || error === null || !('code' in error)) {
-      return false;
-    }
-
-    return (error as { code?: string }).code === 'P2003';
-  }
-
-  private throwNotFound(lbaId: string): never {
-    throw new NotFoundException(
-      this.buildErrorResponse('Ledger bank account not found', [
-        {
-          field: 'lbaId',
-          message: `No active ledger bank account found with id ${lbaId}`,
-        },
-      ]),
-    );
-  }
-
-  private throwBadRequest(message: string, errors: LedgerBankAccountErrorDetail[]): never {
-    throw new BadRequestException(this.buildErrorResponse(message, errors));
-  }
-
-  private buildErrorResponse(
-    message: string,
-    errors: LedgerBankAccountErrorDetail[] = [],
-  ): LedgerBankAccountErrorResponse {
-    return {
-      success: false,
-      message,
-      errors,
-    };
-  }
-
-  private hasOwnProperty<T extends object>(obj: T, key: PropertyKey): boolean {
-    return Object.prototype.hasOwnProperty.call(obj, key);
   }
 }

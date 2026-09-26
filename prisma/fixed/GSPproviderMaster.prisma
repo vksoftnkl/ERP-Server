@@ -13,6 +13,8 @@ model GspProviderMaster {
   gspCreatedBy        String?   @db.VarChar(100)                                 @map("gsp_created_by")
   gspModifiedOn       DateTime  @default(now()) @db.Timestamptz                  @map("gsp_modified_on")
   gspModifiedBy       String?   @db.VarChar(100)                                 @map("gsp_modified_by")
+  /// NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).
+  gspSyncDate DateTime? @db.Timestamptz(6) @map("gsp_sync_date")
 
   @@index([gspIsActive], name: "idx_gsp_provider_active")
   @@map("gsp_provider_master")

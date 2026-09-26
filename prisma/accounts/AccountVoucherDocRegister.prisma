@@ -98,7 +98,7 @@ enum GdrPartyType {
 
 model AccVoucherDocRegister {
   // Primary
-  gdrId                    String            @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("gdr_id")
+  gdrId                    String            @default(dbgenerated("uuidv7()")) @db.Uuid @map("gdr_id")
 
   // Source mapping
   gdrSourceModule          GdrSourceModule   @map("gdr_source_module")
@@ -154,30 +154,17 @@ model AccVoucherDocRegister {
   gdrPartyStateCode        String?           @db.Char(2) @map("gdr_party_state_code")
   gdrPartyStateName        String?           @db.VarChar(100) @map("gdr_party_state_name")
   gdrPartyGstType          String?           @db.VarChar(30) @map("gdr_party_gst_type")
+  // The ship-to and dispatch-from blocks (18 columns) were dropped by
+  // 20260922020000: neither appears in GSTR-1 or GSTR-3B, and both exist
+  // only to build the e-invoice and e-way payloads, which read them from
+  // the shared transport band instead. gdr_party_* stays — GSTR-1 B2B
+  // needs the recipient.
   gdrPartyGstin            String?           @db.VarChar(15) @map("gdr_party_gstin")
   gdrPartyEcomGstin        String?           @db.VarChar(15) @map("gdr_party_ecom_gstin")
 
   // Ship-to snapshot
-  gdrShipName              String?           @db.VarChar(200) @map("gdr_ship_name")
-  gdrShipAddr1             String?           @db.VarChar(200) @map("gdr_ship_addr1")
-  gdrShipAddr2             String?           @db.VarChar(200) @map("gdr_ship_addr2")
-  gdrShipAddr3             String?           @db.VarChar(200) @map("gdr_ship_addr3")
-  gdrShipLocation          String?           @db.VarChar(100) @map("gdr_ship_location")
-  gdrShipPin               String?           @db.VarChar(10) @map("gdr_ship_pin")
-  gdrShipStateCode         String?           @db.Char(2) @map("gdr_ship_state_code")
-  gdrShipStateName         String?           @db.VarChar(100) @map("gdr_ship_state_name")
-  gdrShipGstin             String?           @db.VarChar(15) @map("gdr_ship_gstin")
 
   // Dispatch-from snapshot
-  gdrDispatchName          String?           @db.VarChar(200) @map("gdr_dispatch_name")
-  gdrDispatchAddr1         String?           @db.VarChar(200) @map("gdr_dispatch_addr1")
-  gdrDispatchAddr2         String?           @db.VarChar(200) @map("gdr_dispatch_addr2")
-  gdrDispatchAddr3         String?           @db.VarChar(200) @map("gdr_dispatch_addr3")
-  gdrDispatchLocation      String?           @db.VarChar(100) @map("gdr_dispatch_location")
-  gdrDispatchPin           String?           @db.VarChar(10) @map("gdr_dispatch_pin")
-  gdrDispatchStateCode     String?           @db.Char(2) @map("gdr_dispatch_state_code")
-  gdrDispatchStateName     String?           @db.VarChar(100) @map("gdr_dispatch_state_name")
-  gdrDispatchGstin         String?           @db.VarChar(15) @map("gdr_dispatch_gstin")
 
   // Amount summary
   gdrGrossValue            Decimal           @default(0) @db.Decimal(18, 2) @map("gdr_gross_value")
@@ -197,6 +184,10 @@ model AccVoucherDocRegister {
 
   // Lifecycle / audit
   gdrIsActive              Boolean           @default(true) @map("gdr_is_active")
+  /// IGST charged on an INTRA-state supply: an SEZ unit in the same state,
+  /// and the s.10(1)(b) bill-to/ship-to cases. The one TranDtls flag the
+  /// register lacked.
+  gdrIgstOnIntra           Boolean           @default(false) @map("gdr_igst_on_intra")
   gdrIsDeleted             Boolean           @default(false) @map("gdr_is_deleted")
   gdrSyncDate              DateTime?         @db.Timestamptz(6) @map("gdr_sync_date")
   gdrCreatedOn             DateTime          @default(now()) @db.Timestamptz(6) @map("gdr_created_on")
@@ -208,18 +199,23 @@ model AccVoucherDocRegister {
   company                  Company           @relation(fields: [gdrCompanyId], references: [compId], map: "fk_gdr_voucher_company")
   branch                   BranchMaster      @relation(fields: [gdrBranchId], references: [brId], map: "fk_gdr_voucher_branch")
   party                    AccLedgerMaster   @relation(fields: [gdrPartyId], references: [ledId], map: "fk_gdr_voucher_party")
-  voucherHeader            AccVoucherHeader  @relation(fields: [gdrVoucherId], references: [avhVoucherId], onDelete: Cascade, map: "fk_gdr_voucher_header")
+  // gdrVoucherId stays a plain UUID column — acc_voucher_header was dropped.
   voucherType              AccVoucherType    @relation(fields: [gdrVoucherTypeId], references: [vchrTypeId], map: "fk_gdr_voucher_type")
-  apiLogs                  AccVoucherDocApiLog[]
   details                  AccVoucherDocDetail[]
   einvoice                 AccVoucherDocEinvoice?
   ewaybill                 AccVoucherDocEwaybill?
 
+  // LIST-partitioned on gdr_acc_year as of 20260922100000, so the primary key
+  // carries the partition key and a row is addressed by the pair --
+  // `where: { gdrId_gdrAccYear: { gdrId, gdrAccYear } }` -- never by gdrId alone.
+  @@id([gdrId, gdrAccYear], map: "pk_acc_voucher_doc_register")
   @@map("acc_voucher_doc_register")
   @@schema("accounts")
   // Partial unique indexes uq_acc_voucher_doc_register_source,
   // uq_acc_voucher_doc_register_voucher, and uq_acc_voucher_doc_register_doc
-  // are not expressible in Prisma schema.
+  // are not expressible in Prisma schema. All three carry gdr_acc_year since
+  // 20260922100000 -- a unique index on a partitioned table must contain the
+  // partition key.
   // Partial indexes idx_gdr_branch_voucher_date, idx_gdr_branch_doc_date,
   // idx_gdr_party, idx_gdr_doc_class, and idx_gdr_doc_status
   // are not expressible in Prisma schema.

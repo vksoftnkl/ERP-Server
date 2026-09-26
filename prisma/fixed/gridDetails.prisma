@@ -5,11 +5,15 @@ model GridDetails {
 
   gridSortColumn  String?     @map("grid_sort_column")
   gridSortOrder   String?     @map("grid_sort_order")
-
+  gridDeviceType  String?     @map("grid_device_type")
   gridSql         String?  @db.Text @map("grid_sql")
   gridStatus      Boolean  @default(true)  @map("grid_status")
   gridIsDeleted   Boolean  @default(false) @map("grid_is_deleted")
-
+  gridCreatedOn   DateTime @default(now()) @db.Timestamptz(6) @map("grid_created_on")
+  gridCreatedBy   String?  @db.Text @map("grid_created_by")
+  gridModifiedOn  DateTime? @updatedAt      @db.Timestamptz(6) @map("grid_modified_on")
+  gridModifiedBy  String?  @db.Text @map("grid_modified_by")
+  gridSyncOn      DateTime? @db.Timestamptz(6) @map("grid_sync_on")
   columns         GridColumn[]
 
   @@map("grid_details")

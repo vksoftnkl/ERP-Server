@@ -5,7 +5,8 @@ model Unit {
   // Master fields
   unit_name        String   @unique @db.VarChar(50)
   unit_alias       String?  @db.VarChar(50)
-  unit_code        String?  @db.VarChar(30)
+ unit_code        String?  @db.Text
+  gstUnit          ItemGstUnits? @relation(fields: [unit_code], references: [itemGstUnitCode], onDelete: SetNull, onUpdate: Cascade)
   unit_description String?  @db.VarChar(100)
 
   // Decimal / measurement
@@ -24,6 +25,13 @@ model Unit {
   unit_is_active  Boolean @default(true)
   unit_is_deleted Boolean @default(false)
 
+  // Tally identity — unit_tally_guid is uniquely indexed in the DB
+  // (ux_unit_tally_guid, partial on NOT NULL AND NOT deleted).
+  unit_tally_name      String? @db.VarChar(100)
+  unit_tally_guid      String? @db.VarChar(64)
+  unit_tally_master_id BigInt? @db.BigInt
+  unit_tally_alter_id  BigInt? @db.BigInt
+
   // Audit / Sync
   unit_sync_date   DateTime? @db.Timestamptz(6)
   unit_created_on  DateTime  @default(now()) @db.Timestamptz(6)
@@ -40,14 +48,14 @@ model Unit {
   iucBaseUnits ItemUnitConversion[] @relation("IucBaseUnit")
 
   // Back-relations — ItemPriceMaster
-  ipmUnits     ItemPriceMaster[] @relation("IpmUnit")
-  ipmBaseUnits ItemPriceMaster[] @relation("IpmBaseUnit")
-  openingStockUnits OpeningStockDetail[] @relation("OpeningStockDetailUnit")
+  // (ItemPriceMaster no longer stores a base unit — it reaches one through ItemUnitConversion.)
 
   // Back-relations — others
-  eanCodes     ItemEanCode[]
   itemMasters  ItemMaster[]
-  itemReorders ItemReorder[]
+
+  /// The three-letter GST Unit Quantity Code, for the e-invoice, the e-way
+  /// bill and the GSTR-1 HSN summary. The table had a Tally name and no UQC.
+  unitUqc       String?   @db.Char(3)                                      @map("unit_uqc")
 
   @@map("item_unit_master")
   @@schema("inventory")

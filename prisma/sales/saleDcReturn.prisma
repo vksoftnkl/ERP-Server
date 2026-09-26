@@ -1,0 +1,105 @@
+/// Un-billed goods coming back off a challan.
+///
+/// Only the DC's OPEN quantity (sdiOpenQty) may return here; BILLED goods come
+/// back through a SaleReturn. Posting writes DC_RETURN stock rows, reverses
+/// COGS at the DC line's cost, writes an INWARD challan register row and an
+/// e-way bill when the goods travel by a transporter.
+///
+/// NO party leg — nothing was ever owed, so there is nothing to credit.
+///
+/// ONE challan per DC return, which is why sdrDcId is a plain NOT NULL pair
+/// rather than a per-line reference.
+model SaleDcReturn {
+  sdrId                 String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("sdr_id")
+  sdrCompanyId          String    @db.Uuid                             @map("sdr_company_id")
+  sdrBranchId           String    @db.Uuid                             @map("sdr_branch_id")
+  sdrTenantId           String?   @db.Uuid                             @map("sdr_tenant_id")
+  sdrAccYear            String    @db.Char(9)                          @map("sdr_acc_year")
+
+  sdrSessionId          String?   @db.Uuid                             @map("sdr_session_id")
+  sdrCounterId          String    @db.Uuid                             @map("sdr_counter_id")
+  sdrDeviceType         String?   @db.VarChar(20)                      @map("sdr_device_type")
+  sdrDeviceId           String?                                        @map("sdr_device_id")
+
+  sdrDocType            String    @default("DC_RETURN") @db.VarChar(30) @map("sdr_doc_type")
+  sdrReturnSlno         BigInt                                         @map("sdr_return_slno")
+  sdrReturnRefno        String    @db.VarChar(100)                     @map("sdr_return_refno")
+  sdrUsrRefno           String?   @db.VarChar(100)                     @map("sdr_usr_refno")
+  sdrUsrRefdate         DateTime? @db.Date                             @map("sdr_usr_refdate")
+  sdrReturnDate         DateTime  @db.Date                             @map("sdr_return_date")
+  sdrReturnDatetime     DateTime  @default(now()) @db.Timestamptz(6)   @map("sdr_return_datetime")
+
+  // ── The challan it reverses ──────────────────────────────────────────
+  sdrDcId               String    @db.Uuid                             @map("sdr_dc_id")
+  sdrDcAccYear          String    @db.Char(9)                          @map("sdr_dc_acc_year")
+  sdrDcRefno            String?   @db.VarChar(100)                     @map("sdr_dc_refno")
+  sdrDcDate             DateTime? @db.Date                             @map("sdr_dc_date")
+  sdrReasonId           String?   @db.Uuid                             @map("sdr_reason_id")
+  sdrReturnReason       String?   @db.VarChar(250)                     @map("sdr_return_reason")
+
+  sdrCustId             String    @db.Uuid                             @map("sdr_cust_id")
+  sdrCustName           String    @db.VarChar(200)                     @map("sdr_cust_name")
+  sdrCustGstin          String?   @db.VarChar(15)                      @map("sdr_cust_gstin")
+  sdrCustStcd           String?   @db.Char(2)                          @map("sdr_cust_stcd")
+  sdrPosStcd            String?   @db.Char(2)                          @map("sdr_pos_stcd")
+
+  // ── Delivery crew and vehicle — OURS, on the document on purpose ─────
+  sdrDriverId           String?   @db.Uuid                             @map("sdr_driver_id")
+  sdrSupervisorId       String?   @db.Uuid                             @map("sdr_supervisor_id")
+  sdrLoadmanId          String[]  @db.Uuid                             @map("sdr_loadman_id")
+  sdrVehicleId          String?   @db.Uuid                             @map("sdr_vehicle_id")
+  sdrVehicleNo          String?   @db.VarChar(20)                      @map("sdr_vehicle_no")
+
+  sdrUserId             String    @db.Uuid                             @map("sdr_user_id")
+  /// The challan this reverses carries sdcSalesmanId, so the return of it
+  /// carries the same team — otherwise a delivery and its reversal cannot be
+  /// put side by side in any salesman report. uuid[], no FK on elements.
+  sdrSalesmanId         String[]  @db.Uuid                             @map("sdr_salesman_id")
+
+  sdrTotItems           Int       @default(0)                          @map("sdr_tot_items")
+  sdrTotWeight          Decimal   @default(0) @db.Decimal(15, 3)       @map("sdr_tot_weight")
+  sdrGrossAmt           Decimal   @default(0) @db.Decimal(15, 2)       @map("sdr_gross_amt")
+  sdrTaxableAmt         Decimal   @default(0) @db.Decimal(15, 2)       @map("sdr_taxable_amt")
+  sdrTaxAmt             Decimal   @default(0) @db.Decimal(15, 2)       @map("sdr_tax_amt")
+  sdrReturnAmt          Decimal   @default(0) @db.Decimal(15, 2)       @map("sdr_return_amt")
+  /// The COGS reversed.
+  sdrTotalCost          Decimal   @default(0) @db.Decimal(15, 2)       @map("sdr_total_cost")
+
+  sdrRemarks            String?   @db.VarChar(500)                     @map("sdr_remarks")
+
+  /// DRAFT | POSTED | CANCELLED. Transitions live in TxnStatusLog.
+  sdrStatus             String    @default("DRAFT") @db.VarChar(20)    @map("sdr_status")
+  /// No FK: SERVER-owned, written after an offline counter created this row.
+  sdrPostedVoucherId    String?   @db.Uuid                             @map("sdr_posted_voucher_id")
+  sdrPrintCount         Int       @default(0)                          @map("sdr_print_count")
+
+  sdrIsDeleted          Boolean   @default(false)                      @map("sdr_is_deleted")
+  sdrSyncDate           DateTime? @db.Timestamptz(6)                   @map("sdr_sync_date")
+  sdrCreatedOn          DateTime  @default(now()) @db.Timestamptz(6)   @map("sdr_created_on")
+  sdrCreatedBy          String    @db.VarChar(50)                      @map("sdr_created_by")
+  sdrModifiedOn         DateTime? @db.Timestamptz(6)                   @map("sdr_modified_on")
+  sdrModifiedBy         String?   @db.VarChar(50)                      @map("sdr_modified_by")
+
+  // Relations
+  dc                    SaleDc             @relation("SaleDcReturnDc",         fields: [sdrDcId, sdrDcAccYear], references: [sdcId, sdcAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_sdr_dc")
+  customer              Customer           @relation("SaleDcReturnCustomer",   fields: [sdrCustId],       references: [cusId], onUpdate: Cascade, onDelete: Restrict, map: "fk_sdr_cust")
+  reason                StockReasonMaster? @relation("SaleDcReturnReason",     fields: [sdrReasonId],     references: [srmId], onUpdate: Cascade, onDelete: Restrict, map: "fk_sdr_reason")
+  driver                EmployeeMaster?    @relation("SaleDcReturnDriver",     fields: [sdrDriverId],     references: [empId], onUpdate: Cascade, onDelete: Restrict, map: "fk_sdr_driver")
+  supervisor            EmployeeMaster?    @relation("SaleDcReturnSupervisor", fields: [sdrSupervisorId], references: [empId], onUpdate: Cascade, onDelete: Restrict, map: "fk_sdr_supervisor")
+  vehicle               VehicleMaster?     @relation("SaleDcReturnVehicle",    fields: [sdrVehicleId],    references: [vehId], onUpdate: Cascade, onDelete: Restrict, map: "fk_sdr_vehicle")
+
+  items                 SaleDcReturnItem[] @relation("SaleDcReturnItems")
+
+  @@id([sdrId, sdrAccYear], map: "pk_sale_dc_return")
+
+  @@unique([sdrCompanyId, sdrBranchId, sdrAccYear, sdrReturnRefno], map: "ux_sdr_refno")
+
+  // Partial indexes are DB-only: ix_sdr_dc, ix_sdr_company_branch_date, and
+  // FK-covering ix_sdr_cust / ix_sdr_reason / ix_sdr_driver /
+  // ix_sdr_supervisor / ix_sdr_vehicle.
+  //
+  // CHECK constraints (DB-only): ck_sdr_doc_type, ck_sdr_status
+
+  @@map("sale_dc_return")
+  @@schema("sales")
+}

@@ -9,7 +9,6 @@ model CompanyGroupMaster {
   cogCreatedBy    String?   @db.VarChar(100)                                @map("cog_created_by")
   cogModifiedOn   DateTime  @default(now()) @db.Timestamptz                 @map("cog_modified_on")
   cogModifiedBy   String?   @db.VarChar(100)                                @map("cog_modified_by")
-
   @@index([cogIsActive], name: "idx_cog_group_active")
   @@map("company_group_master")
   @@schema("public")

@@ -1,0 +1,97 @@
+/// stock.stock_reason_master — WHY stock moved when no trade document explains
+/// it. A receipt says "we bought it" and an invoice says "we sold it"; an
+/// ADJUSTMENT says nothing on its own, so it must cite a row from here.
+///
+/// This table is LOAD-BEARING, not a lookup for a dropdown label:
+///   * fn_svh_txn_map REFUSES an ADJUSTMENT that cites no reason, and refuses
+///     one whose reason is direction BOTH — a document that cannot say which
+///     way it moved is not a document. With this table empty, ADJUSTMENT
+///     cannot be posted at all.
+///   * srmDirection (IN | OUT) is what turns an ADJUSTMENT into ADJUST_PLUS or
+///     ADJUST_MINUS. BOTH is only safe where the direction comes from
+///     elsewhere — a PHYSICAL count, where the counted difference supplies it
+///     — so every BOTH row is restricted to PHYSICAL via srmAllowedTxnTypes.
+///   * srmAllowedTxnTypes empty = any movement may cite it. But when a reason
+///     names EXACTLY ONE type and the voucher is an ISSUE, fn_svh_txn_map
+///     BELIEVES the reason and posts that type: an ISSUE citing SAMPLE becomes
+///     SAMPLE_ISSUE, not a bare ADJUST_MINUS. That is the whole mechanism by
+///     which sample, gift and internal-use issues classify themselves.
+///
+/// COMPANY SCOPING is a MERGE, and this is the one place in the stock module
+/// where scoping merges. The tracking policy picks the MOST SPECIFIC row, the
+/// ageing ladder is ALL-OR-NOTHING, but reasons ADD UP: srmCompanyId NULL =
+/// SHARED with every company, and the picker shows the shared rows and the
+/// company's own together, because the user is choosing one from a list and
+/// more choices are not a contradiction. A company that defines its own row
+/// with a shared row's code OVERRIDES it — the picker hides the shared one.
+/// Nothing is copied per company. Same rule as [[StockTrackPreset]].
+///
+/// srmGlLedgerId is where the value of written-off stock lands. NULL = no auto
+/// posting, and the seed leaves every row NULL because the chart of accounts
+/// is a per-company question. Nothing in the stock engine reads it yet.
+///
+/// WRITE RULES:
+///   * srmCode is the stable identity, unique per company (or per SHARED),
+///     [A-Za-z0-9_-] only — enforced by ck_srm_code_shape.
+///   * srmAllowedTxnTypes is a Postgres text[] with DEFAULT '{}'. Prisma
+///     scalar lists REJECT null and report it as a missing-relation error, so
+///     normalise an absent value to [] in the DTO — never pass null.
+///
+/// Vocabulary, enforced by a CHECK constraint in the migration:
+///   srmDirection  IN | OUT | BOTH
+///
+/// DB-only objects Prisma cannot express — hand-authored in the migration and
+/// deliberately NOT declared here (both carry a WHERE, and Prisma ignores
+/// indexes with predicates):
+///   ux_srm_code   unique on (COALESCE(company, nil uuid), code) WHERE NOT
+///                 deleted — COALESCEd because a plain unique index treats
+///                 every NULL as distinct, which would let the seed insert
+///                 SHORTAGE twice. Uniqueness on this path is app-side.
+///   ix_srm_list   the picker's list shape, partial on active + not deleted.
+model StockReasonMaster {
+  srmId                String    @id(map: "pk_stock_reason_master") @default(dbgenerated("uuidv7()")) @db.Uuid @map("srm_id")
+
+  /// NULL = SHARED with every company; a company row with the same code
+  /// overrides the shared one in the picker.
+  srmCompanyId         String?   @db.Uuid                                     @map("srm_company_id")
+  srmCode              String    @db.VarChar(30)                              @map("srm_code")
+  srmName              String    @db.VarChar(150)                             @map("srm_name")
+
+  /// Which movements may cite it. Empty array = any. Kept as text[] rather
+  /// than a child table because it is a filter for a dropdown, not a rule
+  /// anybody reports on. NEVER null — see WRITE RULES above.
+  srmAllowedTxnTypes   String[]  @default([])                                 @map("srm_allowed_txn_types")
+  /// IN, OUT or BOTH — stops "damaged" appearing on a receipt screen.
+  srmDirection         String    @default("BOTH") @db.VarChar(10)             @map("srm_direction")
+
+  srmRequireRemarks    Boolean   @default(false)                              @map("srm_require_remarks")
+  /// Where the value goes when stock is written off. NULL = no auto posting.
+  srmGlLedgerId        String?   @db.Uuid                                     @map("srm_gl_ledger_id")
+  srmSortOrder         Int       @default(0)                                  @map("srm_sort_order")
+
+  srmRemarks           String?   @db.VarChar(250)                             @map("srm_remarks")
+  srmIsActive          Boolean   @default(true)                               @map("srm_is_active")
+  srmIsDeleted         Boolean   @default(false)                              @map("srm_is_deleted")
+  srmSyncDate          DateTime? @db.Timestamptz(6)                           @map("srm_sync_date")
+  srmCreatedOn         DateTime  @default(now()) @db.Timestamptz(6)           @map("srm_created_on")
+  srmCreatedBy         String?   @db.Text                                     @map("srm_created_by")
+  srmModifiedOn        DateTime? @db.Timestamptz(6)                           @map("srm_modified_on")
+  srmModifiedBy        String?   @db.Text                                     @map("srm_modified_by")
+
+  // ── Relations ───────────────────────────────────────────────────────────
+  // Only srm_company_id and srm_gl_ledger_id carry a real FK in the
+  // migration; srm_created_by / srm_modified_by do not, so they stay plain
+  // uuid columns here rather than inventing a constraint the DB lacks.
+  company              Company?        @relation("StockReasonMasterCompany",  fields: [srmCompanyId],  references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_srm_company")
+  glLedger             AccLedgerMaster? @relation("StockReasonMasterGlLedger", fields: [srmGlLedgerId], references: [ledId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_srm_gl_ledger")
+  ledgerEntries        StockLedger[]    @relation("StockLedgerReason")
+  vouchers             StockVoucher[]     @relation("StockVoucherReason")
+  voucherItems         StockVoucherItem[] @relation("StockVoucherItemReason")
+
+  // ── Sales documents (20260921200000) ────────────────────────────────────
+  saleReturns           SaleReturn[]              @relation("SaleReturnReason")
+  saleDcReturns         SaleDcReturn[]            @relation("SaleDcReturnReason")
+
+  @@map("stock_reason_master")
+  @@schema("stock")
+}

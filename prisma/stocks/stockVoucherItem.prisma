@@ -1,0 +1,152 @@
+/// stock.stock_voucher_item — the LINES of a [[StockVoucher]].
+///
+/// Same (lineNo, splitNo) grain as SaleBillItem, so one line issued from three
+/// batches is three rows and [[StockLedger]] receives them unchanged: posting
+/// is an INSERT ... SELECT with no reshaping and no aggregation. That symmetry
+/// is the whole reason the grain is what it is.
+///
+/// THE BATCH ATTRIBUTES ARE STORED AS ENTERED as well as resolved to a lot.
+/// sviBatchNo / sviMfgDate / sviExpiryDate / sviMrp / sviSalePrice /
+/// sviSerialNo / sviSupplierId are what the storekeeper typed; sviLotId is
+/// what fn_slt_resolve() made of it. Both are kept because a reprint must show
+/// what was keyed, and because the resolver may LEGITIMATELY have blanked a
+/// value the item's StockTrackPolicy does not track — an MRP typed on an item
+/// that is not MRP-tracked does not become part of the lot identity, and
+/// silently losing it would make the document unreadable a year later.
+///
+/// sviLotId IS NULL ONLY WHILE DRAFT. It is resolved at posting time, which is
+/// also when the tracking policy is applied — so a draft saved before a policy
+/// change posts under the policy live when it POSTS, not when it was keyed.
+///
+/// PHYSICAL COUNTS keep three numbers, not one: sviBookQty is what the system
+/// thought, sviCountedQty is what was on the shelf, and sviDiffQty — GENERATED,
+/// so it cannot be edited — is what actually posts to the ledger. Storing only
+/// the difference makes a variance impossible to defend a year later; storing
+/// it generated makes it impossible to fudge.
+///
+/// sviValue and sviValueWot are GENERATED from (baseQty + freeBaseQty) × rate,
+/// rounded to 2, so a line's value cannot drift from its own quantity and rate.
+/// Free goods are included: they are stock, and they cost something to hold.
+///
+/// WRITE RULES:
+///   * NEVER write sviDiffQty, sviValue or sviValueWot — all three are
+///     GENERATED ALWAYS ... STORED, and Postgres rejects any write to them.
+///   * Quantities are MAGNITUDES; direction comes from the voucher type, not
+///     from a sign here (ck_svi_qty_sign).
+///   * ck_svi_batch_split mirrors ck_sbi_batch_split: a splitNo above 1 only
+///     makes sense when the line is split BY BATCH, so it requires a batch no.
+///   * sviAccYear must equal the voucher's — it is half the foreign key.
+///
+/// Vocabulary, enforced by a CHECK constraint in the migration:
+///   sviBucket  SALEABLE | DAMAGED | QUARANTINE | EXPIRED | SAMPLE
+/// plus ck_svi_acc_year, ck_svi_line_no, ck_svi_split_no,
+/// ck_svi_to_base_factor and ck_svi_expiry_order.
+///
+/// PARTITIONED BY LIST (svi_acc_year), hence the composite primary key and the
+/// COMPOSITE foreign key back to the voucher on (id, accYear) — a partitioned
+/// parent can only be referenced through its partition key. ON DELETE CASCADE:
+/// deleting a draft voucher takes its lines with it.
+///
+/// DB-only objects Prisma cannot express — hand-authored in the migration and
+/// deliberately NOT declared here (every one carries a WHERE, and Prisma
+/// ignores indexes with predicates):
+///   ux_svi_line     one row per (voucher, year, lineNo, splitNo)
+///   ix_svi_voucher  the lines of one voucher
+///   ix_svi_item     item-wise across vouchers
+///   ix_svi_lot      which documents touched a lot
+model StockVoucherItem {
+  sviId                String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("svi_id")
+  sviVoucherId         String    @db.Uuid                            @map("svi_voucher_id")
+  sviCompanyId         String    @db.Uuid                            @map("svi_company_id")
+  sviBranchId          String    @db.Uuid                            @map("svi_branch_id")
+  sviTenantId          String?   @db.Uuid                            @map("svi_tenant_id")
+  /// The PARTITION KEY, half the primary key, AND half the foreign key back to
+  /// the voucher. Must equal the voucher's own year.
+  sviAccYear           String    @db.Char(9)                         @map("svi_acc_year")
+
+  sviLineNo            Int                                           @map("svi_line_no")
+  /// A second allocation of the same line — one line issued from three batches
+  /// is three rows. Only meaningful with a batch no (ck_svi_batch_split).
+  sviSplitNo           Int       @default(1)                         @map("svi_split_no")
+
+  sviItemId            String    @db.Uuid                            @map("svi_item_id")
+  /// The unit keyed, and the item's base unit. BOTH are
+  /// item_unit_conversion(iuc_id), NEVER item_unit_master(unit_id).
+  sviUomId             String    @db.Uuid                            @map("svi_uom_id")
+  sviBaseUomId         String    @db.Uuid                            @map("svi_base_uom_id")
+  sviToBaseFactor      Decimal   @default(1) @db.Decimal(18, 6)      @map("svi_to_base_factor")
+
+  sviGodownId          String    @db.Uuid                            @map("svi_godown_id")
+  /// Resolved by fn_slt_resolve() at POSTING time. NULL only while DRAFT.
+  sviLotId             String?   @db.Uuid                            @map("svi_lot_id")
+  sviBucket            String    @default("SALEABLE") @db.VarChar(20) @map("svi_bucket")
+
+  // ── As entered ──────────────────────────────────────────────────────────
+  // What the storekeeper typed. The resolver may legitimately have dropped a
+  // value the item's policy does not track — see the header note.
+  /// What the scanner read, verbatim. NOT an identity: the item, batch and
+  /// serial were already resolved from it by the time the line is saved, and
+  /// nothing reads stock back through this column. It is kept so a reprint
+  /// can show the symbol that was actually scanned — a barcode retired from
+  /// the item master, or one that resolved through an alias, still prints as
+  /// what the storekeeper held under the gun.
+  sviBarcode           String?   @db.Text                            @map("svi_barcode")
+  sviBatchNo           String?   @db.VarChar(100)                    @map("svi_batch_no")
+  sviMfgDate           DateTime? @db.Date                            @map("svi_mfg_date")
+  sviExpiryDate        DateTime? @db.Date                            @map("svi_expiry_date")
+  sviMrp               Decimal?  @db.Decimal(18, 6)                  @map("svi_mrp")
+  sviSalePrice         Decimal?  @db.Decimal(18, 6)                  @map("svi_sale_price")
+  sviSerialNo          String?   @db.VarChar(100)                    @map("svi_serial_no")
+  sviSupplierId        String?   @db.Uuid                            @map("svi_supplier_id")
+
+  // ── Quantity ────────────────────────────────────────────────────────────
+  sviQty               Decimal   @default(0) @db.Decimal(18, 6)      @map("svi_qty")
+  sviBaseQty           Decimal   @default(0) @db.Decimal(18, 6)      @map("svi_base_qty")
+  sviFreeQty           Decimal   @default(0) @db.Decimal(18, 6)      @map("svi_free_qty")
+  sviFreeBaseQty       Decimal   @default(0) @db.Decimal(18, 6)      @map("svi_free_base_qty")
+  sviWeightQty         Decimal   @default(0) @db.Decimal(18, 6)      @map("svi_weight_qty")
+
+  // ── PHYSICAL count only ─────────────────────────────────────────────────
+  /// What the system thought was there.
+  sviBookQty           Decimal?  @db.Decimal(18, 6)                  @map("svi_book_qty")
+  /// What was actually on the shelf.
+  sviCountedQty        Decimal?  @db.Decimal(18, 6)                  @map("svi_counted_qty")
+  /// GENERATED ALWAYS ... STORED as counted - book. What POSTS. Read-only,
+  /// never sent — the variance must not be editable.
+  sviDiffQty           Decimal?  @default(dbgenerated()) @db.Decimal(18, 6) @map("svi_diff_qty")
+
+  // ── Value ───────────────────────────────────────────────────────────────
+  sviCostRate          Decimal   @default(0) @db.Decimal(18, 6)      @map("svi_cost_rate")
+  sviCostRateWot       Decimal   @default(0) @db.Decimal(18, 6)      @map("svi_cost_rate_wot")
+  sviLandedRate        Decimal   @default(0) @db.Decimal(18, 6)      @map("svi_landed_rate")
+  sviTaxPerc           Decimal   @default(0) @db.Decimal(9, 3)       @map("svi_tax_perc")
+  /// GENERATED ALWAYS ... STORED as ROUND((baseQty + freeBaseQty) × rate, 2).
+  /// Read-only, never sent.
+  sviValue             Decimal?  @default(dbgenerated()) @db.Decimal(18, 2) @map("svi_value")
+  sviValueWot          Decimal?  @default(dbgenerated()) @db.Decimal(18, 2) @map("svi_value_wot")
+
+  sviReasonId          String?   @db.Uuid                            @map("svi_reason_id")
+  sviRemarks           String?   @db.VarChar(250)                    @map("svi_remarks")
+  sviIsDeleted         Boolean   @default(false)                     @map("svi_is_deleted")
+  sviSyncDate          DateTime? @db.Timestamptz(6)                  @map("svi_sync_date")
+  sviCreatedOn         DateTime  @default(now()) @db.Timestamptz(6)  @map("svi_created_on")
+  sviCreatedBy         String?   @db.Text                            @map("svi_created_by")
+  sviModifiedOn        DateTime? @db.Timestamptz(6)                  @map("svi_modified_on")
+  sviModifiedBy        String?   @db.Text                            @map("svi_modified_by")
+
+  // ── Relations ───────────────────────────────────────────────────────────
+  // sviCompanyId / sviBranchId carry no FK of their own here — the voucher
+  // owns that scope — and sviCreatedBy / sviModifiedBy have none either.
+  voucher              StockVoucher       @relation("StockVoucherItemVoucher", fields: [sviVoucherId, sviAccYear], references: [svhId, svhAccYear], onUpdate: Cascade, onDelete: Cascade, map: "fk_svi_voucher")
+  item                 ItemMaster         @relation("StockVoucherItemItem",     fields: [sviItemId],     references: [itemId], onUpdate: Cascade, onDelete: Restrict, map: "fk_svi_item")
+  uom                  ItemUnitConversion @relation("StockVoucherItemUom",      fields: [sviUomId],      references: [iucId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_svi_uom")
+  baseUom              ItemUnitConversion @relation("StockVoucherItemBaseUom",  fields: [sviBaseUomId],  references: [iucId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_svi_base_uom")
+  godown               GodownLocation     @relation("StockVoucherItemGodown",   fields: [sviGodownId],   references: [gdlId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_svi_godown")
+  lot                  StockLot?          @relation("StockVoucherItemLot",      fields: [sviLotId],      references: [sltId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_svi_lot")
+  supplier             Supplier?          @relation("StockVoucherItemSupplier", fields: [sviSupplierId], references: [supId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_svi_supplier")
+  reason               StockReasonMaster? @relation("StockVoucherItemReason",   fields: [sviReasonId],   references: [srmId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_svi_reason")
+
+  @@id([sviId, sviAccYear], map: "pk_stock_voucher_item")
+  @@map("stock_voucher_item")
+  @@schema("stock")
+}

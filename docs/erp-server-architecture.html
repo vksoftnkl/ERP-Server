@@ -1,0 +1,1780 @@
+<title>ERP Server — Backend Architecture Dossier</title>
+<style>
+  /* Page geometry is supplied by the renderer (Chromium printToPDF), not by @page:
+     the cover is printed full-bleed at margin 0, the body with margins that leave
+     room for the running header and footer. Declaring @page margins here would
+     override those and clip the header. */
+
+  :root {
+    --ink:        #0b0b0b;
+    --ink-2:      #3d3c39;
+    --ink-3:      #6b6a66;
+    --rule:       #d6d5d1;
+    --rule-soft:  #e8e7e4;
+    --surface:    #ffffff;
+    --surface-2:  #f6f6f4;
+    --navy:       #12305c;
+    --blue:       #2a78d6;
+    --blue-deep:  #184f95;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    font-family: "Segoe UI", "Helvetica Neue", Helvetica, "DejaVu Sans", Arial, sans-serif;
+    font-size: 9.6pt;
+    line-height: 1.52;
+    color: var(--ink);
+    background: var(--surface);
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    margin: 0;
+    hyphens: none;
+  }
+
+  p { margin: 0 0 8pt; }
+  strong { font-weight: 600; }
+
+  code, .mono {
+    font-family: "DejaVu Sans Mono", "SF Mono", Menlo, Consolas, monospace;
+    font-size: 0.88em;
+  }
+  p code, td code, li code {
+    background: var(--surface-2);
+    border: 0.4pt solid var(--rule-soft);
+    border-radius: 2pt;
+    padding: 0 2.5pt;
+    white-space: nowrap;
+  }
+
+  pre {
+    font-family: "DejaVu Sans Mono", "SF Mono", Menlo, Consolas, monospace;
+    font-size: 8.2pt;
+    line-height: 1.45;
+    background: var(--surface-2);
+    border: 0.5pt solid var(--rule);
+    border-left: 2.5pt solid var(--blue-deep);
+    border-radius: 2pt;
+    padding: 7pt 9pt;
+    margin: 0 0 10pt;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    break-inside: avoid;
+  }
+  pre .c { color: var(--ink-3); }
+
+  /* ---------- Cover ---------- */
+  .cover {
+    height: 296mm;
+    display: flex;
+    flex-direction: column;
+    break-after: page;
+  }
+  .cover-band {
+    background: var(--navy);
+    color: #fff;
+    padding: 30mm 18mm 22mm;
+    margin: 0;
+  }
+  .cover-body { padding-left: 18mm; padding-right: 18mm; }
+  .cover-foot { padding: 0 18mm 16mm; }
+  .cover-eyebrow {
+    font-size: 8.5pt;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: #9dbbe4;
+    margin-bottom: 9mm;
+    font-weight: 600;
+  }
+  .cover-title {
+    font-size: 30pt;
+    line-height: 1.12;
+    font-weight: 700;
+    letter-spacing: -0.015em;
+    margin: 0 0 5mm;
+  }
+  .cover-sub {
+    font-size: 11.5pt;
+    font-weight: 400;
+    color: #c9dbf2;
+    line-height: 1.45;
+    max-width: 130mm;
+    margin: 0;
+  }
+  .cover-body { padding-top: 12mm; flex: 1; }
+  .cover-stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0;
+    border-top: 0.8pt solid var(--rule);
+    border-bottom: 0.8pt solid var(--rule);
+    margin-bottom: 12mm;
+  }
+  .cover-stat { padding: 6mm 4mm 6mm 0; border-right: 0.5pt solid var(--rule-soft); }
+  .cover-stat:last-child { border-right: 0; }
+  .cover-stat .n { font-size: 19pt; font-weight: 700; color: var(--navy); letter-spacing: -0.01em; }
+  .cover-stat .l { font-size: 7.6pt; text-transform: uppercase; letter-spacing: 0.1em; color: var(--ink-3); margin-top: 1.5mm; }
+  .cover-foot { font-size: 8.5pt; color: var(--ink-3); }
+
+  /* ---------- Headings ---------- */
+  h1 {
+    font-size: 17pt;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    color: var(--navy);
+    margin: 0 0 3mm;
+    padding-bottom: 2.5mm;
+    border-bottom: 1.6pt solid var(--navy);
+    break-before: page;
+    break-after: avoid;
+  }
+  h1 .num { color: var(--blue); margin-right: 3mm; }
+  h1.no-break { break-before: auto; }
+  h2 {
+    font-size: 11.5pt;
+    font-weight: 700;
+    color: var(--ink);
+    margin: 7mm 0 2.5mm;
+    break-after: avoid;
+  }
+  h2 .num { color: var(--ink-3); font-weight: 600; margin-right: 2.5mm; }
+  h3 {
+    font-size: 9.8pt;
+    font-weight: 700;
+    color: var(--ink-2);
+    margin: 5mm 0 1.5mm;
+    break-after: avoid;
+  }
+  .lede {
+    font-size: 10.4pt;
+    color: var(--ink-2);
+    line-height: 1.5;
+    margin-bottom: 5mm;
+  }
+
+  /* ---------- Tables ---------- */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 8.6pt;
+    margin: 0 0 10pt;
+    break-inside: auto;
+  }
+  caption {
+    caption-side: top;
+    text-align: left;
+    font-size: 7.8pt;
+    text-transform: uppercase;
+    letter-spacing: 0.09em;
+    font-weight: 700;
+    color: var(--ink-3);
+    padding-bottom: 2mm;
+  }
+  thead { display: table-header-group; }
+  th {
+    text-align: left;
+    font-weight: 700;
+    font-size: 7.8pt;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--ink-2);
+    background: var(--surface-2);
+    border-top: 0.8pt solid var(--ink-2);
+    border-bottom: 0.8pt solid var(--ink-2);
+    padding: 3pt 5pt;
+  }
+  td {
+    padding: 3.5pt 5pt;
+    border-bottom: 0.4pt solid var(--rule-soft);
+    vertical-align: top;
+  }
+  tr { break-inside: avoid; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .t-tight td, .t-tight th { padding: 2.5pt 5pt; }
+
+  /* ---------- Callouts ---------- */
+  .box {
+    border: 0.5pt solid var(--rule);
+    border-left: 2.5pt solid var(--ink-3);
+    background: var(--surface-2);
+    padding: 6pt 9pt;
+    margin: 0 0 10pt;
+    break-inside: avoid;
+  }
+  .box .box-t {
+    font-size: 7.6pt;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    font-weight: 700;
+    color: var(--ink-3);
+    margin-bottom: 2pt;
+  }
+  .box p:last-child { margin-bottom: 0; }
+  .box.convention { border-left-color: var(--blue-deep); }
+  .box.convention .box-t { color: var(--blue-deep); }
+  .box.risk { border-left-color: #a11c1c; background: #fbf4f4; }
+  .box.risk .box-t { color: #a11c1c; }
+
+  /* ---------- Severity chips (grayscale-safe: text + weight, not colour alone) ---------- */
+  .sev {
+    display: inline-block;
+    font-size: 6.8pt;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 1pt 3.5pt;
+    border-radius: 2pt;
+    border: 0.6pt solid currentColor;
+    white-space: nowrap;
+  }
+  .sev-crit { color: #8d1414; background: #f7e9e9; }
+  .sev-high { color: #93490a; background: #fbf1e6; }
+  .sev-med  { color: #5a4a08; background: #f8f4e4; }
+  .sev-low  { color: #3d3c39; background: #f0f0ee; }
+
+  /* ---------- TOC ---------- */
+  .toc { column-count: 2; column-gap: 10mm; font-size: 9pt; }
+  .toc-item { display: flex; gap: 3mm; margin-bottom: 2.4mm; break-inside: avoid; }
+  .toc-n { color: var(--blue); font-weight: 700; min-width: 9mm; font-variant-numeric: tabular-nums; }
+  .toc-t { color: var(--ink); }
+  .toc-sub { margin-left: 12mm; color: var(--ink-3); font-size: 8.2pt; margin-bottom: 1.6mm; }
+
+  /* ---------- Figures ---------- */
+  figure { margin: 0 0 11pt; break-inside: avoid; }
+  /* Tall bar charts: constrain width so the figure fits below its lead-in text
+     instead of being pushed to the next page and leaving a half-empty one. */
+  figure.chart svg { max-width: 80%; margin: 0 auto; }
+  figcaption {
+    font-size: 7.8pt;
+    color: var(--ink-3);
+    margin-top: 2.5mm;
+    padding-top: 1.6mm;
+    border-top: 0.4pt solid var(--rule-soft);
+  }
+  figcaption b { color: var(--ink-2); font-weight: 700; }
+  svg { display: block; width: 100%; height: auto; }
+
+  ul, ol { margin: 0 0 9pt; padding-left: 5mm; }
+  li { margin-bottom: 2.5pt; }
+
+  .kv { font-size: 8.6pt; }
+  .kv td:first-child { width: 34mm; font-weight: 600; color: var(--ink-2); }
+
+  .avoid-break { break-inside: avoid; }
+</style>
+
+<!-- ============================= COVER ============================= -->
+<section class="cover">
+  <div class="cover-band">
+    <div class="cover-eyebrow">Software Architecture Dossier</div>
+    <h1 class="cover-title" style="break-before:auto;border:0;color:#fff;padding:0;margin:0 0 5mm">ERP Server<br>Backend Architecture</h1>
+    <p class="cover-sub">A NestJS · Prisma · PostgreSQL platform for multi-company retail and distribution ERP — system design, data architecture, security posture, and engineering risk register.</p>
+  </div>
+
+  <div class="cover-body">
+    <div class="cover-stats">
+      <div class="cover-stat"><div class="n">77.7k</div><div class="l">Lines of TypeScript</div></div>
+      <div class="cover-stat"><div class="n">234</div><div class="l">HTTP Endpoints</div></div>
+      <div class="cover-stat"><div class="n">90</div><div class="l">Database Models</div></div>
+      <div class="cover-stat"><div class="n">204</div><div class="l">Migrations</div></div>
+    </div>
+
+    <table class="kv" style="max-width:150mm">
+      <tr><td>Document</td><td>ERP Server — Backend Architecture Dossier</td></tr>
+      <tr><td>Revision</td><td>1.0</td></tr>
+      <tr><td>Status</td><td>Issued for internal review</td></tr>
+      <tr><td>Date of issue</td><td>14 July 2026</td></tr>
+      <tr><td>Applies to</td><td>Branch <code>DEV-v1</code> @ <code>5b3b3f0</code> · 220 commits (13 Feb – 11 Jul 2026)</td></tr>
+      <tr><td>Repository</td><td><code>ERP server</code> — <code>erp-server@1.0.0</code></td></tr>
+      <tr><td>Audience</td><td>Engineering, architecture review board, security, operations</td></tr>
+      <tr><td>Classification</td><td><strong>Confidential — internal use only.</strong> Contains unremediated security findings.</td></tr>
+    </table>
+  </div>
+
+  <div class="cover-foot">
+    Sections 12 and 13 record open defects and security exposures identified during this review. They are reported
+    as found, without mitigation. Distribution outside the engineering organisation is not authorised.
+  </div>
+</section>
+
+<!-- ============================= TOC ============================= -->
+<h1 class="no-break">Contents</h1>
+<div class="toc">
+  <div class="toc-item"><span class="toc-n">1</span><span class="toc-t">Executive summary</span></div>
+  <div class="toc-item"><span class="toc-n">2</span><span class="toc-t">System context and scope</span></div>
+  <div class="toc-item"><span class="toc-n">3</span><span class="toc-t">Technology stack</span></div>
+  <div class="toc-item"><span class="toc-n">4</span><span class="toc-t">Runtime architecture</span></div>
+  <div class="toc-sub">4.1 Layering · 4.2 Request pipeline · 4.3 Bootstrap sequence</div>
+  <div class="toc-item"><span class="toc-n">5</span><span class="toc-t">Domain module catalogue</span></div>
+  <div class="toc-sub">5.1 Map · 5.2 Endpoint distribution · 5.3 Module reference</div>
+  <div class="toc-item"><span class="toc-n">6</span><span class="toc-t">API design and contracts</span></div>
+  <div class="toc-sub">6.1 URL grammar · 6.2 Envelopes · 6.3 Status mapping</div>
+  <div class="toc-item"><span class="toc-n">7</span><span class="toc-t">Data architecture</span></div>
+  <div class="toc-sub">7.1 Schema composition · 7.2 Multi-schema model · 7.3 Conventions · 7.4 Migrations</div>
+  <div class="toc-item"><span class="toc-n">8</span><span class="toc-t">The configured-SQL engine</span></div>
+  <div class="toc-item"><span class="toc-n">9</span><span class="toc-t">Transactional integrity and document numbering</span></div>
+  <div class="toc-item"><span class="toc-n">10</span><span class="toc-t">Security architecture</span></div>
+  <div class="toc-sub">10.1 Authentication · 10.2 Authorisation · 10.3 Input validation · 10.4 Audit trail</div>
+  <div class="toc-item"><span class="toc-n">11</span><span class="toc-t">Caching, queues and background work</span></div>
+  <div class="toc-item"><span class="toc-n">12</span><span class="toc-t">Observability and performance</span></div>
+  <div class="toc-item"><span class="toc-n">13</span><span class="toc-t">Build, packaging and deployment</span></div>
+  <div class="toc-item"><span class="toc-n">14</span><span class="toc-t">Quality engineering</span></div>
+  <div class="toc-item"><span class="toc-n">15</span><span class="toc-t">Risk register</span></div>
+  <div class="toc-item"><span class="toc-n">16</span><span class="toc-t">Remediation roadmap</span></div>
+  <div class="toc-item"><span class="toc-n">A</span><span class="toc-t">Appendix — configuration surface</span></div>
+  <div class="toc-item"><span class="toc-n">B</span><span class="toc-t">Appendix — route index</span></div>
+  <div class="toc-item"><span class="toc-n">C</span><span class="toc-t">Appendix — glossary</span></div>
+</div>
+
+<!-- ============================= 1. EXEC SUMMARY ============================= -->
+<h1><span class="num">1</span>Executive summary</h1>
+
+<p class="lede">The ERP Server is a single-deployable NestJS monolith that provides the master-data, inventory,
+accounting and sales backbone for a multi-company, multi-branch retail ERP. It is a mature, internally consistent
+codebase: 77,701 lines of TypeScript across 69 controllers and 87 services, backed by 90 PostgreSQL models spread
+over eight schemas and 204 sequential migrations. Its defining architectural choice is that a large part of the
+user interface — grids, dropdowns, column layouts, and the SQL that feeds them — is <em>data</em>, not code.</p>
+
+<h2><span class="num">1.1</span>What the system is</h2>
+<p>Functionally the platform covers the master-data and stock spine of a distribution ERP: an item catalogue with
+units, conversions, barcodes, taxes and price levels; a chart of accounts with a voucher engine; customers,
+suppliers and the geographic hierarchy above them; warehouses, opening stock, physical stock counts and a
+batch-level stock ledger; and the organisational structure — companies, branches, fiscal years, employees and
+users — that scopes all of it.</p>
+
+<p>Two design decisions distinguish it from a conventional CRUD service. First, <strong>customers and suppliers are
+account ledgers</strong>: each one is provisioned with a row in <code>acc_ledger_master</code> and reuses that ledger's
+primary key as its own, so a customer <em>is</em> its ledger rather than pointing at one. Second, the
+<strong>configured-SQL engine</strong> stores the SELECT statement behind every grid and dropdown as a database row, parses
+and validates it at runtime, binds tenant parameters into it, and executes it on a read-only connection pool.
+Screens can be added or reshaped by an administrator without a deployment.</p>
+
+<h2><span class="num">1.2</span>Engineering assessment</h2>
+
+<table>
+  <thead><tr><th style="width:36mm">Dimension</th><th style="width:20mm">Rating</th><th>Basis</th></tr></thead>
+  <tbody>
+    <tr><td>Structural consistency</td><td><strong>Strong</strong></td><td>55 modules follow one scaffold (DTO → filter → controller → service). A shared utility spine (<code>module-shared.utils.ts</code>) supplies pagination, error helpers and transaction typing to all of them.</td></tr>
+    <tr><td>Data integrity</td><td><strong>Strong</strong></td><td>294 interactive transactions; advisory-lock-guarded document numbering; universal soft delete; JSONB before/after audit snapshots written inside the business transaction.</td></tr>
+    <tr><td>Domain depth</td><td><strong>Strong</strong></td><td>The stock ledger implements batch identity resolution, two-tier balance roll-up and valuation as a genuine engine, not CRUD.</td></tr>
+    <tr><td>Security posture</td><td><strong>Critical gaps</strong></td><td>The entire Users controller is unauthenticated; role-based authorisation and the Prisma tenant-scoping extension were removed in commit <code>80ab8eb</code> and never replaced. See §10 and §15.</td></tr>
+    <tr><td>Operational readiness</td><td><strong>Weak</strong></td><td>No CI pipeline, no log rotation (168&nbsp;MB <code>app.log</code>), no metrics or tracing, single-process PM2 deployment, and two queues with no producers.</td></tr>
+    <tr><td>Test coverage</td><td><strong>Uneven</strong></td><td>56 spec files, 37 of them in Inventory. Settings, purchase, fixed, users, cache and queue code have none.</td></tr>
+  </tbody>
+</table>
+
+<div class="box risk">
+  <div class="box-t">Principal finding</div>
+  <p>The application currently has <strong>authentication but no authorisation</strong>. Once a bearer token is issued,
+  every one of the ~64 protected controllers is fully accessible, and no query is filtered by company or branch.
+  A Prisma client extension that auto-scoped 35 models to the token's company was deleted in commit <code>80ab8eb</code>
+  and has no replacement; a stale comment in <code>items-master.service.ts</code> still refers to it. Separately,
+  <code>UsersController</code> carries a class-level <code>@Public()</code>, which exposes unauthenticated user creation,
+  user enumeration and password change. These are the two items that gate any production release.</p>
+</div>
+
+<h2><span class="num">1.3</span>How to read this document</h2>
+<p>Sections 2–9 describe the system as designed and built. Section 10 assesses the security architecture against
+what is actually enforced. Sections 11–14 cover the operational surface. Section 15 consolidates every defect and
+exposure found during the review into a single register with severity and location; section 16 sequences the fixes.
+Every claim in this document was verified against the source tree at commit <code>5b3b3f0</code>; file paths are given
+so that each can be re-checked.</p>
+
+<!-- ============================= 2. CONTEXT ============================= -->
+<h1><span class="num">2</span>System context and scope</h1>
+
+<h2><span class="num">2.1</span>Position in the wider system</h2>
+<p>The ERP Server is the sole backend for the ERP product. It is consumed by a browser-based administration and
+point-of-sale client over HTTP, and it owns the PostgreSQL database outright — there is no other writer. Redis is an
+optional dependency used for HTTP response caching, authentication sessions and BullMQ job transport; the
+application degrades to a no-op cache and boots successfully when Redis is absent.</p>
+
+<figure>
+<svg viewBox="0 0 700 250" xmlns="http://www.w3.org/2000/svg" font-family="Segoe UI, DejaVu Sans, Arial" font-size="11">
+  <defs>
+    <marker id="ah" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+      <path d="M0,0 L7,3 L0,6 z" fill="#3d3c39"/>
+    </marker>
+  </defs>
+
+  <!-- client -->
+  <rect x="12" y="88" width="120" height="66" rx="4" fill="#f6f6f4" stroke="#3d3c39" stroke-width="1.2"/>
+  <text x="72" y="112" text-anchor="middle" font-weight="700" fill="#0b0b0b">Web / POS client</text>
+  <text x="72" y="128" text-anchor="middle" font-size="9" fill="#6b6a66">Browser SPA</text>
+  <text x="72" y="141" text-anchor="middle" font-size="9" fill="#6b6a66">Bearer JWT</text>
+
+  <!-- server -->
+  <rect x="212" y="52" width="200" height="140" rx="4" fill="#12305c" stroke="#12305c"/>
+  <text x="312" y="80" text-anchor="middle" font-weight="700" fill="#ffffff" font-size="12">ERP Server</text>
+  <text x="312" y="97" text-anchor="middle" font-size="9" fill="#9dbbe4">NestJS 10 · Node 18/22</text>
+  <rect x="228" y="110" width="168" height="26" rx="3" fill="#1d4party" opacity="0"/>
+  <rect x="228" y="110" width="168" height="24" rx="3" fill="#254a80"/>
+  <text x="312" y="126" text-anchor="middle" font-size="9" fill="#e8eef7">REST · /api/v1 · Swagger</text>
+  <rect x="228" y="142" width="168" height="24" rx="3" fill="#254a80"/>
+  <text x="312" y="158" text-anchor="middle" font-size="9" fill="#e8eef7">Single process (PM2 fork)</text>
+
+  <!-- postgres -->
+  <rect x="492" y="30" width="196" height="62" rx="4" fill="#f6f6f4" stroke="#3d3c39" stroke-width="1.2"/>
+  <text x="590" y="54" text-anchor="middle" font-weight="700" fill="#0b0b0b">PostgreSQL 16</text>
+  <text x="590" y="70" text-anchor="middle" font-size="9" fill="#6b6a66">8 schemas · 90 tables · sole owner</text>
+  <text x="590" y="83" text-anchor="middle" font-size="9" fill="#6b6a66">primary pool + read-only pool</text>
+
+  <!-- redis -->
+  <rect x="492" y="106" width="196" height="62" rx="4" fill="#f6f6f4" stroke="#6b6a66" stroke-width="1.2" stroke-dasharray="4 2.5"/>
+  <text x="590" y="130" text-anchor="middle" font-weight="700" fill="#0b0b0b">Redis 7 <tspan font-weight="400" font-size="9" fill="#6b6a66">(optional)</tspan></text>
+  <text x="590" y="146" text-anchor="middle" font-size="9" fill="#6b6a66">HTTP cache · auth sessions</text>
+  <text x="590" y="159" text-anchor="middle" font-size="9" fill="#6b6a66">BullMQ transport</text>
+
+  <!-- filesystem -->
+  <rect x="492" y="182" width="196" height="46" rx="4" fill="#f6f6f4" stroke="#3d3c39" stroke-width="1.2"/>
+  <text x="590" y="204" text-anchor="middle" font-weight="700" fill="#0b0b0b">Local filesystem</text>
+  <text x="590" y="219" text-anchor="middle" font-size="9" fill="#6b6a66">app.log · error.log (unrotated)</text>
+
+  <!-- arrows -->
+  <line x1="134" y1="121" x2="208" y2="121" stroke="#3d3c39" stroke-width="1.3" marker-end="url(#ah)"/>
+  <text x="171" y="114" text-anchor="middle" font-size="8" fill="#6b6a66">HTTPS</text>
+  <line x1="414" y1="100" x2="488" y2="70" stroke="#3d3c39" stroke-width="1.3" marker-end="url(#ah)"/>
+  <text x="452" y="79" text-anchor="middle" font-size="8" fill="#6b6a66">Prisma / pg</text>
+  <line x1="414" y1="128" x2="488" y2="134" stroke="#6b6a66" stroke-width="1.3" stroke-dasharray="4 2.5" marker-end="url(#ah)"/>
+  <line x1="414" y1="160" x2="488" y2="198" stroke="#3d3c39" stroke-width="1.3" marker-end="url(#ah)"/>
+
+  <text x="12" y="228" font-size="8.5" fill="#6b6a66">Dashed = optional dependency; the server boots and serves traffic without it.</text>
+</svg>
+<figcaption><b>Figure 2.1</b> — System context. The server is the only writer to the database and the only integration point for the client.</figcaption>
+</figure>
+
+<h2><span class="num">2.2</span>In scope / out of scope</h2>
+<table class="t-tight">
+  <thead><tr><th style="width:50%">Owned by this system</th><th>Explicitly not present</th></tr></thead>
+  <tbody>
+    <tr><td>Master data: items, units, taxes, prices, barcodes, godowns</td><td>Purchase and sales <em>transactions</em> (only quotations exist today)</td></tr>
+    <tr><td>Chart of accounts, ledgers, vouchers, e-invoice/e-way-bill document register</td><td>GST filing / GSP call-out (credentials are stored; no client implemented)</td></tr>
+    <tr><td>Stock: opening stock, physical stock, batch ledger, balances</td><td>Reporting/BI layer beyond the configured-grid engine</td></tr>
+    <tr><td>Organisation: companies, branches, fiscal years, employees, users</td><td>Message bus, external integrations, webhooks</td></tr>
+    <tr><td>Platform: audit trail, sequences, configurable grids and dropdowns</td><td>Horizontal scale-out (single process by configuration)</td></tr>
+  </tbody>
+</table>
+
+<h2><span class="num">2.3</span>Quality attributes, as actually engineered</h2>
+<table class="t-tight">
+  <thead><tr><th style="width:30mm">Attribute</th><th>Mechanism in the code</th></tr></thead>
+  <tbody>
+    <tr><td>Consistency</td><td>Every write of consequence runs inside <code>prisma.$transaction</code>; the audit row is written with the same transaction client, so an audit entry cannot survive a rolled-back business write.</td></tr>
+    <tr><td>Recoverability</td><td>Nothing is hard-deleted. 80 of 90 models carry an <code>*_is_deleted</code> flag and delete endpoints toggle it.</td></tr>
+    <tr><td>Traceability</td><td>83 models carry <code>*_created_on</code>/<code>*_created_by</code>; <code>audit.audit_log</code> stores JSONB before/after snapshots and a computed field-level diff.</td></tr>
+    <tr><td>Configurability</td><td>Grids, dropdowns, column widths, menus, batch prefixes and document-number formats are rows, not code.</td></tr>
+    <tr><td>Portability</td><td>The build produces a single self-contained executable per platform (<code>pkg</code>), targeting hosts with no Node runtime installed.</td></tr>
+    <tr><td>Availability</td><td>Redis failure degrades to a no-op cache rather than failing the boot; a database failure at startup is logged but not fatal.</td></tr>
+  </tbody>
+</table>
+
+<!-- ============================= 3. STACK ============================= -->
+<h1><span class="num">3</span>Technology stack</h1>
+
+<table>
+  <caption>Runtime and framework</caption>
+  <thead><tr><th style="width:42mm">Component</th><th style="width:24mm">Version</th><th>Role and notes</th></tr></thead>
+  <tbody>
+    <tr><td>Node.js</td><td>18 (target) / 22 (dev)</td><td>The <code>pkg</code> release targets <code>node18-win-x64</code> and <code>node18-linux-x64</code>.</td></tr>
+    <tr><td>TypeScript</td><td>5.7</td><td>Strict decorator metadata; <code>tsc --noEmit</code> available as <code>npm run typecheck</code>.</td></tr>
+    <tr><td>NestJS</td><td>10.4</td><td>Express adapter. URI versioning, global prefix, global guard/filter/interceptor chain.</td></tr>
+    <tr><td>Prisma ORM</td><td>6.19.2</td><td>Multi-schema (<code>@@schema</code>) client. Interactive transactions are the dominant write pattern.</td></tr>
+    <tr><td>PostgreSQL</td><td>16 (alpine)</td><td>Eight active schemas. Requires a <code>uuidv7()</code> SQL function — 72 models depend on it for primary keys.</td></tr>
+    <tr><td>node-postgres (<code>pg</code>)</td><td>8.13</td><td>A second, deliberate access path: two pools, one forced <code>default_transaction_read_only=on</code> for user-authored SQL.</td></tr>
+    <tr><td>Redis</td><td>7 (alpine)</td><td>Optional. HTTP cache, auth session store, BullMQ transport.</td></tr>
+    <tr><td>BullMQ</td><td>5.76</td><td>Two queues registered — <code>audit-log-archival</code> and <code>stock-reconciliation</code>.</td></tr>
+  </tbody>
+</table>
+
+<table>
+  <caption>Cross-cutting libraries</caption>
+  <thead><tr><th style="width:42mm">Library</th><th>Applied to</th></tr></thead>
+  <tbody>
+    <tr><td><code>class-validator</code> / <code>class-transformer</code></td><td>All 213 DTOs, through a shared decorator library (<code>src/common/dto/dtoDecorators.ts</code>). Enforced by a global <code>ValidationPipe</code> with <code>whitelist</code> and <code>forbidNonWhitelisted</code>.</td></tr>
+    <tr><td><code>@nestjs/swagger</code></td><td>One aggregate OpenAPI document plus ~60 per-module documents, generated from a registry at <code>src/utils/swaggerDocs.ts</code>.</td></tr>
+    <tr><td><code>@nestjs/throttler</code></td><td>Global rate limit, 100 requests / 60 s / IP, in-memory storage.</td></tr>
+    <tr><td><code>helmet</code>, <code>compression</code></td><td>Security headers (CSP relaxed for Swagger UI) and response compression.</td></tr>
+    <tr><td><code>joi</code></td><td>Boot-time validation of 40 environment variables (<code>src/config/env.validation.ts</code>).</td></tr>
+    <tr><td><code>node:crypto</code></td><td>Hand-rolled HS256 JWT and scrypt password hashing — <code>@nestjs/jwt</code> is a dependency but is <em>not</em> used.</td></tr>
+    <tr><td><code>jest</code> / <code>supertest</code></td><td>56 unit specs, 2 end-to-end specs.</td></tr>
+    <tr><td><code>pkg</code></td><td>Single-binary packaging, including the Prisma query engine and the <code>.env</code> file.</td></tr>
+  </tbody>
+</table>
+
+<div class="box convention">
+  <div class="box-t">Convention — no ORM lock-in on the read path</div>
+  <p>Prisma owns every typed CRUD path. Raw SQL is confined to three places, by design: PostgreSQL advisory locks
+  (inexpressible in the Prisma API), the <code>SELECT 1</code> liveness probe, and the configured-SQL engine, which by
+  definition executes statements the ORM cannot know about. Nothing else reaches for <code>$queryRawUnsafe</code>.</p>
+</div>
+<!-- ============================= 4. RUNTIME ARCHITECTURE ============================= -->
+<h1><span class="num">4</span>Runtime architecture</h1>
+
+<h2><span class="num">4.1</span>Layering</h2>
+<p>The application is a layered monolith. Controllers are thin — they validate, delegate, and shape the response
+envelope. Services hold the domain logic and own transaction boundaries. Two persistence services sit beneath them,
+and a set of global cross-cutting components wraps every request from the outside.</p>
+
+<figure>
+<svg viewBox="0 0 700 330" xmlns="http://www.w3.org/2000/svg" font-family="Segoe UI, DejaVu Sans, Arial" font-size="10">
+  <!-- cross-cutting frame -->
+  <rect x="8" y="8" width="684" height="314" rx="5" fill="none" stroke="#6b6a66" stroke-width="1" stroke-dasharray="5 3"/>
+  <text x="20" y="24" font-size="8.5" font-weight="700" fill="#6b6a66" letter-spacing="1">CROSS-CUTTING — GLOBAL GUARD · FILTERS · INTERCEPTORS · REQUEST CONTEXT (AsyncLocalStorage) · AUDIT · LOGGING</text>
+
+  <!-- L1 -->
+  <rect x="26" y="38" width="648" height="52" rx="4" fill="#12305c"/>
+  <text x="40" y="60" font-weight="700" fill="#ffffff" font-size="11">Interface layer — 69 controllers</text>
+  <text x="40" y="77" font-size="9" fill="#9dbbe4">@Controller + @Version · DTO validation · per-module exception filter · response envelope · @CacheTTL</text>
+
+  <!-- L2 -->
+  <rect x="26" y="98" width="648" height="72" rx="4" fill="#e8eef7" stroke="#254a80" stroke-width="1"/>
+  <text x="40" y="120" font-weight="700" fill="#12305c" font-size="11">Domain layer — 87 services</text>
+  <text x="40" y="137" font-size="9" fill="#3d3c39">Transaction boundary (294 × $transaction) · soft delete · linked-ledger mirroring · child-collection reconciliation</text>
+  <text x="40" y="152" font-size="9" fill="#3d3c39">Stock engine · voucher engine · sequence allocation (advisory locks) · audit emission inside the same tx</text>
+  <text x="40" y="166" font-size="8.5" fill="#6b6a66">Shared spine: module-shared.utils.ts — pagination, throw helpers, Prisma error mapping, ModuleWriteClient typing</text>
+
+  <!-- L3 -->
+  <rect x="26" y="178" width="318" height="76" rx="4" fill="#f6f6f4" stroke="#3d3c39" stroke-width="1"/>
+  <text x="40" y="199" font-weight="700" fill="#0b0b0b" font-size="10.5">PrismaService</text>
+  <text x="40" y="215" font-size="9" fill="#3d3c39">Typed CRUD · interactive transactions</text>
+  <text x="40" y="229" font-size="9" fill="#3d3c39">Advisory locks via $queryRaw</text>
+  <text x="40" y="245" font-size="8.5" fill="#6b6a66">Every business module</text>
+
+  <rect x="356" y="178" width="318" height="76" rx="4" fill="#f6f6f4" stroke="#3d3c39" stroke-width="1"/>
+  <text x="370" y="199" font-weight="700" fill="#0b0b0b" font-size="10.5">PgService — two pools</text>
+  <text x="370" y="215" font-size="9" fill="#3d3c39">readOnlyPool: default_transaction_read_only=on</text>
+  <text x="370" y="229" font-size="9" fill="#3d3c39">Executes user-authored grid / dropdown SQL only</text>
+  <text x="370" y="245" font-size="8.5" fill="#6b6a66">configured-grid-sql · master-lookup · dropdown-details</text>
+
+  <!-- L4 -->
+  <rect x="26" y="262" width="209" height="48" rx="4" fill="#ffffff" stroke="#3d3c39" stroke-width="1.3"/>
+  <text x="130" y="282" text-anchor="middle" font-weight="700" font-size="10.5">PostgreSQL 16</text>
+  <text x="130" y="297" text-anchor="middle" font-size="8.5" fill="#6b6a66">90 models · 8 schemas</text>
+
+  <rect x="245" y="262" width="209" height="48" rx="4" fill="#ffffff" stroke="#6b6a66" stroke-width="1.3" stroke-dasharray="4 2.5"/>
+  <text x="349" y="282" text-anchor="middle" font-weight="700" font-size="10.5">Redis 7</text>
+  <text x="349" y="297" text-anchor="middle" font-size="8.5" fill="#6b6a66">cache · sessions · BullMQ</text>
+
+  <rect x="464" y="262" width="210" height="48" rx="4" fill="#ffffff" stroke="#6b6a66" stroke-width="1.3" stroke-dasharray="4 2.5"/>
+  <text x="569" y="282" text-anchor="middle" font-weight="700" font-size="10.5">BullMQ workers</text>
+  <text x="569" y="297" text-anchor="middle" font-size="8.5" fill="#6b6a66">2 queues · no producers today</text>
+</svg>
+<figcaption><b>Figure 4.1</b> — Layering. The dual persistence path is intentional: <code>PgService</code> exists solely so that SQL stored in the database can be executed under a read-only session, isolated from the ORM.</figcaption>
+</figure>
+
+<h2><span class="num">4.2</span>The request pipeline</h2>
+<p>Every request passes through a fixed chain assembled in <code>src/main.ts</code> and <code>src/app.module.ts</code>. The order
+is load-bearing: body limits are registered before Nest initialises so they override the framework's 100&nbsp;kB default,
+and the access-token guard runs before any interceptor so that request context is populated from the verified token —
+never from a header — before caching or handler logic sees the request.</p>
+
+<figure>
+<svg viewBox="0 0 700 176" xmlns="http://www.w3.org/2000/svg" font-family="Segoe UI, DejaVu Sans, Arial" font-size="9">
+  <defs>
+    <marker id="ah2" markerWidth="7" markerHeight="7" refX="6" refY="2.6" orient="auto">
+      <path d="M0,0 L6,2.6 L0,5.2 z" fill="#6b6a66"/>
+    </marker>
+  </defs>
+  <text x="8" y="12" font-size="8" font-weight="700" fill="#6b6a66" letter-spacing="1">INBOUND</text>
+
+  <g>
+    <rect x="8" y="20" width="86" height="34" rx="3" fill="#f6f6f4" stroke="#3d3c39"/>
+    <text x="51" y="35" text-anchor="middle" font-weight="700" font-size="8.5">helmet</text>
+    <text x="51" y="47" text-anchor="middle" font-size="7.5" fill="#6b6a66">CSP, HSTS</text>
+
+    <rect x="102" y="20" width="86" height="34" rx="3" fill="#f6f6f4" stroke="#3d3c39"/>
+    <text x="145" y="35" text-anchor="middle" font-weight="700" font-size="8.5">compression</text>
+    <text x="145" y="47" text-anchor="middle" font-size="7.5" fill="#6b6a66">gzip</text>
+
+    <rect x="196" y="20" width="86" height="34" rx="3" fill="#f6f6f4" stroke="#3d3c39"/>
+    <text x="239" y="35" text-anchor="middle" font-weight="700" font-size="8.5">CORS</text>
+    <text x="239" y="47" text-anchor="middle" font-size="7.5" fill="#6b6a66">allow-list</text>
+
+    <rect x="290" y="20" width="86" height="34" rx="3" fill="#f6f6f4" stroke="#3d3c39"/>
+    <text x="333" y="35" text-anchor="middle" font-weight="700" font-size="8.5">body limit</text>
+    <text x="333" y="47" text-anchor="middle" font-size="7.5" fill="#6b6a66">10 MB</text>
+
+    <rect x="384" y="20" width="104" height="34" rx="3" fill="#e8eef7" stroke="#254a80"/>
+    <text x="436" y="35" text-anchor="middle" font-weight="700" font-size="8.5">RequestContext</text>
+    <text x="436" y="47" text-anchor="middle" font-size="7.5" fill="#6b6a66">ALS scope opens</text>
+
+    <rect x="496" y="20" width="96" height="34" rx="3" fill="#e8eef7" stroke="#254a80"/>
+    <text x="544" y="35" text-anchor="middle" font-weight="700" font-size="8.5">RequestLogger</text>
+    <text x="544" y="47" text-anchor="middle" font-size="7.5" fill="#6b6a66">on finish</text>
+
+    <rect x="600" y="20" width="92" height="34" rx="3" fill="#12305c" stroke="#12305c"/>
+    <text x="646" y="35" text-anchor="middle" font-weight="700" font-size="8.5" fill="#fff">AccessToken</text>
+    <text x="646" y="47" text-anchor="middle" font-size="7.5" fill="#9dbbe4">Guard</text>
+  </g>
+
+  <path d="M646 56 L646 68 L20 68 L20 82" fill="none" stroke="#6b6a66" stroke-width="1" marker-end="url(#ah2)"/>
+
+  <g>
+    <rect x="8" y="86" width="92" height="34" rx="3" fill="#12305c" stroke="#12305c"/>
+    <text x="54" y="101" text-anchor="middle" font-weight="700" font-size="8.5" fill="#fff">Throttler</text>
+    <text x="54" y="113" text-anchor="middle" font-size="7.5" fill="#9dbbe4">100 / 60 s / IP</text>
+
+    <rect x="108" y="86" width="100" height="34" rx="3" fill="#f6f6f4" stroke="#3d3c39"/>
+    <text x="158" y="101" text-anchor="middle" font-weight="700" font-size="8.5">HttpCache</text>
+    <text x="158" y="113" text-anchor="middle" font-size="7.5" fill="#6b6a66">GET + @CacheTTL</text>
+
+    <rect x="216" y="86" width="104" height="34" rx="3" fill="#f6f6f4" stroke="#3d3c39"/>
+    <text x="268" y="101" text-anchor="middle" font-weight="700" font-size="8.5">CacheInvalidation</text>
+    <text x="268" y="113" text-anchor="middle" font-size="7.5" fill="#6b6a66">on write verbs</text>
+
+    <rect x="328" y="86" width="92" height="34" rx="3" fill="#f6f6f4" stroke="#3d3c39"/>
+    <text x="374" y="101" text-anchor="middle" font-weight="700" font-size="8.5">Timeout</text>
+    <text x="374" y="113" text-anchor="middle" font-size="7.5" fill="#6b6a66">15 s → 408</text>
+
+    <rect x="428" y="86" width="100" height="34" rx="3" fill="#f6f6f4" stroke="#3d3c39"/>
+    <text x="478" y="101" text-anchor="middle" font-weight="700" font-size="8.5">ValidationPipe</text>
+    <text x="478" y="113" text-anchor="middle" font-size="7.5" fill="#6b6a66">whitelist, strict</text>
+
+    <rect x="536" y="86" width="156" height="34" rx="3" fill="#e8eef7" stroke="#254a80"/>
+    <text x="614" y="101" text-anchor="middle" font-weight="700" font-size="8.5">Controller → Service → DB</text>
+    <text x="614" y="113" text-anchor="middle" font-size="7.5" fill="#6b6a66">transaction + audit row</text>
+  </g>
+
+  <path d="M614 122 L614 134 L20 134 L20 146" fill="none" stroke="#6b6a66" stroke-width="1" marker-end="url(#ah2)"/>
+  <rect x="8" y="150" width="684" height="22" rx="3" fill="#fbf4f4" stroke="#a11c1c" stroke-width="0.8"/>
+  <text x="16" y="165" font-size="8.5" fill="#0b0b0b"><tspan font-weight="700">Exception path —</tspan> per-module filter (56 controllers) → <tspan font-family="DejaVu Sans Mono, monospace" font-size="8">{success, message, errors[]}</tspan>   ·   otherwise AllExceptionsFilter → <tspan font-family="DejaVu Sans Mono, monospace" font-size="8">{success, statusCode, message, path, timestamp}</tspan></text>
+</svg>
+<figcaption><b>Figure 4.2</b> — The global request pipeline. Two divergent error envelopes leave the system depending on whether the controller declares a module filter (§6.2).</figcaption>
+</figure>
+
+<h2><span class="num">4.3</span>Bootstrap sequence</h2>
+<p><code>src/main.ts</code> performs a deterministic 13-step boot. Two aspects are worth recording because they shape
+deployment. First, <code>src/env.preload.ts</code> is imported <em>before</em> <code>reflect-metadata</code> and before <code>AppModule</code>,
+so <code>process.env</code> is fully populated for module-evaluation-time reads — several modules (notably the throttler) read
+<code>process.env</code> directly rather than through <code>ConfigService</code>. Second, path resolution is <code>pkg</code>-aware:
+<code>resolveFilePath()</code> searches the working directory, then the executable's directory, then the packaged snapshot,
+so TLS certificates can sit beside the binary.</p>
+
+<table class="t-tight">
+  <thead><tr><th class="num" style="width:8mm">#</th><th style="width:44mm">Step</th><th>Behaviour</th></tr></thead>
+  <tbody>
+    <tr><td class="num">1</td><td>Env preload</td><td><code>dotenv.config()</code> before any framework import.</td></tr>
+    <tr><td class="num">2</td><td>HTTPS options</td><td>If <code>HTTPS_ENABLED</code>, cert and key are required — a missing path throws and aborts the boot.</td></tr>
+    <tr><td class="num">3</td><td>Logger</td><td><code>FileLoggerService</code> is constructed directly and passed to <code>NestFactory.create</code>, so the very first framework log line is already captured to file.</td></tr>
+    <tr><td class="num">4</td><td>Shutdown hooks</td><td><code>enableShutdownHooks()</code> — Prisma and both <code>pg</code> pools close on <code>onModuleDestroy</code>.</td></tr>
+    <tr><td class="num">5–7</td><td>Body limit → helmet → compression → CORS</td><td>In production, CORS is enabled <em>only</em> if <code>CORS_ORIGINS</code> is non-empty; otherwise it is never enabled at all.</td></tr>
+    <tr><td class="num">8–10</td><td>ValidationPipe, URI versioning, global prefix</td><td>Yields the URL shape <code>/api/v1/&lt;resource&gt;</code>.</td></tr>
+    <tr><td class="num">11</td><td>Swagger</td><td>Mounted unconditionally, including production. One aggregate document plus ~60 per-module documents.</td></tr>
+    <tr><td class="num">12</td><td>Listen</td><td><code>PORT</code> (3010 by configuration; PM2 overrides to 3012), <code>HOST</code> default <code>0.0.0.0</code>.</td></tr>
+    <tr><td class="num">13</td><td>DB probe</td><td><code>SELECT 1</code>. <strong>Failure is logged but does not abort the boot</strong> — the server will accept traffic with a dead database.</td></tr>
+  </tbody>
+</table>
+
+<!-- ============================= 5. MODULES ============================= -->
+<h1><span class="num">5</span>Domain module catalogue</h1>
+
+<p class="lede">Nineteen top-level modules decompose into 72 Nest modules and 69 controllers. Fifty-five of them are
+master-data modules built from the same four-file scaffold; the remainder are engines (stock, vouchers, sequences,
+configured SQL) or platform services (auth, audit, health, lookup).</p>
+
+<h2><span class="num">5.1</span>Domain map</h2>
+
+<figure>
+<svg viewBox="0 0 700 250" xmlns="http://www.w3.org/2000/svg" font-family="Segoe UI, DejaVu Sans, Arial" font-size="9">
+  <!-- row 1: business domains -->
+  <text x="8" y="12" font-size="8" font-weight="700" fill="#6b6a66" letter-spacing="1">BUSINESS DOMAINS</text>
+  <rect x="8" y="18" width="132" height="80" rx="4" fill="#e8eef7" stroke="#254a80"/>
+  <text x="74" y="36" text-anchor="middle" font-weight="700" font-size="10" fill="#12305c">Inventory</text>
+  <text x="74" y="50" text-anchor="middle" font-size="8" fill="#3d3c39">17 submodules · 47 routes</text>
+  <text x="74" y="64" text-anchor="middle" font-size="8" fill="#6b6a66">items · units · taxes</text>
+  <text x="74" y="76" text-anchor="middle" font-size="8" fill="#6b6a66">prices · barcodes · godowns</text>
+  <text x="74" y="90" text-anchor="middle" font-size="7.5" fill="#6b6a66">composite item save (1 tx)</text>
+
+  <rect x="148" y="18" width="132" height="80" rx="4" fill="#e8eef7" stroke="#254a80"/>
+  <text x="214" y="36" text-anchor="middle" font-weight="700" font-size="10" fill="#12305c">Sales</text>
+  <text x="214" y="50" text-anchor="middle" font-size="8" fill="#3d3c39">8 submodules · 30 routes</text>
+  <text x="214" y="64" text-anchor="middle" font-size="8" fill="#6b6a66">customers · state/city/area</text>
+  <text x="214" y="76" text-anchor="middle" font-size="8" fill="#6b6a66">quotations · loyalty · freight</text>
+  <text x="214" y="90" text-anchor="middle" font-size="7.5" fill="#6b6a66">customer ≡ ledger</text>
+
+  <rect x="288" y="18" width="132" height="80" rx="4" fill="#e8eef7" stroke="#254a80"/>
+  <text x="354" y="36" text-anchor="middle" font-weight="700" font-size="10" fill="#12305c">Accounts</text>
+  <text x="354" y="50" text-anchor="middle" font-size="8" fill="#3d3c39">9 submodules · 26 routes</text>
+  <text x="354" y="64" text-anchor="middle" font-size="8" fill="#6b6a66">COA · ledgers · vouchers</text>
+  <text x="354" y="76" text-anchor="middle" font-size="8" fill="#6b6a66">tenders · GSP · e-invoice</text>
+  <text x="354" y="90" text-anchor="middle" font-size="7.5" fill="#6b6a66">voucher-header helper</text>
+
+  <rect x="428" y="18" width="132" height="80" rx="4" fill="#e8eef7" stroke="#254a80"/>
+  <text x="494" y="36" text-anchor="middle" font-weight="700" font-size="10" fill="#12305c">Stocks</text>
+  <text x="494" y="50" text-anchor="middle" font-size="8" fill="#3d3c39">4 submodules · 18 routes</text>
+  <text x="494" y="64" text-anchor="middle" font-size="8" fill="#6b6a66">opening · physical count</text>
+  <text x="494" y="76" text-anchor="middle" font-size="8" fill="#6b6a66">batch ledger · balances</text>
+  <text x="494" y="90" text-anchor="middle" font-size="7.5" fill="#6b6a66">the stock engine</text>
+
+  <rect x="568" y="18" width="124" height="80" rx="4" fill="#e8eef7" stroke="#254a80"/>
+  <text x="630" y="36" text-anchor="middle" font-weight="700" font-size="10" fill="#12305c">Purchase</text>
+  <text x="630" y="50" text-anchor="middle" font-size="8" fill="#3d3c39">2 submodules · 6 routes</text>
+  <text x="630" y="64" text-anchor="middle" font-size="8" fill="#6b6a66">suppliers</text>
+  <text x="630" y="76" text-anchor="middle" font-size="8" fill="#6b6a66">supplier groups</text>
+  <text x="630" y="90" text-anchor="middle" font-size="7.5" fill="#6b6a66">supplier ≡ ledger</text>
+
+  <!-- row 2 -->
+  <text x="8" y="122" font-size="8" font-weight="700" fill="#6b6a66" letter-spacing="1">ORGANISATION &amp; REFERENCE</text>
+  <rect x="8" y="128" width="172" height="52" rx="4" fill="#f6f6f4" stroke="#3d3c39"/>
+  <text x="94" y="146" text-anchor="middle" font-weight="700" font-size="10">Settings — 24 routes</text>
+  <text x="94" y="160" text-anchor="middle" font-size="8" fill="#6b6a66">companies · branches · employees</text>
+  <text x="94" y="172" text-anchor="middle" font-size="8" fill="#6b6a66">user administration · configs</text>
+
+  <rect x="188" y="128" width="172" height="52" rx="4" fill="#f6f6f4" stroke="#3d3c39"/>
+  <text x="274" y="146" text-anchor="middle" font-weight="700" font-size="10">Fixed — 29 routes</text>
+  <text x="274" y="160" text-anchor="middle" font-size="8" fill="#6b6a66">banks · HSN · state codes · menus</text>
+  <text x="274" y="172" text-anchor="middle" font-size="8" fill="#6b6a66">UI tables · devices · price levels</text>
+
+  <rect x="368" y="128" width="152" height="52" rx="4" fill="#f6f6f4" stroke="#3d3c39"/>
+  <text x="444" y="146" text-anchor="middle" font-weight="700" font-size="10">Master — 10 routes</text>
+  <text x="444" y="160" text-anchor="middle" font-size="8" fill="#6b6a66">batch prefixes</text>
+  <text x="444" y="172" text-anchor="middle" font-size="8" fill="#6b6a66">dashboard widgets</text>
+
+  <rect x="528" y="128" width="164" height="52" rx="4" fill="#f6f6f4" stroke="#3d3c39"/>
+  <text x="610" y="146" text-anchor="middle" font-weight="700" font-size="10">Cust. rates — 4 routes</text>
+  <text x="610" y="160" text-anchor="middle" font-size="8" fill="#6b6a66">negotiated per-customer</text>
+  <text x="610" y="172" text-anchor="middle" font-size="8" fill="#6b6a66">item pricing overrides</text>
+
+  <!-- row 3 -->
+  <text x="8" y="204" font-size="8" font-weight="700" fill="#6b6a66" letter-spacing="1">PLATFORM SERVICES</text>
+  <rect x="8" y="210" width="106" height="34" rx="4" fill="#12305c"/>
+  <text x="61" y="225" text-anchor="middle" font-weight="700" font-size="9" fill="#fff">Auth</text>
+  <text x="61" y="237" text-anchor="middle" font-size="7.5" fill="#9dbbe4">JWT + Redis session</text>
+
+  <rect x="122" y="210" width="106" height="34" rx="4" fill="#12305c"/>
+  <text x="175" y="225" text-anchor="middle" font-weight="700" font-size="9" fill="#fff">Audit log</text>
+  <text x="175" y="237" text-anchor="middle" font-size="7.5" fill="#9dbbe4">53 services emit</text>
+
+  <rect x="236" y="210" width="120" height="34" rx="4" fill="#12305c"/>
+  <text x="296" y="225" text-anchor="middle" font-weight="700" font-size="9" fill="#fff">Configured SQL</text>
+  <text x="296" y="237" text-anchor="middle" font-size="7.5" fill="#9dbbe4">grids + dropdowns</text>
+
+  <rect x="364" y="210" width="106" height="34" rx="4" fill="#12305c"/>
+  <text x="417" y="225" text-anchor="middle" font-weight="700" font-size="9" fill="#fff">Sequences</text>
+  <text x="417" y="237" text-anchor="middle" font-size="7.5" fill="#9dbbe4">document numbers</text>
+
+  <rect x="478" y="210" width="106" height="34" rx="4" fill="#12305c"/>
+  <text x="531" y="225" text-anchor="middle" font-weight="700" font-size="9" fill="#fff">Master-lookup</text>
+  <text x="531" y="237" text-anchor="middle" font-size="7.5" fill="#9dbbe4">8 read routes</text>
+
+  <rect x="592" y="210" width="100" height="34" rx="4" fill="#12305c"/>
+  <text x="642" y="225" text-anchor="middle" font-weight="700" font-size="9" fill="#fff">Health</text>
+  <text x="642" y="237" text-anchor="middle" font-size="7.5" fill="#9dbbe4">DB + cache probe</text>
+</svg>
+<figcaption><b>Figure 5.1</b> — Domain map. Business domains sit on a shared organisation/reference tier and a platform tier that the whole system draws on.</figcaption>
+</figure>
+
+<h2><span class="num">5.2</span>Endpoint distribution</h2>
+<p>The 234 route decorators are unevenly distributed, and the shape is diagnostic: Inventory alone accounts for one
+route in five, and the top four modules carry 56% of the surface. This concentration is why Inventory is also where
+almost all the test coverage sits (§14).</p>
+
+<figure class="chart">
+<svg viewBox="0 0 700 400" xmlns="http://www.w3.org/2000/svg" font-family="Segoe UI, DejaVu Sans, Arial" font-size="9">
+  <!-- gridlines -->
+  <g stroke="#e8e7e4" stroke-width="0.8">
+    <line x1="146" y1="14" x2="146" y2="352"/>
+    <line x1="250" y1="14" x2="250" y2="352"/>
+    <line x1="354" y1="14" x2="354" y2="352"/>
+    <line x1="458" y1="14" x2="458" y2="352"/>
+    <line x1="562" y1="14" x2="562" y2="352"/>
+  </g>
+  <g fill="#6b6a66" font-size="7.5" text-anchor="middle">
+    <text x="146" y="366">0</text><text x="250" y="366">10</text><text x="354" y="366">20</text>
+    <text x="458" y="366">30</text><text x="562" y="366">40</text>
+  </g>
+  <line x1="146" y1="352" x2="666" y2="352" stroke="#3d3c39" stroke-width="1"/>
+  <text x="406" y="382" text-anchor="middle" font-size="8" fill="#6b6a66">HTTP route decorators</text>
+
+  <!-- bars: scale 10.4 px per unit, x0=146 -->
+  <g>
+    <!-- Inventory 47 -->
+    <text x="140" y="27" text-anchor="end" font-size="8.5" fill="#0b0b0b" font-weight="700">Inventory</text>
+    <rect x="146" y="17" width="489" height="13" rx="3" fill="#2a78d6"/>
+    <text x="643" y="27" font-size="8" font-weight="700" fill="#12305c">47</text>
+    <!-- Sales 30 -->
+    <text x="140" y="46" text-anchor="end" font-size="8.5" fill="#0b0b0b">Sales</text>
+    <rect x="146" y="36" width="312" height="13" rx="3" fill="#2a78d6"/>
+    <text x="466" y="46" font-size="8" fill="#3d3c39">30</text>
+    <!-- Fixed 29 -->
+    <text x="140" y="65" text-anchor="end" font-size="8.5" fill="#0b0b0b">Fixed / reference</text>
+    <rect x="146" y="55" width="302" height="13" rx="3" fill="#2a78d6"/>
+    <text x="456" y="65" font-size="8" fill="#3d3c39">29</text>
+    <!-- Accounts 26 -->
+    <text x="140" y="84" text-anchor="end" font-size="8.5" fill="#0b0b0b">Accounts</text>
+    <rect x="146" y="74" width="270" height="13" rx="3" fill="#2a78d6"/>
+    <text x="424" y="84" font-size="8" fill="#3d3c39">26</text>
+    <!-- Settings 24 -->
+    <text x="140" y="103" text-anchor="end" font-size="8.5" fill="#0b0b0b">Settings</text>
+    <rect x="146" y="93" width="250" height="13" rx="3" fill="#2a78d6"/>
+    <text x="404" y="103" font-size="8" fill="#3d3c39">24</text>
+    <!-- Stocks 18 -->
+    <text x="140" y="122" text-anchor="end" font-size="8.5" fill="#0b0b0b">Stocks</text>
+    <rect x="146" y="112" width="187" height="13" rx="3" fill="#2a78d6"/>
+    <text x="341" y="122" font-size="8" fill="#3d3c39">18</text>
+    <!-- Master 10 -->
+    <text x="140" y="141" text-anchor="end" font-size="8.5" fill="#0b0b0b">Master (prefix/widget)</text>
+    <rect x="146" y="131" width="104" height="13" rx="3" fill="#2a78d6"/>
+    <text x="258" y="141" font-size="8" fill="#3d3c39">10</text>
+    <!-- master-lookup 8 -->
+    <text x="140" y="160" text-anchor="end" font-size="8.5" fill="#0b0b0b">Master-lookup</text>
+    <rect x="146" y="150" width="83" height="13" rx="3" fill="#2a78d6"/>
+    <text x="237" y="160" font-size="8" fill="#3d3c39">8</text>
+    <!-- dropdown 8 -->
+    <text x="140" y="179" text-anchor="end" font-size="8.5" fill="#0b0b0b">Dropdown-details</text>
+    <rect x="146" y="169" width="83" height="13" rx="3" fill="#2a78d6"/>
+    <text x="237" y="179" font-size="8" fill="#3d3c39">8</text>
+    <!-- grid 7 -->
+    <text x="140" y="198" text-anchor="end" font-size="8.5" fill="#0b0b0b">Grid-details</text>
+    <rect x="146" y="188" width="73" height="13" rx="3" fill="#2a78d6"/>
+    <text x="227" y="198" font-size="8" fill="#3d3c39">7</text>
+    <!-- common 6 -->
+    <text x="140" y="217" text-anchor="end" font-size="8.5" fill="#0b0b0b">Platform (grid-SQL, seq.)</text>
+    <rect x="146" y="207" width="62" height="13" rx="3" fill="#2a78d6"/>
+    <text x="216" y="217" font-size="8" fill="#3d3c39">6</text>
+    <!-- purchase 6 -->
+    <text x="140" y="236" text-anchor="end" font-size="8.5" fill="#0b0b0b">Purchase</text>
+    <rect x="146" y="226" width="62" height="13" rx="3" fill="#2a78d6"/>
+    <text x="216" y="236" font-size="8" fill="#3d3c39">6</text>
+    <!-- users 5 -->
+    <text x="140" y="255" text-anchor="end" font-size="8.5" fill="#0b0b0b">Users</text>
+    <rect x="146" y="245" width="52" height="13" rx="3" fill="#2a78d6"/>
+    <text x="206" y="255" font-size="8" fill="#3d3c39">5</text>
+    <!-- cust rates 4 -->
+    <text x="140" y="274" text-anchor="end" font-size="8.5" fill="#0b0b0b">Customer item rates</text>
+    <rect x="146" y="264" width="42" height="13" rx="3" fill="#2a78d6"/>
+    <text x="196" y="274" font-size="8" fill="#3d3c39">4</text>
+    <!-- auth 2 -->
+    <text x="140" y="293" text-anchor="end" font-size="8.5" fill="#0b0b0b">Auth</text>
+    <rect x="146" y="283" width="21" height="13" rx="3" fill="#2a78d6"/>
+    <text x="175" y="293" font-size="8" fill="#3d3c39">2</text>
+    <!-- audit 1 -->
+    <text x="140" y="312" text-anchor="end" font-size="8.5" fill="#0b0b0b">Audit log</text>
+    <rect x="146" y="302" width="11" height="13" rx="3" fill="#2a78d6"/>
+    <text x="165" y="312" font-size="8" fill="#3d3c39">1</text>
+    <!-- item price lookup 1 -->
+    <text x="140" y="331" text-anchor="end" font-size="8.5" fill="#0b0b0b">Item price lookup</text>
+    <rect x="146" y="321" width="11" height="13" rx="3" fill="#2a78d6"/>
+    <text x="165" y="331" font-size="8" fill="#3d3c39">1</text>
+    <!-- health 1 -->
+    <text x="140" y="350" text-anchor="end" font-size="8.5" fill="#0b0b0b">Health</text>
+    <rect x="146" y="340" width="11" height="13" rx="3" fill="#2a78d6"/>
+    <text x="165" y="350" font-size="8" fill="#3d3c39">1</text>
+  </g>
+</svg>
+<figcaption><b>Figure 5.2</b> — Route decorators per module (n = 233; one further route belongs to an orphaned, unregistered duplicate module). Counts include alias routes, so they exceed the number of distinct business operations.</figcaption>
+</figure>
+
+<h2><span class="num">5.3</span>Module reference</h2>
+<table class="t-tight">
+  <thead><tr><th style="width:30mm">Module</th><th style="width:14mm" class="num">Routes</th><th>Responsibility and the pattern that defines it</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Inventory</strong></td><td class="num">47</td><td>Item catalogue and its satellites. <code>ItemsMasterService.saveComposite</code> writes the item and its unit conversions, prices, barcodes and reorder levels in one transaction; <code>item-master-update.service.ts</code> reconciles child collections by <em>natural key</em>, writing only genuine deltas.</td></tr>
+    <tr><td><strong>Sales</strong></td><td class="num">30</td><td>Customers, the state→city→area hierarchy, quotations, freight slabs, loyalty. A customer's primary key <em>is</em> its account-ledger id, and its area id becomes the ledger's parent account group.</td></tr>
+    <tr><td><strong>Fixed</strong></td><td class="num">29</td><td>Reference data (banks, HSN, state codes, devices, price levels) plus UI scaffolding (menu tree, UI table definitions) and login-session records.</td></tr>
+    <tr><td><strong>Accounts</strong></td><td class="num">26</td><td>Chart of accounts, ledgers, tender types, GSP registration. <code>accountVoucherHeader</code> has no controller — it is a pure helper that lets stock documents participate in accounting.</td></tr>
+    <tr><td><strong>Settings</strong></td><td class="num">24</td><td>Companies, branches, employees, user administration, key–value configs, GSP service credentials.</td></tr>
+    <tr><td><strong>Stocks</strong></td><td class="num">18</td><td>The movement engine. <code>item-stock-ledger.service.ts</code> (1,700 lines) resolves batch identity, auto-generates batch numbers from a configured prefix, applies movements to batch and summary rows, and rolls batches up into the item summary.</td></tr>
+    <tr><td><strong>Master-lookup</strong></td><td class="num">8</td><td>One read API feeding every dropdown in the UI, via a fetcher registry keyed by master name, with fallback to administrator-configured SQL.</td></tr>
+    <tr><td><strong>Grid / dropdown details</strong></td><td class="num">15</td><td>The metadata engines: stored SQL, column widths, filters, visibility — persisted per screen (§8).</td></tr>
+    <tr><td><strong>Purchase</strong></td><td class="num">6</td><td>Suppliers and supplier groups, mirrored into account ledgers exactly as customers are.</td></tr>
+    <tr><td><strong>Auth · Audit · Health</strong></td><td class="num">4</td><td>Login/refresh; the audit query API; the DB + cache probe.</td></tr>
+  </tbody>
+</table>
+
+<div class="box">
+  <div class="box-t">Housekeeping — dead code</div>
+  <p><code>src/modules/item-price-details/</code> is an orphaned duplicate of <code>src/modules/Inventory/item-price-details/</code>.
+  It has no <code>.module.ts</code>, is imported by nothing, and declares the same <code>@Controller('item-price-details')</code>
+  prefix as the live one. It is not routable and should be deleted. Similarly, <code>src/modules/stocks/itembatchstock/</code>
+  and <code>itemstockbalance/</code> use camelCase filenames (<code>itemBatchStockController.ts</code>) against the kebab-case
+  convention held by the other 67 controllers.</p>
+</div>
+
+<!-- ============================= 6. API ============================= -->
+<h1><span class="num">6</span>API design and contracts</h1>
+
+<h2><span class="num">6.1</span>URL grammar</h2>
+<p>All routes are versioned by URI under a configurable prefix: <code>/{API_PREFIX}/v{API_VERSION}/{resource}/{action}</code>,
+in practice <code>/api/v1/…</code>. The house style is <strong>verb-in-path CRUD</strong> rather than resource REST, and it is
+applied with near-total consistency across the master modules:</p>
+
+<pre><span class="c">POST</span>   /api/v1/item-groups/create     <span class="c">→ upsert: creates when no id is supplied, updates when one is</span>
+<span class="c">GET</span>    /api/v1/item-groups/get        <span class="c">→ single record by id (query param)</span>
+<span class="c">GET</span>    /api/v1/item-groups/list       <span class="c">→ paginated list: ?search=&amp;page=&amp;limit=</span>
+<span class="c">DELETE</span> /api/v1/item-groups/delete     <span class="c">→ toggles the soft-delete flag; returns { id, deleted: boolean }</span></pre>
+
+<p>Across the codebase this yields <code>get</code> ×64, <code>delete</code> ×54, <code>create</code> ×51 and <code>list</code> ×10 as the dominant
+sub-paths. The trade-off is deliberate but should be stated plainly: the API is not idiomatic REST, so HTTP caching,
+conditional requests and standard client tooling gain little from the method semantics. Two controllers
+(<code>users</code>, <code>physical-stock</code>) additionally expose <code>:id</code>-style routes as aliases, which is the only place the two
+styles collide.</p>
+
+<h2><span class="num">6.2</span>Response envelopes</h2>
+<p>Successful responses are assembled by hand in each controller — there is no global response interceptor — against
+a shared type, <code>ModuleApiSuccessResponse</code>:</p>
+
+<pre>{
+  "success": true,
+  "message": "Item groups fetched successfully",
+  "data": [ … ],
+  "meta":  { "page": 1, "limit": 20, "total": 3, "total_pages": 1 },
+  "styles": [ … ]        <span class="c">// optional: grid column styling, when served by the configured-SQL engine</span>
+}</pre>
+
+<p>Two endpoints deliberately break the envelope: <code>GET /health</code> returns a bare status object, and
+<code>POST /auth/login|refresh</code> return a bare token payload.</p>
+
+<div class="box risk">
+  <div class="box-t">Defect — the error contract is not uniform</div>
+  <p>There are <strong>two</strong> error envelopes, and which one a client receives depends on whether the controller declares
+  a module-scoped exception filter. Fifty-six controllers do, and return
+  <code>{success:false, message, errors:[{field, message}]}</code> — with no status code, path or timestamp in the body. The
+  remaining thirteen — including <code>auth</code>, <code>health</code> and <code>users</code> — fall through to the global
+  <code>AllExceptionsFilter</code> and return <code>{success:false, statusCode, message, path, timestamp}</code>, where <code>message</code> may be
+  a string, an array of strings, or a nested object. A client cannot parse errors uniformly. Consolidating on one
+  envelope is a low-risk, high-value fix (§16).</p>
+</div>
+
+<p>A further subtlety worth knowing when debugging: the module filter derives the <code>field</code> name in each error by
+running a <em>regular expression</em> over the validation message (each module supplies its own field-name pattern, e.g.
+<code>/\b(arm[A-Za-z0-9]+)\b/</code> for Area). When no match is found the field is reported as the literal string
+<code>"request"</code>.</p>
+
+<h2><span class="num">6.3</span>Status-code mapping</h2>
+<table class="t-tight">
+  <thead><tr><th style="width:18mm" class="num">Status</th><th style="width:52mm">Raised by</th><th>Condition</th></tr></thead>
+  <tbody>
+    <tr><td class="num">400</td><td>Global <code>ValidationPipe</code></td><td>DTO failure, or any property not on the DTO (<code>forbidNonWhitelisted</code>).</td></tr>
+    <tr><td class="num">400</td><td><code>throwBadRequest()</code></td><td>Business-rule violation; also the mapped result of a SQLSTATE class-42 error from configured SQL (undefined column/table is treated as a configuration fault, not a server fault).</td></tr>
+    <tr><td class="num">401</td><td><code>AccessTokenGuard</code></td><td>Missing or malformed <code>Bearer</code> header, invalid signature, expired token, or a session that is no longer active in Redis.</td></tr>
+    <tr><td class="num">404</td><td><code>throwNotFound()</code></td><td>Record absent or soft-deleted.</td></tr>
+    <tr><td class="num">408</td><td><code>TimeoutInterceptor</code></td><td>Handler exceeded the hard-coded 15,000 ms budget.</td></tr>
+    <tr><td class="num">409</td><td><code>throwConflict()</code></td><td>Prisma <code>P2002</code> unique-constraint violation, mapped centrally by <code>throwOnUniqueConstraintError()</code>.</td></tr>
+    <tr><td class="num">429</td><td><code>ThrottlerGuard</code></td><td>More than <code>THROTTLE_LIMIT</code> requests per <code>THROTTLE_TTL</code> from one IP.</td></tr>
+    <tr><td class="num">503</td><td><code>HealthController</code></td><td>Database or cache probe failed.</td></tr>
+    <tr><td class="num">500</td><td>Either filter</td><td>Anything else. Stack traces are logged server-side only, never returned.</td></tr>
+  </tbody>
+</table>
+
+<div class="box convention">
+  <div class="box-t">Convention — null versus undefined in DTOs</div>
+  <p>The shared decorator library encodes a three-state update semantics that is easy to miss and important to preserve:
+  <code>undefined</code> means <em>do not touch this column</em>, while an explicit <code>null</code> means <em>clear it</em>. This is implemented by
+  <code>SkipOnNullish()</code> — a <code>ValidateIf</code> that suppresses validation only for nullish values — wrapped into every
+  <code>Nullable*</code> decorator. Partial updates therefore work without a separate PATCH DTO.</p>
+</div>
+<!-- ============================= 7. DATA ============================= -->
+<h1><span class="num">7</span>Data architecture</h1>
+
+<p class="lede">Ninety models across eight PostgreSQL schemas, generated from 92 hand-maintained schema fragments and
+evolved through 204 sequential migrations. The schema is master-data dominated — roughly 75 of the 90 models are
+masters or configuration — with transactional depth concentrated in the voucher stack, the stock ledger and
+quotations.</p>
+
+<h2><span class="num">7.1</span>Schema composition — the generated schema is not the source of truth</h2>
+<p><code>prisma/schema.prisma</code> (4,803 lines) is a build artefact. It is regenerated by
+<code>scripts/build-prisma-schema.js</code>, which recursively walks <code>prisma/</code>, concatenates <code>base.prisma</code> with every other
+fragment in path-alphabetical order, and stamps each with a provenance comment. Editing the generated file is futile —
+it is rebuilt before <em>every</em> Prisma command, including <code>postinstall</code>.</p>
+
+<pre><span class="c">// AUTO-GENERATED FILE. DO NOT EDIT.</span>
+<span class="c">// Generated by scripts/build-prisma-schema.js</span>
+
+<span class="c">// ----- prisma/inventory/itemMaster.prisma -----</span>
+model ItemMaster { … }</pre>
+
+<p>The pipeline enforces one invariant with a hard failure: only <code>base.prisma</code> may declare a <code>generator</code> or
+<code>datasource</code> block. A fragment that tries to raises an error and aborts the build. This keeps the datasource — and
+the 12-schema declaration — in exactly one place.</p>
+
+<div class="box convention">
+  <div class="box-t">Convention — where to make a schema change</div>
+  <p>Edit the fragment under <code>prisma/&lt;domain&gt;/*.prisma</code>, never <code>prisma/schema.prisma</code>. Then run
+  <code>npm run prisma:migrate:dev</code>, which rebuilds the schema before invoking Prisma. Every Prisma npm script is wired
+  this way, so a stale generated schema is structurally impossible.</p>
+</div>
+
+<h2><span class="num">7.2</span>The multi-schema model</h2>
+<p>Twelve PostgreSQL schemas are declared in the datasource; eight are actually populated. Every model carries an
+explicit <code>@@schema(...)</code>. Note that the folder layout does not map one-to-one onto schemas — <code>prisma/dropdown/</code>
+models are annotated <code>@@schema("fixed")</code>, and <code>prisma/stocks/</code> maps to the singular <code>stock</code>.</p>
+
+<table class="t-tight">
+  <thead><tr><th style="width:24mm">Schema</th><th class="num" style="width:16mm">Models</th><th>Principal entities</th></tr></thead>
+  <tbody>
+    <tr><td><code>inventory</code></td><td class="num">22</td><td>ItemMaster, ItemGroupMaster, categoryMaster, ItemBrandMaster, ItemSectionMaster, Unit, ItemUnitConversion, ItemEanCode, ItemBatchMaster, ItemBatchStock, ItemStockBalance, ItemStockLedger, ItemPriceMaster, ItemQtywiseRate, ItemReorder, ItemTaxMaster, ItemTaxHistory, GodownLocation, OpeningStockHeader/Detail</td></tr>
+    <tr><td><code>accounts</code></td><td class="num">17</td><td>AccountGroup, AccLedgerMaster, AccLedgerBankAccount, AccShipAddr, AccVoucher, AccVoucherHeader, AccVoucherType, AccVoucherSeq, AccVoucherBill/Cheque, AccVoucherDocRegister/Detail/Einvoice/Ewaybill/ApiLog, AccountTenderMaster/Types</td></tr>
+    <tr><td><code>sales</code></td><td class="num">17</td><td>Customer, CustGroup, CustItemRate, StateMaster, CityMaster, AreaMaster, EmployeeMaster/Department/Designation, SaleQuotation(+Item), FreightCharges, LoyaltyScheme(+Point/Gift/Party)</td></tr>
+    <tr><td><code>fixed</code></td><td class="num">17</td><td>GridDetails, GridColumn, DropdownDetails, DropdownColumns, Uitable, UitableColumns, FormSection, FormField, Menu, BankMaster, DeviceMaster, StateCode, HsnMaster, PriceLevel, StockAdjReason, GspProviderMaster, GspCompanyService</td></tr>
+    <tr><td><code>public</code></td><td class="num">9</td><td>Company, BranchMaster, CompanyGroupMaster, UserMaster, UserMenus, FiscalYear, BatchPrefix, Configs, AppThemeMaster</td></tr>
+    <tr><td><code>audit</code></td><td class="num">3</td><td>AuditLog, AuditScreen, UserLoginSession</td></tr>
+    <tr><td><code>stock</code></td><td class="num">3</td><td>PhysicalStockHeader, PhysicalStockDetail, PhysicalStockBatchDetail</td></tr>
+    <tr><td><code>purchase</code></td><td class="num">2</td><td>Supplier, SupplierGroup</td></tr>
+    <tr><td colspan="3" style="color:#6b6a66"><em>Declared but unused: <code>grid</code>, <code>settings</code>, <code>reports</code>, <code>transport</code>. Note the grid engine lives in <code>fixed</code>, not <code>grid</code>.</em></td></tr>
+  </tbody>
+</table>
+
+<h2><span class="num">7.3</span>Modelling conventions</h2>
+<p>The schema is written in a legacy-ERP idiom that is applied uniformly. Understanding these six conventions is
+enough to read any table in the system.</p>
+
+<table class="t-tight">
+  <thead><tr><th style="width:36mm">Convention</th><th>Rule, and how consistently it holds</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Column prefixes</strong></td><td>Every column is prefixed with a per-table abbreviation — <code>item_*</code>, <code>avh_*</code>, <code>cus_*</code>, <code>sup_*</code>, <code>grid_*</code>, <code>seq_*</code>. Prisma fields are camelCase, mapped with an explicit <code>@map</code> to snake_case. This is also why configured-SQL parameters are prefixed <code>p_*</code> — so a parameter token can never be mistaken for a real column.</td></tr>
+    <tr><td><strong>Primary keys</strong></td><td><strong>72 models</strong> use <code>@default(dbgenerated("uuidv7()")) @db.Uuid</code> — time-ordered UUIDs, validated at the edge with <code>ParseUUIDPipe({version:'7'})</code>. This requires a <code>uuidv7()</code> function to exist in the database; it is a hard deployment prerequisite. Fourteen small lookup tables use <code>autoincrement()</code>.</td></tr>
+    <tr><td><strong>Soft delete</strong></td><td><strong>80 of 90 models</strong> carry an <code>*_is_deleted</code> boolean. Enforcement is <em>application-level</em>: there is no Prisma middleware or extension applying it, so every read must filter explicitly. Frequently paired with an independent <code>*_is_active</code> flag (68 models) — a two-axis lifecycle where <em>deleted</em> means invisible and <em>inactive</em> means visible but unusable.</td></tr>
+    <tr><td><strong>Audit columns</strong></td><td><code>*_created_on</code> (83 models), <code>*_created_by</code> (82), <code>*_modified_on</code> (58), <code>*_modified_by</code> (56), all <code>Timestamptz(6)</code>. The actor is not injected by middleware — services read it from <code>RequestContextService.getUserId()</code> and write it explicitly, falling back to a sentinel <code>DEFAULT_ACTOR</code> UUID of all zeroes when no user is present.</td></tr>
+    <tr><td><strong>Tenancy columns</strong></td><td><strong>34 models</strong> carry <code>*_company_id</code> and <strong>36</strong> carry <code>*_branch_id</code>; branch is usually nullable, meaning "shared across branches". Composite indexes follow the scope, e.g. <code>@@index([companyId, branchId, accYear])</code>.</td></tr>
+    <tr><td><strong>Linked ledger</strong></td><td>Customers and suppliers share a primary key with an <code>acc_ledger_master</code> row: the ledger is created first inside the transaction and its <code>led_id</code> becomes the master's own id. Field propagation is table-driven by a copy-map; updates and soft-deletes are mirrored. <strong>This is the single most important non-obvious invariant in the schema.</strong></td></tr>
+  </tbody>
+</table>
+
+<div class="box risk">
+  <div class="box-t">Critical — tenant isolation is not enforced anywhere</div>
+  <p>The tenancy columns exist, but nothing applies them. A Prisma client extension
+  (<code>src/database/prisma/tenant-scope.extension.ts</code>) that auto-scoped 35 models to
+  <code>requestContext.getCompanyId()</code> on every <code>findMany</code>, <code>findFirst</code>, <code>count</code>, <code>aggregate</code>, <code>groupBy</code>,
+  <code>updateMany</code> and <code>deleteMany</code> was <strong>deleted in commit <code>80ab8eb</code></strong> and never replaced. There is no
+  row-level security in the database either. Isolation now depends entirely on each service — and each stored
+  <code>grid_sql</code> — remembering to apply the predicate, and most services do not. A stale comment in
+  <code>items-master.service.ts:602</code> still tells the reader that "reads are auto-scoped to the token's company (see
+  tenant-scope.extension.ts)". They are not. See R2, §15.</p>
+</div>
+
+<h2><span class="num">7.4</span>Migration strategy</h2>
+<p>204 migrations run from <code>20260212000000_init</code> to <code>20260713072139_…</code> — roughly 1.3 migrations per calendar day
+over five months, which is the signature of a schema still being actively discovered rather than maintained.
+Deployment uses <code>prisma migrate deploy</code> (aliased as <code>npm run migration:run</code>).</p>
+
+<p>Migrations are not only DDL. Several rewrite rows in <code>fixed.grid_details.grid_sql</code> to schema-qualify table names
+after models moved between schemas. That practice — editing data with migrations, then correcting the migration in
+place — produced the need for two bespoke repair scripts, both of which are worth understanding before operating this
+system:</p>
+
+<table class="t-tight">
+  <thead><tr><th style="width:52mm">Script</th><th>Problem it exists to solve</th></tr></thead>
+  <tbody>
+    <tr><td><code>sync-prisma-migration-checksums.js</code></td><td>Two applied migrations were later <em>edited in place</em>, so their SHA-256 no longer matches the value recorded in <code>_prisma_migrations</code>, and Prisma refuses to deploy. The script re-hashes the files and updates the stored checksums inside a transaction (<code>--dry-run</code> supported). It is a deliberate escape hatch that <em>blesses drift</em> — the safer convention, which the repo also follows elsewhere, is a forward-only fix migration.</td></tr>
+    <tr><td><code>repair-ui-table-drift.js</code></td><td>A historical rename of <code>fixed.ui_table</code> → <code>fixed.ui_table_columns</code> left older databases in a state Prisma could only fix by a destructive reset. The script performs a non-destructive, transactional repair: rename the table, rename and re-own the identity sequence, restore the column default, re-add the missing FK column, then add the constraint <code>NOT VALID</code> and only <code>VALIDATE</code> it once an orphan check passes. It refuses to guess if both tables exist.</td></tr>
+  </tbody>
+</table>
+
+<p>Two generators run on every <code>prisma generate</code>: <code>prisma-dbml-generator</code>, which writes an importable ER model to
+<code>dbml/awesome.dbml</code> (90 tables — this is the artefact to load into dbdiagram.io), and <code>prisma-docs-generator</code>.
+The latter's output path, <code>output = "../../docs"</code>, resolves <em>outside the repository</em> to the parent workspace
+directory. That is almost certainly unintended and should be corrected.</p>
+
+<!-- ============================= 8. CONFIGURED SQL ============================= -->
+<h1><span class="num">8</span>The configured-SQL engine</h1>
+
+<p class="lede">This is the system's most distinctive subsystem and the one most worth guarding. Grids and dropdowns —
+their columns, widths, alignment, conditional colouring, totals, and the <code>SELECT</code> that populates them — are rows in
+<code>fixed.grid_details</code> and <code>fixed.dropdown_details</code>. The server parses SQL it did not write, validates it, binds
+tenant parameters into it, and executes it on a read-only connection. A new screen is a database row, not a release.</p>
+
+<h2><span class="num">8.1</span>Execution pipeline</h2>
+
+<figure>
+<svg viewBox="0 0 700 300" xmlns="http://www.w3.org/2000/svg" font-family="Segoe UI, DejaVu Sans, Arial" font-size="9">
+  <defs>
+    <marker id="ah3" markerWidth="7" markerHeight="7" refX="6" refY="2.6" orient="auto">
+      <path d="M0,0 L6,2.6 L0,5.2 z" fill="#254a80"/>
+    </marker>
+  </defs>
+
+  <rect x="8" y="14" width="150" height="44" rx="4" fill="#f6f6f4" stroke="#3d3c39"/>
+  <text x="83" y="32" text-anchor="middle" font-weight="700" font-size="9">GET /configured-grid-sql/run</text>
+  <text x="83" y="46" text-anchor="middle" font-size="8" fill="#6b6a66">?grid_id &amp; grid_param JSON</text>
+
+  <path d="M158 36 L196 36" stroke="#254a80" stroke-width="1.2" marker-end="url(#ah3)"/>
+
+  <rect x="200" y="14" width="164" height="44" rx="4" fill="#e8eef7" stroke="#254a80"/>
+  <text x="282" y="30" text-anchor="middle" font-weight="700" font-size="9" fill="#12305c">1 · Whitelist parameters</text>
+  <text x="282" y="43" text-anchor="middle" font-size="7.5" fill="#3d3c39">key /^[a-z_][a-z0-9_]*$/i</text>
+  <text x="282" y="53" text-anchor="middle" font-size="7.5" fill="#3d3c39">value ∈ {string, number, bool, null}</text>
+
+  <path d="M364 36 L402 36" stroke="#254a80" stroke-width="1.2" marker-end="url(#ah3)"/>
+
+  <rect x="406" y="14" width="164" height="44" rx="4" fill="#e8eef7" stroke="#254a80"/>
+  <text x="488" y="30" text-anchor="middle" font-weight="700" font-size="9" fill="#12305c">2 · Load grid definition</text>
+  <text x="488" y="43" text-anchor="middle" font-size="7.5" fill="#3d3c39">Prisma · is_deleted=false</text>
+  <text x="488" y="53" text-anchor="middle" font-size="7.5" fill="#3d3c39">status=true · grid_sql not null</text>
+
+  <path d="M488 58 L488 74" stroke="#254a80" stroke-width="1.2" marker-end="url(#ah3)"/>
+
+  <rect x="200" y="78" width="370" height="58" rx="4" fill="#fbf4f4" stroke="#a11c1c"/>
+  <text x="385" y="94" text-anchor="middle" font-weight="700" font-size="9" fill="#8d1414">3 · validateBaseSql() — the gate</text>
+  <text x="385" y="108" text-anchor="middle" font-size="7.8" fill="#3d3c39">must start with SELECT · no “;” (no stacked statements) · no -- or /* comments</text>
+  <text x="385" y="119" text-anchor="middle" font-size="7.8" fill="#3d3c39">reject \b(insert|update|delete|drop|alter|truncate|create|grant|revoke)\b</text>
+  <text x="385" y="130" text-anchor="middle" font-size="7.8" fill="#3d3c39">reject pre-existing $N placeholders · must reference the declared table</text>
+
+  <path d="M200 107 L166 107 L166 150" stroke="#254a80" stroke-width="1.2" marker-end="url(#ah3)"/>
+
+  <rect x="8" y="154" width="316" height="56" rx="4" fill="#e8eef7" stroke="#254a80"/>
+  <text x="166" y="170" text-anchor="middle" font-weight="700" font-size="9" fill="#12305c">4 · bindGridParams()</text>
+  <text x="166" y="184" text-anchor="middle" font-size="7.8" fill="#3d3c39">p_comp_id → $1, p_branch_id → $2 …</text>
+  <text x="166" y="196" text-anchor="middle" font-size="7.8" fill="#3d3c39">values NEVER concatenated into SQL</text>
+  <text x="166" y="206" text-anchor="middle" font-size="7.5" fill="#6b6a66">this is the tenant-scoping mechanism for grids</text>
+
+  <rect x="336" y="154" width="356" height="56" rx="4" fill="#e8eef7" stroke="#254a80"/>
+  <text x="514" y="170" text-anchor="middle" font-weight="700" font-size="9" fill="#12305c">5 · Wrap — never rewrite</text>
+  <text x="514" y="184" text-anchor="middle" font-size="7.8" fill="#3d3c39">SELECT COUNT(*) FROM (base) · SELECT * FROM (base) LIMIT $n OFFSET $n+1</text>
+  <text x="514" y="196" text-anchor="middle" font-size="7.8" fill="#3d3c39">search: jsonb_each_text(row_to_json(...)) — column AND value bound</text>
+  <text x="514" y="206" text-anchor="middle" font-size="7.5" fill="#6b6a66">ORDER BY identifier is quote-escaped, not bound</text>
+
+  <path d="M350 210 L350 228" stroke="#254a80" stroke-width="1.2" marker-end="url(#ah3)"/>
+
+  <rect x="176" y="232" width="348" height="52" rx="4" fill="#12305c"/>
+  <text x="350" y="250" text-anchor="middle" font-weight="700" font-size="9.5" fill="#fff">6 · PgService.queryReadOnly()</text>
+  <text x="350" y="264" text-anchor="middle" font-size="8" fill="#9dbbe4">dedicated pool · DATABASE_READONLY_URL when set</text>
+  <text x="350" y="276" text-anchor="middle" font-size="8" fill="#9dbbe4">always: options '-c default_transaction_read_only=on'</text>
+</svg>
+<figcaption><b>Figure 8.1</b> — Defence in depth: a syntactic deny-list, strict parameter binding, and a PostgreSQL session that physically cannot write. A statement that slips past the regex still cannot mutate data.</figcaption>
+</figure>
+
+<h2><span class="num">8.2</span>Parameter binding</h2>
+<p>The convention, discovered from the stored rows themselves, is that configured SQL embeds parameters as bare
+<code>p_</code>-prefixed identifiers. <code>bindGridParams</code> rewrites each token to a PostgreSQL positional parameter and returns the
+values separately, so nothing is ever concatenated:</p>
+
+<pre><span class="c">// stored in fixed.grid_details.grid_sql</span>
+SELECT ls_item_name, ls_qty FROM inventory.item_stock_balance
+WHERE ls_comp_id = p_comp_id AND ls_branch_id = p_branch_id
+
+<span class="c">// grid_param = {"p_comp_id":"…","p_branch_id":"…"}   ⇒   bound form:</span>
+SELECT … WHERE ls_comp_id = $1 AND ls_branch_id = $2      params = [comp, branch]</pre>
+
+<p>Binding order is deterministic (parameter key order); a token appearing many times binds to the same <code>$N</code>; and a
+key that never appears in the SQL contributes no parameter at all, so an unused parameter is harmless rather than a
+syntax error.</p>
+
+<div class="box risk">
+  <div class="box-t">High — the dropdown path was never migrated to binding</div>
+  <p>The predecessor of <code>bindGridParams</code> is <code>substituteGridPrm()</code>, which <em>string-concatenates</em> escaped literals into
+  the SQL. It is still live, called from <code>dropdown-details.service.ts:118</code> with client-supplied parameters. The
+  classic escape is closed — keys are whitelisted by regex, values are restricted to scalars, and single quotes are
+  doubled — but this is manual quoting, not binding, and it will misbehave if a token lands inside a dollar-quoted
+  string or an identifier position. The grid path was fixed; the dropdown path is a regression waiting to be found.
+  Separately, <code>master-lookup.service.ts:859</code> executes stored dropdown SQL with <em>no parameters at all</em> and swallows
+  failures in a <code>try/catch { continue }</code>. See R3, §15.</p>
+</div>
+
+<h2><span class="num">8.3</span>Why there is a SQL parser in the codebase</h2>
+<p>Because the engine must reason about statements it did not author, <code>configured-grid-sql.service.ts</code> contains a
+small, hand-written, quote- and paren-aware SQL analyser — <code>extractTopLevelSelectClause</code>,
+<code>splitTopLevelCommaSeparated</code>, <code>extractSqlOutputFieldName</code>, <code>extractTopLevelFromRelation</code>, <code>stripSqlComments</code>.
+It exists to answer two questions: which output columns does this statement produce (so that <code>grid_columns</code> rows can
+be matched to them, by explicit mapping or by a scored heuristic), and which relation does it read from (so the
+stored SQL can be checked against the grid's declared table). This is inherent complexity of the data-driven design,
+not accidental complexity — but it is the part of the system that most rewards careful test coverage, and it
+currently has two spec files.</p>
+
+<!-- ============================= 9. TRANSACTIONS ============================= -->
+<h1><span class="num">9</span>Transactional integrity and document numbering</h1>
+
+<h2><span class="num">9.1</span>Transaction discipline</h2>
+<p>Interactive Prisma transactions are the dominant write pattern — 294 occurrences across roughly 60 service files.
+The discipline that makes them compose is a single typing convention: services accept an optional transaction client,
+so an aggregate write can pull child services into its own transaction.</p>
+
+<pre>export type ModuleWriteClient = Prisma.TransactionClient | PrismaService;
+
+<span class="c">// a child service participates in the parent's transaction …</span>
+async save(dto: SaveItemPriceDto, tx?: Prisma.TransactionClient) { … }
+
+<span class="c">// … so the composite item save is genuinely atomic</span>
+await this.prisma.$transaction(async (tx) =&gt; {
+  const item = await this.writeItem(dto, tx);
+  await this.itemUnitConversionService.syncChildren(item.itemId, dto.unit_conversions, tx);
+  await this.itemsPriceMasterService.syncChildren(item.itemId, dto.prices, tx);
+  await this.auditLogService.logEntityChange({ … }, tx);   <span class="c">// audit commits with the business write</span>
+});</pre>
+
+<p>Three consequences follow, and all three are load-bearing. An audit row cannot survive a rolled-back business
+write, because it is written with the same client. A customer cannot exist without its ledger, because both are
+created in one transaction. And the child-collection reconciler in <code>item-master-update.service.ts</code> can diff incoming
+rows against existing ones by natural key — <code>ean_code</code>, <code>iuc_unit_id</code>, <code>ipm_unit_id + ipm_godown_id</code> — and write
+only genuine deltas, without risking a partially-applied item.</p>
+
+<h2><span class="num">9.2</span>Document numbering under concurrency</h2>
+<p>ERP document numbers cannot be PostgreSQL sequences: they must reset per fiscal year, be gap-free within a scope,
+and vary by branch and POS device. The system therefore allocates them with a <strong>transaction-scoped advisory lock plus
+max(n)+1</strong>, inside the write transaction:</p>
+
+<pre>await client.$queryRaw`
+  WITH advisory_lock AS (
+    SELECT pg_advisory_xact_lock(
+      hashtext(${SEQUENCE_LAST_NO_LOCK_NAMESPACE}),
+      hashtext(${this.buildLastNoScopeKey(scope)})   <span class="c">// company|branch|accYear|deviceId</span>
+    )
+  ) SELECT 1::int AS locked`;</pre>
+
+<p>The lock is namespaced and released automatically at commit or rollback — no cleanup path can leak it. The counter
+itself lives in <code>accounts.acc_voucher_seq</code>, whose uniqueness constraint <em>is</em> the numbering matrix:</p>
+
+<pre>@@unique([vchrTypeId, companyId, branchId, accYear, deviceCode, periodKey],
+         map: "uq_acc_voucher_seq_scope")
+<span class="c">// document type × company × branch × fiscal year × device × reset period</span></pre>
+
+<p>The row also snapshots the applied format (prefix, company code, branch code, zero-pad width, suffix) and caches the
+last rendered reference. At write time <code>account-voucher-header.helper.ts</code> allocates three numbers per voucher — an
+internal voucher number, a per-type serial, and the human-readable reference built from them — and re-numbers only when
+the scope actually changes, so an edit that does not move a voucher across company, branch or year keeps its number.
+Stock batches use the same idea at a different granularity: <code>generateNextBatchNo()</code> draws its prefix from the
+<code>batch-prefix</code> master and scopes batch identity by company, branch, godown, item and unit.</p>
+
+<div class="box convention">
+  <div class="box-t">Convention — numbering is never a database sequence</div>
+  <p>If you add a new numbered document, do not reach for <code>SERIAL</code>. Follow the existing pattern: acquire
+  <code>pg_advisory_xact_lock(hashtext(namespace), hashtext(scope))</code> inside the transaction, take <code>max(n)+1</code> within the
+  scope, and format from the snapshot columns. A database sequence cannot be reset per year or made gap-free per
+  branch, and mixing the two strategies would silently break the guarantee the ERP relies on.</p>
+</div>
+<!-- ============================= 10. SECURITY ============================= -->
+<h1><span class="num">10</span>Security architecture</h1>
+
+<p class="lede">This section describes what is <em>enforced</em>, not what is intended. The authentication layer is
+carefully built — hand-rolled HS256 tokens with strict verification, scrypt password hashing with constant-time
+comparison, and Redis-backed session revocation. The authorisation layer, by contrast, does not exist: it was
+removed and not replaced. That asymmetry is the defining fact of the system's current security posture.</p>
+
+<h2><span class="num">10.1</span>Authentication</h2>
+
+<figure>
+<svg viewBox="0 0 700 210" xmlns="http://www.w3.org/2000/svg" font-family="Segoe UI, DejaVu Sans, Arial" font-size="9">
+  <defs>
+    <marker id="ah4" markerWidth="7" markerHeight="7" refX="6" refY="2.6" orient="auto">
+      <path d="M0,0 L6,2.6 L0,5.2 z" fill="#3d3c39"/>
+    </marker>
+  </defs>
+  <!-- lanes -->
+  <g font-weight="700" font-size="8.5" fill="#12305c">
+    <rect x="8" y="8" width="96" height="20" rx="3" fill="#e8eef7" stroke="#254a80"/><text x="56" y="22" text-anchor="middle">Client</text>
+    <rect x="180" y="8" width="120" height="20" rx="3" fill="#e8eef7" stroke="#254a80"/><text x="240" y="22" text-anchor="middle">AuthService</text>
+    <rect x="376" y="8" width="120" height="20" rx="3" fill="#e8eef7" stroke="#254a80"/><text x="436" y="22" text-anchor="middle">TokenService</text>
+    <rect x="572" y="8" width="120" height="20" rx="3" fill="#e8eef7" stroke="#254a80"/><text x="632" y="22" text-anchor="middle">Redis session</text>
+  </g>
+  <g stroke="#d6d5d1" stroke-width="0.8" stroke-dasharray="3 3">
+    <line x1="56" y1="30" x2="56" y2="200"/><line x1="240" y1="30" x2="240" y2="200"/>
+    <line x1="436" y1="30" x2="436" y2="200"/><line x1="632" y1="30" x2="632" y2="200"/>
+  </g>
+
+  <line x1="56" y1="46" x2="234" y2="46" stroke="#3d3c39" stroke-width="1" marker-end="url(#ah4)"/>
+  <text x="145" y="41" text-anchor="middle" font-size="8">POST /auth/login  { usrLoginName, usrPassword, device_id }</text>
+
+  <rect x="180" y="56" width="230" height="30" rx="3" fill="#f6f6f4" stroke="#3d3c39"/>
+  <text x="295" y="69" text-anchor="middle" font-size="8">user active · not deleted · not locked · web login allowed</text>
+  <text x="295" y="80" text-anchor="middle" font-size="8">scrypt re-derive → timingSafeEqual · device registered?</text>
+
+  <line x1="240" y1="98" x2="430" y2="98" stroke="#3d3c39" stroke-width="1" marker-end="url(#ah4)"/>
+  <text x="335" y="93" text-anchor="middle" font-size="8">issue access (15 min) + refresh (7 days)</text>
+  <rect x="376" y="106" width="200" height="28" rx="3" fill="#f6f6f4" stroke="#3d3c39"/>
+  <text x="476" y="118" text-anchor="middle" font-size="8">HS256 · node:crypto · claims: sub, sid,</text>
+  <text x="476" y="129" text-anchor="middle" font-size="8">user_name, user_type, company_id, typ</text>
+
+  <line x1="436" y1="148" x2="626" y2="148" stroke="#3d3c39" stroke-width="1" marker-end="url(#ah4)"/>
+  <text x="531" y="143" text-anchor="middle" font-size="8">store auth:session:&lt;sid&gt; → sha256(token)</text>
+
+  <line x1="234" y1="172" x2="62" y2="172" stroke="#3d3c39" stroke-width="1" marker-end="url(#ah4)"/>
+  <text x="148" y="167" text-anchor="middle" font-size="8">200 { access_token, refresh_token, usrId, … }</text>
+
+  <rect x="500" y="160" width="192" height="30" rx="3" fill="#fbf4f4" stroke="#a11c1c"/>
+  <text x="596" y="172" text-anchor="middle" font-size="7.8" fill="#8d1414" font-weight="700">Redis absent → every session call</text>
+  <text x="596" y="183" text-anchor="middle" font-size="7.8" fill="#8d1414">returns early: revocation is skipped</text>
+</svg>
+<figcaption><b>Figure 10.1</b> — Login. Every subsequent request re-verifies the signature <em>and</em> asserts the session is still active — unless Redis is disabled or down, in which case the assertion is silently skipped.</figcaption>
+</figure>
+
+<table class="t-tight">
+  <thead><tr><th style="width:34mm">Control</th><th>Implementation</th></tr></thead>
+  <tbody>
+    <tr><td>Password storage</td><td><code>scrypt</code> (<code>node:crypto</code>), 16-byte salt, 64-byte key, stored as <code>scrypt$&lt;salt&gt;$&lt;hash&gt;</code>. Verification re-derives and compares with <code>timingSafeEqual</code>. Default cost parameters (N=16384, r=8, p=1); no configurable cost and no versioned upgrade path.</td></tr>
+    <tr><td>Token format</td><td>Hand-rolled HS256 JWT. <code>@nestjs/jwt</code> is a dependency but unused. Verification rejects <code>alg:none</code> by requiring an exact <code>{alg:'HS256', typ:'JWT'}</code> header, compares the signature with <code>timingSafeEqual</code>, and enforces a custom <code>typ</code> claim (<code>access</code> vs <code>refresh</code>) that prevents token-type confusion. No <code>iss</code>, <code>aud</code>, <code>nbf</code> or <code>jti</code>.</td></tr>
+    <tr><td>Token lifetime</td><td>Access 900 s; refresh 604,800 s. Refresh re-reads the user, so a disabled account loses access at the next refresh — but refresh tokens are <strong>not rotated</strong>, and the same token is returned each time.</td></tr>
+    <tr><td>Session / revocation</td><td>Redis key <code>auth:session:&lt;sid&gt;</code> holding SHA-256 hashes of both tokens. <code>revokeAccessTokenSession()</code> exists but <strong>no route calls it</strong> — there is no logout endpoint. Sessions are written with no TTL, so the key space grows without bound.</td></tr>
+    <tr><td>Device binding</td><td>Login resolves the supplied <code>device_id</code> against the device master; an unregistered, blocked or inactive device is rejected.</td></tr>
+    <tr><td>Lockout</td><td><strong>Not implemented.</strong> <code>usrFailedLoginCount</code> is incremented on every failure, but no threshold ever sets <code>usrIsLocked</code> — grep confirms the column is never written anywhere in <code>src/</code>. Likewise <code>usrMustChangePassword</code> and <code>usrPasswordExpiresOn</code> are stored but never enforced at login.</td></tr>
+  </tbody>
+</table>
+
+<h2><span class="num">10.2</span>Authorisation — the gap</h2>
+<p><code>AccessTokenGuard</code> is registered globally as <code>APP_GUARD</code>, so by default every route requires a valid bearer
+token. Exemption is by the <code>@Public()</code> decorator. That is the entirety of the access-control model. There is no role
+check, no permission check, and no tenant filter behind it.</p>
+
+<table class="t-tight">
+  <thead><tr><th style="width:44mm">What exists</th><th>What is enforced</th></tr></thead>
+  <tbody>
+    <tr><td><code>UserType</code> enum: SUPER ADMIN, ADMIN, MANAGER, USER, CASHIER, VIEWER, SYSTEM</td><td>Nothing. It survives as a JWT claim and a response field. <code>@Roles()</code> and <code>RolesGuard</code> were deleted in commit <code>80ab8eb</code>.</td></tr>
+    <tr><td>Per-menu permissions <code>umCanView/Create/Edit/Delete/Print/Export</code></td><td>Stored, and returned to the client so it can hide buttons. <strong>Never checked server-side.</strong> The UI is the only enforcement point.</td></tr>
+    <tr><td>Company/branch columns on 34–36 models</td><td>Nothing. The Prisma tenant-scope extension was deleted with the same commit. <code>getCompanyId()</code> is now referenced in exactly one file, on a write path.</td></tr>
+  </tbody>
+</table>
+
+<div class="box risk">
+  <div class="box-t">Critical — three compounding exposures</div>
+  <p><strong>(1) The Users controller is public.</strong> <code>src/modules/users/users.controller.ts:36</code> carries a class-level
+  <code>@Public()</code>. That exposes, with no token at all: <code>POST /users</code> (create a user with a chosen password),
+  <code>GET /users</code> (enumerate all users), <code>PATCH /users/:id</code> (change any user's password) and <code>DELETE /users/delete</code>.
+  This is a full authentication bypass for the whole application — an attacker creates a user, then logs in normally.</p>
+  <p><strong>(2) Any authenticated user is fully authorised</strong> on the remaining ~64 controllers, across all tenants.</p>
+  <p><strong>(3) Any authenticated user can author server-executed SQL</strong> via <code>POST /grid-details/create</code> or
+  <code>POST /dropdown-details/create</code>, then run it. The read-only pool and the deny-list confine it to <code>SELECT</code>, but a
+  <code>SELECT</code> over <code>user_master.usr_password_hash</code> or any other tenant's data satisfies both. If
+  <code>DATABASE_READONLY_URL</code> is unset, that statement runs as the primary application role.</p>
+</div>
+
+<h2><span class="num">10.3</span>Input validation and transport</h2>
+<p>Validation is strict and global: <code>whitelist: true</code> strips unknown properties and <code>forbidNonWhitelisted: true</code>
+turns them into a 400, so mass-assignment is structurally prevented. All 213 DTOs are built from the shared decorator
+library, which keeps <code>@MaxLength</code>, trimming and UUID-version checks uniform. Two weaknesses stand out:
+<code>CreateUserDto.user_password</code> carries <code>@IsString()</code> only — no minimum length, no complexity, no maximum (an
+unbounded input to scrypt) — and <code>LoginAuthDto.ip_address</code> is accepted from the request body and written to the
+login-session row in preference to the server-observed IP, making session audit IPs attacker-controlled.</p>
+
+<table class="t-tight">
+  <thead><tr><th style="width:30mm">Transport control</th><th>Setting</th></tr></thead>
+  <tbody>
+    <tr><td>Helmet</td><td>Enabled with a custom CSP. <code>scriptSrc</code> includes <code>'unsafe-inline'</code> (required by the Swagger UI customisation) — <strong>globally</strong>, not just on the docs route. <code>upgradeInsecureRequests</code> is explicitly disabled so Swagger works over plain HTTP.</td></tr>
+    <tr><td>CORS</td><td>Allow-list from <code>CORS_ORIGINS</code>; localhost origins are added automatically outside production. <code>*</code> reflects any origin. Nothing prevents the combination <code>CORS_ORIGINS=*</code> with <code>CORS_CREDENTIALS=true</code>.</td></tr>
+    <tr><td>Rate limiting</td><td>100 requests / 60 s / IP, in-memory. <strong>No login-specific throttle</strong> — no <code>@Throttle()</code> anywhere — so with no lockout, roughly 100 password guesses per minute per IP are permitted. In-memory storage also means the limit is per-process and would not hold across a clustered deployment.</td></tr>
+    <tr><td>HTTPS</td><td>Optional, via <code>HTTPS_ENABLED</code> + cert/key paths, resolved <code>pkg</code>-aware so certificates can sit beside the binary.</td></tr>
+    <tr><td>Swagger</td><td>Served unconditionally, <strong>including in production</strong>, with no auth gate.</td></tr>
+  </tbody>
+</table>
+
+<h2><span class="num">10.4</span>The audit trail</h2>
+<p>Auditing is explicit, not interceptor-driven: 53 services inject <code>AuditLogService</code> and call
+<code>logEntityChange(input, tx)</code> inside their transaction. Coverage is therefore a matter of developer discipline — a
+service that forgets the call writes no audit row, and there is no audit of reads or of authentication events.</p>
+
+<p>What is captured is genuinely rich: action (<code>insert|update|approve|cancel</code>), screen, table, primary key, entity id,
+JSONB <em>before</em> and <em>after</em> snapshots plus a computed field-level diff, actor, branch, and client IP. The
+<code>audit-screen-sql.constants.ts</code> templates are not executed — they are persisted to <code>audit_screen</code> and parsed to derive
+source-field → human-label mappings for the read API, which also resolves foreign-key UUIDs back to display names.</p>
+
+<div class="box risk">
+  <div class="box-t">High — the audit read API is unscoped</div>
+  <p><code>GET /api/v1/audit-logs/list</code> requires a bearer token but applies <strong>no company, branch or user filter</strong>. Any
+  authenticated user can read every audit row for every tenant — including the JSONB before/after snapshots, which by
+  design contain whatever the audited row contained: PAN and Aadhaar numbers, GSTIN, bank account numbers and IFSC
+  codes, and employee salary fields. This turns the audit trail into the single richest data-exfiltration target in
+  the system. See R4, §15.</p>
+</div>
+
+<!-- ============================= 11. CACHE & QUEUES ============================= -->
+<h1><span class="num">11</span>Caching, queues and background work</h1>
+
+<h2><span class="num">11.1</span>HTTP response cache</h2>
+<p>Two global interceptors implement a read-through cache with write-invalidation. <code>HttpCacheInterceptor</code> caches a
+<code>GET</code> only when the handler carries an explicit <code>@CacheTTL(n &gt; 0)</code>; the key is the pathname plus a
+<em>sorted</em> query string, so <code>?b=2&amp;a=1</code> and <code>?a=1&amp;b=2</code> share an entry. It sets an <code>X-Cache: HIT|MISS</code> header on
+every cacheable response, and it swallows all cache errors — a Redis failure degrades to a pass-through, never a 500.
+<code>HttpCacheInvalidationInterceptor</code> then clears <code>/{prefix}/{version}/{resource}*</code> after any write verb, plus a small
+table of related resources.</p>
+
+<div class="box risk">
+  <div class="box-t">Two cache defects worth fixing together</div>
+  <p><strong>No tenant dimension in the key.</strong> The cache key is URL + query only. Any cached <code>GET</code> is therefore shared
+  across <em>all</em> callers regardless of who they are or which company they belong to. Today the blast radius is limited
+  by the short TTLs below and by the fact that responses are largely tenant-agnostic masters — but it is a cross-tenant
+  data leak waiting for the first company-scoped cached endpoint. (R7)</p>
+  <p><strong>The default TTL is 3,600× too short.</strong> <code>redis.module.ts</code> computes <code>const ttlMilliseconds = ttlSeconds * 1;</code> —
+  evidently intended as <code>* 1000</code> — and hands the result to a store that expects milliseconds. With
+  <code>REDIS_TTL=3600</code> the default cache TTL is 3.6 seconds, not one hour. (R8)</p>
+</div>
+
+<p>Compounding this, roughly 50 controllers declare <code>@CacheTTL(1)</code> — one second — and about twelve use
+<code>@CacheTTL(60)</code>. Comments in <code>configured-grid-sql.controller.ts</code> claim "cache 5 minutes" and "cache 60s" beside a
+literal <code>1</code>. In practice the HTTP cache is a one-second de-duplication window for most master endpoints, which is
+close to no cache at all. The invalidation service also uses Redis <code>KEYS</code> (O(N), blocking) rather than <code>SCAN</code>, once
+per write request.</p>
+
+<h2><span class="num">11.2</span>Queues</h2>
+<table class="t-tight">
+  <thead><tr><th style="width:38mm">Queue</th><th>Job and behaviour</th></tr></thead>
+  <tbody>
+    <tr><td><code>audit-log-archival</code></td><td>Deletes audit rows older than <code>olderThanDays</code> (default 365) in batches of 1,000, reporting progress. Retries 3× with exponential backoff.</td></tr>
+    <tr><td><code>stock-reconciliation</code></td><td>For a company/year scope, compares each <code>item_batch_stock</code> closing quantity against the summed stock ledger and returns the mismatches. Retries 2×. It <em>detects</em> drift but never repairs it, and it issues one aggregate query per batch row — an N+1 by construction.</td></tr>
+  </tbody>
+</table>
+
+<div class="box">
+  <div class="box-t">Dormant infrastructure</div>
+  <p>Both queues are registered and both workers run, but <strong>nothing enqueues a job</strong>. <code>QueueService</code> has no callers
+  outside its own directory; there is no scheduler (<code>@nestjs/schedule</code> is not a dependency) and no controller triggers
+  either job. The archival and reconciliation capabilities exist structurally but have never executed in production.
+  Either wire a schedule to them or remove them — dormant code that appears to provide a guarantee is worse than absent
+  code. (R14)</p>
+</div>
+
+<h2><span class="num">11.3</span>Redis client</h2>
+<p>Worth flagging for maintainers: <code>RedisCacheService</code> is a <strong>hand-rolled RESP protocol client</strong> written directly on
+<code>node:net</code>/<code>node:tls</code> — it encodes commands and parses <code>+ - : $ *</code> replies itself — even though the <code>redis</code>
+package is already a dependency. It handles reconnection and pending-response queueing, and it is used by the health
+probe and the auth session store. It has no test coverage.</p>
+
+<!-- ============================= 12. OBSERVABILITY ============================= -->
+<h1><span class="num">12</span>Observability and performance</h1>
+
+<h2><span class="num">12.1</span>Logging</h2>
+<p><code>FileLoggerService</code> extends Nest's <code>ConsoleLogger</code> and appends to two files: <code>logs/app.log</code> (all levels) and
+<code>logs/error.log</code> (errors and fatals). The format is plain text, not JSON:</p>
+
+<pre>2026-07-14T09:12:33.104Z LOG [Bootstrap] DB connected: true
+2026-07-14T09:12:41.882Z LOG [RequestLoggerMiddleware] GET /api/v1/items/list 200 - 41.3ms</pre>
+
+<div class="box risk">
+  <div class="box-t">Medium — logs are unbounded and unjoinable</div>
+  <p><strong>There is no rotation.</strong> No size cap, no retention, no <code>logrotate</code> integration — the streams are opened once
+  and appended to forever. <code>logs/app.log</code> currently stands at <strong>168 MB</strong>. Every request writes a line synchronously
+  from the request path. The project's own <code>plan.md</code> claims "app.log / error.log with rotation"; that is not
+  implemented. (R9)</p>
+  <p><strong>There is no correlation ID.</strong> No request id is generated, none is propagated, and none appears in log lines or
+  error responses. Two log lines from the same request cannot be joined, and a user reporting an error has no handle to
+  quote. For a system of this size this is the single highest-leverage observability fix. (R9)</p>
+</div>
+
+<p>Beyond the log files there is nothing: no metrics endpoint, no tracing, no alerting, and no health signal other than
+<code>GET /api/v1/health</code>, which probes the database with <code>SELECT 1</code> and Redis with a real <code>PING</code>, returning
+<code>ok</code> or <code>degraded</code> (503 when a dependency is down). It does not check memory, event-loop lag, pool saturation or
+queue depth.</p>
+
+<h2><span class="num">12.2</span>Load testing</h2>
+<p><code>scripts/perf/load-test.js</code> is a dependency-free harness (829 lines) with three scenarios — <code>smoke</code> (15 s, 5
+concurrent, health only), <code>baseline</code> (60 s, 20 concurrent, an 8-route weighted mix) and <code>stress</code> (180 s, 80
+concurrent). It reports throughput, traffic, and min/avg/max/p50/p90/p95/p99 latency using reservoir sampling, and
+exits non-zero if the failure rate exceeds the scenario's threshold.</p>
+
+<div class="box risk">
+  <div class="box-t">The recorded performance baselines are invalid</div>
+  <p>All three runs stored under <code>logs/perf/</code> were executed with <code>--accept-status 429</code>, which counts a rate-limit
+  rejection as a success. The stress run reports 780,434 requests at 4,335 req/s with a 100% success rate — but
+  <strong>only 2,400 of those responses were HTTP 200</strong>. The other 778,034 were 429s. The numbers measure how fast
+  <code>ThrottlerGuard</code> can reject traffic, not how fast the application can serve it.</p>
+  <table class="t-tight" style="margin-top:6pt;margin-bottom:0">
+    <thead><tr><th>Run</th><th class="num">Requests</th><th class="num">HTTP 200</th><th class="num">HTTP 429</th><th class="num">Reported p95</th><th class="num">Actual coverage</th></tr></thead>
+    <tbody>
+      <tr><td>smoke</td><td class="num">62,247</td><td class="num">100</td><td class="num">62,147</td><td class="num">2.43 ms</td><td class="num">0.16%</td></tr>
+      <tr><td>baseline</td><td class="num">261,779</td><td class="num">800</td><td class="num">260,979</td><td class="num">7.43 ms</td><td class="num">0.31%</td></tr>
+      <tr><td>stress</td><td class="num">780,434</td><td class="num">2,400</td><td class="num">778,034</td><td class="num">24.59 ms</td><td class="num">0.31%</td></tr>
+    </tbody>
+  </table>
+  <p style="margin-top:6pt">The system's own <code>docs/performance-load-testing.md</code> §5 documents this trap and prescribes raising
+  <code>THROTTLE_LIMIT</code> for capacity runs. <strong>The platform therefore has no valid performance baseline.</strong> Re-running the
+  three scenarios with the throttler raised is a one-hour task and a prerequisite for any capacity claim. (R15)</p>
+</div>
+
+<h2><span class="num">12.3</span>Known performance characteristics</h2>
+<table class="t-tight">
+  <thead><tr><th style="width:38mm">Characteristic</th><th>Detail</th></tr></thead>
+  <tbody>
+    <tr><td>Connection pools</td><td>Neither the Prisma client nor either <code>pg</code> pool sets an explicit connection limit; all three run on defaults. For a single-process deployment this is survivable, but it is untuned.</td></tr>
+    <tr><td>Pagination</td><td>Offset-based (<code>skip</code>/<code>take</code>) everywhere, including the configured-SQL engine, which wraps the base query in <code>COUNT(*)</code> plus a <code>LIMIT/OFFSET</code> subquery. Deep pages on large grids will degrade linearly.</td></tr>
+    <tr><td>Request timeout</td><td>A hard-coded 15,000 ms ceiling (<code>REQUEST_TIMEOUT_MS</code>) converts any longer handler into a 408. A slow configured grid will hit this rather than hang.</td></tr>
+    <tr><td>Concurrency</td><td>PM2 runs a <strong>single fork-mode instance</strong> — one Node process on one core. There is no clustering and no horizontal scale path today.</td></tr>
+    <tr><td>Synchronous I/O on the request path</td><td>Every request writes a log line to disk from the request path, and the audit trail adds an insert to every write transaction.</td></tr>
+  </tbody>
+</table>
+<!-- ============================= 13. DEPLOYMENT ============================= -->
+<h1><span class="num">13</span>Build, packaging and deployment</h1>
+
+<h2><span class="num">13.1</span>The deployment model</h2>
+<p>The system is designed to be shipped as a <strong>single self-contained executable</strong> to hosts that have no Node
+runtime — the classic on-premise ERP distribution model. <code>npm run release</code> compiles with <code>nest build</code> and then runs
+<code>pkg</code>, producing <code>erp-server-linux</code> (204 MB) and <code>erp-server-win.exe</code> (196 MB).</p>
+
+<p>The snapshot bundles the compiled output, the generated Prisma client and its native query engine, all 204 migration
+files, and — notably — the <code>.env</code> file itself. <code>src/main.ts</code> is written to support this: <code>resolveFilePath()</code>
+detects the <code>pkg</code> runtime and searches the working directory, then the executable's own directory, then the snapshot,
+so an operator can drop a TLS certificate or a replacement <code>.env</code> beside the binary.</p>
+
+<table class="t-tight">
+  <thead><tr><th style="width:34mm">Layer</th><th>Configuration</th></tr></thead>
+  <tbody>
+    <tr><td>Process manager</td><td>PM2, <code>ecosystem.config.js</code>: <code>instances: 1</code>, fork mode, <code>autorestart: true</code>, <code>PORT: 3012</code>. The <code>cwd</code> is a hard-coded developer absolute path and must be corrected before any real deployment.</td></tr>
+    <tr><td>Dependencies</td><td><code>docker-compose.yml</code> provides Postgres 16 and Redis 7 only — <strong>there is no app service</strong>. The API runs on the host. Redis is published on 6379 with no password.</td></tr>
+    <tr><td>Reverse proxy</td><td>Not in this repository (an nginx config exists one level up in the workspace).</td></tr>
+    <tr><td>Migrations</td><td><code>npm run migration:run</code> → <code>prisma migrate deploy</code>. The schema is rebuilt from fragments first, always.</td></tr>
+  </tbody>
+</table>
+
+<div class="box risk">
+  <div class="box-t">Two packaging hazards</div>
+  <p><strong>The <code>.env</code> is baked into the binary.</strong> It is correctly git-ignored, but <code>pkg.assets</code> lists <code>".env"</code>, so the
+  shipped executable embeds <code>DB_PASSWORD</code> and <code>JWT_SECRET</code> in its snapshot, and falls back to that copy when no external
+  <code>.env</code> is found. Anyone holding the binary holds the secrets. Remove it from <code>assets</code> and require an external file.</p>
+  <p><strong>The Windows target may have no query engine.</strong> Only <code>libquery_engine-debian-openssl-3.0.x.so.node</code> is listed in
+  the bundled assets; there is no <code>query_engine-windows.dll.node</code>. The Windows build must fall back to the WASM/library
+  engine or it will fail at runtime. This should be verified on a clean Windows host before shipping.</p>
+</div>
+
+<!-- ============================= 14. QUALITY ============================= -->
+<h1><span class="num">14</span>Quality engineering</h1>
+
+<h2><span class="num">14.1</span>Test coverage</h2>
+<p>Fifty-six unit spec files and two end-to-end specs. The tests that exist are well-formed — plain Jest with
+hand-rolled doubles, constructing the class directly rather than booting a Nest testing module — but they are
+concentrated almost entirely in one module. Two-thirds of all specs test Inventory.</p>
+
+<figure class="chart">
+<svg viewBox="0 0 700 250" xmlns="http://www.w3.org/2000/svg" font-family="Segoe UI, DejaVu Sans, Arial" font-size="9">
+  <g stroke="#e8e7e4" stroke-width="0.8">
+    <line x1="176" y1="12" x2="176" y2="196"/><line x1="304" y1="12" x2="304" y2="196"/>
+    <line x1="432" y1="12" x2="432" y2="196"/><line x1="560" y1="12" x2="560" y2="196"/>
+  </g>
+  <g fill="#6b6a66" font-size="7.5" text-anchor="middle">
+    <text x="176" y="210">0</text><text x="304" y="210">10</text><text x="432" y="210">20</text><text x="560" y="210">30</text>
+  </g>
+  <line x1="176" y1="196" x2="688" y2="196" stroke="#3d3c39" stroke-width="1"/>
+  <text x="432" y="226" text-anchor="middle" font-size="8" fill="#6b6a66">Spec files (n = 56)</text>
+
+  <!-- scale 12.8 px / unit from x=176 -->
+  <text x="170" y="26" text-anchor="end" font-size="8.5" font-weight="700">Inventory</text>
+  <rect x="176" y="16" width="474" height="13" rx="3" fill="#2a78d6"/>
+  <text x="658" y="26" font-size="8" font-weight="700" fill="#12305c">37</text>
+
+  <text x="170" y="49" text-anchor="end" font-size="8.5">Stocks</text>
+  <rect x="176" y="39" width="64" height="13" rx="3" fill="#2a78d6"/>
+  <text x="248" y="49" font-size="8" fill="#3d3c39">5</text>
+
+  <text x="170" y="72" text-anchor="end" font-size="8.5">Sales (loyalty only)</text>
+  <rect x="176" y="62" width="51" height="13" rx="3" fill="#2a78d6"/>
+  <text x="235" y="72" font-size="8" fill="#3d3c39">4</text>
+
+  <text x="170" y="95" text-anchor="end" font-size="8.5">Platform (grid-SQL, utils)</text>
+  <rect x="176" y="85" width="38" height="13" rx="3" fill="#2a78d6"/>
+  <text x="222" y="95" font-size="8" fill="#3d3c39">3</text>
+
+  <text x="170" y="118" text-anchor="end" font-size="8.5">Auth</text>
+  <rect x="176" y="108" width="26" height="13" rx="3" fill="#2a78d6"/>
+  <text x="210" y="118" font-size="8" fill="#3d3c39">2</text>
+
+  <text x="170" y="141" text-anchor="end" font-size="8.5">Audit · Health · Accounts</text>
+  <rect x="176" y="131" width="38" height="13" rx="3" fill="#2a78d6"/>
+  <text x="222" y="141" font-size="8" fill="#3d3c39">3</text>
+
+  <text x="170" y="164" text-anchor="end" font-size="8.5">Grid-details · Master-lookup</text>
+  <rect x="176" y="154" width="26" height="13" rx="3" fill="#2a78d6"/>
+  <text x="210" y="164" font-size="8" fill="#3d3c39">2</text>
+
+  <text x="170" y="187" text-anchor="end" font-size="8.5" fill="#8d1414" font-weight="700">Settings · Purchase · Fixed ·</text>
+  <text x="170" y="196" text-anchor="end" font-size="8.5" fill="#8d1414" font-weight="700">Users · Cache · Queue</text>
+  <rect x="176" y="177" width="3" height="13" rx="1.5" fill="#a11c1c"/>
+  <text x="187" y="187" font-size="8" font-weight="700" fill="#8d1414">0 — no coverage at all</text>
+</svg>
+<figcaption><b>Figure 14.1</b> — Spec files by area. Whole subsystems — user administration, suppliers, reference data, the cache layer, the queues, the Redis client and <code>PgService</code> — have no tests.</figcaption>
+</figure>
+
+<h2><span class="num">14.2</span>Continuous integration</h2>
+<div class="box risk">
+  <div class="box-t">Medium — there is no CI pipeline</div>
+  <p><code>.github/</code> contains one file: <code>copilot-instructions.md</code>. There is no <code>.github/workflows/</code> directory and no
+  CI configuration of any kind anywhere in the repository. Nothing runs lint, typecheck, tests or the build
+  automatically. The npm scripts all exist (<code>lint</code>, <code>typecheck</code>, <code>test</code>, <code>test:cov</code>, <code>test:e2e</code>, <code>build</code>)
+  and must be invoked by hand. There are also no coverage thresholds configured in Jest. The project's own README lists
+  this as an open item. (R10)</p>
+</div>
+
+<p>The end-to-end suite boots the full <code>AppModule</code> through <code>Test.createTestingModule</code>, re-applies the validation pipe,
+versioning and prefix, and exercises <code>/api/v1/health</code> with supertest. It asserts a status of <em>either</em> 200 or 503 —
+that is, it tolerates a dead database — so it verifies wiring rather than behaviour.</p>
+
+<!-- ============================= 15. RISK REGISTER ============================= -->
+<h1><span class="num">15</span>Risk register</h1>
+
+<p class="lede">Every finding below was verified against the source at commit <code>5b3b3f0</code>. Severity reflects
+exploitability and blast radius, not effort to fix. Items R1–R5 should be treated as release-blocking.</p>
+
+<table class="t-tight">
+  <thead>
+    <tr>
+      <th style="width:11mm">ID</th>
+      <th style="width:20mm">Severity</th>
+      <th style="width:46mm">Finding</th>
+      <th>Impact and location</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>R1</strong></td><td><span class="sev sev-crit">Critical</span></td>
+      <td>Users controller is entirely unauthenticated</td>
+      <td>Class-level <code>@Public()</code> exposes user creation, enumeration and password change with no token. A complete authentication bypass: create a user, then log in legitimately. <code>users.controller.ts:36</code></td>
+    </tr>
+    <tr>
+      <td><strong>R2</strong></td><td><span class="sev sev-crit">Critical</span></td>
+      <td>No authorisation and no tenant isolation</td>
+      <td>Role guards and the Prisma tenant-scope extension were removed in commit <code>80ab8eb</code> and never replaced. Any authenticated user reaches every controller and every company's rows. Menu permissions are enforced only by the UI. <code>app.module.ts:193</code></td>
+    </tr>
+    <tr>
+      <td><strong>R3</strong></td><td><span class="sev sev-high">High</span></td>
+      <td>Authenticated users can author server-executed SQL; dropdown parameters are interpolated, not bound</td>
+      <td>Any user may store <code>grid_sql</code>/<code>dropdown_sql</code> and execute it. <code>substituteGridPrm()</code> concatenates escaped literals. Confined to <code>SELECT</code> on a read-only session — but only if <code>DATABASE_READONLY_URL</code> is configured. <code>configured-grid-sql.service.ts:926</code>, <code>dropdown-details.service.ts:118</code></td>
+    </tr>
+    <tr>
+      <td><strong>R4</strong></td><td><span class="sev sev-high">High</span></td>
+      <td>Audit read API is unscoped</td>
+      <td>Any authenticated user reads all tenants' before/after snapshots, which contain PAN, Aadhaar, GSTIN, bank accounts and salary. <code>audit-log.controller.ts:30</code></td>
+    </tr>
+    <tr>
+      <td><strong>R5</strong></td><td><span class="sev sev-high">High</span></td>
+      <td>Session revocation fails open</td>
+      <td>Every <code>AuthSessionService</code> method returns early when Redis is disabled or unreachable. A valid signature alone then grants access, and revocation silently does nothing. <code>auth-session.service.ts:26</code></td>
+    </tr>
+    <tr>
+      <td><strong>R6</strong></td><td><span class="sev sev-med">Medium</span></td>
+      <td>No brute-force protection on login</td>
+      <td>No login-specific throttle and no lockout — <code>usrFailedLoginCount</code> is incremented but <code>usrIsLocked</code> is never written anywhere. ~100 guesses/min/IP. Throttler storage is in-memory, so the limit is per-process. <code>auth.service.ts:239</code></td>
+    </tr>
+    <tr>
+      <td><strong>R7</strong></td><td><span class="sev sev-med">Medium</span></td>
+      <td>HTTP cache key has no user or tenant dimension</td>
+      <td>Cached <code>GET</code> responses are shared across all callers. Currently low-impact because TTLs are ~1 s and cached data is largely tenant-agnostic; becomes a cross-tenant leak the moment a scoped endpoint is cached. <code>http-cache.interceptor.ts:79</code></td>
+    </tr>
+    <tr>
+      <td><strong>R8</strong></td><td><span class="sev sev-med">Medium</span></td>
+      <td>Cache TTL unit bug</td>
+      <td><code>ttlSeconds * 1</code> is passed to a millisecond-based store: <code>REDIS_TTL=3600</code> yields 3.6 s. Combined with the near-universal <code>@CacheTTL(1)</code>, the cache tier delivers almost none of its intended benefit. <code>redis.module.ts:28</code></td>
+    </tr>
+    <tr>
+      <td><strong>R9</strong></td><td><span class="sev sev-med">Medium</span></td>
+      <td>No log rotation; no correlation ID</td>
+      <td><code>app.log</code> is at 168 MB and grows without bound; every request writes synchronously. No request id exists anywhere, so log lines cannot be joined to a request and users cannot quote an error handle. <code>file-logger.service.ts</code></td>
+    </tr>
+    <tr>
+      <td><strong>R10</strong></td><td><span class="sev sev-med">Medium</span></td>
+      <td>No CI; uneven test coverage</td>
+      <td>No workflow runs lint, typecheck, tests or build. No coverage thresholds. Settings, purchase, fixed, users, cache, queue and <code>PgService</code> have zero specs. <code>.github/</code></td>
+    </tr>
+    <tr>
+      <td><strong>R11</strong></td><td><span class="sev sev-med">Medium</span></td>
+      <td>Swagger exposed in production; CSP allows inline scripts</td>
+      <td>The full API surface, including schemas, is published unauthenticated. <code>'unsafe-inline'</code> in <code>scriptSrc</code> applies to every route, not just the docs. <code>main.ts:116,219</code></td>
+    </tr>
+    <tr>
+      <td><strong>R12</strong></td><td><span class="sev sev-low">Low</span></td>
+      <td>Two divergent error envelopes</td>
+      <td>Clients cannot parse errors uniformly; <code>message</code> may be a string, an array or a nested object depending on the route. §6.2</td>
+    </tr>
+    <tr>
+      <td><strong>R13</strong></td><td><span class="sev sev-low">Low</span></td>
+      <td>Single-process deployment; untuned pools</td>
+      <td>PM2 fork mode, <code>instances: 1</code>; no connection limits set on Prisma or either <code>pg</code> pool; hard-coded developer <code>cwd</code> in the PM2 config. <code>ecosystem.config.js</code></td>
+    </tr>
+    <tr>
+      <td><strong>R14</strong></td><td><span class="sev sev-low">Low</span></td>
+      <td>Dead and dormant code</td>
+      <td>Two BullMQ queues with no producers; an orphaned duplicate <code>item-price-details</code> module; <code>.env</code> baked into the <code>pkg</code> binary; config defaults that disagree across three files (<code>THROTTLE_LIMIT</code> 100 vs 10000; <code>PORT</code> 3000 vs 3010 vs 3012).</td>
+    </tr>
+    <tr>
+      <td><strong>R15</strong></td><td><span class="sev sev-low">Low</span></td>
+      <td>Performance baselines are invalid</td>
+      <td>All recorded runs accepted HTTP 429 as success; 99.7% of responses were rate-limit rejections. The platform has no valid capacity baseline. <code>logs/perf/*.json</code></td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- ============================= 16. ROADMAP ============================= -->
+<h1><span class="num">16</span>Remediation roadmap</h1>
+
+<p class="lede">Sequenced by dependency and risk, not by module. P0 is the set of changes without which the system
+should not be exposed to untrusted networks; each is small and well-localised.</p>
+
+<h2><span class="num">16.1</span>P0 — before any production exposure</h2>
+<table class="t-tight">
+  <thead><tr><th style="width:10mm">Ref</th><th style="width:56mm">Action</th><th>Notes</th></tr></thead>
+  <tbody>
+    <tr><td>R1</td><td>Remove the class-level <code>@Public()</code> from <code>UsersController</code></td><td>One line. Then decide deliberately which, if any, user routes may remain public — probably none. Verify no client depends on the current behaviour.</td></tr>
+    <tr><td>R2</td><td>Reinstate authorisation and tenant scoping</td><td>The deleted <code>RolesGuard</code> and <code>tenant-scope.extension.ts</code> are recoverable from commit <code>80ab8eb</code>. Restoring the Prisma extension is the highest-leverage single change in this document: it re-scopes ~35 models on every read in one place, rather than auditing 87 services. Remove the stale comment in <code>items-master.service.ts:602</code> either way.</td></tr>
+    <tr><td>R3</td><td>Gate grid/dropdown SQL authoring behind an admin role; set <code>DATABASE_READONLY_URL</code></td><td>Depends on R2. Configuring a genuine read-only Postgres role is a five-minute change that converts the last line of defence from advisory to physical.</td></tr>
+    <tr><td>R4</td><td>Scope the audit read API by company and branch</td><td>Add the predicate from the request context, and consider restricting it to an auditor role.</td></tr>
+    <tr><td>R5</td><td>Make session assertion fail closed</td><td>If Redis is <em>configured</em> but unreachable, reject rather than pass. Keep the fail-open path only for a deliberate <code>REDIS_ENABLED=false</code> deployment, and log loudly at boot when revocation is inactive.</td></tr>
+    <tr><td>R6</td><td>Throttle <code>/auth/login</code> and enforce lockout</td><td><code>@Throttle()</code> on the login handler, and wire <code>usrFailedLoginCount</code> to actually set <code>usrIsLocked</code> — the column already exists.</td></tr>
+  </tbody>
+</table>
+
+<h2><span class="num">16.2</span>P1 — operational readiness</h2>
+<ul>
+  <li><strong>Introduce a correlation ID</strong> (R9). Generate one per request in <code>RequestContextMiddleware</code>, put it in the ALS store, include it in every log line and in both error envelopes, and echo it as <code>X-Request-Id</code>. This is a half-day change that makes every future incident tractable.</li>
+  <li><strong>Rotate logs</strong> (R9) — size-capped rotation with retention, and move the request log off the synchronous request path.</li>
+  <li><strong>Add a CI pipeline</strong> (R10): lint, typecheck, unit tests, build, and a migration check on every pull request. Set a coverage floor and ratchet it.</li>
+  <li><strong>Fix the cache tier</strong> (R7, R8): correct the millisecond conversion, add the user/company dimension to the cache key, replace <code>KEYS</code> with <code>SCAN</code> in the invalidator, and set TTLs that reflect the comments' intent.</li>
+  <li><strong>Gate Swagger</strong> behind an environment flag or basic auth in production (R11), and scope <code>'unsafe-inline'</code> to the docs route.</li>
+  <li><strong>Re-establish a performance baseline</strong> (R15) with the throttler raised, and record it as the reference for future regressions.</li>
+</ul>
+
+<h2><span class="num">16.3</span>P2 — architectural consolidation</h2>
+<ul>
+  <li><strong>Unify the error envelope</strong> (R12) — a single global filter, one shape, <code>statusCode</code> and correlation id always present. Delete the 55 per-module filters, which currently differ only in a regular expression used to guess field names.</li>
+  <li><strong>Migrate the dropdown path to <code>bindGridParams</code></strong> and delete <code>substituteGridPrm</code> (R3), so no code path concatenates values into SQL.</li>
+  <li><strong>Resolve the queues</strong> (R14): schedule the archival and reconciliation jobs, or remove them. Make the reconciliation processor set-based rather than row-by-row.</li>
+  <li><strong>Extend test coverage</strong> to the configured-SQL engine, the auth guard, the cache interceptors and the stock ledger — the four subsystems where a silent defect is most costly.</li>
+  <li><strong>Housekeeping</strong>: delete the orphaned <code>item-price-details</code> module; remove <code>.env</code> from <code>pkg.assets</code>; reconcile the three conflicting default values for <code>THROTTLE_LIMIT</code> and <code>PORT</code>; fix the <code>prisma-docs-generator</code> output path; verify the Windows query engine.</li>
+</ul>
+
+<div class="box convention">
+  <div class="box-t">Closing assessment</div>
+  <p>The domain engineering here is strong and, in places, genuinely sophisticated — the stock ledger, the voucher
+  numbering, the linked-ledger invariant and the configured-SQL engine are all the work of someone who understands the
+  problem. The gaps are almost entirely in the surrounding envelope: authorisation, isolation, observability and
+  automation. That is a fortunate shape for a codebase to have, because the envelope is where fixes are cheapest.
+  The P0 list above is perhaps a week of focused work, and most of it is restoring code that already existed.</p>
+</div>
+
+<!-- ============================= APPENDICES ============================= -->
+<h1><span class="num">A</span>Appendix — configuration surface</h1>
+
+<p>Forty environment variables are validated by Joi at boot (<code>src/config/env.validation.ts</code>). <code>JWT_SECRET</code> is
+required with a minimum length of 16 outside <code>NODE_ENV=test</code>; a missing or short value aborts the boot. Note that
+<code>API_VERSION</code> is consumed on every route but is <em>not</em> in the Joi schema.</p>
+
+<table class="t-tight">
+  <thead><tr><th style="width:30mm">Group</th><th>Variables</th></tr></thead>
+  <tbody>
+    <tr><td>Application</td><td><code>NODE_ENV</code>, <code>HOST</code>, <code>PORT</code>, <code>API_PREFIX</code>, <code>API_VERSION</code>*, <code>REQUEST_BODY_LIMIT</code></td></tr>
+    <tr><td>Transport</td><td><code>CORS_ORIGINS</code>, <code>CORS_CREDENTIALS</code>, <code>HTTPS_ENABLED</code>, <code>HTTPS_CERT_PATH</code>, <code>HTTPS_KEY_PATH</code>, <code>HTTPS_PASSPHRASE</code></td></tr>
+    <tr><td>Database</td><td><code>DATABASE_URL</code>, <code>DATABASE_READONLY_URL</code>, <code>DB_HOST</code>, <code>DB_PORT</code>, <code>DB_USER</code>, <code>DB_PASSWORD</code>, <code>DB_NAME</code>, <code>DB_SSL</code>, <code>DB_SYNC</code>, <code>DB_LOGGING</code></td></tr>
+    <tr><td>Auth</td><td><code>JWT_SECRET</code>, <code>ACCESS_TOKEN_TTL_SECONDS</code>, <code>REFRESH_TOKEN_TTL_SECONDS</code></td></tr>
+    <tr><td>Rate limiting</td><td><code>THROTTLE_ENABLED</code>, <code>THROTTLE_TTL</code>, <code>THROTTLE_LIMIT</code></td></tr>
+    <tr><td>Redis</td><td><code>REDIS_ENABLED</code>, <code>REDIS_URL</code>, <code>REDIS_HOST</code>, <code>REDIS_PORT</code>, <code>REDIS_TTL</code>, <code>REDIS_USERNAME</code>, <code>REDIS_PASSWORD</code>, <code>REDIS_DB</code>, <code>REDIS_TLS</code>, <code>REDIS_CONNECT_TIMEOUT_MS</code></td></tr>
+    <tr><td>Logging</td><td><code>LOG_FILE_PATH</code>, <code>ERROR_LOG_FILE_PATH</code></td></tr>
+  </tbody>
+</table>
+<p style="font-size:8pt;color:#6b6a66">* consumed but not validated. <code>DB_USER</code>, <code>DB_PASSWORD</code> and <code>DB_NAME</code> carry defaults in both Joi and <code>configuration.ts</code>, so a misconfigured deployment falls back silently instead of failing fast.</p>
+
+<h1><span class="num">B</span>Appendix — route index</h1>
+<p>Sixty-nine controllers. All routes are prefixed <code>/api/v1/</code>.</p>
+<table class="t-tight" style="font-size:8pt">
+  <thead><tr><th style="width:22mm">Domain</th><th>Controller prefixes</th></tr></thead>
+  <tbody>
+    <tr><td>Inventory</td><td><code>items</code>, <code>item-groups</code>, <code>item-categories</code>, <code>item-brands</code>, <code>item-sections</code>, <code>units</code>, <code>item-unit-conversions</code>, <code>item-gst-units</code>, <code>item-ean-codes</code>, <code>item-prices</code>, <code>item-qtywise-rates</code>, <code>item-reorders</code>, <code>item-taxes</code>, <code>item-tax-histories</code>, <code>item-price-details</code>, <code>godowns</code></td></tr>
+    <tr><td>Sales</td><td><code>customers</code>, <code>customer-groups</code>, <code>states</code>, <code>cities</code>, <code>areas</code>, <code>quotations</code>, <code>freight-charges</code>, <code>promotion-loyalty-points</code></td></tr>
+    <tr><td>Accounts</td><td><code>account-groups</code>, <code>account-ledger-masters</code>, <code>ledger-bank-accounts</code>, <code>ledger-shipping-addresses</code>, <code>tender-masters</code>, <code>tender-type-masters</code>, <code>company-group-masters</code>, <code>gsp-provider-masters</code></td></tr>
+    <tr><td>Stocks</td><td><code>opening-stocks</code>, <code>physical-stock</code>, <code>item-stock-balance</code>, <code>item-batch-stock</code></td></tr>
+    <tr><td>Settings</td><td><code>company-masters</code>, <code>branch-masters</code>, <code>employee-masters</code>, <code>employee-department-masters</code>, <code>employee-designation-masters</code>, <code>user-administration</code>, <code>configs</code>, <code>gsp-company-services</code></td></tr>
+    <tr><td>Fixed</td><td><code>bank-lists</code>, <code>hsn-code-masters</code>, <code>state-code-masters</code>, <code>device-list-masters</code>, <code>menu-masters</code>, <code>price-level-masters</code>, <code>stock-adj-reasons</code>, <code>ui-table-masters</code>, <code>user-login-sessions</code></td></tr>
+    <tr><td>Purchase</td><td><code>suppliers</code>, <code>supplier-groups</code></td></tr>
+    <tr><td>Platform</td><td><code>auth</code>, <code>users</code>, <code>health</code>, <code>audit-logs</code>, <code>master-lookups</code>, <code>grid-details</code>, <code>dropdown-details</code>, <code>configured-grid-sql</code>, <code>sequences</code>, <code>item-price-lookup</code>, <code>item-cust-rates</code>, <code>batch-prefixes</code>, <code>widget-masters</code></td></tr>
+  </tbody>
+</table>
+
+<h1><span class="num">C</span>Appendix — glossary</h1>
+<table class="t-tight">
+  <tbody>
+    <tr><td style="width:38mm"><strong>Configured SQL</strong></td><td>A <code>SELECT</code> statement stored in <code>grid_details.grid_sql</code> or <code>dropdown_details.dropdown_sql</code>, validated and executed at runtime on a read-only pool. The mechanism by which screens are data, not code.</td></tr>
+    <tr><td><strong>Linked ledger</strong></td><td>The invariant that a customer or supplier shares its primary key with an <code>acc_ledger_master</code> row. The ledger is created first; its <code>led_id</code> becomes the master's id.</td></tr>
+    <tr><td><strong>Godown</strong></td><td>Warehouse or storage location (Indian ERP usage). Stock balances are scoped by godown.</td></tr>
+    <tr><td><strong>Voucher</strong></td><td>An accounting document. Every stock document produces a voucher header, which is how stock movements reach the ledger.</td></tr>
+    <tr><td><strong>Toggle delete</strong></td><td>The house delete idiom: <code>DELETE</code> flips the <code>*_is_deleted</code> flag and returns <code>{id, deleted: boolean}</code>. Nothing is hard-deleted.</td></tr>
+    <tr><td><strong>Period key</strong></td><td>The reset horizon of a document-number sequence — fiscal year, month, or <code>ALL</code>. Part of the sequence's uniqueness scope.</td></tr>
+    <tr><td><strong>Request context</strong></td><td>An <code>AsyncLocalStorage</code> store holding <code>ipAddress</code>, <code>userId</code>, <code>userType</code> and <code>companyId</code>, populated by the access-token guard from the verified token — never from headers.</td></tr>
+    <tr><td><strong>p_ parameter</strong></td><td>A named placeholder in configured SQL (<code>p_comp_id</code>, <code>p_branch_id</code>). The <code>p_</code> prefix exists so a parameter token can never collide with a real column name.</td></tr>
+  </tbody>
+</table>
+
+<p style="margin-top:10mm;padding-top:4mm;border-top:0.8pt solid var(--rule);font-size:8pt;color:#6b6a66">
+  <strong>End of document.</strong> ERP Server — Backend Architecture Dossier, revision 1.0, 14 July 2026.
+  Verified against branch <code>DEV-v1</code> at commit <code>5b3b3f0</code>. Confidential — internal use only.
+</p>

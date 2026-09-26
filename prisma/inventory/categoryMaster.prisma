@@ -9,6 +9,8 @@ model categoryMaster {
   parent                 categoryMaster? @relation("CategoryParent", fields: [categoryParentId], references: [categoryId], onUpdate: Cascade, onDelete: Restrict)
   children               categoryMaster[] @relation("CategoryParent")
   items                  ItemMaster[]
+  promotionSchemeItems   PromotionSchemeItem[] @relation("PromotionItemCategory")
+  loyaltySchemeItems     LoyaltySchemeItem[]   @relation("LoyaltyItemCategory")
   categorySort           Int?     @map("category_sort")
   categoryLevel          Int?     @map("category_level")
   categoryPathIdsCache   String[] @default([]) @db.Uuid @map("category_path_ids_cache")

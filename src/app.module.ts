@@ -3,72 +3,117 @@ import { ConfigModule } from '@nestjs/config';
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
+import { HttpCacheInterceptor } from './common/interceptors/http-cache.interceptor';
+import { HttpCacheInvalidationInterceptor } from './common/interceptors/http-cache-invalidation.interceptor';
 import { TimeoutInterceptor } from './common/interceptors/timeout.interceptor';
 import { RequestContextMiddleware } from './common/middleware/request-context.middleware';
 import { RequestLoggerMiddleware } from './common/middleware/request-logger.middleware';
 import { RequestContextModule } from './common/request-context/request-context.module';
 import { RedisModule } from './common/redis/redis.module';
+import { QueueModule } from './common/queue/queue.module';
 import { ConfiguredGridSqlModule } from './common/configured-grid-sql/configured-grid-sql.module';
+import { SequenceModule } from './common/Sequence/sequence.module';
 import configuration from './config/configuration';
 import { envValidationSchema } from './config/env.validation';
 import { PrismaModule } from './database/prisma/prisma.module';
+import { PgModule } from './database/pg/pg.module';
 import { HealthModule } from './modules/health/health.module';
+//import { CloudSyncModule } from './modules/cloud-sync/cloud-sync.module';
 import { UsersModule } from './modules/users/users.module';
-import { ItemsGroupMasterModule } from './modules/items-group-master/items-group-master.module';
 import { AuthModule } from './modules/auth/auth.module';
-import { ItemsBrandMasterModule } from './modules/items-brand-master/items-brand-master.module';
-import { UnitsMasterModule } from './modules/units-master/units-master.module';
-import { ItemsSectionMasterModule } from './modules/items-section-master/items-section-master.module';
-import { ItemsCategoryMasterModule } from './modules/items-category-master/items-category-master.module';
 import { GridDetailsModule } from './modules/grid-details/grid-details.module';
-import { GridColumnsModule } from './modules/grid-columns/grid-columns.module';
 import { DropdownDetailsModule } from './modules/dropdown-details/dropdown-details.module';
-import { DropdownColumnsModule } from './modules/dropdown-columns/dropdown-columns.module';
 import { AuditLogModule } from './modules/audit-log/audit-log.module';
 import { AccessTokenGuard } from './modules/auth/guards/access-token.guard';
-import { GodownsMasterModule } from './modules/godowns-master/godowns-master.module';
-import { ItemsTaxMasterModule } from './modules/items-tax-master/items-tax-master.module';
-import { ItemsEanCodeMasterModule } from './modules/items-ean-code-master/items-ean-code-master.module';
 import { ItemsCustRatesMasterModule } from './modules/items-cust-rates-master/items-cust-rates-master.module';
-import { ItemsPriceMasterModule } from './modules/items-price-master/items-price-master.module';
-import { ItemPriceDetailsModule } from './modules/item-price-details/item-price-details.module';
-import { ItemsQtywiseRatesMasterModule } from './modules/items-qtywise-rates-master/items-qtywise-rates-master.module';
-import { ItemsReorderMasterModule } from './modules/items-reorder-master/items-reorder-master.module';
-import { ItemsTaxHistoryMasterModule } from './modules/items-tax-history-master/items-tax-history-master.module';
-import { ItemsMasterModule } from './modules/items-master/items-master.module';
-import { AccountsGroupModule } from './modules/accountsModule/accountsGroup/accounts-group.module';
+import { ItemPriceDetailsModule } from './modules/Inventory/item-price-details/item-price-details.module';
+import { AccGroupMasterModule } from './modules/accountsModule/accGroupMaster/acc-group-master.module';
+import { OpeningBalanceModule } from './modules/accountsModule/openingBalance/opening-balance.module';
 import { AccountLedgerMastersModule } from './modules/accountsModule/accountLedgerMasters/account-ledger-masters.module';
 import { LedgerBankAccountModule } from './modules/accountsModule/ledgerBankAccount/ledger-bank-account.module';
-import { BranchMasterModule } from './modules/accountsModule/branchMaster/branch-master.module';
-import { CompanyMasterModule } from './modules/accountsModule/companyMaster/company-master.module';
+import { BranchMasterModule } from './modules/settings/branchMaster/branch-master.module';
+import { CompanyMasterModule } from './modules/settings/companyMaster/company-master.module';
 import { CompanyGroupMasterModule } from './modules/accountsModule/companyGroupMaster/company-group-master.module';
-import { EmployeeDepartmentMasterModule } from './modules/accountsModule/employeeDepartmentMaster/employee-department-master.module';
-import { EmployeeDesignationMasterModule } from './modules/accountsModule/employeeDesignationMaster/employee-designation-master.module';
-import { EmployeeMasterModule } from './modules/accountsModule/employeeMaster/employee-master.module';
+import { EmployeeDepartmentMasterModule } from './modules/settings/employeeDepartmentMaster/employee-department-master.module';
+import { EmployeeDesignationMasterModule } from './modules/settings/employeeDesignationMaster/employee-designation-master.module';
+import { EmployeeMasterModule } from './modules/settings/employeeMaster/employee-master.module';
+import { UserAdministrationModule } from './modules/settings/userAdministration/user-administration.module';
+import { AppSettingsModule } from './modules/settings/appSettings/app-settings.module';
+import { PrintTemplateModule } from './modules/settings/print-template/print-template.module';
 import { TenderMasterModule } from './modules/accountsModule/tenderMaster/tender-master.module';
 import { TenderTypeMasterModule } from './modules/accountsModule/tenderTypeMaster/tender-type-master.module';
+import { TenderDetailModule } from './modules/accountsModule/tenderDetail/tender-detail.module';
+import { TransactionModule } from './modules/accountsModule/transaction/transaction.module';
+import { ReceiptModule } from './modules/accountsModule/receipt/receipt.module';
+import { ChequesModule } from './modules/accountsModule/cheques/cheques.module';
+import { VouchersModule } from './modules/accountsModule/vouchers/vouchers.module';
+import { LedgerStatementModule } from './modules/reports/ledger-statement/ledger-statement.module';
+import { LedgerMapModule } from './modules/accountsModule/ledgerMap/ledger-map.module';
+import { BillBalanceModule } from './modules/accountsModule/billBalance/bill-balance.module';
 import { LedgerShippingAddressModule } from './modules/accountsModule/ledgerShippingAddress/ledger-shipping-address.module';
 import { GspProviderMasterModule } from './modules/accountsModule/gspProviderMaster/gsp-provider-master.module';
-import { GspCompanyServiceModule } from './modules/accountsModule/gspCompanyService/gsp-company-service.module';
+import { GspCompanyServiceModule } from './modules/settings/gspCompanyService/gsp-company-service.module';
 import { SupplierGroupModule } from './modules/purchase/supplier-group/supplier-group.module';
 import { SuppliersModule } from './modules/purchase/suppliers/suppliers.module';
 import { AreaModule } from './modules/sales/area/area.module';
+import { SaleFreightChargeModule } from './modules/sales/sale-freight-charges/sale-freight-charges.module';
+import { SaleLoadingChargeModule } from './modules/sales/sale-loading-charges/sale-loading-charges.module';
 import { CityModule } from './modules/sales/city/city.module';
 import { StateModule } from './modules/sales/state/state.module';
 import { CustomerModule } from './modules/sales/customer/customer.module';
 import { CustomerGroupModule } from './modules/sales/customer-group/customer-group.module';
+import { SaleAgentModule } from './modules/sales/sale-agent/sale-agent.module';
+import { QuotationModule } from './modules/sales/quotation/quotation.module';
+import { BillModule } from './modules/sales/bill/bill.module';
+import { SalesPostingModule } from './modules/sales/posting/posting.module';
+import { SaleOrderModule } from './modules/sales/sale-order/sale-order.module';
+import { DeliveryChallanModule } from './modules/sales/delivery-challan/delivery-challan.module';
+import { DcReturnModule } from './modules/sales/dc-return/dc-return.module';
+import { SaleReturnModule } from './modules/sales/sale-return/sale-return.module';
+import { TempCreditModule } from './modules/sales/temp-credit/temp-credit.module';
+import { TxnHoldModule } from './modules/sales/txn-hold/txn-hold.module';
 import { BankListModule } from './modules/fixed/bank-list/bank-list.module';
 import { DeviceListMasterModule } from './modules/fixed/device-list-master/device-list-master.module';
 import { MenuMasterModule } from './modules/fixed/menu-master/menu-master.module';
 import { PriceLevelMasterModule } from './modules/fixed/price-level-master/price-level-master.module';
 import { HsnCodeMasterModule } from './modules/fixed/hsn-code-master/hsn-code-master.module';
 import { StateCodeMasterModule } from './modules/fixed/state-code-master/state-code-master.module';
-import { UiTableColumnsModule } from './modules/fixed/ui-table-columns/ui-table-columns.module';
 import { UiTableMasterModule } from './modules/fixed/ui-table-master/ui-table-master.module';
 import { UserLoginSessionsModule } from './modules/fixed/user-login-sessions/user-login-sessions.module';
+import { StockAdjReasonsModule } from './modules/fixed/stock-adj-reasons/stock-adj-reasons.module';
+import { StockTrackPresetsModule } from './modules/stocks/stock-track-presets/stock-track-presets.module';
+import { StockVoucherModule } from './modules/stocks/stock-voucher/stock-voucher.module';
+import { OpeningStockVoucherModule } from './modules/stocks/opening-stock-voucher/opening-stock-voucher.module';
+import { PhysicalStockVoucherModule } from './modules/stocks/physical-stock-voucher/physical-stock-voucher.module';
+import { StockTransferModule } from './modules/stocks/stock-transfer/stock-transfer.module';
+import { SellingPriceBulkModule } from './modules/stocks/selling-price-bulk/selling-price-bulk.module';
 import { MasterLookupModule } from './modules/master-lookup/master-lookup.module';
+import { BatchPrefixModule } from './modules/master/batch-prefix/batch-prefix.module';
 import { WidgetMasterModule } from './modules/master/widget-master/widget-master.module';
-import { OpeningStockModule } from './modules/opening-stock/opening-stock.module';
+import { ChargeMasterModule } from './modules/master/charge-master/charge-master.module';
+import { ChargeDetailModule } from './modules/master/charge-detail/charge-detail.module';
+import { PromotionLoyaltyPointsModule } from './modules/sales/loyalty/promotion-loyalty-points.module';
+import { PromotionSchemeModule } from './modules/sales/promotion-scheme/promotion-scheme.module';
+import { PrintTemplateAssignmentModule } from './modules/settings/print-template-assignment/print-template-assignment.module';
+import { PrintRenderModule } from './modules/settings/print-render/print-render.module';
+import { ItemStockBalanceModule } from './modules/stocks/itemstockbalance/itemStockBalanceModule';
+import { ItemBatchStockModule } from './modules/stocks/itembatchstock/itemBatchStockModule';
+import { GodownsMasterModule } from './modules/Inventory/godowns-master/godowns-master.module';
+import { ItemsGroupMasterModule } from './modules/Inventory/items-group-master/items-group-master.module';
+import { ItemsBrandMasterModule } from './modules/Inventory/items-brand-master/items-brand-master.module';
+import { ItemsSectionMasterModule } from './modules/Inventory/items-section-master/items-section-master.module';
+import { ItemsCategoryMasterModule } from './modules/Inventory/items-category-master/items-category-master.module';
+import { UnitsMasterModule } from './modules/Inventory/units-master/units-master.module';
+import { ItemsTaxMasterModule } from './modules/Inventory/items-tax-master/items-tax-master.module';
+import { TaxRateMasterModule } from './modules/Inventory/tax-rate-master/tax-rate-master.module';
+import { ItemsEanCodeMasterModule } from './modules/Inventory/items-ean-code-master/items-ean-code-master.module';
+import { ItemsGstUnitsMasterModule } from './modules/Inventory/items-gst-units-master/items-gst-units-master.module';
+import { ItemsPriceMasterModule } from './modules/Inventory/items-price-master/items-price-master.module';
+import { ItemUnitConversionModule } from './modules/Inventory/item-unit-conversion/item-unit-conversion.module';
+import { ItemsReorderMasterModule } from './modules/Inventory/items-reorder-master/items-reorder-master.module';
+import { ItemsQtyPriceMasterModule } from './modules/Inventory/items-qty-price-master/items-qty-price-master.module';
+import { ItemsTaxHistoryMasterModule } from './modules/Inventory/items-tax-history-master/items-tax-history-master.module';
+import { ItemsMasterModule } from './modules/Inventory/items-master/items-master.module';
 const parseNumber = (value: string | undefined, fallback: number): number => {
   if (!value) {
     return fallback;
@@ -76,6 +121,13 @@ const parseNumber = (value: string | undefined, fallback: number): number => {
   const parsedValue = Number(value);
   return Number.isFinite(parsedValue) ? parsedValue : fallback;
 };
+const parseBoolean = (value: string | undefined, fallback = false): boolean => {
+  if (value === undefined) {
+    return fallback;
+  }
+  return ['1', 'true', 'yes', 'on'].includes(value.toLowerCase());
+};
+const isThrottlerEnabled = parseBoolean(process.env.THROTTLE_ENABLED, true);
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -87,7 +139,9 @@ const parseNumber = (value: string | undefined, fallback: number): number => {
     }),
     RequestContextModule,
     RedisModule,
+    QueueModule,
     ConfiguredGridSqlModule,
+    SequenceModule,
     ThrottlerModule.forRoot([
       {
         ttl: parseNumber(process.env.THROTTLE_TTL, 60) * 1000,
@@ -95,8 +149,10 @@ const parseNumber = (value: string | undefined, fallback: number): number => {
       },
     ]),
     PrismaModule,
+    PgModule,
     AuditLogModule,
     HealthModule,
+    //CloudSyncModule,
     UsersModule,
     ItemsGroupMasterModule,
     ItemsBrandMasterModule,
@@ -104,15 +160,19 @@ const parseNumber = (value: string | undefined, fallback: number): number => {
     ItemsCategoryMasterModule,
     UnitsMasterModule,
     ItemsTaxMasterModule,
+    TaxRateMasterModule,
     ItemsEanCodeMasterModule,
+    ItemsGstUnitsMasterModule,
     ItemsCustRatesMasterModule,
     ItemsPriceMasterModule,
+    ItemUnitConversionModule,
     ItemPriceDetailsModule,
-    ItemsQtywiseRatesMasterModule,
     ItemsReorderMasterModule,
+    ItemsQtyPriceMasterModule,
     ItemsTaxHistoryMasterModule,
     ItemsMasterModule,
-    AccountsGroupModule,
+    AccGroupMasterModule,
+    OpeningBalanceModule,
     AccountLedgerMastersModule,
     LedgerBankAccountModule,
     LedgerShippingAddressModule,
@@ -122,8 +182,22 @@ const parseNumber = (value: string | undefined, fallback: number): number => {
     EmployeeDepartmentMasterModule,
     EmployeeDesignationMasterModule,
     EmployeeMasterModule,
+    UserAdministrationModule,
+    AppSettingsModule,
+    PrintTemplateModule,
     TenderMasterModule,
     TenderTypeMasterModule,
+    TenderDetailModule,
+    TransactionModule,
+    BillBalanceModule,
+    ReceiptModule,
+    ChequesModule,
+    // The Voucher Register (voucher_register.md): Journal, Contra, Debit / Credit
+    // Note, Purchase / Sales (Accounting), Receipt / Payment Voucher on the ONE
+    // posting routine in common/posting.
+    VouchersModule,
+    LedgerStatementModule,
+    LedgerMapModule,
     GspProviderMasterModule,
     GspCompanyServiceModule,
     SupplierGroupModule,
@@ -131,25 +205,52 @@ const parseNumber = (value: string | undefined, fallback: number): number => {
     StateModule,
     CityModule,
     AreaModule,
+    SaleFreightChargeModule,
+    SaleLoadingChargeModule,
     CustomerModule,
     CustomerGroupModule,
+    SaleAgentModule,
+    QuotationModule,
+    // A2 — the shared posting services (no routes). Imported here so the DI
+    // graph is proven at boot, before A3 hangs the bill and order routes on it.
+    SalesPostingModule,
+    BillModule,
+    SaleOrderModule,
+    // A3 — the four documents of HANDOVER 2026-09-20 §4–§7.
+    DeliveryChallanModule,
+    DcReturnModule,
+    SaleReturnModule,
+    TempCreditModule,
+    TxnHoldModule,
     BankListModule,
     DeviceListMasterModule,
     MenuMasterModule,
     PriceLevelMasterModule,
     HsnCodeMasterModule,
     StateCodeMasterModule,
-    UiTableColumnsModule,
     UiTableMasterModule,
     UserLoginSessionsModule,
+    StockAdjReasonsModule,
+    StockTrackPresetsModule,
+    StockVoucherModule,
+    OpeningStockVoucherModule,
+    PhysicalStockVoucherModule,
+    StockTransferModule,
+    SellingPriceBulkModule,
     MasterLookupModule,
+    BatchPrefixModule,
     WidgetMasterModule,
-    OpeningStockModule,
+    ChargeMasterModule,
+    ChargeDetailModule,
+    ItemStockBalanceModule,
+    ItemBatchStockModule,
+    PromotionLoyaltyPointsModule,
+    PromotionSchemeModule,
+    PrintTemplateAssignmentModule,
+    PrintRenderModule,
     GodownsMasterModule,
     GridDetailsModule,
-    GridColumnsModule,
     DropdownDetailsModule,
-    DropdownColumnsModule,
     AuthModule,
   ],
   providers: [
@@ -159,13 +260,25 @@ const parseNumber = (value: string | undefined, fallback: number): number => {
       provide: APP_GUARD,
       useClass: AccessTokenGuard,
     },
-    {
-      provide: APP_GUARD,
-      useClass: ThrottlerGuard,
-    },
+    ...(isThrottlerEnabled
+      ? [
+          {
+            provide: APP_GUARD,
+            useClass: ThrottlerGuard,
+          },
+        ]
+      : []),
     {
       provide: APP_FILTER,
       useClass: AllExceptionsFilter,
+    },
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: HttpCacheInterceptor,
+    },
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: HttpCacheInvalidationInterceptor,
     },
     {
       provide: APP_INTERCEPTOR,
@@ -175,6 +288,8 @@ const parseNumber = (value: string | undefined, fallback: number): number => {
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {
-    consumer.apply(RequestContextMiddleware, RequestLoggerMiddleware).forRoutes('*');
+    // Express 5 (Nest 11) parses routes with path-to-regexp v8, which dropped the
+    // bare '*' wildcard. '{*path}' is its replacement for "every path, including /".
+    consumer.apply(RequestContextMiddleware, RequestLoggerMiddleware).forRoutes('{*path}');
   }
 }

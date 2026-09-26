@@ -1,168 +1,105 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { ConfiguredGridStyleDto } from '../../../../common/configured-grid-sql/dto/configured-grid-style.dto';
-
-export class DeviceListMasterErrorFieldDto {
-  @ApiProperty({ example: 'devDeviceUid' })
-  field!: string;
-
-  @ApiProperty({ example: 'Duplicate device uid is not allowed' })
-  message!: string;
-}
-
-export class DeviceListMasterErrorResponseDto {
-  @ApiProperty({ example: false })
-  success!: false;
-
-  @ApiProperty({ example: 'Validation failed' })
-  message!: string;
-
-  @ApiProperty({ type: DeviceListMasterErrorFieldDto, isArray: true })
-  errors!: DeviceListMasterErrorFieldDto[];
-}
-
+import {
+  FixedErrorFieldDto,
+  FixedErrorResponseDto,
+  FixedListMetaDto,
+} from 'src/common/utils/module-response.dto';
+import { DevicePlatform, DeviceType } from '../types/device-list-master-enum';
+export { FixedErrorFieldDto as DeviceListMasterErrorFieldDto };
+export { FixedErrorResponseDto as DeviceListMasterErrorResponseDto };
+export { FixedListMetaDto as DeviceListMasterListMetaDto };
 export class DeviceListMasterPayloadDto {
   @ApiProperty({ format: 'uuid' })
   devId!: string;
-
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   devCompanyId!: string | null;
-
+  @ApiPropertyOptional({
+    nullable: true,
+    example: 'Acme Pvt Ltd',
+    description: 'Name of the linked company (resolved on the get endpoint)',
+  })
+  devCompanyName?: string | null;
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   devBranchId!: string | null;
-
+  @ApiPropertyOptional({
+    nullable: true,
+    example: 'Main Branch',
+    description: 'Name of the linked branch (resolved on the get endpoint)',
+  })
+  devBranchName?: string | null;
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   devUserId!: string | null;
-
+  @ApiPropertyOptional({
+    nullable: true,
+    example: 'John Doe',
+    description: 'Display name of the linked user (resolved on the get endpoint)',
+  })
+  devUserName?: string | null;
   @ApiProperty({ maxLength: 120 })
   devDeviceUid!: string;
-
   @ApiPropertyOptional({ maxLength: 120, nullable: true })
   devDeviceName!: string | null;
-
-  @ApiProperty({ maxLength: 30 })
-  devDeviceType!: string;
-
-  @ApiPropertyOptional({ maxLength: 30, nullable: true })
-  devPlatform!: string | null;
-
-  @ApiPropertyOptional({ maxLength: 40, nullable: true })
-  devOsVersion!: string | null;
-
-  @ApiPropertyOptional({ maxLength: 40, nullable: true })
-  devAppVersion!: string | null;
-
-  @ApiPropertyOptional({ maxLength: 120, nullable: true })
-  devSerialNo!: string | null;
-
-  @ApiPropertyOptional({ maxLength: 30, nullable: true })
-  devImei!: string | null;
-
+  @ApiProperty({ enum: DeviceType, enumName: 'DeviceListMasterDeviceType', maxLength: 30 })
+  devDeviceType!: DeviceType;
+  @ApiPropertyOptional({
+    enum: DevicePlatform,
+    enumName: 'DeviceListMasterDevicePlatform',
+    maxLength: 30,
+    nullable: true,
+  })
+  devPlatform!: DevicePlatform | null;
   @ApiPropertyOptional({ maxLength: 50, nullable: true })
   devMacAddress!: string | null;
-
-  @ApiPropertyOptional({ nullable: true })
-  devProductKey!: string | null;
-
-  @ApiProperty({ example: false })
-  devIsAllowed!: boolean;
-
   @ApiProperty({ example: false })
   devIsBlocked!: boolean;
-
-  @ApiPropertyOptional({ maxLength: 250, nullable: true })
-  devAllowReason!: string | null;
-
   @ApiPropertyOptional({ maxLength: 250, nullable: true })
   devBlockReason!: string | null;
-
-  @ApiPropertyOptional({ nullable: true })
-  devLastSeenOn!: string | null;
-
   @ApiPropertyOptional({ nullable: true })
   devLastIp!: string | null;
-
-  @ApiPropertyOptional({ nullable: true })
-  devLastLoginOn!: string | null;
-
   @ApiProperty({ example: true })
   devIsActive!: boolean;
-
   @ApiProperty({ example: false })
   devIsDeleted!: boolean;
-
   @ApiPropertyOptional({ nullable: true })
   devSyncDate!: string | null;
-
   @ApiProperty()
   devCreatedOn!: string;
-
   @ApiPropertyOptional({ nullable: true })
   devCreatedBy!: string | null;
-
-  @ApiProperty()
-  devModifiedOn!: string;
-
+  @ApiPropertyOptional({ nullable: true })
+  devModifiedOn!: string | null;
   @ApiPropertyOptional({ nullable: true })
   devModifiedBy!: string | null;
 }
-
-export class DeviceListMasterListMetaDto {
-  @ApiProperty({ example: 1 })
-  page!: number;
-
-  @ApiProperty({ example: 20 })
-  limit!: number;
-
-  @ApiProperty({ example: 3 })
-  total!: number;
-
-  @ApiProperty({ example: 1 })
-  total_pages!: number;
-}
-
 export class DeviceListMasterDeleteResultDto {
   @ApiProperty({ format: 'uuid' })
   devId!: string;
-
   @ApiProperty({ example: true })
   deleted!: true;
 }
-
 export class DeviceListMasterSuccessSingleDto {
   @ApiProperty({ example: true })
   success!: true;
-
   @ApiProperty({ example: 'Device fetched successfully' })
   message!: string;
-
   @ApiProperty({ type: DeviceListMasterPayloadDto })
   data!: DeviceListMasterPayloadDto;
 }
-
 export class DeviceListMasterSuccessListDto {
   @ApiProperty({ example: true })
   success!: true;
-
   @ApiProperty({ example: 'Devices fetched successfully' })
   message!: string;
-
   @ApiProperty({ type: DeviceListMasterPayloadDto, isArray: true })
   data!: DeviceListMasterPayloadDto[];
-
-  @ApiProperty({ type: DeviceListMasterListMetaDto })
-  meta!: DeviceListMasterListMetaDto;
-
-  @ApiPropertyOptional({ type: ConfiguredGridStyleDto, isArray: true })
-  styles?: ConfiguredGridStyleDto[];
+  @ApiProperty({ type: FixedListMetaDto })
+  meta!: FixedListMetaDto;
 }
-
 export class DeviceListMasterSuccessDeleteDto {
   @ApiProperty({ example: true })
   success!: true;
-
   @ApiProperty({ example: 'Device deleted successfully' })
   message!: string;
-
   @ApiProperty({ type: DeviceListMasterDeleteResultDto })
   data!: DeviceListMasterDeleteResultDto;
 }

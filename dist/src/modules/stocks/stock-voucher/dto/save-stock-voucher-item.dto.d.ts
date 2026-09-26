@@ -1,0 +1,36 @@
+import { type StockBucket } from '../types/stock-voucher.types';
+export declare class SaveStockVoucherItemDto {
+    lineNo: number;
+    splitNo?: number;
+    itemId: string;
+    uomId?: string;
+    baseUomId: string;
+    toBaseFactor: number;
+    godownId: string;
+    lotId?: string | null;
+    bucket?: StockBucket;
+    barcode?: string | null;
+    batchNo?: string | null;
+    mfgDate?: string | null;
+    expiryDate?: string | null;
+    mrp?: string | number | null;
+    salePrice?: string | number | null;
+    serialNo?: string | null;
+    supplierId?: string | null;
+    qty?: string | number;
+    baseQty: number;
+    freeQty?: string | number;
+    freeBaseQty?: number;
+    weightQty?: string | number;
+    bookQty?: string | number | null;
+    countedQty?: string | number | null;
+    costRate?: string | number;
+    costRateWot?: string | number;
+    landedRate?: string | number;
+    taxPerc?: string | number;
+    reasonId?: string | null;
+    syncDate?: string | null;
+    remarks?: string | null;
+    createdBy?: string | null;
+    modifiedBy?: string | null;
+}

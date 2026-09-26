@@ -1,0 +1,178 @@
+/// stock.stock_balance — the CURRENT position. One row per holding.
+///
+/// [[StockLedger]] is the truth and this is the answer: every figure here is
+/// derivable by replaying the ledger, and is kept here only so the billing
+/// screen does not have to. The grain is
+/// (company, branch, godown, item, lot, bucket) — ux_sbl_scope — which is one
+/// row per "this batch of this item, on this shelf, in this condition".
+///
+/// NOT PARTITIONED, and deliberately without an acc-year column. A balance is
+/// as-of-now, not as-of-a-year: carrying stock into a new fiscal year must not
+/// mean copying every holding into a new partition, and "what is on the shelf"
+/// has exactly one answer regardless of which year the movements that produced
+/// it were posted in. Year-wise questions are ledger questions.
+///
+/// ENGINE-MAINTAINED. The posting engine owns this table — on this deployment
+/// stock-voucher-posting.helper.ts, doing what the share's fn_sml_apply() does:
+/// it upserts on ux_sbl_scope as ledger rows land, and it alone writes the four
+/// accumulators and the identity cache. Application code that writes sblInQty / sblOutQty /
+/// sblFreeInQty / sblFreeOutQty is writing a number the next posting will
+/// overwrite, and has moved stock without a ledger row to explain it. Post to
+/// StockLedger instead — always.
+///
+/// THE FOUR ACCUMULATORS, NOT A SINGLE BALANCE. In and out are kept apart
+/// because a concurrent inward and outward then touch different columns of the
+/// same row rather than fighting over one, and because "how much moved" is a
+/// question the balance can answer without opening the ledger. Free in and
+/// free out are kept apart again so margin reporting can separate what was
+/// paid for from what was not — but free goods ARE stock: they sit on the
+/// shelf, they get sold, and sblOnHandQty counts them.
+///
+/// THREE QUANTITIES, THREE MEANINGS, and confusing them is the classic stock
+/// bug:
+///   sblOnHandQty     what is physically here      (in + freeIn - out - freeOut)
+///   sblReservedQty   here, but promised to an order   — owned by stock_reservation
+///   sblAvailableQty  what may still be sold       (onHand - reserved)
+///   sblTransitInQty  sent from another branch, NOT here yet — owned by
+///                    stock_transit, and NOT part of on hand
+/// A billing screen checks AVAILABLE, a physical count reconciles against ON
+/// HAND, and a transfer receipt clears TRANSIT. sblAvailableQty repeats the
+/// on-hand arithmetic instead of referencing it because PostgreSQL forbids a
+/// generated column reading another generated column.
+///
+/// THE IDENTITY CACHE — sblBatchNo, sblMrp, sblSalePrice, sblExpiryDate,
+/// sblSupplierId — is COPIED from [[StockLot]] by the same trigger, and the lot
+/// remains the owner. It is duplicated so that near-expiry, MRP-wise and
+/// supplier-wise stock reports are covering-index reads on this table alone;
+/// when the two ever disagree, the lot is right.
+///
+/// AGEING ANCHORS. sblFirstInDate / sblLastInDate answer "how long has this sat
+/// on THIS shelf"; the lot's sltFirstInwardDate answers "how old is this stock
+/// in the chain", which a transfer must not reset. StockTrackPolicy.
+/// stpAgeingBasis picks which one an ageing report measures from, and
+/// [[StockAgeingSlab]] says where the cuts are.
+///
+/// NEGATIVE STOCK IS REPRESENTABLE ON PURPOSE. ck_sbl_accum keeps the four
+/// accumulators non-negative, but nothing stops on-hand going below zero —
+/// a StockTrackPolicy of ALLOW is a real business choice (an offline till that
+/// must keep billing, a receipt keyed after the sale it supplied). The
+/// exception report reads ix_sbl_negative.
+///
+/// WRITE RULES:
+///   * NEVER write sblOnHandQty or sblAvailableQty — GENERATED ALWAYS ...
+///     STORED, and Postgres rejects any write to them.
+///   * NEVER write the accumulators or the identity cache from application
+///     code; post a ledger row.
+///   * sblReservedQty and sblTransitInQty belong to stock_reservation and
+///     stock_transit respectively, and neither may go negative.
+///
+/// Vocabulary, enforced by a CHECK constraint in the migration:
+///   sblBucket  SALEABLE | DAMAGED | QUARANTINE | EXPIRED | SAMPLE — the same
+///              five as StockLedger.smlBucket, and one balance row each,
+///              because saleable stock and damaged stock must never be added
+///              together by accident
+///
+/// DB-only objects Prisma cannot express — hand-authored in the migration and
+/// deliberately NOT declared here. EVERY index on this table carries a WHERE,
+/// and Prisma ignores indexes with predicates:
+///   ux_sbl_scope       ONE ROW PER HOLDING, and the upsert target of
+///                      fn_sml_apply(). Partial on NOT deleted.
+///   ix_sbl_lookup      the billing screen's stock lookup — what
+///                      /master-lookups/item-price asks, answered without
+///                      touching the heap
+///   ix_sbl_item_chain  item-wise stock across a branch's godowns, and the
+///                      chain-wide "who else has this?" behind an inter-store
+///                      transfer suggestion
+///   ix_sbl_ageing      ageing, on shelf age
+///   ix_sbl_supplier    supplier-wise stock, straight off the cached supplier
+///   ix_sbl_expiry      near expiry and expired-stock blocking
+///   ix_sbl_mrp         MRP-wise and selling-price-wise summaries
+///   ix_sbl_negative    the negative-stock exception report
+model StockBalance {
+  sblId                String    @id(map: "pk_stock_balance") @default(dbgenerated("uuidv7()")) @db.Uuid @map("sbl_id")
+  sblCompanyId         String    @db.Uuid                            @map("sbl_company_id")
+  sblBranchId          String    @db.Uuid                            @map("sbl_branch_id")
+  sblTenantId          String?   @db.Uuid                            @map("sbl_tenant_id")
+  /// The shelf — an inventory.godown_locations(gdl_id). Branch and godown live
+  /// HERE and not on the lot: the same batch held in four godowns is four
+  /// balance rows and one lot.
+  sblGodownId          String    @db.Uuid                            @map("sbl_godown_id")
+  sblItemId            String    @db.Uuid                            @map("sbl_item_id")
+  sblLotId             String    @db.Uuid                            @map("sbl_lot_id")
+  /// The item's BASE unit — an item_unit_conversion(iuc_id), NEVER an
+  /// item_unit_master(unit_id). Every quantity on this row is in this unit.
+  sblBaseUomId         String    @db.Uuid                            @map("sbl_base_uom_id")
+  sblBucket            String    @default("SALEABLE") @db.VarChar(20) @map("sbl_bucket")
+
+  // ── Accumulators ────────────────────────────────────────────────────────
+  // ENGINE-MAINTAINED from StockLedger (stock-voucher-posting.helper.ts). NEVER
+  // written from application code outside that engine — see WRITE RULES above.
+  sblInQty             Decimal   @default(0) @db.Decimal(18, 6)      @map("sbl_in_qty")
+  sblOutQty            Decimal   @default(0) @db.Decimal(18, 6)      @map("sbl_out_qty")
+  sblFreeInQty         Decimal   @default(0) @db.Decimal(18, 6)      @map("sbl_free_in_qty")
+  sblFreeOutQty        Decimal   @default(0) @db.Decimal(18, 6)      @map("sbl_free_out_qty")
+
+  /// GENERATED ALWAYS ... STORED as in + freeIn - out - freeOut. What is
+  /// PHYSICALLY here, free goods included. Read-only, never sent.
+  sblOnHandQty         Decimal?  @default(dbgenerated()) @db.Decimal(18, 6) @map("sbl_on_hand_qty")
+
+  /// Here, but promised to an order. Owned by stock_reservation.
+  sblReservedQty       Decimal   @default(0) @db.Decimal(18, 6)      @map("sbl_reserved_qty")
+  /// Sent from another branch, not yet received here. Owned by stock_transit,
+  /// and NOT part of on hand: it is not here yet.
+  sblTransitInQty      Decimal   @default(0) @db.Decimal(18, 6)      @map("sbl_transit_in_qty")
+
+  /// GENERATED ALWAYS ... STORED as onHand - reserved. What may still be SOLD,
+  /// and the figure a billing screen checks. Read-only, never sent.
+  sblAvailableQty      Decimal?  @default(dbgenerated()) @db.Decimal(18, 6) @map("sbl_available_qty")
+
+  // ── Value ───────────────────────────────────────────────────────────────
+  // The BRANCH average from [[StockItemCost]], distributed over this shelf:
+  // stamped on every holding of the item whenever the average moves. Not a
+  // per-holding truth of its own — a transfer between two godowns of one
+  // branch must not move value.
+  sblAvgCostRate       Decimal   @default(0) @db.Decimal(18, 6)      @map("sbl_avg_cost_rate")
+  sblAvgCostRateWot    Decimal   @default(0) @db.Decimal(18, 6)      @map("sbl_avg_cost_rate_wot")
+  sblStockValue        Decimal   @default(0) @db.Decimal(18, 2)      @map("sbl_stock_value")
+  sblStockValueWot     Decimal   @default(0) @db.Decimal(18, 2)      @map("sbl_stock_value_wot")
+
+  // ── Ageing anchors, for THIS godown ─────────────────────────────────────
+  // "How long has it sat on this shelf". The chain-wide age is the lot's
+  // sltFirstInwardDate, which a transfer must not reset.
+  sblFirstInDate       DateTime? @db.Date                            @map("sbl_first_in_date")
+  sblLastInDate        DateTime? @db.Date                            @map("sbl_last_in_date")
+  sblLastOutDate       DateTime? @db.Date                            @map("sbl_last_out_date")
+
+  // ── Identity cache ──────────────────────────────────────────────────────
+  // Owned by StockLot, copied here by the same trigger so the expiry, MRP and
+  // supplier reports are covering-index reads on this table alone. When the
+  // two disagree, the lot is right.
+  sblBatchNo           String?   @db.VarChar(100)                    @map("sbl_batch_no")
+  sblMrp               Decimal?  @db.Decimal(18, 6)                  @map("sbl_mrp")
+  sblSalePrice         Decimal?  @db.Decimal(18, 6)                  @map("sbl_sale_price")
+  sblExpiryDate        DateTime? @db.Date                            @map("sbl_expiry_date")
+  sblSupplierId        String?   @db.Uuid                            @map("sbl_supplier_id")
+
+  sblRowVersion        BigInt    @default(1)                         @map("sbl_row_version")
+  sblIsActive          Boolean   @default(true)                      @map("sbl_is_active")
+  sblIsDeleted         Boolean   @default(false)                     @map("sbl_is_deleted")
+  sblSyncDate          DateTime? @db.Timestamptz(6)                  @map("sbl_sync_date")
+  sblCreatedOn         DateTime  @default(now()) @db.Timestamptz(6)  @map("sbl_created_on")
+  sblCreatedBy         String?   @db.Text                            @map("sbl_created_by")
+  sblModifiedOn        DateTime? @db.Timestamptz(6)                  @map("sbl_modified_on")
+  sblModifiedBy        String?   @db.Text                            @map("sbl_modified_by")
+
+  // ── Relations ───────────────────────────────────────────────────────────
+  // sblCreatedBy / sblModifiedBy carry NO foreign key in the migration, so
+  // they stay scalar here.
+  company              Company            @relation("StockBalanceCompany",  fields: [sblCompanyId],  references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_sbl_company")
+  branch               BranchMaster       @relation("StockBalanceBranch",   fields: [sblBranchId],   references: [brId],   onUpdate: Cascade, onDelete: Restrict, map: "fk_sbl_branch")
+  godown               GodownLocation     @relation("StockBalanceGodown",   fields: [sblGodownId],   references: [gdlId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_sbl_godown")
+  item                 ItemMaster         @relation("StockBalanceItem",     fields: [sblItemId],     references: [itemId], onUpdate: Cascade, onDelete: Restrict, map: "fk_sbl_item")
+  lot                  StockLot           @relation("StockBalanceLot",      fields: [sblLotId],      references: [sltId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_sbl_lot")
+  baseUom              ItemUnitConversion @relation("StockBalanceBaseUom",  fields: [sblBaseUomId],  references: [iucId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_sbl_base_uom")
+  supplier             Supplier?          @relation("StockBalanceSupplier", fields: [sblSupplierId], references: [supId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_sbl_supplier")
+
+  @@map("stock_balance")
+  @@schema("stock")
+}

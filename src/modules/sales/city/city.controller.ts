@@ -1,3 +1,4 @@
+import { CacheTTL } from '@nestjs/cache-manager';
 import {
   Body,
   Controller,
@@ -24,67 +25,67 @@ import {
 import { HttpErrorResponseDto } from '../../../common/dto/http-error-response.dto';
 import { CityExceptionFilter } from './city-exception.filter';
 import { CityService } from './city.service';
-import { ListCityQueryDto } from './dto/list-city-query.dto';
 import { SaveCityDto } from './dto/save-city.dto';
 import {
   CityErrorResponseDto,
+  CityMasterCreateSuccessDto,
   CitySuccessDeleteDto,
-  CitySuccessListDto,
   CitySuccessSingleDto,
 } from './dto/city-response.dto';
-import {
-  CityListItem,
-  CityListMeta,
-  CityPayload,
-  CitySuccessResponse,
-} from './types/city-api.types';
+import { CityMasterCreateResult, CityPayload, CitySuccessResponse } from './types/city-api.types';
+import { DEFAULT_ACTOR } from 'src/common/utils/module-service.utils';
+import { RequestContextService } from '../../../common/request-context/request-context.service';
+import { API_VERSION } from '../../../common/constants/api-version';
 
 @ApiTags('Cities')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
+@CacheTTL(1)
 @Controller('cities')
 @UseFilters(CityExceptionFilter)
 export class CityController {
-  constructor(private readonly cityService: CityService) {}
+  constructor(
+    private readonly cityService: CityService,
+    private readonly requestContextService: RequestContextService,
+  ) {}
 
+  // Single write endpoint: dispatches on ctmId. With ctmId it updates the existing city
+  // (returns the updated CityPayload); without it, it creates a city master together with its
+  // parent account group (returns CityMasterCreateResult). userId is resolved from the request
+  // context since the create service takes it as an argument.
   @Post('create')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Create or update city (by ctmId presence)' })
-  @ApiCreatedResponse({ type: CitySuccessSingleDto })
+  @ApiCreatedResponse({ type: CityMasterCreateSuccessDto })
+  @ApiOkResponse({ type: CitySuccessSingleDto })
   @ApiBadRequestResponse({ type: CityErrorResponseDto })
   @ApiConflictResponse({ type: CityErrorResponseDto })
   @ApiNotFoundResponse({ type: CityErrorResponseDto })
-  async save(@Body() saveCityDto: SaveCityDto): Promise<CitySuccessResponse<CityPayload>> {
-    const data = await this.cityService.save(saveCityDto);
+  async createCityMaster(
+    @Body() dto: SaveCityDto,
+  ): Promise<CitySuccessResponse<CityMasterCreateResult | CityPayload>> {
+    if (dto.ctmId) {
+      const data = await this.cityService.save(dto);
+
+      return {
+        success: true,
+        message: 'City updated successfully',
+        data,
+      };
+    }
+
+    const userId = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
+    const data = await this.cityService.createCityMaster(dto, userId);
 
     return {
       success: true,
-      message: saveCityDto.ctmId ? 'City updated successfully' : 'City created successfully',
+      message: 'City created successfully',
       data,
     };
   }
 
-  @Get('list')
-  @Version('1')
-  @ApiOperation({ summary: 'List cities with filter/search/pagination' })
-  @ApiOkResponse({ type: CitySuccessListDto })
-  @ApiBadRequestResponse({ type: CityErrorResponseDto })
-  async list(
-    @Query() queryDto: ListCityQueryDto,
-  ): Promise<CitySuccessResponse<CityListItem[], CityListMeta>> {
-    const result = await this.cityService.list(queryDto);
-
-    return {
-      success: true,
-      message: 'Cities fetched successfully',
-      data: result.items,
-      meta: result.meta,
-      ...(result.styles !== undefined && { styles: result.styles }),
-    };
-  }
-
   @Get('get')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Get city by id' })
   @ApiQuery({ name: 'ctmId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: CitySuccessSingleDto })
@@ -103,7 +104,7 @@ export class CityController {
   }
 
   @Delete('delete')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Soft delete city by id' })
   @ApiQuery({ name: 'ctmId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: CitySuccessDeleteDto })

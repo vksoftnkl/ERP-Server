@@ -1,0 +1,85 @@
+# Item Stock Balance — Bulk List API Tests
+# Requires VS Code REST Client extension (humao.rest-client)
+# Run the Login request first, then copy the access_token into @token below.
+
+@baseUrl = https://127.0.0.1:3011/api/v1
+@token = PASTE_ACCESS_TOKEN_HERE
+
+# Real data from DB:
+@accYear    = 2026-2027
+@companyId  = 019cc885-d0f4-771b-a7d1-7c98f9ff3ac1
+@branchId   = 019d9b39-3dbd-702a-8c7a-90aa1bee679a
+@godownId   = 019d2e48-7af3-7d5c-82a7-2eb57fdabf1c
+
+# ─── 0. Login ────────────────────────────────────────────────────────────────
+# Run this first, copy access_token from response into @token above.
+
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "user_name": "YOUR_USERNAME",
+  "user_password": "YOUR_PASSWORD"
+}
+
+###
+
+# ─── 1. All stocks (no filters) ──────────────────────────────────────────────
+# Expected: 13 records (from DB count)
+
+GET {{baseUrl}}/item-stock-balance/bulk-list?isb_acc_year={{accYear}}&isb_company_id={{companyId}}&isb_branch_id={{branchId}}&stock_type=ALL&limit=100
+Authorization: Bearer {{token}}
+
+###
+
+# ─── 2. Zero stocks only ─────────────────────────────────────────────────────
+# Expected: 2 records (from DB count)
+
+GET {{baseUrl}}/item-stock-balance/bulk-list?isb_acc_year={{accYear}}&isb_company_id={{companyId}}&isb_branch_id={{branchId}}&stock_type=ZERO&limit=100
+Authorization: Bearer {{token}}
+
+###
+
+# ─── 3. Negative stocks only ─────────────────────────────────────────────────
+# Expected: 0 records (from DB count — no negative balances currently)
+
+GET {{baseUrl}}/item-stock-balance/bulk-list?isb_acc_year={{accYear}}&isb_company_id={{companyId}}&isb_branch_id={{branchId}}&stock_type=NEGATIVE&limit=100
+Authorization: Bearer {{token}}
+
+###
+
+# ─── 4. Filter by specific godown ────────────────────────────────────────────
+
+GET {{baseUrl}}/item-stock-balance/bulk-list?isb_acc_year={{accYear}}&isb_company_id={{companyId}}&isb_branch_id={{branchId}}&isb_godown_id={{godownId}}&stock_type=ALL&limit=100
+Authorization: Bearer {{token}}
+
+###
+
+# ─── 5. With stock bucket filter ─────────────────────────────────────────────
+
+GET {{baseUrl}}/item-stock-balance/bulk-list?isb_acc_year={{accYear}}&isb_company_id={{companyId}}&isb_branch_id={{branchId}}&stock_type=ALL&isb_stock_bucket=SALEABLE&limit=100
+Authorization: Bearer {{token}}
+
+###
+
+# ─── 6. With item group filter (replace with a real group UUID from your DB) ──
+
+GET {{baseUrl}}/item-stock-balance/bulk-list?isb_acc_year={{accYear}}&isb_company_id={{companyId}}&isb_branch_id={{branchId}}&stock_type=ALL&item_group_id=REPLACE_WITH_REAL_GROUP_UUID&limit=100
+Authorization: Bearer {{token}}
+
+###
+
+# ─── 7. Default limit (no limit param) ───────────────────────────────────────
+
+GET {{baseUrl}}/item-stock-balance/bulk-list?isb_acc_year={{accYear}}&isb_company_id={{companyId}}&isb_branch_id={{branchId}}
+Authorization: Bearer {{token}}
+
+###
+
+# ─── 8. Validation error — missing required params ───────────────────────────
+# Expected: 400 Bad Request
+
+GET {{baseUrl}}/item-stock-balance/bulk-list?isb_acc_year={{accYear}}
+Authorization: Bearer {{token}}
+
+###

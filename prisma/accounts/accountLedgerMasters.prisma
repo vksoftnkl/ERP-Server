@@ -1,18 +1,7 @@
-enum LedGstPartyRegType {
-  REGULAR
-  COMPOSITION
-  UNREGISTERED
-  @@schema("accounts")
-}
-enum LedObType {
-  DR
-  CR
-  @@schema("accounts")
-}
 model AccLedgerMaster {
   ledId                    String    @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("led_id")
-  ledCompanyId             String    @db.Uuid                                        @map("led_company_id")
-  ledBranchId              String    @db.Uuid                                        @map("led_branch_id")
+  ledCompanyId             String?   @db.Uuid                                        @map("led_company_id")
+  ledBranchId              String?   @db.Uuid                                        @map("led_branch_id")
   ledGroupId               String    @db.Uuid                                        @map("led_group_id")
   // 1) Identity / Reference
   ledName                  String    @db.VarChar(200)                                 @map("led_name")
@@ -21,8 +10,12 @@ model AccLedgerMaster {
   ledTallyName             String?   @db.VarChar(200)                                 @map("led_tally_name")
   ledTallyGroupName        String?   @db.VarChar(150)                                 @map("led_tally_group_name")
   ledTallyGuid             String?   @db.VarChar(64)                                  @map("led_tally_guid")
+  ledTallyMasterId         BigInt?   @db.BigInt                                       @map("led_tally_master_id")
+  ledTallyAlterId          BigInt?   @db.BigInt                                       @map("led_tally_alter_id")
   // 2) Ledger category / behaviour
   ledCategory              String    @default("GENERAL") @db.VarChar(30)              @map("led_category")
+  ledLedgerType            String?   @db.VarChar(20)                                  @map("led_ledger_type")
+  ledMailingName           String?   @db.VarChar(200)                                 @map("led_mailing_name")
   ledIsBillByBill          Boolean   @default(false)                                   @map("led_is_bill_by_bill")
   ledIsCostCenterReq       Boolean   @default(false)                                   @map("led_is_cost_center_req")
   ledIsInterestApplicable  Boolean   @default(false)                                   @map("led_is_interest_applicable")
@@ -54,53 +47,117 @@ model AccLedgerMaster {
   ledRegionStateName       String?   @db.VarChar(100)                                 @map("led_region_state_name")
   ledRegionCountry         String?   @default("India") @db.VarChar(60)                @map("led_region_country")
   // 6) GST / Statutory
-  ledGstPartyRegType       LedGstPartyRegType?                                         @map("led_gst_party_reg_type")
+  // Allowed values (REGULAR/COMPOSITION/UNREGISTERED) validated in the app layer
+  // (accountLedgerMasters LedGstPartyRegType enum), not a DB enum type.
+  ledGstPartyRegType       String?   @db.VarChar(20)                                  @map("led_gst_party_reg_type")
   ledGstinNo               String?   @db.VarChar(15)                                  @map("led_gstin_no")
   ledPanNo                 String?   @db.VarChar(10)                                  @map("led_pan_no")
   ledAadharNo              String?   @db.VarChar(20)                                  @map("led_aadhar_no")
   ledEcommerceGstin        String?   @db.VarChar(15)                                  @map("led_ecommerce_gstin")
   ledIsSez                 Boolean   @default(false)                                   @map("led_is_sez")
-  // 7) Bank / Payment
-  ledHolderName            String?   @db.VarChar(80)                                  @map("led_holder_name")
-  ledBankName              String?   @db.VarChar(120)                                 @map("led_bank_name")
-  ledBankBranch            String?   @db.VarChar(120)                                 @map("led_bank_branch")
-  ledBankAcNo              String?   @db.VarChar(40)                                  @map("led_bank_ac_no")
-  ledBankIfsc              String?   @db.VarChar(15)                                  @map("led_bank_ifsc")
-  ledUpiId                 String?   @db.VarChar(80)                                  @map("led_upi_id")
-  // 8) Opening / Running Balance
+  ledTypeOfSupply          String?   @db.VarChar(10)                                  @map("led_type_of_supply")
+  ledHsnSac                String?   @db.VarChar(10)                                  @map("led_hsn_sac")
+  // The tax_rate_master row this ledger carries when it appears as a taxable
+  // line (freight, packing, labour). NULL on a party or bank ledger.
+  // Replaced ledGstRate / ledTaxability / ledTaxRate, which held a bare
+  // percentage; those columns were dropped in 20260912100000.
+  ledTaxId                 String?   @db.Uuid                                         @map("led_tax_id")
+  ledGstPartyType          String?   @db.VarChar(30)                                  @map("led_gst_party_type")
+  ledTanNo                 String?   @db.VarChar(10)                                  @map("led_tan_no")
+  ledCin                   String?   @db.VarChar(21)                                  @map("led_cin")
+  ledUdyamNo               String?   @db.VarChar(25)                                  @map("led_udyam_no")
+  ledMsmeType              String?   @db.VarChar(10)                                  @map("led_msme_type")
+  // 7) Tax / duty ledger (CGST/SGST/IGST/Cess + round-off)
+  ledGstDutyHead           String?   @db.VarChar(20)                                  @map("led_gst_duty_head")
+  ledRoundingMethod        String?   @db.VarChar(15)                                  @map("led_rounding_method")
+  ledRoundingLimit         Decimal?  @db.Decimal                                       @map("led_rounding_limit")
+  // 8) TDS / TCS
+  ledIsTdsApplicable       Boolean   @default(false)                                   @map("led_is_tds_applicable")
+  ledTdsDeducteeType       String?   @db.VarChar(16)                                  @map("led_tds_deductee_type")
+  ledTdsNatureOfPayment    String?   @db.VarChar(16)                                  @map("led_tds_nature_of_payment")
+  ledIsTcsApplicable       Boolean   @default(false)                                   @map("led_is_tcs_applicable")
+  // Input tax credit. Allowed values (ELIGIBLE / INELIGIBLE_17_5 / INELIGIBLE_OTHER /
+  // CAPITAL_GOODS / INPUT_SERVICES) are behind chk_led_itc_eligibility (20260917120000)
+  // AND the app-layer LedItcEligibility enum, which is what turns a bad value into a
+  // 400 instead of a raw 23514. Tally's equivalent is the ledger's "Eligibility for
+  // input credit". Without it GSTR-3B table 4(D) cannot be produced and 4(A) is
+  // overstated by every blocked s.17(5) credit.
+  ledItcEligibility        String?   @db.VarChar(20)                                  @map("led_itc_eligibility")
+  // Reverse charge is decided by WHO you buy from and WHAT (unregistered purchase,
+  // GTA, legal services, director's fees, import of services) — not by the rate row,
+  // which is shared with ordinary forward-charge sales at the same percentage. So it
+  // lives here, on the party or expense ledger, and the document flag
+  // (acc_voucher_doc_register.gdr_is_reverse_charge) defaults from it.
+  ledIsReverseCharge       Boolean   @default(false)                                   @map("led_is_reverse_charge")
+  // 9) Opening / Running Balance
   ledObAmount              Decimal   @default(0) @db.Decimal                          @map("led_ob_amount")
-  ledObType                LedObType @default(DR)                                      @map("led_ob_type")
+  // Allowed values (DR/CR) validated in the app layer (accountLedgerMasters
+  // LedObType enum), not a DB enum type.
+  ledObType                String    @default("DR") @db.VarChar(2)                     @map("led_ob_type")
   ledObAsOn                DateTime? @db.Date                                          @map("led_ob_as_on")
   ledTotalDr               Decimal   @default(0) @db.Decimal                          @map("led_total_dr")
   ledTotalCr               Decimal   @default(0) @db.Decimal                          @map("led_total_cr")
   ledTotalBalance          Decimal   @default(0) @db.Decimal                          @map("led_total_balance")
-  // 9) Status / Notes
+  // 10) Status / Notes / Display
+  ledSortOrder             Int?      @db.Integer                                       @map("led_sort_order")
   ledIsActive              Boolean   @default(true)                                    @map("led_is_active")
   ledIsDeleted             Boolean   @default(false)                                   @map("led_is_deleted")
   ledAllowEdit             Boolean   @default(false)                                   @map("led_allow_edit")
   ledIsEntry               Boolean   @default(false)                                   @map("led_is_entry")
   ledAllowSms              Boolean   @default(false)                                   @map("led_allow_sms")
   ledRemarks               String?   @db.VarChar(250)                                 @map("led_remarks")
-  // 10) Audit / Sync
+  // 11) Audit / Sync
   ledSyncDate              DateTime? @db.Timestamptz                                  @map("led_sync_date")
   ledCreatedOn             DateTime  @default(now()) @db.Timestamptz                  @map("led_created_on")
   ledCreatedBy             String?   @db.VarChar(100)                                 @map("led_created_by")
   ledModifiedOn            DateTime  @default(now()) @db.Timestamptz                  @map("led_modified_on")
   ledModifiedBy            String?   @db.VarChar(100)                                 @map("led_modified_by")
   // Relations
-  company                  Company                @relation(fields: [ledCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict)
-  accountGroup             AccountGroup           @relation(fields: [ledGroupId], references: [accGroupId], onUpdate: Cascade, onDelete: Restrict)
-  branches                 BranchMaster           @relation(fields: [ledBranchId], references: [brId], onUpdate: Cascade, onDelete: Restrict)
+  company                  Company?               @relation(fields: [ledCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict)
+  accGroupMaster           AccGroupMaster         @relation(fields: [ledGroupId], references: [accGroupId], onUpdate: Cascade, onDelete: Restrict)
+  branches                 BranchMaster?          @relation(fields: [ledBranchId], references: [brId], onUpdate: Cascade, onDelete: Restrict)
   bankAccounts             AccLedgerBankAccount[]
   shipAddrs                AccShipAddr[]
-  tenders                  AccountTenderMaster[]
-  voucherBillParties       AccVoucherBill[]       @relation("VoucherBillParty")
+  tenderLedgers            AccTenderMaster[]      @relation("TenderLedger")
+  tenderSettlementLedgers  AccTenderMaster[]      @relation("TenderSettlementLedger")
+  tenderSurchargeLedgers   AccTenderMaster[]      @relation("TenderSurchargeLedger")
+  tenderDetailLedgers      AccTenderDetail[]      @relation("TenderDetailLedger")
+  tenderDetailSettleLedgers AccTenderDetail[]     @relation("TenderDetailSettleLedger")
+  tenderDetailPartyLedgers AccTenderDetail[]      @relation("TenderDetailPartyLedger")
+  tenderDetailSurchargeLedgers AccTenderDetail[]  @relation("TenderDetailSurchargeLedger")
   voucherDocRegisterParties AccVoucherDocRegister[]
-  voucherHeaderParties     AccVoucherHeader[]
+  voucherHeaderParties     AccVoucherHeader[]     @relation("VoucherHeaderParty")
+  voucherHeaderOppLedgers  AccVoucherHeader[]     @relation("VoucherHeaderOppLedger")
   accountingEntries        AccVoucher[]           @relation("AccVoucherLedger")
   oppositeAccountingEntries AccVoucher[]          @relation("AccVoucherOppLedger")
-  tenderLedgerEntries      AccVoucherTender[]     @relation("VoucherTenderTenderLedger")
-  voucherLedgerTenders     AccVoucherTender[]     @relation("VoucherTenderVoucherLedger")
+  billParties              AccBillBalance[]       @relation("BillParty")
+  billAdjustmentParties    AccBillAdjustment[]    @relation("BillAdjustmentParty")
+  billAdjustmentSettleLedgers AccBillAdjustment[] @relation("BillAdjustmentSettleLedger")
+  pdcParties               AccPdcRegister[]       @relation("PdcParty")
+  pdcBankLedgers           AccPdcRegister[]       @relation("PdcBankLedger")
+  // §2.14 — the quarterly return registers. Back-relations only; nothing reads
+  // a ledger's register rows through the ledger, but Prisma requires the
+  // opposite side of every relation to be declared.
+  tcsCollections           AccTcsRegister[]       @relation("TcsCollectee")
+  tdsEntries               AccTdsRegister[]       @relation("TdsParty")
+  chargeMasters            ChargeMaster[]
+  chargeDetails            TransactionChargeDetail[]
+  saleOrderAdvanceLedgers  SaleOrder[]              @relation("SaleOrderAdvanceLedger")
+  stockReasonGlLedgers     StockReasonMaster[]      @relation("StockReasonMasterGlLedger")
+  // fk_led_tax (20260912060000). ON DELETE RESTRICT: a rate a ledger quotes
+  // can be superseded, never removed.
+  taxRate                  TaxRateMaster?         @relation(fields: [ledTaxId], references: [taxId], onUpdate: Cascade, onDelete: Restrict, map: "fk_led_tax")
+  taxRateLedgers           TaxRateLedger[]
+  ledgerMaps               AccLedgerMap[]
+  openingBalances          AccOpeningBalance[]
+  // cus_id IS led_id and sup_id IS led_id — a 1:1 identity link, not a lookup.
+  // fk_cus_ledger / fk_sup_ledger (20260917100000) are what finally say so; before
+  // them four live parties had no ledger row at all and could not be posted to.
+  customer                 Customer?              @relation("CustomerLedger")
+  supplier                 Supplier?              @relation("SupplierLedger")
+  // Kept for the exact-case scoped case; the three rules below are what actually hold,
+  // because this one is INERT for shared rows (led_company_id IS NULL — 50 of 61
+  // ledgers) and case-sensitive besides.
   @@unique([ledCompanyId, ledName], name: "uq_led_name_per_company")
   @@unique([ledCompanyId, ledTallyName], name: "uq_led_tally_name_per_company")
   @@index([ledCompanyId], name: "idx_led_company_id")
@@ -108,6 +165,37 @@ model AccLedgerMaster {
   @@index([ledGroupId], name: "idx_led_group_id")
   @@index([ledIsActive], name: "idx_led_active")
   @@index([ledGstinNo], name: "idx_led_gstin")
+  @@index([ledLedgerType], name: "idx_led_ledger_type")
+  // Partial unique indexes — enforced via raw SQL migration, not expressible in Prisma schema:
+  //   uq_led_tally_guid       UNIQUE (led_tally_guid)                       WHERE led_tally_guid IS NOT NULL
+  //   uq_led_tally_master_id  UNIQUE (led_company_id, led_tally_master_id)  WHERE led_tally_master_id IS NOT NULL
+  //
+  // NAME UNIQUENESS — the same three rules as acc_group_master (20260917110000):
+  //   uq_led_name_shared   UNIQUE (lower(led_name)) WHERE led_company_id IS NULL     AND NOT led_is_deleted
+  //   uq_led_name_company  UNIQUE (led_company_id, lower(led_name)) WHERE led_company_id IS NOT NULL AND NOT led_is_deleted
+  //   tr_led_name_scope    BEFORE INSERT/UPDATE — a company-scoped ledger must not
+  //                        collide with a SHARED one.
+  // The trigger fires only when the name or the scope actually CHANGES, which
+  // grandfathers the one live cross-scope pair ('VAPI BATTERY & AUTO ELECTRICALS',
+  // shared + Acme Foods) — the same trade partner as both customer and supplier —
+  // rather than locking both rows out of every unrelated edit. Resolving that pair is
+  // a naming decision, not a schema one.
+  // ── Loyalty points engine (20260921140000) ─────────────────────────────
+  // Snapshot on the wallet, so a points-liability report can join accounts
+  // without a hop through the customer master.
+  loyaltyMembers        LoyaltyMember[]           @relation("LoyaltyMemberPartyLedger")
+
+  // ── Coupons and gift vouchers (20260921160000) ──────────────────────────
+  coupons               LoyaltyCoupon[]           @relation("CouponPartyLedger")
+
+  // ── Sales documents (20260921200000) ────────────────────────────────────
+  taxCertificates       AccPartyTaxCertificate[]  @relation("PartyTaxCertificateParty")
+
+  // ── Temp credit (20260922000000) ────────────────────────────────────────
+  // The walk-in ledger carries a thousand bills; these rows say WHO took
+  // each small counter loan against it.
+  tempCredits           AccTempCredit[]           @relation("TempCreditParty")
+
   @@map("acc_ledger_master")
   @@schema("accounts")
 }
