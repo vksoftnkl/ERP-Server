@@ -100,6 +100,10 @@
       "file": "Acc_Voucher_Types_Register.sql",
       "description": "accounts.acc_voucher_types — the eight Voucher Register types (Jrl, Con, DrN, CrN, PurA, SalA, RcpV, PmtV) that migration 20260925160000 skips on a fresh database; resolves account groups by name and menus by id, so after Menu_Master.sql and Account_Groups.sql, and after Acc_Voucher_Types.sql, which pins the older ids"
     },
+    {
+      "file": "App_Setting_Drcr_Display.sql",
+      "description": "public.app_setting_def \u2014 accounts.drcr_display (DR_CR | TO_BY, COMPANY scope): whether the Voucher Register labels a leg Dr/Cr or By/To; display only, the Qt client defaults to DR_CR until the row exists. Needs only the app_settings migrations"
+    },
     { "file": "Hsn_Master.sql", "description": "fixed.hsn_master — GST HSN/SAC codes" },
     { "file": "Bank_Master.sql", "description": "fixed.bank_master — Indian banks" },
     {

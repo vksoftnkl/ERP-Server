@@ -291,8 +291,8 @@ let VoucherRegisterService = class VoucherRegisterService {
                     interState: d.gst.supplyNature === 'INTER',
                 });
             }
-            if (d.tds && p.party) {
-                const raised = raisedByLine.get(0) ?? null;
+            for (const t of d.tdsLines) {
+                const raised = raisedByLine.get(t.lineRowNo ?? 0) ?? null;
                 await tx.$executeRaw `
           INSERT INTO accounts.acc_tds_register (
             atd_company_id, atd_branch_id, atd_tenant_id, atd_acc_year, atd_quarter, atd_direction,
@@ -302,13 +302,13 @@ let VoucherRegisterService = class VoucherRegisterService {
           ) VALUES (
             ${dto.header.companyId}::uuid, ${dto.header.branchId}::uuid, ${existing?.avh_tenant_id ?? null}::uuid,
             ${dto.header.accYear}::char(9), ${quarterOf(dto.header.date)}::bpchar, 'DEDUCTED',
-            ${p.party.ledId}::uuid, ${p.party.pan}, ${p.party.name.slice(0, 150)},
-            ${d.tds.registerDeductee}, ${d.tds.section}, ${d.tds.rate.toFixed(3)}::numeric,
-            ${d.tds.rateSource}, ${d.tds.base.toFixed(2)}::numeric, ${d.tds.tax.toFixed(2)}::numeric,
+            ${t.party.ledId}::uuid, ${t.party.pan}, ${t.party.name.slice(0, 150)},
+            ${t.registerDeductee}, ${t.section}, ${t.rate.toFixed(3)}::numeric,
+            ${t.rateSource}, ${t.base.toFixed(2)}::numeric, ${t.tax.toFixed(2)}::numeric,
             ${voucherId}::uuid, ${dto.header.accYear}::char(9),
             ${refno.slice(0, 50)}, ${dto.header.date}::date,
             ${raised?.billId ?? null}::uuid, ${raised?.accYear ?? null}::char(9),
-            ${d.tds.reason?.slice(0, 250) ?? null}, ${actor}
+            ${t.reason?.slice(0, 250) ?? null}, ${actor}
           )`;
             }
             await (0, txn_status_log_helper_1.appendTxnStatusLog)(tx, {
@@ -557,6 +557,21 @@ let VoucherRegisterService = class VoucherRegisterService {
             ]);
             tds = { rate, annualBaseSoFar };
         }
+        const tdsByParty = new Map();
+        if (type.tdsMode === 'DEDUCT' && type.partyMode === 'MANY') {
+            for (const l of lines) {
+                const f = ledgers.get(l.ledgerId);
+                if (!f || tdsByParty.has(f.ledId))
+                    continue;
+                if (!(f.isParty || f.isBillByBill) || !f.isTdsApplicable || !f.tdsSection)
+                    continue;
+                const [rate, annualBaseSoFar] = await Promise.all([
+                    (0, voucher_facts_1.loadTdsRate)(tx, h.companyId, f.tdsSection, f.tdsDeducteeType, h.date),
+                    (0, voucher_facts_1.loadTdsAnnualBase)(tx, h.companyId, f.ledId, h.accYear, f.tdsSection),
+                ]);
+                tdsByParty.set(f.ledId, { rate, annualBaseSoFar });
+            }
+        }
         const bills = await (0, voucher_facts_1.loadBills)(tx, allocations, opts.lock);
         let docRefnoClash = null;
         const docRefno = h.docRefno?.trim() || null;
@@ -607,6 +622,7 @@ let VoucherRegisterService = class VoucherRegisterService {
             party,
             creditDaysByLedger,
             tds,
+            tdsByParty,
             bills,
             docRefnoClash,
             backdateMode,
@@ -755,7 +771,7 @@ let VoucherRegisterService = class VoucherRegisterService {
          AND v.av_is_deleted = false
        ORDER BY v.av_row_no`;
         let partyLegRow = -1;
-        if (type.partyMode === 'ONE' && s.avh_party_id) {
+        if (s.avh_party_id) {
             for (const r of legRows) {
                 if (r.av_ledger_id === s.avh_party_id && r.av_dr_cr.trim() === type.partySide)
                     partyLegRow = r.av_row_no;

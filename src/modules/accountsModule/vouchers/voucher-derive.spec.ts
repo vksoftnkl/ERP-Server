@@ -833,3 +833,247 @@ describe('derive — the other types', () => {
     expect(overridden.ctx.warnings[0].level).toBe('INFO');
   });
 });
+
+// ─── notes (53): Receipt / Payment Voucher with MANY parties ─────────────────
+describe('derive — multi-party Receipt and Payment (notes 53)', () => {
+  const RCPV_MANY = type({ ...RCPV, partyMode: 'MANY' });
+  const PMTV_MANY = type({
+    typeId: 31,
+    typeCode: 'PmtV',
+    typeName: 'Payment Voucher',
+    nature: 'PAYMENT',
+    menuId: 261,
+    partyMode: 'MANY',
+    partySide: 'DR',
+    billwiseMode: 'DEMAND',
+    raiseBillType: null,
+    drGroups: [],
+    crGroups: grp([G.CASH, G.BANK]),
+    tdsMode: 'DEDUCT',
+  });
+  const supplier = (id: string, name: string, extra: Partial<LedgerFacts>) =>
+    ledger(
+      id,
+      name,
+      [
+        [G.SUPPLIERS, 'Suppliers'],
+        [G.SUNDRY_CREDITORS, 'Sundry Creditors'],
+        [G.CURRENT_LIABILITIES, 'Current Liabilities'],
+      ],
+      { isBillByBill: true, ...extra },
+    );
+  // 194C, but no PAN on file → the 206AA rate.
+  const MURUGAN = supplier('l-murugan', 'Murugan Transport', {
+    isTdsApplicable: true,
+    tdsSection: '194C',
+    tdsDeducteeType: 'INDIVIDUAL',
+  });
+  // Not TDS-applicable: paid as typed.
+  const LAKSHMI = supplier('l-lakshmi', 'Lakshmi Stores', {});
+  const MANY_LEDGERS = new Map([...LEDGERS, [MURUGAN.ledId, MURUGAN], [LAKSHMI.ledId, LAKSHMI]]);
+
+  const bill = (
+    id: string,
+    partyId: string,
+    side: 'DR' | 'CR',
+    amount: number,
+    billType = 'SALES',
+  ): [string, BillFacts] => [
+    `${id}|2026-2027`,
+    {
+      ablId: id,
+      ablAccYear: '2026-2027',
+      partyId,
+      billType,
+      docRefno: id,
+      docDate: new Date('2026-08-01T00:00:00Z'),
+      side,
+      billAmount: D(amount),
+      pendingAmount: D(amount),
+      isDeleted: false,
+      isActive: true,
+      companyId: 'c-1',
+    },
+  ];
+  const alloc = (index: number, lineRowNo: number, billId: string, amount: number) => ({
+    index,
+    lineRowNo,
+    billId,
+    billAccYear: '2026-2027',
+    amount: D(amount),
+  });
+
+  // Dr Cash 15,000; Cr Krishna 10,000 (6,000 + 4,000); Cr Ravi 5,000 (one bill).
+  const receipt = (raviAllocated: number) =>
+    input({
+      type: RCPV_MANY,
+      lines: [
+        line(1, 'DR', L.CASH, 15000),
+        line(2, 'CR', L.KRISHNA, 10000),
+        line(3, 'CR', L.RAVI, 5000),
+      ],
+      allocations: [
+        alloc(0, 2, 'k-1', 6000),
+        alloc(1, 2, 'k-2', 4000),
+        alloc(2, 3, 'r-1', raviAllocated),
+      ],
+      bills: new Map([
+        bill('k-1', L.KRISHNA.ledId, 'DR', 6000),
+        bill('k-2', L.KRISHNA.ledId, 'DR', 4000),
+        bill('r-1', L.RAVI.ledId, 'DR', 5000),
+      ]),
+    });
+
+  it('a Receipt settles each customer’s bills against that customer’s own line', () => {
+    const i = receipt(5000);
+    const d = derive(i);
+    expect(codes(i)).toEqual([]);
+    expect(d.party).toBeNull();
+    expect(d.bills).toEqual([]);
+    expect(
+      d.allocations.map((a) => [a.lineRowNo, a.party.ledId, a.bill.ablId, a.amount.toFixed(2)]),
+    ).toEqual([
+      [2, L.KRISHNA.ledId, 'k-1', '6000.00'],
+      [2, L.KRISHNA.ledId, 'k-2', '4000.00'],
+      [3, L.RAVI.ledId, 'r-1', '5000.00'],
+    ]);
+    expect(d.allocations.every((a) => a.adjType === 'ALLOCATION')).toBe(true);
+    expect(d.allocations.every((a) => a.settlementMode === 'CASH')).toBe(true);
+    // two parties → no single opposite ledger on the legs
+    expect(d.legs.every((l) => l.oppLedgerId === null)).toBe(true);
+    expect(toWire('RcpV', '2026-09-15', d).totals).toEqual({
+      debit: 15000,
+      credit: 15000,
+      difference: 0,
+    });
+  });
+
+  it('a Receipt with one customer short is refused, naming that customer only', () => {
+    const i = receipt(4000);
+    derive(i);
+    expect(codes(i)).toEqual(['VCH_BILLWISE_SHORT']);
+    expect(i.ctx.refusals[0].message).toContain(L.RAVI.name);
+    expect(i.ctx.refusals[0].message).not.toContain(L.KRISHNA.name);
+  });
+
+  it('a header party on a multi-party Receipt is refused', () => {
+    const i = receipt(5000);
+    i.header.partyId = L.KRISHNA.ledId;
+    derive(i);
+    expect(codes(i)).toEqual(['VCH_PARTY_MODE']);
+  });
+
+  // Dr Sundaram 9,800 (net; PAN → 2%), Dr Murugan 8,000 (net; no PAN → 20%),
+  // Dr Lakshmi 3,000 (no TDS); Cr HDFC 20,800.
+  const payment = (over: Partial<DeriveInput> = {}) =>
+    input({
+      type: PMTV_MANY,
+      ledgers: MANY_LEDGERS,
+      lines: [
+        line(1, 'DR', L.SUNDARAM, 9800),
+        line(2, 'DR', MURUGAN, 8000),
+        line(3, 'DR', LAKSHMI, 3000),
+        line(4, 'CR', L.HDFC, 20800),
+      ],
+      allocations: [alloc(0, 1, 's-1', 10000), alloc(1, 2, 'm-1', 10000), alloc(2, 3, 'l-1', 3000)],
+      bills: new Map([
+        bill('s-1', L.SUNDARAM.ledId, 'CR', 10000, 'PURCHASE'),
+        bill('m-1', MURUGAN.ledId, 'CR', 10000, 'PURCHASE'),
+        bill('l-1', LAKSHMI.ledId, 'CR', 3000, 'PURCHASE'),
+      ]),
+      tdsByParty: new Map([
+        [L.SUNDARAM.ledId, { rate: TDS_194C, annualBaseSoFar: D(0) }],
+        [MURUGAN.ledId, { rate: TDS_194C, annualBaseSoFar: D(0) }],
+      ]),
+      ...over,
+    });
+
+  it('a Payment deducts TDS per party line: grossed up, one TDS leg and one register entry each', () => {
+    const i = payment();
+    const d = derive(i);
+    expect(codes(i)).toEqual([]);
+    expect(d.tds).toBeNull();
+    // each TDS party's line is grossed up to what discharges the bill
+    expect(legOf(d, L.SUNDARAM.ledId)?.amount.toFixed(2)).toBe('10000.00');
+    expect(legOf(d, MURUGAN.ledId)?.amount.toFixed(2)).toBe('10000.00');
+    expect(legOf(d, LAKSHMI.ledId)?.amount.toFixed(2)).toBe('3000.00');
+    const tdsLegs = d.legs.filter((l) => l.source === 'TDS');
+    expect(tdsLegs.map((l) => [l.drCr, l.ledger.ledId, l.amount.toFixed(2), l.fromRows])).toEqual([
+      ['CR', L.TDS_PAYABLE.ledId, '200.00', [1]],
+      ['CR', L.TDS_PAYABLE.ledId, '2000.00', [2]],
+    ]);
+    expect(
+      d.tdsLines.map((t) => [
+        t.party.ledId,
+        t.lineRowNo,
+        t.rateSource,
+        t.rate.toString(),
+        t.base.toFixed(2),
+        t.tax.toFixed(2),
+        t.deducted,
+      ]),
+    ).toEqual([
+      [L.SUNDARAM.ledId, 1, 'MASTER', '2', '10000.00', '200.00', true],
+      [MURUGAN.ledId, 2, 'NO_PAN', '20', '10000.00', '2000.00', true],
+    ]);
+    const wire = toWire('PmtV', '2026-09-15', d);
+    expect(wire.totals).toEqual({ debit: 23000, credit: 23000, difference: 0 });
+    expect(wire.tds).toBeNull();
+    expect(wire.tdsLines.map((t) => [t.lineRowNo, t.partyId, t.base, t.tax])).toEqual([
+      [1, L.SUNDARAM.ledId, 10000, 200],
+      [2, MURUGAN.ledId, 10000, 2000],
+    ]);
+  });
+
+  it('a Payment allocated only the net on a TDS party line is short by the TDS', () => {
+    const i = payment({
+      allocations: [alloc(0, 1, 's-1', 9800), alloc(1, 2, 'm-1', 10000), alloc(2, 3, 'l-1', 3000)],
+    });
+    derive(i);
+    expect(codes(i)).toEqual(['VCH_BILLWISE_SHORT']);
+    expect(i.ctx.refusals[0].message).toContain(L.SUNDARAM.name);
+  });
+
+  it('thresholds are judged per party: one under deducts nothing and WARNs, the other still deducts', () => {
+    const high: TdsRateFacts = {
+      ...TDS_194C,
+      thresholdSingle: D(30000),
+      thresholdAnnual: D(100000),
+    };
+    const i = payment({
+      allocations: [alloc(0, 1, 's-1', 10000), alloc(1, 2, 'm-1', 8000), alloc(2, 3, 'l-1', 3000)],
+      tdsByParty: new Map([
+        // Sundaram is past the annual threshold already this year
+        [L.SUNDARAM.ledId, { rate: high, annualBaseSoFar: D(95000) }],
+        [MURUGAN.ledId, { rate: high, annualBaseSoFar: D(0) }],
+      ]),
+      lines: [
+        line(1, 'DR', L.SUNDARAM, 9800),
+        line(2, 'DR', MURUGAN, 8000),
+        line(3, 'DR', LAKSHMI, 3000),
+        line(4, 'CR', L.HDFC, 20800),
+      ],
+    });
+    const d = derive(i);
+    expect(codes(i)).toEqual([]);
+    expect(i.ctx.warnings.map((w) => [w.code, w.line])).toEqual([['VCH_TDS_BELOW_THRESHOLD', 2]]);
+    expect(legOf(d, MURUGAN.ledId)?.amount.toFixed(2)).toBe('8000.00');
+    expect(
+      d.tdsLines.map((t) => [t.party.ledId, t.rateSource, t.base.toFixed(2), t.tax.toFixed(2)]),
+    ).toEqual([
+      [L.SUNDARAM.ledId, 'MASTER', '10000.00', '200.00'],
+      [MURUGAN.ledId, 'BELOW_THRESHOLD', '8000.00', '0.00'],
+    ]);
+  });
+
+  it('a TDS party with no rate in force is refused on its own line', () => {
+    const i = payment({
+      tdsByParty: new Map([
+        [L.SUNDARAM.ledId, { rate: TDS_194C, annualBaseSoFar: D(0) }],
+        [MURUGAN.ledId, { rate: null, annualBaseSoFar: D(0) }],
+      ]),
+    });
+    derive(i);
+    expect(i.ctx.refusals.map((r) => [r.code, r.line])).toContainEqual(['VCH_TDS_RATE_MISSING', 2]);
+  });
+});

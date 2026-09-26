@@ -242,6 +242,17 @@ export interface TdsSummary {
   fromRows: number[];
 }
 
+/**
+ * notes (53): one deductee's TDS. ONE mode: the header party (lineRowNo null).
+ * MANY (a multi-party Payment): one per TDS-applicable party, lineRowNo = its
+ * first typed line; fromRows = all its lines.
+ */
+export interface TdsLineSummary extends TdsSummary {
+  lineRowNo: number | null;
+  partyId: string;
+  partyName: string;
+}
+
 export interface DerivedParty {
   ledgerId: string;
   name: string;
@@ -282,7 +293,10 @@ export interface DerivedVoucher {
   totals: { debit: number; credit: number; difference: number };
   party: DerivedParty | null;
   gst: GstSummary | null;
+  /** The ONE-mode deduction; null on a multi-party voucher — read tdsLines. */
   tds: TdsSummary | null;
+  /** notes (53): every deductee, one entry each (ONE mode: the same as `tds`). */
+  tdsLines: TdsLineSummary[];
   bills: DerivedBill[];
   allocations: DerivedAllocation[];
 }
@@ -474,4 +488,28 @@ export interface DeletePayload {
   voucherId: string;
   accYear: string;
   deleted: true;
+}
+
+// ─── notes (52) — GET /vouchers/adjacent ───────────────────────────────────
+
+/** The neighbouring voucher's KEY: the client loads it with /vouchers/get. */
+export interface AdjacentVoucher {
+  voucherId: string;
+  companyId: string;
+  branchId: string;
+  accYear: string;
+  typeCode: string;
+  /** null on a DRAFT — a draft is a stop, and it has no number yet. */
+  voucherRefno: string | null;
+  /** YYYY-MM-DD */
+  date: string;
+  status: VoucherStatus;
+}
+
+export interface AdjacentVoucherPayload {
+  direction: 'prev' | 'next';
+  /** null when the walk started from an empty screen. */
+  fromVoucherId: string | null;
+  /** null at either end of the register. */
+  voucher: AdjacentVoucher | null;
 }

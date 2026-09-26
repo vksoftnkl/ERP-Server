@@ -79,6 +79,16 @@ let VouchersController = class VouchersController {
             data,
         };
     }
+    async adjacent(q) {
+        const data = await this.lookups.adjacent(q);
+        return {
+            success: true,
+            message: data.voucher
+                ? `${data.voucher.voucherRefno ?? '(draft)'} is the ${q.direction} voucher`
+                : `No ${q.direction} voucher — this is the end of the register`,
+            data,
+        };
+    }
     async create(dto, raw) {
         const data = await this.register.create(dto, raw);
         return { success: true, message: data.created ? 'Draft saved' : 'Draft updated', data };
@@ -223,6 +233,32 @@ __decorate([
     __metadata("design:paramtypes", [voucher_payload_dto_1.GetVoucherQueryDto]),
     __metadata("design:returntype", Promise)
 ], VouchersController.prototype, "get", null);
+__decorate([
+    (0, common_1.Get)('adjacent'),
+    (0, common_1.Version)(api_version_1.API_VERSION),
+    (0, cache_manager_1.CacheTTL)(0),
+    (0, swagger_1.ApiOperation)({
+        summary: 'The register voucher entered just before or just after this one',
+        description: 'notes (52) — the Voucher Register’s Prev / Next (Ctrl+PgUp / Ctrl+PgDn), the same walk ' +
+            '/receipts/adjacent does. Returns a KEY; load it with /vouchers/get.\n\n' +
+            '**prev = older, next = newer**, on (voucher date, voucher no, created on, id) — the order ' +
+            'of grid 117, a DRAFT (no number) sitting at the old end of its date. A DRAFT is a stop.\n\n' +
+            'Walked: register types only (a Rev mirror is never a stop), not deleted, and only types ' +
+            'the caller may VIEW (user_menus.um_can_view on the type’s menu). `typeCode` walks one ' +
+            'type (a type menu); omit it for the register. Pass the list’s `status` / `fromDate` / ' +
+            '`toDate` so the walk visits exactly the rows it shows.\n\n' +
+            'Omit `voucherId` on an empty screen: prev → the newest voucher, next → the oldest. ' +
+            '`voucher` is null at either end.',
+    }),
+    (0, swagger_1.ApiOkResponse)({ type: voucher_response_dto_1.AdjacentVoucherSuccessDto }),
+    (0, swagger_1.ApiBadRequestResponse)({ type: voucher_response_dto_1.VoucherErrorResponseDto }),
+    (0, swagger_1.ApiNotFoundResponse)({ type: voucher_response_dto_1.VoucherErrorResponseDto }),
+    (0, swagger_1.ApiForbiddenResponse)({ type: voucher_response_dto_1.VoucherErrorResponseDto }),
+    __param(0, (0, common_1.Query)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [voucher_query_dto_1.AdjacentVoucherQueryDto]),
+    __metadata("design:returntype", Promise)
+], VouchersController.prototype, "adjacent", null);
 __decorate([
     (0, common_1.Post)('create'),
     (0, common_1.Version)(api_version_1.API_VERSION),

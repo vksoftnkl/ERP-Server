@@ -36,6 +36,7 @@ There is **no `/list`**: the F8 list is grid 117 and the exceptions report grid 
 | 6.10 | POST | `/cancel` | cancel | a `Rev` reversal (decision C / C2) |
 | 6.11 | POST | `/delete` | delete | DRAFT only; POSTED → 409 "cancel it" |
 | 6.12 | GET | `/get` | view | header, legs (generated flagged), allocations, bills, GST doc, TDS, rights, locks |
+| n52 | GET | `/adjacent` | view (per type) | Prev / Next: the key of the voucher just older (`prev`) / newer (`next`). Only types the caller may view; `typeCode` narrows to one; `status`/`fromDate`/`toDate` = the list's filters. No `voucherId` → prev = newest, next = oldest. Order = grid 117's, a DRAFT at the OLD end of its date (slno coalesced to 0) |
 
 Envelope `{success, message, data}` / `{success:false, message, errors:[{field, message, code, line?}]}`.
 Status map: 400 malformed · 403 right missing · 404 not found (a voucher scoped to
@@ -94,6 +95,30 @@ another company is a 404, never a 403) · 409 state · 422 rule refusals, all in
   difference; the party leg is then the gross, which is what the bill demands.
   `acc_tds_register.atd_deductee_type` is COMPANY / NON_COMPANY, mapped from
   the ledger's six-value list.
+* **Receipt and Payment Voucher take MANY parties** (notes 53, migration
+  `20260926150000_receipt_payment_many_parties`): a salesman's collection run
+  is one Receipt, a payment run one Payment. `vchr_party_side` (RcpV CR, PmtV
+  DR) and `DEMAND` stay. Each party line is its own party leg; allocations
+  carry `lineRowNo` = that line and must total it exactly, and
+  `abj_party_id` is the line's party. **DEMAND stays strict**: an on-account
+  remainder is refused (`VCH_BILLWISE_SHORT`), not raised as an ADVANCE bill —
+  key the on-account part on its own voucher. (Raising an ADVANCE for the
+  remainder is possible later; it is a new bill shape on a DEMAND type, so it
+  was not slipped in.)
+* **TDS on a MANY Payment is per party line.** Every typed line on the party
+  side whose ledger is a TDS-applicable party (tick not cleared) is grouped by
+  party; each party gets its own rate (`tds_rates` by its section × deductee ×
+  date, 206AA without a PAN), its own threshold against ITS annual base, one
+  `CR TDS Payable` leg and one `acc_tds_register` row (26Q is per deductee).
+  The typed line is the NET paid; it is grossed up to the gross, so **the
+  line's allocations must total the gross**, as the ONE-mode party leg's do.
+  `/validate` answers `derived.tdsLines[]` (`{lineRowNo, partyId, partyName,
+  section, rate, rateSource, base, tax, deducted, reason, fromRows}`), one per
+  deductee on every type (ONE mode: the same entry as `derived.tds`, which is
+  null on MANY). Cancel reverses every live `atd_` row. Other MANY types that
+  deduct (none today) are refused — only a payment is grossed up.
+* **A voucher posted under ONE keeps its header party** after its type turned
+  MANY; `/get` finds its generated party leg from the stored `avh_party_id`.
 * **A zero TDS base is silent** (nothing was ticked); a base under the
   section's threshold is the `VCH_TDS_BELOW_THRESHOLD` WARN.
 * **The period lock is checked against the voucher DATE**, not today: a draft

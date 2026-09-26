@@ -46,4 +46,7 @@ export declare class CancelSuccessDto extends SuccessEnvelopeDto {
 export declare class DeleteSuccessDto extends SuccessEnvelopeDto {
     data: unknown;
 }
+export declare class AdjacentVoucherSuccessDto extends SuccessEnvelopeDto {
+    data: unknown;
+}
 export {};

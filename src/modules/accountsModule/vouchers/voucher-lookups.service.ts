@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
 import type {
+  AdjacentVoucherPayload,
   LedgerBalancePayload,
   LedgerPickPayload,
   LedgerPickRow,
@@ -10,8 +11,10 @@ import type {
   PartyFactsPayload,
   SidedAmount,
   TaxRatesPayload,
+  VoucherStatus,
 } from './types/vouchers-api.types';
 import type {
+  AdjacentVoucherQueryDto,
   LedgerBalanceQueryDto,
   LedgerPickQueryDto,
   OpenBillsQueryDto,
@@ -271,8 +274,150 @@ export class VoucherLookupsService {
       })),
     };
   }
+
+  /**
+   * notes (52) — the register voucher entered just before (`prev`) or just
+   * after (`next`) this one: the Qt register's Ctrl+PgUp / Ctrl+PgDn, the
+   * walk `/receipts/adjacent` does for receipts. Returns a KEY; the client
+   * loads it with /vouchers/get.
+   *
+   * Walked: `vchr_in_register` types only (so a `Rev` mirror or a goods
+   * document is never a stop), not deleted, this company / branch / year,
+   * and only types whose menu the caller may VIEW — the same `user_menus`
+   * join grid 117 makes, so a user with rights on Journal alone is never
+   * stepped onto a Purchase (Accounting) voucher. `typeCode` narrows to one
+   * type (a type menu); `status` / `fromDate` / `toDate` are the list's own
+   * filters. A DRAFT is a stop.
+   *
+   * Order: `(date, slno, created_on, voucher_id)` — total, so the walk never
+   * stalls on a tie. A DRAFT has no slno (`ck_avh_no`); it coalesces to 0,
+   * BELOW every issued number, because grid 117 sorts
+   * `avh_voucher_slno DESC NULLS LAST` and so draws a day's drafts at the
+   * OLD end of that day. (The receipt register draws them at the new end and
+   * coalesces to the bigint maximum — the sentinel follows each list.)
+   *
+   * No `voucherId` (an empty screen): prev answers the newest voucher under
+   * the filters, next the oldest.
+   */
+  async adjacent(q: AdjacentVoucherQueryDto): Promise<AdjacentVoucherPayload> {
+    const userId = this.requestContext.getUserId();
+
+    if (q.typeCode) {
+      const type = await this.types.loadTypeByCode(this.tx, q.typeCode);
+      if (!type) {
+        throwMissing(`No active voucher type '${q.typeCode}'`, VCH.TYPE_NOT_REGISTER, 'typeCode');
+      }
+      if (!type.inRegister) {
+        throwState(
+          `${type.typeName} is not a Voucher Register type`,
+          VCH.TYPE_NOT_REGISTER,
+          'typeCode',
+        );
+      }
+      const rights = await this.types.rightsFor(this.tx, userId, type);
+      if (!rights.view) {
+        throwRight('This user may not view on this voucher type’s menu', VCH.RIGHT_VIEW);
+      }
+    }
+
+    if (q.voucherId) {
+      // All four keys checked; a miss on any is a 404, so a caller scoped
+      // elsewhere does not learn the voucher exists.
+      const current = await this.prisma.accVoucherHeader.findFirst({
+        where: {
+          avhVoucherId: q.voucherId,
+          avhAccYear: q.accYear,
+          avhCompanyId: q.companyId,
+          avhBranchId: q.branchId,
+          avhIsDeleted: false,
+        },
+        select: { avhVoucherId: true },
+      });
+      if (!current) {
+        throwMissing(
+          `No voucher ${q.voucherId} in ${q.accYear} for this company and branch`,
+          VCH.NOT_FOUND,
+        );
+      }
+    }
+
+    const isPrev = q.direction === 'prev';
+    // Both from a closed set the DTO validated; nothing else can reach them.
+    const comparison = Prisma.raw(isPrev ? '<' : '>');
+    const order = Prisma.raw(isPrev ? 'DESC' : 'ASC');
+    // The walk key of the voucher on screen, read in SQL so the date column
+    // never round-trips through a JS Date. No voucher → no bound: the first
+    // row in walk order is the answer (the newest for prev, the oldest for next).
+    const bound = q.voucherId
+      ? Prisma.sql`AND (h.avh_voucher_date, COALESCE(h.avh_voucher_slno, 0),
+                        h.avh_created_on, h.avh_voucher_id)
+                       ${comparison}
+                       (SELECT c.avh_voucher_date, COALESCE(c.avh_voucher_slno, 0),
+                               c.avh_created_on, c.avh_voucher_id
+                          FROM accounts.acc_voucher_header c
+                         WHERE c.avh_voucher_id = ${q.voucherId}::uuid
+                           AND c.avh_acc_year   = ${q.accYear}::bpchar)`
+      : Prisma.empty;
+
+    const rows = await this.prisma.$queryRaw<AdjacentRow[]>`
+      SELECT h.avh_voucher_id, h.avh_company_id, h.avh_branch_id, h.avh_acc_year,
+             vt.vchr_type_code, h.avh_voucher_refno,
+             to_char(h.avh_voucher_date, 'YYYY-MM-DD') AS voucher_date,
+             h.avh_voucher_status
+        FROM accounts.acc_voucher_header h
+        JOIN accounts.acc_voucher_types vt ON vt.vchr_type_id = h.avh_voucher_type_id
+        JOIN public.user_menus um ON um.um_menu_id = vt.vchr_menu_id
+                                 AND um.um_user_id = ${userId}::uuid
+                                 AND um.um_is_deleted = false
+                                 AND um.um_can_view = true
+       WHERE h.avh_company_id = ${q.companyId}::uuid
+         AND h.avh_branch_id  = ${q.branchId}::uuid
+         AND h.avh_acc_year   = ${q.accYear}::bpchar
+         AND vt.vchr_in_register = true
+         AND h.avh_is_deleted = false
+         AND (${q.typeCode ?? null}::text IS NULL OR vt.vchr_type_code = ${q.typeCode ?? null}::text)
+         AND (${q.status ?? null}::text   IS NULL OR h.avh_voucher_status = ${q.status ?? null}::text)
+         AND (${q.fromDate ?? null}::date IS NULL OR h.avh_voucher_date >= ${q.fromDate ?? null}::date)
+         AND (${q.toDate ?? null}::date   IS NULL OR h.avh_voucher_date <= ${q.toDate ?? null}::date)
+         ${bound}
+       ORDER BY h.avh_voucher_date ${order},
+                COALESCE(h.avh_voucher_slno, 0) ${order},
+                h.avh_created_on ${order},
+                h.avh_voucher_id ${order}
+       LIMIT 1`;
+
+    const row = rows[0];
+    return {
+      direction: q.direction,
+      fromVoucherId: q.voucherId ?? null,
+      voucher: row
+        ? {
+            voucherId: row.avh_voucher_id,
+            companyId: row.avh_company_id,
+            branchId: row.avh_branch_id,
+            accYear: row.avh_acc_year.trim(),
+            typeCode: row.vchr_type_code,
+            voucherRefno: row.avh_voucher_refno,
+            date: row.voucher_date,
+            status: row.avh_voucher_status as VoucherStatus,
+          }
+        : null,
+    };
+  }
 }
 
 function sided(v: Prisma.Decimal): SidedAmount {
   return { amount: Number(v.abs().toFixed(2)), side: v.isNegative() ? 'CR' : 'DR' };
+}
+
+/** One neighbouring register row, as the raw query hands it back. */
+interface AdjacentRow {
+  avh_voucher_id: string;
+  avh_company_id: string;
+  avh_branch_id: string;
+  avh_acc_year: string;
+  vchr_type_code: string;
+  avh_voucher_refno: string | null;
+  voucher_date: string;
+  avh_voucher_status: string;
 }

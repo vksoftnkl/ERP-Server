@@ -774,7 +774,13 @@ describe('Voucher Register — /vouchers/* (e2e, live DB)', () => {
 
   let pmv: { voucherId: string };
 
-  it('POST /post — a Payment Voucher must allocate exactly its party leg (#10), then settles the PurA bill', async () => {
+  it('POST /post — a Payment Voucher must allocate exactly its party line (#10), then settles the PurA bill', async () => {
+    // notes (53): a Payment names its parties on the lines. The supplier is
+    // 194C, so its line would deduct TDS; the tick is cleared to pay 5,000 flat.
+    const payLines = [
+      { rowNo: 1, drCr: 'DR', ledgerId: fx.supplier, amount: 5000, tdsBase: false },
+      { rowNo: 2, drCr: 'CR', ledgerId: LEDGER.KVB, amount: 5000 },
+    ];
     const short = await post('post', {
       header: {
         companyId: COMPANY,
@@ -782,12 +788,11 @@ describe('Voucher Register — /vouchers/* (e2e, live DB)', () => {
         accYear: ACC_YEAR,
         typeCode: 'PmtV',
         date: today(),
-        partyId: fx.supplier,
         remarks: `E2E-VCH-${fx.tag} pay`,
       },
-      lines: [{ rowNo: 1, drCr: 'CR', ledgerId: LEDGER.KVB, amount: 5000 }],
+      lines: payLines,
       allocations: [
-        { lineRowNo: 0, billId: pua.billId, billAccYear: pua.billAccYear, amount: 4000 },
+        { lineRowNo: 1, billId: pua.billId, billAccYear: pua.billAccYear, amount: 4000 },
       ],
     });
     expect(short.status).toBe(422);
@@ -800,12 +805,11 @@ describe('Voucher Register — /vouchers/* (e2e, live DB)', () => {
         accYear: ACC_YEAR,
         typeCode: 'PmtV',
         date: today(),
-        partyId: fx.supplier,
         remarks: `E2E-VCH-${fx.tag} pay`,
       },
-      lines: [{ rowNo: 1, drCr: 'CR', ledgerId: LEDGER.KVB, amount: 5000 }],
+      lines: payLines,
       allocations: [
-        { lineRowNo: 0, billId: pua.billId, billAccYear: pua.billAccYear, amount: 5000 },
+        { lineRowNo: 1, billId: pua.billId, billAccYear: pua.billAccYear, amount: 5000 },
       ],
     });
     expectStatus(ok, 201);
@@ -969,5 +973,187 @@ describe('Voucher Register — /vouchers/* (e2e, live DB)', () => {
     expect(missing.status).toBe(404);
     const malformed = await post('post', { header: { companyId: COMPANY }, lines: [] });
     expect(malformed.status).toBe(400);
+  });
+
+  // ─── notes (53) · Receipt / Payment Voucher with MANY parties ────────────
+
+  /** A Journal that raises one JOURNAL bill on `party` — the bills the runs below settle. */
+  async function journalBill(
+    party: string,
+    side: 'DR' | 'CR',
+    amount: number,
+  ): Promise<{ billId: string; billAccYear: string }> {
+    const res = await post('post', {
+      header: {
+        companyId: COMPANY,
+        branchId: BRANCH,
+        accYear: ACC_YEAR,
+        typeCode: 'Jrl',
+        date: today(),
+        remarks: `E2E-VCH-${fx.tag} bill for a run`,
+      },
+      lines: [
+        { rowNo: 1, drCr: side, ledgerId: party, amount, tdsBase: false },
+        {
+          rowNo: 2,
+          drCr: side === 'DR' ? 'CR' : 'DR',
+          ledgerId: fx.housekeeping,
+          amount,
+          tdsBase: false,
+        },
+      ],
+      allocations: [],
+    });
+    expectStatus(res, 201);
+    expect(res.body.data.bills).toHaveLength(1);
+    return {
+      billId: res.body.data.bills[0].ablId,
+      billAccYear: res.body.data.bills[0].ablAccYear,
+    };
+  }
+
+  const pending = async (billId: string): Promise<number> => {
+    const [b] = await prisma.$queryRaw<{ abl_pending_amount: unknown }[]>`
+      SELECT abl_pending_amount FROM accounts.acc_bill_balance WHERE abl_id = ${billId}::uuid`;
+    return num(b.abl_pending_amount);
+  };
+
+  it('POST /post — a collection run: one Receipt, two customers, each settling its own bills; one short → only it is named', async () => {
+    const custA = await ledger(
+      `E2E-VCH-${fx.tag} Run Customer A`,
+      GROUP.CUSTOMERS,
+      ', led_is_bill_by_bill',
+      ', true',
+    );
+    const custB = await ledger(
+      `E2E-VCH-${fx.tag} Run Customer B`,
+      GROUP.CUSTOMERS,
+      ', led_is_bill_by_bill',
+      ', true',
+    );
+    const a1 = await journalBill(custA, 'DR', 6000);
+    const a2 = await journalBill(custA, 'DR', 4000);
+    const b1 = await journalBill(custB, 'DR', 5000);
+    const receipt = (bAllocated: number) => ({
+      header: {
+        companyId: COMPANY,
+        branchId: BRANCH,
+        accYear: ACC_YEAR,
+        typeCode: 'RcpV',
+        date: today(),
+        remarks: `E2E-VCH-${fx.tag} collection run`,
+      },
+      lines: [
+        { rowNo: 1, drCr: 'DR', ledgerId: LEDGER.CASH, amount: 15000 },
+        { rowNo: 2, drCr: 'CR', ledgerId: custA, amount: 10000 },
+        { rowNo: 3, drCr: 'CR', ledgerId: custB, amount: 5000 },
+      ],
+      allocations: [
+        { lineRowNo: 2, ...a1, amount: 6000 },
+        { lineRowNo: 2, ...a2, amount: 4000 },
+        { lineRowNo: 3, ...b1, amount: bAllocated },
+      ],
+    });
+
+    const short = await post('post', receipt(4000));
+    expect(short.status).toBe(422);
+    expect(codesOf(short)).toEqual(['VCH_BILLWISE_SHORT']);
+    expect(JSON.stringify(short.body)).toContain('Run Customer B');
+    expect(JSON.stringify(short.body)).not.toContain('Run Customer A');
+
+    const ok = await post('post', receipt(5000));
+    expectStatus(ok, 201);
+    expect(ok.body.data.header.partyId).toBeNull();
+    expect(await pending(a1.billId)).toBe(0);
+    expect(await pending(a2.billId)).toBe(0);
+    expect(await pending(b1.billId)).toBe(0);
+    const adj = await prisma.$queryRaw<
+      { abj_bill_id: string; abj_party_id: string; abj_amount: unknown }[]
+    >`
+      SELECT j.abj_bill_id, j.abj_party_id, j.abj_amount
+        FROM accounts.acc_bill_adjustment j
+       WHERE j.abj_bill_id IN (${a1.billId}::uuid, ${a2.billId}::uuid, ${b1.billId}::uuid)
+         AND j.abj_is_deleted = false AND j.abj_reversal_of_id IS NULL
+       ORDER BY j.abj_amount DESC`;
+    expect(adj.map((r) => [r.abj_bill_id, r.abj_party_id, num(r.abj_amount)])).toEqual([
+      [a1.billId, custA, 6000],
+      [b1.billId, custB, 5000],
+      [a2.billId, custA, 4000],
+    ]);
+  });
+
+  it('POST /post → /cancel — a payment run deducts 194C per supplier line: grossed up, one TDS leg and one atd row each', async () => {
+    const supplier = (name: string, pan: string) =>
+      ledger(
+        `E2E-VCH-${fx.tag} ${name}`,
+        GROUP.SUPPLIERS,
+        ', led_is_bill_by_bill, led_is_tds_applicable, led_tds_nature_of_payment, led_tds_deductee_type, led_pan_no',
+        `, true, true, '194C', 'FIRM', '${pan}'`,
+      );
+    const supA = await supplier('Run Supplier A', 'AAAFR1111A');
+    const supB = await supplier('Run Supplier B', 'AAAFR2222B');
+    const billA = await journalBill(supA, 'CR', 10000);
+    const billB = await journalBill(supB, 'CR', 5000);
+
+    // the NET paid: 9,800 + 4,900 out of the bank; 2% of 10,000 and of 5,000 withheld
+    const res = await post('post', {
+      header: {
+        companyId: COMPANY,
+        branchId: BRANCH,
+        accYear: ACC_YEAR,
+        typeCode: 'PmtV',
+        date: today(),
+        remarks: `E2E-VCH-${fx.tag} payment run`,
+      },
+      lines: [
+        { rowNo: 1, drCr: 'DR', ledgerId: supA, amount: 9800 },
+        { rowNo: 2, drCr: 'DR', ledgerId: supB, amount: 4900 },
+        { rowNo: 3, drCr: 'CR', ledgerId: LEDGER.KVB, amount: 14700 },
+      ],
+      allocations: [
+        { lineRowNo: 1, ...billA, amount: 10000 },
+        { lineRowNo: 2, ...billB, amount: 5000 },
+      ],
+    });
+    expectStatus(res, 201);
+    const data = res.body.data;
+    const legOf = (ledgerId: string) =>
+      data.legs.filter((l: { ledgerId: string }) => l.ledgerId === ledgerId);
+    expect(legOf(supA).map((l: { amount: number }) => l.amount)).toEqual([10000]);
+    expect(legOf(supB).map((l: { amount: number }) => l.amount)).toEqual([5000]);
+    expect(
+      data.legs
+        .filter((l: { role: string | null }) => l.role === 'TDS_PAYABLE')
+        .map((l: { drCr: string; amount: number }) => [l.drCr, l.amount]),
+    ).toEqual([
+      ['CR', 200],
+      ['CR', 100],
+    ]);
+    expect(await pending(billA.billId)).toBe(0);
+    expect(await pending(billB.billId)).toBe(0);
+    const atd = await prisma.$queryRaw<
+      { atd_party_id: string; atd_base_amount: unknown; atd_tax_amount: unknown }[]
+    >`
+      SELECT atd_party_id, atd_base_amount, atd_tax_amount FROM accounts.acc_tds_register
+       WHERE atd_voucher_id = ${data.header.voucherId}::uuid AND atd_is_deleted = false
+       ORDER BY atd_base_amount DESC`;
+    expect(atd.map((r) => [r.atd_party_id, num(r.atd_base_amount), num(r.atd_tax_amount)])).toEqual(
+      [
+        [supA, 10000, 200],
+        [supB, 5000, 100],
+      ],
+    );
+
+    const cancelled = await post('cancel', {
+      companyId: COMPANY,
+      branchId: BRANCH,
+      accYear: ACC_YEAR,
+      voucherId: data.header.voucherId,
+      reason: 'Paid twice',
+    });
+    expectStatus(cancelled, 201);
+    expect(cancelled.body.data).toMatchObject({ tdsReversed: 2, allocationsReversed: 2 });
+    expect(await pending(billA.billId)).toBe(10000);
+    expect(await pending(billB.billId)).toBe(5000);
   });
 });

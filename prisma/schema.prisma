@@ -2639,6 +2639,9 @@ model AccVoucherType {
   vchrMenuId                 Int?                 @map("vchr_menu_id")
   /// Offered on the register's type band
   vchrInRegister             Boolean              @default(false) @map("vchr_in_register")
+  /// notes (54): the typed lines carry INSTRUMENTS (tenders); the money legs are generated
+  /// from the tenders' ledgers and a cheque becomes a HELD register row (menu 51)
+  vchrInstruments            Boolean              @default(false) @map("vchr_instruments")
   // Audit
   vchrSyncDate               DateTime?            @db.Timestamptz(6) @map("vchr_sync_date")
   vchrCreatedOn              DateTime             @default(now()) @db.Timestamptz(6) @map("vchr_created_on")

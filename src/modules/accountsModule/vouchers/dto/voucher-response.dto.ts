@@ -56,3 +56,6 @@ export class CancelSuccessDto extends SuccessEnvelopeDto {
 export class DeleteSuccessDto extends SuccessEnvelopeDto {
   @ApiProperty({ type: Object }) data!: unknown;
 }
+export class AdjacentVoucherSuccessDto extends SuccessEnvelopeDto {
+  @ApiProperty({ type: Object }) data!: unknown;
+}

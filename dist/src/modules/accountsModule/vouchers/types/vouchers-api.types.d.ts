@@ -189,6 +189,11 @@ export interface TdsSummary {
     reason: string | null;
     fromRows: number[];
 }
+export interface TdsLineSummary extends TdsSummary {
+    lineRowNo: number | null;
+    partyId: string;
+    partyName: string;
+}
 export interface DerivedParty {
     ledgerId: string;
     name: string;
@@ -229,6 +234,7 @@ export interface DerivedVoucher {
     party: DerivedParty | null;
     gst: GstSummary | null;
     tds: TdsSummary | null;
+    tdsLines: TdsLineSummary[];
     bills: DerivedBill[];
     allocations: DerivedAllocation[];
 }
@@ -401,4 +407,19 @@ export interface DeletePayload {
     voucherId: string;
     accYear: string;
     deleted: true;
+}
+export interface AdjacentVoucher {
+    voucherId: string;
+    companyId: string;
+    branchId: string;
+    accYear: string;
+    typeCode: string;
+    voucherRefno: string | null;
+    date: string;
+    status: VoucherStatus;
+}
+export interface AdjacentVoucherPayload {
+    direction: 'prev' | 'next';
+    fromVoucherId: string | null;
+    voucher: AdjacentVoucher | null;
 }

@@ -203,6 +203,93 @@ let VoucherLookupsService = class VoucherLookupsService {
             })),
         };
     }
+    async adjacent(q) {
+        const userId = this.requestContext.getUserId();
+        if (q.typeCode) {
+            const type = await this.types.loadTypeByCode(this.tx, q.typeCode);
+            if (!type) {
+                (0, vouchers_errors_1.throwMissing)(`No active voucher type '${q.typeCode}'`, vouchers_errors_1.VCH.TYPE_NOT_REGISTER, 'typeCode');
+            }
+            if (!type.inRegister) {
+                (0, vouchers_errors_1.throwState)(`${type.typeName} is not a Voucher Register type`, vouchers_errors_1.VCH.TYPE_NOT_REGISTER, 'typeCode');
+            }
+            const rights = await this.types.rightsFor(this.tx, userId, type);
+            if (!rights.view) {
+                (0, vouchers_errors_1.throwRight)('This user may not view on this voucher type’s menu', vouchers_errors_1.VCH.RIGHT_VIEW);
+            }
+        }
+        if (q.voucherId) {
+            const current = await this.prisma.accVoucherHeader.findFirst({
+                where: {
+                    avhVoucherId: q.voucherId,
+                    avhAccYear: q.accYear,
+                    avhCompanyId: q.companyId,
+                    avhBranchId: q.branchId,
+                    avhIsDeleted: false,
+                },
+                select: { avhVoucherId: true },
+            });
+            if (!current) {
+                (0, vouchers_errors_1.throwMissing)(`No voucher ${q.voucherId} in ${q.accYear} for this company and branch`, vouchers_errors_1.VCH.NOT_FOUND);
+            }
+        }
+        const isPrev = q.direction === 'prev';
+        const comparison = client_1.Prisma.raw(isPrev ? '<' : '>');
+        const order = client_1.Prisma.raw(isPrev ? 'DESC' : 'ASC');
+        const bound = q.voucherId
+            ? client_1.Prisma.sql `AND (h.avh_voucher_date, COALESCE(h.avh_voucher_slno, 0),
+                        h.avh_created_on, h.avh_voucher_id)
+                       ${comparison}
+                       (SELECT c.avh_voucher_date, COALESCE(c.avh_voucher_slno, 0),
+                               c.avh_created_on, c.avh_voucher_id
+                          FROM accounts.acc_voucher_header c
+                         WHERE c.avh_voucher_id = ${q.voucherId}::uuid
+                           AND c.avh_acc_year   = ${q.accYear}::bpchar)`
+            : client_1.Prisma.empty;
+        const rows = await this.prisma.$queryRaw `
+      SELECT h.avh_voucher_id, h.avh_company_id, h.avh_branch_id, h.avh_acc_year,
+             vt.vchr_type_code, h.avh_voucher_refno,
+             to_char(h.avh_voucher_date, 'YYYY-MM-DD') AS voucher_date,
+             h.avh_voucher_status
+        FROM accounts.acc_voucher_header h
+        JOIN accounts.acc_voucher_types vt ON vt.vchr_type_id = h.avh_voucher_type_id
+        JOIN public.user_menus um ON um.um_menu_id = vt.vchr_menu_id
+                                 AND um.um_user_id = ${userId}::uuid
+                                 AND um.um_is_deleted = false
+                                 AND um.um_can_view = true
+       WHERE h.avh_company_id = ${q.companyId}::uuid
+         AND h.avh_branch_id  = ${q.branchId}::uuid
+         AND h.avh_acc_year   = ${q.accYear}::bpchar
+         AND vt.vchr_in_register = true
+         AND h.avh_is_deleted = false
+         AND (${q.typeCode ?? null}::text IS NULL OR vt.vchr_type_code = ${q.typeCode ?? null}::text)
+         AND (${q.status ?? null}::text   IS NULL OR h.avh_voucher_status = ${q.status ?? null}::text)
+         AND (${q.fromDate ?? null}::date IS NULL OR h.avh_voucher_date >= ${q.fromDate ?? null}::date)
+         AND (${q.toDate ?? null}::date   IS NULL OR h.avh_voucher_date <= ${q.toDate ?? null}::date)
+         ${bound}
+       ORDER BY h.avh_voucher_date ${order},
+                COALESCE(h.avh_voucher_slno, 0) ${order},
+                h.avh_created_on ${order},
+                h.avh_voucher_id ${order}
+       LIMIT 1`;
+        const row = rows[0];
+        return {
+            direction: q.direction,
+            fromVoucherId: q.voucherId ?? null,
+            voucher: row
+                ? {
+                    voucherId: row.avh_voucher_id,
+                    companyId: row.avh_company_id,
+                    branchId: row.avh_branch_id,
+                    accYear: row.avh_acc_year.trim(),
+                    typeCode: row.vchr_type_code,
+                    voucherRefno: row.avh_voucher_refno,
+                    date: row.voucher_date,
+                    status: row.avh_voucher_status,
+                }
+                : null,
+        };
+    }
 };
 exports.VoucherLookupsService = VoucherLookupsService;
 exports.VoucherLookupsService = VoucherLookupsService = __decorate([

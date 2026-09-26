@@ -9,7 +9,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.DeleteSuccessDto = exports.CancelSuccessDto = exports.VoucherSuccessDto = exports.ValidateSuccessDto = exports.DraftSavedSuccessDto = exports.TaxRatesSuccessDto = exports.OpenBillsSuccessDto = exports.PartyFactsSuccessDto = exports.LedgerBalanceSuccessDto = exports.LedgerPickSuccessDto = exports.VoucherTypesSuccessDto = exports.VoucherErrorResponseDto = exports.VoucherErrorDetailDto = void 0;
+exports.AdjacentVoucherSuccessDto = exports.DeleteSuccessDto = exports.CancelSuccessDto = exports.VoucherSuccessDto = exports.ValidateSuccessDto = exports.DraftSavedSuccessDto = exports.TaxRatesSuccessDto = exports.OpenBillsSuccessDto = exports.PartyFactsSuccessDto = exports.LedgerBalanceSuccessDto = exports.LedgerPickSuccessDto = exports.VoucherTypesSuccessDto = exports.VoucherErrorResponseDto = exports.VoucherErrorDetailDto = void 0;
 const swagger_1 = require("@nestjs/swagger");
 class VoucherErrorDetailDto {
     field;
@@ -152,4 +152,12 @@ __decorate([
     (0, swagger_1.ApiProperty)({ type: Object }),
     __metadata("design:type", Object)
 ], DeleteSuccessDto.prototype, "data", void 0);
+class AdjacentVoucherSuccessDto extends SuccessEnvelopeDto {
+    data;
+}
+exports.AdjacentVoucherSuccessDto = AdjacentVoucherSuccessDto;
+__decorate([
+    (0, swagger_1.ApiProperty)({ type: Object }),
+    __metadata("design:type", Object)
+], AdjacentVoucherSuccessDto.prototype, "data", void 0);
 //# sourceMappingURL=voucher-response.dto.js.map

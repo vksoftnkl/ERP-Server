@@ -472,9 +472,11 @@ export class VoucherRegisterService {
         );
       }
 
-      // 12 · the TDS register (a below-threshold row too: it is what the annual threshold counts)
-      if (d.tds && p.party) {
-        const raised = raisedByLine.get(0) ?? null;
+      // 12 · the TDS register (a below-threshold row too: it is what the annual
+      // threshold counts). One row per deductee — notes (53): a multi-party
+      // Payment writes one per party line's party, since 26Q is per deductee.
+      for (const t of d.tdsLines) {
+        const raised = raisedByLine.get(t.lineRowNo ?? 0) ?? null;
         await tx.$executeRaw`
           INSERT INTO accounts.acc_tds_register (
             atd_company_id, atd_branch_id, atd_tenant_id, atd_acc_year, atd_quarter, atd_direction,
@@ -484,13 +486,13 @@ export class VoucherRegisterService {
           ) VALUES (
             ${dto.header.companyId}::uuid, ${dto.header.branchId}::uuid, ${existing?.avh_tenant_id ?? null}::uuid,
             ${dto.header.accYear}::char(9), ${quarterOf(dto.header.date)}::bpchar, 'DEDUCTED',
-            ${p.party.ledId}::uuid, ${p.party.pan}, ${p.party.name.slice(0, 150)},
-            ${d.tds.registerDeductee}, ${d.tds.section}, ${d.tds.rate.toFixed(3)}::numeric,
-            ${d.tds.rateSource}, ${d.tds.base.toFixed(2)}::numeric, ${d.tds.tax.toFixed(2)}::numeric,
+            ${t.party.ledId}::uuid, ${t.party.pan}, ${t.party.name.slice(0, 150)},
+            ${t.registerDeductee}, ${t.section}, ${t.rate.toFixed(3)}::numeric,
+            ${t.rateSource}, ${t.base.toFixed(2)}::numeric, ${t.tax.toFixed(2)}::numeric,
             ${voucherId}::uuid, ${dto.header.accYear}::char(9),
             ${refno.slice(0, 50)}, ${dto.header.date}::date,
             ${raised?.billId ?? null}::uuid, ${raised?.accYear ?? null}::char(9),
-            ${d.tds.reason?.slice(0, 250) ?? null}, ${actor}
+            ${t.reason?.slice(0, 250) ?? null}, ${actor}
           )`;
       }
 
@@ -831,6 +833,21 @@ export class VoucherRegisterService {
       ]);
       tds = { rate, annualBaseSoFar };
     }
+    // notes (53): a multi-party type deducts per party line, so the same two
+    // facts are loaded for every TDS-applicable party ledger on the lines.
+    const tdsByParty = new Map<string, NonNullable<DeriveInput['tds']>>();
+    if (type.tdsMode === 'DEDUCT' && type.partyMode === 'MANY') {
+      for (const l of lines) {
+        const f = ledgers.get(l.ledgerId);
+        if (!f || tdsByParty.has(f.ledId)) continue;
+        if (!(f.isParty || f.isBillByBill) || !f.isTdsApplicable || !f.tdsSection) continue;
+        const [rate, annualBaseSoFar] = await Promise.all([
+          loadTdsRate(tx, h.companyId, f.tdsSection, f.tdsDeducteeType, h.date),
+          loadTdsAnnualBase(tx, h.companyId, f.ledId, h.accYear, f.tdsSection),
+        ]);
+        tdsByParty.set(f.ledId, { rate, annualBaseSoFar });
+      }
+    }
 
     const bills = await loadBills(tx, allocations, opts.lock);
 
@@ -884,6 +901,7 @@ export class VoucherRegisterService {
       party,
       creditDaysByLedger,
       tds,
+      tdsByParty,
       bills,
       docRefnoClash,
       backdateMode,
@@ -1070,8 +1088,11 @@ export class VoucherRegisterService {
          AND v.av_is_deleted = false
        ORDER BY v.av_row_no`;
     // The generated party leg is the LAST leg on the party's ledger on the party side.
+    // Keyed on the STORED header party, not the type's mode today: a voucher
+    // posted while its type was ONE keeps its party after the type turned MANY
+    // (notes 53, RcpV / PmtV), and a MANY voucher never stores one.
     let partyLegRow = -1;
-    if (type.partyMode === 'ONE' && s.avh_party_id) {
+    if (s.avh_party_id) {
       for (const r of legRows) {
         if (r.av_ledger_id === s.avh_party_id && r.av_dr_cr.trim() === type.partySide)
           partyLegRow = r.av_row_no;

@@ -31,3 +31,14 @@ export declare class TaxRatesQueryDto {
     companyId: string;
     includeInactive?: string;
 }
+export declare class AdjacentVoucherQueryDto {
+    companyId: string;
+    branchId: string;
+    accYear: string;
+    voucherId?: string;
+    direction: 'prev' | 'next';
+    typeCode?: string;
+    status?: 'DRAFT' | 'POSTED' | 'CANCELLED';
+    fromDate?: string;
+    toDate?: string;
+}

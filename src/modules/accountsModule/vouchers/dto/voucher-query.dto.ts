@@ -117,3 +117,64 @@ export class TaxRatesQueryDto {
   @ValidateIf((_, v) => v !== undefined)
   includeInactive?: string;
 }
+
+/**
+ * notes (52) — `GET /vouchers/adjacent`, the Voucher Register's Prev / Next.
+ *
+ * The house key of the voucher on screen, a direction, and the list's own
+ * filters so the walk visits exactly the rows the F8 list shows. `voucherId`
+ * may be omitted for Prev / Next on an EMPTY screen: prev then answers the
+ * newest voucher under the filters, next the oldest.
+ */
+export class AdjacentVoucherQueryDto {
+  @ApiProperty({ format: 'uuid' })
+  @RequiredUuid()
+  companyId!: string;
+
+  @ApiProperty({ format: 'uuid' })
+  @RequiredUuid()
+  branchId!: string;
+
+  @ApiProperty({ example: '2026-2027' })
+  @Matches(/^\d{4}-\d{4}$/)
+  accYear!: string;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      'The voucher on screen. Omit on an empty screen: prev → the newest voucher, next → the oldest.',
+  })
+  @OptionalUuid()
+  voucherId?: string;
+
+  @ApiProperty({
+    enum: ['prev', 'next'],
+    description: 'prev = the voucher entered just BEFORE this one (older); next = just after.',
+  })
+  @IsIn(['prev', 'next'])
+  direction!: 'prev' | 'next';
+
+  @ApiPropertyOptional({
+    example: 'Jrnl',
+    description:
+      'A type menu (103 Journal, 163 PurA, …) walks its own type only. Omit for the register ' +
+      '(menu 262): every register type the caller may view.',
+  })
+  @OptionalTrimmedString(20)
+  typeCode?: string;
+
+  @ApiPropertyOptional({ enum: ['DRAFT', 'POSTED', 'CANCELLED'] })
+  @IsOptional()
+  @IsIn(['DRAFT', 'POSTED', 'CANCELLED'])
+  status?: 'DRAFT' | 'POSTED' | 'CANCELLED';
+
+  @ApiPropertyOptional({ example: '2026-09-01', description: "The list's from-date, if set." })
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  fromDate?: string;
+
+  @ApiPropertyOptional({ example: '2026-09-30', description: "The list's to-date, if set." })
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  toDate?: string;
+}

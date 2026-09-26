@@ -9,6 +9,7 @@ import type {
   DrCr,
   GstSummary,
   LegSource,
+  TdsLineSummary,
   TdsSummary,
   VoucherTypeRules,
 } from './types/vouchers-api.types';
@@ -79,6 +80,11 @@ export interface DeriveInput {
   party: LedgerFacts | null;
   creditDaysByLedger: ReadonlyMap<string, number>;
   tds: { rate: TdsRateFacts | null; annualBaseSoFar: Prisma.Decimal } | null;
+  /**
+   * notes (53): party mode MANY — the same facts per TDS-applicable party
+   * ledger on the lines, keyed by ledger id. Absent = none loaded.
+   */
+  tdsByParty?: ReadonlyMap<string, { rate: TdsRateFacts | null; annualBaseSoFar: Prisma.Decimal }>;
   bills: ReadonlyMap<string, BillFacts>;
   /** INDEX = the exact ux_avh_doc_refno / ux_abl_doc_refno collision; OTHER = seen on another type */
   docRefnoClash: 'INDEX' | 'OTHER' | null;
@@ -155,6 +161,10 @@ export interface InternalTds {
   reason: string | null;
   fromRows: number[];
   ledgerId: string | null;
+  /** notes (53): the deductee. The header party on ONE; the line's party on MANY. */
+  party: LedgerFacts;
+  /** The first typed line of that party on MANY; null on ONE (the generated party leg). */
+  lineRowNo: number | null;
 }
 
 export interface InternalBill {
@@ -186,6 +196,12 @@ export interface DerivedInternal {
   party: { ledger: LedgerFacts; side: DrCr; amount: Prisma.Decimal; rowNo: number } | null;
   gst: InternalGst | null;
   tds: InternalTds | null;
+  /**
+   * notes (53): one entry per deductee — the ONE-mode `tds` when there is one,
+   * else one per TDS-applicable party on a MANY voucher. /post writes one
+   * acc_tds_register row per entry (26Q is per deductee).
+   */
+  tdsLines: InternalTds[];
   bills: InternalBill[];
   allocations: InternalAllocation[];
 }
@@ -656,12 +672,7 @@ export function derive(input: DeriveInput): DerivedInternal {
       const cumulative = input.tds!.annualBaseSoFar.plus(base);
       const single = rate.thresholdSingle;
       const annual = rate.thresholdAnnual;
-      const noThreshold = single.isZero() && annual.isZero();
-      const deduct =
-        base.greaterThan(0) &&
-        (noThreshold ||
-          (single.greaterThan(0) && base.greaterThan(single)) ||
-          (annual.greaterThan(0) && cumulative.greaterThan(annual)));
+      const deduct = crossesTdsThreshold(base, cumulative, rate);
       const fromRows = baseLegs.map((l) => l.lineRowNo!);
       if (!deduct) {
         // Nothing ticked is a choice, not a threshold: it passes silently.
@@ -685,6 +696,8 @@ export function derive(input: DeriveInput): DerivedInternal {
           reason,
           fromRows,
           ledgerId: null,
+          party,
+          lineRowNo: null,
         };
       } else {
         const led = input.roleLedgers.get(roleKey('TDS_PAYABLE', null, null)) ?? null;
@@ -727,8 +740,146 @@ export function derive(input: DeriveInput): DerivedInternal {
           reason: null,
           fromRows,
           ledgerId: led?.ledgerId ?? null,
+          party,
+          lineRowNo: null,
         };
       }
+    }
+  }
+
+  // ── 5 (MANY) · TDS per party line — notes (53) ────────────────────────────
+  // With parties on the lines there is no header party, so the deduction is
+  // worked out per deductee: every typed line on the type's party side whose
+  // ledger is a TDS-applicable party (and whose TDS tick is not cleared). A
+  // payment types the NET each party is paid; the deduction is on the gross,
+  // so each such line is grossed up to it (the party is discharged of the
+  // gross) and one CR TDS Payable leg per party carries the difference.
+  const tdsLines: InternalTds[] = tds ? [tds] : [];
+  if (type.tdsMode === 'DEDUCT' && type.partyMode === 'MANY') {
+    const side = type.partySide === 'DR' || type.partySide === 'CR' ? type.partySide : null;
+    const byParty = new Map<string, InternalLeg[]>();
+    for (const leg of typed) {
+      const l = leg.ledger as LedgerFacts;
+      if (!(l.isParty || l.isBillByBill) || !l.isTdsApplicable || !leg.isTdsBase) continue;
+      if (side && leg.drCr !== side) continue;
+      byParty.set(l.ledId, [...(byParty.get(l.ledId) ?? []), leg]);
+    }
+    const paymentShaped = type.billwiseMode === 'DEMAND' && side === 'DR';
+    let unmappedTold = false;
+    for (const partyLines of byParty.values()) {
+      const p = partyLines[0].ledger as LedgerFacts;
+      const first = partyLines[0].lineRowNo!;
+      const field = `lines.${first}.ledgerId`;
+      const fromRows = partyLines.map((l) => l.lineRowNo!);
+      if (!paymentShaped) {
+        refuse(
+          ctx,
+          VCH.INVALID,
+          `Row ${first}: TDS on a multi-party ${type.typeName} is worked out only when it pays parties (party side DR, bills demanded)`,
+          { field, line: first },
+        );
+        continue;
+      }
+      const section = p.tdsSection?.trim() ?? '';
+      const facts = input.tdsByParty?.get(p.ledId) ?? null;
+      const rate = facts?.rate ?? null;
+      if (!section) {
+        refuse(ctx, VCH.TDS_RATE_MISSING, `${p.name} is TDS-applicable but names no section`, {
+          field,
+          line: first,
+        });
+        continue;
+      }
+      if (!rate || !facts) {
+        refuse(
+          ctx,
+          VCH.TDS_RATE_MISSING,
+          `No TDS rate is in force for section ${section} (${p.tdsDeducteeType ?? 'ANY'}) on ${header.date} — ${p.name}`,
+          { field, line: first },
+        );
+        continue;
+      }
+      const pct = p.pan ? rate.rate : rate.noPanRate;
+      const rateSource: InternalTds['rateSource'] = p.pan ? 'MASTER' : 'NO_PAN';
+      // Grossed up line by line, so each line's own share of the tax is known.
+      const perLine = partyLines.map((leg) => {
+        const gross = pct.isZero()
+          ? leg.amount
+          : round2(leg.amount.div(new Prisma.Decimal(1).minus(pct.div(HUNDRED))));
+        return { leg, gross, tax: gross.minus(leg.amount) };
+      });
+      const base = perLine.reduce((acc, x) => acc.plus(x.gross), ZERO);
+      const tax = perLine.reduce((acc, x) => acc.plus(x.tax), ZERO);
+      const cumulative = facts.annualBaseSoFar.plus(base);
+      const common = {
+        section,
+        sectionName: rate.sectionName,
+        deducteeType: p.tdsDeducteeType ?? rate.deducteeType,
+        registerDeductee: registerDeductee(p.tdsDeducteeType),
+        rate: pct,
+        fromRows,
+        party: p,
+        lineRowNo: first,
+      };
+      if (!crossesTdsThreshold(base, cumulative, rate)) {
+        // Nothing is deducted, so the lines stay the net typed: the base
+        // recorded (what the annual threshold counts) is what was paid.
+        const paid = partyLines.reduce((acc, l) => acc.plus(l.amount), ZERO);
+        const reason = `${money(paid)} to ${p.name} is within the ${section} threshold (single ${money(rate.thresholdSingle)}, annual ${money(rate.thresholdAnnual)}; ${money(facts.annualBaseSoFar.plus(paid))} so far this year)`;
+        warn(ctx, VCH.TDS_BELOW_THRESHOLD, `No TDS deducted: ${reason}`, { field, line: first });
+        tdsLines.push({
+          ...common,
+          base: paid,
+          rateSource: 'BELOW_THRESHOLD',
+          tax: ZERO,
+          deducted: false,
+          reason,
+          ledgerId: null,
+        });
+        continue;
+      }
+      const led = input.roleLedgers.get(roleKey('TDS_PAYABLE', null, null)) ?? null;
+      if (!led) {
+        if (!unmappedTold) {
+          unmappedTold = true;
+          refuse(
+            ctx,
+            VCH.TDS_UNMAPPED,
+            'No ledger is mapped for TDS_PAYABLE — map it in Posting Ledgers (menu 250)',
+            { field: 'lines' },
+          );
+        }
+        continue;
+      }
+      if (tax.greaterThan(0)) {
+        for (const x of perLine) {
+          x.leg.amount = x.gross;
+        }
+        legs.push({
+          rowNo: legs.length + 1,
+          lineRowNo: null,
+          drCr: 'CR',
+          ledger: { ledId: led.ledgerId, name: led.ledgerName, groupName: null },
+          amount: tax,
+          generated: true,
+          source: 'TDS',
+          role: 'TDS_PAYABLE',
+          remarks: `TDS ${section} @ ${pct.toString()}% on ${money(base)} — ${p.name}`,
+          fromRows,
+          gst: null,
+          isTdsBase: false,
+          oppLedgerId: null,
+        });
+      }
+      tdsLines.push({
+        ...common,
+        base,
+        rateSource,
+        tax,
+        deducted: tax.greaterThan(0),
+        reason: null,
+        ledgerId: led.ledgerId,
+      });
     }
   }
 
@@ -1001,9 +1152,29 @@ export function derive(input: DeriveInput): DerivedInternal {
     party: partyLeg,
     gst,
     tds,
+    tdsLines,
     bills,
     allocations,
   };
+}
+
+/**
+ * Whether a TDS base crosses the section's threshold: no threshold at all,
+ * above the single-payment one, or the year's running total above the annual.
+ */
+function crossesTdsThreshold(
+  base: Prisma.Decimal,
+  cumulative: Prisma.Decimal,
+  rate: TdsRateFacts,
+): boolean {
+  const single = rate.thresholdSingle;
+  const annual = rate.thresholdAnnual;
+  return (
+    base.greaterThan(0) &&
+    ((single.isZero() && annual.isZero()) ||
+      (single.greaterThan(0) && base.greaterThan(single)) ||
+      (annual.greaterThan(0) && cumulative.greaterThan(annual)))
+  );
 }
 
 /** acc_tds_register's closed deductee list: COMPANY, or everyone else. */
@@ -1104,19 +1275,24 @@ export function toWire(typeCode: string, date: string, d: DerivedInternal): Deri
       rows: [...rows.values()],
     };
   }
-  const tds: TdsSummary | null = d.tds
-    ? {
-        section: d.tds.section,
-        deducteeType: d.tds.deducteeType,
-        rate: Number(d.tds.rate.toString()),
-        rateSource: d.tds.rateSource,
-        base: n(d.tds.base),
-        tax: n(d.tds.tax),
-        deducted: d.tds.deducted,
-        reason: d.tds.reason,
-        fromRows: d.tds.fromRows,
-      }
-    : null;
+  const tdsOf = (t: InternalTds): TdsSummary => ({
+    section: t.section,
+    deducteeType: t.deducteeType,
+    rate: Number(t.rate.toString()),
+    rateSource: t.rateSource,
+    base: n(t.base),
+    tax: n(t.tax),
+    deducted: t.deducted,
+    reason: t.reason,
+    fromRows: t.fromRows,
+  });
+  const tds: TdsSummary | null = d.tds ? tdsOf(d.tds) : null;
+  const tdsLines: TdsLineSummary[] = d.tdsLines.map((t) => ({
+    ...tdsOf(t),
+    lineRowNo: t.lineRowNo,
+    partyId: t.party.ledId,
+    partyName: t.party.name,
+  }));
   const bills: DerivedBill[] = d.bills.map((b) => ({
     lineRowNo: b.lineRowNo,
     partyId: b.party.ledId,
@@ -1150,6 +1326,7 @@ export function toWire(typeCode: string, date: string, d: DerivedInternal): Deri
     party,
     gst,
     tds,
+    tdsLines,
     bills,
     allocations,
   };

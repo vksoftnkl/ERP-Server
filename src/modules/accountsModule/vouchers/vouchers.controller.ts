@@ -22,6 +22,7 @@ import { VoucherLookupsService } from './voucher-lookups.service';
 import { VoucherRegisterService } from './voucher-register.service';
 import { VoucherCancelService } from './voucher-cancel.service';
 import {
+  AdjacentVoucherQueryDto,
   LedgerBalanceQueryDto,
   LedgerPickQueryDto,
   OpenBillsQueryDto,
@@ -38,6 +39,7 @@ import {
   VoucherPayloadDto,
 } from './dto/voucher-payload.dto';
 import {
+  AdjacentVoucherSuccessDto,
   CancelSuccessDto,
   DeleteSuccessDto,
   DraftSavedSuccessDto,
@@ -52,6 +54,7 @@ import {
   VoucherTypesSuccessDto,
 } from './dto/voucher-response.dto';
 import type {
+  AdjacentVoucherPayload,
   CancelPayload,
   DeletePayload,
   DraftSavedPayload,
@@ -72,7 +75,7 @@ import type {
  * Purchase (Accounting), Sales (Accounting), Receipt Voucher, Payment Voucher
  * — and ONE posting routine behind it.
  *
- * Twelve routes, no path params, no `/list` (the F8 list and the exceptions
+ * Thirteen routes, no path params, no `/list` (the F8 list and the exceptions
  * report are registered grids). Every route that acts on an existing voucher
  * takes the house key `companyId · branchId · accYear · voucherId`. Rights
  * are judged on the voucher TYPE's menu (decision E), never on the menu the
@@ -225,6 +228,42 @@ export class VouchersController {
     return {
       success: true,
       message: `${data.header.typeName} ${data.header.voucherRefno ?? '(draft)'} — ${data.header.status}`,
+      data,
+    };
+  }
+
+  @Get('adjacent')
+  @Version(API_VERSION)
+  // No cache: the register changes all day, and a cached neighbour is a walk
+  // that loops or skips a voucher somebody just keyed.
+  @CacheTTL(0)
+  @ApiOperation({
+    summary: 'The register voucher entered just before or just after this one',
+    description:
+      'notes (52) — the Voucher Register’s Prev / Next (Ctrl+PgUp / Ctrl+PgDn), the same walk ' +
+      '/receipts/adjacent does. Returns a KEY; load it with /vouchers/get.\n\n' +
+      '**prev = older, next = newer**, on (voucher date, voucher no, created on, id) — the order ' +
+      'of grid 117, a DRAFT (no number) sitting at the old end of its date. A DRAFT is a stop.\n\n' +
+      'Walked: register types only (a Rev mirror is never a stop), not deleted, and only types ' +
+      'the caller may VIEW (user_menus.um_can_view on the type’s menu). `typeCode` walks one ' +
+      'type (a type menu); omit it for the register. Pass the list’s `status` / `fromDate` / ' +
+      '`toDate` so the walk visits exactly the rows it shows.\n\n' +
+      'Omit `voucherId` on an empty screen: prev → the newest voucher, next → the oldest. ' +
+      '`voucher` is null at either end.',
+  })
+  @ApiOkResponse({ type: AdjacentVoucherSuccessDto })
+  @ApiBadRequestResponse({ type: VoucherErrorResponseDto })
+  @ApiNotFoundResponse({ type: VoucherErrorResponseDto })
+  @ApiForbiddenResponse({ type: VoucherErrorResponseDto })
+  async adjacent(
+    @Query() q: AdjacentVoucherQueryDto,
+  ): Promise<VoucherSuccessResponse<AdjacentVoucherPayload>> {
+    const data = await this.lookups.adjacent(q);
+    return {
+      success: true,
+      message: data.voucher
+        ? `${data.voucher.voucherRefno ?? '(draft)'} is the ${q.direction} voucher`
+        : `No ${q.direction} voucher — this is the end of the register`,
       data,
     };
   }

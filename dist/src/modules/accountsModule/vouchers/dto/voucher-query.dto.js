@@ -9,7 +9,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.TaxRatesQueryDto = exports.OpenBillsQueryDto = exports.PartyFactsQueryDto = exports.LedgerBalanceQueryDto = exports.LedgerPickQueryDto = exports.VoucherTypesQueryDto = void 0;
+exports.AdjacentVoucherQueryDto = exports.TaxRatesQueryDto = exports.OpenBillsQueryDto = exports.PartyFactsQueryDto = exports.LedgerBalanceQueryDto = exports.LedgerPickQueryDto = exports.VoucherTypesQueryDto = void 0;
 const swagger_1 = require("@nestjs/swagger");
 const class_validator_1 = require("class-validator");
 const dtoDecorators_1 = require("../../../../common/dto/dtoDecorators");
@@ -164,4 +164,74 @@ __decorate([
     (0, class_validator_1.ValidateIf)((_, v) => v !== undefined),
     __metadata("design:type", String)
 ], TaxRatesQueryDto.prototype, "includeInactive", void 0);
+class AdjacentVoucherQueryDto {
+    companyId;
+    branchId;
+    accYear;
+    voucherId;
+    direction;
+    typeCode;
+    status;
+    fromDate;
+    toDate;
+}
+exports.AdjacentVoucherQueryDto = AdjacentVoucherQueryDto;
+__decorate([
+    (0, swagger_1.ApiProperty)({ format: 'uuid' }),
+    (0, dtoDecorators_1.RequiredUuid)(),
+    __metadata("design:type", String)
+], AdjacentVoucherQueryDto.prototype, "companyId", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ format: 'uuid' }),
+    (0, dtoDecorators_1.RequiredUuid)(),
+    __metadata("design:type", String)
+], AdjacentVoucherQueryDto.prototype, "branchId", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: '2026-2027' }),
+    (0, class_validator_1.Matches)(/^\d{4}-\d{4}$/),
+    __metadata("design:type", String)
+], AdjacentVoucherQueryDto.prototype, "accYear", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        format: 'uuid',
+        description: 'The voucher on screen. Omit on an empty screen: prev → the newest voucher, next → the oldest.',
+    }),
+    (0, dtoDecorators_1.OptionalUuid)(),
+    __metadata("design:type", String)
+], AdjacentVoucherQueryDto.prototype, "voucherId", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        enum: ['prev', 'next'],
+        description: 'prev = the voucher entered just BEFORE this one (older); next = just after.',
+    }),
+    (0, class_validator_1.IsIn)(['prev', 'next']),
+    __metadata("design:type", String)
+], AdjacentVoucherQueryDto.prototype, "direction", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        example: 'Jrnl',
+        description: 'A type menu (103 Journal, 163 PurA, …) walks its own type only. Omit for the register ' +
+            '(menu 262): every register type the caller may view.',
+    }),
+    (0, dtoDecorators_1.OptionalTrimmedString)(20),
+    __metadata("design:type", String)
+], AdjacentVoucherQueryDto.prototype, "typeCode", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ enum: ['DRAFT', 'POSTED', 'CANCELLED'] }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsIn)(['DRAFT', 'POSTED', 'CANCELLED']),
+    __metadata("design:type", String)
+], AdjacentVoucherQueryDto.prototype, "status", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ example: '2026-09-01', description: "The list's from-date, if set." }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.Matches)(/^\d{4}-\d{2}-\d{2}$/),
+    __metadata("design:type", String)
+], AdjacentVoucherQueryDto.prototype, "fromDate", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ example: '2026-09-30', description: "The list's to-date, if set." }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.Matches)(/^\d{4}-\d{2}-\d{2}$/),
+    __metadata("design:type", String)
+], AdjacentVoucherQueryDto.prototype, "toDate", void 0);
 //# sourceMappingURL=voucher-query.dto.js.map

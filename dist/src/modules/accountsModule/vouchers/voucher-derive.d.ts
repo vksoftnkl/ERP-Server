@@ -49,6 +49,10 @@ export interface DeriveInput {
         rate: TdsRateFacts | null;
         annualBaseSoFar: Prisma.Decimal;
     } | null;
+    tdsByParty?: ReadonlyMap<string, {
+        rate: TdsRateFacts | null;
+        annualBaseSoFar: Prisma.Decimal;
+    }>;
     bills: ReadonlyMap<string, BillFacts>;
     docRefnoClash: 'INDEX' | 'OTHER' | null;
     backdateMode: 'OFF' | 'WARN' | 'REFUSE';
@@ -126,6 +130,8 @@ export interface InternalTds {
     reason: string | null;
     fromRows: number[];
     ledgerId: string | null;
+    party: LedgerFacts;
+    lineRowNo: number | null;
 }
 export interface InternalBill {
     lineRowNo: number;
@@ -163,6 +169,7 @@ export interface DerivedInternal {
     } | null;
     gst: InternalGst | null;
     tds: InternalTds | null;
+    tdsLines: InternalTds[];
     bills: InternalBill[];
     allocations: InternalAllocation[];
 }
