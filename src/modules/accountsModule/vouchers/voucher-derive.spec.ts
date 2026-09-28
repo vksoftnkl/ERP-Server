@@ -2,7 +2,13 @@ import { Prisma } from '@prisma/client';
 import type { ResolvedRoleLedger } from '../ledgerRole/ledger-map.helper';
 import type { VoucherTypeRules } from './types/vouchers-api.types';
 import { derive, roleKey, toWire, type DeriveInput, type TypedLineInput } from './voucher-derive';
-import type { BillFacts, LedgerFacts, TaxRateFacts, TdsRateFacts } from './voucher-facts';
+import type {
+  BillFacts,
+  LedgerFacts,
+  TaxRateFacts,
+  TdsRateFacts,
+  TenderFacts,
+} from './voucher-facts';
 import { newGuardContext } from './vouchers.errors';
 
 /**
@@ -247,6 +253,7 @@ const TDS_194C: TdsRateFacts = {
 
 function type(over: Partial<VoucherTypeRules>): VoucherTypeRules {
   return {
+    instruments: false,
     typeId: 1,
     typeCode: 'X',
     typeName: 'X',
@@ -684,7 +691,7 @@ describe('derive — the other types', () => {
     expect(i.ctx.refusals[0].message).toMatch(/51 \/ 52/);
   });
 
-  it('#10 · a Receipt Voucher whose allocations fall short of the party leg is refused', () => {
+  it('#10 · a Receipt Voucher allocated short keeps the remainder as an ADVANCE (notes 57); strict under the setting', () => {
     const bill: BillFacts = {
       ablId: 'b-1',
       ablAccYear: '2026-2027',
@@ -715,8 +722,25 @@ describe('derive — the other types', () => {
       party: L.KRISHNA,
       bills: new Map([['b-1|2026-2027', bill]]),
     });
-    derive(short);
-    expect(codes(short)).toEqual(['VCH_BILLWISE_SHORT']);
+    const ds = derive(short);
+    expect(codes(short)).toEqual([]);
+    expect(ds.bills.map((b) => [b.lineRowNo, b.party.ledId, b.billType, b.side, b.amount.toFixed(2), b.dueDate, b.isAdvance])).toEqual([
+      [0, L.KRISHNA.ledId, 'ADVANCE', 'CR', '5000.00', null, true],
+    ]);
+    expect(toWire('RcpV', '2026-09-15', ds).bills[0]).toMatchObject({
+      billType: 'ADVANCE',
+      side: 'CR',
+      amount: 5000,
+      dueDays: 0,
+      dueDate: null,
+      isAdvance: true,
+    });
+
+    // the brake: accounts.voucher_allow_advance = false keeps the strict rule
+    const strict = input({ ...short, allowAdvance: false, ctx: input({}).ctx });
+    derive(strict);
+    expect(codes(strict)).toEqual(['VCH_BILLWISE_SHORT']);
+    expect(strict.ctx.refusals[0].message).toContain('must be allocated bill by bill');
 
     const exact = input({
       type: RCPV,
@@ -835,6 +859,139 @@ describe('derive — the other types', () => {
 });
 
 // ─── notes (53): Receipt / Payment Voucher with MANY parties ─────────────────
+describe('derive — notes (56) the cash/bank side of a Receipt and a Payment', () => {
+  const RCPV_MANY = type({ ...RCPV, partyMode: 'MANY' });
+  const PMTV = type({
+    typeId: 31,
+    typeCode: 'PmtV',
+    typeName: 'Payment Voucher',
+    nature: 'PAYMENT',
+    menuId: 261,
+    partyMode: 'MANY',
+    partySide: 'DR',
+    billwiseMode: 'DEMAND',
+    raiseBillType: null,
+    drGroups: [],
+    crGroups: grp([G.CASH, G.BANK]),
+  });
+  /** RcpV as the register held it before 20260928170000: no group list at all. */
+  const RCPV_UNLISTED = type({ ...RCPV_MANY, drGroups: [], crGroups: [] });
+  const SALES = ledger('l-sales', 'Sales A/c', [[G.SALES_ACCOUNTS, 'Sales Accounts']]);
+  /** The reserved id of Bank OD A/c (prisma/seed/Account_Groups.sql) — matched by id, not name. */
+  const OD_GROUP = '019eee86-f34b-7d50-af11-254d259a8440';
+  const OD = ledger('l-od', 'SBI OD — 7781', [
+    [OD_GROUP, 'Overdraft'],
+    ['g-loans', 'Loans (Liability)'],
+  ]);
+  const WITH_MORE = new Map([...LEDGERS, [SALES.ledId, SALES], [OD.ledId, OD]]);
+  const kBill = (): [string, BillFacts] => [
+    'k-1|2026-2027',
+    {
+      ablId: 'k-1',
+      ablAccYear: '2026-2027',
+      partyId: L.KRISHNA.ledId,
+      billType: 'SALES',
+      docRefno: 'k-1',
+      docDate: new Date('2026-08-01T00:00:00Z'),
+      side: 'DR',
+      billAmount: D(6000),
+      pendingAmount: D(6000),
+      isDeleted: false,
+      isActive: true,
+      companyId: 'c-1',
+    },
+  ];
+  const messages = (i: DeriveInput) => i.ctx.refusals.map((r) => r.message);
+
+  it('RcpV with Cr Cash is refused — cash to bank is a Contra, even with no group list on the type', () => {
+    const i = input({
+      type: RCPV_UNLISTED,
+      ledgers: WITH_MORE,
+      lines: [line(1, 'DR', L.HDFC, 5000), line(2, 'CR', L.CASH, 5000)],
+    });
+    derive(i);
+    expect(codes(i)).toEqual(['VCH_LEDGER_SIDE']);
+    expect(i.ctx.refusals[0].line).toBe(2);
+    expect(messages(i)[0]).toMatch(/Cash — Counter 1 may not be credited on a Receipt Voucher — cash to bank is a Contra/);
+  });
+
+  it('RcpV with Dr Sales A/c is refused — the DR side takes cash or bank only', () => {
+    const i = input({
+      type: RCPV_UNLISTED,
+      ledgers: WITH_MORE,
+      lines: [line(1, 'DR', SALES, 6000), line(2, 'CR', L.KRISHNA, 6000)],
+      allocations: [{ index: 0, lineRowNo: 2, billId: 'k-1', billAccYear: '2026-2027', amount: D(6000) }],
+      bills: new Map([kBill()]),
+    });
+    derive(i);
+    expect(codes(i)).toEqual(['VCH_LEDGER_SIDE']);
+    expect(i.ctx.refusals[0].line).toBe(1);
+    expect(messages(i)[0]).toMatch(/Sales A\/c \(Sales Accounts\) may not be debited on a Receipt Voucher — the DR side takes cash or bank only/);
+  });
+
+  it('RcpV with Dr Bank / Cr customer passes, and so does Dr Bank OD (any of the three money groups)', () => {
+    /** RcpV as 20260928170000 leaves it: the DR list names all three money groups. */
+    const RCPV_THREE = type({ ...RCPV_MANY, drGroups: grp([G.CASH, G.BANK, OD_GROUP]) });
+    for (const money of [L.HDFC, OD]) {
+      const i = input({
+        type: RCPV_THREE,
+        ledgers: WITH_MORE,
+        lines: [line(1, 'DR', money, 6000), line(2, 'CR', L.KRISHNA, 6000)],
+        allocations: [{ index: 0, lineRowNo: 2, billId: 'k-1', billAccYear: '2026-2027', amount: D(6000) }],
+        bills: new Map([kBill()]),
+      });
+      const d = derive(i);
+      expect(codes(i)).toEqual([]);
+      expect(d.legs).toHaveLength(2);
+    }
+  });
+
+  it('PmtV with Dr Cash / Cr Bank is refused on the DR side — a withdrawal is a Contra', () => {
+    const i = input({
+      type: PMTV,
+      ledgers: WITH_MORE,
+      lines: [line(1, 'DR', L.CASH, 2000), line(2, 'CR', L.HDFC, 2000)],
+    });
+    derive(i);
+    expect(codes(i)).toEqual(['VCH_LEDGER_SIDE']);
+    expect(i.ctx.refusals[0].line).toBe(1);
+    expect(messages(i)[0]).toMatch(/bank to cash is a Contra/);
+  });
+
+  it('PmtV with Cr Sales A/c is refused as the money rule, not as a list of group names', () => {
+    const i = input({
+      type: PMTV,
+      ledgers: WITH_MORE,
+      lines: [line(1, 'DR', L.STATIONERY, 2000), line(2, 'CR', SALES, 2000)],
+    });
+    derive(i);
+    expect(codes(i)).toEqual(['VCH_LEDGER_SIDE']);
+    expect(i.ctx.refusals[0].line).toBe(2);
+    expect(messages(i)[0]).toMatch(/Sales A\/c \(Sales Accounts\) may not be credited on a Payment Voucher — the CR side takes cash or bank only/);
+  });
+
+  it('a Contra keeps the group-list message — it has no money side', () => {
+    const i = input({
+      type: CON,
+      ledgers: WITH_MORE,
+      lines: [line(1, 'DR', L.CASH, 2000), line(2, 'CR', SALES, 2000)],
+    });
+    derive(i);
+    expect(codes(i)).toEqual(['VCH_LEDGER_SIDE']);
+    expect(messages(i)[0]).toMatch(/may not be credited on a Contra/);
+    expect(messages(i)[0]).not.toMatch(/cash or bank only/);
+  });
+
+  it('Jrl with Dr Cash / Cr Bank still passes — the rule is keyed on nature, and a Journal has no money side', () => {
+    const i = input({
+      type: JRL,
+      lines: [line(1, 'DR', L.CASH, 2000), line(2, 'CR', L.HDFC, 2000)],
+    });
+    derive(i);
+    expect(codes(i)).toEqual([]);
+  });
+});
+
 describe('derive — multi-party Receipt and Payment (notes 53)', () => {
   const RCPV_MANY = type({ ...RCPV, partyMode: 'MANY' });
   const PMTV_MANY = type({
@@ -948,11 +1105,27 @@ describe('derive — multi-party Receipt and Payment (notes 53)', () => {
     });
   });
 
-  it('a Receipt with one customer short is refused, naming that customer only', () => {
+  it('a Receipt with one customer short keeps that customer’s remainder as an ADVANCE, and no other (notes 57)', () => {
     const i = receipt(4000);
+    const d = derive(i);
+    expect(codes(i)).toEqual([]);
+    expect(d.bills.map((b) => [b.lineRowNo, b.party.ledId, b.billType, b.side, b.amount.toFixed(2)])).toEqual([
+      [3, L.RAVI.ledId, 'ADVANCE', 'CR', '1000.00'],
+    ]);
+    expect(d.allocations).toHaveLength(3);
+    expect(toWire('RcpV', '2026-09-15', d).totals).toEqual({ debit: 15000, credit: 15000, difference: 0 });
+  });
+
+  it('a Receipt over-allocated on one customer is refused, naming that customer only (notes 57)', () => {
+    const base = receipt(5000);
+    const i = input({
+      ...base,
+      allocations: [...base.allocations, alloc(3, 3, 'r-2', 500)],
+      bills: new Map([...base.bills, bill('r-2', L.RAVI.ledId, 'DR', 500)]),
+    });
     derive(i);
     expect(codes(i)).toEqual(['VCH_BILLWISE_SHORT']);
-    expect(i.ctx.refusals[0].message).toContain(L.RAVI.name);
+    expect(i.ctx.refusals[0].message).toContain(`${L.RAVI.name}: 5500.00 is allocated against a party amount of 5000.00`);
     expect(i.ctx.refusals[0].message).not.toContain(L.KRISHNA.name);
   });
 
@@ -1025,13 +1198,27 @@ describe('derive — multi-party Receipt and Payment (notes 53)', () => {
     ]);
   });
 
-  it('a Payment allocated only the net on a TDS party line is short by the TDS', () => {
+  it('a Payment allocated only the net on a TDS party line keeps gross − allocated as a DR ADVANCE on the supplier (notes 57)', () => {
     const i = payment({
       allocations: [alloc(0, 1, 's-1', 9800), alloc(1, 2, 'm-1', 10000), alloc(2, 3, 'l-1', 3000)],
     });
-    derive(i);
-    expect(codes(i)).toEqual(['VCH_BILLWISE_SHORT']);
-    expect(i.ctx.refusals[0].message).toContain(L.SUNDARAM.name);
+    const d = derive(i);
+    expect(codes(i)).toEqual([]);
+    // the leg is the GROSS 10,000; 9,800 set against the bill; 200 we still owe
+    expect(legOf(d, L.SUNDARAM.ledId)?.amount.toFixed(2)).toBe('10000.00');
+    expect(d.bills.map((b) => [b.lineRowNo, b.party.ledId, b.billType, b.side, b.amount.toFixed(2), b.isAdvance])).toEqual([
+      [1, L.SUNDARAM.ledId, 'ADVANCE', 'DR', '200.00', true],
+    ]);
+    // the deduction is the leg's, unchanged by how it was allocated
+    expect(d.tdsLines.find((t) => t.party.ledId === L.SUNDARAM.ledId)?.tax.toFixed(2)).toBe('200.00');
+
+    const strict = payment({
+      allocations: [alloc(0, 1, 's-1', 9800), alloc(1, 2, 'm-1', 10000), alloc(2, 3, 'l-1', 3000)],
+      allowAdvance: false,
+    });
+    derive(strict);
+    expect(codes(strict)).toEqual(['VCH_BILLWISE_SHORT']);
+    expect(strict.ctx.refusals[0].message).toContain(L.SUNDARAM.name);
   });
 
   it('thresholds are judged per party: one under deducts nothing and WARNs, the other still deducts', () => {
@@ -1075,5 +1262,299 @@ describe('derive — multi-party Receipt and Payment (notes 53)', () => {
     });
     derive(i);
     expect(i.ctx.refusals.map((r) => [r.code, r.line])).toContainEqual(['VCH_TDS_RATE_MISSING', 2]);
+  });
+});
+
+// ─── notes (54) · instruments on a Receipt Voucher ───────────────────────────
+
+const RCPV_INS = type({
+  ...RCPV,
+  instruments: true,
+  partyMode: 'MANY',
+  partySide: 'CR',
+  billwiseMode: 'DEMAND',
+  drGroups: [],
+  crGroups: [],
+});
+
+function tender(
+  id: string,
+  name: string,
+  typeId: number,
+  ledger: LedgerFacts,
+  extra: Partial<TenderFacts> = {},
+): TenderFacts {
+  return {
+    tndId: id,
+    name,
+    shortName: name,
+    typeId,
+    typeName: name,
+    isCash: typeId === 1,
+    needsRef: typeId !== 1,
+    ledgerId: ledger.ledId,
+    ledgerName: ledger.name,
+    settlementLedgerId: null,
+    isActive: true,
+    isDeleted: false,
+    companyId: 'c-1',
+    branchId: null,
+    hotkey: null,
+    displayPosition: 0,
+    ...extra,
+  };
+}
+const T = {
+  CASH: tender('t-cash', 'CASH', 1, L.CASH),
+  CHEQUE: tender('t-chq', 'CHEQUE', 5, L.CHEQUES_IN_HAND),
+  UPI: tender('t-upi', 'UPI', 3, L.HDFC),
+  TEMP_CR: tender('t-tmp', 'TEMP.CR', 8, L.HDFC),
+};
+const TENDERS = new Map(Object.values(T).map((t) => [t.tndId, t]));
+
+const bill = (id: string, party: LedgerFacts, amount: number): BillFacts => ({
+  ablId: id,
+  ablAccYear: '2026-2027',
+  partyId: party.ledId,
+  billType: 'JOURNAL',
+  docRefno: id,
+  docDate: new Date('2026-08-01T00:00:00Z'),
+  side: 'DR',
+  billAmount: D(amount),
+  pendingAmount: D(amount),
+  isDeleted: false,
+  isActive: true,
+  companyId: 'c-1',
+});
+
+describe('derive — notes (54) instruments', () => {
+  const run = (over: Partial<DeriveInput> = {}) =>
+    input({
+      type: RCPV_INS,
+      tenders: TENDERS,
+      lines: [
+        line(1, 'CR', L.KRISHNA, 6000, {
+          instrument: {
+            tenderId: 't-chq',
+            refNo: '445123',
+            instrumentDate: '2026-09-15',
+            bankName: 'KVB',
+            cheque: null,
+          },
+        }),
+        line(2, 'CR', L.RAVI, 5000, {
+          instrument: {
+            tenderId: 't-cash',
+            refNo: null,
+            instrumentDate: null,
+            bankName: null,
+            cheque: null,
+          },
+        }),
+        line(3, 'CR', L.SUNDARAM, 4000, {
+          instrument: {
+            tenderId: 't-chq',
+            refNo: '445124',
+            instrumentDate: '2026-10-05',
+            bankName: 'KVB',
+            cheque: { drawerName: 'S', bankBranch: null, ifsc: null, micr: null },
+          },
+        }),
+      ],
+      allocations: [
+        { index: 0, lineRowNo: 1, billId: 'b-k', billAccYear: '2026-2027', amount: D(6000) },
+        { index: 1, lineRowNo: 2, billId: 'b-r', billAccYear: '2026-2027', amount: D(5000) },
+        { index: 2, lineRowNo: 3, billId: 'b-s', billAccYear: '2026-2027', amount: D(4000) },
+      ],
+      bills: new Map([
+        ['b-k|2026-2027', bill('b-k', L.KRISHNA, 6000)],
+        ['b-r|2026-2027', bill('b-r', L.RAVI, 5000)],
+        ['b-s|2026-2027', bill('b-s', L.SUNDARAM, 4000)],
+      ]),
+      ...over,
+    });
+
+  it('generates one Dr leg per instrument from the tender’s ledger; a post-dated cheque marks its pair', () => {
+    const i = run();
+    const d = derive(i);
+    expect(codes(i)).toEqual([]);
+    const ins = d.legs.filter((l) => l.source === 'INSTRUMENT');
+    expect(ins.map((l) => [l.drCr, l.ledger.ledId, l.amount.toNumber(), l.postDated])).toEqual([
+      ['DR', L.CHEQUES_IN_HAND.ledId, 6000, false],
+      ['DR', L.CASH.ledId, 5000, false],
+      ['DR', L.CHEQUES_IN_HAND.ledId, 4000, true],
+    ]);
+    expect(ins.every((l) => l.generated)).toBe(true);
+    // the party line and its Dr leg name each other
+    expect(legOf(d, L.KRISHNA.ledId)?.oppLedgerId).toBe(L.CHEQUES_IN_HAND.ledId);
+    expect(ins[0].oppLedgerId).toBe(L.KRISHNA.ledId);
+    // totals are TODAY's voucher only
+    expect(d.totals.debit.toNumber()).toBe(11000);
+    expect(d.totals.credit.toNumber()).toBe(11000);
+    expect(d.totals.difference.isZero()).toBe(true);
+    expect(d.postDated).toHaveLength(1);
+    expect(d.postDated[0]).toMatchObject({
+      lineRowNo: 3,
+      postsOn: '2026-10-05',
+      accYear: '2026-2027',
+    });
+    expect(d.postDated[0].amount.toNumber()).toBe(4000);
+    // allocations: the cheque's settle as CHEQUE, cash as CASH; the post-dated one counts from its date
+    expect(
+      d.allocations.map((a) => [a.lineRowNo, a.settlementMode, a.postDated, a.adjDate]),
+    ).toEqual([
+      [1, 'CHEQUE', false, '2026-09-15'],
+      [2, 'CASH', false, '2026-09-15'],
+      [3, 'CHEQUE', true, '2026-10-05'],
+    ]);
+    const w = toWire('RcpV', '2026-09-15', d);
+    expect(w.postDated).toEqual([
+      expect.objectContaining({
+        lineRowNo: 3,
+        partyId: L.SUNDARAM.ledId,
+        amount: 4000,
+        postsOn: '2026-10-05',
+        refNo: '445124',
+      }),
+    ]);
+    expect(w.legs.find((l) => l.source === 'INSTRUMENT')?.instrument).toMatchObject({
+      tenderName: 'CHEQUE',
+      isCheque: true,
+      refNo: '445123',
+    });
+  });
+
+  it('a typed Dr cash line still works beside instrument lines (the older shape)', () => {
+    const i = input({
+      type: RCPV_INS,
+      tenders: TENDERS,
+      lines: [line(1, 'DR', L.CASH, 500), line(2, 'CR', L.RAVI, 500)],
+    });
+    const d = derive(i);
+    // the unallocated party line is kept as an advance (notes 57); nothing about the instrument is refused
+    expect(codes(i)).toEqual([]);
+    expect(d.bills.map((b) => [b.party.ledId, b.billType, b.amount.toFixed(2)])).toEqual([[L.RAVI.ledId, 'ADVANCE', '500.00']]);
+    expect(d.legs.filter((l) => l.source === 'INSTRUMENT')).toHaveLength(0);
+    expect(d.totals.debit.toNumber()).toBe(500);
+  });
+
+  it('refuses an instrument on a type without them, on the wrong side, and a credit-shaped tender', () => {
+    const jrl = input({
+      type: JRL,
+      tenders: TENDERS,
+      lines: [
+        line(1, 'DR', L.RAVI, 100, {
+          instrument: {
+            tenderId: 't-cash',
+            refNo: null,
+            instrumentDate: null,
+            bankName: null,
+            cheque: null,
+          },
+        }),
+        line(2, 'CR', L.KRISHNA, 100),
+      ],
+    });
+    derive(jrl);
+    expect(codes(jrl)).toContain('VCH_INSTRUMENT_NOT_ALLOWED');
+
+    const side = run({
+      lines: [
+        line(1, 'DR', L.CASH, 100, {
+          instrument: {
+            tenderId: 't-cash',
+            refNo: null,
+            instrumentDate: null,
+            bankName: null,
+            cheque: null,
+          },
+        }),
+        line(2, 'CR', L.RAVI, 100),
+      ],
+      allocations: [],
+    });
+    derive(side);
+    expect(codes(side)).toContain('VCH_INSTRUMENT_NOT_ALLOWED');
+
+    const tmp = run({
+      lines: [
+        line(1, 'CR', L.RAVI, 100, {
+          instrument: {
+            tenderId: 't-tmp',
+            refNo: 'x',
+            instrumentDate: null,
+            bankName: null,
+            cheque: null,
+          },
+        }),
+      ],
+      allocations: [],
+    });
+    derive(tmp);
+    expect(codes(tmp)).toContain('VCH_INSTRUMENT_TENDER');
+
+    const upi = run({
+      lines: [
+        line(1, 'CR', L.RAVI, 100, {
+          instrument: {
+            tenderId: 't-upi',
+            refNo: null,
+            instrumentDate: null,
+            bankName: null,
+            cheque: null,
+          },
+        }),
+      ],
+      allocations: [],
+    });
+    derive(upi);
+    expect(codes(upi)).toContain('VCH_INSTRUMENT_TENDER');
+  });
+
+  it('a cheque needs its date, number and bank; a number already registered is refused; all post-dated posts nothing', () => {
+    const missing = run({
+      lines: [
+        line(1, 'CR', L.RAVI, 100, {
+          instrument: {
+            tenderId: 't-chq',
+            refNo: '9',
+            instrumentDate: null,
+            bankName: null,
+            cheque: null,
+          },
+        }),
+      ],
+      allocations: [],
+    });
+    derive(missing);
+    expect(codes(missing)).toContain('VCH_CHEQUE_DETAILS');
+    expect(missing.ctx.refusals[0].message).toMatch(/instrumentDate, bankName/);
+
+    const dup = run({ registeredCheques: new Set([`${L.KRISHNA.ledId}|445123|2026-2027`]) });
+    derive(dup);
+    expect(codes(dup)).toEqual(['VCH_CHEQUE_DETAILS']);
+
+    const allPdc = run({
+      lines: [
+        line(3, 'CR', L.SUNDARAM, 4000, {
+          instrument: {
+            tenderId: 't-chq',
+            refNo: '445124',
+            instrumentDate: '2026-10-05',
+            bankName: 'KVB',
+            cheque: null,
+          },
+        }),
+      ],
+      allocations: [
+        { index: 0, lineRowNo: 3, billId: 'b-s', billAccYear: '2026-2027', amount: D(4000) },
+      ],
+    });
+    derive(allPdc);
+    expect(codes(allPdc)).toContain('VCH_NO_LINES');
+
+    const locked = run({ closedYears: new Map([['2026-2027', 'locked up to 2026-12-31']]) });
+    derive(locked);
+    expect(codes(locked)).toContain('VCH_PERIOD_LOCKED');
   });
 });

@@ -106,6 +106,51 @@ export class OpenBillsQueryDto {
   side!: 'DR' | 'CR';
 }
 
+/** notes (54) — GET /vouchers/instruments */
+export class InstrumentsQueryDto {
+  @ApiProperty({ format: 'uuid' })
+  @RequiredUuid()
+  companyId!: string;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      'A tender scoped to one branch is offered at that branch only; omit for every tender.',
+  })
+  @OptionalUuid()
+  branchId?: string | null;
+
+  @ApiPropertyOptional({
+    example: 'PmtV',
+    description:
+      'notes (55): the voucher type the line belongs to. A PAYING type (party side DR — the ' +
+      'Payment Voucher) is offered only what money can go out by: cash, cheque, UPI, bank transfer.',
+  })
+  @OptionalTrimmedString(20)
+  typeCode?: string;
+}
+
+/** notes (55) — `GET /vouchers/cheque-books` */
+export class ChequeBooksQueryDto {
+  @ApiProperty({ format: 'uuid' })
+  @RequiredUuid()
+  companyId!: string;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description: 'A book kept for one branch is offered at that branch only; omit for every book.',
+  })
+  @OptionalUuid()
+  branchId?: string | null;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description: 'Only the books drawn on this bank account.',
+  })
+  @OptionalUuid()
+  bankLedgerId?: string | null;
+}
+
 /** §6.6 */
 export class TaxRatesQueryDto {
   @ApiProperty({ format: 'uuid' })

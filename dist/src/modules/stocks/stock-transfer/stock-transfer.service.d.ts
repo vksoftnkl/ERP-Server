@@ -1,15 +1,17 @@
 import { PrismaService } from "../../../database/prisma/prisma.service";
 import { RequestContextService } from "../../../common/request-context/request-context.service";
+import { StockAccountsPostingService } from '../posting/stock-accounts-posting.service';
 import { StockVoucherService } from '../stock-voucher/stock-voucher.service';
 import type { StockVoucherPayload, StockVoucherTypeRules } from '../stock-voucher/types/stock-voucher.types';
 import type { SaveStockTransferDto } from './dto/save-stock-transfer.dto';
 import type { SaveStockTransferReceiveDto } from './dto/save-stock-transfer-receive.dto';
-import type { StockTransferDespatchResult, StockTransferPrefill, StockTransferReceiveResult, StockTransitRow } from './types/stock-transfer.types';
+import type { StockTransferDespatchResult, StockTransferPrefill, StockTransferReceiveResult, StockTransferSettleShortResult, StockTransitRow } from './types/stock-transfer.types';
 export declare class StockTransferService {
     private readonly prisma;
     private readonly stockVoucherService;
     private readonly requestContextService;
-    constructor(prisma: PrismaService, stockVoucherService: StockVoucherService, requestContextService: RequestContextService);
+    private readonly stockAccounts;
+    constructor(prisma: PrismaService, stockVoucherService: StockVoucherService, requestContextService: RequestContextService, stockAccounts: StockAccountsPostingService);
     save(rules: StockVoucherTypeRules, dto: SaveStockTransferDto): Promise<StockVoucherPayload>;
     private assertTransferOutRules;
     private assertLotsAndStock;
@@ -44,6 +46,15 @@ export declare class StockTransferService {
     private assertReceiveLines;
     private lineQty;
     receive(rules: StockVoucherTypeRules, svhId: string, accYear: string, companyId: string, branchId: string, userId?: string): Promise<StockTransferReceiveResult>;
+    settleShort(args: {
+        outVoucherId: string;
+        accYear: string;
+        companyId: string;
+        branchId: string;
+        reasonId: string;
+        remarks?: string | null;
+        userId?: string;
+    }): Promise<StockTransferSettleShortResult>;
     private loadTransitRows;
     private toTransitRow;
     private toIsoDate;

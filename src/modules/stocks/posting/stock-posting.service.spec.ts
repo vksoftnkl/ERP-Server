@@ -5,6 +5,7 @@ import {
   cancelStockVoucher,
   postStockVoucher,
 } from '../stock-voucher/stock-voucher-posting.helper';
+import type { StockAccountsPostingService } from './stock-accounts-posting.service';
 import { StockPostingService } from './stock-posting.service';
 import { StockVoucherSource } from './stock-voucher.source';
 
@@ -25,8 +26,10 @@ const ACC_YEAR = '2026-2027';
 
 const RULES = {
   voucherType: 'OPENING',
-  postFunction: 'stock.fn_svh_post',
+  postShape: 'SIMPLE',
 } as unknown as StockVoucherTypeRules;
+
+const POSTED = { rowsPosted: 3, status: 'POSTED', transitRows: 0, closedOut: null };
 
 const source = () =>
   new StockVoucherSource({
@@ -81,20 +84,32 @@ const window = { from: new Date('2026-09-21T09:00:00Z'), to: new Date('2026-09-2
 
 describe('StockPostingService', () => {
   let service: StockPostingService;
+  let accounts: { postForVoucher: jest.Mock; reverseForVoucher: jest.Mock };
   const postedOn = new Date('2026-09-21T14:00:00Z');
 
   beforeEach(() => {
     jest.clearAllMocks();
-    (postStockVoucher as jest.Mock).mockResolvedValue(3);
+    (postStockVoucher as jest.Mock).mockResolvedValue(POSTED);
     (cancelStockVoucher as jest.Mock).mockResolvedValue(3);
-    service = new StockPostingService({} as PrismaService);
+    // §1.9 — the accounts leg is the accounts service's; here only WHEN it is
+    // asked matters.
+    accounts = {
+      postForVoucher: jest.fn().mockResolvedValue({ voucherId: 'v1', voucherRefno: 'OPN0001', amount: 1, legCount: 2 }),
+      reverseForVoucher: jest.fn().mockResolvedValue(null),
+    };
+    service = new StockPostingService(
+      {} as PrismaService,
+      accounts as unknown as StockAccountsPostingService,
+    );
   });
 
   describe('post()', () => {
     it("runs the seven phases through the helper, inside the caller's transaction", async () => {
       const tx = txWith({ docDatetime: new Date('2026-09-21T14:00:00Z'), godowns: [GODOWN_ID] });
 
-      await expect(service.post(tx, source(), { actor: ACTOR, postedOn })).resolves.toBe(3);
+      await expect(service.post(tx, source(), { actor: ACTOR, postedOn })).resolves.toMatchObject(
+        { rowsPosted: 3, status: 'POSTED', accountsVoucherId: 'v1' },
+      );
 
       expect(postStockVoucher).toHaveBeenCalledTimes(1);
       expect(postStockVoucher).toHaveBeenCalledWith(tx, {
@@ -104,6 +119,24 @@ describe('StockPostingService', () => {
         actor: ACTOR,
         postedOn,
       });
+    });
+
+    it("writes NO accounts leg for a sales document's shadow voucher — the bill posts its own COGS pair", async () => {
+      const tx = txWith({ docDatetime: postedOn, godowns: [GODOWN_ID] });
+      await service.post(tx, source(), {
+        actor: ACTOR,
+        postedOn,
+        ledgerSource: { srcModule: 'SALES', srcDocType: 'SALE_BILL', srcRefno: 'bil00042' },
+      });
+      expect(accounts.postForVoucher).not.toHaveBeenCalled();
+    });
+
+    it('writes no accounts leg for a despatch that ended IN_TRANSIT', async () => {
+      (postStockVoucher as jest.Mock).mockResolvedValue({ ...POSTED, status: 'IN_TRANSIT' });
+      const tx = txWith({ docDatetime: postedOn, godowns: [GODOWN_ID] });
+      const outcome = await service.post(tx, source(), { actor: ACTOR, postedOn });
+      expect(outcome.status).toBe('IN_TRANSIT');
+      expect(accounts.postForVoucher).not.toHaveBeenCalled();
     });
 
     it('refuses a movement TIMED inside a freeze window with a 409, before any phase runs', async () => {

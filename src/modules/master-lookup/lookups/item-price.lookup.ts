@@ -5,6 +5,7 @@ import {
   toNullableNumber,
   toNumber,
 } from '../../../common/utils/module-service.utils';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import {
   resolveRoleLedgers,
@@ -340,22 +341,19 @@ export class ItemPriceLookup {
       this.prisma.itemReorder.findFirst({
         where: { irItemId: item_id, irUcUnitId: rate.ipmUcUnitId, irIsDeleted: false },
       }),
+      // §1.7 — the ENGINE's balance, not the retired inventory.item_stock_*
+      // tables (0 rows, no writer). stock_balance is in the item's BASE unit
+      // and is not partitioned by year; the caller's unit and year only
+      // decide whether a figure is wanted at all.
       acccyear
-        ? this.prisma.itemStockBalance.aggregate({
-            _sum: { isbClosingQty: true },
-            where: {
-              isbAccYear: acccyear,
-              isbItemId: item_id,
-              // isb_unit_id holds a raw unit_id, so the conversion's unit.
-              isbUnitId: rateUnitId,
-              // A missing company / branch widens the sum to all of them.
-              ...(company_id ? { isbCompanyId: company_id } : {}),
-              ...(branch_id ? { isbBranchId: branch_id } : {}),
-              // No godown resolved at all → nothing to scope the stock to,
-              // so it sums across all godowns.
-              ...(godownId ? { isbGodownId: godownId } : {}),
-            },
-          })
+        ? this.prisma.$queryRaw<{ qty: Prisma.Decimal | null }[]>`
+            SELECT SUM(b.sbl_on_hand_qty) AS qty
+              FROM stock.stock_balance b
+             WHERE b.sbl_item_id = ${item_id}::uuid
+               AND b.sbl_is_deleted = false
+               AND (${company_id ?? null}::uuid IS NULL OR b.sbl_company_id = ${company_id ?? null}::uuid)
+               AND (${branch_id ?? null}::uuid IS NULL OR b.sbl_branch_id = ${branch_id ?? null}::uuid)
+               AND (${godownId ?? null}::uuid IS NULL OR b.sbl_godown_id = ${godownId ?? null}::uuid)`
         : Promise.resolve(null),
       // Reads sale_loading_charges only in `auto` mode; the other two modes
       // resolve from what is already in hand.
@@ -376,7 +374,7 @@ export class ItemPriceLookup {
     const itemName = regional
       ? (itemRecord.itemNameTa ?? itemRecord.itemNameEn)
       : itemRecord.itemNameEn;
-    const stock = stockSum ? toNullableNumber(stockSum._sum.isbClosingQty ?? 0) : null;
+    const stock = stockSum ? toNullableNumber(stockSum[0]?.qty ?? 0) : null;
     const reorderQty = reorder ? toNumber(reorder.irMinLevel) - (stock ?? 0) : null;
     // Legacy allow_negative_stock: service items always allow; otherwise it is
     // blocked only when godown, company and item all disallow it.

@@ -135,6 +135,7 @@ model AccLedgerMaster {
   billAdjustmentSettleLedgers AccBillAdjustment[] @relation("BillAdjustmentSettleLedger")
   pdcParties               AccPdcRegister[]       @relation("PdcParty")
   pdcBankLedgers           AccPdcRegister[]       @relation("PdcBankLedger")
+  chequeBooks              AccChequeBook[]        @relation("ChequeBookBank")
   // §2.14 — the quarterly return registers. Back-relations only; nothing reads
   // a ledger's register rows through the ledger, but Prisma requires the
   // opposite side of every relation to be declared.

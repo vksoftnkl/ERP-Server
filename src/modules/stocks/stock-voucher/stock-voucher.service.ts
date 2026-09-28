@@ -1,4 +1,4 @@
-import { Injectable, InternalServerErrorException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import { AuditLogService } from 'src/modules/audit-log/audit-log.service';
@@ -22,9 +22,11 @@ import { resolveImportedLines } from './stock-voucher-import.helper';
 import {
   cancelDraftVoucher,
   effectivePolicyCte,
+  lineDirectionColumn,
+  lineReasonJoin,
   lotIdentityKeyColumns,
+  lotlessOutwardLine,
   unreversedLedgerRow,
-  usesInProcessPosting,
 } from './stock-voucher-posting.helper';
 // §3.1 — the one stock engine. postStockVoucher / cancelStockVoucher are no
 // longer called from here: StockPostingService owns the phases AND the freeze
@@ -38,7 +40,6 @@ import {
 } from 'src/common/txn-status-log/txn-status-log.helper';
 import {
   DERIVABLE_RATE_SOURCES,
-  STOCK_POST_FUNCTIONS,
   type OpeningReconcileRow,
   type PagedResult,
   type PendingOpeningItem,
@@ -249,6 +250,7 @@ interface LineRow {
   svi_tax_perc: Prisma.Decimal;
   svi_reason_id: string | null;
   line_reason_name: string | null;
+  svi_direction: number | null;
   svi_sync_date: Date | null;
   svi_value: Prisma.Decimal | null;
   svi_value_wot: Prisma.Decimal | null;
@@ -267,10 +269,12 @@ interface LineRow {
  * payload can ever change the type a document is saved under.
  *
  * WHAT THIS SERVICE DOES NOT DO. It writes exactly two tables — stock_voucher
- * and stock_voucher_item — and calls one function. The lot, the ledger row, the
- * balance and the moving average are written by stock.fn_svh_post() and by
- * triggers. Nothing here inserts into stock_ledger, touches stock_balance, or
- * computes a header total; see the write rules on the Prisma models.
+ * and stock_voucher_item — and hands the document to ONE engine. The lot, the
+ * ledger row, the balance, the moving average, the transit rows and the header
+ * totals at post are written by `StockPostingService` (the phases in
+ * stock-voucher-posting.helper.ts). Nothing here inserts into stock_ledger,
+ * touches stock_balance, or computes a posted header total; see the write
+ * rules on the Prisma models.
  */
 @Injectable()
 export class StockVoucherService {
@@ -321,11 +325,15 @@ export class StockVoucherService {
     // 'POSTED' on the payload is an INSTRUCTION, not a column value — see the
     // DTO's status field. Anything else, including nothing, saves a draft.
     const postAfterSave = header.status === 'POSTED';
+    // ONE instant for the whole request. The CREATED row and the POSTED row of a
+    // save-and-post used to take two clocks fifty milliseconds apart, with the
+    // CREATED row stamped LATER — and a day-end query ordering by time then
+    // called every posted opening a draft. Both rows take this one.
     const postedOn = new Date();
     const { svhId, rowsPosted } = await this.prisma.$transaction(async (tx) => {
       const id = header.svhId
-        ? await this.updateDraft(tx, rules, dto, actor)
-        : await this.createDraft(tx, rules, dto, actor);
+        ? await this.updateDraft(tx, rules, dto, actor, postedOn)
+        : await this.createDraft(tx, rules, dto, actor, postedOn);
       if (!postAfterSave) {
         return { svhId: id, rowsPosted: null as number | null };
       }
@@ -361,14 +369,14 @@ export class StockVoucherService {
         // updateDraft refuses anything else, so the trail reads DRAFT → POSTED
         // even when the two steps arrived in one request.
         fromStatus: 'DRAFT',
-        toStatus: 'POSTED',
+        toStatus: posted.status,
         actor,
         changedOn: postedOn,
-        remarks: `${rules.displayName} saved and posted — ${posted} ledger rows`,
+        remarks: `${rules.displayName} saved and posted — ${posted.rowsPosted} ledger rows`,
         deviceId: header.deviceId,
         sessionId: header.sessionId ?? null,
       });
-      return { svhId: id, rowsPosted: posted as number | null };
+      return { svhId: id, rowsPosted: posted.rowsPosted as number | null };
     });
     const document = await this.getById(
       rules,
@@ -433,6 +441,15 @@ export class StockVoucherService {
     }
     // The DTO is shared by all eleven document types, so the fields that belong
     // to only one of them are gated here rather than being absent from it.
+    if (rules.lineDirection !== 'REASON') {
+      const signed = lines.findIndex((line) => line.direction !== undefined && line.direction !== null);
+      if (signed >= 0) {
+        errors.push({
+          field: `lines.${signed}`,
+          message: `Line ${lines[signed].lineNo}: only a stock adjustment states a direction per line; a ${rules.displayName.toLowerCase()} moves every line the same way.`,
+        });
+      }
+    }
     if (!rules.allowsToBranch && header.toBranchId) {
       errors.push({
         field: 'toBranchId',
@@ -648,7 +665,9 @@ export class StockVoucherService {
             message: `Line ${line.lineNo} names no lot. A ${rules.displayName.toLowerCase()} moves existing stock — pick the holding from the balance, which carries its lotId.`,
           });
         }
-      } else if (!isCount && line.lotId) {
+      } else if (!isCount && !rules.allowsLot && line.lotId) {
+        // allowsLot (the adjustment family): an outward line picked from the
+        // balance names its holding; an inward one leaves the engine to it.
         errors.push({
           field,
           message: `Line ${line.lineNo}: a ${rules.displayName.toLowerCase()} does not choose its own lot. The engine resolves it at post.`,
@@ -864,6 +883,8 @@ export class StockVoucherService {
     rules: StockVoucherTypeRules,
     dto: SaveStockVoucherDto,
     actor: string,
+    /** The request's one instant — see save(). */
+    now: Date,
   ): Promise<string> {
     const { header } = dto;
     const scope: StockVoucherNumberScope = {
@@ -928,7 +949,7 @@ export class StockVoucherService {
       select: { svhId: true, svhAccYear: true, svhRefno: true },
     });
     await this.replaceLines(tx, rules, dto, created.svhId, actor, header.createdBy);
-    await this.writeHeaderTotals(tx, created.svhId, header);
+    await this.writeHeaderTotals(tx, created.svhId, header, dto.lines.length);
     await this.auditLogService.logEntityChange(
       {
         action: 'insert',
@@ -957,7 +978,7 @@ export class StockVoucherService {
       fromStatus: null,
       toStatus: 'DRAFT',
       actor,
-      changedOn: new Date(),
+      changedOn: now,
       remarks: `${rules.displayName} created`,
       deviceId: header.deviceId,
       sessionId: header.sessionId ?? null,
@@ -975,25 +996,25 @@ export class StockVoucherService {
    * server-side fallback hide a grid that forgot to fill it. When nothing at
    * all is sent, no statement is issued.
    *
-   * WHY THIS RUNS AFTER replaceLines, as its own UPDATE rather than as four
-   * more keys on the create/update above: on any environment carrying the
-   * engine DDL, stock.tr_svi_refresh_header re-sums these four columns on every
-   * line write. Totals written before the lines would be silently replaced by
-   * that trigger's sums; written after, the payload is what survives the save.
-   *
-   * A POST IS STILL THE ENGINE'S. stock.fn_svh_recompute re-derives these at
-   * post time, so a posted document carries the engine's figures, not these.
-   * Changing that is a schema change to DDL that does not live in this repo.
+   * A DRAFT'S FIGURES ARE PROVISIONAL. Nothing has been valued yet, so the
+   * grid's own sums are stored as it sent them. A POST RECOMPUTES ALL FOUR from
+   * the ledger rows it wrote (`recomputeHeaderTotals` in the posting helper,
+   * the former `fn_svh_recompute`): a posted document carries the engine's
+   * figures, a cancelled one re-totals to 0, and a count carries its NET
+   * variance. Nothing in this service ever writes them after a post.
    */
   private async writeHeaderTotals(
     tx: Prisma.TransactionClient,
     svhId: string,
     header: SaveStockVoucherDto['header'],
+    /** How many lines this save wrote — the one figure that is not a valuation. */
+    lineCount: number,
   ): Promise<void> {
-    const data: Prisma.StockVoucherUncheckedUpdateInput = {};
-    if (header.lineCount !== undefined) {
-      data.svhLineCount = header.lineCount;
-    }
+    const data: Prisma.StockVoucherUncheckedUpdateInput = {
+      // A line COUNT is the number of rows just written, not a grid's sum; it
+      // is always true and is stated whether or not the payload repeated it.
+      svhLineCount: header.lineCount ?? lineCount,
+    };
     if (header.totalQty !== undefined) {
       data.svhTotalQty = this.toDecimalColumn(header.totalQty);
     }
@@ -1002,9 +1023,6 @@ export class StockVoucherService {
     }
     if (header.totalValueWot !== undefined) {
       data.svhTotalValueWot = this.toDecimalColumn(header.totalValueWot);
-    }
-    if (!Object.keys(data).length) {
-      return;
     }
     await tx.stockVoucher.update({
       where: { svhId_svhAccYear: { svhId, svhAccYear: header.accYear } },
@@ -1016,14 +1034,16 @@ export class StockVoucherService {
     rules: StockVoucherTypeRules,
     dto: SaveStockVoucherDto,
     actor: string,
+    /** The request's one instant — see save(). */
+    now: Date,
   ): Promise<string> {
     const { header } = dto;
     const svhId = header.svhId as string;
     const existing = await this.loadForWrite(tx, rules, svhId, header.accYear);
-    // tr_svh_post_lock and tr_svi_post_lock refuse every edit once the status
-    // leaves DRAFT, and tr_sml_immutable refuses every UPDATE and DELETE of the
-    // ledger. Checking here is what turns a 500 from a trigger into a 409 that
-    // says which status the document is actually in.
+    // Lines are written only while the header is DRAFT (the service discipline
+    // that replaced tr_svh_post_lock / tr_svi_post_lock): IN_TRANSIT and
+    // RECEIVED are as frozen as POSTED. Checking here is what turns a bare
+    // refusal into a 409 that says which status the document is actually in.
     this.assertDraft(rules, existing);
     await tx.stockVoucher.update({
       where: { svhId_svhAccYear: { svhId, svhAccYear: header.accYear } },
@@ -1046,14 +1066,14 @@ export class StockVoucherService {
         ...this.freezeData(header),
         svhSyncDate: header.syncDate ? new Date(header.syncDate) : null,
         svhVersionNo: { increment: 1 },
-        svhModifiedOn: new Date(),
+        svhModifiedOn: now,
         // An UPDATE writes modified_by and NEVER touches created_by: who raised
         // the document is not something a later edit gets to change.
         svhModifiedBy: this.actorFor(header.modifiedBy, actor),
       },
     });
     await this.replaceLines(tx, rules, dto, svhId, actor, header.modifiedBy);
-    await this.writeHeaderTotals(tx, svhId, header);
+    await this.writeHeaderTotals(tx, svhId, header, dto.lines.length);
     await this.auditLogService.logEntityChange(
       {
         action: 'update',
@@ -1140,7 +1160,7 @@ export class StockVoucherService {
         // figure it is reconciling, and re-resolving would find a different one.
         // A TRANSFER supplies it for the third reason again: the lot is the
         // thing being moved, and the destination must receive the SAME one.
-        sviLotId: isCount || rules.requiresLot ? (line.lotId ?? null) : null,
+        sviLotId: isCount || rules.requiresLot || rules.allowsLot ? (line.lotId ?? null) : null,
         sviBucket: (line.bucket ?? 'SALEABLE') satisfies StockBucket,
         // Stored as scanned. The line was already identified by itemId /
         // batchNo / serialNo, so nothing here re-resolves through it.
@@ -1221,6 +1241,10 @@ export class StockVoucherService {
           : this.toDecimalColumn(line.landedRate ?? 0),
         sviTaxPerc: zeroCost ? new Prisma.Decimal(0) : this.toDecimalColumn(line.taxPerc ?? 0),
         sviReasonId: line.reasonId ?? null,
+        // The line's OWN sign, only where the rule record lets the reason
+        // decide per line (the adjustment family); assertPayloadRules refuses
+        // it everywhere else.
+        sviDirection: rules.lineDirection === 'REASON' ? (line.direction ?? null) : null,
         sviSyncDate: line.syncDate ? new Date(line.syncDate) : null,
         sviRemarks: line.remarks ?? null,
         sviCreatedBy: this.actorFor(line.createdBy ?? author, actor),
@@ -1603,6 +1627,7 @@ export class StockVoucherService {
              svi.svi_tax_perc,
              svi.svi_reason_id,
              srm.srm_name AS line_reason_name,
+             svi.svi_direction,
              svi.svi_sync_date,
              svi.svi_value,
              svi.svi_value_wot,
@@ -1656,6 +1681,11 @@ export class StockVoucherService {
     // rows, which reads identically to "no problems".
     await this.loadHeaderOrThrow(rules, svhId, accYear, companyId, branchId, tx);
     const isCount = rules.quantityMode === 'COUNT';
+    // Only a SIMPLE document's OUTWARD lines pick (§1.4): opening and count
+    // lines carry identity by construction, and a transfer's lot is mandatory.
+    // Which lines are outward is the line's direction — the document's, or
+    // the reason's on an adjustment.
+    const canPick = rules.postShape === 'SIMPLE' && rules.quantityMode === 'QTY';
     return (tx ?? this.prisma).$queryRaw<StockVoucherLineProblem[]>`
       WITH doc AS (
         SELECT svh.svh_id,
@@ -1664,7 +1694,8 @@ export class StockVoucherService {
                svh.svh_branch_id,
                svh.svh_doc_date,
                svh.svh_doc_datetime,
-               svh.svh_rate_source
+               svh.svh_rate_source,
+               svh.svh_reason_id
           FROM stock.stock_voucher svh
          WHERE svh.svh_id       = ${svhId}::uuid
            AND svh.svh_acc_year = ${accYear}::bpchar
@@ -1673,7 +1704,7 @@ export class StockVoucherService {
         -- svh_doc_datetime rides along for the freeze check below: the window
         -- is tested against the MOVEMENT's timestamp, not now().
         SELECT svi.*, doc.svh_doc_date, doc.svh_doc_datetime, doc.svh_rate_source,
-               doc.svh_company_id, doc.svh_branch_id
+               doc.svh_company_id, doc.svh_branch_id, doc.svh_reason_id
           FROM stock.stock_voucher_item svi
           JOIN doc ON doc.svh_id = svi.svi_voucher_id AND doc.svh_acc_year = svi.svi_acc_year
          WHERE svi.svi_is_deleted = false
@@ -1692,9 +1723,32 @@ export class StockVoucherService {
         SELECT line.*,
                policy.track_batch, policy.track_mrp, policy.track_sale_price,
                policy.track_expiry, policy.track_serial, policy.track_supplier,
-               ${lotIdentityKeyColumns()}
+               policy.issue_strategy,
+               ${lotIdentityKeyColumns()},
+               ${lineDirectionColumn(rules)}
           FROM line
           JOIN policy ON policy.svi_id = line.svi_id
+          ${lineReasonJoin()}
+      ),
+      -- §1.4 — an OUTWARD line of a lot-tracked item that names no lot and no
+      -- complete identity is not refused for the missing dimension: the post
+      -- PICKS its lots by the item's issue strategy (FEFO / FIFO / LIFO) from
+      -- what the godown holds. What the preflight checks instead is that there
+      -- IS something to pick from, and that the strategy is not MANUAL.
+      pick AS (
+        SELECT keyed.svi_id,
+               (${canPick}::boolean AND keyed.line_direction < 0 AND ${lotlessOutwardLine()}) AS pickable,
+               EXISTS (
+                 SELECT 1 FROM stock.stock_balance pb
+                  WHERE pb.sbl_company_id = keyed.svh_company_id
+                    AND pb.sbl_branch_id  = keyed.svh_branch_id
+                    AND pb.sbl_godown_id  = keyed.svi_godown_id
+                    AND pb.sbl_item_id    = keyed.svi_item_id
+                    AND pb.sbl_bucket     = keyed.svi_bucket
+                    AND pb.sbl_is_deleted = false
+                    AND pb.sbl_available_qty > 0
+               ) AS has_stock
+          FROM keyed
       ),
       -- Has this holding already been opened this year? Matched through the
       -- lot's generated key columns and the OPENING rows in the ledger, NOT
@@ -1832,19 +1886,28 @@ export class StockVoucherService {
 
                WHEN iuc.iuc_id IS NULL OR iuc.iuc_item_id <> keyed.svi_item_id
                  THEN 'the unit does not belong to this item'
-               WHEN keyed.track_batch      AND COALESCE(keyed.svi_batch_no, '') = ''
+               WHEN pick.pickable AND upper(keyed.issue_strategy) = 'MANUAL'
+                 THEN 'the issue strategy for this item is MANUAL: the line must name the lot it issues from'
+               WHEN pick.pickable AND NOT pick.has_stock
+                 THEN 'this line names no lot and the godown holds no stock of the item to issue from'
+               -- A line that NAMES its lot (a transfer, a count) carries the
+               -- holding's identity by reference; the six dimensions are the
+               -- engine's to resolve only when it does not.
+               WHEN keyed.svi_lot_id IS NULL AND NOT pick.pickable AND keyed.track_batch      AND COALESCE(keyed.svi_batch_no, '') = ''
                  THEN 'this item is batch-tracked and the line has no batch number'
-               WHEN keyed.track_expiry     AND keyed.svi_expiry_date IS NULL
+               WHEN keyed.svi_lot_id IS NULL AND NOT pick.pickable AND keyed.track_expiry     AND keyed.svi_expiry_date IS NULL
                  THEN 'this item is expiry-tracked and the line has no expiry date'
-               WHEN keyed.track_mrp        AND keyed.svi_mrp IS NULL
+               WHEN keyed.svi_lot_id IS NULL AND NOT pick.pickable AND keyed.track_mrp        AND keyed.svi_mrp IS NULL
                  THEN 'this item is MRP-tracked and the line has no MRP'
-               WHEN keyed.track_sale_price AND keyed.svi_sale_price IS NULL
+               WHEN keyed.svi_lot_id IS NULL AND NOT pick.pickable AND keyed.track_sale_price AND keyed.svi_sale_price IS NULL
                  THEN 'this item is sale-price-tracked and the line has no sale price'
-               WHEN keyed.track_serial     AND COALESCE(keyed.svi_serial_no, '') = ''
+               WHEN keyed.svi_lot_id IS NULL AND NOT pick.pickable AND keyed.track_serial     AND COALESCE(keyed.svi_serial_no, '') = ''
                  THEN 'this item is serial-tracked and the line has no serial number'
-               WHEN keyed.track_supplier   AND keyed.svi_supplier_id IS NULL
+               WHEN keyed.svi_lot_id IS NULL AND NOT pick.pickable AND keyed.track_supplier   AND keyed.svi_supplier_id IS NULL
                  THEN 'this item is supplier-tracked and the line has no supplier'
-               WHEN ${rules.isInward}::boolean AND keyed.svi_cost_rate = 0
+               -- A receipt's cost is the transit row's, stamped when the goods
+               -- left (§1.1); its line carries none and needs no rate source.
+               WHEN ${rules.postShape !== 'TRANSFER_IN'}::boolean AND keyed.line_direction > 0 AND keyed.svi_cost_rate = 0
                     AND COALESCE(keyed.svh_rate_source, '') <> ALL (${DERIVABLE_RATE_SOURCES as readonly string[]}::text[])
                  THEN 'this line brings stock in with no cost rate and no rate source the engine can derive one from'
                -- Document-wide, and therefore QTY-only: a count whose every
@@ -1863,6 +1926,7 @@ export class StockVoucherService {
                ELSE NULL
              END                                      AS "problem"
         FROM keyed
+        JOIN pick   ON pick.svi_id   = keyed.svi_id
         JOIN opened ON opened.svi_id = keyed.svi_id
         JOIN bal    ON bal.svi_id    = keyed.svi_id
         JOIN frozen ON frozen.svi_id = keyed.svi_id
@@ -1880,25 +1944,9 @@ export class StockVoucherService {
   // §7 — post
   // ──────────────────────────────────────────────────────────────────────────
   /**
-   * The whole engine, one statement.
-   *
-   * WHAT THIS DELIBERATELY DOES NOT DO around that statement: no application
-   * lock, no pre-UPDATE of the status, no ledger insert, no balance touch.
-   * fn_svh_post takes FOR UPDATE on the header itself, so two simultaneous
-   * posts are already serialised and the loser is told the voucher is POSTED.
-   * A lock on top of that buys nothing and can deadlock against the function's
-   * own.
-   *
-   * What happens inside, in order — worth knowing when reading a stack trace:
-   * fn_slt_resolve creates the lots → stock_ledger rows are inserted →
-   * tr_sml_apply builds stock_balance, slt_total_on_hand and the moving average
-   * in stock_item_cost → the lines get their lot_id and resolved rates written
-   * back → fn_svh_recompute → status POSTED.
-   */
-  /**
    * Q3 for every line, refused as ONE 422 rather than one error at a time.
    *
-   * The engine raises on the FIRST bad line and rolls the document back, which
+   * The engine refuses on the FIRST bad line and rolls the document back, which
    * is right for the database and useless as a screen message: a user forty
    * lines into an opening fixes one, presses post, and is told about the next.
    *
@@ -1939,16 +1987,15 @@ export class StockVoucherService {
      * before the commit.
      *
      * It exists for one thing: `stt_lr_no`, `stt_vehicle_no` and
-     * `stt_expected_on` are columns on stock_transit that
-     * `fn_svh_post_transfer` never sets and nothing else in the engine writes
-     * either (§0.3 of the transfer plan). The API has to write them itself, and
+     * `stt_expected_on` are the lorry, which the engine has no opinion about
+     * (§0.3 of the transfer plan). The despatch writes them itself, and
      * writing them in a SECOND transaction means a despatch can commit with the
      * lorry missing — a despatch note with no vehicle number, and no way to
      * tell afterwards whether it was never sent or lost on the way in.
      *
      * Deliberately narrow: it gets the transaction client and the row count,
      * and nothing here inspects what it does. It must not be used to write
-     * svh_status — see the note on this class.
+     * svh_status — the engine owns that column.
      */
     afterPost?: (tx: Prisma.TransactionClient, rowsPosted: number) => Promise<void>,
   ): Promise<StockVoucherPostResult> {
@@ -1965,34 +2012,18 @@ export class StockVoucherService {
     // movements that produced it.
     const postedOn = new Date();
     const rowsPosted = await this.prisma.$transaction(async (tx) => {
-      let posted: number;
-      if (usesInProcessPosting(rules)) {
-        // THE GENERIC PATH IS POSTED HERE, NOT BY THE DATABASE. stock.fn_svh_post
-        // does not exist on this deployment — see stock-voucher-posting.helper
-        // for what that costs and what has to change if the engine share is ever
-        // installed.
-        posted = await this.stockPosting.post(
-          tx,
-          new StockVoucherSource({ svhId, accYear, companyId, branchId, rules }),
-          { actor, postedOn },
-        );
-      } else {
-        // The transfer paths still belong to the engine. The FUNCTION NAME comes
-        // from the rule record, not from a branch here — see
-        // StockVoucherTypeRules.postFunction. It is interpolated rather than
-        // bound because a function name is not a parameter in SQL; the value is
-        // a literal owned by a controller and never reaches this service from a
-        // payload, and assertPostFunction refuses anything that is not one of
-        // the three known names before it gets this far.
-        const fn = Prisma.raw(this.assertPostFunction(rules));
-        const [row] = await tx.$queryRaw<Array<{ rows: number }>>`
-          SELECT ${fn}(${svhId}::uuid, ${accYear}::bpchar, ${actor}::uuid) AS rows
-        `;
-        posted = Number(row?.rows ?? 0);
-      }
+      // EVERY shape posts here — SIMPLE, COUNT and both halves of a transfer.
+      // The engine decides the shape from the rule record and reports the
+      // status it landed on: POSTED, or IN_TRANSIT for an inter-branch
+      // despatch, which never reaches POSTED (20:218-220).
+      const posted = await this.stockPosting.post(
+        tx,
+        new StockVoucherSource({ svhId, accYear, companyId, branchId, rules }),
+        { actor, postedOn },
+      );
       // Inside the transaction on purpose — if this throws, the post rolls back
       // with it rather than leaving a committed despatch missing its lorry.
-      await afterPost?.(tx, posted);
+      await afterPost?.(tx, posted.rowsPosted);
       await this.logStatusChange(tx, {
         rules,
         svhId,
@@ -2002,12 +2033,36 @@ export class StockVoucherService {
         tenantId: existing.svhTenantId ?? null,
         refno: existing.svhRefno,
         fromStatus: existing.svhStatus,
-        toStatus: 'POSTED',
+        toStatus: posted.status,
         actor,
         changedOn: postedOn,
-        remarks: `${rules.displayName} posted — ${posted} ledger rows`,
+        remarks:
+          posted.status === 'IN_TRANSIT'
+            ? `${rules.displayName} despatched — ${posted.rowsPosted} ledger rows, ${posted.transitRows} lines in transit`
+            : `${rules.displayName} posted — ${posted.rowsPosted} ledger rows`,
+        deviceId: existing.svhDeviceId,
+        sessionId: existing.svhSessionId,
       });
-      return posted;
+      // A receipt that took the last of a despatch closed it: the OUT's trail
+      // gets its RECEIVED step here, in the same transaction, under the same
+      // doc type both halves file under.
+      if (posted.closedOut) {
+        await this.logStatusChange(tx, {
+          rules,
+          svhId: posted.closedOut.svhId,
+          accYear: posted.closedOut.accYear,
+          companyId,
+          branchId,
+          tenantId: existing.svhTenantId ?? null,
+          refno: posted.closedOut.refno,
+          fromStatus: 'IN_TRANSIT',
+          toStatus: 'RECEIVED',
+          actor,
+          changedOn: postedOn,
+          remarks: `Closed by receipt ${existing.svhRefno}`,
+        });
+      }
+      return posted.rowsPosted;
     });
     // Reload: the post changed lotId, costRateWot and every total on rows the
     // client is still holding.
@@ -2060,13 +2115,10 @@ export class StockVoucherService {
    * An already-CANCELLED document is refused before any of that, with the date
    * it was cancelled on.
    *
-   * WHO REVERSES A POSTED ONE: the generic types are reversed IN PROCESS by
-   * `StockPostingService.cancel`, for the same reason `post()` runs the same
-   * service's `post`
-   * — stock.fn_svh_cancel does not exist on this deployment, and a cancel that
-   * called it answered every request with a 500. The transfer types keep
-   * calling the engine function, as their post does, because a transfer's
-   * cancel also has to undo stock_transit and the paired document.
+   * WHO REVERSES A POSTED ONE: `StockPostingService.cancel`, for every type.
+   * A transfer is refused there by the engine's own guard when it is in flight
+   * (IN_TRANSIT / RECEIVED) or is a received receipt; a same-branch POSTED pair
+   * reverses both halves symmetrically.
    *
    * `reason` is required here even though the trail's tsl_remarks is nullable
    * in general: a cancelled opening with no reason is unanswerable three months
@@ -2111,15 +2163,14 @@ export class StockVoucherService {
     // A DRAFT has written no ledger row, so it is cancelled by moving the
     // header: no reversal, no engine, nothing to fail on.
     //
-    // NOT ON THE TRANSFER ROUTES, and `usesInProcessPosting` is the right
-    // discriminator for the same reason it is the right one on the posting
-    // split: a transfer draft is not a document this service knows the whole
-    // of. A draft TRANSFER_IN is the receipt half of a despatch that has
-    // ALREADY moved stock into stock_transit, and cancelling it would strand
-    // those rows with no document left to settle them. Those routes keep
-    // saying "delete it instead", which for them remains true.
+    // NOT ON THE TRANSFER ROUTES. A draft TRANSFER_IN is the receipt half of a
+    // despatch that has ALREADY moved stock into stock_transit, and cancelling
+    // it would strand those rows with no document left to settle them. Those
+    // routes say "delete it instead", which for them remains true (§1.1: a
+    // DRAFT of either half is deleted, as today).
     const isDraft = existing.svhStatus === 'DRAFT';
-    if (isDraft && !usesInProcessPosting(rules)) {
+    const isTransfer = rules.postShape === 'TRANSFER_OUT' || rules.postShape === 'TRANSFER_IN';
+    if (isDraft && isTransfer) {
       throwStockConflict<StockErrorDetail, StockErrorResponse>(`${rules.displayName} is a draft`, [
         {
           field: 'svhId',
@@ -2139,17 +2190,12 @@ export class StockVoucherService {
           reason: trimmedReason,
           cancelledOn,
         });
-      } else if (usesInProcessPosting(rules)) {
+      } else {
         reversed = await this.stockPosting.cancel(
           tx,
           new StockVoucherSource({ svhId, accYear, companyId, branchId, rules }),
           { actor, reason: trimmedReason, cancelledOn },
         );
-      } else {
-        const [row] = await tx.$queryRaw<Array<{ rows: number }>>`
-          SELECT stock.fn_svh_cancel(${svhId}::uuid, ${accYear}::bpchar, ${trimmedReason}, ${actor}::uuid) AS rows
-        `;
-        reversed = Number(row?.rows ?? 0);
       }
       // Inside the cancellation's own transaction: a cancellation whose header
       // move (and, on a posted document, whose ledger reversal) committed and
@@ -2203,11 +2249,11 @@ export class StockVoucherService {
   /**
    * DRAFT only.
    *
-   * A POSTED voucher is CANCELLED, never deleted. svh_is_deleted is not read by
-   * fn_svh_cancel's ledger scan and fn_svh_post refuses a deleted voucher — so
-   * soft-deleting a posted document hides it from every list while its ledger
-   * rows go on affecting stock for ever. That is the one state this module must
-   * not be able to reach.
+   * A POSTED voucher is CANCELLED, never deleted. The engine's reversal scans
+   * the ledger by document id, not by svh_is_deleted — so soft-deleting a
+   * posted document would hide it from every list while its ledger rows went
+   * on affecting stock for ever. That is the one state this module must not be
+   * able to reach.
    */
   async softDelete(
     rules: StockVoucherTypeRules,
@@ -2929,24 +2975,6 @@ export class StockVoucherService {
     }
     return existing;
   }
-  /**
-   * The three engine entry points, by name.
-   *
-   * `Prisma.raw` does not escape, so the function name must not be able to
-   * become anything a controller did not write. It is a literal in a rule
-   * record today and unreachable from any payload — this allowlist is what
-   * keeps it that way when the twelfth screen adds a rule record by copying the
-   * eleventh, and it turns a typo into a 500 naming the field rather than a
-   * confusing syntax error from Postgres.
-   */
-  private assertPostFunction(rules: StockVoucherTypeRules): string {
-    if (!STOCK_POST_FUNCTIONS.includes(rules.postFunction)) {
-      throw new InternalServerErrorException(
-        `${rules.voucherType} is wired to post through ${rules.postFunction}, which is not one of ${STOCK_POST_FUNCTIONS.join(', ')}.`,
-      );
-    }
-    return rules.postFunction;
-  }
   private assertDraft(
     rules: StockVoucherTypeRules,
     existing: { svhRefno: string; svhStatus: string; svhIsDeleted: boolean },
@@ -3057,6 +3085,7 @@ export class StockVoucherService {
       taxPerc: toNumber(row.svi_tax_perc),
       reasonId: row.svi_reason_id,
       reasonName: row.line_reason_name,
+      direction: row.svi_direction === null ? null : Number(row.svi_direction),
       syncDate: row.svi_sync_date?.toISOString() ?? null,
       value: toNullableNumber(row.svi_value) ?? 0,
       valueWot: toNullableNumber(row.svi_value_wot) ?? 0,

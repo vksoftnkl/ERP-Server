@@ -125,6 +125,12 @@ model AccTenderDetail {
   /// partitions and the replacement is written before anything validates it.
   tdReplacesId          String?   @db.Uuid                           @map("td_replaces_id")
 
+  // ── Paid tenders (20260926190000_payment_cheques, notes 55) ─────────────
+  /// Who a PAYMENT is made out to: the cheque's favouring, a transfer's payee.
+  tdBeneficiaryName      String?   @db.VarChar(150)                  @map("td_beneficiary_name")
+  tdBeneficiaryAccountNo String?   @db.VarChar(34)                   @map("td_beneficiary_account_no")
+  tdBeneficiaryIfsc      String?   @db.VarChar(11)                   @map("td_beneficiary_ifsc")
+
   @@map("acc_tender_detail")
   @@schema("accounts")
 }

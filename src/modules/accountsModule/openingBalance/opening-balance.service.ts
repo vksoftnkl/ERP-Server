@@ -3,6 +3,8 @@ import { assertBooksReconcile } from '../reconcile/books-reconcile.guard';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
+import { AppSettingValueService } from '../../settings/appSettings/app-setting-value.service';
+import { resolveRoleLedger } from '../ledgerRole/ledger-map.helper';
 import {
   DEFAULT_ACTOR,
   isForeignKeyConstraintError,
@@ -74,6 +76,7 @@ export class OpeningBalanceService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly requestContextService: RequestContextService,
+    private readonly appSettings: AppSettingValueService,
   ) {}
 
   // ─── §4.1 list ─────────────────────────────────────────────────────────────
@@ -194,6 +197,7 @@ export class OpeningBalanceService {
 
       const ledgers = await loadVisibleLedgers(tx, dto.opCompanyId);
       this.assertRowsAreWritable(dto.rows, ledgers);
+      await this.assertInventoryNotOpenedHere(tx, dto.opCompanyId, branchId, dto.rows);
 
       const stored = await tx.accOpeningBalance.findMany({
         where: this.scopeWhere(dto.opCompanyId, branchId, accYear),
@@ -334,6 +338,62 @@ export class OpeningBalanceService {
         staledAccYears,
       };
     });
+  }
+
+  /**
+   * Stock → accounts §1.9: under PERPETUAL the Stock-in-Hand ledger (the one
+   * mapped to the INVENTORY role) is opened by the OPENING STOCK document,
+   * which posts DR INVENTORY / CR OPENING_DIFFERENCE at post. An opening
+   * balance keyed here on the same ledger would count the stock twice — once
+   * from this screen, once from the stock opening. Refused, naming the screen
+   * that owns the figure. Under PERIODIC the ledger is a plain balance-sheet
+   * line and this screen is where it is opened.
+   */
+  private async assertInventoryNotOpenedHere(
+    tx: Prisma.TransactionClient,
+    companyId: string,
+    branchId: string | null,
+    rows: readonly SaveOpeningBalanceRowDto[],
+  ): Promise<void> {
+    const nonZero = rows.filter((row) => !money(row.opAmount).isZero());
+    if (nonZero.length === 0) {
+      return;
+    }
+    const effective = await this.appSettings.resolveEffective({
+      companyId,
+      branchId,
+      deviceId: null,
+      userId: null,
+    });
+    const cogs = (effective.find((i) => i.asdKey === 'accounts.cogs_mode')?.value ?? '')
+      .trim()
+      .toUpperCase();
+    if (cogs === 'PERIODIC') {
+      return;
+    }
+    const inventory = await resolveRoleLedger(
+      tx,
+      { role: 'INVENTORY', field: 'opLedgerId' },
+      { companyId, branchId, where: 'opening_balance' },
+    );
+    if (!inventory) {
+      return;
+    }
+    const errors: OpeningBalanceErrorDetail[] = [];
+    for (const [index, row] of rows.entries()) {
+      if (row.opLedgerId === inventory.ledgerId && !money(row.opAmount).isZero()) {
+        errors.push({
+          field: `rows.${index}.opLedgerId`,
+          message:
+            `"${inventory.ledgerName}" is the Stock-in-Hand ledger and accounts.cogs_mode is PERPETUAL: ` +
+            'its opening comes from the Opening Stock document, which posts it at cost when it is posted. ' +
+            'Keying it here as well would count the stock twice. Leave this row at 0.',
+        });
+      }
+    }
+    if (errors.length) {
+      throwAccountsBadRequest<OpeningBalanceErrorDetail>('Validation failed', errors);
+    }
   }
 
   // ─── §4.4 delete ───────────────────────────────────────────────────────────

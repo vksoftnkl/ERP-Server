@@ -23,6 +23,8 @@ import { VoucherRegisterService } from './voucher-register.service';
 import { VoucherCancelService } from './voucher-cancel.service';
 import {
   AdjacentVoucherQueryDto,
+  ChequeBooksQueryDto,
+  InstrumentsQueryDto,
   LedgerBalanceQueryDto,
   LedgerPickQueryDto,
   OpenBillsQueryDto,
@@ -40,7 +42,9 @@ import {
 } from './dto/voucher-payload.dto';
 import {
   AdjacentVoucherSuccessDto,
+  ChequeBooksSuccessDto,
   CancelSuccessDto,
+  InstrumentsSuccessDto,
   DeleteSuccessDto,
   DraftSavedSuccessDto,
   LedgerBalanceSuccessDto,
@@ -55,7 +59,9 @@ import {
 } from './dto/voucher-response.dto';
 import type {
   AdjacentVoucherPayload,
+  ChequeBooksPayload,
   CancelPayload,
+  InstrumentsPayload,
   DeletePayload,
   DraftSavedPayload,
   LedgerBalancePayload,
@@ -75,7 +81,7 @@ import type {
  * Purchase (Accounting), Sales (Accounting), Receipt Voucher, Payment Voucher
  * — and ONE posting routine behind it.
  *
- * Thirteen routes, no path params, no `/list` (the F8 list and the exceptions
+ * Fourteen routes, no path params, no `/list` (the F8 list and the exceptions
  * report are registered grids). Every route that acts on an existing voucher
  * takes the house key `companyId · branchId · accYear · voucherId`. Rights
  * are judged on the voucher TYPE's menu (decision E), never on the menu the
@@ -194,6 +200,46 @@ export class VouchersController {
   ): Promise<VoucherSuccessResponse<OpenBillsPayload>> {
     const data = await this.lookups.openBills(q);
     return { success: true, message: `${data.bills.length} open bill(s)`, data };
+  }
+
+  @Get('cheque-books')
+  @Version(API_VERSION)
+  @CacheTTL(0)
+  @ApiOperation({
+    summary: 'The cheque books a Payment Voucher cheque may take its leaf from',
+    description:
+      'notes (55). The company’s ACTIVE books with a leaf left (at this branch, or kept for every ' +
+      'branch), optionally on one bank. `nextLeaf` is the leaf the next cheque would take — shown, ' +
+      'not promised: /post takes the book’s next leaf under a lock. A PmtV cheque line names ' +
+      '`instrument.chequeBookId` and `bankLedgerId`, never a leaf.',
+  })
+  @ApiOkResponse({ type: ChequeBooksSuccessDto })
+  async chequeBooks(
+    @Query() q: ChequeBooksQueryDto,
+  ): Promise<VoucherSuccessResponse<ChequeBooksPayload>> {
+    const data = await this.lookups.chequeBooks(q);
+    return { success: true, message: `${data.books.length} open cheque book(s)`, data };
+  }
+
+  @Get('instruments')
+  @Version(API_VERSION)
+  @CacheTTL(0)
+  @ApiOperation({
+    summary: 'The tenders a Receipt Voucher line may come in by',
+    description:
+      'notes (54). The company’s live tenders (at this branch, or every branch), minus the credit ' +
+      'shapes — TEMP_CR, CREDIT, LOYALTY, RRN — that move no money in. Each carries its type, its ' +
+      'ledger, and isCash / isCheque / needsRef. A type with `instruments` (GET /types) takes one ' +
+      'per typed customer line as `lines[].instrument`; the server generates the Dr leg from the ' +
+      'tender’s ledger, a cheque becomes a HELD row on menu 51, and a post-dated cheque a voucher ' +
+      'of its own on its date.',
+  })
+  @ApiOkResponse({ type: InstrumentsSuccessDto })
+  async instruments(
+    @Query() q: InstrumentsQueryDto,
+  ): Promise<VoucherSuccessResponse<InstrumentsPayload>> {
+    const data = await this.lookups.instruments(q);
+    return { success: true, message: `${data.tenders.length} tender(s)`, data };
   }
 
   @Get('tax-rates')

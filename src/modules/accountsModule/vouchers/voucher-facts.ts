@@ -90,6 +90,17 @@ export interface BillFacts {
 
 const PARTY_GROUPS = new Set(['sundry debtors', 'sundry creditors']);
 const MONEY_GROUPS = new Set(['cash-in-hand', 'bank accounts', 'bank od a/c']);
+/**
+ * The same three groups by their RESERVED ids (prisma/seed/Account_Groups.sql
+ * pins them, so they are the same on every database). Matched first; the
+ * names above stand in for a chart that was renamed.
+ */
+export const MONEY_GROUP_IDS: ReadonlySet<string> = new Set([
+  '019eee86-f34b-7e18-9d7c-5bea4d593ba8', // Cash-in-Hand
+  '019eee86-f34b-7e27-8aee-2b5930314c8a', // Bank Accounts
+  '019eee86-f34b-7d50-af11-254d259a8440', // Bank OD A/c
+]);
+export const MONEY_GROUP_NAMES: readonly string[] = ['Cash-in-Hand', 'Bank Accounts', 'Bank OD A/c'];
 
 export async function loadCompanyFacts(
   tx: Prisma.TransactionClient,
@@ -220,9 +231,23 @@ export async function loadLedgerFacts(
   return out;
 }
 
-/** Is this ledger under a cash / bank group? (Any ancestor counts.) */
-export function isMoneyLedger(l: Pick<LedgerFacts, 'groupNames'>): boolean {
-  return l.groupNames.some((n) => MONEY_GROUPS.has(n.toLowerCase()));
+/** notes (55): under Bank Accounts / Bank OD A/c — an account a cheque or transfer is drawn on. */
+export function isBankLedger(l: Pick<LedgerFacts, 'groupNames'>): boolean {
+  return l.groupNames.some(
+    (n) => n.toLowerCase() === 'bank accounts' || n.toLowerCase() === 'bank od a/c',
+  );
+}
+
+/**
+ * Is this ledger under Cash-in-Hand, Bank Accounts or Bank OD A/c? (Any
+ * ancestor counts.) By the reserved group id first, by name as the fallback —
+ * the test notes (56) keys the Receipt / Payment money side on.
+ */
+export function isMoneyLedger(l: Pick<LedgerFacts, 'groupNames'> & { groupPath?: string[] }): boolean {
+  return (
+    (l.groupPath ?? []).some((g) => MONEY_GROUP_IDS.has(g)) ||
+    l.groupNames.some((n) => MONEY_GROUPS.has(n.toLowerCase()))
+  );
 }
 
 /**
@@ -530,6 +555,146 @@ export async function loadBills(
     });
   }
   return out;
+}
+
+// ─── notes (54) · instruments ────────────────────────────────────────────────
+
+/** One tender, as the register's instrument line needs it. */
+export interface TenderFacts {
+  tndId: string;
+  name: string;
+  shortName: string;
+  typeId: number;
+  typeName: string;
+  isCash: boolean;
+  needsRef: boolean;
+  ledgerId: string;
+  ledgerName: string;
+  /** The clearing ledger the money waits in, when the master names one. */
+  settlementLedgerId: string | null;
+  isActive: boolean;
+  isDeleted: boolean;
+  companyId: string;
+  branchId: string | null;
+  hotkey: string | null;
+  displayPosition: number;
+}
+
+/** `ttm_type_id` of the seeded CHEQUE type — the one whose handling differs (a register row). */
+export const CHEQUE_TENDER_TYPE_ID = 5;
+
+/**
+ * Tender types a register instrument may NOT be: credit shapes that move no
+ * money in (RRN 7, TEMP_CR 8, CREDIT 9, LOYALTY 10). They belong to the sale
+ * bill's tender band, not a collection run.
+ */
+export const EXCLUDED_INSTRUMENT_TYPES: readonly number[] = [7, 8, 9, 10];
+
+const TENDER_SELECT = Prisma.sql`
+  SELECT t.tnd_id, t.tnd_name, t.tnd_short_name, t.tnd_type_id, y.ttm_type_name, y.ttm_is_cash,
+         COALESCE(t.tnd_needs_ref, y.ttm_needs_ref) AS needs_ref,
+         t.tnd_ledger_id, l.led_name, t.tnd_settlement_ledger_id, t.tnd_is_active, t.tnd_is_deleted,
+         t.tnd_company_id, t.tnd_branch_id, t.tnd_hotkey, t.tnd_display_position
+    FROM accounts.acc_tender_master t
+    JOIN accounts.acc_tender_types  y ON y.ttm_type_id = t.tnd_type_id
+    JOIN accounts.acc_ledger_master l ON l.led_id = t.tnd_ledger_id`;
+
+interface TenderRow {
+  tnd_id: string;
+  tnd_name: string;
+  tnd_short_name: string;
+  tnd_type_id: number;
+  ttm_type_name: string;
+  ttm_is_cash: boolean;
+  needs_ref: boolean | null;
+  tnd_ledger_id: string;
+  led_name: string;
+  tnd_settlement_ledger_id: string | null;
+  tnd_is_active: boolean;
+  tnd_is_deleted: boolean;
+  tnd_company_id: string;
+  tnd_branch_id: string | null;
+  tnd_hotkey: string | null;
+  tnd_display_position: number;
+}
+
+function toTenderFacts(r: TenderRow): TenderFacts {
+  return {
+    tndId: r.tnd_id,
+    name: r.tnd_name,
+    shortName: r.tnd_short_name,
+    typeId: r.tnd_type_id,
+    typeName: r.ttm_type_name,
+    isCash: r.ttm_is_cash,
+    needsRef: r.needs_ref ?? false,
+    ledgerId: r.tnd_ledger_id,
+    ledgerName: r.led_name,
+    settlementLedgerId: r.tnd_settlement_ledger_id,
+    isActive: r.tnd_is_active,
+    isDeleted: r.tnd_is_deleted,
+    companyId: r.tnd_company_id,
+    branchId: r.tnd_branch_id,
+    hotkey: r.tnd_hotkey,
+    displayPosition: r.tnd_display_position,
+  };
+}
+
+/** The tenders the instrument lines name, deleted ones included (the derivation names the fault). */
+export async function loadTenderFacts(
+  tx: Prisma.TransactionClient,
+  tenderIds: readonly string[],
+): Promise<Map<string, TenderFacts>> {
+  const out = new Map<string, TenderFacts>();
+  const ids = [...new Set(tenderIds.filter((id) => !!id))];
+  if (ids.length === 0) {
+    return out;
+  }
+  const rows = await tx.$queryRaw<TenderRow[]>`
+    ${TENDER_SELECT}
+     WHERE t.tnd_id = ANY(${ids}::uuid[])`;
+  for (const r of rows) {
+    out.set(r.tnd_id, toTenderFacts(r));
+  }
+  return out;
+}
+
+/** notes (54) — GET /vouchers/instruments: the company's usable tenders, in display order. */
+export async function listInstrumentTenders(
+  tx: Prisma.TransactionClient,
+  companyId: string,
+  branchId: string | null,
+): Promise<TenderFacts[]> {
+  const excluded = [...EXCLUDED_INSTRUMENT_TYPES];
+  const rows = await tx.$queryRaw<TenderRow[]>`
+    ${TENDER_SELECT}
+     WHERE t.tnd_company_id = ${companyId}::uuid
+       AND t.tnd_is_deleted = false AND t.tnd_is_active = true
+       AND NOT (t.tnd_type_id = ANY(${excluded}::int[]))
+       AND (${branchId}::uuid IS NULL OR t.tnd_branch_id IS NULL OR t.tnd_branch_id = ${branchId}::uuid)
+     ORDER BY t.tnd_display_position, t.tnd_name`;
+  return rows.map(toTenderFacts);
+}
+
+/** `ttm_type_id` → `abj_settlement_mode`, the receipt's own table (receipt-lines.ts). */
+export function settlementModeForTenderType(typeId: number): string {
+  switch (typeId) {
+    case 1:
+      return 'CASH';
+    case 2:
+      return 'CARD';
+    case 3:
+      return 'UPI';
+    case 4:
+      return 'WALLET';
+    case CHEQUE_TENDER_TYPE_ID:
+      return 'CHEQUE';
+    case 10:
+      return 'LOYALTY';
+    case 11:
+      return 'VOUCHER';
+    default:
+      return 'BANK';
+  }
 }
 
 export function billKey(billId: string, accYear: string): string {

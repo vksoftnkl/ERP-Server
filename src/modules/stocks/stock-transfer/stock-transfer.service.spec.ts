@@ -161,6 +161,7 @@ describe('StockTransferService', () => {
       prisma as unknown as PrismaService,
       voucherService as unknown as StockVoucherService,
       { getUserId: () => USER_ID } as unknown as RequestContextService,
+      { postShortSettlement: jest.fn().mockResolvedValue(null) } as never,
     );
   });
 
@@ -174,8 +175,8 @@ describe('StockTransferService', () => {
       // refuses a transfer by name (0A000) precisely so this cannot go
       // unnoticed, but a receipt wired to the OUT function would post ledger
       // rows and never settle the transit row.
-      expect(TRANSFER_OUT_RULES.postFunction).toBe('stock.fn_svh_post_transfer');
-      expect(TRANSFER_IN_RULES.postFunction).toBe('stock.fn_svh_receive_transfer');
+      expect(TRANSFER_OUT_RULES.postShape).toBe('TRANSFER_OUT');
+      expect(TRANSFER_IN_RULES.postShape).toBe('TRANSFER_IN');
     });
 
     it('demands a lot on both halves — a transfer moves stock, it does not create it', () => {

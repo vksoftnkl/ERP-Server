@@ -13,14 +13,17 @@ exports.StockPostingService = void 0;
 const common_1 = require("@nestjs/common");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const stock_voucher_posting_helper_1 = require("../stock-voucher/stock-voucher-posting.helper");
+const stock_accounts_posting_service_1 = require("./stock-accounts-posting.service");
 let StockPostingService = class StockPostingService {
     prisma;
-    constructor(prisma) {
+    accounts;
+    constructor(prisma, accounts) {
         this.prisma = prisma;
+        this.accounts = accounts;
     }
     async post(tx, source, opts) {
         await this.assertNotFrozen(tx, source);
-        return (0, stock_voucher_posting_helper_1.postStockVoucher)(tx, {
+        const result = await (0, stock_voucher_posting_helper_1.postStockVoucher)(tx, {
             rules: source.rules,
             svhId: source.svhId,
             accYear: source.accYear,
@@ -28,10 +31,25 @@ let StockPostingService = class StockPostingService {
             postedOn: opts.postedOn,
             ledgerSource: opts.ledgerSource,
         });
+        let accountsVoucherId = null;
+        if (!opts.ledgerSource && result.status === 'POSTED') {
+            const posted = await this.accounts.postForVoucher(tx, {
+                svhId: source.svhId,
+                accYear: source.accYear,
+                companyId: source.companyId,
+                branchId: source.branchId,
+                voucherType: source.rules.voucherType,
+                displayName: source.rules.displayName,
+                actor: opts.actor,
+                postedOn: opts.postedOn,
+            });
+            accountsVoucherId = posted?.voucherId ?? null;
+        }
+        return { ...result, accountsVoucherId };
     }
     async cancel(tx, source, opts) {
         await this.assertNotFrozen(tx, source);
-        return (0, stock_voucher_posting_helper_1.cancelStockVoucher)(tx, {
+        const reversed = await (0, stock_voucher_posting_helper_1.cancelStockVoucher)(tx, {
             rules: source.rules,
             svhId: source.svhId,
             accYear: source.accYear,
@@ -39,6 +57,17 @@ let StockPostingService = class StockPostingService {
             reason: opts.reason,
             cancelledOn: opts.cancelledOn,
         });
+        if (!opts.ledgerSource && stock_accounts_posting_service_1.StockAccountsPostingService.postsAccounts(source.rules.voucherType)) {
+            await this.accounts.reverseForVoucher(tx, {
+                svhId: source.svhId,
+                accYear: source.accYear,
+                companyId: source.companyId,
+                voucherType: source.rules.voucherType,
+                reason: opts.reason,
+                actor: opts.actor,
+            });
+        }
+        return reversed;
     }
     async assertNotFrozen(tx, source) {
         const movedAt = await source.docDatetime(tx);
@@ -79,6 +108,7 @@ let StockPostingService = class StockPostingService {
 exports.StockPostingService = StockPostingService;
 exports.StockPostingService = StockPostingService = __decorate([
     (0, common_1.Injectable)(),
-    __metadata("design:paramtypes", [prisma_service_1.PrismaService])
+    __metadata("design:paramtypes", [prisma_service_1.PrismaService,
+        stock_accounts_posting_service_1.StockAccountsPostingService])
 ], StockPostingService);
 //# sourceMappingURL=stock-posting.service.js.map

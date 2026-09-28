@@ -36,9 +36,10 @@ const TRANSFER_IN_RULES = {
     quantityMode: 'QTY',
     requiresLot: true,
     zeroesLineCost: true,
+    allowsRepeatHolding: true,
     allowsCount: false,
     allowsToBranch: false,
-    postFunction: 'stock.fn_svh_receive_transfer',
+    postShape: 'TRANSFER_IN',
     auditScreenName: 'Stock Transfer Receipt',
     statusDocType: txn_status_log_helper_1.TxnStatusDocType.STOCK_TRANSFER,
     refuseTypes: ['OPENING', 'PHYSICAL', 'TRANSFER_OUT', 'REPACK_IN', 'REPACK_OUT'],
@@ -84,6 +85,14 @@ let StockTransferReceiveController = class StockTransferReceiveController {
             message: data.outVoucher.closed
                 ? `Receipt posted — ${data.inVoucher.ledgerRows} ledger rows, transfer ${data.outVoucher.refno} closed`
                 : `Receipt posted — ${data.inVoucher.ledgerRows} ledger rows, transfer ${data.outVoucher.refno} still open with stock outstanding`,
+            data,
+        };
+    }
+    async settleShort(dto) {
+        const data = await this.stockTransferService.settleShort(dto);
+        return {
+            success: true,
+            message: `${data.outVoucher.refno} closed — ${data.shortQty} short, ${data.shortValue} written off`,
             data,
         };
     }
@@ -142,8 +151,8 @@ __decorate([
     (0, common_1.Post)('post'),
     (0, common_1.Version)(api_version_1.API_VERSION),
     (0, swagger_1.ApiOperation)({
-        summary: 'Post the receipt — stock.fn_svh_receive_transfer',
-        description: 'Returns BOTH documents. The receipt closing does not mean the transfer closed: the despatch flips to RECEIVED only when no transit row of it has anything left, and a short keeps it open on purpose — that is the loss report. The write-off is a separate decision and is deliberately not automated.',
+        summary: 'Post the receipt',
+        description: 'Returns BOTH documents. The receipt closing does not mean the transfer closed: the despatch flips to RECEIVED only when no transit row of it has anything left, and a short keeps it open on purpose — that is the loss report. The write-off is a separate decision: POST /settle-short.',
     }),
     (0, swagger_1.ApiOkResponse)({ type: stock_transfer_response_dto_1.StockTransferReceiveSuccessDto }),
     (0, swagger_1.ApiUnprocessableEntityResponse)({ type: stock_transfer_response_dto_1.StockTransferErrorResponseDto }),
@@ -155,11 +164,26 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], StockTransferReceiveController.prototype, "post", null);
 __decorate([
+    (0, common_1.Post)('settle-short'),
+    (0, common_1.Version)(api_version_1.API_VERSION),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Short-settle a despatch whose remainder will never arrive',
+        description: 'Allowed only on an IN_TRANSIT despatch every row of which has been received at least in part. Each PARTIAL row flips to RECEIVED and KEEPS its short, so the loss report still shows it; the despatch closes; the destination stops expecting the goods. Under PERPETUAL the loss is posted DR the reason ledger / CR Stock-in-Hand at the cost the goods left with.',
+    }),
+    (0, swagger_1.ApiOkResponse)({ description: 'The closed despatch, what was short, and the accounts voucher if one was posted.' }),
+    (0, swagger_1.ApiUnprocessableEntityResponse)({ type: stock_transfer_response_dto_1.StockTransferErrorResponseDto }),
+    (0, swagger_1.ApiConflictResponse)({ type: stock_transfer_response_dto_1.StockTransferErrorResponseDto }),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [post_stock_transfer_dto_1.SettleShortStockTransferDto]),
+    __metadata("design:returntype", Promise)
+], StockTransferReceiveController.prototype, "settleShort", null);
+__decorate([
     (0, common_1.Delete)(),
     (0, common_1.Version)(api_version_1.API_VERSION),
     (0, swagger_1.ApiOperation)({
         summary: 'Soft delete a DRAFT receipt',
-        description: 'DELETE, NEVER CANCEL. tr_svh_transfer_cancel_guard refuses cancelling any linked TRANSFER_IN — a draft one included — and the link is mandatory on every one of them, so Cancel must not be offered on a draft receipt at all.',
+        description: 'DELETE, NEVER CANCEL. The engine refuses cancelling a POSTED receipt (un-receiving is a reverse transfer) and a draft one settles a despatch already in transit, so Cancel must not be offered on a receipt at all.',
     }),
     (0, swagger_1.ApiOkResponse)({ type: stock_transfer_response_dto_1.StockTransferDeleteSuccessDto }),
     (0, swagger_1.ApiConflictResponse)({ type: stock_transfer_response_dto_1.StockTransferErrorResponseDto }),

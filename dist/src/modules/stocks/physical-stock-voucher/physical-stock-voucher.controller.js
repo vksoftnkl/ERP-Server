@@ -42,7 +42,7 @@ const PHYSICAL_RULES = {
     allowsToBranch: false,
     auditScreenName: 'Physical Stock Count',
     statusDocType: txn_status_log_helper_1.TxnStatusDocType.STOCK_ADJUSTMENT,
-    postFunction: 'stock.fn_svh_post',
+    postShape: 'COUNT',
     refuseTypes: ['TRANSFER_IN', 'TRANSFER_OUT', 'REPACK_IN', 'REPACK_OUT'],
 };
 let PhysicalStockVoucherController = class PhysicalStockVoucherController {

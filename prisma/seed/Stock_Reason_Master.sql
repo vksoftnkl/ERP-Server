@@ -1,4 +1,4 @@
--- Seed: stock.stock_reason_master -- why stock moved outside a trade document (16 rows).
+-- Seed: stock.stock_reason_master -- why stock moved outside a trade document (17 rows).
 --
 -- This is not decoration. fn_svh_txn_map REFUSES to post an ADJUSTMENT that does
 -- not cite a reason, and refuses one whose reason is direction BOTH, because a
@@ -95,6 +95,9 @@ SELECT v.company, v.code, v.name, v.direction,
     (NULL, 'INTERNAL',    'Internal use',              'OUT',
      ARRAY['ADJUST_MINUS']::text[],                       false, 110,
      'Consumed by the shop itself -- cleaning stock, staff tea, display units.'),
+    (NULL, 'TRANSIT_LOSS', 'Lost in transit',          'OUT',
+     ARRAY['TRANSFER_OUT']::text[],                       false, 115,
+     'Despatched and never arrived. Cited by a transfer short-settlement (POST /stock/transfer/receive/settle-short); its GL ledger, or the STOCK_SHORTAGE role, takes short x cost.'),
 
     -- ── stock genuinely arriving ────────────────────────────────────────
     (NULL, 'FOUND',       'Found on shelf',            'IN',

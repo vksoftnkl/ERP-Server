@@ -4,6 +4,8 @@ import { PrismaService } from '../../../database/prisma/prisma.service';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
 import type {
   AdjacentVoucherPayload,
+  ChequeBooksPayload,
+  InstrumentsPayload,
   LedgerBalancePayload,
   LedgerPickPayload,
   LedgerPickRow,
@@ -15,6 +17,8 @@ import type {
 } from './types/vouchers-api.types';
 import type {
   AdjacentVoucherQueryDto,
+  ChequeBooksQueryDto,
+  InstrumentsQueryDto,
   LedgerBalanceQueryDto,
   LedgerPickQueryDto,
   OpenBillsQueryDto,
@@ -22,14 +26,20 @@ import type {
   TaxRatesQueryDto,
 } from './dto/voucher-query.dto';
 import {
+  CHEQUE_TENDER_TYPE_ID,
   itcClassOf,
+  listInstrumentTenders,
   loadInstrumentLedgers,
   loadLedgerFacts,
   loadPartyCreditDays,
   loadStateName,
   loadTdsRate,
+  MONEY_GROUP_IDS,
+  MONEY_GROUP_NAMES,
 } from './voucher-facts';
+import { moneySideOf } from './voucher-derive';
 import { VoucherTypesService } from './voucher-types.service';
+import { formatLeaf, leavesLeft, listOpenChequeBooks } from './cheque-book.helper';
 import { throwMissing, throwRight, throwState, VCH } from './vouchers.errors';
 
 const GST_GROUPS = new Set([
@@ -55,7 +65,7 @@ export class VoucherLookupsService {
   ) {}
 
   private get tx(): Prisma.TransactionClient {
-    return this.prisma as unknown as Prisma.TransactionClient;
+    return this.prisma;
   }
 
   /** §6.2 — ledgers legal on that side for that type, minus instrument-controlled ledgers. */
@@ -79,18 +89,36 @@ export class VoucherLookupsService {
     const instrument = [...(await loadInstrumentLedgers(this.tx, q.companyId))];
     const term = q.q?.trim() ? `%${q.q.trim()}%` : null;
     const limit = q.limit ?? 50;
+    // notes (56): on a Receipt / Payment the money side offers cash and bank
+    // ONLY and the other side never — the same rule `sideVerdict` refuses by,
+    // so the route and the Qt grid offer one list.
+    const moneySide = moneySideOf(type.nature);
+    const moneyOnly = moneySide !== null && moneySide === q.side;
+    const noMoney = moneySide !== null && moneySide !== q.side;
+    const moneyIds = [...MONEY_GROUP_IDS];
+    const moneyNames = [...MONEY_GROUP_NAMES];
     const rows = await this.tx.$queryRaw<{ led_id: string }[]>`
       WITH RECURSIVE allowed AS (
         SELECT acc_group_id FROM accounts.acc_group_master WHERE acc_group_id = ANY(${groups}::uuid[])
         UNION
         SELECT g.acc_group_id FROM accounts.acc_group_master g
           JOIN allowed a ON g.acc_group_parent_id = a.acc_group_id
+      ),
+      money AS (
+        SELECT acc_group_id FROM accounts.acc_group_master
+         WHERE acc_group_id = ANY(${moneyIds}::uuid[])
+            OR lower(acc_group_name) = ANY(SELECT lower(unnest(${moneyNames}::text[])))
+        UNION
+        SELECT g.acc_group_id FROM accounts.acc_group_master g
+          JOIN money m ON g.acc_group_parent_id = m.acc_group_id
       )
       SELECT l.led_id
         FROM accounts.acc_ledger_master l
        WHERE (l.led_company_id IS NULL OR l.led_company_id = ${q.companyId}::uuid)
          AND l.led_is_deleted = false AND l.led_is_active = true
          AND (${groups.length === 0} OR l.led_group_id IN (SELECT acc_group_id FROM allowed))
+         AND (NOT ${moneyOnly}::boolean OR l.led_group_id IN (SELECT acc_group_id FROM money))
+         AND (NOT ${noMoney}::boolean OR l.led_group_id NOT IN (SELECT acc_group_id FROM money))
          AND NOT (l.led_id = ANY(${instrument}::uuid[]))
          AND (${term}::text IS NULL OR l.led_name ILIKE ${term} OR l.led_alias ILIKE ${term})
        ORDER BY l.led_name
@@ -271,6 +299,65 @@ export class VoucherLookupsService {
         cess: Number(r.tax_cess_perc.toString()),
         isReverseCharge: r.tax_is_reverse_charge,
         taxability: r.tax_taxability,
+      })),
+    };
+  }
+
+  /**
+   * notes (54) — GET /vouchers/instruments: the tenders a Receipt Voucher line
+   * may come in by — the company's live tenders, at this branch or every
+   * branch, minus the credit shapes (TEMP_CR, CREDIT, LOYALTY, RRN) that move
+   * no money in. Each with its type, ledger and the three flags the screen
+   * switches on.
+   */
+  /** notes (55) — the open books a payment's cheque may take its leaf from. */
+  async chequeBooks(q: ChequeBooksQueryDto): Promise<ChequeBooksPayload> {
+    const books = await listOpenChequeBooks(this.tx, {
+      companyId: q.companyId,
+      branchId: q.branchId ?? null,
+      bankLedgerId: q.bankLedgerId ?? null,
+    });
+    return {
+      companyId: q.companyId,
+      books: books.map((b) => ({
+        chequeBookId: b.chequeBookId,
+        bankLedgerId: b.bankLedgerId,
+        bankName: b.bankName,
+        bookNo: b.bookNo,
+        leafFrom: formatLeaf(b.leafFrom, b.leafWidth),
+        leafTo: formatLeaf(b.leafTo, b.leafWidth),
+        nextLeaf: formatLeaf(b.nextLeaf, b.leafWidth),
+        left: leavesLeft(b),
+        format: b.format,
+      })),
+    };
+  }
+
+  async instruments(q: InstrumentsQueryDto): Promise<InstrumentsPayload> {
+    let rows = await listInstrumentTenders(this.tx, q.companyId, q.branchId ?? null);
+    // notes (55): a paying type is offered only what money goes out by
+    if (q.typeCode) {
+      const type = await this.types.loadTypeByCode(this.tx, q.typeCode);
+      if (type?.partySide === 'DR') {
+        rows = rows.filter((t) => [1, 3, 5, 6].includes(t.typeId));
+      }
+    }
+    return {
+      companyId: q.companyId,
+      tenders: rows.map((t) => ({
+        tenderId: t.tndId,
+        name: t.name,
+        shortName: t.shortName,
+        typeId: t.typeId,
+        typeName: t.typeName,
+        ledgerId: t.ledgerId,
+        ledgerName: t.ledgerName,
+        settlementLedgerId: t.settlementLedgerId,
+        isCash: t.isCash,
+        isCheque: t.typeId === CHEQUE_TENDER_TYPE_ID,
+        needsRef: t.needsRef,
+        hotkey: t.hotkey,
+        displayPosition: t.displayPosition,
       })),
     };
   }

@@ -63,6 +63,12 @@ export interface VoucherTypeRules {
   tdsMode: TdsMode;
   inRegister: boolean;
   affectsInventory: boolean;
+  /**
+   * notes (54): the typed lines carry INSTRUMENTS (a tender per line); the
+   * money legs are generated from the tenders' ledgers, a cheque becomes a
+   * HELD row in the cheque register, a post-dated one a voucher of its own.
+   */
+  instruments: boolean;
 }
 
 export interface VoucherTypeWithRights extends VoucherTypeRules {
@@ -171,11 +177,72 @@ export interface TaxRatesPayload {
   rates: TaxRateRow[];
 }
 
+/** notes (54) — GET /vouchers/instruments: one usable tender of the company. */
+export interface InstrumentTenderRow {
+  tenderId: string;
+  name: string;
+  shortName: string;
+  typeId: number;
+  typeName: string;
+  ledgerId: string;
+  ledgerName: string;
+  /** The clearing ledger the money waits in, when the master names one. */
+  settlementLedgerId: string | null;
+  isCash: boolean;
+  isCheque: boolean;
+  needsRef: boolean;
+  hotkey: string | null;
+  displayPosition: number;
+}
+
+export interface InstrumentsPayload {
+  companyId: string;
+  tenders: InstrumentTenderRow[];
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 //  §6.8  the DERIVED voucher (what /validate answers and /post writes)
 // ═══════════════════════════════════════════════════════════════════════════
 
-export type LegSource = 'TYPED' | 'GST' | 'RCM' | 'TDS' | 'PARTY';
+export type LegSource = 'TYPED' | 'GST' | 'RCM' | 'TDS' | 'PARTY' | 'INSTRUMENT';
+
+/** notes (54) — the instrument a typed line carries, as the derivation read it. */
+export interface DerivedInstrument {
+  tenderId: string;
+  tenderName: string;
+  tenderTypeId: number;
+  tenderTypeName: string;
+  /** The ledger its Dr leg posts to: the tender's clearing ledger, else its ledger. */
+  ledgerId: string;
+  ledgerName: string;
+  refNo: string | null;
+  instrumentDate: string | null;
+  bankName: string | null;
+  isCheque: boolean;
+  /** A cheque dated after the voucher: its legs post on `postsOn`, in a voucher of their own. */
+  isPostDated: boolean;
+  postsOn: string | null;
+  cheque: {
+    drawerName: string | null;
+    bankBranch: string | null;
+    ifsc: string | null;
+    micr: string | null;
+  } | null;
+  settlementMode: string;
+  /** notes (55): a PAYMENT's instrument — money going out of our `bankLedgerId`. */
+  issued: boolean;
+  bankLedgerId: string | null;
+  chequeBookId: string | null;
+  bookNo: string | null;
+  /**
+   * The leaf /validate expects the cheque to take — SHOWN, NOT PROMISED: /post
+   * takes the book's next leaf under a lock, and another payment may take this
+   * one first. On /post's answer it is the leaf the cheque got.
+   */
+  nextLeaf: string | null;
+  favouring: string | null;
+  acPayee: boolean | null;
+}
 
 export interface DerivedLeg {
   /** Position in the voucher — what becomes av_row_no. */
@@ -200,6 +267,23 @@ export interface DerivedLeg {
     isTdsBase: boolean;
   } | null;
   isTdsBase: boolean;
+  /** notes (54): this leg posts on `postsOn`, on the post-dated cheque's own voucher. */
+  postDated: boolean;
+  postsOn: string | null;
+  /** On a typed line that carries one, and on the Dr leg generated from it. */
+  instrument: DerivedInstrument | null;
+}
+
+/** notes (54) — one post-dated cheque line: its own voucher, dated the cheque. */
+export interface DerivedPostDated {
+  lineRowNo: number;
+  partyId: string;
+  partyName: string;
+  amount: number;
+  postsOn: string;
+  accYear: string;
+  tenderName: string;
+  refNo: string | null;
 }
 
 export interface GstSummaryRow {
@@ -267,12 +351,20 @@ export interface DerivedBill {
   lineRowNo: number;
   partyId: string;
   partyName: string;
+  /** `ADVANCE` on a notes (57) remainder; else the type's raise bill type. */
   billType: string;
   side: DrCr;
   amount: number;
   docRefno: string | null;
   dueDays: number;
-  dueDate: string;
+  /** null on an ADVANCE: it is held, not owed. */
+  dueDate: string | null;
+  /**
+   * notes (57): the unallocated remainder of a Receipt / Payment party leg,
+   * kept as one ADVANCE bill on that party (`amount` = leg − Σ allocations;
+   * on a TDS payment, gross − allocated). Shown before Post, written on it.
+   */
+  isAdvance: boolean;
 }
 
 export interface DerivedAllocation {
@@ -299,6 +391,8 @@ export interface DerivedVoucher {
   tdsLines: TdsLineSummary[];
   bills: DerivedBill[];
   allocations: DerivedAllocation[];
+  /** notes (54): the post-dated cheque lines. `totals` is TODAY's voucher only. */
+  postDated: DerivedPostDated[];
 }
 
 export interface ValidatePayload {
@@ -348,6 +442,75 @@ export interface VoucherHeaderPayload {
   modifiedOn: string | null;
 }
 
+/** notes (54) — an instrument as stored: the tender row, and its cheque register row. */
+export interface VoucherInstrumentPayload {
+  tdId: string;
+  tdAccYear: string;
+  lineRowNo: number;
+  partyId: string;
+  partyName: string | null;
+  tenderId: string;
+  tenderName: string | null;
+  tenderTypeId: number;
+  tenderTypeName: string | null;
+  ledgerId: string;
+  amount: number;
+  refNo: string | null;
+  instrumentDate: string | null;
+  bankName: string | null;
+  isCheque: boolean;
+  isPostDated: boolean;
+  /** The voucher carrying this instrument's legs: today's, or the post-dated cheque's own. */
+  voucherId: string | null;
+  voucherRefno: string | null;
+  voucherDate: string | null;
+  cheque: {
+    drawerName: string | null;
+    bankBranch: string | null;
+    ifsc: string | null;
+    micr: string | null;
+  } | null;
+  /** acc_pdc_register — null on a non-cheque instrument. */
+  pdcId: string | null;
+  pdcAccYear: string | null;
+  pdcStatus: string | null;
+  pdcBankLedgerId: string | null;
+  // ── notes (55): an ISSUED cheque / payment ───────────────────────────────
+  /** true on a payment's instrument (money out of `bankLedgerId` / the cash tender). */
+  issued: boolean;
+  /**
+   * The bank account the money left (a payment's cheque / transfer / UPI) or
+   * a received cheque was deposited into. null on cash, and on a received
+   * cheque not yet deposited.
+   */
+  bankLedgerId: string | null;
+  /** The leaf the cheque took (= refNo on an issued cheque). */
+  leaf: string | null;
+  chequeBookId: string | null;
+  bookNo: string | null;
+  favouring: string | null;
+  acPayee: boolean | null;
+}
+
+/** notes (55) — one open cheque book, as GET /vouchers/cheque-books lists it. */
+export interface OpenChequeBook {
+  chequeBookId: string;
+  bankLedgerId: string;
+  bankName: string;
+  bookNo: string;
+  leafFrom: string;
+  leafTo: string;
+  /** The leaf the next cheque would take — shown, not promised. */
+  nextLeaf: string;
+  left: number;
+  format: string | null;
+}
+
+export interface ChequeBooksPayload {
+  companyId: string;
+  books: OpenChequeBook[];
+}
+
 export interface VoucherLegPayload {
   avId: string;
   rowNo: number;
@@ -360,6 +523,22 @@ export interface VoucherLegPayload {
   generated: boolean;
   remarks: string | null;
   oppLedgerId: string | null;
+  /** notes (54): the instrument on this line (typed party line) or behind this Dr leg (generated). */
+  instrument: VoucherInstrumentPayload | null;
+}
+
+/** notes (54) — a post-dated cheque's own voucher, under today's. */
+export interface VoucherPdcVoucherPayload {
+  voucherId: string;
+  accYear: string;
+  voucherRefno: string | null;
+  date: string;
+  status: VoucherStatus;
+  partyId: string | null;
+  partyName: string | null;
+  reversalRefno: string | null;
+  legs: VoucherLegPayload[];
+  allocations: VoucherAllocationPayload[];
 }
 
 export interface VoucherAllocationPayload {
@@ -442,6 +621,8 @@ export interface VoucherLocks {
   dayClosed: boolean;
   periodLocked: boolean;
   allocatedElsewhere: boolean;
+  /** notes (54): a cheque of this voucher has left the drawer (not HELD) — it cannot be cancelled here. */
+  chequeMoved: boolean;
 }
 
 /** The §6.13 payload as `/create` stored it, handed back on a DRAFT. */
@@ -457,6 +638,10 @@ export interface VoucherPayload {
   bills: VoucherBillPayload[];
   gstDoc: VoucherGstDocPayload | null;
   tds: VoucherTdsPayload[];
+  /** notes (54): every instrument this voucher took, with its cheque state. */
+  instruments: VoucherInstrumentPayload[];
+  /** notes (54): the post-dated cheques' own vouchers. */
+  pdcVouchers: VoucherPdcVoucherPayload[];
   /** Present on a DRAFT only: the typed payload, verbatim. */
   draft: StoredDraftPayload | null;
 }
@@ -482,6 +667,9 @@ export interface CancelPayload {
   allocationsReversed: number;
   gstDocCancelled: boolean;
   tdsReversed: number;
+  /** notes (54) */
+  chequesCancelled: number;
+  pdcVouchersReversed: number;
 }
 
 export interface DeletePayload {

@@ -23,6 +23,12 @@ import { opposite } from './voucher-derive';
  *     `TRANSFER` on a Journal, `NOTE_ADJUST` for a note or an accounting
  *     invoice). Unallocated, the raised bill stays OPEN — the credit the
  *     Receipt screen's credits band reads.
+ *   · notes (57) — a DEMAND party leg allocated SHORT keeps its remainder as
+ *     one ADVANCE bill on the party (the row /receipts R7 writes): the leg's
+ *     side, dated the voucher, no due date, refno = the voucher's. It is
+ *     linked to the voucher like a raised bill, so a cancel retracts it the
+ *     same way and a later receipt, sale bill or Journal adjusts it through
+ *     `bill.billType === 'ADVANCE'` (ADVANCE_ADJUST) with no change.
  *
  * A row's `abj_dr_cr` is the movement that REDUCES the bill it names: a DR
  * bill is settled by CR, a CR bill by DR (the receipt's and the sale bill's
@@ -50,12 +56,28 @@ export interface RaisedBill extends BillKey {
   lineRowNo: number;
 }
 
+/**
+ * notes (54): what a settlement made BY an instrument names — the tender row
+ * (`abj_tender_id`) and, for a cheque, the register row (`abj_cheque_id`,
+ * which ck_abj_cheque_mode demands of a CHEQUE-mode row and ck_abj_pdc of a
+ * post-dated one). Keyed by the line whose instrument it is.
+ */
+export interface InstrumentRefs {
+  tenderId: string;
+  tenderAccYear: string;
+  chequeId: string | null;
+  chequeAccYear: string | null;
+}
+
 export async function raiseBill(
   tx: Prisma.TransactionClient,
   ctx: BillWriteContext,
   bill: InternalBill,
   legAvId: string | null,
+  /** notes (57): a second advance for the SAME party on this voucher takes a distinct refno (ux_abl_doc_refno). */
+  refnoSuffix: string | null = null,
 ): Promise<RaisedBill> {
+  const docRefno = bill.docRefno ?? (refnoSuffix ? `${ctx.voucherRefno}/${refnoSuffix}` : ctx.voucherRefno);
   const row = await tx.accBillBalance.create({
     data: {
       ablCompanyId: ctx.companyId,
@@ -76,13 +98,18 @@ export async function raiseBill(
       ablVoucherDate: new Date(`${ctx.voucherDate}T00:00:00Z`),
       ablVoucherRefno: ctx.voucherRefno,
       // Both NOT NULL: the party's own document, else the voucher's.
-      ablDocRefno: bill.docRefno ?? ctx.voucherRefno,
-      ablDocDate: new Date(`${ctx.docDate ?? ctx.voucherDate}T00:00:00Z`),
-      ablDueDate: new Date(`${bill.dueDate}T00:00:00Z`),
+      ablDocRefno: docRefno,
+      // An advance is dated the VOUCHER (a post-dated cheque's on the day it
+      // clears, on that cheque's own voucher), never the party's document.
+      ablDocDate: new Date(`${(bill.isAdvance ? null : ctx.docDate) ?? ctx.voucherDate}T00:00:00Z`),
+      // An advance has no due date. It is not owed by anybody; it is held.
+      ablDueDate: bill.dueDate ? new Date(`${bill.dueDate}T00:00:00Z`) : null,
       ablCreditDays: bill.dueDays,
       ablDrCr: bill.side,
       ablBillAmount: bill.amount,
-      ablNarration: `${bill.billType} bill raised by voucher ${ctx.voucherRefno}`,
+      ablNarration: bill.isAdvance
+        ? `On account from voucher ${ctx.voucherRefno}`
+        : `${bill.billType} bill raised by voucher ${ctx.voucherRefno}`,
       ablCreatedBy: ctx.actor,
     },
     select: { ablId: true, ablAccYear: true },
@@ -97,10 +124,10 @@ export async function writeAllocations(
   allocations: readonly InternalAllocation[],
   raisedByLine: ReadonlyMap<number, RaisedBill>,
   legAvIdByRow: ReadonlyMap<number, string>,
+  instrumentRefs: ReadonlyMap<number, InstrumentRefs> = new Map(),
 ): Promise<BillKey[]> {
   const touched = new Map<string, BillKey>();
   let rowNo = 0;
-  const adjDate = new Date(`${ctx.voucherDate}T00:00:00Z`);
   const common = (
     a: InternalAllocation,
   ): Omit<
@@ -112,23 +139,34 @@ export async function writeAllocations(
     | 'abjAmount'
     | 'abjAgainstBillId'
     | 'abjAgainstBillAccYear'
-  > => ({
-    abjCompanyId: ctx.companyId,
-    abjBranchId: ctx.branchId,
-    abjTenantId: ctx.tenantId,
-    abjAccYear: ctx.accYear,
-    abjPartyId: a.party.ledId,
-    abjVoucherId: ctx.voucherId,
-    abjVoucherAccYear: ctx.accYear,
-    abjVoucherLineId: legAvIdByRow.get(a.legRowNo) ?? null,
-    abjAdjType: a.adjType,
-    abjAdjDate: adjDate,
-    abjSettlementMode: a.settlementMode,
-    abjUserId: ctx.userId,
-    abjSessionId: ctx.sessionId,
-    abjCreatedOn: ctx.now,
-    abjCreatedBy: ctx.actor,
-  });
+  > => {
+    const refs =
+      a.instrumentLineRowNo === null ? null : (instrumentRefs.get(a.instrumentLineRowNo) ?? null);
+    return {
+      abjCompanyId: ctx.companyId,
+      abjBranchId: ctx.branchId,
+      abjTenantId: ctx.tenantId,
+      abjAccYear: ctx.accYear,
+      abjPartyId: a.party.ledId,
+      abjVoucherId: ctx.voucherId,
+      abjVoucherAccYear: ctx.accYear,
+      abjVoucherLineId: legAvIdByRow.get(a.legRowNo) ?? null,
+      abjAdjType: a.adjType,
+      // notes (54): a post-dated cheque's row is written now and counts from
+      // the cheque's date — the receipt's rule, which the recompute applies.
+      abjAdjDate: new Date(`${a.adjDate}T00:00:00Z`),
+      abjIsPostDated: a.postDated,
+      abjSettlementMode: a.settlementMode,
+      abjTenderId: refs?.tenderId ?? null,
+      abjTenderAccYear: refs?.tenderAccYear ?? null,
+      abjChequeId: refs?.chequeId ?? null,
+      abjChequeAccYear: refs?.chequeAccYear ?? null,
+      abjUserId: ctx.userId,
+      abjSessionId: ctx.sessionId,
+      abjCreatedOn: ctx.now,
+      abjCreatedBy: ctx.actor,
+    };
+  };
 
   for (const a of allocations) {
     const existing: BillKey = { billId: a.bill.ablId, accYear: a.bill.ablAccYear };
@@ -237,12 +275,21 @@ export async function reverseVoucherAllocations(
         abjVoucherAccYear: params.accYear,
         abjVoucherLineId: null,
         abjAdjType: r.abjAdjType,
+        // The ORIGINAL's date and post-dated flag, mirrored exactly (the
+        // receipt's rule): anything else drives abl_alloc_amount negative on an
+        // un-matured cheque and ck_abl_settled refuses the write.
         abjAdjDate: r.abjAdjDate,
         abjIsPostDated: r.abjIsPostDated,
         abjDrCr: r.abjDrCr.trim() === 'DR' ? 'CR' : 'DR',
         abjAmount: r.abjAmount.negated(),
         abjSettlementMode: r.abjSettlementMode,
         abjSettlementLedgerId: r.abjSettlementLedgerId,
+        // ck_abj_pdc / ck_abj_cheque_pair / ck_abj_tender_pair: the instrument
+        // travels with the counter-row.
+        abjTenderId: r.abjTenderId,
+        abjTenderAccYear: r.abjTenderAccYear,
+        abjChequeId: r.abjChequeId,
+        abjChequeAccYear: r.abjChequeAccYear,
         abjApprovedBy: r.abjApprovedBy,
         abjReversalOfId: r.abjId,
         abjReversalReason: params.reason.slice(0, 250),

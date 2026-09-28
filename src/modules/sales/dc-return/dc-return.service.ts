@@ -79,7 +79,7 @@ export const DCR_SPEC: DocSpec = {
   revisionField: null,
   voucherTypeId: SALES_VOUCHER_TYPE.DC_RETURN,
   menuId: SALES_MENU_ID.DC_RETURN,
-  statusDocType: TxnStatusDocType.OTHER,
+  statusDocType: TxnStatusDocType.DC_RETURN,
   chargeDocType: null,
   tenderDocType: null,
   tenderDrCr: TenderDrCr.CR,

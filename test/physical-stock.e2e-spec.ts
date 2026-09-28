@@ -4,7 +4,8 @@ import { PrismaService } from '../src/database/prisma/prisma.service';
 import { AuditLogService } from '../src/modules/audit-log/audit-log.service';
 import { RequestContextService } from '../src/common/request-context/request-context.service';
 import { StockVoucherService } from '../src/modules/stocks/stock-voucher/stock-voucher.service';
-import { StockPostingService } from '../src/modules/stocks/posting/stock-posting.service';
+import { buildStockPosting } from './helpers/stock-posting.factory';
+import { assertStockBalances } from '../src/modules/stocks/posting/stock-balance-assertion';
 import type { StockVoucherTypeRules } from '../src/modules/stocks/stock-voucher/types/stock-voucher.types';
 
 /**
@@ -62,7 +63,7 @@ const OPENING_RULES: StockVoucherTypeRules = {
   allowsToBranch: false,
   auditScreenName: 'Opening Stock',
   statusDocType: TxnStatusDocType.STOCK_ADJUSTMENT,
-  postFunction: 'stock.fn_svh_post',
+  postShape: 'SIMPLE',
   refuseTypes: ['TRANSFER_IN', 'TRANSFER_OUT', 'REPACK_IN', 'REPACK_OUT'],
 };
 
@@ -82,7 +83,7 @@ const PHYSICAL_RULES: StockVoucherTypeRules = {
   allowsToBranch: false,
   auditScreenName: 'Physical Stock Count',
   statusDocType: TxnStatusDocType.STOCK_ADJUSTMENT,
-  postFunction: 'stock.fn_svh_post',
+  postShape: 'COUNT',
   refuseTypes: ['TRANSFER_IN', 'TRANSFER_OUT', 'REPACK_IN', 'REPACK_OUT'],
 };
 
@@ -118,23 +119,10 @@ async function detectEngine(): Promise<{
   freezeGuard: boolean;
   recomputePhysical: boolean;
 }> {
-  const required = [
-    'fn_svh_post',
-    'fn_svh_cancel',
-    'fn_svh_txn_map',
-    'fn_slt_resolve',
-    'fn_sbl_rebuild',
-    'fn_create_stock_partitions',
-  ];
+  // The engine is TypeScript (stock-voucher-posting.helper.ts); the database
+  // needs only the tables and the year's partitions.
   try {
-    const found = await prisma.$queryRaw<Array<{ proname: string }>>`
-      SELECT p.proname
-        FROM pg_proc p
-        JOIN pg_namespace n ON n.oid = p.pronamespace
-       WHERE n.nspname = 'stock'
-    `;
-    const names = new Set(found.map((row) => row.proname));
-    const missing = required.filter((name) => !names.has(name));
+    const missing: string[] = [];
 
     const tables = await prisma.$queryRaw<Array<{ tablename: string }>>`
       SELECT tablename FROM pg_tables WHERE schemaname = 'stock'
@@ -156,13 +144,8 @@ async function detectEngine(): Promise<{
     const [guard] = await prisma.$queryRaw<Array<{ tgname: string }>>`
       SELECT tgname FROM pg_trigger WHERE tgname = 'tr_sml_freeze_guard'
     `;
-    let recomputePhysical = false;
-    if (names.has('fn_svh_recompute')) {
-      const [recompute] = await prisma.$queryRaw<Array<{ has_physical: boolean }>>`
-        SELECT pg_get_functiondef('stock.fn_svh_recompute'::regproc) LIKE '%PHYSICAL%' AS has_physical
-      `;
-      recomputePhysical = recompute?.has_physical === true;
-    }
+    // recomputeHeaderTotals in the engine carries the NET variance on a count.
+    const recomputePhysical = true;
 
     return {
       ready: missing.length === 0,
@@ -222,9 +205,29 @@ describe('Physical stock count (e2e — needs the stock engine)', () => {
       { getUserId: () => fixture?.userId ?? null } as unknown as RequestContextService,
       // §3.1 — the one stock engine, injected. Handed the same client, so a
       // posting call still runs inside whatever transaction the test opened.
-      new StockPostingService(prisma as unknown as PrismaService),
+      buildStockPosting(prisma as unknown as PrismaService).stockPosting,
     );
     fixture = await createFixture();
+  });
+
+  // Every test counts the SAME book figures: whatever count the previous
+  // test posted is reversed, so the variance is the fixture's again.
+  let settledUpTo = 0;
+  afterEach(async () => {
+    if (!engine?.ready || !fixture) return;
+    for (const svhId of createdVoucherIds.slice(settledUpTo)) {
+      const [row] = await prisma.$queryRaw<Array<{ svh_status: string; svh_voucher_type: string }>>`
+        SELECT svh_status, svh_voucher_type FROM stock.stock_voucher WHERE svh_id = ${svhId}::uuid
+      `;
+      if (row?.svh_status === 'POSTED' && row.svh_voucher_type === 'PHYSICAL') {
+        try {
+          await service.cancel(PHYSICAL_RULES, svhId, ACC_YEAR, 'e2e afterEach', fixture.companyId, fixture.branchId, fixture.userId);
+        } catch {
+          // Refused reversals are that test's own business.
+        }
+      }
+    }
+    settledUpTo = createdVoucherIds.length;
   });
 
   afterAll(async () => {
@@ -337,11 +340,14 @@ describe('Physical stock count (e2e — needs the stock engine)', () => {
 
     const unitIds: Record<string, string> = {};
     for (const unit of units) {
+      // The named unit when the seed has it; otherwise any unit will do —
+      // every quantity here is keyed at the factor the fixture states.
       const [unitRow] = await prisma.$queryRaw<Array<{ unit_id: string }>>`
-        SELECT unit_id FROM inventory.item_unit_master WHERE unit_name = ${unit.name} LIMIT 1
+        SELECT unit_id FROM inventory.item_unit_master
+         ORDER BY (unit_name = ${unit.name}) DESC, unit_name LIMIT 1
       `;
       if (!unitRow) {
-        throw new Error(`No item_unit_master row named ${unit.name} — seed the units first.`);
+        throw new Error(`No item_unit_master row at all — seed the units first.`);
       }
       unitIds[unit.name] = unitRow.unit_id;
     }
@@ -375,6 +381,7 @@ describe('Physical stock count (e2e — needs the stock engine)', () => {
       await prisma.$executeRaw`DELETE FROM stock.stock_voucher WHERE svh_id = ${svhId}::uuid`;
     }
     for (const itemId of createdItemIds) {
+      await prisma.$executeRaw`DELETE FROM stock.stock_track_policy WHERE stp_scope = 'ITEM' AND stp_scope_id = ${itemId}::uuid`;
       await prisma.$executeRaw`DELETE FROM stock.stock_balance WHERE sbl_item_id = ${itemId}::uuid`;
       await prisma.$executeRaw`DELETE FROM stock.stock_item_cost WHERE sic_item_id = ${itemId}::uuid`;
       await prisma.$executeRaw`DELETE FROM stock.stock_lot WHERE slt_item_id = ${itemId}::uuid`;
@@ -393,6 +400,13 @@ describe('Physical stock count (e2e — needs the stock engine)', () => {
    * no book quantity, so it cannot have a variance.
    */
   async function seedHoldings(): Promise<void> {
+    // MILK is BATCH-tracked, so its lot carries B-2604 and the sheet shows it.
+    // FIFO, because the default FEFO needs an expiry (ck_stp_fefo_needs_expiry).
+    await prisma.$executeRaw`
+      INSERT INTO stock.stock_track_policy (
+        stp_company_id, stp_scope, stp_scope_id, stp_track_batch, stp_issue_strategy, stp_remarks)
+      VALUES (${fixture.companyId}::uuid, 'ITEM', ${fixture.milkId}::uuid, true, 'FIFO', 'physical-stock e2e')
+    `;
     const opening = await service.save(OPENING_RULES, {
       header: {
         accYear: ACC_YEAR,
@@ -561,12 +575,14 @@ describe('Physical stock count (e2e — needs the stock engine)', () => {
     return Number(row?.avg ?? 0);
   };
 
-  const rebuild = async (): Promise<number> => {
-    const [row] = await prisma.$queryRaw<Array<{ differed: number }>>`
-      SELECT stock.fn_sbl_rebuild(${fixture.companyId}::uuid, ${fixture.branchId}::uuid) AS differed
-    `;
-    return Number(row.differed);
-  };
+  // §5.1 — the TypeScript assertion: every derived figure against its source.
+  const rebuild = async (): Promise<number> =>
+    (
+      await assertStockBalances(prisma, {
+        companyId: fixture.companyId,
+        branchId: fixture.branchId,
+      })
+    ).length;
 
   // ── §4 — the sheet ───────────────────────────────────────────────────────
 
@@ -714,7 +730,7 @@ describe('Physical stock count (e2e — needs the stock engine)', () => {
     // wrong cost cannot be fixed by counting it, and this engine has no REVALUE.
   });
 
-  it('reconciles: fn_sbl_rebuild finds 0 holdings differing', async () => {
+  it('reconciles: the balance assertion finds 0 holdings differing', async () => {
     if (!requireEngine()) return;
 
     const saved = await saveCount();

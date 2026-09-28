@@ -1,8 +1,9 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.GENERATED_ROLES = void 0;
+exports.EXCLUDED_INSTRUMENT_TYPES = exports.CHEQUE_TENDER_TYPE_ID = exports.GENERATED_ROLES = exports.MONEY_GROUP_NAMES = exports.MONEY_GROUP_IDS = void 0;
 exports.loadCompanyFacts = loadCompanyFacts;
 exports.loadLedgerFacts = loadLedgerFacts;
+exports.isBankLedger = isBankLedger;
 exports.isMoneyLedger = isMoneyLedger;
 exports.loadInstrumentLedgers = loadInstrumentLedgers;
 exports.loadTaxRates = loadTaxRates;
@@ -13,12 +14,21 @@ exports.loadTdsAnnualBase = loadTdsAnnualBase;
 exports.loadPartyCreditDays = loadPartyCreditDays;
 exports.loadStateName = loadStateName;
 exports.loadBills = loadBills;
+exports.loadTenderFacts = loadTenderFacts;
+exports.listInstrumentTenders = listInstrumentTenders;
+exports.settlementModeForTenderType = settlementModeForTenderType;
 exports.billKey = billKey;
 exports.itcClassOf = itcClassOf;
 const client_1 = require("@prisma/client");
 const ledger_map_helper_1 = require("../ledgerRole/ledger-map.helper");
 const PARTY_GROUPS = new Set(['sundry debtors', 'sundry creditors']);
 const MONEY_GROUPS = new Set(['cash-in-hand', 'bank accounts', 'bank od a/c']);
+exports.MONEY_GROUP_IDS = new Set([
+    '019eee86-f34b-7e18-9d7c-5bea4d593ba8',
+    '019eee86-f34b-7e27-8aee-2b5930314c8a',
+    '019eee86-f34b-7d50-af11-254d259a8440',
+]);
+exports.MONEY_GROUP_NAMES = ['Cash-in-Hand', 'Bank Accounts', 'Bank OD A/c'];
 async function loadCompanyFacts(tx, companyId) {
     const rows = await tx.$queryRaw `
     SELECT comp_id, comp_name, comp_state_code, comp_gstin_no, comp_einvoice_applicable
@@ -100,8 +110,12 @@ async function loadLedgerFacts(tx, companyId, ledgerIds) {
     }
     return out;
 }
+function isBankLedger(l) {
+    return l.groupNames.some((n) => n.toLowerCase() === 'bank accounts' || n.toLowerCase() === 'bank od a/c');
+}
 function isMoneyLedger(l) {
-    return l.groupNames.some((n) => MONEY_GROUPS.has(n.toLowerCase()));
+    return ((l.groupPath ?? []).some((g) => exports.MONEY_GROUP_IDS.has(g)) ||
+        l.groupNames.some((n) => MONEY_GROUPS.has(n.toLowerCase())));
 }
 async function loadInstrumentLedgers(tx, companyId) {
     const rows = await tx.$queryRaw `
@@ -292,6 +306,81 @@ async function loadBills(tx, bills, lock) {
         });
     }
     return out;
+}
+exports.CHEQUE_TENDER_TYPE_ID = 5;
+exports.EXCLUDED_INSTRUMENT_TYPES = [7, 8, 9, 10];
+const TENDER_SELECT = client_1.Prisma.sql `
+  SELECT t.tnd_id, t.tnd_name, t.tnd_short_name, t.tnd_type_id, y.ttm_type_name, y.ttm_is_cash,
+         COALESCE(t.tnd_needs_ref, y.ttm_needs_ref) AS needs_ref,
+         t.tnd_ledger_id, l.led_name, t.tnd_settlement_ledger_id, t.tnd_is_active, t.tnd_is_deleted,
+         t.tnd_company_id, t.tnd_branch_id, t.tnd_hotkey, t.tnd_display_position
+    FROM accounts.acc_tender_master t
+    JOIN accounts.acc_tender_types  y ON y.ttm_type_id = t.tnd_type_id
+    JOIN accounts.acc_ledger_master l ON l.led_id = t.tnd_ledger_id`;
+function toTenderFacts(r) {
+    return {
+        tndId: r.tnd_id,
+        name: r.tnd_name,
+        shortName: r.tnd_short_name,
+        typeId: r.tnd_type_id,
+        typeName: r.ttm_type_name,
+        isCash: r.ttm_is_cash,
+        needsRef: r.needs_ref ?? false,
+        ledgerId: r.tnd_ledger_id,
+        ledgerName: r.led_name,
+        settlementLedgerId: r.tnd_settlement_ledger_id,
+        isActive: r.tnd_is_active,
+        isDeleted: r.tnd_is_deleted,
+        companyId: r.tnd_company_id,
+        branchId: r.tnd_branch_id,
+        hotkey: r.tnd_hotkey,
+        displayPosition: r.tnd_display_position,
+    };
+}
+async function loadTenderFacts(tx, tenderIds) {
+    const out = new Map();
+    const ids = [...new Set(tenderIds.filter((id) => !!id))];
+    if (ids.length === 0) {
+        return out;
+    }
+    const rows = await tx.$queryRaw `
+    ${TENDER_SELECT}
+     WHERE t.tnd_id = ANY(${ids}::uuid[])`;
+    for (const r of rows) {
+        out.set(r.tnd_id, toTenderFacts(r));
+    }
+    return out;
+}
+async function listInstrumentTenders(tx, companyId, branchId) {
+    const excluded = [...exports.EXCLUDED_INSTRUMENT_TYPES];
+    const rows = await tx.$queryRaw `
+    ${TENDER_SELECT}
+     WHERE t.tnd_company_id = ${companyId}::uuid
+       AND t.tnd_is_deleted = false AND t.tnd_is_active = true
+       AND NOT (t.tnd_type_id = ANY(${excluded}::int[]))
+       AND (${branchId}::uuid IS NULL OR t.tnd_branch_id IS NULL OR t.tnd_branch_id = ${branchId}::uuid)
+     ORDER BY t.tnd_display_position, t.tnd_name`;
+    return rows.map(toTenderFacts);
+}
+function settlementModeForTenderType(typeId) {
+    switch (typeId) {
+        case 1:
+            return 'CASH';
+        case 2:
+            return 'CARD';
+        case 3:
+            return 'UPI';
+        case 4:
+            return 'WALLET';
+        case exports.CHEQUE_TENDER_TYPE_ID:
+            return 'CHEQUE';
+        case 10:
+            return 'LOYALTY';
+        case 11:
+            return 'VOUCHER';
+        default:
+            return 'BANK';
+    }
 }
 function billKey(billId, accYear) {
     return `${billId}|${accYear.trim()}`;

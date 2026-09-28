@@ -79,6 +79,14 @@ model AccPdcRegister {
   apdCancelDate        DateTime? @db.Date @map("apd_cancel_date")
   apdCancelReason      String?   @db.VarChar(250) @map("apd_cancel_reason")
   apdRemarks           String?   @map("apd_remarks")
+  // notes (55) — an ISSUED cheque (P): the book its leaf came from (no FK in
+  // Prisma terms beyond the DB's own ck_apd_book_issued), who it is made out
+  // to, the A/c Payee crossing (Q8, default on) and the print trail.
+  apdChequeBookId      String?   @db.Uuid @map("apd_cheque_book_id")
+  apdFavouring         String?   @db.VarChar(150) @map("apd_favouring")
+  apdAcPayee           Boolean   @default(true) @map("apd_ac_payee")
+  apdPrintedOn         DateTime? @db.Timestamptz(6) @map("apd_printed_on")
+  apdPrintCount        Int       @default(0) @map("apd_print_count")
   // Audit
   apdIsActive          Boolean   @default(true) @map("apd_is_active")
   apdIsDeleted         Boolean   @default(false) @map("apd_is_deleted")
@@ -107,8 +115,10 @@ model AccPdcRegister {
   // 20260811060000_partition_account_bill_tables_by_acc_year):
   //   - PARTITION BY LIST (apd_acc_year); one partition per accounting year,
   //     created by public.ensure_acc_year_partitions('YYYY-YYYY').
-  //   - Partial UNIQUE index ux_apd_instrument — the same cheque number
-  //     cannot be registered twice for one party in one FY.
+  //   - Partial UNIQUE index ux_apd_instrument — the same RECEIVED cheque
+  //     number cannot be registered twice for one party in one FY; and
+  //     ux_apd_issued_leaf — an ISSUED leaf is unique per bank account per FY
+  //     (20260926190000_payment_cheques).
   //   - Partial/covering indexes ix_apd_due, ix_apd_party, ix_apd_bank,
   //     ix_apd_bounced, ix_apd_branch, ix_apd_voucher, ix_apd_replaced.
   //   - CHECK constraints ck_apd_tra_type, ck_apd_instrument, ck_apd_status,

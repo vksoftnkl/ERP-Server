@@ -51,7 +51,7 @@ exports.DCR_SPEC = {
     revisionField: null,
     voucherTypeId: sales_doc_utils_1.SALES_VOUCHER_TYPE.DC_RETURN,
     menuId: sales_doc_utils_1.SALES_MENU_ID.DC_RETURN,
-    statusDocType: txn_status_log_helper_1.TxnStatusDocType.OTHER,
+    statusDocType: txn_status_log_helper_1.TxnStatusDocType.DC_RETURN,
     chargeDocType: null,
     tenderDocType: null,
     tenderDrCr: tender_detail_api_types_1.TenderDrCr.CR,

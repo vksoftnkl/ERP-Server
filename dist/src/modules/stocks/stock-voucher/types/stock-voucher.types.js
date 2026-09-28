@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.NEGATIVE_STOCK_MESSAGE_FRAGMENT = exports.STOCK_ENGINE_SQLSTATE_STATUS = exports.PHYSICAL_DEFAULT_RATE_SOURCE = exports.PHYSICAL_TXN_TYPES = exports.STOCK_QUANTITY_MODES = exports.STOCK_SRC_MODULE = exports.STOCK_POST_FUNCTIONS = exports.DERIVABLE_RATE_SOURCES = exports.STOCK_RATE_SOURCES = exports.STOCK_BUCKETS = exports.SAVEABLE_STOCK_VOUCHER_STATUSES = exports.STOCK_VOUCHER_STATUSES = exports.STOCK_VOUCHER_TYPES = void 0;
+exports.NEGATIVE_STOCK_MESSAGE_FRAGMENT = exports.STOCK_ENGINE_SQLSTATE_STATUS = exports.PHYSICAL_DEFAULT_RATE_SOURCE = exports.PHYSICAL_TXN_TYPES = exports.STOCK_QUANTITY_MODES = exports.STOCK_SRC_MODULE = exports.STOCK_POST_SHAPES = exports.DERIVABLE_RATE_SOURCES = exports.STOCK_RATE_SOURCES = exports.STOCK_BUCKETS = exports.SAVEABLE_STOCK_VOUCHER_STATUSES = exports.STOCK_VOUCHER_STATUSES = exports.STOCK_VOUCHER_TYPES = void 0;
 exports.STOCK_VOUCHER_TYPES = [
     'OPENING',
     'RECEIPT',
@@ -39,11 +39,7 @@ exports.DERIVABLE_RATE_SOURCES = [
     'LOT_COST',
     'MRP',
 ];
-exports.STOCK_POST_FUNCTIONS = [
-    'stock.fn_svh_post',
-    'stock.fn_svh_post_transfer',
-    'stock.fn_svh_receive_transfer',
-];
+exports.STOCK_POST_SHAPES = ['SIMPLE', 'COUNT', 'TRANSFER_OUT', 'TRANSFER_IN'];
 exports.STOCK_SRC_MODULE = 'STOCK';
 exports.STOCK_QUANTITY_MODES = ['QTY', 'COUNT'];
 exports.PHYSICAL_TXN_TYPES = ['PHYSICAL_PLUS', 'PHYSICAL_MINUS'];

@@ -42,7 +42,7 @@ const OPENING_RULES = {
     allowsToBranch: false,
     auditScreenName: 'Opening Stock',
     statusDocType: txn_status_log_helper_1.TxnStatusDocType.STOCK_ADJUSTMENT,
-    postFunction: 'stock.fn_svh_post',
+    postShape: 'SIMPLE',
     refuseTypes: ['TRANSFER_IN', 'TRANSFER_OUT', 'REPACK_IN', 'REPACK_OUT'],
 };
 const MAX_IMPORT_BYTES = 5 * 1024 * 1024;

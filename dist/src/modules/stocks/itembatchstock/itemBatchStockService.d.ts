@@ -7,7 +7,6 @@ export declare class ItemBatchStockService {
     getByScope(queryDto: GetItemBatchStockQueryDto): Promise<ItemBatchStockPayload[]>;
     private toPayload;
     private getItemPriceUnitFactors;
-    private getUnitFactorForStockUnit;
     private calculateBookQty;
     private toIsoStringOrNull;
     private toNumber;

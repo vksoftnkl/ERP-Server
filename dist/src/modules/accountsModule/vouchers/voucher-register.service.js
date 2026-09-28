@@ -21,9 +21,13 @@ const doc_register_service_1 = require("../../../common/posting/doc-register.ser
 const voucher_posting_service_1 = require("../../../common/posting/voucher-posting.service");
 const txn_status_log_helper_1 = require("../../../common/txn-status-log/txn-status-log.helper");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
+const cheque_book_helper_1 = require("./cheque-book.helper");
 const receipt_guards_1 = require("../receipt/receipt.guards");
-const books_reconcile_guard_1 = require("../reconcile/books-reconcile.guard");
+const receipt_cheque_links_1 = require("../receipt/receipt-cheque-links");
 const bill_balance_recompute_service_1 = require("../billBalance/bill-balance-recompute.service");
+const tender_detail_service_1 = require("../tenderDetail/tender-detail.service");
+const tender_detail_api_types_1 = require("../tenderDetail/types/tender-detail-api.types");
+const voucher_books_helper_1 = require("./voucher-books.helper");
 const voucher_derive_1 = require("./voucher-derive");
 Object.defineProperty(exports, "registerDeductee", { enumerable: true, get: function () { return voucher_derive_1.registerDeductee; } });
 Object.defineProperty(exports, "roleKey", { enumerable: true, get: function () { return voucher_derive_1.roleKey; } });
@@ -33,6 +37,7 @@ const voucher_types_service_1 = require("./voucher-types.service");
 const vouchers_errors_1 = require("./vouchers.errors");
 const TX = { maxWait: 15_000, timeout: 120_000 };
 const BACKDATE_SETTING = 'accounts.backdate_mode';
+const ALLOW_ADVANCE_SETTING = 'accounts.voucher_allow_advance';
 const GENERATED = new Set(voucher_facts_1.GENERATED_ROLES);
 let VoucherRegisterService = class VoucherRegisterService {
     prisma;
@@ -41,13 +46,15 @@ let VoucherRegisterService = class VoucherRegisterService {
     posting;
     docRegister;
     recompute;
-    constructor(prisma, requestContext, types, posting, docRegister, recompute) {
+    tenderDetail;
+    constructor(prisma, requestContext, types, posting, docRegister, recompute, tenderDetail) {
         this.prisma = prisma;
         this.requestContext = requestContext;
         this.types = types;
         this.posting = posting;
         this.docRegister = docRegister;
         this.recompute = recompute;
+        this.tenderDetail = tenderDetail;
     }
     caller() {
         const userId = this.requestContext.getUserId();
@@ -86,7 +93,8 @@ let VoucherRegisterService = class VoucherRegisterService {
             else if (!rights.create) {
                 (0, vouchers_errors_1.throwRight)('This user may not create on this voucher type’s menu', vouchers_errors_1.VCH.RIGHT_CREATE);
             }
-            const { overrides: _o, ...sent } = (raw ?? dto);
+            const sent = { ...(raw ?? dto) };
+            delete sent.overrides;
             const draft = JSON.parse(JSON.stringify(sent));
             const docAmount = dto.lines
                 .filter((l) => l.drCr === 'DR')
@@ -101,6 +109,7 @@ let VoucherRegisterService = class VoucherRegisterService {
           UPDATE accounts.acc_voucher_header
              SET avh_voucher_date = ${dto.header.date}::date,
                  avh_party_id     = ${partyId}::uuid,
+                 avh_employee_id  = ${dto.header.employeeIds ?? []}::uuid[],
                  avh_doc_refno    = ${dto.header.docRefno ?? null},
                  avh_doc_date     = ${dto.header.docDate ?? null}::date,
                  avh_usr_refno    = ${dto.header.usrRefno ?? null},
@@ -115,13 +124,14 @@ let VoucherRegisterService = class VoucherRegisterService {
                 const [row] = await tx.$queryRaw `
           INSERT INTO accounts.acc_voucher_header (
             avh_company_id, avh_branch_id, avh_acc_year, avh_voucher_type_id,
-            avh_voucher_date, avh_party_id, avh_doc_refno, avh_doc_date, avh_usr_refno,
+            avh_voucher_date, avh_party_id, avh_employee_id, avh_doc_refno, avh_doc_date, avh_usr_refno,
             avh_remarks, avh_doc_amount, avh_voucher_status, avh_user_id, avh_draft_lines,
             avh_created_by
           ) VALUES (
             ${dto.header.companyId}::uuid, ${dto.header.branchId}::uuid, ${dto.header.accYear}::char(9),
             ${type.typeId}::int,
-            ${dto.header.date}::date, ${partyId}::uuid, ${dto.header.docRefno ?? null},
+            ${dto.header.date}::date, ${partyId}::uuid, ${dto.header.employeeIds ?? []}::uuid[],
+            ${dto.header.docRefno ?? null},
             ${dto.header.docDate ?? null}::date, ${dto.header.usrRefno ?? null},
             ${dto.header.remarks ?? null}, ${docAmount.toFixed(2)}::numeric, 'DRAFT',
             ${actor}::uuid, ${JSON.stringify(draft)}::jsonb, ${actor}
@@ -170,8 +180,11 @@ let VoucherRegisterService = class VoucherRegisterService {
         };
     }
     async post(dto) {
+        return this.prisma.$transaction((tx) => this.postWithin(tx, dto), TX);
+    }
+    async postWithin(tx, dto) {
         const { userId, actor } = this.caller();
-        return this.prisma.$transaction(async (tx) => {
+        {
             const type = await this.loadRegisterType(tx, dto.header.typeCode);
             const rights = await this.types.rightsFor(tx, userId, type);
             if (!rights.post) {
@@ -208,7 +221,14 @@ let VoucherRegisterService = class VoucherRegisterService {
                 partyIds.add(b.party.ledId);
             for (const a of d.allocations)
                 partyIds.add(a.party.ledId);
-            const legs = d.legs.map((l) => ({
+            for (const pd of d.postDated)
+                partyIds.add(pd.party.ledId);
+            for (const l of d.legs)
+                if (l.instrument)
+                    partyIds.add(l.ledger.ledId);
+            const employeeIds = dto.header.employeeIds ?? [];
+            const todayLegs = d.legs.filter((l) => !l.postDated);
+            const toVoucherLeg = (l) => ({
                 ledgerId: l.ledger.ledId,
                 drCr: l.drCr,
                 amount: Number(l.amount.toFixed(2)),
@@ -216,7 +236,7 @@ let VoucherRegisterService = class VoucherRegisterService {
                 roleTag: l.role,
                 oppLedgerId: l.oppLedgerId,
                 field: l.lineRowNo === null ? l.source : `lines.${l.lineRowNo}`,
-            }));
+            });
             const docAmount = d.party ? d.party.amount : d.totals.debit;
             const voucher = await this.posting.postLegs(tx, {
                 header: {
@@ -242,20 +262,189 @@ let VoucherRegisterService = class VoucherRegisterService {
                     createdBy: actor,
                     draftVoucherId: existing?.avh_voucher_id ?? null,
                 },
-                legs,
+                legs: todayLegs.map(toVoucherLeg),
             });
             const voucherId = voucher.voucherId;
             const refno = voucher.voucherRefno ?? voucherId;
-            if (existing) {
+            await tx.$executeRaw `
+        UPDATE accounts.acc_voucher_header
+           SET avh_draft_lines = NULL, avh_employee_id = ${employeeIds}::uuid[]
+         WHERE avh_voucher_id = ${voucherId}::uuid AND avh_acc_year = ${dto.header.accYear}::char(9)`;
+            const legAvIdByDeriveRow = await this.legIdsByDeriveRow(tx, voucherId, dto.header.accYear, todayLegs);
+            const pdcVouchers = new Map();
+            for (const pd of d.postDated) {
+                await (0, receipt_guards_1.assertVoucherPartitionExists)(tx, pd.accYear, `lines.${pd.lineRowNo}.instrument.instrumentDate`);
+                const pair = d.legs.filter((l) => l.rowNo === pd.instrumentLegRowNo ||
+                    l.rowNo === pd.partyLegRowNo ||
+                    pd.extraLegRowNos.includes(l.rowNo));
+                const pdc = await this.posting.postLegs(tx, {
+                    header: {
+                        companyId: dto.header.companyId,
+                        branchId: dto.header.branchId,
+                        tenantId: existing?.avh_tenant_id ?? null,
+                        accYear: pd.accYear,
+                        voucherTypeId: type.typeId,
+                        voucherDate: pd.postsOn,
+                        docLabel: type.typeName,
+                        docRefno: null,
+                        docDate: pd.postsOn,
+                        usrRefno: p.header.usrRefno,
+                        docAmount: Number(pd.amount.toFixed(2)),
+                        roundOff: 0,
+                        partyId: pd.party.ledId,
+                        userId: actor,
+                        sessionId: existing?.avh_session_id ?? null,
+                        deviceType: existing?.avh_device_type ?? null,
+                        deviceId: existing?.avh_device_id ?? null,
+                        remarks: `Post-dated ${pd.instrument.tender.name} ${pd.instrument.refNo ?? ''} on ${refno}`.trim(),
+                        deviceCode: null,
+                        createdBy: actor,
+                    },
+                    legs: pair.map(toVoucherLeg),
+                });
                 await tx.$executeRaw `
-          UPDATE accounts.acc_voucher_header SET avh_draft_lines = NULL
-           WHERE avh_voucher_id = ${voucherId}::uuid AND avh_acc_year = ${dto.header.accYear}::char(9)`;
+          UPDATE accounts.acc_voucher_header
+             SET avh_against_voucher_id = ${voucherId}::uuid,
+                 avh_against_acc_year   = ${dto.header.accYear}::char(9),
+                 avh_employee_id        = ${employeeIds}::uuid[]
+           WHERE avh_voucher_id = ${pdc.voucherId}::uuid AND avh_acc_year = ${pd.accYear}::char(9)`;
+                pdcVouchers.set(pd.lineRowNo, {
+                    voucherId: pdc.voucherId,
+                    accYear: pd.accYear,
+                    refno: pdc.voucherRefno ?? pdc.voucherId,
+                    lastNo: pdc.voucherLastNo,
+                    legIds: await this.legIdsByDeriveRow(tx, pdc.voucherId, pd.accYear, pair),
+                });
             }
-            const legRows = await tx.$queryRaw `
-        SELECT av_id, av_row_no FROM accounts.acc_vouchers
-         WHERE av_voucher_id = ${voucherId}::uuid AND av_acc_year = ${dto.header.accYear}::char(9)
-           AND av_is_deleted = false`;
-            const legAvIdByRow = new Map(legRows.map((r) => [r.av_row_no, r.av_id]));
+            const instrumentRefs = new Map();
+            const instrumentLegs = d.legs.filter((l) => l.instrument && l.lineRowNo !== null);
+            if (instrumentLegs.length > 0) {
+                const scope = {
+                    tdSrcModule: tender_detail_api_types_1.TenderSrcModule.ACCOUNTS,
+                    tdSrcDocType: tenderDocTypeOf(type),
+                    tdSrcDocId: voucherId,
+                    tdCompanyId: dto.header.companyId,
+                    tdBranchId: dto.header.branchId,
+                    tdTenantId: existing?.avh_tenant_id ?? null,
+                    tdAccYear: dto.header.accYear,
+                    tdDocDate: new Date(`${dto.header.date}T00:00:00Z`),
+                    tdPartyLedgerId: null,
+                    tdUserId: actor,
+                    tdSessionId: existing?.avh_session_id ?? null,
+                    tdDeviceId: existing?.avh_device_id ?? null,
+                    tdDrCr: type.partySide === 'DR' ? tender_detail_api_types_1.TenderDrCr.CR : tender_detail_api_types_1.TenderDrCr.DR,
+                };
+                const leaves = new Map();
+                for (const l of instrumentLegs) {
+                    const ins = l.instrument;
+                    if (!ins.issued || !ins.isCheque || !ins.chequeBook)
+                        continue;
+                    const taken = await (0, cheque_book_helper_1.takeNextLeaf)(tx, ins.chequeBook.chequeBookId, actor);
+                    if (!taken) {
+                        (0, vouchers_errors_1.throwState)(`Row ${l.lineRowNo}: book ${ins.chequeBook.bookNo} has no leaf left — start a new book`, vouchers_errors_1.VCH.BOOK_FINISHED, `lines.${l.lineRowNo}.instrument.chequeBookId`);
+                    }
+                    leaves.set(l.lineRowNo, taken);
+                    ins.refNo = taken.leaf;
+                    ins.nextLeaf = taken.leaf;
+                }
+                const paidBy = (l) => d.legs.find((x) => x.source === 'INSTRUMENT' && x.fromRows[0] === l.lineRowNo)?.amount ??
+                    l.amount;
+                const rows = instrumentLegs.map((l) => {
+                    const ins = l.instrument;
+                    const carrier = pdcVouchers.get(l.lineRowNo);
+                    return {
+                        tdRowNo: l.lineRowNo,
+                        tdPartyLedgerId: l.ledger.ledId,
+                        tdTenderId: ins.tender.tndId,
+                        tdTenderTypeId: ins.tender.typeId,
+                        tdTenderLedgerId: ins.issued ? ins.ledgerId : ins.tender.ledgerId,
+                        tdSettleLedgerId: ins.issued ? null : ins.tender.settlementLedgerId,
+                        tdAmount: paidBy(l).toFixed(2),
+                        tdRefNo: ins.refNo,
+                        tdBankName: ins.bankName,
+                        tdInstrumentDate: ins.instrumentDate,
+                        tdIsPdc: ins.isPostDated,
+                        tdVoucherId: carrier?.voucherId ?? voucherId,
+                        cheque: ins.cheque
+                            ? {
+                                drawerName: ins.cheque.drawerName,
+                                bankBranch: ins.cheque.bankBranch,
+                                ifsc: ins.cheque.ifsc,
+                                micr: ins.cheque.micr,
+                            }
+                            : null,
+                    };
+                });
+                const written = await this.tenderDetail.syncDocumentTenders(tx, scope, rows, actor, {
+                    tableName: 'voucher register tender',
+                    screenName: 'Voucher Register',
+                    entityName: 'Voucher tender',
+                });
+                const tdByRow = new Map(written.map((t) => [t.tdRowNo, t]));
+                for (const l of instrumentLegs) {
+                    const ins = l.instrument;
+                    const td = tdByRow.get(l.lineRowNo);
+                    if (!ins.issued || !td)
+                        continue;
+                    await tx.$executeRaw `
+            UPDATE accounts.acc_tender_detail
+               SET td_beneficiary_name = ${ins.favouring?.slice(0, 150) ?? null}
+             WHERE td_id = ${td.tdId}::uuid AND td_acc_year = ${dto.header.accYear}::char(9)`;
+                }
+                for (const l of instrumentLegs) {
+                    const ins = l.instrument;
+                    const td = tdByRow.get(l.lineRowNo);
+                    if (!td) {
+                        throw new Error(`voucher ${refno}: tender row for line ${l.lineRowNo} was not written`);
+                    }
+                    let cheque = null;
+                    if (ins.isCheque) {
+                        const carrier = pdcVouchers.get(l.lineRowNo);
+                        cheque = await tx.accPdcRegister.create({
+                            data: {
+                                apdCompanyId: dto.header.companyId,
+                                apdBranchId: dto.header.branchId,
+                                apdTenantId: existing?.avh_tenant_id ?? null,
+                                apdAccYear: carrier?.accYear ?? dto.header.accYear,
+                                apdTraType: type.partySide === 'DR' ? 'P' : 'R',
+                                apdPartyId: l.ledger.ledId,
+                                apdSalesmanId: employeeIds[0] ?? null,
+                                apdInstrumentType: 'CHEQUE',
+                                apdInstrumentNo: ins.refNo,
+                                apdInstrumentDate: new Date(`${ins.instrumentDate}T00:00:00Z`),
+                                apdAmount: paidBy(l),
+                                apdBankName: ins.bankName,
+                                apdBankBranch: ins.cheque?.bankBranch ?? null,
+                                apdIfsc: ins.cheque?.ifsc ?? null,
+                                apdMicr: ins.cheque?.micr ?? null,
+                                apdDrawerName: ins.cheque?.drawerName ?? null,
+                                apdReceivedOn: new Date(`${dto.header.date}T00:00:00Z`),
+                                apdBankLedgerId: ins.issued ? ins.bankLedgerId : null,
+                                apdChequeBookId: ins.issued
+                                    ? (leaves.get(l.lineRowNo)?.chequeBookId ?? null)
+                                    : null,
+                                apdFavouring: ins.issued ? ins.favouring : null,
+                                apdAcPayee: ins.issued ? ins.acPayee : true,
+                                apdPostingMode: 'ON_RECEIPT',
+                                apdVoucherId: carrier?.voucherId ?? voucherId,
+                                apdVoucherAccYear: carrier?.accYear ?? dto.header.accYear,
+                                apdTenderId: td.tdId,
+                                apdStatus: 'HELD',
+                                apdStatusOn: now,
+                                apdStatusBy: actor,
+                                apdCreatedBy: actor,
+                            },
+                            select: { apdId: true, apdAccYear: true },
+                        });
+                    }
+                    instrumentRefs.set(l.lineRowNo, {
+                        tenderId: td.tdId,
+                        tenderAccYear: dto.header.accYear,
+                        chequeId: cheque?.apdId ?? null,
+                        chequeAccYear: cheque?.apdAccYear.trim() ?? null,
+                    });
+                }
+            }
             const billCtx = {
                 companyId: dto.header.companyId,
                 branchId: dto.header.branchId,
@@ -274,12 +463,41 @@ let VoucherRegisterService = class VoucherRegisterService {
             };
             const raisedByLine = new Map();
             const touched = [];
+            const advancesOf = new Map();
             for (const b of d.bills) {
-                const raised = await (0, voucher_billwise_helper_1.raiseBill)(tx, billCtx, b, legAvIdByRow.get(b.legRowNo) ?? null);
+                const carrier = b.isAdvance ? pdcVouchers.get(b.lineRowNo) : undefined;
+                const ctxFor = carrier
+                    ? {
+                        ...billCtx,
+                        accYear: carrier.accYear,
+                        voucherId: carrier.voucherId,
+                        voucherNo: carrier.lastNo,
+                        voucherDate: d.postDated.find((x) => x.lineRowNo === b.lineRowNo).postsOn,
+                        voucherRefno: carrier.refno,
+                    }
+                    : billCtx;
+                const legIds = carrier ? carrier.legIds : legAvIdByDeriveRow;
+                let suffix = null;
+                if (b.isAdvance) {
+                    const seen = (advancesOf.get(`${ctxFor.voucherId}|${b.party.ledId}`) ?? 0) + 1;
+                    advancesOf.set(`${ctxFor.voucherId}|${b.party.ledId}`, seen);
+                    suffix = seen > 1 ? String(b.lineRowNo) : null;
+                }
+                const raised = await (0, voucher_billwise_helper_1.raiseBill)(tx, ctxFor, b, legIds.get(b.legRowNo) ?? null, suffix);
                 raisedByLine.set(b.lineRowNo, raised);
                 touched.push(raised);
             }
-            touched.push(...(await (0, voucher_billwise_helper_1.writeAllocations)(tx, billCtx, d.allocations, raisedByLine, legAvIdByRow)));
+            touched.push(...(await (0, voucher_billwise_helper_1.writeAllocations)(tx, billCtx, d.allocations.filter((a) => !a.postDated), raisedByLine, legAvIdByDeriveRow, instrumentRefs)));
+            for (const [lineRowNo, carrier] of pdcVouchers) {
+                touched.push(...(await (0, voucher_billwise_helper_1.writeAllocations)(tx, {
+                    ...billCtx,
+                    accYear: carrier.accYear,
+                    voucherId: carrier.voucherId,
+                    voucherNo: carrier.lastNo,
+                    voucherDate: d.postDated.find((x) => x.lineRowNo === lineRowNo).postsOn,
+                    voucherRefno: carrier.refno,
+                }, d.allocations.filter((a) => a.postDated && a.instrumentLineRowNo === lineRowNo), raisedByLine, carrier.legIds, instrumentRefs)));
+            }
             if (touched.length > 0) {
                 await this.recompute.recomputeBills(tx, touched, now);
             }
@@ -328,15 +546,31 @@ let VoucherRegisterService = class VoucherRegisterService {
                 deviceId: existing?.avh_device_id ?? null,
                 sessionId: existing?.avh_session_id ?? null,
             });
-            await (0, books_reconcile_guard_1.assertBooksReconcile)(tx, {
+            await (0, voucher_books_helper_1.assertVoucherBooksReconcile)(tx, {
                 companyId: dto.header.companyId,
                 accYear: dto.header.accYear,
-                ledgerIds: [...partyIds],
-                vouchers: [{ voucherId, accYear: dto.header.accYear }],
+                ledgerIds: [
+                    ...partyIds,
+                    ...d.legs.filter((l) => l.source === 'INSTRUMENT').map((l) => l.ledger.ledId),
+                ],
             });
             const stored = await this.loadHeader(tx, voucherId, dto.header.accYear);
             return this.assemble(tx, stored, type, rights);
-        }, TX);
+        }
+    }
+    async legIdsByDeriveRow(tx, voucherId, accYear, legs) {
+        const rows = await tx.$queryRaw `
+      SELECT av_id, av_row_no FROM accounts.acc_vouchers
+       WHERE av_voucher_id = ${voucherId}::uuid AND av_acc_year = ${accYear}::char(9)
+         AND av_is_deleted = false`;
+        const byPosition = new Map(rows.map((r) => [r.av_row_no, r.av_id]));
+        const out = new Map();
+        legs.forEach((l, i) => {
+            const id = byPosition.get(i + 1);
+            if (id)
+                out.set(l.rowNo, id);
+        });
+        return out;
     }
     async deleteDraft(keys) {
         const { userId, actor } = this.caller();
@@ -498,6 +732,26 @@ let VoucherRegisterService = class VoucherRegisterService {
                 }
                 : null,
             tdsBase: l.tdsBase ?? null,
+            instrument: l.instrument
+                ? {
+                    tenderId: l.instrument.tenderId,
+                    refNo: l.instrument.refNo ?? null,
+                    instrumentDate: l.instrument.instrumentDate ?? null,
+                    bankName: l.instrument.bankName ?? null,
+                    bankLedgerId: l.instrument.bankLedgerId ?? null,
+                    chequeBookId: l.instrument.chequeBookId ?? null,
+                    favouring: l.instrument.favouring ?? null,
+                    acPayee: l.instrument.acPayee ?? null,
+                    cheque: l.instrument.cheque
+                        ? {
+                            drawerName: l.instrument.cheque.drawerName ?? null,
+                            bankBranch: l.instrument.cheque.bankBranch ?? null,
+                            ifsc: l.instrument.cheque.ifsc ?? null,
+                            micr: l.instrument.cheque.micr ?? null,
+                        }
+                        : null,
+                }
+                : null,
         }));
         const allocations = (dto.allocations ?? []).map((a, index) => ({
             index,
@@ -509,6 +763,10 @@ let VoucherRegisterService = class VoucherRegisterService {
         const ledgerIds = lines.map((l) => l.ledgerId);
         if (h.partyId)
             ledgerIds.push(h.partyId);
+        for (const l of lines) {
+            if (l.instrument?.bankLedgerId)
+                ledgerIds.push(l.instrument.bankLedgerId);
+        }
         const [ledgers, instrumentLedgers, generatedRoleLedgers, taxRates] = await Promise.all([
             (0, voucher_facts_1.loadLedgerFacts)(tx, h.companyId, ledgerIds),
             (0, voucher_facts_1.loadInstrumentLedgers)(tx, h.companyId),
@@ -573,6 +831,46 @@ let VoucherRegisterService = class VoucherRegisterService {
             }
         }
         const bills = await (0, voucher_facts_1.loadBills)(tx, allocations, opts.lock);
+        const tenders = await (0, voucher_facts_1.loadTenderFacts)(tx, lines.filter((l) => l.instrument).map((l) => l.instrument.tenderId));
+        const registeredCheques = new Set();
+        const closedYears = new Map();
+        const chequeLines = lines.filter((l) => l.instrument && (tenders.get(l.instrument.tenderId)?.typeId ?? 0) === 5);
+        const receivedCheques = type.partySide === 'DR' ? [] : chequeLines.filter((l) => l.instrument.refNo);
+        if (chequeLines.length > 0) {
+            const years = [...new Set(chequeLines.map((l) => (0, voucher_derive_1.accYearOfDate)(chequeDay(l, h.date))))];
+            const rows = receivedCheques.length === 0
+                ? []
+                : await tx.$queryRaw `
+        SELECT r.apd_party_id || '|' || r.apd_instrument_no || '|' || r.apd_acc_year AS key
+          FROM accounts.acc_pdc_register r
+         WHERE r.apd_company_id = ${h.companyId}::uuid
+           AND r.apd_instrument_type = 'CHEQUE'
+           AND r.apd_tra_type = 'R'
+           AND r.apd_acc_year = ANY(${years}::bpchar[])
+           AND r.apd_is_deleted = false AND r.apd_status <> 'CANCELLED'
+           AND (r.apd_party_id, r.apd_instrument_no) IN (${client_1.Prisma.join(receivedCheques.map((l) => client_1.Prisma.sql `(${l.ledgerId}::uuid, ${l.instrument.refNo})`))})`;
+            rows.forEach((r) => registeredCheques.add(r.key.replace(/\s+\|/g, '|').trim()));
+            const fys = await tx.$queryRaw `
+        SELECT fy_year_name, fy_status, fy_lock_date FROM public.fiscal_years
+         WHERE comp_id = ${h.companyId}::uuid AND fy_year_name = ANY(${years}::bpchar[])
+           AND is_deleted = false`;
+            for (const y of fys) {
+                const name = y.fy_year_name.trim();
+                if (y.fy_status.trim().toUpperCase() !== 'OPEN') {
+                    closedYears.set(name, y.fy_status.trim());
+                    continue;
+                }
+                const lock = y.fy_lock_date ? y.fy_lock_date.toISOString().slice(0, 10) : null;
+                const latest = chequeLines
+                    .map((l) => chequeDay(l, h.date))
+                    .filter((d) => (0, voucher_derive_1.accYearOfDate)(d) === name)
+                    .sort()
+                    .pop();
+                if (lock && latest && latest <= lock) {
+                    closedYears.set(name, `locked up to ${lock}`);
+                }
+            }
+        }
         let docRefnoClash = null;
         const docRefno = h.docRefno?.trim() || null;
         if (docRefno && party) {
@@ -600,7 +898,9 @@ let VoucherRegisterService = class VoucherRegisterService {
                 docRefnoClash = 'OTHER';
             }
         }
+        const chequeBooks = await (0, cheque_book_helper_1.loadChequeBooks)(tx, lines.map((l) => l.instrument?.chequeBookId ?? '').filter(Boolean));
         const backdateMode = await this.backdateMode(tx, h.companyId);
+        const allowAdvance = await this.allowAdvance(tx, h.companyId);
         const input = {
             type,
             header: {
@@ -626,8 +926,13 @@ let VoucherRegisterService = class VoucherRegisterService {
             bills,
             docRefnoClash,
             backdateMode,
+            allowAdvance,
             today: new Date().toISOString().slice(0, 10),
             ctx,
+            tenders,
+            registeredCheques,
+            closedYears,
+            chequeBooks,
         };
         const derived = (0, voucher_derive_1.derive)(input);
         return {
@@ -648,6 +953,14 @@ let VoucherRegisterService = class VoucherRegisterService {
                 reverseCharge: h.reverseCharge ?? false,
             },
         };
+    }
+    async allowAdvance(tx, companyId) {
+        const [row] = await tx.$queryRaw `
+      SELECT out_effective_value AS value
+        FROM public.fn_app_settings_effective(${companyId}::uuid, NULL::uuid, NULL::uuid, NULL::uuid)
+       WHERE out_asd_key = ${ALLOW_ADVANCE_SETTING}`;
+        const token = row?.value?.trim().toLowerCase();
+        return !(token === 'false' || token === '0' || token === 'no' || token === 'off');
     }
     async backdateMode(tx, companyId) {
         const [row] = await tx.$queryRaw `
@@ -756,6 +1069,108 @@ let VoucherRegisterService = class VoucherRegisterService {
             lines,
         };
     }
+    async loadInstruments(tx, s) {
+        const rows = await tx.$queryRaw `
+      SELECT t.td_dr_cr, t.td_beneficiary_name,
+             r.apd_cheque_book_id, r.acb_book_no, r.apd_favouring, r.apd_ac_payee, r.apd_tra_type,
+             t.td_id, t.td_acc_year, t.td_row_no, t.td_party_ledger_id, p.led_name AS party_name,
+             t.td_tender_id, m.tnd_name, t.td_tender_type_id, y.ttm_type_name,
+             t.td_tender_ledger_id, t.td_settle_ledger_id, t.td_amount, t.td_ref_no,
+             t.td_instrument_date, t.td_bank_name, t.td_is_pdc, t.td_voucher_id,
+             cv.avh_voucher_refno AS cv_refno, cv.avh_voucher_date AS cv_date,
+             r.apd_id, r.apd_acc_year, r.apd_status, r.apd_bank_ledger_id,
+             r.apd_drawer_name, r.apd_bank_branch, r.apd_ifsc, r.apd_micr
+        FROM accounts.acc_tender_detail t
+        LEFT JOIN accounts.acc_ledger_master p ON p.led_id = t.td_party_ledger_id
+        LEFT JOIN accounts.acc_tender_master m ON m.tnd_id = t.td_tender_id
+        LEFT JOIN accounts.acc_tender_types  y ON y.ttm_type_id = t.td_tender_type_id
+        LEFT JOIN accounts.acc_voucher_header cv ON cv.avh_voucher_id = t.td_voucher_id
+        LEFT JOIN LATERAL (
+          SELECT x.apd_id, x.apd_acc_year, x.apd_status, x.apd_bank_ledger_id,
+                 x.apd_drawer_name, x.apd_bank_branch, x.apd_ifsc, x.apd_micr,
+                 x.apd_cheque_book_id, b.acb_book_no, x.apd_favouring, x.apd_ac_payee, x.apd_tra_type
+            FROM accounts.acc_pdc_register x
+            LEFT JOIN accounts.acc_cheque_book b ON b.acb_id = x.apd_cheque_book_id
+           WHERE x.apd_tender_id = t.td_id AND x.apd_is_deleted = false
+           ORDER BY x.apd_created_on DESC LIMIT 1) r ON true
+       WHERE t.td_src_doc_id = ${s.avh_voucher_id}::uuid
+         AND t.td_is_deleted = false AND t.td_is_voided = false
+       ORDER BY t.td_row_no`;
+        const iso = (d) => (d ? d.toISOString().slice(0, 10) : null);
+        return rows.map((r) => ({
+            tdId: r.td_id,
+            tdAccYear: r.td_acc_year.trim(),
+            lineRowNo: r.td_row_no,
+            partyId: r.td_party_ledger_id,
+            partyName: r.party_name,
+            tenderId: r.td_tender_id,
+            tenderName: r.tnd_name,
+            tenderTypeId: r.td_tender_type_id,
+            tenderTypeName: r.ttm_type_name,
+            ledgerId: r.td_settle_ledger_id ?? r.td_tender_ledger_id,
+            amount: Number(new client_1.Prisma.Decimal(r.td_amount).toFixed(2)),
+            refNo: r.td_ref_no,
+            instrumentDate: iso(r.td_instrument_date),
+            bankName: r.td_bank_name,
+            isCheque: r.td_tender_type_id === 5,
+            isPostDated: r.td_is_pdc,
+            voucherId: r.td_voucher_id,
+            voucherRefno: r.cv_refno,
+            voucherDate: iso(r.cv_date),
+            cheque: r.td_tender_type_id === 5
+                ? {
+                    drawerName: r.apd_drawer_name,
+                    bankBranch: r.apd_bank_branch,
+                    ifsc: r.apd_ifsc,
+                    micr: r.apd_micr,
+                }
+                : null,
+            pdcId: r.apd_id,
+            pdcAccYear: r.apd_acc_year?.trim() ?? null,
+            pdcStatus: r.apd_status,
+            pdcBankLedgerId: r.apd_bank_ledger_id,
+            issued: r.td_dr_cr.trim() === 'CR',
+            bankLedgerId: r.apd_bank_ledger_id ??
+                (r.td_dr_cr.trim() === 'CR' && r.td_tender_type_id !== 1 ? r.td_tender_ledger_id : null),
+            leaf: r.apd_tra_type === 'P' ? r.td_ref_no : null,
+            chequeBookId: r.apd_cheque_book_id,
+            bookNo: r.acb_book_no,
+            favouring: r.apd_favouring ?? r.td_beneficiary_name,
+            acPayee: r.apd_tra_type === 'P' ? r.apd_ac_payee : null,
+        }));
+    }
+    async allocationRows(tx, voucherId, accYear) {
+        const n = (v) => Number(new client_1.Prisma.Decimal(v).toFixed(2));
+        const adjRows = await tx.$queryRaw `
+      SELECT j.abj_id, j.abj_row_no, j.abj_bill_id, j.abj_bill_acc_year, b.abl_doc_refno, b.abl_bill_type,
+             j.abj_against_bill_id, j.abj_against_bill_acc_year, j.abj_adj_type, j.abj_dr_cr,
+             j.abj_amount, j.abj_adj_date, j.abj_reversal_of_id
+        FROM accounts.acc_bill_adjustment j
+        LEFT JOIN accounts.acc_bill_balance b ON b.abl_id = j.abj_bill_id AND b.abl_acc_year = j.abj_bill_acc_year
+       WHERE j.abj_is_deleted = false
+         AND ((j.abj_voucher_id = ${voucherId}::uuid AND j.abj_voucher_acc_year = ${accYear}::char(9))
+           -- the counter-rows a cancel filed against the REVERSAL voucher, shown with what they undo
+           OR j.abj_reversal_of_id IN (SELECT o.abj_id FROM accounts.acc_bill_adjustment o
+                                        WHERE o.abj_voucher_id = ${voucherId}::uuid
+                                          AND o.abj_voucher_acc_year = ${accYear}::char(9)))
+       ORDER BY (j.abj_reversal_of_id IS NOT NULL), j.abj_row_no`;
+        return adjRows.map((r) => ({
+            abjId: r.abj_id,
+            rowNo: r.abj_row_no,
+            billId: r.abj_bill_id,
+            billAccYear: r.abj_bill_acc_year.trim(),
+            billRefno: r.abl_doc_refno,
+            billType: r.abl_bill_type,
+            againstBillId: r.abj_against_bill_id,
+            againstBillAccYear: r.abj_against_bill_acc_year?.trim() ?? null,
+            adjType: r.abj_adj_type,
+            drCr: r.abj_dr_cr.trim(),
+            amount: n(r.abj_amount),
+            adjDate: r.abj_adj_date.toISOString().slice(0, 10),
+            isReversal: r.abj_reversal_of_id !== null,
+            reversalOfId: r.abj_reversal_of_id,
+        }));
+    }
     async assemble(tx, s, type, rights) {
         const n = (v) => Number(new client_1.Prisma.Decimal(v ?? 0).toFixed(2));
         const iso = (d) => d ? d.toISOString().slice(0, 10) : null;
@@ -777,7 +1192,25 @@ let VoucherRegisterService = class VoucherRegisterService {
                     partyLegRow = r.av_row_no;
             }
         }
-        const legs = legRows.map((r) => ({
+        const instruments = await this.loadInstruments(tx, s);
+        const pdcHeaders = await tx.accVoucherHeader.findMany({
+            where: (0, receipt_cheque_links_1.receiptPdcVoucherWhere)({
+                avhVoucherId: s.avh_voucher_id,
+                avhVoucherTypeId: s.avh_voucher_type_id,
+            }),
+            select: {
+                avhVoucherId: true,
+                avhAccYear: true,
+                avhVoucherRefno: true,
+                avhVoucherDate: true,
+                avhVoucherStatus: true,
+                avhPartyId: true,
+                party: { select: { ledName: true } },
+                reversalVoucher: { select: { avhVoucherRefno: true } },
+            },
+            orderBy: [{ avhVoucherDate: 'asc' }, { avhVoucherNo: 'asc' }],
+        });
+        const legs = attachInstruments(legRows.map((r) => ({
             avId: r.av_id,
             rowNo: r.av_row_no,
             drCr: r.av_dr_cr.trim(),
@@ -789,36 +1222,58 @@ let VoucherRegisterService = class VoucherRegisterService {
             generated: (r.av_role !== null && GENERATED.has(r.av_role)) || r.av_row_no === partyLegRow,
             remarks: r.av_remarks,
             oppLedgerId: r.av_opp_ledger_id,
-        }));
-        const adjRows = await tx.$queryRaw `
-      SELECT j.abj_id, j.abj_row_no, j.abj_bill_id, j.abj_bill_acc_year, b.abl_doc_refno, b.abl_bill_type,
-             j.abj_against_bill_id, j.abj_against_bill_acc_year, j.abj_adj_type, j.abj_dr_cr,
-             j.abj_amount, j.abj_adj_date, j.abj_reversal_of_id
-        FROM accounts.acc_bill_adjustment j
-        LEFT JOIN accounts.acc_bill_balance b ON b.abl_id = j.abj_bill_id AND b.abl_acc_year = j.abj_bill_acc_year
-       WHERE j.abj_is_deleted = false
-         AND ((j.abj_voucher_id = ${s.avh_voucher_id}::uuid AND j.abj_voucher_acc_year = ${s.avh_acc_year}::char(9))
-           -- the counter-rows a cancel filed against the REVERSAL voucher, shown with what they undo
-           OR j.abj_reversal_of_id IN (SELECT o.abj_id FROM accounts.acc_bill_adjustment o
-                                        WHERE o.abj_voucher_id = ${s.avh_voucher_id}::uuid
-                                          AND o.abj_voucher_acc_year = ${s.avh_acc_year}::char(9)))
-       ORDER BY (j.abj_reversal_of_id IS NOT NULL), j.abj_row_no`;
-        const allocations = adjRows.map((r) => ({
-            abjId: r.abj_id,
-            rowNo: r.abj_row_no,
-            billId: r.abj_bill_id,
-            billAccYear: r.abj_bill_acc_year.trim(),
-            billRefno: r.abl_doc_refno,
-            billType: r.abl_bill_type,
-            againstBillId: r.abj_against_bill_id,
-            againstBillAccYear: r.abj_against_bill_acc_year?.trim() ?? null,
-            adjType: r.abj_adj_type,
-            drCr: r.abj_dr_cr.trim(),
-            amount: n(r.abj_amount),
-            adjDate: iso(r.abj_adj_date),
-            isReversal: r.abj_reversal_of_id !== null,
-            reversalOfId: r.abj_reversal_of_id,
-        }));
+            instrument: null,
+        })), instruments.filter((i) => i.voucherId === s.avh_voucher_id), type);
+        const pdcVouchers = [];
+        for (const h of pdcHeaders) {
+            const pdcLegs = await tx.$queryRaw `
+        SELECT v.av_id, v.av_row_no, v.av_dr_cr, v.av_ledger_id, l.led_name, g.acc_group_name,
+               v.av_amount, v.av_role, v.av_remarks, v.av_opp_ledger_id
+          FROM accounts.acc_vouchers v
+          JOIN accounts.acc_ledger_master l ON l.led_id = v.av_ledger_id
+          LEFT JOIN accounts.acc_group_master g ON g.acc_group_id = l.led_group_id
+         WHERE v.av_voucher_id = ${h.avhVoucherId}::uuid AND v.av_acc_year = ${h.avhAccYear}::char(9)
+           AND v.av_is_deleted = false
+         ORDER BY v.av_row_no`;
+            const pdcAdj = await this.allocationRows(tx, h.avhVoucherId, h.avhAccYear.trim());
+            pdcVouchers.push({
+                voucherId: h.avhVoucherId,
+                accYear: h.avhAccYear.trim(),
+                voucherRefno: h.avhVoucherRefno,
+                date: iso(h.avhVoucherDate),
+                status: h.avhVoucherStatus.trim(),
+                partyId: h.avhPartyId,
+                partyName: h.party?.ledName ?? null,
+                reversalRefno: h.reversalVoucher?.avhVoucherRefno ?? null,
+                legs: attachInstruments(pdcLegs.map((r) => ({
+                    avId: r.av_id,
+                    rowNo: r.av_row_no,
+                    drCr: r.av_dr_cr.trim(),
+                    ledgerId: r.av_ledger_id,
+                    ledgerName: r.led_name,
+                    groupName: r.acc_group_name,
+                    amount: n(r.av_amount),
+                    role: r.av_role,
+                    generated: r.av_role !== null && GENERATED.has(r.av_role),
+                    remarks: r.av_remarks,
+                    oppLedgerId: r.av_opp_ledger_id,
+                    instrument: null,
+                })), instruments.filter((i) => i.voucherId === h.avhVoucherId), type),
+                allocations: pdcAdj,
+            });
+        }
+        const chequeMoved = status === 'POSTED' &&
+            (await tx.accPdcRegister.count({
+                where: {
+                    ...(await (0, receipt_cheque_links_1.receiptChequeFilter)(tx, {
+                        receiptVoucherId: s.avh_voucher_id,
+                        voucherIds: [s.avh_voucher_id, ...pdcHeaders.map((h) => h.avhVoucherId)],
+                    })),
+                    apdIsDeleted: false,
+                    apdStatus: { not: 'HELD' },
+                },
+            })) > 0;
+        const allocations = await this.allocationRows(tx, s.avh_voucher_id, s.avh_acc_year);
         const billRows = await tx.$queryRaw `
       SELECT abl_id, abl_acc_year, abl_bill_type, abl_doc_refno, abl_doc_date, abl_due_date, abl_dr_cr,
              abl_bill_amount, abl_alloc_amount, abl_pending_amount, abl_status, abl_is_deleted
@@ -962,12 +1417,15 @@ let VoucherRegisterService = class VoucherRegisterService {
                 dayClosed: false,
                 periodLocked: lock !== null && header.date <= lock,
                 allocatedElsewhere: elsewhere.length > 0,
+                chequeMoved,
             },
             legs,
             allocations,
             bills,
             gstDoc,
             tds,
+            instruments,
+            pdcVouchers,
             draft: status === 'DRAFT' && s.avh_draft_lines && typeof s.avh_draft_lines === 'object'
                 ? s.avh_draft_lines
                 : null,
@@ -982,8 +1440,49 @@ exports.VoucherRegisterService = VoucherRegisterService = __decorate([
         voucher_types_service_1.VoucherTypesService,
         voucher_posting_service_1.VoucherPostingService,
         doc_register_service_1.DocRegisterService,
-        bill_balance_recompute_service_1.BillBalanceRecomputeService])
+        bill_balance_recompute_service_1.BillBalanceRecomputeService,
+        tender_detail_service_1.TenderDetailService])
 ], VoucherRegisterService);
+function tenderDocTypeOf(type) {
+    switch (type.nature) {
+        case 'RECEIPT':
+            return tender_detail_api_types_1.TenderSrcDocType.RECEIPT;
+        case 'PAYMENT':
+            return tender_detail_api_types_1.TenderSrcDocType.PAYMENT;
+        default:
+            return tender_detail_api_types_1.TenderSrcDocType.OTHER;
+    }
+}
+function chequeDay(l, voucherDate) {
+    const d = l.instrument?.instrumentDate?.trim() || null;
+    return d && d > voucherDate ? d : voucherDate;
+}
+function attachInstruments(legs, instruments, type) {
+    if (instruments.length === 0 || !type.instruments) {
+        return legs;
+    }
+    const side = type.partySide === 'DR' || type.partySide === 'CR' ? type.partySide : 'CR';
+    const partyLegs = legs.filter((l) => l.drCr === side && !l.generated);
+    const sorted = [...instruments].sort((a, b) => a.lineRowNo - b.lineRowNo);
+    const taken = new Set();
+    sorted.forEach((ins, i) => {
+        const partyLeg = partyLegs[i];
+        if (partyLeg && partyLeg.ledgerId === ins.partyId) {
+            partyLeg.instrument = ins;
+        }
+        const drLeg = legs.find((l) => !taken.has(l.avId) &&
+            l.drCr !== side &&
+            l.ledgerId === ins.ledgerId &&
+            l.amount === ins.amount &&
+            l.instrument === null);
+        if (drLeg) {
+            taken.add(drLeg.avId);
+            drLeg.instrument = ins;
+            drLeg.generated = true;
+        }
+    });
+    return legs;
+}
 function accYearOf(iso) {
     const y = Number(iso.slice(0, 4));
     const m = Number(iso.slice(5, 7));

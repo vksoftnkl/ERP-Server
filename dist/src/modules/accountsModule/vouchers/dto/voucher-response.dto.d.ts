@@ -49,4 +49,10 @@ export declare class DeleteSuccessDto extends SuccessEnvelopeDto {
 export declare class AdjacentVoucherSuccessDto extends SuccessEnvelopeDto {
     data: unknown;
 }
+export declare class InstrumentsSuccessDto extends SuccessEnvelopeDto {
+    data: unknown;
+}
+export declare class ChequeBooksSuccessDto extends SuccessEnvelopeDto {
+    data: unknown;
+}
 export {};

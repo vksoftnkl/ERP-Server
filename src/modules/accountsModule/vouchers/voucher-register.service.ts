@@ -13,9 +13,19 @@ import {
   TxnStatusSrcModule,
 } from '../../../common/txn-status-log/txn-status-log.helper';
 import { DEFAULT_ACTOR } from 'src/common/utils/module-service.utils';
+import { loadChequeBooks, takeNextLeaf, type TakenLeaf } from './cheque-book.helper';
 import { assertVoucherPartitionExists } from '../receipt/receipt.guards';
-import { assertBooksReconcile } from '../reconcile/books-reconcile.guard';
+import { receiptChequeFilter, receiptPdcVoucherWhere } from '../receipt/receipt-cheque-links';
 import { BillBalanceRecomputeService } from '../billBalance/bill-balance-recompute.service';
+import { TenderDetailService } from '../tenderDetail/tender-detail.service';
+import type { SaveTenderDetailDto } from '../tenderDetail/dto/save-tender-detail.dto';
+import {
+  TenderDrCr,
+  TenderSrcDocType,
+  TenderSrcModule,
+  type TenderDocumentScope,
+} from '../tenderDetail/types/tender-detail-api.types';
+import { assertVoucherBooksReconcile } from './voucher-books.helper';
 import type { BillKey } from '../billBalance/bill-balance-recompute.service';
 import type {
   DeletePayload,
@@ -26,8 +36,10 @@ import type {
   VoucherBillPayload,
   VoucherGstDocPayload,
   VoucherHeaderPayload,
+  VoucherInstrumentPayload,
   VoucherLegPayload,
   VoucherPayload,
+  VoucherPdcVoucherPayload,
   VoucherRights,
   VoucherStatus,
   VoucherTdsPayload,
@@ -40,6 +52,7 @@ import type {
   VoucherPayloadDto,
 } from './dto/voucher-payload.dto';
 import {
+  accYearOfDate,
   derive,
   registerDeductee,
   roleKey,
@@ -47,6 +60,7 @@ import {
   type AllocationInput,
   type DeriveInput,
   type DerivedInternal,
+  type InternalLeg,
   type TypedLineInput,
 } from './voucher-derive';
 import {
@@ -60,6 +74,7 @@ import {
   loadTaxRates,
   loadTdsAnnualBase,
   loadTdsRate,
+  loadTenderFacts,
   resolveRoleLedgerMap,
   type CompanyFacts,
   type LedgerFacts,
@@ -69,6 +84,7 @@ import {
   raiseBill,
   writeAllocations,
   otherVoucherOnRaisedBills,
+  type InstrumentRefs,
   type RaisedBill,
 } from './voucher-billwise.helper';
 import { VoucherTypesService } from './voucher-types.service';
@@ -86,6 +102,8 @@ import {
 
 const TX = { maxWait: 15_000, timeout: 120_000 };
 const BACKDATE_SETTING = 'accounts.backdate_mode';
+/** notes (57): false = a Receipt / Payment party leg must be allocated to the rupee. */
+const ALLOW_ADVANCE_SETTING = 'accounts.voucher_allow_advance';
 const GENERATED = new Set<string>(GENERATED_ROLES);
 
 /** The header as every route reads it. */
@@ -167,6 +185,7 @@ export class VoucherRegisterService {
     private readonly posting: VoucherPostingService,
     private readonly docRegister: DocRegisterService,
     private readonly recompute: BillBalanceRecomputeService,
+    private readonly tenderDetail: TenderDetailService,
   ) {}
 
   private caller(): { userId: string | null; actor: string } {
@@ -229,7 +248,8 @@ export class VoucherRegisterService {
       }
 
       // The payload as SENT (overrides stripped: they belong to a post, not a draft).
-      const { overrides: _o, ...sent } = (raw ?? dto) as Record<string, unknown>;
+      const sent: Record<string, unknown> = { ...((raw ?? dto) as Record<string, unknown>) };
+      delete sent.overrides;
       const draft = JSON.parse(JSON.stringify(sent)) as Prisma.InputJsonValue;
       const docAmount = dto.lines
         .filter((l) => l.drCr === 'DR')
@@ -245,6 +265,7 @@ export class VoucherRegisterService {
           UPDATE accounts.acc_voucher_header
              SET avh_voucher_date = ${dto.header.date}::date,
                  avh_party_id     = ${partyId}::uuid,
+                 avh_employee_id  = ${dto.header.employeeIds ?? []}::uuid[],
                  avh_doc_refno    = ${dto.header.docRefno ?? null},
                  avh_doc_date     = ${dto.header.docDate ?? null}::date,
                  avh_usr_refno    = ${dto.header.usrRefno ?? null},
@@ -258,13 +279,14 @@ export class VoucherRegisterService {
         const [row] = await tx.$queryRaw<{ avh_voucher_id: string }[]>`
           INSERT INTO accounts.acc_voucher_header (
             avh_company_id, avh_branch_id, avh_acc_year, avh_voucher_type_id,
-            avh_voucher_date, avh_party_id, avh_doc_refno, avh_doc_date, avh_usr_refno,
+            avh_voucher_date, avh_party_id, avh_employee_id, avh_doc_refno, avh_doc_date, avh_usr_refno,
             avh_remarks, avh_doc_amount, avh_voucher_status, avh_user_id, avh_draft_lines,
             avh_created_by
           ) VALUES (
             ${dto.header.companyId}::uuid, ${dto.header.branchId}::uuid, ${dto.header.accYear}::char(9),
             ${type.typeId}::int,
-            ${dto.header.date}::date, ${partyId}::uuid, ${dto.header.docRefno ?? null},
+            ${dto.header.date}::date, ${partyId}::uuid, ${dto.header.employeeIds ?? []}::uuid[],
+            ${dto.header.docRefno ?? null},
             ${dto.header.docDate ?? null}::date, ${dto.header.usrRefno ?? null},
             ${dto.header.remarks ?? null}, ${docAmount.toFixed(2)}::numeric, 'DRAFT',
             ${actor}::uuid, ${JSON.stringify(draft)}::jsonb, ${actor}
@@ -323,8 +345,17 @@ export class VoucherRegisterService {
   // ═════════════════════════════════════════════════════════════════════════
 
   async post(dto: PostVoucherDto): Promise<VoucherPayload> {
+    return this.prisma.$transaction((tx) => this.postWithin(tx, dto), TX);
+  }
+
+  /**
+   * The whole of /post inside the CALLER's transaction. notes (55): an issued
+   * cheque's replacement is a new Payment Voucher raised in the same
+   * transaction that marks the old cheque REPLACED.
+   */
+  async postWithin(tx: Prisma.TransactionClient, dto: PostVoucherDto): Promise<VoucherPayload> {
     const { userId, actor } = this.caller();
-    return this.prisma.$transaction(async (tx) => {
+    {
       // 1 · the type, and the rights on ITS menu
       const type = await this.loadRegisterType(tx, dto.header.typeCode);
       const rights = await this.types.rightsFor(tx, userId, type);
@@ -371,13 +402,19 @@ export class VoucherRegisterService {
       const d = p.derived;
       const now = new Date();
 
-      // 8 – 9 · number and write the header and the legs
+      // 8 – 9 · number and write the header and the legs — TODAY's. A
+      // post-dated cheque's pair (notes 54) goes into a voucher of its own,
+      // dated the cheque, below.
       const partyIds = new Set<string>();
       if (d.party) partyIds.add(d.party.ledger.ledId);
       for (const b of d.bills) partyIds.add(b.party.ledId);
       for (const a of d.allocations) partyIds.add(a.party.ledId);
+      for (const pd of d.postDated) partyIds.add(pd.party.ledId);
+      for (const l of d.legs) if (l.instrument) partyIds.add(l.ledger.ledId);
+      const employeeIds = dto.header.employeeIds ?? [];
 
-      const legs: VoucherLeg[] = d.legs.map((l) => ({
+      const todayLegs = d.legs.filter((l) => !l.postDated);
+      const toVoucherLeg = (l: InternalLeg): VoucherLeg => ({
         ledgerId: l.ledger.ledId,
         drCr: l.drCr,
         amount: Number(l.amount.toFixed(2)),
@@ -385,7 +422,7 @@ export class VoucherRegisterService {
         roleTag: l.role,
         oppLedgerId: l.oppLedgerId,
         field: l.lineRowNo === null ? l.source : `lines.${l.lineRowNo}`,
-      }));
+      });
       const docAmount = d.party ? d.party.amount : d.totals.debit;
       const voucher = await this.posting.postLegs(tx, {
         header: {
@@ -411,22 +448,237 @@ export class VoucherRegisterService {
           createdBy: actor,
           draftVoucherId: existing?.avh_voucher_id ?? null,
         },
-        legs,
+        legs: todayLegs.map(toVoucherLeg),
       });
       const voucherId = voucher.voucherId;
       const refno = voucher.voucherRefno ?? voucherId;
-      if (existing) {
-        await tx.$executeRaw`
-          UPDATE accounts.acc_voucher_header SET avh_draft_lines = NULL
-           WHERE avh_voucher_id = ${voucherId}::uuid AND avh_acc_year = ${dto.header.accYear}::char(9)`;
-      }
-      const legRows = await tx.$queryRaw<{ av_id: string; av_row_no: number }[]>`
-        SELECT av_id, av_row_no FROM accounts.acc_vouchers
-         WHERE av_voucher_id = ${voucherId}::uuid AND av_acc_year = ${dto.header.accYear}::char(9)
-           AND av_is_deleted = false`;
-      const legAvIdByRow = new Map(legRows.map((r) => [r.av_row_no, r.av_id]));
+      await tx.$executeRaw`
+        UPDATE accounts.acc_voucher_header
+           SET avh_draft_lines = NULL, avh_employee_id = ${employeeIds}::uuid[]
+         WHERE avh_voucher_id = ${voucherId}::uuid AND avh_acc_year = ${dto.header.accYear}::char(9)`;
+      // av_row_no is sequential per voucher; the derivation's row numbers run
+      // over every leg, so each voucher maps its legs back through position.
+      const legAvIdByDeriveRow = await this.legIdsByDeriveRow(
+        tx,
+        voucherId,
+        dto.header.accYear,
+        todayLegs,
+      );
 
-      // 10 · bills and allocations
+      // 9b · notes (54): one voucher per post-dated cheque, dated the cheque,
+      //      answering today's through avh_against_voucher_id (the Receipt's
+      //      way). Its two legs balance by construction.
+      const pdcVouchers = new Map<
+        number,
+        {
+          voucherId: string;
+          accYear: string;
+          refno: string;
+          lastNo: bigint;
+          legIds: Map<number, string>;
+        }
+      >();
+      for (const pd of d.postDated) {
+        await assertVoucherPartitionExists(
+          tx,
+          pd.accYear,
+          `lines.${pd.lineRowNo}.instrument.instrumentDate`,
+        );
+        const pair = d.legs.filter(
+          (l) =>
+            l.rowNo === pd.instrumentLegRowNo ||
+            l.rowNo === pd.partyLegRowNo ||
+            pd.extraLegRowNos.includes(l.rowNo),
+        );
+        const pdc = await this.posting.postLegs(tx, {
+          header: {
+            companyId: dto.header.companyId,
+            branchId: dto.header.branchId,
+            tenantId: existing?.avh_tenant_id ?? null,
+            accYear: pd.accYear,
+            voucherTypeId: type.typeId,
+            voucherDate: pd.postsOn,
+            docLabel: type.typeName,
+            docRefno: null,
+            docDate: pd.postsOn,
+            usrRefno: p.header.usrRefno,
+            docAmount: Number(pd.amount.toFixed(2)),
+            roundOff: 0,
+            partyId: pd.party.ledId,
+            userId: actor,
+            sessionId: existing?.avh_session_id ?? null,
+            deviceType: existing?.avh_device_type ?? null,
+            deviceId: existing?.avh_device_id ?? null,
+            remarks:
+              `Post-dated ${pd.instrument.tender.name} ${pd.instrument.refNo ?? ''} on ${refno}`.trim(),
+            deviceCode: null,
+            createdBy: actor,
+          },
+          legs: pair.map(toVoucherLeg),
+        });
+        await tx.$executeRaw`
+          UPDATE accounts.acc_voucher_header
+             SET avh_against_voucher_id = ${voucherId}::uuid,
+                 avh_against_acc_year   = ${dto.header.accYear}::char(9),
+                 avh_employee_id        = ${employeeIds}::uuid[]
+           WHERE avh_voucher_id = ${pdc.voucherId}::uuid AND avh_acc_year = ${pd.accYear}::char(9)`;
+        pdcVouchers.set(pd.lineRowNo, {
+          voucherId: pdc.voucherId,
+          accYear: pd.accYear,
+          refno: pdc.voucherRefno ?? pdc.voucherId,
+          lastNo: pdc.voucherLastNo,
+          legIds: await this.legIdsByDeriveRow(tx, pdc.voucherId, pd.accYear, pair),
+        });
+      }
+
+      // 9c · notes (54): a tender row per instrument (the Receipt's writer),
+      //      and a HELD register row per cheque (menu 51), each naming the
+      //      voucher that carries its legs.
+      const instrumentRefs = new Map<number, InstrumentRefs>();
+      const instrumentLegs = d.legs.filter((l) => l.instrument && l.lineRowNo !== null);
+      if (instrumentLegs.length > 0) {
+        const scope: TenderDocumentScope = {
+          tdSrcModule: TenderSrcModule.ACCOUNTS,
+          tdSrcDocType: tenderDocTypeOf(type),
+          tdSrcDocId: voucherId,
+          tdCompanyId: dto.header.companyId,
+          tdBranchId: dto.header.branchId,
+          tdTenantId: existing?.avh_tenant_id ?? null,
+          tdAccYear: dto.header.accYear,
+          tdDocDate: new Date(`${dto.header.date}T00:00:00Z`),
+          tdPartyLedgerId: null,
+          tdUserId: actor,
+          tdSessionId: existing?.avh_session_id ?? null,
+          tdDeviceId: existing?.avh_device_id ?? null,
+          tdDrCr: type.partySide === 'DR' ? TenderDrCr.CR : TenderDrCr.DR,
+        };
+        // notes (55) §5.2 step 6: a payment's cheque takes its book's next
+        // leaf HERE, under the book's row lock, in line order — /validate's
+        // leaf was only shown. The leaf is the cheque's number from now on.
+        const leaves = new Map<number, TakenLeaf>();
+        for (const l of instrumentLegs) {
+          const ins = l.instrument!;
+          if (!ins.issued || !ins.isCheque || !ins.chequeBook) continue;
+          const taken = await takeNextLeaf(tx, ins.chequeBook.chequeBookId, actor);
+          if (!taken) {
+            throwState(
+              `Row ${l.lineRowNo}: book ${ins.chequeBook.bookNo} has no leaf left — start a new book`,
+              VCH.BOOK_FINISHED,
+              `lines.${l.lineRowNo}.instrument.chequeBookId`,
+            );
+          }
+          leaves.set(l.lineRowNo!, taken);
+          ins.refNo = taken.leaf;
+          ins.nextLeaf = taken.leaf;
+        }
+        // What the instrument moved: its own money leg. On a payment with TDS
+        // the party line is grossed up; the cheque is for the net.
+        const paidBy = (l: (typeof instrumentLegs)[number]) =>
+          d.legs.find((x) => x.source === 'INSTRUMENT' && x.fromRows[0] === l.lineRowNo)?.amount ??
+          l.amount;
+        const rows = instrumentLegs.map((l): SaveTenderDetailDto => {
+          const ins = l.instrument!;
+          const carrier = pdcVouchers.get(l.lineRowNo!);
+          return {
+            tdRowNo: l.lineRowNo!,
+            tdPartyLedgerId: l.ledger.ledId,
+            tdTenderId: ins.tender.tndId,
+            tdTenderTypeId: ins.tender.typeId,
+            // an issued instrument's money left OUR bank, whatever the tender's own ledger
+            tdTenderLedgerId: ins.issued ? ins.ledgerId : ins.tender.ledgerId,
+            tdSettleLedgerId: ins.issued ? null : ins.tender.settlementLedgerId,
+            tdAmount: paidBy(l).toFixed(2),
+            tdRefNo: ins.refNo,
+            tdBankName: ins.bankName,
+            tdInstrumentDate: ins.instrumentDate,
+            tdIsPdc: ins.isPostDated,
+            tdVoucherId: carrier?.voucherId ?? voucherId,
+            cheque: ins.cheque
+              ? {
+                  drawerName: ins.cheque.drawerName,
+                  bankBranch: ins.cheque.bankBranch,
+                  ifsc: ins.cheque.ifsc,
+                  micr: ins.cheque.micr,
+                }
+              : null,
+          };
+        });
+        const written = await this.tenderDetail.syncDocumentTenders(tx, scope, rows, actor, {
+          tableName: 'voucher register tender',
+          screenName: 'Voucher Register',
+          entityName: 'Voucher tender',
+        });
+        const tdByRow = new Map(written.map((t) => [t.tdRowNo, t]));
+        // notes (55): who a payment is made out to
+        for (const l of instrumentLegs) {
+          const ins = l.instrument!;
+          const td = tdByRow.get(l.lineRowNo!);
+          if (!ins.issued || !td) continue;
+          await tx.$executeRaw`
+            UPDATE accounts.acc_tender_detail
+               SET td_beneficiary_name = ${ins.favouring?.slice(0, 150) ?? null}
+             WHERE td_id = ${td.tdId}::uuid AND td_acc_year = ${dto.header.accYear}::char(9)`;
+        }
+        for (const l of instrumentLegs) {
+          const ins = l.instrument!;
+          const td = tdByRow.get(l.lineRowNo!);
+          if (!td) {
+            throw new Error(`voucher ${refno}: tender row for line ${l.lineRowNo} was not written`);
+          }
+          let cheque: { apdId: string; apdAccYear: string } | null = null;
+          if (ins.isCheque) {
+            const carrier = pdcVouchers.get(l.lineRowNo!);
+            cheque = await tx.accPdcRegister.create({
+              data: {
+                apdCompanyId: dto.header.companyId,
+                apdBranchId: dto.header.branchId,
+                apdTenantId: existing?.avh_tenant_id ?? null,
+                // The register row lives in the year of the voucher carrying it.
+                apdAccYear: carrier?.accYear ?? dto.header.accYear,
+                apdTraType: type.partySide === 'DR' ? 'P' : 'R',
+                apdPartyId: l.ledger.ledId,
+                apdSalesmanId: employeeIds[0] ?? null,
+                apdInstrumentType: 'CHEQUE',
+                apdInstrumentNo: ins.refNo!,
+                apdInstrumentDate: new Date(`${ins.instrumentDate!}T00:00:00Z`),
+                apdAmount: paidBy(l),
+                apdBankName: ins.bankName,
+                apdBankBranch: ins.cheque?.bankBranch ?? null,
+                apdIfsc: ins.cheque?.ifsc ?? null,
+                apdMicr: ins.cheque?.micr ?? null,
+                apdDrawerName: ins.cheque?.drawerName ?? null,
+                // received on (R) / issued on (P)
+                apdReceivedOn: new Date(`${dto.header.date}T00:00:00Z`),
+                // P: the account it is drawn on; R: set when it is deposited
+                apdBankLedgerId: ins.issued ? ins.bankLedgerId : null,
+                apdChequeBookId: ins.issued
+                  ? (leaves.get(l.lineRowNo!)?.chequeBookId ?? null)
+                  : null,
+                apdFavouring: ins.issued ? ins.favouring : null,
+                apdAcPayee: ins.issued ? ins.acPayee : true,
+                apdPostingMode: 'ON_RECEIPT',
+                apdVoucherId: carrier?.voucherId ?? voucherId,
+                apdVoucherAccYear: carrier?.accYear ?? dto.header.accYear,
+                apdTenderId: td.tdId,
+                apdStatus: 'HELD',
+                apdStatusOn: now,
+                apdStatusBy: actor,
+                apdCreatedBy: actor,
+              },
+              select: { apdId: true, apdAccYear: true },
+            });
+          }
+          instrumentRefs.set(l.lineRowNo!, {
+            tenderId: td.tdId,
+            tenderAccYear: dto.header.accYear,
+            chequeId: cheque?.apdId ?? null,
+            chequeAccYear: cheque?.apdAccYear.trim() ?? null,
+          });
+        }
+      }
+
+      // 10 · bills and allocations — today's on today's voucher, a post-dated
+      //      line's on its own (they count from the cheque's date)
       const billCtx = {
         companyId: dto.header.companyId,
         branchId: dto.header.branchId,
@@ -445,14 +697,62 @@ export class VoucherRegisterService {
       };
       const raisedByLine = new Map<number, RaisedBill>();
       const touched: BillKey[] = [];
+      const advancesOf = new Map<string, number>();
       for (const b of d.bills) {
-        const raised = await raiseBill(tx, billCtx, b, legAvIdByRow.get(b.legRowNo) ?? null);
+        // notes (57): an advance left on a post-dated cheque line is held from
+        // the day the cheque clears, on that cheque's own voucher (the
+        // Receipt's rule); today's remainder on today's voucher.
+        const carrier = b.isAdvance ? pdcVouchers.get(b.lineRowNo) : undefined;
+        const ctxFor = carrier
+          ? {
+              ...billCtx,
+              accYear: carrier.accYear,
+              voucherId: carrier.voucherId,
+              voucherNo: carrier.lastNo,
+              voucherDate: d.postDated.find((x) => x.lineRowNo === b.lineRowNo)!.postsOn,
+              voucherRefno: carrier.refno,
+            }
+          : billCtx;
+        const legIds = carrier ? carrier.legIds : legAvIdByDeriveRow;
+        let suffix: string | null = null;
+        if (b.isAdvance) {
+          const seen = (advancesOf.get(`${ctxFor.voucherId}|${b.party.ledId}`) ?? 0) + 1;
+          advancesOf.set(`${ctxFor.voucherId}|${b.party.ledId}`, seen);
+          suffix = seen > 1 ? String(b.lineRowNo) : null;
+        }
+        const raised = await raiseBill(tx, ctxFor, b, legIds.get(b.legRowNo) ?? null, suffix);
         raisedByLine.set(b.lineRowNo, raised);
         touched.push(raised);
       }
       touched.push(
-        ...(await writeAllocations(tx, billCtx, d.allocations, raisedByLine, legAvIdByRow)),
+        ...(await writeAllocations(
+          tx,
+          billCtx,
+          d.allocations.filter((a) => !a.postDated),
+          raisedByLine,
+          legAvIdByDeriveRow,
+          instrumentRefs,
+        )),
       );
+      for (const [lineRowNo, carrier] of pdcVouchers) {
+        touched.push(
+          ...(await writeAllocations(
+            tx,
+            {
+              ...billCtx,
+              accYear: carrier.accYear,
+              voucherId: carrier.voucherId,
+              voucherNo: carrier.lastNo,
+              voucherDate: d.postDated.find((x) => x.lineRowNo === lineRowNo)!.postsOn,
+              voucherRefno: carrier.refno,
+            },
+            d.allocations.filter((a) => a.postDated && a.instrumentLineRowNo === lineRowNo),
+            raisedByLine,
+            carrier.legIds,
+            instrumentRefs,
+          )),
+        );
+      }
       if (touched.length > 0) {
         await this.recompute.recomputeBills(tx, touched, now);
       }
@@ -514,16 +814,45 @@ export class VoucherRegisterService {
         deviceId: existing?.avh_device_id ?? null,
         sessionId: existing?.avh_session_id ?? null,
       });
-      await assertBooksReconcile(tx, {
+      // The parties, and every ledger the instruments posted to (Cheques In
+      // Hand among them). A post-dated cheque's party is allowed its
+      // un-matured difference — see voucher-books.helper.
+      await assertVoucherBooksReconcile(tx, {
         companyId: dto.header.companyId,
         accYear: dto.header.accYear,
-        ledgerIds: [...partyIds],
-        vouchers: [{ voucherId, accYear: dto.header.accYear }],
+        ledgerIds: [
+          ...partyIds,
+          ...d.legs.filter((l) => l.source === 'INSTRUMENT').map((l) => l.ledger.ledId),
+        ],
       });
 
       const stored = await this.loadHeader(tx, voucherId, dto.header.accYear);
       return this.assemble(tx, stored!, type, rights);
-    }, TX);
+    }
+  }
+
+  /**
+   * av_row_no runs 1..n per voucher in the order the legs were handed to
+   * `postLegs`; the derivation numbers its legs across today's voucher and
+   * every post-dated one. This maps a derivation row → the av_id it became.
+   */
+  private async legIdsByDeriveRow(
+    tx: Prisma.TransactionClient,
+    voucherId: string,
+    accYear: string,
+    legs: readonly InternalLeg[],
+  ): Promise<Map<number, string>> {
+    const rows = await tx.$queryRaw<{ av_id: string; av_row_no: number }[]>`
+      SELECT av_id, av_row_no FROM accounts.acc_vouchers
+       WHERE av_voucher_id = ${voucherId}::uuid AND av_acc_year = ${accYear}::char(9)
+         AND av_is_deleted = false`;
+    const byPosition = new Map(rows.map((r) => [r.av_row_no, r.av_id]));
+    const out = new Map<number, string>();
+    legs.forEach((l, i) => {
+      const id = byPosition.get(i + 1);
+      if (id) out.set(l.rowNo, id);
+    });
+    return out;
   }
 
   // ═════════════════════════════════════════════════════════════════════════
@@ -769,6 +1098,26 @@ export class VoucherRegisterService {
           }
         : null,
       tdsBase: l.tdsBase ?? null,
+      instrument: l.instrument
+        ? {
+            tenderId: l.instrument.tenderId,
+            refNo: l.instrument.refNo ?? null,
+            instrumentDate: l.instrument.instrumentDate ?? null,
+            bankName: l.instrument.bankName ?? null,
+            bankLedgerId: l.instrument.bankLedgerId ?? null,
+            chequeBookId: l.instrument.chequeBookId ?? null,
+            favouring: l.instrument.favouring ?? null,
+            acPayee: l.instrument.acPayee ?? null,
+            cheque: l.instrument.cheque
+              ? {
+                  drawerName: l.instrument.cheque.drawerName ?? null,
+                  bankBranch: l.instrument.cheque.bankBranch ?? null,
+                  ifsc: l.instrument.cheque.ifsc ?? null,
+                  micr: l.instrument.cheque.micr ?? null,
+                }
+              : null,
+          }
+        : null,
     }));
     const allocations: AllocationInput[] = (dto.allocations ?? []).map((a, index) => ({
       index,
@@ -780,6 +1129,10 @@ export class VoucherRegisterService {
 
     const ledgerIds = lines.map((l) => l.ledgerId);
     if (h.partyId) ledgerIds.push(h.partyId);
+    // notes (55): a payment's instruments name the bank account they leave
+    for (const l of lines) {
+      if (l.instrument?.bankLedgerId) ledgerIds.push(l.instrument.bankLedgerId);
+    }
     const [ledgers, instrumentLedgers, generatedRoleLedgers, taxRates] = await Promise.all([
       loadLedgerFacts(tx, h.companyId, ledgerIds),
       loadInstrumentLedgers(tx, h.companyId),
@@ -851,6 +1204,65 @@ export class VoucherRegisterService {
 
     const bills = await loadBills(tx, allocations, opts.lock);
 
+    // notes (54): the tenders the instrument lines name; the cheque numbers
+    // already registered for a party in the year the cheque posts
+    // (ux_apd_instrument); the years a post-dated cheque would post into that
+    // are not OPEN or are locked as at its date.
+    const tenders = await loadTenderFacts(
+      tx,
+      lines.filter((l) => l.instrument).map((l) => l.instrument!.tenderId),
+    );
+    const registeredCheques = new Set<string>();
+    const closedYears = new Map<string, string>();
+    // notes (55): an ISSUED cheque (a payment's) sends no number — the book
+    // hands out the leaf — so only a RECEIVED cheque is looked up by number;
+    // every cheque's posting year is checked.
+    const chequeLines = lines.filter(
+      (l) => l.instrument && (tenders.get(l.instrument.tenderId)?.typeId ?? 0) === 5,
+    );
+    const receivedCheques =
+      type.partySide === 'DR' ? [] : chequeLines.filter((l) => l.instrument!.refNo);
+    if (chequeLines.length > 0) {
+      const years = [...new Set(chequeLines.map((l) => accYearOfDate(chequeDay(l, h.date))))];
+      const rows =
+        receivedCheques.length === 0
+          ? []
+          : await tx.$queryRaw<{ key: string }[]>`
+        SELECT r.apd_party_id || '|' || r.apd_instrument_no || '|' || r.apd_acc_year AS key
+          FROM accounts.acc_pdc_register r
+         WHERE r.apd_company_id = ${h.companyId}::uuid
+           AND r.apd_instrument_type = 'CHEQUE'
+           AND r.apd_tra_type = 'R'
+           AND r.apd_acc_year = ANY(${years}::bpchar[])
+           AND r.apd_is_deleted = false AND r.apd_status <> 'CANCELLED'
+           AND (r.apd_party_id, r.apd_instrument_no) IN (${Prisma.join(
+             receivedCheques.map((l) => Prisma.sql`(${l.ledgerId}::uuid, ${l.instrument!.refNo!})`),
+           )})`;
+      rows.forEach((r) => registeredCheques.add(r.key.replace(/\s+\|/g, '|').trim()));
+      const fys = await tx.$queryRaw<
+        { fy_year_name: string; fy_status: string; fy_lock_date: Date | null }[]
+      >`
+        SELECT fy_year_name, fy_status, fy_lock_date FROM public.fiscal_years
+         WHERE comp_id = ${h.companyId}::uuid AND fy_year_name = ANY(${years}::bpchar[])
+           AND is_deleted = false`;
+      for (const y of fys) {
+        const name = y.fy_year_name.trim();
+        if (y.fy_status.trim().toUpperCase() !== 'OPEN') {
+          closedYears.set(name, y.fy_status.trim());
+          continue;
+        }
+        const lock = y.fy_lock_date ? y.fy_lock_date.toISOString().slice(0, 10) : null;
+        const latest = chequeLines
+          .map((l) => chequeDay(l, h.date))
+          .filter((d) => accYearOfDate(d) === name)
+          .sort()
+          .pop();
+        if (lock && latest && latest <= lock) {
+          closedYears.set(name, `locked up to ${lock}`);
+        }
+      }
+    }
+
     // the party's document number, seen before? (ux_avh_doc_refno / ux_abl_doc_refno, then softer)
     let docRefnoClash: DeriveInput['docRefnoClash'] = null;
     const docRefno = h.docRefno?.trim() || null;
@@ -879,7 +1291,14 @@ export class VoucherRegisterService {
       }
     }
 
+    // notes (55): the books a payment's cheques take their leaves from
+    const chequeBooks = await loadChequeBooks(
+      tx,
+      lines.map((l) => l.instrument?.chequeBookId ?? '').filter(Boolean),
+    );
+
     const backdateMode = await this.backdateMode(tx, h.companyId);
+    const allowAdvance = await this.allowAdvance(tx, h.companyId);
     const input: DeriveInput = {
       type,
       header: {
@@ -905,8 +1324,13 @@ export class VoucherRegisterService {
       bills,
       docRefnoClash,
       backdateMode,
+      allowAdvance,
       today: new Date().toISOString().slice(0, 10),
       ctx,
+      tenders,
+      registeredCheques,
+      closedYears,
+      chequeBooks,
     };
     const derived = derive(input);
     return {
@@ -927,6 +1351,16 @@ export class VoucherRegisterService {
         reverseCharge: h.reverseCharge ?? false,
       },
     };
+  }
+
+  /** notes (57): `accounts.voucher_allow_advance` through the settings resolver; absent = true. */
+  private async allowAdvance(tx: Prisma.TransactionClient, companyId: string): Promise<boolean> {
+    const [row] = await tx.$queryRaw<{ value: string | null }[]>`
+      SELECT out_effective_value AS value
+        FROM public.fn_app_settings_effective(${companyId}::uuid, NULL::uuid, NULL::uuid, NULL::uuid)
+       WHERE out_asd_key = ${ALLOW_ADVANCE_SETTING}`;
+    const token = row?.value?.trim().toLowerCase();
+    return !(token === 'false' || token === '0' || token === 'no' || token === 'off');
   }
 
   /** `accounts.backdate_mode` (OFF | WARN | REFUSE) through the settings resolver; absent = OFF. */
@@ -1051,6 +1485,176 @@ export class VoucherRegisterService {
     };
   }
 
+  /** notes (54): the tender rows this voucher took, each with its cheque register row. */
+  private async loadInstruments(
+    tx: Prisma.TransactionClient,
+    s: StoredVoucher,
+  ): Promise<VoucherInstrumentPayload[]> {
+    const rows = await tx.$queryRaw<
+      {
+        td_id: string;
+        td_acc_year: string;
+        td_row_no: number;
+        td_party_ledger_id: string;
+        party_name: string | null;
+        td_tender_id: string;
+        tnd_name: string | null;
+        td_tender_type_id: number;
+        ttm_type_name: string | null;
+        td_tender_ledger_id: string;
+        td_settle_ledger_id: string | null;
+        td_amount: Prisma.Decimal;
+        td_ref_no: string | null;
+        td_instrument_date: Date | null;
+        td_bank_name: string | null;
+        td_is_pdc: boolean;
+        td_voucher_id: string | null;
+        cv_refno: string | null;
+        cv_date: Date | null;
+        apd_id: string | null;
+        apd_acc_year: string | null;
+        apd_status: string | null;
+        apd_bank_ledger_id: string | null;
+        apd_drawer_name: string | null;
+        apd_bank_branch: string | null;
+        apd_ifsc: string | null;
+        apd_micr: string | null;
+        td_dr_cr: string;
+        td_beneficiary_name: string | null;
+        apd_cheque_book_id: string | null;
+        acb_book_no: string | null;
+        apd_favouring: string | null;
+        apd_ac_payee: boolean | null;
+        apd_tra_type: string | null;
+      }[]
+    >`
+      SELECT t.td_dr_cr, t.td_beneficiary_name,
+             r.apd_cheque_book_id, r.acb_book_no, r.apd_favouring, r.apd_ac_payee, r.apd_tra_type,
+             t.td_id, t.td_acc_year, t.td_row_no, t.td_party_ledger_id, p.led_name AS party_name,
+             t.td_tender_id, m.tnd_name, t.td_tender_type_id, y.ttm_type_name,
+             t.td_tender_ledger_id, t.td_settle_ledger_id, t.td_amount, t.td_ref_no,
+             t.td_instrument_date, t.td_bank_name, t.td_is_pdc, t.td_voucher_id,
+             cv.avh_voucher_refno AS cv_refno, cv.avh_voucher_date AS cv_date,
+             r.apd_id, r.apd_acc_year, r.apd_status, r.apd_bank_ledger_id,
+             r.apd_drawer_name, r.apd_bank_branch, r.apd_ifsc, r.apd_micr
+        FROM accounts.acc_tender_detail t
+        LEFT JOIN accounts.acc_ledger_master p ON p.led_id = t.td_party_ledger_id
+        LEFT JOIN accounts.acc_tender_master m ON m.tnd_id = t.td_tender_id
+        LEFT JOIN accounts.acc_tender_types  y ON y.ttm_type_id = t.td_tender_type_id
+        LEFT JOIN accounts.acc_voucher_header cv ON cv.avh_voucher_id = t.td_voucher_id
+        LEFT JOIN LATERAL (
+          SELECT x.apd_id, x.apd_acc_year, x.apd_status, x.apd_bank_ledger_id,
+                 x.apd_drawer_name, x.apd_bank_branch, x.apd_ifsc, x.apd_micr,
+                 x.apd_cheque_book_id, b.acb_book_no, x.apd_favouring, x.apd_ac_payee, x.apd_tra_type
+            FROM accounts.acc_pdc_register x
+            LEFT JOIN accounts.acc_cheque_book b ON b.acb_id = x.apd_cheque_book_id
+           WHERE x.apd_tender_id = t.td_id AND x.apd_is_deleted = false
+           ORDER BY x.apd_created_on DESC LIMIT 1) r ON true
+       WHERE t.td_src_doc_id = ${s.avh_voucher_id}::uuid
+         AND t.td_is_deleted = false AND t.td_is_voided = false
+       ORDER BY t.td_row_no`;
+    const iso = (d: Date | null): string | null => (d ? d.toISOString().slice(0, 10) : null);
+    return rows.map((r) => ({
+      tdId: r.td_id,
+      tdAccYear: r.td_acc_year.trim(),
+      lineRowNo: r.td_row_no,
+      partyId: r.td_party_ledger_id,
+      partyName: r.party_name,
+      tenderId: r.td_tender_id,
+      tenderName: r.tnd_name,
+      tenderTypeId: r.td_tender_type_id,
+      tenderTypeName: r.ttm_type_name,
+      ledgerId: r.td_settle_ledger_id ?? r.td_tender_ledger_id,
+      amount: Number(new Prisma.Decimal(r.td_amount).toFixed(2)),
+      refNo: r.td_ref_no,
+      instrumentDate: iso(r.td_instrument_date),
+      bankName: r.td_bank_name,
+      isCheque: r.td_tender_type_id === 5,
+      isPostDated: r.td_is_pdc,
+      voucherId: r.td_voucher_id,
+      voucherRefno: r.cv_refno,
+      voucherDate: iso(r.cv_date),
+      cheque:
+        r.td_tender_type_id === 5
+          ? {
+              drawerName: r.apd_drawer_name,
+              bankBranch: r.apd_bank_branch,
+              ifsc: r.apd_ifsc,
+              micr: r.apd_micr,
+            }
+          : null,
+      pdcId: r.apd_id,
+      pdcAccYear: r.apd_acc_year?.trim() ?? null,
+      pdcStatus: r.apd_status,
+      pdcBankLedgerId: r.apd_bank_ledger_id,
+      // a paid tender goes out CR (the party DR); a received one comes in DR
+      issued: r.td_dr_cr.trim() === 'CR',
+      // a paid tender's row names the bank it left (cash: the cash ledger, no bank)
+      bankLedgerId:
+        r.apd_bank_ledger_id ??
+        (r.td_dr_cr.trim() === 'CR' && r.td_tender_type_id !== 1 ? r.td_tender_ledger_id : null),
+      leaf: r.apd_tra_type === 'P' ? r.td_ref_no : null,
+      chequeBookId: r.apd_cheque_book_id,
+      bookNo: r.acb_book_no,
+      favouring: r.apd_favouring ?? r.td_beneficiary_name,
+      acPayee: r.apd_tra_type === 'P' ? r.apd_ac_payee : null,
+    }));
+  }
+
+  /** The allocation rows a voucher wrote, with the counter-rows a cancel filed against them. */
+  private async allocationRows(
+    tx: Prisma.TransactionClient,
+    voucherId: string,
+    accYear: string,
+  ): Promise<VoucherAllocationPayload[]> {
+    const n = (v: Prisma.Decimal): number => Number(new Prisma.Decimal(v).toFixed(2));
+    const adjRows = await tx.$queryRaw<
+      {
+        abj_id: string;
+        abj_row_no: number;
+        abj_bill_id: string;
+        abj_bill_acc_year: string;
+        abl_doc_refno: string | null;
+        abl_bill_type: string | null;
+        abj_against_bill_id: string | null;
+        abj_against_bill_acc_year: string | null;
+        abj_adj_type: string;
+        abj_dr_cr: string;
+        abj_amount: Prisma.Decimal;
+        abj_adj_date: Date;
+        abj_reversal_of_id: string | null;
+      }[]
+    >`
+      SELECT j.abj_id, j.abj_row_no, j.abj_bill_id, j.abj_bill_acc_year, b.abl_doc_refno, b.abl_bill_type,
+             j.abj_against_bill_id, j.abj_against_bill_acc_year, j.abj_adj_type, j.abj_dr_cr,
+             j.abj_amount, j.abj_adj_date, j.abj_reversal_of_id
+        FROM accounts.acc_bill_adjustment j
+        LEFT JOIN accounts.acc_bill_balance b ON b.abl_id = j.abj_bill_id AND b.abl_acc_year = j.abj_bill_acc_year
+       WHERE j.abj_is_deleted = false
+         AND ((j.abj_voucher_id = ${voucherId}::uuid AND j.abj_voucher_acc_year = ${accYear}::char(9))
+           -- the counter-rows a cancel filed against the REVERSAL voucher, shown with what they undo
+           OR j.abj_reversal_of_id IN (SELECT o.abj_id FROM accounts.acc_bill_adjustment o
+                                        WHERE o.abj_voucher_id = ${voucherId}::uuid
+                                          AND o.abj_voucher_acc_year = ${accYear}::char(9)))
+       ORDER BY (j.abj_reversal_of_id IS NOT NULL), j.abj_row_no`;
+    return adjRows.map((r) => ({
+      abjId: r.abj_id,
+      rowNo: r.abj_row_no,
+      billId: r.abj_bill_id,
+      billAccYear: r.abj_bill_acc_year.trim(),
+      billRefno: r.abl_doc_refno,
+      billType: r.abl_bill_type,
+      againstBillId: r.abj_against_bill_id,
+      againstBillAccYear: r.abj_against_bill_acc_year?.trim() ?? null,
+      adjType: r.abj_adj_type,
+      drCr: r.abj_dr_cr.trim() as DrCr,
+      amount: n(r.abj_amount),
+      adjDate: r.abj_adj_date.toISOString().slice(0, 10),
+      isReversal: r.abj_reversal_of_id !== null,
+      reversalOfId: r.abj_reversal_of_id,
+    }));
+  }
+
   /** §6.12 — header + legs + allocations + bills + GST doc + TDS + rights + locks. */
   async assemble(
     tx: Prisma.TransactionClient,
@@ -1098,65 +1702,113 @@ export class VoucherRegisterService {
           partyLegRow = r.av_row_no;
       }
     }
-    const legs: VoucherLegPayload[] = legRows.map((r) => ({
-      avId: r.av_id,
-      rowNo: r.av_row_no,
-      drCr: r.av_dr_cr.trim() as DrCr,
-      ledgerId: r.av_ledger_id,
-      ledgerName: r.led_name,
-      groupName: r.acc_group_name,
-      amount: n(r.av_amount),
-      role: r.av_role,
-      generated: (r.av_role !== null && GENERATED.has(r.av_role)) || r.av_row_no === partyLegRow,
-      remarks: r.av_remarks,
-      oppLedgerId: r.av_opp_ledger_id,
-    }));
+    // notes (54): the instruments this voucher took, with their cheque state,
+    // and the post-dated cheques' own vouchers.
+    const instruments = await this.loadInstruments(tx, s);
+    const pdcHeaders = await tx.accVoucherHeader.findMany({
+      where: receiptPdcVoucherWhere({
+        avhVoucherId: s.avh_voucher_id,
+        avhVoucherTypeId: s.avh_voucher_type_id,
+      }),
+      select: {
+        avhVoucherId: true,
+        avhAccYear: true,
+        avhVoucherRefno: true,
+        avhVoucherDate: true,
+        avhVoucherStatus: true,
+        avhPartyId: true,
+        party: { select: { ledName: true } },
+        reversalVoucher: { select: { avhVoucherRefno: true } },
+      },
+      orderBy: [{ avhVoucherDate: 'asc' }, { avhVoucherNo: 'asc' }],
+    });
+    const legs: VoucherLegPayload[] = attachInstruments(
+      legRows.map((r) => ({
+        avId: r.av_id,
+        rowNo: r.av_row_no,
+        drCr: r.av_dr_cr.trim() as DrCr,
+        ledgerId: r.av_ledger_id,
+        ledgerName: r.led_name,
+        groupName: r.acc_group_name,
+        amount: n(r.av_amount),
+        role: r.av_role,
+        generated: (r.av_role !== null && GENERATED.has(r.av_role)) || r.av_row_no === partyLegRow,
+        remarks: r.av_remarks,
+        oppLedgerId: r.av_opp_ledger_id,
+        instrument: null,
+      })),
+      instruments.filter((i) => i.voucherId === s.avh_voucher_id),
+      type,
+    );
+    const pdcVouchers: VoucherPdcVoucherPayload[] = [];
+    for (const h of pdcHeaders) {
+      const pdcLegs = await tx.$queryRaw<
+        {
+          av_id: string;
+          av_row_no: number;
+          av_dr_cr: string;
+          av_ledger_id: string;
+          led_name: string;
+          acc_group_name: string | null;
+          av_amount: Prisma.Decimal;
+          av_role: string | null;
+          av_remarks: string | null;
+          av_opp_ledger_id: string | null;
+        }[]
+      >`
+        SELECT v.av_id, v.av_row_no, v.av_dr_cr, v.av_ledger_id, l.led_name, g.acc_group_name,
+               v.av_amount, v.av_role, v.av_remarks, v.av_opp_ledger_id
+          FROM accounts.acc_vouchers v
+          JOIN accounts.acc_ledger_master l ON l.led_id = v.av_ledger_id
+          LEFT JOIN accounts.acc_group_master g ON g.acc_group_id = l.led_group_id
+         WHERE v.av_voucher_id = ${h.avhVoucherId}::uuid AND v.av_acc_year = ${h.avhAccYear}::char(9)
+           AND v.av_is_deleted = false
+         ORDER BY v.av_row_no`;
+      const pdcAdj = await this.allocationRows(tx, h.avhVoucherId, h.avhAccYear.trim());
+      pdcVouchers.push({
+        voucherId: h.avhVoucherId,
+        accYear: h.avhAccYear.trim(),
+        voucherRefno: h.avhVoucherRefno,
+        date: iso(h.avhVoucherDate)!,
+        status: h.avhVoucherStatus.trim() as VoucherStatus,
+        partyId: h.avhPartyId,
+        partyName: h.party?.ledName ?? null,
+        reversalRefno: h.reversalVoucher?.avhVoucherRefno ?? null,
+        legs: attachInstruments(
+          pdcLegs.map((r) => ({
+            avId: r.av_id,
+            rowNo: r.av_row_no,
+            drCr: r.av_dr_cr.trim() as DrCr,
+            ledgerId: r.av_ledger_id,
+            ledgerName: r.led_name,
+            groupName: r.acc_group_name,
+            amount: n(r.av_amount),
+            role: r.av_role,
+            generated: r.av_role !== null && GENERATED.has(r.av_role),
+            remarks: r.av_remarks,
+            oppLedgerId: r.av_opp_ledger_id,
+            instrument: null,
+          })),
+          instruments.filter((i) => i.voucherId === h.avhVoucherId),
+          type,
+        ),
+        allocations: pdcAdj,
+      });
+    }
+    const chequeMoved =
+      status === 'POSTED' &&
+      (await tx.accPdcRegister.count({
+        where: {
+          ...(await receiptChequeFilter(tx, {
+            receiptVoucherId: s.avh_voucher_id,
+            voucherIds: [s.avh_voucher_id, ...pdcHeaders.map((h) => h.avhVoucherId)],
+          })),
+          apdIsDeleted: false,
+          apdStatus: { not: 'HELD' },
+        },
+      })) > 0;
 
-    const adjRows = await tx.$queryRaw<
-      {
-        abj_id: string;
-        abj_row_no: number;
-        abj_bill_id: string;
-        abj_bill_acc_year: string;
-        abl_doc_refno: string | null;
-        abl_bill_type: string | null;
-        abj_against_bill_id: string | null;
-        abj_against_bill_acc_year: string | null;
-        abj_adj_type: string;
-        abj_dr_cr: string;
-        abj_amount: Prisma.Decimal;
-        abj_adj_date: Date;
-        abj_reversal_of_id: string | null;
-      }[]
-    >`
-      SELECT j.abj_id, j.abj_row_no, j.abj_bill_id, j.abj_bill_acc_year, b.abl_doc_refno, b.abl_bill_type,
-             j.abj_against_bill_id, j.abj_against_bill_acc_year, j.abj_adj_type, j.abj_dr_cr,
-             j.abj_amount, j.abj_adj_date, j.abj_reversal_of_id
-        FROM accounts.acc_bill_adjustment j
-        LEFT JOIN accounts.acc_bill_balance b ON b.abl_id = j.abj_bill_id AND b.abl_acc_year = j.abj_bill_acc_year
-       WHERE j.abj_is_deleted = false
-         AND ((j.abj_voucher_id = ${s.avh_voucher_id}::uuid AND j.abj_voucher_acc_year = ${s.avh_acc_year}::char(9))
-           -- the counter-rows a cancel filed against the REVERSAL voucher, shown with what they undo
-           OR j.abj_reversal_of_id IN (SELECT o.abj_id FROM accounts.acc_bill_adjustment o
-                                        WHERE o.abj_voucher_id = ${s.avh_voucher_id}::uuid
-                                          AND o.abj_voucher_acc_year = ${s.avh_acc_year}::char(9)))
-       ORDER BY (j.abj_reversal_of_id IS NOT NULL), j.abj_row_no`;
-    const allocations: VoucherAllocationPayload[] = adjRows.map((r) => ({
-      abjId: r.abj_id,
-      rowNo: r.abj_row_no,
-      billId: r.abj_bill_id,
-      billAccYear: r.abj_bill_acc_year.trim(),
-      billRefno: r.abl_doc_refno,
-      billType: r.abl_bill_type,
-      againstBillId: r.abj_against_bill_id,
-      againstBillAccYear: r.abj_against_bill_acc_year?.trim() ?? null,
-      adjType: r.abj_adj_type,
-      drCr: r.abj_dr_cr.trim() as DrCr,
-      amount: n(r.abj_amount),
-      adjDate: iso(r.abj_adj_date)!,
-      isReversal: r.abj_reversal_of_id !== null,
-      reversalOfId: r.abj_reversal_of_id,
-    }));
+    const allocations = await this.allocationRows(tx, s.avh_voucher_id, s.avh_acc_year);
 
     const billRows = await tx.$queryRaw<
       {
@@ -1365,12 +2017,15 @@ export class VoucherRegisterService {
         dayClosed: false,
         periodLocked: lock !== null && header.date <= lock,
         allocatedElsewhere: elsewhere.length > 0,
+        chequeMoved,
       },
       legs,
       allocations,
       bills,
       gstDoc,
       tds,
+      instruments,
+      pdcVouchers,
       draft:
         status === 'DRAFT' && s.avh_draft_lines && typeof s.avh_draft_lines === 'object'
           ? (s.avh_draft_lines as Record<string, unknown>)
@@ -1380,6 +2035,65 @@ export class VoucherRegisterService {
 }
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
+
+/** notes (54): `td_src_doc_type` of the tender rows a register type writes. */
+function tenderDocTypeOf(type: VoucherTypeRules): TenderSrcDocType {
+  switch (type.nature) {
+    case 'RECEIPT':
+      return TenderSrcDocType.RECEIPT;
+    case 'PAYMENT':
+      return TenderSrcDocType.PAYMENT;
+    default:
+      return TenderSrcDocType.OTHER;
+  }
+}
+
+/** The day a cheque line's legs post: its instrument date when later than the voucher's. */
+function chequeDay(l: TypedLineInput, voucherDate: string): string {
+  const d = l.instrument?.instrumentDate?.trim() || null;
+  return d && d > voucherDate ? d : voucherDate;
+}
+
+/**
+ * notes (54): pins each stored instrument onto the legs of the voucher that
+ * carries it — the typed party line (the tender row's party, in td_row_no
+ * order against the typed party legs in av_row_no order) and the Dr leg
+ * generated from it (the one on the tender's posting ledger with the same
+ * amount, marked generated).
+ */
+function attachInstruments(
+  legs: VoucherLegPayload[],
+  instruments: readonly VoucherInstrumentPayload[],
+  type: VoucherTypeRules,
+): VoucherLegPayload[] {
+  if (instruments.length === 0 || !type.instruments) {
+    return legs;
+  }
+  const side = type.partySide === 'DR' || type.partySide === 'CR' ? type.partySide : 'CR';
+  const partyLegs = legs.filter((l) => l.drCr === side && !l.generated);
+  const sorted = [...instruments].sort((a, b) => a.lineRowNo - b.lineRowNo);
+  const taken = new Set<string>();
+  sorted.forEach((ins, i) => {
+    const partyLeg = partyLegs[i];
+    if (partyLeg && partyLeg.ledgerId === ins.partyId) {
+      partyLeg.instrument = ins;
+    }
+    const drLeg = legs.find(
+      (l) =>
+        !taken.has(l.avId) &&
+        l.drCr !== side &&
+        l.ledgerId === ins.ledgerId &&
+        l.amount === ins.amount &&
+        l.instrument === null,
+    );
+    if (drLeg) {
+      taken.add(drLeg.avId);
+      drLeg.instrument = ins;
+      drLeg.generated = true;
+    }
+  });
+  return legs;
+}
 
 /** The Indian April–March year an ISO date falls in. */
 export function accYearOf(iso: string): string {

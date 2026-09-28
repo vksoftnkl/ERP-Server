@@ -103,6 +103,7 @@ let VoucherTypesService = class VoucherTypesService {
             tdsMode: r.vchr_tds_mode,
             inRegister: r.vchr_in_register,
             affectsInventory: r.vchr_affects_inventory,
+            instruments: r.vchr_instruments,
         }));
     }
 };
@@ -116,7 +117,7 @@ const TYPE_SELECT = client_1.Prisma.sql `
          vchr_no_prefix, vchr_menu_id,
          vchr_party_mode, vchr_party_side, vchr_billwise_mode, vchr_raise_bill_type,
          vchr_dr_groups, vchr_cr_groups, vchr_gst_register, vchr_gst_side, vchr_tds_mode,
-         vchr_in_register, vchr_affects_inventory, vchr_is_active
+         vchr_in_register, vchr_instruments, vchr_affects_inventory, vchr_is_active
     FROM accounts.acc_voucher_types`;
 function toVoucherRights(r) {
     return {

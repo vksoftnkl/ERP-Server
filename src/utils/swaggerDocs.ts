@@ -24,6 +24,7 @@ import { OpeningBalanceModule } from '../modules/accountsModule/openingBalance/o
 import { ReceiptModule } from '../modules/accountsModule/receipt/receipt.module';
 import { ChequesModule } from '../modules/accountsModule/cheques/cheques.module';
 import { VouchersModule } from '../modules/accountsModule/vouchers/vouchers.module';
+import { IssuedChequesModule } from '../modules/accountsModule/issuedCheques/issued-cheques.module';
 import { LedgerMapModule } from '../modules/accountsModule/ledgerMap/ledger-map.module';
 import { AuthModule } from '../modules/auth/auth.module';
 import { AreaModule } from '../modules/sales/area/area.module';
@@ -369,10 +370,12 @@ export const swaggerModuleDocuments = [
       'Note, Purchase (Accounting), Sales (Accounting), Receipt Voucher, Payment Voucher — and ' +
       'ONE posting routine behind it. The voucher TYPE carries the rules; the client sends only ' +
       'the lines the operator typed and the server works out every tax, TDS and party leg. ' +
-      'Twelve routes under /vouchers: the types the caller may view (with rights on each type’s ' +
+      'Thirteen+ routes under /vouchers: the types the caller may view (with rights on each type’s ' +
       'own menu), the ledger picker, a ledger balance, party facts, open bills, tax rates, ' +
-      'create (draft), validate (dry), post, cancel (a Rev reversal), delete (draft), get. No ' +
-      'list: the F8 list and the exceptions report are registered grids.',
+      'create (draft), validate (dry), post, cancel (a Rev reversal), delete (draft), get, the ' +
+      'Prev / Next walk, and the instruments (tenders) a Receipt Voucher line may come in by — a ' +
+      'cheque becomes a HELD row on the Received Cheques screen and a post-dated one a voucher of ' +
+      'its own on its date. No list: the F8 list and the exceptions report are registered grids.',
     include: [VouchersModule],
   },
   {
@@ -384,6 +387,18 @@ export const swaggerModuleDocuments = [
       'status-log row and — when money moves — one voucher, never editing a row. The posting ' +
       "mode is honoured per ROW, and Cheques in Hand comes from the cheque's own tender row",
     include: [ChequesModule],
+  },
+  {
+    path: 'issued-cheques',
+    title: 'Issued Cheques & Cheque Books API',
+    description:
+      'notes (55) — our cheques, handed to suppliers by a Payment Voucher (menu 52). A PmtV cheque ' +
+      'line names a cheque BOOK, never a leaf: /vouchers/post takes the next leaf under a lock. ' +
+      'An issued cheque is posted when written (DR supplier / CR bank), so presenting it moves no ' +
+      'money; returned / stop / void reverse its ONE line through a ChqBnc voucher (bills reopen, ' +
+      'the line’s TDS comes back) and the leaf stays used; replace raises a new Payment Voucher on ' +
+      'a new leaf. Cheque books: get, create (upsert), close. Lists: grids 120 and 121',
+    include: [IssuedChequesModule],
   },
   {
     path: 'ledger-map',

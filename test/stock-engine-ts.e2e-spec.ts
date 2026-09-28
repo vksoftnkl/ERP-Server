@@ -4,8 +4,8 @@ import { PrismaService } from '../src/database/prisma/prisma.service';
 import { AuditLogService } from '../src/modules/audit-log/audit-log.service';
 import { RequestContextService } from '../src/common/request-context/request-context.service';
 import { StockVoucherService } from '../src/modules/stocks/stock-voucher/stock-voucher.service';
-import { StockPostingService } from '../src/modules/stocks/posting/stock-posting.service';
 import { StockVoucherSource } from '../src/modules/stocks/posting/stock-voucher.source';
+import { buildStockPosting } from './helpers/stock-posting.factory';
 import type { StockVoucherTypeRules } from '../src/modules/stocks/stock-voucher/types/stock-voucher.types';
 
 /**
@@ -57,7 +57,7 @@ const OPENING_RULES: StockVoucherTypeRules = {
   allowsToBranch: false,
   auditScreenName: 'Opening Stock',
   statusDocType: TxnStatusDocType.STOCK_ADJUSTMENT,
-  postFunction: 'stock.fn_svh_post',
+  postShape: 'SIMPLE',
   refuseTypes: ['TRANSFER_IN', 'TRANSFER_OUT', 'REPACK_IN', 'REPACK_OUT'],
 };
 
@@ -77,7 +77,7 @@ const PHYSICAL_RULES: StockVoucherTypeRules = {
   allowsToBranch: false,
   auditScreenName: 'Physical Stock Count',
   statusDocType: TxnStatusDocType.STOCK_ADJUSTMENT,
-  postFunction: 'stock.fn_svh_post',
+  postShape: 'COUNT',
   refuseTypes: ['TRANSFER_IN', 'TRANSFER_OUT', 'REPACK_IN', 'REPACK_OUT'],
 };
 
@@ -102,7 +102,7 @@ const ADJUSTMENT_OUT_RULES: StockVoucherTypeRules = {
   allowsToBranch: false,
   auditScreenName: 'Stock Adjustment',
   statusDocType: TxnStatusDocType.STOCK_ADJUSTMENT,
-  postFunction: 'stock.fn_svh_post',
+  postShape: 'SIMPLE',
 };
 
 /** The inward twin, to receive into a lot a count has just emptied. */
@@ -240,9 +240,13 @@ describe('Stock engine in TypeScript (e2e — one rolled-back transaction)', () 
       { getUserId: () => fixture?.userId ?? null } as unknown as RequestContextService,
       // §3.1 — the one stock engine, injected. Handed the same client, so a
       // posting call still runs inside whatever transaction the test opened.
-      new StockPostingService(transactional(tx)),
+      // PERPETUAL: an opening's DR INVENTORY leg is written and asserted below.
+      buildStockPosting(transactional(tx)).stockPosting,
     );
     fixture = await createFixture();
+    // The four roles a stock document posts to need a ledger each; the boot
+    // seed maps them, and inside this rolled-back transaction so does this.
+    await tx.$queryRaw`SELECT accounts.fn_seed_ledger_map()`;
   });
 
   afterAll(async () => {
@@ -833,7 +837,7 @@ describe('Stock engine in TypeScript (e2e — one rolled-back transaction)', () 
     // preflight, exactly what a sync push does — is refused with a 409 and not
     // one ledger row is written. intoA carries no docDatetime, so it took the
     // database default, now(), which is inside the window.
-    const stockPosting = new StockPostingService(transactional(tx));
+    const { stockPosting } = buildStockPosting(transactional(tx));
     const sourceOf = (svhId: string) =>
       new StockVoucherSource({
         svhId,
@@ -1085,5 +1089,262 @@ describe('Stock engine in TypeScript (e2e — one rolled-back transaction)', () 
     expect(lot.signature).toBe('B');
     expect(lot.batch_no).toBe('T1');
     expect(lot.mrp).toBeNull();
+  });
+
+  // ── §1.9 — stock → accounts ──────────────────────────────────────────────
+
+  /** The live accounts voucher behind a stock document, leg by leg. */
+  const accountsLegs = (voucherType: string, svhId: string) =>
+    tx.$queryRaw<
+      Array<{ avh_voucher_id: string; avh_doc_refno: string | null; av_dr_cr: string; av_amount: string; av_role: string | null }>
+    >`
+      SELECT h.avh_voucher_id, h.avh_doc_refno, l.av_dr_cr, l.av_amount::text, l.av_role
+        FROM accounts.acc_voucher_header h
+        JOIN accounts.acc_vouchers l ON l.av_voucher_id = h.avh_voucher_id AND l.av_is_deleted = false
+       WHERE h.avh_src_module = 'STOCK' AND h.avh_src_doc_type = ${voucherType}
+         AND h.avh_src_doc_id = ${svhId}::uuid AND h.avh_is_deleted = false
+       ORDER BY l.av_row_no
+    `;
+
+  /** Σ of the live legs on the ledger mapped to a role, DR positive. */
+  const ledgerNet = async (role: string): Promise<number> => {
+    const [row] = await tx.$queryRaw<Array<{ net: string | null }>>`
+      SELECT SUM(CASE WHEN l.av_dr_cr = 'DR' THEN l.av_amount ELSE -l.av_amount END)::text AS net
+        FROM accounts.acc_vouchers l
+        JOIN accounts.acc_voucher_header h ON h.avh_voucher_id = l.av_voucher_id
+        JOIN accounts.acc_ledger_map m ON m.alm_ledger_id = l.av_ledger_id AND m.alm_role = ${role}
+       WHERE l.av_is_deleted = false AND h.avh_is_deleted = false
+         -- A cancelled original stays in the books beside its Rev mirror; a
+         -- statement shows both and the pair nets to zero.
+         AND h.avh_voucher_status IN ('POSTED', 'CANCELLED')
+         AND h.avh_company_id = ${fixture.companyId}::uuid
+         AND h.avh_acc_year = ${ACC_YEAR}::char(9)
+         AND (h.avh_src_module = 'STOCK' OR h.avh_against_voucher_id IS NOT NULL)
+    `;
+    return Number(row?.net ?? 0);
+  };
+
+  it('11. an opening posts DR INVENTORY / CR OPENING_DIFFERENCE for exactly Σ sml_cost_value, and its cancel nets to 0', async () => {
+    if (!requireBuild()) return;
+
+    const before = await ledgerNet('INVENTORY');
+    // Identity the earlier cases' policies demand: MILK is batch-tracked
+    // (case 9), the branch GROUP rule tracks MRP (case 10).
+    const saved = await opening(fixture.godownA, [
+      { itemId: fixture.saltId, iuc: fixture.saltPieceIuc, qty: 7, costRate: 11, mrp: 77 },
+      { itemId: fixture.milkId, iuc: fixture.milkPieceIuc, qty: 3, costRate: 22.5, batchNo: 'M-ACC', mrp: 40 },
+    ]);
+    await post(OPENING_RULES, saved.header.svhId);
+
+    // 7 × 11 + 3 × 22.5 = 144.50, read off the ledger, never the payload.
+    const [{ value }] = await tx.$queryRaw<Array<{ value: string }>>`
+      SELECT SUM(sml_cost_value)::text AS value FROM stock.stock_ledger
+       WHERE sml_src_doc_id = ${saved.header.svhId}::uuid AND sml_is_reversal = false
+    `;
+    expect(Number(value)).toBeCloseTo(144.5, 2);
+
+    const legs = await accountsLegs('OPENING', saved.header.svhId);
+    expect(legs).toHaveLength(2);
+    const dr = legs.find((l) => l.av_dr_cr.trim() === 'DR');
+    const cr = legs.find((l) => l.av_dr_cr.trim() === 'CR');
+    expect(dr?.av_role).toBe('INVENTORY');
+    expect(cr?.av_role).toBe('OPENING_DIFFERENCE');
+    expect(Number(dr?.av_amount)).toBeCloseTo(144.5, 2);
+    expect(Number(cr?.av_amount)).toBeCloseTo(144.5, 2);
+    // The accounts voucher links back to the stock document by its number.
+    expect(legs[0].avh_doc_refno).toBe(saved.header.refno);
+    expect(await ledgerNet('INVENTORY')).toBeCloseTo(before + 144.5, 2);
+
+    // The header carries the engine's totals now, not the payload's.
+    const [hdr] = await tx.$queryRaw<Array<{ svh_total_qty: string; svh_total_value: string; svh_line_count: number }>>`
+      SELECT svh_total_qty::text, svh_total_value::text, svh_line_count FROM stock.stock_voucher
+       WHERE svh_id = ${saved.header.svhId}::uuid
+    `;
+    expect(Number(hdr.svh_total_qty)).toBeCloseTo(10, 6);
+    expect(Number(hdr.svh_total_value)).toBeCloseTo(144.5, 2);
+    expect(hdr.svh_line_count).toBe(2);
+
+    // Cancel: the Rev mirror nets the ledger back, and the header re-totals to 0.
+    await service.cancel(
+      OPENING_RULES,
+      saved.header.svhId,
+      ACC_YEAR,
+      'e2e accounts reversal',
+      fixture.companyId,
+      fixture.branchId,
+      fixture.userId,
+    );
+    expect(await ledgerNet('INVENTORY')).toBeCloseTo(before, 2);
+    const [after] = await tx.$queryRaw<Array<{ svh_total_qty: string; svh_total_value: string; svh_line_count: number }>>`
+      SELECT svh_total_qty::text, svh_total_value::text, svh_line_count FROM stock.stock_voucher
+       WHERE svh_id = ${saved.header.svhId}::uuid
+    `;
+    expect(Number(after.svh_total_qty)).toBeCloseTo(0, 6);
+    expect(Number(after.svh_total_value)).toBeCloseTo(0, 2);
+    // The document still HAS two lines; only its valuation is undone.
+    expect(after.svh_line_count).toBe(2);
+  });
+
+  it('12. a count short on one line and over on another posts ONE voucher with both pairs', async () => {
+    if (!requireBuild()) return;
+
+    const saved = await opening(fixture.godownB, [
+      { itemId: fixture.saltId, iuc: fixture.saltPieceIuc, qty: 10, costRate: 20, mrp: 78 },
+      { itemId: fixture.teaId, iuc: fixture.teaPieceIuc, qty: 10, costRate: 5, batchNo: 'T-ACC' },
+    ]);
+    await post(OPENING_RULES, saved.header.svhId);
+    const before = await ledgerNet('INVENTORY');
+
+    // SALT short by 2 (at the branch average), TEA over by 4 (+20.00 at 5) —
+    // on the two holdings THIS opening created.
+    const opened = await tx.$queryRaw<Array<{ svi_item_id: string; svi_lot_id: string }>>`
+      SELECT svi_item_id, svi_lot_id FROM stock.stock_voucher_item
+       WHERE svi_voucher_id = ${saved.header.svhId}::uuid
+    `;
+    const lotOf = (itemId: string) => opened.find((l) => l.svi_item_id === itemId)?.svi_lot_id;
+    const salt = (await sheet(fixture.godownB, fixture.saltId)).filter((r) => r.lotId === lotOf(fixture.saltId));
+    const tea = (await sheet(fixture.godownB, fixture.teaId)).filter((r) => r.lotId === lotOf(fixture.teaId));
+    expect(salt).toHaveLength(1);
+    expect(tea).toHaveLength(1);
+    const counted = await service.save(PHYSICAL_RULES, {
+      header: {
+        accYear: ACC_YEAR,
+        companyId: fixture.companyId,
+        branchId: fixture.branchId,
+        deviceId: fixture.deviceId,
+        docDate: COUNT_DATE,
+        toGodownId: fixture.godownB,
+        userId: fixture.userId,
+      },
+      lines: [
+        { lineNo: 1, itemId: salt[0].itemId, godownId: salt[0].godownId, bucket: salt[0].bucket, lotId: salt[0].lotId, countedQty: 8 },
+        { lineNo: 2, itemId: tea[0].itemId, godownId: tea[0].godownId, bucket: tea[0].bucket, lotId: tea[0].lotId, countedQty: 14 },
+      ],
+    } as never);
+    await post(PHYSICAL_RULES, counted.header.svhId);
+
+    // THE AMOUNTS COME FROM THE LEDGER ROWS, never from the payload: the
+    // shortage is relieved at the BRANCH average SALT carries after the
+    // earlier cases, the excess valued at TEA's — whatever those are. What is
+    // asserted is that the voucher says exactly what the ledger says.
+    const [moved] = await tx.$queryRaw<Array<{ short: string; over: string; short_qty: string; over_qty: string }>>`
+      SELECT COALESCE(SUM(sml_cost_value) FILTER (WHERE sml_direction < 0), 0)::text AS short,
+             COALESCE(SUM(sml_cost_value) FILTER (WHERE sml_direction > 0), 0)::text AS over,
+             COALESCE(SUM(sml_base_qty) FILTER (WHERE sml_direction < 0), 0)::text AS short_qty,
+             COALESCE(SUM(sml_base_qty) FILTER (WHERE sml_direction > 0), 0)::text AS over_qty
+        FROM stock.stock_ledger
+       WHERE sml_src_doc_id = ${counted.header.svhId}::uuid AND sml_is_reversal = false
+    `;
+    const short = Number(moved.short);
+    const over = Number(moved.over);
+    expect(Number(moved.short_qty)).toBeCloseTo(2, 6);
+    expect(Number(moved.over_qty)).toBeCloseTo(4, 6);
+    expect(short).toBeGreaterThan(0);
+    expect(over).toBeGreaterThan(0);
+
+    const legs = await accountsLegs('PHYSICAL', counted.header.svhId);
+    // One voucher, netted per ledger: the shortage ledger DR short, the excess
+    // ledger CR over, INVENTORY the net of the two on one side.
+    expect(new Set(legs.map((l) => l.avh_voucher_id)).size).toBe(1);
+    const byRole = new Map(legs.map((l) => [l.av_role, l]));
+    expect(byRole.get('STOCK_SHORTAGE')?.av_dr_cr.trim()).toBe('DR');
+    expect(Number(byRole.get('STOCK_SHORTAGE')?.av_amount)).toBeCloseTo(short, 2);
+    expect(byRole.get('STOCK_EXCESS')?.av_dr_cr.trim()).toBe('CR');
+    expect(Number(byRole.get('STOCK_EXCESS')?.av_amount)).toBeCloseTo(over, 2);
+    const net = Math.round((over - short) * 100) / 100;
+    expect(byRole.get('INVENTORY')?.av_dr_cr.trim()).toBe(net >= 0 ? 'DR' : 'CR');
+    expect(Number(byRole.get('INVENTORY')?.av_amount)).toBeCloseTo(Math.abs(net), 2);
+    expect(await ledgerNet('INVENTORY')).toBeCloseTo(before + net, 2);
+
+    // The header carries the NET variance: +2 units, over − short in value.
+    const [hdr] = await tx.$queryRaw<Array<{ svh_total_qty: string; svh_total_value: string }>>`
+      SELECT svh_total_qty::text, svh_total_value::text FROM stock.stock_voucher
+       WHERE svh_id = ${counted.header.svhId}::uuid
+    `;
+    expect(Number(hdr.svh_total_qty)).toBeCloseTo(2, 6);
+    expect(Number(hdr.svh_total_value)).toBeCloseTo(net, 2);
+  });
+
+  it('13. under PERIODIC no stock document posts a leg', async () => {
+    if (!requireBuild()) return;
+
+    const periodic = new StockVoucherService(
+      transactional(tx),
+      { logEntityChange: jest.fn().mockResolvedValue(undefined) } as unknown as AuditLogService,
+      { getUserId: () => fixture.userId } as unknown as RequestContextService,
+      buildStockPosting(transactional(tx), 'PERIODIC').stockPosting,
+    );
+    const saved = await opening(fixture.godownA, [
+      { itemId: fixture.teaId, iuc: fixture.teaPieceIuc, qty: 2, costRate: 9, batchNo: 'T-PER' },
+    ]);
+    await periodic.post(OPENING_RULES, saved.header.svhId, ACC_YEAR, fixture.companyId, fixture.branchId, fixture.userId);
+    expect(await accountsLegs('OPENING', saved.header.svhId)).toHaveLength(0);
+  });
+
+  it('14. an outward line with no lot is PICKED by the issue strategy and split across lots', async () => {
+    if (!requireBuild()) return;
+
+    await undone(async () => {
+      // TEA batch-tracked, issued LIFO — its own policy row when case 10 did
+      // not run, its strategy flipped when it did; both undone with the case.
+      const [existing] = await tx.$queryRaw<Array<{ stp_id: string }>>`
+        SELECT stp_id FROM stock.stock_track_policy
+         WHERE stp_scope = 'ITEM' AND stp_scope_id = ${fixture.teaId}::uuid AND stp_is_deleted = false
+      `;
+      if (!existing) {
+        await policy({ scope: 'ITEM', scopeId: fixture.teaId, trackBatch: true });
+      }
+      await tx.$executeRaw`
+        UPDATE stock.stock_track_policy SET stp_issue_strategy = 'LIFO'
+         WHERE stp_scope = 'ITEM' AND stp_scope_id = ${fixture.teaId}::uuid
+      `;
+      const explain = (what: string) => (e: { response?: unknown }) => {
+        throw new Error(`case 14 ${what} refused: ${JSON.stringify(e.response)}`);
+      };
+      // Two batches into godown A on two later dates: T-A first, T-B last.
+      const first = await opening(
+        fixture.godownA,
+        [{ itemId: fixture.teaId, iuc: fixture.teaPieceIuc, qty: 4, costRate: 10, batchNo: 'T-A' }],
+        { docDate: '2026-04-05' },
+      );
+      await post(OPENING_RULES, first.header.svhId).catch(explain('first opening'));
+      const second = await opening(
+        fixture.godownA,
+        [{ itemId: fixture.teaId, iuc: fixture.teaPieceIuc, qty: 6, costRate: 10, batchNo: 'T-B' }],
+        { docDate: '2026-04-06' },
+      );
+      await post(OPENING_RULES, second.header.svhId).catch(explain('second opening'));
+
+      // An ADJUSTMENT out of 7 with NO batch and NO lot: the preflight lets it
+      // through (there is stock to pick from), and the post takes the LAST
+      // batch in first — 6 from T-B, then 1 from T-A — as two splits of line 1.
+      const issue = await adjustmentOut(fixture.godownA, fixture.teaId, fixture.teaPieceIuc, 7);
+      const problems = await validate(ADJUSTMENT_OUT_RULES, issue.header.svhId);
+      expect(problems.map((p) => p.problem)).toEqual([null]);
+      await post(ADJUSTMENT_OUT_RULES, issue.header.svhId).catch(explain('issue'));
+
+      const splits = await tx.$queryRaw<Array<{ svi_split_no: number; svi_batch_no: string | null; svi_base_qty: string }>>`
+        SELECT svi_split_no, svi_batch_no, svi_base_qty::text FROM stock.stock_voucher_item
+         WHERE svi_voucher_id = ${issue.header.svhId}::uuid ORDER BY svi_split_no
+      `;
+      expect(splits.map((s) => [s.svi_split_no, s.svi_batch_no, Number(s.svi_base_qty)])).toEqual([
+        [1, 'T-B', 6],
+        [2, 'T-A', 1],
+      ]);
+      const rows = await ledger(issue.header.svhId);
+      expect(rows).toHaveLength(2);
+      const remaining = await lots(fixture.teaId);
+      expect(Number(remaining.find((l) => l.batch_no === 'T-B')?.total)).toBeCloseTo(0, 6);
+      expect(Number(remaining.find((l) => l.batch_no === 'T-A')?.total)).toBeCloseTo(3, 6);
+
+      // MANUAL refuses: the client must name the lot.
+      await tx.$executeRaw`
+        UPDATE stock.stock_track_policy SET stp_issue_strategy = 'MANUAL'
+         WHERE stp_scope = 'ITEM' AND stp_scope_id = ${fixture.teaId}::uuid
+      `;
+      const manual = await adjustmentOut(fixture.godownA, fixture.teaId, fixture.teaPieceIuc, 1);
+      const refused = await validate(ADJUSTMENT_OUT_RULES, manual.header.svhId);
+      expect(refused[0].problem).toMatch(/MANUAL/);
+    });
   });
 });

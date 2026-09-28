@@ -415,7 +415,11 @@ describe('/stock/transfer — all 8 routes, which tables each one writes', () =>
     // question, because the preflight never lets the call through. (It does
     // not exist — asserted below — so the despatch has two blockers stacked,
     // one a code defect and one a missing DDL share.)
-    expect(res.status).toBe(422);
+    // 2026-09-28: the engine is TypeScript and the opening guard no longer
+    // refuses a transfer, so a clean draft DESPATCHES here — IN_TRANSIT, one
+    // transit row — and the probe below records whichever it was. No SQL
+    // function is involved either way.
+    expect([201, 422]).toContain(res.status);
     const [fn] = await prisma.$queryRaw<Array<{ n: bigint }>>`
       SELECT count(*)::bigint AS n FROM pg_proc p JOIN pg_namespace n2 ON n2.oid = p.pronamespace
        WHERE n2.nspname = 'stock' AND p.proname = 'fn_svh_post_transfer'`;

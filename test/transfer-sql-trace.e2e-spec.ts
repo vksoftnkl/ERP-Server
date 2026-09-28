@@ -65,7 +65,7 @@ const TRANSFER_OUT_RULES: StockVoucherTypeRules = {
   zeroesLineCost: true,
   allowsCount: false,
   allowsToBranch: true,
-  postFunction: 'stock.fn_svh_post_transfer',
+  postShape: 'TRANSFER_OUT',
   auditScreenName: 'Stock Transfer',
   statusDocType: TxnStatusDocType.STOCK_TRANSFER,
   refuseTypes: ['OPENING', 'PHYSICAL', 'TRANSFER_IN', 'REPACK_IN', 'REPACK_OUT'],
@@ -341,7 +341,10 @@ describe('TRACE /stock/transfer — statements, tables, functions', () => {
   }, 180_000);
 
   // ── Blocker 2, isolated ─────────────────────────────────────────────────
-  it('with the opening guard bypassed, the despatch reaches the missing engine', async () => {
+  // 2026-09-28: the engine is TypeScript now and the despatch WORKS — running
+  // it here would move real stock out of SRC_GODOWN on the dev database. The
+  // despatch is exercised against fixtures in test/stock-transfer.e2e-spec.ts.
+  it.skip('with the opening guard bypassed, the despatch reaches the missing engine', async () => {
     const service = app.get(StockTransferService);
     // TEST-ONLY. The one field that turns the opening-uniqueness guard off, so
     // the call gets past blocker 1 and hits whatever is actually behind it.

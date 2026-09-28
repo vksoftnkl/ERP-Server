@@ -6,6 +6,7 @@ export declare const VCH: {
     readonly RIGHT_DELETE: "VCH_RIGHT_DELETE";
     readonly RIGHT_POST: "VCH_RIGHT_POST";
     readonly RIGHT_CANCEL: "VCH_RIGHT_CANCEL";
+    readonly RIGHT_AMEND: "VCH_RIGHT_AMEND";
     readonly RIGHT_OVERRIDE: "VCH_RIGHT_OVERRIDE";
     readonly UNBALANCED: "VCH_UNBALANCED";
     readonly NO_LINES: "VCH_NO_LINES";
@@ -46,6 +47,19 @@ export declare const VCH: {
     readonly DUP_DOC_REFNO: "VCH_DUP_DOC_REFNO";
     readonly DOC_REFNO_REQUIRED: "VCH_DOC_REFNO_REQUIRED";
     readonly INVALID: "VCH_INVALID";
+    readonly INSTRUMENT_NOT_ALLOWED: "VCH_INSTRUMENT_NOT_ALLOWED";
+    readonly INSTRUMENT_TENDER: "VCH_INSTRUMENT_TENDER";
+    readonly CHEQUE_DETAILS: "VCH_CHEQUE_DETAILS";
+    readonly CHEQUE_MOVED: "VCH_CHEQUE_MOVED";
+    readonly BANK_REQUIRED: "VCH_BANK_REQUIRED";
+    readonly BOOK_REQUIRED: "VCH_BOOK_REQUIRED";
+    readonly BOOK_FINISHED: "VCH_BOOK_FINISHED";
+    readonly BOOK_BANK: "VCH_BOOK_BANK";
+    readonly CHEQUE_NOT_FOUND: "VCH_CHEQUE_NOT_FOUND";
+    readonly CHEQUE_STATE: "VCH_CHEQUE_STATE";
+    readonly BOOK_NOT_FOUND: "VCH_BOOK_NOT_FOUND";
+    readonly BOOK_OVERLAP: "VCH_BOOK_OVERLAP";
+    readonly BOOK_INVALID: "VCH_BOOK_INVALID";
 };
 export type VoucherErrorCode = (typeof VCH)[keyof typeof VCH];
 export interface VoucherErrorDetail extends AccountsErrorDetail {

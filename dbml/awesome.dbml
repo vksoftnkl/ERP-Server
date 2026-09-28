@@ -1500,6 +1500,8 @@ Table acc_voucher_types {
   vchrTdsMode String [not null, default: 'OFF', note: 'OFF | DEDUCT']
   vchrMenuId Int [note: 'Rights are checked on THIS menu (decision E). NULL for Rev: a cancel is judged on the original\'s menu.']
   vchrInRegister Boolean [not null, default: false, note: 'Offered on the register\'s type band']
+  vchrInstruments Boolean [not null, default: false, note: 'notes (54): the typed lines carry INSTRUMENTS (tenders); the money legs are generated
+from the tenders\' ledgers and a cheque becomes a HELD register row (menu 51)']
   vchrSyncDate DateTime
   vchrCreatedOn DateTime [default: `now()`, not null]
   vchrCreatedBy String

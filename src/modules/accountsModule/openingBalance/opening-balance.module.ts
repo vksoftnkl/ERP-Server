@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { AppSettingsModule } from '../../settings/appSettings/app-settings.module';
 import { OpeningBalanceController } from './opening-balance.controller';
 import { OpeningBalanceExceptionFilter } from './opening-balance-exception.filter';
 import { OpeningBalanceService } from './opening-balance.service';
@@ -6,6 +7,7 @@ import { BillWiseService } from './bill-wise.service';
 import { CarryForwardService } from './carry-forward.service';
 
 @Module({
+  imports: [AppSettingsModule],
   controllers: [OpeningBalanceController],
   providers: [
     OpeningBalanceService,

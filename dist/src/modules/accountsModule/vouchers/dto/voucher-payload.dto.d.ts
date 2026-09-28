@@ -1,7 +1,19 @@
+import { TenderChequeDetailDto } from '../../tenderDetail/dto/save-tender-detail.dto';
 export declare class VoucherLineGstDto {
     taxId: string;
     hsn?: string | null;
     itcEligibility?: string | null;
+}
+export declare class VoucherInstrumentDto {
+    tenderId: string;
+    refNo?: string | null;
+    instrumentDate?: string | null;
+    bankName?: string | null;
+    cheque?: TenderChequeDetailDto | null;
+    bankLedgerId?: string | null;
+    chequeBookId?: string | null;
+    favouring?: string | null;
+    acPayee?: boolean | null;
 }
 export declare class VoucherLineDto {
     rowNo: number;
@@ -11,6 +23,7 @@ export declare class VoucherLineDto {
     remarks?: string | null;
     gst?: VoucherLineGstDto | null;
     tdsBase?: boolean | null;
+    instrument?: VoucherInstrumentDto | null;
 }
 export declare class VoucherAllocationDto {
     lineRowNo: number;
@@ -35,6 +48,7 @@ export declare class VoucherHeaderDto {
     posStcd?: string | null;
     reverseCharge?: boolean;
     remarks?: string | null;
+    employeeIds?: string[];
 }
 export declare class VoucherPayloadDto {
     header: VoucherHeaderDto;

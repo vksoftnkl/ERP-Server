@@ -155,7 +155,7 @@ export class PhysicalStockHeaderDto {
 
   @ApiProperty({
     description:
-      'WHAT THE SAVE PAYLOAD SENT, echoed back — nothing server-side sums the grid on this deployment. On a count the intended reading is the NET VARIANCE (three lines totalling 236 counted units can net +1), so it may be negative; label it "Net variance" on the screen, or do not show it. On an environment carrying the engine DDL, fn_svh_recompute overwrites it at post with the figure read off the ledger.',
+      'While DRAFT: what the save payload sent, echoed back. Once POSTED: the NET VARIANCE read off the ledger by the engine (three lines totalling 236 counted units can net +1), so it may be negative; label it "Net variance" on the screen. A cancelled count re-totals to 0.',
   })
   totalQty!: number;
 
@@ -454,7 +454,7 @@ export class PhysicalStockLineProblemDto {
 export class PhysicalStockPostResultDto extends PhysicalStockDocumentDto {
   @ApiProperty({
     description:
-      'Ledger rows written by stock.fn_svh_post — ONE PER VARYING LINE, and legitimately fewer than lineCount. A count where every line agrees returns 0 and still closes POSTED: that is a success, not an empty document.',
+      'Ledger rows written by the engine — ONE PER VARYING LINE, and legitimately fewer than lineCount. A count where every line agrees returns 0 and still closes POSTED: that is a success, not an empty document.',
   })
   rowsPosted!: number;
 

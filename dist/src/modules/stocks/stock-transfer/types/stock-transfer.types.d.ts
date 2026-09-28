@@ -20,6 +20,7 @@ export interface StockTransitRow {
     damageQty: number;
     remainingQty: number;
     costRate: number;
+    costRateWot: number;
     transitValue: number;
     lrNo: string | null;
     vehicleNo: string | null;
@@ -63,6 +64,20 @@ export interface StockTransferReceiveResult {
         status: StockVoucherStatus;
         closed: boolean;
     };
+    transit: StockTransitRow[];
+}
+export interface StockTransferSettleShortResult {
+    outVoucher: {
+        svhId: string;
+        accYear: string;
+        refno: string;
+        status: StockVoucherStatus;
+    };
+    rowsSettled: number;
+    shortQty: number;
+    shortValue: number;
+    accountsVoucherId: string | null;
+    accountsVoucherRefno: string | null;
     transit: StockTransitRow[];
 }
 export interface StockTransferCancelResult extends StockVoucherCancelResult {

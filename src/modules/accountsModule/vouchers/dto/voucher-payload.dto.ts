@@ -16,7 +16,9 @@ import {
   ValidateIf,
 } from 'class-validator';
 import {
+  NullableDateString,
   NullableString,
+  NullableUuid,
   OptionalBoolean,
   OptionalDateString,
   OptionalUuid,
@@ -25,6 +27,7 @@ import {
   TrimmedString,
   UpperMaxString,
 } from 'src/common/dto/dtoDecorators';
+import { TenderChequeDetailDto } from '../../tenderDetail/dto/save-tender-detail.dto';
 
 /**
  * §6.13 — the payload: ONLY what the operator typed. Never a generated leg.
@@ -40,11 +43,11 @@ function MoneyString(): PropertyDecorator {
   return (target, key) => {
     Transform(({ value }: { value: unknown }) =>
       typeof value === 'number' ? value.toString() : value,
-    )(target, key as string);
-    IsString()(target, key as string);
+    )(target, key);
+    IsString()(target, key);
     Matches(MONEY, { message: `${String(key)} must be a plain figure, e.g. 25000 or "4000.00"` })(
       target,
-      key as string,
+      key,
     );
   };
 }
@@ -67,6 +70,101 @@ export class VoucherLineGstDto {
   @ValidateIf((_, v) => v !== null)
   @IsIn(['INPUTS', 'INPUT_SERVICES', 'CAPITAL_GOODS', 'INELIGIBLE'])
   itcEligibility?: string | null;
+}
+
+/**
+ * notes (54) — the INSTRUMENT a customer line carries on a Receipt Voucher: the
+ * tender (cash, cheque, UPI …) the money came in by. The names are the
+ * Receipt's tender DTO's, so the same screen widget builds both. The amount is
+ * the line's; the server generates the Dr leg from the tender's ledger, and a
+ * cheque becomes a HELD row on the Received Cheques screen (menu 51).
+ */
+export class VoucherInstrumentDto {
+  @ApiProperty({
+    format: 'uuid',
+    description: 'accounts.acc_tender_master.tnd_id — from GET /vouchers/instruments.',
+  })
+  @RequiredUuid()
+  tenderId!: string;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    maxLength: 100,
+    example: '445123',
+    description:
+      'The cheque / UTR / transaction number. REQUIRED on a cheque and on any tender whose type needs a reference.',
+  })
+  @NullableString(100)
+  refNo?: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    example: '2026-10-05',
+    description:
+      'The date on the instrument. REQUIRED on a cheque. Later than the voucher date makes it POST-DATED: ' +
+      'its legs post on that day, in a voucher of their own, and its bills settle when it matures.',
+  })
+  @NullableDateString()
+  instrumentDate?: string | null;
+
+  @ApiPropertyOptional({ nullable: true, maxLength: 150, example: 'KVB' })
+  @NullableString(150)
+  bankName?: string | null;
+
+  @ApiPropertyOptional({
+    type: () => TenderChequeDetailDto,
+    nullable: true,
+    description: 'Cheque detail (drawer, branch, IFSC, MICR). Ignored on a non-cheque tender.',
+  })
+  @IsOptional()
+  @ValidateIf((_, v) => v !== null)
+  @ValidateNested()
+  @Type(() => TenderChequeDetailDto)
+  cheque?: TenderChequeDetailDto | null;
+
+  // ── notes (55): a PAYMENT's instrument — we pay out ───────────────────────
+  // On a Payment Voucher line (party side DR) the money leaves one of OUR bank
+  // accounts. The leaf is never sent: /post takes the book's next leaf.
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description:
+      'PAYMENT: the bank account (a ledger under Bank Accounts / Bank OD) the money leaves. ' +
+      'REQUIRED on a cheque, bank transfer or UPI (VCH_BANK_REQUIRED); ignored on cash, which ' +
+      'posts to the CASH tender’s own ledger.',
+  })
+  @NullableUuid()
+  bankLedgerId?: string | null;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description:
+      'PAYMENT, cheque only: the book the leaf comes from (GET /vouchers/cheque-books). REQUIRED ' +
+      '(VCH_BOOK_REQUIRED); it must be drawn on `bankLedgerId` (VCH_BOOK_BANK) and have a leaf left ' +
+      '(VCH_BOOK_FINISHED). `refNo` is ignored — the server takes the next leaf.',
+  })
+  @NullableUuid()
+  chequeBookId?: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    maxLength: 150,
+    description: 'PAYMENT: who the cheque / transfer is made out to. Omitted = the party’s name.',
+  })
+  @NullableString(150)
+  favouring?: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    default: true,
+    description: 'PAYMENT, cheque only: crossed "A/c Payee" (Q8). Omitted = true.',
+  })
+  @IsOptional()
+  @ValidateIf((_, v) => v !== null)
+  @IsBoolean()
+  acPayee?: boolean | null;
 }
 
 export class VoucherLineDto {
@@ -108,6 +206,19 @@ export class VoucherLineDto {
   @ValidateIf((_, v) => v !== null)
   @IsBoolean()
   tdsBase?: boolean | null;
+
+  @ApiPropertyOptional({
+    type: VoucherInstrumentDto,
+    nullable: true,
+    description:
+      'notes (54): on a type with instruments (the Receipt Voucher), the tender this line’s money came in ' +
+      'by. Refused on any other type (VCH_INSTRUMENT_NOT_ALLOWED).',
+  })
+  @IsOptional()
+  @ValidateIf((_, v) => v !== null)
+  @ValidateNested()
+  @Type(() => VoucherInstrumentDto)
+  instrument?: VoucherInstrumentDto | null;
 }
 
 export class VoucherAllocationDto {
@@ -219,6 +330,21 @@ export class VoucherHeaderDto {
   @ApiPropertyOptional({ maxLength: 500 })
   @NullableString(500)
   remarks?: string | null;
+
+  @ApiPropertyOptional({
+    type: [String],
+    description:
+      'notes (54): the salesmen / collectors (public.employee_master ids) → avh_employee_id; the first is the ' +
+      'cheque register row’s salesman. Omit or [] for none.',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(20)
+  @Matches(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i, {
+    each: true,
+    message: 'each employeeId must be a valid UUID',
+  })
+  employeeIds?: string[];
 }
 
 export class VoucherPayloadDto {

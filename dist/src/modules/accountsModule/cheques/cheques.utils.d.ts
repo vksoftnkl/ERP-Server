@@ -1,9 +1,10 @@
 import { Prisma } from '@prisma/client';
-import { TxnStatusEvent } from "../../../common/txn-status-log/txn-status-log.helper";
+import { TxnStatusDocType, TxnStatusEvent } from "../../../common/txn-status-log/txn-status-log.helper";
 import { PdcStatus } from '../receipt/types/receipt-enum';
 import { type LockedCheque } from './cheques.guards';
 import type { ChequeRow } from './types/cheque-api.types';
-export declare function logChequeStatus(tx: Prisma.TransactionClient, cheque: Pick<LockedCheque, 'apdId' | 'apdAccYear' | 'apdCompanyId' | 'apdBranchId' | 'apdTenantId' | 'apdInstrumentNo'>, entry: {
+export declare function chequeDocTypeOf(traType: string): TxnStatusDocType;
+export declare function logChequeStatus(tx: Prisma.TransactionClient, cheque: Pick<LockedCheque, 'apdId' | 'apdAccYear' | 'apdCompanyId' | 'apdBranchId' | 'apdTenantId' | 'apdInstrumentNo' | 'apdTraType'>, entry: {
     fromStatus: PdcStatus | null;
     toStatus: PdcStatus;
     event?: TxnStatusEvent;

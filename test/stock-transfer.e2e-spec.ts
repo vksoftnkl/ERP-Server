@@ -4,34 +4,29 @@ import { PrismaService } from '../src/database/prisma/prisma.service';
 import { AuditLogService } from '../src/modules/audit-log/audit-log.service';
 import { RequestContextService } from '../src/common/request-context/request-context.service';
 import { StockVoucherService } from '../src/modules/stocks/stock-voucher/stock-voucher.service';
-import { StockPostingService } from '../src/modules/stocks/posting/stock-posting.service';
+import { assertStockBalances } from '../src/modules/stocks/posting/stock-balance-assertion';
 import { StockTransferService } from '../src/modules/stocks/stock-transfer/stock-transfer.service';
+import { buildStockPosting } from './helpers/stock-posting.factory';
 import { TRANSFER_OUT_RULES } from '../src/modules/stocks/stock-transfer/stock-transfer.controller';
 import { TRANSFER_IN_RULES } from '../src/modules/stocks/stock-transfer/stock-transfer-receive.controller';
 import type { StockVoucherTypeRules } from '../src/modules/stocks/stock-voucher/types/stock-voucher.types';
 
 /**
  * §11 of `plan/plan-nestjs-stock-transfer.md` — the acceptance test, run
- * against a REAL database with the stock engine deployed.
+ * against a REAL database.
  *
- * WHY THIS SKIPS RATHER THAN FAILS — as in `opening-stock.e2e-spec` and
- * `physical-stock.e2e-spec`. This repo's migrations created the stock TABLES
- * but deliberately not the posting machinery: `fn_svh_post_transfer`,
- * `fn_svh_receive_transfer` and `tr_svh_transfer_cancel_guard` come from
- * `schema/stock/20_stock_transfer.sql`, which must be loaded AFTER
- * `19_stock_posting.sql`. Until they are on the database every assertion here
- * would fail for an environmental reason, and a suite that is red for an
- * environmental reason trains people to ignore it.
+ * THE ENGINE IS TYPESCRIPT (plan-nestjs-stock-engine §1.1, 2026-09-28): the
+ * despatch and the receipt post through `StockPostingService` with the
+ * TRANSFER_OUT / TRANSFER_IN shapes, and no SQL function is needed. The suite
+ * skips only when the stock TABLES are missing.
  *
  *     SELECT stock.fn_create_stock_partitions('2026-2027');
- *     STOCK_ENGINE_REQUIRED=1 npm run test:e2e -- stock-transfer
+ *     npm run test:e2e -- stock-transfer
  *
- * THE FIGURES ARE `20_stock_transfer_flow.md`'s, and that document is explicit
- * that they were WORKED FROM THE FUNCTION BODIES rather than captured off a
- * cluster — unlike the opening flow's. So the first green run of this file is
- * also the moment those numbers stop being a reconstruction. If one disagrees,
- * the flow doc is as likely to be wrong as this code, and the difference must
- * be resolved with the DB owner rather than by editing an expectation.
+ * THE FIGURES ARE `20_stock_transfer_flow.md`'s, worked from the former
+ * function bodies. If one disagrees, the flow doc is as likely to be wrong as
+ * this code, and the difference must be resolved rather than an expectation
+ * edited.
  *
  *     A0:  MILK 55 @ 28.00 batch B-2604 in MAIN of branch A
  *     A:   20 MAIN → COLD, same branch    → 2 ledger rows, POSTED, no transit
@@ -59,7 +54,7 @@ const OPENING_RULES: StockVoucherTypeRules = {
   allowsToBranch: false,
   auditScreenName: 'Opening Stock',
   statusDocType: TxnStatusDocType.STOCK_ADJUSTMENT,
-  postFunction: 'stock.fn_svh_post',
+  postShape: 'SIMPLE',
   refuseTypes: ['TRANSFER_IN', 'TRANSFER_OUT', 'REPACK_IN', 'REPACK_OUT'],
 };
 
@@ -79,33 +74,17 @@ interface Fixture {
 
 const prisma = new PrismaClient();
 
-/**
- * Is the transfer engine here?
- *
- * Checked by FUNCTION, not by table: after this repo's own migrations the
- * tables exist while the posting machinery does not, and that state fails far
- * more confusingly than no tables at all. `stock_transit` is checked separately
- * because it is the one table 20 needs that 19 does not use.
- */
+/** Are the stock tables here (and the transit column 20260928100000 added)? */
 async function detectEngine(): Promise<{ ready: boolean; missing: string[] }> {
-  const requiredFunctions = [
-    'fn_svh_post',
-    'fn_svh_post_transfer',
-    'fn_svh_receive_transfer',
-    'fn_svh_cancel',
-    'fn_slt_resolve',
-    'fn_sbl_rebuild',
-    'fn_create_stock_partitions',
-  ];
   try {
-    const found = await prisma.$queryRaw<Array<{ proname: string }>>`
-      SELECT p.proname
-        FROM pg_proc p
-        JOIN pg_namespace n ON n.oid = p.pronamespace
-       WHERE n.nspname = 'stock'
+    const missing: string[] = [];
+    const [wot] = await prisma.$queryRaw<Array<{ n: bigint }>>`
+      SELECT count(*)::bigint AS n FROM information_schema.columns
+       WHERE table_schema = 'stock' AND table_name = 'stock_transit' AND column_name = 'stt_cost_rate_wot'
     `;
-    const names = new Set(found.map((row) => row.proname));
-    const missing = requiredFunctions.filter((name) => !names.has(name));
+    if (Number(wot?.n ?? 0) === 0) {
+      missing.push('stock_transit.stt_cost_rate_wot (migration 20260928100000)');
+    }
 
     const tables = await prisma.$queryRaw<Array<{ tablename: string }>>`
       SELECT tablename FROM pg_tables WHERE schemaname = 'stock'
@@ -136,34 +115,36 @@ describe('Stock transfer (e2e — needs the stock engine)', () => {
   let fixture: Fixture;
   const createdItemIds: string[] = [];
   const createdVoucherIds: string[] = [];
+  /** A second branch (with a godown and a device) raised by this run, when the seed has none. */
+  let createdBranch: { branchId: string; godownId: string; deviceId: string } | null = null;
 
   beforeAll(async () => {
     engine = await detectEngine();
     if (!engine.ready) {
       const message =
-        `the stock transfer engine is not on this database.\n` +
+        `the stock tables are not on this database.\n` +
         `  Missing: ${engine.missing.join(', ')}\n` +
-        `  Deploy schema/stock/ — 20_stock_transfer.sql AFTER 19_stock_posting.sql — then:\n` +
+        `  Run the migrations, then:\n` +
         `    SELECT stock.fn_create_stock_partitions('${ACC_YEAR}');`;
-      if (process.env.STOCK_ENGINE_REQUIRED === '1') {
-        throw new Error(`[stock-transfer e2e] STOCK_ENGINE_REQUIRED=1 but ${message}`);
-      }
       // eslint-disable-next-line no-console
       console.warn(`\n[stock-transfer e2e] SKIPPED — ${message}\n`);
       return;
     }
 
+    const engineParts = buildStockPosting(prisma as unknown as PrismaService);
     voucherService = new StockVoucherService(
       prisma as unknown as PrismaService,
       { logEntityChange: jest.fn().mockResolvedValue(undefined) } as unknown as AuditLogService,
       { getUserId: () => fixture?.userId ?? null } as unknown as RequestContextService,
-      // §3.1 — the one stock engine, injected. Handed the same client, so a
-      // posting call still runs inside whatever transaction the test opened.
-      new StockPostingService(prisma as unknown as PrismaService),
+      // §3.1 — the one stock engine, injected.
+      engineParts.stockPosting,
     );
-    service = new StockTransferService(prisma as unknown as PrismaService, voucherService, {
-      getUserId: () => fixture?.userId ?? null,
-    } as unknown as RequestContextService);
+    service = new StockTransferService(
+      prisma as unknown as PrismaService,
+      voucherService,
+      { getUserId: () => fixture?.userId ?? null } as unknown as RequestContextService,
+      engineParts.stockAccounts,
+    );
     fixture = await createFixture();
   });
 
@@ -214,11 +195,15 @@ describe('Stock transfer (e2e — needs the stock engine)', () => {
              gdl.gdl_id AS godown_id, usr.usr_id AS user_id
         FROM public.branch_master br
         JOIN fixed.device_master dev        ON dev.dev_branch_id = br.br_id
-                                           AND dev.dev_is_deleted = false
+                                           AND dev.dev_is_deleted = false AND dev.dev_is_active = true
         JOIN inventory.godown_locations gdl ON gdl.gdl_branch_id = br.br_id
                                            AND gdl.gdl_is_deleted = false
         JOIN public.user_master usr         ON usr.usr_is_deleted = false
        WHERE br.br_is_deleted = false
+       -- Shape A needs TWO godowns in one branch: prefer the branch that has them.
+       ORDER BY (SELECT count(*) FROM inventory.godown_locations g2
+                  WHERE g2.gdl_branch_id = br.br_id AND g2.gdl_is_deleted = false) DESC,
+                gdl.gdl_name, dev.dev_device_uid
        LIMIT 1
     `;
     if (!scope) {
@@ -238,7 +223,7 @@ describe('Stock transfer (e2e — needs the stock engine)', () => {
     // A second BRANCH with its own godown and device — shape B. The device
     // matters: the receiving branch's tablet numbers its own receipts, and
     // svh_slno is unique per (company, branch, year, type, device).
-    const [other] = await prisma.$queryRaw<
+    let [other] = await prisma.$queryRaw<
       Array<{ branch_id: string; godown_id: string; device_id: string }>
     >`
       SELECT br.br_id AS branch_id, gdl.gdl_id AS godown_id, dev.dev_id AS device_id
@@ -246,14 +231,43 @@ describe('Stock transfer (e2e — needs the stock engine)', () => {
         JOIN inventory.godown_locations gdl ON gdl.gdl_branch_id = br.br_id
                                            AND gdl.gdl_is_deleted = false
         JOIN fixed.device_master dev        ON dev.dev_branch_id = br.br_id
-                                           AND dev.dev_is_deleted = false
+                                           AND dev.dev_is_deleted = false AND dev.dev_is_active = true
        WHERE br.br_is_deleted = false
          AND br.br_comp_id = ${scope.company_id}::uuid
          AND br.br_id <> ${scope.branch_id}::uuid
        LIMIT 1
     `;
+    if (!other) {
+      // No second branch with a godown and a device in this company: raise a
+      // temporary one, so shape B is exercised rather than skipped. Removed in
+      // cleanUp, after every row that points at it.
+      const stampB = Date.now().toString(36);
+      const [home] = await prisma.$queryRaw<Array<{ br_state_code: string }>>`
+        SELECT br_state_code FROM public.branch_master WHERE br_id = ${scope.branch_id}::uuid
+      `;
+      const [branch] = await prisma.$queryRaw<Array<{ br_id: string }>>`
+        INSERT INTO public.branch_master (br_comp_id, br_name, br_code, br_state_code)
+        VALUES (${scope.company_id}::uuid, ${`TrfE2E Branch ${stampB}`}, ${`E2ETRF${stampB}`.slice(0, 20)}, ${home.br_state_code})
+        RETURNING br_id
+      `;
+      const [godown] = await prisma.$queryRaw<Array<{ gdl_id: string }>>`
+        INSERT INTO inventory.godown_locations (gdl_branch_id, gdl_name)
+        VALUES (${branch.br_id}::uuid, ${`TrfE2E Store ${stampB}`})
+        RETURNING gdl_id
+      `;
+      const [device] = await prisma.$queryRaw<Array<{ dev_id: string }>>`
+        INSERT INTO fixed.device_master (dev_company_id, dev_branch_id, dev_device_uid, dev_device_name, dev_is_active)
+        VALUES (${scope.company_id}::uuid, ${branch.br_id}::uuid, ${`E2E-TRF-${stampB}`}, ${`TrfE2E till ${stampB}`}, true)
+        RETURNING dev_id
+      `;
+      createdBranch = { branchId: branch.br_id, godownId: godown.gdl_id, deviceId: device.dev_id };
+      other = { branch_id: branch.br_id, godown_id: godown.gdl_id, device_id: device.dev_id };
+    }
 
-    const milk = await createItem('E2E-TRF-MILK', 'TrfE2E Milk 500ml', scope, [
+    // A unique name per run: item_name_en is unique, and a run that aborted
+    // before cleanUp must not block the next one.
+    const stamp = Date.now().toString(36);
+    const milk = await createItem(`E2E-TRF-MILK-${stamp}`, `TrfE2E Milk 500ml ${stamp}`, scope, [
       { name: 'PIECE', factor: 1, isBase: true },
     ]);
 
@@ -299,11 +313,14 @@ describe('Stock transfer (e2e — needs the stock engine)', () => {
     }
     const unitIds: Record<string, string> = {};
     for (const unit of units) {
+      // The named unit when the seed has it; otherwise any unit will do —
+      // every quantity here is keyed in the base unit at factor 1.
       const [unitRow] = await prisma.$queryRaw<Array<{ unit_id: string }>>`
-        SELECT unit_id FROM inventory.item_unit_master WHERE unit_name = ${unit.name} LIMIT 1
+        SELECT unit_id FROM inventory.item_unit_master
+         ORDER BY (unit_name = ${unit.name}) DESC, unit_name LIMIT 1
       `;
       if (!unitRow) {
-        throw new Error(`No item_unit_master row named ${unit.name} — seed the units first.`);
+        throw new Error(`No item_unit_master row at all — seed the units first.`);
       }
       unitIds[unit.name] = unitRow.unit_id;
     }
@@ -328,6 +345,14 @@ describe('Stock transfer (e2e — needs the stock engine)', () => {
 
   async function cleanUp(): Promise<void> {
     for (const svhId of createdVoucherIds) {
+      await prisma.$executeRaw`DELETE FROM accounts.acc_vouchers WHERE av_voucher_id IN (
+        SELECT avh_voucher_id FROM accounts.acc_voucher_header WHERE avh_src_module = 'STOCK' AND avh_src_doc_id = ${svhId}::uuid
+        UNION SELECT avh_voucher_id FROM accounts.acc_voucher_header WHERE avh_against_voucher_id IN (
+          SELECT avh_voucher_id FROM accounts.acc_voucher_header WHERE avh_src_module = 'STOCK' AND avh_src_doc_id = ${svhId}::uuid))`;
+      await prisma.$executeRaw`DELETE FROM accounts.acc_voucher_header WHERE avh_against_voucher_id IN (
+        SELECT avh_voucher_id FROM accounts.acc_voucher_header WHERE avh_src_module = 'STOCK' AND avh_src_doc_id = ${svhId}::uuid)`;
+      await prisma.$executeRaw`DELETE FROM accounts.acc_voucher_header WHERE avh_src_module = 'STOCK' AND avh_src_doc_id = ${svhId}::uuid`;
+      await prisma.$executeRaw`DELETE FROM public.txn_status_log WHERE tsl_src_doc_id = ${svhId}::uuid`;
       await prisma.$executeRaw`DELETE FROM stock.stock_transit WHERE stt_out_voucher_id = ${svhId}::uuid`;
       await prisma.$executeRaw`DELETE FROM stock.stock_ledger WHERE sml_src_doc_id = ${svhId}::uuid`;
       await prisma.$executeRaw`DELETE FROM stock.stock_voucher_item WHERE svi_voucher_id = ${svhId}::uuid`;
@@ -339,6 +364,12 @@ describe('Stock transfer (e2e — needs the stock engine)', () => {
       await prisma.$executeRaw`DELETE FROM stock.stock_lot WHERE slt_item_id = ${itemId}::uuid`;
       await prisma.$executeRaw`DELETE FROM inventory.item_unit_conversion WHERE iuc_item_id = ${itemId}::uuid`;
       await prisma.$executeRaw`DELETE FROM inventory.item_master WHERE item_id = ${itemId}::uuid`;
+    }
+    if (createdBranch) {
+      await prisma.$executeRaw`DELETE FROM public.txn_status_log WHERE tsl_branch_id = ${createdBranch.branchId}::uuid`;
+      await prisma.$executeRaw`DELETE FROM fixed.device_master WHERE dev_id = ${createdBranch.deviceId}::uuid`;
+      await prisma.$executeRaw`DELETE FROM inventory.godown_locations WHERE gdl_id = ${createdBranch.godownId}::uuid`;
+      await prisma.$executeRaw`DELETE FROM public.branch_master WHERE br_id = ${createdBranch.branchId}::uuid`;
     }
   }
 
@@ -413,13 +444,24 @@ describe('Stock transfer (e2e — needs the stock engine)', () => {
     return row?.svh_status ?? 'MISSING';
   };
 
-  /** §11.9 — the balance must be rebuildable from the ledger, every time. */
-  const rebuildDiffers = async (): Promise<number> => {
-    const [row] = await prisma.$queryRaw<Array<{ differing: string }>>`
-      SELECT COALESCE(stock.fn_sbl_rebuild(), 0) AS differing
+  /** §11.9 / §5.1 — every derived figure must agree with its source, every time. */
+  const rebuildDiffers = async (): Promise<number> =>
+    (await assertStockBalances(prisma, { companyId: fixture.companyId, itemId: fixture.milkId }))
+      .length;
+
+  /** The live accounts voucher a stock document (or its short settlement) wrote. */
+  const accountsVoucherFor = async (docType: string, docId: string) =>
+    prisma.$queryRaw<
+      Array<{ avh_voucher_id: string; av_dr_cr: string; av_amount: string; av_role: string | null }>
+    >`
+      SELECT h.avh_voucher_id, l.av_dr_cr, l.av_amount::text, l.av_role
+        FROM accounts.acc_voucher_header h
+        JOIN accounts.acc_vouchers l ON l.av_voucher_id = h.avh_voucher_id AND l.av_is_deleted = false
+       WHERE h.avh_src_module = 'STOCK' AND h.avh_src_doc_type = ${docType}
+         AND h.avh_src_doc_id = ${docId}::uuid AND h.avh_is_deleted = false
+         AND h.avh_voucher_status = 'POSTED'
+       ORDER BY l.av_row_no
     `;
-    return Number(row?.differing ?? 0);
-  };
 
   /** The lot MILK's opening created, which every transfer line must name. */
   const milkLot = async (): Promise<string> => {
@@ -437,7 +479,7 @@ describe('Stock transfer (e2e — needs the stock engine)', () => {
 
   // ── A0 — the starting point ───────────────────────────────────────────────
 
-  /** MILK 55 @ 28.00, batch B-2604, in MAIN of branch A. */
+  /** MILK 100 @ 28.00, batch B-2604, in MAIN of branch A (the flow's 55, plus enough for every case below). */
   async function openMilk(): Promise<void> {
     const draft = await voucherService.save(OPENING_RULES, {
       header: {
@@ -457,11 +499,11 @@ describe('Stock transfer (e2e — needs the stock engine)', () => {
           uomId: fixture.milkPieceIuc,
           baseUomId: fixture.milkPieceIuc,
           toBaseFactor: 1,
-          baseQty: 55,
+          baseQty: 100,
           godownId: fixture.gdMain,
           batchNo: 'B-2604',
           expiryDate: '2026-06-30',
-          qty: 55,
+          qty: 100,
           costRate: 28,
         },
       ],
@@ -551,17 +593,17 @@ describe('Stock transfer (e2e — needs the stock engine)', () => {
       expect(out?.sml_godown_id).toBe(fixture.gdMain);
       expect(into?.sml_godown_id).toBe(fixture.gdCold);
 
-      // A4a/A4b — the cost is STAMPED by fn_sml_cost_default from the item's
-      // policy (28.00), and the IN row carries the OUT row's figure. Nobody
+      // A4a/A4b — the cost is STAMPED by the engine from the branch's moving
+      // average (28.00), and the IN row carries the OUT row's figure. Nobody
       // typed it: the API stripped the line to 0 on purpose.
       expect(Number(out?.sml_cost_rate)).toBeCloseTo(28, 6);
       expect(Number(into?.sml_cost_rate)).toBeCloseTo(28, 6);
       expect(Number(out?.sml_cost_value)).toBeCloseTo(560, 2);
       expect(Number(into?.sml_cost_value)).toBeCloseTo(560, 2);
 
-      // A4c — the balance moved. COLD is created by the trigger if it never
+      // A4c — the balance moved. COLD is created by the engine if it never
       // held the item.
-      expect(await onHand(fixture.branchA, fixture.gdMain)).toBeCloseTo(35, 6);
+      expect(await onHand(fixture.branchA, fixture.gdMain)).toBeCloseTo(80, 6);
       expect(await onHand(fixture.branchA, fixture.gdCold as string)).toBeCloseTo(20, 6);
 
       // A4d — DELIBERATELY UNCHANGED. The moving average is a property of the
@@ -592,6 +634,8 @@ describe('Stock transfer (e2e — needs the stock engine)', () => {
 
       // A5 — an ordinary POSTED document. The transfer cancel guard does not
       // fire: it only refuses IN_TRANSIT / RECEIVED and a POSTED TRANSFER_IN.
+      // A same-company transfer posts NO accounts leg (one Stock-in-Hand
+      // ledger), so there is nothing to reverse there either.
       await voucherService.cancel(
         TRANSFER_OUT_RULES,
         svhId,
@@ -656,7 +700,7 @@ describe('Stock transfer (e2e — needs the stock engine)', () => {
       expect(transit.expectedOn).toBe('2026-04-05');
 
       // B2c — branch B is told it is coming, and the row is CREATED by
-      // fn_sbl_ensure_row when B has never held the item. Without it the
+      // ensureBalanceRows when B has never held the item. Without it the
       // inbound quantity would be invisible until the goods arrived, which is
       // the commonest first-transfer case.
       expect(await transitIn(fixture.branchB as string, fixture.gdStore as string)).toBeCloseTo(
@@ -794,20 +838,19 @@ describe('Stock transfer (e2e — needs the stock engine)', () => {
       expect(await rebuildDiffers()).toBe(0);
     });
 
-    it('pins the cost_rate_wot asymmetry rather than asserting it is right', async () => {
+    it('carries BOTH costs across the transit: cost_rate_wot on the IN row is the OUT row\'s', async () => {
       if (!requireTwoBranches()) {
         return;
       }
-      // ⚠️ B6a, and open item 3. sml_cost_rate comes from the transit row while
-      // sml_cost_rate_wot is read from stock_lot AS IT STANDS NOW, so the two
-      // rates on one ledger row describe different moments. The review's fix is
-      // a stt_cost_rate_wot column. This assertion exists so that landing that
-      // fix is a DELIBERATE change to a test, not a surprise in production.
+      // B6a, and the former open item 3: stt_cost_rate_wot is stamped at
+      // despatch (migration 20260928100000), so the two rates on one IN row
+      // describe the same moment — the moment the goods left.
       const receiptId = createdVoucherIds.at(-1) as string;
+      const [out] = await ledgerFor(outId);
       const rows = await ledgerFor(receiptId);
       for (const row of rows) {
         expect(Number(row.sml_cost_rate)).toBeCloseTo(28, 6);
-        expect(row.sml_cost_rate_wot).not.toBeNull();
+        expect(Number(row.sml_cost_rate_wot)).toBeCloseTo(Number(out.sml_cost_rate_wot), 6);
       }
     });
 
@@ -864,6 +907,126 @@ describe('Stock transfer (e2e — needs the stock engine)', () => {
         0,
         6,
       );
+      expect(await rebuildDiffers()).toBe(0);
+    });
+  });
+
+  // ── §1.1 — short-settle ────────────────────────────────────────────────────
+
+  describe('short-settle', () => {
+    it('closes a despatch whose remainder never arrives, keeps the short on the report and posts the loss', async () => {
+      if (!requireTwoBranches()) {
+        return;
+      }
+      const lotId = await milkLot();
+      const shortOut = await draftTransfer(fixture.gdStore as string, 6, fixture.branchB as string);
+      await service.despatch(TRANSFER_OUT_RULES, {
+        svhId: shortOut,
+        accYear: ACC_YEAR,
+        companyId: fixture.companyId,
+        branchId: fixture.branchA,
+        userId: fixture.userId,
+      });
+      const [reason] = await prisma.$queryRaw<Array<{ srm_id: string }>>`
+        SELECT srm_id FROM stock.stock_reason_master
+         WHERE srm_code = 'TRANSIT_LOSS' AND srm_company_id IS NULL AND srm_is_deleted = false LIMIT 1
+      `;
+      expect(reason).toBeDefined();
+
+      // Nothing received yet: a short is settled AFTER the receipt, not instead of it.
+      await expect(
+        service.settleShort({
+          outVoucherId: shortOut,
+          accYear: ACC_YEAR,
+          companyId: fixture.companyId,
+          branchId: fixture.branchA,
+          reasonId: reason.srm_id,
+          userId: fixture.userId,
+        }),
+      ).rejects.toMatchObject({ status: 409 });
+
+      // 4 of 6 arrive.
+      const receipt = await service.saveReceive(TRANSFER_IN_RULES, {
+        header: {
+          accYear: ACC_YEAR,
+          companyId: fixture.companyId,
+          branchId: fixture.branchB as string,
+          deviceId: fixture.deviceB as string,
+          docDate: RECEIPT_DATE,
+          linkSrcDocId: shortOut,
+          linkSrcAccYear: ACC_YEAR,
+          userId: fixture.userId,
+        },
+        lines: [
+          {
+            lineNo: 1,
+            itemId: fixture.milkId,
+            uomId: fixture.milkPieceIuc,
+            baseUomId: fixture.milkPieceIuc,
+            toBaseFactor: 1,
+            baseQty: 4,
+            godownId: fixture.gdStore as string,
+            lotId,
+            qty: 4,
+          },
+        ],
+      } as never);
+      createdVoucherIds.push(receipt.header.svhId);
+      await service.receive(
+        TRANSFER_IN_RULES,
+        receipt.header.svhId,
+        ACC_YEAR,
+        fixture.companyId,
+        fixture.branchB as string,
+        fixture.userId,
+      );
+      const transitBefore = await transitIn(fixture.branchB as string, fixture.gdStore as string);
+      expect(transitBefore).toBeCloseTo(2, 6);
+
+      const settled = await service.settleShort({
+        outVoucherId: shortOut,
+        accYear: ACC_YEAR,
+        companyId: fixture.companyId,
+        branchId: fixture.branchA,
+        reasonId: reason.srm_id,
+        remarks: 'e2e: two cartons never arrived',
+        userId: fixture.userId,
+      });
+      expect(settled.outVoucher.status).toBe('RECEIVED');
+      expect(settled.rowsSettled).toBe(1);
+      expect(settled.shortQty).toBeCloseTo(2, 6);
+      expect(settled.shortValue).toBeCloseTo(56, 2);
+      expect(await voucherStatus(shortOut)).toBe('RECEIVED');
+
+      // The transit row is RECEIVED and STILL says 2 short — the loss report.
+      const [row] = settled.transit;
+      expect(row.status).toBe('RECEIVED');
+      expect(row.remainingQty).toBeCloseTo(2, 6);
+      // The destination stops expecting the goods.
+      expect(await transitIn(fixture.branchB as string, fixture.gdStore as string)).toBeCloseTo(0, 6);
+
+      // Under PERPETUAL: DR reason ledger (STOCK_SHORTAGE) / CR INVENTORY, 56.00.
+      expect(settled.accountsVoucherId).not.toBeNull();
+      const legs = await accountsVoucherFor('TRANSFER_OUT', shortOut);
+      expect(legs).toHaveLength(2);
+      const dr = legs.find((l) => l.av_dr_cr.trim() === 'DR');
+      const cr = legs.find((l) => l.av_dr_cr.trim() === 'CR');
+      expect(Number(dr?.av_amount)).toBeCloseTo(56, 2);
+      expect(Number(cr?.av_amount)).toBeCloseTo(56, 2);
+      expect(cr?.av_role).toBe('INVENTORY');
+
+      // A second settle is a no-op refusal: nothing is short any more.
+      await expect(
+        service.settleShort({
+          outVoucherId: shortOut,
+          accYear: ACC_YEAR,
+          companyId: fixture.companyId,
+          branchId: fixture.branchA,
+          reasonId: reason.srm_id,
+          userId: fixture.userId,
+        }),
+      ).rejects.toMatchObject({ status: 409 });
+
       expect(await rebuildDiffers()).toBe(0);
     });
   });
@@ -954,8 +1117,8 @@ describe('Stock transfer (e2e — needs the stock engine)', () => {
           fixture.branchA,
           fixture.userId,
         ),
-        // tr_svh_transfer_cancel_guard, 23001 → 409 carrying the engine's own
-        // sentence, which reads as an instruction to the clerk.
+        // The engine's cancel guard: a 409 carrying a sentence that reads as an
+        // instruction to the clerk.
       ).rejects.toMatchObject({ status: 409 });
     });
 

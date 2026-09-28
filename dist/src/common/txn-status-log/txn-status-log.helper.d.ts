@@ -12,6 +12,7 @@ export declare enum TxnStatusDocType {
     QUOTATION = "QUOTATION",
     SALES_ORDER = "SALES_ORDER",
     DELIVERY_CHALLAN = "DELIVERY_CHALLAN",
+    DC_RETURN = "DC_RETURN",
     SALE_BILL = "SALE_BILL",
     SALE_RETURN = "SALE_RETURN",
     PURCHASE_ORDER = "PURCHASE_ORDER",
@@ -22,6 +23,8 @@ export declare enum TxnStatusDocType {
     RECEIPT = "RECEIPT",
     PAYMENT = "PAYMENT",
     JOURNAL = "JOURNAL",
+    CHEQUE_RECEIVED = "CHEQUE_RECEIVED",
+    CHEQUE_ISSUED = "CHEQUE_ISSUED",
     OTHER = "OTHER"
 }
 export declare enum TxnStatusEvent {

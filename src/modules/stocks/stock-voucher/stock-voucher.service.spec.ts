@@ -50,7 +50,7 @@ const OPENING_RULES: StockVoucherTypeRules = {
   allowsToBranch: false,
   auditScreenName: 'Opening Stock',
   statusDocType: TxnStatusDocType.STOCK_ADJUSTMENT,
-  postFunction: 'stock.fn_svh_post',
+  postShape: 'SIMPLE',
   refuseTypes: ['TRANSFER_IN', 'TRANSFER_OUT', 'REPACK_IN', 'REPACK_OUT'],
 };
 
@@ -74,7 +74,7 @@ const PHYSICAL_RULES: StockVoucherTypeRules = {
   allowsToBranch: false,
   auditScreenName: 'Physical Stock Count',
   statusDocType: TxnStatusDocType.STOCK_ADJUSTMENT,
-  postFunction: 'stock.fn_svh_post',
+  postShape: 'COUNT',
   refuseTypes: ['TRANSFER_IN', 'TRANSFER_OUT', 'REPACK_IN', 'REPACK_OUT'],
 };
 
@@ -178,8 +178,36 @@ describe('StockVoucherService', () => {
         create: jest.fn().mockResolvedValue({}),
       },
       $transaction: jest.fn(async (fn: (tx: unknown) => unknown) => fn(client)),
-      // The numbering helper's advisory lock, then MAX(slno) + 1.
-      $queryRaw: jest.fn().mockResolvedValue([{ locked: 1, next_slno: BigInt(1) }]),
+      // Keyed on what each raw read is FOR: the engine's header lock must see a
+      // DRAFT, its zero-cost and negative-stock checks must find nothing, and
+      // the numbering helper's advisory lock / MAX(slno) + 1 read as before.
+      $queryRaw: jest.fn((strings: TemplateStringsArray) => {
+        const sql = Array.isArray(strings) ? strings.join('?') : '';
+        if (sql.includes('FOR UPDATE')) {
+          return Promise.resolve([
+            {
+              status: 'DRAFT',
+              refno: 'OPN/x',
+              voucher_type: 'OPENING',
+              branch_id: BRANCH_ID,
+              to_branch_id: null,
+              to_godown_id: null,
+              link_src_doc_id: null,
+              link_src_acc_year: null,
+              locked: 1,
+            },
+          ]);
+        }
+        if (
+          sql.includes('line_cost_rate = 0') ||
+          sql.includes('sbl_on_hand_qty < 0') ||
+          sql.includes('lotless') ||
+          sql.includes('keyed.line_direction < 0')
+        ) {
+          return Promise.resolve([]);
+        }
+        return Promise.resolve([{ locked: 1, next_slno: BigInt(1) }]);
+      }),
       // The in-process posting engine's seven set-based statements.
       $executeRaw: jest.fn().mockResolvedValue(2),
     };
@@ -190,7 +218,10 @@ describe('StockVoucherService', () => {
       { getUserId: () => USER_ID } as unknown as RequestContextService,
       // §3.1 — the one stock engine, injected. Handed the same client, so a
       // posting call still runs inside whatever transaction the test opened.
-      new StockPostingService(client as unknown as PrismaService),
+      new StockPostingService(client as unknown as PrismaService, {
+        postForVoucher: jest.fn().mockResolvedValue(null),
+        reverseForVoucher: jest.fn().mockResolvedValue(null),
+      } as never),
     );
     // Every save reloads the document at the end; the reload itself is raw SQL
     // against tables a unit test has no business standing up.
@@ -438,7 +469,7 @@ describe('StockVoucherService', () => {
       expect(client.stockVoucher.create.mock.calls[0][0].data.svhStatus).toBe('DRAFT');
       // ...and then the same transaction posts it: lots, lines, ledger,
       // balances, the moving average and its stamp, lot totals.
-      expect(client.$executeRaw).toHaveBeenCalledTimes(7);
+      expect(client.$executeRaw).toHaveBeenCalledTimes(8);
       expect(client.stockVoucher.update).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ svhStatus: 'POSTED' }) }),
       );
@@ -593,12 +624,15 @@ describe('StockVoucherService', () => {
       expect(client.stockVoucherItem.createMany.mock.calls[0][0].data).toHaveLength(1);
     });
 
-    it('issues no totals update at all when the payload sends none', async () => {
+    it('writes only the line COUNT when the payload sends no totals', async () => {
       await service.save(OPENING_RULES, payload());
 
-      // Nothing written means the columns keep their NOT NULL DEFAULT 0 on a
-      // create — not a server-side zero standing in for a missing value.
-      expect(client.stockVoucher.update).not.toHaveBeenCalled();
+      // The valuation columns keep their NOT NULL DEFAULT 0 on a create — not
+      // a server-side zero standing in for a missing value. The line count is
+      // the number of rows just written and is always stated.
+      expect(client.stockVoucher.update).toHaveBeenCalledTimes(1);
+      const [[totals]] = client.stockVoucher.update.mock.calls;
+      expect(totals.data).toEqual({ svhLineCount: 1 });
     });
 
     it('always saves DRAFT and never a lot id', async () => {
@@ -655,7 +689,7 @@ describe('StockVoucherService', () => {
       zeroesLineCost: true,
       allowsCount: false,
       allowsToBranch: true,
-      postFunction: 'stock.fn_svh_post_transfer',
+      postShape: 'TRANSFER_OUT',
       auditScreenName: 'Stock Transfer',
       statusDocType: TxnStatusDocType.STOCK_TRANSFER,
       refuseTypes: ['OPENING', 'PHYSICAL', 'TRANSFER_IN', 'REPACK_IN', 'REPACK_OUT'],
@@ -803,7 +837,7 @@ describe('StockVoucherService', () => {
         isInward: true,
         allowsToBranch: false,
         ledgerTxnTypes: ['TRANSFER_IN'],
-        postFunction: 'stock.fn_svh_receive_transfer',
+        postShape: 'TRANSFER_IN',
         refuseTypes: ['OPENING', 'PHYSICAL', 'TRANSFER_OUT', 'REPACK_IN', 'REPACK_OUT'],
       };
       await service.save(TRANSFER_IN_RULES, transferPayload({ header: { rateSource: null } }));
@@ -871,8 +905,8 @@ describe('StockVoucherService', () => {
       );
       expect(named).toBe(false);
       // Lots, lines, ledger, balances, the moving average and its stamp, lot
-      // totals — seven set-based statements.
-      expect(client.$executeRaw).toHaveBeenCalledTimes(7);
+      // totals, header totals — eight set-based statements.
+      expect(client.$executeRaw).toHaveBeenCalledTimes(8);
       expect(client.stockVoucher.update).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ svhStatus: 'POSTED' }) }),
       );
@@ -915,93 +949,27 @@ describe('StockVoucherService', () => {
       );
     });
 
-    it('calls the function the rule record names, not fn_svh_post', async () => {
-      jest.spyOn(service, 'validate').mockResolvedValue([]);
-      jest.spyOn(service, 'getById').mockResolvedValue({
-        header: { svhId: SVH_ID, refno: 'TRF/x', status: 'IN_TRANSIT', postedOn: null } as never,
-        lines: [],
-      });
-      client.stockVoucher.findUnique.mockResolvedValue({
-        svhId: SVH_ID,
-        svhRefno: 'TRF/x',
-        svhStatus: 'DRAFT',
-        svhIsDeleted: false,
-        // loadHeaderOrThrow re-checks the document's identity against the rule
-        // record and the scope — a mock missing these 404s.
-        svhVoucherType: 'TRANSFER_OUT',
-        svhCompanyId: COMPANY_ID,
-        svhBranchId: BRANCH_ID,
-      });
-      client.$queryRaw.mockResolvedValue([{ rows: 1 }]);
-
-      await service.post(TRANSFER_OUT_RULES, SVH_ID, ACC_YEAR, COMPANY_ID, BRANCH_ID, USER_ID);
-
-      // $queryRaw is a tagged template: [strings, ...values]. The function
-      // name is a Prisma.raw VALUE, not part of the static text — which is the
-      // whole point, and why the allowlist below matters.
-      const call = client.$queryRaw.mock.calls.at(-1) as unknown[];
-      expect(JSON.stringify(call)).toContain('fn_svh_post_transfer');
-      expect(JSON.stringify(call)).not.toContain('fn_svh_post(');
-    });
-
-    it('refuses a rule record wired to a function that is not one of the three', async () => {
-      // Prisma.raw does not escape. The allowlist is what keeps the function
-      // name unreachable from anything but a controller's own literal.
-      jest.spyOn(service, 'validate').mockResolvedValue([]);
-      client.stockVoucher.findUnique.mockResolvedValue({
-        svhId: SVH_ID,
-        svhRefno: 'TRF/x',
-        svhStatus: 'DRAFT',
-        svhIsDeleted: false,
-        // loadHeaderOrThrow re-checks the document's identity against the rule
-        // record and the scope — a mock missing these 404s.
-        svhVoucherType: 'TRANSFER_OUT',
-        svhCompanyId: COMPANY_ID,
-        svhBranchId: BRANCH_ID,
-      });
-      await expect(
-        service.post(
-          { ...TRANSFER_OUT_RULES, postFunction: 'stock.fn_drop_everything' },
-          SVH_ID,
-          ACC_YEAR,
-          COMPANY_ID,
-          BRANCH_ID,
-          USER_ID,
-        ),
-      ).rejects.toThrow(/not one of/);
-    });
-
     it('runs the afterPost hook inside the post transaction', async () => {
       jest.spyOn(service, 'validate').mockResolvedValue([]);
       jest.spyOn(service, 'getById').mockResolvedValue({
-        header: { svhId: SVH_ID, refno: 'TRF/x', status: 'IN_TRANSIT', postedOn: null } as never,
+        header: { svhId: SVH_ID, refno: 'OPN/x', status: 'POSTED', postedOn: null } as never,
         lines: [],
       });
       client.stockVoucher.findUnique.mockResolvedValue({
         svhId: SVH_ID,
-        svhRefno: 'TRF/x',
+        svhRefno: 'OPN/x',
         svhStatus: 'DRAFT',
         svhIsDeleted: false,
-        // loadHeaderOrThrow re-checks the document's identity against the rule
-        // record and the scope — a mock missing these 404s.
-        svhVoucherType: 'TRANSFER_OUT',
+        svhVoucherType: 'OPENING',
         svhCompanyId: COMPANY_ID,
         svhBranchId: BRANCH_ID,
       });
-      client.$queryRaw.mockResolvedValue([{ rows: 3 }]);
 
       const hook = jest.fn().mockResolvedValue(undefined);
-      await service.post(
-        TRANSFER_OUT_RULES,
-        SVH_ID,
-        ACC_YEAR,
-        COMPANY_ID,
-        BRANCH_ID,
-        USER_ID,
-        hook,
-      );
-      // The transaction client, and the row count the engine returned.
-      expect(hook).toHaveBeenCalledWith(client, 3);
+      await service.post(OPENING_RULES, SVH_ID, ACC_YEAR, COMPANY_ID, BRANCH_ID, USER_ID, hook);
+      // The transaction client, and the row count the engine returned — the
+      // ledger INSERT's mocked count.
+      expect(hook).toHaveBeenCalledWith(client, 2);
     });
 
     it('rolls the post back when the afterPost hook throws', async () => {
@@ -1010,18 +978,15 @@ describe('StockVoucherService', () => {
       jest.spyOn(service, 'validate').mockResolvedValue([]);
       client.stockVoucher.findUnique.mockResolvedValue({
         svhId: SVH_ID,
-        svhRefno: 'TRF/x',
+        svhRefno: 'OPN/x',
         svhStatus: 'DRAFT',
         svhIsDeleted: false,
-        // loadHeaderOrThrow re-checks the document's identity against the rule
-        // record and the scope — a mock missing these 404s.
-        svhVoucherType: 'TRANSFER_OUT',
+        svhVoucherType: 'OPENING',
         svhCompanyId: COMPANY_ID,
         svhBranchId: BRANCH_ID,
       });
-      client.$queryRaw.mockResolvedValue([{ rows: 1 }]);
       await expect(
-        service.post(TRANSFER_OUT_RULES, SVH_ID, ACC_YEAR, COMPANY_ID, BRANCH_ID, USER_ID, () => {
+        service.post(OPENING_RULES, SVH_ID, ACC_YEAR, COMPANY_ID, BRANCH_ID, USER_ID, () => {
           throw new Error('transit update failed');
         }),
       ).rejects.toThrow('transit update failed');
@@ -1512,9 +1477,9 @@ describe('StockVoucherService', () => {
         JSON.stringify(call).includes('fn_svh_cancel'),
       );
       expect(named).toBe(false);
-      // Reversal rows, balances, the moving average and its stamp, lot totals
-      // — five set-based statements.
-      expect(client.$executeRaw).toHaveBeenCalledTimes(5);
+      // Reversal rows, balances, the moving average and its stamp, lot totals,
+      // header totals — six set-based statements.
+      expect(client.$executeRaw).toHaveBeenCalledTimes(6);
       // The header moves to CANCELLED and carries NOTHING else about the
       // cancellation: who did it, when, and why are the trail's, and writing
       // them twice is what this asserts against.
@@ -1548,36 +1513,34 @@ describe('StockVoucherService', () => {
       expect(client.stockVoucher.update).not.toHaveBeenCalled();
     });
 
-    it('still hands a transfer to stock.fn_svh_cancel — transit is not reversed here', async () => {
+    it('refuses to cancel a despatch that is IN_TRANSIT — goods on a lorry cannot be un-sent', async () => {
       const transferRules: StockVoucherTypeRules = {
         ...OPENING_RULES,
         voucherType: 'TRANSFER_OUT',
         displayName: 'Stock transfer',
-        postFunction: 'stock.fn_svh_post_transfer',
+        postShape: 'TRANSFER_OUT',
       };
       client.stockVoucher.findUnique.mockResolvedValue({
         ...posted,
+        svhStatus: 'IN_TRANSIT',
         svhVoucherType: 'TRANSFER_OUT',
         svhRefno: 'TRF/x',
       });
-      client.$queryRaw.mockResolvedValue([{ rows: 1 }]);
-      jest.spyOn(service, 'getById').mockResolvedValue({
-        header: { svhId: SVH_ID, refno: 'TRF/x', status: 'CANCELLED' } as never,
-        lines: [],
+      // The engine's transfer guard reads the status first, under its own query.
+      client.$queryRaw.mockResolvedValue([{ status: 'IN_TRANSIT', refno: 'TRF/x' }]);
+
+      await expect(
+        service.cancel(transferRules, SVH_ID, ACC_YEAR, 'sent by mistake', COMPANY_ID, BRANCH_ID),
+      ).rejects.toMatchObject({
+        status: 409,
+        response: expect.objectContaining({
+          errors: expect.arrayContaining([
+            expect.objectContaining({ message: expect.stringContaining('cannot be cancelled on paper') }),
+          ]),
+        }),
       });
-
-      await service.cancel(
-        transferRules,
-        SVH_ID,
-        ACC_YEAR,
-        'sent by mistake',
-        COMPANY_ID,
-        BRANCH_ID,
-      );
-
-      const call = client.$queryRaw.mock.calls.at(-1) as unknown[];
-      expect(JSON.stringify(call)).toContain('fn_svh_cancel');
       expect(client.$executeRaw).not.toHaveBeenCalled();
+      expect(client.stockVoucher.update).not.toHaveBeenCalled();
     });
 
     it('cancels a DRAFT by moving the header alone — no ledger, no engine', async () => {
@@ -1635,7 +1598,7 @@ describe('StockVoucherService', () => {
         ...OPENING_RULES,
         voucherType: 'TRANSFER_IN',
         displayName: 'Stock transfer receipt',
-        postFunction: 'stock.fn_svh_receive_transfer',
+        postShape: 'TRANSFER_IN',
       };
       client.stockVoucher.findUnique.mockResolvedValue({
         ...posted,
@@ -1658,7 +1621,7 @@ describe('StockVoucherService', () => {
   });
 
   describe('post', () => {
-    it('refuses without calling fn_svh_post when the preflight found a problem', async () => {
+    it('refuses without running the engine when the preflight found a problem', async () => {
       client.stockVoucher.findUnique.mockResolvedValue({
         svhId: SVH_ID,
         svhRefno: 'OPN/2026-2027/TILL-01/1',

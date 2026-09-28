@@ -55,17 +55,19 @@ import {
  *
  * The fields that say something the other screens do not:
  *
- *   postFunction        fn_svh_post_transfer, NOT fn_svh_post. 19 refuses to
- *                       post a transfer by name, so a mis-wired record fails
- *                       loudly at the first despatch rather than half-posting a
- *                       document that should have written stock_transit.
- *   requiresLot         a transfer MOVES existing stock. fn_slt_resolve is
- *                       never called here — the destination keeps the same
- *                       slt_id, so ageing does not reset. That is the point of
- *                       the rule, not a side effect.
- *   zeroesLineCost      the cost is stamped by the engine and TRAVELS. See
- *                       MUST-FIX 5: a typed rate lands in the ledger at that
- *                       rate with value 0.
+ *   postShape           TRANSFER_OUT, NOT SIMPLE. The engine writes the OUT
+ *                       row and, same branch, the IN row as a pair — or the
+ *                       transit rows and IN_TRANSIT for another branch. A
+ *                       record that said SIMPLE would move stock out with
+ *                       nothing recording that it is on a lorry.
+ *   requiresLot         a transfer MOVES existing stock. The lot is never
+ *                       re-resolved — the destination keeps the same slt_id,
+ *                       so ageing does not reset. That is the point of the
+ *                       rule, not a side effect.
+ *   zeroesLineCost      the cost is stamped by the engine and TRAVELS: the
+ *                       branch's moving average at the moment it left
+ *                       (defaultRateSource AVG_COST). A typed rate is stripped.
+ *                       See MUST-FIX 5.
  *   allowsToBranch      the only type that may leave the branch.
  *   requiresFromGodown  both godowns, both mandatory (ck_svh_transfer_godowns).
  *   + requiresToGodown  svi_godown_id on the LINE is the source; the header's
@@ -82,9 +84,13 @@ const TRANSFER_OUT_RULES: StockVoucherTypeRules = {
   quantityMode: 'QTY',
   requiresLot: true,
   zeroesLineCost: true,
+  defaultRateSource: 'AVG_COST',
+  // A transfer MOVES an opened holding; the "already opened this year" preflight
+  // is an OPENING's rule and must not refuse it.
+  allowsRepeatHolding: true,
   allowsCount: false,
   allowsToBranch: true,
-  postFunction: 'stock.fn_svh_post_transfer',
+  postShape: 'TRANSFER_OUT',
   auditScreenName: 'Stock Transfer',
   statusDocType: TxnStatusDocType.STOCK_TRANSFER,
   refuseTypes: ['OPENING', 'PHYSICAL', 'TRANSFER_IN', 'REPACK_IN', 'REPACK_OUT'],
@@ -196,7 +202,7 @@ export class StockTransferController {
   @Post('despatch')
   @Version(API_VERSION)
   @ApiOperation({
-    summary: 'Despatch the transfer — stock.fn_svh_post_transfer',
+    summary: 'Despatch the transfer',
     description:
       'The engine chooses the shape. A same-branch transfer writes the OUT and IN ledger rows as a pair and ends POSTED; an inter-branch despatch writes the OUT row plus one stock_transit row per line and ends IN_TRANSIT. The response says which happened — read from the row, not from the request. LR, vehicle and expected date are written to the transit rows in the same transaction.',
   })
@@ -222,7 +228,7 @@ export class StockTransferController {
   @ApiOperation({
     summary: 'Cancel a same-branch POSTED transfer — reversal rows, never a delete',
     description:
-      "Only a same-branch transfer can be cancelled. An IN_TRANSIT or RECEIVED despatch is refused by tr_svh_transfer_cancel_guard with 409 and the engine's own sentence — goods that left cannot be cancelled on paper, and the fix is to receive them or transfer them back.",
+      "Only a same-branch transfer can be cancelled. An IN_TRANSIT or RECEIVED despatch is refused with 409 — goods that left cannot be cancelled on paper; the fix is to receive them and transfer them back, or to short-settle what never arrived.",
   })
   @ApiOkResponse({ type: StockTransferCancelSuccessDto })
   @ApiConflictResponse({ type: StockTransferErrorResponseDto })

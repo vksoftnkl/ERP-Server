@@ -169,7 +169,7 @@ describe('PhysicalStockVoucherController', () => {
       // The generic entry point is what makes the draft path reachable at all:
       // the service refuses a draft cancellation on any type whose
       // postFunction is a transfer's.
-      expect(rules.postFunction).toBe('stock.fn_svh_post');
+      expect(rules.postShape).toBe('COUNT');
       expect(reason).toBe('counter went home');
     });
   });

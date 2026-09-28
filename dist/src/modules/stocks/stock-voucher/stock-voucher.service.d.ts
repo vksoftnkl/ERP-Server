@@ -60,7 +60,6 @@ export declare class StockVoucherService {
     private findLastStatusStep;
     private toStatusEvent;
     private loadHeaderOrThrow;
-    private assertPostFunction;
     private assertDraft;
     private toHeaderPayload;
     private toLinePayload;

@@ -20,8 +20,14 @@ export interface BillWriteContext {
 export interface RaisedBill extends BillKey {
     lineRowNo: number;
 }
-export declare function raiseBill(tx: Prisma.TransactionClient, ctx: BillWriteContext, bill: InternalBill, legAvId: string | null): Promise<RaisedBill>;
-export declare function writeAllocations(tx: Prisma.TransactionClient, ctx: BillWriteContext, allocations: readonly InternalAllocation[], raisedByLine: ReadonlyMap<number, RaisedBill>, legAvIdByRow: ReadonlyMap<number, string>): Promise<BillKey[]>;
+export interface InstrumentRefs {
+    tenderId: string;
+    tenderAccYear: string;
+    chequeId: string | null;
+    chequeAccYear: string | null;
+}
+export declare function raiseBill(tx: Prisma.TransactionClient, ctx: BillWriteContext, bill: InternalBill, legAvId: string | null, refnoSuffix?: string | null): Promise<RaisedBill>;
+export declare function writeAllocations(tx: Prisma.TransactionClient, ctx: BillWriteContext, allocations: readonly InternalAllocation[], raisedByLine: ReadonlyMap<number, RaisedBill>, legAvIdByRow: ReadonlyMap<number, string>, instrumentRefs?: ReadonlyMap<number, InstrumentRefs>): Promise<BillKey[]>;
 export declare function reverseVoucherAllocations(tx: Prisma.TransactionClient, params: {
     voucherId: string;
     accYear: string;

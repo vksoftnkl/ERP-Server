@@ -9,7 +9,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.CancelStockTransferDto = exports.DespatchStockTransferDto = exports.StockTransferRefDto = void 0;
+exports.SettleShortStockTransferDto = exports.CancelStockTransferDto = exports.DespatchStockTransferDto = exports.StockTransferRefDto = void 0;
 const swagger_1 = require("@nestjs/swagger");
 const class_validator_1 = require("class-validator");
 const dtoDecorators_1 = require("../../../../common/dto/dtoDecorators");
@@ -87,4 +87,53 @@ __decorate([
     (0, class_validator_1.MaxLength)(250),
     __metadata("design:type", String)
 ], CancelStockTransferDto.prototype, "reason", void 0);
+class SettleShortStockTransferDto {
+    outVoucherId;
+    accYear;
+    companyId;
+    branchId;
+    reasonId;
+    remarks;
+    userId;
+}
+exports.SettleShortStockTransferDto = SettleShortStockTransferDto;
+__decorate([
+    (0, swagger_1.ApiProperty)({ format: 'uuid', description: 'The TRANSFER_OUT (despatch) to close.' }),
+    (0, dtoDecorators_1.RequiredUuid)(),
+    __metadata("design:type", String)
+], SettleShortStockTransferDto.prototype, "outVoucherId", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: '2026-2027', minLength: 9, maxLength: 9, description: "The despatch's year." }),
+    (0, dtoDecorators_1.TrimmedString)(9),
+    (0, class_validator_1.Matches)(ACC_YEAR_PATTERN, { message: 'accYear must be YYYY-YYYY, e.g. 2026-2027' }),
+    __metadata("design:type", String)
+], SettleShortStockTransferDto.prototype, "accYear", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ format: 'uuid' }),
+    (0, dtoDecorators_1.RequiredUuid)(),
+    __metadata("design:type", String)
+], SettleShortStockTransferDto.prototype, "companyId", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ format: 'uuid', description: 'The SENDING branch — the despatch is its document.' }),
+    (0, dtoDecorators_1.RequiredUuid)(),
+    __metadata("design:type", String)
+], SettleShortStockTransferDto.prototype, "branchId", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        format: 'uuid',
+        description: 'stock_reason_master row, direction OUT or BOTH (seeded: TRANSIT_LOSS). Its GL ledger takes the loss; unset, the STOCK_SHORTAGE role does.',
+    }),
+    (0, dtoDecorators_1.RequiredUuid)(),
+    __metadata("design:type", String)
+], SettleShortStockTransferDto.prototype, "reasonId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ maxLength: 250, nullable: true }),
+    (0, dtoDecorators_1.NullableStringStrict)(250),
+    __metadata("design:type", Object)
+], SettleShortStockTransferDto.prototype, "remarks", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ format: 'uuid', description: 'Falls back to the authenticated user.' }),
+    (0, dtoDecorators_1.OptionalUuid)(),
+    __metadata("design:type", String)
+], SettleShortStockTransferDto.prototype, "userId", void 0);
 //# sourceMappingURL=post-stock-transfer.dto.js.map

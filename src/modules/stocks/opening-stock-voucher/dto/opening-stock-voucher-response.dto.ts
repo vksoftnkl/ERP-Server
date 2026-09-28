@@ -403,7 +403,7 @@ export class OpeningStockLineProblemDto {
 }
 
 export class OpeningStockPostResultDto extends OpeningStockDocumentDto {
-  @ApiProperty({ description: 'Ledger rows written by stock.fn_svh_post.' })
+  @ApiProperty({ description: 'Ledger rows written by the posting engine.' })
   rowsPosted!: number;
 
   @ApiProperty({ example: 'POSTED' })

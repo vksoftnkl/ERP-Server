@@ -8,6 +8,7 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.OpeningBalanceModule = void 0;
 const common_1 = require("@nestjs/common");
+const app_settings_module_1 = require("../../settings/appSettings/app-settings.module");
 const opening_balance_controller_1 = require("./opening-balance.controller");
 const opening_balance_exception_filter_1 = require("./opening-balance-exception.filter");
 const opening_balance_service_1 = require("./opening-balance.service");
@@ -18,6 +19,7 @@ let OpeningBalanceModule = class OpeningBalanceModule {
 exports.OpeningBalanceModule = OpeningBalanceModule;
 exports.OpeningBalanceModule = OpeningBalanceModule = __decorate([
     (0, common_1.Module)({
+        imports: [app_settings_module_1.AppSettingsModule],
         controllers: [opening_balance_controller_1.OpeningBalanceController],
         providers: [
             opening_balance_service_1.OpeningBalanceService,

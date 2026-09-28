@@ -49,8 +49,8 @@ let StockVoucherService = class StockVoucherService {
         const postedOn = new Date();
         const { svhId, rowsPosted } = await this.prisma.$transaction(async (tx) => {
             const id = header.svhId
-                ? await this.updateDraft(tx, rules, dto, actor)
-                : await this.createDraft(tx, rules, dto, actor);
+                ? await this.updateDraft(tx, rules, dto, actor, postedOn)
+                : await this.createDraft(tx, rules, dto, actor, postedOn);
             if (!postAfterSave) {
                 return { svhId: id, rowsPosted: null };
             }
@@ -71,14 +71,14 @@ let StockVoucherService = class StockVoucherService {
                 tenantId: header.tenantId ?? null,
                 refno: (await this.loadRefno(tx, id, header.accYear)) ?? id,
                 fromStatus: 'DRAFT',
-                toStatus: 'POSTED',
+                toStatus: posted.status,
                 actor,
                 changedOn: postedOn,
-                remarks: `${rules.displayName} saved and posted — ${posted} ledger rows`,
+                remarks: `${rules.displayName} saved and posted — ${posted.rowsPosted} ledger rows`,
                 deviceId: header.deviceId,
                 sessionId: header.sessionId ?? null,
             });
-            return { svhId: id, rowsPosted: posted };
+            return { svhId: id, rowsPosted: posted.rowsPosted };
         });
         const document = await this.getById(rules, svhId, header.accYear, header.companyId, header.branchId);
         return { ...document, rowsPosted };
@@ -114,6 +114,15 @@ let StockVoucherService = class StockVoucherService {
                 field: 'fromGodownId',
                 message: `A ${rules.displayName} must name the godown the stock leaves from.`,
             });
+        }
+        if (rules.lineDirection !== 'REASON') {
+            const signed = lines.findIndex((line) => line.direction !== undefined && line.direction !== null);
+            if (signed >= 0) {
+                errors.push({
+                    field: `lines.${signed}`,
+                    message: `Line ${lines[signed].lineNo}: only a stock adjustment states a direction per line; a ${rules.displayName.toLowerCase()} moves every line the same way.`,
+                });
+            }
         }
         if (!rules.allowsToBranch && header.toBranchId) {
             errors.push({
@@ -269,7 +278,7 @@ let StockVoucherService = class StockVoucherService {
                     });
                 }
             }
-            else if (!isCount && line.lotId) {
+            else if (!isCount && !rules.allowsLot && line.lotId) {
                 errors.push({
                     field,
                     message: `Line ${line.lineNo}: a ${rules.displayName.toLowerCase()} does not choose its own lot. The engine resolves it at post.`,
@@ -398,7 +407,7 @@ let StockVoucherService = class StockVoucherService {
             (0, module_service_utils_1.throwStockUnprocessable)('This document cites a stock reason it may not use', errors);
         }
     }
-    async createDraft(tx, rules, dto, actor) {
+    async createDraft(tx, rules, dto, actor, now) {
         const { header } = dto;
         const scope = {
             companyId: header.companyId,
@@ -439,7 +448,7 @@ let StockVoucherService = class StockVoucherService {
             select: { svhId: true, svhAccYear: true, svhRefno: true },
         });
         await this.replaceLines(tx, rules, dto, created.svhId, actor, header.createdBy);
-        await this.writeHeaderTotals(tx, created.svhId, header);
+        await this.writeHeaderTotals(tx, created.svhId, header, dto.lines.length);
         await this.auditLogService.logEntityChange({
             action: 'insert',
             tableName: STOCK_VOUCHER_TABLE_NAME,
@@ -463,18 +472,17 @@ let StockVoucherService = class StockVoucherService {
             fromStatus: null,
             toStatus: 'DRAFT',
             actor,
-            changedOn: new Date(),
+            changedOn: now,
             remarks: `${rules.displayName} created`,
             deviceId: header.deviceId,
             sessionId: header.sessionId ?? null,
         });
         return created.svhId;
     }
-    async writeHeaderTotals(tx, svhId, header) {
-        const data = {};
-        if (header.lineCount !== undefined) {
-            data.svhLineCount = header.lineCount;
-        }
+    async writeHeaderTotals(tx, svhId, header, lineCount) {
+        const data = {
+            svhLineCount: header.lineCount ?? lineCount,
+        };
         if (header.totalQty !== undefined) {
             data.svhTotalQty = this.toDecimalColumn(header.totalQty);
         }
@@ -484,15 +492,12 @@ let StockVoucherService = class StockVoucherService {
         if (header.totalValueWot !== undefined) {
             data.svhTotalValueWot = this.toDecimalColumn(header.totalValueWot);
         }
-        if (!Object.keys(data).length) {
-            return;
-        }
         await tx.stockVoucher.update({
             where: { svhId_svhAccYear: { svhId, svhAccYear: header.accYear } },
             data,
         });
     }
-    async updateDraft(tx, rules, dto, actor) {
+    async updateDraft(tx, rules, dto, actor, now) {
         const { header } = dto;
         const svhId = header.svhId;
         const existing = await this.loadForWrite(tx, rules, svhId, header.accYear);
@@ -518,12 +523,12 @@ let StockVoucherService = class StockVoucherService {
                 ...this.freezeData(header),
                 svhSyncDate: header.syncDate ? new Date(header.syncDate) : null,
                 svhVersionNo: { increment: 1 },
-                svhModifiedOn: new Date(),
+                svhModifiedOn: now,
                 svhModifiedBy: this.actorFor(header.modifiedBy, actor),
             },
         });
         await this.replaceLines(tx, rules, dto, svhId, actor, header.modifiedBy);
-        await this.writeHeaderTotals(tx, svhId, header);
+        await this.writeHeaderTotals(tx, svhId, header, dto.lines.length);
         await this.auditLogService.logEntityChange({
             action: 'update',
             tableName: STOCK_VOUCHER_TABLE_NAME,
@@ -564,7 +569,7 @@ let StockVoucherService = class StockVoucherService {
                 sviBaseUomId: isCount ? holding.baseUomId : line.baseUomId,
                 sviToBaseFactor: isCount ? new client_1.Prisma.Decimal(1) : this.toDecimalColumn(line.toBaseFactor),
                 sviGodownId: line.godownId,
-                sviLotId: isCount || rules.requiresLot ? (line.lotId ?? null) : null,
+                sviLotId: isCount || rules.requiresLot || rules.allowsLot ? (line.lotId ?? null) : null,
                 sviBucket: (line.bucket ?? 'SALEABLE'),
                 sviBarcode: line.barcode ?? null,
                 sviBatchNo: isCount ? holding.batchNo : (line.batchNo ?? null),
@@ -606,6 +611,7 @@ let StockVoucherService = class StockVoucherService {
                     : this.toDecimalColumn(line.landedRate ?? 0),
                 sviTaxPerc: zeroCost ? new client_1.Prisma.Decimal(0) : this.toDecimalColumn(line.taxPerc ?? 0),
                 sviReasonId: line.reasonId ?? null,
+                sviDirection: rules.lineDirection === 'REASON' ? (line.direction ?? null) : null,
                 sviSyncDate: line.syncDate ? new Date(line.syncDate) : null,
                 sviRemarks: line.remarks ?? null,
                 sviCreatedBy: this.actorFor(line.createdBy ?? author, actor),
@@ -891,6 +897,7 @@ let StockVoucherService = class StockVoucherService {
              svi.svi_tax_perc,
              svi.svi_reason_id,
              srm.srm_name AS line_reason_name,
+             svi.svi_direction,
              svi.svi_sync_date,
              svi.svi_value,
              svi.svi_value_wot,
@@ -916,6 +923,7 @@ let StockVoucherService = class StockVoucherService {
     async validate(rules, svhId, accYear, companyId, branchId, tx) {
         await this.loadHeaderOrThrow(rules, svhId, accYear, companyId, branchId, tx);
         const isCount = rules.quantityMode === 'COUNT';
+        const canPick = rules.postShape === 'SIMPLE' && rules.quantityMode === 'QTY';
         return (tx ?? this.prisma).$queryRaw `
       WITH doc AS (
         SELECT svh.svh_id,
@@ -924,7 +932,8 @@ let StockVoucherService = class StockVoucherService {
                svh.svh_branch_id,
                svh.svh_doc_date,
                svh.svh_doc_datetime,
-               svh.svh_rate_source
+               svh.svh_rate_source,
+               svh.svh_reason_id
           FROM stock.stock_voucher svh
          WHERE svh.svh_id       = ${svhId}::uuid
            AND svh.svh_acc_year = ${accYear}::bpchar
@@ -933,7 +942,7 @@ let StockVoucherService = class StockVoucherService {
         -- svh_doc_datetime rides along for the freeze check below: the window
         -- is tested against the MOVEMENT's timestamp, not now().
         SELECT svi.*, doc.svh_doc_date, doc.svh_doc_datetime, doc.svh_rate_source,
-               doc.svh_company_id, doc.svh_branch_id
+               doc.svh_company_id, doc.svh_branch_id, doc.svh_reason_id
           FROM stock.stock_voucher_item svi
           JOIN doc ON doc.svh_id = svi.svi_voucher_id AND doc.svh_acc_year = svi.svi_acc_year
          WHERE svi.svi_is_deleted = false
@@ -952,9 +961,32 @@ let StockVoucherService = class StockVoucherService {
         SELECT line.*,
                policy.track_batch, policy.track_mrp, policy.track_sale_price,
                policy.track_expiry, policy.track_serial, policy.track_supplier,
-               ${(0, stock_voucher_posting_helper_1.lotIdentityKeyColumns)()}
+               policy.issue_strategy,
+               ${(0, stock_voucher_posting_helper_1.lotIdentityKeyColumns)()},
+               ${(0, stock_voucher_posting_helper_1.lineDirectionColumn)(rules)}
           FROM line
           JOIN policy ON policy.svi_id = line.svi_id
+          ${(0, stock_voucher_posting_helper_1.lineReasonJoin)()}
+      ),
+      -- §1.4 — an OUTWARD line of a lot-tracked item that names no lot and no
+      -- complete identity is not refused for the missing dimension: the post
+      -- PICKS its lots by the item's issue strategy (FEFO / FIFO / LIFO) from
+      -- what the godown holds. What the preflight checks instead is that there
+      -- IS something to pick from, and that the strategy is not MANUAL.
+      pick AS (
+        SELECT keyed.svi_id,
+               (${canPick}::boolean AND keyed.line_direction < 0 AND ${(0, stock_voucher_posting_helper_1.lotlessOutwardLine)()}) AS pickable,
+               EXISTS (
+                 SELECT 1 FROM stock.stock_balance pb
+                  WHERE pb.sbl_company_id = keyed.svh_company_id
+                    AND pb.sbl_branch_id  = keyed.svh_branch_id
+                    AND pb.sbl_godown_id  = keyed.svi_godown_id
+                    AND pb.sbl_item_id    = keyed.svi_item_id
+                    AND pb.sbl_bucket     = keyed.svi_bucket
+                    AND pb.sbl_is_deleted = false
+                    AND pb.sbl_available_qty > 0
+               ) AS has_stock
+          FROM keyed
       ),
       -- Has this holding already been opened this year? Matched through the
       -- lot's generated key columns and the OPENING rows in the ledger, NOT
@@ -1092,19 +1124,28 @@ let StockVoucherService = class StockVoucherService {
 
                WHEN iuc.iuc_id IS NULL OR iuc.iuc_item_id <> keyed.svi_item_id
                  THEN 'the unit does not belong to this item'
-               WHEN keyed.track_batch      AND COALESCE(keyed.svi_batch_no, '') = ''
+               WHEN pick.pickable AND upper(keyed.issue_strategy) = 'MANUAL'
+                 THEN 'the issue strategy for this item is MANUAL: the line must name the lot it issues from'
+               WHEN pick.pickable AND NOT pick.has_stock
+                 THEN 'this line names no lot and the godown holds no stock of the item to issue from'
+               -- A line that NAMES its lot (a transfer, a count) carries the
+               -- holding's identity by reference; the six dimensions are the
+               -- engine's to resolve only when it does not.
+               WHEN keyed.svi_lot_id IS NULL AND NOT pick.pickable AND keyed.track_batch      AND COALESCE(keyed.svi_batch_no, '') = ''
                  THEN 'this item is batch-tracked and the line has no batch number'
-               WHEN keyed.track_expiry     AND keyed.svi_expiry_date IS NULL
+               WHEN keyed.svi_lot_id IS NULL AND NOT pick.pickable AND keyed.track_expiry     AND keyed.svi_expiry_date IS NULL
                  THEN 'this item is expiry-tracked and the line has no expiry date'
-               WHEN keyed.track_mrp        AND keyed.svi_mrp IS NULL
+               WHEN keyed.svi_lot_id IS NULL AND NOT pick.pickable AND keyed.track_mrp        AND keyed.svi_mrp IS NULL
                  THEN 'this item is MRP-tracked and the line has no MRP'
-               WHEN keyed.track_sale_price AND keyed.svi_sale_price IS NULL
+               WHEN keyed.svi_lot_id IS NULL AND NOT pick.pickable AND keyed.track_sale_price AND keyed.svi_sale_price IS NULL
                  THEN 'this item is sale-price-tracked and the line has no sale price'
-               WHEN keyed.track_serial     AND COALESCE(keyed.svi_serial_no, '') = ''
+               WHEN keyed.svi_lot_id IS NULL AND NOT pick.pickable AND keyed.track_serial     AND COALESCE(keyed.svi_serial_no, '') = ''
                  THEN 'this item is serial-tracked and the line has no serial number'
-               WHEN keyed.track_supplier   AND keyed.svi_supplier_id IS NULL
+               WHEN keyed.svi_lot_id IS NULL AND NOT pick.pickable AND keyed.track_supplier   AND keyed.svi_supplier_id IS NULL
                  THEN 'this item is supplier-tracked and the line has no supplier'
-               WHEN ${rules.isInward}::boolean AND keyed.svi_cost_rate = 0
+               -- A receipt's cost is the transit row's, stamped when the goods
+               -- left (§1.1); its line carries none and needs no rate source.
+               WHEN ${rules.postShape !== 'TRANSFER_IN'}::boolean AND keyed.line_direction > 0 AND keyed.svi_cost_rate = 0
                     AND COALESCE(keyed.svh_rate_source, '') <> ALL (${stock_voucher_types_1.DERIVABLE_RATE_SOURCES}::text[])
                  THEN 'this line brings stock in with no cost rate and no rate source the engine can derive one from'
                -- Document-wide, and therefore QTY-only: a count whose every
@@ -1123,6 +1164,7 @@ let StockVoucherService = class StockVoucherService {
                ELSE NULL
              END                                      AS "problem"
         FROM keyed
+        JOIN pick   ON pick.svi_id   = keyed.svi_id
         JOIN opened ON opened.svi_id = keyed.svi_id
         JOIN bal    ON bal.svi_id    = keyed.svi_id
         JOIN frozen ON frozen.svi_id = keyed.svi_id
@@ -1152,18 +1194,8 @@ let StockVoucherService = class StockVoucherService {
         await this.assertPostable(rules, svhId, accYear, companyId, branchId);
         const postedOn = new Date();
         const rowsPosted = await this.prisma.$transaction(async (tx) => {
-            let posted;
-            if ((0, stock_voucher_posting_helper_1.usesInProcessPosting)(rules)) {
-                posted = await this.stockPosting.post(tx, new stock_voucher_source_1.StockVoucherSource({ svhId, accYear, companyId, branchId, rules }), { actor, postedOn });
-            }
-            else {
-                const fn = client_1.Prisma.raw(this.assertPostFunction(rules));
-                const [row] = await tx.$queryRaw `
-          SELECT ${fn}(${svhId}::uuid, ${accYear}::bpchar, ${actor}::uuid) AS rows
-        `;
-                posted = Number(row?.rows ?? 0);
-            }
-            await afterPost?.(tx, posted);
+            const posted = await this.stockPosting.post(tx, new stock_voucher_source_1.StockVoucherSource({ svhId, accYear, companyId, branchId, rules }), { actor, postedOn });
+            await afterPost?.(tx, posted.rowsPosted);
             await this.logStatusChange(tx, {
                 rules,
                 svhId,
@@ -1173,12 +1205,32 @@ let StockVoucherService = class StockVoucherService {
                 tenantId: existing.svhTenantId ?? null,
                 refno: existing.svhRefno,
                 fromStatus: existing.svhStatus,
-                toStatus: 'POSTED',
+                toStatus: posted.status,
                 actor,
                 changedOn: postedOn,
-                remarks: `${rules.displayName} posted — ${posted} ledger rows`,
+                remarks: posted.status === 'IN_TRANSIT'
+                    ? `${rules.displayName} despatched — ${posted.rowsPosted} ledger rows, ${posted.transitRows} lines in transit`
+                    : `${rules.displayName} posted — ${posted.rowsPosted} ledger rows`,
+                deviceId: existing.svhDeviceId,
+                sessionId: existing.svhSessionId,
             });
-            return posted;
+            if (posted.closedOut) {
+                await this.logStatusChange(tx, {
+                    rules,
+                    svhId: posted.closedOut.svhId,
+                    accYear: posted.closedOut.accYear,
+                    companyId,
+                    branchId,
+                    tenantId: existing.svhTenantId ?? null,
+                    refno: posted.closedOut.refno,
+                    fromStatus: 'IN_TRANSIT',
+                    toStatus: 'RECEIVED',
+                    actor,
+                    changedOn: postedOn,
+                    remarks: `Closed by receipt ${existing.svhRefno}`,
+                });
+            }
+            return posted.rowsPosted;
         });
         const document = await this.getById(rules, svhId, accYear, companyId, branchId);
         await this.auditLogService.logEntityChange({
@@ -1222,7 +1274,8 @@ let StockVoucherService = class StockVoucherService {
             ]);
         }
         const isDraft = existing.svhStatus === 'DRAFT';
-        if (isDraft && !(0, stock_voucher_posting_helper_1.usesInProcessPosting)(rules)) {
+        const isTransfer = rules.postShape === 'TRANSFER_OUT' || rules.postShape === 'TRANSFER_IN';
+        if (isDraft && isTransfer) {
             (0, module_service_utils_1.throwStockConflict)(`${rules.displayName} is a draft`, [
                 {
                     field: 'svhId',
@@ -1243,14 +1296,8 @@ let StockVoucherService = class StockVoucherService {
                     cancelledOn,
                 });
             }
-            else if ((0, stock_voucher_posting_helper_1.usesInProcessPosting)(rules)) {
-                reversed = await this.stockPosting.cancel(tx, new stock_voucher_source_1.StockVoucherSource({ svhId, accYear, companyId, branchId, rules }), { actor, reason: trimmedReason, cancelledOn });
-            }
             else {
-                const [row] = await tx.$queryRaw `
-          SELECT stock.fn_svh_cancel(${svhId}::uuid, ${accYear}::bpchar, ${trimmedReason}, ${actor}::uuid) AS rows
-        `;
-                reversed = Number(row?.rows ?? 0);
+                reversed = await this.stockPosting.cancel(tx, new stock_voucher_source_1.StockVoucherSource({ svhId, accYear, companyId, branchId, rules }), { actor, reason: trimmedReason, cancelledOn });
             }
             await this.logStatusChange(tx, {
                 rules,
@@ -1750,12 +1797,6 @@ let StockVoucherService = class StockVoucherService {
         }
         return existing;
     }
-    assertPostFunction(rules) {
-        if (!stock_voucher_types_1.STOCK_POST_FUNCTIONS.includes(rules.postFunction)) {
-            throw new common_1.InternalServerErrorException(`${rules.voucherType} is wired to post through ${rules.postFunction}, which is not one of ${stock_voucher_types_1.STOCK_POST_FUNCTIONS.join(', ')}.`);
-        }
-        return rules.postFunction;
-    }
     assertDraft(rules, existing) {
         if (existing.svhIsDeleted) {
             (0, module_service_utils_1.throwStockConflict)(`${rules.displayName} is deleted`, [
@@ -1857,6 +1898,7 @@ let StockVoucherService = class StockVoucherService {
             taxPerc: (0, module_service_utils_1.toNumber)(row.svi_tax_perc),
             reasonId: row.svi_reason_id,
             reasonName: row.line_reason_name,
+            direction: row.svi_direction === null ? null : Number(row.svi_direction),
             syncDate: row.svi_sync_date?.toISOString() ?? null,
             value: (0, module_service_utils_1.toNullableNumber)(row.svi_value) ?? 0,
             valueWot: (0, module_service_utils_1.toNullableNumber)(row.svi_value_wot) ?? 0,

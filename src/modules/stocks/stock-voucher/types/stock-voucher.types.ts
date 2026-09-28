@@ -83,18 +83,22 @@ export const DERIVABLE_RATE_SOURCES = [
 ] as const satisfies readonly StockRateSource[];
 
 /**
- * Every engine entry point a rule record may name, and the only values
- * `postFunction` may take.
+ * HOW the engine posts a document of this type. Every stock voucher posts
+ * in-process through `StockPostingService`; the shape says which phases run and
+ * how the ledger rows are laid out:
  *
- * The name is interpolated into SQL through `Prisma.raw`, which does not
- * escape. It is a literal owned by a controller and no payload can reach it —
- * this list is what guarantees that stays true as rule records get copied.
+ *   SIMPLE        one ledger row per line, in the document's direction
+ *                 (OPENING, RECEIPT, ISSUE, ADJUSTMENT, DAMAGE …). An outward
+ *                 SIMPLE line with no lot is PICKED by the item's issue strategy.
+ *   COUNT         PHYSICAL: the variance per line decides direction and txn type.
+ *   TRANSFER_OUT  same branch → an OUT row and an IN row per line, POSTED;
+ *                 another branch → OUT rows plus a stock_transit row per line,
+ *                 IN_TRANSIT. The lot is mandatory and never re-resolved.
+ *   TRANSFER_IN   IN rows at the transit row's cost, the transit rows settled,
+ *                 the OUT closed when nothing is left.
  */
-export const STOCK_POST_FUNCTIONS: readonly string[] = [
-  'stock.fn_svh_post',
-  'stock.fn_svh_post_transfer',
-  'stock.fn_svh_receive_transfer',
-];
+export const STOCK_POST_SHAPES = ['SIMPLE', 'COUNT', 'TRANSFER_OUT', 'TRANSFER_IN'] as const;
+export type StockPostShape = (typeof STOCK_POST_SHAPES)[number];
 
 /** The `svh_link_src_module` this module stamps on anything it raises. */
 export const STOCK_SRC_MODULE = 'STOCK';
@@ -235,21 +239,44 @@ export interface StockVoucherTypeRules {
   allowsToBranch: boolean;
 
   /**
-   * The engine function `post()` calls, schema-qualified.
+   * How `post()` lays the document into the ledger — see StockPostShape.
    *
    * NOT derivable from `voucherType`, and pinning it here rather than branching
-   * inside the service is what keeps the transfer screens out of `fn_svh_post`.
-   * 19 refuses to post a TRANSFER_* by name (`0A000`), deliberately — so a
-   * mis-wired record fails loudly at the first despatch instead of half-posting
-   * a document the generic path does not know writes `stock_transit`.
-   *
-   * Three functions exist today:
-   *   stock.fn_svh_post              OPENING, PHYSICAL, and the generic types
-   *   stock.fn_svh_post_transfer     TRANSFER_OUT — writes the OUT ledger row
-   *                                  and, inter-branch, the transit rows
-   *   stock.fn_svh_receive_transfer  TRANSFER_IN — settles the transit rows
+   * inside the service is what keeps the transfer screens honest: a transfer
+   * also writes `stock_transit` and closes a paired document, and a record
+   * that said SIMPLE would move stock out of a branch with nothing recording
+   * that it is on a lorry.
    */
-  postFunction: string;
+  postShape: StockPostShape;
+
+  /**
+   * Where a LINE's direction comes from (phase 2, the adjustment family).
+   *
+   *   DOCUMENT  (default) every line moves the way `isInward` says.
+   *   REASON    per line: `svi_direction` when the API stamped one (a BOTH
+   *             reason with a signed quantity), else the reason's
+   *             `srm_direction` (line reason, then header reason), else the
+   *             document's. The ledger txn type follows the same rule — an
+   *             ADJUSTMENT posts ADJUST_PLUS or ADJUST_MINUS per line, an ISSUE
+   *             takes the reason's own type when it lists exactly one issue
+   *             type (SAMPLE_ISSUE / GIFT_ISSUE / ADJUST_MINUS).
+   */
+  lineDirection?: 'DOCUMENT' | 'REASON';
+
+  /**
+   * Keep a `lotId` the line supplies without requiring one: an adjustment's
+   * outward line is picked from the balance (lot known) while its inward line
+   * states identity (lot resolved by the engine). Absent, a QTY document's
+   * lotId is nulled at save unless `requiresLot`.
+   */
+  allowsLot?: boolean;
+
+  /**
+   * Refuse to drive a holding negative whatever the item's policy says
+   * (decision D-A1): writing off stock you do not have is a data error, not a
+   * sale. Transfers are BLOCK by shape already.
+   */
+  blockNegative?: boolean;
 
   /**
    * Whether a LINE names the lot it moves.
@@ -441,6 +468,12 @@ export interface StockVoucherLinePayload {
   /** Per-line override of the header reason — the one pallet that was damaged. */
   reasonId: string | null;
   reasonName: string | null;
+  /**
+   * +1 / −1 when the API stamped the line's direction (an adjustment line
+   * under a BOTH reason, keyed with a signed quantity); NULL when the document
+   * type or the reason decides it.
+   */
+  direction: number | null;
   remarks: string | null;
 }
 

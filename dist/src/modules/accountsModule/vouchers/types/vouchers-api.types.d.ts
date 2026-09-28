@@ -42,6 +42,7 @@ export interface VoucherTypeRules {
     tdsMode: TdsMode;
     inRegister: boolean;
     affectsInventory: boolean;
+    instruments: boolean;
 }
 export interface VoucherTypeWithRights extends VoucherTypeRules {
     rights: VoucherRights;
@@ -130,7 +131,54 @@ export interface TaxRateRow {
 export interface TaxRatesPayload {
     rates: TaxRateRow[];
 }
-export type LegSource = 'TYPED' | 'GST' | 'RCM' | 'TDS' | 'PARTY';
+export interface InstrumentTenderRow {
+    tenderId: string;
+    name: string;
+    shortName: string;
+    typeId: number;
+    typeName: string;
+    ledgerId: string;
+    ledgerName: string;
+    settlementLedgerId: string | null;
+    isCash: boolean;
+    isCheque: boolean;
+    needsRef: boolean;
+    hotkey: string | null;
+    displayPosition: number;
+}
+export interface InstrumentsPayload {
+    companyId: string;
+    tenders: InstrumentTenderRow[];
+}
+export type LegSource = 'TYPED' | 'GST' | 'RCM' | 'TDS' | 'PARTY' | 'INSTRUMENT';
+export interface DerivedInstrument {
+    tenderId: string;
+    tenderName: string;
+    tenderTypeId: number;
+    tenderTypeName: string;
+    ledgerId: string;
+    ledgerName: string;
+    refNo: string | null;
+    instrumentDate: string | null;
+    bankName: string | null;
+    isCheque: boolean;
+    isPostDated: boolean;
+    postsOn: string | null;
+    cheque: {
+        drawerName: string | null;
+        bankBranch: string | null;
+        ifsc: string | null;
+        micr: string | null;
+    } | null;
+    settlementMode: string;
+    issued: boolean;
+    bankLedgerId: string | null;
+    chequeBookId: string | null;
+    bookNo: string | null;
+    nextLeaf: string | null;
+    favouring: string | null;
+    acPayee: boolean | null;
+}
 export interface DerivedLeg {
     rowNo: number;
     lineRowNo: number | null;
@@ -151,6 +199,19 @@ export interface DerivedLeg {
         isTdsBase: boolean;
     } | null;
     isTdsBase: boolean;
+    postDated: boolean;
+    postsOn: string | null;
+    instrument: DerivedInstrument | null;
+}
+export interface DerivedPostDated {
+    lineRowNo: number;
+    partyId: string;
+    partyName: string;
+    amount: number;
+    postsOn: string;
+    accYear: string;
+    tenderName: string;
+    refNo: string | null;
 }
 export interface GstSummaryRow {
     taxId: string;
@@ -210,7 +271,8 @@ export interface DerivedBill {
     amount: number;
     docRefno: string | null;
     dueDays: number;
-    dueDate: string;
+    dueDate: string | null;
+    isAdvance: boolean;
 }
 export interface DerivedAllocation {
     lineRowNo: number;
@@ -237,6 +299,7 @@ export interface DerivedVoucher {
     tdsLines: TdsLineSummary[];
     bills: DerivedBill[];
     allocations: DerivedAllocation[];
+    postDated: DerivedPostDated[];
 }
 export interface ValidatePayload {
     ok: boolean;
@@ -279,6 +342,59 @@ export interface VoucherHeaderPayload {
     modifiedBy: string | null;
     modifiedOn: string | null;
 }
+export interface VoucherInstrumentPayload {
+    tdId: string;
+    tdAccYear: string;
+    lineRowNo: number;
+    partyId: string;
+    partyName: string | null;
+    tenderId: string;
+    tenderName: string | null;
+    tenderTypeId: number;
+    tenderTypeName: string | null;
+    ledgerId: string;
+    amount: number;
+    refNo: string | null;
+    instrumentDate: string | null;
+    bankName: string | null;
+    isCheque: boolean;
+    isPostDated: boolean;
+    voucherId: string | null;
+    voucherRefno: string | null;
+    voucherDate: string | null;
+    cheque: {
+        drawerName: string | null;
+        bankBranch: string | null;
+        ifsc: string | null;
+        micr: string | null;
+    } | null;
+    pdcId: string | null;
+    pdcAccYear: string | null;
+    pdcStatus: string | null;
+    pdcBankLedgerId: string | null;
+    issued: boolean;
+    bankLedgerId: string | null;
+    leaf: string | null;
+    chequeBookId: string | null;
+    bookNo: string | null;
+    favouring: string | null;
+    acPayee: boolean | null;
+}
+export interface OpenChequeBook {
+    chequeBookId: string;
+    bankLedgerId: string;
+    bankName: string;
+    bookNo: string;
+    leafFrom: string;
+    leafTo: string;
+    nextLeaf: string;
+    left: number;
+    format: string | null;
+}
+export interface ChequeBooksPayload {
+    companyId: string;
+    books: OpenChequeBook[];
+}
 export interface VoucherLegPayload {
     avId: string;
     rowNo: number;
@@ -291,6 +407,19 @@ export interface VoucherLegPayload {
     generated: boolean;
     remarks: string | null;
     oppLedgerId: string | null;
+    instrument: VoucherInstrumentPayload | null;
+}
+export interface VoucherPdcVoucherPayload {
+    voucherId: string;
+    accYear: string;
+    voucherRefno: string | null;
+    date: string;
+    status: VoucherStatus;
+    partyId: string | null;
+    partyName: string | null;
+    reversalRefno: string | null;
+    legs: VoucherLegPayload[];
+    allocations: VoucherAllocationPayload[];
 }
 export interface VoucherAllocationPayload {
     abjId: string;
@@ -368,6 +497,7 @@ export interface VoucherLocks {
     dayClosed: boolean;
     periodLocked: boolean;
     allocatedElsewhere: boolean;
+    chequeMoved: boolean;
 }
 export type StoredDraftPayload = Record<string, unknown>;
 export interface VoucherPayload {
@@ -380,6 +510,8 @@ export interface VoucherPayload {
     bills: VoucherBillPayload[];
     gstDoc: VoucherGstDocPayload | null;
     tds: VoucherTdsPayload[];
+    instruments: VoucherInstrumentPayload[];
+    pdcVouchers: VoucherPdcVoucherPayload[];
     draft: StoredDraftPayload | null;
 }
 export interface DraftSavedPayload {
@@ -402,6 +534,8 @@ export interface CancelPayload {
     allocationsReversed: number;
     gstDocCancelled: boolean;
     tdsReversed: number;
+    chequesCancelled: number;
+    pdcVouchersReversed: number;
 }
 export interface DeletePayload {
     voucherId: string;

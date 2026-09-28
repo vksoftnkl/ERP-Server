@@ -55,6 +55,7 @@ const transaction_module_1 = require("./modules/accountsModule/transaction/trans
 const receipt_module_1 = require("./modules/accountsModule/receipt/receipt.module");
 const cheques_module_1 = require("./modules/accountsModule/cheques/cheques.module");
 const vouchers_module_1 = require("./modules/accountsModule/vouchers/vouchers.module");
+const issued_cheques_module_1 = require("./modules/accountsModule/issuedCheques/issued-cheques.module");
 const ledger_statement_module_1 = require("./modules/reports/ledger-statement/ledger-statement.module");
 const ledger_map_module_1 = require("./modules/accountsModule/ledgerMap/ledger-map.module");
 const bill_balance_module_1 = require("./modules/accountsModule/billBalance/bill-balance.module");
@@ -94,6 +95,8 @@ const stock_voucher_module_1 = require("./modules/stocks/stock-voucher/stock-vou
 const opening_stock_voucher_module_1 = require("./modules/stocks/opening-stock-voucher/opening-stock-voucher.module");
 const physical_stock_voucher_module_1 = require("./modules/stocks/physical-stock-voucher/physical-stock-voucher.module");
 const stock_transfer_module_1 = require("./modules/stocks/stock-transfer/stock-transfer.module");
+const txn_status_module_1 = require("./modules/txn-status/txn-status.module");
+const stock_adjustment_module_1 = require("./modules/stocks/stock-adjustment/stock-adjustment.module");
 const selling_price_bulk_module_1 = require("./modules/stocks/selling-price-bulk/selling-price-bulk.module");
 const master_lookup_module_1 = require("./modules/master-lookup/master-lookup.module");
 const batch_prefix_module_1 = require("./modules/master/batch-prefix/batch-prefix.module");
@@ -207,6 +210,7 @@ exports.AppModule = AppModule = __decorate([
             receipt_module_1.ReceiptModule,
             cheques_module_1.ChequesModule,
             vouchers_module_1.VouchersModule,
+            issued_cheques_module_1.IssuedChequesModule,
             ledger_statement_module_1.LedgerStatementModule,
             ledger_map_module_1.LedgerMapModule,
             gsp_provider_master_module_1.GspProviderMasterModule,
@@ -244,6 +248,8 @@ exports.AppModule = AppModule = __decorate([
             opening_stock_voucher_module_1.OpeningStockVoucherModule,
             physical_stock_voucher_module_1.PhysicalStockVoucherModule,
             stock_transfer_module_1.StockTransferModule,
+            txn_status_module_1.TxnStatusModule,
+            stock_adjustment_module_1.StockAdjustmentModule,
             selling_price_bulk_module_1.SellingPriceBulkModule,
             master_lookup_module_1.MasterLookupModule,
             batch_prefix_module_1.BatchPrefixModule,

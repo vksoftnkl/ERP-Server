@@ -9,11 +9,12 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.GetVoucherQueryDto = exports.DeleteVoucherDto = exports.CancelVoucherDto = exports.VoucherKeysDto = exports.PostVoucherDto = exports.ValidateVoucherDto = exports.VoucherPayloadDto = exports.VoucherHeaderDto = exports.VoucherNewBillDto = exports.VoucherAllocationDto = exports.VoucherLineDto = exports.VoucherLineGstDto = void 0;
+exports.GetVoucherQueryDto = exports.DeleteVoucherDto = exports.CancelVoucherDto = exports.VoucherKeysDto = exports.PostVoucherDto = exports.ValidateVoucherDto = exports.VoucherPayloadDto = exports.VoucherHeaderDto = exports.VoucherNewBillDto = exports.VoucherAllocationDto = exports.VoucherLineDto = exports.VoucherInstrumentDto = exports.VoucherLineGstDto = void 0;
 const swagger_1 = require("@nestjs/swagger");
 const class_transformer_1 = require("class-transformer");
 const class_validator_1 = require("class-validator");
 const dtoDecorators_1 = require("../../../../common/dto/dtoDecorators");
+const save_tender_detail_dto_1 = require("../../tenderDetail/dto/save-tender-detail.dto");
 const MONEY = /^-?\d{1,16}(\.\d{1,6})?$/;
 function MoneyString() {
     return (target, key) => {
@@ -48,6 +49,105 @@ __decorate([
     (0, class_validator_1.IsIn)(['INPUTS', 'INPUT_SERVICES', 'CAPITAL_GOODS', 'INELIGIBLE']),
     __metadata("design:type", Object)
 ], VoucherLineGstDto.prototype, "itcEligibility", void 0);
+class VoucherInstrumentDto {
+    tenderId;
+    refNo;
+    instrumentDate;
+    bankName;
+    cheque;
+    bankLedgerId;
+    chequeBookId;
+    favouring;
+    acPayee;
+}
+exports.VoucherInstrumentDto = VoucherInstrumentDto;
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        format: 'uuid',
+        description: 'accounts.acc_tender_master.tnd_id — from GET /vouchers/instruments.',
+    }),
+    (0, dtoDecorators_1.RequiredUuid)(),
+    __metadata("design:type", String)
+], VoucherInstrumentDto.prototype, "tenderId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        maxLength: 100,
+        example: '445123',
+        description: 'The cheque / UTR / transaction number. REQUIRED on a cheque and on any tender whose type needs a reference.',
+    }),
+    (0, dtoDecorators_1.NullableString)(100),
+    __metadata("design:type", Object)
+], VoucherInstrumentDto.prototype, "refNo", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        example: '2026-10-05',
+        description: 'The date on the instrument. REQUIRED on a cheque. Later than the voucher date makes it POST-DATED: ' +
+            'its legs post on that day, in a voucher of their own, and its bills settle when it matures.',
+    }),
+    (0, dtoDecorators_1.NullableDateString)(),
+    __metadata("design:type", Object)
+], VoucherInstrumentDto.prototype, "instrumentDate", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true, maxLength: 150, example: 'KVB' }),
+    (0, dtoDecorators_1.NullableString)(150),
+    __metadata("design:type", Object)
+], VoucherInstrumentDto.prototype, "bankName", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        type: () => save_tender_detail_dto_1.TenderChequeDetailDto,
+        nullable: true,
+        description: 'Cheque detail (drawer, branch, IFSC, MICR). Ignored on a non-cheque tender.',
+    }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.ValidateIf)((_, v) => v !== null),
+    (0, class_validator_1.ValidateNested)(),
+    (0, class_transformer_1.Type)(() => save_tender_detail_dto_1.TenderChequeDetailDto),
+    __metadata("design:type", Object)
+], VoucherInstrumentDto.prototype, "cheque", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        format: 'uuid',
+        nullable: true,
+        description: 'PAYMENT: the bank account (a ledger under Bank Accounts / Bank OD) the money leaves. ' +
+            'REQUIRED on a cheque, bank transfer or UPI (VCH_BANK_REQUIRED); ignored on cash, which ' +
+            'posts to the CASH tender’s own ledger.',
+    }),
+    (0, dtoDecorators_1.NullableUuid)(),
+    __metadata("design:type", Object)
+], VoucherInstrumentDto.prototype, "bankLedgerId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        format: 'uuid',
+        nullable: true,
+        description: 'PAYMENT, cheque only: the book the leaf comes from (GET /vouchers/cheque-books). REQUIRED ' +
+            '(VCH_BOOK_REQUIRED); it must be drawn on `bankLedgerId` (VCH_BOOK_BANK) and have a leaf left ' +
+            '(VCH_BOOK_FINISHED). `refNo` is ignored — the server takes the next leaf.',
+    }),
+    (0, dtoDecorators_1.NullableUuid)(),
+    __metadata("design:type", Object)
+], VoucherInstrumentDto.prototype, "chequeBookId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        maxLength: 150,
+        description: 'PAYMENT: who the cheque / transfer is made out to. Omitted = the party’s name.',
+    }),
+    (0, dtoDecorators_1.NullableString)(150),
+    __metadata("design:type", Object)
+], VoucherInstrumentDto.prototype, "favouring", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        default: true,
+        description: 'PAYMENT, cheque only: crossed "A/c Payee" (Q8). Omitted = true.',
+    }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.ValidateIf)((_, v) => v !== null),
+    (0, class_validator_1.IsBoolean)(),
+    __metadata("design:type", Object)
+], VoucherInstrumentDto.prototype, "acPayee", void 0);
 class VoucherLineDto {
     rowNo;
     drCr;
@@ -56,6 +156,7 @@ class VoucherLineDto {
     remarks;
     gst;
     tdsBase;
+    instrument;
 }
 exports.VoucherLineDto = VoucherLineDto;
 __decorate([
@@ -103,6 +204,19 @@ __decorate([
     (0, class_validator_1.IsBoolean)(),
     __metadata("design:type", Object)
 ], VoucherLineDto.prototype, "tdsBase", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        type: VoucherInstrumentDto,
+        nullable: true,
+        description: 'notes (54): on a type with instruments (the Receipt Voucher), the tender this line’s money came in ' +
+            'by. Refused on any other type (VCH_INSTRUMENT_NOT_ALLOWED).',
+    }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.ValidateIf)((_, v) => v !== null),
+    (0, class_validator_1.ValidateNested)(),
+    (0, class_transformer_1.Type)(() => VoucherInstrumentDto),
+    __metadata("design:type", Object)
+], VoucherLineDto.prototype, "instrument", void 0);
 class VoucherAllocationDto {
     lineRowNo;
     billId;
@@ -167,6 +281,7 @@ class VoucherHeaderDto {
     posStcd;
     reverseCharge;
     remarks;
+    employeeIds;
 }
 exports.VoucherHeaderDto = VoucherHeaderDto;
 __decorate([
@@ -249,6 +364,21 @@ __decorate([
     (0, dtoDecorators_1.NullableString)(500),
     __metadata("design:type", Object)
 ], VoucherHeaderDto.prototype, "remarks", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        type: [String],
+        description: 'notes (54): the salesmen / collectors (public.employee_master ids) → avh_employee_id; the first is the ' +
+            'cheque register row’s salesman. Omit or [] for none.',
+    }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsArray)(),
+    (0, class_validator_1.ArrayMaxSize)(20),
+    (0, class_validator_1.Matches)(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i, {
+        each: true,
+        message: 'each employeeId must be a valid UUID',
+    }),
+    __metadata("design:type", Array)
+], VoucherHeaderDto.prototype, "employeeIds", void 0);
 class VoucherPayloadDto {
     header;
     lines;

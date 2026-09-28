@@ -44,6 +44,7 @@ class SaveStockVoucherItemDto {
     landedRate;
     taxPerc;
     reasonId;
+    direction;
     syncDate;
     remarks;
     createdBy;
@@ -269,6 +270,16 @@ __decorate([
     (0, dtoDecorators_1.NullableUuid)(),
     __metadata("design:type", Object)
 ], SaveStockVoucherItemDto.prototype, "reasonId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        enum: [1, -1],
+        nullable: true,
+        description: 'ADJUSTMENT ONLY, and only under a reason whose direction is BOTH: +1 brings stock in, -1 takes it out. The stock adjustment route derives it from the signed quantity the screen sends; every other route refuses it (quantities are magnitudes — ck_svi_qty_sign — and the voucher type or the reason decides the direction).',
+    }),
+    (0, dtoDecorators_1.SkipOnNullish)(),
+    (0, class_validator_1.IsIn)([1, -1], { message: 'direction must be 1 or -1' }),
+    __metadata("design:type", Object)
+], SaveStockVoucherItemDto.prototype, "direction", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({
         type: 'string',

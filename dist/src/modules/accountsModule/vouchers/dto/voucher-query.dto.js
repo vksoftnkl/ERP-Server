@@ -9,7 +9,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.AdjacentVoucherQueryDto = exports.TaxRatesQueryDto = exports.OpenBillsQueryDto = exports.PartyFactsQueryDto = exports.LedgerBalanceQueryDto = exports.LedgerPickQueryDto = exports.VoucherTypesQueryDto = void 0;
+exports.AdjacentVoucherQueryDto = exports.TaxRatesQueryDto = exports.ChequeBooksQueryDto = exports.InstrumentsQueryDto = exports.OpenBillsQueryDto = exports.PartyFactsQueryDto = exports.LedgerBalanceQueryDto = exports.LedgerPickQueryDto = exports.VoucherTypesQueryDto = void 0;
 const swagger_1 = require("@nestjs/swagger");
 const class_validator_1 = require("class-validator");
 const dtoDecorators_1 = require("../../../../common/dto/dtoDecorators");
@@ -148,6 +148,61 @@ __decorate([
     (0, class_validator_1.IsIn)(['DR', 'CR']),
     __metadata("design:type", String)
 ], OpenBillsQueryDto.prototype, "side", void 0);
+class InstrumentsQueryDto {
+    companyId;
+    branchId;
+    typeCode;
+}
+exports.InstrumentsQueryDto = InstrumentsQueryDto;
+__decorate([
+    (0, swagger_1.ApiProperty)({ format: 'uuid' }),
+    (0, dtoDecorators_1.RequiredUuid)(),
+    __metadata("design:type", String)
+], InstrumentsQueryDto.prototype, "companyId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        format: 'uuid',
+        description: 'A tender scoped to one branch is offered at that branch only; omit for every tender.',
+    }),
+    (0, dtoDecorators_1.OptionalUuid)(),
+    __metadata("design:type", Object)
+], InstrumentsQueryDto.prototype, "branchId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        example: 'PmtV',
+        description: 'notes (55): the voucher type the line belongs to. A PAYING type (party side DR — the ' +
+            'Payment Voucher) is offered only what money can go out by: cash, cheque, UPI, bank transfer.',
+    }),
+    (0, dtoDecorators_1.OptionalTrimmedString)(20),
+    __metadata("design:type", String)
+], InstrumentsQueryDto.prototype, "typeCode", void 0);
+class ChequeBooksQueryDto {
+    companyId;
+    branchId;
+    bankLedgerId;
+}
+exports.ChequeBooksQueryDto = ChequeBooksQueryDto;
+__decorate([
+    (0, swagger_1.ApiProperty)({ format: 'uuid' }),
+    (0, dtoDecorators_1.RequiredUuid)(),
+    __metadata("design:type", String)
+], ChequeBooksQueryDto.prototype, "companyId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        format: 'uuid',
+        description: 'A book kept for one branch is offered at that branch only; omit for every book.',
+    }),
+    (0, dtoDecorators_1.OptionalUuid)(),
+    __metadata("design:type", Object)
+], ChequeBooksQueryDto.prototype, "branchId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        format: 'uuid',
+        description: 'Only the books drawn on this bank account.',
+    }),
+    (0, dtoDecorators_1.OptionalUuid)(),
+    __metadata("design:type", Object)
+], ChequeBooksQueryDto.prototype, "bankLedgerId", void 0);
 class TaxRatesQueryDto {
     companyId;
     includeInactive;

@@ -12,7 +12,8 @@ export type StockBucket = (typeof STOCK_BUCKETS)[number];
 export declare const STOCK_RATE_SOURCES: readonly ["AVG_COST", "LAST_PURCHASE", "LOT_COST", "MRP", "MANUAL"];
 export type StockRateSource = (typeof STOCK_RATE_SOURCES)[number];
 export declare const DERIVABLE_RATE_SOURCES: readonly ["AVG_COST", "LAST_PURCHASE", "LOT_COST", "MRP"];
-export declare const STOCK_POST_FUNCTIONS: readonly string[];
+export declare const STOCK_POST_SHAPES: readonly ["SIMPLE", "COUNT", "TRANSFER_OUT", "TRANSFER_IN"];
+export type StockPostShape = (typeof STOCK_POST_SHAPES)[number];
 export declare const STOCK_SRC_MODULE = "STOCK";
 export declare const STOCK_QUANTITY_MODES: readonly ["QTY", "COUNT"];
 export type StockQuantityMode = (typeof STOCK_QUANTITY_MODES)[number];
@@ -32,7 +33,10 @@ export interface StockVoucherTypeRules {
     allowsRepeatHolding?: boolean;
     allowsCount: boolean;
     allowsToBranch: boolean;
-    postFunction: string;
+    postShape: StockPostShape;
+    lineDirection?: 'DOCUMENT' | 'REASON';
+    allowsLot?: boolean;
+    blockNegative?: boolean;
     requiresLot?: boolean;
     zeroesLineCost?: boolean;
     auditScreenName: string;
@@ -135,6 +139,7 @@ export interface StockVoucherLinePayload {
     diffQty: number | null;
     reasonId: string | null;
     reasonName: string | null;
+    direction: number | null;
     remarks: string | null;
 }
 export interface StockVoucherPayload {

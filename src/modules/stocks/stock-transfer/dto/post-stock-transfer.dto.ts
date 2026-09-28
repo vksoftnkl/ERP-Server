@@ -41,7 +41,7 @@ export class StockTransferRefDto {
  * The lorry's three columns ride along here as well as on the save, because a
  * despatch is often the first moment anyone knows them: the document was
  * drafted yesterday and the driver is at the counter now. Sent here they are
- * written to the transit rows after fn_svh_post_transfer returns, in the same
+ * written to the transit rows after the engine's despatch, in the same
  * transaction; omitted, whatever the draft carried stands.
  *
  * They are IGNORED on a same-branch transfer, which creates no transit row for
@@ -66,7 +66,7 @@ export class DespatchStockTransferDto extends StockTransferRefDto {
 /**
  * §9.2 — cancel, and ONLY a same-branch POSTED transfer reaches the engine.
  *
- * `tr_svh_transfer_cancel_guard` refuses an IN_TRANSIT or RECEIVED OUT ("goods
+ * The engine's cancel guard refuses an IN_TRANSIT or RECEIVED OUT ("goods
  * that left cannot be cancelled on paper") and any POSTED TRANSFER_IN
  * ("un-receiving is a reverse transfer back to the sender"). Both surface as
  * 409 carrying the engine's own sentence, which reads as an instruction.
@@ -82,4 +82,43 @@ export class CancelStockTransferDto extends StockTransferRefDto {
   @MinLength(3, { message: 'reason must say something — at least 3 characters.' })
   @MaxLength(250)
   reason!: string;
+}
+
+/**
+ * §1.1 — short-settle an IN_TRANSIT despatch whose remainder will never arrive.
+ * Allowed only once every row has been received at least in part; the reason
+ * is required because the loss has to land on somebody's ledger.
+ */
+export class SettleShortStockTransferDto {
+  @ApiProperty({ format: 'uuid', description: 'The TRANSFER_OUT (despatch) to close.' })
+  @RequiredUuid()
+  outVoucherId!: string;
+
+  @ApiProperty({ example: '2026-2027', minLength: 9, maxLength: 9, description: "The despatch's year." })
+  @TrimmedString(9)
+  @Matches(ACC_YEAR_PATTERN, { message: 'accYear must be YYYY-YYYY, e.g. 2026-2027' })
+  accYear!: string;
+
+  @ApiProperty({ format: 'uuid' })
+  @RequiredUuid()
+  companyId!: string;
+
+  @ApiProperty({ format: 'uuid', description: 'The SENDING branch — the despatch is its document.' })
+  @RequiredUuid()
+  branchId!: string;
+
+  @ApiProperty({
+    format: 'uuid',
+    description: 'stock_reason_master row, direction OUT or BOTH (seeded: TRANSIT_LOSS). Its GL ledger takes the loss; unset, the STOCK_SHORTAGE role does.',
+  })
+  @RequiredUuid()
+  reasonId!: string;
+
+  @ApiPropertyOptional({ maxLength: 250, nullable: true })
+  @NullableStringStrict(250)
+  remarks?: string | null;
+
+  @ApiPropertyOptional({ format: 'uuid', description: 'Falls back to the authenticated user.' })
+  @OptionalUuid()
+  userId?: string;
 }

@@ -3,8 +3,10 @@ import type { ResolvedRoleLedger, SupplyNature } from '../ledgerRole/ledger-map.
 import type {
   DerivedAllocation,
   DerivedBill,
+  DerivedInstrument,
   DerivedLeg,
   DerivedParty,
+  DerivedPostDated,
   DerivedVoucher,
   DrCr,
   GstSummary,
@@ -13,15 +15,25 @@ import type {
   TdsSummary,
   VoucherTypeRules,
 } from './types/vouchers-api.types';
-import { billKey, isMoneyLedger, itcClassOf } from './voucher-facts';
+import {
+  billKey,
+  CHEQUE_TENDER_TYPE_ID,
+  EXCLUDED_INSTRUMENT_TYPES,
+  isMoneyLedger,
+  itcClassOf,
+  settlementModeForTenderType,
+} from './voucher-facts';
 import type {
   BillFacts,
   CompanyFacts,
   LedgerFacts,
   TaxRateFacts,
   TdsRateFacts,
+  TenderFacts,
 } from './voucher-facts';
 import { refuse, throwState, VCH, warn, type VoucherGuardContext } from './vouchers.errors';
+import { formatLeaf, type ChequeBookFacts } from './cheque-book.helper';
+import { isBankLedger } from './voucher-facts';
 
 /**
  * §7.3 steps 3 – 7 and 10 – 12, as ONE pure function of the facts.
@@ -39,6 +51,26 @@ import { refuse, throwState, VCH, warn, type VoucherGuardContext } from './vouch
 
 // ─── input ───────────────────────────────────────────────────────────────────
 
+/** notes (54) — the instrument a typed line carries, as the payload sent it. */
+export interface InstrumentInput {
+  tenderId: string;
+  refNo: string | null;
+  /** ISO date */
+  instrumentDate: string | null;
+  bankName: string | null;
+  cheque: {
+    drawerName: string | null;
+    bankBranch: string | null;
+    ifsc: string | null;
+    micr: string | null;
+  } | null;
+  /** notes (55): a PAYMENT's — our bank account, the book, the payee, the crossing. */
+  bankLedgerId?: string | null;
+  chequeBookId?: string | null;
+  favouring?: string | null;
+  acPayee?: boolean | null;
+}
+
 export interface TypedLineInput {
   rowNo: number;
   drCr: DrCr;
@@ -48,6 +80,8 @@ export interface TypedLineInput {
   gst: { taxId: string; hsn: string | null; itcEligibility: string | null } | null;
   /** null = the ledger's led_is_tds_applicable decides */
   tdsBase: boolean | null;
+  /** notes (54): only on a type with instruments */
+  instrument?: InstrumentInput | null;
 }
 
 export interface AllocationInput {
@@ -89,8 +123,26 @@ export interface DeriveInput {
   /** INDEX = the exact ux_avh_doc_refno / ux_abl_doc_refno collision; OTHER = seen on another type */
   docRefnoClash: 'INDEX' | 'OTHER' | null;
   backdateMode: 'OFF' | 'WARN' | 'REFUSE';
+  /**
+   * notes (57): `accounts.voucher_allow_advance`. Absent or true — a DEMAND
+   * party leg allocated short keeps its remainder as an ADVANCE bill; false —
+   * the strict rule, every rupee bill by bill.
+   */
+  allowAdvance?: boolean;
   today: string;
   ctx: VoucherGuardContext;
+  /** notes (54): the tenders the instrument lines name, by id. Absent = none loaded. */
+  tenders?: ReadonlyMap<string, TenderFacts>;
+  /**
+   * notes (54): cheque numbers already in the register for a party in a year
+   * (`ux_apd_instrument`), keyed `partyId|refNo|accYear`, so the clash is a
+   * refusal naming the line and not a 23505.
+   */
+  registeredCheques?: ReadonlySet<string>;
+  /** notes (54): the years a post-dated cheque would post into that are closed or locked, keyed by year. */
+  closedYears?: ReadonlyMap<string, string>;
+  /** notes (55): the cheque books a payment's cheques name, by id. Absent = none loaded. */
+  chequeBooks?: ReadonlyMap<string, ChequeBookFacts>;
 }
 
 // ─── output ──────────────────────────────────────────────────────────────────
@@ -109,6 +161,54 @@ export interface InternalLeg {
   gst: { taxId: string; hsn: string | null; itcEligibility: string | null } | null;
   isTdsBase: boolean;
   oppLedgerId: string | null;
+  /** notes (54): a post-dated cheque's line and its Dr leg post on `postsOn`, on their own voucher. */
+  postDated: boolean;
+  postsOn: string | null;
+  instrument: InternalInstrument | null;
+}
+
+/** notes (54) — an instrument as the derivation resolved it. */
+export interface InternalInstrument {
+  lineRowNo: number;
+  tender: TenderFacts;
+  /** Where its Dr leg posts: the clearing ledger, else the tender's ledger. */
+  ledgerId: string;
+  ledgerName: string;
+  refNo: string | null;
+  instrumentDate: string | null;
+  bankName: string | null;
+  isCheque: boolean;
+  isPostDated: boolean;
+  postsOn: string | null;
+  cheque: InstrumentInput['cheque'];
+  settlementMode: string;
+  /**
+   * notes (55): a PAYMENT's instrument (the type's party side is DR): the
+   * money leaves one of our accounts. `ledgerId` is then the bank the line
+   * names (cash: the CASH tender's ledger), a cheque's leaf comes from
+   * `chequeBook`, and `nextLeaf` is the leaf /validate expects it to take —
+   * shown, not promised (/post takes it under a lock).
+   */
+  issued: boolean;
+  bankLedgerId: string | null;
+  chequeBook: ChequeBookFacts | null;
+  nextLeaf: string | null;
+  favouring: string | null;
+  acPayee: boolean;
+}
+
+/** notes (54) — one post-dated cheque line: a voucher of its own, dated the cheque. */
+export interface InternalPostDated {
+  lineRowNo: number;
+  partyLegRowNo: number;
+  instrumentLegRowNo: number;
+  /** notes (55): legs that post with it — a payment line's own TDS leg. */
+  extraLegRowNos: number[];
+  party: LedgerFacts;
+  amount: Prisma.Decimal;
+  postsOn: string;
+  accYear: string;
+  instrument: InternalInstrument;
 }
 
 export interface InternalGstLine {
@@ -176,7 +276,13 @@ export interface InternalBill {
   amount: Prisma.Decimal;
   docRefno: string | null;
   dueDays: number;
-  dueDate: string;
+  /** null on an ADVANCE — it is held, not owed, so it has no due date. */
+  dueDate: string | null;
+  /**
+   * notes (57): the unallocated remainder of a Receipt / Payment party leg,
+   * kept as one ADVANCE bill on the party (the same row /receipts writes).
+   */
+  isAdvance: boolean;
 }
 
 export interface InternalAllocation {
@@ -188,6 +294,11 @@ export interface InternalAllocation {
   amount: Prisma.Decimal;
   adjType: 'ALLOCATION' | 'ADVANCE_ADJUST' | 'NOTE_ADJUST' | 'TRANSFER';
   settlementMode: string;
+  /** notes (54): a post-dated cheque's settlement counts from `adjDate`, not today. */
+  postDated: boolean;
+  adjDate: string;
+  /** The line whose instrument (cheque / tender row) this settlement is made by, if any. */
+  instrumentLineRowNo: number | null;
 }
 
 export interface DerivedInternal {
@@ -204,6 +315,8 @@ export interface DerivedInternal {
   tdsLines: InternalTds[];
   bills: InternalBill[];
   allocations: InternalAllocation[];
+  /** notes (54): the post-dated cheque lines, each a voucher of its own. */
+  postDated: InternalPostDated[];
 }
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
@@ -225,22 +338,95 @@ export function roleKey(role: string, taxId: string | null, supplyNature: string
 }
 
 /**
+ * Why a ledger may not sit on a side: it is outside the type's group list for
+ * that side, or — notes (56) — the type's NATURE says which side is money:
+ *
+ *   RECEIPT   DR takes cash / bank only; CR never takes cash or bank
+ *   PAYMENT   CR takes cash / bank only; DR never takes cash or bank
+ *
+ * Cash / bank is Cash-in-Hand, Bank Accounts or Bank OD A/c, or any group
+ * under them (`isMoneyLedger`). A receipt with Dr Cash / Cr Bank is a Contra
+ * (a deposit) filed as a receipt, and one that debits an expense is a Journal
+ * filed as a receipt: both broke the receipt register and the day-close cash
+ * figures. Every other nature keeps the group-list rule alone.
+ */
+export type SideVerdict = 'OK' | 'GROUPS' | 'MONEY_ONLY' | 'NO_MONEY';
+
+/** The money side of a nature, if it has one. */
+export function moneySideOf(nature: string): DrCr | null {
+  return nature === 'RECEIPT' ? 'DR' : nature === 'PAYMENT' ? 'CR' : null;
+}
+
+export function sideVerdict(type: VoucherTypeRules, side: DrCr, ledger: LedgerFacts): SideVerdict {
+  // The nature rule speaks first: on a Receipt / Payment the money side's
+  // group list IS the cash / bank list, so its refusal reads as the rule,
+  // not as a list of group names.
+  const moneySide = moneySideOf(type.nature);
+  if (moneySide) {
+    const money = isMoneyLedger(ledger);
+    if (side === moneySide && !money) {
+      return 'MONEY_ONLY';
+    }
+    if (side !== moneySide && money) {
+      return 'NO_MONEY';
+    }
+  }
+  const groups = side === 'DR' ? type.drGroups : type.crGroups;
+  if (groups.length > 0) {
+    const allowed = new Set(groups.map((g) => g.groupId));
+    if (!ledger.groupPath.some((g) => allowed.has(g))) {
+      return 'GROUPS';
+    }
+  }
+  return 'OK';
+}
+
+/**
  * §5.2 "a child counts": a ledger is legal on a side when the type lists no
- * group for that side, or its group or ANY ancestor is listed.
+ * group for that side, or its group or ANY ancestor is listed — and, on a
+ * Receipt or Payment, when it is on the right side of the money rule.
  */
 export function legalOnSide(type: VoucherTypeRules, side: DrCr, ledger: LedgerFacts): boolean {
-  const groups = side === 'DR' ? type.drGroups : type.crGroups;
-  if (groups.length === 0) {
-    return true;
+  return sideVerdict(type, side, ledger) === 'OK';
+}
+
+/** The sentence a side refusal carries, per verdict. */
+function sideRefusal(
+  type: VoucherTypeRules,
+  side: DrCr,
+  ledger: LedgerFacts,
+  verdict: SideVerdict,
+  prefix: string,
+): string {
+  const verb = side === 'DR' ? 'debited' : 'credited';
+  const groups = (side === 'DR' ? type.drGroups : type.crGroups).map((g) => g.name);
+  switch (verdict) {
+    case 'MONEY_ONLY':
+      return `${prefix}${ledger.name} (${ledger.groupName}) may not be ${verb} on a ${type.typeName} — the ${side} side takes cash or bank only`;
+    case 'NO_MONEY':
+      return `${prefix}${ledger.name} may not be ${verb} on a ${type.typeName} — ${
+        type.nature === 'RECEIPT' ? 'cash to bank is a Contra' : 'bank to cash is a Contra'
+      }`;
+    default:
+      return (
+        `${prefix}${ledger.name} (${ledger.groupName}) may not be ${verb} on a ${type.typeName}` +
+        (groups.length ? ` — the ${side} side takes ${groups.join(', ')}` : '')
+      );
   }
-  const allowed = new Set(groups.map((g) => g.groupId));
-  return ledger.groupPath.some((g) => allowed.has(g));
 }
 
 export function addDays(iso: string, days: number): string {
   const d = new Date(`${iso}T00:00:00Z`);
   d.setUTCDate(d.getUTCDate() + days);
   return d.toISOString().slice(0, 10);
+}
+
+/** The Indian April–March year an ISO date falls in. */
+export function accYearOfDate(iso: string): string {
+  const y = Number(iso.slice(0, 4));
+  const m = Number(iso.slice(5, 7));
+  const start = m >= 4 ? y : y - 1;
+  return `${start}-${start + 1}`;
 }
 
 function money(v: Prisma.Decimal): string {
@@ -334,13 +520,12 @@ export function derive(input: DeriveInput): DerivedInternal {
         line: line.rowNo,
       });
     }
-    if (!legalOnSide(type, line.drCr, ledger)) {
-      const groups = (line.drCr === 'DR' ? type.drGroups : type.crGroups).map((g) => g.name);
+    const verdict = sideVerdict(type, line.drCr, ledger);
+    if (verdict !== 'OK') {
       refuse(
         ctx,
         VCH.LEDGER_SIDE,
-        `Row ${line.rowNo}: ${ledger.name} (${ledger.groupName}) may not be ${line.drCr === 'DR' ? 'debited' : 'credited'} on a ${type.typeName}` +
-          (groups.length ? ` — the ${line.drCr} side takes ${groups.join(', ')}` : ''),
+        sideRefusal(type, line.drCr, ledger, verdict, `Row ${line.rowNo}: `),
         { field: `${field}.ledgerId`, line: line.rowNo },
       );
     }
@@ -369,6 +554,7 @@ export function derive(input: DeriveInput): DerivedInternal {
       );
     }
     const isTdsBase = line.tdsBase ?? ledger.isTdsApplicable;
+    const instrument = readInstrument(input, line, ledger);
     typed.push({
       rowNo: typed.length + 1,
       lineRowNo: line.rowNo,
@@ -383,9 +569,45 @@ export function derive(input: DeriveInput): DerivedInternal {
       gst: line.gst,
       isTdsBase,
       oppLedgerId: null,
+      postDated: instrument?.isPostDated ?? false,
+      postsOn: instrument?.postsOn ?? null,
+      instrument,
     });
   }
   legs.push(...typed);
+
+  // ── notes (54) · the Dr leg every instrument generates ────────────────────
+  // DR the tender's ledger (its clearing ledger when the master names one) for
+  // the line's amount: cash to the drawer, a cheque to Cheques In Hand, UPI to
+  // the bank. The operator never types the money side. A post-dated cheque's
+  // pair — its party line and this leg — carries `postDated`, and the post
+  // writes the pair into a voucher of its own dated the cheque.
+  for (const leg of typed) {
+    const ins = leg.instrument;
+    if (!ins) continue;
+    const l = leg.ledger as LedgerFacts;
+    const rowNo = legs.length + 1;
+    legs.push({
+      rowNo,
+      lineRowNo: null,
+      drCr: opposite(leg.drCr),
+      ledger: { ledId: ins.ledgerId, name: ins.ledgerName, groupName: null },
+      amount: leg.amount,
+      generated: true,
+      source: 'INSTRUMENT',
+      role: null,
+      remarks: ins.refNo ? `${ins.tender.name} ${ins.refNo}` : ins.tender.name,
+      fromRows: [leg.lineRowNo!],
+      gst: null,
+      isTdsBase: false,
+      oppLedgerId: l.ledId,
+      postDated: ins.isPostDated,
+      postsOn: ins.postsOn,
+      instrument: ins,
+    });
+    // a two-leg reading per line: the party names its instrument's ledger
+    leg.oppLedgerId = ins.ledgerId;
+  }
 
   // ── the party (step 6's identity, needed before the GST band) ─────────────
   let party: LedgerFacts | null = null;
@@ -410,13 +632,17 @@ export function derive(input: DeriveInput): DerivedInternal {
         });
       } else {
         partySide = type.partySide;
-        if (!legalOnSide(type, partySide, party)) {
+        // A party is never under cash / bank, so only the group list can refuse it.
+        const partyVerdict = sideVerdict(type, partySide, party);
+        if (partyVerdict !== 'OK') {
           const groups = (partySide === 'DR' ? type.drGroups : type.crGroups).map((g) => g.name);
           refuse(
             ctx,
             VCH.LEDGER_SIDE,
-            `${party.name} (${party.groupName}) cannot be the party of a ${type.typeName}` +
-              (groups.length ? ` — it takes ${groups.join(', ')}` : ''),
+            partyVerdict === 'GROUPS'
+              ? `${party.name} (${party.groupName}) cannot be the party of a ${type.typeName}` +
+                  (groups.length ? ` — it takes ${groups.join(', ')}` : '')
+              : sideRefusal(type, partySide, party, partyVerdict, ''),
             { field: 'header.partyId' },
           );
         }
@@ -618,6 +844,9 @@ export function derive(input: DeriveInput): DerivedInternal {
         gst: null,
         isTdsBase: false,
         oppLedgerId: null,
+        postDated: false,
+        postsOn: null,
+        instrument: null,
       });
     }
     gst = {
@@ -725,6 +954,9 @@ export function derive(input: DeriveInput): DerivedInternal {
             gst: null,
             isTdsBase: false,
             oppLedgerId: null,
+            postDated: false,
+            postsOn: null,
+            instrument: null,
           });
         }
         tds = {
@@ -851,10 +1083,24 @@ export function derive(input: DeriveInput): DerivedInternal {
         }
         continue;
       }
+      // notes (55): a post-dated cheque's line posts on the cheque's day, in a
+      // voucher of its own; its TDS leg goes with it so both vouchers balance.
+      // That needs the party's deduction to sit on that one line.
+      const datedLines = partyLines.filter((l) => l.postDated);
+      if (tax.greaterThan(0) && datedLines.length > 0 && partyLines.length > 1) {
+        refuse(
+          ctx,
+          VCH.INVALID,
+          `Row ${datedLines[0].lineRowNo}: ${p.name} has TDS deducted across ${partyLines.length} lines and one is a post-dated cheque — pay the post-dated cheque on a voucher of its own`,
+          { field, line: datedLines[0].lineRowNo! },
+        );
+        continue;
+      }
       if (tax.greaterThan(0)) {
         for (const x of perLine) {
           x.leg.amount = x.gross;
         }
+        const dated = datedLines[0] ?? null;
         legs.push({
           rowNo: legs.length + 1,
           lineRowNo: null,
@@ -869,6 +1115,9 @@ export function derive(input: DeriveInput): DerivedInternal {
           gst: null,
           isTdsBase: false,
           oppLedgerId: null,
+          postDated: !!dated,
+          postsOn: dated?.postsOn ?? null,
+          instrument: null,
         });
       }
       tdsLines.push({
@@ -912,6 +1161,9 @@ export function derive(input: DeriveInput): DerivedInternal {
         gst: null,
         isTdsBase: false,
         oppLedgerId: null,
+        postDated: false,
+        postsOn: null,
+        instrument: null,
       });
       partyLeg = { ledger: party, side: partySide, amount: round2(amount), rowNo };
     }
@@ -929,18 +1181,28 @@ export function derive(input: DeriveInput): DerivedInternal {
   if (partyLedgerIds.size === 1) {
     const [only] = [...partyLedgerIds];
     for (const leg of legs) {
+      if (leg.instrument) continue; // an instrument pair already names each other
       leg.oppLedgerId = leg.ledger.ledId === only ? null : only;
     }
   }
 
-  // ── 7 · Σ DR = Σ CR ───────────────────────────────────────────────────────
+  // ── 7 · Σ DR = Σ CR — TODAY's voucher; a post-dated pair balances by itself ─
+  const todayLegs = legs.filter((l) => !l.postDated);
   const debit = round2(
-    legs.filter((l) => l.drCr === 'DR').reduce((s, l) => s.plus(l.amount), ZERO),
+    todayLegs.filter((l) => l.drCr === 'DR').reduce((s, l) => s.plus(l.amount), ZERO),
   );
   const credit = round2(
-    legs.filter((l) => l.drCr === 'CR').reduce((s, l) => s.plus(l.amount), ZERO),
+    todayLegs.filter((l) => l.drCr === 'CR').reduce((s, l) => s.plus(l.amount), ZERO),
   );
   const difference = debit.minus(credit);
+  if (todayLegs.length === 0 && typed.length > 0) {
+    refuse(
+      ctx,
+      VCH.NO_LINES,
+      'Every line is post-dated, so nothing posts today — a post-dated cheque needs at least one line that does',
+      { field: 'lines' },
+    );
+  }
   if (!difference.isZero() && typed.length > 0 && type.partyMode !== 'ONE') {
     refuse(
       ctx,
@@ -959,6 +1221,7 @@ export function derive(input: DeriveInput): DerivedInternal {
     ledger: LedgerFacts;
     side: DrCr;
     amount: Prisma.Decimal;
+    instrument: InternalInstrument | null;
   }[] = [];
   if (partyLeg) {
     partyLegs.push({
@@ -967,6 +1230,7 @@ export function derive(input: DeriveInput): DerivedInternal {
       ledger: partyLeg.ledger,
       side: partyLeg.side,
       amount: partyLeg.amount,
+      instrument: null,
     });
   } else if (type.partyMode === 'MANY') {
     for (const leg of typed) {
@@ -978,6 +1242,7 @@ export function derive(input: DeriveInput): DerivedInternal {
           ledger: l,
           side: leg.drCr,
           amount: leg.amount,
+          instrument: leg.instrument,
         });
       }
     }
@@ -1065,10 +1330,11 @@ export function derive(input: DeriveInput): DerivedInternal {
             : type.nature === 'JOURNAL'
               ? 'TRANSFER'
               : 'NOTE_ADJUST';
+      const instrument = leg.instrument;
       const settlementMode =
         adjType === 'ALLOCATION'
           ? type.billwiseMode === 'DEMAND'
-            ? moneyMode
+            ? (instrument?.settlementMode ?? moneyMode)
             : 'JOURNAL'
           : adjType === 'ADVANCE_ADJUST'
             ? 'ADVANCE'
@@ -1084,6 +1350,9 @@ export function derive(input: DeriveInput): DerivedInternal {
         amount: round2(a.amount),
         adjType,
         settlementMode,
+        postDated: instrument?.isPostDated ?? false,
+        adjDate: instrument?.postsOn ?? header.date,
+        instrumentLineRowNo: instrument ? leg.lineRowNo : null,
       });
     }
 
@@ -1091,17 +1360,6 @@ export function derive(input: DeriveInput): DerivedInternal {
       const allocated = allocations
         .filter((x) => x.lineRowNo === leg.lineRowNo)
         .reduce((s, x) => s.plus(x.amount), ZERO);
-      if (type.billwiseMode === 'DEMAND') {
-        if (!allocated.equals(leg.amount)) {
-          refuse(
-            ctx,
-            VCH.BILLWISE_SHORT,
-            `${leg.ledger.name}: ${money(leg.amount)} must be allocated bill by bill — ${money(allocated)} is`,
-            { field: 'allocations' },
-          );
-        }
-        continue;
-      }
       if (allocated.greaterThan(leg.amount)) {
         refuse(
           ctx,
@@ -1109,6 +1367,39 @@ export function derive(input: DeriveInput): DerivedInternal {
           `${leg.ledger.name}: ${money(allocated)} is allocated against a party amount of ${money(leg.amount)}`,
           { field: 'allocations' },
         );
+        continue;
+      }
+      if (type.billwiseMode === 'DEMAND') {
+        if (allocated.equals(leg.amount)) {
+          continue;
+        }
+        // notes (57): on a Receipt / Payment the remainder is an ADVANCE on the
+        // party — one bill per party leg, on the leg's side (a CR on the
+        // customer who paid ahead, a DR on the supplier we paid ahead), dated
+        // the voucher, no due date. On a Payment with TDS the leg is the GROSS,
+        // so the remainder is gross − allocated: the advance is what we owe.
+        // `accounts.voucher_allow_advance` = false keeps the strict rule.
+        if (input.allowAdvance === false || moneySideOf(type.nature) === null) {
+          refuse(
+            ctx,
+            VCH.BILLWISE_SHORT,
+            `${leg.ledger.name}: ${money(leg.amount)} must be allocated bill by bill — ${money(allocated)} is`,
+            { field: 'allocations' },
+          );
+          continue;
+        }
+        bills.push({
+          lineRowNo: leg.lineRowNo,
+          legRowNo: leg.legRowNo,
+          party: leg.ledger,
+          billType: 'ADVANCE',
+          side: leg.side,
+          amount: round2(leg.amount.minus(allocated)),
+          docRefno: null,
+          dueDays: 0,
+          dueDate: null,
+          isAdvance: true,
+        });
         continue;
       }
       const raise =
@@ -1142,8 +1433,31 @@ export function derive(input: DeriveInput): DerivedInternal {
         docRefno: header.docRefno,
         dueDays,
         dueDate: addDays(header.date, dueDays),
+        isAdvance: false,
       });
     }
+  }
+
+  // ── notes (54) · the post-dated cheque lines, each a voucher of its own ──
+  const postDated: InternalPostDated[] = [];
+  for (const leg of typed) {
+    const ins = leg.instrument;
+    if (!ins?.isPostDated || !ins.postsOn) continue;
+    const drLeg = legs.find((x) => x.source === 'INSTRUMENT' && x.fromRows[0] === leg.lineRowNo);
+    if (!drLeg) continue;
+    postDated.push({
+      lineRowNo: leg.lineRowNo!,
+      partyLegRowNo: leg.rowNo,
+      instrumentLegRowNo: drLeg.rowNo,
+      extraLegRowNos: legs
+        .filter((x) => x.source === 'TDS' && x.postDated && x.fromRows.includes(leg.lineRowNo!))
+        .map((x) => x.rowNo),
+      party: leg.ledger as LedgerFacts,
+      amount: leg.amount,
+      postsOn: ins.postsOn,
+      accYear: accYearOfDate(ins.postsOn),
+      instrument: ins,
+    });
   }
 
   return {
@@ -1155,6 +1469,305 @@ export function derive(input: DeriveInput): DerivedInternal {
     tdsLines,
     bills,
     allocations,
+    postDated,
+  };
+}
+
+/**
+ * notes (54) — a typed line's instrument, checked against its tender and the
+ * type: allowed only on a type with instruments, on the party's side; the
+ * tender must be the company's, live, usable here (not a credit shape) and
+ * carry a reference when its type needs one; a cheque needs its date, number
+ * and bank, and its number must be new for the party in the year it posts.
+ */
+function readInstrument(
+  input: DeriveInput,
+  line: TypedLineInput,
+  ledger: LedgerFacts,
+): InternalInstrument | null {
+  const { type, ctx, header } = input;
+  const ins = line.instrument ?? null;
+  if (!ins) {
+    return null;
+  }
+  const field = `lines.${line.rowNo}.instrument`;
+  if (!type.instruments) {
+    refuse(
+      ctx,
+      VCH.INSTRUMENT_NOT_ALLOWED,
+      `Row ${line.rowNo}: a ${type.typeName} takes no instruments — the money side is typed`,
+      { field, line: line.rowNo },
+    );
+    return null;
+  }
+  if ((type.partySide === 'DR' || type.partySide === 'CR') && line.drCr !== type.partySide) {
+    refuse(
+      ctx,
+      VCH.INSTRUMENT_NOT_ALLOWED,
+      `Row ${line.rowNo}: an instrument sits on a ${type.partySide} line (the party's side); the ${line.drCr} leg is generated from it`,
+      { field, line: line.rowNo },
+    );
+    return null;
+  }
+  const tender = input.tenders?.get(ins.tenderId) ?? null;
+  if (!tender || tender.isDeleted || tender.companyId !== input.company.companyId) {
+    refuse(ctx, VCH.INSTRUMENT_TENDER, `Row ${line.rowNo}: no such tender for this company`, {
+      field: `${field}.tenderId`,
+      line: line.rowNo,
+    });
+    return null;
+  }
+  if (!tender.isActive) {
+    refuse(ctx, VCH.INSTRUMENT_TENDER, `Row ${line.rowNo}: tender "${tender.name}" is inactive`, {
+      field: `${field}.tenderId`,
+      line: line.rowNo,
+    });
+    return null;
+  }
+  if (EXCLUDED_INSTRUMENT_TYPES.includes(tender.typeId)) {
+    refuse(
+      ctx,
+      VCH.INSTRUMENT_TENDER,
+      `Row ${line.rowNo}: "${tender.name}" (${tender.typeName}) moves no money in and cannot be an instrument here`,
+      { field: `${field}.tenderId`, line: line.rowNo },
+    );
+    return null;
+  }
+  if (type.partySide === 'DR') {
+    return readIssuedInstrument(input, line, ledger, tender);
+  }
+  const refNo = ins.refNo?.trim() || null;
+  const bankName = ins.bankName?.trim() || null;
+  const instrumentDate = ins.instrumentDate?.trim() || null;
+  const isCheque = tender.typeId === CHEQUE_TENDER_TYPE_ID;
+  if (isCheque) {
+    const missing: string[] = [];
+    if (!instrumentDate) missing.push('instrumentDate');
+    if (!refNo) missing.push('refNo');
+    if (!bankName) missing.push('bankName');
+    if (missing.length > 0) {
+      refuse(ctx, VCH.CHEQUE_DETAILS, `Row ${line.rowNo}: a cheque needs ${missing.join(', ')}`, {
+        field: `${field}.${missing[0]}`,
+        line: line.rowNo,
+      });
+      return null;
+    }
+  } else if (tender.needsRef && !refNo) {
+    refuse(
+      ctx,
+      VCH.INSTRUMENT_TENDER,
+      `Row ${line.rowNo}: "${tender.name}" needs a reference number`,
+      { field: `${field}.refNo`, line: line.rowNo },
+    );
+    return null;
+  }
+  const isPostDated = isCheque && !!instrumentDate && instrumentDate > header.date;
+  const postsOn = isPostDated ? instrumentDate : null;
+  if (isCheque) {
+    const year = accYearOfDate(postsOn ?? header.date);
+    const closed = input.closedYears?.get(year);
+    if (closed) {
+      refuse(
+        ctx,
+        closed.startsWith('locked') ? VCH.PERIOD_LOCKED : VCH.YEAR_CLOSED,
+        `Row ${line.rowNo}: cheque ${refNo} would post on ${postsOn ?? header.date}, and ${year} is ${closed}`,
+        { field: `${field}.instrumentDate`, line: line.rowNo },
+      );
+    }
+    if (input.registeredCheques?.has(`${ledger.ledId}|${refNo}|${year}`)) {
+      refuse(
+        ctx,
+        VCH.CHEQUE_DETAILS,
+        `Row ${line.rowNo}: cheque ${refNo} of ${ledger.name} is already in the register for ${year}`,
+        { field: `${field}.refNo`, line: line.rowNo },
+      );
+    }
+  }
+  return {
+    lineRowNo: line.rowNo,
+    tender,
+    ledgerId: tender.settlementLedgerId ?? tender.ledgerId,
+    ledgerName: tender.ledgerName,
+    refNo,
+    instrumentDate,
+    bankName,
+    isCheque,
+    isPostDated,
+    postsOn,
+    cheque: isCheque
+      ? {
+          drawerName: ins.cheque?.drawerName?.trim() || null,
+          bankBranch: ins.cheque?.bankBranch?.trim() || null,
+          ifsc: ins.cheque?.ifsc?.trim() || null,
+          micr: ins.cheque?.micr?.trim() || null,
+        }
+      : null,
+    settlementMode: settlementModeForTenderType(tender.typeId),
+    issued: false,
+    bankLedgerId: null,
+    chequeBook: null,
+    nextLeaf: null,
+    favouring: null,
+    acPayee: false,
+  };
+}
+
+/** Tender types a PAYMENT may go out by: cash, cheque, UPI, bank transfer. */
+const PAYABLE_TENDER_TYPES: readonly number[] = [1, 3, 5, 6];
+
+/** Leaves already promised to earlier lines of the same derivation, per book. */
+const leavesPromised = new WeakMap<DeriveInput, Map<string, number>>();
+
+/**
+ * notes (55) — a PAYMENT's instrument. Cash posts to the CASH tender's own
+ * ledger; everything else leaves the bank account the line names (a ledger
+ * under Bank Accounts / Bank OD). A cheque names its BOOK, which must be
+ * drawn on that bank and have a leaf left; its number is the book's next
+ * leaf, counted on across the voucher's cheque lines in row order. The date
+ * defaults to the voucher's — later makes it post-dated, as on a receipt.
+ */
+function readIssuedInstrument(
+  input: DeriveInput,
+  line: TypedLineInput,
+  party: LedgerFacts,
+  tender: TenderFacts,
+): InternalInstrument | null {
+  const { type, ctx, header } = input;
+  const ins = line.instrument!;
+  const field = `lines.${line.rowNo}.instrument`;
+  if (!PAYABLE_TENDER_TYPES.includes(tender.typeId)) {
+    refuse(
+      ctx,
+      VCH.INSTRUMENT_TENDER,
+      `Row ${line.rowNo}: "${tender.name}" (${tender.typeName}) cannot pay a ${type.typeName} — use cash, a cheque, UPI or a bank transfer`,
+      { field: `${field}.tenderId`, line: line.rowNo },
+    );
+    return null;
+  }
+  const isCheque = tender.typeId === CHEQUE_TENDER_TYPE_ID;
+  const favouring = ins.favouring?.trim() || party.name;
+  let refNo = ins.refNo?.trim() || null;
+  let ledgerId = tender.settlementLedgerId ?? tender.ledgerId;
+  let ledgerName = tender.ledgerName;
+  let bankLedgerId: string | null = null;
+  if (!tender.isCash) {
+    const bankId = ins.bankLedgerId ?? null;
+    const bank = bankId ? (input.ledgers.get(bankId) ?? null) : null;
+    if (!bankId) {
+      refuse(
+        ctx,
+        VCH.BANK_REQUIRED,
+        `Row ${line.rowNo}: say which bank account the ${tender.typeName.toLowerCase()} is drawn on`,
+        { field: `${field}.bankLedgerId`, line: line.rowNo },
+      );
+      return null;
+    }
+    if (!bank || !isBankLedger(bank) || !bank.isActive || bank.isDeleted) {
+      refuse(
+        ctx,
+        VCH.BANK_REQUIRED,
+        `Row ${line.rowNo}: ${bank?.name ?? 'that ledger'} is not a live bank account (Bank Accounts / Bank OD)`,
+        { field: `${field}.bankLedgerId`, line: line.rowNo },
+      );
+      return null;
+    }
+    bankLedgerId = bank.ledId;
+    ledgerId = bank.ledId;
+    ledgerName = bank.name;
+    if (!isCheque && tender.needsRef && !refNo) {
+      refuse(
+        ctx,
+        VCH.INSTRUMENT_TENDER,
+        `Row ${line.rowNo}: "${tender.name}" needs a reference number`,
+        {
+          field: `${field}.refNo`,
+          line: line.rowNo,
+        },
+      );
+      return null;
+    }
+  }
+  const instrumentDate = isCheque ? ins.instrumentDate?.trim() || header.date : null;
+  const isPostDated = isCheque && !!instrumentDate && instrumentDate > header.date;
+  const postsOn = isPostDated ? instrumentDate : null;
+  let chequeBook: ChequeBookFacts | null = null;
+  let nextLeaf: string | null = null;
+  if (isCheque) {
+    const bookId = ins.chequeBookId ?? null;
+    chequeBook = bookId ? (input.chequeBooks?.get(bookId) ?? null) : null;
+    if (
+      !bookId ||
+      !chequeBook ||
+      chequeBook.isDeleted ||
+      chequeBook.companyId !== input.company.companyId
+    ) {
+      refuse(
+        ctx,
+        VCH.BOOK_REQUIRED,
+        bookId
+          ? `Row ${line.rowNo}: no such cheque book for this company`
+          : `Row ${line.rowNo}: a cheque names the book its leaf comes from`,
+        { field: `${field}.chequeBookId`, line: line.rowNo },
+      );
+      return null;
+    }
+    if (chequeBook.bankLedgerId !== bankLedgerId) {
+      refuse(
+        ctx,
+        VCH.BOOK_BANK,
+        `Row ${line.rowNo}: book ${chequeBook.bookNo} is drawn on ${chequeBook.bankName}, not ${ledgerName}`,
+        { field: `${field}.chequeBookId`, line: line.rowNo },
+      );
+      return null;
+    }
+    const promised = leavesPromised.get(input) ?? new Map<string, number>();
+    leavesPromised.set(input, promised);
+    const offset = promised.get(chequeBook.chequeBookId) ?? 0;
+    const leafNo = chequeBook.nextLeaf + offset;
+    if (chequeBook.status !== 'ACTIVE' || leafNo > chequeBook.leafTo) {
+      refuse(
+        ctx,
+        VCH.BOOK_FINISHED,
+        chequeBook.status === 'CLOSED'
+          ? `Row ${line.rowNo}: book ${chequeBook.bookNo} is closed`
+          : `Row ${line.rowNo}: book ${chequeBook.bookNo} has no leaf left${offset > 0 ? ' for this line' : ''} — start a new book`,
+        { field: `${field}.chequeBookId`, line: line.rowNo },
+      );
+      return null;
+    }
+    promised.set(chequeBook.chequeBookId, offset + 1);
+    nextLeaf = formatLeaf(leafNo, chequeBook.leafWidth);
+    refNo = nextLeaf;
+    const year = accYearOfDate(postsOn ?? header.date);
+    const closed = input.closedYears?.get(year);
+    if (closed) {
+      refuse(
+        ctx,
+        closed.startsWith('locked') ? VCH.PERIOD_LOCKED : VCH.YEAR_CLOSED,
+        `Row ${line.rowNo}: the cheque would post on ${postsOn ?? header.date}, and ${year} is ${closed}`,
+        { field: `${field}.instrumentDate`, line: line.rowNo },
+      );
+    }
+  }
+  return {
+    lineRowNo: line.rowNo,
+    tender,
+    ledgerId,
+    ledgerName,
+    refNo,
+    instrumentDate,
+    bankName: bankLedgerId ? ledgerName : null,
+    isCheque,
+    isPostDated,
+    postsOn,
+    cheque: null,
+    settlementMode: settlementModeForTenderType(tender.typeId),
+    issued: true,
+    bankLedgerId,
+    chequeBook,
+    nextLeaf,
+    favouring,
+    acPayee: isCheque ? (ins.acPayee ?? true) : false,
   };
 }
 
@@ -1223,6 +1836,19 @@ export function toWire(typeCode: string, date: string, d: DerivedInternal): Deri
     fromRows: l.fromRows,
     gst: l.gst ? { ...l.gst, isTdsBase: l.isTdsBase } : null,
     isTdsBase: l.isTdsBase,
+    postDated: l.postDated,
+    postsOn: l.postsOn,
+    instrument: l.instrument ? instrumentToWire(l.instrument) : null,
+  }));
+  const postDated: DerivedPostDated[] = d.postDated.map((pd) => ({
+    lineRowNo: pd.lineRowNo,
+    partyId: pd.party.ledId,
+    partyName: pd.party.name,
+    amount: n(pd.amount),
+    postsOn: pd.postsOn,
+    accYear: pd.accYear,
+    tenderName: pd.instrument.tender.name,
+    refNo: pd.instrument.refNo,
   }));
   const party: DerivedParty | null = d.party
     ? {
@@ -1303,6 +1929,7 @@ export function toWire(typeCode: string, date: string, d: DerivedInternal): Deri
     docRefno: b.docRefno,
     dueDays: b.dueDays,
     dueDate: b.dueDate,
+    isAdvance: b.isAdvance,
   }));
   const allocations: DerivedAllocation[] = d.allocations.map((a) => ({
     lineRowNo: a.lineRowNo,
@@ -1329,5 +1956,32 @@ export function toWire(typeCode: string, date: string, d: DerivedInternal): Deri
     tdsLines,
     bills,
     allocations,
+    postDated,
+  };
+}
+
+export function instrumentToWire(i: InternalInstrument): DerivedInstrument {
+  return {
+    tenderId: i.tender.tndId,
+    tenderName: i.tender.name,
+    tenderTypeId: i.tender.typeId,
+    tenderTypeName: i.tender.typeName,
+    ledgerId: i.ledgerId,
+    ledgerName: i.ledgerName,
+    refNo: i.refNo,
+    instrumentDate: i.instrumentDate,
+    bankName: i.bankName,
+    isCheque: i.isCheque,
+    isPostDated: i.isPostDated,
+    postsOn: i.postsOn,
+    cheque: i.cheque,
+    settlementMode: i.settlementMode,
+    issued: i.issued,
+    bankLedgerId: i.bankLedgerId,
+    chequeBookId: i.chequeBook?.chequeBookId ?? null,
+    bookNo: i.chequeBook?.bookNo ?? null,
+    nextLeaf: i.nextLeaf,
+    favouring: i.favouring,
+    acPayee: i.issued && i.isCheque ? i.acPayee : null,
   };
 }

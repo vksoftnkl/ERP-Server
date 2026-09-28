@@ -107,7 +107,7 @@ const PHYSICAL_RULES: StockVoucherTypeRules = {
   statusDocType: TxnStatusDocType.STOCK_ADJUSTMENT,
   // The generic entry point. 19 refuses to post a TRANSFER_* through it by
   // name, so the transfer screens cannot reach this record by accident.
-  postFunction: 'stock.fn_svh_post',
+  postShape: 'COUNT',
   refuseTypes: ['TRANSFER_IN', 'TRANSFER_OUT', 'REPACK_IN', 'REPACK_OUT'],
 };
 /**

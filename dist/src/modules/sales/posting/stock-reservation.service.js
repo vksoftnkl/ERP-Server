@@ -12,6 +12,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.StockReservationService = void 0;
 const common_1 = require("@nestjs/common");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
+const stock_voucher_posting_helper_1 = require("../../stocks/stock-voucher/stock-voucher-posting.helper");
 const sales_doc_utils_1 = require("./sales-doc.utils");
 let StockReservationService = class StockReservationService {
     prisma;
@@ -53,11 +54,9 @@ let StockReservationService = class StockReservationService {
                srv_closed_on = ${now}, srv_close_reason = 'Re-reserved', srv_modified_on = ${now}, srv_modified_by = ${actor}
          WHERE srv_src_doc_type = ${doc.docType} AND srv_src_doc_id = ${doc.docId}::uuid AND srv_line_no = ${line.lineNo}
            AND srv_status IN ('OPEN', 'PARTIAL') AND srv_is_deleted = false`;
+            await (0, stock_voucher_posting_helper_1.refreshReserved)(tx, (0, stock_voucher_posting_helper_1.reservationHoldingsOf)(doc.docType, doc.docId), actor, now);
             const holdings = await tx.$queryRaw `
-        SELECT b.sbl_lot_id,
-               b.sbl_available_qty - COALESCE((SELECT SUM(r.srv_open_qty) FROM stock.stock_reservation r
-                                                WHERE r.srv_lot_id = b.sbl_lot_id AND r.srv_godown_id = b.sbl_godown_id
-                                                  AND r.srv_status IN ('OPEN', 'PARTIAL') AND r.srv_is_deleted = false), 0) AS free
+        SELECT b.sbl_lot_id, b.sbl_available_qty AS free
           FROM stock.stock_balance b
           JOIN stock.stock_lot l ON l.slt_id = b.sbl_lot_id
          WHERE b.sbl_company_id = ${doc.companyId}::uuid AND b.sbl_branch_id = ${doc.branchId}::uuid
@@ -88,6 +87,8 @@ let StockReservationService = class StockReservationService {
                 wantBase = (0, sales_doc_utils_1.round4)(wantBase - take);
                 got = (0, sales_doc_utils_1.round4)(got + take);
             }
+            await (0, stock_voucher_posting_helper_1.ensureBalanceRows)(tx, (0, stock_voucher_posting_helper_1.reservationHoldingsOf)(doc.docType, doc.docId), actor);
+            await (0, stock_voucher_posting_helper_1.refreshReserved)(tx, (0, stock_voucher_posting_helper_1.reservationHoldingsOf)(doc.docType, doc.docId), actor, now);
             reserved.set(line.lineId, (0, sales_doc_utils_1.round4)(got / factor));
             if (wantBase > 0.0005) {
                 const short = (0, sales_doc_utils_1.round4)(wantBase / factor);
@@ -102,12 +103,16 @@ let StockReservationService = class StockReservationService {
         return { reserved, warnings };
     }
     async release(tx, doc, reason, actor, now) {
-        return tx.$executeRaw `
+        const released = await tx.$executeRaw `
       UPDATE stock.stock_reservation
          SET srv_released_qty = srv_reserved_qty - srv_consumed_qty, srv_status = 'RELEASED',
              srv_closed_on = ${now}, srv_close_reason = ${reason}, srv_modified_on = ${now}, srv_modified_by = ${actor}
        WHERE srv_src_doc_type = ${doc.docType} AND srv_src_doc_id = ${doc.docId}::uuid
          AND srv_status IN ('OPEN', 'PARTIAL') AND srv_is_deleted = false`;
+        if (released > 0) {
+            await (0, stock_voucher_posting_helper_1.refreshReserved)(tx, (0, stock_voucher_posting_helper_1.reservationHoldingsOf)(doc.docType, doc.docId), actor, now);
+        }
+        return released;
     }
     async consume(tx, order, baseQty, actor, now) {
         let left = (0, sales_doc_utils_1.round4)(baseQty);
@@ -160,6 +165,9 @@ let StockReservationService = class StockReservationService {
                srv_closed_on = CASE WHEN ${status} IN ('CONSUMED', 'RELEASED') THEN ${now} ELSE NULL END,
                srv_modified_on = ${now}, srv_modified_by = ${actor}
          WHERE srv_id = ${r.srv_id}::uuid AND srv_acc_year = ${r.srv_acc_year}::char(9)`;
+        }
+        if (rows.length > 0) {
+            await (0, stock_voucher_posting_helper_1.refreshReserved)(tx, (0, stock_voucher_posting_helper_1.reservationHoldingsOf)('SALES_ORDER', order.docId), actor, now);
         }
     }
 };

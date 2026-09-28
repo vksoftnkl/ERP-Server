@@ -1206,6 +1206,7 @@ let SaleOrderService = class SaleOrderService {
                 const tenders = await this.tenderDetailService.syncDocumentTenders(tx, this.toTenderScope(scope), saveOrderDto.tenders, createdBy, sale_order_api_types_1.SALE_ORDER_TENDER_AUDIT);
                 const posting = await this.syncAdvanceVoucher(tx, created, createdBy, now, (0, pdc_register_helper_1.matchChequeDetails)(saveOrderDto.tenders ?? [], tenders));
                 const restated = await this.restateAdvanceRollups(tx, created, posting, saveOrderDto);
+                await this.logStatusStep(tx, restated, { event: txn_status_log_helper_1.TxnStatusEvent.CREATED, fromStatus: null, toStatus: restated.soStatus }, createdBy, now);
                 const payload = this.toPayload({
                     ...restated,
                     items,

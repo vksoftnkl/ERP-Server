@@ -29,10 +29,11 @@ import {
   StockTransferPrefillQueryDto,
   StockTransferRefQueryDto,
 } from './dto/list-stock-transfer-query.dto';
-import { StockTransferRefDto } from './dto/post-stock-transfer.dto';
+import { SettleShortStockTransferDto, StockTransferRefDto } from './dto/post-stock-transfer.dto';
 import type {
   StockTransferPrefill,
   StockTransferReceiveResult,
+  StockTransferSettleShortResult,
 } from './types/stock-transfer.types';
 import {
   StockTransferDeleteSuccessDto,
@@ -51,8 +52,9 @@ import {
  * record, because a receipt is a different document with the opposite meaning
  * for two of its fields:
  *
- *   postFunction   fn_svh_receive_transfer — it settles the transit rows, which
- *                  fn_svh_post_transfer knows nothing about.
+ *   postShape      TRANSFER_IN — the engine writes the IN rows at the transit
+ *                  row's cost, settles the transit rows and closes the OUT
+ *                  when nothing is left.
  *   isInward       true. The stock arrives. Its COST does not come with the
  *                  payload though: it is read from stt_cost_rate, the figure
  *                  stamped on the OUT row weeks earlier, so the receiving
@@ -78,9 +80,12 @@ const TRANSFER_IN_RULES: StockVoucherTypeRules = {
   quantityMode: 'QTY',
   requiresLot: true,
   zeroesLineCost: true,
+  // A transfer MOVES an opened holding; the "already opened this year" preflight
+  // is an OPENING's rule and must not refuse it.
+  allowsRepeatHolding: true,
   allowsCount: false,
   allowsToBranch: false,
-  postFunction: 'stock.fn_svh_receive_transfer',
+  postShape: 'TRANSFER_IN',
   auditScreenName: 'Stock Transfer Receipt',
   statusDocType: TxnStatusDocType.STOCK_TRANSFER,
   refuseTypes: ['OPENING', 'PHYSICAL', 'TRANSFER_OUT', 'REPACK_IN', 'REPACK_OUT'],
@@ -173,9 +178,9 @@ export class StockTransferReceiveController {
   @Post('post')
   @Version(API_VERSION)
   @ApiOperation({
-    summary: 'Post the receipt — stock.fn_svh_receive_transfer',
+    summary: 'Post the receipt',
     description:
-      'Returns BOTH documents. The receipt closing does not mean the transfer closed: the despatch flips to RECEIVED only when no transit row of it has anything left, and a short keeps it open on purpose — that is the loss report. The write-off is a separate decision and is deliberately not automated.',
+      'Returns BOTH documents. The receipt closing does not mean the transfer closed: the despatch flips to RECEIVED only when no transit row of it has anything left, and a short keeps it open on purpose — that is the loss report. The write-off is a separate decision: POST /settle-short.',
   })
   @ApiOkResponse({ type: StockTransferReceiveSuccessDto })
   @ApiUnprocessableEntityResponse({ type: StockTransferErrorResponseDto })
@@ -201,12 +206,33 @@ export class StockTransferReceiveController {
     };
   }
 
+  @Post('settle-short')
+  @Version(API_VERSION)
+  @ApiOperation({
+    summary: 'Short-settle a despatch whose remainder will never arrive',
+    description:
+      'Allowed only on an IN_TRANSIT despatch every row of which has been received at least in part. Each PARTIAL row flips to RECEIVED and KEEPS its short, so the loss report still shows it; the despatch closes; the destination stops expecting the goods. Under PERPETUAL the loss is posted DR the reason ledger / CR Stock-in-Hand at the cost the goods left with.',
+  })
+  @ApiOkResponse({ description: 'The closed despatch, what was short, and the accounts voucher if one was posted.' })
+  @ApiUnprocessableEntityResponse({ type: StockTransferErrorResponseDto })
+  @ApiConflictResponse({ type: StockTransferErrorResponseDto })
+  async settleShort(
+    @Body() dto: SettleShortStockTransferDto,
+  ): Promise<StockVoucherSuccessResponse<StockTransferSettleShortResult>> {
+    const data = await this.stockTransferService.settleShort(dto);
+    return {
+      success: true,
+      message: `${data.outVoucher.refno} closed — ${data.shortQty} short, ${data.shortValue} written off`,
+      data,
+    };
+  }
+
   @Delete()
   @Version(API_VERSION)
   @ApiOperation({
     summary: 'Soft delete a DRAFT receipt',
     description:
-      'DELETE, NEVER CANCEL. tr_svh_transfer_cancel_guard refuses cancelling any linked TRANSFER_IN — a draft one included — and the link is mandatory on every one of them, so Cancel must not be offered on a draft receipt at all.',
+      'DELETE, NEVER CANCEL. The engine refuses cancelling a POSTED receipt (un-receiving is a reverse transfer) and a draft one settles a despatch already in transit, so Cancel must not be offered on a receipt at all.',
   })
   @ApiOkResponse({ type: StockTransferDeleteSuccessDto })
   @ApiConflictResponse({ type: StockTransferErrorResponseDto })

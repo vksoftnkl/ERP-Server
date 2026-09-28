@@ -18,6 +18,7 @@ const request_context_service_1 = require("../../../common/request-context/reque
 const txn_status_log_helper_1 = require("../../../common/txn-status-log/txn-status-log.helper");
 const stock_posting_service_1 = require("../../stocks/posting/stock-posting.service");
 const stock_voucher_source_1 = require("../../stocks/posting/stock-voucher.source");
+const stock_voucher_numbering_helper_1 = require("../../stocks/stock-voucher/stock-voucher-numbering.helper");
 const sales_errors_1 = require("./sales.errors");
 const posting_types_1 = require("./types/posting.types");
 const sales_doc_utils_1 = require("./sales-doc.utils");
@@ -48,7 +49,7 @@ let SalesStockService = class SalesStockService {
         const rules = this.rules(doc);
         const svhId = await this.writeShadow(tx, doc, lines, units, rules, actor, postedOn);
         try {
-            const rowsPosted = await this.stockPosting.post(tx, new stock_voucher_source_1.StockVoucherSource({
+            const { rowsPosted } = await this.stockPosting.post(tx, new stock_voucher_source_1.StockVoucherSource({
                 svhId,
                 accYear: doc.accYear,
                 companyId: doc.companyId,
@@ -74,18 +75,6 @@ let SalesStockService = class SalesStockService {
             if (!expected.equals(got)) {
                 throw new Error(`${posting_types_1.SALES_ERROR_CODES.STOCK_QTY_MISMATCH}: ${doc.docType} ${doc.refno} moved ${got.toString()} against ${expected.toString()} on its lines`);
             }
-            await tx.$executeRaw `
-        UPDATE stock.stock_voucher svh
-           SET svh_total_value     = COALESCE(t.v, 0),
-               svh_total_value_wot = COALESCE(t.vw, 0)
-          FROM (SELECT SUM(sml_cost_value)     AS v,
-                       SUM(sml_cost_value_wot) AS vw
-                  FROM stock.stock_ledger
-                 WHERE sml_src_doc_id  = ${svhId}::uuid
-                   AND sml_acc_year    = ${doc.accYear}::bpchar
-                   AND sml_is_deleted  = false
-                   AND sml_is_reversal = false) t
-         WHERE svh.svh_id = ${svhId}::uuid AND svh.svh_acc_year = ${doc.accYear}::bpchar`;
             const costs = await tx.$queryRaw `
         SELECT svi.svi_line_no, svi.svi_lot_id, SUM(sml.sml_cost_value) AS cost
           FROM stock.stock_voucher_item svi
@@ -161,7 +150,7 @@ let SalesStockService = class SalesStockService {
             defaultRateSource: 'AVG_COST',
             allowsCount: false,
             allowsToBranch: false,
-            postFunction: 'stock.fn_svh_post',
+            postShape: 'SIMPLE',
             auditScreenName: DISPLAY_NAME[doc.docType],
             statusDocType: STATUS_DOC_TYPE[doc.docType],
         };
@@ -202,12 +191,13 @@ let SalesStockService = class SalesStockService {
     }
     async writeShadow(tx, doc, lines, units, rules, actor, now) {
         const deviceId = await this.shadowDevice(tx, doc);
-        const [slno] = await tx.$queryRaw `
-      SELECT COALESCE(MAX(svh_slno), 0) + 1 AS next
-        FROM stock.stock_voucher
-       WHERE svh_acc_year = ${doc.accYear}::bpchar AND svh_company_id = ${doc.companyId}::uuid
-         AND svh_branch_id = ${doc.branchId}::uuid AND svh_voucher_type = ${rules.voucherType}
-         AND svh_device_id = ${deviceId}::uuid`;
+        const slno = await (0, stock_voucher_numbering_helper_1.nextStockVoucherSlno)(tx, {
+            companyId: doc.companyId,
+            branchId: doc.branchId,
+            accYear: doc.accYear,
+            voucherType: rules.voucherType,
+            deviceId,
+        });
         const refno = `${doc.docType}/${doc.refno}/r${doc.revision}`;
         const godowns = [...new Set(lines.map((l) => l.godownId))];
         const inward = doc.direction === 'IN';
@@ -221,7 +211,7 @@ let SalesStockService = class SalesStockService {
       ) VALUES (
         ${doc.companyId}::uuid, ${doc.branchId}::uuid, ${doc.tenantId ?? null}::uuid, ${doc.accYear}::bpchar,
         ${deviceId}::uuid, ${doc.sessionId ?? null}::uuid,
-        ${rules.voucherType}, ${Number(slno?.next ?? 1)}::bigint, ${refno}, ${doc.refno},
+        ${rules.voucherType}, ${slno}::bigint, ${refno}, ${doc.refno},
         ${doc.docDate}::date, ${doc.docDatetime},
         ${inward ? null : godowns[0]}::uuid, ${inward ? godowns[0] : null}::uuid,
         ${doc.partyId ?? null},
@@ -307,6 +297,6 @@ const STATUS_DOC_TYPE = {
     SALE_BILL: txn_status_log_helper_1.TxnStatusDocType.SALE_BILL,
     DELIVERY_CHALLAN: txn_status_log_helper_1.TxnStatusDocType.DELIVERY_CHALLAN,
     SALE_RETURN: txn_status_log_helper_1.TxnStatusDocType.SALE_RETURN,
-    DC_RETURN: txn_status_log_helper_1.TxnStatusDocType.OTHER,
+    DC_RETURN: txn_status_log_helper_1.TxnStatusDocType.DC_RETURN,
 };
 //# sourceMappingURL=sales-stock.service.js.map

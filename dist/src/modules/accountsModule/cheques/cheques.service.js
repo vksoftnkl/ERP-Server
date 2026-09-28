@@ -269,7 +269,7 @@ let ChequesService = class ChequesService {
         }
         const entries = await this.prisma.txnStatusLog.findMany({
             where: {
-                tslSrcDocType: txn_status_log_helper_1.TxnStatusDocType.OTHER,
+                tslSrcDocType: txn_status_log_helper_1.TxnStatusDocType.CHEQUE_RECEIVED,
                 tslSrcDocId: cheque.apdId,
                 tslAccYear: cheque.apdAccYear,
             },

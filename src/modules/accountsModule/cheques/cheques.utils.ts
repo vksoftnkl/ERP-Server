@@ -21,13 +21,14 @@ import type { ChequeRow } from './types/cheque-api.types';
  * One `public.txn_status_log` row per STEP, which is what §6.2 and §7's last
  * check ("every transition appears in `history` with who and when") mean.
  *
- * ── `srcDocType` is OTHER, and that is the right answer ──────────────────
- * `ck_tsl_src_doc_type` admits fourteen document types and a cheque is none of
- * them. It is not a RECEIPT — the receipt has its own trail, under its own id,
- * and filing the cheque's deposits there would interleave two documents'
- * histories under one heading. The helper's own comment says OTHER exists "so
- * a new document type never forces an ALTER on the table", and this is that
- * case. `tsl_src_doc_id` is the cheque's own `apd_id`, so nothing is ambiguous.
+ * ── `srcDocType` is the cheque's OWN doc type ────────────────────────────
+ * A received cheque (apd_tra_type R) files as CHEQUE_RECEIVED, an issued one
+ * (P) as CHEQUE_ISSUED — `ck_tsl_src_doc_type` admits both since 20260928100000.
+ * Neither is a RECEIPT or a PAYMENT: the voucher has its own trail, under its
+ * own id, and filing the cheque's steps there would interleave two documents'
+ * histories under one heading. `tsl_src_doc_id` is the cheque's own `apd_id`.
+ * Both registers' `history` routes read by `chequeDocTypeOf`, so a writer and
+ * its reader can never drift apart again (they did, for one afternoon).
  *
  * ── `accYear` is the CHEQUE's year ───────────────────────────────────────
  * `txn_status_log` is LIST-partitioned on `tsl_acc_year` and the register row
@@ -35,11 +36,16 @@ import type { ChequeRow } from './types/cheque-api.types';
  * in March and cleared in May files both steps in 2025-2026, beside each other,
  * which is the only way `history` reads as one story.
  */
+/** The status-log doc type a register row files under, by its apd_tra_type. */
+export function chequeDocTypeOf(traType: string): TxnStatusDocType {
+  return traType.trim() === 'P' ? TxnStatusDocType.CHEQUE_ISSUED : TxnStatusDocType.CHEQUE_RECEIVED;
+}
+
 export async function logChequeStatus(
   tx: Prisma.TransactionClient,
   cheque: Pick<
     LockedCheque,
-    'apdId' | 'apdAccYear' | 'apdCompanyId' | 'apdBranchId' | 'apdTenantId' | 'apdInstrumentNo'
+    'apdId' | 'apdAccYear' | 'apdCompanyId' | 'apdBranchId' | 'apdTenantId' | 'apdInstrumentNo' | 'apdTraType'
   >,
   entry: {
     fromStatus: PdcStatus | null;
@@ -57,7 +63,7 @@ export async function logChequeStatus(
     tenantId: cheque.apdTenantId,
     accYear: cheque.apdAccYear,
     srcModule: TxnStatusSrcModule.ACCOUNTS,
-    srcDocType: TxnStatusDocType.OTHER,
+    srcDocType: chequeDocTypeOf(cheque.apdTraType),
     srcDocId: cheque.apdId,
     srcDocRefno: cheque.apdInstrumentNo,
     event: entry.event ?? eventFor(entry.toStatus),

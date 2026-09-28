@@ -11,6 +11,7 @@ export declare class ItemStockBalanceService {
     getBulkList(queryDto: GetBulkItemStockListQueryDto): Promise<BulkItemStockPayload[]>;
     getBatchOptionsByScope(queryDto: GetItemBatchStockOptionsQueryDto): Promise<ItemBatchStockOptionPayload[]>;
     getPriceMasterByItemAndUnit(itemId: string, unitId: string): Promise<ItemPricePayload[]>;
+    private holdings;
     private toPayload;
     private toBatchOptionPayload;
     private toItemPricePayload;

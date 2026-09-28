@@ -5,7 +5,8 @@ exports.writeAllocations = writeAllocations;
 exports.reverseVoucherAllocations = reverseVoucherAllocations;
 exports.otherVoucherOnRaisedBills = otherVoucherOnRaisedBills;
 const voucher_derive_1 = require("./voucher-derive");
-async function raiseBill(tx, ctx, bill, legAvId) {
+async function raiseBill(tx, ctx, bill, legAvId, refnoSuffix = null) {
+    const docRefno = bill.docRefno ?? (refnoSuffix ? `${ctx.voucherRefno}/${refnoSuffix}` : ctx.voucherRefno);
     const row = await tx.accBillBalance.create({
         data: {
             ablCompanyId: ctx.companyId,
@@ -24,40 +25,49 @@ async function raiseBill(tx, ctx, bill, legAvId) {
             ablVoucherNo: ctx.voucherNo,
             ablVoucherDate: new Date(`${ctx.voucherDate}T00:00:00Z`),
             ablVoucherRefno: ctx.voucherRefno,
-            ablDocRefno: bill.docRefno ?? ctx.voucherRefno,
-            ablDocDate: new Date(`${ctx.docDate ?? ctx.voucherDate}T00:00:00Z`),
-            ablDueDate: new Date(`${bill.dueDate}T00:00:00Z`),
+            ablDocRefno: docRefno,
+            ablDocDate: new Date(`${(bill.isAdvance ? null : ctx.docDate) ?? ctx.voucherDate}T00:00:00Z`),
+            ablDueDate: bill.dueDate ? new Date(`${bill.dueDate}T00:00:00Z`) : null,
             ablCreditDays: bill.dueDays,
             ablDrCr: bill.side,
             ablBillAmount: bill.amount,
-            ablNarration: `${bill.billType} bill raised by voucher ${ctx.voucherRefno}`,
+            ablNarration: bill.isAdvance
+                ? `On account from voucher ${ctx.voucherRefno}`
+                : `${bill.billType} bill raised by voucher ${ctx.voucherRefno}`,
             ablCreatedBy: ctx.actor,
         },
         select: { ablId: true, ablAccYear: true },
     });
     return { billId: row.ablId, accYear: row.ablAccYear.trim(), lineRowNo: bill.lineRowNo };
 }
-async function writeAllocations(tx, ctx, allocations, raisedByLine, legAvIdByRow) {
+async function writeAllocations(tx, ctx, allocations, raisedByLine, legAvIdByRow, instrumentRefs = new Map()) {
     const touched = new Map();
     let rowNo = 0;
-    const adjDate = new Date(`${ctx.voucherDate}T00:00:00Z`);
-    const common = (a) => ({
-        abjCompanyId: ctx.companyId,
-        abjBranchId: ctx.branchId,
-        abjTenantId: ctx.tenantId,
-        abjAccYear: ctx.accYear,
-        abjPartyId: a.party.ledId,
-        abjVoucherId: ctx.voucherId,
-        abjVoucherAccYear: ctx.accYear,
-        abjVoucherLineId: legAvIdByRow.get(a.legRowNo) ?? null,
-        abjAdjType: a.adjType,
-        abjAdjDate: adjDate,
-        abjSettlementMode: a.settlementMode,
-        abjUserId: ctx.userId,
-        abjSessionId: ctx.sessionId,
-        abjCreatedOn: ctx.now,
-        abjCreatedBy: ctx.actor,
-    });
+    const common = (a) => {
+        const refs = a.instrumentLineRowNo === null ? null : (instrumentRefs.get(a.instrumentLineRowNo) ?? null);
+        return {
+            abjCompanyId: ctx.companyId,
+            abjBranchId: ctx.branchId,
+            abjTenantId: ctx.tenantId,
+            abjAccYear: ctx.accYear,
+            abjPartyId: a.party.ledId,
+            abjVoucherId: ctx.voucherId,
+            abjVoucherAccYear: ctx.accYear,
+            abjVoucherLineId: legAvIdByRow.get(a.legRowNo) ?? null,
+            abjAdjType: a.adjType,
+            abjAdjDate: new Date(`${a.adjDate}T00:00:00Z`),
+            abjIsPostDated: a.postDated,
+            abjSettlementMode: a.settlementMode,
+            abjTenderId: refs?.tenderId ?? null,
+            abjTenderAccYear: refs?.tenderAccYear ?? null,
+            abjChequeId: refs?.chequeId ?? null,
+            abjChequeAccYear: refs?.chequeAccYear ?? null,
+            abjUserId: ctx.userId,
+            abjSessionId: ctx.sessionId,
+            abjCreatedOn: ctx.now,
+            abjCreatedBy: ctx.actor,
+        };
+    };
     for (const a of allocations) {
         const existing = { billId: a.bill.ablId, accYear: a.bill.ablAccYear };
         touched.set(`${existing.billId}|${existing.accYear}`, existing);
@@ -148,6 +158,10 @@ async function reverseVoucherAllocations(tx, params) {
                 abjAmount: r.abjAmount.negated(),
                 abjSettlementMode: r.abjSettlementMode,
                 abjSettlementLedgerId: r.abjSettlementLedgerId,
+                abjTenderId: r.abjTenderId,
+                abjTenderAccYear: r.abjTenderAccYear,
+                abjChequeId: r.abjChequeId,
+                abjChequeAccYear: r.abjChequeAccYear,
                 abjApprovedBy: r.abjApprovedBy,
                 abjReversalOfId: r.abjId,
                 abjReversalReason: params.reason.slice(0, 250),

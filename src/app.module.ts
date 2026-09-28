@@ -47,6 +47,7 @@ import { TransactionModule } from './modules/accountsModule/transaction/transact
 import { ReceiptModule } from './modules/accountsModule/receipt/receipt.module';
 import { ChequesModule } from './modules/accountsModule/cheques/cheques.module';
 import { VouchersModule } from './modules/accountsModule/vouchers/vouchers.module';
+import { IssuedChequesModule } from './modules/accountsModule/issuedCheques/issued-cheques.module';
 import { LedgerStatementModule } from './modules/reports/ledger-statement/ledger-statement.module';
 import { LedgerMapModule } from './modules/accountsModule/ledgerMap/ledger-map.module';
 import { BillBalanceModule } from './modules/accountsModule/billBalance/bill-balance.module';
@@ -86,6 +87,8 @@ import { StockVoucherModule } from './modules/stocks/stock-voucher/stock-voucher
 import { OpeningStockVoucherModule } from './modules/stocks/opening-stock-voucher/opening-stock-voucher.module';
 import { PhysicalStockVoucherModule } from './modules/stocks/physical-stock-voucher/physical-stock-voucher.module';
 import { StockTransferModule } from './modules/stocks/stock-transfer/stock-transfer.module';
+import { TxnStatusModule } from './modules/txn-status/txn-status.module';
+import { StockAdjustmentModule } from './modules/stocks/stock-adjustment/stock-adjustment.module';
 import { SellingPriceBulkModule } from './modules/stocks/selling-price-bulk/selling-price-bulk.module';
 import { MasterLookupModule } from './modules/master-lookup/master-lookup.module';
 import { BatchPrefixModule } from './modules/master/batch-prefix/batch-prefix.module';
@@ -196,6 +199,7 @@ const isThrottlerEnabled = parseBoolean(process.env.THROTTLE_ENABLED, true);
     // Note, Purchase / Sales (Accounting), Receipt / Payment Voucher on the ONE
     // posting routine in common/posting.
     VouchersModule,
+    IssuedChequesModule,
     LedgerStatementModule,
     LedgerMapModule,
     GspProviderMasterModule,
@@ -236,6 +240,8 @@ const isThrottlerEnabled = parseBoolean(process.env.THROTTLE_ENABLED, true);
     OpeningStockVoucherModule,
     PhysicalStockVoucherModule,
     StockTransferModule,
+    TxnStatusModule,
+    StockAdjustmentModule,
     SellingPriceBulkModule,
     MasterLookupModule,
     BatchPrefixModule,

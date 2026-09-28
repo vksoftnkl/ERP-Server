@@ -14,6 +14,8 @@ const common_1 = require("@nestjs/common");
 const books_reconcile_guard_1 = require("../reconcile/books-reconcile.guard");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
+const app_setting_value_service_1 = require("../../settings/appSettings/app-setting-value.service");
+const ledger_map_helper_1 = require("../ledgerRole/ledger-map.helper");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
 const ledger_roles_1 = require("./ledger-roles");
 const opening_balance_guards_1 = require("./opening-balance.guards");
@@ -33,9 +35,11 @@ const OPENING_ROW_SELECT = {
 let OpeningBalanceService = class OpeningBalanceService {
     prisma;
     requestContextService;
-    constructor(prisma, requestContextService) {
+    appSettings;
+    constructor(prisma, requestContextService, appSettings) {
         this.prisma = prisma;
         this.requestContextService = requestContextService;
+        this.appSettings = appSettings;
     }
     async list(query) {
         const accYear = this.requireAccYear(query.accYear, 'accYear');
@@ -104,6 +108,7 @@ let OpeningBalanceService = class OpeningBalanceService {
             await (0, opening_balance_guards_1.assertAccYearWritable)(tx, dto.opCompanyId, accYear, 'opAccYear');
             const ledgers = await (0, opening_balance_guards_1.loadVisibleLedgers)(tx, dto.opCompanyId);
             this.assertRowsAreWritable(dto.rows, ledgers);
+            await this.assertInventoryNotOpenedHere(tx, dto.opCompanyId, branchId, dto.rows);
             const stored = await tx.accOpeningBalance.findMany({
                 where: this.scopeWhere(dto.opCompanyId, branchId, accYear),
                 select: OPENING_ROW_SELECT,
@@ -207,6 +212,42 @@ let OpeningBalanceService = class OpeningBalanceService {
                 staledAccYears,
             };
         });
+    }
+    async assertInventoryNotOpenedHere(tx, companyId, branchId, rows) {
+        const nonZero = rows.filter((row) => !(0, opening_balance_utils_1.money)(row.opAmount).isZero());
+        if (nonZero.length === 0) {
+            return;
+        }
+        const effective = await this.appSettings.resolveEffective({
+            companyId,
+            branchId,
+            deviceId: null,
+            userId: null,
+        });
+        const cogs = (effective.find((i) => i.asdKey === 'accounts.cogs_mode')?.value ?? '')
+            .trim()
+            .toUpperCase();
+        if (cogs === 'PERIODIC') {
+            return;
+        }
+        const inventory = await (0, ledger_map_helper_1.resolveRoleLedger)(tx, { role: 'INVENTORY', field: 'opLedgerId' }, { companyId, branchId, where: 'opening_balance' });
+        if (!inventory) {
+            return;
+        }
+        const errors = [];
+        for (const [index, row] of rows.entries()) {
+            if (row.opLedgerId === inventory.ledgerId && !(0, opening_balance_utils_1.money)(row.opAmount).isZero()) {
+                errors.push({
+                    field: `rows.${index}.opLedgerId`,
+                    message: `"${inventory.ledgerName}" is the Stock-in-Hand ledger and accounts.cogs_mode is PERPETUAL: ` +
+                        'its opening comes from the Opening Stock document, which posts it at cost when it is posted. ' +
+                        'Keying it here as well would count the stock twice. Leave this row at 0.',
+                });
+            }
+        }
+        if (errors.length) {
+            (0, module_service_utils_1.throwAccountsBadRequest)('Validation failed', errors);
+        }
     }
     async softDelete(opId, accYear) {
         const year = this.requireAccYear(accYear, 'accYear');
@@ -553,6 +594,7 @@ exports.OpeningBalanceService = OpeningBalanceService;
 exports.OpeningBalanceService = OpeningBalanceService = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [prisma_service_1.PrismaService,
-        request_context_service_1.RequestContextService])
+        request_context_service_1.RequestContextService,
+        app_setting_value_service_1.AppSettingValueService])
 ], OpeningBalanceService);
 //# sourceMappingURL=opening-balance.service.js.map

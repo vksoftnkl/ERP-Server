@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { StockPostingModule } from '../posting/stock-posting.module';
 import { StockVoucherModule } from '../stock-voucher/stock-voucher.module';
 import { StockTransferController } from './stock-transfer.controller';
 import { StockTransferReceiveController } from './stock-transfer-receive.controller';
@@ -19,12 +20,12 @@ import { StockTransferService } from './stock-transfer.service';
  * in the ledger.
  *
  * The despatch and the receipt DO get their own controllers, because they are
- * genuinely two documents raised at two branches with two engine functions and
+ * genuinely two documents raised at two branches with two engine shapes and
  * two rule records — and because `svi_godown_id` means the source on one and
  * the destination on the other.
  */
 @Module({
-  imports: [StockVoucherModule],
+  imports: [StockVoucherModule, StockPostingModule],
   controllers: [StockTransferController, StockTransferReceiveController],
   providers: [StockTransferService],
   exports: [StockTransferService],

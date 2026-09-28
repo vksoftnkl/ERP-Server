@@ -176,17 +176,14 @@ class ItemPriceLookup {
                 where: { irItemId: item_id, irUcUnitId: rate.ipmUcUnitId, irIsDeleted: false },
             }),
             acccyear
-                ? this.prisma.itemStockBalance.aggregate({
-                    _sum: { isbClosingQty: true },
-                    where: {
-                        isbAccYear: acccyear,
-                        isbItemId: item_id,
-                        isbUnitId: rateUnitId,
-                        ...(company_id ? { isbCompanyId: company_id } : {}),
-                        ...(branch_id ? { isbBranchId: branch_id } : {}),
-                        ...(godownId ? { isbGodownId: godownId } : {}),
-                    },
-                })
+                ? this.prisma.$queryRaw `
+            SELECT SUM(b.sbl_on_hand_qty) AS qty
+              FROM stock.stock_balance b
+             WHERE b.sbl_item_id = ${item_id}::uuid
+               AND b.sbl_is_deleted = false
+               AND (${company_id ?? null}::uuid IS NULL OR b.sbl_company_id = ${company_id ?? null}::uuid)
+               AND (${branch_id ?? null}::uuid IS NULL OR b.sbl_branch_id = ${branch_id ?? null}::uuid)
+               AND (${godownId ?? null}::uuid IS NULL OR b.sbl_godown_id = ${godownId ?? null}::uuid)`
                 : Promise.resolve(null),
             this.resolveLoadingCharge(query, rate),
         ]);
@@ -198,7 +195,7 @@ class ItemPriceLookup {
         const itemName = regional
             ? (itemRecord.itemNameTa ?? itemRecord.itemNameEn)
             : itemRecord.itemNameEn;
-        const stock = stockSum ? (0, module_service_utils_1.toNullableNumber)(stockSum._sum.isbClosingQty ?? 0) : null;
+        const stock = stockSum ? (0, module_service_utils_1.toNullableNumber)(stockSum[0]?.qty ?? 0) : null;
         const reorderQty = reorder ? (0, module_service_utils_1.toNumber)(reorder.irMinLevel) - (stock ?? 0) : null;
         const allowNegativeStock = itemRecord.itemIsService
             ? true

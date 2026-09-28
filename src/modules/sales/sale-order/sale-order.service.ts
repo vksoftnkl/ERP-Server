@@ -2128,6 +2128,16 @@ export class SaleOrderService {
           matchChequeDetails(saveOrderDto.tenders ?? [], tenders),
         );
         const restated = await this.restateAdvanceRollups(tx, created, posting, saveOrderDto);
+        // The first row of the order's trail. Every other document logs its
+        // birth; orders did not, and a day-end "what is still unposted" walk
+        // over txn_status_log could not see a single draft order (§1.10).
+        await this.logStatusStep(
+          tx,
+          restated,
+          { event: TxnStatusEvent.CREATED, fromStatus: null, toStatus: restated.soStatus },
+          createdBy,
+          now,
+        );
         const payload = this.toPayload({
           ...restated,
           items,

@@ -193,6 +193,7 @@ VALUES
     ,( 260,    5, 'Receipt Voucher'                      , NULL                  , true ,  11.20, NULL, NULL, NULL, true , false)
     ,( 261,    5, 'Payment Voucher'                      , NULL                  , true ,  11.30, NULL, NULL, NULL, true , false)
     ,( 262,    5, 'Voucher Register'                     , NULL                  , true ,  11.40, NULL, NULL, NULL, true , false)
+    ,( 263,    5, 'Cheque Books'                         , NULL                  , true ,  13.10, NULL, NULL, NULL, true , false)
     -- ============ &6 Reports (menu 6, 21 rows) ============
     ,(   6, NULL, '&6 Reports'                           , NULL                  , true ,   6.00, '0', NULL, NULL, true , false)
     ,(  74,    6, 'Sales Reports'                        , NULL                  , false,   3.00, NULL, NULL, NULL, true , false)
@@ -313,6 +314,13 @@ UPDATE fixed.menu_master
 UPDATE fixed.menu_master
    SET menu_verbs = '{VIEW,CREATE,EDIT,DELETE,PRINT,EXPORT,POST,CANCEL,OVERRIDE}'
  WHERE menu_id IN (101, 102, 103, 104, 163, 259, 260, 261, 262)
+   AND menu_verbs = '{VIEW,CREATE,EDIT,DELETE,PRINT,EXPORT}';
+
+-- Cheque Books (263, notes 58 / 20260928190000_cheque_books_menu): a master that
+-- is closed, never deleted, and neither posts nor prints. Same guard as 257.
+UPDATE fixed.menu_master
+   SET menu_verbs = '{VIEW,CREATE,EDIT}'
+ WHERE menu_id = 263
    AND menu_verbs = '{VIEW,CREATE,EDIT,DELETE,PRINT,EXPORT}';
 
 -- Keep the identity sequence ahead of the seeded ids, otherwise the first menu

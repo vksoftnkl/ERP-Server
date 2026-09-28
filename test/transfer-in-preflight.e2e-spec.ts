@@ -55,7 +55,7 @@ const TRANSFER_IN_RULES: StockVoucherTypeRules = {
   zeroesLineCost: true,
   allowsCount: false,
   allowsToBranch: false,
-  postFunction: 'stock.fn_svh_receive_transfer',
+  postShape: 'TRANSFER_IN',
   auditScreenName: 'Stock Transfer Receipt',
   statusDocType: TxnStatusDocType.STOCK_TRANSFER,
   refuseTypes: ['OPENING', 'PHYSICAL', 'TRANSFER_OUT', 'REPACK_IN', 'REPACK_OUT'],
@@ -214,15 +214,11 @@ describe('TRANSFER_IN — what the receiving half will hit', () => {
     // eslint-disable-next-line no-console
     console.log('  opening gate corrected   →', JSON.stringify(onlyOpening.map((r) => r.problem)));
 
-    // The zero-cost gate is the one that refuses THIS receipt: the line is
-    // clean the moment it stops firing.
+    // Neither gate refuses a receipt any more (2026-09-28): a TRANSFER_IN
+    // line's cost is the transit row's, and its rule record allows the
+    // re-opened holding. Both readings of the preflight are clean.
     expect(onlyCost[0].problem).toBeNull();
-    // The opening guard is still wrong on TRANSFER_IN — it simply does not
-    // fire here, because the RECEIVING godown has no opening for this lot.
-    // Receive into a godown that opened the same holding this year and it will.
-    expect(onlyOpening[0].problem).toBe(
-      'this line brings stock in with no cost rate and no rate source the engine can derive one from',
-    );
+    expect(onlyOpening[0].problem).toBeNull();
   }, 60_000);
 
   it('and behind the preflight, its engine is missing too', async () => {

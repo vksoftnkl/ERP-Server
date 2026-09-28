@@ -3,11 +3,19 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import { RequestContextService } from 'src/common/request-context/request-context.service';
 import {
+  appendTxnStatusLog,
+  TxnStatusDocType,
+  TxnStatusEvent,
+  TxnStatusSrcModule,
+} from 'src/common/txn-status-log/txn-status-log.helper';
+import {
   resolveActor,
   throwStockConflict,
   throwStockNotFound,
   throwStockUnprocessable,
 } from 'src/common/utils/module-service.utils';
+import { StockAccountsPostingService } from '../posting/stock-accounts-posting.service';
+import { settleTransitShort } from '../stock-voucher/stock-voucher-posting.helper';
 import { StockVoucherService } from '../stock-voucher/stock-voucher.service';
 import type { SaveStockVoucherDto } from '../stock-voucher/dto/save-stock-voucher.dto';
 import type { SaveStockVoucherItemDto } from '../stock-voucher/dto/save-stock-voucher-item.dto';
@@ -26,6 +34,7 @@ import type {
   StockTransferPrefill,
   StockTransferPrefillRow,
   StockTransferReceiveResult,
+  StockTransferSettleShortResult,
   StockTransitRow,
 } from './types/stock-transfer.types';
 import { TRANSFER_LINK_SRC_DOC_TYPE, TRANSFER_LINK_SRC_MODULE } from './types/stock-transfer.types';
@@ -50,6 +59,7 @@ interface TransitDbRow {
   stt_damage_qty: Prisma.Decimal;
   remaining_qty: Prisma.Decimal;
   stt_cost_rate: Prisma.Decimal;
+  stt_cost_rate_wot: Prisma.Decimal;
   stt_transit_value: Prisma.Decimal;
   stt_lr_no: string | null;
   stt_vehicle_no: string | null;
@@ -70,25 +80,26 @@ interface BalanceRow {
 /**
  * The transfer-specific half. Everything type-agnostic — save, load, list,
  * post, cancel, delete, audit — is StockVoucherService's, imported and never
- * copied.
+ * copied. The MOVEMENT itself — OUT and IN rows, the transit rows, settling
+ * them, closing the OUT — is the engine's, in stock-voucher-posting.helper.ts
+ * (shapes TRANSFER_OUT / TRANSFER_IN), since 2026-09-28.
  *
  * WHAT IS ACTUALLY DIFFERENT ABOUT A TRANSFER, and therefore what is here:
  *
- *  1. THE REFUSALS THE ENGINE DOES NOT MAKE (§3.2, §7.2). Four of them exist
- *     because of defects reproduced in REVIEW_2026-09-05.md — until those are
- *     fixed in 20/16, this service is the only thing standing between them and
- *     the ledger. Each one is commented with what it is standing in for.
- *  2. THE LORRY (§0.3). fn_svh_post_transfer never writes stt_lr_no,
- *     stt_vehicle_no or stt_expected_on. Nothing in the engine does. The API
- *     updates the transit rows itself, in the post's own transaction.
+ *  1. THE SAVE-TIME REFUSALS (§3.2, §7.2), reported as ONE 422 with a per-line
+ *     list before anything is written: the engine makes most of them again at
+ *     post, but one line at a time and after a rollback.
+ *  2. THE LORRY (§0.3). stt_lr_no, stt_vehicle_no and stt_expected_on are
+ *     written to the transit rows in the despatch's own transaction.
  *  3. TWO TABLES ARE READ THAT NO OTHER SCREEN READS — stock_transit for the
  *     receipt prefill and the inbound worklist, stock_balance for the
  *     over-issue check.
+ *  4. SHORT-SETTLE (§1.1), the `fn_stt_settle_short` nobody wrote: closes an
+ *     OUT whose remainder will never arrive, keeps the short on the loss
+ *     report, and posts the accounts leg for it under PERPETUAL.
  *
- * WHAT IS NOT HERE, DELIBERATELY: any UPDATE of svh_status. fn_svh_post_lock
- * exempts IN_TRANSIT and RECEIVED (MUST-FIX 2), so a plain UPDATE would regress
- * an OUT to DRAFT and a second despatch would move the stock twice. Only the
- * two engine functions may write that column, and there is no reopen action.
+ * WHAT IS NOT HERE, DELIBERATELY: any UPDATE of svh_status. Only the engine
+ * writes that column, and there is no reopen action.
  */
 @Injectable()
 export class StockTransferService {
@@ -96,6 +107,7 @@ export class StockTransferService {
     private readonly prisma: PrismaService,
     private readonly stockVoucherService: StockVoucherService,
     private readonly requestContextService: RequestContextService,
+    private readonly stockAccounts: StockAccountsPostingService,
   ) {}
 
   // ──────────────────────────────────────────────────────────────────────────
@@ -311,7 +323,7 @@ export class StockTransferService {
         reported.add(key);
         errors.push({
           field,
-          message: `Line ${line.lineNo} sends ${asked} but this godown holds ${available} of that lot in the ${line.bucket ?? 'SALEABLE'} bucket. A transfer moves stock that exists; the engine will not stop this one under an ALLOW policy.`,
+          message: `Line ${line.lineNo} sends ${asked} but this godown holds ${available} of that lot in the ${line.bucket ?? 'SALEABLE'} bucket. A transfer moves stock that exists, whatever the item's negative-stock policy says.`,
         });
       }
     });
@@ -331,9 +343,9 @@ export class StockTransferService {
   /**
    * ONE CALL, ONE TRANSACTION — and the lorry written straight after it.
    *
-   * fn_svh_post_transfer decides the shape itself and the response reports
-   * which one happened, because the two forms END DIFFERENTLY: a same-branch
-   * pair finishes POSTED with no transit row, an inter-branch despatch finishes
+   * The engine decides the shape itself and the response reports which one
+   * happened, because the two forms END DIFFERENTLY: a same-branch pair
+   * finishes POSTED with no transit row, an inter-branch despatch finishes
    * IN_TRANSIT with one row per line and a receipt still owed. `status` is read
    * back off the row, never assumed from the request.
    */
@@ -354,8 +366,7 @@ export class StockTransferService {
     const actor = resolveActor(args.userId, this.requestContextService.getUserId());
 
     // §0.3(a). stt_lr_no, stt_vehicle_no and stt_expected_on exist on
-    // stock_transit and NOTHING IN THE ENGINE WRITES THEM —
-    // fn_svh_post_transfer neither takes them nor sets them. They are written
+    // stock_transit and the engine has no opinion about them. They are written
     // here, keyed by the OUT, in the POST'S OWN TRANSACTION: a second
     // transaction could commit the despatch and then fail to record the lorry,
     // and a despatch note without a vehicle number is not a despatch note.
@@ -367,8 +378,8 @@ export class StockTransferService {
       args.lrNo !== undefined || args.vehicleNo !== undefined || args.expectedOn !== undefined;
 
     // The shared post does the whole document dance — the DRAFT check, the
-    // preflight, the engine call through rules.postFunction, the reload and the
-    // audit row. Only the lorry is ours.
+    // preflight, the engine, the reload and the audit row. Only the lorry is
+    // ours.
     const posted = await this.stockVoucherService.post(
       rules,
       svhId,
@@ -470,7 +481,7 @@ export class StockTransferService {
              t.stt_bucket, t.stt_base_uom_id, t.stt_sent_qty, t.stt_received_qty,
              t.stt_damage_qty,
              t.stt_sent_qty - t.stt_received_qty - t.stt_damage_qty AS remaining_qty,
-             t.stt_cost_rate, t.stt_transit_value, t.stt_lr_no, t.stt_vehicle_no,
+             t.stt_cost_rate, t.stt_cost_rate_wot, t.stt_transit_value, t.stt_lr_no, t.stt_vehicle_no,
              t.stt_expected_on, t.stt_sent_on, t.stt_received_on,
              t.stt_out_refno, t.stt_from_branch_id,
              EXTRACT(DAY FROM now() - t.stt_sent_on)::int AS days_in_flight,
@@ -578,10 +589,10 @@ export class StockTransferService {
    * The three things that make a despatch receivable, checked in the order a
    * clerk would ask them.
    *
-   * `svh_is_deleted` is checked HERE because fn_svh_receive_transfer never
-   * checks it (MUST-FIX 2) — a receipt against a soft-deleted despatch would
-   * post stock into the destination against a document the sender has thrown
-   * away.
+   * `svh_is_deleted` is checked HERE as well as at post (the engine locks the
+   * OUT and checks all three again under the lock) — a receipt against a
+   * soft-deleted despatch would post stock into the destination against a
+   * document the sender has thrown away.
    */
   private assertReceivable(
     out: {
@@ -667,10 +678,9 @@ export class StockTransferService {
     });
     this.assertReceiveLines(dto, transit);
 
-    // §7.1 — the link's module and doc type are STAMPED, not accepted. The
-    // engine checks all three by hand and ck_svh_transfer_in_link checks the
-    // id; there is nothing here for a client to choose, and a client that chose
-    // wrong would be refused by the engine with a constraint name.
+    // §7.1 — the link's module and doc type are STAMPED, not accepted.
+    // ck_svh_transfer_in_link checks the id; there is nothing here for a client
+    // to choose.
     //
     // The godowns are copied from the OUT for the same reason:
     // ck_svh_transfer_godowns applies to a TRANSFER_IN too even though only the
@@ -691,12 +701,8 @@ export class StockTransferService {
   }
 
   /**
-   * §7.2 — the five refusals, before the engine.
-   *
-   * The engine makes three of them itself (23514 on over-receipt, no_data_found
-   * on an unmatched line, 0A000 on a two-bucket shipment) but one line at a
-   * time and after a rollback. The fourth — the bucket check — it makes only in
-   * ONE direction, and the missing direction is the expensive one.
+   * §7.2 — the five refusals, at SAVE. The engine makes the first three again
+   * at post, under the OUT's lock; the bucket check is this service's alone.
    */
   private assertReceiveLines(dto: SaveStockTransferReceiveDto, transit: StockTransitRow[]): void {
     const errors: StockErrorDetail[] = [];
@@ -718,8 +724,8 @@ export class StockTransferService {
     }
 
     // The matcher is (item, lot, destination godown) — WITHOUT bucket, exactly
-    // as fn_svh_receive_transfer matches, so that a payload this accepts is one
-    // the engine can also match.
+    // as the engine matches, so that a payload this accepts is one the engine
+    // can also match.
     const byMatcher = new Map<string, StockTransitRow[]>();
     transit.forEach((row) => {
       const key = `${row.itemId}|${row.lotId}|${row.toGodownId}`;
@@ -762,11 +768,10 @@ export class StockTransferService {
       const row = rows[0];
       const bucket = line.bucket ?? 'SALEABLE';
 
-      // SHOULD-FIX. The engine treats a line as damage only when
-      // svi_bucket = 'DAMAGED' against a non-damaged transit row; it never
-      // checks the OTHER direction, so a DAMAGED consignment received as
-      // SALEABLE posts damaged goods into the clean bucket, silently. That is
-      // stock laundering by typo, and it is refused here.
+      // The engine treats a line as damage only when svi_bucket = 'DAMAGED'
+      // against a non-damaged transit row; the OTHER direction — a DAMAGED
+      // consignment received as SALEABLE, damaged goods posted into the clean
+      // bucket — is stock laundering by typo, and it is refused here.
       if (bucket !== row.bucket && bucket !== 'DAMAGED') {
         errors.push({
           field,
@@ -808,8 +813,8 @@ export class StockTransferService {
    *
    * The OUT flips to RECEIVED only when no transit row of it has anything left.
    * A SHORT KEEPS IT OPEN ON PURPOSE — that is the loss report, and the
-   * write-off is a separate decision the engine deliberately does not automate.
-   * There is no "auto write-off short" here and there must not be one.
+   * write-off is a separate DECISION: `settleShort` below, with a reason,
+   * never something a receipt does on its own.
    */
   async receive(
     rules: StockVoucherTypeRules,
@@ -864,10 +869,122 @@ export class StockTransferService {
         accYear: (out?.svh_acc_year ?? outAccYear).trim(),
         refno: out?.svh_refno ?? '',
         status: (out?.svh_status ?? 'IN_TRANSIT') as StockVoucherStatus,
-        // The same question fn_svh_receive_transfer asks before flipping the
-        // OUT: has any row of it anything left?
+        // The same question the engine asks before flipping the OUT: has any
+        // row of it anything left?
         closed: transit.every((row) => row.remainingQty <= 0),
       },
+      transit,
+    };
+  }
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // §1.1 — short-settle
+  // ──────────────────────────────────────────────────────────────────────────
+
+  /**
+   * "The last 2 will never turn up." Allowed only on an IN_TRANSIT despatch
+   * whose rows are all RECEIVED or PARTIAL: every PARTIAL row flips to
+   * RECEIVED and KEEPS its `stt_short_qty`, so the loss report still shows it;
+   * the OUT closes; the destination's transit quantity drops the remainder.
+   *
+   * Under PERPETUAL it posts DR the reason's ledger / CR INVENTORY for
+   * `short × stt_cost_rate`: the goods left branch A's stock at the OUT and
+   * never arrived at B, so without this entry the Stock-in-Hand ledger keeps a
+   * value no stock stands behind. The reason is required (seed: TRANSIT_LOSS).
+   */
+  async settleShort(args: {
+    outVoucherId: string;
+    accYear: string;
+    companyId: string;
+    branchId: string;
+    reasonId: string;
+    remarks?: string | null;
+    userId?: string;
+  }): Promise<StockTransferSettleShortResult> {
+    const actor = resolveActor(args.userId, this.requestContextService.getUserId());
+    const settledOn = new Date();
+    const [reason] = await this.prisma.$queryRaw<
+      Array<{ srm_id: string; srm_direction: string; srm_is_active: boolean }>
+    >`
+      SELECT srm_id, srm_direction, srm_is_active FROM stock.stock_reason_master
+       WHERE srm_id = ${args.reasonId}::uuid AND srm_is_deleted = false
+         AND (srm_company_id IS NULL OR srm_company_id = ${args.companyId}::uuid)
+    `;
+    if (!reason || !reason.srm_is_active) {
+      throwStockUnprocessable<StockErrorDetail, StockErrorResponse>('Reason not usable', [
+        { field: 'reasonId', message: 'A short settlement must cite a live stock reason (e.g. TRANSIT_LOSS).' },
+      ]);
+    }
+    if (reason.srm_direction === 'IN') {
+      throwStockUnprocessable<StockErrorDetail, StockErrorResponse>('Reason points the wrong way', [
+        { field: 'reasonId', message: 'A transit short is stock LOST; the reason must be direction OUT or BOTH.' },
+      ]);
+    }
+    const remarks = args.remarks?.trim() || null;
+    const outcome = await this.prisma.$transaction(async (tx) => {
+      const settled = await settleTransitShort(tx, {
+        outId: args.outVoucherId,
+        outAccYear: args.accYear,
+        companyId: args.companyId,
+        branchId: args.branchId,
+        reasonId: args.reasonId,
+        remarks,
+        actor,
+        settledOn,
+      });
+      const accounts = await this.stockAccounts.postShortSettlement(tx, {
+        outId: args.outVoucherId,
+        outAccYear: args.accYear,
+        companyId: args.companyId,
+        branchId: args.branchId,
+        refno: settled.refno,
+        reasonId: args.reasonId,
+        remarks,
+        rows: settled.rows,
+        actor,
+        settledOn,
+      });
+      const shortQty = settled.rows.reduce((s, r) => s.plus(r.shortQty), new Prisma.Decimal(0));
+      const shortValue = settled.rows.reduce((s, r) => s.plus(r.shortValue), new Prisma.Decimal(0));
+      const [header] = await tx.$queryRaw<
+        Array<{ svh_tenant_id: string | null; svh_device_id: string; svh_session_id: string | null }>
+      >`
+        SELECT svh_tenant_id, svh_device_id, svh_session_id FROM stock.stock_voucher
+         WHERE svh_id = ${args.outVoucherId}::uuid AND svh_acc_year = ${args.accYear}::bpchar
+      `;
+      await appendTxnStatusLog(tx, {
+        companyId: args.companyId,
+        branchId: args.branchId,
+        tenantId: header?.svh_tenant_id ?? null,
+        accYear: args.accYear,
+        srcModule: TxnStatusSrcModule.INVENTORY,
+        srcDocType: TxnStatusDocType.STOCK_TRANSFER,
+        srcDocId: args.outVoucherId,
+        srcDocRefno: settled.refno,
+        event: TxnStatusEvent.CLOSED,
+        fromStatus: 'IN_TRANSIT',
+        toStatus: 'RECEIVED',
+        changedOn: settledOn,
+        changedBy: actor,
+        remarks: remarks ?? `Short-settled: ${shortQty.toString()} never arrived`,
+        deviceId: header?.svh_device_id ?? null,
+        sessionId: header?.svh_session_id ?? null,
+      });
+      return { settled, accounts, shortQty, shortValue };
+    });
+    const transit = await this.loadTransitRows(args.outVoucherId, args.accYear);
+    return {
+      outVoucher: {
+        svhId: args.outVoucherId,
+        accYear: args.accYear,
+        refno: outcome.settled.refno,
+        status: 'RECEIVED',
+      },
+      rowsSettled: outcome.settled.rows.length,
+      shortQty: outcome.shortQty.toNumber(),
+      shortValue: outcome.shortValue.toNumber(),
+      accountsVoucherId: outcome.accounts?.voucherId ?? null,
+      accountsVoucherRefno: outcome.accounts?.voucherRefno ?? null,
       transit,
     };
   }
@@ -892,7 +1009,7 @@ export class StockTransferService {
              t.stt_bucket, t.stt_base_uom_id, t.stt_sent_qty, t.stt_received_qty,
              t.stt_damage_qty,
              t.stt_sent_qty - t.stt_received_qty - t.stt_damage_qty AS remaining_qty,
-             t.stt_cost_rate, t.stt_transit_value, t.stt_lr_no, t.stt_vehicle_no,
+             t.stt_cost_rate, t.stt_cost_rate_wot, t.stt_transit_value, t.stt_lr_no, t.stt_vehicle_no,
              t.stt_expected_on, t.stt_sent_on, t.stt_received_on,
              i.item_code, i.item_name_en AS item_name,
              l.slt_batch_no AS batch_no, l.slt_expiry_date AS expiry_date,
@@ -934,6 +1051,7 @@ export class StockTransferService {
       damageQty: Number(row.stt_damage_qty),
       remainingQty: Number(row.remaining_qty),
       costRate: Number(row.stt_cost_rate),
+      costRateWot: Number(row.stt_cost_rate_wot),
       transitValue: Number(row.stt_transit_value),
       lrNo: row.stt_lr_no,
       vehicleNo: row.stt_vehicle_no,

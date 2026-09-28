@@ -4,10 +4,12 @@
 /// not remove its ledger rows, it writes REVERSING ones — because a stock
 /// figure that can change retrospectively is a stock figure nobody can
 /// reconcile, and because in an offline chain the cancellation may arrive
-/// after the day was closed. A BEFORE DELETE trigger raises rather than
-/// trusting convention, so Prisma's delete/deleteMany WILL fail here by
-/// design; smlIsDeleted exists for the soft-delete predicate the partial
-/// indexes are built on, not as an escape hatch.
+/// after the day was closed. Since 2026-09-22 that is STRUCTURAL rather than a
+/// trigger: exactly one INSERT site (stock-voucher-posting.helper.ts) and no
+/// UPDATE or DELETE anywhere, asserted by
+/// test/stock-ledger-single-writer.e2e-spec.ts; smlIsDeleted exists for the
+/// soft-delete predicate the partial indexes are built on, not as an escape
+/// hatch.
 ///
 /// GRAIN — one row per (source document, line, split, godown, lot, direction).
 /// That is exactly the grain SaleBillItem already emits (sbiLineNo ×

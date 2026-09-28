@@ -11,6 +11,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.VoucherCancelService = void 0;
 const common_1 = require("@nestjs/common");
+const client_1 = require("@prisma/client");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
 const doc_register_service_1 = require("../../../common/posting/doc-register.service");
@@ -18,9 +19,10 @@ const voucher_posting_service_1 = require("../../../common/posting/voucher-posti
 const txn_status_log_helper_1 = require("../../../common/txn-status-log/txn-status-log.helper");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
 const receipt_guards_1 = require("../receipt/receipt.guards");
-const books_reconcile_guard_1 = require("../reconcile/books-reconcile.guard");
+const receipt_cheque_links_1 = require("../receipt/receipt-cheque-links");
 const bill_balance_recompute_service_1 = require("../billBalance/bill-balance-recompute.service");
 const voucher_billwise_helper_1 = require("./voucher-billwise.helper");
+const voucher_books_helper_1 = require("./voucher-books.helper");
 const voucher_register_service_1 = require("./voucher-register.service");
 const voucher_types_service_1 = require("./voucher-types.service");
 const vouchers_errors_1 = require("./vouchers.errors");
@@ -66,26 +68,75 @@ let VoucherCancelService = class VoucherCancelService {
             if (stored.avh_voucher_status !== 'POSTED' || stored.avh_reversal_voucher_id) {
                 (0, vouchers_errors_1.throwState)(`${stored.avh_voucher_refno ?? dto.voucherId} is already ${stored.avh_voucher_status}`, vouchers_errors_1.VCH.CANCELLED);
             }
+            if (stored.avh_against_voucher_id) {
+                (0, vouchers_errors_1.throwState)(`${stored.avh_voucher_refno ?? dto.voucherId} carries a post-dated cheque of ${stored.against_refno ?? 'another voucher'} — cancel that voucher and both are reversed together`, vouchers_errors_1.VCH.NOT_POSTED);
+            }
+            const pdcVouchers = await tx.accVoucherHeader.findMany({
+                where: {
+                    ...(0, receipt_cheque_links_1.receiptPdcVoucherWhere)({
+                        avhVoucherId: stored.avh_voucher_id,
+                        avhVoucherTypeId: stored.avh_voucher_type_id,
+                    }),
+                    avhVoucherStatus: 'POSTED',
+                },
+                select: {
+                    avhVoucherId: true,
+                    avhAccYear: true,
+                    avhVoucherRefno: true,
+                    avhVoucherDate: true,
+                    avhPartyId: true,
+                },
+            });
+            const vouchers = [
+                {
+                    voucherId: stored.avh_voucher_id,
+                    accYear: stored.avh_acc_year,
+                    refno: stored.avh_voucher_refno,
+                    date: stored.avh_voucher_date,
+                },
+                ...pdcVouchers.map((v) => ({
+                    voucherId: v.avhVoucherId,
+                    accYear: v.avhAccYear.trim(),
+                    refno: v.avhVoucherRefno,
+                    date: v.avhVoucherDate,
+                })),
+            ];
             const today = new Date().toISOString().slice(0, 10);
-            const [fy] = await tx.$queryRaw `
-        SELECT fy_status, fy_lock_date FROM public.fiscal_years
-         WHERE comp_id = ${stored.avh_company_id}::uuid AND fy_year_name = ${stored.avh_acc_year}::char(9)
-           AND is_deleted = false LIMIT 1`;
-            if (fy && fy.fy_status.trim().toUpperCase() !== 'OPEN') {
-                (0, vouchers_errors_1.throwRefused)(`Accounting year ${stored.avh_acc_year} is ${fy.fy_status.trim()}`, vouchers_errors_1.VCH.YEAR_CLOSED, 'accYear');
+            for (const v of vouchers) {
+                const [fy] = await tx.$queryRaw `
+          SELECT fy_status, fy_lock_date FROM public.fiscal_years
+           WHERE comp_id = ${stored.avh_company_id}::uuid AND fy_year_name = ${v.accYear}::char(9)
+             AND is_deleted = false LIMIT 1`;
+                if (fy && fy.fy_status.trim().toUpperCase() !== 'OPEN') {
+                    (0, vouchers_errors_1.throwRefused)(`Accounting year ${v.accYear} is ${fy.fy_status.trim()}`, vouchers_errors_1.VCH.YEAR_CLOSED, 'accYear');
+                }
+                const lock = fy?.fy_lock_date ? fy.fy_lock_date.toISOString().slice(0, 10) : null;
+                const voucherDate = v.date.toISOString().slice(0, 10);
+                if (lock && (today <= lock || voucherDate <= lock)) {
+                    (0, vouchers_errors_1.throwRefused)(`${v.accYear} is locked up to ${lock}`, vouchers_errors_1.VCH.PERIOD_LOCKED, 'voucherId');
+                }
+                await (0, receipt_guards_1.assertVoucherPartitionExists)(tx, v.accYear, 'accYear');
             }
-            const lock = fy?.fy_lock_date ? fy.fy_lock_date.toISOString().slice(0, 10) : null;
-            const voucherDate = stored.avh_voucher_date.toISOString().slice(0, 10);
-            if (lock && (today <= lock || voucherDate <= lock)) {
-                (0, vouchers_errors_1.throwRefused)(`${stored.avh_acc_year} is locked up to ${lock}`, vouchers_errors_1.VCH.PERIOD_LOCKED, 'voucherId');
-            }
-            await (0, receipt_guards_1.assertVoucherPartitionExists)(tx, stored.avh_acc_year, 'accYear');
-            const elsewhere = await (0, voucher_billwise_helper_1.otherVoucherOnRaisedBills)(tx, stored.avh_voucher_id, stored.avh_acc_year);
+            const elsewhere = (await Promise.all(vouchers.map((v) => (0, voucher_billwise_helper_1.otherVoucherOnRaisedBills)(tx, v.voucherId, v.accYear)))).flat();
             if (elsewhere.length > 0) {
                 const who = elsewhere
                     .map((e) => `${e.voucherRefno ?? 'another voucher'} (bill ${e.billRefno})`)
                     .join(', ');
                 (0, vouchers_errors_1.throwState)(`${stored.avh_voucher_refno} raised a bill that ${who} has already settled against — release that allocation first`, vouchers_errors_1.VCH.ALLOCATED_ELSEWHERE);
+            }
+            const chequeFilter = await (0, receipt_cheque_links_1.receiptChequeFilter)(tx, {
+                receiptVoucherId: stored.avh_voucher_id,
+                voucherIds: vouchers.map((v) => v.voucherId),
+            });
+            const moved = await tx.accPdcRegister.findMany({
+                where: { ...chequeFilter, apdIsDeleted: false, apdStatus: { not: 'HELD' } },
+                select: { apdInstrumentNo: true, apdStatus: true, apdTraType: true },
+            });
+            if (moved.length > 0) {
+                const screen = moved[0].apdTraType.trim() === 'P'
+                    ? 'Issued Cheques screen (menu 52)'
+                    : 'Received Cheques screen (menu 51)';
+                (0, vouchers_errors_1.throwState)(`Cheque ${moved[0].apdInstrumentNo} is ${moved[0].apdStatus}. Once an instrument has left the drawer the voucher behind it cannot be unmade — unwind it on the ${screen} first`, vouchers_errors_1.VCH.CHEQUE_MOVED);
             }
             const tdsRows = await tx.$queryRaw `
         SELECT t.atd_id, t.atd_challan_no, t.atd_base_amount, t.atd_tax_amount
@@ -111,36 +162,70 @@ let VoucherCancelService = class VoucherCancelService {
                 }
             }
             const now = new Date();
-            const mirror = await this.posting.reverseLegs(tx, stored.avh_voucher_id, stored.avh_acc_year, reason, actor);
-            if (!mirror) {
-                (0, vouchers_errors_1.throwState)(`${stored.avh_voucher_refno} is already reversed`, vouchers_errors_1.VCH.CANCELLED);
+            const touched = [];
+            let allocationsReversed = 0;
+            const mirrors = [];
+            for (const v of vouchers) {
+                const mirror = await this.posting.reverseLegs(tx, v.voucherId, v.accYear, reason, actor);
+                if (!mirror) {
+                    (0, vouchers_errors_1.throwState)(`${v.refno ?? v.voucherId} is already reversed`, vouchers_errors_1.VCH.CANCELLED);
+                }
+                await tx.$executeRaw `
+          UPDATE accounts.acc_voucher_header
+             SET avh_status_by = ${actor}::uuid
+           WHERE avh_voucher_id = ${v.voucherId}::uuid AND avh_acc_year = ${v.accYear}::char(9)`;
+                mirrors.push({ of: v.voucherId, accYear: v.accYear, mirrorId: mirror.voucherId });
+                const reversed = await (0, voucher_billwise_helper_1.reverseVoucherAllocations)(tx, {
+                    voucherId: v.voucherId,
+                    accYear: v.accYear,
+                    reversalVoucherId: mirror.voucherId,
+                    reason,
+                    actor,
+                    now,
+                });
+                allocationsReversed += reversed.count;
+                touched.push(...reversed.touched);
             }
-            await tx.$executeRaw `
-        UPDATE accounts.acc_voucher_header
-           SET avh_status_by = ${actor}::uuid
-         WHERE avh_voucher_id = ${stored.avh_voucher_id}::uuid AND avh_acc_year = ${stored.avh_acc_year}::char(9)`;
-            const reversed = await (0, voucher_billwise_helper_1.reverseVoucherAllocations)(tx, {
-                voucherId: stored.avh_voucher_id,
-                accYear: stored.avh_acc_year,
-                reversalVoucherId: mirror.voucherId,
-                reason,
-                actor,
-                now,
+            if (touched.length > 0) {
+                await this.recompute.recomputeBills(tx, touched, now);
+            }
+            let closed = 0;
+            for (const v of vouchers) {
+                closed += await tx.$executeRaw `
+          UPDATE accounts.acc_bill_balance
+             SET abl_is_deleted = true, abl_is_active = false,
+                 abl_modified_on = ${now}, abl_modified_by = ${actor}
+           WHERE abl_voucher_id = ${v.voucherId}::uuid AND abl_acc_year = ${v.accYear}::char(9)
+             AND abl_is_deleted = false`;
+            }
+            const held = await tx.accPdcRegister.findMany({
+                where: { ...chequeFilter, apdIsDeleted: false, apdStatus: 'HELD' },
+                select: { apdId: true, apdAccYear: true },
             });
-            if (reversed.touched.length > 0) {
-                await this.recompute.recomputeBills(tx, reversed.touched, now);
+            for (const c of held) {
+                await tx.accPdcRegister.update({
+                    where: { apdId_apdAccYear: { apdId: c.apdId, apdAccYear: c.apdAccYear } },
+                    data: {
+                        apdStatus: 'CANCELLED',
+                        apdCancelReason: reason.slice(0, 250),
+                        apdCancelDate: now,
+                        apdStatusOn: now,
+                        apdStatusBy: actor,
+                        apdModifiedOn: now,
+                        apdModifiedBy: actor,
+                    },
+                });
             }
-            const closed = await tx.$executeRaw `
-        UPDATE accounts.acc_bill_balance
-           SET abl_is_deleted = true, abl_is_active = false,
-               abl_modified_on = ${now}, abl_modified_by = ${actor}
-         WHERE abl_voucher_id = ${stored.avh_voucher_id}::uuid AND abl_acc_year = ${stored.avh_acc_year}::char(9)
-           AND abl_is_deleted = false`;
+            await tx.accTenderDetail.updateMany({
+                where: { tdSrcDocId: stored.avh_voucher_id, tdIsDeleted: false },
+                data: { tdIsDeleted: true, tdModifiedOn: now, tdModifiedBy: actor },
+            });
             let gstDocCancelled = false;
             if (gdrId) {
                 gstDocCancelled =
                     (await this.docRegister.cancel(tx, gdrId, stored.avh_acc_year, reason, actor)) > 0;
             }
+            const todayMirror = mirrors[0].mirrorId;
             for (const t of tdsRows) {
                 await tx.$executeRaw `
           INSERT INTO accounts.acc_tds_register (
@@ -153,7 +238,7 @@ let VoucherCancelService = class VoucherCancelService {
           SELECT o.atd_company_id, o.atd_branch_id, o.atd_tenant_id, o.atd_acc_year, o.atd_quarter, o.atd_direction,
                  o.atd_party_id, o.atd_pan, o.atd_party_name, o.atd_deductee_type, o.atd_section, o.atd_rate,
                  o.atd_rate_source, o.atd_base_amount, -o.atd_tax_amount,
-                 ${mirror.voucherId}::uuid, o.atd_voucher_acc_year,
+                 ${todayMirror}::uuid, o.atd_voucher_acc_year,
                  o.atd_doc_refno, o.atd_doc_date, NULL, NULL, o.atd_id,
                  ${`Reversal of ${stored.avh_voucher_refno ?? ''}: ${reason}`.slice(0, 250)}, ${actor}
             FROM accounts.acc_tds_register o WHERE o.atd_id = ${t.atd_id}::uuid`;
@@ -174,29 +259,30 @@ let VoucherCancelService = class VoucherCancelService {
                 changedOn: now,
                 remarks: reason,
             });
-            await (0, books_reconcile_guard_1.assertBooksReconcile)(tx, {
+            const ledgers = await tx.$queryRaw `
+        SELECT DISTINCT av_ledger_id AS id FROM accounts.acc_vouchers
+         WHERE (av_voucher_id, av_acc_year) IN (${client_1.Prisma.join(vouchers.map((v) => client_1.Prisma.sql `(${v.voucherId}::uuid, ${v.accYear}::char(9))`))})`;
+            await (0, voucher_books_helper_1.assertVoucherBooksReconcile)(tx, {
                 companyId: stored.avh_company_id,
                 accYear: stored.avh_acc_year,
-                ledgerIds: [stored.avh_party_id],
-                vouchers: [
-                    { voucherId: stored.avh_voucher_id, accYear: stored.avh_acc_year },
-                    { voucherId: mirror.voucherId, accYear: stored.avh_acc_year },
-                ],
+                ledgerIds: [stored.avh_party_id, ...ledgers.map((l) => l.id)],
             });
             const [rev] = await tx.$queryRaw `
         SELECT avh_voucher_refno FROM accounts.acc_voucher_header
-         WHERE avh_voucher_id = ${mirror.voucherId}::uuid AND avh_acc_year = ${stored.avh_acc_year}::char(9)`;
+         WHERE avh_voucher_id = ${todayMirror}::uuid AND avh_acc_year = ${stored.avh_acc_year}::char(9)`;
             return {
                 voucherId: stored.avh_voucher_id,
                 accYear: stored.avh_acc_year,
                 voucherRefno: stored.avh_voucher_refno,
-                reversalVoucherId: mirror.voucherId,
+                reversalVoucherId: todayMirror,
                 reversalRefno: rev?.avh_voucher_refno ?? null,
                 cancelledOn: now.toISOString(),
                 billsClosed: closed,
-                allocationsReversed: reversed.count,
+                allocationsReversed,
                 gstDocCancelled,
                 tdsReversed: tdsRows.length,
+                chequesCancelled: held.length,
+                pdcVouchersReversed: pdcVouchers.length,
             };
         }, TX);
     }

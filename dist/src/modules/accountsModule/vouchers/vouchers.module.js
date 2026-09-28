@@ -10,6 +10,7 @@ exports.VouchersModule = void 0;
 const common_1 = require("@nestjs/common");
 const posting_module_1 = require("../../../common/posting/posting.module");
 const bill_balance_module_1 = require("../billBalance/bill-balance.module");
+const tender_detail_module_1 = require("../tenderDetail/tender-detail.module");
 const vouchers_controller_1 = require("./vouchers.controller");
 const vouchers_exception_filter_1 = require("./vouchers-exception.filter");
 const voucher_types_service_1 = require("./voucher-types.service");
@@ -21,7 +22,7 @@ let VouchersModule = class VouchersModule {
 exports.VouchersModule = VouchersModule;
 exports.VouchersModule = VouchersModule = __decorate([
     (0, common_1.Module)({
-        imports: [posting_module_1.CommonPostingModule, bill_balance_module_1.BillBalanceModule],
+        imports: [posting_module_1.CommonPostingModule, bill_balance_module_1.BillBalanceModule, tender_detail_module_1.TenderDetailModule],
         controllers: [vouchers_controller_1.VouchersController],
         providers: [
             voucher_types_service_1.VoucherTypesService,

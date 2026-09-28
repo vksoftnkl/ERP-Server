@@ -29,6 +29,7 @@ export declare class SaveStockVoucherItemDto {
     landedRate?: string | number;
     taxPerc?: string | number;
     reasonId?: string | null;
+    direction?: 1 | -1 | null;
     syncDate?: string | null;
     remarks?: string | null;
     createdBy?: string | null;

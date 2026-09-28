@@ -5,6 +5,7 @@ import { DocRegisterService } from '../../../common/posting/doc-register.service
 import { VoucherPostingService } from '../../../common/posting/voucher-posting.service';
 import { TxnStatusDocType } from '../../../common/txn-status-log/txn-status-log.helper';
 import { BillBalanceRecomputeService } from '../billBalance/bill-balance-recompute.service';
+import { TenderDetailService } from '../tenderDetail/tender-detail.service';
 import type { DeletePayload, DraftSavedPayload, ValidatePayload, VoucherPayload, VoucherRights, VoucherTypeRules } from './types/vouchers-api.types';
 import type { PostVoucherDto, ValidateVoucherDto, VoucherKeysDto, VoucherPayloadDto } from './dto/voucher-payload.dto';
 import { registerDeductee, roleKey } from './voucher-derive';
@@ -57,11 +58,14 @@ export declare class VoucherRegisterService {
     private readonly posting;
     private readonly docRegister;
     private readonly recompute;
-    constructor(prisma: PrismaService, requestContext: RequestContextService, types: VoucherTypesService, posting: VoucherPostingService, docRegister: DocRegisterService, recompute: BillBalanceRecomputeService);
+    private readonly tenderDetail;
+    constructor(prisma: PrismaService, requestContext: RequestContextService, types: VoucherTypesService, posting: VoucherPostingService, docRegister: DocRegisterService, recompute: BillBalanceRecomputeService, tenderDetail: TenderDetailService);
     private caller;
     create(dto: VoucherPayloadDto, raw?: Record<string, unknown>): Promise<DraftSavedPayload>;
     validate(dto: ValidateVoucherDto): Promise<ValidatePayload>;
     post(dto: PostVoucherDto): Promise<VoucherPayload>;
+    postWithin(tx: Prisma.TransactionClient, dto: PostVoucherDto): Promise<VoucherPayload>;
+    private legIdsByDeriveRow;
     deleteDraft(keys: VoucherKeysDto): Promise<DeletePayload>;
     get(keys: VoucherKeysDto): Promise<VoucherPayload>;
     loadRegisterType(tx: Prisma.TransactionClient, typeCode: string): Promise<VoucherTypeRules>;
@@ -75,8 +79,11 @@ export declare class VoucherRegisterService {
     }): void;
     private assertDateInYear;
     private prepare;
+    private allowAdvance;
     private backdateMode;
     private registerDoc;
+    private loadInstruments;
+    private allocationRows;
     assemble(tx: Prisma.TransactionClient, s: StoredVoucher, type: VoucherTypeRules, rights: VoucherRights): Promise<VoucherPayload>;
 }
 export declare function accYearOf(iso: string): string;

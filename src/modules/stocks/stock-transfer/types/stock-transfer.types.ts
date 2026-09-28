@@ -8,11 +8,11 @@ import type {
 /**
  * The link a TRANSFER_IN must carry back to its despatch.
  *
- * `ck_svh_transfer_in_link` enforces the id, and `fn_svh_receive_transfer`
- * checks the module and doc type by hand and refuses anything else. They are
- * constants rather than payload fields for that reason: a receipt that names
- * some other module's document is not a receipt, and there is nothing for the
- * client to choose here.
+ * `ck_svh_transfer_in_link` enforces the id, and the engine matches the
+ * receipt's lines against that despatch's transit rows. They are constants
+ * rather than payload fields for that reason: a receipt that names some other
+ * module's document is not a receipt, and there is nothing for the client to
+ * choose here.
  */
 export const TRANSFER_LINK_SRC_MODULE = 'STOCK';
 export const TRANSFER_LINK_SRC_DOC_TYPE = 'STOCK_VOUCHER';
@@ -45,6 +45,8 @@ export interface StockTransitRow {
   /** sent − received − damage. What a second receipt must open with. */
   remainingQty: number;
   costRate: number;
+  /** The without-tax cost, stamped at despatch too (REVIEW's `stt_cost_rate_wot`). */
+  costRateWot: number;
   transitValue: number;
   lrNo: string | null;
   vehicleNo: string | null;
@@ -65,7 +67,7 @@ export interface StockTransferDespatchResult extends StockVoucherPayload {
   /** true = godown → godown, POSTED, no transit row. false = a lorry left. */
   sameBranch: boolean;
   status: StockVoucherStatus;
-  /** What fn_svh_post_transfer returned: 2 per line same-branch, 1 per line out. */
+  /** Ledger rows written: 2 per line same-branch, 1 per line inter-branch. */
   ledgerRows: number;
   transitRows: number;
   transit: StockTransitRow[];
@@ -107,6 +109,19 @@ export interface StockTransferReceiveResult {
     /** true when every transit row of the OUT is settled. */
     closed: boolean;
   };
+  transit: StockTransitRow[];
+}
+
+/** §1.1 — what a short settlement answers with. */
+export interface StockTransferSettleShortResult {
+  outVoucher: { svhId: string; accYear: string; refno: string; status: StockVoucherStatus };
+  /** Transit rows flipped PARTIAL → RECEIVED with their short kept. */
+  rowsSettled: number;
+  shortQty: number;
+  shortValue: number;
+  /** The DR reason / CR INVENTORY voucher under PERPETUAL; null under PERIODIC or when nothing was short. */
+  accountsVoucherId: string | null;
+  accountsVoucherRefno: string | null;
   transit: StockTransitRow[];
 }
 

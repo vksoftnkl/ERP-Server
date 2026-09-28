@@ -31,13 +31,14 @@ and the drift lands in the ledger.
 | `POST /stock/transfer` | save a TRANSFER_OUT draft. Update is a **full replace of the lines**. |
 | `GET /stock/transfer` | `svhId` loads one **with its transit rows**; absent lists |
 | `GET /stock/transfer/validate` | the preflight, line by line |
-| `POST /stock/transfer/despatch` | `fn_svh_post_transfer`, plus the lorry |
+| `POST /stock/transfer/despatch` | the engine (shape `TRANSFER_OUT`), plus the lorry |
 | `POST /stock/transfer/cancel` | **same-branch POSTED only** — reversal rows |
 | `DELETE /stock/transfer` | soft delete, DRAFT only |
 | `GET /stock/transfer/receive/inbound` | what is on its way to me, oldest first |
 | `GET /stock/transfer/receive/prefill` | open a receipt **at the remainder** |
 | `POST /stock/transfer/receive` | save a TRANSFER_IN draft |
-| `POST /stock/transfer/receive/post` | `fn_svh_receive_transfer` |
+| `POST /stock/transfer/receive/post` | the engine (shape `TRANSFER_IN`) |
+| `POST /stock/transfer/receive/settle-short` | close a despatch whose remainder will never arrive; the short stays on the loss report and, under PERPETUAL, DR reason / CR Stock-in-Hand |
 | `DELETE /stock/transfer/receive` | soft delete a draft receipt |
 
 Every response is `{ success, message, data }`. No `@CacheTTL` anywhere: every

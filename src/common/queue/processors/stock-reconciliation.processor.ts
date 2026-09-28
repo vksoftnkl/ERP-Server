@@ -2,32 +2,38 @@ import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
 import { PrismaService } from '../../../database/prisma/prisma.service';
+import {
+  assertStockBalances,
+  type StockBalanceFinding,
+} from '../../../modules/stocks/posting/stock-balance-assertion';
 import { QUEUE_NAMES } from '../queue.constants';
 
 export interface StockReconciliationJobData {
-  accYear: string;
+  /** Kept for the job's callers; the engine's balances are not per year. */
+  accYear?: string;
   companyId: string;
   branchId?: string;
   itemId?: string;
 }
 
-export interface StockMismatch {
-  ibsId: string;
-  itemId: string;
-  batchId: string;
-  branchId: string;
-  godownId: string;
-  stockBucket: string;
-  batchClosingQty: number;
-  ledgerNetQty: number;
-  delta: number;
-}
-
 export interface StockReconciliationResult {
-  checked: number;
-  mismatches: StockMismatch[];
+  findings: StockBalanceFinding[];
+  /** Findings per kind, for the log line and the dashboard. */
+  byKind: Record<string, number>;
 }
 
+/**
+ * §5.1 — the nightly BALANCE ASSERTION over the stock engine's tables.
+ *
+ * It replaced the reconciliation of `inventory.item_batch_stock` against
+ * `inventory.item_stock_ledger` on 2026-09-28: those tables have 0 rows and no
+ * writer, so the old job compared nothing to nothing and reported a clean book.
+ *
+ * DETECT AND REPORT, NEVER SILENTLY FIX: every derived figure (balance
+ * accumulators, the branch item total, reserved, in transit, the lot total) is
+ * re-derived from its source and every disagreement is returned and logged.
+ * Repair is a separate, explicit act.
+ */
 @Processor(QUEUE_NAMES.STOCK_RECONCILIATION)
 export class StockReconciliationProcessor extends WorkerHost {
   private readonly logger = new Logger(StockReconciliationProcessor.name);
@@ -37,82 +43,33 @@ export class StockReconciliationProcessor extends WorkerHost {
   }
 
   async process(job: Job<StockReconciliationJobData>): Promise<StockReconciliationResult> {
-    const { accYear, companyId, branchId, itemId } = job.data;
-
+    const { companyId, branchId, itemId } = job.data;
     this.logger.log(
-      `Starting stock reconciliation — year: ${accYear}, company: ${companyId}` +
+      `Stock balance assertion — company: ${companyId}` +
         (branchId ? `, branch: ${branchId}` : '') +
         (itemId ? `, item: ${itemId}` : ''),
     );
-
-    const batchStocks = await this.prisma.itemBatchStock.findMany({
-      where: {
-        ibsAccYear: accYear,
-        ibsCompanyId: companyId,
-        ...(branchId ? { ibsBranchId: branchId } : {}),
-        ...(itemId ? { ibsItemId: itemId } : {}),
-      },
-      select: {
-        ibsId: true,
-        ibsItemId: true,
-        ibsBranchId: true,
-        ibsGodownId: true,
-        ibsBatchId: true,
-        ibsBatchNo: true,
-        ibsStockBucket: true,
-        ibsClosingQty: true,
-      },
-    });
-
-    const mismatches: StockMismatch[] = [];
-
-    for (let i = 0; i < batchStocks.length; i++) {
-      const stock = batchStocks[i];
-
-      // Net qty from ledger = SUM(stlBaseQty * stlStockEffect) for this scope
-      const ledgerAgg = await this.prisma.itemStockLedger.aggregate({
-        where: {
-          stlAccYear: accYear,
-          stlCompanyId: companyId,
-          stlBranchId: stock.ibsBranchId,
-          stlGodownId: stock.ibsGodownId,
-          stlItemId: stock.ibsItemId,
-          stlBatchId: stock.ibsBatchId,
-        },
-        _sum: { stlBaseQty: true },
-      });
-
-      const ledgerNetQty = Number(ledgerAgg._sum?.stlBaseQty ?? 0);
-      const batchClosingQty = Number(stock.ibsClosingQty ?? 0);
-      const delta = batchClosingQty - ledgerNetQty;
-
-      if (Math.abs(delta) > 0.000001) {
-        mismatches.push({
-          ibsId: stock.ibsId,
-          itemId: stock.ibsItemId,
-          batchId: stock.ibsBatchId,
-          branchId: stock.ibsBranchId,
-          godownId: stock.ibsGodownId,
-          stockBucket: stock.ibsStockBucket,
-          batchClosingQty,
-          ledgerNetQty,
-          delta,
-        });
-      }
-
-      if (i % 100 === 0) {
-        await job.updateProgress(Math.round((i / batchStocks.length) * 100));
-      }
+    const findings = await assertStockBalances(this.prisma, { companyId, branchId, itemId });
+    const byKind: Record<string, number> = {};
+    for (const f of findings) {
+      byKind[f.kind] = (byKind[f.kind] ?? 0) + 1;
     }
-
-    if (mismatches.length > 0) {
+    if (findings.length > 0) {
       this.logger.warn(
-        `Reconciliation found ${mismatches.length} mismatch(es) out of ${batchStocks.length} records`,
+        `Stock balance assertion found ${findings.length} disagreement(s): ` +
+          Object.entries(byKind)
+            .map(([kind, n]) => `${kind}=${n}`)
+            .join(', '),
       );
+      for (const f of findings.slice(0, 50)) {
+        this.logger.warn(
+          `  ${f.kind} item ${f.itemId} lot ${f.lotId ?? '-'} godown ${f.godownId ?? '-'} ${f.bucket ?? ''}: stored ${f.stored}, derived ${f.derived}`,
+        );
+      }
     } else {
-      this.logger.log(`Reconciliation complete. All ${batchStocks.length} records match.`);
+      this.logger.log('Stock balance assertion: every derived figure agrees with its source.');
     }
-
-    return { checked: batchStocks.length, mismatches };
+    await job.updateProgress(100);
+    return { findings, byKind };
   }
 }

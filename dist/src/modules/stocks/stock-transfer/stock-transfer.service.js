@@ -14,17 +14,22 @@ const common_1 = require("@nestjs/common");
 const client_1 = require("@prisma/client");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
+const txn_status_log_helper_1 = require("../../../common/txn-status-log/txn-status-log.helper");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
+const stock_accounts_posting_service_1 = require("../posting/stock-accounts-posting.service");
+const stock_voucher_posting_helper_1 = require("../stock-voucher/stock-voucher-posting.helper");
 const stock_voucher_service_1 = require("../stock-voucher/stock-voucher.service");
 const stock_transfer_types_1 = require("./types/stock-transfer.types");
 let StockTransferService = class StockTransferService {
     prisma;
     stockVoucherService;
     requestContextService;
-    constructor(prisma, stockVoucherService, requestContextService) {
+    stockAccounts;
+    constructor(prisma, stockVoucherService, requestContextService, stockAccounts) {
         this.prisma = prisma;
         this.stockVoucherService = stockVoucherService;
         this.requestContextService = requestContextService;
+        this.stockAccounts = stockAccounts;
     }
     async save(rules, dto) {
         await this.assertTransferOutRules(dto);
@@ -158,7 +163,7 @@ let StockTransferService = class StockTransferService {
                 reported.add(key);
                 errors.push({
                     field,
-                    message: `Line ${line.lineNo} sends ${asked} but this godown holds ${available} of that lot in the ${line.bucket ?? 'SALEABLE'} bucket. A transfer moves stock that exists; the engine will not stop this one under an ALLOW policy.`,
+                    message: `Line ${line.lineNo} sends ${asked} but this godown holds ${available} of that lot in the ${line.bucket ?? 'SALEABLE'} bucket. A transfer moves stock that exists, whatever the item's negative-stock policy says.`,
                 });
             }
         });
@@ -206,7 +211,7 @@ let StockTransferService = class StockTransferService {
              t.stt_bucket, t.stt_base_uom_id, t.stt_sent_qty, t.stt_received_qty,
              t.stt_damage_qty,
              t.stt_sent_qty - t.stt_received_qty - t.stt_damage_qty AS remaining_qty,
-             t.stt_cost_rate, t.stt_transit_value, t.stt_lr_no, t.stt_vehicle_no,
+             t.stt_cost_rate, t.stt_cost_rate_wot, t.stt_transit_value, t.stt_lr_no, t.stt_vehicle_no,
              t.stt_expected_on, t.stt_sent_on, t.stt_received_on,
              t.stt_out_refno, t.stt_from_branch_id,
              EXTRACT(DAY FROM now() - t.stt_sent_on)::int AS days_in_flight,
@@ -424,6 +429,90 @@ let StockTransferService = class StockTransferService {
             transit,
         };
     }
+    async settleShort(args) {
+        const actor = (0, module_service_utils_1.resolveActor)(args.userId, this.requestContextService.getUserId());
+        const settledOn = new Date();
+        const [reason] = await this.prisma.$queryRaw `
+      SELECT srm_id, srm_direction, srm_is_active FROM stock.stock_reason_master
+       WHERE srm_id = ${args.reasonId}::uuid AND srm_is_deleted = false
+         AND (srm_company_id IS NULL OR srm_company_id = ${args.companyId}::uuid)
+    `;
+        if (!reason || !reason.srm_is_active) {
+            (0, module_service_utils_1.throwStockUnprocessable)('Reason not usable', [
+                { field: 'reasonId', message: 'A short settlement must cite a live stock reason (e.g. TRANSIT_LOSS).' },
+            ]);
+        }
+        if (reason.srm_direction === 'IN') {
+            (0, module_service_utils_1.throwStockUnprocessable)('Reason points the wrong way', [
+                { field: 'reasonId', message: 'A transit short is stock LOST; the reason must be direction OUT or BOTH.' },
+            ]);
+        }
+        const remarks = args.remarks?.trim() || null;
+        const outcome = await this.prisma.$transaction(async (tx) => {
+            const settled = await (0, stock_voucher_posting_helper_1.settleTransitShort)(tx, {
+                outId: args.outVoucherId,
+                outAccYear: args.accYear,
+                companyId: args.companyId,
+                branchId: args.branchId,
+                reasonId: args.reasonId,
+                remarks,
+                actor,
+                settledOn,
+            });
+            const accounts = await this.stockAccounts.postShortSettlement(tx, {
+                outId: args.outVoucherId,
+                outAccYear: args.accYear,
+                companyId: args.companyId,
+                branchId: args.branchId,
+                refno: settled.refno,
+                reasonId: args.reasonId,
+                remarks,
+                rows: settled.rows,
+                actor,
+                settledOn,
+            });
+            const shortQty = settled.rows.reduce((s, r) => s.plus(r.shortQty), new client_1.Prisma.Decimal(0));
+            const shortValue = settled.rows.reduce((s, r) => s.plus(r.shortValue), new client_1.Prisma.Decimal(0));
+            const [header] = await tx.$queryRaw `
+        SELECT svh_tenant_id, svh_device_id, svh_session_id FROM stock.stock_voucher
+         WHERE svh_id = ${args.outVoucherId}::uuid AND svh_acc_year = ${args.accYear}::bpchar
+      `;
+            await (0, txn_status_log_helper_1.appendTxnStatusLog)(tx, {
+                companyId: args.companyId,
+                branchId: args.branchId,
+                tenantId: header?.svh_tenant_id ?? null,
+                accYear: args.accYear,
+                srcModule: txn_status_log_helper_1.TxnStatusSrcModule.INVENTORY,
+                srcDocType: txn_status_log_helper_1.TxnStatusDocType.STOCK_TRANSFER,
+                srcDocId: args.outVoucherId,
+                srcDocRefno: settled.refno,
+                event: txn_status_log_helper_1.TxnStatusEvent.CLOSED,
+                fromStatus: 'IN_TRANSIT',
+                toStatus: 'RECEIVED',
+                changedOn: settledOn,
+                changedBy: actor,
+                remarks: remarks ?? `Short-settled: ${shortQty.toString()} never arrived`,
+                deviceId: header?.svh_device_id ?? null,
+                sessionId: header?.svh_session_id ?? null,
+            });
+            return { settled, accounts, shortQty, shortValue };
+        });
+        const transit = await this.loadTransitRows(args.outVoucherId, args.accYear);
+        return {
+            outVoucher: {
+                svhId: args.outVoucherId,
+                accYear: args.accYear,
+                refno: outcome.settled.refno,
+                status: 'RECEIVED',
+            },
+            rowsSettled: outcome.settled.rows.length,
+            shortQty: outcome.shortQty.toNumber(),
+            shortValue: outcome.shortValue.toNumber(),
+            accountsVoucherId: outcome.accounts?.voucherId ?? null,
+            accountsVoucherRefno: outcome.accounts?.voucherRefno ?? null,
+            transit,
+        };
+    }
     async loadTransitRows(outVoucherId, outAccYear, options = {}) {
         const openOnly = options.openOnly === true;
         const rows = await this.prisma.$queryRaw `
@@ -431,7 +520,7 @@ let StockTransferService = class StockTransferService {
              t.stt_bucket, t.stt_base_uom_id, t.stt_sent_qty, t.stt_received_qty,
              t.stt_damage_qty,
              t.stt_sent_qty - t.stt_received_qty - t.stt_damage_qty AS remaining_qty,
-             t.stt_cost_rate, t.stt_transit_value, t.stt_lr_no, t.stt_vehicle_no,
+             t.stt_cost_rate, t.stt_cost_rate_wot, t.stt_transit_value, t.stt_lr_no, t.stt_vehicle_no,
              t.stt_expected_on, t.stt_sent_on, t.stt_received_on,
              i.item_code, i.item_name_en AS item_name,
              l.slt_batch_no AS batch_no, l.slt_expiry_date AS expiry_date,
@@ -472,6 +561,7 @@ let StockTransferService = class StockTransferService {
             damageQty: Number(row.stt_damage_qty),
             remainingQty: Number(row.remaining_qty),
             costRate: Number(row.stt_cost_rate),
+            costRateWot: Number(row.stt_cost_rate_wot),
             transitValue: Number(row.stt_transit_value),
             lrNo: row.stt_lr_no,
             vehicleNo: row.stt_vehicle_no,
@@ -492,6 +582,7 @@ exports.StockTransferService = StockTransferService = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [prisma_service_1.PrismaService,
         stock_voucher_service_1.StockVoucherService,
-        request_context_service_1.RequestContextService])
+        request_context_service_1.RequestContextService,
+        stock_accounts_posting_service_1.StockAccountsPostingService])
 ], StockTransferService);
 //# sourceMappingURL=stock-transfer.service.js.map

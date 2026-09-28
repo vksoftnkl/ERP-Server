@@ -10,10 +10,10 @@
 -- own on its date — the Receipt's way. The operator still never types Cheques
 -- In Hand.
 --
--- The Receipt Voucher therefore becomes a MANY-party type: its typed lines ARE
--- the customer lines (several customers on one collection run), each settled
--- bill by bill (DEMAND) against its own party's bills. The money side is no
--- longer typed, so its Dr group list is cleared.
+-- The Receipt Voucher's typed lines ARE the customer lines (party mode MANY,
+-- notes 53 / 20260926150000; vchr_party_side CR still says the side they sit
+-- on), each settled bill by bill (DEMAND) against its own party's bills. The
+-- money side is no longer typed, so its Dr group list is cleared.
 -- ════════════════════════════════════════════════════════════════════════════
 
 BEGIN;
@@ -27,7 +27,6 @@ COMMENT ON COLUMN accounts.acc_voucher_types.vchr_instruments IS
 UPDATE accounts.acc_voucher_types
    SET vchr_instruments = true,
        vchr_party_mode  = 'MANY',
-       vchr_party_side  = 'ANY',
        vchr_dr_groups   = '{}',
        vchr_updated_on  = now(),
        vchr_updated_by  = '20260926120000_voucher_register_instruments'

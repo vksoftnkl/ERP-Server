@@ -15,7 +15,9 @@ const client_1 = require("@prisma/client");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
 const voucher_facts_1 = require("./voucher-facts");
+const voucher_derive_1 = require("./voucher-derive");
 const voucher_types_service_1 = require("./voucher-types.service");
+const cheque_book_helper_1 = require("./cheque-book.helper");
 const vouchers_errors_1 = require("./vouchers.errors");
 const GST_GROUPS = new Set([
     'direct expenses',
@@ -54,18 +56,33 @@ let VoucherLookupsService = class VoucherLookupsService {
         const instrument = [...(await (0, voucher_facts_1.loadInstrumentLedgers)(this.tx, q.companyId))];
         const term = q.q?.trim() ? `%${q.q.trim()}%` : null;
         const limit = q.limit ?? 50;
+        const moneySide = (0, voucher_derive_1.moneySideOf)(type.nature);
+        const moneyOnly = moneySide !== null && moneySide === q.side;
+        const noMoney = moneySide !== null && moneySide !== q.side;
+        const moneyIds = [...voucher_facts_1.MONEY_GROUP_IDS];
+        const moneyNames = [...voucher_facts_1.MONEY_GROUP_NAMES];
         const rows = await this.tx.$queryRaw `
       WITH RECURSIVE allowed AS (
         SELECT acc_group_id FROM accounts.acc_group_master WHERE acc_group_id = ANY(${groups}::uuid[])
         UNION
         SELECT g.acc_group_id FROM accounts.acc_group_master g
           JOIN allowed a ON g.acc_group_parent_id = a.acc_group_id
+      ),
+      money AS (
+        SELECT acc_group_id FROM accounts.acc_group_master
+         WHERE acc_group_id = ANY(${moneyIds}::uuid[])
+            OR lower(acc_group_name) = ANY(SELECT lower(unnest(${moneyNames}::text[])))
+        UNION
+        SELECT g.acc_group_id FROM accounts.acc_group_master g
+          JOIN money m ON g.acc_group_parent_id = m.acc_group_id
       )
       SELECT l.led_id
         FROM accounts.acc_ledger_master l
        WHERE (l.led_company_id IS NULL OR l.led_company_id = ${q.companyId}::uuid)
          AND l.led_is_deleted = false AND l.led_is_active = true
          AND (${groups.length === 0} OR l.led_group_id IN (SELECT acc_group_id FROM allowed))
+         AND (NOT ${moneyOnly}::boolean OR l.led_group_id IN (SELECT acc_group_id FROM money))
+         AND (NOT ${noMoney}::boolean OR l.led_group_id NOT IN (SELECT acc_group_id FROM money))
          AND NOT (l.led_id = ANY(${instrument}::uuid[]))
          AND (${term}::text IS NULL OR l.led_name ILIKE ${term} OR l.led_alias ILIKE ${term})
        ORDER BY l.led_name
@@ -200,6 +217,54 @@ let VoucherLookupsService = class VoucherLookupsService {
                 cess: Number(r.tax_cess_perc.toString()),
                 isReverseCharge: r.tax_is_reverse_charge,
                 taxability: r.tax_taxability,
+            })),
+        };
+    }
+    async chequeBooks(q) {
+        const books = await (0, cheque_book_helper_1.listOpenChequeBooks)(this.tx, {
+            companyId: q.companyId,
+            branchId: q.branchId ?? null,
+            bankLedgerId: q.bankLedgerId ?? null,
+        });
+        return {
+            companyId: q.companyId,
+            books: books.map((b) => ({
+                chequeBookId: b.chequeBookId,
+                bankLedgerId: b.bankLedgerId,
+                bankName: b.bankName,
+                bookNo: b.bookNo,
+                leafFrom: (0, cheque_book_helper_1.formatLeaf)(b.leafFrom, b.leafWidth),
+                leafTo: (0, cheque_book_helper_1.formatLeaf)(b.leafTo, b.leafWidth),
+                nextLeaf: (0, cheque_book_helper_1.formatLeaf)(b.nextLeaf, b.leafWidth),
+                left: (0, cheque_book_helper_1.leavesLeft)(b),
+                format: b.format,
+            })),
+        };
+    }
+    async instruments(q) {
+        let rows = await (0, voucher_facts_1.listInstrumentTenders)(this.tx, q.companyId, q.branchId ?? null);
+        if (q.typeCode) {
+            const type = await this.types.loadTypeByCode(this.tx, q.typeCode);
+            if (type?.partySide === 'DR') {
+                rows = rows.filter((t) => [1, 3, 5, 6].includes(t.typeId));
+            }
+        }
+        return {
+            companyId: q.companyId,
+            tenders: rows.map((t) => ({
+                tenderId: t.tndId,
+                name: t.name,
+                shortName: t.shortName,
+                typeId: t.typeId,
+                typeName: t.typeName,
+                ledgerId: t.ledgerId,
+                ledgerName: t.ledgerName,
+                settlementLedgerId: t.settlementLedgerId,
+                isCash: t.isCash,
+                isCheque: t.typeId === voucher_facts_1.CHEQUE_TENDER_TYPE_ID,
+                needsRef: t.needsRef,
+                hotkey: t.hotkey,
+                displayPosition: t.displayPosition,
             })),
         };
     }

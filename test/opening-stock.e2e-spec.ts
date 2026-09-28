@@ -4,7 +4,8 @@ import { PrismaService } from '../src/database/prisma/prisma.service';
 import { AuditLogService } from '../src/modules/audit-log/audit-log.service';
 import { RequestContextService } from '../src/common/request-context/request-context.service';
 import { StockVoucherService } from '../src/modules/stocks/stock-voucher/stock-voucher.service';
-import { StockPostingService } from '../src/modules/stocks/posting/stock-posting.service';
+import { buildStockPosting } from './helpers/stock-posting.factory';
+import { assertStockBalances } from '../src/modules/stocks/posting/stock-balance-assertion';
 import type { StockVoucherTypeRules } from '../src/modules/stocks/stock-voucher/types/stock-voucher.types';
 
 /**
@@ -50,7 +51,7 @@ const OPENING_RULES: StockVoucherTypeRules = {
   allowsToBranch: false,
   auditScreenName: 'Opening Stock',
   statusDocType: TxnStatusDocType.STOCK_ADJUSTMENT,
-  postFunction: 'stock.fn_svh_post',
+  postShape: 'SIMPLE',
   refuseTypes: ['TRANSFER_IN', 'TRANSFER_OUT', 'REPACK_IN', 'REPACK_OUT'],
 };
 
@@ -76,22 +77,10 @@ const prisma = new PrismaClient();
  * far more confusingly than no tables at all.
  */
 async function detectEngine(): Promise<{ ready: boolean; missing: string[] }> {
-  const required = [
-    'fn_svh_post',
-    'fn_svh_cancel',
-    'fn_slt_resolve',
-    'fn_sbl_rebuild',
-    'fn_create_stock_partitions',
-  ];
+  // The engine is TypeScript (stock-voucher-posting.helper.ts); the database
+  // needs only the tables and the year's partitions.
   try {
-    const found = await prisma.$queryRaw<Array<{ proname: string }>>`
-      SELECT p.proname
-        FROM pg_proc p
-        JOIN pg_namespace n ON n.oid = p.pronamespace
-       WHERE n.nspname = 'stock'
-    `;
-    const names = new Set(found.map((row) => row.proname));
-    const missing = required.filter((name) => !names.has(name));
+    const missing: string[] = [];
     const tables = await prisma.$queryRaw<Array<{ tablename: string }>>`
       SELECT tablename FROM pg_tables WHERE schemaname = 'stock'
     `;
@@ -142,9 +131,31 @@ describe('Opening stock (e2e — needs the stock engine)', () => {
       { getUserId: () => fixture?.userId ?? null } as unknown as RequestContextService,
       // §3.1 — the one stock engine, injected. Handed the same client, so a
       // posting call still runs inside whatever transaction the test opened.
-      new StockPostingService(prisma as unknown as PrismaService),
+      buildStockPosting(prisma as unknown as PrismaService).stockPosting,
     );
     fixture = await createFixture();
+  });
+
+  // Every test starts from a branch with NO opening for the flow holdings:
+  // whatever the previous test posted is reversed, which also frees the
+  // holding (a cancelled opening does not hold it — unreversedLedgerRow).
+  let settledUpTo = 0;
+  afterEach(async () => {
+    if (!engine?.ready || !fixture) return;
+    for (const svhId of createdVoucherIds.slice(settledUpTo)) {
+      const [row] = await prisma.$queryRaw<Array<{ svh_status: string }>>`
+        SELECT svh_status FROM stock.stock_voucher WHERE svh_id = ${svhId}::uuid
+      `;
+      if (row?.svh_status === 'POSTED') {
+        try {
+          await service.cancel(OPENING_RULES, svhId, ACC_YEAR, 'e2e afterEach', fixture.companyId, fixture.branchId, fixture.userId);
+        } catch {
+          // A cancel the policy refuses (stock already sold from the holding)
+          // is that test's own business; the next test deals with what it left.
+        }
+      }
+    }
+    settledUpTo = createdVoucherIds.length;
   });
 
   afterAll(async () => {
@@ -249,11 +260,14 @@ describe('Opening stock (e2e — needs the stock engine)', () => {
     // including the base's own row, which points at itself.
     const unitIds: Record<string, string> = {};
     for (const unit of units) {
+      // The named unit when the seed has it; otherwise any unit will do —
+      // every quantity here is keyed at the factor the fixture states.
       const [unitRow] = await prisma.$queryRaw<Array<{ unit_id: string }>>`
-        SELECT unit_id FROM inventory.item_unit_master WHERE unit_name = ${unit.name} LIMIT 1
+        SELECT unit_id FROM inventory.item_unit_master
+         ORDER BY (unit_name = ${unit.name}) DESC, unit_name LIMIT 1
       `;
       if (!unitRow) {
-        throw new Error(`No item_unit_master row named ${unit.name} — seed the units first.`);
+        throw new Error(`No item_unit_master row at all — seed the units first.`);
       }
       unitIds[unit.name] = unitRow.unit_id;
     }
@@ -307,6 +321,12 @@ describe('Opening stock (e2e — needs the stock engine)', () => {
       toGodownId: fixture.godownId,
       rateSource: 'MANUAL' as const,
       userId: fixture.userId,
+      // THE TOTALS ARE THE SCREEN'S on a draft: sent as the grid computed
+      // them. The post re-derives them from the ledger.
+      lineCount: 2,
+      totalQty: 175,
+      totalValue: 3940,
+      totalValueWot: 3752.38,
     },
     lines: [
       // baseUomId / toBaseFactor / baseQty / freeBaseQty are sent BY THE CLIENT
@@ -459,7 +479,7 @@ describe('Opening stock (e2e — needs the stock engine)', () => {
     expect(Number(milkCost.total_value_wot)).toBeCloseTo(1466.67, 2);
   });
 
-  it('fn_sbl_rebuild finds 0 holdings differing, after the post and after a cancel', async () => {
+  it('the balance assertion finds 0 holdings differing, after the post and after a cancel', async () => {
     if (!requireEngine()) return;
 
     const saved = await saveFlowDraft();
@@ -472,12 +492,14 @@ describe('Opening stock (e2e — needs the stock engine)', () => {
       fixture.userId,
     );
 
-    const rebuild = async (): Promise<number> => {
-      const [row] = await prisma.$queryRaw<Array<{ differed: number }>>`
-        SELECT stock.fn_sbl_rebuild(${fixture.companyId}::uuid, ${fixture.branchId}::uuid) AS differed
-      `;
-      return Number(row.differed);
-    };
+    // §5.1 — the TypeScript assertion: every derived figure against its source.
+    const rebuild = async (): Promise<number> =>
+      (
+        await assertStockBalances(prisma, {
+          companyId: fixture.companyId,
+          branchId: fixture.branchId,
+        })
+      ).length;
     expect(await rebuild()).toBe(0);
 
     // fn_sbl_rebuild re-derives QUANTITIES ONLY. It never recomputes

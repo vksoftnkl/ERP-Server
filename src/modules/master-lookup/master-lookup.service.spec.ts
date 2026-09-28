@@ -676,7 +676,8 @@ describe('MasterLookupService', () => {
         company: { ...prisma.company, findFirst: jest.fn().mockResolvedValue(null) },
         custItemRate: { findFirst: jest.fn().mockResolvedValue(null) },
         itemReorder: { findFirst: jest.fn().mockResolvedValue(null) },
-        itemStockBalance: { aggregate: jest.fn() },
+        // §1.7 — the stock figure is read off stock.stock_balance with one raw SUM.
+        $queryRaw: jest.fn().mockResolvedValue([{ qty: null }]),
         saleLoadingCharge: { findMany: jest.fn().mockResolvedValue([]) },
       });
     };

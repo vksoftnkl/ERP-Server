@@ -70,9 +70,14 @@ export interface BillFacts {
     isActive: boolean;
     companyId: string;
 }
+export declare const MONEY_GROUP_IDS: ReadonlySet<string>;
+export declare const MONEY_GROUP_NAMES: readonly string[];
 export declare function loadCompanyFacts(tx: Prisma.TransactionClient, companyId: string): Promise<CompanyFacts | null>;
 export declare function loadLedgerFacts(tx: Prisma.TransactionClient, companyId: string, ledgerIds: readonly string[]): Promise<Map<string, LedgerFacts>>;
-export declare function isMoneyLedger(l: Pick<LedgerFacts, 'groupNames'>): boolean;
+export declare function isBankLedger(l: Pick<LedgerFacts, 'groupNames'>): boolean;
+export declare function isMoneyLedger(l: Pick<LedgerFacts, 'groupNames'> & {
+    groupPath?: string[];
+}): boolean;
 export declare function loadInstrumentLedgers(tx: Prisma.TransactionClient, companyId: string): Promise<Set<string>>;
 export declare function loadTaxRates(tx: Prisma.TransactionClient, taxIds: readonly string[]): Promise<Map<string, TaxRateFacts>>;
 export declare const GENERATED_ROLES: readonly ["INPUT_CGST", "INPUT_SGST", "INPUT_IGST", "INPUT_CESS", "OUTPUT_CGST", "OUTPUT_SGST", "OUTPUT_IGST", "OUTPUT_CESS", "RCM_CGST_PAYABLE", "RCM_SGST_PAYABLE", "RCM_IGST_PAYABLE", "TDS_PAYABLE"];
@@ -91,5 +96,28 @@ export declare function loadBills(tx: Prisma.TransactionClient, bills: readonly 
     billId: string;
     billAccYear: string;
 }[], lock: boolean): Promise<Map<string, BillFacts>>;
+export interface TenderFacts {
+    tndId: string;
+    name: string;
+    shortName: string;
+    typeId: number;
+    typeName: string;
+    isCash: boolean;
+    needsRef: boolean;
+    ledgerId: string;
+    ledgerName: string;
+    settlementLedgerId: string | null;
+    isActive: boolean;
+    isDeleted: boolean;
+    companyId: string;
+    branchId: string | null;
+    hotkey: string | null;
+    displayPosition: number;
+}
+export declare const CHEQUE_TENDER_TYPE_ID = 5;
+export declare const EXCLUDED_INSTRUMENT_TYPES: readonly number[];
+export declare function loadTenderFacts(tx: Prisma.TransactionClient, tenderIds: readonly string[]): Promise<Map<string, TenderFacts>>;
+export declare function listInstrumentTenders(tx: Prisma.TransactionClient, companyId: string, branchId: string | null): Promise<TenderFacts[]>;
+export declare function settlementModeForTenderType(typeId: number): string;
 export declare function billKey(billId: string, accYear: string): string;
 export declare function itcClassOf(ledgerItc: string | null | undefined): string | null;

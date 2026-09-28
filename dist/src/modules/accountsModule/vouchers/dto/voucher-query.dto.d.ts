@@ -27,6 +27,16 @@ export declare class OpenBillsQueryDto {
     partyId: string;
     side: 'DR' | 'CR';
 }
+export declare class InstrumentsQueryDto {
+    companyId: string;
+    branchId?: string | null;
+    typeCode?: string;
+}
+export declare class ChequeBooksQueryDto {
+    companyId: string;
+    branchId?: string | null;
+    bankLedgerId?: string | null;
+}
 export declare class TaxRatesQueryDto {
     companyId: string;
     includeInactive?: string;

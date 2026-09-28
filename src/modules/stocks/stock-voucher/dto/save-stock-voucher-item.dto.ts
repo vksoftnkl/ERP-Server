@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsIn, IsOptional, IsPositive } from 'class-validator';
 import {
+  SkipOnNullish,
   NullableDateString,
   NullableNumber,
   NullableStringStrict,
@@ -262,6 +263,16 @@ export class SaveStockVoucherItemDto {
   })
   @NullableUuid()
   reasonId?: string | null;
+
+  @ApiPropertyOptional({
+    enum: [1, -1],
+    nullable: true,
+    description:
+      'ADJUSTMENT ONLY, and only under a reason whose direction is BOTH: +1 brings stock in, -1 takes it out. The stock adjustment route derives it from the signed quantity the screen sends; every other route refuses it (quantities are magnitudes — ck_svi_qty_sign — and the voucher type or the reason decides the direction).',
+  })
+  @SkipOnNullish()
+  @IsIn([1, -1], { message: 'direction must be 1 or -1' })
+  direction?: 1 | -1 | null;
 
   @ApiPropertyOptional({
     type: 'string',

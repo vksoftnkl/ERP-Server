@@ -14,6 +14,7 @@ exports.StockReconciliationProcessor = void 0;
 const bullmq_1 = require("@nestjs/bullmq");
 const common_1 = require("@nestjs/common");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
+const stock_balance_assertion_1 = require("../../../modules/stocks/posting/stock-balance-assertion");
 const queue_constants_1 = require("../queue.constants");
 let StockReconciliationProcessor = StockReconciliationProcessor_1 = class StockReconciliationProcessor extends bullmq_1.WorkerHost {
     prisma;
@@ -23,69 +24,29 @@ let StockReconciliationProcessor = StockReconciliationProcessor_1 = class StockR
         this.prisma = prisma;
     }
     async process(job) {
-        const { accYear, companyId, branchId, itemId } = job.data;
-        this.logger.log(`Starting stock reconciliation — year: ${accYear}, company: ${companyId}` +
+        const { companyId, branchId, itemId } = job.data;
+        this.logger.log(`Stock balance assertion — company: ${companyId}` +
             (branchId ? `, branch: ${branchId}` : '') +
             (itemId ? `, item: ${itemId}` : ''));
-        const batchStocks = await this.prisma.itemBatchStock.findMany({
-            where: {
-                ibsAccYear: accYear,
-                ibsCompanyId: companyId,
-                ...(branchId ? { ibsBranchId: branchId } : {}),
-                ...(itemId ? { ibsItemId: itemId } : {}),
-            },
-            select: {
-                ibsId: true,
-                ibsItemId: true,
-                ibsBranchId: true,
-                ibsGodownId: true,
-                ibsBatchId: true,
-                ibsBatchNo: true,
-                ibsStockBucket: true,
-                ibsClosingQty: true,
-            },
-        });
-        const mismatches = [];
-        for (let i = 0; i < batchStocks.length; i++) {
-            const stock = batchStocks[i];
-            const ledgerAgg = await this.prisma.itemStockLedger.aggregate({
-                where: {
-                    stlAccYear: accYear,
-                    stlCompanyId: companyId,
-                    stlBranchId: stock.ibsBranchId,
-                    stlGodownId: stock.ibsGodownId,
-                    stlItemId: stock.ibsItemId,
-                    stlBatchId: stock.ibsBatchId,
-                },
-                _sum: { stlBaseQty: true },
-            });
-            const ledgerNetQty = Number(ledgerAgg._sum?.stlBaseQty ?? 0);
-            const batchClosingQty = Number(stock.ibsClosingQty ?? 0);
-            const delta = batchClosingQty - ledgerNetQty;
-            if (Math.abs(delta) > 0.000001) {
-                mismatches.push({
-                    ibsId: stock.ibsId,
-                    itemId: stock.ibsItemId,
-                    batchId: stock.ibsBatchId,
-                    branchId: stock.ibsBranchId,
-                    godownId: stock.ibsGodownId,
-                    stockBucket: stock.ibsStockBucket,
-                    batchClosingQty,
-                    ledgerNetQty,
-                    delta,
-                });
-            }
-            if (i % 100 === 0) {
-                await job.updateProgress(Math.round((i / batchStocks.length) * 100));
-            }
+        const findings = await (0, stock_balance_assertion_1.assertStockBalances)(this.prisma, { companyId, branchId, itemId });
+        const byKind = {};
+        for (const f of findings) {
+            byKind[f.kind] = (byKind[f.kind] ?? 0) + 1;
         }
-        if (mismatches.length > 0) {
-            this.logger.warn(`Reconciliation found ${mismatches.length} mismatch(es) out of ${batchStocks.length} records`);
+        if (findings.length > 0) {
+            this.logger.warn(`Stock balance assertion found ${findings.length} disagreement(s): ` +
+                Object.entries(byKind)
+                    .map(([kind, n]) => `${kind}=${n}`)
+                    .join(', '));
+            for (const f of findings.slice(0, 50)) {
+                this.logger.warn(`  ${f.kind} item ${f.itemId} lot ${f.lotId ?? '-'} godown ${f.godownId ?? '-'} ${f.bucket ?? ''}: stored ${f.stored}, derived ${f.derived}`);
+            }
         }
         else {
-            this.logger.log(`Reconciliation complete. All ${batchStocks.length} records match.`);
+            this.logger.log('Stock balance assertion: every derived figure agrees with its source.');
         }
-        return { checked: batchStocks.length, mismatches };
+        await job.updateProgress(100);
+        return { findings, byKind };
     }
 };
 exports.StockReconciliationProcessor = StockReconciliationProcessor;

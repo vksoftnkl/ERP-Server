@@ -314,7 +314,11 @@ describe('Stock transfer module (e2e — live DB)', () => {
     console.log(`\n[transfer e2e] validate → ${JSON.stringify(res.body?.data)}\n`);
   });
 
-  it('despatch: is refused before moving stock (preflight, then the missing engine)', async () => {
+  // 2026-09-28: the engine is TypeScript now and a clean holding DESPATCHES —
+  // which would move real stock on the dev database and leave the draft
+  // un-deletable below. The despatch is exercised against fixtures in
+  // test/stock-transfer.e2e-spec.ts.
+  it.skip('despatch: is refused before moving stock (preflight, then the missing engine)', async () => {
     if (!transferSvhId) return;
     const res = await http
       .post(`${T}/despatch`)

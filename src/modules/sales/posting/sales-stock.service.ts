@@ -6,6 +6,7 @@ import { RequestContextService } from '../../../common/request-context/request-c
 import { TxnStatusDocType } from 'src/common/txn-status-log/txn-status-log.helper';
 import { StockPostingService } from '../../stocks/posting/stock-posting.service';
 import { StockVoucherSource } from '../../stocks/posting/stock-voucher.source';
+import { nextStockVoucherSlno } from '../../stocks/stock-voucher/stock-voucher-numbering.helper';
 import type { StockVoucherTypeRules } from '../../stocks/stock-voucher/types/stock-voucher.types';
 import { throwSalesRefused } from './sales.errors';
 import { SALES_ERROR_CODES } from './types/posting.types';
@@ -138,7 +139,7 @@ export class SalesStockService {
     const svhId = await this.writeShadow(tx, doc, lines, units, rules, actor, postedOn);
 
     try {
-      const rowsPosted = await this.stockPosting.post(
+      const { rowsPosted } = await this.stockPosting.post(
         tx,
         new StockVoucherSource({
           svhId,
@@ -178,28 +179,8 @@ export class SalesStockService {
         );
       }
 
-      // The header's VALUE totals, rolled up from the ledger.
-      //
-      // They cannot be written when the shadow is: a line's cost is not known
-      // until the engine resolves it at post (AVG_COST prices it in phase 2),
-      // so the INSERT would store zeros with extra steps. The sum is taken in
-      // the database and never round-trips through a JS number.
-      //
-      // `sml_is_reversal = false` is the whole of it: without that predicate a
-      // cancelled voucher sums its own reversals back in and lands on zero for
-      // a different reason.
-      await tx.$executeRaw`
-        UPDATE stock.stock_voucher svh
-           SET svh_total_value     = COALESCE(t.v, 0),
-               svh_total_value_wot = COALESCE(t.vw, 0)
-          FROM (SELECT SUM(sml_cost_value)     AS v,
-                       SUM(sml_cost_value_wot) AS vw
-                  FROM stock.stock_ledger
-                 WHERE sml_src_doc_id  = ${svhId}::uuid
-                   AND sml_acc_year    = ${doc.accYear}::bpchar
-                   AND sml_is_deleted  = false
-                   AND sml_is_reversal = false) t
-         WHERE svh.svh_id = ${svhId}::uuid AND svh.svh_acc_year = ${doc.accYear}::bpchar`;
+      // The header's totals are the engine's now: `recomputeHeaderTotals`
+      // re-sums them from the ledger rows it wrote, on post and on cancel.
 
       const costs = await tx.$queryRaw<
         { svi_line_no: number; svi_lot_id: string | null; cost: Prisma.Decimal | null }[]
@@ -299,7 +280,7 @@ export class SalesStockService {
       defaultRateSource: 'AVG_COST',
       allowsCount: false,
       allowsToBranch: false,
-      postFunction: 'stock.fn_svh_post',
+      postShape: 'SIMPLE',
       auditScreenName: DISPLAY_NAME[doc.docType],
       statusDocType: STATUS_DOC_TYPE[doc.docType],
     } as StockVoucherTypeRules;
@@ -375,12 +356,16 @@ export class SalesStockService {
     now: Date,
   ): Promise<string> {
     const deviceId = await this.shadowDevice(tx, doc);
-    const [slno] = await tx.$queryRaw<{ next: bigint }[]>`
-      SELECT COALESCE(MAX(svh_slno), 0) + 1 AS next
-        FROM stock.stock_voucher
-       WHERE svh_acc_year = ${doc.accYear}::bpchar AND svh_company_id = ${doc.companyId}::uuid
-         AND svh_branch_id = ${doc.branchId}::uuid AND svh_voucher_type = ${rules.voucherType}
-         AND svh_device_id = ${deviceId}::uuid`;
+    // §1.6 — the same allocator every stock screen uses: an advisory lock on
+    // (company, branch, year, type, device) around MAX+1. Two concurrent bills
+    // on one device used to collide on ux_svh_slno.
+    const slno = await nextStockVoucherSlno(tx, {
+      companyId: doc.companyId,
+      branchId: doc.branchId,
+      accYear: doc.accYear,
+      voucherType: rules.voucherType,
+      deviceId,
+    });
     const refno = `${doc.docType}/${doc.refno}/r${doc.revision}`;
     const godowns = [...new Set(lines.map((l) => l.godownId))];
     const inward = doc.direction === 'IN';
@@ -395,7 +380,7 @@ export class SalesStockService {
       ) VALUES (
         ${doc.companyId}::uuid, ${doc.branchId}::uuid, ${doc.tenantId ?? null}::uuid, ${doc.accYear}::bpchar,
         ${deviceId}::uuid, ${doc.sessionId ?? null}::uuid,
-        ${rules.voucherType}, ${Number(slno?.next ?? 1)}::bigint, ${refno}, ${doc.refno},
+        ${rules.voucherType}, ${slno}::bigint, ${refno}, ${doc.refno},
         ${doc.docDate}::date, ${doc.docDatetime},
         ${inward ? null : godowns[0]}::uuid, ${inward ? godowns[0] : null}::uuid,
         ${doc.partyId ?? null},
@@ -502,5 +487,5 @@ const STATUS_DOC_TYPE: Record<SalesStockDocType, TxnStatusDocType> = {
   SALE_BILL: TxnStatusDocType.SALE_BILL,
   DELIVERY_CHALLAN: TxnStatusDocType.DELIVERY_CHALLAN,
   SALE_RETURN: TxnStatusDocType.SALE_RETURN,
-  DC_RETURN: TxnStatusDocType.OTHER,
+  DC_RETURN: TxnStatusDocType.DC_RETURN,
 };

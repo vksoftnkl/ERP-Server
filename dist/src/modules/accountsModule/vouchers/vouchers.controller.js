@@ -67,6 +67,14 @@ let VouchersController = class VouchersController {
         const data = await this.lookups.openBills(q);
         return { success: true, message: `${data.bills.length} open bill(s)`, data };
     }
+    async chequeBooks(q) {
+        const data = await this.lookups.chequeBooks(q);
+        return { success: true, message: `${data.books.length} open cheque book(s)`, data };
+    }
+    async instruments(q) {
+        const data = await this.lookups.instruments(q);
+        return { success: true, message: `${data.tenders.length} tender(s)`, data };
+    }
     async taxRates(q) {
         const data = await this.lookups.taxRates(q);
         return { success: true, message: `${data.rates.length} rate(s)`, data };
@@ -201,6 +209,42 @@ __decorate([
     __metadata("design:paramtypes", [voucher_query_dto_1.OpenBillsQueryDto]),
     __metadata("design:returntype", Promise)
 ], VouchersController.prototype, "openBills", null);
+__decorate([
+    (0, common_1.Get)('cheque-books'),
+    (0, common_1.Version)(api_version_1.API_VERSION),
+    (0, cache_manager_1.CacheTTL)(0),
+    (0, swagger_1.ApiOperation)({
+        summary: 'The cheque books a Payment Voucher cheque may take its leaf from',
+        description: 'notes (55). The company’s ACTIVE books with a leaf left (at this branch, or kept for every ' +
+            'branch), optionally on one bank. `nextLeaf` is the leaf the next cheque would take — shown, ' +
+            'not promised: /post takes the book’s next leaf under a lock. A PmtV cheque line names ' +
+            '`instrument.chequeBookId` and `bankLedgerId`, never a leaf.',
+    }),
+    (0, swagger_1.ApiOkResponse)({ type: voucher_response_dto_1.ChequeBooksSuccessDto }),
+    __param(0, (0, common_1.Query)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [voucher_query_dto_1.ChequeBooksQueryDto]),
+    __metadata("design:returntype", Promise)
+], VouchersController.prototype, "chequeBooks", null);
+__decorate([
+    (0, common_1.Get)('instruments'),
+    (0, common_1.Version)(api_version_1.API_VERSION),
+    (0, cache_manager_1.CacheTTL)(0),
+    (0, swagger_1.ApiOperation)({
+        summary: 'The tenders a Receipt Voucher line may come in by',
+        description: 'notes (54). The company’s live tenders (at this branch, or every branch), minus the credit ' +
+            'shapes — TEMP_CR, CREDIT, LOYALTY, RRN — that move no money in. Each carries its type, its ' +
+            'ledger, and isCash / isCheque / needsRef. A type with `instruments` (GET /types) takes one ' +
+            'per typed customer line as `lines[].instrument`; the server generates the Dr leg from the ' +
+            'tender’s ledger, a cheque becomes a HELD row on menu 51, and a post-dated cheque a voucher ' +
+            'of its own on its date.',
+    }),
+    (0, swagger_1.ApiOkResponse)({ type: voucher_response_dto_1.InstrumentsSuccessDto }),
+    __param(0, (0, common_1.Query)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [voucher_query_dto_1.InstrumentsQueryDto]),
+    __metadata("design:returntype", Promise)
+], VouchersController.prototype, "instruments", null);
 __decorate([
     (0, common_1.Get)('tax-rates'),
     (0, common_1.Version)(api_version_1.API_VERSION),

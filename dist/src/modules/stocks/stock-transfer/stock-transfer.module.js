@@ -8,6 +8,7 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.StockTransferModule = void 0;
 const common_1 = require("@nestjs/common");
+const stock_posting_module_1 = require("../posting/stock-posting.module");
 const stock_voucher_module_1 = require("../stock-voucher/stock-voucher.module");
 const stock_transfer_controller_1 = require("./stock-transfer.controller");
 const stock_transfer_receive_controller_1 = require("./stock-transfer-receive.controller");
@@ -17,7 +18,7 @@ let StockTransferModule = class StockTransferModule {
 exports.StockTransferModule = StockTransferModule;
 exports.StockTransferModule = StockTransferModule = __decorate([
     (0, common_1.Module)({
-        imports: [stock_voucher_module_1.StockVoucherModule],
+        imports: [stock_voucher_module_1.StockVoucherModule, stock_posting_module_1.StockPostingModule],
         controllers: [stock_transfer_controller_1.StockTransferController, stock_transfer_receive_controller_1.StockTransferReceiveController],
         providers: [stock_transfer_service_1.StockTransferService],
         exports: [stock_transfer_service_1.StockTransferService],

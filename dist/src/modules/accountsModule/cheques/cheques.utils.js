@@ -1,5 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.chequeDocTypeOf = chequeDocTypeOf;
 exports.logChequeStatus = logChequeStatus;
 exports.toChequeRow = toChequeRow;
 exports.reloadChequeRow = reloadChequeRow;
@@ -8,6 +9,9 @@ const txn_status_log_helper_1 = require("../../../common/txn-status-log/txn-stat
 const receipt_enum_1 = require("../receipt/types/receipt-enum");
 const receipt_utils_1 = require("../receipt/receipt.utils");
 const cheques_guards_1 = require("./cheques.guards");
+function chequeDocTypeOf(traType) {
+    return traType.trim() === 'P' ? txn_status_log_helper_1.TxnStatusDocType.CHEQUE_ISSUED : txn_status_log_helper_1.TxnStatusDocType.CHEQUE_RECEIVED;
+}
 async function logChequeStatus(tx, cheque, entry) {
     await (0, txn_status_log_helper_1.appendTxnStatusLog)(tx, {
         companyId: cheque.apdCompanyId,
@@ -15,7 +19,7 @@ async function logChequeStatus(tx, cheque, entry) {
         tenantId: cheque.apdTenantId,
         accYear: cheque.apdAccYear,
         srcModule: txn_status_log_helper_1.TxnStatusSrcModule.ACCOUNTS,
-        srcDocType: txn_status_log_helper_1.TxnStatusDocType.OTHER,
+        srcDocType: chequeDocTypeOf(cheque.apdTraType),
         srcDocId: cheque.apdId,
         srcDocRefno: cheque.apdInstrumentNo,
         event: entry.event ?? eventFor(entry.toStatus),

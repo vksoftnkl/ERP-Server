@@ -335,7 +335,7 @@ export class SavePhysicalStockVoucherHeaderDto {
   // NOTE FOR ANY ENVIRONMENT CARRYING THE ENGINE DDL, which this deployment
   // does NOT: stock.tr_svi_refresh_header re-sums these on every line write —
   // the API writes them after the lines, so the payload still wins at save
-  // time — and stock.fn_svh_recompute overwrites them at post with the figures
+  // time — and the engine's recomputeHeaderTotals overwrites them at post with the figures
   // read off the ledger. Here, nothing does either, so what is sent is what a
   // posted count keeps.
   @ApiPropertyOptional({

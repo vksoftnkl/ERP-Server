@@ -1,6 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
+import {
+  ensureBalanceRows,
+  refreshReserved,
+  reservationHoldingsOf,
+} from '../../stocks/stock-voucher/stock-voucher-posting.helper';
 import { round4 } from './sales-doc.utils';
 
 /**
@@ -14,6 +19,12 @@ import { round4 } from './sales-doc.utils';
  *
  * A bill against the line CONSUMES; a cancel RELEASES. `srv_open_qty` is
  * generated and never written.
+ *
+ * `sbl_reserved_qty` ON THE BALANCE IS RECOMPUTED after every write here
+ * (§1.3, `refreshReserved` — the one writer of that column), so
+ * `sbl_available_qty`, which is GENERATED from it, is what the billing screen
+ * and the transfer over-issue check read. It used to be written by nobody: 28
+ * open reservations live, and the column read 0 everywhere.
  */
 export interface ReservationLine {
   lineId: string;
@@ -94,11 +105,12 @@ export class StockReservationService {
                srv_closed_on = ${now}, srv_close_reason = 'Re-reserved', srv_modified_on = ${now}, srv_modified_by = ${actor}
          WHERE srv_src_doc_type = ${doc.docType} AND srv_src_doc_id = ${doc.docId}::uuid AND srv_line_no = ${line.lineNo}
            AND srv_status IN ('OPEN', 'PARTIAL') AND srv_is_deleted = false`;
+      // The release above changed what is free, so the balance is brought up
+      // to date BEFORE it is read: sbl_available_qty already nets every open
+      // reservation, and subtracting them again here counted each one twice.
+      await refreshReserved(tx, reservationHoldingsOf(doc.docType, doc.docId), actor, now);
       const holdings = await tx.$queryRaw<{ sbl_lot_id: string; free: Prisma.Decimal | null }[]>`
-        SELECT b.sbl_lot_id,
-               b.sbl_available_qty - COALESCE((SELECT SUM(r.srv_open_qty) FROM stock.stock_reservation r
-                                                WHERE r.srv_lot_id = b.sbl_lot_id AND r.srv_godown_id = b.sbl_godown_id
-                                                  AND r.srv_status IN ('OPEN', 'PARTIAL') AND r.srv_is_deleted = false), 0) AS free
+        SELECT b.sbl_lot_id, b.sbl_available_qty AS free
           FROM stock.stock_balance b
           JOIN stock.stock_lot l ON l.slt_id = b.sbl_lot_id
          WHERE b.sbl_company_id = ${doc.companyId}::uuid AND b.sbl_branch_id = ${doc.branchId}::uuid
@@ -129,6 +141,9 @@ export class StockReservationService {
         wantBase = round4(wantBase - take);
         got = round4(got + take);
       }
+      // Every holding this line now holds carries its reservation on the balance.
+      await ensureBalanceRows(tx, reservationHoldingsOf(doc.docType, doc.docId), actor);
+      await refreshReserved(tx, reservationHoldingsOf(doc.docType, doc.docId), actor, now);
       reserved.set(line.lineId, round4(got / factor));
       if (wantBase > 0.0005) {
         const short = round4(wantBase / factor);
@@ -151,12 +166,16 @@ export class StockReservationService {
     actor: string,
     now: Date,
   ): Promise<number> {
-    return tx.$executeRaw`
+    const released = await tx.$executeRaw`
       UPDATE stock.stock_reservation
          SET srv_released_qty = srv_reserved_qty - srv_consumed_qty, srv_status = 'RELEASED',
              srv_closed_on = ${now}, srv_close_reason = ${reason}, srv_modified_on = ${now}, srv_modified_by = ${actor}
        WHERE srv_src_doc_type = ${doc.docType} AND srv_src_doc_id = ${doc.docId}::uuid
          AND srv_status IN ('OPEN', 'PARTIAL') AND srv_is_deleted = false`;
+    if (released > 0) {
+      await refreshReserved(tx, reservationHoldingsOf(doc.docType, doc.docId), actor, now);
+    }
+    return released;
   }
 
   /**
@@ -228,6 +247,9 @@ export class StockReservationService {
                srv_closed_on = CASE WHEN ${status} IN ('CONSUMED', 'RELEASED') THEN ${now} ELSE NULL END,
                srv_modified_on = ${now}, srv_modified_by = ${actor}
          WHERE srv_id = ${r.srv_id}::uuid AND srv_acc_year = ${r.srv_acc_year}::char(9)`;
+    }
+    if (rows.length > 0) {
+      await refreshReserved(tx, reservationHoldingsOf('SALES_ORDER', order.docId), actor, now);
     }
   }
 }

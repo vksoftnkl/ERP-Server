@@ -222,7 +222,7 @@ export class SaveOpeningStockVoucherHeaderDto {
   // that would quietly substitute a computed value for a missing one.
   //
   // NOTE FOR ANY ENVIRONMENT CARRYING THE ENGINE DDL: stock.tr_svi_refresh_header
-  // re-sums these on every line write and stock.fn_svh_recompute does it again
+  // (the engine re-derives these at post and at cancel; a draft keeps the payload's)
   // at post. The API writes them AFTER the lines so the payload wins at save
   // time, but a post will still overwrite them from the lines.
 

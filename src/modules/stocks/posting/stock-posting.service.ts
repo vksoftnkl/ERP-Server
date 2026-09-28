@@ -5,27 +5,38 @@ import {
   cancelStockVoucher,
   postStockVoucher,
 } from '../stock-voucher/stock-voucher-posting.helper';
-import type { StockLedgerSourceLabel } from '../stock-voucher/stock-voucher-posting.helper';
+import type {
+  PostStockVoucherResult,
+  StockLedgerSourceLabel,
+} from '../stock-voucher/stock-voucher-posting.helper';
+import { StockAccountsPostingService } from './stock-accounts-posting.service';
 import { StockVoucherSource } from './stock-voucher.source';
+
+/** What `post()` reports: the engine's result plus the accounts voucher, if one was written. */
+export interface StockPostOutcome extends PostStockVoucherResult {
+  accountsVoucherId: string | null;
+}
 
 /**
  * §3.1 — ONE stock engine, and one door into it.
  *
  * ── Why this service exists at all ─────────────────────────────────────────
  *
- * The posting phases — resolveLots → attachLotsToLines → writeLedger →
- * applyBalances → applyItemCost → assertNegativeStockPolicy → refreshLotTotals
- * — were written twice before: once as `stock.fn_svh_post` in plpgsql and once
- * in TypeScript, and the two drifted apart with nobody the wiser. A delivery
- * challan, a sale bill, a sale return and a DC return are about to need the
- * same seven phases. If each grows its own, the same thing happens again and
- * the next person cannot tell which engine a holding came from.
+ * The posting phases — pickIssueLots → resolveLots → attachLotsToLines →
+ * writeLedger → applyBalances → applyItemCost → assertNegativeStockPolicy →
+ * refreshLotTotals → recomputeHeaderTotals — were written twice before: once
+ * as `stock.fn_svh_post` in plpgsql and once in TypeScript, and the two drifted
+ * apart with nobody the wiser. A delivery challan, a sale bill, a sale return,
+ * a DC return and both halves of a transfer need the same phases. If each grows
+ * its own, the same thing happens again and the next person cannot tell which
+ * engine a holding came from.
  *
  * So: every document posts stock through `post(tx, source)`, the phases live in
  * one place, and a `StockLineSource` is the only thing a new document has to
- * write.
+ * write. The transfer routes post here too since 2026-09-28; the SQL functions
+ * they used to call were never deployed.
  *
- * ── The freeze guard, which is NEW and is the point of the drop ────────────
+ * ── The freeze guard ───────────────────────────────────────────────────────
  *
  * `fn_sml_freeze_guard` used to refuse a `stock_ledger` insert while a godown
  * was frozen for a count — and it tested **`now()`**: the moment the row
@@ -38,10 +49,20 @@ import { StockVoucherSource } from './stock-voucher.source';
  * its replacement, and it tests **`sml_doc_datetime`** — the movement's own
  * timestamp — so a movement that HAPPENED before the freeze is let through for
  * the count to reconcile, and one that happened inside it is still refused.
+ *
+ * ── Stock → accounts ───────────────────────────────────────────────────────
+ *
+ * Under PERPETUAL a stock document that posts also writes its accounts voucher
+ * (§1.9), in the same transaction, from the ledger rows the post just wrote.
+ * A sales document's shadow voucher (`ledgerSource` set) does NOT: the sales
+ * document posts its own COGS pair, and posting here too would count it twice.
  */
 @Injectable()
 export class StockPostingService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly accounts: StockAccountsPostingService,
+  ) {}
 
   /**
    * Post one document's stock movement.
@@ -49,22 +70,18 @@ export class StockPostingService {
    * Runs inside the CALLER's transaction — a document that says POSTED with no
    * ledger rows behind it is the inconsistency this prevents.
    *
-   * Returns the number of LEDGER ROWS written, which is not always the line
-   * count: a count line whose variance is zero moves nothing and posts no row.
+   * `rowsPosted` is the number of LEDGER ROWS written, which is not always the
+   * line count: a count line whose variance is zero moves nothing and posts no
+   * row; a same-branch transfer posts two per line.
    */
   async post(
     tx: Prisma.TransactionClient,
     source: StockVoucherSource,
     opts: { actor: string; postedOn: Date; ledgerSource?: StockLedgerSourceLabel },
-  ): Promise<number> {
+  ): Promise<StockPostOutcome> {
     await this.assertNotFrozen(tx, source);
 
-    // The stock voucher keeps its own CTE chain, which reads
-    // `stock_voucher_item` directly and IS the reference implementation of the
-    // seven phases. Calling it from here rather than copying it is what makes
-    // this a seam and not a second engine: its existing e2e suite is the
-    // regression test for every phase.
-    return postStockVoucher(tx, {
+    const result = await postStockVoucher(tx, {
       rules: source.rules,
       svhId: source.svhId,
       accYear: source.accYear,
@@ -72,22 +89,39 @@ export class StockPostingService {
       postedOn: opts.postedOn,
       ledgerSource: opts.ledgerSource,
     });
+
+    let accountsVoucherId: string | null = null;
+    if (!opts.ledgerSource && result.status === 'POSTED') {
+      const posted = await this.accounts.postForVoucher(tx, {
+        svhId: source.svhId,
+        accYear: source.accYear,
+        companyId: source.companyId,
+        branchId: source.branchId,
+        voucherType: source.rules.voucherType,
+        displayName: source.rules.displayName,
+        actor: opts.actor,
+        postedOn: opts.postedOn,
+      });
+      accountsVoucherId = posted?.voucherId ?? null;
+    }
+    return { ...result, accountsVoucherId };
   }
 
   /**
    * Cancel by REVERSAL, never by delete: every ledger row the post wrote gets
    * a mirror with the opposite direction, and the balance, the moving average,
    * the negative-stock policy and the lot totals are then applied over those
-   * mirrors exactly as they were over the originals.
+   * mirrors exactly as they were over the originals. The accounts voucher, if
+   * one was written, gets its `Rev` mirror in the same transaction.
    */
   async cancel(
     tx: Prisma.TransactionClient,
     source: StockVoucherSource,
-    opts: { actor: string; reason: string; cancelledOn: Date },
+    opts: { actor: string; reason: string; cancelledOn: Date; ledgerSource?: StockLedgerSourceLabel },
   ): Promise<number> {
     await this.assertNotFrozen(tx, source);
 
-    return cancelStockVoucher(tx, {
+    const reversed = await cancelStockVoucher(tx, {
       rules: source.rules,
       svhId: source.svhId,
       accYear: source.accYear,
@@ -95,6 +129,17 @@ export class StockPostingService {
       reason: opts.reason,
       cancelledOn: opts.cancelledOn,
     });
+    if (!opts.ledgerSource && StockAccountsPostingService.postsAccounts(source.rules.voucherType)) {
+      await this.accounts.reverseForVoucher(tx, {
+        svhId: source.svhId,
+        accYear: source.accYear,
+        companyId: source.companyId,
+        voucherType: source.rules.voucherType,
+        reason: opts.reason,
+        actor: opts.actor,
+      });
+    }
+    return reversed;
   }
 
   /**

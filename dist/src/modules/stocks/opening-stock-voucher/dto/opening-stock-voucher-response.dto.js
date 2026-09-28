@@ -653,7 +653,7 @@ class OpeningStockPostResultDto extends OpeningStockDocumentDto {
 }
 exports.OpeningStockPostResultDto = OpeningStockPostResultDto;
 __decorate([
-    (0, swagger_1.ApiProperty)({ description: 'Ledger rows written by stock.fn_svh_post.' }),
+    (0, swagger_1.ApiProperty)({ description: 'Ledger rows written by the posting engine.' }),
     __metadata("design:type", Number)
 ], OpeningStockPostResultDto.prototype, "rowsPosted", void 0);
 __decorate([

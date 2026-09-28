@@ -1,8 +1,25 @@
 import { Prisma } from '@prisma/client';
 import type { ResolvedRoleLedger, SupplyNature } from '../ledgerRole/ledger-map.helper';
-import type { DerivedVoucher, DrCr, LegSource, VoucherTypeRules } from './types/vouchers-api.types';
-import type { BillFacts, CompanyFacts, LedgerFacts, TaxRateFacts, TdsRateFacts } from './voucher-facts';
+import type { DerivedInstrument, DerivedVoucher, DrCr, LegSource, VoucherTypeRules } from './types/vouchers-api.types';
+import type { BillFacts, CompanyFacts, LedgerFacts, TaxRateFacts, TdsRateFacts, TenderFacts } from './voucher-facts';
 import { type VoucherGuardContext } from './vouchers.errors';
+import { type ChequeBookFacts } from './cheque-book.helper';
+export interface InstrumentInput {
+    tenderId: string;
+    refNo: string | null;
+    instrumentDate: string | null;
+    bankName: string | null;
+    cheque: {
+        drawerName: string | null;
+        bankBranch: string | null;
+        ifsc: string | null;
+        micr: string | null;
+    } | null;
+    bankLedgerId?: string | null;
+    chequeBookId?: string | null;
+    favouring?: string | null;
+    acPayee?: boolean | null;
+}
 export interface TypedLineInput {
     rowNo: number;
     drCr: DrCr;
@@ -15,6 +32,7 @@ export interface TypedLineInput {
         itcEligibility: string | null;
     } | null;
     tdsBase: boolean | null;
+    instrument?: InstrumentInput | null;
 }
 export interface AllocationInput {
     index: number;
@@ -56,8 +74,13 @@ export interface DeriveInput {
     bills: ReadonlyMap<string, BillFacts>;
     docRefnoClash: 'INDEX' | 'OTHER' | null;
     backdateMode: 'OFF' | 'WARN' | 'REFUSE';
+    allowAdvance?: boolean;
     today: string;
     ctx: VoucherGuardContext;
+    tenders?: ReadonlyMap<string, TenderFacts>;
+    registeredCheques?: ReadonlySet<string>;
+    closedYears?: ReadonlyMap<string, string>;
+    chequeBooks?: ReadonlyMap<string, ChequeBookFacts>;
 }
 export interface InternalLeg {
     rowNo: number;
@@ -81,6 +104,40 @@ export interface InternalLeg {
     } | null;
     isTdsBase: boolean;
     oppLedgerId: string | null;
+    postDated: boolean;
+    postsOn: string | null;
+    instrument: InternalInstrument | null;
+}
+export interface InternalInstrument {
+    lineRowNo: number;
+    tender: TenderFacts;
+    ledgerId: string;
+    ledgerName: string;
+    refNo: string | null;
+    instrumentDate: string | null;
+    bankName: string | null;
+    isCheque: boolean;
+    isPostDated: boolean;
+    postsOn: string | null;
+    cheque: InstrumentInput['cheque'];
+    settlementMode: string;
+    issued: boolean;
+    bankLedgerId: string | null;
+    chequeBook: ChequeBookFacts | null;
+    nextLeaf: string | null;
+    favouring: string | null;
+    acPayee: boolean;
+}
+export interface InternalPostDated {
+    lineRowNo: number;
+    partyLegRowNo: number;
+    instrumentLegRowNo: number;
+    extraLegRowNos: number[];
+    party: LedgerFacts;
+    amount: Prisma.Decimal;
+    postsOn: string;
+    accYear: string;
+    instrument: InternalInstrument;
 }
 export interface InternalGstLine {
     rowNo: number;
@@ -142,7 +199,8 @@ export interface InternalBill {
     amount: Prisma.Decimal;
     docRefno: string | null;
     dueDays: number;
-    dueDate: string;
+    dueDate: string | null;
+    isAdvance: boolean;
 }
 export interface InternalAllocation {
     index: number;
@@ -153,6 +211,9 @@ export interface InternalAllocation {
     amount: Prisma.Decimal;
     adjType: 'ALLOCATION' | 'ADVANCE_ADJUST' | 'NOTE_ADJUST' | 'TRANSFER';
     settlementMode: string;
+    postDated: boolean;
+    adjDate: string;
+    instrumentLineRowNo: number | null;
 }
 export interface DerivedInternal {
     legs: InternalLeg[];
@@ -172,12 +233,18 @@ export interface DerivedInternal {
     tdsLines: InternalTds[];
     bills: InternalBill[];
     allocations: InternalAllocation[];
+    postDated: InternalPostDated[];
 }
 export declare function round2(v: Prisma.Decimal): Prisma.Decimal;
 export declare function opposite(side: DrCr): DrCr;
 export declare function roleKey(role: string, taxId: string | null, supplyNature: string | null): string;
+export type SideVerdict = 'OK' | 'GROUPS' | 'MONEY_ONLY' | 'NO_MONEY';
+export declare function moneySideOf(nature: string): DrCr | null;
+export declare function sideVerdict(type: VoucherTypeRules, side: DrCr, ledger: LedgerFacts): SideVerdict;
 export declare function legalOnSide(type: VoucherTypeRules, side: DrCr, ledger: LedgerFacts): boolean;
 export declare function addDays(iso: string, days: number): string;
+export declare function accYearOfDate(iso: string): string;
 export declare function derive(input: DeriveInput): DerivedInternal;
 export declare function registerDeductee(ledgerType: string | null | undefined): 'COMPANY' | 'NON_COMPANY';
 export declare function toWire(typeCode: string, date: string, d: DerivedInternal): DerivedVoucher;
+export declare function instrumentToWire(i: InternalInstrument): DerivedInstrument;

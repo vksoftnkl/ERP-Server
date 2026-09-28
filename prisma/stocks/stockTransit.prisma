@@ -85,6 +85,11 @@ model StockTransit {
   sttShortQty          Decimal?  @default(dbgenerated()) @db.Decimal(18, 6) @map("stt_short_qty")
 
   sttCostRate          Decimal   @default(0) @db.Decimal(18, 6)      @map("stt_cost_rate")
+  // Stamped at despatch beside sttCostRate (20260928100000), so a receipt
+  // carries BOTH figures the OUT row was valued at. Before this the
+  // without-tax cost was read off the lot's frozen first-arrival rate, and the
+  // two rates on one IN row described two different moments.
+  sttCostRateWot       Decimal   @default(0) @db.Decimal(18, 6)      @map("stt_cost_rate_wot")
   sttTransitValue      Decimal   @default(0) @db.Decimal(18, 2)      @map("stt_transit_value")
 
   sttSentOn            DateTime  @default(now()) @db.Timestamptz(6)  @map("stt_sent_on")

@@ -14,15 +14,15 @@ PHYSICAL and the rest are the same shape.
 
 The lot, the ledger row, the balance and the moving average are written by
 **`stock-voucher-posting.helper.ts`**, the posting engine — in the application,
-not in the database, because the share's `stock.fn_svh_post()` / `fn_sml_apply()`
-are not installed here (see the note at the top of that file; installing them on
-top of this engine would apply every movement twice). It resolves lots, writes
+not in the database. No `fn_svh_post` / `fn_sml_apply` / ledger trigger exists on
+any deployment (the 2026-09-22 rule: the database keeps only what is declarative).
+It picks and resolves lots, writes
 `stock_ledger`, applies `stock_balance`, maintains `stock_item_cost` and stamps
 the branch average onto every holding, checks the negative-stock policy and
 refreshes `slt_total_on_hand` — seven set-based statements in the caller's
-transaction. Nothing outside that file inserts into `stock_ledger`, and
-`stock_ledger` deliberately has **no Prisma model at all**, which is the cheapest
-possible guard against a future `create` finding its way in.
+transaction. Nothing outside that file inserts into `stock_ledger`: the model
+exists (`StockLedger`) but `test/stock-ledger-single-writer.e2e-spec.ts` fails the
+build on any second INSERT site, any UPDATE or DELETE, and any Prisma write.
 
 The database keeps the rules that must hold whatever writes the ledger, from
 migration `20260908110000`: the ledger is append-only (`tr_sml_forbid_delete`,
@@ -68,11 +68,10 @@ are taken from the header payload and written verbatim. The screen sums its own
 grid; this service counts nothing.
 
 They are written as **their own `UPDATE`, after the lines** — see
-`writeHeaderTotals`. Where the engine DDL is installed, `tr_svi_refresh_header`
-re-sums all four on every line write, so totals written before the lines would be
-silently replaced by that trigger's sums. `fn_svh_recompute` still re-derives
-them **at post**, which is out of this module's hands: that DDL does not live in
-this repo. A `PHYSICAL` count refuses all four outright — its header carries the
+`writeHeaderTotals`. A DRAFT's figures are provisional. The engine's
+`recomputeHeaderTotals` re-derives all four **at post and at cancel** from the
+ledger rows it wrote, so a posted document carries the engine's figures and a
+cancelled one re-totals to 0. A `PHYSICAL` count refuses all four outright — its header carries the
 net variance read off the ledger, which nothing on the count sheet adds up to.
 
 ## Numbering is self-contained
