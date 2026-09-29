@@ -290,6 +290,23 @@ Setting `accounts.voucher_allow_advance` (BOOL, COMPANY, default **true**, migra
 `20260928180000`): false keeps the strict rule, every rupee bill by bill. OPTIONAL (Journal)
 and the RAISE types are unchanged.
 
+## notes (59) — the Accounts menu (&5), names and order by nature
+
+Migration `20260928200000_accounts_menu_by_nature` (and the same rows in
+`prisma/seed/Menu_Master.sql` for a fresh database) renames and re-orders the Accounts menu
+**without touching an id**, so no client registration moves and the tree shows the new names
+as soon as the rows change. Masters first: 54 Ledger Groups · 53 Ledgers · 55 Opening
+Balances ‖ bill-wise settlement (one party, against bills): 99 **Bill-wise Receipt** ·
+100 **Bill-wise Payment** (hidden until the payment screen is built) · 51 Received Cheques ·
+52 Issued Cheques · 263 Cheque Books ‖ the register's vouchers in Tally's F4–F10 order:
+104 Contra · 261 Payment Voucher · 260 Receipt Voucher · 103 Journal · 259 Sales (Accounting) ·
+163 Purchase (Accounting) · 102 Credit Note · 101 Debit Note · 262 Voucher Register ‖ retired /
+unbuilt screens (48 and 49 with an "(old)" suffix, 187, 188, 179, 185) at 90+ and hidden.
+99/100 settle ONE party's bills; 260/261 are the register's many-party vouchers — the old
+"Receipt" beside "Receipt Voucher" read as the same thing. Screen titles are the screens'
+own (the register's "Opened from:" uses the voucher TYPE's name from `/vouchers/types`), so
+a screen titled "Receipt" keeps that title until the client renames it.
+
 ## Grids and ui_tables (§10) — migration `20260926100000_voucher_register_grids`
 
 | Id | Name | Params |

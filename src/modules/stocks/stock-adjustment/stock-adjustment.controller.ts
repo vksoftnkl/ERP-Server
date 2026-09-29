@@ -18,7 +18,6 @@ import type {
   StockVoucherCancelResult,
   StockVoucherDeleteResult,
   StockVoucherLineProblem,
-  StockVoucherPayload,
   StockVoucherPostResult,
   StockVoucherSaveResult,
   StockVoucherSuccessResponse,
@@ -30,16 +29,19 @@ import {
   StockAdjustmentRefDto,
   StockAdjustmentRefQueryDto,
 } from './dto/stock-adjustment-query.dto';
-import { StockAdjustmentService, type PickStockRow } from './stock-adjustment.service';
+import { StockAdjustmentService, type PickStockRow, type StockAdjustmentPayload } from './stock-adjustment.service';
 
 /**
- * ONE module, ONE screen with a Type selector, four documents
- * (plan-nestjs-stock-adjustments §0, §1). The kind is on the payload at save
- * and on the row for everything else; the service pins the matching rule
- * record the way a dedicated controller would.
+ * ONE module, ONE screen with a Type selector, five documents
+ * (plan-nestjs-stock-adjustments §0, §1; the fifth, Move stock, is notes 60).
+ * The kind is on the payload at save and on the row for everything else; the
+ * service pins the matching rule record the way a dedicated controller would.
+ * Menu 264 "Stock Adjustment" covers every kind (per-kind rights later).
  *
- * No `/list` route (house rule): the list screen is a grid over
- * `stock.stock_voucher` with `svh_voucher_type IN (the four)`.
+ * No `/list` route (house rule): the list screen is grid 122
+ * (TXN MAIN LIST - STOCK ADJUSTMENT) over `stock.stock_voucher` with
+ * `svh_voucher_type IN (the four)`; its `kind_code` tells a re-lot and a move
+ * apart. The line grid is ui_table 41.
  */
 @ApiTags('Stock Adjustment')
 @ApiBearerAuth('access-token')
@@ -52,9 +54,9 @@ export class StockAdjustmentController {
   @Post()
   @Version(API_VERSION)
   @ApiOperation({
-    summary: 'Create or update a DRAFT adjustment, issue, damage or expiry write-off',
+    summary: 'Create or update a DRAFT adjustment, issue, damage or expiry write-off, or a stock move',
     description:
-      'header.voucherType picks the kind. Every line moves under a reason (its own, else the header\'s): an IN / OUT reason fixes the sign, a BOTH reason takes it from the signed quantity. Outward lines name a lot from /pick-stock or leave it to the issue strategy; inward lines state identity. A re-lot is an ADJUSTMENT with a RELOT_OUT / RELOT_IN pair that balances per item.',
+      'header.voucherType picks the kind. Every line moves under a reason (its own, else the header\'s): an IN / OUT reason fixes the sign, a BOTH reason takes it from the signed quantity. Outward lines name a lot from /pick-stock or leave it to the issue strategy; inward lines state identity. A re-lot is an ADJUSTMENT with a RELOT_OUT / RELOT_IN pair that balances per item. BUCKET_MOVE (stored as ADJUSTMENT): every line names its lot, `bucket` (from) and `toBucket` (to), a positive quantity and a move reason; the post writes BUCKET_OUT / BUCKET_IN at the same cost and no accounts voucher.',
   })
   @ApiCreatedResponse({ description: 'The saved document.' })
   @ApiBadRequestResponse({ type: HttpErrorResponseDto })
@@ -71,10 +73,14 @@ export class StockAdjustmentController {
 
   @Get()
   @Version(API_VERSION)
-  @ApiOperation({ summary: 'Load one document with item, lot, reason and godown names' })
+  @ApiOperation({
+    summary: 'Load one document with item, lot, reason and godown names',
+    description:
+      '`kind` is what the Type selector shows: ADJUSTMENT, RELOT, BUCKET_MOVE, ISSUE, DAMAGE or EXPIRY_WRITEOFF (header.voucherType stays the stored type, ADJUSTMENT for the first three). A move\'s lines carry `toBucket`.',
+  })
   @ApiOkResponse({ description: 'The document.' })
   @ApiNotFoundResponse({ type: HttpErrorResponseDto })
-  async load(@Query() query: StockAdjustmentRefQueryDto): Promise<StockVoucherSuccessResponse<StockVoucherPayload>> {
+  async load(@Query() query: StockAdjustmentRefQueryDto): Promise<StockVoucherSuccessResponse<StockAdjustmentPayload>> {
     const data = await this.service.getOne(query.svhId, query.accYear, query.companyId, query.branchId);
     return { success: true, message: 'Stock adjustment fetched successfully', data };
   }
@@ -103,7 +109,7 @@ export class StockAdjustmentController {
   @ApiOperation({
     summary: 'Post: the engine, the accounts voucher and the trail in one transaction',
     description:
-      'Per-line direction and txn type from the reason; BLOCK on any holding it would drive negative; the header re-summed from the ledger; under PERPETUAL one Stock Journal voucher (DR reason ledger / CR Stock-in-Hand for stock out, the reverse for stock in, netted per ledger; a re-lot pair posts none).',
+      'Per-line direction and txn type from the reason; BLOCK on any holding it would drive negative; the header re-summed from the ledger; under PERPETUAL one Stock Journal voucher (DR reason ledger / CR Stock-in-Hand for stock out, the reverse for stock in, netted per ledger; a re-lot pair and a stock move post none).',
   })
   @ApiOkResponse({ description: 'The posted document with rowsPosted.' })
   @ApiUnprocessableEntityResponse({ type: HttpErrorResponseDto })
@@ -143,7 +149,7 @@ export class StockAdjustmentController {
   @ApiOperation({
     summary: 'Pick stock from the balance — the holdings an outward line is chosen from',
     description:
-      'Balance-grain rows (godown × lot × bucket) with available > 0: item, batch, expiry, MRP, on hand, available and the average cost. Live, never cached.',
+      'Balance-grain rows (godown × lot × bucket) with available > 0: item, batch, expiry, MRP, the lot\'s supplier, on hand, available and the average cost. With bucket=DAMAGED it is the "what goes back to which supplier" list. Live, never cached.',
   })
   @ApiOkResponse({ description: 'The holdings.' })
   async pickStock(@Query() query: PickStockQueryDto): Promise<StockVoucherSuccessResponse<PickStockRow[]>> {

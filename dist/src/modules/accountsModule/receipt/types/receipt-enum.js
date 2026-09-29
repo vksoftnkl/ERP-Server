@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.RECEIPT_PRINT_PURPOSE_CODE = exports.ADVANCE_SRC_DOC_TYPE = exports.RECEIPT_SRC_DOC_TYPE = exports.RECEIPT_SRC_MODULE = exports.RECEIPT_VOUCHER_TYPE_CODE = exports.TcsBasis = exports.ReceiptBillSort = exports.ReceiptSettingKey = exports.FREE_LEDGER_SETTLEMENT_MODE = exports.ROLE_SETTLEMENT_MODE = exports.ROLE_SIDE = exports.ReceiptLedgerRole = exports.CHEQUE_TENDER_TYPE_ID = exports.PdcPostingMode = exports.CANCELLABLE_PDC_STATUSES = exports.PdcStatus = exports.PdcInstrumentType = exports.PdcTraType = exports.BillSettlementMode = exports.ALLOCATING_ADJ_TYPES = exports.BillAdjType = exports.CREDIT_BILL_TYPES = exports.RECEIVABLE_BILL_TYPES = exports.BillStatus = exports.BillType = exports.DrCr = exports.VOUCHER_STATUSES = exports.VoucherDeviceType = exports.VoucherStatus = void 0;
+exports.RECEIPT_PRINT_PURPOSE_CODE = exports.ADVANCE_SRC_DOC_TYPE = exports.RECEIPT_SRC_DOC_TYPE = exports.RECEIPT_SRC_MODULE = exports.RECEIPT_MENU_ID = exports.RECEIPT_VOUCHER_TYPE_CODE = exports.TcsBasis = exports.ReceiptBillSort = exports.ReceiptSettingKey = exports.FREE_LEDGER_SETTLEMENT_MODE = exports.ROLE_SETTLEMENT_MODE = exports.ROLE_SIDE = exports.ReceiptLedgerRole = exports.CHEQUE_TENDER_TYPE_ID = exports.PdcPostingMode = exports.CANCELLABLE_PDC_STATUSES = exports.PdcStatus = exports.PdcInstrumentType = exports.PdcTraType = exports.BillSettlementMode = exports.ALLOCATING_ADJ_TYPES = exports.BillAdjType = exports.CREDIT_BILL_TYPES = exports.RECEIVABLE_BILL_TYPES = exports.BillStatus = exports.BillType = exports.DrCr = exports.VOUCHER_STATUSES = exports.VoucherDeviceType = exports.VoucherStatus = void 0;
 var VoucherStatus;
 (function (VoucherStatus) {
     VoucherStatus["DRAFT"] = "DRAFT";
@@ -168,6 +168,7 @@ var TcsBasis;
     TcsBasis["SALES"] = "SALES";
 })(TcsBasis || (exports.TcsBasis = TcsBasis = {}));
 exports.RECEIPT_VOUCHER_TYPE_CODE = 'Rct';
+exports.RECEIPT_MENU_ID = 99;
 exports.RECEIPT_SRC_MODULE = 'ACCOUNTS';
 exports.RECEIPT_SRC_DOC_TYPE = 'RECEIPT';
 exports.ADVANCE_SRC_DOC_TYPE = 'RECEIPT_ADVANCE';

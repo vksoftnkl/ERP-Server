@@ -146,9 +146,9 @@ export declare const fieldElementSchema: z.ZodObject<{
     kind: z.ZodLiteral<"FIELD">;
     aggregate: z.ZodOptional<z.ZodObject<{
         fn: z.ZodEnum<{
-            count: "count";
             max: "max";
             min: "min";
+            count: "count";
             avg: "avg";
             sum: "sum";
         }>;
@@ -322,9 +322,9 @@ export declare const crosstabMeasureSchema: z.ZodObject<{
     expression: z.ZodString;
     label: z.ZodDefault<z.ZodString>;
     fn: z.ZodDefault<z.ZodEnum<{
-        count: "count";
         max: "max";
         min: "min";
+        count: "count";
         avg: "avg";
         sum: "sum";
     }>>;
@@ -355,9 +355,9 @@ export declare const crosstabElementSchema: z.ZodObject<{
     columnBy: z.ZodString;
     measure: z.ZodString;
     fn: z.ZodDefault<z.ZodEnum<{
-        count: "count";
         max: "max";
         min: "min";
+        count: "count";
         avg: "avg";
         sum: "sum";
     }>>;
@@ -378,9 +378,9 @@ export declare const crosstabElementSchema: z.ZodObject<{
         expression: z.ZodString;
         label: z.ZodDefault<z.ZodString>;
         fn: z.ZodDefault<z.ZodEnum<{
-            count: "count";
             max: "max";
             min: "min";
+            count: "count";
             avg: "avg";
             sum: "sum";
         }>>;
@@ -515,9 +515,9 @@ export declare const elementSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     kind: z.ZodLiteral<"FIELD">;
     aggregate: z.ZodOptional<z.ZodObject<{
         fn: z.ZodEnum<{
-            count: "count";
             max: "max";
             min: "min";
+            count: "count";
             avg: "avg";
             sum: "sum";
         }>;
@@ -699,9 +699,9 @@ export declare const elementSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     columnBy: z.ZodString;
     measure: z.ZodString;
     fn: z.ZodDefault<z.ZodEnum<{
-        count: "count";
         max: "max";
         min: "min";
+        count: "count";
         avg: "avg";
         sum: "sum";
     }>>;
@@ -722,9 +722,9 @@ export declare const elementSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         expression: z.ZodString;
         label: z.ZodDefault<z.ZodString>;
         fn: z.ZodDefault<z.ZodEnum<{
-            count: "count";
             max: "max";
             min: "min";
+            count: "count";
             avg: "avg";
             sum: "sum";
         }>>;
@@ -889,9 +889,9 @@ export declare const bandSchema: z.ZodObject<{
         kind: z.ZodLiteral<"FIELD">;
         aggregate: z.ZodOptional<z.ZodObject<{
             fn: z.ZodEnum<{
-                count: "count";
                 max: "max";
                 min: "min";
+                count: "count";
                 avg: "avg";
                 sum: "sum";
             }>;
@@ -1073,9 +1073,9 @@ export declare const bandSchema: z.ZodObject<{
         columnBy: z.ZodString;
         measure: z.ZodString;
         fn: z.ZodDefault<z.ZodEnum<{
-            count: "count";
             max: "max";
             min: "min";
+            count: "count";
             avg: "avg";
             sum: "sum";
         }>>;
@@ -1096,9 +1096,9 @@ export declare const bandSchema: z.ZodObject<{
             expression: z.ZodString;
             label: z.ZodDefault<z.ZodString>;
             fn: z.ZodDefault<z.ZodEnum<{
-                count: "count";
                 max: "max";
                 min: "min";
+                count: "count";
                 avg: "avg";
                 sum: "sum";
             }>>;
@@ -1297,9 +1297,9 @@ export declare const templateDefinitionSchema: z.ZodObject<{
             kind: z.ZodLiteral<"FIELD">;
             aggregate: z.ZodOptional<z.ZodObject<{
                 fn: z.ZodEnum<{
-                    count: "count";
                     max: "max";
                     min: "min";
+                    count: "count";
                     avg: "avg";
                     sum: "sum";
                 }>;
@@ -1481,9 +1481,9 @@ export declare const templateDefinitionSchema: z.ZodObject<{
             columnBy: z.ZodString;
             measure: z.ZodString;
             fn: z.ZodDefault<z.ZodEnum<{
-                count: "count";
                 max: "max";
                 min: "min";
+                count: "count";
                 avg: "avg";
                 sum: "sum";
             }>>;
@@ -1504,9 +1504,9 @@ export declare const templateDefinitionSchema: z.ZodObject<{
                 expression: z.ZodString;
                 label: z.ZodDefault<z.ZodString>;
                 fn: z.ZodDefault<z.ZodEnum<{
-                    count: "count";
                     max: "max";
                     min: "min";
+                    count: "count";
                     avg: "avg";
                     sum: "sum";
                 }>>;

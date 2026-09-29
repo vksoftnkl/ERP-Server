@@ -10,6 +10,15 @@ import * as request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { TokenService, type AccessTokenPayload } from '../src/modules/auth/token.service';
 import { AuthSessionService } from '../src/modules/auth/auth-session.service';
+import {
+  grantMenuRights,
+  RECEIPT_MENU,
+  restoreMenuRights,
+  type MenuRightsMemo,
+} from './helpers/menu-rights';
+
+/** notes (62) D2 — tester1's menu-99 rights for this suite, put back in afterAll. */
+let rightsMemo: MenuRightsMemo | null = null;
 
 /**
  * Notes (38) and (39) — what a receipt owns once the cheques module has been
@@ -114,6 +123,7 @@ const today = (): string => new Date().toISOString().slice(0, 10);
 const data = <T>(res: request.Response): T => (res.body as { data: T }).data;
 
 beforeAll(async () => {
+  rightsMemo = await grantMenuRights(prisma, [RECEIPT_MENU]);
   const chequeTender = await prisma.accTenderMaster.findFirstOrThrow({
     where: { tndTypeId: CHEQUE_TENDER_TYPE, tndCompanyId: COMPANY, tndIsDeleted: false },
     select: { tndId: true },
@@ -198,6 +208,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  await restoreMenuRights(prisma, rightsMemo);
   await teardown();
   await app?.close();
   await prisma.$disconnect();

@@ -5,4 +5,11 @@ export declare const NO_RIGHTS: Readonly<MenuRights>;
 export declare const RIGHT_COLUMN: Record<MenuRight, string>;
 type RightsClient = Pick<Prisma.TransactionClient, '$queryRaw'>;
 export declare function loadRights(client: RightsClient, userId: string, menuId: number): Promise<MenuRights>;
+export declare function assertMenuRight(client: RightsClient, params: {
+    userId: string | null;
+    menuId: number;
+    right: MenuRight;
+    codePrefix: string;
+    action: string;
+}): Promise<MenuRights>;
 export {};

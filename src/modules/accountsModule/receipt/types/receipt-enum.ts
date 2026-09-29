@@ -353,6 +353,9 @@ export enum TcsBasis {
  */
 export const RECEIPT_VOUCHER_TYPE_CODE = 'Rct';
 
+/** `fixed.menu_master.menu_id` of the Receipt screen — whose `user_menus` rights judge every route. */
+export const RECEIPT_MENU_ID = 99;
+
 /** `td_src_module` / `td_src_doc_type` / `tsl_src_*` for everything this module writes. */
 export const RECEIPT_SRC_MODULE = 'ACCOUNTS';
 export const RECEIPT_SRC_DOC_TYPE = 'RECEIPT';

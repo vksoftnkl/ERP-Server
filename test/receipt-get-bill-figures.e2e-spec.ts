@@ -10,6 +10,15 @@ import * as request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { TokenService, type AccessTokenPayload } from '../src/modules/auth/token.service';
 import { AuthSessionService } from '../src/modules/auth/auth-session.service';
+import {
+  grantMenuRights,
+  RECEIPT_MENU,
+  restoreMenuRights,
+  type MenuRightsMemo,
+} from './helpers/menu-rights';
+
+/** notes (62) D2 — tester1's menu-99 rights for this suite, put back in afterAll. */
+let rightsMemo: MenuRightsMemo | null = null;
 
 /**
  * N36 §3 — a loaded receipt carries the BILL's own figures (2026-09-19).
@@ -129,6 +138,7 @@ describe('GET /receipts/get — allocations carry the bill (e2e, live DB, writes
   };
 
   beforeAll(async () => {
+    rightsMemo = await grantMenuRights(prisma, [RECEIPT_MENU]);
     // CASH deliberately: every other tender type needs a reference, and a
     // cheque additionally needs an instrument date and a bank. None of that is
     // what this suite is about.
@@ -238,6 +248,7 @@ describe('GET /receipts/get — allocations carry the bill (e2e, live DB, writes
   });
 
   afterAll(async () => {
+    await restoreMenuRights(prisma, rightsMemo);
     await app?.close();
     await prisma.$disconnect();
   });

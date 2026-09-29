@@ -1,8 +1,8 @@
 import { SaveStockVoucherHeaderDto } from '../../stock-voucher/dto/save-stock-voucher.dto';
 import { type StockBucket } from '../../stock-voucher/types/stock-voucher.types';
-import { type StockAdjustmentKind } from '../stock-adjustment.rules';
+import { type StockAdjustmentSaveKind } from '../stock-adjustment.rules';
 export declare class SaveStockAdjustmentHeaderDto extends SaveStockVoucherHeaderDto {
-    voucherType: StockAdjustmentKind;
+    voucherType: StockAdjustmentSaveKind;
 }
 export declare class SaveStockAdjustmentItemDto {
     lineNo: number;
@@ -17,6 +17,7 @@ export declare class SaveStockAdjustmentItemDto {
     godownId: string;
     lotId?: string | null;
     bucket?: StockBucket;
+    toBucket?: StockBucket | null;
     batchNo?: string | null;
     mfgDate?: string | null;
     expiryDate?: string | null;

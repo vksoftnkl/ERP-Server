@@ -25,28 +25,61 @@ function invalid(message, details) {
 exports.RECEIPT_VOUCHER_KEY = 'RECEIPT';
 const pdcVoucherKey = (tenderRowNo) => `PDC:${tenderRowNo}`;
 exports.pdcVoucherKey = pdcVoucherKey;
+function sidesOf(input) {
+    if (input.direction === 'OUT') {
+        return {
+            direction: 'OUT',
+            settle: receipt_enum_1.DrCr.DR,
+            mirror: receipt_enum_1.DrCr.CR,
+            deduction: receipt_enum_1.DrCr.CR,
+            extra: receipt_enum_1.DrCr.DR,
+            moved: 'Paid',
+            route: '/payments/open-items',
+        };
+    }
+    return {
+        direction: 'IN',
+        settle: receipt_enum_1.DrCr.CR,
+        mirror: receipt_enum_1.DrCr.DR,
+        deduction: receipt_enum_1.DrCr.DR,
+        extra: receipt_enum_1.DrCr.CR,
+        moved: 'Received',
+        route: '/receipts/open-items',
+    };
+}
+function isDeduction(line, sides) {
+    return line.drCr === sides.deduction && line.settlesBill && !line.isInstrumentSplit;
+}
+function isFloating(line, sides) {
+    return line.drCr === sides.deduction && !line.settlesBill && !line.isInstrumentSplit;
+}
+function isExtra(line, sides) {
+    return line.drCr === sides.extra;
+}
 function allocate(input) {
     const bills = input.bills;
-    assertBillsFit(bills);
-    assertCreditsFit(input.credits);
-    assertIdentity(input);
+    const sides = sidesOf(input);
+    assertBillsFit(bills, sides);
+    assertCreditsFit(input.credits, sides);
+    assertIdentity(input, sides);
     const adjustments = [];
     const capacity = bills.map((bill) => (0, receipt_utils_1.money)(bill.amount));
-    reserveDeductions(input, bills, capacity, adjustments);
-    const sources = buildSources(input);
-    pour(bills, capacity, sources, adjustments);
+    const deductionOverflow = reserveDeductions(input, sides, bills, capacity, adjustments);
+    const sources = buildSources(input, sides);
+    pour(bills, capacity, sources, sides, adjustments);
     const unfilled = capacity.findIndex((left) => !left.isZero());
     if (unfilled >= 0) {
         invalid('Allocation could not be completed', [
             {
                 field: `allocations.${unfilled}.amount`,
                 message: `Bill ${bills[unfilled].docRefno} is short by ${capacity[unfilled].toFixed(2)} — ` +
-                    'the receipt does not carry enough money, credit or deduction to settle what it claims',
+                    `the ${sides.direction === 'OUT' ? 'payment' : 'receipt'} does not carry enough money, ` +
+                    'credit or deduction to settle what it claims',
             },
         ]);
     }
-    addReductions(input, bills, adjustments);
-    const onAccount = collectOnAccount(input, sources);
+    addReductions(input, sides, bills, adjustments);
+    const onAccount = collectOnAccount(input, sides, sources, deductionOverflow);
     const totalOnAccount = (0, receipt_utils_1.sum)(onAccount.map((entry) => entry.amount));
     if (!totalOnAccount.equals((0, receipt_utils_1.money)(input.claimedOnAccount))) {
         invalid('Validation failed', [
@@ -54,7 +87,7 @@ function allocate(input) {
                 field: 'onAccount',
                 message: `The server holds ${totalOnAccount.toFixed(2)} on account, not ` +
                     `${(0, receipt_utils_1.money)(input.claimedOnAccount).toFixed(2)}. The client's figure is a preview; ` +
-                    're-read /receipts/open-items and re-post.',
+                    `re-read ${sides.route} and re-post.`,
             },
         ]);
     }
@@ -63,11 +96,13 @@ function allocate(input) {
         onAccount,
         totalOnAccount,
         adjustAmountByVoucher: totalPerVoucher(adjustments),
-        partyCreditByVoucher: partyCreditPerVoucher(input, adjustments, onAccount),
+        partyCreditByVoucher: partyLegPerVoucher(input, sides, adjustments, onAccount),
+        partyLegSide: sides.settle,
     };
 }
-function assertBillsFit(bills) {
+function assertBillsFit(bills, sides) {
     const seen = new Set();
+    const doc = sides.direction === 'OUT' ? 'payment' : 'receipt';
     bills.forEach((bill, index) => {
         const key = `${bill.billId}|${bill.billAccYear}`;
         if (seen.has(key)) {
@@ -101,18 +136,19 @@ function assertBillsFit(bills) {
             ]);
         }
         if (settled.greaterThan((0, receipt_utils_1.money)(bill.pendingAmount))) {
-            conflict('Bill moved while this receipt was being entered', [
+            conflict(`Bill moved while this ${doc} was being entered`, [
                 {
                     field: `allocations.${index}.amount`,
                     message: `Bill ${bill.docRefno} has ${(0, receipt_utils_1.money)(bill.pendingAmount).toFixed(2)} pending, but this ` +
-                        `receipt settles ${settled.toFixed(2)} against it`,
+                        `${doc} settles ${settled.toFixed(2)} against it`,
                 },
             ]);
         }
     });
 }
-function assertCreditsFit(credits) {
+function assertCreditsFit(credits, sides) {
     const seen = new Set();
+    const doc = sides.direction === 'OUT' ? 'payment' : 'receipt';
     credits.forEach((credit, index) => {
         const key = `${credit.billId}|${credit.billAccYear}`;
         if (seen.has(key)) {
@@ -133,52 +169,54 @@ function assertCreditsFit(credits) {
             ]);
         }
         if ((0, receipt_utils_1.money)(credit.amount).greaterThan((0, receipt_utils_1.money)(credit.pendingAmount))) {
-            conflict('Credit moved while this receipt was being entered', [
+            conflict(`Credit moved while this ${doc} was being entered`, [
                 {
                     field: `creditsApplied.${index}.amount`,
                     message: `Credit ${credit.docRefno} has ${(0, receipt_utils_1.money)(credit.pendingAmount).toFixed(2)} left, but this ` +
-                        `receipt applies ${(0, receipt_utils_1.money)(credit.amount).toFixed(2)} of it`,
+                        `${doc} applies ${(0, receipt_utils_1.money)(credit.amount).toFixed(2)} of it`,
                 },
             ]);
         }
     });
 }
-function assertIdentity(input) {
-    const moneyIn = (0, receipt_utils_1.sum)(input.tenders.map((tender) => (0, receipt_utils_1.money)(tender.amount)));
-    const otherDr = (0, receipt_utils_1.sum)(input.otherLines
-        .filter((line) => line.drCr === receipt_enum_1.DrCr.DR && !line.isInstrumentSplit)
+function assertIdentity(input, sides) {
+    const moneyMoved = (0, receipt_utils_1.sum)(input.tenders.map((tender) => (0, receipt_utils_1.money)(tender.amount)));
+    const deductions = (0, receipt_utils_1.sum)(input.otherLines
+        .filter((line) => line.drCr === sides.deduction && !line.isInstrumentSplit)
         .map((line) => (0, receipt_utils_1.money)(line.amount)));
-    const otherCr = (0, receipt_utils_1.sum)(input.otherLines.filter((line) => line.drCr === receipt_enum_1.DrCr.CR).map((line) => (0, receipt_utils_1.money)(line.amount)));
+    const extras = (0, receipt_utils_1.sum)(input.otherLines.filter((line) => isExtra(line, sides)).map((line) => (0, receipt_utils_1.money)(line.amount)));
     const credits = (0, receipt_utils_1.sum)(input.credits.map((credit) => (0, receipt_utils_1.money)(credit.amount)));
     const allocated = (0, receipt_utils_1.sum)(input.bills.map((bill) => (0, receipt_utils_1.money)(bill.amount)));
     const claimed = (0, receipt_utils_1.money)(input.claimedOnAccount);
-    const left = moneyIn.plus(otherDr).plus(credits);
-    const right = allocated.plus(claimed).plus(otherCr);
+    const left = moneyMoved.plus(deductions).plus(credits);
+    const right = allocated.plus(claimed).plus(extras);
     if (!left.equals(right)) {
-        invalid('The receipt does not balance', [
+        const doc = sides.direction === 'OUT' ? 'payment' : 'receipt';
+        invalid(`The ${doc} does not balance`, [
             {
                 field: 'onAccount',
-                message: `Received ${moneyIn.toFixed(2)} + deductions ${otherDr.toFixed(2)} + credits ` +
+                message: `${sides.moved} ${moneyMoved.toFixed(2)} + deductions ${deductions.toFixed(2)} + credits ` +
                     `${credits.toFixed(2)} = ${left.toFixed(2)}, but allocated ${allocated.toFixed(2)} + ` +
-                    `on account ${claimed.toFixed(2)} + other income ${otherCr.toFixed(2)} = ` +
-                    `${right.toFixed(2)}. Out by ${left.minus(right).toFixed(2)}.`,
+                    `on account ${claimed.toFixed(2)} + other ${sides.direction === 'OUT' ? 'charges' : 'income'} ` +
+                    `${extras.toFixed(2)} = ${right.toFixed(2)}. Out by ${left.minus(right).toFixed(2)}.`,
             },
         ]);
     }
     const instant = (0, receipt_utils_1.sum)(input.tenders.filter((tender) => !tender.isPostDated).map((tender) => (0, receipt_utils_1.money)(tender.amount)));
-    if (otherCr.greaterThan(instant)) {
+    if (extras.greaterThan(instant)) {
         invalid('Validation failed', [
             {
                 field: 'otherLines',
-                message: `Other income of ${otherCr.toFixed(2)} needs money that has arrived, and only ` +
+                message: `Other ${sides.direction === 'OUT' ? 'charges' : 'income'} of ${extras.toFixed(2)} ` +
+                    `needs money that has ${sides.direction === 'OUT' ? 'left' : 'arrived'}, and only ` +
                     `${instant.toFixed(2)} has. A post-dated cheque cannot fund it.`,
             },
         ]);
     }
 }
-function reserveDeductions(input, bills, capacity, out) {
+function reserveDeductions(input, sides, bills, capacity, out) {
     const billIndex = new Map(bills.map((bill, index) => [`${bill.billId}|${bill.billAccYear}`, index]));
-    const deductions = input.otherLines.filter((line) => line.drCr === receipt_enum_1.DrCr.DR && line.settlesBill && !line.isInstrumentSplit);
+    const deductions = input.otherLines.filter((line) => isDeduction(line, sides));
     const pinnedByLine = new Map();
     for (const pin of input.pins) {
         const list = pinnedByLine.get(pin.lineNo) ?? [];
@@ -192,7 +230,7 @@ function reserveDeductions(input, bills, capacity, out) {
                 {
                     field: 'otherLineBills',
                     message: `Line ${lineNo} is pinned to a bill, but it is not a deduction that settles one. ` +
-                        'Only a DR other-ledger line with settlesBill can be pinned.',
+                        `Only a ${sides.deduction} other-ledger line with settlesBill can be pinned.`,
                 },
             ]);
         }
@@ -212,35 +250,39 @@ function reserveDeductions(input, bills, capacity, out) {
                 invalid('Validation failed', [
                     {
                         field: 'otherLineBills',
-                        message: `Line ${lineNo} is pinned to a bill this receipt does not allocate against`,
+                        message: `Line ${lineNo} is pinned to a bill this document does not allocate against`,
                     },
                 ]);
             }
             takeFromBill(bills, capacity, index, (0, receipt_utils_1.money)(pin.amount), `otherLineBills (line ${lineNo})`);
-            out.push(deductionRow(input, bills[index], line, (0, receipt_utils_1.money)(pin.amount)));
+            out.push(deductionRow(input, sides, bills[index], line, (0, receipt_utils_1.money)(pin.amount)));
         }
     }
+    let overflow = receipt_utils_1.ZERO;
     for (const line of deductions) {
         if (pinnedByLine.has(line.lineNo)) {
             continue;
         }
-        const shares = (0, receipt_utils_1.distributeProRata)((0, receipt_utils_1.money)(line.amount), capacity.map((left) => left));
+        const placed = client_1.Prisma.Decimal.min((0, receipt_utils_1.money)(line.amount), (0, receipt_utils_1.sum)(capacity));
+        overflow = overflow.plus((0, receipt_utils_1.money)(line.amount).minus(placed));
+        const shares = (0, receipt_utils_1.distributeProRata)(placed, capacity.map((left) => left));
         shares.forEach((share, index) => {
             if (share.isZero()) {
                 return;
             }
             takeFromBill(bills, capacity, index, share, `otherLines.${line.lineNo}.amount`);
-            out.push(deductionRow(input, bills[index], line, share));
+            out.push(deductionRow(input, sides, bills[index], line, share));
         });
     }
+    return overflow;
 }
-function deductionRow(input, bill, line, amount) {
+function deductionRow(input, sides, bill, line, amount) {
     return {
         billId: bill.billId,
         billAccYear: bill.billAccYear,
         adjType: receipt_enum_1.BillAdjType.ALLOCATION,
         settlementMode: line.settlementMode,
-        drCr: receipt_enum_1.DrCr.CR,
+        drCr: sides.settle,
         amount,
         adjDate: input.receiptDate,
         isPostDated: false,
@@ -248,7 +290,7 @@ function deductionRow(input, bill, line, amount) {
         tenderRowNo: null,
         otherLineNo: line.lineNo,
         againstBill: null,
-        approvedBy: null,
+        approvedBy: line.approvedBy ?? null,
         countsToAdjustAmount: true,
         remarks: null,
     };
@@ -265,7 +307,7 @@ function takeFromBill(bills, capacity, index, amount, field) {
     }
     capacity[index] = capacity[index].minus(amount);
 }
-function buildSources(input) {
+function buildSources(input, sides) {
     const sources = input.credits.map((credit) => ({
         kind: 'CREDIT',
         remaining: (0, receipt_utils_1.money)(credit.amount),
@@ -281,11 +323,11 @@ function buildSources(input) {
         .sort((left, right) => left.tenderRowNo - right.tenderRowNo);
     const pooled = instant.filter((tender) => !tender.isCheque);
     const currentCheques = instant.filter((tender) => tender.isCheque);
-    let otherCr = (0, receipt_utils_1.sum)(input.otherLines.filter((line) => line.drCr === receipt_enum_1.DrCr.CR).map((line) => (0, receipt_utils_1.money)(line.amount)));
+    let extras = (0, receipt_utils_1.sum)(input.otherLines.filter((line) => isExtra(line, sides)).map((line) => (0, receipt_utils_1.money)(line.amount)));
     let pooledTotal = (0, receipt_utils_1.sum)(pooled.map((tender) => (0, receipt_utils_1.money)(tender.amount)));
-    const takeFromPooled = client_1.Prisma.Decimal.min(otherCr, pooledTotal);
+    const takeFromPooled = client_1.Prisma.Decimal.min(extras, pooledTotal);
     pooledTotal = pooledTotal.minus(takeFromPooled);
-    otherCr = otherCr.minus(takeFromPooled);
+    extras = extras.minus(takeFromPooled);
     if (pooledTotal.greaterThan(0)) {
         sources.push({
             kind: 'MONEY',
@@ -300,9 +342,9 @@ function buildSources(input) {
     }
     for (const cheque of currentCheques) {
         let amount = (0, receipt_utils_1.money)(cheque.amount);
-        const take = client_1.Prisma.Decimal.min(otherCr, amount);
+        const take = client_1.Prisma.Decimal.min(extras, amount);
         amount = amount.minus(take);
-        otherCr = otherCr.minus(take);
+        extras = extras.minus(take);
         if (amount.greaterThan(0)) {
             sources.push({
                 kind: 'CHEQUE',
@@ -334,7 +376,7 @@ function buildSources(input) {
     }
     return sources;
 }
-function pour(bills, capacity, sources, out) {
+function pour(bills, capacity, sources, sides, out) {
     let cursor = 0;
     for (let index = 0; index < bills.length; index += 1) {
         while (capacity[index].greaterThan(0) && cursor < sources.length) {
@@ -346,11 +388,11 @@ function pour(bills, capacity, sources, out) {
             const take = client_1.Prisma.Decimal.min(source.remaining, capacity[index]);
             source.remaining = source.remaining.minus(take);
             capacity[index] = capacity[index].minus(take);
-            out.push(...settlementRows(bills[index], source, take));
+            out.push(...settlementRows(bills[index], source, take, sides));
         }
     }
 }
-function settlementRows(bill, source, amount) {
+function settlementRows(bill, source, amount, sides) {
     const base = {
         adjDate: source.adjDate,
         isPostDated: source.isPostDated,
@@ -368,7 +410,7 @@ function settlementRows(bill, source, amount) {
                 billAccYear: bill.billAccYear,
                 adjType: receipt_enum_1.BillAdjType.ALLOCATION,
                 settlementMode: source.settlementMode,
-                drCr: receipt_enum_1.DrCr.CR,
+                drCr: sides.settle,
                 againstBill: null,
                 countsToAdjustAmount: true,
                 remarks: null,
@@ -383,7 +425,7 @@ function settlementRows(bill, source, amount) {
             billAccYear: bill.billAccYear,
             adjType: credit.adjType,
             settlementMode: credit.settlementMode,
-            drCr: receipt_enum_1.DrCr.CR,
+            drCr: sides.settle,
             againstBill: { billId: credit.billId, billAccYear: credit.billAccYear },
             countsToAdjustAmount: true,
             remarks: `Settled from ${credit.docRefno}`,
@@ -394,14 +436,14 @@ function settlementRows(bill, source, amount) {
             billAccYear: credit.billAccYear,
             adjType: credit.adjType,
             settlementMode: credit.settlementMode,
-            drCr: receipt_enum_1.DrCr.DR,
+            drCr: sides.mirror,
             againstBill: { billId: bill.billId, billAccYear: bill.billAccYear },
             countsToAdjustAmount: false,
             remarks: `Applied to ${bill.docRefno}`,
         },
     ];
 }
-function addReductions(input, bills, out) {
+function addReductions(input, sides, bills, out) {
     bills.forEach((bill) => {
         const discount = (0, receipt_utils_1.money)(bill.discount);
         if (discount.greaterThan(0)) {
@@ -410,7 +452,7 @@ function addReductions(input, bills, out) {
                 billAccYear: bill.billAccYear,
                 adjType: receipt_enum_1.BillAdjType.DISCOUNT,
                 settlementMode: receipt_enum_1.BillSettlementMode.DISCOUNT,
-                drCr: receipt_enum_1.DrCr.CR,
+                drCr: sides.settle,
                 amount: discount,
                 adjDate: input.receiptDate,
                 isPostDated: false,
@@ -438,7 +480,7 @@ function addReductions(input, bills, out) {
                 billAccYear: bill.billAccYear,
                 adjType: receipt_enum_1.BillAdjType.WRITEOFF,
                 settlementMode: receipt_enum_1.BillSettlementMode.WRITEOFF,
-                drCr: receipt_enum_1.DrCr.CR,
+                drCr: sides.settle,
                 amount: writeoff,
                 adjDate: input.receiptDate,
                 isPostDated: false,
@@ -458,7 +500,7 @@ function addReductions(input, bills, out) {
                 billAccYear: bill.billAccYear,
                 adjType: receipt_enum_1.BillAdjType.ROUND_OFF,
                 settlementMode: receipt_enum_1.BillSettlementMode.ROUND_OFF,
-                drCr: receipt_enum_1.DrCr.CR,
+                drCr: sides.settle,
                 amount: roundoff,
                 adjDate: input.receiptDate,
                 isPostDated: false,
@@ -473,7 +515,7 @@ function addReductions(input, bills, out) {
         }
     });
 }
-function collectOnAccount(input, sources) {
+function collectOnAccount(input, sides, sources, deductionOverflow) {
     const byVoucher = new Map();
     const add = (voucherKey, amount, onDate) => {
         if (amount.lessThanOrEqualTo(0)) {
@@ -502,10 +544,8 @@ function collectOnAccount(input, sources) {
         }
         add(source.voucherKey, source.remaining, source.adjDate);
     }
-    const floating = (0, receipt_utils_1.sum)(input.otherLines
-        .filter((line) => line.drCr === receipt_enum_1.DrCr.DR && !line.settlesBill && !line.isInstrumentSplit)
-        .map((line) => (0, receipt_utils_1.money)(line.amount)));
-    add(exports.RECEIPT_VOUCHER_KEY, floating, input.receiptDate);
+    const floating = (0, receipt_utils_1.sum)(input.otherLines.filter((line) => isFloating(line, sides)).map((line) => (0, receipt_utils_1.money)(line.amount)));
+    add(exports.RECEIPT_VOUCHER_KEY, floating.plus(deductionOverflow), input.receiptDate);
     return [...byVoucher.values()].map((entry) => ({ ...entry, amount: (0, receipt_utils_1.money)(entry.amount) }));
 }
 function totalPerVoucher(adjustments) {
@@ -521,13 +561,13 @@ function totalPerVoucher(adjustments) {
     }
     return totals;
 }
-function partyCreditPerVoucher(input, adjustments, onAccount) {
+function partyLegPerVoucher(input, sides, adjustments, onAccount) {
     const totals = new Map();
     const add = (key, amount) => {
         totals.set(key, (totals.get(key) ?? receipt_utils_1.ZERO).plus(amount));
     };
     for (const row of adjustments) {
-        add(row.voucherKey, row.drCr === receipt_enum_1.DrCr.CR ? row.amount : row.amount.negated());
+        add(row.voucherKey, row.drCr === sides.settle ? row.amount : row.amount.negated());
     }
     for (const entry of onAccount) {
         add(entry.voucherKey, entry.amount);

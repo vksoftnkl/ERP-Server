@@ -17,6 +17,9 @@ const common_1 = require("@nestjs/common");
 const cache_manager_1 = require("@nestjs/cache-manager");
 const swagger_1 = require("@nestjs/swagger");
 const api_version_1 = require("../../../common/constants/api-version");
+const rights_1 = require("../../../common/posting/rights");
+const request_context_service_1 = require("../../../common/request-context/request-context.service");
+const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const http_error_response_dto_1 = require("../../../common/dto/http-error-response.dto");
 const bill_balance_recompute_service_1 = require("../billBalance/bill-balance-recompute.service");
 const receipt_exception_filter_1 = require("./receipt-exception.filter");
@@ -31,14 +34,19 @@ const save_receipt_dto_1 = require("./dto/save-receipt.dto");
 const post_receipt_dto_1 = require("./dto/post-receipt.dto");
 const receipt_response_dto_1 = require("./dto/receipt-response.dto");
 const receipt_utils_1 = require("./receipt.utils");
+const receipt_enum_1 = require("./types/receipt-enum");
 let ReceiptController = class ReceiptController {
+    prisma;
+    requestContext;
     receiptService;
     postingService;
     cancelService;
     amendService;
     openItemsService;
     recompute;
-    constructor(receiptService, postingService, cancelService, amendService, openItemsService, recompute) {
+    constructor(prisma, requestContext, receiptService, postingService, cancelService, amendService, openItemsService, recompute) {
+        this.prisma = prisma;
+        this.requestContext = requestContext;
         this.receiptService = receiptService;
         this.postingService = postingService;
         this.cancelService = cancelService;
@@ -47,6 +55,7 @@ let ReceiptController = class ReceiptController {
         this.recompute = recompute;
     }
     async openItems(query) {
+        await this.requireRight('view', 'view receipts');
         const data = await this.openItemsService.listOpenItems(query);
         return {
             success: true,
@@ -55,14 +64,17 @@ let ReceiptController = class ReceiptController {
         };
     }
     async partyContext(query) {
+        await this.requireRight('view', 'view receipts');
         const data = await this.openItemsService.partyContext(query);
         return { success: true, message: 'Party context fetched successfully', data };
     }
     async get(query) {
+        await this.requireRight('view', 'view receipts');
         const data = await this.receiptService.get(query);
         return { success: true, message: 'Receipt fetched successfully', data };
     }
     async adjacent(query) {
+        await this.requireRight('view', 'view receipts');
         const data = await this.openItemsService.adjacent(query);
         return {
             success: true,
@@ -73,6 +85,7 @@ let ReceiptController = class ReceiptController {
         };
     }
     async duplicateCheck(query) {
+        await this.requireRight('view', 'view receipts');
         const data = await this.openItemsService.duplicateCheck(query);
         return {
             success: true,
@@ -83,6 +96,7 @@ let ReceiptController = class ReceiptController {
         };
     }
     async create(dto) {
+        await this.requireRight(dto.avhVoucherId ? 'edit' : 'create', 'save receipt drafts');
         const data = await this.receiptService.save(dto);
         return {
             success: true,
@@ -93,6 +107,7 @@ let ReceiptController = class ReceiptController {
         };
     }
     async postReceipt(dto) {
+        await this.requireRight('post', 'post receipts');
         const data = await this.postingService.post(dto);
         const pdcCount = data.numberedVouchers.filter((voucher) => voucher.isPdcVoucher).length;
         return {
@@ -103,10 +118,12 @@ let ReceiptController = class ReceiptController {
         };
     }
     async updateHeader(dto, body) {
+        await this.requireRight('edit', 'edit receipts');
         const data = await this.receiptService.updateHeader(dto, body);
         return { success: true, message: 'Receipt header updated successfully', data };
     }
     async cancel(dto) {
+        await this.requireRight('cancel', 'cancel receipts');
         const data = await this.cancelService.cancel(dto);
         return {
             success: true,
@@ -115,6 +132,7 @@ let ReceiptController = class ReceiptController {
         };
     }
     async delete(dto) {
+        await this.requireRight('delete', 'delete receipt drafts');
         const data = await this.receiptService.deleteDraft(dto);
         return {
             success: true,
@@ -124,6 +142,7 @@ let ReceiptController = class ReceiptController {
         };
     }
     async amend(dto) {
+        await this.requireRight('amend', 'amend posted receipts');
         const data = await this.amendService.amend(dto);
         return {
             success: true,
@@ -140,6 +159,15 @@ let ReceiptController = class ReceiptController {
             message: `${data.billsRegularised} of ${data.billsExamined} bill(s) regularised as at ${data.asOf}`,
             data,
         };
+    }
+    async requireRight(right, action) {
+        await (0, rights_1.assertMenuRight)(this.prisma, {
+            userId: this.requestContext.getUserId(),
+            menuId: receipt_enum_1.RECEIPT_MENU_ID,
+            right,
+            codePrefix: 'RCT',
+            action,
+        });
     }
 };
 exports.ReceiptController = ReceiptController;
@@ -471,9 +499,12 @@ exports.ReceiptController = ReceiptController = __decorate([
     (0, swagger_1.ApiTags)('Receipts'),
     (0, swagger_1.ApiBearerAuth)('access-token'),
     (0, swagger_1.ApiUnauthorizedResponse)({ type: http_error_response_dto_1.HttpErrorResponseDto }),
+    (0, swagger_1.ApiForbiddenResponse)({ type: receipt_response_dto_1.ReceiptErrorResponseDto }),
     (0, common_1.Controller)('receipts'),
     (0, common_1.UseFilters)(receipt_exception_filter_1.ReceiptExceptionFilter),
-    __metadata("design:paramtypes", [receipt_service_1.ReceiptService,
+    __metadata("design:paramtypes", [prisma_service_1.PrismaService,
+        request_context_service_1.RequestContextService,
+        receipt_service_1.ReceiptService,
         receipt_posting_service_1.ReceiptPostingService,
         receipt_cancel_service_1.ReceiptCancelService,
         receipt_amend_service_1.ReceiptAmendService,

@@ -1,3 +1,5 @@
+import { RequestContextService } from '../../../common/request-context/request-context.service';
+import { PrismaService } from '../../../database/prisma/prisma.service';
 import { BillBalanceRecomputeService } from '../billBalance/bill-balance-recompute.service';
 import { ReceiptService } from './receipt.service';
 import { ReceiptPostingService } from './receipt-posting.service';
@@ -10,13 +12,15 @@ import { RegularisePdcDto, SaveDraftReceiptDto, UpdateReceiptHeaderDto } from '.
 import { CancelReceiptDto, DeleteReceiptDto, GetReceiptQueryDto, PostReceiptDto } from './dto/post-receipt.dto';
 import type { AdjacentVoucherPayload, DuplicateCheckPayload, OpenItemsPayload, PartyContextPayload, ReceiptAmendPayload, ReceiptCancelPayload, ReceiptDeletePayload, ReceiptDraftPayload, ReceiptHeader, ReceiptPayload, ReceiptPostPayload, ReceiptSuccessResponse, RegularisePdcPayload } from './types/receipt-api.types';
 export declare class ReceiptController {
+    private readonly prisma;
+    private readonly requestContext;
     private readonly receiptService;
     private readonly postingService;
     private readonly cancelService;
     private readonly amendService;
     private readonly openItemsService;
     private readonly recompute;
-    constructor(receiptService: ReceiptService, postingService: ReceiptPostingService, cancelService: ReceiptCancelService, amendService: ReceiptAmendService, openItemsService: OpenItemsService, recompute: BillBalanceRecomputeService);
+    constructor(prisma: PrismaService, requestContext: RequestContextService, receiptService: ReceiptService, postingService: ReceiptPostingService, cancelService: ReceiptCancelService, amendService: ReceiptAmendService, openItemsService: OpenItemsService, recompute: BillBalanceRecomputeService);
     openItems(query: ListOpenItemsQueryDto): Promise<ReceiptSuccessResponse<OpenItemsPayload>>;
     partyContext(query: PartyContextQueryDto): Promise<ReceiptSuccessResponse<PartyContextPayload>>;
     get(query: GetReceiptQueryDto): Promise<ReceiptSuccessResponse<ReceiptPayload>>;
@@ -29,4 +33,5 @@ export declare class ReceiptController {
     delete(dto: DeleteReceiptDto): Promise<ReceiptSuccessResponse<ReceiptDeletePayload>>;
     amend(dto: AmendReceiptDto): Promise<ReceiptSuccessResponse<ReceiptAmendPayload>>;
     regularise(dto: RegularisePdcDto): Promise<ReceiptSuccessResponse<RegularisePdcPayload>>;
+    private requireRight;
 }

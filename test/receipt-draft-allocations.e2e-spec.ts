@@ -10,6 +10,15 @@ import * as request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { TokenService, type AccessTokenPayload } from '../src/modules/auth/token.service';
 import { AuthSessionService } from '../src/modules/auth/auth-session.service';
+import {
+  grantMenuRights,
+  RECEIPT_MENU,
+  restoreMenuRights,
+  type MenuRightsMemo,
+} from './helpers/menu-rights';
+
+/** notes (62) D2 — tester1's menu-99 rights for this suite, put back in afterAll. */
+let rightsMemo: MenuRightsMemo | null = null;
 
 /**
  * A DRAFT now remembers its bill-wise settlement (2026-09-18).
@@ -88,6 +97,7 @@ describe('a DRAFT remembers its bill allocation (e2e, live DB)', () => {
   };
 
   beforeAll(async () => {
+    rightsMemo = await grantMenuRights(prisma, [RECEIPT_MENU]);
     // CASH deliberately — every other tender type needs a reference, and a
     // cheque needs an instrument date and a bank. None of that is under test.
     const [tender] = await prisma.$queryRawUnsafe<
@@ -179,6 +189,7 @@ describe('a DRAFT remembers its bill allocation (e2e, live DB)', () => {
   });
 
   afterAll(async () => {
+    await restoreMenuRights(prisma, rightsMemo);
     // Every draft this suite made, thrown away. A draft took no number and
     // touched no bill, so this leaves nothing behind.
     for (const voucherId of created) {

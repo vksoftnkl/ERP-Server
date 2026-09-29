@@ -7,7 +7,8 @@ import type {
 /**
  * The adjustment family — ONE module, ONE screen with a Type selector, four
  * `svh_voucher_type`s (plan-nestjs-stock-adjustments §0). A re-lot is an
- * ADJUSTMENT carrying a RELOT_OUT / RELOT_IN pair, not a fifth type.
+ * ADJUSTMENT carrying a RELOT_OUT / RELOT_IN pair, not a fifth type; a bucket
+ * move is an ADJUSTMENT whose lines name a `toBucket` (see BUCKET_MOVE_KIND).
  */
 export const STOCK_ADJUSTMENT_KINDS = ['ADJUSTMENT', 'ISSUE', 'DAMAGE', 'EXPIRY_WRITEOFF'] as const;
 export type StockAdjustmentKind = (typeof STOCK_ADJUSTMENT_KINDS)[number];
@@ -15,6 +16,30 @@ export type StockAdjustmentKind = (typeof STOCK_ADJUSTMENT_KINDS)[number];
 export function isStockAdjustmentKind(value: unknown): value is StockAdjustmentKind {
   return typeof value === 'string' && (STOCK_ADJUSTMENT_KINDS as readonly string[]).includes(value);
 }
+
+/**
+ * "Move stock" (adjustments plan D-A3, notes 60): the same lot moved between
+ * buckets of one godown — SALEABLE → DAMAGED to hold it for a supplier return,
+ * or back. Stored as `svh_voucher_type = 'ADJUSTMENT'` the way a re-lot is: no
+ * new document type, no CHECK change. The screen sends it as a sixth
+ * `voucherType` on a save; a loaded document is recognised by its lines.
+ */
+export const BUCKET_MOVE_KIND = 'BUCKET_MOVE' as const;
+
+/** What `header.voucherType` may say on a SAVE: the four stored kinds, plus a move. */
+export const STOCK_ADJUSTMENT_SAVE_KINDS = [...STOCK_ADJUSTMENT_KINDS, BUCKET_MOVE_KIND] as const;
+export type StockAdjustmentSaveKind = (typeof STOCK_ADJUSTMENT_SAVE_KINDS)[number];
+
+/**
+ * What a loaded document IS, for the Type selector and the list grid
+ * (grid 122's `kind_code`): the stored kind, or RELOT / BUCKET_MOVE for the two
+ * ADJUSTMENT shapes told apart by their lines.
+ */
+export const STOCK_ADJUSTMENT_DOC_KINDS = [...STOCK_ADJUSTMENT_KINDS, 'RELOT', BUCKET_MOVE_KIND] as const;
+export type StockAdjustmentDocKind = (typeof STOCK_ADJUSTMENT_DOC_KINDS)[number];
+
+/** The ledger txn types a move writes, and the only ones a move reason may name. */
+export const BUCKET_MOVE_TXN_TYPES = ['BUCKET_OUT', 'BUCKET_IN'] as const;
 
 const EVERY_OTHER_TYPE: readonly StockVoucherType[] = [
   'OPENING',
@@ -70,7 +95,7 @@ function rules(
   };
 }
 
-export const STOCK_ADJUSTMENT_RULES: Readonly<Record<StockAdjustmentKind, StockVoucherTypeRules>> = {
+export const STOCK_ADJUSTMENT_RULES: Readonly<Record<StockAdjustmentSaveKind, StockVoucherTypeRules>> = {
   ADJUSTMENT: rules('ADJUSTMENT', {
     typeCode: 'ADJ',
     displayName: 'Stock adjustment',
@@ -96,11 +121,33 @@ export const STOCK_ADJUSTMENT_RULES: Readonly<Record<StockAdjustmentKind, StockV
     displayName: 'Expiry write-off',
     ledgerTxnTypes: ['EXPIRY_WRITEOFF'],
   }),
+  // An ADJUSTMENT row, numbered in the ADJ series like every adjustment. The
+  // shape does the work: per line BUCKET_OUT from `bucket` and BUCKET_IN into
+  // `toBucket`, same lot, godown, quantity and cost. lineDirection stays
+  // REASON so the line's own direction (−1, stamped by the service) rides on
+  // `svi_direction` and the engine values it as an outward line — at the
+  // branch average. The accounts writer posts no leg for the pair.
+  BUCKET_MOVE: rules('ADJUSTMENT', {
+    typeCode: 'ADJ',
+    displayName: 'Stock move',
+    ledgerTxnTypes: [...BUCKET_MOVE_TXN_TYPES],
+    postShape: 'BUCKET_MOVE',
+  }),
 };
 
 /** The two reason codes of a re-lot pair, as the seed ships them. */
 export const RELOT_OUT_CODE = 'RELOT_OUT';
 export const RELOT_IN_CODE = 'RELOT_IN';
+
+/**
+ * The two move reasons the seed ships, and the to-bucket the screen defaults
+ * from each (the operator may change it). Any reason whose allowed types name
+ * BUCKET_OUT / BUCKET_IN is a move reason; these are the shared ones.
+ */
+export const MOVE_REASON_DEFAULT_BUCKET = {
+  MOVE_DAMAGED: 'DAMAGED',
+  MOVE_SALEABLE: 'SALEABLE',
+} as const;
 
 /** `stock.expiry_writeoff_grace_days` — decision D-A2. */
 export const EXPIRY_GRACE_SETTING_KEY = 'stock.expiry_writeoff_grace_days';

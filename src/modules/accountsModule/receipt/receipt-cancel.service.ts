@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { assertBooksReconcile } from '../reconcile/books-reconcile.guard';
+import { assertVoucherBooksReconcile } from '../vouchers/voucher-books.helper';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
@@ -264,14 +264,25 @@ export class ReceiptCancelService {
 
       // The trial check (notes 47), after every write. The reversals mirror
       // the originals' legs, so the originals name every ledger moved.
-      await assertBooksReconcile(tx, {
+      //
+      // Through the Voucher Register's helper, not the shared guard (notes 61).
+      // THIS receipt's post-dated pair nets to zero on both sides whether the
+      // cheque has matured or not — but the guard reads the PARTY, and a party
+      // holding an un-matured post-dated cheque from some OTHER receipt is
+      // already off by that amount on the ledger side. The shared guard would
+      // refuse this cancel for a difference this cancel did not make.
+      const movedLedgers = await tx.accVoucher.findMany({
+        where: {
+          avVoucherId: { in: vouchers.map((voucher) => voucher.avhVoucherId) },
+          avIsDeleted: false,
+        },
+        select: { avLedgerId: true },
+        distinct: ['avLedgerId'],
+      });
+      await assertVoucherBooksReconcile(tx, {
         companyId: header.avhCompanyId,
         accYear: header.avhAccYear,
-        ledgerIds: [header.avhPartyId],
-        vouchers: vouchers.map((voucher) => ({
-          voucherId: voucher.avhVoucherId,
-          accYear: voucher.avhAccYear,
-        })),
+        ledgerIds: [header.avhPartyId, ...movedLedgers.map((leg) => leg.avLedgerId)],
       });
 
       return {

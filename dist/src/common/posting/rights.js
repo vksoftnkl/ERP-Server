@@ -2,6 +2,8 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.RIGHT_COLUMN = exports.NO_RIGHTS = void 0;
 exports.loadRights = loadRights;
+exports.assertMenuRight = assertMenuRight;
+const module_shared_utils_1 = require("../utils/module-shared.utils");
 exports.NO_RIGHTS = Object.freeze({
     view: false,
     create: false,
@@ -51,5 +53,22 @@ async function loadRights(client, userId, menuId) {
         override: row?.um_can_override ?? false,
         retender: row?.um_can_retender ?? false,
     };
+}
+async function assertMenuRight(client, params) {
+    const rights = params.userId
+        ? await loadRights(client, params.userId, params.menuId)
+        : { ...exports.NO_RIGHTS };
+    if (!rights[params.right]) {
+        const message = `This user may not ${params.action} (menu ${params.menuId}: ` +
+            `${exports.RIGHT_COLUMN[params.right]} is not granted)`;
+        (0, module_shared_utils_1.throwForbidden)(message, [
+            {
+                field: 'userId',
+                message,
+                code: `${params.codePrefix}_RIGHT_${params.right.toUpperCase()}`,
+            },
+        ]);
+    }
+    return rights;
 }
 //# sourceMappingURL=rights.js.map

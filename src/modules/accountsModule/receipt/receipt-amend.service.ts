@@ -335,6 +335,11 @@ export class ReceiptAmendService {
 
     return {
       ...posted,
+      // The header as it stands AFTER the revision moved (notes 61).
+      // `posted.header` was read inside the post, before the bump above, and
+      // still says the old revision — a client that sent that back as its next
+      // baseRevision would be refused with a 409 for an amend nobody else made.
+      header: await this.receiptService.toHeaderPayload(tx, after),
       fromRevision: dto.baseRevision,
       toRevision,
       editRemark: dto.editRemark,

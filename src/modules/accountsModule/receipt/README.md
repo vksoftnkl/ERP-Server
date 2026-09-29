@@ -1137,10 +1137,71 @@ Not arbitrary, and the three routes differ on purpose:
 
 ---
 
+## notes (61) — three defects the payment module found first
+
+The Payment module (menu 100) was built from this one and found three defects
+while being tested (its README, "Fixed while testing"). All three were live
+here too, on routes the Receipt screen calls, and the client could not work
+around any of them. Each fix is the payment's, ported.
+
+- **`/post` refused every post-dated cheque**: 422 `ACC_PARTY_OUT_OF_BALANCE`.
+  The shared `assertBooksReconcile` has no allowance for a post-dated voucher.
+  The voucher is POSTED today, so the ledger counts it now, while the bill's
+  post-dated row counts only on maturity. Step 16 now calls
+  `assertVoucherBooksReconcile` (`vouchers/voucher-books.helper.ts`, notes 54)
+  over the party plus every ledger the numbered vouchers moved. That check
+  allows exactly the un-matured difference.
+- **`/cancel` used the same guard.** Cancelling the post-dated receipt itself
+  nets to zero on both sides and was never refused. But the guard reads the
+  PARTY, so cancelling any OTHER receipt of a party still holding an
+  un-matured post-dated cheque was a 422. The cancel now calls the same helper.
+- **`/adjacent` compared the `avh_voucher_date` DATE with a timestamptz.** On an
+  Asia/Kolkata session the 29th reads as 28 September 18:30Z. Same-day
+  receipts were skipped or misordered, and a one-day window matched nothing.
+  `fromDate`, `toDate` and the current row's date are now bound as `::date`.
+- **`/amend` answered with the header read inside the post**, before the
+  revision bump, so it carried the old `avhRevisionNo`. A client sending that
+  back as `baseRevision` got a 409. The response now carries the header as it
+  stands after the bump.
+
+`test/receipt-payment-parity.e2e-spec.ts` covers all four. It runs on the
+payment harness (`test/helpers/payment-e2e.ts`) with its own Sundry Debtors
+party and opening rows. Every test in it failed on the code before the fix.
+
+---
+
+## notes (62) — what the payment review changed here too
+
+- **Menu 99 rights are enforced.** Every route is judged on the caller's
+  `user_menus` row for menu 99: view for the reads, create for a new draft,
+  edit for a draft change or `/update-header`, and post / cancel / delete /
+  amend for their own routes. A refusal is a 403 with code
+  `RCT_RIGHT_<RIGHT>` that names the column. `/regularise-pdc` is not gated,
+  because it is the cron's maintenance sweep and not a screen verb. **Before
+  this ships, grant `um_can_post`, `um_can_cancel` and `um_can_amend` on menu
+  99 to everyone who takes receipts.** On dev on 2026-09-29 only VKPOS and
+  VKPOS1 held them; ravi and VIJAY held view/create/edit/delete only.
+- **Only an `Rct`.** `loadHeaderOrThrow` and `/adjacent`'s starting row
+  filter on `vchr_type_code`. `/create` with an existing id also checks type,
+  company and branch, because the save rewrites all three and would turn a
+  payment draft into a receipt. A wrong type is a 404.
+- **The engine lets a deduction spill over to on account.** An UNPINNED
+  settling deduction (TDS the customer withheld, a claim) now fills the bills'
+  room, and the part no bill can hold is held on account with the money. Every
+  input the engine accepted before gives the same rows; only the old "room for
+  X" refusal became an acceptance, which is what a customer's advance net of
+  TDS needs. **The Receipt screen's port of the engine should learn the same
+  rule**, or its preview will refuse what the server accepts.
+- The receipt e2e suites grant tester1 the menu-99 rights in `beforeAll` and
+  put back what was there (`test/helpers/menu-rights.ts`); run them
+  `--runInBand`.
+
+---
+
 ## Not in this phase
 
 Received Cheques (menu 51: deposit / clear / bounce / replace), `ON_CLEARING`
-posting, the Payment voucher (menu 100 — the same module with `td_dr_cr = 'CR'`,
+posting, Bill-wise Payment (menu 100, notes 59 — the same module with `td_dr_cr = 'CR'`,
 `apd_tra_type = 'P'` and PURCHASE bills), Collection Entry / Approval
 (187 / 188), bank reconciliation (`av_recon_date` is the hook) and a day-close
 lock (`fy_lock_date` is the only lock).

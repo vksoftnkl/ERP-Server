@@ -96,8 +96,13 @@ export const DERIVABLE_RATE_SOURCES = [
  *                 IN_TRANSIT. The lot is mandatory and never re-resolved.
  *   TRANSFER_IN   IN rows at the transit row's cost, the transit rows settled,
  *                 the OUT closed when nothing is left.
+ *   BUCKET_MOVE   "Move stock" (adjustments plan D-A3): per line a BUCKET_OUT
+ *                 row from `svi_bucket` and a BUCKET_IN row into
+ *                 `svi_to_bucket` — the SAME lot, godown and quantity, both at
+ *                 the OUT's stamped cost. The lot is mandatory, nothing is
+ *                 picked or resolved, the branch's average does not move.
  */
-export const STOCK_POST_SHAPES = ['SIMPLE', 'COUNT', 'TRANSFER_OUT', 'TRANSFER_IN'] as const;
+export const STOCK_POST_SHAPES = ['SIMPLE', 'COUNT', 'TRANSFER_OUT', 'TRANSFER_IN', 'BUCKET_MOVE'] as const;
 export type StockPostShape = (typeof STOCK_POST_SHAPES)[number];
 
 /** The `svh_link_src_module` this module stamps on anything it raises. */
@@ -431,6 +436,11 @@ export interface StockVoucherLinePayload {
   supplierId: string | null;
   /** purchase.suppliers.sup_name for supplierId — null when the line names none. */
   supplierName: string | null;
+  /**
+   * A "Move stock" line only: the bucket the same lot lands in (`bucket` is
+   * where it comes from). NULL on every other line.
+   */
+  toBucket: StockBucket | null;
   qty: number;
   baseQty: number;
   freeQty: number;

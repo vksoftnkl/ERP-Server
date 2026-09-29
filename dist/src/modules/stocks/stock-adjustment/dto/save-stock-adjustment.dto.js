@@ -24,11 +24,11 @@ class SaveStockAdjustmentHeaderDto extends save_stock_voucher_dto_1.SaveStockVou
 exports.SaveStockAdjustmentHeaderDto = SaveStockAdjustmentHeaderDto;
 __decorate([
     (0, swagger_1.ApiProperty)({
-        enum: stock_adjustment_rules_1.STOCK_ADJUSTMENT_KINDS,
-        description: 'Which of the four documents this is. A re-lot is an ADJUSTMENT carrying a RELOT_OUT / RELOT_IN pair.',
+        enum: stock_adjustment_rules_1.STOCK_ADJUSTMENT_SAVE_KINDS,
+        description: 'Which document this is. A re-lot is an ADJUSTMENT carrying a RELOT_OUT / RELOT_IN pair. BUCKET_MOVE ("Move stock") is stored as an ADJUSTMENT: every line moves one lot from `bucket` to `toBucket` in the same godown, and no accounts voucher is written.',
     }),
-    (0, class_validator_1.IsIn)(stock_adjustment_rules_1.STOCK_ADJUSTMENT_KINDS, {
-        message: `voucherType must be one of ${stock_adjustment_rules_1.STOCK_ADJUSTMENT_KINDS.join(', ')}`,
+    (0, class_validator_1.IsIn)(stock_adjustment_rules_1.STOCK_ADJUSTMENT_SAVE_KINDS, {
+        message: `voucherType must be one of ${stock_adjustment_rules_1.STOCK_ADJUSTMENT_SAVE_KINDS.join(', ')}`,
     }),
     __metadata("design:type", String)
 ], SaveStockAdjustmentHeaderDto.prototype, "voucherType", void 0);
@@ -45,6 +45,7 @@ class SaveStockAdjustmentItemDto {
     godownId;
     lotId;
     bucket;
+    toBucket;
     batchNo;
     mfgDate;
     expiryDate;
@@ -88,7 +89,7 @@ __decorate([
 ], SaveStockAdjustmentItemDto.prototype, "toBaseFactor", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)({
-        description: 'The quantity, in the document unit. SIGNED only under a reason whose direction is BOTH (+ in, − out); an IN or OUT reason fixes the sign and a quantity the wrong way round is refused. Never 0.',
+        description: 'The quantity, in the document unit. SIGNED only under a reason whose direction is BOTH (+ in, − out); an IN or OUT reason fixes the sign and a quantity the wrong way round is refused. On a BUCKET_MOVE line, the quantity moved, positive. Never 0.',
     }),
     (0, dtoDecorators_1.RequiredNumber)(),
     __metadata("design:type", Number)
@@ -117,16 +118,30 @@ __decorate([
     (0, swagger_1.ApiPropertyOptional)({
         format: 'uuid',
         nullable: true,
-        description: 'OUTWARD: the holding, from GET /stock/adjustment/pick-stock; omit it and the engine picks lots by the item\'s issue strategy. Required on an EXPIRY_WRITEOFF (the expiry is the lot\'s). INWARD: leave empty — the identity fields resolve the lot.',
+        description: 'OUTWARD: the holding, from GET /stock/adjustment/pick-stock; omit it and the engine picks lots by the item\'s issue strategy. Required on an EXPIRY_WRITEOFF (the expiry is the lot\'s) and on a BUCKET_MOVE (the lot names the supplier the stock goes back to). INWARD: leave empty — the identity fields resolve the lot.',
     }),
     (0, dtoDecorators_1.NullableUuid)(),
     __metadata("design:type", Object)
 ], SaveStockAdjustmentItemDto.prototype, "lotId", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ enum: stock_voucher_types_1.STOCK_BUCKETS, default: 'SALEABLE' }),
+    (0, swagger_1.ApiPropertyOptional)({
+        enum: stock_voucher_types_1.STOCK_BUCKETS,
+        default: 'SALEABLE',
+        description: 'The holding\'s bucket. On a BUCKET_MOVE line, the bucket the stock LEAVES.',
+    }),
     (0, class_validator_1.IsIn)(stock_voucher_types_1.STOCK_BUCKETS),
     __metadata("design:type", String)
 ], SaveStockAdjustmentItemDto.prototype, "bucket", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        enum: stock_voucher_types_1.STOCK_BUCKETS,
+        nullable: true,
+        description: 'BUCKET_MOVE only, and required there: the bucket the same lot moves to (never `bucket` itself). The screen defaults it from the reason — MOVE_DAMAGED → DAMAGED, MOVE_SALEABLE → SALEABLE. Refused on every other kind.',
+    }),
+    (0, dtoDecorators_1.SkipOnNullish)(),
+    (0, class_validator_1.IsIn)(stock_voucher_types_1.STOCK_BUCKETS, { message: `toBucket must be one of ${stock_voucher_types_1.STOCK_BUCKETS.join(', ')}` }),
+    __metadata("design:type", Object)
+], SaveStockAdjustmentItemDto.prototype, "toBucket", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ maxLength: 100, nullable: true, description: 'Inward identity, when the policy tracks it.' }),
     (0, dtoDecorators_1.NullableStringStrict)(100),

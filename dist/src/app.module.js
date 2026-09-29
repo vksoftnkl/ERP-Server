@@ -53,6 +53,7 @@ const tender_type_master_module_1 = require("./modules/accountsModule/tenderType
 const tender_detail_module_1 = require("./modules/accountsModule/tenderDetail/tender-detail.module");
 const transaction_module_1 = require("./modules/accountsModule/transaction/transaction.module");
 const receipt_module_1 = require("./modules/accountsModule/receipt/receipt.module");
+const payment_module_1 = require("./modules/accountsModule/payment/payment.module");
 const cheques_module_1 = require("./modules/accountsModule/cheques/cheques.module");
 const vouchers_module_1 = require("./modules/accountsModule/vouchers/vouchers.module");
 const issued_cheques_module_1 = require("./modules/accountsModule/issuedCheques/issued-cheques.module");
@@ -208,6 +209,7 @@ exports.AppModule = AppModule = __decorate([
             transaction_module_1.TransactionModule,
             bill_balance_module_1.BillBalanceModule,
             receipt_module_1.ReceiptModule,
+            payment_module_1.PaymentModule,
             cheques_module_1.ChequesModule,
             vouchers_module_1.VouchersModule,
             issued_cheques_module_1.IssuedChequesModule,

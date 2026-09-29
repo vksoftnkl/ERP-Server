@@ -5,6 +5,7 @@ import {
   ApiBearerAuth,
   ApiConflictResponse,
   ApiCreatedResponse,
+  ApiForbiddenResponse,
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
@@ -12,6 +13,9 @@ import {
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import { API_VERSION } from '../../../common/constants/api-version';
+import { assertMenuRight, type MenuRight } from '../../../common/posting/rights';
+import { RequestContextService } from '../../../common/request-context/request-context.service';
+import { PrismaService } from '../../../database/prisma/prisma.service';
 import { HttpErrorResponseDto } from '../../../common/dto/http-error-response.dto';
 import { BillBalanceRecomputeService } from '../billBalance/bill-balance-recompute.service';
 import { ReceiptExceptionFilter } from './receipt-exception.filter';
@@ -69,6 +73,7 @@ import type {
   ReceiptSuccessResponse,
   RegularisePdcPayload,
 } from './types/receipt-api.types';
+import { RECEIPT_MENU_ID } from './types/receipt-enum';
 
 /**
  * Money received from a party, split across instruments, allocated due-date
@@ -111,10 +116,13 @@ import type {
 @ApiTags('Receipts')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
+@ApiForbiddenResponse({ type: ReceiptErrorResponseDto })
 @Controller('receipts')
 @UseFilters(ReceiptExceptionFilter)
 export class ReceiptController {
   constructor(
+    private readonly prisma: PrismaService,
+    private readonly requestContext: RequestContextService,
     private readonly receiptService: ReceiptService,
     private readonly postingService: ReceiptPostingService,
     private readonly cancelService: ReceiptCancelService,
@@ -148,6 +156,7 @@ export class ReceiptController {
   async openItems(
     @Query() query: ListOpenItemsQueryDto,
   ): Promise<ReceiptSuccessResponse<OpenItemsPayload>> {
+    await this.requireRight('view', 'view receipts');
     const data = await this.openItemsService.listOpenItems(query);
 
     return {
@@ -172,6 +181,7 @@ export class ReceiptController {
   async partyContext(
     @Query() query: PartyContextQueryDto,
   ): Promise<ReceiptSuccessResponse<PartyContextPayload>> {
+    await this.requireRight('view', 'view receipts');
     const data = await this.openItemsService.partyContext(query);
 
     return { success: true, message: 'Party context fetched successfully', data };
@@ -210,6 +220,7 @@ export class ReceiptController {
   @ApiOkResponse({ type: ReceiptSuccessDto })
   @ApiNotFoundResponse({ type: ReceiptErrorResponseDto })
   async get(@Query() query: GetReceiptQueryDto): Promise<ReceiptSuccessResponse<ReceiptPayload>> {
+    await this.requireRight('view', 'view receipts');
     const data = await this.receiptService.get(query);
 
     return { success: true, message: 'Receipt fetched successfully', data };
@@ -243,6 +254,7 @@ export class ReceiptController {
   async adjacent(
     @Query() query: AdjacentVoucherQueryDto,
   ): Promise<ReceiptSuccessResponse<AdjacentVoucherPayload>> {
+    await this.requireRight('view', 'view receipts');
     const data = await this.openItemsService.adjacent(query);
 
     return {
@@ -280,6 +292,7 @@ export class ReceiptController {
   async duplicateCheck(
     @Query() query: DuplicateCheckQueryDto,
   ): Promise<ReceiptSuccessResponse<DuplicateCheckPayload>> {
+    await this.requireRight('view', 'view receipts');
     const data = await this.openItemsService.duplicateCheck(query);
 
     return {
@@ -327,6 +340,7 @@ export class ReceiptController {
   async create(
     @Body() dto: SaveDraftReceiptDto,
   ): Promise<ReceiptSuccessResponse<ReceiptDraftPayload>> {
+    await this.requireRight(dto.avhVoucherId ? 'edit' : 'create', 'save receipt drafts');
     const data = await this.receiptService.save(dto);
 
     return {
@@ -362,6 +376,7 @@ export class ReceiptController {
   async postReceipt(
     @Body() dto: PostReceiptDto,
   ): Promise<ReceiptSuccessResponse<ReceiptPostPayload>> {
+    await this.requireRight('post', 'post receipts');
     const data = await this.postingService.post(dto);
     const pdcCount = data.numberedVouchers.filter((voucher) => voucher.isPdcVoucher).length;
 
@@ -394,6 +409,7 @@ export class ReceiptController {
     // not declare.
     @Body() body: Record<string, unknown>,
   ): Promise<ReceiptSuccessResponse<ReceiptHeader>> {
+    await this.requireRight('edit', 'edit receipts');
     const data = await this.receiptService.updateHeader(dto, body);
 
     return { success: true, message: 'Receipt header updated successfully', data };
@@ -416,6 +432,7 @@ export class ReceiptController {
   async cancel(
     @Body() dto: CancelReceiptDto,
   ): Promise<ReceiptSuccessResponse<ReceiptCancelPayload>> {
+    await this.requireRight('cancel', 'cancel receipts');
     const data = await this.cancelService.cancel(dto);
 
     return {
@@ -447,6 +464,7 @@ export class ReceiptController {
   async delete(
     @Body() dto: DeleteReceiptDto,
   ): Promise<ReceiptSuccessResponse<ReceiptDeletePayload>> {
+    await this.requireRight('delete', 'delete receipt drafts');
     const data = await this.receiptService.deleteDraft(dto);
 
     return {
@@ -494,6 +512,7 @@ export class ReceiptController {
   @ApiConflictResponse({ type: ReceiptErrorResponseDto })
   @ApiNotFoundResponse({ type: ReceiptErrorResponseDto })
   async amend(@Body() dto: AmendReceiptDto): Promise<ReceiptSuccessResponse<ReceiptAmendPayload>> {
+    await this.requireRight('amend', 'amend posted receipts');
     const data = await this.amendService.amend(dto);
 
     return {
@@ -550,5 +569,21 @@ export class ReceiptController {
       message: `${data.billsRegularised} of ${data.billsExamined} bill(s) regularised as at ${data.asOf}`,
       data,
     };
+  }
+
+  /**
+   * notes (62) D2 — every route is judged on menu RECEIPT_MENU_ID's `user_menus` row
+   * for the caller, as the Voucher Register and the sales documents are:
+   * reads need view, a new draft create, a draft change edit, and post /
+   * cancel / amend / delete their own right. No row, no rights.
+   */
+  private async requireRight(right: MenuRight, action: string): Promise<void> {
+    await assertMenuRight(this.prisma, {
+      userId: this.requestContext.getUserId(),
+      menuId: RECEIPT_MENU_ID,
+      right,
+      codePrefix: 'RCT',
+      action,
+    });
   }
 }

@@ -1,4 +1,4 @@
--- Seed: stock.stock_reason_master -- why stock moved outside a trade document (17 rows).
+-- Seed: stock.stock_reason_master -- why stock moved outside a trade document (19 rows).
 --
 -- This is not decoration. fn_svh_txn_map REFUSES to post an ADJUSTMENT that does
 -- not cite a reason, and refuses one whose reason is direction BOTH, because a
@@ -127,7 +127,22 @@ SELECT v.company, v.code, v.name, v.direction,
      'Half of a re-lot pair. Never valid on its own: if stock leaves a lot and does not arrive in another, that is shrinkage, and PILFERAGE or DAMAGE is the honest reason.'),
     (NULL, 'RELOT_IN',    'Re-classify -- into the correct lot', 'IN',
      ARRAY['ADJUST_PLUS']::text[],                        true,  160,
-     'The other half. Carry the SAME cost rate as the outgoing line, or the re-lot moves value as well as identity and the moving average shifts for no reason.')
+     'The other half. Carry the SAME cost rate as the outgoing line, or the re-lot moves value as well as identity and the moving average shifts for no reason.'),
+
+    -- ── bucket moves: the same lot, a different bucket (notes 60, D-A3) ──
+    -- Cited by "Move stock" (a stock adjustment with voucherType BUCKET_MOVE):
+    -- ONE line per move, the engine writes BUCKET_OUT from the line's bucket
+    -- and BUCKET_IN into its toBucket, same lot, same cost, no accounts leg.
+    -- The stock stays the company's. BOTH because the pair goes both ways;
+    -- the allowed types keep them off every other kind, and keep every
+    -- any-movement reason (PILFERAGE) off a move. The screen defaults the
+    -- to-bucket from the code: MOVE_DAMAGED -> DAMAGED, MOVE_SALEABLE -> SALEABLE.
+    (NULL, 'MOVE_DAMAGED',  'Damaged — hold for return', 'BOTH',
+     ARRAY['BUCKET_OUT','BUCKET_IN']::text[],             false, 170,
+     'Out of SALEABLE into DAMAGED, still ours: pick-stock with bucket=DAMAGED then lists what goes back to which supplier (the lot names it). A purchase return sends it back, or a DAMAGE write-off clears it.'),
+    (NULL, 'MOVE_SALEABLE', 'Back to saleable',          'BOTH',
+     ARRAY['BUCKET_OUT','BUCKET_IN']::text[],             false, 180,
+     'The reverse move: the supplier would not take it back, or it was fine after all. Same lot, same cost.')
   ) AS v(company, code, name, direction, allowed, require_remarks, sort_order, note)
  WHERE NOT EXISTS (
         SELECT 1

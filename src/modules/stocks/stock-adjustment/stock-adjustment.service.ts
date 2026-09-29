@@ -23,12 +23,15 @@ import type {
 import type { SaveStockAdjustmentDto, SaveStockAdjustmentItemDto } from './dto/save-stock-adjustment.dto';
 import type { PickStockQueryDto } from './dto/stock-adjustment-query.dto';
 import {
+  BUCKET_MOVE_KIND,
+  BUCKET_MOVE_TXN_TYPES,
   EXPIRY_GRACE_SETTING_KEY,
   RELOT_IN_CODE,
   RELOT_OUT_CODE,
   STOCK_ADJUSTMENT_RULES,
   isStockAdjustmentKind,
-  type StockAdjustmentKind,
+  type StockAdjustmentDocKind,
+  type StockAdjustmentSaveKind,
 } from './stock-adjustment.rules';
 
 /** One line as every check below sees it — from the payload at save, from the rows at validate / post. */
@@ -41,6 +44,10 @@ interface AdjustmentLine {
   godownId: string;
   lotId: string | null;
   bucket: string;
+  /** A move line's destination bucket; null on every other line. */
+  toBucket: string | null;
+  /** The payload keyed a NEGATIVE quantity (save only; rows are magnitudes). */
+  keyedNegative: boolean;
   /** In BASE units, a magnitude. */
   baseQty: number;
   freeBaseQty: number;
@@ -56,6 +63,7 @@ interface ReasonRow {
   srm_code: string;
   srm_name: string;
   srm_direction: string;
+  srm_allowed_txn_types: string[] | null;
   srm_is_active: boolean;
   srm_require_remarks: boolean;
 }
@@ -69,7 +77,8 @@ interface LotRow {
 }
 
 interface HeaderFacts {
-  kind: StockAdjustmentKind;
+  /** The stored kind, or BUCKET_MOVE for an ADJUSTMENT whose lines move buckets. */
+  kind: StockAdjustmentSaveKind;
   companyId: string;
   branchId: string;
   docDate: string;
@@ -94,6 +103,13 @@ export interface PickStockRow {
   mrp: number | null;
   salePrice: number | null;
   serialNo: string | null;
+  /**
+   * The LOT's supplier (`slt_supplier_id`), when the item's policy tracks it.
+   * With bucket=DAMAGED this row set is the "what goes back to which
+   * supplier" list; the screen groups it by supplier.
+   */
+  supplierId: string | null;
+  supplierName: string | null;
   baseUomId: string;
   unitName: string | null;
   onHandQty: number;
@@ -104,9 +120,12 @@ export interface PickStockRow {
   firstInDate: string | null;
 }
 
+/** A loaded adjustment: the shared payload plus what the Type selector shows. */
+export type StockAdjustmentPayload = StockVoucherPayload & { kind: StockAdjustmentDocKind };
+
 /**
- * The adjustment family — ADJUSTMENT, ISSUE, DAMAGE, EXPIRY_WRITEOFF and the
- * re-lot pair — as one service over the shared stock voucher service
+ * The adjustment family — ADJUSTMENT, ISSUE, DAMAGE, EXPIRY_WRITEOFF, the
+ * re-lot pair and the bucket move — as one service over the shared stock voucher service
  * (plan-nestjs-stock-adjustments). Everything type-agnostic — save, load,
  * post, cancel, delete, the trail, the accounts voucher — is
  * `StockVoucherService`'s and the engine's; what is HERE is what the four
@@ -125,6 +144,11 @@ export interface PickStockRow {
  *     names an expired lot (grace: `stock.expiry_writeoff_grace_days`).
  *  4. THE RE-LOT PAIR: RELOT_OUT and RELOT_IN balance per item, different lots,
  *     the IN valued at the average the OUT was relieved at, no accounts leg.
+ *  5. THE BUCKET MOVE (D-A3, notes 60): ONE line per move — `bucket` from,
+ *     `toBucket` to — which the engine lays as a BUCKET_OUT / BUCKET_IN pair on
+ *     the same lot at the OUT's cost. The lot is required (it names the
+ *     supplier), the from-holding must cover it (BLOCK), the reason must be a
+ *     move reason, and a document is all moves or none. No accounts leg.
  *
  * The checks run at SAVE over the payload and again at VALIDATE / POST over the
  * stored rows, from one function, so the screen and the post cannot disagree.
@@ -168,6 +192,8 @@ export class StockAdjustmentService {
         godownId: line.godownId,
         lotId: line.lotId ?? null,
         bucket: line.bucket ?? 'SALEABLE',
+        toBucket: line.toBucket ?? null,
+        keyedNegative: sign < 0,
         baseQty: Math.abs(baseQty),
         freeBaseQty: Math.abs(Number(line.freeBaseQty ?? 0)) + Math.abs(Number(line.freeQty ?? 0)),
         sign,
@@ -180,13 +206,17 @@ export class StockAdjustmentService {
     const verdict = await this.check(header, lines, reasons);
     this.refuse(rules, `This ${rules.displayName.toLowerCase()} cannot be saved`, verdict, lines);
 
-    // A re-lot carries its value across: the IN is valued at the average the
-    // OUT is relieved at, so neither side keys a cost and the header says so.
+    // A re-lot and a move carry their value across: the IN is valued at the
+    // average the OUT is relieved at, so neither side keys a cost and the
+    // header says so.
     const relot = lines.some((line) => this.isRelot(reasons, line));
+    const carried = relot || kind === BUCKET_MOVE_KIND;
     const mapped: SaveStockVoucherDto = {
       header: {
         ...dto.header,
-        rateSource: relot ? 'AVG_COST' : (dto.header.rateSource ?? undefined),
+        // A move is stored as an ADJUSTMENT; the rule record says so too.
+        voucherType: rules.voucherType,
+        rateSource: carried ? 'AVG_COST' : (dto.header.rateSource ?? undefined),
       },
       lines: dto.lines.map((line, index) => this.toSharedLine(kind, line, lines[index], reasons)),
     } as unknown as SaveStockVoucherDto;
@@ -195,7 +225,7 @@ export class StockAdjustmentService {
 
   /** The shared line: magnitudes, the resolved sign, no free goods, no keyed cost on an outward line. */
   private toSharedLine(
-    kind: StockAdjustmentKind,
+    kind: StockAdjustmentSaveKind,
     line: SaveStockAdjustmentItemDto,
     view: AdjustmentLine,
     reasons: Map<string, ReasonRow>,
@@ -215,6 +245,7 @@ export class StockAdjustmentService {
       godownId: line.godownId,
       lotId: line.lotId ?? null,
       bucket: line.bucket ?? 'SALEABLE',
+      toBucket: kind === BUCKET_MOVE_KIND ? (line.toBucket ?? null) : null,
       barcode: line.barcode ?? null,
       batchNo: line.batchNo ?? null,
       mfgDate: line.mfgDate ?? null,
@@ -228,12 +259,16 @@ export class StockAdjustmentService {
       // way, so the pair carries the same figure.
       costRate: outward || this.isRelot(reasons, view) ? 0 : (line.costRate ?? 0),
       costRateWot: outward || this.isRelot(reasons, view) ? 0 : (line.costRateWot ?? 0),
+      // (a move line is outward: directionOf says −1 whenever toBucket is set)
       taxPerc: line.taxPerc ?? 0,
       reasonId: line.reasonId ?? null,
       remarks: line.remarks ?? null,
       // ADJUSTMENT lines carry their resolved sign; the other kinds always move
-      // out and the reason / type say so.
-      direction: kind === 'ADJUSTMENT' ? direction : null,
+      // out and the reason / type say so. A move line's OWN direction is out
+      // of its bucket (the IN half is the engine's), and stamping it keeps a
+      // BOTH move reason from being read as inward — the engine then values
+      // the pair at the branch average.
+      direction: kind === BUCKET_MOVE_KIND ? -1 : kind === 'ADJUSTMENT' ? direction : null,
     };
   }
 
@@ -241,9 +276,10 @@ export class StockAdjustmentService {
   // load / validate / post / cancel / delete — the kind comes from the row
   // ──────────────────────────────────────────────────────────────────────────
 
-  async getOne(svhId: string, accYear: string, companyId: string, branchId: string): Promise<StockVoucherPayload> {
-    const { rules } = await this.kindOf(svhId, accYear, companyId, branchId);
-    return this.stockVoucherService.getById(rules, svhId, accYear, companyId, branchId);
+  async getOne(svhId: string, accYear: string, companyId: string, branchId: string): Promise<StockAdjustmentPayload> {
+    const { rules, docKind } = await this.kindOf(svhId, accYear, companyId, branchId);
+    const payload = await this.stockVoucherService.getById(rules, svhId, accYear, companyId, branchId);
+    return { ...payload, kind: docKind };
   }
 
   async validate(
@@ -345,6 +381,8 @@ export class StockAdjustmentService {
         slt_mrp: Prisma.Decimal | null;
         slt_sale_price: Prisma.Decimal | null;
         slt_serial_no: string | null;
+        slt_supplier_id: string | null;
+        sup_name: string | null;
         sbl_base_uom_id: string;
         unit_name: string | null;
         sbl_on_hand_qty: Prisma.Decimal | null;
@@ -358,12 +396,14 @@ export class StockAdjustmentService {
       SELECT b.sbl_id, b.sbl_item_id, itm.item_code, itm.item_name_en AS item_name,
              b.sbl_godown_id, b.sbl_lot_id, b.sbl_bucket,
              slt.slt_batch_no, slt.slt_mfg_date, slt.slt_expiry_date, slt.slt_mrp, slt.slt_sale_price, slt.slt_serial_no,
+             slt.slt_supplier_id, sup.sup_name,
              b.sbl_base_uom_id, unt.unit_name,
              b.sbl_on_hand_qty, b.sbl_reserved_qty, b.sbl_available_qty,
              b.sbl_avg_cost_rate, b.sbl_stock_value, b.sbl_first_in_date
         FROM stock.stock_balance b
         JOIN stock.stock_lot slt ON slt.slt_id = b.sbl_lot_id
         JOIN inventory.item_master itm ON itm.item_id = b.sbl_item_id
+        LEFT JOIN purchase.suppliers sup ON sup.sup_id = slt.slt_supplier_id
         LEFT JOIN inventory.item_unit_conversion iuc ON iuc.iuc_id = b.sbl_base_uom_id
         LEFT JOIN inventory.item_unit_master unt ON unt.unit_id = iuc.iuc_unit_id
        WHERE b.sbl_company_id = ${query.companyId}::uuid
@@ -394,6 +434,8 @@ export class StockAdjustmentService {
       mrp: r.slt_mrp === null ? null : Number(r.slt_mrp),
       salePrice: r.slt_sale_price === null ? null : Number(r.slt_sale_price),
       serialNo: r.slt_serial_no,
+      supplierId: r.slt_supplier_id,
+      supplierName: r.sup_name,
       baseUomId: r.sbl_base_uom_id,
       unitName: r.unit_name,
       onHandQty: Number(r.sbl_on_hand_qty ?? 0),
@@ -442,6 +484,29 @@ export class StockAdjustmentService {
       }
     }
 
+    // ── the bucket move: all moves or none, one lot, a real destination ───
+    const moving = kind === BUCKET_MOVE_KIND;
+    for (const line of lines) {
+      if (!moving) {
+        if (line.toBucket) {
+          say(
+            line,
+            `names a bucket to move to (${line.toBucket}), but this is a ${STOCK_ADJUSTMENT_RULES[kind].displayName.toLowerCase()}. A document is all moves or none: key the move as Move stock.`,
+          );
+        }
+        continue;
+      }
+      if (line.keyedNegative) {
+        say(line, 'moves a negative quantity. State the quantity moved; the buckets say which way it goes.');
+      } else if (!line.toBucket) {
+        say(line, `names no bucket to move to. A move takes the stock out of ${line.bucket} and into another bucket — name it (toBucket). A document is all moves or none.`);
+      } else if (line.toBucket === line.bucket) {
+        say(line, `moves stock from ${line.bucket} into ${line.bucket}. Pick a different bucket.`);
+      } else if (!line.lotId) {
+        say(line, 'names no lot. A move is about one lot — the lot is what names the supplier the stock goes back to. Pick it from the balance.');
+      }
+    }
+
     // ── the reason, and the direction it fixes ────────────────────────────
     for (const line of lines) {
       const reason = line.reasonId ? reasons.get(line.reasonId) : undefined;
@@ -455,6 +520,27 @@ export class StockAdjustmentService {
       }
       if (!reason.srm_is_active) {
         say(line, `cites ${reason.srm_code} (${reason.srm_name}), which is inactive.`);
+        continue;
+      }
+      if (moving) {
+        // A move cites a move reason — one whose allowed types name
+        // BUCKET_OUT / BUCKET_IN — never an any-movement one: PILFERAGE on a
+        // move would read as a write-off that wrote nothing off.
+        if (!this.allowsMove(reason)) {
+          say(
+            line,
+            `cites ${reason.srm_code} (${reason.srm_name}), which is not a stock-move reason. Cite MOVE_DAMAGED, MOVE_SALEABLE or a reason of your own that allows BUCKET_OUT / BUCKET_IN.`,
+          );
+        } else if (reason.srm_require_remarks && !line.remarks) {
+          say(line, `cites ${reason.srm_code} (${reason.srm_name}), which requires a remark saying what happened.`);
+        }
+        continue;
+      }
+      if (this.onlyMove(reason)) {
+        say(
+          line,
+          `cites ${reason.srm_code} (${reason.srm_name}), a stock-move reason. Key it as Move stock and name the bucket the stock moves to.`,
+        );
         continue;
       }
       if (kind !== 'ADJUSTMENT' && reason.srm_direction === 'IN') {
@@ -535,7 +621,9 @@ export class StockAdjustmentService {
           shortReported.add(key);
           say(
             line,
-            `takes ${asked} but this godown holds ${have} of ${lot.slt_batch_no ? `batch ${lot.slt_batch_no}` : 'that lot'} in the ${line.bucket} bucket. Writing off stock you do not have is a data error, not a sale.`,
+            `${moving ? 'moves' : 'takes'} ${asked} but this godown holds ${have} of ${lot.slt_batch_no ? `batch ${lot.slt_batch_no}` : 'that lot'} in the ${line.bucket} bucket. ${
+              moving ? 'Moving stock you do not have is a data error.' : 'Writing off stock you do not have is a data error, not a sale.'
+            }`,
           );
         }
       }
@@ -580,8 +668,14 @@ export class StockAdjustmentService {
     return out;
   }
 
-  /** Which way a line moves: its own sign, else its reason's, else the kind's (out). */
+  /**
+   * Which way a line moves: out of its bucket when it is a move, else its
+   * reason's direction, else its own sign, else the kind's (out).
+   */
   private directionOf(line: AdjustmentLine, reasons: Map<string, ReasonRow>): 1 | -1 {
+    if (line.toBucket) {
+      return -1;
+    }
     const reason = line.reasonId ? reasons.get(line.reasonId) : undefined;
     if (reason?.srm_direction === 'IN') {
       return 1;
@@ -595,6 +689,17 @@ export class StockAdjustmentService {
     return -1;
   }
 
+  /** A reason a move may cite: its allowed types name BUCKET_OUT or BUCKET_IN. */
+  private allowsMove(reason: ReasonRow): boolean {
+    return (reason.srm_allowed_txn_types ?? []).some((t) => (BUCKET_MOVE_TXN_TYPES as readonly string[]).includes(t));
+  }
+
+  /** A reason ONLY a move may cite: it names bucket types and nothing else. */
+  private onlyMove(reason: ReasonRow): boolean {
+    const allowed = reason.srm_allowed_txn_types ?? [];
+    return allowed.length > 0 && allowed.every((t) => (BUCKET_MOVE_TXN_TYPES as readonly string[]).includes(t));
+  }
+
   private isRelot(reasons: Map<string, ReasonRow>, line: AdjustmentLine): boolean {
     const code = line.reasonId ? reasons.get(line.reasonId)?.srm_code : undefined;
     return code === RELOT_OUT_CODE || code === RELOT_IN_CODE;
@@ -602,10 +707,15 @@ export class StockAdjustmentService {
 
   /**
    * The ONE godown of the document. ADJUSTMENT names exactly one of from / to
-   * (both signs share it, in `from`); the write-offs name `from`.
+   * (both signs share it, in `from`); the write-offs and a move name `from`.
    */
   private documentGodown(header: HeaderFacts): string | null {
     const { fromGodownId, toGodownId, kind } = header;
+    if (kind === BUCKET_MOVE_KIND && toGodownId && toGodownId !== fromGodownId) {
+      throwStockUnprocessable<StockErrorDetail, StockErrorResponse>('This stock move cannot be saved', [
+        { field: 'toGodownId', message: 'A move changes the bucket, not the godown: name the godown once, in fromGodownId. Moving stock between godowns is a transfer.' },
+      ]);
+    }
     if (kind === 'ADJUSTMENT') {
       if (!fromGodownId && !toGodownId) {
         throwStockUnprocessable<StockErrorDetail, StockErrorResponse>('This stock adjustment cannot be saved', [
@@ -648,7 +758,9 @@ export class StockAdjustmentService {
     accYear: string,
     companyId: string,
     branchId: string,
-  ): Promise<{ rules: StockVoucherTypeRules; header: HeaderFacts }> {
+  ): Promise<{ rules: StockVoucherTypeRules; header: HeaderFacts; docKind: StockAdjustmentDocKind }> {
+    // A move and a re-lot are both stored as ADJUSTMENT and told apart by
+    // their lines — the same test grid 122's kind_code makes.
     const [row] = await this.prisma.$queryRaw<
       Array<{
         svh_voucher_type: string;
@@ -657,12 +769,24 @@ export class StockAdjustmentService {
         svh_to_godown_id: string | null;
         svh_reason_id: string | null;
         svh_remarks: string | null;
+        is_move: boolean;
+        is_relot: boolean;
       }>
     >`
-      SELECT svh_voucher_type, svh_doc_date, svh_from_godown_id, svh_to_godown_id, svh_reason_id, svh_remarks
-        FROM stock.stock_voucher
-       WHERE svh_id = ${svhId}::uuid AND svh_acc_year = ${accYear}::bpchar
-         AND svh_company_id = ${companyId}::uuid AND svh_branch_id = ${branchId}::uuid
+      SELECT h.svh_voucher_type, h.svh_doc_date, h.svh_from_godown_id, h.svh_to_godown_id, h.svh_reason_id, h.svh_remarks,
+             (h.svh_voucher_type = 'ADJUSTMENT' AND EXISTS (
+                SELECT 1 FROM stock.stock_voucher_item i
+                 WHERE i.svi_voucher_id = h.svh_id AND i.svi_acc_year = h.svh_acc_year
+                   AND i.svi_is_deleted = false AND i.svi_to_bucket IS NOT NULL))                AS is_move,
+             (h.svh_voucher_type = 'ADJUSTMENT' AND EXISTS (
+                SELECT 1 FROM stock.stock_voucher_item i
+                  JOIN stock.stock_reason_master rm ON rm.srm_id = COALESCE(i.svi_reason_id, h.svh_reason_id)
+                 WHERE i.svi_voucher_id = h.svh_id AND i.svi_acc_year = h.svh_acc_year
+                   AND i.svi_is_deleted = false
+                   AND rm.srm_code IN (${RELOT_OUT_CODE}, ${RELOT_IN_CODE})))                     AS is_relot
+        FROM stock.stock_voucher h
+       WHERE h.svh_id = ${svhId}::uuid AND h.svh_acc_year = ${accYear}::bpchar
+         AND h.svh_company_id = ${companyId}::uuid AND h.svh_branch_id = ${branchId}::uuid
     `;
     if (!row || !isStockAdjustmentKind(row.svh_voucher_type)) {
       throwStockNotFound<StockErrorDetail, StockErrorResponse>(
@@ -671,9 +795,10 @@ export class StockAdjustmentService {
         `No adjustment, issue, damage or expiry write-off ${svhId} in ${accYear} for this company and branch.`,
       );
     }
-    const kind = row.svh_voucher_type;
+    const kind: StockAdjustmentSaveKind = row.is_move ? BUCKET_MOVE_KIND : row.svh_voucher_type;
     return {
       rules: STOCK_ADJUSTMENT_RULES[kind],
+      docKind: row.is_move ? BUCKET_MOVE_KIND : row.is_relot ? 'RELOT' : row.svh_voucher_type,
       header: {
         kind,
         companyId,
@@ -697,6 +822,7 @@ export class StockAdjustmentService {
         svi_godown_id: string;
         svi_lot_id: string | null;
         svi_bucket: string;
+        svi_to_bucket: string | null;
         svi_base_qty: Prisma.Decimal;
         svi_free_base_qty: Prisma.Decimal;
         svi_direction: number | null;
@@ -706,7 +832,7 @@ export class StockAdjustmentService {
       }>
     >`
       SELECT svi.svi_id, svi.svi_line_no, svi.svi_item_id, itm.item_name_en AS item_name,
-             svi.svi_godown_id, svi.svi_lot_id, svi.svi_bucket, svi.svi_base_qty, svi.svi_free_base_qty,
+             svi.svi_godown_id, svi.svi_lot_id, svi.svi_bucket, svi.svi_to_bucket, svi.svi_base_qty, svi.svi_free_base_qty,
              svi.svi_direction, svi.svi_reason_id, svi.svi_remarks, svi.svi_base_uom_id
         FROM stock.stock_voucher_item svi
         JOIN inventory.item_master itm ON itm.item_id = svi.svi_item_id
@@ -723,6 +849,8 @@ export class StockAdjustmentService {
       godownId: r.svi_godown_id,
       lotId: r.svi_lot_id,
       bucket: r.svi_bucket,
+      toBucket: r.svi_to_bucket,
+      keyedNegative: false,
       baseQty: Number(r.svi_base_qty),
       freeBaseQty: Number(r.svi_free_base_qty),
       sign: r.svi_direction === null ? 0 : Number(r.svi_direction) > 0 ? 1 : -1,
@@ -738,7 +866,7 @@ export class StockAdjustmentService {
       return new Map();
     }
     const rows = await this.prisma.$queryRaw<ReasonRow[]>`
-      SELECT srm_id, srm_code, srm_name, srm_direction, srm_is_active, srm_require_remarks
+      SELECT srm_id, srm_code, srm_name, srm_direction, srm_allowed_txn_types, srm_is_active, srm_require_remarks
         FROM stock.stock_reason_master
        WHERE srm_id = ANY(${ids}::uuid[])
          AND srm_is_deleted = false

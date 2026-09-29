@@ -10,6 +10,15 @@ import * as request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { TokenService, type AccessTokenPayload } from '../src/modules/auth/token.service';
 import { AuthSessionService } from '../src/modules/auth/auth-session.service';
+import {
+  grantMenuRights,
+  RECEIPT_MENU,
+  restoreMenuRights,
+  type MenuRightsMemo,
+} from './helpers/menu-rights';
+
+/** notes (62) D2 — tester1's menu-99 rights for this suite, put back in afterAll. */
+let rightsMemo: MenuRightsMemo | null = null;
 
 /**
  * "received 10, disc 1, r.off 1 but i cant post" — 2026-09-18.
@@ -111,6 +120,7 @@ describe('a receipt may round a bill off (e2e, live DB, writes)', () => {
   };
 
   beforeAll(async () => {
+    rightsMemo = await grantMenuRights(prisma, [RECEIPT_MENU]);
     const [tender] = await prisma.$queryRawUnsafe<
       Array<{ tnd_id: string; tnd_type_id: number; tnd_ledger_id: string | null }>
     >(
@@ -201,6 +211,7 @@ describe('a receipt may round a bill off (e2e, live DB, writes)', () => {
   });
 
   afterAll(async () => {
+    await restoreMenuRights(prisma, rightsMemo);
     await app?.close();
     await prisma.$disconnect();
   });

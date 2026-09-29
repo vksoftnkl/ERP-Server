@@ -1,4 +1,5 @@
 import { Prisma } from '@prisma/client';
+import { throwForbidden } from '../utils/module-shared.utils';
 
 /**
  * The per-menu rights of `public.user_menus`, read in one round trip.
@@ -106,4 +107,42 @@ export async function loadRights(
     override: row?.um_can_override ?? false,
     retender: row?.um_can_retender ?? false,
   };
+}
+
+/**
+ * A screen route's gate: 403 unless the caller holds `right` on `menuId`.
+ *
+ * The refusal names the `user_menus` column, so whoever administers rights
+ * reads off what to grant. Its code is `<codePrefix>_RIGHT_<RIGHT>` —
+ * RCT_RIGHT_POST, PMT_RIGHT_VIEW — each module keeping its own family, as the
+ * Voucher Register (VCH_) and sales (SALES_) do. A call with no user in the
+ * request context has no rights, exactly as a user with no row.
+ */
+export async function assertMenuRight(
+  client: RightsClient,
+  params: {
+    userId: string | null;
+    menuId: number;
+    right: MenuRight;
+    codePrefix: string;
+    /** "post receipts" — the words the refusal uses. */
+    action: string;
+  },
+): Promise<MenuRights> {
+  const rights = params.userId
+    ? await loadRights(client, params.userId, params.menuId)
+    : { ...NO_RIGHTS };
+  if (!rights[params.right]) {
+    const message =
+      `This user may not ${params.action} (menu ${params.menuId}: ` +
+      `${RIGHT_COLUMN[params.right]} is not granted)`;
+    throwForbidden(message, [
+      {
+        field: 'userId',
+        message,
+        code: `${params.codePrefix}_RIGHT_${params.right.toUpperCase()}`,
+      },
+    ]);
+  }
+  return rights;
 }

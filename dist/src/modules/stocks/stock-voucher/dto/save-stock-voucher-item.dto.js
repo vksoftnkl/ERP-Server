@@ -24,6 +24,7 @@ class SaveStockVoucherItemDto {
     godownId;
     lotId;
     bucket;
+    toBucket;
     barcode;
     batchNo;
     mfgDate;
@@ -129,6 +130,18 @@ __decorate([
     }),
     __metadata("design:type", String)
 ], SaveStockVoucherItemDto.prototype, "bucket", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        enum: stock_voucher_types_1.STOCK_BUCKETS,
+        nullable: true,
+        description: 'MOVE STOCK ONLY (a stock adjustment whose voucherType is BUCKET_MOVE): the bucket the same lot moves to; `bucket` is the one it leaves. The engine writes BUCKET_OUT from `bucket` and BUCKET_IN into this one, same godown, quantity and cost. Refused on every other document.',
+    }),
+    (0, dtoDecorators_1.SkipOnNullish)(),
+    (0, class_validator_1.IsIn)(stock_voucher_types_1.STOCK_BUCKETS, {
+        message: `toBucket must be one of ${stock_voucher_types_1.STOCK_BUCKETS.join(', ')}`,
+    }),
+    __metadata("design:type", Object)
+], SaveStockVoucherItemDto.prototype, "toBucket", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({
         nullable: true,

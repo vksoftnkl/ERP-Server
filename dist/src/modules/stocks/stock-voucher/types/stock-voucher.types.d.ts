@@ -12,7 +12,7 @@ export type StockBucket = (typeof STOCK_BUCKETS)[number];
 export declare const STOCK_RATE_SOURCES: readonly ["AVG_COST", "LAST_PURCHASE", "LOT_COST", "MRP", "MANUAL"];
 export type StockRateSource = (typeof STOCK_RATE_SOURCES)[number];
 export declare const DERIVABLE_RATE_SOURCES: readonly ["AVG_COST", "LAST_PURCHASE", "LOT_COST", "MRP"];
-export declare const STOCK_POST_SHAPES: readonly ["SIMPLE", "COUNT", "TRANSFER_OUT", "TRANSFER_IN"];
+export declare const STOCK_POST_SHAPES: readonly ["SIMPLE", "COUNT", "TRANSFER_OUT", "TRANSFER_IN", "BUCKET_MOVE"];
 export type StockPostShape = (typeof STOCK_POST_SHAPES)[number];
 export declare const STOCK_SRC_MODULE = "STOCK";
 export declare const STOCK_QUANTITY_MODES: readonly ["QTY", "COUNT"];
@@ -121,6 +121,7 @@ export interface StockVoucherLinePayload {
     serialNo: string | null;
     supplierId: string | null;
     supplierName: string | null;
+    toBucket: StockBucket | null;
     qty: number;
     baseQty: number;
     freeQty: number;

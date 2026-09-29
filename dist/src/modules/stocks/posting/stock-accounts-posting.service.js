@@ -33,6 +33,7 @@ const ADJUSTMENT_FAMILY = new Set([
     'EXPIRY_WRITEOFF',
 ]);
 const RELOT_REASON_CODES = ['RELOT_OUT', 'RELOT_IN'];
+const BUCKET_MOVE_TXN_TYPES = ['BUCKET_OUT', 'BUCKET_IN'];
 const SHORT_SETTLE_VOUCHER_TYPE_CODE = 'Jrl';
 exports.STOCK_LEDGER_ROLES = {
     INVENTORY: 'INVENTORY',
@@ -243,6 +244,7 @@ let StockAccountsPostingService = StockAccountsPostingService_1 = class StockAcc
          AND sml.sml_is_deleted  = false
          AND sml.sml_is_reversal = false
          AND (srm.srm_code IS NULL OR srm.srm_code <> ALL(${RELOT_REASON_CODES}::text[]))
+         AND sml.sml_txn_type <> ALL(${BUCKET_MOVE_TXN_TYPES}::text[])
        GROUP BY sml.sml_direction, srm.srm_gl_ledger_id`;
         const net = new Map();
         const add = (key, leg, signed) => {

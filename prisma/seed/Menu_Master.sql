@@ -1,4 +1,4 @@
--- Seed: fixed.menu_master -- the full application menu tree (228 rows).
+-- Seed: fixed.menu_master -- the full application menu tree (233 rows).
 --
 -- Exported from the reference database, so a fresh environment comes up with the
 -- same menu ids every other table points at.
@@ -149,14 +149,17 @@ VALUES
     ,( 238,    3, 'Custom Sticker'                       , NULL                  , false,   5.10, NULL, NULL, NULL, true , false)
     ,( 240,   34, 'item category master'                 , 'item-category-master', true ,   2.10, NULL, NULL, NULL, true , false)
     ,( 244,   34, 'Item Qty wise Price'                  , NULL                  , true ,   7.00, NULL, NULL, NULL, true , false)
-    -- ============ &4 Stock (menu 4, 19 rows) ============
+    -- ============ &4 Stock (menu 4, 20 rows) ============
     ,(   4, NULL, '&4 Stock'                             , NULL                  , true ,   4.00, '0', NULL, NULL, true , false)
     ,(  41,    4, 'Stock Transfer'                       , 'CTRL+T'              , false,   1.00, NULL, NULL, NULL, true , true)
     ,(  42,    4, 'Split Stock'                          , NULL                  , false,   2.00, NULL, NULL, NULL, true , false)
     ,(  43,    4, 'Production'                           , 'CTRL+K'              , false,   3.00, NULL, NULL, NULL, true , true)
     ,(  44,    4, 'Opening Stock'                        , NULL                  , true ,   4.00, NULL, NULL, NULL, true , false)
     ,(  45,    4, 'Physical Stock Update'                , 'CTRL+SHIFT+U'        , true ,   5.00, NULL, NULL, NULL, true , false)
+    -- 264: notes 60 / 20260928210000_stock_bucket_move -- ONE menu for every adjustment kind
+    -- (adjustment, re-lot, move stock, issue, damage, expiry write-off); per-kind rights later.
     ,( 107,    4, 'Stock Transfer (Third Party)'         , NULL                  , false,   7.00, NULL, NULL, NULL, true , false)
+    ,( 264,    4, 'Stock Adjustment'                     , NULL                  , true ,   6.00, NULL, NULL, NULL, true , false)
     ,( 145,    4, 'Stock Exchange'                       , NULL                  , false,   8.00, NULL, NULL, NULL, true , false)
     ,( 170,    4, 'Gate Inward Entry'                    , NULL                  , false,  10.00, NULL, NULL, NULL, true , false)
     ,( 171,    4, 'Gate Inward Pending'                  , NULL                  , false,  11.00, NULL, NULL, NULL, true , false)
@@ -169,31 +172,37 @@ VALUES
     ,( 224,  222, 'Shop Inward'                          , NULL                  , false,   2.00, NULL, NULL, NULL, true , true)
     ,( 225,  222, 'Meat Inward'                          , NULL                  , false,   3.00, NULL, NULL, NULL, true , false)
     ,( 237,    4, 'Godown - Stock Dispatch'              , 'false'               , false,  15.00, NULL, NULL, NULL, true , false)
-    -- ============ &5 Accounts (menu 5, 19 rows) ============
+    -- ============ &5 Accounts (menu 5, 24 rows) ============
+    -- notes (59) / 20260928200000_accounts_menu_by_nature: names and positions follow the
+    -- screen's nature -- masters 1-3, bill-wise settlement 10-14 (99/100 settle ONE party's
+    -- bills; 260/261 are the register's many-party vouchers), the Voucher Register's
+    -- vouchers 20-28 in Tally's F4-F10 order, retired / unbuilt screens at 90+ and hidden.
+    -- Ids are pinned (the client opens screens by id). 100 is visible since the payment
+    -- screen was built (20260929090000). 48 is inactive (20260915120000: the one receipt screen is 99).
     ,(   5, NULL, '&5 Accounts'                          , NULL                  , true ,   5.00, '0', NULL, NULL, true , false)
-    ,(  48,    5, 'Bill wise Receipt'                    , 'CTRL+B'              , false,   3.00, NULL, NULL, NULL, true , false)
-    ,(  49,    5, 'Bill wise Payment'                    , 'CTRL+SHIFT+B'        , false,   4.00, NULL, NULL, NULL, true , true)
-    ,(  51,    5, 'Received Cheques'                     , NULL                  , false,  12.00, NULL, NULL, NULL, true , false)
-    ,(  52,    5, 'Issued Cheques'                       , NULL                  , false,  13.00, NULL, NULL, NULL, true , false)
-    ,(  53,    5, 'Ledger Master'                        , NULL                  , true ,   2.00, NULL, NULL, NULL, true , true)
-    ,(  54,    5, 'Ledger Group Master'                  , NULL                  , true ,   1.00, NULL, NULL, NULL, true , false)
-    ,(  55,    5, 'Opening Balance'                      , NULL                  , false,   0.00, NULL, NULL, NULL, true , false)
-    ,(  99,    5, 'Receipt'                              , NULL                  , false,   6.00, NULL, NULL, NULL, true , false)
-    ,( 100,    5, 'Payment'                              , NULL                  , false,   7.00, NULL, NULL, NULL, true , false)
-    ,( 101,    5, 'Debit Note'                           , NULL                  , true ,   8.00, NULL, NULL, NULL, true , false)
-    ,( 102,    5, 'Credit Note'                          , NULL                  , true ,   9.00, NULL, NULL, NULL, true , true)
-    ,( 103,    5, 'Journal'                              , NULL                  , true ,  10.00, NULL, NULL, NULL, true , false)
-    ,( 104,    5, 'Contra'                               , NULL                  , true ,  11.00, NULL, NULL, NULL, true , true)
-    ,( 163,    5, 'Purchase (Accounting)'                , NULL                  , true ,  11.00, NULL, NULL, NULL, true , false)
-    ,( 179,    5, 'Claim Management'                     , NULL                  , false,  14.00, NULL, NULL, NULL, true , true)
-    ,( 185,    5, 'Third Party Bills'                    , NULL                  , false,  15.00, NULL, NULL, NULL, true , false)
-    ,( 187,    5, 'Collection Entry'                     , 'false'               , false,  11.10, NULL, NULL, NULL, true , false)
-    ,( 188,    5, 'Collection Approval'                  , 'false'               , false,  11.20, NULL, NULL, NULL, true , true)
-    ,( 259,    5, 'Sales (Accounting)'                   , NULL                  , true ,  11.10, NULL, NULL, NULL, true , false)
-    ,( 260,    5, 'Receipt Voucher'                      , NULL                  , true ,  11.20, NULL, NULL, NULL, true , false)
-    ,( 261,    5, 'Payment Voucher'                      , NULL                  , true ,  11.30, NULL, NULL, NULL, true , false)
-    ,( 262,    5, 'Voucher Register'                     , NULL                  , true ,  11.40, NULL, NULL, NULL, true , false)
-    ,( 263,    5, 'Cheque Books'                         , NULL                  , true ,  13.10, NULL, NULL, NULL, true , false)
+    ,(  48,    5, 'Bill wise Receipt (old)'              , 'CTRL+B'              , false,  90.00, NULL, NULL, NULL, false, false)
+    ,(  49,    5, 'Bill wise Payment (old)'              , 'CTRL+SHIFT+B'        , false,  91.00, NULL, NULL, NULL, true , false)
+    ,(  51,    5, 'Received Cheques'                     , NULL                  , true ,  12.00, NULL, NULL, NULL, true , false)
+    ,(  52,    5, 'Issued Cheques'                       , NULL                  , true ,  13.00, NULL, NULL, NULL, true , false)
+    ,(  53,    5, 'Ledgers'                              , NULL                  , true ,   2.00, NULL, NULL, NULL, true , false)
+    ,(  54,    5, 'Ledger Groups'                        , NULL                  , true ,   1.00, NULL, NULL, NULL, true , false)
+    ,(  55,    5, 'Opening Balances'                     , NULL                  , true ,   3.00, NULL, NULL, NULL, true , true)
+    ,(  99,    5, 'Bill-wise Receipt'                    , NULL                  , true ,  10.00, NULL, NULL, NULL, true , false)
+    ,( 100,    5, 'Bill-wise Payment'                    , NULL                  , true ,  11.00, NULL, NULL, NULL, true , false)
+    ,( 101,    5, 'Debit Note'                           , NULL                  , true ,  27.00, NULL, NULL, NULL, true , true)
+    ,( 102,    5, 'Credit Note'                          , NULL                  , true ,  26.00, NULL, NULL, NULL, true , false)
+    ,( 103,    5, 'Journal'                              , NULL                  , true ,  23.00, NULL, NULL, NULL, true , false)
+    ,( 104,    5, 'Contra'                               , NULL                  , true ,  20.00, NULL, NULL, NULL, true , false)
+    ,( 163,    5, 'Purchase (Accounting)'                , NULL                  , true ,  25.00, NULL, NULL, NULL, true , false)
+    ,( 179,    5, 'Claim Management'                     , NULL                  , false,  94.00, NULL, NULL, NULL, true , false)
+    ,( 185,    5, 'Third Party Bills'                    , NULL                  , false,  95.00, NULL, NULL, NULL, true , false)
+    ,( 187,    5, 'Collection Entry'                     , 'false'               , false,  92.00, NULL, NULL, NULL, true , false)
+    ,( 188,    5, 'Collection Approval'                  , 'false'               , false,  93.00, NULL, NULL, NULL, true , false)
+    ,( 259,    5, 'Sales (Accounting)'                   , NULL                  , true ,  24.00, NULL, NULL, NULL, true , false)
+    ,( 260,    5, 'Receipt Voucher'                      , NULL                  , true ,  22.00, NULL, NULL, NULL, true , false)
+    ,( 261,    5, 'Payment Voucher'                      , NULL                  , true ,  21.00, NULL, NULL, NULL, true , false)
+    ,( 262,    5, 'Voucher Register'                     , NULL                  , true ,  28.00, NULL, NULL, NULL, true , false)
+    ,( 263,    5, 'Cheque Books'                         , NULL                  , true ,  14.00, NULL, NULL, NULL, true , true)
     -- ============ &6 Reports (menu 6, 21 rows) ============
     ,(   6, NULL, '&6 Reports'                           , NULL                  , true ,   6.00, '0', NULL, NULL, true , false)
     ,(  74,    6, 'Sales Reports'                        , NULL                  , false,   3.00, NULL, NULL, NULL, true , false)
@@ -314,6 +323,15 @@ UPDATE fixed.menu_master
 UPDATE fixed.menu_master
    SET menu_verbs = '{VIEW,CREATE,EDIT,DELETE,PRINT,EXPORT,POST,CANCEL,OVERRIDE}'
  WHERE menu_id IN (101, 102, 103, 104, 163, 259, 260, 261, 262)
+   AND menu_verbs = '{VIEW,CREATE,EDIT,DELETE,PRINT,EXPORT}';
+
+-- Stock Adjustment (264, notes 60 / 20260928210000_stock_bucket_move): a posting
+-- document -- POST and CANCEL -- but no AMEND (a posted adjustment is corrected by
+-- cancel + re-enter) and no OVERRIDE (negative stock is BLOCK by decision D-A1).
+-- Same guard as 257.
+UPDATE fixed.menu_master
+   SET menu_verbs = '{VIEW,CREATE,EDIT,DELETE,PRINT,EXPORT,POST,CANCEL}'
+ WHERE menu_id = 264
    AND menu_verbs = '{VIEW,CREATE,EDIT,DELETE,PRINT,EXPORT}';
 
 -- Cheque Books (263, notes 58 / 20260928190000_cheque_books_menu): a master that

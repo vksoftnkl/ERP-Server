@@ -51,6 +51,14 @@ const ADJUSTMENT_FAMILY: ReadonlySet<StockVoucherType> = new Set([
  */
 const RELOT_REASON_CODES = ['RELOT_OUT', 'RELOT_IN'];
 
+/**
+ * A "Move stock" pair (adjustments plan D-A3, notes 60) moves the same lot
+ * between buckets of one godown: the stock never leaves the company and the
+ * Stock-in-Hand ledger holds it in either bucket, so its rows post NO leg.
+ * Recognised by the txn type, which only the move writes.
+ */
+const BUCKET_MOVE_TXN_TYPES = ['BUCKET_OUT', 'BUCKET_IN'];
+
 /** The voucher type a transit short-settlement is numbered in — a Journal. */
 const SHORT_SETTLE_VOUCHER_TYPE_CODE = 'Jrl';
 
@@ -108,7 +116,8 @@ interface StockHeaderRow {
  *              excess:   DR INVENTORY / CR reason ledger (default role STOCK_EXCESS)
  *              one voucher, both pairs, netted per ledger
  *   ADJUSTMENT / ISSUE / DAMAGE / EXPIRY_WRITEOFF   the same, on the 'StkAdj'
- *              Stock Journal type; a RELOT_OUT / RELOT_IN pair posts nothing
+ *              Stock Journal type; a RELOT_OUT / RELOT_IN pair and a
+ *              BUCKET_OUT / BUCKET_IN move post nothing
  *   TRANSFER   none within one company: one company-level Stock-in-Hand ledger
  *   settle-short   DR reason ledger / CR INVENTORY for short × stt_cost_rate
  *   ISSUE / RECEIPT behind a sales document   none — the sales document posts
@@ -161,7 +170,8 @@ export class StockAccountsPostingService {
     const header = await this.header(tx, input.svhId, input.accYear);
     // A count and every adjustment-family document post the same way: each
     // ledger row is a shortage (DR reason / CR INVENTORY) or an excess (the
-    // other way), netted per ledger. Only the re-lot pair is left out.
+    // other way), netted per ledger. Only the re-lot pair and a bucket move
+    // are left out — a document of nothing else writes no voucher.
     const legs =
       input.voucherType === 'OPENING'
         ? await this.openingLegs(tx, input)
@@ -399,7 +409,8 @@ export class StockAccountsPostingService {
    * ledger here, so a count that is short on one shelf and over on another of
    * the same reason — or an adjustment sheet with ten shortage lines — posts
    * one figure, not two that cancel. A re-lot pair's rows are left out: the
-   * value left the wrong lot and arrived in the right one.
+   * value left the wrong lot and arrived in the right one. So are a bucket
+   * move's: the value left SALEABLE and sits in DAMAGED, still the company's.
    */
   private async varianceLegs(
     tx: Prisma.TransactionClient,
@@ -417,6 +428,7 @@ export class StockAccountsPostingService {
          AND sml.sml_is_deleted  = false
          AND sml.sml_is_reversal = false
          AND (srm.srm_code IS NULL OR srm.srm_code <> ALL(${RELOT_REASON_CODES}::text[]))
+         AND sml.sml_txn_type <> ALL(${BUCKET_MOVE_TXN_TYPES}::text[])
        GROUP BY sml.sml_direction, srm.srm_gl_ledger_id`;
     // key → signed amount (DR positive, CR negative)
     const net = new Map<string, { leg: Omit<VoucherLeg, 'drCr' | 'amount'>; amount: number }>();

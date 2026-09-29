@@ -83,10 +83,17 @@ let ReceiptService = class ReceiptService {
                         avhIsDeleted: true,
                         avhVoucherRefno: true,
                         avhDraftLines: true,
+                        avhVoucherTypeId: true,
+                        avhCompanyId: true,
+                        avhBranchId: true,
                     },
                 })
                 : null;
-            if (dto.avhVoucherId && !existing) {
+            if (dto.avhVoucherId &&
+                (!existing ||
+                    existing.avhVoucherTypeId !== voucherType.vchrTypeId ||
+                    existing.avhCompanyId !== dto.avhCompanyId ||
+                    existing.avhBranchId !== dto.avhBranchId)) {
                 (0, module_service_utils_1.throwAccountsNotFound)('Receipt not found', 'avhVoucherId', `No receipt ${dto.avhVoucherId} in ${dto.avhAccYear}`);
             }
             if (existing &&
@@ -698,8 +705,12 @@ let ReceiptService = class ReceiptService {
         }
     }
     async loadHeaderOrThrow(client, voucherId, accYear) {
-        const header = await client.accVoucherHeader.findUnique({
-            where: { avhVoucherId_avhAccYear: { avhVoucherId: voucherId, avhAccYear: accYear } },
+        const header = await client.accVoucherHeader.findFirst({
+            where: {
+                avhVoucherId: voucherId,
+                avhAccYear: accYear,
+                voucherType: { vchrTypeCode: receipt_enum_1.RECEIPT_VOUCHER_TYPE_CODE },
+            },
             select: exports.STORED_HEADER_SELECT,
         });
         if (!header || header.avhIsDeleted) {

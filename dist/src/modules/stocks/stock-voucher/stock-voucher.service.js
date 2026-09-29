@@ -124,6 +124,31 @@ let StockVoucherService = class StockVoucherService {
                 });
             }
         }
+        if (rules.postShape === 'BUCKET_MOVE') {
+            lines.forEach((line, index) => {
+                if (!line.toBucket) {
+                    errors.push({
+                        field: `lines.${index}.toBucket`,
+                        message: `Line ${line.lineNo}: a stock move names the bucket the stock moves to.`,
+                    });
+                }
+                else if (line.toBucket === (line.bucket ?? 'SALEABLE')) {
+                    errors.push({
+                        field: `lines.${index}.toBucket`,
+                        message: `Line ${line.lineNo}: moves stock from ${line.toBucket} into ${line.toBucket}. Pick a different bucket.`,
+                    });
+                }
+            });
+        }
+        else {
+            const moved = lines.findIndex((line) => line.toBucket !== undefined && line.toBucket !== null);
+            if (moved >= 0) {
+                errors.push({
+                    field: `lines.${moved}.toBucket`,
+                    message: `Line ${lines[moved].lineNo}: only a stock move names a destination bucket; a ${rules.displayName.toLowerCase()} keeps the stock where it is.`,
+                });
+            }
+        }
         if (!rules.allowsToBranch && header.toBranchId) {
             errors.push({
                 field: 'toBranchId',
@@ -571,6 +596,7 @@ let StockVoucherService = class StockVoucherService {
                 sviGodownId: line.godownId,
                 sviLotId: isCount || rules.requiresLot || rules.allowsLot ? (line.lotId ?? null) : null,
                 sviBucket: (line.bucket ?? 'SALEABLE'),
+                sviToBucket: rules.postShape === 'BUCKET_MOVE' ? (line.toBucket ?? null) : null,
                 sviBarcode: line.barcode ?? null,
                 sviBatchNo: isCount ? holding.batchNo : (line.batchNo ?? null),
                 sviMfgDate: isCount
@@ -874,6 +900,7 @@ let StockVoucherService = class StockVoucherService {
              svi.svi_godown_id,
              gdl.gdl_name AS godown_name,
              svi.svi_bucket,
+             svi.svi_to_bucket,
              svi.svi_barcode,
              svi.svi_batch_no,
              svi.svi_mfg_date,
@@ -1884,6 +1911,7 @@ let StockVoucherService = class StockVoucherService {
             serialNo: row.svi_serial_no,
             supplierId: row.svi_supplier_id,
             supplierName: row.line_supplier_name,
+            toBucket: row.svi_to_bucket ?? null,
             qty: (0, module_service_utils_1.toNumber)(row.svi_qty),
             baseQty: (0, module_service_utils_1.toNumber)(row.svi_base_qty),
             freeQty: (0, module_service_utils_1.toNumber)(row.svi_free_qty),

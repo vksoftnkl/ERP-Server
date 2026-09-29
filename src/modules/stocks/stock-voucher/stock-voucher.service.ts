@@ -227,6 +227,7 @@ interface LineRow {
   svi_godown_id: string;
   godown_name: string | null;
   svi_bucket: string;
+  svi_to_bucket: string | null;
   svi_barcode: string | null;
   svi_batch_no: string | null;
   svi_mfg_date: Date | null;
@@ -447,6 +448,33 @@ export class StockVoucherService {
         errors.push({
           field: `lines.${signed}`,
           message: `Line ${lines[signed].lineNo}: only a stock adjustment states a direction per line; a ${rules.displayName.toLowerCase()} moves every line the same way.`,
+        });
+      }
+    }
+    // "Move stock" (postShape BUCKET_MOVE) is the one document whose lines name
+    // a second bucket. Everywhere else the field would be a move the engine
+    // never writes; on a move, a line without it would be a write-off with no
+    // ledger row to say where the stock went.
+    if (rules.postShape === 'BUCKET_MOVE') {
+      lines.forEach((line, index) => {
+        if (!line.toBucket) {
+          errors.push({
+            field: `lines.${index}.toBucket`,
+            message: `Line ${line.lineNo}: a stock move names the bucket the stock moves to.`,
+          });
+        } else if (line.toBucket === (line.bucket ?? 'SALEABLE')) {
+          errors.push({
+            field: `lines.${index}.toBucket`,
+            message: `Line ${line.lineNo}: moves stock from ${line.toBucket} into ${line.toBucket}. Pick a different bucket.`,
+          });
+        }
+      });
+    } else {
+      const moved = lines.findIndex((line) => line.toBucket !== undefined && line.toBucket !== null);
+      if (moved >= 0) {
+        errors.push({
+          field: `lines.${moved}.toBucket`,
+          message: `Line ${lines[moved].lineNo}: only a stock move names a destination bucket; a ${rules.displayName.toLowerCase()} keeps the stock where it is.`,
         });
       }
     }
@@ -1162,6 +1190,8 @@ export class StockVoucherService {
         // thing being moved, and the destination must receive the SAME one.
         sviLotId: isCount || rules.requiresLot || rules.allowsLot ? (line.lotId ?? null) : null,
         sviBucket: (line.bucket ?? 'SALEABLE') satisfies StockBucket,
+        // A move's destination; assertPayloadRules refuses it on every other shape.
+        sviToBucket: rules.postShape === 'BUCKET_MOVE' ? (line.toBucket ?? null) : null,
         // Stored as scanned. The line was already identified by itemId /
         // batchNo / serialNo, so nothing here re-resolves through it.
         sviBarcode: line.barcode ?? null,
@@ -1604,6 +1634,7 @@ export class StockVoucherService {
              svi.svi_godown_id,
              gdl.gdl_name AS godown_name,
              svi.svi_bucket,
+             svi.svi_to_bucket,
              svi.svi_barcode,
              svi.svi_batch_no,
              svi.svi_mfg_date,
@@ -3070,6 +3101,7 @@ export class StockVoucherService {
       serialNo: row.svi_serial_no,
       supplierId: row.svi_supplier_id,
       supplierName: row.line_supplier_name,
+      toBucket: (row.svi_to_bucket as StockBucket | null) ?? null,
       qty: toNumber(row.svi_qty),
       baseQty: toNumber(row.svi_base_qty),
       freeQty: toNumber(row.svi_free_qty),

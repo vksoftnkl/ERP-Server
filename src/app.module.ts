@@ -45,6 +45,7 @@ import { TenderTypeMasterModule } from './modules/accountsModule/tenderTypeMaste
 import { TenderDetailModule } from './modules/accountsModule/tenderDetail/tender-detail.module';
 import { TransactionModule } from './modules/accountsModule/transaction/transaction.module';
 import { ReceiptModule } from './modules/accountsModule/receipt/receipt.module';
+import { PaymentModule } from './modules/accountsModule/payment/payment.module';
 import { ChequesModule } from './modules/accountsModule/cheques/cheques.module';
 import { VouchersModule } from './modules/accountsModule/vouchers/vouchers.module';
 import { IssuedChequesModule } from './modules/accountsModule/issuedCheques/issued-cheques.module';
@@ -194,6 +195,8 @@ const isThrottlerEnabled = parseBoolean(process.env.THROTTLE_ENABLED, true);
     TransactionModule,
     BillBalanceModule,
     ReceiptModule,
+    // The Payment (menu 100): the receipt mirrored, money going OUT.
+    PaymentModule,
     ChequesModule,
     // The Voucher Register (voucher_register.md): Journal, Contra, Debit / Credit
     // Note, Purchase / Sales (Accounting), Receipt / Payment Voucher on the ONE

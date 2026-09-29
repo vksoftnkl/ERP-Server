@@ -10,6 +10,15 @@ import * as request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { TokenService, type AccessTokenPayload } from '../src/modules/auth/token.service';
 import { AuthSessionService } from '../src/modules/auth/auth-session.service';
+import {
+  grantMenuRights,
+  RECEIPT_MENU,
+  restoreMenuRights,
+  type MenuRightsMemo,
+} from './helpers/menu-rights';
+
+/** notes (62) D2 — tester1's menu-99 rights for this suite, put back in afterAll. */
+let rightsMemo: MenuRightsMemo | null = null;
 
 /**
  * The three `/receipts/amend` defects of 2026-09-18, each driven end to end
@@ -83,6 +92,7 @@ describe('POST /receipts/amend — the three defects (e2e, live DB, writes)', ()
   };
 
   beforeAll(async () => {
+    rightsMemo = await grantMenuRights(prisma, [RECEIPT_MENU]);
     // CASH deliberately: every other tender type needs a reference, and a
     // cheque additionally needs an instrument date and a bank. None of that is
     // what this suite is about.
@@ -204,6 +214,7 @@ describe('POST /receipts/amend — the three defects (e2e, live DB, writes)', ()
   });
 
   afterAll(async () => {
+    await restoreMenuRights(prisma, rightsMemo);
     await app?.close();
     await prisma.$disconnect();
   });

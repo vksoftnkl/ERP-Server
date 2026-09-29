@@ -10,6 +10,15 @@ import * as request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { TokenService, type AccessTokenPayload } from '../src/modules/auth/token.service';
 import { AuthSessionService } from '../src/modules/auth/auth-session.service';
+import {
+  grantMenuRights,
+  RECEIPT_MENU,
+  restoreMenuRights,
+  type MenuRightsMemo,
+} from './helpers/menu-rights';
+
+/** notes (62) D2 — tester1's menu-99 rights for this suite, put back in afterAll. */
+let rightsMemo: MenuRightsMemo | null = null;
 
 /**
  * The receipt backend gaps of 2026-09-18, each asserted against the live dev
@@ -87,6 +96,7 @@ describe('receipt backend gaps (e2e, live DB)', () => {
   };
 
   beforeAll(async () => {
+    rightsMemo = await grantMenuRights(prisma, [RECEIPT_MENU]);
     register = await snapshotRegister();
     anyCompanyId = register[0]?.companyId ?? '';
 
@@ -128,6 +138,7 @@ describe('receipt backend gaps (e2e, live DB)', () => {
   });
 
   afterAll(async () => {
+    await restoreMenuRights(prisma, rightsMemo);
     await app?.close();
     await prisma.$disconnect();
   });

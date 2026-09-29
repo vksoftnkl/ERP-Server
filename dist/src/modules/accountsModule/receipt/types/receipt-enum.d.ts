@@ -121,6 +121,7 @@ export declare enum TcsBasis {
     SALES = "SALES"
 }
 export declare const RECEIPT_VOUCHER_TYPE_CODE = "Rct";
+export declare const RECEIPT_MENU_ID = 99;
 export declare const RECEIPT_SRC_MODULE = "ACCOUNTS";
 export declare const RECEIPT_SRC_DOC_TYPE = "RECEIPT";
 export declare const ADVANCE_SRC_DOC_TYPE = "RECEIPT_ADVANCE";

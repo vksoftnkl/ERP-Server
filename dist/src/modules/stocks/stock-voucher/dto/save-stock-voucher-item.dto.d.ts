@@ -9,6 +9,7 @@ export declare class SaveStockVoucherItemDto {
     godownId: string;
     lotId?: string | null;
     bucket?: StockBucket;
+    toBucket?: StockBucket | null;
     barcode?: string | null;
     batchNo?: string | null;
     mfgDate?: string | null;

@@ -127,6 +127,18 @@ export class SaveStockVoucherItemDto {
   })
   bucket?: StockBucket;
 
+  @ApiPropertyOptional({
+    enum: STOCK_BUCKETS,
+    nullable: true,
+    description:
+      'MOVE STOCK ONLY (a stock adjustment whose voucherType is BUCKET_MOVE): the bucket the same lot moves to; `bucket` is the one it leaves. The engine writes BUCKET_OUT from `bucket` and BUCKET_IN into this one, same godown, quantity and cost. Refused on every other document.',
+  })
+  @SkipOnNullish()
+  @IsIn(STOCK_BUCKETS, {
+    message: `toBucket must be one of ${STOCK_BUCKETS.join(', ')}`,
+  })
+  toBucket?: StockBucket | null;
+
   // ── As entered. Kept verbatim even when the item's track policy does not ──
   // ── track them: a reprint must show what was keyed. ──────────────────────
   @ApiPropertyOptional({

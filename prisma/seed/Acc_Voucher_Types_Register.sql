@@ -107,6 +107,19 @@ BEGIN
   ON CONFLICT (vchr_type_code) DO NOTHING;
 END $$;
 
+-- 20260929090000_payment_voucher: the Payment screen's 'Pmt' (menu 100) is not a
+-- register type and is created by that migration, but on a fresh database the
+-- migration ran before the menu tree existed, so it could not name its menu.
+-- Link it now that Menu_Master.sql has run. Idempotent; a no-op on any box
+-- where the migration found the menu.
+UPDATE accounts.acc_voucher_types
+   SET vchr_menu_id    = 100,
+       vchr_updated_on = now(),
+       vchr_updated_by = 'Acc_Voucher_Types_Register.sql'
+ WHERE vchr_type_code = 'Pmt'
+   AND vchr_menu_id IS NULL
+   AND EXISTS (SELECT 1 FROM fixed.menu_master WHERE menu_id = 100);
+
 -- Keep the identity sequence ahead of every id, as Acc_Voucher_Types.sql does.
 SELECT setval(
     pg_get_serial_sequence('accounts.acc_voucher_types', 'vchr_type_id'),

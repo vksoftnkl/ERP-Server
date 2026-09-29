@@ -68,6 +68,31 @@ import { distributeProRata, money, sum, ZERO } from './receipt.utils';
  * `ck_abj_against` requires and which this engine emits. See the module README,
  * "Deviations from the plan".
  *
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  DIRECTION — the PAYMENT (menu 100) runs the same engine, money going OUT
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * `AllocationInput.direction` is `IN` (the receipt, the default — nothing
+ * about the receipt changed) or `OUT` (the payment). Every side in the model
+ * mirrors:
+ *
+ *   · the TARGETS are the party's CR bills (what we owe) and a settlement
+ *     row on one is a DEBIT to the party; the mirror row of a credit pair
+ *     (a supplier advance or a debit note being spent) is a CREDIT;
+ *   · a settling DEDUCTION is a CR other-line — TDS withheld from the
+ *     supplier, a balance written back — value that discharges the bill
+ *     without leaving as money;
+ *   · an EXTRA is a DR other-line — bank charges, interest paid — money that
+ *     went out on top of the bills and is taken off the front of the instant
+ *     money, exactly as a receipt takes its CR income off the front;
+ *   · the party leg per voucher is a DEBIT, derived from the bill side.
+ *
+ * The identity reads Σ paid + Σ CR deductions + Σ debits applied
+ *   = Σ allocations + on account + Σ DR extras, which is the receipt's
+ * identity with the sides swapped. The BANK_CHARGES split needs no special
+ * case on a payment: the bank is credited GROSS of its charge and the charge
+ * is an ordinary extra the money paid for, so it stays in the identity.
+ *
  * ── What the engine does NOT decide ───────────────────────────────────────
  *
  * Which ledger a role maps to, what a bill's pending amount is, whether the
@@ -111,13 +136,19 @@ function invalid(message: string, details: ModuleErrorDetail[]): never {
 /**
  * Which voucher a row belongs to, before any of them has an id.
  *
- * `RECEIPT` is the receipt itself. `PDC:<tenderRowNo>` is the voucher a
- * post-dated cheque gets of its own, dated the cheque (R2). The posting service
- * turns these into real ids; the engine only has to be consistent.
+ * `RECEIPT` is the receipt itself — and, on a payment, the payment itself: the
+ * key is a label the posting service maps to a real id, and the payment's
+ * service maps the same label to its own header. `PDC:<tenderRowNo>` is the
+ * voucher a post-dated cheque gets of its own, dated the cheque (R2). The
+ * posting service turns these into real ids; the engine only has to be
+ * consistent.
  */
 export type VoucherKey = string;
 export const RECEIPT_VOUCHER_KEY: VoucherKey = 'RECEIPT';
 export const pdcVoucherKey = (tenderRowNo: number): VoucherKey => `PDC:${tenderRowNo}`;
+
+/** Money IN (the receipt) or money OUT (the payment). */
+export type AllocationDirection = 'IN' | 'OUT';
 
 /** One bill the receipt is settling, with what the caller says it settles. */
 export interface AllocationBill {
@@ -173,16 +204,26 @@ export interface AllocationOtherLine {
    * — it simply cannot be aimed at a bill, so it flows to on account. A CR line
    * never settles: income the customer paid ON TOP of their bills reduces the
    * money available to settle them.
+   *
+   * On a payment (direction OUT) read DR as CR and CR as DR: a CR line is the
+   * deduction (TDS withheld), a DR line the extra (bank charges).
    */
   settlesBill: boolean;
   /** How the bill records it — TDS, CLAIM, JOURNAL. */
   settlementMode: BillSettlementMode;
   /**
    * The MDR half of an instrument split. Excluded from the identity (§5.2
-   * step 9) because it is not extra value: it is part of `tdAmount`, already
-   * counted once as money.
+   * step 9) on a RECEIPT because it is not extra value: it is part of
+   * `tdAmount`, already counted once as money. On a PAYMENT it is an ordinary
+   * extra — the bank is credited gross of it — and stays in.
    */
   isInstrumentSplit: boolean;
+  /**
+   * Who authorised the line — a balance written back above the threshold. It
+   * travels onto every bill row the line settles (`abj_approved_by`), which is
+   * where it survives the post. Absent = nobody needed to.
+   */
+  approvedBy?: string | null;
 }
 
 /** One tender row, after the service has classified it. */
@@ -216,6 +257,11 @@ export interface AllocationInput {
   pins: readonly AllocationPin[];
   /** What the CLIENT says is left over. Checked, never trusted (§4.4). */
   claimedOnAccount: Prisma.Decimal;
+  /**
+   * IN — the receipt (the default, so every existing caller is untouched).
+   * OUT — the payment: the same engine with every side mirrored.
+   */
+  direction?: AllocationDirection;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -230,8 +276,8 @@ export interface AllocationAdjustment {
   settlementMode: BillSettlementMode;
   /**
    * The side of the PARTY's account this row moves. Every settlement of a
-   * receivable is a credit to the party; `abj_dr_cr` records it so a row reads
-   * on its own.
+   * receivable is a credit to the party, and every settlement of a payable a
+   * debit; `abj_dr_cr` records it so a row reads on its own.
    */
   drCr: DrCr;
   amount: Prisma.Decimal;
@@ -276,8 +322,14 @@ export interface AllocationResult {
   totalOnAccount: Prisma.Decimal;
   /** `avh_adjust_amount` per voucher, derived from the rows, never stamped. */
   adjustAmountByVoucher: Map<VoucherKey, Prisma.Decimal>;
-  /** The party CR leg each voucher needs, so step 9 does not re-derive it. */
+  /**
+   * The party leg each voucher needs, so step 9 does not re-derive it: a CR
+   * on a receipt, a DR on a payment. Named for the receipt, which had it
+   * first; `partyLegSide` says which side it is.
+   */
   partyCreditByVoucher: Map<VoucherKey, Prisma.Decimal>;
+  /** The side of the party leg — CR for money IN, DR for money OUT. */
+  partyLegSide: DrCr;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -296,12 +348,79 @@ interface Source {
   credit: AllocationCredit | null;
 }
 
+/**
+ * The sides one direction reads by. Every rule below is written against these
+ * four names and never against DR / CR directly, so the payment IS the receipt
+ * with the table flipped.
+ */
+interface Sides {
+  direction: AllocationDirection;
+  /** The side a settlement row on the bill takes: CR in, DR out. */
+  settle: DrCr;
+  /** The side the mirror row of a credit pair takes. */
+  mirror: DrCr;
+  /** An other-line on this side is a deduction that may settle a bill. */
+  deduction: DrCr;
+  /** An other-line on this side is an extra, taken off the front of the money. */
+  extra: DrCr;
+  /** The two words the messages use. */
+  moved: 'Received' | 'Paid';
+  route: string;
+}
+
+function sidesOf(input: AllocationInput): Sides {
+  if (input.direction === 'OUT') {
+    return {
+      direction: 'OUT',
+      settle: DrCr.DR,
+      mirror: DrCr.CR,
+      deduction: DrCr.CR,
+      extra: DrCr.DR,
+      moved: 'Paid',
+      route: '/payments/open-items',
+    };
+  }
+  return {
+    direction: 'IN',
+    settle: DrCr.CR,
+    mirror: DrCr.DR,
+    deduction: DrCr.DR,
+    extra: DrCr.CR,
+    moved: 'Received',
+    route: '/receipts/open-items',
+  };
+}
+
+/** A deduction line, this direction's way: the deduction side, settling, not a split. */
+function isDeduction(line: AllocationOtherLine, sides: Sides): boolean {
+  return line.drCr === sides.deduction && line.settlesBill && !line.isInstrumentSplit;
+}
+
+/**
+ * A deduction-side line that settles no bill still moves the party's account
+ * and can only go on account. On a receipt the MDR split is left out — it is a
+ * slice of money already counted.
+ */
+function isFloating(line: AllocationOtherLine, sides: Sides): boolean {
+  return line.drCr === sides.deduction && !line.settlesBill && !line.isInstrumentSplit;
+}
+
+/**
+ * An extra — income the customer paid on top, or a charge the payment bore on
+ * top. On a receipt the DR MDR split is neither (it is on the deduction side
+ * and excluded); on a payment the DR bank charge is exactly this.
+ */
+function isExtra(line: AllocationOtherLine, sides: Sides): boolean {
+  return line.drCr === sides.extra;
+}
+
 export function allocate(input: AllocationInput): AllocationResult {
   const bills = input.bills;
+  const sides = sidesOf(input);
 
-  assertBillsFit(bills);
-  assertCreditsFit(input.credits);
-  assertIdentity(input);
+  assertBillsFit(bills, sides);
+  assertCreditsFit(input.credits, sides);
+  assertIdentity(input, sides);
 
   const adjustments: AllocationAdjustment[] = [];
 
@@ -309,11 +428,12 @@ export function allocate(input: AllocationInput): AllocationResult {
   const capacity = bills.map((bill) => money(bill.amount));
 
   // ── 1 · Deductions reserve their share, pinned or pro-rata ───────────────
-  reserveDeductions(input, bills, capacity, adjustments);
+  // What no bill had room for is held on account with the rest (step 4).
+  const deductionOverflow = reserveDeductions(input, sides, bills, capacity, adjustments);
 
   // ── 2 · Everything else pours in, in the stated order ────────────────────
-  const sources = buildSources(input);
-  pour(bills, capacity, sources, adjustments);
+  const sources = buildSources(input, sides);
+  pour(bills, capacity, sources, sides, adjustments);
 
   // Every bill must now be exactly full. It cannot fail if the identity held
   // and the pours were exact, which is precisely why it is asserted: a failure
@@ -326,16 +446,17 @@ export function allocate(input: AllocationInput): AllocationResult {
         field: `allocations.${unfilled}.amount`,
         message:
           `Bill ${bills[unfilled].docRefno} is short by ${capacity[unfilled].toFixed(2)} — ` +
-          'the receipt does not carry enough money, credit or deduction to settle what it claims',
+          `the ${sides.direction === 'OUT' ? 'payment' : 'receipt'} does not carry enough money, ` +
+          'credit or deduction to settle what it claims',
       },
     ]);
   }
 
   // ── 3 · Discount, write-off and round-off, per bill ──────────────────────
-  addReductions(input, bills, adjustments);
+  addReductions(input, sides, bills, adjustments);
 
   // ── 4 · What is left is held on account ──────────────────────────────────
-  const onAccount = collectOnAccount(input, sources);
+  const onAccount = collectOnAccount(input, sides, sources, deductionOverflow);
   const totalOnAccount = sum(onAccount.map((entry) => entry.amount));
 
   if (!totalOnAccount.equals(money(input.claimedOnAccount))) {
@@ -345,7 +466,7 @@ export function allocate(input: AllocationInput): AllocationResult {
         message:
           `The server holds ${totalOnAccount.toFixed(2)} on account, not ` +
           `${money(input.claimedOnAccount).toFixed(2)}. The client's figure is a preview; ` +
-          're-read /receipts/open-items and re-post.',
+          `re-read ${sides.route} and re-post.`,
       },
     ]);
   }
@@ -355,14 +476,16 @@ export function allocate(input: AllocationInput): AllocationResult {
     onAccount,
     totalOnAccount,
     adjustAmountByVoucher: totalPerVoucher(adjustments),
-    partyCreditByVoucher: partyCreditPerVoucher(input, adjustments, onAccount),
+    partyCreditByVoucher: partyLegPerVoucher(input, sides, adjustments, onAccount),
+    partyLegSide: sides.settle,
   };
 }
 
 // ─── Validation ──────────────────────────────────────────────────────────────
 
-function assertBillsFit(bills: readonly AllocationBill[]): void {
+function assertBillsFit(bills: readonly AllocationBill[], sides: Sides): void {
   const seen = new Set<string>();
+  const doc = sides.direction === 'OUT' ? 'payment' : 'receipt';
   bills.forEach((bill, index) => {
     const key = `${bill.billId}|${bill.billAccYear}`;
     if (seen.has(key)) {
@@ -402,20 +525,21 @@ function assertBillsFit(bills: readonly AllocationBill[]): void {
     // §5.2 step 3 — measured against what is pending NOW, under the row lock,
     // not against what the screen was showing when the operator started typing.
     if (settled.greaterThan(money(bill.pendingAmount))) {
-      conflict('Bill moved while this receipt was being entered', [
+      conflict(`Bill moved while this ${doc} was being entered`, [
         {
           field: `allocations.${index}.amount`,
           message:
             `Bill ${bill.docRefno} has ${money(bill.pendingAmount).toFixed(2)} pending, but this ` +
-            `receipt settles ${settled.toFixed(2)} against it`,
+            `${doc} settles ${settled.toFixed(2)} against it`,
         },
       ]);
     }
   });
 }
 
-function assertCreditsFit(credits: readonly AllocationCredit[]): void {
+function assertCreditsFit(credits: readonly AllocationCredit[], sides: Sides): void {
   const seen = new Set<string>();
+  const doc = sides.direction === 'OUT' ? 'payment' : 'receipt';
   credits.forEach((credit, index) => {
     const key = `${credit.billId}|${credit.billAccYear}`;
     if (seen.has(key)) {
@@ -437,12 +561,12 @@ function assertCreditsFit(credits: readonly AllocationCredit[]): void {
       ]);
     }
     if (money(credit.amount).greaterThan(money(credit.pendingAmount))) {
-      conflict('Credit moved while this receipt was being entered', [
+      conflict(`Credit moved while this ${doc} was being entered`, [
         {
           field: `creditsApplied.${index}.amount`,
           message:
             `Credit ${credit.docRefno} has ${money(credit.pendingAmount).toFixed(2)} left, but this ` +
-            `receipt applies ${money(credit.amount).toFixed(2)} of it`,
+            `${doc} applies ${money(credit.amount).toFixed(2)} of it`,
         },
       ]);
     }
@@ -452,12 +576,14 @@ function assertCreditsFit(credits: readonly AllocationCredit[]): void {
 /**
  * §5.2 step 4, to the paisa:
  *
- *     Σ tdAmount + Σ DR-other + Σ creditsApplied
- *         = Σ allocations + onAccount + Σ CR-other
+ *     Σ tdAmount + Σ deductions + Σ creditsApplied
+ *         = Σ allocations + onAccount + Σ extras
  *
- * The MDR-derived BANK_CHARGES line is excluded from "Σ DR-other" because it is
- * not extra value arriving — it is a slice of `tdAmount`, which the left-hand
- * side has already counted.
+ * On a receipt the deductions are the DR other-lines and the extras the CR
+ * ones; on a payment the other way round. The MDR-derived BANK_CHARGES line is
+ * excluded from a RECEIPT's deductions because it is not extra value arriving —
+ * it is a slice of `tdAmount`, which the left-hand side has already counted.
+ * On a PAYMENT it is an extra the money paid for, and counts.
  *
  * Discount, write-off and round-off are NOT in this identity. They reduce what
  * the bill demands; they are not money, and adding them to both sides would
@@ -468,49 +594,51 @@ function assertCreditsFit(credits: readonly AllocationCredit[]): void {
  * money allocated — so a receipt of 10 settling a bill by 11 came back "Out by
  * -1.00". The figure was right; there was nowhere to put it.
  */
-function assertIdentity(input: AllocationInput): void {
-  const moneyIn = sum(input.tenders.map((tender) => money(tender.amount)));
-  const otherDr = sum(
+function assertIdentity(input: AllocationInput, sides: Sides): void {
+  const moneyMoved = sum(input.tenders.map((tender) => money(tender.amount)));
+  const deductions = sum(
     input.otherLines
-      .filter((line) => line.drCr === DrCr.DR && !line.isInstrumentSplit)
+      .filter((line) => line.drCr === sides.deduction && !line.isInstrumentSplit)
       .map((line) => money(line.amount)),
   );
-  const otherCr = sum(
-    input.otherLines.filter((line) => line.drCr === DrCr.CR).map((line) => money(line.amount)),
+  const extras = sum(
+    input.otherLines.filter((line) => isExtra(line, sides)).map((line) => money(line.amount)),
   );
   const credits = sum(input.credits.map((credit) => money(credit.amount)));
   const allocated = sum(input.bills.map((bill) => money(bill.amount)));
   const claimed = money(input.claimedOnAccount);
 
-  const left = moneyIn.plus(otherDr).plus(credits);
-  const right = allocated.plus(claimed).plus(otherCr);
+  const left = moneyMoved.plus(deductions).plus(credits);
+  const right = allocated.plus(claimed).plus(extras);
 
   if (!left.equals(right)) {
-    invalid('The receipt does not balance', [
+    const doc = sides.direction === 'OUT' ? 'payment' : 'receipt';
+    invalid(`The ${doc} does not balance`, [
       {
         field: 'onAccount',
         message:
-          `Received ${moneyIn.toFixed(2)} + deductions ${otherDr.toFixed(2)} + credits ` +
+          `${sides.moved} ${moneyMoved.toFixed(2)} + deductions ${deductions.toFixed(2)} + credits ` +
           `${credits.toFixed(2)} = ${left.toFixed(2)}, but allocated ${allocated.toFixed(2)} + ` +
-          `on account ${claimed.toFixed(2)} + other income ${otherCr.toFixed(2)} = ` +
-          `${right.toFixed(2)}. Out by ${left.minus(right).toFixed(2)}.`,
+          `on account ${claimed.toFixed(2)} + other ${sides.direction === 'OUT' ? 'charges' : 'income'} ` +
+          `${extras.toFixed(2)} = ${right.toFixed(2)}. Out by ${left.minus(right).toFixed(2)}.`,
       },
     ]);
   }
 
-  // A CR-other line is funded out of money that has ARRIVED. Recognising
+  // An extra is funded out of money that has ARRIVED (or left). Recognising
   // surcharge or interest against a post-dated cheque would put the income on
   // the receipt voucher and the money on a voucher dated three weeks later,
   // and neither would balance.
   const instant = sum(
     input.tenders.filter((tender) => !tender.isPostDated).map((tender) => money(tender.amount)),
   );
-  if (otherCr.greaterThan(instant)) {
+  if (extras.greaterThan(instant)) {
     invalid('Validation failed', [
       {
         field: 'otherLines',
         message:
-          `Other income of ${otherCr.toFixed(2)} needs money that has arrived, and only ` +
+          `Other ${sides.direction === 'OUT' ? 'charges' : 'income'} of ${extras.toFixed(2)} ` +
+          `needs money that has ${sides.direction === 'OUT' ? 'left' : 'arrived'}, and only ` +
           `${instant.toFixed(2)} has. A post-dated cheque cannot fund it.`,
       },
     ]);
@@ -527,19 +655,29 @@ function assertIdentity(input: AllocationInput): void {
  * Pro-rata by CAPACITY and not by face value, because a pinned deduction has
  * already eaten into some bills and not others, and spreading the rest by face
  * value would re-open the possibility of overfilling one.
+ *
+ * ── A deduction bigger than the bills (notes 62 A1) ──────────────────────
+ * An UNPINNED deduction fills the bills' remaining room and no more; the part
+ * no bill has room for is returned, and step 4 holds it on account with the
+ * money. That is TDS withheld on an advance: 50,000 paid ahead to a 194C
+ * supplier is 49,500 of money and 500 of tax, and with no bill to land on the
+ * 500 used to be refused ("room for 0.00") so no advance with TDS could post.
+ * Nothing that fitted before is placed differently — the overflow is zero
+ * whenever the bills had room, which was the only case that was accepted.
+ * A PINNED line is still exact: a pin is an instruction, and one that does
+ * not fit is refused.
  */
 function reserveDeductions(
   input: AllocationInput,
+  sides: Sides,
   bills: readonly AllocationBill[],
   capacity: Prisma.Decimal[],
   out: AllocationAdjustment[],
-): void {
+): Prisma.Decimal {
   const billIndex = new Map(
     bills.map((bill, index) => [`${bill.billId}|${bill.billAccYear}`, index]),
   );
-  const deductions = input.otherLines.filter(
-    (line) => line.drCr === DrCr.DR && line.settlesBill && !line.isInstrumentSplit,
-  );
+  const deductions = input.otherLines.filter((line) => isDeduction(line, sides));
 
   // Pinned first, all of them, before any spreading: a pin is an instruction
   // and a spread is a default, and a default must not consume room an
@@ -559,7 +697,7 @@ function reserveDeductions(
           field: 'otherLineBills',
           message:
             `Line ${lineNo} is pinned to a bill, but it is not a deduction that settles one. ` +
-            'Only a DR other-ledger line with settlesBill can be pinned.',
+            `Only a ${sides.deduction} other-ledger line with settlesBill can be pinned.`,
         },
       ]);
     }
@@ -581,21 +719,24 @@ function reserveDeductions(
         invalid('Validation failed', [
           {
             field: 'otherLineBills',
-            message: `Line ${lineNo} is pinned to a bill this receipt does not allocate against`,
+            message: `Line ${lineNo} is pinned to a bill this document does not allocate against`,
           },
         ]);
       }
       takeFromBill(bills, capacity, index, money(pin.amount), `otherLineBills (line ${lineNo})`);
-      out.push(deductionRow(input, bills[index], line, money(pin.amount)));
+      out.push(deductionRow(input, sides, bills[index], line, money(pin.amount)));
     }
   }
 
+  let overflow = ZERO;
   for (const line of deductions) {
     if (pinnedByLine.has(line.lineNo)) {
       continue;
     }
+    const placed = Prisma.Decimal.min(money(line.amount), sum(capacity));
+    overflow = overflow.plus(money(line.amount).minus(placed));
     const shares = distributeProRata(
-      money(line.amount),
+      placed,
       capacity.map((left) => left),
     );
     shares.forEach((share, index) => {
@@ -603,13 +744,15 @@ function reserveDeductions(
         return;
       }
       takeFromBill(bills, capacity, index, share, `otherLines.${line.lineNo}.amount`);
-      out.push(deductionRow(input, bills[index], line, share));
+      out.push(deductionRow(input, sides, bills[index], line, share));
     });
   }
+  return overflow;
 }
 
 function deductionRow(
   input: AllocationInput,
+  sides: Sides,
   bill: AllocationBill,
   line: AllocationOtherLine,
   amount: Prisma.Decimal,
@@ -622,7 +765,7 @@ function deductionRow(
     // the MODE says how (§2.5).
     adjType: BillAdjType.ALLOCATION,
     settlementMode: line.settlementMode,
-    drCr: DrCr.CR,
+    drCr: sides.settle,
     amount,
     adjDate: input.receiptDate,
     isPostDated: false,
@@ -630,7 +773,7 @@ function deductionRow(
     tenderRowNo: null,
     otherLineNo: line.lineNo,
     againstBill: null,
-    approvedBy: null,
+    approvedBy: line.approvedBy ?? null,
     countsToAdjustAmount: true,
     remarks: null,
   };
@@ -659,15 +802,15 @@ function takeFromBill(
 // ─── Step 2: the pour ────────────────────────────────────────────────────────
 
 /**
- * The sources, in consumption order, with the CR-other lines already taken off
- * the front of the instant money.
+ * The sources, in consumption order, with the extras already taken off the
+ * front of the instant money.
  *
  * Taking them off the front rather than pro-rata across the tenders is
  * deliberate: it means the first rupee of cash pays the surcharge, so a receipt
  * of 100 cash + a 10,000 cheque with 20 of interest leaves 80 of cash for the
  * bills rather than 99.8 of a cheque that has not cleared.
  */
-function buildSources(input: AllocationInput): Source[] {
+function buildSources(input: AllocationInput, sides: Sides): Source[] {
   const sources: Source[] = input.credits.map((credit) => ({
     kind: 'CREDIT' as const,
     remaining: money(credit.amount),
@@ -692,16 +835,16 @@ function buildSources(input: AllocationInput): Source[] {
   const pooled = instant.filter((tender) => !tender.isCheque);
   const currentCheques = instant.filter((tender) => tender.isCheque);
 
-  let otherCr = sum(
-    input.otherLines.filter((line) => line.drCr === DrCr.CR).map((line) => money(line.amount)),
+  let extras = sum(
+    input.otherLines.filter((line) => isExtra(line, sides)).map((line) => money(line.amount)),
   );
   let pooledTotal = sum(pooled.map((tender) => money(tender.amount)));
 
-  // The CR-other lines eat pooled money first, then current-dated cheques —
+  // The extras eat pooled money first, then current-dated cheques —
   // assertIdentity has already proved there is enough non-post-dated money.
-  const takeFromPooled = Prisma.Decimal.min(otherCr, pooledTotal);
+  const takeFromPooled = Prisma.Decimal.min(extras, pooledTotal);
   pooledTotal = pooledTotal.minus(takeFromPooled);
-  otherCr = otherCr.minus(takeFromPooled);
+  extras = extras.minus(takeFromPooled);
 
   if (pooledTotal.greaterThan(0)) {
     sources.push({
@@ -718,9 +861,9 @@ function buildSources(input: AllocationInput): Source[] {
 
   for (const cheque of currentCheques) {
     let amount = money(cheque.amount);
-    const take = Prisma.Decimal.min(otherCr, amount);
+    const take = Prisma.Decimal.min(extras, amount);
     amount = amount.minus(take);
-    otherCr = otherCr.minus(take);
+    extras = extras.minus(take);
     if (amount.greaterThan(0)) {
       sources.push({
         kind: 'CHEQUE',
@@ -767,6 +910,7 @@ function pour(
   bills: readonly AllocationBill[],
   capacity: Prisma.Decimal[],
   sources: Source[],
+  sides: Sides,
   out: AllocationAdjustment[],
 ): void {
   let cursor = 0;
@@ -780,7 +924,7 @@ function pour(
       const take = Prisma.Decimal.min(source.remaining, capacity[index]);
       source.remaining = source.remaining.minus(take);
       capacity[index] = capacity[index].minus(take);
-      out.push(...settlementRows(bills[index], source, take));
+      out.push(...settlementRows(bills[index], source, take, sides));
     }
   }
 }
@@ -794,6 +938,7 @@ function settlementRows(
   bill: AllocationBill,
   source: Source,
   amount: Prisma.Decimal,
+  sides: Sides,
 ): AllocationAdjustment[] {
   const base = {
     adjDate: source.adjDate,
@@ -813,7 +958,7 @@ function settlementRows(
         billAccYear: bill.billAccYear,
         adjType: BillAdjType.ALLOCATION,
         settlementMode: source.settlementMode,
-        drCr: DrCr.CR,
+        drCr: sides.settle,
         againstBill: null,
         countsToAdjustAmount: true,
         remarks: null,
@@ -829,7 +974,7 @@ function settlementRows(
       billAccYear: bill.billAccYear,
       adjType: credit.adjType,
       settlementMode: credit.settlementMode,
-      drCr: DrCr.CR,
+      drCr: sides.settle,
       againstBill: { billId: credit.billId, billAccYear: credit.billAccYear },
       countsToAdjustAmount: true,
       remarks: `Settled from ${credit.docRefno}`,
@@ -841,8 +986,8 @@ function settlementRows(
       adjType: credit.adjType,
       settlementMode: credit.settlementMode,
       // The mirror moves the CREDIT, which sits on the other side of the
-      // party's account, so it is a debit.
-      drCr: DrCr.DR,
+      // party's account, so it takes the other side.
+      drCr: sides.mirror,
       againstBill: { billId: bill.billId, billAccYear: bill.billAccYear },
       // One event, recorded twice. Counting both would double the receipt's
       // reported adjustment.
@@ -856,6 +1001,7 @@ function settlementRows(
 
 function addReductions(
   input: AllocationInput,
+  sides: Sides,
   bills: readonly AllocationBill[],
   out: AllocationAdjustment[],
 ): void {
@@ -867,7 +1013,7 @@ function addReductions(
         billAccYear: bill.billAccYear,
         adjType: BillAdjType.DISCOUNT,
         settlementMode: BillSettlementMode.DISCOUNT,
-        drCr: DrCr.CR,
+        drCr: sides.settle,
         amount: discount,
         adjDate: input.receiptDate,
         isPostDated: false,
@@ -899,7 +1045,7 @@ function addReductions(
         billAccYear: bill.billAccYear,
         adjType: BillAdjType.WRITEOFF,
         settlementMode: BillSettlementMode.WRITEOFF,
-        drCr: DrCr.CR,
+        drCr: sides.settle,
         amount: writeoff,
         adjDate: input.receiptDate,
         isPostDated: false,
@@ -929,7 +1075,7 @@ function addReductions(
         billAccYear: bill.billAccYear,
         adjType: BillAdjType.ROUND_OFF,
         settlementMode: BillSettlementMode.ROUND_OFF,
-        drCr: DrCr.CR,
+        drCr: sides.settle,
         amount: roundoff,
         adjDate: input.receiptDate,
         isPostDated: false,
@@ -957,7 +1103,9 @@ function addReductions(
  */
 function collectOnAccount(
   input: AllocationInput,
+  sides: Sides,
   sources: readonly Source[],
+  deductionOverflow: Prisma.Decimal,
 ): AllocationOnAccount[] {
   const byVoucher = new Map<VoucherKey, AllocationOnAccount>();
 
@@ -991,14 +1139,13 @@ function collectOnAccount(
     add(source.voucherKey, source.remaining, source.adjDate);
   }
 
-  // A DR other-ledger line that settles no bill still credits the party, and
-  // the only place left for it is the advance.
+  // A deduction-side other-ledger line that settles no bill still moves the
+  // party's account, and the only place left for it is the advance — as is
+  // the part of a settling deduction the bills had no room for (step 1).
   const floating = sum(
-    input.otherLines
-      .filter((line) => line.drCr === DrCr.DR && !line.settlesBill && !line.isInstrumentSplit)
-      .map((line) => money(line.amount)),
+    input.otherLines.filter((line) => isFloating(line, sides)).map((line) => money(line.amount)),
   );
-  add(RECEIPT_VOUCHER_KEY, floating, input.receiptDate);
+  add(RECEIPT_VOUCHER_KEY, floating.plus(deductionOverflow), input.receiptDate);
 
   return [...byVoucher.values()].map((entry) => ({ ...entry, amount: money(entry.amount) }));
 }
@@ -1022,20 +1169,21 @@ function totalPerVoucher(
 }
 
 /**
- * The single CR party leg each voucher needs (§5.2 step 9, "ONE CR party for
- * the rest").
+ * The single party leg each voucher needs (§5.2 step 9, "ONE CR party for the
+ * rest" — one DR party on a payment).
  *
  * Derived from the BILL side, not from the money side, because that is the side
  * that has to agree: whatever this receipt credited to the party's bills, plus
  * whatever it held on account, less whatever credit of theirs it spent.
  *
- *   party CR = Σ(rows that credit the party) − Σ(rows that debit them) + on account
+ *   party leg = Σ(rows on the settle side) − Σ(rows on the mirror side) + on account
  *
- * The mirror row of a credit pair is a DR and is therefore subtracted, which is
- * exactly the C in the header's arithmetic.
+ * The mirror row of a credit pair is subtracted, which is exactly the C in the
+ * header's arithmetic.
  */
-function partyCreditPerVoucher(
+function partyLegPerVoucher(
   input: AllocationInput,
+  sides: Sides,
   adjustments: readonly AllocationAdjustment[],
   onAccount: readonly AllocationOnAccount[],
 ): Map<VoucherKey, Prisma.Decimal> {
@@ -1045,7 +1193,7 @@ function partyCreditPerVoucher(
   };
 
   for (const row of adjustments) {
-    add(row.voucherKey, row.drCr === DrCr.CR ? row.amount : row.amount.negated());
+    add(row.voucherKey, row.drCr === sides.settle ? row.amount : row.amount.negated());
   }
   for (const entry of onAccount) {
     add(entry.voucherKey, entry.amount);

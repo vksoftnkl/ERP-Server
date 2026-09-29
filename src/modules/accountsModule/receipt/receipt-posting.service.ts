@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { assertBooksReconcile } from '../reconcile/books-reconcile.guard';
+import { assertVoucherBooksReconcile } from '../vouchers/voucher-books.helper';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
@@ -360,17 +360,28 @@ export class ReceiptPostingService {
     });
 
     // ── 16 · The trial check (notes 47), after every write ─────────────────
-    // The party's bills = its ledger; Cheques In Hand = the register. Every
-    // voucher this receipt numbered is looked at — a post-dated cheque has one
-    // of its own.
-    await assertBooksReconcile(tx, {
+    // The party's bills = its ledger; Cheques In Hand = the register, over
+    // every ledger the numbered vouchers moved — through the Voucher Register's
+    // helper and NOT the shared guard (notes 61). The shared guard has no
+    // allowance for a post-dated cheque: its voucher is POSTED today, dated the
+    // cheque, so fn_ledger_book_balance counts it now, while the bill's
+    // post-dated row does not count until the cheque matures. The two sides
+    // differ by exactly the un-matured settlement, and the shared guard refused
+    // every receipt carrying a post-dated cheque with a 422 (notes 54 settled
+    // this for the register). With no post-dated row the two checks are the
+    // same check.
+    const movedLedgers = await tx.accVoucher.findMany({
+      where: {
+        avVoucherId: { in: vouchers.map((voucher) => voucher.voucherId) },
+        avIsDeleted: false,
+      },
+      select: { avLedgerId: true },
+      distinct: ['avLedgerId'],
+    });
+    await assertVoucherBooksReconcile(tx, {
       companyId: header.avhCompanyId,
       accYear: header.avhAccYear,
-      ledgerIds: [header.avhPartyId],
-      vouchers: vouchers.map((voucher) => ({
-        voucherId: voucher.voucherId,
-        accYear: voucher.accYear,
-      })),
+      ledgerIds: [header.avhPartyId, ...movedLedgers.map((leg) => leg.avLedgerId)],
     });
 
     const posted = await this.receiptService.loadHeaderOrThrow(

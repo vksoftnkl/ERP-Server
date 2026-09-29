@@ -12,7 +12,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.ReceiptPostingService = void 0;
 exports.rethrowAllocationError = rethrowAllocationError;
 const common_1 = require("@nestjs/common");
-const books_reconcile_guard_1 = require("../reconcile/books-reconcile.guard");
+const voucher_books_helper_1 = require("../vouchers/voucher-books.helper");
 const client_1 = require("@prisma/client");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
@@ -203,14 +203,18 @@ let ReceiptPostingService = class ReceiptPostingService {
             deviceId: header.avhDeviceId,
             sessionId: header.avhSessionId,
         });
-        await (0, books_reconcile_guard_1.assertBooksReconcile)(tx, {
+        const movedLedgers = await tx.accVoucher.findMany({
+            where: {
+                avVoucherId: { in: vouchers.map((voucher) => voucher.voucherId) },
+                avIsDeleted: false,
+            },
+            select: { avLedgerId: true },
+            distinct: ['avLedgerId'],
+        });
+        await (0, voucher_books_helper_1.assertVoucherBooksReconcile)(tx, {
             companyId: header.avhCompanyId,
             accYear: header.avhAccYear,
-            ledgerIds: [header.avhPartyId],
-            vouchers: vouchers.map((voucher) => ({
-                voucherId: voucher.voucherId,
-                accYear: voucher.accYear,
-            })),
+            ledgerIds: [header.avhPartyId, ...movedLedgers.map((leg) => leg.avLedgerId)],
         });
         const posted = await this.receiptService.loadHeaderOrThrow(tx, header.avhVoucherId, header.avhAccYear);
         const full = await this.receiptService.loadFullReceipt(tx, posted);

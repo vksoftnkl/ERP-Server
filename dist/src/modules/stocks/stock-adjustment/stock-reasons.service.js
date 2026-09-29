@@ -25,6 +25,7 @@ let StockReasonsService = class StockReasonsService {
     }
     async pick(query) {
         const kindTypes = stock_adjustment_rules_1.STOCK_ADJUSTMENT_RULES[query.voucherType].ledgerTxnTypes;
+        const strict = query.voucherType === stock_adjustment_rules_1.BUCKET_MOVE_KIND;
         const rows = await this.prisma.$queryRaw `
       SELECT r.srm_id, r.srm_company_id, r.srm_code, r.srm_name, r.srm_direction, r.srm_allowed_txn_types,
              r.srm_require_remarks, r.srm_gl_ledger_id, l.led_name, r.srm_sort_order, r.srm_remarks, r.srm_is_active
@@ -36,7 +37,8 @@ let StockReasonsService = class StockReasonsService {
                     SELECT 1 FROM stock.stock_reason_master o
                      WHERE o.srm_company_id = ${query.companyId}::uuid AND o.srm_code = r.srm_code
                        AND o.srm_is_deleted = false)))
-         AND (cardinality(r.srm_allowed_txn_types) = 0 OR r.srm_allowed_txn_types && ${kindTypes}::text[])
+         AND ((NOT ${strict}::boolean AND cardinality(r.srm_allowed_txn_types) = 0)
+              OR r.srm_allowed_txn_types && ${kindTypes}::text[])
          AND (${query.direction ?? null}::text IS NULL OR r.srm_direction IN (${query.direction ?? null}::text, 'BOTH'))
        ORDER BY r.srm_sort_order, r.srm_code
     `;

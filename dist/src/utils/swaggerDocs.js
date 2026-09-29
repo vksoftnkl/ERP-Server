@@ -25,6 +25,7 @@ const tender_detail_module_1 = require("../modules/accountsModule/tenderDetail/t
 const transaction_module_1 = require("../modules/accountsModule/transaction/transaction.module");
 const opening_balance_module_1 = require("../modules/accountsModule/openingBalance/opening-balance.module");
 const receipt_module_1 = require("../modules/accountsModule/receipt/receipt.module");
+const payment_module_1 = require("../modules/accountsModule/payment/payment.module");
 const cheques_module_1 = require("../modules/accountsModule/cheques/cheques.module");
 const vouchers_module_1 = require("../modules/accountsModule/vouchers/vouchers.module");
 const issued_cheques_module_1 = require("../modules/accountsModule/issuedCheques/issued-cheques.module");
@@ -356,6 +357,16 @@ exports.swaggerModuleDocuments = [
             'post-dated cheque gets a voucher of its own dated the cheque, and its bills settle on ' +
             'maturity. The remainder is always held as an ADVANCE bill',
         include: [receipt_module_1.ReceiptModule],
+    },
+    {
+        path: 'payments',
+        title: 'Payment API',
+        description: 'Money paid to a party (menu 100) — the receipt mirrored, the money going OUT. Split across ' +
+            'instruments and allocated against the bills we owe them and the debits of ours they hold. ' +
+            'A cheque takes the next leaf of our cheque book at post; a post-dated cheque gets a voucher ' +
+            'of its own dated the cheque. TDS is seeded server-side from accounts.tds_rates. The ' +
+            'remainder is always held as an ADVANCE (DR) bill',
+        include: [payment_module_1.PaymentModule],
     },
     {
         path: 'vouchers',

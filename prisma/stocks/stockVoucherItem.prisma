@@ -38,7 +38,8 @@
 ///   * sviAccYear must equal the voucher's — it is half the foreign key.
 ///
 /// Vocabulary, enforced by a CHECK constraint in the migration:
-///   sviBucket  SALEABLE | DAMAGED | QUARANTINE | EXPIRED | SAMPLE
+///   sviBucket    SALEABLE | DAMAGED | QUARANTINE | EXPIRED | SAMPLE
+///   sviToBucket  the same five, or NULL; never equal to sviBucket (ck_svi_to_bucket)
 /// plus ck_svi_acc_year, ck_svi_line_no, ck_svi_split_no,
 /// ck_svi_to_base_factor and ck_svi_expiry_order.
 ///
@@ -80,6 +81,12 @@ model StockVoucherItem {
   /// Resolved by fn_slt_resolve() at POSTING time. NULL only while DRAFT.
   sviLotId             String?   @db.Uuid                            @map("svi_lot_id")
   sviBucket            String    @default("SALEABLE") @db.VarChar(20) @map("svi_bucket")
+  /// A "Move stock" line (adjustments plan D-A3, notes 60 — 20260928210000):
+  /// the bucket the SAME lot lands in. The engine writes a BUCKET_OUT row from
+  /// sviBucket and a BUCKET_IN row into this one, same godown, same quantity,
+  /// same cost. NULL on every other line. Only an ADJUSTMENT carries it, and a
+  /// document is all moves or none (StockAdjustmentService.check).
+  sviToBucket          String?   @db.VarChar(20)                     @map("svi_to_bucket")
 
   // ── As entered ──────────────────────────────────────────────────────────
   // What the storekeeper typed. The resolver may legitimately have dropped a

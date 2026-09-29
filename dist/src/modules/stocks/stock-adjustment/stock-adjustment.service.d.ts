@@ -5,6 +5,7 @@ import { StockVoucherService } from '../stock-voucher/stock-voucher.service';
 import type { StockVoucherCancelResult, StockVoucherDeleteResult, StockVoucherLineProblem, StockVoucherPayload, StockVoucherPostResult, StockVoucherSaveResult } from '../stock-voucher/types/stock-voucher.types';
 import type { SaveStockAdjustmentDto } from './dto/save-stock-adjustment.dto';
 import type { PickStockQueryDto } from './dto/stock-adjustment-query.dto';
+import { type StockAdjustmentDocKind } from './stock-adjustment.rules';
 export interface PickStockRow {
     sblId: string;
     itemId: string;
@@ -19,6 +20,8 @@ export interface PickStockRow {
     mrp: number | null;
     salePrice: number | null;
     serialNo: string | null;
+    supplierId: string | null;
+    supplierName: string | null;
     baseUomId: string;
     unitName: string | null;
     onHandQty: number;
@@ -28,6 +31,9 @@ export interface PickStockRow {
     stockValue: number;
     firstInDate: string | null;
 }
+export type StockAdjustmentPayload = StockVoucherPayload & {
+    kind: StockAdjustmentDocKind;
+};
 export declare class StockAdjustmentService {
     private readonly prisma;
     private readonly stockVoucherService;
@@ -36,7 +42,7 @@ export declare class StockAdjustmentService {
     constructor(prisma: PrismaService, stockVoucherService: StockVoucherService, requestContextService: RequestContextService, appSettings: AppSettingValueService);
     save(dto: SaveStockAdjustmentDto): Promise<StockVoucherSaveResult>;
     private toSharedLine;
-    getOne(svhId: string, accYear: string, companyId: string, branchId: string): Promise<StockVoucherPayload>;
+    getOne(svhId: string, accYear: string, companyId: string, branchId: string): Promise<StockAdjustmentPayload>;
     validate(svhId: string, accYear: string, companyId: string, branchId: string): Promise<StockVoucherLineProblem[]>;
     post(args: {
         svhId: string;
@@ -57,6 +63,8 @@ export declare class StockAdjustmentService {
     pickStock(query: PickStockQueryDto): Promise<PickStockRow[]>;
     private check;
     private directionOf;
+    private allowsMove;
+    private onlyMove;
     private isRelot;
     private documentGodown;
     private refuse;

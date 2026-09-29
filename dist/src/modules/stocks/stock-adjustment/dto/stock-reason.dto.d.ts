@@ -1,9 +1,9 @@
-import { type StockAdjustmentKind } from '../stock-adjustment.rules';
+import { type StockAdjustmentSaveKind } from '../stock-adjustment.rules';
 export declare const REASON_DIRECTIONS: readonly ["IN", "OUT", "BOTH"];
 export type ReasonDirection = (typeof REASON_DIRECTIONS)[number];
 export declare class StockReasonPickerQueryDto {
     companyId: string;
-    voucherType: StockAdjustmentKind;
+    voucherType: StockAdjustmentSaveKind;
     direction?: 'IN' | 'OUT';
 }
 export declare class StockReasonListQueryDto {

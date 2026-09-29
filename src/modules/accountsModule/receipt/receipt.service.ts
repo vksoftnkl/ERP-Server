@@ -79,6 +79,7 @@ import {
   BillType,
   DrCr,
   PdcPostingMode,
+  RECEIPT_VOUCHER_TYPE_CODE,
   ReceiptLedgerRole,
   VOUCHER_STATUSES,
   VoucherStatus,
@@ -216,11 +217,24 @@ export class ReceiptService {
               // that has never heard of `allocations` would wipe them on every
               // ordinary save.
               avhDraftLines: true,
+              avhVoucherTypeId: true,
+              avhCompanyId: true,
+              avhBranchId: true,
             },
           })
         : null;
 
-      if (dto.avhVoucherId && !existing) {
+      // notes (62) A2: the save rewrites the header's type, company and branch
+      // from the payload, so an id naming a payment draft — or another
+      // company's receipt — would be turned into this receipt. It is not a
+      // receipt here, so it is a 404 like any other miss.
+      if (
+        dto.avhVoucherId &&
+        (!existing ||
+          existing.avhVoucherTypeId !== voucherType.vchrTypeId ||
+          existing.avhCompanyId !== dto.avhCompanyId ||
+          existing.avhBranchId !== dto.avhBranchId)
+      ) {
         throwAccountsNotFound<ReceiptErrorDetail>(
           'Receipt not found',
           'avhVoucherId',
@@ -1117,8 +1131,16 @@ export class ReceiptService {
     voucherId: string,
     accYear: string,
   ): Promise<StoredHeader> {
-    const header = await client.accVoucherHeader.findUnique({
-      where: { avhVoucherId_avhAccYear: { avhVoucherId: voucherId, avhAccYear: accYear } },
+    // notes (62) A2: an `Rct` and nothing else. Without the type every route
+    // here — /get, /post, /cancel, /delete, /amend — would act on a payment or
+    // a Voucher Register voucher handed its id. A 404, as for a miss on any
+    // other key: the caller learns nothing about what the id is.
+    const header = await client.accVoucherHeader.findFirst({
+      where: {
+        avhVoucherId: voucherId,
+        avhAccYear: accYear,
+        voucherType: { vchrTypeCode: RECEIPT_VOUCHER_TYPE_CODE },
+      },
       select: STORED_HEADER_SELECT,
     });
 

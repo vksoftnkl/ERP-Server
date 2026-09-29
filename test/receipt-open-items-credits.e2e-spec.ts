@@ -10,6 +10,15 @@ import * as request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { TokenService, type AccessTokenPayload } from '../src/modules/auth/token.service';
 import { AuthSessionService } from '../src/modules/auth/auth-session.service';
+import {
+  grantMenuRights,
+  RECEIPT_MENU,
+  restoreMenuRights,
+  type MenuRightsMemo,
+} from './helpers/menu-rights';
+
+/** notes (62) D2 — tester1's menu-99 rights for this suite, put back in afterAll. */
+let rightsMemo: MenuRightsMemo | null = null;
 
 /**
  * GET /api/v1/receipts/open-items returned `credits: []` for every party,
@@ -55,6 +64,7 @@ describe('GET /receipts/open-items — credits (e2e, live DB, read-only)', () =>
   const ACTOR = '019e4f64-1d3f-7717-b252-cbe2b6ce0f8d';
 
   beforeAll(async () => {
+    rightsMemo = await grantMenuRights(prisma, [RECEIPT_MENU]);
     // Every party holding an open credit, with the count and total the
     // endpoint must report. This is the report's own verification query.
     const rows = await prisma.$queryRawUnsafe<
@@ -132,6 +142,7 @@ describe('GET /receipts/open-items — credits (e2e, live DB, read-only)', () =>
   });
 
   afterAll(async () => {
+    await restoreMenuRights(prisma, rightsMemo);
     await app?.close();
     await prisma.$disconnect();
   });

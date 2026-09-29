@@ -470,6 +470,7 @@ let OpenItemsService = class OpenItemsService {
                 avhCompanyId: query.companyId,
                 avhBranchId: query.branchId,
                 avhIsDeleted: false,
+                voucherType: { vchrTypeCode: receipt_enum_1.RECEIPT_VOUCHER_TYPE_CODE },
             },
             select: { avhVoucherDate: true, avhVoucherSlno: true, avhCreatedOn: true },
         });
@@ -480,8 +481,9 @@ let OpenItemsService = class OpenItemsService {
         const comparison = client_1.Prisma.raw(isPrev ? '<' : '>');
         const order = client_1.Prisma.raw(isPrev ? 'DESC' : 'ASC');
         const status = query.status ?? null;
-        const fromDate = query.fromDate ? (0, receipt_utils_1.toDateOnly)(query.fromDate) : null;
-        const toDate = query.toDate ? (0, receipt_utils_1.toDateOnly)(query.toDate) : null;
+        const fromDate = query.fromDate ? query.fromDate.slice(0, 10) : null;
+        const toDate = query.toDate ? query.toDate.slice(0, 10) : null;
+        const currentDate = (0, receipt_utils_1.toDateString)(current.avhVoucherDate);
         const rows = await this.prisma.$queryRaw `
       SELECT h.avh_voucher_id,
              h.avh_acc_year,
@@ -503,14 +505,14 @@ let OpenItemsService = class OpenItemsService {
          AND h.avh_is_deleted = false
          AND h.avh_against_voucher_id IS NULL
          AND (${status}::varchar IS NULL OR h.avh_voucher_status = ${status}::varchar)
-         AND (${fromDate}::timestamptz IS NULL OR h.avh_voucher_date >= ${fromDate}::timestamptz)
-         AND (${toDate}::timestamptz   IS NULL OR h.avh_voucher_date <= ${toDate}::timestamptz)
+         AND (${fromDate}::date IS NULL OR h.avh_voucher_date >= ${fromDate}::date)
+         AND (${toDate}::date   IS NULL OR h.avh_voucher_date <= ${toDate}::date)
          AND (h.avh_voucher_date,
               COALESCE(h.avh_voucher_slno, ${DRAFT_SLNO_SENTINEL}),
               h.avh_created_on,
               h.avh_voucher_id)
              ${comparison}
-             (${current.avhVoucherDate}::timestamptz,
+             (${currentDate}::date,
               COALESCE(${current.avhVoucherSlno}::bigint, ${DRAFT_SLNO_SENTINEL}),
               ${current.avhCreatedOn}::timestamptz,
               ${query.voucherId}::uuid)

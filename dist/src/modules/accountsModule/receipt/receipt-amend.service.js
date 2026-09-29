@@ -127,6 +127,7 @@ let ReceiptAmendService = class ReceiptAmendService {
         });
         return {
             ...posted,
+            header: await this.receiptService.toHeaderPayload(tx, after),
             fromRevision: dto.baseRevision,
             toRevision,
             editRemark: dto.editRemark,

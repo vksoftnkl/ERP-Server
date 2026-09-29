@@ -25,6 +25,7 @@ export interface PostStockVoucherResult {
         refno: string;
     } | null;
 }
+export declare const BUCKET_MOVE_TXN_TYPES: readonly ["BUCKET_OUT", "BUCKET_IN"];
 export declare function postStockVoucher(tx: Prisma.TransactionClient, params: PostStockVoucherParams): Promise<PostStockVoucherResult>;
 export declare function effectivePolicyLateral(scope: {
     companyId: Prisma.Sql;

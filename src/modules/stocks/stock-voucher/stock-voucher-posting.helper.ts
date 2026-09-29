@@ -170,6 +170,13 @@ function ledgerRowsOf({ svhId, accYear, reversal }: ApplyParams): Prisma.Sql {
 const isTransferShape = (shape: StockPostShape): boolean =>
   shape === 'TRANSFER_OUT' || shape === 'TRANSFER_IN';
 /**
+ * The two txn types of a "Move stock" pair (postShape BUCKET_MOVE). Same
+ * branch, same item, same quantity, same cost: the pair is a wash for the
+ * branch's moving average, so `applyItemCost` leaves it out — counted in, its
+ * BUCKET_IN half would stamp the average as the item's "last purchase".
+ */
+export const BUCKET_MOVE_TXN_TYPES = ['BUCKET_OUT', 'BUCKET_IN'] as const;
+/**
  * Posts one DRAFT voucher: lots picked and resolved, ledger written, balances
  * and the moving average applied, the negative-stock policy checked, lot totals
  * updated, header totals re-summed, lines stamped with their lot, header moved
@@ -194,6 +201,10 @@ export async function postStockVoucher(
     transit = await assertDespatchable(tx, params, header);
   } else if (shape === 'TRANSFER_IN') {
     transit = await assertReceivable(tx, params, header);
+  } else if (shape === 'BUCKET_MOVE') {
+    // The lot IS what is moved (and what names the supplier the damaged stock
+    // goes back to): nothing to pick, nothing to resolve.
+    await assertLotsNamed(tx, params, 'moved', 'a stock move moves one lot from one bucket to another; pick it from the balance.');
   } else {
     if (rules.quantityMode === 'QTY' && (!rules.isInward || rules.lineDirection === 'REASON')) {
       await pickIssueLots(tx, params);
@@ -1071,6 +1082,10 @@ async function assertInwardCost(
  *   TRANSFER_IN   one row, +1, the LINE's godown (the destination), at the
  *                 transit row's cost. A line saved in the DAMAGED bucket lands
  *                 in DAMAGED.
+ *   BUCKET_MOVE   two rows per line in the LINE's godown and lot: BUCKET_OUT
+ *                 (−1) from `svi_bucket`, BUCKET_IN (+1) into `svi_to_bucket`,
+ *                 both at the line's cost — the branch average, because the
+ *                 line's own direction is outward. The value is carried.
  */
 async function writeLedger(
   tx: Prisma.TransactionClient,
@@ -1086,18 +1101,24 @@ async function writeLedger(
     : [rules.ledgerTxnTypes[0], rules.ledgerTxnTypes[0]];
   const direction = rules.isInward ? DIRECTION_IN : DIRECTION_OUT;
   // (direction, txn type, lands in the header's to-godown, only within one
-  // branch, from the line). A transfer's sides are fixed by the shape; every
-  // other document's row takes the LINE's direction and txn type — the
-  // document's under lineDirection DOCUMENT, the reason's under REASON.
+  // branch, from the line, lands in the line's to-bucket). A transfer's and a
+  // move's sides are fixed by the shape; every other document's row takes the
+  // LINE's direction and txn type — the document's under lineDirection
+  // DOCUMENT, the reason's under REASON.
   const sides: Prisma.Sql[] =
     shape === 'TRANSFER_OUT'
       ? [
-          Prisma.sql`(${DIRECTION_OUT}::int, 'TRANSFER_OUT'::text, false, false, false)`,
-          Prisma.sql`(${DIRECTION_IN}::int, 'TRANSFER_IN'::text, true, true, false)`,
+          Prisma.sql`(${DIRECTION_OUT}::int, 'TRANSFER_OUT'::text, false, false, false, false)`,
+          Prisma.sql`(${DIRECTION_IN}::int, 'TRANSFER_IN'::text, true, true, false, false)`,
         ]
       : shape === 'TRANSFER_IN'
-        ? [Prisma.sql`(${DIRECTION_IN}::int, 'TRANSFER_IN'::text, false, false, false)`]
-        : [Prisma.sql`(${direction}::int, ${plusTxnType}::text, false, false, true)`];
+        ? [Prisma.sql`(${DIRECTION_IN}::int, 'TRANSFER_IN'::text, false, false, false, false)`]
+        : shape === 'BUCKET_MOVE'
+          ? [
+              Prisma.sql`(${DIRECTION_OUT}::int, 'BUCKET_OUT'::text, false, false, false, false)`,
+              Prisma.sql`(${DIRECTION_IN}::int, 'BUCKET_IN'::text, false, false, false, true)`,
+            ]
+          : [Prisma.sql`(${direction}::int, ${plusTxnType}::text, false, false, true, false)`];
   return tx.$executeRaw`
     WITH ${postingCte(svhId, accYear, rules)}
     INSERT INTO stock.stock_ledger (
@@ -1128,7 +1149,7 @@ async function writeLedger(
                 THEN CASE WHEN COALESCE(c.svi_diff_qty, 0) >= 0 THEN ${DIRECTION_IN} ELSE ${DIRECTION_OUT} END
                 WHEN side.from_line THEN c.line_direction
                 ELSE side.direction END,
-           c.svi_bucket,
+           CASE WHEN side.to_bucket THEN c.svi_to_bucket ELSE c.svi_bucket END,
            c.svh_doc_date, c.svh_doc_datetime, ${postedOn},
            c.move_qty, c.move_base_qty, c.move_free_qty, c.move_free_base_qty, c.svi_weight_qty,
            c.line_cost_rate,     ROUND(c.line_cost_rate     * (c.move_base_qty + c.move_free_base_qty), 2),
@@ -1146,7 +1167,7 @@ async function writeLedger(
       FROM costed c
       JOIN stock.stock_voucher_item svi
         ON svi.svi_id = c.svi_id AND svi.svi_acc_year = c.svi_acc_year
-      CROSS JOIN (VALUES ${Prisma.join(sides)}) AS side(direction, txn_type, to_godown, same_branch_only, from_line)
+      CROSS JOIN (VALUES ${Prisma.join(sides)}) AS side(direction, txn_type, to_godown, same_branch_only, from_line, to_bucket)
      WHERE (c.move_base_qty + c.move_free_base_qty) <> 0
        AND (NOT side.same_branch_only OR c.same_branch)
      ORDER BY c.svi_line_no, c.svi_split_no, side.direction DESC
@@ -1173,6 +1194,33 @@ interface LockedHeader {
   linkSrcAccYear: string | null;
 }
 /**
+ * Every live line names its lot — or the document is refused, naming the lines.
+ * A transfer and a stock move both move an EXISTING lot; a lotless line would
+ * let the engine invent one.
+ */
+async function assertLotsNamed(
+  tx: Prisma.TransactionClient,
+  { rules, svhId, accYear }: PostStockVoucherParams,
+  verb: string,
+  why: string,
+): Promise<void> {
+  const lotless = await tx.$queryRaw<Array<{ svi_line_no: number }>>`
+    SELECT svi_line_no FROM stock.stock_voucher_item
+     WHERE svi_voucher_id = ${svhId}::uuid AND svi_acc_year = ${accYear}::bpchar
+       AND svi_is_deleted = false AND svi_lot_id IS NULL
+     ORDER BY svi_line_no
+  `;
+  if (lotless.length) {
+    throwStockUnprocessable<StockErrorDetail, StockErrorResponse>(
+      `This ${rules.displayName.toLowerCase()} cannot be ${verb}`,
+      lotless.map((r) => ({
+        field: `lines.${r.svi_line_no}`,
+        message: `Line ${r.svi_line_no} names no lot — ${why}`,
+      })),
+    );
+  }
+}
+/**
  * Despatch preconditions (20:~100-130): every line names its lot, and the
  * shape — same branch or another — is decided from the header alone.
  */
@@ -1182,21 +1230,7 @@ async function assertDespatchable(
   header: LockedHeader,
 ): Promise<TransferContext> {
   const { rules, svhId, accYear } = params;
-  const lotless = await tx.$queryRaw<Array<{ svi_line_no: number }>>`
-    SELECT svi_line_no FROM stock.stock_voucher_item
-     WHERE svi_voucher_id = ${svhId}::uuid AND svi_acc_year = ${accYear}::bpchar
-       AND svi_is_deleted = false AND svi_lot_id IS NULL
-     ORDER BY svi_line_no
-  `;
-  if (lotless.length) {
-    throwStockUnprocessable<StockErrorDetail, StockErrorResponse>(
-      `This ${rules.displayName.toLowerCase()} cannot be despatched`,
-      lotless.map((r) => ({
-        field: `lines.${r.svi_line_no}`,
-        message: `Line ${r.svi_line_no} names no lot — a transfer moves existing stock; pick it from the balance.`,
-      })),
-    );
-  }
+  await assertLotsNamed(tx, params, 'despatched', 'a transfer moves existing stock; pick it from the balance.');
   const sameBranch = header.toBranchId === null || header.toBranchId === header.branchId;
   if (!sameBranch && !header.toGodownId) {
     throwStockUnprocessable<StockErrorDetail, StockErrorResponse>(
@@ -1947,6 +1981,11 @@ async function applyItemCost(tx: Prisma.TransactionClient, params: ApplyParams):
                  FILTER (WHERE sml.sml_direction < 0 AND sml.sml_txn_type = 'SALE'))[1]                     AS last_sale_date
         FROM stock.stock_ledger sml
        WHERE ${ledgerRowsOf(params)}
+         -- A bucket move is a wash for the branch (same item, qty and cost on
+         -- both rows); counted in, its IN half would pose as a purchase and
+         -- stamp the average as the last purchase rate. The stamp below still
+         -- runs over it, so the destination holding gets its value.
+         AND sml.sml_txn_type <> ALL(${BUCKET_MOVE_TXN_TYPES as readonly string[]}::text[])
        GROUP BY 1, 2, 3
     ),
     cur AS (
@@ -2220,6 +2259,7 @@ async function refreshLotTotals(tx: Prisma.TransactionClient, params: ApplyParam
  *                 PLUS/MINUS rows (README:189-193; +1 / 86.00 in the worked
  *                 count), so it may be negative and the screen labels it so;
  *   TRANSFER_OUT  the OUT rows only — a same-branch pair moved 20, not 40;
+ *   BUCKET_MOVE   the BUCKET_OUT rows only, for the same reason: moved 5;
  *   everything else   every row, as a magnitude.
  * `svh_line_count` is the document's live line count: a count sheet that
  * varied on two of three lines still counted three.
@@ -2235,8 +2275,11 @@ async function recomputeHeaderTotals(
   const isCount = rules.quantityMode === 'COUNT';
   // A document whose lines move both ways (a count, an adjustment under
   // per-line reasons) carries the NET of them; everything else a magnitude.
-  const netted = isCount || rules.lineDirection === 'REASON';
-  const outOnly = rules.postShape === 'TRANSFER_OUT';
+  // A move (BUCKET_OUT + BUCKET_IN) nets to nothing; like a same-branch
+  // transfer it carries what LEFT the source, as a magnitude: moved 5, not 0.
+  const netted = isCount || (rules.lineDirection === 'REASON' && rules.postShape !== 'BUCKET_MOVE');
+  const outTxnType =
+    rules.postShape === 'TRANSFER_OUT' ? 'TRANSFER_OUT' : rules.postShape === 'BUCKET_MOVE' ? 'BUCKET_OUT' : null;
   await tx.$executeRaw`
     WITH led AS (
       SELECT sml.sml_line_no, sml.sml_is_reversal,
@@ -2248,7 +2291,7 @@ async function recomputeHeaderTotals(
        WHERE sml.sml_src_doc_id = ${svhId}::uuid
          AND sml.sml_acc_year   = ${accYear}::bpchar
          AND sml.sml_is_deleted = false
-         AND (NOT ${outOnly}::boolean OR sml.sml_txn_type = 'TRANSFER_OUT')
+         AND (${outTxnType}::text IS NULL OR sml.sml_txn_type = ${outTxnType}::text)
     ),
     totals AS (
       SELECT (SELECT count(*) FROM stock.stock_voucher_item svi

@@ -10,7 +10,7 @@ import {
   TrimmedString,
   UpperMaxString,
 } from 'src/common/dto/dtoDecorators';
-import { STOCK_ADJUSTMENT_KINDS, type StockAdjustmentKind } from '../stock-adjustment.rules';
+import { STOCK_ADJUSTMENT_SAVE_KINDS, type StockAdjustmentSaveKind } from '../stock-adjustment.rules';
 
 export const REASON_DIRECTIONS = ['IN', 'OUT', 'BOTH'] as const;
 export type ReasonDirection = (typeof REASON_DIRECTIONS)[number];
@@ -21,9 +21,13 @@ export class StockReasonPickerQueryDto {
   @RequiredUuid()
   companyId!: string;
 
-  @ApiProperty({ enum: STOCK_ADJUSTMENT_KINDS, description: 'Filters by the reasons allowed on this kind.' })
-  @IsIn(STOCK_ADJUSTMENT_KINDS as readonly string[])
-  voucherType!: StockAdjustmentKind;
+  @ApiProperty({
+    enum: STOCK_ADJUSTMENT_SAVE_KINDS,
+    description:
+      'Filters by the reasons allowed on this kind. BUCKET_MOVE lists only reasons that name BUCKET_OUT / BUCKET_IN (MOVE_DAMAGED, MOVE_SALEABLE and a company\'s own), never an any-movement reason.',
+  })
+  @IsIn(STOCK_ADJUSTMENT_SAVE_KINDS as readonly string[])
+  voucherType!: StockAdjustmentSaveKind;
 
   @ApiPropertyOptional({ enum: ['IN', 'OUT'], description: 'Only reasons that move this way (BOTH always qualifies).' })
   @IsOptional()

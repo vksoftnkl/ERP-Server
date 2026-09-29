@@ -866,6 +866,8 @@ export class OpenItemsService {
         avhCompanyId: query.companyId,
         avhBranchId: query.branchId,
         avhIsDeleted: false,
+        // notes (62) A2: walked FROM one of this module's own vouchers only.
+        voucherType: { vchrTypeCode: RECEIPT_VOUCHER_TYPE_CODE },
       },
       select: { avhVoucherDate: true, avhVoucherSlno: true, avhCreatedOn: true },
     });
@@ -888,8 +890,15 @@ export class OpenItemsService {
     const order = Prisma.raw(isPrev ? 'DESC' : 'ASC');
 
     const status = query.status ?? null;
-    const fromDate = query.fromDate ? toDateOnly(query.fromDate) : null;
-    const toDate = query.toDate ? toDateOnly(query.toDate) : null;
+    // `avh_voucher_date` is a DATE, so every bound is passed and compared as
+    // one (notes 61). Binding a JS Date as `::timestamptz` — what this did —
+    // compares midnight UTC with the date read in the SESSION timezone
+    // (Asia/Kolkata here): 2026-09-29 becomes 2026-09-28 18:30Z, a window of
+    // one day matches nothing, and every same-day row sorts below the receipt
+    // being walked from, so Prev/Next skipped or misordered them.
+    const fromDate = query.fromDate ? query.fromDate.slice(0, 10) : null;
+    const toDate = query.toDate ? query.toDate.slice(0, 10) : null;
+    const currentDate = toDateString(current.avhVoucherDate)!;
 
     const rows = await this.prisma.$queryRaw<AdjacentRow[]>`
       SELECT h.avh_voucher_id,
@@ -912,14 +921,14 @@ export class OpenItemsService {
          AND h.avh_is_deleted = false
          AND h.avh_against_voucher_id IS NULL
          AND (${status}::varchar IS NULL OR h.avh_voucher_status = ${status}::varchar)
-         AND (${fromDate}::timestamptz IS NULL OR h.avh_voucher_date >= ${fromDate}::timestamptz)
-         AND (${toDate}::timestamptz   IS NULL OR h.avh_voucher_date <= ${toDate}::timestamptz)
+         AND (${fromDate}::date IS NULL OR h.avh_voucher_date >= ${fromDate}::date)
+         AND (${toDate}::date   IS NULL OR h.avh_voucher_date <= ${toDate}::date)
          AND (h.avh_voucher_date,
               COALESCE(h.avh_voucher_slno, ${DRAFT_SLNO_SENTINEL}),
               h.avh_created_on,
               h.avh_voucher_id)
              ${comparison}
-             (${current.avhVoucherDate}::timestamptz,
+             (${currentDate}::date,
               COALESCE(${current.avhVoucherSlno}::bigint, ${DRAFT_SLNO_SENTINEL}),
               ${current.avhCreatedOn}::timestamptz,
               ${query.voucherId}::uuid)

@@ -10,6 +10,15 @@ import * as request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { TokenService, type AccessTokenPayload } from '../src/modules/auth/token.service';
 import { AuthSessionService } from '../src/modules/auth/auth-session.service';
+import {
+  grantMenuRights,
+  RECEIPT_MENU,
+  restoreMenuRights,
+  type MenuRightsMemo,
+} from './helpers/menu-rights';
+
+/** notes (62) D2 — tester1's menu-99 rights for this suite, put back in afterAll. */
+let rightsMemo: MenuRightsMemo | null = null;
 
 /**
  * HTTP-level test for POST /api/v1/receipts/delete — the route that makes an
@@ -63,6 +72,7 @@ describe('POST /receipts/delete — throw a draft away (e2e, live DB)', () => {
   let fx: Fixtures;
 
   beforeAll(async () => {
+    rightsMemo = await grantMenuRights(prisma, [RECEIPT_MENU]);
     // Everything is taken FROM the database rather than hard-coded, so the
     // suite still means something after the dev data moves on.
     // CASH deliberately (ttm_is_cash). Every other tender type has
@@ -163,6 +173,7 @@ describe('POST /receipts/delete — throw a draft away (e2e, live DB)', () => {
   });
 
   afterAll(async () => {
+    await restoreMenuRights(prisma, rightsMemo);
     await app?.close();
     await prisma.$disconnect();
   });

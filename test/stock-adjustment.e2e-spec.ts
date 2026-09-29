@@ -9,12 +9,13 @@ import { StockAdjustmentService } from '../src/modules/stocks/stock-adjustment/s
 import { StockReasonsService } from '../src/modules/stocks/stock-adjustment/stock-reasons.service';
 import { assertStockBalances } from '../src/modules/stocks/posting/stock-balance-assertion';
 import type { StockVoucherTypeRules } from '../src/modules/stocks/stock-voucher/types/stock-voucher.types';
-import type { StockAdjustmentKind } from '../src/modules/stocks/stock-adjustment/stock-adjustment.rules';
+import type { StockAdjustmentSaveKind } from '../src/modules/stocks/stock-adjustment/stock-adjustment.rules';
 import { buildStockPosting } from './helpers/stock-posting.factory';
 
 /**
  * THE ADJUSTMENT FAMILY, END TO END (plan-nestjs-stock-adjustments §7), in
- * one rolled-back transaction like `stock-engine-ts.e2e-spec.ts`.
+ * one rolled-back transaction like `stock-engine-ts.e2e-spec.ts`. Cases 10–14
+ * are "Move stock" (notes 60): the bucket pair, the refusals, the cancel.
  *
  *     npm run test:e2e -- stock-adjustment
  */
@@ -56,9 +57,22 @@ interface Fixture {
   sugar: Item;
   tea: Item;
   milk: Item;
+  /** Batch + supplier tracked: the lot names the supplier a damaged carton goes back to. */
+  soap: Item;
+  supplierId: string;
 }
 type Reasons = Record<
-  'FOUND' | 'PILFERAGE' | 'INTERNAL' | 'DAMAGE' | 'EXPIRY' | 'RELOT_OUT' | 'RELOT_IN' | 'SAMPLE' | 'E2E_BOTH',
+  | 'FOUND'
+  | 'PILFERAGE'
+  | 'INTERNAL'
+  | 'DAMAGE'
+  | 'EXPIRY'
+  | 'RELOT_OUT'
+  | 'RELOT_IN'
+  | 'SAMPLE'
+  | 'MOVE_DAMAGED'
+  | 'MOVE_SALEABLE'
+  | 'E2E_BOTH',
   string
 >;
 
@@ -191,19 +205,28 @@ describe('Stock adjustments (e2e — one rolled-back transaction)', () => {
       });
       return { itemId: item.itemId, iuc: iuc.iucId };
     };
-    const [salt, sugar, tea, milk] = await Promise.all([
+    const [salt, sugar, tea, milk, soap] = await Promise.all([
       createItem('E2E-ADJ-SALT', 'AdjE2E Salt'),
       createItem('E2E-ADJ-SUGAR', 'AdjE2E Sugar'),
       createItem('E2E-ADJ-TEA', 'AdjE2E Tea'),
       createItem('E2E-ADJ-MILK', 'AdjE2E Milk'),
+      createItem('E2E-ADJ-SOAP', 'AdjE2E Soap'),
     ]);
-    // TEA is batch-tracked (FIFO); MILK batch + expiry (FEFO).
+    // TEA is batch-tracked (FIFO); MILK batch + expiry (FEFO); SOAP batch +
+    // supplier (FIFO), so its lot says whom a damaged carton goes back to.
     await tx.$executeRaw`
       INSERT INTO stock.stock_track_policy (
-        stp_company_id, stp_scope, stp_scope_id, stp_track_batch, stp_track_expiry, stp_issue_strategy, stp_remarks)
-      VALUES (${scope.company_id}::uuid, 'ITEM', ${tea.itemId}::uuid, true, false, 'FIFO', 'stock-adjustment e2e'),
-             (${scope.company_id}::uuid, 'ITEM', ${milk.itemId}::uuid, true, true, 'FEFO', 'stock-adjustment e2e')
+        stp_company_id, stp_scope, stp_scope_id, stp_track_batch, stp_track_expiry, stp_track_supplier, stp_issue_strategy, stp_remarks)
+      VALUES (${scope.company_id}::uuid, 'ITEM', ${tea.itemId}::uuid, true, false, false, 'FIFO', 'stock-adjustment e2e'),
+             (${scope.company_id}::uuid, 'ITEM', ${milk.itemId}::uuid, true, true, false, 'FEFO', 'stock-adjustment e2e'),
+             (${scope.company_id}::uuid, 'ITEM', ${soap.itemId}::uuid, true, false, true, 'FIFO', 'stock-adjustment e2e')
     `;
+    const [supplier] = await tx.$queryRaw<Array<{ sup_id: string }>>`
+      SELECT sup_id FROM purchase.suppliers
+       WHERE sup_is_deleted = false AND (sup_company_id IS NULL OR sup_company_id = ${scope.company_id}::uuid)
+       ORDER BY sup_name LIMIT 1
+    `;
+    if (!supplier) throw new Error('No purchase.suppliers row on this database for the move fixture.');
     return {
       companyId: scope.company_id,
       branchId: scope.branch_id,
@@ -215,6 +238,8 @@ describe('Stock adjustments (e2e — one rolled-back transaction)', () => {
       sugar,
       tea,
       milk,
+      soap,
+      supplierId: supplier.sup_id,
     };
   }
 
@@ -227,11 +252,11 @@ describe('Stock adjustments (e2e — one rolled-back transaction)', () => {
     const rows = await tx.$queryRaw<Array<{ srm_code: string; srm_id: string }>>`
       SELECT srm_code, srm_id FROM stock.stock_reason_master
        WHERE srm_is_deleted = false
-         AND ((srm_company_id IS NULL AND srm_code IN ('FOUND','PILFERAGE','INTERNAL','DAMAGE','EXPIRY','RELOT_OUT','RELOT_IN','SAMPLE'))
+         AND ((srm_company_id IS NULL AND srm_code IN ('FOUND','PILFERAGE','INTERNAL','DAMAGE','EXPIRY','RELOT_OUT','RELOT_IN','SAMPLE','MOVE_DAMAGED','MOVE_SALEABLE'))
               OR (srm_company_id = ${fixture.companyId}::uuid AND srm_code = 'E2E_BOTH'))
     `;
     const out = Object.fromEntries(rows.map((r) => [r.srm_code, r.srm_id])) as Reasons;
-    for (const code of ['FOUND', 'PILFERAGE', 'INTERNAL', 'DAMAGE', 'EXPIRY', 'RELOT_OUT', 'RELOT_IN', 'SAMPLE', 'E2E_BOTH']) {
+    for (const code of ['FOUND', 'PILFERAGE', 'INTERNAL', 'DAMAGE', 'EXPIRY', 'RELOT_OUT', 'RELOT_IN', 'SAMPLE', 'MOVE_DAMAGED', 'MOVE_SALEABLE', 'E2E_BOTH']) {
       if (!out[code as keyof Reasons]) throw new Error(`Seed reason ${code} missing — run prisma/seed/Stock_Reason_Master.sql`);
     }
     return out;
@@ -259,6 +284,7 @@ describe('Stock adjustments (e2e — one rolled-back transaction)', () => {
     costRate: number;
     batchNo?: string;
     expiryDate?: string;
+    supplierId?: string;
   }
   async function open(lines: OpeningLine[]): Promise<string> {
     const saved = await voucherService.save(OPENING_RULES, {
@@ -284,6 +310,7 @@ describe('Stock adjustments (e2e — one rolled-back transaction)', () => {
         costRate: line.costRate,
         ...(line.batchNo ? { batchNo: line.batchNo } : {}),
         ...(line.expiryDate ? { expiryDate: line.expiryDate } : {}),
+        ...(line.supplierId ? { supplierId: line.supplierId } : {}),
       })),
     } as never);
     await attempt(() =>
@@ -302,6 +329,7 @@ describe('Stock adjustments (e2e — one rolled-back transaction)', () => {
     batchNo?: string;
     expiryDate?: string;
     bucket?: string;
+    toBucket?: string;
   }
   /** A refusal's per-line messages ride on the thrown error's text, so a failed case says WHY. */
   const explained = async <T,>(fn: () => Promise<T>): Promise<T> => {
@@ -315,7 +343,7 @@ describe('Stock adjustments (e2e — one rolled-back transaction)', () => {
       throw err;
     }
   };
-  const adjustment = (kind: StockAdjustmentKind, lines: AdjLine[], extra: Record<string, unknown> = {}) =>
+  const adjustment = (kind: StockAdjustmentSaveKind, lines: AdjLine[], extra: Record<string, unknown> = {}) =>
     explained(() => attempt(() =>
       service.save({
         header: {
@@ -345,6 +373,7 @@ describe('Stock adjustments (e2e — one rolled-back transaction)', () => {
           ...(line.batchNo ? { batchNo: line.batchNo } : {}),
           ...(line.expiryDate ? { expiryDate: line.expiryDate } : {}),
           ...(line.bucket ? { bucket: line.bucket } : {}),
+          ...(line.toBucket ? { toBucket: line.toBucket } : {}),
         })),
       } as never),
     ));
@@ -357,11 +386,11 @@ describe('Stock adjustments (e2e — one rolled-back transaction)', () => {
 
   const ledger = (svhId: string) =>
     tx.$queryRaw<
-      Array<{ line_no: number; split_no: number; txn_type: string; direction: number; qty: string; cost_rate: string; cost_value: string; is_reversal: boolean; lot_id: string }>
+      Array<{ line_no: number; split_no: number; txn_type: string; direction: number; qty: string; cost_rate: string; cost_value: string; is_reversal: boolean; lot_id: string; bucket: string }>
     >`
       SELECT sml_line_no AS line_no, sml_split_no AS split_no, sml_txn_type AS txn_type, sml_direction AS direction,
              sml_base_qty::text AS qty, sml_cost_rate::text AS cost_rate, sml_cost_value::text AS cost_value,
-             sml_is_reversal AS is_reversal, sml_lot_id AS lot_id
+             sml_is_reversal AS is_reversal, sml_lot_id AS lot_id, sml_bucket AS bucket
         FROM stock.stock_ledger
        WHERE sml_src_doc_id = ${svhId}::uuid AND sml_acc_year = ${ACC_YEAR}::bpchar
        ORDER BY sml_is_reversal, sml_line_no, sml_split_no
@@ -385,6 +414,16 @@ describe('Stock adjustments (e2e — one rolled-back transaction)', () => {
     `;
     return row ? { qty: Number(row.qty), value: Number(row.value), avg: Number(row.avg) } : null;
   };
+  /** The stamps a purchase leaves — a move must leave them alone. */
+  const lastPurchase = async (item: Item) => {
+    const [row] = await tx.$queryRaw<Array<{ rate: string; on: Date | null; max: string }>>`
+      SELECT sic_last_purchase_rate::text AS rate, sic_last_purchase_date AS on, sic_max_cost_rate::text AS max
+        FROM stock.stock_item_cost WHERE sic_item_id = ${item.itemId}::uuid AND sic_branch_id = ${fixture.branchId}::uuid
+    `;
+    return row ? { rate: Number(row.rate), on: row.on?.toISOString().slice(0, 10) ?? null, max: Number(row.max) } : null;
+  };
+  const holdings = (item: Item, bucket: 'SALEABLE' | 'DAMAGED') =>
+    service.pickStock({ companyId: fixture.companyId, branchId: fixture.branchId, godownId: fixture.godownA, itemId: item.itemId, bucket });
   const lots = (item: Item) =>
     tx.$queryRaw<Array<{ slt_id: string; batch_no: string | null; total: string; status: string }>>`
       SELECT slt_id, slt_batch_no AS batch_no, slt_total_on_hand::text AS total, slt_status AS status
@@ -666,5 +705,168 @@ describe('Stock adjustments (e2e — one rolled-back transaction)', () => {
     expect(usage.ledgerRows).toBeGreaterThan(0);
     const gone = await reasonsService.deactivate({ companyId: fixture.companyId, srmId: own.srmId });
     expect(gone).toEqual({ srmId: own.srmId, deleted: true });
+  });
+
+  // ── Move stock (notes 60, D-A3): the same lot, a different bucket ────────
+
+  let moveId: string;
+  let soapLot: string;
+  let soapCost: { qty: number; value: number; avg: number } | null;
+  let soapStamps: Awaited<ReturnType<typeof lastPurchase>>;
+
+  it('10. a move of 5 SALEABLE → DAMAGED writes a BUCKET_OUT / BUCKET_IN pair on one lot at one cost, leaves the average alone and posts no accounts voucher', async () => {
+    await open([{ item: fixture.soap, qty: 10, costRate: 8, batchNo: 'S-1', supplierId: fixture.supplierId }]);
+    soapCost = await itemCost(fixture.soap);
+    soapStamps = await lastPurchase(fixture.soap);
+    expect(soapCost).toEqual({ qty: 10, value: 80, avg: 8 });
+
+    // The lot names its supplier on the picker.
+    const [saleable] = await holdings(fixture.soap, 'SALEABLE');
+    expect(saleable.supplierId).toBe(fixture.supplierId);
+    expect(saleable.supplierName).toBeTruthy();
+    soapLot = saleable.lotId;
+
+    const saved = await adjustment('BUCKET_MOVE', [
+      { item: fixture.soap, qty: 5, reasonId: reasons.MOVE_DAMAGED, lotId: soapLot, toBucket: 'DAMAGED' },
+    ]);
+    moveId = saved.header.svhId;
+    // Stored as an ADJUSTMENT: no new document type.
+    expect(saved.header.voucherType).toBe('ADJUSTMENT');
+    expect(saved.lines.map((l) => [l.bucket, l.toBucket, l.qty, l.direction])).toEqual([['SALEABLE', 'DAMAGED', 5, -1]]);
+    const problems = await service.validate(moveId, ACC_YEAR, fixture.companyId, fixture.branchId);
+    expect(problems.map((p) => p.problem)).toEqual([null]);
+
+    const posted = await post(moveId);
+    expect(posted.rowsPosted).toBe(2);
+    const rows = (await ledger(moveId)).sort((a, b) => Number(a.direction) - Number(b.direction));
+    expect(rows.map((r) => [r.txn_type, Number(r.direction), Number(r.qty), Number(r.cost_rate), Number(r.cost_value), r.bucket, r.lot_id])).toEqual([
+      ['BUCKET_OUT', -1, 5, 8, 40, 'SALEABLE', soapLot],
+      ['BUCKET_IN', 1, 5, 8, 40, 'DAMAGED', soapLot],
+    ]);
+
+    // The value is carried: the branch figures and the purchase stamps are untouched.
+    expect(await itemCost(fixture.soap)).toEqual(soapCost);
+    expect(await lastPurchase(fixture.soap)).toEqual(soapStamps);
+    // Still the company's stock, so no Stock Journal.
+    expect(await legs('ADJUSTMENT', moveId)).toHaveLength(0);
+
+    // The DAMAGED bucket now holds 5 of the same lot, valued, with its supplier:
+    // the "what goes back to which supplier" list.
+    const [damaged] = await holdings(fixture.soap, 'DAMAGED');
+    expect(damaged).toMatchObject({ lotId: soapLot, bucket: 'DAMAGED', supplierId: fixture.supplierId, batchNo: 'S-1' });
+    expect(damaged.availableQty).toBeCloseTo(5, 6);
+    expect(damaged.stockValue).toBeCloseTo(40, 2);
+    expect((await holdings(fixture.soap, 'SALEABLE'))[0].availableQty).toBeCloseTo(5, 6);
+
+    // The header carries what moved, as a magnitude; the load names the kind.
+    const hdr = await header(moveId);
+    expect(hdr).toMatchObject({ status: 'POSTED', lines: 1 });
+    expect(hdr.qty).toBeCloseTo(5, 6);
+    expect(hdr.value).toBeCloseTo(40, 2);
+    const loaded = await service.getOne(moveId, ACC_YEAR, fixture.companyId, fixture.branchId);
+    expect(loaded.kind).toBe('BUCKET_MOVE');
+    expect(loaded.lines[0].toBucket).toBe('DAMAGED');
+    expect(await balancesAgree(fixture.soap)).toBe(0);
+  });
+
+  it('11. a move of more than the holding carries is refused, naming what it holds', async () => {
+    let caught: unknown;
+    await adjustment('BUCKET_MOVE', [
+      { item: fixture.soap, qty: 6, reasonId: reasons.MOVE_DAMAGED, lotId: soapLot, toBucket: 'DAMAGED' },
+    ]).catch((e) => (caught = e));
+    expect(caught).toMatchObject({ status: 422 });
+    expect(refusal(caught)).toMatch(/moves 6 but this godown holds 5/);
+    expect(await balancesAgree(fixture.soap)).toBe(0);
+  });
+
+  it('12. a lotless move is refused, and so are a same-bucket move, a mixed document and a non-move reason', async () => {
+    const tryMove = async (kind: StockAdjustmentSaveKind, line: AdjLine): Promise<string> => {
+      let caught: unknown;
+      await adjustment(kind, [line]).catch((e) => (caught = e));
+      expect(caught).toMatchObject({ status: 422 });
+      return refusal(caught);
+    };
+    expect(await tryMove('BUCKET_MOVE', { item: fixture.soap, qty: 1, reasonId: reasons.MOVE_DAMAGED, toBucket: 'DAMAGED' })).toMatch(/names no lot/);
+    expect(await tryMove('BUCKET_MOVE', { item: fixture.soap, qty: 1, reasonId: reasons.MOVE_DAMAGED, lotId: soapLot, toBucket: 'SALEABLE' })).toMatch(
+      /from SALEABLE into SALEABLE/,
+    );
+    // All moves or none, both ways round.
+    expect(await tryMove('BUCKET_MOVE', { item: fixture.soap, qty: 1, reasonId: reasons.MOVE_DAMAGED, lotId: soapLot })).toMatch(/names no bucket to move to/);
+    expect(await tryMove('ADJUSTMENT', { item: fixture.soap, qty: 1, reasonId: reasons.INTERNAL, lotId: soapLot, toBucket: 'DAMAGED' })).toMatch(
+      /all moves or none/,
+    );
+    // A move cites a move reason; a move reason belongs on a move.
+    expect(
+      await tryMove('BUCKET_MOVE', { item: fixture.soap, qty: 1, reasonId: reasons.PILFERAGE, remarks: 'x', lotId: soapLot, toBucket: 'DAMAGED' }),
+    ).toMatch(/not a stock-move reason/);
+    expect(await tryMove('ADJUSTMENT', { item: fixture.soap, qty: -1, reasonId: reasons.MOVE_DAMAGED, lotId: soapLot })).toMatch(/a stock-move reason/);
+    // No free goods on a move either.
+    let caught: unknown;
+    await explained(() =>
+      attempt(() =>
+        service.save({
+          header: {
+            accYear: ACC_YEAR, companyId: fixture.companyId, branchId: fixture.branchId, deviceId: fixture.deviceId,
+            docDate: DOC_DATE, voucherType: 'BUCKET_MOVE', fromGodownId: fixture.godownA, userId: fixture.userId,
+          },
+          lines: [{
+            lineNo: 1, itemId: fixture.soap.itemId, uomId: fixture.soap.iuc, baseUomId: fixture.soap.iuc, toBaseFactor: 1,
+            qty: 1, baseQty: 1, freeQty: 1, freeBaseQty: 1, godownId: fixture.godownA, lotId: soapLot,
+            bucket: 'SALEABLE', toBucket: 'DAMAGED', reasonId: reasons.MOVE_DAMAGED,
+          }],
+        } as never),
+      ),
+    ).catch((e) => (caught = e));
+    expect(caught).toMatchObject({ status: 422 });
+    expect(refusal(caught)).toMatch(/free quantity/);
+  });
+
+  it('13. cancelling the move mirrors both rows and puts the stock back in SALEABLE', async () => {
+    const cancelled = await attempt(() =>
+      service.cancel({ svhId: moveId, accYear: ACC_YEAR, companyId: fixture.companyId, branchId: fixture.branchId, reason: 'e2e move reversal', userId: fixture.userId }),
+    );
+    expect(cancelled.rowsReversed).toBe(2);
+    const mirrors = (await ledger(moveId)).filter((r) => r.is_reversal).sort((a, b) => Number(a.direction) - Number(b.direction));
+    expect(mirrors.map((r) => [r.txn_type, Number(r.direction), Number(r.qty), r.bucket])).toEqual([
+      ['BUCKET_IN', -1, 5, 'DAMAGED'],
+      ['BUCKET_OUT', 1, 5, 'SALEABLE'],
+    ]);
+    expect(await holdings(fixture.soap, 'DAMAGED')).toHaveLength(0);
+    expect((await holdings(fixture.soap, 'SALEABLE'))[0].availableQty).toBeCloseTo(10, 6);
+    expect(await itemCost(fixture.soap)).toEqual(soapCost);
+    expect(await lastPurchase(fixture.soap)).toEqual(soapStamps);
+    const hdr = await header(moveId);
+    expect(hdr.status).toBe('CANCELLED');
+    expect(hdr.qty).toBeCloseTo(0, 6);
+    expect(hdr.value).toBeCloseTo(0, 2);
+    expect(await legs('ADJUSTMENT', moveId)).toHaveLength(0);
+    expect(await balancesAgree(fixture.soap)).toBe(0);
+  });
+
+  it('14. the move picker offers the move reasons only, and MOVE_SALEABLE brings damaged stock back', async () => {
+    const forMove = (await reasonsService.pick({ companyId: fixture.companyId, voucherType: 'BUCKET_MOVE' })).map((r) => r.code);
+    expect(forMove).toEqual(expect.arrayContaining(['MOVE_DAMAGED', 'MOVE_SALEABLE']));
+    expect(forMove).not.toContain('PILFERAGE');
+    const forAdjustment = (await reasonsService.pick({ companyId: fixture.companyId, voucherType: 'ADJUSTMENT' })).map((r) => r.code);
+    expect(forAdjustment).not.toContain('MOVE_DAMAGED');
+
+    const out = await adjustment('BUCKET_MOVE', [
+      { item: fixture.soap, qty: 3, reasonId: reasons.MOVE_DAMAGED, lotId: soapLot, toBucket: 'DAMAGED' },
+    ]);
+    await post(out.header.svhId);
+    const back = await adjustment('BUCKET_MOVE', [
+      { item: fixture.soap, qty: 3, reasonId: reasons.MOVE_SALEABLE, lotId: soapLot, bucket: 'DAMAGED', toBucket: 'SALEABLE' },
+    ]);
+    await post(back.header.svhId);
+    const rows = (await ledger(back.header.svhId)).sort((a, b) => Number(a.direction) - Number(b.direction));
+    expect(rows.map((r) => [r.txn_type, r.bucket, Number(r.qty)])).toEqual([
+      ['BUCKET_OUT', 'DAMAGED', 3],
+      ['BUCKET_IN', 'SALEABLE', 3],
+    ]);
+    expect(await holdings(fixture.soap, 'DAMAGED')).toHaveLength(0);
+    expect((await holdings(fixture.soap, 'SALEABLE'))[0].availableQty).toBeCloseTo(10, 6);
+    expect(await itemCost(fixture.soap)).toEqual(soapCost);
+    expect(await lastPurchase(fixture.soap)).toEqual(soapStamps);
+    expect(await balancesAgree(fixture.soap)).toBe(0);
   });
 });

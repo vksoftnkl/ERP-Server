@@ -15,7 +15,7 @@ import type {
   SaveStockReasonDto,
   StockReasonPickerQueryDto,
 } from './dto/stock-reason.dto';
-import { STOCK_ADJUSTMENT_RULES, type StockAdjustmentKind } from './stock-adjustment.rules';
+import { BUCKET_MOVE_KIND, STOCK_ADJUSTMENT_RULES, type StockAdjustmentKind } from './stock-adjustment.rules';
 
 export interface StockReasonRow {
   srmId: string;
@@ -86,6 +86,9 @@ export class StockReasonsService {
   /** Q17 — shared + company rows merged (a company row hides the shared one with the same code), filtered for one kind. */
   async pick(query: StockReasonPickerQueryDto): Promise<StockReasonRow[]> {
     const kindTypes = STOCK_ADJUSTMENT_RULES[query.voucherType].ledgerTxnTypes as string[];
+    // A move cites a MOVE reason, never an any-movement one: PILFERAGE on a
+    // move would read as a write-off that wrote nothing off.
+    const strict = query.voucherType === BUCKET_MOVE_KIND;
     const rows = await this.prisma.$queryRaw<RawReason[]>`
       SELECT r.srm_id, r.srm_company_id, r.srm_code, r.srm_name, r.srm_direction, r.srm_allowed_txn_types,
              r.srm_require_remarks, r.srm_gl_ledger_id, l.led_name, r.srm_sort_order, r.srm_remarks, r.srm_is_active
@@ -97,7 +100,8 @@ export class StockReasonsService {
                     SELECT 1 FROM stock.stock_reason_master o
                      WHERE o.srm_company_id = ${query.companyId}::uuid AND o.srm_code = r.srm_code
                        AND o.srm_is_deleted = false)))
-         AND (cardinality(r.srm_allowed_txn_types) = 0 OR r.srm_allowed_txn_types && ${kindTypes}::text[])
+         AND ((NOT ${strict}::boolean AND cardinality(r.srm_allowed_txn_types) = 0)
+              OR r.srm_allowed_txn_types && ${kindTypes}::text[])
          AND (${query.direction ?? null}::text IS NULL OR r.srm_direction IN (${query.direction ?? null}::text, 'BOTH'))
        ORDER BY r.srm_sort_order, r.srm_code
     `;

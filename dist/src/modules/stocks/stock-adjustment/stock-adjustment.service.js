@@ -55,6 +55,8 @@ let StockAdjustmentService = class StockAdjustmentService {
                 godownId: line.godownId,
                 lotId: line.lotId ?? null,
                 bucket: line.bucket ?? 'SALEABLE',
+                toBucket: line.toBucket ?? null,
+                keyedNegative: sign < 0,
                 baseQty: Math.abs(baseQty),
                 freeBaseQty: Math.abs(Number(line.freeBaseQty ?? 0)) + Math.abs(Number(line.freeQty ?? 0)),
                 sign,
@@ -67,10 +69,12 @@ let StockAdjustmentService = class StockAdjustmentService {
         const verdict = await this.check(header, lines, reasons);
         this.refuse(rules, `This ${rules.displayName.toLowerCase()} cannot be saved`, verdict, lines);
         const relot = lines.some((line) => this.isRelot(reasons, line));
+        const carried = relot || kind === stock_adjustment_rules_1.BUCKET_MOVE_KIND;
         const mapped = {
             header: {
                 ...dto.header,
-                rateSource: relot ? 'AVG_COST' : (dto.header.rateSource ?? undefined),
+                voucherType: rules.voucherType,
+                rateSource: carried ? 'AVG_COST' : (dto.header.rateSource ?? undefined),
             },
             lines: dto.lines.map((line, index) => this.toSharedLine(kind, line, lines[index], reasons)),
         };
@@ -92,6 +96,7 @@ let StockAdjustmentService = class StockAdjustmentService {
             godownId: line.godownId,
             lotId: line.lotId ?? null,
             bucket: line.bucket ?? 'SALEABLE',
+            toBucket: kind === stock_adjustment_rules_1.BUCKET_MOVE_KIND ? (line.toBucket ?? null) : null,
             barcode: line.barcode ?? null,
             batchNo: line.batchNo ?? null,
             mfgDate: line.mfgDate ?? null,
@@ -105,12 +110,13 @@ let StockAdjustmentService = class StockAdjustmentService {
             taxPerc: line.taxPerc ?? 0,
             reasonId: line.reasonId ?? null,
             remarks: line.remarks ?? null,
-            direction: kind === 'ADJUSTMENT' ? direction : null,
+            direction: kind === stock_adjustment_rules_1.BUCKET_MOVE_KIND ? -1 : kind === 'ADJUSTMENT' ? direction : null,
         };
     }
     async getOne(svhId, accYear, companyId, branchId) {
-        const { rules } = await this.kindOf(svhId, accYear, companyId, branchId);
-        return this.stockVoucherService.getById(rules, svhId, accYear, companyId, branchId);
+        const { rules, docKind } = await this.kindOf(svhId, accYear, companyId, branchId);
+        const payload = await this.stockVoucherService.getById(rules, svhId, accYear, companyId, branchId);
+        return { ...payload, kind: docKind };
     }
     async validate(svhId, accYear, companyId, branchId) {
         const { rules, header } = await this.kindOf(svhId, accYear, companyId, branchId);
@@ -146,12 +152,14 @@ let StockAdjustmentService = class StockAdjustmentService {
       SELECT b.sbl_id, b.sbl_item_id, itm.item_code, itm.item_name_en AS item_name,
              b.sbl_godown_id, b.sbl_lot_id, b.sbl_bucket,
              slt.slt_batch_no, slt.slt_mfg_date, slt.slt_expiry_date, slt.slt_mrp, slt.slt_sale_price, slt.slt_serial_no,
+             slt.slt_supplier_id, sup.sup_name,
              b.sbl_base_uom_id, unt.unit_name,
              b.sbl_on_hand_qty, b.sbl_reserved_qty, b.sbl_available_qty,
              b.sbl_avg_cost_rate, b.sbl_stock_value, b.sbl_first_in_date
         FROM stock.stock_balance b
         JOIN stock.stock_lot slt ON slt.slt_id = b.sbl_lot_id
         JOIN inventory.item_master itm ON itm.item_id = b.sbl_item_id
+        LEFT JOIN purchase.suppliers sup ON sup.sup_id = slt.slt_supplier_id
         LEFT JOIN inventory.item_unit_conversion iuc ON iuc.iuc_id = b.sbl_base_uom_id
         LEFT JOIN inventory.item_unit_master unt ON unt.unit_id = iuc.iuc_unit_id
        WHERE b.sbl_company_id = ${query.companyId}::uuid
@@ -182,6 +190,8 @@ let StockAdjustmentService = class StockAdjustmentService {
             mrp: r.slt_mrp === null ? null : Number(r.slt_mrp),
             salePrice: r.slt_sale_price === null ? null : Number(r.slt_sale_price),
             serialNo: r.slt_serial_no,
+            supplierId: r.slt_supplier_id,
+            supplierName: r.sup_name,
             baseUomId: r.sbl_base_uom_id,
             unitName: r.unit_name,
             onHandQty: Number(r.sbl_on_hand_qty ?? 0),
@@ -212,6 +222,27 @@ let StockAdjustmentService = class StockAdjustmentService {
                 say(line, 'has no quantity.');
             }
         }
+        const moving = kind === stock_adjustment_rules_1.BUCKET_MOVE_KIND;
+        for (const line of lines) {
+            if (!moving) {
+                if (line.toBucket) {
+                    say(line, `names a bucket to move to (${line.toBucket}), but this is a ${stock_adjustment_rules_1.STOCK_ADJUSTMENT_RULES[kind].displayName.toLowerCase()}. A document is all moves or none: key the move as Move stock.`);
+                }
+                continue;
+            }
+            if (line.keyedNegative) {
+                say(line, 'moves a negative quantity. State the quantity moved; the buckets say which way it goes.');
+            }
+            else if (!line.toBucket) {
+                say(line, `names no bucket to move to. A move takes the stock out of ${line.bucket} and into another bucket — name it (toBucket). A document is all moves or none.`);
+            }
+            else if (line.toBucket === line.bucket) {
+                say(line, `moves stock from ${line.bucket} into ${line.bucket}. Pick a different bucket.`);
+            }
+            else if (!line.lotId) {
+                say(line, 'names no lot. A move is about one lot — the lot is what names the supplier the stock goes back to. Pick it from the balance.');
+            }
+        }
         for (const line of lines) {
             const reason = line.reasonId ? reasons.get(line.reasonId) : undefined;
             if (!line.reasonId) {
@@ -224,6 +255,19 @@ let StockAdjustmentService = class StockAdjustmentService {
             }
             if (!reason.srm_is_active) {
                 say(line, `cites ${reason.srm_code} (${reason.srm_name}), which is inactive.`);
+                continue;
+            }
+            if (moving) {
+                if (!this.allowsMove(reason)) {
+                    say(line, `cites ${reason.srm_code} (${reason.srm_name}), which is not a stock-move reason. Cite MOVE_DAMAGED, MOVE_SALEABLE or a reason of your own that allows BUCKET_OUT / BUCKET_IN.`);
+                }
+                else if (reason.srm_require_remarks && !line.remarks) {
+                    say(line, `cites ${reason.srm_code} (${reason.srm_name}), which requires a remark saying what happened.`);
+                }
+                continue;
+            }
+            if (this.onlyMove(reason)) {
+                say(line, `cites ${reason.srm_code} (${reason.srm_name}), a stock-move reason. Key it as Move stock and name the bucket the stock moves to.`);
                 continue;
             }
             if (kind !== 'ADJUSTMENT' && reason.srm_direction === 'IN') {
@@ -294,7 +338,7 @@ let StockAdjustmentService = class StockAdjustmentService {
                 const asked = wanted.get(key) ?? 0;
                 if (asked > have && !shortReported.has(key)) {
                     shortReported.add(key);
-                    say(line, `takes ${asked} but this godown holds ${have} of ${lot.slt_batch_no ? `batch ${lot.slt_batch_no}` : 'that lot'} in the ${line.bucket} bucket. Writing off stock you do not have is a data error, not a sale.`);
+                    say(line, `${moving ? 'moves' : 'takes'} ${asked} but this godown holds ${have} of ${lot.slt_batch_no ? `batch ${lot.slt_batch_no}` : 'that lot'} in the ${line.bucket} bucket. ${moving ? 'Moving stock you do not have is a data error.' : 'Writing off stock you do not have is a data error, not a sale.'}`);
                 }
             }
         }
@@ -340,6 +384,9 @@ let StockAdjustmentService = class StockAdjustmentService {
         return out;
     }
     directionOf(line, reasons) {
+        if (line.toBucket) {
+            return -1;
+        }
         const reason = line.reasonId ? reasons.get(line.reasonId) : undefined;
         if (reason?.srm_direction === 'IN') {
             return 1;
@@ -352,12 +399,24 @@ let StockAdjustmentService = class StockAdjustmentService {
         }
         return -1;
     }
+    allowsMove(reason) {
+        return (reason.srm_allowed_txn_types ?? []).some((t) => stock_adjustment_rules_1.BUCKET_MOVE_TXN_TYPES.includes(t));
+    }
+    onlyMove(reason) {
+        const allowed = reason.srm_allowed_txn_types ?? [];
+        return allowed.length > 0 && allowed.every((t) => stock_adjustment_rules_1.BUCKET_MOVE_TXN_TYPES.includes(t));
+    }
     isRelot(reasons, line) {
         const code = line.reasonId ? reasons.get(line.reasonId)?.srm_code : undefined;
         return code === stock_adjustment_rules_1.RELOT_OUT_CODE || code === stock_adjustment_rules_1.RELOT_IN_CODE;
     }
     documentGodown(header) {
         const { fromGodownId, toGodownId, kind } = header;
+        if (kind === stock_adjustment_rules_1.BUCKET_MOVE_KIND && toGodownId && toGodownId !== fromGodownId) {
+            (0, module_service_utils_1.throwStockUnprocessable)('This stock move cannot be saved', [
+                { field: 'toGodownId', message: 'A move changes the bucket, not the godown: name the godown once, in fromGodownId. Moving stock between godowns is a transfer.' },
+            ]);
+        }
         if (kind === 'ADJUSTMENT') {
             if (!fromGodownId && !toGodownId) {
                 (0, module_service_utils_1.throwStockUnprocessable)('This stock adjustment cannot be saved', [
@@ -383,17 +442,28 @@ let StockAdjustmentService = class StockAdjustmentService {
     }
     async kindOf(svhId, accYear, companyId, branchId) {
         const [row] = await this.prisma.$queryRaw `
-      SELECT svh_voucher_type, svh_doc_date, svh_from_godown_id, svh_to_godown_id, svh_reason_id, svh_remarks
-        FROM stock.stock_voucher
-       WHERE svh_id = ${svhId}::uuid AND svh_acc_year = ${accYear}::bpchar
-         AND svh_company_id = ${companyId}::uuid AND svh_branch_id = ${branchId}::uuid
+      SELECT h.svh_voucher_type, h.svh_doc_date, h.svh_from_godown_id, h.svh_to_godown_id, h.svh_reason_id, h.svh_remarks,
+             (h.svh_voucher_type = 'ADJUSTMENT' AND EXISTS (
+                SELECT 1 FROM stock.stock_voucher_item i
+                 WHERE i.svi_voucher_id = h.svh_id AND i.svi_acc_year = h.svh_acc_year
+                   AND i.svi_is_deleted = false AND i.svi_to_bucket IS NOT NULL))                AS is_move,
+             (h.svh_voucher_type = 'ADJUSTMENT' AND EXISTS (
+                SELECT 1 FROM stock.stock_voucher_item i
+                  JOIN stock.stock_reason_master rm ON rm.srm_id = COALESCE(i.svi_reason_id, h.svh_reason_id)
+                 WHERE i.svi_voucher_id = h.svh_id AND i.svi_acc_year = h.svh_acc_year
+                   AND i.svi_is_deleted = false
+                   AND rm.srm_code IN (${stock_adjustment_rules_1.RELOT_OUT_CODE}, ${stock_adjustment_rules_1.RELOT_IN_CODE})))                     AS is_relot
+        FROM stock.stock_voucher h
+       WHERE h.svh_id = ${svhId}::uuid AND h.svh_acc_year = ${accYear}::bpchar
+         AND h.svh_company_id = ${companyId}::uuid AND h.svh_branch_id = ${branchId}::uuid
     `;
         if (!row || !(0, stock_adjustment_rules_1.isStockAdjustmentKind)(row.svh_voucher_type)) {
             (0, module_service_utils_1.throwStockNotFound)('Stock adjustment not found', 'svhId', `No adjustment, issue, damage or expiry write-off ${svhId} in ${accYear} for this company and branch.`);
         }
-        const kind = row.svh_voucher_type;
+        const kind = row.is_move ? stock_adjustment_rules_1.BUCKET_MOVE_KIND : row.svh_voucher_type;
         return {
             rules: stock_adjustment_rules_1.STOCK_ADJUSTMENT_RULES[kind],
+            docKind: row.is_move ? stock_adjustment_rules_1.BUCKET_MOVE_KIND : row.is_relot ? 'RELOT' : row.svh_voucher_type,
             header: {
                 kind,
                 companyId,
@@ -409,7 +479,7 @@ let StockAdjustmentService = class StockAdjustmentService {
     async loadLines(svhId, accYear, header) {
         const rows = await this.prisma.$queryRaw `
       SELECT svi.svi_id, svi.svi_line_no, svi.svi_item_id, itm.item_name_en AS item_name,
-             svi.svi_godown_id, svi.svi_lot_id, svi.svi_bucket, svi.svi_base_qty, svi.svi_free_base_qty,
+             svi.svi_godown_id, svi.svi_lot_id, svi.svi_bucket, svi.svi_to_bucket, svi.svi_base_qty, svi.svi_free_base_qty,
              svi.svi_direction, svi.svi_reason_id, svi.svi_remarks, svi.svi_base_uom_id
         FROM stock.stock_voucher_item svi
         JOIN inventory.item_master itm ON itm.item_id = svi.svi_item_id
@@ -426,6 +496,8 @@ let StockAdjustmentService = class StockAdjustmentService {
             godownId: r.svi_godown_id,
             lotId: r.svi_lot_id,
             bucket: r.svi_bucket,
+            toBucket: r.svi_to_bucket,
+            keyedNegative: false,
             baseQty: Number(r.svi_base_qty),
             freeBaseQty: Number(r.svi_free_base_qty),
             sign: r.svi_direction === null ? 0 : Number(r.svi_direction) > 0 ? 1 : -1,
@@ -440,7 +512,7 @@ let StockAdjustmentService = class StockAdjustmentService {
             return new Map();
         }
         const rows = await this.prisma.$queryRaw `
-      SELECT srm_id, srm_code, srm_name, srm_direction, srm_is_active, srm_require_remarks
+      SELECT srm_id, srm_code, srm_name, srm_direction, srm_allowed_txn_types, srm_is_active, srm_require_remarks
         FROM stock.stock_reason_master
        WHERE srm_id = ANY(${ids}::uuid[])
          AND srm_is_deleted = false

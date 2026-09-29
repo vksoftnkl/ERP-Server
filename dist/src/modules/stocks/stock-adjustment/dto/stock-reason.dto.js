@@ -27,8 +27,11 @@ __decorate([
     __metadata("design:type", String)
 ], StockReasonPickerQueryDto.prototype, "companyId", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ enum: stock_adjustment_rules_1.STOCK_ADJUSTMENT_KINDS, description: 'Filters by the reasons allowed on this kind.' }),
-    (0, class_validator_1.IsIn)(stock_adjustment_rules_1.STOCK_ADJUSTMENT_KINDS),
+    (0, swagger_1.ApiProperty)({
+        enum: stock_adjustment_rules_1.STOCK_ADJUSTMENT_SAVE_KINDS,
+        description: 'Filters by the reasons allowed on this kind. BUCKET_MOVE lists only reasons that name BUCKET_OUT / BUCKET_IN (MOVE_DAMAGED, MOVE_SALEABLE and a company\'s own), never an any-movement reason.',
+    }),
+    (0, class_validator_1.IsIn)(stock_adjustment_rules_1.STOCK_ADJUSTMENT_SAVE_KINDS),
     __metadata("design:type", String)
 ], StockReasonPickerQueryDto.prototype, "voucherType", void 0);
 __decorate([

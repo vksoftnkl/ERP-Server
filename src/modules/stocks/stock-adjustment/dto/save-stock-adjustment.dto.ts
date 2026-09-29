@@ -17,28 +17,29 @@ import {
   OptionalNumber,
   RequiredNumber,
   RequiredUuid,
+  SkipOnNullish,
 } from 'src/common/dto/dtoDecorators';
 import { SaveStockVoucherHeaderDto } from '../../stock-voucher/dto/save-stock-voucher.dto';
 import { STOCK_BUCKETS, type StockBucket } from '../../stock-voucher/types/stock-voucher.types';
-import { STOCK_ADJUSTMENT_KINDS, type StockAdjustmentKind } from '../stock-adjustment.rules';
+import { STOCK_ADJUSTMENT_SAVE_KINDS, type StockAdjustmentSaveKind } from '../stock-adjustment.rules';
 
 const MAX_LINES = 2000;
 
 /**
  * The header is the shared one plus the Type selector. `voucherType` is
- * REQUIRED here — one screen, four documents — and only the four kinds are
- * accepted; anything else 400s before the service sees it.
+ * REQUIRED here — one screen, five documents — and only those are accepted;
+ * anything else 400s before the service sees it.
  */
 export class SaveStockAdjustmentHeaderDto extends SaveStockVoucherHeaderDto {
   @ApiProperty({
-    enum: STOCK_ADJUSTMENT_KINDS,
+    enum: STOCK_ADJUSTMENT_SAVE_KINDS,
     description:
-      'Which of the four documents this is. A re-lot is an ADJUSTMENT carrying a RELOT_OUT / RELOT_IN pair.',
+      'Which document this is. A re-lot is an ADJUSTMENT carrying a RELOT_OUT / RELOT_IN pair. BUCKET_MOVE ("Move stock") is stored as an ADJUSTMENT: every line moves one lot from `bucket` to `toBucket` in the same godown, and no accounts voucher is written.',
   })
-  @IsIn(STOCK_ADJUSTMENT_KINDS as readonly string[], {
-    message: `voucherType must be one of ${STOCK_ADJUSTMENT_KINDS.join(', ')}`,
+  @IsIn(STOCK_ADJUSTMENT_SAVE_KINDS as readonly string[], {
+    message: `voucherType must be one of ${STOCK_ADJUSTMENT_SAVE_KINDS.join(', ')}`,
   })
-  voucherType!: StockAdjustmentKind;
+  voucherType!: StockAdjustmentSaveKind;
 }
 
 /**
@@ -73,7 +74,7 @@ export class SaveStockAdjustmentItemDto {
 
   @ApiProperty({
     description:
-      'The quantity, in the document unit. SIGNED only under a reason whose direction is BOTH (+ in, − out); an IN or OUT reason fixes the sign and a quantity the wrong way round is refused. Never 0.',
+      'The quantity, in the document unit. SIGNED only under a reason whose direction is BOTH (+ in, − out); an IN or OUT reason fixes the sign and a quantity the wrong way round is refused. On a BUCKET_MOVE line, the quantity moved, positive. Never 0.',
   })
   @RequiredNumber()
   qty!: number;
@@ -98,14 +99,28 @@ export class SaveStockAdjustmentItemDto {
     format: 'uuid',
     nullable: true,
     description:
-      'OUTWARD: the holding, from GET /stock/adjustment/pick-stock; omit it and the engine picks lots by the item\'s issue strategy. Required on an EXPIRY_WRITEOFF (the expiry is the lot\'s). INWARD: leave empty — the identity fields resolve the lot.',
+      'OUTWARD: the holding, from GET /stock/adjustment/pick-stock; omit it and the engine picks lots by the item\'s issue strategy. Required on an EXPIRY_WRITEOFF (the expiry is the lot\'s) and on a BUCKET_MOVE (the lot names the supplier the stock goes back to). INWARD: leave empty — the identity fields resolve the lot.',
   })
   @NullableUuid()
   lotId?: string | null;
 
-  @ApiPropertyOptional({ enum: STOCK_BUCKETS, default: 'SALEABLE' })
+  @ApiPropertyOptional({
+    enum: STOCK_BUCKETS,
+    default: 'SALEABLE',
+    description: 'The holding\'s bucket. On a BUCKET_MOVE line, the bucket the stock LEAVES.',
+  })
   @IsIn(STOCK_BUCKETS as readonly string[])
   bucket?: StockBucket;
+
+  @ApiPropertyOptional({
+    enum: STOCK_BUCKETS,
+    nullable: true,
+    description:
+      'BUCKET_MOVE only, and required there: the bucket the same lot moves to (never `bucket` itself). The screen defaults it from the reason — MOVE_DAMAGED → DAMAGED, MOVE_SALEABLE → SALEABLE. Refused on every other kind.',
+  })
+  @SkipOnNullish()
+  @IsIn(STOCK_BUCKETS as readonly string[], { message: `toBucket must be one of ${STOCK_BUCKETS.join(', ')}` })
+  toBucket?: StockBucket | null;
 
   @ApiPropertyOptional({ maxLength: 100, nullable: true, description: 'Inward identity, when the policy tracks it.' })
   @NullableStringStrict(100)

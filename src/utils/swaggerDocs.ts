@@ -22,6 +22,7 @@ import { TenderDetailModule } from '../modules/accountsModule/tenderDetail/tende
 import { TransactionModule } from '../modules/accountsModule/transaction/transaction.module';
 import { OpeningBalanceModule } from '../modules/accountsModule/openingBalance/opening-balance.module';
 import { ReceiptModule } from '../modules/accountsModule/receipt/receipt.module';
+import { PaymentModule } from '../modules/accountsModule/payment/payment.module';
 import { ChequesModule } from '../modules/accountsModule/cheques/cheques.module';
 import { VouchersModule } from '../modules/accountsModule/vouchers/vouchers.module';
 import { IssuedChequesModule } from '../modules/accountsModule/issuedCheques/issued-cheques.module';
@@ -361,6 +362,17 @@ export const swaggerModuleDocuments = [
       'post-dated cheque gets a voucher of its own dated the cheque, and its bills settle on ' +
       'maturity. The remainder is always held as an ADVANCE bill',
     include: [ReceiptModule],
+  },
+  {
+    path: 'payments',
+    title: 'Payment API',
+    description:
+      'Money paid to a party (menu 100) — the receipt mirrored, the money going OUT. Split across ' +
+      'instruments and allocated against the bills we owe them and the debits of ours they hold. ' +
+      'A cheque takes the next leaf of our cheque book at post; a post-dated cheque gets a voucher ' +
+      'of its own dated the cheque. TDS is seeded server-side from accounts.tds_rates. The ' +
+      'remainder is always held as an ADVANCE (DR) bill',
+    include: [PaymentModule],
   },
   {
     path: 'vouchers',

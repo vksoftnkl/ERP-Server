@@ -9,6 +9,7 @@ export declare class AllocationError extends Error {
 export type VoucherKey = string;
 export declare const RECEIPT_VOUCHER_KEY: VoucherKey;
 export declare const pdcVoucherKey: (tenderRowNo: number) => VoucherKey;
+export type AllocationDirection = 'IN' | 'OUT';
 export interface AllocationBill {
     billId: string;
     billAccYear: string;
@@ -39,6 +40,7 @@ export interface AllocationOtherLine {
     settlesBill: boolean;
     settlementMode: BillSettlementMode;
     isInstrumentSplit: boolean;
+    approvedBy?: string | null;
 }
 export interface AllocationTender {
     tenderRowNo: number;
@@ -62,6 +64,7 @@ export interface AllocationInput {
     tenders: readonly AllocationTender[];
     pins: readonly AllocationPin[];
     claimedOnAccount: Prisma.Decimal;
+    direction?: AllocationDirection;
 }
 export interface AllocationAdjustment {
     billId: string;
@@ -94,5 +97,6 @@ export interface AllocationResult {
     totalOnAccount: Prisma.Decimal;
     adjustAmountByVoucher: Map<VoucherKey, Prisma.Decimal>;
     partyCreditByVoucher: Map<VoucherKey, Prisma.Decimal>;
+    partyLegSide: DrCr;
 }
 export declare function allocate(input: AllocationInput): AllocationResult;
