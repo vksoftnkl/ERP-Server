@@ -171,3 +171,25 @@ export class PrintRenderProvidersSuccessDto {
   @ApiProperty({ type: [PrintDataProviderDto] })
   data!: PrintDataProviderDto[];
 }
+
+export class PrintLogIdsDto {
+  @ApiProperty({
+    type: [String],
+    format: 'uuid',
+    description:
+      'One print_log id per document. Empty when the row could not be written — a failed log ' +
+      'never fails a print, and the reason is in the server log.',
+  })
+  printLogIds!: string[];
+}
+
+export class PrintRenderLogSuccessDto {
+  @ApiProperty({ example: true })
+  success!: true;
+
+  @ApiProperty({ example: 'Print recorded' })
+  message!: string;
+
+  @ApiProperty({ type: PrintLogIdsDto })
+  data!: PrintLogIdsDto;
+}

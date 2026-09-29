@@ -57,3 +57,11 @@ export declare class PrintRenderProvidersSuccessDto {
     message: string;
     data: PrintDataProviderDto[];
 }
+export declare class PrintLogIdsDto {
+    printLogIds: string[];
+}
+export declare class PrintRenderLogSuccessDto {
+    success: true;
+    message: string;
+    data: PrintLogIdsDto;
+}

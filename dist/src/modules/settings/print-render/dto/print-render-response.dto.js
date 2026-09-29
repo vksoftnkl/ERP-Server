@@ -9,7 +9,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.PrintRenderProvidersSuccessDto = exports.PrintDataProviderDto = exports.PrintRenderInspectSuccessDto = exports.RenderInspectionDto = exports.RenderWarningDto = exports.ResolvedDatasetDto = exports.PrintRenderErrorResponseDto = exports.PrintRenderErrorDetailDto = void 0;
+exports.PrintRenderLogSuccessDto = exports.PrintLogIdsDto = exports.PrintRenderProvidersSuccessDto = exports.PrintDataProviderDto = exports.PrintRenderInspectSuccessDto = exports.RenderInspectionDto = exports.RenderWarningDto = exports.ResolvedDatasetDto = exports.PrintRenderErrorResponseDto = exports.PrintRenderErrorDetailDto = void 0;
 const swagger_1 = require("@nestjs/swagger");
 class PrintRenderErrorDetailDto {
     field;
@@ -266,4 +266,35 @@ __decorate([
     (0, swagger_1.ApiProperty)({ type: [PrintDataProviderDto] }),
     __metadata("design:type", Array)
 ], PrintRenderProvidersSuccessDto.prototype, "data", void 0);
+class PrintLogIdsDto {
+    printLogIds;
+}
+exports.PrintLogIdsDto = PrintLogIdsDto;
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        type: [String],
+        format: 'uuid',
+        description: 'One print_log id per document. Empty when the row could not be written — a failed log ' +
+            'never fails a print, and the reason is in the server log.',
+    }),
+    __metadata("design:type", Array)
+], PrintLogIdsDto.prototype, "printLogIds", void 0);
+class PrintRenderLogSuccessDto {
+    success;
+    message;
+    data;
+}
+exports.PrintRenderLogSuccessDto = PrintRenderLogSuccessDto;
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: true }),
+    __metadata("design:type", Boolean)
+], PrintRenderLogSuccessDto.prototype, "success", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 'Print recorded' }),
+    __metadata("design:type", String)
+], PrintRenderLogSuccessDto.prototype, "message", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ type: PrintLogIdsDto }),
+    __metadata("design:type", PrintLogIdsDto)
+], PrintRenderLogSuccessDto.prototype, "data", void 0);
 //# sourceMappingURL=print-render-response.dto.js.map

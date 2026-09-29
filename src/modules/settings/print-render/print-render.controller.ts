@@ -2,6 +2,7 @@ import { Body, Controller, Get, HttpCode, Post, Res, UseFilters, Version } from 
 import {
   ApiBadRequestResponse,
   ApiBearerAuth,
+  ApiCreatedResponse,
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
@@ -17,10 +18,12 @@ import { throwSettingsBadRequest } from 'src/common/utils/module-service.utils';
 import { PrintDataProviderRegistry } from './data/print-data-provider.registry';
 import { RenderDocumentDto } from './dto/render-document.dto';
 import { RenderPreviewDto } from './dto/render-preview.dto';
+import { RecordPrintDto } from './dto/record-print.dto';
 import {
   PrintRenderProvidersSuccessDto,
   PrintRenderErrorResponseDto,
   PrintRenderInspectSuccessDto,
+  PrintRenderLogSuccessDto,
 } from './dto/print-render-response.dto';
 import { PrintRenderService } from './print-render.service';
 import { OutputMode } from './definition/template-definition.schema';
@@ -43,6 +46,9 @@ import { PrintRenderExceptionFilter } from './print-render-exception.filter';
  *   /preview  renders a REVISION you name. Nothing is logged.
  *   /print    renders whatever the assignment ladder resolves to for this
  *             counter, and writes one print_log row per copy.
+ *
+ * And a third that renders nothing: /log records a print the client made from
+ * a /preview it already holds — the print dialog's Print and Download.
  *
  * Neither takes a company, a branch, a counter or an accounting year: all four
  * come from the authenticated context. A render reads a company's documents,
@@ -170,6 +176,43 @@ export class PrintRenderController {
     this.send(response, outcome, dto.filename ?? `${dto.srcDocType ?? 'document'}-${dto.docId}`);
   }
 
+  @Post('log')
+  @Version(API_VERSION)
+  @ApiOperation({
+    summary: 'Record a print made from a preview',
+    description:
+      'The print dialog renders through /preview (so Format can pick any design) and the ' +
+      'operator then prints or saves from the popup. This appends one print_log row per ' +
+      'document for that act, pointing at the revision that was rendered; the purpose, module ' +
+      'and document type come from the revision. Nothing is rendered.',
+  })
+  @ApiCreatedResponse({ type: PrintRenderLogSuccessDto })
+  @ApiBadRequestResponse({ type: PrintRenderErrorResponseDto })
+  @ApiNotFoundResponse({ type: PrintRenderErrorResponseDto })
+  async log(
+    @Body() dto: RecordPrintDto,
+  ): Promise<PrintRenderSuccessResponse<{ printLogIds: string[] }>> {
+    const docIds = this.batchFrom(dto);
+
+    const printLogIds = await this.printRenderService.recordPrint({
+      versionId: dto.versionId,
+      context: this.contextFrom(dto),
+      outputMode: dto.outputMode,
+      ...(docIds.length > 0 ? { docIds } : {}),
+      ...(dto.pageCount !== undefined ? { pageCount: dto.pageCount } : {}),
+      ...(dto.byteCount !== undefined ? { byteCount: dto.byteCount } : {}),
+    });
+
+    return {
+      success: true,
+      // Still a success when nothing was written: the paper is out, and the
+      // swallowed failure is in the server log with the row it would have been.
+      message:
+        printLogIds.length > 0 ? 'Print recorded' : 'The print could not be recorded; see the server log',
+      data: { printLogIds },
+    };
+  }
+
   @Get('providers')
   @Version(API_VERSION)
   @ApiOperation({
@@ -209,7 +252,7 @@ export class PrintRenderController {
    * filled in downstream from the company's current fiscal year when the body
    * leaves it out.
    */
-  private contextFrom(dto: RenderPreviewDto | RenderDocumentDto): RenderContext {
+  private contextFrom(dto: RenderPreviewDto | RenderDocumentDto | RecordPrintDto): RenderContext {
     // The document's own company when the caller names it, else the token's —
     // the same rule `/print-template-assignments/resolve` applies. The two differ
     // whenever the session works in a company other than the user's home one.
@@ -256,7 +299,7 @@ export class PrintRenderController {
    * but it is not ambiguous, and silently collapsing it would hand back fewer
    * pages than the operator counted on screen.
    */
-  private batchFrom(dto: RenderPreviewDto): string[] {
+  private batchFrom(dto: Pick<RenderPreviewDto, 'docId' | 'docIds'>): string[] {
     if (dto.docId && dto.docIds) {
       throwSettingsBadRequest<PrintRenderErrorDetail, PrintRenderErrorResponse>(
         'Send either docId or docIds, not both',

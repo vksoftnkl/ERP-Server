@@ -7,6 +7,7 @@ import { EscPRenderer } from './engine/renderers/grid/escp.renderer';
 import { EscPosRenderer } from './engine/renderers/grid/escpos.renderer';
 import { PdfKitRenderer } from './engine/renderers/pdfkit.renderer';
 import { PrintLogService } from './print-log.service';
+import { RecordableOutputMode } from './print-render.constants';
 import { RenderContext, RenderOutcome } from './types/print-render-api.types';
 export interface PreviewRequest {
     readonly versionId: string;
@@ -29,6 +30,14 @@ export interface PrintRequest {
     readonly copies?: number;
     readonly isReprint?: boolean;
 }
+export interface RecordPrintRequest {
+    readonly versionId: string;
+    readonly context: RenderContext;
+    readonly docIds?: readonly string[];
+    readonly outputMode: RecordableOutputMode;
+    readonly pageCount?: number;
+    readonly byteCount?: number;
+}
 export interface PrintOutcome extends RenderOutcome {
     readonly printLogIds: readonly string[];
     readonly assignment: {
@@ -50,6 +59,7 @@ export declare class PrintRenderService {
     constructor(prisma: PrismaService, datasetRunner: DatasetRunnerService, assignments: PrintTemplateAssignmentService, printLog: PrintLogService, layout: LayoutEngine, pdf: PdfKitRenderer, escpos: EscPosRenderer, escp: EscPRenderer);
     preview(request: PreviewRequest): Promise<RenderOutcome>;
     print(request: PrintRequest): Promise<PrintOutcome>;
+    recordPrint(request: RecordPrintRequest): Promise<string[]>;
     private withCurrentAccYear;
     private renderDefinition;
     private loadPurpose;

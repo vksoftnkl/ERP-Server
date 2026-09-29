@@ -3,6 +3,7 @@ import { RequestContextService } from '../../../common/request-context/request-c
 import { PrintDataProviderRegistry } from './data/print-data-provider.registry';
 import { RenderDocumentDto } from './dto/render-document.dto';
 import { RenderPreviewDto } from './dto/render-preview.dto';
+import { RecordPrintDto } from './dto/record-print.dto';
 import { PrintRenderService } from './print-render.service';
 import { PrintRenderSuccessResponse, RenderInspection } from './types/print-render-api.types';
 export declare class PrintRenderController {
@@ -12,6 +13,9 @@ export declare class PrintRenderController {
     constructor(printRenderService: PrintRenderService, providers: PrintDataProviderRegistry, requestContextService: RequestContextService);
     preview(dto: RenderPreviewDto, response: Response): Promise<PrintRenderSuccessResponse<RenderInspection> | void>;
     print(dto: RenderDocumentDto, response: Response): Promise<PrintRenderSuccessResponse<RenderInspection> | void>;
+    log(dto: RecordPrintDto): Promise<PrintRenderSuccessResponse<{
+        printLogIds: string[];
+    }>>;
     providerList(): PrintRenderSuccessResponse<Array<{
         code: string;
         label: string;

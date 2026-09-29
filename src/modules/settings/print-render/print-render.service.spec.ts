@@ -202,11 +202,16 @@ function buildService(options: {
           template: {
             ptlId: '0196-template',
             ptlCompanyId: 'company-1',
+            ptlPurposeId: 'purpose-sale-invoice',
             ptlCode: 'SALE_INVOICE_TEST',
             ptlName: 'Tax Invoice — test',
           },
           datasets: options.datasets,
         }),
+    },
+    printPurpose: {
+      findFirst: () =>
+        Promise.resolve({ ppoSrcModule: 'SALES', ppoDocType: 'SALE_BILL', ppoAllowReprint: true }),
     },
   } as unknown as PrismaService;
 
@@ -518,5 +523,76 @@ describe('PrintRenderService.preview — a character-grid design', () => {
     await expect(
       service.preview({ versionId: '0196-version', context, params: {}, outputMode: 'PDF' }),
     ).rejects.toThrow(/cannot be rendered as PDF/);
+  });
+});
+
+describe('PrintRenderService.recordPrint — a print made from a preview', () => {
+  const fixture = loadCanvasFixture('gst-invoice-a4') as FixtureShape;
+
+  it("writes one row naming the revision, with the source quad from the revision's purpose", async () => {
+    const { service, logged, datasetCalls } = buildService({
+      version: versionFor(fixture),
+      datasets: datasetsFor(fixture),
+    });
+
+    const ids = await service.recordPrint({
+      versionId: '0196-version',
+      context,
+      outputMode: 'PRINT',
+      pageCount: 2,
+      byteCount: 48_000,
+    });
+
+    expect(ids).toEqual(['log-0']);
+    expect(logged).toEqual([
+      expect.objectContaining({
+        accYear: '2026-2027',
+        companyId: 'company-1',
+        srcModule: 'SALES',
+        srcDocType: 'SALE_BILL',
+        srcDocId: '0196-bill',
+        srcAccYear: '2026-2027',
+        purposeId: 'purpose-sale-invoice',
+        templateId: '0196-template',
+        versionId: '0196-version',
+        printerId: null,
+        outputMode: 'PRINT',
+        copyNo: 1,
+        status: 'SUCCESS',
+        pageCount: 2,
+        byteCount: 48_000,
+        printedBy: 'user-1',
+      }),
+    ]);
+    // A record, not a render: no dataset is read.
+    expect(datasetCalls).toEqual([]);
+  });
+
+  it('writes a row per document for a batch, without inventing per-document page counts', async () => {
+    const { service, logged } = buildService({
+      version: versionFor(fixture),
+      datasets: datasetsFor(fixture),
+    });
+
+    await service.recordPrint({
+      versionId: '0196-version',
+      context: { ...context, docId: null },
+      docIds: ['bill-a', 'bill-b', 'bill-c'],
+      outputMode: 'FILE',
+      pageCount: 3,
+      byteCount: 90_000,
+    });
+
+    expect(logged).toHaveLength(3);
+    expect((logged as { srcDocId: string }[]).map((row) => row.srcDocId)).toEqual([
+      'bill-a',
+      'bill-b',
+      'bill-c',
+    ]);
+    for (const row of logged) {
+      expect(row).toEqual(
+        expect.objectContaining({ outputMode: 'FILE', pageCount: null, byteCount: 90_000 }),
+      );
+    }
   });
 });

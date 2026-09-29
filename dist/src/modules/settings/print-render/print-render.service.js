@@ -137,6 +137,39 @@ let PrintRenderService = PrintRenderService_1 = class PrintRenderService {
             },
         };
     }
+    async recordPrint(request) {
+        const context = await this.withCurrentAccYear(request.context);
+        const bundle = await this.loadVersion(request.versionId, context.companyId);
+        const purposeId = bundle.template.ptlPurposeId;
+        const purpose = await this.loadPurpose(purposeId, context.companyId);
+        const accYear = await this.printLog.currentAccYear(context.companyId, context.accYear);
+        const docs = request.docIds && request.docIds.length > 0 ? request.docIds : [context.docId];
+        return this.printLog.record(docs.map((docId) => ({
+            accYear,
+            companyId: context.companyId,
+            branchId: context.branchId,
+            deviceId: context.deviceId,
+            srcModule: purpose.ppoSrcModule,
+            srcDocType: purpose.ppoDocType,
+            srcDocId: docId,
+            srcAccYear: context.accYear,
+            purposeId,
+            templateId: bundle.template.ptlId,
+            versionId: bundle.version.ptvId,
+            printerId: null,
+            outputMode: request.outputMode,
+            copyNo: 1,
+            copyLabel: null,
+            lang: bundle.version.ptvLang,
+            params: null,
+            status: 'SUCCESS',
+            error: null,
+            pageCount: docs.length === 1 ? (request.pageCount ?? null) : null,
+            byteCount: request.byteCount ?? null,
+            durationMs: null,
+            printedBy: context.userId,
+        })));
+    }
     async withCurrentAccYear(context) {
         const named = context.accYear?.trim();
         if (named && print_render_constants_1.ACC_YEAR_PATTERN.test(named)) {

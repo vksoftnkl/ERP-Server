@@ -19,6 +19,7 @@ module existed, none of it could produce a page.
 | --- | --- | --- |
 | `POST` | `/preview` | Render one revision you name. Nothing is logged. |
 | `POST` | `/print` | Render what the assignment ladder resolves to, and log every copy. |
+| `POST` | `/log` | Record a print made from a `/preview` — the print dialog's Print and Download. Renders nothing. |
 | `GET` | `/providers` | The dataset provider codes this build carries. |
 
 Both render routes answer with **bytes** — `application/pdf`, or
@@ -184,6 +185,11 @@ version.
   and swallowed, with the row's contents in the message.
 - Previews are **not** logged. A designer iterating a layout would put fifty rows into an
   immutable table that exists to answer "what did the customer get".
+- `/log` covers the print dialog, which renders through `/preview` so its Format button can
+  pick any design. When the operator then prints (`PRINT`) or saves the PDF (`FILE`) from the
+  popup, the client posts the revision it rendered and the documents; one row per document is
+  written, with the purpose, module and document type taken from the revision's template.
+  `REPRINT` is in `PLG_OUTPUT_MODES` but the live `ck_plg_output_mode` refuses it.
 
 ## Unsaved bodies
 

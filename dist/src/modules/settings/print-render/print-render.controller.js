@@ -22,6 +22,7 @@ const module_service_utils_1 = require("../../../common/utils/module-service.uti
 const print_data_provider_registry_1 = require("./data/print-data-provider.registry");
 const render_document_dto_1 = require("./dto/render-document.dto");
 const render_preview_dto_1 = require("./dto/render-preview.dto");
+const record_print_dto_1 = require("./dto/record-print.dto");
 const print_render_response_dto_1 = require("./dto/print-render-response.dto");
 const print_render_service_1 = require("./print-render.service");
 const print_render_exception_filter_1 = require("./print-render-exception.filter");
@@ -76,6 +77,22 @@ let PrintRenderController = class PrintRenderController {
             };
         }
         this.send(response, outcome, dto.filename ?? `${dto.srcDocType ?? 'document'}-${dto.docId}`);
+    }
+    async log(dto) {
+        const docIds = this.batchFrom(dto);
+        const printLogIds = await this.printRenderService.recordPrint({
+            versionId: dto.versionId,
+            context: this.contextFrom(dto),
+            outputMode: dto.outputMode,
+            ...(docIds.length > 0 ? { docIds } : {}),
+            ...(dto.pageCount !== undefined ? { pageCount: dto.pageCount } : {}),
+            ...(dto.byteCount !== undefined ? { byteCount: dto.byteCount } : {}),
+        });
+        return {
+            success: true,
+            message: printLogIds.length > 0 ? 'Print recorded' : 'The print could not be recorded; see the server log',
+            data: { printLogIds },
+        };
     }
     providerList() {
         return {
@@ -193,6 +210,24 @@ __decorate([
     __metadata("design:paramtypes", [render_document_dto_1.RenderDocumentDto, Object]),
     __metadata("design:returntype", Promise)
 ], PrintRenderController.prototype, "print", null);
+__decorate([
+    (0, common_1.Post)('log'),
+    (0, common_1.Version)(api_version_1.API_VERSION),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Record a print made from a preview',
+        description: 'The print dialog renders through /preview (so Format can pick any design) and the ' +
+            'operator then prints or saves from the popup. This appends one print_log row per ' +
+            'document for that act, pointing at the revision that was rendered; the purpose, module ' +
+            'and document type come from the revision. Nothing is rendered.',
+    }),
+    (0, swagger_1.ApiCreatedResponse)({ type: print_render_response_dto_1.PrintRenderLogSuccessDto }),
+    (0, swagger_1.ApiBadRequestResponse)({ type: print_render_response_dto_1.PrintRenderErrorResponseDto }),
+    (0, swagger_1.ApiNotFoundResponse)({ type: print_render_response_dto_1.PrintRenderErrorResponseDto }),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [record_print_dto_1.RecordPrintDto]),
+    __metadata("design:returntype", Promise)
+], PrintRenderController.prototype, "log", null);
 __decorate([
     (0, common_1.Get)('providers'),
     (0, common_1.Version)(api_version_1.API_VERSION),

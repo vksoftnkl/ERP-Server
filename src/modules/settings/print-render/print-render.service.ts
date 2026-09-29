@@ -30,6 +30,7 @@ import {
   RENDERER_FOR_OUTPUT_MODE,
   RENDER_COPY_TIMEOUT_MS,
   RENDER_TIMEOUT_MS,
+  RecordableOutputMode,
 } from './print-render.constants';
 import {
   PrintRenderErrorDetail,
@@ -112,6 +113,18 @@ export interface PrintRequest {
   readonly assignmentOutputMode?: string;
   readonly copies?: number;
   readonly isReprint?: boolean;
+}
+
+export interface RecordPrintRequest {
+  /** The revision the popup rendered — what `plg_version_id` points at. */
+  readonly versionId: string;
+  readonly context: RenderContext;
+  /** A batch. Left out, the print was of `context.docId`. */
+  readonly docIds?: readonly string[];
+  readonly outputMode: RecordableOutputMode;
+  /** The whole render's, as the client read them off the response. */
+  readonly pageCount?: number;
+  readonly byteCount?: number;
 }
 
 export interface PrintOutcome extends RenderOutcome {
@@ -289,6 +302,64 @@ export class PrintRenderService {
         outputMode: resolution.ptaOutputMode,
       },
     };
+  }
+
+  // ─── Record ────────────────────────────────────────────────────────────
+
+  /**
+   * Log a print that has already happened — the print dialog's paper and PDFs.
+   *
+   * The dialog renders through `preview`, because its Format button lets the
+   * operator choose the design and `print` only takes the ladder's winner. So
+   * the render is not the print: the operator looks, then prints or saves from
+   * the popup, and that act is what this writes. One row per document, pointing
+   * at the revision the popup rendered, with the source quad taken from that
+   * revision's purpose.
+   *
+   * Nothing is rendered. The version is loaded only to prove it is visible to
+   * this company and to find its template and purpose.
+   */
+  async recordPrint(request: RecordPrintRequest): Promise<string[]> {
+    const context = await this.withCurrentAccYear(request.context);
+    const bundle = await this.loadVersion(request.versionId, context.companyId);
+    const purposeId = bundle.template.ptlPurposeId;
+    const purpose = await this.loadPurpose(purposeId, context.companyId);
+    const accYear = await this.printLog.currentAccYear(context.companyId, context.accYear);
+
+    const docs: readonly (string | null)[] =
+      request.docIds && request.docIds.length > 0 ? request.docIds : [context.docId];
+
+    return this.printLog.record(
+      docs.map((docId) => ({
+        accYear,
+        companyId: context.companyId,
+        branchId: context.branchId,
+        deviceId: context.deviceId,
+        srcModule: purpose.ppoSrcModule,
+        srcDocType: purpose.ppoDocType,
+        srcDocId: docId,
+        srcAccYear: context.accYear,
+        purposeId,
+        templateId: bundle.template.ptlId,
+        versionId: bundle.version.ptvId,
+        // The browser's printer, which has no printer_profile row.
+        printerId: null,
+        outputMode: request.outputMode,
+        copyNo: 1,
+        copyLabel: null,
+        lang: bundle.version.ptvLang,
+        params: null,
+        status: 'SUCCESS',
+        error: null,
+        // A batch's page count is the whole file's; which document had how many
+        // pages is not known here, and dividing would invent it.
+        pageCount: docs.length === 1 ? (request.pageCount ?? null) : null,
+        // The whole file on every row, as `print` does for copies.
+        byteCount: request.byteCount ?? null,
+        durationMs: null,
+        printedBy: context.userId,
+      })),
+    );
   }
 
   // ─── The shared path ───────────────────────────────────────────────────
