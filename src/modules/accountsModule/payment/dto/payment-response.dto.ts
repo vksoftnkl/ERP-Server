@@ -649,7 +649,8 @@ export class PaymentAmendUnwoundDto {
     example: 1,
     description:
       'Leaves of the old post now CANCELLED ("Amended into revision N"). They stay on the ' +
-      'register and in the book — a leaf once out is never handed out again.',
+      'register and in the book — a leaf once out is never handed out again. Each carries ' +
+      'apd_amended_into_revision = N, so it does not block a later cancel or amend (notes 63).',
   })
   chequesRemoved!: number;
 

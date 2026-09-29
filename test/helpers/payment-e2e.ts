@@ -12,7 +12,7 @@ import { TokenService, type AccessTokenPayload } from '../../src/modules/auth/to
 import { AuthSessionService } from '../../src/modules/auth/auth-session.service';
 import { grantMenuRights, restoreMenuRights, type MenuRightsMemo } from './menu-rights';
 
-export { PAYMENT_MENU, RECEIPT_MENU } from './menu-rights';
+export { ISSUED_CHEQUES_MENU, PAYMENT_MENU, RECEIPT_MENU } from './menu-rights';
 
 /**
  * The harness every `test/payment-*.e2e-spec.ts` suite shares — plan

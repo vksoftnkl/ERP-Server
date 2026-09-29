@@ -85,6 +85,8 @@ export const VCH = {
   BOOK_NOT_FOUND: 'VCH_BOOK_NOT_FOUND',
   BOOK_OVERLAP: 'VCH_BOOK_OVERLAP',
   BOOK_INVALID: 'VCH_BOOK_INVALID',
+  // notes (64) — a cheque's on-account share has been spent off the advance
+  ADVANCE_SPENT: 'VCH_ADVANCE_SPENT',
 } as const;
 
 export type VoucherErrorCode = (typeof VCH)[keyof typeof VCH];

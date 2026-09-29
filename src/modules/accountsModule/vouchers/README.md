@@ -229,7 +229,12 @@ notes (55) and the received-cheques module. **Every name is listed at the end.**
   cancel) — each reverses the cheque's ONE line through a `ChqBnc` voucher
   against the payment: DR bank (the cheque) + DR TDS Payable (the line's
   deduction = its allocations − the cheque) / CR supplier (the gross); the
-  line's allocations by `abj_cheque_id`; a counter-row on the party's
+  line's allocations by `abj_cheque_id`; what the cheque paid ON ACCOUNT
+  (notes 64: the cheque less its allocations, capped at what the advance was
+  raised for) settled off the party's ADVANCE (DR) bill on the cheque's voucher
+  by a CR `ALLOCATION` row on the ChqBnc voucher, and refused
+  (`VCH_ADVANCE_SPENT`, naming the documents that used it) when less than that
+  is still open; a counter-row on the party's
   `acc_tds_register` row (refused if deposited, `VCH_TDS_DEPOSITED`);
   optional `charges` DR BANK_CHARGES / CR bank. `replace` (right: amend, + post
   on 261) stops a HELD cheque first, then raises a NEW PmtV

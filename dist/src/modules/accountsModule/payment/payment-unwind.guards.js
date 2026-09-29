@@ -16,6 +16,7 @@ async function assertIssuedChequesStillHeld(tx, scope, verb) {
             ...(await (0, payment_cheque_links_1.paymentChequeFilter)(tx, scope)),
             apdIsDeleted: false,
             apdStatus: { notIn: [...payment_enum_1.CANCELLABLE_PDC_STATUSES] },
+            apdAmendedIntoRevision: null,
         },
         select: { apdInstrumentNo: true, apdStatus: true },
     });

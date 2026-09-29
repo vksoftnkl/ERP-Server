@@ -24,6 +24,7 @@ export declare class IssuedChequesService {
     private unwind;
     replace(dto: ReplaceChequeDto): Promise<ReplacedChequePayload>;
     private lock;
+    private onAccountShare;
     private assertHeld;
     private load;
 }

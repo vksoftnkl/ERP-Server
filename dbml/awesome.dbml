@@ -574,6 +574,7 @@ Table acc_pdc_register {
   apdReplacedByAccYear String
   apdCancelDate DateTime
   apdCancelReason String
+  apdAmendedIntoRevision Int
   apdRemarks String
   apdChequeBookId String
   apdFavouring String

@@ -22,6 +22,14 @@ function refusal(verb: UnwindVerb): string {
  * returned, replaced. Once the bank has acted on our cheque the payment behind
  * it cannot be unmade here; the instrument is unwound on the Issued Cheques
  * screen (menu 52) first.
+ *
+ * A leaf an earlier AMEND of this payment cancelled is left out (notes 63).
+ * The amend keeps it live and CANCELLED so the book shows no gap (notes 62
+ * C1), and nobody acted on it: it is history of an earlier revision, and
+ * CANCELLED is terminal, so menu 52 has nothing to unwind. It is known by
+ * `apdAmendedIntoRevision`, which only the amend sets, not by its reason. A
+ * leaf STOPPED or VOIDED on menu 52 is CANCELLED too, with the column NULL
+ * and its own reversal voucher, and still refuses.
  */
 export async function assertIssuedChequesStillHeld(
   tx: Prisma.TransactionClient,
@@ -33,6 +41,7 @@ export async function assertIssuedChequesStillHeld(
       ...(await paymentChequeFilter(tx, scope)),
       apdIsDeleted: false,
       apdStatus: { notIn: [...CANCELLABLE_PDC_STATUSES] },
+      apdAmendedIntoRevision: null,
     },
     select: { apdInstrumentNo: true, apdStatus: true },
   });

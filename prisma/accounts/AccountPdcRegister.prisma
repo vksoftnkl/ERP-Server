@@ -78,6 +78,11 @@ model AccPdcRegister {
   apdReplacedByAccYear String?   @db.Char(9) @map("apd_replaced_by_acc_year")
   apdCancelDate        DateTime? @db.Date @map("apd_cancel_date")
   apdCancelReason      String?   @db.VarChar(250) @map("apd_cancel_reason")
+  // notes (63) — set by /payments/amend when it CANCELs a leaf of the old
+  // post: the revision the payment moved to. The unwind guards skip such a
+  // row (history of an earlier revision, not an act on the cheque); a Stop or
+  // Void on menu 52 leaves it NULL. ck_apd_amended: CANCELLED rows only.
+  apdAmendedIntoRevision Int?    @map("apd_amended_into_revision")
   apdRemarks           String?   @map("apd_remarks")
   // notes (55) — an ISSUED cheque (P): the book its leaf came from (no FK in
   // Prisma terms beyond the DB's own ck_apd_book_issued), who it is made out
@@ -126,7 +131,8 @@ model AccPdcRegister {
   //     ck_apd_acc_year, ck_apd_dates, ck_apd_deposited, ck_apd_cleared,
   //     ck_apd_bounced, ck_apd_replaced, ck_apd_replaced_pair (the
   //     replacement id and its year move together), ck_apd_cancelled,
-  //     ck_apd_self, ck_apd_posting, ck_apd_seq.
+  //     ck_apd_self, ck_apd_posting, ck_apd_seq, ck_apd_amended
+  //     (20260929120000_pdc_amended_into_revision).
   //   - No FK on apd_company_id / apd_branch_id / apd_salesman_id /
   //     apd_tender_id.
 }

@@ -234,6 +234,7 @@ let PaymentAmendService = class PaymentAmendService {
             },
             data: {
                 apdStatus: payment_enum_1.PdcStatus.CANCELLED,
+                apdAmendedIntoRevision: header.avhRevisionNo + 1,
                 apdCancelReason: `Amended into revision ${header.avhRevisionNo + 1}`,
                 apdCancelDate: now,
                 apdStatusOn: now,

@@ -17,6 +17,8 @@ import { PrismaClient } from '@prisma/client';
 /** tester1 (SUPER ADMIN) — every e2e suite's stubbed caller. */
 export const TESTER1 = '019e4f64-1d3f-7717-b252-cbe2b6ce0f8d';
 
+/** Issued Cheques — Stop / Void / Replace are judged on it (issued-cheques.service.ts). */
+export const ISSUED_CHEQUES_MENU = 52;
 export const RECEIPT_MENU = 99;
 export const PAYMENT_MENU = 100;
 

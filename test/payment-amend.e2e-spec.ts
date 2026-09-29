@@ -4,9 +4,11 @@ import * as request from 'supertest';
 import {
   ACTOR,
   BEARER,
+  BRANCH,
   COMPANY,
   bankTender,
   bootApp,
+  CASH_TENDER_TYPE,
   chequeTender,
   createAndPost,
   data,
@@ -21,6 +23,7 @@ import {
   stamp,
   today,
   type Masters,
+  ISSUED_CHEQUES_MENU,
   PAYMENT_MENU,
 } from './helpers/payment-e2e';
 
@@ -44,6 +47,11 @@ import {
  * notes (62) adds: an amend with a cheque (C1 — the old leaf stays on the
  * register as CANCELLED, a new leaf is taken), an amend with TDS (the old
  * deduction reversed), and the three refusals it shares with /cancel.
+ *
+ * notes (63) adds: the leaf an amend cancelled no longer blocks a later
+ * /cancel or /amend of the same payment, while a leaf STOPPED on menu 52
+ * still does. The Stop goes through the real `/issued-cheques/stop`, so the
+ * suite grants menu 52 as well as menu 100.
  */
 
 jest.setTimeout(240_000);
@@ -57,7 +65,7 @@ const api = () => request(app.getHttpServer());
 let settingMemo: { asvId: string; asvValue: string | null; created: boolean } | null = null;
 
 beforeAll(async () => {
-  await fixtures.grantRights([PAYMENT_MENU]);
+  await fixtures.grantRights([PAYMENT_MENU, ISSUED_CHEQUES_MENU]);
   masters = await loadMasters();
   app = await bootApp();
 
@@ -117,6 +125,17 @@ const amendBody = (
   baseRevision,
   editRemark: 'E2E — UTR keyed wrong',
   ...extra,
+});
+
+const cashTender = (amount: number) => ({
+  tdRowNo: 1,
+  tdTenderId: masters.cashTenderId,
+  tdTenderTypeId: CASH_TENDER_TYPE,
+  ...(masters.cashLedgerId ? { tdTenderLedgerId: masters.cashLedgerId } : {}),
+  tdAmount: amount,
+  // ck_td_cash_change: received − change must equal tdAmount.
+  tdReceivedAmt: amount,
+  tdChangeAmt: 0,
 });
 
 async function settingRow() {
@@ -498,6 +517,164 @@ describe('POST /payments/amend — R20 on a payment (e2e, live DB, writes)', () 
       expectStatus(refused, 409);
       expect(JSON.stringify(refused.body)).toContain('SETTLED');
       expect((await fixtures.headerRow(voucherId)).avhRevisionNo).toBe(0);
+    });
+  });
+
+  describe('a leaf the amend cancelled is history, not an act on the cheque (notes 63)', () => {
+    /** Posted by cheque, then amended to cash — pmt00398's path. */
+    async function chequeAmendedToCash(tag: string, amount: number) {
+      const partyId = await fixtures.createParty(tag);
+      const bill = await fixtures.createOpeningBill(partyId, 'CR', amount);
+      const book = await fixtures.createChequeBook(masters.bankLedgerId, 3);
+      const { voucherId, posted } = await createAndPost(
+        app,
+        fixtures,
+        draftBody(partyId, [chequeTender(masters, amount, book.chequeBookId)]),
+        {
+          allocations: [{ billId: bill.billId, billAccYear: bill.billAccYear, amount }],
+          onAccount: 0,
+        },
+      );
+      expectStatus(posted, 201);
+      const leaf = data<{ cheques: Array<{ apdId: string }> }>(posted).cheques[0];
+
+      const amended = await api()
+        .post(ROUTES.amend)
+        .set('Authorization', BEARER)
+        .send(amendBody(voucherId, partyId, bill, amount, 0, { tenders: [cashTender(amount)] }));
+      expectStatus(amended, 201);
+      expect(await leafRow(leaf.apdId)).toMatchObject({
+        apdStatus: 'CANCELLED',
+        apdIsDeleted: false,
+        apdCancelReason: 'Amended into revision 1',
+        apdAmendedIntoRevision: 1,
+      });
+      return { partyId, bill, book, voucherId, leafId: leaf.apdId };
+    }
+
+    const leafRow = (apdId: string) =>
+      prisma.accPdcRegister.findFirstOrThrow({
+        where: { apdId },
+        select: {
+          apdStatus: true,
+          apdIsDeleted: true,
+          apdCancelReason: true,
+          apdAmendedIntoRevision: true,
+        },
+      });
+
+    it('cancels a payment whose cheque an amend replaced by cash; the leaf keeps its amend reason', async () => {
+      const { bill, voucherId, leafId } = await chequeAmendedToCash('AMEND-THEN-CANCEL', 70);
+
+      const cancelled = await api()
+        .post(ROUTES.cancel)
+        .set('Authorization', BEARER)
+        .send({ ...keys(voucherId), reason: 'E2E notes 63 — amended, then cancelled' });
+      expectStatus(cancelled, 201);
+      expect((await fixtures.headerRow(voucherId)).avhVoucherStatus).toBe('CANCELLED');
+
+      // The cancel leaves the amend's leaf exactly as the amend left it.
+      expect(await leafRow(leafId)).toMatchObject({
+        apdStatus: 'CANCELLED',
+        apdIsDeleted: false,
+        apdCancelReason: 'Amended into revision 1',
+        apdAmendedIntoRevision: 1,
+      });
+      expect(Number((await fixtures.billRow(bill.billId)).ablPendingAmount)).toBe(70);
+    });
+
+    it('amends it a second time; the new leaf is a fresh one', async () => {
+      const { partyId, bill, book, voucherId, leafId } = await chequeAmendedToCash(
+        'AMEND-TWICE',
+        90,
+      );
+
+      const again = await api()
+        .post(ROUTES.amend)
+        .set('Authorization', BEARER)
+        .send(
+          amendBody(voucherId, partyId, bill, 90, 1, {
+            tenders: [chequeTender(masters, 90, book.chequeBookId)],
+          }),
+        );
+      expectStatus(again, 201);
+      const result = data<{
+        header: { avhRevisionNo: number };
+        cheques: Array<{ apdId: string; leaf: string }>;
+        unwound: { chequesRemoved: number };
+      }>(again);
+      expect(result.header.avhRevisionNo).toBe(2);
+      // Revision 1 was cash: there was no HELD leaf for this amend to cancel.
+      expect(result.unwound.chequesRemoved).toBe(0);
+      expect(Number(result.cheques[0].leaf)).toBe(book.leafFrom + 1);
+      expect(await leafRow(result.cheques[0].apdId)).toMatchObject({
+        apdStatus: 'HELD',
+        apdAmendedIntoRevision: null,
+      });
+      expect(await leafRow(leafId)).toMatchObject({
+        apdStatus: 'CANCELLED',
+        apdCancelReason: 'Amended into revision 1',
+        apdAmendedIntoRevision: 1,
+      });
+      expect(Number((await fixtures.billRow(bill.billId)).ablPendingAmount)).toBe(0);
+    });
+
+    it('still refuses once the leaf was STOPPED on menu 52', async () => {
+      const partyId = await fixtures.createParty('AMEND-STOPPED');
+      const bill = await fixtures.createOpeningBill(partyId, 'CR', 60);
+      const book = await fixtures.createChequeBook(masters.bankLedgerId, 2);
+      const { voucherId, posted } = await createAndPost(
+        app,
+        fixtures,
+        draftBody(partyId, [chequeTender(masters, 60, book.chequeBookId)]),
+        {
+          allocations: [{ billId: bill.billId, billAccYear: bill.billAccYear, amount: 60 }],
+          onAccount: 0,
+        },
+      );
+      expectStatus(posted, 201);
+      const cheque = data<{ cheques: Array<{ apdId: string; apdAccYear: string; leaf: string }> }>(
+        posted,
+      ).cheques[0];
+
+      const stopped = await api()
+        .post('/api/v1/issued-cheques/stop')
+        .set('Authorization', BEARER)
+        .send({
+          apdId: cheque.apdId,
+          apdAccYear: cheque.apdAccYear,
+          companyId: COMPANY,
+          branchId: BRANCH,
+          date: today(),
+          reason: 'E2E notes 63 — supplier asked for a transfer',
+        });
+      expectStatus(stopped, 200);
+      const stop = data<{ status: string; reversalVoucherId: string | null }>(stopped);
+      expect(stop.status).toBe('CANCELLED');
+      expect(stop.reversalVoucherId).not.toBeNull();
+      fixtures.vouchers.push(stop.reversalVoucherId as string);
+      expect((await leafRow(cheque.apdId)).apdAmendedIntoRevision).toBeNull();
+
+      const cancel = await api()
+        .post(ROUTES.cancel)
+        .set('Authorization', BEARER)
+        .send({ ...keys(voucherId), reason: 'E2E notes 63 — must be refused' });
+      expectStatus(cancel, 409);
+      const body = JSON.stringify(cancel.body);
+      expect(body).toContain(cheque.leaf);
+      expect(body).toContain('CANCELLED');
+      expect(body).toContain('52');
+
+      const amend = await api()
+        .post(ROUTES.amend)
+        .set('Authorization', BEARER)
+        .send(amendBody(voucherId, partyId, bill, 60, 0, { tenders: [cashTender(60)] }));
+      expectStatus(amend, 409);
+      expect(JSON.stringify(amend.body)).toContain('CANCELLED');
+
+      const header = await fixtures.headerRow(voucherId);
+      expect(header.avhVoucherStatus).toBe('POSTED');
+      expect(header.avhRevisionNo).toBe(0);
     });
   });
 });

@@ -88,6 +88,8 @@ export interface IssuedChequeReversal {
   tds: number;
   charges: number;
   allocationsReversed: number;
+  /** notes (64): what the cheque had paid on account, now taken off the payment's ADVANCE. */
+  onAccount: number;
 }
 
 export interface ReplacedChequePayload {

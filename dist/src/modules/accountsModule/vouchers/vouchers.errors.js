@@ -73,6 +73,7 @@ exports.VCH = {
     BOOK_NOT_FOUND: 'VCH_BOOK_NOT_FOUND',
     BOOK_OVERLAP: 'VCH_BOOK_OVERLAP',
     BOOK_INVALID: 'VCH_BOOK_INVALID',
+    ADVANCE_SPENT: 'VCH_ADVANCE_SPENT',
 };
 function newGuardContext(opts) {
     return {

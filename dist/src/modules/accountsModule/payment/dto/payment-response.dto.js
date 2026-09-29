@@ -902,7 +902,8 @@ __decorate([
     (0, swagger_1.ApiProperty)({
         example: 1,
         description: 'Leaves of the old post now CANCELLED ("Amended into revision N"). They stay on the ' +
-            'register and in the book — a leaf once out is never handed out again.',
+            'register and in the book — a leaf once out is never handed out again. Each carries ' +
+            'apd_amended_into_revision = N, so it does not block a later cancel or amend (notes 63).',
     }),
     __metadata("design:type", Number)
 ], PaymentAmendUnwoundDto.prototype, "chequesRemoved", void 0);

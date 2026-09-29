@@ -68,6 +68,7 @@ export interface IssuedChequeReversal {
     tds: number;
     charges: number;
     allocationsReversed: number;
+    onAccount: number;
 }
 export interface ReplacedChequePayload {
     replaced: IssuedChequePayload;

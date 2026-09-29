@@ -60,6 +60,7 @@ export declare const VCH: {
     readonly BOOK_NOT_FOUND: "VCH_BOOK_NOT_FOUND";
     readonly BOOK_OVERLAP: "VCH_BOOK_OVERLAP";
     readonly BOOK_INVALID: "VCH_BOOK_INVALID";
+    readonly ADVANCE_SPENT: "VCH_ADVANCE_SPENT";
 };
 export type VoucherErrorCode = (typeof VCH)[keyof typeof VCH];
 export interface VoucherErrorDetail extends AccountsErrorDetail {

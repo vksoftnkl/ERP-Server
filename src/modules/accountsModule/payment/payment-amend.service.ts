@@ -335,6 +335,9 @@ export class PaymentAmendService {
     //     rows only, so the database would stop guarding the number. The leaf
     //     stays used; the re-apply takes a fresh one. Only HELD rows reach
     //     here — assertIssuedChequesStillHeld refused anything the bank has seen.
+    //     apdAmendedIntoRevision marks the row as this amend's own (notes 63):
+    //     the guard skips it, so the payment can still be cancelled or amended
+    //     again. Without it the row reads as a cheque stopped on menu 52.
     const chequesRemoved = await tx.accPdcRegister.updateMany({
       where: {
         ...(await paymentChequeFilter(tx, { receiptVoucherId: header.avhVoucherId, voucherIds })),
@@ -343,6 +346,7 @@ export class PaymentAmendService {
       },
       data: {
         apdStatus: PdcStatus.CANCELLED,
+        apdAmendedIntoRevision: header.avhRevisionNo + 1,
         apdCancelReason: `Amended into revision ${header.avhRevisionNo + 1}`,
         apdCancelDate: now,
         apdStatusOn: now,

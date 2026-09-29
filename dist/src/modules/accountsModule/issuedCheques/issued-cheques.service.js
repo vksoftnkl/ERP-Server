@@ -169,7 +169,11 @@ let IssuedChequesService = class IssuedChequesService {
          AND j.abj_is_deleted = false AND j.abj_reversal_of_id IS NULL
          AND NOT EXISTS (SELECT 1 FROM accounts.acc_bill_adjustment r
                           WHERE r.abj_reversal_of_id = j.abj_id AND r.abj_is_deleted = false)`;
-        const gross = new client_1.Prisma.Decimal(standing?.total ?? cheque.apdAmount);
+        const billPart = new client_1.Prisma.Decimal(standing?.total ?? 0);
+        const onAccount = await this.onAccountShare(tx, cheque, billPart, o.how);
+        const gross = standing?.total == null && onAccount.share.isZero()
+            ? cheque.apdAmount
+            : billPart.plus(onAccount.share);
         const lineTds = gross.greaterThan(cheque.apdAmount) ? gross.minus(cheque.apdAmount) : ZERO;
         const [root] = await tx.$queryRaw `
       SELECT COALESCE(h.avh_against_voucher_id, h.avh_voucher_id) AS voucher_id,
@@ -286,8 +290,39 @@ let IssuedChequesService = class IssuedChequesService {
             actor: o.actor,
             reason: `Cheque ${cheque.apdInstrumentNo} ${label}`,
         });
-        if (reversed.bills.length > 0) {
-            await this.recompute.recomputeBills(tx, reversed.bills, now);
+        let rowNo = reversed.nextRowNo;
+        const takenBack = onAccount.takes.map((take) => ({
+            abjCompanyId: cheque.apdCompanyId,
+            abjBranchId: cheque.apdBranchId,
+            abjTenantId: cheque.apdTenantId,
+            abjAccYear: voucher.ref.accYear,
+            abjBillId: take.billId,
+            abjBillAccYear: take.accYear,
+            abjPartyId: cheque.apdPartyId,
+            abjRowNo: rowNo++,
+            abjVoucherId: voucher.ref.voucherId,
+            abjVoucherAccYear: voucher.ref.accYear,
+            abjAdjType: receipt_enum_1.BillAdjType.ALLOCATION,
+            abjAdjDate: on,
+            abjIsPostDated: false,
+            abjDrCr: receipt_enum_1.DrCr.CR,
+            abjAmount: take.amount,
+            abjSettlementMode: receipt_enum_1.BillSettlementMode.CHEQUE,
+            abjChequeId: cheque.apdId,
+            abjChequeAccYear: cheque.apdAccYear,
+            abjRemarks: `Cheque ${cheque.apdInstrumentNo} ${label}: its on-account share taken back`,
+            abjUserId: o.userId ?? o.actor,
+            abjCreatedBy: o.actor,
+        }));
+        if (takenBack.length > 0) {
+            await tx.accBillAdjustment.createMany({ data: takenBack });
+        }
+        const touched = [
+            ...reversed.bills,
+            ...onAccount.takes.map((take) => ({ billId: take.billId, accYear: take.accYear })),
+        ];
+        if (touched.length > 0) {
+            await this.recompute.recomputeBills(tx, touched, now);
         }
         if (tdsRow && lineTds.greaterThan(0)) {
             await tx.$executeRaw `
@@ -368,6 +403,7 @@ let IssuedChequesService = class IssuedChequesService {
             tds: Number(lineTds.toFixed(2)),
             charges: Number(fee.toFixed(2)),
             allocationsReversed: reversed.count,
+            onAccount: Number(onAccount.share.toFixed(2)),
         };
     }
     async replace(dto) {
@@ -492,6 +528,79 @@ let IssuedChequesService = class IssuedChequesService {
             (0, vouchers_errors_1.throwMissing)(`No issued cheque ${keys.apdId} in ${keys.apdAccYear} at this company / branch`, vouchers_errors_1.VCH.CHEQUE_NOT_FOUND, 'apdId');
         }
         return cheque;
+    }
+    async onAccountShare(tx, cheque, billPart, how) {
+        const none = { share: ZERO, takes: [] };
+        const rest = cheque.apdAmount.minus(billPart);
+        if (rest.lessThanOrEqualTo(0) || !cheque.apdVoucherId || !cheque.apdVoucherAccYear) {
+            return none;
+        }
+        const advances = await tx.accBillBalance.findMany({
+            where: {
+                ablVoucherId: cheque.apdVoucherId,
+                ablAccYear: cheque.apdVoucherAccYear,
+                ablPartyId: cheque.apdPartyId,
+                ablBillType: receipt_enum_1.BillType.ADVANCE,
+                ablDrCr: receipt_enum_1.DrCr.DR,
+                ablIsDeleted: false,
+            },
+            orderBy: [{ ablCreatedOn: 'asc' }, { ablId: 'asc' }],
+            select: {
+                ablId: true,
+                ablAccYear: true,
+                ablDocRefno: true,
+                ablBillAmount: true,
+                ablPendingAmount: true,
+            },
+        });
+        if (advances.length === 0) {
+            return none;
+        }
+        const raised = advances.reduce((s, a) => s.plus(a.ablBillAmount), ZERO);
+        const open = advances.reduce((s, a) => s.plus(a.ablPendingAmount ?? ZERO), ZERO);
+        const share = client_1.Prisma.Decimal.min(rest, raised);
+        if (open.lessThan(share)) {
+            const users = await tx.$queryRaw `
+        SELECT DISTINCT h.avh_voucher_refno AS voucher_refno, ab.abl_doc_refno AS against_refno
+          FROM accounts.acc_bill_adjustment j
+          LEFT JOIN accounts.acc_voucher_header h
+                 ON h.avh_voucher_id = j.abj_voucher_id AND h.avh_acc_year = j.abj_voucher_acc_year
+          LEFT JOIN accounts.acc_bill_balance ab
+                 ON ab.abl_id = j.abj_against_bill_id AND ab.abl_acc_year = j.abj_against_bill_acc_year
+         WHERE j.abj_bill_id = ANY(${advances.map((a) => a.ablId)}::uuid[])
+           AND j.abj_bill_acc_year = ${cheque.apdVoucherAccYear}::char(9)
+           AND j.abj_is_deleted = false AND j.abj_reversal_of_id IS NULL
+           AND NOT EXISTS (SELECT 1 FROM accounts.acc_bill_adjustment r
+                            WHERE r.abj_reversal_of_id = j.abj_id AND r.abj_is_deleted = false)`;
+            const named = users
+                .map((u) => u.voucher_refno
+                ? `${u.voucher_refno}${u.against_refno ? ` (against ${u.against_refno})` : ''}`
+                : (u.against_refno ?? null))
+                .filter((n) => Boolean(n));
+            const verb = {
+                RETURNED: 'recorded as returned',
+                STOPPED: 'stopped',
+                VOIDED: 'voided',
+                REPLACED: 'replaced',
+            }[how];
+            (0, vouchers_errors_1.throwState)(`Cheque ${cheque.apdInstrumentNo} paid ${share.toFixed(2)} on account, held as the advance ` +
+                `on ${advances[0].ablDocRefno}, and only ${open.toFixed(2)} of that advance is still open — ` +
+                `${raised.minus(open).toFixed(2)} of it was used by ${named.length > 0 ? named.join(', ') : 'a later document'}. ` +
+                `Reverse that use first; then the cheque can be ${verb}.`, vouchers_errors_1.VCH.ADVANCE_SPENT, 'apdId');
+        }
+        const takes = [];
+        let left = share;
+        for (const advance of advances) {
+            if (left.lessThanOrEqualTo(0)) {
+                break;
+            }
+            const take = client_1.Prisma.Decimal.min(left, advance.ablPendingAmount ?? ZERO);
+            if (take.greaterThan(0)) {
+                takes.push({ billId: advance.ablId, accYear: advance.ablAccYear, amount: take });
+                left = left.minus(take);
+            }
+        }
+        return { share, takes };
     }
     assertHeld(cheque, action) {
         if (cheque.apdStatus !== receipt_enum_1.PdcStatus.HELD) {

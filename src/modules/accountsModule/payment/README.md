@@ -186,12 +186,56 @@ charge is sent as `tdAmount: 5012.50, tdMdrAmt: 12.50`.
   of this yet.
 - **E3 / E4.** The post passes the tender Decimals through. The stale comments are corrected.
 
+## notes (63) — an amended payment could not be cancelled or amended again (2026-09-29)
+
+C1 left the old leaf live and CANCELLED, and `assertIssuedChequesStillHeld` refuses any live
+leaf past HELD. So it read the amend's own leaf as a cheque someone had acted on, and refused
+every later `/cancel` and `/amend` of the payment. It pointed the user to menu 52, where a
+CANCELLED leaf has nothing to unwind. pmt00398 (cheque → cash) was stuck POSTED this way.
+
+- **`acc_pdc_register.apd_amended_into_revision`** (migration
+  `20260929120000_pdc_amended_into_revision`). The amend sets it to the revision it moves to,
+  on each leaf it cancels, and the guard skips those rows. The guard reads the column, not
+  the reason text. `ck_apd_amended` allows the column only on a CANCELLED row. The migration
+  backfilled the leaves an amend had already cancelled, taking N from their reason.
+- **A Stop or Void on menu 52 still refuses.** Those also leave the leaf CANCELLED, but with
+  the column NULL and with their own reversal voucher.
+
+## notes (64) — a cheque paid on account could not be stopped or returned (2026-09-29)
+
+A payment's remainder is an ADVANCE (DR) bill, not an adjustment row, so the cheque that paid
+it has no `abj_cheque_id` row for that part. `IssuedChequesService.unwind()` (stop, returned,
+void, and replace of a HELD cheque) reversed only the rows. Its ChqBnc voucher put the ledger
+back but the ADVANCE stayed open, and the books check refused (pmt00494, pmt00497). A cheque
+paid partly to a bill and partly on account failed earlier still: its ChqBnc did not balance
+(DR bank the cheque, CR party only the bill part).
+
+- **The on-account share comes off the ADVANCE** (`onAccountShare`). The share is the cheque
+  less its standing allocations, capped at what the payment's ADVANCE bills for that party on
+  the cheque's voucher were raised for. The ChqBnc voucher credits the party with bills + share,
+  and a CR `ALLOCATION` row on it settles the share off the ADVANCE. The advance is settled,
+  not deleted: the payment is still POSTED, its leg still raised the advance, and part of the
+  advance may belong to another tender of the payment.
+- **Spent advance → refused** (`VCH_ADVANCE_SPENT`, 409) when less than the share is still open.
+  The message names each document that used the advance and the bill it went against. Refused,
+  not cascaded (the note left that call to us): reversing the use first is the operator's
+  decision. Only a shortfall refuses, so an advance funded by several tenders stays usable when
+  what was spent is no more than the other tenders put in.
+- **Not covered: a cheque that also paid an extra line** (a bank charge in `tdAmount`) with no
+  pooled money to take it. The allocation engine charges extras to the cheque, and no row
+  records that, so its ChqBnc still does not balance (`The voucher does not balance`), as
+  before. Stopping it needs the extra line reversed too. (Read from the engine; no test.)
+- **TDS held on account stays.** A deduction the bills could not hold (A1) sits in the ADVANCE
+  beside the money. The share is the money only, so after a stop that part of the advance stays
+  open, matching the TDS register row, which the stop does not reverse for a `/payments` cheque.
+  (Read from the engine; no test.)
+
 ## Tests
 
 - `receipt/allocation-engine.out.spec.ts` — the OUT twin of every engine case (30) plus notes
   (62)'s four (TDS on an advance, a bill smaller than the tax, a pinned line still refused, the
   approver carried), beside the receipt's 24, which are unchanged and pass.
-- `test/payment-*.e2e-spec.ts` (55 tests, five suites) over `test/helpers/payment-e2e.ts`, live
+- `test/payment-*.e2e-spec.ts` (58 tests, five suites) over `test/helpers/payment-e2e.ts`, live
   dev database, `--runInBand`. Each suite creates its own Sundry Creditors party, OPENING bills
   **with the matching `acc_opening_balance` row** (one per ledger — the net of its bills) so
   `accounts.reconcile_on_post` stays satisfied, and its own cheque books; `afterAll` removes all
@@ -218,4 +262,12 @@ charge is sent as `tdAmount: 5012.50, tdMdrAmt: 12.50`.
     in place (id, number, refno kept; revision +1), stale `baseRevision` 409, party change 409,
     setting off 409; with a cheque (old leaf CANCELLED, new leaf taken); with TDS
     (`tdsReversed` 1); refused once a cheque is presented, the advance spent, or the transfer
-    SETTLED.
+    SETTLED. notes (63): cheque → cash, then `/cancel` passes and the leaf keeps its amend
+    reason; cheque → cash → cheque passes and takes a fresh leaf; a leaf STOPPED through the
+    real `/issued-cheques/stop` still refuses both `/cancel` and `/amend`. The suite also grants
+    menu 52 for the Stop.
+- `test/issued-cheques-on-account.e2e-spec.ts` (notes 64, 6 tests), run for `/stop` and for
+  `/returned`, through the real routes (tester1 is granted menus 100 and 52): a cheque wholly on
+  account (the ADVANCE settled by the ChqBnc, the party reconciles to 0); the ADVANCE first
+  spent by another payment (409 `VCH_ADVANCE_SPENT` naming it, the leaf still HELD); 10 to a
+  bill + 5 on account (the bill reopens by 10, the ADVANCE by 5, the ChqBnc balances at 15).
