@@ -99,21 +99,40 @@ export class ItemsGroupMasterController {
 
   @Delete('delete')
   @Version(API_VERSION)
-  @ApiOperation({ summary: 'Soft delete item group by id' })
+  @ApiOperation({
+    summary: 'Soft delete item group by id',
+    description:
+      'Deletes only — it is not a toggle: an already deleted group is a 409 (use POST ' +
+      '/item-groups/restore). Refused with 409 while live sub-groups or live items still use it.',
+  })
   @ApiQuery({ name: 'itg_id', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: ItemGroupSuccessDeleteDto })
   @ApiBadRequestResponse({ type: ItemGroupErrorResponseDto })
   @ApiNotFoundResponse({ type: ItemGroupErrorResponseDto })
+  @ApiConflictResponse({ type: ItemGroupErrorResponseDto })
   async remove(
     @Query('itg_id', new ParseUUIDPipe({ version: '7' })) itgId: string,
   ): Promise<ItemGroupSuccessResponse<{ itg_id: string }>> {
-    const { itg_id, deleted } = await this.itemsGroupMasterService.toggleDelete(itgId);
+    const { itg_id } = await this.itemsGroupMasterService.softDelete(itgId);
+    return { success: true, message: 'Item group deleted successfully', data: { itg_id } };
+  }
 
-    return {
-      success: true,
-      message: deleted ? 'Item group deleted successfully' : 'Item group restored successfully',
-      data: { itg_id },
-    };
+  @Post('restore')
+  @Version(API_VERSION)
+  @ApiOperation({
+    summary: 'Restore a soft-deleted item group',
+    description: '409 when the group is not deleted, or when its parent group is.',
+  })
+  @ApiQuery({ name: 'itg_id', schema: { type: 'string', format: 'uuid' } })
+  @ApiCreatedResponse({ type: ItemGroupSuccessDeleteDto })
+  @ApiBadRequestResponse({ type: ItemGroupErrorResponseDto })
+  @ApiNotFoundResponse({ type: ItemGroupErrorResponseDto })
+  @ApiConflictResponse({ type: ItemGroupErrorResponseDto })
+  async restore(
+    @Query('itg_id', new ParseUUIDPipe({ version: '7' })) itgId: string,
+  ): Promise<ItemGroupSuccessResponse<{ itg_id: string }>> {
+    const { itg_id } = await this.itemsGroupMasterService.restore(itgId);
+    return { success: true, message: 'Item group restored successfully', data: { itg_id } };
   }
 
   private withUploadedPhoto(

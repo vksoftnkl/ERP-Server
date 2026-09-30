@@ -81,6 +81,7 @@ class SellingPriceRowDto {
     stockQty;
     mrp;
     salePrice;
+    maxPrice;
     priceSource;
     priceScope;
     bucketId;
@@ -118,7 +119,10 @@ __decorate([
     __metadata("design:type", Object)
 ], SellingPriceRowDto.prototype, "unitName", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ example: 42 }),
+    (0, swagger_1.ApiProperty)({
+        example: 42,
+        description: "On hand at the branch for this bucket, in this row's own unit.",
+    }),
     __metadata("design:type", Number)
 ], SellingPriceRowDto.prototype, "stockQty", void 0);
 __decorate([
@@ -131,21 +135,37 @@ __decorate([
 ], SellingPriceRowDto.prototype, "salePrice", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)({
+        example: 40,
+        description: "What the MRP column shows: the answering row's ipm_max_price — the bucket's MRP on a " +
+            "BUCKET row, the headline's own MRP on a MASTER row. Display only; mrp is the identity " +
+            'the save echoes.',
+    }),
+    __metadata("design:type", Number)
+], SellingPriceRowDto.prototype, "maxPrice", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
         enum: selling_price_bulk_types_1.PRICE_SOURCES,
-        description: 'The Src chip renders from this and priceScope, never from a string the API drew.',
+        description: 'The Src chip renders from this and priceScope, never from a string the API drew. ' +
+            'MASTER with mrp / salePrice set = this stock bucket has no row of its own yet; the ' +
+            'headline prices it and Save creates the bucket row.',
     }),
     __metadata("design:type", String)
 ], SellingPriceRowDto.prototype, "priceSource", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ enum: selling_price_bulk_types_1.PRICE_SCOPES }),
-    __metadata("design:type", String)
+    (0, swagger_1.ApiPropertyOptional)({
+        enum: selling_price_bulk_types_1.PRICE_SCOPES,
+        nullable: true,
+        description: 'Null when no price row answers for this bucket yet.',
+    }),
+    __metadata("design:type", Object)
 ], SellingPriceRowDto.prototype, "priceScope", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({
         type: String,
         format: 'uuid',
         nullable: true,
-        description: 'NULL when priceSource = MASTER.',
+        description: 'The item_price_master row (ipm_id) that answered — a bucket row on BUCKET, the headline ' +
+            'on MASTER. NULL when no row prices this bucket yet.',
     }),
     __metadata("design:type", Object)
 ], SellingPriceRowDto.prototype, "bucketId", void 0);
@@ -245,7 +265,7 @@ __decorate([
     __metadata("design:type", Boolean)
 ], SellingPriceBucketsSuccessDto.prototype, "success", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ example: '2 buckets found' }),
+    (0, swagger_1.ApiProperty)({ example: '4 price rows found' }),
     __metadata("design:type", String)
 ], SellingPriceBucketsSuccessDto.prototype, "message", void 0);
 __decorate([
@@ -353,11 +373,19 @@ class SellingPriceSaveDataDto {
 }
 exports.SellingPriceSaveDataDto = SellingPriceSaveDataDto;
 __decorate([
-    (0, swagger_1.ApiProperty)({ example: 12, description: 'stock_mrp_price rows written — S2 and S3 together.' }),
+    (0, swagger_1.ApiProperty)({
+        example: 12,
+        description: 'item_price_master rows written — S2 and S3 together, buckets and headlines alike.',
+    }),
     __metadata("design:type", Number)
 ], SellingPriceSaveDataDto.prototype, "saved", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ example: 2, description: 'item_price_master rows written by the §6 fan-out.' }),
+    (0, swagger_1.ApiProperty)({
+        example: 0,
+        deprecated: true,
+        description: 'ALWAYS 0. The headline fan-out is gone (one price table); kept for one release so a ' +
+            'client built against the frozen DTO does not break.',
+    }),
     __metadata("design:type", Number)
 ], SellingPriceSaveDataDto.prototype, "masterRowsSaved", void 0);
 __decorate([

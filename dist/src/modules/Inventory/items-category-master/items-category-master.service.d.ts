@@ -11,10 +11,15 @@ export declare class ItemsCategoryMasterService {
     save(saveItemCategoryDto: SaveItemCategoryDto): Promise<ItemCategoryPayload>;
     getById(categoryId: string): Promise<ItemCategoryPayload>;
     private getParentName;
-    toggleDelete(categoryId: string): Promise<{
+    softDelete(categoryId: string): Promise<{
         category_id: string;
         deleted: boolean;
     }>;
+    restore(categoryId: string): Promise<{
+        category_id: string;
+        deleted: boolean;
+    }>;
+    private setDeleted;
     private createItemCategory;
     private updateItemCategory;
     private ensureParentExists;

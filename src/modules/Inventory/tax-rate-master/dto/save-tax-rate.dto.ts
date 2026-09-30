@@ -1,4 +1,4 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { IsArray, IsOptional, ValidateNested } from 'class-validator';
 import {
@@ -9,7 +9,7 @@ import {
   OptionalNumber,
   OptionalUpperMaxString,
   OptionalUuid,
-  TrimmedString,
+  OptionalTrimmedString,
 } from 'src/common/dto/dtoDecorators';
 import { SaveTaxRateLedgerDto } from './save-tax-rate-ledger.dto';
 
@@ -29,13 +29,15 @@ export class SaveTaxRateDto {
   @OptionalUuid()
   tax_id?: string;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     maxLength: 100,
     example: 'GST 18%',
-    description: 'Unique among live rates, case-insensitively. A soft-deleted name is reusable.',
+    description:
+      'Required on create. On update it may be omitted and the stored name stands (notes 70 D9). ' +
+      'Unique among live rates, case-insensitively. A soft-deleted name is reusable.',
   })
-  @TrimmedString(100)
-  tax_name!: string;
+  @OptionalTrimmedString(100)
+  tax_name?: string;
 
   @ApiPropertyOptional({
     maxLength: 30,

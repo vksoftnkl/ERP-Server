@@ -11,6 +11,10 @@ import type {
   StockPostShape,
   StockVoucherTypeRules,
 } from './types/stock-voucher.types';
+import {
+  normalizeBucketValue,
+  type BucketKey,
+} from '../../Inventory/items-price-master/price-resolver';
 /**
  * THE POSTING ENGINE, IN THE APPLICATION RATHER THAN IN THE DATABASE.
  *
@@ -360,6 +364,10 @@ export function effectivePolicyCte(): Prisma.Sql {
  * `fn_slt_resolve` looks them up: a batch number is a label read off a carton,
  * and 'b-2604', 'B-2604' and 'B-2604 ' are one carton. The original spelling
  * is what the lot STORES (`lot_batch_no` in `postingCte`); only the key folds.
+ *
+ * `key_mrp` / `key_sp` are also the PRICE BUCKET's key: `bucketKeyFor` below is
+ * the same blanking rule for the callers that price a line rather than post
+ * one. Change one and the other in the same commit.
  */
 export function lotIdentityKeyColumns(): Prisma.Sql {
   return Prisma.sql`
@@ -371,6 +379,107 @@ export function lotIdentityKeyColumns(): Prisma.Sql {
              COALESCE(CASE WHEN policy.track_supplier   THEN line.svi_supplier_id END,
                       '00000000-0000-0000-0000-000000000000'::uuid)                                                    AS key_supplier
   `;
+}
+/** The two policy flags that decide which price dimensions are a bucket. */
+export interface BucketTrackFlags {
+  trackMrp: boolean;
+  trackSalePrice: boolean;
+}
+
+/**
+ * The PRICE BUCKET a line or a price row belongs to — the MRP and sale-price
+ * half of `lotIdentityKeyColumns`, in TypeScript, for the callers that are not
+ * a posting statement (the sale lookup, the item card, menu 30).
+ *
+ * THE SAME RULE AS THE LOT, deliberately: a dimension is kept only when the
+ * item's effective policy tracks it (`key_mrp` / `key_sp` above), so a price
+ * bucket and a lot can never disagree about which dimensions exist. An
+ * untracked item therefore always resolves (NULL, NULL) — its headline row —
+ * whatever MRP the bill typed. Feed it the policy `effectivePolicyLateral`
+ * answers at the document's date (`readBucketTrackFlags` below).
+ *
+ * One refinement the lot does not need: a tracked value that is not positive is
+ * NULL here. A lot may be keyed on MRP 0; a price row may not
+ * (`ck_ipm_bucket_mrp`), and MRP 0 is how a skip_mrp shop says "no MRP" — so
+ * such a line prices off the headline, which is what it always did.
+ */
+export function bucketKeyFor(
+  policy: BucketTrackFlags | null | undefined,
+  value: { mrp?: number | null; salePrice?: number | null },
+): BucketKey {
+  return {
+    mrp: policy?.trackMrp ? normalizeBucketValue(value.mrp) : null,
+    salePrice: policy?.trackSalePrice ? normalizeBucketValue(value.salePrice) : null,
+  };
+}
+
+/**
+ * `bucketKeyFor` as SQL, for a statement that prices many rows at once (menu
+ * 30's grid): each dimension kept only when the policy tracks it AND it is
+ * positive, else NULL. The arguments are column references from the caller's
+ * own aliases, never request values.
+ */
+export function bucketKeySql(args: {
+  trackMrp: Prisma.Sql;
+  trackSalePrice: Prisma.Sql;
+  mrp: Prisma.Sql;
+  salePrice: Prisma.Sql;
+}): { mrp: Prisma.Sql; salePrice: Prisma.Sql } {
+  return {
+    mrp: Prisma.sql`CASE WHEN ${args.trackMrp} AND ${args.mrp} > 0 THEN ${args.mrp} END`,
+    salePrice: Prisma.sql`CASE WHEN ${args.trackSalePrice} AND ${args.salePrice} > 0 THEN ${args.salePrice} END`,
+  };
+}
+
+/** One (item, scope) the bucket flags are wanted for. */
+export interface BucketPolicyScope {
+  itemId: string;
+  companyId: string | null;
+  branchId: string | null;
+}
+
+/**
+ * `trackMrp` / `trackSalePrice` for each (item, company, branch), through
+ * `effectivePolicyLateral` — the one policy resolver the post, the preflight
+ * and the opening picker already share. Answers in the order asked; an item
+ * with no policy row tracks nothing (both false), exactly as the post reads it.
+ *
+ * NULLs travel as '' inside a text[] because a uuid[] parameter cannot carry
+ * them portably; NULLIF turns them back before the lateral sees them.
+ */
+export async function readBucketTrackFlags(
+  client: Pick<Prisma.TransactionClient, '$queryRaw'>,
+  scopes: readonly BucketPolicyScope[],
+  onDate: string,
+): Promise<BucketTrackFlags[]> {
+  if (!scopes.length) {
+    return [];
+  }
+  const rows = await client.$queryRaw<
+    Array<{ ord: bigint; trackMrp: boolean; trackSalePrice: boolean }>
+  >`
+    SELECT q.ord,
+           COALESCE(stp.stp_track_mrp,        false) AS "trackMrp",
+           COALESCE(stp.stp_track_sale_price, false) AS "trackSalePrice"
+      FROM unnest(${scopes.map((s) => s.itemId)}::text[],
+                  ${scopes.map((s) => s.companyId ?? '')}::text[],
+                  ${scopes.map((s) => s.branchId ?? '')}::text[])
+           WITH ORDINALITY AS q(item_id, company_id, branch_id, ord)
+      JOIN inventory.item_master itm ON itm.item_id = q.item_id::uuid
+      ${effectivePolicyLateral({
+        companyId: Prisma.raw("NULLIF(q.company_id, '')::uuid"),
+        branchId: Prisma.raw("NULLIF(q.branch_id, '')::uuid"),
+        itemId: Prisma.raw('itm.item_id'),
+        itemGroupId: Prisma.raw('itm.item_group_id'),
+        onDate: Prisma.sql`${onDate}::date`,
+      })}
+     ORDER BY q.ord
+  `;
+  const byOrd = new Map(rows.map((row) => [Number(row.ord), row]));
+  return scopes.map((_, index) => {
+    const row = byOrd.get(index + 1);
+    return { trackMrp: row?.trackMrp ?? false, trackSalePrice: row?.trackSalePrice ?? false };
+  });
 }
 /**
  * The reason a line moves under: its own, else the header's. Expects a `line`

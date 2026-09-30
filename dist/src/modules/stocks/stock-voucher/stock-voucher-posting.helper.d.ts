@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client';
 import type { StockVoucherTypeRules } from './types/stock-voucher.types';
+import { type BucketKey } from '../../Inventory/items-price-master/price-resolver';
 export declare const STOCK_LEDGER_SRC_MODULE = "STOCK";
 export interface StockLedgerSourceLabel {
     srcModule: 'SALES' | 'PURCHASE' | 'STOCK';
@@ -36,6 +37,29 @@ export declare function effectivePolicyLateral(scope: {
 }): Prisma.Sql;
 export declare function effectivePolicyCte(): Prisma.Sql;
 export declare function lotIdentityKeyColumns(): Prisma.Sql;
+export interface BucketTrackFlags {
+    trackMrp: boolean;
+    trackSalePrice: boolean;
+}
+export declare function bucketKeyFor(policy: BucketTrackFlags | null | undefined, value: {
+    mrp?: number | null;
+    salePrice?: number | null;
+}): BucketKey;
+export declare function bucketKeySql(args: {
+    trackMrp: Prisma.Sql;
+    trackSalePrice: Prisma.Sql;
+    mrp: Prisma.Sql;
+    salePrice: Prisma.Sql;
+}): {
+    mrp: Prisma.Sql;
+    salePrice: Prisma.Sql;
+};
+export interface BucketPolicyScope {
+    itemId: string;
+    companyId: string | null;
+    branchId: string | null;
+}
+export declare function readBucketTrackFlags(client: Pick<Prisma.TransactionClient, '$queryRaw'>, scopes: readonly BucketPolicyScope[], onDate: string): Promise<BucketTrackFlags[]>;
 export declare function lineReasonJoin(): Prisma.Sql;
 export declare function lineDirectionColumn(rules: StockVoucherTypeRules): Prisma.Sql;
 export declare function lotlessOutwardLine(): Prisma.Sql;

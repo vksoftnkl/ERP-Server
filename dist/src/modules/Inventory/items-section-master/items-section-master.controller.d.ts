@@ -13,6 +13,10 @@ export declare class ItemsSectionMasterController {
         sec_id: string;
         deleted: boolean;
     }>>;
+    restore(secId: string): Promise<ItemSectionSuccessResponse<{
+        sec_id: string;
+        deleted: boolean;
+    }>>;
     private withUploadedPhoto;
 }
 export {};

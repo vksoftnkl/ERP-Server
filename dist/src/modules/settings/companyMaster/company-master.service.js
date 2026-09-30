@@ -180,6 +180,7 @@ let CompanyMasterService = class CompanyMasterService {
                 await this.ensureNameIsUnique(tx, compName);
                 await this.ensureCodeIsUnique(tx, saveCompanyMasterDto.compCode ?? null);
                 await this.ensureGstinIsUnique(tx, saveCompanyMasterDto.compGstinNo ?? null);
+                await this.ensureThemeIsLive(tx, saveCompanyMasterDto.compStylesheetId);
                 if (saveCompanyMasterDto.compDefault === true) {
                     await this.clearDefaultCompany(tx);
                 }
@@ -232,6 +233,9 @@ let CompanyMasterService = class CompanyMasterService {
                 await this.ensureNameIsUnique(tx, compName, compId);
                 await this.ensureCodeIsUnique(tx, saveCompanyMasterDto.compCode ?? null, compId);
                 await this.ensureGstinIsUnique(tx, saveCompanyMasterDto.compGstinNo ?? null, compId);
+                if (saveCompanyMasterDto.compStylesheetId !== existing.compStylesheetId) {
+                    await this.ensureThemeIsLive(tx, saveCompanyMasterDto.compStylesheetId);
+                }
                 if (saveCompanyMasterDto.compDefault === true) {
                     await this.clearDefaultCompany(tx, compId);
                 }
@@ -488,6 +492,20 @@ let CompanyMasterService = class CompanyMasterService {
     }
     throwNotFound(compId) {
         (0, module_service_utils_1.throwSettingsNotFound)('Company not found', 'compId', `No active company found with id ${compId}`);
+    }
+    async ensureThemeIsLive(tx, thmId) {
+        if (thmId === null || thmId === undefined) {
+            return;
+        }
+        const theme = await tx.appThemeMaster.findFirst({
+            where: { thmId, thmIsActive: true, thmIsDeleted: false },
+            select: { thmId: true },
+        });
+        if (!theme) {
+            this.throwBadRequest('Validation failed', [
+                { field: 'compStylesheetId', message: `theme ${thmId} is not active` },
+            ]);
+        }
     }
     throwBadRequest(message, errors) {
         (0, module_service_utils_1.throwSettingsBadRequest)(message, errors);

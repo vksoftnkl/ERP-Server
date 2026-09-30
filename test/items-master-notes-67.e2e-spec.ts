@@ -4,6 +4,7 @@ import { AuditLogService } from '../src/modules/audit-log/audit-log.service';
 import { RequestContextService } from '../src/common/request-context/request-context.service';
 import { ItemUnitConversionService } from '../src/modules/Inventory/item-unit-conversion/item-unit-conversion.service';
 import { ItemsPriceMasterService } from '../src/modules/Inventory/items-price-master/items-price-master.service';
+import { PriceBucketService } from '../src/modules/Inventory/items-price-master/price-bucket.service';
 import { ItemsEanCodeMasterService } from '../src/modules/Inventory/items-ean-code-master/items-ean-code-master.service';
 import { ItemsReorderMasterService } from '../src/modules/Inventory/items-reorder-master/items-reorder-master.service';
 import { ItemMasterUpdateService } from '../src/modules/Inventory/items-master/item-master-update.service';
@@ -11,6 +12,7 @@ import { ItemsMasterService } from '../src/modules/Inventory/items-master/items-
 import { StockTrackPolicyService } from '../src/modules/stocks/stock-track-policy/stock-track-policy.service';
 import { effectivePolicyLateral } from '../src/modules/stocks/stock-voucher/stock-voucher-posting.helper';
 import { OpeningStockLookupService } from '../src/modules/stocks/opening-stock-voucher/opening-stock-lookup.service';
+import { PriceBucketGateway } from '../src/modules/stocks/selling-price-bulk/price-bucket.gateway';
 import type { SaveItemCompositeDto } from '../src/modules/Inventory/items-master/dto/save-item-composite.dto';
 
 /**
@@ -101,7 +103,11 @@ describe('Item master, notes 67 / 68 / 69 (e2e — one rolled-back transaction)'
     const db = transactional(tx);
     const grid = {} as never;
     const iuc = new ItemUnitConversionService(db, audit, grid, ctx);
-    const price = new ItemsPriceMasterService(db, audit, grid, ctx);
+    // No setting overrides: sales.default_price_level reads its catalog default.
+    const buckets = new PriceBucketService({
+      resolveEffective: () => Promise.resolve([]),
+    } as never);
+    const price = new ItemsPriceMasterService(db, audit, grid, ctx, buckets);
     const ean = new ItemsEanCodeMasterService(db, audit, grid, ctx);
     const reorder = new ItemsReorderMasterService(db, audit, grid, ctx);
     policy = new StockTrackPolicyService(db, audit, ctx);
@@ -113,8 +119,9 @@ describe('Item master, notes 67 / 68 / 69 (e2e — one rolled-back transaction)'
       price,
       ean,
       reorder,
-      new ItemMasterUpdateService(iuc, price, ean, reorder),
+      new ItemMasterUpdateService(iuc, price, ean, reorder, buckets),
       policy,
+      buckets,
     );
   });
 
@@ -466,7 +473,10 @@ describe('Item master, notes 67 / 68 / 69 (e2e — one rolled-back transaction)'
         item_group_id: grp.itgId,
       }),
     );
-    const lookup = new OpeningStockLookupService(transactional(tx), { isDeployed: false } as never);
+    const lookup = new OpeningStockLookupService(
+      transactional(tx),
+      new PriceBucketGateway(transactional(tx)),
+    );
     const found = await lookup.lookupItem({
       companyId: fixture.companyId,
       branchId: fixture.branchX,

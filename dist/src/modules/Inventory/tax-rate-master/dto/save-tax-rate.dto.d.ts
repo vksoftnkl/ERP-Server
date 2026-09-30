@@ -1,7 +1,7 @@
 import { SaveTaxRateLedgerDto } from './save-tax-rate-ledger.dto';
 export declare class SaveTaxRateDto {
     tax_id?: string;
-    tax_name: string;
+    tax_name?: string;
     tax_code?: string | null;
     tax_sort_order?: number;
     tax_taxability?: string;

@@ -31,7 +31,8 @@ tree per branch, with a cached ancestor path on every node.
 | `POST` | `/create` | Create **or** update a godown location — routed by presence of `gdl_id` in the body. Returns `201` on create, `200` on update. |
 | `GET` | `/` | Fetch one location by `gdl_id` query param (alias of `/get`). |
 | `GET` | `/get` | Fetch one active location by `gdl_id` query param. |
-| `DELETE` | `/delete` | Soft-delete **or restore** a location by `gdl_id` query param (toggles `gdl_is_deleted`). |
+| `DELETE` | `/delete` | Soft-delete a location by `gdl_id` query param. Not a toggle: 409 when already deleted. |
+| `POST` | `/restore` | Restore a soft-deleted location by `gdl_id` query param. |
 
 Both `GET` routes require a `gdl_id` query parameter and return a single record — there is no
 "list all" endpoint.
@@ -62,14 +63,20 @@ Both `GET` routes require a `gdl_id` query parameter and return a single record 
 
 ### Soft delete / restore
 
-- `DELETE /delete` **toggles** `gdl_is_deleted` rather than only deleting — deleting an active
-  row soft-deletes it, deleting an already-deleted row restores it. The row is looked up
-  regardless of current deleted state, and the flip uses a guarded `updateMany`
-  (`gdlIsDeleted: wasDeleted`) so a concurrent change is detected.
-- On delete the node's active subtree ids are removed from ancestor path caches; on restore they
-  are re-appended.
-- Response message and payload reflect the resulting state (`deleted: true` = soft deleted,
-  `false` = restored).
+- `DELETE /delete` **deletes only** — it is not a toggle (notes 70 C1). An already deleted location
+  is a **409**; `POST /godowns/restore` brings one back, and is itself a 409 when the location is not
+  deleted or its parent is (the row would come back an orphan).
+- DELETE is refused (**409**, naming what is in the way) while child locations, stock on hand there, or a branch's default godown still point at it.
+- Both run in one transaction with a guarded `updateMany`; rows are never hard-deleted. On delete the
+  active subtree ids leave the ancestors' path caches; on restore they are read back AFTER the row
+  is live again and re-appended.
+- **Levels are depths** (a root is 1), computed by `relevelSubtree` on every create and update and
+  never taken from the payload; a re-parent re-levels the whole subtree. A node cannot move under
+  itself or one of its descendants (400). All three rules live in `../utils/master-tree.helper.ts`
+  (notes 70 B1-B3).
+- An update that OMITS `gdl_parent_id` or `gdl_name` keeps them (notes 70 B5); `null` or `""`
+  still makes the location a root. `gdl_type` is one of WAREHOUSE / ZONE / AISLE / RACK / SHELF /
+  BIN (DTO 400, `ck_gdl_type`).
 
 ### Uniqueness & validation
 

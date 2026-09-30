@@ -38,6 +38,8 @@ class ItemPricePayloadDto {
     ipm_price_c_markup_perc;
     ipm_price_d_markup_perc;
     ipm_max_price;
+    ipm_bucket_mrp;
+    ipm_bucket_sp;
     ipm_min_price;
     ipm_disc_perc;
     ipm_disc_qty;
@@ -153,6 +155,26 @@ __decorate([
     (0, swagger_1.ApiProperty)({ example: 0 }),
     __metadata("design:type", Number)
 ], ItemPricePayloadDto.prototype, "ipm_max_price", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        type: Number,
+        nullable: true,
+        example: 40,
+        description: 'The MRP bucket this row prices. DERIVED by the server from the stock track policy ' +
+            '(NULLIF(ipm_max_price, 0) under track_mrp) and never accepted on a save. Null with ' +
+            'ipm_bucket_sp null = the headline row.',
+    }),
+    __metadata("design:type", Object)
+], ItemPricePayloadDto.prototype, "ipm_bucket_mrp", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        type: Number,
+        nullable: true,
+        description: 'The sale-price bucket this row prices — the price at sales.default_price_level under ' +
+            'track_sale_price. Derived, never accepted on a save.',
+    }),
+    __metadata("design:type", Object)
+], ItemPricePayloadDto.prototype, "ipm_bucket_sp", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)({ example: 0 }),
     __metadata("design:type", Number)

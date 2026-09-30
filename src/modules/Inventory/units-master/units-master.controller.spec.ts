@@ -35,7 +35,8 @@ describe('UnitsMasterController', () => {
     save: jest.fn(),
     list: jest.fn(),
     getById: jest.fn(),
-    toggleDelete: jest.fn(),
+    softDelete: jest.fn(),
+    restore: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -92,7 +93,7 @@ describe('UnitsMasterController', () => {
   });
 
   it('returns wrapped soft delete response', async () => {
-    serviceMock.toggleDelete.mockResolvedValue({
+    serviceMock.softDelete.mockResolvedValue({
       unit_id: UNIT_ID,
       deleted: true,
     });
@@ -108,12 +109,12 @@ describe('UnitsMasterController', () => {
   });
 
   it('returns wrapped restore response', async () => {
-    serviceMock.toggleDelete.mockResolvedValue({
+    serviceMock.restore.mockResolvedValue({
       unit_id: UNIT_ID,
       deleted: false,
     });
 
-    await expect(controller.remove(UNIT_ID)).resolves.toEqual({
+    await expect(controller.restore(UNIT_ID)).resolves.toEqual({
       success: true,
       message: 'Unit restored successfully',
       data: {

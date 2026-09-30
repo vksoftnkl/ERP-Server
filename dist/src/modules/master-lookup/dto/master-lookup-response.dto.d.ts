@@ -149,6 +149,21 @@ export declare class CustomerDetailSuccessDto {
     message: string;
     data: CustomerDetailDto;
 }
+export declare class ItemPriceBucketDto {
+    mrp: number | null;
+    sale_price: number | null;
+    available_qty: number;
+    price_source: 'BUCKET' | 'MASTER' | null;
+    price_scope: 'BRANCH' | 'CHAIN' | null;
+    price_row_id: string | null;
+    sales_price: number;
+    sales_price_a: number;
+    sales_price_b: number;
+    sales_price_c: number;
+    sales_price_d: number;
+    max_price: number;
+    min_price: number;
+}
 export declare class ItemPriceLookupPayloadDto {
     item_id: string;
     item_uc_id: string;
@@ -174,6 +189,10 @@ export declare class ItemPriceLookupPayloadDto {
     cost_wot: number;
     min_price: number;
     max_price: number;
+    price_source: 'BUCKET' | 'MASTER';
+    price_scope: 'BRANCH' | 'CHAIN';
+    price_row_id: string;
+    buckets: ItemPriceBucketDto[];
     disc_perc: number;
     disc_qty: number;
     sch_discount: number | null;

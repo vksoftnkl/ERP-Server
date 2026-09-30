@@ -24,6 +24,9 @@ type PrismaMock = {
     update: jest.Mock<Promise<ItemSectionMaster>, [Prisma.ItemSectionMasterUpdateArgs]>;
     updateMany: jest.Mock<Promise<Prisma.BatchPayload>, [Prisma.ItemSectionMasterUpdateManyArgs]>;
   };
+  // The hierarchy guards and re-levelling (master-tree.helper) are raw SQL.
+  $queryRaw: jest.Mock;
+  $executeRaw: jest.Mock;
   $transaction: jest.Mock<Promise<unknown>, [(tx: Prisma.TransactionClient) => Promise<unknown>]>;
 };
 
@@ -75,6 +78,11 @@ describe('ItemsSectionMasterService', () => {
           [Prisma.ItemSectionMasterUpdateManyArgs]
         >(),
       },
+      // No cycle, no live children or references, a live parent: the guards pass.
+      $queryRaw: jest
+        .fn()
+        .mockResolvedValue([{ hit: false, n: 0n, names: null, live: true, ord: 0 }]),
+      $executeRaw: jest.fn().mockResolvedValue(0),
       $transaction: jest.fn<
         Promise<unknown>,
         [(tx: Prisma.TransactionClient) => Promise<unknown>]
@@ -120,7 +128,10 @@ describe('ItemsSectionMasterService', () => {
     expect(prisma.itemSectionMaster.create).toHaveBeenCalledTimes(1);
     const createArgs = prisma.itemSectionMaster.create.mock.calls[0][0];
     expect(createArgs.data.secName).toBe('Dairy');
-    expect(createArgs.data.secLevel).toBe(1);
+    // The level is the node's depth, set by relevelSubtree in SQL — never
+    // written from the payload (notes 70 B1/B2).
+    expect(createArgs.data.secLevel).toBeUndefined();
+    expect(prisma.$executeRaw).toHaveBeenCalled();
     expect(result.sec_id).toBe(ITEM_SECTION_ID);
     expect(result.sec_path_ids).toEqual([ITEM_SECTION_ID]);
   });
@@ -231,7 +242,10 @@ describe('ItemsSectionMasterService', () => {
     });
 
     const createArgs = prisma.itemSectionMaster.create.mock.calls[0][0];
-    expect(createArgs.data.secLevel).toBe(2);
+    // The level is the node's depth, set by relevelSubtree in SQL — never
+    // written from the payload (notes 70 B1/B2).
+    expect(createArgs.data.secLevel).toBeUndefined();
+    expect(prisma.$executeRaw).toHaveBeenCalled();
     expect(result.sec_id).toBe(CHILD_SECTION_ID);
 
     const parentUpdateArgs = prisma.itemSectionMaster.update.mock.calls[1][0];
@@ -356,7 +370,10 @@ describe('ItemsSectionMasterService', () => {
     });
 
     const updateArgs = prisma.itemSectionMaster.update.mock.calls[0][0];
-    expect(updateArgs.data.secLevel).toBe(2);
+    // The level is the node's depth, set by relevelSubtree in SQL — never
+    // written from the payload (notes 70 B1/B2).
+    expect(updateArgs.data.secLevel).toBeUndefined();
+    expect(prisma.$executeRaw).toHaveBeenCalled();
     expect(result.sec_parent_id).toBe(NEW_PARENT_SECTION_ID);
 
     const oldParentUpdateArgs = prisma.itemSectionMaster.update.mock.calls[2][0];
@@ -413,7 +430,10 @@ describe('ItemsSectionMasterService', () => {
     });
 
     const updateArgs = prisma.itemSectionMaster.update.mock.calls[0][0];
-    expect(updateArgs.data.secLevel).toBe(1);
+    // The level is the node's depth, set by relevelSubtree in SQL — never
+    // written from the payload (notes 70 B1/B2).
+    expect(updateArgs.data.secLevel).toBeUndefined();
+    expect(prisma.$executeRaw).toHaveBeenCalled();
     expect(result.sec_parent_id).toBeNull();
     const oldParentUpdateArgs = prisma.itemSectionMaster.update.mock.calls[1][0];
     expect(oldParentUpdateArgs.where.secId).toBe(PARENT_SECTION_ID);
@@ -430,7 +450,7 @@ describe('ItemsSectionMasterService', () => {
     expect(findFirstArgs.where?.secId).toBe(ITEM_SECTION_ID);
     expect(findFirstArgs.where?.secIsDeleted).toBe(false);
   });
-  it('toggleDelete removes subtree ids from ancestor caches', async () => {
+  it('softDelete removes subtree ids from ancestor caches', async () => {
     const parent = makeRecord({
       secId: PARENT_SECTION_ID,
       secParentId: null,
@@ -465,7 +485,7 @@ describe('ItemsSectionMasterService', () => {
       }),
     );
 
-    await expect(service.toggleDelete(ITEM_SECTION_ID)).resolves.toEqual({
+    await expect(service.softDelete(ITEM_SECTION_ID)).resolves.toEqual({
       sec_id: ITEM_SECTION_ID,
       deleted: true,
     });
@@ -486,13 +506,13 @@ describe('ItemsSectionMasterService', () => {
     expect(ancestorUpdateArgs.data.secPathIds).toEqual([PARENT_SECTION_ID]);
   });
 
-  it('toggleDelete restores a previously deleted section', async () => {
+  it('restore restores a previously deleted section', async () => {
     prisma.itemSectionMaster.findFirst
       .mockResolvedValueOnce(makeRecord({ secIsDeleted: true, secParentId: null }))
       .mockResolvedValueOnce(null);
     prisma.itemSectionMaster.updateMany.mockResolvedValue({ count: 1 });
 
-    await expect(service.toggleDelete(ITEM_SECTION_ID)).resolves.toEqual({
+    await expect(service.restore(ITEM_SECTION_ID)).resolves.toEqual({
       sec_id: ITEM_SECTION_ID,
       deleted: false,
     });

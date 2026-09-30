@@ -15,8 +15,22 @@ const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const audit_log_service_1 = require("../../audit-log/audit-log.service");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
+const master_tree_helper_1 = require("../utils/master-tree.helper");
 const ITEM_BRAND_TABLE_NAME = 'item brand master';
 const ITEM_BRAND_AUDIT_SCREEN_NAME = 'Item Brand Master';
+const ITEM_BRAND_REFERENCES = [
+    {
+        table: 'inventory.item_master',
+        column: 'item_brand_id',
+        live: 'item_is_deleted = false',
+        label: 'items',
+    },
+];
+const ITEM_BRAND_DELETE_STATE = {
+    label: 'item brand',
+    idField: 'brand_id',
+    restoreRoute: '/item-brands/restore',
+};
 let ItemsBrandMasterService = class ItemsBrandMasterService {
     prisma;
     auditLogService;
@@ -54,7 +68,13 @@ let ItemsBrandMasterService = class ItemsBrandMasterService {
         });
         return parent?.brand_name ?? null;
     }
-    async toggleDelete(brandId) {
+    async softDelete(brandId) {
+        return this.setDeleted(brandId, true);
+    }
+    async restore(brandId) {
+        return this.setDeleted(brandId, false);
+    }
+    async setDeleted(brandId, wantDeleted) {
         return this.prisma.$transaction(async (tx) => {
             const existing = await tx.itemBrandMaster.findFirst({
                 where: {
@@ -64,9 +84,17 @@ let ItemsBrandMasterService = class ItemsBrandMasterService {
             if (!existing) {
                 (0, module_service_utils_1.throwInventoryNotFound)('Item brand not found', 'brand_id', `No item brand found with id ${brandId}`);
             }
+            (0, master_tree_helper_1.assertDeleteState)(existing.brand_is_deleted, wantDeleted, ITEM_BRAND_DELETE_STATE);
+            if (wantDeleted) {
+                await (0, master_tree_helper_1.assertNoLiveChildren)(tx, master_tree_helper_1.ITEM_BRAND_TREE, brandId);
+                await (0, master_tree_helper_1.assertNoLiveReferences)(tx, ITEM_BRAND_REFERENCES, brandId, ITEM_BRAND_DELETE_STATE);
+            }
+            else {
+                await (0, master_tree_helper_1.assertParentLive)(tx, master_tree_helper_1.ITEM_BRAND_TREE, existing.brand_parent_id);
+            }
             const wasDeleted = existing.brand_is_deleted;
-            const nextDeleted = !wasDeleted;
-            const subtreeIds = await this.getActiveSubtreeIds(tx, brandId);
+            const nextDeleted = wantDeleted;
+            const subtreeIds = nextDeleted ? await this.getActiveSubtreeIds(tx, brandId) : [];
             const ancestorIds = await this.getAncestorIds(tx, existing.brand_parent_id);
             const modifiedOn = new Date();
             const userId = this.requestContextService.getUserId() ?? module_service_utils_1.DEFAULT_ACTOR;
@@ -88,7 +116,7 @@ let ItemsBrandMasterService = class ItemsBrandMasterService {
                 await this.removePathIds(tx, ancestorIds, subtreeIds);
             }
             else {
-                await this.appendPathIds(tx, ancestorIds, subtreeIds);
+                await this.appendPathIds(tx, ancestorIds, await this.getActiveSubtreeIds(tx, brandId));
             }
             const originalRecord = this.toPayload(existing);
             const modifiedRecord = this.toPayload({
@@ -135,6 +163,7 @@ let ItemsBrandMasterService = class ItemsBrandMasterService {
                     const ancestorIds = await this.getAncestorIds(tx, saveItemBrandDto.brand_parent_id);
                     await this.appendPathIds(tx, ancestorIds, [created.brand_id]);
                 }
+                await (0, master_tree_helper_1.relevelSubtree)(tx, master_tree_helper_1.ITEM_BRAND_TREE, created.brand_id);
                 const refreshed = await tx.itemBrandMaster.findFirst({
                     where: {
                         brand_id: created.brand_id,
@@ -191,11 +220,14 @@ let ItemsBrandMasterService = class ItemsBrandMasterService {
                 if (saveItemBrandDto.brand_parent_id) {
                     await this.ensureParentExists(saveItemBrandDto.brand_parent_id, tx);
                 }
-                const hasParentField = (0, module_service_utils_1.hasOwnProperty)(saveItemBrandDto, 'brand_parent_id');
+                const hasParentField = saveItemBrandDto.brand_parent_id !== undefined;
                 const nextParentId = hasParentField
                     ? (saveItemBrandDto.brand_parent_id ?? null)
                     : existing.brand_parent_id;
                 const isParentChanged = hasParentField && nextParentId !== existing.brand_parent_id;
+                if (isParentChanged) {
+                    await (0, master_tree_helper_1.assertNotUnderOwnSubtree)(tx, master_tree_helper_1.ITEM_BRAND_TREE, brandId, nextParentId);
+                }
                 const subtreeIds = isParentChanged ? await this.getActiveSubtreeIds(tx, brandId) : [];
                 const oldAncestorIds = isParentChanged
                     ? await this.getAncestorIds(tx, existing.brand_parent_id)
@@ -218,6 +250,7 @@ let ItemsBrandMasterService = class ItemsBrandMasterService {
                     await this.removePathIds(tx, oldAncestorIds, subtreeIds);
                     await this.appendPathIds(tx, newAncestorIds, subtreeIds);
                 }
+                await (0, master_tree_helper_1.relevelSubtree)(tx, master_tree_helper_1.ITEM_BRAND_TREE, brandId);
                 const refreshed = await tx.itemBrandMaster.findFirst({
                     where: {
                         brand_id: brandId,
@@ -279,9 +312,6 @@ let ItemsBrandMasterService = class ItemsBrandMasterService {
         }
         if ((0, module_service_utils_1.hasOwnProperty)(saveItemBrandDto, 'brand_sort')) {
             data.brand_sort = saveItemBrandDto.brand_sort;
-        }
-        if ((0, module_service_utils_1.hasOwnProperty)(saveItemBrandDto, 'brand_level')) {
-            data.brand_level = saveItemBrandDto.brand_level;
         }
         if ((0, module_service_utils_1.hasOwnProperty)(saveItemBrandDto, 'brand_photo')) {
             data.brand_photo = this.decodePhotoInput(saveItemBrandDto.brand_photo);

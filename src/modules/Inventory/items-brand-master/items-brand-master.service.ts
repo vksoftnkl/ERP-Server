@@ -12,9 +12,33 @@ import {
   throwOnUniqueConstraintError,
 } from 'src/common/utils/module-service.utils';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
+import {
+  ITEM_BRAND_TREE,
+  assertDeleteState,
+  assertNoLiveChildren,
+  assertNoLiveReferences,
+  assertNotUnderOwnSubtree,
+  assertParentLive,
+  relevelSubtree,
+  type LiveReference,
+} from '../utils/master-tree.helper';
 const ITEM_BRAND_TABLE_NAME = 'item brand master';
 const ITEM_BRAND_AUDIT_SCREEN_NAME = 'Item Brand Master';
 type ItemBrandWriteClient = Prisma.TransactionClient | PrismaService;
+/** What keeps a row from being deleted besides its own children (notes 70 B4). */
+const ITEM_BRAND_REFERENCES: readonly LiveReference[] = [
+  {
+    table: 'inventory.item_master',
+    column: 'item_brand_id',
+    live: 'item_is_deleted = false',
+    label: 'items',
+  },
+];
+const ITEM_BRAND_DELETE_STATE = {
+  label: 'item brand',
+  idField: 'brand_id',
+  restoreRoute: '/item-brands/restore',
+};
 @Injectable()
 export class ItemsBrandMasterService {
   constructor(
@@ -53,7 +77,22 @@ export class ItemsBrandMasterService {
     });
     return parent?.brand_name ?? null;
   }
-  async toggleDelete(brandId: string): Promise<{ brand_id: string; deleted: boolean }> {
+  /**
+   * DELETE deletes — it is no longer a toggle (notes 70 C1): an already
+   * deleted row is a 409, and POST /item-brands/restore brings one back. Refused
+   * (409) while live children or live items still hang off it (B4).
+   */
+  async softDelete(brandId: string): Promise<{ brand_id: string; deleted: boolean }> {
+    return this.setDeleted(brandId, true);
+  }
+  /** Restore a deleted row. Refused (409) when it is not deleted or its parent is. */
+  async restore(brandId: string): Promise<{ brand_id: string; deleted: boolean }> {
+    return this.setDeleted(brandId, false);
+  }
+  private async setDeleted(
+    brandId: string,
+    wantDeleted: boolean,
+  ): Promise<{ brand_id: string; deleted: boolean }> {
     return this.prisma.$transaction(async (tx) => {
       // Find regardless of current deleted state
       const existing = await tx.itemBrandMaster.findFirst({
@@ -68,9 +107,20 @@ export class ItemsBrandMasterService {
           `No item brand found with id ${brandId}`,
         );
       }
+      assertDeleteState(existing.brand_is_deleted, wantDeleted, ITEM_BRAND_DELETE_STATE);
+      if (wantDeleted) {
+        await assertNoLiveChildren(tx, ITEM_BRAND_TREE, brandId);
+        await assertNoLiveReferences(tx, ITEM_BRAND_REFERENCES, brandId, ITEM_BRAND_DELETE_STATE);
+      } else {
+        await assertParentLive(tx, ITEM_BRAND_TREE, existing.brand_parent_id);
+      }
       const wasDeleted = existing.brand_is_deleted;
-      const nextDeleted = !wasDeleted;
-      const subtreeIds = await this.getActiveSubtreeIds(tx, brandId);
+      const nextDeleted = wantDeleted;
+      // The subtree walk sees live rows only, so it is read while this row is
+      // live: before the flip on delete, after it on restore (below). A restore
+      // used to read it while still deleted, get nothing, and never put the ids
+      // back into the ancestors' path caches.
+      const subtreeIds = nextDeleted ? await this.getActiveSubtreeIds(tx, brandId) : [];
       const ancestorIds = await this.getAncestorIds(tx, existing.brand_parent_id);
       const modifiedOn = new Date();
       const userId = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
@@ -96,7 +146,7 @@ export class ItemsBrandMasterService {
       if (nextDeleted) {
         await this.removePathIds(tx, ancestorIds, subtreeIds);
       } else {
-        await this.appendPathIds(tx, ancestorIds, subtreeIds);
+        await this.appendPathIds(tx, ancestorIds, await this.getActiveSubtreeIds(tx, brandId));
       }
       const originalRecord = this.toPayload(existing);
       const modifiedRecord = this.toPayload({
@@ -146,6 +196,8 @@ export class ItemsBrandMasterService {
           const ancestorIds = await this.getAncestorIds(tx, saveItemBrandDto.brand_parent_id);
           await this.appendPathIds(tx, ancestorIds, [created.brand_id]);
         }
+        // The level is the node's depth, computed — never the payload's (B1).
+        await relevelSubtree(tx, ITEM_BRAND_TREE, created.brand_id);
         const refreshed = await tx.itemBrandMaster.findFirst({
           where: {
             brand_id: created.brand_id,
@@ -208,11 +260,18 @@ export class ItemsBrandMasterService {
         if (saveItemBrandDto.brand_parent_id) {
           await this.ensureParentExists(saveItemBrandDto.brand_parent_id, tx);
         }
-        const hasParentField = hasOwnProperty(saveItemBrandDto, 'brand_parent_id');
+        // `!== undefined`, not hasOwnProperty: every declared DTO field is an
+        // own property (ES2022 class fields), so an OMITTED parent used to read
+        // as "moved to root" and shuffle the path caches. null / "" still clear.
+        const hasParentField = saveItemBrandDto.brand_parent_id !== undefined;
         const nextParentId = hasParentField
           ? (saveItemBrandDto.brand_parent_id ?? null)
           : existing.brand_parent_id;
         const isParentChanged = hasParentField && nextParentId !== existing.brand_parent_id;
+        if (isParentChanged) {
+          // B3: under its own descendant would be a loop.
+          await assertNotUnderOwnSubtree(tx, ITEM_BRAND_TREE, brandId, nextParentId);
+        }
         const subtreeIds = isParentChanged ? await this.getActiveSubtreeIds(tx, brandId) : [];
         const oldAncestorIds = isParentChanged
           ? await this.getAncestorIds(tx, existing.brand_parent_id)
@@ -235,6 +294,9 @@ export class ItemsBrandMasterService {
           await this.removePathIds(tx, oldAncestorIds, subtreeIds);
           await this.appendPathIds(tx, newAncestorIds, subtreeIds);
         }
+        // The node and its whole subtree take their depth from where they now
+        // sit (B1, B2) — also repairs a level a payload or an old bug left wrong.
+        await relevelSubtree(tx, ITEM_BRAND_TREE, brandId);
         const refreshed = await tx.itemBrandMaster.findFirst({
           where: {
             brand_id: brandId,
@@ -302,9 +364,7 @@ export class ItemsBrandMasterService {
     if (hasOwnProperty(saveItemBrandDto, 'brand_sort')) {
       data.brand_sort = saveItemBrandDto.brand_sort;
     }
-    if (hasOwnProperty(saveItemBrandDto, 'brand_level')) {
-      data.brand_level = saveItemBrandDto.brand_level;
-    }
+    // brand_level is not taken from the payload: relevelSubtree computes it (B1).
     if (hasOwnProperty(saveItemBrandDto, 'brand_photo')) {
       data.brand_photo = this.decodePhotoInput(saveItemBrandDto.brand_photo);
     }

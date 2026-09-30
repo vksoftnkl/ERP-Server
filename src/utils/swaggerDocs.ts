@@ -6,6 +6,7 @@ import { LedgerBankAccountModule } from '../modules/accountsModule/ledgerBankAcc
 import { BranchMasterModule } from '../modules/settings/branchMaster/branch-master.module';
 import { CompanyGroupMasterModule } from '../modules/accountsModule/companyGroupMaster/company-group-master.module';
 import { CompanyMasterModule } from '../modules/settings/companyMaster/company-master.module';
+import { AppThemeModule } from '../modules/settings/appTheme/app-theme.module';
 import { EmployeeDepartmentMasterModule } from '../modules/settings/employeeDepartmentMaster/employee-department-master.module';
 import { EmployeeDesignationMasterModule } from '../modules/settings/employeeDesignationMaster/employee-designation-master.module';
 import { EmployeeMasterModule } from '../modules/settings/employeeMaster/employee-master.module';
@@ -251,6 +252,13 @@ export const swaggerModuleDocuments = [
     title: 'Company Master API',
     description: 'Company master module endpoints',
     include: [CompanyMasterModule],
+  },
+  {
+    path: 'app-themes',
+    title: 'App Themes API',
+    description:
+      'Company colour themes: named colour tokens per theme, never CSS. /effective is the theme a company is painted in, read by both clients at login and on company switch.',
+    include: [AppThemeModule],
   },
   {
     path: 'company-group-master',

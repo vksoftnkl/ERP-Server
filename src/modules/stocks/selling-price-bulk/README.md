@@ -1,7 +1,14 @@
 # SellingPriceBulkModule — Change Selling Price (bulk), menu 30
 
-Plan: `plan/plan-nestjs-change-selling-price.md`. Screen accelerator `CTRL+G`
+Plans: `plan/plan-nestjs-change-selling-price.md`, retargeted by
+`plan/plan-nestjs-one-price-table.md` §5. Screen accelerator `CTRL+G`
 (`prisma/seed/Menu_Master.sql:130`).
+
+**One price table.** Every row this screen reads or writes is an
+`inventory.item_price_master` row: a bucket row ("this item at MRP 40 sells
+for…", `ipm_bucket_mrp` / `ipm_bucket_sp` set) or the headline (both NULL).
+`stock.stock_mrp_price` was never created. All statements live in
+`PriceBucketGateway` (`price-bucket.gateway.ts`).
 
 Three routes:
 
@@ -9,7 +16,7 @@ Three routes:
 |---|---|
 | `GET /api/v1/stock/price-bulk` | the grid — Q25, paged, four optional filters |
 | `GET /api/v1/stock/price-buckets/:itemId` | F12's bucket picker — Q24 |
-| `POST /api/v1/stock/price-bulk` | the save — Q26 → S1–S3 → Q27 → the headline fan-out |
+| `POST /api/v1/stock/price-bulk` | the save — cost → Q26 → S1–S3 → Q27, one transaction |
 
 ## The thing this screen is actually about
 
@@ -35,21 +42,32 @@ the target scope*, so a BRANCH search cannot find the chain row and the write
 falls through to S3. The chain row is never read for update, so it cannot be
 edited by accident.
 
-## What is not deployed here
+## Buckets, and how a row finds its price
 
-`stock.stock_mrp_price` ships out of band from the `schema/stock/` share, like
-`stock.stock_voucher`, and is **not on this database** — no model, no migration,
-no reference to `smp_` or `fn_smp_effective` anywhere in the repo (verified
-2026-09-07). Its column list is unverified too, so no Prisma model has been
-written from the plan alone.
+A bucket is the (MRP, sale price) pair of stock on hand, **blanked by the
+item's stock track policy** — the rule lot identity uses (`bucketKeyFor` /
+`bucketKeySql` beside `lotIdentityKeyColumns`). An item that tracks neither
+has one bucket, (NULL, NULL): its headline. The grid is one row per item × unit
+× live bucket at the branch (plus the headline for an item with no stock), and
+each row's price is what the resolver answers — `resolveEffectivePrice` in
+`Inventory/items-price-master/price-resolver.ts`, mirrored in SQL by
+`effectivePriceLateral`: the exact bucket row before the headline, a branch
+row before the chain row, company before shared.
 
-Every statement that needs it lives in `StockMrpPriceGateway` and answers **503**
-with the sentence that says so. One file changes when the share lands: fill in
-Q23–Q27 and S1–S3 from `16q` as `$queryRaw` **verbatim**, and flip `isDeployed`.
+The save blanks each row's MRP / sale price by the policy again (an untracked
+item's MRP 45 is its headline), costs it from `stock.stock_item_cost`, and
+writes by key at the target scope. There is **no fan-out**: a headline edit is
+S1–S3 at key (-1, -1). A new bucket row (S3) copies godown, cess, discount,
+loading, freight, loyalty and the unit remark from the headline, or a
+bucket-priced line would lose its cess at the till. `masterRowsSaved` is
+always 0 and goes after one release.
 
-**A save of headline rows only works today**, end to end, because it never
-touches the gateway. That is the §6 fan-out, and it is most of what the legacy
-form got wrong.
+**Audit.** One audit row per price row written, under the table's own "Item
+Price Master" screen — an update with the row before and after, an insert with
+the row after — so a price's history reads the same whichever screen changed
+it. The notes name menu 30, the scope, and any confirmed below-cost verdicts
+(notes 71 B1: a single summary row logged as an `update` with no original
+record made every valid save a 400).
 
 ## Where the rules live
 
@@ -60,17 +78,19 @@ form got wrong.
 | which row the edit targets | `resolveTargetScope` (pure) |
 | above MRP / below min | Q26, as 422 with the row list, before any write |
 | below cost | `inventory.below_cost_price` via `AppSettingValueService.resolveEffective` |
-| bucket vs headline | `isHeadlineRow` — has this row a dimension? |
+| bucket vs headline | `bucketKeyFor` over the item's policy — never the client's say-so |
+| one row per bucket per scope | the save (422, both lines named), then `ex_ipm_overlap` (409) |
+| the unit is the item's | the save, as 422 |
 | everything else | the database, translated by `SellingPriceBulkExceptionFilter` |
 
 ## Five traps worth reading before editing
 
-**1. A raise from inside a function is `P2010`.** Same trap as the voucher
+**1. A raw-query failure is `P2010`.** Same trap as the voucher
 filter: the real SQLSTATE is in `error.meta.code`, the text in
 `error.meta.message`, and a filter switching on `error.code` answers one useless
 500 to every distinct failure. `23P01 exclusion_violation` was added to the
 *shared* `STOCK_ENGINE_SQLSTATE_STATUS` rather than locally — the transfer
-screens will meet its cousin.
+screens will meet its cousin. `ex_ipm_overlap` is what raises it here.
 
 **2. The setting's tokens are `restrict` / `warning` / `allow`.** The screen plan
 says `block` / `ask` / `allow`; those are not in the catalog and never were. The
@@ -97,8 +117,8 @@ a configured grid — no grid id exists for this screen.
 
 ## Open items (plan §13)
 
-1. The `stock_mrp_price` column list — partitioned? levels as columns or rows?
-   what is the scope discriminator called?
+1. ~~The `stock_mrp_price` column list~~ — closed: the table is
+   `inventory.item_price_master` (plan-nestjs-one-price-table.md).
 2. All branches over a BRANCH-sourced row. Implemented as the plan recommends
    (update the override, do not promote); the other reading is destructive to
    every other branch.
@@ -108,4 +128,5 @@ a configured grid — no grid id exists for this screen.
 4. Confirm `block` / `ask` were shorthand for `restrict` / `warning`.
 5. Cess items — disable the four-number panel, or warn. Today the row carries
    `hasCess` and the screen decides.
-6. Q23 is referenced by the screen plan and used by none of the three endpoints.
+6. ~~Q23~~ — closed: it is `/master-lookups/item-price` (plan §3), not a route
+   of this module.

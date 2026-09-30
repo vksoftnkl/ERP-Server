@@ -15,8 +15,28 @@ const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const audit_log_service_1 = require("../../audit-log/audit-log.service");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
+const master_tree_helper_1 = require("../utils/master-tree.helper");
 const GODOWN_LOCATION_TABLE_NAME = 'godown locations';
 const GODOWN_LOCATION_AUDIT_SCREEN_NAME = 'Godown Location Master';
+const GODOWN_REFERENCES = [
+    {
+        table: 'stock.stock_balance',
+        column: 'sbl_godown_id',
+        live: 'sbl_is_deleted = false AND sbl_on_hand_qty <> 0',
+        label: 'stock holdings with quantity on hand',
+    },
+    {
+        table: 'public.branch_master',
+        column: 'br_default_godown_id',
+        live: 'br_is_deleted = false',
+        label: 'branches (as their default godown)',
+    },
+];
+const GODOWN_DELETE_STATE = {
+    label: 'godown location',
+    idField: 'gdl_id',
+    restoreRoute: '/godowns/restore',
+};
 let GodownsMasterService = class GodownsMasterService {
     prisma;
     auditLogService;
@@ -47,7 +67,13 @@ let GodownsMasterService = class GodownsMasterService {
         payload.gdl_branch_name = branchName;
         return payload;
     }
-    async toggleDelete(gdlId) {
+    async softDelete(gdlId) {
+        return this.setDeleted(gdlId, true);
+    }
+    async restore(gdlId) {
+        return this.setDeleted(gdlId, false);
+    }
+    async setDeleted(gdlId, wantDeleted) {
         return this.prisma.$transaction(async (tx) => {
             const existing = await tx.godownLocation.findFirst({
                 where: { gdlId },
@@ -55,11 +81,19 @@ let GodownsMasterService = class GodownsMasterService {
             if (!existing) {
                 (0, module_service_utils_1.throwInventoryNotFound)('Godown location not found', 'gdl_id', `No godown location found with id ${gdlId}`);
             }
+            (0, master_tree_helper_1.assertDeleteState)(existing.gdlIsDeleted, wantDeleted, GODOWN_DELETE_STATE);
+            if (wantDeleted) {
+                await (0, master_tree_helper_1.assertNoLiveChildren)(tx, master_tree_helper_1.GODOWN_TREE, gdlId);
+                await (0, master_tree_helper_1.assertNoLiveReferences)(tx, GODOWN_REFERENCES, gdlId, GODOWN_DELETE_STATE);
+            }
+            else {
+                await (0, master_tree_helper_1.assertParentLive)(tx, master_tree_helper_1.GODOWN_TREE, existing.gdlParentId);
+            }
             const wasDeleted = existing.gdlIsDeleted;
-            const nextDeleted = !wasDeleted;
+            const nextDeleted = wantDeleted;
             const now = new Date();
             const userId = this.requestContextService.getUserId() ?? module_service_utils_1.DEFAULT_ACTOR;
-            const subtreeIds = await this.getActiveSubtreeIds(tx, gdlId);
+            const subtreeIds = nextDeleted ? await this.getActiveSubtreeIds(tx, gdlId) : [];
             const ancestorIds = await this.getAncestorIds(tx, existing.gdlParentId);
             const result = await tx.godownLocation.updateMany({
                 where: {
@@ -79,7 +113,7 @@ let GodownsMasterService = class GodownsMasterService {
                 await this.removePathIds(tx, ancestorIds, subtreeIds);
             }
             else {
-                await this.appendPathIds(tx, ancestorIds, subtreeIds);
+                await this.appendPathIds(tx, ancestorIds, await this.getActiveSubtreeIds(tx, gdlId));
             }
             const originalRecord = this.toPayload(existing);
             const modifiedRecord = this.toPayload({
@@ -128,6 +162,7 @@ let GodownsMasterService = class GodownsMasterService {
                     const ancestorIds = await this.getAncestorIds(tx, saveGodownDto.gdl_parent_id);
                     await this.appendPathIds(tx, ancestorIds, [created.gdlId]);
                 }
+                await (0, master_tree_helper_1.relevelSubtree)(tx, master_tree_helper_1.GODOWN_TREE, created.gdlId);
                 const refreshed = await this.findActiveLocation(tx, created.gdlId);
                 const payload = !refreshed
                     ? this.toPayload({
@@ -161,7 +196,8 @@ let GodownsMasterService = class GodownsMasterService {
             return await this.prisma.$transaction(async (tx) => {
                 const existing = await this.getActiveLocationOrThrow(tx, gdlId);
                 const gdlBranchId = saveGodownDto.gdl_branch_id ?? existing.gdlBranchId;
-                const parentId = (0, module_service_utils_1.hasOwnProperty)(saveGodownDto, 'gdl_parent_id')
+                const hasParentField = saveGodownDto.gdl_parent_id !== undefined;
+                const parentId = hasParentField
                     ? (saveGodownDto.gdl_parent_id ?? null)
                     : existing.gdlParentId;
                 await this.validateParentAssignment(tx, {
@@ -169,18 +205,18 @@ let GodownsMasterService = class GodownsMasterService {
                     parentId,
                     gdlBranchId,
                 });
-                const hasParentField = (0, module_service_utils_1.hasOwnProperty)(saveGodownDto, 'gdl_parent_id');
-                const nextParentId = hasParentField
-                    ? (saveGodownDto.gdl_parent_id ?? null)
-                    : existing.gdlParentId;
+                const nextParentId = parentId;
                 const isParentChanged = hasParentField && nextParentId !== existing.gdlParentId;
+                if (isParentChanged) {
+                    await (0, master_tree_helper_1.assertNotUnderOwnSubtree)(tx, master_tree_helper_1.GODOWN_TREE, gdlId, nextParentId);
+                }
                 const subtreeIds = isParentChanged ? await this.getActiveSubtreeIds(tx, gdlId) : [];
                 const oldAncestorIds = isParentChanged
                     ? await this.getAncestorIds(tx, existing.gdlParentId)
                     : [];
                 const data = {};
                 this.applyOptionalFields(data, saveGodownDto);
-                if ((0, module_service_utils_1.hasOwnProperty)(saveGodownDto, 'gdl_name')) {
+                if (saveGodownDto.gdl_name !== undefined) {
                     if (!saveGodownDto.gdl_name?.trim()) {
                         (0, module_service_utils_1.throwInventoryBadRequest)('Validation failed', [
                             { field: 'gdl_name', message: 'gdl_name cannot be empty' },
@@ -205,6 +241,7 @@ let GodownsMasterService = class GodownsMasterService {
                     await this.removePathIds(tx, oldAncestorIds, subtreeIds);
                     await this.appendPathIds(tx, newAncestorIds, subtreeIds);
                 }
+                await (0, master_tree_helper_1.relevelSubtree)(tx, master_tree_helper_1.GODOWN_TREE, gdlId);
                 const refreshed = await this.findActiveLocation(tx, gdlId);
                 const payload = this.toPayload(refreshed ?? updated);
                 await this.auditLogService.logEntityChange({
@@ -527,14 +564,11 @@ let GodownsMasterService = class GodownsMasterService {
             }
             data.gdlType = saveGodownDto.gdl_type.trim();
         }
-        if ((0, module_service_utils_1.hasOwnProperty)(saveGodownDto, 'gdl_parent_id')) {
+        if (saveGodownDto.gdl_parent_id !== undefined) {
             data.gdlParentId = saveGodownDto.gdl_parent_id ?? null;
         }
         if ((0, module_service_utils_1.hasOwnProperty)(saveGodownDto, 'gdl_sort') && saveGodownDto.gdl_sort !== undefined) {
             data.gdlSort = saveGodownDto.gdl_sort;
-        }
-        if ((0, module_service_utils_1.hasOwnProperty)(saveGodownDto, 'gdl_level') && saveGodownDto.gdl_level !== undefined) {
-            data.gdlLevel = saveGodownDto.gdl_level;
         }
         if ((0, module_service_utils_1.hasOwnProperty)(saveGodownDto, 'gdl_del_sheet') &&
             saveGodownDto.gdl_del_sheet !== undefined) {

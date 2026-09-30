@@ -36,7 +36,8 @@ describe('ItemsSectionMasterController', () => {
     save: jest.fn(),
     list: jest.fn(),
     getById: jest.fn(),
-    toggleDelete: jest.fn(),
+    softDelete: jest.fn(),
+    restore: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -93,7 +94,7 @@ describe('ItemsSectionMasterController', () => {
   });
 
   it('returns wrapped soft delete response', async () => {
-    serviceMock.toggleDelete.mockResolvedValue({
+    serviceMock.softDelete.mockResolvedValue({
       sec_id: ITEM_SECTION_ID,
       deleted: true,
     });
@@ -109,12 +110,12 @@ describe('ItemsSectionMasterController', () => {
   });
 
   it('returns wrapped restore response', async () => {
-    serviceMock.toggleDelete.mockResolvedValue({
+    serviceMock.restore.mockResolvedValue({
       sec_id: ITEM_SECTION_ID,
       deleted: false,
     });
 
-    await expect(controller.remove(ITEM_SECTION_ID)).resolves.toEqual({
+    await expect(controller.restore(ITEM_SECTION_ID)).resolves.toEqual({
       success: true,
       message: 'Item section restored successfully',
       data: {

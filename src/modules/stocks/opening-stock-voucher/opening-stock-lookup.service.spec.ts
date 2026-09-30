@@ -1,7 +1,7 @@
 import { NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from 'src/database/prisma/prisma.service';
-import { StockMrpPriceGateway } from '../selling-price-bulk/stock-mrp-price.gateway';
+import { PriceBucketGateway } from '../selling-price-bulk/price-bucket.gateway';
 import { OpeningStockLookupService } from './opening-stock-lookup.service';
 
 const COMPANY_ID = '01000000-0000-7000-8000-0000000000c1';
@@ -49,19 +49,20 @@ const assemble = (call: unknown[]): Prisma.Sql =>
 
 describe('OpeningStockLookupService', () => {
   let queryRaw: jest.Mock;
-  let gateway: { isDeployed: boolean; findOpeningSeedBucket: jest.Mock };
+  let gateway: { findOpeningSeedBucket: jest.Mock };
   let service: OpeningStockLookupService;
 
   beforeEach(() => {
     queryRaw = jest.fn();
-    gateway = { isDeployed: false, findOpeningSeedBucket: jest.fn() };
+    // No price row for the unit unless a test says otherwise.
+    gateway = { findOpeningSeedBucket: jest.fn().mockResolvedValue(null) };
     service = new OpeningStockLookupService(
       { $queryRaw: queryRaw } as unknown as PrismaService,
-      gateway as unknown as StockMrpPriceGateway,
+      gateway as unknown as PriceBucketGateway,
     );
   });
 
-  it('fills the line from one row, Decimals as numbers, and seeds no price where the table is not deployed', async () => {
+  it('fills the line from one row, Decimals as numbers, and seeds 0 when the unit has no price row', async () => {
     queryRaw.mockResolvedValueOnce([saltRow()]);
 
     const result = await service.lookupItem(args({ uomId: UOM_ID }));
@@ -84,7 +85,7 @@ describe('OpeningStockLookupService', () => {
       alreadyOpened: false,
     });
     expect(queryRaw).toHaveBeenCalledTimes(1);
-    expect(gateway.findOpeningSeedBucket).not.toHaveBeenCalled();
+    expect(gateway.findOpeningSeedBucket).toHaveBeenCalledTimes(1);
     // No cost column, by design: the engine resolves the rate source only
     // when a line arrives at cost 0, and a seeded cell would disable it.
     expect(Object.keys(result)).not.toEqual(
@@ -148,7 +149,6 @@ describe('OpeningStockLookupService', () => {
   ])(
     'binds a null company and branch when they are %s, so both predicates switch off',
     async (_label, scope) => {
-      gateway.isDeployed = true;
       gateway.findOpeningSeedBucket.mockResolvedValueOnce(null);
       queryRaw.mockResolvedValueOnce([saltRow()]);
 
@@ -181,8 +181,7 @@ describe('OpeningStockLookupService', () => {
     expect(statement.values).not.toEqual(expect.arrayContaining([BRANCH_ID]));
   });
 
-  it('seeds mrp and sale price through the gateway once the table is deployed', async () => {
-    gateway.isDeployed = true;
+  it('seeds mrp and sale price through the gateway', async () => {
     gateway.findOpeningSeedBucket.mockResolvedValueOnce({ mrp: 120, salePrice: 110 });
     queryRaw.mockResolvedValueOnce([saltRow({ alreadyOpened: true })]);
 
@@ -201,7 +200,6 @@ describe('OpeningStockLookupService', () => {
   });
 
   it('keeps 0 / 0 when the deployed table has no live bucket for the unit', async () => {
-    gateway.isDeployed = true;
     gateway.findOpeningSeedBucket.mockResolvedValueOnce(null);
     queryRaw.mockResolvedValueOnce([saltRow()]);
 

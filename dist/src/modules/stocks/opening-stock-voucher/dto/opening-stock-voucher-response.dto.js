@@ -883,7 +883,7 @@ __decorate([
 __decorate([
     (0, swagger_1.ApiProperty)({
         example: 0,
-        description: "A SEED for a signature carrying M: the dearest live bucket at the most specific price scope. 0 when there is none, and 0 wherever stock.stock_mrp_price is not deployed. The line's real bucket is the MRP that ends up typed.",
+        description: "A SEED for a signature carrying M: the dearest bucket row at the most specific price scope, else the headline row's MRP. 0 only when the unit has no price row. The line's real bucket is the MRP that ends up typed.",
     }),
     __metadata("design:type", Number)
 ], OpeningStockItemLookupDto.prototype, "mrp", void 0);

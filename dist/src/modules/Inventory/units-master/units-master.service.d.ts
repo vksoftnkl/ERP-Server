@@ -10,10 +10,15 @@ export declare class UnitsMasterService {
     constructor(prisma: PrismaService, auditLogService: AuditLogService, requestContextService: RequestContextService);
     save(saveUnitDto: SaveUnitDto): Promise<UnitPayload>;
     getById(unitId: string): Promise<UnitDetailPayload>;
-    toggleDelete(unitId: string): Promise<{
+    softDelete(unitId: string): Promise<{
         unit_id: string;
         deleted: boolean;
     }>;
+    restore(unitId: string): Promise<{
+        unit_id: string;
+        deleted: boolean;
+    }>;
+    private setDeleted;
     private createUnit;
     private updateUnit;
     private validateConversionRules;

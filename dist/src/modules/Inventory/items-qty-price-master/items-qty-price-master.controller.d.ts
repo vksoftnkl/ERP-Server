@@ -6,6 +6,7 @@ export declare class ItemsQtyPriceMasterController {
     save(body: unknown): Promise<ItemQtyPriceSuccessResponse<ItemQtyPricePayload[]>>;
     getById(query: Record<string, unknown>): Promise<ItemQtyPriceSuccessResponse<ItemQtyPricePayload> | ItemQtyPriceSuccessResponse<ItemQtyPriceListItem[], ItemQtyPriceListMeta>>;
     remove(body: unknown, iqpId?: string): Promise<ItemQtyPriceSuccessResponse<ItemQtyPriceDeleteResult | ItemQtyPriceDeleteResult[]>>;
+    restore(body: unknown, iqpId?: string): Promise<ItemQtyPriceSuccessResponse<ItemQtyPriceDeleteResult | ItemQtyPriceDeleteResult[]>>;
     private resolveSavePayload;
     private buildToggleDeleteMessage;
     private resolveDeletePayload;

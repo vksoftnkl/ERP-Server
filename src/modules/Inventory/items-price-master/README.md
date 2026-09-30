@@ -11,6 +11,26 @@ to price an item in a given unit at a company/branch/godown.
 - **Also written:** `item_unit_conversion` — the unit-conversion chain for the item is re-derived
   and persisted when a unit factor is supplied (see [Unit-conversion sync](#unit-conversion-sync))
 
+## One price table: headline rows and MRP buckets
+
+Since `20260930160000_one_price_table` (plan `plan/plan-nestjs-one-price-table.md`) this table
+also holds **MRP / sale-price buckets**: `ipm_bucket_mrp` / `ipm_bucket_sp` both NULL is the
+headline row the item always had; one set is "stock of this item at THIS MRP sells for".
+
+- **The bucket is derived, never sent.** `PriceBucketService.deriveBuckets` sets it on every
+  create and update from the item's effective stock track policy — the rule lot identity uses
+  (`bucketKeyFor`): `track_mrp` → `NULLIF(ipm_max_price, 0)`, `track_sale_price` → the price at
+  `sales.default_price_level`, else NULL. `SaveItemPriceDto` has no field for it, so a client that
+  sends one gets a 400. The payload echoes it read-only.
+- **One row per company, branch, unit and bucket at a time** — `ex_ipm_overlap` (EXCLUDE,
+  DEFERRABLE), which replaced `uq_item_price_master_scope`. A clash is a 409.
+- **A bucket row never sells above its MRP** (`ck_ipm_not_above_mrp`, a 422) and its MRP is its
+  `ipm_max_price` (`ck_ipm_bucket_mrp_is_max`). Headline rows are not checked.
+- **Which row prices a line** is `resolveEffectivePrice` ([price-resolver.ts](price-resolver.ts)):
+  the exact bucket before the headline, a branch row before the chain row. Pure — no Prisma.
+- **Re-key.** `PriceBucketService.rekeyItem` re-derives an item's rows when its tracking can have
+  changed (the item master calls it); two rows that would become one are refused, both named.
+
 ## Files
 
 | File | Purpose |
@@ -18,6 +38,8 @@ to price an item in a given unit at a company/branch/godown.
 | [items-price-master.module.ts](items-price-master.module.ts) | Module wiring — imports `AuditLogModule`, **exports the service** for reuse |
 | [items-price-master.controller.ts](items-price-master.controller.ts) | HTTP routes + Swagger docs; class-level `@CacheTTL(60)` |
 | [items-price-master.service.ts](items-price-master.service.ts) | Business logic, persistence, unit-conversion sync, audit logging |
+| [price-bucket.service.ts](price-bucket.service.ts) | Derives a row's bucket from the stock track policy; re-keys an item's rows |
+| [price-resolver.ts](price-resolver.ts) | The one rule for which row prices a line (pure; the till can reuse it) |
 | [item-price-exception.filter.ts](item-price-exception.filter.ts) | Maps DB/domain errors to the module's error shape (matches `ipm_*` field names) |
 | [dto/save-item-price.dto.ts](dto/save-item-price.dto.ts) | Single create/update payload |
 | [dto/get-item-price-query.dto.ts](dto/get-item-price-query.dto.ts) | Query params for `GET /get` (extends the shared inventory list-query base) |

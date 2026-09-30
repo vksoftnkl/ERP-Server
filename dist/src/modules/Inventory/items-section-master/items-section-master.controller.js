@@ -48,12 +48,12 @@ let ItemsSectionMasterController = class ItemsSectionMasterController {
         };
     }
     async remove(secId) {
-        const { sec_id, deleted } = await this.itemsSectionMasterService.toggleDelete(secId);
-        return {
-            success: true,
-            message: deleted ? 'Item section deleted successfully' : 'Item section restored successfully',
-            data: { sec_id, deleted },
-        };
+        const data = await this.itemsSectionMasterService.softDelete(secId);
+        return { success: true, message: 'Item section deleted successfully', data };
+    }
+    async restore(secId) {
+        const data = await this.itemsSectionMasterService.restore(secId);
+        return { success: true, message: 'Item section restored successfully', data };
     }
     withUploadedPhoto(saveItemSectionDto, secPhotoFile) {
         if (!secPhotoFile) {
@@ -99,16 +99,38 @@ __decorate([
 __decorate([
     (0, common_1.Delete)('delete'),
     (0, common_1.Version)(api_version_1.API_VERSION),
-    (0, swagger_1.ApiOperation)({ summary: 'Soft delete or restore item section by id' }),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Soft delete item section by id',
+        description: 'Deletes only — it is not a toggle: an already deleted section is a 409 (use POST ' +
+            '/item-sections/restore). Refused with 409 while live sub-sections or live items still use it.',
+    }),
     (0, swagger_1.ApiQuery)({ name: 'sec_id', schema: { type: 'string', format: 'uuid' } }),
     (0, swagger_1.ApiOkResponse)({ type: item_section_response_dto_1.ItemSectionSuccessDeleteDto }),
     (0, swagger_1.ApiBadRequestResponse)({ type: item_section_response_dto_1.ItemSectionErrorResponseDto }),
     (0, swagger_1.ApiNotFoundResponse)({ type: item_section_response_dto_1.ItemSectionErrorResponseDto }),
+    (0, swagger_1.ApiConflictResponse)({ type: item_section_response_dto_1.ItemSectionErrorResponseDto }),
     __param(0, (0, common_1.Query)('sec_id', new common_1.ParseUUIDPipe({ version: '7' }))),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", Promise)
 ], ItemsSectionMasterController.prototype, "remove", null);
+__decorate([
+    (0, common_1.Post)('restore'),
+    (0, common_1.Version)(api_version_1.API_VERSION),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Restore a soft-deleted item section',
+        description: '409 when the section is not deleted, or when its parent is.',
+    }),
+    (0, swagger_1.ApiQuery)({ name: 'sec_id', schema: { type: 'string', format: 'uuid' } }),
+    (0, swagger_1.ApiCreatedResponse)({ type: item_section_response_dto_1.ItemSectionSuccessDeleteDto }),
+    (0, swagger_1.ApiBadRequestResponse)({ type: item_section_response_dto_1.ItemSectionErrorResponseDto }),
+    (0, swagger_1.ApiNotFoundResponse)({ type: item_section_response_dto_1.ItemSectionErrorResponseDto }),
+    (0, swagger_1.ApiConflictResponse)({ type: item_section_response_dto_1.ItemSectionErrorResponseDto }),
+    __param(0, (0, common_1.Query)('sec_id', new common_1.ParseUUIDPipe({ version: '7' }))),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", Promise)
+], ItemsSectionMasterController.prototype, "restore", null);
 exports.ItemsSectionMasterController = ItemsSectionMasterController = __decorate([
     (0, swagger_1.ApiTags)('Item Sections'),
     (0, swagger_1.ApiBearerAuth)('access-token'),

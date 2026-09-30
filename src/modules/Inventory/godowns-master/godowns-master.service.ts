@@ -14,9 +14,44 @@ import {
   toNumber,
 } from 'src/common/utils/module-service.utils';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
+import {
+  GODOWN_TREE,
+  assertDeleteState,
+  assertNoLiveChildren,
+  assertNoLiveReferences,
+  assertNotUnderOwnSubtree,
+  assertParentLive,
+  relevelSubtree,
+  type LiveReference,
+} from '../utils/master-tree.helper';
 const GODOWN_LOCATION_TABLE_NAME = 'godown locations';
 const GODOWN_LOCATION_AUDIT_SCREEN_NAME = 'Godown Location Master';
 type GodownLocationWriteClient = Prisma.TransactionClient | PrismaService;
+/**
+ * What keeps a godown from being deleted besides its own children (notes 70
+ * B4 / C5): stock still on hand there — a deleted godown would hide a holding
+ * that is still valued — and a branch that names it as its default godown,
+ * which every sale line without a godown of its own falls back to.
+ */
+const GODOWN_REFERENCES: readonly LiveReference[] = [
+  {
+    table: 'stock.stock_balance',
+    column: 'sbl_godown_id',
+    live: 'sbl_is_deleted = false AND sbl_on_hand_qty <> 0',
+    label: 'stock holdings with quantity on hand',
+  },
+  {
+    table: 'public.branch_master',
+    column: 'br_default_godown_id',
+    live: 'br_is_deleted = false',
+    label: 'branches (as their default godown)',
+  },
+];
+const GODOWN_DELETE_STATE = {
+  label: 'godown location',
+  idField: 'gdl_id',
+  restoreRoute: '/godowns/restore',
+};
 @Injectable()
 export class GodownsMasterService {
   constructor(
@@ -49,7 +84,23 @@ export class GodownsMasterService {
     payload.gdl_branch_name = branchName;
     return payload;
   }
-  async toggleDelete(gdlId: string): Promise<{ gdl_id: string; deleted: boolean }> {
+  /**
+   * DELETE deletes — it is no longer a toggle (notes 70 C1): an already
+   * deleted godown is a 409, and POST /godowns/restore brings one back.
+   * Refused (409) while child locations, stock on hand, or a branch's default
+   * still point at it (B4, C5).
+   */
+  async softDelete(gdlId: string): Promise<{ gdl_id: string; deleted: boolean }> {
+    return this.setDeleted(gdlId, true);
+  }
+  /** Restore a deleted godown. Refused (409) when it is not deleted or its parent is. */
+  async restore(gdlId: string): Promise<{ gdl_id: string; deleted: boolean }> {
+    return this.setDeleted(gdlId, false);
+  }
+  private async setDeleted(
+    gdlId: string,
+    wantDeleted: boolean,
+  ): Promise<{ gdl_id: string; deleted: boolean }> {
     return this.prisma.$transaction(async (tx) => {
       // Find regardless of current deleted state
       const existing = await tx.godownLocation.findFirst({
@@ -63,11 +114,21 @@ export class GodownsMasterService {
         );
       }
 
+      assertDeleteState(existing.gdlIsDeleted, wantDeleted, GODOWN_DELETE_STATE);
+      if (wantDeleted) {
+        await assertNoLiveChildren(tx, GODOWN_TREE, gdlId);
+        await assertNoLiveReferences(tx, GODOWN_REFERENCES, gdlId, GODOWN_DELETE_STATE);
+      } else {
+        await assertParentLive(tx, GODOWN_TREE, existing.gdlParentId);
+      }
       const wasDeleted = existing.gdlIsDeleted;
-      const nextDeleted = !wasDeleted;
+      const nextDeleted = wantDeleted;
       const now = new Date();
       const userId = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
-      const subtreeIds = await this.getActiveSubtreeIds(tx, gdlId);
+      // Read while this row is live: before the flip on delete, after it on
+      // restore (below) — a restore used to read it while still deleted, get
+      // nothing, and never put the ids back into the ancestors' path caches.
+      const subtreeIds = nextDeleted ? await this.getActiveSubtreeIds(tx, gdlId) : [];
       const ancestorIds = await this.getAncestorIds(tx, existing.gdlParentId);
 
       // Guarded update: only flips if state hasn't changed since the read
@@ -94,7 +155,7 @@ export class GodownsMasterService {
       if (nextDeleted) {
         await this.removePathIds(tx, ancestorIds, subtreeIds);
       } else {
-        await this.appendPathIds(tx, ancestorIds, subtreeIds);
+        await this.appendPathIds(tx, ancestorIds, await this.getActiveSubtreeIds(tx, gdlId));
       }
 
       const originalRecord = this.toPayload(existing);
@@ -154,6 +215,8 @@ export class GodownsMasterService {
           const ancestorIds = await this.getAncestorIds(tx, saveGodownDto.gdl_parent_id);
           await this.appendPathIds(tx, ancestorIds, [created.gdlId]);
         }
+        // gdl_level is the node's depth, computed — never the payload's (B1).
+        await relevelSubtree(tx, GODOWN_TREE, created.gdlId);
 
         const refreshed = await this.findActiveLocation(tx, created.gdlId);
         const payload = !refreshed
@@ -194,7 +257,12 @@ export class GodownsMasterService {
       return await this.prisma.$transaction(async (tx) => {
         const existing = await this.getActiveLocationOrThrow(tx, gdlId);
         const gdlBranchId = saveGodownDto.gdl_branch_id ?? existing.gdlBranchId;
-        const parentId = hasOwnProperty(saveGodownDto, 'gdl_parent_id')
+        // `!== undefined`, not hasOwnProperty (notes 70 B5): every declared DTO
+        // field is an own property (ES2022 class fields), so an update that
+        // OMITTED gdl_parent_id set the parent to NULL — the child silently
+        // detached. An explicit null (or "") still makes it a root.
+        const hasParentField = saveGodownDto.gdl_parent_id !== undefined;
+        const parentId = hasParentField
           ? (saveGodownDto.gdl_parent_id ?? null)
           : existing.gdlParentId;
 
@@ -204,11 +272,12 @@ export class GodownsMasterService {
           gdlBranchId,
         });
 
-        const hasParentField = hasOwnProperty(saveGodownDto, 'gdl_parent_id');
-        const nextParentId = hasParentField
-          ? (saveGodownDto.gdl_parent_id ?? null)
-          : existing.gdlParentId;
+        const nextParentId = parentId;
         const isParentChanged = hasParentField && nextParentId !== existing.gdlParentId;
+        if (isParentChanged) {
+          // B3: under its own descendant would be a loop.
+          await assertNotUnderOwnSubtree(tx, GODOWN_TREE, gdlId, nextParentId);
+        }
         const subtreeIds = isParentChanged ? await this.getActiveSubtreeIds(tx, gdlId) : [];
         const oldAncestorIds = isParentChanged
           ? await this.getAncestorIds(tx, existing.gdlParentId)
@@ -217,7 +286,9 @@ export class GodownsMasterService {
         const data: Prisma.GodownLocationUncheckedUpdateInput = {};
         this.applyOptionalFields(data, saveGodownDto);
 
-        if (hasOwnProperty(saveGodownDto, 'gdl_name')) {
+        // Omitted keeps the stored name (B5: a partial update without gdl_name
+        // used to be a 400); a blank one is still refused.
+        if (saveGodownDto.gdl_name !== undefined) {
           if (!saveGodownDto.gdl_name?.trim()) {
             throwInventoryBadRequest<GodownErrorDetail>('Validation failed', [
               { field: 'gdl_name', message: 'gdl_name cannot be empty' },
@@ -247,6 +318,9 @@ export class GodownsMasterService {
           await this.removePathIds(tx, oldAncestorIds, subtreeIds);
           await this.appendPathIds(tx, newAncestorIds, subtreeIds);
         }
+        // The node and its whole subtree take their depth from where they now
+        // sit (B1) — also repairs a level a payload or an old bug left wrong.
+        await relevelSubtree(tx, GODOWN_TREE, gdlId);
 
         const refreshed = await this.findActiveLocation(tx, gdlId);
         const payload = this.toPayload(refreshed ?? updated);
@@ -663,15 +737,13 @@ export class GodownsMasterService {
       }
       data.gdlType = saveGodownDto.gdl_type.trim();
     }
-    if (hasOwnProperty(saveGodownDto, 'gdl_parent_id')) {
+    if (saveGodownDto.gdl_parent_id !== undefined) {
       data.gdlParentId = saveGodownDto.gdl_parent_id ?? null;
     }
     if (hasOwnProperty(saveGodownDto, 'gdl_sort') && saveGodownDto.gdl_sort !== undefined) {
       data.gdlSort = saveGodownDto.gdl_sort;
     }
-    if (hasOwnProperty(saveGodownDto, 'gdl_level') && saveGodownDto.gdl_level !== undefined) {
-      data.gdlLevel = saveGodownDto.gdl_level;
-    }
+    // gdl_level is not taken from the payload: relevelSubtree computes it (B1).
     if (
       hasOwnProperty(saveGodownDto, 'gdl_del_sheet') &&
       saveGodownDto.gdl_del_sheet !== undefined

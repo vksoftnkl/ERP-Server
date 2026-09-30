@@ -37,7 +37,8 @@ describe('ItemsGroupMasterController', () => {
     save: jest.fn(),
     list: jest.fn(),
     getById: jest.fn(),
-    toggleDelete: jest.fn(),
+    softDelete: jest.fn(),
+    restore: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -94,7 +95,7 @@ describe('ItemsGroupMasterController', () => {
   });
 
   it('returns wrapped soft delete response', async () => {
-    serviceMock.toggleDelete.mockResolvedValue({
+    serviceMock.softDelete.mockResolvedValue({
       itg_id: ITEM_GROUP_ID,
       deleted: true,
     });
@@ -109,12 +110,12 @@ describe('ItemsGroupMasterController', () => {
   });
 
   it('returns wrapped restore response', async () => {
-    serviceMock.toggleDelete.mockResolvedValue({
+    serviceMock.restore.mockResolvedValue({
       itg_id: ITEM_GROUP_ID,
       deleted: false,
     });
 
-    await expect(controller.remove(ITEM_GROUP_ID)).resolves.toEqual({
+    await expect(controller.restore(ITEM_GROUP_ID)).resolves.toEqual({
       success: true,
       message: 'Item group restored successfully',
       data: {

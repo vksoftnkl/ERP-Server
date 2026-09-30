@@ -12,6 +12,7 @@ export declare class StockTrackPolicyService {
     constructor(prisma: PrismaService, auditLogService: AuditLogService, requestContextService: RequestContextService);
     syncFromItem(item: ItemTrackPolicySource, tx?: Prisma.TransactionClient): Promise<StockTrackPolicySyncResult>;
     retireForItem(itemId: string, tx?: Prisma.TransactionClient): Promise<StockTrackPolicySyncResult[]>;
+    retireForGroup(itgId: string, tx?: Prisma.TransactionClient): Promise<StockTrackPolicySyncResult[]>;
     syncFromItemGroup(group: ItemGroupTrackPolicySource, tx?: Prisma.TransactionClient): Promise<StockTrackPolicySyncResult>;
     resolvePreset(presetId: string | null | undefined, tx?: Prisma.TransactionClient): Promise<StockTrackPreset | null>;
     presetToDerived(preset: StockTrackPreset): DerivedTrackPolicy;

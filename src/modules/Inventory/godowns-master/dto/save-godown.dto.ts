@@ -1,5 +1,5 @@
 import { Transform } from 'class-transformer';
-import { IsBoolean, IsInt, IsOptional, IsString, Matches, MaxLength } from 'class-validator';
+import { IsBoolean, IsIn, IsInt, IsOptional, IsString, Matches, MaxLength } from 'class-validator';
 import { ApiHideProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   NullableString,
@@ -19,6 +19,12 @@ import {
   toTrimmedString,
 } from 'src/common/dto/dtoDecorators';
 import { resolveAliasValue } from 'src/common/dto/dto-transforms';
+/**
+ * The location kinds the godown screen offers, outermost first — and the only
+ * ones stored (notes 70 B6: "BOGUS" used to be accepted). ck_gdl_type enforces
+ * the same list in the database.
+ */
+export const GODOWN_TYPES = ['WAREHOUSE', 'ZONE', 'AISLE', 'RACK', 'SHELF', 'BIN'] as const;
 export class SaveGodownDto {
   @ApiPropertyOptional({
     format: 'uuid',
@@ -53,8 +59,9 @@ export class SaveGodownDto {
   @IsString()
   @MaxLength(30)
   gdl_code?: string | null;
-  @ApiPropertyOptional({ maxLength: 20, default: 'BIN' })
+  @ApiPropertyOptional({ enum: GODOWN_TYPES, default: 'BIN' })
   @OptionalTrimmedString(20)
+  @IsIn(GODOWN_TYPES, { message: `gdl_type must be one of: ${GODOWN_TYPES.join(', ')}` })
   gdl_type?: string;
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   @IsOptional()
@@ -66,7 +73,10 @@ export class SaveGodownDto {
   @Transform(({ value, obj }) => toOptionalInteger(resolveAliasValue(value, obj, ['godown_sort'])))
   @IsInt()
   gdl_sort?: number;
-  @ApiPropertyOptional({ default: 0 })
+  @ApiPropertyOptional({
+    default: 0,
+    description: 'Accepted and IGNORED: the level is the location depth, computed by the server.',
+  })
   @OptionalInteger()
   gdl_level?: number;
   @ApiPropertyOptional({ default: false })

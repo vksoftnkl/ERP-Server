@@ -3,27 +3,6 @@ import { toNumber } from '../../../common/utils/module-service.utils';
 import { PriceRowWithUnit, UnitCycleRow } from '../types/master-lookup-internal.types';
 
 /**
- * Collapses the price rows to one per unit. A row without a branch prices the
- * unit for every branch, so it stands in only where the requested branch has
- * no rate of its own — a branch-specific row always beats the branch-less one.
- * Rows arrive ordered (slno, then ipm_id), so the fallback pick is stable.
- */
-export function preferBranchPriceRows(
-  priceRows: PriceRowWithUnit[],
-  branchId?: string,
-): PriceRowWithUnit[] {
-  if (!branchId) return priceRows;
-  const byUnit = new Map<string, PriceRowWithUnit>();
-  for (const row of priceRows) {
-    const current = byUnit.get(row.ipmUcUnitId);
-    if (!current || (current.ipmBranchId !== branchId && row.ipmBranchId === branchId)) {
-      byUnit.set(row.ipmUcUnitId, row);
-    }
-  }
-  return [...byUnit.values()];
-}
-
-/**
  * Unit-rate selection (legacy WHERE clause). An explicit unit wins. Otherwise
  * the unit-slno rule applies: a retail item takes the row with the highest
  * slno (largest pack), a non-retail item takes the base row — the lowest slno.

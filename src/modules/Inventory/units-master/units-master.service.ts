@@ -9,14 +9,55 @@ import {
   hasOwnProperty,
   resolveActor,
   throwInventoryBadRequest,
+  throwInventoryConflict,
   throwInventoryNotFound,
   throwOnUniqueConstraintError,
   toNullableNumber,
 } from 'src/common/utils/module-service.utils';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
+import {
+  assertDeleteState,
+  assertNoLiveReferences,
+  type LiveReference,
+} from '../utils/master-tree.helper';
 
 const UNIT_TABLE_NAME = 'item_unit_master';
 const UNIT_AUDIT_SCREEN_NAME = 'Units Master';
+/**
+ * What keeps a unit from being deleted (notes 70 C2): a pack unit built on it,
+ * an item conversion using it (as the unit or as its base), an item whose base
+ * unit it is. A deleted base unit used to leave its pack unit resolving the
+ * deleted name on GET while dropdown 15 no longer listed it.
+ */
+const UNIT_REFERENCES: readonly LiveReference[] = [
+  {
+    table: 'inventory.item_unit_master',
+    column: 'unit_base_unit_id',
+    live: 'unit_is_deleted = false',
+    label: 'pack units built on it',
+  },
+  {
+    table: 'inventory.item_unit_conversion',
+    column: 'iuc_unit_id',
+    live: 'iuc_is_deleted = false',
+    label: 'item unit conversions',
+  },
+  {
+    table: 'inventory.item_unit_conversion',
+    column: 'iuc_base_unit_id',
+    live: 'iuc_is_deleted = false',
+    label: 'item unit conversions (as their base unit)',
+  },
+  {
+    table: 'inventory.item_master',
+    column: 'item_base_unit_id',
+    live: 'item_is_deleted = false',
+    label: 'items (as their base unit)',
+  },
+];
+const UNIT_DELETE_STATE = { label: 'unit', idField: 'unit_id', restoreRoute: '/units/restore' };
+/** A GST Unit Quantity Code: three capital letters (ck_unit_uqc). */
+const UQC_PATTERN = /^[A-Z]{3}$/;
 
 @Injectable()
 export class UnitsMasterService {
@@ -72,7 +113,22 @@ export class UnitsMasterService {
       unit_is_active: payload.unit_is_active,
     };
   }
-  async toggleDelete(unitId: string): Promise<{ unit_id: string; deleted: boolean }> {
+  /**
+   * DELETE deletes — it is no longer a toggle (notes 70 C1): an already
+   * deleted unit is a 409, and POST /units/restore brings one back. Refused
+   * (409) while a pack unit, an item conversion or an item still uses it (C2).
+   */
+  async softDelete(unitId: string): Promise<{ unit_id: string; deleted: boolean }> {
+    return this.setDeleted(unitId, true);
+  }
+  /** Restore a deleted unit. Refused (409) when it is not deleted, or its base unit is. */
+  async restore(unitId: string): Promise<{ unit_id: string; deleted: boolean }> {
+    return this.setDeleted(unitId, false);
+  }
+  private async setDeleted(
+    unitId: string,
+    wantDeleted: boolean,
+  ): Promise<{ unit_id: string; deleted: boolean }> {
     return this.prisma.$transaction(async (tx) => {
       // Find regardless of current deleted state
       const existing = await tx.unit.findFirst({
@@ -85,8 +141,25 @@ export class UnitsMasterService {
           `No unit found with id ${unitId}`,
         );
       }
+      assertDeleteState(existing.unit_is_deleted, wantDeleted, UNIT_DELETE_STATE);
+      if (wantDeleted) {
+        await assertNoLiveReferences(tx, UNIT_REFERENCES, unitId, UNIT_DELETE_STATE);
+      } else if (existing.unit_base_unit_id) {
+        const base = await tx.unit.findFirst({
+          where: { unit_id: existing.unit_base_unit_id, unit_is_deleted: false },
+          select: { unit_id: true },
+        });
+        if (!base) {
+          throwInventoryConflict<UnitErrorDetail>('The base unit is deleted', [
+            {
+              field: 'unit_base_unit_id',
+              message: `Restore base unit ${existing.unit_base_unit_id} first.`,
+            },
+          ]);
+        }
+      }
       const wasDeleted = existing.unit_is_deleted;
-      const nextDeleted = !wasDeleted;
+      const nextDeleted = wantDeleted;
       const modifiedOn = new Date();
       const userId = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
       // Guarded update: only flips if state hasn't changed since the read
@@ -131,12 +204,8 @@ export class UnitsMasterService {
     });
   }
   private async createUnit(saveUnitDto: SaveUnitDto): Promise<UnitPayload> {
-    const baseUnitId = hasOwnProperty(saveUnitDto, 'unit_base_unit_id')
-      ? (saveUnitDto.unit_base_unit_id ?? null)
-      : null;
-    const conversion = hasOwnProperty(saveUnitDto, 'unit_conversion')
-      ? (saveUnitDto.unit_conversion ?? null)
-      : null;
+    const baseUnitId = saveUnitDto.unit_base_unit_id ?? null;
+    const conversion = saveUnitDto.unit_conversion ?? null;
     this.validateConversionRules(baseUnitId, conversion);
     const now = new Date();
     const createdBy = resolveActor(
@@ -189,12 +258,17 @@ export class UnitsMasterService {
             `No active unit found with id ${unitId}`,
           );
         }
-        const baseUnitId = hasOwnProperty(saveUnitDto, 'unit_base_unit_id')
-          ? (saveUnitDto.unit_base_unit_id ?? null)
-          : existing.unit_base_unit_id;
-        const conversion = hasOwnProperty(saveUnitDto, 'unit_conversion')
-          ? (saveUnitDto.unit_conversion ?? null)
-          : toNullableNumber(existing.unit_conversion);
+        // `!== undefined`, not hasOwnProperty: every declared DTO field is an
+        // own property (ES2022 class fields), so an omitted base unit or
+        // conversion was validated as a cleared one. An explicit null clears.
+        const baseUnitId =
+          saveUnitDto.unit_base_unit_id !== undefined
+            ? (saveUnitDto.unit_base_unit_id ?? null)
+            : existing.unit_base_unit_id;
+        const conversion =
+          saveUnitDto.unit_conversion !== undefined
+            ? (saveUnitDto.unit_conversion ?? null)
+            : toNullableNumber(existing.unit_conversion);
         if (baseUnitId !== null && baseUnitId === unitId) {
           throwInventoryBadRequest<UnitErrorDetail>('Validation error', [
             { field: 'unit_base_unit_id', message: 'unit_base_unit_id cannot be same as unit_id' },
@@ -256,7 +330,16 @@ export class UnitsMasterService {
     saveUnitDto: SaveUnitDto,
   ): void {
     if (hasOwnProperty(saveUnitDto, 'unit_alias')) data.unit_alias = saveUnitDto.unit_alias;
-    if (hasOwnProperty(saveUnitDto, 'unit_code')) data.unit_code = saveUnitDto.unit_code;
+    if (hasOwnProperty(saveUnitDto, 'unit_code')) {
+      data.unit_code = saveUnitDto.unit_code;
+      // D1 — unit_code IS the UQC (an FK to item_gst_units). unit_uqc is kept as
+      // its derived copy for the e-invoice / GSTR-1 readers that name it, never
+      // set on its own, so the two columns cannot disagree.
+      if (saveUnitDto.unit_code !== undefined) {
+        const code = saveUnitDto.unit_code?.trim().toUpperCase() ?? '';
+        data.unitUqc = UQC_PATTERN.test(code) ? code : null;
+      }
+    }
     if (hasOwnProperty(saveUnitDto, 'unit_description'))
       data.unit_description = saveUnitDto.unit_description;
     if (hasOwnProperty(saveUnitDto, 'unit_decimal_count'))

@@ -40,7 +40,8 @@ describe('GodownsMasterController', () => {
     list: jest.fn(),
     getList: jest.fn(),
     getById: jest.fn(),
-    toggleDelete: jest.fn(),
+    softDelete: jest.fn(),
+    restore: jest.fn(),
   };
 
   const createResponse = (): { response: Response; statusMock: jest.Mock } => {
@@ -103,7 +104,7 @@ describe('GodownsMasterController', () => {
   });
 
   it('returns wrapped soft delete response', async () => {
-    serviceMock.toggleDelete.mockResolvedValue({
+    serviceMock.softDelete.mockResolvedValue({
       gdl_id: GDL_ID,
       deleted: true,
     });
@@ -123,7 +124,7 @@ describe('GodownsMasterController', () => {
   });
 
   it('returns wrapped restore response', async () => {
-    serviceMock.toggleDelete.mockResolvedValue({
+    serviceMock.restore.mockResolvedValue({
       gdl_id: GDL_ID,
       deleted: false,
     });
@@ -132,7 +133,7 @@ describe('GodownsMasterController', () => {
       gdl_id: GDL_ID,
     };
 
-    await expect(controller.remove(query)).resolves.toEqual({
+    await expect(controller.restore(query)).resolves.toEqual({
       success: true,
       message: 'Godown location restored successfully',
       data: {

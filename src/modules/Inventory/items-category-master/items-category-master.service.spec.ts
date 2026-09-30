@@ -24,6 +24,9 @@ type PrismaMock = {
   gridColumn: {
     findMany: jest.Mock;
   };
+  // The hierarchy guards and re-levelling (master-tree.helper) are raw SQL.
+  $queryRaw: jest.Mock;
+  $executeRaw: jest.Mock;
   $transaction: jest.Mock<Promise<unknown>, [(tx: Prisma.TransactionClient) => Promise<unknown>]>;
 };
 
@@ -73,6 +76,11 @@ describe('ItemsCategoryMasterService', () => {
       gridColumn: {
         findMany: jest.fn().mockResolvedValue([]),
       },
+      // No cycle, no live children or references, a live parent: the guards pass.
+      $queryRaw: jest
+        .fn()
+        .mockResolvedValue([{ hit: false, n: 0n, names: null, live: true, ord: 0 }]),
+      $executeRaw: jest.fn().mockResolvedValue(0),
       $transaction: jest.fn<
         Promise<unknown>,
         [(tx: Prisma.TransactionClient) => Promise<unknown>]
@@ -423,7 +431,7 @@ describe('ItemsCategoryMasterService', () => {
     expect(findFirstArgs.where?.categoryId).toBe(ITEM_CATEGORY_ID);
     expect(findFirstArgs.where?.categoryIsDeleted).toBe(false);
   });
-  it('toggleDelete removes subtree ids from ancestor caches', async () => {
+  it('softDelete removes subtree ids from ancestor caches', async () => {
     const parent = makeRecord({
       categoryId: PARENT_CATEGORY_ID,
       categoryParentId: null,
@@ -458,7 +466,7 @@ describe('ItemsCategoryMasterService', () => {
       }),
     );
 
-    await expect(service.toggleDelete(ITEM_CATEGORY_ID)).resolves.toEqual({
+    await expect(service.softDelete(ITEM_CATEGORY_ID)).resolves.toEqual({
       category_id: ITEM_CATEGORY_ID,
       deleted: true,
     });
@@ -479,13 +487,13 @@ describe('ItemsCategoryMasterService', () => {
     expect(ancestorUpdateArgs.data.categoryPathIdsCache).toEqual([PARENT_CATEGORY_ID]);
   });
 
-  it('toggleDelete restores a previously deleted category', async () => {
+  it('restore restores a previously deleted category', async () => {
     prisma.categoryMaster.findFirst
       .mockResolvedValueOnce(makeRecord({ categoryIsDeleted: true, categoryParentId: null }))
       .mockResolvedValueOnce(null);
     prisma.categoryMaster.updateMany.mockResolvedValue({ count: 1 });
 
-    await expect(service.toggleDelete(ITEM_CATEGORY_ID)).resolves.toEqual({
+    await expect(service.restore(ITEM_CATEGORY_ID)).resolves.toEqual({
       category_id: ITEM_CATEGORY_ID,
       deleted: false,
     });

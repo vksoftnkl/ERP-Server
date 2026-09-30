@@ -52,14 +52,12 @@ let GodownsMasterController = class GodownsMasterController {
         };
     }
     async remove(queryDto) {
-        const { gdl_id, deleted } = await this.godownsMasterService.toggleDelete(queryDto.gdl_id);
-        return {
-            success: true,
-            message: deleted
-                ? 'Godown location deleted successfully'
-                : 'Godown location restored successfully',
-            data: { gdl_id, deleted },
-        };
+        const data = await this.godownsMasterService.softDelete(queryDto.gdl_id);
+        return { success: true, message: 'Godown location deleted successfully', data };
+    }
+    async restore(queryDto) {
+        const data = await this.godownsMasterService.restore(queryDto.gdl_id);
+        return { success: true, message: 'Godown location restored successfully', data };
     }
 };
 exports.GodownsMasterController = GodownsMasterController;
@@ -111,15 +109,37 @@ __decorate([
 __decorate([
     (0, common_1.Delete)('delete'),
     (0, common_1.Version)(api_version_1.API_VERSION),
-    (0, swagger_1.ApiOperation)({ summary: 'Soft delete or restore godown location by gdl_id query parameter' }),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Soft delete a godown location by gdl_id query parameter',
+        description: 'Deletes only — it is not a toggle: an already deleted location is a 409 (use POST ' +
+            '/godowns/restore). Refused with 409 while child locations, stock on hand, or a ' +
+            "branch's default godown still point at it.",
+    }),
     (0, swagger_1.ApiOkResponse)({ type: godown_response_dto_1.GodownSuccessDeleteDto }),
     (0, swagger_1.ApiBadRequestResponse)({ type: godown_response_dto_1.GodownErrorResponseDto }),
     (0, swagger_1.ApiNotFoundResponse)({ type: godown_response_dto_1.GodownErrorResponseDto }),
+    (0, swagger_1.ApiConflictResponse)({ type: godown_response_dto_1.GodownErrorResponseDto }),
     __param(0, (0, common_1.Query)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [delete_godown_query_dto_1.DeleteGodownQueryDto]),
     __metadata("design:returntype", Promise)
 ], GodownsMasterController.prototype, "remove", null);
+__decorate([
+    (0, common_1.Post)('restore'),
+    (0, common_1.Version)(api_version_1.API_VERSION),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Restore a soft-deleted godown location by gdl_id query parameter',
+        description: '409 when the location is not deleted, or when its parent location is.',
+    }),
+    (0, swagger_1.ApiCreatedResponse)({ type: godown_response_dto_1.GodownSuccessDeleteDto }),
+    (0, swagger_1.ApiBadRequestResponse)({ type: godown_response_dto_1.GodownErrorResponseDto }),
+    (0, swagger_1.ApiNotFoundResponse)({ type: godown_response_dto_1.GodownErrorResponseDto }),
+    (0, swagger_1.ApiConflictResponse)({ type: godown_response_dto_1.GodownErrorResponseDto }),
+    __param(0, (0, common_1.Query)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [delete_godown_query_dto_1.DeleteGodownQueryDto]),
+    __metadata("design:returntype", Promise)
+], GodownsMasterController.prototype, "restore", null);
 exports.GodownsMasterController = GodownsMasterController = __decorate([
     (0, swagger_1.ApiTags)('Godowns'),
     (0, swagger_1.ApiBearerAuth)('access-token'),

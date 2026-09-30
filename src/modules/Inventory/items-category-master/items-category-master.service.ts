@@ -12,9 +12,33 @@ import {
   throwOnUniqueConstraintError,
 } from 'src/common/utils/module-service.utils';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
+import {
+  ITEM_CATEGORY_TREE,
+  assertDeleteState,
+  assertNoLiveChildren,
+  assertNoLiveReferences,
+  assertNotUnderOwnSubtree,
+  assertParentLive,
+  relevelSubtree,
+  type LiveReference,
+} from '../utils/master-tree.helper';
 const ITEM_CATEGORY_TABLE_NAME = 'item category master';
 const ITEM_CATEGORY_AUDIT_SCREEN_NAME = 'Category Master';
 type ItemCategoryWriteClient = Prisma.TransactionClient | PrismaService;
+/** What keeps a row from being deleted besides its own children (notes 70 B4). */
+const ITEM_CATEGORY_REFERENCES: readonly LiveReference[] = [
+  {
+    table: 'inventory.item_master',
+    column: 'item_category_id',
+    live: 'item_is_deleted = false',
+    label: 'items',
+  },
+];
+const ITEM_CATEGORY_DELETE_STATE = {
+  label: 'item category',
+  idField: 'category_id',
+  restoreRoute: '/item-categories/restore',
+};
 @Injectable()
 export class ItemsCategoryMasterService {
   constructor(
@@ -53,7 +77,22 @@ export class ItemsCategoryMasterService {
     });
     return parent?.categoryName ?? null;
   }
-  async toggleDelete(categoryId: string): Promise<{ category_id: string; deleted: boolean }> {
+  /**
+   * DELETE deletes — it is no longer a toggle (notes 70 C1): an already
+   * deleted row is a 409, and POST /item-categories/restore brings one back. Refused
+   * (409) while live children or live items still hang off it (B4).
+   */
+  async softDelete(categoryId: string): Promise<{ category_id: string; deleted: boolean }> {
+    return this.setDeleted(categoryId, true);
+  }
+  /** Restore a deleted row. Refused (409) when it is not deleted or its parent is. */
+  async restore(categoryId: string): Promise<{ category_id: string; deleted: boolean }> {
+    return this.setDeleted(categoryId, false);
+  }
+  private async setDeleted(
+    categoryId: string,
+    wantDeleted: boolean,
+  ): Promise<{ category_id: string; deleted: boolean }> {
     return this.prisma.$transaction(async (tx) => {
       // Find regardless of current deleted state
       const existing = await tx.categoryMaster.findFirst({
@@ -68,9 +107,25 @@ export class ItemsCategoryMasterService {
           `No item category found with id ${categoryId}`,
         );
       }
+      assertDeleteState(existing.categoryIsDeleted, wantDeleted, ITEM_CATEGORY_DELETE_STATE);
+      if (wantDeleted) {
+        await assertNoLiveChildren(tx, ITEM_CATEGORY_TREE, categoryId);
+        await assertNoLiveReferences(
+          tx,
+          ITEM_CATEGORY_REFERENCES,
+          categoryId,
+          ITEM_CATEGORY_DELETE_STATE,
+        );
+      } else {
+        await assertParentLive(tx, ITEM_CATEGORY_TREE, existing.categoryParentId);
+      }
       const wasDeleted = existing.categoryIsDeleted;
-      const nextDeleted = !wasDeleted;
-      const subtreeIds = await this.getActiveSubtreeIds(tx, categoryId);
+      const nextDeleted = wantDeleted;
+      // The subtree walk sees live rows only, so it is read while this row is
+      // live: before the flip on delete, after it on restore (below). A restore
+      // used to read it while still deleted, get nothing, and never put the ids
+      // back into the ancestors' path caches.
+      const subtreeIds = nextDeleted ? await this.getActiveSubtreeIds(tx, categoryId) : [];
       const ancestorIds = await this.getAncestorIds(tx, existing.categoryParentId);
       const modifiedOn = new Date();
       const userId = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
@@ -96,7 +151,7 @@ export class ItemsCategoryMasterService {
       if (nextDeleted) {
         await this.removePathIds(tx, ancestorIds, subtreeIds);
       } else {
-        await this.appendPathIds(tx, ancestorIds, subtreeIds);
+        await this.appendPathIds(tx, ancestorIds, await this.getActiveSubtreeIds(tx, categoryId));
       }
       const originalRecord = this.toPayload(existing);
       const modifiedRecord = this.toPayload({
@@ -148,6 +203,8 @@ export class ItemsCategoryMasterService {
           const ancestorIds = await this.getAncestorIds(tx, saveItemCategoryDto.category_parent_id);
           await this.appendPathIds(tx, ancestorIds, [created.categoryId]);
         }
+        // The level is the node's depth, computed — never the payload's (B1).
+        await relevelSubtree(tx, ITEM_CATEGORY_TREE, created.categoryId);
         const refreshed = await tx.categoryMaster.findFirst({
           where: {
             categoryId: created.categoryId,
@@ -217,11 +274,18 @@ export class ItemsCategoryMasterService {
         if (saveItemCategoryDto.category_parent_id) {
           await this.ensureParentExists(saveItemCategoryDto.category_parent_id, tx);
         }
-        const hasParentField = hasOwnProperty(saveItemCategoryDto, 'category_parent_id');
+        // `!== undefined`, not hasOwnProperty: every declared DTO field is an
+        // own property (ES2022 class fields), so an OMITTED parent used to read
+        // as "moved to root" and shuffle the path caches. null / "" still clear.
+        const hasParentField = saveItemCategoryDto.category_parent_id !== undefined;
         const nextParentId = hasParentField
           ? (saveItemCategoryDto.category_parent_id ?? null)
           : existing.categoryParentId;
         const isParentChanged = hasParentField && nextParentId !== existing.categoryParentId;
+        if (isParentChanged) {
+          // B3: under its own descendant would be a loop.
+          await assertNotUnderOwnSubtree(tx, ITEM_CATEGORY_TREE, categoryId, nextParentId);
+        }
         const subtreeIds = isParentChanged ? await this.getActiveSubtreeIds(tx, categoryId) : [];
         const oldAncestorIds = isParentChanged
           ? await this.getAncestorIds(tx, existing.categoryParentId)
@@ -244,6 +308,9 @@ export class ItemsCategoryMasterService {
           await this.removePathIds(tx, oldAncestorIds, subtreeIds);
           await this.appendPathIds(tx, newAncestorIds, subtreeIds);
         }
+        // The node and its whole subtree take their depth from where they now
+        // sit (B1, B2) — also repairs a level a payload or an old bug left wrong.
+        await relevelSubtree(tx, ITEM_CATEGORY_TREE, categoryId);
         const refreshed = await tx.categoryMaster.findFirst({
           where: {
             categoryId,
@@ -312,9 +379,7 @@ export class ItemsCategoryMasterService {
     if (hasOwnProperty(saveItemCategoryDto, 'category_sort')) {
       data.categorySort = saveItemCategoryDto.category_sort;
     }
-    if (hasOwnProperty(saveItemCategoryDto, 'category_level')) {
-      data.categoryLevel = saveItemCategoryDto.category_level;
-    }
+    // category_level is not taken from the payload: relevelSubtree computes it (B1).
     if (hasOwnProperty(saveItemCategoryDto, 'category_photo')) {
       data.categoryPhoto = this.decodePhotoInput(saveItemCategoryDto.category_photo);
     }

@@ -9,6 +9,7 @@ const ledger_bank_account_module_1 = require("../modules/accountsModule/ledgerBa
 const branch_master_module_1 = require("../modules/settings/branchMaster/branch-master.module");
 const company_group_master_module_1 = require("../modules/accountsModule/companyGroupMaster/company-group-master.module");
 const company_master_module_1 = require("../modules/settings/companyMaster/company-master.module");
+const app_theme_module_1 = require("../modules/settings/appTheme/app-theme.module");
 const employee_department_master_module_1 = require("../modules/settings/employeeDepartmentMaster/employee-department-master.module");
 const employee_designation_master_module_1 = require("../modules/settings/employeeDesignationMaster/employee-designation-master.module");
 const employee_master_module_1 = require("../modules/settings/employeeMaster/employee-master.module");
@@ -253,6 +254,12 @@ exports.swaggerModuleDocuments = [
         title: 'Company Master API',
         description: 'Company master module endpoints',
         include: [company_master_module_1.CompanyMasterModule],
+    },
+    {
+        path: 'app-themes',
+        title: 'App Themes API',
+        description: 'Company colour themes: named colour tokens per theme, never CSS. /effective is the theme a company is painted in, read by both clients at login and on company switch.',
+        include: [app_theme_module_1.AppThemeModule],
     },
     {
         path: 'company-group-master',

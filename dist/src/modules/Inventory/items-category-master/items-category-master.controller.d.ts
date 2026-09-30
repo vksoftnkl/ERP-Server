@@ -13,6 +13,10 @@ export declare class ItemsCategoryMasterController {
         category_id: string;
         deleted: boolean;
     }>>;
+    restore(categoryId: string): Promise<ItemCategorySuccessResponse<{
+        category_id: string;
+        deleted: boolean;
+    }>>;
     private withUploadedPhoto;
 }
 export {};

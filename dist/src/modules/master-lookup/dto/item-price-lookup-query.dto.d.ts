@@ -11,4 +11,8 @@ export declare class ItemPriceLookupQueryDto {
     loading_type?: LoadingType;
     freight_type?: FreightType;
     price_level: number;
+    mrp?: number;
+    sale_price?: number;
+    lot_id?: string;
+    doc_date?: string;
 }

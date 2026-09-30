@@ -2446,6 +2446,12 @@ Table item_price_master {
   ipmCreatedBy String
   ipmUpdatedOn DateTime
   ipmUpdatedBy String
+  ipmBucketMrp Decimal
+  ipmBucketSp Decimal
+  ipmKeyMrp Decimal
+  ipmKeySp Decimal
+  ipmEffectiveFrom DateTime [not null]
+  ipmEffectiveTo DateTime [not null]
   item item_master [not null]
   company companys
   branch branch_master
@@ -2907,12 +2913,32 @@ DELETE, never a write of the default value.'
 }
 
 Table app_theme_master {
-  thmId Int [pk]
+  thmId Int [pk, increment]
   thmName String [not null]
   thmIsActive Boolean [not null, default: true]
   thmIsDeleted Boolean [not null, default: false]
+  thmBase String [not null, default: 'LIGHT', note: 'LIGHT or DARK: which client template the tokens fill. Phase 1 ships LIGHT only.']
+  thmTokens Json [not null, default: '{}', note: 'Flat { "<token key>": "#rrggbb" }. A missing key = the client\'s compiled default.']
+  thmIsDefault Boolean [not null, default: false, note: 'The theme a company with a NULL comp_stylesheet_id gets.']
+  thmRemarks String
+  thmCreatedOn DateTime [default: `now()`, not null]
+  thmCreatedBy String
+  thmModifiedOn DateTime
+  thmModifiedBy String
   company companys [not null]
   thmSyncDate DateTime [note: 'NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).']
+
+  Note: 'A company\'s colour theme: named colour VALUES, never a stylesheet — each
+client fills its own template from thm_tokens (theme/plan-app-theme.md §2,
+migration 20260930190000_app_theme_tokens). Shared by every company, like
+the printing tables: a theme is a palette, a company picks one
+(companys.comp_stylesheet_id).
+
+Not expressible here, all raw SQL in that migration:
+ck_thm_base    thm_base IN (\'LIGHT\', \'DARK\')
+ck_thm_tokens  every value #rrggbb / #rrggbbaa (fn_theme_tokens_valid)
+ux_thm_default exactly one live default row
+ux_thm_name    lower(thm_name) unique among live rows'
 }
 
 Table batches_prefix {
@@ -6298,7 +6324,7 @@ NEVER set custId / custGroupId, and never use their nested `connect`s.
 Postgres computes those columns and rejects any write. Set lspKind +
 lspScopeId; read the relations back.
 
-── MIGRATION ───────────────────────────────────────────────────────────
+── MIGRATION ──────────────────────────────────────────────��────────────
 prisma migrate cannot emit a generated column; both are hand-authored, e.g.
 lsp_cust_id uuid GENERATED ALWAYS AS
 (CASE WHEN lsp_kind::text = \'CUSTOMER\' THEN lsp_scope_id END) STORED

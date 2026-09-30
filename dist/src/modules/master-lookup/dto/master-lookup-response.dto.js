@@ -9,7 +9,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.DocumentNumberSuccessDto = exports.DocumentNumberDto = exports.ItemUnitCycleSuccessDto = exports.ItemUnitCycleDto = exports.ItemPriceLookupSuccessDto = exports.ItemPriceLookupPayloadDto = exports.CustomerDetailSuccessDto = exports.CustomerDetailDto = exports.ItemUnitOptionListSuccessDto = exports.ItemUnitOptionDto = exports.BarcodeItemLookupSuccessDto = exports.BarcodeItemLookupDto = exports.FreightChargeListSuccessDto = exports.FreightChargeDto = exports.FiscalYearOptionListSuccessDto = exports.FiscalYearOptionDto = exports.NameIdOptionListSuccessDto = exports.MasterLookupSuccessDto = exports.MasterLookupPayloadDto = exports.MastersLookupPayloadDto = exports.AccountsLookupPayloadDto = exports.NameIdOptionDto = void 0;
+exports.DocumentNumberSuccessDto = exports.DocumentNumberDto = exports.ItemUnitCycleSuccessDto = exports.ItemUnitCycleDto = exports.ItemPriceLookupSuccessDto = exports.ItemPriceLookupPayloadDto = exports.ItemPriceBucketDto = exports.CustomerDetailSuccessDto = exports.CustomerDetailDto = exports.ItemUnitOptionListSuccessDto = exports.ItemUnitOptionDto = exports.BarcodeItemLookupSuccessDto = exports.BarcodeItemLookupDto = exports.FreightChargeListSuccessDto = exports.FreightChargeDto = exports.FiscalYearOptionListSuccessDto = exports.FiscalYearOptionDto = exports.NameIdOptionListSuccessDto = exports.MasterLookupSuccessDto = exports.MasterLookupPayloadDto = exports.MastersLookupPayloadDto = exports.AccountsLookupPayloadDto = exports.NameIdOptionDto = void 0;
 const swagger_1 = require("@nestjs/swagger");
 class NameIdOptionDto {
     id;
@@ -654,6 +654,77 @@ __decorate([
     (0, swagger_1.ApiProperty)({ type: CustomerDetailDto }),
     __metadata("design:type", CustomerDetailDto)
 ], CustomerDetailSuccessDto.prototype, "data", void 0);
+class ItemPriceBucketDto {
+    mrp;
+    sale_price;
+    available_qty;
+    price_source;
+    price_scope;
+    price_row_id;
+    sales_price;
+    sales_price_a;
+    sales_price_b;
+    sales_price_c;
+    sales_price_d;
+    max_price;
+    min_price;
+}
+exports.ItemPriceBucketDto = ItemPriceBucketDto;
+__decorate([
+    (0, swagger_1.ApiProperty)({ type: Number, nullable: true, example: 40 }),
+    __metadata("design:type", Object)
+], ItemPriceBucketDto.prototype, "mrp", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ type: Number, nullable: true }),
+    __metadata("design:type", Object)
+], ItemPriceBucketDto.prototype, "sale_price", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        example: 24,
+        description: 'SUM(sbl_available_qty) over SALEABLE holdings at this scope, in the BASE unit.',
+    }),
+    __metadata("design:type", Number)
+], ItemPriceBucketDto.prototype, "available_qty", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ enum: ['BUCKET', 'MASTER'], nullable: true }),
+    __metadata("design:type", Object)
+], ItemPriceBucketDto.prototype, "price_source", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ enum: ['BRANCH', 'CHAIN'], nullable: true }),
+    __metadata("design:type", Object)
+], ItemPriceBucketDto.prototype, "price_scope", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ format: 'uuid', nullable: true }),
+    __metadata("design:type", Object)
+], ItemPriceBucketDto.prototype, "price_row_id", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 38, description: 'The price at the requested price_level.' }),
+    __metadata("design:type", Number)
+], ItemPriceBucketDto.prototype, "sales_price", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 38 }),
+    __metadata("design:type", Number)
+], ItemPriceBucketDto.prototype, "sales_price_a", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 38 }),
+    __metadata("design:type", Number)
+], ItemPriceBucketDto.prototype, "sales_price_b", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 38 }),
+    __metadata("design:type", Number)
+], ItemPriceBucketDto.prototype, "sales_price_c", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 38 }),
+    __metadata("design:type", Number)
+], ItemPriceBucketDto.prototype, "sales_price_d", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 40 }),
+    __metadata("design:type", Number)
+], ItemPriceBucketDto.prototype, "max_price", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 0 }),
+    __metadata("design:type", Number)
+], ItemPriceBucketDto.prototype, "min_price", void 0);
 class ItemPriceLookupPayloadDto {
     item_id;
     item_uc_id;
@@ -679,6 +750,10 @@ class ItemPriceLookupPayloadDto {
     cost_wot;
     min_price;
     max_price;
+    price_source;
+    price_scope;
+    price_row_id;
+    buckets;
     disc_perc;
     disc_qty;
     sch_discount;
@@ -811,9 +886,38 @@ __decorate([
     __metadata("design:type", Number)
 ], ItemPriceLookupPayloadDto.prototype, "min_price", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ example: 120 }),
+    (0, swagger_1.ApiProperty)({
+        example: 120,
+        description: "The MRP on the line: the bucket's MRP on a BUCKET answer, the headline's ipm_max_price on a MASTER one.",
+    }),
     __metadata("design:type", Number)
 ], ItemPriceLookupPayloadDto.prototype, "max_price", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        enum: ['BUCKET', 'MASTER'],
+        description: "BUCKET = the item's price row for the line's exact MRP / sale price answered; MASTER = the headline row did (always so for an item whose policy tracks neither). A line with no MRP on an item priced only per MRP (no headline) gets the dearest bucket, provisionally, as BUCKET; buckets[] lists the others.",
+    }),
+    __metadata("design:type", String)
+], ItemPriceLookupPayloadDto.prototype, "price_source", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        enum: ['BRANCH', 'CHAIN'],
+        description: "BRANCH = the answering row is this branch's override; CHAIN = it has no branch.",
+    }),
+    __metadata("design:type", String)
+], ItemPriceLookupPayloadDto.prototype, "price_scope", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ format: 'uuid', description: 'item_price_master.ipm_id of the answering row.' }),
+    __metadata("design:type", String)
+], ItemPriceLookupPayloadDto.prototype, "price_row_id", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        type: ItemPriceBucketDto,
+        isArray: true,
+        description: 'Every live bucket at this branch with stock, each with its resolved prices — only for items whose stock track policy tracks MRP or sale price; [] otherwise. With no stock at all, every PRICED bucket at quantity 0, so an item priced but not yet received can still be sold.',
+    }),
+    __metadata("design:type", Array)
+], ItemPriceLookupPayloadDto.prototype, "buckets", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)({ example: 0 }),
     __metadata("design:type", Number)

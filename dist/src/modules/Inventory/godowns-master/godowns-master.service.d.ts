@@ -10,10 +10,15 @@ export declare class GodownsMasterService {
     constructor(prisma: PrismaService, auditLogService: AuditLogService, requestContextService: RequestContextService);
     save(saveGodownDto: SaveGodownDto): Promise<GodownPayload>;
     getById(gdlId: string): Promise<GodownPayload>;
-    toggleDelete(gdlId: string): Promise<{
+    softDelete(gdlId: string): Promise<{
         gdl_id: string;
         deleted: boolean;
     }>;
+    restore(gdlId: string): Promise<{
+        gdl_id: string;
+        deleted: boolean;
+    }>;
+    private setDeleted;
     private createGodownLocation;
     private updateGodownLocation;
     private normalizeLegacySaveGodownDto;

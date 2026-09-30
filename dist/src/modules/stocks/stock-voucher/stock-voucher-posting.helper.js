@@ -5,6 +5,9 @@ exports.postStockVoucher = postStockVoucher;
 exports.effectivePolicyLateral = effectivePolicyLateral;
 exports.effectivePolicyCte = effectivePolicyCte;
 exports.lotIdentityKeyColumns = lotIdentityKeyColumns;
+exports.bucketKeyFor = bucketKeyFor;
+exports.bucketKeySql = bucketKeySql;
+exports.readBucketTrackFlags = readBucketTrackFlags;
 exports.lineReasonJoin = lineReasonJoin;
 exports.lineDirectionColumn = lineDirectionColumn;
 exports.lotlessOutwardLine = lotlessOutwardLine;
@@ -21,6 +24,7 @@ exports.cancelDraftVoucher = cancelDraftVoucher;
 const common_1 = require("@nestjs/common");
 const client_1 = require("@prisma/client");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
+const price_resolver_1 = require("../../Inventory/items-price-master/price-resolver");
 const logger = new common_1.Logger('StockVoucherPosting');
 const DIRECTION_IN = 1;
 const DIRECTION_OUT = -1;
@@ -160,6 +164,46 @@ function lotIdentityKeyColumns() {
              COALESCE(CASE WHEN policy.track_supplier   THEN line.svi_supplier_id END,
                       '00000000-0000-0000-0000-000000000000'::uuid)                                                    AS key_supplier
   `;
+}
+function bucketKeyFor(policy, value) {
+    return {
+        mrp: policy?.trackMrp ? (0, price_resolver_1.normalizeBucketValue)(value.mrp) : null,
+        salePrice: policy?.trackSalePrice ? (0, price_resolver_1.normalizeBucketValue)(value.salePrice) : null,
+    };
+}
+function bucketKeySql(args) {
+    return {
+        mrp: client_1.Prisma.sql `CASE WHEN ${args.trackMrp} AND ${args.mrp} > 0 THEN ${args.mrp} END`,
+        salePrice: client_1.Prisma.sql `CASE WHEN ${args.trackSalePrice} AND ${args.salePrice} > 0 THEN ${args.salePrice} END`,
+    };
+}
+async function readBucketTrackFlags(client, scopes, onDate) {
+    if (!scopes.length) {
+        return [];
+    }
+    const rows = await client.$queryRaw `
+    SELECT q.ord,
+           COALESCE(stp.stp_track_mrp,        false) AS "trackMrp",
+           COALESCE(stp.stp_track_sale_price, false) AS "trackSalePrice"
+      FROM unnest(${scopes.map((s) => s.itemId)}::text[],
+                  ${scopes.map((s) => s.companyId ?? '')}::text[],
+                  ${scopes.map((s) => s.branchId ?? '')}::text[])
+           WITH ORDINALITY AS q(item_id, company_id, branch_id, ord)
+      JOIN inventory.item_master itm ON itm.item_id = q.item_id::uuid
+      ${effectivePolicyLateral({
+        companyId: client_1.Prisma.raw("NULLIF(q.company_id, '')::uuid"),
+        branchId: client_1.Prisma.raw("NULLIF(q.branch_id, '')::uuid"),
+        itemId: client_1.Prisma.raw('itm.item_id'),
+        itemGroupId: client_1.Prisma.raw('itm.item_group_id'),
+        onDate: client_1.Prisma.sql `${onDate}::date`,
+    })}
+     ORDER BY q.ord
+  `;
+    const byOrd = new Map(rows.map((row) => [Number(row.ord), row]));
+    return scopes.map((_, index) => {
+        const row = byOrd.get(index + 1);
+        return { trackMrp: row?.trackMrp ?? false, trackSalePrice: row?.trackSalePrice ?? false };
+    });
 }
 function lineReasonJoin() {
     return client_1.Prisma.sql `

@@ -17,6 +17,7 @@ export {
   isExclusionConstraintError,
   isForeignKeyConstraintError,
   violatedConstraintOf,
+  violatedCheckOf,
   isPrismaErrorCode,
   isUniqueConstraintError,
   normalizeNullableString,

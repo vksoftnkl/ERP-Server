@@ -122,6 +122,31 @@ export interface ItemUnitCyclePayload {
  * ONE unit rate (the pricing hub `item_price_master` row) into a single row
  * carrying the effective price, tax block, and stock.
  */
+/**
+ * One live stock bucket of an MRP- or sale-price-tracked item at the branch,
+ * with the prices that bucket resolves to (plan-nestjs-one-price-table.md §3.3).
+ */
+export interface ItemPriceBucketPayload {
+  /** The bucket's MRP, null when the item does not track MRP or the stock carries none. */
+  mrp: number | null;
+  /** The bucket's sale-price dimension, null when not tracked. */
+  sale_price: number | null;
+  /** SUM(sbl_available_qty) over SALEABLE holdings at this scope, in the item's BASE unit. */
+  available_qty: number;
+  /** BUCKET = a row for this exact bucket answered; MASTER = the headline did. */
+  price_source: 'BUCKET' | 'MASTER' | null;
+  price_scope: 'BRANCH' | 'CHAIN' | null;
+  /** The ipm_id that answered, or null when no row prices this bucket. */
+  price_row_id: string | null;
+  /** The price at the requested price_level (no customer rate applied). */
+  sales_price: number;
+  sales_price_a: number;
+  sales_price_b: number;
+  sales_price_c: number;
+  sales_price_d: number;
+  max_price: number;
+  min_price: number;
+}
 export interface ItemPriceLookupPayload {
   item_id: string;
   /**
@@ -156,7 +181,31 @@ export interface ItemPriceLookupPayload {
   cost_price: number;
   cost_wot: number;
   min_price: number;
+  /**
+   * The MRP on the line: the bucket's MRP on a BUCKET answer, the headline's
+   * ipm_max_price on a MASTER one.
+   */
   max_price: number;
+  /**
+   * BUCKET = the row for the line's exact (MRP, sale price) answered; MASTER =
+   * the headline did. A line with no MRP on an item priced ONLY per MRP (no
+   * headline) gets the dearest bucket, provisionally, as BUCKET — buckets[]
+   * lists the rest (notes 71 B2).
+   */
+  price_source: 'BUCKET' | 'MASTER';
+  /** BRANCH = the answering row is this branch's override; CHAIN = it prices every branch. */
+  price_scope: 'BRANCH' | 'CHAIN';
+  /** item_price_master.ipm_id of the answering row. */
+  price_row_id: string;
+  /**
+   * Every live bucket at this branch that has stock, each with its resolved
+   * prices — ONLY for items whose policy tracks MRP or sale price; [] otherwise.
+   * With NO stock at all it lists every PRICED bucket instead, at quantity 0
+   * (notes 71 B2), so an item priced but not yet received can still be sold.
+   * One entry: the line takes it. Several: the screen opens its bucket picker
+   * and re-asks with mrp. None: the headline stands.
+   */
+  buckets: ItemPriceBucketPayload[];
   disc_perc: number;
   disc_qty: number;
   /** Legacy item-group price-level scheme discount — no equivalent column in the current schema, always null. */

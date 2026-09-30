@@ -81,20 +81,40 @@ export class UnitsMasterController {
 
   @Delete('delete')
   @Version(API_VERSION)
-  @ApiOperation({ summary: 'Soft delete or restore unit by id' })
+  @ApiOperation({
+    summary: 'Soft delete unit by id',
+    description:
+      'Deletes only — it is not a toggle: an already deleted unit is a 409 (use POST ' +
+      '/units/restore). Refused with 409 while a pack unit, an item unit conversion or an item ' +
+      'still uses it.',
+  })
   @ApiQuery({ name: 'unit_id', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: UnitSuccessDeleteDto })
   @ApiBadRequestResponse({ type: UnitErrorResponseDto })
   @ApiNotFoundResponse({ type: UnitErrorResponseDto })
+  @ApiConflictResponse({ type: UnitErrorResponseDto })
   async remove(
     @Query('unit_id', new ParseUUIDPipe({ version: '7' })) unitId: string,
   ): Promise<UnitSuccessResponse<{ unit_id: string; deleted: boolean }>> {
-    const { unit_id, deleted } = await this.unitsMasterService.toggleDelete(unitId);
+    const data = await this.unitsMasterService.softDelete(unitId);
+    return { success: true, message: 'Unit deleted successfully', data };
+  }
 
-    return {
-      success: true,
-      message: deleted ? 'Unit deleted successfully' : 'Unit restored successfully',
-      data: { unit_id, deleted },
-    };
+  @Post('restore')
+  @Version(API_VERSION)
+  @ApiOperation({
+    summary: 'Restore a soft-deleted unit',
+    description: '409 when the unit is not deleted, or when its base unit is.',
+  })
+  @ApiQuery({ name: 'unit_id', schema: { type: 'string', format: 'uuid' } })
+  @ApiCreatedResponse({ type: UnitSuccessDeleteDto })
+  @ApiBadRequestResponse({ type: UnitErrorResponseDto })
+  @ApiNotFoundResponse({ type: UnitErrorResponseDto })
+  @ApiConflictResponse({ type: UnitErrorResponseDto })
+  async restore(
+    @Query('unit_id', new ParseUUIDPipe({ version: '7' })) unitId: string,
+  ): Promise<UnitSuccessResponse<{ unit_id: string; deleted: boolean }>> {
+    const data = await this.unitsMasterService.restore(unitId);
+    return { success: true, message: 'Unit restored successfully', data };
   }
 }

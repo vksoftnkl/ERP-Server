@@ -170,7 +170,8 @@ __decorate([
         summary: 'Soft delete an item by id, cascading to its unit conversions, prices, EAN codes, reorders and derived track policy',
         description: 'Deletes only — it is no longer a toggle: an item that is already deleted answers 409 (use ' +
             'POST /items/restore). The item and every live child row are soft-deleted in ONE transaction, and ' +
-            "the item's derived stock track policy is retired with them.",
+            "the item's derived stock track policy is retired with them. Also 409 while the item still " +
+            'has stock on hand or in transit anywhere (notes 70 C4); past transactions do not block.',
     }),
     (0, swagger_1.ApiQuery)({ name: 'item_id', schema: { type: 'string', format: 'uuid' } }),
     (0, swagger_1.ApiOkResponse)({ type: item_composite_response_dto_1.ItemCompositeSuccessDeleteDto }),

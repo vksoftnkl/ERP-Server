@@ -10,6 +10,12 @@ import {
 import { ItemCompositePayload } from './types/item-composite-api.types';
 import { ItemUnitConversionService } from '../item-unit-conversion/item-unit-conversion.service';
 import { ItemsPriceMasterService } from '../items-price-master/items-price-master.service';
+import {
+  PriceBucketService,
+  toBucketSource,
+  type PriceBucketSource,
+} from '../items-price-master/price-bucket.service';
+import type { BucketKey } from '../items-price-master/price-resolver';
 import { ItemsEanCodeMasterService } from '../items-ean-code-master/items-ean-code-master.service';
 import { ItemsReorderMasterService } from '../items-reorder-master/items-reorder-master.service';
 import { SaveItemUnitConversionDto } from '../item-unit-conversion/dto/save-item-unit-conversion.dto';
@@ -46,13 +52,18 @@ type UnitConversionIndex = {
  * Natural keys used to match payload rows against the item's existing rows:
  *   ean_codes        → ean_code                      (unique per item)
  *   unit_conversions → iuc_unit_id                   (one conversion row per unit)
- *   prices           → ipm_company_id + ipm_branch_id + ipm_uc_unit_id
- *                      — uq_item_price_master_scope's own key (NULLS NOT
- *                      DISTINCT). ipm_godown_id is NOT part of it: it is an
- *                      attribute of the row. The key used to be unit + godown,
- *                      so a NEW row for branch Y with branch X's unit and
- *                      godown took X's ipm_id and was saved over X's price
- *                      (notes 67 B1).
+ *   prices           → ipm_company_id + ipm_branch_id + ipm_uc_unit_id +
+ *                      ipm_bucket_mrp + ipm_bucket_sp — ex_ipm_overlap's own
+ *                      key, NULLs matching NULLs. The two bucket columns are
+ *                      DERIVED here from the item's stock track policy
+ *                      (PriceBucketService), never read from the payload, so
+ *                      an MRP-tracked item holds one row per unit × MRP and an
+ *                      untracked one a single row per unit, whatever MRPs the
+ *                      grid typed (plan-nestjs-one-price-table.md §4).
+ *                      ipm_godown_id is NOT part of it: it is an attribute of
+ *                      the row. The key used to be unit + godown, so a NEW row
+ *                      for branch Y with branch X's unit and godown took X's
+ *                      ipm_id and was saved over X's price (notes 67 B1).
  *   reorders         → ir_branch_id + ir_unit_id + ir_godown_id (nulls = the
  *                      global rule); the branch is in the key for the same
  *                      reason, since two branches' godown-less rules for one
@@ -83,6 +94,7 @@ export class ItemMasterUpdateService {
     private readonly itemsPriceMasterService: ItemsPriceMasterService,
     private readonly itemsEanCodeMasterService: ItemsEanCodeMasterService,
     private readonly itemsReorderMasterService: ItemsReorderMasterService,
+    private readonly priceBucketService: PriceBucketService,
   ) {}
 
   /**
@@ -216,10 +228,21 @@ export class ItemMasterUpdateService {
 
   /**
    * Sync item_price_master rows; natural key: (ipm_company_id, ipm_branch_id,
-   * ipm_uc_unit_id), the unique index's.
+   * ipm_uc_unit_id, ipm_bucket_mrp, ipm_bucket_sp) — ex_ipm_overlap's.
    * ipm_uc_unit_id stores an iuc_id, but the composite payload may name either
    * that or the unit behind it, so each row is resolved before it is matched,
    * compared and saved — exactly like the EAN and reorder collections below.
+   *
+   * THE BUCKET IS DERIVED, ON BOTH SIDES, UNDER THE POLICY IN FORCE NOW. The
+   * payload rows' keys come from what each row will hold; the stored rows'
+   * keys are re-derived rather than read, because this save may be the one
+   * that changed the item's preset or group — a stored row keyed under the old
+   * policy must still be matched by the row the grid sent for it. Two payload
+   * rows with one key are refused, naming both: under an untracked policy two
+   * MRPs for one unit are one price, and which of them survives is the
+   * operator's choice, not this service's. Stored rows the payload no longer
+   * claims are soft-deleted as before, and ItemsMasterService.saveComposite
+   * re-keys whatever is left (PriceBucketService.rekeyItem).
    */
   private async syncPrices(
     itemId: string,
@@ -231,12 +254,7 @@ export class ItemMasterUpdateService {
       return [];
     }
     const existing = await this.itemsPriceMasterService.findByItemId(itemId, tx);
-    const priceKey = (row: {
-      ipm_company_id?: string | null;
-      ipm_branch_id?: string | null;
-      ipm_uc_unit_id: string;
-    }) => this.naturalKey(row.ipm_company_id, row.ipm_branch_id, row.ipm_uc_unit_id);
-    const existingByKey = new Map(existing.map((row) => [priceKey(row), row]));
+    const existingById = new Map(existing.map((row) => [row.ipm_id, row]));
 
     const resolvedRows = children.map((child) => ({
       ...child,
@@ -246,25 +264,67 @@ export class ItemMasterUpdateService {
         conversions,
       ),
     }));
+    const [payloadKeys, existingKeys] = await Promise.all([
+      this.priceBucketService.deriveBuckets(
+        tx,
+        itemId,
+        resolvedRows.map((row) =>
+          this.payloadBucketSource(row, row.ipm_id ? existingById.get(row.ipm_id) : undefined),
+        ),
+      ),
+      this.priceBucketService.deriveBuckets(
+        tx,
+        itemId,
+        existing.map((row) => this.payloadBucketSource(row, undefined)),
+      ),
+    ]);
+    const priceKey = (
+      row: {
+        ipm_company_id?: string | null;
+        ipm_branch_id?: string | null;
+        ipm_uc_unit_id: string;
+      },
+      bucket: BucketKey,
+    ) =>
+      this.naturalKey(
+        row.ipm_company_id,
+        row.ipm_branch_id,
+        row.ipm_uc_unit_id,
+        bucket.mrp === null ? null : String(bucket.mrp),
+        bucket.salePrice === null ? null : String(bucket.salePrice),
+      );
+    // First stored row per key wins the match; any other row that now shares
+    // its key is unclaimed and soft-deleted below, which is what the grid
+    // asked for when it sent one row where there used to be two.
+    const existingByKey = new Map<string, ItemPricePayload>();
+    existing.forEach((row, index) => {
+      const key = priceKey(row, existingKeys[index]);
+      if (!existingByKey.has(key)) {
+        existingByKey.set(key, row);
+      }
+    });
+
     this.refuseDuplicateKeys(
-      resolvedRows.map(priceKey),
+      resolvedRows.map((row, index) => priceKey(row, payloadKeys[index])),
       'prices',
-      'two price rows for the same company, branch and unit — the price table holds one per scope (ipm_godown_id is an attribute, not part of the key)',
+      'one price: the same company, branch, unit and MRP / sale-price bucket. ' +
+        'An item that does not track MRP holds one price per unit, whatever MRP each row shows ' +
+        '(ipm_godown_id is an attribute, not part of the key)',
     );
     const toSave: SaveItemPriceDto[] = [];
     const claimedIds = new Set<string>();
-    for (const resolved of resolvedRows) {
+    resolvedRows.forEach((resolved, index) => {
       const match = resolved.ipm_id
         ? existing.find((row) => row.ipm_id === resolved.ipm_id)
-        : existingByKey.get(priceKey(resolved));
+        : existingByKey.get(priceKey(resolved, payloadKeys[index]));
       if (match) {
         claimedIds.add(match.ipm_id);
         if (!this.rowChanged(resolved, match, IPM_IGNORED_FIELDS)) {
-          continue;
+          return;
         }
       }
       toSave.push({ ...resolved, ipm_item_id: itemId, ipm_id: resolved.ipm_id ?? match?.ipm_id });
-    }
+    });
 
     const staleIds = existing.filter((row) => !claimedIds.has(row.ipm_id)).map((row) => row.ipm_id);
     if (staleIds.length > 0) {
@@ -274,6 +334,37 @@ export class ItemMasterUpdateService {
       await this.itemsPriceMasterService.save(toSave, tx);
     }
     return this.itemsPriceMasterService.findByItemId(itemId, tx);
+  }
+
+  /**
+   * What a price row will hold, for its bucket: the payload's value where it
+   * sent one, else the stored row's (an update by id), else what a create
+   * stores — 0 and NULL.
+   */
+  private payloadBucketSource(
+    row: Partial<SaveItemPriceDto> | ItemPricePayload,
+    stored: ItemPricePayload | undefined,
+  ): PriceBucketSource {
+    const pick = (field: keyof ItemPricePayload & keyof SaveItemPriceDto): number => {
+      const sent = (row as Record<string, unknown>)[field];
+      if (typeof sent === 'number') return sent;
+      const kept = stored?.[field];
+      return typeof kept === 'number' ? kept : 0;
+    };
+    const scope = (field: 'ipm_company_id' | 'ipm_branch_id'): string | null => {
+      const sent = (row as Record<string, unknown>)[field];
+      if (sent !== undefined) return (sent as string | null) ?? null;
+      return stored?.[field] ?? null;
+    };
+    return toBucketSource({
+      ipmCompanyId: scope('ipm_company_id'),
+      ipmBranchId: scope('ipm_branch_id'),
+      ipmMaxPrice: pick('ipm_max_price'),
+      ipmSalesPriceA: pick('ipm_sales_price_a'),
+      ipmSalesPriceB: pick('ipm_sales_price_b'),
+      ipmSalesPriceC: pick('ipm_sales_price_c'),
+      ipmSalesPriceD: pick('ipm_sales_price_d'),
+    });
   }
 
   /**

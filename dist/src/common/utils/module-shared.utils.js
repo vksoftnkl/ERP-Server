@@ -12,6 +12,7 @@ exports.isUniqueConstraintError = isUniqueConstraintError;
 exports.isForeignKeyConstraintError = isForeignKeyConstraintError;
 exports.violatedConstraintOf = violatedConstraintOf;
 exports.isExclusionConstraintError = isExclusionConstraintError;
+exports.violatedCheckOf = violatedCheckOf;
 exports.isPrismaErrorCode = isPrismaErrorCode;
 exports.normalizeRequiredText = normalizeRequiredText;
 exports.normalizeNullableString = normalizeNullableString;
@@ -81,6 +82,23 @@ function isExclusionConstraintError(error) {
     }
     const { message } = error;
     return typeof message === 'string' && message.includes('23P01');
+}
+function violatedCheckOf(error) {
+    if (typeof error !== 'object' || error === null) {
+        return null;
+    }
+    const { message, meta } = error;
+    const texts = [meta?.code === '23514' ? meta.message : null, message].filter((text) => typeof text === 'string');
+    for (const text of texts) {
+        if (!text.includes('23514') && text !== meta?.message) {
+            continue;
+        }
+        const match = /violates check constraint \\?"([A-Za-z0-9_]+)\\?"/.exec(text);
+        if (match) {
+            return match[1];
+        }
+    }
+    return null;
 }
 function isPrismaErrorCode(error, code) {
     if (typeof error !== 'object' || error === null || !('code' in error)) {

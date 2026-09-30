@@ -12,6 +12,9 @@ export declare class ItemsGroupMasterController {
     remove(itgId: string): Promise<ItemGroupSuccessResponse<{
         itg_id: string;
     }>>;
+    restore(itgId: string): Promise<ItemGroupSuccessResponse<{
+        itg_id: string;
+    }>>;
     private withUploadedPhoto;
 }
 export {};

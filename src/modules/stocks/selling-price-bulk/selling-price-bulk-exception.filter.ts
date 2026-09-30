@@ -11,12 +11,12 @@ interface RawQueryErrorMeta {
 }
 
 /**
- * A sentence per SQLSTATE, for the constraints §9 names.
+ * A sentence per constraint of `inventory.item_price_master` a save can trip.
  *
  * The database is the LAST line, not a fallback: a save the screen failed to
  * validate aborts whole, and that is the design. What it must not do is abort
  * with the database's own wording — "conflicting key value violates exclusion
- * constraint ex_smp_overlap" tells a shopkeeper nothing at all, and this is
+ * constraint ex_ipm_overlap" tells a shopkeeper nothing at all, and this is
  * the only place in the chain that knows the constraint's name means "another
  * price already covers this bucket for this period".
  *
@@ -24,18 +24,18 @@ interface RawQueryErrorMeta {
  * constraint name does not.
  */
 const CONSTRAINT_MESSAGES: Readonly<Record<string, string>> = {
-  ex_smp_overlap:
+  ex_ipm_overlap:
     'Another price already covers this bucket at this scope for an overlapping period. ' +
     'Reload the row and try again — someone else may have priced it a moment ago.',
-  ck_smp_not_above_mrp: 'A selling price cannot be above the MRP of the bucket it prices.',
-  ck_smp_prices_nonneg: 'A selling price cannot be negative.',
-  ck_smp_identity:
-    'A bucket must carry an MRP or a sale price. An item that tracks neither is priced on its ' +
-    'headline row, not on a bucket.',
+  ck_ipm_not_above_mrp: 'A selling price cannot be above the MRP of the bucket it prices.',
+  ck_ipm_bucket_mrp_is_max: "A bucket row's MRP and its max price must be the same figure.",
+  ck_ipm_bucket_mrp: 'An MRP bucket must be above zero.',
+  ck_ipm_bucket_sp: 'A sale-price bucket must be above zero.',
+  chk_ipm_nonnegative: 'A selling price cannot be negative.',
 };
 
 /**
- * §9 — the SQLSTATEs of `stock.stock_mrp_price`, translated.
+ * §9 — the SQLSTATEs of `inventory.item_price_master`, translated.
  *
  * THE SAME TRAP as the voucher filter, and the reason this is not a switch on
  * `error.code`: a RAISE from inside a PL/pgSQL function does not reach Prisma
@@ -54,9 +54,9 @@ export class SellingPriceBulkExceptionFilter extends StockExceptionFilter<
   StockErrorResponse
 > {
   constructor() {
-    // Field prefixes reachable from a price request: the smp columns, the
-    // fan-out's ipm columns, and the camelCase payload keys the DTOs use.
-    super(/\b((?:smp|ipm)[A-Za-z0-9_]+|scope|confirmed|bucketId|uomId|itemId|priceScope)\b/);
+    // Field prefixes reachable from a price request: the ipm columns and the
+    // camelCase payload keys the DTOs use.
+    super(/\b(ipm[A-Za-z0-9_]+|scope|confirmed|bucketId|uomId|itemId|priceScope)\b/);
   }
 
   catch(exception: unknown, host: ArgumentsHost): void {

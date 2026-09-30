@@ -1,34 +1,34 @@
 import { Module } from '@nestjs/common';
 import { AuditLogModule } from 'src/modules/audit-log/audit-log.module';
 import { AppSettingsModule } from 'src/modules/settings/appSettings/app-settings.module';
-import { ItemsPriceMasterModule } from 'src/modules/Inventory/items-price-master/items-price-master.module';
 import { SellingPriceBulkController } from './selling-price-bulk.controller';
 import { SellingPriceBulkExceptionFilter } from './selling-price-bulk-exception.filter';
 import { SellingPriceBulkService } from './selling-price-bulk.service';
-import { StockMrpPriceGateway } from './stock-mrp-price.gateway';
+import { PriceBucketGateway } from './price-bucket.gateway';
 
 /**
  * Change Selling Price (bulk), menu 30.
  *
- * Under `stocks/` because the table it OWNS is `stock.stock_mrp_price`, even
- * though half its fan-out lands in `inventory.item_price_master`. The table
- * decides where a module lives; the destinations of its writes do not.
+ * It writes `inventory.item_price_master` — the ONE price table, buckets and
+ * headlines alike (plan-nestjs-one-price-table.md) — through PriceBucketGateway,
+ * which holds every statement the screen runs. It lives under `stocks/`
+ * because what it prices is stock: the grid is one row per live bucket on
+ * hand, read from stock.stock_balance.
  *
- * All three imports are load-bearing and all three already export what is
- * needed: AppSettingsModule exports AppSettingValueService (for §0.3's
- * below-cost setting), ItemsPriceMasterModule exports ItemsPriceMasterService
- * (whose `save(rows, tx)` takes this module's transaction, §6), and
- * AuditLogModule the audit trail every write here is filed under.
+ * AppSettingsModule exports AppSettingValueService (for §0.3's below-cost
+ * setting); AuditLogModule the audit trail every save is filed under. There
+ * is no ItemsPriceMasterModule import any more: the headline fan-out it
+ * served is gone.
  *
- * StockMrpPriceGateway is exported as well: the Opening Stock item picker
+ * PriceBucketGateway is exported as well: the Opening Stock item picker
  * (OpeningStockVoucherModule) seeds a line's MRP and sale price from the same
- * table, and the rule that EVERY statement against `stock.stock_mrp_price`
- * lives in that one class is worth more than module tidiness.
+ * rows, and the rule that every bucket statement lives in that one class is
+ * worth more than module tidiness.
  */
 @Module({
-  imports: [AuditLogModule, AppSettingsModule, ItemsPriceMasterModule],
+  imports: [AuditLogModule, AppSettingsModule],
   controllers: [SellingPriceBulkController],
-  providers: [SellingPriceBulkService, SellingPriceBulkExceptionFilter, StockMrpPriceGateway],
-  exports: [SellingPriceBulkService, StockMrpPriceGateway],
+  providers: [SellingPriceBulkService, SellingPriceBulkExceptionFilter, PriceBucketGateway],
+  exports: [SellingPriceBulkService, PriceBucketGateway],
 })
 export class SellingPriceBulkModule {}

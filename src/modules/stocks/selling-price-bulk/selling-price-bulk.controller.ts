@@ -8,7 +8,6 @@ import {
   ApiOkResponse,
   ApiOperation,
   ApiParam,
-  ApiServiceUnavailableResponse,
   ApiTags,
   ApiUnauthorizedResponse,
   ApiUnprocessableEntityResponse,
@@ -55,17 +54,14 @@ interface SellingPriceSuccessResponse<TData> {
  * Not a configured grid either: no grid id exists for this screen, so nothing
  * here goes through ConfiguredGridSqlService the way
  * `ItemsPriceMasterService.listPrices` does.
+ *
+ * ONE PRICE TABLE: every row read or written here is an
+ * inventory.item_price_master row — a bucket (this item at THIS MRP) or the
+ * headline (plan-nestjs-one-price-table.md §5).
  */
 @ApiTags('Change Selling Price')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
-@ApiServiceUnavailableResponse({
-  type: SellingPriceErrorResponseDto,
-  description:
-    'stock.stock_mrp_price is not deployed on this database. It ships out of band from the ' +
-    'schema/stock share; every route that reads or writes a bucket answers 503 until it lands. ' +
-    'A save of headline rows only (no MRP, no sale price) never touches it and works today.',
-})
 @Controller('stock')
 @UseFilters(SellingPriceBulkExceptionFilter)
 export class SellingPriceBulkController {
@@ -76,8 +72,12 @@ export class SellingPriceBulkController {
   @ApiOperation({
     summary: 'The price grid — one row per (item × uom × live bucket) with stock',
     description:
-      'Items with no live bucket come back once, as priceSource = MASTER with both dimensions ' +
-      'blank. Paged, because a group filter over a 40,000-row item master with four buckets ' +
+      'Buckets are the (MRP, sale price) pairs of the stock on hand at the branch, blanked by ' +
+      "the item's stock track policy — an item that tracks neither has one bucket, its " +
+      'headline. Items with no live bucket come back once per unit as the headline, both ' +
+      'dimensions blank. priceSource / priceScope / bucketId are what the price resolver ' +
+      'answers: the exact bucket row before the headline, a branch row before the chain row. ' +
+      "stockQty is in the row's own unit. Paged, because a group filter over a 40,000-row item master with four buckets " +
       'each is not a grid; F8 exists so the operator narrows before loading. taxPerc is ' +
       'resolved server-side as of today through item_tax_history, so the client never has to ' +
       'ask which tax row applied.',
@@ -98,14 +98,14 @@ export class SellingPriceBulkController {
   @Get('price-buckets/:itemId')
   @Version(API_VERSION)
   @ApiOperation({
-    summary: 'F12 — every live bucket of one item',
+    summary: 'F12 — every live price row of one item this branch can see',
     description:
-      'A bucket is a live (MRP, sale price) pair, so an item with two MRPs and one sale price ' +
-      'shows two buckets and not three. AN EMPTY LIST IS A CORRECT ANSWER: an item whose ' +
-      'stock_track_policy tracks neither dimension has no bucket and cannot have one — ' +
-      'ck_smp_identity refuses a (NULL, NULL) row on purpose — and its edits route to the ' +
-      'headline row instead. Every row carries its own loaded values complete, so picking a ' +
-      'bucket resets the client row wholesale rather than merging into what was there.',
+      "The chain rows and this branch's own, never another branch's: the headline first, " +
+      'then by MRP and sale price, the chain row before the branch override of the same ' +
+      'bucket. The grid shows only the row that wins at this branch; this list shows both, so ' +
+      "the operator sees what an edit hides. stockQty is the stock on hand for each row's own " +
+      "bucket at this branch, in the row's unit. Every row carries its own values complete, so " +
+      'picking one resets the client row wholesale rather than merging into what was there.',
   })
   @ApiParam({ name: 'itemId', format: 'uuid' })
   @ApiOkResponse({ type: SellingPriceBucketsSuccessDto })
@@ -117,7 +117,7 @@ export class SellingPriceBulkController {
     const data = await this.sellingPriceBulkService.listBuckets(params.itemId, queryDto);
     return {
       success: true,
-      message: `${data.length} bucket${data.length === 1 ? '' : 's'} found`,
+      message: `${data.length} price row${data.length === 1 ? '' : 's'} found`,
       data,
     };
   }
@@ -132,8 +132,11 @@ export class SellingPriceBulkController {
       'inventory.below_cost_price (restrict → 422, warning → 200 with needsConfirm, allow → ' +
       'writes and still reports). A confirmed re-post re-runs the validation, because cost ' +
       'moves when a purchase posts and the confirm is the user agreeing to the price rather ' +
-      'than to a cost figure. Rows with neither dimension are headline edits and land in ' +
-      'inventory.item_price_master inside the same transaction.',
+      'than to a cost figure. Every row lands in inventory.item_price_master: its MRP / sale ' +
+      "price are blanked by the item's stock track policy first, so a row with neither is the " +
+      'headline, saved by the same statements. Two rows naming one bucket at one scope are a ' +
+      '422. Missing attributes of a new bucket row (godown, cess, loading, freight, loyalty) ' +
+      'are copied from the headline.',
   })
   @ApiOkResponse({ type: SellingPriceSaveSuccessDto })
   @ApiBadRequestResponse({ type: SellingPriceErrorResponseDto })
@@ -144,7 +147,7 @@ export class SellingPriceBulkController {
   @ApiUnprocessableEntityResponse({ type: SellingPriceErrorResponseDto })
   @ApiConflictResponse({
     type: SellingPriceErrorResponseDto,
-    description: 'ex_smp_overlap (23P01) — another price already covers this bucket and period.',
+    description: 'ex_ipm_overlap (23P01) — another price already covers this bucket and period.',
   })
   async saveBulk(
     @Body() dto: SaveSellingPriceBulkDto,

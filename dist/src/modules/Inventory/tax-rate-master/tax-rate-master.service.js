@@ -17,8 +17,36 @@ const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const audit_log_service_1 = require("../../audit-log/audit-log.service");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
 const ledger_map_helper_1 = require("../../accountsModule/ledgerRole/ledger-map.helper");
+const master_tree_helper_1 = require("../utils/master-tree.helper");
 const tax_rate_ledger_guard_1 = require("./utils/tax-rate-ledger.guard");
 const tax_rate_utils_1 = require("./utils/tax-rate.utils");
+const TAX_RATE_REFERENCES = [
+    {
+        table: 'inventory.item_master',
+        column: 'item_default_tax_id',
+        live: 'item_is_deleted = false',
+        label: 'items (as their default tax)',
+    },
+    {
+        table: 'inventory.item_tax_history',
+        column: 'ith_tax_id',
+        live: '(ith_effective_to IS NULL OR ith_effective_to >= CURRENT_DATE) AND EXISTS (' +
+            'SELECT 1 FROM inventory.item_master i WHERE i.item_id = ith_item_id AND i.item_is_deleted = false)',
+        label: 'open item tax-history windows',
+    },
+    {
+        table: 'accounts.acc_ledger_master',
+        column: 'led_tax_id',
+        live: 'led_is_deleted = false',
+        label: 'ledgers',
+    },
+    {
+        table: 'public.charge_master',
+        column: 'chg_tax_id',
+        live: 'chg_is_deleted = false',
+        label: 'charges',
+    },
+];
 const SCREEN_NAME = 'Tax Rate Master';
 const TAX_TABLE_NAME = 'tax rate master';
 const LINE_TABLE_NAME = 'tax rate ledger';
@@ -136,7 +164,7 @@ let TaxRateMasterService = class TaxRateMasterService {
         return this.prisma
             .$transaction(async (tx) => {
             const data = {
-                taxName: dto.tax_name,
+                taxName: dto.tax_name ?? '',
                 taxCreatedBy: actor,
             };
             this.applyHeaderFields(data, dto);
@@ -172,7 +200,7 @@ let TaxRateMasterService = class TaxRateMasterService {
                 taxModifiedOn: new Date(),
                 taxModifiedBy: this.resolveWriteActor(dto.tax_modified_by),
             };
-            if ((0, module_service_utils_1.hasOwnProperty)(dto, 'tax_name')) {
+            if (dto.tax_name !== undefined) {
                 data.taxName = dto.tax_name;
             }
             this.applyHeaderFields(data, dto);
@@ -203,6 +231,10 @@ let TaxRateMasterService = class TaxRateMasterService {
             if (!existing || existing.taxIsDeleted) {
                 this.throwNotFound('tax_id', taxId, 'Tax rate not found');
             }
+            await (0, master_tree_helper_1.assertNoLiveReferences)(tx, TAX_RATE_REFERENCES, taxId, {
+                label: 'tax rate',
+                idField: 'tax_id',
+            });
             const actor = this.resolveWriteActor(modifiedBy);
             const modifiedOn = new Date();
             const liveLines = (existing.ledgerOverrides ?? []).filter((line) => !line.trlIsDeleted);
@@ -225,7 +257,7 @@ let TaxRateMasterService = class TaxRateMasterService {
     applyHeaderFields(data, dto) {
         if ((0, module_service_utils_1.hasOwnProperty)(dto, 'tax_code'))
             data.taxCode = (0, module_service_utils_1.normalizeNullableString)(dto.tax_code);
-        if ((0, module_service_utils_1.hasOwnProperty)(dto, 'tax_supersedes_id'))
+        if (dto.tax_supersedes_id !== undefined)
             data.taxSupersedesId = dto.tax_supersedes_id ?? null;
         if (isPresent(dto.tax_sort_order))
             data.taxSortOrder = dto.tax_sort_order;
@@ -253,10 +285,8 @@ let TaxRateMasterService = class TaxRateMasterService {
     effectiveTaxRate(existing, dto) {
         const num = (sent, stored) => isPresent(sent) ? sent : stored !== undefined ? (0, module_service_utils_1.toNumber)(stored) : 0;
         return {
-            taxName: (0, module_service_utils_1.hasOwnProperty)(dto, 'tax_name')
-                ? (dto.tax_name ?? '').trim()
-                : (existing?.taxName ?? ''),
-            taxCode: (0, module_service_utils_1.hasOwnProperty)(dto, 'tax_code')
+            taxName: dto.tax_name !== undefined ? dto.tax_name.trim() : (existing?.taxName ?? ''),
+            taxCode: dto.tax_code !== undefined
                 ? ((0, module_service_utils_1.normalizeNullableString)(dto.tax_code) ?? null)
                 : (existing?.taxCode ?? null),
             taxTaxability: isPresent(dto.tax_taxability)
@@ -273,7 +303,7 @@ let TaxRateMasterService = class TaxRateMasterService {
                 : (existing?.taxAcessBasis ?? 'NONE'),
             taxAcessPerc: num(dto.tax_acess_perc, existing?.taxAcessPerc),
             taxAcessPerUnit: num(dto.tax_acess_per_unit, existing?.taxAcessPerUnit),
-            taxSupersedesId: (0, module_service_utils_1.hasOwnProperty)(dto, 'tax_supersedes_id')
+            taxSupersedesId: dto.tax_supersedes_id !== undefined
                 ? (dto.tax_supersedes_id ?? null)
                 : (existing?.taxSupersedesId ?? null),
         };
@@ -332,14 +362,13 @@ let TaxRateMasterService = class TaxRateMasterService {
     async assertNameIsFree(client, taxName, excludeTaxId) {
         if (!taxName)
             return;
-        const clash = await client.taxRateMaster.findFirst({
-            where: {
-                taxIsDeleted: false,
-                taxName: { equals: taxName, mode: client_1.Prisma.QueryMode.insensitive },
-                ...(excludeTaxId ? { taxId: { not: excludeTaxId } } : {}),
-            },
-            select: { taxId: true, taxName: true },
-        });
+        const [clash] = await client.$queryRaw `
+      SELECT tax_id AS "taxId", tax_name AS "taxName"
+        FROM inventory.tax_rate_master
+       WHERE tax_is_deleted = false
+         AND lower(tax_name) = lower(${taxName})
+         AND (${excludeTaxId}::uuid IS NULL OR tax_id <> ${excludeTaxId}::uuid)
+       LIMIT 1`;
         if (clash) {
             (0, tax_rate_utils_1.throwTaxRateConflict)('Tax rate name already exists', [
                 {
@@ -352,14 +381,13 @@ let TaxRateMasterService = class TaxRateMasterService {
     async assertCodeIsFree(client, taxCode, excludeTaxId) {
         if (!taxCode)
             return;
-        const clash = await client.taxRateMaster.findFirst({
-            where: {
-                taxIsDeleted: false,
-                taxCode: { equals: taxCode, mode: client_1.Prisma.QueryMode.insensitive },
-                ...(excludeTaxId ? { taxId: { not: excludeTaxId } } : {}),
-            },
-            select: { taxId: true, taxCode: true },
-        });
+        const [clash] = await client.$queryRaw `
+      SELECT tax_id AS "taxId", tax_code AS "taxCode"
+        FROM inventory.tax_rate_master
+       WHERE tax_is_deleted = false
+         AND lower(tax_code) = lower(${taxCode})
+         AND (${excludeTaxId}::uuid IS NULL OR tax_id <> ${excludeTaxId}::uuid)
+       LIMIT 1`;
         if (clash) {
             (0, tax_rate_utils_1.throwTaxRateConflict)('Tax rate code already exists', [
                 {

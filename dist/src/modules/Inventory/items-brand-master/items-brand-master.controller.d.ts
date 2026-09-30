@@ -13,6 +13,10 @@ export declare class ItemsBrandMasterController {
         brand_id: string;
         deleted: boolean;
     }>>;
+    restore(brandId: string): Promise<ItemBrandSuccessResponse<{
+        brand_id: string;
+        deleted: boolean;
+    }>>;
     private withUploadedPhoto;
 }
 export {};

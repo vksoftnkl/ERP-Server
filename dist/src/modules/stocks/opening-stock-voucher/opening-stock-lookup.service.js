@@ -14,7 +14,7 @@ const common_1 = require("@nestjs/common");
 const client_1 = require("@prisma/client");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
-const stock_mrp_price_gateway_1 = require("../selling-price-bulk/stock-mrp-price.gateway");
+const price_bucket_gateway_1 = require("../selling-price-bulk/price-bucket.gateway");
 const stock_voucher_posting_helper_1 = require("../stock-voucher/stock-voucher-posting.helper");
 let OpeningStockLookupService = class OpeningStockLookupService {
     prisma;
@@ -145,15 +145,13 @@ let OpeningStockLookupService = class OpeningStockLookupService {
         if (!row) {
             return this.throwWhyEmpty(args);
         }
-        const seed = this.mrpPrices.isDeployed
-            ? await this.mrpPrices.findOpeningSeedBucket({
-                companyId,
-                branchId,
-                itemId: row.itemId,
-                uomId: row.uomId,
-                onDate: args.onDate,
-            })
-            : null;
+        const seed = await this.mrpPrices.findOpeningSeedBucket({
+            companyId,
+            branchId,
+            itemId: row.itemId,
+            uomId: row.uomId,
+            onDate: args.onDate,
+        });
         return {
             itemId: row.itemId,
             itemCode: row.itemCode,
@@ -234,6 +232,6 @@ exports.OpeningStockLookupService = OpeningStockLookupService;
 exports.OpeningStockLookupService = OpeningStockLookupService = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [prisma_service_1.PrismaService,
-        stock_mrp_price_gateway_1.StockMrpPriceGateway])
+        price_bucket_gateway_1.PriceBucketGateway])
 ], OpeningStockLookupService);
 //# sourceMappingURL=opening-stock-lookup.service.js.map

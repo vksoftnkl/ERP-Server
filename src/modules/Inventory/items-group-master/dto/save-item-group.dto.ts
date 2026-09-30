@@ -94,7 +94,10 @@ export class SaveItemGroupDto {
   @IsInt()
   itg_sort?: number;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({
+    description:
+      'Accepted and IGNORED: the level is the node depth (root = 1), computed by the server.',
+  })
   @IsOptional()
   @IsInt()
   itg_level?: number;

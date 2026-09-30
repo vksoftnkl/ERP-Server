@@ -80,6 +80,12 @@ const makeItemPriceRecord = (overrides: Partial<ItemPriceMaster> = {}): ItemPric
     ipmCreatedBy: USER_ID,
     ipmUpdatedOn: new Date('2026-03-25T10:00:00.000Z'),
     ipmUpdatedBy: USER_ID,
+    ipmBucketMrp: null,
+    ipmBucketSp: null,
+    ipmKeyMrp: new Prisma.Decimal(-1),
+    ipmKeySp: new Prisma.Decimal(-1),
+    ipmEffectiveFrom: new Date('1900-01-01T00:00:00Z'),
+    ipmEffectiveTo: new Date('9999-12-31T00:00:00Z'),
     ...overrides,
   }) as ItemPriceMaster;
 const makeItemUnitConversionRecord = (
@@ -113,6 +119,7 @@ describe('ItemsPriceMasterService', () => {
   let auditLogService: Pick<AuditLogService, 'logEntityChange'>;
   let configuredGridSqlService: ConfiguredGridSqlServiceMock;
   let requestContextService: { getUserId: jest.Mock };
+  let priceBucketService: { deriveBuckets: jest.Mock };
   beforeEach(() => {
     prisma = {
       itemPriceMaster: {
@@ -151,11 +158,16 @@ describe('ItemsPriceMasterService', () => {
       runPagedQuery: jest.fn(),
     };
     requestContextService = { getUserId: jest.fn().mockReturnValue(null) };
+    // An untracked item: every row derives the headline key (NULL, NULL).
+    priceBucketService = {
+      deriveBuckets: jest.fn().mockResolvedValue([{ mrp: null, salePrice: null }]),
+    };
     service = new ItemsPriceMasterService(
       prisma as unknown as PrismaService,
       auditLogService as AuditLogService,
       configuredGridSqlService as never,
       requestContextService as never,
+      priceBucketService as never,
     );
   });
   it('writes only the conversion id, never a copy of the unit shape', async () => {

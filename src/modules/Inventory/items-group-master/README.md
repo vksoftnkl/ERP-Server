@@ -26,7 +26,8 @@ filed under, with each group carrying pricing/tax defaults and an optional photo
 | --- | --- | --- |
 | `POST` | `/create` | Create **or** update an item group (decided by `itg_id` presence). Accepts `application/json` or `multipart/form-data`. |
 | `GET` | `/get` | Fetch one item group by `itg_id` (UUID v7). |
-| `DELETE` | `/delete` | Toggle the soft-delete flag for an item group by `itg_id` (delete **or** restore). |
+| `DELETE` | `/delete` | Soft-delete an item group by `itg_id`. Not a toggle: 409 when already deleted. |
+| `POST` | `/restore` | Restore a soft-deleted item group by `itg_id`. |
 
 ### Create / update semantics
 
@@ -47,14 +48,19 @@ filed under, with each group carrying pricing/tax defaults and an optional photo
 - The service (`decodePhotoInput`) validates/strips the base64, rejecting malformed content with
   a `400`, and stores the decoded bytes in `itg_photo`; responses re-encode the bytes to base64.
 
-### Soft-delete toggle
+### Delete / restore
 
-- `DELETE /delete` **flips** `itgIsDeleted` rather than only deleting: a currently active group is
-  soft-deleted, a currently deleted group is restored (the response message reflects which).
-- The flip uses a guarded `updateMany` (`where: { itgId, itgIsDeleted: wasDeleted }`); if the row
-  vanished or changed state concurrently, it raises a not-found error.
-- Rows are never hard-deleted; deleting only sets `itgIsDeleted = true` and stamps
-  `itgModifiedOn` / `itgModifiedBy`.
+- `DELETE /delete` **deletes only** — it is not a toggle (notes 70 C1). An already deleted group
+  is a **409**; `POST /item-groups/restore` brings one back, and is itself a 409 when the group is not
+  deleted or its parent is (the row would come back an orphan).
+- DELETE is refused (**409**, naming what is in the way) while live sub-groups or live items still use it.
+- Both run in one transaction with a guarded `updateMany`; rows are never hard-deleted. On delete the
+  active subtree ids leave the ancestors' path caches; on restore they are read back AFTER the row
+  is live again and re-appended.
+- **Levels are depths** (a root is 1), computed by `relevelSubtree` on every create and update and
+  never taken from the payload; a re-parent re-levels the whole subtree. A node cannot move under
+  itself or one of its descendants (400). All three rules live in `../utils/master-tree.helper.ts`
+  (notes 70 B1-B3).
 
 ## Hierarchy & path cache
 

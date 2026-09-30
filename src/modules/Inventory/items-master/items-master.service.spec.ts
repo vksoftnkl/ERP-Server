@@ -10,6 +10,7 @@ import { ItemsReorderMasterService } from '../items-reorder-master/items-reorder
 import { SaveItemCompositeDto } from './dto/save-item-composite.dto';
 import { ItemsMasterService } from './items-master.service';
 import { ItemMasterUpdateService } from './item-master-update.service';
+import { PriceBucketService } from '../items-price-master/price-bucket.service';
 import { StockTrackPolicyService } from '../../stocks/stock-track-policy/stock-track-policy.service';
 
 const ITEM_ID = '019c6f6c-be87-7a11-8905-36092c46aa01';
@@ -130,6 +131,8 @@ type PrismaMock = {
   supplier: LookupMock;
   custGroup: LookupMock;
   taxRateMaster: LookupMock;
+  // The stock-on-hand delete guard (notes 70 C4) is raw SQL.
+  $queryRaw: jest.Mock;
   $transaction: jest.Mock<Promise<unknown>, [(tx: Prisma.TransactionClient) => Promise<unknown>]>;
 };
 
@@ -155,6 +158,7 @@ describe('ItemsMasterService composite endpoints', () => {
   let eanCodeService: ChildServiceMock;
   let reorderService: ChildServiceMock;
   let stockTrackPolicyService: { syncFromItem: jest.Mock; retireForItem: jest.Mock };
+  let priceBucketService: { deriveBuckets: jest.Mock; rekeyItem: jest.Mock };
 
   beforeEach(() => {
     prisma = {
@@ -185,6 +189,8 @@ describe('ItemsMasterService composite endpoints', () => {
       supplier: makeLookup(),
       custGroup: makeLookup(),
       taxRateMaster: makeLookup(),
+      // No stock on hand anywhere: the delete guard passes.
+      $queryRaw: jest.fn().mockResolvedValue([{ ord: 0, n: 0n }]),
       $transaction: jest.fn<
         Promise<unknown>,
         [(tx: Prisma.TransactionClient) => Promise<unknown>]
@@ -245,11 +251,22 @@ describe('ItemsMasterService composite endpoints', () => {
       retireForItem: jest.fn().mockResolvedValue([]),
     };
 
+    // An untracked item: every row derives the headline bucket, and re-keying
+    // changes nothing. The bucket rules themselves are covered end to end in
+    // test/one-price-table.e2e-spec.ts.
+    priceBucketService = {
+      deriveBuckets: jest.fn((_client: unknown, _itemId: string, rows: unknown[]) =>
+        Promise.resolve(rows.map(() => ({ mrp: null, salePrice: null }))),
+      ),
+      rekeyItem: jest.fn().mockResolvedValue(0),
+    };
+
     const itemMasterUpdateService = new ItemMasterUpdateService(
       unitConversionService as unknown as ItemUnitConversionService,
       priceService as unknown as ItemsPriceMasterService,
       eanCodeService as unknown as ItemsEanCodeMasterService,
       reorderService as unknown as ItemsReorderMasterService,
+      priceBucketService as unknown as PriceBucketService,
     );
 
     service = new ItemsMasterService(
@@ -262,6 +279,7 @@ describe('ItemsMasterService composite endpoints', () => {
       reorderService as unknown as ItemsReorderMasterService,
       itemMasterUpdateService,
       stockTrackPolicyService as unknown as StockTrackPolicyService,
+      priceBucketService as unknown as PriceBucketService,
     );
   });
 

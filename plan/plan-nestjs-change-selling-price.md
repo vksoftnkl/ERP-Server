@@ -1,5 +1,12 @@
 # NestJS — Change Selling Price (Bulk), menu 30
 
+> **Superseded in part, 2026-09-30, by `plan-nestjs-one-price-table.md`.** There is no
+> `stock.stock_mrp_price`: buckets are rows of `inventory.item_price_master`. §0.1 and §0.2 (the
+> table is not in this repo; its column list is unknown) no longer apply, §1 (the model) is the
+> existing `ItemPriceMaster` plus six columns, and §6's headline fan-out is deleted — a row with
+> neither dimension is S1–S3 at key (-1, -1) of the same table. The scope switch (§5.5), the
+> below-cost round trip (§0.3, §5.3), the recompute (§5.1) and the paging stand as written.
+
 Target repo: `/home/vk/Dev/erp/ERP server` (NestJS + Prisma, PostgreSQL 18).
 Screen plan: `change_selling_price_bulk.md` · layout `change_selling_ui_mockup.png`.
 Schema it is written against: `schema/stock/16_stock.sql` §20 (`stock_mrp_price`,

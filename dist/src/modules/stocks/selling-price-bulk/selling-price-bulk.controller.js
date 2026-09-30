@@ -48,7 +48,7 @@ let SellingPriceBulkController = class SellingPriceBulkController {
         const data = await this.sellingPriceBulkService.listBuckets(params.itemId, queryDto);
         return {
             success: true,
-            message: `${data.length} bucket${data.length === 1 ? '' : 's'} found`,
+            message: `${data.length} price row${data.length === 1 ? '' : 's'} found`,
             data,
         };
     }
@@ -67,8 +67,12 @@ __decorate([
     (0, common_1.Version)(api_version_1.API_VERSION),
     (0, swagger_1.ApiOperation)({
         summary: 'The price grid — one row per (item × uom × live bucket) with stock',
-        description: 'Items with no live bucket come back once, as priceSource = MASTER with both dimensions ' +
-            'blank. Paged, because a group filter over a 40,000-row item master with four buckets ' +
+        description: 'Buckets are the (MRP, sale price) pairs of the stock on hand at the branch, blanked by ' +
+            "the item's stock track policy — an item that tracks neither has one bucket, its " +
+            'headline. Items with no live bucket come back once per unit as the headline, both ' +
+            'dimensions blank. priceSource / priceScope / bucketId are what the price resolver ' +
+            'answers: the exact bucket row before the headline, a branch row before the chain row. ' +
+            "stockQty is in the row's own unit. Paged, because a group filter over a 40,000-row item master with four buckets " +
             'each is not a grid; F8 exists so the operator narrows before loading. taxPerc is ' +
             'resolved server-side as of today through item_tax_history, so the client never has to ' +
             'ask which tax row applied.',
@@ -84,13 +88,13 @@ __decorate([
     (0, common_1.Get)('price-buckets/:itemId'),
     (0, common_1.Version)(api_version_1.API_VERSION),
     (0, swagger_1.ApiOperation)({
-        summary: 'F12 — every live bucket of one item',
-        description: 'A bucket is a live (MRP, sale price) pair, so an item with two MRPs and one sale price ' +
-            'shows two buckets and not three. AN EMPTY LIST IS A CORRECT ANSWER: an item whose ' +
-            'stock_track_policy tracks neither dimension has no bucket and cannot have one — ' +
-            'ck_smp_identity refuses a (NULL, NULL) row on purpose — and its edits route to the ' +
-            'headline row instead. Every row carries its own loaded values complete, so picking a ' +
-            'bucket resets the client row wholesale rather than merging into what was there.',
+        summary: 'F12 — every live price row of one item this branch can see',
+        description: "The chain rows and this branch's own, never another branch's: the headline first, " +
+            'then by MRP and sale price, the chain row before the branch override of the same ' +
+            'bucket. The grid shows only the row that wins at this branch; this list shows both, so ' +
+            "the operator sees what an edit hides. stockQty is the stock on hand for each row's own " +
+            "bucket at this branch, in the row's unit. Every row carries its own values complete, so " +
+            'picking one resets the client row wholesale rather than merging into what was there.',
     }),
     (0, swagger_1.ApiParam)({ name: 'itemId', format: 'uuid' }),
     (0, swagger_1.ApiOkResponse)({ type: selling_price_bulk_response_dto_1.SellingPriceBucketsSuccessDto }),
@@ -112,8 +116,11 @@ __decorate([
             'inventory.below_cost_price (restrict → 422, warning → 200 with needsConfirm, allow → ' +
             'writes and still reports). A confirmed re-post re-runs the validation, because cost ' +
             'moves when a purchase posts and the confirm is the user agreeing to the price rather ' +
-            'than to a cost figure. Rows with neither dimension are headline edits and land in ' +
-            'inventory.item_price_master inside the same transaction.',
+            'than to a cost figure. Every row lands in inventory.item_price_master: its MRP / sale ' +
+            "price are blanked by the item's stock track policy first, so a row with neither is the " +
+            'headline, saved by the same statements. Two rows naming one bucket at one scope are a ' +
+            '422. Missing attributes of a new bucket row (godown, cess, loading, freight, loyalty) ' +
+            'are copied from the headline.',
     }),
     (0, swagger_1.ApiOkResponse)({ type: selling_price_bulk_response_dto_1.SellingPriceSaveSuccessDto }),
     (0, swagger_1.ApiBadRequestResponse)({ type: selling_price_bulk_response_dto_1.SellingPriceErrorResponseDto }),
@@ -124,7 +131,7 @@ __decorate([
     (0, swagger_1.ApiUnprocessableEntityResponse)({ type: selling_price_bulk_response_dto_1.SellingPriceErrorResponseDto }),
     (0, swagger_1.ApiConflictResponse)({
         type: selling_price_bulk_response_dto_1.SellingPriceErrorResponseDto,
-        description: 'ex_smp_overlap (23P01) — another price already covers this bucket and period.',
+        description: 'ex_ipm_overlap (23P01) — another price already covers this bucket and period.',
     }),
     __param(0, (0, common_1.Body)()),
     __metadata("design:type", Function),
@@ -135,12 +142,6 @@ exports.SellingPriceBulkController = SellingPriceBulkController = __decorate([
     (0, swagger_1.ApiTags)('Change Selling Price'),
     (0, swagger_1.ApiBearerAuth)('access-token'),
     (0, swagger_1.ApiUnauthorizedResponse)({ type: http_error_response_dto_1.HttpErrorResponseDto }),
-    (0, swagger_1.ApiServiceUnavailableResponse)({
-        type: selling_price_bulk_response_dto_1.SellingPriceErrorResponseDto,
-        description: 'stock.stock_mrp_price is not deployed on this database. It ships out of band from the ' +
-            'schema/stock share; every route that reads or writes a bucket answers 503 until it lands. ' +
-            'A save of headline rows only (no MRP, no sale price) never touches it and works today.',
-    }),
     (0, common_1.Controller)('stock'),
     (0, common_1.UseFilters)(selling_price_bulk_exception_filter_1.SellingPriceBulkExceptionFilter),
     __metadata("design:paramtypes", [selling_price_bulk_service_1.SellingPriceBulkService])

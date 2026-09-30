@@ -144,6 +144,13 @@ const makeItemPriceRecord = (overrides: Partial<ItemPriceMaster> = {}): ItemPric
     ipmCreatedBy: USER_ID,
     ipmUpdatedOn: new Date('2026-03-25T10:00:00.000Z'),
     ipmUpdatedBy: USER_ID,
+    // The headline row: no MRP / sale-price bucket, always in force.
+    ipmBucketMrp: null,
+    ipmBucketSp: null,
+    ipmKeyMrp: new Prisma.Decimal(-1),
+    ipmKeySp: new Prisma.Decimal(-1),
+    ipmEffectiveFrom: new Date('1900-01-01T00:00:00Z'),
+    ipmEffectiveTo: new Date('9999-12-31T00:00:00Z'),
     ...overrides,
   }) as ItemPriceMaster;
 

@@ -6,13 +6,15 @@ import { ItemPriceDeleteResult, ItemPriceListItem, ItemPriceListMeta, ItemPriceP
 import { PrismaService } from "../../../database/prisma/prisma.service";
 import { AuditLogService } from "../../audit-log/audit-log.service";
 import { RequestContextService } from "../../../common/request-context/request-context.service";
+import { PriceBucketService } from './price-bucket.service';
 import type { InventoryWriteClient } from "../../../common/utils/module-service.utils";
 export declare class ItemsPriceMasterService {
     private readonly prisma;
     private readonly auditLogService;
     private readonly configuredGridSqlService;
     private readonly requestContextService;
-    constructor(prisma: PrismaService, auditLogService: AuditLogService, configuredGridSqlService: ConfiguredGridSqlService, requestContextService: RequestContextService);
+    private readonly priceBucketService;
+    constructor(prisma: PrismaService, auditLogService: AuditLogService, configuredGridSqlService: ConfiguredGridSqlService, requestContextService: RequestContextService, priceBucketService: PriceBucketService);
     save(saveItemPriceDto: SaveItemPriceDto, tx?: Prisma.TransactionClient): Promise<ItemPricePayload>;
     save(saveItemPriceDto: SaveItemPriceDto[], tx?: Prisma.TransactionClient): Promise<ItemPricePayload[]>;
     save(saveItemPriceDto: SaveItemPriceDto | SaveItemPriceDto[], tx?: Prisma.TransactionClient): Promise<ItemPricePayload | ItemPricePayload[]>;
@@ -26,6 +28,8 @@ export declare class ItemsPriceMasterService {
     private toggleDeleteItemPrice;
     private createItemPrice;
     private updateItemPrice;
+    private applyBucket;
+    private fillLevelFigures;
     private requireUnitConversion;
     private applyOptionalFields;
     private parseOptionalDate;

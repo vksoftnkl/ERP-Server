@@ -28,7 +28,8 @@ attributes (color, icon, photo).
 | --- | --- | --- |
 | `POST` | `/create` | Create **or** update an item section (chosen by `sec_id` presence). Accepts `application/json` **or** `multipart/form-data` (file field `sec_photo`). |
 | `GET` | `/get` | Fetch one item section by `sec_id` (required, UUID v7). Only active (non-deleted) records. |
-| `DELETE` | `/delete` | Toggle soft-delete **or** restore an item section by `sec_id` (UUID v7). |
+| `DELETE` | `/delete` | Soft-delete an item section by `sec_id` (UUID v7). Not a toggle: 409 when already deleted. |
+| `POST` | `/restore` | Restore a soft-deleted item section by `sec_id`. |
 
 ## Create / update semantics
 
@@ -57,13 +58,18 @@ attributes (color, icon, photo).
 
 ## Soft delete / restore
 
-- `DELETE /delete` **toggles** state: an active section is soft-deleted (`sec_is_deleted = true`), a
-  deleted one is restored. The response `deleted` flag reports the resulting state and drives the
-  response message.
-- Rows are never hard-deleted; the update is guarded (`updateMany` filtered on the previously-read
-  `sec_is_deleted`) so it no-ops if state changed concurrently.
-- On delete, the section's active-subtree ids are pulled out of ancestor paths; on restore they are
-  re-appended.
+- `DELETE /delete` **deletes only** — it is not a toggle (notes 70 C1). An already deleted section
+  is a **409**; `POST /item-sections/restore` brings one back, and is itself a 409 when the section is not
+  deleted or its parent is (the row would come back an orphan).
+- DELETE is refused (**409**, naming what is in the way) while live sub-sections or live items still use it.
+- Both run in one transaction with a guarded `updateMany`; rows are never hard-deleted. On delete the
+  active subtree ids leave the ancestors' path caches; on restore they are read back AFTER the row
+  is live again and re-appended.
+- **Levels are depths** (a root is 1), computed by `relevelSubtree` on every create and update and
+  never taken from the payload; a re-parent re-levels the whole subtree. A node cannot move under
+  itself or one of its descendants (400). All three rules live in `../utils/master-tree.helper.ts`
+  (notes 70 B1-B3).
+- `sec_name` is unique among live sections (`uq_sec_name`, notes 70 D6): a duplicate is a 409.
 
 ## Validation & uniqueness
 

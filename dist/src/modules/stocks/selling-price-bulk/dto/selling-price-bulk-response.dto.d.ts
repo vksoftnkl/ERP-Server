@@ -24,8 +24,9 @@ export declare class SellingPriceRowDto {
     stockQty: number;
     mrp: number | null;
     salePrice: number | null;
+    maxPrice: number;
     priceSource: string;
-    priceScope: string;
+    priceScope: string | null;
     bucketId: string | null;
     costRate: number;
     minPrice: number;

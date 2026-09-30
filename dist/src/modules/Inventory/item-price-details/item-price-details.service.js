@@ -164,6 +164,8 @@ let ItemPriceDetailsService = class ItemPriceDetailsService {
             ipm_price_c_markup_perc: (0, module_service_utils_1.toNumber)(record.ipmPriceCMarkupPerc),
             ipm_price_d_markup_perc: (0, module_service_utils_1.toNumber)(record.ipmPriceDMarkupPerc),
             ipm_max_price: (0, module_service_utils_1.toNumber)(record.ipmMaxPrice),
+            ipm_bucket_mrp: record.ipmBucketMrp === null ? null : (0, module_service_utils_1.toNumber)(record.ipmBucketMrp),
+            ipm_bucket_sp: record.ipmBucketSp === null ? null : (0, module_service_utils_1.toNumber)(record.ipmBucketSp),
             ipm_min_price: (0, module_service_utils_1.toNumber)(record.ipmMinPrice),
             ipm_disc_perc: (0, module_service_utils_1.toNumber)(record.ipmDiscPerc),
             ipm_disc_qty: (0, module_service_utils_1.toNumber)(record.ipmDiscQty),

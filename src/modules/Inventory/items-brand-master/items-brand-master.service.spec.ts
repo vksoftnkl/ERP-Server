@@ -28,6 +28,9 @@ type PrismaMock = {
     >;
   };
   $queryRawUnsafe: jest.Mock<Promise<unknown>, [string, ...unknown[]]>;
+  // The hierarchy guards and re-levelling (master-tree.helper) are raw SQL.
+  $queryRaw: jest.Mock;
+  $executeRaw: jest.Mock;
   $transaction: jest.Mock<Promise<unknown>, [(tx: Prisma.TransactionClient) => Promise<unknown>]>;
 };
 
@@ -80,6 +83,11 @@ describe('ItemsBrandMasterService', () => {
         >(),
       },
       $queryRawUnsafe: jest.fn<Promise<unknown>, [string, ...unknown[]]>(),
+      // No cycle, no live children or references, a live parent: the guards pass.
+      $queryRaw: jest
+        .fn()
+        .mockResolvedValue([{ hit: false, n: 0n, names: null, live: true, ord: 0 }]),
+      $executeRaw: jest.fn().mockResolvedValue(0),
       $transaction: jest.fn<
         Promise<unknown>,
         [(tx: Prisma.TransactionClient) => Promise<unknown>]
@@ -427,7 +435,7 @@ describe('ItemsBrandMasterService', () => {
     expect(findFirstArgs.where?.brand_id).toBe(BRAND_ID);
     expect(findFirstArgs.where?.brand_is_deleted).toBe(false);
   });
-  it('toggleDelete removes subtree ids from ancestor caches', async () => {
+  it('softDelete removes subtree ids from ancestor caches', async () => {
     const parent = makeRecord({
       brand_id: PARENT_BRAND_ID,
       brand_parent_id: null,
@@ -462,7 +470,7 @@ describe('ItemsBrandMasterService', () => {
       }),
     );
 
-    await expect(service.toggleDelete(BRAND_ID)).resolves.toEqual({
+    await expect(service.softDelete(BRAND_ID)).resolves.toEqual({
       brand_id: BRAND_ID,
       deleted: true,
     });
@@ -483,13 +491,13 @@ describe('ItemsBrandMasterService', () => {
     expect(ancestorUpdateArgs.data.brand_path_ids).toEqual([PARENT_BRAND_ID]);
   });
 
-  it('toggleDelete restores a previously deleted brand', async () => {
+  it('restore restores a previously deleted brand', async () => {
     prisma.itemBrandMaster.findFirst
       .mockResolvedValueOnce(makeRecord({ brand_is_deleted: true, brand_parent_id: null }))
       .mockResolvedValueOnce(null);
     prisma.itemBrandMaster.updateMany.mockResolvedValue({ count: 1 });
 
-    await expect(service.toggleDelete(BRAND_ID)).resolves.toEqual({
+    await expect(service.restore(BRAND_ID)).resolves.toEqual({
       brand_id: BRAND_ID,
       deleted: false,
     });

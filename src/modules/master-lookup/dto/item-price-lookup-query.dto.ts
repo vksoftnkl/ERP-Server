@@ -4,6 +4,8 @@ import { Transform } from 'class-transformer';
 import { IsIn, IsOptional } from 'class-validator';
 import { toOptionalTrimmedString } from 'src/common/dto/DtoTransforms';
 import {
+  OptionalDateString,
+  OptionalNumber,
   OptionalQueryBoolean,
   OptionalTrimmedString,
   OptionalUuid,
@@ -94,4 +96,31 @@ export class ItemPriceLookupQueryDto {
   })
   @RequiredInteger(1, 7)
   price_level!: number;
+  @ApiPropertyOptional({
+    example: 40,
+    description:
+      "The MRP on the line — what the operator reads off the packet, or retyped under sales.allow_mrp_edit. Picks the item's price row FOR THAT MRP when the item's stock track policy tracks MRP; ignored (the headline answers) when it does not. Ignored when lot_id is given.",
+  })
+  @OptionalNumber(0)
+  mrp?: number;
+  @ApiPropertyOptional({
+    description:
+      "The line's selling-price dimension, for items whose policy tracks sale price. Ignored when lot_id is given, and when the policy does not track it.",
+  })
+  @OptionalNumber(0)
+  sale_price?: number;
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      'The lot the line already holds (a picked lot, or a loaded line). Its slt_mrp / slt_sale_price ARE the bucket key; mrp and sale_price are then ignored.',
+  })
+  @OptionalUuid()
+  lot_id?: string;
+  @ApiPropertyOptional({
+    format: 'date',
+    description:
+      "The document's date, for the price rows' effective window and the stock track policy. Defaults to today.",
+  })
+  @OptionalDateString()
+  doc_date?: string;
 }

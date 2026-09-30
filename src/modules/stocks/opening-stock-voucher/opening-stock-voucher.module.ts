@@ -15,10 +15,10 @@ import { OpeningStockVoucherController } from './opening-stock-voucher.controlle
  * left stock ledger and balance posting explicitly out of scope, which is the
  * exact opposite of what this one does.
  *
- * SellingPriceBulkModule is imported for one provider, StockMrpPriceGateway:
- * the item picker seeds a line's MRP and sale price from
- * `stock.stock_mrp_price`, and every statement against that table lives in
- * that gateway so that the day the table is deployed, one file changes.
+ * SellingPriceBulkModule is imported for one provider, PriceBucketGateway:
+ * the item picker seeds a line's MRP and sale price from the price table's
+ * bucket rows (inventory.item_price_master), and every statement that reads
+ * that table by bucket lives in that gateway.
  * OpeningStockLookupService is this module's own — the picker is the one read
  * on the screen that is not a document operation, so it is not on
  * StockVoucherService.

@@ -152,11 +152,14 @@ export class TaxRateMasterController {
     summary: 'Soft delete a GST rate and every one of its ledger overrides',
     description:
       'Soft delete only — a rate that has priced a bill is never removed. Deleting frees the ' +
-      'name and code for reuse, which is what the partial unique indexes are for.',
+      'name and code for reuse, which is what the partial unique indexes are for. Refused with ' +
+      '409 while a live item (default tax or open tax-history window), ledger or charge still ' +
+      'points at the rate: the picker would stop offering it while they kept posting with it.',
   })
   @ApiOkResponse({ type: TaxRateSuccessDeleteDto })
   @ApiBadRequestResponse({ type: TaxRateErrorResponseDto })
   @ApiNotFoundResponse({ type: TaxRateErrorResponseDto })
+  @ApiConflictResponse({ type: TaxRateErrorResponseDto })
   async remove(
     @Query() query: DeleteTaxRateQueryDto,
   ): Promise<TaxRateSuccessResponse<TaxRateDeleteResult>> {

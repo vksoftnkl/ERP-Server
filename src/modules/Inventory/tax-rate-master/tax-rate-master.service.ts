@@ -31,6 +31,7 @@ import {
   roleLedgerKey,
   SUPPLY_NATURES,
 } from '../../accountsModule/ledgerRole/ledger-map.helper';
+import { assertNoLiveReferences, type LiveReference } from '../utils/master-tree.helper';
 import { collectTaxRateLedgerErrors } from './utils/tax-rate-ledger.guard';
 import {
   CESS_BASES,
@@ -49,6 +50,41 @@ import {
   toTaxRatePayload,
 } from './utils/tax-rate.utils';
 
+/**
+ * The MASTER rows that keep a rate from being deleted (notes 70 C3). Of the
+ * 21 foreign keys onto tax_rate_master these are the live configuration; the
+ * sale document lines are history (a used rate would otherwise be undeletable
+ * for ever), the rate's own ledger lines are deleted with it, and a rate that
+ * supersedes this one only records where it came from.
+ */
+const TAX_RATE_REFERENCES: readonly LiveReference[] = [
+  {
+    table: 'inventory.item_master',
+    column: 'item_default_tax_id',
+    live: 'item_is_deleted = false',
+    label: 'items (as their default tax)',
+  },
+  {
+    table: 'inventory.item_tax_history',
+    column: 'ith_tax_id',
+    live:
+      '(ith_effective_to IS NULL OR ith_effective_to >= CURRENT_DATE) AND EXISTS (' +
+      'SELECT 1 FROM inventory.item_master i WHERE i.item_id = ith_item_id AND i.item_is_deleted = false)',
+    label: 'open item tax-history windows',
+  },
+  {
+    table: 'accounts.acc_ledger_master',
+    column: 'led_tax_id',
+    live: 'led_is_deleted = false',
+    label: 'ledgers',
+  },
+  {
+    table: 'public.charge_master',
+    column: 'chg_tax_id',
+    live: 'chg_is_deleted = false',
+    label: 'charges',
+  },
+];
 const SCREEN_NAME = 'Tax Rate Master';
 const TAX_TABLE_NAME = 'tax rate master';
 const LINE_TABLE_NAME = 'tax rate ledger';
@@ -248,7 +284,8 @@ export class TaxRateMasterService {
     return this.prisma
       .$transaction(async (tx) => {
         const data: Prisma.TaxRateMasterUncheckedCreateInput = {
-          taxName: dto.tax_name,
+          // An absent name is refused below (collectHeaderErrors: tax_name is required).
+          taxName: dto.tax_name ?? '',
           taxCreatedBy: actor,
         };
         this.applyHeaderFields(data, dto);
@@ -303,7 +340,7 @@ export class TaxRateMasterService {
           taxModifiedOn: new Date(),
           taxModifiedBy: this.resolveWriteActor(dto.tax_modified_by),
         };
-        if (hasOwnProperty(dto, 'tax_name')) {
+        if (dto.tax_name !== undefined) {
           data.taxName = dto.tax_name;
         }
         this.applyHeaderFields(data, dto);
@@ -354,6 +391,13 @@ export class TaxRateMasterService {
       if (!existing || existing.taxIsDeleted) {
         this.throwNotFound('tax_id', taxId, 'Tax rate not found');
       }
+      // C3 — a rate an item, a ledger, a charge or an open tax-history window
+      // still points at is not deleted: the picker would stop offering it while
+      // those rows kept posting with it.
+      await assertNoLiveReferences(tx, TAX_RATE_REFERENCES, taxId, {
+        label: 'tax rate',
+        idField: 'tax_id',
+      });
 
       const actor = this.resolveWriteActor(modifiedBy);
       const modifiedOn = new Date();
@@ -405,8 +449,10 @@ export class TaxRateMasterService {
   ): void {
     // Nullable: an explicit null clears the column.
     if (hasOwnProperty(dto, 'tax_code')) data.taxCode = normalizeNullableString(dto.tax_code);
-    if (hasOwnProperty(dto, 'tax_supersedes_id'))
-      data.taxSupersedesId = dto.tax_supersedes_id ?? null;
+    // `!== undefined`, not hasOwnProperty: every declared DTO field is an own
+    // property (ES2022 class fields), so an update that OMITTED the key cleared
+    // the chain. An explicit null (or "") still clears it.
+    if (dto.tax_supersedes_id !== undefined) data.taxSupersedesId = dto.tax_supersedes_id ?? null;
 
     // NOT NULL with a default: a null is ignored, not written.
     if (isPresent(dto.tax_sort_order)) data.taxSortOrder = dto.tax_sort_order;
@@ -435,12 +481,11 @@ export class TaxRateMasterService {
       isPresent(sent) ? sent : stored !== undefined ? toNumber(stored) : 0;
 
     return {
-      taxName: hasOwnProperty(dto, 'tax_name')
-        ? (dto.tax_name ?? '').trim()
-        : (existing?.taxName ?? ''),
-      taxCode: hasOwnProperty(dto, 'tax_code')
-        ? (normalizeNullableString(dto.tax_code) ?? null)
-        : (existing?.taxCode ?? null),
+      taxName: dto.tax_name !== undefined ? dto.tax_name.trim() : (existing?.taxName ?? ''),
+      taxCode:
+        dto.tax_code !== undefined
+          ? (normalizeNullableString(dto.tax_code) ?? null)
+          : (existing?.taxCode ?? null),
       taxTaxability: isPresent(dto.tax_taxability)
         ? dto.tax_taxability
         : (existing?.taxTaxability ?? 'TAXABLE'),
@@ -455,9 +500,10 @@ export class TaxRateMasterService {
         : (existing?.taxAcessBasis ?? 'NONE'),
       taxAcessPerc: num(dto.tax_acess_perc, existing?.taxAcessPerc),
       taxAcessPerUnit: num(dto.tax_acess_per_unit, existing?.taxAcessPerUnit),
-      taxSupersedesId: hasOwnProperty(dto, 'tax_supersedes_id')
-        ? (dto.tax_supersedes_id ?? null)
-        : (existing?.taxSupersedesId ?? null),
+      taxSupersedesId:
+        dto.tax_supersedes_id !== undefined
+          ? (dto.tax_supersedes_id ?? null)
+          : (existing?.taxSupersedesId ?? null),
     };
   }
 
@@ -588,14 +634,17 @@ export class TaxRateMasterService {
     excludeTaxId: string | null,
   ): Promise<void> {
     if (!taxName) return;
-    const clash = await client.taxRateMaster.findFirst({
-      where: {
-        taxIsDeleted: false,
-        taxName: { equals: taxName, mode: Prisma.QueryMode.insensitive },
-        ...(excludeTaxId ? { taxId: { not: excludeTaxId } } : {}),
-      },
-      select: { taxId: true, taxName: true },
-    });
+    // lower() = lower(), exactly what ux_tax_name enforces. NOT Prisma's
+    // `equals` + `mode: insensitive`: that compiles to ILIKE, where % and _ are
+    // wildcards — "GST 0%" then "clashed" with "GST 0.25%" and could never be
+    // saved again (found by the notes 70 e2e).
+    const [clash] = await client.$queryRaw<Array<{ taxId: string; taxName: string }>>`
+      SELECT tax_id AS "taxId", tax_name AS "taxName"
+        FROM inventory.tax_rate_master
+       WHERE tax_is_deleted = false
+         AND lower(tax_name) = lower(${taxName})
+         AND (${excludeTaxId}::uuid IS NULL OR tax_id <> ${excludeTaxId}::uuid)
+       LIMIT 1`;
     if (clash) {
       throwTaxRateConflict('Tax rate name already exists', [
         {
@@ -613,14 +662,15 @@ export class TaxRateMasterService {
     excludeTaxId: string | null,
   ): Promise<void> {
     if (!taxCode) return;
-    const clash = await client.taxRateMaster.findFirst({
-      where: {
-        taxIsDeleted: false,
-        taxCode: { equals: taxCode, mode: Prisma.QueryMode.insensitive },
-        ...(excludeTaxId ? { taxId: { not: excludeTaxId } } : {}),
-      },
-      select: { taxId: true, taxCode: true },
-    });
+    // Exact and case-insensitive, like the name — an ILIKE would treat the _ in
+    // "GST_18" as a wildcard.
+    const [clash] = await client.$queryRaw<Array<{ taxId: string; taxCode: string }>>`
+      SELECT tax_id AS "taxId", tax_code AS "taxCode"
+        FROM inventory.tax_rate_master
+       WHERE tax_is_deleted = false
+         AND lower(tax_code) = lower(${taxCode})
+         AND (${excludeTaxId}::uuid IS NULL OR tax_id <> ${excludeTaxId}::uuid)
+       LIMIT 1`;
     if (clash) {
       throwTaxRateConflict('Tax rate code already exists', [
         {

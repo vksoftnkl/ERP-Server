@@ -10,6 +10,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ItemsQtyPriceMasterService = void 0;
+const master_tree_helper_1 = require("../utils/master-tree.helper");
 const common_1 = require("@nestjs/common");
 const configured_grid_sql_service_1 = require("../../../common/configured-grid-sql/configured-grid-sql.service");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
@@ -105,17 +106,29 @@ let ItemsQtyPriceMasterService = class ItemsQtyPriceMasterService {
         }
         return this.toPayload(record);
     }
-    async toggleDelete(iqpId, tx) {
-        const toggleIds = Array.isArray(iqpId) ? iqpId : [iqpId];
-        const toggleAll = async (client) => {
-            const toggledItems = [];
-            for (const toggleId of toggleIds) {
-                toggledItems.push(await this.toggleDeleteItemQtyPrice(client, toggleId));
+    async softDelete(iqpId) {
+        return this.setDeleted(iqpId, true);
+    }
+    async restore(iqpId) {
+        return this.setDeleted(iqpId, false);
+    }
+    async setDeleted(iqpId, wantDeleted) {
+        const ids = Array.isArray(iqpId) ? iqpId : [iqpId];
+        const applyAll = async (client) => {
+            const results = [];
+            for (const id of ids) {
+                results.push(await this.setDeletedItemQtyPrice(client, id, wantDeleted));
             }
-            return toggledItems;
+            return results;
         };
-        const results = tx ? await toggleAll(tx) : await this.prisma.$transaction(toggleAll);
-        return Array.isArray(iqpId) ? results : results[0];
+        try {
+            const results = await this.prisma.$transaction(applyAll);
+            return Array.isArray(iqpId) ? results : results[0];
+        }
+        catch (error) {
+            this.handleWriteError(error);
+            throw error;
+        }
     }
     async saveItemQtyPrice(tx, saveItemQtyPriceDto) {
         if (saveItemQtyPriceDto.iqp_id) {
@@ -123,7 +136,7 @@ let ItemsQtyPriceMasterService = class ItemsQtyPriceMasterService {
         }
         return this.createItemQtyPrice(tx, saveItemQtyPriceDto);
     }
-    async toggleDeleteItemQtyPrice(tx, iqpId) {
+    async setDeletedItemQtyPrice(tx, iqpId, wantDeleted) {
         const existing = await tx.itemQtyPrice.findFirst({
             where: { iqpId },
             include: ITEM_QTY_PRICE_INCLUDE,
@@ -131,8 +144,13 @@ let ItemsQtyPriceMasterService = class ItemsQtyPriceMasterService {
         if (!existing) {
             this.throwNotFound(iqpId);
         }
+        (0, master_tree_helper_1.assertDeleteState)(existing.iqpIsDeleted, wantDeleted, {
+            label: 'qty price slab',
+            idField: 'iqp_id',
+            restoreRoute: '/item-qty-prices/restore',
+        });
         const wasDeleted = existing.iqpIsDeleted;
-        const nextDeleted = !wasDeleted;
+        const nextDeleted = wantDeleted;
         const modifiedOn = new Date();
         const modifiedBy = this.requestContextService.getUserId() ?? module_service_utils_1.DEFAULT_ACTOR;
         const result = await tx.itemQtyPrice.updateMany({

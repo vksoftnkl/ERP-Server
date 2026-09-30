@@ -4,14 +4,13 @@ import { PrismaService } from 'src/database/prisma/prisma.service';
 import { AuditLogService } from 'src/modules/audit-log/audit-log.service';
 import { RequestContextService } from 'src/common/request-context/request-context.service';
 import { AppSettingValueService } from 'src/modules/settings/appSettings/app-setting-value.service';
-import { ItemsPriceMasterService } from 'src/modules/Inventory/items-price-master/items-price-master.service';
-import type { SaveItemPriceDto } from 'src/modules/Inventory/items-price-master/dto/save-item-price.dto';
 import {
   resolveActor,
   throwStockForbidden,
   throwStockUnprocessable,
-  toNumber,
 } from 'src/common/utils/module-service.utils';
+import { bucketKeyFor } from '../stock-voucher/stock-voucher-posting.helper';
+import { resolveItemTaxRates } from '../../Inventory/utils/item-tax-rate.helper';
 import {
   DEFAULT_PRICE_GRID_LIMIT,
   MAX_PRICE_GRID_LIMIT,
@@ -23,83 +22,57 @@ import { resolveBelowCostAction, resolveBelowCostPolicy } from './below-cost-pol
 import { recomputeLevel } from './selling-price-math.helper';
 import { resolveTargetScope, type ScopeResolution } from './selling-price-scope.helper';
 import {
-  StockMrpPriceGateway,
-  type BucketLevelWrite,
+  PriceBucketGateway,
   type BucketPriceCandidate,
-} from './stock-mrp-price.gateway';
+  type PriceGridRecord,
+  type RowCost,
+} from './price-bucket.gateway';
 import {
   CONFIRMABLE_VERDICTS,
-  LEVEL_COLUMN_SUFFIX,
+  PRICE_LEVELS,
   isHqUserType,
   type BelowCostPolicy,
   type ItemTaxRate,
   type PagedResult,
   type PriceLevel,
   type PriceScope,
-  type SellingPriceLevelValue,
   type SellingPriceProblem,
   type SellingPriceRow,
   type SellingPriceSaveResult,
   type StockErrorDetail,
 } from './types/selling-price-bulk.types';
 
-const SMP_TABLE_NAME = 'stock_mrp_price';
+/** The audit trail's table and screen — the ones ItemsPriceMasterService files under. */
+const ITEM_PRICE_TABLE_NAME = 'item price master';
+const ITEM_PRICE_AUDIT_SCREEN_NAME = 'Item Price Master';
+/** Named in each audit row's notes, so the trail says which screen made the change. */
 const AUDIT_SCREEN_NAME = 'Change Selling Price';
 
-/**
- * The headline fan-out's profit type. §6.
- *
- * ipm_profit_type is NOT NULL and SaveItemPriceDto pins it to three values.
- * "By User" is the only honest one here: the operator typed the price into the
- * grid, and neither a percentage nor an amount was derived from anything.
- */
-const HEADLINE_PROFIT_TYPE = 'By User';
-
-/** What one master row answers for the fan-out and the cost the recompute needs. */
-interface MasterPriceRow {
+/** What one S1 → S2/S3 did: the row written, and the row as it stood before an update. */
+export interface AppliedBucketPrice {
   ipmId: string;
-  costRate: number;
-  minPrice: number;
-}
-
-/** Item code and name, for the problem list only. */
-interface ItemIdentity {
-  itemCode: string | null;
-  itemName: string;
-}
-
-/** A row after §5.1's recompute, ready for either destination. */
-interface PreparedRow {
+  /** to_jsonb of the row before an S2; null after an S3. */
+  before: Prisma.JsonObject | null;
   lineNo: number;
-  itemId: string;
-  uomId: string;
-  bucketId: string | null;
-  mrp: number | null;
-  salePrice: number | null;
-  minPrice: number | null;
-  roundOff: number | null;
-  levels: SellingPriceLevelValue[];
-  taxPerc: number;
-  costRate: number;
+  itemName: string;
 }
 
 /**
  * Change Selling Price (bulk), menu 30.
  *
- * This service is a TRANSACTION BOUNDARY and an ERROR TRANSLATOR around SQL it
- * does not own. `fn_smp_effective` resolves prices, Q26 validates, S1–S3 write;
- * there is deliberately no second implementation of the price-resolution rule
- * in TypeScript, because two answers to "what does this item cost" disagree
- * within a month.
+ * ONE PRICE TABLE (plan-nestjs-one-price-table.md §5). Every row this screen
+ * shows or saves is an `inventory.item_price_master` row: a bucket row for
+ * "stock at THIS MRP", or the headline (both bucket columns NULL). There is no
+ * second table and therefore no fan-out — a row with neither dimension is
+ * S1–S3 at key (-1, -1), like any other.
  *
- * What IS owned here, and what the client must never duplicate:
+ * This service is a TRANSACTION BOUNDARY and an ERROR TRANSLATOR around the
+ * statements in PriceBucketGateway. What IS owned here, and what the client
+ * must never duplicate:
  *   §5.5  which row an edit targets — see selling-price-scope.helper.ts
  *   §0.3  whether a below-cost price is allowed — see below-cost-policy.helper.ts
- *   §6    whether an edit is a bucket edit or a headline edit
- *
- * The three statements this cannot run yet all live behind StockMrpPriceGateway
- * (§0.1). A payload of headline-only rows never touches it and saves end to end
- * today; anything naming a dimension answers 503 until the share is deployed.
+ *   §2    which dimensions a row's bucket has — `bucketKeyFor`, the rule the
+ *         lot uses, applied to whatever MRP / sale price the grid echoed back
  */
 @Injectable()
 export class SellingPriceBulkService {
@@ -108,15 +81,14 @@ export class SellingPriceBulkService {
     private readonly auditLogService: AuditLogService,
     private readonly requestContext: RequestContextService,
     private readonly appSettingValueService: AppSettingValueService,
-    private readonly itemsPriceMasterService: ItemsPriceMasterService,
-    private readonly gateway: StockMrpPriceGateway,
+    private readonly gateway: PriceBucketGateway,
   ) {}
 
   /** §3 — Q25, paged. */
   async listPrices(queryDto: ListSellingPriceQueryDto): Promise<PagedResult<SellingPriceRow>> {
     const limit = Math.min(queryDto.limit ?? DEFAULT_PRICE_GRID_LIMIT, MAX_PRICE_GRID_LIMIT);
     const offset = Math.max(queryDto.offset ?? 0, 0);
-    return this.gateway.listPrices({
+    const page = await this.gateway.listPrices({
       companyId: queryDto.companyId,
       branchId: queryDto.branchId,
       itemGroupId: queryDto.itemGroupId,
@@ -126,11 +98,13 @@ export class SellingPriceBulkService {
       limit,
       offset,
     });
+    return { items: await this.toGridRows(page.items, offset), meta: page.meta };
   }
 
-  /** §4 — Q24. An item whose policy tracks neither dimension answers []. */
+  /** §4 — Q24, F12: every live price row this branch can see, headline first. */
   async listBuckets(itemId: string, queryDto: PriceBucketsQueryDto): Promise<SellingPriceRow[]> {
-    return this.gateway.listBuckets(itemId, queryDto.companyId, queryDto.branchId);
+    const records = await this.gateway.listBuckets(itemId, queryDto.companyId, queryDto.branchId);
+    return this.toGridRows(records, 0);
   }
 
   /** §5 — one POST, one transaction, one commit. */
@@ -148,37 +122,39 @@ export class SellingPriceBulkService {
         tx,
         dto.rows.map((row) => row.itemId),
       );
-      const masterRows = await this.loadMasterPriceRows(tx, dto);
-      const identities = await this.loadItemIdentities(
+      const costs = await this.gateway.loadRowCosts(
         tx,
-        dto.rows.map((row) => row.itemId),
+        dto.rows.map((row) => ({
+          itemId: row.itemId,
+          uomId: row.uomId,
+          mrp: row.mrp ?? null,
+          salePrice: row.salePrice ?? null,
+        })),
+        dto.companyId,
+        dto.branchId,
       );
+      this.assertUnitsBelong(dto.rows, costs);
 
-      const bucketRows: SaveSellingPriceRowDto[] = [];
-      const headlineRows: SaveSellingPriceRowDto[] = [];
-      for (const row of dto.rows) {
-        (this.isHeadlineRow(row) ? headlineRows : bucketRows).push(row);
-      }
-
-      const resolutions = bucketRows.map((row) =>
+      const candidates = dto.rows.map((row, index) =>
+        this.toCandidate(row, index, dto.companyId, actor, taxRates, costs[index]),
+      );
+      const resolutions = dto.rows.map((row) =>
         resolveTargetScope(dto.scope, this.rowScopeOf(row), dto.branchId),
       );
-      const candidates = bucketRows.map((row, index) =>
-        this.toCandidate(row, index, dto.companyId, actor, taxRates, masterRows),
-      );
+      this.assertOneRowPerBucket(candidates, resolutions);
 
-      // ── Step 1 — Q26, and the headline rows' equivalent. §5.2 ──────────────
-      const problems = [
-        ...(candidates.length ? await this.gateway.validateRows(tx, candidates, resolutions) : []),
-        ...this.validateHeadlineRows(headlineRows, taxRates, masterRows, identities),
-      ];
+      // ── Step 1 — Q26. §5.2 ─────────────────────────────────────────────────
+      const problems = this.gateway.validateRows(
+        candidates,
+        costs.map((cost) => cost.minPrice),
+      );
 
       const blocking = problems.filter(
         (problem) => !CONFIRMABLE_VERDICTS.includes(problem.verdict),
       );
       if (blocking.length) {
         // Above MRP and below min abort ALWAYS — `confirmed` never reaches
-        // here. `ck_smp_not_above_mrp` would refuse the first anyway; the
+        // here. `ck_ipm_not_above_mrp` would refuse the first anyway; the
         // second has NO constraint behind it, so this is its only enforcement.
         this.throwProblems(blocking, 'These prices cannot be saved');
       }
@@ -208,56 +184,22 @@ export class SellingPriceBulkService {
       }
 
       // ── Steps 2–4 — write, report, commit. §5.4 ───────────────────────────
-      const smpIds: string[] = [];
+      const applied: AppliedBucketPrice[] = [];
       for (let index = 0; index < candidates.length; index += 1) {
-        smpIds.push(await this.applyBucketPrice(tx, candidates[index], resolutions[index]));
+        applied.push(await this.applyBucketPrice(tx, candidates[index], resolutions[index]));
       }
+      const ipmIds = applied.map((row) => row.ipmId);
 
-      const masterRowsSaved = await this.fanOutHeadlineRows(
-        tx,
-        dto,
-        headlineRows,
-        taxRates,
-        masterRows,
+      const noStock = await this.gateway.listNoStock(tx, ipmIds, dto.companyId, dto.branchId);
+
+      await this.auditWrites(tx, dto, applied, {
         actor,
-      );
-
-      const noStock = smpIds.length ? await this.gateway.listNoStock(tx, smpIds, dto.branchId) : [];
-
-      await this.auditLogService.logEntityChange(
-        {
-          action: 'update',
-          tableName: SMP_TABLE_NAME,
-          screenName: AUDIT_SCREEN_NAME,
-          screenType: 'transaction',
-          pk: smpIds[0] ?? dto.rows[0].itemId,
-          displayName: `${dto.scope === 'CHAIN' ? 'All branches' : 'This branch'} · ${
-            smpIds.length + masterRowsSaved
-          } rows`,
-          originalRecord: null,
-          modifiedRecord: {
-            scope: dto.scope,
-            bucketRows: smpIds.length,
-            masterRows: masterRowsSaved,
-            belowCostPolicy: policy,
-            confirmedBelowCost: confirmed && belowCost.length > 0,
-            // §5.3 — the audit row for a confirmed below-cost save SAYS SO,
-            // with the rows. A confirmation nobody can find afterwards is a
-            // rule that was never enforced.
-            belowCostRows: confirmed ? belowCost : [],
-          },
-          userId: actor,
-          notes:
-            confirmed && belowCost.length
-              ? `Selling prices saved with ${belowCost.length} row(s) confirmed below cost`
-              : 'Selling prices saved',
-        },
-        tx,
-      );
+        confirmedBelowCost: confirmed ? belowCost : [],
+      });
 
       return {
-        saved: smpIds.length,
-        masterRowsSaved,
+        saved: ipmIds.length,
+        masterRowsSaved: 0,
         noStock,
         needsConfirm: false,
         problems,
@@ -279,12 +221,7 @@ export class SellingPriceBulkService {
     }
     const parts: string[] = [];
     if (result.saved) {
-      parts.push(`${result.saved} bucket${result.saved === 1 ? '' : 's'} saved`);
-    }
-    if (result.masterRowsSaved) {
-      parts.push(
-        `${result.masterRowsSaved} headline row${result.masterRowsSaved === 1 ? '' : 's'} saved`,
-      );
+      parts.push(`${result.saved} price${result.saved === 1 ? '' : 's'} saved`);
     }
     if (!parts.length) {
       parts.push('Nothing to save');
@@ -312,15 +249,85 @@ export class SellingPriceBulkService {
     tx: Prisma.TransactionClient,
     candidate: BucketPriceCandidate,
     scope: ScopeResolution,
-  ): Promise<string> {
+  ): Promise<AppliedBucketPrice> {
     // S1 searches AT THE TARGET SCOPE, so a *This branch* save over a
     // CHAIN-sourced row finds nothing and falls through to S3 — that fall-through
     // IS the branch override of §5.5 row 2, and the chain row is never read for
     // update, so it cannot be edited by accident.
     const existing = await this.gateway.findBucketRowForUpdate(tx, candidate, scope);
-    return existing
-      ? this.gateway.updateBucketPrice(tx, existing.smpId, candidate)
-      : this.gateway.insertBucketPrice(tx, candidate, scope);
+    if (!existing) {
+      return {
+        ipmId: await this.gateway.insertBucketPrice(tx, candidate, scope),
+        before: null,
+        lineNo: candidate.lineNo,
+        itemName: candidate.itemName,
+      };
+    }
+    // The row as it stood, locked by S1 — the audit trail's "before".
+    const [before] = (await this.gateway.snapshotRows(tx, [existing.ipmId])).values();
+    return {
+      ipmId: await this.gateway.updateBucketPrice(tx, existing.ipmId, candidate),
+      before: before ?? null,
+      lineNo: candidate.lineNo,
+      itemName: candidate.itemName,
+    };
+  }
+
+  /**
+   * One audit row per price row written, filed under the table's own "Item
+   * Price Master" screen — so a price's history reads the same whichever
+   * screen changed it: an update carries the row before and after, an insert
+   * the row after.
+   *
+   * (notes 71 B1: the save used to log ONE summary row as an `update` with no
+   * original record, which the audit service refuses — every valid save was a
+   * 400 and nothing was written.)
+   *
+   * §5.3 — a confirmed below-cost save SAYS SO on each row it confirmed: a
+   * confirmation nobody can find afterwards is a rule that was never enforced.
+   */
+  private async auditWrites(
+    tx: Prisma.TransactionClient,
+    dto: SaveSellingPriceBulkDto,
+    applied: readonly AppliedBucketPrice[],
+    context: { actor: string; confirmedBelowCost: readonly SellingPriceProblem[] },
+  ): Promise<void> {
+    const after = await this.gateway.snapshotRows(
+      tx,
+      applied.map((row) => row.ipmId),
+    );
+    const scopeLabel = dto.scope === 'CHAIN' ? 'all branches' : 'this branch';
+    for (const row of applied) {
+      const modified = after.get(row.ipmId) ?? null;
+      const confirmed = context.confirmedBelowCost.filter((p) => p.lineNo === row.lineNo);
+      // to_jsonb renders numeric as a JSON number; anything else is no bucket.
+      const amount = (value: unknown) => (typeof value === 'number' ? value : null);
+      const mrp = amount(modified?.ipm_bucket_mrp);
+      const salePrice = amount(modified?.ipm_bucket_sp);
+      const bucket = [
+        mrp !== null ? `MRP ${mrp}` : null,
+        salePrice !== null ? `sale price ${salePrice}` : null,
+      ].filter(Boolean);
+      await this.auditLogService.logEntityChange(
+        {
+          action: row.before ? 'update' : 'New',
+          tableName: ITEM_PRICE_TABLE_NAME,
+          screenName: ITEM_PRICE_AUDIT_SCREEN_NAME,
+          screenType: 'master',
+          pk: row.ipmId,
+          displayName: `${row.itemName} · ${bucket.length ? bucket.join(', ') : 'headline'}`,
+          originalRecord: row.before,
+          modifiedRecord: modified,
+          userId: context.actor,
+          notes:
+            `${AUDIT_SCREEN_NAME} (menu 30), ${scopeLabel}` +
+            (confirmed.length
+              ? ` — confirmed below cost: ${confirmed.map((p) => p.message).join('; ')}`
+              : ''),
+        },
+        tx,
+      );
+    }
   }
 
   /**
@@ -356,20 +363,6 @@ export class SellingPriceBulkService {
   }
 
   /**
-   * §6 — the fan-out rule, and the whole of it.
-   *
-   * Has this row a dimension? MRP or sale price present → it is a bucket.
-   * Neither → `ck_smp_identity` refuses a (NULL, NULL) row on purpose, so the
-   * edit is a headline edit and lands in inventory.item_price_master.
-   *
-   * NOT a user-facing choice, and it must never become one: the same item
-   * would then have two prices depending on which radio the operator left set.
-   */
-  private isHeadlineRow(row: SaveSellingPriceRowDto): boolean {
-    return (row.mrp ?? null) === null && (row.salePrice ?? null) === null;
-  }
-
-  /**
    * The loaded row's own scope — the second axis of §5.5's table.
    *
    * It comes from the PAYLOAD, echoed back from what §3 sent, and there is
@@ -383,159 +376,149 @@ export class SellingPriceBulkService {
     return (row.priceScope as PriceScope | undefined) ?? null;
   }
 
+  /**
+   * A uomId is an item_unit_conversion.iuc_id OF THIS ITEM. The foreign key
+   * alone would let a price point at another item's unit; refused with the
+   * lines named, before anything is written.
+   */
+  private assertUnitsBelong(
+    rows: readonly SaveSellingPriceRowDto[],
+    costs: readonly RowCost[],
+  ): void {
+    const wrong = rows
+      .map((row, index) => ({ row, index }))
+      .filter(({ index }) => !costs[index].uomBelongs);
+    if (!wrong.length) {
+      return;
+    }
+    throwStockUnprocessable<StockErrorDetail>(
+      'These prices cannot be saved',
+      wrong.map(({ row, index }) => ({
+        field: `rows.${row.lineNo ?? index + 1}`,
+        message: `Line ${row.lineNo ?? index + 1}: unit ${row.uomId} is not one of item ${row.itemId}'s units.`,
+      })),
+    );
+  }
+
+  /**
+   * Two rows of one save landing on one bucket at one scope. After policy
+   * blanking two MRPs of an untracked item ARE one price, and the second write
+   * would silently replace the first — refused, naming both lines, the same
+   * refusal the item card gives.
+   */
+  private assertOneRowPerBucket(
+    candidates: readonly BucketPriceCandidate[],
+    resolutions: readonly ScopeResolution[],
+  ): void {
+    const firstAt = new Map<string, number>();
+    candidates.forEach((candidate, index) => {
+      const key = [
+        candidate.itemId,
+        candidate.uomId,
+        resolutions[index].targetBranchId ?? '',
+        candidate.mrp ?? '',
+        candidate.salePrice ?? '',
+      ].join('|');
+      const first = firstAt.get(key);
+      if (first !== undefined) {
+        throwStockUnprocessable<StockErrorDetail>('These prices cannot be saved', [
+          {
+            field: `rows.${candidate.lineNo}`,
+            message:
+              `Lines ${candidates[first].lineNo} and ${candidate.lineNo} price the same bucket of ` +
+              `${candidate.itemName || candidate.itemId} at the same scope. Keep one of them.`,
+          },
+        ]);
+      }
+      firstAt.set(key, index);
+    });
+  }
+
+  /**
+   * §5.1 — `price` wins; priceWot and markupPerc are recomputed, never trusted.
+   * The bucket is BLANKED here by the item's policy (`bucketKeyFor`): the grid
+   * echoes what it loaded, but an MRP the policy does not track is not a
+   * dimension, and the row is the headline.
+   */
   private toCandidate(
     row: SaveSellingPriceRowDto,
     index: number,
     companyId: string,
     actor: string,
     taxRates: ReadonlyMap<string, ItemTaxRate>,
-    masterRows: ReadonlyMap<string, MasterPriceRow>,
+    cost: RowCost,
   ): BucketPriceCandidate {
-    const prepared = this.prepareRow(row, index, taxRates, masterRows);
-    return {
-      lineNo: prepared.lineNo,
-      companyId,
-      itemId: prepared.itemId,
-      uomId: prepared.uomId,
-      bucketId: prepared.bucketId,
-      mrp: prepared.mrp,
-      salePrice: prepared.salePrice,
-      minPrice: prepared.minPrice,
-      roundOff: prepared.roundOff,
-      actor,
-      levels: prepared.levels.map(
-        (level): BucketLevelWrite => ({
-          level: level.level,
-          price: level.price,
-          priceWot: level.priceWot,
-          markupPerc: level.markupPerc,
-        }),
-      ),
-    };
-  }
-
-  /** §5.1 — `price` wins; priceWot and markupPerc are recomputed, never trusted. */
-  private prepareRow(
-    row: SaveSellingPriceRowDto,
-    index: number,
-    taxRates: ReadonlyMap<string, ItemTaxRate>,
-    masterRows: ReadonlyMap<string, MasterPriceRow>,
-  ): PreparedRow {
-    const tax = taxRates.get(row.itemId);
-    const taxPerc = tax?.taxPerc ?? 0;
-    const costRate = masterRows.get(this.masterKey(row))?.costRate ?? 0;
+    const taxPerc = taxRates.get(row.itemId)?.taxPerc ?? 0;
+    const key = bucketKeyFor(cost, { mrp: row.mrp ?? null, salePrice: row.salePrice ?? null });
     return {
       lineNo: row.lineNo ?? index + 1,
+      companyId,
       itemId: row.itemId,
       uomId: row.uomId,
+      itemCode: cost.itemCode,
+      itemName: cost.itemName,
       bucketId: row.bucketId ?? null,
-      mrp: row.mrp ?? null,
-      salePrice: row.salePrice ?? null,
+      mrp: key.mrp,
+      salePrice: key.salePrice,
       minPrice: row.minPrice ?? null,
       roundOff: row.roundOff ?? null,
-      taxPerc,
-      costRate,
-      levels: row.levels.map((level) =>
-        recomputeLevel(level.level as PriceLevel, level.price, taxPerc, costRate),
-      ),
+      costRate: cost.costRate,
+      costWot: cost.costWot,
+      actor,
+      levels: row.levels.map((level) => {
+        const value = recomputeLevel(
+          level.level as PriceLevel,
+          level.price,
+          taxPerc,
+          cost.costRate,
+        );
+        return {
+          level: value.level,
+          price: value.price,
+          priceWot: value.priceWot,
+          markupPerc: value.markupPerc,
+        };
+      }),
     };
   }
 
-  /**
-   * The headline rows' half of §5.2.
-   *
-   * Q26 reads `stock.stock_mrp_price` and cannot see a headline row, so the two
-   * verdicts that DO apply to one are checked here against the master row's own
-   * columns. ABOVE_MRP is absent on purpose: a headline row has no MRP
-   * dimension to be above — that is what made it a headline row.
-   *
-   * Not a second implementation of anything: `ipm_min_price` and
-   * `ipm_cost_price` are the only figures involved, and without this the
-   * below-cost setting would silently not apply to master rows, which is the
-   * same shape of hole as legacy fault #2.
-   */
-  private validateHeadlineRows(
-    rows: readonly SaveSellingPriceRowDto[],
-    taxRates: ReadonlyMap<string, ItemTaxRate>,
-    masterRows: ReadonlyMap<string, MasterPriceRow>,
-    identities: ReadonlyMap<string, ItemIdentity>,
-  ): SellingPriceProblem[] {
-    const problems: SellingPriceProblem[] = [];
-    rows.forEach((row, index) => {
-      const master = masterRows.get(this.masterKey(row));
-      const prepared = this.prepareRow(row, index, taxRates, masterRows);
-      const minPrice = row.minPrice ?? master?.minPrice ?? 0;
-      for (const level of prepared.levels) {
-        if (minPrice > 0 && level.price < minPrice) {
-          problems.push(
-            this.problem(
-              prepared,
-              identities,
-              level.level,
-              'BELOW_MIN',
-              `${level.price} is below the minimum price ${minPrice}.`,
-            ),
-          );
-          continue;
-        }
-        if (prepared.costRate > 0 && level.price < prepared.costRate) {
-          problems.push(
-            this.problem(
-              prepared,
-              identities,
-              level.level,
-              'BELOW_COST',
-              `${level.price} is below the cost ${prepared.costRate}.`,
-            ),
-          );
-        }
-      }
-    });
-    return problems;
-  }
-
-  private problem(
-    prepared: PreparedRow,
-    identities: ReadonlyMap<string, ItemIdentity>,
-    level: PriceLevel,
-    verdict: SellingPriceProblem['verdict'],
-    message: string,
-  ): SellingPriceProblem {
-    const identity = identities.get(prepared.itemId);
-    return {
-      lineNo: prepared.lineNo,
-      itemId: prepared.itemId,
-      itemCode: identity?.itemCode ?? null,
-      itemName: identity?.itemName ?? '',
-      uomId: prepared.uomId,
-      bucketId: prepared.bucketId,
-      level,
-      verdict,
-      // Prefixed with the item, because a problem list rendered against a grid
-      // of four hundred rows is only useful if each line names its own row.
-      message: identity ? `${identity.itemName}: ${message}` : message,
-    };
-  }
-
-  /** Item code and name for the problem list. One read, only when it is needed. */
-  private async loadItemIdentities(
-    tx: Prisma.TransactionClient,
-    itemIds: readonly string[],
-  ): Promise<Map<string, ItemIdentity>> {
-    const ids = [...new Set(itemIds)];
-    if (!ids.length) {
-      return new Map();
-    }
-    const records = await tx.itemMaster.findMany({
-      where: { itemId: { in: ids } },
-      select: { itemId: true, itemCode: true, itemNameEn: true },
-    });
-    return new Map(
-      records.map((record) => [
-        record.itemId,
-        { itemCode: record.itemCode, itemName: record.itemNameEn },
-      ]),
+  /** The grid rows the client sees: the gateway's records plus tax and the four-number levels. */
+  private async toGridRows(
+    records: readonly PriceGridRecord[],
+    offset: number,
+  ): Promise<SellingPriceRow[]> {
+    const taxRates = await this.resolveItemTaxRates(
+      this.prisma,
+      records.map((record) => record.itemId),
     );
+    return records.map((record, index) => {
+      const tax = taxRates.get(record.itemId);
+      const taxPerc = tax?.taxPerc ?? 0;
+      return {
+        lineNo: offset + index + 1,
+        itemId: record.itemId,
+        itemCode: record.itemCode,
+        itemName: record.itemName,
+        uomId: record.uomId,
+        unitName: record.unitName,
+        stockQty: record.stockQty,
+        mrp: record.mrp,
+        salePrice: record.salePrice,
+        maxPrice: record.maxPrice,
+        priceSource: record.priceSource,
+        priceScope: record.priceScope,
+        bucketId: record.bucketId,
+        costRate: record.costRate,
+        minPrice: record.minPrice,
+        roundOff: record.roundOff,
+        taxPerc,
+        inclTax: tax?.inclTax ?? false,
+        hasCess: tax?.hasCess ?? false,
+        levels: PRICE_LEVELS.map((level) =>
+          recomputeLevel(level, record.prices[level - 1], taxPerc, record.costRate),
+        ),
+      };
+    });
   }
 
   private throwProblems(problems: SellingPriceProblem[], message: string): never {
@@ -549,232 +532,16 @@ export class SellingPriceBulkService {
   }
 
   /**
-   * §6 — the headline write, through the service that already owns the table.
-   *
-   * `ItemsPriceMasterService.save(rows, tx)` runs inside THIS transaction, so
-   * the whole save — buckets and headlines — commits or rolls back together.
-   * Nothing here touches `item_price_master` with a write of its own; the only
-   * direct read is loadMasterPriceRows, which resolves the id to update.
-   */
-  private async fanOutHeadlineRows(
-    tx: Prisma.TransactionClient,
-    dto: SaveSellingPriceBulkDto,
-    rows: readonly SaveSellingPriceRowDto[],
-    taxRates: ReadonlyMap<string, ItemTaxRate>,
-    masterRows: ReadonlyMap<string, MasterPriceRow>,
-    actor: string,
-  ): Promise<number> {
-    if (!rows.length) {
-      return 0;
-    }
-    const payloads = rows.map((row, index) => {
-      const prepared = this.prepareRow(row, index, taxRates, masterRows);
-      const existing = masterRows.get(this.masterKey(row));
-      const payload: SaveItemPriceDto = {
-        ...(existing ? { ipm_id: existing.ipmId } : {}),
-        ipm_company_id: dto.companyId,
-        // The same scope rule the buckets follow: a chain price is the row with
-        // no branch, and every branch without an override reads it.
-        ipm_branch_id: dto.scope === 'CHAIN' ? null : dto.branchId,
-        ipm_item_id: prepared.itemId,
-        // uomId IS the iuc_id — see SaveSellingPriceRowDto.uomId.
-        ipm_uc_unit_id: prepared.uomId,
-        ipm_profit_type: HEADLINE_PROFIT_TYPE,
-        ipm_updated_by: actor,
-        ...(existing ? {} : { ipm_created_by: actor }),
-      };
-      if (prepared.minPrice !== null) {
-        payload.ipm_min_price = prepared.minPrice;
-      }
-      if (prepared.roundOff !== null) {
-        payload.ipm_round_off = prepared.roundOff;
-      }
-      for (const level of prepared.levels) {
-        this.applyLevelColumns(payload, level);
-      }
-      return payload;
-    });
-    const saved = await this.itemsPriceMasterService.save(payloads, tx);
-    return saved.length;
-  }
-
-  /**
-   * The level mapping, in ONE place. §6.
-   *
-   * item_price_master levels by column and stock_mrp_price does not, so the
-   * mapping is not identity and every place that open-codes it is a place that
-   * can write level 2's price into level 3's column.
-   */
-  private applyLevelColumns(payload: SaveItemPriceDto, level: SellingPriceLevelValue): void {
-    // Written out rather than built from LEVEL_COLUMN_SUFFIX by string
-    // concatenation, so that a renamed column is a compile error here instead
-    // of a price silently landing in no column at all.
-    switch (LEVEL_COLUMN_SUFFIX[level.level]) {
-      case 'a':
-        payload.ipm_sales_price_a = level.price;
-        payload.ipm_price_a_wot = level.priceWot;
-        payload.ipm_price_a_markup_perc = level.markupPerc;
-        return;
-      case 'b':
-        payload.ipm_sales_price_b = level.price;
-        payload.ipm_price_b_wot = level.priceWot;
-        payload.ipm_price_b_markup_perc = level.markupPerc;
-        return;
-      case 'c':
-        payload.ipm_sales_price_c = level.price;
-        payload.ipm_price_c_wot = level.priceWot;
-        payload.ipm_price_c_markup_perc = level.markupPerc;
-        return;
-      case 'd':
-        payload.ipm_sales_price_d = level.price;
-        payload.ipm_price_d_wot = level.priceWot;
-        payload.ipm_price_d_markup_perc = level.markupPerc;
-        return;
-    }
-  }
-
-  /**
-   * The existing master row for each (item, uom) in the payload.
-   *
-   * Two jobs, both necessary. It resolves `ipm_id` — without it the fan-out's
-   * every save would CREATE, and a second save of the same screen would leave
-   * the item with two headline rows and the till reading whichever sorted
-   * first. And it supplies `ipm_cost_price` as the cost the §5.1 recompute
-   * needs when the row has no bucket cost of its own.
-   */
-  private async loadMasterPriceRows(
-    tx: Prisma.TransactionClient,
-    dto: SaveSellingPriceBulkDto,
-  ): Promise<Map<string, MasterPriceRow>> {
-    const itemIds = [...new Set(dto.rows.map((row) => row.itemId))];
-    const uomIds = [...new Set(dto.rows.map((row) => row.uomId))];
-    const records = await tx.itemPriceMaster.findMany({
-      where: {
-        ipmItemId: { in: itemIds },
-        ipmUcUnitId: { in: uomIds },
-        ipmCompanyId: dto.companyId,
-        ipmBranchId: dto.scope === 'CHAIN' ? null : dto.branchId,
-        // NULL = the price applies to every godown, which is the only shape
-        // this screen writes; a godown-specific row is a different price.
-        ipmGodownId: null,
-        ipmIsDeleted: false,
-      },
-      select: {
-        ipmId: true,
-        ipmItemId: true,
-        ipmUcUnitId: true,
-        ipmCostPrice: true,
-        ipmMinPrice: true,
-      },
-    });
-    const map = new Map<string, MasterPriceRow>();
-    for (const record of records) {
-      map.set(`${record.ipmItemId}|${record.ipmUcUnitId}`, {
-        ipmId: record.ipmId,
-        costRate: toNumber(record.ipmCostPrice),
-        minPrice: toNumber(record.ipmMinPrice),
-      });
-    }
-    return map;
-  }
-
-  private masterKey(row: SaveSellingPriceRowDto): string {
-    return `${row.itemId}|${row.uomId}`;
-  }
-
-  /**
-   * §4.3 — the tax percentage, AS OF TODAY, through item_tax_history.
-   *
-   * "Tax % comes from the item's tax master" is under-specified, and the
-   * under-specified part is the date. `inventory.item_tax_history` is
-   * date-effective, so an item whose rate changed last week has two answers and
-   * only one of them is the one a price written today should be derived from.
-   *
-   * Resolved SERVER-SIDE and sent down (§3) rather than left to the client: a
-   * client reading the item's rate itself would use the current row on a screen
-   * that, once §12's dormant effective-date columns wake up, may be writing a
-   * future one.
-   *
-   * Both ith_tax_id and item_default_tax_id point at inventory.tax_rate_master
-   * (20260912110000_repoint_items_to_tax_rate_master); item_tax_master is
-   * retired, and reading it here answered 0% for every item.
+   * §4.3 — the tax percentage per item, AS OF a date (today by default),
+   * through item_tax_history. The rule lives in the shared helper
+   * `Inventory/utils/item-tax-rate.helper.ts`, which the item card's price
+   * save uses too (notes 71 B4), so the two derive a level the same way.
    */
   async resolveItemTaxRates(
-    tx: Prisma.TransactionClient,
+    tx: Pick<Prisma.TransactionClient, 'itemMaster' | 'itemTaxHistory' | 'taxRateMaster'>,
     itemIds: readonly string[],
     asOf: Date = new Date(),
   ): Promise<Map<string, ItemTaxRate>> {
-    const ids = [...new Set(itemIds)];
-    if (!ids.length) {
-      return new Map();
-    }
-    const asOfDate = new Date(
-      Date.UTC(asOf.getUTCFullYear(), asOf.getUTCMonth(), asOf.getUTCDate()),
-    );
-
-    const items = await tx.itemMaster.findMany({
-      where: { itemId: { in: ids } },
-      select: { itemId: true, itemDefaultTaxId: true, itemInclTax: true },
-    });
-    const history = await tx.itemTaxHistory.findMany({
-      where: {
-        ithItemId: { in: ids },
-        ithEffectiveFrom: { lte: asOfDate },
-        OR: [{ ithEffectiveTo: null }, { ithEffectiveTo: { gte: asOfDate } }],
-      },
-      // Latest window that covers the date wins; a history row overrides the
-      // item's default, which is the whole reason the table exists.
-      orderBy: [{ ithItemId: 'asc' }, { ithEffectiveFrom: 'desc' }],
-      select: { ithItemId: true, ithTaxId: true },
-    });
-    const historyTaxId = new Map<string, string>();
-    for (const row of history) {
-      if (!historyTaxId.has(row.ithItemId)) {
-        historyTaxId.set(row.ithItemId, row.ithTaxId);
-      }
-    }
-
-    const taxIds = [
-      ...new Set(
-        [
-          ...historyTaxId.values(),
-          ...items.map((item) => item.itemDefaultTaxId).filter((id): id is string => !!id),
-        ].filter(Boolean),
-      ),
-    ];
-    // No tax_is_deleted filter, as before: the rate an item or its history row
-    // names is the rate it is taxed at until someone re-points it.
-    const taxes = taxIds.length
-      ? await tx.taxRateMaster.findMany({
-          where: { taxId: { in: taxIds } },
-          select: {
-            taxId: true,
-            taxRatePerc: true,
-            taxCessBasis: true,
-            taxAcessBasis: true,
-          },
-        })
-      : [];
-    const taxById = new Map(taxes.map((tax) => [tax.taxId, tax]));
-
-    const result = new Map<string, ItemTaxRate>();
-    for (const item of items) {
-      const taxId = historyTaxId.get(item.itemId) ?? item.itemDefaultTaxId ?? null;
-      const tax = taxId ? taxById.get(taxId) : undefined;
-      result.set(item.itemId, {
-        itemId: item.itemId,
-        taxId,
-        taxPerc: tax ? toNumber(tax.taxRatePerc) : 0,
-        inclTax: item.itemInclTax,
-        // §13.5 — cess makes the four-number panel approximate, because
-        // tax_cess_per_unit is an amount per unit and not a percentage of price.
-        // The screen is told rather than left to pretend. The basis alone
-        // answers it: ck_tax_cess_agrees / ck_tax_acess_agrees hold the figures
-        // to it, so NONE means both are zero. The additional (state) cess
-        // counts too — it is just as missing from taxPerc.
-        hasCess: tax ? tax.taxCessBasis !== 'NONE' || tax.taxAcessBasis !== 'NONE' : false,
-      });
-    }
-    return result;
+    return resolveItemTaxRates(tx, itemIds, asOf);
   }
 }

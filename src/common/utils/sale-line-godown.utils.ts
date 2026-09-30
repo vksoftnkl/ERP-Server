@@ -60,6 +60,12 @@ export async function resolveDefaultSaleGodowns(
       where: {
         ipmItemId: { in: itemIds },
         OR: [{ ipmBranchId: branchId }, { ipmBranchId: null }],
+        // The HEADLINE rows only. The price table also holds MRP buckets
+        // (plan-nestjs-one-price-table.md), and a line with no MRP yet has no
+        // bucket to read a godown from; a bucket row's godown is copied from
+        // its headline anyway.
+        ipmBucketMrp: null,
+        ipmBucketSp: null,
         ipmIsDeleted: false,
       },
       select: { ipmItemId: true, ipmUcUnitId: true, ipmBranchId: true, ipmGodownId: true },
@@ -67,8 +73,8 @@ export async function resolveDefaultSaleGodowns(
     }),
     branchDefaultGodownId(prisma, branchId),
   ]);
-  // Same preference as preferBranchPriceRows: first row per unit, replaced by
-  // a branch-specific one if the first was branch-less.
+  // Branch beats chain, as resolveEffectivePrice ranks them: first row per
+  // unit, replaced by a branch-specific one if the first was branch-less.
   const rowByKey = new Map<string, (typeof priceRows)[number]>();
   for (const row of priceRows) {
     const key = saleGodownKey({ itemId: row.ipmItemId, iucId: row.ipmUcUnitId });

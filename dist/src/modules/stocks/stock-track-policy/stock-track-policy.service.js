@@ -94,6 +94,23 @@ let StockTrackPolicyService = class StockTrackPolicyService {
         }
         return results;
     }
+    async retireForGroup(itgId, tx) {
+        const client = tx ?? this.prisma;
+        const derived = await client.stockTrackPolicy.findMany({
+            where: {
+                stpScope: 'GROUP',
+                stpGroupId: itgId,
+                stpRemarks: { startsWith: exports.DERIVED_FROM_GROUP_REMARK },
+                stpIsDeleted: false,
+            },
+            orderBy: { stpCreatedOn: 'asc' },
+        });
+        const results = [];
+        for (const row of derived) {
+            results.push(await this.retireDerived(row, itgId, 'GROUP', client));
+        }
+        return results;
+    }
     async syncFromItemGroup(group, tx) {
         const client = tx ?? this.prisma;
         const shared = { companyId: null, branchId: null };

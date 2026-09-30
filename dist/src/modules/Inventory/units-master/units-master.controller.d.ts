@@ -10,4 +10,8 @@ export declare class UnitsMasterController {
         unit_id: string;
         deleted: boolean;
     }>>;
+    restore(unitId: string): Promise<UnitSuccessResponse<{
+        unit_id: string;
+        deleted: boolean;
+    }>>;
 }

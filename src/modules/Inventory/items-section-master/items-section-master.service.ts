@@ -12,11 +12,34 @@ import {
   throwOnUniqueConstraintError,
 } from 'src/common/utils/module-service.utils';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
+import {
+  ITEM_SECTION_TREE,
+  assertDeleteState,
+  assertNoLiveChildren,
+  assertNoLiveReferences,
+  assertNotUnderOwnSubtree,
+  assertParentLive,
+  relevelSubtree,
+  type LiveReference,
+} from '../utils/master-tree.helper';
 
-const ROOT_SECTION_LEVEL = 1;
 const ITEM_SECTION_TABLE_NAME = 'item section master';
 const ITEM_SECTION_AUDIT_SCREEN_NAME = 'Item Section Master';
 type ItemSectionWriteClient = Prisma.TransactionClient | PrismaService;
+/** What keeps a row from being deleted besides its own children (notes 70 B4). */
+const ITEM_SECTION_REFERENCES: readonly LiveReference[] = [
+  {
+    table: 'inventory.item_master',
+    column: 'item_section_id',
+    live: 'item_is_deleted = false',
+    label: 'items',
+  },
+];
+const ITEM_SECTION_DELETE_STATE = {
+  label: 'item section',
+  idField: 'sec_id',
+  restoreRoute: '/item-sections/restore',
+};
 
 @Injectable()
 export class ItemsSectionMasterService {
@@ -57,7 +80,22 @@ export class ItemsSectionMasterService {
     return parent?.secName ?? null;
   }
 
-  async toggleDelete(secId: string): Promise<{ sec_id: string; deleted: boolean }> {
+  /**
+   * DELETE deletes — it is no longer a toggle (notes 70 C1): an already
+   * deleted row is a 409, and POST /item-sections/restore brings one back. Refused
+   * (409) while live children or live items still hang off it (B4).
+   */
+  async softDelete(secId: string): Promise<{ sec_id: string; deleted: boolean }> {
+    return this.setDeleted(secId, true);
+  }
+  /** Restore a deleted row. Refused (409) when it is not deleted or its parent is. */
+  async restore(secId: string): Promise<{ sec_id: string; deleted: boolean }> {
+    return this.setDeleted(secId, false);
+  }
+  private async setDeleted(
+    secId: string,
+    wantDeleted: boolean,
+  ): Promise<{ sec_id: string; deleted: boolean }> {
     return this.prisma.$transaction(async (tx) => {
       // Find regardless of current deleted state
       const existing = await tx.itemSectionMaster.findFirst({
@@ -72,9 +110,20 @@ export class ItemsSectionMasterService {
         );
       }
 
+      assertDeleteState(existing.secIsDeleted, wantDeleted, ITEM_SECTION_DELETE_STATE);
+      if (wantDeleted) {
+        await assertNoLiveChildren(tx, ITEM_SECTION_TREE, secId);
+        await assertNoLiveReferences(tx, ITEM_SECTION_REFERENCES, secId, ITEM_SECTION_DELETE_STATE);
+      } else {
+        await assertParentLive(tx, ITEM_SECTION_TREE, existing.secParentId);
+      }
       const wasDeleted = existing.secIsDeleted;
-      const nextDeleted = !wasDeleted;
-      const subtreeIds = await this.getActiveSubtreeIds(tx, secId);
+      const nextDeleted = wantDeleted;
+      // The subtree walk sees live rows only, so it is read while this row is
+      // live: before the flip on delete, after it on restore (below). A restore
+      // used to read it while still deleted, get nothing, and never put the ids
+      // back into the ancestors' path caches.
+      const subtreeIds = nextDeleted ? await this.getActiveSubtreeIds(tx, secId) : [];
       const ancestorIds = await this.getAncestorIds(tx, existing.secParentId);
       const modifiedOn = new Date();
       const userId = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
@@ -95,7 +144,7 @@ export class ItemsSectionMasterService {
       if (nextDeleted) {
         await this.removePathIds(tx, ancestorIds, subtreeIds);
       } else {
-        await this.appendPathIds(tx, ancestorIds, subtreeIds);
+        await this.appendPathIds(tx, ancestorIds, await this.getActiveSubtreeIds(tx, secId));
       }
 
       const originalRecord = this.toPayload(existing);
@@ -130,10 +179,8 @@ export class ItemsSectionMasterService {
   ): Promise<ItemSectionPayload> {
     try {
       return await this.prisma.$transaction(async (tx) => {
-        let parentLevel: number | null | undefined;
         if (saveItemSectionDto.sec_parent_id) {
-          const parent = await this.ensureParentExists(saveItemSectionDto.sec_parent_id, tx);
-          parentLevel = parent.secLevel;
+          await this.ensureParentExists(saveItemSectionDto.sec_parent_id, tx);
         }
 
         const now = new Date();
@@ -141,7 +188,6 @@ export class ItemsSectionMasterService {
 
         const data: Prisma.ItemSectionMasterUncheckedCreateInput = {
           secName: saveItemSectionDto.sec_name.trim(),
-          secLevel: this.resolveSectionLevel(saveItemSectionDto.sec_parent_id, parentLevel),
           secCreatedOn: now,
           secCreatedBy: createdBy,
         };
@@ -154,6 +200,8 @@ export class ItemsSectionMasterService {
           const ancestorIds = await this.getAncestorIds(tx, saveItemSectionDto.sec_parent_id);
           await this.appendPathIds(tx, ancestorIds, [created.secId]);
         }
+        // The level is the node's depth, computed — never the payload's (B1).
+        await relevelSubtree(tx, ITEM_SECTION_TREE, created.secId);
 
         const refreshed = await tx.itemSectionMaster.findFirst({
           where: { secId: created.secId, secIsDeleted: false },
@@ -212,17 +260,22 @@ export class ItemsSectionMasterService {
           );
         }
 
-        let requestedParentLevel: number | null | undefined;
         if (saveItemSectionDto.sec_parent_id) {
-          const parent = await this.ensureParentExists(saveItemSectionDto.sec_parent_id, tx);
-          requestedParentLevel = parent.secLevel;
+          await this.ensureParentExists(saveItemSectionDto.sec_parent_id, tx);
         }
 
-        const hasParentField = hasOwnProperty(saveItemSectionDto, 'sec_parent_id');
+        // `!== undefined`, not hasOwnProperty: every declared DTO field is an
+        // own property (ES2022 class fields), so an OMITTED parent used to read
+        // as "moved to root" and shuffle the path caches. null / "" still clear.
+        const hasParentField = saveItemSectionDto.sec_parent_id !== undefined;
         const nextParentId = hasParentField
           ? (saveItemSectionDto.sec_parent_id ?? null)
           : existing.secParentId;
         const isParentChanged = hasParentField && nextParentId !== existing.secParentId;
+        if (isParentChanged) {
+          // B3: under its own descendant would be a loop.
+          await assertNotUnderOwnSubtree(tx, ITEM_SECTION_TREE, secId, nextParentId);
+        }
         const subtreeIds = isParentChanged ? await this.getActiveSubtreeIds(tx, secId) : [];
         const oldAncestorIds = isParentChanged
           ? await this.getAncestorIds(tx, existing.secParentId)
@@ -233,10 +286,6 @@ export class ItemsSectionMasterService {
           secModifiedOn: new Date(),
           secModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         };
-        if (isParentChanged) {
-          data.secLevel = this.resolveSectionLevel(nextParentId, requestedParentLevel);
-        }
-
         this.applyOptionalFields(data, saveItemSectionDto);
         const updated = await tx.itemSectionMaster.update({ where: { secId }, data });
 
@@ -246,6 +295,9 @@ export class ItemsSectionMasterService {
           await this.removePathIds(tx, oldAncestorIds, subtreeIds);
           await this.appendPathIds(tx, newAncestorIds, subtreeIds);
         }
+        // The node and its whole subtree take their depth from where they now
+        // sit (B1, B2) — also repairs a level a payload or an old bug left wrong.
+        await relevelSubtree(tx, ITEM_SECTION_TREE, secId);
 
         const refreshed = await tx.itemSectionMaster.findFirst({
           where: { secId, secIsDeleted: false },
@@ -534,13 +586,5 @@ export class ItemsSectionMasterService {
       'Item section name already exists',
       [{ field: 'sec_name', message: 'Duplicate sec_name is not allowed' }],
     );
-  }
-
-  private resolveSectionLevel(
-    parentId: string | null | undefined,
-    parentLevel: number | null | undefined,
-  ): number {
-    if (!parentId) return ROOT_SECTION_LEVEL;
-    return (parentLevel ?? ROOT_SECTION_LEVEL) + 1;
   }
 }

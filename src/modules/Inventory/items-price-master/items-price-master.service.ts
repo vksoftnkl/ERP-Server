@@ -16,13 +16,21 @@ import {
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import { AuditLogService } from 'src/modules/audit-log/audit-log.service';
 import { RequestContextService } from 'src/common/request-context/request-context.service';
+import { PriceBucketService } from './price-bucket.service';
+import { resolveItemTaxRates } from '../utils/item-tax-rate.helper';
+import { recomputeLevel } from 'src/modules/stocks/selling-price-bulk/selling-price-math.helper';
 import {
   hasOwnProperty,
+  isExclusionConstraintError,
   isForeignKeyConstraintError,
   throwInventoryBadRequest,
+  throwInventoryConflict,
   throwInventoryNotFound,
   throwOnUniqueConstraintError,
+  throwUnprocessable,
+  toNullableNumber,
   toNumber,
+  violatedCheckOf,
 } from 'src/common/utils/module-service.utils';
 import type { InventoryWriteClient } from 'src/common/utils/module-service.utils';
 import {
@@ -33,6 +41,31 @@ import {
 const DEFAULT_AUDIT_ACTOR = 'system';
 const ITEM_PRICE_TABLE_NAME = 'item price master';
 const ITEM_PRICE_AUDIT_SCREEN_NAME = 'Item Price Master';
+/**
+ * The price table's CHECKs, in words. The database is the last line; what it
+ * must not do is answer a shopkeeper with a constraint name.
+ */
+const CHECK_MESSAGES: Readonly<Record<string, { field: string; message: string }>> = {
+  ck_ipm_not_above_mrp: {
+    field: 'ipm_max_price',
+    message:
+      'A price for one MRP cannot be above that MRP. Lower the selling price, or correct the MRP.',
+  },
+  ck_ipm_bucket_mrp_is_max: {
+    field: 'ipm_max_price',
+    message: "A price row's MRP bucket and its MRP must be the same figure.",
+  },
+  ck_ipm_bucket_mrp: { field: 'ipm_max_price', message: 'An MRP bucket must be above zero.' },
+  ck_ipm_bucket_sp: {
+    field: 'ipm_sales_price_a',
+    message: 'A sale-price bucket must be above zero.',
+  },
+  ck_ipm_dates: { field: 'request', message: 'A price cannot end before it starts.' },
+  chk_ipm_nonnegative: {
+    field: 'request',
+    message: 'Prices, charges and points cannot be negative.',
+  },
+};
 /**
  * item_price_master stores no unit shape (base unit, factors, slno, the is_*
  * flags) — item_unit_conversion owns it, and a price row reaches it through
@@ -46,6 +79,7 @@ export class ItemsPriceMasterService {
     private readonly auditLogService: AuditLogService,
     private readonly configuredGridSqlService: ConfiguredGridSqlService,
     private readonly requestContextService: RequestContextService,
+    private readonly priceBucketService: PriceBucketService,
   ) {}
   async save(
     saveItemPriceDto: SaveItemPriceDto,
@@ -276,6 +310,8 @@ export class ItemsPriceMasterService {
       ipmUpdatedBy: updatedBy,
     };
     this.applyOptionalFields(data, saveItemPriceDto);
+    await this.applyBucket(tx, data, saveItemPriceDto, null);
+    await this.fillLevelFigures(tx, data, saveItemPriceDto, null);
     const created = await tx.itemPriceMaster.create({
       data,
     });
@@ -344,6 +380,8 @@ export class ItemsPriceMasterService {
       data.ipmGodownId = saveItemPriceDto.ipm_godown_id ?? null;
     }
     this.applyOptionalFields(data, saveItemPriceDto);
+    await this.applyBucket(tx, data, saveItemPriceDto, existing);
+    await this.fillLevelFigures(tx, data, saveItemPriceDto, existing);
     const updated = await tx.itemPriceMaster.update({
       where: {
         ipmId,
@@ -367,6 +405,119 @@ export class ItemsPriceMasterService {
       tx,
     );
     return payload;
+  }
+  /**
+   * The row's bucket, DERIVED — never read from the payload (the DTO has no
+   * field for it, and forbidNonWhitelisted refuses one). Computed from what the
+   * row will hold after this write: the payload's value where it sent one, the
+   * stored value where it did not. See PriceBucketService.
+   *
+   * ck_ipm_bucket_mrp_is_max holds by construction: the MRP bucket IS
+   * NULLIF(ipm_max_price, 0).
+   */
+  private async applyBucket(
+    tx: Prisma.TransactionClient,
+    data: Prisma.ItemPriceMasterUncheckedCreateInput | Prisma.ItemPriceMasterUncheckedUpdateInput,
+    dto: SaveItemPriceDto,
+    existing: ItemPriceMaster | null,
+  ): Promise<void> {
+    const pick = (sent: number | undefined, stored: Prisma.Decimal | undefined) =>
+      sent !== undefined ? sent : stored !== undefined ? toNumber(stored) : 0;
+    const [key] = await this.priceBucketService.deriveBuckets(tx, dto.ipm_item_id, [
+      {
+        companyId:
+          dto.ipm_company_id !== undefined ? dto.ipm_company_id : (existing?.ipmCompanyId ?? null),
+        branchId:
+          dto.ipm_branch_id !== undefined ? dto.ipm_branch_id : (existing?.ipmBranchId ?? null),
+        maxPrice: pick(dto.ipm_max_price, existing?.ipmMaxPrice),
+        prices: [
+          pick(dto.ipm_sales_price_a, existing?.ipmSalesPriceA),
+          pick(dto.ipm_sales_price_b, existing?.ipmSalesPriceB),
+          pick(dto.ipm_sales_price_c, existing?.ipmSalesPriceC),
+          pick(dto.ipm_sales_price_d, existing?.ipmSalesPriceD),
+        ],
+      },
+    ]);
+    data.ipmBucketMrp = key.mrp;
+    data.ipmBucketSp = key.salePrice;
+  }
+  /**
+   * Notes 71 B4 — a level whose PRICE is sent but whose without-tax figure or
+   * markup is not gets them derived here, by the rule menu 30 applies ("price
+   * wins", selling-price-math.helper): price ÷ (1 + tax %) at the item's tax
+   * rate as of today, and (price − cost) ÷ cost on the row's cost. A client
+   * that sends them — the Qt item card always does — is taken at its word; a
+   * client that sent prices only used to leave 0 in both.
+   */
+  private async fillLevelFigures(
+    tx: Prisma.TransactionClient,
+    data: Prisma.ItemPriceMasterUncheckedCreateInput | Prisma.ItemPriceMasterUncheckedUpdateInput,
+    dto: SaveItemPriceDto,
+    existing: ItemPriceMaster | null,
+  ): Promise<void> {
+    const levels = [
+      {
+        level: 1,
+        price: dto.ipm_sales_price_a,
+        wot: dto.ipm_price_a_wot,
+        markup: dto.ipm_price_a_markup_perc,
+      },
+      {
+        level: 2,
+        price: dto.ipm_sales_price_b,
+        wot: dto.ipm_price_b_wot,
+        markup: dto.ipm_price_b_markup_perc,
+      },
+      {
+        level: 3,
+        price: dto.ipm_sales_price_c,
+        wot: dto.ipm_price_c_wot,
+        markup: dto.ipm_price_c_markup_perc,
+      },
+      {
+        level: 4,
+        price: dto.ipm_sales_price_d,
+        wot: dto.ipm_price_d_wot,
+        markup: dto.ipm_price_d_markup_perc,
+      },
+    ] as const;
+    const missing = levels.filter(
+      (l) => l.price !== undefined && (l.wot === undefined || l.markup === undefined),
+    );
+    if (!missing.length) {
+      return;
+    }
+    const taxPerc =
+      (await resolveItemTaxRates(tx, [dto.ipm_item_id])).get(dto.ipm_item_id)?.taxPerc ?? 0;
+    const cost =
+      dto.ipm_cost_price !== undefined
+        ? dto.ipm_cost_price
+        : existing
+          ? toNumber(existing.ipmCostPrice)
+          : 0;
+    for (const l of missing) {
+      const figures = recomputeLevel(l.level, l.price ?? 0, taxPerc, cost);
+      const wot = l.wot === undefined ? figures.priceWot : undefined;
+      const markup = l.markup === undefined ? figures.markupPerc : undefined;
+      switch (l.level) {
+        case 1:
+          if (wot !== undefined) data.ipmPriceAWot = wot;
+          if (markup !== undefined) data.ipmPriceAMarkupPerc = markup;
+          break;
+        case 2:
+          if (wot !== undefined) data.ipmPriceBWot = wot;
+          if (markup !== undefined) data.ipmPriceBMarkupPerc = markup;
+          break;
+        case 3:
+          if (wot !== undefined) data.ipmPriceCWot = wot;
+          if (markup !== undefined) data.ipmPriceCMarkupPerc = markup;
+          break;
+        case 4:
+          if (wot !== undefined) data.ipmPriceDWot = wot;
+          if (markup !== undefined) data.ipmPriceDMarkupPerc = markup;
+          break;
+      }
+    }
   }
   /**
    * ipm_uc_unit_id is a FK to item_unit_conversion(iuc_id), and the conversion
@@ -536,6 +687,8 @@ export class ItemsPriceMasterService {
       ipm_price_c_markup_perc: toNumber(record.ipmPriceCMarkupPerc),
       ipm_price_d_markup_perc: toNumber(record.ipmPriceDMarkupPerc),
       ipm_max_price: toNumber(record.ipmMaxPrice),
+      ipm_bucket_mrp: toNullableNumber(record.ipmBucketMrp),
+      ipm_bucket_sp: toNullableNumber(record.ipmBucketSp),
       ipm_min_price: toNumber(record.ipmMinPrice),
       ipm_disc_perc: toNumber(record.ipmDiscPerc),
       ipm_disc_qty: toNumber(record.ipmDiscQty),
@@ -580,6 +733,24 @@ export class ItemsPriceMasterService {
     throwOnUniqueConstraintError<ItemPriceErrorDetail>(error, 'Item price already exists', [
       { field: 'ipm_item_id', message: 'Duplicate item price configuration is not allowed' },
     ]);
+    // ex_ipm_overlap: one price per company, branch, unit and bucket (MRP /
+    // sale price) at a time. It replaced uq_item_price_master_scope, so this
+    // is the same 409 that index used to raise.
+    if (isExclusionConstraintError(error)) {
+      throwInventoryConflict<ItemPriceErrorDetail>('Item price already exists', [
+        {
+          field: 'ipm_uc_unit_id',
+          message:
+            'This unit already has a price at this company, branch and MRP. Edit that row instead of adding another.',
+        },
+      ]);
+    }
+    const check = violatedCheckOf(error);
+    if (check && CHECK_MESSAGES[check]) {
+      throwUnprocessable<ItemPriceErrorDetail>('This price cannot be saved', [
+        CHECK_MESSAGES[check],
+      ]);
+    }
     if (isForeignKeyConstraintError(error)) {
       throwInventoryBadRequest<ItemPriceErrorDetail>('Invalid relation reference', [
         {

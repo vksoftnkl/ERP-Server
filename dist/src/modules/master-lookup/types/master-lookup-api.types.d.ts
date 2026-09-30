@@ -76,6 +76,21 @@ export interface ItemUnitCyclePayload {
     item_id: string;
     iuc_id: string;
 }
+export interface ItemPriceBucketPayload {
+    mrp: number | null;
+    sale_price: number | null;
+    available_qty: number;
+    price_source: 'BUCKET' | 'MASTER' | null;
+    price_scope: 'BRANCH' | 'CHAIN' | null;
+    price_row_id: string | null;
+    sales_price: number;
+    sales_price_a: number;
+    sales_price_b: number;
+    sales_price_c: number;
+    sales_price_d: number;
+    max_price: number;
+    min_price: number;
+}
 export interface ItemPriceLookupPayload {
     item_id: string;
     item_uc_id: string;
@@ -101,6 +116,10 @@ export interface ItemPriceLookupPayload {
     cost_wot: number;
     min_price: number;
     max_price: number;
+    price_source: 'BUCKET' | 'MASTER';
+    price_scope: 'BRANCH' | 'CHAIN';
+    price_row_id: string;
+    buckets: ItemPriceBucketPayload[];
     disc_perc: number;
     disc_qty: number;
     sch_discount: number | null;

@@ -29,6 +29,8 @@ async function resolveDefaultSaleGodowns(prisma, branchId, lines) {
             where: {
                 ipmItemId: { in: itemIds },
                 OR: [{ ipmBranchId: branchId }, { ipmBranchId: null }],
+                ipmBucketMrp: null,
+                ipmBucketSp: null,
                 ipmIsDeleted: false,
             },
             select: { ipmItemId: true, ipmUcUnitId: true, ipmBranchId: true, ipmGodownId: true },

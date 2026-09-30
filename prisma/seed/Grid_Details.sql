@@ -558,6 +558,7 @@ ORDER BY cgr_name$seed$)
 	item_name_en,
 	item_name_ta
 FROM inventory.item_master
+WHERE item_is_deleted = iitem_is_deleted
 ORDER BY item_name_en$seed$)
     ,(68, 'POPUP - UNITS'                , NULL, NULL              , 'Ascending', 'Desktop', true , false, 'system', $seed$SELECT
 	unit_id,

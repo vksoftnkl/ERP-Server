@@ -36,8 +36,9 @@ export interface SellingPriceRow {
     stockQty: number;
     mrp: number | null;
     salePrice: number | null;
+    maxPrice: number;
     priceSource: PriceSource;
-    priceScope: PriceScope;
+    priceScope: PriceScope | null;
     bucketId: string | null;
     costRate: number;
     minPrice: number;
@@ -47,13 +48,7 @@ export interface SellingPriceRow {
     hasCess: boolean;
     levels: SellingPriceLevelValue[];
 }
-export interface ItemTaxRate {
-    itemId: string;
-    taxId: string | null;
-    taxPerc: number;
-    inclTax: boolean;
-    hasCess: boolean;
-}
+export type { ItemTaxRate } from '../../../Inventory/utils/item-tax-rate.helper';
 export interface SellingPriceProblem {
     lineNo: number;
     itemId: string;
@@ -83,4 +78,3 @@ export interface SellingPriceSaveResult {
     problems: SellingPriceProblem[];
     belowCostPolicy: BelowCostPolicy;
 }
-export declare const STOCK_MRP_PRICE_NOT_DEPLOYED: string;

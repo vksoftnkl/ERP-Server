@@ -13,6 +13,16 @@ import {
 } from 'src/common/utils/module-service.utils';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
 import { StockTrackPolicyService } from 'src/modules/stocks/stock-track-policy/stock-track-policy.service';
+import {
+  ITEM_GROUP_TREE,
+  assertDeleteState,
+  assertNoLiveChildren,
+  assertNoLiveReferences,
+  assertNotUnderOwnSubtree,
+  assertParentLive,
+  relevelSubtree,
+  type LiveReference,
+} from '../utils/master-tree.helper';
 const ITEM_GROUP_TABLE_NAME = 'item group master';
 const ITEM_GROUP_AUDIT_SCREEN_NAME = 'Item Group Master';
 // The payload echoes the preset's name next to itg_track_preset_id, so every
@@ -21,6 +31,20 @@ const TRACK_PRESET_INCLUDE = {
   trackPreset: { select: { sptName: true } },
 } satisfies Prisma.ItemGroupMasterInclude;
 type ItemGroupWriteClient = Prisma.TransactionClient | PrismaService;
+/** What keeps a group from being deleted besides its own children (notes 70 B4). */
+const ITEM_GROUP_REFERENCES: readonly LiveReference[] = [
+  {
+    table: 'inventory.item_master',
+    column: 'item_group_id',
+    live: 'item_is_deleted = false',
+    label: 'items',
+  },
+];
+const ITEM_GROUP_DELETE_STATE = {
+  label: 'item group',
+  idField: 'itg_id',
+  restoreRoute: '/item-groups/restore',
+};
 @Injectable()
 export class ItemsGroupMasterService {
   constructor(
@@ -63,7 +87,22 @@ export class ItemsGroupMasterService {
     });
     return parent?.itgName ?? null;
   }
-  async toggleDelete(itgId: string): Promise<{ itg_id: string; deleted: boolean }> {
+  /**
+   * DELETE deletes — it is no longer a toggle (notes 70 C1): an already
+   * deleted group is a 409, and POST /item-groups/restore brings one back.
+   * Refused (409) while live sub-groups or live items still hang off it (B4).
+   */
+  async softDelete(itgId: string): Promise<{ itg_id: string; deleted: boolean }> {
+    return this.setDeleted(itgId, true);
+  }
+  /** Restore a deleted group. Refused (409) when it is not deleted or its parent is. */
+  async restore(itgId: string): Promise<{ itg_id: string; deleted: boolean }> {
+    return this.setDeleted(itgId, false);
+  }
+  private async setDeleted(
+    itgId: string,
+    wantDeleted: boolean,
+  ): Promise<{ itg_id: string; deleted: boolean }> {
     return this.prisma.$transaction(async (tx) => {
       // Find regardless of current deleted state
       const existing = await tx.itemGroupMaster.findFirst({
@@ -78,8 +117,15 @@ export class ItemsGroupMasterService {
         );
       }
 
-      const wasDeleted = existing.itgIsDeleted; // current state
-      const nextDeleted = !wasDeleted; // flip it
+      assertDeleteState(existing.itgIsDeleted, wantDeleted, ITEM_GROUP_DELETE_STATE);
+      if (wantDeleted) {
+        await assertNoLiveChildren(tx, ITEM_GROUP_TREE, itgId);
+        await assertNoLiveReferences(tx, ITEM_GROUP_REFERENCES, itgId, ITEM_GROUP_DELETE_STATE);
+      } else {
+        await assertParentLive(tx, ITEM_GROUP_TREE, existing.itgParentId);
+      }
+      const wasDeleted = existing.itgIsDeleted;
+      const nextDeleted = wantDeleted;
       const modifiedOn = new Date();
       const userId = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
 
@@ -111,10 +157,15 @@ export class ItemsGroupMasterService {
 
       if (nextDeleted) {
         await this.removePathIds(tx, ancestorIds, subtreeIds);
+        // Notes 71 B3 — the group's derived GROUP-scope policy goes with it; it
+        // used to stay live and active under a deleted group.
+        await this.stockTrackPolicyService.retireForGroup(itgId, tx);
       } else {
         // Now that the row is live again, the same subtree the delete stripped
         // out — this row plus every descendant that stayed active — reads back.
         await this.appendPathIds(tx, ancestorIds, await this.getActiveSubtreeIds(tx, itgId));
+        // ...and its preset derives the GROUP policy again.
+        await this.stockTrackPolicyService.syncFromItemGroup(existing, tx);
       }
 
       const originalRecord = this.toPayload(existing);
@@ -171,6 +222,8 @@ export class ItemsGroupMasterService {
           const ancestorIds = await this.getAncestorIds(tx, saveItemGroupDto.itg_parent_id);
           await this.appendPathIds(tx, ancestorIds, [created.itgId]);
         }
+        // itg_level is the node's depth, computed — never the payload's (B1).
+        await relevelSubtree(tx, ITEM_GROUP_TREE, created.itgId);
         const refreshed = await tx.itemGroupMaster.findFirst({
           where: {
             itgId: created.itgId,
@@ -235,11 +288,18 @@ export class ItemsGroupMasterService {
         if (saveItemGroupDto.itg_parent_id) {
           await this.ensureParentExists(saveItemGroupDto.itg_parent_id, tx);
         }
-        const hasParentField = hasOwnProperty(saveItemGroupDto, 'itg_parent_id');
+        // `!== undefined`, not hasOwnProperty: every declared DTO field is an
+        // own property (ES2022 class fields), so an OMITTED parent used to read
+        // as "moved to root" and shuffle the path caches. null / "" still clear.
+        const hasParentField = saveItemGroupDto.itg_parent_id !== undefined;
         const nextParentId = hasParentField
           ? (saveItemGroupDto.itg_parent_id ?? null)
           : existing.itgParentId;
         const isParentChanged = hasParentField && nextParentId !== existing.itgParentId;
+        if (isParentChanged) {
+          // B3: under its own descendant would be a loop.
+          await assertNotUnderOwnSubtree(tx, ITEM_GROUP_TREE, itgId, nextParentId);
+        }
         const subtreeIds = isParentChanged ? await this.getActiveSubtreeIds(tx, itgId) : [];
         const oldAncestorIds = isParentChanged
           ? await this.getAncestorIds(tx, existing.itgParentId)
@@ -267,6 +327,9 @@ export class ItemsGroupMasterService {
           await this.removePathIds(tx, oldAncestorIds, subtreeIds);
           await this.appendPathIds(tx, newAncestorIds, subtreeIds);
         }
+        // The node and its whole subtree take their depth from where they now
+        // sit (B1, B2) — also repairs a level a payload or an old bug left wrong.
+        await relevelSubtree(tx, ITEM_GROUP_TREE, itgId);
         const refreshed = await tx.itemGroupMaster.findFirst({
           where: {
             itgId,
@@ -335,9 +398,7 @@ export class ItemsGroupMasterService {
     if (hasOwnProperty(saveItemGroupDto, 'itg_sort')) {
       data.itgSort = saveItemGroupDto.itg_sort;
     }
-    if (hasOwnProperty(saveItemGroupDto, 'itg_level')) {
-      data.itgLevel = saveItemGroupDto.itg_level;
-    }
+    // itg_level is not taken from the payload: relevelSubtree computes it (B1).
     if (hasOwnProperty(saveItemGroupDto, 'itg_tax_claim')) {
       data.itgTaxClaim = saveItemGroupDto.itg_tax_claim;
     }

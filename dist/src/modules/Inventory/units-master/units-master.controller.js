@@ -44,12 +44,12 @@ let UnitsMasterController = class UnitsMasterController {
         };
     }
     async remove(unitId) {
-        const { unit_id, deleted } = await this.unitsMasterService.toggleDelete(unitId);
-        return {
-            success: true,
-            message: deleted ? 'Unit deleted successfully' : 'Unit restored successfully',
-            data: { unit_id, deleted },
-        };
+        const data = await this.unitsMasterService.softDelete(unitId);
+        return { success: true, message: 'Unit deleted successfully', data };
+    }
+    async restore(unitId) {
+        const data = await this.unitsMasterService.restore(unitId);
+        return { success: true, message: 'Unit restored successfully', data };
     }
 };
 exports.UnitsMasterController = UnitsMasterController;
@@ -82,16 +82,39 @@ __decorate([
 __decorate([
     (0, common_1.Delete)('delete'),
     (0, common_1.Version)(api_version_1.API_VERSION),
-    (0, swagger_1.ApiOperation)({ summary: 'Soft delete or restore unit by id' }),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Soft delete unit by id',
+        description: 'Deletes only — it is not a toggle: an already deleted unit is a 409 (use POST ' +
+            '/units/restore). Refused with 409 while a pack unit, an item unit conversion or an item ' +
+            'still uses it.',
+    }),
     (0, swagger_1.ApiQuery)({ name: 'unit_id', schema: { type: 'string', format: 'uuid' } }),
     (0, swagger_1.ApiOkResponse)({ type: unit_response_dto_1.UnitSuccessDeleteDto }),
     (0, swagger_1.ApiBadRequestResponse)({ type: unit_response_dto_1.UnitErrorResponseDto }),
     (0, swagger_1.ApiNotFoundResponse)({ type: unit_response_dto_1.UnitErrorResponseDto }),
+    (0, swagger_1.ApiConflictResponse)({ type: unit_response_dto_1.UnitErrorResponseDto }),
     __param(0, (0, common_1.Query)('unit_id', new common_1.ParseUUIDPipe({ version: '7' }))),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", Promise)
 ], UnitsMasterController.prototype, "remove", null);
+__decorate([
+    (0, common_1.Post)('restore'),
+    (0, common_1.Version)(api_version_1.API_VERSION),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Restore a soft-deleted unit',
+        description: '409 when the unit is not deleted, or when its base unit is.',
+    }),
+    (0, swagger_1.ApiQuery)({ name: 'unit_id', schema: { type: 'string', format: 'uuid' } }),
+    (0, swagger_1.ApiCreatedResponse)({ type: unit_response_dto_1.UnitSuccessDeleteDto }),
+    (0, swagger_1.ApiBadRequestResponse)({ type: unit_response_dto_1.UnitErrorResponseDto }),
+    (0, swagger_1.ApiNotFoundResponse)({ type: unit_response_dto_1.UnitErrorResponseDto }),
+    (0, swagger_1.ApiConflictResponse)({ type: unit_response_dto_1.UnitErrorResponseDto }),
+    __param(0, (0, common_1.Query)('unit_id', new common_1.ParseUUIDPipe({ version: '7' }))),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", Promise)
+], UnitsMasterController.prototype, "restore", null);
 exports.UnitsMasterController = UnitsMasterController = __decorate([
     (0, swagger_1.ApiTags)('Units'),
     (0, swagger_1.ApiBearerAuth)('access-token'),

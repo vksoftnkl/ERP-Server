@@ -58,7 +58,17 @@ let ItemsQtyPriceMasterController = class ItemsQtyPriceMasterController {
     async remove(body, iqpId) {
         const deleteItemQtyPriceDto = await this.resolveDeletePayload(body, iqpId);
         const isArray = Array.isArray(deleteItemQtyPriceDto);
-        const data = await this.itemsQtyPriceMasterService.toggleDelete(isArray ? deleteItemQtyPriceDto.map((item) => item.iqp_id) : deleteItemQtyPriceDto.iqp_id);
+        const data = await this.itemsQtyPriceMasterService.softDelete(isArray ? deleteItemQtyPriceDto.map((item) => item.iqp_id) : deleteItemQtyPriceDto.iqp_id);
+        return {
+            success: true,
+            message: this.buildToggleDeleteMessage(data),
+            data,
+        };
+    }
+    async restore(body, iqpId) {
+        const deleteItemQtyPriceDto = await this.resolveDeletePayload(body, iqpId);
+        const isArray = Array.isArray(deleteItemQtyPriceDto);
+        const data = await this.itemsQtyPriceMasterService.restore(isArray ? deleteItemQtyPriceDto.map((item) => item.iqp_id) : deleteItemQtyPriceDto.iqp_id);
         return {
             success: true,
             message: this.buildToggleDeleteMessage(data),
@@ -150,7 +160,11 @@ __decorate([
 __decorate([
     (0, common_1.Delete)('delete'),
     (0, common_1.Version)(api_version_1.API_VERSION),
-    (0, swagger_1.ApiOperation)({ summary: 'Soft delete or restore item qty price by id' }),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Soft delete item qty price slab(s) by id',
+        description: 'Deletes only — it is not a toggle: a slab that is already deleted is a 409 (use POST ' +
+            '/item-qty-prices/restore). A batch is all-or-nothing.',
+    }),
     (0, swagger_1.ApiQuery)({ name: 'iqp_id', required: false, schema: { type: 'string', format: 'uuid' } }),
     (0, swagger_1.ApiBody)({
         required: false,
@@ -167,12 +181,44 @@ __decorate([
     (0, swagger_1.ApiOkResponse)({ type: item_qty_price_response_dto_1.ItemQtyPriceSuccessDeleteDto }),
     (0, swagger_1.ApiBadRequestResponse)({ type: item_qty_price_response_dto_1.ItemQtyPriceErrorResponseDto }),
     (0, swagger_1.ApiNotFoundResponse)({ type: item_qty_price_response_dto_1.ItemQtyPriceErrorResponseDto }),
+    (0, swagger_1.ApiConflictResponse)({ type: item_qty_price_response_dto_1.ItemQtyPriceErrorResponseDto }),
     __param(0, (0, common_1.Body)()),
     __param(1, (0, common_1.Query)('iqp_id')),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [Object, String]),
     __metadata("design:returntype", Promise)
 ], ItemsQtyPriceMasterController.prototype, "remove", null);
+__decorate([
+    (0, common_1.Post)('restore'),
+    (0, common_1.Version)(api_version_1.API_VERSION),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Restore soft-deleted item qty price slab(s) by id',
+        description: '409 when a slab is not deleted, or when a live slab now holds the same key. A batch is ' +
+            'all-or-nothing.',
+    }),
+    (0, swagger_1.ApiQuery)({ name: 'iqp_id', required: false, schema: { type: 'string', format: 'uuid' } }),
+    (0, swagger_1.ApiBody)({
+        required: false,
+        schema: {
+            oneOf: [
+                { $ref: (0, swagger_1.getSchemaPath)(delete_item_qty_price_dto_1.DeleteItemQtyPriceDto) },
+                {
+                    type: 'array',
+                    items: { $ref: (0, swagger_1.getSchemaPath)(delete_item_qty_price_dto_1.DeleteItemQtyPriceDto) },
+                },
+            ],
+        },
+    }),
+    (0, swagger_1.ApiCreatedResponse)({ type: item_qty_price_response_dto_1.ItemQtyPriceSuccessDeleteDto }),
+    (0, swagger_1.ApiBadRequestResponse)({ type: item_qty_price_response_dto_1.ItemQtyPriceErrorResponseDto }),
+    (0, swagger_1.ApiNotFoundResponse)({ type: item_qty_price_response_dto_1.ItemQtyPriceErrorResponseDto }),
+    (0, swagger_1.ApiConflictResponse)({ type: item_qty_price_response_dto_1.ItemQtyPriceErrorResponseDto }),
+    __param(0, (0, common_1.Body)()),
+    __param(1, (0, common_1.Query)('iqp_id')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, String]),
+    __metadata("design:returntype", Promise)
+], ItemsQtyPriceMasterController.prototype, "restore", null);
 exports.ItemsQtyPriceMasterController = ItemsQtyPriceMasterController = __decorate([
     (0, swagger_1.ApiTags)('Item Qty Prices'),
     (0, swagger_1.ApiBearerAuth)('access-token'),

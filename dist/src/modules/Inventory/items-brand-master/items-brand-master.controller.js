@@ -48,12 +48,12 @@ let ItemsBrandMasterController = class ItemsBrandMasterController {
         };
     }
     async remove(brandId) {
-        const { brand_id, deleted } = await this.itemsBrandMasterService.toggleDelete(brandId);
-        return {
-            success: true,
-            message: deleted ? 'Item brand deleted successfully' : 'Item brand restored successfully',
-            data: { brand_id, deleted },
-        };
+        const data = await this.itemsBrandMasterService.softDelete(brandId);
+        return { success: true, message: 'Item brand deleted successfully', data };
+    }
+    async restore(brandId) {
+        const data = await this.itemsBrandMasterService.restore(brandId);
+        return { success: true, message: 'Item brand restored successfully', data };
     }
     withUploadedPhoto(saveItemBrandDto, brandPhotoFile) {
         if (!brandPhotoFile) {
@@ -99,16 +99,38 @@ __decorate([
 __decorate([
     (0, common_1.Delete)('delete'),
     (0, common_1.Version)(api_version_1.API_VERSION),
-    (0, swagger_1.ApiOperation)({ summary: 'Soft delete or restore item brand by id' }),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Soft delete item brand by id',
+        description: 'Deletes only — it is not a toggle: an already deleted brand is a 409 (use POST ' +
+            '/item-brands/restore). Refused with 409 while live sub-brands or live items still use it.',
+    }),
     (0, swagger_1.ApiQuery)({ name: 'brand_id', schema: { type: 'string', format: 'uuid' } }),
     (0, swagger_1.ApiOkResponse)({ type: item_brand_response_dto_1.ItemBrandSuccessDeleteDto }),
     (0, swagger_1.ApiBadRequestResponse)({ type: item_brand_response_dto_1.ItemBrandErrorResponseDto }),
     (0, swagger_1.ApiNotFoundResponse)({ type: item_brand_response_dto_1.ItemBrandErrorResponseDto }),
+    (0, swagger_1.ApiConflictResponse)({ type: item_brand_response_dto_1.ItemBrandErrorResponseDto }),
     __param(0, (0, common_1.Query)('brand_id', new common_1.ParseUUIDPipe({ version: '7' }))),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", Promise)
 ], ItemsBrandMasterController.prototype, "remove", null);
+__decorate([
+    (0, common_1.Post)('restore'),
+    (0, common_1.Version)(api_version_1.API_VERSION),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Restore a soft-deleted item brand',
+        description: '409 when the brand is not deleted, or when its parent is.',
+    }),
+    (0, swagger_1.ApiQuery)({ name: 'brand_id', schema: { type: 'string', format: 'uuid' } }),
+    (0, swagger_1.ApiCreatedResponse)({ type: item_brand_response_dto_1.ItemBrandSuccessDeleteDto }),
+    (0, swagger_1.ApiBadRequestResponse)({ type: item_brand_response_dto_1.ItemBrandErrorResponseDto }),
+    (0, swagger_1.ApiNotFoundResponse)({ type: item_brand_response_dto_1.ItemBrandErrorResponseDto }),
+    (0, swagger_1.ApiConflictResponse)({ type: item_brand_response_dto_1.ItemBrandErrorResponseDto }),
+    __param(0, (0, common_1.Query)('brand_id', new common_1.ParseUUIDPipe({ version: '7' }))),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", Promise)
+], ItemsBrandMasterController.prototype, "restore", null);
 exports.ItemsBrandMasterController = ItemsBrandMasterController = __decorate([
     (0, swagger_1.ApiTags)('Item Brands'),
     (0, swagger_1.ApiBearerAuth)('access-token'),

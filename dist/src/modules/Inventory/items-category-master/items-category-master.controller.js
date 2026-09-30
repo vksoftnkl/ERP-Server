@@ -48,14 +48,12 @@ let ItemsCategoryMasterController = class ItemsCategoryMasterController {
         };
     }
     async remove(categoryId) {
-        const { category_id, deleted } = await this.itemsCategoryMasterService.toggleDelete(categoryId);
-        return {
-            success: true,
-            message: deleted
-                ? 'Item category deleted successfully'
-                : 'Item category restored successfully',
-            data: { category_id, deleted },
-        };
+        const data = await this.itemsCategoryMasterService.softDelete(categoryId);
+        return { success: true, message: 'Item category deleted successfully', data };
+    }
+    async restore(categoryId) {
+        const data = await this.itemsCategoryMasterService.restore(categoryId);
+        return { success: true, message: 'Item category restored successfully', data };
     }
     withUploadedPhoto(saveItemCategoryDto, categoryPhotoFile) {
         if (!categoryPhotoFile) {
@@ -101,16 +99,38 @@ __decorate([
 __decorate([
     (0, common_1.Delete)('delete'),
     (0, common_1.Version)(api_version_1.API_VERSION),
-    (0, swagger_1.ApiOperation)({ summary: 'Soft delete or restore item category by id' }),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Soft delete item category by id',
+        description: 'Deletes only — it is not a toggle: an already deleted category is a 409 (use POST ' +
+            '/item-categories/restore). Refused with 409 while live sub-categories or live items still use it.',
+    }),
     (0, swagger_1.ApiQuery)({ name: 'category_id', schema: { type: 'string', format: 'uuid' } }),
     (0, swagger_1.ApiOkResponse)({ type: item_category_response_dto_1.ItemCategorySuccessDeleteDto }),
     (0, swagger_1.ApiBadRequestResponse)({ type: item_category_response_dto_1.ItemCategoryErrorResponseDto }),
     (0, swagger_1.ApiNotFoundResponse)({ type: item_category_response_dto_1.ItemCategoryErrorResponseDto }),
+    (0, swagger_1.ApiConflictResponse)({ type: item_category_response_dto_1.ItemCategoryErrorResponseDto }),
     __param(0, (0, common_1.Query)('category_id', new common_1.ParseUUIDPipe({ version: '7' }))),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", Promise)
 ], ItemsCategoryMasterController.prototype, "remove", null);
+__decorate([
+    (0, common_1.Post)('restore'),
+    (0, common_1.Version)(api_version_1.API_VERSION),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Restore a soft-deleted item category',
+        description: '409 when the category is not deleted, or when its parent is.',
+    }),
+    (0, swagger_1.ApiQuery)({ name: 'category_id', schema: { type: 'string', format: 'uuid' } }),
+    (0, swagger_1.ApiCreatedResponse)({ type: item_category_response_dto_1.ItemCategorySuccessDeleteDto }),
+    (0, swagger_1.ApiBadRequestResponse)({ type: item_category_response_dto_1.ItemCategoryErrorResponseDto }),
+    (0, swagger_1.ApiNotFoundResponse)({ type: item_category_response_dto_1.ItemCategoryErrorResponseDto }),
+    (0, swagger_1.ApiConflictResponse)({ type: item_category_response_dto_1.ItemCategoryErrorResponseDto }),
+    __param(0, (0, common_1.Query)('category_id', new common_1.ParseUUIDPipe({ version: '7' }))),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", Promise)
+], ItemsCategoryMasterController.prototype, "restore", null);
 exports.ItemsCategoryMasterController = ItemsCategoryMasterController = __decorate([
     (0, swagger_1.ApiTags)('Item Categories'),
     (0, swagger_1.ApiBearerAuth)('access-token'),

@@ -218,7 +218,15 @@ export class ItemStockBalanceService {
         select: { gdlId: true, gdlName: true },
       }),
       this.prisma.itemPriceMaster.findMany({
-        where: { ipmItemId: { in: allItemIds }, ipmIsDeleted: false },
+        // The HEADLINE row per unit, as before the price table held MRP
+        // buckets too (plan-nestjs-one-price-table.md) — "first row per unit"
+        // below must not land on a bucket row by accident.
+        where: {
+          ipmItemId: { in: allItemIds },
+          ipmIsDeleted: false,
+          ipmBucketMrp: null,
+          ipmBucketSp: null,
+        },
         select: {
           ipmItemId: true,
           ipmId: true,
@@ -521,6 +529,8 @@ export class ItemStockBalanceService {
       ipm_price_c_markup_perc: this.toNumber(record.ipmPriceCMarkupPerc),
       ipm_price_d_markup_perc: this.toNumber(record.ipmPriceDMarkupPerc),
       ipm_max_price: this.toNumber(record.ipmMaxPrice),
+      ipm_bucket_mrp: record.ipmBucketMrp === null ? null : this.toNumber(record.ipmBucketMrp),
+      ipm_bucket_sp: record.ipmBucketSp === null ? null : this.toNumber(record.ipmBucketSp),
       ipm_min_price: this.toNumber(record.ipmMinPrice),
       ipm_disc_perc: this.toNumber(record.ipmDiscPerc),
       ipm_disc_qty: this.toNumber(record.ipmDiscQty),

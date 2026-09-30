@@ -66,12 +66,19 @@ FROM
 ORDER BY
 	menu_name;$seed$, NULL)
     ,(17, 'ITEM GROUPS'             , NULL, 'itg_name'            , 'asc', 10, false, 0   , 'Desktop', 'itg_name'          , 'system', $seed$SELECT
-	itg_id,
-	itg_name,
-	itg_short
-FROM inventory.item_group_master
-WHERE itg_is_active = true AND itg_is_deleted = false
-ORDER BY itg_name;$seed$, NULL)
+	g.itg_id,
+	g.itg_name,
+	g.itg_short
+FROM inventory.item_group_master g
+WHERE g.itg_is_active = true AND g.itg_is_deleted = false
+	AND g.itg_id NOT IN (
+		WITH RECURSIVE sub(id) AS (
+			SELECT s.itg_id FROM inventory.item_group_master s
+			 WHERE s.itg_id::text = NULLIF(NULLIF('iexclude_id', ''), 'iexclude' || '_id')
+			UNION
+			SELECT c.itg_id FROM inventory.item_group_master c JOIN sub ON c.itg_parent_id = sub.id)
+		SELECT id FROM sub)
+ORDER BY g.itg_name$seed$, NULL)
     ,(18, 'ITEM BRANDS'             , NULL, 'brand_name'          , 'asc', 10, false, 0   , 'Desktop', 'brand_name'        , 'system', $seed$SELECT
 	brand_id,
 	brand_name,
@@ -80,21 +87,35 @@ FROM inventory.item_brand_master
 WHERE brand_is_active = true AND brand_is_deleted = false
 ORDER BY brand_name;$seed$, NULL)
     ,(19, 'ITEM SECTIONS'           , NULL, 'sec_name'            , 'asc', 10, false, 0   , 'Desktop', 'sec_name'          , 'system', $seed$SELECT
-	sec_id,
-	sec_short,
-	sec_name,
-	sec_alias	
-FROM inventory.item_section_master
-WHERE sec_is_active = true AND sec_is_deleted = false
-ORDER BY sec_name;$seed$, NULL)
+	s0.sec_id,
+	s0.sec_short,
+	s0.sec_name,
+	s0.sec_alias
+FROM inventory.item_section_master s0
+WHERE s0.sec_is_active = true AND s0.sec_is_deleted = false
+	AND s0.sec_id NOT IN (
+		WITH RECURSIVE sub(id) AS (
+			SELECT s.sec_id FROM inventory.item_section_master s
+			 WHERE s.sec_id::text = NULLIF(NULLIF('iexclude_id', ''), 'iexclude' || '_id')
+			UNION
+			SELECT c.sec_id FROM inventory.item_section_master c JOIN sub ON c.sec_parent_id = sub.id)
+		SELECT id FROM sub)
+ORDER BY s0.sec_name$seed$, NULL)
     ,(20, 'ITEM CATEGORIES'         , NULL, 'category_name'       , 'asc', 10, false, 0   , 'Desktop', 'category_name'     , 'system', $seed$SELECT
-	category_id,
-	category_short,
-	category_name,
-	category_alias	
-FROM inventory.item_category_master
-WHERE category_is_active = true AND category_is_deleted = false
-ORDER BY category_name;$seed$, NULL)
+	g.category_id,
+	g.category_short,
+	g.category_name,
+	g.category_alias
+FROM inventory.item_category_master g
+WHERE g.category_is_active = true AND g.category_is_deleted = false
+	AND g.category_id NOT IN (
+		WITH RECURSIVE sub(id) AS (
+			SELECT s.category_id FROM inventory.item_category_master s
+			 WHERE s.category_id::text = NULLIF(NULLIF('iexclude_id', ''), 'iexclude' || '_id')
+			UNION
+			SELECT c.category_id FROM inventory.item_category_master c JOIN sub ON c.category_parent_id = sub.id)
+		SELECT id FROM sub)
+ORDER BY g.category_name$seed$, NULL)
     ,(21, 'GST - STATE CODES'       , NULL, 'state_name'          , 'asc', 10, false, 0   , 'Desktop', 'state_name'        , 'system', $seed$SELECT
 	state_code,
 	state_name
@@ -130,7 +151,22 @@ WHERE led_group_id = '019eee86-f34b-7e27-8aee-2b5930314c8a'
 	AND led_is_active = true
 	AND led_is_deleted = false
 ORDER BY led_name;$seed$, NULL)
-    ,(26, 'GODOWNS'                 , NULL, 'gdl_name'            , 'asc', 10, false, 0   , 'Desktop', 'gdl_name'          , 'system', $seed$SELECT gdl_id, gdl_name, gdl_short FROM inventory.godown_locations WHERE gdl_is_active = true AND gdl_is_deleted = false ORDER BY gdl_name$seed$, NULL)
+    ,(26, 'GODOWNS'                 , NULL, 'gdl_name'            , 'asc', 10, false, 0   , 'Desktop', 'gdl_name'          , 'system', $seed$SELECT
+	g.gdl_id,
+	g.gdl_name,
+	g.gdl_short
+FROM inventory.godown_locations g
+WHERE g.gdl_is_active = true AND g.gdl_is_deleted = false
+	AND (NULLIF(NULLIF('ibranch_id', ''), 'ibranch' || '_id') IS NULL
+	     OR g.gdl_branch_id::text = NULLIF(NULLIF('ibranch_id', ''), 'ibranch' || '_id'))
+	AND g.gdl_id NOT IN (
+		WITH RECURSIVE sub(id) AS (
+			SELECT s.gdl_id FROM inventory.godown_locations s
+			 WHERE s.gdl_id::text = NULLIF(NULLIF('iexclude_id', ''), 'iexclude' || '_id')
+			UNION
+			SELECT c.gdl_id FROM inventory.godown_locations c JOIN sub ON c.gdl_parent_id = sub.id)
+		SELECT id FROM sub)
+ORDER BY g.gdl_name$seed$, NULL)
     ,(27, 'APP THEMES'              , NULL, 'thm_name'            , 'asc', 10, false, 0   , 'Desktop', 'thm_name'          , 'system', $seed$SELECT
 	thm_id::text AS thm_id,
 	thm_name

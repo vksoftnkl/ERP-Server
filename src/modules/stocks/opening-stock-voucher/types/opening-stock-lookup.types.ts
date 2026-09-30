@@ -50,9 +50,10 @@ export interface OpeningStockItemLookup {
    * to resolve into a bucket, and these are what it resolves by. They are a
    * SEED, not an answer — most specific price scope first, then the dearest
    * bucket — and the line's real bucket is settled by the MRP that ends up
-   * typed. 0 when there is no live bucket for the unit, and 0 on every database
-   * where `stock.stock_mrp_price` has not been deployed (see
-   * StockMrpPriceGateway). For a signature of N they are noise.
+   * typed. With no bucket row for the unit the headline's MRP seeds `mrp`
+   * (and `salePrice` is 0); both are 0 only when the unit has no price row at
+   * all (PriceBucketGateway.findOpeningSeedBucket). For a signature of N they
+   * are noise.
    */
   mrp: number;
   salePrice: number;

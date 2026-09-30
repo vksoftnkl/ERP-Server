@@ -142,11 +142,14 @@ __decorate([
     (0, swagger_1.ApiOperation)({
         summary: 'Soft delete a GST rate and every one of its ledger overrides',
         description: 'Soft delete only — a rate that has priced a bill is never removed. Deleting frees the ' +
-            'name and code for reuse, which is what the partial unique indexes are for.',
+            'name and code for reuse, which is what the partial unique indexes are for. Refused with ' +
+            '409 while a live item (default tax or open tax-history window), ledger or charge still ' +
+            'points at the rate: the picker would stop offering it while they kept posting with it.',
     }),
     (0, swagger_1.ApiOkResponse)({ type: tax_rate_response_dto_1.TaxRateSuccessDeleteDto }),
     (0, swagger_1.ApiBadRequestResponse)({ type: tax_rate_response_dto_1.TaxRateErrorResponseDto }),
     (0, swagger_1.ApiNotFoundResponse)({ type: tax_rate_response_dto_1.TaxRateErrorResponseDto }),
+    (0, swagger_1.ApiConflictResponse)({ type: tax_rate_response_dto_1.TaxRateErrorResponseDto }),
     __param(0, (0, common_1.Query)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [tax_rate_query_dto_1.DeleteTaxRateQueryDto]),

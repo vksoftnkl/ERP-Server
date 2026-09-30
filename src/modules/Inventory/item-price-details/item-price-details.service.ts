@@ -176,6 +176,8 @@ export class ItemPriceDetailsService {
       ipm_price_c_markup_perc: toNumber(record.ipmPriceCMarkupPerc),
       ipm_price_d_markup_perc: toNumber(record.ipmPriceDMarkupPerc),
       ipm_max_price: toNumber(record.ipmMaxPrice),
+      ipm_bucket_mrp: record.ipmBucketMrp === null ? null : toNumber(record.ipmBucketMrp),
+      ipm_bucket_sp: record.ipmBucketSp === null ? null : toNumber(record.ipmBucketSp),
       ipm_min_price: toNumber(record.ipmMinPrice),
       ipm_disc_perc: toNumber(record.ipmDiscPerc),
       ipm_disc_qty: toNumber(record.ipmDiscQty),

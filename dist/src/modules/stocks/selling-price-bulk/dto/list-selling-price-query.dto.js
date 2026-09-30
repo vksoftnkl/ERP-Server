@@ -34,7 +34,7 @@ __decorate([
     (0, swagger_1.ApiProperty)({
         format: 'uuid',
         description: 'The branch whose effective prices are resolved. Required even at CHAIN scope: ' +
-            'fn_smp_effective answers "what does this branch see", and the Src chip is the answer.',
+            'the price resolver answers "what does this branch see", and the Src chip is the answer.',
     }),
     (0, dtoDecorators_1.RequiredUuid)(),
     __metadata("design:type", String)

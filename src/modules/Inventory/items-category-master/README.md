@@ -28,7 +28,8 @@ optionally hang off a parent category to form a hierarchy.
 | --- | --- | --- |
 | `POST` | `/create` | Create **or** update a single item category, decided by `category_id` presence. Accepts `application/json` or `multipart/form-data`. |
 | `GET` | `/get` | Fetch one active item category by `category_id`. |
-| `DELETE` | `/delete` | Toggle soft-delete: soft-deletes an active category, or restores a deleted one, by `category_id`. |
+| `DELETE` | `/delete` | Soft-delete a category by `category_id`. Not a toggle: 409 when already deleted. |
+| `POST` | `/restore` | Restore a soft-deleted category by `category_id`. |
 
 - `GET /get` and `DELETE /delete` read `category_id` from the query string, validated by
   `ParseUUIDPipe({ version: '7' })`.
@@ -82,12 +83,17 @@ Each row carries `categoryPathIdsCache`, a materialized list of ids used to trac
 
 ## Soft delete / restore
 
-- `DELETE /delete` is a **toggle** (`toggleDelete`): it flips `categoryIsDeleted` — soft-deleting
-  an active category or restoring a deleted one — and reports the resulting `deleted` flag.
-- The flip runs inside a `$transaction` with a guarded `updateMany` (matching the previously read
-  `categoryIsDeleted` state) so concurrent toggles don't double-apply.
-- Rows are never hard-deleted; the toggle also updates `categoryModifiedOn` / `categoryModifiedBy`
-  and reconciles ancestor path caches.
+- `DELETE /delete` **deletes only** — it is not a toggle (notes 70 C1). An already deleted category
+  is a **409**; `POST /item-categories/restore` brings one back, and is itself a 409 when the category is not
+  deleted or its parent is (the row would come back an orphan).
+- DELETE is refused (**409**, naming what is in the way) while live sub-categories or live items still use it.
+- Both run in one transaction with a guarded `updateMany`; rows are never hard-deleted. On delete the
+  active subtree ids leave the ancestors' path caches; on restore they are read back AFTER the row
+  is live again and re-appended.
+- **Levels are depths** (a root is 1), computed by `relevelSubtree` on every create and update and
+  never taken from the payload; a re-parent re-levels the whole subtree. A node cannot move under
+  itself or one of its descendants (400). All three rules live in `../utils/master-tree.helper.ts`
+  (notes 70 B1-B3).
 
 ## Audit logging
 

@@ -1,3 +1,4 @@
+export declare const GODOWN_TYPES: readonly ["WAREHOUSE", "ZONE", "AISLE", "RACK", "SHELF", "BIN"];
 export declare class SaveGodownDto {
     gdl_id?: string;
     gdl_branch_id?: string;

@@ -101,20 +101,38 @@ export class GodownsMasterController {
   }
   @Delete('delete')
   @Version(API_VERSION)
-  @ApiOperation({ summary: 'Soft delete or restore godown location by gdl_id query parameter' })
+  @ApiOperation({
+    summary: 'Soft delete a godown location by gdl_id query parameter',
+    description:
+      'Deletes only — it is not a toggle: an already deleted location is a 409 (use POST ' +
+      '/godowns/restore). Refused with 409 while child locations, stock on hand, or a ' +
+      "branch's default godown still point at it.",
+  })
   @ApiOkResponse({ type: GodownSuccessDeleteDto })
   @ApiBadRequestResponse({ type: GodownErrorResponseDto })
   @ApiNotFoundResponse({ type: GodownErrorResponseDto })
+  @ApiConflictResponse({ type: GodownErrorResponseDto })
   async remove(
     @Query() queryDto: DeleteGodownQueryDto,
   ): Promise<GodownSuccessResponse<{ gdl_id: string; deleted: boolean }>> {
-    const { gdl_id, deleted } = await this.godownsMasterService.toggleDelete(queryDto.gdl_id);
-    return {
-      success: true,
-      message: deleted
-        ? 'Godown location deleted successfully'
-        : 'Godown location restored successfully',
-      data: { gdl_id, deleted },
-    };
+    const data = await this.godownsMasterService.softDelete(queryDto.gdl_id);
+    return { success: true, message: 'Godown location deleted successfully', data };
+  }
+
+  @Post('restore')
+  @Version(API_VERSION)
+  @ApiOperation({
+    summary: 'Restore a soft-deleted godown location by gdl_id query parameter',
+    description: '409 when the location is not deleted, or when its parent location is.',
+  })
+  @ApiCreatedResponse({ type: GodownSuccessDeleteDto })
+  @ApiBadRequestResponse({ type: GodownErrorResponseDto })
+  @ApiNotFoundResponse({ type: GodownErrorResponseDto })
+  @ApiConflictResponse({ type: GodownErrorResponseDto })
+  async restore(
+    @Query() queryDto: DeleteGodownQueryDto,
+  ): Promise<GodownSuccessResponse<{ gdl_id: string; deleted: boolean }>> {
+    const data = await this.godownsMasterService.restore(queryDto.gdl_id);
+    return { success: true, message: 'Godown location restored successfully', data };
   }
 }

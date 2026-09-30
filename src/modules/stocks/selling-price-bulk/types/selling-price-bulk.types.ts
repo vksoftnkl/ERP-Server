@@ -6,9 +6,11 @@ export type { PagedResult } from '../../stock-voucher/types/stock-voucher.types'
 /**
  * Where a displayed price came from — the `Src` chip's first half.
  *
- * BUCKET  a stock.stock_mrp_price row keyed on this item's (MRP, sale price)
- *         pair. MASTER  the headline row in inventory.item_price_master,
- *         which is what an item with no live bucket shows.
+ * BUCKET  an inventory.item_price_master row keyed on this item's (MRP, sale
+ *         price) pair. MASTER  the headline row of the same table (both bucket
+ *         columns NULL), which is what an item with no row for its bucket —
+ *         or no bucket at all — shows. One table since
+ *         plan-nestjs-one-price-table.md; `resolveEffectivePrice` decides.
  *
  * The API sends this and `priceScope` as two columns and never a pre-rendered
  * string: the SAVE has to reason about both (§5.5), and a chip cannot be
@@ -23,10 +25,8 @@ export type PriceSource = (typeof PRICE_SOURCES)[number];
  * BRANCH  a row belonging to one branch — an override.
  * CHAIN   the company-wide row every branch without an override reads.
  *
- * NOT a Prisma enum: the column behind it is `varchar + CHECK`, and §13.1 has
- * not yet confirmed that the STORED column and the RETURNED column share a
- * name or a vocabulary. A TS union costs nothing to widen; a Prisma enum
- * silently rejects rows the database accepts.
+ * Not stored: it is `ipm_branch_id IS NULL` of the row that answered, the
+ * resolver's second output.
  */
 export const PRICE_SCOPES = ['BRANCH', 'CHAIN'] as const;
 export type PriceScope = (typeof PRICE_SCOPES)[number];
@@ -82,7 +82,7 @@ export type BelowCostAction = (typeof BELOW_COST_ACTIONS)[number];
 /**
  * Q26's three verdict families. §5.2.
  *
- * BELOW_MIN is the one that matters most: `smp_min_price` is DATA, not a CHECK,
+ * BELOW_MIN is the one that matters most: `ipm_min_price` is DATA, not a CHECK,
  * so Q26 is the only thing enforcing it. A below-minimum price whose verdict is
  * ignored saves cleanly and nothing downstream ever notices.
  */
@@ -94,7 +94,7 @@ export type PriceVerdict = (typeof PRICE_VERDICTS)[number];
  *
  * A single confirm flag that waved through every verdict is how an amber rule
  * quietly disables the red ones: above-MRP would abort at the database anyway
- * (`ck_smp_not_above_mrp`), and below-min has nothing behind it at all.
+ * (`ck_ipm_not_above_mrp`), and below-min has nothing behind it at all.
  */
 export const CONFIRMABLE_VERDICTS: readonly PriceVerdict[] = ['BELOW_COST'];
 
@@ -142,14 +142,33 @@ export interface SellingPriceRow {
   itemName: string;
   uomId: string;
   unitName: string | null;
-  /** For the Stock column, and for §5.4's no-stock list. */
+  /** On hand at the branch for this bucket, in THIS row's unit. */
   stockQty: number;
-  /** The two identity dimensions. Both null on a MASTER row — see §4.2. */
+  /**
+   * The row's bucket, blanked by the item's stock track policy. Both null is
+   * the headline — every row of an item that tracks neither dimension.
+   */
   mrp: number | null;
   salePrice: number | null;
+  /**
+   * What the MRP column SHOWS: the answering row's ipm_max_price — the
+   * bucket's MRP on a BUCKET row, the headline's own MRP on a MASTER row, 0
+   * when nothing answers. Display only; `mrp` is what the save echoes back.
+   */
+  maxPrice: number;
+  /**
+   * BUCKET: this bucket's own row answered. MASTER: the headline answered —
+   * with `mrp` / `salePrice` null it IS the headline row; with either set, this
+   * stock bucket has no row of its own yet and Save creates one (S3).
+   */
   priceSource: PriceSource;
-  priceScope: PriceScope;
-  /** NULL when priceSource = MASTER. */
+  /** Null when no row prices this bucket yet — the header scope decides alone on save. */
+  priceScope: PriceScope | null;
+  /**
+   * The item_price_master row (ipm_id) that answered — a bucket row on
+   * BUCKET, the headline on MASTER — or null when none did. Informational:
+   * S1 finds the row to write by key at the target scope, never by this id.
+   */
   bucketId: string | null;
   costRate: number;
   minPrice: number;
@@ -168,13 +187,7 @@ export interface SellingPriceRow {
 }
 
 /** §4.3 — what the tax resolver answers for one item, as of one date. */
-export interface ItemTaxRate {
-  itemId: string;
-  taxId: string | null;
-  taxPerc: number;
-  inclTax: boolean;
-  hasCess: boolean;
-}
+export type { ItemTaxRate } from '../../../Inventory/utils/item-tax-rate.helper';
 
 /** §5.2 — one row Q26 refused, or asked about. */
 export interface SellingPriceProblem {
@@ -193,6 +206,7 @@ export interface SellingPriceProblem {
 
 /** §5.4 — one row Q27 reported as priced with nothing on hand. */
 export interface SellingPriceNoStockRow {
+  /** The item_price_master row written. */
   bucketId: string;
   itemId: string;
   itemCode: string | null;
@@ -205,9 +219,13 @@ export interface SellingPriceNoStockRow {
 
 /** §5.4 — what a save answers with. */
 export interface SellingPriceSaveResult {
-  /** stock_mrp_price rows written — S2 and S3 together. */
+  /** item_price_master rows written — S2 and S3 together, buckets and headlines alike. */
   saved: number;
-  /** item_price_master rows written by the §6 fan-out. */
+  /**
+   * ALWAYS 0. The headline fan-out is gone — a headline edit is S1–S3 on the
+   * same table — and the key is kept for one release so a client built
+   * against the frozen DTO does not break. Remove it after that.
+   */
   masterRowsSaved: number;
   /** Q27 — priced, nothing on hand. Never silent: see §5.4. */
   noStock: SellingPriceNoStockRow[];
@@ -222,12 +240,3 @@ export interface SellingPriceSaveResult {
   /** What `inventory.below_cost_price` resolved to for this caller. */
   belowCostPolicy: BelowCostPolicy;
 }
-
-/**
- * What every gateway method says while `schema/stock/16_stock.sql` §20 is not
- * deployed here. §0.1.
- */
-export const STOCK_MRP_PRICE_NOT_DEPLOYED =
-  'stock.stock_mrp_price is not deployed on this database. It ships out of band ' +
-  'from the schema/stock share, like stock.stock_voucher; the price grid and the ' +
-  'bucket save stay unavailable until it lands.';

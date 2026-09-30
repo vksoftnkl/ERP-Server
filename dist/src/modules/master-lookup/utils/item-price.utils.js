@@ -1,22 +1,9 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.preferBranchPriceRows = preferBranchPriceRows;
 exports.selectUnitRate = selectUnitRate;
 exports.nextIucIdInCycle = nextIucIdInCycle;
 exports.priceForLevel = priceForLevel;
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
-function preferBranchPriceRows(priceRows, branchId) {
-    if (!branchId)
-        return priceRows;
-    const byUnit = new Map();
-    for (const row of priceRows) {
-        const current = byUnit.get(row.ipmUcUnitId);
-        if (!current || (current.ipmBranchId !== branchId && row.ipmBranchId === branchId)) {
-            byUnit.set(row.ipmUcUnitId, row);
-        }
-    }
-    return [...byUnit.values()];
-}
 function selectUnitRate(priceRows, isRetailItem, unitId) {
     if (priceRows.length === 0)
         return null;

@@ -11,10 +11,15 @@ export declare class ItemsBrandMasterService {
     save(saveItemBrandDto: SaveItemBrandDto): Promise<ItemBrandPayload>;
     getById(brandId: string): Promise<ItemBrandPayload>;
     private getParentName;
-    toggleDelete(brandId: string): Promise<{
+    softDelete(brandId: string): Promise<{
         brand_id: string;
         deleted: boolean;
     }>;
+    restore(brandId: string): Promise<{
+        brand_id: string;
+        deleted: boolean;
+    }>;
+    private setDeleted;
     private createItemBrand;
     private updateItemBrand;
     private ensureParentExists;

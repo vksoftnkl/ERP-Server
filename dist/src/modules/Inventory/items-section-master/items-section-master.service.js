@@ -15,9 +15,22 @@ const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const audit_log_service_1 = require("../../audit-log/audit-log.service");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
-const ROOT_SECTION_LEVEL = 1;
+const master_tree_helper_1 = require("../utils/master-tree.helper");
 const ITEM_SECTION_TABLE_NAME = 'item section master';
 const ITEM_SECTION_AUDIT_SCREEN_NAME = 'Item Section Master';
+const ITEM_SECTION_REFERENCES = [
+    {
+        table: 'inventory.item_master',
+        column: 'item_section_id',
+        live: 'item_is_deleted = false',
+        label: 'items',
+    },
+];
+const ITEM_SECTION_DELETE_STATE = {
+    label: 'item section',
+    idField: 'sec_id',
+    restoreRoute: '/item-sections/restore',
+};
 let ItemsSectionMasterService = class ItemsSectionMasterService {
     prisma;
     auditLogService;
@@ -52,7 +65,13 @@ let ItemsSectionMasterService = class ItemsSectionMasterService {
         });
         return parent?.secName ?? null;
     }
-    async toggleDelete(secId) {
+    async softDelete(secId) {
+        return this.setDeleted(secId, true);
+    }
+    async restore(secId) {
+        return this.setDeleted(secId, false);
+    }
+    async setDeleted(secId, wantDeleted) {
         return this.prisma.$transaction(async (tx) => {
             const existing = await tx.itemSectionMaster.findFirst({
                 where: { secId },
@@ -60,9 +79,17 @@ let ItemsSectionMasterService = class ItemsSectionMasterService {
             if (!existing) {
                 (0, module_service_utils_1.throwInventoryNotFound)('Item section not found', 'sec_id', `No item section found with id ${secId}`);
             }
+            (0, master_tree_helper_1.assertDeleteState)(existing.secIsDeleted, wantDeleted, ITEM_SECTION_DELETE_STATE);
+            if (wantDeleted) {
+                await (0, master_tree_helper_1.assertNoLiveChildren)(tx, master_tree_helper_1.ITEM_SECTION_TREE, secId);
+                await (0, master_tree_helper_1.assertNoLiveReferences)(tx, ITEM_SECTION_REFERENCES, secId, ITEM_SECTION_DELETE_STATE);
+            }
+            else {
+                await (0, master_tree_helper_1.assertParentLive)(tx, master_tree_helper_1.ITEM_SECTION_TREE, existing.secParentId);
+            }
             const wasDeleted = existing.secIsDeleted;
-            const nextDeleted = !wasDeleted;
-            const subtreeIds = await this.getActiveSubtreeIds(tx, secId);
+            const nextDeleted = wantDeleted;
+            const subtreeIds = nextDeleted ? await this.getActiveSubtreeIds(tx, secId) : [];
             const ancestorIds = await this.getAncestorIds(tx, existing.secParentId);
             const modifiedOn = new Date();
             const userId = this.requestContextService.getUserId() ?? module_service_utils_1.DEFAULT_ACTOR;
@@ -77,7 +104,7 @@ let ItemsSectionMasterService = class ItemsSectionMasterService {
                 await this.removePathIds(tx, ancestorIds, subtreeIds);
             }
             else {
-                await this.appendPathIds(tx, ancestorIds, subtreeIds);
+                await this.appendPathIds(tx, ancestorIds, await this.getActiveSubtreeIds(tx, secId));
             }
             const originalRecord = this.toPayload(existing);
             const modifiedRecord = this.toPayload({
@@ -104,16 +131,13 @@ let ItemsSectionMasterService = class ItemsSectionMasterService {
     async createItemSection(saveItemSectionDto) {
         try {
             return await this.prisma.$transaction(async (tx) => {
-                let parentLevel;
                 if (saveItemSectionDto.sec_parent_id) {
-                    const parent = await this.ensureParentExists(saveItemSectionDto.sec_parent_id, tx);
-                    parentLevel = parent.secLevel;
+                    await this.ensureParentExists(saveItemSectionDto.sec_parent_id, tx);
                 }
                 const now = new Date();
                 const createdBy = this.requestContextService.getUserId() ?? module_service_utils_1.DEFAULT_ACTOR;
                 const data = {
                     secName: saveItemSectionDto.sec_name.trim(),
-                    secLevel: this.resolveSectionLevel(saveItemSectionDto.sec_parent_id, parentLevel),
                     secCreatedOn: now,
                     secCreatedBy: createdBy,
                 };
@@ -124,6 +148,7 @@ let ItemsSectionMasterService = class ItemsSectionMasterService {
                     const ancestorIds = await this.getAncestorIds(tx, saveItemSectionDto.sec_parent_id);
                     await this.appendPathIds(tx, ancestorIds, [created.secId]);
                 }
+                await (0, master_tree_helper_1.relevelSubtree)(tx, master_tree_helper_1.ITEM_SECTION_TREE, created.secId);
                 const refreshed = await tx.itemSectionMaster.findFirst({
                     where: { secId: created.secId, secIsDeleted: false },
                 });
@@ -166,16 +191,17 @@ let ItemsSectionMasterService = class ItemsSectionMasterService {
                 if (saveItemSectionDto.sec_parent_id === secId) {
                     (0, module_service_utils_1.throwInventoryBadRequest)('Item section cannot be its own parent', [{ field: 'sec_parent_id', message: 'sec_parent_id cannot be same as sec_id' }]);
                 }
-                let requestedParentLevel;
                 if (saveItemSectionDto.sec_parent_id) {
-                    const parent = await this.ensureParentExists(saveItemSectionDto.sec_parent_id, tx);
-                    requestedParentLevel = parent.secLevel;
+                    await this.ensureParentExists(saveItemSectionDto.sec_parent_id, tx);
                 }
-                const hasParentField = (0, module_service_utils_1.hasOwnProperty)(saveItemSectionDto, 'sec_parent_id');
+                const hasParentField = saveItemSectionDto.sec_parent_id !== undefined;
                 const nextParentId = hasParentField
                     ? (saveItemSectionDto.sec_parent_id ?? null)
                     : existing.secParentId;
                 const isParentChanged = hasParentField && nextParentId !== existing.secParentId;
+                if (isParentChanged) {
+                    await (0, master_tree_helper_1.assertNotUnderOwnSubtree)(tx, master_tree_helper_1.ITEM_SECTION_TREE, secId, nextParentId);
+                }
                 const subtreeIds = isParentChanged ? await this.getActiveSubtreeIds(tx, secId) : [];
                 const oldAncestorIds = isParentChanged
                     ? await this.getAncestorIds(tx, existing.secParentId)
@@ -185,9 +211,6 @@ let ItemsSectionMasterService = class ItemsSectionMasterService {
                     secModifiedOn: new Date(),
                     secModifiedBy: this.requestContextService.getUserId() ?? module_service_utils_1.DEFAULT_ACTOR,
                 };
-                if (isParentChanged) {
-                    data.secLevel = this.resolveSectionLevel(nextParentId, requestedParentLevel);
-                }
                 this.applyOptionalFields(data, saveItemSectionDto);
                 const updated = await tx.itemSectionMaster.update({ where: { secId }, data });
                 await this.ensureSelfInPath(tx, secId);
@@ -196,6 +219,7 @@ let ItemsSectionMasterService = class ItemsSectionMasterService {
                     await this.removePathIds(tx, oldAncestorIds, subtreeIds);
                     await this.appendPathIds(tx, newAncestorIds, subtreeIds);
                 }
+                await (0, master_tree_helper_1.relevelSubtree)(tx, master_tree_helper_1.ITEM_SECTION_TREE, secId);
                 const refreshed = await tx.itemSectionMaster.findFirst({
                     where: { secId, secIsDeleted: false },
                 });
@@ -434,11 +458,6 @@ let ItemsSectionMasterService = class ItemsSectionMasterService {
     }
     handleWriteError(error) {
         (0, module_service_utils_1.throwOnUniqueConstraintError)(error, 'Item section name already exists', [{ field: 'sec_name', message: 'Duplicate sec_name is not allowed' }]);
-    }
-    resolveSectionLevel(parentId, parentLevel) {
-        if (!parentId)
-            return ROOT_SECTION_LEVEL;
-        return (parentLevel ?? ROOT_SECTION_LEVEL) + 1;
     }
 };
 exports.ItemsSectionMasterService = ItemsSectionMasterService;

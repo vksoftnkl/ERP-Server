@@ -15,8 +15,37 @@ const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const audit_log_service_1 = require("../../audit-log/audit-log.service");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
+const master_tree_helper_1 = require("../utils/master-tree.helper");
 const UNIT_TABLE_NAME = 'item_unit_master';
 const UNIT_AUDIT_SCREEN_NAME = 'Units Master';
+const UNIT_REFERENCES = [
+    {
+        table: 'inventory.item_unit_master',
+        column: 'unit_base_unit_id',
+        live: 'unit_is_deleted = false',
+        label: 'pack units built on it',
+    },
+    {
+        table: 'inventory.item_unit_conversion',
+        column: 'iuc_unit_id',
+        live: 'iuc_is_deleted = false',
+        label: 'item unit conversions',
+    },
+    {
+        table: 'inventory.item_unit_conversion',
+        column: 'iuc_base_unit_id',
+        live: 'iuc_is_deleted = false',
+        label: 'item unit conversions (as their base unit)',
+    },
+    {
+        table: 'inventory.item_master',
+        column: 'item_base_unit_id',
+        live: 'item_is_deleted = false',
+        label: 'items (as their base unit)',
+    },
+];
+const UNIT_DELETE_STATE = { label: 'unit', idField: 'unit_id', restoreRoute: '/units/restore' };
+const UQC_PATTERN = /^[A-Z]{3}$/;
 let UnitsMasterService = class UnitsMasterService {
     prisma;
     auditLogService;
@@ -63,7 +92,13 @@ let UnitsMasterService = class UnitsMasterService {
             unit_is_active: payload.unit_is_active,
         };
     }
-    async toggleDelete(unitId) {
+    async softDelete(unitId) {
+        return this.setDeleted(unitId, true);
+    }
+    async restore(unitId) {
+        return this.setDeleted(unitId, false);
+    }
+    async setDeleted(unitId, wantDeleted) {
         return this.prisma.$transaction(async (tx) => {
             const existing = await tx.unit.findFirst({
                 where: { unit_id: unitId },
@@ -71,8 +106,26 @@ let UnitsMasterService = class UnitsMasterService {
             if (!existing) {
                 (0, module_service_utils_1.throwInventoryNotFound)('Unit not found', 'unit_id', `No unit found with id ${unitId}`);
             }
+            (0, master_tree_helper_1.assertDeleteState)(existing.unit_is_deleted, wantDeleted, UNIT_DELETE_STATE);
+            if (wantDeleted) {
+                await (0, master_tree_helper_1.assertNoLiveReferences)(tx, UNIT_REFERENCES, unitId, UNIT_DELETE_STATE);
+            }
+            else if (existing.unit_base_unit_id) {
+                const base = await tx.unit.findFirst({
+                    where: { unit_id: existing.unit_base_unit_id, unit_is_deleted: false },
+                    select: { unit_id: true },
+                });
+                if (!base) {
+                    (0, module_service_utils_1.throwInventoryConflict)('The base unit is deleted', [
+                        {
+                            field: 'unit_base_unit_id',
+                            message: `Restore base unit ${existing.unit_base_unit_id} first.`,
+                        },
+                    ]);
+                }
+            }
             const wasDeleted = existing.unit_is_deleted;
-            const nextDeleted = !wasDeleted;
+            const nextDeleted = wantDeleted;
             const modifiedOn = new Date();
             const userId = this.requestContextService.getUserId() ?? module_service_utils_1.DEFAULT_ACTOR;
             const result = await tx.unit.updateMany({
@@ -109,12 +162,8 @@ let UnitsMasterService = class UnitsMasterService {
         });
     }
     async createUnit(saveUnitDto) {
-        const baseUnitId = (0, module_service_utils_1.hasOwnProperty)(saveUnitDto, 'unit_base_unit_id')
-            ? (saveUnitDto.unit_base_unit_id ?? null)
-            : null;
-        const conversion = (0, module_service_utils_1.hasOwnProperty)(saveUnitDto, 'unit_conversion')
-            ? (saveUnitDto.unit_conversion ?? null)
-            : null;
+        const baseUnitId = saveUnitDto.unit_base_unit_id ?? null;
+        const conversion = saveUnitDto.unit_conversion ?? null;
         this.validateConversionRules(baseUnitId, conversion);
         const now = new Date();
         const createdBy = (0, module_service_utils_1.resolveActor)(saveUnitDto.unit_created_by, this.requestContextService.getUserId());
@@ -158,10 +207,10 @@ let UnitsMasterService = class UnitsMasterService {
                 if (!existing) {
                     (0, module_service_utils_1.throwInventoryNotFound)('Unit not found', 'unit_id', `No active unit found with id ${unitId}`);
                 }
-                const baseUnitId = (0, module_service_utils_1.hasOwnProperty)(saveUnitDto, 'unit_base_unit_id')
+                const baseUnitId = saveUnitDto.unit_base_unit_id !== undefined
                     ? (saveUnitDto.unit_base_unit_id ?? null)
                     : existing.unit_base_unit_id;
-                const conversion = (0, module_service_utils_1.hasOwnProperty)(saveUnitDto, 'unit_conversion')
+                const conversion = saveUnitDto.unit_conversion !== undefined
                     ? (saveUnitDto.unit_conversion ?? null)
                     : (0, module_service_utils_1.toNullableNumber)(existing.unit_conversion);
                 if (baseUnitId !== null && baseUnitId === unitId) {
@@ -218,8 +267,13 @@ let UnitsMasterService = class UnitsMasterService {
     applyOptionalFields(data, saveUnitDto) {
         if ((0, module_service_utils_1.hasOwnProperty)(saveUnitDto, 'unit_alias'))
             data.unit_alias = saveUnitDto.unit_alias;
-        if ((0, module_service_utils_1.hasOwnProperty)(saveUnitDto, 'unit_code'))
+        if ((0, module_service_utils_1.hasOwnProperty)(saveUnitDto, 'unit_code')) {
             data.unit_code = saveUnitDto.unit_code;
+            if (saveUnitDto.unit_code !== undefined) {
+                const code = saveUnitDto.unit_code?.trim().toUpperCase() ?? '';
+                data.unitUqc = UQC_PATTERN.test(code) ? code : null;
+            }
+        }
         if ((0, module_service_utils_1.hasOwnProperty)(saveUnitDto, 'unit_description'))
             data.unit_description = saveUnitDto.unit_description;
         if ((0, module_service_utils_1.hasOwnProperty)(saveUnitDto, 'unit_decimal_count'))

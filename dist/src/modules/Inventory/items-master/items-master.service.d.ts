@@ -9,6 +9,7 @@ import { ItemsEanCodeMasterService } from '../items-ean-code-master/items-ean-co
 import { ItemsReorderMasterService } from '../items-reorder-master/items-reorder-master.service';
 import { ItemMasterUpdateService } from './item-master-update.service';
 import { StockTrackPolicyService } from "../../stocks/stock-track-policy/stock-track-policy.service";
+import { PriceBucketService } from '../items-price-master/price-bucket.service';
 import { PrismaService } from "../../../database/prisma/prisma.service";
 import { AuditLogService } from "../../audit-log/audit-log.service";
 import { RequestContextService } from '../../../common/request-context/request-context.service';
@@ -22,7 +23,8 @@ export declare class ItemsMasterService {
     private readonly itemsReorderMasterService;
     private readonly itemMasterUpdateService;
     private readonly stockTrackPolicyService;
-    constructor(prisma: PrismaService, auditLogService: AuditLogService, requestContextService: RequestContextService, itemUnitConversionService: ItemUnitConversionService, itemsPriceMasterService: ItemsPriceMasterService, itemsEanCodeMasterService: ItemsEanCodeMasterService, itemsReorderMasterService: ItemsReorderMasterService, itemMasterUpdateService: ItemMasterUpdateService, stockTrackPolicyService: StockTrackPolicyService);
+    private readonly priceBucketService;
+    constructor(prisma: PrismaService, auditLogService: AuditLogService, requestContextService: RequestContextService, itemUnitConversionService: ItemUnitConversionService, itemsPriceMasterService: ItemsPriceMasterService, itemsEanCodeMasterService: ItemsEanCodeMasterService, itemsReorderMasterService: ItemsReorderMasterService, itemMasterUpdateService: ItemMasterUpdateService, stockTrackPolicyService: StockTrackPolicyService, priceBucketService: PriceBucketService);
     save(saveItemDto: SaveItemDto, tx?: Prisma.TransactionClient): Promise<ItemPayload>;
     saveComposite(dto: SaveItemCompositeDto): Promise<ItemCompositePayload>;
     getById(itemId: string): Promise<ItemPayload>;

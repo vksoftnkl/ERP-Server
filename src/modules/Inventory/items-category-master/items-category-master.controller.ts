@@ -92,22 +92,40 @@ export class ItemsCategoryMasterController {
   }
   @Delete('delete')
   @Version(API_VERSION)
-  @ApiOperation({ summary: 'Soft delete or restore item category by id' })
+  @ApiOperation({
+    summary: 'Soft delete item category by id',
+    description:
+      'Deletes only — it is not a toggle: an already deleted category is a 409 (use POST ' +
+      '/item-categories/restore). Refused with 409 while live sub-categories or live items still use it.',
+  })
   @ApiQuery({ name: 'category_id', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: ItemCategorySuccessDeleteDto })
   @ApiBadRequestResponse({ type: ItemCategoryErrorResponseDto })
   @ApiNotFoundResponse({ type: ItemCategoryErrorResponseDto })
+  @ApiConflictResponse({ type: ItemCategoryErrorResponseDto })
   async remove(
     @Query('category_id', new ParseUUIDPipe({ version: '7' })) categoryId: string,
   ): Promise<ItemCategorySuccessResponse<{ category_id: string; deleted: boolean }>> {
-    const { category_id, deleted } = await this.itemsCategoryMasterService.toggleDelete(categoryId);
-    return {
-      success: true,
-      message: deleted
-        ? 'Item category deleted successfully'
-        : 'Item category restored successfully',
-      data: { category_id, deleted },
-    };
+    const data = await this.itemsCategoryMasterService.softDelete(categoryId);
+    return { success: true, message: 'Item category deleted successfully', data };
+  }
+
+  @Post('restore')
+  @Version(API_VERSION)
+  @ApiOperation({
+    summary: 'Restore a soft-deleted item category',
+    description: '409 when the category is not deleted, or when its parent is.',
+  })
+  @ApiQuery({ name: 'category_id', schema: { type: 'string', format: 'uuid' } })
+  @ApiCreatedResponse({ type: ItemCategorySuccessDeleteDto })
+  @ApiBadRequestResponse({ type: ItemCategoryErrorResponseDto })
+  @ApiNotFoundResponse({ type: ItemCategoryErrorResponseDto })
+  @ApiConflictResponse({ type: ItemCategoryErrorResponseDto })
+  async restore(
+    @Query('category_id', new ParseUUIDPipe({ version: '7' })) categoryId: string,
+  ): Promise<ItemCategorySuccessResponse<{ category_id: string; deleted: boolean }>> {
+    const data = await this.itemsCategoryMasterService.restore(categoryId);
+    return { success: true, message: 'Item category restored successfully', data };
   }
   private withUploadedPhoto(
     saveItemCategoryDto: SaveItemCategoryDto,

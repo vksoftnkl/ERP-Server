@@ -78,7 +78,9 @@ __decorate([
     __metadata("design:type", Number)
 ], SaveItemSectionDto.prototype, "sec_sort", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)(),
+    (0, swagger_1.ApiPropertyOptional)({
+        description: 'Accepted and IGNORED: the level is the node depth (root = 1), computed by the server.',
+    }),
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsInt)(),
     __metadata("design:type", Number)

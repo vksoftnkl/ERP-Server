@@ -1,3 +1,4 @@
+import { assertDeleteState } from '../utils/master-tree.helper';
 import { Injectable } from '@nestjs/common';
 import { ItemQtyPrice, Prisma } from '@prisma/client';
 import {
@@ -165,34 +166,55 @@ export class ItemsQtyPriceMasterService {
     return this.toPayload(record);
   }
 
-  async toggleDelete(
-    iqpId: string,
-    tx?: Prisma.TransactionClient,
-  ): Promise<ItemQtyPriceDeleteResult>;
-  async toggleDelete(
-    iqpId: string[],
-    tx?: Prisma.TransactionClient,
-  ): Promise<ItemQtyPriceDeleteResult[]>;
-  async toggleDelete(
+  /**
+   * DELETE deletes — it is no longer a toggle (notes 70 C1): a slab that is
+   * already deleted is a 409, and restore() (POST /item-qty-prices/restore)
+   * brings one back. A batch is all-or-nothing, like the save.
+   */
+  async softDelete(iqpId: string): Promise<ItemQtyPriceDeleteResult>;
+  async softDelete(iqpId: string[]): Promise<ItemQtyPriceDeleteResult[]>;
+  async softDelete(
     iqpId: string | string[],
-    tx?: Prisma.TransactionClient,
   ): Promise<ItemQtyPriceDeleteResult | ItemQtyPriceDeleteResult[]>;
-  async toggleDelete(
+  async softDelete(
     iqpId: string | string[],
-    tx?: Prisma.TransactionClient,
   ): Promise<ItemQtyPriceDeleteResult | ItemQtyPriceDeleteResult[]> {
-    const toggleIds = Array.isArray(iqpId) ? iqpId : [iqpId];
-    const toggleAll = async (client: Prisma.TransactionClient) => {
-      const toggledItems: ItemQtyPriceDeleteResult[] = [];
-      for (const toggleId of toggleIds) {
-        toggledItems.push(await this.toggleDeleteItemQtyPrice(client, toggleId));
+    return this.setDeleted(iqpId, true);
+  }
+  /**
+   * Restore deleted slabs. 409 when one is not deleted, or when a live slab now
+   * holds the same key (uq_iqp_slab).
+   */
+  async restore(iqpId: string): Promise<ItemQtyPriceDeleteResult>;
+  async restore(iqpId: string[]): Promise<ItemQtyPriceDeleteResult[]>;
+  async restore(
+    iqpId: string | string[],
+  ): Promise<ItemQtyPriceDeleteResult | ItemQtyPriceDeleteResult[]>;
+  async restore(
+    iqpId: string | string[],
+  ): Promise<ItemQtyPriceDeleteResult | ItemQtyPriceDeleteResult[]> {
+    return this.setDeleted(iqpId, false);
+  }
+
+  private async setDeleted(
+    iqpId: string | string[],
+    wantDeleted: boolean,
+  ): Promise<ItemQtyPriceDeleteResult | ItemQtyPriceDeleteResult[]> {
+    const ids = Array.isArray(iqpId) ? iqpId : [iqpId];
+    const applyAll = async (client: Prisma.TransactionClient) => {
+      const results: ItemQtyPriceDeleteResult[] = [];
+      for (const id of ids) {
+        results.push(await this.setDeletedItemQtyPrice(client, id, wantDeleted));
       }
-      return toggledItems;
+      return results;
     };
-
-    const results = tx ? await toggleAll(tx) : await this.prisma.$transaction(toggleAll);
-
-    return Array.isArray(iqpId) ? results : results[0];
+    try {
+      const results = await this.prisma.$transaction(applyAll);
+      return Array.isArray(iqpId) ? results : results[0];
+    } catch (error: unknown) {
+      this.handleWriteError(error);
+      throw error;
+    }
   }
 
   private async saveItemQtyPrice(
@@ -205,11 +227,12 @@ export class ItemsQtyPriceMasterService {
     return this.createItemQtyPrice(tx, saveItemQtyPriceDto);
   }
 
-  private async toggleDeleteItemQtyPrice(
+  private async setDeletedItemQtyPrice(
     tx: Prisma.TransactionClient,
     iqpId: string,
+    wantDeleted: boolean,
   ): Promise<ItemQtyPriceDeleteResult> {
-    // Find regardless of current deleted state so a delete can be undone.
+    // Found regardless of its deleted state: restore needs the deleted row.
     const existing = await tx.itemQtyPrice.findFirst({
       where: { iqpId },
       include: ITEM_QTY_PRICE_INCLUDE,
@@ -218,8 +241,13 @@ export class ItemsQtyPriceMasterService {
       this.throwNotFound(iqpId);
     }
 
+    assertDeleteState(existing.iqpIsDeleted, wantDeleted, {
+      label: 'qty price slab',
+      idField: 'iqp_id',
+      restoreRoute: '/item-qty-prices/restore',
+    });
     const wasDeleted = existing.iqpIsDeleted;
-    const nextDeleted = !wasDeleted;
+    const nextDeleted = wantDeleted;
     const modifiedOn = new Date();
     const modifiedBy = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
     // Guarded update: only flips if state hasn't changed since the read.

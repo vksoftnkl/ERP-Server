@@ -247,6 +247,8 @@ let BillReadService = class BillReadService {
           SELECT p.ipm_godown_id FROM inventory.item_price_master p
            WHERE p.ipm_item_id = d.soi_item_id AND p.ipm_uc_unit_id = d.soi_item_unit_id
              AND p.ipm_is_deleted = false
+             -- the headline row: a bucket row's godown is copied from it
+             AND p.ipm_key_mrp = -1 AND p.ipm_key_sp = -1
              AND (p.ipm_branch_id = h.so_branch_id OR p.ipm_branch_id IS NULL)
            ORDER BY (p.ipm_branch_id IS NULL), p.ipm_id
            LIMIT 1) pr ON true

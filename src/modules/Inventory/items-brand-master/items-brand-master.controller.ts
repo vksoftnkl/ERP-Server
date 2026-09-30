@@ -92,20 +92,40 @@ export class ItemsBrandMasterController {
   }
   @Delete('delete')
   @Version(API_VERSION)
-  @ApiOperation({ summary: 'Soft delete or restore item brand by id' })
+  @ApiOperation({
+    summary: 'Soft delete item brand by id',
+    description:
+      'Deletes only — it is not a toggle: an already deleted brand is a 409 (use POST ' +
+      '/item-brands/restore). Refused with 409 while live sub-brands or live items still use it.',
+  })
   @ApiQuery({ name: 'brand_id', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: ItemBrandSuccessDeleteDto })
   @ApiBadRequestResponse({ type: ItemBrandErrorResponseDto })
   @ApiNotFoundResponse({ type: ItemBrandErrorResponseDto })
+  @ApiConflictResponse({ type: ItemBrandErrorResponseDto })
   async remove(
     @Query('brand_id', new ParseUUIDPipe({ version: '7' })) brandId: string,
   ): Promise<ItemBrandSuccessResponse<{ brand_id: string; deleted: boolean }>> {
-    const { brand_id, deleted } = await this.itemsBrandMasterService.toggleDelete(brandId);
-    return {
-      success: true,
-      message: deleted ? 'Item brand deleted successfully' : 'Item brand restored successfully',
-      data: { brand_id, deleted },
-    };
+    const data = await this.itemsBrandMasterService.softDelete(brandId);
+    return { success: true, message: 'Item brand deleted successfully', data };
+  }
+
+  @Post('restore')
+  @Version(API_VERSION)
+  @ApiOperation({
+    summary: 'Restore a soft-deleted item brand',
+    description: '409 when the brand is not deleted, or when its parent is.',
+  })
+  @ApiQuery({ name: 'brand_id', schema: { type: 'string', format: 'uuid' } })
+  @ApiCreatedResponse({ type: ItemBrandSuccessDeleteDto })
+  @ApiBadRequestResponse({ type: ItemBrandErrorResponseDto })
+  @ApiNotFoundResponse({ type: ItemBrandErrorResponseDto })
+  @ApiConflictResponse({ type: ItemBrandErrorResponseDto })
+  async restore(
+    @Query('brand_id', new ParseUUIDPipe({ version: '7' })) brandId: string,
+  ): Promise<ItemBrandSuccessResponse<{ brand_id: string; deleted: boolean }>> {
+    const data = await this.itemsBrandMasterService.restore(brandId);
+    return { success: true, message: 'Item brand restored successfully', data };
   }
   private withUploadedPhoto(
     saveItemBrandDto: SaveItemBrandDto,

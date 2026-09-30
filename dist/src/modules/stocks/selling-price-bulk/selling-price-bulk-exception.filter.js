@@ -15,16 +15,17 @@ const module_exception_filter_utils_1 = require("../../../common/utils/module-ex
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
 const stock_voucher_types_1 = require("../stock-voucher/types/stock-voucher.types");
 const CONSTRAINT_MESSAGES = {
-    ex_smp_overlap: 'Another price already covers this bucket at this scope for an overlapping period. ' +
+    ex_ipm_overlap: 'Another price already covers this bucket at this scope for an overlapping period. ' +
         'Reload the row and try again — someone else may have priced it a moment ago.',
-    ck_smp_not_above_mrp: 'A selling price cannot be above the MRP of the bucket it prices.',
-    ck_smp_prices_nonneg: 'A selling price cannot be negative.',
-    ck_smp_identity: 'A bucket must carry an MRP or a sale price. An item that tracks neither is priced on its ' +
-        'headline row, not on a bucket.',
+    ck_ipm_not_above_mrp: 'A selling price cannot be above the MRP of the bucket it prices.',
+    ck_ipm_bucket_mrp_is_max: "A bucket row's MRP and its max price must be the same figure.",
+    ck_ipm_bucket_mrp: 'An MRP bucket must be above zero.',
+    ck_ipm_bucket_sp: 'A sale-price bucket must be above zero.',
+    chk_ipm_nonnegative: 'A selling price cannot be negative.',
 };
 let SellingPriceBulkExceptionFilter = class SellingPriceBulkExceptionFilter extends module_exception_filter_utils_1.StockExceptionFilter {
     constructor() {
-        super(/\b((?:smp|ipm)[A-Za-z0-9_]+|scope|confirmed|bucketId|uomId|itemId|priceScope)\b/);
+        super(/\b(ipm[A-Za-z0-9_]+|scope|confirmed|bucketId|uomId|itemId|priceScope)\b/);
     }
     catch(exception, host) {
         super.catch(this.translateEngineError(exception) ?? exception, host);

@@ -15,36 +15,35 @@ const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const audit_log_service_1 = require("../../audit-log/audit-log.service");
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
 const app_setting_value_service_1 = require("../../settings/appSettings/app-setting-value.service");
-const items_price_master_service_1 = require("../../Inventory/items-price-master/items-price-master.service");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
+const stock_voucher_posting_helper_1 = require("../stock-voucher/stock-voucher-posting.helper");
+const item_tax_rate_helper_1 = require("../../Inventory/utils/item-tax-rate.helper");
 const list_selling_price_query_dto_1 = require("./dto/list-selling-price-query.dto");
 const below_cost_policy_helper_1 = require("./below-cost-policy.helper");
 const selling_price_math_helper_1 = require("./selling-price-math.helper");
 const selling_price_scope_helper_1 = require("./selling-price-scope.helper");
-const stock_mrp_price_gateway_1 = require("./stock-mrp-price.gateway");
+const price_bucket_gateway_1 = require("./price-bucket.gateway");
 const selling_price_bulk_types_1 = require("./types/selling-price-bulk.types");
-const SMP_TABLE_NAME = 'stock_mrp_price';
+const ITEM_PRICE_TABLE_NAME = 'item price master';
+const ITEM_PRICE_AUDIT_SCREEN_NAME = 'Item Price Master';
 const AUDIT_SCREEN_NAME = 'Change Selling Price';
-const HEADLINE_PROFIT_TYPE = 'By User';
 let SellingPriceBulkService = class SellingPriceBulkService {
     prisma;
     auditLogService;
     requestContext;
     appSettingValueService;
-    itemsPriceMasterService;
     gateway;
-    constructor(prisma, auditLogService, requestContext, appSettingValueService, itemsPriceMasterService, gateway) {
+    constructor(prisma, auditLogService, requestContext, appSettingValueService, gateway) {
         this.prisma = prisma;
         this.auditLogService = auditLogService;
         this.requestContext = requestContext;
         this.appSettingValueService = appSettingValueService;
-        this.itemsPriceMasterService = itemsPriceMasterService;
         this.gateway = gateway;
     }
     async listPrices(queryDto) {
         const limit = Math.min(queryDto.limit ?? list_selling_price_query_dto_1.DEFAULT_PRICE_GRID_LIMIT, list_selling_price_query_dto_1.MAX_PRICE_GRID_LIMIT);
         const offset = Math.max(queryDto.offset ?? 0, 0);
-        return this.gateway.listPrices({
+        const page = await this.gateway.listPrices({
             companyId: queryDto.companyId,
             branchId: queryDto.branchId,
             itemGroupId: queryDto.itemGroupId,
@@ -54,9 +53,11 @@ let SellingPriceBulkService = class SellingPriceBulkService {
             limit,
             offset,
         });
+        return { items: await this.toGridRows(page.items, offset), meta: page.meta };
     }
     async listBuckets(itemId, queryDto) {
-        return this.gateway.listBuckets(itemId, queryDto.companyId, queryDto.branchId);
+        const records = await this.gateway.listBuckets(itemId, queryDto.companyId, queryDto.branchId);
+        return this.toGridRows(records, 0);
     }
     async saveBulk(dto) {
         this.assertScopeAllowed(dto.scope);
@@ -65,19 +66,17 @@ let SellingPriceBulkService = class SellingPriceBulkService {
         const actor = (0, module_service_utils_1.resolveActor)(dto.userId, this.requestContext.getUserId());
         return this.prisma.$transaction(async (tx) => {
             const taxRates = await this.resolveItemTaxRates(tx, dto.rows.map((row) => row.itemId));
-            const masterRows = await this.loadMasterPriceRows(tx, dto);
-            const identities = await this.loadItemIdentities(tx, dto.rows.map((row) => row.itemId));
-            const bucketRows = [];
-            const headlineRows = [];
-            for (const row of dto.rows) {
-                (this.isHeadlineRow(row) ? headlineRows : bucketRows).push(row);
-            }
-            const resolutions = bucketRows.map((row) => (0, selling_price_scope_helper_1.resolveTargetScope)(dto.scope, this.rowScopeOf(row), dto.branchId));
-            const candidates = bucketRows.map((row, index) => this.toCandidate(row, index, dto.companyId, actor, taxRates, masterRows));
-            const problems = [
-                ...(candidates.length ? await this.gateway.validateRows(tx, candidates, resolutions) : []),
-                ...this.validateHeadlineRows(headlineRows, taxRates, masterRows, identities),
-            ];
+            const costs = await this.gateway.loadRowCosts(tx, dto.rows.map((row) => ({
+                itemId: row.itemId,
+                uomId: row.uomId,
+                mrp: row.mrp ?? null,
+                salePrice: row.salePrice ?? null,
+            })), dto.companyId, dto.branchId);
+            this.assertUnitsBelong(dto.rows, costs);
+            const candidates = dto.rows.map((row, index) => this.toCandidate(row, index, dto.companyId, actor, taxRates, costs[index]));
+            const resolutions = dto.rows.map((row) => (0, selling_price_scope_helper_1.resolveTargetScope)(dto.scope, this.rowScopeOf(row), dto.branchId));
+            this.assertOneRowPerBucket(candidates, resolutions);
+            const problems = this.gateway.validateRows(candidates, costs.map((cost) => cost.minPrice));
             const blocking = problems.filter((problem) => !selling_price_bulk_types_1.CONFIRMABLE_VERDICTS.includes(problem.verdict));
             if (blocking.length) {
                 this.throwProblems(blocking, 'These prices cannot be saved');
@@ -99,36 +98,19 @@ let SellingPriceBulkService = class SellingPriceBulkService {
                     };
                 }
             }
-            const smpIds = [];
+            const applied = [];
             for (let index = 0; index < candidates.length; index += 1) {
-                smpIds.push(await this.applyBucketPrice(tx, candidates[index], resolutions[index]));
+                applied.push(await this.applyBucketPrice(tx, candidates[index], resolutions[index]));
             }
-            const masterRowsSaved = await this.fanOutHeadlineRows(tx, dto, headlineRows, taxRates, masterRows, actor);
-            const noStock = smpIds.length ? await this.gateway.listNoStock(tx, smpIds, dto.branchId) : [];
-            await this.auditLogService.logEntityChange({
-                action: 'update',
-                tableName: SMP_TABLE_NAME,
-                screenName: AUDIT_SCREEN_NAME,
-                screenType: 'transaction',
-                pk: smpIds[0] ?? dto.rows[0].itemId,
-                displayName: `${dto.scope === 'CHAIN' ? 'All branches' : 'This branch'} · ${smpIds.length + masterRowsSaved} rows`,
-                originalRecord: null,
-                modifiedRecord: {
-                    scope: dto.scope,
-                    bucketRows: smpIds.length,
-                    masterRows: masterRowsSaved,
-                    belowCostPolicy: policy,
-                    confirmedBelowCost: confirmed && belowCost.length > 0,
-                    belowCostRows: confirmed ? belowCost : [],
-                },
-                userId: actor,
-                notes: confirmed && belowCost.length
-                    ? `Selling prices saved with ${belowCost.length} row(s) confirmed below cost`
-                    : 'Selling prices saved',
-            }, tx);
+            const ipmIds = applied.map((row) => row.ipmId);
+            const noStock = await this.gateway.listNoStock(tx, ipmIds, dto.companyId, dto.branchId);
+            await this.auditWrites(tx, dto, applied, {
+                actor,
+                confirmedBelowCost: confirmed ? belowCost : [],
+            });
             return {
-                saved: smpIds.length,
-                masterRowsSaved,
+                saved: ipmIds.length,
+                masterRowsSaved: 0,
                 noStock,
                 needsConfirm: false,
                 problems,
@@ -142,10 +124,7 @@ let SellingPriceBulkService = class SellingPriceBulkService {
         }
         const parts = [];
         if (result.saved) {
-            parts.push(`${result.saved} bucket${result.saved === 1 ? '' : 's'} saved`);
-        }
-        if (result.masterRowsSaved) {
-            parts.push(`${result.masterRowsSaved} headline row${result.masterRowsSaved === 1 ? '' : 's'} saved`);
+            parts.push(`${result.saved} price${result.saved === 1 ? '' : 's'} saved`);
         }
         if (!parts.length) {
             parts.push('Nothing to save');
@@ -157,9 +136,51 @@ let SellingPriceBulkService = class SellingPriceBulkService {
     }
     async applyBucketPrice(tx, candidate, scope) {
         const existing = await this.gateway.findBucketRowForUpdate(tx, candidate, scope);
-        return existing
-            ? this.gateway.updateBucketPrice(tx, existing.smpId, candidate)
-            : this.gateway.insertBucketPrice(tx, candidate, scope);
+        if (!existing) {
+            return {
+                ipmId: await this.gateway.insertBucketPrice(tx, candidate, scope),
+                before: null,
+                lineNo: candidate.lineNo,
+                itemName: candidate.itemName,
+            };
+        }
+        const [before] = (await this.gateway.snapshotRows(tx, [existing.ipmId])).values();
+        return {
+            ipmId: await this.gateway.updateBucketPrice(tx, existing.ipmId, candidate),
+            before: before ?? null,
+            lineNo: candidate.lineNo,
+            itemName: candidate.itemName,
+        };
+    }
+    async auditWrites(tx, dto, applied, context) {
+        const after = await this.gateway.snapshotRows(tx, applied.map((row) => row.ipmId));
+        const scopeLabel = dto.scope === 'CHAIN' ? 'all branches' : 'this branch';
+        for (const row of applied) {
+            const modified = after.get(row.ipmId) ?? null;
+            const confirmed = context.confirmedBelowCost.filter((p) => p.lineNo === row.lineNo);
+            const amount = (value) => (typeof value === 'number' ? value : null);
+            const mrp = amount(modified?.ipm_bucket_mrp);
+            const salePrice = amount(modified?.ipm_bucket_sp);
+            const bucket = [
+                mrp !== null ? `MRP ${mrp}` : null,
+                salePrice !== null ? `sale price ${salePrice}` : null,
+            ].filter(Boolean);
+            await this.auditLogService.logEntityChange({
+                action: row.before ? 'update' : 'New',
+                tableName: ITEM_PRICE_TABLE_NAME,
+                screenName: ITEM_PRICE_AUDIT_SCREEN_NAME,
+                screenType: 'master',
+                pk: row.ipmId,
+                displayName: `${row.itemName} · ${bucket.length ? bucket.join(', ') : 'headline'}`,
+                originalRecord: row.before,
+                modifiedRecord: modified,
+                userId: context.actor,
+                notes: `${AUDIT_SCREEN_NAME} (menu 30), ${scopeLabel}` +
+                    (confirmed.length
+                        ? ` — confirmed below cost: ${confirmed.map((p) => p.message).join('; ')}`
+                        : ''),
+            }, tx);
+        }
     }
     assertScopeAllowed(scope) {
         if (scope !== 'CHAIN' || (0, selling_price_bulk_types_1.isHqUserType)(this.requestContext.getUserType())) {
@@ -181,96 +202,101 @@ let SellingPriceBulkService = class SellingPriceBulkService {
         });
         return (0, below_cost_policy_helper_1.resolveBelowCostPolicy)(effective);
     }
-    isHeadlineRow(row) {
-        return (row.mrp ?? null) === null && (row.salePrice ?? null) === null;
-    }
     rowScopeOf(row) {
         return row.priceScope ?? null;
     }
-    toCandidate(row, index, companyId, actor, taxRates, masterRows) {
-        const prepared = this.prepareRow(row, index, taxRates, masterRows);
-        return {
-            lineNo: prepared.lineNo,
-            companyId,
-            itemId: prepared.itemId,
-            uomId: prepared.uomId,
-            bucketId: prepared.bucketId,
-            mrp: prepared.mrp,
-            salePrice: prepared.salePrice,
-            minPrice: prepared.minPrice,
-            roundOff: prepared.roundOff,
-            actor,
-            levels: prepared.levels.map((level) => ({
-                level: level.level,
-                price: level.price,
-                priceWot: level.priceWot,
-                markupPerc: level.markupPerc,
-            })),
-        };
+    assertUnitsBelong(rows, costs) {
+        const wrong = rows
+            .map((row, index) => ({ row, index }))
+            .filter(({ index }) => !costs[index].uomBelongs);
+        if (!wrong.length) {
+            return;
+        }
+        (0, module_service_utils_1.throwStockUnprocessable)('These prices cannot be saved', wrong.map(({ row, index }) => ({
+            field: `rows.${row.lineNo ?? index + 1}`,
+            message: `Line ${row.lineNo ?? index + 1}: unit ${row.uomId} is not one of item ${row.itemId}'s units.`,
+        })));
     }
-    prepareRow(row, index, taxRates, masterRows) {
-        const tax = taxRates.get(row.itemId);
-        const taxPerc = tax?.taxPerc ?? 0;
-        const costRate = masterRows.get(this.masterKey(row))?.costRate ?? 0;
+    assertOneRowPerBucket(candidates, resolutions) {
+        const firstAt = new Map();
+        candidates.forEach((candidate, index) => {
+            const key = [
+                candidate.itemId,
+                candidate.uomId,
+                resolutions[index].targetBranchId ?? '',
+                candidate.mrp ?? '',
+                candidate.salePrice ?? '',
+            ].join('|');
+            const first = firstAt.get(key);
+            if (first !== undefined) {
+                (0, module_service_utils_1.throwStockUnprocessable)('These prices cannot be saved', [
+                    {
+                        field: `rows.${candidate.lineNo}`,
+                        message: `Lines ${candidates[first].lineNo} and ${candidate.lineNo} price the same bucket of ` +
+                            `${candidate.itemName || candidate.itemId} at the same scope. Keep one of them.`,
+                    },
+                ]);
+            }
+            firstAt.set(key, index);
+        });
+    }
+    toCandidate(row, index, companyId, actor, taxRates, cost) {
+        const taxPerc = taxRates.get(row.itemId)?.taxPerc ?? 0;
+        const key = (0, stock_voucher_posting_helper_1.bucketKeyFor)(cost, { mrp: row.mrp ?? null, salePrice: row.salePrice ?? null });
         return {
             lineNo: row.lineNo ?? index + 1,
+            companyId,
             itemId: row.itemId,
             uomId: row.uomId,
+            itemCode: cost.itemCode,
+            itemName: cost.itemName,
             bucketId: row.bucketId ?? null,
-            mrp: row.mrp ?? null,
-            salePrice: row.salePrice ?? null,
+            mrp: key.mrp,
+            salePrice: key.salePrice,
             minPrice: row.minPrice ?? null,
             roundOff: row.roundOff ?? null,
-            taxPerc,
-            costRate,
-            levels: row.levels.map((level) => (0, selling_price_math_helper_1.recomputeLevel)(level.level, level.price, taxPerc, costRate)),
+            costRate: cost.costRate,
+            costWot: cost.costWot,
+            actor,
+            levels: row.levels.map((level) => {
+                const value = (0, selling_price_math_helper_1.recomputeLevel)(level.level, level.price, taxPerc, cost.costRate);
+                return {
+                    level: value.level,
+                    price: value.price,
+                    priceWot: value.priceWot,
+                    markupPerc: value.markupPerc,
+                };
+            }),
         };
     }
-    validateHeadlineRows(rows, taxRates, masterRows, identities) {
-        const problems = [];
-        rows.forEach((row, index) => {
-            const master = masterRows.get(this.masterKey(row));
-            const prepared = this.prepareRow(row, index, taxRates, masterRows);
-            const minPrice = row.minPrice ?? master?.minPrice ?? 0;
-            for (const level of prepared.levels) {
-                if (minPrice > 0 && level.price < minPrice) {
-                    problems.push(this.problem(prepared, identities, level.level, 'BELOW_MIN', `${level.price} is below the minimum price ${minPrice}.`));
-                    continue;
-                }
-                if (prepared.costRate > 0 && level.price < prepared.costRate) {
-                    problems.push(this.problem(prepared, identities, level.level, 'BELOW_COST', `${level.price} is below the cost ${prepared.costRate}.`));
-                }
-            }
+    async toGridRows(records, offset) {
+        const taxRates = await this.resolveItemTaxRates(this.prisma, records.map((record) => record.itemId));
+        return records.map((record, index) => {
+            const tax = taxRates.get(record.itemId);
+            const taxPerc = tax?.taxPerc ?? 0;
+            return {
+                lineNo: offset + index + 1,
+                itemId: record.itemId,
+                itemCode: record.itemCode,
+                itemName: record.itemName,
+                uomId: record.uomId,
+                unitName: record.unitName,
+                stockQty: record.stockQty,
+                mrp: record.mrp,
+                salePrice: record.salePrice,
+                maxPrice: record.maxPrice,
+                priceSource: record.priceSource,
+                priceScope: record.priceScope,
+                bucketId: record.bucketId,
+                costRate: record.costRate,
+                minPrice: record.minPrice,
+                roundOff: record.roundOff,
+                taxPerc,
+                inclTax: tax?.inclTax ?? false,
+                hasCess: tax?.hasCess ?? false,
+                levels: selling_price_bulk_types_1.PRICE_LEVELS.map((level) => (0, selling_price_math_helper_1.recomputeLevel)(level, record.prices[level - 1], taxPerc, record.costRate)),
+            };
         });
-        return problems;
-    }
-    problem(prepared, identities, level, verdict, message) {
-        const identity = identities.get(prepared.itemId);
-        return {
-            lineNo: prepared.lineNo,
-            itemId: prepared.itemId,
-            itemCode: identity?.itemCode ?? null,
-            itemName: identity?.itemName ?? '',
-            uomId: prepared.uomId,
-            bucketId: prepared.bucketId,
-            level,
-            verdict,
-            message: identity ? `${identity.itemName}: ${message}` : message,
-        };
-    }
-    async loadItemIdentities(tx, itemIds) {
-        const ids = [...new Set(itemIds)];
-        if (!ids.length) {
-            return new Map();
-        }
-        const records = await tx.itemMaster.findMany({
-            where: { itemId: { in: ids } },
-            select: { itemId: true, itemCode: true, itemNameEn: true },
-        });
-        return new Map(records.map((record) => [
-            record.itemId,
-            { itemCode: record.itemCode, itemName: record.itemNameEn },
-        ]));
     }
     throwProblems(problems, message) {
         (0, module_service_utils_1.throwStockUnprocessable)(message, problems.map((problem) => ({
@@ -278,150 +304,8 @@ let SellingPriceBulkService = class SellingPriceBulkService {
             message: `Line ${problem.lineNo}: ${problem.message}`,
         })));
     }
-    async fanOutHeadlineRows(tx, dto, rows, taxRates, masterRows, actor) {
-        if (!rows.length) {
-            return 0;
-        }
-        const payloads = rows.map((row, index) => {
-            const prepared = this.prepareRow(row, index, taxRates, masterRows);
-            const existing = masterRows.get(this.masterKey(row));
-            const payload = {
-                ...(existing ? { ipm_id: existing.ipmId } : {}),
-                ipm_company_id: dto.companyId,
-                ipm_branch_id: dto.scope === 'CHAIN' ? null : dto.branchId,
-                ipm_item_id: prepared.itemId,
-                ipm_uc_unit_id: prepared.uomId,
-                ipm_profit_type: HEADLINE_PROFIT_TYPE,
-                ipm_updated_by: actor,
-                ...(existing ? {} : { ipm_created_by: actor }),
-            };
-            if (prepared.minPrice !== null) {
-                payload.ipm_min_price = prepared.minPrice;
-            }
-            if (prepared.roundOff !== null) {
-                payload.ipm_round_off = prepared.roundOff;
-            }
-            for (const level of prepared.levels) {
-                this.applyLevelColumns(payload, level);
-            }
-            return payload;
-        });
-        const saved = await this.itemsPriceMasterService.save(payloads, tx);
-        return saved.length;
-    }
-    applyLevelColumns(payload, level) {
-        switch (selling_price_bulk_types_1.LEVEL_COLUMN_SUFFIX[level.level]) {
-            case 'a':
-                payload.ipm_sales_price_a = level.price;
-                payload.ipm_price_a_wot = level.priceWot;
-                payload.ipm_price_a_markup_perc = level.markupPerc;
-                return;
-            case 'b':
-                payload.ipm_sales_price_b = level.price;
-                payload.ipm_price_b_wot = level.priceWot;
-                payload.ipm_price_b_markup_perc = level.markupPerc;
-                return;
-            case 'c':
-                payload.ipm_sales_price_c = level.price;
-                payload.ipm_price_c_wot = level.priceWot;
-                payload.ipm_price_c_markup_perc = level.markupPerc;
-                return;
-            case 'd':
-                payload.ipm_sales_price_d = level.price;
-                payload.ipm_price_d_wot = level.priceWot;
-                payload.ipm_price_d_markup_perc = level.markupPerc;
-                return;
-        }
-    }
-    async loadMasterPriceRows(tx, dto) {
-        const itemIds = [...new Set(dto.rows.map((row) => row.itemId))];
-        const uomIds = [...new Set(dto.rows.map((row) => row.uomId))];
-        const records = await tx.itemPriceMaster.findMany({
-            where: {
-                ipmItemId: { in: itemIds },
-                ipmUcUnitId: { in: uomIds },
-                ipmCompanyId: dto.companyId,
-                ipmBranchId: dto.scope === 'CHAIN' ? null : dto.branchId,
-                ipmGodownId: null,
-                ipmIsDeleted: false,
-            },
-            select: {
-                ipmId: true,
-                ipmItemId: true,
-                ipmUcUnitId: true,
-                ipmCostPrice: true,
-                ipmMinPrice: true,
-            },
-        });
-        const map = new Map();
-        for (const record of records) {
-            map.set(`${record.ipmItemId}|${record.ipmUcUnitId}`, {
-                ipmId: record.ipmId,
-                costRate: (0, module_service_utils_1.toNumber)(record.ipmCostPrice),
-                minPrice: (0, module_service_utils_1.toNumber)(record.ipmMinPrice),
-            });
-        }
-        return map;
-    }
-    masterKey(row) {
-        return `${row.itemId}|${row.uomId}`;
-    }
     async resolveItemTaxRates(tx, itemIds, asOf = new Date()) {
-        const ids = [...new Set(itemIds)];
-        if (!ids.length) {
-            return new Map();
-        }
-        const asOfDate = new Date(Date.UTC(asOf.getUTCFullYear(), asOf.getUTCMonth(), asOf.getUTCDate()));
-        const items = await tx.itemMaster.findMany({
-            where: { itemId: { in: ids } },
-            select: { itemId: true, itemDefaultTaxId: true, itemInclTax: true },
-        });
-        const history = await tx.itemTaxHistory.findMany({
-            where: {
-                ithItemId: { in: ids },
-                ithEffectiveFrom: { lte: asOfDate },
-                OR: [{ ithEffectiveTo: null }, { ithEffectiveTo: { gte: asOfDate } }],
-            },
-            orderBy: [{ ithItemId: 'asc' }, { ithEffectiveFrom: 'desc' }],
-            select: { ithItemId: true, ithTaxId: true },
-        });
-        const historyTaxId = new Map();
-        for (const row of history) {
-            if (!historyTaxId.has(row.ithItemId)) {
-                historyTaxId.set(row.ithItemId, row.ithTaxId);
-            }
-        }
-        const taxIds = [
-            ...new Set([
-                ...historyTaxId.values(),
-                ...items.map((item) => item.itemDefaultTaxId).filter((id) => !!id),
-            ].filter(Boolean)),
-        ];
-        const taxes = taxIds.length
-            ? await tx.taxRateMaster.findMany({
-                where: { taxId: { in: taxIds } },
-                select: {
-                    taxId: true,
-                    taxRatePerc: true,
-                    taxCessBasis: true,
-                    taxAcessBasis: true,
-                },
-            })
-            : [];
-        const taxById = new Map(taxes.map((tax) => [tax.taxId, tax]));
-        const result = new Map();
-        for (const item of items) {
-            const taxId = historyTaxId.get(item.itemId) ?? item.itemDefaultTaxId ?? null;
-            const tax = taxId ? taxById.get(taxId) : undefined;
-            result.set(item.itemId, {
-                itemId: item.itemId,
-                taxId,
-                taxPerc: tax ? (0, module_service_utils_1.toNumber)(tax.taxRatePerc) : 0,
-                inclTax: item.itemInclTax,
-                hasCess: tax ? tax.taxCessBasis !== 'NONE' || tax.taxAcessBasis !== 'NONE' : false,
-            });
-        }
-        return result;
+        return (0, item_tax_rate_helper_1.resolveItemTaxRates)(tx, itemIds, asOf);
     }
 };
 exports.SellingPriceBulkService = SellingPriceBulkService;
@@ -431,7 +315,6 @@ exports.SellingPriceBulkService = SellingPriceBulkService = __decorate([
         audit_log_service_1.AuditLogService,
         request_context_service_1.RequestContextService,
         app_setting_value_service_1.AppSettingValueService,
-        items_price_master_service_1.ItemsPriceMasterService,
-        stock_mrp_price_gateway_1.StockMrpPriceGateway])
+        price_bucket_gateway_1.PriceBucketGateway])
 ], SellingPriceBulkService);
 //# sourceMappingURL=selling-price-bulk.service.js.map

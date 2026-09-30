@@ -29,7 +29,8 @@ optional base-unit conversion.
 | --- | --- | --- |
 | `POST` | `/create` | Create **or** update a unit, chosen by `unit_id` presence in the body. |
 | `GET` | `/get` | Fetch one active unit by `unit_id` (query param, validated as UUID v7). |
-| `DELETE` | `/delete` | Soft-delete **or** restore a unit by `unit_id` — toggles `unit_is_deleted`. |
+| `DELETE` | `/delete` | Soft-delete a unit by `unit_id`. Not a toggle: 409 when already deleted. |
+| `POST` | `/restore` | Restore a soft-deleted unit by `unit_id`. |
 
 ### Create / update semantics
 
@@ -56,9 +57,12 @@ optional base-unit conversion.
 
 - **Unit name uniqueness** — `unit_name` is `@unique` at the DB level; a duplicate is caught in
   `handleWriteError` and surfaced as a **409 Conflict** (`Unit name already exists`).
-- **Soft delete / restore** — `DELETE /delete` flips `unit_is_deleted` via a guarded `updateMany`
-  (only acts if the row's state hasn't changed since the read); rows are never hard-deleted. The
-  response `deleted` flag is `true` when soft-deleted, `false` when restored.
+- **Soft delete / restore** — `DELETE /delete` deletes only (409 when already deleted) and
+  `POST /restore` restores (409 when not deleted, or when a pack unit's base unit is deleted). DELETE
+  is refused with 409 while a live pack unit is built on the unit, an item unit conversion uses it
+  (as unit or base) or an item has it as its base unit (notes 70 C1/C2).
+- **UQC** — `unit_code` is an FK to `item_gst_units`, i.e. it IS the GST Unit Quantity Code;
+  `unit_uqc` is written from it on every save and is never set on its own (notes 70 D1).
 - **Audit logging** — every mutation is recorded via `AuditLogService.logEntityChange`
   (`New` on create, `update` on update/restore, `cancel` on soft-delete), capturing original vs.
   modified records against table `item_unit_master`, screen `Units Master` (type `master`). The acting

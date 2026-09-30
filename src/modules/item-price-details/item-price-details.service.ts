@@ -183,6 +183,8 @@ export class ItemPriceDetailsService {
       ipm_price_c_markup_perc: this.toNumber(record.ipmPriceCMarkupPerc),
       ipm_price_d_markup_perc: this.toNumber(record.ipmPriceDMarkupPerc),
       ipm_max_price: this.toNumber(record.ipmMaxPrice),
+      ipm_bucket_mrp: record.ipmBucketMrp === null ? null : this.toNumber(record.ipmBucketMrp),
+      ipm_bucket_sp: record.ipmBucketSp === null ? null : this.toNumber(record.ipmBucketSp),
       ipm_min_price: this.toNumber(record.ipmMinPrice),
       ipm_disc_perc: this.toNumber(record.ipmDiscPerc),
       ipm_disc_qty: this.toNumber(record.ipmDiscQty),

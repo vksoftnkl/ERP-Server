@@ -21,8 +21,12 @@ item + unit, optionally scoped by company, branch, party and price level.
   `iqp_branch_id`, `iqp_party_id`, `iqp_price_level`, `iqp_is_active`, plus
   `search`/`page`/`limit`. Uses an admin-configured grid when one exists, else a Prisma
   fallback ordered by item → unit → lower bound.
-- `DELETE /item-qty-prices/delete` — toggles soft delete/restore by `iqp_id` (query param
-  or body), single or array.
+- `DELETE /item-qty-prices/delete` — soft-deletes by `iqp_id` (query param or body), single or
+  array, all-or-nothing. Not a toggle: 409 when a slab is already deleted (notes 70 C1).
+- `POST /item-qty-prices/restore` — same payload; 409 when a slab is not deleted or a live slab now
+  holds its key.
+- One live slab per (item, unit, company, branch, party, level, from, to, effective-from) —
+  `uq_iqp_slab`, NULLS NOT DISTINCT (notes 70 D7): a re-POST is a 409, not a second slab.
 
 ## Resolved names
 

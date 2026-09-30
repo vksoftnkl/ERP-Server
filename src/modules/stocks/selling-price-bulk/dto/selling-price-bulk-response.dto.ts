@@ -62,7 +62,10 @@ export class SellingPriceRowDto {
   @ApiPropertyOptional({ nullable: true, example: 'BOX' })
   unitName!: string | null;
 
-  @ApiProperty({ example: 42 })
+  @ApiProperty({
+    example: 42,
+    description: "On hand at the branch for this bucket, in this row's own unit.",
+  })
   stockQty!: number;
 
   @ApiPropertyOptional({ type: Number, nullable: true, example: 120 })
@@ -72,19 +75,37 @@ export class SellingPriceRowDto {
   salePrice!: number | null;
 
   @ApiProperty({
+    example: 40,
+    description:
+      "What the MRP column shows: the answering row's ipm_max_price — the bucket's MRP on a " +
+      "BUCKET row, the headline's own MRP on a MASTER row. Display only; mrp is the identity " +
+      'the save echoes.',
+  })
+  maxPrice!: number;
+
+  @ApiProperty({
     enum: PRICE_SOURCES,
-    description: 'The Src chip renders from this and priceScope, never from a string the API drew.',
+    description:
+      'The Src chip renders from this and priceScope, never from a string the API drew. ' +
+      'MASTER with mrp / salePrice set = this stock bucket has no row of its own yet; the ' +
+      'headline prices it and Save creates the bucket row.',
   })
   priceSource!: string;
 
-  @ApiProperty({ enum: PRICE_SCOPES })
-  priceScope!: string;
+  @ApiPropertyOptional({
+    enum: PRICE_SCOPES,
+    nullable: true,
+    description: 'Null when no price row answers for this bucket yet.',
+  })
+  priceScope!: string | null;
 
   @ApiPropertyOptional({
     type: String,
     format: 'uuid',
     nullable: true,
-    description: 'NULL when priceSource = MASTER.',
+    description:
+      'The item_price_master row (ipm_id) that answered — a bucket row on BUCKET, the headline ' +
+      'on MASTER. NULL when no row prices this bucket yet.',
   })
   bucketId!: string | null;
 
@@ -153,7 +174,7 @@ export class SellingPriceBucketsSuccessDto {
   @ApiProperty({ example: true })
   success!: true;
 
-  @ApiProperty({ example: '2 buckets found' })
+  @ApiProperty({ example: '4 price rows found' })
   message!: string;
 
   @ApiProperty({ type: SellingPriceRowDto, isArray: true })
@@ -216,10 +237,20 @@ export class SellingPriceNoStockRowDto {
 }
 
 export class SellingPriceSaveDataDto {
-  @ApiProperty({ example: 12, description: 'stock_mrp_price rows written — S2 and S3 together.' })
+  @ApiProperty({
+    example: 12,
+    description:
+      'item_price_master rows written — S2 and S3 together, buckets and headlines alike.',
+  })
   saved!: number;
 
-  @ApiProperty({ example: 2, description: 'item_price_master rows written by the §6 fan-out.' })
+  @ApiProperty({
+    example: 0,
+    deprecated: true,
+    description:
+      'ALWAYS 0. The headline fan-out is gone (one price table); kept for one release so a ' +
+      'client built against the frozen DTO does not break.',
+  })
   masterRowsSaved!: number;
 
   @ApiProperty({ type: SellingPriceNoStockRowDto, isArray: true })

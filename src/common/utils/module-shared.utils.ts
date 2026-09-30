@@ -140,6 +140,38 @@ export function isExclusionConstraintError(error: unknown): boolean {
   const { message } = error as { message?: unknown };
   return typeof message === 'string' && message.includes('23P01');
 }
+/**
+ * The CHECK constraint a write violated (SQLSTATE 23514), or null.
+ *
+ * The same trap as isExclusionConstraintError, in both of Prisma's shapes: an
+ * ORM write surfaces as a `PrismaClientUnknownRequestError` with the SQLSTATE
+ * and the constraint name only inside the driver message, and a raw one as a
+ * P2010 carrying them in `meta.code` / `meta.message`. The name is read out of
+ * whichever text is there, so a caller can map a KNOWN check to a sentence
+ * and answer 422 rather than 500.
+ */
+export function violatedCheckOf(error: unknown): string | null {
+  if (typeof error !== 'object' || error === null) {
+    return null;
+  }
+  const { message, meta } = error as {
+    message?: unknown;
+    meta?: { code?: unknown; message?: unknown };
+  };
+  const texts = [meta?.code === '23514' ? meta.message : null, message].filter(
+    (text): text is string => typeof text === 'string',
+  );
+  for (const text of texts) {
+    if (!text.includes('23514') && text !== meta?.message) {
+      continue;
+    }
+    const match = /violates check constraint \\?"([A-Za-z0-9_]+)\\?"/.exec(text);
+    if (match) {
+      return match[1];
+    }
+  }
+  return null;
+}
 export function isPrismaErrorCode(error: unknown, code: string): boolean {
   if (typeof error !== 'object' || error === null || !('code' in error)) {
     return false;

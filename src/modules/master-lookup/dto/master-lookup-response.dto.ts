@@ -269,6 +269,37 @@ export class CustomerDetailSuccessDto {
   @ApiProperty({ type: CustomerDetailDto })
   data!: CustomerDetailDto;
 }
+export class ItemPriceBucketDto {
+  @ApiProperty({ type: Number, nullable: true, example: 40 })
+  mrp!: number | null;
+  @ApiProperty({ type: Number, nullable: true })
+  sale_price!: number | null;
+  @ApiProperty({
+    example: 24,
+    description: 'SUM(sbl_available_qty) over SALEABLE holdings at this scope, in the BASE unit.',
+  })
+  available_qty!: number;
+  @ApiProperty({ enum: ['BUCKET', 'MASTER'], nullable: true })
+  price_source!: 'BUCKET' | 'MASTER' | null;
+  @ApiProperty({ enum: ['BRANCH', 'CHAIN'], nullable: true })
+  price_scope!: 'BRANCH' | 'CHAIN' | null;
+  @ApiProperty({ format: 'uuid', nullable: true })
+  price_row_id!: string | null;
+  @ApiProperty({ example: 38, description: 'The price at the requested price_level.' })
+  sales_price!: number;
+  @ApiProperty({ example: 38 })
+  sales_price_a!: number;
+  @ApiProperty({ example: 38 })
+  sales_price_b!: number;
+  @ApiProperty({ example: 38 })
+  sales_price_c!: number;
+  @ApiProperty({ example: 38 })
+  sales_price_d!: number;
+  @ApiProperty({ example: 40 })
+  max_price!: number;
+  @ApiProperty({ example: 0 })
+  min_price!: number;
+}
 export class ItemPriceLookupPayloadDto {
   @ApiProperty({ format: 'uuid' })
   item_id!: string;
@@ -324,8 +355,32 @@ export class ItemPriceLookupPayloadDto {
   cost_wot!: number;
   @ApiProperty({ example: 90 })
   min_price!: number;
-  @ApiProperty({ example: 120 })
+  @ApiProperty({
+    example: 120,
+    description:
+      "The MRP on the line: the bucket's MRP on a BUCKET answer, the headline's ipm_max_price on a MASTER one.",
+  })
   max_price!: number;
+  @ApiProperty({
+    enum: ['BUCKET', 'MASTER'],
+    description:
+      "BUCKET = the item's price row for the line's exact MRP / sale price answered; MASTER = the headline row did (always so for an item whose policy tracks neither). A line with no MRP on an item priced only per MRP (no headline) gets the dearest bucket, provisionally, as BUCKET; buckets[] lists the others.",
+  })
+  price_source!: 'BUCKET' | 'MASTER';
+  @ApiProperty({
+    enum: ['BRANCH', 'CHAIN'],
+    description: "BRANCH = the answering row is this branch's override; CHAIN = it has no branch.",
+  })
+  price_scope!: 'BRANCH' | 'CHAIN';
+  @ApiProperty({ format: 'uuid', description: 'item_price_master.ipm_id of the answering row.' })
+  price_row_id!: string;
+  @ApiProperty({
+    type: ItemPriceBucketDto,
+    isArray: true,
+    description:
+      'Every live bucket at this branch with stock, each with its resolved prices — only for items whose stock track policy tracks MRP or sale price; [] otherwise. With no stock at all, every PRICED bucket at quantity 0, so an item priced but not yet received can still be sold.',
+  })
+  buckets!: ItemPriceBucketDto[];
   @ApiProperty({ example: 0 })
   disc_perc!: number;
   @ApiProperty({ example: 0 })

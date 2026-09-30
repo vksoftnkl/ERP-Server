@@ -56,6 +56,24 @@ export class ItemPricePayloadDto {
   ipm_price_d_markup_perc!: number;
   @ApiProperty({ example: 0 })
   ipm_max_price!: number;
+  @ApiPropertyOptional({
+    type: Number,
+    nullable: true,
+    example: 40,
+    description:
+      'The MRP bucket this row prices. DERIVED by the server from the stock track policy ' +
+      '(NULLIF(ipm_max_price, 0) under track_mrp) and never accepted on a save. Null with ' +
+      'ipm_bucket_sp null = the headline row.',
+  })
+  ipm_bucket_mrp!: number | null;
+  @ApiPropertyOptional({
+    type: Number,
+    nullable: true,
+    description:
+      'The sale-price bucket this row prices — the price at sales.default_price_level under ' +
+      'track_sale_price. Derived, never accepted on a save.',
+  })
+  ipm_bucket_sp!: number | null;
   @ApiProperty({ example: 0 })
   ipm_min_price!: number;
   @ApiProperty({ example: 0 })

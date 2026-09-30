@@ -16,10 +16,24 @@ const audit_log_service_1 = require("../../audit-log/audit-log.service");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
 const stock_track_policy_service_1 = require("../../stocks/stock-track-policy/stock-track-policy.service");
+const master_tree_helper_1 = require("../utils/master-tree.helper");
 const ITEM_GROUP_TABLE_NAME = 'item group master';
 const ITEM_GROUP_AUDIT_SCREEN_NAME = 'Item Group Master';
 const TRACK_PRESET_INCLUDE = {
     trackPreset: { select: { sptName: true } },
+};
+const ITEM_GROUP_REFERENCES = [
+    {
+        table: 'inventory.item_master',
+        column: 'item_group_id',
+        live: 'item_is_deleted = false',
+        label: 'items',
+    },
+];
+const ITEM_GROUP_DELETE_STATE = {
+    label: 'item group',
+    idField: 'itg_id',
+    restoreRoute: '/item-groups/restore',
 };
 let ItemsGroupMasterService = class ItemsGroupMasterService {
     prisma;
@@ -62,7 +76,13 @@ let ItemsGroupMasterService = class ItemsGroupMasterService {
         });
         return parent?.itgName ?? null;
     }
-    async toggleDelete(itgId) {
+    async softDelete(itgId) {
+        return this.setDeleted(itgId, true);
+    }
+    async restore(itgId) {
+        return this.setDeleted(itgId, false);
+    }
+    async setDeleted(itgId, wantDeleted) {
         return this.prisma.$transaction(async (tx) => {
             const existing = await tx.itemGroupMaster.findFirst({
                 where: { itgId },
@@ -70,8 +90,16 @@ let ItemsGroupMasterService = class ItemsGroupMasterService {
             if (!existing) {
                 (0, module_service_utils_1.throwInventoryNotFound)('Item group not found', 'itg_id', `No item group found with id ${itgId}`);
             }
+            (0, master_tree_helper_1.assertDeleteState)(existing.itgIsDeleted, wantDeleted, ITEM_GROUP_DELETE_STATE);
+            if (wantDeleted) {
+                await (0, master_tree_helper_1.assertNoLiveChildren)(tx, master_tree_helper_1.ITEM_GROUP_TREE, itgId);
+                await (0, master_tree_helper_1.assertNoLiveReferences)(tx, ITEM_GROUP_REFERENCES, itgId, ITEM_GROUP_DELETE_STATE);
+            }
+            else {
+                await (0, master_tree_helper_1.assertParentLive)(tx, master_tree_helper_1.ITEM_GROUP_TREE, existing.itgParentId);
+            }
             const wasDeleted = existing.itgIsDeleted;
-            const nextDeleted = !wasDeleted;
+            const nextDeleted = wantDeleted;
             const modifiedOn = new Date();
             const userId = this.requestContextService.getUserId() ?? module_service_utils_1.DEFAULT_ACTOR;
             const subtreeIds = wasDeleted ? [] : await this.getActiveSubtreeIds(tx, itgId);
@@ -89,9 +117,11 @@ let ItemsGroupMasterService = class ItemsGroupMasterService {
             }
             if (nextDeleted) {
                 await this.removePathIds(tx, ancestorIds, subtreeIds);
+                await this.stockTrackPolicyService.retireForGroup(itgId, tx);
             }
             else {
                 await this.appendPathIds(tx, ancestorIds, await this.getActiveSubtreeIds(tx, itgId));
+                await this.stockTrackPolicyService.syncFromItemGroup(existing, tx);
             }
             const originalRecord = this.toPayload(existing);
             const modifiedRecord = this.toPayload({
@@ -136,6 +166,7 @@ let ItemsGroupMasterService = class ItemsGroupMasterService {
                     const ancestorIds = await this.getAncestorIds(tx, saveItemGroupDto.itg_parent_id);
                     await this.appendPathIds(tx, ancestorIds, [created.itgId]);
                 }
+                await (0, master_tree_helper_1.relevelSubtree)(tx, master_tree_helper_1.ITEM_GROUP_TREE, created.itgId);
                 const refreshed = await tx.itemGroupMaster.findFirst({
                     where: {
                         itgId: created.itgId,
@@ -193,11 +224,14 @@ let ItemsGroupMasterService = class ItemsGroupMasterService {
                 if (saveItemGroupDto.itg_parent_id) {
                     await this.ensureParentExists(saveItemGroupDto.itg_parent_id, tx);
                 }
-                const hasParentField = (0, module_service_utils_1.hasOwnProperty)(saveItemGroupDto, 'itg_parent_id');
+                const hasParentField = saveItemGroupDto.itg_parent_id !== undefined;
                 const nextParentId = hasParentField
                     ? (saveItemGroupDto.itg_parent_id ?? null)
                     : existing.itgParentId;
                 const isParentChanged = hasParentField && nextParentId !== existing.itgParentId;
+                if (isParentChanged) {
+                    await (0, master_tree_helper_1.assertNotUnderOwnSubtree)(tx, master_tree_helper_1.ITEM_GROUP_TREE, itgId, nextParentId);
+                }
                 const subtreeIds = isParentChanged ? await this.getActiveSubtreeIds(tx, itgId) : [];
                 const oldAncestorIds = isParentChanged
                     ? await this.getAncestorIds(tx, existing.itgParentId)
@@ -222,6 +256,7 @@ let ItemsGroupMasterService = class ItemsGroupMasterService {
                     await this.removePathIds(tx, oldAncestorIds, subtreeIds);
                     await this.appendPathIds(tx, newAncestorIds, subtreeIds);
                 }
+                await (0, master_tree_helper_1.relevelSubtree)(tx, master_tree_helper_1.ITEM_GROUP_TREE, itgId);
                 const refreshed = await tx.itemGroupMaster.findFirst({
                     where: {
                         itgId,
@@ -284,9 +319,6 @@ let ItemsGroupMasterService = class ItemsGroupMasterService {
         }
         if ((0, module_service_utils_1.hasOwnProperty)(saveItemGroupDto, 'itg_sort')) {
             data.itgSort = saveItemGroupDto.itg_sort;
-        }
-        if ((0, module_service_utils_1.hasOwnProperty)(saveItemGroupDto, 'itg_level')) {
-            data.itgLevel = saveItemGroupDto.itg_level;
         }
         if ((0, module_service_utils_1.hasOwnProperty)(saveItemGroupDto, 'itg_tax_claim')) {
             data.itgTaxClaim = saveItemGroupDto.itg_tax_claim;

@@ -32,6 +32,10 @@ class ItemPriceLookupQueryDto {
     loading_type;
     freight_type;
     price_level;
+    mrp;
+    sale_price;
+    lot_id;
+    doc_date;
 }
 exports.ItemPriceLookupQueryDto = ItemPriceLookupQueryDto;
 __decorate([
@@ -112,4 +116,35 @@ __decorate([
     (0, dtoDecorators_1.RequiredInteger)(1, 7),
     __metadata("design:type", Number)
 ], ItemPriceLookupQueryDto.prototype, "price_level", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        example: 40,
+        description: "The MRP on the line — what the operator reads off the packet, or retyped under sales.allow_mrp_edit. Picks the item's price row FOR THAT MRP when the item's stock track policy tracks MRP; ignored (the headline answers) when it does not. Ignored when lot_id is given.",
+    }),
+    (0, dtoDecorators_1.OptionalNumber)(0),
+    __metadata("design:type", Number)
+], ItemPriceLookupQueryDto.prototype, "mrp", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        description: "The line's selling-price dimension, for items whose policy tracks sale price. Ignored when lot_id is given, and when the policy does not track it.",
+    }),
+    (0, dtoDecorators_1.OptionalNumber)(0),
+    __metadata("design:type", Number)
+], ItemPriceLookupQueryDto.prototype, "sale_price", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        format: 'uuid',
+        description: 'The lot the line already holds (a picked lot, or a loaded line). Its slt_mrp / slt_sale_price ARE the bucket key; mrp and sale_price are then ignored.',
+    }),
+    (0, dtoDecorators_1.OptionalUuid)(),
+    __metadata("design:type", String)
+], ItemPriceLookupQueryDto.prototype, "lot_id", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        format: 'date',
+        description: "The document's date, for the price rows' effective window and the stock track policy. Defaults to today.",
+    }),
+    (0, dtoDecorators_1.OptionalDateString)(),
+    __metadata("design:type", String)
+], ItemPriceLookupQueryDto.prototype, "doc_date", void 0);
 //# sourceMappingURL=item-price-lookup-query.dto.js.map

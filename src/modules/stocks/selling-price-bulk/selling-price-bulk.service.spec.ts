@@ -3,10 +3,13 @@ import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
 import { AppSettingValueService } from '../../settings/appSettings/app-setting-value.service';
-import { ItemsPriceMasterService } from '../../Inventory/items-price-master/items-price-master.service';
 import { SellingPriceBulkService } from './selling-price-bulk.service';
 import { SellingPriceBulkExceptionFilter } from './selling-price-bulk-exception.filter';
-import { StockMrpPriceGateway } from './stock-mrp-price.gateway';
+import {
+  PriceBucketGateway,
+  type BucketPriceCandidate,
+  type RowCost,
+} from './price-bucket.gateway';
 import { resolveBelowCostAction, resolveBelowCostPolicy } from './below-cost-policy.helper';
 import { recomputeLevel } from './selling-price-math.helper';
 import type { SaveSellingPriceBulkDto } from './dto/save-selling-price-bulk.dto';
@@ -15,13 +18,14 @@ import type { BelowCostPolicy, SellingPriceProblem } from './types/selling-price
 const COMPANY_ID = '01000000-0000-7000-8000-0000000000c1';
 const BRANCH_ID = '01000000-0000-7000-8000-0000000000b1';
 const USER_ID = '01000000-0000-7000-8000-0000000000a1';
+/** An item whose stock track policy tracks MRP. */
 const BUCKET_ITEM = '01000000-0000-7000-8000-000000000001';
+/** An item whose policy tracks neither dimension: its only price is the headline. */
 const HEADLINE_ITEM = '01000000-0000-7000-8000-000000000002';
 const UOM_ID = '01000000-0000-7000-8000-000000000011';
 const TAX_ID = '01000000-0000-7000-8000-000000000031';
 const OLD_TAX_ID = '01000000-0000-7000-8000-000000000032';
 const IPM_ID = '01000000-0000-7000-8000-000000000041';
-const SMP_ID = '01000000-0000-7000-8000-000000000051';
 
 /** 118 at 18% is exactly 100 without tax, so nothing here rests on rounding. */
 const PRICE = 118;
@@ -51,7 +55,6 @@ const problem = (
 describe('SellingPriceBulkService', () => {
   let service: SellingPriceBulkService;
   let tx: {
-    itemPriceMaster: { findMany: jest.Mock };
     itemMaster: { findMany: jest.Mock };
     itemTaxHistory: { findMany: jest.Mock };
     taxRateMaster: { findMany: jest.Mock };
@@ -64,10 +67,11 @@ describe('SellingPriceBulkService', () => {
     getDeviceId: jest.Mock;
   };
   let appSettingValueService: { resolveEffective: jest.Mock };
-  let itemsPriceMasterService: { save: jest.Mock };
   let gateway: {
     listPrices: jest.Mock;
     listBuckets: jest.Mock;
+    loadRowCosts: jest.Mock;
+    snapshotRows: jest.Mock;
     validateRows: jest.Mock;
     findBucketRowForUpdate: jest.Mock;
     updateBucketPrice: jest.Mock;
@@ -84,24 +88,6 @@ describe('SellingPriceBulkService', () => {
 
   beforeEach(() => {
     tx = {
-      itemPriceMaster: {
-        findMany: jest.fn().mockResolvedValue([
-          {
-            ipmId: IPM_ID,
-            ipmItemId: BUCKET_ITEM,
-            ipmUcUnitId: UOM_ID,
-            ipmCostPrice: COST,
-            ipmMinPrice: 0,
-          },
-          {
-            ipmId: IPM_ID,
-            ipmItemId: HEADLINE_ITEM,
-            ipmUcUnitId: UOM_ID,
-            ipmCostPrice: COST,
-            ipmMinPrice: 0,
-          },
-        ]),
-      },
       itemMaster: {
         findMany: jest.fn().mockResolvedValue([
           {
@@ -146,15 +132,38 @@ describe('SellingPriceBulkService', () => {
     };
     appSettingValueService = { resolveEffective: jest.fn() };
     settingIs('warning');
-    itemsPriceMasterService = {
-      save: jest
-        .fn()
-        .mockImplementation((rows: unknown[]) => Promise.resolve(rows.map(() => ({})))),
-    };
     gateway = {
       listPrices: jest.fn(),
       listBuckets: jest.fn(),
-      validateRows: jest.fn().mockResolvedValue([]),
+      // One RowCost per payload row: BUCKET_ITEM tracks MRP, HEADLINE_ITEM
+      // tracks nothing; both cost COST, both units are the item's own.
+      loadRowCosts: jest.fn(
+        (_tx: unknown, rows: Array<{ itemId: string }>): Promise<RowCost[]> =>
+          Promise.resolve(
+            rows.map((row) => ({
+              itemCode: row.itemId === BUCKET_ITEM ? 'SALT' : 'RICE',
+              itemName: row.itemId === BUCKET_ITEM ? 'Salt 1 Kg' : 'Rice 25 Kg',
+              uomBelongs: true,
+              trackMrp: row.itemId === BUCKET_ITEM,
+              trackSalePrice: false,
+              costRate: COST,
+              costWot: COST / 1.18,
+              minPrice: 0,
+            })),
+          ),
+      ),
+      // Every snapshot is the stored row, as to_jsonb would give it.
+      snapshotRows: jest.fn((_tx: unknown, ids: string[]) =>
+        Promise.resolve(
+          new Map(
+            ids.map((id) => [
+              id,
+              { ipm_id: id, ipm_item_id: BUCKET_ITEM, ipm_bucket_mrp: 120, ipm_bucket_sp: null },
+            ]),
+          ),
+        ),
+      ),
+      validateRows: jest.fn().mockReturnValue([]),
       // A FAITHFUL fake of S1: it searches AT THE TARGET SCOPE, so a search at
       // BRANCH scope cannot find a chain row. Everything the scope tests assert
       // about S2-vs-S3 rests on this being the real predicate.
@@ -162,10 +171,10 @@ describe('SellingPriceBulkService', () => {
         .fn()
         .mockImplementation(
           (_tx, candidate: { loadedScope?: string }, scope: { targetScope: string }) =>
-            Promise.resolve(scope.targetScope === candidate.loadedScope ? { smpId: SMP_ID } : null),
+            Promise.resolve(scope.targetScope === candidate.loadedScope ? { ipmId: IPM_ID } : null),
         ),
-      updateBucketPrice: jest.fn().mockResolvedValue(SMP_ID),
-      insertBucketPrice: jest.fn().mockResolvedValue(SMP_ID),
+      updateBucketPrice: jest.fn().mockResolvedValue(IPM_ID),
+      insertBucketPrice: jest.fn().mockResolvedValue(IPM_ID),
       listNoStock: jest.fn().mockResolvedValue([]),
     };
     service = new SellingPriceBulkService(
@@ -173,8 +182,7 @@ describe('SellingPriceBulkService', () => {
       auditLogService as unknown as AuditLogService,
       requestContext as unknown as RequestContextService,
       appSettingValueService as unknown as AppSettingValueService,
-      itemsPriceMasterService as unknown as ItemsPriceMasterService,
-      gateway as unknown as StockMrpPriceGateway,
+      gateway as unknown as PriceBucketGateway,
     );
   });
 
@@ -187,14 +195,14 @@ describe('SellingPriceBulkService', () => {
   const s1Finds = (loadedScope: 'BRANCH' | 'CHAIN' | null) =>
     gateway.findBucketRowForUpdate.mockImplementation(
       (_tx, _candidate, scope: { targetScope: string }) =>
-        Promise.resolve(scope.targetScope === loadedScope ? { smpId: SMP_ID } : null),
+        Promise.resolve(scope.targetScope === loadedScope ? { ipmId: IPM_ID } : null),
     );
 
   const bucketRow = (overrides: Record<string, unknown> = {}) => ({
     lineNo: 1,
     itemId: BUCKET_ITEM,
     uomId: UOM_ID,
-    // An MRP is what makes this a bucket row — §6.
+    // An MRP on an MRP-tracked item is what makes this a bucket row.
     mrp: 120,
     salePrice: null,
     levels: [{ level: 1, price: PRICE }],
@@ -205,8 +213,7 @@ describe('SellingPriceBulkService', () => {
     lineNo: 2,
     itemId: HEADLINE_ITEM,
     uomId: UOM_ID,
-    // Neither dimension. ck_smp_identity refuses a (NULL, NULL) bucket, so this
-    // is a headline edit by definition and not by choice.
+    // Neither dimension: the headline row, key (-1, -1) of the same table.
     mrp: null,
     salePrice: null,
     levels: [{ level: 1, price: PRICE }],
@@ -223,82 +230,82 @@ describe('SellingPriceBulkService', () => {
       ...overrides,
     }) as unknown as SaveSellingPriceBulkDto;
 
-  // ── §6 the fan-out ────────────────────────────────────────────────────────
-  describe('the fan-out rule — §6', () => {
-    it('sends a row with a dimension to the bucket statements and a row with neither to item_price_master', async () => {
+  // ── one price table: no fan-out ─────────────────────────────────────────
+  describe('one price table — plan-nestjs-one-price-table.md §5', () => {
+    it('saves a bucket row and a headline row through the SAME statements', async () => {
       const result = await service.saveBulk(payload({ rows: [bucketRow(), headlineRow()] }));
 
-      expect(gateway.insertBucketPrice).toHaveBeenCalledTimes(1);
-      expect(gateway.insertBucketPrice.mock.calls[0][1]).toMatchObject({ itemId: BUCKET_ITEM });
-      expect(itemsPriceMasterService.save).toHaveBeenCalledTimes(1);
-      expect(itemsPriceMasterService.save.mock.calls[0][0]).toHaveLength(1);
-      expect(itemsPriceMasterService.save.mock.calls[0][0][0]).toMatchObject({
-        ipm_item_id: HEADLINE_ITEM,
-      });
-      expect(result).toMatchObject({ saved: 1, masterRowsSaved: 1 });
+      expect(gateway.insertBucketPrice).toHaveBeenCalledTimes(2);
+      const [bucket, headline] = gateway.insertBucketPrice.mock.calls.map(
+        (call) => call[1] as BucketPriceCandidate,
+      );
+      expect(bucket).toMatchObject({ itemId: BUCKET_ITEM, mrp: 120, salePrice: null });
+      expect(headline).toMatchObject({ itemId: HEADLINE_ITEM, mrp: null, salePrice: null });
+      // The key is kept for one release and is always 0: there is no fan-out.
+      expect(result).toMatchObject({ saved: 2, masterRowsSaved: 0 });
     });
 
-    it('hands ItemsPriceMasterService THE TRANSACTION, so buckets and headlines commit together', async () => {
+    it("blanks an MRP the item's policy does not track — the row is the headline", async () => {
+      await service.saveBulk(payload({ rows: [headlineRow({ mrp: 45 })] }));
+
+      expect(gateway.insertBucketPrice.mock.calls[0][1]).toMatchObject({
+        itemId: HEADLINE_ITEM,
+        mrp: null,
+      });
+    });
+
+    it('treats an MRP of 0 on a tracked item as no MRP, never a bucket of its own', async () => {
+      await service.saveBulk(payload({ rows: [bucketRow({ mrp: 0 })] }));
+
+      expect(gateway.insertBucketPrice.mock.calls[0][1]).toMatchObject({ mrp: null });
+    });
+
+    it('costs every row in the transaction before its levels are recomputed', async () => {
       await service.saveBulk(payload({ rows: [bucketRow(), headlineRow()] }));
 
-      // The whole reason §6 reuses that service rather than writing the table:
-      // its save() takes the caller's client. Passing undefined here would open
-      // a second transaction and let the headline rows survive a bucket rollback.
-      expect(itemsPriceMasterService.save.mock.calls[0][1]).toBe(tx);
+      expect(gateway.loadRowCosts).toHaveBeenCalledWith(
+        tx,
+        [
+          { itemId: BUCKET_ITEM, uomId: UOM_ID, mrp: 120, salePrice: null },
+          { itemId: HEADLINE_ITEM, uomId: UOM_ID, mrp: null, salePrice: null },
+        ],
+        COMPANY_ID,
+        BRANCH_ID,
+      );
+      // S2 / S3 store the cost the row was priced against.
+      expect(gateway.insertBucketPrice.mock.calls[0][1]).toMatchObject({ costRate: COST });
     });
 
-    it('never touches the gateway when every row is a headline row', async () => {
-      const result = await service.saveBulk(payload({ rows: [headlineRow()] }));
-
-      // This is what makes the module useful before the stock share lands.
-      expect(gateway.validateRows).not.toHaveBeenCalled();
-      expect(gateway.insertBucketPrice).not.toHaveBeenCalled();
-      expect(gateway.listNoStock).not.toHaveBeenCalled();
-      expect(result).toMatchObject({ saved: 0, masterRowsSaved: 1 });
-    });
-
-    it('routes on the dimension and not on bucketId — a stale bucketId cannot make a headline row a bucket', async () => {
-      await service.saveBulk(payload({ rows: [headlineRow({ bucketId: SMP_ID })] }));
-
-      expect(gateway.insertBucketPrice).not.toHaveBeenCalled();
-      expect(itemsPriceMasterService.save).toHaveBeenCalledTimes(1);
-    });
-
-    it('maps level ordinals onto the A-D column triplet', async () => {
-      await service.saveBulk(
+    it('refuses two rows that price one bucket at one scope, naming both lines', async () => {
+      // Two MRPs of an untracked item ARE one price once blanked.
+      const attempt = service.saveBulk(
         payload({
-          rows: [
-            headlineRow({
-              levels: [
-                { level: 1, price: PRICE },
-                { level: 3, price: 236 },
-              ],
-            }),
-          ],
+          rows: [headlineRow({ lineNo: 1, mrp: 40 }), headlineRow({ lineNo: 2, mrp: 45 })],
         }),
       );
 
-      expect(itemsPriceMasterService.save.mock.calls[0][0][0]).toMatchObject({
-        ipm_sales_price_a: 118,
-        ipm_price_a_wot: 100,
-        ipm_sales_price_c: 236,
-        ipm_price_c_wot: 200,
+      await expect(attempt).rejects.toMatchObject({ status: 422 });
+      await attempt.catch((error: HttpException) => {
+        const body = error.getResponse() as { errors: { message: string }[] };
+        expect(body.errors[0].message).toContain('Lines 1 and 2');
       });
+      expect(gateway.insertBucketPrice).not.toHaveBeenCalled();
     });
 
-    it('updates the existing master row rather than creating a second one', async () => {
-      await service.saveBulk(payload({ rows: [headlineRow()] }));
+    it("refuses a unit that is not one of the item's, before any write", async () => {
+      gateway.loadRowCosts.mockImplementationOnce((_tx: unknown, rows: unknown[]) =>
+        Promise.resolve(rows.map(() => ({ uomBelongs: false }))),
+      );
 
-      expect(itemsPriceMasterService.save.mock.calls[0][0][0]).toMatchObject({ ipm_id: IPM_ID });
+      await expect(service.saveBulk(payload())).rejects.toMatchObject({ status: 422 });
+      expect(gateway.insertBucketPrice).not.toHaveBeenCalled();
     });
 
-    it('writes a chain headline as the branch-less row', async () => {
-      await service.saveBulk(payload({ scope: 'CHAIN', rows: [headlineRow()] }));
+    it('addresses the row by key and scope, not by bucketId — a stale id cannot redirect a save', async () => {
+      await service.saveBulk(payload({ rows: [headlineRow({ bucketId: IPM_ID })] }));
 
-      expect(itemsPriceMasterService.save.mock.calls[0][0][0]).toMatchObject({
-        ipm_company_id: COMPANY_ID,
-        ipm_branch_id: null,
-      });
+      expect(gateway.findBucketRowForUpdate).toHaveBeenCalledTimes(1);
+      expect(gateway.insertBucketPrice).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -400,7 +407,7 @@ describe('SellingPriceBulkService', () => {
   // ── §0.3 / §5.3 below cost ────────────────────────────────────────────────
   describe('the below-cost setting and its round trip — §0.3, §5.3', () => {
     const belowCost = () =>
-      gateway.validateRows.mockResolvedValue([problem({ verdict: 'BELOW_COST' })]);
+      gateway.validateRows.mockReturnValue([problem({ verdict: 'BELOW_COST' })]);
 
     it('restrict aborts with 422 and the row list, before any write', async () => {
       settingIs('restrict');
@@ -429,7 +436,7 @@ describe('SellingPriceBulkService', () => {
       expect(result).toMatchObject({ needsConfirm: true, saved: 0, masterRowsSaved: 0 });
       expect(result.problems).toHaveLength(1);
       expect(gateway.insertBucketPrice).not.toHaveBeenCalled();
-      expect(itemsPriceMasterService.save).not.toHaveBeenCalled();
+      expect(gateway.updateBucketPrice).not.toHaveBeenCalled();
     });
 
     it('the confirmed re-post writes', async () => {
@@ -470,13 +477,37 @@ describe('SellingPriceBulkService', () => {
 
       await service.saveBulk(payload({ confirmed: true }));
 
-      const [entry] = auditLogService.logEntityChange.mock.calls[0] as [
-        { notes: string; modifiedRecord: { belowCostRows: unknown[] } },
-      ];
-      expect(entry.notes).toContain('below cost');
-      expect(entry.modifiedRecord.belowCostRows).toHaveLength(1);
+      const [entry] = auditLogService.logEntityChange.mock.calls[0] as [{ notes: string }];
+      expect(entry.notes).toContain('confirmed below cost');
+      expect(entry.notes).toContain('Q26 said so');
       // Inside the transaction, like every other module here.
       expect(auditLogService.logEntityChange.mock.calls[0][1]).toBe(tx);
+    });
+
+    it('audits each row: an update with the row before AND after, an insert with the row after (notes 71 B1)', async () => {
+      // Row 1 is found by S1 (an update), row 2 is not (an insert).
+      gateway.findBucketRowForUpdate
+        .mockResolvedValueOnce({ ipmId: IPM_ID })
+        .mockResolvedValueOnce(null);
+
+      await service.saveBulk(payload({ rows: [bucketRow(), headlineRow()] }));
+
+      const entries = auditLogService.logEntityChange.mock.calls.map(
+        (call) =>
+          call[0] as {
+            action: string;
+            screenName: string;
+            originalRecord: unknown;
+            modifiedRecord: unknown;
+          },
+      );
+      expect(entries).toHaveLength(2);
+      expect(entries[0]).toMatchObject({ action: 'update', screenName: 'Item Price Master' });
+      // The audit service refuses an update without both — that refusal was
+      // every valid menu 30 save answering 400.
+      expect(entries[0].originalRecord).not.toBeNull();
+      expect(entries[0].modifiedRecord).not.toBeNull();
+      expect(entries[1]).toMatchObject({ action: 'New', originalRecord: null });
     });
 
     it('reads the setting through the resolver, with the caller as the scope', async () => {
@@ -496,7 +527,7 @@ describe('SellingPriceBulkService', () => {
       'still aborts a %s verdict on a confirmed post',
       async (verdict) => {
         settingIs('warning');
-        gateway.validateRows.mockResolvedValue([
+        gateway.validateRows.mockReturnValue([
           problem({ verdict }),
           problem({ verdict: 'BELOW_COST', lineNo: 2 }),
         ]);
@@ -510,7 +541,7 @@ describe('SellingPriceBulkService', () => {
 
     it('aborts a below-min verdict even under `allow`, because min has no constraint behind it', async () => {
       settingIs('allow');
-      gateway.validateRows.mockResolvedValue([problem({ verdict: 'BELOW_MIN' })]);
+      gateway.validateRows.mockReturnValue([problem({ verdict: 'BELOW_MIN' })]);
 
       await expect(service.saveBulk(payload())).rejects.toMatchObject({ status: 422 });
     });
@@ -546,9 +577,9 @@ describe('SellingPriceBulkService', () => {
         }),
       );
 
-      expect(itemsPriceMasterService.save.mock.calls[0][0][0]).toMatchObject({
-        ipm_sales_price_a: 118,
-        ipm_price_a_wot: 100,
+      expect(gateway.insertBucketPrice.mock.calls[0][1].levels[0]).toMatchObject({
+        price: 118,
+        priceWot: 100,
       });
     });
 
@@ -649,7 +680,7 @@ describe('SellingPriceBulkService', () => {
   describe('the response message — §5.4', () => {
     const base = {
       saved: 12,
-      masterRowsSaved: 2,
+      masterRowsSaved: 0,
       noStock: [],
       needsConfirm: false,
       problems: [],
@@ -659,17 +690,17 @@ describe('SellingPriceBulkService', () => {
     it('never says a plain "Saved" when noStock is non-empty — legacy fault #2', () => {
       const message = service.buildSaveMessage({
         ...base,
-        noStock: [{ bucketId: SMP_ID }, { bucketId: SMP_ID }] as never,
+        noStock: [{ bucketId: IPM_ID }, { bucketId: IPM_ID }] as never,
       });
 
       expect(message).not.toBe('Saved');
-      expect(message).toContain('12 buckets saved');
+      expect(message).toContain('12 prices saved');
       expect(message).toContain('2 have no stock on hand');
       expect(message).toContain('the price applies when stock arrives');
     });
 
     it('says nothing about stock when every priced bucket has some', () => {
-      expect(service.buildSaveMessage(base)).toBe('12 buckets saved · 2 headline rows saved.');
+      expect(service.buildSaveMessage(base)).toBe('12 prices saved.');
     });
 
     it('asks rather than reports when the save needs confirming', () => {
@@ -686,7 +717,7 @@ describe('SellingPriceBulkService', () => {
     });
 
     it('carries the no-stock list into the save result', async () => {
-      gateway.listNoStock.mockResolvedValue([{ bucketId: SMP_ID, itemId: BUCKET_ITEM }]);
+      gateway.listNoStock.mockResolvedValue([{ bucketId: IPM_ID, itemId: BUCKET_ITEM }]);
 
       const result = await service.saveBulk(payload());
 
@@ -749,10 +780,10 @@ describe('SellingPriceBulkExceptionFilter — the SQLSTATE map, §9', () => {
   // Every one of these arrives from Prisma as code P2010 with the real SQLSTATE
   // in meta.code — a filter switching on error.code answers 500 to all of them.
   it.each([
-    ['23514', 'new row violates check constraint "ck_smp_not_above_mrp"', 422],
-    ['23P01', 'conflicting key value violates exclusion constraint "ex_smp_overlap"', 409],
-    ['23505', 'duplicate key value violates unique constraint "ux_smp_identity"', 409],
-    ['23503', 'insert violates foreign key constraint "fk_smp_item"', 422],
+    ['23514', 'new row violates check constraint "ck_ipm_not_above_mrp"', 422],
+    ['23P01', 'conflicting key value violates exclusion constraint "ex_ipm_overlap"', 409],
+    ['23505', 'duplicate key value violates unique constraint "item_price_master_pkey"', 409],
+    ['23503', 'insert violates foreign key constraint "fk_ipm_item"', 422],
     ['P0002', 'bucket vanished between load and save', 404],
   ])('maps meta.code %s to HTTP %i', (sqlState, message, expected) => {
     filter.catch(engineError(sqlState, message), host);
@@ -760,9 +791,9 @@ describe('SellingPriceBulkExceptionFilter — the SQLSTATE map, §9', () => {
     expect(status).toHaveBeenCalledWith(expected);
   });
 
-  it('says what ex_smp_overlap MEANS, and still carries the engine text', () => {
+  it('says what ex_ipm_overlap MEANS, and still carries the engine text', () => {
     filter.catch(
-      engineError('23P01', 'conflicting key value violates exclusion constraint "ex_smp_overlap"'),
+      engineError('23P01', 'conflicting key value violates exclusion constraint "ex_ipm_overlap"'),
       host,
     );
 
@@ -771,12 +802,12 @@ describe('SellingPriceBulkExceptionFilter — the SQLSTATE map, §9', () => {
     expect(body.message).toContain('period');
     // "conflicting key value violates exclusion constraint" tells a shopkeeper
     // nothing, but it is what the log will be searched for.
-    expect(body.errors[0].message).toContain('ex_smp_overlap');
+    expect(body.errors[0].message).toContain('ex_ipm_overlap');
   });
 
   it('names the constraint behind an above-MRP refusal', () => {
     filter.catch(
-      engineError('23514', 'new row violates check constraint "ck_smp_not_above_mrp"'),
+      engineError('23514', 'new row violates check constraint "ck_ipm_not_above_mrp"'),
       host,
     );
 
@@ -785,7 +816,7 @@ describe('SellingPriceBulkExceptionFilter — the SQLSTATE map, §9', () => {
   });
 
   it('lets an unrecognised SQLSTATE fall through to 500 rather than dressing it up', () => {
-    filter.catch(engineError('42P01', 'relation "stock.stock_mrp_price" does not exist'), host);
+    filter.catch(engineError('42P01', 'relation "stock.nowhere" does not exist'), host);
 
     expect(status).toHaveBeenCalledWith(500);
   });
@@ -798,30 +829,62 @@ describe('SellingPriceBulkExceptionFilter — the SQLSTATE map, §9', () => {
   });
 });
 
-describe('StockMrpPriceGateway — the seam, §0.1', () => {
-  const gateway = new StockMrpPriceGateway(null as never);
-
-  it('is not deployed on this database, and says which statement it is waiting on', async () => {
-    expect(gateway.isDeployed).toBe(false);
-    await expect(
-      gateway.listPrices({ companyId: COMPANY_ID, branchId: BRANCH_ID, limit: 10, offset: 0 }),
-    ).rejects.toMatchObject({ status: 503 });
+describe('PriceBucketGateway.validateRows — Q26, §5.2', () => {
+  const gateway = new PriceBucketGateway(null as never);
+  const candidate = (overrides: Partial<BucketPriceCandidate> = {}): BucketPriceCandidate => ({
+    lineNo: 1,
+    companyId: COMPANY_ID,
+    itemId: BUCKET_ITEM,
+    uomId: UOM_ID,
+    itemCode: 'SALT',
+    itemName: 'Salt 1 Kg',
+    bucketId: null,
+    mrp: 120,
+    salePrice: null,
+    levels: [{ level: 1, price: PRICE, priceWot: 100, markupPerc: 0 }],
+    minPrice: null,
+    roundOff: null,
+    costRate: COST,
+    costWot: COST / 1.18,
+    actor: USER_ID,
+    ...overrides,
   });
 
-  it.each([
-    ['listBuckets', () => gateway.listBuckets(BUCKET_ITEM, COMPANY_ID, BRANCH_ID)],
-    ['validateRows', () => gateway.validateRows(null as never, [], [])],
-    [
-      'findBucketRowForUpdate',
-      () => gateway.findBucketRowForUpdate(null as never, null as never, null as never),
-    ],
-    ['updateBucketPrice', () => gateway.updateBucketPrice(null as never, SMP_ID, null as never)],
-    [
-      'insertBucketPrice',
-      () => gateway.insertBucketPrice(null as never, null as never, null as never),
-    ],
-    ['listNoStock', () => gateway.listNoStock(null as never, [SMP_ID], BRANCH_ID)],
-  ])('%s answers 503 rather than a Prisma stack trace', async (_name, call) => {
-    await expect(call()).rejects.toMatchObject({ status: 503 });
+  it('says nothing about a price between cost and MRP', () => {
+    expect(gateway.validateRows([candidate()], [0])).toEqual([]);
+  });
+
+  it('refuses a bucket row priced above its MRP', () => {
+    const [found] = gateway.validateRows(
+      [candidate({ levels: [{ level: 1, price: 125, priceWot: 0, markupPerc: 0 }] })],
+      [0],
+    );
+    expect(found).toMatchObject({ verdict: 'ABOVE_MRP', level: 1 });
+    expect(found.message).toContain('Salt 1 Kg');
+  });
+
+  it('never checks a headline row against an MRP — it has none to be above', () => {
+    expect(
+      gateway.validateRows(
+        [candidate({ mrp: null, levels: [{ level: 1, price: 500, priceWot: 0, markupPerc: 0 }] })],
+        [0],
+      ),
+    ).toEqual([]);
+  });
+
+  it('uses the stored min price when the row sends none', () => {
+    const [found] = gateway.validateRows([candidate()], [119]);
+    expect(found).toMatchObject({ verdict: 'BELOW_MIN' });
+  });
+
+  it('prefers the min price the row sends over the stored one', () => {
+    expect(gateway.validateRows([candidate({ minPrice: 100 })], [119])).toEqual([]);
+  });
+
+  it('reports below cost only when a cost is known', () => {
+    expect(gateway.validateRows([candidate({ costRate: 130 })], [0])[0]).toMatchObject({
+      verdict: 'BELOW_COST',
+    });
+    expect(gateway.validateRows([candidate({ costRate: 0 })], [0])).toEqual([]);
   });
 });

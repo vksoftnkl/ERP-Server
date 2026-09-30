@@ -32,6 +32,9 @@ type PrismaMock = {
     >;
   };
   $queryRawUnsafe: jest.Mock<Promise<unknown>, [string, ...unknown[]]>;
+  // The hierarchy guards and re-levelling (master-tree.helper) are raw SQL.
+  $queryRaw: jest.Mock;
+  $executeRaw: jest.Mock;
   $transaction: jest.Mock<Promise<unknown>, [(tx: Prisma.TransactionClient) => Promise<unknown>]>;
 };
 
@@ -66,7 +69,7 @@ describe('ItemsGroupMasterService', () => {
   let prisma: PrismaMock;
   let auditLogService: Pick<AuditLogService, 'logEntityChange'>;
   let requestContextService: { getUserId: jest.Mock };
-  let stockTrackPolicyService: { syncFromItemGroup: jest.Mock };
+  let stockTrackPolicyService: { syncFromItemGroup: jest.Mock; retireForGroup: jest.Mock };
   beforeEach(() => {
     prisma = {
       itemGroupMaster: {
@@ -93,6 +96,11 @@ describe('ItemsGroupMasterService', () => {
         >(),
       },
       $queryRawUnsafe: jest.fn<Promise<unknown>, [string, ...unknown[]]>(),
+      // No cycle, no live children or references, a live parent: the guards pass.
+      $queryRaw: jest
+        .fn()
+        .mockResolvedValue([{ hit: false, n: 0n, names: null, live: true, ord: 0 }]),
+      $executeRaw: jest.fn().mockResolvedValue(0),
       $transaction: jest.fn<
         Promise<unknown>,
         [(tx: Prisma.TransactionClient) => Promise<unknown>]
@@ -114,6 +122,7 @@ describe('ItemsGroupMasterService', () => {
     };
 
     stockTrackPolicyService = {
+      retireForGroup: jest.fn().mockResolvedValue([]),
       syncFromItemGroup: jest.fn().mockResolvedValue({
         stp_id: null,
         scope_id: ITEM_GROUP_ID,
@@ -480,7 +489,7 @@ describe('ItemsGroupMasterService', () => {
       }),
     );
 
-    await expect(service.toggleDelete(ITEM_GROUP_ID)).resolves.toEqual({
+    await expect(service.softDelete(ITEM_GROUP_ID)).resolves.toEqual({
       itg_id: ITEM_GROUP_ID,
       deleted: true,
     });
@@ -498,6 +507,8 @@ describe('ItemsGroupMasterService', () => {
     const ancestorUpdateArgs = prisma.itemGroupMaster.update.mock.calls[0][0];
     expect(ancestorUpdateArgs.where.itgId).toBe(PARENT_GROUP_ID);
     expect(ancestorUpdateArgs.data.itgPathIdsCache).toEqual([PARENT_GROUP_ID]);
+    // Notes 71 B3 — the group's derived GROUP policy is retired with it.
+    expect(stockTrackPolicyService.retireForGroup).toHaveBeenCalledWith(ITEM_GROUP_ID, prisma);
   });
   it('rejects invalid base64 image input', async () => {
     const input: SaveItemGroupDto = {

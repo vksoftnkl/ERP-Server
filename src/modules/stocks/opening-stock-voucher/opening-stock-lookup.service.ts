@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import { throwStockNotFound, toNumber } from 'src/common/utils/module-service.utils';
-import { StockMrpPriceGateway } from '../selling-price-bulk/stock-mrp-price.gateway';
+import { PriceBucketGateway } from '../selling-price-bulk/price-bucket.gateway';
 import {
   effectivePolicyLateral,
   unreversedLedgerRow,
@@ -72,20 +72,16 @@ interface EmptyCauseRow {
  * a third time, so the fragment is used here instead. The picker, the
  * preflight and the post therefore cannot disagree about a line's identity.
  *
- * PRICES GO THROUGH StockMrpPriceGateway. `stock.stock_mrp_price` is not on
- * every database (no Prisma model, ships out of band from the share), and a
- * LEFT JOIN to a relation that does not exist is not "no row", it is 42P01 —
- * the whole picker would fail on every database that lacks it. The seed is
- * therefore a second, gated read: skipped, with `mrp`/`salePrice` 0, wherever
- * the gateway says the table is not deployed. Everything above the price
- * columns was verified end to end on 192.168.0.106 (2026-09-08); the price
- * read itself is untested, per Q6's own status note.
+ * PRICES GO THROUGH PriceBucketGateway, the one class that reads the price
+ * table by bucket (plan-nestjs-one-price-table.md §5). The seed is the
+ * dearest bucket row at the most specific scope, else the headline's MRP, and
+ * 0 only when the unit has no price row at all.
  */
 @Injectable()
 export class OpeningStockLookupService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly mrpPrices: StockMrpPriceGateway,
+    private readonly mrpPrices: PriceBucketGateway,
   ) {}
 
   /**
@@ -223,15 +219,13 @@ export class OpeningStockLookupService {
       return this.throwWhyEmpty(args);
     }
 
-    const seed = this.mrpPrices.isDeployed
-      ? await this.mrpPrices.findOpeningSeedBucket({
-          companyId,
-          branchId,
-          itemId: row.itemId,
-          uomId: row.uomId,
-          onDate: args.onDate,
-        })
-      : null;
+    const seed = await this.mrpPrices.findOpeningSeedBucket({
+      companyId,
+      branchId,
+      itemId: row.itemId,
+      uomId: row.uomId,
+      onDate: args.onDate,
+    });
 
     return {
       itemId: row.itemId,

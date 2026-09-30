@@ -1,5 +1,10 @@
 # Change Selling Price (Bulk) — completion checklist
 
+> **2026-09-30:** the blocker below is gone. `plan-nestjs-one-price-table.md` retargeted the
+> gateway at `inventory.item_price_master` (buckets and headlines in one table) and it is built
+> and tested (`test/one-price-table.e2e-spec.ts`). Items here that wait on
+> `stock.stock_mrp_price` are done or void; the Qt screen is what remains.
+
 Status of `plan/plan-nestjs-change-selling-price.md`. Written 2026-09-07;
 the buildable half **built 2026-09-07** in
 `src/modules/stocks/selling-price-bulk/` (see its `README.md`).

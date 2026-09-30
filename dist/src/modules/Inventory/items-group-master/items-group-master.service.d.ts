@@ -13,10 +13,15 @@ export declare class ItemsGroupMasterService {
     save(saveItemGroupDto: SaveItemGroupDto): Promise<ItemGroupPayload>;
     getById(itgId: string): Promise<ItemGroupPayload>;
     private resolveParentName;
-    toggleDelete(itgId: string): Promise<{
+    softDelete(itgId: string): Promise<{
         itg_id: string;
         deleted: boolean;
     }>;
+    restore(itgId: string): Promise<{
+        itg_id: string;
+        deleted: boolean;
+    }>;
+    private setDeleted;
     private createItemGroup;
     private updateItemGroup;
     private ensureParentExists;

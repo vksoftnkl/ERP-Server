@@ -635,8 +635,17 @@ describe('MasterLookupService', () => {
     ) => ({
       ipmId,
       ipmItemId: ITEM_ID,
+      ipmCompanyId: null,
       ipmBranchId: branchId,
       ipmUcUnitId: `IUC-${slno}`,
+      // The headline row: no bucket, always in force.
+      ipmBucketMrp: null,
+      ipmBucketSp: null,
+      ipmKeyMrp: -1,
+      ipmKeySp: -1,
+      ipmEffectiveFrom: new Date('1900-01-01T00:00:00Z'),
+      ipmEffectiveTo: new Date('9999-12-31T00:00:00Z'),
+      ipmIsDeleted: false,
       ipmGodownId: null,
       ipmCostPrice: 0,
       ipmCostWot: 0,
@@ -689,6 +698,8 @@ describe('MasterLookupService', () => {
         itemMaster: { ...prisma.itemMaster, findFirst: jest.fn().mockResolvedValue(item) },
         itemPriceMaster: { findMany: jest.fn().mockResolvedValue(rows) },
         godownLocation: { findFirst: jest.fn().mockResolvedValue(null) },
+        // A godown-less rate falls back to the branch default (notes 51).
+        branchMaster: { findFirst: jest.fn().mockResolvedValue(null) },
         taxRateMaster: { findFirst: jest.fn().mockResolvedValue(null) },
         company: { ...prisma.company, findFirst: jest.fn().mockResolvedValue(null) },
         custItemRate: { findFirst: jest.fn().mockResolvedValue(null) },
@@ -696,6 +707,22 @@ describe('MasterLookupService', () => {
         // §1.7 — the stock figure is read off stock.stock_balance with one raw SUM.
         $queryRaw: jest.fn().mockResolvedValue([{ qty: null }]),
         saleLoadingCharge: { findMany: jest.fn().mockResolvedValue([]) },
+        // resolveTaxLedgers reads the role catalog, the rate's overrides and
+        // the ledger map; nothing mapped is a null ledger, not an error.
+        accLedgerRole: {
+          findMany: jest.fn(({ where }: { where: { alrRole: { in: string[] } } }) =>
+            Promise.resolve(
+              where.alrRole.in.map((alrRole) => ({
+                alrRole,
+                alrLabel: alrRole,
+                alrBySupply: false,
+                alrIsActive: true,
+              })),
+            ),
+          ),
+        },
+        taxRateLedger: { findMany: jest.fn().mockResolvedValue([]) },
+        accLedgerMap: { findMany: jest.fn().mockResolvedValue([]) },
       });
     };
     it('picks the lowest-slno price row as the base unit when slno numbering starts at 1', async () => {

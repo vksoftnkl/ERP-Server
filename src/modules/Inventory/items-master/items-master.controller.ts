@@ -166,7 +166,8 @@ export class ItemsMasterController {
     description:
       'Deletes only — it is no longer a toggle: an item that is already deleted answers 409 (use ' +
       'POST /items/restore). The item and every live child row are soft-deleted in ONE transaction, and ' +
-      "the item's derived stock track policy is retired with them.",
+      "the item's derived stock track policy is retired with them. Also 409 while the item still " +
+      'has stock on hand or in transit anywhere (notes 70 C4); past transactions do not block.',
   })
   @ApiQuery({ name: 'item_id', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: ItemCompositeSuccessDeleteDto })

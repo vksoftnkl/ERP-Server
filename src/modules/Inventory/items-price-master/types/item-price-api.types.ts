@@ -36,6 +36,13 @@ export interface ItemPricePayload {
   ipm_price_c_markup_perc: number;
   ipm_price_d_markup_perc: number;
   ipm_max_price: number;
+  /**
+   * The bucket this row prices — DERIVED by the server from the item's stock
+   * track policy, never sent. Both null = the headline row. A set MRP bucket
+   * always equals ipm_max_price.
+   */
+  ipm_bucket_mrp: number | null;
+  ipm_bucket_sp: number | null;
   ipm_min_price: number;
   ipm_disc_perc: number;
   ipm_disc_qty: number;

@@ -15,8 +15,22 @@ const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const audit_log_service_1 = require("../../audit-log/audit-log.service");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
+const master_tree_helper_1 = require("../utils/master-tree.helper");
 const ITEM_CATEGORY_TABLE_NAME = 'item category master';
 const ITEM_CATEGORY_AUDIT_SCREEN_NAME = 'Category Master';
+const ITEM_CATEGORY_REFERENCES = [
+    {
+        table: 'inventory.item_master',
+        column: 'item_category_id',
+        live: 'item_is_deleted = false',
+        label: 'items',
+    },
+];
+const ITEM_CATEGORY_DELETE_STATE = {
+    label: 'item category',
+    idField: 'category_id',
+    restoreRoute: '/item-categories/restore',
+};
 let ItemsCategoryMasterService = class ItemsCategoryMasterService {
     prisma;
     auditLogService;
@@ -54,7 +68,13 @@ let ItemsCategoryMasterService = class ItemsCategoryMasterService {
         });
         return parent?.categoryName ?? null;
     }
-    async toggleDelete(categoryId) {
+    async softDelete(categoryId) {
+        return this.setDeleted(categoryId, true);
+    }
+    async restore(categoryId) {
+        return this.setDeleted(categoryId, false);
+    }
+    async setDeleted(categoryId, wantDeleted) {
         return this.prisma.$transaction(async (tx) => {
             const existing = await tx.categoryMaster.findFirst({
                 where: {
@@ -64,9 +84,17 @@ let ItemsCategoryMasterService = class ItemsCategoryMasterService {
             if (!existing) {
                 (0, module_service_utils_1.throwInventoryNotFound)('Item category not found', 'category_id', `No item category found with id ${categoryId}`);
             }
+            (0, master_tree_helper_1.assertDeleteState)(existing.categoryIsDeleted, wantDeleted, ITEM_CATEGORY_DELETE_STATE);
+            if (wantDeleted) {
+                await (0, master_tree_helper_1.assertNoLiveChildren)(tx, master_tree_helper_1.ITEM_CATEGORY_TREE, categoryId);
+                await (0, master_tree_helper_1.assertNoLiveReferences)(tx, ITEM_CATEGORY_REFERENCES, categoryId, ITEM_CATEGORY_DELETE_STATE);
+            }
+            else {
+                await (0, master_tree_helper_1.assertParentLive)(tx, master_tree_helper_1.ITEM_CATEGORY_TREE, existing.categoryParentId);
+            }
             const wasDeleted = existing.categoryIsDeleted;
-            const nextDeleted = !wasDeleted;
-            const subtreeIds = await this.getActiveSubtreeIds(tx, categoryId);
+            const nextDeleted = wantDeleted;
+            const subtreeIds = nextDeleted ? await this.getActiveSubtreeIds(tx, categoryId) : [];
             const ancestorIds = await this.getAncestorIds(tx, existing.categoryParentId);
             const modifiedOn = new Date();
             const userId = this.requestContextService.getUserId() ?? module_service_utils_1.DEFAULT_ACTOR;
@@ -88,7 +116,7 @@ let ItemsCategoryMasterService = class ItemsCategoryMasterService {
                 await this.removePathIds(tx, ancestorIds, subtreeIds);
             }
             else {
-                await this.appendPathIds(tx, ancestorIds, subtreeIds);
+                await this.appendPathIds(tx, ancestorIds, await this.getActiveSubtreeIds(tx, categoryId));
             }
             const originalRecord = this.toPayload(existing);
             const modifiedRecord = this.toPayload({
@@ -135,6 +163,7 @@ let ItemsCategoryMasterService = class ItemsCategoryMasterService {
                     const ancestorIds = await this.getAncestorIds(tx, saveItemCategoryDto.category_parent_id);
                     await this.appendPathIds(tx, ancestorIds, [created.categoryId]);
                 }
+                await (0, master_tree_helper_1.relevelSubtree)(tx, master_tree_helper_1.ITEM_CATEGORY_TREE, created.categoryId);
                 const refreshed = await tx.categoryMaster.findFirst({
                     where: {
                         categoryId: created.categoryId,
@@ -193,11 +222,14 @@ let ItemsCategoryMasterService = class ItemsCategoryMasterService {
                 if (saveItemCategoryDto.category_parent_id) {
                     await this.ensureParentExists(saveItemCategoryDto.category_parent_id, tx);
                 }
-                const hasParentField = (0, module_service_utils_1.hasOwnProperty)(saveItemCategoryDto, 'category_parent_id');
+                const hasParentField = saveItemCategoryDto.category_parent_id !== undefined;
                 const nextParentId = hasParentField
                     ? (saveItemCategoryDto.category_parent_id ?? null)
                     : existing.categoryParentId;
                 const isParentChanged = hasParentField && nextParentId !== existing.categoryParentId;
+                if (isParentChanged) {
+                    await (0, master_tree_helper_1.assertNotUnderOwnSubtree)(tx, master_tree_helper_1.ITEM_CATEGORY_TREE, categoryId, nextParentId);
+                }
                 const subtreeIds = isParentChanged ? await this.getActiveSubtreeIds(tx, categoryId) : [];
                 const oldAncestorIds = isParentChanged
                     ? await this.getAncestorIds(tx, existing.categoryParentId)
@@ -220,6 +252,7 @@ let ItemsCategoryMasterService = class ItemsCategoryMasterService {
                     await this.removePathIds(tx, oldAncestorIds, subtreeIds);
                     await this.appendPathIds(tx, newAncestorIds, subtreeIds);
                 }
+                await (0, master_tree_helper_1.relevelSubtree)(tx, master_tree_helper_1.ITEM_CATEGORY_TREE, categoryId);
                 const refreshed = await tx.categoryMaster.findFirst({
                     where: {
                         categoryId,
@@ -281,9 +314,6 @@ let ItemsCategoryMasterService = class ItemsCategoryMasterService {
         }
         if ((0, module_service_utils_1.hasOwnProperty)(saveItemCategoryDto, 'category_sort')) {
             data.categorySort = saveItemCategoryDto.category_sort;
-        }
-        if ((0, module_service_utils_1.hasOwnProperty)(saveItemCategoryDto, 'category_level')) {
-            data.categoryLevel = saveItemCategoryDto.category_level;
         }
         if ((0, module_service_utils_1.hasOwnProperty)(saveItemCategoryDto, 'category_photo')) {
             data.categoryPhoto = this.decodePhotoInput(saveItemCategoryDto.category_photo);

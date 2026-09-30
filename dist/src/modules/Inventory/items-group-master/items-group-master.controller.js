@@ -48,12 +48,12 @@ let ItemsGroupMasterController = class ItemsGroupMasterController {
         };
     }
     async remove(itgId) {
-        const { itg_id, deleted } = await this.itemsGroupMasterService.toggleDelete(itgId);
-        return {
-            success: true,
-            message: deleted ? 'Item group deleted successfully' : 'Item group restored successfully',
-            data: { itg_id },
-        };
+        const { itg_id } = await this.itemsGroupMasterService.softDelete(itgId);
+        return { success: true, message: 'Item group deleted successfully', data: { itg_id } };
+    }
+    async restore(itgId) {
+        const { itg_id } = await this.itemsGroupMasterService.restore(itgId);
+        return { success: true, message: 'Item group restored successfully', data: { itg_id } };
     }
     withUploadedPhoto(saveItemGroupDto, itgPhotoFile) {
         if (!itgPhotoFile) {
@@ -99,16 +99,38 @@ __decorate([
 __decorate([
     (0, common_1.Delete)('delete'),
     (0, common_1.Version)(api_version_1.API_VERSION),
-    (0, swagger_1.ApiOperation)({ summary: 'Soft delete item group by id' }),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Soft delete item group by id',
+        description: 'Deletes only — it is not a toggle: an already deleted group is a 409 (use POST ' +
+            '/item-groups/restore). Refused with 409 while live sub-groups or live items still use it.',
+    }),
     (0, swagger_1.ApiQuery)({ name: 'itg_id', schema: { type: 'string', format: 'uuid' } }),
     (0, swagger_1.ApiOkResponse)({ type: item_group_response_dto_1.ItemGroupSuccessDeleteDto }),
     (0, swagger_1.ApiBadRequestResponse)({ type: item_group_response_dto_1.ItemGroupErrorResponseDto }),
     (0, swagger_1.ApiNotFoundResponse)({ type: item_group_response_dto_1.ItemGroupErrorResponseDto }),
+    (0, swagger_1.ApiConflictResponse)({ type: item_group_response_dto_1.ItemGroupErrorResponseDto }),
     __param(0, (0, common_1.Query)('itg_id', new common_1.ParseUUIDPipe({ version: '7' }))),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", Promise)
 ], ItemsGroupMasterController.prototype, "remove", null);
+__decorate([
+    (0, common_1.Post)('restore'),
+    (0, common_1.Version)(api_version_1.API_VERSION),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Restore a soft-deleted item group',
+        description: '409 when the group is not deleted, or when its parent group is.',
+    }),
+    (0, swagger_1.ApiQuery)({ name: 'itg_id', schema: { type: 'string', format: 'uuid' } }),
+    (0, swagger_1.ApiCreatedResponse)({ type: item_group_response_dto_1.ItemGroupSuccessDeleteDto }),
+    (0, swagger_1.ApiBadRequestResponse)({ type: item_group_response_dto_1.ItemGroupErrorResponseDto }),
+    (0, swagger_1.ApiNotFoundResponse)({ type: item_group_response_dto_1.ItemGroupErrorResponseDto }),
+    (0, swagger_1.ApiConflictResponse)({ type: item_group_response_dto_1.ItemGroupErrorResponseDto }),
+    __param(0, (0, common_1.Query)('itg_id', new common_1.ParseUUIDPipe({ version: '7' }))),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", Promise)
+], ItemsGroupMasterController.prototype, "restore", null);
 exports.ItemsGroupMasterController = ItemsGroupMasterController = __decorate([
     (0, swagger_1.ApiTags)('Item Groups'),
     (0, swagger_1.ApiBearerAuth)('access-token'),

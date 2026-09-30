@@ -10,20 +10,19 @@ exports.SellingPriceBulkModule = void 0;
 const common_1 = require("@nestjs/common");
 const audit_log_module_1 = require("../../audit-log/audit-log.module");
 const app_settings_module_1 = require("../../settings/appSettings/app-settings.module");
-const items_price_master_module_1 = require("../../Inventory/items-price-master/items-price-master.module");
 const selling_price_bulk_controller_1 = require("./selling-price-bulk.controller");
 const selling_price_bulk_exception_filter_1 = require("./selling-price-bulk-exception.filter");
 const selling_price_bulk_service_1 = require("./selling-price-bulk.service");
-const stock_mrp_price_gateway_1 = require("./stock-mrp-price.gateway");
+const price_bucket_gateway_1 = require("./price-bucket.gateway");
 let SellingPriceBulkModule = class SellingPriceBulkModule {
 };
 exports.SellingPriceBulkModule = SellingPriceBulkModule;
 exports.SellingPriceBulkModule = SellingPriceBulkModule = __decorate([
     (0, common_1.Module)({
-        imports: [audit_log_module_1.AuditLogModule, app_settings_module_1.AppSettingsModule, items_price_master_module_1.ItemsPriceMasterModule],
+        imports: [audit_log_module_1.AuditLogModule, app_settings_module_1.AppSettingsModule],
         controllers: [selling_price_bulk_controller_1.SellingPriceBulkController],
-        providers: [selling_price_bulk_service_1.SellingPriceBulkService, selling_price_bulk_exception_filter_1.SellingPriceBulkExceptionFilter, stock_mrp_price_gateway_1.StockMrpPriceGateway],
-        exports: [selling_price_bulk_service_1.SellingPriceBulkService, stock_mrp_price_gateway_1.StockMrpPriceGateway],
+        providers: [selling_price_bulk_service_1.SellingPriceBulkService, selling_price_bulk_exception_filter_1.SellingPriceBulkExceptionFilter, price_bucket_gateway_1.PriceBucketGateway],
+        exports: [selling_price_bulk_service_1.SellingPriceBulkService, price_bucket_gateway_1.PriceBucketGateway],
     })
 ], SellingPriceBulkModule);
 //# sourceMappingURL=selling-price-bulk.module.js.map

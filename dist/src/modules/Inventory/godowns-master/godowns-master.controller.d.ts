@@ -13,4 +13,8 @@ export declare class GodownsMasterController {
         gdl_id: string;
         deleted: boolean;
     }>>;
+    restore(queryDto: DeleteGodownQueryDto): Promise<GodownSuccessResponse<{
+        gdl_id: string;
+        deleted: boolean;
+    }>>;
 }

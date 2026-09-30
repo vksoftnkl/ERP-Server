@@ -17,6 +17,8 @@ const items_ean_code_master_service_1 = require("../items-ean-code-master/items-
 const items_reorder_master_service_1 = require("../items-reorder-master/items-reorder-master.service");
 const item_master_update_service_1 = require("./item-master-update.service");
 const stock_track_policy_service_1 = require("../../stocks/stock-track-policy/stock-track-policy.service");
+const master_tree_helper_1 = require("../utils/master-tree.helper");
+const price_bucket_service_1 = require("../items-price-master/price-bucket.service");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
 const audit_log_service_1 = require("../../audit-log/audit-log.service");
@@ -40,6 +42,14 @@ const ITEM_FOREIGN_KEYS = {
     item_master_item_company_id_fkey: { field: 'item_company_id', what: 'company' },
     fk_item_track_preset: { field: 'item_track_preset_id', what: 'stock track preset' },
 };
+const ITEM_STOCK_REFERENCES = [
+    {
+        table: 'stock.stock_balance',
+        column: 'sbl_item_id',
+        live: 'sbl_is_deleted = false AND (sbl_on_hand_qty <> 0 OR sbl_transit_in_qty <> 0)',
+        label: 'stock holdings with quantity on hand or in transit',
+    },
+];
 let ItemsMasterService = class ItemsMasterService {
     prisma;
     auditLogService;
@@ -50,7 +60,8 @@ let ItemsMasterService = class ItemsMasterService {
     itemsReorderMasterService;
     itemMasterUpdateService;
     stockTrackPolicyService;
-    constructor(prisma, auditLogService, requestContextService, itemUnitConversionService, itemsPriceMasterService, itemsEanCodeMasterService, itemsReorderMasterService, itemMasterUpdateService, stockTrackPolicyService) {
+    priceBucketService;
+    constructor(prisma, auditLogService, requestContextService, itemUnitConversionService, itemsPriceMasterService, itemsEanCodeMasterService, itemsReorderMasterService, itemMasterUpdateService, stockTrackPolicyService, priceBucketService) {
         this.prisma = prisma;
         this.auditLogService = auditLogService;
         this.requestContextService = requestContextService;
@@ -60,6 +71,7 @@ let ItemsMasterService = class ItemsMasterService {
         this.itemsReorderMasterService = itemsReorderMasterService;
         this.itemMasterUpdateService = itemMasterUpdateService;
         this.stockTrackPolicyService = stockTrackPolicyService;
+        this.priceBucketService = priceBucketService;
     }
     async save(saveItemDto, tx) {
         if (saveItemDto.item_id) {
@@ -69,8 +81,13 @@ let ItemsMasterService = class ItemsMasterService {
     }
     async saveComposite(dto) {
         return this.prisma.$transaction(async (tx) => {
-            const item = await this.save(dto, tx);
+            const item = dto.item_id
+                ? await this.updateItem(dto, tx, { rekeyPrices: false })
+                : await this.createItem(dto, tx);
             const children = await this.itemMasterUpdateService.syncChildren(item.item_id, dto, tx);
+            if (await this.priceBucketService.rekeyItem(tx, item.item_id)) {
+                children.prices = await this.itemsPriceMasterService.findByItemId(item.item_id, tx);
+            }
             return { item, ...children };
         }, COMPOSITE_TRANSACTION_OPTIONS);
     }
@@ -258,7 +275,7 @@ let ItemsMasterService = class ItemsMasterService {
             where,
             include: {
                 prices: {
-                    where: { ipmIsDeleted: false },
+                    where: { ipmIsDeleted: false, ipmBucketMrp: null, ipmBucketSp: null },
                     orderBy: [
                         { itemUnitConversion: { iucIsDefaultUnit: 'desc' } },
                         { ipmSlNo: 'asc' },
@@ -346,6 +363,10 @@ let ItemsMasterService = class ItemsMasterService {
                     },
                 ]);
             }
+            await (0, master_tree_helper_1.assertNoLiveReferences)(tx, ITEM_STOCK_REFERENCES, itemId, {
+                label: 'item',
+                idField: 'item_id',
+            });
             const item = await this.setItemDeleted(tx, existing, true);
             const [unitConversionIds, priceIds, eanCodeIds, reorderIds] = await Promise.all([
                 tx.itemUnitConversion
@@ -550,7 +571,7 @@ let ItemsMasterService = class ItemsMasterService {
             throw error;
         }
     }
-    async updateItem(saveItemDto, tx) {
+    async updateItem(saveItemDto, tx, options = { rekeyPrices: true }) {
         const itemId = saveItemDto.item_id;
         const itemNameEn = saveItemDto.item_name_en?.trim();
         if (!itemNameEn) {
@@ -592,6 +613,9 @@ let ItemsMasterService = class ItemsMasterService {
                 include: TRACK_PRESET_INCLUDE,
             });
             await this.stockTrackPolicyService.syncFromItem(updated, client);
+            if (options.rekeyPrices) {
+                await this.priceBucketService.rekeyItem(client, itemId);
+            }
             const payload = this.toPayload(updated);
             await this.auditLogService.logEntityChange({
                 action: 'update',
@@ -898,6 +922,7 @@ exports.ItemsMasterService = ItemsMasterService = __decorate([
         items_ean_code_master_service_1.ItemsEanCodeMasterService,
         items_reorder_master_service_1.ItemsReorderMasterService,
         item_master_update_service_1.ItemMasterUpdateService,
-        stock_track_policy_service_1.StockTrackPolicyService])
+        stock_track_policy_service_1.StockTrackPolicyService,
+        price_bucket_service_1.PriceBucketService])
 ], ItemsMasterService);
 //# sourceMappingURL=items-master.service.js.map

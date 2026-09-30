@@ -99,21 +99,40 @@ export class ItemsSectionMasterController {
 
   @Delete('delete')
   @Version(API_VERSION)
-  @ApiOperation({ summary: 'Soft delete or restore item section by id' })
+  @ApiOperation({
+    summary: 'Soft delete item section by id',
+    description:
+      'Deletes only — it is not a toggle: an already deleted section is a 409 (use POST ' +
+      '/item-sections/restore). Refused with 409 while live sub-sections or live items still use it.',
+  })
   @ApiQuery({ name: 'sec_id', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: ItemSectionSuccessDeleteDto })
   @ApiBadRequestResponse({ type: ItemSectionErrorResponseDto })
   @ApiNotFoundResponse({ type: ItemSectionErrorResponseDto })
+  @ApiConflictResponse({ type: ItemSectionErrorResponseDto })
   async remove(
     @Query('sec_id', new ParseUUIDPipe({ version: '7' })) secId: string,
   ): Promise<ItemSectionSuccessResponse<{ sec_id: string; deleted: boolean }>> {
-    const { sec_id, deleted } = await this.itemsSectionMasterService.toggleDelete(secId);
+    const data = await this.itemsSectionMasterService.softDelete(secId);
+    return { success: true, message: 'Item section deleted successfully', data };
+  }
 
-    return {
-      success: true,
-      message: deleted ? 'Item section deleted successfully' : 'Item section restored successfully',
-      data: { sec_id, deleted },
-    };
+  @Post('restore')
+  @Version(API_VERSION)
+  @ApiOperation({
+    summary: 'Restore a soft-deleted item section',
+    description: '409 when the section is not deleted, or when its parent is.',
+  })
+  @ApiQuery({ name: 'sec_id', schema: { type: 'string', format: 'uuid' } })
+  @ApiCreatedResponse({ type: ItemSectionSuccessDeleteDto })
+  @ApiBadRequestResponse({ type: ItemSectionErrorResponseDto })
+  @ApiNotFoundResponse({ type: ItemSectionErrorResponseDto })
+  @ApiConflictResponse({ type: ItemSectionErrorResponseDto })
+  async restore(
+    @Query('sec_id', new ParseUUIDPipe({ version: '7' })) secId: string,
+  ): Promise<ItemSectionSuccessResponse<{ sec_id: string; deleted: boolean }>> {
+    const data = await this.itemsSectionMasterService.restore(secId);
+    return { success: true, message: 'Item section restored successfully', data };
   }
 
   private withUploadedPhoto(

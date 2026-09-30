@@ -39,6 +39,18 @@ model ItemPriceMaster {
   ipmCreatedBy        String?       @db.Uuid @map("ipm_created_by")
   ipmUpdatedOn        DateTime?     @db.Timestamptz(6) @map("ipm_updated_on")
   ipmUpdatedBy        String?       @db.Uuid @map("ipm_updated_by")
+  // The bucket (plan-nestjs-one-price-table.md §1): the price-defining half of
+  // a lot's identity. Both NULL = the headline row. DERIVED BY THE SERVER from
+  // the item's stock track policy (PriceBucketService), never sent by a client.
+  ipmBucketMrp        Decimal?      @db.Decimal(18, 6) @map("ipm_bucket_mrp")
+  ipmBucketSp         Decimal?      @db.Decimal(18, 6) @map("ipm_bucket_sp")
+  // GENERATED ALWAYS AS (COALESCE(ipm_bucket_*, -1)) STORED — the sentinel
+  // stock_lot's slt_key_mrp / slt_key_sp use. Read-only: NEVER write them.
+  ipmKeyMrp           Decimal?      @default(dbgenerated()) @db.Decimal(18, 6) @map("ipm_key_mrp")
+  ipmKeySp            Decimal?      @default(dbgenerated()) @db.Decimal(18, 6) @map("ipm_key_sp")
+  // Dormant effective dating: the defaults mean "always". No v1 screen writes them.
+  ipmEffectiveFrom    DateTime      @default(dbgenerated("'1900-01-01'::date")) @db.Date @map("ipm_effective_from")
+  ipmEffectiveTo      DateTime      @default(dbgenerated("'9999-12-31'::date")) @db.Date @map("ipm_effective_to")
 
   item                ItemMaster     @relation("ItemPrices", fields: [ipmItemId], references: [itemId], onUpdate: Cascade, onDelete: Restrict, map: "fk_ipm_item")
   company             Company?       @relation("CompanyItemPrices", fields: [ipmCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_ipm_company_id")
@@ -49,11 +61,18 @@ model ItemPriceMaster {
   @@index([ipmItemId, ipmUcUnitId], map: "idx_item_price_master_item")
   @@map("item_price_master")
   @@schema("inventory")
-  // Partial unique index uq_item_price_master_scope is not expressible in Prisma
-  // schema: (ipm_company_id, ipm_branch_id, ipm_item_id, ipm_uc_unit_id)
-  // NULLS NOT DISTINCT WHERE ipm_is_deleted = false. It replaced
-  // uq_item_price_master_branch and uq_item_price_master_item_unit_global.
+  // Not expressible in Prisma schema, all raw SQL in
+  // 20260930160000_one_price_table:
+  //   ex_ipm_overlap — EXCLUDE USING gist over (COALESCE(company, nil),
+  //     COALESCE(branch, nil), item, unit, ipm_key_mrp, ipm_key_sp,
+  //     daterange(effective_from, effective_to, '[]')) WHERE NOT deleted,
+  //     DEFERRABLE. One price set per bucket per scope at a time. It replaced
+  //     uq_item_price_master_scope, which it subsumes; a 23P01 is a 409.
+  //   ck_ipm_bucket_mrp / ck_ipm_bucket_sp — a bucket value is > 0.
+  //   ck_ipm_bucket_mrp_is_max — a bucket row's MRP IS its ipm_max_price.
+  //   ck_ipm_not_above_mrp — a BUCKET row's A-D prices are <= its MRP.
+  //     Headline rows are not checked (skip_mrp shops, legacy test rows).
+  //   ck_ipm_dates, chk_ipm_nonnegative, and the partial index ix_ipm_lookup.
   // ipm_godown_id is deliberately NOT part of the key, so two godowns cannot
-  // hold different prices for the same item + unit + branch.
-  // CHECK constraints are not expressible in Prisma schema.
+  // hold different prices for the same item + unit + branch + bucket.
 }

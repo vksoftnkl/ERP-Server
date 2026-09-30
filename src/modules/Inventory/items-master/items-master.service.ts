@@ -10,6 +10,8 @@ import { ItemsEanCodeMasterService } from '../items-ean-code-master/items-ean-co
 import { ItemsReorderMasterService } from '../items-reorder-master/items-reorder-master.service';
 import { ItemMasterUpdateService } from './item-master-update.service';
 import { StockTrackPolicyService } from 'src/modules/stocks/stock-track-policy/stock-track-policy.service';
+import { assertNoLiveReferences, type LiveReference } from '../utils/master-tree.helper';
+import { PriceBucketService } from '../items-price-master/price-bucket.service';
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import { toNumber } from 'src/common/utils/module-service.utils';
 import { AuditLogService } from 'src/modules/audit-log/audit-log.service';
@@ -55,6 +57,15 @@ const ITEM_FOREIGN_KEYS: Readonly<Record<string, { field: string; what: string }
   item_master_item_company_id_fkey: { field: 'item_company_id', what: 'company' },
   fk_item_track_preset: { field: 'item_track_preset_id', what: 'stock track preset' },
 };
+/** What keeps an item from being deleted (notes 70 C4): stock that still exists. */
+const ITEM_STOCK_REFERENCES: readonly LiveReference[] = [
+  {
+    table: 'stock.stock_balance',
+    column: 'sbl_item_id',
+    live: 'sbl_is_deleted = false AND (sbl_on_hand_qty <> 0 OR sbl_transit_in_qty <> 0)',
+    label: 'stock holdings with quantity on hand or in transit',
+  },
+];
 @Injectable()
 export class ItemsMasterService {
   constructor(
@@ -67,6 +78,7 @@ export class ItemsMasterService {
     private readonly itemsReorderMasterService: ItemsReorderMasterService,
     private readonly itemMasterUpdateService: ItemMasterUpdateService,
     private readonly stockTrackPolicyService: StockTrackPolicyService,
+    private readonly priceBucketService: PriceBucketService,
   ) {}
   /**
    * @param tx When supplied, the write runs inside the caller's transaction
@@ -94,8 +106,17 @@ export class ItemsMasterService {
    */
   async saveComposite(dto: SaveItemCompositeDto): Promise<ItemCompositePayload> {
     return this.prisma.$transaction(async (tx) => {
-      const item = await this.save(dto, tx);
+      const item = dto.item_id
+        ? await this.updateItem(dto, tx, { rekeyPrices: false })
+        : await this.createItem(dto, tx);
       const children = await this.itemMasterUpdateService.syncChildren(item.item_id, dto, tx);
+      // AFTER the price sync, not before: this save may both change the
+      // tracking (preset, group) and remove the row that would otherwise
+      // collide under it, and the payload is the final word on which rows
+      // exist. Re-keying first would refuse a save whose end state is valid.
+      if (await this.priceBucketService.rekeyItem(tx, item.item_id)) {
+        children.prices = await this.itemsPriceMasterService.findByItemId(item.item_id, tx);
+      }
       return { item, ...children };
     }, COMPOSITE_TRANSACTION_OPTIONS);
   }
@@ -356,7 +377,9 @@ export class ItemsMasterService {
       where,
       include: {
         prices: {
-          where: { ipmIsDeleted: false },
+          // Headline rows only: the bulk load shows one price per item, and
+          // an MRP bucket row is not it (plan-nestjs-one-price-table.md).
+          where: { ipmIsDeleted: false, ipmBucketMrp: null, ipmBucketSp: null },
           orderBy: [
             { itemUnitConversion: { iucIsDefaultUnit: 'desc' } },
             { ipmSlNo: 'asc' },
@@ -469,6 +492,14 @@ export class ItemsMasterService {
           },
         ]);
       }
+      // Notes 70 C4 — an item with stock on hand (or on its way to a branch)
+      // is not deleted: it would vanish from every picker while the holding
+      // stays valued and unsellable. Past transactions do not block — a soft
+      // delete keeps them readable — only stock that still exists does.
+      await assertNoLiveReferences(tx, ITEM_STOCK_REFERENCES, itemId, {
+        label: 'item',
+        idField: 'item_id',
+      });
       const item = await this.setItemDeleted(tx, existing, true);
       const [unitConversionIds, priceIds, eanCodeIds, reorderIds] = await Promise.all([
         tx.itemUnitConversion
@@ -719,9 +750,15 @@ export class ItemsMasterService {
       throw error;
     }
   }
+  /**
+   * @param options.rekeyPrices re-derive the item's price buckets under the
+   *   policy this save leaves in force (plan-nestjs-one-price-table.md §4.3).
+   *   saveComposite turns it off and re-keys after its own price sync instead.
+   */
   private async updateItem(
     saveItemDto: SaveItemDto,
     tx?: Prisma.TransactionClient,
+    options: { rekeyPrices: boolean } = { rekeyPrices: true },
   ): Promise<ItemPayload> {
     const itemId = saveItemDto.item_id!;
     const itemNameEn = saveItemDto.item_name_en?.trim();
@@ -779,6 +816,12 @@ export class ItemsMasterService {
       // nothing the policy cares about changed, and left alone entirely when an
       // admin has hand-authored the policy for this item.
       await this.stockTrackPolicyService.syncFromItem(updated, client);
+      // A new preset or group can change which price dimensions are buckets.
+      // Every live price row of the item is re-keyed in this transaction, and
+      // two that would become one are refused with both named.
+      if (options.rekeyPrices) {
+        await this.priceBucketService.rekeyItem(client, itemId);
+      }
       const payload = this.toPayload(updated);
       await this.auditLogService.logEntityChange(
         {

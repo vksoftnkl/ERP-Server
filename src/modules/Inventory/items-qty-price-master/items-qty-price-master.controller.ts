@@ -139,7 +139,12 @@ export class ItemsQtyPriceMasterController {
 
   @Delete('delete')
   @Version(API_VERSION)
-  @ApiOperation({ summary: 'Soft delete or restore item qty price by id' })
+  @ApiOperation({
+    summary: 'Soft delete item qty price slab(s) by id',
+    description:
+      'Deletes only — it is not a toggle: a slab that is already deleted is a 409 (use POST ' +
+      '/item-qty-prices/restore). A batch is all-or-nothing.',
+  })
   @ApiQuery({ name: 'iqp_id', required: false, schema: { type: 'string', format: 'uuid' } })
   @ApiBody({
     required: false,
@@ -156,13 +161,56 @@ export class ItemsQtyPriceMasterController {
   @ApiOkResponse({ type: ItemQtyPriceSuccessDeleteDto })
   @ApiBadRequestResponse({ type: ItemQtyPriceErrorResponseDto })
   @ApiNotFoundResponse({ type: ItemQtyPriceErrorResponseDto })
+  @ApiConflictResponse({ type: ItemQtyPriceErrorResponseDto })
   async remove(
     @Body() body: unknown,
     @Query('iqp_id') iqpId?: string,
   ): Promise<ItemQtyPriceSuccessResponse<ItemQtyPriceDeleteResult | ItemQtyPriceDeleteResult[]>> {
     const deleteItemQtyPriceDto = await this.resolveDeletePayload(body, iqpId);
     const isArray = Array.isArray(deleteItemQtyPriceDto);
-    const data = await this.itemsQtyPriceMasterService.toggleDelete(
+    const data = await this.itemsQtyPriceMasterService.softDelete(
+      isArray ? deleteItemQtyPriceDto.map((item) => item.iqp_id) : deleteItemQtyPriceDto.iqp_id,
+    );
+
+    return {
+      success: true,
+      message: this.buildToggleDeleteMessage(data),
+      data,
+    };
+  }
+
+  @Post('restore')
+  @Version(API_VERSION)
+  @ApiOperation({
+    summary: 'Restore soft-deleted item qty price slab(s) by id',
+    description:
+      '409 when a slab is not deleted, or when a live slab now holds the same key. A batch is ' +
+      'all-or-nothing.',
+  })
+  @ApiQuery({ name: 'iqp_id', required: false, schema: { type: 'string', format: 'uuid' } })
+  @ApiBody({
+    required: false,
+    schema: {
+      oneOf: [
+        { $ref: getSchemaPath(DeleteItemQtyPriceDto) },
+        {
+          type: 'array',
+          items: { $ref: getSchemaPath(DeleteItemQtyPriceDto) },
+        },
+      ],
+    },
+  })
+  @ApiCreatedResponse({ type: ItemQtyPriceSuccessDeleteDto })
+  @ApiBadRequestResponse({ type: ItemQtyPriceErrorResponseDto })
+  @ApiNotFoundResponse({ type: ItemQtyPriceErrorResponseDto })
+  @ApiConflictResponse({ type: ItemQtyPriceErrorResponseDto })
+  async restore(
+    @Body() body: unknown,
+    @Query('iqp_id') iqpId?: string,
+  ): Promise<ItemQtyPriceSuccessResponse<ItemQtyPriceDeleteResult | ItemQtyPriceDeleteResult[]>> {
+    const deleteItemQtyPriceDto = await this.resolveDeletePayload(body, iqpId);
+    const isArray = Array.isArray(deleteItemQtyPriceDto);
+    const data = await this.itemsQtyPriceMasterService.restore(
       isArray ? deleteItemQtyPriceDto.map((item) => item.iqp_id) : deleteItemQtyPriceDto.iqp_id,
     );
 

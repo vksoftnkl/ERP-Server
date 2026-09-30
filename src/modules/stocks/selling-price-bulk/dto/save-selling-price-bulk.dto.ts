@@ -86,9 +86,9 @@ export class SaveSellingPriceRowDto {
     format: 'uuid',
     nullable: true,
     description:
-      'The bucket loaded into this row, when it had one. Absent means the row is either a new ' +
-      'bucket (S3) or a headline row (§6) — which of the two is decided by mrp/salePrice, ' +
-      'never by this field.',
+      'The price row (ipm_id) loaded into this row, when it had one. Informational: the save ' +
+      'finds the row to write by item, unit, bucket and target scope — never by this id — so ' +
+      'a CHAIN-sourced id saved at This branch still creates the override.',
   })
   @NullableUuid()
   bucketId?: string | null;
@@ -109,7 +109,9 @@ export class SaveSellingPriceRowDto {
   @ApiPropertyOptional({
     type: Number,
     nullable: true,
-    description: 'Identity dimension, echoed back from the load. Never edited here — see §12.',
+    description:
+      "Bucket dimension, echoed back from the load. Never edited here. Blanked by the item's " +
+      'stock track policy on save: an MRP the policy does not track makes this the headline row.',
   })
   @NullableNumber(0)
   mrp?: number | null;

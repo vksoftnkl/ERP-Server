@@ -33,6 +33,7 @@ import { AccountLedgerMastersModule } from './modules/accountsModule/accountLedg
 import { LedgerBankAccountModule } from './modules/accountsModule/ledgerBankAccount/ledger-bank-account.module';
 import { BranchMasterModule } from './modules/settings/branchMaster/branch-master.module';
 import { CompanyMasterModule } from './modules/settings/companyMaster/company-master.module';
+import { AppThemeModule } from './modules/settings/appTheme/app-theme.module';
 import { CompanyGroupMasterModule } from './modules/accountsModule/companyGroupMaster/company-group-master.module';
 import { EmployeeDepartmentMasterModule } from './modules/settings/employeeDepartmentMaster/employee-department-master.module';
 import { EmployeeDesignationMasterModule } from './modules/settings/employeeDesignationMaster/employee-designation-master.module';
@@ -180,6 +181,7 @@ const isThrottlerEnabled = parseBoolean(process.env.THROTTLE_ENABLED, true);
     LedgerShippingAddressModule,
     BranchMasterModule,
     CompanyMasterModule,
+    AppThemeModule,
     CompanyGroupMasterModule,
     EmployeeDepartmentMasterModule,
     EmployeeDesignationMasterModule,

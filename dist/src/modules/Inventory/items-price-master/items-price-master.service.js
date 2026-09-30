@@ -15,21 +15,46 @@ const configured_grid_sql_service_1 = require("../../../common/configured-grid-s
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const audit_log_service_1 = require("../../audit-log/audit-log.service");
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
+const price_bucket_service_1 = require("./price-bucket.service");
+const item_tax_rate_helper_1 = require("../utils/item-tax-rate.helper");
+const selling_price_math_helper_1 = require("../../stocks/selling-price-bulk/selling-price-math.helper");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
 const module_list_utils_1 = require("../../../common/utils/module-list.utils");
 const DEFAULT_AUDIT_ACTOR = 'system';
 const ITEM_PRICE_TABLE_NAME = 'item price master';
 const ITEM_PRICE_AUDIT_SCREEN_NAME = 'Item Price Master';
+const CHECK_MESSAGES = {
+    ck_ipm_not_above_mrp: {
+        field: 'ipm_max_price',
+        message: 'A price for one MRP cannot be above that MRP. Lower the selling price, or correct the MRP.',
+    },
+    ck_ipm_bucket_mrp_is_max: {
+        field: 'ipm_max_price',
+        message: "A price row's MRP bucket and its MRP must be the same figure.",
+    },
+    ck_ipm_bucket_mrp: { field: 'ipm_max_price', message: 'An MRP bucket must be above zero.' },
+    ck_ipm_bucket_sp: {
+        field: 'ipm_sales_price_a',
+        message: 'A sale-price bucket must be above zero.',
+    },
+    ck_ipm_dates: { field: 'request', message: 'A price cannot end before it starts.' },
+    chk_ipm_nonnegative: {
+        field: 'request',
+        message: 'Prices, charges and points cannot be negative.',
+    },
+};
 let ItemsPriceMasterService = class ItemsPriceMasterService {
     prisma;
     auditLogService;
     configuredGridSqlService;
     requestContextService;
-    constructor(prisma, auditLogService, configuredGridSqlService, requestContextService) {
+    priceBucketService;
+    constructor(prisma, auditLogService, configuredGridSqlService, requestContextService, priceBucketService) {
         this.prisma = prisma;
         this.auditLogService = auditLogService;
         this.configuredGridSqlService = configuredGridSqlService;
         this.requestContextService = requestContextService;
+        this.priceBucketService = priceBucketService;
     }
     async save(saveItemPriceDto, tx) {
         const saveItems = Array.isArray(saveItemPriceDto) ? saveItemPriceDto : [saveItemPriceDto];
@@ -193,6 +218,8 @@ let ItemsPriceMasterService = class ItemsPriceMasterService {
             ipmUpdatedBy: updatedBy,
         };
         this.applyOptionalFields(data, saveItemPriceDto);
+        await this.applyBucket(tx, data, saveItemPriceDto, null);
+        await this.fillLevelFigures(tx, data, saveItemPriceDto, null);
         const created = await tx.itemPriceMaster.create({
             data,
         });
@@ -245,6 +272,8 @@ let ItemsPriceMasterService = class ItemsPriceMasterService {
             data.ipmGodownId = saveItemPriceDto.ipm_godown_id ?? null;
         }
         this.applyOptionalFields(data, saveItemPriceDto);
+        await this.applyBucket(tx, data, saveItemPriceDto, existing);
+        await this.fillLevelFigures(tx, data, saveItemPriceDto, existing);
         const updated = await tx.itemPriceMaster.update({
             where: {
                 ipmId,
@@ -265,6 +294,93 @@ let ItemsPriceMasterService = class ItemsPriceMasterService {
             notes: 'Item price updated',
         }, tx);
         return payload;
+    }
+    async applyBucket(tx, data, dto, existing) {
+        const pick = (sent, stored) => sent !== undefined ? sent : stored !== undefined ? (0, module_service_utils_1.toNumber)(stored) : 0;
+        const [key] = await this.priceBucketService.deriveBuckets(tx, dto.ipm_item_id, [
+            {
+                companyId: dto.ipm_company_id !== undefined ? dto.ipm_company_id : (existing?.ipmCompanyId ?? null),
+                branchId: dto.ipm_branch_id !== undefined ? dto.ipm_branch_id : (existing?.ipmBranchId ?? null),
+                maxPrice: pick(dto.ipm_max_price, existing?.ipmMaxPrice),
+                prices: [
+                    pick(dto.ipm_sales_price_a, existing?.ipmSalesPriceA),
+                    pick(dto.ipm_sales_price_b, existing?.ipmSalesPriceB),
+                    pick(dto.ipm_sales_price_c, existing?.ipmSalesPriceC),
+                    pick(dto.ipm_sales_price_d, existing?.ipmSalesPriceD),
+                ],
+            },
+        ]);
+        data.ipmBucketMrp = key.mrp;
+        data.ipmBucketSp = key.salePrice;
+    }
+    async fillLevelFigures(tx, data, dto, existing) {
+        const levels = [
+            {
+                level: 1,
+                price: dto.ipm_sales_price_a,
+                wot: dto.ipm_price_a_wot,
+                markup: dto.ipm_price_a_markup_perc,
+            },
+            {
+                level: 2,
+                price: dto.ipm_sales_price_b,
+                wot: dto.ipm_price_b_wot,
+                markup: dto.ipm_price_b_markup_perc,
+            },
+            {
+                level: 3,
+                price: dto.ipm_sales_price_c,
+                wot: dto.ipm_price_c_wot,
+                markup: dto.ipm_price_c_markup_perc,
+            },
+            {
+                level: 4,
+                price: dto.ipm_sales_price_d,
+                wot: dto.ipm_price_d_wot,
+                markup: dto.ipm_price_d_markup_perc,
+            },
+        ];
+        const missing = levels.filter((l) => l.price !== undefined && (l.wot === undefined || l.markup === undefined));
+        if (!missing.length) {
+            return;
+        }
+        const taxPerc = (await (0, item_tax_rate_helper_1.resolveItemTaxRates)(tx, [dto.ipm_item_id])).get(dto.ipm_item_id)?.taxPerc ?? 0;
+        const cost = dto.ipm_cost_price !== undefined
+            ? dto.ipm_cost_price
+            : existing
+                ? (0, module_service_utils_1.toNumber)(existing.ipmCostPrice)
+                : 0;
+        for (const l of missing) {
+            const figures = (0, selling_price_math_helper_1.recomputeLevel)(l.level, l.price ?? 0, taxPerc, cost);
+            const wot = l.wot === undefined ? figures.priceWot : undefined;
+            const markup = l.markup === undefined ? figures.markupPerc : undefined;
+            switch (l.level) {
+                case 1:
+                    if (wot !== undefined)
+                        data.ipmPriceAWot = wot;
+                    if (markup !== undefined)
+                        data.ipmPriceAMarkupPerc = markup;
+                    break;
+                case 2:
+                    if (wot !== undefined)
+                        data.ipmPriceBWot = wot;
+                    if (markup !== undefined)
+                        data.ipmPriceBMarkupPerc = markup;
+                    break;
+                case 3:
+                    if (wot !== undefined)
+                        data.ipmPriceCWot = wot;
+                    if (markup !== undefined)
+                        data.ipmPriceCMarkupPerc = markup;
+                    break;
+                case 4:
+                    if (wot !== undefined)
+                        data.ipmPriceDWot = wot;
+                    if (markup !== undefined)
+                        data.ipmPriceDMarkupPerc = markup;
+                    break;
+            }
+        }
     }
     async requireUnitConversion(tx, saveItemPriceDto) {
         const unitConversion = await tx.itemUnitConversion.findFirst({
@@ -419,6 +535,8 @@ let ItemsPriceMasterService = class ItemsPriceMasterService {
             ipm_price_c_markup_perc: (0, module_service_utils_1.toNumber)(record.ipmPriceCMarkupPerc),
             ipm_price_d_markup_perc: (0, module_service_utils_1.toNumber)(record.ipmPriceDMarkupPerc),
             ipm_max_price: (0, module_service_utils_1.toNumber)(record.ipmMaxPrice),
+            ipm_bucket_mrp: (0, module_service_utils_1.toNullableNumber)(record.ipmBucketMrp),
+            ipm_bucket_sp: (0, module_service_utils_1.toNullableNumber)(record.ipmBucketSp),
             ipm_min_price: (0, module_service_utils_1.toNumber)(record.ipmMinPrice),
             ipm_disc_perc: (0, module_service_utils_1.toNumber)(record.ipmDiscPerc),
             ipm_disc_qty: (0, module_service_utils_1.toNumber)(record.ipmDiscQty),
@@ -459,6 +577,20 @@ let ItemsPriceMasterService = class ItemsPriceMasterService {
         (0, module_service_utils_1.throwOnUniqueConstraintError)(error, 'Item price already exists', [
             { field: 'ipm_item_id', message: 'Duplicate item price configuration is not allowed' },
         ]);
+        if ((0, module_service_utils_1.isExclusionConstraintError)(error)) {
+            (0, module_service_utils_1.throwInventoryConflict)('Item price already exists', [
+                {
+                    field: 'ipm_uc_unit_id',
+                    message: 'This unit already has a price at this company, branch and MRP. Edit that row instead of adding another.',
+                },
+            ]);
+        }
+        const check = (0, module_service_utils_1.violatedCheckOf)(error);
+        if (check && CHECK_MESSAGES[check]) {
+            (0, module_service_utils_1.throwUnprocessable)('This price cannot be saved', [
+                CHECK_MESSAGES[check],
+            ]);
+        }
         if ((0, module_service_utils_1.isForeignKeyConstraintError)(error)) {
             (0, module_service_utils_1.throwInventoryBadRequest)('Invalid relation reference', [
                 {
@@ -482,6 +614,7 @@ exports.ItemsPriceMasterService = ItemsPriceMasterService = __decorate([
     __metadata("design:paramtypes", [prisma_service_1.PrismaService,
         audit_log_service_1.AuditLogService,
         configured_grid_sql_service_1.ConfiguredGridSqlService,
-        request_context_service_1.RequestContextService])
+        request_context_service_1.RequestContextService,
+        price_bucket_service_1.PriceBucketService])
 ], ItemsPriceMasterService);
 //# sourceMappingURL=items-price-master.service.js.map

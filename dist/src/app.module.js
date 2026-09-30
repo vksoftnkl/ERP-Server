@@ -41,6 +41,7 @@ const account_ledger_masters_module_1 = require("./modules/accountsModule/accoun
 const ledger_bank_account_module_1 = require("./modules/accountsModule/ledgerBankAccount/ledger-bank-account.module");
 const branch_master_module_1 = require("./modules/settings/branchMaster/branch-master.module");
 const company_master_module_1 = require("./modules/settings/companyMaster/company-master.module");
+const app_theme_module_1 = require("./modules/settings/appTheme/app-theme.module");
 const company_group_master_module_1 = require("./modules/accountsModule/companyGroupMaster/company-group-master.module");
 const employee_department_master_module_1 = require("./modules/settings/employeeDepartmentMaster/employee-department-master.module");
 const employee_designation_master_module_1 = require("./modules/settings/employeeDesignationMaster/employee-designation-master.module");
@@ -194,6 +195,7 @@ exports.AppModule = AppModule = __decorate([
             ledger_shipping_address_module_1.LedgerShippingAddressModule,
             branch_master_module_1.BranchMasterModule,
             company_master_module_1.CompanyMasterModule,
+            app_theme_module_1.AppThemeModule,
             company_group_master_module_1.CompanyGroupMasterModule,
             employee_department_master_module_1.EmployeeDepartmentMasterModule,
             employee_designation_master_module_1.EmployeeDesignationMasterModule,

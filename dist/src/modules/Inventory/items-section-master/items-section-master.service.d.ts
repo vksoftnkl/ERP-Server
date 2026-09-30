@@ -11,10 +11,15 @@ export declare class ItemsSectionMasterService {
     save(saveItemSectionDto: SaveItemSectionDto): Promise<ItemSectionPayload>;
     getById(secId: string): Promise<ItemSectionPayload>;
     private getParentName;
-    toggleDelete(secId: string): Promise<{
+    softDelete(secId: string): Promise<{
         sec_id: string;
         deleted: boolean;
     }>;
+    restore(secId: string): Promise<{
+        sec_id: string;
+        deleted: boolean;
+    }>;
+    private setDeleted;
     private createItemSection;
     private updateItemSection;
     private ensureParentExists;
@@ -31,5 +36,4 @@ export declare class ItemsSectionMasterService {
     private decodePhotoInput;
     private toPayload;
     private handleWriteError;
-    private resolveSectionLevel;
 }

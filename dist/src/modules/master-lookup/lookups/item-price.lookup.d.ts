@@ -10,5 +10,9 @@ export declare class ItemPriceLookup {
     private resolveLoadingCharge;
     private resolveFreightCharge;
     private resolveTaxLedgers;
+    private lineBucketValues;
+    private pricedBuckets;
+    private provisionalBucket;
+    private resolveStockBuckets;
     getItemPriceLookup(query: ItemPriceLookupQueryDto): Promise<ItemPriceLookupPayload>;
 }

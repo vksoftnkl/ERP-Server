@@ -26,6 +26,7 @@ export declare class CompanyMasterService {
     private toPayload;
     private handleWriteError;
     private throwNotFound;
+    private ensureThemeIsLive;
     private throwBadRequest;
     private buildErrorResponse;
 }

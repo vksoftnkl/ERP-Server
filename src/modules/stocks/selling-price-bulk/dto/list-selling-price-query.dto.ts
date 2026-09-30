@@ -19,7 +19,7 @@ export class ListSellingPriceQueryDto {
     format: 'uuid',
     description:
       'The branch whose effective prices are resolved. Required even at CHAIN scope: ' +
-      'fn_smp_effective answers "what does this branch see", and the Src chip is the answer.',
+      'the price resolver answers "what does this branch see", and the Src chip is the answer.',
   })
   @RequiredUuid()
   branchId!: string;

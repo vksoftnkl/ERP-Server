@@ -198,6 +198,7 @@ export class CompanyMasterService {
         await this.ensureNameIsUnique(tx, compName);
         await this.ensureCodeIsUnique(tx, saveCompanyMasterDto.compCode ?? null);
         await this.ensureGstinIsUnique(tx, saveCompanyMasterDto.compGstinNo ?? null);
+        await this.ensureThemeIsLive(tx, saveCompanyMasterDto.compStylesheetId);
         if (saveCompanyMasterDto.compDefault === true) {
           await this.clearDefaultCompany(tx);
         }
@@ -258,6 +259,11 @@ export class CompanyMasterService {
         await this.ensureNameIsUnique(tx, compName, compId);
         await this.ensureCodeIsUnique(tx, saveCompanyMasterDto.compCode ?? null, compId);
         await this.ensureGstinIsUnique(tx, saveCompanyMasterDto.compGstinNo ?? null, compId);
+        // Only a CHANGED theme is checked: a company already pointing at a theme
+        // retired since is still saved for an unrelated edit.
+        if (saveCompanyMasterDto.compStylesheetId !== existing.compStylesheetId) {
+          await this.ensureThemeIsLive(tx, saveCompanyMasterDto.compStylesheetId);
+        }
         if (saveCompanyMasterDto.compDefault === true) {
           await this.clearDefaultCompany(tx, compId);
         }
@@ -538,6 +544,28 @@ export class CompanyMasterService {
       'compId',
       `No active company found with id ${compId}`,
     );
+  }
+  /**
+   * theme/plan-app-theme.md §3.1 — the FK to app_theme_master accepts a
+   * soft-deleted row, so a company could be pointed at a theme nobody can see
+   * or edit. Refused here: the theme must be active and not deleted.
+   */
+  private async ensureThemeIsLive(
+    tx: SettingsWriteClient,
+    thmId: number | null | undefined,
+  ): Promise<void> {
+    if (thmId === null || thmId === undefined) {
+      return;
+    }
+    const theme = await tx.appThemeMaster.findFirst({
+      where: { thmId, thmIsActive: true, thmIsDeleted: false },
+      select: { thmId: true },
+    });
+    if (!theme) {
+      this.throwBadRequest('Validation failed', [
+        { field: 'compStylesheetId', message: `theme ${thmId} is not active` },
+      ]);
+    }
   }
   private throwBadRequest(message: string, errors: CompanyMasterErrorDetail[]): never {
     throwSettingsBadRequest<CompanyMasterErrorDetail>(message, errors);

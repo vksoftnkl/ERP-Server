@@ -4068,6 +4068,18 @@ model ItemPriceMaster {
   ipmCreatedBy        String?       @db.Uuid @map("ipm_created_by")
   ipmUpdatedOn        DateTime?     @db.Timestamptz(6) @map("ipm_updated_on")
   ipmUpdatedBy        String?       @db.Uuid @map("ipm_updated_by")
+  // The bucket (plan-nestjs-one-price-table.md §1): the price-defining half of
+  // a lot's identity. Both NULL = the headline row. DERIVED BY THE SERVER from
+  // the item's stock track policy (PriceBucketService), never sent by a client.
+  ipmBucketMrp        Decimal?      @db.Decimal(18, 6) @map("ipm_bucket_mrp")
+  ipmBucketSp         Decimal?      @db.Decimal(18, 6) @map("ipm_bucket_sp")
+  // GENERATED ALWAYS AS (COALESCE(ipm_bucket_*, -1)) STORED — the sentinel
+  // stock_lot's slt_key_mrp / slt_key_sp use. Read-only: NEVER write them.
+  ipmKeyMrp           Decimal?      @default(dbgenerated()) @db.Decimal(18, 6) @map("ipm_key_mrp")
+  ipmKeySp            Decimal?      @default(dbgenerated()) @db.Decimal(18, 6) @map("ipm_key_sp")
+  // Dormant effective dating: the defaults mean "always". No v1 screen writes them.
+  ipmEffectiveFrom    DateTime      @default(dbgenerated("'1900-01-01'::date")) @db.Date @map("ipm_effective_from")
+  ipmEffectiveTo      DateTime      @default(dbgenerated("'9999-12-31'::date")) @db.Date @map("ipm_effective_to")
 
   item                ItemMaster     @relation("ItemPrices", fields: [ipmItemId], references: [itemId], onUpdate: Cascade, onDelete: Restrict, map: "fk_ipm_item")
   company             Company?       @relation("CompanyItemPrices", fields: [ipmCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_ipm_company_id")
@@ -4078,13 +4090,20 @@ model ItemPriceMaster {
   @@index([ipmItemId, ipmUcUnitId], map: "idx_item_price_master_item")
   @@map("item_price_master")
   @@schema("inventory")
-  // Partial unique index uq_item_price_master_scope is not expressible in Prisma
-  // schema: (ipm_company_id, ipm_branch_id, ipm_item_id, ipm_uc_unit_id)
-  // NULLS NOT DISTINCT WHERE ipm_is_deleted = false. It replaced
-  // uq_item_price_master_branch and uq_item_price_master_item_unit_global.
+  // Not expressible in Prisma schema, all raw SQL in
+  // 20260930160000_one_price_table:
+  //   ex_ipm_overlap — EXCLUDE USING gist over (COALESCE(company, nil),
+  //     COALESCE(branch, nil), item, unit, ipm_key_mrp, ipm_key_sp,
+  //     daterange(effective_from, effective_to, '[]')) WHERE NOT deleted,
+  //     DEFERRABLE. One price set per bucket per scope at a time. It replaced
+  //     uq_item_price_master_scope, which it subsumes; a 23P01 is a 409.
+  //   ck_ipm_bucket_mrp / ck_ipm_bucket_sp — a bucket value is > 0.
+  //   ck_ipm_bucket_mrp_is_max — a bucket row's MRP IS its ipm_max_price.
+  //   ck_ipm_not_above_mrp — a BUCKET row's A-D prices are <= its MRP.
+  //     Headline rows are not checked (skip_mrp shops, legacy test rows).
+  //   ck_ipm_dates, chk_ipm_nonnegative, and the partial index ix_ipm_lookup.
   // ipm_godown_id is deliberately NOT part of the key, so two godowns cannot
-  // hold different prices for the same item + unit + branch.
-  // CHECK constraints are not expressible in Prisma schema.
+  // hold different prices for the same item + unit + branch + bucket.
 }
 
 // ----- prisma/inventory/itemQtyPrice.prisma -----
@@ -4912,11 +4931,33 @@ model AppSettingValue {
 // ═══════════════════════════════════════════════════════════════════════════
 
 // ----- prisma/public/appThemeMaster.prisma -----
+/// A company's colour theme: named colour VALUES, never a stylesheet — each
+/// client fills its own template from thm_tokens (theme/plan-app-theme.md §2,
+/// migration 20260930190000_app_theme_tokens). Shared by every company, like
+/// the printing tables: a theme is a palette, a company picks one
+/// (companys.comp_stylesheet_id).
+///
+/// Not expressible here, all raw SQL in that migration:
+///   ck_thm_base    thm_base IN ('LIGHT', 'DARK')
+///   ck_thm_tokens  every value #rrggbb / #rrggbbaa (fn_theme_tokens_valid)
+///   ux_thm_default exactly one live default row
+///   ux_thm_name    lower(thm_name) unique among live rows
 model AppThemeMaster {
-  thmId           Int    @id  @map("thm_id")
-  thmName         String @db.VarChar(100) @map("thm_name") 
-  thmIsActive     Boolean @default(true) @map("thm_is_active")
-  thmIsDeleted    Boolean @default(false) @map("thm_is_deleted")
+  thmId           Int       @id @default(autoincrement()) @map("thm_id")
+  thmName         String    @db.VarChar(100) @map("thm_name")
+  thmIsActive     Boolean   @default(true) @map("thm_is_active")
+  thmIsDeleted    Boolean   @default(false) @map("thm_is_deleted")
+  /// LIGHT or DARK: which client template the tokens fill. Phase 1 ships LIGHT only.
+  thmBase         String    @default("LIGHT") @db.VarChar(5) @map("thm_base")
+  /// Flat { "<token key>": "#rrggbb" }. A missing key = the client's compiled default.
+  thmTokens       Json      @default("{}") @map("thm_tokens")
+  /// The theme a company with a NULL comp_stylesheet_id gets.
+  thmIsDefault    Boolean   @default(false) @map("thm_is_default")
+  thmRemarks      String?   @db.VarChar(250) @map("thm_remarks")
+  thmCreatedOn    DateTime  @default(now()) @db.Timestamptz(6) @map("thm_created_on")
+  thmCreatedBy    String?   @db.VarChar(100) @map("thm_created_by")
+  thmModifiedOn   DateTime? @db.Timestamptz(6) @map("thm_modified_on")
+  thmModifiedBy   String?   @db.VarChar(100) @map("thm_modified_by")
   company       Company[] @relation("CompanyStylesheet")
   /// NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).
   thmSyncDate DateTime? @db.Timestamptz(6) @map("thm_sync_date")

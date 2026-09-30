@@ -13,6 +13,7 @@ exports.ItemMasterUpdateService = void 0;
 const common_1 = require("@nestjs/common");
 const item_unit_conversion_service_1 = require("../item-unit-conversion/item-unit-conversion.service");
 const items_price_master_service_1 = require("../items-price-master/items-price-master.service");
+const price_bucket_service_1 = require("../items-price-master/price-bucket.service");
 const items_ean_code_master_service_1 = require("../items-ean-code-master/items-ean-code-master.service");
 const items_reorder_master_service_1 = require("../items-reorder-master/items-reorder-master.service");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
@@ -31,11 +32,13 @@ let ItemMasterUpdateService = class ItemMasterUpdateService {
     itemsPriceMasterService;
     itemsEanCodeMasterService;
     itemsReorderMasterService;
-    constructor(itemUnitConversionService, itemsPriceMasterService, itemsEanCodeMasterService, itemsReorderMasterService) {
+    priceBucketService;
+    constructor(itemUnitConversionService, itemsPriceMasterService, itemsEanCodeMasterService, itemsReorderMasterService, priceBucketService) {
         this.itemUnitConversionService = itemUnitConversionService;
         this.itemsPriceMasterService = itemsPriceMasterService;
         this.itemsEanCodeMasterService = itemsEanCodeMasterService;
         this.itemsReorderMasterService = itemsReorderMasterService;
+        this.priceBucketService = priceBucketService;
     }
     async syncChildren(itemId, dto, tx) {
         const unit_conversions = await this.syncUnitConversions(itemId, dto.unit_conversions, tx);
@@ -101,27 +104,40 @@ let ItemMasterUpdateService = class ItemMasterUpdateService {
             return [];
         }
         const existing = await this.itemsPriceMasterService.findByItemId(itemId, tx);
-        const priceKey = (row) => this.naturalKey(row.ipm_company_id, row.ipm_branch_id, row.ipm_uc_unit_id);
-        const existingByKey = new Map(existing.map((row) => [priceKey(row), row]));
+        const existingById = new Map(existing.map((row) => [row.ipm_id, row]));
         const resolvedRows = children.map((child) => ({
             ...child,
             ipm_uc_unit_id: this.resolveUnitConversionId(child.ipm_uc_unit_id, 'ipm_uc_unit_id', conversions),
         }));
-        this.refuseDuplicateKeys(resolvedRows.map(priceKey), 'prices', 'two price rows for the same company, branch and unit — the price table holds one per scope (ipm_godown_id is an attribute, not part of the key)');
+        const [payloadKeys, existingKeys] = await Promise.all([
+            this.priceBucketService.deriveBuckets(tx, itemId, resolvedRows.map((row) => this.payloadBucketSource(row, row.ipm_id ? existingById.get(row.ipm_id) : undefined))),
+            this.priceBucketService.deriveBuckets(tx, itemId, existing.map((row) => this.payloadBucketSource(row, undefined))),
+        ]);
+        const priceKey = (row, bucket) => this.naturalKey(row.ipm_company_id, row.ipm_branch_id, row.ipm_uc_unit_id, bucket.mrp === null ? null : String(bucket.mrp), bucket.salePrice === null ? null : String(bucket.salePrice));
+        const existingByKey = new Map();
+        existing.forEach((row, index) => {
+            const key = priceKey(row, existingKeys[index]);
+            if (!existingByKey.has(key)) {
+                existingByKey.set(key, row);
+            }
+        });
+        this.refuseDuplicateKeys(resolvedRows.map((row, index) => priceKey(row, payloadKeys[index])), 'prices', 'one price: the same company, branch, unit and MRP / sale-price bucket. ' +
+            'An item that does not track MRP holds one price per unit, whatever MRP each row shows ' +
+            '(ipm_godown_id is an attribute, not part of the key)');
         const toSave = [];
         const claimedIds = new Set();
-        for (const resolved of resolvedRows) {
+        resolvedRows.forEach((resolved, index) => {
             const match = resolved.ipm_id
                 ? existing.find((row) => row.ipm_id === resolved.ipm_id)
-                : existingByKey.get(priceKey(resolved));
+                : existingByKey.get(priceKey(resolved, payloadKeys[index]));
             if (match) {
                 claimedIds.add(match.ipm_id);
                 if (!this.rowChanged(resolved, match, IPM_IGNORED_FIELDS)) {
-                    continue;
+                    return;
                 }
             }
             toSave.push({ ...resolved, ipm_item_id: itemId, ipm_id: resolved.ipm_id ?? match?.ipm_id });
-        }
+        });
         const staleIds = existing.filter((row) => !claimedIds.has(row.ipm_id)).map((row) => row.ipm_id);
         if (staleIds.length > 0) {
             await this.itemsPriceMasterService.toggleDelete(staleIds, tx);
@@ -130,6 +146,30 @@ let ItemMasterUpdateService = class ItemMasterUpdateService {
             await this.itemsPriceMasterService.save(toSave, tx);
         }
         return this.itemsPriceMasterService.findByItemId(itemId, tx);
+    }
+    payloadBucketSource(row, stored) {
+        const pick = (field) => {
+            const sent = row[field];
+            if (typeof sent === 'number')
+                return sent;
+            const kept = stored?.[field];
+            return typeof kept === 'number' ? kept : 0;
+        };
+        const scope = (field) => {
+            const sent = row[field];
+            if (sent !== undefined)
+                return sent ?? null;
+            return stored?.[field] ?? null;
+        };
+        return (0, price_bucket_service_1.toBucketSource)({
+            ipmCompanyId: scope('ipm_company_id'),
+            ipmBranchId: scope('ipm_branch_id'),
+            ipmMaxPrice: pick('ipm_max_price'),
+            ipmSalesPriceA: pick('ipm_sales_price_a'),
+            ipmSalesPriceB: pick('ipm_sales_price_b'),
+            ipmSalesPriceC: pick('ipm_sales_price_c'),
+            ipmSalesPriceD: pick('ipm_sales_price_d'),
+        });
     }
     async syncEanCodes(itemId, children, conversions, tx) {
         if (children === undefined) {
@@ -244,6 +284,7 @@ exports.ItemMasterUpdateService = ItemMasterUpdateService = __decorate([
     __metadata("design:paramtypes", [item_unit_conversion_service_1.ItemUnitConversionService,
         items_price_master_service_1.ItemsPriceMasterService,
         items_ean_code_master_service_1.ItemsEanCodeMasterService,
-        items_reorder_master_service_1.ItemsReorderMasterService])
+        items_reorder_master_service_1.ItemsReorderMasterService,
+        price_bucket_service_1.PriceBucketService])
 ], ItemMasterUpdateService);
 //# sourceMappingURL=item-master-update.service.js.map

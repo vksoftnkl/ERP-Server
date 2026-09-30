@@ -37,6 +37,9 @@ type PrismaMock = {
     >;
   };
   $queryRawUnsafe: jest.Mock<Promise<unknown>, [string, ...unknown[]]>;
+  // The hierarchy guards and re-levelling (master-tree.helper) are raw SQL.
+  $queryRaw: jest.Mock;
+  $executeRaw: jest.Mock;
   $transaction: jest.Mock<Promise<unknown>, [(tx: Prisma.TransactionClient) => Promise<unknown>]>;
 };
 
@@ -101,6 +104,11 @@ describe('GodownsMasterService', () => {
         >(),
       },
       $queryRawUnsafe: jest.fn<Promise<unknown>, [string, ...unknown[]]>(),
+      // No cycle, no live children or references, a live parent: the guards pass.
+      $queryRaw: jest
+        .fn()
+        .mockResolvedValue([{ hit: false, n: 0n, names: null, live: true, ord: 0 }]),
+      $executeRaw: jest.fn().mockResolvedValue(0),
       $transaction: jest.fn<
         Promise<unknown>,
         [(tx: Prisma.TransactionClient) => Promise<unknown>]
@@ -368,11 +376,11 @@ describe('GodownsMasterService', () => {
     await expect(service.getById(GDL_ID)).rejects.toBeInstanceOf(NotFoundException);
   });
 
-  it('toggleDelete marks an active location as deleted', async () => {
+  it('softDelete marks an active location as deleted', async () => {
     prisma.godownLocation.findFirst.mockResolvedValue(makeRecord());
     prisma.godownLocation.updateMany.mockResolvedValue({ count: 1 });
 
-    const result = await service.toggleDelete(GDL_ID);
+    const result = await service.softDelete(GDL_ID);
 
     expect(prisma.godownLocation.updateMany).toHaveBeenCalledTimes(1);
     const updateManyArgs = prisma.godownLocation.updateMany.mock.calls[0][0];
@@ -392,13 +400,13 @@ describe('GodownsMasterService', () => {
     });
   });
 
-  it('toggleDelete restores a previously deleted location', async () => {
+  it('restore restores a previously deleted location', async () => {
     prisma.godownLocation.findFirst
       .mockResolvedValueOnce(makeRecord({ gdlIsDeleted: true, gdlParentId: null }))
       .mockResolvedValueOnce(null);
     prisma.godownLocation.updateMany.mockResolvedValue({ count: 1 });
 
-    const result = await service.toggleDelete(GDL_ID);
+    const result = await service.restore(GDL_ID);
 
     const updateManyArgs = prisma.godownLocation.updateMany.mock.calls[0][0];
     expect(updateManyArgs.where).toEqual({
@@ -416,7 +424,7 @@ describe('GodownsMasterService', () => {
     });
   });
 
-  it('toggleDelete removes subtree ids from ancestor caches', async () => {
+  it('softDelete removes subtree ids from ancestor caches', async () => {
     const parent = makeRecord({
       gdlId: PARENT_ID,
       gdlParentId: null,
@@ -451,7 +459,7 @@ describe('GodownsMasterService', () => {
       }),
     );
 
-    await expect(service.toggleDelete(GDL_ID)).resolves.toEqual({
+    await expect(service.softDelete(GDL_ID)).resolves.toEqual({
       gdl_id: GDL_ID,
       deleted: true,
     });
@@ -462,9 +470,9 @@ describe('GodownsMasterService', () => {
     expect(ancestorUpdateArgs.data.gdlPathIdsCache).toEqual([PARENT_ID]);
   });
 
-  it('toggleDelete throws not found when location does not exist', async () => {
+  it('softDelete throws not found when location does not exist', async () => {
     prisma.godownLocation.findFirst.mockResolvedValue(null);
 
-    await expect(service.toggleDelete(GDL_ID)).rejects.toBeInstanceOf(NotFoundException);
+    await expect(service.softDelete(GDL_ID)).rejects.toBeInstanceOf(NotFoundException);
   });
 });

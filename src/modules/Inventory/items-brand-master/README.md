@@ -29,7 +29,8 @@ materialized ancestor path.
 | --- | --- | --- |
 | `POST` | `/create` | Create **or** update a single item brand (create when `brand_id` is omitted, update when present). Consumes `application/json` **or** `multipart/form-data`. |
 | `GET` | `/get` | Fetch one active item brand by required `brand_id` query param (validated as UUID v7). |
-| `DELETE` | `/delete` | Toggle soft-delete/restore of an item brand by `brand_id`. |
+| `DELETE` | `/delete` | Soft-delete an item brand by `brand_id`. Not a toggle: 409 when already deleted. |
+| `POST` | `/restore` | Restore a soft-deleted item brand by `brand_id`. |
 
 ### Create / update semantics
 
@@ -47,10 +48,17 @@ materialized ancestor path.
 
 ### Delete / restore semantics
 
-- `DELETE /delete` **toggles** `brand_is_deleted` (delete when active, restore when deleted) via
-  a guarded `updateMany` that only flips if the state hasn't changed since the read.
-- Soft delete only — rows are never hard-deleted, and `GET /get` / updates only see rows where
-  `brand_is_deleted = false`.
+- `DELETE /delete` **deletes only** — it is not a toggle (notes 70 C1). An already deleted brand
+  is a **409**; `POST /item-brands/restore` brings one back, and is itself a 409 when the brand is not
+  deleted or its parent is (the row would come back an orphan).
+- DELETE is refused (**409**, naming what is in the way) while live sub-brands or live items still use it.
+- Both run in one transaction with a guarded `updateMany`; rows are never hard-deleted. On delete the
+  active subtree ids leave the ancestors' path caches; on restore they are read back AFTER the row
+  is live again and re-appended.
+- **Levels are depths** (a root is 1), computed by `relevelSubtree` on every create and update and
+  never taken from the payload; a re-parent re-levels the whole subtree. A node cannot move under
+  itself or one of its descendants (400). All three rules live in `../utils/master-tree.helper.ts`
+  (notes 70 B1-B3).
 
 ## Hierarchy & path maintenance
 

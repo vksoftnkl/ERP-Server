@@ -149,6 +149,33 @@ export class StockTrackPolicyService {
     return results;
   }
   /**
+   * Retires every DERIVED group-scope row of a group — call it when the group
+   * is soft-deleted, in the same transaction (notes 71 B3: a deleted group's
+   * policy stayed live and active). A hand-authored row is an admin's and is
+   * left alone, as syncFromItemGroup leaves it; restoring the group re-runs
+   * syncFromItemGroup, which derives the row again from its preset.
+   */
+  async retireForGroup(
+    itgId: string,
+    tx?: Prisma.TransactionClient,
+  ): Promise<StockTrackPolicySyncResult[]> {
+    const client: Prisma.TransactionClient = tx ?? this.prisma;
+    const derived = await client.stockTrackPolicy.findMany({
+      where: {
+        stpScope: 'GROUP',
+        stpGroupId: itgId,
+        stpRemarks: { startsWith: DERIVED_FROM_GROUP_REMARK },
+        stpIsDeleted: false,
+      },
+      orderBy: { stpCreatedOn: 'asc' },
+    });
+    const results: StockTrackPolicySyncResult[] = [];
+    for (const row of derived) {
+      results.push(await this.retireDerived(row, itgId, 'GROUP', client));
+    }
+    return results;
+  }
+  /**
    * Creates, refreshes or retires the GROUP-scope policy row for an item group.
    * Call it from group create AND group update, inside the caller's
    * transaction, exactly like syncFromItem.

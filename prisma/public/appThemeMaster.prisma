@@ -1,8 +1,30 @@
+/// A company's colour theme: named colour VALUES, never a stylesheet — each
+/// client fills its own template from thm_tokens (theme/plan-app-theme.md §2,
+/// migration 20260930190000_app_theme_tokens). Shared by every company, like
+/// the printing tables: a theme is a palette, a company picks one
+/// (companys.comp_stylesheet_id).
+///
+/// Not expressible here, all raw SQL in that migration:
+///   ck_thm_base    thm_base IN ('LIGHT', 'DARK')
+///   ck_thm_tokens  every value #rrggbb / #rrggbbaa (fn_theme_tokens_valid)
+///   ux_thm_default exactly one live default row
+///   ux_thm_name    lower(thm_name) unique among live rows
 model AppThemeMaster {
-  thmId           Int    @id  @map("thm_id")
-  thmName         String @db.VarChar(100) @map("thm_name") 
-  thmIsActive     Boolean @default(true) @map("thm_is_active")
-  thmIsDeleted    Boolean @default(false) @map("thm_is_deleted")
+  thmId           Int       @id @default(autoincrement()) @map("thm_id")
+  thmName         String    @db.VarChar(100) @map("thm_name")
+  thmIsActive     Boolean   @default(true) @map("thm_is_active")
+  thmIsDeleted    Boolean   @default(false) @map("thm_is_deleted")
+  /// LIGHT or DARK: which client template the tokens fill. Phase 1 ships LIGHT only.
+  thmBase         String    @default("LIGHT") @db.VarChar(5) @map("thm_base")
+  /// Flat { "<token key>": "#rrggbb" }. A missing key = the client's compiled default.
+  thmTokens       Json      @default("{}") @map("thm_tokens")
+  /// The theme a company with a NULL comp_stylesheet_id gets.
+  thmIsDefault    Boolean   @default(false) @map("thm_is_default")
+  thmRemarks      String?   @db.VarChar(250) @map("thm_remarks")
+  thmCreatedOn    DateTime  @default(now()) @db.Timestamptz(6) @map("thm_created_on")
+  thmCreatedBy    String?   @db.VarChar(100) @map("thm_created_by")
+  thmModifiedOn   DateTime? @db.Timestamptz(6) @map("thm_modified_on")
+  thmModifiedBy   String?   @db.VarChar(100) @map("thm_modified_by")
   company       Company[] @relation("CompanyStylesheet")
   /// NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).
   thmSyncDate DateTime? @db.Timestamptz(6) @map("thm_sync_date")

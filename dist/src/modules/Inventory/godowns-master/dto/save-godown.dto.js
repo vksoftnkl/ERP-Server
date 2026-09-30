@@ -9,12 +9,13 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.SaveGodownDto = void 0;
+exports.SaveGodownDto = exports.GODOWN_TYPES = void 0;
 const class_transformer_1 = require("class-transformer");
 const class_validator_1 = require("class-validator");
 const swagger_1 = require("@nestjs/swagger");
 const dtoDecorators_1 = require("../../../../common/dto/dtoDecorators");
 const dto_transforms_1 = require("../../../../common/dto/dto-transforms");
+exports.GODOWN_TYPES = ['WAREHOUSE', 'ZONE', 'AISLE', 'RACK', 'SHELF', 'BIN'];
 class SaveGodownDto {
     gdl_id;
     gdl_branch_id;
@@ -86,8 +87,9 @@ __decorate([
     __metadata("design:type", Object)
 ], SaveGodownDto.prototype, "gdl_code", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ maxLength: 20, default: 'BIN' }),
+    (0, swagger_1.ApiPropertyOptional)({ enum: exports.GODOWN_TYPES, default: 'BIN' }),
     (0, dtoDecorators_1.OptionalTrimmedString)(20),
+    (0, class_validator_1.IsIn)(exports.GODOWN_TYPES, { message: `gdl_type must be one of: ${exports.GODOWN_TYPES.join(', ')}` }),
     __metadata("design:type", String)
 ], SaveGodownDto.prototype, "gdl_type", void 0);
 __decorate([
@@ -105,7 +107,10 @@ __decorate([
     __metadata("design:type", Number)
 ], SaveGodownDto.prototype, "gdl_sort", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ default: 0 }),
+    (0, swagger_1.ApiPropertyOptional)({
+        default: 0,
+        description: 'Accepted and IGNORED: the level is the location depth, computed by the server.',
+    }),
     (0, dtoDecorators_1.OptionalInteger)(),
     __metadata("design:type", Number)
 ], SaveGodownDto.prototype, "gdl_level", void 0);
