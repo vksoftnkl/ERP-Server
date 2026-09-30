@@ -156,7 +156,7 @@ __decorate([
     (0, common_1.Version)(api_version_1.API_VERSION),
     (0, swagger_1.ApiOperation)({
         summary: 'Pick stock from the balance — the holdings an outward line is chosen from',
-        description: 'Balance-grain rows (godown × lot × bucket) with available > 0: item, batch, expiry, MRP, the lot\'s supplier, on hand, available and the average cost. With bucket=DAMAGED it is the "what goes back to which supplier" list. Live, never cached.',
+        description: 'Balance-grain rows (godown × lot × bucket) with available > 0: item, batch, expiry, MRP, the lot\'s supplier, on hand, available and the average cost. With bucket=DAMAGED it is the "what goes back to which supplier" list; without bucket, every bucket, each row naming its own. Live, never cached.',
     }),
     (0, swagger_1.ApiOkResponse)({ description: 'The holdings.' }),
     __param(0, (0, common_1.Query)()),

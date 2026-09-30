@@ -131,8 +131,9 @@ model ItemMaster {
 
   @@map("item_master")
   @@schema("inventory")
-  // UNIQUE item_name_en globally (since company removed)
-  @@unique([itemNameEn], map: "uq_item_name_en_global")
+  // uq_item_name_en_global UNIQUE (item_name_en) WHERE item_is_deleted = false
+  // — DB-only, partial since 20260930120000 so a deleted item's name is free
+  // again (a partial index cannot be declared here).
   @@index([itemGroupId], map: "idx_item_group")
   @@index([itemNameEn], map: "idx_item_name_en")
   @@index([itemDefaultBarcode], map: "idx_item_barcode")

@@ -1,14 +1,15 @@
 # Item Tax History
 
 CRUD API for **item tax history** — effective-dated records that link an inventory item to the
-GST/tax rate (`ItemTaxMaster`) that applied to it over a given date range, preserving the item's
-historical tax rates.
+GST/tax rate (`TaxRateMaster`, `inventory.tax_rate_master`) that applied to it over a given date
+range, preserving the item's historical tax rates. (The old `item_tax_master` it once pointed at is
+retired: its module and `/item-taxes` routes were removed on 2026-09-30.)
 
 - **Base route:** `item-tax-histories` (API-versioned via `@Version(API_VERSION)`)
 - **Swagger tag:** `Item Tax History`
 - **Auth:** Bearer `access-token` (required)
 - **Primary table:** `item_tax_history` (`inventory` schema) — PK `ith_id` (uuidv7)
-- **Foreign keys:** `ith_item_id → item_master.item_id`, `ith_tax_id → item_tax_master.tax_id` (both `onDelete: Restrict`)
+- **Foreign keys:** `ith_item_id → item_master.item_id`, `ith_tax_id → tax_rate_master.tax_id` (both `onDelete: Restrict`)
 
 ## Files
 

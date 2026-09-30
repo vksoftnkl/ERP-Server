@@ -19,7 +19,6 @@ export declare class ItemsReorderMasterService {
     list(queryDto: GetItemReorderQueryDto): Promise<ConfiguredGridListResult<ItemReorderListItem, ItemReorderListMeta>>;
     getById(irId: string): Promise<ItemReorderPayload>;
     findByItemId(itemId: string, client?: InventoryWriteClient): Promise<ItemReorderPayload[]>;
-    findIdsByItemId(itemId: string, isDeleted: boolean): Promise<string[]>;
     toggleDelete(irId: string, tx?: Prisma.TransactionClient): Promise<ItemReorderDeleteResult>;
     toggleDelete(irId: string[], tx?: Prisma.TransactionClient): Promise<ItemReorderDeleteResult[]>;
     toggleDelete(irId: string | string[], tx?: Prisma.TransactionClient): Promise<ItemReorderDeleteResult | ItemReorderDeleteResult[]>;

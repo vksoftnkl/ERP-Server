@@ -152,13 +152,6 @@ export class ItemsEanCodeMasterService {
     });
     return records.map((record) => this.toPayload(record));
   }
-  async findIdsByItemId(itemId: string, isDeleted: boolean): Promise<string[]> {
-    const records = await this.prisma.itemEanCode.findMany({
-      where: { eanItemId: itemId, eanIsDeleted: isDeleted },
-      select: { eanId: true },
-    });
-    return records.map((record) => record.eanId);
-  }
 
   async toggleDelete(
     eanId: string,

@@ -41,8 +41,9 @@ to price an item in a given unit at a company/branch/godown.
 - **Batch mode is all-or-nothing:** the whole array runs in one `$transaction`; if any entry
   fails, nothing is saved. A batch returns an array; a single object returns a single payload.
 - `ipm_profit_type` is **required and non-empty** on both create and update (trimmed in code),
-  and must be one of `BY_PERCENT` · `BY_AMOUNT` · `MANUAL` (`@IsIn` in the DTO, also enforced by
-  the `chk_ipm_profit_type` DB check constraint).
+  and must be one of `By %` · `By Rs` · `By User` (`@IsIn` in the DTO — the only check:
+  `chk_ipm_profit_type` was dropped in 20260718140000). Rows still holding the older `BY_PERCENT` /
+  `BY_AMOUNT` were mapped to `By %` / `By Rs` by 20260930120000 (notes 67 B3).
 - Optional scalar fields are only written when present on the payload (`hasOwnProperty` guards),
   so an update patches just the supplied keys.
 
@@ -95,8 +96,7 @@ exactly like the `ean_unit_id` / `ir_unit_id` collections.
   `cancel`) under screen `Item Price Master` (table `item price master`, `master` screen type),
   capturing original vs. modified payloads. The actor is resolved from the record's
   `ipm_updated_by` / `ipm_created_by`, falling back to `system`.
-- **Profit type** is constrained by `chk_ipm_profit_type` to `BY_PERCENT`, `BY_AMOUNT` or
-  `MANUAL`; the DTO enforces the same set so an invalid value fails validation, not the insert.
+- **Profit type** is `By %`, `By Rs` or `By User`, enforced by the DTO alone (see above).
 - A DB check constraint (not expressible in Prisma) also enforces non-negative price/charge
   columns (`chk_ipm_nonnegative`).
 

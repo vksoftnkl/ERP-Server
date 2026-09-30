@@ -149,7 +149,7 @@ export class StockAdjustmentController {
   @ApiOperation({
     summary: 'Pick stock from the balance — the holdings an outward line is chosen from',
     description:
-      'Balance-grain rows (godown × lot × bucket) with available > 0: item, batch, expiry, MRP, the lot\'s supplier, on hand, available and the average cost. With bucket=DAMAGED it is the "what goes back to which supplier" list. Live, never cached.',
+      'Balance-grain rows (godown × lot × bucket) with available > 0: item, batch, expiry, MRP, the lot\'s supplier, on hand, available and the average cost. With bucket=DAMAGED it is the "what goes back to which supplier" list; without bucket, every bucket, each row naming its own. Live, never cached.',
   })
   @ApiOkResponse({ description: 'The holdings.' })
   async pickStock(@Query() query: PickStockQueryDto): Promise<StockVoucherSuccessResponse<PickStockRow[]>> {

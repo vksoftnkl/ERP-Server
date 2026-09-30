@@ -10,7 +10,7 @@ type PrismaMock = {
   itemGroupMaster: {
     findMany: jest.Mock;
   };
-  itemTaxMaster: {
+  taxRateMaster: {
     findMany: jest.Mock;
   };
   unit: {
@@ -70,7 +70,7 @@ describe('AuditLogService', () => {
       itemGroupMaster: {
         findMany: jest.fn(),
       },
-      itemTaxMaster: {
+      taxRateMaster: {
         findMany: jest.fn(),
       },
       unit: {
@@ -682,7 +682,7 @@ describe('AuditLogService', () => {
       { itgId: currentGroupId, itgName: 'Current Group' },
       { itgId: nextParentGroupId, itgName: 'Parent Group B' },
     ]);
-    prisma.itemTaxMaster.findMany.mockResolvedValue([{ taxId: defaultTaxId, taxName: 'GST 18%' }]);
+    prisma.taxRateMaster.findMany.mockResolvedValue([{ taxId: defaultTaxId, taxName: 'GST 18%' }]);
     prisma.unit.findMany.mockResolvedValue([
       { unit_id: oldUnitId, unit_name: 'Box' },
       { unit_id: newUnitId, unit_name: 'Carton' },
@@ -694,7 +694,7 @@ describe('AuditLogService', () => {
     });
 
     expect(prisma.itemGroupMaster.findMany).toHaveBeenCalledTimes(1);
-    expect(prisma.itemTaxMaster.findMany).toHaveBeenCalledTimes(1);
+    expect(prisma.taxRateMaster.findMany).toHaveBeenCalledTimes(1);
     expect(prisma.unit.findMany).toHaveBeenCalledTimes(1);
     expect(result.items[0].log_display_name).toBe('Cold Drinks');
     expect(result.items[0].log_pk).toBe('Cold Drinks');

@@ -540,6 +540,23 @@ describe('MasterLookupService', () => {
     expect(pg.queryReadOnly).not.toHaveBeenCalled();
     expect(prisma.company.findMany).toHaveBeenCalledTimes(1);
   });
+  it('lists itemTaxes from tax_rate_master, the table item_default_tax_id references', async () => {
+    // The picked id is written into item_default_tax_id; an item_tax_master id
+    // would fail its FK to tax_rate_master.
+    const taxRateMaster = {
+      findMany: jest.fn().mockResolvedValue([{ taxId: 'TAX-18', taxName: 'GST 18%' }]),
+    };
+    Object.assign(prisma as unknown as Record<string, unknown>, { taxRateMaster });
+    const result = await service.getAllAccountsAndMasterNameIds('itemTaxes');
+    expect(result).toEqual({
+      scope: 'masters',
+      module: 'itemTaxes',
+      items: [{ id: 'TAX-18', name: 'GST 18%' }],
+    });
+    expect(taxRateMaster.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { taxIsDeleted: false, taxIsActive: true } }),
+    );
+  });
   describe('id filter', () => {
     const configuredCustomerGroups = (rows: unknown[]) => {
       prisma.dropdownDetails.findMany.mockResolvedValue([
@@ -672,7 +689,7 @@ describe('MasterLookupService', () => {
         itemMaster: { ...prisma.itemMaster, findFirst: jest.fn().mockResolvedValue(item) },
         itemPriceMaster: { findMany: jest.fn().mockResolvedValue(rows) },
         godownLocation: { findFirst: jest.fn().mockResolvedValue(null) },
-        itemTaxMaster: { findFirst: jest.fn().mockResolvedValue(null) },
+        taxRateMaster: { findFirst: jest.fn().mockResolvedValue(null) },
         company: { ...prisma.company, findFirst: jest.fn().mockResolvedValue(null) },
         custItemRate: { findFirst: jest.fn().mockResolvedValue(null) },
         itemReorder: { findFirst: jest.fn().mockResolvedValue(null) },

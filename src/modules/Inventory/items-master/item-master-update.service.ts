@@ -46,8 +46,19 @@ type UnitConversionIndex = {
  * Natural keys used to match payload rows against the item's existing rows:
  *   ean_codes        → ean_code                      (unique per item)
  *   unit_conversions → iuc_unit_id                   (one conversion row per unit)
- *   prices           → ipm_uc_unit_id + ipm_godown_id
- *   reorders         → ir_unit_id + ir_godown_id     (nulls = the global rule)
+ *   prices           → ipm_company_id + ipm_branch_id + ipm_uc_unit_id
+ *                      — uq_item_price_master_scope's own key (NULLS NOT
+ *                      DISTINCT). ipm_godown_id is NOT part of it: it is an
+ *                      attribute of the row. The key used to be unit + godown,
+ *                      so a NEW row for branch Y with branch X's unit and
+ *                      godown took X's ipm_id and was saved over X's price
+ *                      (notes 67 B1).
+ *   reorders         → ir_branch_id + ir_unit_id + ir_godown_id (nulls = the
+ *                      global rule); the branch is in the key for the same
+ *                      reason, since two branches' godown-less rules for one
+ *                      unit are two rows.
+ * An omitted company / branch / godown on a payload row reads as null — what a
+ * create would store — and two payload rows with one key are refused.
  *
  * Fields never compared when deciding whether a matched row changed: the row's
  * own PK, the parent item id, and actor columns (created/modified/updated by) —
@@ -204,7 +215,8 @@ export class ItemMasterUpdateService {
   }
 
   /**
-   * Sync item_price_master rows; natural key: (ipm_uc_unit_id, ipm_godown_id).
+   * Sync item_price_master rows; natural key: (ipm_company_id, ipm_branch_id,
+   * ipm_uc_unit_id), the unique index's.
    * ipm_uc_unit_id stores an iuc_id, but the composite payload may name either
    * that or the unit behind it, so each row is resolved before it is matched,
    * compared and saved — exactly like the EAN and reorder collections below.
@@ -219,24 +231,32 @@ export class ItemMasterUpdateService {
       return [];
     }
     const existing = await this.itemsPriceMasterService.findByItemId(itemId, tx);
-    const existingByKey = new Map(
-      existing.map((row) => [this.pairKey(row.ipm_uc_unit_id, row.ipm_godown_id), row]),
-    );
+    const priceKey = (row: {
+      ipm_company_id?: string | null;
+      ipm_branch_id?: string | null;
+      ipm_uc_unit_id: string;
+    }) => this.naturalKey(row.ipm_company_id, row.ipm_branch_id, row.ipm_uc_unit_id);
+    const existingByKey = new Map(existing.map((row) => [priceKey(row), row]));
 
+    const resolvedRows = children.map((child) => ({
+      ...child,
+      ipm_uc_unit_id: this.resolveUnitConversionId(
+        child.ipm_uc_unit_id,
+        'ipm_uc_unit_id',
+        conversions,
+      ),
+    }));
+    this.refuseDuplicateKeys(
+      resolvedRows.map(priceKey),
+      'prices',
+      'two price rows for the same company, branch and unit — the price table holds one per scope (ipm_godown_id is an attribute, not part of the key)',
+    );
     const toSave: SaveItemPriceDto[] = [];
     const claimedIds = new Set<string>();
-    for (const child of children) {
-      const resolved = {
-        ...child,
-        ipm_uc_unit_id: this.resolveUnitConversionId(
-          child.ipm_uc_unit_id,
-          'ipm_uc_unit_id',
-          conversions,
-        ),
-      };
+    for (const resolved of resolvedRows) {
       const match = resolved.ipm_id
         ? existing.find((row) => row.ipm_id === resolved.ipm_id)
-        : existingByKey.get(this.pairKey(resolved.ipm_uc_unit_id, resolved.ipm_godown_id));
+        : existingByKey.get(priceKey(resolved));
       if (match) {
         claimedIds.add(match.ipm_id);
         if (!this.rowChanged(resolved, match, IPM_IGNORED_FIELDS)) {
@@ -305,7 +325,7 @@ export class ItemMasterUpdateService {
   }
 
   /**
-   * Sync item_reorders rows; natural key: (ir_unit_id, ir_godown_id). A non-null
+   * Sync item_reorders rows; natural key: (ir_branch_id, ir_unit_id, ir_godown_id). A non-null
    * ir_unit_id is resolved to an iuc_id like the EAN rows above; null keeps its
    * meaning of "no unit scoping" and is left alone.
    */
@@ -319,25 +339,31 @@ export class ItemMasterUpdateService {
       return [];
     }
     const existing = await this.itemsReorderMasterService.findByItemId(itemId, tx);
-    const existingByKey = new Map(
-      existing.map((row) => [this.pairKey(row.ir_unit_id, row.ir_godown_id), row]),
-    );
+    const reorderKey = (row: {
+      ir_branch_id?: string | null;
+      ir_unit_id?: string | null;
+      ir_godown_id?: string | null;
+    }) => this.naturalKey(row.ir_branch_id, row.ir_unit_id, row.ir_godown_id);
+    const existingByKey = new Map(existing.map((row) => [reorderKey(row), row]));
 
+    const resolvedRows = children.map((child) => ({
+      ...child,
+      ir_unit_id:
+        child.ir_unit_id == null
+          ? child.ir_unit_id
+          : this.resolveUnitConversionId(child.ir_unit_id, 'ir_unit_id', conversions),
+    }));
+    this.refuseDuplicateKeys(
+      resolvedRows.map(reorderKey),
+      'reorders',
+      'two reorder rows for the same branch, unit and godown',
+    );
     const toSave: SaveItemReorderDto[] = [];
     const claimedIds = new Set<string>();
-    for (const child of children) {
-      const resolved = {
-        ...child,
-        ir_unit_id:
-          child.ir_unit_id == null
-            ? child.ir_unit_id
-            : this.resolveUnitConversionId(child.ir_unit_id, 'ir_unit_id', conversions),
-      };
+    for (const resolved of resolvedRows) {
       const match = resolved.ir_id
         ? existing.find((row) => row.ir_id === resolved.ir_id)
-        : existingByKey.get(
-            this.pairKey(resolved.ir_unit_id ?? null, resolved.ir_godown_id ?? null),
-          );
+        : existingByKey.get(reorderKey(resolved));
       if (match) {
         claimedIds.add(match.ir_id);
         if (!this.rowChanged(resolved, match, IR_IGNORED_FIELDS)) {
@@ -386,10 +412,33 @@ export class ItemMasterUpdateService {
   }
 
   /**
-   * Builds a composite map key for two-column natural keys. UUIDs never contain
-   * "::", so the delimiter cannot produce colliding keys; nulls collapse to ''.
+   * Builds a composite map key for a multi-column natural key. UUIDs never
+   * contain "::", so the delimiter cannot produce colliding keys; null and
+   * undefined both collapse to '' — an omitted scope column is the null a
+   * create would store.
    */
-  private pairKey(left: string | null | undefined, right: string | null | undefined): string {
-    return `${left ?? ''}::${right ?? ''}`;
+  private naturalKey(...parts: (string | null | undefined)[]): string {
+    return parts.map((part) => part ?? '').join('::');
+  }
+
+  /**
+   * Two payload rows with one natural key would both claim the same stored
+   * row (the second silently overwriting the first) or, as creates, trip the
+   * table's unique index. Refused up front, naming the rows.
+   */
+  private refuseDuplicateKeys(keys: string[], field: string, what: string): void {
+    const firstAt = new Map<string, number>();
+    keys.forEach((key, index) => {
+      const first = firstAt.get(key);
+      if (first !== undefined) {
+        throwInventoryBadRequest<InventoryErrorDetail>('Duplicate rows in one save', [
+          {
+            field: `${field}.${index}`,
+            message: `${field}[${first}] and ${field}[${index}] are ${what}.`,
+          },
+        ]);
+      }
+      firstAt.set(key, index);
+    });
   }
 }

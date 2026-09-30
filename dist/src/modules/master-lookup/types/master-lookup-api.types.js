@@ -233,7 +233,11 @@ exports.LOOKUP_MODULE_ALIASES = {
         'tax',
         'tax master',
         'tax-master',
-        'item_tax_master',
+        'tax rates',
+        'tax rate',
+        'tax rate master',
+        'tax-rate-master',
+        'tax_rate_master',
     ],
     priceLevels: [
         'price levels',

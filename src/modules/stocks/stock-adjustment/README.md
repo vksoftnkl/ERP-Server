@@ -7,7 +7,8 @@ an ADJUSTMENT whose lines name a `toBucket`.
 
 Menu **264** "Stock Adjustment" (under &4 Stock) covers every kind; per-kind rights can come
 later. The list is grid **122** `TXN MAIN LIST - STOCK ADJUSTMENT`, the line grid ui_table **41**
-`STOCK ADJUSTMENT - ITEM` (migration `20260928210000_stock_bucket_move`).
+`STOCK ADJUSTMENT - ITEM` (migration `20260928210000_stock_bucket_move`; the 31-column layout the
+Qt screen registered, and grid 122's shadow filter, in `20260930110000_stock_adjustment_list_and_layout`).
 
 | route | does |
 |---|---|
@@ -17,7 +18,7 @@ later. The list is grid **122** `TXN MAIN LIST - STOCK ADJUSTMENT`, the line gri
 | `POST /stock/adjustment/post` | engine + Stock Journal voucher + trail, one transaction |
 | `POST /stock/adjustment/cancel` | DRAFT → CANCELLED; POSTED → mirror rows + `Rev` voucher |
 | `DELETE /stock/adjustment` | soft delete a DRAFT |
-| `GET /stock/adjustment/pick-stock?companyId&branchId&godownId&itemId?&bucket?&search?` | the holdings an outward line is chosen from (available > 0), with the lot's `supplierId` / `supplierName` — with `bucket=DAMAGED` it is the "what goes back to which supplier" list |
+| `GET /stock/adjustment/pick-stock?companyId&branchId&godownId&itemId?&bucket?&search?` | the holdings an outward line is chosen from (available > 0), with the lot's `supplierId` / `supplierName` — with `bucket=DAMAGED` it is the "what goes back to which supplier" list; without `bucket`, every bucket (each row says its own) |
 | `GET /stock/reasons?companyId&voucherType&direction?` | the reason picker (shared + company rows merged) |
 | `GET /stock/reasons/list`, `/get`, `/usage`, `POST /stock/reasons`, `POST /stock/reasons/deactivate` | reason master maintenance |
 
@@ -34,7 +35,13 @@ the reason's own type only when the reason lists exactly one issue type (`SAMPLE
 An **outward line is always valued at the branch average** whatever the header's rate source
 or a keyed cost. A lotless outward line is picked by the item's issue strategy (FEFO / FIFO /
 LIFO) and split by `svi_split_no`; MANUAL refuses. The negative-stock policy is **BLOCK**
-whatever the item says (D-A1). Header totals are the NET of the lines.
+whatever the item says (D-A1). Header totals are the NET of the lines, so `totalQty` /
+`totalValue` / `totalValueWot` take a negative on a save (the header DTO omits the shared
+header's floored totals and declares its own); the post re-sums them from the ledger.
+
+A keyed inward `costRate` is **per base unit**, as on the opening: the line value is
+`(base_qty + free_base_qty) × cost_rate` (`svi_value` is generated that way), so a rate keyed per
+document unit is divided by `toBaseFactor` before it is sent.
 
 ## The checks (`StockAdjustmentService.check`, at save and again at validate / post)
 
@@ -47,7 +54,12 @@ whatever the item says (D-A1). Header totals are the NET of the lines.
    holding); an EXPIRY_WRITEOFF must name its lot, and the lot must have expired by the document
    date plus `stock.expiry_writeoff_grace_days` (D-A2, default 0) — otherwise it is DAMAGE;
 5. a re-lot pair balances per item, the OUT names its lot, the IN is a different lot, one base
-   unit; the header is forced to AVG_COST so the IN carries the OUT's value;
+   unit; the header is forced to AVG_COST so the IN carries the OUT's value. The IN names no lot,
+   so "different" is decided by RESOLVING its identity the way the engine will
+   (`resolveInwardLots`: the same policy CTE and identity-key fragment as `attachLotsToLines`, so
+   `' right '` is lot `RIGHT` and an untracked item has one lot per bucket and nothing to re-lot);
+   and once more inside the post, over the lots the engine stamped (`assertRelotLandsElsewhere`,
+   the `afterPost` hook), so a same-lot pair rolls the post back (notes 65 §1);
 6. a move: every line names its lot, `bucket ≠ toBucket`, a positive quantity, a move reason
    (one whose allowed types name `BUCKET_OUT` / `BUCKET_IN`), and the from-holding covers it
    (BLOCK); a document is all moves or none, both ways round; a move reason on any other kind is
@@ -85,14 +97,23 @@ the other way (role `STOCK_EXCESS`); netted per ledger. A re-lot pair and a move
 
 ## Tests
 
-`test/stock-adjustment.e2e-spec.ts` — fourteen cases in one rolled-back transaction, including
+`test/stock-adjustment.e2e-spec.ts` — eighteen cases in one rolled-back transaction, including
 the §5.1 balance assertion after each. Cases 10–14 are Move stock: the pair at one cost with the
 average and the purchase stamps untouched and no voucher, an over-move, a lotless move and the
-other refusals, the cancel, the move picker and a move back to SALEABLE.
+other refusals, the cancel, the move picker and a move back to SALEABLE. Cases 15–18 are notes 65:
+a same-lot re-lot (tracked and untracked, at save, validate and the in-post guard), negative
+header totals on a draft, the every-bucket picker, and a sales shadow voucher refused.
+`dto/save-stock-adjustment.dto.spec.ts` runs the ValidationPipe over the signed totals and the
+optional buckets.
 
 ## The list grid (D-A5)
 
-Grid 122 over `stock.stock_voucher` with `svh_voucher_type IN` the four stored types. Its
+Grid 122 over `stock.stock_voucher` with `svh_voucher_type IN` the four stored types, and only the
+stock module's own rows: `COALESCE(svh_link_src_module, 'STOCK') = 'STOCK'`. A sale bill, challan or
+return posts its stock through a SHADOW ISSUE / RECEIPT voucher linked back with
+`svh_link_src_module = 'SALES'`; those flooded the list (notes 65 §3). `kindOf` refuses the same
+rows (404, naming the owning document), so a shadow cannot be opened, posted or cancelled here, and
+a save with another module's `linkSrcModule` is refused. Its
 `kind_code` column is ADJUSTMENT, RELOT, BUCKET_MOVE, ISSUE, DAMAGE or EXPIRY_WRITEOFF — the same
 test `kindOf` makes. Params (bare tokens, send every one, `''` = no bound): `icompany_id`,
 `ibranch_id`, `iacc_year`, `ifrom_date`, `ito_date`, `ikind`, `istatus`.

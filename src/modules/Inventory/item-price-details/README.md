@@ -11,7 +11,9 @@ or by barcode.
 - **Primary tables (all read-only):**
   - `item_master` — PK `item_id`
   - `item_price_master` — PK `ipm_id`, FK `ipm_item_id → item_id`
-  - `item_tax_master` — PK `tax_id`, joined via `item_default_tax_id`
+  - `tax_rate_master` — PK `tax_id`, joined via `item_default_tax_id` (the retired
+    `item_tax_master` is not read — items were re-pointed by
+    `20260912110000_repoint_items_to_tax_rate_master`)
 
 ## Files
 
@@ -49,8 +51,19 @@ The response `data` is a single object with three parts
 - `item` — the matched `item_master` row.
 - `item_prices` — the item's active price rows from `item_price_master`
   (`ipm_item_id = item_id`, `ipm_is_deleted = false`), ordered by the conversion row's `iuc_unit_slno` then `ipm_id`.
-- `item_tax` — the item's default tax row from `item_tax_master` (looked up by
+- `item_tax` — the item's default tax rate from `tax_rate_master` (looked up by
   `item_default_tax_id`, `tax_is_deleted = false`), or `null` when the item has no default tax.
+  It keeps the field names of the old `item_tax_master` payload
+  ([`ItemPriceDetailTaxPayload`](types/item-price-detail-api.types.ts)) so the client reads it
+  unchanged, but a rate has one percentage and one cess for both sides and no ledgers:
+  - `tax_gst_rate_total` ← `tax_rate_perc`; `tax_cgst/sgst/igst_perc` ← the generated columns;
+    the `_pur_` figures repeat the sales ones.
+  - `tax_cess_type` ← `tax_cess_basis`: `NONE | PERCENT | PER_UNIT | BOTH` (the old table said
+    `UNIT`, and had no `BOTH`); `tax_cess_unit` ← `tax_cess_per_unit`.
+  - `tax_taxability_type` ← `tax_taxability`.
+  - every `tax_*_ledger_id` is `null` — ledgers resolve through `acc_ledger_map` and
+    `tax_rate_ledger` (`GET /tax-rates/resolve`).
+  - `tax_modified_on` is `null` on a rate never edited.
 
 Behavior details, all grounded in [the service](item-price-details.service.ts):
 
@@ -75,4 +88,5 @@ payloads, DTOs, and types are reused from:
 
 - `items-master` — `ItemPayload` / `ItemPayloadDto`
 - `items-price-master` — `ItemPricePayload` / `ItemPricePayloadDto`
-- `items-tax-master` — `ItemTaxPayload` / `ItemTaxPayloadDto`
+- the `item_tax` block has its own `ItemPriceDetailTaxPayload` / `ItemPriceDetailTaxPayloadDto`,
+  no longer `items-tax-master`'s

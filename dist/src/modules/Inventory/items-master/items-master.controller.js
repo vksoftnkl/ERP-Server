@@ -60,12 +60,12 @@ let ItemsMasterController = class ItemsMasterController {
         return { success: true, message: 'Items fetched successfully', data };
     }
     async remove(itemId) {
-        const data = await this.itemsMasterService.toggleDeleteComposite(itemId);
-        return {
-            success: true,
-            message: data.item.deleted ? 'Item deleted successfully' : 'Item restored successfully',
-            data,
-        };
+        const data = await this.itemsMasterService.softDeleteComposite(itemId);
+        return { success: true, message: 'Item deleted successfully', data };
+    }
+    async restore(itemId) {
+        const data = await this.itemsMasterService.restoreComposite(itemId);
+        return { success: true, message: 'Item restored successfully', data };
     }
 };
 exports.ItemsMasterController = ItemsMasterController;
@@ -76,13 +76,17 @@ __decorate([
         summary: 'Create or update an item, optionally with its unit conversions, prices, EAN codes and reorders',
         description: 'Item fields are sent at the top level (create vs update by item_id presence). Optionally include ' +
             'unit_conversions[], prices[], ean_codes[] and/or reorders[] to save them in the same call. ' +
-            "Each provided child collection is DIFF-SYNCED against the item's existing rows by natural key " +
-            '(EAN: ean_code; conversions: iuc_unit_id; prices: ipm_uc_unit_id+ipm_godown_id; reorders: ' +
-            'ir_unit_id+ir_godown_id): new rows are created, matched rows are updated when a field differs, ' +
-            'and existing rows absent from the payload are SOFT-DELETED. Omitting a child array leaves that ' +
-            'table untouched; an empty array soft-deletes all of its rows. Saving is NON-ATOMIC: the item is ' +
-            'saved first, then each child collection in dependency order (unit-conversions, prices, EAN ' +
-            'codes, reorders); the parent item_id is injected into every child row.',
+            "Each provided child collection is DIFF-SYNCED against the item's existing rows by ids or by natural " +
+            'key (EAN: ean_code; conversions: iuc_unit_id; prices: ipm_company_id+ipm_branch_id+ipm_uc_unit_id, ' +
+            "the price table's unique scope — ipm_godown_id is an attribute of the row, not part of its key; " +
+            'reorders: ir_branch_id+ir_unit_id+ir_godown_id). A price or reorder row without its id must state ' +
+            'its company/branch: an omitted one is read as null, the same as a create would store. New rows are ' +
+            'created, matched rows are updated when a field differs, and existing rows absent from the payload ' +
+            'are SOFT-DELETED; two payload rows with the same key are refused. On an item update an omitted top-level key ' +
+            'keeps its stored value and only an explicit null clears it. Omitting a child array leaves that ' +
+            'table untouched; an empty array soft-deletes all of its rows. ONE transaction: the item, then each ' +
+            'child collection in dependency order (unit-conversions, prices, EAN codes, reorders); the parent ' +
+            'item_id is injected into every child row.',
     }),
     (0, swagger_1.ApiCreatedResponse)({ type: item_composite_response_dto_1.ItemCompositeSuccessSingleDto }),
     (0, swagger_1.ApiBadRequestResponse)({ type: item_response_dto_1.ItemErrorResponseDto }),
@@ -163,21 +167,41 @@ __decorate([
     (0, common_1.Delete)('delete'),
     (0, common_1.Version)(api_version_1.API_VERSION),
     (0, swagger_1.ApiOperation)({
-        summary: 'Soft delete or restore an item by id, cascading to its unit conversions, prices, EAN codes and reorders',
-        description: 'Toggles the item (delete if active, restore if deleted), then cascades the same target state to ' +
-            "all of its child rows: children currently in the item's old state are flipped, children already " +
-            'in the target state are left untouched. NON-ATOMIC: the item is toggled first, then each child ' +
-            'collection in its own transaction.',
+        summary: 'Soft delete an item by id, cascading to its unit conversions, prices, EAN codes, reorders and derived track policy',
+        description: 'Deletes only — it is no longer a toggle: an item that is already deleted answers 409 (use ' +
+            'POST /items/restore). The item and every live child row are soft-deleted in ONE transaction, and ' +
+            "the item's derived stock track policy is retired with them.",
     }),
     (0, swagger_1.ApiQuery)({ name: 'item_id', schema: { type: 'string', format: 'uuid' } }),
     (0, swagger_1.ApiOkResponse)({ type: item_composite_response_dto_1.ItemCompositeSuccessDeleteDto }),
     (0, swagger_1.ApiBadRequestResponse)({ type: item_response_dto_1.ItemErrorResponseDto }),
     (0, swagger_1.ApiNotFoundResponse)({ type: item_response_dto_1.ItemErrorResponseDto }),
+    (0, swagger_1.ApiConflictResponse)({ type: item_response_dto_1.ItemErrorResponseDto, description: 'The item is already deleted.' }),
     __param(0, (0, common_1.Query)('item_id', new common_1.ParseUUIDPipe({ version: '7' }))),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", Promise)
 ], ItemsMasterController.prototype, "remove", null);
+__decorate([
+    (0, common_1.Post)('restore'),
+    (0, common_1.Version)(api_version_1.API_VERSION),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Restore a soft-deleted item and the child rows deleted with it',
+        description: 'Restores the item and ONLY the unit conversions, prices, EAN codes and reorders that were ' +
+            'soft-deleted together with it (at or after its deletion instant) — rows an earlier save had ' +
+            "removed stay deleted. The item's stock track policy is re-derived. One transaction. 409 when the " +
+            'item is not deleted, or when its name or one of its EAN codes now belongs to another live item.',
+    }),
+    (0, swagger_1.ApiQuery)({ name: 'item_id', schema: { type: 'string', format: 'uuid' } }),
+    (0, swagger_1.ApiCreatedResponse)({ type: item_composite_response_dto_1.ItemCompositeSuccessDeleteDto }),
+    (0, swagger_1.ApiBadRequestResponse)({ type: item_response_dto_1.ItemErrorResponseDto }),
+    (0, swagger_1.ApiNotFoundResponse)({ type: item_response_dto_1.ItemErrorResponseDto }),
+    (0, swagger_1.ApiConflictResponse)({ type: item_response_dto_1.ItemErrorResponseDto }),
+    __param(0, (0, common_1.Query)('item_id', new common_1.ParseUUIDPipe({ version: '7' }))),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", Promise)
+], ItemsMasterController.prototype, "restore", null);
 exports.ItemsMasterController = ItemsMasterController = __decorate([
     (0, swagger_1.ApiTags)('Items'),
     (0, swagger_1.ApiBearerAuth)('access-token'),

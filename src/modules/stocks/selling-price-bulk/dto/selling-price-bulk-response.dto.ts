@@ -109,8 +109,9 @@ export class SellingPriceRowDto {
   @ApiProperty({
     example: false,
     description:
-      'The item carries a cess. The four-number panel is approximate for it — tax_cess_unit is ' +
-      'a per-unit amount, not a percentage of price.',
+      "The item's tax rate carries a cess or an additional cess. The four-number panel is " +
+      'approximate for it — tax_cess_per_unit is a per-unit amount, not a percentage of price, ' +
+      'and neither cess is in taxPerc.',
   })
   hasCess!: boolean;
 

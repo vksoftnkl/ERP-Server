@@ -17,10 +17,13 @@ import {
   DEFAULT_ACTOR,
   hasOwnProperty,
   isForeignKeyConstraintError,
+  isUniqueConstraintError,
   resolveActor,
   throwInventoryBadRequest,
+  throwInventoryConflict,
   throwInventoryNotFound,
   throwOnUniqueConstraintError,
+  violatedConstraintOf,
 } from 'src/common/utils/module-service.utils';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
 const ITEM_TABLE_NAME = 'item master';
@@ -35,6 +38,23 @@ const COMPOSITE_TRANSACTION_OPTIONS = { maxWait: 10_000, timeout: 30_000 };
 const TRACK_PRESET_INCLUDE = {
   trackPreset: { select: { sptName: true } },
 } satisfies Prisma.ItemMasterInclude;
+/**
+ * item_master's foreign keys, by constraint name, and the payload field each
+ * one checks. A write that trips one is reported against THAT field: every
+ * FK error used to be filed under item_group_id, so a bad tax id read as a
+ * bad group (notes 50 #4).
+ */
+const ITEM_FOREIGN_KEYS: Readonly<Record<string, { field: string; what: string }>> = {
+  item_master_item_group_id_fkey: { field: 'item_group_id', what: 'item group' },
+  item_master_item_default_tax_id_fkey: {
+    field: 'item_default_tax_id',
+    what: 'tax rate (tax_rate_master)',
+  },
+  item_master_item_base_unit_id_fkey: { field: 'item_base_unit_id', what: 'unit' },
+  item_master_item_category_id_fkey: { field: 'item_category_id', what: 'item category' },
+  item_master_item_company_id_fkey: { field: 'item_company_id', what: 'company' },
+  fk_item_track_preset: { field: 'item_track_preset_id', what: 'stock track preset' },
+};
 @Injectable()
 export class ItemsMasterService {
   constructor(
@@ -237,8 +257,11 @@ export class ItemsMasterService {
             select: { cgrId: true, cgrName: true },
           })
         : [],
+      // item_default_tax_id is a FK to tax_rate_master (20260912110000); the
+      // retired item_tax_master holds none of these ids, which is why the name
+      // always came back null (notes 67 B2).
       taxIds.length
-        ? this.prisma.itemTaxMaster.findMany({
+        ? this.prisma.taxRateMaster.findMany({
             where: { taxId: { in: taxIds } },
             select: { taxId: true, taxName: true },
           })
@@ -352,9 +375,11 @@ export class ItemsMasterService {
     const taxIds = Array.from(
       new Set(items.map((i) => i.itemDefaultTaxId).filter((id): id is string => id !== null)),
     );
+    // tax_rate_master, the table item_default_tax_id points at — see
+    // resolveCompositeNames. One rate serves sale and purchase alike.
     const taxRecords =
       taxIds.length > 0
-        ? await this.prisma.itemTaxMaster.findMany({
+        ? await this.prisma.taxRateMaster.findMany({
             where: { taxId: { in: taxIds }, taxIsDeleted: false },
           })
         : [];
@@ -368,6 +393,9 @@ export class ItemsMasterService {
         item.prices[0] ??
         null;
       const tax = item.itemDefaultTaxId ? (taxById.get(item.itemDefaultTaxId) ?? null) : null;
+      // A hint read off the item's OWN flags, not the resolved stock track
+      // policy: since notes 68 an item with no preset follows its group's
+      // policy, and for such an item the two can disagree.
       const trackingType =
         item.itemBatchConfig === 1
           ? 'MRP'
@@ -410,107 +438,226 @@ export class ItemsMasterService {
         round_off: toNumber(p?.ipmRoundOff ?? 0),
         tax_id: item.itemDefaultTaxId ?? null,
         tax_name: tax?.taxName ?? null,
-        tax_perc: toNumber(tax?.taxGstRateTotal ?? 0),
-        cess_type: tax?.taxCessType ?? 'NONE',
+        tax_perc: toNumber(tax?.taxRatePerc ?? 0),
+        // tax_cess_basis: NONE | PERCENT | PER_UNIT | BOTH.
+        cess_type: tax?.taxCessBasis ?? 'NONE',
         cess_perc: toNumber(tax?.taxCessPerc ?? 0),
-        cess_per_unit: toNumber(tax?.taxCessUnit ?? 0),
+        cess_per_unit: toNumber(tax?.taxCessPerUnit ?? 0),
         tracking_type: trackingType,
       };
     });
   }
-  async toggleDelete(itemId: string): Promise<{ item_id: string; deleted: boolean }> {
+  /**
+   * Soft-deletes an item and, in the SAME transaction, every live child row
+   * (unit conversions, prices, EAN codes, reorders) and its derived stock track
+   * policy. An item that is already deleted is a 409, not a restore: this used
+   * to be a toggle, so a second DELETE brought the item back (notes 50 #5).
+   *
+   * The item's itemModifiedOn becomes the deletion instant and every child is
+   * stamped at or after it in this transaction — restoreComposite reads that
+   * instant to tell the rows deleted WITH the item from rows an earlier save
+   * had removed on purpose.
+   */
+  async softDeleteComposite(itemId: string): Promise<ItemCompositeDeleteResult> {
     return this.prisma.$transaction(async (tx) => {
-      // Find regardless of current deleted state
-      const existing = await tx.itemMaster.findFirst({
-        where: {
-          itemId,
-        },
-      });
-      if (!existing) {
-        throwInventoryNotFound<ItemErrorDetail>(
-          'Item not found',
-          'item_id',
-          `No item found with id ${itemId}`,
-        );
+      const existing = await this.findItemForDeleteState(tx, itemId);
+      if (existing.itemIsDeleted) {
+        throwInventoryConflict<ItemErrorDetail>('Item is already deleted', [
+          {
+            field: 'item_id',
+            message: `${existing.itemNameEn} is already deleted. POST /items/restore brings it back.`,
+          },
+        ]);
       }
-      const wasDeleted = existing.itemIsDeleted;
-      const nextDeleted = !wasDeleted;
-      const modifiedOn = new Date();
-      const modifiedBy = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
-      // Guarded update: only flips if state hasn't changed since the read
-      const result = await tx.itemMaster.updateMany({
-        where: {
-          itemId,
-          itemIsDeleted: wasDeleted,
-        },
-        data: {
-          itemIsDeleted: nextDeleted,
-          itemModifiedOn: modifiedOn,
-          itemModifiedBy: modifiedBy,
-        },
+      const item = await this.setItemDeleted(tx, existing, true);
+      const [unitConversionIds, priceIds, eanCodeIds, reorderIds] = await Promise.all([
+        tx.itemUnitConversion
+          .findMany({ where: { iucItemId: itemId, iucIsDeleted: false }, select: { iucId: true } })
+          .then((rows) => rows.map((row) => row.iucId)),
+        tx.itemPriceMaster
+          .findMany({ where: { ipmItemId: itemId, ipmIsDeleted: false }, select: { ipmId: true } })
+          .then((rows) => rows.map((row) => row.ipmId)),
+        tx.itemEanCode
+          .findMany({ where: { eanItemId: itemId, eanIsDeleted: false }, select: { eanId: true } })
+          .then((rows) => rows.map((row) => row.eanId)),
+        tx.itemReorder
+          .findMany({ where: { irItemId: itemId, irIsDeleted: false }, select: { irId: true } })
+          .then((rows) => rows.map((row) => row.irId)),
+      ]);
+      const children = await this.toggleChildren(tx, {
+        unitConversionIds,
+        priceIds,
+        eanCodeIds,
+        reorderIds,
       });
-      if (result.count === 0) {
-        throwInventoryNotFound<ItemErrorDetail>(
-          'Item not found',
-          'item_id',
-          `No item found with id ${itemId}`,
-        );
-      }
-      const originalRecord = this.toPayload(existing);
-      const modifiedRecord = this.toPayload({
-        ...existing,
-        itemIsDeleted: nextDeleted,
-        itemModifiedOn: modifiedOn,
-        itemModifiedBy: modifiedBy,
-      });
-      await this.auditLogService.logEntityChange(
-        {
-          action: nextDeleted ? 'cancel' : 'update',
-          tableName: ITEM_TABLE_NAME,
-          screenName: ITEM_AUDIT_SCREEN_NAME,
-          screenType: 'master',
-          pk: itemId,
-          displayName: existing.itemNameEn,
-          originalRecord,
-          modifiedRecord,
-          userId: modifiedBy,
-          notes: nextDeleted ? 'Item soft deleted' : 'Item restored',
-        },
-        tx,
-      );
-      return {
-        item_id: itemId,
-        deleted: nextDeleted,
-      };
-    });
+      await this.stockTrackPolicyService.retireForItem(itemId, tx);
+      return { item, ...children };
+    }, COMPOSITE_TRANSACTION_OPTIONS);
   }
   /**
-   * Soft deletes (or restores) an item and cascades the same state to all of
-   * its unit conversions, prices, EAN codes and reorders. NOT atomic: the item
-   * is toggled first (its own transaction), then each child collection is
-   * toggled in its own transaction. Only child rows currently in the item's
-   * OLD state are flipped (e.g. deleting the item soft-deletes its currently
-   * active children; restoring it restores its currently deleted children) —
-   * children already in the target state are left untouched.
+   * Restores a soft-deleted item and ONLY the child rows deleted with it: those
+   * soft-deleted at or after the item's deletion instant (its itemModifiedOn,
+   * which nothing can move while the item is deleted). Rows an earlier save
+   * removed — an old base unit, a replaced EAN — stay deleted; the old toggle
+   * brought every one of them back (notes 67 B4). The derived stock track
+   * policy is re-derived. One transaction: a restored name or EAN code that
+   * another live item has taken since is a 409 and nothing is restored.
    */
-  async toggleDeleteComposite(itemId: string): Promise<ItemCompositeDeleteResult> {
-    const item = await this.toggleDelete(itemId);
-    const wasDeleted = !item.deleted;
-    const [unitConversionIds, priceIds, eanCodeIds, reorderIds] = await Promise.all([
-      this.itemUnitConversionService.findIdsByItemId(itemId, wasDeleted),
-      this.itemsPriceMasterService.findIdsByItemId(itemId, wasDeleted),
-      this.itemsEanCodeMasterService.findIdsByItemId(itemId, wasDeleted),
-      this.itemsReorderMasterService.findIdsByItemId(itemId, wasDeleted),
-    ]);
-    const [unit_conversions, prices, ean_codes, reorders] = await Promise.all([
-      unitConversionIds.length
-        ? this.itemUnitConversionService.toggleDelete(unitConversionIds)
-        : [],
-      priceIds.length ? this.itemsPriceMasterService.toggleDelete(priceIds) : [],
-      eanCodeIds.length ? this.itemsEanCodeMasterService.toggleDelete(eanCodeIds) : [],
-      reorderIds.length ? this.itemsReorderMasterService.toggleDelete(reorderIds) : [],
-    ]);
-    return { item, unit_conversions, prices, ean_codes, reorders };
+  async restoreComposite(itemId: string): Promise<ItemCompositeDeleteResult> {
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const existing = await this.findItemForDeleteState(tx, itemId);
+        if (!existing.itemIsDeleted) {
+          throwInventoryConflict<ItemErrorDetail>('Item is not deleted', [
+            {
+              field: 'item_id',
+              message: `${existing.itemNameEn} is not deleted; there is nothing to restore.`,
+            },
+          ]);
+        }
+        const deletedOn = existing.itemModifiedOn;
+        const [unitConversionIds, priceIds, eanCodeIds, reorderIds] = await Promise.all([
+          tx.itemUnitConversion
+            .findMany({
+              where: { iucItemId: itemId, iucIsDeleted: true, iucUpdatedOn: { gte: deletedOn } },
+              select: { iucId: true },
+            })
+            .then((rows) => rows.map((row) => row.iucId)),
+          tx.itemPriceMaster
+            .findMany({
+              where: { ipmItemId: itemId, ipmIsDeleted: true, ipmUpdatedOn: { gte: deletedOn } },
+              select: { ipmId: true },
+            })
+            .then((rows) => rows.map((row) => row.ipmId)),
+          tx.itemEanCode
+            .findMany({
+              where: { eanItemId: itemId, eanIsDeleted: true, eanModifiedOn: { gte: deletedOn } },
+              select: { eanId: true },
+            })
+            .then((rows) => rows.map((row) => row.eanId)),
+          tx.itemReorder
+            .findMany({
+              where: { irItemId: itemId, irIsDeleted: true, irModifiedOn: { gte: deletedOn } },
+              select: { irId: true },
+            })
+            .then((rows) => rows.map((row) => row.irId)),
+        ]);
+        const item = await this.setItemDeleted(tx, existing, false);
+        const children = await this.toggleChildren(tx, {
+          unitConversionIds,
+          priceIds,
+          eanCodeIds,
+          reorderIds,
+        });
+        const restored = await tx.itemMaster.findFirstOrThrow({ where: { itemId } });
+        await this.stockTrackPolicyService.syncFromItem(restored, tx);
+        return { item, ...children };
+      }, COMPOSITE_TRANSACTION_OPTIONS);
+    } catch (error: unknown) {
+      if (isUniqueConstraintError(error)) {
+        const constraint = violatedConstraintOf(error) ?? '';
+        throwInventoryConflict<ItemErrorDetail>('Item cannot be restored', [
+          /item_name_en/.test(constraint)
+            ? {
+                field: 'item_name_en',
+                message: 'Another live item now has this name. Rename one of them, then restore.',
+              }
+            : /ean_code/.test(constraint)
+              ? {
+                  field: 'ean_codes',
+                  message:
+                    'An EAN code of this item now belongs to another live item. Remove it there, then restore.',
+                }
+              : {
+                  field: 'item_id',
+                  message: 'A row of this item now clashes with a live row elsewhere.',
+                },
+        ]);
+      }
+      throw error;
+    }
+  }
+  private async findItemForDeleteState(
+    tx: Prisma.TransactionClient,
+    itemId: string,
+  ): Promise<ItemMaster> {
+    const existing = await tx.itemMaster.findFirst({ where: { itemId } });
+    if (!existing) {
+      throwInventoryNotFound<ItemErrorDetail>(
+        'Item not found',
+        'item_id',
+        `No item found with id ${itemId}`,
+      );
+    }
+    return existing;
+  }
+  /** Flips the item row (guarded against a concurrent flip) and writes its audit row. */
+  private async setItemDeleted(
+    tx: Prisma.TransactionClient,
+    existing: ItemMaster,
+    deleted: boolean,
+  ): Promise<{ item_id: string; deleted: boolean }> {
+    const modifiedOn = new Date();
+    const modifiedBy = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
+    const result = await tx.itemMaster.updateMany({
+      where: { itemId: existing.itemId, itemIsDeleted: !deleted },
+      data: { itemIsDeleted: deleted, itemModifiedOn: modifiedOn, itemModifiedBy: modifiedBy },
+    });
+    if (result.count === 0) {
+      throwInventoryConflict<ItemErrorDetail>('Item changed', [
+        {
+          field: 'item_id',
+          message: 'The item was deleted or restored by someone else just now. Reload it.',
+        },
+      ]);
+    }
+    await this.auditLogService.logEntityChange(
+      {
+        action: deleted ? 'cancel' : 'update',
+        tableName: ITEM_TABLE_NAME,
+        screenName: ITEM_AUDIT_SCREEN_NAME,
+        screenType: 'master',
+        pk: existing.itemId,
+        displayName: existing.itemNameEn,
+        originalRecord: this.toPayload(existing),
+        modifiedRecord: this.toPayload({
+          ...existing,
+          itemIsDeleted: deleted,
+          itemModifiedOn: modifiedOn,
+          itemModifiedBy: modifiedBy,
+        }),
+        userId: modifiedBy,
+        notes: deleted ? 'Item soft deleted' : 'Item restored',
+      },
+      tx,
+    );
+    return { item_id: existing.itemId, deleted };
+  }
+  /** Flips the named child rows through their own services, on the caller's transaction. */
+  private async toggleChildren(
+    tx: Prisma.TransactionClient,
+    ids: {
+      unitConversionIds: string[];
+      priceIds: string[];
+      eanCodeIds: string[];
+      reorderIds: string[];
+    },
+  ): Promise<Omit<ItemCompositeDeleteResult, 'item'>> {
+    // Sequential, not Promise.all: one transaction is one connection, and the
+    // EAN service re-checks the single-default rule against the other rows.
+    const unit_conversions = ids.unitConversionIds.length
+      ? await this.itemUnitConversionService.toggleDelete(ids.unitConversionIds, tx)
+      : [];
+    const prices = ids.priceIds.length
+      ? await this.itemsPriceMasterService.toggleDelete(ids.priceIds, tx)
+      : [];
+    const ean_codes = ids.eanCodeIds.length
+      ? await this.itemsEanCodeMasterService.toggleDelete(ids.eanCodeIds, tx)
+      : [];
+    const reorders = ids.reorderIds.length
+      ? await this.itemsReorderMasterService.toggleDelete(ids.reorderIds, tx)
+      : [];
+    return { unit_conversions, prices, ean_codes, reorders };
   }
   private async createItem(
     saveItemDto: SaveItemDto,
@@ -586,7 +733,6 @@ export class ItemsMasterService {
         },
       ]);
     }
-    const companyId = saveItemDto.item_company_id ?? null;
     const update = async (client: Prisma.TransactionClient) => {
       const existing = await client.itemMaster.findFirst({
         where: {
@@ -601,17 +747,26 @@ export class ItemsMasterService {
           `No active item found with id ${itemId}`,
         );
       }
+      // AN UPDATE WRITES WHAT THE PAYLOAD STATES. An omitted key keeps the
+      // stored value — undefined is "leave it" to Prisma — and only an explicit
+      // null clears one. Company and base unit used to be written `?? null`
+      // (and the packing list `?? []`, in applyOptionalFields), so any client
+      // that did not echo them wiped them (notes 50 #1, re-found in notes 67).
       const data: Prisma.ItemMasterUncheckedUpdateInput = {
-        itemCompanyId: companyId,
         itemNameEn,
         itemGroupId: saveItemDto.item_group_id,
-        itemBaseUnitId: saveItemDto.item_base_unit_id ?? null,
         itemModifiedOn: new Date(),
         itemModifiedBy: resolveActor(
           saveItemDto.item_modified_by,
           this.requestContextService.getUserId(),
         ),
       };
+      if (saveItemDto.item_company_id !== undefined) {
+        data.itemCompanyId = saveItemDto.item_company_id ?? null;
+      }
+      if (saveItemDto.item_base_unit_id !== undefined) {
+        data.itemBaseUnitId = saveItemDto.item_base_unit_id ?? null;
+      }
       this.applyOptionalFields(data, saveItemDto);
       const updated = await client.itemMaster.update({
         where: {
@@ -650,6 +805,13 @@ export class ItemsMasterService {
       throw error;
     }
   }
+  /**
+   * `hasOwnProperty` is true for EVERY field declared on a DTO instance, sent or
+   * not (target ES2022 defines class fields), so it guards nothing on its own:
+   * what keeps an omitted field untouched is that its value is undefined, which
+   * Prisma skips. A field must therefore never be written as `value ?? x` here
+   * — that turns "not sent" into x.
+   */
   private applyOptionalFields(
     data: Prisma.ItemMasterUncheckedCreateInput | Prisma.ItemMasterUncheckedUpdateInput,
     saveItemDto: SaveItemDto,
@@ -808,7 +970,8 @@ export class ItemsMasterService {
     if (hasOwnProperty(saveItemDto, 'item_storage_location')) {
       data.itemStorageLocation = saveItemDto.item_storage_location;
     }
-    if (hasOwnProperty(saveItemDto, 'item_packing_item_ids')) {
+    // null clears the list; absent leaves it (create seeds [] itself).
+    if (saveItemDto.item_packing_item_ids !== undefined) {
       data.itemPackingItemIds = saveItemDto.item_packing_item_ids ?? [];
     }
     if (hasOwnProperty(saveItemDto, 'item_incl_tax')) {
@@ -918,8 +1081,14 @@ export class ItemsMasterService {
       { field: 'item_name_en', message: 'Duplicate item_name_en is not allowed' },
     ]);
     if (isForeignKeyConstraintError(error)) {
+      const known = ITEM_FOREIGN_KEYS[violatedConstraintOf(error) ?? ''];
       throwInventoryBadRequest<ItemErrorDetail>('Invalid relation reference', [
-        { field: 'item_group_id', message: 'Referenced relation does not exist' },
+        known
+          ? {
+              field: known.field,
+              message: `${known.field} does not name an existing ${known.what}`,
+            }
+          : { field: 'request', message: 'Referenced relation does not exist' },
       ]);
     }
   }

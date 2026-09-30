@@ -1249,7 +1249,12 @@ export class AuditLogService {
         return new Map(sections.map((section) => [section.secId, section.secName]));
       }
       case 'itemTax': {
-        const taxes = await this.prisma.itemTaxMaster.findMany({
+        // Every id this resolves — itg_default_tax_id, item_default_tax_id and
+        // ith_tax_id — is a tax_rate_master id since
+        // 20260912110000_repoint_items_to_tax_rate_master, which re-keyed the
+        // items rather than copying ids. A log row written before it carries a
+        // retired item_tax_master id, matches nothing here and shows the raw id.
+        const taxes = await this.prisma.taxRateMaster.findMany({
           where: {
             taxId: {
               in: [...ids],

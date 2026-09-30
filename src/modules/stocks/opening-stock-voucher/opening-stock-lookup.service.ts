@@ -117,9 +117,11 @@ export class OpeningStockLookupService {
              u.iuc_to_base_factor                              AS "toBaseFactor",
              b.iuc_id                                          AS "baseUomId",
 
-             COALESCE(t.tax_gst_rate_total, 0)                 AS "taxPerc",
+             -- ck_tax_cess_agrees holds each cess figure to tax_cess_basis,
+             -- so the one not in play is already 0 and needs no CASE here.
+             COALESCE(t.tax_rate_perc, 0)                      AS "taxPerc",
              COALESCE(t.tax_cess_perc, 0)                      AS "cessPerc",
-             COALESCE(t.tax_cess_unit, 0)                      AS "cessUnit",
+             COALESCE(t.tax_cess_per_unit, 0)                  AS "cessUnit",
 
              -- Which identity columns the line must carry. 'N' when nothing
              -- matches at all is not a fallback, it is the rule: track nothing.
@@ -163,8 +165,10 @@ export class OpeningStockLookupService {
             AND COALESCE(b.iuc_is_deleted, false) = false
 
         -- LEFT: item_default_tax_id is nullable, and an item with no tax slab
-        -- is still an item that can be opened.
-        LEFT JOIN inventory.item_tax_master t ON t.tax_id = i.item_default_tax_id
+        -- is still an item that can be opened. It references tax_rate_master
+        -- (20260912110000_repoint_items_to_tax_rate_master); the retired
+        -- item_tax_master holds none of those ids, so a join there read 0%.
+        LEFT JOIN inventory.tax_rate_master t ON t.tax_id = i.item_default_tax_id
 
         -- A null company or branch here matches only the policy rows that
         -- are themselves company-wide / branch-wide, which is the fragment's

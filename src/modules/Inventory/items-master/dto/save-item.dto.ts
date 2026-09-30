@@ -272,7 +272,7 @@ export class SaveItemDto {
     format: 'uuid',
     nullable: true,
     description:
-      'stock.stock_track_preset.spt_id, from /stock-track-presets/get. Supplies every column of the ITEM-scope stock track policy. Send null to clear it and fall back to item_batch_config / item_is_batch_based / item_is_expiry_item.',
+      "stock.stock_track_preset.spt_id, from /stock-track-presets/get. Supplies every column of the ITEM-scope stock track policy — the ONLY item-level tracking choice (NONE included). Send null to clear it: the item then follows its group's policy, then the company's; item_batch_config / item_is_batch_based / item_is_expiry_item / item_allow_neg_stock no longer derive one (notes 68).",
   })
   @NullableUuid()
   item_track_preset_id?: string | null;

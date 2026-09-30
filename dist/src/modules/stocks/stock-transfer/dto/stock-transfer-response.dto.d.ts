@@ -95,6 +95,7 @@ export declare class StockTransferLineDto {
     reasonId: string | null;
     reasonName: string | null;
     remarks: string | null;
+    trackSignature: string;
 }
 export declare class StockTransferDocumentDto {
     header: StockTransferHeaderDto;

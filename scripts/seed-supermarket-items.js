@@ -606,31 +606,36 @@ const upsertUnits = async (actor) => {
   return entries;
 };
 
+// item_default_tax_id / itg_default_tax_id are FKs to tax_rate_master
+// (20260912110000); the old item_tax_master is retired and its ids would fail
+// both. cgst / sgst / igst are GENERATED from tax_rate_perc there.
 const upsertTaxes = async (actor) => {
   const entries = new Map();
 
   for (const tax of TAXES) {
-    const existing = await prisma.itemTaxMaster.findUnique({
-      where: { taxName: tax.name },
+    // ux_tax_name / ux_tax_code are partial and case-insensitive, so there is
+    // no Prisma unique key to upsert on: match either the way the index does.
+    const existing = await prisma.taxRateMaster.findFirst({
+      where: {
+        taxIsDeleted: false,
+        OR: [
+          { taxName: { equals: tax.name, mode: 'insensitive' } },
+          { taxCode: { equals: tax.code, mode: 'insensitive' } },
+        ],
+      },
       select: { taxId: true, taxName: true, taxCreatedBy: true },
     });
     const data = {
       taxCode: tax.code,
-      taxTaxabilityType: tax.rate === 0 ? 'EXEMPT' : 'TAXABLE',
-      taxCgstPerc: tax.cgst,
-      taxSgstPerc: tax.sgst,
-      taxIgstPerc: tax.igst,
-      taxCgstPurPerc: tax.cgst,
-      taxSgstPurPerc: tax.sgst,
-      taxIgstPurPerc: tax.igst,
-      taxGstRateTotal: tax.rate,
+      taxTaxability: tax.rate === 0 ? 'EXEMPT' : 'TAXABLE',
+      taxRatePerc: tax.rate,
       taxIsActive: true,
       taxIsDeleted: false,
       taxModifiedBy: actor,
       taxModifiedOn: new Date(),
     };
     const record = existing
-      ? await prisma.itemTaxMaster.update({
+      ? await prisma.taxRateMaster.update({
           where: { taxId: existing.taxId },
           data: {
             ...data,
@@ -638,7 +643,7 @@ const upsertTaxes = async (actor) => {
           },
           select: { taxId: true, taxName: true },
         })
-      : await prisma.itemTaxMaster.create({
+      : await prisma.taxRateMaster.create({
           data: {
             taxName: tax.name,
             taxCreatedBy: actor,
@@ -647,7 +652,7 @@ const upsertTaxes = async (actor) => {
           select: { taxId: true, taxName: true },
         });
 
-    entries.set(record.taxName, record.taxId);
+    entries.set(tax.name, record.taxId);
   }
 
   return entries;

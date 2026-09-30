@@ -9,4 +9,5 @@ export declare class ItemsMasterController {
     getById(itemId: string): Promise<ItemSuccessResponse<ItemCompositePayload>>;
     bulkLoad(itemCompanyId?: string, itemBranchId?: string, godownId?: string, itemGroupId?: string, itemBrandId?: string, itemSectionId?: string, itemCategoryId?: string, limit?: number, uiTableId?: string, uiColumnId?: string): Promise<ItemSuccessResponse<BulkLoadItemPayload[]>>;
     remove(itemId: string): Promise<ItemSuccessResponse<ItemCompositeDeleteResult>>;
+    restore(itemId: string): Promise<ItemSuccessResponse<ItemCompositeDeleteResult>>;
 }

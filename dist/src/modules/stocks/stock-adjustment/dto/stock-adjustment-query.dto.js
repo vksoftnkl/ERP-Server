@@ -121,7 +121,11 @@ __decorate([
     __metadata("design:type", String)
 ], PickStockQueryDto.prototype, "itemId", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ enum: stock_voucher_types_1.STOCK_BUCKETS }),
+    (0, swagger_1.ApiPropertyOptional)({
+        enum: stock_voucher_types_1.STOCK_BUCKETS,
+        description: 'One bucket, or every bucket when absent — each row says its own `bucket`, so one call answers "where is this lot" across SALEABLE, DAMAGED and the rest.',
+    }),
+    (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsIn)(stock_voucher_types_1.STOCK_BUCKETS),
     __metadata("design:type", String)
 ], PickStockQueryDto.prototype, "bucket", void 0);

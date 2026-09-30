@@ -18,8 +18,15 @@ const save_stock_voucher_dto_1 = require("../../stock-voucher/dto/save-stock-vou
 const stock_voucher_types_1 = require("../../stock-voucher/types/stock-voucher.types");
 const stock_adjustment_rules_1 = require("../stock-adjustment.rules");
 const MAX_LINES = 2000;
-class SaveStockAdjustmentHeaderDto extends save_stock_voucher_dto_1.SaveStockVoucherHeaderDto {
+class SaveStockAdjustmentHeaderDto extends (0, swagger_1.OmitType)(save_stock_voucher_dto_1.SaveStockVoucherHeaderDto, [
+    'totalQty',
+    'totalValue',
+    'totalValueWot',
+]) {
     voucherType;
+    totalQty;
+    totalValue;
+    totalValueWot;
 }
 exports.SaveStockAdjustmentHeaderDto = SaveStockAdjustmentHeaderDto;
 __decorate([
@@ -32,6 +39,30 @@ __decorate([
     }),
     __metadata("design:type", String)
 ], SaveStockAdjustmentHeaderDto.prototype, "voucherType", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        default: 0,
+        description: 'The document total quantity, as the screen summed it: the NET of the lines, so MAY BE NEGATIVE when more goes out than comes in. A move counts the quantity moved. numeric(18,6), NOT NULL DEFAULT 0 — omit to take the default; the post re-sums it from the ledger either way.',
+    }),
+    (0, dtoDecorators_1.OptionalNumber)(),
+    __metadata("design:type", Number)
+], SaveStockAdjustmentHeaderDto.prototype, "totalQty", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        default: 0,
+        description: 'The document total value, inclusive of tax: the net, may be negative — see totalQty. numeric(18,2), NOT NULL DEFAULT 0.',
+    }),
+    (0, dtoDecorators_1.OptionalNumber)(),
+    __metadata("design:type", Number)
+], SaveStockAdjustmentHeaderDto.prototype, "totalValue", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        default: 0,
+        description: 'The document total value excluding tax: the net, may be negative — see totalQty. numeric(18,2), NOT NULL DEFAULT 0.',
+    }),
+    (0, dtoDecorators_1.OptionalNumber)(),
+    __metadata("design:type", Number)
+], SaveStockAdjustmentHeaderDto.prototype, "totalValueWot", void 0);
 class SaveStockAdjustmentItemDto {
     lineNo;
     itemId;
@@ -127,8 +158,9 @@ __decorate([
     (0, swagger_1.ApiPropertyOptional)({
         enum: stock_voucher_types_1.STOCK_BUCKETS,
         default: 'SALEABLE',
-        description: 'The holding\'s bucket. On a BUCKET_MOVE line, the bucket the stock LEAVES.',
+        description: 'The holding\'s bucket; absent means SALEABLE. On a BUCKET_MOVE line, the bucket the stock LEAVES.',
     }),
+    (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsIn)(stock_voucher_types_1.STOCK_BUCKETS),
     __metadata("design:type", String)
 ], SaveStockAdjustmentItemDto.prototype, "bucket", void 0);
@@ -179,7 +211,7 @@ __decorate([
 ], SaveStockAdjustmentItemDto.prototype, "supplierId", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({
-        description: 'INWARD only, and only when the header names no rate source that derives one: what the stock is worth per document unit. An OUTWARD line is always stamped by the engine at the branch average; a keyed cost is ignored.',
+        description: 'INWARD only, and only when the header names no rate source that derives one: what the stock is worth per BASE unit (a rate keyed per document unit is divided by toBaseFactor first). The line value is (baseQty + freeBaseQty) × costRate, the way svi_value is generated. An OUTWARD line is always stamped by the engine at the branch average; a keyed cost is ignored.',
     }),
     (0, dtoDecorators_1.OptionalNumber)(0),
     __metadata("design:type", Number)

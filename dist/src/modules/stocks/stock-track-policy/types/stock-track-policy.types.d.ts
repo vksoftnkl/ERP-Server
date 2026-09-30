@@ -3,12 +3,6 @@ export interface ItemTrackPolicySource {
     itemCompanyId: string | null;
     itemBranchId: string | null;
     itemTrackPresetId: string | null;
-    itemBatchConfig: number;
-    itemIsBatchBased: boolean;
-    itemIsExpiryItem: boolean;
-    itemExpiryDays: number | null;
-    itemIntimateBeforeDays: number | null;
-    itemAllowNegStock: boolean;
 }
 export interface ItemGroupTrackPolicySource {
     itgId: string;

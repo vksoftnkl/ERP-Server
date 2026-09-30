@@ -92,6 +92,7 @@ export declare class OpeningStockLineDto {
     valueWot: number;
     lotId: string | null;
     remarks: string | null;
+    trackSignature: string;
 }
 export declare class OpeningStockDocumentDto {
     header: OpeningStockHeaderDto;

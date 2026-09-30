@@ -43,8 +43,9 @@ model ItemReorder {
   @@map("item_reorders")
    @@schema("inventory")
 
-  // Prevent duplicates per scope (no company)
-  @@unique([irItemId, irUcUnitId, irGodownId], map: "uq_ir_item_unit_godown")
+  // uq_ir_item_unit_godown UNIQUE (ir_item_id, ir_uc_unit_id, ir_godown_id)
+  // WHERE ir_is_deleted = false — DB-only, partial since 20260930120000 (a
+  // partial index cannot be declared here).
 
   @@index([irItemId], map: "idx_ir_item")
   @@index([irUcUnitId], map: "idx_ir_unit")

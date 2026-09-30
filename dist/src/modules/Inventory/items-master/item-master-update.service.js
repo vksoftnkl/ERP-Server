@@ -101,17 +101,19 @@ let ItemMasterUpdateService = class ItemMasterUpdateService {
             return [];
         }
         const existing = await this.itemsPriceMasterService.findByItemId(itemId, tx);
-        const existingByKey = new Map(existing.map((row) => [this.pairKey(row.ipm_uc_unit_id, row.ipm_godown_id), row]));
+        const priceKey = (row) => this.naturalKey(row.ipm_company_id, row.ipm_branch_id, row.ipm_uc_unit_id);
+        const existingByKey = new Map(existing.map((row) => [priceKey(row), row]));
+        const resolvedRows = children.map((child) => ({
+            ...child,
+            ipm_uc_unit_id: this.resolveUnitConversionId(child.ipm_uc_unit_id, 'ipm_uc_unit_id', conversions),
+        }));
+        this.refuseDuplicateKeys(resolvedRows.map(priceKey), 'prices', 'two price rows for the same company, branch and unit — the price table holds one per scope (ipm_godown_id is an attribute, not part of the key)');
         const toSave = [];
         const claimedIds = new Set();
-        for (const child of children) {
-            const resolved = {
-                ...child,
-                ipm_uc_unit_id: this.resolveUnitConversionId(child.ipm_uc_unit_id, 'ipm_uc_unit_id', conversions),
-            };
+        for (const resolved of resolvedRows) {
             const match = resolved.ipm_id
                 ? existing.find((row) => row.ipm_id === resolved.ipm_id)
-                : existingByKey.get(this.pairKey(resolved.ipm_uc_unit_id, resolved.ipm_godown_id));
+                : existingByKey.get(priceKey(resolved));
             if (match) {
                 claimedIds.add(match.ipm_id);
                 if (!this.rowChanged(resolved, match, IPM_IGNORED_FIELDS)) {
@@ -167,19 +169,21 @@ let ItemMasterUpdateService = class ItemMasterUpdateService {
             return [];
         }
         const existing = await this.itemsReorderMasterService.findByItemId(itemId, tx);
-        const existingByKey = new Map(existing.map((row) => [this.pairKey(row.ir_unit_id, row.ir_godown_id), row]));
+        const reorderKey = (row) => this.naturalKey(row.ir_branch_id, row.ir_unit_id, row.ir_godown_id);
+        const existingByKey = new Map(existing.map((row) => [reorderKey(row), row]));
+        const resolvedRows = children.map((child) => ({
+            ...child,
+            ir_unit_id: child.ir_unit_id == null
+                ? child.ir_unit_id
+                : this.resolveUnitConversionId(child.ir_unit_id, 'ir_unit_id', conversions),
+        }));
+        this.refuseDuplicateKeys(resolvedRows.map(reorderKey), 'reorders', 'two reorder rows for the same branch, unit and godown');
         const toSave = [];
         const claimedIds = new Set();
-        for (const child of children) {
-            const resolved = {
-                ...child,
-                ir_unit_id: child.ir_unit_id == null
-                    ? child.ir_unit_id
-                    : this.resolveUnitConversionId(child.ir_unit_id, 'ir_unit_id', conversions),
-            };
+        for (const resolved of resolvedRows) {
             const match = resolved.ir_id
                 ? existing.find((row) => row.ir_id === resolved.ir_id)
-                : existingByKey.get(this.pairKey(resolved.ir_unit_id ?? null, resolved.ir_godown_id ?? null));
+                : existingByKey.get(reorderKey(resolved));
             if (match) {
                 claimedIds.add(match.ir_id);
                 if (!this.rowChanged(resolved, match, IR_IGNORED_FIELDS)) {
@@ -215,8 +219,23 @@ let ItemMasterUpdateService = class ItemMasterUpdateService {
         }
         return false;
     }
-    pairKey(left, right) {
-        return `${left ?? ''}::${right ?? ''}`;
+    naturalKey(...parts) {
+        return parts.map((part) => part ?? '').join('::');
+    }
+    refuseDuplicateKeys(keys, field, what) {
+        const firstAt = new Map();
+        keys.forEach((key, index) => {
+            const first = firstAt.get(key);
+            if (first !== undefined) {
+                (0, module_service_utils_1.throwInventoryBadRequest)('Duplicate rows in one save', [
+                    {
+                        field: `${field}.${index}`,
+                        message: `${field}[${first}] and ${field}[${index}] are ${what}.`,
+                    },
+                ]);
+            }
+            firstAt.set(key, index);
+        });
     }
 };
 exports.ItemMasterUpdateService = ItemMasterUpdateService;

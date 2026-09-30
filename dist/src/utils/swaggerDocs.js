@@ -80,7 +80,6 @@ const items_brand_master_module_1 = require("../modules/Inventory/items-brand-ma
 const items_section_master_module_1 = require("../modules/Inventory/items-section-master/items-section-master.module");
 const items_category_master_module_1 = require("../modules/Inventory/items-category-master/items-category-master.module");
 const units_master_module_1 = require("../modules/Inventory/units-master/units-master.module");
-const items_tax_master_module_1 = require("../modules/Inventory/items-tax-master/items-tax-master.module");
 const tax_rate_master_module_1 = require("../modules/Inventory/tax-rate-master/tax-rate-master.module");
 const items_price_master_module_1 = require("../modules/Inventory/items-price-master/items-price-master.module");
 const item_unit_conversion_module_1 = require("../modules/Inventory/item-unit-conversion/item-unit-conversion.module");
@@ -165,16 +164,10 @@ exports.swaggerModuleDocuments = [
         include: [units_master_module_1.UnitsMasterModule],
     },
     {
-        path: 'items-tax-master',
-        title: 'Item Tax API',
-        description: 'Item tax module endpoints',
-        include: [items_tax_master_module_1.ItemsTaxMasterModule],
-    },
-    {
         path: 'tax-rates',
         title: 'Tax Rate Master API',
         description: 'GST rate master — the header and its per-rate ledger overrides, saved and read as one ' +
-            'payload. Supersedes the eighteen ledger columns of items-tax-master.',
+            'payload. Replaces the retired item_tax_master and its /item-taxes routes (retired 2026-09-30).',
         include: [tax_rate_master_module_1.TaxRateMasterModule],
     },
     {

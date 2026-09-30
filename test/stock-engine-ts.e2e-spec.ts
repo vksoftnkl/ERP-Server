@@ -423,6 +423,7 @@ describe('Stock engine in TypeScript (e2e — one rolled-back transaction)', () 
     costRate: number;
     batchNo?: string;
     mrp?: number;
+    bucket?: string;
   }
 
   async function opening(
@@ -444,6 +445,7 @@ describe('Stock engine in TypeScript (e2e — one rolled-back transaction)', () 
         costRate: line.costRate,
         ...(line.batchNo !== undefined ? { batchNo: line.batchNo } : {}),
         ...(line.mrp !== undefined ? { mrp: line.mrp } : {}),
+        ...(line.bucket !== undefined ? { bucket: line.bucket } : {}),
       })),
     } as never);
   }
@@ -1019,7 +1021,7 @@ describe('Stock engine in TypeScript (e2e — one rolled-back transaction)', () 
 
   // ── 9. batch identity folds case and whitespace ───────────────────────────
 
-  it("9. 'b-2604' and 'B-2604 ' are one lot, and the second opening of it is refused", async () => {
+  it("9. 'b-2604' and 'B-2604 ' are one lot, and the second opening of it is refused — in the same bucket only", async () => {
     if (!requireBuild()) return;
 
     await policy({ scope: 'ITEM', scopeId: fixture.milkId, trackBatch: true });
@@ -1056,6 +1058,40 @@ describe('Stock engine in TypeScript (e2e — one rolled-back transaction)', () 
     ]);
     const problems = await validate(OPENING_RULES, second.header.svhId);
     expect(problems[0].problem).toBe('this holding already has an opening in this year');
+
+    // A holding is godown × lot × BUCKET (notes 66): the crushed ones of the
+    // same lot, opened DAMAGED on a document of their own, are a second
+    // holding, not a repeat.
+    const damaged = await opening(fixture.godownA, [
+      {
+        itemId: fixture.milkId,
+        iuc: fixture.milkPieceIuc,
+        qty: 2,
+        costRate: 28,
+        batchNo: 'B-2604',
+        bucket: 'DAMAGED',
+      },
+    ]);
+    expect((await validate(OPENING_RULES, damaged.header.svhId))[0].problem).toBeNull();
+    await post(OPENING_RULES, damaged.header.svhId);
+    expect(await lots(fixture.milkId)).toHaveLength(1);
+
+    // ...and a third in DAMAGED is the repeat.
+    const again = await opening(fixture.godownA, [
+      { itemId: fixture.milkId, iuc: fixture.milkPieceIuc, qty: 1, costRate: 28, batchNo: 'b-2604', bucket: 'DAMAGED' },
+    ]);
+    expect((await validate(OPENING_RULES, again.header.svhId))[0].problem).toBe(
+      'this holding already has an opening in this year',
+    );
+
+    // A loaded line says which identity cells open, as the item lookup does:
+    // MILK tracks the batch here; TEA, with no policy of its own, tracks nothing.
+    const loaded = await service.getById(OPENING_RULES, first.header.svhId, ACC_YEAR, fixture.companyId, fixture.branchId);
+    expect(loaded.lines.map((line) => line.trackSignature)).toEqual(['B']);
+    const untracked = await opening(fixture.godownA, [
+      { itemId: fixture.teaId, iuc: fixture.teaPieceIuc, qty: 1, costRate: 10 },
+    ]);
+    expect(untracked.lines.map((line) => line.trackSignature)).toEqual(['N']);
   });
 
   // ── 10. precedence: an ITEM rule beats a branch-level GROUP rule ─────────

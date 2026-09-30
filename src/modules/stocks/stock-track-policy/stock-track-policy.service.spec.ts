@@ -24,12 +24,6 @@ const item = (overrides: Partial<ItemTrackPolicySource> = {}): ItemTrackPolicySo
   itemCompanyId: COMPANY_ID,
   itemBranchId: BRANCH_ID,
   itemTrackPresetId: null,
-  itemBatchConfig: 0,
-  itemIsBatchBased: false,
-  itemIsExpiryItem: false,
-  itemExpiryDays: null,
-  itemIntimateBeforeDays: null,
-  itemAllowNegStock: true,
   ...overrides,
 });
 
@@ -114,7 +108,12 @@ const policyRow = (overrides: Partial<StockTrackPolicy> = {}): StockTrackPolicy 
 describe('StockTrackPolicyService', () => {
   let service: StockTrackPolicyService;
   let client: {
-    stockTrackPolicy: { findFirst: jest.Mock; create: jest.Mock; update: jest.Mock };
+    stockTrackPolicy: {
+      findFirst: jest.Mock;
+      findMany: jest.Mock;
+      create: jest.Mock;
+      update: jest.Mock;
+    };
     stockTrackPreset: { findUnique: jest.Mock };
   };
   let auditLogService: { logEntityChange: jest.Mock };
@@ -125,6 +124,7 @@ describe('StockTrackPolicyService', () => {
     client = {
       stockTrackPolicy: {
         findFirst: jest.fn().mockResolvedValue(null),
+        findMany: jest.fn().mockResolvedValue([]),
         create: jest.fn((args: { data: Record<string, unknown> }) =>
           Promise.resolve(policyRow(args.data as Partial<StockTrackPolicy>)),
         ),
@@ -145,76 +145,46 @@ describe('StockTrackPolicyService', () => {
     );
   });
 
-  describe('deriveFromItem', () => {
-    it('reads a plain item as untracked, FIFO, negative-stock allowed', () => {
-      expect(service.deriveFromItem(item())).toMatchObject({
-        trackBatch: false,
-        trackMrp: false,
-        trackExpiry: false,
-        issueStrategy: 'FIFO',
-        allowNegative: 'ALLOW',
-        valuationMethod: 'WAVG',
-        shelfLifeDays: null,
-        nearExpiryDays: 30,
-      });
-    });
-
-    it('reads item_batch_config 1 as MRP-wise and 2 as batch-wise', () => {
-      expect(service.deriveFromItem(item({ itemBatchConfig: 1 }))).toMatchObject({
-        trackMrp: true,
-        trackBatch: false,
-      });
-      expect(service.deriveFromItem(item({ itemBatchConfig: 2 }))).toMatchObject({
-        trackMrp: false,
-        trackBatch: true,
-      });
-    });
-
-    it('forces batch tracking on an expiry item, and switches it to FEFO', () => {
-      expect(service.deriveFromItem(item({ itemIsExpiryItem: true }))).toMatchObject({
-        trackExpiry: true,
-        // ck_stp_expiry_needs_batch — expiry cannot be keyed without it.
-        trackBatch: true,
-        issueStrategy: 'FEFO',
-      });
-    });
-
-    it('keeps mrp and batch together for an MRP item that also expires', () => {
-      const derived = service.deriveFromItem(item({ itemBatchConfig: 1, itemIsExpiryItem: true }));
-      expect(derived).toMatchObject({ trackMrp: true, trackBatch: true, trackExpiry: true });
-    });
-
-    it('blocks negative stock when the item disallows it', () => {
-      expect(service.deriveFromItem(item({ itemAllowNegStock: false }))).toMatchObject({
-        allowNegative: 'BLOCK',
-      });
-    });
-
-    it('drops a non-positive shelf life and a negative near-expiry window', () => {
-      // ck_stp_shelf_life (NULL or > 0) and ck_stp_near_expiry (>= 0).
-      expect(
-        service.deriveFromItem(item({ itemExpiryDays: 0, itemIntimateBeforeDays: -5 })),
-      ).toMatchObject({ shelfLifeDays: null, nearExpiryDays: 30 });
-      expect(
-        service.deriveFromItem(item({ itemExpiryDays: 180, itemIntimateBeforeDays: 0 })),
-      ).toMatchObject({ shelfLifeDays: 180, nearExpiryDays: 0 });
-    });
-  });
-
   describe('syncFromItem', () => {
-    it('creates the ITEM-scope row, writing the scope pair and never the generated columns', async () => {
-      const result = await service.syncFromItem(item({ itemIsExpiryItem: true }), tx());
+    /** The item's row as PHARMA writes it — what a re-save should leave alone. */
+    const pharmaRow = (overrides: Partial<StockTrackPolicy> = {}) =>
+      policyRow({
+        stpTrackBatch: true,
+        stpTrackMrp: true,
+        stpTrackExpiry: true,
+        stpTrackSupplier: true,
+        stpTrackSignature: 'BMEP',
+        stpIssueStrategy: 'FEFO',
+        stpNearExpiryDays: 90,
+        stpBlockExpiredSale: true,
+        stpRemarks: `${DERIVED_FROM_ITEM_REMARK} [preset PHARMA]`,
+        ...overrides,
+      });
+    const withPreset = () => item({ itemTrackPresetId: PRESET_ID });
 
-      expect(result.outcome).toBe('created');
+    it('creates the ITEM-scope row from the preset, writing the scope pair and never the generated columns', async () => {
+      client.stockTrackPreset.findUnique.mockResolvedValueOnce(preset());
+
+      const result = await service.syncFromItem(withPreset(), tx());
+
+      expect(result).toMatchObject({ outcome: 'created', preset_code: 'PHARMA' });
       const { data } = client.stockTrackPolicy.create.mock.calls[0][0];
       expect(data).toMatchObject({
         stpScope: 'ITEM',
         stpScopeId: ITEM_ID,
         stpCompanyId: COMPANY_ID,
         stpBranchId: BRANCH_ID,
+        stpTrackBatch: true,
+        stpTrackMrp: true,
         stpTrackExpiry: true,
+        stpTrackSupplier: true,
+        stpTrackSalePrice: false,
+        stpTrackSerial: false,
+        stpBlockExpiredSale: true,
+        stpNearExpiryDays: 90,
+        stpAllowNegative: 'ALLOW',
         stpIssueStrategy: 'FEFO',
-        stpRemarks: DERIVED_FROM_ITEM_REMARK,
+        stpRemarks: `${DERIVED_FROM_ITEM_REMARK} [preset PHARMA]`,
         stpCreatedBy: USER_ID,
       });
       expect(data).not.toHaveProperty('stpItemId');
@@ -225,42 +195,93 @@ describe('StockTrackPolicyService', () => {
       expect(auditLogService.logEntityChange).toHaveBeenCalledTimes(1);
     });
 
-    it('leaves an admin-authored policy alone', async () => {
+    // Notes 68: an item follows its group unless it names its own preset. The
+    // item's flags used to derive a row that outranked the group's.
+    it('writes no ITEM row for an item with no preset — its group governs', async () => {
+      const result = await service.syncFromItem(item(), tx());
+
+      expect(result).toMatchObject({ outcome: 'no_preset', stp_id: null });
+      expect(client.stockTrackPreset.findUnique).not.toHaveBeenCalled();
+      expect(client.stockTrackPolicy.create).not.toHaveBeenCalled();
+      expect(client.stockTrackPolicy.update).not.toHaveBeenCalled();
+    });
+
+    it('retires the derived row of an item that no longer names a preset', async () => {
+      client.stockTrackPolicy.findFirst.mockResolvedValueOnce(pharmaRow());
+
+      const result = await service.syncFromItem(item(), tx());
+
+      expect(result.outcome).toBe('cleared');
+      expect(client.stockTrackPolicy.update.mock.calls[0][0].data).toMatchObject({
+        stpIsActive: false,
+        stpIsDeleted: true,
+      });
+    });
+
+    it('retires a pre-preset row derived from the item flags, which carries the bare marker', async () => {
       client.stockTrackPolicy.findFirst.mockResolvedValueOnce(
         policyRow({
-          stpRemarks: 'Set by hand for the pharmacy counter',
-          stpIssueStrategy: 'MANUAL',
+          stpTrackMrp: true,
+          stpTrackSignature: 'M',
+          stpRemarks: DERIVED_FROM_ITEM_REMARK,
         }),
       );
 
-      const result = await service.syncFromItem(item({ itemIsExpiryItem: true }), tx());
+      const result = await service.syncFromItem(item(), tx());
 
-      expect(result.outcome).toBe('skipped_manual');
+      expect(result.outcome).toBe('cleared');
+    });
+
+    it('treats a preset id that names nothing as no preset', async () => {
+      client.stockTrackPreset.findUnique.mockResolvedValueOnce(null);
+
+      const result = await service.syncFromItem(withPreset(), tx());
+
+      expect(result.outcome).toBe('no_preset');
+      expect(client.stockTrackPolicy.create).not.toHaveBeenCalled();
+    });
+
+    it('leaves an admin-authored policy alone, preset or not', async () => {
+      for (const source of [item(), withPreset()]) {
+        client.stockTrackPolicy.findFirst.mockResolvedValueOnce(
+          policyRow({
+            stpRemarks: 'Set by hand for the pharmacy counter',
+            stpIssueStrategy: 'MANUAL',
+          }),
+        );
+        client.stockTrackPreset.findUnique.mockResolvedValueOnce(preset());
+
+        const result = await service.syncFromItem(source, tx());
+
+        expect(result.outcome).toBe('skipped_manual');
+      }
       expect(client.stockTrackPolicy.update).not.toHaveBeenCalled();
       expect(client.stockTrackPolicy.create).not.toHaveBeenCalled();
       expect(auditLogService.logEntityChange).not.toHaveBeenCalled();
     });
 
     it('writes nothing when the derived row already says exactly this', async () => {
-      client.stockTrackPolicy.findFirst.mockResolvedValueOnce(policyRow());
+      client.stockTrackPolicy.findFirst.mockResolvedValueOnce(pharmaRow());
+      client.stockTrackPreset.findUnique.mockResolvedValueOnce(preset());
 
-      const result = await service.syncFromItem(item(), tx());
+      const result = await service.syncFromItem(withPreset(), tx());
 
       expect(result.outcome).toBe('unchanged');
       expect(client.stockTrackPolicy.update).not.toHaveBeenCalled();
       expect(auditLogService.logEntityChange).not.toHaveBeenCalled();
     });
 
-    it('updates the derived row when an item flag changed', async () => {
-      client.stockTrackPolicy.findFirst.mockResolvedValueOnce(policyRow());
+    it('updates the derived row when the preset now says something else', async () => {
+      client.stockTrackPolicy.findFirst.mockResolvedValueOnce(pharmaRow());
+      client.stockTrackPreset.findUnique.mockResolvedValueOnce(preset({ sptNearExpiryDays: 60 }));
 
-      const result = await service.syncFromItem(item({ itemIsBatchBased: true }), tx());
+      const result = await service.syncFromItem(withPreset(), tx());
 
       expect(result.outcome).toBe('updated');
       expect(client.stockTrackPolicy.update).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { stpId: 'stp1' },
-          data: expect.objectContaining({ stpTrackBatch: true, stpModifiedBy: USER_ID }),
+          data: expect.objectContaining({ stpNearExpiryDays: 60, stpModifiedBy: USER_ID }),
         }),
       );
     });
@@ -271,9 +292,10 @@ describe('StockTrackPolicyService', () => {
         // nothing at the item's NEW (company, branch) slot ...
         .mockResolvedValueOnce(null)
         // ... but the derived row it left behind at the old one.
-        .mockResolvedValueOnce(policyRow({ stpBranchId: otherBranch }));
+        .mockResolvedValueOnce(pharmaRow({ stpBranchId: otherBranch }));
+      client.stockTrackPreset.findUnique.mockResolvedValueOnce(preset());
 
-      const result = await service.syncFromItem(item(), tx());
+      const result = await service.syncFromItem(withPreset(), tx());
 
       expect(result.outcome).toBe('updated');
       expect(client.stockTrackPolicy.create).not.toHaveBeenCalled();
@@ -284,67 +306,15 @@ describe('StockTrackPolicyService', () => {
       );
     });
 
-    it('takes every column from the preset, ignoring the item flags entirely', async () => {
-      client.stockTrackPreset.findUnique.mockResolvedValueOnce(preset());
-
-      // Flags that on their own would derive B/FEFO/BLOCK and a 7-day window.
-      const result = await service.syncFromItem(
-        item({
-          itemTrackPresetId: PRESET_ID,
-          itemIsBatchBased: true,
-          itemAllowNegStock: false,
-          itemIntimateBeforeDays: 7,
-        }),
-        tx(),
-      );
-
-      expect(result.outcome).toBe('created');
-      expect(result.preset_code).toBe('PHARMA');
-      const { data } = client.stockTrackPolicy.create.mock.calls[0][0];
-      expect(data).toMatchObject({
-        stpTrackBatch: true,
-        stpTrackMrp: true,
-        stpTrackExpiry: true,
-        // Only a preset can set these three; no item_master column expresses them.
-        stpTrackSupplier: true,
-        stpTrackSalePrice: false,
-        stpTrackSerial: false,
-        stpBlockExpiredSale: true,
-        // The preset's window and negative-stock rule, not the item's.
-        stpNearExpiryDays: 90,
-        stpAllowNegative: 'ALLOW',
-        stpRemarks: `${DERIVED_FROM_ITEM_REMARK} [preset PHARMA]`,
-      });
-    });
-
-    it('falls back to the item flags when the preset id names nothing', async () => {
-      client.stockTrackPreset.findUnique.mockResolvedValueOnce(null);
-
-      const result = await service.syncFromItem(
-        item({ itemTrackPresetId: PRESET_ID, itemIsExpiryItem: true }),
-        tx(),
-      );
-
-      expect(result.outcome).toBe('created');
-      expect(result.preset_code).toBeNull();
-      const { data } = client.stockTrackPolicy.create.mock.calls[0][0];
-      expect(data).toMatchObject({
-        stpTrackExpiry: true,
-        stpTrackSupplier: false,
-        stpNearExpiryDays: 30,
-        stpRemarks: DERIVED_FROM_ITEM_REMARK,
-      });
-    });
-
     it('honours a preset that has since been deactivated, rather than silently untracking the item', async () => {
       // Retiring a preset stops it being OFFERED. An item already configured
-      // with it must keep resolving to it — falling back here would drop batch
-      // and expiry from an item whose stock is already keyed by them.
+      // with it must keep resolving to it — dropping it here would untrack an
+      // item whose stock is already keyed by batch and expiry.
       client.stockTrackPreset.findUnique.mockResolvedValueOnce(
         preset({ sptIsActive: false, sptIsDeleted: true }),
       );
 
-      const result = await service.syncFromItem(item({ itemTrackPresetId: PRESET_ID }), tx());
+      const result = await service.syncFromItem(withPreset(), tx());
 
       expect(result.preset_code).toBe('PHARMA');
       expect(client.stockTrackPreset.findUnique).toHaveBeenCalledWith({
@@ -374,7 +344,7 @@ describe('StockTrackPolicyService', () => {
         }),
       );
 
-      const result = await service.syncFromItem(item({ itemTrackPresetId: PRESET_ID }), tx());
+      const result = await service.syncFromItem(withPreset(), tx());
 
       // Provenance is only recorded on the row, so a changed preset is a change
       // even when every value it supplies is identical.
@@ -384,14 +354,45 @@ describe('StockTrackPolicyService', () => {
       );
     });
 
-    it('still recognises a pre-preset derived row, which carries the bare marker', async () => {
-      client.stockTrackPolicy.findFirst.mockResolvedValueOnce(
-        policyRow({ stpRemarks: DERIVED_FROM_ITEM_REMARK }),
+    it('writes the NONE preset: an untracked preset is a deliberate item-level choice', async () => {
+      client.stockTrackPreset.findUnique.mockResolvedValueOnce(
+        preset({
+          sptCode: 'NONE',
+          sptTrackBatch: false,
+          sptTrackMrp: false,
+          sptTrackExpiry: false,
+          sptTrackSupplier: false,
+          sptAllowNegative: 'ALLOW',
+        }),
       );
 
-      const result = await service.syncFromItem(item({ itemIsBatchBased: true }), tx());
+      const result = await service.syncFromItem(withPreset(), tx());
 
-      expect(result.outcome).toBe('updated');
+      expect(result.outcome).toBe('created');
+      expect(client.stockTrackPolicy.create.mock.calls[0][0].data.stpRemarks).toBe(
+        `${DERIVED_FROM_ITEM_REMARK} [preset NONE]`,
+      );
+    });
+  });
+
+  describe('retireForItem', () => {
+    // Notes 50 #8: a deleted item's policy stayed live.
+    it('retires every derived row of a deleted item, and only the derived ones', async () => {
+      client.stockTrackPolicy.findMany.mockResolvedValueOnce([
+        policyRow({ stpId: 'stp1' }),
+        policyRow({ stpId: 'stp2', stpRemarks: `${DERIVED_FROM_ITEM_REMARK} [preset PHARMA]` }),
+      ]);
+
+      const results = await service.retireForItem(ITEM_ID, tx());
+
+      expect(client.stockTrackPolicy.findMany.mock.calls[0][0].where).toMatchObject({
+        stpScope: 'ITEM',
+        stpItemId: ITEM_ID,
+        stpRemarks: { startsWith: DERIVED_FROM_ITEM_REMARK },
+        stpIsDeleted: false,
+      });
+      expect(results.map((r) => r.outcome)).toEqual(['cleared', 'cleared']);
+      expect(client.stockTrackPolicy.update).toHaveBeenCalledTimes(2);
     });
   });
 
@@ -407,17 +408,23 @@ describe('StockTrackPolicyService', () => {
       expect(auditLogService.logEntityChange).not.toHaveBeenCalled();
     });
 
-    it('creates the GROUP row at the context company, open to every branch', async () => {
+    // Notes 69: filed under the LOGIN token's company, the row was invisible
+    // to every other company's items. A group is not company-owned.
+    it('creates the GROUP row SHARED by every company — never at the login company — and open to every branch', async () => {
       client.stockTrackPreset.findUnique.mockResolvedValueOnce(preset());
 
       const result = await service.syncFromItemGroup(group({ itgTrackPresetId: PRESET_ID }), tx());
 
       expect(result).toMatchObject({ outcome: 'created', scope: 'GROUP', preset_code: 'PHARMA' });
+      expect(client.stockTrackPolicy.findFirst.mock.calls[0][0].where).toMatchObject({
+        stpCompanyId: null,
+        stpBranchId: null,
+      });
       const { data } = client.stockTrackPolicy.create.mock.calls[0][0];
       expect(data).toMatchObject({
         stpScope: 'GROUP',
         stpScopeId: GROUP_ID,
-        stpCompanyId: COMPANY_ID,
+        stpCompanyId: null,
         // A group rule sits above the branches, not inside one.
         stpBranchId: null,
         stpTrackSupplier: true,
@@ -479,6 +486,68 @@ describe('StockTrackPolicyService', () => {
       // so this is a create — and createDerived leaves is_active/is_deleted at
       // their defaults rather than resurrecting anything by accident.
       expect(client.stockTrackPolicy.create).toHaveBeenCalledTimes(1);
+    });
+    const groupRow = (overrides: Partial<StockTrackPolicy> = {}) =>
+      policyRow({
+        stpScope: 'GROUP',
+        stpScopeId: GROUP_ID,
+        stpItemId: null,
+        stpGroupId: GROUP_ID,
+        stpBranchId: null,
+        stpRemarks: `${DERIVED_FROM_GROUP_REMARK} [preset PHARMA]`,
+        ...overrides,
+      });
+
+    it('moves a derived row stranded under a login company into the shared slot, and retires the others', async () => {
+      const otherCompany = '01000000-0000-7000-8000-0000000000c2';
+      client.stockTrackPolicy.findMany.mockResolvedValueOnce([
+        groupRow({ stpId: 'stp-login-1', stpCompanyId: COMPANY_ID }),
+        groupRow({ stpId: 'stp-login-2', stpCompanyId: otherCompany }),
+      ]);
+      client.stockTrackPreset.findUnique.mockResolvedValueOnce(preset());
+
+      const result = await service.syncFromItemGroup(group({ itgTrackPresetId: PRESET_ID }), tx());
+
+      expect(client.stockTrackPolicy.findMany.mock.calls[0][0].where).toMatchObject({
+        stpScope: 'GROUP',
+        stpGroupId: GROUP_ID,
+        stpCompanyId: { not: null },
+        stpRemarks: { startsWith: DERIVED_FROM_GROUP_REMARK },
+      });
+      const updates = client.stockTrackPolicy.update.mock.calls.map(
+        (call: [{ where: { stpId: string }; data: Record<string, unknown> }]) => call[0],
+      );
+      expect(updates).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            where: { stpId: 'stp-login-2' },
+            data: expect.objectContaining({ stpIsDeleted: true }),
+          }),
+          expect.objectContaining({
+            where: { stpId: 'stp-login-1' },
+            data: expect.objectContaining({ stpCompanyId: null, stpBranchId: null }),
+          }),
+        ]),
+      );
+      expect(result.outcome).toBe('updated');
+      expect(client.stockTrackPolicy.create).not.toHaveBeenCalled();
+    });
+
+    it('retires every stranded row when the shared slot is already held', async () => {
+      client.stockTrackPolicy.findFirst.mockResolvedValueOnce(groupRow());
+      client.stockTrackPolicy.findMany.mockResolvedValueOnce([
+        groupRow({ stpId: 'stp-login', stpCompanyId: COMPANY_ID }),
+      ]);
+      client.stockTrackPreset.findUnique.mockResolvedValueOnce(preset());
+
+      await service.syncFromItemGroup(group({ itgTrackPresetId: PRESET_ID }), tx());
+
+      expect(client.stockTrackPolicy.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { stpId: 'stp-login' },
+          data: expect.objectContaining({ stpIsActive: false, stpIsDeleted: true }),
+        }),
+      );
     });
   });
 });

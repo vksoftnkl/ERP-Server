@@ -95,6 +95,7 @@ export declare class PhysicalStockLineDto {
     valueWot: number;
     lotId: string | null;
     remarks: string | null;
+    trackSignature: string;
 }
 export declare class PhysicalStockDocumentDto {
     header: PhysicalStockHeaderDto;

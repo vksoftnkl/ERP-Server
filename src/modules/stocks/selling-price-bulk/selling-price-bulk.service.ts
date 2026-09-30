@@ -691,9 +691,13 @@ export class SellingPriceBulkService {
    * only one of them is the one a price written today should be derived from.
    *
    * Resolved SERVER-SIDE and sent down (§3) rather than left to the client: a
-   * client reading item_tax_master itself would use the current row on a screen
+   * client reading the item's rate itself would use the current row on a screen
    * that, once §12's dormant effective-date columns wake up, may be writing a
    * future one.
+   *
+   * Both ith_tax_id and item_default_tax_id point at inventory.tax_rate_master
+   * (20260912110000_repoint_items_to_tax_rate_master); item_tax_master is
+   * retired, and reading it here answered 0% for every item.
    */
   async resolveItemTaxRates(
     tx: Prisma.TransactionClient,
@@ -738,15 +742,16 @@ export class SellingPriceBulkService {
         ].filter(Boolean),
       ),
     ];
+    // No tax_is_deleted filter, as before: the rate an item or its history row
+    // names is the rate it is taxed at until someone re-points it.
     const taxes = taxIds.length
-      ? await tx.itemTaxMaster.findMany({
+      ? await tx.taxRateMaster.findMany({
           where: { taxId: { in: taxIds } },
           select: {
             taxId: true,
-            taxGstRateTotal: true,
-            taxCessType: true,
-            taxCessPerc: true,
-            taxCessUnit: true,
+            taxRatePerc: true,
+            taxCessBasis: true,
+            taxAcessBasis: true,
           },
         })
       : [];
@@ -759,16 +764,15 @@ export class SellingPriceBulkService {
       result.set(item.itemId, {
         itemId: item.itemId,
         taxId,
-        taxPerc: tax ? toNumber(tax.taxGstRateTotal) : 0,
+        taxPerc: tax ? toNumber(tax.taxRatePerc) : 0,
         inclTax: item.itemInclTax,
         // §13.5 — cess makes the four-number panel approximate, because
-        // tax_cess_unit is an amount per unit and not a percentage of price.
-        // The screen is told rather than left to pretend.
-        hasCess: tax
-          ? tax.taxCessType !== 'NONE' ||
-            toNumber(tax.taxCessPerc) > 0 ||
-            toNumber(tax.taxCessUnit) > 0
-          : false,
+        // tax_cess_per_unit is an amount per unit and not a percentage of price.
+        // The screen is told rather than left to pretend. The basis alone
+        // answers it: ck_tax_cess_agrees / ck_tax_acess_agrees hold the figures
+        // to it, so NONE means both are zero. The additional (state) cess
+        // counts too — it is just as missing from taxPerc.
+        hasCess: tax ? tax.taxCessBasis !== 'NONE' || tax.taxAcessBasis !== 'NONE' : false,
       });
     }
     return result;

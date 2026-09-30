@@ -14,6 +14,7 @@ const common_1 = require("@nestjs/common");
 const configured_grid_sql_service_1 = require("../../../common/configured-grid-sql/configured-grid-sql.service");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const audit_log_service_1 = require("../../audit-log/audit-log.service");
+const request_context_service_1 = require("../../../common/request-context/request-context.service");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
 const module_list_utils_1 = require("../../../common/utils/module-list.utils");
 const DEFAULT_AUDIT_ACTOR = 'system';
@@ -23,10 +24,12 @@ let ItemsPriceMasterService = class ItemsPriceMasterService {
     prisma;
     auditLogService;
     configuredGridSqlService;
-    constructor(prisma, auditLogService, configuredGridSqlService) {
+    requestContextService;
+    constructor(prisma, auditLogService, configuredGridSqlService, requestContextService) {
         this.prisma = prisma;
         this.auditLogService = auditLogService;
         this.configuredGridSqlService = configuredGridSqlService;
+        this.requestContextService = requestContextService;
     }
     async save(saveItemPriceDto, tx) {
         const saveItems = Array.isArray(saveItemPriceDto) ? saveItemPriceDto : [saveItemPriceDto];
@@ -102,13 +105,6 @@ let ItemsPriceMasterService = class ItemsPriceMasterService {
         });
         return records.map((record) => this.toPayload(record));
     }
-    async findIdsByItemId(itemId, isDeleted) {
-        const records = await this.prisma.itemPriceMaster.findMany({
-            where: { ipmItemId: itemId, ipmIsDeleted: isDeleted },
-            select: { ipmId: true },
-        });
-        return records.map((record) => record.ipmId);
-    }
     async toggleDelete(ipmId, tx) {
         const toggleIds = Array.isArray(ipmId) ? ipmId : [ipmId];
         const toggleAll = async (client) => {
@@ -151,6 +147,7 @@ let ItemsPriceMasterService = class ItemsPriceMasterService {
             data: {
                 ipmIsDeleted: nextDeleted,
                 ipmUpdatedOn: updatedOn,
+                ipmUpdatedBy: this.requestUser() ?? existing.ipmUpdatedBy,
             },
         });
         await this.auditLogService.logEntityChange({
@@ -182,7 +179,7 @@ let ItemsPriceMasterService = class ItemsPriceMasterService {
         }
         const unitConversion = await this.requireUnitConversion(tx, saveItemPriceDto);
         const now = new Date();
-        const createdBy = this.resolveRecordActor(saveItemPriceDto.ipm_created_by);
+        const createdBy = this.resolveRecordActor(saveItemPriceDto.ipm_created_by) ?? this.requestUser();
         const updatedBy = this.resolveRecordActor(saveItemPriceDto.ipm_updated_by) ?? createdBy;
         const data = {
             ipmItemId: saveItemPriceDto.ipm_item_id,
@@ -238,12 +235,14 @@ let ItemsPriceMasterService = class ItemsPriceMasterService {
         const data = {
             ipmItemId: saveItemPriceDto.ipm_item_id,
             ipmUcUnitId: unitConversion.iucId,
-            ipmGodownId: saveItemPriceDto.ipm_godown_id ?? null,
             ipmProfitType: profitType,
             ipmUpdatedOn: new Date(),
+            ipmUpdatedBy: this.resolveRecordActor(saveItemPriceDto.ipm_updated_by) ??
+                this.requestUser() ??
+                existing.ipmUpdatedBy,
         };
-        if ((0, module_service_utils_1.hasOwnProperty)(saveItemPriceDto, 'ipm_updated_by')) {
-            data.ipmUpdatedBy = this.resolveRecordActor(saveItemPriceDto.ipm_updated_by);
+        if (saveItemPriceDto.ipm_godown_id !== undefined) {
+            data.ipmGodownId = saveItemPriceDto.ipm_godown_id ?? null;
         }
         this.applyOptionalFields(data, saveItemPriceDto);
         const updated = await tx.itemPriceMaster.update({
@@ -449,6 +448,9 @@ let ItemsPriceMasterService = class ItemsPriceMasterService {
         const trimmed = value?.trim();
         return trimmed || null;
     }
+    requestUser() {
+        return this.requestContextService.getUserId()?.trim() || null;
+    }
     resolveAuditActor(value, fallback = DEFAULT_AUDIT_ACTOR) {
         const trimmed = value?.trim();
         return trimmed || fallback;
@@ -479,6 +481,7 @@ exports.ItemsPriceMasterService = ItemsPriceMasterService = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [prisma_service_1.PrismaService,
         audit_log_service_1.AuditLogService,
-        configured_grid_sql_service_1.ConfiguredGridSqlService])
+        configured_grid_sql_service_1.ConfiguredGridSqlService,
+        request_context_service_1.RequestContextService])
 ], ItemsPriceMasterService);
 //# sourceMappingURL=items-price-master.service.js.map

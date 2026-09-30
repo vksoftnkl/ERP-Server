@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsIn, Matches, MinLength } from 'class-validator';
+import { IsIn, IsOptional, Matches, MinLength } from 'class-validator';
 import {
   OptionalInteger,
   OptionalTrimmedString,
@@ -80,7 +80,12 @@ export class PickStockQueryDto {
   @OptionalUuid()
   itemId?: string;
 
-  @ApiPropertyOptional({ enum: STOCK_BUCKETS })
+  @ApiPropertyOptional({
+    enum: STOCK_BUCKETS,
+    description:
+      'One bucket, or every bucket when absent — each row says its own `bucket`, so one call answers "where is this lot" across SALEABLE, DAMAGED and the rest.',
+  })
+  @IsOptional()
   @IsIn(STOCK_BUCKETS as readonly string[])
   bucket?: StockBucket;
 

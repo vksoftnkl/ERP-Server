@@ -19,7 +19,6 @@ export declare class ItemsEanCodeMasterService {
     list(queryDto: GetItemEanCodeQueryDto): Promise<ConfiguredGridListResult<ItemEanCodeListItem, ItemEanCodeListMeta>>;
     getById(eanId: string): Promise<ItemEanCodePayload>;
     findByItemId(itemId: string, client?: InventoryWriteClient): Promise<ItemEanCodePayload[]>;
-    findIdsByItemId(itemId: string, isDeleted: boolean): Promise<string[]>;
     toggleDelete(eanId: string, tx?: Prisma.TransactionClient): Promise<ItemEanCodeDeleteResult>;
     toggleDelete(eanId: string[], tx?: Prisma.TransactionClient): Promise<ItemEanCodeDeleteResult[]>;
     toggleDelete(eanId: string | string[], tx?: Prisma.TransactionClient): Promise<ItemEanCodeDeleteResult | ItemEanCodeDeleteResult[]>;

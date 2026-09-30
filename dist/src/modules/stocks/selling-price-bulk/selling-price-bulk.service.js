@@ -398,14 +398,13 @@ let SellingPriceBulkService = class SellingPriceBulkService {
             ].filter(Boolean)),
         ];
         const taxes = taxIds.length
-            ? await tx.itemTaxMaster.findMany({
+            ? await tx.taxRateMaster.findMany({
                 where: { taxId: { in: taxIds } },
                 select: {
                     taxId: true,
-                    taxGstRateTotal: true,
-                    taxCessType: true,
-                    taxCessPerc: true,
-                    taxCessUnit: true,
+                    taxRatePerc: true,
+                    taxCessBasis: true,
+                    taxAcessBasis: true,
                 },
             })
             : [];
@@ -417,13 +416,9 @@ let SellingPriceBulkService = class SellingPriceBulkService {
             result.set(item.itemId, {
                 itemId: item.itemId,
                 taxId,
-                taxPerc: tax ? (0, module_service_utils_1.toNumber)(tax.taxGstRateTotal) : 0,
+                taxPerc: tax ? (0, module_service_utils_1.toNumber)(tax.taxRatePerc) : 0,
                 inclTax: item.itemInclTax,
-                hasCess: tax
-                    ? tax.taxCessType !== 'NONE' ||
-                        (0, module_service_utils_1.toNumber)(tax.taxCessPerc) > 0 ||
-                        (0, module_service_utils_1.toNumber)(tax.taxCessUnit) > 0
-                    : false,
+                hasCess: tax ? tax.taxCessBasis !== 'NONE' || tax.taxAcessBasis !== 'NONE' : false,
             });
         }
         return result;

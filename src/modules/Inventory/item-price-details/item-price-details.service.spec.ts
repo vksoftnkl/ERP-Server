@@ -1,4 +1,4 @@
-import { ItemMaster, ItemPriceMaster, ItemTaxMaster, Prisma } from '@prisma/client';
+import { ItemMaster, ItemPriceMaster, Prisma, TaxRateMaster } from '@prisma/client';
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import { ItemUnitConversionService } from '../item-unit-conversion/item-unit-conversion.service';
 import { ItemPriceDetailsService } from './item-price-details.service';
@@ -19,8 +19,8 @@ type PrismaMock = {
   itemPriceMaster: {
     findMany: jest.Mock<Promise<ItemPriceMaster[]>, [Prisma.ItemPriceMasterFindManyArgs]>;
   };
-  itemTaxMaster: {
-    findFirst: jest.Mock<Promise<ItemTaxMaster | null>, [Prisma.ItemTaxMasterFindFirstArgs]>;
+  taxRateMaster: {
+    findFirst: jest.Mock<Promise<TaxRateMaster | null>, [Prisma.TaxRateMasterFindFirstArgs]>;
   };
 };
 
@@ -147,46 +147,33 @@ const makeItemPriceRecord = (overrides: Partial<ItemPriceMaster> = {}): ItemPric
     ...overrides,
   }) as ItemPriceMaster;
 
-const makeItemTaxRecord = (overrides: Partial<ItemTaxMaster> = {}): ItemTaxMaster =>
-  ({
-    taxId: TAX_ID,
-    taxName: 'GST 18%',
-    taxCode: 'GST18',
-    taxTaxabilityType: 'TAXABLE',
-    taxIsReverseCharge: false,
-    taxCgstPerc: new Prisma.Decimal(9),
-    taxSgstPerc: new Prisma.Decimal(9),
-    taxIgstPerc: new Prisma.Decimal(18),
-    taxCgstPurPerc: new Prisma.Decimal(9),
-    taxSgstPurPerc: new Prisma.Decimal(9),
-    taxIgstPurPerc: new Prisma.Decimal(18),
-    taxCessType: 'NONE',
-    taxCessPerc: new Prisma.Decimal(0),
-    taxCessUnit: new Prisma.Decimal(0),
-    taxCessPurPerc: new Prisma.Decimal(0),
-    taxCessPurUnit: new Prisma.Decimal(0),
-    taxGstRateTotal: new Prisma.Decimal(18),
-    taxSalesLedgerId: null,
-    taxSalesReturnLedgerId: null,
-    taxPurchaseLedgerId: null,
-    taxPurchaseReturnLedgerId: null,
-    taxCgstOutputLedgerId: null,
-    taxSgstOutputLedgerId: null,
-    taxIgstOutputLedgerId: null,
-    taxCessOutputLedgerId: null,
-    taxCgstInputLedgerId: null,
-    taxSgstInputLedgerId: null,
-    taxIgstInputLedgerId: null,
-    taxCessInputLedgerId: null,
-    taxIsActive: true,
-    taxIsDeleted: false,
-    taxSyncDate: null,
-    taxCreatedOn: new Date('2026-03-25T10:00:00.000Z'),
-    taxCreatedBy: USER_ID,
-    taxModifiedOn: new Date('2026-03-25T10:00:00.000Z'),
-    taxModifiedBy: USER_ID,
-    ...overrides,
-  }) as ItemTaxMaster;
+const makeTaxRateRecord = (overrides: Partial<TaxRateMaster> = {}): TaxRateMaster => ({
+  taxId: TAX_ID,
+  taxName: 'GST 18%',
+  taxCode: 'GST18',
+  taxSortOrder: 0,
+  taxTaxability: 'TAXABLE',
+  taxIsReverseCharge: false,
+  taxRatePerc: new Prisma.Decimal(18),
+  taxCgstPerc: new Prisma.Decimal(9),
+  taxSgstPerc: new Prisma.Decimal(9),
+  taxIgstPerc: new Prisma.Decimal(18),
+  taxCessBasis: 'NONE',
+  taxCessPerc: new Prisma.Decimal(0),
+  taxCessPerUnit: new Prisma.Decimal(0),
+  taxAcessBasis: 'NONE',
+  taxAcessPerc: new Prisma.Decimal(0),
+  taxAcessPerUnit: new Prisma.Decimal(0),
+  taxSupersedesId: null,
+  taxIsActive: true,
+  taxIsDeleted: false,
+  taxSyncDate: null,
+  taxCreatedOn: new Date('2026-03-25T10:00:00.000Z'),
+  taxCreatedBy: USER_ID,
+  taxModifiedOn: null,
+  taxModifiedBy: null,
+  ...overrides,
+});
 
 describe('ItemPriceDetailsService', () => {
   let service: ItemPriceDetailsService;
@@ -201,8 +188,8 @@ describe('ItemPriceDetailsService', () => {
       itemPriceMaster: {
         findMany: jest.fn<Promise<ItemPriceMaster[]>, [Prisma.ItemPriceMasterFindManyArgs]>(),
       },
-      itemTaxMaster: {
-        findFirst: jest.fn<Promise<ItemTaxMaster | null>, [Prisma.ItemTaxMasterFindFirstArgs]>(),
+      taxRateMaster: {
+        findFirst: jest.fn<Promise<TaxRateMaster | null>, [Prisma.TaxRateMasterFindFirstArgs]>(),
       },
     };
 
@@ -224,7 +211,7 @@ describe('ItemPriceDetailsService', () => {
     itemUnitConversionService.findByItemId.mockResolvedValue(conversions);
     prisma.itemMaster.findFirst.mockResolvedValue(makeItemMasterRecord());
     prisma.itemPriceMaster.findMany.mockResolvedValue([makeItemPriceRecord()]);
-    prisma.itemTaxMaster.findFirst.mockResolvedValue(makeItemTaxRecord());
+    prisma.taxRateMaster.findFirst.mockResolvedValue(makeTaxRateRecord());
 
     const result = await service.getByItemId(ITEM_ID);
 
@@ -235,7 +222,7 @@ describe('ItemPriceDetailsService', () => {
   it('returns joined item, active prices, and default tax when fetching by item id', async () => {
     prisma.itemMaster.findFirst.mockResolvedValue(makeItemMasterRecord());
     prisma.itemPriceMaster.findMany.mockResolvedValue([makeItemPriceRecord()]);
-    prisma.itemTaxMaster.findFirst.mockResolvedValue(makeItemTaxRecord());
+    prisma.taxRateMaster.findFirst.mockResolvedValue(makeTaxRateRecord());
 
     const result = await service.getByItemId(ITEM_ID);
 
@@ -254,7 +241,7 @@ describe('ItemPriceDetailsService', () => {
       include: { itemUnitConversion: true },
       orderBy: [{ itemUnitConversion: { iucUnitSlno: 'asc' } }, { ipmId: 'asc' }],
     });
-    expect(prisma.itemTaxMaster.findFirst).toHaveBeenCalledWith({
+    expect(prisma.taxRateMaster.findFirst).toHaveBeenCalledWith({
       where: {
         taxId: TAX_ID,
         taxIsDeleted: false,
@@ -276,5 +263,58 @@ describe('ItemPriceDetailsService', () => {
         tax_name: 'GST 18%',
       },
     });
+  });
+
+  it('maps the tax_rate_master row onto the old item_tax field names', async () => {
+    // One rate serves both sides, so the _pur_ figures repeat the sales ones;
+    // the cess basis is the new vocabulary (PER_UNIT, not UNIT); a rate has no
+    // ledger columns, so every _ledger_id is null.
+    prisma.itemMaster.findFirst.mockResolvedValue(makeItemMasterRecord());
+    prisma.itemPriceMaster.findMany.mockResolvedValue([]);
+    prisma.taxRateMaster.findFirst.mockResolvedValue(
+      makeTaxRateRecord({
+        taxName: 'GST 28% + cess',
+        taxRatePerc: new Prisma.Decimal(28),
+        taxCgstPerc: new Prisma.Decimal(14),
+        taxSgstPerc: new Prisma.Decimal(14),
+        taxIgstPerc: new Prisma.Decimal(28),
+        taxCessBasis: 'PER_UNIT',
+        taxCessPerUnit: new Prisma.Decimal('4.5000'),
+      }),
+    );
+
+    const { item_tax } = await service.getByItemId(ITEM_ID);
+
+    expect(item_tax).toMatchObject({
+      tax_id: TAX_ID,
+      tax_name: 'GST 28% + cess',
+      tax_taxability_type: 'TAXABLE',
+      tax_gst_rate_total: 28,
+      tax_cgst_perc: 14,
+      tax_sgst_perc: 14,
+      tax_igst_perc: 28,
+      tax_cgst_pur_perc: 14,
+      tax_sgst_pur_perc: 14,
+      tax_igst_pur_perc: 28,
+      tax_cess_type: 'PER_UNIT',
+      tax_cess_perc: 0,
+      tax_cess_unit: 4.5,
+      tax_cess_pur_perc: 0,
+      tax_cess_pur_unit: 4.5,
+      tax_sales_ledger_id: null,
+      tax_cess_input_ledger_id: null,
+      tax_created_on: '2026-03-25T10:00:00.000Z',
+      tax_modified_on: null,
+    });
+  });
+
+  it('skips the tax read and returns a null item_tax when the item has no default tax', async () => {
+    prisma.itemMaster.findFirst.mockResolvedValue(makeItemMasterRecord({ itemDefaultTaxId: null }));
+    prisma.itemPriceMaster.findMany.mockResolvedValue([]);
+
+    const result = await service.getByItemId(ITEM_ID);
+
+    expect(prisma.taxRateMaster.findFirst).not.toHaveBeenCalled();
+    expect(result.item_tax).toBeNull();
   });
 });

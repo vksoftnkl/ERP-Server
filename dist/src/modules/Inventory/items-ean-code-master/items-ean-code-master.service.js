@@ -95,13 +95,6 @@ let ItemsEanCodeMasterService = class ItemsEanCodeMasterService {
         });
         return records.map((record) => this.toPayload(record));
     }
-    async findIdsByItemId(itemId, isDeleted) {
-        const records = await this.prisma.itemEanCode.findMany({
-            where: { eanItemId: itemId, eanIsDeleted: isDeleted },
-            select: { eanId: true },
-        });
-        return records.map((record) => record.eanId);
-    }
     async toggleDelete(eanId, tx) {
         const toggleIds = Array.isArray(eanId) ? eanId : [eanId];
         const toggleAll = async (client) => {

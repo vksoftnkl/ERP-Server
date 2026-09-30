@@ -10,6 +10,7 @@ exports.throwNotFound = throwNotFound;
 exports.throwOnUniqueConstraintError = throwOnUniqueConstraintError;
 exports.isUniqueConstraintError = isUniqueConstraintError;
 exports.isForeignKeyConstraintError = isForeignKeyConstraintError;
+exports.violatedConstraintOf = violatedConstraintOf;
 exports.isExclusionConstraintError = isExclusionConstraintError;
 exports.isPrismaErrorCode = isPrismaErrorCode;
 exports.normalizeRequiredText = normalizeRequiredText;
@@ -58,6 +59,21 @@ function isUniqueConstraintError(error) {
 }
 function isForeignKeyConstraintError(error) {
     return isPrismaErrorCode(error, 'P2003');
+}
+function violatedConstraintOf(error) {
+    if (typeof error !== 'object' || error === null || !('meta' in error)) {
+        return null;
+    }
+    const meta = error.meta ?? {};
+    for (const value of [meta.constraint, meta.target, meta.field_name]) {
+        if (Array.isArray(value) && value.length) {
+            return value.map(String).join(',');
+        }
+        if (typeof value === 'string' && value) {
+            return value.replace(/ \(index\)$/, '');
+        }
+    }
+    return null;
 }
 function isExclusionConstraintError(error) {
     if (typeof error !== 'object' || error === null || !('message' in error)) {

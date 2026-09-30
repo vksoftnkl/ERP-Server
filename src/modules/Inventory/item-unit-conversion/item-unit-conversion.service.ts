@@ -15,6 +15,7 @@ import {
 } from './types/item-unit-conversion-api.types';
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import { AuditLogService } from 'src/modules/audit-log/audit-log.service';
+import { RequestContextService } from 'src/common/request-context/request-context.service';
 import {
   hasOwnProperty,
   isForeignKeyConstraintError,
@@ -48,6 +49,7 @@ export class ItemUnitConversionService {
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
     private readonly configuredGridSqlService: ConfiguredGridSqlService,
+    private readonly requestContextService: RequestContextService,
   ) {}
   async save(
     saveItemUnitConversionDto: SaveItemUnitConversionDto,
@@ -158,13 +160,6 @@ export class ItemUnitConversionService {
     });
     return records.map((record) => this.toPayload(record));
   }
-  async findIdsByItemId(itemId: string, isDeleted: boolean): Promise<string[]> {
-    const records = await this.prisma.itemUnitConversion.findMany({
-      where: { iucItemId: itemId, iucIsDeleted: isDeleted },
-      select: { iucId: true },
-    });
-    return records.map((record) => record.iucId);
-  }
   async toggleDelete(
     iucId: string,
     tx?: Prisma.TransactionClient,
@@ -212,7 +207,10 @@ export class ItemUnitConversionService {
   ): Promise<ItemUnitConversionPayload> {
     this.validateItemUnitConversion(saveItemUnitConversionDto);
     const now = new Date();
-    const createdBy = this.resolveRecordActor(saveItemUnitConversionDto.iuc_created_by);
+    // The payload's actor when it names one, else the request's user — never
+    // left NULL just because the client sent none (notes 50 #2).
+    const createdBy =
+      this.resolveRecordActor(saveItemUnitConversionDto.iuc_created_by) ?? this.requestUser();
     const updatedBy =
       this.resolveRecordActor(saveItemUnitConversionDto.iuc_updated_by) ?? createdBy;
     const baseUnitId =
@@ -278,10 +276,13 @@ export class ItemUnitConversionService {
       iucUnitId: saveItemUnitConversionDto.iuc_unit_id,
       iucBaseUnitId: baseUnitId,
       iucUpdatedOn: new Date(),
+      // hasOwnProperty is true for every declared DTO field, sent or not: the
+      // payload's actor, else the request's user, else the stored one.
+      iucUpdatedBy:
+        this.resolveRecordActor(saveItemUnitConversionDto.iuc_updated_by) ??
+        this.requestUser() ??
+        existing.iucUpdatedBy,
     };
-    if (hasOwnProperty(saveItemUnitConversionDto, 'iuc_updated_by')) {
-      data.iucUpdatedBy = this.resolveRecordActor(saveItemUnitConversionDto.iuc_updated_by);
-    }
     this.applyOptionalFields(data, saveItemUnitConversionDto);
     // Unprovided fields keep their existing persisted values, so validate the
     // effective post-update state (incoming values merged over the stored row).
@@ -343,6 +344,7 @@ export class ItemUnitConversionService {
       data: {
         iucIsDeleted: nextDeleted,
         iucUpdatedOn: updatedOn,
+        iucUpdatedBy: this.requestUser() ?? existing.iucUpdatedBy,
       },
     });
     await this.auditLogService.logEntityChange(
@@ -797,6 +799,10 @@ export class ItemUnitConversionService {
   private resolveRecordActor(value: string | null | undefined): string | null {
     const trimmed = value?.trim();
     return trimmed || null;
+  }
+  /** The authenticated user, or null — never the nil-uuid DEFAULT_ACTOR sentinel. */
+  private requestUser(): string | null {
+    return this.requestContextService.getUserId()?.trim() || null;
   }
   private resolveAuditActor(
     value: string | null | undefined,

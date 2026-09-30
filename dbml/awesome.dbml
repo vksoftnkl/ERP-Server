@@ -2207,7 +2207,7 @@ Table item_ean_codes {
   eanId String [pk]
   eanItemId String [not null]
   eanUcUnitId String [not null]
-  eanCode String [unique, not null]
+  eanCode String [not null]
   eanSlNo Int [not null, default: 0]
   eanIsDefault Boolean [not null, default: false]
   eanIsActive Boolean [not null, default: true]
@@ -2275,7 +2275,7 @@ Table item_master {
   itemBranchId String
   itemCode String
   itemSku String
-  itemNameEn String [unique, not null]
+  itemNameEn String [not null]
   itemNameTa String
   itemAlias String
   itemStockType String [not null, default: 'FG']
@@ -2511,10 +2511,6 @@ Table item_reorders {
   item item_master [not null]
   itemUnitConversion item_unit_conversion
   irSyncDate DateTime [note: 'NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).']
-
-  indexes {
-    (irItemId, irUcUnitId, irGodownId) [unique]
-  }
 }
 
 Table item_section_master {

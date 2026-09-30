@@ -112,7 +112,13 @@ type PrismaMock = {
     findFirst: jest.Mock<Promise<ItemMasterWithPreset | null>, [Prisma.ItemMasterFindFirstArgs]>;
     update: jest.Mock<Promise<ItemMasterWithPreset>, [Prisma.ItemMasterUpdateArgs]>;
     updateMany: jest.Mock<Promise<{ count: number }>, [Prisma.ItemMasterUpdateManyArgs]>;
+    findFirstOrThrow: jest.Mock;
   };
+  // The delete / restore paths read child ids on the transaction itself.
+  itemUnitConversion: { findMany: jest.Mock };
+  itemPriceMaster: { findMany: jest.Mock };
+  itemEanCode: { findMany: jest.Mock };
+  itemReorder: { findMany: jest.Mock };
   company: LookupMock;
   branchMaster: LookupMock;
   unit: LookupMock;
@@ -123,14 +129,13 @@ type PrismaMock = {
   itemSectionMaster: LookupMock;
   supplier: LookupMock;
   custGroup: LookupMock;
-  itemTaxMaster: LookupMock;
+  taxRateMaster: LookupMock;
   $transaction: jest.Mock<Promise<unknown>, [(tx: Prisma.TransactionClient) => Promise<unknown>]>;
 };
 
 type ChildServiceMock = {
   save: jest.Mock;
   findByItemId: jest.Mock;
-  findIdsByItemId: jest.Mock;
   toggleDelete: jest.Mock;
 };
 
@@ -149,7 +154,7 @@ describe('ItemsMasterService composite endpoints', () => {
   let priceService: ChildServiceMock;
   let eanCodeService: ChildServiceMock;
   let reorderService: ChildServiceMock;
-  let stockTrackPolicyService: { syncFromItem: jest.Mock };
+  let stockTrackPolicyService: { syncFromItem: jest.Mock; retireForItem: jest.Mock };
 
   beforeEach(() => {
     prisma = {
@@ -163,7 +168,12 @@ describe('ItemsMasterService composite endpoints', () => {
         updateMany: jest
           .fn<Promise<{ count: number }>, [Prisma.ItemMasterUpdateManyArgs]>()
           .mockResolvedValue({ count: 1 }),
+        findFirstOrThrow: jest.fn(),
       },
+      itemUnitConversion: { findMany: jest.fn().mockResolvedValue([]) },
+      itemPriceMaster: { findMany: jest.fn().mockResolvedValue([]) },
+      itemEanCode: { findMany: jest.fn().mockResolvedValue([]) },
+      itemReorder: { findMany: jest.fn().mockResolvedValue([]) },
       company: makeLookup(),
       branchMaster: makeLookup(),
       unit: makeLookup(),
@@ -174,7 +184,7 @@ describe('ItemsMasterService composite endpoints', () => {
       itemSectionMaster: makeLookup(),
       supplier: makeLookup(),
       custGroup: makeLookup(),
-      itemTaxMaster: makeLookup(),
+      taxRateMaster: makeLookup(),
       $transaction: jest.fn<
         Promise<unknown>,
         [(tx: Prisma.TransactionClient) => Promise<unknown>]
@@ -213,7 +223,6 @@ describe('ItemsMasterService composite endpoints', () => {
           return Promise.resolve(rows);
         }),
         findByItemId: jest.fn(() => Promise.resolve([...saved])),
-        findIdsByItemId: jest.fn().mockResolvedValue([]),
         toggleDelete: jest.fn((ids: string[]) =>
           Promise.resolve(ids.map((id) => ({ [idField]: id, deleted: true }))),
         ),
@@ -233,6 +242,7 @@ describe('ItemsMasterService composite endpoints', () => {
         track_signature: 'N',
         preset_code: null,
       }),
+      retireForItem: jest.fn().mockResolvedValue([]),
     };
 
     const itemMasterUpdateService = new ItemMasterUpdateService(
@@ -346,9 +356,11 @@ describe('ItemsMasterService composite endpoints', () => {
   it('injects the parent item_id into EVERY row of a multi-row collection', async () => {
     prisma.itemMaster.create.mockResolvedValue(makeItemRecord());
     const dto = fullCompositeDto();
+    // Two scopes (company-wide and one branch): one scope holds one price row.
     dto.prices = [
       { ipm_uc_unit_id: UNIT_ID, ipm_godown_id: GODOWN_ID, ipm_profit_type: 'MANUAL' },
       {
+        ipm_branch_id: BRANCH_ID,
         ipm_uc_unit_id: UNIT_ID,
         ipm_godown_id: GODOWN_ID,
         ipm_profit_type: 'MANUAL',
@@ -410,7 +422,9 @@ describe('ItemsMasterService composite endpoints', () => {
     expect(prisma.itemMaster.create.mock.calls[0][0].data.itemCompanyId).toBeNull();
   });
 
-  it('updates with a null company when the body omits item_company_id', async () => {
+  // Notes 50 #1 / 67: an update used to write `?? null` / `?? []` for these
+  // three, so a client that did not echo them wiped them.
+  it('keeps the stored company, base unit and packing list when an update omits them', async () => {
     requestContextService.getCompanyId.mockReturnValue('019c6f6c-be87-7a11-8905-36092c46aaff');
     prisma.itemMaster.findFirst.mockResolvedValue(makeItemRecord());
     prisma.itemMaster.update.mockResolvedValue(makeItemRecord());
@@ -420,7 +434,45 @@ describe('ItemsMasterService composite endpoints', () => {
 
     await service.saveComposite(dto);
 
-    expect(prisma.itemMaster.update.mock.calls[0][0].data.itemCompanyId).toBeNull();
+    const data = prisma.itemMaster.update.mock.calls[0][0].data;
+    expect(data).not.toHaveProperty('itemCompanyId');
+    expect(data).not.toHaveProperty('itemBaseUnitId');
+    expect(data).not.toHaveProperty('itemPackingItemIds');
+  });
+
+  it('clears them on an update only when the payload says null', async () => {
+    prisma.itemMaster.findFirst.mockResolvedValue(makeItemRecord());
+    prisma.itemMaster.update.mockResolvedValue(makeItemRecord());
+
+    await service.saveComposite({
+      item_id: ITEM_ID,
+      item_name_en: 'Widget',
+      item_group_id: GROUP_ID,
+      item_company_id: null,
+      item_base_unit_id: null,
+      item_packing_item_ids: null,
+    } as unknown as SaveItemCompositeDto);
+
+    const data = prisma.itemMaster.update.mock.calls[0][0].data;
+    expect(data.itemCompanyId).toBeNull();
+    expect(data.itemBaseUnitId).toBeNull();
+    expect(data.itemPackingItemIds).toEqual([]);
+  });
+
+  // Notes 50 #4: every FK error used to be filed under item_group_id.
+  it('reports a foreign-key failure against the field whose constraint failed', async () => {
+    prisma.itemMaster.create.mockRejectedValue(
+      Object.assign(new Error('fk'), {
+        code: 'P2003',
+        meta: { modelName: 'ItemMaster', constraint: 'item_master_item_default_tax_id_fkey' },
+      }),
+    );
+
+    await expect(
+      service.saveComposite({ item_name_en: 'Widget', item_group_id: GROUP_ID }),
+    ).rejects.toMatchObject({
+      response: { errors: [{ field: 'item_default_tax_id' }] },
+    });
   });
 
   it('stores item_track_preset_id and hands the saved record to the policy sync', async () => {
@@ -756,71 +808,210 @@ describe('ItemsMasterService composite endpoints', () => {
     expect(reorderService.findByItemId).not.toHaveBeenCalled();
   });
 
-  it('toggleDeleteComposite soft-deletes an active item and cascades to its currently active children', async () => {
+  const idRows = (column: string, ...ids: string[]) => ids.map((id) => ({ [column]: id }));
+
+  it('softDeleteComposite deletes the item and every live child in one transaction, and retires its policy', async () => {
     prisma.itemMaster.findFirst.mockResolvedValue(makeItemRecord({ itemIsDeleted: false }));
-    unitConversionService.findIdsByItemId.mockResolvedValue(['uc1']);
-    priceService.findIdsByItemId.mockResolvedValue(['p1', 'p2']);
-    eanCodeService.findIdsByItemId.mockResolvedValue(['e1']);
-    reorderService.findIdsByItemId.mockResolvedValue(['r1']);
+    prisma.itemUnitConversion.findMany.mockResolvedValue(idRows('iucId', 'uc1'));
+    prisma.itemPriceMaster.findMany.mockResolvedValue(idRows('ipmId', 'p1', 'p2'));
+    prisma.itemEanCode.findMany.mockResolvedValue(idRows('eanId', 'e1'));
+    prisma.itemReorder.findMany.mockResolvedValue(idRows('irId', 'r1'));
 
-    const result = await service.toggleDeleteComposite(ITEM_ID);
+    const result = await service.softDeleteComposite(ITEM_ID);
 
-    // Children are looked up in their OLD (active) state, i.e. isDeleted=false
-    expect(unitConversionService.findIdsByItemId).toHaveBeenCalledWith(ITEM_ID, false);
-    expect(priceService.findIdsByItemId).toHaveBeenCalledWith(ITEM_ID, false);
-    expect(eanCodeService.findIdsByItemId).toHaveBeenCalledWith(ITEM_ID, false);
-    expect(reorderService.findIdsByItemId).toHaveBeenCalledWith(ITEM_ID, false);
-
-    // Every matched child id is toggled (soft deleted)
-    expect(unitConversionService.toggleDelete).toHaveBeenCalledWith(['uc1']);
-    expect(priceService.toggleDelete).toHaveBeenCalledWith(['p1', 'p2']);
-    expect(eanCodeService.toggleDelete).toHaveBeenCalledWith(['e1']);
-    expect(reorderService.toggleDelete).toHaveBeenCalledWith(['r1']);
-
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(prisma.itemPriceMaster.findMany.mock.calls[0][0]).toMatchObject({
+      where: { ipmItemId: ITEM_ID, ipmIsDeleted: false },
+    });
+    const tx = prisma as unknown as Prisma.TransactionClient;
+    expect(unitConversionService.toggleDelete).toHaveBeenCalledWith(['uc1'], tx);
+    expect(priceService.toggleDelete).toHaveBeenCalledWith(['p1', 'p2'], tx);
+    expect(eanCodeService.toggleDelete).toHaveBeenCalledWith(['e1'], tx);
+    expect(reorderService.toggleDelete).toHaveBeenCalledWith(['r1'], tx);
+    expect(stockTrackPolicyService.retireForItem).toHaveBeenCalledWith(ITEM_ID, tx);
+    expect(prisma.itemMaster.updateMany.mock.calls[0][0]).toMatchObject({
+      where: { itemId: ITEM_ID, itemIsDeleted: false },
+      data: { itemIsDeleted: true },
+    });
     expect(result.item).toEqual({ item_id: ITEM_ID, deleted: true });
-    expect(result.unit_conversions).toHaveLength(1);
     expect(result.prices).toHaveLength(2);
-    expect(result.ean_codes).toHaveLength(1);
-    expect(result.reorders).toHaveLength(1);
   });
 
-  it('toggleDeleteComposite restores a deleted item and cascades to its currently deleted children', async () => {
+  // Notes 50 #5: this used to be a toggle, and a second DELETE restored.
+  it('softDeleteComposite refuses an item that is already deleted — it never restores', async () => {
     prisma.itemMaster.findFirst.mockResolvedValue(makeItemRecord({ itemIsDeleted: true }));
-    unitConversionService.findIdsByItemId.mockResolvedValue(['uc1']);
 
-    const result = await service.toggleDeleteComposite(ITEM_ID);
+    await expect(service.softDeleteComposite(ITEM_ID)).rejects.toMatchObject({ status: 409 });
 
-    // Children are looked up in their OLD (deleted) state, i.e. isDeleted=true
-    expect(unitConversionService.findIdsByItemId).toHaveBeenCalledWith(ITEM_ID, true);
-    expect(priceService.findIdsByItemId).toHaveBeenCalledWith(ITEM_ID, true);
-    expect(eanCodeService.findIdsByItemId).toHaveBeenCalledWith(ITEM_ID, true);
-    expect(reorderService.findIdsByItemId).toHaveBeenCalledWith(ITEM_ID, true);
+    expect(prisma.itemMaster.updateMany).not.toHaveBeenCalled();
+    expect(priceService.toggleDelete).not.toHaveBeenCalled();
+  });
 
+  // Notes 67 B4: restore used to bring back every child ever removed.
+  it('restoreComposite restores only the children deleted at or after the item', async () => {
+    const deletedOn = new Date('2026-09-30T06:00:00.000Z');
+    const deleted = makeItemRecord({ itemIsDeleted: true, itemModifiedOn: deletedOn });
+    prisma.itemMaster.findFirst.mockResolvedValue(deleted);
+    prisma.itemMaster.findFirstOrThrow.mockResolvedValue({ ...deleted, itemIsDeleted: false });
+    prisma.itemEanCode.findMany.mockResolvedValue(idRows('eanId', 'e-with-item'));
+
+    const result = await service.restoreComposite(ITEM_ID);
+
+    expect(prisma.itemUnitConversion.findMany.mock.calls[0][0]).toMatchObject({
+      where: { iucItemId: ITEM_ID, iucIsDeleted: true, iucUpdatedOn: { gte: deletedOn } },
+    });
+    expect(prisma.itemPriceMaster.findMany.mock.calls[0][0]).toMatchObject({
+      where: { ipmItemId: ITEM_ID, ipmIsDeleted: true, ipmUpdatedOn: { gte: deletedOn } },
+    });
+    expect(prisma.itemEanCode.findMany.mock.calls[0][0]).toMatchObject({
+      where: { eanItemId: ITEM_ID, eanIsDeleted: true, eanModifiedOn: { gte: deletedOn } },
+    });
+    expect(prisma.itemReorder.findMany.mock.calls[0][0]).toMatchObject({
+      where: { irItemId: ITEM_ID, irIsDeleted: true, irModifiedOn: { gte: deletedOn } },
+    });
+    expect(eanCodeService.toggleDelete).toHaveBeenCalledWith(['e-with-item'], expect.anything());
+    expect(unitConversionService.toggleDelete).not.toHaveBeenCalled();
+    expect(stockTrackPolicyService.syncFromItem).toHaveBeenCalledWith(
+      expect.objectContaining({ itemId: ITEM_ID, itemIsDeleted: false }),
+      expect.anything(),
+    );
     expect(result.item).toEqual({ item_id: ITEM_ID, deleted: false });
   });
 
-  it('toggleDeleteComposite skips a child service entirely when it has no matching rows', async () => {
+  it('restoreComposite refuses an item that is not deleted', async () => {
     prisma.itemMaster.findFirst.mockResolvedValue(makeItemRecord({ itemIsDeleted: false }));
-    // All findIdsByItemId mocks default to [] from beforeEach
 
-    const result = await service.toggleDeleteComposite(ITEM_ID);
-
-    expect(unitConversionService.toggleDelete).not.toHaveBeenCalled();
-    expect(priceService.toggleDelete).not.toHaveBeenCalled();
-    expect(eanCodeService.toggleDelete).not.toHaveBeenCalled();
-    expect(reorderService.toggleDelete).not.toHaveBeenCalled();
-    expect(result.unit_conversions).toEqual([]);
-    expect(result.prices).toEqual([]);
-    expect(result.ean_codes).toEqual([]);
-    expect(result.reorders).toEqual([]);
+    await expect(service.restoreComposite(ITEM_ID)).rejects.toMatchObject({ status: 409 });
+    expect(prisma.itemMaster.updateMany).not.toHaveBeenCalled();
   });
 
-  it('toggleDeleteComposite throws NotFound and never queries or toggles children when the item is missing', async () => {
+  it('restoreComposite answers a name taken by a live item since with a 409 on item_name_en', async () => {
+    prisma.itemMaster.findFirst.mockResolvedValue(makeItemRecord({ itemIsDeleted: true }));
+    prisma.itemMaster.updateMany.mockRejectedValue(
+      Object.assign(new Error('unique'), {
+        code: 'P2002',
+        meta: { target: 'uq_item_name_en_global' },
+      }),
+    );
+
+    await expect(service.restoreComposite(ITEM_ID)).rejects.toMatchObject({
+      status: 409,
+      response: { errors: [{ field: 'item_name_en' }] },
+    });
+  });
+
+  it('delete and restore throw NotFound and touch no child when the item is missing', async () => {
     prisma.itemMaster.findFirst.mockResolvedValue(null);
 
-    await expect(service.toggleDeleteComposite(ITEM_ID)).rejects.toThrow();
+    await expect(service.softDeleteComposite(ITEM_ID)).rejects.toMatchObject({ status: 404 });
+    await expect(service.restoreComposite(ITEM_ID)).rejects.toMatchObject({ status: 404 });
 
-    expect(unitConversionService.findIdsByItemId).not.toHaveBeenCalled();
+    expect(prisma.itemPriceMaster.findMany).not.toHaveBeenCalled();
     expect(priceService.toggleDelete).not.toHaveBeenCalled();
+  });
+
+  // ── Notes 67 B1: prices match on the unique index's key, not unit + godown ──
+
+  const BRANCH_Y = '019c6f6c-be87-7a11-8905-36092c46aa0b';
+  const branchXPrice = {
+    ipm_id: 'px',
+    ipm_company_id: COMPANY_ID,
+    ipm_branch_id: BRANCH_ID,
+    ipm_item_id: ITEM_ID,
+    ipm_uc_unit_id: IUC_ID,
+    ipm_godown_id: GODOWN_ID,
+    ipm_profit_type: 'By %',
+  };
+
+  it("creates a NEW branch's price beside branch X's — same unit and godown — instead of overwriting X", async () => {
+    prisma.itemMaster.create.mockResolvedValue(makeItemRecord());
+    priceService.findByItemId.mockResolvedValueOnce([branchXPrice]);
+    const dto = fullCompositeDto();
+    dto.prices = [
+      { ...branchXPrice },
+      {
+        ipm_company_id: COMPANY_ID,
+        ipm_branch_id: BRANCH_Y,
+        ipm_uc_unit_id: UNIT_ID,
+        ipm_godown_id: GODOWN_ID,
+        ipm_profit_type: 'By %',
+      },
+    ];
+
+    await service.saveComposite(dto);
+
+    const saved = savedRows(priceService.save);
+    expect(saved).toHaveLength(1);
+    expect(saved[0]).toMatchObject({ ipm_branch_id: BRANCH_Y, ipm_id: undefined });
+    expect(priceService.toggleDelete).not.toHaveBeenCalled();
+  });
+
+  it('matches an id-less row to the stored row of the same company, branch and unit, and moves its godown', async () => {
+    prisma.itemMaster.create.mockResolvedValue(makeItemRecord());
+    priceService.findByItemId.mockResolvedValueOnce([branchXPrice]);
+    const dto = fullCompositeDto();
+    const { ipm_id: _id, ...noId } = branchXPrice;
+    dto.prices = [{ ...noId, ipm_godown_id: null }];
+
+    await service.saveComposite(dto);
+
+    expect(savedRows(priceService.save)[0]).toMatchObject({ ipm_id: 'px', ipm_godown_id: null });
+    expect(priceService.toggleDelete).not.toHaveBeenCalled();
+  });
+
+  it('refuses two price rows with one company, branch and unit, and saves nothing', async () => {
+    prisma.itemMaster.create.mockResolvedValue(makeItemRecord());
+    const dto = fullCompositeDto();
+    dto.prices = [
+      {
+        ipm_company_id: COMPANY_ID,
+        ipm_branch_id: BRANCH_ID,
+        ipm_uc_unit_id: UNIT_ID,
+        ipm_godown_id: GODOWN_ID,
+        ipm_profit_type: 'By %',
+      },
+      {
+        ipm_company_id: COMPANY_ID,
+        ipm_branch_id: BRANCH_ID,
+        ipm_uc_unit_id: UNIT_ID,
+        ipm_godown_id: null,
+        ipm_profit_type: 'By %',
+      },
+    ];
+
+    await expect(service.saveComposite(dto)).rejects.toBeInstanceOf(BadRequestException);
+    expect(priceService.save).not.toHaveBeenCalled();
+  });
+
+  it("keys reorders on branch too: a second branch's godown-less rule is a new row", async () => {
+    prisma.itemMaster.create.mockResolvedValue(makeItemRecord());
+    reorderService.findByItemId.mockResolvedValueOnce([
+      {
+        ir_id: 'rx',
+        ir_item_id: ITEM_ID,
+        ir_branch_id: BRANCH_ID,
+        ir_unit_id: IUC_ID,
+        ir_godown_id: null,
+        ir_min_level: 5,
+      },
+    ]);
+    const dto = fullCompositeDto();
+    dto.reorders = [
+      {
+        ir_id: 'rx',
+        ir_branch_id: BRANCH_ID,
+        ir_unit_id: IUC_ID,
+        ir_godown_id: null,
+        ir_min_level: 5,
+      },
+      { ir_branch_id: BRANCH_Y, ir_unit_id: UNIT_ID, ir_godown_id: null, ir_min_level: 9 },
+    ];
+
+    await service.saveComposite(dto);
+
+    const saved = savedRows(reorderService.save);
+    expect(saved).toHaveLength(1);
+    expect(saved[0]).toMatchObject({ ir_branch_id: BRANCH_Y, ir_id: undefined });
+    expect(reorderService.toggleDelete).not.toHaveBeenCalled();
   });
 });

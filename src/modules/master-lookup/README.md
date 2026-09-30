@@ -94,7 +94,7 @@ price for the requested price level, the tax block, stock, reorder level and neg
   stands in for units the branch does not price itself.
 - **Loading / freight charge:** both resolved server-side, from `loading_type` and `freight_type` —
   see below.
-- **Tax:** loaded from `item_tax_master` via the item's `item_default_tax_id`; GST/cess percentages
+- **Tax:** loaded from `tax_rate_master` via the item's `item_default_tax_id`; GST/cess percentages
   are zeroed when the company has GST disabled. `item_incl_tax` is the exception — it comes straight
   off `item_master` and tells the caller whether the returned prices already carry tax, so the GST
   toggle does not change it.
@@ -243,7 +243,7 @@ falls back to the id.
 | `itemSections` | `itemSectionMaster` | `secName` |
 | `itemBrands` | `itemBrandMaster` | `brand_name` |
 | `units` | `unit` | `unit_name` |
-| `itemTaxes` | `itemTaxMaster` | `taxName` |
+| `itemTaxes` | `taxRateMaster` | `taxName` — the ids go into `item_default_tax_id` |
 | `priceLevels` | `priceLevel` | `priceLvlName` → `priceLvlShort` |
 | `hsnCodes` | `hsnMaster` | `hsnCode` (both id and name); filters **`hsnIsActive` only** |
 | `items` | `itemMaster` | `itemNameEn` |

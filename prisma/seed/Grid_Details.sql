@@ -1,4 +1,4 @@
--- Seed: fixed.grid_details -- the configured list/report grids and the SQL behind them (95 rows).
+-- Seed: fixed.grid_details -- the configured list/report grids and the SQL behind them (94 rows).
 --
 -- grid_sql is user-configurable SQL executed by the grid "run" endpoint through the
 -- read-only pool, with p_* named tokens bound as parameters (bindGridParams). It is
@@ -60,8 +60,6 @@ ORDER BY
     ,(4 , 'unit master'                  , 'unit master', 'Unit name'       , 'Ascending', 'web'    , true , false, 'system', $seed$SELECT unit_name, unit_alias, unit_code, unit_description, unit_decimal_count, unit_weight, unit_loading, unit_unloading, unit_attach_charge, unit_is_pack_unit, unit_conversion, unit_is_active,  unit_id, unit_base_unit_id
 	FROM inventory.item_unit_master
 where unit_is_deleted=wantdelete$seed$)
-    ,(5 , 'item tax master'              , 'item tax master', 'Tax name'        , 'Ascending', 'web'    , true , false, 'system', $seed$SELECT tax_id, tax_name, tax_code, tax_taxability_type, tax_is_reverse_charge, tax_cgst_perc, tax_sgst_perc, tax_igst_perc, tax_cgst_pur_perc, tax_sgst_pur_perc, tax_igst_pur_perc, tax_cess_type, tax_cess_perc, tax_cess_unit, tax_cess_pur_perc, tax_cess_pur_unit, tax_gst_rate_total, tax_sales_ledger_id, tax_sales_return_ledger_id, tax_purchase_ledger_id, tax_purchase_return_ledger_id, tax_cgst_output_ledger_id, tax_sgst_output_ledger_id, tax_igst_output_ledger_id, tax_cess_output_ledger_id, tax_cgst_input_ledger_id, tax_sgst_input_ledger_id, tax_igst_input_ledger_id, tax_cess_input_ledger_id
-	FROM inventory.item_tax_master where tax_is_deleted=wantdelete$seed$)
     ,(6 , 'item group master'            , 'item group master', 'Group Name'      , 'Ascending', 'web'    , true , false, 'system', $seed$SELECT
     itg.itg_id,
     itg.itg_name,

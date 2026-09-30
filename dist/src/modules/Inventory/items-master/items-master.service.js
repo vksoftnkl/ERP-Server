@@ -29,6 +29,17 @@ const COMPOSITE_TRANSACTION_OPTIONS = { maxWait: 10_000, timeout: 30_000 };
 const TRACK_PRESET_INCLUDE = {
     trackPreset: { select: { sptName: true } },
 };
+const ITEM_FOREIGN_KEYS = {
+    item_master_item_group_id_fkey: { field: 'item_group_id', what: 'item group' },
+    item_master_item_default_tax_id_fkey: {
+        field: 'item_default_tax_id',
+        what: 'tax rate (tax_rate_master)',
+    },
+    item_master_item_base_unit_id_fkey: { field: 'item_base_unit_id', what: 'unit' },
+    item_master_item_category_id_fkey: { field: 'item_category_id', what: 'item category' },
+    item_master_item_company_id_fkey: { field: 'item_company_id', what: 'company' },
+    fk_item_track_preset: { field: 'item_track_preset_id', what: 'stock track preset' },
+};
 let ItemsMasterService = class ItemsMasterService {
     prisma;
     auditLogService;
@@ -164,7 +175,7 @@ let ItemsMasterService = class ItemsMasterService {
                 })
                 : [],
             taxIds.length
-                ? this.prisma.itemTaxMaster.findMany({
+                ? this.prisma.taxRateMaster.findMany({
                     where: { taxId: { in: taxIds } },
                     select: { taxId: true, taxName: true },
                 })
@@ -264,7 +275,7 @@ let ItemsMasterService = class ItemsMasterService {
             return [];
         const taxIds = Array.from(new Set(items.map((i) => i.itemDefaultTaxId).filter((id) => id !== null)));
         const taxRecords = taxIds.length > 0
-            ? await this.prisma.itemTaxMaster.findMany({
+            ? await this.prisma.taxRateMaster.findMany({
                 where: { taxId: { in: taxIds }, taxIsDeleted: false },
             })
             : [];
@@ -316,85 +327,179 @@ let ItemsMasterService = class ItemsMasterService {
                 round_off: (0, module_service_utils_1.toNumber)(p?.ipmRoundOff ?? 0),
                 tax_id: item.itemDefaultTaxId ?? null,
                 tax_name: tax?.taxName ?? null,
-                tax_perc: (0, module_service_utils_1.toNumber)(tax?.taxGstRateTotal ?? 0),
-                cess_type: tax?.taxCessType ?? 'NONE',
+                tax_perc: (0, module_service_utils_1.toNumber)(tax?.taxRatePerc ?? 0),
+                cess_type: tax?.taxCessBasis ?? 'NONE',
                 cess_perc: (0, module_service_utils_1.toNumber)(tax?.taxCessPerc ?? 0),
-                cess_per_unit: (0, module_service_utils_1.toNumber)(tax?.taxCessUnit ?? 0),
+                cess_per_unit: (0, module_service_utils_1.toNumber)(tax?.taxCessPerUnit ?? 0),
                 tracking_type: trackingType,
             };
         });
     }
-    async toggleDelete(itemId) {
+    async softDeleteComposite(itemId) {
         return this.prisma.$transaction(async (tx) => {
-            const existing = await tx.itemMaster.findFirst({
-                where: {
-                    itemId,
-                },
-            });
-            if (!existing) {
-                (0, module_service_utils_2.throwInventoryNotFound)('Item not found', 'item_id', `No item found with id ${itemId}`);
+            const existing = await this.findItemForDeleteState(tx, itemId);
+            if (existing.itemIsDeleted) {
+                (0, module_service_utils_2.throwInventoryConflict)('Item is already deleted', [
+                    {
+                        field: 'item_id',
+                        message: `${existing.itemNameEn} is already deleted. POST /items/restore brings it back.`,
+                    },
+                ]);
             }
-            const wasDeleted = existing.itemIsDeleted;
-            const nextDeleted = !wasDeleted;
-            const modifiedOn = new Date();
-            const modifiedBy = this.requestContextService.getUserId() ?? module_service_utils_2.DEFAULT_ACTOR;
-            const result = await tx.itemMaster.updateMany({
-                where: {
-                    itemId,
-                    itemIsDeleted: wasDeleted,
-                },
-                data: {
-                    itemIsDeleted: nextDeleted,
-                    itemModifiedOn: modifiedOn,
-                    itemModifiedBy: modifiedBy,
-                },
+            const item = await this.setItemDeleted(tx, existing, true);
+            const [unitConversionIds, priceIds, eanCodeIds, reorderIds] = await Promise.all([
+                tx.itemUnitConversion
+                    .findMany({ where: { iucItemId: itemId, iucIsDeleted: false }, select: { iucId: true } })
+                    .then((rows) => rows.map((row) => row.iucId)),
+                tx.itemPriceMaster
+                    .findMany({ where: { ipmItemId: itemId, ipmIsDeleted: false }, select: { ipmId: true } })
+                    .then((rows) => rows.map((row) => row.ipmId)),
+                tx.itemEanCode
+                    .findMany({ where: { eanItemId: itemId, eanIsDeleted: false }, select: { eanId: true } })
+                    .then((rows) => rows.map((row) => row.eanId)),
+                tx.itemReorder
+                    .findMany({ where: { irItemId: itemId, irIsDeleted: false }, select: { irId: true } })
+                    .then((rows) => rows.map((row) => row.irId)),
+            ]);
+            const children = await this.toggleChildren(tx, {
+                unitConversionIds,
+                priceIds,
+                eanCodeIds,
+                reorderIds,
             });
-            if (result.count === 0) {
-                (0, module_service_utils_2.throwInventoryNotFound)('Item not found', 'item_id', `No item found with id ${itemId}`);
+            await this.stockTrackPolicyService.retireForItem(itemId, tx);
+            return { item, ...children };
+        }, COMPOSITE_TRANSACTION_OPTIONS);
+    }
+    async restoreComposite(itemId) {
+        try {
+            return await this.prisma.$transaction(async (tx) => {
+                const existing = await this.findItemForDeleteState(tx, itemId);
+                if (!existing.itemIsDeleted) {
+                    (0, module_service_utils_2.throwInventoryConflict)('Item is not deleted', [
+                        {
+                            field: 'item_id',
+                            message: `${existing.itemNameEn} is not deleted; there is nothing to restore.`,
+                        },
+                    ]);
+                }
+                const deletedOn = existing.itemModifiedOn;
+                const [unitConversionIds, priceIds, eanCodeIds, reorderIds] = await Promise.all([
+                    tx.itemUnitConversion
+                        .findMany({
+                        where: { iucItemId: itemId, iucIsDeleted: true, iucUpdatedOn: { gte: deletedOn } },
+                        select: { iucId: true },
+                    })
+                        .then((rows) => rows.map((row) => row.iucId)),
+                    tx.itemPriceMaster
+                        .findMany({
+                        where: { ipmItemId: itemId, ipmIsDeleted: true, ipmUpdatedOn: { gte: deletedOn } },
+                        select: { ipmId: true },
+                    })
+                        .then((rows) => rows.map((row) => row.ipmId)),
+                    tx.itemEanCode
+                        .findMany({
+                        where: { eanItemId: itemId, eanIsDeleted: true, eanModifiedOn: { gte: deletedOn } },
+                        select: { eanId: true },
+                    })
+                        .then((rows) => rows.map((row) => row.eanId)),
+                    tx.itemReorder
+                        .findMany({
+                        where: { irItemId: itemId, irIsDeleted: true, irModifiedOn: { gte: deletedOn } },
+                        select: { irId: true },
+                    })
+                        .then((rows) => rows.map((row) => row.irId)),
+                ]);
+                const item = await this.setItemDeleted(tx, existing, false);
+                const children = await this.toggleChildren(tx, {
+                    unitConversionIds,
+                    priceIds,
+                    eanCodeIds,
+                    reorderIds,
+                });
+                const restored = await tx.itemMaster.findFirstOrThrow({ where: { itemId } });
+                await this.stockTrackPolicyService.syncFromItem(restored, tx);
+                return { item, ...children };
+            }, COMPOSITE_TRANSACTION_OPTIONS);
+        }
+        catch (error) {
+            if ((0, module_service_utils_2.isUniqueConstraintError)(error)) {
+                const constraint = (0, module_service_utils_2.violatedConstraintOf)(error) ?? '';
+                (0, module_service_utils_2.throwInventoryConflict)('Item cannot be restored', [
+                    /item_name_en/.test(constraint)
+                        ? {
+                            field: 'item_name_en',
+                            message: 'Another live item now has this name. Rename one of them, then restore.',
+                        }
+                        : /ean_code/.test(constraint)
+                            ? {
+                                field: 'ean_codes',
+                                message: 'An EAN code of this item now belongs to another live item. Remove it there, then restore.',
+                            }
+                            : {
+                                field: 'item_id',
+                                message: 'A row of this item now clashes with a live row elsewhere.',
+                            },
+                ]);
             }
-            const originalRecord = this.toPayload(existing);
-            const modifiedRecord = this.toPayload({
+            throw error;
+        }
+    }
+    async findItemForDeleteState(tx, itemId) {
+        const existing = await tx.itemMaster.findFirst({ where: { itemId } });
+        if (!existing) {
+            (0, module_service_utils_2.throwInventoryNotFound)('Item not found', 'item_id', `No item found with id ${itemId}`);
+        }
+        return existing;
+    }
+    async setItemDeleted(tx, existing, deleted) {
+        const modifiedOn = new Date();
+        const modifiedBy = this.requestContextService.getUserId() ?? module_service_utils_2.DEFAULT_ACTOR;
+        const result = await tx.itemMaster.updateMany({
+            where: { itemId: existing.itemId, itemIsDeleted: !deleted },
+            data: { itemIsDeleted: deleted, itemModifiedOn: modifiedOn, itemModifiedBy: modifiedBy },
+        });
+        if (result.count === 0) {
+            (0, module_service_utils_2.throwInventoryConflict)('Item changed', [
+                {
+                    field: 'item_id',
+                    message: 'The item was deleted or restored by someone else just now. Reload it.',
+                },
+            ]);
+        }
+        await this.auditLogService.logEntityChange({
+            action: deleted ? 'cancel' : 'update',
+            tableName: ITEM_TABLE_NAME,
+            screenName: ITEM_AUDIT_SCREEN_NAME,
+            screenType: 'master',
+            pk: existing.itemId,
+            displayName: existing.itemNameEn,
+            originalRecord: this.toPayload(existing),
+            modifiedRecord: this.toPayload({
                 ...existing,
-                itemIsDeleted: nextDeleted,
+                itemIsDeleted: deleted,
                 itemModifiedOn: modifiedOn,
                 itemModifiedBy: modifiedBy,
-            });
-            await this.auditLogService.logEntityChange({
-                action: nextDeleted ? 'cancel' : 'update',
-                tableName: ITEM_TABLE_NAME,
-                screenName: ITEM_AUDIT_SCREEN_NAME,
-                screenType: 'master',
-                pk: itemId,
-                displayName: existing.itemNameEn,
-                originalRecord,
-                modifiedRecord,
-                userId: modifiedBy,
-                notes: nextDeleted ? 'Item soft deleted' : 'Item restored',
-            }, tx);
-            return {
-                item_id: itemId,
-                deleted: nextDeleted,
-            };
-        });
+            }),
+            userId: modifiedBy,
+            notes: deleted ? 'Item soft deleted' : 'Item restored',
+        }, tx);
+        return { item_id: existing.itemId, deleted };
     }
-    async toggleDeleteComposite(itemId) {
-        const item = await this.toggleDelete(itemId);
-        const wasDeleted = !item.deleted;
-        const [unitConversionIds, priceIds, eanCodeIds, reorderIds] = await Promise.all([
-            this.itemUnitConversionService.findIdsByItemId(itemId, wasDeleted),
-            this.itemsPriceMasterService.findIdsByItemId(itemId, wasDeleted),
-            this.itemsEanCodeMasterService.findIdsByItemId(itemId, wasDeleted),
-            this.itemsReorderMasterService.findIdsByItemId(itemId, wasDeleted),
-        ]);
-        const [unit_conversions, prices, ean_codes, reorders] = await Promise.all([
-            unitConversionIds.length
-                ? this.itemUnitConversionService.toggleDelete(unitConversionIds)
-                : [],
-            priceIds.length ? this.itemsPriceMasterService.toggleDelete(priceIds) : [],
-            eanCodeIds.length ? this.itemsEanCodeMasterService.toggleDelete(eanCodeIds) : [],
-            reorderIds.length ? this.itemsReorderMasterService.toggleDelete(reorderIds) : [],
-        ]);
-        return { item, unit_conversions, prices, ean_codes, reorders };
+    async toggleChildren(tx, ids) {
+        const unit_conversions = ids.unitConversionIds.length
+            ? await this.itemUnitConversionService.toggleDelete(ids.unitConversionIds, tx)
+            : [];
+        const prices = ids.priceIds.length
+            ? await this.itemsPriceMasterService.toggleDelete(ids.priceIds, tx)
+            : [];
+        const ean_codes = ids.eanCodeIds.length
+            ? await this.itemsEanCodeMasterService.toggleDelete(ids.eanCodeIds, tx)
+            : [];
+        const reorders = ids.reorderIds.length
+            ? await this.itemsReorderMasterService.toggleDelete(ids.reorderIds, tx)
+            : [];
+        return { unit_conversions, prices, ean_codes, reorders };
     }
     async createItem(saveItemDto, tx) {
         const itemNameEn = saveItemDto.item_name_en?.trim();
@@ -456,7 +561,6 @@ let ItemsMasterService = class ItemsMasterService {
                 },
             ]);
         }
-        const companyId = saveItemDto.item_company_id ?? null;
         const update = async (client) => {
             const existing = await client.itemMaster.findFirst({
                 where: {
@@ -468,13 +572,17 @@ let ItemsMasterService = class ItemsMasterService {
                 (0, module_service_utils_2.throwInventoryNotFound)('Item not found', 'item_id', `No active item found with id ${itemId}`);
             }
             const data = {
-                itemCompanyId: companyId,
                 itemNameEn,
                 itemGroupId: saveItemDto.item_group_id,
-                itemBaseUnitId: saveItemDto.item_base_unit_id ?? null,
                 itemModifiedOn: new Date(),
                 itemModifiedBy: (0, module_service_utils_2.resolveActor)(saveItemDto.item_modified_by, this.requestContextService.getUserId()),
             };
+            if (saveItemDto.item_company_id !== undefined) {
+                data.itemCompanyId = saveItemDto.item_company_id ?? null;
+            }
+            if (saveItemDto.item_base_unit_id !== undefined) {
+                data.itemBaseUnitId = saveItemDto.item_base_unit_id ?? null;
+            }
             this.applyOptionalFields(data, saveItemDto);
             const updated = await client.itemMaster.update({
                 where: {
@@ -661,7 +769,7 @@ let ItemsMasterService = class ItemsMasterService {
         if ((0, module_service_utils_2.hasOwnProperty)(saveItemDto, 'item_storage_location')) {
             data.itemStorageLocation = saveItemDto.item_storage_location;
         }
-        if ((0, module_service_utils_2.hasOwnProperty)(saveItemDto, 'item_packing_item_ids')) {
+        if (saveItemDto.item_packing_item_ids !== undefined) {
             data.itemPackingItemIds = saveItemDto.item_packing_item_ids ?? [];
         }
         if ((0, module_service_utils_2.hasOwnProperty)(saveItemDto, 'item_incl_tax')) {
@@ -767,8 +875,14 @@ let ItemsMasterService = class ItemsMasterService {
             { field: 'item_name_en', message: 'Duplicate item_name_en is not allowed' },
         ]);
         if ((0, module_service_utils_2.isForeignKeyConstraintError)(error)) {
+            const known = ITEM_FOREIGN_KEYS[(0, module_service_utils_2.violatedConstraintOf)(error) ?? ''];
             (0, module_service_utils_2.throwInventoryBadRequest)('Invalid relation reference', [
-                { field: 'item_group_id', message: 'Referenced relation does not exist' },
+                known
+                    ? {
+                        field: known.field,
+                        message: `${known.field} does not name an existing ${known.what}`,
+                    }
+                    : { field: 'request', message: 'Referenced relation does not exist' },
             ]);
         }
     }

@@ -202,9 +202,13 @@ export function buildModuleFetchers(prisma: PrismaService): Record<LookupModuleK
         }),
       (row) => toOption(row.unit_id, row.unit_name),
     ),
+    // The item form writes this picker's id into item_default_tax_id, which
+    // references tax_rate_master (20260912110000_repoint_items_to_tax_rate_master)
+    // — an item_tax_master id would fail the FK. Ordered by name, as the
+    // configured TAXES dropdown that normally serves this module is.
     itemTaxes: simpleFetcher(
       () =>
-        prisma.itemTaxMaster.findMany({
+        prisma.taxRateMaster.findMany({
           where: { taxIsDeleted: false, taxIsActive: true },
           select: { taxId: true, taxName: true },
           orderBy: [{ taxName: 'asc' }, { taxId: 'asc' }],

@@ -15,6 +15,7 @@ import {
 } from './types/item-price-api.types';
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import { AuditLogService } from 'src/modules/audit-log/audit-log.service';
+import { RequestContextService } from 'src/common/request-context/request-context.service';
 import {
   hasOwnProperty,
   isForeignKeyConstraintError,
@@ -44,6 +45,7 @@ export class ItemsPriceMasterService {
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
     private readonly configuredGridSqlService: ConfiguredGridSqlService,
+    private readonly requestContextService: RequestContextService,
   ) {}
   async save(
     saveItemPriceDto: SaveItemPriceDto,
@@ -154,13 +156,6 @@ export class ItemsPriceMasterService {
     });
     return records.map((record) => this.toPayload(record));
   }
-  async findIdsByItemId(itemId: string, isDeleted: boolean): Promise<string[]> {
-    const records = await this.prisma.itemPriceMaster.findMany({
-      where: { ipmItemId: itemId, ipmIsDeleted: isDeleted },
-      select: { ipmId: true },
-    });
-    return records.map((record) => record.ipmId);
-  }
   async toggleDelete(ipmId: string, tx?: Prisma.TransactionClient): Promise<ItemPriceDeleteResult>;
   async toggleDelete(
     ipmId: string[],
@@ -225,6 +220,7 @@ export class ItemsPriceMasterService {
       data: {
         ipmIsDeleted: nextDeleted,
         ipmUpdatedOn: updatedOn,
+        ipmUpdatedBy: this.requestUser() ?? existing.ipmUpdatedBy,
       },
     });
     await this.auditLogService.logEntityChange(
@@ -262,7 +258,10 @@ export class ItemsPriceMasterService {
     }
     const unitConversion = await this.requireUnitConversion(tx, saveItemPriceDto);
     const now = new Date();
-    const createdBy = this.resolveRecordActor(saveItemPriceDto.ipm_created_by);
+    // The row's actor is the payload's when it names one, else the request's
+    // user — never left NULL just because the client sent none (notes 50 #2).
+    const createdBy =
+      this.resolveRecordActor(saveItemPriceDto.ipm_created_by) ?? this.requestUser();
     const updatedBy = this.resolveRecordActor(saveItemPriceDto.ipm_updated_by) ?? createdBy;
     const data: Prisma.ItemPriceMasterUncheckedCreateInput = {
       ipmItemId: saveItemPriceDto.ipm_item_id,
@@ -329,12 +328,20 @@ export class ItemsPriceMasterService {
     const data: Prisma.ItemPriceMasterUncheckedUpdateInput = {
       ipmItemId: saveItemPriceDto.ipm_item_id,
       ipmUcUnitId: unitConversion.iucId,
-      ipmGodownId: saveItemPriceDto.ipm_godown_id ?? null,
       ipmProfitType: profitType,
       ipmUpdatedOn: new Date(),
+      // hasOwnProperty is true for every declared DTO field, sent or not, so
+      // it cannot tell "omitted" from "sent": the payload's actor, else the
+      // request's user, else the stored one.
+      ipmUpdatedBy:
+        this.resolveRecordActor(saveItemPriceDto.ipm_updated_by) ??
+        this.requestUser() ??
+        existing.ipmUpdatedBy,
     };
-    if (hasOwnProperty(saveItemPriceDto, 'ipm_updated_by')) {
-      data.ipmUpdatedBy = this.resolveRecordActor(saveItemPriceDto.ipm_updated_by);
+    // Omitted keeps the stored godown; only an explicit null makes the row
+    // global again.
+    if (saveItemPriceDto.ipm_godown_id !== undefined) {
+      data.ipmGodownId = saveItemPriceDto.ipm_godown_id ?? null;
     }
     this.applyOptionalFields(data, saveItemPriceDto);
     const updated = await tx.itemPriceMaster.update({
@@ -557,6 +564,10 @@ export class ItemsPriceMasterService {
   private resolveRecordActor(value: string | null | undefined): string | null {
     const trimmed = value?.trim();
     return trimmed || null;
+  }
+  /** The authenticated user, or null — never the nil-uuid DEFAULT_ACTOR sentinel. */
+  private requestUser(): string | null {
+    return this.requestContextService.getUserId()?.trim() || null;
   }
   private resolveAuditActor(
     value: string | null | undefined,

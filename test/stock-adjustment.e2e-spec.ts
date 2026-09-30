@@ -9,13 +9,15 @@ import { StockAdjustmentService } from '../src/modules/stocks/stock-adjustment/s
 import { StockReasonsService } from '../src/modules/stocks/stock-adjustment/stock-reasons.service';
 import { assertStockBalances } from '../src/modules/stocks/posting/stock-balance-assertion';
 import type { StockVoucherTypeRules } from '../src/modules/stocks/stock-voucher/types/stock-voucher.types';
-import type { StockAdjustmentSaveKind } from '../src/modules/stocks/stock-adjustment/stock-adjustment.rules';
+import { STOCK_ADJUSTMENT_RULES, type StockAdjustmentSaveKind } from '../src/modules/stocks/stock-adjustment/stock-adjustment.rules';
 import { buildStockPosting } from './helpers/stock-posting.factory';
 
 /**
  * THE ADJUSTMENT FAMILY, END TO END (plan-nestjs-stock-adjustments §7), in
  * one rolled-back transaction like `stock-engine-ts.e2e-spec.ts`. Cases 10–14
  * are "Move stock" (notes 60): the bucket pair, the refusals, the cancel.
+ * Cases 15–18 are the notes 65 fixes: a same-lot re-lot, signed header totals,
+ * the every-bucket picker and the sales shadow vouchers.
  *
  *     npm run test:e2e -- stock-adjustment
  */
@@ -868,5 +870,116 @@ describe('Stock adjustments (e2e — one rolled-back transaction)', () => {
     expect(await itemCost(fixture.soap)).toEqual(soapCost);
     expect(await lastPurchase(fixture.soap)).toEqual(soapStamps);
     expect(await balancesAgree(fixture.soap)).toBe(0);
+  });
+
+  // ── notes 65 ─────────────────────────────────────────────────────────────
+
+  it('15. a re-lot that lands back on the lot it leaves is refused — at save, at validate and inside the post', async () => {
+    const right = (await lots(fixture.tea)).find((l) => l.batch_no === 'RIGHT');
+    expect(right).toBeDefined();
+    const outHalf: AdjLine = { item: fixture.tea, qty: 5, reasonId: reasons.RELOT_OUT, lotId: right!.slt_id, remarks: 'relabel' };
+    const inHalf = (extra: Partial<AdjLine>): AdjLine => ({ item: fixture.tea, qty: 5, reasonId: reasons.RELOT_IN, remarks: 'relabel', ...extra });
+
+    // TEA tracks the batch, and the key folds case and blanks as the lot's
+    // does: ' right ' IS lot RIGHT. The IN line names no lot, so the old
+    // inLots test never saw it (notes 65 §1).
+    const same = await adjustment('ADJUSTMENT', [outHalf, inHalf({ batchNo: ' right ' })]).then(() => 'saved', refusal);
+    expect(same).toMatch(/Line 2: re-lot lands back on the lot the OUT half leaves: this item tracks batch/);
+
+    // SUGAR tracks nothing (case 4 left 6 in its one lot): whatever the IN half
+    // states, the policy blanks it and it resolves to that lot.
+    const [sugarLot] = await lots(fixture.sugar);
+    const untracked = await adjustment('ADJUSTMENT', [
+      { item: fixture.sugar, qty: 1, reasonId: reasons.RELOT_OUT, lotId: sugarLot.slt_id, remarks: 'relabel' },
+      { item: fixture.sugar, qty: 1, reasonId: reasons.RELOT_IN, batchNo: 'NEW', remarks: 'relabel' },
+    ]).then(() => 'saved', refusal);
+    expect(untracked).toMatch(/tracks no lot identity/);
+
+    // Validate and post read the STORED rows: a pair that saved clean and was
+    // then changed underneath is refused there too.
+    const saved = await adjustment('ADJUSTMENT', [outHalf, inHalf({ batchNo: 'FIXED' })]);
+    const svhId = saved.header.svhId;
+    await tx.$executeRaw`
+      UPDATE stock.stock_voucher_item SET svi_batch_no = 'RIGHT'
+       WHERE svi_voucher_id = ${svhId}::uuid AND svi_acc_year = ${ACC_YEAR}::bpchar AND svi_line_no = 2
+    `;
+    const problems = await service.validate(svhId, ACC_YEAR, fixture.companyId, fixture.branchId);
+    expect(problems.find((p) => p.lineNo === 2)?.problem).toMatch(/lands back on the lot the OUT half leaves/);
+    expect(await post(svhId).then(() => 'posted', refusal)).toMatch(/lands back on the lot the OUT half leaves/);
+    expect((await header(svhId)).status).toBe('DRAFT');
+    expect(await ledger(svhId)).toHaveLength(0);
+
+    // The in-transaction guard reads the lot the engine STAMPED on each line,
+    // not the stated identity: an IN line carrying the OUT's lot is refused.
+    await tx.$executeRaw`
+      UPDATE stock.stock_voucher_item SET svi_lot_id = ${right!.slt_id}::uuid
+       WHERE svi_voucher_id = ${svhId}::uuid AND svi_acc_year = ${ACC_YEAR}::bpchar AND svi_line_no = 2
+    `;
+    const guard = (service as unknown as {
+      assertRelotLandsElsewhere: (client: Prisma.TransactionClient, rules: StockVoucherTypeRules, id: string, year: string) => Promise<void>;
+    }).assertRelotLandsElsewhere(tx, STOCK_ADJUSTMENT_RULES.ADJUSTMENT, svhId, ACC_YEAR);
+    await expect(guard).rejects.toMatchObject({ status: 422 });
+    await expect(guard.catch(refusal)).resolves.toMatch(/Line 2 .*resolved to the lot line 1 takes the stock out of/);
+    expect(await balancesAgree(fixture.tea)).toBe(0);
+  });
+
+  it('16. a net-out adjustment keeps NEGATIVE header totals as a DRAFT; the post re-sums the net', async () => {
+    const saved = await adjustment('ADJUSTMENT', [{ item: fixture.salt, qty: 2, reasonId: reasons.INTERNAL }], {
+      lineCount: 1,
+      totalQty: -2,
+      totalValue: -40,
+      totalValueWot: -40,
+    });
+    expect(await header(saved.header.svhId)).toEqual({ status: 'DRAFT', qty: -2, value: -40, lines: 1 });
+    await post(saved.header.svhId);
+    const posted = await header(saved.header.svhId);
+    expect(posted.status).toBe('POSTED');
+    expect(posted.qty).toBeCloseTo(-2, 6);
+    expect(posted.value).toBeLessThan(0);
+    expect(await balancesAgree(fixture.salt)).toBe(0);
+  });
+
+  it('17. pick-stock without a bucket lists the lot in every bucket it sits in', async () => {
+    const moved = await adjustment('BUCKET_MOVE', [
+      { item: fixture.soap, qty: 2, reasonId: reasons.MOVE_DAMAGED, lotId: soapLot, toBucket: 'DAMAGED' },
+    ]);
+    await post(moved.header.svhId);
+    const everywhere = await service.pickStock({
+      companyId: fixture.companyId,
+      branchId: fixture.branchId,
+      godownId: fixture.godownA,
+      itemId: fixture.soap.itemId,
+    });
+    expect(everywhere.map((r) => [r.lotId, r.bucket, r.availableQty]).sort()).toEqual(
+      [
+        [soapLot, 'DAMAGED', 2],
+        [soapLot, 'SALEABLE', 8],
+      ].sort(),
+    );
+    expect(await balancesAgree(fixture.soap)).toBe(0);
+  });
+
+  it("18. a sales shadow voucher is not an adjustment: it cannot be opened or cancelled here, nor an adjustment saved with another module's link", async () => {
+    const draft = await adjustment('ADJUSTMENT', [{ item: fixture.salt, qty: 1, reasonId: reasons.INTERNAL }]);
+    const svhId = draft.header.svhId;
+    // Dress the draft as a sale bill's shadow (ck_svh_link: all three or none).
+    await tx.$executeRaw`
+      UPDATE stock.stock_voucher
+         SET svh_link_src_module = 'SALES', svh_link_src_doc_type = 'SALE_BILL', svh_link_src_doc_id = ${svhId}::uuid
+       WHERE svh_id = ${svhId}::uuid AND svh_acc_year = ${ACC_YEAR}::bpchar
+    `;
+    const opened = await service.getOne(svhId, ACC_YEAR, fixture.companyId, fixture.branchId).then(() => 'opened', refusal);
+    expect(opened).toMatch(/is the stock movement of a SALES SALE_BILL, not an adjustment/);
+    const cancelled = await attempt(() =>
+      service.cancel({ svhId, accYear: ACC_YEAR, companyId: fixture.companyId, branchId: fixture.branchId, reason: 'not mine' }),
+    ).then(() => 'cancelled', refusal);
+    expect(cancelled).toMatch(/not an adjustment/);
+
+    const linked = await adjustment('ADJUSTMENT', [{ item: fixture.salt, qty: 1, reasonId: reasons.INTERNAL }], {
+      linkSrcModule: 'SALES',
+      linkSrcDocType: 'SALE_BILL',
+      linkSrcDocId: svhId,
+    }).then(() => 'saved', refusal);
+    expect(linked).toMatch(/linkSrcModule may be STOCK or empty, not SALES/);
   });
 });

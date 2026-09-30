@@ -1,5 +1,7 @@
 /**
- * The slice of inventory.item_master that decides an item's track policy.
+ * The slice of inventory.item_master that decides an item's track policy —
+ * which, since notes 68, is its preset and nothing else: the item's own
+ * batch / expiry / MRP / negative-stock flags no longer derive a policy.
  *
  * Declared structurally rather than as `ItemMaster` so a caller can pass the
  * Prisma record straight through (it is assignable), and a test can pass a
@@ -10,18 +12,11 @@ export interface ItemTrackPolicySource {
   itemCompanyId: string | null;
   itemBranchId: string | null;
   /**
-   * stock.stock_track_preset.spt_id. When set, the preset supplies ALL thirteen
-   * policy columns and the flags below are not read; when it is null, the flags
-   * are the fallback.
+   * stock.stock_track_preset.spt_id. Set: the preset supplies ALL thirteen
+   * policy columns and becomes the item's row. Null: no item row — the group,
+   * then the company, governs.
    */
   itemTrackPresetId: string | null;
-  /** 1 = MRP-wise, 2 = batch-wise, anything else = neither. */
-  itemBatchConfig: number;
-  itemIsBatchBased: boolean;
-  itemIsExpiryItem: boolean;
-  itemExpiryDays: number | null;
-  itemIntimateBeforeDays: number | null;
-  itemAllowNegStock: boolean;
 }
 /**
  * The slice of inventory.item_group_master that decides a group's track policy.
@@ -56,8 +51,10 @@ export interface DerivedTrackPolicy {
  * updated       — the derived row existed and at least one column changed
  * unchanged     — the derived row already said exactly this; nothing written
  * skipped_manual— an ADMIN-authored policy holds that slot; it is left alone
- * no_preset     — GROUP scope with no preset: nothing to derive, nothing written
- * cleared       — the preset was removed, so the derived row was retired
+ * no_preset     — no preset on the GROUP or the ITEM: nothing written; for an
+ *                 item the group / company policy governs (notes 68)
+ * cleared       — the preset was removed (or the item was deleted), so the
+ *                 derived row was retired
  */
 export type StockTrackPolicySyncOutcome =
   | 'created'

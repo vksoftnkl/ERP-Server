@@ -111,7 +111,7 @@ export class ItemPayloadDto {
     format: 'uuid',
     nullable: true,
     description:
-      "stock.stock_track_preset the item's track policy is derived from; null = derived from the item's own flags",
+      "stock.stock_track_preset the item's track policy is derived from; null = the item follows its group's policy, then the company's",
   })
   item_track_preset_id!: string | null;
   @ApiPropertyOptional({

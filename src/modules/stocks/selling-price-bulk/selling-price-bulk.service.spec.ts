@@ -54,7 +54,7 @@ describe('SellingPriceBulkService', () => {
     itemPriceMaster: { findMany: jest.Mock };
     itemMaster: { findMany: jest.Mock };
     itemTaxHistory: { findMany: jest.Mock };
-    itemTaxMaster: { findMany: jest.Mock };
+    taxRateMaster: { findMany: jest.Mock };
   };
   let prisma: { $transaction: jest.Mock };
   let auditLogService: { logEntityChange: jest.Mock };
@@ -121,14 +121,13 @@ describe('SellingPriceBulkService', () => {
         ]),
       },
       itemTaxHistory: { findMany: jest.fn().mockResolvedValue([]) },
-      itemTaxMaster: {
+      taxRateMaster: {
         findMany: jest.fn().mockResolvedValue([
           {
             taxId: TAX_ID,
-            taxGstRateTotal: TAX_PERC,
-            taxCessType: 'NONE',
-            taxCessPerc: 0,
-            taxCessUnit: 0,
+            taxRatePerc: TAX_PERC,
+            taxCessBasis: 'NONE',
+            taxAcessBasis: 'NONE',
           },
         ]),
       },
@@ -576,15 +575,9 @@ describe('SellingPriceBulkService', () => {
       tx.itemTaxHistory.findMany.mockResolvedValue([
         { ithItemId: BUCKET_ITEM, ithTaxId: OLD_TAX_ID },
       ]);
-      tx.itemTaxMaster.findMany.mockResolvedValue([
-        {
-          taxId: OLD_TAX_ID,
-          taxGstRateTotal: 5,
-          taxCessType: 'NONE',
-          taxCessPerc: 0,
-          taxCessUnit: 0,
-        },
-        { taxId: TAX_ID, taxGstRateTotal: 18, taxCessType: 'NONE', taxCessPerc: 0, taxCessUnit: 0 },
+      tx.taxRateMaster.findMany.mockResolvedValue([
+        { taxId: OLD_TAX_ID, taxRatePerc: 5, taxCessBasis: 'NONE', taxAcessBasis: 'NONE' },
+        { taxId: TAX_ID, taxRatePerc: 18, taxCessBasis: 'NONE', taxAcessBasis: 'NONE' },
       ]);
 
       const rates = await service.resolveItemTaxRates(tx as never, [BUCKET_ITEM, HEADLINE_ITEM]);
@@ -608,13 +601,31 @@ describe('SellingPriceBulkService', () => {
     });
 
     it('flags a cess item, because the four-number panel is only approximate for it', async () => {
-      tx.itemTaxMaster.findMany.mockResolvedValue([
-        { taxId: TAX_ID, taxGstRateTotal: 28, taxCessType: 'UNIT', taxCessPerc: 0, taxCessUnit: 4 },
+      tx.taxRateMaster.findMany.mockResolvedValue([
+        { taxId: TAX_ID, taxRatePerc: 28, taxCessBasis: 'PER_UNIT', taxAcessBasis: 'NONE' },
       ]);
 
       const rates = await service.resolveItemTaxRates(tx as never, [BUCKET_ITEM]);
 
       expect(rates.get(BUCKET_ITEM)).toMatchObject({ taxPerc: 28, hasCess: true });
+    });
+
+    it('flags an additional (state) cess the same way — it is just as missing from taxPerc', async () => {
+      tx.taxRateMaster.findMany.mockResolvedValue([
+        { taxId: TAX_ID, taxRatePerc: 12, taxCessBasis: 'NONE', taxAcessBasis: 'PERCENT' },
+      ]);
+
+      const rates = await service.resolveItemTaxRates(tx as never, [BUCKET_ITEM]);
+
+      expect(rates.get(BUCKET_ITEM)).toMatchObject({ taxPerc: 12, hasCess: true });
+    });
+
+    it('reads the rate from tax_rate_master, where item_default_tax_id points', async () => {
+      await service.resolveItemTaxRates(tx as never, [BUCKET_ITEM]);
+
+      expect(tx.taxRateMaster.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { taxId: { in: [TAX_ID] } } }),
+      );
     });
 
     it('answers 0% for an item with no tax at all rather than failing the save', async () => {

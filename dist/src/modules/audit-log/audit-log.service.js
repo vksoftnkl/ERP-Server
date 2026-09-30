@@ -991,7 +991,7 @@ let AuditLogService = class AuditLogService {
                 return new Map(sections.map((section) => [section.secId, section.secName]));
             }
             case 'itemTax': {
-                const taxes = await this.prisma.itemTaxMaster.findMany({
+                const taxes = await this.prisma.taxRateMaster.findMany({
                     where: {
                         taxId: {
                             in: [...ids],

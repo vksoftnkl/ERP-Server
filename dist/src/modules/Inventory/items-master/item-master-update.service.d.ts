@@ -20,5 +20,6 @@ export declare class ItemMasterUpdateService {
     private syncEanCodes;
     private syncReorders;
     private rowChanged;
-    private pairKey;
+    private naturalKey;
+    private refuseDuplicateKeys;
 }

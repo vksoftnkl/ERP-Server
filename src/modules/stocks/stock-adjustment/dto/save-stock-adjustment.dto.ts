@@ -1,10 +1,11 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional, OmitType } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   IsArray,
   IsIn,
   IsInt,
+  IsOptional,
   IsPositive,
   Min,
   ValidateNested,
@@ -26,11 +27,22 @@ import { STOCK_ADJUSTMENT_SAVE_KINDS, type StockAdjustmentSaveKind } from '../st
 const MAX_LINES = 2000;
 
 /**
- * The header is the shared one plus the Type selector. `voucherType` is
- * REQUIRED here — one screen, five documents — and only those are accepted;
- * anything else 400s before the service sees it.
+ * The header is the shared one plus the Type selector, with the three value
+ * totals declared again. `voucherType` is REQUIRED here — one screen, five
+ * documents — and only those are accepted; anything else 400s before the
+ * service sees it.
+ *
+ * The totals are OMITTED from the shared header and declared here, not
+ * redeclared over it: nestjs/swagger merges a redecorated property's options
+ * with the base's up the prototype chain, so `minimum: 0` would stay in
+ * /api/docs. OmitType copies every other property's validators, transforms
+ * and docs, and leaves these three to this class.
  */
-export class SaveStockAdjustmentHeaderDto extends SaveStockVoucherHeaderDto {
+export class SaveStockAdjustmentHeaderDto extends OmitType(SaveStockVoucherHeaderDto, [
+  'totalQty',
+  'totalValue',
+  'totalValueWot',
+] as const) {
   @ApiProperty({
     enum: STOCK_ADJUSTMENT_SAVE_KINDS,
     description:
@@ -40,6 +52,36 @@ export class SaveStockAdjustmentHeaderDto extends SaveStockVoucherHeaderDto {
     message: `voucherType must be one of ${STOCK_ADJUSTMENT_SAVE_KINDS.join(', ')}`,
   })
   voucherType!: StockAdjustmentSaveKind;
+
+  // ── The totals are the NET of the lines, so they may be negative ─────────
+  //
+  // The shared header floors them at 0 (`@OptionalNumber(0)`), which is right
+  // for an opening and wrong here: an adjustment that takes out more than it
+  // brings in nets below zero, as a count's shortage does (the physical header
+  // takes a signed total for the same reason; notes 65 §2). lineCount keeps
+  // its floor — a document cannot have fewer than no lines.
+
+  @ApiPropertyOptional({
+    default: 0,
+    description:
+      'The document total quantity, as the screen summed it: the NET of the lines, so MAY BE NEGATIVE when more goes out than comes in. A move counts the quantity moved. numeric(18,6), NOT NULL DEFAULT 0 — omit to take the default; the post re-sums it from the ledger either way.',
+  })
+  @OptionalNumber()
+  totalQty?: number;
+
+  @ApiPropertyOptional({
+    default: 0,
+    description: 'The document total value, inclusive of tax: the net, may be negative — see totalQty. numeric(18,2), NOT NULL DEFAULT 0.',
+  })
+  @OptionalNumber()
+  totalValue?: number;
+
+  @ApiPropertyOptional({
+    default: 0,
+    description: 'The document total value excluding tax: the net, may be negative — see totalQty. numeric(18,2), NOT NULL DEFAULT 0.',
+  })
+  @OptionalNumber()
+  totalValueWot?: number;
 }
 
 /**
@@ -107,8 +149,9 @@ export class SaveStockAdjustmentItemDto {
   @ApiPropertyOptional({
     enum: STOCK_BUCKETS,
     default: 'SALEABLE',
-    description: 'The holding\'s bucket. On a BUCKET_MOVE line, the bucket the stock LEAVES.',
+    description: 'The holding\'s bucket; absent means SALEABLE. On a BUCKET_MOVE line, the bucket the stock LEAVES.',
   })
+  @IsOptional()
   @IsIn(STOCK_BUCKETS as readonly string[])
   bucket?: StockBucket;
 
@@ -152,7 +195,7 @@ export class SaveStockAdjustmentItemDto {
 
   @ApiPropertyOptional({
     description:
-      'INWARD only, and only when the header names no rate source that derives one: what the stock is worth per document unit. An OUTWARD line is always stamped by the engine at the branch average; a keyed cost is ignored.',
+      'INWARD only, and only when the header names no rate source that derives one: what the stock is worth per BASE unit (a rate keyed per document unit is divided by toBaseFactor first). The line value is (baseQty + freeBaseQty) × costRate, the way svi_value is generated. An OUTWARD line is always stamped by the engine at the branch average; a keyed cost is ignored.',
   })
   @OptionalNumber(0)
   costRate?: number;

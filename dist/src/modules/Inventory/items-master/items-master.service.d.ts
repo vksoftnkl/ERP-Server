@@ -40,11 +40,11 @@ export declare class ItemsMasterService {
         uiTableId?: string;
         uiColumnId?: string;
     }): Promise<BulkLoadItemPayload[]>;
-    toggleDelete(itemId: string): Promise<{
-        item_id: string;
-        deleted: boolean;
-    }>;
-    toggleDeleteComposite(itemId: string): Promise<ItemCompositeDeleteResult>;
+    softDeleteComposite(itemId: string): Promise<ItemCompositeDeleteResult>;
+    restoreComposite(itemId: string): Promise<ItemCompositeDeleteResult>;
+    private findItemForDeleteState;
+    private setItemDeleted;
+    private toggleChildren;
     private createItem;
     private updateItem;
     private applyOptionalFields;

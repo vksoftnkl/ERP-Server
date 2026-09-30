@@ -142,6 +142,7 @@ export interface StockVoucherLinePayload {
     reasonName: string | null;
     direction: number | null;
     remarks: string | null;
+    trackSignature: string;
 }
 export interface StockVoucherPayload {
     header: StockVoucherHeaderPayload;

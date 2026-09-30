@@ -18,8 +18,8 @@ of what this one does.
 | Route | What it is |
 |---|---|
 | `POST /stock/opening` | save a draft — create when `header.svhId` is absent, update when present. Update is a **full replace of the lines**. |
-| `GET /stock/opening` | `svhId` present loads one document; absent lists them |
-| `GET /stock/opening/validate` | the preflight — every line, `problem` null on the clean ones |
+| `GET /stock/opening` | `svhId` present loads one document; absent lists them. Each loaded line carries `trackSignature` — the effective policy on the document's date, the item lookup's answer — so the screen knows which identity cells open without a lookup per item |
+| `GET /stock/opening/validate` | the preflight — every line, `problem` null on the clean ones. "This holding already has an opening in this year" is per **holding**: godown × lot identity × **bucket**, so 40 SALEABLE and the 5 crushed ones in DAMAGED may be opened on two documents |
 | `POST /stock/opening/post` | the whole engine, one statement |
 | `POST /stock/opening/cancel` | cancels a **DRAFT or a POSTED** opening, never a delete. A posted one is reversed; a draft moves the header alone. `reason` required on both. |
 | `POST /stock/opening/import` | replace an existing DRAFT's lines from a CSV. Never posts, never creates. |
@@ -75,8 +75,9 @@ round trip returns what a line cannot be built without:
   itself keeps working, because a LEFT JOIN to a missing relation is an error,
   not an empty row.
 * **`alreadyOpened`** — a warning while the operator is still typing, not a
-  refusal. The engine's rule is per holding, finer than this can see; the
-  preflight is the real check.
+  refusal. It says only that the ITEM has an opening in the branch; the
+  preflight's rule is per holding (godown × lot × bucket), finer than this can
+  see, and is the real check.
 
 **It returns no cost, deliberately.** The engine resolves `rateSource` only
 when a line arrives at cost 0. A picker that seeds the cost cell hands the

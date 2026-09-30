@@ -359,6 +359,13 @@ export class StockTransferLineDto {
 
   @ApiPropertyOptional({ nullable: true })
   remarks!: string | null;
+
+  @ApiProperty({
+    example: 'BE',
+    description:
+      "Which identity columns the line may carry — B batch, M MRP, S sale price, E expiry, R serial, P supplier; 'N' when no policy matches. The effective policy on the document's date.",
+  })
+  trackSignature!: string;
 }
 
 export class StockTransferDocumentDto {

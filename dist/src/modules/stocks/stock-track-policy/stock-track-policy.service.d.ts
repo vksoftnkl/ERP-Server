@@ -11,10 +11,10 @@ export declare class StockTrackPolicyService {
     private readonly requestContextService;
     constructor(prisma: PrismaService, auditLogService: AuditLogService, requestContextService: RequestContextService);
     syncFromItem(item: ItemTrackPolicySource, tx?: Prisma.TransactionClient): Promise<StockTrackPolicySyncResult>;
+    retireForItem(itemId: string, tx?: Prisma.TransactionClient): Promise<StockTrackPolicySyncResult[]>;
     syncFromItemGroup(group: ItemGroupTrackPolicySource, tx?: Prisma.TransactionClient): Promise<StockTrackPolicySyncResult>;
     resolvePreset(presetId: string | null | undefined, tx?: Prisma.TransactionClient): Promise<StockTrackPreset | null>;
     presetToDerived(preset: StockTrackPreset): DerivedTrackPolicy;
-    deriveFromItem(item: ItemTrackPolicySource): DerivedTrackPolicy;
     findByItemId(itemId: string, tx?: Prisma.TransactionClient): Promise<StockTrackPolicy | null>;
     findByGroupId(itgId: string, companyId: string | null, tx?: Prisma.TransactionClient): Promise<StockTrackPolicy | null>;
     private createDerived;
@@ -27,8 +27,6 @@ export declare class StockTrackPolicyService {
     private toColumns;
     private hasChanged;
     private actor;
-    private positiveOrNull;
-    private nonNegativeOr;
     private logChange;
     private toAuditRecord;
 }

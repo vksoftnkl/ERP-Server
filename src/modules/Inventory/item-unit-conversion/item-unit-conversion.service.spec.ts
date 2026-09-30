@@ -67,6 +67,7 @@ describe('ItemUnitConversionService', () => {
   let prisma: PrismaMock;
   let auditLogService: Pick<AuditLogService, 'logEntityChange'>;
   let configuredGridSqlService: ConfiguredGridSqlServiceMock;
+  let requestContextService: { getUserId: jest.Mock };
 
   beforeEach(() => {
     prisma = {
@@ -109,10 +110,12 @@ describe('ItemUnitConversionService', () => {
       runPagedQuery: jest.fn(),
     };
 
+    requestContextService = { getUserId: jest.fn().mockReturnValue(null) };
     service = new ItemUnitConversionService(
       prisma as unknown as PrismaService,
       auditLogService as AuditLogService,
       configuredGridSqlService as never,
+      requestContextService as never,
     );
   });
 
@@ -142,6 +145,23 @@ describe('ItemUnitConversionService', () => {
       iuc_to_base_factor: 12,
       iuc_unit_slno: 2,
     });
+  });
+
+  // Notes 50 #2 / 67: no actor in the payload means the request's user, not NULL.
+  it('stamps the request user as created_by / updated_by when the payload names none', async () => {
+    requestContextService.getUserId.mockReturnValue(USER_ID);
+    prisma.itemUnitConversion.create.mockResolvedValue(makeItemUnitConversionRecord());
+    prisma.itemMaster.findFirst.mockResolvedValue({ itemBaseUnitId: BASE_UNIT_ID });
+
+    await service.save({
+      iuc_item_id: ITEM_ID,
+      iuc_unit_id: UNIT_ID,
+      iuc_base_unit_id: BASE_UNIT_ID,
+    });
+
+    const data = prisma.itemUnitConversion.create.mock.calls[0][0].data;
+    expect(data.iucCreatedBy).toBe(USER_ID);
+    expect(data.iucUpdatedBy).toBe(USER_ID);
   });
 
   it('derives cumulative to-base factors from step unit factors across a batch', async () => {

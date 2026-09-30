@@ -93,13 +93,6 @@ let ItemsReorderMasterService = class ItemsReorderMasterService {
         });
         return records.map((record) => this.toPayload(record));
     }
-    async findIdsByItemId(itemId, isDeleted) {
-        const records = await this.prisma.itemReorder.findMany({
-            where: { irItemId: itemId, irIsDeleted: isDeleted },
-            select: { irId: true },
-        });
-        return records.map((record) => record.irId);
-    }
     async toggleDelete(irId, tx) {
         const toggleIds = Array.isArray(irId) ? irId : [irId];
         const toggleAll = async (client) => {

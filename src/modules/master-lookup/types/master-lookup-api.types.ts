@@ -506,6 +506,10 @@ export const LOOKUP_MODULE_ALIASES: Record<LookupModuleKey, readonly string[]> =
     'unit-master',
     'item_unit_master',
   ],
+  // Options come from inventory.tax_rate_master — what item_default_tax_id
+  // references. The "item tax" spellings stay because they name the module, not
+  // the retired item_tax_master table; aliases match with punctuation stripped,
+  // so an old client's module=item_tax_master still lands here via 'item tax master'.
   itemTaxes: [
     'item taxes',
     'item tax',
@@ -514,7 +518,11 @@ export const LOOKUP_MODULE_ALIASES: Record<LookupModuleKey, readonly string[]> =
     'tax',
     'tax master',
     'tax-master',
-    'item_tax_master',
+    'tax rates',
+    'tax rate',
+    'tax rate master',
+    'tax-rate-master',
+    'tax_rate_master',
   ],
   priceLevels: [
     'price levels',

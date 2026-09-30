@@ -16,11 +16,11 @@ import { validateDto } from 'src/common/utils/request-payload-validation.util';
 import { GetItemPriceDetailQueryDto } from 'src/modules/Inventory/item-price-details/dto/get-item-price-detail-query.dto';
 import { ItemPayloadDto } from 'src/modules/Inventory/items-master/dto/item-response.dto';
 import { ItemPricePayloadDto } from 'src/modules/Inventory/items-price-master/dto/item-price-response.dto';
-import { ItemTaxPayloadDto } from 'src/modules/Inventory/items-tax-master/dto/item-tax-response.dto';
 import {
   ItemPriceDetailErrorResponseDto,
   ItemPriceDetailPayloadDto,
   ItemPriceDetailSuccessSingleDto,
+  ItemPriceDetailTaxPayloadDto,
 } from 'src/modules/Inventory/item-price-details/dto/item-price-detail-response.dto';
 import { ItemPriceDetailExceptionFilter } from 'src/modules/Inventory/item-price-details/item-price-detail-exception.filter';
 import { ItemPriceDetailsService } from './item-price-details.service';
@@ -32,7 +32,12 @@ import { API_VERSION } from '../../common/constants/api-version';
 @ApiTags('Item Price Details')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
-@ApiExtraModels(ItemPayloadDto, ItemPricePayloadDto, ItemTaxPayloadDto, ItemPriceDetailPayloadDto)
+@ApiExtraModels(
+  ItemPayloadDto,
+  ItemPricePayloadDto,
+  ItemPriceDetailTaxPayloadDto,
+  ItemPriceDetailPayloadDto,
+)
 @CacheTTL(60)
 @Controller('item-price-details')
 @UseFilters(ItemPriceDetailExceptionFilter)

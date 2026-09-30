@@ -23,6 +23,7 @@ export declare function throwNotFound<TErrorDetail extends ModuleErrorDetail, TE
 export declare function throwOnUniqueConstraintError<TErrorDetail extends ModuleErrorDetail, TErrorResponse extends ModuleErrorResponse<TErrorDetail> = ModuleErrorResponse<TErrorDetail>>(error: unknown, message: string, errors: TErrorDetail[]): void;
 export declare function isUniqueConstraintError(error: unknown): boolean;
 export declare function isForeignKeyConstraintError(error: unknown): boolean;
+export declare function violatedConstraintOf(error: unknown): string | null;
 export declare function isExclusionConstraintError(error: unknown): boolean;
 export declare function isPrismaErrorCode(error: unknown, code: string): boolean;
 export declare function normalizeRequiredText<TErrorDetail extends ModuleErrorDetail, TErrorResponse extends ModuleErrorResponse<TErrorDetail> = ModuleErrorResponse<TErrorDetail>>(value: string, field: string, message?: string): string;

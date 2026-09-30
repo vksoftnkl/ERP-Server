@@ -35,7 +35,9 @@ export interface BulkLoadItemPayload {
   round_off: number;
   tax_id: string | null;
   tax_name: string | null;
+  /** tax_rate_master.tax_rate_perc — the one GST rate, sale and purchase alike. */
   tax_perc: number;
+  /** tax_rate_master.tax_cess_basis: NONE | PERCENT | PER_UNIT | BOTH. */
   cess_type: string;
   cess_perc: number;
   cess_per_unit: number;

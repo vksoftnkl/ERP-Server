@@ -28,8 +28,8 @@ row goes straight in. Always pass `tx`.
 | `updated` | the derived row existed and something changed — a value, the preset it came from, or the item moving company or branch, which retargets the row rather than leaving a second one behind |
 | `unchanged` | the derived row already said exactly this; no write, no audit row |
 | `skipped_manual` | an admin authored the policy for that slot; it is left alone |
-| `no_preset` | GROUP only: no preset, so nothing to derive and nothing written |
-| `cleared` | GROUP only: the preset was removed, so the derived row was retired |
+| `no_preset` | no preset on the group or the item: nothing written — for an item, the group / company policy governs |
+| `cleared` | the preset was removed (or the item deleted), so the derived row was retired |
 
 ### An admin's policy always wins
 
@@ -75,28 +75,32 @@ is a **picker** concern only, and lives in
 shared with the picker so the two cannot disagree. An `spt_id` names exactly one
 row, so nothing here merges again.
 
-### The item's own flags, when it does not
+### No preset means no ITEM row (notes 68)
 
-`deriveFromItem` is the fallback, unchanged. `item_batch_config` is read exactly
-the way `ItemsMasterService.bulkLoad` reads it for `tracking_type`, so the
-billing lookup and the policy cannot disagree:
+**An item follows its group unless it names its own preset** — the user's rule,
+2026-09-30. `item_track_preset_id` is the only item-level choice: a preset (NONE
+included) is written as the item's row; with no preset `syncFromItem` writes
+nothing (`no_preset`) and retires a derived row the item had (`cleared`), so
+the resolver answers from the GROUP, then the COMPANY. An ITEM row outranks the
+GROUP one, which is why the item's own flags (`item_batch_config`,
+`item_is_batch_based`, `item_is_expiry_item`, `item_allow_neg_stock`, the
+expiry-day columns) no longer derive a row: until then `deriveFromItem` did, and
+any of them hid the group's "Tracked as". Migration
+`20260930140000_item_policy_needs_preset` retired the rows it had written for
+items with no preset.
 
-| item_master | policy |
-|---|---|
-| `item_batch_config = 1` | `stp_track_mrp` |
-| `item_batch_config = 2`, `item_is_batch_based`, `item_is_expiry_item` | `stp_track_batch` |
-| `item_is_expiry_item` | `stp_track_expiry` (+ batch, which `ck_stp_expiry_needs_batch` requires) |
-| `item_expiry_days` | `stp_shelf_life_days`, dropped unless > 0 |
-| `item_intimate_before_days` | `stp_near_expiry_days`, 30 unless >= 0 |
-| `item_allow_neg_stock` | `ALLOW` / `BLOCK` |
-| — | `stp_issue_strategy` = `FEFO` when expiry is tracked, else `FIFO` |
+Those flags still mean something OUTSIDE the stock engine: the sales screens'
+"may this line go negative" answer reads `item_allow_neg_stock` together with
+the godown's and the company's flag (`saleLineAllowsNegativeStock`), and
+`GET /items/bulk-load`'s `tracking_type` and the sales lookups' `batch_config`
+are read from `item_batch_config` / `item_is_batch_based` /
+`item_is_expiry_item`. For an item that follows its group those can now disagree
+with the policy the engine keys its stock by.
 
-Unlike the old single-valued `tracking_type`, the six identity flags are
-independent: an MRP item that also carries an expiry date comes out `BME` rather
-than having to pick one. Sale price, serial and supplier stay false here, and
-valuation is always `WAVG`, ageing always `INWARD_DATE`.
+`retireForItem` retires an item's derived rows when the item is deleted;
+restoring it runs `syncFromItem` again.
 
-### A group has no fallback, so no preset means no row
+### A group has no fallback either, so no preset means no row
 
 `item_group_master` has no tracking flags, no company and no branch. There is
 nothing to derive from, and writing a defaulted all-false GROUP row would be
@@ -111,9 +115,17 @@ that group and quietly untrack them. Hence `no_preset` writes nothing, and
 removing a preset **retires** the row it wrote (`cleared`) rather than leaving
 it standing.
 
-A group policy is filed at the request context's company with
-`stp_branch_id = NULL`. The group itself is not company-owned, but a policy must
-be: two companies sharing a group can legitimately track it differently.
+A group policy is **shared by every company**: `stp_company_id = NULL`,
+`stp_branch_id = NULL` (notes 69). `item_group_master` has no company and its
+save carries none. It used to be filed under the request context's company —
+the LOGIN token's company, not the one the user works in — so an item of any
+other company never saw its group's "Tracked as". A company that must track a
+group differently authors a company-specific GROUP row on the policy screen: the
+resolver prefers it (the `company IS NULL` tie-break sorts it first), and this
+service never touches a hand-authored row. Derived GROUP rows stranded under a
+company are moved to the shared slot (the first, when free) or retired on the
+group's next save; migration `20260930150000_group_policy_shared` did the same
+for the rows already there.
 
 ## Things to know
 

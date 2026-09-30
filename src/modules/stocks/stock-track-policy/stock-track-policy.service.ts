@@ -33,24 +33,25 @@ export class StockTrackPolicyService {
     private readonly requestContextService: RequestContextService,
   ) {}
   /**
-   * Creates or refreshes the ITEM-scope stock.stock_track_policy row for an
-   * item. Call it from item create AND item update, inside the caller's
-   * transaction, so the item and its policy are saved or rolled back together.
+   * Creates, refreshes or retires the ITEM-scope stock.stock_track_policy row
+   * for an item. Call it from item create, update and restore, inside the
+   * caller's transaction, so the item and its policy are saved or rolled back
+   * together.
    *
-   * WHERE THE VALUES COME FROM. item_track_preset_code wins outright: a preset
-   * was chosen deliberately and supplies all thirteen columns, including the
-   * three (sale price, serial, supplier) and the two (valuation, ageing basis)
-   * that no item_master column can express. Only when there is no preset — or
-   * the code names nothing this company can see — do the item's own
-   * batch/expiry flags derive the policy, exactly as they always did.
+   * AN ITEM FOLLOWS ITS GROUP UNLESS IT NAMES ITS OWN PRESET (notes 68, the
+   * user's rule). item_track_preset_id is the ONLY item-level choice: a preset
+   * — NONE included — supplies all thirteen columns and is written as the
+   * item's row. No preset means NO item row, and a derived one the item had is
+   * retired ('cleared'), so the resolver's chain (ITEM → GROUP → COMPANY)
+   * answers from the group, then the company. An ITEM row outranks the GROUP
+   * one, which is why the item's own batch / expiry / MRP / negative-stock
+   * flags no longer derive a row: until 2026-09-30 any of them did, and hid the
+   * group's "Tracked as" (notes 50 #8, 67 #8).
    *
    * WHAT IT WILL NOT DO — an admin's policy always wins. If a row already
    * holds this item's (company, branch, ITEM) slot and does NOT carry
    * DERIVED_FROM_ITEM_REMARK, it was authored by hand and is left exactly as
-   * it is ('skipped_manual'). Item-master flags are a starting point, not a
-   * standing override: a shop that has deliberately set LOT_ACTUAL valuation
-   * and MANUAL issue for one item must not have that undone by someone
-   * renaming the item.
+   * it is ('skipped_manual'), preset or not.
    *
    * MOVING AN ITEM between companies or branches retargets the derived row
    * rather than leaving a second one behind, so an item never ends up with two
@@ -67,10 +68,6 @@ export class StockTrackPolicyService {
   ): Promise<StockTrackPolicySyncResult> {
     const client: Prisma.TransactionClient = tx ?? this.prisma;
     const preset = await this.resolvePreset(item.itemTrackPresetId, client);
-    const derived = preset ? this.presetToDerived(preset) : this.deriveFromItem(item);
-    // No preset means the row was derived from the item's own flags, and the
-    // remark says so — it is the only place that provenance is recorded.
-    const remarks = this.derivedRemark(DERIVED_FROM_ITEM_REMARK, preset?.sptCode ?? null);
     // The slot the database itself considers "the same policy": ex_stp_overlap
     // keys on (company, branch, scope, scope_id, date range).
     const atSlot = await client.stockTrackPolicy.findFirst({
@@ -100,6 +97,20 @@ export class StockTrackPolicyService {
         },
         orderBy: { stpCreatedOn: 'asc' },
       }));
+    if (!preset) {
+      return existing
+        ? this.retireDerived(existing, item.itemId, 'ITEM', client)
+        : {
+            stp_id: null,
+            scope_id: item.itemId,
+            scope: 'ITEM',
+            outcome: 'no_preset',
+            track_signature: null,
+            preset_code: null,
+          };
+    }
+    const derived = this.presetToDerived(preset);
+    const remarks = this.derivedRemark(DERIVED_FROM_ITEM_REMARK, preset.sptCode);
     return existing
       ? this.updateDerived(existing, item.itemId, 'ITEM', derived, remarks, client, {
           companyId: item.itemCompanyId,
@@ -109,6 +120,33 @@ export class StockTrackPolicyService {
           companyId: item.itemCompanyId,
           branchId: item.itemBranchId,
         });
+  }
+  /**
+   * Retires every DERIVED item-scope row of an item — call it when the item is
+   * soft-deleted, in the same transaction. A deleted item's policy used to
+   * stay live (notes 50 #8). A hand-authored row is an admin's and is left
+   * alone, as syncFromItem leaves it; restoring the item re-runs syncFromItem,
+   * which derives the row again.
+   */
+  async retireForItem(
+    itemId: string,
+    tx?: Prisma.TransactionClient,
+  ): Promise<StockTrackPolicySyncResult[]> {
+    const client: Prisma.TransactionClient = tx ?? this.prisma;
+    const derived = await client.stockTrackPolicy.findMany({
+      where: {
+        stpScope: 'ITEM',
+        stpItemId: itemId,
+        stpRemarks: { startsWith: DERIVED_FROM_ITEM_REMARK },
+        stpIsDeleted: false,
+      },
+      orderBy: { stpCreatedOn: 'asc' },
+    });
+    const results: StockTrackPolicySyncResult[] = [];
+    for (const row of derived) {
+      results.push(await this.retireDerived(row, itemId, 'ITEM', client));
+    }
+    return results;
   }
   /**
    * Creates, refreshes or retires the GROUP-scope policy row for an item group.
@@ -124,35 +162,61 @@ export class StockTrackPolicyService {
    * No preset therefore means no write ('no_preset'), and REMOVING a preset
    * retires the row it wrote ('cleared') rather than leaving it standing.
    *
-   * SCOPE. item_group_master is not company-owned, but a policy must be: two
-   * companies sharing a group can legitimately track it differently. The row
-   * is filed under the request context's company and left open to every branch
-   * (stp_branch_id NULL), which is the level the resolver expects a group rule
-   * to sit at.
+   * SCOPE: SHARED BY EVERY COMPANY (notes 69). item_group_master has no
+   * company column and its save carries none, so the row is filed with
+   * stp_company_id NULL and stp_branch_id NULL — "shared", as NULL means
+   * throughout the schema — and every company's items see it. It used to be
+   * filed under the request context's company, which is the LOGIN token's
+   * company, not the one the user works in: an item of any other company never
+   * saw its group's "Tracked as". A company that must track a group
+   * differently authors a company-specific GROUP row on the policy screen; the
+   * resolver prefers it (its `company IS NULL` tie-break), and this service
+   * never touches a hand-authored row.
+   *
+   * Derived rows filed under a login company before that fix are STRANDED:
+   * the first is moved to the shared slot when that is free, and every other
+   * one is retired, so none keeps overriding the shared row for its company.
    */
   async syncFromItemGroup(
     group: ItemGroupTrackPolicySource,
     tx?: Prisma.TransactionClient,
   ): Promise<StockTrackPolicySyncResult> {
     const client: Prisma.TransactionClient = tx ?? this.prisma;
-    const companyId = this.requestContextService.getCompanyId();
+    const shared = { companyId: null, branchId: null };
     const preset = await this.resolvePreset(group.itgTrackPresetId, client);
     const atSlot = await client.stockTrackPolicy.findFirst({
       where: {
         stpScope: 'GROUP',
         stpGroupId: group.itgId,
-        stpCompanyId: companyId,
+        stpCompanyId: null,
         stpBranchId: null,
         stpIsDeleted: false,
       },
       orderBy: { stpCreatedOn: 'asc' },
     });
-    if (atSlot && !this.isDerivedRemark(atSlot.stpRemarks, DERIVED_FROM_GROUP_REMARK)) {
+    const stranded = await client.stockTrackPolicy.findMany({
+      where: {
+        stpScope: 'GROUP',
+        stpGroupId: group.itgId,
+        stpCompanyId: { not: null },
+        stpRemarks: { startsWith: DERIVED_FROM_GROUP_REMARK },
+        stpIsDeleted: false,
+      },
+      orderBy: { stpCreatedOn: 'asc' },
+    });
+    const manual =
+      atSlot !== null && !this.isDerivedRemark(atSlot.stpRemarks, DERIVED_FROM_GROUP_REMARK);
+    // The first stranded row moves to the shared slot when it is free.
+    const existing = manual ? null : (atSlot ?? stranded.shift() ?? null);
+    for (const row of stranded) {
+      await this.retireDerived(row, group.itgId, 'GROUP', client);
+    }
+    if (manual) {
       return this.result(atSlot, group.itgId, 'GROUP', 'skipped_manual');
     }
     if (!preset) {
-      return atSlot
-        ? this.retireDerived(atSlot, group.itgId, client)
+      return existing
+        ? this.retireDerived(existing, group.itgId, 'GROUP', client)
         : {
             stp_id: null,
             scope_id: group.itgId,
@@ -164,15 +228,9 @@ export class StockTrackPolicyService {
     }
     const derived = this.presetToDerived(preset);
     const remarks = this.derivedRemark(DERIVED_FROM_GROUP_REMARK, preset.sptCode);
-    return atSlot
-      ? this.updateDerived(atSlot, group.itgId, 'GROUP', derived, remarks, client, {
-          companyId,
-          branchId: null,
-        })
-      : this.createDerived(group.itgId, 'GROUP', derived, remarks, client, {
-          companyId,
-          branchId: null,
-        });
+    return existing
+      ? this.updateDerived(existing, group.itgId, 'GROUP', derived, remarks, client, shared)
+      : this.createDerived(group.itgId, 'GROUP', derived, remarks, client, shared);
   }
   /**
    * The preset an id names, or null.
@@ -221,54 +279,6 @@ export class StockTrackPolicyService {
       ageingBasis: preset.sptAgeingBasis,
     };
   }
-  /**
-   * item_master's flags, read as the six independent identity dimensions the
-   * policy table actually has. Used only when the item names no preset. The
-   * batch/mrp reading is the one already used for tracking_type in
-   * ItemsMasterService.bulkLoad, kept identical so the billing lookup and the
-   * policy cannot disagree:
-   *
-   *     item_batch_config 1  → MRP-wise
-   *     item_batch_config 2, item_is_batch_based, item_is_expiry_item → batch-wise
-   *
-   * The difference is that a policy row is not limited to ONE of them, so an
-   * MRP item that also carries an expiry date comes out tracking batch, mrp
-   * AND expiry ('BME') instead of having to pick.
-   *
-   * Sale price, serial and supplier stay false: no item_master column expresses
-   * them, and inventing one from a related flag would be a guess. To set them,
-   * pick a preset that carries them (SP_ONLY, SERIAL, PHARMA) or hand-author
-   * the policy row.
-   */
-  deriveFromItem(item: ItemTrackPolicySource): DerivedTrackPolicy {
-    const trackMrp = item.itemBatchConfig === 1;
-    const trackExpiry = item.itemIsExpiryItem;
-    // ck_stp_expiry_needs_batch: two deliveries with different expiry dates and
-    // no batch number are indistinguishable on the shelf, so expiry forces batch.
-    const trackBatch = item.itemBatchConfig === 2 || item.itemIsBatchBased || item.itemIsExpiryItem;
-    return {
-      trackBatch,
-      trackMrp,
-      trackSalePrice: false,
-      trackExpiry,
-      trackSerial: false,
-      trackSupplier: false,
-      // No item_master column selects a valuation basis; WAVG is the table
-      // default and switching it later needs no recomputation.
-      valuationMethod: 'WAVG',
-      // ck_stp_fefo_needs_expiry allows FEFO on an untracked item, but there is
-      // nothing to order by — say FIFO and mean it.
-      issueStrategy: trackExpiry ? 'FEFO' : 'FIFO',
-      allowNegative: item.itemAllowNegStock ? 'ALLOW' : 'BLOCK',
-      // ck_stp_shelf_life: NULL or strictly positive.
-      shelfLifeDays: this.positiveOrNull(item.itemExpiryDays),
-      // ck_stp_near_expiry: >= 0. Anything absent or nonsensical takes the
-      // table's own default rather than failing an item save.
-      nearExpiryDays: this.nonNegativeOr(item.itemIntimateBeforeDays, 30),
-      blockExpiredSale: false,
-      ageingBasis: 'INWARD_DATE',
-    };
-  }
   /** The policy in force for an item at its own company/branch, if any. */
   async findByItemId(
     itemId: string,
@@ -287,7 +297,8 @@ export class StockTrackPolicyService {
   /**
    * The GROUP-scope policy for a group in a company. companyId is explicit
    * rather than read from the request context because a background caller
-   * (a report, a reconciliation job) has no context to read.
+   * (a report, a reconciliation job) has no context to read. The row
+   * syncFromItemGroup derives is the SHARED one — pass null for it (notes 69).
    */
   async findByGroupId(
     itgId: string,
@@ -384,15 +395,17 @@ export class StockTrackPolicyService {
     return this.result(updated, scopeId, scope, 'updated');
   }
   /**
-   * Retires a derived GROUP row whose preset has been removed. Soft-deleted
-   * rather than hard-deleted so the audit trail keeps pointing somewhere, and
-   * deactivated as well because ex_stp_overlap and ix_stp_resolve are both
-   * partial on `is_active AND NOT is_deleted` — a retired row occupies no slot
-   * and is invisible to the resolver.
+   * Retires a derived row: a GROUP row whose preset has been removed, an ITEM
+   * row whose item no longer names a preset, or one whose item was deleted.
+   * Soft-deleted rather than hard-deleted so the audit trail keeps pointing
+   * somewhere, and deactivated as well because ex_stp_overlap and
+   * ix_stp_resolve are both partial on `is_active AND NOT is_deleted` — a
+   * retired row occupies no slot and is invisible to the resolver.
    */
   private async retireDerived(
     existing: StockTrackPolicy,
     scopeId: string,
+    scope: 'ITEM' | 'GROUP',
     client: Prisma.TransactionClient,
   ): Promise<StockTrackPolicySyncResult> {
     const actor = this.actor();
@@ -409,13 +422,13 @@ export class StockTrackPolicyService {
       client,
       existing.stpId,
       scopeId,
-      'GROUP',
+      scope,
       existing,
       retired,
       actor,
       'update',
     );
-    return this.result(retired, scopeId, 'GROUP', 'cleared');
+    return this.result(retired, scopeId, scope, 'cleared');
   }
   /**
    * `Auto-derived from item master` on its own, or with the preset that
@@ -484,16 +497,6 @@ export class StockTrackPolicyService {
   private actor(): string | null {
     return this.requestContextService.getUserId() ?? null;
   }
-  private positiveOrNull(value: number | null | undefined): number | null {
-    return typeof value === 'number' && Number.isFinite(value) && value > 0
-      ? Math.trunc(value)
-      : null;
-  }
-  private nonNegativeOr(value: number | null | undefined, fallback: number): number {
-    return typeof value === 'number' && Number.isFinite(value) && value >= 0
-      ? Math.trunc(value)
-      : fallback;
-  }
   private async logChange(
     client: Prisma.TransactionClient,
     stpId: string,
@@ -520,7 +523,7 @@ export class StockTrackPolicyService {
           action === 'New'
             ? `Track policy derived from ${source}`
             : modifiedRecord.stpIsDeleted
-              ? `Track policy retired — preset removed on ${source}`
+              ? `Track policy retired from ${source} — preset removed, or ${scope === 'ITEM' ? 'item' : 'group'} deleted`
               : `Track policy refreshed from ${source}`,
       },
       client,

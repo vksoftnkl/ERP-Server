@@ -316,6 +316,7 @@ class OpeningStockLineDto {
     valueWot;
     lotId;
     remarks;
+    trackSignature;
 }
 exports.OpeningStockLineDto = OpeningStockLineDto;
 __decorate([
@@ -482,6 +483,13 @@ __decorate([
     (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
     __metadata("design:type", Object)
 ], OpeningStockLineDto.prototype, "remarks", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        example: 'BE',
+        description: "Which identity columns the line may carry — B batch, M MRP, S sale price, E expiry, R serial, P supplier; 'N' when no policy matches. The effective policy on the DOCUMENT's date, the same answer /stock/opening/item-lookup gives, so a loaded document needs no lookup per item.",
+    }),
+    __metadata("design:type", String)
+], OpeningStockLineDto.prototype, "trackSignature", void 0);
 class OpeningStockDocumentDto {
     header;
     lines;

@@ -127,6 +127,21 @@ describe('OpeningStockLookupService', () => {
     );
   });
 
+  it('reads the tax slab from tax_rate_master, the table item_default_tax_id references', async () => {
+    queryRaw.mockResolvedValueOnce([saltRow()]);
+
+    await service.lookupItem(args());
+
+    const sql = assemble(queryRaw.mock.calls[0] as unknown[]).sql;
+    expect(sql).toContain(
+      'LEFT JOIN inventory.tax_rate_master t ON t.tax_id = i.item_default_tax_id',
+    );
+    expect(sql).toContain('COALESCE(t.tax_rate_perc, 0)');
+    expect(sql).toContain('COALESCE(t.tax_cess_per_unit, 0)');
+    // Named in a comment only — the retired table holds none of the ids.
+    expect(sql).not.toContain('JOIN inventory.item_tax_master');
+  });
+
   it.each([
     ['omitted', {}],
     ['null', { companyId: null, branchId: null }],

@@ -100,6 +100,30 @@ export function isForeignKeyConstraintError(error: unknown): boolean {
   return isPrismaErrorCode(error, 'P2003');
 }
 /**
+ * What a Prisma write violated, when the error says: `meta.constraint` on a
+ * P2003 (e.g. `item_master_item_default_tax_id_fkey`), and on a P2002
+ * `meta.target` — the index's COLUMNS as an array (`['item_name_en']`, seen
+ * with Prisma 6.19 on a partial unique index), joined with ',', or the index
+ * name when Prisma reports a string. Null when neither is present, so a caller
+ * can map a KNOWN constraint or column to the field that caused it and fall
+ * back to a generic message.
+ */
+export function violatedConstraintOf(error: unknown): string | null {
+  if (typeof error !== 'object' || error === null || !('meta' in error)) {
+    return null;
+  }
+  const meta = (error as { meta?: Record<string, unknown> }).meta ?? {};
+  for (const value of [meta.constraint, meta.target, meta.field_name]) {
+    if (Array.isArray(value) && value.length) {
+      return value.map(String).join(',');
+    }
+    if (typeof value === 'string' && value) {
+      return value.replace(/ \(index\)$/, '');
+    }
+  }
+  return null;
+}
+/**
  * A GiST exclusion constraint violation (SQLSTATE 23P01) — e.g. a weight slab
  * overlapping one that already exists.
  *

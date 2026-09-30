@@ -348,6 +348,7 @@ class StockTransferLineDto {
     reasonId;
     reasonName;
     remarks;
+    trackSignature;
 }
 exports.StockTransferLineDto = StockTransferLineDto;
 __decorate([
@@ -528,6 +529,13 @@ __decorate([
     (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
     __metadata("design:type", Object)
 ], StockTransferLineDto.prototype, "remarks", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        example: 'BE',
+        description: "Which identity columns the line may carry — B batch, M MRP, S sale price, E expiry, R serial, P supplier; 'N' when no policy matches. The effective policy on the document's date.",
+    }),
+    __metadata("design:type", String)
+], StockTransferLineDto.prototype, "trackSignature", void 0);
 class StockTransferDocumentDto {
     header;
     lines;

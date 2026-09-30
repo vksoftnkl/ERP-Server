@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { ItemMaster, ItemTaxMaster, ItemUnitConversion, Prisma } from '@prisma/client';
+import { ItemMaster, ItemUnitConversion, Prisma, TaxRateMaster } from '@prisma/client';
 
 /** A price row read with the conversion row that owns its unit shape. */
 type ItemPriceMasterWithConversion = Prisma.ItemPriceMasterGetPayload<{
@@ -10,11 +10,11 @@ import { ItemPriceDetailPayloadDto } from 'src/modules/Inventory/item-price-deta
 import {
   ItemPriceDetailErrorDetail,
   ItemPriceDetailErrorResponse,
+  ItemPriceDetailTaxPayload,
 } from 'src/modules/Inventory/item-price-details/types/item-price-detail-api.types';
 import { ItemPayload } from 'src/modules/Inventory/items-master/types/item-api.types';
 import { ItemPricePayload } from 'src/modules/Inventory/items-price-master/types/item-price-api.types';
 import { ItemUnitConversionPayload } from 'src/modules/Inventory/item-unit-conversion/types/item-unit-conversion-api.types';
-import { ItemTaxPayload } from 'src/modules/Inventory/items-tax-master/types/item-tax-api.types';
 
 @Injectable()
 export class ItemPriceDetailsService {
@@ -45,8 +45,10 @@ export class ItemPriceDetailsService {
         where: { iucItemId: itemId, iucIsDeleted: false },
         orderBy: [{ iucUnitSlno: 'asc' }, { iucId: 'asc' }],
       }),
+      // item_default_tax_id points at tax_rate_master since
+      // 20260912110000_repoint_items_to_tax_rate_master; item_tax_master is retired.
       itemRecord.itemDefaultTaxId
-        ? this.prisma.itemTaxMaster.findFirst({
+        ? this.prisma.taxRateMaster.findFirst({
             where: {
               taxId: itemRecord.itemDefaultTaxId,
               taxIsDeleted: false,
@@ -201,43 +203,54 @@ export class ItemPriceDetailsService {
       ipm_updated_by: record.ipmUpdatedBy,
     };
   }
-  private toItemTaxPayload(record: ItemTaxMaster): ItemTaxPayload {
+  /**
+   * The same mapping as the Inventory module's service: a tax_rate_master row in
+   * the old item_tax_master payload's shape (see ItemPriceDetailTaxPayload).
+   */
+  private toItemTaxPayload(record: TaxRateMaster): ItemPriceDetailTaxPayload {
+    // The component rates are GENERATED columns, which Prisma reads back as nullable.
+    const cgstPerc = this.toNumber(record.taxCgstPerc ?? 0);
+    const sgstPerc = this.toNumber(record.taxSgstPerc ?? 0);
+    const igstPerc = this.toNumber(record.taxIgstPerc ?? 0);
+    const cessPerc = this.toNumber(record.taxCessPerc);
+    const cessUnit = this.toNumber(record.taxCessPerUnit);
     return {
       tax_id: record.taxId,
       tax_name: record.taxName,
       tax_code: record.taxCode,
-      tax_taxability_type: record.taxTaxabilityType,
+      tax_taxability_type: record.taxTaxability,
       tax_is_reverse_charge: record.taxIsReverseCharge,
-      tax_cgst_perc: this.toNumber(record.taxCgstPerc),
-      tax_sgst_perc: this.toNumber(record.taxSgstPerc),
-      tax_igst_perc: this.toNumber(record.taxIgstPerc),
-      tax_cgst_pur_perc: this.toNumber(record.taxCgstPurPerc),
-      tax_sgst_pur_perc: this.toNumber(record.taxSgstPurPerc),
-      tax_igst_pur_perc: this.toNumber(record.taxIgstPurPerc),
-      tax_cess_type: record.taxCessType,
-      tax_cess_perc: this.toNumber(record.taxCessPerc),
-      tax_cess_unit: this.toNumber(record.taxCessUnit),
-      tax_cess_pur_perc: this.toNumber(record.taxCessPurPerc),
-      tax_cess_pur_unit: this.toNumber(record.taxCessPurUnit),
-      tax_gst_rate_total: this.toNumber(record.taxGstRateTotal),
-      tax_sales_ledger_id: record.taxSalesLedgerId,
-      tax_sales_return_ledger_id: record.taxSalesReturnLedgerId,
-      tax_purchase_ledger_id: record.taxPurchaseLedgerId,
-      tax_purchase_return_ledger_id: record.taxPurchaseReturnLedgerId,
-      tax_cgst_output_ledger_id: record.taxCgstOutputLedgerId,
-      tax_sgst_output_ledger_id: record.taxSgstOutputLedgerId,
-      tax_igst_output_ledger_id: record.taxIgstOutputLedgerId,
-      tax_cess_output_ledger_id: record.taxCessOutputLedgerId,
-      tax_cgst_input_ledger_id: record.taxCgstInputLedgerId,
-      tax_sgst_input_ledger_id: record.taxSgstInputLedgerId,
-      tax_igst_input_ledger_id: record.taxIgstInputLedgerId,
-      tax_cess_input_ledger_id: record.taxCessInputLedgerId,
+      tax_cgst_perc: cgstPerc,
+      tax_sgst_perc: sgstPerc,
+      tax_igst_perc: igstPerc,
+      tax_cgst_pur_perc: cgstPerc,
+      tax_sgst_pur_perc: sgstPerc,
+      tax_igst_pur_perc: igstPerc,
+      // NONE | PERCENT | PER_UNIT | BOTH — not the old NONE | PERCENT | UNIT.
+      tax_cess_type: record.taxCessBasis,
+      tax_cess_perc: cessPerc,
+      tax_cess_unit: cessUnit,
+      tax_cess_pur_perc: cessPerc,
+      tax_cess_pur_unit: cessUnit,
+      tax_gst_rate_total: this.toNumber(record.taxRatePerc),
+      tax_sales_ledger_id: null,
+      tax_sales_return_ledger_id: null,
+      tax_purchase_ledger_id: null,
+      tax_purchase_return_ledger_id: null,
+      tax_cgst_output_ledger_id: null,
+      tax_sgst_output_ledger_id: null,
+      tax_igst_output_ledger_id: null,
+      tax_cess_output_ledger_id: null,
+      tax_cgst_input_ledger_id: null,
+      tax_sgst_input_ledger_id: null,
+      tax_igst_input_ledger_id: null,
+      tax_cess_input_ledger_id: null,
       tax_is_active: record.taxIsActive,
       tax_is_deleted: record.taxIsDeleted,
       tax_sync_date: record.taxSyncDate ? record.taxSyncDate.toISOString() : null,
       tax_created_on: record.taxCreatedOn.toISOString(),
       tax_created_by: record.taxCreatedBy,
-      tax_modified_on: record.taxModifiedOn.toISOString(),
+      tax_modified_on: record.taxModifiedOn ? record.taxModifiedOn.toISOString() : null,
       tax_modified_by: record.taxModifiedBy,
     };
   }

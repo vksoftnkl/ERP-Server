@@ -21,7 +21,6 @@ const request_payload_validation_util_1 = require("../../common/utils/request-pa
 const get_item_price_detail_query_dto_1 = require("../Inventory/item-price-details/dto/get-item-price-detail-query.dto");
 const item_response_dto_1 = require("../Inventory/items-master/dto/item-response.dto");
 const item_price_response_dto_1 = require("../Inventory/items-price-master/dto/item-price-response.dto");
-const item_tax_response_dto_1 = require("../Inventory/items-tax-master/dto/item-tax-response.dto");
 const item_price_detail_response_dto_1 = require("../Inventory/item-price-details/dto/item-price-detail-response.dto");
 const item_price_detail_exception_filter_1 = require("../Inventory/item-price-details/item-price-detail-exception.filter");
 const item_price_details_service_1 = require("./item-price-details.service");
@@ -64,7 +63,7 @@ exports.ItemPriceDetailsController = ItemPriceDetailsController = __decorate([
     (0, swagger_1.ApiTags)('Item Price Details'),
     (0, swagger_1.ApiBearerAuth)('access-token'),
     (0, swagger_1.ApiUnauthorizedResponse)({ type: http_error_response_dto_1.HttpErrorResponseDto }),
-    (0, swagger_1.ApiExtraModels)(item_response_dto_1.ItemPayloadDto, item_price_response_dto_1.ItemPricePayloadDto, item_tax_response_dto_1.ItemTaxPayloadDto, item_price_detail_response_dto_1.ItemPriceDetailPayloadDto),
+    (0, swagger_1.ApiExtraModels)(item_response_dto_1.ItemPayloadDto, item_price_response_dto_1.ItemPricePayloadDto, item_price_detail_response_dto_1.ItemPriceDetailTaxPayloadDto, item_price_detail_response_dto_1.ItemPriceDetailPayloadDto),
     (0, cache_manager_1.CacheTTL)(60),
     (0, common_1.Controller)('item-price-details'),
     (0, common_1.UseFilters)(item_price_detail_exception_filter_1.ItemPriceDetailExceptionFilter),

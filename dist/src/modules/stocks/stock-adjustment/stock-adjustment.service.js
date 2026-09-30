@@ -17,6 +17,8 @@ const request_context_service_1 = require("../../../common/request-context/reque
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
 const app_setting_value_service_1 = require("../../settings/appSettings/app-setting-value.service");
 const stock_voucher_service_1 = require("../stock-voucher/stock-voucher.service");
+const stock_voucher_posting_helper_1 = require("../stock-voucher/stock-voucher-posting.helper");
+const stock_voucher_types_1 = require("../stock-voucher/types/stock-voucher.types");
 const stock_adjustment_rules_1 = require("./stock-adjustment.rules");
 let StockAdjustmentService = class StockAdjustmentService {
     prisma;
@@ -32,6 +34,15 @@ let StockAdjustmentService = class StockAdjustmentService {
     async save(dto) {
         const kind = dto.header.voucherType;
         const rules = stock_adjustment_rules_1.STOCK_ADJUSTMENT_RULES[kind];
+        const linkModule = dto.header.linkSrcModule?.trim() || null;
+        if (linkModule && linkModule !== stock_voucher_types_1.STOCK_SRC_MODULE) {
+            (0, module_service_utils_1.throwStockUnprocessable)(`This ${rules.displayName.toLowerCase()} cannot be saved`, [
+                {
+                    field: 'header.linkSrcModule',
+                    message: `An adjustment is the stock module's own document: linkSrcModule may be ${stock_voucher_types_1.STOCK_SRC_MODULE} or empty, not ${linkModule}. A ${linkModule} document moves its stock through its own module.`,
+                },
+            ]);
+        }
         const header = {
             kind,
             companyId: dto.header.companyId,
@@ -63,6 +74,14 @@ let StockAdjustmentService = class StockAdjustmentService {
                 reasonId: line.reasonId ?? header.reasonId,
                 remarks: line.remarks?.trim() || header.remarks?.trim() || null,
                 baseUomId: line.baseUomId,
+                identity: {
+                    batchNo: line.batchNo ?? null,
+                    mrp: line.mrp === null || line.mrp === undefined ? null : String(line.mrp),
+                    salePrice: line.salePrice === null || line.salePrice === undefined ? null : String(line.salePrice),
+                    expiryDate: line.expiryDate ? line.expiryDate.slice(0, 10) : null,
+                    serialNo: line.serialNo ?? null,
+                    supplierId: line.supplierId ?? null,
+                },
             };
         });
         const reasons = await this.loadReasons(header.companyId, lines);
@@ -131,12 +150,12 @@ let StockAdjustmentService = class StockAdjustmentService {
         return shared.map((row) => ({ ...row, problem: byLineNo.get(row.lineNo) ?? row.problem }));
     }
     async post(args) {
-        const { rules, header } = await this.kindOf(args.svhId, args.accYear, args.companyId, args.branchId);
+        const { rules, header, docKind } = await this.kindOf(args.svhId, args.accYear, args.companyId, args.branchId);
         const lines = await this.loadLines(args.svhId, args.accYear, header);
         const reasons = await this.loadReasons(args.companyId, lines);
         const verdict = await this.check(header, lines, reasons);
         this.refuse(rules, `This ${rules.displayName.toLowerCase()} cannot be posted`, verdict, lines);
-        return this.stockVoucherService.post(rules, args.svhId, args.accYear, args.companyId, args.branchId, args.userId);
+        return this.stockVoucherService.post(rules, args.svhId, args.accYear, args.companyId, args.branchId, args.userId, docKind === 'RELOT' ? (tx) => this.assertRelotLandsElsewhere(tx, rules, args.svhId, args.accYear) : undefined);
     }
     async cancel(args) {
         const { rules } = await this.kindOf(args.svhId, args.accYear, args.companyId, args.branchId);
@@ -173,7 +192,8 @@ let StockAdjustmentService = class StockAdjustmentService {
               OR itm.item_name_en ILIKE ${search}::text
               OR itm.item_code ILIKE ${search}::text
               OR slt.slt_batch_no ILIKE ${search}::text)
-       ORDER BY itm.item_name_en, slt.slt_expiry_date NULLS LAST, b.sbl_first_in_date NULLS LAST, slt.slt_batch_no
+       ORDER BY itm.item_name_en, slt.slt_expiry_date NULLS LAST, b.sbl_first_in_date NULLS LAST, slt.slt_batch_no,
+                b.sbl_bucket
        LIMIT ${query.limit ?? 200}
     `;
         return rows.map((r) => ({
@@ -379,9 +399,121 @@ let StockAdjustmentService = class StockAdjustmentService {
                         say(line, 're-lot halves are keyed in different base units.');
                     }
                 }
+                const lotlessIn = relotLines.filter((l) => !l.lotId && !out.has(l.index) && reasons.get(l.reasonId)?.srm_code === stock_adjustment_rules_1.RELOT_IN_CODE);
+                const resolved = await this.resolveInwardLots(header, lotlessIn);
+                for (const line of lotlessIn) {
+                    const landsOn = resolved.get(line.index)?.lotId;
+                    if (!landsOn || !perItem.get(line.itemId)?.outLots.has(landsOn)) {
+                        continue;
+                    }
+                    const tracked = resolved.get(line.index)?.tracked ?? [];
+                    say(line, tracked.length === 0
+                        ? 're-lots an item that tracks no lot identity (no batch, expiry, MRP, sale price, serial or supplier): all of its stock in a bucket is one lot, so the IN half lands back on the lot the OUT half leaves. There is nothing to re-lot — change the item\'s tracking policy first if it should carry an identity.'
+                        : `re-lot lands back on the lot the OUT half leaves: this item tracks ${tracked.join(', ')}, and the IN half states the same ${tracked.length === 1 ? 'value' : 'values'} as that lot. State the CORRECT identity.`);
+                }
             }
         }
         return out;
+    }
+    async resolveInwardLots(header, lines) {
+        if (lines.length === 0) {
+            return new Map();
+        }
+        const stated = JSON.stringify(lines.map((l) => ({
+            idx: l.index,
+            item_id: l.itemId,
+            batch_no: l.identity.batchNo,
+            mrp: l.identity.mrp,
+            sale_price: l.identity.salePrice,
+            expiry_date: l.identity.expiryDate,
+            serial_no: l.identity.serialNo,
+            supplier_id: l.identity.supplierId,
+        })));
+        const rows = await this.prisma.$queryRaw `
+      WITH line AS (
+        SELECT u.idx                         AS svi_id,
+               u.item_id                     AS svi_item_id,
+               ${header.companyId}::uuid     AS svh_company_id,
+               ${header.branchId}::uuid      AS svh_branch_id,
+               ${header.docDate}::date       AS svh_doc_date,
+               u.batch_no                    AS svi_batch_no,
+               u.mrp                         AS svi_mrp,
+               u.sale_price                  AS svi_sale_price,
+               u.expiry_date                 AS svi_expiry_date,
+               u.serial_no                   AS svi_serial_no,
+               u.supplier_id                 AS svi_supplier_id
+          FROM jsonb_to_recordset(${stated}::jsonb)
+               AS u(idx int, item_id uuid, batch_no text, mrp numeric, sale_price numeric,
+                    expiry_date date, serial_no text, supplier_id uuid)
+      ),
+      ${(0, stock_voucher_posting_helper_1.effectivePolicyCte)()},
+      keyed AS (
+        SELECT line.svi_id, line.svi_item_id, line.svh_company_id,
+               policy.track_batch, policy.track_mrp, policy.track_sale_price,
+               policy.track_expiry, policy.track_serial, policy.track_supplier,
+               ${(0, stock_voucher_posting_helper_1.lotIdentityKeyColumns)()}
+          FROM line
+          JOIN policy ON policy.svi_id = line.svi_id
+      )
+      SELECT k.svi_id AS idx, slt.slt_id AS lot_id,
+             k.track_batch, k.track_mrp, k.track_sale_price, k.track_expiry, k.track_serial, k.track_supplier
+        FROM keyed k
+        LEFT JOIN stock.stock_lot slt
+          ON slt.slt_company_id   = k.svh_company_id
+         AND slt.slt_item_id      = k.svi_item_id
+         AND slt.slt_key_batch    = k.key_batch
+         AND slt.slt_key_mrp      = k.key_mrp
+         AND slt.slt_key_sp       = k.key_sp
+         AND slt.slt_key_expiry   = k.key_expiry
+         AND slt.slt_key_serial   = k.key_serial
+         AND slt.slt_key_supplier = k.key_supplier
+         AND slt.slt_is_deleted   = false
+    `;
+        return new Map(rows.map((r) => [
+            Number(r.idx),
+            {
+                lotId: r.lot_id,
+                tracked: [
+                    r.track_batch && 'batch',
+                    r.track_expiry && 'expiry',
+                    r.track_mrp && 'MRP',
+                    r.track_sale_price && 'sale price',
+                    r.track_serial && 'serial',
+                    r.track_supplier && 'supplier',
+                ].filter((t) => !!t),
+            },
+        ]));
+    }
+    async assertRelotLandsElsewhere(tx, rules, svhId, accYear) {
+        const same = await tx.$queryRaw `
+      WITH relot AS (
+        SELECT i.svi_line_no, i.svi_item_id, i.svi_lot_id, rm.srm_code
+          FROM stock.stock_voucher_item i
+          JOIN stock.stock_voucher h
+            ON h.svh_id = i.svi_voucher_id AND h.svh_acc_year = i.svi_acc_year
+          JOIN stock.stock_reason_master rm
+            ON rm.srm_id = COALESCE(i.svi_reason_id, h.svh_reason_id)
+         WHERE i.svi_voucher_id = ${svhId}::uuid AND i.svi_acc_year = ${accYear}::bpchar
+           AND i.svi_is_deleted = false
+           AND rm.srm_code IN (${stock_adjustment_rules_1.RELOT_OUT_CODE}, ${stock_adjustment_rules_1.RELOT_IN_CODE})
+      )
+      SELECT DISTINCT ON (i_in.svi_line_no)
+             i_in.svi_line_no AS in_line_no, o.svi_line_no AS out_line_no, itm.item_name_en AS item_name
+        FROM relot i_in
+        JOIN relot o
+          ON o.svi_item_id = i_in.svi_item_id
+         AND o.svi_lot_id  = i_in.svi_lot_id
+         AND o.srm_code    = ${stock_adjustment_rules_1.RELOT_OUT_CODE}
+        JOIN inventory.item_master itm ON itm.item_id = i_in.svi_item_id
+       WHERE i_in.srm_code = ${stock_adjustment_rules_1.RELOT_IN_CODE}
+       ORDER BY i_in.svi_line_no, o.svi_line_no
+    `;
+        if (same.length) {
+            (0, module_service_utils_1.throwStockUnprocessable)(`This ${rules.displayName.toLowerCase()} cannot be posted`, same.map((r) => ({
+                field: `lines.${r.in_line_no}`,
+                message: `Line ${r.in_line_no} (${r.item_name}): the IN half of the re-lot resolved to the lot line ${r.out_line_no} takes the stock out of — the pair would move it from a lot into the same lot. State the CORRECT identity.`,
+            })));
+        }
     }
     directionOf(line, reasons) {
         if (line.toBucket) {
@@ -443,6 +575,7 @@ let StockAdjustmentService = class StockAdjustmentService {
     async kindOf(svhId, accYear, companyId, branchId) {
         const [row] = await this.prisma.$queryRaw `
       SELECT h.svh_voucher_type, h.svh_doc_date, h.svh_from_godown_id, h.svh_to_godown_id, h.svh_reason_id, h.svh_remarks,
+             h.svh_refno, h.svh_link_src_module, h.svh_link_src_doc_type,
              (h.svh_voucher_type = 'ADJUSTMENT' AND EXISTS (
                 SELECT 1 FROM stock.stock_voucher_item i
                  WHERE i.svi_voucher_id = h.svh_id AND i.svi_acc_year = h.svh_acc_year
@@ -459,6 +592,9 @@ let StockAdjustmentService = class StockAdjustmentService {
     `;
         if (!row || !(0, stock_adjustment_rules_1.isStockAdjustmentKind)(row.svh_voucher_type)) {
             (0, module_service_utils_1.throwStockNotFound)('Stock adjustment not found', 'svhId', `No adjustment, issue, damage or expiry write-off ${svhId} in ${accYear} for this company and branch.`);
+        }
+        if (row.svh_link_src_module && row.svh_link_src_module !== stock_voucher_types_1.STOCK_SRC_MODULE) {
+            (0, module_service_utils_1.throwStockNotFound)('Stock adjustment not found', 'svhId', `${row.svh_refno ?? svhId} is the stock movement of a ${row.svh_link_src_module} ${row.svh_link_src_doc_type ?? 'document'}, not an adjustment. It is posted and cancelled with that document.`);
         }
         const kind = row.is_move ? stock_adjustment_rules_1.BUCKET_MOVE_KIND : row.svh_voucher_type;
         return {
@@ -480,7 +616,8 @@ let StockAdjustmentService = class StockAdjustmentService {
         const rows = await this.prisma.$queryRaw `
       SELECT svi.svi_id, svi.svi_line_no, svi.svi_item_id, itm.item_name_en AS item_name,
              svi.svi_godown_id, svi.svi_lot_id, svi.svi_bucket, svi.svi_to_bucket, svi.svi_base_qty, svi.svi_free_base_qty,
-             svi.svi_direction, svi.svi_reason_id, svi.svi_remarks, svi.svi_base_uom_id
+             svi.svi_direction, svi.svi_reason_id, svi.svi_remarks, svi.svi_base_uom_id,
+             svi.svi_batch_no, svi.svi_mrp, svi.svi_sale_price, svi.svi_expiry_date, svi.svi_serial_no, svi.svi_supplier_id
         FROM stock.stock_voucher_item svi
         JOIN inventory.item_master itm ON itm.item_id = svi.svi_item_id
        WHERE svi.svi_voucher_id = ${svhId}::uuid AND svi.svi_acc_year = ${accYear}::bpchar
@@ -504,6 +641,14 @@ let StockAdjustmentService = class StockAdjustmentService {
             reasonId: r.svi_reason_id ?? header.reasonId,
             remarks: r.svi_remarks?.trim() || header.remarks?.trim() || null,
             baseUomId: r.svi_base_uom_id,
+            identity: {
+                batchNo: r.svi_batch_no,
+                mrp: r.svi_mrp === null ? null : r.svi_mrp.toString(),
+                salePrice: r.svi_sale_price === null ? null : r.svi_sale_price.toString(),
+                expiryDate: isoDate(r.svi_expiry_date),
+                serialNo: r.svi_serial_no,
+                supplierId: r.svi_supplier_id,
+            },
         }));
     }
     async loadReasons(companyId, lines) {

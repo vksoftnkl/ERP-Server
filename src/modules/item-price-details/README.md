@@ -11,7 +11,7 @@ default tax record, assembled into one nested payload keyed by `item_id`.
   - `item_master` (model `ItemMaster`) — matched on PK `itemId`, filtered `itemIsDeleted = false`
   - `item_price_master` (model `ItemPriceMaster`) — filtered `ipmItemId = itemId` and
     `ipmIsDeleted = false`, ordered by `ipmUnitSlno`, then `ipmId`
-  - `item_tax_master` (model `ItemTaxMaster`) — matched on PK `taxId = item.itemDefaultTaxId`,
+  - `tax_rate_master` (model `TaxRateMaster`) — matched on PK `taxId = item.itemDefaultTaxId`,
     filtered `taxIsDeleted = false`; skipped when the item has no default tax
 
 ## Files

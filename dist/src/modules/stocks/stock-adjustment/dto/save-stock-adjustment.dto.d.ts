@@ -1,8 +1,12 @@
 import { SaveStockVoucherHeaderDto } from '../../stock-voucher/dto/save-stock-voucher.dto';
 import { type StockBucket } from '../../stock-voucher/types/stock-voucher.types';
 import { type StockAdjustmentSaveKind } from '../stock-adjustment.rules';
-export declare class SaveStockAdjustmentHeaderDto extends SaveStockVoucherHeaderDto {
+declare const SaveStockAdjustmentHeaderDto_base: import("@nestjs/common").Type<Omit<SaveStockVoucherHeaderDto, "totalQty" | "totalValue" | "totalValueWot">>;
+export declare class SaveStockAdjustmentHeaderDto extends SaveStockAdjustmentHeaderDto_base {
     voucherType: StockAdjustmentSaveKind;
+    totalQty?: number;
+    totalValue?: number;
+    totalValueWot?: number;
 }
 export declare class SaveStockAdjustmentItemDto {
     lineNo: number;
@@ -36,3 +40,4 @@ export declare class SaveStockAdjustmentDto {
     header: SaveStockAdjustmentHeaderDto;
     lines: SaveStockAdjustmentItemDto[];
 }
+export {};

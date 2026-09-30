@@ -128,8 +128,8 @@ export interface RecordPrintRequest {
 }
 
 export interface PrintOutcome extends RenderOutcome {
-  readonly printLogIds: readonly string[];
-  readonly assignment: {
+    readonly printLogIds: readonly string[];
+    readonly assignment: {
     readonly ptaId: string;
     readonly scope: string;
     readonly printerName: string | null;

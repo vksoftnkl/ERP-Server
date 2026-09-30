@@ -202,10 +202,14 @@ must be null unless `cdTaxApl` is set and `cdBeforeTax` is not. A before-tax
 charge is taxed at the *item's* rate inside the item line, and a non-taxable one
 is never taxed — either way a rate there would be one nothing reads.
 
-## Relationship to items-tax-master
+## Relationship to the retired item_tax_master
 
-[items-tax-master](../items-tax-master) still owns `inventory.item_tax_master`,
-which remains the **live** GST rate master until the read/write paths move.
-Nothing in this module touches it. The two differ in shape, not just in table:
+`inventory.item_tax_master` is no longer the GST rate master: items were
+re-pointed here by `20260912110000_repoint_items_to_tax_rate_master`, every
+reader followed (2026-09-30), and the `items-tax-master` module with its
+`/item-taxes` routes and grid 5 was removed the same day
+(`20260930130000_retire_item_tax_master_grid`). The table itself is still in the
+database with no reader and no foreign key into it, until it is dropped on
+purpose. Nothing in this module touches it. The two differ in shape, not just in table:
 the old one carries its ledgers as eighteen columns that went 12 → 14 → 4 → 14 →
 18 in a week as each new axis turned up, and every one of those was an `ALTER`.

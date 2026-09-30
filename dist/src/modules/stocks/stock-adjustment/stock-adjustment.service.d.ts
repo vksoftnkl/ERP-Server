@@ -2,7 +2,7 @@ import { PrismaService } from "../../../database/prisma/prisma.service";
 import { RequestContextService } from "../../../common/request-context/request-context.service";
 import { AppSettingValueService } from '../../settings/appSettings/app-setting-value.service';
 import { StockVoucherService } from '../stock-voucher/stock-voucher.service';
-import type { StockVoucherCancelResult, StockVoucherDeleteResult, StockVoucherLineProblem, StockVoucherPayload, StockVoucherPostResult, StockVoucherSaveResult } from '../stock-voucher/types/stock-voucher.types';
+import { type StockVoucherCancelResult, type StockVoucherDeleteResult, type StockVoucherLineProblem, type StockVoucherPayload, type StockVoucherPostResult, type StockVoucherSaveResult } from '../stock-voucher/types/stock-voucher.types';
 import type { SaveStockAdjustmentDto } from './dto/save-stock-adjustment.dto';
 import type { PickStockQueryDto } from './dto/stock-adjustment-query.dto';
 import { type StockAdjustmentDocKind } from './stock-adjustment.rules';
@@ -62,6 +62,8 @@ export declare class StockAdjustmentService {
     remove(svhId: string, accYear: string, companyId: string, branchId: string, userId?: string): Promise<StockVoucherDeleteResult>;
     pickStock(query: PickStockQueryDto): Promise<PickStockRow[]>;
     private check;
+    private resolveInwardLots;
+    private assertRelotLandsElsewhere;
     private directionOf;
     private allowsMove;
     private onlyMove;

@@ -28,8 +28,9 @@ model ItemEanCode {
   @@map("item_ean_codes")
   @@schema("inventory")
 
-  // uq_ean_code UNIQUE (ean_code)
-  @@unique([eanCode], map: "uq_ean_code")
+  // uq_ean_code UNIQUE (ean_code) WHERE ean_is_deleted = false — DB-only: a
+  // partial index cannot be declared here (Prisma ignores the predicate and
+  // would see drift). Partial since 20260930120000, so a removed EAN is free.
 
   @@index([eanCode], map: "idx_ean_code")
   @@index([eanItemId], map: "idx_ean_item")

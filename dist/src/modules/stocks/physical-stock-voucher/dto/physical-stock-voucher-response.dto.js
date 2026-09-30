@@ -339,6 +339,7 @@ class PhysicalStockLineDto {
     valueWot;
     lotId;
     remarks;
+    trackSignature;
 }
 exports.PhysicalStockLineDto = PhysicalStockLineDto;
 __decorate([
@@ -527,6 +528,13 @@ __decorate([
     (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
     __metadata("design:type", Object)
 ], PhysicalStockLineDto.prototype, "remarks", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        example: 'BE',
+        description: "Which identity columns the line may carry — B batch, M MRP, S sale price, E expiry, R serial, P supplier; 'N' when no policy matches. The effective policy on the document's date.",
+    }),
+    __metadata("design:type", String)
+], PhysicalStockLineDto.prototype, "trackSignature", void 0);
 class PhysicalStockDocumentDto {
     header;
     lines;

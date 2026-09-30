@@ -1,4 +1,4 @@
--- Seed: fixed.grid_columns -- the column layout of every configured grid (818 rows).
+-- Seed: fixed.grid_columns -- the column layout of every configured grid (809 rows).
 --
 -- Runs after Grid_Details.sql -- grid_id is a foreign key into it, ON DELETE CASCADE.
 --
@@ -60,16 +60,6 @@ SELECT v.* FROM (VALUES
     ,('019ec9f3-f24b-763e-8625-39f8c32f967d', 4 , 5 , 'Column 5'           , NULL                        , 'Text'         , NULL  , 5.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
     ,('019f2c7b-41b8-7775-9df4-f46bcb531ade', 4 , 5 , 'Weight'             , 'unit_weight'               , 'Text'         , 100.00, 5.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019f2c7b-41b8-7f64-9acd-4e2581d42830', 4 , 6 , 'Active'             , 'unit_is_active'            , 'Text'         , 100.00, 6.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
-    -- ============ item tax master (id 5) ============
-    ,('019eb6a3-cb45-7739-bbf9-8ae2f7ca5fda', 5 , 1 , 'Tax name'           , 'tax_name'                  , 'Text'         , 50.00 , 1.00 , 'Left'  , true , true , false, false, NULL, NULL, NULL, 'tax_name'             , false, 'system')
-    ,('019eb6a3-cb45-76db-929c-bcc14b9aa0c4', 5 , 2 , 'Tax type'           , NULL                        , 'Text'         , 50.00 , 2.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, 'Tax type'             , false, 'system')
-    ,('019eb6a3-cb45-768f-bd8c-a78e7ae07f4f', 5 , 3 , 'Tax code'           , 'tax_code'                  , 'Text'         , 50.00 , 3.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, 'tax_code'             , false, 'system')
-    ,('019eb6a3-cb45-75f2-8e51-ef4065999a8a', 5 , 4 , 'tas'                , NULL                        , 'Text'         , 1.68  , NULL , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
-    ,('019ec9fb-b337-7c25-968c-a5cc288bde1a', 5 , 4 , 'ID'                 , 'tax_id'                    , 'Text'         , 50.00 , 4.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, 'tax_id'               , false, 'system')
-    ,('019eb6a3-cb45-7608-8a24-fad66110ee8d', 5 , 5 , 'Tax reverse'        , NULL                        , 'Text'         , 1.48  , NULL , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
-    ,('019eb6a3-cb45-7694-8e75-f3f81ef6783f', 5 , 5 , 'Tax status'         , NULL                        , 'Text'         , 10.00 , NULL , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
-    ,('019eb6a3-cb45-75bc-b8bc-82e5c9003813', 5 , 6 , 'tax'                , NULL                        , 'Text'         , 1.96  , NULL , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
-    ,('019eb6a3-cb45-774e-b246-3ded42d2e27e', 5 , 7 , 'sa'                 , NULL                        , 'Text'         , 4.08  , NULL , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
     -- ============ item group master (id 6) ============
     ,('019f2b82-5198-7901-8118-43803e847045', 6 , 1 , 'Id'                 , 'itg_id'                    , 'Text'         , 100.00, 1.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019eb6a3-cb45-7633-9f7b-e878d1530fe5', 6 , 2 , 'Group Name'         , 'itg_name'                  , 'Text'         , 16.85 , 2.00 , 'Left'  , true , true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')

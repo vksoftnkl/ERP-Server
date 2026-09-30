@@ -34,21 +34,28 @@ collections (**unit conversions**, **prices**, **EAN codes** and **reorders**) i
 | `POST` | `/create` | Create **or** update an item (create vs update by `item_id` presence), optionally with its child collections. |
 | `GET` | `/get` | Fetch one item by `item_id` (UUID v7) with its non-deleted unit conversions, prices, EAN codes and reorders, plus resolved names. |
 | `GET` | `/bulk-load` | List active items with a chosen default price row, flattened for bulk opening-stock load. |
-| `DELETE` | `/delete` | Soft-delete **or restore** an item by `item_id`, cascading the same state to its children. |
+| `DELETE` | `/delete` | Soft-delete an item by `item_id` with its live children and derived track policy. **Not a toggle**: already deleted → 409. |
+| `POST` | `/restore` | Restore a soft-deleted item and **only** the children deleted with it; re-derives its track policy. Not deleted → 409. |
 
 ### Create / update semantics
 
 - **Omit `item_id` → create; include `item_id` → update** the existing (non-deleted) item.
 - `item_name_en` is trimmed and required on both create and update.
-- On create/update only the fields the client actually sent are applied — every optional column is
-  gated by `hasOwnProperty` in [applyOptionalFields](items-master.service.ts), so unsent fields keep
-  their DB defaults / current value.
+- On create/update only the fields the client actually sent are applied: an omitted key keeps its DB
+  default / current value, and only an explicit `null` clears it. The `hasOwnProperty` guards in
+  [applyOptionalFields](items-master.service.ts) do NOT decide that — every field declared on a DTO
+  instance is an own property (target ES2022), sent or not; what keeps an unsent field untouched is
+  that its value is `undefined`, which Prisma skips. So nothing may be written as `value ?? x`: until
+  2026-09-30 `item_company_id`, `item_base_unit_id` and `item_packing_item_ids` were, and an update
+  that omitted them wiped them (notes 50 #1 / 67).
 - `item_photo` accepts a base64 string; it is validated (`BASE64_PATTERN`, length % 4) and decoded to
   bytes before storage, and re-encoded to base64 on read. An empty string decodes to `null`.
 - `item_packing_item_ids` is coerced by the DTO from a UUID array, JSON-array string, or
   comma-separated string.
-- The item itself is saved in **its own `$transaction`**; then children are synced. Saving is
-  **NON-ATOMIC** — if a child collection fails, the item and any earlier children stay persisted.
+- The item and every child collection are saved in **one `$transaction`** (`saveComposite`): a
+  child failure rolls the item back too.
+- A foreign-key failure names the field whose constraint failed (`ITEM_FOREIGN_KEYS`, from the
+  Prisma error's `meta.constraint`) — `item_default_tax_id` is a FK to **`tax_rate_master`**.
 
 ### Composite child collections
 
@@ -59,9 +66,15 @@ item's existing non-deleted rows:
 
 - Rows are matched by **natural key** (or by an explicit row id when supplied):
   - unit conversions → `iuc_unit_id`
-  - prices → `ipm_uc_unit_id` + `ipm_godown_id`
+  - prices → `ipm_company_id` + `ipm_branch_id` + `ipm_uc_unit_id` — `uq_item_price_master_scope`'s
+    own key; `ipm_godown_id` is an attribute of the row, not part of it. Until 2026-09-30 the key was
+    unit + godown, so a NEW row for branch Y took branch X's `ipm_id` and overwrote X's price
+    (notes 67 B1).
   - EAN codes → `ean_code`
-  - reorders → `ir_unit_id` + `ir_godown_id`
+  - reorders → `ir_branch_id` + `ir_unit_id` + `ir_godown_id`
+- An omitted company / branch / godown on a price or reorder row reads as `null` — what a create
+  would store — so a client that sends no row id must send the scope columns. Two payload rows with
+  one key are refused (400) before anything is written.
 - Unmatched payload rows are **created**; matched rows are **updated only when a supplied field
   differs** (`rowChanged`, ignoring each table's PK, parent item id and actor columns); existing rows
   not claimed by any payload row are **soft-deleted** (stale rows are released *before* saving to
@@ -87,25 +100,43 @@ name still shows even if the referenced master was later deleted. `item_company_
 `GET /bulk-load` lists active, non-deleted items (optionally filtered by company, branch, group,
 brand, section, category; default limit 500) and flattens one price row per item into a
 `BulkLoadItemPayload`. The chosen price is: the row for the requested `godown_id`, else the default-unit
-row, else the first price. It also folds in the item's default tax (rate, cess) and derives a
+row, else the first price. It also folds in the item's default tax from **`tax_rate_master`**
+(`tax_rate_perc`, `tax_cess_basis` NONE / PERCENT / PER_UNIT / BOTH, `tax_cess_perc`,
+`tax_cess_per_unit`; the retired `item_tax_master` holds none of the items' tax ids) and derives a
 `tracking_type` of `MRP` / `BATCH` / `NONE` from `item_batch_config`, `item_is_batch_based` and
 `item_is_expiry_item`.
 
 ### Soft delete / restore
 
-`DELETE /delete` toggles the item: it soft-deletes if active, restores if already deleted (the
-response `message` reflects which happened). A guarded `updateMany` flips `itemIsDeleted` only if the
-state hasn't changed since the read. It then cascades the **same target state** to the item's
-children — only children currently in the item's *old* state are flipped; children already in the
-target state are left untouched. **NON-ATOMIC:** the item toggles in its own transaction, then each
-child collection in its own.
+Two routes, each **one transaction** (`softDeleteComposite` / `restoreComposite`):
+
+- `DELETE /delete` soft-deletes the item (a guarded `updateMany`), then every live unit conversion,
+  price, EAN code and reorder, and retires the item's derived ITEM-scope stock track policy
+  (`StockTrackPolicyService.retireForItem`). An item already deleted is a **409** — this used to be a
+  toggle, and a second DELETE restored it (notes 50 #5).
+- `POST /restore` restores the item and **only the children deleted with it**: those soft-deleted at
+  or after the item's deletion instant (its `item_modified_on`, which nothing moves while the item is
+  deleted; the children are stamped after it in the same transaction). Rows an earlier save removed —
+  an old base unit, a replaced EAN — stay deleted (notes 67 B4). The track policy is re-derived. A
+  name or EAN code another live item has taken since is a **409** naming the field, and nothing is
+  restored.
 
 ## Business rules
 
-- **Item name uniqueness is global** — the DB enforces a single unique index on `itemNameEn`
-  (`uq_item_name_en_global`); a duplicate surfaces as a conflict on `item_name_en`
-  ([handleWriteError](items-master.service.ts)). A bad foreign key (e.g. `item_group_id`) surfaces as a
-  bad-request "Invalid relation reference".
+- **Item name uniqueness is global among live items** — `uq_item_name_en_global` is partial on
+  `item_is_deleted = false` (as are `uq_ean_code` and `uq_ir_item_unit_godown`, since
+  `20260930120000`), so a deleted item's name, a removed EAN or reorder rule can be used again. The
+  indexes are DB-only: Prisma cannot declare a partial index. A duplicate surfaces as a conflict on
+  `item_name_en` ([handleWriteError](items-master.service.ts)); a bad foreign key as a bad-request
+  "Invalid relation reference" on the field whose constraint failed.
+- **Stock track policy**: create / update / restore call `StockTrackPolicyService.syncFromItem`.
+  **An item follows its group unless it names its own preset** (notes 68): an item with no
+  `item_track_preset_id` gets **no** ITEM row, whatever its own batch / expiry / MRP /
+  negative-stock flags say (a
+  derived one is retired), so its group's / company's policy governs — an ITEM row always outranks
+  the group's. A preset, NONE included, is the only item-level choice and is written as the item's
+  row (notes 50 #8, 67, 68). The flags still feed sales' negative-stock answer and bulk-load's
+  `tracking_type` hint.
 - **Soft delete only** — rows are never hard-deleted; deleting flips `itemIsDeleted` (get/update
   operate on `itemIsDeleted = false` only).
 - **Every mutation is audited** via `AuditLogService.logEntityChange` (`New` / `update` / `cancel`),
@@ -118,4 +149,6 @@ child collection in its own.
 Unlike the leaf masters, this module **consumes** the four child modules rather than exporting its own
 service. It injects `ItemUnitConversionService`, `ItemsPriceMasterService`, `ItemsEanCodeMasterService`
 and `ItemsReorderMasterService` and drives them through their public `save` / `findByItemId` /
-`findIdsByItemId` / `toggleDelete` methods, so all child validation and audit behaviour is reused as-is.
+`toggleDelete` methods (on the caller's transaction), so all child validation and audit behaviour is
+reused as-is. Price and unit-conversion rows stamp the request's user as `*_created_by` /
+`*_updated_by` when the payload names none (notes 50 #2).

@@ -485,6 +485,14 @@ export interface StockVoucherLinePayload {
    */
   direction: number | null;
   remarks: string | null;
+  /**
+   * Which identity columns the line may carry — B batch, M MRP, S sale price,
+   * E expiry, R serial, P supplier; 'N' when no policy matches. The effective
+   * StockTrackPolicy on the DOCUMENT's date, exactly as the item lookup
+   * reports it, so a loaded document needs no lookup per item to know which
+   * identity cells open.
+   */
+  trackSignature: string;
 }
 
 export interface StockVoucherPayload {

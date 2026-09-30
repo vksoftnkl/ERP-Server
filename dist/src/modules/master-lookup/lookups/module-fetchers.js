@@ -125,7 +125,7 @@ function buildModuleFetchers(prisma) {
             select: { unit_id: true, unit_name: true },
             orderBy: [{ unit_name: 'asc' }, { unit_id: 'asc' }],
         }), (row) => (0, lookup_option_utils_1.toOption)(row.unit_id, row.unit_name)),
-        itemTaxes: simpleFetcher(() => prisma.itemTaxMaster.findMany({
+        itemTaxes: simpleFetcher(() => prisma.taxRateMaster.findMany({
             where: { taxIsDeleted: false, taxIsActive: true },
             select: { taxId: true, taxName: true },
             orderBy: [{ taxName: 'asc' }, { taxId: 'asc' }],

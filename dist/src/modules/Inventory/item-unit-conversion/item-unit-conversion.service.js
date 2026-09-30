@@ -14,6 +14,7 @@ const common_1 = require("@nestjs/common");
 const configured_grid_sql_service_1 = require("../../../common/configured-grid-sql/configured-grid-sql.service");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const audit_log_service_1 = require("../../audit-log/audit-log.service");
+const request_context_service_1 = require("../../../common/request-context/request-context.service");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
 const module_list_utils_1 = require("../../../common/utils/module-list.utils");
 const DEFAULT_AUDIT_ACTOR = 'system';
@@ -23,10 +24,12 @@ let ItemUnitConversionService = class ItemUnitConversionService {
     prisma;
     auditLogService;
     configuredGridSqlService;
-    constructor(prisma, auditLogService, configuredGridSqlService) {
+    requestContextService;
+    constructor(prisma, auditLogService, configuredGridSqlService, requestContextService) {
         this.prisma = prisma;
         this.auditLogService = auditLogService;
         this.configuredGridSqlService = configuredGridSqlService;
+        this.requestContextService = requestContextService;
     }
     async save(saveItemUnitConversionDto, tx) {
         const saveItems = Array.isArray(saveItemUnitConversionDto)
@@ -98,13 +101,6 @@ let ItemUnitConversionService = class ItemUnitConversionService {
         });
         return records.map((record) => this.toPayload(record));
     }
-    async findIdsByItemId(itemId, isDeleted) {
-        const records = await this.prisma.itemUnitConversion.findMany({
-            where: { iucItemId: itemId, iucIsDeleted: isDeleted },
-            select: { iucId: true },
-        });
-        return records.map((record) => record.iucId);
-    }
     async toggleDelete(iucId, tx) {
         const toggleIds = Array.isArray(iucId) ? iucId : [iucId];
         const toggleAll = async (client) => {
@@ -132,7 +128,7 @@ let ItemUnitConversionService = class ItemUnitConversionService {
     async createItemUnitConversion(tx, saveItemUnitConversionDto) {
         this.validateItemUnitConversion(saveItemUnitConversionDto);
         const now = new Date();
-        const createdBy = this.resolveRecordActor(saveItemUnitConversionDto.iuc_created_by);
+        const createdBy = this.resolveRecordActor(saveItemUnitConversionDto.iuc_created_by) ?? this.requestUser();
         const updatedBy = this.resolveRecordActor(saveItemUnitConversionDto.iuc_updated_by) ?? createdBy;
         const baseUnitId = saveItemUnitConversionDto.iuc_base_unit_id ?? saveItemUnitConversionDto.iuc_unit_id;
         const data = {
@@ -186,10 +182,10 @@ let ItemUnitConversionService = class ItemUnitConversionService {
             iucUnitId: saveItemUnitConversionDto.iuc_unit_id,
             iucBaseUnitId: baseUnitId,
             iucUpdatedOn: new Date(),
+            iucUpdatedBy: this.resolveRecordActor(saveItemUnitConversionDto.iuc_updated_by) ??
+                this.requestUser() ??
+                existing.iucUpdatedBy,
         };
-        if ((0, module_service_utils_1.hasOwnProperty)(saveItemUnitConversionDto, 'iuc_updated_by')) {
-            data.iucUpdatedBy = this.resolveRecordActor(saveItemUnitConversionDto.iuc_updated_by);
-        }
         this.applyOptionalFields(data, saveItemUnitConversionDto);
         this.assertItemUnitConversionConstraints({
             unitId: saveItemUnitConversionDto.iuc_unit_id ?? existing.iucUnitId,
@@ -237,6 +233,7 @@ let ItemUnitConversionService = class ItemUnitConversionService {
             data: {
                 iucIsDeleted: nextDeleted,
                 iucUpdatedOn: updatedOn,
+                iucUpdatedBy: this.requestUser() ?? existing.iucUpdatedBy,
             },
         });
         await this.auditLogService.logEntityChange({
@@ -616,6 +613,9 @@ let ItemUnitConversionService = class ItemUnitConversionService {
         const trimmed = value?.trim();
         return trimmed || null;
     }
+    requestUser() {
+        return this.requestContextService.getUserId()?.trim() || null;
+    }
     resolveAuditActor(value, fallback = DEFAULT_AUDIT_ACTOR) {
         const trimmed = value?.trim();
         return trimmed || fallback;
@@ -647,6 +647,7 @@ exports.ItemUnitConversionService = ItemUnitConversionService = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [prisma_service_1.PrismaService,
         audit_log_service_1.AuditLogService,
-        configured_grid_sql_service_1.ConfiguredGridSqlService])
+        configured_grid_sql_service_1.ConfiguredGridSqlService,
+        request_context_service_1.RequestContextService])
 ], ItemUnitConversionService);
 //# sourceMappingURL=item-unit-conversion.service.js.map

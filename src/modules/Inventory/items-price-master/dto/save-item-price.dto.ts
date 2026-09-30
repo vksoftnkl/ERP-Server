@@ -23,7 +23,8 @@ import {
 // chk_ipm_profit_type was dropped in migration
 // 20260718140000_drop_item_price_profit_type_check because it still pinned the
 // column to the older BY_PERCENT/BY_AMOUNT/MANUAL set — so this list is the only
-// thing enforcing them. Rows written before that migration hold the old values.
+// thing enforcing them. Rows written before that migration held the old values
+// until 20260930120000 mapped them (BY_PERCENT → By %, BY_AMOUNT → By Rs).
 const ITEM_PRICE_PROFIT_TYPES = ['By %', 'By Rs', 'By User'] as const;
 export class SaveItemPriceDto {
   @ApiPropertyOptional({

@@ -158,9 +158,10 @@ export interface SellingPriceRow {
   taxPerc: number;
   inclTax: boolean;
   /**
-   * The item's tax carries a cess. The four-number panel is APPROXIMATE for it
-   * — `tax_cess_unit` is a per-unit amount, not a percentage of price — so the
-   * screen must say so rather than pretend. §4.3, §13.5.
+   * The item's tax rate carries a cess or an additional cess (any basis but
+   * NONE). The four-number panel is APPROXIMATE for it — `tax_cess_per_unit`
+   * is a per-unit amount, not a percentage of price, and neither cess is in
+   * taxPerc — so the screen must say so rather than pretend. §4.3, §13.5.
    */
   hasCess: boolean;
   levels: SellingPriceLevelValue[];

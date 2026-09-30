@@ -22,6 +22,7 @@ import { resolveImportedLines } from './stock-voucher-import.helper';
 import {
   cancelDraftVoucher,
   effectivePolicyCte,
+  effectivePolicyLateral,
   lineDirectionColumn,
   lineReasonJoin,
   lotIdentityKeyColumns,
@@ -257,6 +258,7 @@ interface LineRow {
   svi_value_wot: Prisma.Decimal | null;
   svi_lot_id: string | null;
   svi_remarks: string | null;
+  track_signature: string;
 }
 /**
  * The type-agnostic half of every stock document screen.
@@ -1663,7 +1665,12 @@ export class StockVoucherService {
              svi.svi_value,
              svi.svi_value_wot,
              svi.svi_lot_id,
-             svi.svi_remarks
+             svi.svi_remarks,
+             -- Which identity cells the line may open, as /stock/opening/item-lookup
+             -- answers it: the effective policy on the DOCUMENT's date, the one
+             -- the preflight and the post key the lot by. Saves the screen a
+             -- lookup per distinct item after every load (notes 66).
+             COALESCE(stp.stp_track_signature, 'N') AS track_signature
         FROM stock.stock_voucher_item svi
         JOIN inventory.item_master itm            ON itm.item_id = svi.svi_item_id
         LEFT JOIN inventory.item_unit_conversion iuc ON iuc.iuc_id = svi.svi_uom_id
@@ -1671,6 +1678,13 @@ export class StockVoucherService {
         LEFT JOIN inventory.godown_locations gdl  ON gdl.gdl_id = svi.svi_godown_id
         LEFT JOIN stock.stock_reason_master srm   ON srm.srm_id = svi.svi_reason_id
         LEFT JOIN purchase.suppliers sup          ON sup.sup_id = svi.svi_supplier_id
+        ${effectivePolicyLateral({
+          companyId: Prisma.sql`${companyId}::uuid`,
+          branchId: Prisma.sql`${branchId}::uuid`,
+          itemId: Prisma.raw('svi.svi_item_id'),
+          itemGroupId: Prisma.raw('itm.item_group_id'),
+          onDate: Prisma.sql`${this.toIsoDate(header.svh_doc_date)}::date`,
+        })}
        WHERE svi.svi_voucher_id = ${svhId}::uuid
          AND svi.svi_acc_year   = ${accYear}::bpchar
          AND svi.svi_is_deleted = false
@@ -1785,6 +1799,12 @@ export class StockVoucherService {
       -- lot's generated key columns and the OPENING rows in the ledger, NOT
       -- through the documents: a cancelled opening is reversed in the ledger
       -- and must correctly read as "not opened".
+      --
+      -- A HOLDING IS godown × lot × BUCKET — stock_balance's grain, and the
+      -- count's. 40 SALEABLE opened on one document and the 5 crushed ones
+      -- opened DAMAGED on a second are two holdings, not a repeat; before
+      -- 2026-09-30 (notes 66) the bucket was not matched and the second
+      -- document was refused, though keying both on one document passed.
       opened AS (
         SELECT keyed.svi_id,
                -- Gated INSIDE the CASE rather than by omitting the CTE: a
@@ -1813,6 +1833,7 @@ export class StockVoucherService {
                     AND sml.sml_branch_id   = keyed.svh_branch_id
                     AND sml.sml_acc_year    = keyed.svi_acc_year
                     AND sml.sml_godown_id   = keyed.svi_godown_id
+                    AND sml.sml_bucket      = keyed.svi_bucket
                     AND sml.sml_txn_type    = 'OPENING'
                     -- LIVE, FORWARD AND NOT REVERSED. A cancel leaves the
                     -- original row where it is and mirrors it; reading the
@@ -3123,6 +3144,7 @@ export class StockVoucherService {
       valueWot: toNullableNumber(row.svi_value_wot) ?? 0,
       lotId: row.svi_lot_id,
       remarks: row.svi_remarks,
+      trackSignature: row.track_signature,
     };
   }
   /**

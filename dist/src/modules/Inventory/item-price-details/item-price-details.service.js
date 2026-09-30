@@ -56,7 +56,7 @@ let ItemPriceDetailsService = class ItemPriceDetailsService {
             }),
             this.itemUnitConversionService.findByItemId(itemId),
             itemRecord.itemDefaultTaxId
-                ? this.prisma.itemTaxMaster.findFirst({
+                ? this.prisma.taxRateMaster.findFirst({
                     where: {
                         taxId: itemRecord.itemDefaultTaxId,
                         taxIsDeleted: false,
@@ -185,42 +185,47 @@ let ItemPriceDetailsService = class ItemPriceDetailsService {
         };
     }
     toItemTaxPayload(record) {
+        const cgstPerc = (0, module_service_utils_1.toNumber)(record.taxCgstPerc ?? 0);
+        const sgstPerc = (0, module_service_utils_1.toNumber)(record.taxSgstPerc ?? 0);
+        const igstPerc = (0, module_service_utils_1.toNumber)(record.taxIgstPerc ?? 0);
+        const cessPerc = (0, module_service_utils_1.toNumber)(record.taxCessPerc);
+        const cessUnit = (0, module_service_utils_1.toNumber)(record.taxCessPerUnit);
         return {
             tax_id: record.taxId,
             tax_name: record.taxName,
             tax_code: record.taxCode,
-            tax_taxability_type: record.taxTaxabilityType,
+            tax_taxability_type: record.taxTaxability,
             tax_is_reverse_charge: record.taxIsReverseCharge,
-            tax_cgst_perc: (0, module_service_utils_1.toNumber)(record.taxCgstPerc),
-            tax_sgst_perc: (0, module_service_utils_1.toNumber)(record.taxSgstPerc),
-            tax_igst_perc: (0, module_service_utils_1.toNumber)(record.taxIgstPerc),
-            tax_cgst_pur_perc: (0, module_service_utils_1.toNumber)(record.taxCgstPurPerc),
-            tax_sgst_pur_perc: (0, module_service_utils_1.toNumber)(record.taxSgstPurPerc),
-            tax_igst_pur_perc: (0, module_service_utils_1.toNumber)(record.taxIgstPurPerc),
-            tax_cess_type: record.taxCessType,
-            tax_cess_perc: (0, module_service_utils_1.toNumber)(record.taxCessPerc),
-            tax_cess_unit: (0, module_service_utils_1.toNumber)(record.taxCessUnit),
-            tax_cess_pur_perc: (0, module_service_utils_1.toNumber)(record.taxCessPurPerc),
-            tax_cess_pur_unit: (0, module_service_utils_1.toNumber)(record.taxCessPurUnit),
-            tax_gst_rate_total: (0, module_service_utils_1.toNumber)(record.taxGstRateTotal),
-            tax_sales_ledger_id: record.taxSalesLedgerId,
-            tax_sales_return_ledger_id: record.taxSalesReturnLedgerId,
-            tax_purchase_ledger_id: record.taxPurchaseLedgerId,
-            tax_purchase_return_ledger_id: record.taxPurchaseReturnLedgerId,
-            tax_cgst_output_ledger_id: record.taxCgstOutputLedgerId,
-            tax_sgst_output_ledger_id: record.taxSgstOutputLedgerId,
-            tax_igst_output_ledger_id: record.taxIgstOutputLedgerId,
-            tax_cess_output_ledger_id: record.taxCessOutputLedgerId,
-            tax_cgst_input_ledger_id: record.taxCgstInputLedgerId,
-            tax_sgst_input_ledger_id: record.taxSgstInputLedgerId,
-            tax_igst_input_ledger_id: record.taxIgstInputLedgerId,
-            tax_cess_input_ledger_id: record.taxCessInputLedgerId,
+            tax_cgst_perc: cgstPerc,
+            tax_sgst_perc: sgstPerc,
+            tax_igst_perc: igstPerc,
+            tax_cgst_pur_perc: cgstPerc,
+            tax_sgst_pur_perc: sgstPerc,
+            tax_igst_pur_perc: igstPerc,
+            tax_cess_type: record.taxCessBasis,
+            tax_cess_perc: cessPerc,
+            tax_cess_unit: cessUnit,
+            tax_cess_pur_perc: cessPerc,
+            tax_cess_pur_unit: cessUnit,
+            tax_gst_rate_total: (0, module_service_utils_1.toNumber)(record.taxRatePerc),
+            tax_sales_ledger_id: null,
+            tax_sales_return_ledger_id: null,
+            tax_purchase_ledger_id: null,
+            tax_purchase_return_ledger_id: null,
+            tax_cgst_output_ledger_id: null,
+            tax_sgst_output_ledger_id: null,
+            tax_igst_output_ledger_id: null,
+            tax_cess_output_ledger_id: null,
+            tax_cgst_input_ledger_id: null,
+            tax_sgst_input_ledger_id: null,
+            tax_igst_input_ledger_id: null,
+            tax_cess_input_ledger_id: null,
             tax_is_active: record.taxIsActive,
             tax_is_deleted: record.taxIsDeleted,
             tax_sync_date: record.taxSyncDate ? record.taxSyncDate.toISOString() : null,
             tax_created_on: record.taxCreatedOn.toISOString(),
             tax_created_by: record.taxCreatedBy,
-            tax_modified_on: record.taxModifiedOn.toISOString(),
+            tax_modified_on: record.taxModifiedOn ? record.taxModifiedOn.toISOString() : null,
             tax_modified_by: record.taxModifiedBy,
         };
     }

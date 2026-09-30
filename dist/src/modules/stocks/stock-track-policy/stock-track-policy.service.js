@@ -30,8 +30,6 @@ let StockTrackPolicyService = class StockTrackPolicyService {
     async syncFromItem(item, tx) {
         const client = tx ?? this.prisma;
         const preset = await this.resolvePreset(item.itemTrackPresetId, client);
-        const derived = preset ? this.presetToDerived(preset) : this.deriveFromItem(item);
-        const remarks = this.derivedRemark(exports.DERIVED_FROM_ITEM_REMARK, preset?.sptCode ?? null);
         const atSlot = await client.stockTrackPolicy.findFirst({
             where: {
                 stpScope: 'ITEM',
@@ -55,6 +53,20 @@ let StockTrackPolicyService = class StockTrackPolicyService {
                 },
                 orderBy: { stpCreatedOn: 'asc' },
             }));
+        if (!preset) {
+            return existing
+                ? this.retireDerived(existing, item.itemId, 'ITEM', client)
+                : {
+                    stp_id: null,
+                    scope_id: item.itemId,
+                    scope: 'ITEM',
+                    outcome: 'no_preset',
+                    track_signature: null,
+                    preset_code: null,
+                };
+        }
+        const derived = this.presetToDerived(preset);
+        const remarks = this.derivedRemark(exports.DERIVED_FROM_ITEM_REMARK, preset.sptCode);
         return existing
             ? this.updateDerived(existing, item.itemId, 'ITEM', derived, remarks, client, {
                 companyId: item.itemCompanyId,
@@ -65,26 +77,58 @@ let StockTrackPolicyService = class StockTrackPolicyService {
                 branchId: item.itemBranchId,
             });
     }
+    async retireForItem(itemId, tx) {
+        const client = tx ?? this.prisma;
+        const derived = await client.stockTrackPolicy.findMany({
+            where: {
+                stpScope: 'ITEM',
+                stpItemId: itemId,
+                stpRemarks: { startsWith: exports.DERIVED_FROM_ITEM_REMARK },
+                stpIsDeleted: false,
+            },
+            orderBy: { stpCreatedOn: 'asc' },
+        });
+        const results = [];
+        for (const row of derived) {
+            results.push(await this.retireDerived(row, itemId, 'ITEM', client));
+        }
+        return results;
+    }
     async syncFromItemGroup(group, tx) {
         const client = tx ?? this.prisma;
-        const companyId = this.requestContextService.getCompanyId();
+        const shared = { companyId: null, branchId: null };
         const preset = await this.resolvePreset(group.itgTrackPresetId, client);
         const atSlot = await client.stockTrackPolicy.findFirst({
             where: {
                 stpScope: 'GROUP',
                 stpGroupId: group.itgId,
-                stpCompanyId: companyId,
+                stpCompanyId: null,
                 stpBranchId: null,
                 stpIsDeleted: false,
             },
             orderBy: { stpCreatedOn: 'asc' },
         });
-        if (atSlot && !this.isDerivedRemark(atSlot.stpRemarks, exports.DERIVED_FROM_GROUP_REMARK)) {
+        const stranded = await client.stockTrackPolicy.findMany({
+            where: {
+                stpScope: 'GROUP',
+                stpGroupId: group.itgId,
+                stpCompanyId: { not: null },
+                stpRemarks: { startsWith: exports.DERIVED_FROM_GROUP_REMARK },
+                stpIsDeleted: false,
+            },
+            orderBy: { stpCreatedOn: 'asc' },
+        });
+        const manual = atSlot !== null && !this.isDerivedRemark(atSlot.stpRemarks, exports.DERIVED_FROM_GROUP_REMARK);
+        const existing = manual ? null : (atSlot ?? stranded.shift() ?? null);
+        for (const row of stranded) {
+            await this.retireDerived(row, group.itgId, 'GROUP', client);
+        }
+        if (manual) {
             return this.result(atSlot, group.itgId, 'GROUP', 'skipped_manual');
         }
         if (!preset) {
-            return atSlot
-                ? this.retireDerived(atSlot, group.itgId, client)
+            return existing
+                ? this.retireDerived(existing, group.itgId, 'GROUP', client)
                 : {
                     stp_id: null,
                     scope_id: group.itgId,
@@ -96,15 +140,9 @@ let StockTrackPolicyService = class StockTrackPolicyService {
         }
         const derived = this.presetToDerived(preset);
         const remarks = this.derivedRemark(exports.DERIVED_FROM_GROUP_REMARK, preset.sptCode);
-        return atSlot
-            ? this.updateDerived(atSlot, group.itgId, 'GROUP', derived, remarks, client, {
-                companyId,
-                branchId: null,
-            })
-            : this.createDerived(group.itgId, 'GROUP', derived, remarks, client, {
-                companyId,
-                branchId: null,
-            });
+        return existing
+            ? this.updateDerived(existing, group.itgId, 'GROUP', derived, remarks, client, shared)
+            : this.createDerived(group.itgId, 'GROUP', derived, remarks, client, shared);
     }
     async resolvePreset(presetId, tx) {
         if (!presetId) {
@@ -128,26 +166,6 @@ let StockTrackPolicyService = class StockTrackPolicyService {
             nearExpiryDays: preset.sptNearExpiryDays,
             blockExpiredSale: preset.sptBlockExpiredSale,
             ageingBasis: preset.sptAgeingBasis,
-        };
-    }
-    deriveFromItem(item) {
-        const trackMrp = item.itemBatchConfig === 1;
-        const trackExpiry = item.itemIsExpiryItem;
-        const trackBatch = item.itemBatchConfig === 2 || item.itemIsBatchBased || item.itemIsExpiryItem;
-        return {
-            trackBatch,
-            trackMrp,
-            trackSalePrice: false,
-            trackExpiry,
-            trackSerial: false,
-            trackSupplier: false,
-            valuationMethod: 'WAVG',
-            issueStrategy: trackExpiry ? 'FEFO' : 'FIFO',
-            allowNegative: item.itemAllowNegStock ? 'ALLOW' : 'BLOCK',
-            shelfLifeDays: this.positiveOrNull(item.itemExpiryDays),
-            nearExpiryDays: this.nonNegativeOr(item.itemIntimateBeforeDays, 30),
-            blockExpiredSale: false,
-            ageingBasis: 'INWARD_DATE',
         };
     }
     async findByItemId(itemId, tx) {
@@ -212,7 +230,7 @@ let StockTrackPolicyService = class StockTrackPolicyService {
         await this.logChange(client, existing.stpId, scopeId, scope, existing, updated, actor, 'update');
         return this.result(updated, scopeId, scope, 'updated');
     }
-    async retireDerived(existing, scopeId, client) {
+    async retireDerived(existing, scopeId, scope, client) {
         const actor = this.actor();
         const retired = await client.stockTrackPolicy.update({
             where: { stpId: existing.stpId },
@@ -223,8 +241,8 @@ let StockTrackPolicyService = class StockTrackPolicyService {
                 stpModifiedBy: actor,
             },
         });
-        await this.logChange(client, existing.stpId, scopeId, 'GROUP', existing, retired, actor, 'update');
-        return this.result(retired, scopeId, 'GROUP', 'cleared');
+        await this.logChange(client, existing.stpId, scopeId, scope, existing, retired, actor, 'update');
+        return this.result(retired, scopeId, scope, 'cleared');
     }
     derivedRemark(marker, presetCode) {
         return presetCode ? `${marker} [preset ${presetCode}]` : marker;
@@ -269,16 +287,6 @@ let StockTrackPolicyService = class StockTrackPolicyService {
     actor() {
         return this.requestContextService.getUserId() ?? null;
     }
-    positiveOrNull(value) {
-        return typeof value === 'number' && Number.isFinite(value) && value > 0
-            ? Math.trunc(value)
-            : null;
-    }
-    nonNegativeOr(value, fallback) {
-        return typeof value === 'number' && Number.isFinite(value) && value >= 0
-            ? Math.trunc(value)
-            : fallback;
-    }
     async logChange(client, stpId, scopeId, scope, originalRecord, modifiedRecord, actor, action) {
         const source = scope === 'ITEM' ? 'item master' : 'item group master';
         await this.auditLogService.logEntityChange({
@@ -294,7 +302,7 @@ let StockTrackPolicyService = class StockTrackPolicyService {
             notes: action === 'New'
                 ? `Track policy derived from ${source}`
                 : modifiedRecord.stpIsDeleted
-                    ? `Track policy retired — preset removed on ${source}`
+                    ? `Track policy retired from ${source} — preset removed, or ${scope === 'ITEM' ? 'item' : 'group'} deleted`
                     : `Track policy refreshed from ${source}`,
         }, client);
     }

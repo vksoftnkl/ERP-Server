@@ -421,7 +421,7 @@ __decorate([
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({
         minimum: 0,
-        description: 'Cost per unit of uomId, inclusive of tax. Required in practice on an opening — it is inward, and a rateSource of MANUAL derives nothing — but that depends on the header, so it is checked in the service.',
+        description: 'Cost per BASE unit, inclusive of tax — a rate keyed per unit of uomId is divided by toBaseFactor first, because the line value is (baseQty + freeBaseQty) × costRate, the way svi_value is generated. Required in practice on an opening — it is inward, and a rateSource of MANUAL derives nothing — but that depends on the header, so it is checked in the service.',
     }),
     (0, dtoDecorators_1.OptionalNumber)(0),
     __metadata("design:type", Object)

@@ -112,6 +112,7 @@ describe('ItemsPriceMasterService', () => {
   let prisma: PrismaMock;
   let auditLogService: Pick<AuditLogService, 'logEntityChange'>;
   let configuredGridSqlService: ConfiguredGridSqlServiceMock;
+  let requestContextService: { getUserId: jest.Mock };
   beforeEach(() => {
     prisma = {
       itemPriceMaster: {
@@ -149,10 +150,12 @@ describe('ItemsPriceMasterService', () => {
       validateBaseSql: jest.fn(),
       runPagedQuery: jest.fn(),
     };
+    requestContextService = { getUserId: jest.fn().mockReturnValue(null) };
     service = new ItemsPriceMasterService(
       prisma as unknown as PrismaService,
       auditLogService as AuditLogService,
       configuredGridSqlService as never,
+      requestContextService as never,
     );
   });
   it('writes only the conversion id, never a copy of the unit shape', async () => {
@@ -231,6 +234,55 @@ describe('ItemsPriceMasterService', () => {
     const updateArgs = prisma.itemPriceMaster.update.mock.calls[0][0];
     expect(updateArgs.data.ipmUcUnitId).toBe(IUC_ID);
     expect(updateArgs.data.ipmUomRemarks).toBe('Manual UOM note');
+  });
+  // Notes 50 #2 / 67: a row saved by a client that names no actor is stamped
+  // with the request's user rather than left NULL.
+  it('stamps the request user as created_by / updated_by when the payload names none', async () => {
+    requestContextService.getUserId.mockReturnValue(USER_ID);
+    prisma.itemUnitConversion.findFirst.mockResolvedValue(makeItemUnitConversionRecord());
+    prisma.itemPriceMaster.create.mockResolvedValue(makeItemPriceRecord());
+    await service.save({
+      ipm_item_id: ITEM_ID,
+      ipm_uc_unit_id: IUC_ID,
+      ipm_profit_type: 'MANUAL',
+    });
+    const data = prisma.itemPriceMaster.create.mock.calls[0][0].data;
+    expect(data.ipmCreatedBy).toBe(USER_ID);
+    expect(data.ipmUpdatedBy).toBe(USER_ID);
+  });
+  it('keeps the stored godown when an update omits ipm_godown_id, and stamps the request user', async () => {
+    requestContextService.getUserId.mockReturnValue(USER_ID);
+    prisma.itemUnitConversion.findFirst.mockResolvedValue(makeItemUnitConversionRecord());
+    prisma.itemPriceMaster.findFirst.mockResolvedValueOnce(
+      makeItemPriceRecord({ ipmGodownId: GODOWN_ID }),
+    );
+    prisma.itemPriceMaster.update.mockResolvedValue(
+      makeItemPriceRecord({ ipmGodownId: GODOWN_ID }),
+    );
+    await service.save({
+      ipm_id: ITEM_PRICE_ID,
+      ipm_item_id: ITEM_ID,
+      ipm_uc_unit_id: IUC_ID,
+      ipm_profit_type: 'By %',
+    });
+    const data = prisma.itemPriceMaster.update.mock.calls[0][0].data;
+    expect(data).not.toHaveProperty('ipmGodownId');
+    expect(data.ipmUpdatedBy).toBe(USER_ID);
+  });
+  it('clears the godown only on an explicit null', async () => {
+    prisma.itemUnitConversion.findFirst.mockResolvedValue(makeItemUnitConversionRecord());
+    prisma.itemPriceMaster.findFirst.mockResolvedValueOnce(
+      makeItemPriceRecord({ ipmGodownId: GODOWN_ID }),
+    );
+    prisma.itemPriceMaster.update.mockResolvedValue(makeItemPriceRecord({ ipmGodownId: null }));
+    await service.save({
+      ipm_id: ITEM_PRICE_ID,
+      ipm_item_id: ITEM_ID,
+      ipm_uc_unit_id: IUC_ID,
+      ipm_godown_id: null,
+      ipm_profit_type: 'By %',
+    });
+    expect(prisma.itemPriceMaster.update.mock.calls[0][0].data.ipmGodownId).toBeNull();
   });
   it('rejects a conversion id that belongs to no live conversion row of the item', async () => {
     // ipm_uc_unit_id is a FK to item_unit_conversion(iuc_id); rejecting here
