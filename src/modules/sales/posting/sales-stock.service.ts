@@ -436,7 +436,7 @@ export class SalesStockService {
  * left at, tax-inclusive; it used to be copied into svi_cost_rate_wot as well,
  * and the engine takes a nonzero stated wot as given — so every SALE_RETURN /
  * DC_RETURN received its stock at the INCLUSIVE rate on the without-tax side
- * and dragged the branch's average wot down with it. Net of the line's own tax
+ * and skewed the branch's average wot with it. Net of the line's own tax
  * rate, as the engine derives it when nothing is stated (20 at 5% → 19.047619).
  * No quoted cost → 0, and the engine prices the line from the average pair.
  */

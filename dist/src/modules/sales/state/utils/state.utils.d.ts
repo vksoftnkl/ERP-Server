@@ -1,0 +1,18 @@
+import { Prisma, StateMaster } from '@prisma/client';
+import { SaveStateDto } from '../dto/save-state.dto';
+import { StateErrorDetail, StateErrorResponse, StatePayload } from '../types/state-api.types';
+import { DEFAULT_ACTOR, DEFAULT_LIMIT, DEFAULT_PAGE, SalesWriteClient } from "../../../../common/utils/module-service.utils";
+export { DEFAULT_ACTOR, DEFAULT_LIMIT, DEFAULT_PAGE };
+export declare const STATE_TABLE_NAME = "state master";
+export declare const STATE_AUDIT_SCREEN_NAME = "State Master";
+export declare const STATES_ACCOUNT_GROUP_ID = "019f081c-6764-73b0-b397-3f30a6efe73e";
+export type StateWriteClient = SalesWriteClient;
+export declare function ensureStateNameIsUnique(tx: StateWriteClient, stateName: string, excludeId?: string): Promise<void>;
+export declare function applyStateOptionalFields(data: Prisma.StateMasterUncheckedCreateInput | Prisma.StateMasterUncheckedUpdateInput, saveStateDto: SaveStateDto): void;
+export declare function normalizeRequiredStateName(name: string): string;
+export declare function toStatePayload(record: StateMaster): StatePayload;
+export declare function resolveStateActor(value: string | null | undefined, userId?: string | null | undefined): string;
+export declare function handleStateWriteError(error: unknown): void;
+export declare function throwStateNotFound(stmId: string): never;
+export declare function throwStateBadRequest(message: string, errors: StateErrorDetail[]): never;
+export declare function buildStateErrorResponse(message: string, errors?: StateErrorDetail[]): StateErrorResponse;

@@ -25,9 +25,10 @@
 --   3. For a validated key, re-derives each row's WITHOUT-tax rate:
 --        SALE_RETURN / DC_RETURN inward  cost ÷ (1 + item tax %)
 --        OPENING inward, wot 0 or = cost on a taxed item   cost ÷ (1 + tax %)
---        PHYSICAL gain, BUCKET moves, every outward,      the replayed average
+--        BUCKET moves, every outward,                     the replayed average
 --        any inward valued AT the average (an AVG_COST    wot (cost ÷ (1 + tax %)
---        adjustment gain: its rate is the average's)      when that is 0)
+--        count or adjustment gain: its rate is the avg)   when that is 0)
+--        PHYSICAL gain at any other rate                   cost ÷ (1 + tax %)
 --        a reversal row                                    the row it reverses
 --        any other inward (a typed cost)                   kept as stored
 --      the item tax % as at the row's doc date: item_tax_history's latest
@@ -116,7 +117,7 @@ BEGIN
                 IF r.rev AND r.reverses IS NOT NULL THEN
                     SELECT o.new_wot INTO w FROM n77_row o WHERE o.sml_id = r.reverses;
                     w := COALESCE(w, r.old_wot);
-                ELSIF r.dir < 0 OR r.txn IN ('BUCKET_OUT', 'BUCKET_IN') OR r.doc_type = 'PHYSICAL' THEN
+                ELSIF r.dir < 0 OR r.txn IN ('BUCKET_OUT', 'BUCKET_IN') THEN
                     w := CASE WHEN aw > 0 THEN aw
                               ELSE ROUND(r.rate / (1 + r.tax_perc / 100), 6) END;
                 ELSIF r.doc_type IN ('SALE_RETURN', 'DC_RETURN') THEN
@@ -125,10 +126,14 @@ BEGIN
                       AND (r.old_wot = 0 OR (r.old_wot = r.rate AND r.tax_perc > 0)) THEN
                     w := ROUND(r.rate / (1 + r.tax_perc / 100), 6);
                 ELSIF a > 0 AND abs(r.rate - a) <= 0.000001 THEN
-                    -- Valued at the branch average (an AVG_COST adjustment gain):
-                    -- the average's own wot, as the engine pairs them.
+                    -- Valued at the branch average (an AVG_COST count or
+                    -- adjustment gain): the average's own wot, as the engine pairs them.
                     w := CASE WHEN aw > 0 THEN aw
                               ELSE ROUND(r.rate / (1 + r.tax_perc / 100), 6) END;
+                ELSIF r.doc_type = 'PHYSICAL' THEN
+                    -- A count gain valued at anything but the average (LAST_PURCHASE,
+                    -- MRP, a lot): the engine derives its wot from the item's tax.
+                    w := ROUND(r.rate / (1 + r.tax_perc / 100), 6);
                 ELSE
                     w := r.old_wot;
                 END IF;

@@ -1,0 +1,364 @@
+"use strict";
+var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
+    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
+    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
+    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
+    return c > 3 && r && Object.defineProperty(target, key, r), r;
+};
+var __metadata = (this && this.__metadata) || function (k, v) {
+    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.StockTrackPolicyService = exports.DERIVED_FROM_GROUP_REMARK = exports.DERIVED_FROM_ITEM_REMARK = void 0;
+const common_1 = require("@nestjs/common");
+const prisma_service_1 = require("../../../database/prisma/prisma.service");
+const audit_log_service_1 = require("../../audit-log/audit-log.service");
+const request_context_service_1 = require("../../../common/request-context/request-context.service");
+const STP_TABLE_NAME = 'stock track policy';
+const STP_AUDIT_SCREEN_NAME = 'Stock Track Policy';
+exports.DERIVED_FROM_ITEM_REMARK = 'Auto-derived from item master';
+exports.DERIVED_FROM_GROUP_REMARK = 'Auto-derived from item group master';
+let StockTrackPolicyService = class StockTrackPolicyService {
+    prisma;
+    auditLogService;
+    requestContextService;
+    constructor(prisma, auditLogService, requestContextService) {
+        this.prisma = prisma;
+        this.auditLogService = auditLogService;
+        this.requestContextService = requestContextService;
+    }
+    async syncFromItem(item, tx) {
+        const client = tx ?? this.prisma;
+        const preset = await this.resolvePreset(item.itemTrackPresetId, client);
+        const atSlot = await client.stockTrackPolicy.findFirst({
+            where: {
+                stpScope: 'ITEM',
+                stpItemId: item.itemId,
+                stpCompanyId: item.itemCompanyId,
+                stpBranchId: item.itemBranchId,
+                stpIsDeleted: false,
+            },
+            orderBy: { stpCreatedOn: 'asc' },
+        });
+        if (atSlot && !this.isDerivedRemark(atSlot.stpRemarks, exports.DERIVED_FROM_ITEM_REMARK)) {
+            return this.result(atSlot, item.itemId, 'ITEM', 'skipped_manual');
+        }
+        const existing = atSlot ??
+            (await client.stockTrackPolicy.findFirst({
+                where: {
+                    stpScope: 'ITEM',
+                    stpItemId: item.itemId,
+                    stpRemarks: { startsWith: exports.DERIVED_FROM_ITEM_REMARK },
+                    stpIsDeleted: false,
+                },
+                orderBy: { stpCreatedOn: 'asc' },
+            }));
+        if (!preset) {
+            return existing
+                ? this.retireDerived(existing, item.itemId, 'ITEM', client)
+                : {
+                    stp_id: null,
+                    scope_id: item.itemId,
+                    scope: 'ITEM',
+                    outcome: 'no_preset',
+                    track_signature: null,
+                    preset_code: null,
+                };
+        }
+        const derived = this.presetToDerived(preset);
+        const remarks = this.derivedRemark(exports.DERIVED_FROM_ITEM_REMARK, preset.sptCode);
+        return existing
+            ? this.updateDerived(existing, item.itemId, 'ITEM', derived, remarks, client, {
+                companyId: item.itemCompanyId,
+                branchId: item.itemBranchId,
+            })
+            : this.createDerived(item.itemId, 'ITEM', derived, remarks, client, {
+                companyId: item.itemCompanyId,
+                branchId: item.itemBranchId,
+            });
+    }
+    async retireForItem(itemId, tx) {
+        const client = tx ?? this.prisma;
+        const derived = await client.stockTrackPolicy.findMany({
+            where: {
+                stpScope: 'ITEM',
+                stpItemId: itemId,
+                stpRemarks: { startsWith: exports.DERIVED_FROM_ITEM_REMARK },
+                stpIsDeleted: false,
+            },
+            orderBy: { stpCreatedOn: 'asc' },
+        });
+        const results = [];
+        for (const row of derived) {
+            results.push(await this.retireDerived(row, itemId, 'ITEM', client));
+        }
+        return results;
+    }
+    async retireForGroup(itgId, tx) {
+        const client = tx ?? this.prisma;
+        const derived = await client.stockTrackPolicy.findMany({
+            where: {
+                stpScope: 'GROUP',
+                stpGroupId: itgId,
+                stpRemarks: { startsWith: exports.DERIVED_FROM_GROUP_REMARK },
+                stpIsDeleted: false,
+            },
+            orderBy: { stpCreatedOn: 'asc' },
+        });
+        const results = [];
+        for (const row of derived) {
+            results.push(await this.retireDerived(row, itgId, 'GROUP', client));
+        }
+        return results;
+    }
+    async syncFromItemGroup(group, tx) {
+        const client = tx ?? this.prisma;
+        const shared = { companyId: null, branchId: null };
+        const preset = await this.resolvePreset(group.itgTrackPresetId, client);
+        const atSlot = await client.stockTrackPolicy.findFirst({
+            where: {
+                stpScope: 'GROUP',
+                stpGroupId: group.itgId,
+                stpCompanyId: null,
+                stpBranchId: null,
+                stpIsDeleted: false,
+            },
+            orderBy: { stpCreatedOn: 'asc' },
+        });
+        const stranded = await client.stockTrackPolicy.findMany({
+            where: {
+                stpScope: 'GROUP',
+                stpGroupId: group.itgId,
+                stpCompanyId: { not: null },
+                stpRemarks: { startsWith: exports.DERIVED_FROM_GROUP_REMARK },
+                stpIsDeleted: false,
+            },
+            orderBy: { stpCreatedOn: 'asc' },
+        });
+        const manual = atSlot !== null && !this.isDerivedRemark(atSlot.stpRemarks, exports.DERIVED_FROM_GROUP_REMARK);
+        const existing = manual ? null : (atSlot ?? stranded.shift() ?? null);
+        for (const row of stranded) {
+            await this.retireDerived(row, group.itgId, 'GROUP', client);
+        }
+        if (manual) {
+            return this.result(atSlot, group.itgId, 'GROUP', 'skipped_manual');
+        }
+        if (!preset) {
+            return existing
+                ? this.retireDerived(existing, group.itgId, 'GROUP', client)
+                : {
+                    stp_id: null,
+                    scope_id: group.itgId,
+                    scope: 'GROUP',
+                    outcome: 'no_preset',
+                    track_signature: null,
+                    preset_code: null,
+                };
+        }
+        const derived = this.presetToDerived(preset);
+        const remarks = this.derivedRemark(exports.DERIVED_FROM_GROUP_REMARK, preset.sptCode);
+        return existing
+            ? this.updateDerived(existing, group.itgId, 'GROUP', derived, remarks, client, shared)
+            : this.createDerived(group.itgId, 'GROUP', derived, remarks, client, shared);
+    }
+    async resolvePreset(presetId, tx) {
+        if (!presetId) {
+            return null;
+        }
+        const client = tx ?? this.prisma;
+        return client.stockTrackPreset.findUnique({ where: { sptId: presetId } });
+    }
+    presetToDerived(preset) {
+        return {
+            trackBatch: preset.sptTrackBatch,
+            trackMrp: preset.sptTrackMrp,
+            trackSalePrice: preset.sptTrackSalePrice,
+            trackExpiry: preset.sptTrackExpiry,
+            trackSerial: preset.sptTrackSerial,
+            trackSupplier: preset.sptTrackSupplier,
+            valuationMethod: preset.sptValuationMethod,
+            issueStrategy: preset.sptIssueStrategy,
+            allowNegative: preset.sptAllowNegative,
+            shelfLifeDays: preset.sptShelfLifeDays,
+            nearExpiryDays: preset.sptNearExpiryDays,
+            blockExpiredSale: preset.sptBlockExpiredSale,
+            ageingBasis: preset.sptAgeingBasis,
+        };
+    }
+    async findByItemId(itemId, tx) {
+        const client = tx ?? this.prisma;
+        return client.stockTrackPolicy.findFirst({
+            where: {
+                stpScope: 'ITEM',
+                stpItemId: itemId,
+                stpIsDeleted: false,
+            },
+            orderBy: { stpCreatedOn: 'asc' },
+        });
+    }
+    async findByGroupId(itgId, companyId, tx) {
+        const client = tx ?? this.prisma;
+        return client.stockTrackPolicy.findFirst({
+            where: {
+                stpScope: 'GROUP',
+                stpGroupId: itgId,
+                stpCompanyId: companyId,
+                stpIsDeleted: false,
+            },
+            orderBy: { stpCreatedOn: 'asc' },
+        });
+    }
+    async createDerived(scopeId, scope, derived, remarks, client, slot) {
+        const actor = this.actor();
+        const created = await client.stockTrackPolicy.create({
+            data: {
+                stpCompanyId: slot.companyId,
+                stpBranchId: slot.branchId,
+                stpScope: scope,
+                stpScopeId: scopeId,
+                ...this.toColumns(derived),
+                stpRemarks: remarks,
+                stpCreatedBy: actor,
+            },
+        });
+        await this.logChange(client, created.stpId, scopeId, scope, null, created, actor, 'New');
+        return this.result(created, scopeId, scope, 'created');
+    }
+    async updateDerived(existing, scopeId, scope, derived, remarks, client, slot) {
+        const moved = existing.stpCompanyId !== slot.companyId || existing.stpBranchId !== slot.branchId;
+        const rewritten = existing.stpRemarks !== remarks;
+        if (!moved && !rewritten && !this.hasChanged(existing, derived)) {
+            return this.result(existing, scopeId, scope, 'unchanged');
+        }
+        const actor = this.actor();
+        const updated = await client.stockTrackPolicy.update({
+            where: { stpId: existing.stpId },
+            data: {
+                stpCompanyId: slot.companyId,
+                stpBranchId: slot.branchId,
+                ...this.toColumns(derived),
+                stpRemarks: remarks,
+                stpIsActive: true,
+                stpIsDeleted: false,
+                stpModifiedOn: new Date(),
+                stpModifiedBy: actor,
+            },
+        });
+        await this.logChange(client, existing.stpId, scopeId, scope, existing, updated, actor, 'update');
+        return this.result(updated, scopeId, scope, 'updated');
+    }
+    async retireDerived(existing, scopeId, scope, client) {
+        const actor = this.actor();
+        const retired = await client.stockTrackPolicy.update({
+            where: { stpId: existing.stpId },
+            data: {
+                stpIsActive: false,
+                stpIsDeleted: true,
+                stpModifiedOn: new Date(),
+                stpModifiedBy: actor,
+            },
+        });
+        await this.logChange(client, existing.stpId, scopeId, scope, existing, retired, actor, 'update');
+        return this.result(retired, scopeId, scope, 'cleared');
+    }
+    derivedRemark(marker, presetCode) {
+        return presetCode ? `${marker} [preset ${presetCode}]` : marker;
+    }
+    isDerivedRemark(remarks, marker) {
+        return remarks === marker || (remarks?.startsWith(`${marker} [`) ?? false);
+    }
+    presetCodeFromRemark(remarks) {
+        return /\[preset ([A-Za-z0-9_-]+)\]$/.exec(remarks ?? '')?.[1] ?? null;
+    }
+    result(record, scopeId, scope, outcome) {
+        return {
+            stp_id: record.stpId,
+            scope_id: scopeId,
+            scope,
+            outcome,
+            track_signature: record.stpTrackSignature,
+            preset_code: this.presetCodeFromRemark(record.stpRemarks),
+        };
+    }
+    toColumns(derived) {
+        return {
+            stpTrackBatch: derived.trackBatch,
+            stpTrackMrp: derived.trackMrp,
+            stpTrackSalePrice: derived.trackSalePrice,
+            stpTrackExpiry: derived.trackExpiry,
+            stpTrackSerial: derived.trackSerial,
+            stpTrackSupplier: derived.trackSupplier,
+            stpValuationMethod: derived.valuationMethod,
+            stpIssueStrategy: derived.issueStrategy,
+            stpAllowNegative: derived.allowNegative,
+            stpShelfLifeDays: derived.shelfLifeDays,
+            stpNearExpiryDays: derived.nearExpiryDays,
+            stpBlockExpiredSale: derived.blockExpiredSale,
+            stpAgeingBasis: derived.ageingBasis,
+        };
+    }
+    hasChanged(existing, derived) {
+        const next = this.toColumns(derived);
+        return Object.keys(next).some((column) => existing[column] !== next[column]);
+    }
+    actor() {
+        return this.requestContextService.getUserId() ?? null;
+    }
+    async logChange(client, stpId, scopeId, scope, originalRecord, modifiedRecord, actor, action) {
+        const source = scope === 'ITEM' ? 'item master' : 'item group master';
+        await this.auditLogService.logEntityChange({
+            action,
+            tableName: STP_TABLE_NAME,
+            screenName: STP_AUDIT_SCREEN_NAME,
+            screenType: 'master',
+            pk: stpId,
+            displayName: modifiedRecord.stpTrackSignature ?? scopeId,
+            originalRecord: originalRecord ? this.toAuditRecord(originalRecord) : null,
+            modifiedRecord: this.toAuditRecord(modifiedRecord),
+            userId: actor ?? undefined,
+            notes: action === 'New'
+                ? `Track policy derived from ${source}`
+                : modifiedRecord.stpIsDeleted
+                    ? `Track policy retired from ${source} — preset removed, or ${scope === 'ITEM' ? 'item' : 'group'} deleted`
+                    : `Track policy refreshed from ${source}`,
+        }, client);
+    }
+    toAuditRecord(record) {
+        return {
+            stp_id: record.stpId,
+            stp_company_id: record.stpCompanyId,
+            stp_branch_id: record.stpBranchId,
+            stp_scope: record.stpScope,
+            stp_scope_id: record.stpScopeId,
+            stp_item_id: record.stpItemId,
+            stp_group_id: record.stpGroupId,
+            stp_track_batch: record.stpTrackBatch,
+            stp_track_mrp: record.stpTrackMrp,
+            stp_track_sale_price: record.stpTrackSalePrice,
+            stp_track_expiry: record.stpTrackExpiry,
+            stp_track_serial: record.stpTrackSerial,
+            stp_track_supplier: record.stpTrackSupplier,
+            stp_track_signature: record.stpTrackSignature,
+            stp_valuation_method: record.stpValuationMethod,
+            stp_issue_strategy: record.stpIssueStrategy,
+            stp_allow_negative: record.stpAllowNegative,
+            stp_shelf_life_days: record.stpShelfLifeDays,
+            stp_near_expiry_days: record.stpNearExpiryDays,
+            stp_block_expired_sale: record.stpBlockExpiredSale,
+            stp_ageing_basis: record.stpAgeingBasis,
+            stp_effective_from: record.stpEffectiveFrom,
+            stp_effective_to: record.stpEffectiveTo,
+            stp_remarks: record.stpRemarks,
+            stp_is_active: record.stpIsActive,
+            stp_is_deleted: record.stpIsDeleted,
+        };
+    }
+};
+exports.StockTrackPolicyService = StockTrackPolicyService;
+exports.StockTrackPolicyService = StockTrackPolicyService = __decorate([
+    (0, common_1.Injectable)(),
+    __metadata("design:paramtypes", [prisma_service_1.PrismaService,
+        audit_log_service_1.AuditLogService,
+        request_context_service_1.RequestContextService])
+], StockTrackPolicyService);
+//# sourceMappingURL=stock-track-policy.service.js.map
