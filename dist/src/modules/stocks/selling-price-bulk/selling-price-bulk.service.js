@@ -290,6 +290,7 @@ let SellingPriceBulkService = class SellingPriceBulkService {
                 priceScope: record.priceScope,
                 bucketId: record.bucketId,
                 costRate: record.costRate,
+                costBasis: record.costBasis,
                 minPrice: record.minPrice,
                 roundOff: record.roundOff,
                 taxPerc,

@@ -86,6 +86,7 @@ class SellingPriceRowDto {
     priceScope;
     bucketId;
     costRate;
+    costBasis;
     minPrice;
     roundOff;
     taxPerc;
@@ -170,9 +171,23 @@ __decorate([
     __metadata("design:type", Object)
 ], SellingPriceRowDto.prototype, "bucketId", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ example: 95 }),
+    (0, swagger_1.ApiProperty)({
+        example: 95,
+        description: "Cost of one of this row's unit: for an MRP-tracked item's MRP bucket, the inward cost of " +
+            "that MRP's stock at the branch, weighted by what is on hand (notes 75); otherwise the " +
+            'branch moving average, else the price row’s stored cost.',
+    }),
     __metadata("design:type", Number)
 ], SellingPriceRowDto.prototype, "costRate", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        enum: ['MRP', 'ITEM', 'PRICE_ROW'],
+        nullable: true,
+        description: 'Which figure costRate is: MRP = that MRP’s stock only ("Cost @ MRP 40"), ITEM = the item ' +
+            'average at the branch, PRICE_ROW = the cost stored on the answering price row. Null = no cost.',
+    }),
+    __metadata("design:type", Object)
+], SellingPriceRowDto.prototype, "costBasis", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)({ example: 100 }),
     __metadata("design:type", Number)

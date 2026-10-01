@@ -3,6 +3,8 @@ export type { StockErrorDetail, StockErrorResponse };
 export type { PagedResult } from '../../stock-voucher/types/stock-voucher.types';
 export declare const PRICE_SOURCES: readonly ["BUCKET", "MASTER"];
 export type PriceSource = (typeof PRICE_SOURCES)[number];
+export declare const COST_BASES: readonly ["MRP", "ITEM", "PRICE_ROW"];
+export type CostBasis = (typeof COST_BASES)[number];
 export declare const PRICE_SCOPES: readonly ["BRANCH", "CHAIN"];
 export type PriceScope = (typeof PRICE_SCOPES)[number];
 export declare const PRICE_LEVELS: readonly [1, 2, 3, 4];
@@ -41,6 +43,7 @@ export interface SellingPriceRow {
     priceScope: PriceScope | null;
     bucketId: string | null;
     costRate: number;
+    costBasis: CostBasis | null;
     minPrice: number;
     roundOff: number;
     taxPerc: number;

@@ -1,7 +1,7 @@
 import { Prisma } from '@prisma/client';
 import { PrismaService } from "../../../database/prisma/prisma.service";
 import type { ScopeResolution } from './selling-price-scope.helper';
-import { type PagedResult, type PriceLevel, type PriceScope, type PriceSource, type SellingPriceNoStockRow, type SellingPriceProblem } from './types/selling-price-bulk.types';
+import { type CostBasis, type PagedResult, type PriceLevel, type PriceScope, type PriceSource, type SellingPriceNoStockRow, type SellingPriceProblem } from './types/selling-price-bulk.types';
 export interface ListSellingPricesArgs {
     companyId: string;
     branchId: string;
@@ -38,6 +38,7 @@ export interface PriceGridRecord {
     priceScope: PriceScope | null;
     bucketId: string | null;
     costRate: number;
+    costBasis: CostBasis | null;
     minPrice: number;
     roundOff: number;
     prices: [number, number, number, number];

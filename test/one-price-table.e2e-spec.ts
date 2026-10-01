@@ -344,7 +344,7 @@ describe('One price table (e2e — one rolled-back transaction)', () => {
   async function openStock(
     itemId: string,
     iucId: string,
-    lines: Array<{ mrp: number; qty: number }>,
+    lines: Array<{ mrp: number; qty: number; costRate?: number }>,
   ) {
     const saved = await attempt(() =>
       vouchers.save(OPENING_RULES, {
@@ -367,7 +367,7 @@ describe('One price table (e2e — one rolled-back transaction)', () => {
           qty: line.qty,
           baseQty: line.qty,
           godownId: fixture.godownId,
-          costRate: 30,
+          costRate: line.costRate ?? 30,
           mrp: line.mrp,
         })),
       } as never),
@@ -845,5 +845,55 @@ describe('One price table (e2e — one rolled-back transaction)', () => {
     // A sale price nothing prices, with no headline: the 404 names the priced one.
     const missing = await refusal(ask(sp.item.item_id, { sale_price: 40 }));
     expect(missing.body).toContain('sale price 38');
+  });
+  it('notes 75. an MRP bucket is costed by its own MRP’s stock; the grid, F12 and the save agree', async () => {
+    const created = await createItem('Landing', fixture.presetMrp, [priceRow(null, 0, 600)]);
+    const item = { itemId: created.item.item_id, iucId: created.unit_conversions[0].iuc_id };
+    await openStock(item.itemId, item.iucId, [
+      { mrp: 40, qty: 10, costRate: 25 },
+      { mrp: 550, qty: 20, costRate: 500 },
+    ]);
+    const average = (10 * 25 + 20 * 500) / 30; // 341.67 — the item's moving average
+
+    const grid = await menu30.listPrices({
+      companyId: fixture.companyId,
+      branchId: fixture.branchX,
+      itemId: item.itemId,
+      limit: 100,
+    });
+    expect(grid.items.map((row) => [row.mrp, row.costRate, row.costBasis])).toEqual([
+      [550, 500, 'MRP'],
+      [40, 25, 'MRP'],
+    ]);
+
+    const f12 = await menu30.listBuckets(item.itemId, {
+      companyId: fixture.companyId,
+      branchId: fixture.branchX,
+    });
+    const headline = f12.find((row) => row.mrp === null);
+    expect(headline?.costBasis).toBe('ITEM');
+    expect(headline?.costRate).toBeCloseTo(average, 2);
+    expect(
+      f12.filter((row) => row.mrp !== null).map((row) => [row.mrp, row.costRate, row.costBasis]),
+    ).toEqual([
+      [40, 25, 'MRP'],
+      [550, 500, 'MRP'],
+    ]);
+
+    // The save prices against the same figure: below-cost, markup, ipm_cost_price.
+    const costs = await gateway.loadRowCosts(
+      tx,
+      [40, 550, null].map((mrp) => ({
+        itemId: item.itemId,
+        uomId: item.iucId,
+        mrp,
+        salePrice: null,
+      })),
+      fixture.companyId,
+      fixture.branchX,
+    );
+    expect(costs[0].costRate).toBe(25);
+    expect(costs[1].costRate).toBe(500);
+    expect(costs[2].costRate).toBeCloseTo(average, 2);
   });
 });

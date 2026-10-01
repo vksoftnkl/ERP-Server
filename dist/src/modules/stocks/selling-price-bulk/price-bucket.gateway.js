@@ -40,6 +40,67 @@ function effectivePriceLateral(args) {
     ) p ON true
   `;
 }
+function mrpCostCte(args) {
+    return client_1.Prisma.sql `
+    mrp_cost AS (
+      SELECT k.item_id, k.mrp, mc.cost_rate, mc.cost_rate_wot
+        FROM (${args.pairs}) k
+        LEFT JOIN LATERAL (
+          WITH lots AS (
+            SELECT sml.sml_lot_id                                AS lot_id,
+                   SUM(sml.sml_cost_value)                       AS in_value,
+                   SUM(sml.sml_cost_value_wot)                   AS in_value_wot,
+                   SUM(sml.sml_base_qty + sml.sml_free_base_qty) AS in_qty
+              FROM stock.stock_ledger sml
+              JOIN stock.stock_lot slt ON slt.slt_id = sml.sml_lot_id
+             WHERE sml.sml_company_id  = ${args.companyId}::uuid
+               AND sml.sml_branch_id   = ${args.branchId}::uuid
+               AND sml.sml_item_id     = k.item_id
+               AND slt.slt_key_mrp     = k.mrp
+               AND sml.sml_direction   = 1
+               AND sml.sml_is_reversal = false
+               AND sml.sml_is_deleted  = false
+               AND NOT EXISTS (SELECT 1 FROM stock.stock_ledger rev
+                                WHERE rev.sml_reverses_id = sml.sml_id
+                                  AND rev.sml_is_deleted = false)
+             GROUP BY sml.sml_lot_id
+          ),
+          onhand AS (
+            SELECT b.sbl_lot_id AS lot_id, GREATEST(SUM(b.sbl_on_hand_qty), 0) AS qty
+              FROM stock.stock_balance b
+             WHERE b.sbl_company_id = ${args.companyId}::uuid
+               AND b.sbl_branch_id  = ${args.branchId}::uuid
+               AND b.sbl_item_id    = k.item_id
+               AND b.sbl_is_deleted = false
+               AND b.sbl_lot_id IN (SELECT lot_id FROM lots)
+             GROUP BY b.sbl_lot_id
+          )
+          SELECT CASE WHEN SUM(oh.qty) FILTER (WHERE l.in_qty > 0) > 0
+                      THEN SUM(oh.qty * l.in_value / l.in_qty) FILTER (WHERE l.in_qty > 0)
+                           / SUM(oh.qty) FILTER (WHERE l.in_qty > 0)
+                      ELSE SUM(l.in_value) / NULLIF(SUM(l.in_qty), 0) END     AS cost_rate,
+                 CASE WHEN SUM(oh.qty) FILTER (WHERE l.in_qty > 0) > 0
+                      THEN SUM(oh.qty * l.in_value_wot / l.in_qty) FILTER (WHERE l.in_qty > 0)
+                           / SUM(oh.qty) FILTER (WHERE l.in_qty > 0)
+                      ELSE SUM(l.in_value_wot) / NULLIF(SUM(l.in_qty), 0) END AS cost_rate_wot
+            FROM lots l
+            LEFT JOIN onhand oh ON oh.lot_id = l.lot_id
+        ) mc ON true
+    )
+  `;
+}
+function costColumns(a) {
+    const mrpRate = `NULLIF(${a.mc}.cost_rate, 0)`;
+    const itemRate = `NULLIF(${a.sic}.sic_avg_cost_rate, 0)`;
+    return {
+        rate: client_1.Prisma.raw(`COALESCE(${mrpRate} * ${a.factor}, ${itemRate} * ${a.factor}, ${a.p}.ipm_cost_price, 0)`),
+        wot: client_1.Prisma.raw(`CASE WHEN ${mrpRate} IS NOT NULL THEN COALESCE(${a.mc}.cost_rate_wot, 0) * ${a.factor}` +
+            ` ELSE COALESCE(NULLIF(${a.sic}.sic_avg_cost_rate_wot, 0) * ${a.factor}, ${a.p}.ipm_cost_wot, 0) END`),
+        basis: client_1.Prisma.raw(`CASE WHEN ${mrpRate} IS NOT NULL THEN 'MRP'` +
+            ` WHEN ${itemRate} IS NOT NULL THEN 'ITEM'` +
+            ` WHEN ${a.p}.ipm_cost_price IS NOT NULL THEN 'PRICE_ROW' END`),
+    };
+}
 let PriceBucketGateway = class PriceBucketGateway {
     prisma;
     constructor(prisma) {
@@ -99,7 +160,7 @@ let PriceBucketGateway = class PriceBucketGateway {
             mrp: client_1.Prisma.raw('b.sbl_mrp'),
             salePrice: client_1.Prisma.raw('b.sbl_sale_price'),
         });
-        const branchCost = (unit) => client_1.Prisma.raw(`NULLIF(sic.sic_avg_cost_rate, 0) * ${unit}.iuc_to_base_factor`);
+        const cost = costColumns({ mc: 'mc', sic: 'sic', p: 'p', factor: 'iuc.iuc_to_base_factor' });
         const rows = await this.prisma.$queryRaw `
       WITH pol AS (
         SELECT i.item_id, i.item_code, i.item_name_en,
@@ -129,6 +190,24 @@ let PriceBucketGateway = class PriceBucketGateway {
            AND b.sbl_is_deleted = false
          GROUP BY 1, 2, 3, 4
       ),
+      -- Notes 75: the MRPs this list can show for an MRP-tracked item — its
+      -- stock buckets' and its price rows'.
+      ${mrpCostCte({
+            companyId,
+            branchId,
+            pairs: client_1.Prisma.sql `
+          SELECT pol.item_id, m.mrp
+            FROM pol
+            CROSS JOIN LATERAL (
+              SELECT st.mrp FROM stock st WHERE st.mrp IS NOT NULL
+              UNION
+              SELECT p.ipm_bucket_mrp
+                FROM inventory.item_price_master p
+               WHERE p.ipm_item_id = pol.item_id
+                 AND p.ipm_bucket_mrp IS NOT NULL
+                 AND p.ipm_is_deleted = false) m
+           WHERE pol.track_mrp`,
+        })},
       listed AS (
         -- The price rows this branch can see.
         SELECT iuc.iuc_id         AS uom_id,
@@ -141,7 +220,8 @@ let PriceBucketGateway = class PriceBucketGateway {
                p.ipm_key_sp       AS key_sp,
                (p.ipm_key_mrp <> -1 OR p.ipm_key_sp <> -1) AS price_is_bucket,
                p.ipm_branch_id, p.ipm_company_id, p.ipm_id, p.ipm_max_price,
-               COALESCE(${branchCost('iuc')}, p.ipm_cost_price, 0) AS cost_rate,
+               ${cost.rate} AS cost_rate,
+               ${cost.basis} AS cost_basis,
                p.ipm_min_price, p.ipm_round_off,
                p.ipm_sales_price_a, p.ipm_sales_price_b, p.ipm_sales_price_c, p.ipm_sales_price_d
           FROM pol
@@ -155,6 +235,8 @@ let PriceBucketGateway = class PriceBucketGateway {
             ON iuc.iuc_id = p.ipm_uc_unit_id AND iuc.iuc_is_deleted = false
           LEFT JOIN inventory.item_unit_master u ON u.unit_id = iuc.iuc_unit_id
           LEFT JOIN stock st ON st.key_mrp = p.ipm_key_mrp AND st.key_sp = p.ipm_key_sp
+          LEFT JOIN mrp_cost mc
+                 ON pol.track_mrp AND mc.item_id = pol.item_id AND mc.mrp = p.ipm_bucket_mrp
           LEFT JOIN stock.stock_item_cost sic
                  ON sic.sic_company_id = ${companyId}::uuid
                 AND sic.sic_branch_id  = ${branchId}::uuid
@@ -170,7 +252,8 @@ let PriceBucketGateway = class PriceBucketGateway {
                st.mrp, st.sp, st.key_mrp, st.key_sp,
                p.p_is_bucket,
                p.ipm_branch_id, p.ipm_company_id, p.ipm_id, p.ipm_max_price,
-               COALESCE(${branchCost('iuc')}, p.ipm_cost_price, 0),
+               ${cost.rate},
+               ${cost.basis},
                p.ipm_min_price, p.ipm_round_off,
                p.ipm_sales_price_a, p.ipm_sales_price_b, p.ipm_sales_price_c, p.ipm_sales_price_d
           FROM pol
@@ -178,6 +261,7 @@ let PriceBucketGateway = class PriceBucketGateway {
           JOIN inventory.item_unit_conversion iuc
             ON iuc.iuc_item_id = pol.item_id AND iuc.iuc_is_deleted = false
           LEFT JOIN inventory.item_unit_master u ON u.unit_id = iuc.iuc_unit_id
+          LEFT JOIN mrp_cost mc ON mc.item_id = pol.item_id AND mc.mrp = st.mrp
           LEFT JOIN stock.stock_item_cost sic
                  ON sic.sic_company_id = ${companyId}::uuid
                 AND sic.sic_branch_id  = ${branchId}::uuid
@@ -208,6 +292,7 @@ let PriceBucketGateway = class PriceBucketGateway {
              l.ipm_id             AS "bucketId",
              l.ipm_max_price      AS "maxPrice",
              l.cost_rate          AS "costRate",
+             l.cost_basis         AS "costBasis",
              l.ipm_min_price      AS "minPrice",
              l.ipm_round_off      AS "roundOff",
              l.ipm_sales_price_a  AS "priceA",
@@ -227,6 +312,7 @@ let PriceBucketGateway = class PriceBucketGateway {
         if (!rows.length) {
             return [];
         }
+        const saveCost = costColumns({ mc: 'mc', sic: 'sic', p: 'p', factor: 'k.iuc_to_base_factor' });
         const found = await tx.$queryRaw `
       WITH q AS (
         SELECT q.item_id::uuid AS item_id, q.uom_id::uuid AS uom_id,
@@ -253,17 +339,28 @@ let PriceBucketGateway = class PriceBucketGateway {
             itemGroupId: client_1.Prisma.raw('i.item_group_id'),
             onDate: client_1.Prisma.raw('CURRENT_DATE'),
         })}
-      )
+      ),
+      ${mrpCostCte({
+            companyId,
+            branchId,
+            pairs: client_1.Prisma.sql `
+          SELECT DISTINCT keyed.item_id, keyed.mrp FROM keyed
+           WHERE keyed.track_mrp AND keyed.mrp > 0`,
+        })}
       SELECT k.ord,
              k.item_code    AS "itemCode",
              k.item_name_en AS "itemName",
              k.uom_belongs  AS "uomBelongs",
              k.track_mrp    AS "trackMrp",
              k.track_sp     AS "trackSalePrice",
-             COALESCE(NULLIF(sic.sic_avg_cost_rate, 0) * k.iuc_to_base_factor, p.ipm_cost_price, 0)    AS "costRate",
-             COALESCE(NULLIF(sic.sic_avg_cost_rate_wot, 0) * k.iuc_to_base_factor, p.ipm_cost_wot, 0)  AS "costWot",
+             ${saveCost.rate} AS "costRate",
+             ${saveCost.wot}  AS "costWot",
              COALESCE(p.ipm_min_price, 0) AS "minPrice"
         FROM keyed k
+        -- Notes 75: an MRP bucket is costed by its own MRP's stock, as the grid
+        -- showed it — the below-cost check and ipm_cost_price use that figure.
+        LEFT JOIN mrp_cost mc
+               ON k.track_mrp AND k.mrp > 0 AND mc.item_id = k.item_id AND mc.mrp = k.mrp
         LEFT JOIN stock.stock_item_cost sic
                ON sic.sic_company_id = ${companyId}::uuid
               AND sic.sic_branch_id  = ${branchId}::uuid
@@ -495,6 +592,12 @@ let PriceBucketGateway = class PriceBucketGateway {
             mrp: client_1.Prisma.raw('b.sbl_mrp'),
             salePrice: client_1.Prisma.raw('b.sbl_sale_price'),
         });
+        const gridCost = costColumns({
+            mc: 'mc',
+            sic: 'sic',
+            p: 'p',
+            factor: 'iuc.iuc_to_base_factor',
+        });
         return client_1.Prisma.sql `
       WITH items AS (
         SELECT i.item_id, i.item_code, i.item_name_en, i.item_group_id
@@ -531,6 +634,13 @@ let PriceBucketGateway = class PriceBucketGateway {
          GROUP BY 1, 2, 3
         HAVING SUM(b.sbl_on_hand_qty) <> 0
       ),
+      -- Notes 75: one cost probe per item × MRP in stock (the stock CTE's mrp
+      -- is already blanked: non-null only for an MRP-tracked item).
+      ${mrpCostCte({
+            companyId: args.companyId,
+            branchId: args.branchId,
+            pairs: client_1.Prisma.sql `SELECT DISTINCT item_id, mrp FROM stock WHERE mrp IS NOT NULL`,
+        })},
       buckets AS (
         SELECT item_id, mrp, sp, qty FROM stock
         UNION ALL
@@ -550,7 +660,8 @@ let PriceBucketGateway = class PriceBucketGateway {
              p.ipm_branch_id    AS "priceBranchId",
              p.ipm_id           AS "bucketId",
              p.ipm_max_price    AS "maxPrice",
-             COALESCE(NULLIF(sic.sic_avg_cost_rate, 0) * iuc.iuc_to_base_factor, p.ipm_cost_price, 0) AS "costRate",
+             ${gridCost.rate}   AS "costRate",
+             ${gridCost.basis}  AS "costBasis",
              p.ipm_min_price    AS "minPrice",
              p.ipm_round_off    AS "roundOff",
              p.ipm_sales_price_a AS "priceA",
@@ -562,6 +673,7 @@ let PriceBucketGateway = class PriceBucketGateway {
         JOIN inventory.item_unit_conversion iuc
           ON iuc.iuc_item_id = bk.item_id AND iuc.iuc_is_deleted = false
         LEFT JOIN inventory.item_unit_master u ON u.unit_id = iuc.iuc_unit_id
+        LEFT JOIN mrp_cost mc ON mc.item_id = bk.item_id AND mc.mrp = bk.mrp
         LEFT JOIN stock.stock_item_cost sic
                ON sic.sic_company_id = ${args.companyId}::uuid
               AND sic.sic_branch_id  = ${args.branchId}::uuid
@@ -596,6 +708,7 @@ let PriceBucketGateway = class PriceBucketGateway {
             priceScope: row.bucketId === null ? null : row.priceBranchId === null ? 'CHAIN' : 'BRANCH',
             bucketId: row.bucketId,
             costRate: amount(row.costRate),
+            costBasis: row.costBasis,
             minPrice: amount(row.minPrice),
             roundOff: amount(row.roundOff),
             prices: [amount(row.priceA), amount(row.priceB), amount(row.priceC), amount(row.priceD)],

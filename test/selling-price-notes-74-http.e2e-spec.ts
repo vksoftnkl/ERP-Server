@@ -139,4 +139,54 @@ describe('Change Selling Price, notes 74 (HTTP — read-only)', () => {
     const { lineNo: _b, ...gridRest } = gridBucket!;
     expect(f12Rest).toEqual(gridRest);
   });
+  // ── notes 75: an MRP bucket's cost is that MRP's stock, not the item average ──
+  it('notes 75. MRP STOCK ITEM: MRP 40 costs 25 and MRP 550 costs 500, in the grid and F12', async () => {
+    const [item] = await prisma.$queryRaw<Array<{ item_id: string }>>`
+      SELECT item_id FROM inventory.item_master
+       WHERE item_name_en = 'MRP STOCK ITEM' AND NOT item_is_deleted LIMIT 1`;
+    if (!scope || !item) return;
+    expect.assertions(2);
+    const query = { companyId: scope.companyId, branchId: scope.branchId };
+    const [grid, f12] = await Promise.all([
+      http
+        .get('/api/v1/stock/price-bulk')
+        .set('Authorization', BEARER)
+        .query({ ...query, itemId: item.item_id }),
+      http
+        .get(`/api/v1/stock/price-buckets/${item.item_id}`)
+        .set('Authorization', BEARER)
+        .query(query),
+    ]);
+    type Costed = { mrp: number | null; costRate: number; costBasis: string | null };
+    const costs = (rows: Costed[]) =>
+      rows
+        .filter((r) => r.mrp !== null)
+        .map((r) => [r.mrp, Math.round(r.costRate * 100) / 100, r.costBasis])
+        .sort((a, b) => Number(a[0]) - Number(b[0]));
+    expect(costs(grid.body.data.items as Costed[])).toEqual([
+      [40, 25, 'MRP'],
+      [550, 500, 'MRP'],
+    ]);
+    expect(costs(f12.body.data as Costed[])).toEqual([
+      [40, 25, 'MRP'],
+      [550, 500, 'MRP'],
+    ]);
+  });
+
+  it('notes 75. MRP ITEM, one MRP: its MRP cost equals the item average, as before', async () => {
+    if (!scope) return;
+    const res = await http
+      .get('/api/v1/stock/price-bulk')
+      .set('Authorization', BEARER)
+      .query({ companyId: scope.companyId, branchId: scope.branchId, itemId: ITEM_ID });
+    const row = (
+      res.body.data.items as Array<{ mrp: number | null; costRate: number; costBasis: string }>
+    ).find((r) => r.mrp === scope!.mrp);
+    expect(row?.costBasis).toBe('MRP');
+    const [avg] = await prisma.$queryRaw<Array<{ cost: number }>>`
+      SELECT sic_avg_cost_rate::float AS cost FROM stock.stock_item_cost
+       WHERE sic_company_id = ${scope.companyId}::uuid AND sic_branch_id = ${scope.branchId}::uuid
+         AND sic_item_id = ${ITEM_ID}::uuid AND NOT sic_is_deleted`;
+    expect(row?.costRate).toBeCloseTo(avg.cost, 2);
+  });
 });

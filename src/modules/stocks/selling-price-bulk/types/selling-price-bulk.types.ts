@@ -20,6 +20,17 @@ export const PRICE_SOURCES = ['BUCKET', 'MASTER'] as const;
 export type PriceSource = (typeof PRICE_SOURCES)[number];
 
 /**
+ * Which figure a row's costRate is (notes 75), so the screen can label it:
+ *   MRP        the inward cost of THIS MRP's stock at the branch (an MRP-tracked
+ *              item's MRP bucket) — "Cost @ MRP 40";
+ *   ITEM       the branch's moving average for the whole item;
+ *   PRICE_ROW  the cost stored on the answering price row (no stock cost yet).
+ * Null when there is no cost at all.
+ */
+export const COST_BASES = ['MRP', 'ITEM', 'PRICE_ROW'] as const;
+export type CostBasis = (typeof COST_BASES)[number];
+
+/**
  * The scope discriminator, as Q25 reports it and as the header radio sets it.
  *
  * BRANCH  a row belonging to one branch — an override.
@@ -170,7 +181,13 @@ export interface SellingPriceRow {
    * S1 finds the row to write by key at the target scope, never by this id.
    */
   bucketId: string | null;
+  /**
+   * Cost of ONE of this row's unit. For an MRP-tracked item's MRP bucket, what
+   * that MRP's stock cost to land (notes 75); otherwise the branch average.
+   */
   costRate: number;
+  /** Which figure costRate is — see COST_BASES. */
+  costBasis: CostBasis | null;
   minPrice: number;
   roundOff: number;
   /** Resolved server-side as of today, through item_tax_history. §4.3. */

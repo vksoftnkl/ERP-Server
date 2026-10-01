@@ -109,8 +109,23 @@ export class SellingPriceRowDto {
   })
   bucketId!: string | null;
 
-  @ApiProperty({ example: 95 })
+  @ApiProperty({
+    example: 95,
+    description:
+      "Cost of one of this row's unit: for an MRP-tracked item's MRP bucket, the inward cost of " +
+      "that MRP's stock at the branch, weighted by what is on hand (notes 75); otherwise the " +
+      'branch moving average, else the price row’s stored cost.',
+  })
   costRate!: number;
+
+  @ApiProperty({
+    enum: ['MRP', 'ITEM', 'PRICE_ROW'],
+    nullable: true,
+    description:
+      'Which figure costRate is: MRP = that MRP’s stock only ("Cost @ MRP 40"), ITEM = the item ' +
+      'average at the branch, PRICE_ROW = the cost stored on the answering price row. Null = no cost.',
+  })
+  costBasis!: 'MRP' | 'ITEM' | 'PRICE_ROW' | null;
 
   @ApiProperty({ example: 100 })
   minPrice!: number;

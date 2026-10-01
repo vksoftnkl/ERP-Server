@@ -1,8 +1,9 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.HQ_USER_TYPES = exports.CONFIRMABLE_VERDICTS = exports.PRICE_VERDICTS = exports.BELOW_COST_ACTIONS = exports.DEFAULT_BELOW_COST_POLICY = exports.BELOW_COST_POLICIES = exports.BELOW_COST_PRICE_SETTING_KEY = exports.LEVEL_COLUMN_SUFFIX = exports.PRICE_LEVELS = exports.PRICE_SCOPES = exports.PRICE_SOURCES = void 0;
+exports.HQ_USER_TYPES = exports.CONFIRMABLE_VERDICTS = exports.PRICE_VERDICTS = exports.BELOW_COST_ACTIONS = exports.DEFAULT_BELOW_COST_POLICY = exports.BELOW_COST_POLICIES = exports.BELOW_COST_PRICE_SETTING_KEY = exports.LEVEL_COLUMN_SUFFIX = exports.PRICE_LEVELS = exports.PRICE_SCOPES = exports.COST_BASES = exports.PRICE_SOURCES = void 0;
 exports.isHqUserType = isHqUserType;
 exports.PRICE_SOURCES = ['BUCKET', 'MASTER'];
+exports.COST_BASES = ['MRP', 'ITEM', 'PRICE_ROW'];
 exports.PRICE_SCOPES = ['BRANCH', 'CHAIN'];
 exports.PRICE_LEVELS = [1, 2, 3, 4];
 exports.LEVEL_COLUMN_SUFFIX = {

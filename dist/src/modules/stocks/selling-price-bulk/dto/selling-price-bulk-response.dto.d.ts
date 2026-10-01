@@ -29,6 +29,7 @@ export declare class SellingPriceRowDto {
     priceScope: string | null;
     bucketId: string | null;
     costRate: number;
+    costBasis: 'MRP' | 'ITEM' | 'PRICE_ROW' | null;
     minPrice: number;
     roundOff: number;
     taxPerc: number;
