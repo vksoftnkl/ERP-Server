@@ -39,7 +39,11 @@ export class SaveItemSectionDto {
   @NullableUuid()
   sec_parent_id?: string | null;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({
+    description:
+      'The section position: grid 50 and dropdown 19 list sections by it, then by name. ' +
+      'sec_position is kept equal to it.',
+  })
   @IsOptional()
   @IsInt()
   sec_sort?: number;
@@ -52,7 +56,9 @@ export class SaveItemSectionDto {
   @IsInt()
   sec_level?: number;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({
+    description: 'Same fact as sec_sort, and used for it only when sec_sort is not sent.',
+  })
   @IsOptional()
   @IsInt()
   sec_position?: number;

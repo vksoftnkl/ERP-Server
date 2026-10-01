@@ -2,8 +2,11 @@
 
 Answer to notes 70 (client + backend + live audit of menu 34's masters). Migration
 `20260930170000_item_masters_notes_70` (applied to 192.168.0.106), the services under
-`src/modules/Inventory`, and `test/item-masters-notes-70.e2e-spec.ts` (13 cases, one rolled-back
-transaction). Nothing is committed.
+`src/modules/Inventory`, and `test/item-masters-notes-70.e2e-spec.ts` (one rolled-back
+transaction). That round is in commit 0626a3c7.
+
+**2026-10-01 — D2–D5 decided and built** (migration `20261001100000_item_masters_notes_70_d2_d5`,
+applied to 192.168.0.106; five more e2e cases, 19 in all; not committed yet). See the D table.
 
 ## For the client
 
@@ -14,6 +17,11 @@ transaction). Nothing is committed.
 | grid 45 / 50 / 67 `grid_param` | `iunit_is_deleted` / `isec_is_deleted` / `iitem_is_deleted` — now bound and filtering. |
 | dropdowns 17 / 19 / 20 / 26 `dropdown_param` | Optional **`iexclude_id`** = the row being edited: it and its whole subtree drop out of the parent picker. Optional **`ibranch_id`** on 26: that branch's godowns only. Absent = exactly the old list. |
 | `*_level` on the five tree masters | Accepted and ignored — the server sets it (depth, root = 1). |
+| dropdown 18 `dropdown_param` (2026-10-01) | Optional **`iexclude_id`** on the parent-BRAND picker too: brands are a tree (D4). |
+| `category_tax_claim / _default_tax_id / _default_hsn / _default_uom_id` (2026-10-01) | **Stored now** and returned by GET (were accepted and dropped). `""` HSN is stored as null. |
+| `/items/create` (2026-10-01) | A blank `item_default_tax_id` / `item_hsn_code` / `item_base_unit_id` is **filled from the group, else the category** (D3). Send a value to override. Not on update. |
+| `sec_sort` / `sec_position` (2026-10-01) | One fact: sending either sets both (`sec_sort` wins if both differ). Grid 50 and dropdown 19 list by `sec_sort`, then name. |
+| `/tax-rates/delete`, `/units/delete` (2026-10-01) | Also **409** while a live group or category names the rate / unit as its default. |
 | `tax_name` on `/tax-rates/create` with a `tax_id` | May be omitted. |
 
 ## A — list grids (done)
@@ -67,10 +75,10 @@ godown:
 | # | Status |
 |---|---|
 | D1 | **Done — `unit_code` is the source.** `unit_uqc` is written from it on every unit save (three capital letters, else NULL) and backfilled by the migration (21 units). Nothing in this repo reads `unit_uqc`; the e-invoice / GSTR-1 / Tally readers named in the analysis now see the same value either way. |
-| D2 | **Not changed — decide.** Category `category_tax_claim / default_tax_id / default_hsn / default_uom_id` are still accepted and dropped. Removing them from the DTO makes any client that sends them a 400, so it waits for the client's answer. |
-| D3 | **Not changed — decide.** Group `itg_alias / itg_tax_claim / itg_default_*` are stored and read by nothing. If a new item should inherit them, that is an item-create rule to specify. |
-| D4 | **Not changed — decide.** Brand stays hierarchical on the server (the tree rules apply to it); there is still no parent-brand dropdown. |
-| D5 | **Not changed — decide.** `sec_position` is stored, indexed, never sent, and grid 50 orders by name. |
+| D2 | **Done 2026-10-01 — stored like the group's.** The React category form sends all four on every save, so they became columns (same types as `itg_*`, no FKs, like the group's) instead of leaving the DTO. |
+| D3 | **Done 2026-10-01 — the server fills on create.** `ItemsMasterService.inheritClassDefaults`: for each of tax, HSN and base unit the payload leaves blank (omitted, null, `""`), the group's default, else the category's. Skipped: a default naming an inactive / deleted tax or unit, an HSN longer than `item_hsn_code` (10), and the base unit whenever the payload carries `unit_conversions`. Updates never inherit. Because the defaults now matter, tax-rate and unit DELETE also count live groups / categories that name them. `itg_alias` / `itg_tax_claim` are still read by nothing. On dev 30 of 74 live groups carry a default. |
+| D4 | **Done 2026-10-01 — brands are a tree.** Dropdown 18 "ITEM BRANDS" is the React client's parent-brand picker (the notes' "no dropdown" was the Qt side) and one live brand already has a parent. Dropdown 18 got the D10 `iexclude_id`. |
+| D5 | **Done 2026-10-01 — position = `sec_sort`.** Grid 50 and dropdown 19 order by `sec_sort NULLS LAST, sec_name`; `sec_position` is backfilled from `sec_sort` and written with it. The master-lookup path still sorts dropdown 19 by its `dropdown_sort_column` (`sec_name`); `/dropdown-details/run`, which both clients' pickers use, keeps the SQL order. POPUP grid 93 still lists by name. |
 | D6 | **Done.** `uq_sec_name` (live rows). The migration renamed the one live duplicate on dev: "Baby Care" → "Baby Care (2)". |
 | D7 | **Done.** `uq_iqp_slab` on the eight key columns **plus `iqp_effective_from`**, NULLS NOT DISTINCT, live rows — so a future-dated replacement slab can still be scheduled while a re-POST is 409. Existing duplicates are soft-deleted first (none on dev). |
 | D8 | Nothing (client maps Q → R). |
@@ -89,3 +97,11 @@ godown:
 ## E / F
 
 No action, as the notes say.
+
+## Seen on the box 2026-10-01 — grid 67 regressed
+
+A Grid Master save from 192.168.0.103 (login VKPOS) at 10:35:58 re-registered grid 67's columns
+and sent back a stale `grid_sql` with **no WHERE**, undoing A3 (audit row: `grid details` / 67,
+changed `columns` + `grid_sql`). The item list's "Show Only Deleted" is inert again and A1–A3 in the
+e2e fails on 67. The screen that saves a grid should not resend the SQL it loaded long ago; re-apply
+`WHERE item_is_deleted = iitem_is_deleted` once that editor is done.

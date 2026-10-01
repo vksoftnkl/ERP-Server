@@ -14,6 +14,10 @@ export declare class BranchMasterService {
         brId: string;
         deleted: true;
     }>;
+    restore(brId: string): Promise<{
+        brId: string;
+        deleted: false;
+    }>;
     private createBranch;
     private updateBranch;
     private resolveRelatedNames;
@@ -26,6 +30,10 @@ export declare class BranchMasterService {
     private normalizeStateCode;
     private toPayload;
     private handleWriteError;
+    private assertDeletable;
+    private assertMayChangeCompany;
+    private inUse;
+    private assertGstin;
     private throwNotFound;
     private throwBadRequest;
     private buildErrorResponse;

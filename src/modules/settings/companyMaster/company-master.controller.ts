@@ -88,11 +88,16 @@ export class CompanyMasterController {
 
   @Delete('delete')
   @Version(API_VERSION)
-  @ApiOperation({ summary: 'Soft delete company by id' })
+  @ApiOperation({
+    summary: 'Soft delete company by id',
+    description:
+      '409 for the default company, and while live branches, live ledgers or vouchers use it.',
+  })
   @ApiQuery({ name: 'compId', type: String, example: '018e1b2c-3d4e-7f8a-9b0c-1d2e3f4a5b6c' })
   @ApiOkResponse({ type: CompanyMasterSuccessDeleteDto })
   @ApiBadRequestResponse({ type: CompanyMasterErrorResponseDto })
   @ApiNotFoundResponse({ type: CompanyMasterErrorResponseDto })
+  @ApiConflictResponse({ type: CompanyMasterErrorResponseDto })
   async remove(
     @Query('compId', ParseUUIDPipe) compId: string,
   ): Promise<CompanyMasterSuccessResponse<{ compId: string; deleted: true }>> {
@@ -101,6 +106,29 @@ export class CompanyMasterController {
     return {
       success: true,
       message: 'Company deleted successfully',
+      data,
+    };
+  }
+
+  @Post('restore')
+  @Version(API_VERSION)
+  @ApiOperation({
+    summary: 'Restore a soft-deleted company',
+    description: 'It comes back active and not the default. 409 when the company is not deleted.',
+  })
+  @ApiQuery({ name: 'compId', type: String, example: '018e1b2c-3d4e-7f8a-9b0c-1d2e3f4a5b6c' })
+  @ApiCreatedResponse({ type: CompanyMasterSuccessDeleteDto })
+  @ApiBadRequestResponse({ type: CompanyMasterErrorResponseDto })
+  @ApiNotFoundResponse({ type: CompanyMasterErrorResponseDto })
+  @ApiConflictResponse({ type: CompanyMasterErrorResponseDto })
+  async restore(
+    @Query('compId', ParseUUIDPipe) compId: string,
+  ): Promise<CompanyMasterSuccessResponse<{ compId: string; deleted: false }>> {
+    const data = await this.companyMasterService.restore(compId);
+
+    return {
+      success: true,
+      message: 'Company restored successfully',
       data,
     };
   }

@@ -43,6 +43,18 @@ const UNIT_REFERENCES = [
         live: 'item_is_deleted = false',
         label: 'items (as their base unit)',
     },
+    {
+        table: 'inventory.item_group_master',
+        column: 'itg_default_uom_id',
+        live: 'itg_is_deleted = false',
+        label: 'item groups (as their default unit)',
+    },
+    {
+        table: 'inventory.item_category_master',
+        column: 'category_default_uom_id',
+        live: 'category_is_deleted = false',
+        label: 'item categories (as their default unit)',
+    },
 ];
 const UNIT_DELETE_STATE = { label: 'unit', idField: 'unit_id', restoreRoute: '/units/restore' };
 const UQC_PATTERN = /^[A-Z]{3}$/;

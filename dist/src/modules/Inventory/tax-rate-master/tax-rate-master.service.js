@@ -46,6 +46,18 @@ const TAX_RATE_REFERENCES = [
         live: 'chg_is_deleted = false',
         label: 'charges',
     },
+    {
+        table: 'inventory.item_group_master',
+        column: 'itg_default_tax_id',
+        live: 'itg_is_deleted = false',
+        label: 'item groups (as their default tax)',
+    },
+    {
+        table: 'inventory.item_category_master',
+        column: 'category_default_tax_id',
+        live: 'category_is_deleted = false',
+        label: 'item categories (as their default tax)',
+    },
 ];
 const SCREEN_NAME = 'Tax Rate Master';
 const TAX_TABLE_NAME = 'tax rate master';

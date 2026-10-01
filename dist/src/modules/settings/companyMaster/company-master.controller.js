@@ -53,6 +53,14 @@ let CompanyMasterController = class CompanyMasterController {
             data,
         };
     }
+    async restore(compId) {
+        const data = await this.companyMasterService.restore(compId);
+        return {
+            success: true,
+            message: 'Company restored successfully',
+            data,
+        };
+    }
 };
 exports.CompanyMasterController = CompanyMasterController;
 __decorate([
@@ -84,16 +92,37 @@ __decorate([
 __decorate([
     (0, common_1.Delete)('delete'),
     (0, common_1.Version)(api_version_1.API_VERSION),
-    (0, swagger_1.ApiOperation)({ summary: 'Soft delete company by id' }),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Soft delete company by id',
+        description: '409 for the default company, and while live branches, live ledgers or vouchers use it.',
+    }),
     (0, swagger_1.ApiQuery)({ name: 'compId', type: String, example: '018e1b2c-3d4e-7f8a-9b0c-1d2e3f4a5b6c' }),
     (0, swagger_1.ApiOkResponse)({ type: company_master_response_dto_1.CompanyMasterSuccessDeleteDto }),
     (0, swagger_1.ApiBadRequestResponse)({ type: company_master_response_dto_1.CompanyMasterErrorResponseDto }),
     (0, swagger_1.ApiNotFoundResponse)({ type: company_master_response_dto_1.CompanyMasterErrorResponseDto }),
+    (0, swagger_1.ApiConflictResponse)({ type: company_master_response_dto_1.CompanyMasterErrorResponseDto }),
     __param(0, (0, common_1.Query)('compId', common_1.ParseUUIDPipe)),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", Promise)
 ], CompanyMasterController.prototype, "remove", null);
+__decorate([
+    (0, common_1.Post)('restore'),
+    (0, common_1.Version)(api_version_1.API_VERSION),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Restore a soft-deleted company',
+        description: 'It comes back active and not the default. 409 when the company is not deleted.',
+    }),
+    (0, swagger_1.ApiQuery)({ name: 'compId', type: String, example: '018e1b2c-3d4e-7f8a-9b0c-1d2e3f4a5b6c' }),
+    (0, swagger_1.ApiCreatedResponse)({ type: company_master_response_dto_1.CompanyMasterSuccessDeleteDto }),
+    (0, swagger_1.ApiBadRequestResponse)({ type: company_master_response_dto_1.CompanyMasterErrorResponseDto }),
+    (0, swagger_1.ApiNotFoundResponse)({ type: company_master_response_dto_1.CompanyMasterErrorResponseDto }),
+    (0, swagger_1.ApiConflictResponse)({ type: company_master_response_dto_1.CompanyMasterErrorResponseDto }),
+    __param(0, (0, common_1.Query)('compId', common_1.ParseUUIDPipe)),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", Promise)
+], CompanyMasterController.prototype, "restore", null);
 exports.CompanyMasterController = CompanyMasterController = __decorate([
     (0, swagger_1.ApiTags)('Company Master'),
     (0, swagger_1.ApiBearerAuth)('access-token'),

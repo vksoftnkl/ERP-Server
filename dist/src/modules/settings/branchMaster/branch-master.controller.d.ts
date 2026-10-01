@@ -10,4 +10,8 @@ export declare class BranchMasterController {
         brId: string;
         deleted: true;
     }>>;
+    restore(brId: string): Promise<BranchMasterSuccessResponse<{
+        brId: string;
+        deleted: false;
+    }>>;
 }

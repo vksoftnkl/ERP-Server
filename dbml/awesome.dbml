@@ -2045,6 +2045,10 @@ Table item_category_master {
   categorySort Int
   categoryLevel Int
   categoryPathIdsCache String[] [not null]
+  categoryTaxClaim Boolean
+  categoryDefaultTaxId String
+  categoryDefaultHsn String
+  categoryDefaultUomId String
   categoryPhoto Bytes
   categoryPhotoUrl String
   categoryIsActive Boolean [not null, default: true]
@@ -3167,7 +3171,7 @@ the e-invoice applicability rows in StatutoryLimit.']
   compRegionName String
   compBooksLockDate DateTime
   compAuthorizeSignature String
-  compTdsApplicable String
+  compTdsApplicable Boolean [not null, default: false, note: 'Notes 72 C1: a switch like compTcsApplicable (was free TEXT nothing read).']
   stylesheet app_theme_master
   branches branch_master [not null]
   accGroupMasters acc_group_master [not null]
@@ -6324,7 +6328,7 @@ NEVER set custId / custGroupId, and never use their nested `connect`s.
 Postgres computes those columns and rejects any write. Set lspKind +
 lspScopeId; read the relations back.
 
-── MIGRATION ──────────────────────────────────────────────��────────────
+── MIGRATION ───────────────────────────────────────────────────────────
 prisma migrate cannot emit a generated column; both are hand-authored, e.g.
 lsp_cust_id uuid GENERATED ALWAYS AS
 (CASE WHEN lsp_kind::text = \'CUSTOMER\' THEN lsp_scope_id END) STORED

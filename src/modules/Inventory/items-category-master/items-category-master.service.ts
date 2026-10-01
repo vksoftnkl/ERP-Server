@@ -380,6 +380,22 @@ export class ItemsCategoryMasterService {
       data.categorySort = saveItemCategoryDto.category_sort;
     }
     // category_level is not taken from the payload: relevelSubtree computes it (B1).
+    // The four defaults a new item inherits when its group names none (notes 70
+    // D2/D3). Accepted and dropped until 2026-10-01; an omitted key is
+    // undefined, which Prisma leaves untouched.
+    if (hasOwnProperty(saveItemCategoryDto, 'category_tax_claim')) {
+      data.categoryTaxClaim = saveItemCategoryDto.category_tax_claim;
+    }
+    if (hasOwnProperty(saveItemCategoryDto, 'category_default_tax_id')) {
+      data.categoryDefaultTaxId = saveItemCategoryDto.category_default_tax_id;
+    }
+    if (saveItemCategoryDto.category_default_hsn !== undefined) {
+      // The React form sends "" for none; store that as NULL.
+      data.categoryDefaultHsn = saveItemCategoryDto.category_default_hsn?.trim() || null;
+    }
+    if (hasOwnProperty(saveItemCategoryDto, 'category_default_uom_id')) {
+      data.categoryDefaultUomId = saveItemCategoryDto.category_default_uom_id;
+    }
     if (hasOwnProperty(saveItemCategoryDto, 'category_photo')) {
       data.categoryPhoto = this.decodePhotoInput(saveItemCategoryDto.category_photo);
     }
@@ -608,10 +624,10 @@ export class ItemsCategoryMasterService {
       category_sort: record.categorySort,
       category_level: record.categoryLevel,
       category_path_ids_cache: record.categoryPathIdsCache,
-      category_tax_claim: null,
-      category_default_tax_id: null,
-      category_default_hsn: null,
-      category_default_uom_id: null,
+      category_tax_claim: record.categoryTaxClaim,
+      category_default_tax_id: record.categoryDefaultTaxId,
+      category_default_hsn: record.categoryDefaultHsn,
+      category_default_uom_id: record.categoryDefaultUomId,
       category_photo: record.categoryPhoto
         ? Buffer.from(record.categoryPhoto).toString('base64')
         : null,

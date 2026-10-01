@@ -85,11 +85,17 @@ export class BranchMasterController {
 
   @Delete('delete')
   @Version(API_VERSION)
-  @ApiOperation({ summary: 'Soft delete branch by id' })
+  @ApiOperation({
+    summary: 'Soft delete branch by id',
+    description:
+      '409 while the branch has any document, stock row, user or device, and for the ' +
+      "company's default branch while the company has other live branches.",
+  })
   @ApiQuery({ name: 'brId', type: String, example: '018e1b2c-3d4e-7f8a-9b0c-1d2e3f4a5b6c' })
   @ApiOkResponse({ type: BranchMasterSuccessDeleteDto })
   @ApiBadRequestResponse({ type: BranchMasterErrorResponseDto })
   @ApiNotFoundResponse({ type: BranchMasterErrorResponseDto })
+  @ApiConflictResponse({ type: BranchMasterErrorResponseDto })
   async remove(
     @Query('brId', ParseUUIDPipe) brId: string,
   ): Promise<BranchMasterSuccessResponse<{ brId: string; deleted: true }>> {
@@ -98,6 +104,31 @@ export class BranchMasterController {
     return {
       success: true,
       message: 'Branch deleted successfully',
+      data,
+    };
+  }
+
+  @Post('restore')
+  @Version(API_VERSION)
+  @ApiOperation({
+    summary: 'Restore a soft-deleted branch',
+    description:
+      'It comes back active. 409 when the branch is not deleted, when its company is deleted, ' +
+      'or when a live branch of the company now has its name.',
+  })
+  @ApiQuery({ name: 'brId', type: String, example: '018e1b2c-3d4e-7f8a-9b0c-1d2e3f4a5b6c' })
+  @ApiCreatedResponse({ type: BranchMasterSuccessDeleteDto })
+  @ApiBadRequestResponse({ type: BranchMasterErrorResponseDto })
+  @ApiNotFoundResponse({ type: BranchMasterErrorResponseDto })
+  @ApiConflictResponse({ type: BranchMasterErrorResponseDto })
+  async restore(
+    @Query('brId', ParseUUIDPipe) brId: string,
+  ): Promise<BranchMasterSuccessResponse<{ brId: string; deleted: false }>> {
+    const data = await this.branchMasterService.restore(brId);
+
+    return {
+      success: true,
+      message: 'Branch restored successfully',
       data,
     };
   }

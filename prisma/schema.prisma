@@ -3493,6 +3493,12 @@ model categoryMaster {
   categorySort           Int?     @map("category_sort")
   categoryLevel          Int?     @map("category_level")
   categoryPathIdsCache   String[] @default([]) @db.Uuid @map("category_path_ids_cache")
+  // Defaults a new item inherits when its group names none (notes 70 D2/D3) —
+  // the same four as item_group_master's itg_* columns.
+  categoryTaxClaim       Boolean? @map("category_tax_claim")
+  categoryDefaultTaxId   String?  @db.Uuid @map("category_default_tax_id")
+  categoryDefaultHsn     String?  @db.VarChar(20) @map("category_default_hsn")
+  categoryDefaultUomId   String?  @db.Uuid @map("category_default_uom_id")
   // Media
   categoryPhoto          Bytes?   @map("category_photo")
   categoryPhotoUrl       String?  @db.Text @map("category_photo_url")
@@ -5258,7 +5264,8 @@ model Company {
   compRegionName        String?   @db.Text                                          @map("comp_region_name")
   compBooksLockDate     DateTime? @db.Date                                          @map("comp_books_lock_date")
   compAuthorizeSignature String?  @db.Text                                         @map("comp_authorize_signature")
-  compTdsApplicable     String?   @db.Text                                    @map("comp_tds_applicable")
+  /// Notes 72 C1: a switch like compTcsApplicable (was free TEXT nothing read).
+  compTdsApplicable     Boolean   @default(false)                                   @map("comp_tds_applicable")
   // Relations
   stylesheet            AppThemeMaster? @relation("CompanyStylesheet", fields: [compStylesheetId], references: [thmId])
   branches              BranchMaster[]

@@ -357,9 +357,18 @@ export class ItemsSectionMasterService {
       data.secDescription = saveItemSectionDto.sec_description;
     if (hasOwnProperty(saveItemSectionDto, 'sec_parent_id'))
       data.secParentId = saveItemSectionDto.sec_parent_id;
-    if (hasOwnProperty(saveItemSectionDto, 'sec_sort')) data.secSort = saveItemSectionDto.sec_sort;
-    if (hasOwnProperty(saveItemSectionDto, 'sec_position'))
-      data.secPosition = saveItemSectionDto.sec_position;
+    // sec_sort IS the section's position — grid 50 and dropdown 19 order by it —
+    // and sec_position is kept equal to it, so a client sending either one moves
+    // the section (the React form sends both, the Qt form sec_sort only). If
+    // both are sent, sec_sort wins (notes 70 D5).
+    const position =
+      saveItemSectionDto.sec_sort !== undefined
+        ? saveItemSectionDto.sec_sort
+        : saveItemSectionDto.sec_position;
+    if (position !== undefined) {
+      data.secSort = position;
+      data.secPosition = position;
+    }
     if (hasOwnProperty(saveItemSectionDto, 'sec_color_code'))
       data.secColorCode = saveItemSectionDto.sec_color_code;
     if (hasOwnProperty(saveItemSectionDto, 'sec_icon')) data.secIcon = saveItemSectionDto.sec_icon;

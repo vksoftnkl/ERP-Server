@@ -49,6 +49,9 @@ export declare class CompanyMasterPayloadDto {
     compBooksLockDate: string | null;
     compGstApplicable: boolean;
     compTcsApplicable: boolean;
+    compTdsApplicable: boolean;
+    compAatoClass: string;
+    compDcPurposes: string[];
     compSmsApplicable: boolean;
     compEinvoiceApplicable: boolean;
     compEwayApplicable: boolean;
@@ -82,7 +85,7 @@ export declare class CompanyMasterPayloadDto {
 }
 export declare class CompanyMasterDeleteResultDto {
     compId: string;
-    deleted: true;
+    deleted: boolean;
 }
 export declare class CompanyMasterSuccessSingleDto {
     success: true;

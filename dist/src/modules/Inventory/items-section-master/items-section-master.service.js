@@ -265,10 +265,13 @@ let ItemsSectionMasterService = class ItemsSectionMasterService {
             data.secDescription = saveItemSectionDto.sec_description;
         if ((0, module_service_utils_1.hasOwnProperty)(saveItemSectionDto, 'sec_parent_id'))
             data.secParentId = saveItemSectionDto.sec_parent_id;
-        if ((0, module_service_utils_1.hasOwnProperty)(saveItemSectionDto, 'sec_sort'))
-            data.secSort = saveItemSectionDto.sec_sort;
-        if ((0, module_service_utils_1.hasOwnProperty)(saveItemSectionDto, 'sec_position'))
-            data.secPosition = saveItemSectionDto.sec_position;
+        const position = saveItemSectionDto.sec_sort !== undefined
+            ? saveItemSectionDto.sec_sort
+            : saveItemSectionDto.sec_position;
+        if (position !== undefined) {
+            data.secSort = position;
+            data.secPosition = position;
+        }
         if ((0, module_service_utils_1.hasOwnProperty)(saveItemSectionDto, 'sec_color_code'))
             data.secColorCode = saveItemSectionDto.sec_color_code;
         if ((0, module_service_utils_1.hasOwnProperty)(saveItemSectionDto, 'sec_icon'))

@@ -206,8 +206,8 @@ export class BranchMasterDeleteResultDto {
   @ApiProperty({ example: '018e1b2c-3d4e-7f8a-9b0c-1d2e3f4a5b6c' })
   brId!: string;
 
-  @ApiProperty({ example: true })
-  deleted!: true;
+  @ApiProperty({ example: true, description: 'true after a delete, false after a restore.' })
+  deleted!: boolean;
 }
 
 export class BranchMasterSuccessSingleDto {

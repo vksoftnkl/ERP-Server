@@ -14,6 +14,12 @@ model categoryMaster {
   categorySort           Int?     @map("category_sort")
   categoryLevel          Int?     @map("category_level")
   categoryPathIdsCache   String[] @default([]) @db.Uuid @map("category_path_ids_cache")
+  // Defaults a new item inherits when its group names none (notes 70 D2/D3) —
+  // the same four as item_group_master's itg_* columns.
+  categoryTaxClaim       Boolean? @map("category_tax_claim")
+  categoryDefaultTaxId   String?  @db.Uuid @map("category_default_tax_id")
+  categoryDefaultHsn     String?  @db.VarChar(20) @map("category_default_hsn")
+  categoryDefaultUomId   String?  @db.Uuid @map("category_default_uom_id")
   // Media
   categoryPhoto          Bytes?   @map("category_photo")
   categoryPhotoUrl       String?  @db.Text @map("category_photo_url")

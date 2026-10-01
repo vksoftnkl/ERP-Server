@@ -10,4 +10,8 @@ export declare class CompanyMasterController {
         compId: string;
         deleted: true;
     }>>;
+    restore(compId: string): Promise<CompanyMasterSuccessResponse<{
+        compId: string;
+        deleted: false;
+    }>>;
 }

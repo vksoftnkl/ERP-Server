@@ -53,6 +53,14 @@ let BranchMasterController = class BranchMasterController {
             data,
         };
     }
+    async restore(brId) {
+        const data = await this.branchMasterService.restore(brId);
+        return {
+            success: true,
+            message: 'Branch restored successfully',
+            data,
+        };
+    }
 };
 exports.BranchMasterController = BranchMasterController;
 __decorate([
@@ -84,16 +92,39 @@ __decorate([
 __decorate([
     (0, common_1.Delete)('delete'),
     (0, common_1.Version)(api_version_1.API_VERSION),
-    (0, swagger_1.ApiOperation)({ summary: 'Soft delete branch by id' }),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Soft delete branch by id',
+        description: '409 while the branch has any document, stock row, user or device, and for the ' +
+            "company's default branch while the company has other live branches.",
+    }),
     (0, swagger_1.ApiQuery)({ name: 'brId', type: String, example: '018e1b2c-3d4e-7f8a-9b0c-1d2e3f4a5b6c' }),
     (0, swagger_1.ApiOkResponse)({ type: branch_master_response_dto_1.BranchMasterSuccessDeleteDto }),
     (0, swagger_1.ApiBadRequestResponse)({ type: branch_master_response_dto_1.BranchMasterErrorResponseDto }),
     (0, swagger_1.ApiNotFoundResponse)({ type: branch_master_response_dto_1.BranchMasterErrorResponseDto }),
+    (0, swagger_1.ApiConflictResponse)({ type: branch_master_response_dto_1.BranchMasterErrorResponseDto }),
     __param(0, (0, common_1.Query)('brId', common_1.ParseUUIDPipe)),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", Promise)
 ], BranchMasterController.prototype, "remove", null);
+__decorate([
+    (0, common_1.Post)('restore'),
+    (0, common_1.Version)(api_version_1.API_VERSION),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Restore a soft-deleted branch',
+        description: 'It comes back active. 409 when the branch is not deleted, when its company is deleted, ' +
+            'or when a live branch of the company now has its name.',
+    }),
+    (0, swagger_1.ApiQuery)({ name: 'brId', type: String, example: '018e1b2c-3d4e-7f8a-9b0c-1d2e3f4a5b6c' }),
+    (0, swagger_1.ApiCreatedResponse)({ type: branch_master_response_dto_1.BranchMasterSuccessDeleteDto }),
+    (0, swagger_1.ApiBadRequestResponse)({ type: branch_master_response_dto_1.BranchMasterErrorResponseDto }),
+    (0, swagger_1.ApiNotFoundResponse)({ type: branch_master_response_dto_1.BranchMasterErrorResponseDto }),
+    (0, swagger_1.ApiConflictResponse)({ type: branch_master_response_dto_1.BranchMasterErrorResponseDto }),
+    __param(0, (0, common_1.Query)('brId', common_1.ParseUUIDPipe)),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", Promise)
+], BranchMasterController.prototype, "restore", null);
 exports.BranchMasterController = BranchMasterController = __decorate([
     (0, swagger_1.ApiTags)('Branch Master'),
     (0, swagger_1.ApiBearerAuth)('access-token'),

@@ -15,6 +15,15 @@ import { UnitsMasterService } from '../src/modules/Inventory/units-master/units-
 import { ItemsQtyPriceMasterService } from '../src/modules/Inventory/items-qty-price-master/items-qty-price-master.service';
 import { TaxRateMasterService } from '../src/modules/Inventory/tax-rate-master/tax-rate-master.service';
 import { StockTrackPolicyService } from '../src/modules/stocks/stock-track-policy/stock-track-policy.service';
+import { SaveItemCategoryDto } from '../src/modules/Inventory/items-category-master/dto/save-item-category.dto';
+import { SaveItemSectionDto } from '../src/modules/Inventory/items-section-master/dto/save-item-section.dto';
+import { ItemUnitConversionService } from '../src/modules/Inventory/item-unit-conversion/item-unit-conversion.service';
+import { ItemsPriceMasterService } from '../src/modules/Inventory/items-price-master/items-price-master.service';
+import { PriceBucketService } from '../src/modules/Inventory/items-price-master/price-bucket.service';
+import { ItemsEanCodeMasterService } from '../src/modules/Inventory/items-ean-code-master/items-ean-code-master.service';
+import { ItemsReorderMasterService } from '../src/modules/Inventory/items-reorder-master/items-reorder-master.service';
+import { ItemMasterUpdateService } from '../src/modules/Inventory/items-master/item-master-update.service';
+import { ItemsMasterService } from '../src/modules/Inventory/items-master/items-master.service';
 
 /**
  * NOTES 70 — the item-related masters — against the real database, in one
@@ -68,6 +77,7 @@ describe('Item masters, notes 70 (e2e — one rolled-back transaction)', () => {
   let units: UnitsMasterService;
   let qtyPrices: ItemsQtyPriceMasterService;
   let taxes: TaxRateMasterService;
+  let items: ItemsMasterService;
   let spSeq = 0;
   const stamp = Date.now().toString(36);
   const name = (what: string) => `ZT70-${what}-${stamp}`;
@@ -118,6 +128,27 @@ describe('Item masters, notes 70 (e2e — one rolled-back transaction)', () => {
     units = new UnitsMasterService(db, audit, ctx);
     qtyPrices = new ItemsQtyPriceMasterService(db, audit, {} as never, ctx);
     taxes = new TaxRateMasterService(db, audit, ctx);
+    const noGrid = {} as never;
+    const iuc = new ItemUnitConversionService(db, audit, noGrid, ctx);
+    // No setting overrides: sales.default_price_level reads its catalog default.
+    const buckets = new PriceBucketService({
+      resolveEffective: () => Promise.resolve([]),
+    } as never);
+    const price = new ItemsPriceMasterService(db, audit, noGrid, ctx, buckets);
+    const ean = new ItemsEanCodeMasterService(db, audit, noGrid, ctx);
+    const reorder = new ItemsReorderMasterService(db, audit, noGrid, ctx);
+    items = new ItemsMasterService(
+      db,
+      audit,
+      ctx,
+      iuc,
+      price,
+      ean,
+      reorder,
+      new ItemMasterUpdateService(iuc, price, ean, reorder, buckets),
+      new StockTrackPolicyService(db, audit, ctx),
+      buckets,
+    );
   });
 
   afterAll(async () => {
@@ -443,5 +474,233 @@ describe('Item masters, notes 70 (e2e — one rolled-back transaction)', () => {
     expect(await live()).toBe(0);
     await attempt(() => groups.restore(group.itg_id));
     expect(await live()).toBe(1);
+  });
+
+  // ── D2 – D5 — decided by the user 2026-10-01 ─────────────────────────────
+  const liveTaxIds = async (n: number) =>
+    (
+      await tx.$queryRaw<Array<{ tax_id: string }>>`
+        SELECT tax_id FROM inventory.tax_rate_master
+         WHERE tax_is_deleted = false AND tax_is_active = true
+         ORDER BY tax_sort_order, tax_id LIMIT ${n}`
+    ).map((row) => row.tax_id);
+  const liveUnitIds = async (n: number) =>
+    (
+      await tx.$queryRaw<Array<{ unit_id: string }>>`
+        SELECT unit_id FROM inventory.item_unit_master
+         WHERE unit_is_deleted = false AND unit_is_active = true
+         ORDER BY unit_name, unit_id LIMIT ${n}`
+    ).map((row) => row.unit_id);
+
+  it('D2. a category stores its four defaults; an update that omits them keeps them', async () => {
+    const [taxId] = await liveTaxIds(1);
+    const defaults = {
+      category_tax_claim: true,
+      category_default_tax_id: taxId,
+      category_default_hsn: '3304',
+      category_default_uom_id: fixture.unitId,
+    };
+    const created = await attempt(() =>
+      categories.save({
+        category_name: name('catDef'),
+        ...defaults,
+        category_default_hsn: ' 3304 ',
+      }),
+    );
+    expect(created).toMatchObject(defaults);
+    expect(await categories.getById(created.category_id)).toMatchObject(defaults);
+
+    // Through the real DTO class: every declared field is an own property.
+    const renamed = await attempt(() =>
+      categories.save(
+        plainToInstance(SaveItemCategoryDto, {
+          category_id: created.category_id,
+          category_name: name('catDef2'),
+        }),
+      ),
+    );
+    expect(renamed).toMatchObject(defaults);
+
+    const cleared = await attempt(() =>
+      categories.save({
+        category_id: created.category_id,
+        category_name: name('catDef2'),
+        category_default_hsn: '',
+        category_default_tax_id: null,
+      }),
+    );
+    expect(cleared).toMatchObject({ category_default_hsn: null, category_default_tax_id: null });
+  });
+
+  it("D3. a new item takes its group's tax / HSN / unit, else its category's; what it sends wins", async () => {
+    const [taxG, taxC] = await liveTaxIds(2);
+    const [unitG, unitC] = await liveUnitIds(2);
+    // The group names a tax and a unit but no HSN; the category names all three.
+    const group = await attempt(() =>
+      groups.save({
+        itg_name: name('defG'),
+        itg_default_tax_id: taxG,
+        itg_default_uom_id: unitG,
+      }),
+    );
+    const category = await attempt(() =>
+      categories.save({
+        category_name: name('defC'),
+        category_default_tax_id: taxC,
+        category_default_hsn: '3304',
+        category_default_uom_id: unitC,
+      }),
+    );
+    const item = (what: string, extra: Record<string, unknown> = {}) => ({
+      item_company_id: fixture.companyId,
+      item_name_en: name(what),
+      item_group_id: group.itg_id,
+      item_category_id: category.category_id,
+      ...extra,
+    });
+
+    const blank = await attempt(() => items.save(item('inherit', { item_hsn_code: '' })));
+    expect(blank).toMatchObject({
+      item_default_tax_id: taxG,
+      item_hsn_code: '3304',
+      item_base_unit_id: unitG,
+    });
+
+    const own = await attempt(() =>
+      items.save(
+        item('own', {
+          item_default_tax_id: taxC,
+          item_hsn_code: '9999',
+          item_base_unit_id: unitC,
+        }),
+      ),
+    );
+    expect(own).toMatchObject({
+      item_default_tax_id: taxC,
+      item_hsn_code: '9999',
+      item_base_unit_id: unitC,
+    });
+
+    // The payload's own unit rows are its answer about units: no unit beside them.
+    const withUnits = await attempt(() =>
+      items.saveComposite({
+        ...item('units'),
+        unit_conversions: [
+          {
+            iuc_unit_id: unitC,
+            iuc_is_base_unit: true,
+            iuc_is_default_unit: true,
+            iuc_to_base_factor: 1,
+          },
+        ],
+      }),
+    );
+    expect(withUnits.item.item_base_unit_id).toBeNull();
+    expect(withUnits.item.item_default_tax_id).toBe(taxG);
+
+    // An update never inherits: clearing the tax leaves it clear.
+    const updated = await attempt(() =>
+      items.save({
+        item_id: blank.item_id,
+        item_name_en: name('inherit'),
+        item_group_id: group.itg_id,
+        item_default_tax_id: null,
+      }),
+    );
+    expect(updated.item_default_tax_id).toBeNull();
+
+    // A retired group tax is skipped, not copied: the category's is next.
+    await tx.$executeRaw`
+      UPDATE inventory.tax_rate_master SET tax_is_active = false WHERE tax_id = ${taxG}::uuid`;
+    try {
+      const fallback = await attempt(() => items.save(item('fallback')));
+      expect(fallback.item_default_tax_id).toBe(taxC);
+    } finally {
+      await tx.$executeRaw`
+        UPDATE inventory.tax_rate_master SET tax_is_active = true WHERE tax_id = ${taxG}::uuid`;
+    }
+  });
+
+  it('D3. a tax or unit a live group or category defaults to is not deleted', async () => {
+    const [taxId] = await liveTaxIds(1);
+    const unit = await attempt(() => units.save({ unit_name: name('DEFU'), unit_code: 'NOS' }));
+    await attempt(() => groups.save({ itg_name: name('guardG'), itg_default_tax_id: taxId }));
+    await attempt(() =>
+      categories.save({ category_name: name('guardC'), category_default_uom_id: unit.unit_id }),
+    );
+    const tax = await refusal(attempt(() => taxes.softDelete(taxId)));
+    expect(tax.status).toBe(409);
+    expect(tax.body).toContain('item groups (as their default tax)');
+    const unitUsed = await refusal(attempt(() => units.softDelete(unit.unit_id)));
+    expect(unitUsed.status).toBe(409);
+    expect(unitUsed.body).toContain('item categories (as their default unit)');
+  });
+
+  it('D4. the parent-brand picker (dropdown 18) leaves out the brand being edited and its subtree', async () => {
+    const parent = await attempt(() => brands.save({ brand_name: name('brP') }));
+    const child = await attempt(() =>
+      brands.save({ brand_name: name('brC'), brand_parent_id: parent.brand_id }),
+    );
+    const other = await attempt(() => brands.save({ brand_name: name('brO') }));
+    const grid = new ConfiguredGridSqlService(null as never, null as never);
+    const [row] = await tx.$queryRaw<Array<{ dropdown_sql: string }>>`
+      SELECT dropdown_sql FROM fixed.dropdown_details WHERE dropdown_id = 18`;
+    // As /dropdown-details/run does it: validate, then substitute literals.
+    const tableName = grid.extractTopLevelFromTableName(row.dropdown_sql) ?? '';
+    const validation = grid.validateBaseSql({ sql: row.dropdown_sql, tableName });
+    if (!validation.isValid) throw new Error(validation.message);
+    const baseSql = validation.normalizedSql;
+    const run = async (prm?: Record<string, unknown>) => {
+      const sql = prm ? grid.substituteGridPrm(baseSql, prm) : baseSql;
+      const rows = await tx.$queryRawUnsafe<Array<{ brand_id: string }>>(sql);
+      return rows.map((r) => r.brand_id);
+    };
+    expect(await run()).toEqual(
+      expect.arrayContaining([parent.brand_id, child.brand_id, other.brand_id]),
+    );
+    const editing = await run({ iexclude_id: parent.brand_id });
+    expect(editing).not.toContain(parent.brand_id);
+    expect(editing).not.toContain(child.brand_id);
+    expect(editing).toContain(other.brand_id);
+  });
+
+  it('D5. sections are listed by sec_sort, then name; sec_position follows sec_sort', async () => {
+    const late = await attempt(() => sections.save({ sec_name: name('aaa-late'), sec_sort: 9002 }));
+    const early = await attempt(() =>
+      sections.save({ sec_name: name('zzz-early'), sec_sort: 9001 }),
+    );
+    const byPosition = await attempt(() =>
+      sections.save({ sec_name: name('pos-only'), sec_position: 9003 }),
+    );
+    expect([late.sec_position, early.sec_position, byPosition.sec_sort]).toEqual([
+      9002, 9001, 9003,
+    ]);
+    // An update that sends neither keeps both (real DTO class: own properties).
+    const kept = await attempt(() =>
+      sections.save(
+        plainToInstance(SaveItemSectionDto, { sec_id: late.sec_id, sec_name: name('aaa-late') }),
+      ),
+    );
+    expect([kept.sec_sort, kept.sec_position]).toEqual([9002, 9002]);
+
+    const order = [early.sec_id, late.sec_id, byPosition.sec_id];
+    const positions = (ids: string[]) => order.map((id) => ids.indexOf(id));
+    const grid = new ConfiguredGridSqlService(null as never, null as never);
+    const [g50] = await tx.$queryRaw<Array<{ grid_sql: string }>>`
+      SELECT grid_sql FROM fixed.grid_details WHERE grid_id = 50`;
+    const bound = grid.bindGridParams(g50.grid_sql, { isec_is_deleted: false });
+    const listed = (
+      await tx.$queryRawUnsafe<Array<{ sec_id: string }>>(bound.sql, ...bound.params)
+    ).map((r) => r.sec_id);
+    const [d19] = await tx.$queryRaw<Array<{ dropdown_sql: string }>>`
+      SELECT dropdown_sql FROM fixed.dropdown_details WHERE dropdown_id = 19`;
+    const picked = (await tx.$queryRawUnsafe<Array<{ sec_id: string }>>(d19.dropdown_sql)).map(
+      (r) => r.sec_id,
+    );
+    for (const ids of [listed, picked]) {
+      const [a, b, c] = positions(ids);
+      expect(a).toBeGreaterThanOrEqual(0);
+      expect(a < b && b < c).toBe(true);
+    }
   });
 });

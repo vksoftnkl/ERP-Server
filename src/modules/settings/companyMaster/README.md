@@ -64,6 +64,20 @@ CRUD API for the **company master** — the tenant / legal company entity that o
 - **Soft delete only** — `DELETE /delete` never hard-deletes; it flags `compIsDeleted = true`,
   `compIsActive = false` and `compDefault = false`, then stamps `compModifiedOn` /
   `compModifiedBy`. All reads filter on `compIsDeleted = false`.
+- **Delete guards (notes 72 B2)** — 409 for the default company, and while live branches, live
+  ledgers or vouchers use it. `POST /restore?compId=` brings a deleted company back active and
+  not default (409 when it is not deleted).
+- **First fiscal year (notes 72 A1)** — create inserts the company's `fiscal_years` row in the same
+  transaction: `compFinYearFrom` / `compFinYearTo` / `compBooksBeginFrom` (default: the Indian
+  year containing today, books from its first day), OPEN and current. On update those three and
+  `compBooksLockDate` are ignored; GET reports the current year's begin / end / books-begin / lock
+  date (C2).
+- **GST (notes 72 C3 / C7)** — `compGstRegType` is REGULAR / COMPOSITION / UNREGISTERED / SEZ
+  (`ck_comp_gst_reg_type`). The GSTIN's state digits must equal `compStateCode` and its PAN
+  `compPanNo`; a blank PAN is filled from it.
+- **Also (notes 72)** — `compAatoClass`, `compDcPurposes`, `compTdsApplicable` (boolean since C1);
+  `compAuthorizeSignature` is a PNG / JPEG / GIF / WebP of at most 512 KB, stored and returned as
+  a data URL (C5).
 - A residual unique-constraint DB error is mapped by `handleWriteError` to a `compName`
   conflict response.
 

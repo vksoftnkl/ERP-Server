@@ -84,6 +84,9 @@ class CompanyMasterPayloadDto {
     compBooksLockDate;
     compGstApplicable;
     compTcsApplicable;
+    compTdsApplicable;
+    compAatoClass;
+    compDcPurposes;
     compSmsApplicable;
     compEinvoiceApplicable;
     compEwayApplicable;
@@ -283,6 +286,18 @@ __decorate([
 __decorate([
     (0, swagger_1.ApiProperty)(),
     __metadata("design:type", Boolean)
+], CompanyMasterPayloadDto.prototype, "compTdsApplicable", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ enum: ['LE_1_5CR', 'LE_5CR', 'LE_10CR', 'GT_10CR'] }),
+    __metadata("design:type", String)
+], CompanyMasterPayloadDto.prototype, "compAatoClass", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ type: [String] }),
+    __metadata("design:type", Array)
+], CompanyMasterPayloadDto.prototype, "compDcPurposes", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)(),
+    __metadata("design:type", Boolean)
 ], CompanyMasterPayloadDto.prototype, "compSmsApplicable", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)(),
@@ -373,7 +388,10 @@ __decorate([
     __metadata("design:type", Object)
 ], CompanyMasterPayloadDto.prototype, "compRemarks", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        description: 'The signature image as a data URL (data:image/...;base64,...).',
+    }),
     __metadata("design:type", Object)
 ], CompanyMasterPayloadDto.prototype, "compAuthorizeSignature", void 0);
 __decorate([
@@ -410,7 +428,7 @@ __decorate([
     __metadata("design:type", String)
 ], CompanyMasterDeleteResultDto.prototype, "compId", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ example: true }),
+    (0, swagger_1.ApiProperty)({ example: true, description: 'true after a delete, false after a restore.' }),
     __metadata("design:type", Boolean)
 ], CompanyMasterDeleteResultDto.prototype, "deleted", void 0);
 class CompanyMasterSuccessSingleDto {

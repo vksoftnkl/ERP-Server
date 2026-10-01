@@ -101,10 +101,16 @@ const makeItemRecord = (overrides: Partial<ItemMaster> = {}): ItemMaster =>
     ...overrides,
   }) as ItemMaster;
 
-// The composite name-resolver batch-loads each reference master via findMany.
-type LookupMock = { findMany: jest.Mock<Promise<Array<Record<string, unknown>>>, [unknown]> };
+// The composite name-resolver batch-loads each reference master via findMany;
+// create reads the group / category defaults via findUnique (notes 70 D3) —
+// none by default, so nothing is inherited.
+type LookupMock = {
+  findMany: jest.Mock<Promise<Array<Record<string, unknown>>>, [unknown]>;
+  findUnique: jest.Mock<Promise<Record<string, unknown> | null>, [unknown]>;
+};
 const makeLookup = (): LookupMock => ({
   findMany: jest.fn<Promise<Array<Record<string, unknown>>>, [unknown]>().mockResolvedValue([]),
+  findUnique: jest.fn<Promise<Record<string, unknown> | null>, [unknown]>().mockResolvedValue(null),
 });
 
 type PrismaMock = {

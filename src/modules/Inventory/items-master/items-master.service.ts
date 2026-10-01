@@ -31,6 +31,8 @@ import { RequestContextService } from '../../../common/request-context/request-c
 const ITEM_TABLE_NAME = 'item master';
 const ITEM_AUDIT_SCREEN_NAME = 'Item Master';
 const BASE64_PATTERN = /^[A-Za-z0-9+/]+={0,2}$/;
+// item_hsn_code is varchar(10); a group / category default HSN may be up to 20.
+const ITEM_HSN_MAX_LENGTH = 10;
 // A composite save writes the item plus four child collections (each row an
 // insert/update alongside its audit-log row) in one transaction, so it needs
 // more headroom than Prisma's 5s interactive-transaction default.
@@ -720,6 +722,7 @@ export class ItemsMasterService {
     };
     this.applyOptionalFields(data, saveItemDto);
     const create = async (client: Prisma.TransactionClient) => {
+      await this.inheritClassDefaults(client, data, saveItemDto);
       const created = await client.itemMaster.create({ data, include: TRACK_PRESET_INCLUDE });
       // Same transaction as the item: an item never exists without the policy
       // that says how its stock is keyed, and neither is written if the other
@@ -748,6 +751,78 @@ export class ItemsMasterService {
     } catch (error: unknown) {
       this.handleWriteError(error);
       throw error;
+    }
+  }
+  /**
+   * Notes 70 D3: a NEW item takes the default tax, HSN and base unit of its
+   * group — or, where the group names none, of its category — for each of the
+   * three its payload leaves blank (omitted, null or ""). An explicit value
+   * always wins, and an update never inherits: a default is where an item
+   * starts, not a rule it keeps following.
+   *
+   * A default that points at a deleted or inactive tax rate or unit is skipped,
+   * not copied — it must never turn into a 400 against a field the caller did
+   * not send — and so is an HSN longer than item_hsn_code holds. The base unit
+   * is left alone when the payload carries unit conversions: those rows are the
+   * item's own answer about its units, and a group unit beside them could
+   * disagree with them.
+   */
+  private async inheritClassDefaults(
+    client: Prisma.TransactionClient,
+    data: Prisma.ItemMasterUncheckedCreateInput,
+    dto: SaveItemDto,
+  ): Promise<void> {
+    const wantsTax = !data.itemDefaultTaxId;
+    const wantsHsn = !data.itemHsnCode?.trim();
+    const wantsUnit =
+      !data.itemBaseUnitId && !(dto as SaveItemCompositeDto).unit_conversions?.length;
+    if (!wantsTax && !wantsHsn && !wantsUnit) {
+      return;
+    }
+    const group = await client.itemGroupMaster.findUnique({
+      where: { itgId: data.itemGroupId },
+      select: { itgDefaultTaxId: true, itgDefaultHsn: true, itgDefaultUomId: true },
+    });
+    const category = data.itemCategoryId
+      ? await client.categoryMaster.findUnique({
+          where: { categoryId: data.itemCategoryId },
+          select: {
+            categoryDefaultTaxId: true,
+            categoryDefaultHsn: true,
+            categoryDefaultUomId: true,
+          },
+        })
+      : null;
+    // Group first, then category, field by field.
+    const taxIds = [group?.itgDefaultTaxId, category?.categoryDefaultTaxId].filter(
+      (id): id is string => !!id,
+    );
+    const unitIds = [group?.itgDefaultUomId, category?.categoryDefaultUomId].filter(
+      (id): id is string => !!id,
+    );
+    if (wantsTax && taxIds.length) {
+      const live = await client.taxRateMaster.findMany({
+        where: { taxId: { in: taxIds }, taxIsActive: true, taxIsDeleted: false },
+        select: { taxId: true },
+      });
+      const liveIds = new Set(live.map((row) => row.taxId));
+      const taxId = taxIds.find((id) => liveIds.has(id));
+      if (taxId) data.itemDefaultTaxId = taxId;
+    }
+    if (wantsHsn) {
+      const hsn = [group?.itgDefaultHsn, category?.categoryDefaultHsn]
+        .map((code) => code?.trim())
+        .find((code) => !!code && code.length <= ITEM_HSN_MAX_LENGTH);
+      if (hsn) data.itemHsnCode = hsn;
+    }
+    if (wantsUnit && unitIds.length) {
+      const live = await client.unit.findMany({
+        where: { unit_id: { in: unitIds }, unit_is_active: true, unit_is_deleted: false },
+        select: { unit_id: true },
+      });
+      const liveIds = new Set(live.map((row) => row.unit_id));
+      const unitId = unitIds.find((id) => liveIds.has(id));
+      if (unitId) data.itemBaseUnitId = unitId;
     }
   }
   /**

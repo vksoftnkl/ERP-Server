@@ -315,6 +315,18 @@ let ItemsCategoryMasterService = class ItemsCategoryMasterService {
         if ((0, module_service_utils_1.hasOwnProperty)(saveItemCategoryDto, 'category_sort')) {
             data.categorySort = saveItemCategoryDto.category_sort;
         }
+        if ((0, module_service_utils_1.hasOwnProperty)(saveItemCategoryDto, 'category_tax_claim')) {
+            data.categoryTaxClaim = saveItemCategoryDto.category_tax_claim;
+        }
+        if ((0, module_service_utils_1.hasOwnProperty)(saveItemCategoryDto, 'category_default_tax_id')) {
+            data.categoryDefaultTaxId = saveItemCategoryDto.category_default_tax_id;
+        }
+        if (saveItemCategoryDto.category_default_hsn !== undefined) {
+            data.categoryDefaultHsn = saveItemCategoryDto.category_default_hsn?.trim() || null;
+        }
+        if ((0, module_service_utils_1.hasOwnProperty)(saveItemCategoryDto, 'category_default_uom_id')) {
+            data.categoryDefaultUomId = saveItemCategoryDto.category_default_uom_id;
+        }
         if ((0, module_service_utils_1.hasOwnProperty)(saveItemCategoryDto, 'category_photo')) {
             data.categoryPhoto = this.decodePhotoInput(saveItemCategoryDto.category_photo);
         }
@@ -527,10 +539,10 @@ let ItemsCategoryMasterService = class ItemsCategoryMasterService {
             category_sort: record.categorySort,
             category_level: record.categoryLevel,
             category_path_ids_cache: record.categoryPathIdsCache,
-            category_tax_claim: null,
-            category_default_tax_id: null,
-            category_default_hsn: null,
-            category_default_uom_id: null,
+            category_tax_claim: record.categoryTaxClaim,
+            category_default_tax_id: record.categoryDefaultTaxId,
+            category_default_hsn: record.categoryDefaultHsn,
+            category_default_uom_id: record.categoryDefaultUomId,
             category_photo: record.categoryPhoto
                 ? Buffer.from(record.categoryPhoto).toString('base64')
                 : null,

@@ -21,6 +21,11 @@ import {
   toNullableNumber,
 } from 'src/common/utils/module-service.utils';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
+import {
+  countLiveReferences,
+  type LiveReference,
+} from 'src/modules/Inventory/utils/master-tree.helper';
+import { checkGstin } from '../shared/gst-registration';
 
 const BRANCH_MASTER_TABLE_NAME = 'branch master';
 const BRANCH_MASTER_AUDIT_SCREEN_NAME = 'Branch Master';
@@ -71,6 +76,67 @@ const BRANCH_MASTER_OPTIONAL_FIELDS = [
   'brGstRegType',
   'brPanNo',
 ];
+/**
+ * What ties a branch to its books (notes 72 B3 / B4): any document or stock
+ * row, ever — a cancelled bill is still the branch's — and the users and
+ * devices that sign in to it. While any exist the branch is not deleted and
+ * does not move to another company.
+ */
+const BRANCH_IN_USE_REFERENCES: readonly LiveReference[] = [
+  {
+    table: 'stock.stock_balance',
+    column: 'sbl_branch_id',
+    live: 'true',
+    label: 'stock balance rows',
+  },
+  { table: 'stock.stock_ledger', column: 'sml_branch_id', live: 'true', label: 'stock movements' },
+  { table: 'stock.stock_voucher', column: 'svh_branch_id', live: 'true', label: 'stock vouchers' },
+  {
+    table: 'stock.stock_voucher',
+    column: 'svh_to_branch_id',
+    live: 'true',
+    label: 'stock vouchers sent to it',
+  },
+  {
+    table: 'stock.stock_transit',
+    column: 'stt_from_branch_id',
+    live: 'true',
+    label: 'transfers out',
+  },
+  { table: 'stock.stock_transit', column: 'stt_to_branch_id', live: 'true', label: 'transfers in' },
+  { table: 'sales.sale_quotation', column: 'sq_branch_id', live: 'true', label: 'quotations' },
+  { table: 'sales.sale_order', column: 'so_branch_id', live: 'true', label: 'sale orders' },
+  { table: 'sales.sale_dc', column: 'sdc_branch_id', live: 'true', label: 'delivery challans' },
+  { table: 'sales.sale_dc_return', column: 'sdr_branch_id', live: 'true', label: 'DC returns' },
+  { table: 'sales.sale_bill', column: 'sb_branch_id', live: 'true', label: 'sale bills' },
+  { table: 'sales.sale_return', column: 'sr_branch_id', live: 'true', label: 'sale returns' },
+  {
+    table: 'accounts.acc_voucher_header',
+    column: 'avh_branch_id',
+    live: 'true',
+    label: 'vouchers',
+  },
+  {
+    table: 'accounts.acc_opening_balance',
+    column: 'op_branch_id',
+    live: 'op_is_deleted = false',
+    label: 'opening balances',
+  },
+  {
+    table: 'public.user_master',
+    column: 'usr_branch_id',
+    live: 'usr_is_deleted = false',
+    label: 'users',
+  },
+  {
+    table: 'fixed.device_master',
+    column: 'dev_branch_id',
+    live: 'dev_is_deleted = false',
+    label: 'devices',
+  },
+];
+const describeUse = (used: Array<{ label: string; count: number }>) =>
+  used.map((ref) => `${ref.count} ${ref.label}`).join(', ');
 type BranchMasterWriteClient = SettingsWriteClient;
 @Injectable()
 export class BranchMasterService {
@@ -110,6 +176,7 @@ export class BranchMasterService {
       if (!existing) {
         this.throwNotFound(brId);
       }
+      await this.assertDeletable(tx, existing);
       const modifiedOn = new Date();
       const result = await tx.branchMaster.updateMany({
         where: {
@@ -155,6 +222,88 @@ export class BranchMasterService {
       };
     });
   }
+  /**
+   * Notes 72 B1 — brings a soft-deleted branch back, active. 409 when it is not
+   * deleted, when its company is (restore that first), or when a live branch of
+   * the company has taken its name since. It stays its company's default only
+   * if no other live branch has become the default meanwhile.
+   */
+  async restore(brId: string): Promise<{ brId: string; deleted: false }> {
+    return this.prisma.$transaction(async (tx) => {
+      const existing = await tx.branchMaster.findFirst({ where: { brId } });
+      if (!existing) {
+        throwSettingsNotFound<BranchMasterErrorDetail>(
+          'Branch not found',
+          'brId',
+          `No branch found with id ${brId}`,
+        );
+      }
+      if (!existing.brIsDeleted) {
+        throwSettingsConflict<BranchMasterErrorDetail>('Branch is not deleted', [
+          {
+            field: 'brId',
+            message: `${existing.brName} is live; only a deleted branch can be restored`,
+          },
+        ]);
+      }
+      const company = await tx.company.findFirst({
+        where: { compId: existing.brCompId, compIsDeleted: false },
+        select: { compId: true },
+      });
+      if (!company) {
+        throwSettingsConflict<BranchMasterErrorDetail>('The branch’s company is deleted', [
+          {
+            field: 'brCompId',
+            message: 'Restore the company first (POST /company-masters/restore)',
+          },
+        ]);
+      }
+      await this.ensureNameIsUnique(tx, existing.brCompId, existing.brName, brId);
+      const otherDefault = existing.brIsDefault
+        ? await tx.branchMaster.findFirst({
+            where: {
+              brCompId: existing.brCompId,
+              brIsDeleted: false,
+              brIsDefault: true,
+              brId: { not: brId },
+            },
+            select: { brId: true },
+          })
+        : null;
+      const modifiedOn = new Date();
+      const actor = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
+      const restored = {
+        brIsDeleted: false,
+        brIsActive: true,
+        brIsDefault: existing.brIsDefault && !otherDefault,
+        brModifiedOn: modifiedOn,
+        brModifiedBy: actor,
+      };
+      const result = await tx.branchMaster.updateMany({
+        where: { brId, brIsDeleted: true },
+        data: restored,
+      });
+      if (result.count === 0) {
+        this.throwNotFound(brId);
+      }
+      await this.auditLogService.logEntityChange(
+        {
+          action: 'update',
+          tableName: BRANCH_MASTER_TABLE_NAME,
+          screenName: BRANCH_MASTER_AUDIT_SCREEN_NAME,
+          screenType: 'master',
+          pk: String(brId),
+          displayName: existing.brName,
+          originalRecord: this.toPayload(existing),
+          modifiedRecord: this.toPayload({ ...existing, ...restored }),
+          userId: actor,
+          notes: 'Branch restored',
+        },
+        tx,
+      );
+      return { brId, deleted: false };
+    });
+  }
   private async createBranch(
     saveBranchMasterDto: SaveBranchMasterDto,
   ): Promise<BranchMasterPayload> {
@@ -162,6 +311,11 @@ export class BranchMasterService {
       return await this.prisma.$transaction(async (tx) => {
         const normalizedName = this.normalizeRequiredName(saveBranchMasterDto.brName);
         const stateCode = this.normalizeStateCode(saveBranchMasterDto.brStateCode);
+        const panFromGstin = this.assertGstin(
+          saveBranchMasterDto.brGstinNo ?? null,
+          stateCode,
+          saveBranchMasterDto.brPanNo ?? null,
+        );
         await this.ensureCompanyExists(saveBranchMasterDto.brCompId, tx);
         await this.ensureNameIsUnique(tx, saveBranchMasterDto.brCompId, normalizedName);
         await this.ensureCodeIsUnique(tx, saveBranchMasterDto.brCode ?? null);
@@ -177,6 +331,9 @@ export class BranchMasterService {
           brCreatedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         };
         this.applyOptionalFields(data, saveBranchMasterDto);
+        if (panFromGstin) {
+          data.brPanNo = panFromGstin;
+        }
         const created = await tx.branchMaster.create({ data });
         const payload = this.toPayload(created);
         await this.auditLogService.logEntityChange(
@@ -218,6 +375,19 @@ export class BranchMasterService {
         }
         const normalizedName = this.normalizeRequiredName(saveBranchMasterDto.brName);
         const stateCode = this.normalizeStateCode(saveBranchMasterDto.brStateCode);
+        // C7 against what the branch will hold: an omitted GSTIN or PAN keeps the stored one.
+        const panFromGstin = this.assertGstin(
+          saveBranchMasterDto.brGstinNo !== undefined
+            ? saveBranchMasterDto.brGstinNo
+            : existing.brGstinNo,
+          stateCode,
+          saveBranchMasterDto.brPanNo !== undefined
+            ? saveBranchMasterDto.brPanNo
+            : existing.brPanNo,
+        );
+        if (saveBranchMasterDto.brCompId !== existing.brCompId) {
+          await this.assertMayChangeCompany(tx, existing);
+        }
         await this.ensureCompanyExists(saveBranchMasterDto.brCompId, tx);
         await this.ensureNameIsUnique(tx, saveBranchMasterDto.brCompId, normalizedName, brId);
         await this.ensureCodeIsUnique(tx, saveBranchMasterDto.brCode ?? null, brId);
@@ -232,6 +402,9 @@ export class BranchMasterService {
           brModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         };
         this.applyOptionalFields(data, saveBranchMasterDto);
+        if (panFromGstin) {
+          data.brPanNo = panFromGstin;
+        }
         const updated = await tx.branchMaster.update({
           where: {
             brId,
@@ -501,6 +674,97 @@ export class BranchMasterService {
         message: 'Duplicate branch unique value is not allowed',
       },
     ]);
+  }
+  /**
+   * Notes 72 B3 — a branch with any document, stock, user or device is not
+   * deleted. Nor is its company's default branch while other live branches
+   * exist: make one of them the default first. The company's ONLY branch may
+   * go (once unused) — refusing it too would make the company undeletable,
+   * since a company is deleted only once it has no live branches (B2).
+   */
+  private async assertDeletable(
+    tx: BranchMasterWriteClient,
+    existing: BranchMaster,
+  ): Promise<void> {
+    if (existing.brIsDefault) {
+      const others = await tx.branchMaster.count({
+        where: { brCompId: existing.brCompId, brIsDeleted: false, brId: { not: existing.brId } },
+      });
+      if (others > 0) {
+        throwSettingsConflict<BranchMasterErrorDetail>('The default branch cannot be deleted', [
+          {
+            field: 'brId',
+            message: `${existing.brName} is its company’s default branch; make another branch the default first`,
+          },
+        ]);
+      }
+    }
+    const used = await this.inUse(tx, existing.brId);
+    if (used.length) {
+      throwSettingsConflict<BranchMasterErrorDetail>('This branch is still in use', [
+        {
+          field: 'brId',
+          message:
+            `Used by ${describeUse(used)}. A deleted branch would leave them under a ` +
+            'branch nobody can open.',
+        },
+      ]);
+    }
+  }
+  /**
+   * Notes 72 B4 — moving a branch to another company would file everything it
+   * holds under the wrong books, so a branch with any document, stock, user or
+   * device stays where it is (400). Its company's default branch stays too:
+   * the move would leave that company without one.
+   */
+  private async assertMayChangeCompany(
+    tx: BranchMasterWriteClient,
+    existing: BranchMaster,
+  ): Promise<void> {
+    if (existing.brIsDefault) {
+      this.throwBadRequest('Validation failed', [
+        {
+          field: 'brCompId',
+          message: `${existing.brName} is its company’s default branch and cannot move to another company`,
+        },
+      ]);
+    }
+    const used = await this.inUse(tx, existing.brId);
+    if (used.length) {
+      this.throwBadRequest('Validation failed', [
+        {
+          field: 'brCompId',
+          message: `${existing.brName} cannot move to another company: it has ${describeUse(used)}`,
+        },
+      ]);
+    }
+  }
+  private async inUse(
+    tx: BranchMasterWriteClient,
+    brId: string,
+  ): Promise<Array<{ label: string; count: number }>> {
+    return (await countLiveReferences(tx, BRANCH_IN_USE_REFERENCES, brId)).filter(
+      (ref) => ref.count > 0,
+    );
+  }
+  /**
+   * Notes 72 C7 — the GSTIN must be of the branch's own state and PAN.
+   * Returns the PAN to store when none was given and the GSTIN carries one.
+   */
+  private assertGstin(
+    gstin: string | null | undefined,
+    stateCode: string,
+    pan: string | null | undefined,
+  ): string | null {
+    const check = checkGstin(gstin, stateCode, pan, {
+      gstin: 'brGstinNo',
+      stateCode: 'brStateCode',
+      pan: 'brPanNo',
+    });
+    if (check.errors.length) {
+      this.throwBadRequest('Validation failed', check.errors);
+    }
+    return check.panFromGstin;
   }
   private throwNotFound(brId: string): never {
     throwSettingsNotFound<BranchMasterErrorDetail>(

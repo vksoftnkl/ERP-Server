@@ -1,3 +1,5 @@
+export declare const COMPANY_AATO_CLASSES: readonly ["LE_1_5CR", "LE_5CR", "LE_10CR", "GT_10CR"];
+export declare const COMPANY_DC_PURPOSES: readonly ["SUPPLY", "JOB_WORK", "APPROVAL", "EXHIBITION", "OWN_USE", "LINE_SALES", "OTHER"];
 export declare class SaveCompanyMasterDto {
     compId?: string | null;
     compCode?: string | null;
@@ -40,6 +42,9 @@ export declare class SaveCompanyMasterDto {
     compBooksLockDate?: Date | null;
     compGstApplicable?: boolean;
     compTcsApplicable?: boolean;
+    compTdsApplicable?: boolean;
+    compAatoClass?: string;
+    compDcPurposes?: string[];
     compSmsApplicable?: boolean;
     compEinvoiceApplicable?: boolean;
     compEwayApplicable?: boolean;

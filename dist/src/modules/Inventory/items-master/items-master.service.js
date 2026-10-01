@@ -27,6 +27,7 @@ const request_context_service_1 = require("../../../common/request-context/reque
 const ITEM_TABLE_NAME = 'item master';
 const ITEM_AUDIT_SCREEN_NAME = 'Item Master';
 const BASE64_PATTERN = /^[A-Za-z0-9+/]+={0,2}$/;
+const ITEM_HSN_MAX_LENGTH = 10;
 const COMPOSITE_TRANSACTION_OPTIONS = { maxWait: 10_000, timeout: 30_000 };
 const TRACK_PRESET_INCLUDE = {
     trackPreset: { select: { sptName: true } },
@@ -546,6 +547,7 @@ let ItemsMasterService = class ItemsMasterService {
         };
         this.applyOptionalFields(data, saveItemDto);
         const create = async (client) => {
+            await this.inheritClassDefaults(client, data, saveItemDto);
             const created = await client.itemMaster.create({ data, include: TRACK_PRESET_INCLUDE });
             await this.stockTrackPolicyService.syncFromItem(created, client);
             const payload = this.toPayload(created);
@@ -569,6 +571,57 @@ let ItemsMasterService = class ItemsMasterService {
         catch (error) {
             this.handleWriteError(error);
             throw error;
+        }
+    }
+    async inheritClassDefaults(client, data, dto) {
+        const wantsTax = !data.itemDefaultTaxId;
+        const wantsHsn = !data.itemHsnCode?.trim();
+        const wantsUnit = !data.itemBaseUnitId && !dto.unit_conversions?.length;
+        if (!wantsTax && !wantsHsn && !wantsUnit) {
+            return;
+        }
+        const group = await client.itemGroupMaster.findUnique({
+            where: { itgId: data.itemGroupId },
+            select: { itgDefaultTaxId: true, itgDefaultHsn: true, itgDefaultUomId: true },
+        });
+        const category = data.itemCategoryId
+            ? await client.categoryMaster.findUnique({
+                where: { categoryId: data.itemCategoryId },
+                select: {
+                    categoryDefaultTaxId: true,
+                    categoryDefaultHsn: true,
+                    categoryDefaultUomId: true,
+                },
+            })
+            : null;
+        const taxIds = [group?.itgDefaultTaxId, category?.categoryDefaultTaxId].filter((id) => !!id);
+        const unitIds = [group?.itgDefaultUomId, category?.categoryDefaultUomId].filter((id) => !!id);
+        if (wantsTax && taxIds.length) {
+            const live = await client.taxRateMaster.findMany({
+                where: { taxId: { in: taxIds }, taxIsActive: true, taxIsDeleted: false },
+                select: { taxId: true },
+            });
+            const liveIds = new Set(live.map((row) => row.taxId));
+            const taxId = taxIds.find((id) => liveIds.has(id));
+            if (taxId)
+                data.itemDefaultTaxId = taxId;
+        }
+        if (wantsHsn) {
+            const hsn = [group?.itgDefaultHsn, category?.categoryDefaultHsn]
+                .map((code) => code?.trim())
+                .find((code) => !!code && code.length <= ITEM_HSN_MAX_LENGTH);
+            if (hsn)
+                data.itemHsnCode = hsn;
+        }
+        if (wantsUnit && unitIds.length) {
+            const live = await client.unit.findMany({
+                where: { unit_id: { in: unitIds }, unit_is_active: true, unit_is_deleted: false },
+                select: { unit_id: true },
+            });
+            const liveIds = new Set(live.map((row) => row.unit_id));
+            const unitId = unitIds.find((id) => liveIds.has(id));
+            if (unitId)
+                data.itemBaseUnitId = unitId;
         }
     }
     async updateItem(saveItemDto, tx, options = { rekeyPrices: true }) {

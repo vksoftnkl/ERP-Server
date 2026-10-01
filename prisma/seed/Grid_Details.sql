@@ -369,7 +369,7 @@ ORDER BY brand_name$seed$)
 	sec_is_active
 FROM inventory.item_section_master
 WHERE sec_is_deleted = isec_is_deleted
-ORDER BY sec_name$seed$)
+ORDER BY sec_sort NULLS LAST, sec_name$seed$)
     ,(51, 'MAIN LIST - ITEM CATEGORY'    , NULL, NULL              , 'Ascending', 'Desktop', true , false, 'system', $seed$SELECT
 	category_id,
 	category_short, 

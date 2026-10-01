@@ -15,6 +15,8 @@ const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const audit_log_service_1 = require("../../audit-log/audit-log.service");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
+const master_tree_helper_1 = require("../../Inventory/utils/master-tree.helper");
+const gst_registration_1 = require("../shared/gst-registration");
 const BRANCH_MASTER_TABLE_NAME = 'branch master';
 const BRANCH_MASTER_AUDIT_SCREEN_NAME = 'Branch Master';
 const BRANCH_MASTER_OPTIONAL_FIELDS = [
@@ -64,6 +66,60 @@ const BRANCH_MASTER_OPTIONAL_FIELDS = [
     'brGstRegType',
     'brPanNo',
 ];
+const BRANCH_IN_USE_REFERENCES = [
+    {
+        table: 'stock.stock_balance',
+        column: 'sbl_branch_id',
+        live: 'true',
+        label: 'stock balance rows',
+    },
+    { table: 'stock.stock_ledger', column: 'sml_branch_id', live: 'true', label: 'stock movements' },
+    { table: 'stock.stock_voucher', column: 'svh_branch_id', live: 'true', label: 'stock vouchers' },
+    {
+        table: 'stock.stock_voucher',
+        column: 'svh_to_branch_id',
+        live: 'true',
+        label: 'stock vouchers sent to it',
+    },
+    {
+        table: 'stock.stock_transit',
+        column: 'stt_from_branch_id',
+        live: 'true',
+        label: 'transfers out',
+    },
+    { table: 'stock.stock_transit', column: 'stt_to_branch_id', live: 'true', label: 'transfers in' },
+    { table: 'sales.sale_quotation', column: 'sq_branch_id', live: 'true', label: 'quotations' },
+    { table: 'sales.sale_order', column: 'so_branch_id', live: 'true', label: 'sale orders' },
+    { table: 'sales.sale_dc', column: 'sdc_branch_id', live: 'true', label: 'delivery challans' },
+    { table: 'sales.sale_dc_return', column: 'sdr_branch_id', live: 'true', label: 'DC returns' },
+    { table: 'sales.sale_bill', column: 'sb_branch_id', live: 'true', label: 'sale bills' },
+    { table: 'sales.sale_return', column: 'sr_branch_id', live: 'true', label: 'sale returns' },
+    {
+        table: 'accounts.acc_voucher_header',
+        column: 'avh_branch_id',
+        live: 'true',
+        label: 'vouchers',
+    },
+    {
+        table: 'accounts.acc_opening_balance',
+        column: 'op_branch_id',
+        live: 'op_is_deleted = false',
+        label: 'opening balances',
+    },
+    {
+        table: 'public.user_master',
+        column: 'usr_branch_id',
+        live: 'usr_is_deleted = false',
+        label: 'users',
+    },
+    {
+        table: 'fixed.device_master',
+        column: 'dev_branch_id',
+        live: 'dev_is_deleted = false',
+        label: 'devices',
+    },
+];
+const describeUse = (used) => used.map((ref) => `${ref.count} ${ref.label}`).join(', ');
 let BranchMasterService = class BranchMasterService {
     prisma;
     auditLogService;
@@ -104,6 +160,7 @@ let BranchMasterService = class BranchMasterService {
             if (!existing) {
                 this.throwNotFound(brId);
             }
+            await this.assertDeletable(tx, existing);
             const modifiedOn = new Date();
             const result = await tx.branchMaster.updateMany({
                 where: {
@@ -146,11 +203,81 @@ let BranchMasterService = class BranchMasterService {
             };
         });
     }
+    async restore(brId) {
+        return this.prisma.$transaction(async (tx) => {
+            const existing = await tx.branchMaster.findFirst({ where: { brId } });
+            if (!existing) {
+                (0, module_service_utils_1.throwSettingsNotFound)('Branch not found', 'brId', `No branch found with id ${brId}`);
+            }
+            if (!existing.brIsDeleted) {
+                (0, module_service_utils_1.throwSettingsConflict)('Branch is not deleted', [
+                    {
+                        field: 'brId',
+                        message: `${existing.brName} is live; only a deleted branch can be restored`,
+                    },
+                ]);
+            }
+            const company = await tx.company.findFirst({
+                where: { compId: existing.brCompId, compIsDeleted: false },
+                select: { compId: true },
+            });
+            if (!company) {
+                (0, module_service_utils_1.throwSettingsConflict)('The branch’s company is deleted', [
+                    {
+                        field: 'brCompId',
+                        message: 'Restore the company first (POST /company-masters/restore)',
+                    },
+                ]);
+            }
+            await this.ensureNameIsUnique(tx, existing.brCompId, existing.brName, brId);
+            const otherDefault = existing.brIsDefault
+                ? await tx.branchMaster.findFirst({
+                    where: {
+                        brCompId: existing.brCompId,
+                        brIsDeleted: false,
+                        brIsDefault: true,
+                        brId: { not: brId },
+                    },
+                    select: { brId: true },
+                })
+                : null;
+            const modifiedOn = new Date();
+            const actor = this.requestContextService.getUserId() ?? module_service_utils_1.DEFAULT_ACTOR;
+            const restored = {
+                brIsDeleted: false,
+                brIsActive: true,
+                brIsDefault: existing.brIsDefault && !otherDefault,
+                brModifiedOn: modifiedOn,
+                brModifiedBy: actor,
+            };
+            const result = await tx.branchMaster.updateMany({
+                where: { brId, brIsDeleted: true },
+                data: restored,
+            });
+            if (result.count === 0) {
+                this.throwNotFound(brId);
+            }
+            await this.auditLogService.logEntityChange({
+                action: 'update',
+                tableName: BRANCH_MASTER_TABLE_NAME,
+                screenName: BRANCH_MASTER_AUDIT_SCREEN_NAME,
+                screenType: 'master',
+                pk: String(brId),
+                displayName: existing.brName,
+                originalRecord: this.toPayload(existing),
+                modifiedRecord: this.toPayload({ ...existing, ...restored }),
+                userId: actor,
+                notes: 'Branch restored',
+            }, tx);
+            return { brId, deleted: false };
+        });
+    }
     async createBranch(saveBranchMasterDto) {
         try {
             return await this.prisma.$transaction(async (tx) => {
                 const normalizedName = this.normalizeRequiredName(saveBranchMasterDto.brName);
                 const stateCode = this.normalizeStateCode(saveBranchMasterDto.brStateCode);
+                const panFromGstin = this.assertGstin(saveBranchMasterDto.brGstinNo ?? null, stateCode, saveBranchMasterDto.brPanNo ?? null);
                 await this.ensureCompanyExists(saveBranchMasterDto.brCompId, tx);
                 await this.ensureNameIsUnique(tx, saveBranchMasterDto.brCompId, normalizedName);
                 await this.ensureCodeIsUnique(tx, saveBranchMasterDto.brCode ?? null);
@@ -166,6 +293,9 @@ let BranchMasterService = class BranchMasterService {
                     brCreatedBy: this.requestContextService.getUserId() ?? module_service_utils_1.DEFAULT_ACTOR,
                 };
                 this.applyOptionalFields(data, saveBranchMasterDto);
+                if (panFromGstin) {
+                    data.brPanNo = panFromGstin;
+                }
                 const created = await tx.branchMaster.create({ data });
                 const payload = this.toPayload(created);
                 await this.auditLogService.logEntityChange({
@@ -203,6 +333,14 @@ let BranchMasterService = class BranchMasterService {
                 }
                 const normalizedName = this.normalizeRequiredName(saveBranchMasterDto.brName);
                 const stateCode = this.normalizeStateCode(saveBranchMasterDto.brStateCode);
+                const panFromGstin = this.assertGstin(saveBranchMasterDto.brGstinNo !== undefined
+                    ? saveBranchMasterDto.brGstinNo
+                    : existing.brGstinNo, stateCode, saveBranchMasterDto.brPanNo !== undefined
+                    ? saveBranchMasterDto.brPanNo
+                    : existing.brPanNo);
+                if (saveBranchMasterDto.brCompId !== existing.brCompId) {
+                    await this.assertMayChangeCompany(tx, existing);
+                }
                 await this.ensureCompanyExists(saveBranchMasterDto.brCompId, tx);
                 await this.ensureNameIsUnique(tx, saveBranchMasterDto.brCompId, normalizedName, brId);
                 await this.ensureCodeIsUnique(tx, saveBranchMasterDto.brCode ?? null, brId);
@@ -217,6 +355,9 @@ let BranchMasterService = class BranchMasterService {
                     brModifiedBy: this.requestContextService.getUserId() ?? module_service_utils_1.DEFAULT_ACTOR,
                 };
                 this.applyOptionalFields(data, saveBranchMasterDto);
+                if (panFromGstin) {
+                    data.brPanNo = panFromGstin;
+                }
                 const updated = await tx.branchMaster.update({
                     where: {
                         brId,
@@ -456,6 +597,64 @@ let BranchMasterService = class BranchMasterService {
                 message: 'Duplicate branch unique value is not allowed',
             },
         ]);
+    }
+    async assertDeletable(tx, existing) {
+        if (existing.brIsDefault) {
+            const others = await tx.branchMaster.count({
+                where: { brCompId: existing.brCompId, brIsDeleted: false, brId: { not: existing.brId } },
+            });
+            if (others > 0) {
+                (0, module_service_utils_1.throwSettingsConflict)('The default branch cannot be deleted', [
+                    {
+                        field: 'brId',
+                        message: `${existing.brName} is its company’s default branch; make another branch the default first`,
+                    },
+                ]);
+            }
+        }
+        const used = await this.inUse(tx, existing.brId);
+        if (used.length) {
+            (0, module_service_utils_1.throwSettingsConflict)('This branch is still in use', [
+                {
+                    field: 'brId',
+                    message: `Used by ${describeUse(used)}. A deleted branch would leave them under a ` +
+                        'branch nobody can open.',
+                },
+            ]);
+        }
+    }
+    async assertMayChangeCompany(tx, existing) {
+        if (existing.brIsDefault) {
+            this.throwBadRequest('Validation failed', [
+                {
+                    field: 'brCompId',
+                    message: `${existing.brName} is its company’s default branch and cannot move to another company`,
+                },
+            ]);
+        }
+        const used = await this.inUse(tx, existing.brId);
+        if (used.length) {
+            this.throwBadRequest('Validation failed', [
+                {
+                    field: 'brCompId',
+                    message: `${existing.brName} cannot move to another company: it has ${describeUse(used)}`,
+                },
+            ]);
+        }
+    }
+    async inUse(tx, brId) {
+        return (await (0, master_tree_helper_1.countLiveReferences)(tx, BRANCH_IN_USE_REFERENCES, brId)).filter((ref) => ref.count > 0);
+    }
+    assertGstin(gstin, stateCode, pan) {
+        const check = (0, gst_registration_1.checkGstin)(gstin, stateCode, pan, {
+            gstin: 'brGstinNo',
+            stateCode: 'brStateCode',
+            pan: 'brPanNo',
+        });
+        if (check.errors.length) {
+            this.throwBadRequest('Validation failed', check.errors);
+        }
+        return check.panFromGstin;
     }
     throwNotFound(brId) {
         (0, module_service_utils_1.throwSettingsNotFound)('Branch not found', 'brId', `No active branch found with id ${brId}`);

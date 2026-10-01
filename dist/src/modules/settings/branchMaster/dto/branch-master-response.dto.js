@@ -357,7 +357,7 @@ __decorate([
     __metadata("design:type", String)
 ], BranchMasterDeleteResultDto.prototype, "brId", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ example: true }),
+    (0, swagger_1.ApiProperty)({ example: true, description: 'true after a delete, false after a restore.' }),
     __metadata("design:type", Boolean)
 ], BranchMasterDeleteResultDto.prototype, "deleted", void 0);
 class BranchMasterSuccessSingleDto {

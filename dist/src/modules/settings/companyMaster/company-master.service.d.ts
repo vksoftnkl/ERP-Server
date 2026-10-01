@@ -14,6 +14,10 @@ export declare class CompanyMasterService {
         compId: string;
         deleted: true;
     }>;
+    restore(compId: string): Promise<{
+        compId: string;
+        deleted: false;
+    }>;
     private createCompany;
     private updateCompany;
     private ensureNameIsUnique;
@@ -25,6 +29,12 @@ export declare class CompanyMasterService {
     private normalizeLengthCode;
     private toPayload;
     private handleWriteError;
+    private currentYear;
+    private assertDeletable;
+    private resolveFirstYear;
+    private currentIndianYearStart;
+    private assertGstin;
+    private normalizeSignature;
     private throwNotFound;
     private ensureThemeIsLive;
     private throwBadRequest;

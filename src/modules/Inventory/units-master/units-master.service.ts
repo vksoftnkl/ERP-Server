@@ -54,6 +54,19 @@ const UNIT_REFERENCES: readonly LiveReference[] = [
     live: 'item_is_deleted = false',
     label: 'items (as their base unit)',
   },
+  // A new item takes its group's / category's default unit (notes 70 D3).
+  {
+    table: 'inventory.item_group_master',
+    column: 'itg_default_uom_id',
+    live: 'itg_is_deleted = false',
+    label: 'item groups (as their default unit)',
+  },
+  {
+    table: 'inventory.item_category_master',
+    column: 'category_default_uom_id',
+    live: 'category_is_deleted = false',
+    label: 'item categories (as their default unit)',
+  },
 ];
 const UNIT_DELETE_STATE = { label: 'unit', idField: 'unit_id', restoreRoute: '/units/restore' };
 /** A GST Unit Quantity Code: three capital letters (ck_unit_uqc). */

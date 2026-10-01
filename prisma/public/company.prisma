@@ -84,7 +84,8 @@ model Company {
   compRegionName        String?   @db.Text                                          @map("comp_region_name")
   compBooksLockDate     DateTime? @db.Date                                          @map("comp_books_lock_date")
   compAuthorizeSignature String?  @db.Text                                         @map("comp_authorize_signature")
-  compTdsApplicable     String?   @db.Text                                    @map("comp_tds_applicable")
+  /// Notes 72 C1: a switch like compTcsApplicable (was free TEXT nothing read).
+  compTdsApplicable     Boolean   @default(false)                                   @map("comp_tds_applicable")
   // Relations
   stylesheet            AppThemeMaster? @relation("CompanyStylesheet", fields: [compStylesheetId], references: [thmId])
   branches              BranchMaster[]

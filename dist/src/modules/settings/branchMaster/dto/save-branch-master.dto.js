@@ -14,6 +14,8 @@ const swagger_1 = require("@nestjs/swagger");
 const class_transformer_1 = require("class-transformer");
 const class_validator_1 = require("class-validator");
 const dtoDecorators_1 = require("../../../../common/dto/dtoDecorators");
+const gst_registration_1 = require("../../shared/gst-registration");
+const INFORMATIONAL = 'Informational: stored and returned, but no posting, numbering, rounding or print reads it yet.';
 class SaveBranchMasterDto {
     brId;
     brCompId;
@@ -77,7 +79,12 @@ __decorate([
     __metadata("design:type", String)
 ], SaveBranchMasterDto.prototype, "brId", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ type: String, format: 'uuid' }),
+    (0, swagger_1.ApiProperty)({
+        type: String,
+        format: 'uuid',
+        description: 'On update a branch cannot change company once it has documents, stock, users or ' +
+            'devices, nor while it is its company’s default branch (400, notes 72 B4).',
+    }),
     (0, class_validator_1.IsUUID)('all'),
     __metadata("design:type", String)
 ], SaveBranchMasterDto.prototype, "brCompId", void 0);
@@ -238,32 +245,32 @@ __decorate([
     __metadata("design:type", Object)
 ], SaveBranchMasterDto.prototype, "brMail", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ maxLength: 20, nullable: true }),
+    (0, swagger_1.ApiPropertyOptional)({ maxLength: 20, nullable: true, description: INFORMATIONAL }),
     (0, dtoDecorators_1.NullableString)(20),
     __metadata("design:type", Object)
 ], SaveBranchMasterDto.prototype, "brBillPrefix", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ maxLength: 20, nullable: true }),
+    (0, swagger_1.ApiPropertyOptional)({ maxLength: 20, nullable: true, description: INFORMATIONAL }),
     (0, dtoDecorators_1.NullableString)(20),
     __metadata("design:type", Object)
 ], SaveBranchMasterDto.prototype, "brInvoiceSeriesPrefix", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ maxLength: 300, nullable: true }),
+    (0, swagger_1.ApiPropertyOptional)({ maxLength: 300, nullable: true, description: INFORMATIONAL }),
     (0, dtoDecorators_1.NullableString)(300),
     __metadata("design:type", Object)
 ], SaveBranchMasterDto.prototype, "brBillGreeting", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true, description: INFORMATIONAL }),
     (0, dtoDecorators_1.NullableString)(),
     __metadata("design:type", Object)
 ], SaveBranchMasterDto.prototype, "brTerms", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ maxLength: 20, nullable: true }),
+    (0, swagger_1.ApiPropertyOptional)({ maxLength: 20, nullable: true, description: INFORMATIONAL }),
     (0, dtoDecorators_1.NullableString)(20),
     __metadata("design:type", Object)
 ], SaveBranchMasterDto.prototype, "brRoundingMode", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true, description: INFORMATIONAL }),
     (0, dtoDecorators_1.NullableNumber)(),
     __metadata("design:type", Number)
 ], SaveBranchMasterDto.prototype, "brRoundingValue", void 0);
@@ -273,7 +280,7 @@ __decorate([
     __metadata("design:type", Object)
 ], SaveBranchMasterDto.prototype, "brDefaultGodownId", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ maxLength: 20, nullable: true }),
+    (0, swagger_1.ApiPropertyOptional)({ maxLength: 20, nullable: true, description: INFORMATIONAL }),
     (0, dtoDecorators_1.NullableString)(20),
     __metadata("design:type", Object)
 ], SaveBranchMasterDto.prototype, "brPosType", void 0);
@@ -313,8 +320,13 @@ __decorate([
     __metadata("design:type", Object)
 ], SaveBranchMasterDto.prototype, "brGstinNo", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ maxLength: 30, nullable: true }),
-    (0, dtoDecorators_1.NullableString)(30),
+    (0, swagger_1.ApiPropertyOptional)({
+        enum: gst_registration_1.GST_REG_TYPES,
+        nullable: true,
+        description: 'Upper-cased on the way in; anything else is a 400 (notes 72 C3).',
+    }),
+    (0, dtoDecorators_1.NullableUpperMaxString)(30),
+    (0, class_validator_1.IsIn)(gst_registration_1.GST_REG_TYPES),
     __metadata("design:type", Object)
 ], SaveBranchMasterDto.prototype, "brGstRegType", void 0);
 __decorate([

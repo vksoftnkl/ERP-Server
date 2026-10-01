@@ -141,6 +141,15 @@ export class CompanyMasterPayloadDto {
   compTcsApplicable!: boolean;
 
   @ApiProperty()
+  compTdsApplicable!: boolean;
+
+  @ApiProperty({ enum: ['LE_1_5CR', 'LE_5CR', 'LE_10CR', 'GT_10CR'] })
+  compAatoClass!: string;
+
+  @ApiProperty({ type: [String] })
+  compDcPurposes!: string[];
+
+  @ApiProperty()
   compSmsApplicable!: boolean;
 
   @ApiProperty()
@@ -209,7 +218,10 @@ export class CompanyMasterPayloadDto {
   @ApiPropertyOptional({ nullable: true })
   compRemarks!: string | null;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'The signature image as a data URL (data:image/...;base64,...).',
+  })
   compAuthorizeSignature!: string | null;
 
   @ApiProperty()
@@ -235,8 +247,8 @@ export class CompanyMasterDeleteResultDto {
   @ApiProperty({ example: '019cc885-d0f4-771b-a7d1-7c98f9ff3ac1' })
   compId!: string;
 
-  @ApiProperty({ example: true })
-  deleted!: true;
+  @ApiProperty({ example: true, description: 'true after a delete, false after a restore.' })
+  deleted!: boolean;
 }
 
 export class CompanyMasterSuccessSingleDto {

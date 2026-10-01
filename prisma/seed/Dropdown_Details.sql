@@ -80,12 +80,19 @@ WHERE g.itg_is_active = true AND g.itg_is_deleted = false
 		SELECT id FROM sub)
 ORDER BY g.itg_name$seed$, NULL)
     ,(18, 'ITEM BRANDS'             , NULL, 'brand_name'          , 'asc', 10, false, 0   , 'Desktop', 'brand_name'        , 'system', $seed$SELECT
-	brand_id,
-	brand_name,
-	brand_short
-FROM inventory.item_brand_master
-WHERE brand_is_active = true AND brand_is_deleted = false
-ORDER BY brand_name;$seed$, NULL)
+	b.brand_id,
+	b.brand_name,
+	b.brand_short
+FROM inventory.item_brand_master b
+WHERE b.brand_is_active = true AND b.brand_is_deleted = false
+	AND b.brand_id NOT IN (
+		WITH RECURSIVE sub(id) AS (
+			SELECT s.brand_id FROM inventory.item_brand_master s
+			 WHERE s.brand_id::text = NULLIF(NULLIF('iexclude_id', ''), 'iexclude' || '_id')
+			UNION
+			SELECT c.brand_id FROM inventory.item_brand_master c JOIN sub ON c.brand_parent_id = sub.id)
+		SELECT id FROM sub)
+ORDER BY b.brand_name$seed$, NULL)
     ,(19, 'ITEM SECTIONS'           , NULL, 'sec_name'            , 'asc', 10, false, 0   , 'Desktop', 'sec_name'          , 'system', $seed$SELECT
 	s0.sec_id,
 	s0.sec_short,
@@ -100,7 +107,7 @@ WHERE s0.sec_is_active = true AND s0.sec_is_deleted = false
 			UNION
 			SELECT c.sec_id FROM inventory.item_section_master c JOIN sub ON c.sec_parent_id = sub.id)
 		SELECT id FROM sub)
-ORDER BY s0.sec_name$seed$, NULL)
+ORDER BY s0.sec_sort NULLS LAST, s0.sec_name$seed$, NULL)
     ,(20, 'ITEM CATEGORIES'         , NULL, 'category_name'       , 'asc', 10, false, 0   , 'Desktop', 'category_name'     , 'system', $seed$SELECT
 	g.category_id,
 	g.category_short,

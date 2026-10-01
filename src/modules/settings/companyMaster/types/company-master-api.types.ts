@@ -52,6 +52,9 @@ export interface CompanyMasterPayload {
   compBooksLockDate: string | null;
   compGstApplicable: boolean;
   compTcsApplicable: boolean;
+  compTdsApplicable: boolean;
+  compAatoClass: string;
+  compDcPurposes: string[];
   compSmsApplicable: boolean;
   compEinvoiceApplicable: boolean;
   compEwayApplicable: boolean;

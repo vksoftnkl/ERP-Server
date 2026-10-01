@@ -72,7 +72,10 @@ __decorate([
     __metadata("design:type", Object)
 ], SaveItemSectionDto.prototype, "sec_parent_id", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)(),
+    (0, swagger_1.ApiPropertyOptional)({
+        description: 'The section position: grid 50 and dropdown 19 list sections by it, then by name. ' +
+            'sec_position is kept equal to it.',
+    }),
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsInt)(),
     __metadata("design:type", Number)
@@ -86,7 +89,9 @@ __decorate([
     __metadata("design:type", Number)
 ], SaveItemSectionDto.prototype, "sec_level", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)(),
+    (0, swagger_1.ApiPropertyOptional)({
+        description: 'Same fact as sec_sort, and used for it only when sec_sort is not sent.',
+    }),
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsInt)(),
     __metadata("design:type", Number)

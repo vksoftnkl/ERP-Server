@@ -42,6 +42,7 @@ const ledger_bank_account_module_1 = require("./modules/accountsModule/ledgerBan
 const branch_master_module_1 = require("./modules/settings/branchMaster/branch-master.module");
 const company_master_module_1 = require("./modules/settings/companyMaster/company-master.module");
 const app_theme_module_1 = require("./modules/settings/appTheme/app-theme.module");
+const gstin_lookup_module_1 = require("./modules/settings/gstinLookup/gstin-lookup.module");
 const company_group_master_module_1 = require("./modules/accountsModule/companyGroupMaster/company-group-master.module");
 const employee_department_master_module_1 = require("./modules/settings/employeeDepartmentMaster/employee-department-master.module");
 const employee_designation_master_module_1 = require("./modules/settings/employeeDesignationMaster/employee-designation-master.module");
@@ -196,6 +197,7 @@ exports.AppModule = AppModule = __decorate([
             branch_master_module_1.BranchMasterModule,
             company_master_module_1.CompanyMasterModule,
             app_theme_module_1.AppThemeModule,
+            gstin_lookup_module_1.GstinLookupModule,
             company_group_master_module_1.CompanyGroupMasterModule,
             employee_department_master_module_1.EmployeeDepartmentMasterModule,
             employee_designation_master_module_1.EmployeeDesignationMasterModule,

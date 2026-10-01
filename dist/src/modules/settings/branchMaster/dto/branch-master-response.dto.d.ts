@@ -69,7 +69,7 @@ export declare class BranchMasterPayloadDto {
 }
 export declare class BranchMasterDeleteResultDto {
     brId: string;
-    deleted: true;
+    deleted: boolean;
 }
 export declare class BranchMasterSuccessSingleDto {
     success: true;

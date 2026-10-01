@@ -78,3 +78,17 @@ tables (each only when the corresponding id is set):
   screen `Branch Master` / table `branch master`.
 - The acting user comes from `RequestContextService.getUserId()`, falling back to
   `DEFAULT_ACTOR`.
+
+### Guards (notes 72)
+
+- **Delete** — 409 while the branch has any document or stock row (bills, challans, orders,
+  quotations, returns, vouchers, opening balances, stock vouchers / ledger / balance / transit)
+  or live users or devices, and for the company's default branch while the company has other
+  live branches. The company's only branch may go once unused, so the company can be deleted.
+- **Restore** — `POST /restore?brId=`: 409 when not deleted, when its company is deleted, or when
+  a live branch of the company has taken its name. It stays default only if no other live
+  branch became the default meanwhile.
+- **Move** — an update that changes `brCompId` is 400 for the default branch and for a branch
+  with any of the above.
+- **GST** — `brGstRegType` is REGULAR / COMPOSITION / UNREGISTERED / SEZ; the GSTIN must match
+  `brStateCode` and `brPanNo` (a blank PAN is filled from it).
