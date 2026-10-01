@@ -10,6 +10,11 @@ export interface ListSellingPricesArgs {
     itemSectionId?: string;
     supplierId?: string;
     itemId?: string;
+    search?: string;
+    itemCategoryId?: string;
+    trackPresetId?: string;
+    taxId?: string;
+    activeOnly: boolean;
     limit: number;
     offset: number;
 }
@@ -27,6 +32,7 @@ export interface OpeningSeedBucketArgs {
 export interface PriceGridRecord {
     itemId: string;
     itemCode: string | null;
+    barcode: string | null;
     itemName: string;
     uomId: string;
     unitName: string | null;
@@ -38,6 +44,7 @@ export interface PriceGridRecord {
     priceScope: PriceScope | null;
     bucketId: string | null;
     costRate: number;
+    costWot: number;
     costBasis: CostBasis | null;
     minPrice: number;
     roundOff: number;
@@ -81,6 +88,7 @@ export declare class PriceBucketGateway {
     constructor(prisma: PrismaService);
     findOpeningSeedBucket(args: OpeningSeedBucketArgs): Promise<OpeningSeedBucket | null>;
     listPrices(args: ListSellingPricesArgs): Promise<PagedResult<PriceGridRecord>>;
+    private popupFilter;
     listBuckets(itemId: string, companyId: string, branchId: string): Promise<PriceGridRecord[]>;
     loadRowCosts(tx: Prisma.TransactionClient, rows: ReadonlyArray<{
         itemId: string;

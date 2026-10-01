@@ -53,6 +53,13 @@ export class SellingPriceRowDto {
   @ApiPropertyOptional({ nullable: true, example: 'SALT-1KG' })
   itemCode!: string | null;
 
+  @ApiPropertyOptional({
+    nullable: true,
+    example: '8901234567890',
+    description: 'item_default_barcode — display only, never sent back on save (notes 76).',
+  })
+  barcode!: string | null;
+
   @ApiProperty({ example: 'Salt 1 Kg' })
   itemName!: string;
 
@@ -117,6 +124,14 @@ export class SellingPriceRowDto {
       'branch moving average, else the price row’s stored cost.',
   })
   costRate!: number;
+
+  @ApiProperty({
+    example: 85,
+    description:
+      'costRate without tax, from the same source (the MRP stock, the branch average or the ' +
+      'price row) — exact for an item with cess, unlike cost ÷ (1 + tax%) (notes 76).',
+  })
+  costWot!: number;
 
   @ApiProperty({
     enum: ['MRP', 'ITEM', 'PRICE_ROW'],

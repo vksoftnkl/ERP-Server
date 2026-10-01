@@ -189,4 +189,36 @@ describe('Change Selling Price, notes 74 (HTTP — read-only)', () => {
          AND sic_item_id = ${ITEM_ID}::uuid AND NOT sic_is_deleted`;
     expect(row?.costRate).toBeCloseTo(avg.cost, 2);
   });
+  // ── notes 76: the filter popup's keys pass the DTO; activeOnly parses from a query string ──
+  it('notes 76. the popup keys are accepted, and ?activeOnly=false lists an inactive item', async () => {
+    if (!scope) return;
+    const [inactive] = await prisma.$queryRaw<Array<{ item_id: string; name: string }>>`
+      SELECT item_id, item_name_en AS name FROM inventory.item_master
+       WHERE NOT item_is_active AND NOT item_is_deleted
+         AND (item_company_id IS NULL OR item_company_id = ${scope.companyId}::uuid)
+         AND (item_branch_id IS NULL OR item_branch_id = ${scope.branchId}::uuid)
+       LIMIT 1`;
+    const run = (extra: Record<string, string>) =>
+      http
+        .get('/api/v1/stock/price-bulk')
+        .set('Authorization', BEARER)
+        .query({ companyId: scope!.companyId, branchId: scope!.branchId, ...extra });
+    const nil = '00000000-0000-4000-8000-000000000000';
+    const allKeys = await run({
+      search: 'x',
+      itemCategoryId: nil,
+      trackPresetId: nil,
+      taxId: nil,
+      activeOnly: 'true',
+    });
+    expect(allKeys.status).toBe(200);
+    expect(allKeys.body.data.items).toEqual([]);
+    if (!inactive) return;
+    const ids = (res: { body: { data: { items: Array<{ itemId: string }> } } }) =>
+      res.body.data.items.map((row) => row.itemId);
+    expect(ids(await run({ itemId: inactive.item_id }))).toEqual([]);
+    expect(ids(await run({ itemId: inactive.item_id, activeOnly: 'false' }))).toContain(
+      inactive.item_id,
+    );
+  });
 });

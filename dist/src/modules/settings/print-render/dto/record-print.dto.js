@@ -31,7 +31,8 @@ exports.RecordPrintDto = RecordPrintDto;
 __decorate([
     (0, swagger_1.ApiProperty)({
         enum: print_render_constants_1.RECORDABLE_OUTPUT_MODES,
-        description: 'PRINT — sent to a printer. FILE — saved as a PDF.',
+        description: 'PRINT — sent to a printer. FILE — saved as a PDF. PREVIEW — opened in the popup ' +
+            '(Preview / Pdf) and not yet sent anywhere.',
     }),
     (0, class_validator_1.IsIn)(print_render_constants_1.RECORDABLE_OUTPUT_MODES),
     __metadata("design:type", String)

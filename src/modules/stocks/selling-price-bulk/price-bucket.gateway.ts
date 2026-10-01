@@ -28,6 +28,15 @@ export interface ListSellingPricesArgs {
   supplierId?: string;
   /** One item only (notes 74: the screen's Add item). */
   itemId?: string;
+  // Notes 76 — the filter popup.
+  /** "Contains", on code, name, alias or default barcode. */
+  search?: string;
+  itemCategoryId?: string;
+  /** The EFFECTIVE preset: the item's own, else its group's. */
+  trackPresetId?: string;
+  taxId?: string;
+  /** Inactive items are left out unless this is false. */
+  activeOnly: boolean;
   limit: number;
   offset: number;
 }
@@ -56,6 +65,8 @@ export interface OpeningSeedBucketArgs {
 export interface PriceGridRecord {
   itemId: string;
   itemCode: string | null;
+  /** item_default_barcode — display only, never sent back on save (notes 76). */
+  barcode: string | null;
   itemName: string;
   uomId: string;
   unitName: string | null;
@@ -71,6 +82,8 @@ export interface PriceGridRecord {
   /** The ipm_id that answered, null when none did. */
   bucketId: string | null;
   costRate: number;
+  /** costRate without tax, from the same source — exact for an item with cess (notes 76). */
+  costWot: number;
   /** Which figure costRate is (notes 75): one MRP's stock, the item average, or the row's own. */
   costBasis: CostBasis | null;
   minPrice: number;
@@ -288,6 +301,7 @@ function costColumns(a: { mc: string; sic: string; p: string; factor: string }):
 interface GridSqlRow {
   itemId: string;
   itemCode: string | null;
+  barcode: string | null;
   itemName: string;
   uomId: string;
   unitName: string | null;
@@ -299,6 +313,7 @@ interface GridSqlRow {
   bucketId: string | null;
   maxPrice: Prisma.Decimal | null;
   costRate: Prisma.Decimal | null;
+  costWot: Prisma.Decimal | null;
   costBasis: CostBasis | null;
   minPrice: Prisma.Decimal | null;
   roundOff: Prisma.Decimal | null;
@@ -394,12 +409,40 @@ export class PriceBucketGateway {
           AND (${args.itemBrandId ?? null}::uuid IS NULL OR i.item_brand_id = ${args.itemBrandId ?? null}::uuid)
           AND (${args.itemSectionId ?? null}::uuid IS NULL OR i.item_section_id = ${args.itemSectionId ?? null}::uuid)
           AND (${args.supplierId ?? null}::uuid IS NULL OR i.item_supplier_id = ${args.supplierId ?? null}::uuid)
-          AND (${args.itemId ?? null}::uuid IS NULL OR i.item_id = ${args.itemId ?? null}::uuid)`,
+          AND (${args.itemId ?? null}::uuid IS NULL OR i.item_id = ${args.itemId ?? null}::uuid)
+          ${this.popupFilter(args)}`,
       })}
       LIMIT ${args.limit} OFFSET ${args.offset}
     `;
     const items = rows.map((row) => this.toGridRecord(row));
     return { items, meta: { limit: args.limit, offset: args.offset, count: items.length } };
+  }
+
+  /**
+   * Notes 76 — the filter popup's keys, ANDed with the F8 four. Each is off
+   * when absent. `search` is "contains" on code, name, alias and default
+   * barcode, its own % and _ escaped. `trackPresetId` is the EFFECTIVE preset —
+   * the item's own, else its group's — so "Tracked as" matches what the item
+   * entry shows (an item follows its group unless it names its own, notes 68).
+   * `activeOnly` (default true) leaves inactive items out; until notes 76 only
+   * deleted ones were.
+   */
+  private popupFilter(args: ListSellingPricesArgs): Prisma.Sql {
+    const search = args.search?.trim();
+    const pattern = search ? `%${search.replace(/[\\%_]/g, (c) => `\\${c}`)}%` : null;
+    return Prisma.sql`
+          AND (${pattern}::text IS NULL
+               OR i.item_code            ILIKE ${pattern}
+               OR i.item_name_en         ILIKE ${pattern}
+               OR i.item_alias           ILIKE ${pattern}
+               OR i.item_default_barcode ILIKE ${pattern})
+          AND (${args.itemCategoryId ?? null}::uuid IS NULL OR i.item_category_id = ${args.itemCategoryId ?? null}::uuid)
+          AND (${args.trackPresetId ?? null}::uuid IS NULL
+               OR COALESCE(i.item_track_preset_id,
+                           (SELECT g.itg_track_preset_id FROM inventory.item_group_master g
+                             WHERE g.itg_id = i.item_group_id)) = ${args.trackPresetId ?? null}::uuid)
+          AND (${args.taxId ?? null}::uuid IS NULL OR i.item_default_tax_id = ${args.taxId ?? null}::uuid)
+          AND (${args.activeOnly} = false OR i.item_is_active = true)`;
   }
 
   /**
@@ -436,7 +479,7 @@ export class PriceBucketGateway {
     const cost = costColumns({ mc: 'mc', sic: 'sic', p: 'p', factor: 'iuc.iuc_to_base_factor' });
     const rows = await this.prisma.$queryRaw<GridSqlRow[]>`
       WITH pol AS (
-        SELECT i.item_id, i.item_code, i.item_name_en,
+        SELECT i.item_id, i.item_code, i.item_name_en, i.item_default_barcode,
                COALESCE(stp.stp_track_mrp, false)        AS track_mrp,
                COALESCE(stp.stp_track_sale_price, false) AS track_sp
           FROM inventory.item_master i
@@ -494,6 +537,7 @@ export class PriceBucketGateway {
                (p.ipm_key_mrp <> -1 OR p.ipm_key_sp <> -1) AS price_is_bucket,
                p.ipm_branch_id, p.ipm_company_id, p.ipm_id, p.ipm_max_price,
                ${cost.rate} AS cost_rate,
+               ${cost.wot} AS cost_wot,
                ${cost.basis} AS cost_basis,
                p.ipm_min_price, p.ipm_round_off,
                p.ipm_sales_price_a, p.ipm_sales_price_b, p.ipm_sales_price_c, p.ipm_sales_price_d
@@ -526,6 +570,7 @@ export class PriceBucketGateway {
                p.p_is_bucket,
                p.ipm_branch_id, p.ipm_company_id, p.ipm_id, p.ipm_max_price,
                ${cost.rate},
+               ${cost.wot},
                ${cost.basis},
                p.ipm_min_price, p.ipm_round_off,
                p.ipm_sales_price_a, p.ipm_sales_price_b, p.ipm_sales_price_c, p.ipm_sales_price_d
@@ -554,6 +599,7 @@ export class PriceBucketGateway {
       )
       SELECT pol.item_id          AS "itemId",
              pol.item_code        AS "itemCode",
+             pol.item_default_barcode AS "barcode",
              pol.item_name_en     AS "itemName",
              l.uom_id             AS "uomId",
              l.unit_name          AS "unitName",
@@ -565,6 +611,7 @@ export class PriceBucketGateway {
              l.ipm_id             AS "bucketId",
              l.ipm_max_price      AS "maxPrice",
              l.cost_rate          AS "costRate",
+             l.cost_wot           AS "costWot",
              l.cost_basis         AS "costBasis",
              l.ipm_min_price      AS "minPrice",
              l.ipm_round_off      AS "roundOff",
@@ -1005,7 +1052,7 @@ export class PriceBucketGateway {
     });
     return Prisma.sql`
       WITH items AS (
-        SELECT i.item_id, i.item_code, i.item_name_en, i.item_group_id
+        SELECT i.item_id, i.item_code, i.item_name_en, i.item_group_id, i.item_default_barcode
           FROM inventory.item_master i
          WHERE i.item_is_deleted = false
            AND (i.item_company_id IS NULL OR i.item_company_id = ${args.companyId}::uuid)
@@ -1055,6 +1102,7 @@ export class PriceBucketGateway {
       )
       SELECT items.item_id      AS "itemId",
              items.item_code    AS "itemCode",
+             items.item_default_barcode AS "barcode",
              items.item_name_en AS "itemName",
              iuc.iuc_id         AS "uomId",
              u.unit_name        AS "unitName",
@@ -1066,6 +1114,7 @@ export class PriceBucketGateway {
              p.ipm_id           AS "bucketId",
              p.ipm_max_price    AS "maxPrice",
              ${gridCost.rate}   AS "costRate",
+             ${gridCost.wot}    AS "costWot",
              ${gridCost.basis}  AS "costBasis",
              p.ipm_min_price    AS "minPrice",
              p.ipm_round_off    AS "roundOff",
@@ -1103,6 +1152,7 @@ export class PriceBucketGateway {
     return {
       itemId: row.itemId,
       itemCode: row.itemCode,
+      barcode: row.barcode,
       itemName: row.itemName,
       uomId: row.uomId,
       unitName: row.unitName,
@@ -1114,6 +1164,7 @@ export class PriceBucketGateway {
       priceScope: row.bucketId === null ? null : row.priceBranchId === null ? 'CHAIN' : 'BRANCH',
       bucketId: row.bucketId,
       costRate: amount(row.costRate),
+      costWot: amount(row.costWot),
       costBasis: row.costBasis,
       minPrice: amount(row.minPrice),
       roundOff: amount(row.roundOff),

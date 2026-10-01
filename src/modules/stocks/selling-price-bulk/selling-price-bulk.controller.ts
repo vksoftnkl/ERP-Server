@@ -80,7 +80,10 @@ export class SellingPriceBulkController {
       "stockQty is in the row's own unit. Paged, because a group filter over a 40,000-row item master with four buckets " +
       'each is not a grid; F8 exists so the operator narrows before loading. taxPerc is ' +
       'resolved server-side as of today through item_tax_history, so the client never has to ' +
-      'ask which tax row applied. itemId narrows the grid to one item (the Add item search).',
+      'ask which tax row applied. itemId narrows the grid to one item (the Add item search). ' +
+      'The filter popup (notes 76): search (contains, on code / name / alias / barcode), ' +
+      "itemCategoryId, trackPresetId (the effective preset — own, else the group's), taxId, and " +
+      'activeOnly (default true). Every row carries barcode and costWot.',
   })
   @ApiOkResponse({ type: SellingPriceListSuccessDto })
   @ApiBadRequestResponse({ type: SellingPriceErrorResponseDto })

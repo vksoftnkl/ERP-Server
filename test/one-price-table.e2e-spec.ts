@@ -896,4 +896,85 @@ describe('One price table (e2e — one rolled-back transaction)', () => {
     expect(costs[1].costRate).toBe(500);
     expect(costs[2].costRate).toBeCloseTo(average, 2);
   });
+  it('notes 76. the filter popup: search, category, effective preset, tax, activeOnly; barcode on the rows', async () => {
+    const tag = stamp.toUpperCase();
+    const [category] = await tx.$queryRaw<Array<{ category_id: string }>>`
+      SELECT category_id FROM inventory.item_category_master WHERE NOT category_is_deleted LIMIT 1`;
+    const make = (name: string, extra: Record<string, unknown>) =>
+      attempt(() =>
+        items.saveComposite({
+          ...itemDto(name, fixture.presetMrp),
+          prices: [priceRow(null, 0, 10)],
+          ...extra,
+        } as SaveItemCompositeDto),
+      );
+    const alpha = (
+      await make('N76 Alpha', {
+        item_code: `N76A-${tag}`,
+        item_alias: `ALIASX${tag}`,
+        item_default_barcode: `89${tag}01`,
+        item_category_id: category.category_id,
+        item_default_tax_id: fixture.taxId,
+      })
+    ).item.item_id;
+    const beta = (await make('N76 Beta', { item_code: `N76B-${tag}`, item_is_active: false })).item
+      .item_id;
+    // Gamma names no preset of its own: it follows its group's.
+    const gamma = (
+      await make('N76 Gamma', { item_code: `N76C-${tag}`, item_track_preset_id: null })
+    ).item.item_id;
+    await tx.$executeRaw`
+      UPDATE inventory.item_group_master SET itg_track_preset_id = ${fixture.presetSp}::uuid
+       WHERE itg_id = ${fixture.groupId}::uuid`;
+
+    const listed = async (filter: Record<string, unknown>) =>
+      new Set(
+        (
+          await menu30.listPrices({
+            companyId: fixture.companyId,
+            branchId: fixture.branchX,
+            limit: 1000,
+            ...filter,
+          } as never)
+        ).items.map((row) => row.itemId),
+      );
+    const only = async (filter: Record<string, unknown>) => {
+      const found = await listed(filter);
+      return [alpha, beta, gamma].filter((id) => found.has(id));
+    };
+
+    // search: contains, on code, name, alias and barcode; % and _ are literal.
+    expect(await only({ search: `6A-${tag}` })).toEqual([alpha]);
+    expect(await only({ search: `alpha ${stamp}` })).toEqual([alpha]);
+    expect(await only({ search: `${tag}01` })).toEqual([alpha]);
+    expect(await only({ search: `ALIASX${tag}` })).toEqual([alpha]);
+    expect(await only({ search: `ALIAS_${tag}` })).toEqual([]);
+    expect(await only({ search: `N76%-${tag}` })).toEqual([]);
+    // The id filters, alone and together.
+    expect(await only({ itemCategoryId: category.category_id })).toEqual([alpha]);
+    expect(await only({ itemCategoryId: category.category_id, taxId: fixture.taxId })).toEqual([
+      alpha,
+    ]);
+    expect((await listed({ taxId: fixture.taxId })).has(alpha)).toBe(true);
+    // The EFFECTIVE preset: Gamma follows the group's SP preset, Alpha keeps its own.
+    expect(await only({ trackPresetId: fixture.presetSp })).toEqual([gamma]);
+    expect(await only({ trackPresetId: fixture.presetMrp })).toEqual([alpha]);
+    // Inactive items only on request.
+    expect(await only({ search: `-${tag}` })).toEqual([alpha, gamma]);
+    expect(await only({ search: `-${tag}`, activeOnly: false })).toEqual([alpha, beta, gamma]);
+
+    // barcode on the grid row and the F12 row; costWot on both.
+    const grid = await menu30.listPrices({
+      companyId: fixture.companyId,
+      branchId: fixture.branchX,
+      itemId: alpha,
+      limit: 10,
+    } as never);
+    expect(grid.items[0]).toMatchObject({ barcode: `89${tag}01`, costWot: expect.any(Number) });
+    const f12 = await menu30.listBuckets(alpha, {
+      companyId: fixture.companyId,
+      branchId: fixture.branchX,
+    });
+    expect(f12[0]).toMatchObject({ barcode: `89${tag}01`, costWot: expect.any(Number) });
+  });
 });

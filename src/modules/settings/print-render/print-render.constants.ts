@@ -85,11 +85,16 @@ export const PLG_STATUSES = ['SUCCESS', 'FAILED', 'QUEUED', 'CANCELLED'] as cons
 export type PlgStatus = (typeof PLG_STATUSES)[number];
 
 /**
- * What `/print-render/log` may record: the document went to a printer, or was
- * saved as a file. A look in the popup is not a print, so PREVIEW is not here,
- * and REPRINT is not either — the live ck_plg_output_mode refuses it.
+ * What `/print-render/log` may record: the document went to a printer, was
+ * saved as a file, or was opened in the popup (Preview / Pdf) — the paper was
+ * produced and shown, even if the operator never pressed Print. REPRINT is not
+ * here — the live ck_plg_output_mode refuses it.
  */
-export const RECORDABLE_OUTPUT_MODES = ['PRINT', 'FILE'] as const satisfies readonly PlgOutputMode[];
+export const RECORDABLE_OUTPUT_MODES = [
+  'PRINT',
+  'FILE',
+  'PREVIEW',
+] as const satisfies readonly PlgOutputMode[];
 export type RecordableOutputMode = (typeof RECORDABLE_OUTPUT_MODES)[number];
 
 // ── Ceilings ───────────────────────────────────────────────────────────────

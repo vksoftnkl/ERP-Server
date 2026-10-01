@@ -32,6 +32,7 @@ export interface SellingPriceRow {
     lineNo: number;
     itemId: string;
     itemCode: string | null;
+    barcode: string | null;
     itemName: string;
     uomId: string;
     unitName: string | null;
@@ -43,6 +44,7 @@ export interface SellingPriceRow {
     priceScope: PriceScope | null;
     bucketId: string | null;
     costRate: number;
+    costWot: number;
     costBasis: CostBasis | null;
     minPrice: number;
     roundOff: number;

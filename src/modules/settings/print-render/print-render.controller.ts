@@ -47,8 +47,8 @@ import { PrintRenderExceptionFilter } from './print-render-exception.filter';
  *   /print    renders whatever the assignment ladder resolves to for this
  *             counter, and writes one print_log row per copy.
  *
- * And a third that renders nothing: /log records a print the client made from
- * a /preview it already holds — the print dialog's Print and Download.
+ * And a third that renders nothing: /log records what the client did with a
+ * /preview it already holds — opened it (Preview / Pdf), printed it or saved it.
  *
  * Neither takes a company, a branch, a counter or an accounting year: all four
  * come from the authenticated context. A render reads a company's documents,
@@ -182,9 +182,10 @@ export class PrintRenderController {
     summary: 'Record a print made from a preview',
     description:
       'The print dialog renders through /preview (so Format can pick any design) and the ' +
-      'operator then prints or saves from the popup. This appends one print_log row per ' +
-      'document for that act, pointing at the revision that was rendered; the purpose, module ' +
-      'and document type come from the revision. Nothing is rendered.',
+      'operator then views, prints or saves it from the popup (PREVIEW, PRINT, FILE). This ' +
+      'appends one print_log row per document for that act, pointing at the revision that was ' +
+      'rendered; the purpose, module and document type come from the revision. Nothing is ' +
+      'rendered.',
   })
   @ApiCreatedResponse({ type: PrintRenderLogSuccessDto })
   @ApiBadRequestResponse({ type: PrintRenderErrorResponseDto })

@@ -11,7 +11,7 @@ export declare const PLG_OUTPUT_MODES: readonly ["PRINT", "PREVIEW", "EMAIL", "F
 export type PlgOutputMode = (typeof PLG_OUTPUT_MODES)[number];
 export declare const PLG_STATUSES: readonly ["SUCCESS", "FAILED", "QUEUED", "CANCELLED"];
 export type PlgStatus = (typeof PLG_STATUSES)[number];
-export declare const RECORDABLE_OUTPUT_MODES: readonly ["PRINT", "FILE"];
+export declare const RECORDABLE_OUTPUT_MODES: readonly ["PRINT", "FILE", "PREVIEW"];
 export type RecordableOutputMode = (typeof RECORDABLE_OUTPUT_MODES)[number];
 export declare const RENDER_TIMEOUT_MS = 30000;
 export declare const RENDER_COPY_TIMEOUT_MS = 15000;

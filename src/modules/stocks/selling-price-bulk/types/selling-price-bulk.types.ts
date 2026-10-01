@@ -150,6 +150,8 @@ export interface SellingPriceRow {
   lineNo: number;
   itemId: string;
   itemCode: string | null;
+  /** item_default_barcode — display only, never sent back on save (notes 76). */
+  barcode: string | null;
   itemName: string;
   uomId: string;
   unitName: string | null;
@@ -186,6 +188,11 @@ export interface SellingPriceRow {
    * that MRP's stock cost to land (notes 75); otherwise the branch average.
    */
   costRate: number;
+  /**
+   * costRate without tax, from the same source as costRate (notes 76). Exact for
+   * an item with cess, which cost ÷ (1 + tax%) is not.
+   */
+  costWot: number;
   /** Which figure costRate is — see COST_BASES. */
   costBasis: CostBasis | null;
   minPrice: number;

@@ -8,7 +8,7 @@ import { RenderPreviewDto } from './render-preview.dto';
  *
  * The print dialog renders through `/preview` — its Format button lets the
  * operator pick any design, and `/print` only renders the ladder's winner — and
- * the operator then prints or saves from the popup. This is that act. The
+ * the operator then views, prints or saves it from the popup. This is that act. The
  * document, company and year fields are the preview's own, so the row names the
  * same subject the render bound.
  */
@@ -23,7 +23,9 @@ export class RecordPrintDto extends PickType(RenderPreviewDto, [
 ] as const) {
   @ApiProperty({
     enum: RECORDABLE_OUTPUT_MODES as unknown as string[],
-    description: 'PRINT — sent to a printer. FILE — saved as a PDF.',
+    description:
+      'PRINT — sent to a printer. FILE — saved as a PDF. PREVIEW — opened in the popup ' +
+      '(Preview / Pdf) and not yet sent anywhere.',
   })
   @IsIn(RECORDABLE_OUTPUT_MODES as unknown as string[])
   outputMode!: RecordableOutputMode;

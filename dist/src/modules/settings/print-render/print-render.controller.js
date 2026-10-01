@@ -216,9 +216,10 @@ __decorate([
     (0, swagger_1.ApiOperation)({
         summary: 'Record a print made from a preview',
         description: 'The print dialog renders through /preview (so Format can pick any design) and the ' +
-            'operator then prints or saves from the popup. This appends one print_log row per ' +
-            'document for that act, pointing at the revision that was rendered; the purpose, module ' +
-            'and document type come from the revision. Nothing is rendered.',
+            'operator then views, prints or saves it from the popup (PREVIEW, PRINT, FILE). This ' +
+            'appends one print_log row per document for that act, pointing at the revision that was ' +
+            'rendered; the purpose, module and document type come from the revision. Nothing is ' +
+            'rendered.',
     }),
     (0, swagger_1.ApiCreatedResponse)({ type: print_render_response_dto_1.PrintRenderLogSuccessDto }),
     (0, swagger_1.ApiBadRequestResponse)({ type: print_render_response_dto_1.PrintRenderErrorResponseDto }),

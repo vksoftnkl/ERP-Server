@@ -8,6 +8,11 @@ export declare class ListSellingPriceQueryDto {
     itemSectionId?: string;
     supplierId?: string;
     itemId?: string;
+    search?: string;
+    itemCategoryId?: string;
+    trackPresetId?: string;
+    taxId?: string;
+    activeOnly?: boolean;
     limit?: number;
     offset?: number;
 }

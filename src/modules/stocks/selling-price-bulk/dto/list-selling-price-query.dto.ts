@@ -1,5 +1,11 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { OptionalQueryInt, OptionalUuid, RequiredUuid } from 'src/common/dto/dtoDecorators';
+import {
+  OptionalQueryBoolean,
+  OptionalQueryInt,
+  OptionalTrimmedString,
+  OptionalUuid,
+  RequiredUuid,
+} from 'src/common/dto/dtoDecorators';
 
 /**
  * §3's paging. A group filter over a 40,000-row item master with four buckets
@@ -49,6 +55,43 @@ export class ListSellingPriceQueryDto {
   })
   @OptionalUuid()
   itemId?: string;
+
+  // Notes 76 — the filter popup. All optional, ANDed with everything above.
+  @ApiPropertyOptional({
+    maxLength: 100,
+    description:
+      'Contains, case-insensitive, on item code, name, alias or default barcode. % and _ match ' +
+      'themselves.',
+  })
+  @OptionalTrimmedString(100)
+  search?: string;
+
+  @ApiPropertyOptional({ format: 'uuid', description: 'item_master.item_category_id' })
+  @OptionalUuid()
+  itemCategoryId?: string;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      "The EFFECTIVE stock track preset: the item's own item_track_preset_id, else its group's " +
+      '(the "Tracked as" the item entry shows).',
+  })
+  @OptionalUuid()
+  trackPresetId?: string;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description: "item_master.item_default_tax_id — the item entry's tax (dropdown 36).",
+  })
+  @OptionalUuid()
+  taxId?: string;
+
+  @ApiPropertyOptional({
+    default: true,
+    description: 'Only active items (default). false lists inactive ones too; deleted never.',
+  })
+  @OptionalQueryBoolean()
+  activeOnly?: boolean;
 
   @ApiPropertyOptional({ default: DEFAULT_PRICE_GRID_LIMIT, maximum: MAX_PRICE_GRID_LIMIT })
   @OptionalQueryInt(1, MAX_PRICE_GRID_LIMIT)

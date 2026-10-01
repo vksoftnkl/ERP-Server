@@ -22,6 +22,11 @@ class ListSellingPriceQueryDto {
     itemSectionId;
     supplierId;
     itemId;
+    search;
+    itemCategoryId;
+    trackPresetId;
+    taxId;
+    activeOnly;
     limit;
     offset;
 }
@@ -69,6 +74,45 @@ __decorate([
     (0, dtoDecorators_1.OptionalUuid)(),
     __metadata("design:type", String)
 ], ListSellingPriceQueryDto.prototype, "itemId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        maxLength: 100,
+        description: 'Contains, case-insensitive, on item code, name, alias or default barcode. % and _ match ' +
+            'themselves.',
+    }),
+    (0, dtoDecorators_1.OptionalTrimmedString)(100),
+    __metadata("design:type", String)
+], ListSellingPriceQueryDto.prototype, "search", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ format: 'uuid', description: 'item_master.item_category_id' }),
+    (0, dtoDecorators_1.OptionalUuid)(),
+    __metadata("design:type", String)
+], ListSellingPriceQueryDto.prototype, "itemCategoryId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        format: 'uuid',
+        description: "The EFFECTIVE stock track preset: the item's own item_track_preset_id, else its group's " +
+            '(the "Tracked as" the item entry shows).',
+    }),
+    (0, dtoDecorators_1.OptionalUuid)(),
+    __metadata("design:type", String)
+], ListSellingPriceQueryDto.prototype, "trackPresetId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        format: 'uuid',
+        description: "item_master.item_default_tax_id — the item entry's tax (dropdown 36).",
+    }),
+    (0, dtoDecorators_1.OptionalUuid)(),
+    __metadata("design:type", String)
+], ListSellingPriceQueryDto.prototype, "taxId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        default: true,
+        description: 'Only active items (default). false lists inactive ones too; deleted never.',
+    }),
+    (0, dtoDecorators_1.OptionalQueryBoolean)(),
+    __metadata("design:type", Boolean)
+], ListSellingPriceQueryDto.prototype, "activeOnly", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ default: exports.DEFAULT_PRICE_GRID_LIMIT, maximum: exports.MAX_PRICE_GRID_LIMIT }),
     (0, dtoDecorators_1.OptionalQueryInt)(1, exports.MAX_PRICE_GRID_LIMIT),

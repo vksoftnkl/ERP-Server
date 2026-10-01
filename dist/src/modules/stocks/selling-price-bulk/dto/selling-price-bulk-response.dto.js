@@ -75,6 +75,7 @@ class SellingPriceRowDto {
     lineNo;
     itemId;
     itemCode;
+    barcode;
     itemName;
     uomId;
     unitName;
@@ -86,6 +87,7 @@ class SellingPriceRowDto {
     priceScope;
     bucketId;
     costRate;
+    costWot;
     costBasis;
     minPrice;
     roundOff;
@@ -107,6 +109,14 @@ __decorate([
     (0, swagger_1.ApiPropertyOptional)({ nullable: true, example: 'SALT-1KG' }),
     __metadata("design:type", Object)
 ], SellingPriceRowDto.prototype, "itemCode", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        example: '8901234567890',
+        description: 'item_default_barcode — display only, never sent back on save (notes 76).',
+    }),
+    __metadata("design:type", Object)
+], SellingPriceRowDto.prototype, "barcode", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)({ example: 'Salt 1 Kg' }),
     __metadata("design:type", String)
@@ -179,6 +189,14 @@ __decorate([
     }),
     __metadata("design:type", Number)
 ], SellingPriceRowDto.prototype, "costRate", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        example: 85,
+        description: 'costRate without tax, from the same source (the MRP stock, the branch average or the ' +
+            'price row) — exact for an item with cess, unlike cost ÷ (1 + tax%) (notes 76).',
+    }),
+    __metadata("design:type", Number)
+], SellingPriceRowDto.prototype, "costWot", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)({
         enum: ['MRP', 'ITEM', 'PRICE_ROW'],

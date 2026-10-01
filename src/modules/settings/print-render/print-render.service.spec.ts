@@ -595,4 +595,28 @@ describe('PrintRenderService.recordPrint — a print made from a preview', () =>
       );
     }
   });
+
+  it('records a popup that was only opened as PREVIEW', async () => {
+    const { service, logged } = buildService({
+      version: versionFor(fixture),
+      datasets: datasetsFor(fixture),
+    });
+
+    await service.recordPrint({
+      versionId: '0196-version',
+      context,
+      outputMode: 'PREVIEW',
+      pageCount: 1,
+    });
+
+    expect(logged).toEqual([
+      expect.objectContaining({
+        srcDocId: '0196-bill',
+        outputMode: 'PREVIEW',
+        status: 'SUCCESS',
+        pageCount: 1,
+        byteCount: null,
+      }),
+    ]);
+  });
 });
