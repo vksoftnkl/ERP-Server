@@ -9,7 +9,7 @@ specs: `test/company-branch-notes-72.e2e-spec.ts` (11 cases, one rolled-back tra
 
 | Route / key | Change |
 |---|---|
-| `POST /company-masters/create` (new company) | Also writes the company's first **`fiscal_years`** row (A1): `compFinYearFrom` / `compFinYearTo` / `compBooksBeginFrom`, defaulting to the Indian year containing today. 400 on `compFinYearTo` when it is not after From or the year is longer than one year; 400 on `compBooksBeginFrom` when outside the year. |
+| `POST /company-masters/create` (new company) | Also writes the company's first **`fiscal_years`** row (A1), derived as the share's `43_fiscal_year_seed.sql` derives it: always **1 April – 31 March**, named `YYYY-(YYYY+1)`; the year beginning on `compFinYearFrom`, else ending on `compFinYearTo`, else containing `compBooksBeginFrom`, else today. 400 on `compFinYearFrom` when not a 1 April, on `compFinYearTo` when not the 31 March after it, on `compBooksBeginFrom` when outside the year. (Until the 2026-10-01 fix any range up to a year was accepted: ZT-CO-72B became `2026-2026`, since corrected to 2025-2026.) |
 | `compAatoClass` (A2) | **In.** `LE_1_5CR / LE_5CR / LE_10CR / GT_10CR`, not nullable. Add the Tax-tab combo. |
 | `compDcPurposes` (A3) | **In.** Array, at least one of `SUPPLY JOB_WORK APPROVAL EXHIBITION OWN_USE LINE_SALES OTHER` (the `sdc_purpose` CHECK). Upper-cased. |
 | `compTdsApplicable` (C1) | **New boolean** (column converted). Split the "TCS/TDS" box. |
@@ -41,7 +41,10 @@ specs: `test/company-branch-notes-72.e2e-spec.ts` (11 cases, one rolled-back tra
 ## Data
 
 - **A1 backfill:** every live company without a fiscal year got the current Indian year (dev:
-  LEAPSWITCH NETWORKS → 2026-2027, OPEN, current).
+  LEAPSWITCH NETWORKS → 2026-2027, OPEN, current). The share's 43 file is also in the repo as
+  `prisma/seed/Fiscal_Year_Seed.sql` (idempotent, runs with the seeds); run on dev 2026-10-01 it
+  inserted nothing. It anchors on books-begin / fin-year-from where the migration used today; the
+  two agree for a company with neither set.
 - **C3:** dev companies → REGULAR (ZT-CO-AUDIT → UNREGISTERED); two branches normalised.
 - **Acme Foods fails C7:** GSTIN `33ABNPL5414F1ZU` carries PAN `ABNPL5414F`, but `comp_pan_no` is
   `ABCDE1234F`, so the next full save of Acme is a 400 on `compPanNo` until the PAN is fixed.

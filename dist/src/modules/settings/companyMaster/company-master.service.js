@@ -111,7 +111,9 @@ const SIGNATURE_IMAGE_TYPES = [
 ];
 const utcDay = (year, monthIndex, day) => new Date(Date.UTC(year, monthIndex, day));
 const sameDay = (date) => utcDay(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
-const yearEndFrom = (date) => utcDay(date.getUTCFullYear() + 1, date.getUTCMonth(), date.getUTCDate() - 1);
+const aprilYearOf = (date) => date.getUTCMonth() >= 3 ? date.getUTCFullYear() : date.getUTCFullYear() - 1;
+const isFirstApril = (date) => date.getUTCMonth() === 3 && date.getUTCDate() === 1;
+const isThirtyFirstMarch = (date) => date.getUTCMonth() === 2 && date.getUTCDate() === 31;
 const isoDay = (date) => date.toISOString().slice(0, 10);
 let CompanyMasterService = class CompanyMasterService {
     prisma;
@@ -649,25 +651,39 @@ let CompanyMasterService = class CompanyMasterService {
     resolveFirstYear(dto) {
         const from = dto.compFinYearFrom ? sameDay(dto.compFinYearFrom) : null;
         const to = dto.compFinYearTo ? sameDay(dto.compFinYearTo) : null;
-        const begin = from ??
-            (to
-                ? utcDay(to.getUTCFullYear() - 1, to.getUTCMonth(), to.getUTCDate() + 1)
-                : this.currentIndianYearStart());
-        const end = to ?? yearEndFrom(begin);
-        if (end <= begin) {
-            this.throwBadRequest('Validation failed', [
-                { field: 'compFinYearTo', message: 'compFinYearTo must be after compFinYearFrom' },
-            ]);
-        }
-        if (end > yearEndFrom(begin)) {
+        const books = dto.compBooksBeginFrom ? sameDay(dto.compBooksBeginFrom) : null;
+        if (from && !isFirstApril(from)) {
             this.throwBadRequest('Validation failed', [
                 {
-                    field: 'compFinYearTo',
-                    message: `A financial year runs at most one year: from ${isoDay(begin)} it ends by ${isoDay(yearEndFrom(begin))}`,
+                    field: 'compFinYearFrom',
+                    message: `A financial year begins on 1 April; compFinYearFrom is ${isoDay(from)}`,
                 },
             ]);
         }
-        const booksBegin = dto.compBooksBeginFrom ? sameDay(dto.compBooksBeginFrom) : begin;
+        if (to && !isThirtyFirstMarch(to)) {
+            this.throwBadRequest('Validation failed', [
+                {
+                    field: 'compFinYearTo',
+                    message: `A financial year ends on 31 March; compFinYearTo is ${isoDay(to)}`,
+                },
+            ]);
+        }
+        if (from && to && to.getUTCFullYear() !== from.getUTCFullYear() + 1) {
+            this.throwBadRequest('Validation failed', [
+                {
+                    field: 'compFinYearTo',
+                    message: `A year from ${isoDay(from)} ends on ${from.getUTCFullYear() + 1}-03-31; compFinYearTo is ${isoDay(to)}`,
+                },
+            ]);
+        }
+        const startYear = from
+            ? from.getUTCFullYear()
+            : to
+                ? to.getUTCFullYear() - 1
+                : aprilYearOf(books ?? this.todayInIndia());
+        const begin = utcDay(startYear, 3, 1);
+        const end = utcDay(startYear + 1, 2, 31);
+        const booksBegin = books ?? begin;
         if (booksBegin < begin || booksBegin > end) {
             this.throwBadRequest('Validation failed', [
                 {
@@ -676,15 +692,10 @@ let CompanyMasterService = class CompanyMasterService {
                 },
             ]);
         }
-        return {
-            name: `${begin.getUTCFullYear()}-${end.getUTCFullYear()}`,
-            begin,
-            end,
-            booksBegin,
-        };
+        return { name: `${startYear}-${startYear + 1}`, begin, end, booksBegin };
     }
-    currentIndianYearStart() {
-        const [year, month] = new Intl.DateTimeFormat('en-CA', {
+    todayInIndia() {
+        const [year, month, day] = new Intl.DateTimeFormat('en-CA', {
             timeZone: 'Asia/Kolkata',
             year: 'numeric',
             month: '2-digit',
@@ -693,7 +704,7 @@ let CompanyMasterService = class CompanyMasterService {
             .format(new Date())
             .split('-')
             .map(Number);
-        return utcDay(month >= 4 ? year : year - 1, 3, 1);
+        return utcDay(year, month - 1, day);
     }
     assertGstin(gstin, stateCode, pan) {
         const check = (0, gst_registration_1.checkGstin)(gstin, stateCode, pan, {

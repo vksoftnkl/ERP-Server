@@ -188,20 +188,47 @@ describe('Company + Branch masters, notes 72 (e2e — one rolled-back transactio
     expect(year.fyBooksBeginDate?.toISOString().slice(0, 10)).toBe('2026-06-15');
 
     const backwards = await refusal(
-      newCompany('fy-back', { compFinYearFrom: '2026-04-01', compFinYearTo: '2026-03-01' }),
+      newCompany('fy-back', { compFinYearFrom: '2026-04-01', compFinYearTo: '2026-03-31' }),
     );
     expect(backwards.status).toBe(400);
-    expect(backwards.body).toContain('compFinYearTo');
+    expect(backwards.body).toContain('ends on 2027-03-31');
     const tooLong = await refusal(
-      newCompany('fy-long', { compFinYearFrom: '2026-04-01', compFinYearTo: '2027-04-30' }),
+      newCompany('fy-long', { compFinYearFrom: '2026-04-01', compFinYearTo: '2028-03-31' }),
     );
     expect(tooLong.status).toBe(400);
-    expect(tooLong.body).toContain('at most one year');
+    expect(tooLong.body).toContain('compFinYearTo');
     const outside = await refusal(
       newCompany('fy-books', { compFinYearFrom: '2026-04-01', compBooksBeginFrom: '2027-05-01' }),
     );
     expect(outside.status).toBe(400);
     expect(outside.body).toContain('compBooksBeginFrom');
+  });
+
+  it('A1. a year is always 1 April – 31 March: other dates are a 400, never a "2026-2026"', async () => {
+    // The range the Qt form was once sent (ZT-CO-72B): an eight-day "year".
+    const junk = await refusal(
+      newCompany('fy-junk', {
+        compFinYearFrom: '2026-03-20',
+        compFinYearTo: '2026-03-28',
+        compBooksBeginFrom: '2026-03-21',
+      }),
+    );
+    expect(junk.status).toBe(400);
+    expect(junk.body).toContain('begins on 1 April');
+    const calendar = await refusal(newCompany('fy-cal', { compFinYearTo: '2026-12-31' }));
+    expect(calendar.status).toBe(400);
+    expect(calendar.body).toContain('ends on 31 March');
+
+    // Without From / To the year is the one containing the books-begin date …
+    const midYear = await newCompany('fy-books-only', { compBooksBeginFrom: '2026-02-10' });
+    const [fromBooks] = await years(midYear.compId);
+    expect(fromBooks.fyYearName).toBe('2025-2026');
+    expect(fromBooks.fyBeginDate.toISOString().slice(0, 10)).toBe('2025-04-01');
+    expect(fromBooks.fyEndDate.toISOString().slice(0, 10)).toBe('2026-03-31');
+    expect(fromBooks.fyBooksBeginDate?.toISOString().slice(0, 10)).toBe('2026-02-10');
+    // … and To alone names the year it ends.
+    const toOnly = await newCompany('fy-to-only', { compFinYearTo: '2028-03-31' });
+    expect((await years(toOnly.compId))[0].fyYearName).toBe('2027-2028');
   });
 
   // ── A2 / A3 / C1 / C3 — the new fields ────────────────────────────────────

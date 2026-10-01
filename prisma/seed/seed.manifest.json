@@ -104,6 +104,10 @@
       "file": "App_Setting_Drcr_Display.sql",
       "description": "public.app_setting_def \u2014 accounts.drcr_display (DR_CR | TO_BY, COMPANY scope): whether the Voucher Register labels a leg Dr/Cr or By/To; display only, the Qt client defaults to DR_CR until the row exists. Needs only the app_settings migrations"
     },
+    {
+      "file": "Fiscal_Year_Seed.sql",
+      "description": "public.fiscal_years \u2014 the share's 43_fiscal_year_seed.sql (notes 72 A1): every live company with no live year gets the April\u2013March year containing comp_books_begin_from / comp_fin_year_from / today, OPEN and current. Idempotent: a company with any live year is never touched"
+    },
     { "file": "Hsn_Master.sql", "description": "fixed.hsn_master — GST HSN/SAC codes" },
     { "file": "Bank_Master.sql", "description": "fixed.bank_master — Indian banks" },
     {

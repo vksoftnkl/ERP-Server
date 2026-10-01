@@ -68,8 +68,10 @@ CRUD API for the **company master** — the tenant / legal company entity that o
   ledgers or vouchers use it. `POST /restore?compId=` brings a deleted company back active and
   not default (409 when it is not deleted).
 - **First fiscal year (notes 72 A1)** — create inserts the company's `fiscal_years` row in the same
-  transaction: `compFinYearFrom` / `compFinYearTo` / `compBooksBeginFrom` (default: the Indian
-  year containing today, books from its first day), OPEN and current. On update those three and
+  transaction, OPEN and current, always 1 April – 31 March (the derivation of
+  `prisma/seed/Fiscal_Year_Seed.sql`): the year beginning on `compFinYearFrom` (must be a 1 April),
+  else ending on `compFinYearTo` (must be the following 31 March), else containing
+  `compBooksBeginFrom`, else today; books from `compBooksBeginFrom` (inside the year) or 1 April. On update those three and
   `compBooksLockDate` are ignored; GET reports the current year's begin / end / books-begin / lock
   date (C2).
 - **GST (notes 72 C3 / C7)** — `compGstRegType` is REGULAR / COMPOSITION / UNREGISTERED / SEZ

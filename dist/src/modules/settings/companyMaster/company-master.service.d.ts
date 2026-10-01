@@ -32,7 +32,7 @@ export declare class CompanyMasterService {
     private currentYear;
     private assertDeletable;
     private resolveFirstYear;
-    private currentIndianYearStart;
+    private todayInIndia;
     private assertGstin;
     private normalizeSignature;
     private throwNotFound;

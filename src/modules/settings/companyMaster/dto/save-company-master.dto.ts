@@ -189,9 +189,9 @@ export class SaveCompanyMasterDto {
     format: 'date',
     nullable: true,
     description:
-      "CREATE ONLY: the first fiscal year's begin date (default: the 1 April of the Indian " +
-      'financial year containing today). Ignored on update — the year belongs to fiscal_years. ' +
-      "GET returns the current fiscal year's begin date.",
+      "CREATE ONLY: the first fiscal year's begin date — a 1 April, else 400 (a year is always " +
+      '1 April – 31 March). Default: the year containing compBooksBeginFrom, else today. ' +
+      "Ignored on update — the year belongs to fiscal_years. GET returns the current year's begin date.",
   })
   @NullableDate()
   compFinYearFrom?: Date | null;
@@ -201,8 +201,8 @@ export class SaveCompanyMasterDto {
     format: 'date',
     nullable: true,
     description:
-      "CREATE ONLY: the first fiscal year's end date (default: one year after compFinYearFrom, " +
-      "less a day; at most that). Ignored on update. GET returns the current year's end date.",
+      "CREATE ONLY: the first fiscal year's end date — the 31 March after compFinYearFrom, " +
+      "else 400. Ignored on update. GET returns the current year's end date.",
   })
   @NullableDate()
   compFinYearTo?: Date | null;
@@ -212,8 +212,8 @@ export class SaveCompanyMasterDto {
     format: 'date',
     nullable: true,
     description:
-      'CREATE ONLY: when the books begin, inside the first year (default: its begin date). ' +
-      "Ignored on update. GET returns the current year's books-begin date.",
+      'CREATE ONLY: when the books begin, inside the first year (default: its 1 April; 400 ' +
+      "outside it). Without From/To it picks the year. Ignored on update. GET returns the current year's books-begin date.",
   })
   @NullableDate()
   compBooksBeginFrom?: Date | null;

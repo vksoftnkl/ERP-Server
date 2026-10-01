@@ -147,9 +147,11 @@ const utcDay = (year: number, monthIndex: number, day: number) =>
   new Date(Date.UTC(year, monthIndex, day));
 const sameDay = (date: Date) =>
   utcDay(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
-/** The day before the same date a year on: the last day of a year begun on `date`. */
-const yearEndFrom = (date: Date) =>
-  utcDay(date.getUTCFullYear() + 1, date.getUTCMonth(), date.getUTCDate() - 1);
+/** The calendar year in which the April-to-March year containing `date` begins. */
+const aprilYearOf = (date: Date) =>
+  date.getUTCMonth() >= 3 ? date.getUTCFullYear() : date.getUTCFullYear() - 1;
+const isFirstApril = (date: Date) => date.getUTCMonth() === 3 && date.getUTCDate() === 1;
+const isThirtyFirstMarch = (date: Date) => date.getUTCMonth() === 2 && date.getUTCDate() === 31;
 const isoDay = (date: Date) => date.toISOString().slice(0, 10);
 
 type CompanyWriteClient = SettingsWriteClient;
@@ -769,34 +771,54 @@ export class CompanyMasterService {
     }
   }
   /**
-   * Notes 72 A1 — the year a new company starts in. Without dates it is the
-   * Indian financial year containing today (1 April – 31 March, IST); one date
-   * alone sets the other a year away. A year runs at most one year, and the
-   * books begin inside it.
+   * Notes 72 A1 — the year a new company starts in, derived as the share's
+   * 43_fiscal_year_seed.sql derives it (prisma/seed/Fiscal_Year_Seed.sql).
+   *
+   * A year is ALWAYS 1 April – 31 March and is named 'YYYY-YYYY' with the
+   * second year one more than the first: ck_caa_fin_year, isValidAccYear and
+   * every accYear check assume exactly that. So compFinYearFrom must be a
+   * 1 April and compFinYearTo the 31 March after it (400 otherwise — they are
+   * refused, not silently moved; a range like 2026-03-20 .. 2026-03-28 once
+   * became an eight-day year named '2026-2026'). The year is the one that
+   * begins on compFinYearFrom, else ends on compFinYearTo, else contains
+   * compBooksBeginFrom, else contains today (IST). The books begin inside it.
    */
   private resolveFirstYear(dto: SaveCompanyMasterDto): FirstYear {
     const from = dto.compFinYearFrom ? sameDay(dto.compFinYearFrom) : null;
     const to = dto.compFinYearTo ? sameDay(dto.compFinYearTo) : null;
-    const begin =
-      from ??
-      (to
-        ? utcDay(to.getUTCFullYear() - 1, to.getUTCMonth(), to.getUTCDate() + 1)
-        : this.currentIndianYearStart());
-    const end = to ?? yearEndFrom(begin);
-    if (end <= begin) {
-      this.throwBadRequest('Validation failed', [
-        { field: 'compFinYearTo', message: 'compFinYearTo must be after compFinYearFrom' },
-      ]);
-    }
-    if (end > yearEndFrom(begin)) {
+    const books = dto.compBooksBeginFrom ? sameDay(dto.compBooksBeginFrom) : null;
+    if (from && !isFirstApril(from)) {
       this.throwBadRequest('Validation failed', [
         {
-          field: 'compFinYearTo',
-          message: `A financial year runs at most one year: from ${isoDay(begin)} it ends by ${isoDay(yearEndFrom(begin))}`,
+          field: 'compFinYearFrom',
+          message: `A financial year begins on 1 April; compFinYearFrom is ${isoDay(from)}`,
         },
       ]);
     }
-    const booksBegin = dto.compBooksBeginFrom ? sameDay(dto.compBooksBeginFrom) : begin;
+    if (to && !isThirtyFirstMarch(to)) {
+      this.throwBadRequest('Validation failed', [
+        {
+          field: 'compFinYearTo',
+          message: `A financial year ends on 31 March; compFinYearTo is ${isoDay(to)}`,
+        },
+      ]);
+    }
+    if (from && to && to.getUTCFullYear() !== from.getUTCFullYear() + 1) {
+      this.throwBadRequest('Validation failed', [
+        {
+          field: 'compFinYearTo',
+          message: `A year from ${isoDay(from)} ends on ${from.getUTCFullYear() + 1}-03-31; compFinYearTo is ${isoDay(to)}`,
+        },
+      ]);
+    }
+    const startYear = from
+      ? from.getUTCFullYear()
+      : to
+        ? to.getUTCFullYear() - 1
+        : aprilYearOf(books ?? this.todayInIndia());
+    const begin = utcDay(startYear, 3, 1);
+    const end = utcDay(startYear + 1, 2, 31);
+    const booksBegin = books ?? begin;
     if (booksBegin < begin || booksBegin > end) {
       this.throwBadRequest('Validation failed', [
         {
@@ -805,16 +827,11 @@ export class CompanyMasterService {
         },
       ]);
     }
-    return {
-      name: `${begin.getUTCFullYear()}-${end.getUTCFullYear()}`,
-      begin,
-      end,
-      booksBegin,
-    };
+    return { name: `${startYear}-${startYear + 1}`, begin, end, booksBegin };
   }
-  /** 1 April of the Indian financial year that contains today, in IST. */
-  private currentIndianYearStart(): Date {
-    const [year, month] = new Intl.DateTimeFormat('en-CA', {
+  /** Today's date in IST, as a UTC-midnight Date like the DTO's dates. */
+  private todayInIndia(): Date {
+    const [year, month, day] = new Intl.DateTimeFormat('en-CA', {
       timeZone: 'Asia/Kolkata',
       year: 'numeric',
       month: '2-digit',
@@ -823,7 +840,7 @@ export class CompanyMasterService {
       .format(new Date())
       .split('-')
       .map(Number);
-    return utcDay(month >= 4 ? year : year - 1, 3, 1);
+    return utcDay(year, month - 1, day);
   }
   /**
    * Notes 72 C7 — the GSTIN must be of the company's own state and PAN.
