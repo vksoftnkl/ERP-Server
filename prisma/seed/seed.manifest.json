@@ -131,6 +131,10 @@
       "description": "fixed.form_section + fixed.form_field for menu 12 (Sales Entry) — the sale bill's Visible Settings config; targeted because Form_Section.sql skips a menu that already has any section, so it never adds a newly built screen to a laid-out database"
     },
     {
+      "file": "Supplier_Widget_Config_Menu22.sql",
+      "description": "fixed.form_section + fixed.form_field for menu 22 (Suppliers) — the supplier master's Visible Settings config, matched by name rather than the hardcoded ids Form_Section.sql / Form_Field.sql use, so a live database with a missing or half-built menu-22 config gets only what it lacks; after Form_Field.sql, so a fresh database keeps the exported ids"
+    },
+    {
       "file": "Gsp_Providers.sql",
       "description": "public.gst_provider + service/account/endpoint/field-map/error-map — the GSP catalogue (NIC direct, CHARTERED wrapper seeded INACTIVE). Depends only on 20260921120000_add_gst_provider_integration, so it can run anywhere in the order; kept last because nothing else reads it"
     }
