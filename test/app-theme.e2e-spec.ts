@@ -249,4 +249,67 @@ describe('App themes (e2e — one rolled-back transaction)', () => {
     );
     expect(saved.compStylesheetId).toBe(2);
   });
+  // ── plan-app-theme-template.md: the stylesheet rules, once, in the database ──
+  it('template: the active one lists its placeholders; /effective and /bootstrap carry it', async () => {
+    const tpl = await themes.template();
+    expect(tpl.placeholders).toEqual(expect.arrayContaining(['primary', 'primary.soft']));
+    const [company] = await tx.$queryRaw<Array<{ comp_id: string }>>`
+      SELECT comp_id FROM public.companys WHERE NOT comp_is_deleted LIMIT 1`;
+    const effective = await themes.effective(company.comp_id);
+    expect(effective.template).toEqual({
+      tplId: tpl.tplId,
+      tplQss: tpl.tplQss,
+      tplModifiedOn: tpl.tplModifiedOn,
+    });
+    // No token: nothing but the default theme's colours and the template.
+    const boot = await themes.bootstrap();
+    expect(Object.keys(boot).sort()).toEqual(['template', 'thmModifiedOn', 'tokens']);
+    expect(boot.template?.tplId).toBe(tpl.tplId);
+    expect(boot.tokens).toEqual(
+      (
+        await tx.appThemeMaster.findFirstOrThrow({
+          where: { thmIsDefault: true, thmIsDeleted: false },
+        })
+      ).thmTokens,
+    );
+  });
+
+  it('template save: needs edit; a bad text is a 400; a stale load is a 409; audited whole', async () => {
+    const tpl = await themes.template();
+    const save = (qss: string, loaded = tpl.tplModifiedOn) =>
+      themes.saveTemplate({
+        tplId: tpl.tplId,
+        tplQss: qss,
+        tplModifiedOn: loaded,
+        tplRemarks: 'e2e',
+      });
+
+    await grant({ create: true, edit: false, delete: true });
+    const denied = await refusal(attempt(() => save(tpl.tplQss)));
+    expect(denied.status).toBe(403);
+    await grant({ create: true, edit: true, delete: true });
+
+    const bad = await refusal(attempt(() => save(`${tpl.tplQss}\nX { color: {{nope}}; `)));
+    expect(bad.status).toBe(400);
+    expect(bad.body).toContain('unknown placeholder {{nope}}');
+    expect(bad.body).toContain('is never closed');
+
+    const next = `${tpl.tplQss}\n/* e2e ${stamp} */\n`;
+    const saved = await attempt(() => save(next));
+    expect(saved.tplQss).toBe(next);
+    expect(saved.tplModifiedOn).not.toBe(tpl.tplModifiedOn);
+
+    // A second save of the SAME load: someone else's edit is not overwritten.
+    const stale = await refusal(attempt(() => save(tpl.tplQss)));
+    expect(stale.status).toBe(409);
+    expect(stale.body).toContain('changed by someone else');
+    expect((await themes.template()).tplQss).toBe(next);
+
+    const [log] = await tx.$queryRaw<Array<{ before: unknown; after: unknown }>>`
+      SELECT log_original_record AS before, log_modified_record AS after FROM audit.audit_log
+       WHERE log_table_name = 'app theme template' AND log_pk = ${String(tpl.tplId)}
+       ORDER BY log_date DESC LIMIT 1`;
+    expect(JSON.stringify(log.after)).toContain(`e2e ${stamp}`);
+    expect(JSON.stringify(log.before)).not.toContain(`e2e ${stamp}`);
+  });
 });

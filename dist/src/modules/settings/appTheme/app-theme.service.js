@@ -20,6 +20,13 @@ const app_theme_types_1 = require("./types/app-theme.types");
 const APP_THEME_TABLE_NAME = 'app theme master';
 const APP_THEME_AUDIT_SCREEN_NAME = 'App Theme Master';
 const APP_THEME_MENU = { parent: 60, name: 'App Themes' };
+const APP_THEME_TEMPLATE_TABLE_NAME = 'app theme template';
+const APP_THEME_TEMPLATE_AUDIT_SCREEN_NAME = 'App Theme Template';
+const PLACEHOLDER_PATTERN = /\{\{([^{}]*)\}\}/g;
+const TEMPLATE_KEYS = new Set([
+    ...Object.keys(app_theme_types_1.APP_THEME_TOKENS),
+    ...app_theme_types_1.APP_THEME_SIZE_KEYS,
+]);
 let AppThemeService = class AppThemeService {
     prisma;
     auditLogService;
@@ -60,7 +67,142 @@ let AppThemeService = class AppThemeService {
         return {
             ...this.toPayload(theme, await this.usedByCount(this.prisma, theme.thmId)),
             resolvedFrom: own ? 'COMPANY' : 'DEFAULT',
+            template: this.toTemplateRef(await this.activeTemplate(this.prisma)),
         };
+    }
+    async bootstrap() {
+        const [theme, template] = await Promise.all([
+            this.prisma.appThemeMaster.findFirst({ where: { thmIsDefault: true, thmIsDeleted: false } }),
+            this.activeTemplate(this.prisma),
+        ]);
+        return {
+            tokens: theme ? this.readTokens(theme.thmTokens) : {},
+            thmModifiedOn: theme ? (theme.thmModifiedOn ?? theme.thmCreatedOn).toISOString() : null,
+            template: this.toTemplateRef(template),
+        };
+    }
+    async template() {
+        const record = await this.activeTemplate(this.prisma);
+        if (!record) {
+            (0, module_service_utils_1.throwSettingsNotFound)('No active app theme template', 'tplId', 'No live, active template exists: migration 20261001140000_app_theme_template seeds one.');
+        }
+        return this.toTemplatePayload(record);
+    }
+    async saveTemplate(dto) {
+        await this.requireRight('edit', 'edit the app theme template');
+        this.validateTemplate(dto.tplQss);
+        const actor = this.actor();
+        return this.prisma.$transaction(async (tx) => {
+            await tx.$queryRaw `
+        SELECT tpl_id FROM public.app_theme_template WHERE tpl_id = ${dto.tplId} FOR UPDATE`;
+            const existing = await tx.appThemeTemplate.findUnique({ where: { tplId: dto.tplId } });
+            if (!existing) {
+                (0, module_service_utils_1.throwSettingsNotFound)('App theme template not found', 'tplId', `No app theme template found with id ${dto.tplId}`);
+            }
+            if (existing.tplIsDeleted || !existing.tplIsActive) {
+                (0, module_service_utils_1.throwSettingsConflict)('Not the active template', [
+                    {
+                        field: 'tplId',
+                        message: `Template ${existing.tplId} is not the one clients apply; edit the one GET /app-themes/template answers.`,
+                    },
+                ]);
+            }
+            const current = this.templateStamp(existing);
+            const loaded = new Date(dto.tplModifiedOn).toISOString();
+            if (loaded !== current) {
+                (0, module_service_utils_1.throwSettingsConflict)('Template changed by someone else', [
+                    {
+                        field: 'tplModifiedOn',
+                        message: `It was saved at ${current}, after the copy you loaded (${loaded}). Reload it and apply your edit again.`,
+                    },
+                ]);
+            }
+            const saved = await tx.appThemeTemplate.update({
+                where: { tplId: existing.tplId },
+                data: {
+                    tplQss: dto.tplQss,
+                    ...(dto.tplRemarks !== undefined ? { tplRemarks: dto.tplRemarks } : {}),
+                    tplModifiedOn: new Date(),
+                    tplModifiedBy: actor,
+                },
+            });
+            await this.auditLogService.logEntityChange({
+                action: 'update',
+                tableName: APP_THEME_TEMPLATE_TABLE_NAME,
+                screenName: APP_THEME_TEMPLATE_AUDIT_SCREEN_NAME,
+                screenType: 'master',
+                pk: String(saved.tplId),
+                displayName: saved.tplName,
+                originalRecord: this.toTemplateAuditRecord(existing),
+                modifiedRecord: this.toTemplateAuditRecord(saved),
+                userId: actor,
+                notes: 'App theme template saved',
+            }, tx);
+            return this.toTemplatePayload(saved);
+        });
+    }
+    validateTemplate(qss) {
+        const errors = [];
+        const field = 'tplQss';
+        const bytes = Buffer.byteLength(qss, 'utf8');
+        if (bytes > app_theme_types_1.APP_THEME_TEMPLATE_MAX_BYTES) {
+            errors.push({
+                field,
+                message: `at most ${app_theme_types_1.APP_THEME_TEMPLATE_MAX_BYTES / 1024} KB; this one is ${Math.ceil(bytes / 1024)} KB`,
+            });
+        }
+        const unknown = new Set();
+        for (const [, key] of qss.matchAll(PLACEHOLDER_PATTERN)) {
+            if (!TEMPLATE_KEYS.has(key)) {
+                unknown.add(key);
+            }
+        }
+        for (const key of unknown) {
+            errors.push({ field, message: `unknown placeholder {{${key}}}` });
+        }
+        const blank = (text) => text.replace(/[^\n]/g, ' ');
+        let masked = qss;
+        const openComment = masked.search(/\/\*(?![\s\S]*?\*\/)/);
+        if (openComment >= 0) {
+            errors.push({
+                field,
+                message: `the comment opened on line ${this.lineOf(qss, openComment)} is never closed`,
+            });
+            masked = masked.slice(0, openComment) + blank(masked.slice(openComment));
+        }
+        masked = masked
+            .replace(/\/\*[\s\S]*?\*\//g, blank)
+            .replace(/"[^"\n]*"|'[^'\n]*'/g, blank)
+            .replace(PLACEHOLDER_PATTERN, blank);
+        const opened = [];
+        for (let index = 0; index < masked.length; index += 1) {
+            if (masked[index] === '{') {
+                opened.push(index);
+            }
+            else if (masked[index] === '}' && opened.pop() === undefined) {
+                errors.push({ field, message: `the } on line ${this.lineOf(qss, index)} closes nothing` });
+            }
+        }
+        for (const index of opened) {
+            errors.push({ field, message: `the { on line ${this.lineOf(qss, index)} is never closed` });
+        }
+        for (const match of masked.matchAll(/url\(/gi)) {
+            const start = (match.index ?? 0) + match[0].length;
+            const end = qss.indexOf(')', start);
+            const target = qss
+                .slice(start, end < 0 ? undefined : end)
+                .trim()
+                .replace(/^["']|["']$/g, '');
+            if (!target.startsWith(':/')) {
+                errors.push({
+                    field,
+                    message: `url(${target}) on line ${this.lineOf(qss, start)} is not a :/ resource`,
+                });
+            }
+        }
+        if (errors.length) {
+            (0, module_service_utils_1.throwSettingsBadRequest)('Invalid template', errors);
+        }
     }
     async save(dto) {
         const creating = dto.thmId === undefined;
@@ -270,6 +412,46 @@ let AppThemeService = class AppThemeService {
         }
         this.menuId = menu.menuId;
         return menu.menuId;
+    }
+    activeTemplate(client) {
+        return client.appThemeTemplate.findFirst({
+            where: { tplIsActive: true, tplIsDeleted: false },
+            orderBy: { tplId: 'asc' },
+        });
+    }
+    templateStamp(record) {
+        return (record.tplModifiedOn ?? record.tplCreatedOn).toISOString();
+    }
+    toTemplateRef(record) {
+        return record
+            ? { tplId: record.tplId, tplQss: record.tplQss, tplModifiedOn: this.templateStamp(record) }
+            : null;
+    }
+    toTemplatePayload(record) {
+        const placeholders = [
+            ...new Set([...record.tplQss.matchAll(PLACEHOLDER_PATTERN)].map(([, key]) => key)),
+        ];
+        return {
+            tplId: record.tplId,
+            tplName: record.tplName,
+            tplQss: record.tplQss,
+            tplRemarks: record.tplRemarks,
+            tplModifiedOn: this.templateStamp(record),
+            placeholders,
+        };
+    }
+    toTemplateAuditRecord(record) {
+        return {
+            tplId: record.tplId,
+            tplName: record.tplName,
+            tplQss: record.tplQss,
+            tplRemarks: record.tplRemarks,
+            tplIsActive: record.tplIsActive,
+            tplIsDeleted: record.tplIsDeleted,
+        };
+    }
+    lineOf(text, index) {
+        return text.slice(0, index).split('\n').length;
     }
     actor() {
         return this.requestContext.getUserId() ?? module_service_utils_1.DEFAULT_ACTOR;

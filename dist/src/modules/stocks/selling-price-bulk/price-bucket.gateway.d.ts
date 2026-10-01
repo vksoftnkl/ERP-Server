@@ -9,6 +9,7 @@ export interface ListSellingPricesArgs {
     itemBrandId?: string;
     itemSectionId?: string;
     supplierId?: string;
+    itemId?: string;
     limit: number;
     offset: number;
 }

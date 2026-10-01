@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.APP_THEME_BASES = exports.APP_THEME_COLOUR_PATTERN = exports.APP_THEME_TOKEN_KEYS = exports.APP_THEME_TOKENS = void 0;
+exports.APP_THEME_BASES = exports.APP_THEME_COLOUR_PATTERN = exports.APP_THEME_TEMPLATE_MAX_BYTES = exports.APP_THEME_SIZE_KEYS = exports.APP_THEME_TOKEN_KEYS = exports.APP_THEME_TOKENS = void 0;
 exports.APP_THEME_TOKENS = {
     primary: 'brand colour: buttons, tab underline, title band',
     'primary.hover': 'pressed / hover of primary',
@@ -35,8 +35,15 @@ exports.APP_THEME_TOKENS = {
     'info.bg': 'info strip background',
     'rate.below': 'rate moved below the price list',
     'rate.above': 'rate moved above the price list',
+    'primary.soft': 'hover background of buttons and list items',
+    'primary.softer': 'hover background of the master-list action buttons',
+    'primary.soft.border': 'border of a hovered button or list item',
+    'primary.pressed.bg': 'pressed background of the master-list action buttons',
+    'primary.pressed.border': 'border of a pressed button',
 };
 exports.APP_THEME_TOKEN_KEYS = Object.keys(exports.APP_THEME_TOKENS);
+exports.APP_THEME_SIZE_KEYS = ['size.font', 'size.icon', 'size.header'];
+exports.APP_THEME_TEMPLATE_MAX_BYTES = 512 * 1024;
 exports.APP_THEME_COLOUR_PATTERN = /^#[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?$/;
 exports.APP_THEME_BASES = ['LIGHT', 'DARK'];
 //# sourceMappingURL=app-theme.types.js.map

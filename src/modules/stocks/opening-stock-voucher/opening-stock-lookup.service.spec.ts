@@ -104,16 +104,15 @@ describe('OpeningStockLookupService', () => {
     expect(sql).toContain('LEFT JOIN LATERAL');
     expect(sql).toContain("COALESCE(stp.stp_track_signature, 'N')");
     expect(sql).toContain('COALESCE(i.item_is_service, false) = false');
-    // Company is STRICT once given — a null company on the ITEM is a row
-    // nobody owns; branch is nullable-means-shared, the same shape the policy
-    // uses. Both predicates switch off when the PARAMETER is null.
+    // A blank company or branch on the ITEM means shared (notes 73): the
+    // company's own items plus the shared ones, the branch's own plus the
+    // company-wide ones. Both predicates switch off when the PARAMETER is null.
     expect(sql).toMatch(
-      /AND \(NULLIF\(\?::text, ''\) IS NULL\s+OR i\.item_company_id = \?::uuid\)/,
+      /AND \(NULLIF\(\?::text, ''\) IS NULL\s+OR i\.item_company_id IS NULL\s+OR i\.item_company_id = \?::uuid\)/,
     );
     expect(sql).toMatch(
       /AND \(NULLIF\(\?::text, ''\) IS NULL\s+OR i\.item_branch_id IS NULL\s+OR i\.item_branch_id = \?::uuid\)/,
     );
-    expect(sql).not.toContain('i.item_company_id IS NULL');
     // Only live, active items — both flags are NOT NULL, so no COALESCE.
     expect(sql).toContain('AND i.item_is_active  = true');
     expect(sql).toContain('AND i.item_is_deleted = false');
@@ -248,8 +247,10 @@ describe('OpeningStockLookupService', () => {
 
     it('an inactive item', () => expect404(cause({ isActive: false }), {}, 'itemId', 'inactive'));
 
-    it('an item with no company — nobody owns it, and it is not treated as shared', () =>
-      expect404(cause({ companyId: null }), {}, 'itemId', 'no company set'));
+    // A blank company is shared (notes 73), so it is never the cause: the
+    // diagnosis moves on to the next one.
+    it('an item with no company is shared — the cause is never its company', () =>
+      expect404(cause({ companyId: null, isService: true }), {}, 'itemId', 'service item'));
 
     it("another company's item, even when scanned from this company", () =>
       expect404(cause({ companyId: OTHER_COMPANY_ID }), {}, 'itemId', 'another company'));

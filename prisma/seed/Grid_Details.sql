@@ -586,8 +586,16 @@ ORDER BY br_name$seed$)
 	UM.unit_name
 FROM inventory.item_master IM
 	 INNER JOIN inventory.item_unit_conversion CM ON CM.iuc_item_id = IM.item_id
+	        AND COALESCE(CM.iuc_is_deleted, false) = false
 	 INNER JOIN inventory.item_unit_master UM ON UM.unit_id = CM.iuc_unit_id
+	        AND UM.unit_is_deleted = false
 WHERE IM.item_is_active = true AND IM.item_is_deleted = false
+	AND (NULLIF(NULLIF('iitem_company_id', ''), 'iitem_company' || '_id') IS NULL
+	     OR IM.item_company_id IS NULL
+	     OR IM.item_company_id::text = lower(NULLIF(NULLIF('iitem_company_id', ''), 'iitem_company' || '_id')))
+	AND (NULLIF(NULLIF('iitem_branch_id', ''), 'iitem_branch' || '_id') IS NULL
+	     OR IM.item_branch_id IS NULL
+	     OR IM.item_branch_id::text = lower(NULLIF(NULLIF('iitem_branch_id', ''), 'iitem_branch' || '_id')))
 ORDER BY IM.item_name_en$seed$)
     ,(72, 'POPUP - COMPANYS'             , NULL, NULL              , 'Ascending', 'Desktop', true , false, 'system', $seed$SELECT
 	comp_id, 

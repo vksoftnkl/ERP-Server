@@ -116,22 +116,24 @@ let OpeningStockLookupService = class OpeningStockLookupService {
          -- item which this lookup then returned in full (confirmed
          -- 2026-09-08).
          --
-         -- When a company IS given the match is STRICT, not "= company OR
-         -- IS NULL". A null company means something definite for
-         -- stock_track_policy, stock_ageing_slab and stock_reason_master
-         -- (shared with every company) and nothing at all for an item;
-         -- treating it as shared here would invent a rule. When NO company is
-         -- given (the parameter is null or empty) the predicate is off
-         -- altogether — the caller asked for the item regardless of who owns it.
+         -- A BLANK COMPANY ON AN ITEM MEANS SHARED — every company may use
+         -- it — as it does for ledgers, groups, customers and suppliers: the
+         -- item card leaves Company blank precisely to share an item (notes
+         -- 73, the user's rule). So with a company given: that company's own
+         -- items plus the shared ones, never another company's. The stock
+         -- adjustment's pick-stock (stock-voucher.service) and the price
+         -- gateway already read items this way; until notes 73 this lookup
+         -- alone was strict and refused every shared item. With no company
+         -- given (null or empty) the predicate is off altogether — the caller
+         -- asked for the item regardless of who owns it.
          AND (NULLIF(${companyId}::text, '') IS NULL
+              OR i.item_company_id IS NULL
               OR i.item_company_id = ${companyId}::uuid)
-         -- BRANCH, on the other hand, IS nullable-means-shared: 10,010 of the
-         -- 10,041 live items carry no branch and belong to the whole company,
-         -- 31 are branch-specific. With a branch given: this branch's own
-         -- items plus the company-wide ones, never another branch's — the
-         -- same shape fn_stp_effective uses for stp_branch_id. The asymmetry
-         -- with the company predicate is deliberate. With no branch given the
-         -- predicate is off, like the company one.
+         -- BRANCH, the same shape: 10,010 of the 10,041 live items carry no
+         -- branch and belong to the whole company, 31 are branch-specific.
+         -- With a branch given: this branch's own items plus the company-wide
+         -- ones, never another branch's — the shape fn_stp_effective uses for
+         -- stp_branch_id. With no branch given the predicate is off.
          AND (NULLIF(${branchId}::text, '') IS NULL
               OR i.item_branch_id IS NULL
               OR i.item_branch_id = ${branchId}::uuid)
@@ -204,10 +206,7 @@ let OpeningStockLookupService = class OpeningStockLookupService {
         if (!cause.isActive) {
             return notFound('itemId', 'This item is inactive; activate it on the item master first.');
         }
-        if (companyId !== null && cause.companyId === null) {
-            return notFound('itemId', 'This item has no company set, so no company can open it; set one on the item master.');
-        }
-        if (companyId !== null && cause.companyId !== companyId) {
+        if (companyId !== null && cause.companyId !== null && cause.companyId !== companyId) {
             return notFound('itemId', 'This item belongs to another company.');
         }
         if (branchId !== null && cause.branchId !== null && cause.branchId !== branchId) {

@@ -429,6 +429,20 @@ exports.AUDIT_SCREEN_SQL_BY_NAME = new Map([
         ]),
     ],
     [
+        'App Theme Template',
+        buildAuditSql('public.app_theme_template', [
+            ['tpl_name', 'Template'],
+            ['tpl_qss', 'Stylesheet'],
+            ['tpl_remarks', 'Remarks'],
+            ['tpl_is_active', 'Is Active'],
+            ['tpl_is_deleted', 'Is Deleted'],
+            ['tpl_created_on', 'Created On'],
+            ['tpl_created_by', 'Created By'],
+            ['tpl_modified_on', 'Modified On'],
+            ['tpl_modified_by', 'Modified By'],
+        ]),
+    ],
+    [
         'Company Master',
         buildAuditSql('public.companys', [
             ['comp_code', 'Company Code'],

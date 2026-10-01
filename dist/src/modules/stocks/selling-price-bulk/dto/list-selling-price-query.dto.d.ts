@@ -7,6 +7,7 @@ export declare class ListSellingPriceQueryDto {
     itemBrandId?: string;
     itemSectionId?: string;
     supplierId?: string;
+    itemId?: string;
     limit?: number;
     offset?: number;
 }

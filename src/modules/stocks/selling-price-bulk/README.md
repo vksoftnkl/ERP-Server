@@ -15,7 +15,7 @@ Three routes:
 | Route | What it is |
 |---|---|
 | `GET /api/v1/stock/price-bulk` | the grid — Q25, paged, four optional filters |
-| `GET /api/v1/stock/price-buckets/:itemId` | F12's bucket picker — Q24 |
+| `GET /api/v1/stock/price-buckets/:itemId` | F12's bucket picker — Q24: the price rows this branch sees, plus the stock buckets with no row of their own, priced as the grid prices them (notes 74) |
 | `POST /api/v1/stock/price-bulk` | the save — cost → Q26 → S1–S3 → Q27, one transaction |
 
 ## The thing this screen is actually about

@@ -365,11 +365,22 @@ export class ItemsMasterService {
     uiTableId?: string;
     uiColumnId?: string;
   }): Promise<BulkLoadItemPayload[]> {
+    // A blank company or branch on an item means SHARED (notes 73): a
+    // company's load takes its own items plus the shared ones, a branch's its
+    // own plus the company-wide ones — never another company's or branch's.
+    // Until notes 73 both were strict, so a branch-scoped load left out every
+    // company-wide item and a company-scoped one every shared item.
+    const scope: Prisma.ItemMasterWhereInput[] = [];
+    if (params.itemCompanyId) {
+      scope.push({ OR: [{ itemCompanyId: params.itemCompanyId }, { itemCompanyId: null }] });
+    }
+    if (params.itemBranchId) {
+      scope.push({ OR: [{ itemBranchId: params.itemBranchId }, { itemBranchId: null }] });
+    }
     const where: Prisma.ItemMasterWhereInput = {
       itemIsDeleted: false,
       itemIsActive: true,
-      ...(params.itemCompanyId ? { itemCompanyId: params.itemCompanyId } : {}),
-      ...(params.itemBranchId ? { itemBranchId: params.itemBranchId } : {}),
+      ...(scope.length ? { AND: scope } : {}),
       ...(params.itemGroupId ? { itemGroupId: params.itemGroupId } : {}),
       ...(params.itemBrandId ? { itemBrandId: params.itemBrandId } : {}),
       ...(params.itemSectionId ? { itemSectionId: params.itemSectionId } : {}),
@@ -722,6 +733,7 @@ export class ItemsMasterService {
     };
     this.applyOptionalFields(data, saveItemDto);
     const create = async (client: Prisma.TransactionClient) => {
+      await this.assertBranchOfCompany(client, companyId, saveItemDto.item_branch_id ?? null);
       await this.inheritClassDefaults(client, data, saveItemDto);
       const created = await client.itemMaster.create({ data, include: TRACK_PRESET_INCLUDE });
       // Same transaction as the item: an item never exists without the policy
@@ -751,6 +763,42 @@ export class ItemsMasterService {
     } catch (error: unknown) {
       this.handleWriteError(error);
       throw error;
+    }
+  }
+  /**
+   * Notes 73 C — a branch belongs to exactly one company, so an item scoped to
+   * a branch must name that branch's company. A blank company shares the item
+   * with every company; "every company, but only this one company's branch"
+   * means nothing. 400 on item_branch_id for a branch without a company, a
+   * branch that does not exist, or another company's branch.
+   */
+  private async assertBranchOfCompany(
+    client: Prisma.TransactionClient,
+    companyId: string | null,
+    branchId: string | null,
+  ): Promise<void> {
+    if (!branchId) {
+      return;
+    }
+    const refuse = (message: string): never =>
+      throwInventoryBadRequest<ItemErrorDetail>('Validation failed', [
+        { field: 'item_branch_id', message },
+      ]);
+    if (!companyId) {
+      return refuse(
+        "An item with a branch must name that branch's company: set item_company_id, or clear " +
+          'item_branch_id to share the item with every company',
+      );
+    }
+    const branch = await client.branchMaster.findFirst({
+      where: { brId: branchId },
+      select: { brCompId: true, brName: true },
+    });
+    if (!branch) {
+      return refuse(`No branch found with id ${branchId}`);
+    }
+    if (branch.brCompId !== companyId) {
+      return refuse(`${branch.brName} belongs to another company, not to item_company_id`);
     }
   }
   /**
@@ -875,6 +923,19 @@ export class ItemsMasterService {
       };
       if (saveItemDto.item_company_id !== undefined) {
         data.itemCompanyId = saveItemDto.item_company_id ?? null;
+      }
+      // Notes 73 C, against what the item will hold after this save. An update
+      // that states neither key leaves an existing row as it is.
+      if (saveItemDto.item_company_id !== undefined || saveItemDto.item_branch_id !== undefined) {
+        await this.assertBranchOfCompany(
+          client,
+          saveItemDto.item_company_id !== undefined
+            ? (saveItemDto.item_company_id ?? null)
+            : existing.itemCompanyId,
+          saveItemDto.item_branch_id !== undefined
+            ? (saveItemDto.item_branch_id ?? null)
+            : existing.itemBranchId,
+        );
       }
       if (saveItemDto.item_base_unit_id !== undefined) {
         data.itemBaseUnitId = saveItemDto.item_base_unit_id ?? null;

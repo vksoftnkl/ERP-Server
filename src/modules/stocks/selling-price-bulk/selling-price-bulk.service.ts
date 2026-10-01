@@ -95,13 +95,17 @@ export class SellingPriceBulkService {
       itemBrandId: queryDto.itemBrandId,
       itemSectionId: queryDto.itemSectionId,
       supplierId: queryDto.supplierId,
+      itemId: queryDto.itemId,
       limit,
       offset,
     });
     return { items: await this.toGridRows(page.items, offset), meta: page.meta };
   }
 
-  /** §4 — Q24, F12: every live price row this branch can see, headline first. */
+  /**
+   * §4 — Q24, F12: every live price row this branch can see, plus every stock
+   * bucket at the branch with no row of its own (notes 74), headline first.
+   */
   async listBuckets(itemId: string, queryDto: PriceBucketsQueryDto): Promise<SellingPriceRow[]> {
     const records = await this.gateway.listBuckets(itemId, queryDto.companyId, queryDto.branchId);
     return this.toGridRows(records, 0);

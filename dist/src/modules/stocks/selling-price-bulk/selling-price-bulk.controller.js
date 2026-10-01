@@ -75,7 +75,7 @@ __decorate([
             "stockQty is in the row's own unit. Paged, because a group filter over a 40,000-row item master with four buckets " +
             'each is not a grid; F8 exists so the operator narrows before loading. taxPerc is ' +
             'resolved server-side as of today through item_tax_history, so the client never has to ' +
-            'ask which tax row applied.',
+            'ask which tax row applied. itemId narrows the grid to one item (the Add item search).',
     }),
     (0, swagger_1.ApiOkResponse)({ type: selling_price_bulk_response_dto_1.SellingPriceListSuccessDto }),
     (0, swagger_1.ApiBadRequestResponse)({ type: selling_price_bulk_response_dto_1.SellingPriceErrorResponseDto }),
@@ -88,11 +88,14 @@ __decorate([
     (0, common_1.Get)('price-buckets/:itemId'),
     (0, common_1.Version)(api_version_1.API_VERSION),
     (0, swagger_1.ApiOperation)({
-        summary: 'F12 — every live price row of one item this branch can see',
+        summary: 'F12 — every live price row of one item this branch can see, and every unpriced stock bucket',
         description: "The chain rows and this branch's own, never another branch's: the headline first, " +
             'then by MRP and sale price, the chain row before the branch override of the same ' +
             'bucket. The grid shows only the row that wins at this branch; this list shows both, so ' +
-            "the operator sees what an edit hides. stockQty is the stock on hand for each row's own " +
+            'the operator sees what an edit hides. Also every bucket with stock at this branch that ' +
+            'has no row of its own (a received MRP nobody has priced yet), per unit, priced exactly as ' +
+            "the grid prices it: priceSource MASTER with the headline's prices and cost, bucketId the " +
+            "headline's (null when there is none). stockQty is the stock on hand for each row's own " +
             "bucket at this branch, in the row's unit. Every row carries its own values complete, so " +
             'picking one resets the client row wholesale rather than merging into what was there.',
     }),

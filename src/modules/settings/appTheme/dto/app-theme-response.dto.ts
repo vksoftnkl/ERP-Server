@@ -50,6 +50,16 @@ export class AppThemePayloadDto {
   thmModifiedOn!: string | null;
 }
 
+/** The template as /effective and /bootstrap carry it. */
+export class AppThemeTemplateRefDto {
+  @ApiProperty({ example: 1 })
+  tplId!: number;
+  @ApiProperty({ description: 'QSS with {{key}} placeholders, to fill from the tokens.' })
+  tplQss!: string;
+  @ApiProperty({ example: '2026-10-01T08:00:00.000Z' })
+  tplModifiedOn!: string;
+}
+
 export class AppThemeEffectivePayloadDto extends AppThemePayloadDto {
   @ApiProperty({
     enum: ['COMPANY', 'DEFAULT'],
@@ -58,6 +68,59 @@ export class AppThemeEffectivePayloadDto extends AppThemePayloadDto {
       'or deleted one.',
   })
   resolvedFrom!: 'COMPANY' | 'DEFAULT';
+
+  @ApiProperty({
+    type: AppThemeTemplateRefDto,
+    nullable: true,
+    description: 'The active stylesheet template; null only while there is none.',
+  })
+  template!: AppThemeTemplateRefDto | null;
+}
+
+/** GET /app-themes/template. */
+export class AppThemeTemplatePayloadDto extends AppThemeTemplateRefDto {
+  @ApiProperty({ example: 'NEXERP' })
+  tplName!: string;
+  @ApiProperty({ nullable: true, type: String })
+  tplRemarks!: string | null;
+  @ApiProperty({
+    type: [String],
+    example: ['primary', 'surface', 'text'],
+    description: 'The distinct {{key}}s the template uses, in order of first use.',
+  })
+  placeholders!: string[];
+}
+
+export class AppThemeSuccessTemplateDto {
+  @ApiProperty({ example: true })
+  success!: true;
+  @ApiProperty({ example: 'App theme template fetched successfully' })
+  message!: string;
+  @ApiProperty({ type: AppThemeTemplatePayloadDto })
+  data!: AppThemeTemplatePayloadDto;
+}
+
+/** GET /app-themes/bootstrap — no token. */
+export class AppThemeBootstrapPayloadDto {
+  @ApiProperty({
+    type: 'object',
+    additionalProperties: { type: 'string' },
+    description: "The default theme's colour tokens.",
+  })
+  tokens!: Record<string, string>;
+  @ApiProperty({ nullable: true, type: String })
+  thmModifiedOn!: string | null;
+  @ApiProperty({ type: AppThemeTemplateRefDto, nullable: true })
+  template!: AppThemeTemplateRefDto | null;
+}
+
+export class AppThemeSuccessBootstrapDto {
+  @ApiProperty({ example: true })
+  success!: true;
+  @ApiProperty({ example: 'App theme bootstrap fetched successfully' })
+  message!: string;
+  @ApiProperty({ type: AppThemeBootstrapPayloadDto })
+  data!: AppThemeBootstrapPayloadDto;
 }
 
 export class AppThemeSuccessSingleDto {

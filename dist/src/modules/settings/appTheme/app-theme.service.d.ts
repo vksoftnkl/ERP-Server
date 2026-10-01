@@ -2,7 +2,8 @@ import { PrismaService } from "../../../database/prisma/prisma.service";
 import { AuditLogService } from "../../audit-log/audit-log.service";
 import { RequestContextService } from "../../../common/request-context/request-context.service";
 import { SaveAppThemeDto } from './dto/save-app-theme.dto';
-import { type AppThemeDeleteResult, type AppThemeEffectivePayload, type AppThemePayload } from './types/app-theme.types';
+import { SaveAppThemeTemplateDto } from './dto/save-app-theme-template.dto';
+import { type AppThemeBootstrapPayload, type AppThemeDeleteResult, type AppThemeEffectiveWithTemplate, type AppThemePayload, type AppThemeTemplatePayload } from './types/app-theme.types';
 export declare class AppThemeService {
     private readonly prisma;
     private readonly auditLogService;
@@ -10,7 +11,11 @@ export declare class AppThemeService {
     private menuId;
     constructor(prisma: PrismaService, auditLogService: AuditLogService, requestContext: RequestContextService);
     getById(thmId: number): Promise<AppThemePayload>;
-    effective(companyId: string): Promise<AppThemeEffectivePayload>;
+    effective(companyId: string): Promise<AppThemeEffectiveWithTemplate>;
+    bootstrap(): Promise<AppThemeBootstrapPayload>;
+    template(): Promise<AppThemeTemplatePayload>;
+    saveTemplate(dto: SaveAppThemeTemplateDto): Promise<AppThemeTemplatePayload>;
+    validateTemplate(qss: string): void;
     save(dto: SaveAppThemeDto): Promise<AppThemePayload>;
     softDelete(thmId: number): Promise<AppThemeDeleteResult>;
     restore(thmId: number): Promise<AppThemeDeleteResult>;
@@ -20,6 +25,12 @@ export declare class AppThemeService {
     private usedByCount;
     private requireRight;
     private resolveMenuId;
+    private activeTemplate;
+    private templateStamp;
+    private toTemplateRef;
+    private toTemplatePayload;
+    private toTemplateAuditRecord;
+    private lineOf;
     private actor;
     private toPayload;
     private toAuditRecord;

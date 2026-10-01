@@ -21,6 +21,7 @@ class ListSellingPriceQueryDto {
     itemBrandId;
     itemSectionId;
     supplierId;
+    itemId;
     limit;
     offset;
 }
@@ -59,6 +60,15 @@ __decorate([
     (0, dtoDecorators_1.OptionalUuid)(),
     __metadata("design:type", String)
 ], ListSellingPriceQueryDto.prototype, "supplierId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        format: 'uuid',
+        description: "ONE item: every unit × live bucket of it, with stock — the screen's Add item (notes 74). " +
+            'ANDed with the four filters above.',
+    }),
+    (0, dtoDecorators_1.OptionalUuid)(),
+    __metadata("design:type", String)
+], ListSellingPriceQueryDto.prototype, "itemId", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ default: exports.DEFAULT_PRICE_GRID_LIMIT, maximum: exports.MAX_PRICE_GRID_LIMIT }),
     (0, dtoDecorators_1.OptionalQueryInt)(1, exports.MAX_PRICE_GRID_LIMIT),

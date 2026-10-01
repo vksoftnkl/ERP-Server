@@ -1,0 +1,22 @@
+/// The stylesheet RULES every client applies — QSS written once, with {{key}}
+/// placeholders the client fills from the company's app_theme_master tokens
+/// (theme/plan-app-theme-template.md, migration 20261001140000_app_theme_template).
+/// Shared by every company. One live active row (ux_tpl_active, raw SQL in the
+/// migration). tpl_id is GENERATED ALWAYS AS IDENTITY: never written.
+model AppThemeTemplate {
+  tplId          Int       @id @default(autoincrement()) @map("tpl_id")
+  tplName        String    @db.VarChar(100) @map("tpl_name")
+  /// QSS with {{token}} / {{size.*}} placeholders, at most 512 KB.
+  tplQss         String    @map("tpl_qss")
+  tplIsActive    Boolean   @default(true) @map("tpl_is_active")
+  tplIsDeleted   Boolean   @default(false) @map("tpl_is_deleted")
+  tplRemarks     String?   @db.VarChar(250) @map("tpl_remarks")
+  /// NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).
+  tplSyncDate    DateTime? @db.Timestamptz(6) @map("tpl_sync_date")
+  tplCreatedOn   DateTime  @default(now()) @db.Timestamptz(6) @map("tpl_created_on")
+  tplCreatedBy   String?   @db.VarChar(100) @map("tpl_created_by")
+  tplModifiedOn  DateTime? @db.Timestamptz(6) @map("tpl_modified_on")
+  tplModifiedBy  String?   @db.VarChar(100) @map("tpl_modified_by")
+  @@map("app_theme_template")
+  @@schema("public")
+}

@@ -262,11 +262,17 @@ let ItemsMasterService = class ItemsMasterService {
         };
     }
     async listForBulkLoad(params) {
+        const scope = [];
+        if (params.itemCompanyId) {
+            scope.push({ OR: [{ itemCompanyId: params.itemCompanyId }, { itemCompanyId: null }] });
+        }
+        if (params.itemBranchId) {
+            scope.push({ OR: [{ itemBranchId: params.itemBranchId }, { itemBranchId: null }] });
+        }
         const where = {
             itemIsDeleted: false,
             itemIsActive: true,
-            ...(params.itemCompanyId ? { itemCompanyId: params.itemCompanyId } : {}),
-            ...(params.itemBranchId ? { itemBranchId: params.itemBranchId } : {}),
+            ...(scope.length ? { AND: scope } : {}),
             ...(params.itemGroupId ? { itemGroupId: params.itemGroupId } : {}),
             ...(params.itemBrandId ? { itemBrandId: params.itemBrandId } : {}),
             ...(params.itemSectionId ? { itemSectionId: params.itemSectionId } : {}),
@@ -547,6 +553,7 @@ let ItemsMasterService = class ItemsMasterService {
         };
         this.applyOptionalFields(data, saveItemDto);
         const create = async (client) => {
+            await this.assertBranchOfCompany(client, companyId, saveItemDto.item_branch_id ?? null);
             await this.inheritClassDefaults(client, data, saveItemDto);
             const created = await client.itemMaster.create({ data, include: TRACK_PRESET_INCLUDE });
             await this.stockTrackPolicyService.syncFromItem(created, client);
@@ -571,6 +578,28 @@ let ItemsMasterService = class ItemsMasterService {
         catch (error) {
             this.handleWriteError(error);
             throw error;
+        }
+    }
+    async assertBranchOfCompany(client, companyId, branchId) {
+        if (!branchId) {
+            return;
+        }
+        const refuse = (message) => (0, module_service_utils_2.throwInventoryBadRequest)('Validation failed', [
+            { field: 'item_branch_id', message },
+        ]);
+        if (!companyId) {
+            return refuse("An item with a branch must name that branch's company: set item_company_id, or clear " +
+                'item_branch_id to share the item with every company');
+        }
+        const branch = await client.branchMaster.findFirst({
+            where: { brId: branchId },
+            select: { brCompId: true, brName: true },
+        });
+        if (!branch) {
+            return refuse(`No branch found with id ${branchId}`);
+        }
+        if (branch.brCompId !== companyId) {
+            return refuse(`${branch.brName} belongs to another company, not to item_company_id`);
         }
     }
     async inheritClassDefaults(client, data, dto) {
@@ -653,6 +682,13 @@ let ItemsMasterService = class ItemsMasterService {
             };
             if (saveItemDto.item_company_id !== undefined) {
                 data.itemCompanyId = saveItemDto.item_company_id ?? null;
+            }
+            if (saveItemDto.item_company_id !== undefined || saveItemDto.item_branch_id !== undefined) {
+                await this.assertBranchOfCompany(client, saveItemDto.item_company_id !== undefined
+                    ? (saveItemDto.item_company_id ?? null)
+                    : existing.itemCompanyId, saveItemDto.item_branch_id !== undefined
+                    ? (saveItemDto.item_branch_id ?? null)
+                    : existing.itemBranchId);
             }
             if (saveItemDto.item_base_unit_id !== undefined) {
                 data.itemBaseUnitId = saveItemDto.item_base_unit_id ?? null;

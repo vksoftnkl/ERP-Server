@@ -50,6 +50,7 @@ let SellingPriceBulkService = class SellingPriceBulkService {
             itemBrandId: queryDto.itemBrandId,
             itemSectionId: queryDto.itemSectionId,
             supplierId: queryDto.supplierId,
+            itemId: queryDto.itemId,
             limit,
             offset,
         });

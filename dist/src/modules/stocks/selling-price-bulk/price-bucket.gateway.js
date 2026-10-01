@@ -84,7 +84,8 @@ let PriceBucketGateway = class PriceBucketGateway {
           AND (${args.itemGroupId ?? null}::uuid IS NULL OR i.item_group_id = ${args.itemGroupId ?? null}::uuid)
           AND (${args.itemBrandId ?? null}::uuid IS NULL OR i.item_brand_id = ${args.itemBrandId ?? null}::uuid)
           AND (${args.itemSectionId ?? null}::uuid IS NULL OR i.item_section_id = ${args.itemSectionId ?? null}::uuid)
-          AND (${args.supplierId ?? null}::uuid IS NULL OR i.item_supplier_id = ${args.supplierId ?? null}::uuid)`,
+          AND (${args.supplierId ?? null}::uuid IS NULL OR i.item_supplier_id = ${args.supplierId ?? null}::uuid)
+          AND (${args.itemId ?? null}::uuid IS NULL OR i.item_id = ${args.itemId ?? null}::uuid)`,
         })}
       LIMIT ${args.limit} OFFSET ${args.offset}
     `;
@@ -98,6 +99,7 @@ let PriceBucketGateway = class PriceBucketGateway {
             mrp: client_1.Prisma.raw('b.sbl_mrp'),
             salePrice: client_1.Prisma.raw('b.sbl_sale_price'),
         });
+        const branchCost = (unit) => client_1.Prisma.raw(`NULLIF(sic.sic_avg_cost_rate, 0) * ${unit}.iuc_to_base_factor`);
         const rows = await this.prisma.$queryRaw `
       WITH pol AS (
         SELECT i.item_id, i.item_code, i.item_name_en,
@@ -116,6 +118,8 @@ let PriceBucketGateway = class PriceBucketGateway {
       stock AS (
         SELECT COALESCE(${key.mrp}, -1)       AS key_mrp,
                COALESCE(${key.salePrice}, -1) AS key_sp,
+               ${key.mrp}                     AS mrp,
+               ${key.salePrice}               AS sp,
                SUM(b.sbl_on_hand_qty)         AS qty
           FROM stock.stock_balance b
           JOIN pol ON pol.item_id = b.sbl_item_id
@@ -123,47 +127,99 @@ let PriceBucketGateway = class PriceBucketGateway {
            AND b.sbl_branch_id  = ${branchId}::uuid
            AND b.sbl_bucket     = 'SALEABLE'
            AND b.sbl_is_deleted = false
-         GROUP BY 1, 2
+         GROUP BY 1, 2, 3, 4
+      ),
+      listed AS (
+        -- The price rows this branch can see.
+        SELECT iuc.iuc_id         AS uom_id,
+               iuc.iuc_unit_slno  AS unit_slno,
+               u.unit_name,
+               COALESCE(st.qty, 0) / NULLIF(iuc.iuc_to_base_factor, 0) AS stock_qty,
+               p.ipm_bucket_mrp   AS mrp,
+               p.ipm_bucket_sp    AS sp,
+               p.ipm_key_mrp      AS key_mrp,
+               p.ipm_key_sp       AS key_sp,
+               (p.ipm_key_mrp <> -1 OR p.ipm_key_sp <> -1) AS price_is_bucket,
+               p.ipm_branch_id, p.ipm_company_id, p.ipm_id, p.ipm_max_price,
+               COALESCE(${branchCost('iuc')}, p.ipm_cost_price, 0) AS cost_rate,
+               p.ipm_min_price, p.ipm_round_off,
+               p.ipm_sales_price_a, p.ipm_sales_price_b, p.ipm_sales_price_c, p.ipm_sales_price_d
+          FROM pol
+          JOIN inventory.item_price_master p
+            ON p.ipm_item_id = pol.item_id
+           AND p.ipm_is_deleted = false
+           AND CURRENT_DATE BETWEEN p.ipm_effective_from AND p.ipm_effective_to
+           AND (p.ipm_company_id IS NULL OR p.ipm_company_id = ${companyId}::uuid)
+           AND (p.ipm_branch_id  IS NULL OR p.ipm_branch_id  = ${branchId}::uuid)
+          JOIN inventory.item_unit_conversion iuc
+            ON iuc.iuc_id = p.ipm_uc_unit_id AND iuc.iuc_is_deleted = false
+          LEFT JOIN inventory.item_unit_master u ON u.unit_id = iuc.iuc_unit_id
+          LEFT JOIN stock st ON st.key_mrp = p.ipm_key_mrp AND st.key_sp = p.ipm_key_sp
+          LEFT JOIN stock.stock_item_cost sic
+                 ON sic.sic_company_id = ${companyId}::uuid
+                AND sic.sic_branch_id  = ${branchId}::uuid
+                AND sic.sic_item_id    = pol.item_id
+                AND sic.sic_is_deleted = false
+        UNION ALL
+        -- The stock buckets with no row of their own, per live unit, priced by
+        -- the resolver. The resolver answers the exact bucket row first, so
+        -- "no row of its own" is: it answered nothing, or only the headline
+        -- for a bucket that is not the headline's own.
+        SELECT iuc.iuc_id, iuc.iuc_unit_slno, u.unit_name,
+               st.qty / NULLIF(iuc.iuc_to_base_factor, 0),
+               st.mrp, st.sp, st.key_mrp, st.key_sp,
+               p.p_is_bucket,
+               p.ipm_branch_id, p.ipm_company_id, p.ipm_id, p.ipm_max_price,
+               COALESCE(${branchCost('iuc')}, p.ipm_cost_price, 0),
+               p.ipm_min_price, p.ipm_round_off,
+               p.ipm_sales_price_a, p.ipm_sales_price_b, p.ipm_sales_price_c, p.ipm_sales_price_d
+          FROM pol
+          JOIN stock st ON st.qty <> 0
+          JOIN inventory.item_unit_conversion iuc
+            ON iuc.iuc_item_id = pol.item_id AND iuc.iuc_is_deleted = false
+          LEFT JOIN inventory.item_unit_master u ON u.unit_id = iuc.iuc_unit_id
+          LEFT JOIN stock.stock_item_cost sic
+                 ON sic.sic_company_id = ${companyId}::uuid
+                AND sic.sic_branch_id  = ${branchId}::uuid
+                AND sic.sic_item_id    = pol.item_id
+                AND sic.sic_is_deleted = false
+          ${effectivePriceLateral({
+            itemId: client_1.Prisma.raw('pol.item_id'),
+            uomId: client_1.Prisma.raw('iuc.iuc_id'),
+            mrp: client_1.Prisma.raw('st.mrp'),
+            salePrice: client_1.Prisma.raw('st.sp'),
+            companyId,
+            branchId,
+            onDate: client_1.Prisma.raw('CURRENT_DATE'),
+        })}
+         WHERE p.ipm_id IS NULL
+            OR (p.p_is_bucket = false AND (st.key_mrp <> -1 OR st.key_sp <> -1))
       )
-      SELECT pol.item_id        AS "itemId",
-             pol.item_code      AS "itemCode",
-             pol.item_name_en   AS "itemName",
-             iuc.iuc_id         AS "uomId",
-             u.unit_name        AS "unitName",
-             COALESCE(st.qty, 0) / NULLIF(iuc.iuc_to_base_factor, 0) AS "stockQty",
-             p.ipm_bucket_mrp   AS "mrp",
-             p.ipm_bucket_sp    AS "salePrice",
-             (p.ipm_key_mrp <> -1 OR p.ipm_key_sp <> -1) AS "priceIsBucket",
-             p.ipm_branch_id    AS "priceBranchId",
-             p.ipm_id           AS "bucketId",
-             p.ipm_max_price    AS "maxPrice",
-             COALESCE(NULLIF(sic.sic_avg_cost_rate, 0) * iuc.iuc_to_base_factor, p.ipm_cost_price, 0) AS "costRate",
-             p.ipm_min_price    AS "minPrice",
-             p.ipm_round_off    AS "roundOff",
-             p.ipm_sales_price_a AS "priceA",
-             p.ipm_sales_price_b AS "priceB",
-             p.ipm_sales_price_c AS "priceC",
-             p.ipm_sales_price_d AS "priceD"
-        FROM pol
-        JOIN inventory.item_price_master p
-          ON p.ipm_item_id = pol.item_id
-         AND p.ipm_is_deleted = false
-         AND CURRENT_DATE BETWEEN p.ipm_effective_from AND p.ipm_effective_to
-         AND (p.ipm_company_id IS NULL OR p.ipm_company_id = ${companyId}::uuid)
-         AND (p.ipm_branch_id  IS NULL OR p.ipm_branch_id  = ${branchId}::uuid)
-        JOIN inventory.item_unit_conversion iuc
-          ON iuc.iuc_id = p.ipm_uc_unit_id AND iuc.iuc_is_deleted = false
-        LEFT JOIN inventory.item_unit_master u ON u.unit_id = iuc.iuc_unit_id
-        LEFT JOIN stock st ON st.key_mrp = p.ipm_key_mrp AND st.key_sp = p.ipm_key_sp
-        LEFT JOIN stock.stock_item_cost sic
-               ON sic.sic_company_id = ${companyId}::uuid
-              AND sic.sic_branch_id  = ${branchId}::uuid
-              AND sic.sic_item_id    = pol.item_id
-              AND sic.sic_is_deleted = false
-       ORDER BY iuc.iuc_unit_slno, iuc.iuc_id,
-                (p.ipm_key_mrp <> -1 OR p.ipm_key_sp <> -1),
-                p.ipm_key_mrp, p.ipm_key_sp,
-                (p.ipm_branch_id IS NOT NULL), (p.ipm_company_id IS NOT NULL), p.ipm_id
+      SELECT pol.item_id          AS "itemId",
+             pol.item_code        AS "itemCode",
+             pol.item_name_en     AS "itemName",
+             l.uom_id             AS "uomId",
+             l.unit_name          AS "unitName",
+             l.stock_qty          AS "stockQty",
+             l.mrp                AS "mrp",
+             l.sp                 AS "salePrice",
+             l.price_is_bucket    AS "priceIsBucket",
+             l.ipm_branch_id      AS "priceBranchId",
+             l.ipm_id             AS "bucketId",
+             l.ipm_max_price      AS "maxPrice",
+             l.cost_rate          AS "costRate",
+             l.ipm_min_price      AS "minPrice",
+             l.ipm_round_off      AS "roundOff",
+             l.ipm_sales_price_a  AS "priceA",
+             l.ipm_sales_price_b  AS "priceB",
+             l.ipm_sales_price_c  AS "priceC",
+             l.ipm_sales_price_d  AS "priceD"
+        FROM listed l
+        CROSS JOIN pol
+       ORDER BY l.unit_slno, l.uom_id,
+                (l.key_mrp <> -1 OR l.key_sp <> -1),
+                l.key_mrp, l.key_sp,
+                (l.ipm_branch_id IS NOT NULL), (l.ipm_company_id IS NOT NULL), l.ipm_id
     `;
         return rows.map((row) => this.toGridRecord(row));
     }

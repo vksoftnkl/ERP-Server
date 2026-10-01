@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { AppThemeMaster, Prisma } from '@prisma/client';
+import { AppThemeMaster, AppThemeTemplate, Prisma } from '@prisma/client';
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import { AuditLogService } from 'src/modules/audit-log/audit-log.service';
 import { RequestContextService } from 'src/common/request-context/request-context.service';
@@ -14,13 +14,19 @@ import {
   violatedConstraintOf,
 } from 'src/common/utils/module-service.utils';
 import { SaveAppThemeDto } from './dto/save-app-theme.dto';
+import { SaveAppThemeTemplateDto } from './dto/save-app-theme-template.dto';
 import {
   APP_THEME_COLOUR_PATTERN,
+  APP_THEME_SIZE_KEYS,
+  APP_THEME_TEMPLATE_MAX_BYTES,
   APP_THEME_TOKENS,
+  type AppThemeBootstrapPayload,
   type AppThemeDeleteResult,
-  type AppThemeEffectivePayload,
+  type AppThemeEffectiveWithTemplate,
   type AppThemeErrorDetail,
   type AppThemePayload,
+  type AppThemeTemplatePayload,
+  type AppThemeTemplateRef,
 } from './types/app-theme.types';
 
 const APP_THEME_TABLE_NAME = 'app theme master';
@@ -31,6 +37,15 @@ const APP_THEME_AUDIT_SCREEN_NAME = 'App Theme Master';
  * sequence, so it is 266 on 192.168.0.106 and something else on the live box.
  */
 const APP_THEME_MENU = { parent: 60, name: 'App Themes' } as const;
+const APP_THEME_TEMPLATE_TABLE_NAME = 'app theme template';
+const APP_THEME_TEMPLATE_AUDIT_SCREEN_NAME = 'App Theme Template';
+/** `{{key}}` — the key exactly as written, so `{{ primary }}` is reported, not trimmed away. */
+const PLACEHOLDER_PATTERN = /\{\{([^{}]*)\}\}/g;
+/** Every key a template placeholder may name: the colour tokens and the three sizes. */
+const TEMPLATE_KEYS: ReadonlySet<string> = new Set([
+  ...Object.keys(APP_THEME_TOKENS),
+  ...APP_THEME_SIZE_KEYS,
+]);
 
 /**
  * Company themes (theme/plan-app-theme.md §3): named colour VALUES a client
@@ -43,6 +58,14 @@ const APP_THEME_MENU = { parent: 60, name: 'App Themes' } as const;
  *   /save       create / update, gated on the App Themes menu's create / edit
  *   /delete     soft delete, 409 while a company uses it or it is the default
  *   /restore    undo a delete
+ *
+ * and, since plan-app-theme-template.md, the stylesheet RULES the tokens
+ * fill — one shared template row (public.app_theme_template):
+ *
+ *   /template       the active template, any logged-in user
+ *   /template/save  edit it, gated on the menu's edit right; 409 on a stale load
+ *   /bootstrap      NO TOKEN: the default theme's tokens + the template, for the
+ *                   login window, which is painted before anyone logs in
  *
  * The default is never absent while the table has a live row: it can be MOVED
  * (another theme saved with thmIsDefault) but not un-set, deactivated or
@@ -72,7 +95,7 @@ export class AppThemeService {
    * active and not deleted, else the default. 404 only for an unknown company
    * or when the table has no live default at all (a seed defect).
    */
-  async effective(companyId: string): Promise<AppThemeEffectivePayload> {
+  async effective(companyId: string): Promise<AppThemeEffectiveWithTemplate> {
     const company = await this.prisma.company.findFirst({
       where: { compId: companyId, compIsDeleted: false },
       select: { compStylesheetId: true },
@@ -104,7 +127,186 @@ export class AppThemeService {
     return {
       ...this.toPayload(theme, await this.usedByCount(this.prisma, theme.thmId)),
       resolvedFrom: own ? 'COMPANY' : 'DEFAULT',
+      // The rules ride along, so a login or a company switch stays one call.
+      template: this.toTemplateRef(await this.activeTemplate(this.prisma)),
     };
+  }
+
+  /**
+   * NO TOKEN — the login window is painted before anyone has logged in. The
+   * default theme's colours and the active template: colours and layout
+   * rules, no data. Never a 404: the window takes what exists, and a client
+   * with nothing falls back to its cache, then to its compiled defaults.
+   */
+  async bootstrap(): Promise<AppThemeBootstrapPayload> {
+    const [theme, template] = await Promise.all([
+      this.prisma.appThemeMaster.findFirst({ where: { thmIsDefault: true, thmIsDeleted: false } }),
+      this.activeTemplate(this.prisma),
+    ]);
+    return {
+      tokens: theme ? this.readTokens(theme.thmTokens) : {},
+      thmModifiedOn: theme ? (theme.thmModifiedOn ?? theme.thmCreatedOn).toISOString() : null,
+      template: this.toTemplateRef(template),
+    };
+  }
+
+  /** The active stylesheet template. 404 only while none exists (a seed defect). */
+  async template(): Promise<AppThemeTemplatePayload> {
+    const record = await this.activeTemplate(this.prisma);
+    if (!record) {
+      throwSettingsNotFound<AppThemeErrorDetail>(
+        'No active app theme template',
+        'tplId',
+        'No live, active template exists: migration 20261001140000_app_theme_template seeds one.',
+      );
+    }
+    return this.toTemplatePayload(record);
+  }
+
+  /**
+   * Replace the template's rules. Every check (validateTemplate) runs before
+   * anything is written. `tplModifiedOn` is what the editor loaded: when the
+   * row has changed since, 409 — two editors never silently overwrite each
+   * other. The row is locked for the compare, so two saves of one load cannot
+   * both pass it. Audited with the text before and after: it is the one record
+   * that changes every screen at once.
+   */
+  async saveTemplate(dto: SaveAppThemeTemplateDto): Promise<AppThemeTemplatePayload> {
+    await this.requireRight('edit', 'edit the app theme template');
+    this.validateTemplate(dto.tplQss);
+    const actor = this.actor();
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`
+        SELECT tpl_id FROM public.app_theme_template WHERE tpl_id = ${dto.tplId} FOR UPDATE`;
+      const existing = await tx.appThemeTemplate.findUnique({ where: { tplId: dto.tplId } });
+      if (!existing) {
+        throwSettingsNotFound<AppThemeErrorDetail>(
+          'App theme template not found',
+          'tplId',
+          `No app theme template found with id ${dto.tplId}`,
+        );
+      }
+      if (existing.tplIsDeleted || !existing.tplIsActive) {
+        throwSettingsConflict<AppThemeErrorDetail>('Not the active template', [
+          {
+            field: 'tplId',
+            message: `Template ${existing.tplId} is not the one clients apply; edit the one GET /app-themes/template answers.`,
+          },
+        ]);
+      }
+      const current = this.templateStamp(existing);
+      const loaded = new Date(dto.tplModifiedOn).toISOString();
+      if (loaded !== current) {
+        throwSettingsConflict<AppThemeErrorDetail>('Template changed by someone else', [
+          {
+            field: 'tplModifiedOn',
+            message: `It was saved at ${current}, after the copy you loaded (${loaded}). Reload it and apply your edit again.`,
+          },
+        ]);
+      }
+      const saved = await tx.appThemeTemplate.update({
+        where: { tplId: existing.tplId },
+        data: {
+          tplQss: dto.tplQss,
+          ...(dto.tplRemarks !== undefined ? { tplRemarks: dto.tplRemarks } : {}),
+          tplModifiedOn: new Date(),
+          tplModifiedBy: actor,
+        },
+      });
+      await this.auditLogService.logEntityChange(
+        {
+          action: 'update',
+          tableName: APP_THEME_TEMPLATE_TABLE_NAME,
+          screenName: APP_THEME_TEMPLATE_AUDIT_SCREEN_NAME,
+          screenType: 'master',
+          pk: String(saved.tplId),
+          displayName: saved.tplName,
+          originalRecord: this.toTemplateAuditRecord(existing),
+          modifiedRecord: this.toTemplateAuditRecord(saved),
+          userId: actor,
+          notes: 'App theme template saved',
+        },
+        tx,
+      );
+      return this.toTemplatePayload(saved);
+    });
+  }
+
+  /**
+   * plan-app-theme-template.md §4.2 — every fault as a 400 on tplQss, all at
+   * once, before anything is written:
+   *   * each {{placeholder}} a token key or size.font / size.icon / size.header;
+   *   * braces balanced outside comments, strings and placeholders — Qt drops
+   *     every rule after a missing brace without a word;
+   *   * every url(...) a :/ resource — a template must not make every client
+   *     fetch from the network;
+   *   * at most 512 KB.
+   */
+  validateTemplate(qss: string): void {
+    const errors: AppThemeErrorDetail[] = [];
+    const field = 'tplQss';
+    const bytes = Buffer.byteLength(qss, 'utf8');
+    if (bytes > APP_THEME_TEMPLATE_MAX_BYTES) {
+      errors.push({
+        field,
+        message: `at most ${APP_THEME_TEMPLATE_MAX_BYTES / 1024} KB; this one is ${Math.ceil(bytes / 1024)} KB`,
+      });
+    }
+    const unknown = new Set<string>();
+    for (const [, key] of qss.matchAll(PLACEHOLDER_PATTERN)) {
+      if (!TEMPLATE_KEYS.has(key)) {
+        unknown.add(key);
+      }
+    }
+    for (const key of unknown) {
+      errors.push({ field, message: `unknown placeholder {{${key}}}` });
+    }
+    // Blank out comments, strings and placeholders, keeping every newline, so a
+    // line number still points at the right line of the text as sent.
+    const blank = (text: string) => text.replace(/[^\n]/g, ' ');
+    let masked = qss;
+    const openComment = masked.search(/\/\*(?![\s\S]*?\*\/)/);
+    if (openComment >= 0) {
+      errors.push({
+        field,
+        message: `the comment opened on line ${this.lineOf(qss, openComment)} is never closed`,
+      });
+      masked = masked.slice(0, openComment) + blank(masked.slice(openComment));
+    }
+    masked = masked
+      .replace(/\/\*[\s\S]*?\*\//g, blank)
+      .replace(/"[^"\n]*"|'[^'\n]*'/g, blank)
+      .replace(PLACEHOLDER_PATTERN, blank);
+    const opened: number[] = [];
+    for (let index = 0; index < masked.length; index += 1) {
+      if (masked[index] === '{') {
+        opened.push(index);
+      } else if (masked[index] === '}' && opened.pop() === undefined) {
+        errors.push({ field, message: `the } on line ${this.lineOf(qss, index)} closes nothing` });
+      }
+    }
+    for (const index of opened) {
+      errors.push({ field, message: `the { on line ${this.lineOf(qss, index)} is never closed` });
+    }
+    // url(...) is read off the text as sent (a quoted target is masked above),
+    // but only where the masked text shows it — so a url( in a comment is not one.
+    for (const match of masked.matchAll(/url\(/gi)) {
+      const start = (match.index ?? 0) + match[0].length;
+      const end = qss.indexOf(')', start);
+      const target = qss
+        .slice(start, end < 0 ? undefined : end)
+        .trim()
+        .replace(/^["']|["']$/g, '');
+      if (!target.startsWith(':/')) {
+        errors.push({
+          field,
+          message: `url(${target}) on line ${this.lineOf(qss, start)} is not a :/ resource`,
+        });
+      }
+    }
+    if (errors.length) {
+      throwSettingsBadRequest<AppThemeErrorDetail>('Invalid template', errors);
+    }
   }
 
   /**
@@ -363,6 +565,56 @@ export class AppThemeService {
     }
     this.menuId = menu.menuId;
     return menu.menuId;
+  }
+
+  private activeTemplate(
+    client: Pick<Prisma.TransactionClient, 'appThemeTemplate'>,
+  ): Promise<AppThemeTemplate | null> {
+    return client.appThemeTemplate.findFirst({
+      where: { tplIsActive: true, tplIsDeleted: false },
+      orderBy: { tplId: 'asc' },
+    });
+  }
+
+  /** What the editor loads and echoes back; the 409 compare is on this string. */
+  private templateStamp(record: AppThemeTemplate): string {
+    return (record.tplModifiedOn ?? record.tplCreatedOn).toISOString();
+  }
+
+  private toTemplateRef(record: AppThemeTemplate | null): AppThemeTemplateRef | null {
+    return record
+      ? { tplId: record.tplId, tplQss: record.tplQss, tplModifiedOn: this.templateStamp(record) }
+      : null;
+  }
+
+  private toTemplatePayload(record: AppThemeTemplate): AppThemeTemplatePayload {
+    const placeholders = [
+      ...new Set([...record.tplQss.matchAll(PLACEHOLDER_PATTERN)].map(([, key]) => key)),
+    ];
+    return {
+      tplId: record.tplId,
+      tplName: record.tplName,
+      tplQss: record.tplQss,
+      tplRemarks: record.tplRemarks,
+      tplModifiedOn: this.templateStamp(record),
+      placeholders,
+    };
+  }
+
+  /** The audit screen reads tpl_* names — the text before and after, whole. */
+  private toTemplateAuditRecord(record: AppThemeTemplate): Record<string, unknown> {
+    return {
+      tplId: record.tplId,
+      tplName: record.tplName,
+      tplQss: record.tplQss,
+      tplRemarks: record.tplRemarks,
+      tplIsActive: record.tplIsActive,
+      tplIsDeleted: record.tplIsDeleted,
+    };
+  }
+
+  private lineOf(text: string, index: number): number {
+    return text.slice(0, index).split('\n').length;
   }
 
   private actor(): string {

@@ -2945,6 +2945,26 @@ ux_thm_default exactly one live default row
 ux_thm_name    lower(thm_name) unique among live rows'
 }
 
+Table app_theme_template {
+  tplId Int [pk, increment]
+  tplName String [not null]
+  tplQss String [not null, note: 'QSS with {{token}} / {{size.*}} placeholders, at most 512 KB.']
+  tplIsActive Boolean [not null, default: true]
+  tplIsDeleted Boolean [not null, default: false]
+  tplRemarks String
+  tplSyncDate DateTime [note: 'NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).']
+  tplCreatedOn DateTime [default: `now()`, not null]
+  tplCreatedBy String
+  tplModifiedOn DateTime
+  tplModifiedBy String
+
+  Note: 'The stylesheet RULES every client applies — QSS written once, with {{key}}
+placeholders the client fills from the company\'s app_theme_master tokens
+(theme/plan-app-theme-template.md, migration 20261001140000_app_theme_template).
+Shared by every company. One live active row (ux_tpl_active, raw SQL in the
+migration). tpl_id is GENERATED ALWAYS AS IDENTITY: never written.'
+}
+
 Table batches_prefix {
   id String [pk]
   prefixUsed String

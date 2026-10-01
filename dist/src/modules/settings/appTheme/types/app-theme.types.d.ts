@@ -36,9 +36,16 @@ export declare const APP_THEME_TOKENS: {
     readonly 'info.bg': "info strip background";
     readonly 'rate.below': "rate moved below the price list";
     readonly 'rate.above': "rate moved above the price list";
+    readonly 'primary.soft': "hover background of buttons and list items";
+    readonly 'primary.softer': "hover background of the master-list action buttons";
+    readonly 'primary.soft.border': "border of a hovered button or list item";
+    readonly 'primary.pressed.bg': "pressed background of the master-list action buttons";
+    readonly 'primary.pressed.border': "border of a pressed button";
 };
 export type AppThemeTokenKey = keyof typeof APP_THEME_TOKENS;
 export declare const APP_THEME_TOKEN_KEYS: AppThemeTokenKey[];
+export declare const APP_THEME_SIZE_KEYS: readonly ["size.font", "size.icon", "size.header"];
+export declare const APP_THEME_TEMPLATE_MAX_BYTES: number;
 export declare const APP_THEME_COLOUR_PATTERN: RegExp;
 export declare const APP_THEME_BASES: readonly ["LIGHT", "DARK"];
 export type AppThemeBase = (typeof APP_THEME_BASES)[number];
@@ -60,4 +67,25 @@ export interface AppThemeEffectivePayload extends AppThemePayload {
 export interface AppThemeDeleteResult {
     thmId: number;
     deleted: boolean;
+}
+export interface AppThemeTemplatePayload {
+    tplId: number;
+    tplName: string;
+    tplQss: string;
+    tplRemarks: string | null;
+    tplModifiedOn: string;
+    placeholders: string[];
+}
+export interface AppThemeTemplateRef {
+    tplId: number;
+    tplQss: string;
+    tplModifiedOn: string;
+}
+export interface AppThemeEffectiveWithTemplate extends AppThemeEffectivePayload {
+    template: AppThemeTemplateRef | null;
+}
+export interface AppThemeBootstrapPayload {
+    tokens: Record<string, string>;
+    thmModifiedOn: string | null;
+    template: AppThemeTemplateRef | null;
 }

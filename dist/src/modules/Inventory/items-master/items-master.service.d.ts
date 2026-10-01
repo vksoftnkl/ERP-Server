@@ -48,6 +48,7 @@ export declare class ItemsMasterService {
     private setItemDeleted;
     private toggleChildren;
     private createItem;
+    private assertBranchOfCompany;
     private inheritClassDefaults;
     private updateItem;
     private applyOptionalFields;

@@ -41,6 +41,15 @@ export class ListSellingPriceQueryDto {
   @OptionalUuid()
   supplierId?: string;
 
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      "ONE item: every unit × live bucket of it, with stock — the screen's Add item (notes 74). " +
+      'ANDed with the four filters above.',
+  })
+  @OptionalUuid()
+  itemId?: string;
+
   @ApiPropertyOptional({ default: DEFAULT_PRICE_GRID_LIMIT, maximum: MAX_PRICE_GRID_LIMIT })
   @OptionalQueryInt(1, MAX_PRICE_GRID_LIMIT)
   limit?: number;

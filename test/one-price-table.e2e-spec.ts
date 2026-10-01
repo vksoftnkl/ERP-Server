@@ -623,7 +623,9 @@ describe('One price table (e2e — one rolled-back transaction)', () => {
       branchId: fixture.branchX,
     });
     // F12 lists every live ROW this branch can see — headline first, the chain
-    // row before X's override of the same bucket — each with its bucket's stock.
+    // row before X's override of the same bucket — each with its bucket's stock,
+    // and (notes 74) every bucket IN STOCK with no row of its own: MRP 50,
+    // priced by the headline exactly as the grid prices it below.
     expect(
       picker.map((row) => [row.mrp, row.priceSource, row.priceScope, row.stockQty, row.maxPrice]),
     ).toEqual([
@@ -631,6 +633,7 @@ describe('One price table (e2e — one rolled-back transaction)', () => {
       [40, 'BUCKET', 'CHAIN', 10, 40],
       [40, 'BUCKET', 'BRANCH', 10, 40],
       [45, 'BUCKET', 'CHAIN', 0, 45],
+      [50, 'MASTER', 'CHAIN', 5, 0],
     ]);
     expect(picker[2].levels[0]).toMatchObject({ level: 1, price: 37 });
 
@@ -649,6 +652,19 @@ describe('One price table (e2e — one rolled-back transaction)', () => {
       [50, 'MASTER', 'CHAIN', 5, 0],
       [40, 'BUCKET', 'BRANCH', 10, 40],
     ]);
+    // The unpriced bucket is the same row in both routes (notes 74); only its
+    // position in each list (lineNo) differs.
+    const withoutLine = <T extends { lineNo: number }>({ lineNo: _line, ...rest }: T) => rest;
+    expect(withoutLine(picker[4])).toEqual(withoutLine(mine[0]));
+
+    // Add item: the grid narrowed to ONE item, no other filter (notes 74).
+    const one = await menu30.listPrices({
+      companyId: fixture.companyId,
+      branchId: fixture.branchX,
+      itemId: tracked.itemId,
+      limit: 1000,
+    });
+    expect(one.items.map(withoutLine)).toEqual(mine.map(withoutLine));
   });
 
   it('13. S3 for a fresh bucket copies the attributes from the headline', async () => {
