@@ -733,17 +733,26 @@ function postingCte(svhId: string, accYear: string, rules: StockVoucherTypeRules
                         ELSE NULL
                       END,
                       0) END                                 AS line_cost_rate,
+             -- The without-tax rate comes from WHERE THE COST CAME FROM, never a
+             -- mix (notes 77): the average's wot only with the average's cost, a
+             -- lot's only with the lot's, the line's own only with the line's.
+             -- A 0 is "not stated" — costed derives it from the cost and the tax
+             -- rate — never a rate: an average carrying cost but a 0 wot used to
+             -- receive and relieve stock at a 0 without-tax cost.
              CASE WHEN ${shape === 'TRANSFER_IN'}::boolean THEN COALESCE(stt.stt_cost_rate_wot, 0)
                   WHEN keyed.line_direction < 0
                     OR (${isCount}::boolean AND COALESCE(keyed.svi_diff_qty, 0) < 0)
-                  THEN COALESCE(NULLIF(sic.sic_avg_cost_rate_wot, 0), NULLIF(keyed.svi_cost_rate_wot, 0))
+                  THEN CASE WHEN NULLIF(sic.sic_avg_cost_rate, 0) IS NOT NULL
+                            THEN NULLIF(sic.sic_avg_cost_rate_wot, 0)
+                            ELSE NULLIF(keyed.svi_cost_rate_wot, 0) END
+                  WHEN NULLIF(keyed.svi_cost_rate, 0) IS NOT NULL
+                  THEN NULLIF(keyed.svi_cost_rate_wot, 0)
                   ELSE
-             COALESCE(NULLIF(keyed.svi_cost_rate_wot, 0),
                       CASE keyed.svh_rate_source
-                        WHEN 'AVG_COST'      THEN sic.sic_avg_cost_rate_wot
-                        WHEN 'LOT_COST'      THEN slc.slt_cost_rate_wot
+                        WHEN 'AVG_COST'      THEN NULLIF(sic.sic_avg_cost_rate_wot, 0)
+                        WHEN 'LOT_COST'      THEN NULLIF(slc.slt_cost_rate_wot, 0)
                         ELSE NULL
-                      END) END                               AS stated_cost_rate_wot
+                      END END                                AS stated_cost_rate_wot
         FROM keyed
         LEFT JOIN stock.stock_item_cost sic
                ON sic.sic_company_id = keyed.svh_company_id
@@ -790,11 +799,34 @@ function postingCte(svhId: string, accYear: string, rules: StockVoucherTypeRules
       -- The without-tax cost, when nothing stated one: the with-tax cost net
       -- of the line's own tax rate (20 at 5% → 19.047619), as
       -- fn_sml_cost_default derived it. No tax rate means the two are equal.
+      -- A COUNT line carries no tax rate (the save strips it, §3.3), so it
+      -- takes the item's own as at the document date — item_tax_history's
+      -- latest window, else item_default_tax_id, the rule of
+      -- item-tax-rate.helper — or a count of a taxed item would value its
+      -- gain at the inclusive rate on the without-tax side (notes 77).
       SELECT priced.*,
              COALESCE(priced.stated_cost_rate_wot,
-                      ROUND(priced.line_cost_rate / (1 + COALESCE(priced.svi_tax_perc, 0) / 100), 6),
+                      ROUND(priced.line_cost_rate / (1 + COALESCE(
+                        CASE WHEN ${isCount}::boolean THEN item_tax.tax_rate_perc
+                             ELSE priced.svi_tax_perc END, 0) / 100), 6),
                       0)                                     AS line_cost_rate_wot
         FROM priced
+        LEFT JOIN LATERAL (
+          SELECT t.tax_rate_perc
+            FROM inventory.tax_rate_master t
+           WHERE ${isCount}::boolean
+             AND t.tax_id = COALESCE(
+                   (SELECT h.ith_tax_id
+                      FROM inventory.item_tax_history h
+                     WHERE h.ith_item_id = priced.svi_item_id
+                       AND h.ith_effective_from <= priced.svh_doc_date
+                       AND (h.ith_effective_to IS NULL OR h.ith_effective_to >= priced.svh_doc_date)
+                     ORDER BY h.ith_effective_from DESC
+                     LIMIT 1),
+                   (SELECT i.item_default_tax_id
+                      FROM inventory.item_master i
+                     WHERE i.item_id = priced.svi_item_id))
+        ) item_tax ON true
     )
   `;
 }

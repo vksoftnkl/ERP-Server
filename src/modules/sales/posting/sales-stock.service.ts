@@ -408,7 +408,7 @@ export class SalesStockService {
         ${qty}::numeric, ${decQty(qty.times(factor))}::numeric,
         ${free}::numeric, ${decQty(free.times(factor))}::numeric,
         ${l.weightQty ?? 0}::numeric,
-        ${l.costRate ?? 0}::numeric, ${l.costRate ?? 0}::numeric, ${l.taxPerc ?? 0}::numeric,
+        ${l.costRate ?? 0}::numeric, ${costRateWot(l)}::numeric, ${l.taxPerc ?? 0}::numeric,
         ${now}, ${actor === '00000000-0000-0000-0000-000000000000' ? null : actor}
       )`;
     });
@@ -429,6 +429,26 @@ export class SalesStockService {
 
     return svhId;
   }
+}
+
+/**
+ * The line's cost WITHOUT tax (notes 77). A return quotes the cost the goods
+ * left at, tax-inclusive; it used to be copied into svi_cost_rate_wot as well,
+ * and the engine takes a nonzero stated wot as given — so every SALE_RETURN /
+ * DC_RETURN received its stock at the INCLUSIVE rate on the without-tax side
+ * and dragged the branch's average wot down with it. Net of the line's own tax
+ * rate, as the engine derives it when nothing is stated (20 at 5% → 19.047619).
+ * No quoted cost → 0, and the engine prices the line from the average pair.
+ */
+export function costRateWot(line: Pick<SalesStockLine, 'costRate' | 'taxPerc'>): Prisma.Decimal {
+  const cost = new Prisma.Decimal(line.costRate ?? 0);
+  if (!cost.isFinite() || cost.lte(0)) {
+    return new Prisma.Decimal(0);
+  }
+  const taxPerc = new Prisma.Decimal(line.taxPerc ?? 0);
+  return cost
+    .dividedBy(new Prisma.Decimal(1).plus(taxPerc.dividedBy(100)))
+    .toDecimalPlaces(6, Prisma.Decimal.ROUND_HALF_UP);
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

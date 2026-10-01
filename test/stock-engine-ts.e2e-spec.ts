@@ -1383,4 +1383,62 @@ describe('Stock engine in TypeScript (e2e — one rolled-back transaction)', () 
       expect(refused[0].problem).toMatch(/MANUAL/);
     });
   });
+
+  // ── notes 77: the without-tax cost of a count comes from the item's tax ────
+  it('notes 77. a count gain of a taxed item is valued without tax at the item’s rate, over a 0 average wot', async () => {
+    if (!requireBuild()) return;
+    const [tax] = await tx.$queryRaw<Array<{ tax_id: string }>>`
+      SELECT tax_id FROM inventory.tax_rate_master
+       WHERE tax_rate_perc = 18 AND tax_is_deleted = false LIMIT 1`;
+    if (!tax) return;
+    const [salt] = await tx.$queryRaw<Array<{ item_group_id: string; unit_id: string }>>`
+      SELECT i.item_group_id, c.iuc_unit_id AS unit_id
+        FROM inventory.item_master i
+        JOIN inventory.item_unit_conversion c ON c.iuc_item_id = i.item_id
+       WHERE i.item_id = ${fixture.saltId}::uuid LIMIT 1`;
+    const item = await tx.itemMaster.create({
+      data: {
+        itemCode: 'E2E-ENG-N77',
+        itemNameEn: 'EngE2E N77 taxed',
+        itemGroupId: salt.item_group_id,
+        itemCompanyId: fixture.companyId,
+        itemBranchId: fixture.branchId,
+        itemDefaultTaxId: tax.tax_id,
+      },
+      select: { itemId: true },
+    });
+    const iuc = await tx.itemUnitConversion.create({
+      data: {
+        iucItemId: item.itemId,
+        iucUnitId: salt.unit_id,
+        iucBaseUnitId: salt.unit_id,
+        iucToBaseFactor: 1,
+        iucUnitSlno: 1,
+        iucIsBaseUnit: true,
+      },
+      select: { iucId: true },
+    });
+    const saved = await attempt(() =>
+      // The fixture's group tracks MRP, and the item follows its group.
+      opening(fixture.godownA, [
+        { itemId: item.itemId, iuc: iuc.iucId, qty: 10, costRate: 118, mrp: 200 },
+      ]),
+    );
+    await post(OPENING_RULES, saved.header.svhId);
+    // The state the old return / opening paths left behind: cost, but a 0 wot.
+    await tx.$executeRaw`
+      UPDATE stock.stock_item_cost SET sic_avg_cost_rate_wot = 0
+       WHERE sic_item_id = ${item.itemId}::uuid AND sic_branch_id = ${fixture.branchId}::uuid`;
+
+    const counted = await attempt(() => count(fixture.godownA, item.itemId, 12));
+    await post(PHYSICAL_RULES, counted.header.svhId);
+    const [gain] = await tx.$queryRaw<Array<{ rate: string; wot: string }>>`
+      SELECT sml_cost_rate::text AS rate, sml_cost_rate_wot::text AS wot
+        FROM stock.stock_ledger
+       WHERE sml_src_doc_id = ${counted.header.svhId}::uuid AND sml_is_deleted = false`;
+    // 118 is the average; without tax it is 118 / 1.18 — not 0 (the average's
+    // stated wot) and not 118 (the count line's stripped 0% tax).
+    expect(Number(gain.rate)).toBe(118);
+    expect(Number(gain.wot)).toBe(100);
+  });
 });
