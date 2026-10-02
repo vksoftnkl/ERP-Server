@@ -7,6 +7,7 @@ import { BranchMasterModule } from '../modules/settings/branchMaster/branch-mast
 import { CompanyGroupMasterModule } from '../modules/accountsModule/companyGroupMaster/company-group-master.module';
 import { CompanyMasterModule } from '../modules/settings/companyMaster/company-master.module';
 import { AppThemeModule } from '../modules/settings/appTheme/app-theme.module';
+import { GstModule } from '../modules/gst/gst.module';
 import { EmployeeDepartmentMasterModule } from '../modules/settings/employeeDepartmentMaster/employee-department-master.module';
 import { EmployeeDesignationMasterModule } from '../modules/settings/employeeDesignationMaster/employee-designation-master.module';
 import { EmployeeMasterModule } from '../modules/settings/employeeMaster/employee-master.module';
@@ -14,8 +15,6 @@ import { UserAdministrationModule } from '../modules/settings/userAdministration
 import { AppSettingsModule } from '../modules/settings/appSettings/app-settings.module';
 import { PrintTemplateAssignmentModule } from '../modules/settings/print-template-assignment/print-template-assignment.module';
 import { PrintTemplateModule } from '../modules/settings/print-template/print-template.module';
-import { GspCompanyServiceModule } from '../modules/settings/gspCompanyService/gsp-company-service.module';
-import { GspProviderMasterModule } from '../modules/accountsModule/gspProviderMaster/gsp-provider-master.module';
 import { LedgerShippingAddressModule } from '../modules/accountsModule/ledgerShippingAddress/ledger-shipping-address.module';
 import { TenderMasterModule } from '../modules/accountsModule/tenderMaster/tender-master.module';
 import { TenderTypeMasterModule } from '../modules/accountsModule/tenderTypeMaster/tender-type-master.module';
@@ -261,6 +260,13 @@ export const swaggerModuleDocuments = [
     include: [AppThemeModule],
   },
   {
+    path: 'gst-config',
+    title: 'GST Providers & Credentials API',
+    description:
+      'The GSP layer’s masters (notes 79): providers, their services, endpoints, field and error maps, the GSP accounts, and the company credentials with Verify and status. Secrets are write-only: they come back as has* flags, never a value.',
+    include: [GstModule],
+  },
+  {
     path: 'company-group-master',
     title: 'Company Group Master API',
     description: 'Company group master module endpoints',
@@ -438,18 +444,6 @@ export const swaggerModuleDocuments = [
     title: 'Sequence API',
     description: 'Sequence module endpoints',
     include: [SequenceModule],
-  },
-  {
-    path: 'gsp-provider-masters',
-    title: 'GSP Provider Master API',
-    description: 'GSP provider master module endpoints',
-    include: [GspProviderMasterModule],
-  },
-  {
-    path: 'gsp-company-services',
-    title: 'GSP Company Service API',
-    description: 'GSP company service module endpoints',
-    include: [GspCompanyServiceModule],
   },
   {
     path: 'items-ean-code-master',

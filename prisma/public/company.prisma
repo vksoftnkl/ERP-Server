@@ -96,7 +96,6 @@ model Company {
   openingRuns           AccOpeningRun[]
   employees             EmployeeMaster[]
   ledgerBankAccounts    AccLedgerBankAccount[]
-  gspCompanyServices    GspCompanyService[]
   shipAddrs             AccShipAddr[]
   custGroup             CustGroup[]
   itemMaster            ItemMaster[]

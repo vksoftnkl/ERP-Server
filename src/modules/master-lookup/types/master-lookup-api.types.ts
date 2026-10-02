@@ -284,8 +284,6 @@ export interface AccountsLookupPayload {
   employees: NameIdOption[];
   tenderTypes: NameIdOption[];
   tenders: NameIdOption[];
-  gspProviders: NameIdOption[];
-  gspCompanyServices: NameIdOption[];
 }
 export interface MastersLookupPayload {
   itemGroups: NameIdOption[];
@@ -322,8 +320,6 @@ export const ACCOUNT_LOOKUP_MODULE_KEYS = [
   'employees',
   'tenderTypes',
   'tenders',
-  'gspProviders',
-  'gspCompanyServices',
 ] as const;
 export const MASTER_LOOKUP_MODULE_KEYS = [
   'itemGroups',
@@ -487,24 +483,6 @@ export const LOOKUP_MODULE_ALIASES: Record<LookupModuleKey, readonly string[]> =
     'tender_type_master',
   ],
   tenders: ['tenders', 'tender', 'tender master', 'tender-master', 'tender_master'],
-  gspProviders: [
-    'gsp providers',
-    'gsp provider',
-    'gsp provider master',
-    'providers',
-    'provider',
-    'gsp-provider-master',
-    'gsp_provider_master',
-  ],
-  gspCompanyServices: [
-    'gsp company services',
-    'gsp company service',
-    'gsp company service master',
-    'company services',
-    'company service',
-    'gsp-company-service',
-    'gsp_company_service',
-  ],
   itemGroups: [
     'item groups',
     'item group',

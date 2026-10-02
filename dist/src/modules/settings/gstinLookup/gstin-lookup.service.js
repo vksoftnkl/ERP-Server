@@ -16,7 +16,6 @@ const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
 const gst_registration_1 = require("../shared/gst-registration");
-const SEARCH_PATH = '/commonapi/v1.1/search';
 const LOOKUP_TIMEOUT_MS = 10_000;
 const DATA_KEYS = ['data', 'taxpayer', 'result'];
 const TAXPAYER_KEYS = ['lgnm', 'tradeNam', 'tradeName', 'pradr', 'dty'];
@@ -31,9 +30,10 @@ let GstinLookupService = GstinLookupService_1 = class GstinLookupService {
         this.requestContextService = requestContextService;
     }
     async search(gstin) {
-        const provider = await this.resolveProvider();
+        const config = this.resolveConfig();
         const sourceGstin = await this.resolveSourceGstin();
-        const url = this.buildUrl(provider, sourceGstin, gstin);
+        const url = this.buildUrl(config, sourceGstin, gstin);
+        const host = config.endpoint.host;
         let ok;
         let status;
         let body;
@@ -47,11 +47,11 @@ let GstinLookupService = GstinLookupService_1 = class GstinLookupService {
             body = this.parseBody(await response.text());
         }
         catch (error) {
-            this.logger.warn(`GSTIN search via ${provider.gspProviderCode} failed: ${error instanceof Error ? error.message : String(error)}`);
+            this.logger.warn(`GSTIN search via ${host} failed: ${error instanceof Error ? error.message : String(error)}`);
             this.throwUpstream('Unable to reach the GST service right now');
         }
         if (!ok) {
-            this.logger.warn(`GSTIN search via ${provider.gspProviderCode} answered HTTP ${status}`);
+            this.logger.warn(`GSTIN search via ${host} answered HTTP ${status}`);
             this.throwUpstream(this.messageOf(body, `The GST service answered HTTP ${status}`));
         }
         const data = this.extractTaxpayer(body);
@@ -60,41 +60,28 @@ let GstinLookupService = GstinLookupService_1 = class GstinLookupService {
         }
         return this.toPayload(gstin, data);
     }
-    async resolveProvider() {
-        const live = { gspIsActive: true, gspIsDeleted: false };
-        const code = process.env.GST_LOOKUP_PROVIDER_CODE?.trim();
-        if (code) {
-            const byCode = await this.prisma.gspProviderMaster.findFirst({
-                where: { ...live, gspProviderCode: code },
-            });
-            if (!byCode) {
-                this.throwUnavailable(`GST_LOOKUP_PROVIDER_CODE names "${code}", which is not an active provider`);
-            }
-            return byCode;
+    resolveConfig() {
+        const endpoint = text(process.env.GST_LOOKUP_ENDPOINT);
+        const aspId = text(process.env.GST_LOOKUP_ASP_ID);
+        const aspPassword = process.env.GST_LOOKUP_ASP_PASSWORD || null;
+        if (!endpoint || !aspId || !aspPassword) {
+            const missing = Object.entries({
+                GST_LOOKUP_ENDPOINT: endpoint,
+                GST_LOOKUP_ASP_ID: aspId,
+                GST_LOOKUP_ASP_PASSWORD: aspPassword,
+            })
+                .filter(([, value]) => !value)
+                .map(([name]) => name);
+            this.throwUnavailable(`Set ${missing.join(', ')} in the server environment`);
         }
-        const companyId = this.requestContextService.getCompanyId();
-        if (companyId) {
-            const mapped = await this.prisma.gspCompanyService.findFirst({
-                where: { csgCompanyId: companyId, csgIsActive: true, csgIsDeleted: false },
-                orderBy: { csgCreatedOn: 'asc' },
-                select: { csgGspProviderId: true },
-            });
-            if (mapped) {
-                const provider = await this.prisma.gspProviderMaster.findFirst({
-                    where: { ...live, gspProviderId: mapped.csgGspProviderId },
-                });
-                if (provider) {
-                    return provider;
-                }
-            }
+        let url;
+        try {
+            url = new URL(endpoint);
         }
-        const providers = await this.prisma.gspProviderMaster.findMany({ where: live, take: 2 });
-        if (providers.length !== 1) {
-            this.throwUnavailable(providers.length
-                ? 'Several GST providers are active: set GST_LOOKUP_PROVIDER_CODE, or map this company to one (GSP Company Service)'
-                : 'No active GST provider is configured (GSP Provider Master)');
+        catch {
+            this.throwUnavailable('GST_LOOKUP_ENDPOINT is not a valid URL');
         }
-        return providers[0];
+        return { endpoint: url, aspId, aspPassword };
     }
     async resolveSourceGstin() {
         const companyId = this.requestContextService.getCompanyId();
@@ -110,12 +97,10 @@ let GstinLookupService = GstinLookupService_1 = class GstinLookupService {
         }
         return gstin;
     }
-    buildUrl(provider, sourceGstin, gstin) {
-        const endpoint = text(process.env.GST_LOOKUP_ENDPOINT) ??
-            `${provider.gspBaseUrl.replace(/\/+$/, '')}${SEARCH_PATH}`;
-        const url = new URL(endpoint);
-        url.searchParams.set('aspid', provider.gspUserName);
-        url.searchParams.set('password', provider.gspUserPassword);
+    buildUrl(config, sourceGstin, gstin) {
+        const url = new URL(config.endpoint);
+        url.searchParams.set('aspid', config.aspId);
+        url.searchParams.set('password', config.aspPassword);
         url.searchParams.set('Action', 'TP');
         url.searchParams.set('Gstin', sourceGstin);
         url.searchParams.set('SearchGstin', gstin);

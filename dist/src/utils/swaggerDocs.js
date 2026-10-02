@@ -10,6 +10,7 @@ const branch_master_module_1 = require("../modules/settings/branchMaster/branch-
 const company_group_master_module_1 = require("../modules/accountsModule/companyGroupMaster/company-group-master.module");
 const company_master_module_1 = require("../modules/settings/companyMaster/company-master.module");
 const app_theme_module_1 = require("../modules/settings/appTheme/app-theme.module");
+const gst_module_1 = require("../modules/gst/gst.module");
 const employee_department_master_module_1 = require("../modules/settings/employeeDepartmentMaster/employee-department-master.module");
 const employee_designation_master_module_1 = require("../modules/settings/employeeDesignationMaster/employee-designation-master.module");
 const employee_master_module_1 = require("../modules/settings/employeeMaster/employee-master.module");
@@ -17,8 +18,6 @@ const user_administration_module_1 = require("../modules/settings/userAdministra
 const app_settings_module_1 = require("../modules/settings/appSettings/app-settings.module");
 const print_template_assignment_module_1 = require("../modules/settings/print-template-assignment/print-template-assignment.module");
 const print_template_module_1 = require("../modules/settings/print-template/print-template.module");
-const gsp_company_service_module_1 = require("../modules/settings/gspCompanyService/gsp-company-service.module");
-const gsp_provider_master_module_1 = require("../modules/accountsModule/gspProviderMaster/gsp-provider-master.module");
 const ledger_shipping_address_module_1 = require("../modules/accountsModule/ledgerShippingAddress/ledger-shipping-address.module");
 const tender_master_module_1 = require("../modules/accountsModule/tenderMaster/tender-master.module");
 const tender_type_master_module_1 = require("../modules/accountsModule/tenderTypeMaster/tender-type-master.module");
@@ -262,6 +261,12 @@ exports.swaggerModuleDocuments = [
         include: [app_theme_module_1.AppThemeModule],
     },
     {
+        path: 'gst-config',
+        title: 'GST Providers & Credentials API',
+        description: 'The GSP layer’s masters (notes 79): providers, their services, endpoints, field and error maps, the GSP accounts, and the company credentials with Verify and status. Secrets are write-only: they come back as has* flags, never a value.',
+        include: [gst_module_1.GstModule],
+    },
+    {
         path: 'company-group-master',
         title: 'Company Group Master API',
         description: 'Company group master module endpoints',
@@ -426,18 +431,6 @@ exports.swaggerModuleDocuments = [
         title: 'Sequence API',
         description: 'Sequence module endpoints',
         include: [sequence_module_1.SequenceModule],
-    },
-    {
-        path: 'gsp-provider-masters',
-        title: 'GSP Provider Master API',
-        description: 'GSP provider master module endpoints',
-        include: [gsp_provider_master_module_1.GspProviderMasterModule],
-    },
-    {
-        path: 'gsp-company-services',
-        title: 'GSP Company Service API',
-        description: 'GSP company service module endpoints',
-        include: [gsp_company_service_module_1.GspCompanyServiceModule],
     },
     {
         path: 'items-ean-code-master',

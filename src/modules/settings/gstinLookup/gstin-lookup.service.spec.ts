@@ -3,13 +3,6 @@ import { PrismaService } from 'src/database/prisma/prisma.service';
 import { RequestContextService } from 'src/common/request-context/request-context.service';
 import { GstinLookupService } from './gstin-lookup.service';
 
-const PROVIDER = {
-  gspProviderId: 'p1',
-  gspProviderCode: 'TAX PRO',
-  gspBaseUrl: 'https://gsp.example/',
-  gspUserName: 'ASP1',
-  gspUserPassword: 'secret',
-};
 const TAXPAYER = {
   gstin: '33ABNPL5414F1ZU',
   lgnm: 'ACME FOODS PRIVATE LIMITED',
@@ -32,8 +25,6 @@ const TAXPAYER = {
 
 describe('GstinLookupService', () => {
   let prisma: {
-    gspProviderMaster: { findFirst: jest.Mock; findMany: jest.Mock };
-    gspCompanyService: { findFirst: jest.Mock };
     company: { findFirst: jest.Mock };
   };
   let fetchMock: jest.SpyInstance;
@@ -59,15 +50,11 @@ describe('GstinLookupService', () => {
   };
 
   beforeEach(() => {
-    delete process.env.GST_LOOKUP_PROVIDER_CODE;
     delete process.env.GST_LOOKUP_SOURCE_GSTIN;
-    delete process.env.GST_LOOKUP_ENDPOINT;
+    process.env.GST_LOOKUP_ENDPOINT = 'https://gsp.example/commonapi/v1.1/search';
+    process.env.GST_LOOKUP_ASP_ID = 'ASP1';
+    process.env.GST_LOOKUP_ASP_PASSWORD = 'secret';
     prisma = {
-      gspProviderMaster: {
-        findFirst: jest.fn().mockResolvedValue(PROVIDER),
-        findMany: jest.fn().mockResolvedValue([PROVIDER]),
-      },
-      gspCompanyService: { findFirst: jest.fn().mockResolvedValue(null) },
       company: { findFirst: jest.fn().mockResolvedValue({ compGstinNo: '33AAAAA0000A1Z5' }) },
     };
     fetchMock = jest.spyOn(globalThis, 'fetch');
@@ -112,33 +99,21 @@ describe('GstinLookupService', () => {
     expect(result.raw).toEqual(TAXPAYER);
   });
 
-  it("prefers GST_LOOKUP_PROVIDER_CODE, then the company's mapped provider", async () => {
-    respond(200, TAXPAYER);
-    process.env.GST_LOOKUP_PROVIDER_CODE = 'TAX PRO';
-    await service.search('33ABNPL5414F1ZU');
-    expect(prisma.gspProviderMaster.findFirst).toHaveBeenCalledWith({
-      where: { gspIsActive: true, gspIsDeleted: false, gspProviderCode: 'TAX PRO' },
-    });
-    expect(prisma.gspCompanyService.findFirst).not.toHaveBeenCalled();
+  it('is 503 naming each missing setting, or a bad endpoint, or no source GSTIN', async () => {
+    delete process.env.GST_LOOKUP_ENDPOINT;
+    process.env.GST_LOOKUP_ASP_PASSWORD = '';
+    const unset = await failure(service.search('33ABNPL5414F1ZU'));
+    expect(unset.status).toBe(503);
+    expect(unset.body).toContain('GST_LOOKUP_ENDPOINT, GST_LOOKUP_ASP_PASSWORD');
+    expect(unset.body).not.toContain('GST_LOOKUP_ASP_ID');
 
-    delete process.env.GST_LOOKUP_PROVIDER_CODE;
-    prisma.gspCompanyService.findFirst.mockResolvedValue({ csgGspProviderId: 'p9' });
-    await service.search('33ABNPL5414F1ZU');
-    expect(prisma.gspProviderMaster.findFirst).toHaveBeenLastCalledWith({
-      where: { gspIsActive: true, gspIsDeleted: false, gspProviderId: 'p9' },
-    });
-  });
+    process.env.GST_LOOKUP_ENDPOINT = 'gsp.example/search';
+    process.env.GST_LOOKUP_ASP_PASSWORD = 'secret';
+    const badUrl = await failure(service.search('33ABNPL5414F1ZU'));
+    expect(badUrl.status).toBe(503);
+    expect(badUrl.body).toContain('not a valid URL');
 
-  it('is 503 when several providers are active and none is chosen, or there is no source GSTIN', async () => {
-    prisma.gspProviderMaster.findMany.mockResolvedValue([
-      PROVIDER,
-      { ...PROVIDER, gspProviderId: 'p2' },
-    ]);
-    const several = await failure(service.search('33ABNPL5414F1ZU'));
-    expect(several.status).toBe(503);
-    expect(several.body).toContain('GST_LOOKUP_PROVIDER_CODE');
-
-    prisma.gspProviderMaster.findMany.mockResolvedValue([PROVIDER]);
+    process.env.GST_LOOKUP_ENDPOINT = 'https://gsp.example/commonapi/v1.1/search';
     prisma.company.findFirst.mockResolvedValue({ compGstinNo: null });
     const noSource = await failure(service.search('33ABNPL5414F1ZU'));
     expect(noSource.status).toBe(503);

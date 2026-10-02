@@ -232,10 +232,6 @@ SELECT v.* FROM (VALUES
     ,('019f2c91-e7a7-77ab-80b8-4150582a897b', 26, 8 , 'Tel No'             , 'led_tel'                   , 'Text'         , 100.00, 8.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019f2c91-e7a9-7822-bc47-588b374d3d96', 26, 9 , 'City'               , 'led_city'                  , 'Text'         , 100.00, 9.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019f2c91-e7aa-752e-abb5-f1b681246d09', 26, 10, 'Active'             , 'led_is_active'             , 'Text'         , 100.00, 10.00, 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
-    -- ============ gsp company service (id 27) ============
-    ,('019eb6a3-cb45-7861-a600-449573537470', 27, 1 , 'service type'       , NULL                        , 'Text'         , 57.94 , NULL , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
-    ,('019eb6a3-cb45-7997-85c5-8301e9b767ad', 27, 2 , 'provider id'        , NULL                        , 'Text'         , 53.83 , NULL , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
-    ,('019eb6a3-cb45-783c-87b2-540fbbc16d8a', 27, 3 , 'user name'          , NULL                        , 'Text'         , 12.96 , NULL , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     -- ============ device list master (id 28) ============
     ,('019eb6a3-cb45-7841-8510-9044bbd63271', 28, 1 , 'Device UID'         , NULL                        , 'Text'         , 32.92 , NULL , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019eb6a3-cb45-77db-98e7-3de8b6a9fb3c', 28, 2 , 'Type'               , NULL                        , 'Text'         , 15.58 , NULL , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')

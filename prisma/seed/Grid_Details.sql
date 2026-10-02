@@ -204,9 +204,6 @@ WHERE
 	LM.led_is_deleted = wantdelete
 ORDER BY
 	LM.led_name$seed$)
-    ,(27, 'gsp company service'          , NULL, 'provider id'     , 'Ascending', 'web'    , true , false, 'system', $seed$SELECT  csg_gsp_provider_id, csg_service_type, csg_euser_name,csg_company_service_id
-	FROM fixed.gsp_company_service
-where csg_is_deleted=false$seed$)
     ,(28, 'device list master'           , NULL, 'Device UID'      , 'Ascending', 'web'    , true , false, 'system', $seed$SELECT dev_id, dev_company_id, dev_branch_id, dev_user_id, dev_device_uid, dev_device_name, dev_device_type, dev_platform, dev_mac_address, dev_is_blocked, dev_block_reason, dev_last_ip, dev_last_login
 	FROM fixed.device_master
 where dev_is_deleted=false$seed$)

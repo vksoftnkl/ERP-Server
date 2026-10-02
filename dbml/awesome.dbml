@@ -707,7 +707,7 @@ to tell afterwards which rule produced the figure.
 
 ═══════════════════════════════════════════════════════════════════════════
 NOT PARTITIONED, unlike the money tables
-═══════════════════════════════════════════════════════════════════════════
+══════════════════════════════════════════��════════════════════════════════
 
 `acc_bill_balance`, `acc_voucher_header`, `acc_vouchers`, `acc_pdc_register`
 and `acc_tender_detail` are all LIST-partitioned on their accounting year.
@@ -1860,43 +1860,6 @@ Table grid_details {
   gridModifiedBy String
   gridSyncOn DateTime
   columns grid_columns [not null]
-}
-
-Table gsp_company_service {
-  csgCompanyServiceId String [pk]
-  csgCompanyId String [not null]
-  csgGspProviderId String [not null]
-  csgServiceType String [not null]
-  csgEuserName String [not null]
-  csgEuserPassword String [not null]
-  csgAuthToken String
-  csgAuthTokenValidTill DateTime
-  csgIsActive Boolean [not null, default: true]
-  csgIsDeleted Boolean [not null, default: false]
-  csgSyncDate DateTime
-  csgCreatedOn DateTime [default: `now()`, not null]
-  csgCreatedBy String
-  csgModifiedOn DateTime [default: `now()`, not null]
-  csgModifiedBy String
-  company companys [not null]
-}
-
-Table gsp_provider_master {
-  gspProviderId String [pk]
-  gspProviderCode String [not null]
-  gspProviderName String [not null]
-  gspBaseUrl String [not null]
-  gspRoute String [not null]
-  gspIpAddress String [not null]
-  gspUserName String [not null]
-  gspUserPassword String [not null]
-  gspIsActive Boolean [not null, default: true]
-  gspIsDeleted Boolean [not null, default: false]
-  gspCreatedOn DateTime [default: `now()`, not null]
-  gspCreatedBy String
-  gspModifiedOn DateTime [default: `now()`, not null]
-  gspModifiedBy String
-  gspSyncDate DateTime [note: 'NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).']
 }
 
 Table hsn_master {
@@ -3201,7 +3164,6 @@ the e-invoice applicability rows in StatutoryLimit.']
   openingRuns acc_opening_run [not null]
   employees employee_master [not null]
   ledgerBankAccounts acc_ledger_bank_accounts [not null]
-  gspCompanyServices gsp_company_service [not null]
   shipAddrs acc_ship_addrs [not null]
   custGroup cust_groups [not null]
   itemMaster item_master [not null]
@@ -10659,8 +10621,6 @@ Ref: form_section.sectionMenuId > menu_master.menuId [delete: Cascade]
 Ref: form_field.fieldSectionId > form_section.sectionId [delete: Cascade]
 
 Ref: grid_columns.gridId > grid_details.gridId [delete: Cascade]
-
-Ref: gsp_company_service.csgCompanyId > companys.compId [delete: Restrict]
 
 Ref: menu_master.menuParentId - menu_master.menuId [delete: Set Null]
 

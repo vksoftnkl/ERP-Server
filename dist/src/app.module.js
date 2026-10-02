@@ -43,6 +43,7 @@ const branch_master_module_1 = require("./modules/settings/branchMaster/branch-m
 const company_master_module_1 = require("./modules/settings/companyMaster/company-master.module");
 const app_theme_module_1 = require("./modules/settings/appTheme/app-theme.module");
 const gstin_lookup_module_1 = require("./modules/settings/gstinLookup/gstin-lookup.module");
+const gst_module_1 = require("./modules/gst/gst.module");
 const company_group_master_module_1 = require("./modules/accountsModule/companyGroupMaster/company-group-master.module");
 const employee_department_master_module_1 = require("./modules/settings/employeeDepartmentMaster/employee-department-master.module");
 const employee_designation_master_module_1 = require("./modules/settings/employeeDesignationMaster/employee-designation-master.module");
@@ -63,8 +64,6 @@ const ledger_statement_module_1 = require("./modules/reports/ledger-statement/le
 const ledger_map_module_1 = require("./modules/accountsModule/ledgerMap/ledger-map.module");
 const bill_balance_module_1 = require("./modules/accountsModule/billBalance/bill-balance.module");
 const ledger_shipping_address_module_1 = require("./modules/accountsModule/ledgerShippingAddress/ledger-shipping-address.module");
-const gsp_provider_master_module_1 = require("./modules/accountsModule/gspProviderMaster/gsp-provider-master.module");
-const gsp_company_service_module_1 = require("./modules/settings/gspCompanyService/gsp-company-service.module");
 const supplier_group_module_1 = require("./modules/purchase/supplier-group/supplier-group.module");
 const suppliers_module_1 = require("./modules/purchase/suppliers/suppliers.module");
 const area_module_1 = require("./modules/sales/area/area.module");
@@ -198,6 +197,7 @@ exports.AppModule = AppModule = __decorate([
             company_master_module_1.CompanyMasterModule,
             app_theme_module_1.AppThemeModule,
             gstin_lookup_module_1.GstinLookupModule,
+            gst_module_1.GstModule,
             company_group_master_module_1.CompanyGroupMasterModule,
             employee_department_master_module_1.EmployeeDepartmentMasterModule,
             employee_designation_master_module_1.EmployeeDesignationMasterModule,
@@ -217,8 +217,6 @@ exports.AppModule = AppModule = __decorate([
             issued_cheques_module_1.IssuedChequesModule,
             ledger_statement_module_1.LedgerStatementModule,
             ledger_map_module_1.LedgerMapModule,
-            gsp_provider_master_module_1.GspProviderMasterModule,
-            gsp_company_service_module_1.GspCompanyServiceModule,
             supplier_group_module_1.SupplierGroupModule,
             suppliers_module_1.SuppliersModule,
             state_module_1.StateModule,

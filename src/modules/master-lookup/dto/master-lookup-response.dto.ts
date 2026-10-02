@@ -30,10 +30,6 @@ export class AccountsLookupPayloadDto {
   tenderTypes!: NameIdOptionDto[];
   @ApiProperty({ type: NameIdOptionDto, isArray: true })
   tenders!: NameIdOptionDto[];
-  @ApiProperty({ type: NameIdOptionDto, isArray: true })
-  gspProviders!: NameIdOptionDto[];
-  @ApiProperty({ type: NameIdOptionDto, isArray: true })
-  gspCompanyServices!: NameIdOptionDto[];
 }
 export class MastersLookupPayloadDto {
   @ApiProperty({ type: NameIdOptionDto, isArray: true })

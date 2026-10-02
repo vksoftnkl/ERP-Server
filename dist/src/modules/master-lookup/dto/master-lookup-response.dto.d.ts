@@ -15,8 +15,6 @@ export declare class AccountsLookupPayloadDto {
     employees: NameIdOptionDto[];
     tenderTypes: NameIdOptionDto[];
     tenders: NameIdOptionDto[];
-    gspProviders: NameIdOptionDto[];
-    gspCompanyServices: NameIdOptionDto[];
 }
 export declare class MastersLookupPayloadDto {
     itemGroups: NameIdOptionDto[];

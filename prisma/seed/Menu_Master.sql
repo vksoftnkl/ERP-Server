@@ -260,7 +260,6 @@ VALUES
     ,( 227,   60, 'What''s App Configuration'            , NULL                  , false,   0.50, NULL, NULL, NULL, true , true)
     ,( 231,    7, 'Print Settings'                       , 'false'               , false,   1.10, NULL, NULL, NULL, true , false)
     ,( 239,   69, 'device list master'                   , 'device-listmaster'   , true ,   4.00, '/icons/desktop/device.png', '/icons/web/device.png', '/icons/mobile/device.png', true , false)
-    ,( 241,    7, 'gsp company service'                  , 'gsp sc'              , true ,   2.00, NULL, NULL, NULL, true , false)
     ,( 242,   69, 'ui- table-master'                     , NULL                  , true ,   8.10, NULL, NULL, NULL, true , false)
     ,( 243,   60, 'widget-master'                        , NULL                  , true ,   6.00, NULL, NULL, NULL, true , false)
     ,( 245,   60, 'Charge master'                        , NULL                  , true ,   7.00, NULL, NULL, NULL, true , false)

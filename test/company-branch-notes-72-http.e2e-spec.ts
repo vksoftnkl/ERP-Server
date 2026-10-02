@@ -28,7 +28,6 @@ describe('Company + Branch masters, notes 72 (HTTP — read-only)', () => {
   let http: ReturnType<typeof request>;
   let liveCompanyId: string;
   let defaultCompanyId: string | undefined;
-  let providerCode: string | undefined;
   const env = { ...process.env };
 
   beforeAll(async () => {
@@ -38,10 +37,6 @@ describe('Company + Branch masters, notes 72 (HTTP — read-only)', () => {
     const [def] = await prisma.$queryRaw<Array<{ comp_id: string }>>`
       SELECT comp_id FROM public.companys WHERE comp_default AND NOT comp_is_deleted LIMIT 1`;
     defaultCompanyId = def?.comp_id;
-    const [provider] = await prisma.$queryRaw<Array<{ code: string }>>`
-      SELECT gsp_provider_code AS code FROM fixed.gsp_provider_master
-       WHERE gsp_is_active AND NOT gsp_is_deleted ORDER BY gsp_provider_code LIMIT 1`;
-    providerCode = provider?.code;
     const [user] = await prisma.$queryRaw<Array<{ usr_id: string }>>`
       SELECT usr_id FROM public.user_master WHERE NOT usr_is_deleted LIMIT 1`;
 
@@ -141,8 +136,9 @@ describe('Company + Branch masters, notes 72 (HTTP — read-only)', () => {
       .query({ gstin: 'ABC' });
     expect(bad.status).toBe(400);
 
-    if (!providerCode) return;
-    process.env.GST_LOOKUP_PROVIDER_CODE = providerCode;
+    process.env.GST_LOOKUP_ENDPOINT = 'https://gsp.example/commonapi/v1.1/search';
+    process.env.GST_LOOKUP_ASP_ID = 'e2e-asp';
+    process.env.GST_LOOKUP_ASP_PASSWORD = 'e2e-secret';
     process.env.GST_LOOKUP_SOURCE_GSTIN = '33AAAAA0000A1Z5';
     const fetchMock = jest.spyOn(globalThis, 'fetch').mockResolvedValue({
       ok: true,

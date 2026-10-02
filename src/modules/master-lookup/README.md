@@ -231,8 +231,6 @@ falls back to the id.
 | `employees` | `employeeMaster` | `empName` |
 | `tenderTypes` | `accountTenderTypes` | `accttTypeName` |
 | `tenders` | `accountTenderMaster` | `acctndName` |
-| `gspProviders` | `gspProviderMaster` | `gspProviderName` |
-| `gspCompanyServices` | `gspCompanyService` | `csgServiceType - companyName`; ordered by service type |
 
 **`masters` scope** — from [`MASTER_LOOKUP_MODULE_KEYS`](types/master-lookup-api.types.ts):
 
@@ -314,8 +312,7 @@ DTO) rather than TypeScript `enum`s:
 
 - **`ACCOUNT_LOOKUP_MODULE_KEYS`** (`accounts` scope): `companies`, `companyGroups`, `branches`,
   `accountGroups`, `accountLedgers`, `ledgerBankAccounts`, `ledgerShippingAddresses`,
-  `employeeDepartments`, `employeeDesignations`, `employees`, `tenderTypes`, `tenders`,
-  `gspProviders`, `gspCompanyServices`.
+  `employeeDepartments`, `employeeDesignations`, `employees`, `tenderTypes`, `tenders`.
 - **`MASTER_LOOKUP_MODULE_KEYS`** (`masters` scope): `itemGroups`, `itemCategories`, `itemSections`,
   `itemBrands`, `units`, `itemTaxes`, `priceLevels`, `hsnCodes`, `items`, `godownLocations`,
   `stateCodes`, `states`, `cities`, `areas`, `customerGroups`, `customers`, `supplierGroups`,

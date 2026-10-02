@@ -168,8 +168,6 @@ export interface AccountsLookupPayload {
     employees: NameIdOption[];
     tenderTypes: NameIdOption[];
     tenders: NameIdOption[];
-    gspProviders: NameIdOption[];
-    gspCompanyServices: NameIdOption[];
 }
 export interface MastersLookupPayload {
     itemGroups: NameIdOption[];
@@ -193,9 +191,9 @@ export interface MastersLookupPayload {
     userMasters: NameIdOption[];
     devices: NameIdOption[];
 }
-export declare const ACCOUNT_LOOKUP_MODULE_KEYS: readonly ["companies", "companyGroups", "branches", "accountGroups", "accountLedgers", "ledgerBankAccounts", "ledgerShippingAddresses", "employeeDepartments", "employeeDesignations", "employees", "tenderTypes", "tenders", "gspProviders", "gspCompanyServices"];
+export declare const ACCOUNT_LOOKUP_MODULE_KEYS: readonly ["companies", "companyGroups", "branches", "accountGroups", "accountLedgers", "ledgerBankAccounts", "ledgerShippingAddresses", "employeeDepartments", "employeeDesignations", "employees", "tenderTypes", "tenders"];
 export declare const MASTER_LOOKUP_MODULE_KEYS: readonly ["itemGroups", "itemCategories", "itemSections", "itemBrands", "units", "itemTaxes", "priceLevels", "hsnCodes", "items", "godownLocations", "stateCodes", "states", "cities", "areas", "customerGroups", "customers", "supplierGroups", "suppliers", "userMasters", "devices"];
-export declare const LOOKUP_MODULE_KEYS: readonly ["companies", "companyGroups", "branches", "accountGroups", "accountLedgers", "ledgerBankAccounts", "ledgerShippingAddresses", "employeeDepartments", "employeeDesignations", "employees", "tenderTypes", "tenders", "gspProviders", "gspCompanyServices", "itemGroups", "itemCategories", "itemSections", "itemBrands", "units", "itemTaxes", "priceLevels", "hsnCodes", "items", "godownLocations", "stateCodes", "states", "cities", "areas", "customerGroups", "customers", "supplierGroups", "suppliers", "userMasters", "devices"];
+export declare const LOOKUP_MODULE_KEYS: readonly ["companies", "companyGroups", "branches", "accountGroups", "accountLedgers", "ledgerBankAccounts", "ledgerShippingAddresses", "employeeDepartments", "employeeDesignations", "employees", "tenderTypes", "tenders", "itemGroups", "itemCategories", "itemSections", "itemBrands", "units", "itemTaxes", "priceLevels", "hsnCodes", "items", "godownLocations", "stateCodes", "states", "cities", "areas", "customerGroups", "customers", "supplierGroups", "suppliers", "userMasters", "devices"];
 export type AccountsLookupModuleKey = (typeof ACCOUNT_LOOKUP_MODULE_KEYS)[number];
 export type MastersLookupModuleKey = (typeof MASTER_LOOKUP_MODULE_KEYS)[number];
 export type LookupModuleKey = (typeof LOOKUP_MODULE_KEYS)[number];

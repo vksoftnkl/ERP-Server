@@ -37,8 +37,6 @@ class AccountsLookupPayloadDto {
     employees;
     tenderTypes;
     tenders;
-    gspProviders;
-    gspCompanyServices;
 }
 exports.AccountsLookupPayloadDto = AccountsLookupPayloadDto;
 __decorate([
@@ -89,14 +87,6 @@ __decorate([
     (0, swagger_1.ApiProperty)({ type: NameIdOptionDto, isArray: true }),
     __metadata("design:type", Array)
 ], AccountsLookupPayloadDto.prototype, "tenders", void 0);
-__decorate([
-    (0, swagger_1.ApiProperty)({ type: NameIdOptionDto, isArray: true }),
-    __metadata("design:type", Array)
-], AccountsLookupPayloadDto.prototype, "gspProviders", void 0);
-__decorate([
-    (0, swagger_1.ApiProperty)({ type: NameIdOptionDto, isArray: true }),
-    __metadata("design:type", Array)
-], AccountsLookupPayloadDto.prototype, "gspCompanyServices", void 0);
 class MastersLookupPayloadDto {
     itemGroups;
     itemCategories;

@@ -35,6 +35,7 @@ import { BranchMasterModule } from './modules/settings/branchMaster/branch-maste
 import { CompanyMasterModule } from './modules/settings/companyMaster/company-master.module';
 import { AppThemeModule } from './modules/settings/appTheme/app-theme.module';
 import { GstinLookupModule } from './modules/settings/gstinLookup/gstin-lookup.module';
+import { GstModule } from './modules/gst/gst.module';
 import { CompanyGroupMasterModule } from './modules/accountsModule/companyGroupMaster/company-group-master.module';
 import { EmployeeDepartmentMasterModule } from './modules/settings/employeeDepartmentMaster/employee-department-master.module';
 import { EmployeeDesignationMasterModule } from './modules/settings/employeeDesignationMaster/employee-designation-master.module';
@@ -55,8 +56,6 @@ import { LedgerStatementModule } from './modules/reports/ledger-statement/ledger
 import { LedgerMapModule } from './modules/accountsModule/ledgerMap/ledger-map.module';
 import { BillBalanceModule } from './modules/accountsModule/billBalance/bill-balance.module';
 import { LedgerShippingAddressModule } from './modules/accountsModule/ledgerShippingAddress/ledger-shipping-address.module';
-import { GspProviderMasterModule } from './modules/accountsModule/gspProviderMaster/gsp-provider-master.module';
-import { GspCompanyServiceModule } from './modules/settings/gspCompanyService/gsp-company-service.module';
 import { SupplierGroupModule } from './modules/purchase/supplier-group/supplier-group.module';
 import { SuppliersModule } from './modules/purchase/suppliers/suppliers.module';
 import { AreaModule } from './modules/sales/area/area.module';
@@ -184,6 +183,7 @@ const isThrottlerEnabled = parseBoolean(process.env.THROTTLE_ENABLED, true);
     CompanyMasterModule,
     AppThemeModule,
     GstinLookupModule,
+    GstModule,
     CompanyGroupMasterModule,
     EmployeeDepartmentMasterModule,
     EmployeeDesignationMasterModule,
@@ -207,8 +207,6 @@ const isThrottlerEnabled = parseBoolean(process.env.THROTTLE_ENABLED, true);
     IssuedChequesModule,
     LedgerStatementModule,
     LedgerMapModule,
-    GspProviderMasterModule,
-    GspCompanyServiceModule,
     SupplierGroupModule,
     SuppliersModule,
     StateModule,

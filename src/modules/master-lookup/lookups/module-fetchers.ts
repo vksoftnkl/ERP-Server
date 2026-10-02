@@ -134,29 +134,6 @@ export function buildModuleFetchers(prisma: PrismaService): Record<LookupModuleK
         }),
       (row) => toOption(row.tndId, row.tndName),
     ),
-    gspProviders: simpleFetcher(
-      () =>
-        prisma.gspProviderMaster.findMany({
-          where: { gspIsDeleted: false, gspIsActive: true },
-          select: { gspProviderId: true, gspProviderName: true },
-          orderBy: [{ gspProviderName: 'asc' }, { gspProviderId: 'asc' }],
-        }),
-      (row) => toOption(row.gspProviderId, row.gspProviderName),
-    ),
-    gspCompanyServices: async () => {
-      const rows = await prisma.gspCompanyService.findMany({
-        where: { csgIsDeleted: false, csgIsActive: true },
-        select: {
-          csgCompanyServiceId: true,
-          csgServiceType: true,
-          company: { select: { compName: true } },
-        },
-        orderBy: [{ csgServiceType: 'asc' }, { csgCompanyServiceId: 'asc' }],
-      });
-      return rows.map((row) =>
-        toOption(row.csgCompanyServiceId, `${row.csgServiceType} - ${row.company.compName}`),
-      );
-    },
     itemGroups: simpleFetcher(
       () =>
         prisma.itemGroupMaster.findMany({

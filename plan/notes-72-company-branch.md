@@ -37,6 +37,10 @@ specs: `test/company-branch-notes-72.e2e-spec.ts` (11 cases, one rolled-back tra
   `/commonapi/v1.1/search`. On dev two providers are active and only Acme is mapped (to SAND
   BOX, whose stored password equals its user name), so **set `GST_LOOKUP_PROVIDER_CODE`** before
   using it. Not yet called against the real provider from here.
+  **Superseded 2026-10-02:** fixed.gsp_provider_master / gsp_company_service were dropped
+  (20261002140000) with their two modules; lookup is now env-only — `GST_LOOKUP_ENDPOINT` (full
+  search URL), `GST_LOOKUP_ASP_ID`, `GST_LOOKUP_ASP_PASSWORD`, plus `GST_LOOKUP_SOURCE_GSTIN` as
+  before. `GST_LOOKUP_PROVIDER_CODE` is gone.
 
 ## Data
 

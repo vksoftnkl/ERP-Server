@@ -45,13 +45,6 @@ exports.MODULE_DROPDOWN_NAME_ALIASES = {
     employees: ['employees', 'employee'],
     tenderTypes: ['tender types', 'tender type'],
     tenders: ['tenders', 'tender'],
-    gspProviders: ['gsp providers', 'gsp provider', 'providers', 'provider'],
-    gspCompanyServices: [
-        'gsp company services',
-        'gsp company service',
-        'company services',
-        'company service',
-    ],
     itemGroups: ['item groups', 'item group'],
     itemCategories: ['item categories', 'item category', 'categories', 'category'],
     itemSections: ['item sections', 'item section', 'sections', 'section'],

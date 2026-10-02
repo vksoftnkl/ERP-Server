@@ -1,5 +1,4 @@
 import { HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
-import { GspProviderMaster } from '@prisma/client';
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import { RequestContextService } from 'src/common/request-context/request-context.service';
 import {
@@ -13,8 +12,6 @@ import {
   GstinLookupPayload,
 } from './types/gstin-lookup.types';
 
-/** The provider's "search taxpayer" call, under its base URL. */
-const SEARCH_PATH = '/commonapi/v1.1/search';
 const LOOKUP_TIMEOUT_MS = 10_000;
 /** Where the provider may nest the taxpayer record. */
 const DATA_KEYS = ['data', 'taxpayer', 'result'] as const;
@@ -27,17 +24,26 @@ const isRecord = (value: unknown): value is JsonRecord =>
 const text = (value: unknown): string | null =>
   typeof value === 'string' && value.trim() ? value.trim() : null;
 
+/** The provider's "search taxpayer" call and the ASP login it is made as. */
+interface LookupConfig {
+  endpoint: URL;
+  aspId: string;
+  aspPassword: string;
+}
+
 /**
  * Notes 72 C6 — GSTIN search on the server, so the Qt client (and React,
  * which until now called the provider from its own Next route with the ASP
  * password compiled in) look a GSTIN up the same way.
  *
- * WHICH PROVIDER: env GST_LOOKUP_PROVIDER_CODE when set; else the provider the
- * request's company is mapped to (GSP Company Service); else the only active
- * provider. Its gsp_user_name / gsp_user_password are the ASP id / password.
+ * WHERE and AS WHOM: env only — GST_LOOKUP_ENDPOINT (the provider's full search
+ * URL, e.g. https://gstsandbox.charteredinfo.com/commonapi/v1.1/search) and
+ * GST_LOOKUP_ASP_ID / GST_LOOKUP_ASP_PASSWORD; a missing one is a 503. The
+ * first-draft fixed.gsp_provider_master that used to hold them was dropped
+ * (20261002140000); the public.gst_* tables take over once their credential
+ * encryption exists.
  * WHICH SOURCE GSTIN (the provider's `Gstin`): the request company's own GSTIN,
- * else env GST_LOOKUP_SOURCE_GSTIN. WHERE: env GST_LOOKUP_ENDPOINT, else the
- * provider's base URL + /commonapi/v1.1/search.
+ * else env GST_LOOKUP_SOURCE_GSTIN.
  *
  * The provider takes the password in the query string, so the URL is never
  * logged or echoed.
@@ -52,9 +58,10 @@ export class GstinLookupService {
   ) {}
 
   async search(gstin: string): Promise<GstinLookupPayload> {
-    const provider = await this.resolveProvider();
+    const config = this.resolveConfig();
     const sourceGstin = await this.resolveSourceGstin();
-    const url = this.buildUrl(provider, sourceGstin, gstin);
+    const url = this.buildUrl(config, sourceGstin, gstin);
+    const host = config.endpoint.host;
 
     let ok: boolean;
     let status: number;
@@ -69,12 +76,12 @@ export class GstinLookupService {
       body = this.parseBody(await response.text());
     } catch (error) {
       this.logger.warn(
-        `GSTIN search via ${provider.gspProviderCode} failed: ${error instanceof Error ? error.message : String(error)}`,
+        `GSTIN search via ${host} failed: ${error instanceof Error ? error.message : String(error)}`,
       );
       this.throwUpstream('Unable to reach the GST service right now');
     }
     if (!ok) {
-      this.logger.warn(`GSTIN search via ${provider.gspProviderCode} answered HTTP ${status}`);
+      this.logger.warn(`GSTIN search via ${host} answered HTTP ${status}`);
       this.throwUpstream(this.messageOf(body, `The GST service answered HTTP ${status}`));
     }
     const data = this.extractTaxpayer(body);
@@ -88,45 +95,27 @@ export class GstinLookupService {
     return this.toPayload(gstin, data);
   }
 
-  private async resolveProvider(): Promise<GspProviderMaster> {
-    const live = { gspIsActive: true, gspIsDeleted: false };
-    const code = process.env.GST_LOOKUP_PROVIDER_CODE?.trim();
-    if (code) {
-      const byCode = await this.prisma.gspProviderMaster.findFirst({
-        where: { ...live, gspProviderCode: code },
-      });
-      if (!byCode) {
-        this.throwUnavailable(
-          `GST_LOOKUP_PROVIDER_CODE names "${code}", which is not an active provider`,
-        );
-      }
-      return byCode;
+  private resolveConfig(): LookupConfig {
+    const endpoint = text(process.env.GST_LOOKUP_ENDPOINT);
+    const aspId = text(process.env.GST_LOOKUP_ASP_ID);
+    const aspPassword = process.env.GST_LOOKUP_ASP_PASSWORD || null;
+    if (!endpoint || !aspId || !aspPassword) {
+      const missing = Object.entries({
+        GST_LOOKUP_ENDPOINT: endpoint,
+        GST_LOOKUP_ASP_ID: aspId,
+        GST_LOOKUP_ASP_PASSWORD: aspPassword,
+      })
+        .filter(([, value]) => !value)
+        .map(([name]) => name);
+      this.throwUnavailable(`Set ${missing.join(', ')} in the server environment`);
     }
-    const companyId = this.requestContextService.getCompanyId();
-    if (companyId) {
-      const mapped = await this.prisma.gspCompanyService.findFirst({
-        where: { csgCompanyId: companyId, csgIsActive: true, csgIsDeleted: false },
-        orderBy: { csgCreatedOn: 'asc' },
-        select: { csgGspProviderId: true },
-      });
-      if (mapped) {
-        const provider = await this.prisma.gspProviderMaster.findFirst({
-          where: { ...live, gspProviderId: mapped.csgGspProviderId },
-        });
-        if (provider) {
-          return provider;
-        }
-      }
+    let url: URL;
+    try {
+      url = new URL(endpoint);
+    } catch {
+      this.throwUnavailable('GST_LOOKUP_ENDPOINT is not a valid URL');
     }
-    const providers = await this.prisma.gspProviderMaster.findMany({ where: live, take: 2 });
-    if (providers.length !== 1) {
-      this.throwUnavailable(
-        providers.length
-          ? 'Several GST providers are active: set GST_LOOKUP_PROVIDER_CODE, or map this company to one (GSP Company Service)'
-          : 'No active GST provider is configured (GSP Provider Master)',
-      );
-    }
-    return providers[0];
+    return { endpoint: url, aspId, aspPassword };
   }
 
   private async resolveSourceGstin(): Promise<string> {
@@ -146,13 +135,10 @@ export class GstinLookupService {
     return gstin;
   }
 
-  private buildUrl(provider: GspProviderMaster, sourceGstin: string, gstin: string): string {
-    const endpoint =
-      text(process.env.GST_LOOKUP_ENDPOINT) ??
-      `${provider.gspBaseUrl.replace(/\/+$/, '')}${SEARCH_PATH}`;
-    const url = new URL(endpoint);
-    url.searchParams.set('aspid', provider.gspUserName);
-    url.searchParams.set('password', provider.gspUserPassword);
+  private buildUrl(config: LookupConfig, sourceGstin: string, gstin: string): string {
+    const url = new URL(config.endpoint);
+    url.searchParams.set('aspid', config.aspId);
+    url.searchParams.set('password', config.aspPassword);
     url.searchParams.set('Action', 'TP');
     url.searchParams.set('Gstin', sourceGstin);
     url.searchParams.set('SearchGstin', gstin);

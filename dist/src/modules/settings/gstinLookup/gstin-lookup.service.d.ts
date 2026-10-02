@@ -7,7 +7,7 @@ export declare class GstinLookupService {
     private readonly logger;
     constructor(prisma: PrismaService, requestContextService: RequestContextService);
     search(gstin: string): Promise<GstinLookupPayload>;
-    private resolveProvider;
+    private resolveConfig;
     private resolveSourceGstin;
     private buildUrl;
     private parseBody;

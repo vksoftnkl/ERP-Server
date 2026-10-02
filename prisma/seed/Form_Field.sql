@@ -143,13 +143,6 @@ SELECT v.* FROM (VALUES
     ,(111, 19, 'group_parent'                , 'Group Parent'            , ''    , 3 , true, 'system')
     ,(112, 19, 'group_sort'                  , 'Group Sort'              , ''    , 4 , true, 'system')
     ,(113, 19, 'group_description'           , 'Group Description'       , ''    , 5 , true, 'system')
-    -- ============ gsp company service / gsp (id 20) ============
-    ,(114, 20, 'gsp_company'                 , 'Company'                 , NULL  , 1 , true, 'system')
-    ,(115, 20, 'gsp_provide'                 , 'GSP Provider'            , NULL  , 2 , true, 'system')
-    ,(116, 20, 'gsp_service_type'            , 'Service Type'            , NULL  , 3 , true, 'system')
-    ,(117, 20, 'gsp_service_euser_name'      , 'E-User Name'             , NULL  , 4 , true, 'system')
-    ,(118, 20, 'gsp_user_password'           , 'E-User Password'         , NULL  , 5 , true, 'system')
-    ,(363, 20, 'gsp_status'                  , 'Status'                  , NULL  , 6 , true, 'system')
     -- ============ Department Master / basic (id 21) ============
     ,(119, 21, 'department_name'             , 'Department Name'         , NULL  , 1 , true, 'system')
     ,(120, 21, 'department_code'             , 'Department Code'         , NULL  , 2 , true, 'system')

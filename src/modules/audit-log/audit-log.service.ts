@@ -67,7 +67,6 @@ type AuditReferenceLookupType =
   | 'employeeDesignation'
   | 'godownGroup'
   | 'godownLocation'
-  | 'gspProvider'
   | 'item'
   | 'itemBrand'
   | 'itemGroup'
@@ -111,7 +110,6 @@ const GLOBAL_AUDIT_FIELD_REFERENCE_TYPES = createAuditReferenceTypeMap([
   ['Default UOM ID', 'unit'],
   ['Department ID', 'employeeDepartment'],
   ['Designation ID', 'employeeDesignation'],
-  ['GSP Provider ID', 'gspProvider'],
   ['Item ID', 'item'],
   ['Ledger ID', 'ledger'],
   ['State ID', 'state'],
@@ -1175,22 +1173,6 @@ export class AuditLogService {
           },
         });
         return new Map(locations.map((location) => [location.gdlId, location.gdlName]));
-      }
-      case 'gspProvider': {
-        const providers = await this.prisma.gspProviderMaster.findMany({
-          where: {
-            gspProviderId: {
-              in: [...ids],
-            },
-          },
-          select: {
-            gspProviderId: true,
-            gspProviderName: true,
-          },
-        });
-        return new Map(
-          providers.map((provider) => [provider.gspProviderId, provider.gspProviderName]),
-        );
       }
       case 'item': {
         const items = await this.prisma.itemMaster.findMany({

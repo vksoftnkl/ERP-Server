@@ -90,8 +90,6 @@ SELECT v.* FROM (VALUES
     ,(23, 239, 'Device list master'         , 'basic'           , 1, true, 'Web'    , 'system')
     -- ============ item category master (id 240) ============
     ,(14, 240, 'item category master'       , 'basic details'   , 1, true, 'Web'    , 'system')
-    -- ============ gsp company service (id 241) ============
-    ,(20, 241, 'gsp company service'        , 'gsp'             , 1, true, 'Web'    , 'system')
 ) AS v(section_id, section_menu_id, section_name, section_gui_name, section_position, section_visibility, section_platform, section_created_by)
 WHERE NOT EXISTS (
   SELECT 1 FROM fixed.form_section existing
