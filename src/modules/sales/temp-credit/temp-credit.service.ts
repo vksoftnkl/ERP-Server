@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { looseSearchSql } from '../../../common/search/loose-search';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import { throwSalesNotFound } from 'src/common/utils/module-service.utils';
@@ -28,7 +29,6 @@ export class TempCreditService {
       .split(',')
       .map((s) => s.trim().toUpperCase())
       .filter(Boolean);
-    const search = q.search?.trim() ? `%${q.search.trim()}%` : null;
     const today = isoToday();
     const rows = await this.prisma.$queryRaw<
       {
@@ -62,7 +62,7 @@ export class TempCreditService {
        WHERE t.atc_company_id = ${q.companyId}::uuid AND t.atc_is_deleted = false
          AND (${q.branchId ?? null}::uuid IS NULL OR t.atc_branch_id = ${q.branchId ?? null}::uuid)
          AND t.atc_status = ANY(${statuses}::text[])
-         AND (${search}::text IS NULL OR t.atc_name ILIKE ${search} OR t.atc_mobile ILIKE ${search} OR t.atc_bill_refno ILIKE ${search})
+         AND ${looseSearchSql(['t.atc_name', 't.atc_mobile', 't.atc_bill_refno'], q.search)}
          AND (${q.overdueOnly ?? false}::boolean = false OR (t.atc_due_date < ${today}::date AND t.atc_balance_amount > 0))
        ORDER BY t.atc_due_date, t.atc_created_on`;
     return rows.map((r) => ({

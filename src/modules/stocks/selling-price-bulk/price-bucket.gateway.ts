@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { looseSearchSql } from 'src/common/search/loose-search';
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import { DEFAULT_ACTOR, toNumber } from 'src/common/utils/module-service.utils';
 import {
@@ -420,22 +421,20 @@ export class PriceBucketGateway {
 
   /**
    * Notes 76 — the filter popup's keys, ANDed with the F8 four. Each is off
-   * when absent. `search` is "contains" on code, name, alias and default
-   * barcode, its own % and _ escaped. `trackPresetId` is the EFFECTIVE preset —
+   * when absent. `search` is a loose contains (src/common/search/loose-search.ts:
+   * spaces and punctuation ignored on both sides, every typed word required) on
+   * code, name, alias and default barcode. `trackPresetId` is the EFFECTIVE preset —
    * the item's own, else its group's — so "Tracked as" matches what the item
    * entry shows (an item follows its group unless it names its own, notes 68).
    * `activeOnly` (default true) leaves inactive items out; until notes 76 only
    * deleted ones were.
    */
   private popupFilter(args: ListSellingPricesArgs): Prisma.Sql {
-    const search = args.search?.trim();
-    const pattern = search ? `%${search.replace(/[\\%_]/g, (c) => `\\${c}`)}%` : null;
     return Prisma.sql`
-          AND (${pattern}::text IS NULL
-               OR i.item_code            ILIKE ${pattern}
-               OR i.item_name_en         ILIKE ${pattern}
-               OR i.item_alias           ILIKE ${pattern}
-               OR i.item_default_barcode ILIKE ${pattern})
+          AND ${looseSearchSql(
+            ['i.item_code', 'i.item_name_en', 'i.item_alias', 'i.item_default_barcode'],
+            args.search,
+          )}
           AND (${args.itemCategoryId ?? null}::uuid IS NULL OR i.item_category_id = ${args.itemCategoryId ?? null}::uuid)
           AND (${args.trackPresetId ?? null}::uuid IS NULL
                OR COALESCE(i.item_track_preset_id,

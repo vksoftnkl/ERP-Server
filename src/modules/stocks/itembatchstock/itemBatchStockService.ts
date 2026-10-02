@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { looseSearchSql } from 'src/common/search/loose-search';
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import { GetItemBatchStockQueryDto } from './dto/get-item-batch-stock-query.dto';
 import {
@@ -62,7 +63,6 @@ export class ItemBatchStockService {
       queryDto.ibs_item_id,
       queryDto.ibs_unit_id,
     );
-    const search = queryDto.search?.trim() ? `%${queryDto.search.trim()}%` : null;
     const records = await this.prisma.$queryRaw<LotHoldingRow[]>`
       SELECT b.sbl_id, b.sbl_company_id, b.sbl_branch_id, b.sbl_godown_id, b.sbl_item_id, b.sbl_lot_id,
              b.sbl_bucket, b.sbl_in_qty, b.sbl_out_qty, b.sbl_free_in_qty, b.sbl_free_out_qty,
@@ -97,7 +97,7 @@ export class ItemBatchStockService {
          AND b.sbl_is_deleted = ${queryDto.ibs_is_deleted ?? false}::boolean
          AND (${queryDto.ibs_batch_id ?? null}::uuid IS NULL OR b.sbl_lot_id = ${queryDto.ibs_batch_id ?? null}::uuid)
          AND (${queryDto.ibs_stock_bucket ?? null}::text IS NULL OR b.sbl_bucket = ${queryDto.ibs_stock_bucket ?? null}::text)
-         AND (${search}::text IS NULL OR slt.slt_batch_no ILIKE ${search}::text OR slt.slt_serial_no ILIKE ${search}::text)
+         AND ${looseSearchSql(['slt.slt_batch_no', 'slt.slt_serial_no'], queryDto.search)}
        ORDER BY b.sbl_bucket, slt.slt_expiry_date NULLS LAST, slt.slt_batch_no, b.sbl_lot_id
     `;
     if (records.length === 0) {

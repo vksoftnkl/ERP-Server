@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { looseSearchSql } from 'src/common/search/loose-search';
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import { RequestContextService } from 'src/common/request-context/request-context.service';
 import {
@@ -413,7 +414,6 @@ export class StockAdjustmentService {
    * query names none (each row carries its own).
    */
   async pickStock(query: PickStockQueryDto): Promise<PickStockRow[]> {
-    const search = query.search?.trim() ? `%${query.search.trim()}%` : null;
     const rows = await this.prisma.$queryRaw<
       Array<{
         sbl_id: string;
@@ -461,10 +461,7 @@ export class StockAdjustmentService {
          AND b.sbl_available_qty > 0
          AND (${query.itemId ?? null}::uuid IS NULL OR b.sbl_item_id = ${query.itemId ?? null}::uuid)
          AND (${query.bucket ?? null}::text IS NULL OR b.sbl_bucket = ${query.bucket ?? null}::text)
-         AND (${search}::text IS NULL
-              OR itm.item_name_en ILIKE ${search}::text
-              OR itm.item_code ILIKE ${search}::text
-              OR slt.slt_batch_no ILIKE ${search}::text)
+         AND ${looseSearchSql(['itm.item_name_en', 'itm.item_code', 'slt.slt_batch_no'], query.search)}
        ORDER BY itm.item_name_en, slt.slt_expiry_date NULLS LAST, b.sbl_first_in_date NULLS LAST, slt.slt_batch_no,
                 b.sbl_bucket
        LIMIT ${query.limit ?? 200}

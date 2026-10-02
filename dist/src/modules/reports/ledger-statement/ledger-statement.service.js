@@ -12,6 +12,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.LedgerStatementService = void 0;
 const common_1 = require("@nestjs/common");
 const client_1 = require("@prisma/client");
+const loose_search_1 = require("../../../common/search/loose-search");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
@@ -31,7 +32,6 @@ let LedgerStatementService = class LedgerStatementService {
     }
     async ledgers(q) {
         await this.assertMenuRight();
-        const search = q.search?.trim() ? `%${q.search.trim()}%` : null;
         const rows = await this.prisma.$queryRaw `
       SELECT l.led_id, l.led_name, l.led_group_id, g.acc_group_name, l.led_is_bill_by_bill,
              l.led_company_id
@@ -40,10 +40,7 @@ let LedgerStatementService = class LedgerStatementService {
        WHERE l.led_is_deleted = false
          AND (l.led_company_id IS NULL OR l.led_company_id = ${q.companyId}::uuid)
          AND (${q.groupId ?? null}::uuid IS NULL OR l.led_group_id = ${q.groupId ?? null}::uuid)
-         AND (${search}::text IS NULL
-              OR l.led_name ILIKE ${search} OR l.led_alias ILIKE ${search}
-              OR l.led_short ILIKE ${search} OR l.led_gstin_no ILIKE ${search}
-              OR l.led_phone1 ILIKE ${search})
+         AND ${(0, loose_search_1.looseSearchSql)(['l.led_name', 'l.led_alias', 'l.led_short', 'l.led_gstin_no', 'l.led_phone1'], q.search)}
        ORDER BY l.led_name, l.led_id
        LIMIT ${q.limit ?? DEFAULT_PICK_LIMIT}`;
         return {

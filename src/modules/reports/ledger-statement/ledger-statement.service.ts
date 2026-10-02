@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { looseSearchSql } from '../../../common/search/loose-search';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
 import {
@@ -128,7 +129,6 @@ export class LedgerStatementService {
 
   async ledgers(q: LedgerStatementLedgersDto): Promise<LedgerPickPayload> {
     await this.assertMenuRight();
-    const search = q.search?.trim() ? `%${q.search.trim()}%` : null;
     const rows = await this.prisma.$queryRaw<
       {
         led_id: string;
@@ -146,10 +146,10 @@ export class LedgerStatementService {
        WHERE l.led_is_deleted = false
          AND (l.led_company_id IS NULL OR l.led_company_id = ${q.companyId}::uuid)
          AND (${q.groupId ?? null}::uuid IS NULL OR l.led_group_id = ${q.groupId ?? null}::uuid)
-         AND (${search}::text IS NULL
-              OR l.led_name ILIKE ${search} OR l.led_alias ILIKE ${search}
-              OR l.led_short ILIKE ${search} OR l.led_gstin_no ILIKE ${search}
-              OR l.led_phone1 ILIKE ${search})
+         AND ${looseSearchSql(
+           ['l.led_name', 'l.led_alias', 'l.led_short', 'l.led_gstin_no', 'l.led_phone1'],
+           q.search,
+         )}
        ORDER BY l.led_name, l.led_id
        LIMIT ${q.limit ?? DEFAULT_PICK_LIMIT}`;
     return {

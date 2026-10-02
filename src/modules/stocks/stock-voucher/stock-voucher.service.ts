@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { looseSearchSql } from 'src/common/search/loose-search';
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import { AuditLogService } from 'src/modules/audit-log/audit-log.service';
 import { RequestContextService } from 'src/common/request-context/request-context.service';
@@ -1432,7 +1433,6 @@ export class StockVoucherService {
   ): Promise<StockVoucherListResult> {
     const limit = this.clamp(query.limit, DEFAULT_LIST_LIMIT, MAX_LIST_LIMIT);
     const offset = Math.max(query.offset ?? 0, 0);
-    const search = query.search?.trim();
     const rows = await this.prisma.$queryRaw<
       Array<
         Pick<
@@ -1495,11 +1495,7 @@ export class StockVoucherService {
          AND (${query.status ?? null}::varchar IS NULL OR svh.svh_status = ${query.status ?? null}::varchar)
          AND (${query.fromDate ?? null}::date IS NULL OR svh.svh_doc_date >= ${query.fromDate ?? null}::date)
          AND (${query.toDate ?? null}::date   IS NULL OR svh.svh_doc_date <= ${query.toDate ?? null}::date)
-         AND (
-               ${search ?? null}::text IS NULL
-            OR svh.svh_refno     ILIKE '%' || ${search ?? null}::text || '%'
-            OR svh.svh_usr_refno ILIKE '%' || ${search ?? null}::text || '%'
-         )
+         AND ${looseSearchSql(['svh.svh_refno', 'svh.svh_usr_refno'], query.search)}
        ORDER BY svh.svh_doc_date DESC, svh.svh_slno DESC
        LIMIT ${limit} OFFSET ${offset}
     `;

@@ -11,6 +11,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ItemStockBalanceService = void 0;
 const common_1 = require("@nestjs/common");
+const loose_search_1 = require("../../../common/search/loose-search");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const DEFAULT_BATCH_OPTION_LIMIT = 50;
 const MAX_BATCH_OPTION_LIMIT = 100;
@@ -237,7 +238,6 @@ let ItemStockBalanceService = class ItemStockBalanceService {
         return records.map((record) => this.toItemPricePayload(record));
     }
     async holdings(scope) {
-        const search = scope.search ? `%${scope.search}%` : null;
         return this.prisma.$queryRaw `
       SELECT b.sbl_id, b.sbl_company_id, b.sbl_branch_id, b.sbl_godown_id, b.sbl_item_id, b.sbl_lot_id,
              b.sbl_base_uom_id, iuc.iuc_unit_id AS base_unit_id, b.sbl_bucket,
@@ -273,7 +273,7 @@ let ItemStockBalanceService = class ItemStockBalanceService {
          AND b.sbl_item_id    = ${scope.itemId}::uuid
          AND b.sbl_is_deleted = false
          AND (${scope.bucket}::text IS NULL OR b.sbl_bucket = ${scope.bucket}::text)
-         AND (${search}::text IS NULL OR slt.slt_batch_no ILIKE ${search}::text OR slt.slt_serial_no ILIKE ${search}::text)
+         AND ${(0, loose_search_1.looseSearchSql)(['slt.slt_batch_no', 'slt.slt_serial_no'], scope.search)}
          AND (NOT ${scope.onHandOnly ?? false}::boolean OR b.sbl_on_hand_qty > 0)
        ORDER BY b.sbl_bucket, slt.slt_expiry_date NULLS LAST, slt.slt_batch_no, b.sbl_id
        LIMIT ${scope.limit ?? 10000}

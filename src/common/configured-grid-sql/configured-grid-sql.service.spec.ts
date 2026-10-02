@@ -484,12 +484,44 @@ ORDER BY unit_name`,
       searchableFieldNames: ['cus_name'],
     });
 
-    expect(result.params).toEqual(['cus_name', '%sun%']);
+    expect(result.params).toEqual([['cus_name'], 'sun']);
     expect(result.sql).toContain(
       'SELECT * FROM (SELECT cus_name, cus_code FROM sales.customers) AS customer_grid',
     );
-    expect(result.sql).toContain('grid_kv.key = $1');
-    expect(result.sql).toContain('grid_kv.value ILIKE $2');
+    expect(result.sql).toContain('grid_kv.key = ANY($1::text[])');
+    expect(result.sql).toContain(
+      "fixed.fn_search_norm(grid_kv.value) LIKE '%' || fixed.fn_search_norm($2::text) || '%'",
+    );
+  });
+
+  it('requires every space-separated piece of the search, each in some searchable column', () => {
+    const result = service.buildSearchSql({
+      baseSql: 'SELECT item_name_en, item_code FROM inventory.item_master',
+      alias: 'item_grid',
+      search: '  chilli   Powder ',
+      searchableFieldNames: ['item_name_en', 'item_code'],
+    });
+
+    expect(result.params).toEqual([['item_name_en', 'item_code'], 'chilli', 'Powder']);
+    const exists = result.sql.match(/EXISTS \(/g) ?? [];
+    expect(exists).toHaveLength(2);
+    expect(result.sql).toContain(
+      "fixed.fn_search_norm($2::text) || '%') AND EXISTS (",
+    );
+    expect(result.sql).toContain('fixed.fn_search_norm($3::text)');
+    expect(result.sql).not.toContain('ILIKE');
+  });
+
+  it('treats a search of only spaces and punctuation as no search', () => {
+    const result = service.buildSearchSql({
+      baseSql: 'SELECT cus_name FROM sales.customers',
+      alias: 'customer_grid',
+      search: ' - / ',
+      searchableFieldNames: ['cus_name'],
+    });
+
+    expect(result.params).toEqual([]);
+    expect(result.sql).not.toContain('WHERE');
   });
 
   it('applies configured searchable grid columns when running a searched paged query', async () => {
@@ -528,8 +560,8 @@ ORDER BY unit_name`,
     });
     expect(pg.queryReadOnly).toHaveBeenNthCalledWith(
       1,
-      expect.stringContaining('grid_kv.value ILIKE $2'),
-      ['cus_name', '%sun%'],
+      expect.stringContaining('fixed.fn_search_norm(grid_kv.value)'),
+      [['cus_name'], 'sun'],
     );
   });
 

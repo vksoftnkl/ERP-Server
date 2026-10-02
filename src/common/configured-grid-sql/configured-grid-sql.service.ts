@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import { PgService } from '../../database/pg/pg.service';
+import { looseSearchPredicateSql, splitSearchTokens } from '../search/loose-search';
 import {
   BuildConfiguredGridFilterSqlOptions,
   BuildConfiguredGridSearchSqlOptions,
@@ -424,24 +425,28 @@ export class ConfiguredGridSqlService {
   } {
     const params = [...(options.params ?? [])];
     const conditions = [...(options.conditions ?? [])];
-    const search = options.search.trim();
-    if (search) {
+    // "chillipowder", "chilli powder" and "POWDER chilli" are one search. The
+    // typed text is split on spaces, and each piece must be found in SOME
+    // searchable column after both sides go through fixed.fn_search_norm
+    // (lower-case, white space and punctuation removed — see
+    // src/common/search/loose-search.ts). It used to be `value ILIKE
+    // '%<typed>%'`, which a single space in the stored name defeated.
+    const tokens = splitSearchTokens(options.search);
+    if (tokens.length > 0) {
       if (options.searchableFieldNames.length > 0) {
-        const searchConditions: string[] = [];
-        for (const fieldName of options.searchableFieldNames) {
-          params.push(fieldName);
-          const columnParamIndex = params.length;
-          params.push(`%${search}%`);
-          const valueParamIndex = params.length;
-          searchConditions.push(
+        params.push(options.searchableFieldNames);
+        const columnsParamIndex = params.length;
+        const tokenConditions = tokens.map((token) => {
+          params.push(token);
+          return (
             `EXISTS (` +
-              `SELECT 1 FROM jsonb_each_text(row_to_json(${options.alias})::jsonb) AS grid_kv(key, value) ` +
-              `WHERE grid_kv.key = $${columnParamIndex} ` +
-              `AND grid_kv.value ILIKE $${valueParamIndex}` +
-              `)`,
+            `SELECT 1 FROM jsonb_each_text(row_to_json(${options.alias})::jsonb) AS grid_kv(key, value) ` +
+            `WHERE grid_kv.key = ANY($${columnsParamIndex}::text[]) ` +
+            `AND ${looseSearchPredicateSql('grid_kv.value', `$${params.length}`)}` +
+            `)`
           );
-        }
-        conditions.push(`(${searchConditions.join(' OR ')})`);
+        });
+        conditions.push(`(${tokenConditions.join(' AND ')})`);
       } else {
         conditions.push('1 = 0');
       }

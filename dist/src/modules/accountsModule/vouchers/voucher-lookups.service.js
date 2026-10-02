@@ -12,6 +12,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.VoucherLookupsService = void 0;
 const common_1 = require("@nestjs/common");
 const client_1 = require("@prisma/client");
+const loose_search_1 = require("../../../common/search/loose-search");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
 const voucher_facts_1 = require("./voucher-facts");
@@ -54,7 +55,6 @@ let VoucherLookupsService = class VoucherLookupsService {
         }
         const groups = (q.side === 'DR' ? type.drGroups : type.crGroups).map((g) => g.groupId);
         const instrument = [...(await (0, voucher_facts_1.loadInstrumentLedgers)(this.tx, q.companyId))];
-        const term = q.q?.trim() ? `%${q.q.trim()}%` : null;
         const limit = q.limit ?? 50;
         const moneySide = (0, voucher_derive_1.moneySideOf)(type.nature);
         const moneyOnly = moneySide !== null && moneySide === q.side;
@@ -84,7 +84,7 @@ let VoucherLookupsService = class VoucherLookupsService {
          AND (NOT ${moneyOnly}::boolean OR l.led_group_id IN (SELECT acc_group_id FROM money))
          AND (NOT ${noMoney}::boolean OR l.led_group_id NOT IN (SELECT acc_group_id FROM money))
          AND NOT (l.led_id = ANY(${instrument}::uuid[]))
-         AND (${term}::text IS NULL OR l.led_name ILIKE ${term} OR l.led_alias ILIKE ${term})
+         AND ${(0, loose_search_1.looseSearchSql)(['l.led_name', 'l.led_alias'], q.q)}
        ORDER BY l.led_name
        LIMIT ${limit}::int`;
         const facts = await (0, voucher_facts_1.loadLedgerFacts)(this.tx, q.companyId, rows.map((r) => r.led_id));

@@ -12,6 +12,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.StockAdjustmentService = void 0;
 exports.adjustmentIsoDate = isoDate;
 const common_1 = require("@nestjs/common");
+const loose_search_1 = require("../../../common/search/loose-search");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
@@ -166,7 +167,6 @@ let StockAdjustmentService = class StockAdjustmentService {
         return this.stockVoucherService.softDelete(rules, svhId, accYear, companyId, branchId, userId);
     }
     async pickStock(query) {
-        const search = query.search?.trim() ? `%${query.search.trim()}%` : null;
         const rows = await this.prisma.$queryRaw `
       SELECT b.sbl_id, b.sbl_item_id, itm.item_code, itm.item_name_en AS item_name,
              b.sbl_godown_id, b.sbl_lot_id, b.sbl_bucket,
@@ -188,10 +188,7 @@ let StockAdjustmentService = class StockAdjustmentService {
          AND b.sbl_available_qty > 0
          AND (${query.itemId ?? null}::uuid IS NULL OR b.sbl_item_id = ${query.itemId ?? null}::uuid)
          AND (${query.bucket ?? null}::text IS NULL OR b.sbl_bucket = ${query.bucket ?? null}::text)
-         AND (${search}::text IS NULL
-              OR itm.item_name_en ILIKE ${search}::text
-              OR itm.item_code ILIKE ${search}::text
-              OR slt.slt_batch_no ILIKE ${search}::text)
+         AND ${(0, loose_search_1.looseSearchSql)(['itm.item_name_en', 'itm.item_code', 'slt.slt_batch_no'], query.search)}
        ORDER BY itm.item_name_en, slt.slt_expiry_date NULLS LAST, b.sbl_first_in_date NULLS LAST, slt.slt_batch_no,
                 b.sbl_bucket
        LIMIT ${query.limit ?? 200}

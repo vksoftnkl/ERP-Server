@@ -11,6 +11,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.TempCreditService = void 0;
 const common_1 = require("@nestjs/common");
+const loose_search_1 = require("../../../common/search/loose-search");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const audit_log_service_1 = require("../../audit-log/audit-log.service");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
@@ -30,7 +31,6 @@ let TempCreditService = class TempCreditService {
             .split(',')
             .map((s) => s.trim().toUpperCase())
             .filter(Boolean);
-        const search = q.search?.trim() ? `%${q.search.trim()}%` : null;
         const today = (0, sales_doc_utils_1.isoToday)();
         const rows = await this.prisma.$queryRaw `
       SELECT t.atc_id, t.atc_acc_year, t.atc_party_id, l.led_name, t.atc_src_doc_id, t.atc_bill_refno, t.atc_bill_date, t.atc_bill_amount,
@@ -41,7 +41,7 @@ let TempCreditService = class TempCreditService {
        WHERE t.atc_company_id = ${q.companyId}::uuid AND t.atc_is_deleted = false
          AND (${q.branchId ?? null}::uuid IS NULL OR t.atc_branch_id = ${q.branchId ?? null}::uuid)
          AND t.atc_status = ANY(${statuses}::text[])
-         AND (${search}::text IS NULL OR t.atc_name ILIKE ${search} OR t.atc_mobile ILIKE ${search} OR t.atc_bill_refno ILIKE ${search})
+         AND ${(0, loose_search_1.looseSearchSql)(['t.atc_name', 't.atc_mobile', 't.atc_bill_refno'], q.search)}
          AND (${q.overdueOnly ?? false}::boolean = false OR (t.atc_due_date < ${today}::date AND t.atc_balance_amount > 0))
        ORDER BY t.atc_due_date, t.atc_created_on`;
         return rows.map((r) => ({

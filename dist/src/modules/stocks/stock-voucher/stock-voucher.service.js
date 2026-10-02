@@ -12,6 +12,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.StockVoucherService = void 0;
 const common_1 = require("@nestjs/common");
 const client_1 = require("@prisma/client");
+const loose_search_1 = require("../../../common/search/loose-search");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const audit_log_service_1 = require("../../audit-log/audit-log.service");
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
@@ -728,7 +729,6 @@ let StockVoucherService = class StockVoucherService {
     async list(rules, query) {
         const limit = this.clamp(query.limit, DEFAULT_LIST_LIMIT, MAX_LIST_LIMIT);
         const offset = Math.max(query.offset ?? 0, 0);
-        const search = query.search?.trim();
         const rows = await this.prisma.$queryRaw `
       SELECT svh.svh_id,
              svh.svh_acc_year,
@@ -770,11 +770,7 @@ let StockVoucherService = class StockVoucherService {
          AND (${query.status ?? null}::varchar IS NULL OR svh.svh_status = ${query.status ?? null}::varchar)
          AND (${query.fromDate ?? null}::date IS NULL OR svh.svh_doc_date >= ${query.fromDate ?? null}::date)
          AND (${query.toDate ?? null}::date   IS NULL OR svh.svh_doc_date <= ${query.toDate ?? null}::date)
-         AND (
-               ${search ?? null}::text IS NULL
-            OR svh.svh_refno     ILIKE '%' || ${search ?? null}::text || '%'
-            OR svh.svh_usr_refno ILIKE '%' || ${search ?? null}::text || '%'
-         )
+         AND ${(0, loose_search_1.looseSearchSql)(['svh.svh_refno', 'svh.svh_usr_refno'], query.search)}
        ORDER BY svh.svh_doc_date DESC, svh.svh_slno DESC
        LIMIT ${limit} OFFSET ${offset}
     `;

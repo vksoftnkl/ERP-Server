@@ -12,6 +12,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.PriceBucketGateway = void 0;
 const common_1 = require("@nestjs/common");
 const client_1 = require("@prisma/client");
+const loose_search_1 = require("../../../common/search/loose-search");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
 const stock_voucher_posting_helper_1 = require("../stock-voucher/stock-voucher-posting.helper");
@@ -155,14 +156,8 @@ let PriceBucketGateway = class PriceBucketGateway {
         return { items, meta: { limit: args.limit, offset: args.offset, count: items.length } };
     }
     popupFilter(args) {
-        const search = args.search?.trim();
-        const pattern = search ? `%${search.replace(/[\\%_]/g, (c) => `\\${c}`)}%` : null;
         return client_1.Prisma.sql `
-          AND (${pattern}::text IS NULL
-               OR i.item_code            ILIKE ${pattern}
-               OR i.item_name_en         ILIKE ${pattern}
-               OR i.item_alias           ILIKE ${pattern}
-               OR i.item_default_barcode ILIKE ${pattern})
+          AND ${(0, loose_search_1.looseSearchSql)(['i.item_code', 'i.item_name_en', 'i.item_alias', 'i.item_default_barcode'], args.search)}
           AND (${args.itemCategoryId ?? null}::uuid IS NULL OR i.item_category_id = ${args.itemCategoryId ?? null}::uuid)
           AND (${args.trackPresetId ?? null}::uuid IS NULL
                OR COALESCE(i.item_track_preset_id,

@@ -11,6 +11,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ItemBatchStockService = void 0;
 const common_1 = require("@nestjs/common");
+const loose_search_1 = require("../../../common/search/loose-search");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 let ItemBatchStockService = class ItemBatchStockService {
     prisma;
@@ -19,7 +20,6 @@ let ItemBatchStockService = class ItemBatchStockService {
     }
     async getByScope(queryDto) {
         const unitFactorsByUnitId = await this.getItemPriceUnitFactors(queryDto.ibs_item_id, queryDto.ibs_unit_id);
-        const search = queryDto.search?.trim() ? `%${queryDto.search.trim()}%` : null;
         const records = await this.prisma.$queryRaw `
       SELECT b.sbl_id, b.sbl_company_id, b.sbl_branch_id, b.sbl_godown_id, b.sbl_item_id, b.sbl_lot_id,
              b.sbl_bucket, b.sbl_in_qty, b.sbl_out_qty, b.sbl_free_in_qty, b.sbl_free_out_qty,
@@ -54,7 +54,7 @@ let ItemBatchStockService = class ItemBatchStockService {
          AND b.sbl_is_deleted = ${queryDto.ibs_is_deleted ?? false}::boolean
          AND (${queryDto.ibs_batch_id ?? null}::uuid IS NULL OR b.sbl_lot_id = ${queryDto.ibs_batch_id ?? null}::uuid)
          AND (${queryDto.ibs_stock_bucket ?? null}::text IS NULL OR b.sbl_bucket = ${queryDto.ibs_stock_bucket ?? null}::text)
-         AND (${search}::text IS NULL OR slt.slt_batch_no ILIKE ${search}::text OR slt.slt_serial_no ILIKE ${search}::text)
+         AND ${(0, loose_search_1.looseSearchSql)(['slt.slt_batch_no', 'slt.slt_serial_no'], queryDto.search)}
        ORDER BY b.sbl_bucket, slt.slt_expiry_date NULLS LAST, slt.slt_batch_no, b.sbl_lot_id
     `;
         if (records.length === 0) {

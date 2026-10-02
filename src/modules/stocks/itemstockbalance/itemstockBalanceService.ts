@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { looseSearchSql } from 'src/common/search/loose-search';
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import type { ItemPricePayload } from 'src/modules/Inventory/items-price-master/types/item-price-api.types';
 import { GetItemBatchStockOptionsQueryDto } from './dto/get-item-batch-stock-options-query.dto';
@@ -362,7 +363,6 @@ export class ItemStockBalanceService {
     onHandOnly?: boolean;
     limit?: number;
   }): Promise<HoldingRow[]> {
-    const search = scope.search ? `%${scope.search}%` : null;
     return this.prisma.$queryRaw<HoldingRow[]>`
       SELECT b.sbl_id, b.sbl_company_id, b.sbl_branch_id, b.sbl_godown_id, b.sbl_item_id, b.sbl_lot_id,
              b.sbl_base_uom_id, iuc.iuc_unit_id AS base_unit_id, b.sbl_bucket,
@@ -398,7 +398,7 @@ export class ItemStockBalanceService {
          AND b.sbl_item_id    = ${scope.itemId}::uuid
          AND b.sbl_is_deleted = false
          AND (${scope.bucket}::text IS NULL OR b.sbl_bucket = ${scope.bucket}::text)
-         AND (${search}::text IS NULL OR slt.slt_batch_no ILIKE ${search}::text OR slt.slt_serial_no ILIKE ${search}::text)
+         AND ${looseSearchSql(['slt.slt_batch_no', 'slt.slt_serial_no'], scope.search)}
          AND (NOT ${scope.onHandOnly ?? false}::boolean OR b.sbl_on_hand_qty > 0)
        ORDER BY b.sbl_bucket, slt.slt_expiry_date NULLS LAST, slt.slt_batch_no, b.sbl_id
        LIMIT ${scope.limit ?? 10000}

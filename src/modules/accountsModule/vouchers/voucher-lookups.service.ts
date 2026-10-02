@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { looseSearchSql } from '../../../common/search/loose-search';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
 import type {
@@ -87,7 +88,6 @@ export class VoucherLookupsService {
     }
     const groups = (q.side === 'DR' ? type.drGroups : type.crGroups).map((g) => g.groupId);
     const instrument = [...(await loadInstrumentLedgers(this.tx, q.companyId))];
-    const term = q.q?.trim() ? `%${q.q.trim()}%` : null;
     const limit = q.limit ?? 50;
     // notes (56): on a Receipt / Payment the money side offers cash and bank
     // ONLY and the other side never — the same rule `sideVerdict` refuses by,
@@ -120,7 +120,7 @@ export class VoucherLookupsService {
          AND (NOT ${moneyOnly}::boolean OR l.led_group_id IN (SELECT acc_group_id FROM money))
          AND (NOT ${noMoney}::boolean OR l.led_group_id NOT IN (SELECT acc_group_id FROM money))
          AND NOT (l.led_id = ANY(${instrument}::uuid[]))
-         AND (${term}::text IS NULL OR l.led_name ILIKE ${term} OR l.led_alias ILIKE ${term})
+         AND ${looseSearchSql(['l.led_name', 'l.led_alias'], q.q)}
        ORDER BY l.led_name
        LIMIT ${limit}::int`;
     const facts = await loadLedgerFacts(

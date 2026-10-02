@@ -14,6 +14,7 @@ exports.ConfiguredGridSqlService = void 0;
 const common_1 = require("@nestjs/common");
 const prisma_service_1 = require("../../database/prisma/prisma.service");
 const pg_service_1 = require("../../database/pg/pg.service");
+const loose_search_1 = require("../search/loose-search");
 const GRID_SQL_FORBIDDEN_TOKENS = /\b(insert|update|delete|drop|alter|truncate|create|grant|revoke)\b/i;
 const GRID_SQL_COMMENT_PATTERN = /(--|\/\*)/;
 const POSITIONAL_PARAMETER_PATTERN = /\$[1-9][0-9]*/;
@@ -362,22 +363,20 @@ let ConfiguredGridSqlService = ConfiguredGridSqlService_1 = class ConfiguredGrid
     buildSearchSql(options) {
         const params = [...(options.params ?? [])];
         const conditions = [...(options.conditions ?? [])];
-        const search = options.search.trim();
-        if (search) {
+        const tokens = (0, loose_search_1.splitSearchTokens)(options.search);
+        if (tokens.length > 0) {
             if (options.searchableFieldNames.length > 0) {
-                const searchConditions = [];
-                for (const fieldName of options.searchableFieldNames) {
-                    params.push(fieldName);
-                    const columnParamIndex = params.length;
-                    params.push(`%${search}%`);
-                    const valueParamIndex = params.length;
-                    searchConditions.push(`EXISTS (` +
+                params.push(options.searchableFieldNames);
+                const columnsParamIndex = params.length;
+                const tokenConditions = tokens.map((token) => {
+                    params.push(token);
+                    return (`EXISTS (` +
                         `SELECT 1 FROM jsonb_each_text(row_to_json(${options.alias})::jsonb) AS grid_kv(key, value) ` +
-                        `WHERE grid_kv.key = $${columnParamIndex} ` +
-                        `AND grid_kv.value ILIKE $${valueParamIndex}` +
+                        `WHERE grid_kv.key = ANY($${columnsParamIndex}::text[]) ` +
+                        `AND ${(0, loose_search_1.looseSearchPredicateSql)('grid_kv.value', `$${params.length}`)}` +
                         `)`);
-                }
-                conditions.push(`(${searchConditions.join(' OR ')})`);
+                });
+                conditions.push(`(${tokenConditions.join(' AND ')})`);
             }
             else {
                 conditions.push('1 = 0');
