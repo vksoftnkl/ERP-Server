@@ -7,6 +7,12 @@ export declare class CompanyMasterErrorResponseDto {
     message: string;
     errors: CompanyMasterErrorFieldDto[];
 }
+export declare class CompanySeededMainBranchDto {
+    brId: string;
+    brName: string;
+    gdlId: string;
+    gdlName: string;
+}
 export declare class CompanyMasterPayloadDto {
     compId: string;
     compCode: string | null;
@@ -82,6 +88,7 @@ export declare class CompanyMasterPayloadDto {
     compCreatedBy: string | null;
     compModifiedOn: string;
     compModifiedBy: string | null;
+    compMainBranch?: CompanySeededMainBranchDto;
 }
 export declare class CompanyMasterDeleteResultDto {
     compId: string;

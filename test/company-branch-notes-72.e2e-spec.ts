@@ -8,6 +8,7 @@ import { CompanyMasterService } from '../src/modules/settings/companyMaster/comp
 import { SaveCompanyMasterDto } from '../src/modules/settings/companyMaster/dto/save-company-master.dto';
 import { BranchMasterService } from '../src/modules/settings/branchMaster/branch-master.service';
 import { SaveBranchMasterDto } from '../src/modules/settings/branchMaster/dto/save-branch-master.dto';
+import { GodownsMasterService } from '../src/modules/Inventory/godowns-master/godowns-master.service';
 
 /**
  * NOTES 72 — Company + Branch masters — against the real database, in one
@@ -95,8 +96,10 @@ describe('Company + Branch masters, notes 72 (e2e — one rolled-back transactio
     const db = transactional(tx);
     // The REAL audit service (notes 71 B1's lesson).
     const audit = new AuditLogService(db, ctx);
-    companies = new CompanyMasterService(db, audit, ctx);
-    branches = new BranchMasterService(db, audit, ctx);
+    // A new company seeds its Main Branch and Main Godown (notes 78), so a
+    // company made here already has one live, default branch.
+    branches = new BranchMasterService(db, audit, ctx, new GodownsMasterService(db, audit, ctx));
+    companies = new CompanyMasterService(db, audit, ctx, branches);
   });
 
   afterAll(async () => {
@@ -376,13 +379,16 @@ describe('Company + Branch masters, notes 72 (e2e — one rolled-back transactio
     await newBranch(company.compId, 'b2-branch');
     const used = await refusal(attempt(() => companies.softDelete(company.compId)));
     expect(used.status).toBe(409);
-    expect(used.body).toContain('1 live branches');
+    // The seeded Main Branch (notes 78) and b2-branch.
+    expect(used.body).toContain('2 live branches');
   });
 
   it('B1. a deleted branch waits for its company; restore twice is a 409', async () => {
     const company = await newCompany('b1');
     const branch = await newBranch(company.compId, 'b1-branch');
     await attempt(() => branches.softDelete(branch.brId));
+    // The seeded Main Branch (notes 78) is the company's last; it may go too.
+    await attempt(() => branches.softDelete(company.compMainBranch!.brId));
     await attempt(() => companies.softDelete(company.compId));
 
     const orphan = await refusal(attempt(() => branches.restore(branch.brId)));
@@ -413,6 +419,8 @@ describe('Company + Branch masters, notes 72 (e2e — one rolled-back transactio
     expect(isDefault.status).toBe(409);
     expect(isDefault.body).toContain('default branch');
     await attempt(() => branches.softDelete(side.brId));
+    // The seeded Main Branch (notes 78) lost the flag to b3-main; unused, it may go.
+    await attempt(() => branches.softDelete(company.compMainBranch!.brId));
     // Now the company's only branch: it may go, so the company can be retired.
     await attempt(() => branches.softDelete(main.brId));
 

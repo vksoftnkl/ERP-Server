@@ -17,6 +17,7 @@ const module_service_utils_1 = require("../../../common/utils/module-service.uti
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
 const master_tree_helper_1 = require("../../Inventory/utils/master-tree.helper");
 const gst_registration_1 = require("../shared/gst-registration");
+const branch_master_service_1 = require("../branchMaster/branch-master.service");
 const COMPANY_MASTER_TABLE_NAME = 'companys';
 const COMPANY_MASTER_AUDIT_SCREEN_NAME = 'Company Master';
 const COMPANY_MASTER_OPTIONAL_FIELDS = [
@@ -119,10 +120,12 @@ let CompanyMasterService = class CompanyMasterService {
     prisma;
     auditLogService;
     requestContextService;
-    constructor(prisma, auditLogService, requestContextService) {
+    branchMasterService;
+    constructor(prisma, auditLogService, requestContextService, branchMasterService) {
         this.prisma = prisma;
         this.auditLogService = auditLogService;
         this.requestContextService = requestContextService;
+        this.branchMasterService = branchMasterService;
     }
     async save(saveCompanyMasterDto) {
         if (saveCompanyMasterDto.compId) {
@@ -307,7 +310,11 @@ let CompanyMasterService = class CompanyMasterService {
                         fyRemarks: 'Seeded on company create',
                     },
                 });
-                const payload = this.toPayload(created, undefined, fiscalYear);
+                const compMainBranch = await this.branchMasterService.seedMainBranch(tx, created, actor, now);
+                const payload = {
+                    ...this.toPayload(created, undefined, fiscalYear),
+                    compMainBranch,
+                };
                 await this.auditLogService.logEntityChange({
                     action: 'New',
                     tableName: COMPANY_MASTER_TABLE_NAME,
@@ -783,6 +790,7 @@ exports.CompanyMasterService = CompanyMasterService = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [prisma_service_1.PrismaService,
         audit_log_service_1.AuditLogService,
-        request_context_service_1.RequestContextService])
+        request_context_service_1.RequestContextService,
+        branch_master_service_1.BranchMasterService])
 ], CompanyMasterService);
 //# sourceMappingURL=company-master.service.js.map

@@ -11,6 +11,16 @@ export type BranchMasterSuccessResponse<
   TStyles = unknown,
 > = ModuleApiSuccessResponse<T, TMeta, TStyles>;
 
+/**
+ * Notes 78 — the branch and godown a new company is seeded with, returned on
+ * the company's create payload so the client can name (or open) them.
+ */
+export interface SeededMainBranch {
+  brId: string;
+  brName: string;
+  gdlId: string;
+  gdlName: string;
+}
 export interface BranchMasterPayload {
   brId: string;
   brCompId: string;

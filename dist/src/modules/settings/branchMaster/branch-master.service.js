@@ -9,7 +9,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.BranchMasterService = void 0;
+exports.BranchMasterService = exports.MAIN_BRANCH_TYPE = exports.MAIN_BRANCH_NAME = void 0;
 const common_1 = require("@nestjs/common");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const audit_log_service_1 = require("../../audit-log/audit-log.service");
@@ -17,8 +17,11 @@ const module_service_utils_1 = require("../../../common/utils/module-service.uti
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
 const master_tree_helper_1 = require("../../Inventory/utils/master-tree.helper");
 const gst_registration_1 = require("../shared/gst-registration");
+const godowns_master_service_1 = require("../../Inventory/godowns-master/godowns-master.service");
 const BRANCH_MASTER_TABLE_NAME = 'branch master';
 const BRANCH_MASTER_AUDIT_SCREEN_NAME = 'Branch Master';
+exports.MAIN_BRANCH_NAME = 'Main Branch';
+exports.MAIN_BRANCH_TYPE = 'HEAD OFFICE';
 const BRANCH_MASTER_OPTIONAL_FIELDS = [
     'brCode',
     'brMailingName',
@@ -124,10 +127,12 @@ let BranchMasterService = class BranchMasterService {
     prisma;
     auditLogService;
     requestContextService;
-    constructor(prisma, auditLogService, requestContextService) {
+    godownsMasterService;
+    constructor(prisma, auditLogService, requestContextService, godownsMasterService) {
         this.prisma = prisma;
         this.auditLogService = auditLogService;
         this.requestContextService = requestContextService;
+        this.godownsMasterService = godownsMasterService;
     }
     async save(saveBranchMasterDto) {
         if (saveBranchMasterDto.brId) {
@@ -272,6 +277,67 @@ let BranchMasterService = class BranchMasterService {
             return { brId, deleted: false };
         });
     }
+    async seedMainBranch(tx, company, actor, now) {
+        const created = await tx.branchMaster.create({
+            data: {
+                brCompId: company.compId,
+                brName: exports.MAIN_BRANCH_NAME,
+                brType: exports.MAIN_BRANCH_TYPE,
+                brIsDefault: true,
+                brIsActive: true,
+                brAddr1: company.compAddr1,
+                brAddr2: company.compAddr2,
+                brAddr3: company.compAddr3,
+                brCity: company.compCity,
+                brDistrict: company.compDistrict,
+                brState: company.compState,
+                brStateCode: company.compStateCode,
+                brPin: company.compPin,
+                brCountry: company.compCountry,
+                brRegionAddr1: company.compRegionAddr1,
+                brRegionAddr2: company.compRegionAddr2,
+                brRegionAddr3: company.compRegionAddr3,
+                brRegionCity: company.compRegionCity,
+                brRegionDistrict: company.compRegionDistrict,
+                brRegionState: company.compRegionState,
+                brRegionCountry: company.compRegionCountry,
+                brTel: company.compTel,
+                brPhone: company.compPhone,
+                brMail: company.compMail,
+                brGstinNo: company.compGstinNo,
+                brGstRegType: company.compGstRegType,
+                brPanNo: company.compPanNo,
+                brCreatedOn: now,
+                brCreatedBy: actor,
+                brModifiedOn: now,
+                brModifiedBy: actor,
+            },
+        });
+        const godown = await this.godownsMasterService.seedMainGodown(tx, created.brId, actor, now);
+        const branch = await tx.branchMaster.update({
+            where: { brId: created.brId },
+            data: { brDefaultGodownId: godown.gdl_id },
+        });
+        const payload = this.toPayload(branch);
+        await this.auditLogService.logEntityChange({
+            action: 'New',
+            tableName: BRANCH_MASTER_TABLE_NAME,
+            screenName: BRANCH_MASTER_AUDIT_SCREEN_NAME,
+            screenType: 'master',
+            pk: String(payload.brId),
+            displayName: payload.brName,
+            originalRecord: null,
+            modifiedRecord: payload,
+            userId: actor,
+            notes: 'Seeded on company create',
+        }, tx);
+        return {
+            brId: branch.brId,
+            brName: branch.brName,
+            gdlId: godown.gdl_id,
+            gdlName: godown.gdl_name,
+        };
+    }
     async createBranch(saveBranchMasterDto) {
         try {
             return await this.prisma.$transaction(async (tx) => {
@@ -338,6 +404,14 @@ let BranchMasterService = class BranchMasterService {
                     : existing.brGstinNo, stateCode, saveBranchMasterDto.brPanNo !== undefined
                     ? saveBranchMasterDto.brPanNo
                     : existing.brPanNo);
+                if (existing.brIsDefault && saveBranchMasterDto.brIsDefault === false) {
+                    this.throwBadRequest('Validation failed', [
+                        {
+                            field: 'brIsDefault',
+                            message: `${existing.brName} is its company’s default branch; make another branch the default instead`,
+                        },
+                    ]);
+                }
                 if (saveBranchMasterDto.brCompId !== existing.brCompId) {
                     await this.assertMayChangeCompany(tx, existing);
                 }
@@ -671,6 +745,7 @@ exports.BranchMasterService = BranchMasterService = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [prisma_service_1.PrismaService,
         audit_log_service_1.AuditLogService,
-        request_context_service_1.RequestContextService])
+        request_context_service_1.RequestContextService,
+        godowns_master_service_1.GodownsMasterService])
 ], BranchMasterService);
 //# sourceMappingURL=branch-master.service.js.map

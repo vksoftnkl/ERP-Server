@@ -1,4 +1,5 @@
 import type { ModuleApiErrorDetail, ModuleApiErrorResponse, ModuleApiSuccessResponse } from "../../../../common/types/module-api.types";
+import type { SeededMainBranch } from "../../branchMaster/types/branch-master-api.types";
 export type CompanyMasterErrorDetail = ModuleApiErrorDetail;
 export type CompanyMasterErrorResponse = ModuleApiErrorResponse<CompanyMasterErrorDetail>;
 export type CompanyMasterSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> = ModuleApiSuccessResponse<T, TMeta, TStyles>;
@@ -77,4 +78,5 @@ export interface CompanyMasterPayload {
     compCreatedBy: string | null;
     compModifiedOn: string;
     compModifiedBy: string | null;
+    compMainBranch?: SeededMainBranch;
 }

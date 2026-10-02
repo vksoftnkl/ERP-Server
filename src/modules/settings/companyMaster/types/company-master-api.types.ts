@@ -3,6 +3,7 @@ import type {
   ModuleApiErrorResponse,
   ModuleApiSuccessResponse,
 } from 'src/common/types/module-api.types';
+import type { SeededMainBranch } from 'src/modules/settings/branchMaster/types/branch-master-api.types';
 export type CompanyMasterErrorDetail = ModuleApiErrorDetail;
 export type CompanyMasterErrorResponse = ModuleApiErrorResponse<CompanyMasterErrorDetail>;
 export type CompanyMasterSuccessResponse<
@@ -85,4 +86,9 @@ export interface CompanyMasterPayload {
   compCreatedBy: string | null;
   compModifiedOn: string;
   compModifiedBy: string | null;
+  /**
+   * Create only (notes 78): the 'Main Branch' and its 'Main Godown' seeded
+   * with the company. Absent on get and update.
+   */
+  compMainBranch?: SeededMainBranch;
 }

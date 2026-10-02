@@ -8,5 +8,7 @@ import { AuditLogModule } from 'src/modules/audit-log/audit-log.module';
   imports: [AuditLogModule],
   controllers: [GodownsMasterController],
   providers: [GodownsMasterService, GodownExceptionFilter],
+  // BranchMasterService seeds a new company's Main Godown (notes 78).
+  exports: [GodownsMasterService],
 })
 export class GodownsMasterModule {}

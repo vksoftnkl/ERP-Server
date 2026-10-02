@@ -20,6 +20,7 @@ exports.GodownsMasterModule = GodownsMasterModule = __decorate([
         imports: [audit_log_module_1.AuditLogModule],
         controllers: [godowns_master_controller_1.GodownsMasterController],
         providers: [godowns_master_service_1.GodownsMasterService, godown_exception_filter_1.GodownExceptionFilter],
+        exports: [godowns_master_service_1.GodownsMasterService],
     })
 ], GodownsMasterModule);
 //# sourceMappingURL=godowns-master.module.js.map

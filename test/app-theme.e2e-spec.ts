@@ -4,6 +4,8 @@ import { AuditLogService } from '../src/modules/audit-log/audit-log.service';
 import { RequestContextService } from '../src/common/request-context/request-context.service';
 import { AppThemeService } from '../src/modules/settings/appTheme/app-theme.service';
 import { CompanyMasterService } from '../src/modules/settings/companyMaster/company-master.service';
+import { BranchMasterService } from '../src/modules/settings/branchMaster/branch-master.service';
+import { GodownsMasterService } from '../src/modules/Inventory/godowns-master/godowns-master.service';
 
 /**
  * Company themes (theme/plan-app-theme.md §8 "Live") against the real
@@ -83,7 +85,13 @@ describe('App themes (e2e — one rolled-back transaction)', () => {
     const db = transactional(tx);
     const audit = new AuditLogService(db, ctx);
     themes = new AppThemeService(db, audit, ctx);
-    companies = new CompanyMasterService(db, audit, ctx);
+    // A new company seeds its Main Branch and Main Godown (notes 78).
+    companies = new CompanyMasterService(
+      db,
+      audit,
+      ctx,
+      new BranchMasterService(db, audit, ctx, new GodownsMasterService(db, audit, ctx)),
+    );
   });
 
   afterAll(async () => {

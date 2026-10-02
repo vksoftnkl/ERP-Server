@@ -1,13 +1,20 @@
+import { Company } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import { SaveBranchMasterDto } from './dto/save-branch-master.dto';
-import { BranchMasterPayload } from './types/branch-master-api.types';
+import { BranchMasterPayload, SeededMainBranch } from './types/branch-master-api.types';
+import { SettingsWriteClient } from "../../../common/utils/module-service.utils";
 import { RequestContextService } from '../../../common/request-context/request-context.service';
+import { GodownsMasterService } from "../../Inventory/godowns-master/godowns-master.service";
+export declare const MAIN_BRANCH_NAME = "Main Branch";
+export declare const MAIN_BRANCH_TYPE = "HEAD OFFICE";
+type BranchMasterWriteClient = SettingsWriteClient;
 export declare class BranchMasterService {
     private readonly prisma;
     private readonly auditLogService;
     private readonly requestContextService;
-    constructor(prisma: PrismaService, auditLogService: AuditLogService, requestContextService: RequestContextService);
+    private readonly godownsMasterService;
+    constructor(prisma: PrismaService, auditLogService: AuditLogService, requestContextService: RequestContextService, godownsMasterService: GodownsMasterService);
     save(saveBranchMasterDto: SaveBranchMasterDto): Promise<BranchMasterPayload>;
     getById(brId: string): Promise<BranchMasterPayload>;
     softDelete(brId: string): Promise<{
@@ -18,6 +25,7 @@ export declare class BranchMasterService {
         brId: string;
         deleted: false;
     }>;
+    seedMainBranch(tx: BranchMasterWriteClient, company: Company, actor: string, now: Date): Promise<SeededMainBranch>;
     private createBranch;
     private updateBranch;
     private resolveRelatedNames;
@@ -38,3 +46,4 @@ export declare class BranchMasterService {
     private throwBadRequest;
     private buildErrorResponse;
 }
+export {};

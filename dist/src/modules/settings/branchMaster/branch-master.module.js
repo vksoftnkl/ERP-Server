@@ -9,6 +9,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.BranchMasterModule = void 0;
 const common_1 = require("@nestjs/common");
 const audit_log_module_1 = require("../../audit-log/audit-log.module");
+const godowns_master_module_1 = require("../../Inventory/godowns-master/godowns-master.module");
 const branch_master_controller_1 = require("./branch-master.controller");
 const branch_master_exception_filter_1 = require("./branch-master-exception.filter");
 const branch_master_service_1 = require("./branch-master.service");
@@ -17,9 +18,10 @@ let BranchMasterModule = class BranchMasterModule {
 exports.BranchMasterModule = BranchMasterModule;
 exports.BranchMasterModule = BranchMasterModule = __decorate([
     (0, common_1.Module)({
-        imports: [audit_log_module_1.AuditLogModule],
+        imports: [audit_log_module_1.AuditLogModule, godowns_master_module_1.GodownsMasterModule],
         controllers: [branch_master_controller_1.BranchMasterController],
         providers: [branch_master_service_1.BranchMasterService, branch_master_exception_filter_1.BranchMasterExceptionFilter],
+        exports: [branch_master_service_1.BranchMasterService],
     })
 ], BranchMasterModule);
 //# sourceMappingURL=branch-master.module.js.map

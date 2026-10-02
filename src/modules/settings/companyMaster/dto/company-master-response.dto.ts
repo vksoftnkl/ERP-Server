@@ -16,6 +16,20 @@ export class CompanyMasterErrorResponseDto {
   @ApiProperty({ type: CompanyMasterErrorFieldDto, isArray: true })
   errors!: CompanyMasterErrorFieldDto[];
 }
+export class CompanySeededMainBranchDto {
+  @ApiProperty({ example: '019cc885-d0f4-771b-a7d1-7c98f9ff3ac2' })
+  brId!: string;
+
+  @ApiProperty({ example: 'Main Branch' })
+  brName!: string;
+
+  @ApiProperty({ example: '019cc885-d0f4-771b-a7d1-7c98f9ff3ac3' })
+  gdlId!: string;
+
+  @ApiProperty({ example: 'Main Godown' })
+  gdlName!: string;
+}
+
 export class CompanyMasterPayloadDto {
   @ApiProperty({ example: '019cc885-d0f4-771b-a7d1-7c98f9ff3ac1' })
   compId!: string;
@@ -241,6 +255,15 @@ export class CompanyMasterPayloadDto {
 
   @ApiPropertyOptional({ nullable: true })
   compModifiedBy!: string | null;
+
+  @ApiPropertyOptional({
+    type: CompanySeededMainBranchDto,
+    description:
+      'Create only (notes 78): the "Main Branch" (HEAD OFFICE, the company\'s default, ' +
+      'state / GSTIN / PAN / address / contacts copied from the company) and its "Main Godown" ' +
+      "(WAREHOUSE, the branch's default godown) seeded with the company. Absent on get and update.",
+  })
+  compMainBranch?: CompanySeededMainBranchDto;
 }
 
 export class CompanyMasterDeleteResultDto {

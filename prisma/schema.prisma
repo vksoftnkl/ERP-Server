@@ -5126,6 +5126,10 @@ model BranchMaster {
 
   @@index([brCompId],    name: "idx_branch_comp_id")
   @@index([brStateCode], name: "idx_branch_state_code")
+  // uq_branch_master_default (migration 20261002100000, notes 78): UNIQUE
+  // (br_comp_id) WHERE br_is_default AND NOT br_is_deleted — at most one live
+  // default branch per company. Partial, so not expressible here; the service
+  // clears the old default in the same transaction before every write.
   // ── Loyalty points engine (20260921140000) ─────────────────────────────
   // A wallet is company-scoped; a branch only ENROLS one. Every LEDGER row,
   // though, records the branch the event happened at — that is what makes

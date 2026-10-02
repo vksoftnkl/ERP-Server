@@ -3,11 +3,13 @@ import { AuditLogService } from '../../audit-log/audit-log.service';
 import { SaveCompanyMasterDto } from './dto/save-company-master.dto';
 import { CompanyMasterPayload } from './types/company-master-api.types';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
+import { BranchMasterService } from '../branchMaster/branch-master.service';
 export declare class CompanyMasterService {
     private readonly prisma;
     private readonly auditLogService;
     private readonly requestContextService;
-    constructor(prisma: PrismaService, auditLogService: AuditLogService, requestContextService: RequestContextService);
+    private readonly branchMasterService;
+    constructor(prisma: PrismaService, auditLogService: AuditLogService, requestContextService: RequestContextService, branchMasterService: BranchMasterService);
     save(saveCompanyMasterDto: SaveCompanyMasterDto): Promise<CompanyMasterPayload>;
     getById(compId: string): Promise<CompanyMasterPayload>;
     softDelete(compId: string): Promise<{

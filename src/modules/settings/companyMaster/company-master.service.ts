@@ -27,6 +27,7 @@ import {
   type LiveReference,
 } from 'src/modules/Inventory/utils/master-tree.helper';
 import { checkGstin } from '../shared/gst-registration';
+import { BranchMasterService } from '../branchMaster/branch-master.service';
 
 const COMPANY_MASTER_TABLE_NAME = 'companys';
 const COMPANY_MASTER_AUDIT_SCREEN_NAME = 'Company Master';
@@ -161,6 +162,7 @@ export class CompanyMasterService {
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
     private readonly requestContextService: RequestContextService,
+    private readonly branchMasterService: BranchMasterService,
   ) {}
   async save(saveCompanyMasterDto: SaveCompanyMasterDto): Promise<CompanyMasterPayload> {
     if (saveCompanyMasterDto.compId) {
@@ -378,7 +380,19 @@ export class CompanyMasterService {
             fyRemarks: 'Seeded on company create',
           },
         });
-        const payload = this.toPayload(created, undefined, fiscalYear);
+        // Notes 78 — and a branch to work in: the login token, godowns,
+        // counters, number series and stock balances all hang off one. The
+        // Main Branch brings its Main Godown; the client names both.
+        const compMainBranch = await this.branchMasterService.seedMainBranch(
+          tx,
+          created,
+          actor,
+          now,
+        );
+        const payload: CompanyMasterPayload = {
+          ...this.toPayload(created, undefined, fiscalYear),
+          compMainBranch,
+        };
         await this.auditLogService.logEntityChange(
           {
             action: 'New',

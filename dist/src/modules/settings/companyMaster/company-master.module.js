@@ -9,6 +9,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.CompanyMasterModule = void 0;
 const common_1 = require("@nestjs/common");
 const audit_log_module_1 = require("../../audit-log/audit-log.module");
+const branch_master_module_1 = require("../branchMaster/branch-master.module");
 const company_master_controller_1 = require("./company-master.controller");
 const company_master_exception_filter_1 = require("./company-master-exception.filter");
 const company_master_service_1 = require("./company-master.service");
@@ -17,7 +18,7 @@ let CompanyMasterModule = class CompanyMasterModule {
 exports.CompanyMasterModule = CompanyMasterModule;
 exports.CompanyMasterModule = CompanyMasterModule = __decorate([
     (0, common_1.Module)({
-        imports: [audit_log_module_1.AuditLogModule],
+        imports: [audit_log_module_1.AuditLogModule, branch_master_module_1.BranchMasterModule],
         controllers: [company_master_controller_1.CompanyMasterController],
         providers: [company_master_service_1.CompanyMasterService, company_master_exception_filter_1.CompanyMasterExceptionFilter],
     })

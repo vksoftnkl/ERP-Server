@@ -9,7 +9,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.CompanyMasterSuccessDeleteDto = exports.CompanyMasterSuccessSingleDto = exports.CompanyMasterDeleteResultDto = exports.CompanyMasterPayloadDto = exports.CompanyMasterErrorResponseDto = exports.CompanyMasterErrorFieldDto = void 0;
+exports.CompanyMasterSuccessDeleteDto = exports.CompanyMasterSuccessSingleDto = exports.CompanyMasterDeleteResultDto = exports.CompanyMasterPayloadDto = exports.CompanySeededMainBranchDto = exports.CompanyMasterErrorResponseDto = exports.CompanyMasterErrorFieldDto = void 0;
 const swagger_1 = require("@nestjs/swagger");
 class CompanyMasterErrorFieldDto {
     field;
@@ -42,6 +42,29 @@ __decorate([
     (0, swagger_1.ApiProperty)({ type: CompanyMasterErrorFieldDto, isArray: true }),
     __metadata("design:type", Array)
 ], CompanyMasterErrorResponseDto.prototype, "errors", void 0);
+class CompanySeededMainBranchDto {
+    brId;
+    brName;
+    gdlId;
+    gdlName;
+}
+exports.CompanySeededMainBranchDto = CompanySeededMainBranchDto;
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: '019cc885-d0f4-771b-a7d1-7c98f9ff3ac2' }),
+    __metadata("design:type", String)
+], CompanySeededMainBranchDto.prototype, "brId", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 'Main Branch' }),
+    __metadata("design:type", String)
+], CompanySeededMainBranchDto.prototype, "brName", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: '019cc885-d0f4-771b-a7d1-7c98f9ff3ac3' }),
+    __metadata("design:type", String)
+], CompanySeededMainBranchDto.prototype, "gdlId", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 'Main Godown' }),
+    __metadata("design:type", String)
+], CompanySeededMainBranchDto.prototype, "gdlName", void 0);
 class CompanyMasterPayloadDto {
     compId;
     compCode;
@@ -117,6 +140,7 @@ class CompanyMasterPayloadDto {
     compCreatedBy;
     compModifiedOn;
     compModifiedBy;
+    compMainBranch;
 }
 exports.CompanyMasterPayloadDto = CompanyMasterPayloadDto;
 __decorate([
@@ -418,6 +442,15 @@ __decorate([
     (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
     __metadata("design:type", Object)
 ], CompanyMasterPayloadDto.prototype, "compModifiedBy", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        type: CompanySeededMainBranchDto,
+        description: 'Create only (notes 78): the "Main Branch" (HEAD OFFICE, the company\'s default, ' +
+            'state / GSTIN / PAN / address / contacts copied from the company) and its "Main Godown" ' +
+            "(WAREHOUSE, the branch's default godown) seeded with the company. Absent on get and update.",
+    }),
+    __metadata("design:type", CompanySeededMainBranchDto)
+], CompanyMasterPayloadDto.prototype, "compMainBranch", void 0);
 class CompanyMasterDeleteResultDto {
     compId;
     deleted;

@@ -1,8 +1,12 @@
+import { Prisma } from '@prisma/client';
 import { SaveGodownDto } from './dto/save-godown.dto';
 import { GodownPayload } from './types/godown-api.types';
 import { PrismaService } from "../../../database/prisma/prisma.service";
 import { AuditLogService } from "../../audit-log/audit-log.service";
 import { RequestContextService } from '../../../common/request-context/request-context.service';
+export declare const MAIN_GODOWN_NAME = "Main Godown";
+export declare const MAIN_GODOWN_TYPE = "WAREHOUSE";
+type GodownLocationWriteClient = Prisma.TransactionClient | PrismaService;
 export declare class GodownsMasterService {
     private readonly prisma;
     private readonly auditLogService;
@@ -20,6 +24,7 @@ export declare class GodownsMasterService {
     }>;
     private setDeleted;
     private createGodownLocation;
+    seedMainGodown(tx: GodownLocationWriteClient, gdlBranchId: string, actor: string, now: Date): Promise<GodownPayload>;
     private updateGodownLocation;
     private normalizeLegacySaveGodownDto;
     private validateCreatePayload;
@@ -41,3 +46,4 @@ export declare class GodownsMasterService {
     private toPayload;
     private handleWriteError;
 }
+export {};

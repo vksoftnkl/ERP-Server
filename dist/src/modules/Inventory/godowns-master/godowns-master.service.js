@@ -9,7 +9,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.GodownsMasterService = void 0;
+exports.GodownsMasterService = exports.MAIN_GODOWN_TYPE = exports.MAIN_GODOWN_NAME = void 0;
 const common_1 = require("@nestjs/common");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const audit_log_service_1 = require("../../audit-log/audit-log.service");
@@ -18,6 +18,8 @@ const request_context_service_1 = require("../../../common/request-context/reque
 const master_tree_helper_1 = require("../utils/master-tree.helper");
 const GODOWN_LOCATION_TABLE_NAME = 'godown locations';
 const GODOWN_LOCATION_AUDIT_SCREEN_NAME = 'Godown Location Master';
+exports.MAIN_GODOWN_NAME = 'Main Godown';
+exports.MAIN_GODOWN_TYPE = 'WAREHOUSE';
 const GODOWN_REFERENCES = [
     {
         table: 'stock.stock_balance',
@@ -189,6 +191,35 @@ let GodownsMasterService = class GodownsMasterService {
             this.handleWriteError(error);
             throw error;
         }
+    }
+    async seedMainGodown(tx, gdlBranchId, actor, now) {
+        const created = await tx.godownLocation.create({
+            data: {
+                gdlBranchId,
+                gdlName: exports.MAIN_GODOWN_NAME,
+                gdlType: exports.MAIN_GODOWN_TYPE,
+                gdlCreatedOn: now,
+                gdlCreatedBy: actor,
+                gdlModifiedOn: now,
+                gdlModifiedBy: actor,
+            },
+        });
+        await this.ensureSelfInPath(tx, created.gdlId);
+        const refreshed = await this.findActiveLocation(tx, created.gdlId);
+        const payload = this.toPayload(refreshed ?? { ...created, gdlPathIdsCache: [created.gdlId] });
+        await this.auditLogService.logEntityChange({
+            action: 'New',
+            tableName: GODOWN_LOCATION_TABLE_NAME,
+            screenName: GODOWN_LOCATION_AUDIT_SCREEN_NAME,
+            screenType: 'master',
+            pk: payload.gdl_id,
+            displayName: payload.gdl_name,
+            originalRecord: null,
+            modifiedRecord: payload,
+            userId: actor,
+            notes: 'Seeded on company create',
+        }, tx);
+        return payload;
     }
     async updateGodownLocation(saveGodownDto) {
         const gdlId = saveGodownDto.gdl_id;

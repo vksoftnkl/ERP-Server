@@ -2,6 +2,12 @@ import type { ModuleApiErrorDetail, ModuleApiErrorResponse, ModuleApiSuccessResp
 export type BranchMasterErrorDetail = ModuleApiErrorDetail;
 export type BranchMasterErrorResponse = ModuleApiErrorResponse<BranchMasterErrorDetail>;
 export type BranchMasterSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> = ModuleApiSuccessResponse<T, TMeta, TStyles>;
+export interface SeededMainBranch {
+    brId: string;
+    brName: string;
+    gdlId: string;
+    gdlName: string;
+}
 export interface BranchMasterPayload {
     brId: string;
     brCompId: string;

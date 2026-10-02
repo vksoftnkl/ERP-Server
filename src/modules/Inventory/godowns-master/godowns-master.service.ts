@@ -26,6 +26,9 @@ import {
 } from '../utils/master-tree.helper';
 const GODOWN_LOCATION_TABLE_NAME = 'godown locations';
 const GODOWN_LOCATION_AUDIT_SCREEN_NAME = 'Godown Location Master';
+/** Notes 78 item 2 — the godown a new company's main branch starts with. */
+export const MAIN_GODOWN_NAME = 'Main Godown';
+export const MAIN_GODOWN_TYPE = 'WAREHOUSE';
 type GodownLocationWriteClient = Prisma.TransactionClient | PrismaService;
 /**
  * What keeps a godown from being deleted besides its own children (notes 70
@@ -248,6 +251,51 @@ export class GodownsMasterService {
       this.handleWriteError(error);
       throw error;
     }
+  }
+
+  /**
+   * Notes 78 item 2 — the godown a new company's Main Branch starts with, so
+   * the stock screens and the sale bill have somewhere to post from day one.
+   * Called by BranchMasterService.seedMainBranch() inside the company-create
+   * transaction: a root WAREHOUSE under the branch, audited like any create.
+   */
+  async seedMainGodown(
+    tx: GodownLocationWriteClient,
+    gdlBranchId: string,
+    actor: string,
+    now: Date,
+  ): Promise<GodownPayload> {
+    const created = await tx.godownLocation.create({
+      data: {
+        gdlBranchId,
+        gdlName: MAIN_GODOWN_NAME,
+        gdlType: MAIN_GODOWN_TYPE,
+        gdlCreatedOn: now,
+        gdlCreatedBy: actor,
+        gdlModifiedOn: now,
+        gdlModifiedBy: actor,
+      },
+    });
+    // A root node: its path is itself and its depth the column's default, 0.
+    await this.ensureSelfInPath(tx, created.gdlId);
+    const refreshed = await this.findActiveLocation(tx, created.gdlId);
+    const payload = this.toPayload(refreshed ?? { ...created, gdlPathIdsCache: [created.gdlId] });
+    await this.auditLogService.logEntityChange(
+      {
+        action: 'New',
+        tableName: GODOWN_LOCATION_TABLE_NAME,
+        screenName: GODOWN_LOCATION_AUDIT_SCREEN_NAME,
+        screenType: 'master',
+        pk: payload.gdl_id,
+        displayName: payload.gdl_name,
+        originalRecord: null,
+        modifiedRecord: payload,
+        userId: actor,
+        notes: 'Seeded on company create',
+      },
+      tx,
+    );
+    return payload;
   }
 
   private async updateGodownLocation(saveGodownDto: SaveGodownDto): Promise<GodownPayload> {

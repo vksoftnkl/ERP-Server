@@ -108,6 +108,10 @@
       "file": "Fiscal_Year_Seed.sql",
       "description": "public.fiscal_years \u2014 the share's 43_fiscal_year_seed.sql (notes 72 A1): every live company with no live year gets the April\u2013March year containing comp_books_begin_from / comp_fin_year_from / today, OPEN and current. Idempotent: a company with any live year is never touched"
     },
+    {
+      "file": "Main_Branch_Seed.sql",
+      "description": "public.branch_master \u2014 the share's 45_main_branch_seed.sql (notes 78): every live company with no live branch gets 'Main Branch' (HEAD OFFICE, default, copied from the company row), a lone unflagged branch is marked default, and uq_branch_master_default holds one live default per company. Idempotent; also in migration 20261002100000"
+    },
     { "file": "Hsn_Master.sql", "description": "fixed.hsn_master — GST HSN/SAC codes" },
     { "file": "Bank_Master.sql", "description": "fixed.bank_master — Indian banks" },
     {
