@@ -297,6 +297,7 @@ export class ChequeBounceService {
           `${written.ref.voucherRefno ?? ''}`,
         actor,
         changedOn: now,
+        deviceId: this.requestContext.getDeviceId(),
       });
 
       // The trial check (notes 47), after every write: the party's bills = its

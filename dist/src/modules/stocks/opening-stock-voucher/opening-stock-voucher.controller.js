@@ -41,7 +41,7 @@ const OPENING_RULES = {
     allowsCount: false,
     allowsToBranch: false,
     auditScreenName: 'Opening Stock',
-    statusDocType: txn_status_log_helper_1.TxnStatusDocType.STOCK_ADJUSTMENT,
+    statusDocType: txn_status_log_helper_1.TxnStatusDocType.OPENING_STOCK,
     postShape: 'SIMPLE',
     refuseTypes: ['TRANSFER_IN', 'TRANSFER_OUT', 'REPACK_IN', 'REPACK_OUT'],
 };

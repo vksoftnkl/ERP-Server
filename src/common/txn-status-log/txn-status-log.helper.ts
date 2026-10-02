@@ -39,7 +39,13 @@ export enum TxnStatusDocType {
   PURCHASE_BILL = 'PURCHASE_BILL',
   PURCHASE_RETURN = 'PURCHASE_RETURN',
   STOCK_TRANSFER = 'STOCK_TRANSFER',
+  // The adjustment family (ADJUSTMENT, ISSUE, DAMAGE, EXPIRY_WRITEOFF, re-lot,
+  // move). Openings and counts used to file here too, until notes 80 C gave
+  // them their own values (20261002160000): a report filtering the trail by
+  // doc type could not tell an opening from an adjustment.
   STOCK_ADJUSTMENT = 'STOCK_ADJUSTMENT',
+  OPENING_STOCK = 'OPENING_STOCK',
+  PHYSICAL_STOCK = 'PHYSICAL_STOCK',
   RECEIPT = 'RECEIPT',
   PAYMENT = 'PAYMENT',
   JOURNAL = 'JOURNAL',
@@ -144,6 +150,16 @@ export interface TxnStatusLogEntry {
   notifyChannel?: TxnStatusNotifyChannel | null;
   notifiedOn?: Date | null;
   notifyRef?: string | null;
+}
+
+/// The actor a status step is filed under (notes 80 A). tsl_changed_by is a
+/// uuid, but some sales paths carry the client's login NAME as their actor —
+/// sb_created_by / sq_created_by are text and store the name the client sent —
+/// and appendTxnStatusLog files a non-uuid as DEFAULT_ACTOR, which lost the
+/// user on every bill's and quotation's CREATED step. A uuid actor is kept; a
+/// name gives way to the request's user id when there is one.
+export function statusActorOf(actor: string, requestUserId: string | null | undefined): string {
+  return UUID_PATTERN.test(actor) || !requestUserId ? actor : requestUserId;
 }
 
 export async function appendTxnStatusLog(

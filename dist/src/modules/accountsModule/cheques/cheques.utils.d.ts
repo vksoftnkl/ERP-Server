@@ -12,6 +12,7 @@ export declare function logChequeStatus(tx: Prisma.TransactionClient, cheque: Pi
     actor: string;
     changedOn: Date;
     sessionId?: string | null;
+    deviceId?: string | null;
 }): Promise<void>;
 export interface ChequeRowExtras {
     partyName: string;

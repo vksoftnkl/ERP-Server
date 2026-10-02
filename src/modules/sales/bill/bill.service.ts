@@ -82,6 +82,7 @@ import type { TenderChequeDetailDto } from '../../accountsModule/tenderDetail/dt
 import {
   TxnStatusEvent,
   appendTxnStatusLog,
+  statusActorOf,
 } from 'src/common/txn-status-log/txn-status-log.helper';
 // accounts.acc_voucher_types row "Bil" / Sales Bill. Its numbering format
 // (prefix / suffix / width / reset frequency) seeds the acc_voucher_seq row the
@@ -1752,7 +1753,9 @@ export class BillService {
       fromStatus,
       toStatus: bill.sbStatus,
       changedOn,
-      changedBy: actor,
+      // createBill's actor is sbCreatedBy, the login NAME the client sends —
+      // the trail wants the user's id (notes 80 A).
+      changedBy: statusActorOf(actor, this.requestContextService.getUserId()),
       // ck_tsl_reason_required wants one on a cancellation. The bill no longer
       // carries a fallback copy (20260921220000 dropped sb_cancel_reason), so
       // this row IS the reason's only home — the caller must supply it, and the

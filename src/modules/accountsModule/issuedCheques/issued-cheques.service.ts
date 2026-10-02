@@ -195,6 +195,7 @@ export class IssuedChequesService {
         remarks: `Presented and paid on ${dto.date}${dto.remarks ? ` — ${dto.remarks}` : ''}`,
         actor,
         changedOn: now,
+        deviceId: this.requestContext.getDeviceId(),
       });
       return this.load(tx, dto);
     }, TX);
@@ -517,6 +518,7 @@ export class IssuedChequesService {
         remarks: `${label} on ${o.date}: ${o.reason} — reversed by ${voucher.ref.voucherRefno ?? voucher.ref.voucherId}`,
         actor: o.actor,
         changedOn: now,
+        deviceId: this.requestContext.getDeviceId(),
       });
     }
 
@@ -659,6 +661,7 @@ export class IssuedChequesService {
         remarks: `Replaced by cheque ${ins.refNo ?? ''} on ${posted.header.voucherRefno ?? ''}: ${dto.reason}`,
         actor,
         changedOn: now,
+        deviceId: this.requestContext.getDeviceId(),
       });
 
       return {

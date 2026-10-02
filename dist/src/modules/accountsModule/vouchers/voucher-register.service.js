@@ -149,6 +149,7 @@ let VoucherRegisterService = class VoucherRegisterService {
                     event: txn_status_log_helper_1.TxnStatusEvent.CREATED,
                     toStatus: 'DRAFT',
                     changedBy: actor,
+                    deviceId: this.requestContext.getDeviceId(),
                     changedOn: now,
                 });
             }
@@ -543,7 +544,7 @@ let VoucherRegisterService = class VoucherRegisterService {
                 toStatus: 'POSTED',
                 changedBy: actor,
                 changedOn: now,
-                deviceId: existing?.avh_device_id ?? null,
+                deviceId: this.requestContext.getDeviceId() ?? existing?.avh_device_id ?? null,
                 sessionId: existing?.avh_session_id ?? null,
             });
             await (0, voucher_books_helper_1.assertVoucherBooksReconcile)(tx, {
@@ -606,6 +607,7 @@ let VoucherRegisterService = class VoucherRegisterService {
                 fromStatus: 'DRAFT',
                 toStatus: 'DRAFT',
                 changedBy: actor,
+                deviceId: this.requestContext.getDeviceId(),
                 changedOn: now,
             });
             return { voucherId: keys.voucherId, accYear: keys.accYear, deleted: true };

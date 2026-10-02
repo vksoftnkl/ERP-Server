@@ -28,6 +28,7 @@ async function logChequeStatus(tx, cheque, entry) {
         changedBy: entry.actor,
         changedOn: entry.changedOn,
         remarks: entry.remarks,
+        deviceId: entry.deviceId ?? null,
         sessionId: entry.sessionId ?? null,
     });
 }

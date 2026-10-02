@@ -162,6 +162,7 @@ export class ChequeClearService {
           (dto.remarks ? ` — ${dto.remarks}` : ''),
         actor,
         changedOn: now,
+        deviceId: this.requestContext.getDeviceId(),
       });
 
       // The trial check (notes 47), after every write.

@@ -91,7 +91,9 @@ export function expectStatus(res: request.Response, status: number): void {
 export const stamp = (): string =>
   `${Date.now().toString(36).toUpperCase()}${Math.floor(Math.random() * 900 + 100)}`;
 
-export async function bootApp(): Promise<INestApplication> {
+export async function bootApp(
+  overrides: Partial<AccessTokenPayload> = {},
+): Promise<INestApplication> {
   const claims: AccessTokenPayload = {
     sub: ACTOR,
     user_name: 'tester1',
@@ -103,6 +105,7 @@ export async function bootApp(): Promise<INestApplication> {
     iat: Math.floor(Date.now() / 1000),
     exp: Math.floor(Date.now() / 1000) + 3600,
     typ: 'access',
+    ...overrides,
   };
 
   const moduleRef = await Test.createTestingModule({ imports: [AppModule] })

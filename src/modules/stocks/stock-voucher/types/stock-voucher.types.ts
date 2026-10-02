@@ -323,13 +323,17 @@ export interface StockVoucherTypeRules {
    * public.txn_status_log.
    *
    * A RULE RATHER THAN A MAPPING OFF `voucherType`, because ck_tsl_src_doc_type
-   * is a fourteen-value vocabulary shared with sales, purchase and accounts, and
-   * only three of them describe a stock document at all: STOCK_TRANSFER,
-   * STOCK_ADJUSTMENT and OTHER. Eleven voucher types have to land on three
-   * values, so which one each takes is a business classification and not
-   * something to be derived — an opening is filed as an adjustment because it
-   * adjusts a holding from nothing to something, and a reader who disagrees can
-   * change one line here rather than a switch buried in the service.
+   * is a vocabulary shared with sales, purchase and accounts, and only five of
+   * its values describe a stock document: STOCK_TRANSFER, STOCK_ADJUSTMENT,
+   * OPENING_STOCK, PHYSICAL_STOCK and OTHER. Eleven voucher types land on
+   * those, so which one each takes is a business classification and not
+   * something to be derived: the transfer types file as STOCK_TRANSFER, the
+   * adjustment family as STOCK_ADJUSTMENT, and since notes 80 C
+   * (20261002160000) the opening and the count each as their own — before
+   * that they filed as STOCK_ADJUSTMENT too, and a report on the trail could
+   * not tell them apart. Changing a screen's value means re-filing its existing
+   * trail rows in a migration, or its readers (list, get, the cancelled-409)
+   * stop finding them.
    */
   statusDocType: TxnStatusDocType;
   /**

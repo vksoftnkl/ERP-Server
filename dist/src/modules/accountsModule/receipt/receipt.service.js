@@ -167,7 +167,7 @@ let ReceiptService = class ReceiptService {
                     event: txn_status_log_helper_1.TxnStatusEvent.CREATED,
                     toStatus: receipt_enum_1.VoucherStatus.DRAFT,
                     changedBy: actor,
-                    deviceId: dto.avhDeviceId ?? null,
+                    deviceId: this.requestContext.getDeviceId() ?? dto.avhDeviceId ?? null,
                     sessionId: dto.avhSessionId ?? null,
                 });
             }
@@ -580,6 +580,7 @@ let ReceiptService = class ReceiptService {
                 fromStatus: header.avhVoucherStatus,
                 toStatus: header.avhVoucherStatus,
                 changedBy: actor,
+                deviceId: this.requestContext.getDeviceId(),
                 changedOn: now,
                 remarks: dto.editRemark,
             });
@@ -661,6 +662,7 @@ let ReceiptService = class ReceiptService {
                 fromStatus: header.avhVoucherStatus,
                 toStatus: header.avhVoucherStatus,
                 changedBy: actor,
+                deviceId: this.requestContext.getDeviceId(),
                 changedOn: now,
             });
             return {

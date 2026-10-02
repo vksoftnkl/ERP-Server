@@ -144,6 +144,7 @@ let PaymentCancelService = class PaymentCancelService {
                     fromStatus: payment_enum_1.VoucherStatus.POSTED,
                     toStatus: payment_enum_1.VoucherStatus.CANCELLED,
                     changedBy: actor,
+                    deviceId: this.requestContext.getDeviceId(),
                     changedOn: now,
                     remarks: dto.reason,
                 });

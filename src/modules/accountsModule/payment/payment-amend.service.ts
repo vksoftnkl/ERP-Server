@@ -553,7 +553,7 @@ export class PaymentAmendService {
       srcDocRefno: header.avhVoucherRefno,
       changedBy: actor,
       changedOn: now,
-      deviceId: header.avhDeviceId,
+      deviceId: this.requestContext.getDeviceId() ?? header.avhDeviceId,
       sessionId: header.avhSessionId,
     };
     await appendTxnStatusLog(tx, {

@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.TxnStatusNotifyChannel = exports.TxnStatusEvent = exports.TxnStatusDocType = exports.TxnStatusSrcModule = void 0;
+exports.statusActorOf = statusActorOf;
 exports.appendTxnStatusLog = appendTxnStatusLog;
 const module_shared_utils_1 = require("../utils/module-shared.utils");
 var TxnStatusSrcModule;
@@ -26,6 +27,8 @@ var TxnStatusDocType;
     TxnStatusDocType["PURCHASE_RETURN"] = "PURCHASE_RETURN";
     TxnStatusDocType["STOCK_TRANSFER"] = "STOCK_TRANSFER";
     TxnStatusDocType["STOCK_ADJUSTMENT"] = "STOCK_ADJUSTMENT";
+    TxnStatusDocType["OPENING_STOCK"] = "OPENING_STOCK";
+    TxnStatusDocType["PHYSICAL_STOCK"] = "PHYSICAL_STOCK";
     TxnStatusDocType["RECEIPT"] = "RECEIPT";
     TxnStatusDocType["PAYMENT"] = "PAYMENT";
     TxnStatusDocType["JOURNAL"] = "JOURNAL";
@@ -71,6 +74,9 @@ const DOC_REFNO_MAX_LENGTH = 100;
 const REMARKS_MAX_LENGTH = 500;
 const CREATED_BY_MAX_LENGTH = 50;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function statusActorOf(actor, requestUserId) {
+    return UUID_PATTERN.test(actor) || !requestUserId ? actor : requestUserId;
+}
 async function appendTxnStatusLog(tx, entry) {
     const changedOn = entry.changedOn ?? new Date();
     const event = normalizeToken(entry.event, EVENT_MAX_LENGTH);

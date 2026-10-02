@@ -190,6 +190,7 @@ export class PaymentCancelService {
           fromStatus: VoucherStatus.POSTED,
           toStatus: VoucherStatus.CANCELLED,
           changedBy: actor,
+          deviceId: this.requestContext.getDeviceId(),
           changedOn: now,
           remarks: dto.reason,
         });

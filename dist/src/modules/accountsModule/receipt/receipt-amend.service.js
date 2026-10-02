@@ -361,7 +361,7 @@ let ReceiptAmendService = class ReceiptAmendService {
             srcDocRefno: header.avhVoucherRefno,
             changedBy: actor,
             changedOn: now,
-            deviceId: header.avhDeviceId,
+            deviceId: this.requestContext.getDeviceId() ?? header.avhDeviceId,
             sessionId: header.avhSessionId,
         };
         await (0, txn_status_log_helper_1.appendTxnStatusLog)(tx, {

@@ -107,9 +107,9 @@ const OPENING_RULES: StockVoucherTypeRules = {
   allowsCount: false,
   allowsToBranch: false,
   auditScreenName: 'Opening Stock',
-  // An opening is not a transfer, and ck_tsl_src_doc_type has no OPENING —
-  // see StockVoucherTypeRules.statusDocType for why this is pinned per screen.
-  statusDocType: TxnStatusDocType.STOCK_ADJUSTMENT,
+  // Its own value since notes 80 C (20261002160000) — it filed as
+  // STOCK_ADJUSTMENT before. See StockVoucherTypeRules.statusDocType.
+  statusDocType: TxnStatusDocType.OPENING_STOCK,
   // The generic entry point. 19 refuses to post a TRANSFER_* through it by
   // name, so the transfer screens cannot reach this record by accident.
   postShape: 'SIMPLE',

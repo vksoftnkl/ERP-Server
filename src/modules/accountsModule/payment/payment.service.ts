@@ -292,7 +292,7 @@ export class PaymentService {
         event: TxnStatusEvent.CREATED,
         toStatus: VoucherStatus.DRAFT,
         changedBy: actor,
-        deviceId: dto.avhDeviceId ?? null,
+        deviceId: this.requestContext.getDeviceId() ?? dto.avhDeviceId ?? null,
         sessionId: dto.avhSessionId ?? null,
       });
     }
@@ -742,6 +742,7 @@ export class PaymentService {
         fromStatus: header.avhVoucherStatus,
         toStatus: header.avhVoucherStatus,
         changedBy: actor,
+        deviceId: this.requestContext.getDeviceId(),
         changedOn: now,
         remarks: dto.editRemark,
       });
@@ -823,6 +824,7 @@ export class PaymentService {
         fromStatus: header.avhVoucherStatus,
         toStatus: header.avhVoucherStatus,
         changedBy: actor,
+        deviceId: this.requestContext.getDeviceId(),
         changedOn: now,
       });
       return {

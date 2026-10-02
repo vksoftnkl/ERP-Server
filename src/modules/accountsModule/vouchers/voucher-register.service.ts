@@ -304,6 +304,7 @@ export class VoucherRegisterService {
           event: TxnStatusEvent.CREATED,
           toStatus: 'DRAFT',
           changedBy: actor,
+          deviceId: this.requestContext.getDeviceId(),
           changedOn: now,
         });
       }
@@ -811,7 +812,7 @@ export class VoucherRegisterService {
         toStatus: 'POSTED',
         changedBy: actor,
         changedOn: now,
-        deviceId: existing?.avh_device_id ?? null,
+        deviceId: this.requestContext.getDeviceId() ?? existing?.avh_device_id ?? null,
         sessionId: existing?.avh_session_id ?? null,
       });
       // The parties, and every ledger the instruments posted to (Cheques In
@@ -896,6 +897,7 @@ export class VoucherRegisterService {
         fromStatus: 'DRAFT',
         toStatus: 'DRAFT',
         changedBy: actor,
+        deviceId: this.requestContext.getDeviceId(),
         changedOn: now,
       });
       return { voucherId: keys.voucherId, accYear: keys.accYear, deleted: true };

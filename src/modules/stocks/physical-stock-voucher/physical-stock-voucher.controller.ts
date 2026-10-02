@@ -104,7 +104,9 @@ const PHYSICAL_RULES: StockVoucherTypeRules = {
   allowsCount: true,
   allowsToBranch: false,
   auditScreenName: 'Physical Stock Count',
-  statusDocType: TxnStatusDocType.STOCK_ADJUSTMENT,
+  // Its own value since notes 80 C (20261002160000) — it filed as
+  // STOCK_ADJUSTMENT before. See StockVoucherTypeRules.statusDocType.
+  statusDocType: TxnStatusDocType.PHYSICAL_STOCK,
   // The generic entry point. 19 refuses to post a TRANSFER_* through it by
   // name, so the transfer screens cannot reach this record by accident.
   postShape: 'COUNT',

@@ -41,7 +41,7 @@ const PHYSICAL_RULES = {
     allowsCount: true,
     allowsToBranch: false,
     auditScreenName: 'Physical Stock Count',
-    statusDocType: txn_status_log_helper_1.TxnStatusDocType.STOCK_ADJUSTMENT,
+    statusDocType: txn_status_log_helper_1.TxnStatusDocType.PHYSICAL_STOCK,
     postShape: 'COUNT',
     refuseTypes: ['TRANSFER_IN', 'TRANSFER_OUT', 'REPACK_IN', 'REPACK_OUT'],
 };

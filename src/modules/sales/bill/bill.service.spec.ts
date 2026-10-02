@@ -1214,13 +1214,12 @@ describe('BillService', () => {
       expect(loggedStep()).toMatchObject({ tslDeviceId: null });
     });
 
-    it('falls back to DEFAULT_ACTOR for a non-uuid actor, which tsl_changed_by would reject', async () => {
+    it("files a login-name actor under the request's user id, not DEFAULT_ACTOR (notes 80 A)", async () => {
       await service.save(baseDto({ sbCreatedBy: 'admin' } as Partial<SaveBillDto>));
 
       expect(loggedStep()).toMatchObject({
-        tslChangedBy: '00000000-0000-0000-0000-000000000000',
-        // The free-text column keeps what the payload actually said.
-        tslCreatedBy: 'admin',
+        tslChangedBy: USER_ID,
+        tslCreatedBy: USER_ID,
       });
     });
   });

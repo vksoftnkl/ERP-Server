@@ -147,6 +147,7 @@ export class ChequeDepositService {
             (dto.remarks ? ` — ${dto.remarks}` : ''),
           actor,
           changedOn: now,
+          deviceId: this.requestContext.getDeviceId(),
         });
       }
 

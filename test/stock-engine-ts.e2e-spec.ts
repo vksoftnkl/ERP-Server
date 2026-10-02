@@ -56,7 +56,7 @@ const OPENING_RULES: StockVoucherTypeRules = {
   allowsCount: false,
   allowsToBranch: false,
   auditScreenName: 'Opening Stock',
-  statusDocType: TxnStatusDocType.STOCK_ADJUSTMENT,
+  statusDocType: TxnStatusDocType.OPENING_STOCK,
   postShape: 'SIMPLE',
   refuseTypes: ['TRANSFER_IN', 'TRANSFER_OUT', 'REPACK_IN', 'REPACK_OUT'],
 };
@@ -76,7 +76,7 @@ const PHYSICAL_RULES: StockVoucherTypeRules = {
   allowsCount: true,
   allowsToBranch: false,
   auditScreenName: 'Physical Stock Count',
-  statusDocType: TxnStatusDocType.STOCK_ADJUSTMENT,
+  statusDocType: TxnStatusDocType.PHYSICAL_STOCK,
   postShape: 'COUNT',
   refuseTypes: ['TRANSFER_IN', 'TRANSFER_OUT', 'REPACK_IN', 'REPACK_OUT'],
 };

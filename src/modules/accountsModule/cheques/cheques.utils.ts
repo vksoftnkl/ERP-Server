@@ -55,6 +55,8 @@ export async function logChequeStatus(
     actor: string;
     changedOn: Date;
     sessionId?: string | null;
+    /** The session's device (`fixed.device_master.dev_id`) — notes 80 B: the counter the step was taken at. */
+    deviceId?: string | null;
   },
 ): Promise<void> {
   await appendTxnStatusLog(tx, {
@@ -72,6 +74,7 @@ export async function logChequeStatus(
     changedBy: entry.actor,
     changedOn: entry.changedOn,
     remarks: entry.remarks,
+    deviceId: entry.deviceId ?? null,
     sessionId: entry.sessionId ?? null,
   });
 }

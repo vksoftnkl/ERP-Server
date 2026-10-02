@@ -355,7 +355,7 @@ export class ReceiptPostingService {
       fromStatus: header.avhVoucherStatus,
       toStatus: VoucherStatus.POSTED,
       changedBy: actor,
-      deviceId: header.avhDeviceId,
+      deviceId: this.requestContext.getDeviceId() ?? header.avhDeviceId,
       sessionId: header.avhSessionId,
     });
 

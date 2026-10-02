@@ -174,7 +174,7 @@ let PaymentService = class PaymentService {
                 event: txn_status_log_helper_1.TxnStatusEvent.CREATED,
                 toStatus: payment_enum_1.VoucherStatus.DRAFT,
                 changedBy: actor,
-                deviceId: dto.avhDeviceId ?? null,
+                deviceId: this.requestContext.getDeviceId() ?? dto.avhDeviceId ?? null,
                 sessionId: dto.avhSessionId ?? null,
             });
         }
@@ -569,6 +569,7 @@ let PaymentService = class PaymentService {
                 fromStatus: header.avhVoucherStatus,
                 toStatus: header.avhVoucherStatus,
                 changedBy: actor,
+                deviceId: this.requestContext.getDeviceId(),
                 changedOn: now,
                 remarks: dto.editRemark,
             });
@@ -641,6 +642,7 @@ let PaymentService = class PaymentService {
                 fromStatus: header.avhVoucherStatus,
                 toStatus: header.avhVoucherStatus,
                 changedBy: actor,
+                deviceId: this.requestContext.getDeviceId(),
                 changedOn: now,
             });
             return {

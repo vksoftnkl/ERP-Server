@@ -91,6 +91,7 @@ let ChequeReissueService = class ChequeReissueService {
                     `(presentation ${cheque.apdPresentCount + 1})`,
                 actor,
                 changedOn: now,
+                deviceId: this.requestContext.getDeviceId(),
             });
             await (0, books_reconcile_guard_1.assertBooksReconcile)(tx, {
                 companyId: cheque.apdCompanyId,
@@ -243,6 +244,7 @@ let ChequeReissueService = class ChequeReissueService {
                 remarks: reason,
                 actor,
                 changedOn: now,
+                deviceId: this.requestContext.getDeviceId(),
             });
             await (0, cheques_utils_1.logChequeStatus)(tx, newCheque, {
                 fromStatus: null,
@@ -250,6 +252,7 @@ let ChequeReissueService = class ChequeReissueService {
                 remarks: `Replaces cheque ${old.apdInstrumentNo} — ${reason}`,
                 actor,
                 changedOn: now,
+                deviceId: this.requestContext.getDeviceId(),
             });
             await (0, books_reconcile_guard_1.assertBooksReconcile)(tx, {
                 companyId: old.apdCompanyId,

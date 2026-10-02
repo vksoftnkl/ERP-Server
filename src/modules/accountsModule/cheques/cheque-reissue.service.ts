@@ -219,6 +219,7 @@ export class ChequeReissueService {
           `(presentation ${cheque.apdPresentCount + 1})`,
         actor,
         changedOn: now,
+        deviceId: this.requestContext.getDeviceId(),
       });
 
       // The trial check (notes 47), after every write.
@@ -430,6 +431,7 @@ export class ChequeReissueService {
         remarks: reason,
         actor,
         changedOn: now,
+        deviceId: this.requestContext.getDeviceId(),
       });
       await logChequeStatus(tx, newCheque, {
         fromStatus: null,
@@ -437,6 +439,7 @@ export class ChequeReissueService {
         remarks: `Replaces cheque ${old.apdInstrumentNo} — ${reason}`,
         actor,
         changedOn: now,
+        deviceId: this.requestContext.getDeviceId(),
       });
 
       // The trial check (notes 47), after every write — both cheques, both

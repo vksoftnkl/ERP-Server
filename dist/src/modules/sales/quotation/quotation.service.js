@@ -1141,7 +1141,7 @@ let QuotationService = class QuotationService {
             fromStatus: step.fromStatus,
             toStatus: step.toStatus,
             changedOn,
-            changedBy: actor,
+            changedBy: (0, txn_status_log_helper_1.statusActorOf)(actor, this.requestContextService.getUserId()),
             remarks: step.remarks ?? quotation.sqCancelReason,
             deviceId: quotation.sqDeviceId,
             sessionId: quotation.sqSessionId,

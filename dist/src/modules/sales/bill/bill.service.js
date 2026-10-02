@@ -1112,7 +1112,7 @@ let BillService = class BillService {
             fromStatus,
             toStatus: bill.sbStatus,
             changedOn,
-            changedBy: actor,
+            changedBy: (0, txn_status_log_helper_1.statusActorOf)(actor, this.requestContextService.getUserId()),
             remarks,
             deviceId: bill.sbDeviceId,
             sessionId: bill.sbSessionId,

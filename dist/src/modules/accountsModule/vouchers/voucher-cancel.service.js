@@ -256,6 +256,7 @@ let VoucherCancelService = class VoucherCancelService {
                 fromStatus: 'POSTED',
                 toStatus: 'CANCELLED',
                 changedBy: actor,
+                deviceId: this.requestContext.getDeviceId(),
                 changedOn: now,
                 remarks: reason,
             });

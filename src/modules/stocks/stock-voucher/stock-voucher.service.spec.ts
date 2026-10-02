@@ -49,7 +49,7 @@ const OPENING_RULES: StockVoucherTypeRules = {
   allowsCount: false,
   allowsToBranch: false,
   auditScreenName: 'Opening Stock',
-  statusDocType: TxnStatusDocType.STOCK_ADJUSTMENT,
+  statusDocType: TxnStatusDocType.OPENING_STOCK,
   postShape: 'SIMPLE',
   refuseTypes: ['TRANSFER_IN', 'TRANSFER_OUT', 'REPACK_IN', 'REPACK_OUT'],
 };
@@ -73,7 +73,7 @@ const PHYSICAL_RULES: StockVoucherTypeRules = {
   allowsCount: true,
   allowsToBranch: false,
   auditScreenName: 'Physical Stock Count',
-  statusDocType: TxnStatusDocType.STOCK_ADJUSTMENT,
+  statusDocType: TxnStatusDocType.PHYSICAL_STOCK,
   postShape: 'COUNT',
   refuseTypes: ['TRANSFER_IN', 'TRANSFER_OUT', 'REPACK_IN', 'REPACK_OUT'],
 };
@@ -939,7 +939,7 @@ describe('StockVoucherService', () => {
             // INVENTORY, never the ledger's 'STOCK' — the two tables allow
             // different module vocabularies and ck_tsl_src_module has no STOCK.
             tslSrcModule: 'INVENTORY',
-            tslSrcDocType: 'STOCK_ADJUSTMENT',
+            tslSrcDocType: 'OPENING_STOCK',
             tslEvent: 'POSTED',
             tslFromStatus: 'DRAFT',
             tslToStatus: 'POSTED',

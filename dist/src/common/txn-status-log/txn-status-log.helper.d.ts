@@ -20,6 +20,8 @@ export declare enum TxnStatusDocType {
     PURCHASE_RETURN = "PURCHASE_RETURN",
     STOCK_TRANSFER = "STOCK_TRANSFER",
     STOCK_ADJUSTMENT = "STOCK_ADJUSTMENT",
+    OPENING_STOCK = "OPENING_STOCK",
+    PHYSICAL_STOCK = "PHYSICAL_STOCK",
     RECEIPT = "RECEIPT",
     PAYMENT = "PAYMENT",
     JOURNAL = "JOURNAL",
@@ -72,4 +74,5 @@ export interface TxnStatusLogEntry {
     notifiedOn?: Date | null;
     notifyRef?: string | null;
 }
+export declare function statusActorOf(actor: string, requestUserId: string | null | undefined): string;
 export declare function appendTxnStatusLog(tx: Prisma.TransactionClient, entry: TxnStatusLogEntry): Promise<TxnStatusLog>;

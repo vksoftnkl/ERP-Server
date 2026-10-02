@@ -317,7 +317,7 @@ export class PaymentPostingService {
       fromStatus: header.avhVoucherStatus,
       toStatus: VoucherStatus.POSTED,
       changedBy: actor,
-      deviceId: header.avhDeviceId,
+      deviceId: this.requestContext.getDeviceId() ?? header.avhDeviceId,
       sessionId: header.avhSessionId,
     });
     const now = new Date();
@@ -344,6 +344,7 @@ export class PaymentPostingService {
           remarks: `Issued on payment ${paymentVoucher.voucherRefno}: leaf ${leaf.leaf} of book ${leaf.bookNo}`,
           actor,
           changedOn: now,
+          deviceId: this.requestContext.getDeviceId(),
           sessionId: header.avhSessionId,
         },
       );

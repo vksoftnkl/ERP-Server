@@ -53,6 +53,7 @@ import { allocateVoucherNumber } from 'src/common/Sequence/voucher-sequence.help
 import {
   TxnStatusEvent,
   appendTxnStatusLog,
+  statusActorOf,
 } from 'src/common/txn-status-log/txn-status-log.helper';
 import {
   assertTaxRateRefs,
@@ -1662,7 +1663,10 @@ export class QuotationService {
       fromStatus: step.fromStatus,
       toStatus: step.toStatus,
       changedOn,
-      changedBy: actor,
+      // Create / update / a bill's conversion sync pass sqCreatedBy /
+      // sqModifiedBy / sbCreatedBy — login NAMES; the trail wants the user's
+      // id (notes 80 A).
+      changedBy: statusActorOf(actor, this.requestContextService.getUserId()),
       // ck_tsl_reason_required wants one on a CANCELLED / REJECTED step; the
       // quotation's own reason is it, and the helper falls back rather than
       // failing the save.

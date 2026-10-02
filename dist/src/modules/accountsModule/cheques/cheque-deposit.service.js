@@ -78,6 +78,7 @@ let ChequeDepositService = class ChequeDepositService {
                         (dto.remarks ? ` — ${dto.remarks}` : ''),
                     actor,
                     changedOn: now,
+                    deviceId: this.requestContext.getDeviceId(),
                 });
             }
             await (0, books_reconcile_guard_1.assertBooksReconcile)(tx, {
