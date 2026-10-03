@@ -1,0 +1,89 @@
+/// The GSP's own account — CREDENTIAL #1 of two.
+///
+/// This is the API credential the GSP (Chartered, Cygnet, ClearTax …) issues
+/// to identify THIS ERP INSTALLATION to their gateway. The second — the
+/// taxpayer's own portal user, per GSTIN — is GstCompanyCredential. Most GSPs
+/// need both, and they rotate on different schedules, which is the whole
+/// reason they are not one row.
+///
+/// Grain is provider × ENVIRONMENT, not per service. A GSP that sells
+/// e-invoice, e-way bill and returns issues ONE account for all of it; the
+/// sandbox account is a different one. Keying it per service would copy the
+/// same secret across four rows and make rotation a hunt.
+///
+/// gpaService is nevertheless present and NULLABLE, because a few providers
+/// do issue separate accounts per service:
+///     NULL -> covers every service this provider offers   (the norm)
+///     set  -> overrides the NULL row for that one service (the exception)
+/// Resolution is most-specific-wins:
+///
+///     ORDER BY gpa_service NULLS LAST LIMIT 1
+///
+/// A direct-to-NIC provider has NO row here at all: there is no middleman to
+/// authenticate to, only the per-GSTIN AppKey on GstCompanyCredential.
+model GstProviderAccount {
+  gpaId               String    @id(map: "pk_gst_provider_account") @default(dbgenerated("uuidv7()")) @db.Uuid @map("gpa_id")
+  gpaGpvId            String    @db.Uuid                                 @map("gpa_gpv_id")
+
+  /// SANDBOX | PRODUCTION
+  gpaEnvironment      String    @db.VarChar(10)                          @map("gpa_environment")
+  /// NULL = every service this provider offers.
+  gpaService          String?   @db.VarChar(20)                          @map("gpa_service")
+
+  /// Your customer / account number with the GSP. Not a secret, and the first
+  /// thing their support desk asks for.
+  gpaAccountRef       String?   @db.VarChar(100)                         @map("gpa_account_ref")
+
+  // Application-encrypted, same scheme and key as every other _enc column.
+  // Never written from SQL: only the application holds the key.
+  gpaClientIdEnc      String?                                            @map("gpa_client_id_enc")
+  gpaClientSecretEnc  String?                                            @map("gpa_client_secret_enc")
+  gpaApiKeyEnc        String?                                            @map("gpa_api_key_enc")
+  gpaKeyVersion       Int       @default(1) @db.SmallInt                 @map("gpa_key_version")
+
+  /// Contract window. A GSP contract lapses on a date somebody agreed to a
+  /// year ago; without this the first anybody knows is bills not printing.
+  gpaValidFrom        DateTime? @db.Date                                 @map("gpa_valid_from")
+  gpaValidUpto        DateTime? @db.Date                                 @map("gpa_valid_upto")
+
+  /// Most GSPs sell IRNs in blocks. Running the balance down mid-morning
+  /// stops every counter at once, so it is worth a column and an alert rather
+  /// than a phone call from the shop floor. Refreshed by GET_API_BALANCE.
+  gpaCreditBalance    Decimal?  @db.Decimal(14, 2)                       @map("gpa_credit_balance")
+  gpaBalanceCheckedOn DateTime? @db.Timestamptz(6)                       @map("gpa_balance_checked_on")
+
+  gpaLastVerifiedOn   DateTime? @db.Timestamptz(6)                       @map("gpa_last_verified_on")
+  gpaRemarks          String?   @db.VarChar(500)                         @map("gpa_remarks")
+  gpaIsActive         Boolean   @default(true)                           @map("gpa_is_active")
+
+  // ── Audit ────────────────────────────────────────────────────────────
+  gpaIsDeleted        Boolean   @default(false)                          @map("gpa_is_deleted")
+  gpaSyncDate         DateTime? @db.Timestamptz(6)                       @map("gpa_sync_date")
+  gpaCreatedOn        DateTime  @default(now()) @db.Timestamptz(6)       @map("gpa_created_on")
+  gpaCreatedBy        String    @db.VarChar(50)                          @map("gpa_created_by")
+  gpaModifiedOn       DateTime? @db.Timestamptz(6)                       @map("gpa_modified_on")
+  gpaModifiedBy       String?   @db.VarChar(50)                          @map("gpa_modified_by")
+
+  // Relations
+  provider            GstProvider @relation("GstProviderAccounts", fields: [gpaGpvId], references: [gpvId], onUpdate: Cascade, onDelete: Cascade, map: "fk_gpa_provider")
+
+  @@index([gpaGpvId], map: "ix_gpa_provider")
+
+  // Partial indexes are DB-only:
+  //
+  //   CREATE UNIQUE INDEX ux_gpa_provider_env_service
+  //       ON public.gst_provider_account (gpa_gpv_id, gpa_environment, gpa_service)
+  //       NULLS NOT DISTINCT
+  //       WHERE gpa_is_deleted = false;
+  //
+  // NULLS NOT DISTINCT is load-bearing: without it two "covers every service"
+  // rows for the same provider and environment — both with a NULL service —
+  // would each be treated as unique, and the resolution above would pick one
+  // of them at random.
+  //
+  // CHECK constraints (DB-only): ck_gpa_environment, ck_gpa_service,
+  //   ck_gpa_key_ver, ck_gpa_validity, ck_gpa_balance
+
+  @@map("gst_provider_account")
+  @@schema("public")
+}

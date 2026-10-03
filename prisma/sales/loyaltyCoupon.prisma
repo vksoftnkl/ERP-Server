@@ -1,0 +1,145 @@
+/// One ISSUED coupon.
+///
+/// NOT partitioned, and never carried forward at year end. A voucher issued in
+/// 2025-2026 and spent in 2027-2028 is the SAME row throughout — which is what
+/// makes LoyaltyCouponTxn's reference to it a plain foreign key. lcpAccYear is
+/// the FY of ISSUE and a reporting filter only, never a partition key.
+///
+/// lcpFaceValue is a SNAPSHOT taken at issue. Re-pricing a batch must not
+/// re-price the cards already in customers' wallets — the same reason
+/// AccTenderDetail snapshots its ledger and its rate.
+model LoyaltyCoupon {
+  lcpId               String    @id(map: "pk_loyalty_coupon") @default(dbgenerated("uuidv7()")) @db.Uuid @map("lcp_id")
+  lcpCompId           String    @db.Uuid                                 @map("lcp_comp_id")
+  /// Branch that ISSUED it.
+  lcpBranchId         String?   @db.Uuid                                 @map("lcp_branch_id")
+  lcpTenantId         String?   @db.Uuid                                 @map("lcp_tenant_id")
+  /// FY of issue. Reporting filter only.
+  lcpAccYear          String    @db.Char(9)                              @map("lcp_acc_year")
+
+  lcpLcbId            String    @db.Uuid                                 @map("lcp_lcb_id")
+  /// What the counter scans or types.
+  lcpCode             String    @db.VarChar(40)                          @map("lcp_code")
+  /// So a code photographed off someone's phone screen is not by itself
+  /// spendable.
+  lcpPin              String?   @db.VarChar(10)                          @map("lcp_pin")
+
+  /// NULL = bearer instrument. Non-null and a non-transferable batch means
+  /// this customer alone may spend it.
+  lcpCustId           String?   @db.Uuid                                 @map("lcp_cust_id")
+  /// If the holder is also a points member.
+  lcpMemberId         String?   @db.Uuid                                 @map("lcp_member_id")
+  lcpPartyLedgerId    String?   @db.Uuid                                 @map("lcp_party_ledger_id")
+
+  lcpIssuedOn         DateTime  @default(dbgenerated("CURRENT_DATE")) @db.Date @map("lcp_issued_on")
+  lcpValidFrom        DateTime? @db.Date                                 @map("lcp_valid_from")
+  lcpValidUpto        DateTime? @db.Date                                 @map("lcp_valid_upto")
+
+  // ── The bill that SOLD it, when it was sold rather than given away ───
+  // All three of module/type/id or none (ck_lcp_src_doc). No relation field:
+  // polymorphic by design.
+  lcpSrcModule        String?   @db.VarChar(20)                          @map("lcp_src_module")
+  lcpSrcDocType       String?   @db.VarChar(30)                          @map("lcp_src_doc_type")
+  lcpSrcDocId         String?   @db.Uuid                                 @map("lcp_src_doc_id")
+  lcpSrcAccYear       String?   @db.Char(9)                              @map("lcp_src_acc_year")
+  lcpSrcDocRefno      String?   @db.VarChar(100)                         @map("lcp_src_doc_refno")
+
+  /// Snapshot at issue, and must be POSITIVE (ck_lcp_face) — so an uncapped
+  /// PERCENT batch cannot issue a coupon. Give such a batch an lcbMaxValue and
+  /// snapshot that as the face.
+  lcpFaceValue        Decimal   @db.Decimal(18, 2)                       @map("lcp_face_value")
+  /// What was actually PAID for it: 0 for a giveaway, face value for a sold
+  /// card, something between for a discounted promotion. Breakage — vouchers
+  /// sold and never spent — has no other source.
+  lcpIssueAmount      Decimal   @default(0) @db.Decimal(18, 2)           @map("lcp_issue_amount")
+
+  // ── Caches of LoyaltyCouponTxn ───────────────────────────────────────
+  // Recomputed by LoyaltyCouponService.recomputeCoupons(). There is no
+  // trigger; no other code may write them. A coupon movement is an AMOUNT and
+  // the TYPE carries the sign, so these are plain sums — the OPPOSITE of the
+  // points ledger, where a spend is negative.
+  lcpUsedValue        Decimal   @default(0) @db.Decimal(18, 2)           @map("lcp_used_value")
+  lcpTopupValue       Decimal   @default(0) @db.Decimal(18, 2)           @map("lcp_topup_value")
+  lcpUseCount         Int       @default(0)                              @map("lcp_use_count")
+  /// MAX(lctTxnDate) over this coupon's movements, recomputed with the value
+  /// buckets. Added by this migration and not by the design note, whose
+  /// recompute contract writes it against a column it never declared.
+  lcpLastUsedOn       DateTime? @db.Date                                 @map("lcp_last_used_on")
+
+  /// GENERATED ALWAYS ... STORED: face + topup - used. Read-only — never send
+  /// it on a create or update, and @default(dbgenerated()) marks it DB-owned
+  /// so migrate never emits a default of its own.
+  lcpBalanceValue     Decimal?  @default(dbgenerated()) @db.Decimal(18, 2) @map("lcp_balance_value")
+
+  /// ISSUED | PARTIAL | REDEEMED | EXPIRED | CANCELLED | BLOCKED.
+  ///
+  /// Deliberately NOT a generated column. The first three are arithmetic, but
+  /// EXPIRED, CANCELLED and BLOCKED are DECISIONS and cannot be derived from
+  /// the amounts — and expiry additionally depends on today's date, which a
+  /// generated column may not read. recomputeCoupons() moves it between the
+  /// first three ONLY; the admin path and couponExpiryRun() own the rest.
+  /// Writing a decision from a recompute is how a cancelled voucher silently
+  /// comes back to life.
+  lcpStatus           String    @default("ISSUED") @db.VarChar(20)       @map("lcp_status")
+  lcpRedeemedOn       DateTime? @db.Date                                 @map("lcp_redeemed_on")
+  lcpCancelledOn      DateTime? @db.Date                                 @map("lcp_cancelled_on")
+  lcpCancelledBy      String?   @db.Uuid                                 @map("lcp_cancelled_by")
+  lcpCancelReason     String?   @db.VarChar(250)                         @map("lcp_cancel_reason")
+
+  lcpRemarks          String?   @db.VarChar(250)                         @map("lcp_remarks")
+  lcpIsActive         Boolean   @default(true)                           @map("lcp_is_active")
+  lcpIsDeleted        Boolean   @default(false)                          @map("lcp_is_deleted")
+
+  lcpSyncDate         DateTime? @db.Timestamptz(6)                       @map("lcp_sync_date")
+  lcpCreatedOn        DateTime  @default(now()) @db.Timestamptz(6)       @map("lcp_created_on")
+  lcpCreatedBy        String?   @db.VarChar(50)                          @map("lcp_created_by")
+  lcpModifiedOn       DateTime? @db.Timestamptz(6)                       @map("lcp_modified_on")
+  lcpModifiedBy       String?   @db.VarChar(50)                          @map("lcp_modified_by")
+
+  // Relations
+  batch               LoyaltyCouponBatch @relation("CouponBatchCoupons",   fields: [lcpLcbId],         references: [lcbId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_lcp_batch")
+  company             Company            @relation("CouponCompany",        fields: [lcpCompId],        references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_lcp_company")
+  branch              BranchMaster?      @relation("CouponBranch",         fields: [lcpBranchId],      references: [brId],   onUpdate: Cascade, onDelete: Restrict, map: "fk_lcp_branch")
+  customer            Customer?          @relation("CouponCustomer",       fields: [lcpCustId],        references: [cusId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_lcp_cust")
+  member              LoyaltyMember?     @relation("CouponMember",         fields: [lcpMemberId],      references: [lmbId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_lcp_member")
+  cancelledByUser     UserMaster?        @relation("CouponCancelledBy",    fields: [lcpCancelledBy],   references: [usrId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_lcp_cancelled_by")
+  partyLedger         AccLedgerMaster?   @relation("CouponPartyLedger",    fields: [lcpPartyLedgerId], references: [ledId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_lcp_party_ledger")
+
+  txns                LoyaltyCouponTxn[] @relation("CouponTxnCoupon")
+
+  // Partial indexes are DB-only — Prisma ignores WHERE predicates and
+  // expression keys:
+  //
+  //   -- THE SCAN AT THE COUNTER. Company-scoped rather than batch-scoped,
+  //   -- because a cashier types a code, not a code and the batch it came from.
+  //   CREATE UNIQUE INDEX ux_lcp_code ON sales.loyalty_coupon
+  //       (lcp_comp_id, upper(lcp_code::text)) WHERE lcp_is_deleted = false;
+  //
+  //   -- the expiry sweep and the outstanding-voucher liability report
+  //   CREATE INDEX ix_lcp_open ON sales.loyalty_coupon (lcp_comp_id, lcp_valid_upto)
+  //       INCLUDE (lcp_code, lcp_face_value, lcp_balance_value, lcp_cust_id)
+  //       WHERE lcp_is_deleted = false AND lcp_balance_value > 0
+  //         AND lcp_status IN ('ISSUED','PARTIAL');
+  //
+  //   -- reconciliation. No over-spend CHECK exists: movements sync in pieces
+  //   -- and the guard is the service's at post. The over-draw is RECORDED and
+  //   -- found here the next morning rather than by a customer.
+  //   CREATE INDEX ix_lcp_overdrawn ON sales.loyalty_coupon
+  //       (lcp_comp_id, lcp_balance_value)
+  //       WHERE lcp_is_deleted = false AND lcp_balance_value < 0;
+  //
+  //   -- ix_lcp_batch, ix_lcp_cust, ix_lcp_src_doc, and FK-covering
+  //   -- ix_lcp_member, ix_lcp_party_ledger, ix_lcp_branch, ix_lcp_cust_fk,
+  //   -- ix_lcp_cancelled_by
+  //
+  // CHECK constraints (DB-only): ck_lcp_acc_year, ck_lcp_src_acc_year,
+  //   ck_lcp_src_doc, ck_lcp_code_shape, ck_lcp_status, ck_lcp_cancel,
+  //   ck_lcp_validity, ck_lcp_issue_amount, ck_lcp_face
+
+  // ── Promotion usage (20260921180000) ────────────────────────────────────
+  // When a campaign was coupon-gated, the code that unlocked it.
+  promotionUsages       PromotionUsage[]          @relation("PromotionUsageCoupon")
+
+  @@map("loyalty_coupon")
+  @@schema("sales")
+}

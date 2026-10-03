@@ -1,0 +1,173 @@
+/// stock.stock_lot — the IDENTITY of a holding. Never its quantity.
+///
+/// A lot is "this item, this batch, this MRP, this selling price, this expiry,
+/// from this supplier". Quantity lives in stock_balance, movement in
+/// StockLedger. Splitting identity from quantity is what lets the same lot be
+/// held in four godowns across three branches without four truths about its
+/// expiry date.
+///
+/// COMPANY-SCOPED, DELIBERATELY. A lot is NOT per branch. Transfer stock from
+/// one branch to another and it is the same batch, the same expiry, the same
+/// supplier and — critically — the same AGE. A per-branch lot would reset the
+/// ageing clock at every transfer and let a chain hide ninety-day-old stock by
+/// moving it. Branch and godown live on stock_balance, which carries its own
+/// sbl_first_in_date for "how long has it been on THIS shelf".
+///
+/// THE NULL-NORMALISED KEY. Every tracked dimension is a nullable column with a
+/// GENERATED companion that substitutes a sentinel when it is NULL:
+///
+///     tracked:      sltMrp = 120.00  →  sltKeyMrp = 120.00
+///     not tracked:  sltMrp = NULL    →  sltKeyMrp = -1
+///
+/// ux_slt_identity is built over the COMPANIONS, never the originals, because
+/// a UNIQUE index treats every NULL as distinct — which would let the same
+/// untracked item accrete a new lot on every single receipt, for ever. So an
+/// item tracked by nothing has exactly ONE lot with all six identity columns
+/// NULL, and there is no "non-batch path" anywhere in the engine.
+///
+/// Sentinels are impossible values, not merely unlikely: '~' sorts after every
+/// alphanumeric batch number, -1 cannot be a price, 0001-01-01 cannot be an
+/// expiry, and the nil uuid is not a supplier.
+///
+/// SUPPLIER IS ON THE LOT, not derived by tracing consumption back to a
+/// purchase. The same batch number received from two suppliers is two lots.
+/// That costs a few more rows and buys exact supplier-wise stock, exact
+/// supplier-wise ageing, and a recall that names the right supplier without a
+/// single join back through the ledger.
+///
+/// WRITE RULES:
+///   * NEVER write sltKeyBatch / sltKeyMrp / sltKeySp / sltKeyExpiry /
+///     sltKeySerial / sltKeySupplier — all six are GENERATED ALWAYS ... STORED
+///     and Postgres rejects any write to them. Write the nullable originals.
+///   * NEVER write sltTotalOnHand. It is TRIGGER-MAINTAINED from StockLedger
+///     by fn_sml_apply(); stock_balance owns the per-godown truth it sums.
+///   * sltTrackSignature is stamped from the resolved StockTrackPolicy at
+///     creation, so a policy change tomorrow cannot re-key yesterday's stock.
+///
+/// Vocabularies, enforced by CHECK constraints in the migration:
+///   sltStatus  ACTIVE | CLOSED | BLOCKED | EXPIRED
+/// plus ck_slt_expiry_order, ck_slt_prices, ck_slt_batch_shape,
+/// ck_slt_serial_shape and ck_slt_inward_src (the source triple is
+/// all-or-nothing, as everywhere else in the chain).
+///
+/// DB-only objects Prisma cannot express — hand-authored in the migration and
+/// deliberately NOT declared here (every one is partial, and ux_slt_identity
+/// is over generated columns as well):
+///   ux_slt_identity  THE index of the stock engine — the one that collapses
+///                    batch-wise, MRP-wise, sale-price-wise and none into one
+///                    mechanism
+///   ix_slt_expiry    FEFO and near-expiry
+///   ix_slt_inward    FIFO / LIFO, and the chain-wide ageing report
+///   ix_slt_supplier  supplier-wise stock and supplier recall
+///   ix_slt_batch_no  "who has any of batch AX-4471?"
+///   ix_slt_mrp       "how much at 120, how much at the old 110"
+model StockLot {
+  sltId                 String    @id(map: "pk_stock_lot") @default(dbgenerated("uuidv7()")) @db.Uuid @map("slt_id")
+  sltCompanyId          String    @db.Uuid                            @map("slt_company_id")
+  sltTenantId           String?   @db.Uuid                            @map("slt_tenant_id")
+
+  sltItemId             String    @db.Uuid                            @map("slt_item_id")
+  /// The item's BASE unit — an item_unit_conversion(iuc_id), NEVER an
+  /// item_unit_master(unit_id). Every quantity in this engine is stored in
+  /// this unit as well as in the unit it was keyed in.
+  sltBaseUomId          String    @db.Uuid                            @map("slt_base_uom_id")
+
+  // ── Identity. NULL means "not significant for this item". ───────────────
+  sltBatchNo            String?   @db.VarChar(100)                    @map("slt_batch_no")
+  sltMfgBatchNo         String?   @db.VarChar(100)                    @map("slt_mfg_batch_no")
+  sltMrp                Decimal?  @db.Decimal(18, 6)                  @map("slt_mrp")
+  sltSalePrice          Decimal?  @db.Decimal(18, 6)                  @map("slt_sale_price")
+  sltMfgDate            DateTime? @db.Date                            @map("slt_mfg_date")
+  sltExpiryDate         DateTime? @db.Date                            @map("slt_expiry_date")
+  sltSerialNo           String?   @db.VarChar(100)                    @map("slt_serial_no")
+  sltSupplierId         String?   @db.Uuid                            @map("slt_supplier_id")
+
+  // ── The key ux_slt_identity is actually built on ────────────────────────
+  // GENERATED ALWAYS ... STORED. Read-only, never sent. Batch and serial are
+  // upper-cased and trimmed — COALESCE(NULLIF(upper(btrim(x)), ''), '~') — so
+  // 'b-2604', 'B-2604' and 'B-2604 ' are one lot; the original spelling stays
+  // in sltBatchNo / sltSerialNo.
+  sltKeyBatch           String?   @default(dbgenerated()) @db.VarChar(100) @map("slt_key_batch")
+  sltKeyMrp             Decimal?  @default(dbgenerated()) @db.Decimal(18, 6) @map("slt_key_mrp")
+  sltKeySp              Decimal?  @default(dbgenerated()) @db.Decimal(18, 6) @map("slt_key_sp")
+  sltKeyExpiry          DateTime? @default(dbgenerated()) @db.Date       @map("slt_key_expiry")
+  sltKeySerial          String?   @default(dbgenerated()) @db.VarChar(100) @map("slt_key_serial")
+  sltKeySupplier        String?   @default(dbgenerated()) @db.Uuid       @map("slt_key_supplier")
+
+  /// Which StockTrackPolicy flags were live when this lot was created —
+  /// B/M/S/E/R/P, 'N' when nothing is tracked. A policy change tomorrow must
+  /// not make yesterday's lots unreadable.
+  sltTrackSignature     String    @default("N") @db.VarChar(8)        @map("slt_track_signature")
+
+  // ── Where it came from, and when ────────────────────────────────────────
+  /// The ageing anchor for the CHAIN as a whole (StockTrackPolicy
+  /// stpAgeingBasis = INWARD_DATE reads this). A godown's own "how long has
+  /// this sat HERE" reads stock_balance.sbl_first_in_date instead.
+  sltFirstInwardDate    DateTime  @default(dbgenerated("CURRENT_DATE")) @db.Date @map("slt_first_inward_date")
+  sltFirstInwardBranch  String?   @db.Uuid                            @map("slt_first_inward_branch")
+  /// The (module, docType, docId) triple, all-or-nothing per ck_slt_inward_src.
+  sltInwardSrcModule    String?   @db.VarChar(20)                     @map("slt_inward_src_module")
+  sltInwardSrcDocType   String?   @db.VarChar(30)                     @map("slt_inward_src_doc_type")
+  sltInwardSrcDocId     String?   @db.Uuid                            @map("slt_inward_src_doc_id")
+  sltInwardSrcAccYear   String?   @db.Char(9)                         @map("slt_inward_src_acc_year")
+  sltInwardRefno        String?   @db.VarChar(100)                    @map("slt_inward_refno")
+
+  // ── Cost, as received ───────────────────────────────────────────────────
+  /// sltCostRate is THIS lot's own cost, which is what makes FIFO and
+  /// LOT_ACTUAL valuation a read rather than a replay. The moving weighted
+  /// average is maintained in parallel in stock_item_cost. Both, always, so
+  /// stpValuationMethod selects an answer instead of triggering a rebuild.
+  sltPurchaseRate       Decimal   @default(0) @db.Decimal(18, 6)      @map("slt_purchase_rate")
+  sltCostRate           Decimal   @default(0) @db.Decimal(18, 6)      @map("slt_cost_rate")
+  sltCostRateWot        Decimal   @default(0) @db.Decimal(18, 6)      @map("slt_cost_rate_wot")
+  sltLandedRate         Decimal   @default(0) @db.Decimal(18, 6)      @map("slt_landed_rate")
+  sltTaxRate            Decimal   @default(0) @db.Decimal(9, 3)       @map("slt_tax_rate")
+
+  // ── Lifecycle ───────────────────────────────────────────────────────────
+  /// CLOSED is set by the engine when the last unit leaves; BLOCKED and
+  /// EXPIRED are business decisions that stop the lot being issued.
+  sltStatus             String    @default("ACTIVE") @db.VarChar(20)  @map("slt_status")
+  sltClosedOn           DateTime? @db.Timestamptz(6)                  @map("slt_closed_on")
+  sltBlockedReason      String?   @db.VarChar(250)                    @map("slt_blocked_reason")
+
+  /// Chain-wide total across every branch and godown. TRIGGER-MAINTAINED from
+  /// StockLedger by fn_sml_apply(). NEVER written from application code.
+  sltTotalOnHand        Decimal   @default(0) @db.Decimal(18, 6)      @map("slt_total_on_hand")
+
+  sltRowVersion         BigInt    @default(1)                         @map("slt_row_version")
+  sltRemarks            String?   @db.VarChar(250)                    @map("slt_remarks")
+  sltIsActive           Boolean   @default(true)                      @map("slt_is_active")
+  sltIsDeleted          Boolean   @default(false)                     @map("slt_is_deleted")
+  sltSyncDate           DateTime? @db.Timestamptz(6)                  @map("slt_sync_date")
+  sltCreatedOn          DateTime  @default(now()) @db.Timestamptz(6)  @map("slt_created_on")
+  sltCreatedBy          String?   @db.Text                            @map("slt_created_by")
+  sltModifiedOn         DateTime? @db.Timestamptz(6)                  @map("slt_modified_on")
+  sltModifiedBy         String?   @db.Text                            @map("slt_modified_by")
+
+  // ── Relations ───────────────────────────────────────────────────────────
+  // sltCreatedBy / sltModifiedBy carry NO foreign key in the migration, so
+  // they stay scalar here.
+  company               Company            @relation("StockLotCompany",       fields: [sltCompanyId],         references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_slt_company")
+  item                  ItemMaster         @relation("StockLotItem",          fields: [sltItemId],            references: [itemId], onUpdate: Cascade, onDelete: Restrict, map: "fk_slt_item")
+  baseUom               ItemUnitConversion @relation("StockLotBaseUom",       fields: [sltBaseUomId],         references: [iucId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_slt_base_uom")
+  supplier              Supplier?          @relation("StockLotSupplier",      fields: [sltSupplierId],        references: [supId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_slt_supplier")
+  firstInwardBranch     BranchMaster?      @relation("StockLotFirstInwardBranch", fields: [sltFirstInwardBranch], references: [brId], onUpdate: Cascade, onDelete: Restrict, map: "fk_slt_branch")
+  ledgerEntries         StockLedger[]      @relation("StockLedgerLot")
+  balances              StockBalance[]     @relation("StockBalanceLot")
+  voucherItems          StockVoucherItem[] @relation("StockVoucherItemLot")
+  reservations          StockReservation[] @relation("StockReservationLot")
+  transits              StockTransit[]     @relation("StockTransitLot")
+  valuationSnaps        StockValuationSnap[] @relation("StockValuationSnapLot")
+
+  // ── Sales documents (20260921200000) ────────────────────────────────────
+  // Goods come back to the lot they left from, which is what keeps a
+  // returned unit valued at what it actually cost.
+  saleReturnItems       SaleReturnItem[]          @relation("SaleReturnItemLot")
+  saleDcItems           SaleDcItem[]              @relation("SaleDcItemLot")
+  saleDcReturnItems     SaleDcReturnItem[]        @relation("SaleDcReturnItemLot")
+
+  saleBillItems         SaleBillItem[]            @relation("SaleBillItemLot")
+
+  @@map("stock_lot")
+  @@schema("stock")
+}

@@ -1,0 +1,120 @@
+/// stock.stock_track_preset — named tracking-flag combinations, offered by the
+/// policy screen as a combo of TRADES ("Pharma", "Perishables") instead of six
+/// checkboxes. Adding a preset for a new trade is an INSERT, not a release.
+///
+/// THE ENGINE NEVER READS THIS TABLE. fn_stp_effective, fn_slt_resolve and
+/// everything downstream read StockTrackPolicy's own six flags. A preset is a
+/// STENCIL:
+///
+///     picking one COPIES its values into the policy form;
+///     Save writes an ordinary StockTrackPolicy row that owns its flags;
+///     after that the preset is irrelevant to that policy for ever.
+///
+/// There is deliberately NO relation from StockTrackPolicy to this model and
+/// no sptId stored on the policy. Link semantics — where editing a preset
+/// re-keys every policy that used it — would silently re-identify stock across
+/// every company at a stroke: exactly the accident the policy's effective
+/// dates and the lot's stamped signature exist to prevent. To show "which
+/// preset is this policy?", match on the GENERATED signature
+/// (stpTrackSignature = sptTrackSignature); no match means "Custom", which is
+/// the truth.
+///
+/// WHAT THE MASTERS DO STORE. ItemMaster.itemTrackPresetId and
+/// ItemGroupMaster.itgTrackPresetId (20260907060000) point HERE, and
+/// StockTrackPolicyService copies this row's values into the policy when either
+/// master is saved. That is not the link semantics refused above: the link is on
+/// the MASTER, the policy row still owns its own thirteen columns outright, and
+/// editing a preset changes no policy until somebody explicitly re-saves the
+/// item or group that names it. What it buys is that a re-save re-derives the
+/// SAME policy rather than falling back to the item's flags and quietly undoing
+/// the choice. A policy still has no way back to a preset except the signature.
+///
+/// COMPANY SCOPING is a MERGE, exactly like the stock adjustment reasons:
+/// sptCompanyId NULL = a SHARED preset offered to every company; a company row
+/// with a shared row's code overrides it in the picker. Nothing has to be
+/// copied per company.
+///
+/// The CHECK constraints are the POLICY's rulebook verbatim, on purpose: a
+/// preset that cannot be saved as a policy is a trap waiting in a combo, so an
+/// admin cannot author "Batch, FEFO, no expiry" here either.
+///
+/// WRITE RULES:
+///   * NEVER write sptTrackSignature — it is GENERATED ALWAYS ... STORED and
+///     Postgres rejects any write to it.
+///   * sptCode is the stable identity, uppercase-ish [A-Za-z0-9_-] only.
+///
+/// Vocabularies, enforced by CHECK constraints in the migration:
+///   sptValuationMethod  WAVG | FIFO | LOT_ACTUAL
+///   sptIssueStrategy    FIFO | FEFO | LIFO | MANUAL
+///   sptAllowNegative    ALLOW | WARN | BLOCK
+///   sptAgeingBasis      INWARD_DATE | MFG_DATE | LAST_IN_DATE
+/// plus ck_spt_expiry_needs_batch and ck_spt_fefo_needs_expiry — the same two
+/// derivable rules the policy enforces.
+///
+/// DB-only objects Prisma cannot express — hand-authored in the migration and
+/// deliberately NOT declared here (both carry a WHERE, and Prisma ignores
+/// indexes with predicates):
+///   ux_spt_code   unique on (COALESCE(company, nil uuid), code) WHERE NOT
+///                 deleted — COALESCEd because a plain unique index treats
+///                 every NULL as distinct, which would let the seed insert
+///                 PHARMA twice. Uniqueness on this path is app-side.
+///   ix_spt_list   the picker's list shape, partial on active + not deleted.
+model StockTrackPreset {
+  sptId                String    @id(map: "pk_stock_track_preset") @default(dbgenerated("uuidv7()")) @db.Uuid @map("spt_id")
+
+  /// NULL = shared with every company; a company row with the same code
+  /// overrides the shared one in the picker.
+  sptCompanyId         String?   @db.Uuid                                     @map("spt_company_id")
+  sptCode              String    @db.VarChar(30)                              @map("spt_code")
+  /// Named by TRADE, not by flags: "Pharma" tells the user more than
+  /// "batch+expiry+MRP+supplier" ever will. The flags live in the tooltip.
+  sptName              String    @db.VarChar(150)                             @map("spt_name")
+  sptDescription       String?   @db.VarChar(250)                             @map("spt_description")
+
+  // ── The six flags the preset stamps into the policy form ────────────────
+  sptTrackBatch        Boolean   @default(false)                              @map("spt_track_batch")
+  sptTrackMrp          Boolean   @default(false)                              @map("spt_track_mrp")
+  sptTrackSalePrice    Boolean   @default(false)                              @map("spt_track_sale_price")
+  sptTrackExpiry       Boolean   @default(false)                              @map("spt_track_expiry")
+  sptTrackSerial       Boolean   @default(false)                              @map("spt_track_serial")
+  sptTrackSupplier     Boolean   @default(false)                              @map("spt_track_supplier")
+
+  /// GENERATED ALWAYS ... STORED, same expression as stpTrackSignature so a
+  /// screen can match a saved policy back to a preset by comparing the two.
+  sptTrackSignature    String?   @default(dbgenerated()) @db.VarChar(8)       @map("spt_track_signature")
+
+  // ── The policy defaults that travel with the trade ──────────────────────
+  // A preset carries the WHOLE sensible policy, not only the flags: a pharma
+  // item is not just "BEMP", it is also FEFO, blocked-when-expired and 90-day
+  // near-expiry. All of it is copied, all of it stays editable before Save.
+  sptValuationMethod   String    @default("WAVG") @db.VarChar(20)             @map("spt_valuation_method")
+  sptIssueStrategy     String    @default("FEFO") @db.VarChar(20)             @map("spt_issue_strategy")
+  sptAllowNegative     String    @default("ALLOW") @db.VarChar(10)            @map("spt_allow_negative")
+  sptShelfLifeDays     Int?                                                   @map("spt_shelf_life_days")
+  sptNearExpiryDays    Int       @default(30)                                 @map("spt_near_expiry_days")
+  sptBlockExpiredSale  Boolean   @default(false)                              @map("spt_block_expired_sale")
+  sptAgeingBasis       String    @default("INWARD_DATE") @db.VarChar(20)      @map("spt_ageing_basis")
+
+  sptSortOrder         Int       @default(0)                                  @map("spt_sort_order")
+  sptRemarks           String?   @db.VarChar(250)                             @map("spt_remarks")
+  sptIsActive          Boolean   @default(true)                               @map("spt_is_active")
+  sptIsDeleted         Boolean   @default(false)                              @map("spt_is_deleted")
+  sptSyncDate          DateTime? @db.Timestamptz(6)                           @map("spt_sync_date")
+  sptCreatedOn         DateTime  @default(now()) @db.Timestamptz(6)           @map("spt_created_on")
+  sptCreatedBy         String?   @db.Text                                     @map("spt_created_by")
+  sptModifiedOn        DateTime? @db.Timestamptz(6)                           @map("spt_modified_on")
+  sptModifiedBy        String?   @db.Text                                     @map("spt_modified_by")
+
+  // ── Relations ───────────────────────────────────────────────────────────
+  // sptCreatedBy / sptModifiedBy carry NO foreign key in the migration, so
+  // they stay scalar here.
+  company              Company?    @relation("StockTrackPresetCompany",   fields: [sptCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_spt_company")
+
+  /// The masters configured with this preset. Back-relations only — a preset
+  /// still has NO relation to StockTrackPolicy, and must not gain one.
+  items                ItemMaster[]      @relation("ItemTrackPreset")
+  itemGroups           ItemGroupMaster[] @relation("ItemGroupTrackPreset")
+
+  @@map("stock_track_preset")
+  @@schema("stock")
+}

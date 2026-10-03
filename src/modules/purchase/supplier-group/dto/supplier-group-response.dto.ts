@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { ConfiguredGridStyleDto } from '../../../../common/configured-grid-sql/dto/configured-grid-style.dto';
+
 export class SupplierGroupErrorFieldDto {
   @ApiProperty({ example: 'spgName' })
   field!: string;
@@ -40,16 +40,6 @@ export class SupplierGroupPayloadDto {
   @ApiPropertyOptional({ nullable: true })
   spgModifiedBy!: string | null;
 }
-export class SupplierGroupListMetaDto {
-  @ApiProperty({ example: 1 })
-  page!: number;
-  @ApiProperty({ example: 20 })
-  limit!: number;
-  @ApiProperty({ example: 3 })
-  total!: number;
-  @ApiProperty({ example: 1 })
-  total_pages!: number;
-}
 export class SupplierGroupDeleteResultDto {
   @ApiProperty({ format: 'uuid' })
   spgId!: string;
@@ -63,19 +53,6 @@ export class SupplierGroupSuccessSingleDto {
   message!: string;
   @ApiProperty({ type: SupplierGroupPayloadDto })
   data!: SupplierGroupPayloadDto;
-}
-export class SupplierGroupSuccessListDto {
-  @ApiProperty({ example: true })
-  success!: true;
-  @ApiProperty({ example: 'Supplier groups fetched successfully' })
-  message!: string;
-  @ApiProperty({ type: SupplierGroupPayloadDto, isArray: true })
-  data!: SupplierGroupPayloadDto[];
-  @ApiProperty({ type: SupplierGroupListMetaDto })
-  meta!: SupplierGroupListMetaDto;
-
-  @ApiPropertyOptional({ type: ConfiguredGridStyleDto, isArray: true })
-  styles?: ConfiguredGridStyleDto[];
 }
 export class SupplierGroupSuccessDeleteDto {
   @ApiProperty({ example: true })

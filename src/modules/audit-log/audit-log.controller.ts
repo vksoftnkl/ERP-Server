@@ -1,3 +1,4 @@
+import { CacheTTL } from '@nestjs/cache-manager';
 import { Controller, Get, Query, Version } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -16,16 +17,18 @@ import {
   AuditLogListMeta,
   AuditLogSuccessResponse,
 } from './types/audit-log-api.types';
+import { API_VERSION } from '../../common/constants/api-version';
 
 @ApiTags('Audit Logs')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
-@Controller('audit-logs')
+@CacheTTL(60)
+@Controller(['audit-logs', 'audit-log'])
 export class AuditLogController {
   constructor(private readonly auditLogService: AuditLogService) {}
 
   @Get('list')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'List audit logs with search and date filters' })
   @ApiOkResponse({ type: AuditLogSuccessListDto })
   @ApiBadRequestResponse({ type: AuditLogErrorResponseDto })

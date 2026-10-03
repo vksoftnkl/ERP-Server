@@ -1,0 +1,165 @@
+/// The points wallet: ONE per (company, customer).
+///
+/// NOT partitioned, and never carried forward at year end — this is
+/// AccBillBalance applied to points. A customer who earned in 2025-2026 and
+/// spends in 2027-2028 is the SAME row throughout, which is precisely what
+/// makes LoyaltyLedger's reference to it a plain foreign key instead of a
+/// composite one that has to carry a year around.
+///
+/// lmbAccYear records the year they ENROLLED and is a reporting filter only.
+/// Making it a partition key is exactly the mistake the bill-balance
+/// repartitioning exists to undo.
+///
+/// Keyed by company and customer, never by branch: that single index
+/// (ux_lmb_cust) is the chain-store guarantee that points earned at one branch
+/// spend at another. lmbCardNo and lmbMobile are ALTERNATE HANDLES for finding
+/// this row, not identities — the identity is lmbCustId.
+model LoyaltyMember {
+  lmbId               String    @id(map: "pk_loyalty_member") @default(dbgenerated("uuidv7()")) @db.Uuid @map("lmb_id")
+  lmbCompId           String    @db.Uuid                                   @map("lmb_comp_id")
+  /// Branch that ENROLLED them. Never a scope — a wallet belongs to the company.
+  lmbBranchId         String?   @db.Uuid                                   @map("lmb_branch_id")
+  lmbTenantId         String?   @db.Uuid                                   @map("lmb_tenant_id")
+  /// FY of enrolment. Reporting filter only, never a partition key.
+  lmbAccYear          String    @db.Char(9)                                @map("lmb_acc_year")
+
+  // ── Identity ─────────────────────────────────────────────────────────
+  lmbCustId           String    @db.Uuid                                   @map("lmb_cust_id")
+  /// The accounting party, snapshotted so a points-liability report can join
+  /// accounts without a hop through the customer master. Nullable: a cash
+  /// customer may have no ledger row yet.
+  lmbPartyLedgerId    String?   @db.Uuid                                   @map("lmb_party_ledger_id")
+  lmbLscId            String?   @db.Uuid                                   @map("lmb_lsc_id")
+  lmbCardNo           String?   @db.VarChar(30)                            @map("lmb_card_no")
+  /// Snapshot of customers.cus_phone1 — the supermarket lookup handle.
+  lmbMobile           String?   @db.VarChar(20)                            @map("lmb_mobile")
+  lmbEnrolledOn       DateTime  @default(dbgenerated("CURRENT_DATE")) @db.Date @map("lmb_enrolled_on")
+
+  // ── Roll-ups ─────────────────────────────────────────────────────────
+  // CACHES of LoyaltyLedger, recomputed by
+  // LoyaltyLedgerService.recomputeMembers(). There is no trigger; no other
+  // code may write them. All stored positive except lmbAdjustedPoints, signed.
+  lmbEarnedPoints     Decimal   @default(0) @db.Decimal(18, 4)             @map("lmb_earned_points")
+  lmbRedeemedPoints   Decimal   @default(0) @db.Decimal(18, 4)             @map("lmb_redeemed_points")
+  lmbExpiredPoints    Decimal   @default(0) @db.Decimal(18, 4)             @map("lmb_expired_points")
+  lmbGiftPoints       Decimal   @default(0) @db.Decimal(18, 4)             @map("lmb_gift_points")
+  lmbAdjustedPoints   Decimal   @default(0) @db.Decimal(18, 4)             @map("lmb_adjusted_points")
+
+  /// GENERATED ALWAYS ... STORED in the DB:
+  ///   earned + adjusted - redeemed - expired - gift
+  /// Read-only: never send it on a create or update — Postgres rejects it, and
+  /// @default(dbgenerated()) marks it DB-owned so migrate never emits a
+  /// default of its own.
+  ///
+  /// This is what the bill screen shows. It is NOT what the customer may spend
+  /// today: cooling lots and unswept lapsed lots make those differ, and
+  /// LoyaltyLedgerService.redeemable() answers that instead.
+  lmbBalancePoints    Decimal?  @default(dbgenerated()) @db.Decimal(18, 4) @map("lmb_balance_points")
+
+  /// Lifetime trading, which points alone cannot answer: lmbEarnedPoints is
+  /// already "everything ever earned" (redemption never touches that bucket),
+  /// so a lifetime-points column would just be a second copy of it. These two
+  /// are not derivable from the point columns at all.
+  lmbLifetimeBillAmt  Decimal   @default(0) @db.Decimal(18, 2)             @map("lmb_lifetime_bill_amt")
+  lmbLifetimeBillCnt  Int       @default(0)                                @map("lmb_lifetime_bill_cnt")
+
+  lmbLastEarnOn       DateTime? @db.Date                                   @map("lmb_last_earn_on")
+  lmbLastRedeemOn     DateTime? @db.Date                                   @map("lmb_last_redeem_on")
+  /// The dormant-member report and lsc_expiry_basis = 'LAST_TXN' have no other
+  /// source once the row simply stays open across years.
+  lmbLastActivityOn   DateTime? @db.Date                                   @map("lmb_last_activity_on")
+  /// Earliest open lot, so the till can say "480 points expire in 9 days"
+  /// without a scan of the ledger. Recomputed AFTER the lots — it reads
+  /// lldLotBalance, so the other order publishes a wrong date silently.
+  lmbNextExpiryOn     DateTime? @db.Date                                   @map("lmb_next_expiry_on")
+
+  // There is deliberately NO stored "redeemable points" column. With a cooling
+  // period, redeemable is not the same number as balance — but it is
+  // date-dependent, and a cached copy would go stale at midnight with nobody
+  // writing to it.
+
+  // ── Status ───────────────────────────────────────────────────────────
+  /// ACTIVE | SUSPENDED | CLOSED | MERGED. MERGED is two wallets that turn out
+  /// to be one person: the loser is marked MERGED and its points move by a
+  /// PAIR of ADJUST ledger rows — never by editing a balance, which would
+  /// leave the trail with a hole in it.
+  lmbStatus           String    @default("ACTIVE") @db.VarChar(20)         @map("lmb_status")
+  lmbMergedIntoId     String?   @db.Uuid                                   @map("lmb_merged_into_id")
+  lmbBlockReason      String?   @db.VarChar(250)                           @map("lmb_block_reason")
+
+  lmbRemarks          String?   @db.VarChar(250)                           @map("lmb_remarks")
+  lmbIsActive         Boolean   @default(true)                             @map("lmb_is_active")
+  lmbIsDeleted        Boolean   @default(false)                            @map("lmb_is_deleted")
+
+  // ── Audit ────────────────────────────────────────────────────────────
+  lmbSyncDate         DateTime? @db.Timestamptz(6)                         @map("lmb_sync_date")
+  lmbCreatedOn        DateTime  @default(now()) @db.Timestamptz(6)         @map("lmb_created_on")
+  lmbCreatedBy        String?   @db.VarChar(50)                            @map("lmb_created_by")
+  lmbModifiedOn       DateTime? @db.Timestamptz(6)                         @map("lmb_modified_on")
+  lmbModifiedBy       String?   @db.VarChar(50)                            @map("lmb_modified_by")
+
+  // Relations
+  company             Company        @relation("LoyaltyMemberCompany",     fields: [lmbCompId],        references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_lmb_company")
+  branch              BranchMaster?  @relation("LoyaltyMemberBranch",      fields: [lmbBranchId],      references: [brId],   onUpdate: Cascade, onDelete: Restrict, map: "fk_lmb_branch")
+  customer            Customer       @relation("LoyaltyMemberCustomer",    fields: [lmbCustId],        references: [cusId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_lmb_cust")
+  partyLedger         AccLedgerMaster? @relation("LoyaltyMemberPartyLedger", fields: [lmbPartyLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_lmb_party_ledger")
+  scheme              LoyaltyScheme? @relation("LoyaltyMemberScheme",      fields: [lmbLscId],         references: [lscId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_lmb_scheme")
+  mergedInto          LoyaltyMember? @relation("LoyaltyMemberMerge",       fields: [lmbMergedIntoId],  references: [lmbId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_lmb_merged_into")
+  mergedFrom          LoyaltyMember[] @relation("LoyaltyMemberMerge")
+
+  ledgerRows          LoyaltyLedger[]     @relation("LoyaltyLedgerMember")
+  giftRedeems         LoyaltyGiftRedeem[] @relation("LoyaltyGiftRedeemMember")
+
+  // Partial indexes are DB-only — Prisma ignores WHERE predicates and
+  // expression keys, so declaring them here would produce phantom drift on
+  // every migrate dev:
+  //
+  //   -- ONE wallet per customer per company: the chain-store guarantee
+  //   CREATE UNIQUE INDEX ux_lmb_cust ON sales.loyalty_member
+  //       (lmb_comp_id, lmb_cust_id) WHERE lmb_is_deleted = false;
+  //
+  //   CREATE UNIQUE INDEX ux_lmb_card_no ON sales.loyalty_member
+  //       (lmb_comp_id, upper(lmb_card_no::text))
+  //       WHERE lmb_card_no IS NOT NULL AND lmb_is_deleted = false;
+  //
+  //   -- the cashier types a phone number and the balance must be on screen
+  //   -- before the next item is scanned; INCLUDE makes it index-only
+  //   CREATE INDEX ix_lmb_mobile ON sales.loyalty_member (lmb_comp_id, lmb_mobile)
+  //       INCLUDE (lmb_cust_id, lmb_balance_points, lmb_status)
+  //       WHERE lmb_mobile IS NOT NULL AND lmb_is_deleted = false;
+  //
+  //   -- the liability report and the top-members list
+  //   CREATE INDEX ix_lmb_balance ON sales.loyalty_member
+  //       (lmb_comp_id, lmb_balance_points DESC)
+  //       INCLUDE (lmb_cust_id, lmb_card_no, lmb_next_expiry_on, lmb_last_activity_on)
+  //       WHERE lmb_is_deleted = false AND lmb_balance_points <> 0;
+  //
+  //   CREATE INDEX ix_lmb_expiry ON sales.loyalty_member (lmb_comp_id, lmb_next_expiry_on)
+  //       WHERE lmb_is_deleted = false AND lmb_balance_points > 0
+  //         AND lmb_next_expiry_on IS NOT NULL;
+  //
+  //   -- THE RECONCILIATION REPORT. There is deliberately no non-negativity
+  //   -- CHECK on the buckets or the balance: under offline sync a reversal can
+  //   -- land before the row it reverses and a CHECK would abort the batch. The
+  //   -- over-draw guard is LoyaltyLedgerService's, at post; this index is how
+  //   -- an over-draw that got past it is found the next morning rather than by
+  //   -- a customer.
+  //   CREATE INDEX ix_lmb_overdrawn ON sales.loyalty_member
+  //       (lmb_comp_id, lmb_balance_points)
+  //       WHERE lmb_is_deleted = false AND lmb_balance_points < 0;
+  //
+  //   -- FK-covering: ix_lmb_branch, ix_lmb_scheme, ix_lmb_party_ledger,
+  //   -- ix_lmb_cust_fk, ix_lmb_merged_into
+  //
+  // CHECK constraints (DB-only): ck_lmb_acc_year, ck_lmb_status,
+  //   ck_lmb_merged, ck_lmb_no_self_merge, ck_lmb_card_shape
+
+  // ── Coupons and gift vouchers (20260921160000) ──────────────────────────
+  // A coupon holder may also be a points member. The two are separate
+  // instruments — a coupon is money with a code on it — but the same person.
+  coupons               LoyaltyCoupon[]           @relation("CouponMember")
+  couponTxns            LoyaltyCouponTxn[]        @relation("CouponTxnMember")
+
+  @@map("loyalty_member")
+  @@schema("sales")
+}

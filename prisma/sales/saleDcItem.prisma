@@ -1,0 +1,148 @@
+/// A challan line. The LOT leaves here, and the bill inherits it.
+///
+/// sdiItemUnitId is inventory.item_unit_conversion(iuc_id), exactly as
+/// SaleBillItem.sbiItemUnitId — the bill line inherits this value unchanged,
+/// so the two must share an id space.
+///
+/// Fulfilment is tracked on the LINE: sdiBilledQty and sdiReturnedQty are
+/// written by OTHER documents (a bill and a DC return), which is why the
+/// remainder is generated rather than guarded.
+model SaleDcItem {
+  sdiId                 String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("sdi_id")
+  sdiDcId               String    @db.Uuid                             @map("sdi_dc_id")
+  sdiCompanyId          String    @db.Uuid                             @map("sdi_company_id")
+  sdiBranchId           String    @db.Uuid                             @map("sdi_branch_id")
+  sdiTenantId           String?   @db.Uuid                             @map("sdi_tenant_id")
+  sdiAccYear            String    @db.Char(9)                          @map("sdi_acc_year")
+  sdiLineNo             Int                                            @map("sdi_line_no")
+  sdiSplitNo            Int       @default(1)                          @map("sdi_split_no")
+
+  // ── Source order line (partial delivery of an order) ─────────────────
+  sdiSrcDocType         String?   @db.VarChar(30)                      @map("sdi_src_doc_type")
+  sdiSrcDocId           String?   @db.Uuid                             @map("sdi_src_doc_id")
+  sdiSrcDocAccYear      String?   @db.Char(9)                          @map("sdi_src_doc_acc_year")
+  sdiSrcDocRefno        String?   @db.VarChar(100)                     @map("sdi_src_doc_refno")
+  sdiSrcLineNo          Int?                                           @map("sdi_src_line_no")
+  /// sale_order_item.soi_id. No FK: polymorphic with sdiSrcDocType.
+  sdiSrcItemId          String?   @db.Uuid                             @map("sdi_src_item_id")
+
+  sdiItemId             String    @db.Uuid                             @map("sdi_item_id")
+  sdiItemUnitId         String    @db.Uuid                             @map("sdi_item_unit_id")
+  sdiToBaseFactor       Decimal   @default(0) @db.Decimal(15, 6)       @map("sdi_to_base_factor")
+  sdiHsnCode            String?   @db.VarChar(8)                       @map("sdi_hsn_code")
+  sdiTaxId              String?   @db.Uuid                             @map("sdi_tax_id")
+  sdiPriceLevel         Int?                                           @map("sdi_price_level")
+  sdiEanCode            String?   @db.VarChar(100)                     @map("sdi_ean_code")
+  sdiSize               String?   @db.VarChar(50)                      @map("sdi_size")
+  sdiSizeUom            String?   @db.VarChar(20)                      @map("sdi_size_uom")
+
+  // ── Stock identity ───────────────────────────────────────────────────
+  sdiGodownId           String    @db.Uuid                             @map("sdi_godown_id")
+  sdiLotId              String?   @db.Uuid                             @map("sdi_lot_id")
+  /// SALEABLE | DAMAGED | QUARANTINE | EXPIRED | SAMPLE
+  sdiBucket             String    @default("SALEABLE") @db.VarChar(20) @map("sdi_bucket")
+  sdiBatchNo            String?   @db.VarChar(100)                     @map("sdi_batch_no")
+  sdiBatchDate          DateTime? @db.Date                             @map("sdi_batch_date")
+  sdiExpiryDate         DateTime? @db.Date                             @map("sdi_expiry_date")
+  sdiSerialNo           String?   @db.VarChar(100)                     @map("sdi_serial_no")
+
+  sdiIsFree             Boolean   @default(false)                      @map("sdi_is_free")
+  sdiFreeType           String?   @db.VarChar(20)                      @map("sdi_free_type")
+  sdiIsService          Boolean   @default(false)                      @map("sdi_is_service")
+
+  sdiCaseQty            Decimal   @default(0) @db.Decimal(15, 3)       @map("sdi_case_qty")
+  sdiDcQty              Decimal   @default(0) @db.Decimal(15, 3)       @map("sdi_dc_qty")
+  sdiFreeQty            Decimal   @default(0) @db.Decimal(15, 3)       @map("sdi_free_qty")
+  sdiNetQty             Decimal   @default(0) @db.Decimal(15, 3)       @map("sdi_net_qty")
+  sdiWeightQty          Decimal?  @default(0) @db.Decimal(15, 3)       @map("sdi_weight_qty")
+
+  // ── Fulfilment, line level ───────────────────────────────────────────
+  sdiBilledQty          Decimal   @default(0) @db.Decimal(15, 3)       @map("sdi_billed_qty")
+  sdiReturnedQty        Decimal   @default(0) @db.Decimal(15, 3)       @map("sdi_returned_qty")
+  /// GENERATED ALWAYS ... STORED: dcQty - billedQty - returnedQty. Read-only —
+  /// never send it on a create or update.
+  ///
+  /// Allowed to go NEGATIVE. The challan's own quantities may be guarded, but
+  /// billed and returned are written by other documents — a bill and a DC
+  /// return, either of which may have been raised offline — so an over-draw
+  /// is RECORDED (ix_sdi_overdrawn) rather than refused, because refusing it
+  /// would abort a sync batch for goods that already moved.
+  sdiOpenQty            Decimal?  @default(dbgenerated()) @db.Decimal(15, 3) @map("sdi_open_qty")
+  /// OPEN | PARTIAL | BILLED | RETURNED | CLOSED
+  sdiLineStatus         String    @default("OPEN") @db.VarChar(20)     @map("sdi_line_status")
+
+  // ── Prices (e-way bill + print; the bill may re-price, with a warning) ─
+  sdiRate               Decimal   @default(0) @db.Decimal(15, 4)       @map("sdi_rate")
+  sdiRatePreTax         Decimal   @default(0) @db.Decimal(15, 4)       @map("sdi_rate_pre_tax")
+  sdiMaxPrice           Decimal?  @db.Decimal(15, 4)                   @map("sdi_max_price")
+  /// Resolved lot cost at post: the COGS rate.
+  sdiCostPrice          Decimal?  @db.Decimal(15, 4)                   @map("sdi_cost_price")
+  sdiIsTaxIncl          Boolean   @default(false)                      @map("sdi_is_tax_incl")
+  sdiDiscPerc           Decimal   @default(0) @db.Decimal(15, 4)       @map("sdi_disc_perc")
+  sdiDiscAmt            Decimal   @default(0) @db.Decimal(15, 2)       @map("sdi_disc_amt")
+  sdiGrossAmt           Decimal   @default(0) @db.Decimal(15, 2)       @map("sdi_gross_amt")
+  sdiTaxableAmt         Decimal   @default(0) @db.Decimal(15, 2)       @map("sdi_taxable_amt")
+  sdiTaxPerc            Decimal   @default(0) @db.Decimal(15, 4)       @map("sdi_tax_perc")
+  sdiCgstPerc           Decimal   @default(0) @db.Decimal(15, 4)       @map("sdi_cgst_perc")
+  sdiCgstAmt            Decimal   @default(0) @db.Decimal(15, 2)       @map("sdi_cgst_amt")
+  sdiSgstPerc           Decimal   @default(0) @db.Decimal(15, 4)       @map("sdi_sgst_perc")
+  sdiSgstAmt            Decimal   @default(0) @db.Decimal(15, 2)       @map("sdi_sgst_amt")
+  sdiIgstPerc           Decimal   @default(0) @db.Decimal(15, 4)       @map("sdi_igst_perc")
+  sdiIgstAmt            Decimal   @default(0) @db.Decimal(15, 2)       @map("sdi_igst_amt")
+  sdiCessPerc           Decimal   @default(0) @db.Decimal(15, 4)       @map("sdi_cess_perc")
+  sdiCessAmt            Decimal   @default(0) @db.Decimal(15, 2)       @map("sdi_cess_amt")
+  sdiTaxAmt             Decimal   @default(0) @db.Decimal(15, 2)       @map("sdi_tax_amt")
+  sdiNetAmt             Decimal   @default(0) @db.Decimal(15, 2)       @map("sdi_net_amt")
+
+  // ── Pricing: the essentials of SaleBillItem, same name/type/default, so
+  //    the bill line inherits them ────────────────────────────────────────
+  sdiIsPromo            Boolean   @default(false)                      @map("sdi_is_promo")
+  sdiActPrice           Decimal?  @db.Decimal(15, 4)                   @map("sdi_act_price")
+  sdiMinPrice           Decimal?  @db.Decimal(15, 4)                   @map("sdi_min_price")
+  sdiItemDiscPerc       Decimal   @default(0) @db.Decimal(15, 4)       @map("sdi_item_disc_perc")
+  sdiItemDiscAmt        Decimal   @default(0) @db.Decimal(15, 2)       @map("sdi_item_disc_amt")
+  sdiSplDiscPerc        Decimal   @default(0) @db.Decimal(15, 4)       @map("sdi_spl_disc_perc")
+  sdiSplDiscAmt         Decimal   @default(0) @db.Decimal(15, 2)       @map("sdi_spl_disc_amt")
+  sdiSchDiscPerc        Decimal   @default(0) @db.Decimal(15, 4)       @map("sdi_sch_disc_perc")
+  sdiSchDiscAmt         Decimal   @default(0) @db.Decimal(15, 2)       @map("sdi_sch_disc_amt")
+  sdiChrgBeforeTax      Decimal?  @db.Decimal(14, 4)                   @map("sdi_chrg_before_tax")
+  sdiChrgAfterTax       Decimal?  @db.Decimal(14, 4)                   @map("sdi_chrg_after_tax")
+  sdiCessPerUnit        Decimal   @default(0) @db.Decimal(15, 4)       @map("sdi_cess_per_unit")
+  sdiSalesmanId         String?   @db.Uuid                             @map("sdi_salesman_id")
+  sdiSchemeId           String?   @db.Uuid                             @map("sdi_scheme_id")
+  sdiSchemeName         String?   @db.VarChar(150)                     @map("sdi_scheme_name")
+
+  sdiRemarks            String?   @db.VarChar(250)                     @map("sdi_remarks")
+
+  sdiIsDeleted          Boolean   @default(false)                      @map("sdi_is_deleted")
+  sdiSyncDate           DateTime? @db.Timestamptz(6)                   @map("sdi_sync_date")
+  sdiCreatedOn          DateTime  @default(now()) @db.Timestamptz(6)   @map("sdi_created_on")
+  sdiCreatedBy          String    @db.VarChar(50)                      @map("sdi_created_by")
+  sdiModifiedOn         DateTime? @db.Timestamptz(6)                   @map("sdi_modified_on")
+  sdiModifiedBy         String?   @db.VarChar(50)                      @map("sdi_modified_by")
+
+  // Relations
+  dc                    SaleDc             @relation("SaleDcItems",    fields: [sdiDcId, sdiAccYear], references: [sdcId, sdcAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_sdi_dc")
+  item                  ItemMaster         @relation("SaleDcItemItem", fields: [sdiItemId],     references: [itemId], onUpdate: Cascade, onDelete: Restrict, map: "fk_sdi_item")
+  unit                  ItemUnitConversion @relation("SaleDcItemUnit", fields: [sdiItemUnitId], references: [iucId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_sdi_item_unit")
+  godown                GodownLocation     @relation("SaleDcItemGodown", fields: [sdiGodownId], references: [gdlId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_sdi_godown")
+  lot                   StockLot?          @relation("SaleDcItemLot",  fields: [sdiLotId],      references: [sltId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_sdi_lot")
+
+  dcReturnItems         SaleDcReturnItem[] @relation("SaleDcReturnItemDcItem")
+
+  @@id([sdiId, sdiAccYear], map: "pk_sale_dc_item")
+
+  // Partial indexes are DB-only:
+  //   ix_sdi_dc, ix_sdi_src_item
+  //   ix_sdi_open      -- the billing screen's own read: challan lines with
+  //                       something still open, index-only
+  //   ix_sdi_overdrawn -- the reconciliation report, and what the dropped
+  //                       clause of ck_sdi_qty became
+  //   FK-covering: ix_sdi_item, ix_sdi_item_unit, ix_sdi_godown, ix_sdi_lot
+  //
+  // CHECK constraints (DB-only): ck_sdi_split_no, ck_sdi_qty, ck_sdi_bucket,
+  //   ck_sdi_line_status
+
+  @@map("sale_dc_item")
+  @@schema("sales")
+}

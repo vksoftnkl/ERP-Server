@@ -1,21 +1,6 @@
-export interface CustomerGroupErrorDetail {
-  field: string;
-  message: string;
-}
-
-export interface CustomerGroupErrorResponse {
-  success: false;
-  message: string;
-  errors: CustomerGroupErrorDetail[];
-}
-
-export interface CustomerGroupSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> {
-  success: true;
-  message: string;
-  data: T;
-  meta?: TMeta;
-  styles?: TStyles;
-}
+export type { SalesErrorDetail as CustomerGroupErrorDetail } from 'src/common/types/module-api.types';
+export type { SalesErrorResponse as CustomerGroupErrorResponse } from 'src/common/types/module-api.types';
+export type { SalesSuccessResponse as CustomerGroupSuccessResponse } from 'src/common/types/module-api.types';
 
 export interface CustomerGroupPayload {
   cgrId: string;
@@ -37,13 +22,4 @@ export interface CustomerGroupPayload {
   cgrIsDeleted: boolean;
   cgrCreatedOn: string;
   cgrModifiedOn: string;
-}
-
-export type CustomerGroupListItem = CustomerGroupPayload | Record<string, unknown>;
-
-export interface CustomerGroupListMeta {
-  page: number;
-  limit: number;
-  total: number;
-  total_pages: number;
 }

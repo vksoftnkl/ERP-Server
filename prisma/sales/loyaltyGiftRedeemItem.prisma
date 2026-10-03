@@ -1,0 +1,96 @@
+/// The goods issued against a redemption slip.
+///
+/// ONE detail table, not two. The legacy pair (loy_item_rdm_items and
+/// loy_item_rdm_itm_det) held identical column sets against the same header
+/// and only one was live, so only one is rebuilt.
+///
+/// Carries the full stock movement — godown, batch, serial, expiry — because a
+/// gift relieves inventory exactly as a sale does, and a batch-tracked shop
+/// cannot post the issue without them. Cost is snapshotted alongside the issue
+/// rate so the giveaway can be valued afterwards without re-pricing history.
+///
+/// Partitioned on its own lgdAccYear, which ck_lgd_same_year pins to the
+/// header's — the composite FK requires it and the CHECK makes it readable.
+model LoyaltyGiftRedeemItem {
+  lgdId             String    @default(dbgenerated("uuidv7()")) @db.Uuid   @map("lgd_id")
+  lgdCompId         String    @db.Uuid                                     @map("lgd_comp_id")
+  lgdBranchId       String    @db.Uuid                                     @map("lgd_branch_id")
+  lgdTenantId       String?   @db.Uuid                                     @map("lgd_tenant_id")
+  lgdAccYear        String    @db.Char(9)                                  @map("lgd_acc_year")
+
+  lgdLgrId          String    @db.Uuid                                     @map("lgd_lgr_id")
+  lgdLgrAccYear     String    @db.Char(9)                                  @map("lgd_lgr_acc_year")
+  lgdRowNo          Int       @default(1)                                  @map("lgd_row_no")
+
+  /// The catalogue row claimed, when the gift came from a scheme's list.
+  lgdLsgId          String?   @db.Uuid                                     @map("lgd_lsg_id")
+  lgdItemId         String    @db.Uuid                                     @map("lgd_item_id")
+  /// item_unit_conversion, as on a bill line.
+  lgdUnitId         String    @db.Uuid                                     @map("lgd_unit_id")
+  lgdGodownId       String?   @db.Uuid                                     @map("lgd_godown_id")
+  lgdBarcode        String?   @db.VarChar(30)                              @map("lgd_barcode")
+
+  // Batch / serial. The id is the link; the rest are snapshots so a reprint of
+  // last year's slip does not depend on the batch row still existing.
+  lgdBatchId        String?   @db.Uuid                                     @map("lgd_batch_id")
+  lgdBatchNo        String?   @db.VarChar(50)                              @map("lgd_batch_no")
+  lgdSerialNo       String?   @db.VarChar(50)                              @map("lgd_serial_no")
+  lgdBatchDate      DateTime? @db.Date                                     @map("lgd_batch_date")
+  lgdExpiryDate     DateTime? @db.Date                                     @map("lgd_expiry_date")
+
+  /// No database default: ck_lgd_qty demands it be positive, so a row that
+  /// omits it must fail rather than silently issue nothing.
+  lgdQty            Decimal   @db.Decimal(18, 3)                           @map("lgd_qty")
+  /// On hand at the moment of issue.
+  lgdStockQty       Decimal   @default(0) @db.Decimal(18, 3)               @map("lgd_stock_qty")
+  /// Issue rate.
+  lgdRate           Decimal   @default(0) @db.Decimal(18, 4)               @map("lgd_rate")
+  lgdTotal          Decimal   @default(0) @db.Decimal(18, 2)               @map("lgd_total")
+  /// Points this line cost.
+  lgdPoints         Decimal   @default(0) @db.Decimal(18, 4)               @map("lgd_points")
+  lgdMaxPrice       Decimal   @default(0) @db.Decimal(18, 4)               @map("lgd_max_price")
+  /// The giveaway's cost — what a Tally Stock Journal posts against.
+  lgdCostPrice      Decimal   @default(0) @db.Decimal(18, 4)               @map("lgd_cost_price")
+  /// Cost excluding tax.
+  lgdCostWot        Decimal   @default(0) @db.Decimal(18, 4)               @map("lgd_cost_wot")
+
+  lgdNotes          String?   @db.VarChar(250)                             @map("lgd_notes")
+  lgdIsDeleted      Boolean   @default(false)                              @map("lgd_is_deleted")
+  lgdSyncDate       DateTime? @db.Timestamptz(6)                           @map("lgd_sync_date")
+  lgdCreatedOn      DateTime  @default(now()) @db.Timestamptz(6)           @map("lgd_created_on")
+  lgdCreatedBy      String?   @db.VarChar(50)                              @map("lgd_created_by")
+  lgdModifiedOn     DateTime? @db.Timestamptz(6)                           @map("lgd_modified_on")
+  lgdModifiedBy     String?   @db.VarChar(50)                              @map("lgd_modified_by")
+
+  // Relations
+  header            LoyaltyGiftRedeem @relation("LoyaltyGiftRedeemItems", fields: [lgdLgrId, lgdLgrAccYear], references: [lgrId, lgrAccYear], onUpdate: Cascade, onDelete: Cascade, map: "fk_lgd_header")
+  company           Company            @relation("LoyaltyGiftItemCompany", fields: [lgdCompId],   references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_lgd_company")
+  branch            BranchMaster       @relation("LoyaltyGiftItemBranch",  fields: [lgdBranchId], references: [brId],   onUpdate: Cascade, onDelete: Restrict, map: "fk_lgd_branch")
+  gift              LoyaltySchemeGift? @relation("LoyaltyGiftItemGift",    fields: [lgdLsgId],    references: [lsgId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_lgd_gift")
+  item              ItemMaster         @relation("LoyaltyGiftItemItem",    fields: [lgdItemId],   references: [itemId], onUpdate: Cascade, onDelete: Restrict, map: "fk_lgd_item")
+  unit              ItemUnitConversion @relation("LoyaltyGiftItemUnit",    fields: [lgdUnitId],   references: [iucId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_lgd_unit")
+  godown            GodownLocation?    @relation("LoyaltyGiftItemGodown",  fields: [lgdGodownId], references: [gdlId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_lgd_godown")
+  batch             ItemBatchMaster?   @relation("LoyaltyGiftItemBatch",   fields: [lgdBatchId],  references: [btmId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_lgd_batch")
+
+  @@id([lgdId, lgdAccYear], map: "pk_loyalty_gift_redeem_item")
+
+  // Partial indexes are DB-only:
+  //
+  //   CREATE UNIQUE INDEX ux_lgd_row ON sales.loyalty_gift_redeem_item
+  //       (lgd_lgr_id, lgd_acc_year, lgd_row_no) WHERE lgd_is_deleted = false;
+  //
+  //   -- what the giveaway cost, by item and period
+  //   CREATE INDEX ix_lgd_item_period ON sales.loyalty_gift_redeem_item
+  //       (lgd_comp_id, lgd_item_id, lgd_acc_year)
+  //       INCLUDE (lgd_qty, lgd_points, lgd_total, lgd_cost_price)
+  //       WHERE lgd_is_deleted = false;
+  //
+  //   -- FK-covering: ix_lgd_header, ix_lgd_branch, ix_lgd_item, ix_lgd_unit,
+  //   -- ix_lgd_gift, ix_lgd_godown, ix_lgd_batch
+  //
+  // CHECK constraints (DB-only): ck_lgd_acc_year, ck_lgd_same_year,
+  //   ck_lgd_row_no, ck_lgd_qty, ck_lgd_amounts, ck_lgd_batch_dates
+
+  @@map("loyalty_gift_redeem_item")
+  @@schema("sales")
+}

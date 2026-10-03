@@ -1,3 +1,4 @@
+import { CacheTTL } from '@nestjs/cache-manager';
 import {
   Body,
   Controller,
@@ -12,7 +13,7 @@ import {
   Query,
   Version,
 } from '@nestjs/common';
-import { User } from '@prisma/client';
+import { UserMaster } from '@prisma/client';
 import {
   ApiBadRequestResponse,
   ApiConflictResponse,
@@ -31,13 +32,15 @@ import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UserResponseDto } from './dto/user-response.dto';
 import { UsersService } from './users.service';
+import { API_VERSION } from '../../common/constants/api-version';
 @Public()
 @ApiTags('Users')
+@CacheTTL(0)
 @Controller('users')
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
   @Post()
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Create user' })
   @ApiCreatedResponse({ type: UserResponseDto })
   @ApiBadRequestResponse({ type: HttpErrorResponseDto })
@@ -47,7 +50,7 @@ export class UsersController {
     return this.toResponse(user);
   }
   @Get()
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'List users' })
   @ApiOkResponse({ type: UserResponseDto, isArray: true })
   @ApiBadRequestResponse({ type: HttpErrorResponseDto })
@@ -56,7 +59,7 @@ export class UsersController {
     return users.map((user) => this.toResponse(user));
   }
   @Get('get')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Get user by id' })
   @ApiQuery({ name: 'id', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: UserResponseDto })
@@ -67,7 +70,7 @@ export class UsersController {
     return this.toResponse(user);
   }
   @Patch(':id')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Update user by id' })
   @ApiParam({ name: 'id', format: 'uuid' })
   @ApiOkResponse({ type: UserResponseDto })
@@ -82,7 +85,7 @@ export class UsersController {
     return this.toResponse(user);
   }
   @Delete('delete')
-  @Version('1')
+  @Version(API_VERSION)
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Delete user by id' })
   @ApiQuery({ name: 'id', schema: { type: 'string', format: 'uuid' } })
@@ -92,14 +95,14 @@ export class UsersController {
   async remove(@Query('id', new ParseUUIDPipe()) id: string): Promise<void> {
     await this.usersService.remove(id);
   }
-  private toResponse(user: User): UserResponseDto {
+  private toResponse(user: UserMaster): UserResponseDto {
     return {
-      user_id: user.user_id,
-      user_code: user.user_code,
-      user_phone: user.user_phone,
-      user_name: user.user_name,
-      created_at: user.created_at.toISOString(),
-      updated_at: user.updated_at.toISOString(),
+      usrId: user.usrId,
+      usrLoginName: user.usrLoginName,
+      usrMobileNo: user.usrMobileNo,
+      usrIsActive: user.usrIsActive,
+      usrCreatedOn: user.usrCreatedOn.toISOString(),
+      usrModifiedOn: user.usrModifiedOn?.toISOString() ?? null,
     };
   }
 }

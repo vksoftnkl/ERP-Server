@@ -1,0 +1,103 @@
+/// A DC-return line. The DC line is MANDATORY — a DC return is never free, so
+/// unlike SaleReturnItem there is no nullable source.
+///
+/// The lot goes back where it came from, which is why sdriLotId is the DC
+/// line's lot rather than a fresh one.
+///
+/// The money columns are the DC line's figures, carried for the INWARD e-way
+/// bill: goods coming back still have a value the portal wants.
+model SaleDcReturnItem {
+  sdriId                String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("sdri_id")
+  sdriReturnId          String    @db.Uuid                             @map("sdri_return_id")
+  sdriCompanyId         String    @db.Uuid                             @map("sdri_company_id")
+  sdriBranchId          String    @db.Uuid                             @map("sdri_branch_id")
+  sdriTenantId          String?   @db.Uuid                             @map("sdri_tenant_id")
+  sdriAccYear           String    @db.Char(9)                          @map("sdri_acc_year")
+  sdriLineNo            Int                                            @map("sdri_line_no")
+
+  // ── The DC line (mandatory) ──────────────────────────────────────────
+  sdriDcItemId          String    @db.Uuid                             @map("sdri_dc_item_id")
+  sdriDcAccYear         String    @db.Char(9)                          @map("sdri_dc_acc_year")
+  sdriDcLineNo          Int?                                           @map("sdri_dc_line_no")
+
+  sdriItemId            String    @db.Uuid                             @map("sdri_item_id")
+  /// item_unit_conversion, matching the DC line it reverses.
+  sdriItemUnitId        String    @db.Uuid                             @map("sdri_item_unit_id")
+  sdriToBaseFactor      Decimal   @default(0) @db.Decimal(15, 6)       @map("sdri_to_base_factor")
+  sdriHsnCode           String?   @db.VarChar(8)                       @map("sdri_hsn_code")
+
+  sdriGodownId          String    @db.Uuid                             @map("sdri_godown_id")
+  /// The DC line's lot: it goes back where it came from.
+  sdriLotId             String?   @db.Uuid                             @map("sdri_lot_id")
+  /// RESTOCK | DAMAGED | EXPIRED | SCRAP
+  sdriCondition         String    @default("RESTOCK") @db.VarChar(20)  @map("sdri_condition")
+  /// SALEABLE | DAMAGED | QUARANTINE | EXPIRED | SAMPLE
+  sdriBucket            String    @default("SALEABLE") @db.VarChar(20) @map("sdri_bucket")
+  sdriBatchNo           String?   @db.VarChar(100)                     @map("sdri_batch_no")
+  sdriExpiryDate        DateTime? @db.Date                             @map("sdri_expiry_date")
+  sdriSerialNo          String?   @db.VarChar(100)                     @map("sdri_serial_no")
+
+  sdriReturnQty         Decimal   @default(0) @db.Decimal(15, 3)       @map("sdri_return_qty")
+  sdriFreeQty           Decimal   @default(0) @db.Decimal(15, 3)       @map("sdri_free_qty")
+  sdriNetQty            Decimal   @default(0) @db.Decimal(15, 3)       @map("sdri_net_qty")
+  sdriWeightQty         Decimal?  @default(0) @db.Decimal(15, 3)       @map("sdri_weight_qty")
+
+  sdriRate              Decimal   @default(0) @db.Decimal(15, 4)       @map("sdri_rate")
+  /// The DC line's cost: what COGS reverses at.
+  sdriCostPrice         Decimal?  @db.Decimal(15, 4)                   @map("sdri_cost_price")
+  sdriTaxableAmt        Decimal   @default(0) @db.Decimal(15, 2)       @map("sdri_taxable_amt")
+  sdriTaxPerc           Decimal   @default(0) @db.Decimal(15, 4)       @map("sdri_tax_perc")
+  sdriTaxAmt            Decimal   @default(0) @db.Decimal(15, 2)       @map("sdri_tax_amt")
+  sdriNetAmt            Decimal   @default(0) @db.Decimal(15, 2)       @map("sdri_net_amt")
+
+  // ── Value of the goods coming back (inward e-way bill) ───────────────
+  sdriPriceLevel        Int                                            @map("sdri_price_level")
+  sdriEanCode           String?   @db.VarChar(100)                     @map("sdri_ean_code")
+  sdriIsTaxIncl         Boolean   @default(false)                      @map("sdri_is_tax_incl")
+  sdriIsService         Boolean   @default(false)                      @map("sdri_is_service")
+  sdriRatePreTax        Decimal   @default(0) @db.Decimal(15, 4)       @map("sdri_rate_pre_tax")
+  sdriMaxPrice          Decimal?  @db.Decimal(15, 4)                   @map("sdri_max_price")
+  sdriItemDiscPerc      Decimal   @default(0) @db.Decimal(15, 4)       @map("sdri_item_disc_perc")
+  sdriItemDiscAmt       Decimal   @default(0) @db.Decimal(15, 2)       @map("sdri_item_disc_amt")
+  sdriSchDiscAmt        Decimal   @default(0) @db.Decimal(15, 2)       @map("sdri_sch_disc_amt")
+  sdriGrossAmt          Decimal   @default(0) @db.Decimal(15, 2)       @map("sdri_gross_amt")
+  sdriCgstPerc          Decimal   @default(0) @db.Decimal(15, 4)       @map("sdri_cgst_perc")
+  sdriCgstAmt           Decimal   @default(0) @db.Decimal(15, 2)       @map("sdri_cgst_amt")
+  sdriSgstPerc          Decimal   @default(0) @db.Decimal(15, 4)       @map("sdri_sgst_perc")
+  sdriSgstAmt           Decimal   @default(0) @db.Decimal(15, 2)       @map("sdri_sgst_amt")
+  sdriIgstPerc          Decimal   @default(0) @db.Decimal(15, 4)       @map("sdri_igst_perc")
+  sdriIgstAmt           Decimal   @default(0) @db.Decimal(15, 2)       @map("sdri_igst_amt")
+  sdriCessPerc          Decimal   @default(0) @db.Decimal(15, 4)       @map("sdri_cess_perc")
+  sdriCessPerUnit       Decimal   @default(0) @db.Decimal(15, 4)       @map("sdri_cess_per_unit")
+  sdriCessAmt           Decimal   @default(0) @db.Decimal(15, 2)       @map("sdri_cess_amt")
+  sdriSize              String?   @db.VarChar(50)                      @map("sdri_size")
+  sdriSizeUom           String?   @db.VarChar(20)                      @map("sdri_size_uom")
+  sdriTaxId             String?   @db.Uuid                             @map("sdri_tax_id")
+
+  sdriRemarks           String?   @db.VarChar(250)                     @map("sdri_remarks")
+
+  sdriIsDeleted         Boolean   @default(false)                      @map("sdri_is_deleted")
+  sdriSyncDate          DateTime? @db.Timestamptz(6)                   @map("sdri_sync_date")
+  sdriCreatedOn         DateTime  @default(now()) @db.Timestamptz(6)   @map("sdri_created_on")
+  sdriCreatedBy         String    @db.VarChar(50)                      @map("sdri_created_by")
+  sdriModifiedOn        DateTime? @db.Timestamptz(6)                   @map("sdri_modified_on")
+  sdriModifiedBy        String?   @db.VarChar(50)                      @map("sdri_modified_by")
+
+  // Relations
+  dcReturn              SaleDcReturn       @relation("SaleDcReturnItems",       fields: [sdriReturnId, sdriAccYear], references: [sdrId, sdrAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_sdri_return")
+  dcItem                SaleDcItem         @relation("SaleDcReturnItemDcItem",  fields: [sdriDcItemId, sdriDcAccYear], references: [sdiId, sdiAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_sdri_dc_item")
+  item                  ItemMaster         @relation("SaleDcReturnItemItem",    fields: [sdriItemId],     references: [itemId], onUpdate: Cascade, onDelete: Restrict, map: "fk_sdri_item")
+  unit                  ItemUnitConversion @relation("SaleDcReturnItemUnit",    fields: [sdriItemUnitId], references: [iucId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_sdri_item_unit")
+  godown                GodownLocation     @relation("SaleDcReturnItemGodown",  fields: [sdriGodownId],   references: [gdlId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_sdri_godown")
+  lot                   StockLot?          @relation("SaleDcReturnItemLot",     fields: [sdriLotId],      references: [sltId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_sdri_lot")
+
+  @@id([sdriId, sdriAccYear], map: "pk_sale_dc_return_item")
+
+  // Partial indexes are DB-only: ix_sdri_return, ix_sdri_dc_item, and
+  // FK-covering ix_sdri_item / ix_sdri_item_unit / ix_sdri_godown / ix_sdri_lot.
+  //
+  // CHECK constraints (DB-only): ck_sdri_qty, ck_sdri_condition, ck_sdri_bucket
+
+  @@map("sale_dc_return_item")
+  @@schema("sales")
+}

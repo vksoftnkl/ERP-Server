@@ -1,3 +1,4 @@
+import { CacheTTL } from '@nestjs/cache-manager';
 import {
   Body,
   Controller,
@@ -24,67 +25,71 @@ import {
 import { HttpErrorResponseDto } from '../../../common/dto/http-error-response.dto';
 import { StateExceptionFilter } from './state-exception.filter';
 import { StateService } from './state.service';
-import { ListStateQueryDto } from './dto/list-state-query.dto';
 import { SaveStateDto } from './dto/save-state.dto';
 import {
   StateErrorResponseDto,
+  StateMasterCreateSuccessDto,
   StateSuccessDeleteDto,
-  StateSuccessListDto,
   StateSuccessSingleDto,
 } from './dto/state-response.dto';
 import {
-  StateListItem,
-  StateListMeta,
+  StateMasterCreateResult,
   StatePayload,
   StateSuccessResponse,
 } from './types/state-api.types';
+import { DEFAULT_ACTOR } from './utils/state.utils';
+import { RequestContextService } from '../../../common/request-context/request-context.service';
+import { API_VERSION } from '../../../common/constants/api-version';
 
 @ApiTags('States')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
+@CacheTTL(1)
 @Controller('states')
 @UseFilters(StateExceptionFilter)
 export class StateController {
-  constructor(private readonly stateService: StateService) {}
+  constructor(
+    private readonly stateService: StateService,
+    private readonly requestContextService: RequestContextService,
+  ) {}
 
+  // Single write endpoint: dispatches on stmId. With stmId it updates the existing state
+  // (returns the updated StatePayload); without it, it creates a state master together with
+  // its parent account group (returns StateMasterCreateResult). userId is resolved from the
+  // request context since the create service takes it as an argument.
   @Post('create')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Create or update state (by stmId presence)' })
-  @ApiCreatedResponse({ type: StateSuccessSingleDto })
+  @ApiCreatedResponse({ type: StateMasterCreateSuccessDto })
+  @ApiOkResponse({ type: StateSuccessSingleDto })
   @ApiBadRequestResponse({ type: StateErrorResponseDto })
   @ApiConflictResponse({ type: StateErrorResponseDto })
   @ApiNotFoundResponse({ type: StateErrorResponseDto })
-  async save(@Body() saveStateDto: SaveStateDto): Promise<StateSuccessResponse<StatePayload>> {
-    const data = await this.stateService.save(saveStateDto);
+  async createStateMaster(
+    @Body() dto: SaveStateDto,
+  ): Promise<StateSuccessResponse<StateMasterCreateResult | StatePayload>> {
+    if (dto.stmId) {
+      const data = await this.stateService.save(dto);
+
+      return {
+        success: true,
+        message: 'State updated successfully',
+        data,
+      };
+    }
+
+    const userId = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
+    const data = await this.stateService.createStateMaster(dto, userId);
 
     return {
       success: true,
-      message: saveStateDto.stmId ? 'State updated successfully' : 'State created successfully',
+      message: 'State created successfully',
       data,
     };
   }
 
-  @Get('list')
-  @Version('1')
-  @ApiOperation({ summary: 'List states with filter/search/pagination' })
-  @ApiOkResponse({ type: StateSuccessListDto })
-  @ApiBadRequestResponse({ type: StateErrorResponseDto })
-  async list(
-    @Query() queryDto: ListStateQueryDto,
-  ): Promise<StateSuccessResponse<StateListItem[], StateListMeta>> {
-    const result = await this.stateService.list(queryDto);
-
-    return {
-      success: true,
-      message: 'States fetched successfully',
-      data: result.items,
-      meta: result.meta,
-      ...(result.styles !== undefined && { styles: result.styles }),
-    };
-  }
-
   @Get('get')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Get state by id' })
   @ApiQuery({ name: 'stmId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: StateSuccessSingleDto })
@@ -103,7 +108,7 @@ export class StateController {
   }
 
   @Delete('delete')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Soft delete state by id' })
   @ApiQuery({ name: 'stmId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: StateSuccessDeleteDto })

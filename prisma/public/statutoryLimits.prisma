@@ -1,0 +1,93 @@
+/// Every rupee figure, percentage, day count and hour count that comes from an
+/// Act — per company, with an effective window.
+///
+/// Nothing in code may hard-code one of these, and nothing may read this table
+/// WITHOUT A DATE. That is the entire reason it exists: a bill dated before a
+/// threshold changed must still resolve to the threshold that was in force
+/// when it was raised.
+///
+/// THE RESOLVER IS NOT A DATABASE FUNCTION. StatutoryService.limit() in NestJS
+/// owns it. It is a read, so it is not dangerous the way a trigger is — but it
+/// is the one piece of law the OFFLINE TILL must also apply, by itself, with
+/// no server in reach: the cash limit under 269ST, the PAN / Form 60
+/// threshold, the e-way bill floor. The resolution order therefore has to
+/// exist in TypeScript no matter what, and a second copy in plpgsql would be
+/// two implementations of one statute, drifting, with the server silently
+/// overruling what the counter told the customer.
+///
+///   limit(companyId, code, onDate, appliesTo = 'ALL', aatoClass = null)
+///
+///   FILTER  stl_code = code
+///       AND NOT stl_is_deleted AND stl_is_active
+///       AND (stl_company_id IS NULL OR stl_company_id = companyId)
+///       AND (stl_applies_to = 'ALL' OR stl_applies_to = appliesTo)
+///       AND (stl_aato_class IS NULL OR stl_aato_class = aatoClass)
+///       AND stl_effective_from <= onDate
+///       AND (stl_effective_to IS NULL OR stl_effective_to >= onDate)
+///
+///   ORDER BY — this precedence IS the rule, so keep it exactly:
+///       1  stl_company_id IS NOT NULL  DESC   -- a company override beats the pack
+///       2  stl_applies_to <> 'ALL'     DESC   -- a specific applies_to beats ALL
+///       3  stl_aato_class IS NOT NULL  DESC   -- a turnover-class row beats any-class
+///       4  stl_effective_from          DESC   -- the latest in force on that date
+///      LIMIT 1
+///
+/// No row means NOT APPLICABLE, and a guard must say so out loud rather than
+/// defaulting to a number. Cache per REQUEST, never per process — the answer
+/// changes with the DOCUMENT's date, not with today's.
+model StatutoryLimit {
+  stlId             String    @id(map: "pk_statutory_limits") @default(dbgenerated("uuidv7()")) @db.Uuid @map("stl_id")
+  /// NULL = the shipped pack, applying to every company. A company that
+  /// differs adds its OWN row; it never edits a pack row.
+  stlCompanyId      String?   @db.Uuid                                 @map("stl_company_id")
+  /// The application's handle: CASH_TXN_LIMIT_269ST, EWAY_VALUE_LIMIT, …
+  stlCode           String    @db.VarChar(40)                          @map("stl_code")
+  /// GST | IT | COMPANIES | OTHER
+  stlLaw            String    @db.VarChar(10)                          @map("stl_law")
+  /// '269ST', '206C(1H)', 'R138(1)', …
+  stlSection        String?   @db.VarChar(40)                          @map("stl_section")
+  stlLabel          String    @db.VarChar(200)                         @map("stl_label")
+  /// AMOUNT | PERCENT | DAYS | HOURS | KM | BOOL | TEXT
+  stlValueType      String    @db.VarChar(10)                          @map("stl_value_type")
+  stlValue          Decimal?  @db.Decimal(18, 4)                       @map("stl_value")
+  stlValueText      String?   @db.VarChar(100)                         @map("stl_value_text")
+  /// ALL | INTRA_STATE | INTER_STATE | B2B | B2C | a two-character state code.
+  /// A specific value outranks 'ALL' in the resolver.
+  stlAppliesTo      String    @default("ALL") @db.VarChar(20)          @map("stl_applies_to")
+  /// NULL = any turnover class; else LE_1_5CR | LE_5CR | LE_10CR | GT_10CR.
+  stlAatoClass      String?   @db.VarChar(10)                          @map("stl_aato_class")
+  stlEffectiveFrom  DateTime  @db.Date                                 @map("stl_effective_from")
+  /// NULL = still in force. A CLOSED row is kept on purpose so a document
+  /// dated inside the old window still resolves.
+  stlEffectiveTo    DateTime? @db.Date                                 @map("stl_effective_to")
+  /// WARN | REFUSE | INFO — what the guard does when the figure is exceeded.
+  stlEnforce        String    @default("WARN") @db.VarChar(10)         @map("stl_enforce")
+  /// The notification or Finance Act citation. Shown to the operator so the
+  /// refusal names its authority.
+  stlSourceRef      String?   @db.VarChar(250)                         @map("stl_source_ref")
+  stlRemarks        String?   @db.VarChar(250)                         @map("stl_remarks")
+  stlIsActive       Boolean   @default(true)                           @map("stl_is_active")
+  stlIsDeleted      Boolean   @default(false)                          @map("stl_is_deleted")
+  stlSyncDate       DateTime? @db.Timestamptz(6)                       @map("stl_sync_date")
+  stlCreatedOn      DateTime  @default(now()) @db.Timestamptz(6)       @map("stl_created_on")
+  stlCreatedBy      String?   @db.VarChar(50)                          @map("stl_created_by")
+  stlModifiedOn     DateTime? @db.Timestamptz(6)                       @map("stl_modified_on")
+  stlModifiedBy     String?   @db.VarChar(50)                          @map("stl_modified_by")
+
+  // No relation on stlCompanyId: a NULL there is the SHIPPED PACK, not a
+  // missing company, and the resolver reads the two cases together.
+
+  // DB-only (NULLS NOT DISTINCT + partial):
+  //   CREATE UNIQUE INDEX ux_stl_row ON public.statutory_limits
+  //       (stl_code, stl_company_id, stl_applies_to, stl_aato_class, stl_effective_from)
+  //       NULLS NOT DISTINCT WHERE stl_is_deleted = false;
+  //   CREATE INDEX ix_stl_lookup ON public.statutory_limits
+  //       (stl_code, stl_company_id, stl_applies_to, stl_effective_from DESC)
+  //       WHERE stl_is_deleted = false AND stl_is_active = true;
+  //
+  // CHECK constraints (DB-only): ck_stl_law, ck_stl_value_type,
+  //   ck_stl_enforce, ck_stl_window
+
+  @@map("statutory_limits")
+  @@schema("public")
+}

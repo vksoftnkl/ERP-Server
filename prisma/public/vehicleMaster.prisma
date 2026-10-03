@@ -1,0 +1,50 @@
+/// Vehicle numbers, validated once rather than typed on every document.
+///
+/// ck_veh_no keeps the number in exactly the form the e-way bill portal
+/// stores it — upper case, no spaces — because a number that differs by a
+/// space is a number the portal will not match.
+model VehicleMaster {
+  vehId             String    @id(map: "pk_vehicle_master") @default(dbgenerated("uuidv7()")) @db.Uuid @map("veh_id")
+  /// NULL = every company.
+  vehCompanyId      String?   @db.Uuid                                 @map("veh_company_id")
+  vehBranchId       String?   @db.Uuid                                 @map("veh_branch_id")
+  /// As printed on the e-way bill: upper case, no spaces (ck_veh_no).
+  vehVehicleNo      String    @db.VarChar(20)                          @map("veh_vehicle_no")
+  /// REGULAR | ODC (over-dimensional cargo — a different validity ladder,
+  /// 20 km per day instead of 200).
+  vehType           String    @default("REGULAR") @db.VarChar(10)      @map("veh_type")
+  vehDescription    String?   @db.VarChar(150)                         @map("veh_description")
+  vehCapacityKg     Decimal?  @db.Decimal(12, 3)                       @map("veh_capacity_kg")
+  vehIsOwn          Boolean   @default(true)                           @map("veh_is_own")
+  vehTransporterId  String?   @db.Uuid                                 @map("veh_transporter_id")
+  vehDriverId       String?   @db.Uuid                                 @map("veh_driver_id")
+  vehIsActive       Boolean   @default(true)                           @map("veh_is_active")
+  vehIsDeleted      Boolean   @default(false)                          @map("veh_is_deleted")
+  vehSyncDate       DateTime? @db.Timestamptz(6)                       @map("veh_sync_date")
+  vehCreatedOn      DateTime  @default(now()) @db.Timestamptz(6)       @map("veh_created_on")
+  vehCreatedBy      String?   @db.VarChar(50)                          @map("veh_created_by")
+  vehModifiedOn     DateTime? @db.Timestamptz(6)                       @map("veh_modified_on")
+  vehModifiedBy     String?   @db.VarChar(50)                          @map("veh_modified_by")
+
+  transporter       TransporterMaster? @relation("VehicleTransporter", fields: [vehTransporterId], references: [trnId], onUpdate: Cascade, onDelete: Restrict, map: "fk_veh_transporter")
+  driver            EmployeeMaster?    @relation("VehicleDriver",      fields: [vehDriverId],      references: [empId], onUpdate: Cascade, onDelete: Restrict, map: "fk_veh_driver")
+
+  saleReturns       SaleReturn[]       @relation("SaleReturnVehicle")
+  saleDcs           SaleDc[]           @relation("SaleDcVehicle")
+  saleDcReturns     SaleDcReturn[]     @relation("SaleDcReturnVehicle")
+
+  // DB-only:
+  //   CREATE UNIQUE INDEX ux_veh_no ON public.vehicle_master
+  //       (veh_company_id, veh_vehicle_no) NULLS NOT DISTINCT
+  //       WHERE veh_is_deleted = false;
+  //   ix_veh_transporter, ix_veh_driver  (FK-covering, partial)
+  //
+  // CHECK constraints (DB-only): ck_veh_type, ck_veh_no
+
+  saleBills         SaleBill[]         @relation("SaleBillVehicle")
+
+  ewayBills         AccVoucherDocEwaybill[] @relation("EwayBillVehicle")
+
+  @@map("vehicle_master")
+  @@schema("public")
+}

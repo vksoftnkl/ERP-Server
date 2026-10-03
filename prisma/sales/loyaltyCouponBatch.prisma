@@ -1,0 +1,128 @@
+/// The coupon batch — what a coupon of this kind is worth and how it behaves.
+///
+/// A coupon is a MONEY instrument with a code on it. It is not points, it
+/// shares no ledger with points, and it redeems through its own tender type
+/// (accounts.acc_tender_types 11, VOUCHER).
+///
+/// Two sources, and only two:
+///   SOLD      a gift voucher the customer bought. May be RELOADED
+///             (lcbAllowTopup), which is what makes it a gift CARD rather
+///             than a one-shot slip.
+///   CAMPAIGN  codes issued in bulk and handed out or mailed. Not reloadable
+///             (ck_lcb_topup) — a campaign code is not a wallet.
+///
+/// A PERCENT batch ("20% off, up to 500") resolves against the bill at the
+/// moment of redemption and only the RESOLVED RUPEE AMOUNT reaches
+/// lctAmount and acc_tender_detail.td_amount. The percentage never leaves
+/// this row.
+model LoyaltyCouponBatch {
+  lcbId               String    @id(map: "pk_loyalty_coupon_batch") @default(dbgenerated("uuidv7()")) @db.Uuid @map("lcb_id")
+  lcbCompId           String    @db.Uuid                                 @map("lcb_comp_id")
+  /// NULL = every branch.
+  lcbBranchId         String?   @db.Uuid                                 @map("lcb_branch_id")
+  lcbTenantId         String?   @db.Uuid                                 @map("lcb_tenant_id")
+
+  /// Stable handle, never renamed — retire the batch instead.
+  lcbCode             String    @db.VarChar(20)                          @map("lcb_code")
+  lcbName             String    @db.VarChar(150)                         @map("lcb_name")
+  /// SOLD | CAMPAIGN
+  lcbSource           String    @db.VarChar(15)                          @map("lcb_source")
+
+  // ── What it is worth ─────────────────────────────────────────────────
+  /// AMOUNT | PERCENT
+  lcbValueType        String    @default("AMOUNT") @db.VarChar(10)       @map("lcb_value_type")
+  lcbFaceValue        Decimal   @default(0) @db.Decimal(18, 2)           @map("lcb_face_value")
+  lcbPercent          Decimal   @default(0) @db.Decimal(6, 3)            @map("lcb_percent")
+  /// Cap on a PERCENT coupon, and the only case where a cap means anything
+  /// (ck_lcb_cap_percent). An uncapped PERCENT batch cannot issue a coupon,
+  /// because ck_lcp_face demands a positive face value to snapshot — so give
+  /// a PERCENT batch a cap and use it as the face.
+  lcbMaxValue         Decimal?  @db.Decimal(18, 2)                       @map("lcb_max_value")
+  lcbMinBillAmount    Decimal   @default(0) @db.Decimal(18, 2)           @map("lcb_min_bill_amount")
+
+  // ── How it may be spent ──────────────────────────────────────────────
+  /// May a 500 voucher go 300 now and 200 next week. This is what decides
+  /// whether lcpUsedValue behaves as a balance or as a switch.
+  lcbAllowPartial     Boolean   @default(false)                          @map("lcb_allow_partial")
+  /// Reloadable gift card. SOLD only.
+  lcbAllowTopup       Boolean   @default(false)                          @map("lcb_allow_topup")
+  lcbMaxPerBill       Int       @default(1) @db.SmallInt                 @map("lcb_max_per_bill")
+  /// false = bound to lcpCustId.
+  lcbIsTransferable   Boolean   @default(true)                           @map("lcb_is_transferable")
+  lcbPinRequired      Boolean   @default(false)                          @map("lcb_pin_required")
+
+  // ── Code generation (CAMPAIGN) ───────────────────────────────────────
+  lcbPrefix           String?   @db.VarChar(10)                          @map("lcb_prefix")
+  lcbCodeLength       Int       @default(12) @db.SmallInt                @map("lcb_code_length")
+  /// NULL = unlimited. Checked by the service WHEN IT ISSUES, not by the
+  /// recompute — a recompute reports, it does not refuse.
+  lcbMaxIssueCount    Int?                                               @map("lcb_max_issue_count")
+  /// Caches of LoyaltyCoupon, recomputed by
+  /// LoyaltyCouponService.recomputeCouponBatches(). There is no trigger; no
+  /// other code may write these.
+  lcbIssuedCount      Int       @default(0)                              @map("lcb_issued_count")
+  lcbRedeemedCount    Int       @default(0)                              @map("lcb_redeemed_count")
+
+  // ── Validity ─────────────────────────────────────────────────────────
+  lcbValidFrom        DateTime? @db.Date                                 @map("lcb_valid_from")
+  lcbValidUpto        DateTime? @db.Date                                 @map("lcb_valid_upto")
+  /// SOLD vouchers usually expire N days after THEIR OWN issue rather than on
+  /// a batch-wide date; this is that N.
+  lcbValidityDays     Int?                                               @map("lcb_validity_days")
+
+  /// ALL | LIST
+  lcbBranchScope      String    @default("ALL") @db.VarChar(10)          @map("lcb_branch_scope")
+  lcbCustGroupId      String?   @db.Uuid                                 @map("lcb_cust_group_id")
+
+  /// The VOUCHER tender (type 11) redemption settles through. NULL = the
+  /// branch's default. The rate and the floor stay owned by the tender
+  /// master, exactly as they do for points.
+  lcbRedeemTenderId   String?   @db.Uuid                                 @map("lcb_redeem_tender_id")
+
+  lcbRemarks          String?   @db.VarChar(500)                         @map("lcb_remarks")
+  lcbIsActive         Boolean   @default(true)                           @map("lcb_is_active")
+  lcbIsDeleted        Boolean   @default(false)                          @map("lcb_is_deleted")
+
+  lcbSyncDate         DateTime? @db.Timestamptz(6)                       @map("lcb_sync_date")
+  lcbCreatedOn        DateTime  @default(now()) @db.Timestamptz(6)       @map("lcb_created_on")
+  lcbCreatedBy        String?   @db.VarChar(50)                          @map("lcb_created_by")
+  lcbModifiedOn       DateTime? @db.Timestamptz(6)                       @map("lcb_modified_on")
+  lcbModifiedBy       String?   @db.VarChar(50)                          @map("lcb_modified_by")
+
+  // Relations
+  company             Company          @relation("CouponBatchCompany",     fields: [lcbCompId],         references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_lcb_company")
+  branch              BranchMaster?    @relation("CouponBatchBranch",      fields: [lcbBranchId],       references: [brId],   onUpdate: Cascade, onDelete: Restrict, map: "fk_lcb_branch")
+  redeemTender        AccTenderMaster? @relation("CouponBatchRedeemTender", fields: [lcbRedeemTenderId], references: [tndId], onUpdate: Cascade, onDelete: Restrict, map: "fk_lcb_redeem_tender")
+  custGroup           CustGroup?       @relation("CouponBatchCustGroup",   fields: [lcbCustGroupId],    references: [cgrId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_lcb_cust_group")
+
+  coupons             LoyaltyCoupon[]    @relation("CouponBatchCoupons")
+  couponTxns          LoyaltyCouponTxn[] @relation("CouponTxnBatch")
+
+  // Partial indexes are DB-only — Prisma ignores WHERE predicates and
+  // expression keys:
+  //
+  //   CREATE UNIQUE INDEX ux_lcb_code ON sales.loyalty_coupon_batch
+  //       (lcb_comp_id, upper(lcb_code::text)) WHERE lcb_is_deleted = false;
+  //
+  //   CREATE INDEX ix_lcb_lookup ON sales.loyalty_coupon_batch
+  //       (lcb_comp_id, lcb_branch_id, lcb_valid_from, lcb_valid_upto)
+  //       WHERE lcb_is_active = true AND lcb_is_deleted = false;
+  //
+  //   -- reconciliation. There is deliberately no "redeemed <= issued" CHECK:
+  //   -- a sync batch may carry the redemption before the issue, and two tills
+  //   -- offline can both issue the last voucher of a batch. Recorded, not
+  //   -- refused.
+  //   CREATE INDEX ix_lcb_overdrawn ON sales.loyalty_coupon_batch (lcb_comp_id)
+  //       WHERE lcb_is_deleted = false AND lcb_redeemed_count > lcb_issued_count;
+  //
+  //   -- FK-covering: ix_lcb_branch, ix_lcb_cust_group, ix_lcb_redeem_tender
+  //
+  // CHECK constraints (DB-only): ck_lcb_code_shape, ck_lcb_source,
+  //   ck_lcb_value_type, ck_lcb_value, ck_lcb_max_value, ck_lcb_min_bill,
+  //   ck_lcb_code_length, ck_lcb_max_issue, ck_lcb_max_per_bill,
+  //   ck_lcb_validity, ck_lcb_validity_days, ck_lcb_branch_scope,
+  //   ck_lcb_topup, ck_lcb_cap_percent
+
+  @@map("loyalty_coupon_batch")
+  @@schema("sales")
+}

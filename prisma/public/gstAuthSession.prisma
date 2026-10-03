@@ -1,0 +1,100 @@
+/// The live session with a provider.
+///
+/// Separate from the credential on purpose. A token rotates every six hours;
+/// writing it back onto the credential row would churn a master's audit trail
+/// four times a day, and would put a live bearer token in the same SELECT the
+/// configuration screen runs. Nothing in this model is ever returned to the
+/// client.
+///
+/// Rows are written once and never edited, so there is no modifiedOn/By — the
+/// same reasoning as TxnStatusLog. Renewal inserts a new row and retires the
+/// old one.
+model GstAuthSession {
+  gasId               String    @id(map: "pk_gst_auth_session") @default(dbgenerated("uuidv7()")) @db.Uuid @map("gas_id")
+  gasGccId            String    @db.Uuid                             @map("gas_gcc_id")
+
+  /// Encrypted with the same application key as the credential's secrets. A
+  /// bearer token in a readable column is a password with a shorter life, not
+  /// something less than one.
+  gasAuthTokenEnc     String                                         @map("gas_auth_token_enc")
+
+  /// NIC's Sek — the AES session key every subsequent payload is encrypted
+  /// with. Without a column for it the NIC_SEK scheme cannot work at all,
+  /// which is why the token column alone was not enough in the first draft.
+  gasSessionKeyEnc    String?                                        @map("gas_session_key_enc")
+  gasRefreshTokenEnc  String?                                        @map("gas_refresh_token_enc")
+
+  gasKeyVersion       Int       @default(1) @db.SmallInt             @map("gas_key_version")
+  gasTokenType        String    @default("AuthToken") @db.VarChar(20) @map("gas_token_type")
+
+  gasIssuedOn         DateTime  @default(now()) @db.Timestamptz(6)   @map("gas_issued_on")
+  gasExpiresOn        DateTime  @db.Timestamptz(6)                   @map("gas_expires_on")
+
+  /// What the provider literally sent. NIC returns TokenExpiry as IST local
+  /// time with no zone on it; keeping the raw string is the only way to prove
+  /// clock skew later.
+  gasExpiryRaw        String?   @db.VarChar(40)                      @map("gas_expiry_raw")
+
+  // ── Single-flight refresh ────────────────────────────────────────────
+  /// Four tills notice the same expiry in the same second. Without a lease
+  /// all four call /auth, which NIC rate-limits hard and the e-way portal
+  /// answers by blocking the account. A LEASE and not an advisory lock,
+  /// because the auth call is external HTTP and no transaction should be held
+  /// open across one: claim in a short transaction, call outside any
+  /// transaction, write the result in a second short transaction.
+  ///
+  ///   UPDATE public.gst_auth_session
+  ///      SET gas_lock_by = :worker, gas_lock_upto = now() + interval '60 seconds'
+  ///    WHERE gas_gcc_id = :cred
+  ///      AND gas_expires_on <= now() + make_interval(secs => :margin)
+  ///      AND (gas_lock_upto IS NULL OR gas_lock_upto < now())
+  ///   RETURNING gas_id, gas_token_version;
+  ///
+  /// One row back and you are the refresher; none and somebody else is, so
+  /// wait and re-read. gasLockUpto expiring is what stops a worker that died
+  /// mid-call from freezing every counter behind it.
+  gasLockBy           String?   @db.Uuid                             @map("gas_lock_by")
+  gasLockOn           DateTime? @db.Timestamptz(6)                   @map("gas_lock_on")
+  gasLockUpto         DateTime? @db.Timestamptz(6)                   @map("gas_lock_upto")
+
+  /// Bumped on every successful refresh. Workers cache the token in memory; a
+  /// rejection means "re-read", and a version higher than the cached one
+  /// means somebody already fixed it — retry rather than refresh again. This
+  /// is also what keeps the Sek from tearing: a payload encrypted with the
+  /// previous session key is detectable instead of merely rejected.
+  gasTokenVersion     Int       @default(0)                          @map("gas_token_version")
+
+  gasIsActive         Boolean   @default(true)                       @map("gas_is_active")
+
+  // ── Audit (write-once) ───────────────────────────────────────────────
+  gasIsDeleted        Boolean   @default(false)                      @map("gas_is_deleted")
+  gasSyncDate         DateTime? @db.Timestamptz(6)                   @map("gas_sync_date")
+  gasCreatedOn        DateTime  @default(now()) @db.Timestamptz(6)   @map("gas_created_on")
+  gasCreatedBy        String    @db.VarChar(50)                      @map("gas_created_by")
+
+  // Relations
+  credential          GstCompanyCredential @relation("GstCredentialSessions", fields: [gasGccId], references: [gccId], onUpdate: Cascade, onDelete: Cascade, map: "fk_gas_credential")
+
+  // Partial indexes are DB-only:
+  //
+  //   -- one live session per credential. The lease above serialises the
+  //   -- refresh; this guarantees there is only ever one row to lease.
+  //   CREATE UNIQUE INDEX ux_gas_live
+  //       ON public.gst_auth_session (gas_gcc_id)
+  //       WHERE gas_is_active = true AND gas_is_deleted = false;
+  //
+  //   CREATE INDEX ix_gas_expiry
+  //       ON public.gst_auth_session (gas_expires_on)
+  //       WHERE gas_is_active = true AND gas_is_deleted = false;
+  //
+  // The table is created WITH (fillfactor=70), a deliberate deviation from
+  // the fillfactor=100 used everywhere else: this row is UPDATEd on every
+  // token refresh and every lease claim, and packing it full guarantees
+  // non-HOT updates and index bloat on a table whose whole job is to be
+  // written. Storage parameters are not expressible in Prisma schema.
+  //
+  // CHECK constraints (DB-only): ck_gas_expiry, ck_gas_key_ver, ck_gas_lease
+
+  @@map("gst_auth_session")
+  @@schema("public")
+}

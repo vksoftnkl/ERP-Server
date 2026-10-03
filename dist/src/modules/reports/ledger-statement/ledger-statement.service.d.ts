@@ -1,0 +1,32 @@
+import { PrismaService } from '../../../database/prisma/prisma.service';
+import { RequestContextService } from '../../../common/request-context/request-context.service';
+import type { LedgerStatementExportDto, LedgerStatementLedgersDto, LedgerStatementRangeDto, LedgerStatementScopeDto, LedgerStatementVoucherLegsDto, LedgerStatementVouchersDto } from './dto/ledger-statement-query.dto';
+import { type DailyPayload, type ExportPayload, type LedgerHeaderPayload, type LedgerPickPayload, type MonthlyPayload, type VoucherLegsPayload, type VouchersPayload } from './types/ledger-statement.types';
+export declare class LedgerStatementService {
+    private readonly prisma;
+    private readonly requestContext;
+    constructor(prisma: PrismaService, requestContext: RequestContextService);
+    ledgers(q: LedgerStatementLedgersDto): Promise<LedgerPickPayload>;
+    header(q: LedgerStatementRangeDto): Promise<LedgerHeaderPayload>;
+    vouchers(q: LedgerStatementVouchersDto): Promise<VouchersPayload>;
+    voucherLegs(q: LedgerStatementVoucherLegsDto): Promise<VoucherLegsPayload>;
+    daily(q: LedgerStatementRangeDto): Promise<DailyPayload>;
+    monthly(q: LedgerStatementScopeDto): Promise<MonthlyPayload>;
+    export(q: LedgerStatementExportDto): Promise<ExportPayload>;
+    private assertMenuRight;
+    private resolveScope;
+    private assertRange;
+    private legsSql;
+    private openingSql;
+    private openingOf;
+    private totals;
+    private period;
+    private kindCtes;
+    private coreRows;
+    private countRows;
+    private forwards;
+    private decorate;
+    private legsOf;
+    private billRefsOf;
+    private ledgerFacts;
+}

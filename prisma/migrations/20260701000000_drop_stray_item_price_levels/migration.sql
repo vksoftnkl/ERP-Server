@@ -1,0 +1,11 @@
+-- Drop the stray legacy `inventory.item_price_levels` table.
+--
+-- This table (cols: ipl_id, ipl_name, ipl_uname, ipl_status, ipl_admin) predates the
+-- migration history and was never created by any migration, so `migrate dev` reported it
+-- as schema drift and wanted to reset the whole database. It is fully orphaned: nothing in
+-- the codebase, no grid_sql, no view and no FK references it, and its 2 rows
+-- (Whole Sale / Retail) are superseded by the active `fixed.price_levels` master.
+--
+-- IF EXISTS keeps this idempotent so it replays as a no-op on a fresh/shadow database
+-- (where the table was never created).
+DROP TABLE IF EXISTS "inventory"."item_price_levels";

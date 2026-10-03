@@ -10,6 +10,11 @@ export class RequestContextMiddleware implements NestMiddleware {
       {
         ipAddress: this.extractClientIp(request),
         userId: this.extractUserIdHeader(request),
+        // Populated by AccessTokenGuard from the verified token — never from headers.
+        userType: null,
+        companyId: null,
+        branchId: null,
+        deviceId: null,
       },
       next,
     );

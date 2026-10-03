@@ -1,9 +1,3 @@
-enum ItemBatchStatus {
-  ACTIVE
-  CLOSED
-  BLOCKED
-  @@schema("inventory")
-}
 model ItemBatchMaster {
   // Primary
   btmId                    String           @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("btm_id")
@@ -24,8 +18,8 @@ model ItemBatchMaster {
   btmLastSaleRateWot       Decimal          @default(0) @db.Decimal(18, 6) @map("btm_last_sale_rate_wot")
   // Optional identifiers
   btmBarcode               String?          @db.VarChar(100) @map("btm_barcode")
-  // Status
-  btmStatus                ItemBatchStatus  @default(ACTIVE) @map("btm_status")
+  // Status — validated at app level (ACTIVE, CLOSED, BLOCKED)
+  btmStatus                String           @default("ACTIVE") @db.VarChar(20) @map("btm_status")
   btmClosedOn              DateTime?        @db.Timestamptz(6) @map("btm_closed_on")
   btmClosedReason          String?          @db.VarChar(250) @map("btm_closed_reason")
   // Notes
@@ -38,10 +32,15 @@ model ItemBatchMaster {
   btmUpdatedOn             DateTime?        @db.Timestamptz(6) @map("btm_updated_on")
   btmUpdatedBy             String?          @db.Uuid @map("btm_updated_by")
   batchStocks              ItemBatchStock[]
+  /// NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).
+  btmSyncDate DateTime? @db.Timestamptz(6) @map("btm_sync_date")
 
   // Expression/partial indexes are maintained in SQL because Prisma schema
   // cannot express `lower(trim(...))` or filtered uniqueness/indexes.
   @@index([btmCompanyId, btmItemId], map: "idx_btm_item")
+  // ── Loyalty points engine (20260921140000) ─────────────────────────────
+  loyaltyGiftItems      LoyaltyGiftRedeemItem[]   @relation("LoyaltyGiftItemBatch")
+
   @@map("item_batch_master")
   @@schema("inventory")
 }

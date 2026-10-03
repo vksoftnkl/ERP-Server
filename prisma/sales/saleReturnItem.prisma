@@ -1,0 +1,130 @@
+/// A credit note line: one bill line coming back, reversed tier by tier.
+///
+/// sriBillItemId is NULL on a FREE return (srIsAgainstBill = false) — there is
+/// no bill line to point at, and no cost to reverse.
+///
+/// sriItemUnitId is inventory.item_unit_conversion(iuc_id), exactly as
+/// SaleBillItem.sbiItemUnitId. Every transaction line in this database uses
+/// that table; a line pointing at item_unit_master instead would carry an id
+/// from the wrong space and be rejected the moment it met a bill.
+model SaleReturnItem {
+  sriId                 String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("sri_id")
+  sriReturnId           String    @db.Uuid                             @map("sri_return_id")
+  sriCompanyId          String    @db.Uuid                             @map("sri_company_id")
+  sriBranchId           String    @db.Uuid                             @map("sri_branch_id")
+  sriTenantId           String?   @db.Uuid                             @map("sri_tenant_id")
+  sriAccYear            String    @db.Char(9)                          @map("sri_acc_year")
+  sriLineNo             Int                                            @map("sri_line_no")
+  sriSplitNo            Int       @default(1)                          @map("sri_split_no")
+
+  // ── The bill line this comes back against (NULL on a free return) ────
+  sriBillItemId         String?   @db.Uuid                             @map("sri_bill_item_id")
+  sriBillAccYear        String?   @db.Char(9)                          @map("sri_bill_acc_year")
+  sriBillLineNo         Int?                                           @map("sri_bill_line_no")
+
+  sriItemId             String    @db.Uuid                             @map("sri_item_id")
+  sriItemUnitId         String    @db.Uuid                             @map("sri_item_unit_id")
+  sriToBaseFactor       Decimal   @default(0) @db.Decimal(15, 6)       @map("sri_to_base_factor")
+  sriHsnCode            String?   @db.VarChar(8)                       @map("sri_hsn_code")
+  sriTaxId              String?   @db.Uuid                             @map("sri_tax_id")
+
+  // ── Where it goes back, and in what state ────────────────────────────
+  sriGodownId           String    @db.Uuid                             @map("sri_godown_id")
+  /// The ORIGINAL lot when known, so it goes back where it came from.
+  sriLotId              String?   @db.Uuid                             @map("sri_lot_id")
+  sriBatchNo            String?   @db.VarChar(100)                     @map("sri_batch_no")
+  sriBatchDate          DateTime? @db.Date                             @map("sri_batch_date")
+  sriExpiryDate         DateTime? @db.Date                             @map("sri_expiry_date")
+  sriSerialNo           String?   @db.VarChar(100)                     @map("sri_serial_no")
+  /// RESTOCK | DAMAGED | EXPIRED | SCRAP
+  sriCondition          String    @default("RESTOCK") @db.VarChar(20)  @map("sri_condition")
+  /// SALEABLE | DAMAGED | QUARANTINE | EXPIRED | SAMPLE — mirrors sml_bucket,
+  /// so damaged goods come back into the damaged bucket and not into stock.
+  sriBucket             String    @default("SALEABLE") @db.VarChar(20) @map("sri_bucket")
+
+  sriCaseQty            Decimal   @default(0) @db.Decimal(15, 3)       @map("sri_case_qty")
+  sriReturnQty          Decimal   @default(0) @db.Decimal(15, 3)       @map("sri_return_qty")
+  /// Free goods coming back.
+  sriFreeQty            Decimal   @default(0) @db.Decimal(15, 3)       @map("sri_free_qty")
+  sriNetQty             Decimal   @default(0) @db.Decimal(15, 3)       @map("sri_net_qty")
+  sriWeightQty          Decimal?  @default(0) @db.Decimal(15, 3)       @map("sri_weight_qty")
+
+  sriRate               Decimal   @default(0) @db.Decimal(15, 4)       @map("sri_rate")
+  sriRatePreTax         Decimal   @default(0) @db.Decimal(15, 4)       @map("sri_rate_pre_tax")
+  sriMaxPrice           Decimal?  @db.Decimal(15, 4)                   @map("sri_max_price")
+  /// The BILL line's cost: what COGS reverses at, not today's cost.
+  sriCostPrice          Decimal?  @db.Decimal(15, 4)                   @map("sri_cost_price")
+  sriGrossAmt           Decimal   @default(0) @db.Decimal(15, 2)       @map("sri_gross_amt")
+  sriDiscAmt            Decimal   @default(0) @db.Decimal(15, 2)       @map("sri_disc_amt")
+  sriTaxableAmt         Decimal   @default(0) @db.Decimal(15, 2)       @map("sri_taxable_amt")
+  sriTaxPerc            Decimal   @default(0) @db.Decimal(15, 4)       @map("sri_tax_perc")
+  sriCgstPerc           Decimal   @default(0) @db.Decimal(15, 4)       @map("sri_cgst_perc")
+  sriCgstAmt            Decimal   @default(0) @db.Decimal(15, 2)       @map("sri_cgst_amt")
+  sriSgstPerc           Decimal   @default(0) @db.Decimal(15, 4)       @map("sri_sgst_perc")
+  sriSgstAmt            Decimal   @default(0) @db.Decimal(15, 2)       @map("sri_sgst_amt")
+  sriIgstPerc           Decimal   @default(0) @db.Decimal(15, 4)       @map("sri_igst_perc")
+  sriIgstAmt            Decimal   @default(0) @db.Decimal(15, 2)       @map("sri_igst_amt")
+  sriCessPerc           Decimal   @default(0) @db.Decimal(15, 4)       @map("sri_cess_perc")
+  sriCessAmt            Decimal   @default(0) @db.Decimal(15, 2)       @map("sri_cess_amt")
+  sriTaxAmt             Decimal   @default(0) @db.Decimal(15, 2)       @map("sri_tax_amt")
+  sriRoundOff           Decimal   @default(0) @db.Decimal(15, 2)       @map("sri_round_off")
+  sriNetAmt             Decimal   @default(0) @db.Decimal(15, 2)       @map("sri_net_amt")
+
+  // ── Pricing: the essentials of SaleBillItem, tier by tier ────────────
+  sriPriceLevel         Int                                            @map("sri_price_level")
+  sriEanCode            String?   @db.VarChar(100)                     @map("sri_ean_code")
+  sriIsTaxIncl          Boolean   @default(false)                      @map("sri_is_tax_incl")
+  sriIsPromo            Boolean   @default(false)                      @map("sri_is_promo")
+  sriIsFree             Boolean   @default(false)                      @map("sri_is_free")
+  sriFreeType           String?   @db.VarChar(20)                      @map("sri_free_type")
+  sriIsService          Boolean   @default(false)                      @map("sri_is_service")
+  sriActPrice           Decimal?  @db.Decimal(15, 4)                   @map("sri_act_price")
+  sriMinPrice           Decimal?  @db.Decimal(15, 4)                   @map("sri_min_price")
+  sriItemDiscPerc       Decimal   @default(0) @db.Decimal(15, 4)       @map("sri_item_disc_perc")
+  sriItemDiscAmt        Decimal   @default(0) @db.Decimal(15, 2)       @map("sri_item_disc_amt")
+  sriSplDiscPerc        Decimal   @default(0) @db.Decimal(15, 4)       @map("sri_spl_disc_perc")
+  sriSplDiscAmt         Decimal   @default(0) @db.Decimal(15, 2)       @map("sri_spl_disc_amt")
+  sriSchDiscPerc        Decimal   @default(0) @db.Decimal(15, 4)       @map("sri_sch_disc_perc")
+  sriSchDiscAmt         Decimal   @default(0) @db.Decimal(15, 2)       @map("sri_sch_disc_amt")
+  /// The BILL-level scheme share this line reverses.
+  sriBillSchAmt         Decimal   @default(0) @db.Decimal(15, 2)       @map("sri_bill_sch_amt")
+  sriChrgBeforeTax      Decimal?  @db.Decimal(14, 4)                   @map("sri_chrg_before_tax")
+  sriChrgAfterTax       Decimal?  @db.Decimal(14, 4)                   @map("sri_chrg_after_tax")
+  sriCessPerUnit        Decimal   @default(0) @db.Decimal(15, 4)       @map("sri_cess_per_unit")
+  sriSalesmanId         String?   @db.Uuid                             @map("sri_salesman_id")
+  sriSchemeId           String?   @db.Uuid                             @map("sri_scheme_id")
+  sriSchemeName         String?   @db.VarChar(150)                     @map("sri_scheme_name")
+  /// The per-line POINTS the bill awarded, so the claw-back share can be
+  /// worked out line by line. numeric(18,4), like every points column.
+  sriLoyaltyPoints      Decimal   @default(0) @db.Decimal(18, 4)       @map("sri_loyalty_points")
+  sriSize               String?   @db.VarChar(50)                      @map("sri_size")
+  sriSizeUom            String?   @db.VarChar(20)                      @map("sri_size_uom")
+
+  sriRemarks            String?   @db.VarChar(250)                     @map("sri_remarks")
+
+  sriIsDeleted          Boolean   @default(false)                      @map("sri_is_deleted")
+  sriSyncDate           DateTime? @db.Timestamptz(6)                   @map("sri_sync_date")
+  sriCreatedOn          DateTime  @default(now()) @db.Timestamptz(6)   @map("sri_created_on")
+  sriCreatedBy          String    @db.VarChar(50)                      @map("sri_created_by")
+  sriModifiedOn         DateTime? @db.Timestamptz(6)                   @map("sri_modified_on")
+  sriModifiedBy         String?   @db.VarChar(50)                      @map("sri_modified_by")
+
+  // Relations
+  saleReturn            SaleReturn         @relation("SaleReturnItems",     fields: [sriReturnId, sriAccYear],      references: [srId, srAccYear],      onUpdate: Cascade, onDelete: Restrict, map: "fk_sri_return")
+  billItem              SaleBillItem?      @relation("SaleReturnItemBill",  fields: [sriBillItemId, sriBillAccYear], references: [sbiId, sbiAccYear],   onUpdate: Cascade, onDelete: Restrict, map: "fk_sri_bill_item")
+  item                  ItemMaster         @relation("SaleReturnItemItem",  fields: [sriItemId],     references: [itemId], onUpdate: Cascade, onDelete: Restrict, map: "fk_sri_item")
+  unit                  ItemUnitConversion @relation("SaleReturnItemUnit",  fields: [sriItemUnitId], references: [iucId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_sri_item_unit")
+  godown                GodownLocation     @relation("SaleReturnItemGodown", fields: [sriGodownId],  references: [gdlId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_sri_godown")
+  lot                   StockLot?          @relation("SaleReturnItemLot",   fields: [sriLotId],      references: [sltId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_sri_lot")
+
+  @@id([sriId, sriAccYear], map: "pk_sale_return_item")
+
+  // Partial indexes are DB-only: ix_sri_return, ix_sri_bill_item, and
+  // FK-covering ix_sri_item / ix_sri_item_unit / ix_sri_godown / ix_sri_lot.
+  //
+  // CHECK constraints (DB-only): ck_sri_split_no, ck_sri_condition,
+  //   ck_sri_bucket, ck_sri_return_qty
+
+  @@map("sale_return_item")
+  @@schema("sales")
+}

@@ -1,0 +1,11 @@
+-- Move allowed-value validation to the module layer.
+ALTER TABLE "sales"."loyalty_sch_list" DROP CONSTRAINT IF EXISTS "chk_loyalty_sch_list_type";
+ALTER TABLE "sales"."loyalty_sch_list" DROP CONSTRAINT IF EXISTS "chk_loyalty_sch_list_status";
+ALTER TABLE "sales"."loyalty_sch_list" DROP CONSTRAINT IF EXISTS "chk_loyalty_sch_list_apply_on";
+ALTER TABLE "sales"."loyalty_sch_list" DROP CONSTRAINT IF EXISTS "chk_loyalty_sch_list_calc_on_amount_type";
+ALTER TABLE "sales"."loyalty_sch_list" DROP CONSTRAINT IF EXISTS "chk_loyalty_sch_list_bill_type";
+ALTER TABLE "sales"."loyalty_sch_list" DROP CONSTRAINT IF EXISTS "chk_loyalty_sch_list_cust_type";
+ALTER TABLE "sales"."loyalty_sch_list" DROP CONSTRAINT IF EXISTS "chk_loyalty_sch_list_item_type";
+ALTER TABLE "sales"."loyalty_sch_list" DROP CONSTRAINT IF EXISTS "chk_loyalty_sch_list_rounding_method";
+ALTER TABLE "sales"."loyalty_sch_list" DROP CONSTRAINT IF EXISTS "chk_loyalty_sch_list_expiry_basis";
+ALTER TABLE "sales"."loyalty_sch_party" DROP CONSTRAINT IF EXISTS "chk_loyalty_sch_party_type";

@@ -1,0 +1,33 @@
+import { Prisma } from '@prisma/client';
+import { PrismaService } from '../../../database/prisma/prisma.service';
+import { RequestContextService } from '../../../common/request-context/request-context.service';
+import { BillBalanceRecomputeService } from '../billBalance/bill-balance-recompute.service';
+import { OpenItemsService } from './open-items.service';
+import { ReceiptService } from './receipt.service';
+import { PostReceiptDto } from './dto/post-receipt.dto';
+import type { ReceiptPostPayload } from './types/receipt-api.types';
+export declare class ReceiptPostingService {
+    private readonly prisma;
+    private readonly requestContext;
+    private readonly receiptService;
+    private readonly openItemsService;
+    private readonly recompute;
+    constructor(prisma: PrismaService, requestContext: RequestContextService, receiptService: ReceiptService, openItemsService: OpenItemsService, recompute: BillBalanceRecomputeService);
+    post(dto: PostReceiptDto): Promise<ReceiptPostPayload>;
+    postInTransaction(tx: Prisma.TransactionClient, dto: PostReceiptDto, actor: string): Promise<ReceiptPostPayload>;
+    private lockHeader;
+    private assertStatusMayPost;
+    private assertWriteoffsApproved;
+    private rebuildLines;
+    private planVouchers;
+    private writeRegisterRows;
+    private writeLegs;
+    private pushReduction;
+    private writeAdjustments;
+    private writeAdvanceBills;
+    private linkInstruments;
+    private tenderIdsByRow;
+    private postHeaders;
+    private postDatedHeldByBill;
+}
+export declare function rethrowAllocationError(error: unknown): unknown;

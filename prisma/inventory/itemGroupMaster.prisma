@@ -11,6 +11,9 @@ model ItemGroupMaster {
   parent            ItemGroupMaster? @relation("ItemGroupParent", fields: [itgParentId], references: [itgId], onUpdate: Cascade, onDelete: Restrict)
   children          ItemGroupMaster[] @relation("ItemGroupParent")
   items             ItemMaster[]
+  promotionSchemeItems PromotionSchemeItem[] @relation("PromotionItemGroup")
+  loyaltySchemeItems   LoyaltySchemeItem[]   @relation("LoyaltyItemGroup")
+  stockTrackPolicies   StockTrackPolicy[]    @relation("StockTrackPolicyGroup")
 
   itgSort           Int?     @map("itg_sort")
   itgLevel          Int?     @map("itg_level")
@@ -21,6 +24,12 @@ model ItemGroupMaster {
   itgDefaultTaxId   String?  @db.Uuid @map("itg_default_tax_id")
   itgDefaultHsn     String?  @db.VarChar(20) @map("itg_default_hsn")
   itgDefaultUomId   String?  @db.Uuid @map("itg_default_uom_id")
+  /// The stock.stock_track_preset the GROUP-scope stock_track_policy row is
+  /// derived from. NULL = no group policy is written at all — a group has no
+  /// tracking flags of its own, and an all-false GROUP row would shadow the
+  /// company-wide fallback for every item in the group.
+  itgTrackPresetId  String?  @db.Uuid @map("itg_track_preset_id")
+  trackPreset       StockTrackPreset? @relation("ItemGroupTrackPreset", fields: [itgTrackPresetId], references: [sptId], onUpdate: Cascade, onDelete: Restrict, map: "fk_itg_track_preset")
 
   // Media
   itgPhoto          Bytes?   @map("itg_photo")

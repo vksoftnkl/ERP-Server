@@ -1,0 +1,138 @@
+/// stock.stock_forecast — what we expect to sell, and what to order.
+///
+/// THE MATHS IS NOT IN THE DATABASE, and that is the design. A forecasting
+/// model written in PL/pgSQL cannot be changed without a migration, cannot be
+/// back-tested against last year without running last year, and cannot be
+/// swapped when the retailer discovers Croston fits their slow movers better
+/// than exponential smoothing. It WILL be changed.
+///
+/// So the schema holds the three things a model needs to be useful and does
+/// not hold the model: the INPUTS ([[StockDemandDaily]]), the SETTINGS
+/// ([[StockReorderPolicy]]) and the OUTPUTS (this table). A nightly job, the
+/// API layer, or somebody's notebook writes rows here; every screen reads them
+/// the same way regardless of what produced them, and sfcComputedBy says which
+/// it was.
+///
+/// THE ERROR COLUMNS ARE NOT OPTIONAL. A forecast without a measured error is
+/// a number somebody made up. sfcMape, sfcRmse and sfcBias are written by the
+/// same run that writes the forecast, computed against the period just past,
+/// so a buyer can see that this item's model has been wrong by 40% for three
+/// months and stop trusting it. BIAS IS SEPARATE FROM ERROR on purpose:
+/// consistently over-ordering and randomly missing are different diseases with
+/// different cures, and a single accuracy number hides both.
+///
+/// ONE ROW PER (item, branch, forecast date, horizon, METHOD). Keeping the
+/// method in the key means two models run side by side against the same
+/// history and be compared on it — which is the only honest way to choose one.
+///
+/// sfcPipelineQty IS THE COLUMN A REPLENISHMENT BUG LIVES IN. Stock already
+/// ordered or in transit must be netted off before suggesting more; forgetting
+/// it is how a chain double-orders, twice a week, until somebody notices the
+/// warehouse is full.
+///
+/// sfcAcceptedQty is set when a BUYER OVERRIDES the suggestion, so the next
+/// back-test knows the order it sees in the purchase history was not the one
+/// the model asked for. Without it every override silently becomes evidence
+/// against the model.
+///
+/// sfcModelParams is jsonb — alpha/beta/gamma, window lengths, whatever the
+/// method needs — so a new method costs no column and no migration.
+///
+/// sfcForecastDate IS THE DAY FORECAST FOR, not the day computed. The day
+/// computed is sfcComputedOn. Confusing the two makes every back-test wrong.
+///
+/// WRITE RULES:
+///   * sfcStockoutDays cannot exceed sfcHistoryDays (ck_sfc_stockout_days) —
+///     it is a count of censored days WITHIN the history the model saw.
+///   * sfcAcceptedQty and sfcAcceptedOn move together (ck_sfc_accepted).
+///   * The confidence band is optional, but if both ends are given the upper
+///     must not be below the lower (ck_sfc_band).
+///
+/// Vocabulary, enforced by a CHECK constraint in the migration:
+///   sfcMethod  MOVING_AVG | WMA | SES | HOLT | HOLT_WINTERS | CROSTON |
+///              REGRESSION | MANUAL | EXTERNAL
+/// plus ck_sfc_horizon, ck_sfc_confidence and ck_sfc_qty.
+///
+/// DB-only objects Prisma cannot express — hand-authored in the migration and
+/// deliberately NOT declared here (every one carries a WHERE):
+///   ux_sfc_scope      one row per item/branch/date/horizon/method
+///   ix_sfc_action     the buying screen: this branch, latest run, worst first
+///   ix_sfc_item_chain chain view for one item — which branch runs out first
+///   ix_sfc_accuracy   model comparison: how has each method actually done
+model StockForecast {
+  sfcId                  String    @id(map: "pk_stock_forecast") @default(dbgenerated("uuidv7()")) @db.Uuid @map("sfc_id")
+  sfcCompanyId           String    @db.Uuid                          @map("sfc_company_id")
+  sfcBranchId            String    @db.Uuid                          @map("sfc_branch_id")
+  sfcTenantId            String?   @db.Uuid                          @map("sfc_tenant_id")
+  sfcItemId              String    @db.Uuid                          @map("sfc_item_id")
+  sfcBaseUomId           String    @db.Uuid                          @map("sfc_base_uom_id")
+
+  /// The day forecast FOR — not the day computed, which is sfcComputedOn.
+  sfcForecastDate        DateTime  @db.Date                          @map("sfc_forecast_date")
+  sfcHorizonDays         Int       @default(30)                      @map("sfc_horizon_days")
+  /// In the unique key: two methods may run side by side on the same history.
+  sfcMethod              String    @default("MOVING_AVG") @db.VarChar(30) @map("sfc_method")
+
+  // ── The forecast ────────────────────────────────────────────────────────
+  sfcForecastQty         Decimal   @default(0) @db.Decimal(18, 6)    @map("sfc_forecast_qty")
+  sfcForecastLower       Decimal?  @db.Decimal(18, 6)                @map("sfc_forecast_lower")
+  sfcForecastUpper       Decimal?  @db.Decimal(18, 6)                @map("sfc_forecast_upper")
+  sfcConfidencePerc      Decimal?  @db.Decimal(9, 3)                 @map("sfc_confidence_perc")
+  sfcDailyRate           Decimal   @default(0) @db.Decimal(18, 6)    @map("sfc_daily_rate")
+
+  // ── What the model saw ──────────────────────────────────────────────────
+  sfcHistoryDays         Int       @default(0)                       @map("sfc_history_days")
+  /// Censored days WITHIN that history — cannot exceed sfcHistoryDays.
+  sfcStockoutDays        Int       @default(0)                       @map("sfc_stockout_days")
+  sfcTrendSlope          Decimal?  @db.Decimal(18, 6)                @map("sfc_trend_slope")
+  sfcSeasonalityIndex    Decimal?  @db.Decimal(9, 4)                 @map("sfc_seasonality_index")
+  /// Alpha/beta/gamma, window lengths, whatever the method needs. jsonb so a
+  /// new method costs no column and no migration.
+  sfcModelParams         Json?     @db.JsonB                         @map("sfc_model_params")
+
+  // ── How wrong it has been ───────────────────────────────────────────────
+  // Written by the same run, against the period just past. A forecast without
+  // these is a number somebody made up.
+  sfcMape                Decimal?  @db.Decimal(9, 3)                 @map("sfc_mape")
+  sfcRmse                Decimal?  @db.Decimal(18, 6)                @map("sfc_rmse")
+  /// Separate from error on purpose: consistently over-ordering and randomly
+  /// missing are different diseases with different cures.
+  sfcBias                Decimal?  @db.Decimal(18, 6)                @map("sfc_bias")
+  sfcBacktestDays        Int?                                        @map("sfc_backtest_days")
+
+  // ── What to do about it ─────────────────────────────────────────────────
+  sfcOnHandQty           Decimal   @default(0) @db.Decimal(18, 6)    @map("sfc_on_hand_qty")
+  /// Ordered or in transit: stock already coming, which MUST be netted off
+  /// before suggesting more. Forgetting this is how a chain double-orders.
+  sfcPipelineQty         Decimal   @default(0) @db.Decimal(18, 6)    @map("sfc_pipeline_qty")
+  sfcSafetyStock         Decimal   @default(0) @db.Decimal(18, 6)    @map("sfc_safety_stock")
+  sfcReorderPoint        Decimal   @default(0) @db.Decimal(18, 6)    @map("sfc_reorder_point")
+  sfcSuggestedOrderQty   Decimal   @default(0) @db.Decimal(18, 6)    @map("sfc_suggested_order_qty")
+  sfcDaysOfCover         Decimal?  @db.Decimal(9, 2)                 @map("sfc_days_of_cover")
+  sfcExpectedStockoutOn  DateTime? @db.Date                          @map("sfc_expected_stockout_on")
+  sfcPreferredSupplierId String?   @db.Uuid                          @map("sfc_preferred_supplier_id")
+
+  /// Set when a buyer OVERRIDES the suggestion, so the next back-test knows
+  /// the order it sees was not the one the model asked for.
+  sfcAcceptedQty         Decimal?  @db.Decimal(18, 6)                @map("sfc_accepted_qty")
+  sfcAcceptedBy          String?   @db.Uuid                          @map("sfc_accepted_by")
+  sfcAcceptedOn          DateTime? @db.Timestamptz(6)                @map("sfc_accepted_on")
+
+  sfcComputedOn          DateTime  @default(now()) @db.Timestamptz(6) @map("sfc_computed_on")
+  /// Which job, service or notebook produced this row.
+  sfcComputedBy          String?   @db.VarChar(50)                   @map("sfc_computed_by")
+  sfcIsDeleted           Boolean   @default(false)                   @map("sfc_is_deleted")
+  sfcSyncDate            DateTime? @db.Timestamptz(6)                @map("sfc_sync_date")
+  sfcCreatedOn           DateTime  @default(now()) @db.Timestamptz(6) @map("sfc_created_on")
+
+  // ── Relations ───────────────────────────────────────────────────────────
+  // sfcAcceptedBy carries no foreign key in the migration, so it stays scalar.
+  company                Company            @relation("StockForecastCompany",  fields: [sfcCompanyId],           references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_sfc_company")
+  branch                 BranchMaster       @relation("StockForecastBranch",   fields: [sfcBranchId],            references: [brId],   onUpdate: Cascade, onDelete: Restrict, map: "fk_sfc_branch")
+  item                   ItemMaster         @relation("StockForecastItem",     fields: [sfcItemId],              references: [itemId], onUpdate: Cascade, onDelete: Restrict, map: "fk_sfc_item")
+  baseUom                ItemUnitConversion @relation("StockForecastBaseUom",  fields: [sfcBaseUomId],           references: [iucId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_sfc_base_uom")
+  preferredSupplier      Supplier?          @relation("StockForecastSupplier", fields: [sfcPreferredSupplierId], references: [supId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_sfc_supplier")
+
+  @@map("stock_forecast")
+  @@schema("stock")
+}

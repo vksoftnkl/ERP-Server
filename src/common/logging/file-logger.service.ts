@@ -1,19 +1,26 @@
 import { ConsoleLogger, Injectable } from '@nestjs/common';
-import { appendFileSync, mkdirSync } from 'node:fs';
+import { createWriteStream, mkdirSync, WriteStream } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { inspect } from 'node:util';
 @Injectable()
 export class FileLoggerService extends ConsoleLogger {
-  private readonly logFilePath: string;
-  private readonly errorLogFilePath: string;
+  private readonly logStream: WriteStream;
+  private readonly errorStream: WriteStream;
   constructor(
     logFilePath = process.env.LOG_FILE_PATH ?? resolve(process.cwd(), 'logs/app.log'),
     errorLogFilePath = process.env.ERROR_LOG_FILE_PATH ?? resolve(process.cwd(), 'logs/error.log'),
   ) {
     super();
-    this.logFilePath = resolve(logFilePath);
-    this.errorLogFilePath = resolve(errorLogFilePath);
-    this.ensureLogDirectory();
+    const resolvedLogPath = resolve(logFilePath);
+    const resolvedErrorPath = resolve(errorLogFilePath);
+    mkdirSync(dirname(resolvedLogPath), { recursive: true });
+    mkdirSync(dirname(resolvedErrorPath), { recursive: true });
+    this.logStream = createWriteStream(resolvedLogPath, { flags: 'a', encoding: 'utf8' });
+    this.errorStream = createWriteStream(resolvedErrorPath, { flags: 'a', encoding: 'utf8' });
+    this.logStream.on('error', (err) => process.stderr.write(`Log stream error: ${err.message}\n`));
+    this.errorStream.on('error', (err) =>
+      process.stderr.write(`Error log stream error: ${err.message}\n`),
+    );
   }
   log(message: unknown, context?: string): void {
     super.log(message, context);
@@ -40,10 +47,6 @@ export class FileLoggerService extends ConsoleLogger {
     super.fatal(message, context);
     this.writeLine('FATAL', message, context, true);
   }
-  private ensureLogDirectory(): void {
-    mkdirSync(dirname(this.logFilePath), { recursive: true });
-    mkdirSync(dirname(this.errorLogFilePath), { recursive: true });
-  }
   private writeLine(
     level: string,
     message: unknown,
@@ -53,10 +56,9 @@ export class FileLoggerService extends ConsoleLogger {
     const timestamp = new Date().toISOString();
     const contextLabel = context ? ` [${context}]` : '';
     const line = `${timestamp} ${level}${contextLabel} ${this.stringify(message)}\n`;
-    appendFileSync(this.logFilePath, line, { encoding: 'utf8' });
-
+    this.logStream.write(line);
     if (writeToErrorFile) {
-      appendFileSync(this.errorLogFilePath, line, { encoding: 'utf8' });
+      this.errorStream.write(line);
     }
   }
   private stringify(message: unknown): string {
