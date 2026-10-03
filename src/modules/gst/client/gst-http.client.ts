@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { assertGstRouteActive, type GstRoute } from './gst-route-guard';
 
 export interface GstHttpRequest {
   method: string;
@@ -6,6 +7,8 @@ export interface GstHttpRequest {
   headers: Record<string, string>;
   body?: string;
   timeoutMs: number;
+  /** The rows the call runs on, checked again here (notes 88): nothing goes out while one is off. */
+  route: GstRoute;
 }
 
 export interface GstHttpResponse {
@@ -26,11 +29,14 @@ export class GstHttpError extends Error {
 /**
  * The one door to the network. Everything about a call — URL, headers, body,
  * timeout — is decided by the caller from the endpoint rows; this only sends
- * it. A provider so tests can swap it for a scripted portal.
+ * it, and only while every one of those rows is switched on (notes 88: a 503
+ * GST_SWITCHED_OFF otherwise, before any I/O). A provider so tests can swap it
+ * for a scripted portal.
  */
 @Injectable()
 export class GstHttpClient {
   async send(request: GstHttpRequest): Promise<GstHttpResponse> {
+    assertGstRouteActive(request.route, { field: 'gstProvider' });
     try {
       const response = await fetch(request.url, {
         method: request.method,

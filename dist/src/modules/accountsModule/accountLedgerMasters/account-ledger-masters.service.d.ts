@@ -23,6 +23,7 @@ export declare class AccountLedgerMastersService {
         ledId: string;
         deleted: true;
     }>;
+    private ensureLedgerHasNoOwner;
     private createLedger;
     createLedgerWithinTx(saveAccountLedgerMasterDto: SaveAccountLedgerMasterDto, tx: AccountLedgerWriteClient): Promise<AccountLedgerMasterPayload>;
     private updateLedger;

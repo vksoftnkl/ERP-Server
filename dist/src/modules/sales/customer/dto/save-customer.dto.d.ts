@@ -1,5 +1,6 @@
 export declare class SaveCustomerDto {
     cusId?: string;
+    cusLinkLedId?: string;
     cusTitle?: string | null;
     cusShort?: string | null;
     cusCode?: string | null;

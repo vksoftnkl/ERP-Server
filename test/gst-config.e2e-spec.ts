@@ -692,6 +692,55 @@ describe('GST providers & credentials (e2e — one rolled-back transaction)', ()
     expect(calls).toHaveLength(0);
   });
 
+  it('notes 88: every switch refuses Verify with a 503 naming it — before the portal and the log', async () => {
+    const logged = async () => {
+      const [row] = await tx.$queryRaw<Array<{ n: number }>>`
+        SELECT count(*)::int AS n FROM public.gst_api_log WHERE gal_gcc_id = ${gccId}::uuid`;
+      return row.n;
+    };
+    const before = await logged();
+    const switches: Array<[string, (active: boolean) => Promise<unknown>]> = [
+      [
+        `GST provider ZT${stamp} is inactive`,
+        (active) => tx.gstProvider.update({ where: { gpvId }, data: { gpvIsActive: active } }),
+      ],
+      [
+        'EINVOICE · SANDBOX service is inactive',
+        (active) =>
+          tx.gstProviderService.update({ where: { gpsId }, data: { gpsIsActive: active } }),
+      ],
+      [
+        'AUTH endpoint of EINVOICE · SANDBOX is inactive',
+        (active) =>
+          tx.gstProviderEndpoint.update({ where: { gpeId }, data: { gpeIsActive: active } }),
+      ],
+      [
+        'The GST credential is inactive',
+        (active) =>
+          tx.gstCompanyCredential.update({ where: { gccId }, data: { gccIsActive: active } }),
+      ],
+    ];
+    for (const [message, flip] of switches) {
+      await flip(false);
+      calls.length = 0;
+      const r = await refusal(attempt(() => credentials.verify(gccId)));
+      expect(r.status).toBe(503);
+      expect(r.body).toContain('GST_SWITCHED_OFF');
+      expect(r.body).toContain(message);
+      expect(calls).toHaveLength(0);
+      await flip(true);
+    }
+    // The provider is named first even when everything below it is off too.
+    await switches[1][1](false);
+    await switches[0][1](false);
+    expect((await refusal(attempt(() => credentials.verify(gccId)))).body).toContain(
+      `GST provider ZT${stamp} is inactive`,
+    );
+    await switches[0][1](true);
+    await switches[1][1](true);
+    expect(await logged()).toBe(before);
+  });
+
   it('a new password retires the live session; delete and restore keep the slot rules', async () => {
     const current = await credentials.getById(gccId);
     const saved = await attempt(() =>

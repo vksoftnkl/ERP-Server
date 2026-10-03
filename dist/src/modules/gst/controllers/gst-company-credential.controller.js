@@ -139,7 +139,9 @@ __decorate([
             'portal is data: { ok: false, message, errorCode }. Refused WITHOUT calling the portal: 409 ' +
             'GST_AUTH_BUSY (another sign-in holds the lease), GST_AUTH_RATE_LIMIT (4 sign-ins for this ' +
             'GSTIN in 15 minutes — NIC blocks at 5); 422 GST_CREDENTIAL_INCOMPLETE / ' +
-            'GST_PUBLIC_KEY_MISSING / GST_NO_AUTH_ENDPOINT / GST_NO_GSTIN naming what is missing.',
+            'GST_PUBLIC_KEY_MISSING / GST_NO_AUTH_ENDPOINT / GST_NO_GSTIN naming what is missing; 503 ' +
+            'GST_SWITCHED_OFF naming the first inactive row (provider, service, AUTH endpoint, account, ' +
+            'credential — notes 88).',
     }),
     (0, swagger_1.ApiCreatedResponse)({
         description: '{ success, message, data: { ok, message, errorCode?, tokenValidUntil?, creditBalance? } }',

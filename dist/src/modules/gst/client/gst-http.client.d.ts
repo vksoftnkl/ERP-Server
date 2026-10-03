@@ -1,9 +1,11 @@
+import { type GstRoute } from './gst-route-guard';
 export interface GstHttpRequest {
     method: string;
     url: string;
     headers: Record<string, string>;
     body?: string;
     timeoutMs: number;
+    route: GstRoute;
 }
 export interface GstHttpResponse {
     status: number;

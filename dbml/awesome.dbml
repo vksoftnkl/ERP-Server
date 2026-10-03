@@ -707,7 +707,7 @@ to tell afterwards which rule produced the figure.
 
 ═══════════════════════════════════════════════════════════════════════════
 NOT PARTITIONED, unlike the money tables
-══════════════════════════════════════════��════════════════════════════════
+═══════════════════════════════════════════════════════════════════════════
 
 `acc_bill_balance`, `acc_voucher_header`, `acc_vouchers`, `acc_pdc_register`
 and `acc_tender_detail` are all LIST-partitioned on their accounting year.
@@ -1641,6 +1641,12 @@ Table audit_log {
   logIp String
   logAppName String
   logNotes String
+  logRevNo Int [note: 'Notes 89 — revision of a transaction document: 1 = the create, then one
+per save, counted per (logScreenId, logPk). NULL on every other row.
+DB-only partial unique index (Prisma cannot express the predicate):
+ux_audit_log_revision ON (log_screen_id, log_pk, log_rev_no)
+WHERE log_rev_no IS NOT NULL
+plus CHECK ck_audit_log_rev_no (log_rev_no >= 1).']
   logSyncDate DateTime [note: 'NULL = changed since the last push to the cloud DB (see src/modules/cloud-sync).']
 }
 

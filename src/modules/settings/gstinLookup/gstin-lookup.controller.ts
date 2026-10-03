@@ -34,8 +34,10 @@ export class GstinLookupController {
     description:
       'Fills a company / branch / party form: legal and trade name, status, registration type ' +
       '(also as REGULAR / COMPOSITION / UNREGISTERED / SEZ), state code, PAN and address, plus ' +
-      'the provider record as sent. 404 when the provider has no details, 502 when it fails, ' +
-      '503 when no provider or source GSTIN is configured.',
+      'the provider record as sent. The provider is whatever the GST Provider screen has ' +
+      'switched on for GSTIN_VERIFY (notes 87). 404 when the provider has no details, 502 when ' +
+      'it fails (with its own [code] message), 503 when search is switched off or the company ' +
+      'has no GSTIN.',
   })
   @ApiOkResponse({ description: '{ success, message, data: GstinLookupPayload }' })
   @ApiBadRequestResponse({ type: HttpErrorResponseDto })

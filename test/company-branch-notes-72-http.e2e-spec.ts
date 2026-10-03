@@ -8,12 +8,15 @@ import * as request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { TokenService, type AccessTokenPayload } from '../src/modules/auth/token.service';
 import { AuthSessionService } from '../src/modules/auth/auth-session.service';
+import { GstHttpClient } from '../src/modules/gst/client/gst-http.client';
+import { GstinLookupService } from '../src/modules/settings/gstinLookup/gstin-lookup.service';
 
 /**
  * NOTES 72 over HTTP: the new routes are mounted, their query / body
  * validation runs through the real pipe and filters, and the guards answer
  * with the right status. Every call is a refusal or a read — nothing here
- * writes — and the GST provider is never called: global fetch is mocked.
+ * writes — and the GST provider is never called: GstHttpClient is stubbed, and
+ * so are the rows GSTIN search would otherwise read and its gst_api_log row.
  * The behaviour itself is covered by company-branch-notes-72.e2e-spec.ts.
  *
  *     npm run test:e2e -- company-branch-notes-72-http
@@ -46,8 +49,8 @@ describe('Company + Branch masters, notes 72 (HTTP — read-only)', () => {
       sid: 'e2e-notes-72-session',
       user_type: 'SUPER ADMIN',
       company_id: liveCompanyId,
-      branch_id: null as unknown as string,
-      device_id: null as unknown as string,
+      branch_id: null,
+      device_id: null,
       iat: Math.floor(Date.now() / 1000),
       exp: Math.floor(Date.now() / 1000) + 3600,
       typ: 'access',
@@ -129,27 +132,52 @@ describe('Company + Branch masters, notes 72 (HTTP — read-only)', () => {
     );
   });
 
-  it('GET /gst/search validates the GSTIN and answers from the provider (fetch mocked)', async () => {
+  it('GET /gst/search validates the GSTIN and answers from the provider (rows and network stubbed)', async () => {
     const bad = await http
       .get('/api/v1/gst/search')
       .set('Authorization', BEARER)
       .query({ gstin: 'ABC' });
     expect(bad.status).toBe(400);
 
-    process.env.GST_LOOKUP_ENDPOINT = 'https://gsp.example/commonapi/v1.1/search';
-    process.env.GST_LOOKUP_ASP_ID = 'e2e-asp';
-    process.env.GST_LOOKUP_ASP_PASSWORD = 'e2e-secret';
-    process.env.GST_LOOKUP_SOURCE_GSTIN = '33AAAAA0000A1Z5';
-    const fetchMock = jest.spyOn(globalThis, 'fetch').mockResolvedValue({
-      ok: true,
+    // Notes 87: search runs on the GST Provider rows. Stub the route those rows
+    // would give, the company it searches as and the log write, so this stays
+    // read-only and independent of what the box has switched on.
+    const route = {
+      provider: { gpvId: 'gpv-e2e', gpvCode: 'E2E', gpvTimeoutMs: 30000 },
+      service: {
+        gpsGpvId: 'gpv-e2e',
+        gpsEnvironment: 'SANDBOX',
+        gpsBaseUrl: 'https://gsp.example',
+        gpsTimeoutMs: null,
+      },
+      endpoint: {
+        gpeHttpMethod: 'GET',
+        gpePathTemplate: '/commonapi/v1.1/search',
+        gpeQueryTemplate: '?Action=TP&Gstin={gstin}&SearchGstin={searchGstin}',
+        gpeHeaders: null,
+        gpeTimeoutMs: 10000,
+        gpeSuccessPath: null,
+        gpeResponseRootPath: null,
+      },
+      account: { gpaClientIdEnc: null, gpaClientSecretEnc: null, gpaApiKeyEnc: null },
+    };
+    const lookup = GstinLookupService.prototype as unknown as Record<
+      'resolveRoute' | 'resolveSource' | 'log',
+      () => Promise<unknown>
+    >;
+    const spies = [
+      jest.spyOn(lookup, 'resolveRoute').mockResolvedValue(route),
+      jest
+        .spyOn(lookup, 'resolveSource')
+        .mockResolvedValue({ companyId: liveCompanyId, sourceGstin: '33AAAAA0000A1Z5' }),
+      jest.spyOn(lookup, 'log').mockResolvedValue(undefined),
+    ];
+    const send = jest.spyOn(GstHttpClient.prototype, 'send').mockResolvedValue({
       status: 200,
-      text: () =>
-        Promise.resolve(
-          JSON.stringify({
-            data: { lgnm: 'ZT LEGAL NAME', tradeNam: 'ZT TRADE', dty: 'Composition' },
-          }),
-        ),
-    } as Response);
+      text: JSON.stringify({
+        data: { lgnm: 'ZT LEGAL NAME', tradeNam: 'ZT TRADE', dty: 'Composition' },
+      }),
+    });
     try {
       const res = await http
         .get('/api/v1/gst/search')
@@ -162,9 +190,13 @@ describe('Company + Branch masters, notes 72 (HTTP — read-only)', () => {
         gstRegType: 'COMPOSITION',
         panNo: 'ABNPL5414F',
       });
-      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(send).toHaveBeenCalledTimes(1);
+      expect(send.mock.calls[0][0].url).toBe(
+        'https://gsp.example/commonapi/v1.1/search?Action=TP&Gstin=33AAAAA0000A1Z5&SearchGstin=33ABNPL5414F1ZU',
+      );
     } finally {
-      fetchMock.mockRestore();
+      send.mockRestore();
+      spies.forEach((spy) => spy.mockRestore());
     }
   });
 });

@@ -47,6 +47,16 @@ const SUPPLIER_TO_LEDGER_FIELD_MAP = [
     ['supNotes', 'ledRemarks'],
     ['supIsActive', 'ledIsActive'],
 ];
+const SUPPLIER_FIELDS_FROM_LINKED_LEDGER = [
+    ['supName', 'ledName'],
+    ['supStateName', 'ledStateName'],
+    ['supStateCode', 'ledStateCode'],
+    ...SUPPLIER_TO_LEDGER_FIELD_MAP.filter(([supField]) => supField !== 'supIsActive' && supField !== 'supNotes'),
+];
+const SUPPLIER_LINK_MAX_LENGTH = {
+    supMailId: 120,
+    supRegionName: 200,
+};
 let SuppliersService = class SuppliersService {
     prisma;
     auditLogService;
@@ -60,6 +70,11 @@ let SuppliersService = class SuppliersService {
     }
     async save(saveSupplierDto) {
         if (saveSupplierDto.supId) {
+            if (saveSupplierDto.supLinkLedId && saveSupplierDto.supLinkLedId !== saveSupplierDto.supId) {
+                (0, module_service_utils_1.throwPurchaseBadRequest)('Validation failed', [
+                    { field: 'supLinkLedId', message: 'supLinkLedId applies to a create only' },
+                ]);
+            }
             return this.updateSupplier(saveSupplierDto);
         }
         return this.createSupplier(saveSupplierDto);
@@ -99,14 +114,21 @@ let SuppliersService = class SuppliersService {
             if (result.count === 0) {
                 (0, module_service_utils_1.throwPurchaseNotFound)('Supplier not found', 'supId', `No active supplier found with id ${supId}`);
             }
+            const customerRole = await this.findCustomerRole(tx, supId);
             await tx.accLedgerMaster.updateMany({
                 where: { ledId: supId, ledIsDeleted: false },
-                data: {
-                    ledIsDeleted: true,
-                    ledIsActive: false,
-                    ledModifiedOn: modifiedOn,
-                    ledModifiedBy: this.requestContextService.getUserId() ?? module_service_utils_1.DEFAULT_ACTOR,
-                },
+                data: customerRole
+                    ? {
+                        ledIsActive: customerRole.cusIsActive,
+                        ledModifiedOn: modifiedOn,
+                        ledModifiedBy: this.requestContextService.getUserId() ?? module_service_utils_1.DEFAULT_ACTOR,
+                    }
+                    : {
+                        ledIsDeleted: true,
+                        ledIsActive: false,
+                        ledModifiedOn: modifiedOn,
+                        ledModifiedBy: this.requestContextService.getUserId() ?? module_service_utils_1.DEFAULT_ACTOR,
+                    },
             });
             const originalRecord = this.toPayload(existing);
             const modifiedRecord = this.toPayload({
@@ -126,39 +148,56 @@ let SuppliersService = class SuppliersService {
                 originalRecord,
                 modifiedRecord,
                 userId: this.requestContextService.getUserId() ?? module_service_utils_1.DEFAULT_ACTOR,
-                notes: 'Supplier soft deleted',
+                notes: customerRole
+                    ? 'Supplier soft deleted; its ledger stays with the customer'
+                    : 'Supplier soft deleted',
             }, tx);
             return { supId, deleted: true };
         });
     }
     async createSupplier(saveSupplierDto) {
-        const normalizedName = (0, module_service_utils_1.normalizeRequiredText)(saveSupplierDto.supName, 'supName');
-        const normalizedPurchaseType = (0, module_service_utils_1.normalizeRequiredText)(saveSupplierDto.supPurchaseType, 'supPurchaseType');
-        const normalizedStateName = (0, module_service_utils_1.normalizeRequiredText)(saveSupplierDto.supStateName, 'supStateName');
-        const normalizedStateCode = this.normalizeStateCode(saveSupplierDto.supStateCode);
-        const normalizedGstType = (0, module_service_utils_1.normalizeRequiredText)(saveSupplierDto.supGstType, 'supGstType');
-        const now = new Date();
-        const createdBy = (0, module_service_utils_1.resolveActor)(saveSupplierDto.supCreatedBy, this.requestContextService.getUserId());
-        const data = {
-            supGroupId: saveSupplierDto.supGroupId,
-            supPurchaseType: normalizedPurchaseType,
-            supName: normalizedName,
-            supStateName: normalizedStateName,
-            supStateCode: normalizedStateCode,
-            supGstType: normalizedGstType,
-            supBilledDate: now,
-            supCreatedOn: now,
-            supCreatedBy: createdBy,
-        };
-        this.applyOptionalFields(data, saveSupplierDto);
         try {
             return await this.prisma.$transaction(async (tx) => {
-                await this.ensureSupplierGroupExists(tx, data.supGroupId);
-                const companyId = (0, module_service_utils_1.hasOwnProperty)(saveSupplierDto, 'supCompanyId')
-                    ? (saveSupplierDto.supCompanyId ?? null)
+                const linkLedger = saveSupplierDto.supLinkLedId
+                    ? await this.loadLedgerToLink(tx, saveSupplierDto.supLinkLedId)
                     : null;
-                await this.ensureNameIsUnique(tx, normalizedName, companyId);
-                const ledgerDto = this.buildLinkedLedgerDto(saveSupplierDto, {
+                if (linkLedger && (saveSupplierDto.ledgerBankAccount?.length ?? 0) > 0) {
+                    (0, module_service_utils_1.throwPurchaseBadRequest)('Validation failed', [
+                        {
+                            field: 'ledgerBankAccount',
+                            message: 'Bank accounts cannot be sent with supLinkLedId; save them afterwards',
+                        },
+                    ]);
+                }
+                const dto = linkLedger
+                    ? this.withLinkedLedgerDefaults(saveSupplierDto, linkLedger)
+                    : saveSupplierDto;
+                const normalizedName = (0, module_service_utils_1.normalizeRequiredText)(dto.supName, 'supName');
+                const normalizedPurchaseType = (0, module_service_utils_1.normalizeRequiredText)(dto.supPurchaseType, 'supPurchaseType');
+                const normalizedStateName = (0, module_service_utils_1.normalizeRequiredText)(dto.supStateName, 'supStateName');
+                const normalizedStateCode = this.normalizeStateCode(dto.supStateCode);
+                const normalizedGstType = (0, module_service_utils_1.normalizeRequiredText)(dto.supGstType, 'supGstType');
+                const now = new Date();
+                const createdBy = (0, module_service_utils_1.resolveActor)(dto.supCreatedBy, this.requestContextService.getUserId());
+                const data = {
+                    supGroupId: dto.supGroupId,
+                    supPurchaseType: normalizedPurchaseType,
+                    supName: normalizedName,
+                    supStateName: normalizedStateName,
+                    supStateCode: normalizedStateCode,
+                    supGstType: normalizedGstType,
+                    supBilledDate: now,
+                    supCreatedOn: now,
+                    supCreatedBy: createdBy,
+                };
+                this.applyOptionalFields(data, dto);
+                await this.ensureSupplierGroupExists(tx, data.supGroupId);
+                const companyId = (0, module_service_utils_1.hasOwnProperty)(dto, 'supCompanyId') ? (dto.supCompanyId ?? null) : null;
+                await this.ensureNameIsUnique(tx, normalizedName, companyId, linkLedger?.ledId);
+                if (linkLedger) {
+                    return this.createSupplierOnLedger(tx, data, linkLedger);
+                }
+                const ledgerDto = this.buildLinkedLedgerDto(dto, {
                     name: normalizedName,
                     stateName: normalizedStateName,
                     stateCode: normalizedStateCode,
@@ -188,6 +227,66 @@ let SuppliersService = class SuppliersService {
             ]);
             throw error;
         }
+    }
+    async createSupplierOnLedger(tx, data, ledger) {
+        const supId = ledger.ledId;
+        const previous = await tx.supplier.findUnique({ where: { supId } });
+        if (previous && !previous.supIsDeleted) {
+            (0, module_service_utils_1.throwPurchaseConflict)('Supplier already exists', [
+                { field: 'supLinkLedId', message: `Ledger "${ledger.ledName}" is already a supplier` },
+            ]);
+        }
+        let saved;
+        if (previous) {
+            const { supCreatedOn, supCreatedBy, ...revived } = data;
+            saved = await tx.supplier.update({
+                where: { supId },
+                data: {
+                    ...revived,
+                    supIsDeleted: false,
+                    supIsActive: data.supIsActive ?? true,
+                    supModifiedOn: supCreatedOn,
+                    supModifiedBy: supCreatedBy,
+                },
+            });
+        }
+        else {
+            saved = await tx.supplier.create({ data: { ...data, supId } });
+        }
+        const ledgerBankAccount = await this.accountLedgerMastersService.listBankAccountPayloads(supId);
+        const payload = this.toPayload(saved, ledgerBankAccount);
+        await this.auditLogService.logEntityChange({
+            action: previous ? 'update' : 'New',
+            tableName: SUPPLIER_TABLE_NAME,
+            screenName: SUPPLIER_AUDIT_SCREEN_NAME,
+            screenType: 'master',
+            pk: supId,
+            displayName: payload.supName,
+            originalRecord: previous ? this.toPayload(previous) : null,
+            modifiedRecord: payload,
+            userId: saved.supModifiedBy,
+            notes: previous
+                ? 'Supplier restored on its existing ledger'
+                : 'Supplier created on an existing ledger',
+        }, tx);
+        return payload;
+    }
+    async loadLedgerToLink(tx, ledId) {
+        const ledger = await tx.accLedgerMaster.findFirst({ where: { ledId, ledIsDeleted: false } });
+        if (!ledger) {
+            (0, module_service_utils_1.throwPurchaseBadRequest)('Ledger does not exist', [
+                { field: 'supLinkLedId', message: `No active account ledger found with id ${ledId}` },
+            ]);
+        }
+        if (ledger.ledLedgerType !== 'PARTY' && !(await this.findCustomerRole(tx, ledId))) {
+            (0, module_service_utils_1.throwPurchaseBadRequest)('Ledger is not a party ledger', [
+                {
+                    field: 'supLinkLedId',
+                    message: `Ledger "${ledger.ledName}" is a ${ledger.ledLedgerType ?? 'untyped'} ledger; only a PARTY ledger can be a supplier`,
+                },
+            ]);
+        }
+        return ledger;
     }
     async updateSupplier(saveSupplierDto) {
         const supId = saveSupplierDto.supId;
@@ -225,7 +324,7 @@ let SuppliersService = class SuppliersService {
                 const updated = await tx.supplier.update({ where: { supId }, data });
                 const linkedLedger = await tx.accLedgerMaster.findFirst({
                     where: { ledId: supId, ledIsDeleted: false },
-                    select: { ledId: true },
+                    select: { ledId: true, ledGroupId: true },
                 });
                 let ledgerBankAccount = [];
                 if (linkedLedger) {
@@ -235,6 +334,11 @@ let SuppliersService = class SuppliersService {
                         stateCode: normalizedStateCode,
                     });
                     ledgerDto.ledId = supId;
+                    const customerRole = await this.findCustomerRole(tx, supId);
+                    if (customerRole) {
+                        ledgerDto.ledGroupId = linkedLedger.ledGroupId;
+                        ledgerDto.ledIsActive = updated.supIsActive || customerRole.cusIsActive;
+                    }
                     const ledger = await this.accountLedgerMastersService.updateLedgerWithinTx(ledgerDto, tx);
                     ledgerBankAccount = ledger.ledgerBankAccount;
                 }
@@ -287,6 +391,28 @@ let SuppliersService = class SuppliersService {
             supBranchName: branch?.brName ?? null,
             supGroupName: group?.spgName ?? null,
         };
+    }
+    findCustomerRole(tx, ledId) {
+        return tx.customer.findFirst({
+            where: { cusId: ledId, cusIsDeleted: false },
+            select: { cusIsActive: true },
+        });
+    }
+    withLinkedLedgerDefaults(saveSupplierDto, ledger) {
+        const dto = { ...saveSupplierDto };
+        const ledgerRecord = ledger;
+        for (const [supField, ledField] of SUPPLIER_FIELDS_FROM_LINKED_LEDGER) {
+            const current = dto[supField];
+            const fallback = ledgerRecord[ledField];
+            const maxLength = SUPPLIER_LINK_MAX_LENGTH[supField];
+            if ((current === undefined || current === null || current === '') &&
+                fallback !== null &&
+                fallback !== undefined &&
+                !(maxLength !== undefined && typeof fallback === 'string' && fallback.length > maxLength)) {
+                dto[supField] = fallback;
+            }
+        }
+        return dto;
     }
     async ensureSupplierGroupExists(tx, supGroupId) {
         const record = await tx.supplierGroup.findFirst({
@@ -381,7 +507,7 @@ let SuppliersService = class SuppliersService {
         }
     }
     normalizeStateCode(value) {
-        const normalized = value.trim().toUpperCase();
+        const normalized = (value ?? '').trim().toUpperCase();
         if (normalized.length !== 2) {
             (0, module_service_utils_1.throwPurchaseBadRequest)('Validation failed', [
                 { field: 'supStateCode', message: 'supStateCode must be exactly 2 characters' },

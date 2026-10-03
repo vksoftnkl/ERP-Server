@@ -15,6 +15,7 @@ const class_validator_1 = require("class-validator");
 const dtoDecorators_1 = require("../../../../common/dto/dtoDecorators");
 class SaveCustomerDto {
     cusId;
+    cusLinkLedId;
     cusTitle;
     cusShort;
     cusCode;
@@ -97,6 +98,18 @@ __decorate([
     __metadata("design:type", String)
 ], SaveCustomerDto.prototype, "cusId", void 0);
 __decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        format: 'uuid',
+        description: 'Create only: make this existing PARTY ledger a customer as well (e.g. a supplier that is ' +
+            'also sold to). No ledger is created; the customer takes the ledger id as its cusId, and ' +
+            'the ledger keeps its group (cusAreaId is still required, for beats and area filters). ' +
+            'Name, state, address, contact, GSTIN and PAN left out default from the ledger. 409 when ' +
+            'the ledger is already a customer.',
+    }),
+    (0, dtoDecorators_1.OptionalUuid)(),
+    __metadata("design:type", String)
+], SaveCustomerDto.prototype, "cusLinkLedId", void 0);
+__decorate([
     (0, swagger_1.ApiPropertyOptional)({ maxLength: 5, nullable: true }),
     (0, dtoDecorators_1.NullableStringStrict)(5),
     __metadata("design:type", Object)
@@ -142,7 +155,8 @@ __decorate([
     __metadata("design:type", Object)
 ], SaveCustomerDto.prototype, "cusDistrict", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ maxLength: 100 }),
+    (0, swagger_1.ApiProperty)({ maxLength: 100, description: 'May be left out when cusLinkLedId is set' }),
+    (0, class_validator_1.ValidateIf)((o) => !o.cusLinkLedId || Boolean(o.cusStateName)),
     (0, dtoDecorators_1.TrimmedString)(100),
     (0, class_validator_1.IsNotEmpty)(),
     __metadata("design:type", String)
@@ -153,7 +167,12 @@ __decorate([
     __metadata("design:type", Object)
 ], SaveCustomerDto.prototype, "cusCountry", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ minLength: 2, maxLength: 2 }),
+    (0, swagger_1.ApiProperty)({
+        minLength: 2,
+        maxLength: 2,
+        description: 'May be left out when cusLinkLedId is set',
+    }),
+    (0, class_validator_1.ValidateIf)((o) => !o.cusLinkLedId || Boolean(o.cusStateCode)),
     (0, dtoDecorators_1.UpperString)(2),
     __metadata("design:type", String)
 ], SaveCustomerDto.prototype, "cusStateCode", void 0);

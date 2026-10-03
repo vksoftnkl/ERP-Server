@@ -23,6 +23,7 @@ const gst_crypto_service_1 = require("../config/gst-crypto.service");
 const gst_auth_lease_1 = require("./gst-auth-lease");
 const gst_http_client_1 = require("./gst-http.client");
 const gst_json_path_1 = require("./gst-json-path");
+const gst_route_guard_1 = require("./gst-route-guard");
 const gst_nic_crypto_1 = require("./gst-nic-crypto");
 exports.VERIFY_AUTH_BUDGET = 4;
 const AUTH_WINDOW_MINUTES = 15;
@@ -77,6 +78,7 @@ let GstAuthService = GstAuthService_1 = class GstAuthService {
                 headers: request.headers,
                 body: request.body,
                 timeoutMs: context.timeoutMs,
+                route: context.route,
             });
             verdict = await this.interpret(context, request, response, actor);
         }
@@ -131,10 +133,6 @@ let GstAuthService = GstAuthService_1 = class GstAuthService {
                 },
             ]);
         }
-        const gstin = credential.branch?.brGstinNo?.trim() || credential.company.compGstinNo?.trim();
-        if (!gstin) {
-            this.incomplete('gccCompanyId', `${credential.company.compName} has no GSTIN to sign in as`, gst_config_constants_1.GST_CODES.NO_GSTIN);
-        }
         const services = await this.prisma.gstProviderService.findMany({
             where: {
                 gpsGpvId: credential.gccGpvId,
@@ -158,16 +156,32 @@ let GstAuthService = GstAuthService_1 = class GstAuthService {
             gst_config_constants_1.GST_SERVICES.indexOf(s.gpsService);
         const service = services.filter((s) => s.endpoints.length).sort((a, b) => rank(a) - rank(b))[0];
         if (!service) {
+            (0, gst_route_guard_1.assertGstRouteActive)({ provider: credential.provider }, { field: 'gccId' });
             this.incomplete('gccGpvId', `${credential.provider.gpvCode} has no ${credential.gccService ?? ''} ${credential.gccEnvironment} ` +
                 'service with an AUTH endpoint. Add one under GST Providers.', gst_config_constants_1.GST_CODES.NO_AUTH_ENDPOINT);
         }
         const endpoint = service.endpoints.find((e) => e.gpeIsActive) ?? service.endpoints[0];
-        const account = await (0, gst_auth_lease_1.resolveProviderAccount)(this.prisma, credential, service.gpsService, {
-            activeOnly: false,
-        });
+        const account = (await (0, gst_auth_lease_1.resolveProviderAccount)(this.prisma, credential, service.gpsService)) ??
+            (await (0, gst_auth_lease_1.resolveProviderAccount)(this.prisma, credential, service.gpsService, {
+                activeOnly: false,
+            }));
+        const route = {
+            provider: credential.provider,
+            service,
+            action: 'AUTH',
+            endpoint,
+            account,
+            credential,
+        };
+        (0, gst_route_guard_1.assertGstRouteActive)(route, { field: 'gccId' });
+        const gstin = credential.branch?.brGstinNo?.trim() || credential.company.compGstinNo?.trim();
+        if (!gstin) {
+            this.incomplete('gccCompanyId', `${credential.company.compName} has no GSTIN to sign in as`, gst_config_constants_1.GST_CODES.NO_GSTIN);
+        }
         return {
             credential,
             gstin,
+            route,
             service,
             endpoint,
             account,

@@ -34,6 +34,7 @@ export declare class StockVoucherService {
     private readonly stockPosting;
     constructor(prisma: PrismaService, auditLogService: AuditLogService, requestContextService: RequestContextService, stockPosting: StockPostingService);
     save(rules: StockVoucherTypeRules, dto: SaveStockVoucherDto): Promise<StockVoucherSaveResult>;
+    private logRevision;
     private loadRefno;
     private assertPayloadRules;
     private assertReasons;
@@ -41,10 +42,13 @@ export declare class StockVoucherService {
     private writeHeaderTotals;
     private updateDraft;
     private replaceLines;
+    private assertLineIds;
+    private lineDiffers;
+    private sameColumnValue;
     private loadCountHoldings;
     private holdingKey;
     list(rules: StockVoucherTypeRules, query: ListStockVouchersQuery): Promise<StockVoucherListResult>;
-    getById(rules: StockVoucherTypeRules, svhId: string, accYear: string, companyId: string, branchId: string): Promise<StockVoucherPayload>;
+    getById(rules: StockVoucherTypeRules, svhId: string, accYear: string, companyId: string, branchId: string, client?: Prisma.TransactionClient | PrismaService): Promise<StockVoucherPayload>;
     validate(rules: StockVoucherTypeRules, svhId: string, accYear: string, companyId: string, branchId: string, tx?: Prisma.TransactionClient): Promise<StockVoucherLineProblem[]>;
     private assertPostable;
     post(rules: StockVoucherTypeRules, svhId: string, accYear: string, companyId: string, branchId: string, userId?: string, afterPost?: (tx: Prisma.TransactionClient, rowsPosted: number) => Promise<void>): Promise<StockVoucherPostResult>;

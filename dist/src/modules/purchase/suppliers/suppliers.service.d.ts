@@ -17,8 +17,12 @@ export declare class SuppliersService {
         deleted: true;
     }>;
     private createSupplier;
+    private createSupplierOnLedger;
+    private loadLedgerToLink;
     private updateSupplier;
     private resolveRelatedNames;
+    private findCustomerRole;
+    private withLinkedLedgerDefaults;
     private ensureSupplierGroupExists;
     private ensureNameIsUnique;
     private buildLinkedLedgerDto;

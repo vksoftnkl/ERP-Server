@@ -8,6 +8,7 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.GstinLookupModule = void 0;
 const common_1 = require("@nestjs/common");
+const gst_module_1 = require("../../gst/gst.module");
 const gstin_lookup_controller_1 = require("./gstin-lookup.controller");
 const gstin_lookup_exception_filter_1 = require("./gstin-lookup-exception.filter");
 const gstin_lookup_service_1 = require("./gstin-lookup.service");
@@ -16,6 +17,7 @@ let GstinLookupModule = class GstinLookupModule {
 exports.GstinLookupModule = GstinLookupModule;
 exports.GstinLookupModule = GstinLookupModule = __decorate([
     (0, common_1.Module)({
+        imports: [gst_module_1.GstModule],
         controllers: [gstin_lookup_controller_1.GstinLookupController],
         providers: [gstin_lookup_service_1.GstinLookupService, gstin_lookup_exception_filter_1.GstinLookupExceptionFilter],
     })

@@ -379,6 +379,17 @@ export class SaveOpeningStockVoucherHeaderDto {
  * batches is three rows, and `ux_svi_line` is keyed on the pair.
  */
 export class SaveOpeningStockVoucherItemDto {
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      'Update only: the id of an existing line of this document (svi_id, as /get returns it). ' +
+      'A line WITH it updates that row, a line WITHOUT one is inserted, and a stored line whose ' +
+      'id is not sent is deleted — so a line keeps its identity across saves (notes 89). ' +
+      'Refused on a create, and refused when it names a line of another document.',
+  })
+  @OptionalUuid()
+  sviId?: string;
+
   @ApiProperty({ minimum: 1, description: 'Position in the grid, 1-based (ck_svi_line_no)' })
   @RequiredInteger(1)
   lineNo!: number;

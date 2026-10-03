@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
-import { IsArray, IsNotEmpty, IsOptional, ValidateNested } from 'class-validator';
+import { IsArray, IsNotEmpty, IsOptional, ValidateIf, ValidateNested } from 'class-validator';
 import {
   NullableDateString,
   NullableInteger,
@@ -23,6 +23,16 @@ export class SaveSupplierDto {
   })
   @OptionalUuid()
   supId?: string;
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      'Create only: make this existing PARTY ledger a supplier as well (e.g. a customer that is ' +
+      'also bought from). No ledger is created; the supplier takes the ledger id as its supId, ' +
+      'and the ledger keeps its group. Name, state, address, contact, GSTIN and PAN left out ' +
+      'default from the ledger. 409 when the ledger is already a supplier.',
+  })
+  @OptionalUuid()
+  supLinkLedId?: string;
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   @NullableUuid()
   supCompanyId?: string | null;
@@ -36,7 +46,8 @@ export class SaveSupplierDto {
   @TrimmedString(20)
   @IsNotEmpty()
   supPurchaseType!: string;
-  @ApiProperty({ maxLength: 200 })
+  @ApiProperty({ maxLength: 200, description: 'May be left out when supLinkLedId is set' })
+  @ValidateIf((o: SaveSupplierDto) => !o.supLinkLedId || Boolean(o.supName))
   @TrimmedString(200)
   @IsNotEmpty()
   supName!: string;
@@ -58,7 +69,8 @@ export class SaveSupplierDto {
   @ApiPropertyOptional({ maxLength: 250, nullable: true })
   @NullableString(250)
   supDistrict?: string | null;
-  @ApiProperty({ maxLength: 100 })
+  @ApiProperty({ maxLength: 100, description: 'May be left out when supLinkLedId is set' })
+  @ValidateIf((o: SaveSupplierDto) => !o.supLinkLedId || Boolean(o.supStateName))
   @TrimmedString(100)
   @IsNotEmpty()
   supStateName!: string;
@@ -104,7 +116,12 @@ export class SaveSupplierDto {
   @ApiPropertyOptional({ maxLength: 15, nullable: true })
   @NullableString(15)
   supGstNo?: string | null;
-  @ApiProperty({ minLength: 2, maxLength: 2 })
+  @ApiProperty({
+    minLength: 2,
+    maxLength: 2,
+    description: 'May be left out when supLinkLedId is set',
+  })
+  @ValidateIf((o: SaveSupplierDto) => !o.supLinkLedId || Boolean(o.supStateCode))
   @UpperString(2)
   supStateCode!: string;
   @ApiPropertyOptional({ maxLength: 10, nullable: true })

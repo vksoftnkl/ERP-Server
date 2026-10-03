@@ -26,6 +26,7 @@ export declare class SaveOpeningStockVoucherHeaderDto {
     modifiedBy?: string | null;
 }
 export declare class SaveOpeningStockVoucherItemDto {
+    sviId?: string;
     lineNo: number;
     splitNo?: number;
     itemId: string;

@@ -138,7 +138,11 @@ describe('Stock adjustments (e2e — one rolled-back transaction)', () => {
     const { stockPosting } = buildStockPosting(transactional(tx));
     voucherService = new StockVoucherService(
       transactional(tx),
-      { logEntityChange: jest.fn().mockResolvedValue(undefined) } as unknown as AuditLogService,
+      {
+        logEntityChange: jest.fn().mockResolvedValue(undefined),
+        // Notes 89 — every save writes one document revision.
+        logDocumentRevision: jest.fn().mockResolvedValue({ revNo: 1 }),
+      } as unknown as AuditLogService,
       ctx,
       stockPosting,
     );

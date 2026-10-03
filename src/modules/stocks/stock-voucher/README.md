@@ -30,6 +30,21 @@ migration `20260908110000`: the ledger is append-only (`tr_sml_forbid_delete`,
 movement but the count's own (`tr_sml_freeze_guard`, answered as 409), and the
 lot identity keys fold batch/serial case and whitespace.
 
+## Lines keep their id; every save is one audit revision (notes 89)
+
+A save is still a create (no `svhId`) or an update of a DRAFT, but the lines are matched **by
+`sviId`**, never by line number: a line that sends its `sviId` updates that row (and only when a
+column actually changed, so an untouched line keeps its stamps), a line without one is inserted,
+and a stored line the payload no longer names is hard-deleted (a draft has no ledger rows). A line
+id on a create, a repeated one, or one that is not a live line of this document is a 422 on
+`lines.<n>.sviId`. `ux_svi_line` is not deferrable, so renumbered lines are parked at
+`1_000_000 + n` first and then given their final number.
+
+`save()` reads the document (the `getById` shape) before touching anything and again at the end of
+its transaction — after the post, on a save-and-post — and writes ONE
+`AuditLogService.logDocumentRevision` row with both. The old header `insert`/`update` rows and the
+"lines replaced" row are gone. `getById` takes an optional client for that in-transaction read.
+
 ## Where the rules live
 
 | Rule | Enforced in |

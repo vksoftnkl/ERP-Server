@@ -15,6 +15,7 @@ const class_validator_1 = require("class-validator");
 const dtoDecorators_1 = require("../../../../common/dto/dtoDecorators");
 const stock_voucher_types_1 = require("../types/stock-voucher.types");
 class SaveStockVoucherItemDto {
+    sviId;
     lineNo;
     splitNo;
     itemId;
@@ -52,6 +53,17 @@ class SaveStockVoucherItemDto {
     modifiedBy;
 }
 exports.SaveStockVoucherItemDto = SaveStockVoucherItemDto;
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        format: 'uuid',
+        description: 'Update only: the id of an existing line of this document (svi_id, as /get returns it). ' +
+            'A line WITH it updates that row, a line WITHOUT one is inserted, and a stored line whose ' +
+            'id is not sent is deleted — so a line keeps its identity across saves (notes 89). ' +
+            'Refused on a create, and refused when it names a line of another document.',
+    }),
+    (0, dtoDecorators_1.OptionalUuid)(),
+    __metadata("design:type", String)
+], SaveStockVoucherItemDto.prototype, "sviId", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)({ minimum: 1, description: 'Position in the grid, 1-based (ck_svi_line_no)' }),
     (0, dtoDecorators_1.RequiredInteger)(),

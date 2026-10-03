@@ -104,6 +104,7 @@ let StockAdjustmentService = class StockAdjustmentService {
         const direction = this.directionOf(view, reasons);
         const outward = direction < 0;
         return {
+            ...(line.sviId ? { sviId: line.sviId } : {}),
             lineNo: line.lineNo,
             itemId: line.itemId,
             uomId: line.uomId,

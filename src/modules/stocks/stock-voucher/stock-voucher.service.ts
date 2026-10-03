@@ -66,7 +66,12 @@ import {
   type StockVarianceRow,
 } from './types/stock-voucher.types';
 const STOCK_VOUCHER_TABLE_NAME = 'stock_voucher';
-const STOCK_VOUCHER_ITEM_TABLE_NAME = 'stock_voucher_item';
+/**
+ * Notes 89 — where a renumbered line waits while the others move: above any
+ * real line number (ck_svi_line_no only asks for >= 1), so ux_svi_line, which
+ * is not deferrable, never sees two live rows on one number mid-save.
+ */
+const PARKED_LINE_NO = 1_000_000;
 /** §10 — both reports can cover a 40,000-row item master, so they page. */
 const DEFAULT_REPORT_LIMIT = 200;
 const MAX_REPORT_LIMIT = 1000;
@@ -301,10 +306,17 @@ export class StockVoucherService {
   /**
    * Create when `header.svhId` is absent, update when present.
    *
-   * UPDATE IS A FULL REPLACE OF THE LINES. Merging by line number over a grid
-   * the user can insert into the middle of is exactly where line numbers drift
-   * apart from the rows they name, and a DRAFT has no history worth preserving
-   * — nothing downstream of it exists yet.
+   * ON UPDATE THE LINES ARE MATCHED BY ID, never by line number (notes 89). A
+   * line that sends its `sviId` updates that row, a line without one is
+   * inserted, and a stored line whose id is not sent is deleted — merging by
+   * line number over a grid the user can insert into the middle of is exactly
+   * where numbers drift apart from the rows they name. Lines only ever change
+   * while the document is a DRAFT, which has no ledger rows, so nothing
+   * downstream depends on a line's identity yet; History does.
+   *
+   * Every save writes ONE audit row holding the whole document before and after
+   * it (AuditLogService.logDocumentRevision), instead of a header row plus a
+   * "lines replaced" row that said nothing about the lines.
    */
   async save(
     rules: StockVoucherTypeRules,
@@ -335,10 +347,23 @@ export class StockVoucherService {
     // called every posted opening a draft. Both rows take this one.
     const postedOn = new Date();
     const { svhId, rowsPosted } = await this.prisma.$transaction(async (tx) => {
+      // Notes 89 — the document BEFORE this save, read before anything is
+      // touched and in the shape /get returns; null on a create.
+      const before = header.svhId
+        ? await this.getById(
+            rules,
+            header.svhId,
+            header.accYear,
+            header.companyId,
+            header.branchId,
+            tx,
+          )
+        : null;
       const id = header.svhId
         ? await this.updateDraft(tx, rules, dto, actor, postedOn)
         : await this.createDraft(tx, rules, dto, actor, postedOn);
       if (!postAfterSave) {
+        await this.logRevision(tx, rules, id, header, before, actor, false);
         return { svhId: id, rowsPosted: null as number | null };
       }
       // IN THE SAME TRANSACTION AS THE SAVE, and that is the whole point of
@@ -380,6 +405,9 @@ export class StockVoucherService {
         deviceId: header.deviceId,
         sessionId: header.sessionId ?? null,
       });
+      // After the post, so the revision records the document this request left
+      // behind — posted, with the engine's totals.
+      await this.logRevision(tx, rules, id, header, before, actor, true);
       return { svhId: id, rowsPosted: posted.rowsPosted as number | null };
     });
     const document = await this.getById(
@@ -390,6 +418,44 @@ export class StockVoucherService {
       header.branchId,
     );
     return { ...document, rowsPosted };
+  }
+  /**
+   * Notes 89 — the ONE audit row of a save: the document after it, read inside
+   * the transaction so the uncommitted lines are seen, beside the `before` the
+   * save read first. History diffs the two; nothing here lists the changes.
+   */
+  private async logRevision(
+    tx: Prisma.TransactionClient,
+    rules: StockVoucherTypeRules,
+    svhId: string,
+    header: SaveStockVoucherDto['header'],
+    before: StockVoucherPayload | null,
+    actor: string,
+    posted: boolean,
+  ): Promise<void> {
+    const after = await this.getById(
+      rules,
+      svhId,
+      header.accYear,
+      header.companyId,
+      header.branchId,
+      tx,
+    );
+    await this.auditLogService.logDocumentRevision(
+      {
+        screenName: rules.auditScreenName,
+        tableName: STOCK_VOUCHER_TABLE_NAME,
+        docId: svhId,
+        displayName: after.header.refno,
+        before,
+        after,
+        userId: actor,
+        branchId: header.branchId,
+        deviceId: header.deviceId,
+        notes: `${rules.displayName} ${before ? 'updated' : 'created'}${posted ? ' and posted' : ''}`,
+      },
+      tx,
+    );
   }
   /** The printed number, for a trail row written in the same breath as the post. */
   private async loadRefno(
@@ -979,23 +1045,9 @@ export class StockVoucherService {
       },
       select: { svhId: true, svhAccYear: true, svhRefno: true },
     });
-    await this.replaceLines(tx, rules, dto, created.svhId, actor, header.createdBy);
+    await this.replaceLines(tx, rules, dto, created.svhId, actor, header.createdBy, now);
     await this.writeHeaderTotals(tx, created.svhId, header, dto.lines.length);
-    await this.auditLogService.logEntityChange(
-      {
-        action: 'insert',
-        tableName: STOCK_VOUCHER_TABLE_NAME,
-        screenName: rules.auditScreenName,
-        screenType: 'transaction',
-        pk: created.svhId,
-        displayName: created.svhRefno,
-        originalRecord: null,
-        modifiedRecord: { svhId: created.svhId, svhRefno: created.svhRefno, svhStatus: 'DRAFT' },
-        userId: actor,
-        notes: `${rules.displayName} draft created`,
-      },
-      tx,
-    );
+    // The audit row is save()'s: one revision holding the whole document.
     // The first row of the voucher's trail. fromStatus NULL says the document
     // did not exist before this step; tslToStatus says what it was born as.
     await this.logStatusChange(tx, {
@@ -1103,32 +1155,24 @@ export class StockVoucherService {
         svhModifiedBy: this.actorFor(header.modifiedBy, actor),
       },
     });
-    await this.replaceLines(tx, rules, dto, svhId, actor, header.modifiedBy);
+    await this.replaceLines(tx, rules, dto, svhId, actor, header.modifiedBy, now);
     await this.writeHeaderTotals(tx, svhId, header, dto.lines.length);
-    await this.auditLogService.logEntityChange(
-      {
-        action: 'update',
-        tableName: STOCK_VOUCHER_TABLE_NAME,
-        screenName: rules.auditScreenName,
-        screenType: 'transaction',
-        pk: svhId,
-        displayName: existing.svhRefno,
-        originalRecord: { svhId, svhRefno: existing.svhRefno, svhStatus: existing.svhStatus },
-        modifiedRecord: { svhId, svhRefno: existing.svhRefno, svhStatus: 'DRAFT' },
-        userId: actor,
-        notes: `${rules.displayName} draft updated`,
-      },
-      tx,
-    );
+    // The audit row is save()'s: one revision holding the whole document.
     return svhId;
   }
   /**
-   * Deletes and re-inserts the lines. See save() for why a replace rather than
-   * a merge.
+   * Writes the lines BY ID (notes 89; see save()): a line with `sviId` updates
+   * that row — and only when one of its columns actually differs, so an
+   * untouched line keeps its modified stamp — a line without one is inserted,
+   * and a stored line the payload no longer names is deleted.
    *
    * A hard delete, not a soft one: these lines have never reached the ledger —
    * a DRAFT moves no stock — so there is nothing to preserve and everything to
    * gain from ux_svi_line staying clean.
+   *
+   * ux_svi_line is not deferrable, so a renumber is done in two steps: every
+   * moving line is first parked above any real line number, then given its
+   * final one. Swapping lines 1 and 2 would otherwise collide half way.
    */
   private async replaceLines(
     tx: Prisma.TransactionClient,
@@ -1148,11 +1192,23 @@ export class StockVoucherService {
      * cannot happen, and the lines must not undo it.
      */
     author: string | null | undefined,
+    /** The request's one instant — see save(). Stamps svi_modified_on on an updated line. */
+    now: Date,
   ): Promise<void> {
     const { header, lines } = dto;
-    await tx.stockVoucherItem.deleteMany({
-      where: { sviVoucherId: svhId, sviAccYear: header.accYear },
-    });
+    const stored = header.svhId
+      ? await tx.stockVoucherItem.findMany({
+          where: { sviVoucherId: svhId, sviAccYear: header.accYear, sviIsDeleted: false },
+        })
+      : null;
+    this.assertLineIds(rules, lines, stored === null ? null : new Set(stored.map((r) => r.sviId)));
+    const kept = new Set(lines.map((line) => line.sviId).filter((id): id is string => !!id));
+    const dropped = (stored ?? []).filter((row) => !kept.has(row.sviId)).map((row) => row.sviId);
+    if (dropped.length) {
+      await tx.stockVoucherItem.deleteMany({
+        where: { sviVoucherId: svhId, sviAccYear: header.accYear, sviId: { in: dropped } },
+      });
+    }
     if (!lines.length) {
       return;
     }
@@ -1290,26 +1346,115 @@ export class StockVoucherService {
         // any write to them, including a write of the value it would compute.
       };
     });
-    await tx.stockVoucherItem.createMany({ data });
-    await this.auditLogService.logEntityChange(
-      {
-        // 'insert', not 'update', even though this replaced a line set: the
-        // audit service refuses an 'update' whose originalRecord is null, and
-        // the pre-delete line set is not read back here. Every other line grid
-        // logs a replacement the same way — see quotation/sale-order items.
-        action: 'insert',
-        tableName: STOCK_VOUCHER_ITEM_TABLE_NAME,
-        screenName: rules.auditScreenName,
-        screenType: 'transaction',
-        pk: svhId,
-        displayName: header.refno ?? svhId,
-        originalRecord: null,
-        modifiedRecord: { svhId, lineCount: data.length },
-        userId: actor,
-        notes: `${rules.displayName} lines replaced`,
-      },
-      tx,
+    const storedById = new Map((stored ?? []).map((row) => [row.sviId, row]));
+    const changed: Array<{
+      sviId: string;
+      next: (typeof data)[number];
+      line: SaveStockVoucherItemDto;
+    }> = [];
+    const moving: string[] = [];
+    lines.forEach((line, index) => {
+      const row = line.sviId ? storedById.get(line.sviId) : undefined;
+      if (!row || !this.lineDiffers(row, data[index])) {
+        return;
+      }
+      changed.push({ sviId: row.sviId, next: data[index], line });
+      if (row.sviLineNo !== data[index].sviLineNo || row.sviSplitNo !== data[index].sviSplitNo) {
+        moving.push(row.sviId);
+      }
+    });
+    const key = (sviId: string) => ({ sviId_sviAccYear: { sviId, sviAccYear: header.accYear } });
+    for (const [index, sviId] of moving.entries()) {
+      await tx.stockVoucherItem.update({
+        where: key(sviId),
+        data: { sviLineNo: PARKED_LINE_NO + index },
+      });
+    }
+    for (const { sviId, next, line } of changed) {
+      // created_by is the line's author and stays; this save is its modifier.
+      const fields: Record<string, unknown> = { ...next };
+      delete fields.sviCreatedBy;
+      await tx.stockVoucherItem.update({
+        where: key(sviId),
+        data: {
+          ...(fields as Prisma.StockVoucherItemUncheckedUpdateInput),
+          sviModifiedOn: now,
+          sviModifiedBy: this.actorFor(line.modifiedBy ?? author, actor),
+        },
+      });
+    }
+    const inserted = data.filter((_, index) => !lines[index].sviId);
+    if (inserted.length) {
+      await tx.stockVoucherItem.createMany({ data: inserted });
+    }
+  }
+  /**
+   * Notes 89 — a line id must name a live line of THIS document, once. A create
+   * has no lines to name; a stale grid (lines another save dropped) is told to
+   * reload rather than silently re-inserting what someone deleted.
+   */
+  private assertLineIds(
+    rules: StockVoucherTypeRules,
+    lines: readonly SaveStockVoucherItemDto[],
+    stored: ReadonlySet<string> | null,
+  ): void {
+    const errors: StockErrorDetail[] = [];
+    const seen = new Set<string>();
+    lines.forEach((line, index) => {
+      const id = line.sviId;
+      if (!id) {
+        return;
+      }
+      const field = `lines.${index}.sviId`;
+      if (stored === null) {
+        errors.push({
+          field,
+          message: `Line ${line.lineNo} sends line id ${id}, but a new ${rules.displayName.toLowerCase()} has no lines yet. Send it without sviId.`,
+        });
+      } else if (seen.has(id)) {
+        errors.push({
+          field,
+          message: `Line ${line.lineNo} repeats line id ${id}: one stored line cannot become two.`,
+        });
+      } else if (!stored.has(id)) {
+        errors.push({
+          field,
+          message: `Line ${line.lineNo} names line ${id}, which is not a line of this document any more. Reload it and save again.`,
+        });
+      }
+      seen.add(id);
+    });
+    if (errors.length) {
+      throwStockUnprocessable<StockErrorDetail, StockErrorResponse>(
+        `This ${rules.displayName.toLowerCase()} cannot be saved`,
+        errors,
+      );
+    }
+  }
+  /** Whether the line about to be written differs from the stored row in any column it sets. */
+  private lineDiffers(stored: object, next: object): boolean {
+    const row = stored as Record<string, unknown>;
+    return Object.entries(next).some(
+      ([column, value]) =>
+        value !== undefined &&
+        column !== 'sviCreatedBy' &&
+        column !== 'sviModifiedBy' &&
+        !this.sameColumnValue(row[column], value),
     );
+  }
+  private sameColumnValue(left: unknown, right: unknown): boolean {
+    if (left === null || left === undefined || right === null || right === undefined) {
+      return (left ?? null) === (right ?? null);
+    }
+    if (Prisma.Decimal.isDecimal(left) || Prisma.Decimal.isDecimal(right)) {
+      return new Prisma.Decimal(left as Prisma.Decimal.Value).equals(
+        new Prisma.Decimal(right as Prisma.Decimal.Value),
+      );
+    }
+    if (left instanceof Date && right instanceof Date) {
+      return left.getTime() === right.getTime();
+    }
+    return left === right;
   }
   /**
    * §3.4 — the holdings a count's lines name, read back from `stock_balance`
@@ -1527,8 +1672,10 @@ export class StockVoucherService {
     accYear: string,
     companyId: string,
     branchId: string,
+    /** The save's transaction, so a revision snapshot sees its uncommitted lines (notes 89). */
+    client: Prisma.TransactionClient | PrismaService = this.prisma,
   ): Promise<StockVoucherPayload> {
-    const [header] = await this.prisma.$queryRaw<HeaderRow[]>`
+    const [header] = await client.$queryRaw<HeaderRow[]>`
       SELECT svh.svh_id,
              svh.svh_acc_year,
              svh.svh_company_id,
@@ -1618,7 +1765,7 @@ export class StockVoucherService {
         `No ${rules.voucherType} voucher ${svhId} in ${accYear} for this company and branch.`,
       );
     }
-    const lines = await this.prisma.$queryRaw<LineRow[]>`
+    const lines = await client.$queryRaw<LineRow[]>`
       SELECT svi.svi_id,
              svi.svi_line_no,
              svi.svi_split_no,

@@ -1,7 +1,7 @@
 import { Prisma } from '@prisma/client';
 import { RequestContextService } from '../../common/request-context/request-context.service';
 import { PrismaService } from '../../database/prisma/prisma.service';
-import { CaptureScreenSnapshotInput, CreateAuditLogInput, LogEntityChangeInput } from './types/audit-log.types';
+import { CaptureScreenSnapshotInput, CreateAuditLogInput, LogDocumentRevisionInput, LogEntityChangeInput } from './types/audit-log.types';
 import { ListAuditLogQueryDto } from './dto/list-audit-log-query.dto';
 import { AuditLogListItem, AuditLogListMeta } from './types/audit-log-api.types';
 export declare class AuditLogService {
@@ -17,6 +17,11 @@ export declare class AuditLogService {
     private buildRecordScopeFilter;
     createAuditLog(input: CreateAuditLogInput, tx?: Prisma.TransactionClient): Promise<void>;
     logEntityChange(input: LogEntityChangeInput, tx?: Prisma.TransactionClient): Promise<void>;
+    logDocumentRevision(input: LogDocumentRevisionInput, tx?: Prisma.TransactionClient): Promise<{
+        revNo: number;
+    }>;
+    private documentHeaderOf;
+    private resolveDeviceName;
     private resolveAuditScreen;
     private syncAuditScreenSqlIfNeeded;
     private normalizeAction;

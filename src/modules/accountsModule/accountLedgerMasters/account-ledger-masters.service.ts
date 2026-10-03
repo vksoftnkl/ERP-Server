@@ -143,6 +143,7 @@ export class AccountLedgerMastersService {
           `No active account ledger found with id ${ledId}`,
         );
       }
+      await this.ensureLedgerHasNoOwner(tx, ledId, existing.ledName);
       const modifiedOn = new Date();
       const result = await tx.accLedgerMaster.updateMany({
         where: {
@@ -191,6 +192,59 @@ export class AccountLedgerMastersService {
         deleted: true,
       };
     });
+  }
+  // Notes 82 — a customer, supplier or sale agent IS its ledger (cus_id / sup_id / sa_id =
+  // led_id), and its own delete drops the ledger along with its last role (notes 81). Deleting
+  // the ledger from here instead would leave that master live on a deleted ledger: still
+  // pickable on a bill, with nothing to post to and no statement or outstanding. So the ledger
+  // goes only through its master, the way a group with ledgers is refused in the group delete.
+  private async ensureLedgerHasNoOwner(
+    tx: AccountLedgerWriteClient,
+    ledId: string,
+    ledName: string,
+  ): Promise<void> {
+    const [customer, supplier, saleAgent] = await Promise.all([
+      tx.customer.findFirst({
+        where: { cusId: ledId, cusIsDeleted: false },
+        select: { cusName: true },
+      }),
+      tx.supplier.findFirst({
+        where: { supId: ledId, supIsDeleted: false },
+        select: { supName: true },
+      }),
+      tx.saleAgent.findFirst({
+        where: { saId: ledId, saIsDeleted: false },
+        select: { saName: true },
+      }),
+    ]);
+    const owners: Array<{ role: string; name: string; master: string }> = [];
+    if (customer) {
+      owners.push({ role: 'customer', name: customer.cusName || ledName, master: 'Customer' });
+    }
+    if (supplier) {
+      owners.push({ role: 'supplier', name: supplier.supName, master: 'Supplier' });
+    }
+    if (saleAgent) {
+      owners.push({ role: 'sale agent', name: saleAgent.saName, master: 'Sale Agent' });
+    }
+    if (owners.length === 0) {
+      return;
+    }
+    const joined = (parts: string[]) =>
+      parts.length === 1 ? parts[0] : `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}`;
+    const roles = joined(owners.map((owner) => `${owner.role} "${owner.name}"`));
+    const masters = joined(owners.map((owner) => owner.master));
+    throwAccountsBadRequest<AccountLedgerMasterErrorDetail>(
+      'Cannot delete a ledger that belongs to a master',
+      [
+        {
+          field: 'ledId',
+          message: `This ledger belongs to ${roles}. Delete it from the ${masters} ${
+            owners.length === 1 ? 'master' : 'masters'
+          }.`,
+        },
+      ],
+    );
   }
   private async createLedger(
     saveAccountLedgerMasterDto: SaveAccountLedgerMasterDto,

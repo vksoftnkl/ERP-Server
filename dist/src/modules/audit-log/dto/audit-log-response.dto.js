@@ -31,6 +31,9 @@ class AuditLogListItemDto {
     log_branch_id;
     log_branch_name;
     log_notes;
+    log_entity_id;
+    log_rev_no;
+    log_device_name;
 }
 exports.AuditLogListItemDto = AuditLogListItemDto;
 __decorate([
@@ -97,6 +100,24 @@ __decorate([
     (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
     __metadata("design:type", Object)
 ], AuditLogListItemDto.prototype, "log_notes", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true, format: 'uuid', description: 'The raw record id' }),
+    __metadata("design:type", Object)
+], AuditLogListItemDto.prototype, "log_entity_id", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        example: 2,
+        description: 'Notes 89 — revision of a transaction document: 1 = create, then one per save. ' +
+            'log_original_record / log_modified_record hold the whole document (the /get shape) ' +
+            'before and after that save. Null on every other row.',
+    }),
+    __metadata("design:type", Object)
+], AuditLogListItemDto.prototype, "log_rev_no", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true, example: 'Till 1' }),
+    __metadata("design:type", Object)
+], AuditLogListItemDto.prototype, "log_device_name", void 0);
 class AuditLogListMetaDto {
     page;
     limit;

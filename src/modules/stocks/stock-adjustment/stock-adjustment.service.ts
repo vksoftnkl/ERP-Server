@@ -276,6 +276,8 @@ export class StockAdjustmentService {
     const direction = this.directionOf(view, reasons);
     const outward = direction < 0;
     return {
+      // Notes 89 — the line's identity across saves; absent on a new line.
+      ...(line.sviId ? { sviId: line.sviId } : {}),
       lineNo: line.lineNo,
       itemId: line.itemId,
       uomId: line.uomId,

@@ -127,7 +127,11 @@ describe('Opening stock (e2e — needs the stock engine)', () => {
 
     service = new StockVoucherService(
       prisma as unknown as PrismaService,
-      { logEntityChange: jest.fn().mockResolvedValue(undefined) } as unknown as AuditLogService,
+      {
+        logEntityChange: jest.fn().mockResolvedValue(undefined),
+        // Notes 89 — every save writes one document revision.
+        logDocumentRevision: jest.fn().mockResolvedValue({ revNo: 1 }),
+      } as unknown as AuditLogService,
       { getUserId: () => fixture?.userId ?? null } as unknown as RequestContextService,
       // §3.1 — the one stock engine, injected. Handed the same client, so a
       // posting call still runs inside whatever transaction the test opened.

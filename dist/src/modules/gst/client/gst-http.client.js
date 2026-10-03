@@ -8,6 +8,7 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.GstHttpClient = exports.GstHttpError = void 0;
 const common_1 = require("@nestjs/common");
+const gst_route_guard_1 = require("./gst-route-guard");
 class GstHttpError extends Error {
     kind;
     constructor(kind, message) {
@@ -18,6 +19,7 @@ class GstHttpError extends Error {
 exports.GstHttpError = GstHttpError;
 let GstHttpClient = class GstHttpClient {
     async send(request) {
+        (0, gst_route_guard_1.assertGstRouteActive)(request.route, { field: 'gstProvider' });
         try {
             const response = await fetch(request.url, {
                 method: request.method,

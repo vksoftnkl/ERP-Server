@@ -1,6 +1,7 @@
 import { LedgerBankAccountItemDto } from '../../../accountsModule/accountLedgerMasters/dto/ledger-bank-account-item.dto';
 export declare class SaveSupplierDto {
     supId?: string;
+    supLinkLedId?: string;
     supCompanyId?: string | null;
     supBranchId?: string | null;
     supGroupId: string;

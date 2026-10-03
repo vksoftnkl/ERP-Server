@@ -18,6 +18,7 @@ const ledger_bank_account_item_dto_1 = require("../../../accountsModule/accountL
 const save_account_ledger_master_dto_1 = require("../../../accountsModule/accountLedgerMasters/dto/save-account-ledger-master.dto");
 class SaveSupplierDto {
     supId;
+    supLinkLedId;
     supCompanyId;
     supBranchId;
     supGroupId;
@@ -73,6 +74,17 @@ __decorate([
     __metadata("design:type", String)
 ], SaveSupplierDto.prototype, "supId", void 0);
 __decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        format: 'uuid',
+        description: 'Create only: make this existing PARTY ledger a supplier as well (e.g. a customer that is ' +
+            'also bought from). No ledger is created; the supplier takes the ledger id as its supId, ' +
+            'and the ledger keeps its group. Name, state, address, contact, GSTIN and PAN left out ' +
+            'default from the ledger. 409 when the ledger is already a supplier.',
+    }),
+    (0, dtoDecorators_1.OptionalUuid)(),
+    __metadata("design:type", String)
+], SaveSupplierDto.prototype, "supLinkLedId", void 0);
+__decorate([
     (0, swagger_1.ApiPropertyOptional)({ format: 'uuid', nullable: true }),
     (0, dtoDecorators_1.NullableUuid)(),
     __metadata("design:type", Object)
@@ -94,7 +106,8 @@ __decorate([
     __metadata("design:type", String)
 ], SaveSupplierDto.prototype, "supPurchaseType", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ maxLength: 200 }),
+    (0, swagger_1.ApiProperty)({ maxLength: 200, description: 'May be left out when supLinkLedId is set' }),
+    (0, class_validator_1.ValidateIf)((o) => !o.supLinkLedId || Boolean(o.supName)),
     (0, dtoDecorators_1.TrimmedString)(200),
     (0, class_validator_1.IsNotEmpty)(),
     __metadata("design:type", String)
@@ -130,7 +143,8 @@ __decorate([
     __metadata("design:type", Object)
 ], SaveSupplierDto.prototype, "supDistrict", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ maxLength: 100 }),
+    (0, swagger_1.ApiProperty)({ maxLength: 100, description: 'May be left out when supLinkLedId is set' }),
+    (0, class_validator_1.ValidateIf)((o) => !o.supLinkLedId || Boolean(o.supStateName)),
     (0, dtoDecorators_1.TrimmedString)(100),
     (0, class_validator_1.IsNotEmpty)(),
     __metadata("design:type", String)
@@ -204,7 +218,12 @@ __decorate([
     __metadata("design:type", Object)
 ], SaveSupplierDto.prototype, "supGstNo", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ minLength: 2, maxLength: 2 }),
+    (0, swagger_1.ApiProperty)({
+        minLength: 2,
+        maxLength: 2,
+        description: 'May be left out when supLinkLedId is set',
+    }),
+    (0, class_validator_1.ValidateIf)((o) => !o.supLinkLedId || Boolean(o.supStateCode)),
     (0, dtoDecorators_1.UpperString)(2),
     __metadata("design:type", String)
 ], SaveSupplierDto.prototype, "supStateCode", void 0);

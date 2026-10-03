@@ -102,6 +102,7 @@ let AccountLedgerMastersService = class AccountLedgerMastersService {
             if (!existing) {
                 (0, module_service_utils_1.throwAccountsNotFound)('Account ledger not found', 'ledId', `No active account ledger found with id ${ledId}`);
             }
+            await this.ensureLedgerHasNoOwner(tx, ledId, existing.ledName);
             const modifiedOn = new Date();
             const result = await tx.accLedgerMaster.updateMany({
                 where: {
@@ -143,6 +144,44 @@ let AccountLedgerMastersService = class AccountLedgerMastersService {
                 deleted: true,
             };
         });
+    }
+    async ensureLedgerHasNoOwner(tx, ledId, ledName) {
+        const [customer, supplier, saleAgent] = await Promise.all([
+            tx.customer.findFirst({
+                where: { cusId: ledId, cusIsDeleted: false },
+                select: { cusName: true },
+            }),
+            tx.supplier.findFirst({
+                where: { supId: ledId, supIsDeleted: false },
+                select: { supName: true },
+            }),
+            tx.saleAgent.findFirst({
+                where: { saId: ledId, saIsDeleted: false },
+                select: { saName: true },
+            }),
+        ]);
+        const owners = [];
+        if (customer) {
+            owners.push({ role: 'customer', name: customer.cusName || ledName, master: 'Customer' });
+        }
+        if (supplier) {
+            owners.push({ role: 'supplier', name: supplier.supName, master: 'Supplier' });
+        }
+        if (saleAgent) {
+            owners.push({ role: 'sale agent', name: saleAgent.saName, master: 'Sale Agent' });
+        }
+        if (owners.length === 0) {
+            return;
+        }
+        const joined = (parts) => parts.length === 1 ? parts[0] : `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}`;
+        const roles = joined(owners.map((owner) => `${owner.role} "${owner.name}"`));
+        const masters = joined(owners.map((owner) => owner.master));
+        (0, module_service_utils_1.throwAccountsBadRequest)('Cannot delete a ledger that belongs to a master', [
+            {
+                field: 'ledId',
+                message: `This ledger belongs to ${roles}. Delete it from the ${masters} ${owners.length === 1 ? 'master' : 'masters'}.`,
+            },
+        ]);
     }
     async createLedger(saveAccountLedgerMasterDto) {
         try {

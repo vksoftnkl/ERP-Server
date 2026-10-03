@@ -19,6 +19,7 @@ import {
   RequiredNumber,
   RequiredUuid,
   SkipOnNullish,
+  OptionalUuid,
 } from 'src/common/dto/dtoDecorators';
 import { SaveStockVoucherHeaderDto } from '../../stock-voucher/dto/save-stock-voucher.dto';
 import { STOCK_BUCKETS, type StockBucket } from '../../stock-voucher/types/stock-voucher.types';
@@ -93,6 +94,17 @@ export class SaveStockAdjustmentHeaderDto extends OmitType(SaveStockVoucherHeade
  * There is no free quantity on an adjustment (§2): a free line is refused.
  */
 export class SaveStockAdjustmentItemDto {
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      'Update only: the id of an existing line of this document (svi_id, as /get returns it). ' +
+      'A line WITH it updates that row, a line WITHOUT one is inserted, and a stored line whose ' +
+      'id is not sent is deleted — so a line keeps its identity across saves (notes 89). ' +
+      'Refused on a create, and refused when it names a line of another document.',
+  })
+  @OptionalUuid()
+  sviId?: string;
+
   @ApiProperty({ minimum: 1 })
   @IsInt()
   @Min(1)

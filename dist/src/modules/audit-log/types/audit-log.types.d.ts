@@ -20,6 +20,18 @@ export type CreateAuditLogInput = {
     branchId?: string | null;
     notes?: string | null;
 };
+export type LogDocumentRevisionInput = {
+    screenName: string;
+    tableName: string;
+    docId: string;
+    displayName?: string | null;
+    before: unknown | null;
+    after: unknown;
+    userId?: string | null;
+    branchId?: string | null;
+    deviceId?: string | null;
+    notes?: string | null;
+};
 export type LogEntityChangeInput = {
     action: AuditActionInput;
     tableName: string;

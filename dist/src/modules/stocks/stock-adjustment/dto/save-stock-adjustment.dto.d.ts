@@ -9,6 +9,7 @@ export declare class SaveStockAdjustmentHeaderDto extends SaveStockAdjustmentHea
     totalValueWot?: number;
 }
 export declare class SaveStockAdjustmentItemDto {
+    sviId?: string;
     lineNo: number;
     itemId: string;
     uomId: string;

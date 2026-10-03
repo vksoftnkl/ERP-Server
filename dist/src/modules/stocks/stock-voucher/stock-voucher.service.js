@@ -25,7 +25,7 @@ const stock_voucher_source_1 = require("../posting/stock-voucher.source");
 const txn_status_log_helper_1 = require("../../../common/txn-status-log/txn-status-log.helper");
 const stock_voucher_types_1 = require("./types/stock-voucher.types");
 const STOCK_VOUCHER_TABLE_NAME = 'stock_voucher';
-const STOCK_VOUCHER_ITEM_TABLE_NAME = 'stock_voucher_item';
+const PARKED_LINE_NO = 1_000_000;
 const DEFAULT_REPORT_LIMIT = 200;
 const MAX_REPORT_LIMIT = 1000;
 const DEFAULT_LIST_LIMIT = 50;
@@ -49,10 +49,14 @@ let StockVoucherService = class StockVoucherService {
         const postAfterSave = header.status === 'POSTED';
         const postedOn = new Date();
         const { svhId, rowsPosted } = await this.prisma.$transaction(async (tx) => {
+            const before = header.svhId
+                ? await this.getById(rules, header.svhId, header.accYear, header.companyId, header.branchId, tx)
+                : null;
             const id = header.svhId
                 ? await this.updateDraft(tx, rules, dto, actor, postedOn)
                 : await this.createDraft(tx, rules, dto, actor, postedOn);
             if (!postAfterSave) {
+                await this.logRevision(tx, rules, id, header, before, actor, false);
                 return { svhId: id, rowsPosted: null };
             }
             await this.assertPostable(rules, id, header.accYear, header.companyId, header.branchId, tx);
@@ -79,10 +83,26 @@ let StockVoucherService = class StockVoucherService {
                 deviceId: header.deviceId,
                 sessionId: header.sessionId ?? null,
             });
+            await this.logRevision(tx, rules, id, header, before, actor, true);
             return { svhId: id, rowsPosted: posted.rowsPosted };
         });
         const document = await this.getById(rules, svhId, header.accYear, header.companyId, header.branchId);
         return { ...document, rowsPosted };
+    }
+    async logRevision(tx, rules, svhId, header, before, actor, posted) {
+        const after = await this.getById(rules, svhId, header.accYear, header.companyId, header.branchId, tx);
+        await this.auditLogService.logDocumentRevision({
+            screenName: rules.auditScreenName,
+            tableName: STOCK_VOUCHER_TABLE_NAME,
+            docId: svhId,
+            displayName: after.header.refno,
+            before,
+            after,
+            userId: actor,
+            branchId: header.branchId,
+            deviceId: header.deviceId,
+            notes: `${rules.displayName} ${before ? 'updated' : 'created'}${posted ? ' and posted' : ''}`,
+        }, tx);
     }
     async loadRefno(tx, svhId, accYear) {
         const row = await tx.stockVoucher.findUnique({
@@ -473,20 +493,8 @@ let StockVoucherService = class StockVoucherService {
             },
             select: { svhId: true, svhAccYear: true, svhRefno: true },
         });
-        await this.replaceLines(tx, rules, dto, created.svhId, actor, header.createdBy);
+        await this.replaceLines(tx, rules, dto, created.svhId, actor, header.createdBy, now);
         await this.writeHeaderTotals(tx, created.svhId, header, dto.lines.length);
-        await this.auditLogService.logEntityChange({
-            action: 'insert',
-            tableName: STOCK_VOUCHER_TABLE_NAME,
-            screenName: rules.auditScreenName,
-            screenType: 'transaction',
-            pk: created.svhId,
-            displayName: created.svhRefno,
-            originalRecord: null,
-            modifiedRecord: { svhId: created.svhId, svhRefno: created.svhRefno, svhStatus: 'DRAFT' },
-            userId: actor,
-            notes: `${rules.displayName} draft created`,
-        }, tx);
         await this.logStatusChange(tx, {
             rules,
             svhId: created.svhId,
@@ -553,27 +561,25 @@ let StockVoucherService = class StockVoucherService {
                 svhModifiedBy: this.actorFor(header.modifiedBy, actor),
             },
         });
-        await this.replaceLines(tx, rules, dto, svhId, actor, header.modifiedBy);
+        await this.replaceLines(tx, rules, dto, svhId, actor, header.modifiedBy, now);
         await this.writeHeaderTotals(tx, svhId, header, dto.lines.length);
-        await this.auditLogService.logEntityChange({
-            action: 'update',
-            tableName: STOCK_VOUCHER_TABLE_NAME,
-            screenName: rules.auditScreenName,
-            screenType: 'transaction',
-            pk: svhId,
-            displayName: existing.svhRefno,
-            originalRecord: { svhId, svhRefno: existing.svhRefno, svhStatus: existing.svhStatus },
-            modifiedRecord: { svhId, svhRefno: existing.svhRefno, svhStatus: 'DRAFT' },
-            userId: actor,
-            notes: `${rules.displayName} draft updated`,
-        }, tx);
         return svhId;
     }
-    async replaceLines(tx, rules, dto, svhId, actor, author) {
+    async replaceLines(tx, rules, dto, svhId, actor, author, now) {
         const { header, lines } = dto;
-        await tx.stockVoucherItem.deleteMany({
-            where: { sviVoucherId: svhId, sviAccYear: header.accYear },
-        });
+        const stored = header.svhId
+            ? await tx.stockVoucherItem.findMany({
+                where: { sviVoucherId: svhId, sviAccYear: header.accYear, sviIsDeleted: false },
+            })
+            : null;
+        this.assertLineIds(rules, lines, stored === null ? null : new Set(stored.map((r) => r.sviId)));
+        const kept = new Set(lines.map((line) => line.sviId).filter((id) => !!id));
+        const dropped = (stored ?? []).filter((row) => !kept.has(row.sviId)).map((row) => row.sviId);
+        if (dropped.length) {
+            await tx.stockVoucherItem.deleteMany({
+                where: { sviVoucherId: svhId, sviAccYear: header.accYear, sviId: { in: dropped } },
+            });
+        }
         if (!lines.length) {
             return;
         }
@@ -645,19 +651,94 @@ let StockVoucherService = class StockVoucherService {
                 ...this.lineModifiedByData(line.modifiedBy ?? header.modifiedBy),
             };
         });
-        await tx.stockVoucherItem.createMany({ data });
-        await this.auditLogService.logEntityChange({
-            action: 'insert',
-            tableName: STOCK_VOUCHER_ITEM_TABLE_NAME,
-            screenName: rules.auditScreenName,
-            screenType: 'transaction',
-            pk: svhId,
-            displayName: header.refno ?? svhId,
-            originalRecord: null,
-            modifiedRecord: { svhId, lineCount: data.length },
-            userId: actor,
-            notes: `${rules.displayName} lines replaced`,
-        }, tx);
+        const storedById = new Map((stored ?? []).map((row) => [row.sviId, row]));
+        const changed = [];
+        const moving = [];
+        lines.forEach((line, index) => {
+            const row = line.sviId ? storedById.get(line.sviId) : undefined;
+            if (!row || !this.lineDiffers(row, data[index])) {
+                return;
+            }
+            changed.push({ sviId: row.sviId, next: data[index], line });
+            if (row.sviLineNo !== data[index].sviLineNo || row.sviSplitNo !== data[index].sviSplitNo) {
+                moving.push(row.sviId);
+            }
+        });
+        const key = (sviId) => ({ sviId_sviAccYear: { sviId, sviAccYear: header.accYear } });
+        for (const [index, sviId] of moving.entries()) {
+            await tx.stockVoucherItem.update({
+                where: key(sviId),
+                data: { sviLineNo: PARKED_LINE_NO + index },
+            });
+        }
+        for (const { sviId, next, line } of changed) {
+            const fields = { ...next };
+            delete fields.sviCreatedBy;
+            await tx.stockVoucherItem.update({
+                where: key(sviId),
+                data: {
+                    ...fields,
+                    sviModifiedOn: now,
+                    sviModifiedBy: this.actorFor(line.modifiedBy ?? author, actor),
+                },
+            });
+        }
+        const inserted = data.filter((_, index) => !lines[index].sviId);
+        if (inserted.length) {
+            await tx.stockVoucherItem.createMany({ data: inserted });
+        }
+    }
+    assertLineIds(rules, lines, stored) {
+        const errors = [];
+        const seen = new Set();
+        lines.forEach((line, index) => {
+            const id = line.sviId;
+            if (!id) {
+                return;
+            }
+            const field = `lines.${index}.sviId`;
+            if (stored === null) {
+                errors.push({
+                    field,
+                    message: `Line ${line.lineNo} sends line id ${id}, but a new ${rules.displayName.toLowerCase()} has no lines yet. Send it without sviId.`,
+                });
+            }
+            else if (seen.has(id)) {
+                errors.push({
+                    field,
+                    message: `Line ${line.lineNo} repeats line id ${id}: one stored line cannot become two.`,
+                });
+            }
+            else if (!stored.has(id)) {
+                errors.push({
+                    field,
+                    message: `Line ${line.lineNo} names line ${id}, which is not a line of this document any more. Reload it and save again.`,
+                });
+            }
+            seen.add(id);
+        });
+        if (errors.length) {
+            (0, module_service_utils_1.throwStockUnprocessable)(`This ${rules.displayName.toLowerCase()} cannot be saved`, errors);
+        }
+    }
+    lineDiffers(stored, next) {
+        const row = stored;
+        return Object.entries(next).some(([column, value]) => value !== undefined &&
+            column !== 'sviCreatedBy' &&
+            column !== 'sviModifiedBy' &&
+            !this.sameColumnValue(row[column], value));
+    }
+    sameColumnValue(left, right) {
+        if (left === null || left === undefined || right === null || right === undefined) {
+            return (left ?? null) === (right ?? null);
+        }
+        if (client_1.Prisma.Decimal.isDecimal(left) || client_1.Prisma.Decimal.isDecimal(right)) {
+            return new client_1.Prisma.Decimal(left).equals(new client_1.Prisma.Decimal(right));
+        }
+        if (left instanceof Date && right instanceof Date) {
+            return left.getTime() === right.getTime();
+        }
+        return left === right;
     }
     async loadCountHoldings(tx, header, lines) {
         const lotIds = [...new Set(lines.map((line) => line.lotId).filter((id) => !!id))];
@@ -795,8 +876,8 @@ let StockVoucherService = class StockVoucherService {
             meta: { limit, offset, count: rows.length },
         };
     }
-    async getById(rules, svhId, accYear, companyId, branchId) {
-        const [header] = await this.prisma.$queryRaw `
+    async getById(rules, svhId, accYear, companyId, branchId, client = this.prisma) {
+        const [header] = await client.$queryRaw `
       SELECT svh.svh_id,
              svh.svh_acc_year,
              svh.svh_company_id,
@@ -882,7 +963,7 @@ let StockVoucherService = class StockVoucherService {
         if (!header) {
             (0, module_service_utils_1.throwStockNotFound)(`${rules.displayName} not found`, 'svhId', `No ${rules.voucherType} voucher ${svhId} in ${accYear} for this company and branch.`);
         }
-        const lines = await this.prisma.$queryRaw `
+        const lines = await client.$queryRaw `
       SELECT svi.svi_id,
              svi.svi_line_no,
              svi.svi_split_no,

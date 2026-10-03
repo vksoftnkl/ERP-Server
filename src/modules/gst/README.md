@@ -62,11 +62,33 @@ GSTIN; 409 `GST_AUTH_BUSY` while another sign-in holds the `gst_auth_session` le
 at 5). A refusal BY the portal is `{ ok: false, message, errorCode }`. Success keeps the session
 encrypted (a new row, the leased one retired, `gas_token_version` + 1) and stamps
 `gcc_last_verified_on`; failure stamps `gcc_last_error_message`. Every attempt writes one redacted
-`gst_api_log` row. Inactive providers / services / endpoints / accounts are allowed — Verify is
-how a provider is tested before it is activated.
+`gst_api_log` row. Since notes 88 an inactive row is refused like everywhere else (see below): to
+test a provider, switch it on.
 
 A credential save that changes who signs in (branch, provider, service, environment, login, any
 secret, public key) and a credential delete retire its live session.
+
+## No active provider, no GST call (notes 88)
+
+Every call that leaves the server for a GSP or NIC — Verify, `/gst/search`
+([settings/gstinLookup](../settings/gstinLookup/gstin-lookup.service.ts)), and every IRN / e-way
+bill / GSTR / ASP call built later — runs on rows the screens switch on and off, and
+[client/gst-route-guard.ts](client/gst-route-guard.ts) refuses it with **503 `GST_SWITCHED_OFF`**
+while any of them is off or missing, naming the first in this order:
+
+| Row | Example message |
+|---|---|
+| `gst_provider` — the master switch | `GST provider CHARTERED is inactive` |
+| `gst_provider_service` (service × environment) | `EINVOICE · SANDBOX service is inactive` |
+| `gst_provider_endpoint` (the action) | `AUTH endpoint of EINVOICE · SANDBOX is inactive` |
+| `gst_provider_account`, only when the endpoint uses `{aspId}` / `{aspPassword}` / `{apiKey}`, or a `{clientId}` / `{clientSecret}` the credential lacks | `CHARTERED SANDBOX provider account is inactive` |
+| `gst_company_credential`, for a call made for a taxpayer | `The GST credential is inactive` |
+
+Callers check right after resolving their rows, so the refusal comes before a lease, a sign-in
+budget slot or a `gst_api_log` row. `GstHttpClient.send` takes the same route (`request.route`,
+required) and checks it again before any I/O: it is the one door to the network, so a new call
+cannot forget the rule. A live `gst_auth_session` is left alone when a row is switched off; the
+next call is refused here, so the session is never used.
 
 ## Tests
 

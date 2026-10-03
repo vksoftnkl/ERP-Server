@@ -60,10 +60,38 @@ Every supplier is backed by an account ledger, and the two masters **share one i
   `updateLedgerWithinTx(dto, tx)` (with `ledId = supId`). Legacy suppliers with no linked ledger
   are a **no-op**.
 - On **soft-delete**, the linked ledger is flagged deleted/inactive alongside the supplier
-  (`updateMany` on `accLedgerMaster` where `ledId = supId`); also a no-op for legacy rows.
+  (`updateMany` on `accLedgerMaster` where `ledId = supId`); also a no-op for legacy rows. A ledger
+  that is also a live customer's is kept (see below).
 - `buildLinkedLedgerDto` copies required ledger fields (name, state name, state code) from the
   supplier's normalized values, plus the shared fields listed in `SUPPLIER_TO_LEDGER_FIELD_MAP`
   (only when the supplier payload carries that key).
+
+## One party as customer and supplier (notes 81)
+
+A party we buy from and sell to keeps **one ledger**, as in Tally: `sup_id = cus_id = led_id`, a
+purchase credits the ledger, a sale debits it, and the statement shows the net.
+
+- **Link create** — `POST /create` with `supLinkLedId` (and no `supId`) makes that existing ledger a
+  supplier. No ledger is created and the ledger is **not written**: no rename, no field sync, no
+  move to the Suppliers group. Only the supplier row is inserted, with `supId = supLinkLedId`.
+  - 400 when the ledger is missing, deleted, or not `led_ledger_type = PARTY` (a NULL type is
+    accepted when the ledger already backs a live customer; June 2026 ledgers predate the stamp).
+  - 409 (`supLinkLedId`) when the ledger is already a live supplier. A supplier row that was
+    soft-deleted while the ledger lived on is **restored** in place (audit `update`), because
+    `sup_id` is the PK and refusing would block the party for good.
+  - Blank (`undefined`, `null`, `''`) name, state, address, contact, region, GSTIN, PAN, company and
+    branch default from the ledger (`SUPPLIER_FIELDS_FROM_LINKED_LEDGER`); so `supName`,
+    `supStateName` and `supStateCode` may be left out. A ledger value wider than the supplier
+    column (`supMailId`, `supRegionName`) is left out rather than cut.
+  - The ledger's name is not checked for uniqueness (it is this party's own); the supplier-table
+    name check still runs. `ledgerBankAccount` is refused (400); send it on the next save.
+  - `supLinkLedId` on an update is ignored when it equals `supId`, 400 otherwise.
+- **Edit** — when the ledger also has a live customer row, the ledger sync keeps the ledger's
+  current group (no flip between Suppliers and the customer's area, which would move the balance
+  between Liabilities and Assets) and sets `ledIsActive = supIsActive OR cusIsActive`. Other shared
+  fields sync as usual: the last save of either master wins.
+- **Delete** — when a live customer row remains, the ledger is kept and takes the customer's active
+  flag; only the supplier row is soft-deleted.
 
 ## Nested bank accounts
 

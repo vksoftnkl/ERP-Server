@@ -127,6 +127,12 @@ create/update payload:
   transaction.
 - **Soft delete only** — for GST / audit retention, rows are never hard-deleted. Deleting flags
   `ledIsDeleted = true` / `ledIsActive = false` (and clears `lbaIsDefault` for bank accounts).
+- **A ledger a master owns is not deleted here** (notes 82): when a live customer, supplier or
+  sale agent has `cus_id` / `sup_id` / `sa_id = ledId`, `DELETE /delete` answers 400 on `ledId`
+  ("This ledger belongs to customer "X". Delete it from the Customer master.", naming every
+  owner). Those masters drop the ledger together with the party's last role (notes 81); deleting it
+  from here would leave the master live on a deleted ledger. A master row already soft-deleted
+  does not count.
 - **Every mutation is audited** via `AuditLogService.logEntityChange` (`New` / `update` /
   `cancel`), capturing original vs. modified records. The acting user comes from
   `RequestContextService.getUserId()`, falling back to `DEFAULT_ACTOR`.

@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsNotEmpty } from 'class-validator';
+import { IsNotEmpty, ValidateIf } from 'class-validator';
 import {
   NullableDateString,
   NullableInteger,
@@ -22,6 +22,18 @@ export class SaveCustomerDto {
   })
   @OptionalUuid()
   cusId?: string;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      'Create only: make this existing PARTY ledger a customer as well (e.g. a supplier that is ' +
+      'also sold to). No ledger is created; the customer takes the ledger id as its cusId, and ' +
+      'the ledger keeps its group (cusAreaId is still required, for beats and area filters). ' +
+      'Name, state, address, contact, GSTIN and PAN left out default from the ledger. 409 when ' +
+      'the ledger is already a customer.',
+  })
+  @OptionalUuid()
+  cusLinkLedId?: string;
 
   @ApiPropertyOptional({ maxLength: 5, nullable: true })
   @NullableStringStrict(5)
@@ -59,7 +71,8 @@ export class SaveCustomerDto {
   @NullableStringStrict(250)
   cusDistrict?: string | null;
 
-  @ApiProperty({ maxLength: 100 })
+  @ApiProperty({ maxLength: 100, description: 'May be left out when cusLinkLedId is set' })
+  @ValidateIf((o: SaveCustomerDto) => !o.cusLinkLedId || Boolean(o.cusStateName))
   @TrimmedString(100)
   @IsNotEmpty()
   cusStateName!: string;
@@ -68,7 +81,12 @@ export class SaveCustomerDto {
   @NullableStringStrict(60)
   cusCountry?: string | null;
 
-  @ApiProperty({ minLength: 2, maxLength: 2 })
+  @ApiProperty({
+    minLength: 2,
+    maxLength: 2,
+    description: 'May be left out when cusLinkLedId is set',
+  })
+  @ValidateIf((o: SaveCustomerDto) => !o.cusLinkLedId || Boolean(o.cusStateCode))
   @UpperString(2)
   cusStateCode!: string;
 

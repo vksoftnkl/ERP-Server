@@ -62,6 +62,17 @@ const MAX_LINES = 2000;
  * WHAT IS LEFT IS ONE NUMBER PER LINE: `countedQty`.
  */
 export class SavePhysicalStockVoucherItemDto {
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      'Update only: the id of an existing line of this document (svi_id, as /get returns it). ' +
+      'A line WITH it updates that row, a line WITHOUT one is inserted, and a stored line whose ' +
+      'id is not sent is deleted — so a line keeps its identity across saves (notes 89). ' +
+      'Refused on a create, and refused when it names a line of another document.',
+  })
+  @OptionalUuid()
+  sviId?: string;
+
   @ApiProperty({
     minimum: 1,
     description: 'Position on the sheet, 1-based. Assigned by GET /stock/physical/count-sheet.',

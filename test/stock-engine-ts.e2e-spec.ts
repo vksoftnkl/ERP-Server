@@ -236,7 +236,11 @@ describe('Stock engine in TypeScript (e2e — one rolled-back transaction)', () 
 
     service = new StockVoucherService(
       transactional(tx),
-      { logEntityChange: jest.fn().mockResolvedValue(undefined) } as unknown as AuditLogService,
+      {
+        logEntityChange: jest.fn().mockResolvedValue(undefined),
+        // Notes 89 — every save writes one document revision.
+        logDocumentRevision: jest.fn().mockResolvedValue({ revNo: 1 }),
+      } as unknown as AuditLogService,
       { getUserId: () => fixture?.userId ?? null } as unknown as RequestContextService,
       // §3.1 — the one stock engine, injected. Handed the same client, so a
       // posting call still runs inside whatever transaction the test opened.
@@ -1306,7 +1310,11 @@ describe('Stock engine in TypeScript (e2e — one rolled-back transaction)', () 
 
     const periodic = new StockVoucherService(
       transactional(tx),
-      { logEntityChange: jest.fn().mockResolvedValue(undefined) } as unknown as AuditLogService,
+      {
+        logEntityChange: jest.fn().mockResolvedValue(undefined),
+        // Notes 89 — every save writes one document revision.
+        logDocumentRevision: jest.fn().mockResolvedValue({ revNo: 1 }),
+      } as unknown as AuditLogService,
       { getUserId: () => fixture.userId } as unknown as RequestContextService,
       buildStockPosting(transactional(tx), 'PERIODIC').stockPosting,
     );

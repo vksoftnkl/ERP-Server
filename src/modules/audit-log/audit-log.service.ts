@@ -7,6 +7,7 @@ import {
   AuditAction,
   CaptureScreenSnapshotInput,
   CreateAuditLogInput,
+  LogDocumentRevisionInput,
   LogEntityChangeInput,
 } from './types/audit-log.types';
 import { ListAuditLogQueryDto } from './dto/list-audit-log-query.dto';
@@ -32,6 +33,9 @@ const AUDIT_LOG_SELECT = {
   logNotes: true,
   logUserId: true,
   logBranchId: true,
+  logEntityId: true,
+  logRevNo: true,
+  logDeviceName: true,
   auditScreen: { select: { screenName: true } },
 } satisfies Prisma.AuditLogSelect;
 type AuditWriteClient = Prisma.TransactionClient | PrismaService;
@@ -566,6 +570,100 @@ export class AuditLogService {
       tx,
     );
   }
+  /**
+   * Notes 89 — ONE audit row per save of a transaction document, carrying the
+   * whole document before the save (log_original_record; SQL NULL on a create)
+   * and after it (log_modified_record), both in the shape of the screen's /get
+   * response. Not projected through the screen's audit fields: a snapshot is
+   * only useful whole. log_changed_fields holds the HEADER's {field:{from,to}}
+   * as masters do; the lines are diffed by the History dialog from the two
+   * snapshots. log_rev_no counts this document's revisions on this screen —
+   * ux_audit_log_revision refuses a second claim to the same number, and the
+   * save's own row lock on the document is what keeps two saves from racing.
+   *
+   * Call it inside the save's transaction, after the save, with `before` read
+   * before anything was touched; the separate per-line rows are not written.
+   */
+  async logDocumentRevision(
+    input: LogDocumentRevisionInput,
+    tx?: Prisma.TransactionClient,
+  ): Promise<{ revNo: number }> {
+    const client = tx ?? this.prisma;
+    const tableName = input.tableName.trim();
+    const docId = this.normalizePk(input.docId);
+    if (!tableName || docId === null) {
+      throw new BadRequestException('tableName and docId are required for a document revision');
+    }
+    const after = this.toNullableJson(input.after);
+    if (after === null) {
+      throw new BadRequestException('after is required for a document revision');
+    }
+    const before = this.toNullableJson(input.before);
+    const screen = await this.resolveAuditScreen(
+      { action: 'update', tableName, screenName: input.screenName, screenType: 'transaction' },
+      client,
+    );
+    const changedFields =
+      before === null
+        ? null
+        : this.computeChangedFields(this.documentHeaderOf(before), this.documentHeaderOf(after));
+    const last = await client.auditLog.aggregate({
+      _max: { logRevNo: true },
+      where: { logScreenId: screen.screenId, logPk: docId, logRevNo: { not: null } },
+    });
+    const revNo = (last._max.logRevNo ?? 0) + 1;
+    await client.auditLog.create({
+      data: {
+        logAction: before === null ? 'insert' : 'update',
+        logScreenId: screen.screenId,
+        logTableName: tableName,
+        logPk: docId,
+        logEntityId: this.normalizeUuid(docId),
+        logDisplayName: this.normalizeOptionalText(input.displayName),
+        logOriginalRecord: before === null ? Prisma.DbNull : (before as Prisma.InputJsonValue),
+        logModifiedRecord: after,
+        logChangedFields:
+          changedFields === null ? Prisma.DbNull : (changedFields as Prisma.InputJsonValue),
+        logUserId: this.resolveAuditUserId(input.userId),
+        logBranchId: this.normalizeUuid(input.branchId),
+        logDeviceName: await this.resolveDeviceName(client, input.deviceId),
+        logIp: this.resolveAuditIpAddress(),
+        logNotes: this.normalizeOptionalText(input.notes),
+        logRevNo: revNo,
+      },
+    });
+    return { revNo };
+  }
+  /** The header of a /get-shaped document: its `header` object, else its non-array fields. */
+  private documentHeaderOf(document: Prisma.JsonValue): Prisma.JsonValue {
+    if (!this.isJsonObject(document)) {
+      return document;
+    }
+    const header = document.header ?? null;
+    if (this.isJsonObject(header)) {
+      return header;
+    }
+    return Object.fromEntries(
+      Object.entries(document).filter(([, value]) => !Array.isArray(value)),
+    );
+  }
+  /** The counter that made the save: the session's device, else the document's. */
+  private async resolveDeviceName(
+    client: AuditWriteClient,
+    documentDeviceId: string | null | undefined,
+  ): Promise<string | null> {
+    const devId =
+      this.normalizeUuid(this.requestContextService.getDeviceId()) ??
+      this.normalizeUuid(documentDeviceId);
+    if (!devId) {
+      return null;
+    }
+    const device = await client.deviceMaster.findUnique({
+      where: { devId },
+      select: { devDeviceName: true, devDeviceUid: true },
+    });
+    return device ? device.devDeviceName?.trim() || device.devDeviceUid : null;
+  }
   private async resolveAuditScreen(
     input: LogEntityChangeInput,
     tx: AuditWriteClient,
@@ -732,6 +830,9 @@ export class AuditLogService {
       log_branch_id: branchName ? null : record.logBranchId,
       log_branch_name: branchName,
       log_notes: record.logNotes,
+      log_entity_id: record.logEntityId,
+      log_rev_no: record.logRevNo,
+      log_device_name: record.logDeviceName,
     };
   }
   private prepareAuditLogListRecord(record: AuditLogListRecord): PreparedAuditLogListRecord {

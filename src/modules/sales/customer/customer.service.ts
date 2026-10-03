@@ -1,5 +1,5 @@
 import { ConflictException, Injectable } from '@nestjs/common';
-import { Customer, Prisma } from '@prisma/client';
+import { AccLedgerMaster, Customer, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import { AccountLedgerMastersService } from '../../accountsModule/accountLedgerMasters/account-ledger-masters.service';
@@ -129,6 +129,31 @@ const CUSTOMER_TO_LEDGER_FIELD_MAP: ReadonlyArray<
   ['cusSortOrder', 'ledSortOrder'],
   ['cusIsActive', 'ledIsActive'],
 ];
+// Notes 81 — on a create with cusLinkLedId the customer row starts from the ledger it joins:
+// each of these fields the payload leaves blank takes the ledger's value. It is the sync map
+// above read backwards, less the flags, the sort order and the notes (they belong to the role),
+// plus the three columns a customer needs.
+const CUSTOMER_FIELDS_NOT_FROM_LINKED_LEDGER = new Set<keyof SaveCustomerDto>([
+  'cusIsActive',
+  'cusEnableSms',
+  'cusSortOrder',
+  'cusNotes',
+]);
+const CUSTOMER_FIELDS_FROM_LINKED_LEDGER: ReadonlyArray<[keyof SaveCustomerDto, string]> = [
+  ['cusName', 'ledName'],
+  ['cusStateName', 'ledStateName'],
+  ['cusStateCode', 'ledStateCode'],
+  ...CUSTOMER_TO_LEDGER_FIELD_MAP.filter(
+    ([cusField]) => !CUSTOMER_FIELDS_NOT_FROM_LINKED_LEDGER.has(cusField),
+  ),
+];
+// Customer columns narrower than the ledger's. A ledger value that would not fit is left out
+// rather than cut short, so the save cannot fail on a column width.
+const CUSTOMER_LINK_MAX_LENGTH: Partial<Record<keyof SaveCustomerDto, number>> = {
+  cusEmail: 120,
+  cusAadharNo: 12,
+  cusRegionName: 200,
+};
 // cus_gst_type is a free-text VarChar(30); the ledger's led_gst_party_reg_type is
 // one of REGULAR / COMPOSITION / UNREGISTERED, behind the LedGstPartyRegType
 // vocabulary the GST engine reads. Match case- and separator-insensitively;
@@ -193,6 +218,12 @@ export class CustomerService {
   ) {}
   async save(saveCustomerDto: SaveCustomerDto): Promise<CustomerPayload> {
     if (saveCustomerDto.cusId) {
+      // A client may echo the link it created the customer with; only a different ledger is wrong.
+      if (saveCustomerDto.cusLinkLedId && saveCustomerDto.cusLinkLedId !== saveCustomerDto.cusId) {
+        throwSalesBadRequest<CustomerErrorDetail, CustomerErrorResponse>('Validation failed', [
+          { field: 'cusLinkLedId', message: 'cusLinkLedId applies to a create only' },
+        ]);
+      }
       return this.updateCustomer(saveCustomerDto);
     }
     return this.createCustomer(saveCustomerDto);
@@ -252,14 +283,22 @@ export class CustomerService {
       }
       // Soft delete the linked account ledger (shares cus_id as its PK) so it can't stay active
       // while the customer is logically deleted. No-op for legacy rows with no linked ledger.
+      // Notes 81: a ledger that is also a live supplier's stays, with the supplier's active flag.
+      const supplierRole = await this.findSupplierRole(tx, cusId);
       await tx.accLedgerMaster.updateMany({
         where: { ledId: cusId, ledIsDeleted: false },
-        data: {
-          ledIsDeleted: true,
-          ledIsActive: false,
-          ledModifiedOn: modifiedOn,
-          ledModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
-        },
+        data: supplierRole
+          ? {
+              ledIsActive: supplierRole.supIsActive,
+              ledModifiedOn: modifiedOn,
+              ledModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
+            }
+          : {
+              ledIsDeleted: true,
+              ledIsActive: false,
+              ledModifiedOn: modifiedOn,
+              ledModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
+            },
       });
       const originalRecord = this.toPayload(existing);
       const modifiedRecord = this.toPayload({
@@ -280,7 +319,9 @@ export class CustomerService {
           originalRecord,
           modifiedRecord,
           userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
-          notes: 'Customer soft deleted',
+          notes: supplierRole
+            ? 'Customer soft deleted; its ledger stays with the supplier'
+            : 'Customer soft deleted',
         },
         tx,
       );
@@ -291,53 +332,59 @@ export class CustomerService {
     });
   }
   private async createCustomer(saveCustomerDto: SaveCustomerDto): Promise<CustomerPayload> {
-    // A name is required: it becomes both the customer name and the linked ledger's
-    // ledName (which the account ledger master requires).
-    const normalizedName = normalizeRequiredText<CustomerErrorDetail, CustomerErrorResponse>(
-      saveCustomerDto.cusName ?? '',
-      'cusName',
-    );
-    const normalizedStateName = normalizeRequiredText<CustomerErrorDetail, CustomerErrorResponse>(
-      saveCustomerDto.cusStateName,
-      'cusStateName',
-    );
-    const normalizedStateCode = this.normalizeStateCode(saveCustomerDto.cusStateCode);
-    const now = new Date();
-    const createdBy = resolveActor(
-      saveCustomerDto.cusCreatedBy,
-      this.requestContextService.getUserId(),
-    );
-    const data: Prisma.CustomerUncheckedCreateInput = {
-      cusStateName: normalizedStateName,
-      cusStateCode: normalizedStateCode,
-      cusCompanyId: hasOwnProperty(saveCustomerDto, 'cusCompanyId')
-        ? (saveCustomerDto.cusCompanyId ?? null)
-        : null,
-      cusAreaId: saveCustomerDto.cusAreaId,
-      cusGroupId: saveCustomerDto.cusGroupId,
-      cusPriceLevelId: saveCustomerDto.cusPriceLevelId,
-      cusCollectionDays: hasOwnProperty(saveCustomerDto, 'cusCollectionDays')
-        ? (saveCustomerDto.cusCollectionDays ?? [])
-        : [],
-      cusBilledDate: now,
-      cusBilledCount: 1,
-      cusCreatedOn: now,
-      cusCreatedBy: createdBy,
-    };
-    this.applyOptionalFields(data, saveCustomerDto);
-    // Ensure the normalized, required name wins over the raw value applied above.
-    data.cusName = normalizedName;
     try {
       return await this.prisma.$transaction(async (tx) => {
+        // Notes 81: with cusLinkLedId the customer joins an existing party ledger instead of
+        // provisioning one, so a party we buy from and sell to keeps one ledger and one balance.
+        const linkLedger = saveCustomerDto.cusLinkLedId
+          ? await this.loadLedgerToLink(tx, saveCustomerDto.cusLinkLedId)
+          : null;
+        const dto = linkLedger
+          ? this.withLinkedLedgerDefaults(saveCustomerDto, linkLedger)
+          : saveCustomerDto;
+        // A name is required: it becomes both the customer name and the linked ledger's
+        // ledName (which the account ledger master requires).
+        const normalizedName = normalizeRequiredText<CustomerErrorDetail, CustomerErrorResponse>(
+          dto.cusName ?? '',
+          'cusName',
+        );
+        const normalizedStateName = normalizeRequiredText<
+          CustomerErrorDetail,
+          CustomerErrorResponse
+        >(dto.cusStateName, 'cusStateName');
+        const normalizedStateCode = this.normalizeStateCode(dto.cusStateCode);
+        const now = new Date();
+        const createdBy = resolveActor(dto.cusCreatedBy, this.requestContextService.getUserId());
+        const data: Prisma.CustomerUncheckedCreateInput = {
+          cusStateName: normalizedStateName,
+          cusStateCode: normalizedStateCode,
+          cusCompanyId: hasOwnProperty(dto, 'cusCompanyId') ? (dto.cusCompanyId ?? null) : null,
+          cusAreaId: dto.cusAreaId,
+          cusGroupId: dto.cusGroupId,
+          cusPriceLevelId: dto.cusPriceLevelId,
+          cusCollectionDays: hasOwnProperty(dto, 'cusCollectionDays')
+            ? (dto.cusCollectionDays ?? [])
+            : [],
+          cusBilledDate: now,
+          cusBilledCount: 1,
+          cusCreatedOn: now,
+          cusCreatedBy: createdBy,
+        };
+        this.applyOptionalFields(data, dto);
+        // Ensure the normalized, required name wins over the raw value applied above.
+        data.cusName = normalizedName;
         await this.ensureCompanyExists(tx, data.cusCompanyId ?? null);
         await this.ensureAreaExists(tx, data.cusAreaId);
         await this.ensureCustomerGroupExists(tx, data.cusGroupId);
         await this.ensureStateCodeExists(tx, normalizedStateCode);
+        if (linkLedger) {
+          return this.createCustomerOnLedger(tx, data, linkLedger);
+        }
         // Provision the linked account ledger first, then reuse its led_id as the
         // customer's cus_id so the two masters share one identity (1:1 link). The
         // area shares its id with a linked account group, so cusAreaId doubles as
         // the ledger's parent account group id (ledGroupId).
-        const ledgerDto = this.buildLinkedLedgerDto(saveCustomerDto, {
+        const ledgerDto = this.buildLinkedLedgerDto(dto, {
           name: normalizedName,
           stateName: normalizedStateName,
           stateCode: normalizedStateCode,
@@ -381,6 +428,123 @@ export class CustomerService {
       );
       throw error;
     }
+  }
+  // Notes 81 — insert only the customer row, keyed by the ledger's id. The ledger is not
+  // written at all: no rename, no field sync and, above all, no move to the customer's area
+  // group, because a supplier's ledger stays under Suppliers. cusAreaId is still stored, for
+  // beats and area filters. Nor is the ledger's name checked for uniqueness, since the name it
+  // would clash with is this very party's own.
+  //
+  // A customer row deleted earlier while the ledger lived on (it was a supplier's too) is
+  // brought back rather than refused: cus_id is the PK, so a second row cannot exist, and
+  // refusing would leave the party unable ever to be a customer again.
+  private async createCustomerOnLedger(
+    tx: CustomerWriteClient,
+    data: Prisma.CustomerUncheckedCreateInput,
+    ledger: AccLedgerMaster,
+  ): Promise<CustomerPayload> {
+    const cusId = ledger.ledId;
+    const previous = await tx.customer.findUnique({ where: { cusId } });
+    if (previous && !previous.cusIsDeleted) {
+      throwSalesConflict<CustomerErrorDetail, CustomerErrorResponse>('Customer already exists', [
+        { field: 'cusLinkLedId', message: `Ledger "${ledger.ledName}" is already a customer` },
+      ]);
+    }
+    let saved: Customer;
+    if (previous) {
+      // The row keeps its original creation stamp and save count; this save is one more.
+      const { cusCreatedOn, cusCreatedBy, cusBilledCount, ...revived } = data;
+      saved = await tx.customer.update({
+        where: { cusId },
+        data: {
+          ...revived,
+          cusBilledCount: { increment: cusBilledCount ?? 1 },
+          cusIsDeleted: false,
+          cusIsActive: data.cusIsActive ?? true,
+          cusModifiedOn: cusCreatedOn,
+          cusModifiedBy: cusCreatedBy,
+        },
+      });
+    } else {
+      saved = await tx.customer.create({ data: { ...data, cusId } });
+    }
+    const payload = this.toPayload(saved);
+    await this.auditLogService.logEntityChange(
+      {
+        action: previous ? 'update' : 'New',
+        tableName: CUSTOMER_TABLE_NAME,
+        screenName: CUSTOMER_AUDIT_SCREEN_NAME,
+        screenType: 'master',
+        pk: cusId,
+        displayName: payload.cusName || payload.cusId,
+        originalRecord: previous ? this.toPayload(previous) : null,
+        modifiedRecord: payload,
+        userId: saved.cusModifiedBy,
+        notes: previous
+          ? 'Customer restored on its existing ledger'
+          : 'Customer created on an existing ledger',
+      },
+      tx,
+    );
+    return payload;
+  }
+  // The ledger a link create joins: live, and a party's. A NULL type is accepted on a ledger
+  // that already backs a live supplier — those were provisioned in June 2026 before
+  // createLedgerWithinTx stamped PARTY, and the supplier row says what they are.
+  private async loadLedgerToLink(tx: CustomerWriteClient, ledId: string): Promise<AccLedgerMaster> {
+    const ledger = await tx.accLedgerMaster.findFirst({ where: { ledId, ledIsDeleted: false } });
+    if (!ledger) {
+      throwSalesBadRequest<CustomerErrorDetail, CustomerErrorResponse>('Ledger does not exist', [
+        { field: 'cusLinkLedId', message: `No active account ledger found with id ${ledId}` },
+      ]);
+    }
+    if (ledger.ledLedgerType !== 'PARTY' && !(await this.findSupplierRole(tx, ledId))) {
+      throwSalesBadRequest<CustomerErrorDetail, CustomerErrorResponse>(
+        'Ledger is not a party ledger',
+        [
+          {
+            field: 'cusLinkLedId',
+            message: `Ledger "${ledger.ledName}" is a ${ledger.ledLedgerType ?? 'untyped'} ledger; only a PARTY ledger can be a customer`,
+          },
+        ],
+      );
+    }
+    return ledger;
+  }
+  // The supplier row sharing this ledger, if it is live. Deleted rows don't count: a ledger
+  // whose supplier is gone is the customer's alone again.
+  private findSupplierRole(
+    tx: CustomerWriteClient,
+    ledId: string,
+  ): Promise<{ supIsActive: boolean } | null> {
+    return tx.supplier.findFirst({
+      where: { supId: ledId, supIsDeleted: false },
+      select: { supIsActive: true },
+    });
+  }
+  // A copy of the payload with every blank CUSTOMER_FIELDS_FROM_LINKED_LEDGER field filled from
+  // the ledger. Blank is undefined, null or ''; the client opens the form prefilled, so a field it
+  // sends empty means "not filled in", not "clear".
+  private withLinkedLedgerDefaults(
+    saveCustomerDto: SaveCustomerDto,
+    ledger: AccLedgerMaster,
+  ): SaveCustomerDto {
+    const dto: Record<string, unknown> = { ...saveCustomerDto };
+    const ledgerRecord = ledger as unknown as Record<string, unknown>;
+    for (const [cusField, ledField] of CUSTOMER_FIELDS_FROM_LINKED_LEDGER) {
+      const current = dto[cusField];
+      const fallback = ledgerRecord[ledField];
+      const maxLength = CUSTOMER_LINK_MAX_LENGTH[cusField];
+      if (
+        (current === undefined || current === null || current === '') &&
+        fallback !== null &&
+        fallback !== undefined &&
+        !(maxLength !== undefined && typeof fallback === 'string' && fallback.length > maxLength)
+      ) {
+        dto[cusField] = fallback;
+      }
+    }
+    return dto as unknown as SaveCustomerDto;
   }
   private async updateCustomer(saveCustomerDto: SaveCustomerDto): Promise<CustomerPayload> {
     const cusId = saveCustomerDto.cusId!;
@@ -450,7 +614,7 @@ export class CustomerService {
         // atomic. Guarded so legacy customers with no linked ledger stay a no-op.
         const linkedLedger = await tx.accLedgerMaster.findFirst({
           where: { ledId: cusId, ledIsDeleted: false },
-          select: { ledId: true, ledName: true },
+          select: { ledId: true, ledName: true, ledGroupId: true },
         });
         if (linkedLedger) {
           const ledgerDto = this.buildLinkedLedgerDto(saveCustomerDto, {
@@ -461,7 +625,14 @@ export class CustomerService {
             stateCode: normalizedStateCode,
           });
           ledgerDto.ledId = cusId;
-          ledgerDto.ledGroupId = nextAreaId;
+          // Notes 81: a ledger that is also a live supplier's is one party with one group, which
+          // only the ledger master moves; an area change re-files the customer's beat, not the
+          // ledger. Nor may deactivating the customer switch off the supplier's ledger.
+          const supplierRole = await this.findSupplierRole(tx, cusId);
+          ledgerDto.ledGroupId = supplierRole ? linkedLedger.ledGroupId : nextAreaId;
+          if (supplierRole) {
+            ledgerDto.ledIsActive = updated.cusIsActive || supplierRole.supIsActive;
+          }
           try {
             await this.accountLedgerMastersService.updateLedgerWithinTx(ledgerDto, tx);
           } catch (error: unknown) {
@@ -708,8 +879,8 @@ export class CustomerService {
       cusCollectionDays: (value) => value ?? [],
     });
   }
-  private normalizeStateCode(value: string): string {
-    const normalized = value.trim().toUpperCase();
+  private normalizeStateCode(value: string | null | undefined): string {
+    const normalized = (value ?? '').trim().toUpperCase();
     if (normalized.length !== 2) {
       throwSalesBadRequest<CustomerErrorDetail, CustomerErrorResponse>('Validation failed', [
         {

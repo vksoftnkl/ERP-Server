@@ -36,6 +36,9 @@ const AUDIT_LOG_SELECT = {
     logNotes: true,
     logUserId: true,
     logBranchId: true,
+    logEntityId: true,
+    logRevNo: true,
+    logDeviceName: true,
     auditScreen: { select: { screenName: true } },
 };
 const normalizeAuditFieldLookupToken = (value) => value
@@ -411,6 +414,70 @@ let AuditLogService = class AuditLogService {
             notes: input.notes,
         }, tx);
     }
+    async logDocumentRevision(input, tx) {
+        const client = tx ?? this.prisma;
+        const tableName = input.tableName.trim();
+        const docId = this.normalizePk(input.docId);
+        if (!tableName || docId === null) {
+            throw new common_1.BadRequestException('tableName and docId are required for a document revision');
+        }
+        const after = this.toNullableJson(input.after);
+        if (after === null) {
+            throw new common_1.BadRequestException('after is required for a document revision');
+        }
+        const before = this.toNullableJson(input.before);
+        const screen = await this.resolveAuditScreen({ action: 'update', tableName, screenName: input.screenName, screenType: 'transaction' }, client);
+        const changedFields = before === null
+            ? null
+            : this.computeChangedFields(this.documentHeaderOf(before), this.documentHeaderOf(after));
+        const last = await client.auditLog.aggregate({
+            _max: { logRevNo: true },
+            where: { logScreenId: screen.screenId, logPk: docId, logRevNo: { not: null } },
+        });
+        const revNo = (last._max.logRevNo ?? 0) + 1;
+        await client.auditLog.create({
+            data: {
+                logAction: before === null ? 'insert' : 'update',
+                logScreenId: screen.screenId,
+                logTableName: tableName,
+                logPk: docId,
+                logEntityId: this.normalizeUuid(docId),
+                logDisplayName: this.normalizeOptionalText(input.displayName),
+                logOriginalRecord: before === null ? client_1.Prisma.DbNull : before,
+                logModifiedRecord: after,
+                logChangedFields: changedFields === null ? client_1.Prisma.DbNull : changedFields,
+                logUserId: this.resolveAuditUserId(input.userId),
+                logBranchId: this.normalizeUuid(input.branchId),
+                logDeviceName: await this.resolveDeviceName(client, input.deviceId),
+                logIp: this.resolveAuditIpAddress(),
+                logNotes: this.normalizeOptionalText(input.notes),
+                logRevNo: revNo,
+            },
+        });
+        return { revNo };
+    }
+    documentHeaderOf(document) {
+        if (!this.isJsonObject(document)) {
+            return document;
+        }
+        const header = document.header ?? null;
+        if (this.isJsonObject(header)) {
+            return header;
+        }
+        return Object.fromEntries(Object.entries(document).filter(([, value]) => !Array.isArray(value)));
+    }
+    async resolveDeviceName(client, documentDeviceId) {
+        const devId = this.normalizeUuid(this.requestContextService.getDeviceId()) ??
+            this.normalizeUuid(documentDeviceId);
+        if (!devId) {
+            return null;
+        }
+        const device = await client.deviceMaster.findUnique({
+            where: { devId },
+            select: { devDeviceName: true, devDeviceUid: true },
+        });
+        return device ? device.devDeviceName?.trim() || device.devDeviceUid : null;
+    }
     async resolveAuditScreen(input, tx) {
         if (input.screenId !== undefined) {
             if (!Number.isInteger(input.screenId) || input.screenId <= 0) {
@@ -553,6 +620,9 @@ let AuditLogService = class AuditLogService {
             log_branch_id: branchName ? null : record.logBranchId,
             log_branch_name: branchName,
             log_notes: record.logNotes,
+            log_entity_id: record.logEntityId,
+            log_rev_no: record.logRevNo,
+            log_device_name: record.logDeviceName,
         };
     }
     prepareAuditLogListRecord(record) {

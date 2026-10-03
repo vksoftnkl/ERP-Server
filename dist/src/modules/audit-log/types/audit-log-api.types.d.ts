@@ -20,6 +20,9 @@ export interface AuditLogListItem {
     log_branch_id: string | null;
     log_branch_name: string | null;
     log_notes: string | null;
+    log_entity_id: string | null;
+    log_rev_no: number | null;
+    log_device_name: string | null;
 }
 export interface AuditLogListMeta {
     page: number | null;

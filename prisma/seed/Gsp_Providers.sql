@@ -21,11 +21,11 @@
 -- where.
 --
 -- CHARTERED ships INACTIVE (gpv_is_active = false, and false on every service,
--- endpoint and account below it). Two things are missing and neither is in their
--- documentation:
---   1. your aspid and ASP password, issued under the contract
---   2. the /dec/ decision — plaintext to Chartered, or AES_SEK encrypted our side
--- Activate only once both are settled:
+-- endpoint and account below it). What is missing is not in their documentation:
+-- your aspid and ASP password, issued under the contract. The /dec/ question is
+-- settled as /dec/ (notes 83, 2026-10-03): plaintext to Chartered, who encrypt for
+-- NIC, so sign-in is eivital/dec and GENERATE_IRN eicore/dec. Activate once the
+-- account is filled in:
 --   UPDATE public.gst_provider SET gpv_is_active = true WHERE gpv_code = 'CHARTERED';
 --   -- and the matching service / endpoint / account rows.
 --
@@ -52,6 +52,7 @@ DECLARE
     v_gps3_id  uuid;
     v_ewb_id   uuid;
     v_auth_id  uuid;
+    v_auth2_id uuid;
     v_gen_id   uuid;
     v_cancel_id uuid;
 BEGIN
@@ -263,14 +264,16 @@ BEGIN
 
     -- Base URL is host only. Chartered versions eivital (v1.04) and eicore
     -- (v1.03) independently, so the version travels in gpe_path_template.
-    -- Sandbox is plain http in their documentation; production is https.
+    -- Both environments are https. Their documentation still prints the sandbox as
+    -- http, but the sandbox now answers http with a 301 to https, and following that
+    -- redirect ends in a 405 on the sign-in (notes 83, 2026-10-03).
     INSERT INTO public.gst_provider_service
         (gps_gpv_id, gps_service, gps_environment, gps_base_url, gps_fallback_urls,
          gps_auth_scheme, gps_payload_encryption, gps_token_ttl_minutes,
          gps_remarks, gps_is_active, gps_created_by)
     VALUES
         (v_gsp2_id, 'EINVOICE', 'SANDBOX',
-         'http://gstsandbox.charteredinfo.com', NULL,
+         'https://gstsandbox.charteredinfo.com', NULL,
          'NIC_SEK', 'NONE', 360,
          'PASSTHROUGH: their e-invoice URLs are byte-for-byte the IRP''s — same '
          'headers, body, query — only the host differs, and they inject their '
@@ -287,7 +290,7 @@ BEGIN
          'Fallback hosts are Chartered''s published Mumbai and Delhi clusters.',
          false, v_user),
         (v_gsp2_id, 'EWAYBILL', 'SANDBOX',
-         'http://gstsandbox.charteredinfo.com', NULL,
+         'https://gstsandbox.charteredinfo.com', NULL,
          'NIC_SEK', 'NONE', 360,
          'e-way bill by IRN lives under /eiewb/v1.03; cancel EWB under /v1.03. '
          'Standalone e-way bill is a separate API set — see their EWB guide.',
@@ -303,8 +306,17 @@ BEGIN
        AND gps_environment = 'SANDBOX';
 
     -- ── The two calls their documentation gives in full ──────────────────
-    -- Every request carries these five headers; the auth body additionally
-    -- carries the password, so both are redacted before the log is written.
+    -- Every request carries Chartered's aspid + ASP password and the taxpayer's
+    -- Gstin + user_name. Sign-in goes to the /dec/ route (notes 83), which takes
+    -- the taxpayer's e-invoice password as a plain eInvPwd header — so no RSA
+    -- body of our own — and is redacted, with the token reply, before the log.
+    --
+    -- Success is HTTP 2xx plus the required auth_token in the field map below,
+    -- so gpe_success_path stays NULL: $.status_cd = 1 is the shape of Chartered's
+    -- ERROR envelope, {"status_cd":"0","error":{"error_cd":"GSP001","message":…}},
+    -- whose code and message are nested under error. A /dec/ success is expected
+    -- NIC-shaped ({Status, Data:{AuthToken, TokenExpiry}}), still to be confirmed
+    -- against a real sandbox reply.
     INSERT INTO public.gst_provider_endpoint
         (gpe_gps_id, gpe_action, gpe_http_method, gpe_path_template, gpe_query_template,
          gpe_headers, gpe_redact_paths,
@@ -312,10 +324,10 @@ BEGIN
          gpe_error_code_path, gpe_error_message_path,
          gpe_is_idempotent, gpe_remarks, gpe_is_active, gpe_created_by)
     VALUES
-        (v_gps2_id, 'AUTH', 'GET', '/eivital/v1.04/auth', NULL,
-         '{"aspid":"{aspId}","password":"{aspPassword}","Gstin":"{gstin}","user_name":"{loginId}"}'::jsonb,
-         '["$.password","$.AppKey","$.Data"]'::jsonb,
-         '$.status_cd', '1', '$.error_cd', '$.message',
+        (v_gps2_id, 'AUTH', 'GET', '/eivital/dec/v1.04/auth', NULL,
+         '{"aspid":"{aspId}","password":"{aspPassword}","Gstin":"{gstin}","user_name":"{loginId}","eInvPwd":"{password}"}'::jsonb,
+         '["$.password","$.eInvPwd","$.Data"]'::jsonb,
+         NULL, NULL, '$.error.error_cd', '$.error.message',
          true,
          'Token lives 360 minutes. NIC blocks the GSTIN after 5 auth calls in '
          '15 minutes — never call this per request, take the gas_lock lease.',
@@ -338,6 +350,21 @@ BEGIN
     --   GET_IRN_BY_DOC GET    ·  HEALTH             GET
     --   GENERATE_EWB_BY_IRN POST  ·  CANCEL_EWB     POST
     --   GET_EWB        GET
+
+    -- ── Response map for AUTH ────────────────────────────────────────────
+    -- gst-auth.service keeps no session without an auth_token mapping. The /dec/
+    -- reply carries no Sek (Chartered holds the NIC session), hence no
+    -- session_key row; TokenExpiry is NIC's yyyy-MM-dd HH:mm:ss, IST, and when it
+    -- is missing the service falls back to gps_token_ttl_minutes.
+    SELECT gpe_id INTO v_auth2_id FROM public.gst_provider_endpoint
+     WHERE gpe_gps_id = v_gps2_id AND gpe_action = 'AUTH';
+
+    INSERT INTO public.gst_provider_field_map
+        (gfm_gpe_id, gfm_direction, gfm_our_field, gfm_their_path,
+         gfm_data_type, gfm_transform, gfm_is_required, gfm_sort_order, gfm_created_by)
+    VALUES
+        (v_auth2_id,'RESPONSE','auth_token','$.Data.AuthToken',  'TEXT','NONE',true, 10,v_user),
+        (v_auth2_id,'RESPONSE','expires_on','$.Data.TokenExpiry','TEXT','NONE',false,20,v_user);
 
     -- ── Response map for GENERATE_IRN ────────────────────────────────────
     -- Field names are from their RespPlGenIRN model, which is flat: no Data
@@ -432,32 +459,46 @@ BEGIN
          gps_auth_scheme, gps_payload_encryption, gps_token_ttl_minutes,
          gps_remarks, gps_is_active, gps_created_by)
     VALUES
-        (v_gsp2_id, 'GSTIN_VERIFY', 'PRODUCTION', 'https://gstapi.charteredinfo.com',
-         'API_KEY', 'NONE', 360, 'Public search API — no taxpayer login needed.', false, v_user),
-        (v_gsp2_id, 'GSTIN_VERIFY', 'SANDBOX',    'http://gstsandbox.charteredinfo.com',
+        -- deprecatedgstapi, not gstapi: gstapi wants an asp-secret header, while
+        -- deprecatedgstapi serves taxpayer search with the ASP pair in the query
+        -- (notes 86/87, 2026-10-03). The sandbox mirror answers GEN5001 to every
+        -- TP search, so SANDBOX gets no VERIFY_GSTIN row at all.
+        (v_gsp2_id, 'GSTIN_VERIFY', 'PRODUCTION', 'https://deprecatedgstapi.charteredinfo.com',
+         'API_KEY', 'NONE', 360, 'Public search API — no taxpayer login needed. /gst/search runs on this row (notes 87).', false, v_user),
+        (v_gsp2_id, 'GSTIN_VERIFY', 'SANDBOX',    'https://gstsandbox.charteredinfo.com',
          'API_KEY', 'NONE', 360, NULL, false, v_user),
         (v_gsp2_id, 'GSTR', 'PRODUCTION', 'https://gstapi.charteredinfo.com',
          'API_KEY', 'NONE', 360, 'Return-status tracking only; filing is a larger surface.', false, v_user),
-        (v_gsp2_id, 'GSTR', 'SANDBOX',    'http://gstsandbox.charteredinfo.com',
+        (v_gsp2_id, 'GSTR', 'SANDBOX',    'https://gstsandbox.charteredinfo.com',
          'API_KEY', 'NONE', 360, NULL, false, v_user),
         (v_gsp2_id, 'ASP_ADMIN', 'PRODUCTION', 'https://gstapi.charteredinfo.com',
          'API_KEY', 'NONE', 360,
          'Chartered''s own account surface. GET_API_BALANCE is the one that matters: '
          'it refreshes gpa_credit_balance before the IRN block runs out mid-morning.',
          false, v_user),
-        (v_gsp2_id, 'ASP_ADMIN', 'SANDBOX',    'http://gstsandbox.charteredinfo.com',
+        (v_gsp2_id, 'ASP_ADMIN', 'SANDBOX',    'https://gstsandbox.charteredinfo.com',
          'API_KEY', 'NONE', 360, NULL, false, v_user);
 
+    -- VERIFY_GSTIN is the row /gst/search runs on (notes 87), verified live on
+    -- 2026-10-03: the reply is the bare taxpayer record, so success is HTTP 2xx
+    -- (no success path), and a refusal nests as {"error":{"error_cd","message"}}.
+    -- {gstin} is the searching company's own GSTIN. The other three keep their
+    -- documented paths until a live reply says otherwise.
     INSERT INTO public.gst_provider_endpoint
         (gpe_gps_id, gpe_action, gpe_http_method, gpe_path_template, gpe_query_template,
          gpe_success_path, gpe_success_value, gpe_error_code_path, gpe_error_message_path,
-         gpe_is_idempotent, gpe_remarks, gpe_is_active, gpe_created_by)
+         gpe_timeout_ms, gpe_is_idempotent, gpe_remarks, gpe_is_active, gpe_created_by)
     SELECT s.gps_id, x.act, x.mth, x.pth, x.qry,
-           '$.status_cd', '1', '$.error_cd', '$.message', true, x.rem, false, v_user
+           CASE WHEN x.act = 'VERIFY_GSTIN' THEN NULL ELSE '$.status_cd' END,
+           CASE WHEN x.act = 'VERIFY_GSTIN' THEN NULL ELSE '1' END,
+           CASE WHEN x.act = 'VERIFY_GSTIN' THEN '$.error.error_cd' ELSE '$.error_cd' END,
+           CASE WHEN x.act = 'VERIFY_GSTIN' THEN '$.error.message' ELSE '$.message' END,
+           CASE WHEN x.act = 'VERIFY_GSTIN' THEN 10000 END,
+           true, x.rem, false, v_user
       FROM (VALUES
         ('GSTIN_VERIFY','VERIFY_GSTIN','GET','/commonapi/v1.1/search',
-         '?action=TP&gstin={gstin}&searchgstin={searchGstin}',
-         'Fills the GSTIN fetch buttons on company, branch and customer.'),
+         '?aspid={aspId}&password={aspPassword}&Action=TP&Gstin={gstin}&SearchGstin={searchGstin}',
+         'Fills the GSTIN fetch buttons on company, branch, customer, supplier and ledger.'),
         ('GSTR','GSTR_STATUS','GET','/commonapi/v1.0/Returns',
          '?action=RETTRACK&gstin={gstin}&fy={finYear}',
          'fy is YYYY-YY. Optional type=R1/R2 narrows it.'),
@@ -558,6 +599,6 @@ BEGIN
         (v_ewb_id,'RESPONSE','ewb_valid_upto',   '$.validUpto', 'DATETIME','DATETIME_MASK','dd/MM/yyyy hh:mm:ss a', false,'gdw_valid_upto', 20,v_user);
 
     RAISE NOTICE 'GSP seed created: NIC e-invoice sandbox (provider %).', v_gpv_id;
-    RAISE NOTICE 'GSP seed created: CHARTERED, INACTIVE — real URLs and error codes seeded; add aspid + ASP password, settle the /dec/ choice, then activate (provider %).', v_gsp2_id;
+    RAISE NOTICE 'GSP seed created: CHARTERED, INACTIVE — real URLs and error codes seeded; add aspid + ASP password, then activate (provider %).', v_gsp2_id;
 END
 $seed$;

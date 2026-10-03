@@ -125,14 +125,20 @@ describe('StockVoucherService', () => {
     deviceMaster: { findFirst: jest.Mock };
     itemUnitConversion: { findMany: jest.Mock };
     stockVoucher: { create: jest.Mock; update: jest.Mock; findUnique: jest.Mock };
-    stockVoucherItem: { deleteMany: jest.Mock; createMany: jest.Mock; updateMany: jest.Mock };
+    stockVoucherItem: {
+      deleteMany: jest.Mock;
+      createMany: jest.Mock;
+      updateMany: jest.Mock;
+      findMany: jest.Mock;
+      update: jest.Mock;
+    };
     stockReasonMaster: { findMany: jest.Mock };
     txnStatusLog: { findFirst: jest.Mock; create: jest.Mock };
     $transaction: jest.Mock;
     $queryRaw: jest.Mock;
     $executeRaw: jest.Mock;
   };
-  let auditLogService: { logEntityChange: jest.Mock };
+  let auditLogService: { logEntityChange: jest.Mock; logDocumentRevision: jest.Mock };
 
   const conversionRow = (overrides: Record<string, unknown> = {}) => ({
     iucId: UOM_ID,
@@ -169,6 +175,9 @@ describe('StockVoucherService', () => {
         deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
         createMany: jest.fn().mockResolvedValue({ count: 1 }),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+        // Notes 89 — the stored lines an update matches by id; none by default.
+        findMany: jest.fn().mockResolvedValue([]),
+        update: jest.fn().mockResolvedValue({}),
       },
       stockReasonMaster: { findMany: jest.fn().mockResolvedValue([]) },
       // public.txn_status_log — every status STEP appends one row. findFirst is
@@ -211,7 +220,10 @@ describe('StockVoucherService', () => {
       // The in-process posting engine's seven set-based statements.
       $executeRaw: jest.fn().mockResolvedValue(2),
     };
-    auditLogService = { logEntityChange: jest.fn().mockResolvedValue(undefined) };
+    auditLogService = {
+      logEntityChange: jest.fn().mockResolvedValue(undefined),
+      logDocumentRevision: jest.fn().mockResolvedValue({ revNo: 1 }),
+    };
     service = new StockVoucherService(
       client as unknown as PrismaService,
       auditLogService as unknown as AuditLogService,
@@ -652,7 +664,7 @@ describe('StockVoucherService', () => {
       expect(line.sviAccYear).toBe(ACC_YEAR);
     });
 
-    it('replaces the lines rather than merging them on update', async () => {
+    it('matches lines by id on update instead of replacing them (notes 89)', async () => {
       client.stockVoucher.findUnique.mockResolvedValue({
         svhId: SVH_ID,
         svhRefno: 'OPN/2026-2027/TILL-01/1',
@@ -663,9 +675,256 @@ describe('StockVoucherService', () => {
 
       await service.save(OPENING_RULES, payload({ header: { svhId: SVH_ID } as never }));
 
-      expect(client.stockVoucherItem.deleteMany).toHaveBeenCalledWith({
-        where: { sviVoucherId: SVH_ID, sviAccYear: ACC_YEAR },
+      // Nothing stored, nothing named: no blanket delete, the one line inserted.
+      expect(client.stockVoucherItem.findMany).toHaveBeenCalledWith({
+        where: { sviVoucherId: SVH_ID, sviAccYear: ACC_YEAR, sviIsDeleted: false },
       });
+      expect(client.stockVoucherItem.deleteMany).not.toHaveBeenCalled();
+      expect(client.stockVoucherItem.createMany.mock.calls[0][0].data).toHaveLength(1);
+    });
+  });
+
+  /**
+   * Notes 89 — one audit row per save holding the whole document before and
+   * after it, and lines that keep their id across saves.
+   */
+  describe('notes 89 — one revision per save, stable line ids', () => {
+    const LINE_A = '019f0000-0000-7000-8000-00000000000a';
+    const LINE_B = '019f0000-0000-7000-8000-00000000000b';
+    const draft = () =>
+      client.stockVoucher.findUnique.mockResolvedValue({
+        svhId: SVH_ID,
+        svhRefno: 'OPN/2026-2027/TILL-01/1',
+        svhStatus: 'DRAFT',
+        svhIsDeleted: false,
+        svhVoucherType: 'OPENING',
+      });
+    /** A stored row exactly as payload().lines[0] writes it, at the given position. */
+    const storedRow = (sviId: string, lineNo: number, over: Record<string, unknown> = {}) => ({
+      sviId,
+      sviVoucherId: SVH_ID,
+      sviCompanyId: COMPANY_ID,
+      sviBranchId: BRANCH_ID,
+      sviTenantId: null,
+      sviAccYear: ACC_YEAR,
+      sviLineNo: lineNo,
+      sviSplitNo: 1,
+      sviItemId: ITEM_ID,
+      sviUomId: UOM_ID,
+      sviBaseUomId: BASE_UOM_ID,
+      sviToBaseFactor: new Prisma.Decimal(12),
+      sviGodownId: GODOWN_ID,
+      sviLotId: null,
+      sviBucket: 'SALEABLE',
+      sviToBucket: null,
+      sviBarcode: null,
+      sviBatchNo: null,
+      sviMfgDate: null,
+      sviExpiryDate: null,
+      sviMrp: null,
+      sviSalePrice: null,
+      sviSerialNo: null,
+      sviSupplierId: null,
+      sviQty: new Prisma.Decimal('10.000'),
+      sviBaseQty: new Prisma.Decimal(120),
+      sviFreeQty: new Prisma.Decimal(0),
+      sviFreeBaseQty: new Prisma.Decimal(0),
+      sviWeightQty: new Prisma.Decimal(0),
+      sviBookQty: null,
+      sviCountedQty: null,
+      sviCostRate: new Prisma.Decimal(20),
+      sviCostRateWot: new Prisma.Decimal(0),
+      sviLandedRate: new Prisma.Decimal(0),
+      sviTaxPerc: new Prisma.Decimal(5),
+      sviReasonId: null,
+      sviDirection: null,
+      sviSyncDate: null,
+      sviRemarks: null,
+      sviCreatedBy: USER_ID,
+      sviModifiedBy: null,
+      ...over,
+    });
+    const line = (over: Record<string, unknown> = {}) => ({
+      ...payload().lines[0],
+      ...over,
+    });
+
+    it('a create writes ONE revision: no before, the reloaded document after, no line rows', async () => {
+      const after = { header: { svhId: SVH_ID, refno: 'OPN/1' } as never, lines: [] };
+      (service.getById as jest.Mock).mockResolvedValue(after);
+
+      await service.save(OPENING_RULES, payload());
+
+      expect(auditLogService.logDocumentRevision).toHaveBeenCalledTimes(1);
+      const [[entry, tx]] = auditLogService.logDocumentRevision.mock.calls;
+      expect(entry).toMatchObject({
+        screenName: 'Opening Stock',
+        tableName: 'stock_voucher',
+        docId: SVH_ID,
+        displayName: 'OPN/1',
+        before: null,
+        after,
+        branchId: BRANCH_ID,
+        deviceId: DEVICE_ID,
+        notes: 'Opening stock created',
+      });
+      expect(tx).toBe(client);
+      // The AFTER read goes through the save's transaction.
+      expect((service.getById as jest.Mock).mock.calls[0][5]).toBe(client);
+      // No header 'insert' row, no "lines replaced" row any more.
+      expect(auditLogService.logEntityChange).not.toHaveBeenCalled();
+    });
+
+    it('an update reads BEFORE first, then writes one revision with both', async () => {
+      draft();
+      const before = { header: { svhId: SVH_ID, remarks: 'old' } as never, lines: [] };
+      const after = { header: { svhId: SVH_ID, remarks: 'new' } as never, lines: [] };
+      const reads: string[] = [];
+      (service.getById as jest.Mock).mockImplementation(() => {
+        reads.push(client.stockVoucher.update.mock.calls.length ? 'after' : 'before');
+        return Promise.resolve(reads.length === 1 ? before : after);
+      });
+
+      await service.save(OPENING_RULES, payload({ header: { svhId: SVH_ID } as never }));
+
+      expect(reads.slice(0, 2)).toEqual(['before', 'after']);
+      expect(auditLogService.logDocumentRevision.mock.calls[0][0]).toMatchObject({
+        before,
+        after,
+        notes: 'Opening stock updated',
+      });
+      expect(auditLogService.logEntityChange).not.toHaveBeenCalled();
+    });
+
+    it('keeps a named line, updates it only where it changed, deletes the unnamed and inserts the new', async () => {
+      draft();
+      client.stockVoucherItem.findMany.mockResolvedValue([
+        storedRow(LINE_A, 1),
+        storedRow(LINE_B, 2),
+      ]);
+
+      await service.save(
+        OPENING_RULES,
+        payload({
+          header: { svhId: SVH_ID } as never,
+          lines: [
+            line({ sviId: LINE_A, qty: 8, baseQty: 96 }),
+            line({ lineNo: 2, itemId: ITEM_ID, qty: 3, baseQty: 36 }),
+          ] as never,
+        }),
+      );
+
+      // B is gone; A is updated in place; the new line is inserted.
+      expect(client.stockVoucherItem.deleteMany).toHaveBeenCalledWith({
+        where: { sviVoucherId: SVH_ID, sviAccYear: ACC_YEAR, sviId: { in: [LINE_B] } },
+      });
+      expect(client.stockVoucherItem.update).toHaveBeenCalledTimes(1);
+      const [[updated]] = client.stockVoucherItem.update.mock.calls;
+      expect(updated.where).toEqual({ sviId_sviAccYear: { sviId: LINE_A, sviAccYear: ACC_YEAR } });
+      expect(Number(updated.data.sviQty)).toBe(8);
+      expect(updated.data).not.toHaveProperty('sviCreatedBy');
+      expect(updated.data.sviModifiedOn).toBeInstanceOf(Date);
+      expect(updated.data.sviModifiedBy).toBe(USER_ID);
+      const inserted = client.stockVoucherItem.createMany.mock.calls[0][0].data;
+      expect(inserted).toHaveLength(1);
+      expect(Number(inserted[0].sviQty)).toBe(3);
+    });
+
+    it('leaves an untouched line alone — no update, no new modified stamp', async () => {
+      draft();
+      client.stockVoucherItem.findMany.mockResolvedValue([storedRow(LINE_A, 1)]);
+
+      await service.save(
+        OPENING_RULES,
+        payload({ header: { svhId: SVH_ID } as never, lines: [line({ sviId: LINE_A })] as never }),
+      );
+
+      expect(client.stockVoucherItem.update).not.toHaveBeenCalled();
+      expect(client.stockVoucherItem.deleteMany).not.toHaveBeenCalled();
+      expect(client.stockVoucherItem.createMany).not.toHaveBeenCalled();
+    });
+
+    it('parks renumbered lines first, so swapping two never collides on ux_svi_line', async () => {
+      draft();
+      client.stockVoucherItem.findMany.mockResolvedValue([
+        storedRow(LINE_A, 1),
+        storedRow(LINE_B, 2),
+      ]);
+
+      await service.save(
+        OPENING_RULES,
+        payload({
+          header: { svhId: SVH_ID } as never,
+          lines: [line({ sviId: LINE_B, lineNo: 1 }), line({ sviId: LINE_A, lineNo: 2 })] as never,
+        }),
+      );
+
+      const steps = client.stockVoucherItem.update.mock.calls.map(
+        ([arg]: [
+          { where: { sviId_sviAccYear: { sviId: string } }; data: { sviLineNo: number } },
+        ]) => [arg.where.sviId_sviAccYear.sviId, arg.data.sviLineNo],
+      );
+      expect(steps).toEqual([
+        [LINE_B, 1_000_000],
+        [LINE_A, 1_000_001],
+        [LINE_B, 1],
+        [LINE_A, 2],
+      ]);
+    });
+
+    it('refuses a line id on a create, a repeated id, and one this document does not hold', async () => {
+      const refusal = async (promise: Promise<unknown>) => {
+        try {
+          await promise;
+        } catch (error) {
+          return JSON.stringify((error as { response?: unknown }).response);
+        }
+        throw new Error('expected a refusal');
+      };
+      expect(
+        await refusal(
+          service.save(OPENING_RULES, payload({ lines: [line({ sviId: LINE_A })] as never })),
+        ),
+      ).toContain('has no lines yet');
+
+      draft();
+      client.stockVoucherItem.findMany.mockResolvedValue([storedRow(LINE_A, 1)]);
+      const twice = await refusal(
+        service.save(
+          OPENING_RULES,
+          payload({
+            header: { svhId: SVH_ID } as never,
+            lines: [line({ sviId: LINE_A }), line({ sviId: LINE_A, lineNo: 2 })] as never,
+          }),
+        ),
+      );
+      expect(twice).toContain('repeats line id');
+      const foreign = await refusal(
+        service.save(
+          OPENING_RULES,
+          payload({
+            header: { svhId: SVH_ID } as never,
+            lines: [line({ sviId: LINE_B })] as never,
+          }),
+        ),
+      );
+      expect(foreign).toContain('not a line of this document');
+      expect(foreign).toContain('lines.0.sviId');
+      expect(client.stockVoucherItem.deleteMany).not.toHaveBeenCalled();
+      expect(auditLogService.logDocumentRevision).not.toHaveBeenCalled();
+    });
+
+    it('a save-and-post writes its revision after the post', async () => {
+      jest.spyOn(service, 'validate').mockResolvedValue([]);
+      await service.save(OPENING_RULES, payload({ header: { status: 'POSTED' } as never }));
+
+      expect(auditLogService.logDocumentRevision).toHaveBeenCalledTimes(1);
+      expect(auditLogService.logDocumentRevision.mock.calls[0][0].notes).toBe(
+        'Opening stock created and posted',
+      );
+      const revisionOrder = auditLogService.logDocumentRevision.mock.invocationCallOrder[0];
+      const postedStep = client.txnStatusLog.create.mock.invocationCallOrder.at(-1)!;
+      expect(revisionOrder).toBeGreaterThan(postedStep);
     });
   });
 

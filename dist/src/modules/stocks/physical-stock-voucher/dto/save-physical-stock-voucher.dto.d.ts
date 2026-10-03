@@ -1,5 +1,6 @@
 import { type SaveableStockVoucherStatus, type StockBucket, type StockRateSource } from '../../stock-voucher/types/stock-voucher.types';
 export declare class SavePhysicalStockVoucherItemDto {
+    sviId?: string;
     lineNo: number;
     splitNo?: number;
     itemId: string;

@@ -17,6 +17,10 @@ export declare class CustomerService {
         deleted: true;
     }>;
     private createCustomer;
+    private createCustomerOnLedger;
+    private loadLedgerToLink;
+    private findSupplierRole;
+    private withLinkedLedgerDefaults;
     private updateCustomer;
     private resolveRelatedNames;
     private ensureAreaExists;

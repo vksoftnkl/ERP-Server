@@ -57,6 +57,22 @@ export class AuditLogListItemDto {
 
   @ApiPropertyOptional({ nullable: true })
   log_notes!: string | null;
+
+  @ApiPropertyOptional({ nullable: true, format: 'uuid', description: 'The raw record id' })
+  log_entity_id!: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    example: 2,
+    description:
+      'Notes 89 — revision of a transaction document: 1 = create, then one per save. ' +
+      'log_original_record / log_modified_record hold the whole document (the /get shape) ' +
+      'before and after that save. Null on every other row.',
+  })
+  log_rev_no!: number | null;
+
+  @ApiPropertyOptional({ nullable: true, example: 'Till 1' })
+  log_device_name!: string | null;
 }
 
 export class AuditLogListMetaDto {

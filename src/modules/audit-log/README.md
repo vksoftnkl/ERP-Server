@@ -109,6 +109,27 @@ If `modifiedRecord` is omitted, the service attempts an automatic snapshot via
 `captureScreenSnapshot`; that path is currently disabled (returns `null`), so callers are expected
 to pass `modifiedRecord` explicitly or a `BadRequestException` is raised.
 
+### `logDocumentRevision(input: LogDocumentRevisionInput, tx?): Promise<{ revNo }>` (notes 89)
+
+ONE row per save of a **transaction** document, written inside the save's transaction:
+
+- `log_original_record` = the document **before** the save (SQL NULL on a create), and
+  `log_modified_record` = the document **after** it — both in the shape of the screen's own `/get`
+  response (header + lines, with names), never projected through the screen's audit fields.
+- `log_changed_fields` = the **header's** `{field: {from, to}}` (the `header` object of the
+  document, else its non-array fields). The lines are diffed by the client's History dialog from the
+  two snapshots — nothing here lists added / dropped / changed lines.
+- `log_rev_no` = 1 for the create, then one per save, counted per `(log_screen_id, log_pk)`;
+  `ux_audit_log_revision` (partial, DB-only) refuses a second claim to the same number.
+- `log_pk` and `log_entity_id` = the document id; `log_action` `insert` / `update`;
+  `log_device_name` = the session's device (else the document's), from `fixed.device_master`.
+
+The caller reads `before` before touching anything and passes `after` read through the same
+transaction; it writes no separate per-line rows for that save. Status steps (post, cancel) stay in
+`public.txn_status_log` and write no revision. `GET /list` returns `log_rev_no`, `log_entity_id`
+and `log_device_name` on every row. In use: every `StockVoucherService` save (opening, physical,
+adjustment family, transfer).
+
 ### `createAuditLog(input: CreateAuditLogInput, tx?): Promise<void>`
 
 Lower-level writer used internally by `logEntityChange`; also callable directly. It writes a row

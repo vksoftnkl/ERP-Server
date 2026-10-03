@@ -46,6 +46,6 @@ import { GstExceptionFilter } from './gst-exception.filter';
     GstAuthService,
     GstExceptionFilter,
   ],
-  exports: [GstCryptoService, GstAuthService],
+  exports: [GstCryptoService, GstAuthService, GstHttpClient],
 })
 export class GstModule {}

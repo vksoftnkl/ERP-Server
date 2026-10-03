@@ -48,7 +48,7 @@ exports.GstModule = GstModule = __decorate([
             gst_auth_service_1.GstAuthService,
             gst_exception_filter_1.GstExceptionFilter,
         ],
-        exports: [gst_crypto_service_1.GstCryptoService, gst_auth_service_1.GstAuthService],
+        exports: [gst_crypto_service_1.GstCryptoService, gst_auth_service_1.GstAuthService, gst_http_client_1.GstHttpClient],
     })
 ], GstModule);
 //# sourceMappingURL=gst.module.js.map

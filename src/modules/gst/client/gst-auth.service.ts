@@ -28,6 +28,7 @@ import {
 } from './gst-auth-lease';
 import { GstHttpClient, GstHttpError, type GstHttpResponse } from './gst-http.client';
 import { getPath, redactPaths, REDACTED } from './gst-json-path';
+import { assertGstRouteActive, type GstRoute } from './gst-route-guard';
 import {
   appKeyBytes,
   decryptSek,
@@ -64,6 +65,8 @@ interface AuthContext {
   service: GstProviderService;
   endpoint: AuthEndpoint;
   account: Awaited<ReturnType<typeof resolveProviderAccount>>;
+  /** The rows the sign-in runs on, every one switched on (notes 88). */
+  route: GstRoute;
   timeoutMs: number;
 }
 
@@ -154,6 +157,7 @@ export class GstAuthService {
         headers: request.headers,
         body: request.body,
         timeoutMs: context.timeoutMs,
+        route: context.route,
       });
       verdict = await this.interpret(context, request, response, actor);
     } catch (error) {
@@ -214,14 +218,6 @@ export class GstAuthService {
         },
       ]);
     }
-    const gstin = credential.branch?.brGstinNo?.trim() || credential.company.compGstinNo?.trim();
-    if (!gstin) {
-      this.incomplete(
-        'gccCompanyId',
-        `${credential.company.compName} has no GSTIN to sign in as`,
-        GST_CODES.NO_GSTIN,
-      );
-    }
     const services = await this.prisma.gstProviderService.findMany({
       where: {
         gpsGpvId: credential.gccGpvId,
@@ -246,6 +242,8 @@ export class GstAuthService {
       GST_SERVICES.indexOf(s.gpsService as (typeof GST_SERVICES)[number]);
     const service = services.filter((s) => s.endpoints.length).sort((a, b) => rank(a) - rank(b))[0];
     if (!service) {
+      // A provider that is switched off says so before "nothing is set up" (notes 88).
+      assertGstRouteActive({ provider: credential.provider }, { field: 'gccId' });
       this.incomplete(
         'gccGpvId',
         `${credential.provider.gpvCode} has no ${credential.gccService ?? ''} ${credential.gccEnvironment} ` +
@@ -254,12 +252,35 @@ export class GstAuthService {
       );
     }
     const endpoint = service.endpoints.find((e) => e.gpeIsActive) ?? service.endpoints[0];
-    const account = await resolveProviderAccount(this.prisma, credential, service.gpsService, {
-      activeOnly: false,
-    });
+    // An active account first; an inactive one only so the refusal below can name it.
+    const account =
+      (await resolveProviderAccount(this.prisma, credential, service.gpsService)) ??
+      (await resolveProviderAccount(this.prisma, credential, service.gpsService, {
+        activeOnly: false,
+      }));
+    // Notes 88: no inactive row is tried any more — Verify refuses like every other call,
+    // so testing a provider means switching it on. Before the GSTIN, budget and lease.
+    const route: GstRoute = {
+      provider: credential.provider,
+      service,
+      action: 'AUTH',
+      endpoint,
+      account,
+      credential,
+    };
+    assertGstRouteActive(route, { field: 'gccId' });
+    const gstin = credential.branch?.brGstinNo?.trim() || credential.company.compGstinNo?.trim();
+    if (!gstin) {
+      this.incomplete(
+        'gccCompanyId',
+        `${credential.company.compName} has no GSTIN to sign in as`,
+        GST_CODES.NO_GSTIN,
+      );
+    }
     return {
       credential,
       gstin,
+      route,
       service,
       endpoint,
       account,

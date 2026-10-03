@@ -1,5 +1,6 @@
 import { type StockBucket } from '../types/stock-voucher.types';
 export declare class SaveStockVoucherItemDto {
+    sviId?: string;
     lineNo: number;
     splitNo?: number;
     itemId: string;

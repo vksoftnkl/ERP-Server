@@ -95,6 +95,34 @@ Every customer is backed by a row in `acc_ledger_master` that uses the **same id
 - Within the same transaction, the **linked ledger is soft-deleted too** (`updateMany` where
   `ledId = cusId`, setting `ledIsDeleted = true` / `ledIsActive = false`) so it can't stay active
   while the customer is logically deleted; a no-op for rows with no linked ledger.
+- **Unless the ledger is also a live supplier's** (notes 81): then the ledger is kept and takes the
+  supplier's active flag; only the customer row is soft-deleted.
+
+### One party as customer and supplier (notes 81)
+
+A party we sell to and buy from keeps **one ledger**, as in Tally: `cus_id = sup_id = led_id`, a
+sale debits the ledger, a purchase credits it, and the statement shows the net.
+
+- **Link create** — `POST /create` with `cusLinkLedId` (and no `cusId`) makes that existing ledger a
+  customer. No ledger is created and the ledger is **not written**: no rename, no field sync, and
+  no move to the area's group (a supplier's ledger stays under Suppliers). Only the customer row is
+  inserted, with `cusId = cusLinkLedId`. `cusAreaId` is still required and stored, for beats and
+  area filters.
+  - 400 when the ledger is missing, deleted, or not `led_ledger_type = PARTY` (a NULL type is
+    accepted when the ledger already backs a live supplier; June 2026 ledgers predate the stamp).
+  - 409 (`cusLinkLedId`) when the ledger is already a live customer. A customer row that was
+    soft-deleted while the ledger lived on is **restored** in place (audit `update`), because
+    `cus_id` is the PK and refusing would block the party for good.
+  - Blank (`undefined`, `null`, `''`) name, state, address, contact, region, GSTIN, PAN, Aadhaar,
+    company and branch default from the ledger (`CUSTOMER_FIELDS_FROM_LINKED_LEDGER`); so
+    `cusName`, `cusStateName` and `cusStateCode` may be left out. A ledger value wider than the
+    customer column (`cusEmail`, `cusAadharNo`, `cusRegionName`) is left out rather than cut.
+  - The ledger's name is not checked for uniqueness: it is this party's own.
+  - `cusLinkLedId` on an update is ignored when it equals `cusId`, 400 otherwise.
+- **Edit** — when the ledger also has a live supplier row, the ledger sync keeps the ledger's
+  current group (an area change moves the customer's beat, not the ledger) and sets
+  `ledIsActive = cusIsActive OR supIsActive`. Other shared fields sync as usual: the last save of
+  either master wins. A customer-only ledger still follows `cusAreaId`.
 
 ## Validation & business rules
 
