@@ -53,6 +53,10 @@ export enum TxnStatusDocType {
   // day-end "what is still unposted" query cannot tell from anything else.
   CHEQUE_RECEIVED = 'CHEQUE_RECEIVED',
   CHEQUE_ISSUED = 'CHEQUE_ISSUED',
+  // Notes 90 (20261005140000): a temporary credit's own life — created with
+  // the bill, moved by every receipt (PARTIAL / SETTLED / REOPENED /
+  // WRITTEN_OFF), cancelled with the bill or a voided tender. Keyed by atc_id.
+  TEMP_CREDIT = 'TEMP_CREDIT',
   OTHER = 'OTHER',
 }
 // tsl_event has no value CHECK of its own — ck_tsl_event_shape only demands a
@@ -93,6 +97,10 @@ export enum TxnStatusEvent {
   DELETED = 'DELETED',
   // A status move none of the above names.
   STATUS_CHANGED = 'STATUS_CHANGED',
+  // Notes 90 — the temporary credit's settlement steps.
+  PARTIAL = 'PARTIAL',
+  SETTLED = 'SETTLED',
+  WRITTEN_OFF = 'WRITTEN_OFF',
 }
 // ck_tsl_notify_channel.
 export enum TxnStatusNotifyChannel {

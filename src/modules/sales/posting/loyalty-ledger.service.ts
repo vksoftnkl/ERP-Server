@@ -1,11 +1,14 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 
 import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { SALES_ERROR_CODES } from './types/posting.types';
 import { throwSalesInvalid, throwSalesRefused } from './sales.errors';
+import { LOYALTY_LOT_TXN_TYPES } from './types/loyalty.types';
 import type {
+  LoyaltyAdjustInput,
+  LoyaltyAdjustResult,
   LoyaltyBillSource,
   LoyaltyConsumeOptions,
   LoyaltyConsumeType,
@@ -62,6 +65,9 @@ import type {
  * feature simply does not work. They may never be written: a sync push that
  * sends whole rows must leave them out of the column list.
  */
+/** The lot types as a text[] bind — one value, shared by every read below. */
+const LOT_TYPES: string[] = [...LOYALTY_LOT_TXN_TYPES];
+
 @Injectable()
 export class LoyaltyLedgerService {
   private readonly logger = new Logger(LoyaltyLedgerService.name);
@@ -149,14 +155,11 @@ export class LoyaltyLedgerService {
       if (r.lotId && r.lotAccYear) {
         touch(r.lotId, r.lotAccYear);
       }
-      // A reversal of an EARN / OPENING row retires THAT LOT, and it cannot
-      // say so through lld_lot_id because ck_lld_lot_required forbids a lot on
-      // those types. See the note on recomputeLots.
-      if (
-        r.reversalOfId &&
-        r.reversalOfAccYear &&
-        (r.txnType === 'EARN' || r.txnType === 'OPENING')
-      ) {
+      // A reversal of a lot row (EARN / OPENING, and since D2 a positive
+      // ADJUST / TRANSFER) retires THAT LOT, and an EARN cannot say so through
+      // lld_lot_id because ck_lld_lot_required forbids a lot on it. See the
+      // note on recomputeLots.
+      if (r.reversalOfId && r.reversalOfAccYear && LOYALTY_LOT_TXN_TYPES.includes(r.txnType)) {
         touch(r.reversalOfId, r.reversalOfAccYear);
       }
     }
@@ -258,7 +261,7 @@ export class LoyaltyLedgerService {
                 MAX(l.lld_txn_date) FILTER (WHERE l.lld_txn_type IN ('REDEEM','GIFT'))    AS last_redeem_on,
                 MAX(l.lld_txn_date)                                                       AS last_activity_on,
                 MIN(l.lld_expires_on) FILTER (
-                      WHERE l.lld_txn_type = 'EARN'
+                      WHERE l.lld_txn_type = ANY(${LOT_TYPES}::text[])
                         AND l.lld_lot_balance > 0
                         AND l.lld_expires_on IS NOT NULL)                                 AS next_expiry_on
                 FROM sales.loyalty_ledger l
@@ -283,11 +286,13 @@ export class LoyaltyLedgerService {
    * them re-implements the ORDER BY — which is the only reason they cannot
    * disagree about which lot paid.
    *
-   * NOTE on `lld_txn_type = 'EARN'`: OPENING rows also create lots and count
-   * towards `lmb_earned_points`, but §3.4c, 13's contract block and the expiry
-   * sweep all name EARN alone, so EARN alone is what this filters on. If
-   * opening balances are ever loaded, that decision has to be revisited in all
-   * three places at once rather than quietly widened here.
+   * NOTE on the type filter: until the Loyalty Status plan (2026-10-05, D2)
+   * this named EARN alone, so an OPENING row or a +50 goodwill ADJUST raised
+   * the wallet without ever being spendable, sweepable or shown as a lot (plan
+   * §6 F1). It now reads `LOYALTY_LOT_TXN_TYPES` — EARN, OPENING, ADJUST,
+   * TRANSFER — in all four places at once: here, `redeemable()`, the member
+   * recompute's next-expiry and `expiryRun()`. The list lives in
+   * loyalty.types.ts and the Loyalty Status report imports the same constant.
    */
   async lots(
     memberId: string,
@@ -311,7 +316,7 @@ export class LoyaltyLedgerService {
              lld_active_from, lld_txn_date, lld_lsc_id, lld_branch_id
         FROM sales.loyalty_ledger
        WHERE lld_member_id  = ${memberId}::uuid
-         AND lld_txn_type   = 'EARN'
+         AND lld_txn_type   = ANY(${LOT_TYPES}::text[])
          AND lld_is_deleted = false
          AND lld_lot_balance > 0
          AND (lld_active_from IS NULL OR lld_active_from <= ${onDate}::date)
@@ -349,7 +354,7 @@ export class LoyaltyLedgerService {
       SELECT SUM(lld_lot_balance) AS total
         FROM sales.loyalty_ledger
        WHERE lld_member_id  = ${memberId}::uuid
-         AND lld_txn_type   = 'EARN'
+         AND lld_txn_type   = ANY(${LOT_TYPES}::text[])
          AND lld_is_deleted = false
          AND lld_lot_balance > 0
          AND (lld_active_from IS NULL OR lld_active_from <= ${onDate}::date)
@@ -415,6 +420,13 @@ export class LoyaltyLedgerService {
         'A gift redemption crosses no money and must not name a tender row',
         SALES_ERROR_CODES.LOYALTY_CAP,
         'tenderId',
+      );
+    }
+    if (txnType === 'ADJUST' && (opts.tenderId || !opts.approvedBy)) {
+      throwSalesInvalid(
+        'A points take-back names its approver and no tender row',
+        SALES_ERROR_CODES.LOYALTY_CAP,
+        opts.tenderId ? 'tenderId' : 'approvedBy',
       );
     }
 
@@ -516,6 +528,275 @@ export class LoyaltyLedgerService {
 
     await this.writeLedgerRows(tx, rows);
     return rows.length;
+  }
+
+  // ═════════════════════════════════════════════════════════════════════════
+  //  adjust() / drain() — the Loyalty Status screen's manual movements
+  //  (plan 2026-10-05 §7.2 and D6)
+  // ═════════════════════════════════════════════════════════════════════════
+
+  /**
+   * A manual adjustment from the Loyalty Status screen.
+   *
+   * POSITIVE: one lot-less ADJUST row. Since D2 a positive ADJUST row IS a lot
+   * — spendable, sweepable, on the member card — so a goodwill credit no
+   * longer sits in the wallet as "unlotted". `expiresOn` absent = never lapses.
+   *
+   * NEGATIVE: FIFO through `consume()`, exactly like a redeem — one ADJUST row
+   * per lot drawn, refused beyond `redeemable()` (422 SALES_LOYALTY_CAP). That
+   * is what keeps `redeemable()` ≤ `balance()` after a take-back; a lot-less
+   * negative row would lower the wallet and leave every lot spendable.
+   * `ck_lld_lot_required` admits a lot on ADJUST since 20261005100000.
+   *
+   * Every row names the adjustment's own document — `LOYALTY_ADJUST` plus a
+   * fresh id — so the statement groups them, and carries `approvedBy`: the
+   * database refuses an ADJUST without one (`ck_lld_adjust_approval`).
+   */
+  async adjust(
+    tx: Prisma.TransactionClient,
+    input: LoyaltyAdjustInput,
+  ): Promise<LoyaltyAdjustResult> {
+    if (!Number.isFinite(input.points) || input.points === 0) {
+      throwSalesInvalid(
+        'An adjustment must move a non-zero number of points',
+        SALES_ERROR_CODES.LOYALTY_CAP,
+        'points',
+      );
+    }
+    if (!input.approvedBy) {
+      throwSalesInvalid(
+        'An adjustment must name who approved it',
+        SALES_ERROR_CODES.LOYALTY_CAP,
+        'approvedBy',
+      );
+    }
+    if (input.expiresOn && input.expiresOn < input.txnDate) {
+      throwSalesInvalid(
+        'A lot cannot lapse before the day it is given',
+        SALES_ERROR_CODES.LOYALTY_CAP,
+        'expiresOn',
+      );
+    }
+
+    const member = await this.lockMember(tx, input.memberId, input.companyId, ['CLOSED', 'MERGED']);
+    const docId = randomUUID();
+    const docRefno = `ADJ/${input.txnDate}/${docId.slice(-6).toUpperCase()}`;
+    const lscId = input.lscId ?? member.lscId ?? (await this.latestLotScheme(tx, input.memberId));
+    const stamp = {
+      srcModule: 'SALES' as const,
+      srcDocType: 'LOYALTY_ADJUST' as const,
+      srcDocId: docId,
+      srcAccYear: input.accYear,
+      srcDocRefno: docRefno,
+      remarks: input.reason,
+      approvedBy: input.approvedBy,
+      userId: input.userId ?? null,
+      deviceId: input.deviceId ?? null,
+      sessionId: input.sessionId ?? null,
+      createdBy: input.createdBy ?? 'SYSTEM',
+    };
+
+    let rowsWritten: number;
+    if (input.points > 0) {
+      await this.writeLedgerRows(tx, [
+        {
+          compId: input.companyId,
+          branchId: input.branchId,
+          accYear: input.accYear,
+          memberId: input.memberId,
+          custId: member.custId,
+          lscId,
+          txnType: 'ADJUST',
+          rowNo: 1,
+          points: round(input.points, 4),
+          txnDate: input.txnDate,
+          expiresOn: input.expiresOn ?? null,
+          ...stamp,
+        },
+      ]);
+      rowsWritten = 1;
+    } else {
+      rowsWritten = await this.consume(tx, input.memberId, round(-input.points, 4), 'ADJUST', {
+        branchId: input.branchId,
+        accYear: input.accYear,
+        txnDate: input.txnDate,
+        rate: 0,
+        lscId,
+        ...stamp,
+      });
+    }
+
+    const [balance, redeemable] = await Promise.all([
+      this.balance(input.memberId, tx),
+      this.redeemable(input.memberId, input.txnDate, tx),
+    ]);
+    return { docId, docRefno, rowsWritten, balance, redeemable };
+  }
+
+  /**
+   * Zero a wallet that is about to be CLOSED with points still on it (plan D6,
+   * the `force` path).
+   *
+   * One ADJUST row per open lot — EVERY lot, cooling and lapsed-not-swept ones
+   * too, since nothing will ever spend them once the wallet is closed — plus
+   * one lot-less row for whatever the balance holds beyond its lots (a wallet
+   * from before D2, or an overdrawn one). Afterwards `balance()` reads 0 and
+   * so does every lot. Not FIFO-through-`consume()` on purpose: that refuses
+   * anything beyond `redeemable()`, and a close must take the lot.
+   */
+  async drain(
+    tx: Prisma.TransactionClient,
+    input: Omit<LoyaltyAdjustInput, 'points' | 'expiresOn'>,
+  ): Promise<LoyaltyAdjustResult> {
+    if (!input.approvedBy) {
+      throwSalesInvalid(
+        'Closing a wallet with points on it must name who approved it',
+        SALES_ERROR_CODES.LOYALTY_CAP,
+        'approvedBy',
+      );
+    }
+    const member = await this.lockMember(tx, input.memberId, input.companyId, ['MERGED']);
+    const docId = randomUUID();
+    const docRefno = `ADJ/${input.txnDate}/${docId.slice(-6).toUpperCase()}`;
+
+    const lots = await tx.$queryRaw<
+      {
+        lld_id: string;
+        lld_acc_year: string;
+        lld_lot_balance: Prisma.Decimal;
+        lld_lsc_id: string | null;
+      }[]
+    >`
+      SELECT lld_id, lld_acc_year, lld_lot_balance, lld_lsc_id
+        FROM sales.loyalty_ledger
+       WHERE lld_member_id  = ${input.memberId}::uuid
+         AND lld_txn_type   = ANY(${LOT_TYPES}::text[])
+         AND lld_is_deleted = false
+         AND lld_lot_balance > 0
+       ORDER BY lld_expires_on NULLS LAST, lld_txn_date, lld_id`;
+    const balance = await this.balance(input.memberId, tx);
+
+    const stamp = {
+      compId: input.companyId,
+      branchId: input.branchId,
+      accYear: input.accYear,
+      memberId: input.memberId,
+      custId: member.custId,
+      txnType: 'ADJUST' as const,
+      txnDate: input.txnDate,
+      rate: 0,
+      moneyValue: 0,
+      srcModule: 'SALES' as const,
+      srcDocType: 'LOYALTY_ADJUST' as const,
+      srcDocId: docId,
+      srcAccYear: input.accYear,
+      srcDocRefno: docRefno,
+      remarks: input.reason,
+      approvedBy: input.approvedBy,
+      userId: input.userId ?? null,
+      deviceId: input.deviceId ?? null,
+      sessionId: input.sessionId ?? null,
+      createdBy: input.createdBy ?? 'SYSTEM',
+    };
+    const rows: LoyaltyLedgerRowInput[] = [];
+    let lotted = 0;
+    for (const lot of lots) {
+      const left = Number(lot.lld_lot_balance);
+      lotted = round(lotted + left, 4);
+      rows.push({
+        ...stamp,
+        rowNo: rows.length + 1,
+        points: -left,
+        lotId: lot.lld_id,
+        lotAccYear: lot.lld_acc_year,
+        lscId: lot.lld_lsc_id,
+      });
+    }
+    // Whatever the wallet holds that no lot accounts for. Negative when the
+    // lots are overdrawn — then the row is positive, and it is itself a lot;
+    // a closed wallet is refused at the till regardless (member status).
+    const remainder = round(balance - lotted, 4);
+    if (remainder !== 0) {
+      rows.push({
+        ...stamp,
+        rowNo: rows.length + 1,
+        points: -remainder,
+        lscId: input.lscId ?? member.lscId ?? (await this.latestLotScheme(tx, input.memberId)),
+      });
+    }
+    await this.writeLedgerRows(tx, rows);
+
+    return {
+      docId,
+      docRefno,
+      rowsWritten: rows.length,
+      balance: await this.balance(input.memberId, tx),
+      redeemable: 0,
+    };
+  }
+
+  /**
+   * `SELECT … FOR UPDATE` on the wallet — the same serialisation `consume()`
+   * takes, so two screens adjusting one member queue instead of racing — plus
+   * the ownership and status checks every manual movement shares.
+   */
+  private async lockMember(
+    tx: Prisma.TransactionClient,
+    memberId: string,
+    companyId: string,
+    refuseStatuses: readonly string[],
+  ): Promise<{ custId: string; lscId: string | null; status: string; branchId: string | null }> {
+    const rows = await tx.$queryRaw<
+      {
+        lmb_comp_id: string;
+        lmb_cust_id: string;
+        lmb_lsc_id: string | null;
+        lmb_status: string;
+        lmb_branch_id: string | null;
+        lmb_is_deleted: boolean;
+      }[]
+    >`
+      SELECT lmb_comp_id, lmb_cust_id, lmb_lsc_id, lmb_status, lmb_branch_id, lmb_is_deleted
+        FROM sales.loyalty_member
+       WHERE lmb_id = ${memberId}::uuid
+         FOR UPDATE`;
+    const row = rows[0];
+    if (!row || row.lmb_is_deleted || row.lmb_comp_id !== companyId) {
+      throwSalesInvalid(
+        `Loyalty member ${memberId} does not exist in this company`,
+        SALES_ERROR_CODES.LOYALTY_CAP,
+        'memberId',
+      );
+    }
+    if (refuseStatuses.includes(row.lmb_status)) {
+      throwSalesRefused(
+        `Loyalty member ${memberId} is ${row.lmb_status}; its points cannot be moved`,
+        SALES_ERROR_CODES.LOYALTY_CAP,
+        'memberId',
+      );
+    }
+    return {
+      custId: row.lmb_cust_id,
+      lscId: row.lmb_lsc_id,
+      status: row.lmb_status,
+      branchId: row.lmb_branch_id,
+    };
+  }
+
+  /** The scheme of the member's most recent movement that named one, for a wallet with no `lmb_lsc_id`. */
+  private async latestLotScheme(
+    tx: Prisma.TransactionClient,
+    memberId: string,
+  ): Promise<string | null> {
+    const rows = await tx.$queryRaw<{ lld_lsc_id: string }[]>`
+      SELECT lld_lsc_id
+        FROM sales.loyalty_ledger
+       WHERE lld_member_id  = ${memberId}::uuid
+         AND lld_is_deleted = false
+         AND lld_lsc_id IS NOT NULL
+       ORDER BY lld_txn_date DESC, lld_id DESC
+       LIMIT 1`;
+    return rows[0]?.lld_lsc_id ?? null;
   }
 
   // ═════════════════════════════════════════════════════════════════════════
@@ -774,6 +1055,16 @@ export class LoyaltyLedgerService {
       },
     ]);
 
+    // Notes 91 N3: a wallet names the scheme it first earned on. The Loyalty
+    // Status screen's Scheme column, best gift and "eligible" all read
+    // lmb_lsc_id, and nothing stamped it — every live member had NULL. First
+    // EARN only: a later earn on another scheme does not re-home the wallet.
+    await tx.$executeRaw`
+      UPDATE sales.loyalty_member
+         SET lmb_lsc_id = ${scheme.lscId}::uuid
+       WHERE lmb_id = ${memberId}::uuid
+         AND lmb_lsc_id IS NULL`;
+
     return {
       memberId,
       schemeId: scheme.lscId,
@@ -1017,7 +1308,7 @@ export class LoyaltyLedgerService {
         SELECT COUNT(*) AS n
           FROM sales.loyalty_ledger
          WHERE lld_member_id  = ${memberId}::uuid
-           AND lld_txn_type   = 'EARN'
+           AND lld_txn_type   = ANY(${LOT_TYPES}::text[])
            AND lld_is_deleted = false
            AND lld_lot_balance > 0
            AND lld_branch_id <> ${bill.branchId}::uuid`;
@@ -1470,7 +1761,7 @@ export class LoyaltyLedgerService {
                lld_txn_date
           FROM sales.loyalty_ledger
          WHERE lld_comp_id    = ${companyId}::uuid
-           AND lld_txn_type   = 'EARN'
+           AND lld_txn_type   = ANY(${LOT_TYPES}::text[])
            AND lld_is_deleted = false
            AND lld_lot_balance > 0
            AND lld_expires_on IS NOT NULL

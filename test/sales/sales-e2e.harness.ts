@@ -458,6 +458,21 @@ export function probes(prisma: PrismaClient) {
       );
     },
     /** Live (not soft-deleted) balance rows of a document. */
+    /** Notes 90 — the credit's own steps in txn_status_log, oldest first. */
+    tempCreditTrail(atcId: string) {
+      return all<{
+        tsl_event: string;
+        tsl_from_status: string | null;
+        tsl_to_status: string;
+        tsl_remarks: string | null;
+      }>(
+        `SELECT tsl_event, tsl_from_status, tsl_to_status, tsl_remarks
+           FROM public.txn_status_log
+          WHERE tsl_src_doc_type = 'TEMP_CREDIT' AND tsl_src_doc_id = $1::uuid
+          ORDER BY tsl_seq_no`,
+        atcId,
+      );
+    },
     balanceRows(srcDocType: string, srcDocId: string) {
       return all(
         `SELECT abl_id, abl_bill_type, abl_dr_cr, abl_party_id, abl_bill_amount, abl_alloc_amount,

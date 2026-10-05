@@ -61,6 +61,7 @@ const cheques_module_1 = require("./modules/accountsModule/cheques/cheques.modul
 const vouchers_module_1 = require("./modules/accountsModule/vouchers/vouchers.module");
 const issued_cheques_module_1 = require("./modules/accountsModule/issuedCheques/issued-cheques.module");
 const ledger_statement_module_1 = require("./modules/reports/ledger-statement/ledger-statement.module");
+const loyalty_status_module_1 = require("./modules/reports/loyalty-status/loyalty-status.module");
 const ledger_map_module_1 = require("./modules/accountsModule/ledgerMap/ledger-map.module");
 const bill_balance_module_1 = require("./modules/accountsModule/billBalance/bill-balance.module");
 const ledger_shipping_address_module_1 = require("./modules/accountsModule/ledgerShippingAddress/ledger-shipping-address.module");
@@ -106,6 +107,7 @@ const widget_master_module_1 = require("./modules/master/widget-master/widget-ma
 const charge_master_module_1 = require("./modules/master/charge-master/charge-master.module");
 const charge_detail_module_1 = require("./modules/master/charge-detail/charge-detail.module");
 const promotion_loyalty_points_module_1 = require("./modules/sales/loyalty/promotion-loyalty-points.module");
+const loyalty_members_module_1 = require("./modules/sales/loyalty/members/loyalty-members.module");
 const promotion_scheme_module_1 = require("./modules/sales/promotion-scheme/promotion-scheme.module");
 const print_template_assignment_module_1 = require("./modules/settings/print-template-assignment/print-template-assignment.module");
 const print_render_module_1 = require("./modules/settings/print-render/print-render.module");
@@ -216,6 +218,7 @@ exports.AppModule = AppModule = __decorate([
             vouchers_module_1.VouchersModule,
             issued_cheques_module_1.IssuedChequesModule,
             ledger_statement_module_1.LedgerStatementModule,
+            loyalty_status_module_1.LoyaltyStatusModule,
             ledger_map_module_1.LedgerMapModule,
             supplier_group_module_1.SupplierGroupModule,
             suppliers_module_1.SuppliersModule,
@@ -261,6 +264,7 @@ exports.AppModule = AppModule = __decorate([
             itemStockBalanceModule_1.ItemStockBalanceModule,
             itemBatchStockModule_1.ItemBatchStockModule,
             promotion_loyalty_points_module_1.PromotionLoyaltyPointsModule,
+            loyalty_members_module_1.LoyaltyMembersModule,
             promotion_scheme_module_1.PromotionSchemeModule,
             print_template_assignment_module_1.PrintTemplateAssignmentModule,
             print_render_module_1.PrintRenderModule,

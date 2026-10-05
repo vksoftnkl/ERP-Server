@@ -15,6 +15,7 @@ const client_1 = require("@prisma/client");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const audit_log_service_1 = require("../../audit-log/audit-log.service");
 const txn_status_log_helper_1 = require("../../../common/txn-status-log/txn-status-log.helper");
+const temp_credit_status_1 = require("../../../common/txn-status-log/temp-credit-status");
 const tender_detail_service_1 = require("../../accountsModule/tenderDetail/tender-detail.service");
 const tender_detail_api_types_1 = require("../../accountsModule/tenderDetail/types/tender-detail-api.types");
 const loyalty_ledger_service_1 = require("../posting/loyalty-ledger.service");
@@ -121,6 +122,21 @@ let BillRetenderService = class BillRetenderService {
                     }, { reason: `Tender voided: ${reasonById.get(r.td_id) ?? 'OTHER'}`, createdBy: actor });
                 }
                 if (r.td_tender_type_id === sales_doc_utils_1.TENDER_TYPE.TEMP_CREDIT) {
+                    const credits = await tx.accTempCredit.findMany({
+                        where: {
+                            atcTenderId: r.td_id,
+                            atcTenderAccYear: bill.sbAccYear,
+                            atcIsDeleted: false,
+                            atcStatus: { not: 'CANCELLED' },
+                        },
+                        select: {
+                            atcId: true,
+                            atcStatus: true,
+                            atcBalanceAmount: true,
+                            atcBillRefno: true,
+                            atcTenantId: true,
+                        },
+                    });
                     await tx.accTempCredit.updateMany({
                         where: { atcTenderId: r.td_id, atcTenderAccYear: bill.sbAccYear, atcIsDeleted: false },
                         data: {
@@ -131,6 +147,26 @@ let BillRetenderService = class BillRetenderService {
                             atcModifiedBy: actor,
                         },
                     });
+                    for (const c of credits) {
+                        await (0, temp_credit_status_1.appendTempCreditStatus)(tx, {
+                            credit: {
+                                atcId: c.atcId,
+                                accYear: bill.sbAccYear,
+                                companyId: bill.sbCompanyId,
+                                branchId: bill.sbBranchId,
+                                tenantId: c.atcTenantId,
+                                billRefno: c.atcBillRefno,
+                            },
+                            event: txn_status_log_helper_1.TxnStatusEvent.CANCELLED,
+                            fromStatus: c.atcStatus,
+                            toStatus: 'CANCELLED',
+                            changedBy: actor,
+                            changedOn: now,
+                            remarks: `Tender voided: ${reasonById.get(r.td_id) ?? 'OTHER'}${dto.remark ? ` — ${dto.remark}` : ''} — balance ${c.atcBalanceAmount.toFixed(2)} cleared`,
+                            deviceId: bill.sbDeviceId,
+                            sessionId: bill.sbSessionId,
+                        });
+                    }
                 }
             }
             const replaces = rows[0].td_id;

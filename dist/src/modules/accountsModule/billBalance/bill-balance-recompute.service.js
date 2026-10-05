@@ -14,14 +14,18 @@ exports.BillBalanceRecomputeService = void 0;
 const common_1 = require("@nestjs/common");
 const client_1 = require("@prisma/client");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
+const request_context_service_1 = require("../../../common/request-context/request-context.service");
+const temp_credit_status_1 = require("../../../common/txn-status-log/temp-credit-status");
 const ALLOCATING_TYPES = ['ALLOCATION', 'ADVANCE_ADJUST', 'NOTE_ADJUST', 'TRANSFER'];
 const DISCOUNTING_TYPES = ['DISCOUNT', 'ROUND_OFF'];
 const ZERO = new client_1.Prisma.Decimal(0);
 let BillBalanceRecomputeService = BillBalanceRecomputeService_1 = class BillBalanceRecomputeService {
     prisma;
+    requestContext;
     logger = new common_1.Logger(BillBalanceRecomputeService_1.name);
-    constructor(prisma) {
+    constructor(prisma, requestContext) {
         this.prisma = prisma;
+        this.requestContext = requestContext;
     }
     async recomputeBills(client, bills, asOf = new Date()) {
         const unique = dedupe(bills);
@@ -43,6 +47,8 @@ let BillBalanceRecomputeService = BillBalanceRecomputeService_1 = class BillBala
                 abjAdjType: true,
                 abjAmount: true,
                 abjAdjDate: true,
+                abjCreatedOn: true,
+                abjVoucherId: true,
                 abjIsPostDated: true,
             },
         });
@@ -70,6 +76,15 @@ let BillBalanceRecomputeService = BillBalanceRecomputeService_1 = class BillBala
             if (bucket.lastOn === null || row.abjAdjDate > bucket.lastOn) {
                 bucket.lastOn = row.abjAdjDate;
             }
+            const candidate = {
+                on: row.abjAdjDate,
+                createdOn: row.abjCreatedOn,
+                type: row.abjAdjType,
+                voucherId: row.abjVoucherId,
+            };
+            if (bucket.last === null || laterMovement(candidate, bucket.last)) {
+                bucket.last = candidate;
+            }
         }
         const stored = await client.accBillBalance.findMany({
             where: {
@@ -87,6 +102,8 @@ let BillBalanceRecomputeService = BillBalanceRecomputeService_1 = class BillBala
         });
         const now = new Date();
         const results = [];
+        const writtenOff = [];
+        const lastVoucherOf = new Map();
         for (const bill of stored) {
             const bucket = totals.get(keyOf({ billId: bill.ablId, accYear: bill.ablAccYear }));
             if (!bucket) {
@@ -114,6 +131,10 @@ let BillBalanceRecomputeService = BillBalanceRecomputeService_1 = class BillBala
                     },
                 });
             }
+            if (pending.lessThanOrEqualTo(0) && bucket.last?.type === 'WRITEOFF') {
+                writtenOff.push({ billId: bill.ablId, accYear: bill.ablAccYear });
+            }
+            lastVoucherOf.set(keyOf({ billId: bill.ablId, accYear: bill.ablAccYear }), bucket.last?.voucherId ?? null);
             results.push({
                 billId: bill.ablId,
                 accYear: bill.ablAccYear,
@@ -127,11 +148,22 @@ let BillBalanceRecomputeService = BillBalanceRecomputeService_1 = class BillBala
             });
         }
         if (unique.length > 0) {
-            await client.$executeRaw `
+            const keys = client_1.Prisma.join(unique.map((u) => client_1.Prisma.sql `(${u.billId}::uuid, ${u.accYear}::char(9))`));
+            const writtenOffKeys = writtenOff.length === 0
+                ? client_1.Prisma.sql `false`
+                : client_1.Prisma.sql `(t.atc_abl_id, t.atc_abl_acc_year) IN (${client_1.Prisma.join(writtenOff.map((u) => client_1.Prisma.sql `(${u.billId}::uuid, ${u.accYear}::char(9))`))})`;
+            const before = await client.$queryRaw `
+        SELECT atc_id, atc_acc_year, atc_status, atc_balance_amount, atc_company_id,
+               atc_branch_id, atc_tenant_id, atc_bill_refno, atc_abl_id, atc_abl_acc_year
+          FROM accounts.acc_temp_credit t
+         WHERE t.atc_is_deleted = false
+           AND (t.atc_abl_id, t.atc_abl_acc_year) IN (${keys})`;
+            const after = await client.$queryRaw `
         UPDATE accounts.acc_temp_credit t
            SET atc_balance_amount = LEAST(t.atc_credit_amount, GREATEST(0, b.abl_pending_amount)),
                atc_status = CASE
-                              WHEN t.atc_status IN ('WRITTEN_OFF', 'CANCELLED') THEN t.atc_status
+                              WHEN t.atc_status = 'CANCELLED' THEN 'CANCELLED'
+                              WHEN b.abl_pending_amount <= 0 AND ${writtenOffKeys} THEN 'WRITTEN_OFF'
                               WHEN b.abl_pending_amount <= 0 THEN 'SETTLED'
                               WHEN b.abl_pending_amount < t.atc_credit_amount THEN 'PARTIAL'
                               ELSE 'OPEN' END,
@@ -140,9 +172,54 @@ let BillBalanceRecomputeService = BillBalanceRecomputeService_1 = class BillBala
           FROM accounts.acc_bill_balance b
          WHERE b.abl_id = t.atc_abl_id AND b.abl_acc_year = t.atc_abl_acc_year
            AND t.atc_is_deleted = false
-           AND (t.atc_abl_id, t.atc_abl_acc_year) IN (${client_1.Prisma.join(unique.map((u) => client_1.Prisma.sql `(${u.billId}::uuid, ${u.accYear}::char(9))`))})`;
+           AND (t.atc_abl_id, t.atc_abl_acc_year) IN (${keys})
+        RETURNING t.atc_id, t.atc_acc_year, t.atc_status, t.atc_balance_amount`;
+            await this.logTempCreditTransitions(client, before, after, lastVoucherOf, now);
         }
         return results;
+    }
+    async logTempCreditTransitions(client, before, after, lastVoucherOf, now) {
+        const was = new Map(before.map((r) => [`${r.atc_id}|${r.atc_acc_year}`, r]));
+        const moved = after
+            .map((a) => ({ a, b: was.get(`${a.atc_id}|${a.atc_acc_year}`) }))
+            .filter((x) => x.b !== undefined && x.b.atc_status !== x.a.atc_status);
+        if (moved.length === 0) {
+            return;
+        }
+        const voucherIds = [
+            ...new Set(moved
+                .map((x) => lastVoucherOf.get(keyOf({ billId: x.b.atc_abl_id, accYear: x.b.atc_abl_acc_year })))
+                .filter((v) => !!v)),
+        ];
+        const refnos = voucherIds.length === 0
+            ? []
+            : await client.$queryRaw `
+            SELECT avh_voucher_id, avh_voucher_refno
+              FROM accounts.acc_voucher_header
+             WHERE avh_voucher_id = ANY(${voucherIds}::uuid[])`;
+        const refnoOf = new Map(refnos.map((r) => [r.avh_voucher_id, r.avh_voucher_refno]));
+        const changedBy = this.requestContext.getUserId() ?? '';
+        const deviceId = this.requestContext.getDeviceId();
+        for (const { a, b } of moved) {
+            const voucherId = lastVoucherOf.get(keyOf({ billId: b.atc_abl_id, accYear: b.atc_abl_acc_year }));
+            await (0, temp_credit_status_1.appendTempCreditStatus)(client, {
+                credit: {
+                    atcId: b.atc_id,
+                    accYear: b.atc_acc_year,
+                    companyId: b.atc_company_id,
+                    branchId: b.atc_branch_id,
+                    tenantId: b.atc_tenant_id,
+                    billRefno: b.atc_bill_refno,
+                },
+                event: (0, temp_credit_status_1.settlementEventOf)(a.atc_status, b.atc_status),
+                fromStatus: b.atc_status,
+                toStatus: a.atc_status,
+                changedBy,
+                changedOn: now,
+                remarks: (0, temp_credit_status_1.movementRemark)(b.atc_balance_amount, a.atc_balance_amount, a.atc_status, voucherId ? (refnoOf.get(voucherId) ?? null) : null),
+                deviceId,
+            });
+        }
     }
     async regularisePostDated(scope, asOf = new Date(), batchSize = 500) {
         const asOfDate = startOfDayUtc(asOf);
@@ -182,10 +259,20 @@ let BillBalanceRecomputeService = BillBalanceRecomputeService_1 = class BillBala
 exports.BillBalanceRecomputeService = BillBalanceRecomputeService;
 exports.BillBalanceRecomputeService = BillBalanceRecomputeService = BillBalanceRecomputeService_1 = __decorate([
     (0, common_1.Injectable)(),
-    __metadata("design:paramtypes", [prisma_service_1.PrismaService])
+    __metadata("design:paramtypes", [prisma_service_1.PrismaService,
+        request_context_service_1.RequestContextService])
 ], BillBalanceRecomputeService);
 function emptyTotals() {
-    return { alloc: ZERO, disc: ZERO, writeoff: ZERO, lastOn: null };
+    return { alloc: ZERO, disc: ZERO, writeoff: ZERO, lastOn: null, last: null };
+}
+function laterMovement(a, b) {
+    if (a.on.getTime() !== b.on.getTime()) {
+        return a.on > b.on;
+    }
+    if (a.createdOn.getTime() !== b.createdOn.getTime()) {
+        return a.createdOn > b.createdOn;
+    }
+    return a.type === 'WRITEOFF' && b.type !== 'WRITEOFF';
 }
 function keyOf(bill) {
     return `${bill.billId}|${bill.accYear}`;

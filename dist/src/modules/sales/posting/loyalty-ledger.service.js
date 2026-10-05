@@ -17,6 +17,8 @@ const client_1 = require("@prisma/client");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const posting_types_1 = require("./types/posting.types");
 const sales_errors_1 = require("./sales.errors");
+const loyalty_types_1 = require("./types/loyalty.types");
+const LOT_TYPES = [...loyalty_types_1.LOYALTY_LOT_TXN_TYPES];
 let LoyaltyLedgerService = LoyaltyLedgerService_1 = class LoyaltyLedgerService {
     prisma;
     logger = new common_1.Logger(LoyaltyLedgerService_1.name);
@@ -80,9 +82,7 @@ let LoyaltyLedgerService = LoyaltyLedgerService_1 = class LoyaltyLedgerService {
             if (r.lotId && r.lotAccYear) {
                 touch(r.lotId, r.lotAccYear);
             }
-            if (r.reversalOfId &&
-                r.reversalOfAccYear &&
-                (r.txnType === 'EARN' || r.txnType === 'OPENING')) {
+            if (r.reversalOfId && r.reversalOfAccYear && loyalty_types_1.LOYALTY_LOT_TXN_TYPES.includes(r.txnType)) {
                 touch(r.reversalOfId, r.reversalOfAccYear);
             }
         }
@@ -148,7 +148,7 @@ let LoyaltyLedgerService = LoyaltyLedgerService_1 = class LoyaltyLedgerService {
                 MAX(l.lld_txn_date) FILTER (WHERE l.lld_txn_type IN ('REDEEM','GIFT'))    AS last_redeem_on,
                 MAX(l.lld_txn_date)                                                       AS last_activity_on,
                 MIN(l.lld_expires_on) FILTER (
-                      WHERE l.lld_txn_type = 'EARN'
+                      WHERE l.lld_txn_type = ANY(${LOT_TYPES}::text[])
                         AND l.lld_lot_balance > 0
                         AND l.lld_expires_on IS NOT NULL)                                 AS next_expiry_on
                 FROM sales.loyalty_ledger l
@@ -164,7 +164,7 @@ let LoyaltyLedgerService = LoyaltyLedgerService_1 = class LoyaltyLedgerService {
              lld_active_from, lld_txn_date, lld_lsc_id, lld_branch_id
         FROM sales.loyalty_ledger
        WHERE lld_member_id  = ${memberId}::uuid
-         AND lld_txn_type   = 'EARN'
+         AND lld_txn_type   = ANY(${LOT_TYPES}::text[])
          AND lld_is_deleted = false
          AND lld_lot_balance > 0
          AND (lld_active_from IS NULL OR lld_active_from <= ${onDate}::date)
@@ -189,7 +189,7 @@ let LoyaltyLedgerService = LoyaltyLedgerService_1 = class LoyaltyLedgerService {
       SELECT SUM(lld_lot_balance) AS total
         FROM sales.loyalty_ledger
        WHERE lld_member_id  = ${memberId}::uuid
-         AND lld_txn_type   = 'EARN'
+         AND lld_txn_type   = ANY(${LOT_TYPES}::text[])
          AND lld_is_deleted = false
          AND lld_lot_balance > 0
          AND (lld_active_from IS NULL OR lld_active_from <= ${onDate}::date)
@@ -211,6 +211,9 @@ let LoyaltyLedgerService = LoyaltyLedgerService_1 = class LoyaltyLedgerService {
         }
         if (txnType === 'GIFT' && opts.tenderId) {
             (0, sales_errors_1.throwSalesInvalid)('A gift redemption crosses no money and must not name a tender row', posting_types_1.SALES_ERROR_CODES.LOYALTY_CAP, 'tenderId');
+        }
+        if (txnType === 'ADJUST' && (opts.tenderId || !opts.approvedBy)) {
+            (0, sales_errors_1.throwSalesInvalid)('A points take-back names its approver and no tender row', posting_types_1.SALES_ERROR_CODES.LOYALTY_CAP, opts.tenderId ? 'tenderId' : 'approvedBy');
         }
         const member = await tx.$queryRaw `
       SELECT lmb_comp_id, lmb_cust_id
@@ -281,6 +284,170 @@ let LoyaltyLedgerService = LoyaltyLedgerService_1 = class LoyaltyLedgerService {
         }
         await this.writeLedgerRows(tx, rows);
         return rows.length;
+    }
+    async adjust(tx, input) {
+        if (!Number.isFinite(input.points) || input.points === 0) {
+            (0, sales_errors_1.throwSalesInvalid)('An adjustment must move a non-zero number of points', posting_types_1.SALES_ERROR_CODES.LOYALTY_CAP, 'points');
+        }
+        if (!input.approvedBy) {
+            (0, sales_errors_1.throwSalesInvalid)('An adjustment must name who approved it', posting_types_1.SALES_ERROR_CODES.LOYALTY_CAP, 'approvedBy');
+        }
+        if (input.expiresOn && input.expiresOn < input.txnDate) {
+            (0, sales_errors_1.throwSalesInvalid)('A lot cannot lapse before the day it is given', posting_types_1.SALES_ERROR_CODES.LOYALTY_CAP, 'expiresOn');
+        }
+        const member = await this.lockMember(tx, input.memberId, input.companyId, ['CLOSED', 'MERGED']);
+        const docId = (0, node_crypto_1.randomUUID)();
+        const docRefno = `ADJ/${input.txnDate}/${docId.slice(-6).toUpperCase()}`;
+        const lscId = input.lscId ?? member.lscId ?? (await this.latestLotScheme(tx, input.memberId));
+        const stamp = {
+            srcModule: 'SALES',
+            srcDocType: 'LOYALTY_ADJUST',
+            srcDocId: docId,
+            srcAccYear: input.accYear,
+            srcDocRefno: docRefno,
+            remarks: input.reason,
+            approvedBy: input.approvedBy,
+            userId: input.userId ?? null,
+            deviceId: input.deviceId ?? null,
+            sessionId: input.sessionId ?? null,
+            createdBy: input.createdBy ?? 'SYSTEM',
+        };
+        let rowsWritten;
+        if (input.points > 0) {
+            await this.writeLedgerRows(tx, [
+                {
+                    compId: input.companyId,
+                    branchId: input.branchId,
+                    accYear: input.accYear,
+                    memberId: input.memberId,
+                    custId: member.custId,
+                    lscId,
+                    txnType: 'ADJUST',
+                    rowNo: 1,
+                    points: round(input.points, 4),
+                    txnDate: input.txnDate,
+                    expiresOn: input.expiresOn ?? null,
+                    ...stamp,
+                },
+            ]);
+            rowsWritten = 1;
+        }
+        else {
+            rowsWritten = await this.consume(tx, input.memberId, round(-input.points, 4), 'ADJUST', {
+                branchId: input.branchId,
+                accYear: input.accYear,
+                txnDate: input.txnDate,
+                rate: 0,
+                lscId,
+                ...stamp,
+            });
+        }
+        const [balance, redeemable] = await Promise.all([
+            this.balance(input.memberId, tx),
+            this.redeemable(input.memberId, input.txnDate, tx),
+        ]);
+        return { docId, docRefno, rowsWritten, balance, redeemable };
+    }
+    async drain(tx, input) {
+        if (!input.approvedBy) {
+            (0, sales_errors_1.throwSalesInvalid)('Closing a wallet with points on it must name who approved it', posting_types_1.SALES_ERROR_CODES.LOYALTY_CAP, 'approvedBy');
+        }
+        const member = await this.lockMember(tx, input.memberId, input.companyId, ['MERGED']);
+        const docId = (0, node_crypto_1.randomUUID)();
+        const docRefno = `ADJ/${input.txnDate}/${docId.slice(-6).toUpperCase()}`;
+        const lots = await tx.$queryRaw `
+      SELECT lld_id, lld_acc_year, lld_lot_balance, lld_lsc_id
+        FROM sales.loyalty_ledger
+       WHERE lld_member_id  = ${input.memberId}::uuid
+         AND lld_txn_type   = ANY(${LOT_TYPES}::text[])
+         AND lld_is_deleted = false
+         AND lld_lot_balance > 0
+       ORDER BY lld_expires_on NULLS LAST, lld_txn_date, lld_id`;
+        const balance = await this.balance(input.memberId, tx);
+        const stamp = {
+            compId: input.companyId,
+            branchId: input.branchId,
+            accYear: input.accYear,
+            memberId: input.memberId,
+            custId: member.custId,
+            txnType: 'ADJUST',
+            txnDate: input.txnDate,
+            rate: 0,
+            moneyValue: 0,
+            srcModule: 'SALES',
+            srcDocType: 'LOYALTY_ADJUST',
+            srcDocId: docId,
+            srcAccYear: input.accYear,
+            srcDocRefno: docRefno,
+            remarks: input.reason,
+            approvedBy: input.approvedBy,
+            userId: input.userId ?? null,
+            deviceId: input.deviceId ?? null,
+            sessionId: input.sessionId ?? null,
+            createdBy: input.createdBy ?? 'SYSTEM',
+        };
+        const rows = [];
+        let lotted = 0;
+        for (const lot of lots) {
+            const left = Number(lot.lld_lot_balance);
+            lotted = round(lotted + left, 4);
+            rows.push({
+                ...stamp,
+                rowNo: rows.length + 1,
+                points: -left,
+                lotId: lot.lld_id,
+                lotAccYear: lot.lld_acc_year,
+                lscId: lot.lld_lsc_id,
+            });
+        }
+        const remainder = round(balance - lotted, 4);
+        if (remainder !== 0) {
+            rows.push({
+                ...stamp,
+                rowNo: rows.length + 1,
+                points: -remainder,
+                lscId: input.lscId ?? member.lscId ?? (await this.latestLotScheme(tx, input.memberId)),
+            });
+        }
+        await this.writeLedgerRows(tx, rows);
+        return {
+            docId,
+            docRefno,
+            rowsWritten: rows.length,
+            balance: await this.balance(input.memberId, tx),
+            redeemable: 0,
+        };
+    }
+    async lockMember(tx, memberId, companyId, refuseStatuses) {
+        const rows = await tx.$queryRaw `
+      SELECT lmb_comp_id, lmb_cust_id, lmb_lsc_id, lmb_status, lmb_branch_id, lmb_is_deleted
+        FROM sales.loyalty_member
+       WHERE lmb_id = ${memberId}::uuid
+         FOR UPDATE`;
+        const row = rows[0];
+        if (!row || row.lmb_is_deleted || row.lmb_comp_id !== companyId) {
+            (0, sales_errors_1.throwSalesInvalid)(`Loyalty member ${memberId} does not exist in this company`, posting_types_1.SALES_ERROR_CODES.LOYALTY_CAP, 'memberId');
+        }
+        if (refuseStatuses.includes(row.lmb_status)) {
+            (0, sales_errors_1.throwSalesRefused)(`Loyalty member ${memberId} is ${row.lmb_status}; its points cannot be moved`, posting_types_1.SALES_ERROR_CODES.LOYALTY_CAP, 'memberId');
+        }
+        return {
+            custId: row.lmb_cust_id,
+            lscId: row.lmb_lsc_id,
+            status: row.lmb_status,
+            branchId: row.lmb_branch_id,
+        };
+    }
+    async latestLotScheme(tx, memberId) {
+        const rows = await tx.$queryRaw `
+      SELECT lld_lsc_id
+        FROM sales.loyalty_ledger
+       WHERE lld_member_id  = ${memberId}::uuid
+         AND lld_is_deleted = false
+         AND lld_lsc_id IS NOT NULL
+       ORDER BY lld_txn_date DESC, lld_id DESC
+       LIMIT 1`;
+        return rows[0]?.lld_lsc_id ?? null;
     }
     async resolveMember(tx, bill, opts = {
         autoEnrol: true,
@@ -451,6 +618,11 @@ let LoyaltyLedgerService = LoyaltyLedgerService_1 = class LoyaltyLedgerService {
                 createdBy: opts.createdBy ?? 'SYSTEM',
             },
         ]);
+        await tx.$executeRaw `
+      UPDATE sales.loyalty_member
+         SET lmb_lsc_id = ${scheme.lscId}::uuid
+       WHERE lmb_id = ${memberId}::uuid
+         AND lmb_lsc_id IS NULL`;
         return {
             memberId,
             schemeId: scheme.lscId,
@@ -593,7 +765,7 @@ let LoyaltyLedgerService = LoyaltyLedgerService_1 = class LoyaltyLedgerService {
         SELECT COUNT(*) AS n
           FROM sales.loyalty_ledger
          WHERE lld_member_id  = ${memberId}::uuid
-           AND lld_txn_type   = 'EARN'
+           AND lld_txn_type   = ANY(${LOT_TYPES}::text[])
            AND lld_is_deleted = false
            AND lld_lot_balance > 0
            AND lld_branch_id <> ${bill.branchId}::uuid`;
@@ -863,7 +1035,7 @@ let LoyaltyLedgerService = LoyaltyLedgerService_1 = class LoyaltyLedgerService {
                lld_txn_date
           FROM sales.loyalty_ledger
          WHERE lld_comp_id    = ${companyId}::uuid
-           AND lld_txn_type   = 'EARN'
+           AND lld_txn_type   = ANY(${LOT_TYPES}::text[])
            AND lld_is_deleted = false
            AND lld_lot_balance > 0
            AND lld_expires_on IS NOT NULL

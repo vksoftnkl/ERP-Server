@@ -27,6 +27,7 @@ export declare enum TxnStatusDocType {
     JOURNAL = "JOURNAL",
     CHEQUE_RECEIVED = "CHEQUE_RECEIVED",
     CHEQUE_ISSUED = "CHEQUE_ISSUED",
+    TEMP_CREDIT = "TEMP_CREDIT",
     OTHER = "OTHER"
 }
 export declare enum TxnStatusEvent {
@@ -45,7 +46,10 @@ export declare enum TxnStatusEvent {
     CLOSED = "CLOSED",
     REOPENED = "REOPENED",
     DELETED = "DELETED",
-    STATUS_CHANGED = "STATUS_CHANGED"
+    STATUS_CHANGED = "STATUS_CHANGED",
+    PARTIAL = "PARTIAL",
+    SETTLED = "SETTLED",
+    WRITTEN_OFF = "WRITTEN_OFF"
 }
 export declare enum TxnStatusNotifyChannel {
     SMS = "SMS",

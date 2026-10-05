@@ -9666,6 +9666,13 @@ model LoyaltyLedger {
   //       (lld_comp_id, lld_branch_id, lld_txn_date, lld_txn_type)
   //       INCLUDE (lld_points, lld_money_value) WHERE lld_is_deleted = false;
   //
+  //   -- the Loyalty Status scheme summary (reports/loyalty-status, plan
+  //   -- 2026-10-05 §5.6): group by scheme over a date range, off the heap.
+  //   CREATE INDEX ix_lld_scheme_period ON sales.loyalty_ledger
+  //       (lld_comp_id, lld_lsc_id, lld_txn_date)
+  //       INCLUDE (lld_txn_type, lld_points, lld_branch_id, lld_src_doc_id)
+  //       WHERE lld_is_deleted = false;
+  //
   //   -- the other half of the reconciliation report. No per-lot over-draw
   //   -- CHECK exists: two tills offline can each draw the last of one lot and
   //   -- the batch that syncs second must be RECORDED, not refused.
@@ -9682,7 +9689,9 @@ model LoyaltyLedger {
   // CHECK constraints (DB-only): ck_lld_acc_year, ck_lld_src_acc_year,
   //   ck_lld_txn_type, ck_lld_src_module, ck_lld_src_doc_type, ck_lld_src_doc,
   //   ck_lld_points_nonzero, ck_lld_sign, ck_lld_lot_pair,
-  //   ck_lld_lot_required, ck_lld_no_self_lot, ck_lld_lot_dates,
+  //   ck_lld_lot_required (REDEEM / GIFT / EXPIRE name a lot; ADJUST and
+  //   TRANSFER may — 20261005100000, a take-back draws FIFO; EARN / OPENING
+  //   never), ck_lld_no_self_lot, ck_lld_lot_dates,
   //   ck_lld_tender_pair, ck_lld_reversal_pair, ck_lld_no_self_reversal,
   //   ck_lld_redeem_tender, ck_lld_gift_no_tender, ck_lld_adjust_approval,
   //   ck_lld_row_no, ck_lld_factor

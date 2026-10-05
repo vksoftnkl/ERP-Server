@@ -16,6 +16,7 @@ const client_1 = require("@prisma/client");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const audit_log_service_1 = require("../../audit-log/audit-log.service");
 const txn_status_log_helper_1 = require("../../../common/txn-status-log/txn-status-log.helper");
+const temp_credit_status_1 = require("../../../common/txn-status-log/temp-credit-status");
 const sale_order_service_1 = require("../sale-order/sale-order.service");
 const charge_carry_service_1 = require("../posting/charge-carry.service");
 const dc_fulfilment_service_1 = require("../posting/dc-fulfilment.service");
@@ -871,7 +872,8 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
         }
         for (const t of snap.tenders.filter((x) => x.tenderTypeId === sales_doc_utils_1.TENDER_TYPE.TEMP_CREDIT && x.tempCredit)) {
             const tc = t.tempCredit;
-            await tx.accTempCredit.create({
+            const dueOn = (0, sales_doc_utils_1.addDays)(snap.billDate, tc.days);
+            const credit = await tx.accTempCredit.create({
                 data: {
                     atcCompanyId: bill.sbCompanyId,
                     atcBranchId: bill.sbBranchId,
@@ -893,7 +895,7 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
                     atcAddr: tc.addr,
                     atcIdRef: tc.idRef,
                     atcDays: tc.days,
-                    atcDueDate: new Date(`${(0, sales_doc_utils_1.addDays)(snap.billDate, tc.days)}T00:00:00Z`),
+                    atcDueDate: new Date(`${dueOn}T00:00:00Z`),
                     atcCreditAmount: (0, bill_snapshot_1.decimal)(t.amount),
                     atcBalanceAmount: (0, bill_snapshot_1.decimal)(t.amount),
                     atcStatus: 'OPEN',
@@ -904,7 +906,51 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
                     atcCreatedOn: now,
                     atcCreatedBy: actor,
                 },
+                select: { atcId: true },
             });
+            const amount = new client_1.Prisma.Decimal(t.amount).toFixed(2);
+            await (0, temp_credit_status_1.appendTempCreditStatus)(tx, {
+                credit: {
+                    atcId: credit.atcId,
+                    accYear: bill.sbAccYear,
+                    companyId: bill.sbCompanyId,
+                    branchId: bill.sbBranchId,
+                    tenantId: bill.sbTenantId,
+                    billRefno: refno,
+                },
+                event: txn_status_log_helper_1.TxnStatusEvent.CREATED,
+                fromStatus: null,
+                toStatus: 'OPEN',
+                changedBy: ctx.actor,
+                changedOn: now,
+                remarks: `credit ${amount} to ${tc.name} (${tc.mobile}), ${tc.days} days, due ${dueOn}`,
+                deviceId: bill.sbDeviceId,
+                sessionId: snap.sessionId,
+            });
+            await this.audit.logEntityChange({
+                action: 'insert',
+                tableName: 'acc_temp_credit',
+                screenName: 'Temporary Credit',
+                screenType: 'transaction',
+                pk: credit.atcId,
+                entityId: credit.atcId,
+                displayName: refno,
+                modifiedRecord: {
+                    atcBillRefno: refno,
+                    atcName: tc.name,
+                    atcMobile: tc.mobile,
+                    atcPlace: tc.place ?? null,
+                    atcAddr: tc.addr ?? null,
+                    atcIdRef: tc.idRef ?? null,
+                    atcDays: tc.days,
+                    atcDueDate: dueOn,
+                    atcCreditAmount: amount,
+                    atcRemarks: tc.notes ?? null,
+                },
+                userId: ctx.actor,
+                branchId: bill.sbBranchId,
+                notes: `Temporary credit given with bill ${refno}`,
+            }, tx);
         }
         let earned = 0;
         let earnPoints = 0;
@@ -1166,6 +1212,21 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
                 },
             });
         }
+        const credits = await tx.accTempCredit.findMany({
+            where: {
+                atcSrcDocId: bill.sbId,
+                atcAccYear: bill.sbAccYear,
+                atcIsDeleted: false,
+                atcStatus: { not: 'CANCELLED' },
+            },
+            select: {
+                atcId: true,
+                atcStatus: true,
+                atcBalanceAmount: true,
+                atcBillRefno: true,
+                atcTenantId: true,
+            },
+        });
         await tx.accTempCredit.updateMany({
             where: { atcSrcDocId: bill.sbId, atcAccYear: bill.sbAccYear, atcIsDeleted: false },
             data: {
@@ -1176,6 +1237,26 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
                 atcModifiedBy: actor,
             },
         });
+        for (const c of credits) {
+            await (0, temp_credit_status_1.appendTempCreditStatus)(tx, {
+                credit: {
+                    atcId: c.atcId,
+                    accYear: bill.sbAccYear,
+                    companyId: bill.sbCompanyId,
+                    branchId: bill.sbBranchId,
+                    tenantId: c.atcTenantId,
+                    billRefno: c.atcBillRefno,
+                },
+                event: txn_status_log_helper_1.TxnStatusEvent.CANCELLED,
+                fromStatus: c.atcStatus,
+                toStatus: 'CANCELLED',
+                changedBy: actor,
+                changedOn: now,
+                remarks: `${mode === 'amend' ? 'Bill amended' : 'Bill cancelled'}: ${reason} — balance ${c.atcBalanceAmount.toFixed(2)} cleared`,
+                deviceId: bill.sbDeviceId,
+                sessionId: bill.sbSessionId,
+            });
+        }
         if (mode === 'cancel') {
             await (0, bill_pdc_posting_helper_1.cancelBillPdcRegister)(tx, bill, reason, actor, now);
         }

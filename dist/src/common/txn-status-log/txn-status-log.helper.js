@@ -34,6 +34,7 @@ var TxnStatusDocType;
     TxnStatusDocType["JOURNAL"] = "JOURNAL";
     TxnStatusDocType["CHEQUE_RECEIVED"] = "CHEQUE_RECEIVED";
     TxnStatusDocType["CHEQUE_ISSUED"] = "CHEQUE_ISSUED";
+    TxnStatusDocType["TEMP_CREDIT"] = "TEMP_CREDIT";
     TxnStatusDocType["OTHER"] = "OTHER";
 })(TxnStatusDocType || (exports.TxnStatusDocType = TxnStatusDocType = {}));
 var TxnStatusEvent;
@@ -54,6 +55,9 @@ var TxnStatusEvent;
     TxnStatusEvent["REOPENED"] = "REOPENED";
     TxnStatusEvent["DELETED"] = "DELETED";
     TxnStatusEvent["STATUS_CHANGED"] = "STATUS_CHANGED";
+    TxnStatusEvent["PARTIAL"] = "PARTIAL";
+    TxnStatusEvent["SETTLED"] = "SETTLED";
+    TxnStatusEvent["WRITTEN_OFF"] = "WRITTEN_OFF";
 })(TxnStatusEvent || (exports.TxnStatusEvent = TxnStatusEvent = {}));
 var TxnStatusNotifyChannel;
 (function (TxnStatusNotifyChannel) {

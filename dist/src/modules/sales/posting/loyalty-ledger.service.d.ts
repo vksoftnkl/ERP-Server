@@ -1,6 +1,6 @@
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
-import type { LoyaltyBillSource, LoyaltyConsumeOptions, LoyaltyConsumeType, LoyaltyEarnResult, LoyaltyLot, LoyaltyPreview, LoyaltyScheme, LoyaltySrcDocType } from './types/loyalty.types';
+import type { LoyaltyAdjustInput, LoyaltyAdjustResult, LoyaltyBillSource, LoyaltyConsumeOptions, LoyaltyConsumeType, LoyaltyEarnResult, LoyaltyLot, LoyaltyPreview, LoyaltyScheme, LoyaltySrcDocType } from './types/loyalty.types';
 export declare class LoyaltyLedgerService {
     private readonly prisma;
     private readonly logger;
@@ -12,6 +12,10 @@ export declare class LoyaltyLedgerService {
     redeemable(memberId: string, onDate: string, tx?: Prisma.TransactionClient): Promise<number>;
     balance(memberId: string, tx?: Prisma.TransactionClient): Promise<number>;
     consume(tx: Prisma.TransactionClient, memberId: string, points: number, txnType: LoyaltyConsumeType, opts: LoyaltyConsumeOptions): Promise<number>;
+    adjust(tx: Prisma.TransactionClient, input: LoyaltyAdjustInput): Promise<LoyaltyAdjustResult>;
+    drain(tx: Prisma.TransactionClient, input: Omit<LoyaltyAdjustInput, 'points' | 'expiresOn'>): Promise<LoyaltyAdjustResult>;
+    private lockMember;
+    private latestLotScheme;
     resolveMember(tx: Prisma.TransactionClient, bill: LoyaltyBillSource, opts?: {
         autoEnrol: boolean;
         isWalkIn: boolean;

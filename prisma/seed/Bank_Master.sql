@@ -17,15 +17,42 @@
 --   * bnk_is_active = false marks banks whose licence has been surrendered or
 --     whose business was amalgamated into another bank. The row is NOT deleted so
 --     that historical bank-account references keep resolving.
+--   * bnk_sync_date is never written here: it records when a site last synced the
+--     row and is per-environment, not a property of the data.
 --
--- Idempotent: rows already present (case-insensitive bnk_name) are skipped.
+-- HOW IT APPLIES (one transaction, idempotent, re-run on every deploy)
+--   The bank NAME is the identity, compared case-insensitively as uq_bnk_name does.
+--   1. UPDATE -- a live bank whose details (short name, alias, RBI code, IBAN flag,
+--      active flag) differ from this file is brought in line, PROVIDED the seed
+--      still owns the row: bnk_modified_by IS NULL or 'system'. A bank edited from
+--      the Bank List screen carries the editing user's id there and is left alone
+--      for good, so a local correction is never undone by a deploy. To hand such a
+--      row back to the seed:
+--        UPDATE fixed.bank_master SET bnk_modified_by = NULL WHERE bnk_name = '...';
+--      Only rows that really change are touched, so bnk_modified_on stays honest.
+--   2. INSERT -- a bank not present under that name at all is added. A bank that
+--      was soft-deleted from the screen stays deleted (the NOT EXISTS ignores
+--      bnk_is_deleted on purpose); restore it from the screen if wanted.
+--   Both steps skip a row whose short name is already held by a DIFFERENT live
+--   bank (uq_bnk_short_name), rather than failing the whole file. The same rule
+--   means two seeded banks cannot swap short names in a single deploy.
+--   Renaming a bank here does not rename the row: the old name is simply no longer
+--   matched and the new name is inserted. Retire the old row on the screen instead.
+--
 -- Run: psql "$DATABASE_URL" -f prisma/seed/Bank_Master.sql
+--      or: npm run seed:run -- --only=Bank_Master.sql
 
-INSERT INTO fixed.bank_master
-    (bnk_name, bnk_short_name, bnk_alias, bnk_rbi_code,
-     bnk_iban_supported, bnk_is_active, bnk_is_deleted, bnk_created_by)
-SELECT v.bnk_name, v.bnk_short_name, v.bnk_alias, v.bnk_rbi_code,
-       v.bnk_iban_supported, v.bnk_is_active, false, 'system'
+BEGIN;
+
+-- The list, once, in a temp table so the UPDATE and the INSERT below read the
+-- same rows. ON COMMIT DROP: the runner sends this whole file as one query.
+CREATE TEMP TABLE _bank ON COMMIT DROP AS
+SELECT v.bnk_name::varchar(200)        AS bnk_name,
+       v.bnk_short_name::varchar(80)   AS bnk_short_name,
+       v.bnk_alias::varchar(120)       AS bnk_alias,
+       v.bnk_rbi_code::varchar(30)     AS bnk_rbi_code,
+       v.bnk_iban_supported::boolean   AS bnk_iban_supported,
+       v.bnk_is_active::boolean        AS bnk_is_active
 FROM (VALUES
     -- ============ PUBLIC SECTOR BANKS (12) ============
     ('State Bank of India',                      'SBI',           NULL,                        'SBIN', false, true),
@@ -211,8 +238,43 @@ FROM (VALUES
     ('ING Vysya Bank',                           'INGVYSYA',      'Vysya Bank',                'VYSA', false, false),
     ('Punjab and Maharashtra Co-operative Bank', 'PMC',           NULL,                        'PMCB', false, false),
     ('Credit Suisse AG',                         'CREDITSUISSE',  NULL,                        'CRES', false, false)
-) AS v(bnk_name, bnk_short_name, bnk_alias, bnk_rbi_code, bnk_iban_supported, bnk_is_active)
-WHERE NOT EXISTS (
-    SELECT 1 FROM fixed.bank_master m
-    WHERE lower(m.bnk_name) = lower(v.bnk_name)
-);
+) AS v(bnk_name, bnk_short_name, bnk_alias, bnk_rbi_code, bnk_iban_supported, bnk_is_active);
+
+-- ---- 1. refresh the details of every bank the seed still owns ----------------
+UPDATE fixed.bank_master m
+   SET bnk_short_name     = v.bnk_short_name,
+       bnk_alias          = v.bnk_alias,
+       bnk_rbi_code       = v.bnk_rbi_code,
+       bnk_iban_supported = v.bnk_iban_supported,
+       bnk_is_active      = v.bnk_is_active,
+       bnk_modified_on    = now(),
+       bnk_modified_by    = 'system'
+  FROM _bank v
+ WHERE lower(m.bnk_name) = lower(v.bnk_name)
+   AND NOT m.bnk_is_deleted
+   AND (m.bnk_modified_by IS NULL OR m.bnk_modified_by = 'system')
+   AND (m.bnk_short_name, m.bnk_alias, m.bnk_rbi_code, m.bnk_iban_supported, m.bnk_is_active)
+       IS DISTINCT FROM
+       (v.bnk_short_name, v.bnk_alias, v.bnk_rbi_code, v.bnk_iban_supported, v.bnk_is_active)
+   AND NOT EXISTS (SELECT 1
+                     FROM fixed.bank_master o
+                    WHERE o.bnk_id <> m.bnk_id
+                      AND NOT o.bnk_is_deleted
+                      AND lower(o.bnk_short_name) = lower(v.bnk_short_name));
+
+-- ---- 2. add the banks that are missing (a soft-deleted bank stays deleted) ----
+INSERT INTO fixed.bank_master
+    (bnk_name, bnk_short_name, bnk_alias, bnk_rbi_code,
+     bnk_iban_supported, bnk_is_active, bnk_is_deleted, bnk_created_by)
+SELECT v.bnk_name, v.bnk_short_name, v.bnk_alias, v.bnk_rbi_code,
+       v.bnk_iban_supported, v.bnk_is_active, false, 'system'
+  FROM _bank v
+ WHERE NOT EXISTS (SELECT 1
+                     FROM fixed.bank_master m
+                    WHERE lower(m.bnk_name) = lower(v.bnk_name))
+   AND NOT EXISTS (SELECT 1
+                     FROM fixed.bank_master o
+                    WHERE NOT o.bnk_is_deleted
+                      AND lower(o.bnk_short_name) = lower(v.bnk_short_name));
+
+COMMIT;

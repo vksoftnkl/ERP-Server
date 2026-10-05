@@ -56,7 +56,7 @@ VALUES
     ,(  66,    1, 'Offer & Schemes'                      , NULL                  , true ,  12.00, NULL, NULL, NULL, true , true)
     ,(  67,   75, 'Loyalty Programs'                     , NULL                  , true ,   1.00, NULL, NULL, NULL, true , false)
     ,(  75,    1, 'Loyalty Schemes'                      , NULL                  , true ,  10.00, NULL, NULL, NULL, true , true)
-    ,(  79,   75, 'Loyalty Status'                       , NULL                  , false,   2.00, NULL, NULL, NULL, true , false)
+    ,(  79,   75, 'Loyalty Status'                       , NULL                  , true ,   2.00, NULL, NULL, NULL, true , false)
     ,(  80,   75, 'Loyalty Redemption'                   , NULL                  , false,   3.00, NULL, NULL, NULL, true , false)
     ,(  81,    1, 'Salesman Schemes'                     , NULL                  , false,  11.00, NULL, NULL, NULL, true , false)
     ,(  82,   81, 'Salesman Target Schemes'              , NULL                  , false,   1.00, NULL, NULL, NULL, true , false)

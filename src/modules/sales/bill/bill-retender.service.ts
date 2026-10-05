@@ -6,6 +6,7 @@ import {
   appendTxnStatusLog,
   TxnStatusEvent,
 } from 'src/common/txn-status-log/txn-status-log.helper';
+import { appendTempCreditStatus } from 'src/common/txn-status-log/temp-credit-status';
 import { TenderDetailService } from '../../accountsModule/tenderDetail/tender-detail.service';
 import {
   TenderDrCr,
@@ -193,8 +194,24 @@ export class BillRetenderService {
             { reason: `Tender voided: ${reasonById.get(r.td_id) ?? 'OTHER'}`, createdBy: actor },
           );
         }
-        // A voided TEMP_CR clears its acc_temp_credit row.
+        // A voided TEMP_CR clears its acc_temp_credit row — and says so in the
+        // credit's own trail (notes 90 A).
         if (r.td_tender_type_id === TENDER_TYPE.TEMP_CREDIT) {
+          const credits = await tx.accTempCredit.findMany({
+            where: {
+              atcTenderId: r.td_id,
+              atcTenderAccYear: bill.sbAccYear,
+              atcIsDeleted: false,
+              atcStatus: { not: 'CANCELLED' },
+            },
+            select: {
+              atcId: true,
+              atcStatus: true,
+              atcBalanceAmount: true,
+              atcBillRefno: true,
+              atcTenantId: true,
+            },
+          });
           await tx.accTempCredit.updateMany({
             where: { atcTenderId: r.td_id, atcTenderAccYear: bill.sbAccYear, atcIsDeleted: false },
             data: {
@@ -205,6 +222,26 @@ export class BillRetenderService {
               atcModifiedBy: actor,
             },
           });
+          for (const c of credits) {
+            await appendTempCreditStatus(tx, {
+              credit: {
+                atcId: c.atcId,
+                accYear: bill.sbAccYear,
+                companyId: bill.sbCompanyId,
+                branchId: bill.sbBranchId,
+                tenantId: c.atcTenantId,
+                billRefno: c.atcBillRefno,
+              },
+              event: TxnStatusEvent.CANCELLED,
+              fromStatus: c.atcStatus,
+              toStatus: 'CANCELLED',
+              changedBy: actor,
+              changedOn: now,
+              remarks: `Tender voided: ${reasonById.get(r.td_id) ?? 'OTHER'}${dto.remark ? ` — ${dto.remark}` : ''} — balance ${c.atcBalanceAmount.toFixed(2)} cleared`,
+              deviceId: bill.sbDeviceId,
+              sessionId: bill.sbSessionId,
+            });
+          }
         }
       }
 

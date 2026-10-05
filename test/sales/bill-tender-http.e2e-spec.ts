@@ -138,6 +138,14 @@ describe('Temporary credit and re-tender (e2e, live DB)', () => {
     expect(tcs).toHaveLength(1);
     atcId = tcs[0].atc_id;
     expect(tcs[0].atc_status).toBe('OPEN');
+    // Notes 90 A / B: the credit's own first step, and an insert audit row.
+    const steps = await p.tempCreditTrail(atcId);
+    expect(steps.map((s) => s.tsl_event)).toEqual(['CREATED']);
+    expect(steps[0].tsl_to_status).toBe('OPEN');
+    const audit = await h.prisma.$queryRaw<{ log_action: string; log_entity_id: string | null }[]>`
+      SELECT log_action::text AS log_action, log_entity_id FROM audit.audit_log
+       WHERE log_table_name = 'acc_temp_credit' AND log_pk = ${atcId}`;
+    expect(audit).toEqual([{ log_action: 'insert', log_entity_id: atcId }]);
     expect(tcs[0].atc_name).toBe('Ravi (e2e)');
     expect(tcs[0].atc_mobile).toBe(MOBILE);
     expect(tcs[0].atc_days).toBe(10);
@@ -315,6 +323,11 @@ describe('Temporary credit and re-tender (e2e, live DB)', () => {
     expect(tc.atc_status).toBe('CANCELLED');
     expect(num(tc.atc_balance_amount)).toBe(0);
     expect(tc.atc_remarks).toBe(`E2E-TENDER-${tag} cancelled`);
+    // Notes 90 A: the cancel is the credit's last step.
+    const steps = await p.tempCreditTrail(atcId);
+    expect(steps.map((s) => s.tsl_event)).toEqual(['CREATED', 'CANCELLED']);
+    expect(steps[1]).toMatchObject({ tsl_from_status: 'OPEN', tsl_to_status: 'CANCELLED' });
+    expect(steps[1].tsl_remarks).toContain(`E2E-TENDER-${tag} cancelled`);
     expect(await p.balanceRows(SALE_BILL, bill.sbId)).toHaveLength(0);
     expect(await p.partyNet(WALK_IN, bill.sbId)).toBe(0);
 

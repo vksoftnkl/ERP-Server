@@ -98,6 +98,7 @@ let TempCreditService = class TempCreditService {
             screenName: 'Temporary Credit',
             screenType: 'transaction',
             pk: dto.atcId,
+            entityId: dto.atcId,
             displayName: row.atcBillRefno ?? dto.atcId,
             originalRecord: { atcPromiseDate: (0, sales_doc_utils_1.isoDate)(row.atcPromiseDate), atcRemarks: row.atcRemarks },
             modifiedRecord: {

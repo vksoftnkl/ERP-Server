@@ -6,6 +6,7 @@ import {
   appendTxnStatusLog,
   TxnStatusEvent,
 } from 'src/common/txn-status-log/txn-status-log.helper';
+import { appendTempCreditStatus } from 'src/common/txn-status-log/temp-credit-status';
 import { SaleOrderService } from '../sale-order/sale-order.service';
 import { ChargeCarryService } from '../posting/charge-carry.service';
 import { DcFulfilmentService } from '../posting/dc-fulfilment.service';
@@ -493,7 +494,7 @@ export class BillLifecycleService {
           screenType: 'transaction',
           pk: bill.sbId,
           displayName: bill.sbBillRefno || bill.sbId,
-          originalRecord: before as unknown as Record<string, unknown>,
+          originalRecord: before,
           modifiedRecord: {
             ...(saveDto as unknown as Record<string, unknown>),
             sbRevisionNo: bill.sbRevisionNo + 1,
@@ -1368,7 +1369,8 @@ export class BillLifecycleService {
       (x) => x.tenderTypeId === TENDER_TYPE.TEMP_CREDIT && x.tempCredit,
     )) {
       const tc = t.tempCredit!;
-      await tx.accTempCredit.create({
+      const dueOn = addDays(snap.billDate, tc.days);
+      const credit = await tx.accTempCredit.create({
         data: {
           atcCompanyId: bill.sbCompanyId,
           atcBranchId: bill.sbBranchId,
@@ -1390,7 +1392,7 @@ export class BillLifecycleService {
           atcAddr: tc.addr,
           atcIdRef: tc.idRef,
           atcDays: tc.days,
-          atcDueDate: new Date(`${addDays(snap.billDate, tc.days)}T00:00:00Z`),
+          atcDueDate: new Date(`${dueOn}T00:00:00Z`),
           atcCreditAmount: decimal(t.amount),
           atcBalanceAmount: decimal(t.amount),
           atcStatus: 'OPEN',
@@ -1401,7 +1403,59 @@ export class BillLifecycleService {
           atcCreatedOn: now,
           atcCreatedBy: actor,
         },
+        select: { atcId: true },
       });
+      // Notes 90 A — the credit's own first step, keyed by ITS id: Ctrl+H on
+      // Temp Credits reads txn_status_log by atc_id, and the bill's steps
+      // file under the bill's.
+      const amount = new Prisma.Decimal(t.amount).toFixed(2);
+      await appendTempCreditStatus(tx, {
+        credit: {
+          atcId: credit.atcId,
+          accYear: bill.sbAccYear,
+          companyId: bill.sbCompanyId,
+          branchId: bill.sbBranchId,
+          tenantId: bill.sbTenantId,
+          billRefno: refno,
+        },
+        event: TxnStatusEvent.CREATED,
+        fromStatus: null,
+        toStatus: 'OPEN',
+        changedBy: ctx.actor,
+        changedOn: now,
+        remarks: `credit ${amount} to ${tc.name} (${tc.mobile}), ${tc.days} days, due ${dueOn}`,
+        deviceId: bill.sbDeviceId,
+        sessionId: snap.sessionId,
+      });
+      // Notes 90 B — the WHO as it was given, so an edit of the name / mobile
+      // before the post is traceable. The follow-ups only ever wrote `update`.
+      await this.audit.logEntityChange(
+        {
+          action: 'insert',
+          tableName: 'acc_temp_credit',
+          screenName: 'Temporary Credit',
+          screenType: 'transaction',
+          pk: credit.atcId,
+          entityId: credit.atcId,
+          displayName: refno,
+          modifiedRecord: {
+            atcBillRefno: refno,
+            atcName: tc.name,
+            atcMobile: tc.mobile,
+            atcPlace: tc.place ?? null,
+            atcAddr: tc.addr ?? null,
+            atcIdRef: tc.idRef ?? null,
+            atcDays: tc.days,
+            atcDueDate: dueOn,
+            atcCreditAmount: amount,
+            atcRemarks: tc.notes ?? null,
+          },
+          userId: ctx.actor,
+          branchId: bill.sbBranchId,
+          notes: `Temporary credit given with bill ${refno}`,
+        },
+        tx,
+      );
     }
 
     // 8 · loyalty — redeem what the tenders spent, earn on the rest.
@@ -1783,7 +1837,22 @@ export class BillLifecycleService {
         },
       });
     }
-    // 7 · temporary credits.
+    // 7 · temporary credits — read first, so the trail names each one (notes 90 A).
+    const credits = await tx.accTempCredit.findMany({
+      where: {
+        atcSrcDocId: bill.sbId,
+        atcAccYear: bill.sbAccYear,
+        atcIsDeleted: false,
+        atcStatus: { not: 'CANCELLED' },
+      },
+      select: {
+        atcId: true,
+        atcStatus: true,
+        atcBalanceAmount: true,
+        atcBillRefno: true,
+        atcTenantId: true,
+      },
+    });
     await tx.accTempCredit.updateMany({
       where: { atcSrcDocId: bill.sbId, atcAccYear: bill.sbAccYear, atcIsDeleted: false },
       data: {
@@ -1794,6 +1863,26 @@ export class BillLifecycleService {
         atcModifiedBy: actor,
       },
     });
+    for (const c of credits) {
+      await appendTempCreditStatus(tx, {
+        credit: {
+          atcId: c.atcId,
+          accYear: bill.sbAccYear,
+          companyId: bill.sbCompanyId,
+          branchId: bill.sbBranchId,
+          tenantId: c.atcTenantId,
+          billRefno: c.atcBillRefno,
+        },
+        event: TxnStatusEvent.CANCELLED,
+        fromStatus: c.atcStatus,
+        toStatus: 'CANCELLED',
+        changedBy: actor,
+        changedOn: now,
+        remarks: `${mode === 'amend' ? 'Bill amended' : 'Bill cancelled'}: ${reason} — balance ${c.atcBalanceAmount.toFixed(2)} cleared`,
+        deviceId: bill.sbDeviceId,
+        sessionId: bill.sbSessionId,
+      });
+    }
     // 8 · the cheques. A cancel takes them out of the register; an amend
     //     leaves them for the re-post's sync, which keeps the row of every td
     //     row that survives the edit and cancels the rest.
@@ -1892,7 +1981,7 @@ export class BillLifecycleService {
           againstBillId: c.abl_id,
           againstBillAccYear: c.abl_acc_year.trim(),
           amount: round2(take),
-        } as SaveBillAdjustmentDto);
+        });
         want = round2(want - take);
       }
       if (want > 0.005) {
@@ -2188,7 +2277,7 @@ export class BillLifecycleService {
     if (uniq.length === 0) {
       return new Map();
     }
-    const rows = await (c as Prisma.TransactionClient).$queryRaw<
+    const rows = await c.$queryRaw<
       (TenderMasterRow & {
         tnd_min_amount: Prisma.Decimal | null;
         tnd_max_amount: Prisma.Decimal | null;

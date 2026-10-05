@@ -1,6 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
+import { RequestContextService } from '../../../common/request-context/request-context.service';
+import {
+  appendTempCreditStatus,
+  movementRemark,
+  settlementEventOf,
+} from '../../../common/txn-status-log/temp-credit-status';
 import type { AccountsWriteClient } from 'src/common/utils/module-service.utils';
 
 /**
@@ -119,7 +125,10 @@ const ZERO = new Prisma.Decimal(0);
 export class BillBalanceRecomputeService {
   private readonly logger = new Logger(BillBalanceRecomputeService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly requestContext: RequestContextService,
+  ) {}
 
   /**
    * Re-derive the cached totals of every named bill.
@@ -166,6 +175,8 @@ export class BillBalanceRecomputeService {
         abjAdjType: true,
         abjAmount: true,
         abjAdjDate: true,
+        abjCreatedOn: true,
+        abjVoucherId: true,
         abjIsPostDated: true,
       },
     });
@@ -195,6 +206,19 @@ export class BillBalanceRecomputeService {
       if (bucket.lastOn === null || row.abjAdjDate > bucket.lastOn) {
         bucket.lastOn = row.abjAdjDate;
       }
+      // The LAST movement — by date, then by when it was written, and on a
+      // tie the WRITEOFF (one receipt's money and write-off rows share a
+      // timestamp, and the write-off is what closed the gap) — decides
+      // WRITTEN_OFF (notes 90 C) and names the document in the trail's remark.
+      const candidate = {
+        on: row.abjAdjDate,
+        createdOn: row.abjCreatedOn,
+        type: row.abjAdjType,
+        voucherId: row.abjVoucherId,
+      };
+      if (bucket.last === null || laterMovement(candidate, bucket.last)) {
+        bucket.last = candidate;
+      }
     }
 
     // The four cached columns come back as well as the bill amount: they are
@@ -218,6 +242,11 @@ export class BillBalanceRecomputeService {
 
     const now = new Date();
     const results: RecomputedBill[] = [];
+    // Notes 90 C: a bill whose LAST movement was a WRITEOFF and which nothing
+    // is left on reads WRITTEN_OFF, not SETTLED — derived here, every time, so
+    // a cancelled write-off reopens the credit instead of leaving it stuck.
+    const writtenOff: BillKey[] = [];
+    const lastVoucherOf = new Map<string, string | null>();
 
     for (const bill of stored) {
       const bucket = totals.get(keyOf({ billId: bill.ablId, accYear: bill.ablAccYear }));
@@ -256,6 +285,14 @@ export class BillBalanceRecomputeService {
         });
       }
 
+      if (pending.lessThanOrEqualTo(0) && bucket.last?.type === 'WRITEOFF') {
+        writtenOff.push({ billId: bill.ablId, accYear: bill.ablAccYear });
+      }
+      lastVoucherOf.set(
+        keyOf({ billId: bill.ablId, accYear: bill.ablAccYear }),
+        bucket.last?.voucherId ?? null,
+      );
+
       results.push({
         billId: bill.ablId,
         accYear: bill.ablAccYear,
@@ -274,11 +311,36 @@ export class BillBalanceRecomputeService {
     // one place the pending figure moves — so a receipt against a temp-credit
     // bill settles the WHO row with it. Idempotent like everything above.
     if (unique.length > 0) {
-      await client.$executeRaw`
+      const keys = Prisma.join(
+        unique.map((u) => Prisma.sql`(${u.billId}::uuid, ${u.accYear}::char(9))`),
+      );
+      const writtenOffKeys =
+        writtenOff.length === 0
+          ? Prisma.sql`false`
+          : Prisma.sql`(t.atc_abl_id, t.atc_abl_acc_year) IN (${Prisma.join(
+              writtenOff.map((u) => Prisma.sql`(${u.billId}::uuid, ${u.accYear}::char(9))`),
+            )})`;
+      // Notes 90 A: read before, update with RETURNING, and log only the rows
+      // whose status really moved — a recompute that moves nothing logs nothing.
+      const before = await client.$queryRaw<TempCreditStateRow[]>`
+        SELECT atc_id, atc_acc_year, atc_status, atc_balance_amount, atc_company_id,
+               atc_branch_id, atc_tenant_id, atc_bill_refno, atc_abl_id, atc_abl_acc_year
+          FROM accounts.acc_temp_credit t
+         WHERE t.atc_is_deleted = false
+           AND (t.atc_abl_id, t.atc_abl_acc_year) IN (${keys})`;
+      const after = await client.$queryRaw<
+        {
+          atc_id: string;
+          atc_acc_year: string;
+          atc_status: string;
+          atc_balance_amount: Prisma.Decimal;
+        }[]
+      >`
         UPDATE accounts.acc_temp_credit t
            SET atc_balance_amount = LEAST(t.atc_credit_amount, GREATEST(0, b.abl_pending_amount)),
                atc_status = CASE
-                              WHEN t.atc_status IN ('WRITTEN_OFF', 'CANCELLED') THEN t.atc_status
+                              WHEN t.atc_status = 'CANCELLED' THEN 'CANCELLED'
+                              WHEN b.abl_pending_amount <= 0 AND ${writtenOffKeys} THEN 'WRITTEN_OFF'
                               WHEN b.abl_pending_amount <= 0 THEN 'SETTLED'
                               WHEN b.abl_pending_amount < t.atc_credit_amount THEN 'PARTIAL'
                               ELSE 'OPEN' END,
@@ -287,10 +349,91 @@ export class BillBalanceRecomputeService {
           FROM accounts.acc_bill_balance b
          WHERE b.abl_id = t.atc_abl_id AND b.abl_acc_year = t.atc_abl_acc_year
            AND t.atc_is_deleted = false
-           AND (t.atc_abl_id, t.atc_abl_acc_year) IN (${Prisma.join(unique.map((u) => Prisma.sql`(${u.billId}::uuid, ${u.accYear}::char(9))`))})`;
+           AND (t.atc_abl_id, t.atc_abl_acc_year) IN (${keys})
+        RETURNING t.atc_id, t.atc_acc_year, t.atc_status, t.atc_balance_amount`;
+      await this.logTempCreditTransitions(client, before, after, lastVoucherOf, now);
     }
 
     return results;
+  }
+
+  /**
+   * Notes 90 A — one `txn_status_log` step per temp credit whose status moved
+   * in this recompute: PARTIAL, SETTLED, WRITTEN_OFF, or REOPENED when a
+   * reversal gives the balance back. The remark says what moved and names the
+   * voucher of the bill's last movement ("received 10.00 by RCT/0012, balance
+   * 200.00"). `changedBy` is the request's user, or the default actor on the
+   * nightly sweep.
+   */
+  private async logTempCreditTransitions(
+    client: AccountsWriteClient,
+    before: readonly TempCreditStateRow[],
+    after: readonly {
+      atc_id: string;
+      atc_acc_year: string;
+      atc_status: string;
+      atc_balance_amount: Prisma.Decimal;
+    }[],
+    lastVoucherOf: ReadonlyMap<string, string | null>,
+    now: Date,
+  ): Promise<void> {
+    const was = new Map(before.map((r) => [`${r.atc_id}|${r.atc_acc_year}`, r]));
+    const moved = after
+      .map((a) => ({ a, b: was.get(`${a.atc_id}|${a.atc_acc_year}`) }))
+      .filter(
+        (x): x is { a: (typeof after)[number]; b: TempCreditStateRow } =>
+          x.b !== undefined && x.b.atc_status !== x.a.atc_status,
+      );
+    if (moved.length === 0) {
+      return;
+    }
+    const voucherIds = [
+      ...new Set(
+        moved
+          .map((x) =>
+            lastVoucherOf.get(keyOf({ billId: x.b.atc_abl_id, accYear: x.b.atc_abl_acc_year })),
+          )
+          .filter((v): v is string => !!v),
+      ),
+    ];
+    const refnos =
+      voucherIds.length === 0
+        ? []
+        : await client.$queryRaw<{ avh_voucher_id: string; avh_voucher_refno: string | null }[]>`
+            SELECT avh_voucher_id, avh_voucher_refno
+              FROM accounts.acc_voucher_header
+             WHERE avh_voucher_id = ANY(${voucherIds}::uuid[])`;
+    const refnoOf = new Map(refnos.map((r) => [r.avh_voucher_id, r.avh_voucher_refno]));
+    const changedBy = this.requestContext.getUserId() ?? '';
+    const deviceId = this.requestContext.getDeviceId();
+
+    for (const { a, b } of moved) {
+      const voucherId = lastVoucherOf.get(
+        keyOf({ billId: b.atc_abl_id, accYear: b.atc_abl_acc_year }),
+      );
+      await appendTempCreditStatus(client, {
+        credit: {
+          atcId: b.atc_id,
+          accYear: b.atc_acc_year,
+          companyId: b.atc_company_id,
+          branchId: b.atc_branch_id,
+          tenantId: b.atc_tenant_id,
+          billRefno: b.atc_bill_refno,
+        },
+        event: settlementEventOf(a.atc_status, b.atc_status),
+        fromStatus: b.atc_status,
+        toStatus: a.atc_status,
+        changedBy,
+        changedOn: now,
+        remarks: movementRemark(
+          b.atc_balance_amount,
+          a.atc_balance_amount,
+          a.atc_status,
+          voucherId ? (refnoOf.get(voucherId) ?? null) : null,
+        ),
+        deviceId,
+      });
+    }
   }
 
   /**
@@ -417,10 +560,38 @@ interface Totals {
   disc: Prisma.Decimal;
   writeoff: Prisma.Decimal;
   lastOn: Date | null;
+  /** The last movement that counted — by date, then by when it was written. */
+  last: { on: Date; createdOn: Date; type: string; voucherId: string | null } | null;
+}
+
+interface TempCreditStateRow {
+  atc_id: string;
+  atc_acc_year: string;
+  atc_status: string;
+  atc_balance_amount: Prisma.Decimal;
+  atc_company_id: string;
+  atc_branch_id: string;
+  atc_tenant_id: string | null;
+  atc_bill_refno: string | null;
+  atc_abl_id: string;
+  atc_abl_acc_year: string;
 }
 
 function emptyTotals(): Totals {
-  return { alloc: ZERO, disc: ZERO, writeoff: ZERO, lastOn: null };
+  return { alloc: ZERO, disc: ZERO, writeoff: ZERO, lastOn: null, last: null };
+}
+
+type Movement = NonNullable<Totals['last']>;
+
+/** Is `a` the later movement — by date, then by when it was written, then WRITEOFF first on a tie. */
+function laterMovement(a: Movement, b: Movement): boolean {
+  if (a.on.getTime() !== b.on.getTime()) {
+    return a.on > b.on;
+  }
+  if (a.createdOn.getTime() !== b.createdOn.getTime()) {
+    return a.createdOn > b.createdOn;
+  }
+  return a.type === 'WRITEOFF' && b.type !== 'WRITEOFF';
 }
 
 function keyOf(bill: BillKey): string {

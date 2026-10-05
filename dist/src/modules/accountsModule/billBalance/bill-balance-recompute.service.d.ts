@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
+import { RequestContextService } from '../../../common/request-context/request-context.service';
 import type { AccountsWriteClient } from "../../../common/utils/module-service.utils";
 export interface BillKey {
     billId: string;
@@ -16,9 +17,11 @@ export interface RecomputedBill extends BillKey {
 }
 export declare class BillBalanceRecomputeService {
     private readonly prisma;
+    private readonly requestContext;
     private readonly logger;
-    constructor(prisma: PrismaService);
+    constructor(prisma: PrismaService, requestContext: RequestContextService);
     recomputeBills(client: AccountsWriteClient, bills: readonly BillKey[], asOf?: Date): Promise<RecomputedBill[]>;
+    private logTempCreditTransitions;
     regularisePostDated(scope: RegulariseScope, asOf?: Date, batchSize?: number): Promise<RegulariseResult>;
 }
 export interface RegulariseScope {

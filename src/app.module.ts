@@ -53,6 +53,7 @@ import { ChequesModule } from './modules/accountsModule/cheques/cheques.module';
 import { VouchersModule } from './modules/accountsModule/vouchers/vouchers.module';
 import { IssuedChequesModule } from './modules/accountsModule/issuedCheques/issued-cheques.module';
 import { LedgerStatementModule } from './modules/reports/ledger-statement/ledger-statement.module';
+import { LoyaltyStatusModule } from './modules/reports/loyalty-status/loyalty-status.module';
 import { LedgerMapModule } from './modules/accountsModule/ledgerMap/ledger-map.module';
 import { BillBalanceModule } from './modules/accountsModule/billBalance/bill-balance.module';
 import { LedgerShippingAddressModule } from './modules/accountsModule/ledgerShippingAddress/ledger-shipping-address.module';
@@ -98,6 +99,7 @@ import { WidgetMasterModule } from './modules/master/widget-master/widget-master
 import { ChargeMasterModule } from './modules/master/charge-master/charge-master.module';
 import { ChargeDetailModule } from './modules/master/charge-detail/charge-detail.module';
 import { PromotionLoyaltyPointsModule } from './modules/sales/loyalty/promotion-loyalty-points.module';
+import { LoyaltyMembersModule } from './modules/sales/loyalty/members/loyalty-members.module';
 import { PromotionSchemeModule } from './modules/sales/promotion-scheme/promotion-scheme.module';
 import { PrintTemplateAssignmentModule } from './modules/settings/print-template-assignment/print-template-assignment.module';
 import { PrintRenderModule } from './modules/settings/print-render/print-render.module';
@@ -206,6 +208,7 @@ const isThrottlerEnabled = parseBoolean(process.env.THROTTLE_ENABLED, true);
     VouchersModule,
     IssuedChequesModule,
     LedgerStatementModule,
+    LoyaltyStatusModule,
     LedgerMapModule,
     SupplierGroupModule,
     SuppliersModule,
@@ -254,6 +257,7 @@ const isThrottlerEnabled = parseBoolean(process.env.THROTTLE_ENABLED, true);
     ItemStockBalanceModule,
     ItemBatchStockModule,
     PromotionLoyaltyPointsModule,
+    LoyaltyMembersModule,
     PromotionSchemeModule,
     PrintTemplateAssignmentModule,
     PrintRenderModule,

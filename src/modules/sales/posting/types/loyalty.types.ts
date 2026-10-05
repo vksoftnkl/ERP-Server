@@ -30,11 +30,32 @@ export type LoyaltyTxnType =
   | 'OPENING';
 
 /**
- * The three types `consume()` may write. They differ in what the customer got:
- * REDEEM is money and needs a tender row (`ck_lld_redeem_tender`), GIFT is
- * stock and must NOT have one (`ck_lld_gift_no_tender`), EXPIRE is nobody.
+ * The types whose POSITIVE rows are lots — what `lots()`, `redeemable()`, the
+ * member recompute's next-expiry and the expiry sweep all filter on, and what
+ * the Loyalty Status report copies into its set SQL (plan 2026-10-05 D1 / D2).
+ *
+ * Until D2 this was EARN alone, and a +50 goodwill ADJUST raised the wallet
+ * without ever being spendable, sweepable or visible as a lot (plan §6 F1).
+ * `lld_lot_balance` is generated for EVERY positive row, so the type list is
+ * what keeps a reversed REDEEM (a positive REDEEM row) from reading as a lot.
+ * Change it here and nowhere else.
  */
-export type LoyaltyConsumeType = Extract<LoyaltyTxnType, 'REDEEM' | 'GIFT' | 'EXPIRE'>;
+export const LOYALTY_LOT_TXN_TYPES: readonly LoyaltyTxnType[] = [
+  'EARN',
+  'OPENING',
+  'ADJUST',
+  'TRANSFER',
+];
+
+/**
+ * The types `consume()` may write. They differ in what the customer got:
+ * REDEEM is money and needs a tender row (`ck_lld_redeem_tender`), GIFT is
+ * stock and must NOT have one (`ck_lld_gift_no_tender`), EXPIRE is nobody, and
+ * a negative ADJUST is the Loyalty Status screen taking points back (plan
+ * 2026-10-05 §7.2) — FIFO through the same lots, approver required
+ * (`ck_lld_adjust_approval`).
+ */
+export type LoyaltyConsumeType = Extract<LoyaltyTxnType, 'REDEEM' | 'GIFT' | 'EXPIRE' | 'ADJUST'>;
 
 /** `ck_lld_src_module` */
 export type LoyaltySrcModule = 'SALES' | 'ACCOUNTS' | 'POS' | 'SERVICE' | 'OTHER';
@@ -325,4 +346,40 @@ export interface LoyaltyScheme {
   endDate: string | null;
   poolMode: string | null;
   allowCrossBranchRedeem: boolean;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  Manual adjustment — Loyalty Status screen (plan 2026-10-05 §7.2 / D6)
+// ═══════════════════════════════════════════════════════════════════════════
+
+export interface LoyaltyAdjustInput {
+  companyId: string;
+  branchId: string;
+  memberId: string;
+  /** SIGNED and non-zero. Positive opens a lot; negative draws FIFO like a redeem. */
+  points: number;
+  /** YYYY-MM-DD, company-local. */
+  txnDate: string;
+  /** The fiscal year `txnDate` falls in — the ledger's partition key. */
+  accYear: string;
+  reason: string;
+  /** `ck_lld_adjust_approval` — a user id; the row is refused without one. */
+  approvedBy: string;
+  /** A positive adjustment's lot may be given an expiry; absent = never lapses. */
+  expiresOn?: string | null;
+  /** The scheme the movement files under; absent = the member's, else the latest lot's. */
+  lscId?: string | null;
+  userId?: string | null;
+  deviceId?: string | null;
+  sessionId?: string | null;
+  createdBy?: string | null;
+}
+
+export interface LoyaltyAdjustResult {
+  /** The adjustment's own document id — `lld_src_doc_id` on every row it wrote. */
+  docId: string;
+  docRefno: string;
+  rowsWritten: number;
+  balance: number;
+  redeemable: number;
 }

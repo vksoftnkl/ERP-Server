@@ -127,6 +127,8 @@ export class TempCreditService {
       screenName: 'Temporary Credit',
       screenType: 'transaction',
       pk: dto.atcId,
+      // Notes 90 B: the follow-up rows carried no entity id (the notes 80 gap).
+      entityId: dto.atcId,
       displayName: row.atcBillRefno ?? dto.atcId,
       originalRecord: { atcPromiseDate: isoDate(row.atcPromiseDate), atcRemarks: row.atcRemarks },
       modifiedRecord: {

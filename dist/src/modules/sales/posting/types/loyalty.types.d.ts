@@ -1,5 +1,6 @@
 export type LoyaltyTxnType = 'EARN' | 'REDEEM' | 'GIFT' | 'EXPIRE' | 'ADJUST' | 'TRANSFER' | 'OPENING';
-export type LoyaltyConsumeType = Extract<LoyaltyTxnType, 'REDEEM' | 'GIFT' | 'EXPIRE'>;
+export declare const LOYALTY_LOT_TXN_TYPES: readonly LoyaltyTxnType[];
+export type LoyaltyConsumeType = Extract<LoyaltyTxnType, 'REDEEM' | 'GIFT' | 'EXPIRE' | 'ADJUST'>;
 export type LoyaltySrcModule = 'SALES' | 'ACCOUNTS' | 'POS' | 'SERVICE' | 'OTHER';
 export type LoyaltySrcDocType = 'SALE_BILL' | 'SALE_RETURN' | 'SALES_ORDER' | 'RECEIPT' | 'LOYALTY_ADJUST' | 'GIFT_REDEEM' | 'EXPIRY_RUN' | 'OTHER';
 export type CouponTxnType = 'REDEEM' | 'TOPUP' | 'CANCEL' | 'EXPIRE';
@@ -183,4 +184,27 @@ export interface LoyaltyScheme {
     endDate: string | null;
     poolMode: string | null;
     allowCrossBranchRedeem: boolean;
+}
+export interface LoyaltyAdjustInput {
+    companyId: string;
+    branchId: string;
+    memberId: string;
+    points: number;
+    txnDate: string;
+    accYear: string;
+    reason: string;
+    approvedBy: string;
+    expiresOn?: string | null;
+    lscId?: string | null;
+    userId?: string | null;
+    deviceId?: string | null;
+    sessionId?: string | null;
+    createdBy?: string | null;
+}
+export interface LoyaltyAdjustResult {
+    docId: string;
+    docRefno: string;
+    rowsWritten: number;
+    balance: number;
+    redeemable: number;
 }
