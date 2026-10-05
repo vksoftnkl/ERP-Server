@@ -93,6 +93,12 @@ import { PrintRenderModule } from 'src/modules/settings/print-render/print-rende
 import { WidgetMasterModule } from 'src/modules/master/widget-master/widget-master.module';
 import { ConfiguredGridSqlModule } from 'src/common/configured-grid-sql/configured-grid-sql.module';
 import { LedgerStatementModule } from 'src/modules/reports/ledger-statement/ledger-statement.module';
+import { GstinLookupModule } from '../modules/settings/gstinLookup/gstin-lookup.module';
+import { LoyaltyMembersModule } from '../modules/sales/loyalty/members/loyalty-members.module';
+import { LoyaltyStatusModule } from '../modules/reports/loyalty-status/loyalty-status.module';
+import { StockAdjustmentModule } from '../modules/stocks/stock-adjustment/stock-adjustment.module';
+import { StockPostingModule } from '../modules/stocks/posting/stock-posting.module';
+import { TxnStatusModule } from '../modules/txn-status/txn-status.module';
 export const swaggerModuleDocuments = [
   {
     path: 'auth',
@@ -265,6 +271,15 @@ export const swaggerModuleDocuments = [
     description:
       'The GSP layer’s masters (notes 79): providers, their services, endpoints, field and error maps, the GSP accounts, and the company credentials with Verify and status. Secrets are write-only: they come back as has* flags, never a value.',
     include: [GstModule],
+  },
+  {
+    path: 'gstin-lookup',
+    title: 'GSTIN Lookup API',
+    description:
+      "GET /gst/search — a GSTIN's registered details (legal and trade name, status, registration " +
+      'type, state code, PAN, address) through whichever provider the GST Provider screen has ' +
+      'switched on for GSTIN_VERIFY. 404 no details, 502 provider failure, 503 switched off',
+    include: [GstinLookupModule],
   },
   {
     path: 'company-group-master',
@@ -482,6 +497,15 @@ export const swaggerModuleDocuments = [
       'Single-call loyalty scheme endpoints with nested branches, parties, items, earn slabs ' +
       'and gifts',
     include: [PromotionLoyaltyPointsModule],
+  },
+  {
+    path: 'loyalty-members',
+    title: 'Loyalty Members API',
+    description:
+      'The Loyalty Status screen’s actions on one member (menu 79): change status, adjust ' +
+      'points and read the status trail. Edit rights for both actions, delete as well for a ' +
+      'forced close, view for the history',
+    include: [LoyaltyMembersModule],
   },
   {
     path: 'promotion-scheme',
@@ -719,6 +743,27 @@ export const swaggerModuleDocuments = [
     include: [StockTransferModule],
   },
   {
+    path: 'stock-adjustment',
+    title: 'Stock Adjustment API',
+    description:
+      'Stock adjustments on the stock voucher engine (menu 264) — ONE screen with a Type selector ' +
+      'for ADJUSTMENT, ISSUE, DAMAGE, EXPIRY_WRITEOFF, re-lot and Move stock: save, get, validate, ' +
+      'post, cancel, delete and the pick-stock lookup under /stock/adjustment, plus the ' +
+      'stock.stock_reason_master picker and maintenance under /stock/reasons. No list route: the ' +
+      'list is grid 122',
+    include: [StockAdjustmentModule],
+  },
+  {
+    path: 'stock-admin',
+    title: 'Stock Admin API',
+    description:
+      'Two administrative routes over the stock engine, neither a screen: post-missing-vouchers ' +
+      'posts the accounts voucher for POSTED OPENING / PHYSICAL documents that have none ' +
+      '(idempotent), and balance-assertion re-derives every derived stock figure from its source ' +
+      'and reports mismatches without fixing them',
+    include: [StockPostingModule],
+  },
+  {
     path: 'change-selling-price',
     title: 'Change Selling Price API',
     description:
@@ -741,6 +786,25 @@ export const swaggerModuleDocuments = [
       'CANCELLED vouchers (a cancelled pair nets to zero), never DRAFT. Shares no URL, DTO or ' +
       'payload with any other module.',
     include: [LedgerStatementModule],
+  },
+  {
+    path: 'reports-loyalty-status',
+    title: 'Reports — Loyalty Status API',
+    description:
+      'Read-only Loyalty Status report (menu 79): nine GET routes under reports/loyalty-status — ' +
+      'members, statement, one member, expiring points and their calendar, scheme summary, ' +
+      'monthly and gift breakdowns, and an export. companyId is required; branchId absent means ' +
+      'every branch. Not cached',
+    include: [LoyaltyStatusModule],
+  },
+  {
+    path: 'txn-status',
+    title: 'Transaction Status API',
+    description:
+      'The day-close question answered from public.txn_status_log: every document whose latest ' +
+      'status step is still DRAFT, HELD, CONFIRMED or IN_TRANSIT, with counts per module, doc ' +
+      'type and status',
+    include: [TxnStatusModule],
   },
   {
     path: 'audit-logs',

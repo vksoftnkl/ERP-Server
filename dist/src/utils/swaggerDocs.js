@@ -96,6 +96,12 @@ const print_render_module_1 = require("../modules/settings/print-render/print-re
 const widget_master_module_1 = require("../modules/master/widget-master/widget-master.module");
 const configured_grid_sql_module_1 = require("../common/configured-grid-sql/configured-grid-sql.module");
 const ledger_statement_module_1 = require("../modules/reports/ledger-statement/ledger-statement.module");
+const gstin_lookup_module_1 = require("../modules/settings/gstinLookup/gstin-lookup.module");
+const loyalty_members_module_1 = require("../modules/sales/loyalty/members/loyalty-members.module");
+const loyalty_status_module_1 = require("../modules/reports/loyalty-status/loyalty-status.module");
+const stock_adjustment_module_1 = require("../modules/stocks/stock-adjustment/stock-adjustment.module");
+const stock_posting_module_1 = require("../modules/stocks/posting/stock-posting.module");
+const txn_status_module_1 = require("../modules/txn-status/txn-status.module");
 exports.swaggerModuleDocuments = [
     {
         path: 'auth',
@@ -265,6 +271,14 @@ exports.swaggerModuleDocuments = [
         title: 'GST Providers & Credentials API',
         description: 'The GSP layer’s masters (notes 79): providers, their services, endpoints, field and error maps, the GSP accounts, and the company credentials with Verify and status. Secrets are write-only: they come back as has* flags, never a value.',
         include: [gst_module_1.GstModule],
+    },
+    {
+        path: 'gstin-lookup',
+        title: 'GSTIN Lookup API',
+        description: "GET /gst/search — a GSTIN's registered details (legal and trade name, status, registration " +
+            'type, state code, PAN, address) through whichever provider the GST Provider screen has ' +
+            'switched on for GSTIN_VERIFY. 404 no details, 502 provider failure, 503 switched off',
+        include: [gstin_lookup_module_1.GstinLookupModule],
     },
     {
         path: 'company-group-master',
@@ -468,6 +482,14 @@ exports.swaggerModuleDocuments = [
         description: 'Single-call loyalty scheme endpoints with nested branches, parties, items, earn slabs ' +
             'and gifts',
         include: [promotion_loyalty_points_module_1.PromotionLoyaltyPointsModule],
+    },
+    {
+        path: 'loyalty-members',
+        title: 'Loyalty Members API',
+        description: 'The Loyalty Status screen’s actions on one member (menu 79): change status, adjust ' +
+            'points and read the status trail. Edit rights for both actions, delete as well for a ' +
+            'forced close, view for the history',
+        include: [loyalty_members_module_1.LoyaltyMembersModule],
     },
     {
         path: 'promotion-scheme',
@@ -696,6 +718,25 @@ exports.swaggerModuleDocuments = [
         include: [stock_transfer_module_1.StockTransferModule],
     },
     {
+        path: 'stock-adjustment',
+        title: 'Stock Adjustment API',
+        description: 'Stock adjustments on the stock voucher engine (menu 264) — ONE screen with a Type selector ' +
+            'for ADJUSTMENT, ISSUE, DAMAGE, EXPIRY_WRITEOFF, re-lot and Move stock: save, get, validate, ' +
+            'post, cancel, delete and the pick-stock lookup under /stock/adjustment, plus the ' +
+            'stock.stock_reason_master picker and maintenance under /stock/reasons. No list route: the ' +
+            'list is grid 122',
+        include: [stock_adjustment_module_1.StockAdjustmentModule],
+    },
+    {
+        path: 'stock-admin',
+        title: 'Stock Admin API',
+        description: 'Two administrative routes over the stock engine, neither a screen: post-missing-vouchers ' +
+            'posts the accounts voucher for POSTED OPENING / PHYSICAL documents that have none ' +
+            '(idempotent), and balance-assertion re-derives every derived stock figure from its source ' +
+            'and reports mismatches without fixing them',
+        include: [stock_posting_module_1.StockPostingModule],
+    },
+    {
         path: 'change-selling-price',
         title: 'Change Selling Price API',
         description: 'Bulk selling-price maintenance over stock.stock_mrp_price — menu 30. One item at one ' +
@@ -716,6 +757,23 @@ exports.swaggerModuleDocuments = [
             'CANCELLED vouchers (a cancelled pair nets to zero), never DRAFT. Shares no URL, DTO or ' +
             'payload with any other module.',
         include: [ledger_statement_module_1.LedgerStatementModule],
+    },
+    {
+        path: 'reports-loyalty-status',
+        title: 'Reports — Loyalty Status API',
+        description: 'Read-only Loyalty Status report (menu 79): nine GET routes under reports/loyalty-status — ' +
+            'members, statement, one member, expiring points and their calendar, scheme summary, ' +
+            'monthly and gift breakdowns, and an export. companyId is required; branchId absent means ' +
+            'every branch. Not cached',
+        include: [loyalty_status_module_1.LoyaltyStatusModule],
+    },
+    {
+        path: 'txn-status',
+        title: 'Transaction Status API',
+        description: 'The day-close question answered from public.txn_status_log: every document whose latest ' +
+            'status step is still DRAFT, HELD, CONFIRMED or IN_TRANSIT, with counts per module, doc ' +
+            'type and status',
+        include: [txn_status_module_1.TxnStatusModule],
     },
     {
         path: 'audit-logs',
