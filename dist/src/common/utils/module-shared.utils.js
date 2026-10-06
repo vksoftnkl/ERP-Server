@@ -13,6 +13,7 @@ exports.isForeignKeyConstraintError = isForeignKeyConstraintError;
 exports.violatedConstraintOf = violatedConstraintOf;
 exports.isExclusionConstraintError = isExclusionConstraintError;
 exports.violatedCheckOf = violatedCheckOf;
+exports.numericOverflowOf = numericOverflowOf;
 exports.isPrismaErrorCode = isPrismaErrorCode;
 exports.normalizeRequiredText = normalizeRequiredText;
 exports.normalizeNullableString = normalizeNullableString;
@@ -99,6 +100,18 @@ function violatedCheckOf(error) {
         }
     }
     return null;
+}
+function numericOverflowOf(error) {
+    if (typeof error !== 'object' || error === null) {
+        return null;
+    }
+    const { message, meta } = error;
+    const text = typeof message === 'string' ? message : '';
+    if (meta?.code !== '22003' && !text.includes('"22003"')) {
+        return null;
+    }
+    const detail = /detail: Some\(\\?"(.+?)\\?"\)/.exec(text);
+    return detail ? detail[1] : 'numeric field overflow';
 }
 function isPrismaErrorCode(error, code) {
     if (typeof error !== 'object' || error === null || !('code' in error)) {
@@ -192,6 +205,13 @@ class ModuleExceptionFilter {
         }
         const request = httpContext.getRequest();
         this.logger.error(`${request.method} ${request.url}`, exception instanceof Error ? exception.stack : JSON.stringify(exception));
+        const overflow = numericOverflowOf(exception);
+        if (overflow) {
+            response
+                .status(common_1.HttpStatus.UNPROCESSABLE_ENTITY)
+                .json(buildErrorResponse(`A value is too large to save: ${overflow}`));
+            return;
+        }
         response
             .status(common_1.HttpStatus.INTERNAL_SERVER_ERROR)
             .json(buildErrorResponse('Internal server error'));

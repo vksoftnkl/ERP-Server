@@ -172,6 +172,25 @@ export function violatedCheckOf(error: unknown): string | null {
   }
   return null;
 }
+/**
+ * A figure too large for its numeric column (SQLSTATE 22003), or null. The
+ * result is Postgres' detail — "A field with precision 15, scale 2 must round
+ * to an absolute value less than 10^13." — or a bare sentence when the driver
+ * gave none. Same two shapes as violatedCheckOf: the SQLSTATE sits only in the
+ * message of an ORM write, in `meta.code` of a raw one (P2010).
+ */
+export function numericOverflowOf(error: unknown): string | null {
+  if (typeof error !== 'object' || error === null) {
+    return null;
+  }
+  const { message, meta } = error as { message?: unknown; meta?: { code?: unknown } };
+  const text = typeof message === 'string' ? message : '';
+  if (meta?.code !== '22003' && !text.includes('"22003"')) {
+    return null;
+  }
+  const detail = /detail: Some\(\\?"(.+?)\\?"\)/.exec(text);
+  return detail ? detail[1] : 'numeric field overflow';
+}
 export function isPrismaErrorCode(error: unknown, code: string): boolean {
   if (typeof error !== 'object' || error === null || !('code' in error)) {
     return false;
@@ -288,6 +307,19 @@ export abstract class ModuleExceptionFilter<
       `${request.method} ${request.url}`,
       exception instanceof Error ? exception.stack : JSON.stringify(exception),
     );
+    // A number in the request outgrew its column. Nothing broke server-side,
+    // so the client gets a 422 it can show rather than a bare 500.
+    const overflow = numericOverflowOf(exception);
+    if (overflow) {
+      response
+        .status(HttpStatus.UNPROCESSABLE_ENTITY)
+        .json(
+          buildErrorResponse<TErrorDetail, TErrorResponse>(
+            `A value is too large to save: ${overflow}`,
+          ),
+        );
+      return;
+    }
     response
       .status(HttpStatus.INTERNAL_SERVER_ERROR)
       .json(buildErrorResponse<TErrorDetail, TErrorResponse>('Internal server error'));

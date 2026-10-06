@@ -116,9 +116,9 @@ model SaleQuotationItem {
   sqiModifiedOn      DateTime? @db.Timestamptz(6) @map("sqi_modified_on")
   sqiModifiedBy      String?   @db.Text @map("sqi_modified_by")
   // line net/gross basis + charges split by where they land relative to tax
-  sqiNetGross        Decimal?  @db.Decimal(14, 4) @map("sqi_net_gross")
-  sqiChrgBeforeTax   Decimal?  @db.Decimal(14, 4) @map("sqi_chrg_before_tax")
-  sqiChrgAfterTax    Decimal?  @db.Decimal(14, 4) @map("sqi_chrg_after_tax")
+  sqiNetGross        Decimal?  @db.Decimal(17, 4) @map("sqi_net_gross")
+  sqiChrgBeforeTax   Decimal?  @db.Decimal(17, 4) @map("sqi_chrg_before_tax")
+  sqiChrgAfterTax    Decimal?  @db.Decimal(17, 4) @map("sqi_chrg_after_tax")
   sqiToBaseFactor    Decimal   @default(0) @db.Decimal(15, 6) @map("sqi_to_base_factor")
   sqiRateDiff        Decimal   @default(0) @db.Decimal(15, 4) @map("sqi_rate_diff")
   sqiHasFreight      Boolean   @default(false) @map("sqi_has_freight")

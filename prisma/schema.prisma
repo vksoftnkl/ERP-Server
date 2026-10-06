@@ -7418,22 +7418,22 @@ model TransactionChargeDetail {
   // priced the charge by typing its total, and the client spreads that total in
   // the method's own shape rather than deriving a rate. Never add a
   // rate-is-required constraint.
-  cdRate          Decimal?  @db.Decimal(14, 4)                             @map("cd_rate")         // rate or %, per cdMethod
-  cdAmount        Decimal?  @db.Decimal(14, 4)                             @map("cd_amount")       // charge amount BEFORE tax
+  cdRate          Decimal?  @db.Decimal(17, 4)                             @map("cd_rate")         // rate or %, per cdMethod
+  cdAmount        Decimal?  @db.Decimal(17, 4)                             @map("cd_amount")       // charge amount BEFORE tax
   // -- Tax (non-zero only when cdTaxApl AND NOT cdBeforeTax) ----------------
   cdTaxCode       String?   @db.Uuid                                       @map("cd_tax_code")
   cdHsn           String?   @db.VarChar(15)                                @map("cd_hsn")          // HSN/SAC, snapshot from the ledger
   cdTaxPerc       Decimal?  @db.Decimal(9, 4)                              @map("cd_tax_perc")
-  cdTaxAmt        Decimal?  @db.Decimal(14, 4)                             @map("cd_tax_amt")
+  cdTaxAmt        Decimal?  @db.Decimal(17, 4)                             @map("cd_tax_amt")
   cdSgstPerc      Decimal?  @db.Decimal(9, 4)                              @map("cd_sgst_perc")
-  cdSgstAmt       Decimal?  @db.Decimal(14, 4)                             @map("cd_sgst_amt")
+  cdSgstAmt       Decimal?  @db.Decimal(17, 4)                             @map("cd_sgst_amt")
   cdCgstPerc      Decimal?  @db.Decimal(9, 4)                              @map("cd_cgst_perc")
-  cdCgstAmt       Decimal?  @db.Decimal(14, 4)                             @map("cd_cgst_amt")
+  cdCgstAmt       Decimal?  @db.Decimal(17, 4)                             @map("cd_cgst_amt")
   cdIgstPerc      Decimal?  @db.Decimal(9, 4)                              @map("cd_igst_perc")
-  cdIgstAmt       Decimal?  @db.Decimal(14, 4)                             @map("cd_igst_amt")
+  cdIgstAmt       Decimal?  @db.Decimal(17, 4)                             @map("cd_igst_amt")
   cdCessPerc      Decimal?  @db.Decimal(9, 4)                              @map("cd_cess_perc")
-  cdCessAmt       Decimal?  @db.Decimal(14, 4)                             @map("cd_cess_amt")
-  cdNetAmt        Decimal?  @db.Decimal(14, 4)                             @map("cd_net_amt")      // cdAmount + its own tax
+  cdCessAmt       Decimal?  @db.Decimal(17, 4)                             @map("cd_cess_amt")
+  cdNetAmt        Decimal?  @db.Decimal(17, 4)                             @map("cd_net_amt")      // cdAmount + its own tax
   // -- Status + audit -------------------------------------------------------
   cdRemarks       String?   @db.VarChar(255)                               @map("cd_remarks")
   cdIsActive      Boolean   @default(true)                                 @map("cd_is_active")
@@ -11264,9 +11264,9 @@ model SaleBillItem {
   // (pre-charge, pre-tax), then this line's signed share of the
   // before/after-tax charges.
   sbiGrossAmt        Decimal   @default(0) @db.Decimal(15, 2) @map("sbi_gross_amt")
-  sbiNetGross        Decimal?  @db.Decimal(14, 4) @map("sbi_net_gross")
-  sbiChrgBeforeTax   Decimal?  @db.Decimal(14, 4) @map("sbi_chrg_before_tax")
-  sbiChrgAfterTax    Decimal?  @db.Decimal(14, 4) @map("sbi_chrg_after_tax")
+  sbiNetGross        Decimal?  @db.Decimal(17, 4) @map("sbi_net_gross")
+  sbiChrgBeforeTax   Decimal?  @db.Decimal(17, 4) @map("sbi_chrg_before_tax")
+  sbiChrgAfterTax    Decimal?  @db.Decimal(17, 4) @map("sbi_chrg_after_tax")
   // Tax (on the POST-charge taxable)
   // Which tax_rate_master row this line was taxed under, snapshotted at save.
   // Not re-read from item_master at posting time: the item default is mutable
@@ -11637,8 +11637,8 @@ model SaleDcItem {
   sdiSplDiscAmt         Decimal   @default(0) @db.Decimal(15, 2)       @map("sdi_spl_disc_amt")
   sdiSchDiscPerc        Decimal   @default(0) @db.Decimal(15, 4)       @map("sdi_sch_disc_perc")
   sdiSchDiscAmt         Decimal   @default(0) @db.Decimal(15, 2)       @map("sdi_sch_disc_amt")
-  sdiChrgBeforeTax      Decimal?  @db.Decimal(14, 4)                   @map("sdi_chrg_before_tax")
-  sdiChrgAfterTax       Decimal?  @db.Decimal(14, 4)                   @map("sdi_chrg_after_tax")
+  sdiChrgBeforeTax      Decimal?  @db.Decimal(17, 4)                   @map("sdi_chrg_before_tax")
+  sdiChrgAfterTax       Decimal?  @db.Decimal(17, 4)                   @map("sdi_chrg_after_tax")
   sdiCessPerUnit        Decimal   @default(0) @db.Decimal(15, 4)       @map("sdi_cess_per_unit")
   sdiSalesmanId         String?   @db.Uuid                             @map("sdi_salesman_id")
   sdiSchemeId           String?   @db.Uuid                             @map("sdi_scheme_id")
@@ -12289,9 +12289,9 @@ model SaleOrderItem {
   soiCashDiscAmt      Decimal   @default(0) @db.Decimal(15, 2) @map("soi_cash_disc_amt")
   // The charge-distribution trio
   soiGrossAmt         Decimal   @default(0) @db.Decimal(15, 2) @map("soi_gross_amt")
-  soiNetGross         Decimal?  @db.Decimal(14, 4) @map("soi_net_gross")
-  soiChrgBeforeTax    Decimal?  @db.Decimal(14, 4) @map("soi_chrg_before_tax")
-  soiChrgAfterTax     Decimal?  @db.Decimal(14, 4) @map("soi_chrg_after_tax")
+  soiNetGross         Decimal?  @db.Decimal(17, 4) @map("soi_net_gross")
+  soiChrgBeforeTax    Decimal?  @db.Decimal(17, 4) @map("soi_chrg_before_tax")
+  soiChrgAfterTax     Decimal?  @db.Decimal(17, 4) @map("soi_chrg_after_tax")
   // Tax (on the POST-charge taxable)
   // Which tax_rate_master row this line was taxed under, snapshotted at save.
   // Not re-read from item_master at posting time: the item default is mutable
@@ -12654,9 +12654,9 @@ model SaleQuotationItem {
   sqiModifiedOn      DateTime? @db.Timestamptz(6) @map("sqi_modified_on")
   sqiModifiedBy      String?   @db.Text @map("sqi_modified_by")
   // line net/gross basis + charges split by where they land relative to tax
-  sqiNetGross        Decimal?  @db.Decimal(14, 4) @map("sqi_net_gross")
-  sqiChrgBeforeTax   Decimal?  @db.Decimal(14, 4) @map("sqi_chrg_before_tax")
-  sqiChrgAfterTax    Decimal?  @db.Decimal(14, 4) @map("sqi_chrg_after_tax")
+  sqiNetGross        Decimal?  @db.Decimal(17, 4) @map("sqi_net_gross")
+  sqiChrgBeforeTax   Decimal?  @db.Decimal(17, 4) @map("sqi_chrg_before_tax")
+  sqiChrgAfterTax    Decimal?  @db.Decimal(17, 4) @map("sqi_chrg_after_tax")
   sqiToBaseFactor    Decimal   @default(0) @db.Decimal(15, 6) @map("sqi_to_base_factor")
   sqiRateDiff        Decimal   @default(0) @db.Decimal(15, 4) @map("sqi_rate_diff")
   sqiHasFreight      Boolean   @default(false) @map("sqi_has_freight")
@@ -12974,8 +12974,8 @@ model SaleReturnItem {
   sriSchDiscAmt         Decimal   @default(0) @db.Decimal(15, 2)       @map("sri_sch_disc_amt")
   /// The BILL-level scheme share this line reverses.
   sriBillSchAmt         Decimal   @default(0) @db.Decimal(15, 2)       @map("sri_bill_sch_amt")
-  sriChrgBeforeTax      Decimal?  @db.Decimal(14, 4)                   @map("sri_chrg_before_tax")
-  sriChrgAfterTax       Decimal?  @db.Decimal(14, 4)                   @map("sri_chrg_after_tax")
+  sriChrgBeforeTax      Decimal?  @db.Decimal(17, 4)                   @map("sri_chrg_before_tax")
+  sriChrgAfterTax       Decimal?  @db.Decimal(17, 4)                   @map("sri_chrg_after_tax")
   sriCessPerUnit        Decimal   @default(0) @db.Decimal(15, 4)       @map("sri_cess_per_unit")
   sriSalesmanId         String?   @db.Uuid                             @map("sri_salesman_id")
   sriSchemeId           String?   @db.Uuid                             @map("sri_scheme_id")

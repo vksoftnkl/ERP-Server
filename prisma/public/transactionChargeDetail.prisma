@@ -56,22 +56,22 @@ model TransactionChargeDetail {
   // priced the charge by typing its total, and the client spreads that total in
   // the method's own shape rather than deriving a rate. Never add a
   // rate-is-required constraint.
-  cdRate          Decimal?  @db.Decimal(14, 4)                             @map("cd_rate")         // rate or %, per cdMethod
-  cdAmount        Decimal?  @db.Decimal(14, 4)                             @map("cd_amount")       // charge amount BEFORE tax
+  cdRate          Decimal?  @db.Decimal(17, 4)                             @map("cd_rate")         // rate or %, per cdMethod
+  cdAmount        Decimal?  @db.Decimal(17, 4)                             @map("cd_amount")       // charge amount BEFORE tax
   // -- Tax (non-zero only when cdTaxApl AND NOT cdBeforeTax) ----------------
   cdTaxCode       String?   @db.Uuid                                       @map("cd_tax_code")
   cdHsn           String?   @db.VarChar(15)                                @map("cd_hsn")          // HSN/SAC, snapshot from the ledger
   cdTaxPerc       Decimal?  @db.Decimal(9, 4)                              @map("cd_tax_perc")
-  cdTaxAmt        Decimal?  @db.Decimal(14, 4)                             @map("cd_tax_amt")
+  cdTaxAmt        Decimal?  @db.Decimal(17, 4)                             @map("cd_tax_amt")
   cdSgstPerc      Decimal?  @db.Decimal(9, 4)                              @map("cd_sgst_perc")
-  cdSgstAmt       Decimal?  @db.Decimal(14, 4)                             @map("cd_sgst_amt")
+  cdSgstAmt       Decimal?  @db.Decimal(17, 4)                             @map("cd_sgst_amt")
   cdCgstPerc      Decimal?  @db.Decimal(9, 4)                              @map("cd_cgst_perc")
-  cdCgstAmt       Decimal?  @db.Decimal(14, 4)                             @map("cd_cgst_amt")
+  cdCgstAmt       Decimal?  @db.Decimal(17, 4)                             @map("cd_cgst_amt")
   cdIgstPerc      Decimal?  @db.Decimal(9, 4)                              @map("cd_igst_perc")
-  cdIgstAmt       Decimal?  @db.Decimal(14, 4)                             @map("cd_igst_amt")
+  cdIgstAmt       Decimal?  @db.Decimal(17, 4)                             @map("cd_igst_amt")
   cdCessPerc      Decimal?  @db.Decimal(9, 4)                              @map("cd_cess_perc")
-  cdCessAmt       Decimal?  @db.Decimal(14, 4)                             @map("cd_cess_amt")
-  cdNetAmt        Decimal?  @db.Decimal(14, 4)                             @map("cd_net_amt")      // cdAmount + its own tax
+  cdCessAmt       Decimal?  @db.Decimal(17, 4)                             @map("cd_cess_amt")
+  cdNetAmt        Decimal?  @db.Decimal(17, 4)                             @map("cd_net_amt")      // cdAmount + its own tax
   // -- Status + audit -------------------------------------------------------
   cdRemarks       String?   @db.VarChar(255)                               @map("cd_remarks")
   cdIsActive      Boolean   @default(true)                                 @map("cd_is_active")

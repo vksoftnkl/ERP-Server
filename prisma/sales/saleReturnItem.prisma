@@ -88,8 +88,8 @@ model SaleReturnItem {
   sriSchDiscAmt         Decimal   @default(0) @db.Decimal(15, 2)       @map("sri_sch_disc_amt")
   /// The BILL-level scheme share this line reverses.
   sriBillSchAmt         Decimal   @default(0) @db.Decimal(15, 2)       @map("sri_bill_sch_amt")
-  sriChrgBeforeTax      Decimal?  @db.Decimal(14, 4)                   @map("sri_chrg_before_tax")
-  sriChrgAfterTax       Decimal?  @db.Decimal(14, 4)                   @map("sri_chrg_after_tax")
+  sriChrgBeforeTax      Decimal?  @db.Decimal(17, 4)                   @map("sri_chrg_before_tax")
+  sriChrgAfterTax       Decimal?  @db.Decimal(17, 4)                   @map("sri_chrg_after_tax")
   sriCessPerUnit        Decimal   @default(0) @db.Decimal(15, 4)       @map("sri_cess_per_unit")
   sriSalesmanId         String?   @db.Uuid                             @map("sri_salesman_id")
   sriSchemeId           String?   @db.Uuid                             @map("sri_scheme_id")
