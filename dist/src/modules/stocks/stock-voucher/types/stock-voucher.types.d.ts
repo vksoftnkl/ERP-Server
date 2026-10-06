@@ -11,6 +11,10 @@ export declare const STOCK_BUCKETS: readonly ["SALEABLE", "DAMAGED", "QUARANTINE
 export type StockBucket = (typeof STOCK_BUCKETS)[number];
 export declare const STOCK_RATE_SOURCES: readonly ["AVG_COST", "LAST_PURCHASE", "LOT_COST", "MRP", "MANUAL"];
 export type StockRateSource = (typeof STOCK_RATE_SOURCES)[number];
+export declare const RELOT_REASON_CODES: {
+    readonly out: "RELOT_OUT";
+    readonly in: "RELOT_IN";
+};
 export declare const DERIVABLE_RATE_SOURCES: readonly ["AVG_COST", "LAST_PURCHASE", "LOT_COST", "MRP"];
 export declare const STOCK_POST_SHAPES: readonly ["SIMPLE", "COUNT", "TRANSFER_OUT", "TRANSFER_IN", "BUCKET_MOVE"];
 export type StockPostShape = (typeof STOCK_POST_SHAPES)[number];

@@ -30,15 +30,42 @@ export interface ItemGroupTrackPolicySource {
   itgId: string;
   itgTrackPresetId: string | null;
 }
-/** The policy columns this module derives. Everything else takes its DB default. */
-export interface DerivedTrackPolicy {
+/** The six "what makes two holdings different" flags, as a preset or a policy carries them. */
+export interface TrackFlags {
   trackBatch: boolean;
   trackMrp: boolean;
   trackSalePrice: boolean;
   trackExpiry: boolean;
   trackSerial: boolean;
   trackSupplier: boolean;
-  valuationMethod: string;
+}
+/** The two ways the engine costs stock. FIFO is in the column's CHECK vocabulary but was never implemented. */
+export const STOCK_VALUATION_METHODS = ['WAVG', 'LOT_ACTUAL'] as const;
+export type StockValuationMethod = (typeof STOCK_VALUATION_METHODS)[number];
+/**
+ * HOW STOCK IS COSTED FOLLOWS WHAT IT TRACKS (notes 92): "only for plain stock
+ * keep total average, otherwise all should be in this rule." An item that
+ * tracks nothing has one lot, and the branch moving average (`stock_item_cost`)
+ * IS its cost — WAVG. An item that tracks anything — batch, expiry, MRP,
+ * selling price, serial, supplier, any mix — has lots that cost different
+ * amounts, and each is costed on its own — LOT_ACTUAL. The rule has no
+ * exception, so the method is derived from the flags and never read from the
+ * payload or the preset row; `ck_stp_valuation_tracks` / `ck_spt_valuation_tracks`
+ * say the same in the database.
+ */
+export function valuationMethodFor(flags: TrackFlags): StockValuationMethod {
+  return flags.trackBatch ||
+    flags.trackMrp ||
+    flags.trackSalePrice ||
+    flags.trackExpiry ||
+    flags.trackSerial ||
+    flags.trackSupplier
+    ? 'LOT_ACTUAL'
+    : 'WAVG';
+}
+/** The policy columns this module derives. Everything else takes its DB default. */
+export interface DerivedTrackPolicy extends TrackFlags {
+  valuationMethod: StockValuationMethod;
   issueStrategy: string;
   allowNegative: string;
   shelfLifeDays: number | null;

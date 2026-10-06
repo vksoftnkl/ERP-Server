@@ -10,6 +10,9 @@ import { Prisma } from '@prisma/client';
  *   BALANCE_QTY     stock_balance accumulators  vs  Σ stock_ledger per holding
  *   BALANCE_ORPHAN  a balance row whose holding has no ledger row at all
  *   ITEM_COST_QTY   stock_item_cost total       vs  Σ balances of the item
+ *   ITEM_COST_VALUE stock_item_cost value       vs  Σ sbl_stock_value of the item
+ *                   (notes 92: a lot's own cost and the item summary are two
+ *                   rebuilds of one ledger and must agree to a paisa a row)
  *   RESERVED        sbl_reserved_qty            vs  Σ open reservations
  *   TRANSIT_IN      sbl_transit_in_qty          vs  Σ transit still in flight
  *   LOT_TOTAL       slt_total_on_hand           vs  Σ balances of the lot
@@ -19,7 +22,14 @@ import { Prisma } from '@prisma/client';
  * findings after every step, and the nightly job logs what it finds.
  */
 export interface StockBalanceFinding {
-  kind: 'BALANCE_QTY' | 'BALANCE_ORPHAN' | 'ITEM_COST_QTY' | 'RESERVED' | 'TRANSIT_IN' | 'LOT_TOTAL';
+  kind:
+    | 'BALANCE_QTY'
+    | 'BALANCE_ORPHAN'
+    | 'ITEM_COST_QTY'
+    | 'ITEM_COST_VALUE'
+    | 'RESERVED'
+    | 'TRANSIT_IN'
+    | 'LOT_TOTAL';
   companyId: string;
   branchId: string | null;
   itemId: string;
@@ -116,10 +126,34 @@ export async function assertStockBalances(
              AND b.sbl_item_id = c.sic_item_id
         ) t ON true
        WHERE c.sic_is_deleted = false
-         -- A fresh row never starts below zero (the seed clamp), so a branch
-         -- whose only movements are outward legitimately reads 0 against a
-         -- negative balance sum.
-         AND c.sic_total_qty <> GREATEST(COALESCE(t.qty, 0), 0)
+         -- Exact (notes 92): both figures are Σ of the same ledger rows now
+         -- that the item total is rebuilt rather than clamped and incremented.
+         AND c.sic_total_qty <> COALESCE(t.qty, 0)
+      UNION ALL
+      -- 3b. the branch item VALUE vs the sum of its holdings' values. Each
+      -- holding's value is its quantity × a six-place rate rounded to a paisa,
+      -- so the two may differ by a paisa per holding plus the rate rounding
+      -- over the quantity — anything more means a lot's cost and the item
+      -- summary have parted. Only while every holding is non-negative: a
+      -- negative holding's value is not a cost (notes 92 §3.1).
+      SELECT 'ITEM_COST_VALUE', c.sic_company_id, c.sic_branch_id, c.sic_item_id, NULL, NULL, NULL,
+             c.sic_total_value::text, COALESCE(t.value, 0)::text
+        FROM stock.stock_item_cost c
+        JOIN scope s ON (s.company_id IS NULL OR c.sic_company_id = s.company_id)
+                    AND (s.branch_id  IS NULL OR c.sic_branch_id  = s.branch_id)
+                    AND (s.item_id    IS NULL OR c.sic_item_id    = s.item_id)
+        LEFT JOIN LATERAL (
+          SELECT SUM(b.sbl_stock_value) AS value, count(*) AS holdings,
+                 bool_and(b.sbl_on_hand_qty >= 0) AS non_negative
+            FROM bal b
+           WHERE b.sbl_company_id = c.sic_company_id AND b.sbl_branch_id = c.sic_branch_id
+             AND b.sbl_item_id = c.sic_item_id
+        ) t ON true
+       WHERE c.sic_is_deleted = false
+         AND c.sic_total_qty > 0
+         AND COALESCE(t.non_negative, true)
+         AND ABS(c.sic_total_value - COALESCE(t.value, 0))
+             > 0.01 * (COALESCE(t.holdings, 0) + 1) + c.sic_total_qty * 0.000001
       UNION ALL
       -- 4. reserved vs open reservations
       SELECT 'RESERVED', b.sbl_company_id, b.sbl_branch_id, b.sbl_item_id, b.sbl_lot_id,

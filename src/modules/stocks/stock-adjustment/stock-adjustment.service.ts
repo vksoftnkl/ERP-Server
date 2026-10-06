@@ -166,7 +166,9 @@ export type StockAdjustmentPayload = StockVoucherPayload & { kind: StockAdjustme
  *     refuses again at post, BLOCK by decision D-A1), an expiry write-off
  *     names an expired lot (grace: `stock.expiry_writeoff_grace_days`).
  *  4. THE RE-LOT PAIR: RELOT_OUT and RELOT_IN balance per item, different lots,
- *     the IN valued at the average the OUT was relieved at, no accounts leg.
+ *     the IN valued at what the OUT relieved — the old lot's own cost for a
+ *     tracked item, the branch average for plain stock (notes 92) — no
+ *     accounts leg.
  *  5. THE BUCKET MOVE (D-A3, notes 60): ONE line per move — `bucket` from,
  *     `toBucket` to — which the engine lays as a BUCKET_OUT / BUCKET_IN pair on
  *     the same lot at the OUT's cost. The lot is required (it names the
@@ -249,8 +251,9 @@ export class StockAdjustmentService {
     const verdict = await this.check(header, lines, reasons);
     this.refuse(rules, `This ${rules.displayName.toLowerCase()} cannot be saved`, verdict, lines);
 
-    // A re-lot and a move carry their value across: the IN is valued at the
-    // average the OUT is relieved at, so neither side keys a cost and the
+    // A re-lot and a move carry their value across: the IN is valued at what
+    // the OUT relieved (the old lot's own cost on a tracked item, the branch
+    // average on plain stock — notes 92), so neither side keys a cost and the
     // header says so.
     const relot = lines.some((line) => this.isRelot(reasons, line));
     const carried = relot || kind === BUCKET_MOVE_KIND;
@@ -299,9 +302,10 @@ export class StockAdjustmentService {
       salePrice: line.salePrice ?? null,
       serialNo: line.serialNo ?? null,
       supplierId: line.supplierId ?? null,
-      // An outward line is stamped by the engine at the branch average; a keyed
-      // cost would let a write-off value itself. A RELOT_IN is valued the same
-      // way, so the pair carries the same figure.
+      // An outward line is stamped by the engine at what the stock cost (the
+      // batch's own cost for a tracked item, the branch average for plain
+      // stock — notes 92); a keyed cost would let a write-off value itself. A
+      // RELOT_IN inherits its OUT half's figure, so the pair carries one cost.
       costRate: outward || this.isRelot(reasons, view) ? 0 : (line.costRate ?? 0),
       costRateWot: outward || this.isRelot(reasons, view) ? 0 : (line.costRateWot ?? 0),
       // (a move line is outward: directionOf says −1 whenever toBucket is set)
@@ -312,7 +316,7 @@ export class StockAdjustmentService {
       // out and the reason / type say so. A move line's OWN direction is out
       // of its bucket (the IN half is the engine's), and stamping it keeps a
       // BOTH move reason from being read as inward — the engine then values
-      // the pair at the branch average.
+      // the pair at what the lot cost.
       direction: kind === BUCKET_MOVE_KIND ? -1 : kind === 'ADJUSTMENT' ? direction : null,
     };
   }

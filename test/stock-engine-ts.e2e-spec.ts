@@ -364,11 +364,13 @@ describe('Stock engine in TypeScript (e2e — one rolled-back transaction)', () 
       () => tx.$executeRaw`
         INSERT INTO stock.stock_track_policy (
           stp_company_id, stp_branch_id, stp_scope, stp_scope_id,
-          stp_track_batch, stp_track_mrp, stp_issue_strategy,
+          stp_track_batch, stp_track_mrp, stp_valuation_method, stp_issue_strategy,
           stp_allow_negative, stp_remarks)
         VALUES (
           ${fixture.companyId}::uuid, ${p.branchId ?? null}::uuid, ${p.scope}, ${p.scopeId}::uuid,
           ${p.trackBatch ?? false}, ${p.trackMrp ?? false},
+          -- Notes 92: the method follows the flags (ck_stp_valuation_tracks).
+          ${p.trackBatch || p.trackMrp ? 'LOT_ACTUAL' : 'WAVG'},
           ${p.trackBatch ? 'FIFO' : 'FEFO'}, ${p.allowNegative ?? 'ALLOW'}, 'stock-engine-ts e2e')
       `,
     );
@@ -776,13 +778,16 @@ describe('Stock engine in TypeScript (e2e — one rolled-back transaction)', () 
       expect(posted.rowsPosted).toBe(1);
 
       expect(await holding(fixture.saltId, fixture.godownA)).toMatchObject({ onHand: -13 });
-      // 15 − 20 units; value floored at 0; the RATE survives an empty branch.
-      expect(await itemCost(fixture.saltId)).toMatchObject({ qty: -5, value: 0, avg: 17 });
+      // 15 − 20 units at 17: the item total is Σ of the ledger (notes 92 §3.3),
+      // so it reads −85 rather than the old clamp's 0; the RATE survives an
+      // empty branch — the latest row's, the average the stock was relieved at.
+      expect(await itemCost(fixture.saltId)).toMatchObject({ qty: -5, value: -85, avg: 17 });
 
-      // A FRESH row never starts below zero: TEA has never been received, so
-      // its first-ever movement — an outward at a typed cost of 9 — leaves the
-      // branch quantity at 0, the value at 0, and the rate at that cost (the
-      // trigger's seed from an outward). The balance carries the negative.
+      // TEA has never been received, so its first-ever movement — an outward at
+      // a typed cost of 9 — is what the branch row says: −2 at 9. The old
+      // engine clamped a fresh row at 0; a rebuild from the ledger cannot, and
+      // must not, remember which movement came first (notes 92 §7). The rate
+      // is that outward's own cost; nothing was ever purchased.
       const teaOpening = await adjustment(
         ADJUSTMENT_OUT_RULES,
         fixture.godownA,
@@ -793,8 +798,8 @@ describe('Stock engine in TypeScript (e2e — one rolled-back transaction)', () 
       );
       expect((await post(ADJUSTMENT_OUT_RULES, teaOpening.header.svhId)).rowsPosted).toBe(1);
       expect(await itemCost(fixture.teaId)).toMatchObject({
-        qty: 0,
-        value: 0,
+        qty: -2,
+        value: -18,
         avg: 9,
         max: 0,
         lastRate: 0,
@@ -1426,8 +1431,12 @@ describe('Stock engine in TypeScript (e2e — one rolled-back transaction)', () 
       },
       select: { iucId: true },
     });
+    // A PLAIN item, by its own ITEM policy: the fixture's group tracks MRP, and
+    // a tracked item's count gain is costed from its LOT's own rate and wot
+    // (notes 92) — the item average, whose 0 wot this case is about, would not
+    // be consulted at all. The item-average path is what notes 77 fixed.
+    await policy({ scope: 'ITEM', scopeId: item.itemId });
     const saved = await attempt(() =>
-      // The fixture's group tracks MRP, and the item follows its group.
       opening(fixture.godownA, [
         { itemId: item.itemId, iuc: iuc.iucId, qty: 10, costRate: 118, mrp: 200 },
       ]),

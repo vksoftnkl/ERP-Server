@@ -5,6 +5,8 @@ import { AuditLogService } from 'src/modules/audit-log/audit-log.service';
 import { RequestContextService } from 'src/common/request-context/request-context.service';
 import {
   DerivedTrackPolicy,
+  TrackFlags,
+  valuationMethodFor,
   ItemGroupTrackPolicySource,
   ItemTrackPolicySource,
   StockTrackPolicySyncResult,
@@ -284,20 +286,28 @@ export class StockTrackPolicyService {
     return client.stockTrackPreset.findUnique({ where: { sptId: presetId } });
   }
   /**
-   * A preset's thirteen columns, verbatim. Nothing is recomputed or second
-   * guessed: the preset table carries the SAME CHECK constraints as the policy
-   * table (ck_spt_expiry_needs_batch, ck_spt_fefo_needs_expiry), precisely so
-   * that anything storable as a preset is storable as a policy.
+   * A preset's thirteen columns — twelve verbatim, the valuation method
+   * derived from the six track flags (notes 92). The preset table carries the
+   * SAME CHECK constraints as the policy table (ck_spt_expiry_needs_batch,
+   * ck_spt_fefo_needs_expiry, ck_*_valuation_tracks), precisely so that
+   * anything storable as a preset is storable as a policy.
    */
   presetToDerived(preset: StockTrackPreset): DerivedTrackPolicy {
-    return {
+    const flags: TrackFlags = {
       trackBatch: preset.sptTrackBatch,
       trackMrp: preset.sptTrackMrp,
       trackSalePrice: preset.sptTrackSalePrice,
       trackExpiry: preset.sptTrackExpiry,
       trackSerial: preset.sptTrackSerial,
       trackSupplier: preset.sptTrackSupplier,
-      valuationMethod: preset.sptValuationMethod,
+    };
+    return {
+      ...flags,
+      // The one column NOT taken verbatim (notes 92): how the item is costed
+      // follows what it tracks — a plain item on the branch average, any
+      // tracked item per lot — and the preset's own column is not consulted.
+      // The rule has no exception; ck_stp_valuation_tracks says so too.
+      valuationMethod: valuationMethodFor(flags),
       issueStrategy: preset.sptIssueStrategy,
       allowNegative: preset.sptAllowNegative,
       shelfLifeDays: preset.sptShelfLifeDays,

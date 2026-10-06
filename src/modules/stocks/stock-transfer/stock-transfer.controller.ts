@@ -64,9 +64,11 @@ import {
  *                       re-resolved — the destination keeps the same slt_id,
  *                       so ageing does not reset. That is the point of the
  *                       rule, not a side effect.
- *   zeroesLineCost      the cost is stamped by the engine and TRAVELS: the
- *                       branch's moving average at the moment it left
- *                       (defaultRateSource AVG_COST). A typed rate is stripped.
+ *   zeroesLineCost      the cost is stamped by the engine and TRAVELS: what
+ *                       the stock cost at the moment it left — the lot's own
+ *                       cost for a tracked item, the branch's moving average
+ *                       for plain stock (notes 92; defaultRateSource
+ *                       AVG_COST). A typed rate is stripped.
  *                       See MUST-FIX 5.
  *   allowsToBranch      the only type that may leave the branch.
  *   requiresFromGodown  both godowns, both mandatory (ck_svh_transfer_godowns).

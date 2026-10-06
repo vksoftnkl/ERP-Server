@@ -1,6 +1,6 @@
 import { Prisma } from '@prisma/client';
 export interface StockBalanceFinding {
-    kind: 'BALANCE_QTY' | 'BALANCE_ORPHAN' | 'ITEM_COST_QTY' | 'RESERVED' | 'TRANSIT_IN' | 'LOT_TOTAL';
+    kind: 'BALANCE_QTY' | 'BALANCE_ORPHAN' | 'ITEM_COST_QTY' | 'ITEM_COST_VALUE' | 'RESERVED' | 'TRANSIT_IN' | 'LOT_TOTAL';
     companyId: string;
     branchId: string | null;
     itemId: string;

@@ -32,8 +32,9 @@ takes the sign the screen keyed — stored as `svi_direction`, the quantities st
 the reason's own type only when the reason lists exactly one issue type (`SAMPLE_ISSUE`,
 `GIFT_ISSUE`, `ADJUST_MINUS`); DAMAGE and EXPIRY_WRITEOFF post their own.
 
-An **outward line is always valued at the branch average** whatever the header's rate source
-or a keyed cost. A lotless outward line is picked by the item's issue strategy (FEFO / FIFO /
+An **outward line is always valued at what the stock cost** — the batch's own cost for a tracked
+item, the branch average for plain stock (notes 92) — whatever the header's rate source or a keyed
+cost. A lotless outward line is picked by the item's issue strategy (FEFO / FIFO /
 LIFO) and split by `svi_split_no`; MANUAL refuses. The negative-stock policy is **BLOCK**
 whatever the item says (D-A1). Header totals are the NET of the lines, so `totalQty` /
 `totalValue` / `totalValueWot` take a negative on a save (the header DTO omits the shared
@@ -76,7 +77,8 @@ sends it back or a DAMAGE write-off clears it.
   own direction `svi_direction = −1`.
 - **The engine** (`postShape: 'BUCKET_MOVE'`) writes `BUCKET_OUT` −1 from (lot, bucket) and
   `BUCKET_IN` +1 into (the same lot, toBucket), same godown, both at the OUT's stamped cost — the
-  branch average. Nothing is picked or resolved: a lotless line is refused.
+  lot's own cost for a tracked item, the branch average for plain stock (notes 92). Nothing is
+  picked or resolved: a lotless line is refused.
 - **The average does not move**: `applyItemCost` leaves the bucket pair out (it nets to nothing,
   and its IN half would otherwise stamp the average as the last purchase rate); the destination
   holding is still valued by the balance stamp.

@@ -13265,10 +13265,17 @@ model StockBalance {
   sblAvailableQty      Decimal?  @default(dbgenerated()) @db.Decimal(18, 6) @map("sbl_available_qty")
 
   // ── Value ───────────────────────────────────────────────────────────────
-  // The BRANCH average from [[StockItemCost]], distributed over this shelf:
-  // stamped on every holding of the item whenever the average moves. Not a
-  // per-holding truth of its own — a transfer between two godowns of one
-  // branch must not move value.
+  // The cost of one unit on this shelf (notes 92), by the item's policy:
+  //   WAVG (plain stock)        the BRANCH average from [[StockItemCost]],
+  //                             stamped on every holding of the item whenever
+  //                             the average moves;
+  //   LOT_ACTUAL (any tracked)  the LOT's own moving average in this branch —
+  //                             Σ of its ledger rows here — the same figure on
+  //                             every godown and bucket of the lot, rebuilt by
+  //                             the engine's applyLotCost on every post.
+  // Either way not a per-holding truth of its own: a move between two godowns
+  // or buckets of one branch must not move value. Engine-maintained; the
+  // readers (count sheet, pick-stock, batch stock) read exactly this.
   sblAvgCostRate       Decimal   @default(0) @db.Decimal(18, 6)      @map("sbl_avg_cost_rate")
   sblAvgCostRateWot    Decimal   @default(0) @db.Decimal(18, 6)      @map("sbl_avg_cost_rate_wot")
   sblStockValue        Decimal   @default(0) @db.Decimal(18, 2)      @map("sbl_stock_value")
@@ -13564,15 +13571,21 @@ model StockForecast {
 }
 
 // ----- prisma/stocks/stockItemCost.prisma -----
-/// stock.stock_item_cost — the MOVING WEIGHTED AVERAGE, one row per
-/// (company, branch, item). The other half of the valuation answer.
+/// stock.stock_item_cost — the branch's ITEM TOTAL AND AVERAGE, one row per
+/// (company, branch, item), re-derived from the ledger on every posting.
 ///
-/// [[StockLot]] carries each lot's OWN cost, which is what makes FIFO, LIFO and
-/// LOT_ACTUAL valuation a read rather than a replay. This table carries the
-/// running average across all of an item's lots in a branch. BOTH are
-/// maintained on every posting, always — so StockTrackPolicy.stpValuationMethod
-/// SELECTS an answer instead of triggering a rebuild, and switching a company
-/// from average to FIFO costs nothing.
+/// WHAT IT MEANS DEPENDS ON THE POLICY (notes 92, 2026-10-06):
+///   WAVG (plain, untracked stock)   the moving weighted average, the cost every
+///                                   outward of the item is relieved at, stamped
+///                                   onto every holding;
+///   LOT_ACTUAL (every tracked item) the item's SUMMARY — Σ of its lots' values ÷
+///                                   quantity — for item-level reports and as the
+///                                   fallback for a lot the branch has never
+///                                   held. Its outwards are relieved at the LOT's
+///                                   own cost, kept on the lot's [[StockBalance]]
+///                                   rows (sblAvgCostRate), not at this figure.
+/// [[StockLot]].sltCostRate is neither: it is the cost on the lot's first
+/// receipt, written once.
 ///
 /// BRANCH-LEVEL, NOT GODOWN-LEVEL. Moving a case from the back store to the
 /// shop floor must not change what the stock cost; a per-godown average would
@@ -13582,24 +13595,29 @@ model StockForecast {
 /// have different costs, and averaging them would let one branch's bad buying
 /// inflate the other's margin.
 ///
-/// NOT LOT-LEVEL EITHER, on purpose — that is exactly what the lot's own
-/// sltCostRate is. This row is what the average costs when the lot identity is
+/// NOT LOT-LEVEL EITHER, on purpose — a lot's cost per branch lives on its
+/// balance rows. This row is what the item is worth when the lot identity is
 /// deliberately ignored.
 ///
-/// ENGINE-MAINTAINED. The posting engine owns it — on this deployment that is
-/// stock-voucher-posting.helper.ts (phase 5), doing what the share's
-/// fn_sml_apply() does: an inward adds qty and value and recomputes the
-/// average, an outward removes qty at the CURRENT average and leaves the rate
-/// alone — which is what "moving average" means, and why an outward can never
-/// change the cost of what remains. Application code that writes these columns
-/// is writing a number the next posting will overwrite. Post to [[StockLedger]]
+/// ENGINE-MAINTAINED, AS A REBUILD. The posting engine owns it — on this
+/// deployment stock-voucher-posting.helper.ts (phase 5): after every post or
+/// cancel the touched item's total quantity and value are Σ of its live ledger
+/// rows (sml_signed_base_qty, direction × sml_cost_value), forward and
+/// reversal alike. For a plain item that IS the moving average — each outward
+/// row was relieved at the running average and stamped with it, so Σ in − Σ
+/// out at those stamps is the moving-average value; an outward can never
+/// change the cost of what remains. Never "old + this document": a re-sent
+/// sync batch or a reversal landing before its original must give the same
+/// figure (notes 92 §7). Application code that writes these columns is
+/// writing a number the next posting will overwrite. Post to [[StockLedger]]
 /// instead.
 ///
 /// THE AVERAGE IS STORED, NOT DERIVED. sicAvgCostRate is a plain column rather
 /// than value/qty as a generated one, because qty legitimately reaches zero
-/// when the last unit is sold and the rate must SURVIVE that: the next inward
-/// of an item that went to nil is not a fresh start, and a division by zero
-/// would make it one.
+/// when the last unit is sold and the rate must SURVIVE that: at or below zero
+/// it is the latest ledger row's rate — the average the stock was relieved at
+/// when it emptied — so the next inward of an item that went to nil is not a
+/// fresh start, and a division by zero cannot make it one.
 ///
 /// sicMaxCostRate is the highest rate this item has ever been received at. It
 /// is kept because a replacement-cost valuation asks for it and because it
@@ -13997,10 +14015,12 @@ model StockLot {
   sltInwardRefno        String?   @db.VarChar(100)                    @map("slt_inward_refno")
 
   // ── Cost, as received ───────────────────────────────────────────────────
-  /// sltCostRate is THIS lot's own cost, which is what makes FIFO and
-  /// LOT_ACTUAL valuation a read rather than a replay. The moving weighted
-  /// average is maintained in parallel in stock_item_cost. Both, always, so
-  /// stpValuationMethod selects an answer instead of triggering a rebuild.
+  /// sltCostRate is THE COST ON THE LOT'S FIRST RECEIPT, written once when the
+  /// lot is opened (resolveLots) and never after. It is NOT the lot's running
+  /// cost: stock_lot is company-wide, and a lot's moving average PER BRANCH is
+  /// sblAvgCostRate on its [[StockBalance]] rows, rebuilt from the ledger by
+  /// the engine on every post (notes 92 §3.1). The LOT_COST rate source reads
+  /// the branch figure first and falls back to this one.
   sltPurchaseRate       Decimal   @default(0) @db.Decimal(18, 6)      @map("slt_purchase_rate")
   sltCostRate           Decimal   @default(0) @db.Decimal(18, 6)      @map("slt_cost_rate")
   sltCostRateWot        Decimal   @default(0) @db.Decimal(18, 6)      @map("slt_cost_rate_wot")
@@ -14600,9 +14620,15 @@ model StockTrackPolicy {
   stpTrackSignature    String?   @default(dbgenerated()) @db.VarChar(8)       @map("stp_track_signature")
 
   // ── How it is valued ────────────────────────────────────────────────────
-  /// WAVG reads stock_item_cost; FIFO and LOT_ACTUAL read slt_cost_rate. Both
-  /// are always maintained, so this only selects which one a report believes —
-  /// changing it needs no recomputation.
+  /// How a holding of this item is COSTED by the posting engine (notes 92):
+  ///   WAVG        the branch moving average in stock_item_cost, stamped on
+  ///               every holding — plain (untracked) stock only;
+  ///   LOT_ACTUAL  each lot's own moving average in the branch, kept on the
+  ///               lot's stock_balance rows — EVERY tracked item.
+  /// FOLLOWS THE TRACK FLAGS: tracks nothing → WAVG, tracks anything →
+  /// LOT_ACTUAL. The policy service derives it (valuationMethodFor) and
+  /// ck_stp_valuation_tracks refuses any other pairing; nothing sends it. FIFO
+  /// is in the vocabulary CHECK but was never implemented and is unreachable.
   stpValuationMethod   String    @default("WAVG") @db.VarChar(20)             @map("stp_valuation_method")
 
   // ── Which lot goes out when nobody names one ────────────────────────────
@@ -14746,6 +14772,8 @@ model StockTrackPreset {
   // A preset carries the WHOLE sensible policy, not only the flags: a pharma
   // item is not just "BEMP", it is also FEFO, blocked-when-expired and 90-day
   // near-expiry. All of it is copied, all of it stays editable before Save.
+  /// Follows the preset's six flags (ck_spt_valuation_tracks): WAVG when
+  /// nothing is tracked, LOT_ACTUAL otherwise — see StockTrackPolicy (notes 92).
   sptValuationMethod   String    @default("WAVG") @db.VarChar(20)             @map("spt_valuation_method")
   sptIssueStrategy     String    @default("FEFO") @db.VarChar(20)             @map("spt_issue_strategy")
   sptAllowNegative     String    @default("ALLOW") @db.VarChar(10)            @map("spt_allow_negative")

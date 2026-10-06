@@ -408,8 +408,8 @@ describe('Physical stock count (e2e — needs the stock engine)', () => {
     // FIFO, because the default FEFO needs an expiry (ck_stp_fefo_needs_expiry).
     await prisma.$executeRaw`
       INSERT INTO stock.stock_track_policy (
-        stp_company_id, stp_scope, stp_scope_id, stp_track_batch, stp_issue_strategy, stp_remarks)
-      VALUES (${fixture.companyId}::uuid, 'ITEM', ${fixture.milkId}::uuid, true, 'FIFO', 'physical-stock e2e')
+        stp_company_id, stp_scope, stp_scope_id, stp_track_batch, stp_valuation_method, stp_issue_strategy, stp_remarks)
+      VALUES (${fixture.companyId}::uuid, 'ITEM', ${fixture.milkId}::uuid, true, 'LOT_ACTUAL', 'FIFO', 'physical-stock e2e')
     `;
     const opening = await service.save(OPENING_RULES, {
       header: {

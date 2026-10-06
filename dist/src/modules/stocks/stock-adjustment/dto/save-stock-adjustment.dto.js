@@ -223,7 +223,7 @@ __decorate([
 ], SaveStockAdjustmentItemDto.prototype, "supplierId", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({
-        description: 'INWARD only, and only when the header names no rate source that derives one: what the stock is worth per BASE unit (a rate keyed per document unit is divided by toBaseFactor first). The line value is (baseQty + freeBaseQty) × costRate, the way svi_value is generated. An OUTWARD line is always stamped by the engine at the branch average; a keyed cost is ignored.',
+        description: 'INWARD only, and only when the header names no rate source that derives one: what the stock is worth per BASE unit (a rate keyed per document unit is divided by toBaseFactor first). The line value is (baseQty + freeBaseQty) × costRate, the way svi_value is generated. An OUTWARD line is always stamped by the engine at what the stock cost — the batch\'s own cost for a tracked item, the branch average for plain stock (notes 92); a keyed cost is ignored.',
     }),
     (0, dtoDecorators_1.OptionalNumber)(0),
     __metadata("design:type", Number)

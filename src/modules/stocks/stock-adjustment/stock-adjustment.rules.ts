@@ -1,4 +1,5 @@
 import { TxnStatusDocType } from 'src/common/txn-status-log/txn-status-log.helper';
+import { RELOT_REASON_CODES } from '../stock-voucher/types/stock-voucher.types';
 import type {
   StockVoucherType,
   StockVoucherTypeRules,
@@ -35,7 +36,11 @@ export type StockAdjustmentSaveKind = (typeof STOCK_ADJUSTMENT_SAVE_KINDS)[numbe
  * (grid 122's `kind_code`): the stored kind, or RELOT / BUCKET_MOVE for the two
  * ADJUSTMENT shapes told apart by their lines.
  */
-export const STOCK_ADJUSTMENT_DOC_KINDS = [...STOCK_ADJUSTMENT_KINDS, 'RELOT', BUCKET_MOVE_KIND] as const;
+export const STOCK_ADJUSTMENT_DOC_KINDS = [
+  ...STOCK_ADJUSTMENT_KINDS,
+  'RELOT',
+  BUCKET_MOVE_KIND,
+] as const;
 export type StockAdjustmentDocKind = (typeof STOCK_ADJUSTMENT_DOC_KINDS)[number];
 
 /** The ledger txn types a move writes, and the only ones a move reason may name. */
@@ -72,7 +77,8 @@ const EVERY_OTHER_TYPE: readonly StockVoucherType[] = [
  */
 function rules(
   voucherType: StockAdjustmentKind,
-  overrides: Partial<StockVoucherTypeRules> & Pick<StockVoucherTypeRules, 'typeCode' | 'displayName' | 'ledgerTxnTypes'>,
+  overrides: Partial<StockVoucherTypeRules> &
+    Pick<StockVoucherTypeRules, 'typeCode' | 'displayName' | 'ledgerTxnTypes'>,
 ): StockVoucherTypeRules {
   return {
     voucherType,
@@ -95,7 +101,9 @@ function rules(
   };
 }
 
-export const STOCK_ADJUSTMENT_RULES: Readonly<Record<StockAdjustmentSaveKind, StockVoucherTypeRules>> = {
+export const STOCK_ADJUSTMENT_RULES: Readonly<
+  Record<StockAdjustmentSaveKind, StockVoucherTypeRules>
+> = {
   ADJUSTMENT: rules('ADJUSTMENT', {
     typeCode: 'ADJ',
     displayName: 'Stock adjustment',
@@ -125,8 +133,9 @@ export const STOCK_ADJUSTMENT_RULES: Readonly<Record<StockAdjustmentSaveKind, St
   // shape does the work: per line BUCKET_OUT from `bucket` and BUCKET_IN into
   // `toBucket`, same lot, godown, quantity and cost. lineDirection stays
   // REASON so the line's own direction (−1, stamped by the service) rides on
-  // `svi_direction` and the engine values it as an outward line — at the
-  // branch average. The accounts writer posts no leg for the pair.
+  // `svi_direction` and the engine values it as an outward line — at what the
+  // stock cost: the lot's own cost for a tracked item, the branch average for
+  // plain stock (notes 92). The accounts writer posts no leg for the pair.
   BUCKET_MOVE: rules('ADJUSTMENT', {
     typeCode: 'ADJ',
     displayName: 'Stock move',
@@ -135,9 +144,9 @@ export const STOCK_ADJUSTMENT_RULES: Readonly<Record<StockAdjustmentSaveKind, St
   }),
 };
 
-/** The two reason codes of a re-lot pair, as the seed ships them. */
-export const RELOT_OUT_CODE = 'RELOT_OUT';
-export const RELOT_IN_CODE = 'RELOT_IN';
+/** The two reason codes of a re-lot pair, as the seed ships them — owned by the engine's types (notes 92). */
+export const RELOT_OUT_CODE: string = RELOT_REASON_CODES.out;
+export const RELOT_IN_CODE: string = RELOT_REASON_CODES.in;
 
 /**
  * The two move reasons the seed ships, and the to-bucket the screen defaults

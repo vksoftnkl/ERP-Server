@@ -14,6 +14,7 @@ const common_1 = require("@nestjs/common");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const audit_log_service_1 = require("../../audit-log/audit-log.service");
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
+const stock_track_policy_types_1 = require("./types/stock-track-policy.types");
 const STP_TABLE_NAME = 'stock track policy';
 const STP_AUDIT_SCREEN_NAME = 'Stock Track Policy';
 exports.DERIVED_FROM_ITEM_REMARK = 'Auto-derived from item master';
@@ -169,14 +170,17 @@ let StockTrackPolicyService = class StockTrackPolicyService {
         return client.stockTrackPreset.findUnique({ where: { sptId: presetId } });
     }
     presetToDerived(preset) {
-        return {
+        const flags = {
             trackBatch: preset.sptTrackBatch,
             trackMrp: preset.sptTrackMrp,
             trackSalePrice: preset.sptTrackSalePrice,
             trackExpiry: preset.sptTrackExpiry,
             trackSerial: preset.sptTrackSerial,
             trackSupplier: preset.sptTrackSupplier,
-            valuationMethod: preset.sptValuationMethod,
+        };
+        return {
+            ...flags,
+            valuationMethod: (0, stock_track_policy_types_1.valuationMethodFor)(flags),
             issueStrategy: preset.sptIssueStrategy,
             allowNegative: preset.sptAllowNegative,
             shelfLifeDays: preset.sptShelfLifeDays,

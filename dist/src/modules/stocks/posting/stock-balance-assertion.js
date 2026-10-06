@@ -76,10 +76,34 @@ async function assertStockBalances(client, scope = {}) {
              AND b.sbl_item_id = c.sic_item_id
         ) t ON true
        WHERE c.sic_is_deleted = false
-         -- A fresh row never starts below zero (the seed clamp), so a branch
-         -- whose only movements are outward legitimately reads 0 against a
-         -- negative balance sum.
-         AND c.sic_total_qty <> GREATEST(COALESCE(t.qty, 0), 0)
+         -- Exact (notes 92): both figures are Σ of the same ledger rows now
+         -- that the item total is rebuilt rather than clamped and incremented.
+         AND c.sic_total_qty <> COALESCE(t.qty, 0)
+      UNION ALL
+      -- 3b. the branch item VALUE vs the sum of its holdings' values. Each
+      -- holding's value is its quantity × a six-place rate rounded to a paisa,
+      -- so the two may differ by a paisa per holding plus the rate rounding
+      -- over the quantity — anything more means a lot's cost and the item
+      -- summary have parted. Only while every holding is non-negative: a
+      -- negative holding's value is not a cost (notes 92 §3.1).
+      SELECT 'ITEM_COST_VALUE', c.sic_company_id, c.sic_branch_id, c.sic_item_id, NULL, NULL, NULL,
+             c.sic_total_value::text, COALESCE(t.value, 0)::text
+        FROM stock.stock_item_cost c
+        JOIN scope s ON (s.company_id IS NULL OR c.sic_company_id = s.company_id)
+                    AND (s.branch_id  IS NULL OR c.sic_branch_id  = s.branch_id)
+                    AND (s.item_id    IS NULL OR c.sic_item_id    = s.item_id)
+        LEFT JOIN LATERAL (
+          SELECT SUM(b.sbl_stock_value) AS value, count(*) AS holdings,
+                 bool_and(b.sbl_on_hand_qty >= 0) AS non_negative
+            FROM bal b
+           WHERE b.sbl_company_id = c.sic_company_id AND b.sbl_branch_id = c.sic_branch_id
+             AND b.sbl_item_id = c.sic_item_id
+        ) t ON true
+       WHERE c.sic_is_deleted = false
+         AND c.sic_total_qty > 0
+         AND COALESCE(t.non_negative, true)
+         AND ABS(c.sic_total_value - COALESCE(t.value, 0))
+             > 0.01 * (COALESCE(t.holdings, 0) + 1) + c.sic_total_qty * 0.000001
       UNION ALL
       -- 4. reserved vs open reservations
       SELECT 'RESERVED', b.sbl_company_id, b.sbl_branch_id, b.sbl_item_id, b.sbl_lot_id,

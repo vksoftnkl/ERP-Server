@@ -1,4 +1,4 @@
-import { StockAdminService } from './stock-admin.service';
+import { StockAdminService, type StockRebuildReport } from './stock-admin.service';
 import type { StockBalanceFinding } from './stock-balance-assertion';
 export declare class PostMissingVouchersQueryDto {
     companyId: string;
@@ -8,6 +8,9 @@ export declare class BalanceAssertionQueryDto {
     companyId?: string;
     branchId?: string;
     itemId?: string;
+}
+export declare class RebuildCostsQueryDto extends BalanceAssertionQueryDto {
+    dryRun?: boolean;
 }
 export declare class StockAdminController {
     private readonly admin;
@@ -29,5 +32,10 @@ export declare class StockAdminController {
         success: true;
         message: string;
         data: StockBalanceFinding[];
+    }>;
+    rebuildCosts(query: RebuildCostsQueryDto): Promise<{
+        success: true;
+        message: string;
+        data: StockRebuildReport;
     }>;
 }

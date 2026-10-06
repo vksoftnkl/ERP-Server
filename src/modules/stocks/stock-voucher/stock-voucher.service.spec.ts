@@ -83,34 +83,33 @@ const PHYSICAL_RULES: StockVoucherTypeRules = {
  * in 19_opening_stock_flow.md, whose captured figures this module is measured
  * against.
  */
-const payload = (overrides: Partial<SaveStockVoucherDto> = {}): SaveStockVoucherDto =>
-  ({
-    header: {
-      accYear: ACC_YEAR,
-      companyId: COMPANY_ID,
-      branchId: BRANCH_ID,
-      deviceId: DEVICE_ID,
-      docDate: '2026-04-01',
-      toGodownId: GODOWN_ID,
-      rateSource: 'MANUAL',
-      userId: USER_ID,
-      ...(overrides.header ?? {}),
+const payload = (overrides: Partial<SaveStockVoucherDto> = {}): SaveStockVoucherDto => ({
+  header: {
+    accYear: ACC_YEAR,
+    companyId: COMPANY_ID,
+    branchId: BRANCH_ID,
+    deviceId: DEVICE_ID,
+    docDate: '2026-04-01',
+    toGodownId: GODOWN_ID,
+    rateSource: 'MANUAL',
+    userId: USER_ID,
+    ...(overrides.header ?? {}),
+  },
+  lines: overrides.lines ?? [
+    {
+      lineNo: 1,
+      itemId: ITEM_ID,
+      uomId: UOM_ID,
+      baseUomId: BASE_UOM_ID,
+      toBaseFactor: 12,
+      baseQty: 120,
+      godownId: GODOWN_ID,
+      qty: 10,
+      costRate: 20,
+      taxPerc: 5,
     },
-    lines: overrides.lines ?? [
-      {
-        lineNo: 1,
-        itemId: ITEM_ID,
-        uomId: UOM_ID,
-        baseUomId: BASE_UOM_ID,
-        toBaseFactor: 12,
-        baseQty: 120,
-        godownId: GODOWN_ID,
-        qty: 10,
-        costRate: 20,
-        taxPerc: 5,
-      },
-    ],
-  }) as SaveStockVoucherDto;
+  ],
+});
 
 /** What Prisma hands back when a PL/pgSQL function RAISEs inside a raw query. */
 const engineError = (sqlState: string, message: string) =>
@@ -230,10 +229,13 @@ describe('StockVoucherService', () => {
       { getUserId: () => USER_ID } as unknown as RequestContextService,
       // §3.1 — the one stock engine, injected. Handed the same client, so a
       // posting call still runs inside whatever transaction the test opened.
-      new StockPostingService(client as unknown as PrismaService, {
-        postForVoucher: jest.fn().mockResolvedValue(null),
-        reverseForVoucher: jest.fn().mockResolvedValue(null),
-      } as never),
+      new StockPostingService(
+        client as unknown as PrismaService,
+        {
+          postForVoucher: jest.fn().mockResolvedValue(null),
+          reverseForVoucher: jest.fn().mockResolvedValue(null),
+        } as never,
+      ),
     );
     // Every save reloads the document at the end; the reload itself is raw SQL
     // against tables a unit test has no business standing up.
@@ -480,8 +482,9 @@ describe('StockVoucherService', () => {
       // a value the insert takes. Nothing may create a POSTED document.
       expect(client.stockVoucher.create.mock.calls[0][0].data.svhStatus).toBe('DRAFT');
       // ...and then the same transaction posts it: lots, lines, ledger,
-      // balances, the moving average and its stamp, lot totals.
-      expect(client.$executeRaw).toHaveBeenCalledTimes(8);
+      // balances, the lot costs (notes 92), the item average and its stamp,
+      // lot totals.
+      expect(client.$executeRaw).toHaveBeenCalledTimes(9);
       expect(client.stockVoucher.update).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ svhStatus: 'POSTED' }) }),
       );
@@ -972,7 +975,7 @@ describe('StockVoucherService', () => {
             godownId: GODOWN_ID,
             lotId: LOT_ID,
             qty: 10,
-          } as never,
+          },
         ],
       });
 
@@ -1163,9 +1166,10 @@ describe('StockVoucherService', () => {
         JSON.stringify(call).includes('fn_svh_post'),
       );
       expect(named).toBe(false);
-      // Lots, lines, ledger, balances, the moving average and its stamp, lot
-      // totals, header totals — eight set-based statements.
-      expect(client.$executeRaw).toHaveBeenCalledTimes(8);
+      // Lots, lines, ledger, balances, the lot costs (notes 92), the item
+      // average and its stamp, lot totals, header totals — nine set-based
+      // statements.
+      expect(client.$executeRaw).toHaveBeenCalledTimes(9);
       expect(client.stockVoucher.update).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ svhStatus: 'POSTED' }) }),
       );
@@ -1625,7 +1629,7 @@ describe('StockVoucherService', () => {
                   qty: 1,
                   costRate: 20,
                   [field]: 5,
-                } as never,
+                },
               ],
             }),
           ),
@@ -1736,9 +1740,9 @@ describe('StockVoucherService', () => {
         JSON.stringify(call).includes('fn_svh_cancel'),
       );
       expect(named).toBe(false);
-      // Reversal rows, balances, the moving average and its stamp, lot totals,
-      // header totals — six set-based statements.
-      expect(client.$executeRaw).toHaveBeenCalledTimes(6);
+      // Reversal rows, balances, the lot costs (notes 92), the item average and
+      // its stamp, lot totals, header totals — seven set-based statements.
+      expect(client.$executeRaw).toHaveBeenCalledTimes(7);
       // The header moves to CANCELLED and carries NOTHING else about the
       // cancellation: who did it, when, and why are the trail's, and writing
       // them twice is what this asserts against.
@@ -1794,7 +1798,9 @@ describe('StockVoucherService', () => {
         status: 409,
         response: expect.objectContaining({
           errors: expect.arrayContaining([
-            expect.objectContaining({ message: expect.stringContaining('cannot be cancelled on paper') }),
+            expect.objectContaining({
+              message: expect.stringContaining('cannot be cancelled on paper'),
+            }),
           ]),
         }),
       });

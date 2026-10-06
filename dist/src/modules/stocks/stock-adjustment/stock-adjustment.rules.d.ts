@@ -9,8 +9,8 @@ export declare const STOCK_ADJUSTMENT_DOC_KINDS: readonly ["ADJUSTMENT", "ISSUE"
 export type StockAdjustmentDocKind = (typeof STOCK_ADJUSTMENT_DOC_KINDS)[number];
 export declare const BUCKET_MOVE_TXN_TYPES: readonly ["BUCKET_OUT", "BUCKET_IN"];
 export declare const STOCK_ADJUSTMENT_RULES: Readonly<Record<StockAdjustmentSaveKind, StockVoucherTypeRules>>;
-export declare const RELOT_OUT_CODE = "RELOT_OUT";
-export declare const RELOT_IN_CODE = "RELOT_IN";
+export declare const RELOT_OUT_CODE: string;
+export declare const RELOT_IN_CODE: string;
 export declare const MOVE_REASON_DEFAULT_BUCKET: {
     readonly MOVE_DAMAGED: "DAMAGED";
     readonly MOVE_SALEABLE: "SALEABLE";

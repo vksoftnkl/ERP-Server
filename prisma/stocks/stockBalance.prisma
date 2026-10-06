@@ -127,10 +127,17 @@ model StockBalance {
   sblAvailableQty      Decimal?  @default(dbgenerated()) @db.Decimal(18, 6) @map("sbl_available_qty")
 
   // ── Value ───────────────────────────────────────────────────────────────
-  // The BRANCH average from [[StockItemCost]], distributed over this shelf:
-  // stamped on every holding of the item whenever the average moves. Not a
-  // per-holding truth of its own — a transfer between two godowns of one
-  // branch must not move value.
+  // The cost of one unit on this shelf (notes 92), by the item's policy:
+  //   WAVG (plain stock)        the BRANCH average from [[StockItemCost]],
+  //                             stamped on every holding of the item whenever
+  //                             the average moves;
+  //   LOT_ACTUAL (any tracked)  the LOT's own moving average in this branch —
+  //                             Σ of its ledger rows here — the same figure on
+  //                             every godown and bucket of the lot, rebuilt by
+  //                             the engine's applyLotCost on every post.
+  // Either way not a per-holding truth of its own: a move between two godowns
+  // or buckets of one branch must not move value. Engine-maintained; the
+  // readers (count sheet, pick-stock, batch stock) read exactly this.
   sblAvgCostRate       Decimal   @default(0) @db.Decimal(18, 6)      @map("sbl_avg_cost_rate")
   sblAvgCostRateWot    Decimal   @default(0) @db.Decimal(18, 6)      @map("sbl_avg_cost_rate_wot")
   sblStockValue        Decimal   @default(0) @db.Decimal(18, 2)      @map("sbl_stock_value")

@@ -48,44 +48,29 @@ function mrpCostCte(args) {
         FROM (${args.pairs}) k
         LEFT JOIN LATERAL (
           WITH lots AS (
-            SELECT sml.sml_lot_id                                AS lot_id,
-                   SUM(sml.sml_cost_value)                       AS in_value,
-                   SUM(sml.sml_cost_value_wot)                   AS in_value_wot,
-                   SUM(sml.sml_base_qty + sml.sml_free_base_qty) AS in_qty
-              FROM stock.stock_ledger sml
-              JOIN stock.stock_lot slt ON slt.slt_id = sml.sml_lot_id
-             WHERE sml.sml_company_id  = ${args.companyId}::uuid
-               AND sml.sml_branch_id   = ${args.branchId}::uuid
-               AND sml.sml_item_id     = k.item_id
-               AND slt.slt_key_mrp     = k.mrp
-               AND sml.sml_direction   = 1
-               AND sml.sml_is_reversal = false
-               AND sml.sml_is_deleted  = false
-               AND NOT EXISTS (SELECT 1 FROM stock.stock_ledger rev
-                                WHERE rev.sml_reverses_id = sml.sml_id
-                                  AND rev.sml_is_deleted = false)
-             GROUP BY sml.sml_lot_id
-          ),
-          onhand AS (
-            SELECT b.sbl_lot_id AS lot_id, GREATEST(SUM(b.sbl_on_hand_qty), 0) AS qty
+            SELECT b.sbl_lot_id                                   AS lot_id,
+                   GREATEST(SUM(b.sbl_on_hand_qty), 0)            AS qty,
+                   SUM(b.sbl_stock_value)                         AS value,
+                   SUM(b.sbl_stock_value_wot)                     AS value_wot,
+                   MAX(b.sbl_avg_cost_rate)                       AS rate,
+                   MAX(b.sbl_avg_cost_rate_wot)                   AS rate_wot
               FROM stock.stock_balance b
+              JOIN stock.stock_lot slt ON slt.slt_id = b.sbl_lot_id
              WHERE b.sbl_company_id = ${args.companyId}::uuid
                AND b.sbl_branch_id  = ${args.branchId}::uuid
                AND b.sbl_item_id    = k.item_id
+               AND slt.slt_key_mrp  = k.mrp
                AND b.sbl_is_deleted = false
-               AND b.sbl_lot_id IN (SELECT lot_id FROM lots)
              GROUP BY b.sbl_lot_id
           )
-          SELECT CASE WHEN SUM(oh.qty) FILTER (WHERE l.in_qty > 0) > 0
-                      THEN SUM(oh.qty * l.in_value / l.in_qty) FILTER (WHERE l.in_qty > 0)
-                           / SUM(oh.qty) FILTER (WHERE l.in_qty > 0)
-                      ELSE SUM(l.in_value) / NULLIF(SUM(l.in_qty), 0) END     AS cost_rate,
-                 CASE WHEN SUM(oh.qty) FILTER (WHERE l.in_qty > 0) > 0
-                      THEN SUM(oh.qty * l.in_value_wot / l.in_qty) FILTER (WHERE l.in_qty > 0)
-                           / SUM(oh.qty) FILTER (WHERE l.in_qty > 0)
-                      ELSE SUM(l.in_value_wot) / NULLIF(SUM(l.in_qty), 0) END AS cost_rate_wot
+          SELECT CASE WHEN SUM(l.qty) > 0
+                      THEN SUM(l.value) FILTER (WHERE l.qty > 0) / SUM(l.qty)
+                      ELSE AVG(l.rate) FILTER (WHERE l.rate <> 0) END         AS cost_rate,
+                 CASE WHEN SUM(l.qty) > 0
+                      THEN SUM(l.value_wot) FILTER (WHERE l.qty > 0) / SUM(l.qty)
+                      ELSE AVG(l.rate_wot) FILTER (WHERE l.rate_wot <> 0) END AS cost_rate_wot
             FROM lots l
-            LEFT JOIN onhand oh ON oh.lot_id = l.lot_id
+          HAVING count(*) > 0
         ) mc ON true
     )
   `;

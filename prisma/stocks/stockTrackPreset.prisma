@@ -87,6 +87,8 @@ model StockTrackPreset {
   // A preset carries the WHOLE sensible policy, not only the flags: a pharma
   // item is not just "BEMP", it is also FEFO, blocked-when-expired and 90-day
   // near-expiry. All of it is copied, all of it stays editable before Save.
+  /// Follows the preset's six flags (ck_spt_valuation_tracks): WAVG when
+  /// nothing is tracked, LOT_ACTUAL otherwise — see StockTrackPolicy (notes 92).
   sptValuationMethod   String    @default("WAVG") @db.VarChar(20)             @map("spt_valuation_method")
   sptIssueStrategy     String    @default("FEFO") @db.VarChar(20)             @map("spt_issue_strategy")
   sptAllowNegative     String    @default("ALLOW") @db.VarChar(10)            @map("spt_allow_negative")

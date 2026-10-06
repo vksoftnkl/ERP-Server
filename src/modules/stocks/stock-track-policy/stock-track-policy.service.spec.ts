@@ -10,6 +10,7 @@ import {
 import {
   ItemGroupTrackPolicySource,
   ItemTrackPolicySource,
+  valuationMethodFor,
 } from './types/stock-track-policy.types';
 
 const ITEM_ID = '01000000-0000-7000-8000-000000000001';
@@ -36,74 +37,72 @@ const group = (
 });
 
 /** PHARMA from prisma/seed/Stock_Track_Presets.sql. */
-const preset = (overrides: Partial<StockTrackPreset> = {}): StockTrackPreset =>
-  ({
-    sptId: PRESET_ID,
-    sptCompanyId: null,
-    sptCode: 'PHARMA',
-    sptName: 'Pharma (batch + expiry + MRP + supplier)',
-    sptDescription: null,
-    sptTrackBatch: true,
-    sptTrackMrp: true,
-    sptTrackSalePrice: false,
-    sptTrackExpiry: true,
-    sptTrackSerial: false,
-    sptTrackSupplier: true,
-    sptTrackSignature: 'BMEP',
-    sptValuationMethod: 'WAVG',
-    sptIssueStrategy: 'FEFO',
-    sptAllowNegative: 'ALLOW',
-    sptShelfLifeDays: null,
-    sptNearExpiryDays: 90,
-    sptBlockExpiredSale: true,
-    sptAgeingBasis: 'INWARD_DATE',
-    sptSortOrder: 70,
-    sptRemarks: null,
-    sptIsActive: true,
-    sptIsDeleted: false,
-    sptSyncDate: null,
-    sptCreatedOn: new Date('2026-09-05'),
-    sptCreatedBy: null,
-    sptModifiedOn: null,
-    sptModifiedBy: null,
-    ...overrides,
-  }) as StockTrackPreset;
+const preset = (overrides: Partial<StockTrackPreset> = {}): StockTrackPreset => ({
+  sptId: PRESET_ID,
+  sptCompanyId: null,
+  sptCode: 'PHARMA',
+  sptName: 'Pharma (batch + expiry + MRP + supplier)',
+  sptDescription: null,
+  sptTrackBatch: true,
+  sptTrackMrp: true,
+  sptTrackSalePrice: false,
+  sptTrackExpiry: true,
+  sptTrackSerial: false,
+  sptTrackSupplier: true,
+  sptTrackSignature: 'BMEP',
+  sptValuationMethod: 'LOT_ACTUAL',
+  sptIssueStrategy: 'FEFO',
+  sptAllowNegative: 'ALLOW',
+  sptShelfLifeDays: null,
+  sptNearExpiryDays: 90,
+  sptBlockExpiredSale: true,
+  sptAgeingBasis: 'INWARD_DATE',
+  sptSortOrder: 70,
+  sptRemarks: null,
+  sptIsActive: true,
+  sptIsDeleted: false,
+  sptSyncDate: null,
+  sptCreatedOn: new Date('2026-09-05'),
+  sptCreatedBy: null,
+  sptModifiedOn: null,
+  sptModifiedBy: null,
+  ...overrides,
+});
 
-const policyRow = (overrides: Partial<StockTrackPolicy> = {}): StockTrackPolicy =>
-  ({
-    stpId: 'stp1',
-    stpCompanyId: COMPANY_ID,
-    stpBranchId: BRANCH_ID,
-    stpScope: 'ITEM',
-    stpScopeId: ITEM_ID,
-    stpItemId: ITEM_ID,
-    stpGroupId: null,
-    stpTrackBatch: false,
-    stpTrackMrp: false,
-    stpTrackSalePrice: false,
-    stpTrackExpiry: false,
-    stpTrackSerial: false,
-    stpTrackSupplier: false,
-    stpTrackSignature: 'N',
-    stpValuationMethod: 'WAVG',
-    stpIssueStrategy: 'FIFO',
-    stpAllowNegative: 'ALLOW',
-    stpShelfLifeDays: null,
-    stpNearExpiryDays: 30,
-    stpBlockExpiredSale: false,
-    stpAgeingBasis: 'INWARD_DATE',
-    stpEffectiveFrom: new Date('1900-01-01'),
-    stpEffectiveTo: new Date('9999-12-31'),
-    stpRemarks: DERIVED_FROM_ITEM_REMARK,
-    stpIsActive: true,
-    stpIsDeleted: false,
-    stpSyncDate: null,
-    stpCreatedOn: new Date('2026-09-02'),
-    stpCreatedBy: null,
-    stpModifiedOn: null,
-    stpModifiedBy: null,
-    ...overrides,
-  }) as StockTrackPolicy;
+const policyRow = (overrides: Partial<StockTrackPolicy> = {}): StockTrackPolicy => ({
+  stpId: 'stp1',
+  stpCompanyId: COMPANY_ID,
+  stpBranchId: BRANCH_ID,
+  stpScope: 'ITEM',
+  stpScopeId: ITEM_ID,
+  stpItemId: ITEM_ID,
+  stpGroupId: null,
+  stpTrackBatch: false,
+  stpTrackMrp: false,
+  stpTrackSalePrice: false,
+  stpTrackExpiry: false,
+  stpTrackSerial: false,
+  stpTrackSupplier: false,
+  stpTrackSignature: 'N',
+  stpValuationMethod: 'WAVG',
+  stpIssueStrategy: 'FIFO',
+  stpAllowNegative: 'ALLOW',
+  stpShelfLifeDays: null,
+  stpNearExpiryDays: 30,
+  stpBlockExpiredSale: false,
+  stpAgeingBasis: 'INWARD_DATE',
+  stpEffectiveFrom: new Date('1900-01-01'),
+  stpEffectiveTo: new Date('9999-12-31'),
+  stpRemarks: DERIVED_FROM_ITEM_REMARK,
+  stpIsActive: true,
+  stpIsDeleted: false,
+  stpSyncDate: null,
+  stpCreatedOn: new Date('2026-09-02'),
+  stpCreatedBy: null,
+  stpModifiedOn: null,
+  stpModifiedBy: null,
+  ...overrides,
+});
 
 describe('StockTrackPolicyService', () => {
   let service: StockTrackPolicyService;
@@ -154,6 +153,8 @@ describe('StockTrackPolicyService', () => {
         stpTrackExpiry: true,
         stpTrackSupplier: true,
         stpTrackSignature: 'BMEP',
+        // Notes 92: a tracked row is LOT_ACTUAL — what the service derives.
+        stpValuationMethod: 'LOT_ACTUAL',
         stpIssueStrategy: 'FEFO',
         stpNearExpiryDays: 90,
         stpBlockExpiredSale: true,
@@ -549,5 +550,56 @@ describe('StockTrackPolicyService', () => {
         }),
       );
     });
+  });
+});
+
+describe('valuationMethodFor (notes 92)', () => {
+  const none = {
+    trackBatch: false,
+    trackMrp: false,
+    trackSalePrice: false,
+    trackExpiry: false,
+    trackSerial: false,
+    trackSupplier: false,
+  };
+  it('a policy that tracks nothing is WAVG — plain stock keeps the branch average', () => {
+    expect(valuationMethodFor(none)).toBe('WAVG');
+  });
+  it.each([
+    'trackBatch',
+    'trackMrp',
+    'trackSalePrice',
+    'trackExpiry',
+    'trackSerial',
+    'trackSupplier',
+  ] as const)(
+    'a policy that tracks %s alone is LOT_ACTUAL — every tracked item is costed per lot',
+    (flag) => {
+      expect(valuationMethodFor({ ...none, [flag]: true })).toBe('LOT_ACTUAL');
+    },
+  );
+  it('presetToDerived takes the method from the flags, never from the preset row', () => {
+    const service = new StockTrackPolicyService(
+      {} as unknown as PrismaService,
+      {} as unknown as AuditLogService,
+      {} as unknown as RequestContextService,
+    );
+    // PHARMA tracks four dimensions: LOT_ACTUAL whatever its row says.
+    expect(service.presetToDerived(preset({ sptValuationMethod: 'WAVG' })).valuationMethod).toBe(
+      'LOT_ACTUAL',
+    );
+    // NONE tracks nothing: WAVG whatever its row says.
+    expect(
+      service.presetToDerived(
+        preset({
+          sptCode: 'NONE',
+          sptTrackBatch: false,
+          sptTrackMrp: false,
+          sptTrackExpiry: false,
+          sptTrackSupplier: false,
+          sptValuationMethod: 'LOT_ACTUAL',
+        }),
+      ).valuationMethod,
+    ).toBe('WAVG');
   });
 });

@@ -75,6 +75,14 @@ export type StockRateSource = (typeof STOCK_RATE_SOURCES)[number];
  * do, and treating MANUAL as the fifth would let the whole branch open at zero
  * value with the check reporting itself satisfied.
  */
+/**
+ * The two reason codes of a re-lot pair, as the seed ships them. Here rather
+ * than in the adjustment module because the posting engine prices the IN half
+ * from the OUT half (notes 92 §3.2) and must recognise both without importing
+ * the module that imports it.
+ */
+export const RELOT_REASON_CODES = { out: 'RELOT_OUT', in: 'RELOT_IN' } as const;
+
 export const DERIVABLE_RATE_SOURCES = [
   'AVG_COST',
   'LAST_PURCHASE',
@@ -102,7 +110,13 @@ export const DERIVABLE_RATE_SOURCES = [
  *                 the OUT's stamped cost. The lot is mandatory, nothing is
  *                 picked or resolved, the branch's average does not move.
  */
-export const STOCK_POST_SHAPES = ['SIMPLE', 'COUNT', 'TRANSFER_OUT', 'TRANSFER_IN', 'BUCKET_MOVE'] as const;
+export const STOCK_POST_SHAPES = [
+  'SIMPLE',
+  'COUNT',
+  'TRANSFER_OUT',
+  'TRANSFER_IN',
+  'BUCKET_MOVE',
+] as const;
 export type StockPostShape = (typeof STOCK_POST_SHAPES)[number];
 
 /** The `svh_link_src_module` this module stamps on anything it raises. */

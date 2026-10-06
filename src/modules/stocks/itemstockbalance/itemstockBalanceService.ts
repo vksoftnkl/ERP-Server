@@ -170,8 +170,16 @@ export class ItemStockBalanceService {
              MAX(b.sbl_base_uom_id::text)::uuid                                     AS base_iuc_id,
              SUM(b.sbl_on_hand_qty)                                                  AS closing_qty,
              SUM(b.sbl_free_in_qty - b.sbl_free_out_qty)                             AS free_closing_qty,
-             MAX(b.sbl_avg_cost_rate)                                                AS avg_cost_rate,
-             MAX(b.sbl_avg_cost_rate_wot)                                            AS avg_cost_rate_wot,
+             -- Notes 92: every lot of a tracked item carries its OWN rate, so the
+             -- item's figure is Σ value ÷ Σ quantity over its holdings, not one
+             -- lot's rate. With nothing on hand, the highest rate still on the
+             -- rows — a sold-out item still knows what it cost.
+             CASE WHEN SUM(b.sbl_on_hand_qty) > 0
+                  THEN ROUND(SUM(b.sbl_stock_value)     / SUM(b.sbl_on_hand_qty), 6)
+                  ELSE MAX(b.sbl_avg_cost_rate) END                                    AS avg_cost_rate,
+             CASE WHEN SUM(b.sbl_on_hand_qty) > 0
+                  THEN ROUND(SUM(b.sbl_stock_value_wot) / SUM(b.sbl_on_hand_qty), 6)
+                  ELSE MAX(b.sbl_avg_cost_rate_wot) END                                AS avg_cost_rate_wot,
              MAX(NULLIF(slt.slt_track_signature, 'N'))                               AS tracking
         FROM stock.stock_balance b
         JOIN stock.stock_lot slt ON slt.slt_id = b.sbl_lot_id
@@ -194,7 +202,9 @@ export class ItemStockBalanceService {
 
     // Step 3: item details, units, godowns, price masters in parallel.
     const allItemIds = [...new Set(rows.map((s) => s.sbl_item_id))];
-    const allUnitIds = [...new Set(rows.map((s) => s.base_unit_id).filter((u): u is string => !!u))];
+    const allUnitIds = [
+      ...new Set(rows.map((s) => s.base_unit_id).filter((u): u is string => !!u)),
+    ];
     const allGodownIds = [...new Set(rows.map((s) => s.sbl_godown_id))];
 
     const [items, units, godowns, priceMasters] = await Promise.all([
@@ -448,11 +458,20 @@ export class ItemStockBalanceService {
       book_qty: this.calculateBookQty(closingQty, unitFactor),
       book_base_qty: closingQty,
       isb_opening_avg_rate: openingQty > 0 ? openingValue / openingQty : 0,
-      isb_avg_stock_rate: this.toNumber(first.sbl_avg_cost_rate),
+      // Notes 92: Σ value ÷ Σ quantity over the item's holdings — each lot of
+      // a tracked item carries its own rate, so no single row's rate is the
+      // item's. With nothing on hand, the first row's rate, as before.
+      isb_avg_stock_rate:
+        closingQty > 0
+          ? sum((r) => r.sbl_stock_value) / closingQty
+          : this.toNumber(first.sbl_avg_cost_rate),
       isb_opening_value: openingValue,
       isb_stock_value: sum((r) => r.sbl_stock_value),
       isb_opening_avg_rate_wot: openingQty > 0 ? openingValueWot / openingQty : 0,
-      isb_avg_stock_rate_wot: this.toNumber(first.sbl_avg_cost_rate_wot),
+      isb_avg_stock_rate_wot:
+        closingQty > 0
+          ? sum((r) => r.sbl_stock_value_wot) / closingQty
+          : this.toNumber(first.sbl_avg_cost_rate_wot),
       isb_opening_value_wot: openingValueWot,
       isb_stock_value_wot: sum((r) => r.sbl_stock_value_wot),
       isb_last_in_date: this.toIsoStringOrNull(latest((r) => r.sbl_last_in_date)),

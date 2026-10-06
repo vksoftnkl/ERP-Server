@@ -86,9 +86,15 @@ model StockTrackPolicy {
   stpTrackSignature    String?   @default(dbgenerated()) @db.VarChar(8)       @map("stp_track_signature")
 
   // ── How it is valued ────────────────────────────────────────────────────
-  /// WAVG reads stock_item_cost; FIFO and LOT_ACTUAL read slt_cost_rate. Both
-  /// are always maintained, so this only selects which one a report believes —
-  /// changing it needs no recomputation.
+  /// How a holding of this item is COSTED by the posting engine (notes 92):
+  ///   WAVG        the branch moving average in stock_item_cost, stamped on
+  ///               every holding — plain (untracked) stock only;
+  ///   LOT_ACTUAL  each lot's own moving average in the branch, kept on the
+  ///               lot's stock_balance rows — EVERY tracked item.
+  /// FOLLOWS THE TRACK FLAGS: tracks nothing → WAVG, tracks anything →
+  /// LOT_ACTUAL. The policy service derives it (valuationMethodFor) and
+  /// ck_stp_valuation_tracks refuses any other pairing; nothing sends it. FIFO
+  /// is in the vocabulary CHECK but was never implemented and is unreachable.
   stpValuationMethod   String    @default("WAVG") @db.VarChar(20)             @map("stp_valuation_method")
 
   // ── Which lot goes out when nobody names one ────────────────────────────

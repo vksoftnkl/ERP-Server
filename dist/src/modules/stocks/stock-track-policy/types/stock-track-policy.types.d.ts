@@ -8,14 +8,19 @@ export interface ItemGroupTrackPolicySource {
     itgId: string;
     itgTrackPresetId: string | null;
 }
-export interface DerivedTrackPolicy {
+export interface TrackFlags {
     trackBatch: boolean;
     trackMrp: boolean;
     trackSalePrice: boolean;
     trackExpiry: boolean;
     trackSerial: boolean;
     trackSupplier: boolean;
-    valuationMethod: string;
+}
+export declare const STOCK_VALUATION_METHODS: readonly ["WAVG", "LOT_ACTUAL"];
+export type StockValuationMethod = (typeof STOCK_VALUATION_METHODS)[number];
+export declare function valuationMethodFor(flags: TrackFlags): StockValuationMethod;
+export interface DerivedTrackPolicy extends TrackFlags {
+    valuationMethod: StockValuationMethod;
     issueStrategy: string;
     allowNegative: string;
     shelfLifeDays: number | null;

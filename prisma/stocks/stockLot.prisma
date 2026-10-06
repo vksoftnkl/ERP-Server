@@ -113,10 +113,12 @@ model StockLot {
   sltInwardRefno        String?   @db.VarChar(100)                    @map("slt_inward_refno")
 
   // ── Cost, as received ───────────────────────────────────────────────────
-  /// sltCostRate is THIS lot's own cost, which is what makes FIFO and
-  /// LOT_ACTUAL valuation a read rather than a replay. The moving weighted
-  /// average is maintained in parallel in stock_item_cost. Both, always, so
-  /// stpValuationMethod selects an answer instead of triggering a rebuild.
+  /// sltCostRate is THE COST ON THE LOT'S FIRST RECEIPT, written once when the
+  /// lot is opened (resolveLots) and never after. It is NOT the lot's running
+  /// cost: stock_lot is company-wide, and a lot's moving average PER BRANCH is
+  /// sblAvgCostRate on its [[StockBalance]] rows, rebuilt from the ledger by
+  /// the engine on every post (notes 92 §3.1). The LOT_COST rate source reads
+  /// the branch figure first and falls back to this one.
   sltPurchaseRate       Decimal   @default(0) @db.Decimal(18, 6)      @map("slt_purchase_rate")
   sltCostRate           Decimal   @default(0) @db.Decimal(18, 6)      @map("slt_cost_rate")
   sltCostRateWot        Decimal   @default(0) @db.Decimal(18, 6)      @map("slt_cost_rate_wot")

@@ -200,19 +200,20 @@ function effectivePriceLateral(args: {
 }
 
 /**
- * Notes 75 — the inward cost of ONE MRP's stock at the branch, for an item
- * that tracks MRP: the user prices an MRP bucket against what THAT stock cost
- * to land, not the item's blended moving average (MRP 40 bought at 25 and MRP
- * 550 at 500 both read 341.67 on the average).
+ * Notes 75 — the cost of ONE MRP's stock at the branch, for an item that
+ * tracks MRP: the user prices an MRP bucket against what THAT stock cost to
+ * land, not the item's blended average (MRP 40 bought at 25 and MRP 550 at
+ * 500 both read 341.67 on the average).
  *
- * Per lot keyed on the MRP: its inward average — Σ sml_cost_value ÷ Σ (base +
- * free base qty) over the live, unreversed inward rows (a cancelled opening or
- * purchase drops out). The lots are weighted by what each still has on hand at
- * the branch (negatives as 0); with nothing on hand, the plain inward average,
- * so a sold-out MRP still shows what it cost. No inward at that MRP → no row,
- * and the caller falls back to the item average. sml_cost_value is the figure
- * the moving average is itself built from, so an item with one MRP reads
- * exactly as before.
+ * Notes 92 moved the figure onto the balance rows: every lot of a tracked item
+ * carries its OWN cost in the branch (`sbl_avg_cost_rate`, written by the
+ * posting engine's `applyLotCost`), so this reads Σ `sbl_stock_value` ÷ Σ
+ * `sbl_on_hand_qty` over the MRP's lots with stock on hand, and with nothing
+ * on hand the plain average of those lots' rates — a sold-out MRP still shows
+ * what it cost. It used to re-derive the figure from the ledger's inward rows;
+ * that was the same number, but two definitions of a lot's cost can drift and
+ * now there is one. No lot at that MRP → no row, and the caller falls back to
+ * the item average.
  *
  * Exposes the CTE `mrp_cost(item_id, mrp, cost_rate, cost_rate_wot)`, per BASE
  * unit. `pairs` yields the DISTINCT (item_id, mrp) to cost, mrp not null — one
@@ -225,44 +226,29 @@ function mrpCostCte(args: { companyId: string; branchId: string; pairs: Prisma.S
         FROM (${args.pairs}) k
         LEFT JOIN LATERAL (
           WITH lots AS (
-            SELECT sml.sml_lot_id                                AS lot_id,
-                   SUM(sml.sml_cost_value)                       AS in_value,
-                   SUM(sml.sml_cost_value_wot)                   AS in_value_wot,
-                   SUM(sml.sml_base_qty + sml.sml_free_base_qty) AS in_qty
-              FROM stock.stock_ledger sml
-              JOIN stock.stock_lot slt ON slt.slt_id = sml.sml_lot_id
-             WHERE sml.sml_company_id  = ${args.companyId}::uuid
-               AND sml.sml_branch_id   = ${args.branchId}::uuid
-               AND sml.sml_item_id     = k.item_id
-               AND slt.slt_key_mrp     = k.mrp
-               AND sml.sml_direction   = 1
-               AND sml.sml_is_reversal = false
-               AND sml.sml_is_deleted  = false
-               AND NOT EXISTS (SELECT 1 FROM stock.stock_ledger rev
-                                WHERE rev.sml_reverses_id = sml.sml_id
-                                  AND rev.sml_is_deleted = false)
-             GROUP BY sml.sml_lot_id
-          ),
-          onhand AS (
-            SELECT b.sbl_lot_id AS lot_id, GREATEST(SUM(b.sbl_on_hand_qty), 0) AS qty
+            SELECT b.sbl_lot_id                                   AS lot_id,
+                   GREATEST(SUM(b.sbl_on_hand_qty), 0)            AS qty,
+                   SUM(b.sbl_stock_value)                         AS value,
+                   SUM(b.sbl_stock_value_wot)                     AS value_wot,
+                   MAX(b.sbl_avg_cost_rate)                       AS rate,
+                   MAX(b.sbl_avg_cost_rate_wot)                   AS rate_wot
               FROM stock.stock_balance b
+              JOIN stock.stock_lot slt ON slt.slt_id = b.sbl_lot_id
              WHERE b.sbl_company_id = ${args.companyId}::uuid
                AND b.sbl_branch_id  = ${args.branchId}::uuid
                AND b.sbl_item_id    = k.item_id
+               AND slt.slt_key_mrp  = k.mrp
                AND b.sbl_is_deleted = false
-               AND b.sbl_lot_id IN (SELECT lot_id FROM lots)
              GROUP BY b.sbl_lot_id
           )
-          SELECT CASE WHEN SUM(oh.qty) FILTER (WHERE l.in_qty > 0) > 0
-                      THEN SUM(oh.qty * l.in_value / l.in_qty) FILTER (WHERE l.in_qty > 0)
-                           / SUM(oh.qty) FILTER (WHERE l.in_qty > 0)
-                      ELSE SUM(l.in_value) / NULLIF(SUM(l.in_qty), 0) END     AS cost_rate,
-                 CASE WHEN SUM(oh.qty) FILTER (WHERE l.in_qty > 0) > 0
-                      THEN SUM(oh.qty * l.in_value_wot / l.in_qty) FILTER (WHERE l.in_qty > 0)
-                           / SUM(oh.qty) FILTER (WHERE l.in_qty > 0)
-                      ELSE SUM(l.in_value_wot) / NULLIF(SUM(l.in_qty), 0) END AS cost_rate_wot
+          SELECT CASE WHEN SUM(l.qty) > 0
+                      THEN SUM(l.value) FILTER (WHERE l.qty > 0) / SUM(l.qty)
+                      ELSE AVG(l.rate) FILTER (WHERE l.rate <> 0) END         AS cost_rate,
+                 CASE WHEN SUM(l.qty) > 0
+                      THEN SUM(l.value_wot) FILTER (WHERE l.qty > 0) / SUM(l.qty)
+                      ELSE AVG(l.rate_wot) FILTER (WHERE l.rate_wot <> 0) END AS cost_rate_wot
             FROM lots l
-            LEFT JOIN onhand oh ON oh.lot_id = l.lot_id
+          HAVING count(*) > 0
         ) mc ON true
     )
   `;

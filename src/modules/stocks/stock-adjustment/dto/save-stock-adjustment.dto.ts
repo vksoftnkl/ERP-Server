@@ -207,7 +207,7 @@ export class SaveStockAdjustmentItemDto {
 
   @ApiPropertyOptional({
     description:
-      'INWARD only, and only when the header names no rate source that derives one: what the stock is worth per BASE unit (a rate keyed per document unit is divided by toBaseFactor first). The line value is (baseQty + freeBaseQty) × costRate, the way svi_value is generated. An OUTWARD line is always stamped by the engine at the branch average; a keyed cost is ignored.',
+      'INWARD only, and only when the header names no rate source that derives one: what the stock is worth per BASE unit (a rate keyed per document unit is divided by toBaseFactor first). The line value is (baseQty + freeBaseQty) × costRate, the way svi_value is generated. An OUTWARD line is always stamped by the engine at what the stock cost — the batch\'s own cost for a tracked item, the branch average for plain stock (notes 92); a keyed cost is ignored.',
   })
   @OptionalNumber(0)
   costRate?: number;

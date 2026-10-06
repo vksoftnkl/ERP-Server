@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.BUCKET_MOVE_TXN_TYPES = exports.STOCK_LEDGER_SRC_MODULE = void 0;
+exports.STOCK_LOT_ID_NAMESPACE = exports.BUCKET_MOVE_TXN_TYPES = exports.STOCK_LEDGER_SRC_MODULE = void 0;
 exports.postStockVoucher = postStockVoucher;
 exports.effectivePolicyLateral = effectivePolicyLateral;
 exports.effectivePolicyCte = effectivePolicyCte;
@@ -12,6 +12,7 @@ exports.lineReasonJoin = lineReasonJoin;
 exports.lineDirectionColumn = lineDirectionColumn;
 exports.lotlessOutwardLine = lotlessOutwardLine;
 exports.unreversedLedgerRow = unreversedLedgerRow;
+exports.lotIdentityUuid = lotIdentityUuid;
 exports.settleTransitShort = settleTransitShort;
 exports.transitHoldingsOf = transitHoldingsOf;
 exports.reservationHoldingsOf = reservationHoldingsOf;
@@ -19,11 +20,13 @@ exports.openReservationHoldings = openReservationHoldings;
 exports.ensureBalanceRows = ensureBalanceRows;
 exports.refreshReserved = refreshReserved;
 exports.refreshTransitIn = refreshTransitIn;
+exports.rebuildStockDerivedFigures = rebuildStockDerivedFigures;
 exports.cancelStockVoucher = cancelStockVoucher;
 exports.cancelDraftVoucher = cancelDraftVoucher;
 const common_1 = require("@nestjs/common");
 const client_1 = require("@prisma/client");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
+const stock_voucher_types_1 = require("./types/stock-voucher.types");
 const price_resolver_1 = require("../../Inventory/items-price-master/price-resolver");
 const logger = new common_1.Logger('StockVoucherPosting');
 const DIRECTION_IN = 1;
@@ -97,7 +100,9 @@ async function postStockVoucher(tx, params) {
     return { rowsPosted, status, transitRows, closedOut };
 }
 async function applyLedgerRows(tx, params) {
+    await lockHoldingItems(tx, touchedHoldings(params));
     await applyBalances(tx, params);
+    await applyLotCost(tx, params);
     await applyItemCost(tx, params);
     await assertNegativeStockPolicy(tx, params);
     await refreshLotTotals(tx, params);
@@ -141,7 +146,14 @@ function effectivePolicyCte() {
              COALESCE(stp.stp_track_expiry,     false) AS track_expiry,
              COALESCE(stp.stp_track_serial,     false) AS track_serial,
              COALESCE(stp.stp_track_supplier,   false) AS track_supplier,
-             COALESCE(stp.stp_issue_strategy,   'FEFO') AS issue_strategy
+             COALESCE(stp.stp_issue_strategy,   'FEFO') AS issue_strategy,
+             -- Notes 92 — how a holding of this item is COSTED. WAVG is the
+             -- no-policy default and what every plain (untracked) item keeps:
+             -- the item's branch moving average. LOT_ACTUAL costs each lot on
+             -- its own in this branch. The policy service and
+             -- ck_stp_valuation_tracks hold the column to the track flags, so
+             -- no tracked item is ever averaged across its lots.
+             COALESCE(stp.stp_valuation_method, 'WAVG') AS valuation_method
         FROM line
         JOIN inventory.item_master itm ON itm.item_id = line.svi_item_id
         ${effectivePolicyLateral({
@@ -227,7 +239,10 @@ function lineDirectionColumn(rules) {
 }
 function lineTxnTypeColumn(rules, alias) {
     const a = client_1.Prisma.raw(alias);
-    const [plus, minus] = [rules.ledgerTxnTypes[0], rules.ledgerTxnTypes[1] ?? rules.ledgerTxnTypes[0]];
+    const [plus, minus] = [
+        rules.ledgerTxnTypes[0],
+        rules.ledgerTxnTypes[1] ?? rules.ledgerTxnTypes[0],
+    ];
     if (rules.lineDirection !== 'REASON') {
         return client_1.Prisma.sql `${plus}::text AS line_txn_type`;
     }
@@ -312,7 +327,7 @@ function postingCte(svhId, accYear, rules) {
       SELECT line.*,
              policy.track_batch, policy.track_mrp, policy.track_sale_price,
              policy.track_expiry, policy.track_serial, policy.track_supplier,
-             policy.issue_strategy,
+             policy.issue_strategy, policy.valuation_method,
              -- What the lot STORES: the original spelling, trimmed. The key
              -- below folds case; the label on the carton is kept as read.
              CASE WHEN policy.track_batch      THEN NULLIF(btrim(line.svi_batch_no), '') END  AS lot_batch_no,
@@ -349,60 +364,25 @@ function postingCte(svhId, accYear, rules) {
         JOIN policy ON policy.svi_id = line.svi_id
         ${lineReasonJoin()}
     ),
-    priced AS (
+    lotted AS (
+      -- Notes 92 — the line's LOT, and what that lot costs IN THIS BRANCH.
+      -- slc resolves the lot the line names or the one its identity keys
+      -- to; lc reads the lot's own rate off its balance rows here (every
+      -- godown and bucket of a lot carries ONE rate — applyLotCost), and
+      -- only for an item the policy costs LOT_ACTUAL. A WAVG line reads NULL
+      -- in both lot_rate columns and prices exactly as it always did. A 0 is
+      -- "no rate" (a row ensureBalanceRows opened ahead of a transit), so a
+      -- lot new to the branch falls through to the item average below.
       SELECT keyed.*,
-             ${lineTxnTypeColumn(rules, 'keyed')},
-             stt.stt_id AS transit_id,
-             CASE WHEN ${shape === 'TRANSFER_IN'}::boolean THEN COALESCE(stt.stt_cost_rate, 0)
-                  -- AN OUTWARD LINE IS RELIEVED AT WHAT THE STOCK COST US — the
-                  -- branch's moving average — whatever the document's rate
-                  -- source says and whatever was keyed: a write-off, an issue
-                  -- or a count shortage cannot value itself (physical plan
-                  -- §3.3, adjustments plan §2). Only when the branch carries no
-                  -- average yet does a keyed figure stand.
-                  WHEN keyed.line_direction < 0
-                    OR (${isCount}::boolean AND COALESCE(keyed.svi_diff_qty, 0) < 0)
-                  THEN COALESCE(NULLIF(sic.sic_avg_cost_rate, 0), NULLIF(keyed.svi_cost_rate, 0), 0)
-                  ELSE
-             -- Only a zero falls through — see the note on this function.
-             COALESCE(NULLIF(keyed.svi_cost_rate, 0),
-                      CASE keyed.svh_rate_source
-                        WHEN 'AVG_COST'      THEN sic.sic_avg_cost_rate
-                        WHEN 'LAST_PURCHASE' THEN sic.sic_last_purchase_rate
-                        WHEN 'LOT_COST'      THEN slc.slt_cost_rate
-                        WHEN 'MRP'           THEN keyed.svi_mrp
-                        ELSE NULL
-                      END,
-                      0) END                                 AS line_cost_rate,
-             -- The without-tax rate comes from WHERE THE COST CAME FROM, never a
-             -- mix (notes 77): the average's wot only with the average's cost, a
-             -- lot's only with the lot's, the line's own only with the line's.
-             -- A 0 is "not stated" — costed derives it from the cost and the tax
-             -- rate — never a rate: an average carrying cost but a 0 wot used to
-             -- receive and relieve stock at a 0 without-tax cost.
-             CASE WHEN ${shape === 'TRANSFER_IN'}::boolean THEN COALESCE(stt.stt_cost_rate_wot, 0)
-                  WHEN keyed.line_direction < 0
-                    OR (${isCount}::boolean AND COALESCE(keyed.svi_diff_qty, 0) < 0)
-                  THEN CASE WHEN NULLIF(sic.sic_avg_cost_rate, 0) IS NOT NULL
-                            THEN NULLIF(sic.sic_avg_cost_rate_wot, 0)
-                            ELSE NULLIF(keyed.svi_cost_rate_wot, 0) END
-                  WHEN NULLIF(keyed.svi_cost_rate, 0) IS NOT NULL
-                  THEN NULLIF(keyed.svi_cost_rate_wot, 0)
-                  ELSE
-                      CASE keyed.svh_rate_source
-                        WHEN 'AVG_COST'      THEN NULLIF(sic.sic_avg_cost_rate_wot, 0)
-                        WHEN 'LOT_COST'      THEN NULLIF(slc.slt_cost_rate_wot, 0)
-                        ELSE NULL
-                      END END                                AS stated_cost_rate_wot
+             slc.slt_id            AS line_lot_id,
+             slc.slt_cost_rate     AS slt_cost_rate,
+             slc.slt_cost_rate_wot AS slt_cost_rate_wot,
+             lc.lot_rate,
+             lc.lot_rate_wot
         FROM keyed
-        LEFT JOIN stock.stock_item_cost sic
-               ON sic.sic_company_id = keyed.svh_company_id
-              AND sic.sic_branch_id  = keyed.svh_branch_id
-              AND sic.sic_item_id    = keyed.svi_item_id
-              AND sic.sic_is_deleted = false
-        -- LOT_COST: the lot the line names, or the one its identity resolves to.
+        -- The lot the line names, or the one its identity resolves to.
         LEFT JOIN LATERAL (
-          SELECT l.slt_cost_rate, l.slt_cost_rate_wot
+          SELECT l.slt_id, l.slt_cost_rate, l.slt_cost_rate_wot
             FROM stock.stock_lot l
            WHERE l.slt_is_deleted = false
              AND (
@@ -419,6 +399,112 @@ function postingCte(svhId, accYear, rules) {
              )
            LIMIT 1
         ) slc ON true
+        LEFT JOIN LATERAL (
+          SELECT NULLIF(MAX(b.sbl_avg_cost_rate), 0)     AS lot_rate,
+                 NULLIF(MAX(b.sbl_avg_cost_rate_wot), 0) AS lot_rate_wot
+            FROM stock.stock_balance b
+           WHERE keyed.valuation_method = 'LOT_ACTUAL'
+             AND b.sbl_company_id = keyed.svh_company_id
+             AND b.sbl_branch_id  = keyed.svh_branch_id
+             AND b.sbl_item_id    = keyed.svi_item_id
+             AND b.sbl_lot_id     = slc.slt_id
+             AND b.sbl_is_deleted = false
+        ) lc ON true
+    ),
+    priced AS (
+      SELECT keyed.*,
+             ${lineTxnTypeColumn(rules, 'keyed')},
+             stt.stt_id AS transit_id,
+             CASE WHEN ${shape === 'TRANSFER_IN'}::boolean THEN COALESCE(stt.stt_cost_rate, 0)
+                  -- AN OUTWARD LINE IS RELIEVED AT WHAT THE STOCK COST US,
+                  -- whatever the document's rate source says and whatever was
+                  -- keyed: a write-off, an issue or a count shortage cannot
+                  -- value itself (physical plan §3.3, adjustments plan §2).
+                  -- Notes 92: for a tracked (LOT_ACTUAL) item that is the
+                  -- LOT's own cost in this branch; for a plain item, and for a
+                  -- lot this branch has never held, the branch's moving
+                  -- average. Only when neither exists does a keyed figure stand.
+                  WHEN keyed.line_direction < 0
+                    OR (${isCount}::boolean AND COALESCE(keyed.svi_diff_qty, 0) < 0)
+                  THEN COALESCE(keyed.lot_rate, NULLIF(sic.sic_avg_cost_rate, 0), NULLIF(keyed.svi_cost_rate, 0), 0)
+                  -- The IN half of a re-lot receives the SAME GOODS its OUT
+                  -- half relieved, so it inherits what they cost: the OUT
+                  -- lots' rates, weighted by quantity (notes 92 §3.2). Only
+                  -- under LOT_ACTUAL — a plain item's two halves both read
+                  -- the item average anyway.
+                  WHEN relot.qty > 0 THEN ROUND(relot.value / relot.qty, 6)
+                  ELSE
+             -- Only a zero falls through — see the note on this function.
+             COALESCE(NULLIF(keyed.svi_cost_rate, 0),
+                      CASE keyed.svh_rate_source
+                        -- AVG_COST on a lot this branch already holds is that
+                        -- lot's own cost (a count overage or an adjustment
+                        -- gain lands on the shelf at what the shelf cost);
+                        -- the item average only for a lot new to the branch.
+                        WHEN 'AVG_COST'      THEN COALESCE(keyed.lot_rate, sic.sic_avg_cost_rate)
+                        WHEN 'LAST_PURCHASE' THEN sic.sic_last_purchase_rate
+                        -- LOT_COST: the lot's running cost here, else the
+                        -- cost on its first receipt (slt_cost_rate is written
+                        -- once, when the lot is opened, and never after).
+                        WHEN 'LOT_COST'      THEN COALESCE(keyed.lot_rate, keyed.slt_cost_rate)
+                        WHEN 'MRP'           THEN keyed.svi_mrp
+                        ELSE NULL
+                      END,
+                      0) END                                 AS line_cost_rate,
+             -- The without-tax rate comes from WHERE THE COST CAME FROM, never a
+             -- mix (notes 77): the lot's wot only with the lot's cost, the
+             -- average's only with the average's, the line's own only with
+             -- the line's. A 0 is "not stated" — costed derives it from the
+             -- cost and the tax rate — never a rate: an average carrying cost
+             -- but a 0 wot used to receive and relieve stock at a 0
+             -- without-tax cost.
+             CASE WHEN ${shape === 'TRANSFER_IN'}::boolean THEN COALESCE(stt.stt_cost_rate_wot, 0)
+                  WHEN keyed.line_direction < 0
+                    OR (${isCount}::boolean AND COALESCE(keyed.svi_diff_qty, 0) < 0)
+                  THEN CASE WHEN keyed.lot_rate IS NOT NULL
+                            THEN keyed.lot_rate_wot
+                            WHEN NULLIF(sic.sic_avg_cost_rate, 0) IS NOT NULL
+                            THEN NULLIF(sic.sic_avg_cost_rate_wot, 0)
+                            ELSE NULLIF(keyed.svi_cost_rate_wot, 0) END
+                  WHEN relot.qty > 0 THEN NULLIF(ROUND(relot.value_wot / relot.qty, 6), 0)
+                  WHEN NULLIF(keyed.svi_cost_rate, 0) IS NOT NULL
+                  THEN NULLIF(keyed.svi_cost_rate_wot, 0)
+                  ELSE
+                      CASE keyed.svh_rate_source
+                        WHEN 'AVG_COST'      THEN CASE WHEN keyed.lot_rate IS NOT NULL
+                                                       THEN keyed.lot_rate_wot
+                                                       ELSE NULLIF(sic.sic_avg_cost_rate_wot, 0) END
+                        WHEN 'LOT_COST'      THEN CASE WHEN keyed.lot_rate IS NOT NULL
+                                                       THEN keyed.lot_rate_wot
+                                                       ELSE NULLIF(keyed.slt_cost_rate_wot, 0) END
+                        ELSE NULL
+                      END END                                AS stated_cost_rate_wot
+        FROM lotted keyed
+        LEFT JOIN stock.stock_item_cost sic
+               ON sic.sic_company_id = keyed.svh_company_id
+              AND sic.sic_branch_id  = keyed.svh_branch_id
+              AND sic.sic_item_id    = keyed.svi_item_id
+              AND sic.sic_is_deleted = false
+        -- Notes 92 — for the IN half of a re-lot: the OUT half (or halves) of
+        -- the same item in this document, each at what ITS lot cost, so the
+        -- goods arrive in the new lot at what they left the old one at.
+        LEFT JOIN LATERAL (
+          SELECT SUM(o.move_base_qty + o.move_free_base_qty)                                              AS qty,
+                 SUM((o.move_base_qty + o.move_free_base_qty)
+                     * COALESCE(o.lot_rate, NULLIF(sic.sic_avg_cost_rate, 0), NULLIF(o.svi_cost_rate, 0), 0)) AS value,
+                 SUM((o.move_base_qty + o.move_free_base_qty)
+                     * CASE WHEN o.lot_rate IS NOT NULL THEN COALESCE(o.lot_rate_wot, 0)
+                            WHEN NULLIF(sic.sic_avg_cost_rate, 0) IS NOT NULL
+                            THEN COALESCE(NULLIF(sic.sic_avg_cost_rate_wot, 0), 0)
+                            ELSE COALESCE(NULLIF(o.svi_cost_rate_wot, 0), 0) END)                       AS value_wot
+            FROM lotted o
+           WHERE keyed.valuation_method = 'LOT_ACTUAL'
+             AND keyed.line_direction > 0
+             AND keyed.reason_code    = ${stock_voucher_types_1.RELOT_REASON_CODES.in}
+             AND o.svi_item_id        = keyed.svi_item_id
+             AND o.line_direction     < 0
+             AND o.reason_code        = ${stock_voucher_types_1.RELOT_REASON_CODES.out}
+        ) relot ON true
         -- TRANSFER_IN: the transit row this line receives against. The matcher
         -- is (out voucher, item, lot, destination godown); the bucket only
         -- breaks a tie, and the save refuses a two-bucket shipment anyway.
@@ -549,7 +635,9 @@ async function pickIssueLots(tx, params) {
                 break;
             }
             const last = i === lots.length - 1;
-            const take = last ? remaining : client_1.Prisma.Decimal.min(remaining, new client_1.Prisma.Decimal(lot.available));
+            const take = last
+                ? remaining
+                : client_1.Prisma.Decimal.min(remaining, new client_1.Prisma.Decimal(lot.available));
             if (take.lte(0)) {
                 continue;
             }
@@ -639,7 +727,7 @@ async function resolveLots(tx, params) {
     await tx.$executeRaw `
     WITH ${postingCte(svhId, accYear, rules)}
     INSERT INTO stock.stock_lot (
-      slt_company_id, slt_tenant_id, slt_item_id, slt_base_uom_id,
+      slt_id, slt_company_id, slt_tenant_id, slt_item_id, slt_base_uom_id,
       slt_batch_no, slt_mrp, slt_sale_price, slt_mfg_date, slt_expiry_date,
       slt_serial_no, slt_supplier_id, slt_track_signature,
       slt_first_inward_date, slt_first_inward_branch,
@@ -650,6 +738,7 @@ async function resolveLots(tx, params) {
     )
     SELECT DISTINCT ON (c.svh_company_id, c.svi_item_id, c.key_batch, c.key_mrp,
                         c.key_sp, c.key_expiry, c.key_serial, c.key_supplier)
+           ${lotIdentityUuid('c')},
            c.svh_company_id, c.svh_tenant_id, c.svi_item_id, c.svi_base_uom_id,
            c.lot_batch_no, c.lot_mrp, c.lot_sale_price, c.svi_mfg_date, c.lot_expiry_date,
            c.lot_serial_no, c.lot_supplier_id, c.track_signature,
@@ -670,7 +759,33 @@ async function resolveLots(tx, params) {
      ORDER BY c.svh_company_id, c.svi_item_id, c.key_batch, c.key_mrp,
               c.key_sp, c.key_expiry, c.key_serial, c.key_supplier,
               c.svi_line_no, c.svi_split_no
+    -- No conflict target on purpose: the identity's own id (slt_id, below)
+    -- and ux_slt_identity both say "this lot exists", and a lot opened
+    -- before ids were deterministic conflicts only on the second.
     ON CONFLICT DO NOTHING
+  `;
+}
+exports.STOCK_LOT_ID_NAMESPACE = '2f0b7c1e-5d3a-4e8f-9b61-7c4d2a9e0f53';
+function lotIdentityUuid(alias) {
+    const c = client_1.Prisma.raw(alias);
+    return client_1.Prisma.sql `
+    (SELECT overlay(
+              overlay(substr(encode(h.b, 'hex'), 1, 32) placing '5' from 13 for 1)
+              placing substr('89ab', ((get_byte(h.b, 8) >> 4) & 3) + 1, 1) from 17 for 1
+            )::uuid
+       FROM (SELECT digest(
+                      decode(replace(${exports.STOCK_LOT_ID_NAMESPACE}::text, '-', ''), 'hex')
+                      || convert_to(
+                           ${c}.svh_company_id::text
+                           || '|' || ${c}.svi_item_id::text
+                           || '|' || ${c}.key_batch
+                           || '|' || ${c}.key_mrp::numeric(18, 6)::text
+                           || '|' || ${c}.key_sp::numeric(18, 6)::text
+                           || '|' || to_char(${c}.key_expiry, 'YYYY-MM-DD')
+                           || '|' || ${c}.key_serial
+                           || '|' || ${c}.key_supplier::text,
+                           'UTF8'),
+                      'sha1') AS b) h)
   `;
 }
 async function attachLotsToLines(tx, { rules, svhId, accYear, postedOn, actor }) {
@@ -815,7 +930,12 @@ async function assertDespatchable(tx, params, header) {
     await assertLotsNamed(tx, params, 'despatched', 'a transfer moves existing stock; pick it from the balance.');
     const sameBranch = header.toBranchId === null || header.toBranchId === header.branchId;
     if (!sameBranch && !header.toGodownId) {
-        (0, module_service_utils_1.throwStockUnprocessable)(`This ${rules.displayName.toLowerCase()} cannot be despatched`, [{ field: 'toGodownId', message: 'An inter-branch transfer must name the destination godown.' }]);
+        (0, module_service_utils_1.throwStockUnprocessable)(`This ${rules.displayName.toLowerCase()} cannot be despatched`, [
+            {
+                field: 'toGodownId',
+                message: 'An inter-branch transfer must name the destination godown.',
+            },
+        ]);
     }
     return { sameBranch, outId: svhId, outAccYear: accYear, outRefno: header.refno };
 }
@@ -1028,7 +1148,11 @@ async function settleTransitRows(tx, params, transit) {
     return {
         rows,
         closedOut: closed[0]
-            ? { svhId: closed[0].svh_id, accYear: closed[0].svh_acc_year.trim(), refno: closed[0].svh_refno }
+            ? {
+                svhId: closed[0].svh_id,
+                accYear: closed[0].svh_acc_year.trim(),
+                refno: closed[0].svh_refno,
+            }
             : null,
     };
 }
@@ -1044,7 +1168,10 @@ async function settleTransitShort(tx, params) {
   `;
     if (!out || out.svh_is_deleted || out.svh_voucher_type !== 'TRANSFER_OUT') {
         (0, module_service_utils_1.throwStockConflict)('Transfer not found', [
-            { field: 'outVoucherId', message: `No live TRANSFER_OUT ${outId} in ${outAccYear} for this branch.` },
+            {
+                field: 'outVoucherId',
+                message: `No live TRANSFER_OUT ${outId} in ${outAccYear} for this branch.`,
+            },
         ]);
     }
     if (out.svh_status !== 'IN_TRANSIT') {
@@ -1219,22 +1346,50 @@ async function refreshTransitIn(tx, holdings, actor, on) {
   `;
 }
 async function applyBalances(tx, params) {
-    const { actor, postedOn } = params;
-    await tx.$executeRaw `
-    WITH moved AS (
-      SELECT sml.sml_company_id, sml.sml_branch_id, sml.sml_tenant_id,
-             sml.sml_godown_id, sml.sml_item_id, sml.sml_lot_id,
-             sml.sml_base_uom_id, sml.sml_bucket,
-             SUM(CASE WHEN sml.sml_direction > 0 THEN sml.sml_base_qty      ELSE 0 END) AS in_qty,
-             SUM(CASE WHEN sml.sml_direction < 0 THEN sml.sml_base_qty      ELSE 0 END) AS out_qty,
-             SUM(CASE WHEN sml.sml_direction > 0 THEN sml.sml_free_base_qty ELSE 0 END) AS free_in_qty,
-             SUM(CASE WHEN sml.sml_direction < 0 THEN sml.sml_free_base_qty ELSE 0 END) AS free_out_qty,
-             MAX(sml.sml_doc_date) FILTER (WHERE sml.sml_direction > 0)                 AS last_in_date,
-             MAX(sml.sml_doc_date) FILTER (WHERE sml.sml_direction < 0)                 AS last_out_date,
-             MIN(sml.sml_doc_date) FILTER (WHERE sml.sml_direction > 0)                 AS first_in_date
-        FROM stock.stock_ledger sml
-       WHERE ${ledgerRowsOf(params)}
-       GROUP BY 1, 2, 3, 4, 5, 6, 7, 8
+    await rebuildBalances(tx, touchedHoldings(params), params.actor, params.postedOn);
+}
+function touchedHoldings(params) {
+    return client_1.Prisma.sql `
+    SELECT DISTINCT sml.sml_company_id AS company_id, sml.sml_branch_id AS branch_id,
+           sml.sml_godown_id AS godown_id, sml.sml_item_id AS item_id,
+           sml.sml_lot_id AS lot_id, sml.sml_bucket AS bucket
+      FROM stock.stock_ledger sml
+     WHERE ${ledgerRowsOf(params)}
+  `;
+}
+function reversalJoin(alias, rev) {
+    const a = client_1.Prisma.raw(alias);
+    const r = client_1.Prisma.raw(rev);
+    return client_1.Prisma.sql `
+        LEFT JOIN stock.stock_ledger ${r}
+          ON ${r}.sml_reverses_id = ${a}.sml_id
+         AND ${r}.sml_acc_year    = ${a}.sml_acc_year
+         AND ${r}.sml_is_reversal = true
+         AND ${r}.sml_is_deleted  = false
+  `;
+}
+async function rebuildBalances(tx, holdings, actor, on) {
+    return tx.$executeRaw `
+    WITH holding AS (${holdings}),
+    led AS (
+      SELECT h.company_id, h.branch_id, h.godown_id, h.item_id, h.lot_id, h.bucket,
+             MAX(sml.sml_tenant_id::text)::uuid                                                        AS tenant_id,
+             (array_agg(sml.sml_base_uom_id ORDER BY sml.sml_doc_datetime DESC, sml.sml_id DESC))[1]  AS base_uom_id,
+             SUM(CASE WHEN sml.sml_direction > 0 THEN sml.sml_base_qty      ELSE 0 END)                AS in_qty,
+             SUM(CASE WHEN sml.sml_direction < 0 THEN sml.sml_base_qty      ELSE 0 END)                AS out_qty,
+             SUM(CASE WHEN sml.sml_direction > 0 THEN sml.sml_free_base_qty ELSE 0 END)                AS free_in_qty,
+             SUM(CASE WHEN sml.sml_direction < 0 THEN sml.sml_free_base_qty ELSE 0 END)                AS free_out_qty,
+             MIN(sml.sml_doc_date) FILTER (WHERE sml.sml_direction > 0 AND NOT sml.sml_is_reversal AND rev.sml_id IS NULL) AS first_in_date,
+             MAX(sml.sml_doc_date) FILTER (WHERE sml.sml_direction > 0 AND NOT sml.sml_is_reversal AND rev.sml_id IS NULL) AS last_in_date,
+             MAX(sml.sml_doc_date) FILTER (WHERE sml.sml_direction < 0 AND NOT sml.sml_is_reversal AND rev.sml_id IS NULL) AS last_out_date
+        FROM holding h
+        JOIN stock.stock_ledger sml
+          ON sml.sml_company_id = h.company_id AND sml.sml_branch_id = h.branch_id
+         AND sml.sml_godown_id  = h.godown_id  AND sml.sml_item_id   = h.item_id
+         AND sml.sml_lot_id     = h.lot_id     AND sml.sml_bucket    = h.bucket
+         AND sml.sml_is_deleted = false
+        ${reversalJoin('sml', 'rev')}
+       GROUP BY 1, 2, 3, 4, 5, 6
     )
     INSERT INTO stock.stock_balance (
       sbl_company_id, sbl_branch_id, sbl_tenant_id, sbl_godown_id, sbl_item_id,
@@ -1244,156 +1399,201 @@ async function applyBalances(tx, params) {
       sbl_batch_no, sbl_mrp, sbl_sale_price, sbl_expiry_date, sbl_supplier_id,
       sbl_created_by
     )
-    SELECT m.sml_company_id, m.sml_branch_id, m.sml_tenant_id, m.sml_godown_id, m.sml_item_id,
-           m.sml_lot_id, m.sml_base_uom_id, m.sml_bucket,
+    SELECT m.company_id, m.branch_id, m.tenant_id, m.godown_id, m.item_id,
+           m.lot_id, m.base_uom_id, m.bucket,
            m.in_qty, m.out_qty, m.free_in_qty, m.free_out_qty,
            m.first_in_date, m.last_in_date, m.last_out_date,
            slt.slt_batch_no, slt.slt_mrp, slt.slt_sale_price, slt.slt_expiry_date, slt.slt_supplier_id,
            ${auditColumnActor(actor)}
-      FROM moved m
-      JOIN stock.stock_lot slt ON slt.slt_id = m.sml_lot_id
+      FROM led m
+      JOIN stock.stock_lot slt ON slt.slt_id = m.lot_id
     ON CONFLICT (sbl_company_id, sbl_branch_id, sbl_godown_id, sbl_item_id, sbl_lot_id, sbl_bucket)
     WHERE sbl_is_deleted = false
     DO UPDATE SET
-      sbl_in_qty        = stock.stock_balance.sbl_in_qty        + EXCLUDED.sbl_in_qty,
-      sbl_out_qty       = stock.stock_balance.sbl_out_qty       + EXCLUDED.sbl_out_qty,
-      sbl_free_in_qty   = stock.stock_balance.sbl_free_in_qty   + EXCLUDED.sbl_free_in_qty,
-      sbl_free_out_qty  = stock.stock_balance.sbl_free_out_qty  + EXCLUDED.sbl_free_out_qty,
-      -- The FIRST inward on this shelf never moves once set; the last two do.
-      sbl_first_in_date = LEAST(stock.stock_balance.sbl_first_in_date, EXCLUDED.sbl_first_in_date),
-      sbl_last_in_date  = GREATEST(stock.stock_balance.sbl_last_in_date, EXCLUDED.sbl_last_in_date),
-      sbl_last_out_date = GREATEST(stock.stock_balance.sbl_last_out_date, EXCLUDED.sbl_last_out_date),
+      -- ASSIGNED, not added: EXCLUDED carries the whole history's sum.
+      sbl_in_qty        = EXCLUDED.sbl_in_qty,
+      sbl_out_qty       = EXCLUDED.sbl_out_qty,
+      sbl_free_in_qty   = EXCLUDED.sbl_free_in_qty,
+      sbl_free_out_qty  = EXCLUDED.sbl_free_out_qty,
+      sbl_first_in_date = EXCLUDED.sbl_first_in_date,
+      sbl_last_in_date  = EXCLUDED.sbl_last_in_date,
+      sbl_last_out_date = EXCLUDED.sbl_last_out_date,
       sbl_batch_no      = EXCLUDED.sbl_batch_no,
       sbl_mrp           = EXCLUDED.sbl_mrp,
       sbl_sale_price    = EXCLUDED.sbl_sale_price,
       sbl_expiry_date   = EXCLUDED.sbl_expiry_date,
       sbl_supplier_id   = EXCLUDED.sbl_supplier_id,
       sbl_row_version   = stock.stock_balance.sbl_row_version + 1,
-      sbl_modified_on   = ${postedOn},
+      sbl_modified_on   = ${on},
       sbl_modified_by   = ${auditColumnActor(actor)}
+    WHERE stock.stock_balance.sbl_in_qty        IS DISTINCT FROM EXCLUDED.sbl_in_qty
+       OR stock.stock_balance.sbl_out_qty       IS DISTINCT FROM EXCLUDED.sbl_out_qty
+       OR stock.stock_balance.sbl_free_in_qty   IS DISTINCT FROM EXCLUDED.sbl_free_in_qty
+       OR stock.stock_balance.sbl_free_out_qty  IS DISTINCT FROM EXCLUDED.sbl_free_out_qty
+       OR stock.stock_balance.sbl_first_in_date IS DISTINCT FROM EXCLUDED.sbl_first_in_date
+       OR stock.stock_balance.sbl_last_in_date  IS DISTINCT FROM EXCLUDED.sbl_last_in_date
+       OR stock.stock_balance.sbl_last_out_date IS DISTINCT FROM EXCLUDED.sbl_last_out_date
+       OR stock.stock_balance.sbl_batch_no      IS DISTINCT FROM EXCLUDED.sbl_batch_no
+       OR stock.stock_balance.sbl_mrp           IS DISTINCT FROM EXCLUDED.sbl_mrp
+       OR stock.stock_balance.sbl_sale_price    IS DISTINCT FROM EXCLUDED.sbl_sale_price
+       OR stock.stock_balance.sbl_expiry_date   IS DISTINCT FROM EXCLUDED.sbl_expiry_date
+       OR stock.stock_balance.sbl_supplier_id   IS DISTINCT FROM EXCLUDED.sbl_supplier_id
+  `;
+}
+async function applyLotCost(tx, params) {
+    await rebuildLotCosts(tx, touchedLotActualLots(params));
+}
+function touchedItems(params) {
+    const { svhId, accYear } = params;
+    return client_1.Prisma.sql `
+    SELECT t.company_id, t.branch_id, t.item_id,
+           COALESCE(stp.stp_valuation_method, 'WAVG') AS valuation_method
+      FROM (SELECT DISTINCT sml.sml_company_id AS company_id, sml.sml_branch_id AS branch_id,
+                   sml.sml_item_id AS item_id
+              FROM stock.stock_ledger sml
+             WHERE ${ledgerRowsOf(params)}) t
+      CROSS JOIN (SELECT svh.svh_doc_date
+                    FROM stock.stock_voucher svh
+                   WHERE svh.svh_id = ${svhId}::uuid AND svh.svh_acc_year = ${accYear}::bpchar) doc
+      JOIN inventory.item_master itm ON itm.item_id = t.item_id
+      ${effectivePolicyLateral({
+        companyId: client_1.Prisma.raw('t.company_id'),
+        branchId: client_1.Prisma.raw('t.branch_id'),
+        itemId: client_1.Prisma.raw('t.item_id'),
+        itemGroupId: client_1.Prisma.raw('itm.item_group_id'),
+        onDate: client_1.Prisma.raw('doc.svh_doc_date'),
+    })}
+  `;
+}
+function touchedLotActualLots(params) {
+    return client_1.Prisma.sql `
+    SELECT t.company_id, t.branch_id, t.item_id, t.lot_id
+      FROM (SELECT DISTINCT sml.sml_company_id AS company_id, sml.sml_branch_id AS branch_id,
+                   sml.sml_item_id AS item_id, sml.sml_lot_id AS lot_id
+              FROM stock.stock_ledger sml
+             WHERE ${ledgerRowsOf(params)}) t
+      JOIN (${touchedItems(params)}) i
+        ON i.company_id = t.company_id AND i.branch_id = t.branch_id AND i.item_id = t.item_id
+     WHERE i.valuation_method = 'LOT_ACTUAL'
+  `;
+}
+async function rebuildLotCosts(tx, lots) {
+    return tx.$executeRaw `
+    WITH lot AS (${lots}),
+    led AS (
+      SELECT l.company_id, l.branch_id, l.item_id, l.lot_id,
+             COALESCE(SUM(sml.sml_signed_base_qty), 0)                                                AS qty,
+             COALESCE(SUM(sml.sml_direction * sml.sml_cost_value), 0)                                 AS value,
+             COALESCE(SUM(sml.sml_direction * sml.sml_cost_value_wot), 0)                             AS value_wot,
+             (array_agg(sml.sml_cost_rate     ORDER BY sml.sml_doc_datetime DESC, sml.sml_id DESC))[1] AS last_rate,
+             (array_agg(sml.sml_cost_rate_wot ORDER BY sml.sml_doc_datetime DESC, sml.sml_id DESC))[1] AS last_rate_wot
+        FROM lot l
+        LEFT JOIN stock.stock_ledger sml
+               ON sml.sml_company_id = l.company_id AND sml.sml_branch_id = l.branch_id
+              AND sml.sml_item_id    = l.item_id    AND sml.sml_lot_id    = l.lot_id
+              AND sml.sml_is_deleted = false
+       GROUP BY 1, 2, 3, 4
+    ),
+    rated AS (
+      SELECT led.*,
+             CASE WHEN led.qty > 0 THEN ROUND(led.value     / led.qty, 6) ELSE COALESCE(led.last_rate, 0)     END AS rate,
+             CASE WHEN led.qty > 0 THEN ROUND(led.value_wot / led.qty, 6) ELSE COALESCE(led.last_rate_wot, 0) END AS rate_wot
+        FROM led
+    )
+    UPDATE stock.stock_balance b
+       SET sbl_avg_cost_rate     = r.rate,
+           sbl_avg_cost_rate_wot = r.rate_wot,
+           sbl_stock_value       = ROUND(b.sbl_on_hand_qty * r.rate,     2),
+           sbl_stock_value_wot   = ROUND(b.sbl_on_hand_qty * r.rate_wot, 2)
+      FROM rated r
+     WHERE b.sbl_company_id = r.company_id
+       AND b.sbl_branch_id  = r.branch_id
+       AND b.sbl_item_id    = r.item_id
+       AND b.sbl_lot_id     = r.lot_id
+       AND b.sbl_is_deleted = false
+       AND (b.sbl_avg_cost_rate     IS DISTINCT FROM r.rate
+         OR b.sbl_avg_cost_rate_wot IS DISTINCT FROM r.rate_wot
+         OR b.sbl_stock_value       IS DISTINCT FROM ROUND(b.sbl_on_hand_qty * r.rate,     2)
+         OR b.sbl_stock_value_wot   IS DISTINCT FROM ROUND(b.sbl_on_hand_qty * r.rate_wot, 2))
   `;
 }
 async function applyItemCost(tx, params) {
-    const { actor, postedOn } = params;
-    await tx.$queryRaw `
-    SELECT count(pg_advisory_xact_lock(hashtextextended(
-             t.sml_company_id::text || ':' || t.sml_branch_id::text || ':' || t.sml_item_id::text, 0)))::int AS locked
-      FROM (
-            SELECT DISTINCT sml.sml_company_id, sml.sml_branch_id, sml.sml_item_id
-              FROM stock.stock_ledger sml
-             WHERE ${ledgerRowsOf(params)}
-             ORDER BY 1, 2, 3
-           ) t
-  `;
-    await tx.$executeRaw `
-    WITH moves AS (
-      SELECT sml.sml_company_id, sml.sml_branch_id, sml.sml_item_id,
-             (array_agg(sml.sml_base_uom_id ORDER BY sml.sml_line_no, sml.sml_split_no))[1]                AS base_uom_id,
-             SUM(CASE WHEN sml.sml_direction > 0 THEN sml.sml_base_qty + sml.sml_free_base_qty ELSE 0 END) AS qty_in,
-             SUM(CASE WHEN sml.sml_direction < 0 THEN sml.sml_base_qty + sml.sml_free_base_qty ELSE 0 END) AS qty_out,
-             SUM(CASE WHEN sml.sml_direction > 0 THEN sml.sml_cost_value     ELSE 0 END)                    AS value_in,
-             SUM(CASE WHEN sml.sml_direction > 0 THEN sml.sml_cost_value_wot ELSE 0 END)                    AS value_in_wot,
-             COALESCE(MAX(sml.sml_cost_rate) FILTER (WHERE sml.sml_direction > 0), 0)                       AS max_in_rate,
-             -- The document's LAST inward line, by line order, is its "last purchase".
-             (array_agg(sml.sml_cost_rate     ORDER BY sml.sml_line_no DESC, sml.sml_split_no DESC)
-                 FILTER (WHERE sml.sml_direction > 0))[1]                                                   AS last_in_rate,
-             (array_agg(sml.sml_cost_rate_wot ORDER BY sml.sml_line_no DESC, sml.sml_split_no DESC)
-                 FILTER (WHERE sml.sml_direction > 0))[1]                                                   AS last_in_rate_wot,
-             (array_agg(sml.sml_doc_date      ORDER BY sml.sml_line_no DESC, sml.sml_split_no DESC)
-                 FILTER (WHERE sml.sml_direction > 0))[1]                                                   AS last_in_date,
-             -- The document's last OUTWARD line: the rate a fresh row takes
-             -- when nothing was received (the trigger's seed from an outward).
-             (array_agg(sml.sml_cost_rate     ORDER BY sml.sml_line_no DESC, sml.sml_split_no DESC)
-                 FILTER (WHERE sml.sml_direction < 0))[1]                                                   AS last_out_rate,
-             (array_agg(sml.sml_cost_rate_wot ORDER BY sml.sml_line_no DESC, sml.sml_split_no DESC)
-                 FILTER (WHERE sml.sml_direction < 0))[1]                                                   AS last_out_rate_wot,
-             -- An outward SALE stamps the last sale, from the DOCUMENT rate.
-             -- 0 is "no rate" (the column is NOT NULL): it must not overwrite
-             -- the stamp a priced sale left, so it reads as NULL here.
-             (array_agg(NULLIF(sml.sml_doc_rate, 0) ORDER BY sml.sml_line_no DESC, sml.sml_split_no DESC)
-                 FILTER (WHERE sml.sml_direction < 0 AND sml.sml_txn_type = 'SALE'))[1]                     AS last_sale_rate,
-             (array_agg(sml.sml_doc_date      ORDER BY sml.sml_line_no DESC, sml.sml_split_no DESC)
-                 FILTER (WHERE sml.sml_direction < 0 AND sml.sml_txn_type = 'SALE'))[1]                     AS last_sale_date
-        FROM stock.stock_ledger sml
-       WHERE ${ledgerRowsOf(params)}
-         -- A bucket move is a wash for the branch (same item, qty and cost on
-         -- both rows); counted in, its IN half would pose as a purchase and
-         -- stamp the average as the last purchase rate. The stamp below still
-         -- runs over it, so the destination holding gets its value.
-         AND sml.sml_txn_type <> ALL(${exports.BUCKET_MOVE_TXN_TYPES}::text[])
+    const items = touchedItems(params);
+    await rebuildItemCosts(tx, items, params.actor, params.postedOn);
+    await stampItemAverage(tx, items);
+}
+async function rebuildItemCosts(tx, items, actor, on) {
+    const bucketMoves = exports.BUCKET_MOVE_TXN_TYPES;
+    return tx.$executeRaw `
+    WITH item AS (${items}),
+    led AS (
+      SELECT i.company_id, i.branch_id, i.item_id,
+             (array_agg(sml.sml_base_uom_id ORDER BY sml.sml_doc_datetime, sml.sml_id))[1]               AS base_uom_id,
+             COALESCE(SUM(sml.sml_signed_base_qty), 0)                                                  AS qty,
+             COALESCE(SUM(sml.sml_direction * sml.sml_cost_value), 0)                                   AS value,
+             COALESCE(SUM(sml.sml_direction * sml.sml_cost_value_wot), 0)                               AS value_wot,
+             (array_agg(sml.sml_cost_rate     ORDER BY sml.sml_doc_datetime DESC, sml.sml_id DESC))[1]   AS last_rate,
+             (array_agg(sml.sml_cost_rate_wot ORDER BY sml.sml_doc_datetime DESC, sml.sml_id DESC))[1]   AS last_rate_wot,
+             -- The stamps: live, unreversed, forward INWARD rows, bucket moves aside.
+             COALESCE(MAX(sml.sml_cost_rate) FILTER (
+               WHERE sml.sml_direction > 0 AND NOT sml.sml_is_reversal AND rev.sml_id IS NULL
+                 AND sml.sml_txn_type <> ALL(${bucketMoves}::text[])), 0)                                AS max_in_rate,
+             (array_agg(sml.sml_cost_rate ORDER BY sml.sml_doc_datetime DESC, sml.sml_id DESC) FILTER (
+               WHERE sml.sml_direction > 0 AND NOT sml.sml_is_reversal AND rev.sml_id IS NULL
+                 AND sml.sml_txn_type <> ALL(${bucketMoves}::text[])))[1]                                AS last_in_rate,
+             (array_agg(sml.sml_doc_date  ORDER BY sml.sml_doc_datetime DESC, sml.sml_id DESC) FILTER (
+               WHERE sml.sml_direction > 0 AND NOT sml.sml_is_reversal AND rev.sml_id IS NULL
+                 AND sml.sml_txn_type <> ALL(${bucketMoves}::text[])))[1]                                AS last_in_date,
+             -- The latest unreversed SALE that carried a document rate.
+             (array_agg(sml.sml_doc_rate ORDER BY sml.sml_doc_datetime DESC, sml.sml_id DESC) FILTER (
+               WHERE sml.sml_direction < 0 AND NOT sml.sml_is_reversal AND rev.sml_id IS NULL
+                 AND sml.sml_txn_type = 'SALE' AND sml.sml_doc_rate <> 0))[1]                            AS last_sale_rate,
+             (array_agg(sml.sml_doc_date ORDER BY sml.sml_doc_datetime DESC, sml.sml_id DESC) FILTER (
+               WHERE sml.sml_direction < 0 AND NOT sml.sml_is_reversal AND rev.sml_id IS NULL
+                 AND sml.sml_txn_type = 'SALE' AND sml.sml_doc_rate <> 0))[1]                            AS last_sale_date
+        FROM item i
+        JOIN stock.stock_ledger sml
+          ON sml.sml_company_id = i.company_id AND sml.sml_branch_id = i.branch_id
+         AND sml.sml_item_id    = i.item_id    AND sml.sml_is_deleted = false
+        ${reversalJoin('sml', 'rev')}
        GROUP BY 1, 2, 3
     ),
-    cur AS (
-      SELECT c.sic_company_id, c.sic_branch_id, c.sic_item_id,
-             c.sic_total_qty, c.sic_total_value, c.sic_total_value_wot,
-             c.sic_avg_cost_rate, c.sic_avg_cost_rate_wot, c.sic_max_cost_rate,
-             c.sic_last_purchase_rate, c.sic_last_purchase_date,
-             c.sic_last_sale_rate, c.sic_last_sale_date
-        FROM stock.stock_item_cost c
-        JOIN moves m
-          ON m.sml_company_id = c.sic_company_id
-         AND m.sml_branch_id  = c.sic_branch_id
-         AND m.sml_item_id    = c.sic_item_id
-       WHERE c.sic_is_deleted = false
-         FOR UPDATE OF c
-    ),
-    step AS (
-      -- Outwards first, at the average the branch carried before this document.
-      -- A fresh row swallows them: it never starts below zero.
-      SELECT m.*,
-             (c.sic_company_id IS NOT NULL)                                                                AS has_row,
-             CASE WHEN c.sic_company_id IS NOT NULL THEN c.sic_total_qty - m.qty_out ELSE 0 END + m.qty_in AS new_qty,
-             GREATEST(COALESCE(c.sic_total_value, 0)
-                      - ROUND(m.qty_out * COALESCE(c.sic_avg_cost_rate, 0), 2), 0) + m.value_in          AS new_value,
-             GREATEST(COALESCE(c.sic_total_value_wot, 0)
-                      - ROUND(m.qty_out * COALESCE(c.sic_avg_cost_rate_wot, 0), 2), 0) + m.value_in_wot  AS new_value_wot,
-             COALESCE(c.sic_avg_cost_rate, 0)                                                              AS old_avg,
-             COALESCE(c.sic_avg_cost_rate_wot, 0)                                                          AS old_avg_wot,
-             GREATEST(COALESCE(c.sic_max_cost_rate, 0), m.max_in_rate)                                     AS new_max,
-             CASE WHEN m.qty_in > 0 THEN m.last_in_rate ELSE c.sic_last_purchase_rate END                  AS new_last_rate,
-             CASE WHEN m.qty_in > 0 THEN m.last_in_date ELSE c.sic_last_purchase_date END                  AS new_last_date,
-             COALESCE(m.last_sale_rate, c.sic_last_sale_rate, 0)                                           AS new_sale_rate,
-             COALESCE(m.last_sale_date, c.sic_last_sale_date)                                              AS new_sale_date
-        FROM moves m
-        LEFT JOIN cur c
-               ON c.sic_company_id = m.sml_company_id
-              AND c.sic_branch_id  = m.sml_branch_id
-              AND c.sic_item_id    = m.sml_item_id
-    ),
     next AS (
-      -- Then inwards re-average. Quantity at or below zero keeps a rate: the
-      -- document's last inward if it had one, otherwise the rate as it stood —
-      -- and a fresh row with nothing received takes its outward's own cost.
-      SELECT step.*,
-             CASE WHEN step.new_qty > 0 THEN ROUND(step.new_value     / step.new_qty, 6)
-                  WHEN step.qty_in  > 0 THEN step.last_in_rate
-                  WHEN NOT step.has_row THEN COALESCE(step.last_out_rate, 0)
-                  ELSE step.old_avg END                                                                    AS new_avg,
-             CASE WHEN step.new_qty > 0 THEN ROUND(step.new_value_wot / step.new_qty, 6)
-                  WHEN step.qty_in  > 0 THEN step.last_in_rate_wot
-                  WHEN NOT step.has_row THEN COALESCE(step.last_out_rate_wot, 0)
-                  ELSE step.old_avg_wot END                                                                AS new_avg_wot
-        FROM step
+      SELECT led.*,
+             CASE WHEN led.qty > 0 THEN ROUND(led.value     / led.qty, 6) ELSE COALESCE(led.last_rate, 0)     END AS avg,
+             CASE WHEN led.qty > 0 THEN ROUND(led.value_wot / led.qty, 6) ELSE COALESCE(led.last_rate_wot, 0) END AS avg_wot
+        FROM led
     )
     MERGE INTO stock.stock_item_cost c
     USING next n
-       ON c.sic_company_id = n.sml_company_id
-      AND c.sic_branch_id  = n.sml_branch_id
-      AND c.sic_item_id    = n.sml_item_id
+       ON c.sic_company_id = n.company_id
+      AND c.sic_branch_id  = n.branch_id
+      AND c.sic_item_id    = n.item_id
       AND c.sic_is_deleted = false
-    WHEN MATCHED THEN UPDATE SET
-         sic_total_qty          = n.new_qty,
-         sic_total_value        = n.new_value,
-         sic_total_value_wot    = n.new_value_wot,
-         sic_avg_cost_rate      = n.new_avg,
-         sic_avg_cost_rate_wot  = n.new_avg_wot,
-         sic_max_cost_rate      = n.new_max,
-         sic_last_purchase_rate = COALESCE(n.new_last_rate, 0),
-         sic_last_purchase_date = n.new_last_date,
-         sic_last_sale_rate     = n.new_sale_rate,
-         sic_last_sale_date     = n.new_sale_date,
+    WHEN MATCHED AND (
+            c.sic_total_qty          IS DISTINCT FROM n.qty
+         OR c.sic_total_value        IS DISTINCT FROM n.value
+         OR c.sic_total_value_wot    IS DISTINCT FROM n.value_wot
+         OR c.sic_avg_cost_rate      IS DISTINCT FROM n.avg
+         OR c.sic_avg_cost_rate_wot  IS DISTINCT FROM n.avg_wot
+         OR c.sic_max_cost_rate      IS DISTINCT FROM n.max_in_rate
+         OR c.sic_last_purchase_rate IS DISTINCT FROM COALESCE(n.last_in_rate, 0)
+         OR c.sic_last_purchase_date IS DISTINCT FROM n.last_in_date
+         OR c.sic_last_sale_rate     IS DISTINCT FROM COALESCE(n.last_sale_rate, 0)
+         OR c.sic_last_sale_date     IS DISTINCT FROM n.last_sale_date)
+    THEN UPDATE SET
+         sic_total_qty          = n.qty,
+         sic_total_value        = n.value,
+         sic_total_value_wot    = n.value_wot,
+         sic_avg_cost_rate      = n.avg,
+         sic_avg_cost_rate_wot  = n.avg_wot,
+         sic_max_cost_rate      = n.max_in_rate,
+         sic_last_purchase_rate = COALESCE(n.last_in_rate, 0),
+         sic_last_purchase_date = n.last_in_date,
+         sic_last_sale_rate     = COALESCE(n.last_sale_rate, 0),
+         sic_last_sale_date     = n.last_sale_date,
          sic_row_version        = c.sic_row_version + 1,
-         sic_modified_on        = ${postedOn},
+         sic_modified_on        = ${on},
          sic_modified_by        = ${auditColumnActor(actor)}
     WHEN NOT MATCHED THEN INSERT (
          sic_company_id, sic_branch_id, sic_item_id, sic_base_uom_id,
@@ -1402,34 +1602,98 @@ async function applyItemCost(tx, params) {
          sic_last_purchase_rate, sic_last_purchase_date,
          sic_last_sale_rate, sic_last_sale_date, sic_created_by)
        VALUES (
-         n.sml_company_id, n.sml_branch_id, n.sml_item_id, n.base_uom_id,
-         n.new_qty, n.new_value, n.new_value_wot,
-         n.new_avg, n.new_avg_wot, n.new_max,
-         COALESCE(n.new_last_rate, 0), n.new_last_date,
-         n.new_sale_rate, n.new_sale_date, ${auditColumnActor(actor)})
+         n.company_id, n.branch_id, n.item_id, n.base_uom_id,
+         n.qty, n.value, n.value_wot,
+         n.avg, n.avg_wot, n.max_in_rate,
+         COALESCE(n.last_in_rate, 0), n.last_in_date,
+         COALESCE(n.last_sale_rate, 0), n.last_sale_date, ${auditColumnActor(actor)})
   `;
-    await tx.$executeRaw `
-    WITH touched AS (
-      SELECT DISTINCT sml.sml_company_id, sml.sml_branch_id, sml.sml_item_id
-        FROM stock.stock_ledger sml
-       WHERE ${ledgerRowsOf(params)}
-    )
+}
+async function stampItemAverage(tx, items) {
+    return tx.$executeRaw `
+    WITH item AS (${items})
     UPDATE stock.stock_balance b
        SET sbl_avg_cost_rate     = c.sic_avg_cost_rate,
            sbl_avg_cost_rate_wot = c.sic_avg_cost_rate_wot,
            sbl_stock_value       = ROUND(b.sbl_on_hand_qty * c.sic_avg_cost_rate,     2),
            sbl_stock_value_wot   = ROUND(b.sbl_on_hand_qty * c.sic_avg_cost_rate_wot, 2)
-      FROM touched t
+      FROM item i
       JOIN stock.stock_item_cost c
-        ON c.sic_company_id = t.sml_company_id
-       AND c.sic_branch_id  = t.sml_branch_id
-       AND c.sic_item_id    = t.sml_item_id
+        ON c.sic_company_id = i.company_id
+       AND c.sic_branch_id  = i.branch_id
+       AND c.sic_item_id    = i.item_id
        AND c.sic_is_deleted = false
-     WHERE b.sbl_company_id = c.sic_company_id
+     WHERE i.valuation_method <> 'LOT_ACTUAL'
+       AND b.sbl_company_id = c.sic_company_id
        AND b.sbl_branch_id  = c.sic_branch_id
        AND b.sbl_item_id    = c.sic_item_id
        AND b.sbl_is_deleted = false
+       AND (b.sbl_avg_cost_rate     IS DISTINCT FROM c.sic_avg_cost_rate
+         OR b.sbl_avg_cost_rate_wot IS DISTINCT FROM c.sic_avg_cost_rate_wot
+         OR b.sbl_stock_value       IS DISTINCT FROM ROUND(b.sbl_on_hand_qty * c.sic_avg_cost_rate,     2)
+         OR b.sbl_stock_value_wot   IS DISTINCT FROM ROUND(b.sbl_on_hand_qty * c.sic_avg_cost_rate_wot, 2))
   `;
+}
+function scopedLedgerRows(scope) {
+    const companyId = scope.companyId ?? null;
+    const branchId = scope.branchId ?? null;
+    const itemId = scope.itemId ?? null;
+    return client_1.Prisma.sql `
+             sml.sml_is_deleted = false
+         AND (${companyId}::uuid IS NULL OR sml.sml_company_id = ${companyId}::uuid)
+         AND (${branchId}::uuid  IS NULL OR sml.sml_branch_id  = ${branchId}::uuid)
+         AND (${itemId}::uuid    IS NULL OR sml.sml_item_id    = ${itemId}::uuid)
+  `;
+}
+function scopedItems(scope) {
+    return client_1.Prisma.sql `
+    SELECT t.company_id, t.branch_id, t.item_id,
+           COALESCE(stp.stp_valuation_method, 'WAVG') AS valuation_method
+      FROM (SELECT DISTINCT sml.sml_company_id AS company_id, sml.sml_branch_id AS branch_id,
+                   sml.sml_item_id AS item_id
+              FROM stock.stock_ledger sml
+             WHERE ${scopedLedgerRows(scope)}) t
+      JOIN inventory.item_master itm ON itm.item_id = t.item_id
+      ${effectivePolicyLateral({
+        companyId: client_1.Prisma.raw('t.company_id'),
+        branchId: client_1.Prisma.raw('t.branch_id'),
+        itemId: client_1.Prisma.raw('t.item_id'),
+        itemGroupId: client_1.Prisma.raw('itm.item_group_id'),
+        onDate: client_1.Prisma.raw('CURRENT_DATE'),
+    })}
+  `;
+}
+async function rebuildStockDerivedFigures(tx, scope, actor, on) {
+    const holdings = client_1.Prisma.sql `
+    SELECT DISTINCT sml.sml_company_id AS company_id, sml.sml_branch_id AS branch_id,
+           sml.sml_godown_id AS godown_id, sml.sml_item_id AS item_id,
+           sml.sml_lot_id AS lot_id, sml.sml_bucket AS bucket
+      FROM stock.stock_ledger sml
+     WHERE ${scopedLedgerRows(scope)}
+  `;
+    const items = scopedItems(scope);
+    const lots = client_1.Prisma.sql `
+    SELECT t.company_id, t.branch_id, t.item_id, t.lot_id
+      FROM (SELECT DISTINCT sml.sml_company_id AS company_id, sml.sml_branch_id AS branch_id,
+                   sml.sml_item_id AS item_id, sml.sml_lot_id AS lot_id
+              FROM stock.stock_ledger sml
+             WHERE ${scopedLedgerRows(scope)}) t
+      JOIN (${items}) i
+        ON i.company_id = t.company_id AND i.branch_id = t.branch_id AND i.item_id = t.item_id
+     WHERE i.valuation_method = 'LOT_ACTUAL'
+  `;
+    const lotIds = client_1.Prisma.sql `
+    SELECT DISTINCT sml.sml_lot_id AS lot_id
+      FROM stock.stock_ledger sml
+     WHERE ${scopedLedgerRows(scope)}
+  `;
+    await lockHoldingItems(tx, holdings);
+    const balances = await rebuildBalances(tx, holdings, actor, on);
+    const lotRates = await rebuildLotCosts(tx, lots);
+    const itemCosts = await rebuildItemCosts(tx, items, actor, on);
+    const stamps = await stampItemAverage(tx, items);
+    const lotTotals = await rebuildLotTotals(tx, lotIds, actor, on);
+    return { balances, lotRates, itemCosts, stamps, lotTotals };
 }
 async function assertNegativeStockPolicy(tx, params) {
     const { rules, svhId } = params;
@@ -1483,54 +1747,54 @@ async function assertNegativeStockPolicy(tx, params) {
     }
 }
 async function refreshLotTotals(tx, params) {
-    const { actor, postedOn } = params;
-    await tx.$executeRaw `
-    WITH touched AS (
-      SELECT sml.sml_lot_id                AS lot_id,
-             bool_or(sml.sml_direction > 0) AS had_in,
-             bool_or(sml.sml_direction < 0) AS had_out
+    await rebuildLotTotals(tx, client_1.Prisma.sql `
+      SELECT DISTINCT sml.sml_lot_id AS lot_id
         FROM stock.stock_ledger sml
        WHERE ${ledgerRowsOf(params)}
-       GROUP BY sml.sml_lot_id
-    ),
+    `, params.actor, params.postedOn);
+}
+async function rebuildLotTotals(tx, lots, actor, on) {
+    return tx.$executeRaw `
+    WITH lot AS (${lots}),
     totals AS (
-      SELECT t.lot_id, t.had_in, t.had_out,
-             COALESCE(SUM(sbl.sbl_on_hand_qty), 0) AS on_hand
-        FROM touched t
+      SELECT l.lot_id, COALESCE(SUM(sbl.sbl_on_hand_qty), 0) AS on_hand
+        FROM lot l
         LEFT JOIN stock.stock_balance sbl
-               ON sbl.sbl_lot_id     = t.lot_id
+               ON sbl.sbl_lot_id     = l.lot_id
               AND sbl.sbl_is_deleted = false
-       GROUP BY t.lot_id, t.had_in, t.had_out
-    ),
-    verdict AS (
-      SELECT totals.*,
-             (totals.on_hand <= 0 AND totals.had_out) AS ends_empty
-        FROM totals
+       GROUP BY l.lot_id
     )
     UPDATE stock.stock_lot slt
-       SET slt_total_on_hand = v.on_hand,
+       SET slt_total_on_hand = t.on_hand,
            slt_status        = CASE
-                                 WHEN v.ends_empty AND slt.slt_status = 'ACTIVE' THEN 'CLOSED'
-                                 WHEN v.had_in AND slt.slt_status = 'CLOSED' AND NOT v.ends_empty THEN 'ACTIVE'
+                                 WHEN t.on_hand <= 0 AND slt.slt_status = 'ACTIVE' THEN 'CLOSED'
+                                 WHEN t.on_hand >  0 AND slt.slt_status = 'CLOSED' THEN 'ACTIVE'
                                  ELSE slt.slt_status
                                END,
            slt_closed_on     = CASE
-                                 WHEN v.ends_empty AND slt.slt_status = 'ACTIVE' THEN ${postedOn}
-                                 WHEN v.had_in AND slt.slt_status = 'CLOSED' AND NOT v.ends_empty THEN NULL
+                                 WHEN t.on_hand <= 0 AND slt.slt_status = 'ACTIVE' THEN ${on}
+                                 WHEN t.on_hand >  0 AND slt.slt_status = 'CLOSED' THEN NULL
                                  ELSE slt.slt_closed_on
                                END,
            slt_row_version   = slt.slt_row_version + 1,
-           slt_modified_on   = ${postedOn},
+           slt_modified_on   = ${on},
            slt_modified_by   = ${auditColumnActor(actor)}
-      FROM verdict v
-     WHERE slt.slt_id = v.lot_id
+      FROM totals t
+     WHERE slt.slt_id = t.lot_id
+       AND (slt.slt_total_on_hand IS DISTINCT FROM t.on_hand
+            OR (t.on_hand <= 0 AND slt.slt_status = 'ACTIVE')
+            OR (t.on_hand >  0 AND slt.slt_status = 'CLOSED'))
   `;
 }
 async function recomputeHeaderTotals(tx, params) {
     const { rules, svhId, accYear } = params;
     const isCount = rules.quantityMode === 'COUNT';
     const netted = isCount || (rules.lineDirection === 'REASON' && rules.postShape !== 'BUCKET_MOVE');
-    const outTxnType = rules.postShape === 'TRANSFER_OUT' ? 'TRANSFER_OUT' : rules.postShape === 'BUCKET_MOVE' ? 'BUCKET_OUT' : null;
+    const outTxnType = rules.postShape === 'TRANSFER_OUT'
+        ? 'TRANSFER_OUT'
+        : rules.postShape === 'BUCKET_MOVE'
+            ? 'BUCKET_OUT'
+            : null;
     await tx.$executeRaw `
     WITH led AS (
       SELECT sml.sml_line_no, sml.sml_is_reversal,
@@ -1597,7 +1861,8 @@ async function assertTransferCancellable(tx, { rules, svhId, accYear }) {
     if (!header) {
         return;
     }
-    if (rules.postShape === 'TRANSFER_OUT' && (header.status === 'IN_TRANSIT' || header.status === 'RECEIVED')) {
+    if (rules.postShape === 'TRANSFER_OUT' &&
+        (header.status === 'IN_TRANSIT' || header.status === 'RECEIVED')) {
         (0, module_service_utils_1.throwStockConflict)(`${rules.displayName} is ${header.status}`, [
             {
                 field: 'svhId',

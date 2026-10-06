@@ -222,10 +222,10 @@ describe('Stock adjustments (e2e — one rolled-back transaction)', () => {
     // supplier (FIFO), so its lot says whom a damaged carton goes back to.
     await tx.$executeRaw`
       INSERT INTO stock.stock_track_policy (
-        stp_company_id, stp_scope, stp_scope_id, stp_track_batch, stp_track_expiry, stp_track_supplier, stp_issue_strategy, stp_remarks)
-      VALUES (${scope.company_id}::uuid, 'ITEM', ${tea.itemId}::uuid, true, false, false, 'FIFO', 'stock-adjustment e2e'),
-             (${scope.company_id}::uuid, 'ITEM', ${milk.itemId}::uuid, true, true, false, 'FEFO', 'stock-adjustment e2e'),
-             (${scope.company_id}::uuid, 'ITEM', ${soap.itemId}::uuid, true, false, true, 'FIFO', 'stock-adjustment e2e')
+        stp_company_id, stp_scope, stp_scope_id, stp_track_batch, stp_track_expiry, stp_track_supplier, stp_valuation_method, stp_issue_strategy, stp_remarks)
+      VALUES (${scope.company_id}::uuid, 'ITEM', ${tea.itemId}::uuid, true, false, false, 'LOT_ACTUAL', 'FIFO', 'stock-adjustment e2e'),
+             (${scope.company_id}::uuid, 'ITEM', ${milk.itemId}::uuid, true, true, false, 'LOT_ACTUAL', 'FEFO', 'stock-adjustment e2e'),
+             (${scope.company_id}::uuid, 'ITEM', ${soap.itemId}::uuid, true, false, true, 'LOT_ACTUAL', 'FIFO', 'stock-adjustment e2e')
     `;
     const [supplier] = await tx.$queryRaw<Array<{ sup_id: string }>>`
       SELECT sup_id FROM purchase.suppliers

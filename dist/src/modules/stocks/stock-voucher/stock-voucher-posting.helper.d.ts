@@ -1,5 +1,5 @@
 import { Prisma } from '@prisma/client';
-import type { StockVoucherTypeRules } from './types/stock-voucher.types';
+import { type StockVoucherTypeRules } from './types/stock-voucher.types';
 import { type BucketKey } from '../../Inventory/items-price-master/price-resolver';
 export declare const STOCK_LEDGER_SRC_MODULE = "STOCK";
 export interface StockLedgerSourceLabel {
@@ -64,6 +64,8 @@ export declare function lineReasonJoin(): Prisma.Sql;
 export declare function lineDirectionColumn(rules: StockVoucherTypeRules): Prisma.Sql;
 export declare function lotlessOutwardLine(): Prisma.Sql;
 export declare function unreversedLedgerRow(): Prisma.Sql;
+export declare const STOCK_LOT_ID_NAMESPACE = "2f0b7c1e-5d3a-4e8f-9b61-7c4d2a9e0f53";
+export declare function lotIdentityUuid(alias: string): Prisma.Sql;
 export interface SettleShortParams {
     outId: string;
     outAccYear: string;
@@ -95,6 +97,19 @@ export declare function openReservationHoldings(companyId?: string | null): Hold
 export declare function ensureBalanceRows(tx: Prisma.TransactionClient, holdings: HoldingSource, actor: string): Promise<void>;
 export declare function refreshReserved(tx: Prisma.TransactionClient, holdings: HoldingSource, actor: string, on: Date): Promise<number>;
 export declare function refreshTransitIn(tx: Prisma.TransactionClient, holdings: HoldingSource, actor: string, on: Date): Promise<number>;
+export interface StockRebuildScope {
+    companyId?: string | null;
+    branchId?: string | null;
+    itemId?: string | null;
+}
+export interface StockRebuildOutcome {
+    balances: number;
+    lotRates: number;
+    itemCosts: number;
+    stamps: number;
+    lotTotals: number;
+}
+export declare function rebuildStockDerivedFigures(tx: Prisma.TransactionClient, scope: StockRebuildScope, actor: string, on: Date): Promise<StockRebuildOutcome>;
 export interface CancelStockVoucherParams {
     rules: StockVoucherTypeRules;
     svhId: string;

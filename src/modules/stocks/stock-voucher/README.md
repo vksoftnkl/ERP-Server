@@ -12,15 +12,39 @@ PHYSICAL and the rest are the same shape.
 
 `stock.stock_voucher` and `stock.stock_voucher_item`. Nothing else.
 
-The lot, the ledger row, the balance and the moving average are written by
-**`stock-voucher-posting.helper.ts`**, the posting engine — in the application,
-not in the database. No `fn_svh_post` / `fn_sml_apply` / ledger trigger exists on
-any deployment (the 2026-09-22 rule: the database keeps only what is declarative).
-It picks and resolves lots, writes
-`stock_ledger`, applies `stock_balance`, maintains `stock_item_cost` and stamps
-the branch average onto every holding, checks the negative-stock policy and
-refreshes `slt_total_on_hand` — seven set-based statements in the caller's
-transaction. Nothing outside that file inserts into `stock_ledger`: the model
+The lot, the ledger row, the balance, each lot's cost and the item average are
+written by **`stock-voucher-posting.helper.ts`**, the posting engine — in the
+application, not in the database. No `fn_svh_post` / `fn_sml_apply` / ledger
+trigger exists on any deployment (the 2026-09-22 rule: the database keeps only
+what is declarative). It picks and resolves lots, writes `stock_ledger`, then
+RE-DERIVES every derived figure from the ledger: `stock_balance`, each tracked
+lot's own cost onto its balance rows, `stock_item_cost` (and the item average
+stamped onto every holding of a PLAIN item), the negative-stock policy,
+`slt_total_on_hand` — eight set-based statements in the caller's transaction.
+
+## How stock is costed (notes 92, 2026-10-06)
+
+The effective tracking policy's `stp_valuation_method` decides, and it follows the track
+flags (the policy service derives it; `ck_stp_valuation_tracks` holds it):
+
+| Policy | Method | Cost of one unit of a holding |
+|---|---|---|
+| tracks nothing (`N`) | `WAVG` | the item's branch moving average (`stock_item_cost`), stamped onto every holding |
+| tracks anything | `LOT_ACTUAL` | that **lot's** own moving average **in this branch**, kept on the lot's `stock_balance` rows (`sbl_avg_cost_rate`, the same on every godown and bucket) |
+
+Every outward line — sale, challan, adjustment OUT, write-off, transfer OUT, count shortage —
+is relieved at that cost; a count overage or an adjustment IN onto a lot the branch holds comes
+in at it; a re-lot IN inherits its OUT half's cost; a transfer carries it on `stt_cost_rate`.
+`slt_cost_rate` is only the cost on the lot's first receipt. The item row of a tracked item is
+the item's summary (Σ of its lots) and the fallback for a lot the branch has never held.
+
+**Every derived figure is a REBUILD from the ledger, never an increment** (§7, offline sync):
+the balance accumulators, a lot's cost, the item total and average, the lot total. Σ over the
+rows that exist, forward and reversal alike, so a re-sent batch or a reversal landing before its
+original gives the same figures. `POST /stock/admin/rebuild-costs` (`dryRun=true` to report and
+roll back) runs the same rebuilds over a scope — the one-off backfill and the only correct repair.
+New lots take a deterministic id: uuid v5 over the eight identity columns (`lotIdentityUuid`), so
+two offline branches mint one id for one carton. Nothing outside that file inserts into `stock_ledger`: the model
 exists (`StockLedger`) but `test/stock-ledger-single-writer.e2e-spec.ts` fails the
 build on any second INSERT site, any UPDATE or DELETE, and any Prisma write.
 
