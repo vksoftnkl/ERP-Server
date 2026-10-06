@@ -15475,3 +15475,45 @@ Foreign key constraint violated on the constraint: `fk_sbi_price_level`
     at async BillService.createBill (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill.service.ts:769:14)
     at async BillService.save (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill.service.ts:486:9)
     at async BillController.save (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill.controller.ts:94:18)
+2026-10-06T07:46:41.720Z ERROR [ModuleExceptionFilter] POST /api/v1/bills/create
+PrismaClientUnknownRequestError: 
+Invalid `tx.saleBillItem.create()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill.service.ts:1341:45
+
+  1338   BILL_ITEM_OPTIONAL_FIELDS,
+  1339   BILL_ITEM_DATE_TRANSFORMS,
+  1340 );
+→ 1341 const created = await tx.saleBillItem.create(
+Error occurred during query execution:
+ConnectorError(ConnectorError { user_facing_error: None, kind: QueryError(PostgresError { code: "22003", message: "numeric field overflow", severity: "ERROR", detail: Some("A field with precision 14, scale 4 must round to an absolute value less than 10^10."), column: None, hint: None }), transient: false })
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:237:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async BillService.syncItems (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill.service.ts:1341:23)
+    at async <anonymous> (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill.service.ts:817:23)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async BillService.createBill (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill.service.ts:770:14)
+    at async BillService.save (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill.service.ts:487:9)
+    at async BillController.save (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill.controller.ts:94:18)
+2026-10-06T07:51:10.866Z ERROR [ModuleExceptionFilter] POST /api/v1/bills/create
+PrismaClientUnknownRequestError: 
+Invalid `tx.saleBillItem.create()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill.service.ts:1341:45
+
+  1338   BILL_ITEM_OPTIONAL_FIELDS,
+  1339   BILL_ITEM_DATE_TRANSFORMS,
+  1340 );
+→ 1341 const created = await tx.saleBillItem.create(
+Error occurred during query execution:
+ConnectorError(ConnectorError { user_facing_error: None, kind: QueryError(PostgresError { code: "22003", message: "numeric field overflow", severity: "ERROR", detail: Some("A field with precision 14, scale 4 must round to an absolute value less than 10^10."), column: None, hint: None }), transient: false })
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:237:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async BillService.syncItems (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill.service.ts:1341:23)
+    at async <anonymous> (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill.service.ts:817:23)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async BillService.createBill (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill.service.ts:770:14)
+    at async BillService.save (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill.service.ts:487:9)
+    at async BillController.save (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill.controller.ts:94:18)

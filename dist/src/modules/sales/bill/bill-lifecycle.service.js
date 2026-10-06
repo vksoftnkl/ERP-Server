@@ -363,7 +363,6 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
                 (0, sales_guards_1.refuse)(g, posting_types_1.SALES_ERROR_CODES.BACKDATE, msg, { field: 'sbBillDate' });
             }
             else {
-                (0, sales_guards_1.warn)(g, posting_types_1.SALES_ERROR_CODES.BACKDATE, msg, { field: 'sbBillDate' });
             }
         }
         if (await (0, sales_guards_1.loadDayClosed)(tx, snap.companyId, snap.branchId, snap.billDate)) {
@@ -393,50 +392,6 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
            AND t.td_doc_date = ${snap.billDate}::date AND t.td_is_deleted = false AND t.td_is_voided = false
            AND t.td_src_module = 'SALES' AND t.td_src_doc_type = 'SALE_BILL'
            AND b.sb_status = 'POSTED' AND b.sb_id <> ${snap.sbId ?? '00000000-0000-0000-0000-000000000000'}::uuid`;
-            const cashToday = (0, sales_doc_utils_1.num)(row?.cash);
-            const isWalkIn = snap.custId === s.defaultCustomerId;
-            const limit = await this.statutory.assertCashLimit(snap.companyId, isWalkIn ? cash : cash + cashToday, snap.billDate, tx);
-            if (limit.exceeded && limit.limit) {
-                const st = {
-                    code: limit.limit.code,
-                    value: limit.limit.value,
-                    effectiveFrom: limit.limit.effectiveFrom,
-                    isCompanyOverride: limit.limit.isCompanyOverride,
-                };
-                const msg = `Cash received from this party today (${(0, sales_doc_utils_1.round2)(cash + (isWalkIn ? 0 : cashToday))}) reaches the ${limit.limit.label} limit of ${limit.limit.value}`;
-                if (limit.limit.enforce === 'REFUSE') {
-                    (0, sales_guards_1.refuse)(g, posting_types_1.SALES_ERROR_CODES.CASH_LIMIT, msg, { field: 'tenders', statutory: st });
-                }
-                else {
-                    (0, sales_guards_1.warn)(g, posting_types_1.SALES_ERROR_CODES.CASH_LIMIT, msg, { field: 'tenders', statutory: st });
-                }
-            }
-            const pan = await this.statutory.assertPanOrForm60(snap.companyId, cash, snap.billDate, tx);
-            if (pan.required && pan.limit && !snap.custPan && !snap.form60Ref) {
-                (0, sales_guards_1.refuse)(g, posting_types_1.SALES_ERROR_CODES.PAN_REQUIRED, `A cash sale above ${pan.limit.value} needs the customer's PAN or a Form 60 reference`, {
-                    field: 'sbCustPan',
-                    statutory: {
-                        code: pan.limit.code,
-                        value: pan.limit.value,
-                        effectiveFrom: pan.limit.effectiveFrom,
-                        isCompanyOverride: pan.limit.isCompanyOverride,
-                    },
-                });
-            }
-        }
-        const hsn = await this.statutory.hsnDigits(snap.companyId, snap.billDate, tx);
-        if (hsn.digits) {
-            for (const i of snap.items) {
-                if (!i.isService && (i.hsnCode ?? '').trim().length < hsn.digits) {
-                    g.warnings.push({
-                        code: posting_types_1.SALES_ERROR_CODES.HSN_DIGITS,
-                        level: 'INFO',
-                        message: `Line ${i.lineNo}: HSN ${i.hsnCode ?? '(blank)'} is shorter than the ${hsn.digits} digits this company must report`,
-                        line: i.lineNo,
-                        overridable: false,
-                    });
-                }
-            }
         }
         const separately = s.postSchemeDiscSeparately;
         const debit = (0, bill_snapshot_1.partyDebitOf)(snap, separately);
@@ -459,9 +414,6 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
             await (0, sales_guards_1.assertCreditLimit)(tx, g, { custId: snap.custId, partyLedgerId: snap.custId }, snap.companyId, outstanding, s, snap.billDate);
         }
         for (const i of snap.items) {
-            if (s.maxLineDiscPerc < 100 && i.itemDiscPerc > s.maxLineDiscPerc + 0.001) {
-                (0, sales_guards_1.warn)(g, posting_types_1.SALES_ERROR_CODES.DISC_CAP, `Line ${i.lineNo}: ${i.itemDiscPerc}% discount exceeds the ${s.maxLineDiscPerc}% line cap`, { field: 'items', line: i.lineNo });
-            }
             if (s.rateBelowMinMode !== 'ALLOW' &&
                 i.minPrice !== null &&
                 i.minPrice > 0 &&
@@ -472,56 +424,10 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
                     (0, sales_guards_1.refuse)(g, posting_types_1.SALES_ERROR_CODES.RATE_BELOW_MIN, msg, { field: 'items', line: i.lineNo });
                 }
                 else {
-                    (0, sales_guards_1.warn)(g, posting_types_1.SALES_ERROR_CODES.RATE_BELOW_MIN, msg, { field: 'items', line: i.lineNo });
-                }
-            }
-        }
-        if (s.maxBillDiscPerc < 100 && snap.grossAmt > 0) {
-            const disc = snap.itemDisc + snap.splDisc + snap.schDisc + snap.billSchDisc + snap.cashDisc;
-            const perc = (disc / snap.grossAmt) * 100;
-            if (perc > s.maxBillDiscPerc + 0.001) {
-                (0, sales_guards_1.warn)(g, posting_types_1.SALES_ERROR_CODES.DISC_CAP, `Discounts of ${(0, sales_doc_utils_1.round2)(disc)} are ${perc.toFixed(2)}% of the bill, over the ${s.maxBillDiscPerc}% cap`, { field: 'sbCashDisc' });
-            }
-        }
-        const masters = await this.tenderMasters(tx, snap.tenders.map((t) => t.tenderId));
-        for (const t of snap.tenders) {
-            const m = t.tenderId ? masters.get(t.tenderId) : undefined;
-            if (!m) {
-                continue;
-            }
-            if (m.tnd_min_amount !== null &&
-                (0, sales_doc_utils_1.num)(m.tnd_min_amount) > 0 &&
-                t.amount < (0, sales_doc_utils_1.num)(m.tnd_min_amount)) {
-                (0, sales_guards_1.warn)(g, posting_types_1.SALES_ERROR_CODES.TENDER_MIN_MAX, `${m.tnd_name ?? 'Tender'} ${t.amount} is below its minimum ${(0, sales_doc_utils_1.num)(m.tnd_min_amount)}`, { field: 'tenders' });
-            }
-            if (m.tnd_max_amount !== null &&
-                (0, sales_doc_utils_1.num)(m.tnd_max_amount) > 0 &&
-                t.amount > (0, sales_doc_utils_1.num)(m.tnd_max_amount)) {
-                (0, sales_guards_1.warn)(g, posting_types_1.SALES_ERROR_CODES.TENDER_MIN_MAX, `${m.tnd_name ?? 'Tender'} ${t.amount} is above its maximum ${(0, sales_doc_utils_1.num)(m.tnd_max_amount)}`, { field: 'tenders' });
-            }
-            if (m.tnd_daily_limit !== null && (0, sales_doc_utils_1.num)(m.tnd_daily_limit) > 0) {
-                const [d] = await tx.$queryRaw `
-          SELECT SUM(td_amount) AS used FROM accounts.acc_tender_detail
-           WHERE td_tender_id = ${t.tenderId}::uuid AND td_doc_date = ${snap.billDate}::date
-             AND td_branch_id = ${snap.branchId}::uuid AND td_is_deleted = false AND td_is_voided = false
-             AND td_src_doc_id <> ${snap.sbId ?? '00000000-0000-0000-0000-000000000000'}::uuid`;
-                if ((0, sales_doc_utils_1.num)(d?.used) + t.amount > (0, sales_doc_utils_1.num)(m.tnd_daily_limit)) {
-                    (0, sales_guards_1.warn)(g, posting_types_1.SALES_ERROR_CODES.TENDER_DAILY_LIMIT, `${m.tnd_name ?? 'Tender'} would exceed its daily limit of ${(0, sales_doc_utils_1.num)(m.tnd_daily_limit)}`, { field: 'tenders' });
                 }
             }
         }
         await this.guardSources(tx, snap, g, s.allowBillOverOrderQty);
-        const schemeIds = [
-            ...new Set(snap.items.map((i) => i.schemeId).filter((x) => !!x)),
-        ];
-        if (schemeIds.length > 0) {
-            const issues = await this.promo.validateApplied(tx, this.promoDoc(snap), schemeIds, {
-                throwOnFirst: false,
-            });
-            for (const issue of issues) {
-                (0, sales_guards_1.warn)(g, posting_types_1.SALES_ERROR_CODES.PROMO_NOT_LIVE, issue.message, { field: 'items' });
-            }
-        }
         const loyaltyTenders = snap.tenders.filter((t) => t.tenderTypeId === sales_doc_utils_1.TENDER_TYPE.LOYALTY);
         if (loyaltyTenders.length > 0) {
             const memberId = snap.loyaltyMemberId;
@@ -577,7 +483,6 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
                         (0, sales_guards_1.refuse)(g, posting_types_1.SALES_ERROR_CODES.TEMP_CREDIT_OPEN, msg, { field: 'tenders' });
                     }
                     else {
-                        (0, sales_guards_1.warn)(g, posting_types_1.SALES_ERROR_CODES.TEMP_CREDIT_OPEN, msg, { field: 'tenders' });
                     }
                 }
             }
@@ -591,39 +496,6 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
                 if (Math.abs(total - declared) > 0.01) {
                     (0, sales_guards_1.refuse)(g, posting_types_1.SALES_ERROR_CODES.AMOUNT_MISMATCH, `${kind} adjustments total ${total} but ${field} says ${declared}`, { field });
                 }
-            }
-        }
-        const company = await this.company(tx, snap.companyId);
-        const inter = (0, sales_doc_utils_1.supplyNatureOf)(company?.comp_state_code, snap.posStcd) === 'INTER';
-        const eway = await this.statutory.ewayApplicable(snap.companyId, snap.billAmt, snap.billDate, { interState: inter, stateCode: snap.posStcd }, tx);
-        if (eway.applicable && snap.billMode !== 'POS') {
-            const band = snap.transport !== undefined
-                ? snap.transport
-                : snap.sbId
-                    ? await this.transportBand.read({ docType: 'SALE_BILL', docId: snap.sbId, accYear: snap.accYear }, tx)
-                    : null;
-            if (!band || (!band.transporterId && !band.transporterName && !band.lrNo)) {
-                (0, sales_guards_1.warn)(g, posting_types_1.SALES_ERROR_CODES.EWAY_TRANSPORT_MISSING, `An e-way bill is required for this consignment (${snap.billAmt} ${inter ? 'inter' : 'intra'}-state) and the transport band is empty`, { field: 'transport' });
-            }
-        }
-        for (const i of snap.items) {
-            if (i.isService || i.srcDocType === 'DELIVERY_CHALLAN' || i.qty <= 0) {
-                continue;
-            }
-            const [row] = await tx.$queryRaw `
-        SELECT SUM(sbl_available_qty) AS on_hand FROM stock.stock_balance
-         WHERE sbl_company_id = ${snap.companyId}::uuid AND sbl_branch_id = ${snap.branchId}::uuid
-           AND sbl_godown_id = ${i.godownId}::uuid AND sbl_item_id = ${i.itemId}::uuid
-           AND sbl_bucket = ${i.bucket} AND sbl_is_deleted = false`;
-            const factor = i.toBaseFactor ?? 1;
-            if ((0, sales_doc_utils_1.num)(row?.on_hand) < i.qty * factor - 0.0005) {
-                g.warnings.push({
-                    code: posting_types_1.SALES_ERROR_CODES.STOCK_NEGATIVE,
-                    level: 'INFO',
-                    message: `Line ${i.lineNo}: ${(0, sales_doc_utils_1.num)(row?.on_hand)} on hand in this godown against ${(0, sales_doc_utils_1.round2)(i.qty * factor)} billed — the item's negative-stock policy decides at post`,
-                    line: i.lineNo,
-                    overridable: false,
-                });
             }
         }
     }
@@ -671,7 +543,6 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
                 if (qty > (0, sales_doc_utils_1.num)(r.soi_pending_qty) + 0.0005) {
                     const msg = `Order line has ${(0, sales_doc_utils_1.num)(r.soi_pending_qty)} pending; this bill takes ${qty}`;
                     if (allowOverOrder) {
-                        (0, sales_guards_1.warn)(g, posting_types_1.SALES_ERROR_CODES.ORDER_LINE_OVER, msg, { field: 'items' });
                     }
                     else {
                         (0, sales_guards_1.refuse)(g, posting_types_1.SALES_ERROR_CODES.ORDER_LINE_OVER, msg, { field: 'items' });
