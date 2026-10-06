@@ -799,4 +799,92 @@ describe('Notes 92 — lot-actual costing for tracked items (e2e — one rolled-
     expect(row.version).toBe('5');
     expect(a1251.lotId).toBe(row.expected);
   });
+
+  // ── notes 93: an outward line never opens a lot; MRP / price 0 is "not stated" ──
+
+  it('notes 93.1 — an outward line with MRP 0 on an MRP-tracked item is PICKED from the real lots and opens none', async () => {
+    const before = await lots(fixture.mrp);
+    const svhId = await adjust(ADJUSTMENT_OUT_RULES, [{ item: fixture.mrp, qty: 1, mrp: 0 }]);
+    const rows = await ledger(svhId);
+    expect(rows).toHaveLength(1);
+    // FIFO over four lots opened in one statement is a tie; whichever real lot
+    // it lands on, the line is relieved at THAT lot's cost and MRP 0 is nowhere.
+    const picked = before.find((l) => l.lotId === rows[0].lot_id);
+    expect(picked).toBeDefined();
+    expect(picked!.mrp).toBeGreaterThan(0);
+    expect(Number(rows[0].cost_rate)).toBeCloseTo(picked!.rate, 6);
+    const after = await lots(fixture.mrp);
+    expect(after.map((l) => l.lotId).sort()).toEqual(before.map((l) => l.lotId).sort());
+    expect(after.find((l) => l.mrp === 0)).toBeUndefined();
+    expect(await clean(fixture.mrp)).toEqual([]);
+  });
+
+  it('notes 93.2 — an outward line whose stated MRP matches no lot is REFUSED, and no phantom lot is opened', async () => {
+    const before = await lots(fixture.mrp);
+    await expect(
+      adjust(ADJUSTMENT_OUT_RULES, [{ item: fixture.mrp, qty: 1, mrp: 999 }]),
+    ).rejects.toMatchObject({
+      status: 422,
+      // The preflight refuses first, narrowed exactly as the pick would be.
+      message: expect.stringMatching(
+        /names no lot and the godown holds no stock of the item matching what the line states/,
+      ),
+    });
+    expect((await lots(fixture.mrp)).map((l) => l.lotId).sort()).toEqual(
+      before.map((l) => l.lotId).sort(),
+    );
+    // Acceptance 4: no tracked lot was ever opened by an outward document.
+    const [{ opened }] = await tx.$queryRaw<Array<{ opened: number }>>`
+      SELECT count(*)::int AS opened
+        FROM stock.stock_lot slt
+       WHERE slt.slt_item_id = ${fixture.mrp.itemId}::uuid
+         AND slt.slt_track_signature <> 'N'
+         AND slt.slt_inward_src_doc_type = 'ADJUSTMENT'
+         AND NOT EXISTS (SELECT 1 FROM stock.stock_ledger sml
+                          WHERE sml.sml_lot_id = slt.slt_id AND sml.sml_src_doc_id = slt.slt_inward_src_doc_id
+                            AND sml.sml_direction > 0 AND sml.sml_is_reversal = false)`;
+    expect(opened).toBe(0);
+  });
+
+  it('notes 93.3 — a PLAIN item sold before any receipt still posts, negative on its one lot', async () => {
+    const [group] = await tx.$queryRaw<
+      Array<{ itg_id: string }>
+    >`SELECT itg_id FROM inventory.item_group_master LIMIT 1`;
+    const [unit] = await tx.$queryRaw<
+      Array<{ unit_id: string }>
+    >`SELECT unit_id FROM inventory.item_unit_master ORDER BY unit_name LIMIT 1`;
+    const item = await tx.itemMaster.create({
+      data: {
+        itemCode: `E2E-N93-PLAIN-${Date.now().toString(36)}`,
+        itemNameEn: 'N93 plain never received',
+        itemGroupId: group.itg_id,
+        itemCompanyId: fixture.companyId,
+        itemBranchId: fixture.branchId,
+      },
+      select: { itemId: true },
+    });
+    const iuc = await tx.itemUnitConversion.create({
+      data: {
+        iucItemId: item.itemId,
+        iucUnitId: unit.unit_id,
+        iucBaseUnitId: unit.unit_id,
+        iucToBaseFactor: 1,
+        iucUnitSlno: 1,
+        iucIsBaseUnit: true,
+      },
+      select: { iucId: true },
+    });
+    await tx.$executeRaw`
+      INSERT INTO stock.stock_track_policy (stp_company_id, stp_scope, stp_scope_id, stp_valuation_method, stp_allow_negative, stp_remarks)
+      VALUES (${fixture.companyId}::uuid, 'ITEM', ${item.itemId}::uuid, 'WAVG', 'ALLOW', 'notes-93 e2e')`;
+    const never: Item = { itemId: item.itemId, iuc: iuc.iucId };
+    const svhId = await adjust(ADJUSTMENT_OUT_RULES, [{ item: never, qty: 2, costRate: 9 }]);
+    expect(
+      (await ledger(svhId)).map((r) => [r.txn_type, Number(r.qty), Number(r.cost_rate)]),
+    ).toEqual([['ADJUST_MINUS', 2, 9]]);
+    const held = await lots(never);
+    expect(held).toHaveLength(1);
+    expect(held[0]).toMatchObject({ signature: 'N', onHand: -2, status: 'CLOSED' });
+    expect(await itemCost(never)).toMatchObject({ qty: -2, value: -18, avg: 9 });
+  });
 });

@@ -588,10 +588,18 @@ function lineTxnTypeColumn(rules: StockVoucherTypeRules, alias: string): Prisma.
   return Prisma.sql`CASE WHEN ${a}.line_direction > 0 THEN ${plus}::text ELSE ${minus}::text END AS line_txn_type`;
 }
 /**
- * "This outward line names no lot and its identity is INCOMPLETE for what the
- * policy tracks" — the condition under which `pickIssueLots` chooses lots for
- * it, and under which `validate()` checks for stock instead of refusing the
- * missing dimension. Selects from a `keyed` alias (line + policy flags).
+ * "This outward line names no lot, and either its identity is INCOMPLETE for
+ * what the policy tracks or, on a tracked item, it is complete but NO LOT HAS
+ * IT" — the condition under which `pickIssueLots` chooses lots for it, and
+ * under which `validate()` checks for stock instead of refusing the missing
+ * dimension. Selects from a `keyed` alias (line + policy flags + identity keys).
+ *
+ * Notes 93: MRP 0 and selling price 0 are "NOT STATED" here, exactly as a
+ * blank batch or serial is — no real MRP or price lot is ever 0, and a till
+ * that sends 0 for "no MRP" used to key a phantom "MRP 0" lot and sell it
+ * negative. And a tracked item's outward line whose stated identity matches no
+ * lot is lotless too: it is picked, narrowed by what it DID state, and refused
+ * when nothing matches — never resolved into a lot that never existed.
  */
 export function lotlessOutwardLine(): Prisma.Sql {
   return Prisma.sql`
@@ -599,11 +607,64 @@ export function lotlessOutwardLine(): Prisma.Sql {
          AND (
                (keyed.track_batch      AND COALESCE(keyed.svi_batch_no, '')  = '')
             OR (keyed.track_expiry     AND keyed.svi_expiry_date IS NULL)
-            OR (keyed.track_mrp        AND keyed.svi_mrp         IS NULL)
-            OR (keyed.track_sale_price AND keyed.svi_sale_price  IS NULL)
+            OR (keyed.track_mrp        AND COALESCE(keyed.svi_mrp, 0)        = 0)
+            OR (keyed.track_sale_price AND COALESCE(keyed.svi_sale_price, 0) = 0)
             OR (keyed.track_serial     AND COALESCE(keyed.svi_serial_no, '') = '')
             OR (keyed.track_supplier   AND keyed.svi_supplier_id IS NULL)
+            OR (
+                 (keyed.track_batch OR keyed.track_mrp OR keyed.track_sale_price
+                  OR keyed.track_expiry OR keyed.track_serial OR keyed.track_supplier)
+                 AND NOT EXISTS (
+                   SELECT 1
+                     FROM stock.stock_lot l
+                    WHERE l.slt_is_deleted  = false
+                      AND l.slt_company_id  = keyed.svh_company_id
+                      AND l.slt_item_id     = keyed.svi_item_id
+                      AND l.slt_key_batch   = keyed.key_batch
+                      AND l.slt_key_mrp     = keyed.key_mrp
+                      AND l.slt_key_sp      = keyed.key_sp
+                      AND l.slt_key_expiry  = keyed.key_expiry
+                      AND l.slt_key_serial  = keyed.key_serial
+                      AND l.slt_key_supplier = keyed.key_supplier)
+               )
          )
+  `;
+}
+/**
+ * The pick's NARROWING: whatever identity an outward line DID state limits the
+ * lots it may issue from (a batch number on an expiry-tracked item narrows the
+ * pick to that batch's lots). A sentinel — '~', the nil uuid, 0001-01-01 — is
+ * "not stated"; so are MRP and selling price −1 AND 0 (notes 93). Selects
+ * against a `stock_lot` alias; the line's flags and keys are passed as
+ * expressions so the pick (bound values) and the preflight (column references)
+ * narrow identically.
+ */
+export function issueNarrowing(
+  lot: string,
+  line: {
+    trackBatch: Prisma.Sql;
+    trackMrp: Prisma.Sql;
+    trackSalePrice: Prisma.Sql;
+    trackExpiry: Prisma.Sql;
+    trackSerial: Prisma.Sql;
+    trackSupplier: Prisma.Sql;
+    keyBatch: Prisma.Sql;
+    keyMrp: Prisma.Sql;
+    keySp: Prisma.Sql;
+    keyExpiry: Prisma.Sql;
+    keySerial: Prisma.Sql;
+    keySupplier: Prisma.Sql;
+  },
+): Prisma.Sql {
+  const l = Prisma.raw(lot);
+  return Prisma.sql`
+             (NOT ${line.trackBatch}::boolean      OR ${line.keyBatch} = '~'  OR ${l}.slt_key_batch    = ${line.keyBatch})
+         AND (NOT ${line.trackMrp}::boolean        OR ${line.keyMrp}::numeric IN (-1, 0) OR ${l}.slt_key_mrp = ${line.keyMrp}::numeric)
+         AND (NOT ${line.trackSalePrice}::boolean  OR ${line.keySp}::numeric  IN (-1, 0) OR ${l}.slt_key_sp  = ${line.keySp}::numeric)
+         AND (NOT ${line.trackExpiry}::boolean     OR ${line.keyExpiry}::date = DATE '0001-01-01' OR ${l}.slt_key_expiry = ${line.keyExpiry}::date)
+         AND (NOT ${line.trackSerial}::boolean     OR ${line.keySerial} = '~' OR ${l}.slt_key_serial   = ${line.keySerial})
+         AND (NOT ${line.trackSupplier}::boolean   OR ${line.keySupplier}::uuid = '00000000-0000-0000-0000-000000000000'::uuid
+                                                   OR ${l}.slt_key_supplier = ${line.keySupplier}::uuid)
   `;
 }
 /**
@@ -981,6 +1042,29 @@ interface PickableLot {
   sbl_lot_id: string;
   available: Prisma.Decimal;
 }
+/** The identity dimensions an outward line DID state, for the refusal that says no lot has them. */
+function statedIdentity(line: PickableLine): string {
+  const parts: string[] = [];
+  if (line.track_batch && line.key_batch !== '~') parts.push(`batch ${line.key_batch}`);
+  if (
+    line.track_mrp &&
+    !new Prisma.Decimal(line.key_mrp).isZero() &&
+    !new Prisma.Decimal(line.key_mrp).eq(-1)
+  )
+    parts.push(`MRP ${new Prisma.Decimal(line.key_mrp).toFixed(2)}`);
+  if (
+    line.track_sale_price &&
+    !new Prisma.Decimal(line.key_sp).isZero() &&
+    !new Prisma.Decimal(line.key_sp).eq(-1)
+  )
+    parts.push(`price ${new Prisma.Decimal(line.key_sp).toFixed(2)}`);
+  if (line.track_expiry && line.key_expiry.toISOString().slice(0, 10) !== '0001-01-01')
+    parts.push(`expiry ${line.key_expiry.toISOString().slice(0, 10)}`);
+  if (line.track_serial && line.key_serial !== '~') parts.push(`serial ${line.key_serial}`);
+  if (line.track_supplier && line.key_supplier !== '00000000-0000-0000-0000-000000000000')
+    parts.push('that supplier');
+  return parts.join(', ');
+}
 /**
  * Phase 0 — WHICH LOT an outward line issues from, when it does not say.
  *
@@ -1004,7 +1088,10 @@ interface PickableLot {
  * line, so phases 1–2 find the same lot the pick did and open no phantom.
  *
  * Opening, count and transfer lines never come here: their lines carry
- * identity by construction. The sale bill sends the lot it picked.
+ * identity by construction. A sale bill usually sends the lot it picked; when
+ * it does not — or sends an MRP / price of 0, or an identity no lot has
+ * (notes 93) — it comes here like any other outward line, and is refused
+ * rather than resolved into a phantom lot.
  */
 async function pickIssueLots(
   tx: Prisma.TransactionClient,
@@ -1060,20 +1147,29 @@ async function pickIssueLots(
          AND b.sbl_is_deleted = false
          AND b.sbl_available_qty > 0
          AND slt.slt_status IN ('ACTIVE', 'CLOSED')
-         -- Whatever identity the line DID supply narrows the pick.
-         AND (NOT ${line.track_batch}::boolean      OR ${line.key_batch} = '~'  OR slt.slt_key_batch    = ${line.key_batch})
-         AND (NOT ${line.track_mrp}::boolean        OR ${line.key_mrp}::numeric = -1 OR slt.slt_key_mrp = ${line.key_mrp}::numeric)
-         AND (NOT ${line.track_sale_price}::boolean OR ${line.key_sp}::numeric = -1  OR slt.slt_key_sp  = ${line.key_sp}::numeric)
-         AND (NOT ${line.track_expiry}::boolean     OR ${line.key_expiry}::date = DATE '0001-01-01' OR slt.slt_key_expiry = ${line.key_expiry}::date)
-         AND (NOT ${line.track_serial}::boolean     OR ${line.key_serial} = '~' OR slt.slt_key_serial   = ${line.key_serial})
-         AND (NOT ${line.track_supplier}::boolean   OR ${line.key_supplier}::uuid = '00000000-0000-0000-0000-000000000000'::uuid
-                                                     OR slt.slt_key_supplier = ${line.key_supplier}::uuid)
+         -- Whatever identity the line DID supply narrows the pick (notes 93:
+         -- MRP / price 0 is "not stated"). The preflight narrows the same way.
+         AND ${issueNarrowing('slt', {
+           trackBatch: Prisma.sql`${line.track_batch}`,
+           trackMrp: Prisma.sql`${line.track_mrp}`,
+           trackSalePrice: Prisma.sql`${line.track_sale_price}`,
+           trackExpiry: Prisma.sql`${line.track_expiry}`,
+           trackSerial: Prisma.sql`${line.track_serial}`,
+           trackSupplier: Prisma.sql`${line.track_supplier}`,
+           keyBatch: Prisma.sql`${line.key_batch}`,
+           keyMrp: Prisma.sql`${line.key_mrp}`,
+           keySp: Prisma.sql`${line.key_sp}`,
+           keyExpiry: Prisma.sql`${line.key_expiry}`,
+           keySerial: Prisma.sql`${line.key_serial}`,
+           keySupplier: Prisma.sql`${line.key_supplier}`,
+         })}
        ORDER BY ${order}
     `;
     if (lots.length === 0) {
+      const stated = statedIdentity(line);
       errors.push({
         field: `lines.${line.svi_line_no}`,
-        message: `Line ${line.svi_line_no} (${line.item_name}): names no lot and this godown holds no stock of the item to issue from. Name the lot, or receive the stock first.`,
+        message: `Line ${line.svi_line_no} (${line.item_name}): names no lot and this godown holds no stock of the item${stated ? ` matching what the line states (${stated})` : ''} to issue from. Name the lot, or receive the stock first.`,
       });
       continue;
     }
@@ -1230,10 +1326,16 @@ async function resolveLots(
            ${auditColumnActor(actor)}
       FROM costed c
      WHERE c.svi_lot_id IS NULL
-       -- Under a per-line direction an OUTWARD line never opens a lot: stock
-       -- that was never received cannot be issued, and the negative policy
-       -- (BLOCK for the adjustment family) says so by name.
-       AND (${rules.lineDirection !== 'REASON'}::boolean OR c.line_direction > 0)
+       -- AN OUTWARD LINE NEVER OPENS A LOT FOR A TRACKED ITEM, in any shape
+       -- (notes 93): stock that was never received cannot be issued, and a
+       -- lot opened from a sale would be a phantom — negative from birth, with
+       -- a cost borrowed from another lot and a count-sheet line nobody can
+       -- find on the shelf. Such a line is picked (pickIssueLots) or refused
+       -- there. A PLAIN item ('N') has exactly one lot, and selling it before
+       -- its first receipt is the negative-stock case the policy rules on, so
+       -- its outward may still open that one lot. Counts, transfers and moves
+       -- always name their lot and never reach this WHERE.
+       AND (c.line_direction > 0 OR c.track_signature = 'N')
      ORDER BY c.svh_company_id, c.svi_item_id, c.key_batch, c.key_mrp,
               c.key_sp, c.key_expiry, c.key_serial, c.key_supplier,
               c.svi_line_no, c.svi_split_no

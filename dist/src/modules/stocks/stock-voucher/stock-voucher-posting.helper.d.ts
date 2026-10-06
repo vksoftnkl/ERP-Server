@@ -63,6 +63,20 @@ export declare function readBucketTrackFlags(client: Pick<Prisma.TransactionClie
 export declare function lineReasonJoin(): Prisma.Sql;
 export declare function lineDirectionColumn(rules: StockVoucherTypeRules): Prisma.Sql;
 export declare function lotlessOutwardLine(): Prisma.Sql;
+export declare function issueNarrowing(lot: string, line: {
+    trackBatch: Prisma.Sql;
+    trackMrp: Prisma.Sql;
+    trackSalePrice: Prisma.Sql;
+    trackExpiry: Prisma.Sql;
+    trackSerial: Prisma.Sql;
+    trackSupplier: Prisma.Sql;
+    keyBatch: Prisma.Sql;
+    keyMrp: Prisma.Sql;
+    keySp: Prisma.Sql;
+    keyExpiry: Prisma.Sql;
+    keySerial: Prisma.Sql;
+    keySupplier: Prisma.Sql;
+}): Prisma.Sql;
 export declare function unreversedLedgerRow(): Prisma.Sql;
 export declare const STOCK_LOT_ID_NAMESPACE = "2f0b7c1e-5d3a-4e8f-9b61-7c4d2a9e0f53";
 export declare function lotIdentityUuid(alias: string): Prisma.Sql;

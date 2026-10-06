@@ -1092,8 +1092,13 @@ let StockVoucherService = class StockVoucherService {
       pick AS (
         SELECT keyed.svi_id,
                (${canPick}::boolean AND keyed.line_direction < 0 AND ${(0, stock_voucher_posting_helper_1.lotlessOutwardLine)()}) AS pickable,
+               -- Stock the PICK could issue from: narrowed by whatever identity
+               -- the line stated, exactly as pickIssueLots narrows (notes 93),
+               -- so the preflight and the post agree about "nothing to pick".
                EXISTS (
-                 SELECT 1 FROM stock.stock_balance pb
+                 SELECT 1
+                   FROM stock.stock_balance pb
+                   JOIN stock.stock_lot pl ON pl.slt_id = pb.sbl_lot_id AND pl.slt_is_deleted = false
                   WHERE pb.sbl_company_id = keyed.svh_company_id
                     AND pb.sbl_branch_id  = keyed.svh_branch_id
                     AND pb.sbl_godown_id  = keyed.svi_godown_id
@@ -1101,6 +1106,21 @@ let StockVoucherService = class StockVoucherService {
                     AND pb.sbl_bucket     = keyed.svi_bucket
                     AND pb.sbl_is_deleted = false
                     AND pb.sbl_available_qty > 0
+                    AND pl.slt_status IN ('ACTIVE', 'CLOSED')
+                    AND ${(0, stock_voucher_posting_helper_1.issueNarrowing)('pl', {
+            trackBatch: client_1.Prisma.raw('keyed.track_batch'),
+            trackMrp: client_1.Prisma.raw('keyed.track_mrp'),
+            trackSalePrice: client_1.Prisma.raw('keyed.track_sale_price'),
+            trackExpiry: client_1.Prisma.raw('keyed.track_expiry'),
+            trackSerial: client_1.Prisma.raw('keyed.track_serial'),
+            trackSupplier: client_1.Prisma.raw('keyed.track_supplier'),
+            keyBatch: client_1.Prisma.raw('keyed.key_batch'),
+            keyMrp: client_1.Prisma.raw('keyed.key_mrp'),
+            keySp: client_1.Prisma.raw('keyed.key_sp'),
+            keyExpiry: client_1.Prisma.raw('keyed.key_expiry'),
+            keySerial: client_1.Prisma.raw('keyed.key_serial'),
+            keySupplier: client_1.Prisma.raw('keyed.key_supplier'),
+        })}
                ) AS has_stock
           FROM keyed
       ),
@@ -1250,7 +1270,7 @@ let StockVoucherService = class StockVoucherService {
                WHEN pick.pickable AND upper(keyed.issue_strategy) = 'MANUAL'
                  THEN 'the issue strategy for this item is MANUAL: the line must name the lot it issues from'
                WHEN pick.pickable AND NOT pick.has_stock
-                 THEN 'this line names no lot and the godown holds no stock of the item to issue from'
+                 THEN 'this line names no lot and the godown holds no stock of the item matching what the line states to issue from'
                -- A line that NAMES its lot (a transfer, a count) carries the
                -- holding's identity by reference; the six dimensions are the
                -- engine's to resolve only when it does not.

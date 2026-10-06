@@ -27,6 +27,7 @@ import {
   lineDirectionColumn,
   lineReasonJoin,
   lotIdentityKeyColumns,
+  issueNarrowing,
   lotlessOutwardLine,
   unreversedLedgerRow,
 } from './stock-voucher-posting.helper';
@@ -408,7 +409,7 @@ export class StockVoucherService {
       // After the post, so the revision records the document this request left
       // behind — posted, with the engine's totals.
       await this.logRevision(tx, rules, id, header, before, actor, true);
-      return { svhId: id, rowsPosted: posted.rowsPosted as number | null };
+      return { svhId: id, rowsPosted: posted.rowsPosted };
     });
     const document = await this.getById(
       rules,
@@ -512,7 +513,9 @@ export class StockVoucherService {
     // The DTO is shared by all eleven document types, so the fields that belong
     // to only one of them are gated here rather than being absent from it.
     if (rules.lineDirection !== 'REASON') {
-      const signed = lines.findIndex((line) => line.direction !== undefined && line.direction !== null);
+      const signed = lines.findIndex(
+        (line) => line.direction !== undefined && line.direction !== null,
+      );
       if (signed >= 0) {
         errors.push({
           field: `lines.${signed}`,
@@ -539,7 +542,9 @@ export class StockVoucherService {
         }
       });
     } else {
-      const moved = lines.findIndex((line) => line.toBucket !== undefined && line.toBucket !== null);
+      const moved = lines.findIndex(
+        (line) => line.toBucket !== undefined && line.toBucket !== null,
+      );
       if (moved >= 0) {
         errors.push({
           field: `lines.${moved}.toBucket`,
@@ -1926,8 +1931,13 @@ export class StockVoucherService {
       pick AS (
         SELECT keyed.svi_id,
                (${canPick}::boolean AND keyed.line_direction < 0 AND ${lotlessOutwardLine()}) AS pickable,
+               -- Stock the PICK could issue from: narrowed by whatever identity
+               -- the line stated, exactly as pickIssueLots narrows (notes 93),
+               -- so the preflight and the post agree about "nothing to pick".
                EXISTS (
-                 SELECT 1 FROM stock.stock_balance pb
+                 SELECT 1
+                   FROM stock.stock_balance pb
+                   JOIN stock.stock_lot pl ON pl.slt_id = pb.sbl_lot_id AND pl.slt_is_deleted = false
                   WHERE pb.sbl_company_id = keyed.svh_company_id
                     AND pb.sbl_branch_id  = keyed.svh_branch_id
                     AND pb.sbl_godown_id  = keyed.svi_godown_id
@@ -1935,6 +1945,21 @@ export class StockVoucherService {
                     AND pb.sbl_bucket     = keyed.svi_bucket
                     AND pb.sbl_is_deleted = false
                     AND pb.sbl_available_qty > 0
+                    AND pl.slt_status IN ('ACTIVE', 'CLOSED')
+                    AND ${issueNarrowing('pl', {
+                      trackBatch: Prisma.raw('keyed.track_batch'),
+                      trackMrp: Prisma.raw('keyed.track_mrp'),
+                      trackSalePrice: Prisma.raw('keyed.track_sale_price'),
+                      trackExpiry: Prisma.raw('keyed.track_expiry'),
+                      trackSerial: Prisma.raw('keyed.track_serial'),
+                      trackSupplier: Prisma.raw('keyed.track_supplier'),
+                      keyBatch: Prisma.raw('keyed.key_batch'),
+                      keyMrp: Prisma.raw('keyed.key_mrp'),
+                      keySp: Prisma.raw('keyed.key_sp'),
+                      keyExpiry: Prisma.raw('keyed.key_expiry'),
+                      keySerial: Prisma.raw('keyed.key_serial'),
+                      keySupplier: Prisma.raw('keyed.key_supplier'),
+                    })}
                ) AS has_stock
           FROM keyed
       ),
@@ -2084,7 +2109,7 @@ export class StockVoucherService {
                WHEN pick.pickable AND upper(keyed.issue_strategy) = 'MANUAL'
                  THEN 'the issue strategy for this item is MANUAL: the line must name the lot it issues from'
                WHEN pick.pickable AND NOT pick.has_stock
-                 THEN 'this line names no lot and the godown holds no stock of the item to issue from'
+                 THEN 'this line names no lot and the godown holds no stock of the item matching what the line states to issue from'
                -- A line that NAMES its lot (a transfer, a count) carries the
                -- holding's identity by reference; the six dimensions are the
                -- engine's to resolve only when it does not.

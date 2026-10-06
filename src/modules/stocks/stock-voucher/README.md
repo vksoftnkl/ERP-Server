@@ -44,7 +44,15 @@ rows that exist, forward and reversal alike, so a re-sent batch or a reversal la
 original gives the same figures. `POST /stock/admin/rebuild-costs` (`dryRun=true` to report and
 roll back) runs the same rebuilds over a scope — the one-off backfill and the only correct repair.
 New lots take a deterministic id: uuid v5 over the eight identity columns (`lotIdentityUuid`), so
-two offline branches mint one id for one carton. Nothing outside that file inserts into `stock_ledger`: the model
+two offline branches mint one id for one carton.
+
+**An outward line never opens a lot for a tracked item** (notes 93): a sale, DC or any fixed-OUT
+shape whose stated identity matches no lot is treated as lotless — picked by the issue strategy,
+narrowed by what it did state, and refused when nothing matches — instead of resolving into a
+phantom lot sold negative. MRP 0 and selling price 0 on an outward line read as "not stated", like a
+blank batch. A plain (`N`) item may still open its one lot from an outward: that is the
+negative-stock case the policy rules on. The preflight (`validate()`) narrows its stock check the
+same way (`issueNarrowing`), so it and the post agree about "nothing to pick". Nothing outside that file inserts into `stock_ledger`: the model
 exists (`StockLedger`) but `test/stock-ledger-single-writer.e2e-spec.ts` fails the
 build on any second INSERT site, any UPDATE or DELETE, and any Prisma write.
 

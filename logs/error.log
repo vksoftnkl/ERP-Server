@@ -15538,3 +15538,155 @@ ConnectorError(ConnectorError { user_facing_error: None, kind: QueryError(Postgr
     at async BillService.createBill (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill.service.ts:770:14)
     at async BillService.save (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill.service.ts:487:9)
     at async BillController.save (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill.controller.ts:94:18)
+2026-10-06T12:03:38.204Z ERROR [ModuleExceptionFilter] POST /api/v1/bills/amend
+PrismaClientKnownRequestError: 
+Invalid `tx.accTempCredit.create()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill-lifecycle.service.ts:1373:45
+
+  1370 )) {
+  1371   const tc = t.tempCredit!;
+  1372   const dueOn = addDays(snap.billDate, tc.days);
+→ 1373   const credit = await tx.accTempCredit.create(
+Unique constraint failed on the fields: (`atc_tender_id`,`atc_tender_acc_year`,`atc_acc_year`)
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async BillLifecycleService.postCore (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill-lifecycle.service.ts:1373:22)
+    at async <anonymous> (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill-lifecycle.service.ts:482:16)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async BillLifecycleService.amend (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill-lifecycle.service.ts:354:5)
+    at async BillController.amend (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill.controller.ts:148:49)
+2026-10-06T12:04:11.781Z ERROR [ModuleExceptionFilter] POST /api/v1/bills/amend
+PrismaClientKnownRequestError: 
+Invalid `tx.accTempCredit.create()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill-lifecycle.service.ts:1373:45
+
+  1370 )) {
+  1371   const tc = t.tempCredit!;
+  1372   const dueOn = addDays(snap.billDate, tc.days);
+→ 1373   const credit = await tx.accTempCredit.create(
+Unique constraint failed on the fields: (`atc_tender_id`,`atc_tender_acc_year`,`atc_acc_year`)
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async BillLifecycleService.postCore (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill-lifecycle.service.ts:1373:22)
+    at async <anonymous> (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill-lifecycle.service.ts:482:16)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async BillLifecycleService.amend (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill-lifecycle.service.ts:354:5)
+    at async BillController.amend (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill.controller.ts:148:49)
+2026-10-06T12:05:47.487Z ERROR [ModuleExceptionFilter] POST /api/v1/bills/amend
+PrismaClientKnownRequestError: 
+Invalid `tx.accTempCredit.create()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill-lifecycle.service.ts:1373:45
+
+  1370 )) {
+  1371   const tc = t.tempCredit!;
+  1372   const dueOn = addDays(snap.billDate, tc.days);
+→ 1373   const credit = await tx.accTempCredit.create(
+Unique constraint failed on the fields: (`atc_tender_id`,`atc_tender_acc_year`,`atc_acc_year`)
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async BillLifecycleService.postCore (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill-lifecycle.service.ts:1373:22)
+    at async <anonymous> (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill-lifecycle.service.ts:482:16)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async BillLifecycleService.amend (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill-lifecycle.service.ts:354:5)
+    at async BillController.amend (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill.controller.ts:148:49)
+2026-10-06T12:06:01.154Z ERROR [ModuleExceptionFilter] POST /api/v1/bills/amend
+PrismaClientKnownRequestError: 
+Invalid `tx.accTempCredit.create()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill-lifecycle.service.ts:1373:45
+
+  1370 )) {
+  1371   const tc = t.tempCredit!;
+  1372   const dueOn = addDays(snap.billDate, tc.days);
+→ 1373   const credit = await tx.accTempCredit.create(
+Unique constraint failed on the fields: (`atc_tender_id`,`atc_tender_acc_year`,`atc_acc_year`)
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async BillLifecycleService.postCore (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill-lifecycle.service.ts:1373:22)
+    at async <anonymous> (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill-lifecycle.service.ts:482:16)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async BillLifecycleService.amend (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill-lifecycle.service.ts:354:5)
+    at async BillController.amend (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill.controller.ts:148:49)
+2026-10-06T12:51:17.056Z ERROR [ModuleExceptionFilter] POST /api/v1/bills/amend
+PrismaClientKnownRequestError: 
+Invalid `tx.accTempCredit.create()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill-lifecycle.service.ts:1373:45
+
+  1370 )) {
+  1371   const tc = t.tempCredit!;
+  1372   const dueOn = addDays(snap.billDate, tc.days);
+→ 1373   const credit = await tx.accTempCredit.create(
+Unique constraint failed on the fields: (`atc_tender_id`,`atc_tender_acc_year`,`atc_acc_year`)
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async BillLifecycleService.postCore (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill-lifecycle.service.ts:1373:22)
+    at async <anonymous> (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill-lifecycle.service.ts:482:16)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async BillLifecycleService.amend (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill-lifecycle.service.ts:354:5)
+    at async BillController.amend (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill.controller.ts:148:49)
+2026-10-06T12:51:56.898Z ERROR [ModuleExceptionFilter] POST /api/v1/bills/amend
+PrismaClientKnownRequestError: 
+Invalid `tx.accTempCredit.create()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill-lifecycle.service.ts:1373:45
+
+  1370 )) {
+  1371   const tc = t.tempCredit!;
+  1372   const dueOn = addDays(snap.billDate, tc.days);
+→ 1373   const credit = await tx.accTempCredit.create(
+Unique constraint failed on the fields: (`atc_tender_id`,`atc_tender_acc_year`,`atc_acc_year`)
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async BillLifecycleService.postCore (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill-lifecycle.service.ts:1373:22)
+    at async <anonymous> (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill-lifecycle.service.ts:482:16)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async BillLifecycleService.amend (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill-lifecycle.service.ts:354:5)
+    at async BillController.amend (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill.controller.ts:148:49)
+2026-10-06T12:53:10.070Z ERROR [ModuleExceptionFilter] POST /api/v1/bills/amend
+PrismaClientKnownRequestError: 
+Invalid `tx.accTempCredit.create()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill-lifecycle.service.ts:1373:45
+
+  1370 )) {
+  1371   const tc = t.tempCredit!;
+  1372   const dueOn = addDays(snap.billDate, tc.days);
+→ 1373   const credit = await tx.accTempCredit.create(
+Unique constraint failed on the fields: (`atc_tender_id`,`atc_tender_acc_year`,`atc_acc_year`)
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async BillLifecycleService.postCore (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill-lifecycle.service.ts:1373:22)
+    at async <anonymous> (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill-lifecycle.service.ts:482:16)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async BillLifecycleService.amend (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill-lifecycle.service.ts:354:5)
+    at async BillController.amend (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill.controller.ts:148:49)
+2026-10-06T12:54:08.537Z ERROR [ModuleExceptionFilter] POST /api/v1/bills/amend
+PrismaClientKnownRequestError: 
+Invalid `tx.accTempCredit.create()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill-lifecycle.service.ts:1373:45
+
+  1370 )) {
+  1371   const tc = t.tempCredit!;
+  1372   const dueOn = addDays(snap.billDate, tc.days);
+→ 1373   const credit = await tx.accTempCredit.create(
+Unique constraint failed on the fields: (`atc_tender_id`,`atc_tender_acc_year`,`atc_acc_year`)
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async BillLifecycleService.postCore (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill-lifecycle.service.ts:1373:22)
+    at async <anonymous> (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill-lifecycle.service.ts:482:16)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async BillLifecycleService.amend (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill-lifecycle.service.ts:354:5)
+    at async BillController.amend (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill.controller.ts:148:49)

@@ -11,6 +11,7 @@ exports.readBucketTrackFlags = readBucketTrackFlags;
 exports.lineReasonJoin = lineReasonJoin;
 exports.lineDirectionColumn = lineDirectionColumn;
 exports.lotlessOutwardLine = lotlessOutwardLine;
+exports.issueNarrowing = issueNarrowing;
 exports.unreversedLedgerRow = unreversedLedgerRow;
 exports.lotIdentityUuid = lotIdentityUuid;
 exports.settleTransitShort = settleTransitShort;
@@ -265,11 +266,39 @@ function lotlessOutwardLine() {
          AND (
                (keyed.track_batch      AND COALESCE(keyed.svi_batch_no, '')  = '')
             OR (keyed.track_expiry     AND keyed.svi_expiry_date IS NULL)
-            OR (keyed.track_mrp        AND keyed.svi_mrp         IS NULL)
-            OR (keyed.track_sale_price AND keyed.svi_sale_price  IS NULL)
+            OR (keyed.track_mrp        AND COALESCE(keyed.svi_mrp, 0)        = 0)
+            OR (keyed.track_sale_price AND COALESCE(keyed.svi_sale_price, 0) = 0)
             OR (keyed.track_serial     AND COALESCE(keyed.svi_serial_no, '') = '')
             OR (keyed.track_supplier   AND keyed.svi_supplier_id IS NULL)
+            OR (
+                 (keyed.track_batch OR keyed.track_mrp OR keyed.track_sale_price
+                  OR keyed.track_expiry OR keyed.track_serial OR keyed.track_supplier)
+                 AND NOT EXISTS (
+                   SELECT 1
+                     FROM stock.stock_lot l
+                    WHERE l.slt_is_deleted  = false
+                      AND l.slt_company_id  = keyed.svh_company_id
+                      AND l.slt_item_id     = keyed.svi_item_id
+                      AND l.slt_key_batch   = keyed.key_batch
+                      AND l.slt_key_mrp     = keyed.key_mrp
+                      AND l.slt_key_sp      = keyed.key_sp
+                      AND l.slt_key_expiry  = keyed.key_expiry
+                      AND l.slt_key_serial  = keyed.key_serial
+                      AND l.slt_key_supplier = keyed.key_supplier)
+               )
          )
+  `;
+}
+function issueNarrowing(lot, line) {
+    const l = client_1.Prisma.raw(lot);
+    return client_1.Prisma.sql `
+             (NOT ${line.trackBatch}::boolean      OR ${line.keyBatch} = '~'  OR ${l}.slt_key_batch    = ${line.keyBatch})
+         AND (NOT ${line.trackMrp}::boolean        OR ${line.keyMrp}::numeric IN (-1, 0) OR ${l}.slt_key_mrp = ${line.keyMrp}::numeric)
+         AND (NOT ${line.trackSalePrice}::boolean  OR ${line.keySp}::numeric  IN (-1, 0) OR ${l}.slt_key_sp  = ${line.keySp}::numeric)
+         AND (NOT ${line.trackExpiry}::boolean     OR ${line.keyExpiry}::date = DATE '0001-01-01' OR ${l}.slt_key_expiry = ${line.keyExpiry}::date)
+         AND (NOT ${line.trackSerial}::boolean     OR ${line.keySerial} = '~' OR ${l}.slt_key_serial   = ${line.keySerial})
+         AND (NOT ${line.trackSupplier}::boolean   OR ${line.keySupplier}::uuid = '00000000-0000-0000-0000-000000000000'::uuid
+                                                   OR ${l}.slt_key_supplier = ${line.keySupplier}::uuid)
   `;
 }
 function unreversedLedgerRow() {
@@ -557,6 +586,26 @@ function postingCte(svhId, accYear, rules) {
     )
   `;
 }
+function statedIdentity(line) {
+    const parts = [];
+    if (line.track_batch && line.key_batch !== '~')
+        parts.push(`batch ${line.key_batch}`);
+    if (line.track_mrp &&
+        !new client_1.Prisma.Decimal(line.key_mrp).isZero() &&
+        !new client_1.Prisma.Decimal(line.key_mrp).eq(-1))
+        parts.push(`MRP ${new client_1.Prisma.Decimal(line.key_mrp).toFixed(2)}`);
+    if (line.track_sale_price &&
+        !new client_1.Prisma.Decimal(line.key_sp).isZero() &&
+        !new client_1.Prisma.Decimal(line.key_sp).eq(-1))
+        parts.push(`price ${new client_1.Prisma.Decimal(line.key_sp).toFixed(2)}`);
+    if (line.track_expiry && line.key_expiry.toISOString().slice(0, 10) !== '0001-01-01')
+        parts.push(`expiry ${line.key_expiry.toISOString().slice(0, 10)}`);
+    if (line.track_serial && line.key_serial !== '~')
+        parts.push(`serial ${line.key_serial}`);
+    if (line.track_supplier && line.key_supplier !== '00000000-0000-0000-0000-000000000000')
+        parts.push('that supplier');
+    return parts.join(', ');
+}
 async function pickIssueLots(tx, params) {
     const { rules, svhId, accYear, actor, postedOn } = params;
     const author = auditColumnActor(actor);
@@ -607,20 +656,29 @@ async function pickIssueLots(tx, params) {
          AND b.sbl_is_deleted = false
          AND b.sbl_available_qty > 0
          AND slt.slt_status IN ('ACTIVE', 'CLOSED')
-         -- Whatever identity the line DID supply narrows the pick.
-         AND (NOT ${line.track_batch}::boolean      OR ${line.key_batch} = '~'  OR slt.slt_key_batch    = ${line.key_batch})
-         AND (NOT ${line.track_mrp}::boolean        OR ${line.key_mrp}::numeric = -1 OR slt.slt_key_mrp = ${line.key_mrp}::numeric)
-         AND (NOT ${line.track_sale_price}::boolean OR ${line.key_sp}::numeric = -1  OR slt.slt_key_sp  = ${line.key_sp}::numeric)
-         AND (NOT ${line.track_expiry}::boolean     OR ${line.key_expiry}::date = DATE '0001-01-01' OR slt.slt_key_expiry = ${line.key_expiry}::date)
-         AND (NOT ${line.track_serial}::boolean     OR ${line.key_serial} = '~' OR slt.slt_key_serial   = ${line.key_serial})
-         AND (NOT ${line.track_supplier}::boolean   OR ${line.key_supplier}::uuid = '00000000-0000-0000-0000-000000000000'::uuid
-                                                     OR slt.slt_key_supplier = ${line.key_supplier}::uuid)
+         -- Whatever identity the line DID supply narrows the pick (notes 93:
+         -- MRP / price 0 is "not stated"). The preflight narrows the same way.
+         AND ${issueNarrowing('slt', {
+            trackBatch: client_1.Prisma.sql `${line.track_batch}`,
+            trackMrp: client_1.Prisma.sql `${line.track_mrp}`,
+            trackSalePrice: client_1.Prisma.sql `${line.track_sale_price}`,
+            trackExpiry: client_1.Prisma.sql `${line.track_expiry}`,
+            trackSerial: client_1.Prisma.sql `${line.track_serial}`,
+            trackSupplier: client_1.Prisma.sql `${line.track_supplier}`,
+            keyBatch: client_1.Prisma.sql `${line.key_batch}`,
+            keyMrp: client_1.Prisma.sql `${line.key_mrp}`,
+            keySp: client_1.Prisma.sql `${line.key_sp}`,
+            keyExpiry: client_1.Prisma.sql `${line.key_expiry}`,
+            keySerial: client_1.Prisma.sql `${line.key_serial}`,
+            keySupplier: client_1.Prisma.sql `${line.key_supplier}`,
+        })}
        ORDER BY ${order}
     `;
         if (lots.length === 0) {
+            const stated = statedIdentity(line);
             errors.push({
                 field: `lines.${line.svi_line_no}`,
-                message: `Line ${line.svi_line_no} (${line.item_name}): names no lot and this godown holds no stock of the item to issue from. Name the lot, or receive the stock first.`,
+                message: `Line ${line.svi_line_no} (${line.item_name}): names no lot and this godown holds no stock of the item${stated ? ` matching what the line states (${stated})` : ''} to issue from. Name the lot, or receive the stock first.`,
             });
             continue;
         }
@@ -752,10 +810,16 @@ async function resolveLots(tx, params) {
            ${auditColumnActor(actor)}
       FROM costed c
      WHERE c.svi_lot_id IS NULL
-       -- Under a per-line direction an OUTWARD line never opens a lot: stock
-       -- that was never received cannot be issued, and the negative policy
-       -- (BLOCK for the adjustment family) says so by name.
-       AND (${rules.lineDirection !== 'REASON'}::boolean OR c.line_direction > 0)
+       -- AN OUTWARD LINE NEVER OPENS A LOT FOR A TRACKED ITEM, in any shape
+       -- (notes 93): stock that was never received cannot be issued, and a
+       -- lot opened from a sale would be a phantom — negative from birth, with
+       -- a cost borrowed from another lot and a count-sheet line nobody can
+       -- find on the shelf. Such a line is picked (pickIssueLots) or refused
+       -- there. A PLAIN item ('N') has exactly one lot, and selling it before
+       -- its first receipt is the negative-stock case the policy rules on, so
+       -- its outward may still open that one lot. Counts, transfers and moves
+       -- always name their lot and never reach this WHERE.
+       AND (c.line_direction > 0 OR c.track_signature = 'N')
      ORDER BY c.svh_company_id, c.svi_item_id, c.key_batch, c.key_mrp,
               c.key_sp, c.key_expiry, c.key_serial, c.key_supplier,
               c.svi_line_no, c.svi_split_no
