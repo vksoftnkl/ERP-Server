@@ -31,7 +31,8 @@
 --      company. This is a one-row-set invariant, so it belongs in the DB
 --      (the SQL-vs-NestJS rule). The service's clearDefaultBranch() runs
 --      before the write in the same transaction, so it never trips this index.
---   A re-run inserts and updates nothing, and the index is IF NOT EXISTS.
+--   A re-run inserts and updates nothing, and the index is created only when
+--   pg_indexes does not already list it (see 3 below for why not IF NOT EXISTS).
 --
 -- WHAT THIS FILE DOES NOT DO (yours, in NestJS; see notes 78)
 --   No trigger. The create-time seed is a unit of work and belongs in
@@ -132,9 +133,25 @@ UPDATE public.branch_master b
                   AND NOT coalesce(c.comp_is_deleted, false));
 
 -- ---- 3. at most one live default branch per company -------------------------
-CREATE UNIQUE INDEX IF NOT EXISTS uq_branch_master_default
-    ON public.branch_master (br_comp_id)
- WHERE br_is_default AND NOT br_is_deleted;
+-- Migration 20261002100000 creates this index as the table owner. Where the
+-- app runs as an unprivileged role (the VPS: tables are owned by postgres, the
+-- seed runs as erp_app) a bare CREATE INDEX IF NOT EXISTS still fails with
+-- "must be owner of table branch_master" -- the ownership check runs before the
+-- IF NOT EXISTS short-circuit -- so look the index up first and create it only
+-- when it is genuinely missing.
+DO $do$
+BEGIN
+    IF NOT EXISTS (SELECT 1
+                     FROM pg_indexes
+                    WHERE schemaname = 'public'
+                      AND tablename  = 'branch_master'
+                      AND indexname  = 'uq_branch_master_default') THEN
+        CREATE UNIQUE INDEX uq_branch_master_default
+            ON public.branch_master (br_comp_id)
+         WHERE br_is_default AND NOT br_is_deleted;
+    END IF;
+END
+$do$;
 
 -- ---- result ----------------------------------------------------------------
 SELECT c.comp_name,
