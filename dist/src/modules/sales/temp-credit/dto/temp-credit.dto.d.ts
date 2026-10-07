@@ -11,3 +11,8 @@ export declare class TempCreditFollowUpDto {
     promiseDate?: string | null;
     remarks: string;
 }
+export declare class DeleteTempCreditDto {
+    atcId: string;
+    atcAccYear: string;
+    reason: string;
+}

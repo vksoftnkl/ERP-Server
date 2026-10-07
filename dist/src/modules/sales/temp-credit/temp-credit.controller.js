@@ -22,7 +22,7 @@ const temp_credit_dto_1 = require("./dto/temp-credit.dto");
 const temp_credit_service_1 = require("./temp-credit.service");
 let TempCreditExceptionFilter = class TempCreditExceptionFilter extends module_exception_filter_utils_1.SalesExceptionFilter {
     constructor() {
-        super(/\b(atc[A-Za-z0-9]+|companyId|branchId|status|search|overdueOnly|promiseDate|remarks)\b/);
+        super(/\b(atc[A-Za-z0-9]+|companyId|branchId|status|search|overdueOnly|promiseDate|remarks|reason)\b/);
     }
 };
 exports.TempCreditExceptionFilter = TempCreditExceptionFilter;
@@ -45,6 +45,9 @@ let TempCreditController = class TempCreditController {
     async followUp(dto) {
         return { success: true, message: 'Follow-up recorded', data: await this.service.followUp(dto) };
     }
+    async remove(dto) {
+        return { success: true, message: 'Temporary credit deleted', data: await this.service.remove(dto) };
+    }
 };
 exports.TempCreditController = TempCreditController;
 __decorate([
@@ -65,6 +68,17 @@ __decorate([
     __metadata("design:paramtypes", [temp_credit_dto_1.TempCreditFollowUpDto]),
     __metadata("design:returntype", Promise)
 ], TempCreditController.prototype, "followUp", null);
+__decorate([
+    (0, common_1.Post)('delete'),
+    (0, common_1.Version)(api_version_1.API_VERSION),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Take a temporary credit off the register (soft delete). The bill and its balance are left alone',
+    }),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [temp_credit_dto_1.DeleteTempCreditDto]),
+    __metadata("design:returntype", Promise)
+], TempCreditController.prototype, "remove", null);
 exports.TempCreditController = TempCreditController = __decorate([
     (0, swagger_1.ApiTags)('Temporary Credits'),
     (0, swagger_1.ApiBearerAuth)('access-token'),

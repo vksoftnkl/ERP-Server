@@ -54,3 +54,24 @@ export class TempCreditFollowUpDto {
   @IsNotEmpty()
   remarks!: string;
 }
+
+/**
+ * `POST /temp-credits/delete` — take a credit off the register. The key rides
+ * in the body, as the bill's and the receipt's deletes do: the row is keyed by
+ * id AND accounting year, since the table is partitioned by the year.
+ */
+export class DeleteTempCreditDto {
+  @ApiProperty({ format: 'uuid' })
+  @RequiredUuid()
+  atcId!: string;
+
+  @ApiProperty({ minLength: 9, maxLength: 9 })
+  @TrimmedString(9)
+  @IsNotEmpty()
+  atcAccYear!: string;
+
+  @ApiProperty({ maxLength: 250, description: 'Why it is being removed — kept on the row and in its trail' })
+  @TrimmedString(250)
+  @IsNotEmpty()
+  reason!: string;
+}

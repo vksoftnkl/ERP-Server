@@ -1,10 +1,14 @@
 import { CacheTTL } from '@nestjs/cache-manager';
-import { Body, Catch, Controller, Get, Put, Query, UseFilters, Version } from '@nestjs/common';
+import { Body, Catch, Controller, Get, Post, Put, Query, UseFilters, Version } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { API_VERSION } from '../../../common/constants/api-version';
 import { SalesExceptionFilter } from 'src/common/utils/module-exception-filter.utils';
 import type { ModuleErrorDetail, ModuleErrorResponse } from 'src/common/utils/module-service.utils';
-import { OpenTempCreditsQueryDto, TempCreditFollowUpDto } from './dto/temp-credit.dto';
+import {
+  DeleteTempCreditDto,
+  OpenTempCreditsQueryDto,
+  TempCreditFollowUpDto,
+} from './dto/temp-credit.dto';
 import { TempCreditService } from './temp-credit.service';
 
 @Catch()
@@ -13,7 +17,7 @@ export class TempCreditExceptionFilter extends SalesExceptionFilter<
   ModuleErrorResponse<ModuleErrorDetail>
 > {
   constructor() {
-    super(/\b(atc[A-Za-z0-9]+|companyId|branchId|status|search|overdueOnly|promiseDate|remarks)\b/);
+    super(/\b(atc[A-Za-z0-9]+|companyId|branchId|status|search|overdueOnly|promiseDate|remarks|reason)\b/);
   }
 }
 
@@ -42,5 +46,15 @@ export class TempCreditController {
   @ApiOperation({ summary: 'Record a follow-up (promise date, remarks) on a temporary credit' })
   async followUp(@Body() dto: TempCreditFollowUpDto) {
     return { success: true, message: 'Follow-up recorded', data: await this.service.followUp(dto) };
+  }
+
+  @Post('delete')
+  @Version(API_VERSION)
+  @ApiOperation({
+    summary:
+      'Take a temporary credit off the register (soft delete). The bill and its balance are left alone',
+  })
+  async remove(@Body() dto: DeleteTempCreditDto) {
+    return { success: true, message: 'Temporary credit deleted', data: await this.service.remove(dto) };
   }
 }

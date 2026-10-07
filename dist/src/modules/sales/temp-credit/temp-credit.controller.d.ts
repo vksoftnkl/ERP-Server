@@ -1,6 +1,6 @@
 import { SalesExceptionFilter } from "../../../common/utils/module-exception-filter.utils";
 import type { ModuleErrorDetail, ModuleErrorResponse } from "../../../common/utils/module-service.utils";
-import { OpenTempCreditsQueryDto, TempCreditFollowUpDto } from './dto/temp-credit.dto';
+import { DeleteTempCreditDto, OpenTempCreditsQueryDto, TempCreditFollowUpDto } from './dto/temp-credit.dto';
 import { TempCreditService } from './temp-credit.service';
 export declare class TempCreditExceptionFilter extends SalesExceptionFilter<ModuleErrorDetail, ModuleErrorResponse<ModuleErrorDetail>> {
     constructor();
@@ -17,5 +17,13 @@ export declare class TempCreditController {
         success: boolean;
         message: string;
         data: Record<string, unknown>;
+    }>;
+    remove(dto: DeleteTempCreditDto): Promise<{
+        success: boolean;
+        message: string;
+        data: {
+            atcId: string;
+            deleted: true;
+        };
     }>;
 }

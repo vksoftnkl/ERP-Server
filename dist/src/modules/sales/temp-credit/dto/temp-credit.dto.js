@@ -9,7 +9,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.TempCreditFollowUpDto = exports.OpenTempCreditsQueryDto = void 0;
+exports.DeleteTempCreditDto = exports.TempCreditFollowUpDto = exports.OpenTempCreditsQueryDto = void 0;
 const swagger_1 = require("@nestjs/swagger");
 const class_validator_1 = require("class-validator");
 const dtoDecorators_1 = require("../../../../common/dto/dtoDecorators");
@@ -78,4 +78,27 @@ __decorate([
     (0, class_validator_1.IsNotEmpty)(),
     __metadata("design:type", String)
 ], TempCreditFollowUpDto.prototype, "remarks", void 0);
+class DeleteTempCreditDto {
+    atcId;
+    atcAccYear;
+    reason;
+}
+exports.DeleteTempCreditDto = DeleteTempCreditDto;
+__decorate([
+    (0, swagger_1.ApiProperty)({ format: 'uuid' }),
+    (0, dtoDecorators_1.RequiredUuid)(),
+    __metadata("design:type", String)
+], DeleteTempCreditDto.prototype, "atcId", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ minLength: 9, maxLength: 9 }),
+    (0, dtoDecorators_1.TrimmedString)(9),
+    (0, class_validator_1.IsNotEmpty)(),
+    __metadata("design:type", String)
+], DeleteTempCreditDto.prototype, "atcAccYear", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ maxLength: 250, description: 'Why it is being removed — kept on the row and in its trail' }),
+    (0, dtoDecorators_1.TrimmedString)(250),
+    (0, class_validator_1.IsNotEmpty)(),
+    __metadata("design:type", String)
+], DeleteTempCreditDto.prototype, "reason", void 0);
 //# sourceMappingURL=temp-credit.dto.js.map

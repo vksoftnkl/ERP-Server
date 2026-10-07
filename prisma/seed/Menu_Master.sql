@@ -292,21 +292,17 @@ VALUES
 ON CONFLICT (menu_id) DO NOTHING;
 
 -- ── menu_verbs for the rows this file adds after 20260922170000 ─────────────
--- The column defaults to '{VIEW,CREATE,EDIT,DELETE,PRINT,EXPORT}', which is
--- right for most screens and wrong for 257: the Temp Credits list shows what
--- the bill screen created and lets it be settled or written off. Nothing is
--- created or deleted there, so CREATE and DELETE would be two checkboxes an
--- administrator can tick to no effect -- exactly what menu_verbs exists to stop.
+-- The column defaults to '{VIEW,CREATE,EDIT,DELETE,PRINT,EXPORT}'. Each block
+-- below narrows a row that needs a different list, and is guarded on that
+-- default so a site that has since edited the row's verbs keeps its own
+-- answer: this runs on every deploy.
 --
--- Guarded on the seeded default so a site that has since edited 257's verbs
--- keeps its own answer: this runs on every deploy.
-UPDATE fixed.menu_master
-   SET menu_verbs = '{VIEW,EDIT,PRINT,EXPORT}'
- WHERE menu_id = 257
-   AND menu_verbs = '{VIEW,CREATE,EDIT,DELETE,PRINT,EXPORT}';
+-- 257 Temp Credits keeps the default (CREATE and DELETE are grantable there);
+-- an earlier block narrowed it to {VIEW,EDIT,PRINT,EXPORT} and was retired by
+-- 20261007100000_temp_credits_create_delete_verbs.
 
 -- 258 Ledger Statement is a read-only report (reports/ledger-statement): it
--- can be viewed, printed and exported, and nothing else. Same guard as 257.
+-- can be viewed, printed and exported, and nothing else.
 UPDATE fixed.menu_master
    SET menu_verbs = '{VIEW,PRINT,EXPORT}'
  WHERE menu_id = 258
@@ -318,7 +314,7 @@ UPDATE fixed.menu_master
 -- Register). Posting documents, so POST / CANCEL / OVERRIDE -- and no AMEND: a posted
 -- voucher is corrected by cancel + re-enter. The migration sets the same list on a
 -- database that already has the rows; this catches a fresh one, where 20260922170000
--- ran before any menu existed. Same guard as 257.
+-- ran before any menu existed. Same guard as above.
 UPDATE fixed.menu_master
    SET menu_verbs = '{VIEW,CREATE,EDIT,DELETE,PRINT,EXPORT,POST,CANCEL,OVERRIDE}'
  WHERE menu_id IN (101, 102, 103, 104, 163, 259, 260, 261, 262)
@@ -327,14 +323,14 @@ UPDATE fixed.menu_master
 -- Stock Adjustment (264, notes 60 / 20260928210000_stock_bucket_move): a posting
 -- document -- POST and CANCEL -- but no AMEND (a posted adjustment is corrected by
 -- cancel + re-enter) and no OVERRIDE (negative stock is BLOCK by decision D-A1).
--- Same guard as 257.
+-- Same guard as above.
 UPDATE fixed.menu_master
    SET menu_verbs = '{VIEW,CREATE,EDIT,DELETE,PRINT,EXPORT,POST,CANCEL}'
  WHERE menu_id = 264
    AND menu_verbs = '{VIEW,CREATE,EDIT,DELETE,PRINT,EXPORT}';
 
 -- Cheque Books (263, notes 58 / 20260928190000_cheque_books_menu): a master that
--- is closed, never deleted, and neither posts nor prints. Same guard as 257.
+-- is closed, never deleted, and neither posts nor prints. Same guard as above.
 UPDATE fixed.menu_master
    SET menu_verbs = '{VIEW,CREATE,EDIT}'
  WHERE menu_id = 263

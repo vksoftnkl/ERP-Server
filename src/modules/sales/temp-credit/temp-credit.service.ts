@@ -5,16 +5,23 @@ import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import { throwSalesNotFound } from 'src/common/utils/module-service.utils';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
+import { appendTempCreditStatus } from '../../../common/txn-status-log/temp-credit-status';
+import { TxnStatusEvent } from '../../../common/txn-status-log/txn-status-log.helper';
 import { daysBetween, isoDate, isoToday } from '../posting/sales-doc.utils';
-import type { OpenTempCreditsQueryDto, TempCreditFollowUpDto } from './dto/temp-credit.dto';
+import type {
+  DeleteTempCreditDto,
+  OpenTempCreditsQueryDto,
+  TempCreditFollowUpDto,
+} from './dto/temp-credit.dto';
 
 /**
  * HANDOVER §7 — `/api/v1/temp-credits` (31).
  *
  * The rows are WRITTEN by `/bills/post` (one per TEMP_CR tender) and moved by
  * receipts through `BillBalanceRecomputeService`; this module only READS them
- * as a grid and records the follow-up. `atc_balance_amount` is a maintained
- * copy of the bill row's `abl_pending_amount`, never recomputed here.
+ * as a grid, records the follow-up and takes a row off the register.
+ * `atc_balance_amount` is a maintained copy of the bill row's
+ * `abl_pending_amount`, never recomputed here.
  */
 @Injectable()
 export class TempCreditService {
@@ -144,6 +151,75 @@ export class TempCreditService {
       followupOn: updated.atcFollowupOn?.toISOString() ?? null,
       remarks: updated.atcRemarks,
     };
+  }
+
+  /**
+   * Take a credit off the register — a soft delete, and ONLY of this row. The
+   * bill, its TEMP_CR tender and its balance row are not touched, so whatever
+   * is still owed stays owed on the bill's ledger as an ordinary credit; what
+   * goes is the promise-tracking (the register row, Receive's mobile filter,
+   * the follow-ups). The status column is left as it was, and the trail files
+   * the step as DELETED, which is what that event is for.
+   */
+  async remove(dto: DeleteTempCreditDto): Promise<{ atcId: string; deleted: true }> {
+    const userId = this.requestContext.getUserId();
+    const actor = userId ?? 'SYSTEM';
+    const now = new Date();
+    const row = await this.prisma.accTempCredit.findFirst({
+      where: { atcId: dto.atcId, atcAccYear: dto.atcAccYear, atcIsDeleted: false },
+    });
+    if (!row) {
+      throwSalesNotFound(
+        'Temporary credit not found',
+        'atcId',
+        `No temporary credit found with id ${dto.atcId}`,
+      );
+    }
+    await this.prisma.$transaction(async (tx) => {
+      await tx.accTempCredit.update({
+        where: { atcId_atcAccYear: { atcId: dto.atcId, atcAccYear: dto.atcAccYear } },
+        data: {
+          atcIsDeleted: true,
+          atcRemarks: dto.reason,
+          atcModifiedOn: now,
+          atcModifiedBy: actor,
+        },
+      });
+      await appendTempCreditStatus(tx, {
+        credit: {
+          atcId: row.atcId,
+          accYear: row.atcAccYear,
+          companyId: row.atcCompanyId,
+          branchId: row.atcBranchId,
+          tenantId: row.atcTenantId,
+          billRefno: row.atcBillRefno,
+        },
+        event: TxnStatusEvent.DELETED,
+        fromStatus: row.atcStatus,
+        toStatus: row.atcStatus,
+        changedBy: actor,
+        changedOn: now,
+        remarks: `Removed from the register: ${dto.reason} — balance ${row.atcBalanceAmount.toFixed(2)} stays on the bill`,
+      });
+      // A soft delete files as 'cancel': audit_log_action has no 'delete'.
+      await this.audit.logEntityChange(
+        {
+          action: 'cancel',
+          tableName: 'acc_temp_credit',
+          screenName: 'Temporary Credit',
+          screenType: 'transaction',
+          pk: dto.atcId,
+          entityId: dto.atcId,
+          displayName: row.atcBillRefno ?? dto.atcId,
+          originalRecord: { atcIsDeleted: false, atcRemarks: row.atcRemarks },
+          modifiedRecord: { atcIsDeleted: true, atcRemarks: dto.reason },
+          userId: actor,
+          notes: `Temporary credit deleted: ${dto.reason}`,
+        },
+        tx,
+      );
+    });
+    return { atcId: dto.atcId, deleted: true };
   }
 }
 

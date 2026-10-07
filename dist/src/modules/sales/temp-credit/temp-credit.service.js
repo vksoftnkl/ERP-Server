@@ -16,6 +16,8 @@ const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const audit_log_service_1 = require("../../audit-log/audit-log.service");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
+const temp_credit_status_1 = require("../../../common/txn-status-log/temp-credit-status");
+const txn_status_log_helper_1 = require("../../../common/txn-status-log/txn-status-log.helper");
 const sales_doc_utils_1 = require("../posting/sales-doc.utils");
 let TempCreditService = class TempCreditService {
     prisma;
@@ -114,6 +116,58 @@ let TempCreditService = class TempCreditService {
             followupOn: updated.atcFollowupOn?.toISOString() ?? null,
             remarks: updated.atcRemarks,
         };
+    }
+    async remove(dto) {
+        const userId = this.requestContext.getUserId();
+        const actor = userId ?? 'SYSTEM';
+        const now = new Date();
+        const row = await this.prisma.accTempCredit.findFirst({
+            where: { atcId: dto.atcId, atcAccYear: dto.atcAccYear, atcIsDeleted: false },
+        });
+        if (!row) {
+            (0, module_service_utils_1.throwSalesNotFound)('Temporary credit not found', 'atcId', `No temporary credit found with id ${dto.atcId}`);
+        }
+        await this.prisma.$transaction(async (tx) => {
+            await tx.accTempCredit.update({
+                where: { atcId_atcAccYear: { atcId: dto.atcId, atcAccYear: dto.atcAccYear } },
+                data: {
+                    atcIsDeleted: true,
+                    atcRemarks: dto.reason,
+                    atcModifiedOn: now,
+                    atcModifiedBy: actor,
+                },
+            });
+            await (0, temp_credit_status_1.appendTempCreditStatus)(tx, {
+                credit: {
+                    atcId: row.atcId,
+                    accYear: row.atcAccYear,
+                    companyId: row.atcCompanyId,
+                    branchId: row.atcBranchId,
+                    tenantId: row.atcTenantId,
+                    billRefno: row.atcBillRefno,
+                },
+                event: txn_status_log_helper_1.TxnStatusEvent.DELETED,
+                fromStatus: row.atcStatus,
+                toStatus: row.atcStatus,
+                changedBy: actor,
+                changedOn: now,
+                remarks: `Removed from the register: ${dto.reason} — balance ${row.atcBalanceAmount.toFixed(2)} stays on the bill`,
+            });
+            await this.audit.logEntityChange({
+                action: 'cancel',
+                tableName: 'acc_temp_credit',
+                screenName: 'Temporary Credit',
+                screenType: 'transaction',
+                pk: dto.atcId,
+                entityId: dto.atcId,
+                displayName: row.atcBillRefno ?? dto.atcId,
+                originalRecord: { atcIsDeleted: false, atcRemarks: row.atcRemarks },
+                modifiedRecord: { atcIsDeleted: true, atcRemarks: dto.reason },
+                userId: actor,
+                notes: `Temporary credit deleted: ${dto.reason}`,
+            }, tx);
+        });
+        return { atcId: dto.atcId, deleted: true };
     }
 };
 exports.TempCreditService = TempCreditService;
