@@ -10,6 +10,13 @@ model AccTenderType {
   ttmAllowChange    Boolean   @default(false)                                  @map("ttm_allow_change")
   ttmAllowInReturn  Boolean   @default(true)                                   @map("ttm_allow_in_return")
   ttmDisplayOrder   Int       @default(0)                                      @map("ttm_display_order")
+  /// How the till close counts it (20261008100000, ck_ttm_close_mode):
+  /// DENOM (cash, by denomination) | SLIPS (card / cheque / gift voucher: slips +
+  /// amount + batch ref) | STATEMENT (UPI / wallet / bank: reconciled against the
+  /// provider later) | NONE (credit / temp credit / loyalty / RRN: not in the drawer).
+  ttmCloseMode      String    @default("NONE") @db.VarChar(10)                 @map("ttm_close_mode")
+  /// The instrument physically goes to the safe at close.
+  ttmHandover       Boolean   @default(false)                                  @map("ttm_handover")
   ttmIsActive       Boolean   @default(true)                                   @map("ttm_is_active")
   ttmIsDeleted      Boolean   @default(false)                                  @map("ttm_is_deleted")
   ttmSyncDate       DateTime? @db.Timestamptz                                  @map("ttm_sync_date")
@@ -20,9 +27,12 @@ model AccTenderType {
   // Relations
   tenders           AccTenderMaster[]
   tenderDetails     AccTenderDetail[]
+  tillCountLines    TillCountLine[]   @relation("TillCountLineTenderType")
+  tillVariances     TillVariance[]    @relation("TillVarianceTenderType")
   // Partial index — enforced via raw SQL migration, not expressible in Prisma schema:
   //   ix_ttm_display_order  btree (ttm_display_order)  WHERE ttm_is_active = true AND ttm_is_deleted = false
   // CHECK constraint (DB-only): ck_ttm_ref_label — ttm_needs_ref = false OR ttm_ref_label IS NOT NULL
+  // CHECK constraint (DB-only): ck_ttm_close_mode — ttm_close_mode IN ('DENOM','SLIPS','STATEMENT','NONE')
   @@map("acc_tender_types")
   @@schema("accounts")
 }

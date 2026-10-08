@@ -1,0 +1,37 @@
+/// TILL SAFE — the safe / cash office drawer cash goes to (share file 47 §1.1,
+/// migration 20261008100000). One default per branch (ux_tsf_default).
+///
+/// tsfLedgerId is the SAFE_CASH ledger this safe posts to: TFlt / TDrp / CRem
+/// vouchers hit it on the safe side, the branch's CASH tender ledger on the
+/// till side.
+model TillSafe {
+  tsfId               String    @id(map: "pk_till_safe") @default(dbgenerated("uuidv7()")) @db.Uuid @map("tsf_id")
+  tsfCompanyId        String    @db.Uuid                             @map("tsf_company_id")
+  tsfBranchId         String    @db.Uuid                             @map("tsf_branch_id")
+  tsfCode             String    @db.VarChar(20)                      @map("tsf_code")
+  tsfName             String    @db.VarChar(100)                     @map("tsf_name")
+  tsfLedgerId         String    @db.Uuid                             @map("tsf_ledger_id")
+  /// 0 = none; above it the day close asks for a remittance.
+  tsfInsuredLimit     Decimal   @default(0) @db.Decimal(15, 2)       @map("tsf_insured_limit")
+  tsfIsDefault        Boolean   @default(false)                      @map("tsf_is_default")
+  tsfRemarks          String?   @db.VarChar(250)                     @map("tsf_remarks")
+  tsfIsActive         Boolean   @default(true)                       @map("tsf_is_active")
+  tsfIsDeleted        Boolean   @default(false)                      @map("tsf_is_deleted")
+  tsfSyncDate         DateTime? @db.Timestamptz(6)                   @map("tsf_sync_date")
+  tsfCreatedOn        DateTime  @default(now()) @db.Timestamptz(6)   @map("tsf_created_on")
+  tsfCreatedBy        String?   @db.VarChar(50)                      @map("tsf_created_by")
+  tsfModifiedOn       DateTime? @db.Timestamptz(6)                   @map("tsf_modified_on")
+  tsfModifiedBy       String?   @db.VarChar(50)                      @map("tsf_modified_by")
+
+  // Relations
+  ledger              AccLedgerMaster    @relation("TillSafeLedger", fields: [tsfLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_tsf_ledger")
+  counters            TillCounter[]      @relation("TillCounterSafe")
+  cashMovements       TillCashMovement[] @relation("TillCashMovementSafe")
+
+  // DB-only (Prisma ignores WHERE predicates and expressions):
+  //   CREATE UNIQUE INDEX ux_tsf_code    ON accounts.till_safe (tsf_company_id, tsf_branch_id, upper(tsf_code)) WHERE tsf_is_deleted = false;
+  //   CREATE UNIQUE INDEX ux_tsf_default ON accounts.till_safe (tsf_company_id, tsf_branch_id) WHERE tsf_is_deleted = false AND tsf_is_default;
+  // CHECK: ck_tsf_limit.
+  @@map("till_safe")
+  @@schema("accounts")
+}

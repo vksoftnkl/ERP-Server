@@ -91,6 +91,20 @@ model AccTenderDetail {
   //   ck_td_settle_status, ck_td_amounts, ck_td_row_no, ck_td_total_amt,
   //   ck_td_cash_change, ck_td_units, ck_td_settle_amount, ck_td_mdr,
   //   ck_td_settled_on, ck_td_pdc, ck_td_card_last4
+  //   ck_td_src_doc_type admits 'EXPENSE' since 20261008110000 (the ExpV tender rows).
+  // Partial index (DB-only) for the till's expected-cash query (20261008110000):
+  //   CREATE INDEX ix_td_session ON accounts.acc_tender_detail
+  //       (td_session_id, td_acc_year, td_tender_type_id, td_src_doc_type)
+  //       WHERE td_session_id IS NOT NULL AND td_is_deleted = false AND td_is_voided = false;
+  // Partial indexes (DB-only) for non-cash tender control (20261008130000):
+  //   ix_td_ref (td_tender_id, upper(td_ref_no)) WHERE td_ref_no IS NOT NULL AND live — the
+  //     duplicate-reference (screenshot fraud) RECONCILIATION index; not unique, two stores'
+  //     rows meet at the cloud. The save-time refusal is the service's (tender.duplicate_ref).
+  //   ix_td_settle_pending (td_company_id, td_branch_id, td_expected_settle_on)
+  //     WHERE td_settle_status IN ('PENDING','PARTIAL') AND live — the "not received" list.
+  // Partial index (DB-only) for 40A(3), cash to one payee in a day (20261008180000):
+  //   ix_td_cash_party_day (td_company_id, td_party_ledger_id, td_doc_date)
+  //     WHERE td_tender_type_id = 1 AND live — payment/cash-payment-limit.ts.
   // ── Loyalty points engine (20260921140000) ─────────────────────────────
   // Redemption is a tender line (td_tender_type_id = 10, LOYALTY). Several
   // REDEEM rows of one redemption share ONE tender, one per lot consumed —

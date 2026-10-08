@@ -62,6 +62,9 @@ model AccTenderMaster {
   tndCreatedBy            String?   @db.VarChar(50)                                @map("tnd_created_by")
   tndModifiedOn           DateTime? @db.Timestamptz                                @map("tnd_modified_on")
   tndModifiedBy           String?   @db.VarChar(50)                                @map("tnd_modified_by")
+  /// Column map of the provider's statement file (20261008130000, file 49); NULL = no
+  /// import. One tender row PER TERMINAL / PER VPA is the set-up rule that makes it work.
+  tndStatementFormat      Json?     @db.JsonB                                      @map("tnd_statement_format")
 
   // Relations
   company                 Company               @relation(fields: [tndCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_tnd_company")

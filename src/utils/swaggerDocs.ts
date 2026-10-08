@@ -23,6 +23,8 @@ import { TransactionModule } from '../modules/accountsModule/transaction/transac
 import { OpeningBalanceModule } from '../modules/accountsModule/openingBalance/opening-balance.module';
 import { ReceiptModule } from '../modules/accountsModule/receipt/receipt.module';
 import { PaymentModule } from '../modules/accountsModule/payment/payment.module';
+import { ExpenseModule } from '../modules/accountsModule/expense/expense.module';
+import { TenderSettlementModule } from '../modules/accountsModule/tenderSettlement/tender-settlement.module';
 import { ChequesModule } from '../modules/accountsModule/cheques/cheques.module';
 import { VouchersModule } from '../modules/accountsModule/vouchers/vouchers.module';
 import { IssuedChequesModule } from '../modules/accountsModule/issuedCheques/issued-cheques.module';
@@ -395,6 +397,26 @@ export const swaggerModuleDocuments = [
       'of its own dated the cheque. TDS is seeded server-side from accounts.tds_rates. The ' +
       'remainder is always held as an ADVANCE (DR) bill',
     include: [PaymentModule],
+  },
+  {
+    path: 'expenses',
+    title: 'Expense Voucher API',
+    description:
+      'An expense paid by one or more tenders (ExpV, menu 277): expense-ledger lines, an optional supplier ' +
+      'GST bill (input tax + the GSTR-2 row), and the tenders. On a till device the cash is the live ' +
+      'session’s drawer; on a back-office device in a till branch it comes from the default safe. ' +
+      'DRAFT → POSTED → CANCELLED (a mirror in the Rev series)',
+    include: [ExpenseModule],
+  },
+  {
+    path: 'tender-settlement',
+    title: 'Tender Settlement API',
+    description:
+      'Non-cash tender control (menu 278): a card / UPI / wallet provider statement imported with the ' +
+      'tender’s column map, matched to our tender rows (reference, approval code, amount + time), posted ' +
+      'as one TSet per payout; the not-received rows written off and the unexplained lines resolved ' +
+      '(OVERRIDE stands in for their approvals until the approval gate ships)',
+    include: [TenderSettlementModule],
   },
   {
     path: 'vouchers',

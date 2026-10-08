@@ -1,0 +1,50 @@
+/// TILL APPROVAL RULE — when an event needs a second person (share file 47
+/// §1.6, migration 20261008100000).
+///
+/// Resolution (TillApprovalService.ruleFor, same shape as StatutoryService):
+/// branch row > company row > shipped row (both NULL), then the latest
+/// tarEffectiveFrom <= business date. LIMIT 1. One rule per event per scope
+/// (ux_tar_scope). Approval THRESHOLDS live here, never in app_setting_def.
+model TillApprovalRule {
+  tarId               String    @id(map: "pk_till_approval_rule") @default(dbgenerated("uuidv7()")) @db.Uuid @map("tar_id")
+  tarCompanyId        String?   @db.Uuid                             @map("tar_company_id")
+  tarBranchId         String?   @db.Uuid                             @map("tar_branch_id")
+  /// ck_tar_event's list (till events + the reserved counter-control gates).
+  tarEventCode        String    @db.VarChar(30)                      @map("tar_event_code")
+  /// NEVER | ALWAYS | OVER_AMOUNT | OVER_COUNT | OVER_PERCENT
+  tarMode             String    @db.VarChar(12)                      @map("tar_mode")
+  tarThresholdAmount  Decimal   @default(0) @db.Decimal(15, 2)       @map("tar_threshold_amount")
+  /// Per session.
+  tarThresholdCount   Int       @default(0)                          @map("tar_threshold_count")
+  tarThresholdPercent Decimal   @default(0) @db.Decimal(7, 3)        @map("tar_threshold_percent")
+  /// COUNTER | REMOTE | EITHER
+  tarChannel          String    @default("EITHER") @db.VarChar(12)   @map("tar_channel")
+  /// SUPERVISOR | STORE_MANAGER | CASH_OFFICE | AREA_MANAGER | HO_FINANCE
+  tarMinRole          String    @default("SUPERVISOR") @db.VarChar(20) @map("tar_min_role")
+  /// Needs two distinct approvers.
+  tarTwoPerson        Boolean   @default(false)                      @map("tar_two_person")
+  /// The requester may approve their own request.
+  tarAllowSelf        Boolean   @default(false)                      @map("tar_allow_self")
+  /// The counter waits (false = record now, review later).
+  tarBlocksTill       Boolean   @default(true)                       @map("tar_blocks_till")
+  /// 0 = a PENDING request never expires.
+  tarExpireMinutes    Int       @default(0)                          @map("tar_expire_minutes")
+  tarEffectiveFrom    DateTime  @default(dbgenerated("'2000-01-01'::date")) @db.Date @map("tar_effective_from")
+  tarRemarks          String?   @db.VarChar(250)                     @map("tar_remarks")
+  tarIsActive         Boolean   @default(true)                       @map("tar_is_active")
+  tarIsDeleted        Boolean   @default(false)                      @map("tar_is_deleted")
+  tarSyncDate         DateTime? @db.Timestamptz(6)                   @map("tar_sync_date")
+  tarCreatedOn        DateTime  @default(now()) @db.Timestamptz(6)   @map("tar_created_on")
+  tarCreatedBy        String?   @db.VarChar(50)                      @map("tar_created_by")
+  tarModifiedOn       DateTime? @db.Timestamptz(6)                   @map("tar_modified_on")
+  tarModifiedBy       String?   @db.VarChar(50)                      @map("tar_modified_by")
+
+  // DB-only:
+  //   CREATE UNIQUE INDEX ux_tar_scope ON accounts.till_approval_rule
+  //       (tar_company_id, tar_branch_id, tar_event_code, tar_effective_from) NULLS NOT DISTINCT
+  //       WHERE tar_is_deleted = false;
+  // CHECKs: ck_tar_event, ck_tar_mode, ck_tar_channel, ck_tar_role, ck_tar_thresholds,
+  //         ck_tar_scope (a branch row names its company).
+  @@map("till_approval_rule")
+  @@schema("accounts")
+}

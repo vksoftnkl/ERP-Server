@@ -1,0 +1,34 @@
+/// TILL SESSION REVIEW — HO's view of a session or a day, written at the CLOUD
+/// only, append-only (share file 47 §9, migration 20261008100000).
+///
+/// Sync is push-only (store → cloud, upsert by PK). If HO updated a
+/// store-owned session row, the store's next push would overwrite it. So HO's
+/// view lives in its own rows that no store ever writes.
+model TillSessionReview {
+  tsrId                 String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("tsr_id")
+  tsrCompanyId          String    @db.Uuid                             @map("tsr_company_id")
+  tsrBranchId           String    @db.Uuid                             @map("tsr_branch_id")
+  tsrAccYear            String    @db.Char(9)                          @map("tsr_acc_year")
+  /// A session, or …
+  tsrSessionId          String?   @db.Uuid                             @map("tsr_session_id")
+  /// … a whole day (ck_tsr_target: at least one).
+  tsrDayId              String?   @db.Uuid                             @map("tsr_day_id")
+  /// OK | QUERY | ESCALATED | RECOVERY_ORDERED | WRITTEN_OFF | SUSPENSE_CLEARED | BANK_MATCHED
+  tsrOutcome            String    @db.VarChar(16)                      @map("tsr_outcome")
+  tsrReviewedBy         String    @db.Uuid                             @map("tsr_reviewed_by")
+  tsrReviewedOn         DateTime  @default(now()) @db.Timestamptz(6)   @map("tsr_reviewed_on")
+  tsrNote               String?   @db.VarChar(1000)                    @map("tsr_note")
+  /// The journal HO raised (suspense cleared, recovery …).
+  tsrRefVoucherId       String?   @db.Uuid                             @map("tsr_ref_voucher_id")
+  tsrRefVoucherAccYear  String?   @db.Char(9)                          @map("tsr_ref_voucher_acc_year")
+  tsrSyncDate           DateTime? @db.Timestamptz(6)                   @map("tsr_sync_date")
+  tsrCreatedOn          DateTime  @default(now()) @db.Timestamptz(6)   @map("tsr_created_on")
+
+  @@id([tsrId, tsrAccYear], map: "pk_till_session_review")
+  @@index([tsrSessionId, tsrAccYear], map: "ix_tsr_session")
+  @@index([tsrDayId, tsrAccYear], map: "ix_tsr_day")
+
+  // CHECKs: ck_tsr_target, ck_tsr_outcome.
+  @@map("till_session_review")
+  @@schema("accounts")
+}

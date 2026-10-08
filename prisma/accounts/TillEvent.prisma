@@ -1,0 +1,44 @@
+/// TILL EVENT — the append-only till journal (share file 47 §8, migration
+/// 20261008100000). 3.0 kept one text blob, sess_log_rec.
+///
+/// INSERT only, never UPDATE: TillEventService is the single writer (the
+/// stock_ledger pattern). Client-side facts (drawer kicked, no-sale, X read,
+/// idle lock) arrive in batches via /till/events/batch; tevEventOn is the
+/// DEVICE time, tevCreatedOn the arrival. (tevDeviceId, tevClientSeq) makes a
+/// re-sent batch idempotent (ux_tev_client_seq).
+model TillEvent {
+  tevId               String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("tev_id")
+  tevCompanyId        String    @db.Uuid                             @map("tev_company_id")
+  tevBranchId         String    @db.Uuid                             @map("tev_branch_id")
+  tevAccYear          String    @db.Char(9)                          @map("tev_acc_year")
+  /// ck_tev_code's list.
+  tevEventCode        String    @db.VarChar(30)                      @map("tev_event_code")
+  tevEventOn          DateTime  @db.Timestamptz(6)                   @map("tev_event_on")
+  tevSessionId        String?   @db.Uuid                             @map("tev_session_id")
+  tevDayId            String?   @db.Uuid                             @map("tev_day_id")
+  tevCounterId        String?   @db.Uuid                             @map("tev_counter_id")
+  tevDeviceId         String?   @db.Uuid                             @map("tev_device_id")
+  tevUserId           String?   @db.Uuid                             @map("tev_user_id")
+  tevSrcDocType       String?   @db.VarChar(30)                      @map("tev_src_doc_type")
+  tevSrcDocId         String?   @db.Uuid                             @map("tev_src_doc_id")
+  tevSrcRefno         String?   @db.VarChar(100)                     @map("tev_src_refno")
+  tevAmount           Decimal?  @db.Decimal(15, 2)                   @map("tev_amount")
+  tevReasonId         String?   @db.Uuid                             @map("tev_reason_id")
+  tevApprovalId       String?   @db.Uuid                             @map("tev_approval_id")
+  /// Device-local sequence: a batch re-sent is idempotent.
+  tevClientSeq        BigInt?                                        @map("tev_client_seq")
+  tevPayload          Json?     @db.JsonB                            @map("tev_payload")
+  tevSyncDate         DateTime? @db.Timestamptz(6)                   @map("tev_sync_date")
+  tevCreatedOn        DateTime  @default(now()) @db.Timestamptz(6)   @map("tev_created_on")
+
+  @@id([tevId, tevAccYear], map: "pk_till_event")
+  @@index([tevSessionId, tevAccYear, tevEventOn], map: "ix_tev_session")
+  @@index([tevCompanyId, tevBranchId, tevEventCode, tevEventOn], map: "ix_tev_branch_code")
+
+  // DB-only:
+  //   CREATE UNIQUE INDEX ux_tev_client_seq ON accounts.till_event (tev_device_id, tev_client_seq, tev_acc_year)
+  //       WHERE tev_device_id IS NOT NULL AND tev_client_seq IS NOT NULL;
+  // CHECK: ck_tev_code.
+  @@map("till_event")
+  @@schema("accounts")
+}

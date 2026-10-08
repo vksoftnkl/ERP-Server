@@ -1,4 +1,5 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { TillApprovalNeedDto } from '../../../till/dto/till-response.dto';
 import {
   AdjacentVoucherSuccessDto,
   DuplicateCheckSuccessDto,
@@ -602,6 +603,30 @@ export class PaymentIssuedLeafDto {
   bookNo!: string;
 }
 
+/** A never-blocking finding of the post (VoucherWarning). */
+export class PaymentPostWarningDto {
+  @ApiProperty({
+    example: 'STATUTORY_40A3',
+    description: 'STATUTORY_40A3 · TILL_APPROVAL_REQUIRED',
+  })
+  code!: string;
+
+  @ApiProperty({ example: 'WARN', enum: ['INFO', 'WARN'] })
+  level!: 'INFO' | 'WARN';
+
+  @ApiProperty({
+    example:
+      'Cash paid to Ravi Traders on 2026-10-08 comes to 12000.00, above the 40A(3) limit of 10000.00 …',
+  })
+  message!: string;
+
+  @ApiPropertyOptional({ example: 'tenders' })
+  field?: string;
+
+  @ApiProperty({ example: false })
+  overridable!: boolean;
+}
+
 export class PaymentPostPayloadDto extends PaymentPayloadDto implements PaymentPostPayload {
   @ApiProperty({ type: ReceiptNumberedVoucherDto, isArray: true })
   numberedVouchers!: ReceiptNumberedVoucherDto[];
@@ -611,6 +636,22 @@ export class PaymentPostPayloadDto extends PaymentPayloadDto implements PaymentP
 
   @ApiProperty({ example: 0 })
   totalOnAccount!: number;
+
+  @ApiProperty({
+    type: PaymentPostWarningDto,
+    isArray: true,
+    description:
+      'STATUTORY_40A3 (cash to one payee in a day above the 40A(3) limit; a company REFUSE row ' +
+      'answers 422 instead) and TILL_APPROVAL_REQUIRED (INFO, the CASH_PAYMENT rule).',
+  })
+  warnings!: PaymentPostWarningDto[];
+
+  @ApiPropertyOptional({
+    type: TillApprovalNeedDto,
+    nullable: true,
+    description: 'In a till session: what the CASH_PAYMENT rule would ask. Reported until phase 3.',
+  })
+  approval!: TillApprovalNeedDto | null;
 
   @ApiProperty({
     type: PaymentIssuedLeafDto,

@@ -68,6 +68,11 @@ import {
   VoucherStatus,
 } from './types/payment-enum';
 import type { PaymentErrorDetail, PaymentPostPayload } from './types/payment-api.types';
+import { TillSessionService } from '../../till/services/till-session.service';
+import { TillApprovalService } from '../../till/services/till-approval.service';
+import { CASH_TENDER_TYPE_ID, TillErrorCode, TillEventCode } from '../../till/types/till-enum';
+import { throwRefusals, type VoucherWarning } from '../vouchers/vouchers.errors';
+import { checkCashPaymentLimit } from './cash-payment-limit';
 
 /**
  * §5.2 — THE transaction, direction OUT. `receipt-posting.service.ts` step for
@@ -108,6 +113,8 @@ export class PaymentPostingService {
     private readonly paymentService: PaymentService,
     private readonly openItemsService: PaymentOpenItemsService,
     private readonly recompute: BillBalanceRecomputeService,
+    private readonly till: TillSessionService,
+    private readonly approvals: TillApprovalService,
   ) {}
 
   async post(dto: PostPaymentDto): Promise<PaymentPostPayload> {
@@ -161,6 +168,94 @@ export class PaymentPostingService {
       settings,
       party,
     );
+
+    // The till (48 §2.3 / §3): on a device in a till session the payment posts
+    // in it — its CASH leaves THAT drawer; with no CASH tender it needs no
+    // session. On a back-office device in a branch that runs a till, CASH comes
+    // from the default safe (or is refused, till.backoffice_cash_from). Any
+    // other device posts as before.
+    const till = await this.till.routeMoneyDoc(tx, {
+      companyId: header.avhCompanyId,
+      branchId: header.avhBranchId,
+      sessionId: header.avhSessionId,
+      field: 'avhSessionId',
+      hasCash: tenders.some((tender) => tender.tenderTypeId === CASH_TENDER_TYPE_ID),
+    });
+    if (till.ref) {
+      await this.till.stampVoucher(
+        tx,
+        till.ref,
+        { voucherId: header.avhVoucherId, accYear: header.avhAccYear, srcDocType: 'PAYMENT' },
+        actor,
+      );
+      header.avhSessionId = till.ref.tssId;
+    }
+    if (till.cashLedgerId) {
+      await this.till.routeCashToLedger(tx, {
+        srcDocType: 'PAYMENT',
+        srcDocId: header.avhVoucherId,
+        accYear: header.avhAccYear,
+        ledgerId: till.cashLedgerId,
+        actor,
+      });
+      for (const tender of tenders.filter((row) => row.tenderTypeId === CASH_TENDER_TYPE_ID)) {
+        tender.tenderLedgerId = till.cashLedgerId;
+        tender.clearingLedgerId = null;
+      }
+    }
+
+    // The cash part (plan-till-receipt-payment-expense §3.3 / §3.4): 40A(3)
+    // sums it with the payee's other cash payments and expenses of the day —
+    // WARN as shipped, a company's REFUSE row refuses — and, in a till
+    // session, the CASH_PAYMENT rule says whether it would need an approver.
+    // Reported only until phase 3 builds the gate.
+    const cash = sum(
+      tenders.filter((row) => row.tenderTypeId === CASH_TENDER_TYPE_ID).map((row) => row.amount),
+    );
+    const warnings: VoucherWarning[] = [];
+    const limit40A3 = await checkCashPaymentLimit(tx, {
+      companyId: header.avhCompanyId,
+      accYear: header.avhAccYear,
+      onDate: toDateString(header.avhVoucherDate)!,
+      payeeLedgerId: header.avhPartyId,
+      cash,
+      excludeDocId: header.avhVoucherId,
+      field: 'tenders',
+    });
+    if (limit40A3?.enforce === 'REFUSE') {
+      throwRefusals('Payment cannot be posted', [limit40A3]);
+    }
+    if (limit40A3) {
+      warnings.push({
+        code: limit40A3.code,
+        level: limit40A3.enforce === 'INFO' ? 'INFO' : 'WARN',
+        message: limit40A3.message,
+        field: limit40A3.field,
+        overridable: false,
+      });
+    }
+    const approval =
+      till.ref && cash.greaterThan(0)
+        ? await this.approvals.assess(tx, {
+            companyId: header.avhCompanyId,
+            branchId: header.avhBranchId,
+            event: 'CASH_PAYMENT',
+            onDate: toDateString(header.avhVoucherDate)!,
+            amount: cash,
+          })
+        : null;
+    if (approval) {
+      warnings.push({
+        code: TillErrorCode.APPROVAL_REQUIRED,
+        level: 'INFO',
+        message:
+          `Cash of ${cash.toFixed(2)} out of the drawer is above the CASH_PAYMENT threshold of ` +
+          `${approval.threshold.toFixed(2)} (${approval.minRole}): recorded for review — ` +
+          'the approval gate is not built yet',
+        field: 'tenders',
+        overridable: false,
+      });
+    }
 
     // ── 3 · Lock every open item, and read what is pending NOW ─────────────
     const locked = await lockBills(tx, [
@@ -320,6 +415,21 @@ export class PaymentPostingService {
       deviceId: this.requestContext.getDeviceId() ?? header.avhDeviceId,
       sessionId: header.avhSessionId,
     });
+    if (till.ref) {
+      await this.till.logMoneyDoc(tx, {
+        sessionId: till.ref.tssId,
+        code: TillEventCode.PAYMENT_POSTED,
+        srcDocType: 'PAYMENT',
+        srcDocId: header.avhVoucherId,
+        srcRefno: paymentVoucher.voucherRefno,
+        amount: sum(tenders.map((tender) => tender.amount)),
+        payload: {
+          cash: Number(cash.toFixed(2)),
+          ...(approval ? { approval: { ...approval } } : {}),
+          ...(limit40A3 ? { statutory: { ...limit40A3.statutory } } : {}),
+        },
+      });
+    }
     const now = new Date();
     for (const tender of tenders.filter((row) => row.isCheque)) {
       const register = registerByTenderRow.get(tender.rowNo);
@@ -404,6 +514,8 @@ export class PaymentPostingService {
         postDatedHeld: toAmount(held.get(`${bill.billId}|${bill.accYear}`) ?? ZERO),
       })),
       totalOnAccount: toAmount(plan.totalOnAccount),
+      warnings,
+      approval,
       cheques: tenders
         .filter((tender) => tender.isCheque && leaves.has(tender.rowNo))
         .map((tender) => {

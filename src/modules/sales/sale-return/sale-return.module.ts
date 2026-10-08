@@ -6,9 +6,11 @@ import { SalesPostingModule } from '../posting/posting.module';
 import { SaleReturnController } from './sale-return.controller';
 import { SaleReturnExceptionFilter } from './sale-return-exception.filter';
 import { SaleReturnService } from './sale-return.service';
+import { TillModule } from '../../till/till.module';
 
 @Module({
-  imports: [AuditLogModule, ChargeDetailModule, TenderDetailModule, SalesPostingModule],
+  // TillModule: a cash refund leaves TODAY's drawer (TILL_DESIGN.md D7).
+  imports: [AuditLogModule, ChargeDetailModule, TenderDetailModule, SalesPostingModule, TillModule],
   controllers: [SaleReturnController],
   providers: [SaleReturnService, SaleReturnExceptionFilter],
   exports: [SaleReturnService],

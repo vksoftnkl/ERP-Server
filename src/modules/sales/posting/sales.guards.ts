@@ -211,6 +211,20 @@ export async function loadDayClosed(
   branchId: string,
   docDate: string,
 ): Promise<boolean> {
+  // The till's business day (TILL_DESIGN.md §5.3): a CLOSED day is the store's
+  // Z, and from it on no money document may land on that date.
+  const [till] = await client.$queryRaw<{ n: number }[]>`
+    SELECT count(*)::int AS n
+      FROM accounts.till_business_day
+     WHERE tbd_company_id    = ${companyId}::uuid
+       AND tbd_branch_id     = ${branchId}::uuid
+       AND tbd_business_date = ${docDate}::date
+       AND tbd_is_deleted    = false
+       AND tbd_status        = 'CLOSED'`;
+  if ((till?.n ?? 0) > 0) {
+    return true;
+  }
+
   const [exists] = await client.$queryRaw<{ tbl: string | null }[]>`
     SELECT to_regclass('accounts.acc_day_close')::text AS tbl`;
   if (!exists?.tbl) {

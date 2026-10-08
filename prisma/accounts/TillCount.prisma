@@ -1,0 +1,54 @@
+/// TILL COUNT — every time somebody counts money, one header + its lines
+/// (share file 47 §4, migration 20261008100000).
+///
+/// 3.0 DELETEd and re-INSERTed the count on every close/approve, so a recount
+/// erased the first count. Here every attempt is its own row and stays.
+/// tctExpected is what the system expected AT THAT MOMENT — stored even when
+/// the count was blind and the cashier never saw it.
+model TillCount {
+  tctId               String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("tct_id")
+  tctCompanyId        String    @db.Uuid                             @map("tct_company_id")
+  tctBranchId         String    @db.Uuid                             @map("tct_branch_id")
+  tctTenantId         String?   @db.Uuid                             @map("tct_tenant_id")
+  tctAccYear          String    @db.Char(9)                          @map("tct_acc_year")
+  /// OPEN | CLOSE | RECOUNT | HANDOVER | SURPRISE | FLOAT_ISSUE | PICKUP | DROP_VERIFY | SAFE
+  tctKind             String    @db.VarChar(12)                      @map("tct_kind")
+  /// NULL for a SAFE count.
+  tctSessionId        String?   @db.Uuid                             @map("tct_session_id")
+  /// SAFE / DROP_VERIFY.
+  tctSafeId           String?   @db.Uuid                             @map("tct_safe_id")
+  /// DROP_VERIFY / FLOAT_ISSUE / PICKUP: the movement counted.
+  tctMovementId       String?   @db.Uuid                             @map("tct_movement_id")
+  tctAttemptNo        Int       @default(1) @db.SmallInt             @map("tct_attempt_no")
+  /// The attempt the session close used (ux_tct_final: one OPEN, one CLOSE-side per session).
+  tctIsFinal          Boolean   @default(false)                      @map("tct_is_final")
+  tctIsBlind          Boolean   @default(false)                      @map("tct_is_blind")
+  tctCountedOn        DateTime  @default(now()) @db.Timestamptz(6)   @map("tct_counted_on")
+  tctCountedBy        String    @db.Uuid                             @map("tct_counted_by")
+  tctWitnessBy        String?   @db.Uuid                             @map("tct_witness_by")
+  tctDeviceId         String?   @db.Uuid                             @map("tct_device_id")
+  tctTotalCounted     Decimal   @default(0) @db.Decimal(15, 2)       @map("tct_total_counted")
+  /// System figure at count time (NULL for SURPRISE before compute).
+  tctExpected         Decimal?  @db.Decimal(15, 2)                   @map("tct_expected")
+  tctNotes            String?   @db.VarChar(500)                     @map("tct_notes")
+  tctIsDeleted        Boolean   @default(false)                      @map("tct_is_deleted")
+  tctSyncDate         DateTime? @db.Timestamptz(6)                   @map("tct_sync_date")
+  tctCreatedOn        DateTime  @default(now()) @db.Timestamptz(6)   @map("tct_created_on")
+  tctCreatedBy        String?   @db.VarChar(50)                      @map("tct_created_by")
+
+  // Relations
+  lines               TillCountLine[] @relation("TillCountLineCount")
+
+  @@id([tctId, tctAccYear], map: "pk_till_count")
+
+  // DB-only:
+  //   ix_tct_session (tct_session_id, tct_acc_year, tct_kind, tct_attempt_no) WHERE tct_is_deleted = false
+  //   ix_tct_safe    (tct_safe_id, tct_counted_on) WHERE tct_is_deleted = false AND tct_safe_id IS NOT NULL
+  //   CREATE UNIQUE INDEX ux_tct_final ON accounts.till_count
+  //       (tct_session_id, (CASE WHEN tct_kind = 'OPEN' THEN 'OPEN' ELSE 'CLOSE' END), tct_acc_year)
+  //       WHERE tct_is_deleted = false AND tct_is_final AND tct_session_id IS NOT NULL
+  //         AND tct_kind IN ('OPEN','CLOSE','RECOUNT');
+  // CHECKs: ck_tct_kind, ck_tct_owner, ck_tct_amounts, ck_tct_witness.
+  @@map("till_count")
+  @@schema("accounts")
+}

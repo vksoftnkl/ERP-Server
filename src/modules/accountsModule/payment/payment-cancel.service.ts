@@ -1,4 +1,6 @@
 import { Injectable } from '@nestjs/common';
+import { TillSessionService } from '../../till/services/till-session.service';
+import { TillEventCode } from '../../till/types/till-enum';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
@@ -60,6 +62,7 @@ export class PaymentCancelService {
     private readonly requestContext: RequestContextService,
     private readonly paymentService: PaymentService,
     private readonly recompute: BillBalanceRecomputeService,
+    private readonly till: TillSessionService,
   ) {}
 
   async cancel(dto: CancelPaymentDto): Promise<PaymentCancelPayload> {
@@ -111,6 +114,12 @@ export class PaymentCancelService {
       for (const voucher of vouchers) {
         await assertAccYearWritable(tx, voucher.avhCompanyId, voucher.avhAccYear, 'avhAccYear');
       }
+      // 48 §2.3: money moved in a till session stays moved once that drawer
+      // stops taking money — correct it with a new document or a journal.
+      await this.till.assertMoneyDocCancellable(tx, {
+        sessionId: header.avhSessionId,
+        field: 'avhVoucherId',
+      });
       const voucherIds = vouchers.map((voucher) => voucher.avhVoucherId);
       const years = [...new Set(vouchers.map((voucher) => voucher.avhAccYear))];
       const scope: PaymentChequeScope = { receiptVoucherId: header.avhVoucherId, voucherIds };
@@ -193,6 +202,17 @@ export class PaymentCancelService {
           deviceId: this.requestContext.getDeviceId(),
           changedOn: now,
           remarks: dto.reason,
+        });
+      }
+      if (header.avhSessionId) {
+        await this.till.logMoneyDoc(tx, {
+          sessionId: header.avhSessionId,
+          code: TillEventCode.MONEY_DOC_CANCELLED,
+          srcDocType: 'PAYMENT',
+          srcDocId: header.avhVoucherId,
+          srcRefno: header.avhVoucherRefno,
+          amount: header.avhDocAmount,
+          payload: { reason: dto.reason },
         });
       }
 

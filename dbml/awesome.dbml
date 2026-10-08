@@ -379,6 +379,10 @@ Table acc_ledger_master {
   coupons loyalty_coupon [not null]
   taxCertificates acc_party_tax_certificate [not null]
   tempCredits acc_temp_credit [not null]
+  tillSafes till_safe [not null]
+  tillReasons till_reason [not null]
+  tillCashMovements till_cash_movement [not null]
+  settlementImports acc_settlement_import [not null]
 
   indexes {
     (ledCompanyId, ledName) [unique]
@@ -621,6 +625,126 @@ record.
 Lifecycle: HELD -> DEPOSITED -> CLEARED
 -> BOUNCED -> (re-present or REPLACED)
 HELD -> RETURNED / CANCELLED / REPLACED'
+}
+
+Table acc_settlement_import {
+  asiId String [not null]
+  asiCompanyId String [not null]
+  asiBranchId String [not null]
+  asiTenantId String
+  asiAccYear String [not null]
+  asiSource String [not null, note: 'CARD | UPI | WALLET (aggregator payout) | BANK (UPI straight to the current
+account: one statement period, one credit per line, no fee — ck_asi_bank).']
+  asiProvider String [not null, note: 'Acquirer / PSP as printed on the file.']
+  asiTenderId String [note: 'The terminal / VPA tender (acc_tender_master); NULL = lines carry their own terminal. FK-less.']
+  asiFileName String [not null]
+  asiFileHash String [not null, note: 'sha256: the same file twice is refused (ux_asi_file).']
+  asiPayoutRef String [note: 'UTR of the bank credit.']
+  asiPayoutDate DateTime [not null, note: '= the voucher date.']
+  asiPeriodFrom DateTime
+  asiPeriodTo DateTime
+  asiLineCount Int [not null, default: 0]
+  asiTotalGross Decimal [not null, default: 0, note: 'Sales − refunds − chargebacks as the provider states.']
+  asiTotalFee Decimal [not null, default: 0, note: 'MDR / commission.']
+  asiTotalTax Decimal [not null, default: 0, note: 'GST on the fee — GST_ON_CHARGES_PENDING until the acquirer\'s tax invoice.']
+  asiTotalNet Decimal [not null, default: 0, note: 'What reached the bank.']
+  asiStatus String [not null, default: 'IMPORTED', note: 'IMPORTED | MATCHED | POSTED | VOIDED']
+  asiBankLedgerId String [note: 'tnd_settlement_ledger_id at import.']
+  asiVoucherId String [note: 'The TSet voucher (with its year: ck_asi_voucher_pair).']
+  asiVoucherAccYear String
+  asiImportedBy String [not null]
+  asiImportedOn DateTime [default: `now()`, not null]
+  asiPostedBy String
+  asiPostedOn DateTime
+  asiVoidReason String
+  asiNotes String
+  asiIsDeleted Boolean [not null, default: false]
+  asiSyncDate DateTime
+  asiCreatedOn DateTime [default: `now()`, not null]
+  asiCreatedBy String
+  asiModifiedOn DateTime
+  asiModifiedBy String
+  bankLedger acc_ledger_master
+  lines acc_settlement_line [not null]
+
+  indexes {
+    (asiId, asiAccYear) [pk]
+  }
+
+  Note: 'SETTLEMENT IMPORT — one provider payout (one bank credit) and the file it
+came in (share file 49 §2, migration 20261008130000).
+
+A statement line is the PROVIDER\'s fact — what the acquirer / PSP says it
+paid, net of its fee; a tender row is OUR fact. This header holds the
+payout no existing row can: one bank credit, many lines
+(AccSettlementLine). Posting it writes one TSet voucher (asiVoucherId).
+
+ONE WRITER: the STORE server that owns the terminal imports, matches and
+posts through its own API; HO splits a chain file by terminal / VPA and
+sends each part to its store. The cloud never writes td_settle_*.
+
+LIST-partitioned by asiAccYear. ck_asi_net holds the payout\'s own
+arithmetic: net = gross - fee - tax.'
+}
+
+Table acc_settlement_line {
+  aslId String [not null]
+  aslAccYear String [not null]
+  aslImportId String [not null]
+  aslRowNo Int [not null]
+  aslKind String [not null, note: 'SALE | REFUND | CHARGEBACK | FEE | ADJUSTMENT — the direction; amounts stay positive.']
+  aslTxnOn DateTime [note: 'When the customer paid, as the provider says.']
+  aslTerminalId String [note: 'TID; matched to acc_tender_master.tnd_terminal_id.']
+  aslVpa String [note: 'UPI: the payee VPA.']
+  aslTenderId String [note: 'Resolved from TID / VPA / the import. FK-less.']
+  aslRefNo String [note: 'RRN / UTR.']
+  aslAuthCode String
+  aslCardLast4 String
+  aslPayer String [note: 'Payer VPA / card network, as given.']
+  aslGrossAmount Decimal [not null]
+  aslFeeAmount Decimal [not null, default: 0]
+  aslTaxAmount Decimal [not null, default: 0]
+  aslNetAmount Decimal [not null, note: '= gross - fee - tax (ck_asl_net).']
+  aslMatchStatus String [not null, default: 'UNMATCHED', note: 'UNMATCHED | SUGGESTED | MATCHED | IGNORED | RESOLVED']
+  aslMatchRule String [note: 'REF | AUTH | AMOUNT_TIME | MANUAL — set exactly when SUGGESTED / MATCHED (ck_asl_rule_set).']
+  aslTdId String [note: 'acc_tender_detail row (ck_asl_linked: set for SUGGESTED / MATCHED / RESOLVED-LINKED only).']
+  aslTdAccYear String
+  aslAmountDiff Decimal [not null, default: 0, note: 'gross − the tender row\'s amount (signed; 0 = exact).']
+  aslMatchedBy String
+  aslMatchedOn DateTime
+  aslResolution String [note: 'LINKED | REFUNDED | INCOME | SUSPENSE — set exactly when RESOLVED (ck_asl_resolved).']
+  aslReasonId String
+  aslApprovalId String [note: 'SETTLEMENT_RESOLVE.']
+  aslResolutionVoucherId String
+  aslResolutionAccYear String
+  aslTvrId String [note: 'LINKED to a CLOSED session: the close variance this money explains.']
+  aslTvrAccYear String
+  aslRaw Json [note: 'The provider\'s row as read, for audit.']
+  aslNotes String
+  aslSyncDate DateTime
+  aslCreatedOn DateTime [default: `now()`, not null]
+  aslModifiedOn DateTime
+  import acc_settlement_import [not null]
+  reason till_reason
+
+  indexes {
+    (aslId, aslAccYear) [pk]
+    (aslImportId, aslRowNo, aslAccYear) [unique]
+  }
+
+  Note: 'SETTLEMENT LINE — one provider statement line, and what it was matched to
+(share file 49 §3, migration 20261008130000).
+
+Matching (TenderSettlementService): REF (RRN / UTR) → AUTH → AMOUNT_TIME
+(SUGGESTED only — exactly one tender row of that amount on that terminal
+inside tender.match_window_minutes; a person confirms) → MANUAL.
+A SALE line nothing of ours explains is RESOLVED as LINKED (it was a bill
+after all — to a CLOSED session, asl_tvr_* names the close variance it
+explains), REFUNDED, INCOME or SUSPENSE, behind SETTLEMENT_RESOLVE.
+
+aslTdId is FK-less: acc_tender_detail is partitioned and may be another
+year. ux_asl_td_matched keeps one MATCHED sale line per tender row within a
+statement year; across 31 March the service refuses a td already MATCHED.'
 }
 
 Table acc_tcs_register {
@@ -1023,6 +1147,8 @@ Table acc_tender_master {
   tndCreatedBy String
   tndModifiedOn DateTime
   tndModifiedBy String
+  tndStatementFormat Json [note: 'Column map of the provider\'s statement file (20261008130000, file 49); NULL = no
+import. One tender row PER TERMINAL / PER VPA is the set-up rule that makes it work.']
   company companys [not null]
   branch branch_master
   tenderType acc_tender_types [not null]
@@ -1046,6 +1172,11 @@ Table acc_tender_types {
   ttmAllowChange Boolean [not null, default: false]
   ttmAllowInReturn Boolean [not null, default: true]
   ttmDisplayOrder Int [not null, default: 0]
+  ttmCloseMode String [not null, default: 'NONE', note: 'How the till close counts it (20261008100000, ck_ttm_close_mode):
+DENOM (cash, by denomination) | SLIPS (card / cheque / gift voucher: slips +
+amount + batch ref) | STATEMENT (UPI / wallet / bank: reconciled against the
+provider later) | NONE (credit / temp credit / loyalty / RRN: not in the drawer).']
+  ttmHandover Boolean [not null, default: false, note: 'The instrument physically goes to the safe at close.']
   ttmIsActive Boolean [not null, default: true]
   ttmIsDeleted Boolean [not null, default: false]
   ttmSyncDate DateTime
@@ -1055,6 +1186,8 @@ Table acc_tender_types {
   ttmModifiedBy String
   tenders acc_tender_master [not null]
   tenderDetails acc_tender_detail [not null]
+  tillCountLines till_count_line [not null]
+  tillVariances till_variance [not null]
 }
 
 Table acc_voucher_doc_detail {
@@ -1622,6 +1755,679 @@ Table acc_ledger_bank_accounts {
   tenderMasters acc_tender_master [not null]
 }
 
+Table till_approval {
+  tapId String [not null]
+  tapCompanyId String [not null]
+  tapBranchId String [not null]
+  tapTenantId String
+  tapAccYear String [not null]
+  tapEventCode String [not null, note: 'ck_tar_event\'s list.']
+  tapSessionId String
+  tapCounterId String
+  tapSrcDocType String [note: 'TILL_SESSION | TILL_MOVEMENT | SALE_BILL …']
+  tapSrcDocId String
+  tapSrcRefno String
+  tapAmount Decimal [not null, default: 0]
+  tapCountInSession Int [not null, default: 0, note: 'How many of this event already in the session.']
+  tapRuleId String
+  tapRuleSnapshot Json [note: 'mode / threshold / role as they were when it fired.']
+  tapRequiredRole String [not null, note: 'SUPERVISOR | STORE_MANAGER | CASH_OFFICE | AREA_MANAGER | HO_FINANCE']
+  tapTwoPerson Boolean [not null, default: false]
+  tapSelfAllowed Boolean [not null, default: false, note: 'Snapshotted from the rule (or till.single_operator): ck_tap_self reads it.']
+  tapChannel String [not null, default: 'COUNTER', note: 'COUNTER | REMOTE']
+  tapRequestedBy String [not null]
+  tapRequestedOn DateTime [default: `now()`, not null]
+  tapReasonId String
+  tapRequestNote String
+  tapStatus String [not null, default: 'PENDING', note: 'PENDING | APPROVED | REJECTED | EXPIRED | CANCELLED']
+  tapDecidedBy String
+  tapDecidedOn DateTime
+  tapDecidedDeviceId String
+  tapDecisionNote String
+  tapSecondBy String [note: 'Two-person: a third person (ck_tap_second, ck_tap_two_person).']
+  tapSecondOn DateTime
+  tapExpiresOn DateTime
+  tapDeviceId String
+  tapIsDeleted Boolean [not null, default: false]
+  tapSyncDate DateTime
+  tapCreatedOn DateTime [default: `now()`, not null]
+  tapModifiedOn DateTime
+  reason till_reason
+
+  indexes {
+    (tapId, tapAccYear) [pk]
+  }
+
+  Note: 'TILL APPROVAL — one row per request, decided once (share file 47 §7,
+migration 20261008100000). Generic on purpose: the void / price-override /
+reprint gates (SIX_TXN_CONTROLS §7) write here too, so "every override in a
+session" is one query.
+
+NOT a voucher approval step. This approves an EXCEPTION — a variance, a
+payout over a limit, a drawer opened with no sale — and records who let it
+through.
+COUNTER channel: the approver types their PIN on the cashier\'s screen; the
+STORE server verifies usr_pin_hash and writes the decision in the same call.
+REMOTE channel: the request sits PENDING; an approver with taa_can_remote
+decides THROUGH THE STORE SERVER\'S API (one writer per row). HO reviews
+go to till_session_review, never here.'
+}
+
+Table till_approval_authority {
+  taaId String [pk]
+  taaUserId String [not null]
+  taaCompanyId String
+  taaBranchId String
+  taaRole String [not null, note: 'The level this grant confers: SUPERVISOR | STORE_MANAGER | CASH_OFFICE | AREA_MANAGER | HO_FINANCE']
+  taaEventCode String [note: 'NULL = every event.']
+  taaMaxAmount Decimal [note: 'NULL = no ceiling.']
+  taaCanRemote Boolean [not null, default: false, note: 'May approve from outside the counter (inbox / mobile).']
+  taaValidFrom DateTime [not null]
+  taaValidTo DateTime
+  taaRemarks String
+  taaIsActive Boolean [not null, default: true]
+  taaIsDeleted Boolean [not null, default: false]
+  taaSyncDate DateTime
+  taaCreatedOn DateTime [default: `now()`, not null]
+  taaCreatedBy String
+  taaModifiedOn DateTime
+  taaModifiedBy String
+
+  Note: 'TILL APPROVAL AUTHORITY — who may approve what, up to how much (share file
+47 §1.7, migration 20261008100000).
+
+Branch NULL = every branch of the company (area manager / HO).
+Company NULL = every company (group finance). taaUserId is a
+user_master.usr_id, FK-less like every till person column.'
+}
+
+Table till_approval_rule {
+  tarId String [pk]
+  tarCompanyId String
+  tarBranchId String
+  tarEventCode String [not null, note: 'ck_tar_event\'s list (till events + the reserved counter-control gates).']
+  tarMode String [not null, note: 'NEVER | ALWAYS | OVER_AMOUNT | OVER_COUNT | OVER_PERCENT']
+  tarThresholdAmount Decimal [not null, default: 0]
+  tarThresholdCount Int [not null, default: 0, note: 'Per session.']
+  tarThresholdPercent Decimal [not null, default: 0]
+  tarChannel String [not null, default: 'EITHER', note: 'COUNTER | REMOTE | EITHER']
+  tarMinRole String [not null, default: 'SUPERVISOR', note: 'SUPERVISOR | STORE_MANAGER | CASH_OFFICE | AREA_MANAGER | HO_FINANCE']
+  tarTwoPerson Boolean [not null, default: false, note: 'Needs two distinct approvers.']
+  tarAllowSelf Boolean [not null, default: false, note: 'The requester may approve their own request.']
+  tarBlocksTill Boolean [not null, default: true, note: 'The counter waits (false = record now, review later).']
+  tarExpireMinutes Int [not null, default: 0, note: '0 = a PENDING request never expires.']
+  tarEffectiveFrom DateTime [not null]
+  tarRemarks String
+  tarIsActive Boolean [not null, default: true]
+  tarIsDeleted Boolean [not null, default: false]
+  tarSyncDate DateTime
+  tarCreatedOn DateTime [default: `now()`, not null]
+  tarCreatedBy String
+  tarModifiedOn DateTime
+  tarModifiedBy String
+
+  Note: 'TILL APPROVAL RULE — when an event needs a second person (share file 47
+§1.6, migration 20261008100000).
+
+Resolution (TillApprovalService.ruleFor, same shape as StatutoryService):
+branch row > company row > shipped row (both NULL), then the latest
+tarEffectiveFrom <= business date. LIMIT 1. One rule per event per scope
+(ux_tar_scope). Approval THRESHOLDS live here, never in app_setting_def.'
+}
+
+Table till_business_day {
+  tbdId String [not null]
+  tbdCompanyId String [not null]
+  tbdBranchId String [not null]
+  tbdTenantId String
+  tbdAccYear String [not null]
+  tbdBusinessDate DateTime [not null]
+  tbdStatus String [not null, default: 'OPEN', note: 'OPEN | CLOSING | CLOSED']
+  tbdOpenedOn DateTime [default: `now()`, not null]
+  tbdOpenedBy String [not null]
+  tbdClosingOn DateTime
+  tbdClosedOn DateTime
+  tbdClosedBy String
+  tbdZNo Int [note: 'Store Z, running per branch, never reset.']
+  tbdReopenCount Int [not null, default: 0]
+  tbdSessionCount Int [not null, default: 0]
+  tbdBillCount Int [not null, default: 0]
+  tbdNetSales Decimal [not null, default: 0]
+  tbdCashExpected Decimal [not null, default: 0]
+  tbdCashCounted Decimal [not null, default: 0]
+  tbdNoncashVariance Decimal [not null, default: 0]
+  tbdSafeOpening Decimal [not null, default: 0]
+  tbdSafeExpected Decimal [not null, default: 0]
+  tbdSafeCounted Decimal [note: 'NULL = no safe count (setting till.day_close_safe_count allowed it).']
+  tbdRemitted Decimal [not null, default: 0]
+  tbdExceptionCount Int [not null, default: 0, note: 'Approvals + force closes + no-sales in the day.']
+  tbdCloseApprovalId String [note: 'DAY_CLOSE_EXCEPTION, when one fired.']
+  tbdPrintCount Int [not null, default: 0]
+  tbdNotes String
+  tbdIsDeleted Boolean [not null, default: false]
+  tbdSyncDate DateTime
+  tbdCreatedOn DateTime [default: `now()`, not null]
+  tbdCreatedBy String
+  tbdModifiedOn DateTime
+  tbdModifiedBy String
+  tbdCashVariance Decimal [note: 'GENERATED ALWAYS AS (tbd_cash_counted - tbd_cash_expected) STORED — never write it.']
+  sessions till_session [not null]
+
+  indexes {
+    (tbdId, tbdAccYear) [pk]
+    (tbdId, tbdAccYear, tbdBusinessDate) [unique]
+  }
+
+  Note: 'TILL BUSINESS DAY — one per branch per trading date (share file 47 §2,
+migration 20261008100000).
+
+The business date is NOT the calendar date: a store open till 01:00 books
+its 00:30 sales to yesterday (setting till.day_cutoff). Every session hangs
+off a day; DAY CLOSE is the store\'s Z and the moment SALES_DAY_CLOSED
+(already used by /bills/retender) starts refusing.
+
+LIST-partitioned by tbdAccYear, which ck_tbd_year ties to the business
+date\'s April–March year. uq_tbd_id_date carries the date so a session\'s FK
+(fk_tss_day) can never sit on another day\'s date.'
+}
+
+Table till_cash_movement {
+  tcmId String [not null]
+  tcmCompanyId String [not null]
+  tcmBranchId String [not null]
+  tcmTenantId String
+  tcmAccYear String [not null]
+  tcmKind String [not null, note: 'FLOAT_ISSUE | TOP_UP | PICKUP | DROP | CLOSE_HANDOVER | PAID_IN | REMIT | SAFE_TRANSFER | EXCHANGE']
+  tcmDocNo String [not null, note: 'From acc_voucher_seq for the voucher type.']
+  tcmDocDate DateTime [not null, note: '= the business date.']
+  tcmDayId String [not null]
+  tcmSessionId String [note: 'NULL only for REMIT / SAFE_TRANSFER (ck_tcm_session).']
+  tcmSafeId String [note: 'The safe side, when there is one.']
+  tcmToSafeId String [note: 'SAFE_TRANSFER target. FK-less.']
+  tcmAmount Decimal [not null, note: 'Always positive; the kind is the direction.']
+  tcmLedgerId String [note: 'PAID_IN counter-ledger; REMIT: bank / transit.']
+  tcmReasonId String
+  tcmRefNo String [note: 'Supplier bill no, deposit slip no.']
+  tcmRefDate DateTime
+  tcmPartyName String [note: 'Who took / gave the cash (free text).']
+  tcmCountId String [note: 'Denomination count of what moved.']
+  tcmBagNo String [note: 'DROP / REMIT: tamper-evident bag.']
+  tcmSealNo String
+  tcmCitAgency String [note: 'REMIT: cash-in-transit company.']
+  tcmDoneBy String [not null, note: 'Who handled the cash.']
+  tcmWitnessBy String [note: 'Second person (PICKUP always: ck_tcm_pickup_witness).']
+  tcmApprovalId String
+  tcmVoucherId String [note: 'The posted acc_voucher_header (with its year: ck_tcm_voucher_pair).']
+  tcmVoucherAccYear String
+  tcmStatus String [not null, default: 'POSTED', note: 'POSTED | VOIDED']
+  tcmVoidReasonId String
+  tcmVoidedOn DateTime
+  tcmVoidedBy String
+  tcmVoidApprovalId String
+  tcmPrintCount Int [not null, default: 0]
+  tcmDeviceId String
+  tcmNotes String
+  tcmIsDeleted Boolean [not null, default: false]
+  tcmSyncDate DateTime
+  tcmCreatedOn DateTime [default: `now()`, not null]
+  tcmCreatedBy String
+  tcmModifiedOn DateTime
+  tcmModifiedBy String
+  ledger acc_ledger_master
+  reason till_reason
+  safe till_safe
+
+  indexes {
+    (tcmId, tcmAccYear) [pk]
+  }
+
+  Note: 'TILL CASH MOVEMENT — every non-sale movement of money through a drawer or
+the safe (share file 47 §5, migration 20261008100000). Each POSTED row has
+exactly one accounting voucher (ix_tcm_unposted finds the ones that don\'t).
+
+kind            from → to            voucher   Dr / Cr
+FLOAT_ISSUE     SAFE → TILL          TFlt      Till cash / Safe
+TOP_UP          SAFE → TILL          TFlt      Till cash / Safe          (change mid-shift)
+PICKUP          TILL → SAFE          TDrp      Safe / Till cash          (supervisor takes it)
+DROP            TILL → SAFE          TDrp      Safe / Till cash          (cashier drops a sealed bag)
+CLOSE_HANDOVER  TILL → SAFE          TDrp      Safe / Till cash          (counted cash at close)
+PAID_IN         LEDGER → TILL        TPIn      Till cash / income or party
+REMIT           SAFE → TRANSIT/BANK  CRem      Cash-in-transit (or bank) / Safe
+SAFE_TRANSFER   SAFE → SAFE          CRem      other safe / this safe
+EXCHANGE        TILL ↔ SAFE          none      net zero; counted both ways, logged
+
+PAID_OUT left this table in 20261008110000 (file 48): an expense is an
+expense voucher (ExpV, tendered like a payment) and a supplier paid from
+the drawer is a bill-wise Payment in the session — one path per fact.
+TPOut, its old voucher type, was deactivated by 20261008120000.
+
+Till cash ledger = the branch\'s CASH tender ledger
+(acc_tender_master.tnd_ledger_id) — ONE source of truth, so a sale and a
+payout hit the same ledger. Session = the sub-ledger, via avh_session_id.'
+}
+
+Table till_count {
+  tctId String [not null]
+  tctCompanyId String [not null]
+  tctBranchId String [not null]
+  tctTenantId String
+  tctAccYear String [not null]
+  tctKind String [not null, note: 'OPEN | CLOSE | RECOUNT | HANDOVER | SURPRISE | FLOAT_ISSUE | PICKUP | DROP_VERIFY | SAFE']
+  tctSessionId String [note: 'NULL for a SAFE count.']
+  tctSafeId String [note: 'SAFE / DROP_VERIFY.']
+  tctMovementId String [note: 'DROP_VERIFY / FLOAT_ISSUE / PICKUP: the movement counted.']
+  tctAttemptNo Int [not null, default: 1]
+  tctIsFinal Boolean [not null, default: false, note: 'The attempt the session close used (ux_tct_final: one OPEN, one CLOSE-side per session).']
+  tctIsBlind Boolean [not null, default: false]
+  tctCountedOn DateTime [default: `now()`, not null]
+  tctCountedBy String [not null]
+  tctWitnessBy String
+  tctDeviceId String
+  tctTotalCounted Decimal [not null, default: 0]
+  tctExpected Decimal [note: 'System figure at count time (NULL for SURPRISE before compute).']
+  tctNotes String
+  tctIsDeleted Boolean [not null, default: false]
+  tctSyncDate DateTime
+  tctCreatedOn DateTime [default: `now()`, not null]
+  tctCreatedBy String
+  lines till_count_line [not null]
+
+  indexes {
+    (tctId, tctAccYear) [pk]
+  }
+
+  Note: 'TILL COUNT — every time somebody counts money, one header + its lines
+(share file 47 §4, migration 20261008100000).
+
+3.0 DELETEd and re-INSERTed the count on every close/approve, so a recount
+erased the first count. Here every attempt is its own row and stays.
+tctExpected is what the system expected AT THAT MOMENT — stored even when
+the count was blind and the cashier never saw it.'
+}
+
+Table till_counter {
+  tcnId String [pk]
+  tcnCompanyId String [not null]
+  tcnBranchId String [not null]
+  tcnCode String [not null, note: 'C01, EXP1, RET']
+  tcnName String [not null]
+  tcnKind String [not null, default: 'POS', note: 'POS | EXPRESS | RETURNS_DESK | SERVICE_DESK | CASH_OFFICE | MOBILE | SELF_CHECKOUT']
+  tcnDrawerMode String [not null, default: 'DRAWER', note: 'DRAWER | TRAY (travels with the cashier) | NONE (cashless lane)']
+  tcnDeviceId String [note: 'Desktop/Mobile only, never Web; NULL = any device may claim it.']
+  tcnSafeId String [note: 'Where its drops go; NULL = the branch default safe.']
+  tcnDefaultFloat Decimal [not null, default: 0]
+  tcnCashAlertLimit Decimal [not null, default: 0, note: '0 = off; above it: "pickup due".']
+  tcnCashBlockLimit Decimal [not null, default: 0, note: '0 = off; above it billing stops until a pickup.']
+  tcnZLastNo Int [not null, default: 0, note: 'Running Z number, never reset (written by the session close).']
+  tcnRequiresSession Boolean [not null, default: true]
+  tcnSortOrder Int [not null, default: 0]
+  tcnRemarks String
+  tcnIsActive Boolean [not null, default: true]
+  tcnIsDeleted Boolean [not null, default: false]
+  tcnSyncDate DateTime
+  tcnCreatedOn DateTime [default: `now()`, not null]
+  tcnCreatedBy String
+  tcnModifiedOn DateTime
+  tcnModifiedBy String
+  device device_master
+  safe till_safe
+  sessions till_session [not null]
+
+  Note: 'TILL COUNTER — a physical lane with (usually) one cash drawer (share file 47
+§1.2, migration 20261008100000).
+
+The accountability unit is the DRAWER. A device is the PC/tablet bolted to
+it; replacing a dead PC re-points tcnDeviceId and history stays on the
+counter. One device drives one counter at a time (ux_tcn_device).'
+}
+
+Table till_count_line {
+  tclId String [not null]
+  tclAccYear String [not null]
+  tclCountId String [not null]
+  tclRowNo Int [not null]
+  tclTenderTypeId Int [not null]
+  tclTenderId String [note: 'acc_tender_master (two UPI QRs = two lines). FK-less.']
+  tclDenominationId String [note: 'DENOM lines.']
+  tclFaceValue Decimal [not null, default: 0, note: 'DENOM: the note value; else 0 (ck_tcl_denom).']
+  tclQty Decimal [not null, default: 0, note: 'DENOM: pieces; SLIPS: slips.']
+  tclEnteredAmount Decimal [not null, default: 0, note: 'SLIPS / loose coin total typed.']
+  tclBatchRef String [note: 'Card EDC batch no / cheque bundle ref.']
+  tclAmount Decimal [note: 'GENERATED ALWAYS AS (CASE WHEN tcl_denomination_id IS NOT NULL THEN
+tcl_face_value * tcl_qty ELSE tcl_entered_amount END) STORED — never write it.']
+  tclSyncDate DateTime
+  count till_count [not null]
+  tenderType acc_tender_types [not null]
+  denomination till_denomination
+
+  indexes {
+    (tclId, tclAccYear) [pk]
+  }
+
+  Note: 'TILL COUNT LINE — one tender (and, for cash, one denomination) of a count
+(share file 47 §4, migration 20261008100000).
+
+DENOM lines carry the denomination, its face value and the pieces; SLIPS /
+loose-coin lines carry an entered amount. tclAmount is GENERATED from
+whichever applies.'
+}
+
+Table till_denomination {
+  tdnId String [pk]
+  tdnCompanyId String
+  tdnCurrency String [not null, default: 'INR']
+  tdnValue Decimal [not null]
+  tdnKind String [not null, note: 'NOTE | COIN']
+  tdnLabel String [not null]
+  tdnBundleQty Int [not null, default: 0, note: 'Notes per strapped bundle (100); 0 = not bundled.']
+  tdnSortOrder Int [not null, default: 0]
+  tdnValidTo DateTime [note: 'Withdrawn notes stop being offered after this.']
+  tdnIsActive Boolean [not null, default: true]
+  tdnIsDeleted Boolean [not null, default: false]
+  tdnSyncDate DateTime
+  tdnCreatedOn DateTime [default: `now()`, not null]
+  tdnCreatedBy String
+  tdnModifiedOn DateTime
+  tdnModifiedBy String
+  countLines till_count_line [not null]
+
+  Note: 'TILL DENOMINATION — the notes and coins a DENOM count offers (share file 47
+§1.5, migration 20261008100000). 3.0 hard-coded them in the .ui.
+
+tdnCompanyId NULL = shared. The INR set is seeded by the migration.'
+}
+
+Table till_event {
+  tevId String [not null]
+  tevCompanyId String [not null]
+  tevBranchId String [not null]
+  tevAccYear String [not null]
+  tevEventCode String [not null, note: 'ck_tev_code\'s list.']
+  tevEventOn DateTime [not null]
+  tevSessionId String
+  tevDayId String
+  tevCounterId String
+  tevDeviceId String
+  tevUserId String
+  tevSrcDocType String
+  tevSrcDocId String
+  tevSrcRefno String
+  tevAmount Decimal
+  tevReasonId String
+  tevApprovalId String
+  tevClientSeq BigInt [note: 'Device-local sequence: a batch re-sent is idempotent.']
+  tevPayload Json
+  tevSyncDate DateTime
+  tevCreatedOn DateTime [default: `now()`, not null]
+
+  indexes {
+    (tevId, tevAccYear) [pk]
+  }
+
+  Note: 'TILL EVENT — the append-only till journal (share file 47 §8, migration
+20261008100000). 3.0 kept one text blob, sess_log_rec.
+
+INSERT only, never UPDATE: TillEventService is the single writer (the
+stock_ledger pattern). Client-side facts (drawer kicked, no-sale, X read,
+idle lock) arrive in batches via /till/events/batch; tevEventOn is the
+DEVICE time, tevCreatedOn the arrival. (tevDeviceId, tevClientSeq) makes a
+re-sent batch idempotent (ux_tev_client_seq).'
+}
+
+Table till_reason {
+  trsId String [pk]
+  trsCompanyId String
+  trsCategory String [not null, note: 'VARIANCE | FLOAT_MISMATCH | EXPENSE | PAID_IN | PICKUP | NO_SALE | SUSPEND |
+FORCE_CLOSE | REOPEN | SESSION_VOID | MOVEMENT_VOID | DAY_REOPEN | REPRINT |
+VOID_BILL | VOID_LINE | PRICE_OVERRIDE | REFUND | NONCASH (20261008130000)
+(EXPENSE was PAID_OUT until 20261008110000; its SUPPLIER / STAFF_ADVANCE
+rows were retired — a party is paid by a bill-wise Payment.)']
+  trsCode String [not null]
+  trsName String [not null]
+  trsLedgerId String [note: 'EXPENSE / PAID_IN: the default ledger.']
+  trsNeedsNote Boolean [not null, default: false]
+  trsNeedsRef Boolean [not null, default: false, note: 'EXPENSE: the bill / voucher no.']
+  trsMaxAmount Decimal [not null, default: 0, note: '0 = no cap of its own (the approval rule still applies).']
+  trsSortOrder Int [not null, default: 0]
+  trsIsActive Boolean [not null, default: true]
+  trsIsDeleted Boolean [not null, default: false]
+  trsSyncDate DateTime
+  trsCreatedOn DateTime [default: `now()`, not null]
+  trsCreatedBy String
+  trsModifiedOn DateTime
+  trsModifiedBy String
+  ledger acc_ledger_master
+  cashMovements till_cash_movement [not null]
+  variances till_variance [not null]
+  approvals till_approval [not null]
+  settlementLines acc_settlement_line [not null]
+
+  Note: 'TILL REASON — the controlled reasons a till event names (share file 47
+§1.4, migration 20261008100000). 3.0 hard-coded six strings in the client.
+
+trsCompanyId NULL = shipped / shared. Unique per (company, category,
+upper(code)) NULLS NOT DISTINCT (ux_trs_code).'
+}
+
+Table till_safe {
+  tsfId String [pk]
+  tsfCompanyId String [not null]
+  tsfBranchId String [not null]
+  tsfCode String [not null]
+  tsfName String [not null]
+  tsfLedgerId String [not null]
+  tsfInsuredLimit Decimal [not null, default: 0, note: '0 = none; above it the day close asks for a remittance.']
+  tsfIsDefault Boolean [not null, default: false]
+  tsfRemarks String
+  tsfIsActive Boolean [not null, default: true]
+  tsfIsDeleted Boolean [not null, default: false]
+  tsfSyncDate DateTime
+  tsfCreatedOn DateTime [default: `now()`, not null]
+  tsfCreatedBy String
+  tsfModifiedOn DateTime
+  tsfModifiedBy String
+  ledger acc_ledger_master [not null]
+  counters till_counter [not null]
+  cashMovements till_cash_movement [not null]
+
+  Note: 'TILL SAFE — the safe / cash office drawer cash goes to (share file 47 §1.1,
+migration 20261008100000). One default per branch (ux_tsf_default).
+
+tsfLedgerId is the SAFE_CASH ledger this safe posts to: TFlt / TDrp / CRem
+vouchers hit it on the safe side, the branch\'s CASH tender ledger on the
+till side.'
+}
+
+Table till_session {
+  tssId String [not null]
+  tssCompanyId String [not null]
+  tssBranchId String [not null]
+  tssTenantId String
+  tssAccYear String [not null]
+  tssDayId String [not null]
+  tssBusinessDate DateTime [not null]
+  tssCounterId String [not null]
+  tssDeviceId String [not null, note: 'The device that opened it; money posts only from it (plan-till-counter-claim.md).']
+  tssOperatorId String [not null, note: 'user_master.usr_id of the accountable cashier.']
+  tssSessionNo String [not null, note: 'C01-260407-02 (counter-date-seq), printed.']
+  tssDaySeq Int [not null, note: 'nth session of this counter on this business date.']
+  tssStatus String [not null, default: 'OPEN', note: 'OPEN | SUSPENDED | COUNTING | PENDING_APPROVAL | CLOSED | VOIDED']
+  tssOpenedOn DateTime [default: `now()`, not null]
+  tssFloatMode String [not null, note: 'ISSUED (from the safe) | CARRIED (left in the drawer) | NONE']
+  tssPrevSessionId String [note: 'CARRIED / handover: whose drawer this was.']
+  tssFloatIssued Decimal [not null, default: 0, note: 'What the safe / previous close says is in it.']
+  tssFloatCounted Decimal [not null, default: 0, note: 'What the cashier counted at open.']
+  tssOpenCountId String
+  tssFloatApprovalId String [note: 'FLOAT_MISMATCH.']
+  tssSuspendCount Int [not null, default: 0]
+  tssSuspendedOn DateTime [note: 'Set while SUSPENDED (ck_tss_suspended).']
+  tssBillingEndedOn DateTime [note: 'The moment it stopped taking money.']
+  tssCountMode String [note: 'BLIND | OPEN']
+  tssCountPlace String [note: 'COUNTER | CASH_OFFICE']
+  tssCloseCountId String [note: 'The FINAL count (attempts are all kept).']
+  tssCountAttempts Int [not null, default: 0]
+  tssCountedOn DateTime
+  tssCountedBy String
+  tssWitnessBy String [note: 'Second person at the count (setting till.close_witness).']
+  tssClosedOn DateTime
+  tssClosedBy String
+  tssCloseApprovalId String [note: 'CASH_VARIANCE / NONCASH_VARIANCE / FORCE_CLOSE.']
+  tssForceClosed Boolean [not null, default: false]
+  tssForceReasonId String
+  tssReopenCount Int [not null, default: 0]
+  tssZNo Int [note: '= the counter\'s tcn_z_last_no + 1 at close.']
+  tssBillCount Int [not null, default: 0]
+  tssReturnCount Int [not null, default: 0]
+  tssReceiptCount Int [not null, default: 0]
+  tssNoSaleCount Int [not null, default: 0]
+  tssVoidCount Int [not null, default: 0]
+  tssVoidLineCount Int [not null, default: 0]
+  tssNetSales Decimal [not null, default: 0]
+  tssCashExpected Decimal [not null, default: 0]
+  tssCashCounted Decimal [not null, default: 0]
+  tssNoncashExpected Decimal [not null, default: 0]
+  tssNoncashCounted Decimal [not null, default: 0]
+  tssHandedOver Decimal [not null, default: 0, note: 'Cash that went to the safe at close.']
+  tssFloatLeft Decimal [not null, default: 0, note: 'Cash left in the drawer for the next session. CLOSED: handed_over + float_left = cash_counted.']
+  tssVarianceStatus String [not null, default: 'NONE', note: 'NONE | WITHIN_TOLERANCE | PENDING | ACCEPTED | RECOVER | INVESTIGATE']
+  tssPrintCount Int [not null, default: 0]
+  tssNotes String
+  tssIsDeleted Boolean [not null, default: false]
+  tssSyncDate DateTime
+  tssCreatedOn DateTime [default: `now()`, not null]
+  tssCreatedBy String
+  tssModifiedOn DateTime
+  tssModifiedBy String
+  tssFloatVariance Decimal [note: 'tss_float_counted - tss_float_issued']
+  tssCashVariance Decimal [note: 'tss_cash_counted - tss_cash_expected']
+  tssNoncashVariance Decimal [note: 'tss_noncash_counted - tss_noncash_expected']
+  tssPaymentCount Int [not null, default: 0]
+  tssExpenseCount Int [not null, default: 0]
+  day till_business_day [not null]
+  counter till_counter [not null]
+  variances till_variance [not null]
+
+  indexes {
+    (tssId, tssAccYear) [pk]
+  }
+
+  Note: 'TILL SESSION — one cashier, one drawer, one stretch of time (share file 47
+§3, migration 20261008100000).
+
+This is the row every *_session_id in the product was always meant to point
+at (sale_bill/return/dc/quotation/order, acc_tender_detail,
+acc_voucher_header, acc_bill_adjustment, acc_temp_credit, txn_hold,
+loyalty_ledger, txn_status_log …). Those columns stay FK-less: they are on
+partitioned tables of other years and an offline push must never fail on
+ordering. TillSessionService validates the id at post time instead.
+
+LIFECYCLE (TILL_DESIGN.md §5.2)
+OPEN ⇄ SUSPENDED → COUNTING → PENDING_APPROVAL → CLOSED
+└→ VOIDED (opened in error, nothing written in it)
+CLOSED → OPEN again only by SESSION_REOPEN (approval), counted again.
+
+One live session per COUNTER (ux_tss_counter_live) — single-writer, so safe
+offline. One open session per OPERATOR is a service rule, NOT an index.'
+}
+
+Table till_session_review {
+  tsrId String [not null]
+  tsrCompanyId String [not null]
+  tsrBranchId String [not null]
+  tsrAccYear String [not null]
+  tsrSessionId String [note: 'A session, or …']
+  tsrDayId String [note: '… a whole day (ck_tsr_target: at least one).']
+  tsrOutcome String [not null, note: 'OK | QUERY | ESCALATED | RECOVERY_ORDERED | WRITTEN_OFF | SUSPENSE_CLEARED | BANK_MATCHED']
+  tsrReviewedBy String [not null]
+  tsrReviewedOn DateTime [default: `now()`, not null]
+  tsrNote String
+  tsrRefVoucherId String [note: 'The journal HO raised (suspense cleared, recovery …).']
+  tsrRefVoucherAccYear String
+  tsrSyncDate DateTime
+  tsrCreatedOn DateTime [default: `now()`, not null]
+
+  indexes {
+    (tsrId, tsrAccYear) [pk]
+  }
+
+  Note: 'TILL SESSION REVIEW — HO\'s view of a session or a day, written at the CLOUD
+only, append-only (share file 47 §9, migration 20261008100000).
+
+Sync is push-only (store → cloud, upsert by PK). If HO updated a
+store-owned session row, the store\'s next push would overwrite it. So HO\'s
+view lives in its own rows that no store ever writes.'
+}
+
+Table till_variance {
+  tvrId String [not null]
+  tvrCompanyId String [not null]
+  tvrBranchId String [not null]
+  tvrTenantId String
+  tvrAccYear String [not null]
+  tvrSessionId String [not null]
+  tvrStage String [not null, default: 'CLOSE', note: 'OPEN (float mismatch) | CLOSE']
+  tvrTenderTypeId Int [not null]
+  tvrTenderId String
+  tvrOpenAmount Decimal [not null, default: 0, note: 'Float (cash only).']
+  tvrSalesAmount Decimal [not null, default: 0, note: 'Sale tenders taken.']
+  tvrRefundAmount Decimal [not null, default: 0, note: 'Refunds paid.']
+  tvrReceiptAmount Decimal [not null, default: 0, note: 'Receipts / advances / temp-credit collections.']
+  tvrMovedIn Decimal [not null, default: 0, note: 'TOP_UP + PAID_IN (cash only).']
+  tvrMovedOut Decimal [not null, default: 0, note: 'PICKUP + DROP (cash only). Expenses left the movements in 48: see tvrExpenseAmount.']
+  tvrTxnCount Int [not null, default: 0]
+  tvrExpected Decimal [not null]
+  tvrCounted Decimal [not null]
+  tvrSlipCount Int
+  tvrTolerance Decimal [not null, default: 0, note: 'The tolerance that applied, snapshot.']
+  tvrTreatment String [not null, default: 'PENDING', note: 'PENDING | WITHIN_TOLERANCE | EXPENSE | RECOVER | SUSPENSE | RETENDERED']
+  tvrReasonId String
+  tvrRecoveryLedgerId String [note: 'RECOVER: the staff advance ledger (ck_tvr_recover). FK-less.']
+  tvrApprovalId String
+  tvrVoucherId String
+  tvrVoucherAccYear String
+  tvrStatus String [not null, default: 'OPEN', note: 'OPEN | POSTED | REVERSED']
+  tvrReversesId String
+  tvrDecidedBy String
+  tvrDecidedOn DateTime
+  tvrNotes String
+  tvrIsDeleted Boolean [not null, default: false]
+  tvrSyncDate DateTime
+  tvrCreatedOn DateTime [default: `now()`, not null]
+  tvrCreatedBy String
+  tvrModifiedOn DateTime
+  tvrModifiedBy String
+  tvrVariance Decimal [note: 'GENERATED ALWAYS AS (tvr_counted - tvr_expected) STORED — never write it.']
+  tvrPaymentAmount Decimal [not null, default: 0, note: 'Bill-wise payments (menu 100) out of this tender in the session.']
+  tvrExpenseAmount Decimal [not null, default: 0, note: 'Expense vouchers (ExpV) out of this tender in the session.']
+  tvrRows Json [note: 'The tender rows a close-time NON-CASH variance parked in Tender suspense:
+[{"td_id": …, "td_acc_year": "2026-2027", "amount": 160.00}]. A later TSet
+credits suspense, not the clearing ledger, for these.']
+  session till_session [not null]
+  tenderType acc_tender_types [not null]
+  reason till_reason
+
+  indexes {
+    (tvrId, tvrAccYear) [pk]
+  }
+
+  Note: 'TILL VARIANCE — per session, per tender: what was decided about the gap
+(share file 47 §6, migration 20261008100000).
+
+Treatment → posting (TVar voucher, journal):
+WITHIN_TOLERANCE  short/excess ≤ till.cash_tolerance → Cash Short & Excess, auto
+EXPENSE           Cash Short & Excess (CASH_SHORT_EXCESS role)
+RECOVER           the cashier\'s staff advance ledger: tss_operator_id →
+usr_employee_id → emp_loan_ledger_id (none → TILL_LEDGER_UNMAPPED)
+SUSPENSE          TENDER_SUSPENSE role — under investigation, cleared later by a journal
+RETENDERED        no posting: the gap was a wrong tender, fixed by /bills/retender
+
+A variance row is never edited after it posts; a changed decision is a
+REVERSED row plus a new one. Stage OPEN = the float mismatch at session open.
+ck_tvr_expected holds the row\'s own arithmetic (since 20261008110000, file 48):
+expected = open + sales - refund + receipt - payment - expense
++ moved_in - moved_out.'
+}
+
 Table audit_log {
   logId String [pk]
   logDate DateTime [default: `now()`, not null]
@@ -1787,6 +2593,7 @@ Table device_master {
   loyaltyGiftRedeems loyalty_gift_redeem [not null]
   couponTxns loyalty_coupon_txn [not null]
   promotionUsages promotion_usage [not null]
+  tillCounters till_counter [not null]
 }
 
 Table form_section {
@@ -10514,6 +11321,12 @@ Ref: acc_pdc_register.(apdChargeVoucherId, apdChargeAccYear) > acc_voucher_heade
 
 Ref: acc_pdc_register.(apdReplacedById, apdReplacedByAccYear) - acc_pdc_register.(apdId, apdAccYear) [delete: Restrict]
 
+Ref: acc_settlement_import.asiBankLedgerId > acc_ledger_master.ledId [delete: Restrict]
+
+Ref: acc_settlement_line.(aslImportId, aslAccYear) > acc_settlement_import.(asiId, asiAccYear) [delete: Cascade]
+
+Ref: acc_settlement_line.aslReasonId > till_reason.trsId [delete: Restrict]
+
 Ref: acc_tcs_register.atcPartyId > acc_ledger_master.ledId [delete: Restrict]
 
 Ref: acc_tcs_register.atcReversalOfId - acc_tcs_register.atcId [delete: Restrict]
@@ -10629,6 +11442,38 @@ Ref: acc_ship_addrs.saaLedgerId > acc_ledger_master.ledId [delete: Restrict]
 Ref: acc_ledger_bank_accounts.lbaCompanyId > companys.compId [delete: Restrict]
 
 Ref: acc_ledger_bank_accounts.lbaLedgerId > acc_ledger_master.ledId
+
+Ref: till_approval.tapReasonId > till_reason.trsId [delete: Restrict]
+
+Ref: till_cash_movement.tcmLedgerId > acc_ledger_master.ledId [delete: Restrict]
+
+Ref: till_cash_movement.tcmReasonId > till_reason.trsId [delete: Restrict]
+
+Ref: till_cash_movement.tcmSafeId > till_safe.tsfId [delete: Restrict]
+
+Ref: till_counter.tcnDeviceId > device_master.devId [delete: Set Null]
+
+Ref: till_counter.tcnSafeId > till_safe.tsfId [delete: Restrict]
+
+Ref: till_count_line.(tclCountId, tclAccYear) > till_count.(tctId, tctAccYear) [delete: Cascade]
+
+Ref: till_count_line.tclTenderTypeId > acc_tender_types.ttmTypeId [delete: Restrict]
+
+Ref: till_count_line.tclDenominationId > till_denomination.tdnId [delete: Restrict]
+
+Ref: till_reason.trsLedgerId > acc_ledger_master.ledId [delete: Restrict]
+
+Ref: till_safe.tsfLedgerId > acc_ledger_master.ledId [delete: Restrict]
+
+Ref: till_session.(tssDayId, tssAccYear, tssBusinessDate) > till_business_day.(tbdId, tbdAccYear, tbdBusinessDate) [delete: Restrict]
+
+Ref: till_session.tssCounterId > till_counter.tcnId [delete: Restrict]
+
+Ref: till_variance.(tvrSessionId, tvrAccYear) > till_session.(tssId, tssAccYear) [delete: Restrict]
+
+Ref: till_variance.tvrTenderTypeId > acc_tender_types.ttmTypeId [delete: Restrict]
+
+Ref: till_variance.tvrReasonId > till_reason.trsId [delete: Restrict]
 
 Ref: audit_log.logScreenId > audit_screen.screenId [delete: Restrict]
 

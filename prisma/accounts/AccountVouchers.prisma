@@ -77,6 +77,8 @@ model AccVoucher {
   //   - Partial UNIQUE index ux_av_voucher_row.
   //   - Partial/covering indexes ix_av_ledger, ix_av_daybook, ix_av_opp_ledger,
   //     ix_av_bill, ix_av_unrecon.
+  //   - Partial ix_av_session_ledger (av_session_id, av_ledger_id) WHERE av_session_id IS NOT NULL
+  //     AND av_is_deleted = false — the till's expected-cash query (20261008110000).
   //   - CHECK constraints ck_av_dr_cr, ck_av_amount, ck_av_row_no,
   //     ck_av_acc_year, ck_av_self, ck_av_recon, and ck_av_doc_pair (av_doc_id
   //     and av_doc_acc_year move together — see

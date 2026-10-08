@@ -1,4 +1,6 @@
 import { Injectable } from '@nestjs/common';
+import { TillSessionService } from '../../till/services/till-session.service';
+import { CASH_TENDER_TYPE_ID, TillEventCode } from '../../till/types/till-enum';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
@@ -18,6 +20,7 @@ import { assertVoucherPartitionExists } from '../receipt/receipt.guards';
 import { receiptChequeFilter, receiptPdcVoucherWhere } from '../receipt/receipt-cheque-links';
 import { BillBalanceRecomputeService } from '../billBalance/bill-balance-recompute.service';
 import { TenderDetailService } from '../tenderDetail/tender-detail.service';
+import { checkCashPaymentLimit } from '../payment/cash-payment-limit';
 import type { SaveTenderDetailDto } from '../tenderDetail/dto/save-tender-detail.dto';
 import {
   TenderDrCr,
@@ -186,6 +189,7 @@ export class VoucherRegisterService {
     private readonly docRegister: DocRegisterService,
     private readonly recompute: BillBalanceRecomputeService,
     private readonly tenderDetail: TenderDetailService,
+    private readonly till: TillSessionService,
   ) {}
 
   private caller(): { userId: string | null; actor: string } {
@@ -403,6 +407,46 @@ export class VoucherRegisterService {
       const d = p.derived;
       const now = new Date();
 
+      // 7b · the till (plan-till-receipt-payment-expense §2.2 / §3). A journal
+      // or contra never touches the till cash ledger from a device in a
+      // session; a receipt / payment voucher's instruments move money where
+      // routeMoneyDoc says — the session's drawer, the back office's safe, or
+      // as before where no till runs.
+      if (type.typeCode === 'Jrl' || type.typeCode === 'Con') {
+        await this.till.assertNoTillCashLeg(tx, {
+          companyId: dto.header.companyId,
+          branchId: dto.header.branchId,
+          ledgerIds: d.legs.map((l) => l.ledger.ledId),
+          field: 'lines',
+        });
+      }
+      const moneyDocType = tenderDocTypeOf(type);
+      const cashLineRows = new Set(
+        d.legs
+          .filter(
+            (l) =>
+              l.instrument &&
+              l.lineRowNo !== null &&
+              l.instrument.tender.typeId === CASH_TENDER_TYPE_ID,
+          )
+          .map((l) => l.lineRowNo!),
+      );
+      const till =
+        moneyDocType === TenderSrcDocType.OTHER || !d.legs.some((l) => l.instrument)
+          ? { ref: null, cashLedgerId: null, safeName: null }
+          : await this.till.routeMoneyDoc(tx, {
+              companyId: dto.header.companyId,
+              branchId: dto.header.branchId,
+              sessionId: existing?.avh_session_id ?? null,
+              field: 'header.sessionId',
+              hasCash: cashLineRows.size > 0,
+              cashIn: moneyDocType === TenderSrcDocType.RECEIPT,
+            });
+      const sessionId = till.ref?.tssId ?? existing?.avh_session_id ?? null;
+      /** A CASH instrument's money leg, when the back office's cash comes from the safe. */
+      const toSafe = (l: InternalLeg): boolean =>
+        !!till.cashLedgerId && l.source === 'INSTRUMENT' && cashLineRows.has(l.fromRows[0]);
+
       // 8 – 9 · number and write the header and the legs — TODAY's. A
       // post-dated cheque's pair (notes 54) goes into a voucher of its own,
       // dated the cheque, below.
@@ -416,7 +460,7 @@ export class VoucherRegisterService {
 
       const todayLegs = d.legs.filter((l) => !l.postDated);
       const toVoucherLeg = (l: InternalLeg): VoucherLeg => ({
-        ledgerId: l.ledger.ledId,
+        ledgerId: toSafe(l) ? till.cashLedgerId! : l.ledger.ledId,
         drCr: l.drCr,
         amount: Number(l.amount.toFixed(2)),
         remarks: l.remarks,
@@ -441,7 +485,7 @@ export class VoucherRegisterService {
           roundOff: 0,
           partyId: d.party?.ledger.ledId ?? null,
           userId: actor,
-          sessionId: existing?.avh_session_id ?? null,
+          sessionId,
           deviceType: existing?.avh_device_type ?? null,
           deviceId: existing?.avh_device_id ?? null,
           remarks: p.header.remarks,
@@ -507,7 +551,7 @@ export class VoucherRegisterService {
             roundOff: 0,
             partyId: pd.party.ledId,
             userId: actor,
-            sessionId: existing?.avh_session_id ?? null,
+            sessionId,
             deviceType: existing?.avh_device_type ?? null,
             deviceId: existing?.avh_device_id ?? null,
             remarks:
@@ -549,7 +593,7 @@ export class VoucherRegisterService {
           tdDocDate: new Date(`${dto.header.date}T00:00:00Z`),
           tdPartyLedgerId: null,
           tdUserId: actor,
-          tdSessionId: existing?.avh_session_id ?? null,
+          tdSessionId: sessionId,
           tdDeviceId: existing?.avh_device_id ?? null,
           tdDrCr: type.partySide === 'DR' ? TenderDrCr.CR : TenderDrCr.DR,
         };
@@ -585,9 +629,18 @@ export class VoucherRegisterService {
             tdPartyLedgerId: l.ledger.ledId,
             tdTenderId: ins.tender.tndId,
             tdTenderTypeId: ins.tender.typeId,
-            // an issued instrument's money left OUR bank, whatever the tender's own ledger
-            tdTenderLedgerId: ins.issued ? ins.ledgerId : ins.tender.ledgerId,
-            tdSettleLedgerId: ins.issued ? null : ins.tender.settlementLedgerId,
+            // an issued instrument's money left OUR bank, whatever the tender's own ledger;
+            // back-office cash in a till branch is the safe's (48 §2.3)
+            tdTenderLedgerId:
+              till.cashLedgerId && cashLineRows.has(l.lineRowNo!)
+                ? till.cashLedgerId
+                : ins.issued
+                  ? ins.ledgerId
+                  : ins.tender.ledgerId,
+            tdSettleLedgerId:
+              ins.issued || (till.cashLedgerId && cashLineRows.has(l.lineRowNo!))
+                ? null
+                : ins.tender.settlementLedgerId,
             tdAmount: paidBy(l).toFixed(2),
             tdRefNo: ins.refNo,
             tdBankName: ins.bankName,
@@ -813,8 +866,22 @@ export class VoucherRegisterService {
         changedBy: actor,
         changedOn: now,
         deviceId: this.requestContext.getDeviceId() ?? existing?.avh_device_id ?? null,
-        sessionId: existing?.avh_session_id ?? null,
+        sessionId,
       });
+      if (till.ref) {
+        await this.till.logMoneyDoc(tx, {
+          sessionId: till.ref.tssId,
+          code:
+            moneyDocType === TenderSrcDocType.RECEIPT
+              ? TillEventCode.RECEIPT_POSTED
+              : TillEventCode.PAYMENT_POSTED,
+          srcDocType: moneyDocType === TenderSrcDocType.RECEIPT ? 'RECEIPT' : 'PAYMENT',
+          srcDocId: voucherId,
+          srcRefno: refno,
+          amount: Number(docAmount.toFixed(2)),
+          payload: { typeCode: type.typeCode },
+        });
+      }
       // The parties, and every ledger the instruments posted to (Cheques In
       // Hand among them). A post-dated cheque's party is allowed its
       // un-matured difference — see voucher-books.helper.
@@ -823,7 +890,9 @@ export class VoucherRegisterService {
         accYear: dto.header.accYear,
         ledgerIds: [
           ...partyIds,
-          ...d.legs.filter((l) => l.source === 'INSTRUMENT').map((l) => l.ledger.ledId),
+          ...d.legs
+            .filter((l) => l.source === 'INSTRUMENT')
+            .map((l) => (toSafe(l) ? till.cashLedgerId! : l.ledger.ledId)),
         ],
       });
 
@@ -1034,6 +1103,62 @@ export class VoucherRegisterService {
         VCH.DATE_OUTSIDE_YEAR,
         'header.date',
       );
+    }
+  }
+
+  /**
+   * 40A(3) (plan-till-receipt-payment-expense §3.4): a payment's CASH
+   * instruments, per payee, summed with that payee's other cash payments and
+   * expenses of the day. WARN as shipped — shown, and on its own never a
+   * refusal at /post; a company REFUSE row refuses.
+   */
+  private async checkCashPaymentLimit(
+    tx: Prisma.TransactionClient,
+    h: ValidateVoucherDto['header'],
+    d: DerivedInternal,
+    ctx: VoucherGuardContext,
+  ): Promise<void> {
+    const cashByPayee = new Map<string, Prisma.Decimal>();
+    for (const l of d.legs) {
+      const ins = l.instrument;
+      if (
+        !ins ||
+        l.lineRowNo === null ||
+        l.postDated ||
+        ins.tender.typeId !== CASH_TENDER_TYPE_ID
+      ) {
+        continue;
+      }
+      // what the instrument moved: its own money leg (a TDS payment's party line is grossed up)
+      const paid =
+        d.legs.find((x) => x.source === 'INSTRUMENT' && x.fromRows[0] === l.lineRowNo)?.amount ??
+        l.amount;
+      cashByPayee.set(
+        l.ledger.ledId,
+        (cashByPayee.get(l.ledger.ledId) ?? new Prisma.Decimal(0)).plus(paid),
+      );
+    }
+    for (const [payee, cash] of cashByPayee) {
+      const hit = await checkCashPaymentLimit(tx, {
+        companyId: h.companyId,
+        accYear: h.accYear,
+        onDate: h.date,
+        payeeLedgerId: payee,
+        cash,
+        excludeDocId: h.voucherId ?? null,
+        field: 'lines',
+      });
+      if (hit?.enforce === 'REFUSE') {
+        refuse(ctx, hit.code, hit.message, { field: hit.field });
+      } else if (hit) {
+        ctx.warnings.push({
+          code: hit.code,
+          level: hit.enforce === 'INFO' ? 'INFO' : 'WARN',
+          message: hit.message,
+          field: hit.field,
+          overridable: false,
+        });
+      }
     }
   }
 
@@ -1335,6 +1460,9 @@ export class VoucherRegisterService {
       chequeBooks,
     };
     const derived = derive(input);
+    if (type.nature === 'PAYMENT') {
+      await this.checkCashPaymentLimit(tx, h, derived, ctx);
+    }
     return {
       type,
       rights,

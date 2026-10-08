@@ -49,6 +49,8 @@ export enum TxnStatusDocType {
   RECEIPT = 'RECEIPT',
   PAYMENT = 'PAYMENT',
   JOURNAL = 'JOURNAL',
+  // 20261008160000: the expense voucher (ExpV, /expenses/*).
+  EXPENSE = 'EXPENSE',
   // 20260928100000: the two cheque registers used to file as OTHER, which a
   // day-end "what is still unposted" query cannot tell from anything else.
   CHEQUE_RECEIVED = 'CHEQUE_RECEIVED',

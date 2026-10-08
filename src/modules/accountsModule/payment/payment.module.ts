@@ -10,6 +10,7 @@ import { PaymentPostingService } from './payment-posting.service';
 import { PaymentCancelService } from './payment-cancel.service';
 import { PaymentAmendService } from './payment-amend.service';
 import { PaymentOpenItemsService } from './payment-open-items.service';
+import { TillModule } from '../../till/till.module';
 
 /**
  * The payment (menu 100) — `ReceiptModule`, mirrored. The same four imports
@@ -20,7 +21,8 @@ import { PaymentOpenItemsService } from './payment-open-items.service';
  * not copies.
  */
 @Module({
-  imports: [AppSettingsModule, TenderDetailModule, BillBalanceModule, AuditLogModule],
+  // TillModule: on a counter's device the money moves in the live till session (48).
+  imports: [AppSettingsModule, TenderDetailModule, BillBalanceModule, AuditLogModule, TillModule],
   controllers: [PaymentController],
   providers: [
     PaymentService,

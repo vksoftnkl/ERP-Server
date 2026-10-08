@@ -93,6 +93,7 @@ import type {
   ValidateBillDto,
 } from './dto/bill-lifecycle.dto';
 import type { SaveBillAdjustmentDto } from './dto/save-bill-adjustment.dto';
+import { TillSessionService, type LiveSessionRef } from '../../till/services/till-session.service';
 import {
   BILL_STATUS_CANCELLED,
   BILL_STATUS_DRAFT,
@@ -143,6 +144,7 @@ export class BillLifecycleService {
     private readonly docBlocks: SalesDocBlocksService,
     private readonly gst: GstGatewayService,
     private readonly audit: AuditLogService,
+    private readonly till: TillSessionService,
   ) {}
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -203,6 +205,25 @@ export class BillLifecycleService {
       if (!ctx.rights.post) {
         throwSalesRight('This user may not post on this menu', SALES_ERROR_CODES.RIGHT_POST);
       }
+      // The till (TILL_DESIGN.md §7.4): on a counter's device the bill posts
+      // in the live session, stamped on the bill and its tender rows BEFORE
+      // the snapshot and the voucher read them. Any other device posts as
+      // before (resolveForMoney answers null).
+      const till = await this.till.resolveForMoney(tx, {
+        companyId: bill.sbCompanyId,
+        branchId: bill.sbBranchId,
+        sessionId: bill.sbSessionId,
+        field: 'sbSessionId',
+        cashIn: true,
+        // An offline till's bill reaches us after its session stopped billing:
+        // judged on when it was MADE (REV 2 §2.6 late arrival, §2.7 cut-off).
+        docTime: bill.sbBillDatetime ?? null,
+        arrivedAt: bill.sbCreatedOn,
+        lateArrivalOk: true,
+      });
+      if (till) {
+        await this.stampTillSession(tx, bill, till, ctx.actorName);
+      }
       const parts = await this.bills.loadParts(tx, bill);
       const snap = snapshotFromRows(bill, parts.items, parts.charges, parts.tenders);
       const guard = createGuardContext({
@@ -255,6 +276,15 @@ export class BillLifecycleService {
       if (!ctx.rights.cancel) {
         throwSalesRight('This user may not cancel on this menu', SALES_ERROR_CODES.RIGHT_CANCEL);
       }
+      // D7: cash taken in a till session whose drawer is already counted is
+      // not cancelled — a sale return takes it out of today's drawer.
+      await this.till.assertCancellable(tx, {
+        sessionId: bill.sbSessionId,
+        srcDocType: 'SALE_BILL',
+        srcDocId: bill.sbId,
+        accYear: bill.sbAccYear,
+        field: 'sbId',
+      });
       await this.assertUnwindable(tx, bill, ctx, dto.reason, 'cancel');
       const items = await tx.saleBillItem.findMany({
         where: { sbiBillId: bill.sbId, sbiAccYear: bill.sbAccYear, sbiIsDeleted: false },
@@ -1111,6 +1141,39 @@ export class BillLifecycleService {
         }
       }
     }
+  }
+
+  /**
+   * The bill and its live tender rows carry the till session the money moved
+   * in, and the counter it belongs to (§7.4 "stamp sbCounterId from the
+   * session"). The row object is updated in place, so everything downstream
+   * — the snapshot, the voucher's avh_session_id, the status log — reads the
+   * session that was asserted.
+   */
+  private async stampTillSession(
+    tx: Prisma.TransactionClient,
+    bill: SaleBill,
+    till: LiveSessionRef,
+    actorName: string,
+  ): Promise<void> {
+    if (bill.sbSessionId !== till.tssId || bill.sbCounterId !== till.tssCounterId) {
+      await tx.$executeRaw`
+        UPDATE sales.sale_bill
+           SET sb_session_id  = ${till.tssId}::uuid,
+               sb_counter_id  = ${till.tssCounterId}::uuid,
+               sb_modified_on = now(),
+               sb_modified_by = ${actorName}
+         WHERE sb_id = ${bill.sbId}::uuid
+           AND sb_acc_year = ${bill.sbAccYear}::char(9)`;
+      bill.sbSessionId = till.tssId;
+      bill.sbCounterId = till.tssCounterId;
+    }
+    await this.till.stampTenderRows(
+      tx,
+      till,
+      { srcDocType: 'SALE_BILL', srcDocId: bill.sbId, accYear: bill.sbAccYear },
+      actorName,
+    );
   }
 
   // ═══════════════════════════════════════════════════════════════════════

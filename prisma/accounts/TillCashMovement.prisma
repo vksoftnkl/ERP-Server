@@ -1,0 +1,101 @@
+/// TILL CASH MOVEMENT — every non-sale movement of money through a drawer or
+/// the safe (share file 47 §5, migration 20261008100000). Each POSTED row has
+/// exactly one accounting voucher (ix_tcm_unposted finds the ones that don't).
+///
+///   kind            from → to            voucher   Dr / Cr
+///   FLOAT_ISSUE     SAFE → TILL          TFlt      Till cash / Safe
+///   TOP_UP          SAFE → TILL          TFlt      Till cash / Safe          (change mid-shift)
+///   PICKUP          TILL → SAFE          TDrp      Safe / Till cash          (supervisor takes it)
+///   DROP            TILL → SAFE          TDrp      Safe / Till cash          (cashier drops a sealed bag)
+///   CLOSE_HANDOVER  TILL → SAFE          TDrp      Safe / Till cash          (counted cash at close)
+///   PAID_IN         LEDGER → TILL        TPIn      Till cash / income or party
+///   REMIT           SAFE → TRANSIT/BANK  CRem      Cash-in-transit (or bank) / Safe
+///   SAFE_TRANSFER   SAFE → SAFE          CRem      other safe / this safe
+///   EXCHANGE        TILL ↔ SAFE          none      net zero; counted both ways, logged
+///
+/// PAID_OUT left this table in 20261008110000 (file 48): an expense is an
+/// expense voucher (ExpV, tendered like a payment) and a supplier paid from
+/// the drawer is a bill-wise Payment in the session — one path per fact.
+/// TPOut, its old voucher type, was deactivated by 20261008120000.
+///
+/// Till cash ledger = the branch's CASH tender ledger
+/// (acc_tender_master.tnd_ledger_id) — ONE source of truth, so a sale and a
+/// payout hit the same ledger. Session = the sub-ledger, via avh_session_id.
+model TillCashMovement {
+  tcmId               String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("tcm_id")
+  tcmCompanyId        String    @db.Uuid                             @map("tcm_company_id")
+  tcmBranchId         String    @db.Uuid                             @map("tcm_branch_id")
+  tcmTenantId         String?   @db.Uuid                             @map("tcm_tenant_id")
+  tcmAccYear          String    @db.Char(9)                          @map("tcm_acc_year")
+  /// FLOAT_ISSUE | TOP_UP | PICKUP | DROP | CLOSE_HANDOVER | PAID_IN | REMIT | SAFE_TRANSFER | EXCHANGE
+  tcmKind             String    @db.VarChar(16)                      @map("tcm_kind")
+  /// From acc_voucher_seq for the voucher type.
+  tcmDocNo            String    @db.VarChar(40)                      @map("tcm_doc_no")
+  /// = the business date.
+  tcmDocDate          DateTime  @db.Date                             @map("tcm_doc_date")
+  tcmDayId            String    @db.Uuid                             @map("tcm_day_id")
+  /// NULL only for REMIT / SAFE_TRANSFER (ck_tcm_session).
+  tcmSessionId        String?   @db.Uuid                             @map("tcm_session_id")
+  /// The safe side, when there is one.
+  tcmSafeId           String?   @db.Uuid                             @map("tcm_safe_id")
+  /// SAFE_TRANSFER target. FK-less.
+  tcmToSafeId         String?   @db.Uuid                             @map("tcm_to_safe_id")
+  /// Always positive; the kind is the direction.
+  tcmAmount           Decimal   @db.Decimal(15, 2)                   @map("tcm_amount")
+  /// PAID_IN counter-ledger; REMIT: bank / transit.
+  tcmLedgerId         String?   @db.Uuid                             @map("tcm_ledger_id")
+  tcmReasonId         String?   @db.Uuid                             @map("tcm_reason_id")
+  /// Supplier bill no, deposit slip no.
+  tcmRefNo            String?   @db.VarChar(50)                      @map("tcm_ref_no")
+  tcmRefDate          DateTime? @db.Date                             @map("tcm_ref_date")
+  /// Who took / gave the cash (free text).
+  tcmPartyName        String?   @db.VarChar(150)                     @map("tcm_party_name")
+  /// Denomination count of what moved.
+  tcmCountId          String?   @db.Uuid                             @map("tcm_count_id")
+  /// DROP / REMIT: tamper-evident bag.
+  tcmBagNo            String?   @db.VarChar(30)                      @map("tcm_bag_no")
+  tcmSealNo           String?   @db.VarChar(30)                      @map("tcm_seal_no")
+  /// REMIT: cash-in-transit company.
+  tcmCitAgency        String?   @db.VarChar(100)                     @map("tcm_cit_agency")
+  /// Who handled the cash.
+  tcmDoneBy           String    @db.Uuid                             @map("tcm_done_by")
+  /// Second person (PICKUP always: ck_tcm_pickup_witness).
+  tcmWitnessBy        String?   @db.Uuid                             @map("tcm_witness_by")
+  tcmApprovalId       String?   @db.Uuid                             @map("tcm_approval_id")
+  /// The posted acc_voucher_header (with its year: ck_tcm_voucher_pair).
+  tcmVoucherId        String?   @db.Uuid                             @map("tcm_voucher_id")
+  tcmVoucherAccYear   String?   @db.Char(9)                          @map("tcm_voucher_acc_year")
+  /// POSTED | VOIDED
+  tcmStatus           String    @default("POSTED") @db.VarChar(8)    @map("tcm_status")
+  tcmVoidReasonId     String?   @db.Uuid                             @map("tcm_void_reason_id")
+  tcmVoidedOn         DateTime? @db.Timestamptz(6)                   @map("tcm_voided_on")
+  tcmVoidedBy         String?   @db.Uuid                             @map("tcm_voided_by")
+  tcmVoidApprovalId   String?   @db.Uuid                             @map("tcm_void_approval_id")
+  tcmPrintCount       Int       @default(0) @db.SmallInt             @map("tcm_print_count")
+  tcmDeviceId         String?   @db.Uuid                             @map("tcm_device_id")
+  tcmNotes            String?   @db.VarChar(500)                     @map("tcm_notes")
+  tcmIsDeleted        Boolean   @default(false)                      @map("tcm_is_deleted")
+  tcmSyncDate         DateTime? @db.Timestamptz(6)                   @map("tcm_sync_date")
+  tcmCreatedOn        DateTime  @default(now()) @db.Timestamptz(6)   @map("tcm_created_on")
+  tcmCreatedBy        String?   @db.VarChar(50)                      @map("tcm_created_by")
+  tcmModifiedOn       DateTime? @db.Timestamptz(6)                   @map("tcm_modified_on")
+  tcmModifiedBy       String?   @db.VarChar(50)                      @map("tcm_modified_by")
+
+  // Relations
+  ledger              AccLedgerMaster? @relation("TillCashMovementLedger", fields: [tcmLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_tcm_ledger")
+  reason              TillReason?      @relation("TillCashMovementReason", fields: [tcmReasonId], references: [trsId], onUpdate: Cascade, onDelete: Restrict, map: "fk_tcm_reason")
+  safe                TillSafe?        @relation("TillCashMovementSafe",   fields: [tcmSafeId],   references: [tsfId], onUpdate: Cascade, onDelete: Restrict, map: "fk_tcm_safe")
+
+  @@id([tcmId, tcmAccYear], map: "pk_till_cash_movement")
+
+  // DB-only:
+  //   CREATE UNIQUE INDEX ux_tcm_doc_no ON accounts.till_cash_movement
+  //       (tcm_company_id, tcm_branch_id, tcm_kind, tcm_doc_no, tcm_acc_year) WHERE tcm_is_deleted = false;
+  //   ix_tcm_session, ix_tcm_day, ix_tcm_safe, and ix_tcm_unposted (reconciliation:
+  //   a POSTED non-EXCHANGE movement with no voucher).
+  // CHECKs: ck_tcm_kind, ck_tcm_status, ck_tcm_amount, ck_tcm_session, ck_tcm_safe, ck_tcm_ledger,
+  //         ck_tcm_reason, ck_tcm_transfer, ck_tcm_witness, ck_tcm_pickup_witness, ck_tcm_void,
+  //         ck_tcm_voucher_pair.
+  @@map("till_cash_movement")
+  @@schema("accounts")
+}

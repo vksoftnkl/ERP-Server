@@ -10,6 +10,7 @@ import { ReceiptPostingService } from './receipt-posting.service';
 import { ReceiptCancelService } from './receipt-cancel.service';
 import { ReceiptAmendService } from './receipt-amend.service';
 import { OpenItemsService } from './open-items.service';
+import { TillModule } from '../../till/till.module';
 
 /**
  * The receipt.
@@ -42,7 +43,8 @@ import { OpenItemsService } from './open-items.service';
  * `loadCredits` rather than keeping a SELECT of its own (§12).
  */
 @Module({
-  imports: [AppSettingsModule, TenderDetailModule, BillBalanceModule, AuditLogModule],
+  // TillModule: on a counter's device the money moves in the live till session (48).
+  imports: [AppSettingsModule, TenderDetailModule, BillBalanceModule, AuditLogModule, TillModule],
   controllers: [ReceiptController],
   providers: [
     ReceiptService,

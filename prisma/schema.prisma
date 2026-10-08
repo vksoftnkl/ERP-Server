@@ -711,6 +711,17 @@ model AccLedgerMaster {
   // each small counter loan against it.
   tempCredits           AccTempCredit[]           @relation("TempCreditParty")
 
+  // ── Till management (20261008100000) ────────────────────────────────────
+  // The safe's SAFE_CASH ledger, a reason's default payout / pay-in ledger,
+  // and a movement's counter-ledger (PAID_OUT / PAID_IN / REMIT).
+  tillSafes             TillSafe[]                @relation("TillSafeLedger")
+  tillReasons           TillReason[]              @relation("TillReasonLedger")
+  tillCashMovements     TillCashMovement[]        @relation("TillCashMovementLedger")
+
+  // ── Non-cash tender control (20261008130000) ────────────────────────────
+  // The bank a provider payout reached (tnd_settlement_ledger_id at import).
+  settlementImports     AccSettlementImport[]     @relation("SettlementImportBank")
+
   @@map("acc_ledger_master")
   @@schema("accounts")
 }
@@ -1100,6 +1111,181 @@ model AccPdcRegister {
   //     (20260929120000_pdc_amended_into_revision).
   //   - No FK on apd_company_id / apd_branch_id / apd_salesman_id /
   //     apd_tender_id.
+}
+
+// ----- prisma/accounts/AccountSettlementImport.prisma -----
+/// SETTLEMENT IMPORT — one provider payout (one bank credit) and the file it
+/// came in (share file 49 §2, migration 20261008130000).
+///
+/// A statement line is the PROVIDER's fact — what the acquirer / PSP says it
+/// paid, net of its fee; a tender row is OUR fact. This header holds the
+/// payout no existing row can: one bank credit, many lines
+/// (AccSettlementLine). Posting it writes one TSet voucher (asiVoucherId).
+///
+/// ONE WRITER: the STORE server that owns the terminal imports, matches and
+/// posts through its own API; HO splits a chain file by terminal / VPA and
+/// sends each part to its store. The cloud never writes td_settle_*.
+///
+/// LIST-partitioned by asiAccYear. ck_asi_net holds the payout's own
+/// arithmetic: net = gross - fee - tax.
+model AccSettlementImport {
+  asiId               String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("asi_id")
+  asiCompanyId        String    @db.Uuid                             @map("asi_company_id")
+  asiBranchId         String    @db.Uuid                             @map("asi_branch_id")
+  asiTenantId         String?   @db.Uuid                             @map("asi_tenant_id")
+  asiAccYear          String    @db.Char(9)                          @map("asi_acc_year")
+  /// CARD | UPI | WALLET (aggregator payout) | BANK (UPI straight to the current
+  /// account: one statement period, one credit per line, no fee — ck_asi_bank).
+  asiSource           String    @db.VarChar(12)                      @map("asi_source")
+  /// Acquirer / PSP as printed on the file.
+  asiProvider         String    @db.VarChar(60)                      @map("asi_provider")
+  /// The terminal / VPA tender (acc_tender_master); NULL = lines carry their own terminal. FK-less.
+  asiTenderId         String?   @db.Uuid                             @map("asi_tender_id")
+  asiFileName         String    @db.VarChar(250)                     @map("asi_file_name")
+  /// sha256: the same file twice is refused (ux_asi_file).
+  asiFileHash         String    @db.VarChar(64)                      @map("asi_file_hash")
+  /// UTR of the bank credit.
+  asiPayoutRef        String?   @db.VarChar(60)                      @map("asi_payout_ref")
+  /// = the voucher date.
+  asiPayoutDate       DateTime  @db.Date                             @map("asi_payout_date")
+  asiPeriodFrom       DateTime? @db.Date                             @map("asi_period_from")
+  asiPeriodTo         DateTime? @db.Date                             @map("asi_period_to")
+  asiLineCount        Int       @default(0)                          @map("asi_line_count")
+  /// Sales − refunds − chargebacks as the provider states.
+  asiTotalGross       Decimal   @default(0) @db.Decimal(15, 2)       @map("asi_total_gross")
+  /// MDR / commission.
+  asiTotalFee         Decimal   @default(0) @db.Decimal(15, 2)       @map("asi_total_fee")
+  /// GST on the fee — GST_ON_CHARGES_PENDING until the acquirer's tax invoice.
+  asiTotalTax         Decimal   @default(0) @db.Decimal(15, 2)       @map("asi_total_tax")
+  /// What reached the bank.
+  asiTotalNet         Decimal   @default(0) @db.Decimal(15, 2)       @map("asi_total_net")
+  /// IMPORTED | MATCHED | POSTED | VOIDED
+  asiStatus           String    @default("IMPORTED") @db.VarChar(10) @map("asi_status")
+  /// tnd_settlement_ledger_id at import.
+  asiBankLedgerId     String?   @db.Uuid                             @map("asi_bank_ledger_id")
+  /// The TSet voucher (with its year: ck_asi_voucher_pair).
+  asiVoucherId        String?   @db.Uuid                             @map("asi_voucher_id")
+  asiVoucherAccYear   String?   @db.Char(9)                          @map("asi_voucher_acc_year")
+  asiImportedBy       String    @db.Uuid                             @map("asi_imported_by")
+  asiImportedOn       DateTime  @default(now()) @db.Timestamptz(6)   @map("asi_imported_on")
+  asiPostedBy         String?   @db.Uuid                             @map("asi_posted_by")
+  asiPostedOn         DateTime? @db.Timestamptz(6)                   @map("asi_posted_on")
+  asiVoidReason       String?   @db.VarChar(250)                     @map("asi_void_reason")
+  asiNotes            String?   @db.VarChar(500)                     @map("asi_notes")
+  asiIsDeleted        Boolean   @default(false)                      @map("asi_is_deleted")
+  asiSyncDate         DateTime? @db.Timestamptz(6)                   @map("asi_sync_date")
+  asiCreatedOn        DateTime  @default(now()) @db.Timestamptz(6)   @map("asi_created_on")
+  asiCreatedBy        String?   @db.VarChar(50)                      @map("asi_created_by")
+  asiModifiedOn       DateTime? @db.Timestamptz(6)                   @map("asi_modified_on")
+  asiModifiedBy       String?   @db.VarChar(50)                      @map("asi_modified_by")
+
+  // Relations
+  bankLedger          AccLedgerMaster?    @relation("SettlementImportBank", fields: [asiBankLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_asi_bank")
+  lines               AccSettlementLine[] @relation("SettlementLineImport")
+
+  @@id([asiId, asiAccYear], map: "pk_acc_settlement_import")
+
+  // DB-only:
+  //   CREATE UNIQUE INDEX ux_asi_file ON accounts.acc_settlement_import
+  //       (asi_company_id, asi_branch_id, asi_file_hash, asi_acc_year)
+  //       WHERE asi_is_deleted = false AND asi_status <> 'VOIDED';
+  //   ix_asi_open (asi_company_id, asi_branch_id, asi_payout_date) WHERE IMPORTED / MATCHED.
+  // CHECKs: ck_asi_source, ck_asi_bank, ck_asi_status, ck_asi_net, ck_asi_amounts, ck_asi_period,
+  //         ck_asi_posted, ck_asi_voucher_pair, ck_asi_void.
+  @@map("acc_settlement_import")
+  @@schema("accounts")
+}
+
+// ----- prisma/accounts/AccountSettlementLine.prisma -----
+/// SETTLEMENT LINE — one provider statement line, and what it was matched to
+/// (share file 49 §3, migration 20261008130000).
+///
+/// Matching (TenderSettlementService): REF (RRN / UTR) → AUTH → AMOUNT_TIME
+/// (SUGGESTED only — exactly one tender row of that amount on that terminal
+/// inside tender.match_window_minutes; a person confirms) → MANUAL.
+/// A SALE line nothing of ours explains is RESOLVED as LINKED (it was a bill
+/// after all — to a CLOSED session, asl_tvr_* names the close variance it
+/// explains), REFUNDED, INCOME or SUSPENSE, behind SETTLEMENT_RESOLVE.
+///
+/// aslTdId is FK-less: acc_tender_detail is partitioned and may be another
+/// year. ux_asl_td_matched keeps one MATCHED sale line per tender row within a
+/// statement year; across 31 March the service refuses a td already MATCHED.
+model AccSettlementLine {
+  aslId                   String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("asl_id")
+  aslAccYear              String    @db.Char(9)                          @map("asl_acc_year")
+  aslImportId             String    @db.Uuid                             @map("asl_import_id")
+  aslRowNo                Int                                            @map("asl_row_no")
+  /// SALE | REFUND | CHARGEBACK | FEE | ADJUSTMENT — the direction; amounts stay positive.
+  aslKind                 String    @db.VarChar(12)                      @map("asl_kind")
+  /// When the customer paid, as the provider says.
+  aslTxnOn                DateTime? @db.Timestamptz(6)                   @map("asl_txn_on")
+  /// TID; matched to acc_tender_master.tnd_terminal_id.
+  aslTerminalId           String?   @db.VarChar(40)                      @map("asl_terminal_id")
+  /// UPI: the payee VPA.
+  aslVpa                  String?   @db.VarChar(100)                     @map("asl_vpa")
+  /// Resolved from TID / VPA / the import. FK-less.
+  aslTenderId             String?   @db.Uuid                             @map("asl_tender_id")
+  /// RRN / UTR.
+  aslRefNo                String?   @db.VarChar(60)                      @map("asl_ref_no")
+  aslAuthCode             String?   @db.VarChar(20)                      @map("asl_auth_code")
+  aslCardLast4            String?   @db.Char(4)                          @map("asl_card_last4")
+  /// Payer VPA / card network, as given.
+  aslPayer                String?   @db.VarChar(150)                     @map("asl_payer")
+  aslGrossAmount          Decimal   @db.Decimal(15, 2)                   @map("asl_gross_amount")
+  aslFeeAmount            Decimal   @default(0) @db.Decimal(15, 2)       @map("asl_fee_amount")
+  aslTaxAmount            Decimal   @default(0) @db.Decimal(15, 2)       @map("asl_tax_amount")
+  /// = gross - fee - tax (ck_asl_net).
+  aslNetAmount            Decimal   @db.Decimal(15, 2)                   @map("asl_net_amount")
+
+  // ── What it was matched to ───────────────────────────────────────────
+  /// UNMATCHED | SUGGESTED | MATCHED | IGNORED | RESOLVED
+  aslMatchStatus          String    @default("UNMATCHED") @db.VarChar(10) @map("asl_match_status")
+  /// REF | AUTH | AMOUNT_TIME | MANUAL — set exactly when SUGGESTED / MATCHED (ck_asl_rule_set).
+  aslMatchRule            String?   @db.VarChar(12)                      @map("asl_match_rule")
+  /// acc_tender_detail row (ck_asl_linked: set for SUGGESTED / MATCHED / RESOLVED-LINKED only).
+  aslTdId                 String?   @db.Uuid                             @map("asl_td_id")
+  aslTdAccYear            String?   @db.Char(9)                          @map("asl_td_acc_year")
+  /// gross − the tender row's amount (signed; 0 = exact).
+  aslAmountDiff           Decimal   @default(0) @db.Decimal(15, 2)       @map("asl_amount_diff")
+  aslMatchedBy            String?   @db.Uuid                             @map("asl_matched_by")
+  aslMatchedOn            DateTime? @db.Timestamptz(6)                   @map("asl_matched_on")
+
+  // ── A line nothing of ours explains ──────────────────────────────────
+  /// LINKED | REFUNDED | INCOME | SUSPENSE — set exactly when RESOLVED (ck_asl_resolved).
+  aslResolution           String?   @db.VarChar(12)                      @map("asl_resolution")
+  aslReasonId             String?   @db.Uuid                             @map("asl_reason_id")
+  /// SETTLEMENT_RESOLVE.
+  aslApprovalId           String?   @db.Uuid                             @map("asl_approval_id")
+  aslResolutionVoucherId  String?   @db.Uuid                             @map("asl_resolution_voucher_id")
+  aslResolutionAccYear    String?   @db.Char(9)                          @map("asl_resolution_acc_year")
+  /// LINKED to a CLOSED session: the close variance this money explains.
+  aslTvrId                String?   @db.Uuid                             @map("asl_tvr_id")
+  aslTvrAccYear           String?   @db.Char(9)                          @map("asl_tvr_acc_year")
+  /// The provider's row as read, for audit.
+  aslRaw                  Json?     @db.JsonB                            @map("asl_raw")
+  aslNotes                String?   @db.VarChar(500)                     @map("asl_notes")
+  aslSyncDate             DateTime? @db.Timestamptz(6)                   @map("asl_sync_date")
+  aslCreatedOn            DateTime  @default(now()) @db.Timestamptz(6)   @map("asl_created_on")
+  aslModifiedOn           DateTime? @db.Timestamptz(6)                   @map("asl_modified_on")
+
+  // Relations
+  import                  AccSettlementImport @relation("SettlementLineImport", fields: [aslImportId, aslAccYear], references: [asiId, asiAccYear], onUpdate: Cascade, onDelete: Cascade, map: "fk_asl_import")
+  reason                  TillReason?         @relation("SettlementLineReason", fields: [aslReasonId], references: [trsId], onUpdate: Cascade, onDelete: Restrict, map: "fk_asl_reason")
+
+  @@id([aslId, aslAccYear], map: "pk_acc_settlement_line")
+  @@unique([aslImportId, aslRowNo, aslAccYear], map: "ux_asl_row")
+  @@index([aslImportId, aslAccYear, aslMatchStatus], map: "ix_asl_import")
+
+  // DB-only:
+  //   CREATE UNIQUE INDEX ux_asl_td_matched ON accounts.acc_settlement_line (asl_td_id, asl_td_acc_year, asl_acc_year)
+  //       WHERE asl_match_status = 'MATCHED' AND asl_kind = 'SALE';
+  //   ix_asl_ref (asl_tender_id, upper(asl_ref_no)) WHERE asl_ref_no IS NOT NULL;
+  //   ix_asl_unexplained (asl_tender_id, asl_txn_on) WHERE UNMATCHED SALE — "money arrived, nothing billed".
+  // CHECKs: ck_asl_kind, ck_asl_status, ck_asl_rule, ck_asl_resolution, ck_asl_amounts, ck_asl_net,
+  //         ck_asl_td_pair, ck_asl_linked, ck_asl_rule_set, ck_asl_tvr_pair, ck_asl_tvr_linked,
+  //         ck_asl_matched, ck_asl_resolved, ck_asl_resolution_voucher.
+  @@map("acc_settlement_line")
+  @@schema("accounts")
 }
 
 // ----- prisma/accounts/AccountTaxCollectionRegister.prisma -----
@@ -1618,6 +1804,20 @@ model AccTenderDetail {
   //   ck_td_settle_status, ck_td_amounts, ck_td_row_no, ck_td_total_amt,
   //   ck_td_cash_change, ck_td_units, ck_td_settle_amount, ck_td_mdr,
   //   ck_td_settled_on, ck_td_pdc, ck_td_card_last4
+  //   ck_td_src_doc_type admits 'EXPENSE' since 20261008110000 (the ExpV tender rows).
+  // Partial index (DB-only) for the till's expected-cash query (20261008110000):
+  //   CREATE INDEX ix_td_session ON accounts.acc_tender_detail
+  //       (td_session_id, td_acc_year, td_tender_type_id, td_src_doc_type)
+  //       WHERE td_session_id IS NOT NULL AND td_is_deleted = false AND td_is_voided = false;
+  // Partial indexes (DB-only) for non-cash tender control (20261008130000):
+  //   ix_td_ref (td_tender_id, upper(td_ref_no)) WHERE td_ref_no IS NOT NULL AND live — the
+  //     duplicate-reference (screenshot fraud) RECONCILIATION index; not unique, two stores'
+  //     rows meet at the cloud. The save-time refusal is the service's (tender.duplicate_ref).
+  //   ix_td_settle_pending (td_company_id, td_branch_id, td_expected_settle_on)
+  //     WHERE td_settle_status IN ('PENDING','PARTIAL') AND live — the "not received" list.
+  // Partial index (DB-only) for 40A(3), cash to one payee in a day (20261008180000):
+  //   ix_td_cash_party_day (td_company_id, td_party_ledger_id, td_doc_date)
+  //     WHERE td_tender_type_id = 1 AND live — payment/cash-payment-limit.ts.
   // ── Loyalty points engine (20260921140000) ─────────────────────────────
   // Redemption is a tender line (td_tender_type_id = 10, LOYALTY). Several
   // REDEEM rows of one redemption share ONE tender, one per lot consumed —
@@ -1727,6 +1927,9 @@ model AccTenderMaster {
   tndCreatedBy            String?   @db.VarChar(50)                                @map("tnd_created_by")
   tndModifiedOn           DateTime? @db.Timestamptz                                @map("tnd_modified_on")
   tndModifiedBy           String?   @db.VarChar(50)                                @map("tnd_modified_by")
+  /// Column map of the provider's statement file (20261008130000, file 49); NULL = no
+  /// import. One tender row PER TERMINAL / PER VPA is the set-up rule that makes it work.
+  tndStatementFormat      Json?     @db.JsonB                                      @map("tnd_statement_format")
 
   // Relations
   company                 Company               @relation(fields: [tndCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_tnd_company")
@@ -1774,6 +1977,13 @@ model AccTenderType {
   ttmAllowChange    Boolean   @default(false)                                  @map("ttm_allow_change")
   ttmAllowInReturn  Boolean   @default(true)                                   @map("ttm_allow_in_return")
   ttmDisplayOrder   Int       @default(0)                                      @map("ttm_display_order")
+  /// How the till close counts it (20261008100000, ck_ttm_close_mode):
+  /// DENOM (cash, by denomination) | SLIPS (card / cheque / gift voucher: slips +
+  /// amount + batch ref) | STATEMENT (UPI / wallet / bank: reconciled against the
+  /// provider later) | NONE (credit / temp credit / loyalty / RRN: not in the drawer).
+  ttmCloseMode      String    @default("NONE") @db.VarChar(10)                 @map("ttm_close_mode")
+  /// The instrument physically goes to the safe at close.
+  ttmHandover       Boolean   @default(false)                                  @map("ttm_handover")
   ttmIsActive       Boolean   @default(true)                                   @map("ttm_is_active")
   ttmIsDeleted      Boolean   @default(false)                                  @map("ttm_is_deleted")
   ttmSyncDate       DateTime? @db.Timestamptz                                  @map("ttm_sync_date")
@@ -1784,9 +1994,12 @@ model AccTenderType {
   // Relations
   tenders           AccTenderMaster[]
   tenderDetails     AccTenderDetail[]
+  tillCountLines    TillCountLine[]   @relation("TillCountLineTenderType")
+  tillVariances     TillVariance[]    @relation("TillVarianceTenderType")
   // Partial index — enforced via raw SQL migration, not expressible in Prisma schema:
   //   ix_ttm_display_order  btree (ttm_display_order)  WHERE ttm_is_active = true AND ttm_is_deleted = false
   // CHECK constraint (DB-only): ck_ttm_ref_label — ttm_needs_ref = false OR ttm_ref_label IS NOT NULL
+  // CHECK constraint (DB-only): ck_ttm_close_mode — ttm_close_mode IN ('DENOM','SLIPS','STATEMENT','NONE')
   @@map("acc_tender_types")
   @@schema("accounts")
 }
@@ -2563,6 +2776,8 @@ model AccVoucher {
   //   - Partial UNIQUE index ux_av_voucher_row.
   //   - Partial/covering indexes ix_av_ledger, ix_av_daybook, ix_av_opp_ledger,
   //     ix_av_bill, ix_av_unrecon.
+  //   - Partial ix_av_session_ledger (av_session_id, av_ledger_id) WHERE av_session_id IS NOT NULL
+  //     AND av_is_deleted = false — the till's expected-cash query (20261008110000).
   //   - CHECK constraints ck_av_dr_cr, ck_av_amount, ck_av_row_no,
   //     ck_av_acc_year, ck_av_self, ck_av_recon, and ck_av_doc_pair (av_doc_id
   //     and av_doc_acc_year move together — see
@@ -2830,6 +3045,950 @@ model AccLedgerBankAccount {
   @@index([lbaLedgerId],  name: "idx_lba_ledger")
   @@index([lbaCompanyId], name: "idx_lba_company")
   @@map("acc_ledger_bank_accounts")
+  @@schema("accounts")
+}
+
+// ----- prisma/accounts/TillApproval.prisma -----
+/// TILL APPROVAL — one row per request, decided once (share file 47 §7,
+/// migration 20261008100000). Generic on purpose: the void / price-override /
+/// reprint gates (SIX_TXN_CONTROLS §7) write here too, so "every override in a
+/// session" is one query.
+///
+/// NOT a voucher approval step. This approves an EXCEPTION — a variance, a
+/// payout over a limit, a drawer opened with no sale — and records who let it
+/// through.
+///   COUNTER channel: the approver types their PIN on the cashier's screen; the
+///     STORE server verifies usr_pin_hash and writes the decision in the same call.
+///   REMOTE channel: the request sits PENDING; an approver with taa_can_remote
+///     decides THROUGH THE STORE SERVER'S API (one writer per row). HO reviews
+///     go to till_session_review, never here.
+model TillApproval {
+  tapId               String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("tap_id")
+  tapCompanyId        String    @db.Uuid                             @map("tap_company_id")
+  tapBranchId         String    @db.Uuid                             @map("tap_branch_id")
+  tapTenantId         String?   @db.Uuid                             @map("tap_tenant_id")
+  tapAccYear          String    @db.Char(9)                          @map("tap_acc_year")
+  /// ck_tar_event's list.
+  tapEventCode        String    @db.VarChar(30)                      @map("tap_event_code")
+  tapSessionId        String?   @db.Uuid                             @map("tap_session_id")
+  tapCounterId        String?   @db.Uuid                             @map("tap_counter_id")
+  /// TILL_SESSION | TILL_MOVEMENT | SALE_BILL …
+  tapSrcDocType       String?   @db.VarChar(30)                      @map("tap_src_doc_type")
+  tapSrcDocId         String?   @db.Uuid                             @map("tap_src_doc_id")
+  tapSrcRefno         String?   @db.VarChar(100)                     @map("tap_src_refno")
+  tapAmount           Decimal   @default(0) @db.Decimal(15, 2)       @map("tap_amount")
+  /// How many of this event already in the session.
+  tapCountInSession   Int       @default(0)                          @map("tap_count_in_session")
+  tapRuleId           String?   @db.Uuid                             @map("tap_rule_id")
+  /// mode / threshold / role as they were when it fired.
+  tapRuleSnapshot     Json?     @db.JsonB                            @map("tap_rule_snapshot")
+  /// SUPERVISOR | STORE_MANAGER | CASH_OFFICE | AREA_MANAGER | HO_FINANCE
+  tapRequiredRole     String    @db.VarChar(20)                      @map("tap_required_role")
+  tapTwoPerson        Boolean   @default(false)                      @map("tap_two_person")
+  /// Snapshotted from the rule (or till.single_operator): ck_tap_self reads it.
+  tapSelfAllowed      Boolean   @default(false)                      @map("tap_self_allowed")
+  /// COUNTER | REMOTE
+  tapChannel          String    @default("COUNTER") @db.VarChar(8)   @map("tap_channel")
+  tapRequestedBy      String    @db.Uuid                             @map("tap_requested_by")
+  tapRequestedOn      DateTime  @default(now()) @db.Timestamptz(6)   @map("tap_requested_on")
+  tapReasonId         String?   @db.Uuid                             @map("tap_reason_id")
+  tapRequestNote      String?   @db.VarChar(500)                     @map("tap_request_note")
+  /// PENDING | APPROVED | REJECTED | EXPIRED | CANCELLED
+  tapStatus           String    @default("PENDING") @db.VarChar(10)  @map("tap_status")
+  tapDecidedBy        String?   @db.Uuid                             @map("tap_decided_by")
+  tapDecidedOn        DateTime? @db.Timestamptz(6)                   @map("tap_decided_on")
+  tapDecidedDeviceId  String?   @db.Uuid                             @map("tap_decided_device_id")
+  tapDecisionNote     String?   @db.VarChar(500)                     @map("tap_decision_note")
+  /// Two-person: a third person (ck_tap_second, ck_tap_two_person).
+  tapSecondBy         String?   @db.Uuid                             @map("tap_second_by")
+  tapSecondOn         DateTime? @db.Timestamptz(6)                   @map("tap_second_on")
+  tapExpiresOn        DateTime? @db.Timestamptz(6)                   @map("tap_expires_on")
+  tapDeviceId         String?   @db.Uuid                             @map("tap_device_id")
+  tapIsDeleted        Boolean   @default(false)                      @map("tap_is_deleted")
+  tapSyncDate         DateTime? @db.Timestamptz(6)                   @map("tap_sync_date")
+  tapCreatedOn        DateTime  @default(now()) @db.Timestamptz(6)   @map("tap_created_on")
+  tapModifiedOn       DateTime? @db.Timestamptz(6)                   @map("tap_modified_on")
+
+  // Relations
+  reason              TillReason? @relation("TillApprovalReason", fields: [tapReasonId], references: [trsId], onUpdate: Cascade, onDelete: Restrict, map: "fk_tap_reason")
+
+  @@id([tapId, tapAccYear], map: "pk_till_approval")
+
+  // DB-only: ix_tap_pending, ix_tap_session, ix_tap_doc, ix_tap_approver (all partial).
+  // CHECKs: ck_tap_status, ck_tap_channel, ck_tap_decided, ck_tap_self, ck_tap_second,
+  //         ck_tap_two_person, ck_tap_amount, ck_tap_event, ck_tap_role.
+  @@map("till_approval")
+  @@schema("accounts")
+}
+
+// ----- prisma/accounts/TillApprovalAuthority.prisma -----
+/// TILL APPROVAL AUTHORITY — who may approve what, up to how much (share file
+/// 47 §1.7, migration 20261008100000).
+///
+/// Branch NULL = every branch of the company (area manager / HO).
+/// Company NULL = every company (group finance). taaUserId is a
+/// user_master.usr_id, FK-less like every till person column.
+model TillApprovalAuthority {
+  taaId               String    @id(map: "pk_till_approval_authority") @default(dbgenerated("uuidv7()")) @db.Uuid @map("taa_id")
+  taaUserId           String    @db.Uuid                             @map("taa_user_id")
+  taaCompanyId        String?   @db.Uuid                             @map("taa_company_id")
+  taaBranchId         String?   @db.Uuid                             @map("taa_branch_id")
+  /// The level this grant confers: SUPERVISOR | STORE_MANAGER | CASH_OFFICE | AREA_MANAGER | HO_FINANCE
+  taaRole             String    @db.VarChar(20)                      @map("taa_role")
+  /// NULL = every event.
+  taaEventCode        String?   @db.VarChar(30)                      @map("taa_event_code")
+  /// NULL = no ceiling.
+  taaMaxAmount        Decimal?  @db.Decimal(15, 2)                   @map("taa_max_amount")
+  /// May approve from outside the counter (inbox / mobile).
+  taaCanRemote        Boolean   @default(false)                      @map("taa_can_remote")
+  taaValidFrom        DateTime  @default(dbgenerated("CURRENT_DATE")) @db.Date @map("taa_valid_from")
+  taaValidTo          DateTime? @db.Date                             @map("taa_valid_to")
+  taaRemarks          String?   @db.VarChar(250)                     @map("taa_remarks")
+  taaIsActive         Boolean   @default(true)                       @map("taa_is_active")
+  taaIsDeleted        Boolean   @default(false)                      @map("taa_is_deleted")
+  taaSyncDate         DateTime? @db.Timestamptz(6)                   @map("taa_sync_date")
+  taaCreatedOn        DateTime  @default(now()) @db.Timestamptz(6)   @map("taa_created_on")
+  taaCreatedBy        String?   @db.VarChar(50)                      @map("taa_created_by")
+  taaModifiedOn       DateTime? @db.Timestamptz(6)                   @map("taa_modified_on")
+  taaModifiedBy       String?   @db.VarChar(50)                      @map("taa_modified_by")
+
+  // DB-only:
+  //   CREATE INDEX ix_taa_lookup ON accounts.till_approval_authority (taa_user_id, taa_company_id, taa_branch_id)
+  //       WHERE taa_is_deleted = false AND taa_is_active;
+  // CHECKs: ck_taa_role, ck_taa_amount, ck_taa_dates, ck_taa_scope.
+  @@map("till_approval_authority")
+  @@schema("accounts")
+}
+
+// ----- prisma/accounts/TillApprovalRule.prisma -----
+/// TILL APPROVAL RULE — when an event needs a second person (share file 47
+/// §1.6, migration 20261008100000).
+///
+/// Resolution (TillApprovalService.ruleFor, same shape as StatutoryService):
+/// branch row > company row > shipped row (both NULL), then the latest
+/// tarEffectiveFrom <= business date. LIMIT 1. One rule per event per scope
+/// (ux_tar_scope). Approval THRESHOLDS live here, never in app_setting_def.
+model TillApprovalRule {
+  tarId               String    @id(map: "pk_till_approval_rule") @default(dbgenerated("uuidv7()")) @db.Uuid @map("tar_id")
+  tarCompanyId        String?   @db.Uuid                             @map("tar_company_id")
+  tarBranchId         String?   @db.Uuid                             @map("tar_branch_id")
+  /// ck_tar_event's list (till events + the reserved counter-control gates).
+  tarEventCode        String    @db.VarChar(30)                      @map("tar_event_code")
+  /// NEVER | ALWAYS | OVER_AMOUNT | OVER_COUNT | OVER_PERCENT
+  tarMode             String    @db.VarChar(12)                      @map("tar_mode")
+  tarThresholdAmount  Decimal   @default(0) @db.Decimal(15, 2)       @map("tar_threshold_amount")
+  /// Per session.
+  tarThresholdCount   Int       @default(0)                          @map("tar_threshold_count")
+  tarThresholdPercent Decimal   @default(0) @db.Decimal(7, 3)        @map("tar_threshold_percent")
+  /// COUNTER | REMOTE | EITHER
+  tarChannel          String    @default("EITHER") @db.VarChar(12)   @map("tar_channel")
+  /// SUPERVISOR | STORE_MANAGER | CASH_OFFICE | AREA_MANAGER | HO_FINANCE
+  tarMinRole          String    @default("SUPERVISOR") @db.VarChar(20) @map("tar_min_role")
+  /// Needs two distinct approvers.
+  tarTwoPerson        Boolean   @default(false)                      @map("tar_two_person")
+  /// The requester may approve their own request.
+  tarAllowSelf        Boolean   @default(false)                      @map("tar_allow_self")
+  /// The counter waits (false = record now, review later).
+  tarBlocksTill       Boolean   @default(true)                       @map("tar_blocks_till")
+  /// 0 = a PENDING request never expires.
+  tarExpireMinutes    Int       @default(0)                          @map("tar_expire_minutes")
+  tarEffectiveFrom    DateTime  @default(dbgenerated("'2000-01-01'::date")) @db.Date @map("tar_effective_from")
+  tarRemarks          String?   @db.VarChar(250)                     @map("tar_remarks")
+  tarIsActive         Boolean   @default(true)                       @map("tar_is_active")
+  tarIsDeleted        Boolean   @default(false)                      @map("tar_is_deleted")
+  tarSyncDate         DateTime? @db.Timestamptz(6)                   @map("tar_sync_date")
+  tarCreatedOn        DateTime  @default(now()) @db.Timestamptz(6)   @map("tar_created_on")
+  tarCreatedBy        String?   @db.VarChar(50)                      @map("tar_created_by")
+  tarModifiedOn       DateTime? @db.Timestamptz(6)                   @map("tar_modified_on")
+  tarModifiedBy       String?   @db.VarChar(50)                      @map("tar_modified_by")
+
+  // DB-only:
+  //   CREATE UNIQUE INDEX ux_tar_scope ON accounts.till_approval_rule
+  //       (tar_company_id, tar_branch_id, tar_event_code, tar_effective_from) NULLS NOT DISTINCT
+  //       WHERE tar_is_deleted = false;
+  // CHECKs: ck_tar_event, ck_tar_mode, ck_tar_channel, ck_tar_role, ck_tar_thresholds,
+  //         ck_tar_scope (a branch row names its company).
+  @@map("till_approval_rule")
+  @@schema("accounts")
+}
+
+// ----- prisma/accounts/TillBusinessDay.prisma -----
+/// TILL BUSINESS DAY — one per branch per trading date (share file 47 §2,
+/// migration 20261008100000).
+///
+/// The business date is NOT the calendar date: a store open till 01:00 books
+/// its 00:30 sales to yesterday (setting till.day_cutoff). Every session hangs
+/// off a day; DAY CLOSE is the store's Z and the moment SALES_DAY_CLOSED
+/// (already used by /bills/retender) starts refusing.
+///
+/// LIST-partitioned by tbdAccYear, which ck_tbd_year ties to the business
+/// date's April–March year. uq_tbd_id_date carries the date so a session's FK
+/// (fk_tss_day) can never sit on another day's date.
+model TillBusinessDay {
+  tbdId               String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("tbd_id")
+  tbdCompanyId        String    @db.Uuid                             @map("tbd_company_id")
+  tbdBranchId         String    @db.Uuid                             @map("tbd_branch_id")
+  tbdTenantId         String?   @db.Uuid                             @map("tbd_tenant_id")
+  tbdAccYear          String    @db.Char(9)                          @map("tbd_acc_year")
+  tbdBusinessDate     DateTime  @db.Date                             @map("tbd_business_date")
+  /// OPEN | CLOSING | CLOSED
+  tbdStatus           String    @default("OPEN") @db.VarChar(10)     @map("tbd_status")
+  tbdOpenedOn         DateTime  @default(now()) @db.Timestamptz(6)   @map("tbd_opened_on")
+  tbdOpenedBy         String    @db.Uuid                             @map("tbd_opened_by")
+  tbdClosingOn        DateTime? @db.Timestamptz(6)                   @map("tbd_closing_on")
+  tbdClosedOn         DateTime? @db.Timestamptz(6)                   @map("tbd_closed_on")
+  tbdClosedBy         String?   @db.Uuid                             @map("tbd_closed_by")
+  /// Store Z, running per branch, never reset.
+  tbdZNo              Int?                                           @map("tbd_z_no")
+  tbdReopenCount      Int       @default(0)                          @map("tbd_reopen_count")
+
+  // ── Frozen at close by TillDayService; never recomputed ──────────────
+  tbdSessionCount     Int       @default(0)                          @map("tbd_session_count")
+  tbdBillCount        Int       @default(0)                          @map("tbd_bill_count")
+  tbdNetSales         Decimal   @default(0) @db.Decimal(15, 2)       @map("tbd_net_sales")
+  tbdCashExpected     Decimal   @default(0) @db.Decimal(15, 2)       @map("tbd_cash_expected")
+  tbdCashCounted      Decimal   @default(0) @db.Decimal(15, 2)       @map("tbd_cash_counted")
+  tbdNoncashVariance  Decimal   @default(0) @db.Decimal(15, 2)       @map("tbd_noncash_variance")
+  tbdSafeOpening      Decimal   @default(0) @db.Decimal(15, 2)       @map("tbd_safe_opening")
+  tbdSafeExpected     Decimal   @default(0) @db.Decimal(15, 2)       @map("tbd_safe_expected")
+  /// NULL = no safe count (setting till.day_close_safe_count allowed it).
+  tbdSafeCounted      Decimal?  @db.Decimal(15, 2)                   @map("tbd_safe_counted")
+  tbdRemitted         Decimal   @default(0) @db.Decimal(15, 2)       @map("tbd_remitted")
+  /// Approvals + force closes + no-sales in the day.
+  tbdExceptionCount   Int       @default(0)                          @map("tbd_exception_count")
+  /// DAY_CLOSE_EXCEPTION, when one fired.
+  tbdCloseApprovalId  String?   @db.Uuid                             @map("tbd_close_approval_id")
+  tbdPrintCount       Int       @default(0) @db.SmallInt             @map("tbd_print_count")
+  tbdNotes            String?   @db.VarChar(500)                     @map("tbd_notes")
+  tbdIsDeleted        Boolean   @default(false)                      @map("tbd_is_deleted")
+  tbdSyncDate         DateTime? @db.Timestamptz(6)                   @map("tbd_sync_date")
+  tbdCreatedOn        DateTime  @default(now()) @db.Timestamptz(6)   @map("tbd_created_on")
+  tbdCreatedBy        String?   @db.VarChar(50)                      @map("tbd_created_by")
+  tbdModifiedOn       DateTime? @db.Timestamptz(6)                   @map("tbd_modified_on")
+  tbdModifiedBy       String?   @db.VarChar(50)                      @map("tbd_modified_by")
+  /// GENERATED ALWAYS AS (tbd_cash_counted - tbd_cash_expected) STORED — never write it.
+  tbdCashVariance     Decimal?  @default(dbgenerated()) @db.Decimal(15, 2) @map("tbd_cash_variance")
+
+  // Relations
+  sessions            TillSession[] @relation("TillSessionDay")
+
+  @@id([tbdId, tbdAccYear], map: "pk_till_business_day")
+  @@unique([tbdId, tbdAccYear, tbdBusinessDate], map: "uq_tbd_id_date")
+
+  // DB-only:
+  //   CREATE UNIQUE INDEX ux_tbd_date ON accounts.till_business_day
+  //       (tbd_company_id, tbd_branch_id, tbd_business_date, tbd_acc_year) WHERE tbd_is_deleted = false;
+  //   CREATE INDEX ix_tbd_open ON accounts.till_business_day (tbd_company_id, tbd_branch_id, tbd_status)
+  //       WHERE tbd_is_deleted = false AND tbd_status <> 'CLOSED';
+  // CHECKs: ck_tbd_year, ck_tbd_status, ck_tbd_closed, ck_tbd_counts.
+  @@map("till_business_day")
+  @@schema("accounts")
+}
+
+// ----- prisma/accounts/TillCashMovement.prisma -----
+/// TILL CASH MOVEMENT — every non-sale movement of money through a drawer or
+/// the safe (share file 47 §5, migration 20261008100000). Each POSTED row has
+/// exactly one accounting voucher (ix_tcm_unposted finds the ones that don't).
+///
+///   kind            from → to            voucher   Dr / Cr
+///   FLOAT_ISSUE     SAFE → TILL          TFlt      Till cash / Safe
+///   TOP_UP          SAFE → TILL          TFlt      Till cash / Safe          (change mid-shift)
+///   PICKUP          TILL → SAFE          TDrp      Safe / Till cash          (supervisor takes it)
+///   DROP            TILL → SAFE          TDrp      Safe / Till cash          (cashier drops a sealed bag)
+///   CLOSE_HANDOVER  TILL → SAFE          TDrp      Safe / Till cash          (counted cash at close)
+///   PAID_IN         LEDGER → TILL        TPIn      Till cash / income or party
+///   REMIT           SAFE → TRANSIT/BANK  CRem      Cash-in-transit (or bank) / Safe
+///   SAFE_TRANSFER   SAFE → SAFE          CRem      other safe / this safe
+///   EXCHANGE        TILL ↔ SAFE          none      net zero; counted both ways, logged
+///
+/// PAID_OUT left this table in 20261008110000 (file 48): an expense is an
+/// expense voucher (ExpV, tendered like a payment) and a supplier paid from
+/// the drawer is a bill-wise Payment in the session — one path per fact.
+/// TPOut, its old voucher type, was deactivated by 20261008120000.
+///
+/// Till cash ledger = the branch's CASH tender ledger
+/// (acc_tender_master.tnd_ledger_id) — ONE source of truth, so a sale and a
+/// payout hit the same ledger. Session = the sub-ledger, via avh_session_id.
+model TillCashMovement {
+  tcmId               String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("tcm_id")
+  tcmCompanyId        String    @db.Uuid                             @map("tcm_company_id")
+  tcmBranchId         String    @db.Uuid                             @map("tcm_branch_id")
+  tcmTenantId         String?   @db.Uuid                             @map("tcm_tenant_id")
+  tcmAccYear          String    @db.Char(9)                          @map("tcm_acc_year")
+  /// FLOAT_ISSUE | TOP_UP | PICKUP | DROP | CLOSE_HANDOVER | PAID_IN | REMIT | SAFE_TRANSFER | EXCHANGE
+  tcmKind             String    @db.VarChar(16)                      @map("tcm_kind")
+  /// From acc_voucher_seq for the voucher type.
+  tcmDocNo            String    @db.VarChar(40)                      @map("tcm_doc_no")
+  /// = the business date.
+  tcmDocDate          DateTime  @db.Date                             @map("tcm_doc_date")
+  tcmDayId            String    @db.Uuid                             @map("tcm_day_id")
+  /// NULL only for REMIT / SAFE_TRANSFER (ck_tcm_session).
+  tcmSessionId        String?   @db.Uuid                             @map("tcm_session_id")
+  /// The safe side, when there is one.
+  tcmSafeId           String?   @db.Uuid                             @map("tcm_safe_id")
+  /// SAFE_TRANSFER target. FK-less.
+  tcmToSafeId         String?   @db.Uuid                             @map("tcm_to_safe_id")
+  /// Always positive; the kind is the direction.
+  tcmAmount           Decimal   @db.Decimal(15, 2)                   @map("tcm_amount")
+  /// PAID_IN counter-ledger; REMIT: bank / transit.
+  tcmLedgerId         String?   @db.Uuid                             @map("tcm_ledger_id")
+  tcmReasonId         String?   @db.Uuid                             @map("tcm_reason_id")
+  /// Supplier bill no, deposit slip no.
+  tcmRefNo            String?   @db.VarChar(50)                      @map("tcm_ref_no")
+  tcmRefDate          DateTime? @db.Date                             @map("tcm_ref_date")
+  /// Who took / gave the cash (free text).
+  tcmPartyName        String?   @db.VarChar(150)                     @map("tcm_party_name")
+  /// Denomination count of what moved.
+  tcmCountId          String?   @db.Uuid                             @map("tcm_count_id")
+  /// DROP / REMIT: tamper-evident bag.
+  tcmBagNo            String?   @db.VarChar(30)                      @map("tcm_bag_no")
+  tcmSealNo           String?   @db.VarChar(30)                      @map("tcm_seal_no")
+  /// REMIT: cash-in-transit company.
+  tcmCitAgency        String?   @db.VarChar(100)                     @map("tcm_cit_agency")
+  /// Who handled the cash.
+  tcmDoneBy           String    @db.Uuid                             @map("tcm_done_by")
+  /// Second person (PICKUP always: ck_tcm_pickup_witness).
+  tcmWitnessBy        String?   @db.Uuid                             @map("tcm_witness_by")
+  tcmApprovalId       String?   @db.Uuid                             @map("tcm_approval_id")
+  /// The posted acc_voucher_header (with its year: ck_tcm_voucher_pair).
+  tcmVoucherId        String?   @db.Uuid                             @map("tcm_voucher_id")
+  tcmVoucherAccYear   String?   @db.Char(9)                          @map("tcm_voucher_acc_year")
+  /// POSTED | VOIDED
+  tcmStatus           String    @default("POSTED") @db.VarChar(8)    @map("tcm_status")
+  tcmVoidReasonId     String?   @db.Uuid                             @map("tcm_void_reason_id")
+  tcmVoidedOn         DateTime? @db.Timestamptz(6)                   @map("tcm_voided_on")
+  tcmVoidedBy         String?   @db.Uuid                             @map("tcm_voided_by")
+  tcmVoidApprovalId   String?   @db.Uuid                             @map("tcm_void_approval_id")
+  tcmPrintCount       Int       @default(0) @db.SmallInt             @map("tcm_print_count")
+  tcmDeviceId         String?   @db.Uuid                             @map("tcm_device_id")
+  tcmNotes            String?   @db.VarChar(500)                     @map("tcm_notes")
+  tcmIsDeleted        Boolean   @default(false)                      @map("tcm_is_deleted")
+  tcmSyncDate         DateTime? @db.Timestamptz(6)                   @map("tcm_sync_date")
+  tcmCreatedOn        DateTime  @default(now()) @db.Timestamptz(6)   @map("tcm_created_on")
+  tcmCreatedBy        String?   @db.VarChar(50)                      @map("tcm_created_by")
+  tcmModifiedOn       DateTime? @db.Timestamptz(6)                   @map("tcm_modified_on")
+  tcmModifiedBy       String?   @db.VarChar(50)                      @map("tcm_modified_by")
+
+  // Relations
+  ledger              AccLedgerMaster? @relation("TillCashMovementLedger", fields: [tcmLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_tcm_ledger")
+  reason              TillReason?      @relation("TillCashMovementReason", fields: [tcmReasonId], references: [trsId], onUpdate: Cascade, onDelete: Restrict, map: "fk_tcm_reason")
+  safe                TillSafe?        @relation("TillCashMovementSafe",   fields: [tcmSafeId],   references: [tsfId], onUpdate: Cascade, onDelete: Restrict, map: "fk_tcm_safe")
+
+  @@id([tcmId, tcmAccYear], map: "pk_till_cash_movement")
+
+  // DB-only:
+  //   CREATE UNIQUE INDEX ux_tcm_doc_no ON accounts.till_cash_movement
+  //       (tcm_company_id, tcm_branch_id, tcm_kind, tcm_doc_no, tcm_acc_year) WHERE tcm_is_deleted = false;
+  //   ix_tcm_session, ix_tcm_day, ix_tcm_safe, and ix_tcm_unposted (reconciliation:
+  //   a POSTED non-EXCHANGE movement with no voucher).
+  // CHECKs: ck_tcm_kind, ck_tcm_status, ck_tcm_amount, ck_tcm_session, ck_tcm_safe, ck_tcm_ledger,
+  //         ck_tcm_reason, ck_tcm_transfer, ck_tcm_witness, ck_tcm_pickup_witness, ck_tcm_void,
+  //         ck_tcm_voucher_pair.
+  @@map("till_cash_movement")
+  @@schema("accounts")
+}
+
+// ----- prisma/accounts/TillCount.prisma -----
+/// TILL COUNT — every time somebody counts money, one header + its lines
+/// (share file 47 §4, migration 20261008100000).
+///
+/// 3.0 DELETEd and re-INSERTed the count on every close/approve, so a recount
+/// erased the first count. Here every attempt is its own row and stays.
+/// tctExpected is what the system expected AT THAT MOMENT — stored even when
+/// the count was blind and the cashier never saw it.
+model TillCount {
+  tctId               String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("tct_id")
+  tctCompanyId        String    @db.Uuid                             @map("tct_company_id")
+  tctBranchId         String    @db.Uuid                             @map("tct_branch_id")
+  tctTenantId         String?   @db.Uuid                             @map("tct_tenant_id")
+  tctAccYear          String    @db.Char(9)                          @map("tct_acc_year")
+  /// OPEN | CLOSE | RECOUNT | HANDOVER | SURPRISE | FLOAT_ISSUE | PICKUP | DROP_VERIFY | SAFE
+  tctKind             String    @db.VarChar(12)                      @map("tct_kind")
+  /// NULL for a SAFE count.
+  tctSessionId        String?   @db.Uuid                             @map("tct_session_id")
+  /// SAFE / DROP_VERIFY.
+  tctSafeId           String?   @db.Uuid                             @map("tct_safe_id")
+  /// DROP_VERIFY / FLOAT_ISSUE / PICKUP: the movement counted.
+  tctMovementId       String?   @db.Uuid                             @map("tct_movement_id")
+  tctAttemptNo        Int       @default(1) @db.SmallInt             @map("tct_attempt_no")
+  /// The attempt the session close used (ux_tct_final: one OPEN, one CLOSE-side per session).
+  tctIsFinal          Boolean   @default(false)                      @map("tct_is_final")
+  tctIsBlind          Boolean   @default(false)                      @map("tct_is_blind")
+  tctCountedOn        DateTime  @default(now()) @db.Timestamptz(6)   @map("tct_counted_on")
+  tctCountedBy        String    @db.Uuid                             @map("tct_counted_by")
+  tctWitnessBy        String?   @db.Uuid                             @map("tct_witness_by")
+  tctDeviceId         String?   @db.Uuid                             @map("tct_device_id")
+  tctTotalCounted     Decimal   @default(0) @db.Decimal(15, 2)       @map("tct_total_counted")
+  /// System figure at count time (NULL for SURPRISE before compute).
+  tctExpected         Decimal?  @db.Decimal(15, 2)                   @map("tct_expected")
+  tctNotes            String?   @db.VarChar(500)                     @map("tct_notes")
+  tctIsDeleted        Boolean   @default(false)                      @map("tct_is_deleted")
+  tctSyncDate         DateTime? @db.Timestamptz(6)                   @map("tct_sync_date")
+  tctCreatedOn        DateTime  @default(now()) @db.Timestamptz(6)   @map("tct_created_on")
+  tctCreatedBy        String?   @db.VarChar(50)                      @map("tct_created_by")
+
+  // Relations
+  lines               TillCountLine[] @relation("TillCountLineCount")
+
+  @@id([tctId, tctAccYear], map: "pk_till_count")
+
+  // DB-only:
+  //   ix_tct_session (tct_session_id, tct_acc_year, tct_kind, tct_attempt_no) WHERE tct_is_deleted = false
+  //   ix_tct_safe    (tct_safe_id, tct_counted_on) WHERE tct_is_deleted = false AND tct_safe_id IS NOT NULL
+  //   CREATE UNIQUE INDEX ux_tct_final ON accounts.till_count
+  //       (tct_session_id, (CASE WHEN tct_kind = 'OPEN' THEN 'OPEN' ELSE 'CLOSE' END), tct_acc_year)
+  //       WHERE tct_is_deleted = false AND tct_is_final AND tct_session_id IS NOT NULL
+  //         AND tct_kind IN ('OPEN','CLOSE','RECOUNT');
+  // CHECKs: ck_tct_kind, ck_tct_owner, ck_tct_amounts, ck_tct_witness.
+  @@map("till_count")
+  @@schema("accounts")
+}
+
+// ----- prisma/accounts/TillCounter.prisma -----
+/// TILL COUNTER — a physical lane with (usually) one cash drawer (share file 47
+/// §1.2, migration 20261008100000).
+///
+/// The accountability unit is the DRAWER. A device is the PC/tablet bolted to
+/// it; replacing a dead PC re-points tcnDeviceId and history stays on the
+/// counter. One device drives one counter at a time (ux_tcn_device).
+model TillCounter {
+  tcnId               String    @id(map: "pk_till_counter") @default(dbgenerated("uuidv7()")) @db.Uuid @map("tcn_id")
+  tcnCompanyId        String    @db.Uuid                             @map("tcn_company_id")
+  tcnBranchId         String    @db.Uuid                             @map("tcn_branch_id")
+  /// C01, EXP1, RET
+  tcnCode             String    @db.VarChar(20)                      @map("tcn_code")
+  tcnName             String    @db.VarChar(100)                     @map("tcn_name")
+  /// POS | EXPRESS | RETURNS_DESK | SERVICE_DESK | CASH_OFFICE | MOBILE | SELF_CHECKOUT
+  tcnKind             String    @default("POS") @db.VarChar(20)      @map("tcn_kind")
+  /// DRAWER | TRAY (travels with the cashier) | NONE (cashless lane)
+  tcnDrawerMode       String    @default("DRAWER") @db.VarChar(10)   @map("tcn_drawer_mode")
+  /// Desktop/Mobile only, never Web; NULL = any device may claim it.
+  tcnDeviceId         String?   @db.Uuid                             @map("tcn_device_id")
+  /// Where its drops go; NULL = the branch default safe.
+  tcnSafeId           String?   @db.Uuid                             @map("tcn_safe_id")
+  tcnDefaultFloat     Decimal   @default(0) @db.Decimal(15, 2)       @map("tcn_default_float")
+  /// 0 = off; above it: "pickup due".
+  tcnCashAlertLimit   Decimal   @default(0) @db.Decimal(15, 2)       @map("tcn_cash_alert_limit")
+  /// 0 = off; above it billing stops until a pickup.
+  tcnCashBlockLimit   Decimal   @default(0) @db.Decimal(15, 2)       @map("tcn_cash_block_limit")
+  /// Running Z number, never reset (written by the session close).
+  tcnZLastNo          Int       @default(0)                          @map("tcn_z_last_no")
+  tcnRequiresSession  Boolean   @default(true)                       @map("tcn_requires_session")
+  tcnSortOrder        Int       @default(0)                          @map("tcn_sort_order")
+  tcnRemarks          String?   @db.VarChar(250)                     @map("tcn_remarks")
+  tcnIsActive         Boolean   @default(true)                       @map("tcn_is_active")
+  tcnIsDeleted        Boolean   @default(false)                      @map("tcn_is_deleted")
+  tcnSyncDate         DateTime? @db.Timestamptz(6)                   @map("tcn_sync_date")
+  tcnCreatedOn        DateTime  @default(now()) @db.Timestamptz(6)   @map("tcn_created_on")
+  tcnCreatedBy        String?   @db.VarChar(50)                      @map("tcn_created_by")
+  tcnModifiedOn       DateTime? @db.Timestamptz(6)                   @map("tcn_modified_on")
+  tcnModifiedBy       String?   @db.VarChar(50)                      @map("tcn_modified_by")
+
+  // Relations
+  device              DeviceMaster? @relation("TillCounterDevice", fields: [tcnDeviceId], references: [devId], onUpdate: Cascade, onDelete: SetNull, map: "fk_tcn_device")
+  safe                TillSafe?     @relation("TillCounterSafe",   fields: [tcnSafeId],   references: [tsfId], onUpdate: Cascade, onDelete: Restrict, map: "fk_tcn_safe")
+  sessions            TillSession[] @relation("TillSessionCounter")
+
+  // DB-only (Prisma ignores WHERE predicates and expressions):
+  //   CREATE UNIQUE INDEX ux_tcn_code   ON accounts.till_counter (tcn_company_id, tcn_branch_id, upper(tcn_code)) WHERE tcn_is_deleted = false;
+  //   CREATE UNIQUE INDEX ux_tcn_device ON accounts.till_counter (tcn_device_id) WHERE tcn_is_deleted = false AND tcn_device_id IS NOT NULL;
+  // CHECKs: ck_tcn_kind, ck_tcn_drawer, ck_tcn_amounts (block limit >= alert limit when both are on).
+  @@map("till_counter")
+  @@schema("accounts")
+}
+
+// ----- prisma/accounts/TillCountLine.prisma -----
+/// TILL COUNT LINE — one tender (and, for cash, one denomination) of a count
+/// (share file 47 §4, migration 20261008100000).
+///
+/// DENOM lines carry the denomination, its face value and the pieces; SLIPS /
+/// loose-coin lines carry an entered amount. tclAmount is GENERATED from
+/// whichever applies.
+model TillCountLine {
+  tclId               String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("tcl_id")
+  tclAccYear          String    @db.Char(9)                          @map("tcl_acc_year")
+  tclCountId          String    @db.Uuid                             @map("tcl_count_id")
+  tclRowNo            Int                                            @map("tcl_row_no")
+  tclTenderTypeId     Int                                            @map("tcl_tender_type_id")
+  /// acc_tender_master (two UPI QRs = two lines). FK-less.
+  tclTenderId         String?   @db.Uuid                             @map("tcl_tender_id")
+  /// DENOM lines.
+  tclDenominationId   String?   @db.Uuid                             @map("tcl_denomination_id")
+  /// DENOM: the note value; else 0 (ck_tcl_denom).
+  tclFaceValue        Decimal   @default(0) @db.Decimal(12, 2)       @map("tcl_face_value")
+  /// DENOM: pieces; SLIPS: slips.
+  tclQty              Decimal   @default(0) @db.Decimal(12, 0)       @map("tcl_qty")
+  /// SLIPS / loose coin total typed.
+  tclEnteredAmount    Decimal   @default(0) @db.Decimal(15, 2)       @map("tcl_entered_amount")
+  /// Card EDC batch no / cheque bundle ref.
+  tclBatchRef         String?   @db.VarChar(50)                      @map("tcl_batch_ref")
+  /// GENERATED ALWAYS AS (CASE WHEN tcl_denomination_id IS NOT NULL THEN
+  /// tcl_face_value * tcl_qty ELSE tcl_entered_amount END) STORED — never write it.
+  tclAmount           Decimal?  @default(dbgenerated()) @db.Decimal(15, 2) @map("tcl_amount")
+  tclSyncDate         DateTime? @db.Timestamptz(6)                   @map("tcl_sync_date")
+
+  // Relations
+  count               TillCount         @relation("TillCountLineCount",        fields: [tclCountId, tclAccYear], references: [tctId, tctAccYear], onUpdate: Cascade, onDelete: Cascade, map: "fk_tcl_count")
+  tenderType          AccTenderType     @relation("TillCountLineTenderType",   fields: [tclTenderTypeId], references: [ttmTypeId], onUpdate: Cascade, onDelete: Restrict, map: "fk_tcl_tender_type")
+  denomination        TillDenomination? @relation("TillCountLineDenomination", fields: [tclDenominationId], references: [tdnId], onUpdate: Cascade, onDelete: Restrict, map: "fk_tcl_denom")
+
+  @@id([tclId, tclAccYear], map: "pk_till_count_line")
+  @@index([tclCountId, tclAccYear, tclRowNo], map: "ix_tcl_count")
+
+  // CHECKs: ck_tcl_values, ck_tcl_denom.
+  @@map("till_count_line")
+  @@schema("accounts")
+}
+
+// ----- prisma/accounts/TillDenomination.prisma -----
+/// TILL DENOMINATION — the notes and coins a DENOM count offers (share file 47
+/// §1.5, migration 20261008100000). 3.0 hard-coded them in the .ui.
+///
+/// tdnCompanyId NULL = shared. The INR set is seeded by the migration.
+model TillDenomination {
+  tdnId               String    @id(map: "pk_till_denomination") @default(dbgenerated("uuidv7()")) @db.Uuid @map("tdn_id")
+  tdnCompanyId        String?   @db.Uuid                             @map("tdn_company_id")
+  tdnCurrency         String    @default("INR") @db.Char(3)          @map("tdn_currency")
+  tdnValue            Decimal   @db.Decimal(12, 2)                   @map("tdn_value")
+  /// NOTE | COIN
+  tdnKind             String    @db.VarChar(5)                       @map("tdn_kind")
+  tdnLabel            String    @db.VarChar(20)                      @map("tdn_label")
+  /// Notes per strapped bundle (100); 0 = not bundled.
+  tdnBundleQty        Int       @default(0)                          @map("tdn_bundle_qty")
+  tdnSortOrder        Int       @default(0)                          @map("tdn_sort_order")
+  /// Withdrawn notes stop being offered after this.
+  tdnValidTo          DateTime? @db.Date                             @map("tdn_valid_to")
+  tdnIsActive         Boolean   @default(true)                       @map("tdn_is_active")
+  tdnIsDeleted        Boolean   @default(false)                      @map("tdn_is_deleted")
+  tdnSyncDate         DateTime? @db.Timestamptz(6)                   @map("tdn_sync_date")
+  tdnCreatedOn        DateTime  @default(now()) @db.Timestamptz(6)   @map("tdn_created_on")
+  tdnCreatedBy        String?   @db.VarChar(50)                      @map("tdn_created_by")
+  tdnModifiedOn       DateTime? @db.Timestamptz(6)                   @map("tdn_modified_on")
+  tdnModifiedBy       String?   @db.VarChar(50)                      @map("tdn_modified_by")
+
+  // Relations
+  countLines          TillCountLine[] @relation("TillCountLineDenomination")
+
+  // DB-only:
+  //   CREATE UNIQUE INDEX ux_tdn_value ON accounts.till_denomination (tdn_company_id, tdn_currency, tdn_value, tdn_kind)
+  //       NULLS NOT DISTINCT WHERE tdn_is_deleted = false;
+  // CHECKs: ck_tdn_kind, ck_tdn_value.
+  @@map("till_denomination")
+  @@schema("accounts")
+}
+
+// ----- prisma/accounts/TillEvent.prisma -----
+/// TILL EVENT — the append-only till journal (share file 47 §8, migration
+/// 20261008100000). 3.0 kept one text blob, sess_log_rec.
+///
+/// INSERT only, never UPDATE: TillEventService is the single writer (the
+/// stock_ledger pattern). Client-side facts (drawer kicked, no-sale, X read,
+/// idle lock) arrive in batches via /till/events/batch; tevEventOn is the
+/// DEVICE time, tevCreatedOn the arrival. (tevDeviceId, tevClientSeq) makes a
+/// re-sent batch idempotent (ux_tev_client_seq).
+model TillEvent {
+  tevId               String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("tev_id")
+  tevCompanyId        String    @db.Uuid                             @map("tev_company_id")
+  tevBranchId         String    @db.Uuid                             @map("tev_branch_id")
+  tevAccYear          String    @db.Char(9)                          @map("tev_acc_year")
+  /// ck_tev_code's list.
+  tevEventCode        String    @db.VarChar(30)                      @map("tev_event_code")
+  tevEventOn          DateTime  @db.Timestamptz(6)                   @map("tev_event_on")
+  tevSessionId        String?   @db.Uuid                             @map("tev_session_id")
+  tevDayId            String?   @db.Uuid                             @map("tev_day_id")
+  tevCounterId        String?   @db.Uuid                             @map("tev_counter_id")
+  tevDeviceId         String?   @db.Uuid                             @map("tev_device_id")
+  tevUserId           String?   @db.Uuid                             @map("tev_user_id")
+  tevSrcDocType       String?   @db.VarChar(30)                      @map("tev_src_doc_type")
+  tevSrcDocId         String?   @db.Uuid                             @map("tev_src_doc_id")
+  tevSrcRefno         String?   @db.VarChar(100)                     @map("tev_src_refno")
+  tevAmount           Decimal?  @db.Decimal(15, 2)                   @map("tev_amount")
+  tevReasonId         String?   @db.Uuid                             @map("tev_reason_id")
+  tevApprovalId       String?   @db.Uuid                             @map("tev_approval_id")
+  /// Device-local sequence: a batch re-sent is idempotent.
+  tevClientSeq        BigInt?                                        @map("tev_client_seq")
+  tevPayload          Json?     @db.JsonB                            @map("tev_payload")
+  tevSyncDate         DateTime? @db.Timestamptz(6)                   @map("tev_sync_date")
+  tevCreatedOn        DateTime  @default(now()) @db.Timestamptz(6)   @map("tev_created_on")
+
+  @@id([tevId, tevAccYear], map: "pk_till_event")
+  @@index([tevSessionId, tevAccYear, tevEventOn], map: "ix_tev_session")
+  @@index([tevCompanyId, tevBranchId, tevEventCode, tevEventOn], map: "ix_tev_branch_code")
+
+  // DB-only:
+  //   CREATE UNIQUE INDEX ux_tev_client_seq ON accounts.till_event (tev_device_id, tev_client_seq, tev_acc_year)
+  //       WHERE tev_device_id IS NOT NULL AND tev_client_seq IS NOT NULL;
+  // CHECK: ck_tev_code.
+  @@map("till_event")
+  @@schema("accounts")
+}
+
+// ----- prisma/accounts/TillReason.prisma -----
+/// TILL REASON — the controlled reasons a till event names (share file 47
+/// §1.4, migration 20261008100000). 3.0 hard-coded six strings in the client.
+///
+/// trsCompanyId NULL = shipped / shared. Unique per (company, category,
+/// upper(code)) NULLS NOT DISTINCT (ux_trs_code).
+model TillReason {
+  trsId               String    @id(map: "pk_till_reason") @default(dbgenerated("uuidv7()")) @db.Uuid @map("trs_id")
+  trsCompanyId        String?   @db.Uuid                             @map("trs_company_id")
+  /// VARIANCE | FLOAT_MISMATCH | EXPENSE | PAID_IN | PICKUP | NO_SALE | SUSPEND |
+  /// FORCE_CLOSE | REOPEN | SESSION_VOID | MOVEMENT_VOID | DAY_REOPEN | REPRINT |
+  /// VOID_BILL | VOID_LINE | PRICE_OVERRIDE | REFUND | NONCASH (20261008130000)
+  /// (EXPENSE was PAID_OUT until 20261008110000; its SUPPLIER / STAFF_ADVANCE
+  /// rows were retired — a party is paid by a bill-wise Payment.)
+  trsCategory         String    @db.VarChar(20)                      @map("trs_category")
+  trsCode             String    @db.VarChar(30)                      @map("trs_code")
+  trsName             String    @db.VarChar(100)                     @map("trs_name")
+  /// EXPENSE / PAID_IN: the default ledger.
+  trsLedgerId         String?   @db.Uuid                             @map("trs_ledger_id")
+  trsNeedsNote        Boolean   @default(false)                      @map("trs_needs_note")
+  /// EXPENSE: the bill / voucher no.
+  trsNeedsRef         Boolean   @default(false)                      @map("trs_needs_ref")
+  /// 0 = no cap of its own (the approval rule still applies).
+  trsMaxAmount        Decimal   @default(0) @db.Decimal(15, 2)       @map("trs_max_amount")
+  trsSortOrder        Int       @default(0)                          @map("trs_sort_order")
+  trsIsActive         Boolean   @default(true)                       @map("trs_is_active")
+  trsIsDeleted        Boolean   @default(false)                      @map("trs_is_deleted")
+  trsSyncDate         DateTime? @db.Timestamptz(6)                   @map("trs_sync_date")
+  trsCreatedOn        DateTime  @default(now()) @db.Timestamptz(6)   @map("trs_created_on")
+  trsCreatedBy        String?   @db.VarChar(50)                      @map("trs_created_by")
+  trsModifiedOn       DateTime? @db.Timestamptz(6)                   @map("trs_modified_on")
+  trsModifiedBy       String?   @db.VarChar(50)                      @map("trs_modified_by")
+
+  // Relations
+  ledger              AccLedgerMaster?   @relation("TillReasonLedger", fields: [trsLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_trs_ledger")
+  cashMovements       TillCashMovement[] @relation("TillCashMovementReason")
+  variances           TillVariance[]     @relation("TillVarianceReason")
+  approvals           TillApproval[]     @relation("TillApprovalReason")
+  settlementLines     AccSettlementLine[] @relation("SettlementLineReason")
+
+  // DB-only:
+  //   CREATE UNIQUE INDEX ux_trs_code ON accounts.till_reason (trs_company_id, trs_category, upper(trs_code))
+  //       NULLS NOT DISTINCT WHERE trs_is_deleted = false;
+  // CHECKs: ck_trs_category, ck_trs_amount.
+  @@map("till_reason")
+  @@schema("accounts")
+}
+
+// ----- prisma/accounts/TillSafe.prisma -----
+/// TILL SAFE — the safe / cash office drawer cash goes to (share file 47 §1.1,
+/// migration 20261008100000). One default per branch (ux_tsf_default).
+///
+/// tsfLedgerId is the SAFE_CASH ledger this safe posts to: TFlt / TDrp / CRem
+/// vouchers hit it on the safe side, the branch's CASH tender ledger on the
+/// till side.
+model TillSafe {
+  tsfId               String    @id(map: "pk_till_safe") @default(dbgenerated("uuidv7()")) @db.Uuid @map("tsf_id")
+  tsfCompanyId        String    @db.Uuid                             @map("tsf_company_id")
+  tsfBranchId         String    @db.Uuid                             @map("tsf_branch_id")
+  tsfCode             String    @db.VarChar(20)                      @map("tsf_code")
+  tsfName             String    @db.VarChar(100)                     @map("tsf_name")
+  tsfLedgerId         String    @db.Uuid                             @map("tsf_ledger_id")
+  /// 0 = none; above it the day close asks for a remittance.
+  tsfInsuredLimit     Decimal   @default(0) @db.Decimal(15, 2)       @map("tsf_insured_limit")
+  tsfIsDefault        Boolean   @default(false)                      @map("tsf_is_default")
+  tsfRemarks          String?   @db.VarChar(250)                     @map("tsf_remarks")
+  tsfIsActive         Boolean   @default(true)                       @map("tsf_is_active")
+  tsfIsDeleted        Boolean   @default(false)                      @map("tsf_is_deleted")
+  tsfSyncDate         DateTime? @db.Timestamptz(6)                   @map("tsf_sync_date")
+  tsfCreatedOn        DateTime  @default(now()) @db.Timestamptz(6)   @map("tsf_created_on")
+  tsfCreatedBy        String?   @db.VarChar(50)                      @map("tsf_created_by")
+  tsfModifiedOn       DateTime? @db.Timestamptz(6)                   @map("tsf_modified_on")
+  tsfModifiedBy       String?   @db.VarChar(50)                      @map("tsf_modified_by")
+
+  // Relations
+  ledger              AccLedgerMaster    @relation("TillSafeLedger", fields: [tsfLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_tsf_ledger")
+  counters            TillCounter[]      @relation("TillCounterSafe")
+  cashMovements       TillCashMovement[] @relation("TillCashMovementSafe")
+
+  // DB-only (Prisma ignores WHERE predicates and expressions):
+  //   CREATE UNIQUE INDEX ux_tsf_code    ON accounts.till_safe (tsf_company_id, tsf_branch_id, upper(tsf_code)) WHERE tsf_is_deleted = false;
+  //   CREATE UNIQUE INDEX ux_tsf_default ON accounts.till_safe (tsf_company_id, tsf_branch_id) WHERE tsf_is_deleted = false AND tsf_is_default;
+  // CHECK: ck_tsf_limit.
+  @@map("till_safe")
+  @@schema("accounts")
+}
+
+// ----- prisma/accounts/TillSession.prisma -----
+/// TILL SESSION — one cashier, one drawer, one stretch of time (share file 47
+/// §3, migration 20261008100000).
+///
+/// This is the row every *_session_id in the product was always meant to point
+/// at (sale_bill/return/dc/quotation/order, acc_tender_detail,
+/// acc_voucher_header, acc_bill_adjustment, acc_temp_credit, txn_hold,
+/// loyalty_ledger, txn_status_log …). Those columns stay FK-less: they are on
+/// partitioned tables of other years and an offline push must never fail on
+/// ordering. TillSessionService validates the id at post time instead.
+///
+/// LIFECYCLE (TILL_DESIGN.md §5.2)
+///   OPEN ⇄ SUSPENDED → COUNTING → PENDING_APPROVAL → CLOSED
+///     └→ VOIDED (opened in error, nothing written in it)
+///   CLOSED → OPEN again only by SESSION_REOPEN (approval), counted again.
+///
+/// One live session per COUNTER (ux_tss_counter_live) — single-writer, so safe
+/// offline. One open session per OPERATOR is a service rule, NOT an index.
+model TillSession {
+  tssId               String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("tss_id")
+  tssCompanyId        String    @db.Uuid                             @map("tss_company_id")
+  tssBranchId         String    @db.Uuid                             @map("tss_branch_id")
+  tssTenantId         String?   @db.Uuid                             @map("tss_tenant_id")
+  tssAccYear          String    @db.Char(9)                          @map("tss_acc_year")
+  tssDayId            String    @db.Uuid                             @map("tss_day_id")
+  tssBusinessDate     DateTime  @db.Date                             @map("tss_business_date")
+  tssCounterId        String    @db.Uuid                             @map("tss_counter_id")
+  /// The device that opened it; money posts only from it (plan-till-counter-claim.md).
+  tssDeviceId         String    @db.Uuid                             @map("tss_device_id")
+  /// user_master.usr_id of the accountable cashier.
+  tssOperatorId       String    @db.Uuid                             @map("tss_operator_id")
+  /// C01-260407-02 (counter-date-seq), printed.
+  tssSessionNo        String    @db.VarChar(30)                      @map("tss_session_no")
+  /// nth session of this counter on this business date.
+  tssDaySeq           Int                                            @map("tss_day_seq")
+  /// OPEN | SUSPENDED | COUNTING | PENDING_APPROVAL | CLOSED | VOIDED
+  tssStatus           String    @default("OPEN") @db.VarChar(16)     @map("tss_status")
+
+  // ── Open ─────────────────────────────────────────────────────────────
+  tssOpenedOn         DateTime  @default(now()) @db.Timestamptz(6)   @map("tss_opened_on")
+  /// ISSUED (from the safe) | CARRIED (left in the drawer) | NONE
+  tssFloatMode        String    @db.VarChar(8)                       @map("tss_float_mode")
+  /// CARRIED / handover: whose drawer this was.
+  tssPrevSessionId    String?   @db.Uuid                             @map("tss_prev_session_id")
+  /// What the safe / previous close says is in it.
+  tssFloatIssued      Decimal   @default(0) @db.Decimal(15, 2)       @map("tss_float_issued")
+  /// What the cashier counted at open.
+  tssFloatCounted     Decimal   @default(0) @db.Decimal(15, 2)       @map("tss_float_counted")
+  tssOpenCountId      String?   @db.Uuid                             @map("tss_open_count_id")
+  /// FLOAT_MISMATCH.
+  tssFloatApprovalId  String?   @db.Uuid                             @map("tss_float_approval_id")
+
+  // ── During ───────────────────────────────────────────────────────────
+  tssSuspendCount     Int       @default(0)                          @map("tss_suspend_count")
+  /// Set while SUSPENDED (ck_tss_suspended).
+  tssSuspendedOn      DateTime? @db.Timestamptz(6)                   @map("tss_suspended_on")
+
+  // ── Close ────────────────────────────────────────────────────────────
+  /// The moment it stopped taking money.
+  tssBillingEndedOn   DateTime? @db.Timestamptz(6)                   @map("tss_billing_ended_on")
+  /// BLIND | OPEN
+  tssCountMode        String?   @db.VarChar(6)                       @map("tss_count_mode")
+  /// COUNTER | CASH_OFFICE
+  tssCountPlace       String?   @db.VarChar(12)                      @map("tss_count_place")
+  /// The FINAL count (attempts are all kept).
+  tssCloseCountId     String?   @db.Uuid                             @map("tss_close_count_id")
+  tssCountAttempts    Int       @default(0) @db.SmallInt             @map("tss_count_attempts")
+  tssCountedOn        DateTime? @db.Timestamptz(6)                   @map("tss_counted_on")
+  tssCountedBy        String?   @db.Uuid                             @map("tss_counted_by")
+  /// Second person at the count (setting till.close_witness).
+  tssWitnessBy        String?   @db.Uuid                             @map("tss_witness_by")
+  tssClosedOn         DateTime? @db.Timestamptz(6)                   @map("tss_closed_on")
+  tssClosedBy         String?   @db.Uuid                             @map("tss_closed_by")
+  /// CASH_VARIANCE / NONCASH_VARIANCE / FORCE_CLOSE.
+  tssCloseApprovalId  String?   @db.Uuid                             @map("tss_close_approval_id")
+  tssForceClosed      Boolean   @default(false)                      @map("tss_force_closed")
+  tssForceReasonId    String?   @db.Uuid                             @map("tss_force_reason_id")
+  tssReopenCount      Int       @default(0) @db.SmallInt             @map("tss_reopen_count")
+  /// = the counter's tcn_z_last_no + 1 at close.
+  tssZNo              Int?                                           @map("tss_z_no")
+
+  // ── Frozen at close by TillLedgerService; never recomputed ───────────
+  tssBillCount        Int       @default(0)                          @map("tss_bill_count")
+  tssReturnCount      Int       @default(0)                          @map("tss_return_count")
+  tssReceiptCount     Int       @default(0)                          @map("tss_receipt_count")
+  tssNoSaleCount      Int       @default(0)                          @map("tss_no_sale_count")
+  tssVoidCount        Int       @default(0)                          @map("tss_void_count")
+  tssVoidLineCount    Int       @default(0)                          @map("tss_void_line_count")
+  tssNetSales         Decimal   @default(0) @db.Decimal(15, 2)       @map("tss_net_sales")
+  tssCashExpected     Decimal   @default(0) @db.Decimal(15, 2)       @map("tss_cash_expected")
+  tssCashCounted      Decimal   @default(0) @db.Decimal(15, 2)       @map("tss_cash_counted")
+  tssNoncashExpected  Decimal   @default(0) @db.Decimal(15, 2)       @map("tss_noncash_expected")
+  tssNoncashCounted   Decimal   @default(0) @db.Decimal(15, 2)       @map("tss_noncash_counted")
+  /// Cash that went to the safe at close.
+  tssHandedOver       Decimal   @default(0) @db.Decimal(15, 2)       @map("tss_handed_over")
+  /// Cash left in the drawer for the next session. CLOSED: handed_over + float_left = cash_counted.
+  tssFloatLeft        Decimal   @default(0) @db.Decimal(15, 2)       @map("tss_float_left")
+  /// NONE | WITHIN_TOLERANCE | PENDING | ACCEPTED | RECOVER | INVESTIGATE
+  tssVarianceStatus   String    @default("NONE") @db.VarChar(16)     @map("tss_variance_status")
+
+  tssPrintCount       Int       @default(0) @db.SmallInt             @map("tss_print_count")
+  tssNotes            String?   @db.VarChar(500)                     @map("tss_notes")
+  tssIsDeleted        Boolean   @default(false)                      @map("tss_is_deleted")
+  tssSyncDate         DateTime? @db.Timestamptz(6)                   @map("tss_sync_date")
+  tssCreatedOn        DateTime  @default(now()) @db.Timestamptz(6)   @map("tss_created_on")
+  tssCreatedBy        String?   @db.VarChar(50)                      @map("tss_created_by")
+  tssModifiedOn       DateTime? @db.Timestamptz(6)                   @map("tss_modified_on")
+  tssModifiedBy       String?   @db.VarChar(50)                      @map("tss_modified_by")
+
+  // ── GENERATED ALWAYS … STORED — never write them ─────────────────────
+  /// tss_float_counted - tss_float_issued
+  tssFloatVariance    Decimal?  @default(dbgenerated()) @db.Decimal(15, 2) @map("tss_float_variance")
+  /// tss_cash_counted - tss_cash_expected
+  tssCashVariance     Decimal?  @default(dbgenerated()) @db.Decimal(15, 2) @map("tss_cash_variance")
+  /// tss_noncash_counted - tss_noncash_expected
+  tssNoncashVariance  Decimal?  @default(dbgenerated()) @db.Decimal(15, 2) @map("tss_noncash_variance")
+
+  // ── Added by 20261008110000 (file 48) — physically last on the table ──
+  //  Frozen at close with the other counts: receipts (tssReceiptCount),
+  //  bill-wise payments and expense vouchers posted in the session.
+  tssPaymentCount     Int       @default(0)                          @map("tss_payment_count")
+  tssExpenseCount     Int       @default(0)                          @map("tss_expense_count")
+
+  // Relations
+  day                 TillBusinessDay @relation("TillSessionDay",     fields: [tssDayId, tssAccYear, tssBusinessDate], references: [tbdId, tbdAccYear, tbdBusinessDate], onUpdate: Cascade, onDelete: Restrict, map: "fk_tss_day")
+  counter             TillCounter     @relation("TillSessionCounter", fields: [tssCounterId], references: [tcnId], onUpdate: Cascade, onDelete: Restrict, map: "fk_tss_counter")
+  variances           TillVariance[]  @relation("TillVarianceSession")
+
+  @@id([tssId, tssAccYear], map: "pk_till_session")
+
+  // DB-only (all partial; acc_year is in each unique key because a unique
+  // index on a partitioned table must carry the partition key):
+  //   CREATE UNIQUE INDEX ux_tss_counter_live ON accounts.till_session (tss_counter_id, tss_acc_year)
+  //       WHERE tss_is_deleted = false AND tss_status IN ('OPEN','SUSPENDED','COUNTING');
+  //   CREATE UNIQUE INDEX ux_tss_no ON accounts.till_session (tss_company_id, tss_branch_id, tss_session_no, tss_acc_year)
+  //       WHERE tss_is_deleted = false;
+  //   ix_tss_day, ix_tss_operator, ix_tss_live, ix_tss_variance_open.
+  // CHECKs: ck_tss_year, ck_tss_status, ck_tss_float_mode, ck_tss_carried, ck_tss_count_mode,
+  //         ck_tss_count_place, ck_tss_variance_status, ck_tss_suspended, ck_tss_closed,
+  //         ck_tss_counted, ck_tss_force, ck_tss_amounts, ck_tss_disposal,
+  //         ck_tss_doc_counts (receipt / payment / expense counts >= 0).
+  @@map("till_session")
+  @@schema("accounts")
+}
+
+// ----- prisma/accounts/TillSessionReview.prisma -----
+/// TILL SESSION REVIEW — HO's view of a session or a day, written at the CLOUD
+/// only, append-only (share file 47 §9, migration 20261008100000).
+///
+/// Sync is push-only (store → cloud, upsert by PK). If HO updated a
+/// store-owned session row, the store's next push would overwrite it. So HO's
+/// view lives in its own rows that no store ever writes.
+model TillSessionReview {
+  tsrId                 String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("tsr_id")
+  tsrCompanyId          String    @db.Uuid                             @map("tsr_company_id")
+  tsrBranchId           String    @db.Uuid                             @map("tsr_branch_id")
+  tsrAccYear            String    @db.Char(9)                          @map("tsr_acc_year")
+  /// A session, or …
+  tsrSessionId          String?   @db.Uuid                             @map("tsr_session_id")
+  /// … a whole day (ck_tsr_target: at least one).
+  tsrDayId              String?   @db.Uuid                             @map("tsr_day_id")
+  /// OK | QUERY | ESCALATED | RECOVERY_ORDERED | WRITTEN_OFF | SUSPENSE_CLEARED | BANK_MATCHED
+  tsrOutcome            String    @db.VarChar(16)                      @map("tsr_outcome")
+  tsrReviewedBy         String    @db.Uuid                             @map("tsr_reviewed_by")
+  tsrReviewedOn         DateTime  @default(now()) @db.Timestamptz(6)   @map("tsr_reviewed_on")
+  tsrNote               String?   @db.VarChar(1000)                    @map("tsr_note")
+  /// The journal HO raised (suspense cleared, recovery …).
+  tsrRefVoucherId       String?   @db.Uuid                             @map("tsr_ref_voucher_id")
+  tsrRefVoucherAccYear  String?   @db.Char(9)                          @map("tsr_ref_voucher_acc_year")
+  tsrSyncDate           DateTime? @db.Timestamptz(6)                   @map("tsr_sync_date")
+  tsrCreatedOn          DateTime  @default(now()) @db.Timestamptz(6)   @map("tsr_created_on")
+
+  @@id([tsrId, tsrAccYear], map: "pk_till_session_review")
+  @@index([tsrSessionId, tsrAccYear], map: "ix_tsr_session")
+  @@index([tsrDayId, tsrAccYear], map: "ix_tsr_day")
+
+  // CHECKs: ck_tsr_target, ck_tsr_outcome.
+  @@map("till_session_review")
+  @@schema("accounts")
+}
+
+// ----- prisma/accounts/TillVariance.prisma -----
+/// TILL VARIANCE — per session, per tender: what was decided about the gap
+/// (share file 47 §6, migration 20261008100000).
+///
+/// Treatment → posting (TVar voucher, journal):
+///   WITHIN_TOLERANCE  short/excess ≤ till.cash_tolerance → Cash Short & Excess, auto
+///   EXPENSE           Cash Short & Excess (CASH_SHORT_EXCESS role)
+///   RECOVER           the cashier's staff advance ledger: tss_operator_id →
+///                     usr_employee_id → emp_loan_ledger_id (none → TILL_LEDGER_UNMAPPED)
+///   SUSPENSE          TENDER_SUSPENSE role — under investigation, cleared later by a journal
+///   RETENDERED        no posting: the gap was a wrong tender, fixed by /bills/retender
+///
+/// A variance row is never edited after it posts; a changed decision is a
+/// REVERSED row plus a new one. Stage OPEN = the float mismatch at session open.
+/// ck_tvr_expected holds the row's own arithmetic (since 20261008110000, file 48):
+///   expected = open + sales - refund + receipt - payment - expense
+///              + moved_in - moved_out.
+model TillVariance {
+  tvrId               String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("tvr_id")
+  tvrCompanyId        String    @db.Uuid                             @map("tvr_company_id")
+  tvrBranchId         String    @db.Uuid                             @map("tvr_branch_id")
+  tvrTenantId         String?   @db.Uuid                             @map("tvr_tenant_id")
+  tvrAccYear          String    @db.Char(9)                          @map("tvr_acc_year")
+  tvrSessionId        String    @db.Uuid                             @map("tvr_session_id")
+  /// OPEN (float mismatch) | CLOSE
+  tvrStage            String    @default("CLOSE") @db.VarChar(5)     @map("tvr_stage")
+  tvrTenderTypeId     Int                                            @map("tvr_tender_type_id")
+  tvrTenderId         String?   @db.Uuid                             @map("tvr_tender_id")
+  /// Float (cash only).
+  tvrOpenAmount       Decimal   @default(0) @db.Decimal(15, 2)       @map("tvr_open_amount")
+  /// Sale tenders taken.
+  tvrSalesAmount      Decimal   @default(0) @db.Decimal(15, 2)       @map("tvr_sales_amount")
+  /// Refunds paid.
+  tvrRefundAmount     Decimal   @default(0) @db.Decimal(15, 2)       @map("tvr_refund_amount")
+  /// Receipts / advances / temp-credit collections.
+  tvrReceiptAmount    Decimal   @default(0) @db.Decimal(15, 2)       @map("tvr_receipt_amount")
+  /// TOP_UP + PAID_IN (cash only).
+  tvrMovedIn          Decimal   @default(0) @db.Decimal(15, 2)       @map("tvr_moved_in")
+  /// PICKUP + DROP (cash only). Expenses left the movements in 48: see tvrExpenseAmount.
+  tvrMovedOut         Decimal   @default(0) @db.Decimal(15, 2)       @map("tvr_moved_out")
+  tvrTxnCount         Int       @default(0)                          @map("tvr_txn_count")
+  tvrExpected         Decimal   @db.Decimal(15, 2)                   @map("tvr_expected")
+  tvrCounted          Decimal   @db.Decimal(15, 2)                   @map("tvr_counted")
+  tvrSlipCount        Int?                                           @map("tvr_slip_count")
+  /// The tolerance that applied, snapshot.
+  tvrTolerance        Decimal   @default(0) @db.Decimal(15, 2)       @map("tvr_tolerance")
+  /// PENDING | WITHIN_TOLERANCE | EXPENSE | RECOVER | SUSPENSE | RETENDERED
+  tvrTreatment        String    @default("PENDING") @db.VarChar(16)  @map("tvr_treatment")
+  tvrReasonId         String?   @db.Uuid                             @map("tvr_reason_id")
+  /// RECOVER: the staff advance ledger (ck_tvr_recover). FK-less.
+  tvrRecoveryLedgerId String?   @db.Uuid                             @map("tvr_recovery_ledger_id")
+  tvrApprovalId       String?   @db.Uuid                             @map("tvr_approval_id")
+  tvrVoucherId        String?   @db.Uuid                             @map("tvr_voucher_id")
+  tvrVoucherAccYear   String?   @db.Char(9)                          @map("tvr_voucher_acc_year")
+  /// OPEN | POSTED | REVERSED
+  tvrStatus           String    @default("OPEN") @db.VarChar(10)     @map("tvr_status")
+  tvrReversesId       String?   @db.Uuid                             @map("tvr_reverses_id")
+  tvrDecidedBy        String?   @db.Uuid                             @map("tvr_decided_by")
+  tvrDecidedOn        DateTime? @db.Timestamptz(6)                   @map("tvr_decided_on")
+  tvrNotes            String?   @db.VarChar(500)                     @map("tvr_notes")
+  tvrIsDeleted        Boolean   @default(false)                      @map("tvr_is_deleted")
+  tvrSyncDate         DateTime? @db.Timestamptz(6)                   @map("tvr_sync_date")
+  tvrCreatedOn        DateTime  @default(now()) @db.Timestamptz(6)   @map("tvr_created_on")
+  tvrCreatedBy        String?   @db.VarChar(50)                      @map("tvr_created_by")
+  tvrModifiedOn       DateTime? @db.Timestamptz(6)                   @map("tvr_modified_on")
+  tvrModifiedBy       String?   @db.VarChar(50)                      @map("tvr_modified_by")
+  /// GENERATED ALWAYS AS (tvr_counted - tvr_expected) STORED — never write it.
+  tvrVariance         Decimal?  @default(dbgenerated()) @db.Decimal(15, 2) @map("tvr_variance")
+
+  // ── Added by 20261008110000 (file 48) — physically last on the table ──
+  /// Bill-wise payments (menu 100) out of this tender in the session.
+  tvrPaymentAmount    Decimal   @default(0) @db.Decimal(15, 2)       @map("tvr_payment_amount")
+  /// Expense vouchers (ExpV) out of this tender in the session.
+  tvrExpenseAmount    Decimal   @default(0) @db.Decimal(15, 2)       @map("tvr_expense_amount")
+
+  // ── Added by 20261008130000 (file 49) — physically last on the table ──
+  /// The tender rows a close-time NON-CASH variance parked in Tender suspense:
+  /// [{"td_id": …, "td_acc_year": "2026-2027", "amount": 160.00}]. A later TSet
+  /// credits suspense, not the clearing ledger, for these.
+  tvrRows             Json?     @db.JsonB                            @map("tvr_rows")
+
+  // Relations
+  session             TillSession   @relation("TillVarianceSession",    fields: [tvrSessionId, tvrAccYear], references: [tssId, tssAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_tvr_session")
+  tenderType          AccTenderType @relation("TillVarianceTenderType", fields: [tvrTenderTypeId], references: [ttmTypeId], onUpdate: Cascade, onDelete: Restrict, map: "fk_tvr_tender_type")
+  reason              TillReason?   @relation("TillVarianceReason",     fields: [tvrReasonId], references: [trsId], onUpdate: Cascade, onDelete: Restrict, map: "fk_tvr_reason")
+
+  @@id([tvrId, tvrAccYear], map: "pk_till_variance")
+
+  // DB-only:
+  //   CREATE UNIQUE INDEX ux_tvr_live ON accounts.till_variance
+  //       (tvr_session_id, tvr_stage, tvr_tender_type_id, tvr_tender_id, tvr_acc_year) NULLS NOT DISTINCT
+  //       WHERE tvr_is_deleted = false AND tvr_status <> 'REVERSED';
+  //   ix_tvr_session, ix_tvr_pending.
+  // CHECKs: ck_tvr_treatment, ck_tvr_status, ck_tvr_stage, ck_tvr_open_stage, ck_tvr_expected,
+  //         ck_tvr_counted, ck_tvr_cash_terms (float / movements are CASH = tender type 1 only),
+  //         ck_tvr_recover, ck_tvr_reason, ck_tvr_decided, ck_tvr_voucher_pair,
+  //         ck_tvr_split (payment / expense >= 0).
+  @@map("till_variance")
   @@schema("accounts")
 }
 
@@ -3153,6 +4312,10 @@ model DeviceMaster {
 
   // ── Promotion usage (20260921180000) ────────────────────────────────────
   promotionUsages       PromotionUsage[]          @relation("PromotionUsageDevice")
+
+  // ── Till management (20261008100000) ────────────────────────────────────
+  // The PC bolted to a counter; ux_tcn_device keeps it to one at a time.
+  tillCounters          TillCounter[]             @relation("TillCounterDevice")
 
   @@map("device_master")
   @@schema("fixed")

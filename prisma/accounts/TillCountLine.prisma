@@ -1,0 +1,41 @@
+/// TILL COUNT LINE — one tender (and, for cash, one denomination) of a count
+/// (share file 47 §4, migration 20261008100000).
+///
+/// DENOM lines carry the denomination, its face value and the pieces; SLIPS /
+/// loose-coin lines carry an entered amount. tclAmount is GENERATED from
+/// whichever applies.
+model TillCountLine {
+  tclId               String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("tcl_id")
+  tclAccYear          String    @db.Char(9)                          @map("tcl_acc_year")
+  tclCountId          String    @db.Uuid                             @map("tcl_count_id")
+  tclRowNo            Int                                            @map("tcl_row_no")
+  tclTenderTypeId     Int                                            @map("tcl_tender_type_id")
+  /// acc_tender_master (two UPI QRs = two lines). FK-less.
+  tclTenderId         String?   @db.Uuid                             @map("tcl_tender_id")
+  /// DENOM lines.
+  tclDenominationId   String?   @db.Uuid                             @map("tcl_denomination_id")
+  /// DENOM: the note value; else 0 (ck_tcl_denom).
+  tclFaceValue        Decimal   @default(0) @db.Decimal(12, 2)       @map("tcl_face_value")
+  /// DENOM: pieces; SLIPS: slips.
+  tclQty              Decimal   @default(0) @db.Decimal(12, 0)       @map("tcl_qty")
+  /// SLIPS / loose coin total typed.
+  tclEnteredAmount    Decimal   @default(0) @db.Decimal(15, 2)       @map("tcl_entered_amount")
+  /// Card EDC batch no / cheque bundle ref.
+  tclBatchRef         String?   @db.VarChar(50)                      @map("tcl_batch_ref")
+  /// GENERATED ALWAYS AS (CASE WHEN tcl_denomination_id IS NOT NULL THEN
+  /// tcl_face_value * tcl_qty ELSE tcl_entered_amount END) STORED — never write it.
+  tclAmount           Decimal?  @default(dbgenerated()) @db.Decimal(15, 2) @map("tcl_amount")
+  tclSyncDate         DateTime? @db.Timestamptz(6)                   @map("tcl_sync_date")
+
+  // Relations
+  count               TillCount         @relation("TillCountLineCount",        fields: [tclCountId, tclAccYear], references: [tctId, tctAccYear], onUpdate: Cascade, onDelete: Cascade, map: "fk_tcl_count")
+  tenderType          AccTenderType     @relation("TillCountLineTenderType",   fields: [tclTenderTypeId], references: [ttmTypeId], onUpdate: Cascade, onDelete: Restrict, map: "fk_tcl_tender_type")
+  denomination        TillDenomination? @relation("TillCountLineDenomination", fields: [tclDenominationId], references: [tdnId], onUpdate: Cascade, onDelete: Restrict, map: "fk_tcl_denom")
+
+  @@id([tclId, tclAccYear], map: "pk_till_count_line")
+  @@index([tclCountId, tclAccYear, tclRowNo], map: "ix_tcl_count")
+
+  // CHECKs: ck_tcl_values, ck_tcl_denom.
+  @@map("till_count_line")
+  @@schema("accounts")
+}

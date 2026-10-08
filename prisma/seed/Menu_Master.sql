@@ -1,4 +1,4 @@
--- Seed: fixed.menu_master -- the full application menu tree (233 rows).
+-- Seed: fixed.menu_master -- the full application menu tree (241 rows).
 --
 -- Exported from the reference database, so a fresh environment comes up with the
 -- same menu ids every other table points at.
@@ -39,7 +39,7 @@ INSERT INTO fixed.menu_master
      menu_icon_location_desktop, menu_icon_location_web, menu_icon_location_mobile,
      menu_is_active, menu_separator)
 VALUES
-    -- ============ &1 Sales (menu 1, 65 rows) ============
+    -- ============ &1 Sales (menu 1, 71 rows) ============
      (   1, NULL, '&1 Sales'                             , NULL                  , true ,   1.00, '0', NULL, NULL, true , true)
     ,(  10,    1, 'Customers'                            , 'CTRL+SHIFT+C'        , true ,   1.00, '0', NULL, NULL, true , true)
     ,(  11,    1, 'Sales Order'                          , 'CTRL+SHIFT+S'        , true ,   2.00, NULL, NULL, NULL, true , false)
@@ -106,6 +106,16 @@ VALUES
     ,( 236,   75, 'Loyalty Redemption Report (Item-wise)', 'false'               , false,   5.00, NULL, NULL, NULL, true , false)
     ,( 247,   66, 'Promotion Scheme'                     , NULL                  , true ,   1.00, NULL, NULL, NULL, true , false)
     ,( 257,    1, 'Temp Credits'                         , NULL                  , true ,   6.20, NULL, NULL, NULL, true , false)
+    -- Till (271-276, migration 20261008140000 / src/modules/till): hidden until the
+    -- client screens ship; rights work on a hidden menu. Verbs are set below.
+    ,( 271,    1, 'Till'                                 , NULL                  , false,  18.10, NULL, NULL, NULL, true , true)
+    ,( 272,  271, 'Open Till'                            , NULL                  , false,   1.00, NULL, NULL, NULL, true , false)
+    ,( 273,  271, 'Till Sessions'                        , NULL                  , false,   2.00, NULL, NULL, NULL, true , false)
+    ,( 274,  271, 'Business Day'                         , NULL                  , false,   3.00, NULL, NULL, NULL, true , false)
+    ,( 275,  271, 'Till Masters'                         , NULL                  , false,   4.00, NULL, NULL, NULL, true , true)
+    ,( 276,  271, 'Till Approval Setup'                  , NULL                  , false,   5.00, NULL, NULL, NULL, true , false)
+    ,( 277,    5, 'Expense Voucher'                      , NULL                  , false,  11.50, NULL, NULL, NULL, true , false)
+    ,( 278,    5, 'Settlement Reconciliation'            , NULL                  , false,  11.60, NULL, NULL, NULL, true , false)
     -- ============ &2 Purchase (menu 2, 18 rows) ============
     ,(   2, NULL, '&2 Purchase'                          , NULL                  , true ,   2.00, '0', NULL, NULL, true , false)
     ,(  22,    2, 'Suppliers'                            , NULL                  , true ,   1.00, NULL, NULL, NULL, true , true)
@@ -334,6 +344,35 @@ UPDATE fixed.menu_master
 UPDATE fixed.menu_master
    SET menu_verbs = '{VIEW,CREATE,EDIT}'
  WHERE menu_id = 263
+   AND menu_verbs = '{VIEW,CREATE,EDIT,DELETE,PRINT,EXPORT}';
+
+-- Till (271-276, 20261008140000): what each till screen can do. The group holds
+-- VIEW only; Open Till is the cashier's own session (CREATE = open, EDIT = suspend /
+-- resume / count / close, PRINT = X read); Till Sessions is the supervisor's view
+-- (OVERRIDE = the expected figures a blind close hides); Business Day opens the day.
+-- Same guard as above: a site that edited a row keeps its edit.
+UPDATE fixed.menu_master m
+   SET menu_verbs = v.verbs::text[]
+  FROM (VALUES (271, '{VIEW}'), (272, '{VIEW,CREATE,EDIT,PRINT}'),
+               (273, '{VIEW,PRINT,EXPORT,OVERRIDE}'), (274, '{VIEW,CREATE}'),
+               (275, '{VIEW,CREATE,EDIT,DELETE,EXPORT}'), (276, '{VIEW,CREATE,EDIT,DELETE,EXPORT}')
+       ) AS v(id, verbs)
+ WHERE m.menu_id = v.id
+   AND m.menu_verbs = '{VIEW,CREATE,EDIT,DELETE,PRINT,EXPORT}';
+
+-- Expense Voucher (277, 20261008160000_expense_voucher): a posting document --
+-- POST and CANCEL, no AMEND (cancel + re-enter) and no OVERRIDE. Same guard as above.
+UPDATE fixed.menu_master
+   SET menu_verbs = '{VIEW,CREATE,EDIT,DELETE,PRINT,EXPORT,POST,CANCEL}'
+ WHERE menu_id = 277
+   AND menu_verbs = '{VIEW,CREATE,EDIT,DELETE,PRINT,EXPORT}';
+
+-- Settlement Reconciliation (278, 20261008190000_tender_settlement): import, match,
+-- post, void — and OVERRIDE, which stands in for the NONCASH_WRITE_OFF /
+-- SETTLEMENT_RESOLVE approvals until the till approval gate ships. Same guard.
+UPDATE fixed.menu_master
+   SET menu_verbs = '{VIEW,CREATE,EDIT,PRINT,EXPORT,POST,CANCEL,OVERRIDE}'
+ WHERE menu_id = 278
    AND menu_verbs = '{VIEW,CREATE,EDIT,DELETE,PRINT,EXPORT}';
 
 -- Keep the identity sequence ahead of the seeded ids, otherwise the first menu

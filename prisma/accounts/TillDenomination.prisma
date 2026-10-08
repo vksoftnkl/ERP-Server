@@ -1,0 +1,35 @@
+/// TILL DENOMINATION — the notes and coins a DENOM count offers (share file 47
+/// §1.5, migration 20261008100000). 3.0 hard-coded them in the .ui.
+///
+/// tdnCompanyId NULL = shared. The INR set is seeded by the migration.
+model TillDenomination {
+  tdnId               String    @id(map: "pk_till_denomination") @default(dbgenerated("uuidv7()")) @db.Uuid @map("tdn_id")
+  tdnCompanyId        String?   @db.Uuid                             @map("tdn_company_id")
+  tdnCurrency         String    @default("INR") @db.Char(3)          @map("tdn_currency")
+  tdnValue            Decimal   @db.Decimal(12, 2)                   @map("tdn_value")
+  /// NOTE | COIN
+  tdnKind             String    @db.VarChar(5)                       @map("tdn_kind")
+  tdnLabel            String    @db.VarChar(20)                      @map("tdn_label")
+  /// Notes per strapped bundle (100); 0 = not bundled.
+  tdnBundleQty        Int       @default(0)                          @map("tdn_bundle_qty")
+  tdnSortOrder        Int       @default(0)                          @map("tdn_sort_order")
+  /// Withdrawn notes stop being offered after this.
+  tdnValidTo          DateTime? @db.Date                             @map("tdn_valid_to")
+  tdnIsActive         Boolean   @default(true)                       @map("tdn_is_active")
+  tdnIsDeleted        Boolean   @default(false)                      @map("tdn_is_deleted")
+  tdnSyncDate         DateTime? @db.Timestamptz(6)                   @map("tdn_sync_date")
+  tdnCreatedOn        DateTime  @default(now()) @db.Timestamptz(6)   @map("tdn_created_on")
+  tdnCreatedBy        String?   @db.VarChar(50)                      @map("tdn_created_by")
+  tdnModifiedOn       DateTime? @db.Timestamptz(6)                   @map("tdn_modified_on")
+  tdnModifiedBy       String?   @db.VarChar(50)                      @map("tdn_modified_by")
+
+  // Relations
+  countLines          TillCountLine[] @relation("TillCountLineDenomination")
+
+  // DB-only:
+  //   CREATE UNIQUE INDEX ux_tdn_value ON accounts.till_denomination (tdn_company_id, tdn_currency, tdn_value, tdn_kind)
+  //       NULLS NOT DISTINCT WHERE tdn_is_deleted = false;
+  // CHECKs: ck_tdn_kind, ck_tdn_value.
+  @@map("till_denomination")
+  @@schema("accounts")
+}

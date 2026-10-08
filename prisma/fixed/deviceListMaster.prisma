@@ -50,6 +50,10 @@ model DeviceMaster {
   // ── Promotion usage (20260921180000) ────────────────────────────────────
   promotionUsages       PromotionUsage[]          @relation("PromotionUsageDevice")
 
+  // ── Till management (20261008100000) ────────────────────────────────────
+  // The PC bolted to a counter; ux_tcn_device keeps it to one at a time.
+  tillCounters          TillCounter[]             @relation("TillCounterDevice")
+
   @@map("device_master")
   @@schema("fixed")
 }

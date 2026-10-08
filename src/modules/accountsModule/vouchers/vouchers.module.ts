@@ -1,3 +1,4 @@
+import { TillModule } from '../../till/till.module';
 import { Module } from '@nestjs/common';
 import { CommonPostingModule } from '../../../common/posting/posting.module';
 import { BillBalanceModule } from '../billBalance/bill-balance.module';
@@ -20,7 +21,8 @@ import { VoucherCancelService } from './voucher-cancel.service';
 @Module({
   // notes (54): the tender rows behind a Receipt Voucher's instruments are
   // written by the same service the receipt and the sale bill write them with.
-  imports: [CommonPostingModule, BillBalanceModule, TenderDetailModule],
+  // TillModule: a receipt / payment voucher's cash moves in the live till session (48 §3).
+  imports: [CommonPostingModule, BillBalanceModule, TenderDetailModule, TillModule],
   controllers: [VouchersController],
   providers: [
     VoucherTypesService,

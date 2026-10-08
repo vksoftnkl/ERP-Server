@@ -13,6 +13,7 @@ import { SaleOrderModule } from '../sale-order/sale-order.module';
 import { QuotationModule } from '../quotation/quotation.module';
 import { SalesPostingModule } from '../posting/posting.module';
 import { BillBalanceModule } from '../../accountsModule/billBalance/bill-balance.module';
+import { TillModule } from '../../till/till.module';
 
 /**
  * ChargeDetailModule / TenderDetailModule export the services that own the
@@ -36,6 +37,9 @@ import { BillBalanceModule } from '../../accountsModule/billBalance/bill-balance
     SalesPostingModule,
     // /bills/retender recomputes the receivable after moving its counter rows.
     BillBalanceModule,
+    // The till (§7.4): a bill posted on a counter's device posts in its live
+    // session; a cash bill of a counted session is not cancelled (D7).
+    TillModule,
   ],
   controllers: [BillController],
   providers: [

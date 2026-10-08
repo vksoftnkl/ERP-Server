@@ -1,4 +1,6 @@
 import { Injectable } from '@nestjs/common';
+import { TillSessionService } from '../../till/services/till-session.service';
+import { TillEventCode } from '../../till/types/till-enum';
 import { assertVoucherBooksReconcile } from '../vouchers/voucher-books.helper';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
@@ -104,6 +106,7 @@ export class ReceiptCancelService {
     private readonly requestContext: RequestContextService,
     private readonly receiptService: ReceiptService,
     private readonly recompute: BillBalanceRecomputeService,
+    private readonly till: TillSessionService,
   ) {}
 
   async cancel(dto: CancelReceiptDto): Promise<ReceiptCancelPayload> {
@@ -168,6 +171,12 @@ export class ReceiptCancelService {
       for (const voucher of vouchers) {
         await assertAccYearWritable(tx, voucher.avhCompanyId, voucher.avhAccYear, 'avhAccYear');
       }
+      // 48 §2.3: money moved in a till session stays moved once that drawer
+      // stops taking money — correct it with a new document or a journal.
+      await this.till.assertMoneyDocCancellable(tx, {
+        sessionId: header.avhSessionId,
+        field: 'avhVoucherId',
+      });
 
       const voucherIds = vouchers.map((voucher) => voucher.avhVoucherId);
       const years = [...new Set(vouchers.map((voucher) => voucher.avhAccYear))];
@@ -260,6 +269,17 @@ export class ReceiptCancelService {
           deviceId: this.requestContext.getDeviceId(),
           changedOn: now,
           remarks: dto.reason,
+        });
+      }
+      if (header.avhSessionId) {
+        await this.till.logMoneyDoc(tx, {
+          sessionId: header.avhSessionId,
+          code: TillEventCode.MONEY_DOC_CANCELLED,
+          srcDocType: 'RECEIPT',
+          srcDocId: header.avhVoucherId,
+          srcRefno: header.avhVoucherRefno,
+          amount: header.avhDocAmount,
+          payload: { reason: dto.reason },
         });
       }
 

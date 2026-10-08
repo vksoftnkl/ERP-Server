@@ -1,0 +1,46 @@
+/// TILL REASON — the controlled reasons a till event names (share file 47
+/// §1.4, migration 20261008100000). 3.0 hard-coded six strings in the client.
+///
+/// trsCompanyId NULL = shipped / shared. Unique per (company, category,
+/// upper(code)) NULLS NOT DISTINCT (ux_trs_code).
+model TillReason {
+  trsId               String    @id(map: "pk_till_reason") @default(dbgenerated("uuidv7()")) @db.Uuid @map("trs_id")
+  trsCompanyId        String?   @db.Uuid                             @map("trs_company_id")
+  /// VARIANCE | FLOAT_MISMATCH | EXPENSE | PAID_IN | PICKUP | NO_SALE | SUSPEND |
+  /// FORCE_CLOSE | REOPEN | SESSION_VOID | MOVEMENT_VOID | DAY_REOPEN | REPRINT |
+  /// VOID_BILL | VOID_LINE | PRICE_OVERRIDE | REFUND | NONCASH (20261008130000)
+  /// (EXPENSE was PAID_OUT until 20261008110000; its SUPPLIER / STAFF_ADVANCE
+  /// rows were retired — a party is paid by a bill-wise Payment.)
+  trsCategory         String    @db.VarChar(20)                      @map("trs_category")
+  trsCode             String    @db.VarChar(30)                      @map("trs_code")
+  trsName             String    @db.VarChar(100)                     @map("trs_name")
+  /// EXPENSE / PAID_IN: the default ledger.
+  trsLedgerId         String?   @db.Uuid                             @map("trs_ledger_id")
+  trsNeedsNote        Boolean   @default(false)                      @map("trs_needs_note")
+  /// EXPENSE: the bill / voucher no.
+  trsNeedsRef         Boolean   @default(false)                      @map("trs_needs_ref")
+  /// 0 = no cap of its own (the approval rule still applies).
+  trsMaxAmount        Decimal   @default(0) @db.Decimal(15, 2)       @map("trs_max_amount")
+  trsSortOrder        Int       @default(0)                          @map("trs_sort_order")
+  trsIsActive         Boolean   @default(true)                       @map("trs_is_active")
+  trsIsDeleted        Boolean   @default(false)                      @map("trs_is_deleted")
+  trsSyncDate         DateTime? @db.Timestamptz(6)                   @map("trs_sync_date")
+  trsCreatedOn        DateTime  @default(now()) @db.Timestamptz(6)   @map("trs_created_on")
+  trsCreatedBy        String?   @db.VarChar(50)                      @map("trs_created_by")
+  trsModifiedOn       DateTime? @db.Timestamptz(6)                   @map("trs_modified_on")
+  trsModifiedBy       String?   @db.VarChar(50)                      @map("trs_modified_by")
+
+  // Relations
+  ledger              AccLedgerMaster?   @relation("TillReasonLedger", fields: [trsLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_trs_ledger")
+  cashMovements       TillCashMovement[] @relation("TillCashMovementReason")
+  variances           TillVariance[]     @relation("TillVarianceReason")
+  approvals           TillApproval[]     @relation("TillApprovalReason")
+  settlementLines     AccSettlementLine[] @relation("SettlementLineReason")
+
+  // DB-only:
+  //   CREATE UNIQUE INDEX ux_trs_code ON accounts.till_reason (trs_company_id, trs_category, upper(trs_code))
+  //       NULLS NOT DISTINCT WHERE trs_is_deleted = false;
+  // CHECKs: ck_trs_category, ck_trs_amount.
+  @@map("till_reason")
+  @@schema("accounts")
+}

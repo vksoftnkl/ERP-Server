@@ -60,6 +60,8 @@ export interface StatutoryLimit {
 /** The codes the shipped pack defines. Not exhaustive — a company may add rows. */
 export const STATUTORY_CODES = {
   CASH_TXN_LIMIT_269ST: 'CASH_TXN_LIMIT_269ST',
+  /** Seeded by 48 (20261008110000_till_money_docs): cash paid to one payee in a day. */
+  CASH_PAYMENT_LIMIT_40A3: 'CASH_PAYMENT_LIMIT_40A3',
   PAN_REQUIRED_CASH_SALE: 'PAN_REQUIRED_CASH_SALE',
   TCS_206C1H_THRESHOLD: 'TCS_206C1H_THRESHOLD',
   TCS_206C1H_RATE: 'TCS_206C1H_RATE',

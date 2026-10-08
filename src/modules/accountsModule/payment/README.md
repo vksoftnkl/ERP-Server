@@ -230,6 +230,24 @@ paid partly to a bill and partly on account failed earlier still: its ChqBnc did
   open, matching the TDS register row, which the stop does not reverse for a `/payments` cheque.
   (Read from the engine; no test.)
 
+## The till, 40A(3) and the CASH_PAYMENT rule (plan-till-receipt-payment-expense, 2026-10-08)
+
+- **The drawer or the safe.** `postInTransaction` asks `TillSessionService.routeMoneyDoc`: on a
+  device in a till session the payment posts in it (header and tender rows stamped, its CASH
+  leaves that drawer, `PAYMENT_POSTED` in the session journal); on a back-office device in a branch
+  that runs a till its CASH comes from the default safe (`till.backoffice_cash_from = SAFE`) or is
+  refused (`REFUSE` → 409 `TILL_SESSION_REQUIRED`); elsewhere nothing changes. A cancel is refused
+  once that session has stopped taking money (409 `TILL_SESSION_CLOSED`).
+- **40A(3)** — `cash-payment-limit.ts`: the payment's CASH, summed with the payee's other POSTED
+  cash payments (this route and the voucher register) and expense vouchers of the same day, above
+  `CASH_PAYMENT_LIMIT_40A3` (10,000 shipped, WARN) → `warnings[]` gets `STATUTORY_40A3`; the post
+  goes through. A company row with `stl_enforce = REFUSE` answers 422 instead. The expense voucher
+  and the register's payment types run the same helper.
+- **CASH_PAYMENT** (1,000 shipped, Supervisor, counter) — in a till session, a cash part above the
+  rule's threshold is **reported, not enforced**, until phase 3 builds the approval gate:
+  `approval` on the post's answer, an INFO `TILL_APPROVAL_REQUIRED` in `warnings[]`, and the
+  `PAYMENT_POSTED` event's payload.
+
 ## Tests
 
 - `receipt/allocation-engine.out.spec.ts` — the OUT twin of every engine case (30) plus notes

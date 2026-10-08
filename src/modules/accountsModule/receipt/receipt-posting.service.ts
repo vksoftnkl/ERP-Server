@@ -61,6 +61,8 @@ import {
   VoucherStatus,
 } from './types/receipt-enum';
 import type { ReceiptErrorDetail, ReceiptPostPayload } from './types/receipt-api.types';
+import { TillSessionService } from '../../till/services/till-session.service';
+import { CASH_TENDER_TYPE_ID, TillEventCode } from '../../till/types/till-enum';
 
 /**
  * §5.2 — THE transaction.
@@ -126,6 +128,7 @@ export class ReceiptPostingService {
     private readonly receiptService: ReceiptService,
     private readonly openItemsService: OpenItemsService,
     private readonly recompute: BillBalanceRecomputeService,
+    private readonly till: TillSessionService,
   ) {}
 
   async post(dto: PostReceiptDto): Promise<ReceiptPostPayload> {
@@ -196,6 +199,43 @@ export class ReceiptPostingService {
       settings,
       party,
     );
+
+    // The till (48 §2.3 / §3): on a device in a till session the receipt posts
+    // in it — its CASH goes into THAT drawer (and its card / UPI / cheque rows
+    // into that counter's expectation); with no CASH tender it needs no session.
+    // On a back-office device in a branch that runs a till, CASH goes to the
+    // default safe (or is refused, till.backoffice_cash_from). Any other device
+    // posts as before.
+    const till = await this.till.routeMoneyDoc(tx, {
+      companyId: header.avhCompanyId,
+      branchId: header.avhBranchId,
+      sessionId: header.avhSessionId,
+      field: 'avhSessionId',
+      hasCash: tenders.some((tender) => tender.tenderTypeId === CASH_TENDER_TYPE_ID),
+      cashIn: true,
+    });
+    if (till.ref) {
+      await this.till.stampVoucher(
+        tx,
+        till.ref,
+        { voucherId: header.avhVoucherId, accYear: header.avhAccYear, srcDocType: 'RECEIPT' },
+        actor,
+      );
+      header.avhSessionId = till.ref.tssId;
+    }
+    if (till.cashLedgerId) {
+      await this.till.routeCashToLedger(tx, {
+        srcDocType: 'RECEIPT',
+        srcDocId: header.avhVoucherId,
+        accYear: header.avhAccYear,
+        ledgerId: till.cashLedgerId,
+        actor,
+      });
+      for (const tender of tenders.filter((row) => row.tenderTypeId === CASH_TENDER_TYPE_ID)) {
+        tender.tenderLedgerId = till.cashLedgerId;
+        tender.clearingLedgerId = null;
+      }
+    }
 
     // ── 3 · Lock every open item, and read what is pending NOW ─────────────
     const locked = await lockBills(tx, [
@@ -358,6 +398,16 @@ export class ReceiptPostingService {
       deviceId: this.requestContext.getDeviceId() ?? header.avhDeviceId,
       sessionId: header.avhSessionId,
     });
+    if (till.ref) {
+      await this.till.logMoneyDoc(tx, {
+        sessionId: till.ref.tssId,
+        code: TillEventCode.RECEIPT_POSTED,
+        srcDocType: 'RECEIPT',
+        srcDocId: header.avhVoucherId,
+        srcRefno: byKey.get(RECEIPT_VOUCHER_KEY)?.voucherRefno ?? header.avhVoucherRefno,
+        amount: sum(tenders.map((tender) => tender.amount)),
+      });
+    }
 
     // ── 16 · The trial check (notes 47), after every write ─────────────────
     // The party's bills = its ledger; Cheques In Hand = the register, over

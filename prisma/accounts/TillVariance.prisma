@@ -1,0 +1,99 @@
+/// TILL VARIANCE — per session, per tender: what was decided about the gap
+/// (share file 47 §6, migration 20261008100000).
+///
+/// Treatment → posting (TVar voucher, journal):
+///   WITHIN_TOLERANCE  short/excess ≤ till.cash_tolerance → Cash Short & Excess, auto
+///   EXPENSE           Cash Short & Excess (CASH_SHORT_EXCESS role)
+///   RECOVER           the cashier's staff advance ledger: tss_operator_id →
+///                     usr_employee_id → emp_loan_ledger_id (none → TILL_LEDGER_UNMAPPED)
+///   SUSPENSE          TENDER_SUSPENSE role — under investigation, cleared later by a journal
+///   RETENDERED        no posting: the gap was a wrong tender, fixed by /bills/retender
+///
+/// A variance row is never edited after it posts; a changed decision is a
+/// REVERSED row plus a new one. Stage OPEN = the float mismatch at session open.
+/// ck_tvr_expected holds the row's own arithmetic (since 20261008110000, file 48):
+///   expected = open + sales - refund + receipt - payment - expense
+///              + moved_in - moved_out.
+model TillVariance {
+  tvrId               String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("tvr_id")
+  tvrCompanyId        String    @db.Uuid                             @map("tvr_company_id")
+  tvrBranchId         String    @db.Uuid                             @map("tvr_branch_id")
+  tvrTenantId         String?   @db.Uuid                             @map("tvr_tenant_id")
+  tvrAccYear          String    @db.Char(9)                          @map("tvr_acc_year")
+  tvrSessionId        String    @db.Uuid                             @map("tvr_session_id")
+  /// OPEN (float mismatch) | CLOSE
+  tvrStage            String    @default("CLOSE") @db.VarChar(5)     @map("tvr_stage")
+  tvrTenderTypeId     Int                                            @map("tvr_tender_type_id")
+  tvrTenderId         String?   @db.Uuid                             @map("tvr_tender_id")
+  /// Float (cash only).
+  tvrOpenAmount       Decimal   @default(0) @db.Decimal(15, 2)       @map("tvr_open_amount")
+  /// Sale tenders taken.
+  tvrSalesAmount      Decimal   @default(0) @db.Decimal(15, 2)       @map("tvr_sales_amount")
+  /// Refunds paid.
+  tvrRefundAmount     Decimal   @default(0) @db.Decimal(15, 2)       @map("tvr_refund_amount")
+  /// Receipts / advances / temp-credit collections.
+  tvrReceiptAmount    Decimal   @default(0) @db.Decimal(15, 2)       @map("tvr_receipt_amount")
+  /// TOP_UP + PAID_IN (cash only).
+  tvrMovedIn          Decimal   @default(0) @db.Decimal(15, 2)       @map("tvr_moved_in")
+  /// PICKUP + DROP (cash only). Expenses left the movements in 48: see tvrExpenseAmount.
+  tvrMovedOut         Decimal   @default(0) @db.Decimal(15, 2)       @map("tvr_moved_out")
+  tvrTxnCount         Int       @default(0)                          @map("tvr_txn_count")
+  tvrExpected         Decimal   @db.Decimal(15, 2)                   @map("tvr_expected")
+  tvrCounted          Decimal   @db.Decimal(15, 2)                   @map("tvr_counted")
+  tvrSlipCount        Int?                                           @map("tvr_slip_count")
+  /// The tolerance that applied, snapshot.
+  tvrTolerance        Decimal   @default(0) @db.Decimal(15, 2)       @map("tvr_tolerance")
+  /// PENDING | WITHIN_TOLERANCE | EXPENSE | RECOVER | SUSPENSE | RETENDERED
+  tvrTreatment        String    @default("PENDING") @db.VarChar(16)  @map("tvr_treatment")
+  tvrReasonId         String?   @db.Uuid                             @map("tvr_reason_id")
+  /// RECOVER: the staff advance ledger (ck_tvr_recover). FK-less.
+  tvrRecoveryLedgerId String?   @db.Uuid                             @map("tvr_recovery_ledger_id")
+  tvrApprovalId       String?   @db.Uuid                             @map("tvr_approval_id")
+  tvrVoucherId        String?   @db.Uuid                             @map("tvr_voucher_id")
+  tvrVoucherAccYear   String?   @db.Char(9)                          @map("tvr_voucher_acc_year")
+  /// OPEN | POSTED | REVERSED
+  tvrStatus           String    @default("OPEN") @db.VarChar(10)     @map("tvr_status")
+  tvrReversesId       String?   @db.Uuid                             @map("tvr_reverses_id")
+  tvrDecidedBy        String?   @db.Uuid                             @map("tvr_decided_by")
+  tvrDecidedOn        DateTime? @db.Timestamptz(6)                   @map("tvr_decided_on")
+  tvrNotes            String?   @db.VarChar(500)                     @map("tvr_notes")
+  tvrIsDeleted        Boolean   @default(false)                      @map("tvr_is_deleted")
+  tvrSyncDate         DateTime? @db.Timestamptz(6)                   @map("tvr_sync_date")
+  tvrCreatedOn        DateTime  @default(now()) @db.Timestamptz(6)   @map("tvr_created_on")
+  tvrCreatedBy        String?   @db.VarChar(50)                      @map("tvr_created_by")
+  tvrModifiedOn       DateTime? @db.Timestamptz(6)                   @map("tvr_modified_on")
+  tvrModifiedBy       String?   @db.VarChar(50)                      @map("tvr_modified_by")
+  /// GENERATED ALWAYS AS (tvr_counted - tvr_expected) STORED — never write it.
+  tvrVariance         Decimal?  @default(dbgenerated()) @db.Decimal(15, 2) @map("tvr_variance")
+
+  // ── Added by 20261008110000 (file 48) — physically last on the table ──
+  /// Bill-wise payments (menu 100) out of this tender in the session.
+  tvrPaymentAmount    Decimal   @default(0) @db.Decimal(15, 2)       @map("tvr_payment_amount")
+  /// Expense vouchers (ExpV) out of this tender in the session.
+  tvrExpenseAmount    Decimal   @default(0) @db.Decimal(15, 2)       @map("tvr_expense_amount")
+
+  // ── Added by 20261008130000 (file 49) — physically last on the table ──
+  /// The tender rows a close-time NON-CASH variance parked in Tender suspense:
+  /// [{"td_id": …, "td_acc_year": "2026-2027", "amount": 160.00}]. A later TSet
+  /// credits suspense, not the clearing ledger, for these.
+  tvrRows             Json?     @db.JsonB                            @map("tvr_rows")
+
+  // Relations
+  session             TillSession   @relation("TillVarianceSession",    fields: [tvrSessionId, tvrAccYear], references: [tssId, tssAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_tvr_session")
+  tenderType          AccTenderType @relation("TillVarianceTenderType", fields: [tvrTenderTypeId], references: [ttmTypeId], onUpdate: Cascade, onDelete: Restrict, map: "fk_tvr_tender_type")
+  reason              TillReason?   @relation("TillVarianceReason",     fields: [tvrReasonId], references: [trsId], onUpdate: Cascade, onDelete: Restrict, map: "fk_tvr_reason")
+
+  @@id([tvrId, tvrAccYear], map: "pk_till_variance")
+
+  // DB-only:
+  //   CREATE UNIQUE INDEX ux_tvr_live ON accounts.till_variance
+  //       (tvr_session_id, tvr_stage, tvr_tender_type_id, tvr_tender_id, tvr_acc_year) NULLS NOT DISTINCT
+  //       WHERE tvr_is_deleted = false AND tvr_status <> 'REVERSED';
+  //   ix_tvr_session, ix_tvr_pending.
+  // CHECKs: ck_tvr_treatment, ck_tvr_status, ck_tvr_stage, ck_tvr_open_stage, ck_tvr_expected,
+  //         ck_tvr_counted, ck_tvr_cash_terms (float / movements are CASH = tender type 1 only),
+  //         ck_tvr_recover, ck_tvr_reason, ck_tvr_decided, ck_tvr_voucher_pair,
+  //         ck_tvr_split (payment / expense >= 0).
+  @@map("till_variance")
+  @@schema("accounts")
+}

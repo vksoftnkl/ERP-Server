@@ -123,3 +123,20 @@ never rewrites what was already tendered.
   `transaction` (auto-created on first write) — unless an owning module passed
   its own `TenderDocumentAudit`, in which case the row lands on that module's
   screen.
+
+## The reference guard (non-cash plan §3, 2026-10-08)
+
+Every insert — and every update that changes a row's tender, side, reference or amount — passes
+`guardReference`, so the rule holds for every document that writes tenders through here:
+
+- a **money-in CARD** row on a tender that needs a reference (`tnd_needs_ref`, else the type's)
+  carries the card's last 4: `tdCardLast4`, or a 4-digit `tdRefNo` (copied across). Else 422
+  `TENDER_REF_REQUIRED`. An approval code, when sent, is 6 letters / digits;
+- the same approval code + last 4 + amount on another live document of the tender is 409
+  `TENDER_REF_DUPLICATE` under `tender.duplicate_ref = BLOCK` (journalled `DUPLICATE_REF_BLOCKED`
+  on its own connection); WARN lets it through;
+- UPI and wallet are not asked for a reference yet (the user's call: rush hours). Money out never is.
+
+`AppSettingValueService` and `TillEventService` are optional constructor parameters: the unit specs
+that build this service by hand still compile, and without them a duplicate is refused (BLOCK) and
+not journalled. See `accountsModule/tenderSettlement/README.md` for the statement side.

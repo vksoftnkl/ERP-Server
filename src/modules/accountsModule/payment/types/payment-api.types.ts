@@ -18,6 +18,8 @@ import type {
   ReceiptTender,
 } from '../../receipt/types/receipt-api.types';
 import type { BillStatus, BillType, PdcStatus, VoucherStatus } from './payment-enum';
+import type { VoucherWarning } from '../../vouchers/vouchers.errors';
+import type { TillApprovalNeed } from '../../../till/types/till-api.types';
 
 /**
  * The payment's API shapes. Everything that is the receipt's shape verbatim is
@@ -272,6 +274,14 @@ export interface PaymentPostPayload extends PaymentPayload {
     postDatedHeld: number;
   }>;
   totalOnAccount: number;
+  /**
+   * Never-blocking findings of the post: STATUTORY_40A3 (cash to one payee in a
+   * day above the 40A(3) limit — a company REFUSE row refuses instead) and
+   * TILL_APPROVAL_REQUIRED (INFO: the CASH_PAYMENT rule's threshold was passed).
+   */
+  warnings: VoucherWarning[];
+  /** In a till session: what the CASH_PAYMENT rule would ask, reported until phase 3. */
+  approval: TillApprovalNeed | null;
   /** The leaf each cheque row got, in tender-row order. */
   cheques: Array<{
     tdRowNo: number;

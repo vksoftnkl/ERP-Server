@@ -1,3 +1,5 @@
+import { TillSessionService } from '../../till/services/till-session.service';
+import { TillEventCode } from '../../till/types/till-enum';
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
@@ -50,6 +52,7 @@ export class VoucherCancelService {
     private readonly posting: VoucherPostingService,
     private readonly docRegister: DocRegisterService,
     private readonly recompute: BillBalanceRecomputeService,
+    private readonly till: TillSessionService,
   ) {}
 
   async cancel(dto: CancelVoucherDto): Promise<CancelPayload> {
@@ -152,7 +155,9 @@ export class VoucherCancelService {
       // …on today's voucher, or — notes (57) — on a post-dated cheque's own,
       // where that line's advance is kept.
       const elsewhere = (
-        await Promise.all(vouchers.map((v) => otherVoucherOnRaisedBills(tx, v.voucherId, v.accYear)))
+        await Promise.all(
+          vouchers.map((v) => otherVoucherOnRaisedBills(tx, v.voucherId, v.accYear)),
+        )
       ).flat();
       if (elsewhere.length > 0) {
         const who = elsewhere
@@ -230,6 +235,13 @@ export class VoucherCancelService {
           );
         }
       }
+
+      // 3b · 48 §2.3: money moved in a till session stays moved once that
+      //      drawer stops taking money — correct it with a new document.
+      await this.till.assertMoneyDocCancellable(tx, {
+        sessionId: stored.avh_session_id,
+        field: 'voucherId',
+      });
 
       // 4 · the reversal voucher(s): the lifted reverseLegs, as it is (type Rev,
       //     its own series, dated the original, linked both ways; the original
@@ -346,6 +358,17 @@ export class VoucherCancelService {
         changedOn: now,
         remarks: reason,
       });
+      if (stored.avh_session_id && (type.nature === 'RECEIPT' || type.nature === 'PAYMENT')) {
+        await this.till.logMoneyDoc(tx, {
+          sessionId: stored.avh_session_id,
+          code: TillEventCode.MONEY_DOC_CANCELLED,
+          srcDocType: type.nature,
+          srcDocId: stored.avh_voucher_id,
+          srcRefno: stored.avh_voucher_refno,
+          amount: stored.avh_doc_amount,
+          payload: { reason, typeCode: type.typeCode },
+        });
+      }
       const ledgers = await tx.$queryRaw<{ id: string }[]>`
         SELECT DISTINCT av_ledger_id AS id FROM accounts.acc_vouchers
          WHERE (av_voucher_id, av_acc_year) IN (${Prisma.join(

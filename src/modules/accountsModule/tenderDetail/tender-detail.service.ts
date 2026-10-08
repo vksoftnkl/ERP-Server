@@ -1,8 +1,13 @@
-import { Injectable } from '@nestjs/common';
+import { HttpException, Injectable, Optional } from '@nestjs/common';
 import { AccTenderDetail, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
+import { AppSettingValueService } from '../../settings/appSettings/app-setting-value.service';
+import { TillEventService } from '../../till/services/till-event.service';
+import { TillEventCode } from '../../till/types/till-enum';
+import { buildErrorResponse } from 'src/common/utils/module-shared.utils';
+import { readTenderSettings } from '../tenderSettlement/tender-settlement.settings';
 import { GetTenderDetailQueryDto } from './dto/get-tender-detail-query.dto';
 import { SaveTenderDetailDto } from './dto/save-tender-detail.dto';
 import {
@@ -133,7 +138,38 @@ interface TenderMasterSnapshot {
   tndName: string;
   tndTypeId: number;
   tndLedgerId: string;
+  tndSettlementLedgerId: string | null;
+  tndSettlementDays: number;
+  tndNeedsRef: boolean | null;
 }
+
+/** What the reference guard reads of a row about to be written (insert, or update merged). */
+interface TenderRefRow {
+  tdId: string | null;
+  tdTenderId: string;
+  tdTenderTypeId: number;
+  tdDrCr: string;
+  tdRefNo: string | null;
+  tdAuthCode: string | null;
+  tdCardLast4: string | null;
+  tdTotalAmt: Prisma.Decimal;
+  tdCompanyId: string;
+  tdBranchId: string;
+  tdAccYear: string;
+  tdSrcDocType: string;
+  tdSrcDocId: string;
+  tdSessionId: string | null;
+}
+
+/** Non-cash plan §3 codes. */
+export const TENDER_REF_REQUIRED = 'TENDER_REF_REQUIRED';
+export const TENDER_REF_DUPLICATE = 'TENDER_REF_DUPLICATE';
+/**
+ * The tender TYPES whose money a provider statement proves (till REV 2 §2.4):
+ * card, UPI and wallet. A cheque keeps its PDC flow and a bank transfer is
+ * reconciled as bank, so neither waits on the Not-received list.
+ */
+const STATEMENT_SETTLED_TYPES = ['CARD', 'UPI', 'WALLET'];
 /**
  * CRUD over `accounts.acc_tender_detail` — the money tendered against a
  * document (cash, card, UPI, loyalty points, …), captured while the document is
@@ -161,6 +197,10 @@ export class TenderDetailService {
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
     private readonly requestContextService: RequestContextService,
+    // Optional so the unit specs that build this service by hand keep compiling;
+    // without them a duplicate reference is refused (BLOCK) and not journalled.
+    @Optional() private readonly appSettings?: AppSettingValueService,
+    @Optional() private readonly tillEvents?: TillEventService,
   ) {}
   async save(saveTenderDetailDto: SaveTenderDetailDto): Promise<TenderDetailPayload> {
     if (saveTenderDetailDto.tdId) {
@@ -527,7 +567,28 @@ export class TenderDetailService {
       TENDER_DETAIL_OPTIONAL_FIELDS,
       TENDER_DETAIL_FIELD_TRANSFORMS,
     );
-    data.tdTotalAmt = this.resolveTotalAmt(saveTenderDetailDto, undefined);
+    const totalAmt = this.resolveTotalAmt(saveTenderDetailDto, undefined);
+    data.tdTotalAmt = totalAmt;
+    const last4 = await this.guardReference(tx, tender, {
+      tdId: null,
+      tdTenderId: tenderId,
+      tdTenderTypeId: tenderTypeId,
+      tdDrCr: data.tdDrCr,
+      tdRefNo: data.tdRefNo ?? null,
+      tdAuthCode: data.tdAuthCode ?? null,
+      tdCardLast4: data.tdCardLast4 ?? null,
+      tdTotalAmt: totalAmt,
+      tdCompanyId: data.tdCompanyId,
+      tdBranchId: data.tdBranchId,
+      tdAccYear: data.tdAccYear,
+      tdSrcDocType: data.tdSrcDocType,
+      tdSrcDocId: data.tdSrcDocId,
+      tdSessionId: data.tdSessionId ?? null,
+    });
+    if (last4 && !data.tdCardLast4) {
+      data.tdCardLast4 = last4;
+    }
+    await this.defaultSettlement(tx, data, tender, saveTenderDetailDto);
     this.ensureValuesAreAllowed(saveTenderDetailDto, undefined, data);
     const created = await tx.accTenderDetail.create({ data });
     await this.auditLogService.logEntityChange(
@@ -635,6 +696,38 @@ export class TenderDetailService {
       data.tdUserId = saveTenderDetailDto.tdUserId;
     }
     data.tdTotalAmt = this.resolveTotalAmt(saveTenderDetailDto, existing);
+    const pick = <T>(value: unknown, stored: T): T => (value === undefined ? stored : (value as T));
+    const merged: TenderRefRow = {
+      tdId: existing.tdId,
+      tdTenderId: tenderId,
+      tdTenderTypeId: tenderTypeId,
+      tdDrCr: String(pick(data.tdDrCr, existing.tdDrCr)),
+      tdRefNo: pick(data.tdRefNo, existing.tdRefNo),
+      tdAuthCode: pick(data.tdAuthCode, existing.tdAuthCode),
+      tdCardLast4: pick(data.tdCardLast4, existing.tdCardLast4),
+      tdTotalAmt: new Prisma.Decimal(String(pick(data.tdTotalAmt, existing.tdTotalAmt) ?? 0)),
+      tdCompanyId: String(pick(data.tdCompanyId, existing.tdCompanyId)),
+      tdBranchId: String(pick(data.tdBranchId, existing.tdBranchId)),
+      tdAccYear: existing.tdAccYear,
+      tdSrcDocType: existing.tdSrcDocType,
+      tdSrcDocId: existing.tdSrcDocId,
+      tdSessionId: existing.tdSessionId,
+    };
+    // A row keyed before the rule is not refused for being re-saved as it was:
+    // only a change to its tender, side, reference or amount is judged again.
+    const touched =
+      tenderChanged ||
+      merged.tdDrCr !== existing.tdDrCr ||
+      merged.tdRefNo !== existing.tdRefNo ||
+      merged.tdAuthCode !== existing.tdAuthCode ||
+      merged.tdCardLast4 !== existing.tdCardLast4 ||
+      !merged.tdTotalAmt.equals(existing.tdTotalAmt);
+    if (touched) {
+      const last4 = await this.guardReference(tx, tender, merged);
+      if (last4 && !merged.tdCardLast4) {
+        data.tdCardLast4 = last4;
+      }
+    }
     this.ensureValuesAreAllowed(saveTenderDetailDto, existing, data);
     const updated = await tx.accTenderDetail.update({
       where: { tdId_tdAccYear: { tdId: existing.tdId, tdAccYear: existing.tdAccYear } },
@@ -770,13 +863,202 @@ export class TenderDetailService {
   // td_tender_id has a DB foreign key to acc_tender_master, but that only
   // guarantees the row exists — not that it is usable. Verify it is neither
   // soft-deleted nor inactive, and hand back the snapshot values a line inherits.
+  /**
+   * Non-cash plan §3.1–§3.2, as the user set it on 2026-10-08:
+   *
+   *   · a money-in CARD row on a tender that needs a reference (tnd_needs_ref,
+   *     else the type's) carries the card's LAST 4 digits — td_card_last4, or a
+   *     4-digit td_ref_no, which is what today's client keys and which is
+   *     copied across (the answer); missing → 422 TENDER_REF_REQUIRED;
+   *   · UPI and wallet are not asked for a reference yet (rush hours);
+   *   · an approval code, when sent, is 6 letters / digits; a card row that
+   *     repeats another live row's code + last 4 + amount on the same tender
+   *     is a duplicate (tender.duplicate_ref): BLOCK → 409 TENDER_REF_DUPLICATE,
+   *     journalled DUPLICATE_REF_BLOCKED outside the refused transaction; WARN
+   *     lets it through (the duplicate-references grid lists it).
+   *
+   * Money out (a refund, a payment, an expense) is never asked.
+   */
+  private async guardReference(
+    tx: TenderDetailWriteClient,
+    tender: TenderMasterSnapshot,
+    row: TenderRefRow,
+  ): Promise<string | null> {
+    if (row.tdDrCr.trim() !== String(TenderDrCr.DR)) {
+      return null;
+    }
+    const type = await tx.accTenderType.findFirst({
+      where: { ttmTypeId: row.tdTenderTypeId },
+      select: { ttmTypeName: true, ttmNeedsRef: true },
+    });
+    if (type?.ttmTypeName !== 'CARD') {
+      return null;
+    }
+    const field = 'tdCardLast4';
+    const refuse = (message: string, code: string, status: number, f = field): never => {
+      throw new HttpException(buildErrorResponse(message, [{ field: f, message, code }]), status);
+    };
+    const ref = row.tdRefNo?.trim() ?? '';
+    const last4 = row.tdCardLast4?.trim() || (/^\d{4}$/.test(ref) ? ref : null);
+    if (row.tdCardLast4 && !/^\d{4}$/.test(row.tdCardLast4.trim())) {
+      refuse('The card’s last 4 must be four digits', TENDER_REF_REQUIRED, 422);
+    }
+    if ((tender.tndNeedsRef ?? type.ttmNeedsRef) && !last4) {
+      refuse(
+        `${tender.tndName}: key the last 4 digits of the card (in the reference)`,
+        TENDER_REF_REQUIRED,
+        422,
+      );
+    }
+    const auth = row.tdAuthCode?.trim().toUpperCase() ?? '';
+    if (auth && !/^[A-Z0-9]{6}$/.test(auth)) {
+      refuse(
+        'The approval code on the slip is 6 letters / digits',
+        TENDER_REF_REQUIRED,
+        422,
+        'tdAuthCode',
+      );
+    }
+    if (!auth || !last4) {
+      return last4;
+    }
+    const [twin] = await tx.$queryRaw<
+      { td_id: string; td_src_doc_type: string; td_src_doc_id: string }[]
+    >`
+      SELECT t.td_id::text, t.td_src_doc_type, t.td_src_doc_id::text
+        FROM accounts.acc_tender_detail t
+       WHERE t.td_company_id = ${row.tdCompanyId}::uuid
+         AND t.td_tender_id  = ${row.tdTenderId}::uuid
+         AND t.td_is_deleted = false AND t.td_is_voided = false
+         AND trim(t.td_dr_cr) = 'DR'
+         AND upper(t.td_auth_code) = ${auth}
+         AND t.td_card_last4 = ${last4}
+         AND t.td_total_amt  = ${row.tdTotalAmt}::numeric
+         AND t.td_src_doc_id <> ${row.tdSrcDocId}::uuid
+         AND (${row.tdId}::uuid IS NULL OR t.td_id <> ${row.tdId}::uuid)
+       LIMIT 1`;
+    if (!twin) {
+      return last4;
+    }
+    const mode = this.appSettings
+      ? readTenderSettings(
+          await this.appSettings.resolveEffective({
+            companyId: row.tdCompanyId,
+            branchId: row.tdBranchId,
+            deviceId: null,
+            userId: null,
+          }),
+        ).duplicateRef
+      : 'BLOCK';
+    if (mode === 'WARN') {
+      return last4;
+    }
+    await this.logDuplicate(row, { auth, last4, twin });
+    return refuse(
+      `Approval code ${auth} on card …${last4} for ${row.tdTotalAmt.toFixed(2)} is already on another ${twin.td_src_doc_type.toLowerCase().replace('_', ' ')}`,
+      TENDER_REF_DUPLICATE,
+      409,
+      'tdAuthCode',
+    );
+  }
+
+  /** DUPLICATE_REF_BLOCKED on its own connection: the refusal rolls the caller's transaction back. */
+  private async logDuplicate(
+    row: TenderRefRow,
+    hit: {
+      auth: string;
+      last4: string;
+      twin: { td_id: string; td_src_doc_type: string; td_src_doc_id: string };
+    },
+  ): Promise<void> {
+    if (!this.tillEvents) {
+      return;
+    }
+    try {
+      const session = row.tdSessionId
+        ? await this.prisma.tillSession.findFirst({
+            where: { tssId: row.tdSessionId, tssIsDeleted: false },
+            select: { tssId: true, tssDayId: true, tssCounterId: true },
+          })
+        : null;
+      await this.tillEvents.log(this.prisma, {
+        companyId: row.tdCompanyId,
+        branchId: row.tdBranchId,
+        accYear: row.tdAccYear,
+        code: TillEventCode.DUPLICATE_REF_BLOCKED,
+        sessionId: session?.tssId ?? null,
+        dayId: session?.tssDayId ?? null,
+        counterId: session?.tssCounterId ?? null,
+        deviceId: this.requestContextService.getDeviceId() ?? null,
+        userId: this.requestContextService.getUserId() ?? null,
+        srcDocType: row.tdSrcDocType,
+        srcDocId: row.tdSrcDocId,
+        amount: row.tdTotalAmt,
+        payload: {
+          tenderId: row.tdTenderId,
+          authCode: hit.auth,
+          cardLast4: hit.last4,
+          otherTdId: hit.twin.td_id,
+          otherDocType: hit.twin.td_src_doc_type,
+          otherDocId: hit.twin.td_src_doc_id,
+        },
+      });
+    } catch {
+      // The journal line is evidence, not the refusal: never let it mask the 409.
+    }
+  }
+
+  /**
+   * Which new rows wait for a statement (till REV 2 §2.4, the non-cash plan's
+   * §3.3): td_settle_status = PENDING — and td_expected_settle_on = the
+   * document date + tnd_settlement_days — only when the tender TYPE is CARD,
+   * UPI or WALLET, its close mode is SLIPS or STATEMENT, and the tender master
+   * names a settlement ledger. Anything else stays NA, so the Not-received list
+   * is not flooded with cheques and transfers. A status (or date) the caller
+   * sends is kept as sent.
+   */
+  private async defaultSettlement(
+    tx: TenderDetailWriteClient,
+    data: Prisma.AccTenderDetailUncheckedCreateInput,
+    tender: TenderMasterSnapshot,
+    saveTenderDetailDto: SaveTenderDetailDto,
+  ): Promise<void> {
+    if (saveTenderDetailDto.tdSettleStatus !== undefined || !tender.tndSettlementLedgerId) {
+      return;
+    }
+    const type = await tx.accTenderType.findFirst({
+      where: { ttmTypeId: data.tdTenderTypeId },
+      select: { ttmTypeName: true, ttmCloseMode: true },
+    });
+    if (
+      !type ||
+      !STATEMENT_SETTLED_TYPES.includes(type.ttmTypeName) ||
+      !['SLIPS', 'STATEMENT'].includes(type.ttmCloseMode)
+    ) {
+      return;
+    }
+    data.tdSettleStatus = TenderSettleStatus.PENDING;
+    if (data.tdExpectedSettleOn === undefined || data.tdExpectedSettleOn === null) {
+      const docDate = new Date(data.tdDocDate as Date);
+      docDate.setUTCDate(docDate.getUTCDate() + Math.max(0, tender.tndSettlementDays));
+      data.tdExpectedSettleOn = docDate;
+    }
+  }
+
   private async ensureTenderExists(
     tx: TenderDetailWriteClient,
     tenderId: string,
   ): Promise<TenderMasterSnapshot> {
     const tender = await tx.accTenderMaster.findFirst({
       where: { tndId: tenderId, tndIsDeleted: false, tndIsActive: true },
-      select: { tndName: true, tndTypeId: true, tndLedgerId: true },
+      select: {
+        tndName: true,
+        tndTypeId: true,
+        tndLedgerId: true,
+        tndSettlementLedgerId: true,
+        tndSettlementDays: true,
+        tndNeedsRef: true,
+      },
     });
     if (!tender) {
       throwAccountsBadRequest<TenderDetailErrorDetail>('Tender does not exist', [

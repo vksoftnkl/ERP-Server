@@ -1,0 +1,81 @@
+/// SETTLEMENT IMPORT — one provider payout (one bank credit) and the file it
+/// came in (share file 49 §2, migration 20261008130000).
+///
+/// A statement line is the PROVIDER's fact — what the acquirer / PSP says it
+/// paid, net of its fee; a tender row is OUR fact. This header holds the
+/// payout no existing row can: one bank credit, many lines
+/// (AccSettlementLine). Posting it writes one TSet voucher (asiVoucherId).
+///
+/// ONE WRITER: the STORE server that owns the terminal imports, matches and
+/// posts through its own API; HO splits a chain file by terminal / VPA and
+/// sends each part to its store. The cloud never writes td_settle_*.
+///
+/// LIST-partitioned by asiAccYear. ck_asi_net holds the payout's own
+/// arithmetic: net = gross - fee - tax.
+model AccSettlementImport {
+  asiId               String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("asi_id")
+  asiCompanyId        String    @db.Uuid                             @map("asi_company_id")
+  asiBranchId         String    @db.Uuid                             @map("asi_branch_id")
+  asiTenantId         String?   @db.Uuid                             @map("asi_tenant_id")
+  asiAccYear          String    @db.Char(9)                          @map("asi_acc_year")
+  /// CARD | UPI | WALLET (aggregator payout) | BANK (UPI straight to the current
+  /// account: one statement period, one credit per line, no fee — ck_asi_bank).
+  asiSource           String    @db.VarChar(12)                      @map("asi_source")
+  /// Acquirer / PSP as printed on the file.
+  asiProvider         String    @db.VarChar(60)                      @map("asi_provider")
+  /// The terminal / VPA tender (acc_tender_master); NULL = lines carry their own terminal. FK-less.
+  asiTenderId         String?   @db.Uuid                             @map("asi_tender_id")
+  asiFileName         String    @db.VarChar(250)                     @map("asi_file_name")
+  /// sha256: the same file twice is refused (ux_asi_file).
+  asiFileHash         String    @db.VarChar(64)                      @map("asi_file_hash")
+  /// UTR of the bank credit.
+  asiPayoutRef        String?   @db.VarChar(60)                      @map("asi_payout_ref")
+  /// = the voucher date.
+  asiPayoutDate       DateTime  @db.Date                             @map("asi_payout_date")
+  asiPeriodFrom       DateTime? @db.Date                             @map("asi_period_from")
+  asiPeriodTo         DateTime? @db.Date                             @map("asi_period_to")
+  asiLineCount        Int       @default(0)                          @map("asi_line_count")
+  /// Sales − refunds − chargebacks as the provider states.
+  asiTotalGross       Decimal   @default(0) @db.Decimal(15, 2)       @map("asi_total_gross")
+  /// MDR / commission.
+  asiTotalFee         Decimal   @default(0) @db.Decimal(15, 2)       @map("asi_total_fee")
+  /// GST on the fee — GST_ON_CHARGES_PENDING until the acquirer's tax invoice.
+  asiTotalTax         Decimal   @default(0) @db.Decimal(15, 2)       @map("asi_total_tax")
+  /// What reached the bank.
+  asiTotalNet         Decimal   @default(0) @db.Decimal(15, 2)       @map("asi_total_net")
+  /// IMPORTED | MATCHED | POSTED | VOIDED
+  asiStatus           String    @default("IMPORTED") @db.VarChar(10) @map("asi_status")
+  /// tnd_settlement_ledger_id at import.
+  asiBankLedgerId     String?   @db.Uuid                             @map("asi_bank_ledger_id")
+  /// The TSet voucher (with its year: ck_asi_voucher_pair).
+  asiVoucherId        String?   @db.Uuid                             @map("asi_voucher_id")
+  asiVoucherAccYear   String?   @db.Char(9)                          @map("asi_voucher_acc_year")
+  asiImportedBy       String    @db.Uuid                             @map("asi_imported_by")
+  asiImportedOn       DateTime  @default(now()) @db.Timestamptz(6)   @map("asi_imported_on")
+  asiPostedBy         String?   @db.Uuid                             @map("asi_posted_by")
+  asiPostedOn         DateTime? @db.Timestamptz(6)                   @map("asi_posted_on")
+  asiVoidReason       String?   @db.VarChar(250)                     @map("asi_void_reason")
+  asiNotes            String?   @db.VarChar(500)                     @map("asi_notes")
+  asiIsDeleted        Boolean   @default(false)                      @map("asi_is_deleted")
+  asiSyncDate         DateTime? @db.Timestamptz(6)                   @map("asi_sync_date")
+  asiCreatedOn        DateTime  @default(now()) @db.Timestamptz(6)   @map("asi_created_on")
+  asiCreatedBy        String?   @db.VarChar(50)                      @map("asi_created_by")
+  asiModifiedOn       DateTime? @db.Timestamptz(6)                   @map("asi_modified_on")
+  asiModifiedBy       String?   @db.VarChar(50)                      @map("asi_modified_by")
+
+  // Relations
+  bankLedger          AccLedgerMaster?    @relation("SettlementImportBank", fields: [asiBankLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_asi_bank")
+  lines               AccSettlementLine[] @relation("SettlementLineImport")
+
+  @@id([asiId, asiAccYear], map: "pk_acc_settlement_import")
+
+  // DB-only:
+  //   CREATE UNIQUE INDEX ux_asi_file ON accounts.acc_settlement_import
+  //       (asi_company_id, asi_branch_id, asi_file_hash, asi_acc_year)
+  //       WHERE asi_is_deleted = false AND asi_status <> 'VOIDED';
+  //   ix_asi_open (asi_company_id, asi_branch_id, asi_payout_date) WHERE IMPORTED / MATCHED.
+  // CHECKs: ck_asi_source, ck_asi_bank, ck_asi_status, ck_asi_net, ck_asi_amounts, ck_asi_period,
+  //         ck_asi_posted, ck_asi_voucher_pair, ck_asi_void.
+  @@map("acc_settlement_import")
+  @@schema("accounts")
+}

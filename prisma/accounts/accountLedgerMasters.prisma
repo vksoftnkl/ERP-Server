@@ -197,6 +197,17 @@ model AccLedgerMaster {
   // each small counter loan against it.
   tempCredits           AccTempCredit[]           @relation("TempCreditParty")
 
+  // ── Till management (20261008100000) ────────────────────────────────────
+  // The safe's SAFE_CASH ledger, a reason's default payout / pay-in ledger,
+  // and a movement's counter-ledger (PAID_OUT / PAID_IN / REMIT).
+  tillSafes             TillSafe[]                @relation("TillSafeLedger")
+  tillReasons           TillReason[]              @relation("TillReasonLedger")
+  tillCashMovements     TillCashMovement[]        @relation("TillCashMovementLedger")
+
+  // ── Non-cash tender control (20261008130000) ────────────────────────────
+  // The bank a provider payout reached (tnd_settlement_ledger_id at import).
+  settlementImports     AccSettlementImport[]     @relation("SettlementImportBank")
+
   @@map("acc_ledger_master")
   @@schema("accounts")
 }

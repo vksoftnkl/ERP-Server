@@ -32,6 +32,8 @@ export enum TenderSrcDocType {
   RECEIPT = 'RECEIPT',
   PAYMENT = 'PAYMENT',
   OTHER = 'OTHER',
+  /** The expense voucher's tenders (48 / ck_td_src_doc_type): CR, money out. */
+  EXPENSE = 'EXPENSE',
 }
 // Which side the tender ledger takes: money in on a sale is DR, money out on a
 // return / refund is CR.

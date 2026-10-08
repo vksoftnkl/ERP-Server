@@ -1,0 +1,51 @@
+/// TILL COUNTER — a physical lane with (usually) one cash drawer (share file 47
+/// §1.2, migration 20261008100000).
+///
+/// The accountability unit is the DRAWER. A device is the PC/tablet bolted to
+/// it; replacing a dead PC re-points tcnDeviceId and history stays on the
+/// counter. One device drives one counter at a time (ux_tcn_device).
+model TillCounter {
+  tcnId               String    @id(map: "pk_till_counter") @default(dbgenerated("uuidv7()")) @db.Uuid @map("tcn_id")
+  tcnCompanyId        String    @db.Uuid                             @map("tcn_company_id")
+  tcnBranchId         String    @db.Uuid                             @map("tcn_branch_id")
+  /// C01, EXP1, RET
+  tcnCode             String    @db.VarChar(20)                      @map("tcn_code")
+  tcnName             String    @db.VarChar(100)                     @map("tcn_name")
+  /// POS | EXPRESS | RETURNS_DESK | SERVICE_DESK | CASH_OFFICE | MOBILE | SELF_CHECKOUT
+  tcnKind             String    @default("POS") @db.VarChar(20)      @map("tcn_kind")
+  /// DRAWER | TRAY (travels with the cashier) | NONE (cashless lane)
+  tcnDrawerMode       String    @default("DRAWER") @db.VarChar(10)   @map("tcn_drawer_mode")
+  /// Desktop/Mobile only, never Web; NULL = any device may claim it.
+  tcnDeviceId         String?   @db.Uuid                             @map("tcn_device_id")
+  /// Where its drops go; NULL = the branch default safe.
+  tcnSafeId           String?   @db.Uuid                             @map("tcn_safe_id")
+  tcnDefaultFloat     Decimal   @default(0) @db.Decimal(15, 2)       @map("tcn_default_float")
+  /// 0 = off; above it: "pickup due".
+  tcnCashAlertLimit   Decimal   @default(0) @db.Decimal(15, 2)       @map("tcn_cash_alert_limit")
+  /// 0 = off; above it billing stops until a pickup.
+  tcnCashBlockLimit   Decimal   @default(0) @db.Decimal(15, 2)       @map("tcn_cash_block_limit")
+  /// Running Z number, never reset (written by the session close).
+  tcnZLastNo          Int       @default(0)                          @map("tcn_z_last_no")
+  tcnRequiresSession  Boolean   @default(true)                       @map("tcn_requires_session")
+  tcnSortOrder        Int       @default(0)                          @map("tcn_sort_order")
+  tcnRemarks          String?   @db.VarChar(250)                     @map("tcn_remarks")
+  tcnIsActive         Boolean   @default(true)                       @map("tcn_is_active")
+  tcnIsDeleted        Boolean   @default(false)                      @map("tcn_is_deleted")
+  tcnSyncDate         DateTime? @db.Timestamptz(6)                   @map("tcn_sync_date")
+  tcnCreatedOn        DateTime  @default(now()) @db.Timestamptz(6)   @map("tcn_created_on")
+  tcnCreatedBy        String?   @db.VarChar(50)                      @map("tcn_created_by")
+  tcnModifiedOn       DateTime? @db.Timestamptz(6)                   @map("tcn_modified_on")
+  tcnModifiedBy       String?   @db.VarChar(50)                      @map("tcn_modified_by")
+
+  // Relations
+  device              DeviceMaster? @relation("TillCounterDevice", fields: [tcnDeviceId], references: [devId], onUpdate: Cascade, onDelete: SetNull, map: "fk_tcn_device")
+  safe                TillSafe?     @relation("TillCounterSafe",   fields: [tcnSafeId],   references: [tsfId], onUpdate: Cascade, onDelete: Restrict, map: "fk_tcn_safe")
+  sessions            TillSession[] @relation("TillSessionCounter")
+
+  // DB-only (Prisma ignores WHERE predicates and expressions):
+  //   CREATE UNIQUE INDEX ux_tcn_code   ON accounts.till_counter (tcn_company_id, tcn_branch_id, upper(tcn_code)) WHERE tcn_is_deleted = false;
+  //   CREATE UNIQUE INDEX ux_tcn_device ON accounts.till_counter (tcn_device_id) WHERE tcn_is_deleted = false AND tcn_device_id IS NOT NULL;
+  // CHECKs: ck_tcn_kind, ck_tcn_drawer, ck_tcn_amounts (block limit >= alert limit when both are on).
+  @@map("till_counter")
+  @@schema("accounts")
+}

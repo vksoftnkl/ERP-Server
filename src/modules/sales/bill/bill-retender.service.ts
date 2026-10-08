@@ -44,6 +44,7 @@ import {
   BILL_TENDER_AUDIT,
   type BillPayload,
 } from './types/bill-api.types';
+import { TillSessionService } from '../../till/services/till-session.service';
 
 /**
  * HANDOVER §2.13 — `/bills/retender`: change HOW it was paid, not what was
@@ -82,6 +83,7 @@ export class BillRetenderService {
     private readonly loyalty: LoyaltyLedgerService,
     private readonly audit: AuditLogService,
     private readonly recompute: BillBalanceRecomputeService,
+    private readonly till: TillSessionService,
   ) {}
 
   async retender(dto: RetenderBillDto): Promise<BillPayload> {
@@ -113,6 +115,17 @@ export class BillRetenderService {
           'sbBillDate',
         );
       }
+
+      // D7 / §5.5: the new tender rows and the TndC are booked in the session
+      // the money moves in NOW — on a counter's device, its live session; the
+      // bill's own (possibly closed) session is not touched. Elsewhere, as before.
+      const till = await this.till.resolveForMoney(tx, {
+        companyId: bill.sbCompanyId,
+        branchId: bill.sbBranchId,
+        sessionId: null,
+        field: 'sbSessionId',
+      });
+      const moneySessionId = till?.tssId ?? bill.sbSessionId;
 
       const voidIds = [...new Set(dto.voids.map((v) => v.tdId))];
       if (voidIds.length === 0) {
@@ -239,7 +252,7 @@ export class BillRetenderService {
               changedOn: now,
               remarks: `Tender voided: ${reasonById.get(r.td_id) ?? 'OTHER'}${dto.remark ? ` — ${dto.remark}` : ''} — balance ${c.atcBalanceAmount.toFixed(2)} cleared`,
               deviceId: bill.sbDeviceId,
-              sessionId: bill.sbSessionId,
+              sessionId: moneySessionId,
             });
           }
         }
@@ -247,7 +260,7 @@ export class BillRetenderService {
 
       // 2 · the rows that really happened, each pointing at what it replaces.
       const replaces = rows[0].td_id;
-      const scope = this.tenderScope(bill);
+      const scope = this.tenderScope(bill, moneySessionId);
       const existing = await this.tenders.getByDocument(
         TenderSrcModule.SALES,
         TenderSrcDocType.SALE_BILL,
@@ -381,7 +394,7 @@ export class BillRetenderService {
             docAmount: newTotal,
             partyId: bill.sbCustId,
             userId: isUuid(bill.sbUserId) ? bill.sbUserId : actor,
-            sessionId: bill.sbSessionId,
+            sessionId: moneySessionId,
             deviceType: bill.sbDeviceType,
             remarks: dto.remark,
             createdBy: actor,
@@ -472,7 +485,7 @@ export class BillRetenderService {
         changedBy: actor,
         remarks: dto.remark,
         deviceId: bill.sbDeviceId,
-        sessionId: bill.sbSessionId,
+        sessionId: moneySessionId,
       });
       await this.audit.logEntityChange(
         {
@@ -512,7 +525,7 @@ export class BillRetenderService {
     return this.bills.getById(dto.sbId, dto.sbCompanyId, dto.sbBranchId, dto.sbAccYear);
   }
 
-  private tenderScope(bill: SaleBill) {
+  private tenderScope(bill: SaleBill, sessionId: string | null) {
     return {
       tdSrcModule: TenderSrcModule.SALES,
       tdSrcDocType: TenderSrcDocType.SALE_BILL,
@@ -524,7 +537,7 @@ export class BillRetenderService {
       tdDocDate: bill.sbBillDate,
       tdPartyLedgerId: bill.sbCustId,
       tdUserId: bill.sbUserId,
-      tdSessionId: bill.sbSessionId,
+      tdSessionId: sessionId,
       tdDeviceId: bill.sbDeviceId,
       tdDrCr: TenderDrCr.DR,
     };

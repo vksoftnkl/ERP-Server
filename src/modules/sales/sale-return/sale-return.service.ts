@@ -19,6 +19,7 @@ import { PromotionUsageService } from '../posting/promotion-usage.service';
 import { SalesContextService, type SalesCallContext } from '../posting/sales-context.service';
 import { SalesDocBlocksService } from '../posting/sales-doc-blocks.service';
 import { SalesDocStore, type DocKeys, type DocRow, type DocSpec } from '../posting/sales-doc-store';
+import { TillSessionService, type LiveSessionRef } from '../../till/services/till-session.service';
 import {
   buildReturnLegs,
   chargePostsSeparately,
@@ -162,6 +163,7 @@ export class SaleReturnService {
     audit: AuditLogService,
     charges: ChargeDetailService,
     tenders: TenderDetailService,
+    private readonly till: TillSessionService,
   ) {
     this.store = new SalesDocStore(SR_SPEC, audit, charges, tenders, transportBand);
   }
@@ -332,6 +334,18 @@ export class SaleReturnService {
       if (!ctx.rights.post) {
         throwSalesRight('This user may not post on this menu', SALES_ERROR_CODES.RIGHT_POST);
       }
+      // D7 / §5.5: a refund comes out of the drawer it is paid from, so on a
+      // counter's device the return posts in THAT live session — whatever
+      // session the original bill was in. Any other device posts as before.
+      const till = await this.till.resolveForMoney(tx, {
+        companyId: row.srCompanyId as string,
+        branchId: row.srBranchId as string,
+        sessionId: row.srSessionId as string | null,
+        field: 'srSessionId',
+      });
+      if (till) {
+        await this.stampTillSession(tx, row, till, ctx.actorName);
+      }
       const items = await this.store.loadItems(tx, row);
       const g = createGuardContext({
         overrides: dto.overrides ?? [],
@@ -350,6 +364,33 @@ export class SaleReturnService {
       );
     }
     return this.get(this.keys(dto));
+  }
+
+  /** The return and its live tender rows carry the till session and its counter (§7.4). */
+  private async stampTillSession(
+    tx: Prisma.TransactionClient,
+    row: DocRow,
+    till: LiveSessionRef,
+    actorName: string,
+  ): Promise<void> {
+    if (row.srSessionId !== till.tssId || row.srCounterId !== till.tssCounterId) {
+      await tx.$executeRaw`
+        UPDATE sales.sale_return
+           SET sr_session_id  = ${till.tssId}::uuid,
+               sr_counter_id  = ${till.tssCounterId}::uuid,
+               sr_modified_on = now(),
+               sr_modified_by = ${actorName}
+         WHERE sr_id = ${row.srId as string}::uuid
+           AND sr_acc_year = ${row.srAccYear as string}::char(9)`;
+      row.srSessionId = till.tssId;
+      row.srCounterId = till.tssCounterId;
+    }
+    await this.till.stampTenderRows(
+      tx,
+      till,
+      { srcDocType: 'SALE_RETURN', srcDocId: row.srId as string, accYear: row.srAccYear as string },
+      actorName,
+    );
   }
 
   private async ctxOf(tx: Prisma.TransactionClient, row: DocRow): Promise<SalesCallContext> {
