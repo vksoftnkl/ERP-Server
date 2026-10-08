@@ -1,0 +1,155 @@
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { AccGroupMasterNature, AccGroupMasterType } from '../types/acc-group-master-enum';
+
+export class AccGroupMasterErrorFieldDto {
+  @ApiProperty({ example: 'accGroupName' })
+  field!: string;
+
+  @ApiProperty({ example: 'Duplicate accGroupName is not allowed for this company' })
+  message!: string;
+}
+
+export class AccGroupMasterErrorResponseDto {
+  @ApiProperty({ example: false })
+  success!: false;
+
+  @ApiProperty({ example: 'Validation failed' })
+  message!: string;
+
+  @ApiProperty({ type: AccGroupMasterErrorFieldDto, isArray: true })
+  errors!: AccGroupMasterErrorFieldDto[];
+}
+
+export class AccGroupMasterPayloadDto {
+  @ApiProperty({ format: 'uuid' })
+  accGroupId!: string;
+
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  accGroupCompanyId!: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    example: 'Acme Pvt Ltd',
+    description: 'Name of the linked company (resolved on the get endpoint)',
+  })
+  accGroupCompanyName!: string | null;
+
+  @ApiProperty({ maxLength: 150 })
+  accGroupName!: string;
+
+  @ApiPropertyOptional({ maxLength: 100, nullable: true })
+  accGroupAlias!: string | null;
+
+  @ApiPropertyOptional({ maxLength: 50, nullable: true })
+  accGroupShort!: string | null;
+
+  @ApiPropertyOptional({ maxLength: 250, nullable: true })
+  accGroupDescription!: string | null;
+
+  @ApiPropertyOptional({ maxLength: 150, nullable: true })
+  accGroupTallyName!: string | null;
+
+  @ApiPropertyOptional({ maxLength: 150, nullable: true })
+  accGroupPrimaryName!: string | null;
+
+  @ApiPropertyOptional({
+    enum: AccGroupMasterNature,
+    enumName: 'AccountGroupNature',
+    maxLength: 20,
+    nullable: true,
+  })
+  accGroupNature!: string | null;
+
+  @ApiPropertyOptional({ maxLength: 64, nullable: true })
+  accGroupTallyGuid!: string | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    description: 'Tally master id (BigInt serialized as string)',
+  })
+  accGroupTallyMasterId!: string | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    description: 'Tally alter id (BigInt serialized as string)',
+  })
+  accGroupTallyAlterId!: string | null;
+
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  accGroupParentId!: string | null;
+
+  @ApiPropertyOptional({
+    maxLength: 150,
+    nullable: true,
+    description: 'Name of the parent account group',
+  })
+  accGroupParentName!: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  accGroupSort!: number | null;
+
+  // accGroupChildIds was removed with acc_group_child_ids (20260917140000). It was
+  // marked REQUIRED here while being maintained by one service and nothing else, so
+  // any consumer that trusted it built the wrong tree — an export most of all, since
+  // it has to emit parents before children. Walk accGroupParentId instead.
+
+  @ApiProperty({ enum: AccGroupMasterType, enumName: 'AccountGroupType', maxLength: 20 })
+  accGroupType!: string;
+
+  @ApiProperty()
+  accGroupIsDefault!: boolean;
+
+  @ApiProperty()
+  accGroupIsReserved!: boolean;
+
+  @ApiProperty()
+  accLedgerProfile!: string;
+
+  // The four Tally behaviour flags — settable since 20260917 and read back here.
+  @ApiProperty({ description: 'Tally ISSUBLEDGER' })
+  accGroupBehaveAsSubledger!: boolean;
+
+  @ApiProperty({ description: 'Tally NETDEBITCREDITFORREPORTING' })
+  accGroupNetDebitCredit!: boolean;
+
+  @ApiProperty({ description: 'Tally USEDFORCALCULATION' })
+  accGroupUsedForCalculation!: boolean;
+
+  @ApiProperty({ description: 'Tally AFFECTSGROSSPROFIT' })
+  accGroupAffectsGrossProfit!: boolean;
+
+  @ApiProperty()
+  accGroupIsActive!: boolean;
+}
+
+export class AccGroupMasterDeleteResultDto {
+  @ApiProperty({ format: 'uuid' })
+  accGroupId!: string;
+
+  @ApiProperty({ example: true })
+  deleted!: true;
+}
+
+export class AccGroupMasterSuccessSingleDto {
+  @ApiProperty({ example: true })
+  success!: true;
+
+  @ApiProperty({ example: 'Account group fetched successfully' })
+  message!: string;
+
+  @ApiProperty({ type: AccGroupMasterPayloadDto })
+  data!: AccGroupMasterPayloadDto;
+}
+
+export class AccGroupMasterSuccessDeleteDto {
+  @ApiProperty({ example: true })
+  success!: true;
+
+  @ApiProperty({ example: 'Account group deleted successfully' })
+  message!: string;
+
+  @ApiProperty({ type: AccGroupMasterDeleteResultDto })
+  data!: AccGroupMasterDeleteResultDto;
+}

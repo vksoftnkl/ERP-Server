@@ -1,0 +1,80 @@
+/// sales.promotion_scheme_party — §3, who the campaign applies to.
+///
+/// ONE KIND + ONE SCOPE ID, the shape the entry grid needs. The screen binds
+/// to exactly two columns, prpKind and prpScopeId; the four *_id fields below
+/// are GENERATED ALWAYS ... STORED in Postgres and exist only to carry a real
+/// foreign key per kind.
+///
+///     prpKind = 'CUSTOMER' | 'CUSTOMER_GROUP' | 'AREA' | 'CITY'
+///
+/// CITY reaches a customer THROUGH THEIR AREA and only that way
+/// (customers.cus_area_id -> area_master.arm_city_id -> city_master.ctm_id);
+/// customers.cus_city is free text and must never be matched on. A customer
+/// with no area is in no city.
+///
+/// prpMatchPriority makes "a rule naming one CUSTOMER beats one naming their
+/// CITY" data rather than an assumption: CUSTOMER 4, AREA 3, CITY 2,
+/// CUSTOMER_GROUP 1 — narrowest first. EXCLUDE beats INCLUDE at equal priority.
+///
+/// Read only when prm_cust_scope = 'LIST'.
+///
+/// ── WRITING THIS MODEL ──────────────────────────────────────────────────
+/// NEVER set custId / custGroupId / areaId / cityId, and never use the four
+/// nested `connect`s. Postgres computes those columns and rejects any write.
+/// Set prpKind + prpScopeId; read the relations back.
+///
+/// ── MIGRATION ───────────────────────────────────────────────────────────
+/// prisma migrate cannot emit a generated column. The four must be
+/// hand-authored, e.g.
+///   prp_cust_id uuid GENERATED ALWAYS AS
+///     (CASE WHEN prp_kind::text = 'CUSTOMER' THEN prp_scope_id END) STORED
+/// The `@default(dbgenerated())` below is the no-argument form: it stops every
+/// later `migrate dev` emitting an ALTER COLUMN ... DROP DEFAULT that Postgres
+/// rejects with 42601 on a generated column.
+///
+/// The FKs are ON UPDATE NO ACTION, not CASCADE — Postgres forbids a cascading
+/// update on a key containing a generated column. Costs nothing: every master
+/// key here is a uuidv7() that is never reissued.
+///
+/// CHECK ck_prp_kind, ck_prp_slno and ck_prp_match_priority are enforced in the
+/// service, not the DB.
+///
+/// DB-only objects to hand-author:
+///   ux_prp_row       UNIQUE (prm_id, kind, scope_id) WHERE NOT deleted
+///   ix_prp_scheme    (prm_id, match_priority DESC) INCLUDE (...), partial
+///   ix_prp_cust / ix_prp_cust_group / ix_prp_area / ix_prp_city, all partial
+model PromotionSchemeParty {
+  prpId            String    @id(map: "pk_promotion_scheme_party") @default(dbgenerated("uuidv7()")) @db.Uuid @map("prp_id")
+  prpPrmId         String    @db.Uuid                                       @map("prp_prm_id")
+  prpSlno          Int       @default(1)                                    @map("prp_slno")
+
+  // The GRID COLUMNS — the only two the form reads and writes.
+  prpKind          String    @db.VarChar(20)                                @map("prp_kind")
+  prpScopeId       String    @db.Uuid                                       @map("prp_scope_id")
+
+  // GENERATED ALWAYS ... STORED. Read-only. See the note above.
+  prpCustId        String?   @default(dbgenerated()) @db.Uuid               @map("prp_cust_id")
+  prpCustGroupId   String?   @default(dbgenerated()) @db.Uuid               @map("prp_cust_group_id")
+  prpAreaId        String?   @default(dbgenerated()) @db.Uuid               @map("prp_area_id")
+  prpCityId        String?   @default(dbgenerated()) @db.Uuid               @map("prp_city_id")
+
+  prpIsExclude     Boolean   @default(false)                                @map("prp_is_exclude")
+  prpMatchPriority Int       @default(1) @db.SmallInt                       @map("prp_match_priority")
+  prpNotes         String?   @db.Text                                       @map("prp_notes")
+  prpIsActive      Boolean   @default(true)                                 @map("prp_is_active")
+  prpIsDeleted     Boolean   @default(false)                                @map("prp_is_deleted")
+  prpSyncDate      DateTime? @db.Timestamptz(6)                             @map("prp_sync_date")
+  prpCreatedOn     DateTime  @default(now()) @db.Timestamptz(6)             @map("prp_created_on")
+  prpCreatedBy     String?   @db.VarChar(50)                                @map("prp_created_by")
+  prpModifiedOn    DateTime? @db.Timestamptz(6)                             @map("prp_modified_on")
+  prpModifiedBy    String?   @db.VarChar(50)                                @map("prp_modified_by")
+
+  scheme           PromotionScheme @relation("PromotionSchemeParties",   fields: [prpPrmId],       references: [prmId],      onUpdate: Cascade,  onDelete: Cascade,  map: "fk_prp_scheme")
+  customer         Customer?       @relation("PromotionPartyCustomer",   fields: [prpCustId],      references: [cusId],      onUpdate: NoAction, onDelete: Restrict, map: "fk_prp_cust")
+  customerGroup    CustGroup?      @relation("PromotionPartyCustGroup",  fields: [prpCustGroupId], references: [cgrId],      onUpdate: NoAction, onDelete: Restrict, map: "fk_prp_cust_group")
+  area             AreaMaster?     @relation("PromotionPartyArea",       fields: [prpAreaId],      references: [armId],      onUpdate: NoAction, onDelete: Restrict, map: "fk_prp_area")
+  city             CityMaster?     @relation("PromotionPartyCity",       fields: [prpCityId],      references: [ctmId],      onUpdate: NoAction, onDelete: Restrict, map: "fk_prp_city")
+
+  @@map("promotion_scheme_party")
+  @@schema("sales")
+}

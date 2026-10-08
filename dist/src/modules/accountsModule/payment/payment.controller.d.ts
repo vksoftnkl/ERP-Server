@@ -1,0 +1,34 @@
+import { RequestContextService } from '../../../common/request-context/request-context.service';
+import { PrismaService } from '../../../database/prisma/prisma.service';
+import { PaymentService } from './payment.service';
+import { PaymentPostingService } from './payment-posting.service';
+import { PaymentCancelService } from './payment-cancel.service';
+import { PaymentAmendService } from './payment-amend.service';
+import { PaymentOpenItemsService } from './payment-open-items.service';
+import { AdjacentVoucherQueryDto, DuplicateCheckQueryDto, ListPaymentOpenItemsQueryDto, PartyContextQueryDto } from './dto/open-item.dto';
+import { AmendPaymentDto } from './dto/amend-payment.dto';
+import { SaveDraftPaymentDto, UpdatePaymentHeaderDto } from './dto/save-payment.dto';
+import { CancelPaymentDto, DeletePaymentDto, GetPaymentQueryDto, PostPaymentDto } from './dto/post-payment.dto';
+import type { AdjacentVoucherPayload, DuplicateCheckPayload, PaymentAmendPayload, PaymentCancelPayload, PaymentDeletePayload, PaymentDraftPayload, PaymentHeader, PaymentOpenItemsPayload, PaymentPartyContextPayload, PaymentPayload, PaymentPostPayload, PaymentSuccessResponse } from './types/payment-api.types';
+export declare class PaymentController {
+    private readonly prisma;
+    private readonly requestContext;
+    private readonly paymentService;
+    private readonly postingService;
+    private readonly cancelService;
+    private readonly amendService;
+    private readonly openItemsService;
+    constructor(prisma: PrismaService, requestContext: RequestContextService, paymentService: PaymentService, postingService: PaymentPostingService, cancelService: PaymentCancelService, amendService: PaymentAmendService, openItemsService: PaymentOpenItemsService);
+    openItems(query: ListPaymentOpenItemsQueryDto): Promise<PaymentSuccessResponse<PaymentOpenItemsPayload>>;
+    partyContext(query: PartyContextQueryDto): Promise<PaymentSuccessResponse<PaymentPartyContextPayload>>;
+    get(query: GetPaymentQueryDto): Promise<PaymentSuccessResponse<PaymentPayload>>;
+    adjacent(query: AdjacentVoucherQueryDto): Promise<PaymentSuccessResponse<AdjacentVoucherPayload>>;
+    duplicateCheck(query: DuplicateCheckQueryDto): Promise<PaymentSuccessResponse<DuplicateCheckPayload>>;
+    create(dto: SaveDraftPaymentDto): Promise<PaymentSuccessResponse<PaymentDraftPayload>>;
+    postPayment(dto: PostPaymentDto): Promise<PaymentSuccessResponse<PaymentPostPayload>>;
+    updateHeader(dto: UpdatePaymentHeaderDto, body: Record<string, unknown>): Promise<PaymentSuccessResponse<PaymentHeader>>;
+    cancel(dto: CancelPaymentDto): Promise<PaymentSuccessResponse<PaymentCancelPayload>>;
+    delete(dto: DeletePaymentDto): Promise<PaymentSuccessResponse<PaymentDeletePayload>>;
+    amend(dto: AmendPaymentDto): Promise<PaymentSuccessResponse<PaymentAmendPayload>>;
+    private requireRight;
+}

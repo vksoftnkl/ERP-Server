@@ -1,0 +1,116 @@
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import {
+  InventoryErrorFieldDto,
+  InventoryErrorResponseDto,
+} from 'src/common/utils/module-response.dto';
+
+export { InventoryErrorFieldDto as ItemGroupErrorFieldDto };
+export { InventoryErrorResponseDto as ItemGroupErrorResponseDto };
+export class ItemGroupPayloadDto {
+  @ApiProperty({ format: 'uuid' })
+  itg_id!: string;
+
+  @ApiProperty({ maxLength: 150 })
+  itg_name!: string;
+
+  @ApiPropertyOptional({ maxLength: 100, nullable: true })
+  itg_alias!: string | null;
+
+  @ApiPropertyOptional({ maxLength: 50, nullable: true })
+  itg_short!: string | null;
+
+  @ApiPropertyOptional({ maxLength: 250, nullable: true })
+  itg_description!: string | null;
+
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  itg_parent_id!: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  itg_sort!: number | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  itg_level!: number | null;
+
+  @ApiProperty({ type: [String], example: [] })
+  itg_path_ids_cache!: string[];
+
+  @ApiPropertyOptional({ nullable: true })
+  itg_tax_claim!: boolean | null;
+
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  itg_default_tax_id!: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  itg_default_hsn!: string | null;
+
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  itg_default_uom_id!: string | null;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description:
+      'stock.stock_track_preset the group-scope stock track policy is derived from; null = no group policy',
+  })
+  itg_track_preset_id!: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    description:
+      'Name of the stock.stock_track_preset named by itg_track_preset_id; null when no preset is set',
+  })
+  itg_track_preset_name!: string | null;
+
+  @ApiPropertyOptional({ nullable: true, description: 'Base64 encoded image' })
+  itg_photo!: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  itg_photo_url!: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  itg_sync_date!: string | null;
+
+  @ApiProperty()
+  itg_is_active!: boolean;
+
+  @ApiProperty()
+  itg_is_deleted!: boolean;
+
+  @ApiProperty()
+  itg_created_on!: string;
+
+  @ApiPropertyOptional({ nullable: true })
+  itg_created_by!: string | null;
+
+  @ApiProperty()
+  itg_modified_on!: string;
+
+  @ApiPropertyOptional({ nullable: true })
+  itg_modified_by!: string | null;
+}
+
+export class ItemGroupDeleteResultDto {
+  @ApiProperty({ format: 'uuid' })
+  itg_id!: string;
+}
+
+export class ItemGroupSuccessSingleDto {
+  @ApiProperty({ example: true })
+  success!: true;
+
+  @ApiProperty({ example: 'Item group fetched successfully' })
+  message!: string;
+
+  @ApiProperty({ type: ItemGroupPayloadDto })
+  data!: ItemGroupPayloadDto;
+}
+export class ItemGroupSuccessDeleteDto {
+  @ApiProperty({ example: true })
+  success!: true;
+
+  @ApiProperty({ example: 'Item group deleted successfully' })
+  message!: string;
+
+  @ApiProperty({ type: ItemGroupDeleteResultDto })
+  data!: ItemGroupDeleteResultDto;
+}

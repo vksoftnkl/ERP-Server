@@ -1,143 +1,98 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomBytes, scrypt as nodeScrypt } from 'node:crypto';
 import { promisify } from 'node:util';
-import { User } from '@prisma/client';
+import { Prisma, UserMaster } from '@prisma/client';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
-
 const scryptAsync = promisify(nodeScrypt);
 const PASSWORD_SALT_BYTES = 16;
 const PASSWORD_KEY_LENGTH = 64;
-
 @Injectable()
 export class UsersService {
   constructor(private readonly prisma: PrismaService) {}
-
-  async create(createUserDto: CreateUserDto): Promise<User> {
+  async create(createUserDto: CreateUserDto): Promise<UserMaster> {
     const username = createUserDto.user_name.trim();
-    const userPhone = createUserDto.user_phone.trim();
-    const userWithUsername = await this.prisma.user.findUnique({
-      where: { user_name: username },
+    const existing = await this.prisma.userMaster.findFirst({
+      where: { usrLoginName: { equals: username, mode: 'insensitive' }, usrIsDeleted: false },
     });
-
-    if (userWithUsername) {
+    if (existing) {
       throw new ConflictException('User with this username already exists');
     }
-
-    const userWithPhone = await this.prisma.user.findUnique({
-      where: { user_phone: userPhone },
-    });
-
-    if (userWithPhone) {
-      throw new ConflictException('User with this phone already exists');
-    }
-
     const hashedPassword = await this.hashPassword(createUserDto.user_password);
-
-    return this.prisma.user.create({
+    return this.prisma.userMaster.create({
       data: {
-        user_phone: userPhone,
-        user_name: username,
-        user_password: hashedPassword,
+        usrLoginName: username,
+        usrDisplayName: username,
+        usrMobileNo: createUserDto.user_phone?.trim() || null,
+        usrPasswordHash: hashedPassword,
       },
     });
   }
-
-  async findAll(): Promise<User[]> {
-    return this.prisma.user.findMany();
+  async findAll(): Promise<UserMaster[]> {
+    return this.prisma.userMaster.findMany({ where: { usrIsDeleted: false } });
   }
-
-  async findByUsername(userName: string): Promise<User | null> {
+  async findByUsername(userName: string): Promise<UserMaster | null> {
     const normalizedUserName = userName.trim();
-    if (!normalizedUserName) {
-      return null;
-    }
-
-    return this.prisma.user.findUnique({
+    if (!normalizedUserName) return null;
+    return this.prisma.userMaster.findFirst({
       where: {
-        user_name: normalizedUserName,
+        usrLoginName: { equals: normalizedUserName, mode: 'insensitive' },
+        usrIsDeleted: false,
       },
     });
   }
-
-  async findOne(id: string): Promise<User> {
+  async findOne(id: string): Promise<UserMaster> {
     return this.getUserOrThrow(id);
   }
-
-  async update(id: string, updateUserDto: UpdateUserDto): Promise<User> {
+  async update(id: string, updateUserDto: UpdateUserDto): Promise<UserMaster> {
     const user = await this.getUserOrThrow(id);
     const nextUsername = updateUserDto.user_name?.trim();
-    const nextUserPhone = updateUserDto.user_phone?.trim();
     const nextPassword = updateUserDto.user_password;
-
-    if (nextUsername && nextUsername !== user.user_name) {
-      const usernameAlreadyUsed = await this.prisma.user.findUnique({
-        where: { user_name: nextUsername },
+    if (nextUsername && nextUsername !== user.usrLoginName) {
+      const taken = await this.prisma.userMaster.findFirst({
+        where: {
+          usrLoginName: { equals: nextUsername, mode: 'insensitive' },
+          usrIsDeleted: false,
+          NOT: { usrId: id },
+        },
       });
-
-      if (usernameAlreadyUsed && usernameAlreadyUsed.user_id !== user.user_id) {
+      if (taken) {
         throw new ConflictException('User with this username already exists');
       }
     }
-
-    if (nextUserPhone && nextUserPhone !== user.user_phone) {
-      const phoneAlreadyUsed = await this.prisma.user.findUnique({
-        where: { user_phone: nextUserPhone },
-      });
-
-      if (phoneAlreadyUsed && phoneAlreadyUsed.user_id !== user.user_id) {
-        throw new ConflictException('User with this phone already exists');
-      }
-    }
-
-    if (!nextUsername && !nextUserPhone && nextPassword === undefined) {
+    if (!nextUsername && updateUserDto.user_phone === undefined && nextPassword === undefined) {
       return user;
     }
-
-    const data: Partial<Pick<User, 'user_name' | 'user_phone' | 'user_password'>> = {};
+    const data: Prisma.UserMasterUncheckedUpdateInput = { usrModifiedOn: new Date() };
     if (nextUsername) {
-      data.user_name = nextUsername;
+      data.usrLoginName = nextUsername;
+      data.usrDisplayName = nextUsername;
     }
-    if (nextUserPhone) {
-      data.user_phone = nextUserPhone;
+    if (updateUserDto.user_phone !== undefined) {
+      data.usrMobileNo = updateUserDto.user_phone.trim() || null;
     }
     if (nextPassword !== undefined) {
-      data.user_password = await this.hashPassword(nextPassword);
+      data.usrPasswordHash = await this.hashPassword(nextPassword);
     }
-
-    return this.prisma.user.update({
-      where: { user_id: user.user_id },
-      data,
-    });
+    return this.prisma.userMaster.update({ where: { usrId: id }, data });
   }
-
   async remove(id: string): Promise<void> {
-    const result = await this.prisma.user.deleteMany({
-      where: {
-        user_id: id,
-      },
+    const result = await this.prisma.userMaster.updateMany({
+      where: { usrId: id, usrIsDeleted: false },
+      data: { usrIsDeleted: true, usrIsActive: false, usrModifiedOn: new Date() },
     });
-
     if (result.count === 0) {
       throw new NotFoundException(`User with id ${id} not found`);
     }
   }
-
-  private async getUserOrThrow(id: string): Promise<User> {
-    const user = await this.prisma.user.findUnique({
-      where: {
-        user_id: id,
-      },
+  private async getUserOrThrow(id: string): Promise<UserMaster> {
+    const user = await this.prisma.userMaster.findFirst({
+      where: { usrId: id, usrIsDeleted: false },
     });
-
-    if (!user) {
-      throw new NotFoundException('User not found');
-    }
-
+    if (!user) throw new NotFoundException('User not found');
     return user;
   }
-
   private async hashPassword(plainPassword: string): Promise<string> {
     const salt = randomBytes(PASSWORD_SALT_BYTES).toString('hex');
     const derivedKey = (await scryptAsync(plainPassword, salt, PASSWORD_KEY_LENGTH)) as Buffer;

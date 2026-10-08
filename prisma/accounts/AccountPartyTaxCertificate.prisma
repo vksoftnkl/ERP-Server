@@ -1,0 +1,46 @@
+/// The party's paper: what a party has shown us that changes a rate or a
+/// refusal. One row per certificate, windowed by validity.
+///
+/// Read by the TDS/TCS rate resolver and by the PAN / Form-60 guard on a cash
+/// sale above the 269ST limit. LDC_197 is the one that carries numbers of its
+/// own: a lower rate certified, and a ceiling up to which it applies.
+model AccPartyTaxCertificate {
+  ptcId             String    @id(map: "pk_acc_party_tax_certificate") @default(dbgenerated("uuidv7()")) @db.Uuid @map("ptc_id")
+  ptcCompanyId      String    @db.Uuid                                 @map("ptc_company_id")
+  /// accounts.acc_ledger_master — the accounting identity of the party.
+  ptcPartyId        String    @db.Uuid                                 @map("ptc_party_id")
+  /// PAN | FORM60 | LDC_197 | NO_DEDUCTION_206C | LUT | COMPOSITION | TAN
+  ptcKind           String    @db.VarChar(20)                          @map("ptc_kind")
+  ptcNumber         String?   @db.VarChar(50)                          @map("ptc_number")
+  /// For an LDC: the lower rate certified.
+  ptcRatePerc       Decimal?  @db.Decimal(6, 3)                        @map("ptc_rate_perc")
+  /// For an LDC: the certified ceiling.
+  ptcLimitAmount    Decimal?  @db.Decimal(18, 2)                       @map("ptc_limit_amount")
+  ptcIssuedOn       DateTime? @db.Date                                 @map("ptc_issued_on")
+  ptcValidFrom      DateTime  @db.Date                                 @map("ptc_valid_from")
+  ptcValidTo        DateTime? @db.Date                                 @map("ptc_valid_to")
+  ptcVerifiedOn     DateTime? @db.Date                                 @map("ptc_verified_on")
+  ptcVerifiedBy     String?   @db.VarChar(50)                          @map("ptc_verified_by")
+  ptcFileRef        String?   @db.VarChar(250)                         @map("ptc_file_ref")
+  ptcRemarks        String?   @db.VarChar(250)                         @map("ptc_remarks")
+  ptcIsActive       Boolean   @default(true)                           @map("ptc_is_active")
+  ptcIsDeleted      Boolean   @default(false)                          @map("ptc_is_deleted")
+  ptcSyncDate       DateTime? @db.Timestamptz(6)                       @map("ptc_sync_date")
+  ptcCreatedOn      DateTime  @default(now()) @db.Timestamptz(6)       @map("ptc_created_on")
+  ptcCreatedBy      String?   @db.VarChar(50)                          @map("ptc_created_by")
+  ptcModifiedOn     DateTime? @db.Timestamptz(6)                       @map("ptc_modified_on")
+  ptcModifiedBy     String?   @db.VarChar(50)                          @map("ptc_modified_by")
+
+  party             AccLedgerMaster @relation("PartyTaxCertificateParty",   fields: [ptcPartyId],   references: [ledId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_ptc_party")
+  company           Company         @relation("PartyTaxCertificateCompany", fields: [ptcCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_ptc_company")
+
+  // DB-only:
+  //   CREATE INDEX ix_ptc_party_kind ON accounts.acc_party_tax_certificate
+  //       (ptc_company_id, ptc_party_id, ptc_kind, ptc_valid_from DESC)
+  //       WHERE ptc_is_deleted = false AND ptc_is_active = true;
+  //
+  // CHECK constraints (DB-only): ck_ptc_kind, ck_ptc_window
+
+  @@map("acc_party_tax_certificate")
+  @@schema("accounts")
+}

@@ -1,0 +1,288 @@
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import { ItemEanCode, Prisma } from '@prisma/client';
+import { PrismaService } from '../../../database/prisma/prisma.service';
+import { DEFAULT_ACTOR } from '../../../common/utils/module-shared.utils';
+import { AuditLogService } from '../../audit-log/audit-log.service';
+import { SaveItemEanCodeDto } from './dto/save-item-ean-code.dto';
+import { ItemsEanCodeMasterService } from './items-ean-code-master.service';
+
+const EAN_ID = '019c6f6c-be87-7a11-8905-36092c46fd06';
+const ITEM_ID = '019c6f6c-be87-7a11-8905-36092c46fd07';
+const UNIT_ID = '019c6f6c-be87-7a11-8905-36092c46fd08';
+
+type PrismaMock = {
+  itemEanCode: {
+    create: jest.Mock<Promise<ItemEanCode>, [Prisma.ItemEanCodeCreateArgs]>;
+    findFirst: jest.Mock<Promise<ItemEanCode | null>, [Prisma.ItemEanCodeFindFirstArgs]>;
+    findMany: jest.Mock<Promise<ItemEanCode[]>, [Prisma.ItemEanCodeFindManyArgs]>;
+    count: jest.Mock<Promise<number>, [Prisma.ItemEanCodeCountArgs]>;
+    update: jest.Mock<Promise<ItemEanCode>, [Prisma.ItemEanCodeUpdateArgs]>;
+    updateMany: jest.Mock<Promise<Prisma.BatchPayload>, [Prisma.ItemEanCodeUpdateManyArgs]>;
+  };
+  $transaction: jest.Mock<Promise<unknown>, [(tx: Prisma.TransactionClient) => Promise<unknown>]>;
+};
+
+const makeRecord = (overrides: Partial<ItemEanCode> = {}): ItemEanCode =>
+  ({
+    eanId: EAN_ID,
+    eanItemId: ITEM_ID,
+    eanUcUnitId: UNIT_ID,
+    eanCode: '8901234567890',
+    eanIsDefault: false,
+    eanIsActive: true,
+    eanIsDeleted: false,
+    eanCreatedOn: new Date('2026-02-20T10:00:00.000Z'),
+    eanCreatedBy: 'tester',
+    eanModifiedOn: new Date('2026-02-20T10:00:00.000Z'),
+    eanModifiedBy: 'tester',
+    eanRemarks: null,
+    ...overrides,
+  }) as ItemEanCode;
+
+describe('ItemsEanCodeMasterService', () => {
+  let service: ItemsEanCodeMasterService;
+  let prisma: PrismaMock;
+  let auditLogService: Pick<AuditLogService, 'logEntityChange'>;
+  let configuredGridSqlService: { loadCandidates: jest.Mock; filterPrimaryFromTable: jest.Mock };
+  let requestContextService: { getUserId: jest.Mock };
+
+  beforeEach(() => {
+    prisma = {
+      itemEanCode: {
+        create: jest.fn<Promise<ItemEanCode>, [Prisma.ItemEanCodeCreateArgs]>(),
+        findFirst: jest.fn<Promise<ItemEanCode | null>, [Prisma.ItemEanCodeFindFirstArgs]>(),
+        findMany: jest.fn<Promise<ItemEanCode[]>, [Prisma.ItemEanCodeFindManyArgs]>(),
+        count: jest.fn<Promise<number>, [Prisma.ItemEanCodeCountArgs]>(),
+        update: jest.fn<Promise<ItemEanCode>, [Prisma.ItemEanCodeUpdateArgs]>(),
+        updateMany: jest.fn<Promise<Prisma.BatchPayload>, [Prisma.ItemEanCodeUpdateManyArgs]>(),
+      },
+      $transaction: jest.fn<
+        Promise<unknown>,
+        [(tx: Prisma.TransactionClient) => Promise<unknown>]
+      >(),
+    };
+
+    prisma.$transaction.mockImplementation(
+      async (callback: (tx: Prisma.TransactionClient) => Promise<unknown>) =>
+        callback(prisma as unknown as Prisma.TransactionClient),
+    );
+    auditLogService = {
+      logEntityChange: jest.fn().mockResolvedValue(undefined),
+    };
+    configuredGridSqlService = {
+      loadCandidates: jest.fn().mockResolvedValue([]),
+      filterPrimaryFromTable: jest.fn().mockReturnValue([]),
+    };
+    requestContextService = {
+      getUserId: jest.fn().mockReturnValue(null),
+    };
+
+    service = new ItemsEanCodeMasterService(
+      prisma as unknown as PrismaService,
+      auditLogService as AuditLogService,
+      configuredGridSqlService as never,
+      requestContextService as never,
+    );
+  });
+
+  it('creates an item ean code row', async () => {
+    const createdRecord = makeRecord();
+    prisma.itemEanCode.create.mockResolvedValue(createdRecord);
+
+    const input: SaveItemEanCodeDto = {
+      ean_item_id: ITEM_ID,
+      ean_unit_id: UNIT_ID,
+      ean_code: '8901234567890',
+    };
+
+    const result = await service.save(input);
+
+    expect(prisma.itemEanCode.create).toHaveBeenCalledTimes(1);
+    const createArgs = prisma.itemEanCode.create.mock.calls[0][0];
+    expect(createArgs.data.eanItemId).toBe(ITEM_ID);
+    expect(createArgs.data.eanUcUnitId).toBe(UNIT_ID);
+    expect(createArgs.data.eanCode).toBe('8901234567890');
+    expect(result.ean_id).toBe(EAN_ID);
+  });
+
+  it('updates an item ean code row when ean_id is provided', async () => {
+    const existingRecord = makeRecord();
+    const updatedRecord = makeRecord({ eanCode: '8901111111111' });
+
+    prisma.itemEanCode.findFirst.mockResolvedValue(existingRecord);
+    prisma.itemEanCode.update.mockResolvedValue(updatedRecord);
+
+    const input: SaveItemEanCodeDto = {
+      ean_id: EAN_ID,
+      ean_item_id: ITEM_ID,
+      ean_unit_id: UNIT_ID,
+      ean_code: '8901111111111',
+    };
+
+    const result = await service.save(input);
+
+    expect(prisma.itemEanCode.update).toHaveBeenCalledTimes(1);
+    const updateArgs = prisma.itemEanCode.update.mock.calls[0][0];
+    expect(updateArgs.where.eanId).toBe(EAN_ID);
+    expect(updateArgs.data.eanCode).toBe('8901111111111');
+    expect(result.ean_code).toBe('8901111111111');
+  });
+
+  it('creates multiple item ean code rows from an array payload', async () => {
+    const firstRecord = makeRecord();
+    const secondRecord = makeRecord({
+      eanId: '019c6f6c-be87-7a11-8905-36092c46fd10',
+      eanCode: '8901111111111',
+    });
+
+    prisma.itemEanCode.create
+      .mockResolvedValueOnce(firstRecord)
+      .mockResolvedValueOnce(secondRecord);
+
+    const result = await service.save([
+      {
+        ean_item_id: ITEM_ID,
+        ean_unit_id: UNIT_ID,
+        ean_code: '8901234567890',
+      },
+      {
+        ean_item_id: ITEM_ID,
+        ean_unit_id: UNIT_ID,
+        ean_code: '8901111111111',
+      },
+    ]);
+
+    expect(prisma.itemEanCode.create).toHaveBeenCalledTimes(2);
+    expect(result).toEqual([
+      expect.objectContaining({ ean_id: EAN_ID }),
+      expect.objectContaining({ ean_id: '019c6f6c-be87-7a11-8905-36092c46fd10' }),
+    ]);
+  });
+
+  it('normalizes old defaults when a new default ean is created in same scope', async () => {
+    const createdDefault = makeRecord({
+      eanIsDefault: true,
+    });
+    prisma.itemEanCode.create.mockResolvedValue(createdDefault);
+    prisma.itemEanCode.updateMany.mockResolvedValue({ count: 1 });
+
+    const input: SaveItemEanCodeDto = {
+      ean_item_id: ITEM_ID,
+      ean_unit_id: UNIT_ID,
+      ean_code: '8901234567890',
+      ean_is_default: true,
+    };
+
+    await service.save(input);
+
+    expect(prisma.itemEanCode.updateMany).toHaveBeenCalledTimes(1);
+    const updateManyArgs = prisma.itemEanCode.updateMany.mock.calls[0][0];
+    expect(updateManyArgs.where?.eanItemId).toBe(ITEM_ID);
+    expect(updateManyArgs.where?.eanUcUnitId).toBe(UNIT_ID);
+    expect(updateManyArgs.where?.eanIsDefault).toBe(true);
+    expect(updateManyArgs.where?.eanId).toEqual({ not: EAN_ID });
+    expect(updateManyArgs.data.eanIsDefault).toBe(false);
+  });
+
+  it('rejects duplicate ean_code with 409', async () => {
+    prisma.itemEanCode.create.mockRejectedValue({ code: 'P2002' });
+
+    const input: SaveItemEanCodeDto = {
+      ean_item_id: ITEM_ID,
+      ean_unit_id: UNIT_ID,
+      ean_code: '8901234567890',
+    };
+
+    await expect(service.save(input)).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('rejects foreign key violations with 400', async () => {
+    prisma.itemEanCode.create.mockRejectedValue({ code: 'P2003' });
+
+    const input: SaveItemEanCodeDto = {
+      ean_item_id: ITEM_ID,
+      ean_unit_id: UNIT_ID,
+      ean_code: '8901234567890',
+    };
+
+    await expect(service.save(input)).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('rejects empty ean_code', async () => {
+    const input: SaveItemEanCodeDto = {
+      ean_item_id: ITEM_ID,
+      ean_unit_id: UNIT_ID,
+      ean_code: '   ',
+    };
+
+    await expect(service.save(input)).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('returns 404 in getById when row is missing or soft deleted', async () => {
+    prisma.itemEanCode.findFirst.mockResolvedValue(null);
+
+    await expect(service.getById(EAN_ID)).rejects.toBeInstanceOf(NotFoundException);
+
+    expect(prisma.itemEanCode.findFirst).toHaveBeenCalledTimes(1);
+    const findFirstArgs = prisma.itemEanCode.findFirst.mock.calls[0][0];
+    expect(findFirstArgs.where?.eanId).toBe(EAN_ID);
+    expect(findFirstArgs.where?.eanIsDeleted).toBe(false);
+  });
+  it('toggleDelete updates ean_is_deleted and audit fields', async () => {
+    const existing = makeRecord();
+    prisma.itemEanCode.findFirst.mockResolvedValue(existing);
+    prisma.itemEanCode.updateMany.mockResolvedValue({ count: 1 });
+
+    await expect(service.toggleDelete(EAN_ID)).resolves.toEqual({
+      ean_id: EAN_ID,
+      deleted: true,
+    });
+
+    expect(prisma.itemEanCode.updateMany).toHaveBeenCalledTimes(1);
+    const updateManyArgs = prisma.itemEanCode.updateMany.mock.calls[0][0];
+    expect(updateManyArgs.where?.eanId).toBe(EAN_ID);
+    expect(updateManyArgs.where?.eanIsDeleted).toBe(false);
+    expect(updateManyArgs.data.eanIsDeleted).toBe(true);
+    expect(updateManyArgs.data.eanModifiedBy).toBe(DEFAULT_ACTOR);
+  });
+
+  it('toggleDelete restores a previously deleted item ean code', async () => {
+    prisma.itemEanCode.findFirst.mockResolvedValue(makeRecord({ eanIsDeleted: true }));
+    prisma.itemEanCode.updateMany.mockResolvedValue({ count: 1 });
+
+    await expect(service.toggleDelete(EAN_ID)).resolves.toEqual({
+      ean_id: EAN_ID,
+      deleted: false,
+    });
+
+    const updateManyArgs = prisma.itemEanCode.updateMany.mock.calls[0][0];
+    expect(updateManyArgs.where?.eanId).toBe(EAN_ID);
+    expect(updateManyArgs.where?.eanIsDeleted).toBe(true);
+    expect(updateManyArgs.data.eanIsDeleted).toBe(false);
+  });
+
+  it('toggles multiple item ean codes from an array payload', async () => {
+    prisma.itemEanCode.findFirst.mockResolvedValueOnce(makeRecord()).mockResolvedValueOnce(
+      makeRecord({
+        eanId: '019c6f6c-be87-7a11-8905-36092c46fd10',
+        eanCode: '8901111111111',
+      }),
+    );
+    prisma.itemEanCode.updateMany.mockResolvedValue({ count: 1 });
+
+    await expect(
+      service.toggleDelete([EAN_ID, '019c6f6c-be87-7a11-8905-36092c46fd10']),
+    ).resolves.toEqual([
+      {
+        ean_id: EAN_ID,
+        deleted: true,
+      },
+      {
+        ean_id: '019c6f6c-be87-7a11-8905-36092c46fd10',
+        deleted: true,
+      },
+    ]);
+
+    expect(prisma.itemEanCode.updateMany).toHaveBeenCalledTimes(2);
+  });
+});

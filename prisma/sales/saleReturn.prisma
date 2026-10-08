@@ -1,0 +1,189 @@
+/// The credit note.
+///
+/// LIST-partitioned by srAccYear, PK (srId, srAccYear). Partitions come from
+/// public.ensure_acc_year_partitions, which 20260921200000 taught about this
+/// table.
+///
+/// srIsAgainstBill = false is the FREE return: allowed, flagged, priced at the
+/// current selling price, NO COGS reversal (there is no cost to reverse), and
+/// it is the row every audit report lists first.
+///
+/// Settlement has three modes and no fourth:
+///   CASH     refund now; rows in AccTenderDetail
+///   ADJUST   against the party's open bills — the ORIGINAL bill first, then
+///            the rest by due date; the remainder becomes a credit note
+///   ADVANCE  the whole amount becomes a credit note the party holds
+model SaleReturn {
+  srId                  String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("sr_id")
+  srCompanyId           String    @db.Uuid                             @map("sr_company_id")
+  srBranchId            String    @db.Uuid                             @map("sr_branch_id")
+  srTenantId            String?   @db.Uuid                             @map("sr_tenant_id")
+  srAccYear             String    @db.Char(9)                          @map("sr_acc_year")
+
+  srSessionId           String?   @db.Uuid                             @map("sr_session_id")
+  srCounterId           String    @db.Uuid                             @map("sr_counter_id")
+  srDeviceType          String?   @db.VarChar(20)                      @map("sr_device_type")
+  srDeviceId            String?                                        @map("sr_device_id")
+
+  // ── Document identity ────────────────────────────────────────────────
+  srDocType             String    @default("CREDIT_NOTE") @db.VarChar(30) @map("sr_doc_type")
+  /// POS | WHOLESALE, inherited from the bill.
+  srBillMode            String    @default("WHOLESALE") @db.VarChar(10) @map("sr_bill_mode")
+  srReturnSlno          BigInt                                         @map("sr_return_slno")
+  srReturnRefno         String    @db.VarChar(100)                     @map("sr_return_refno")
+  srUsrRefno            String?   @db.VarChar(100)                     @map("sr_usr_refno")
+  srUsrRefdate          DateTime? @db.Date                             @map("sr_usr_refdate")
+  srReturnDate          DateTime  @db.Date                             @map("sr_return_date")
+  srReturnDatetime      DateTime  @default(now()) @db.Timestamptz(6)   @map("sr_return_datetime")
+
+  // ── Source invoice ───────────────────────────────────────────────────
+  srIsAgainstBill       Boolean   @default(true)                       @map("sr_is_against_bill")
+  srBillId              String?   @db.Uuid                             @map("sr_bill_id")
+  srBillAccYear         String?   @db.Char(9)                          @map("sr_bill_acc_year")
+  srBillRefno           String?   @db.VarChar(100)                     @map("sr_bill_refno")
+  srBillDate            DateTime? @db.Date                             @map("sr_bill_date")
+  srReasonId            String?   @db.Uuid                             @map("sr_reason_id")
+  srReturnReason        String?   @db.VarChar(250)                     @map("sr_return_reason")
+
+  // ── Customer, snapshotted ────────────────────────────────────────────
+  srCustId              String    @db.Uuid                             @map("sr_cust_id")
+  srCustName            String    @db.VarChar(200)                     @map("sr_cust_name")
+  srCustAddr            String?   @db.VarChar(500)                     @map("sr_cust_addr")
+  srCustPlace           String?   @db.VarChar(100)                     @map("sr_cust_place")
+  srCustPin             String?   @db.VarChar(10)                      @map("sr_cust_pin")
+  srCustPhone           String?   @db.VarChar(20)                      @map("sr_cust_phone")
+  srCustGstin           String?   @db.VarChar(15)                      @map("sr_cust_gstin")
+  srCustGstType         String?   @db.VarChar(20)                      @map("sr_cust_gst_type")
+  srCustStcd            String?   @db.Char(2)                          @map("sr_cust_stcd")
+  srPosStcd             String?   @db.Char(2)                          @map("sr_pos_stcd")
+  srStateName           String?   @db.VarChar(100)                     @map("sr_state_name")
+
+  srPriceLevel          Int?                                           @map("sr_price_level")
+
+  srUserId              String    @db.Uuid                             @map("sr_user_id")
+  /// uuid[]: a document is credited to a TEAM, and a return inherits its
+  /// salesmen from the bill it returns. PostgreSQL cannot FK the ELEMENTS of
+  /// an array, so the service validates each id against EmployeeMaster before
+  /// it writes. Do not make this singular — a company may credit two
+  /// salesmen, and a third later. The LINE stays one person.
+  srSalesmanId          String[]  @db.Uuid                             @map("sr_salesman_id")
+
+  srTotItems            Int       @default(0)                          @map("sr_tot_items")
+  srTotWeight           Decimal   @default(0) @db.Decimal(15, 3)       @map("sr_tot_weight")
+
+  // ── Money ────────────────────────────────────────────────────────────
+  srGrossAmt            Decimal   @default(0) @db.Decimal(15, 2)       @map("sr_gross_amt")
+  srDiscAmt             Decimal   @default(0) @db.Decimal(15, 2)       @map("sr_disc_amt")
+  srTaxableAmt          Decimal   @default(0) @db.Decimal(15, 2)       @map("sr_taxable_amt")
+  srCgstAmt             Decimal   @default(0) @db.Decimal(15, 2)       @map("sr_cgst_amt")
+  srSgstAmt             Decimal   @default(0) @db.Decimal(15, 2)       @map("sr_sgst_amt")
+  srIgstAmt             Decimal   @default(0) @db.Decimal(15, 2)       @map("sr_igst_amt")
+  srCessAmt             Decimal   @default(0) @db.Decimal(15, 2)       @map("sr_cess_amt")
+  srTaxAmt              Decimal   @default(0) @db.Decimal(15, 2)       @map("sr_tax_amt")
+  srOtherAmt            Decimal   @default(0) @db.Decimal(15, 2)       @map("sr_other_amt")
+  srRoundOff            Decimal   @default(0) @db.Decimal(15, 2)       @map("sr_round_off")
+  srReturnAmt           Decimal   @default(0) @db.Decimal(15, 2)       @map("sr_return_amt")
+  /// The COGS reversed, under perpetual costing.
+  srTotalCost           Decimal   @default(0) @db.Decimal(15, 2)       @map("sr_total_cost")
+
+  // ── Settlement ───────────────────────────────────────────────────────
+  /// CASH | ADJUST | ADVANCE
+  srSettleMode          String    @default("ADJUST") @db.VarChar(10)   @map("sr_settle_mode")
+  srRefundAmt           Decimal   @default(0) @db.Decimal(15, 2)       @map("sr_refund_amt")
+  srAdjustedAmt         Decimal   @default(0) @db.Decimal(15, 2)       @map("sr_adjusted_amt")
+  /// What became a credit note the party holds.
+  srCreditAmt           Decimal   @default(0) @db.Decimal(15, 2)       @map("sr_credit_amt")
+  /// PENDING | REFUNDED | ADJUSTED | CREDITED | PARTIAL
+  srSettleStatus        String    @default("PENDING") @db.VarChar(20)  @map("sr_settle_status")
+
+  // ── Loyalty / promotion claw-back ────────────────────────────────────
+  /// POINTS, numeric(18,4) like every other points column — not money's
+  /// (15,2). A cache; the detail is the LoyaltyLedger rows this return
+  /// writes. Declared by the migration that CREATES this table, because the
+  /// loyalty migration's ALTERs were written against a sale_return that did
+  /// not exist and were deliberately skipped.
+  srLoyaltyReversePoints Decimal  @default(0) @db.Decimal(18, 4)       @map("sr_loyalty_reverse_points")
+  srPromoClawbackAmt    Decimal   @default(0) @db.Decimal(15, 2)       @map("sr_promo_clawback_amt")
+
+  // ── Roll-ups from the bill that a credit note reverses ───────────────
+  srHasLoad             Boolean   @default(false)                      @map("sr_has_load")
+  srHasUnload           Boolean   @default(false)                      @map("sr_has_unload")
+  srHasFreight          Boolean   @default(false)                      @map("sr_has_freight")
+  srHasPromo            Boolean   @default(false)                      @map("sr_has_promo")
+  srHasLoyalty          Boolean   @default(false)                      @map("sr_has_loyalty")
+  srAgentId             String?   @db.Uuid                             @map("sr_agent_id")
+  srAgentCommAmt        Decimal?  @db.Decimal(15, 2)                   @map("sr_agent_comm_amt")
+
+  // ── Delivery crew and vehicle — OURS, on the document on purpose ─────
+  // These exist whenever goods move, even with no consignment at all: a home
+  // delivery has a driver and a van and no transporter, no LR and no e-way
+  // bill. Identical on all four goods-moving documents.
+  srDriverId            String?   @db.Uuid                             @map("sr_driver_id")
+  srSupervisorId        String?   @db.Uuid                             @map("sr_supervisor_id")
+  /// Open-ended crew; no FK on array elements.
+  srLoadmanId           String[]  @db.Uuid                             @map("sr_loadman_id")
+  srVehicleId           String?   @db.Uuid                             @map("sr_vehicle_id")
+  srVehicleNo           String?   @db.VarChar(20)                      @map("sr_vehicle_no")
+
+  srTotBags             Decimal   @default(0) @db.Decimal(15, 3)       @map("sr_tot_bags")
+  srItemDisc            Decimal   @default(0) @db.Decimal(15, 2)       @map("sr_item_disc")
+  srSplDisc             Decimal   @default(0) @db.Decimal(15, 2)       @map("sr_spl_disc")
+  srSchDisc             Decimal   @default(0) @db.Decimal(15, 2)       @map("sr_sch_disc")
+  srBillSchDisc         Decimal   @default(0) @db.Decimal(15, 2)       @map("sr_bill_sch_disc")
+  srCashDisc            Decimal   @default(0) @db.Decimal(15, 2)       @map("sr_cash_disc")
+  srFreightAmt          Decimal   @default(0) @db.Decimal(15, 2)       @map("sr_freight_amt")
+  srLoadAmt             Decimal   @default(0) @db.Decimal(15, 2)       @map("sr_load_amt")
+  srUnloadAmt           Decimal   @default(0) @db.Decimal(15, 2)       @map("sr_unload_amt")
+  srDiscAlterBase       Boolean?                                       @map("sr_disc_alter_base")
+  srRoundOffStep        Decimal   @default(1) @db.Decimal(15, 2)       @map("sr_round_off_step")
+
+  srRemarks             String?   @db.VarChar(500)                     @map("sr_remarks")
+
+  // ── Lifecycle ────────────────────────────────────────────────────────
+  /// DRAFT | POSTED | CANCELLED. WHEN / WHO / WHY a status changed lives in
+  /// TxnStatusLog, one appended row per transition; the header keeps only the
+  /// CURRENT status.
+  srStatus              String    @default("DRAFT") @db.VarChar(20)    @map("sr_status")
+  /// accounts.acc_voucher_header. No FK: SERVER-owned and written long after
+  /// an offline counter created this row.
+  srPostedVoucherId     String?   @db.Uuid                             @map("sr_posted_voucher_id")
+  srRevisionNo          Int       @default(1)                          @map("sr_revision_no")
+  srPrintCount          Int       @default(0)                          @map("sr_print_count")
+
+  srIsDeleted           Boolean   @default(false)                      @map("sr_is_deleted")
+  srSyncDate            DateTime? @db.Timestamptz(6)                   @map("sr_sync_date")
+  srCreatedOn           DateTime  @default(now()) @db.Timestamptz(6)   @map("sr_created_on")
+  srCreatedBy           String    @db.VarChar(50)                      @map("sr_created_by")
+  srModifiedOn          DateTime? @db.Timestamptz(6)                   @map("sr_modified_on")
+  srModifiedBy          String?   @db.VarChar(50)                      @map("sr_modified_by")
+
+  // Relations
+  bill                  SaleBill?          @relation("SaleReturnBill",       fields: [srBillId, srBillAccYear], references: [sbId, sbAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_sr_bill")
+  customer              Customer           @relation("SaleReturnCustomer",   fields: [srCustId],      references: [cusId],     onUpdate: Cascade, onDelete: Restrict, map: "fk_sr_cust")
+  posState              StateCode?         @relation("SaleReturnPosState",   fields: [srPosStcd],     references: [stateCode], onUpdate: Cascade, onDelete: Restrict, map: "fk_sr_pos_state")
+  reason                StockReasonMaster? @relation("SaleReturnReason",     fields: [srReasonId],    references: [srmId],     onUpdate: Cascade, onDelete: Restrict, map: "fk_sr_reason")
+  driver                EmployeeMaster?    @relation("SaleReturnDriver",     fields: [srDriverId],    references: [empId],     onUpdate: Cascade, onDelete: Restrict, map: "fk_sr_driver")
+  supervisor            EmployeeMaster?    @relation("SaleReturnSupervisor", fields: [srSupervisorId], references: [empId],    onUpdate: Cascade, onDelete: Restrict, map: "fk_sr_supervisor")
+  vehicle               VehicleMaster?     @relation("SaleReturnVehicle",    fields: [srVehicleId],   references: [vehId],     onUpdate: Cascade, onDelete: Restrict, map: "fk_sr_vehicle")
+
+  items                 SaleReturnItem[]   @relation("SaleReturnItems")
+
+  // No relation fields for srCompanyId / srBranchId: the DDL declares no FKs
+  // for them, matching sale_bill.
+
+  @@id([srId, srAccYear], map: "pk_sale_return")
+
+  @@unique([srCompanyId, srBranchId, srAccYear, srReturnRefno], map: "ux_sr_refno")
+  @@unique([srCompanyId, srBranchId, srAccYear, srCounterId, srReturnSlno], map: "ux_sr_counter_slno")
+
+  // Partial indexes are DB-only: ix_sr_company_branch_date, ix_sr_bill,
+  // ix_sr_cust, and FK-covering ix_sr_pos_state / ix_sr_reason / ix_sr_driver
+  // / ix_sr_supervisor / ix_sr_vehicle.
+  //
+  // CHECK constraints (DB-only): ck_sr_doc_type, ck_sr_bill_mode,
+  //   ck_sr_status, ck_sr_settle_mode, ck_sr_settle_status,
+  //   ck_sr_against_bill, ck_sr_settle_sum
+
+  @@map("sale_return")
+  @@schema("sales")
+}

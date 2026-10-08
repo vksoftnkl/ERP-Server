@@ -1,0 +1,104 @@
+/// stock.stock_valuation_snap — closing stock, FROZEN.
+///
+/// "Stock value as on 31 March" must give the same answer in April and in
+/// October, and it must give it in seconds for fifty branches. Replaying
+/// [[StockLedger]] does neither: it is slow, and a back-dated correction
+/// posted in June would silently change March's audited figure. So the figure
+/// is taken once at period close and never touched again.
+///
+/// AS-ON-DATE FOR ANY OTHER DAY is the nearest snapshot at or before it, plus
+/// the ledger delta since — bounded work rather than a full replay. That is
+/// what fn_stock_asof() does, and ix_svs_asof is the index it reads.
+///
+/// THREE VALUATIONS, NOT ONE, and this cannot be fixed later. At COST is what
+/// the books want, at MRP is what the shop floor counts, at SELLING PRICE is
+/// what a retailer means by "stock worth". Once a price list changes, the
+/// second and third are unrecoverable for a date in the past — so all three
+/// are frozen together or not at all.
+///
+/// svsAgeDays is stored for the same reason: it cannot be recomputed for a lot
+/// that has since been consumed and closed.
+///
+/// svsAccYear IS A SCOPE COLUMN, NOT A PARTITION KEY. A snapshot is a frozen
+/// fact that gets read for years, and a year-close snapshot is precisely what
+/// the NEXT year opens against — partitioning it by year would put the two
+/// sides of that handover in different partitions.
+///
+/// THE IDENTITY CACHE — svsBatchNo, svsMrp, svsExpiryDate, svsSupplierId — is
+/// copied from [[StockLot]] at freeze time because the lot may be closed, and
+/// its costs long superseded, by the time anybody reads this row.
+///
+/// WRITE RULES:
+///   * A snapshot is WRITE-ONCE. Re-freezing a period means deleting the rows
+///     for that (snapType, snapDate) and writing them again — never editing a
+///     figure in place, which would make the audited number and the reported
+///     number diverge with nothing to show for it.
+///   * There is no modifiedOn/By pair, on purpose.
+///
+/// Vocabularies, enforced by CHECK constraints in the migration:
+///   svsSnapType  DAY | MONTH | YEAR_OPEN | YEAR_CLOSE
+///   svsBucket    SALEABLE | DAMAGED | QUARANTINE | EXPIRED | SAMPLE
+///
+/// DB-only objects Prisma cannot express — hand-authored in the migration and
+/// deliberately NOT declared here (every one carries a WHERE):
+///   ux_svs_scope   one row per holding per snapshot
+///   ix_svs_asof    fn_stock_asof(): the nearest snapshot at or before a date
+///   ix_svs_report  the valuation report: one branch, one date, everything
+model StockValuationSnap {
+  svsId                String    @id(map: "pk_stock_valuation_snap") @default(dbgenerated("uuidv7()")) @db.Uuid @map("svs_id")
+  svsCompanyId         String    @db.Uuid                            @map("svs_company_id")
+  svsBranchId          String    @db.Uuid                            @map("svs_branch_id")
+  svsTenantId          String?   @db.Uuid                            @map("svs_tenant_id")
+  /// A SCOPE column, not a partition key — see the header note.
+  svsAccYear           String    @db.Char(9)                         @map("svs_acc_year")
+
+  svsGodownId          String    @db.Uuid                            @map("svs_godown_id")
+  svsItemId            String    @db.Uuid                            @map("svs_item_id")
+  svsLotId             String    @db.Uuid                            @map("svs_lot_id")
+  /// The item's base unit at freeze time. Carries NO foreign key in the
+  /// migration, unlike everywhere else in this module, so it stays scalar.
+  svsBaseUomId         String    @db.Uuid                            @map("svs_base_uom_id")
+  svsBucket            String    @default("SALEABLE") @db.VarChar(20) @map("svs_bucket")
+
+  svsSnapType          String    @default("MONTH") @db.VarChar(20)   @map("svs_snap_type")
+  svsSnapDate          DateTime  @db.Date                            @map("svs_snap_date")
+
+  svsQty               Decimal   @default(0) @db.Decimal(18, 6)      @map("svs_qty")
+  svsAvgCostRate       Decimal   @default(0) @db.Decimal(18, 6)      @map("svs_avg_cost_rate")
+  svsAvgCostRateWot    Decimal   @default(0) @db.Decimal(18, 6)      @map("svs_avg_cost_rate_wot")
+  svsValueAtCost       Decimal   @default(0) @db.Decimal(18, 2)      @map("svs_value_at_cost")
+  svsValueAtCostWot    Decimal   @default(0) @db.Decimal(18, 2)      @map("svs_value_at_cost_wot")
+  /// What the shop floor counts. Unrecoverable once a price list changes.
+  svsValueAtMrp        Decimal   @default(0) @db.Decimal(18, 2)      @map("svs_value_at_mrp")
+  /// What a retailer means by "stock worth". Likewise unrecoverable.
+  svsValueAtSp         Decimal   @default(0) @db.Decimal(18, 2)      @map("svs_value_at_sp")
+
+  // ── Identity cache, copied from the lot at freeze time ──────────────────
+  svsBatchNo           String?   @db.VarChar(100)                    @map("svs_batch_no")
+  svsMrp               Decimal?  @db.Decimal(18, 6)                  @map("svs_mrp")
+  svsExpiryDate        DateTime? @db.Date                            @map("svs_expiry_date")
+  /// No foreign key in the migration, unlike StockBalance.sblSupplierId — a
+  /// snapshot must survive the supplier row being restricted away.
+  svsSupplierId        String?   @db.Uuid                            @map("svs_supplier_id")
+  /// How old the stock was ON the snapshot date. Stored because it cannot be
+  /// recomputed for a lot that has since been consumed.
+  svsAgeDays           Int?                                          @map("svs_age_days")
+
+  svsFrozenOn          DateTime  @default(now()) @db.Timestamptz(6)  @map("svs_frozen_on")
+  svsFrozenBy          String?   @db.Uuid                            @map("svs_frozen_by")
+  svsIsDeleted         Boolean   @default(false)                     @map("svs_is_deleted")
+  svsSyncDate          DateTime? @db.Timestamptz(6)                  @map("svs_sync_date")
+  svsCreatedOn         DateTime  @default(now()) @db.Timestamptz(6)  @map("svs_created_on")
+
+  // ── Relations ───────────────────────────────────────────────────────────
+  // svsBaseUomId, svsSupplierId and svsFrozenBy carry NO foreign key in the
+  // migration, so they stay scalar.
+  company              Company        @relation("StockValuationSnapCompany", fields: [svsCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_svs_company")
+  branch               BranchMaster   @relation("StockValuationSnapBranch",  fields: [svsBranchId],  references: [brId],   onUpdate: Cascade, onDelete: Restrict, map: "fk_svs_branch")
+  godown               GodownLocation @relation("StockValuationSnapGodown",  fields: [svsGodownId],  references: [gdlId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_svs_godown")
+  item                 ItemMaster     @relation("StockValuationSnapItem",    fields: [svsItemId],    references: [itemId], onUpdate: Cascade, onDelete: Restrict, map: "fk_svs_item")
+  lot                  StockLot       @relation("StockValuationSnapLot",     fields: [svsLotId],     references: [sltId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_svs_lot")
+
+  @@map("stock_valuation_snap")
+  @@schema("stock")
+}

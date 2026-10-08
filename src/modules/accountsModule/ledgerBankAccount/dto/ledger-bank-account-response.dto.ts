@@ -1,5 +1,4 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { ConfiguredGridStyleDto } from '../../../../common/configured-grid-sql/dto/configured-grid-style.dto';
 
 export class LedgerBankAccountErrorFieldDto {
   @ApiProperty({ example: 'lbaAccountNo' })
@@ -21,82 +20,68 @@ export class LedgerBankAccountErrorResponseDto {
 }
 
 export class LedgerBankAccountPayloadDto {
-  @ApiProperty({ format: 'uuid' })
+  @ApiProperty({ format: 'uuid', example: '0199b3a4-7777-7888-8999-aaaabbbbcccc' })
   lbaId!: string;
 
-  @ApiPropertyOptional({ nullable: true })
-  lbaCompanyId!: number | null;
+  @ApiPropertyOptional({ nullable: true, example: '0199b3a4-1111-7222-8333-444455556666' })
+  lbaCompanyId!: string | null;
 
-  @ApiProperty({ format: 'uuid' })
+  @ApiProperty({ format: 'uuid', example: '0199b3a4-1c2d-7e3f-8a9b-0c1d2e3f4a5b' })
   lbaLedgerId!: string;
 
-  @ApiProperty({ maxLength: 200 })
+  @ApiProperty({ maxLength: 200, example: 'Acme Industries Pvt Ltd' })
   lbaAccountHolder!: string;
 
-  @ApiProperty({ maxLength: 200 })
+  @ApiProperty({ maxLength: 200, example: 'HDFC Bank' })
   lbaBankName!: string;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ nullable: true, example: 'MG Road' })
   lbaBranchName!: string | null;
 
-  @ApiProperty({ maxLength: 50 })
+  @ApiProperty({ maxLength: 50, example: '50100123456789' })
   lbaAccountNo!: string;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ nullable: true, example: 'HDFC0001234' })
   lbaIfscCode!: string | null;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ nullable: true, example: '560240002' })
   lbaMicrCode!: string | null;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ nullable: true, example: 'CURRENT' })
   lbaAccountType!: string | null;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ nullable: true, example: 'acme@hdfcbank' })
   lbaUpiId!: string | null;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ nullable: true, example: 'Acme Industries' })
   lbaChequeName!: string | null;
 
-  @ApiProperty()
+  @ApiProperty({ example: true })
   lbaIsDefault!: boolean;
 
-  @ApiProperty()
+  @ApiProperty({ example: true })
   lbaIsActive!: boolean;
 
-  @ApiProperty()
+  @ApiProperty({ example: false })
   lbaIsDeleted!: boolean;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ nullable: true, example: null })
   lbaSyncDate!: string | null;
 
-  @ApiProperty()
+  @ApiProperty({ example: '2026-06-23T10:15:00.000Z' })
   lbaCreatedOn!: string;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ nullable: true, example: 'user-001' })
   lbaCreatedBy!: string | null;
 
-  @ApiProperty()
+  @ApiProperty({ example: '2026-06-23T10:15:00.000Z' })
   lbaModifiedOn!: string;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ nullable: true, example: null })
   lbaModifiedBy!: string | null;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ nullable: true, example: 'Primary settlement account' })
   lbaRemarks!: string | null;
-}
-
-export class LedgerBankAccountListMetaDto {
-  @ApiProperty({ example: 1 })
-  page!: number;
-
-  @ApiProperty({ example: 20 })
-  limit!: number;
-
-  @ApiProperty({ example: 3 })
-  total!: number;
-
-  @ApiProperty({ example: 1 })
-  total_pages!: number;
 }
 
 export class LedgerBankAccountDeleteResultDto {
@@ -116,23 +101,6 @@ export class LedgerBankAccountSuccessSingleDto {
 
   @ApiProperty({ type: LedgerBankAccountPayloadDto })
   data!: LedgerBankAccountPayloadDto;
-}
-
-export class LedgerBankAccountSuccessListDto {
-  @ApiProperty({ example: true })
-  success!: true;
-
-  @ApiProperty({ example: 'Ledger bank accounts fetched successfully' })
-  message!: string;
-
-  @ApiProperty({ type: LedgerBankAccountPayloadDto, isArray: true })
-  data!: LedgerBankAccountPayloadDto[];
-
-  @ApiProperty({ type: LedgerBankAccountListMetaDto })
-  meta!: LedgerBankAccountListMetaDto;
-
-  @ApiPropertyOptional({ type: ConfiguredGridStyleDto, isArray: true })
-  styles?: ConfiguredGridStyleDto[];
 }
 
 export class LedgerBankAccountSuccessDeleteDto {

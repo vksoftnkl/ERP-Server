@@ -1,0 +1,88 @@
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+
+export class EmployeeDepartmentMasterErrorFieldDto {
+  @ApiProperty({ example: 'edptName' })
+  field!: string;
+
+  @ApiProperty({ example: 'Duplicate edptName is not allowed' })
+  message!: string;
+}
+
+export class EmployeeDepartmentMasterErrorResponseDto {
+  @ApiProperty({ example: false })
+  success!: false;
+
+  @ApiProperty({ example: 'Validation failed' })
+  message!: string;
+
+  @ApiProperty({ type: EmployeeDepartmentMasterErrorFieldDto, isArray: true })
+  errors!: EmployeeDepartmentMasterErrorFieldDto[];
+}
+
+export class EmployeeDepartmentMasterPayloadDto {
+  @ApiProperty({ format: 'uuid' })
+  edptId!: string;
+
+  @ApiProperty()
+  edptName!: string;
+
+  @ApiPropertyOptional({ nullable: true })
+  edptCode!: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  edptAlias!: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  edptRemarks!: string | null;
+
+  @ApiProperty()
+  edptIsActive!: boolean;
+
+  @ApiProperty()
+  edptIsDeleted!: boolean;
+
+  @ApiPropertyOptional({ nullable: true })
+  edptSyncDate!: string | null;
+
+  @ApiProperty()
+  edptCreatedOn!: string;
+
+  @ApiPropertyOptional({ nullable: true })
+  edptCreatedBy!: string | null;
+
+  @ApiProperty()
+  edptModifiedOn!: string;
+
+  @ApiPropertyOptional({ nullable: true })
+  edptModifiedBy!: string | null;
+}
+
+export class EmployeeDepartmentMasterDeleteResultDto {
+  @ApiProperty({ format: 'uuid' })
+  edptId!: string;
+
+  @ApiProperty({ example: true })
+  deleted!: true;
+}
+
+export class EmployeeDepartmentMasterSuccessSingleDto {
+  @ApiProperty({ example: true })
+  success!: true;
+
+  @ApiProperty({ example: 'Employee department fetched successfully' })
+  message!: string;
+
+  @ApiProperty({ type: EmployeeDepartmentMasterPayloadDto })
+  data!: EmployeeDepartmentMasterPayloadDto;
+}
+
+export class EmployeeDepartmentMasterSuccessDeleteDto {
+  @ApiProperty({ example: true })
+  success!: true;
+
+  @ApiProperty({ example: 'Employee department deleted successfully' })
+  message!: string;
+
+  @ApiProperty({ type: EmployeeDepartmentMasterDeleteResultDto })
+  data!: EmployeeDepartmentMasterDeleteResultDto;
+}

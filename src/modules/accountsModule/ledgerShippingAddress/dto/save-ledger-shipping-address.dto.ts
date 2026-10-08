@@ -1,244 +1,146 @@
-import { Transform, Type } from 'class-transformer';
-import {
-  IsBoolean,
-  IsDate,
-  IsEmail,
-  IsInt,
-  IsOptional,
-  IsString,
-  IsUUID,
-  Length,
-  MaxLength,
-  Min,
-  ValidateIf,
-} from 'class-validator';
+import { IsEmail, IsEnum, IsNotEmpty, IsOptional } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-
-const toNullableString = (value: unknown): string | null | undefined => {
-  if (value === undefined) {
-    return undefined;
-  }
-
-  if (value === null) {
-    return null;
-  }
-
-  if (typeof value !== 'string') {
-    return null;
-  }
-
-  const trimmed = value.trim();
-  return trimmed ? trimmed : null;
-};
-
-const toNullableDate = (value: unknown): Date | null | undefined => {
-  if (value === undefined) {
-    return undefined;
-  }
-
-  if (value === null || value === '') {
-    return null;
-  }
-
-  if (value instanceof Date) {
-    return value;
-  }
-
-  if (typeof value !== 'string' && typeof value !== 'number') {
-    return value as Date;
-  }
-
-  return new Date(value);
-};
-
-const toUpper = (value: unknown): unknown => {
-  if (typeof value !== 'string') {
-    return value;
-  }
-
-  return value.trim().toUpperCase();
-};
-
-const toNullableNumber = (value: unknown): number | null | undefined => {
-  if (value === undefined) {
-    return undefined;
-  }
-
-  if (value === null || value === '') {
-    return null;
-  }
-
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : (value as number);
-};
+import {
+  NullableDate,
+  NullableInteger,
+  NullableString,
+  NullableUpperString,
+  NullableUuid,
+  OptionalBoolean,
+  OptionalInteger,
+  OptionalUpperString,
+  OptionalUuid,
+  RequiredUuid,
+  SkipOnNullish,
+} from 'src/common/dto/dtoDecorators';
+import { Transform } from 'class-transformer';
+import { IsString } from 'class-validator';
+import { toUpperTrimmed } from 'src/common/dto/DtoTransforms';
+import { SaaAddrType } from '../types/ledger-shipping-address-enum';
 
 export class SaveLedgerShippingAddressDto {
   @ApiPropertyOptional({
     format: 'uuid',
     description: 'When provided, request updates the existing ledger shipping address',
   })
-  @IsOptional()
-  @IsUUID('all')
+  @OptionalUuid()
   saaId?: string;
 
-  @ApiPropertyOptional({ type: Number, nullable: true })
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  @NullableUuid()
   saaCompanyId?: string | null;
 
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  @NullableUuid()
+  saaBranchId?: string | null;
+
   @ApiProperty({ format: 'uuid' })
-  @IsUUID('all')
+  @RequiredUuid()
   saaLedgerId!: string;
 
-  @ApiPropertyOptional({ maxLength: 20 })
+  @ApiPropertyOptional({
+    enum: SaaAddrType,
+    enumName: 'SaaAddrType',
+    description: 'Allowed values: SHIP_TO, BILL_TO, BOTH (defaults to SHIP_TO)',
+  })
   @IsOptional()
-  @Transform(({ value }) => toUpper(value))
-  @IsString()
-  @MaxLength(20)
-  saaAddrType?: string;
+  @Transform(({ value }) => toUpperTrimmed(value))
+  @IsEnum(SaaAddrType)
+  saaAddrType?: SaaAddrType;
 
   @ApiPropertyOptional()
-  @IsOptional()
-  @IsBoolean()
+  @OptionalBoolean()
   saaIsDefault?: boolean;
 
   @ApiPropertyOptional({ minimum: 0 })
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(0)
+  @OptionalInteger(0)
   saaSort?: number;
 
   @ApiPropertyOptional({ maxLength: 200, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(200)
-  saaTrdnm?: string | null;
+  @NullableString(200)
+  saaTradeName?: string | null;
 
   @ApiPropertyOptional({ maxLength: 150, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(150)
+  @NullableString(150)
   saaContactName?: string | null;
 
   @ApiPropertyOptional({ maxLength: 250, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(250)
+  @NullableString(250)
   saaAddr1?: string | null;
 
   @ApiPropertyOptional({ maxLength: 250, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(250)
+  @NullableString(250)
   saaAddr2?: string | null;
 
   @ApiPropertyOptional({ maxLength: 250, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(250)
+  @NullableString(250)
   saaAddr3?: string | null;
 
   @ApiPropertyOptional({ maxLength: 200, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(200)
-  saaLoc?: string | null;
+  @NullableString(200)
+  saaLocation?: string | null;
 
-  @ApiPropertyOptional({ maxLength: 10, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(10)
+  @ApiPropertyOptional({
+    maxLength: 10,
+    nullable: true,
+    description: 'PIN code; must be 6 digits when the country is India',
+  })
+  @NullableString(10)
   saaPin?: string | null;
 
-  @ApiPropertyOptional({ maxLength: 2, minLength: 2, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toUpper(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @Length(2, 2)
+  @ApiPropertyOptional({
+    maxLength: 2,
+    minLength: 2,
+    nullable: true,
+    description: '2-digit GST numeric state code',
+  })
+  @NullableUpperString(2)
   saaStateCode?: string | null;
 
   @ApiPropertyOptional({ maxLength: 100, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(100)
+  @NullableString(100)
   saaStateName?: string | null;
 
+  @ApiPropertyOptional({
+    maxLength: 2,
+    minLength: 2,
+    description: 'ISO country code (defaults to IN)',
+  })
+  @OptionalUpperString(2)
+  saaCountryCode?: string;
+
   @ApiPropertyOptional({ minimum: 0, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableNumber(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsInt()
-  @Min(0)
+  @NullableInteger(0)
   saaDistanceKm?: number | null;
 
   @ApiPropertyOptional({ maxLength: 20, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(20)
+  @NullableString(20)
   saaPhone?: string | null;
 
   @ApiPropertyOptional({ maxLength: 120, nullable: true })
   @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
+  @SkipOnNullish()
   @IsEmail()
-  @MaxLength(120)
   saaEmail?: string | null;
 
-  @ApiPropertyOptional({ maxLength: 15, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
+  @ApiProperty({
+    maxLength: 15,
+    description: 'Mandatory 15-character GSTIN',
+  })
+  @Transform(({ value }) => toUpperTrimmed(value))
   @IsString()
-  @MaxLength(15)
-  saaGstin?: string | null;
-
-  @ApiPropertyOptional({ maxLength: 10, minLength: 10, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toUpper(toNullableString(value)))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @Length(10, 10)
-  saaPan?: string | null;
+  @IsNotEmpty()
+  saaGstin!: string;
 
   @ApiPropertyOptional({ type: String, format: 'date-time', nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableDate(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsDate()
-  saaSyncDate?: Date | null;
+  @NullableDate()
+  saaSyncedOn?: Date | null;
 
   @ApiPropertyOptional()
-  @IsOptional()
-  @IsBoolean()
+  @OptionalBoolean()
   saaIsActive?: boolean;
 
   @ApiPropertyOptional({ maxLength: 250, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(250)
+  @NullableString(250)
   saaRemarks?: string | null;
 }

@@ -5,7 +5,6 @@ import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { TokenService } from './token.service';
 import { AuthSessionService } from './auth-session.service';
-
 @Module({
   imports: [UsersModule, ConfigModule],
   controllers: [AuthController],

@@ -12,15 +12,13 @@ Implement a login flow in the Auth module that validates user credentials and re
    - Add `src/modules/auth/dto/login-response.dto.ts`:
      - `access_token: string`
      - `token_type: string` (use `Bearer`)
-     - `expires_in: number` (seconds)
+     - `user_id: string`
 
 2. **Add JWT Environment Variables**
    - Update `.env.example`:
      - `JWT_SECRET=...`
-     - `JWT_EXPIRES_IN=3600`
    - Update `src/config/env.validation.ts`:
      - Validate `JWT_SECRET` (required in non-test environments).
-     - Validate `JWT_EXPIRES_IN` (positive integer).
    - Update `src/config/configuration.ts`:
      - Expose values under `auth` config.
 
@@ -45,11 +43,11 @@ Implement a login flow in the Auth module that validates user credentials and re
    - Build JWT payload with at least:
      - `sub: user_id`
      - `user_name`
-   - Sign token with configured secret + expiry.
+   - Sign token with configured secret. Access tokens do not expire by time.
    - Return response:
      - `access_token`
      - `token_type: "Bearer"`
-     - `expires_in`
+     - `user_id`
 
 6. **Expose Login Endpoint in Controller**
    - Update `src/modules/auth/auth.controller.ts`:

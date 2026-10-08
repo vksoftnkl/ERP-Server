@@ -1,0 +1,137 @@
+/// ONE transport band for every document that moves goods.
+///
+/// The band used to be 22 columns repeated on sale_bill, sale_dc, sale_return
+/// and sale_dc_return — 88 definitions of the same 22 facts, which had ALREADY
+/// drifted before anyone noticed: vehicle_id was missing from the DC return and
+/// supervisor_id existed only on the bill. Every future e-way field would have
+/// been four ALTERs, and the fourth is the one that gets forgotten.
+///
+/// NOT for storage. That argument was measured and does not hold: 22 NULL
+/// columns cost about 8 bytes a row, because PostgreSQL keeps NULLs as one bit
+/// each in a row bitmap. One definition instead of four is the whole reason.
+///
+/// Same shape as TransactionChargeDetail and TxnStatusLog — a polymorphic child
+/// keyed by (docType, docId, accYear), LIST-partitioned on the year.
+///
+/// ── FROM and TO are POSITIONAL; ttdDirection says what they mean ─────────
+///
+///   OUTWARD (sale bill, delivery challan)
+///       FROM = our godown / branch      TO = the customer's address
+///   INWARD  (sale return, DC return)
+///       FROM = the customer's address   TO = our godown / branch
+///
+///   The doc register then maps straight across, with no per-document branch:
+///       gdr_dispatch_*  <-  ttd_from_*
+///       gdr_ship_*      <-  ttd_to_*
+///
+/// Whichever side is OURS fills the godown / branch columns; whichever side is
+/// the party's fills the address block. Both sides carry both, so a
+/// branch-to-branch move needs no third shape.
+///
+/// The VEHICLE and the CREW are deliberately NOT here — they stay on the
+/// document, because they exist whenever goods move even with no consignment
+/// at all: a POS home delivery has a driver and a van and no transporter, no
+/// LR, no distance, no e-way bill.
+model TxnTransportDetail {
+  ttdId               String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("ttd_id")
+  ttdCompanyId        String    @db.Uuid                             @map("ttd_company_id")
+  ttdBranchId         String    @db.Uuid                             @map("ttd_branch_id")
+  ttdTenantId         String?   @db.Uuid                             @map("ttd_tenant_id")
+  ttdAccYear          String    @db.Char(9)                          @map("ttd_acc_year")
+
+  // ── Which document ───────────────────────────────────────────────────
+  /// SALE_BILL | DELIVERY_CHALLAN | SALE_RETURN | DC_RETURN | STOCK_TRANSFER.
+  /// Widened per module as each arrives — PURCHASE_BILL and PURCHASE_RETURN
+  /// join when those are built.
+  ttdDocType          String    @db.VarChar(30)                      @map("ttd_doc_type")
+  /// Polymorphic: NO relation field and no FK, because a child cannot key four
+  /// different partitioned parents. The service is what stops a band outliving
+  /// its document — the same price TransactionChargeDetail and TxnStatusLog
+  /// already pay.
+  ttdDocId            String    @db.Uuid                             @map("ttd_doc_id")
+  /// Snapshot, so a row reads alone.
+  ttdDocRefno         String?   @db.VarChar(100)                     @map("ttd_doc_refno")
+
+  /// OUTWARD | INWARD — what FROM and TO mean on this row.
+  ttdDirection        String    @db.VarChar(10)                      @map("ttd_direction")
+
+  // ── FROM ─────────────────────────────────────────────────────────────
+  /// Set when the FROM side is ours.
+  ttdFromGodownId     String?   @db.Uuid                             @map("ttd_from_godown_id")
+  ttdFromBranchId     String?   @db.Uuid                             @map("ttd_from_branch_id")
+  /// A listed ship address, when it is one. No FK: the address masters are
+  /// company-scoped and a band must survive one being retired.
+  ttdFromAddrId       String?   @db.Uuid                             @map("ttd_from_addr_id")
+  ttdFromName         String?   @db.VarChar(200)                     @map("ttd_from_name")
+  ttdFromAddr         String?   @db.VarChar(500)                     @map("ttd_from_addr")
+  ttdFromPlace        String?   @db.VarChar(100)                     @map("ttd_from_place")
+  ttdFromPin          String?   @db.VarChar(10)                      @map("ttd_from_pin")
+  ttdFromPhone        String?   @db.VarChar(20)                      @map("ttd_from_phone")
+  ttdFromStcd         String?   @db.Char(2)                          @map("ttd_from_stcd")
+  ttdFromGstin        String?   @db.VarChar(15)                      @map("ttd_from_gstin")
+
+  // ── TO ───────────────────────────────────────────────────────────────
+  /// Set when the TO side is ours.
+  ttdToGodownId       String?   @db.Uuid                             @map("ttd_to_godown_id")
+  ttdToBranchId       String?   @db.Uuid                             @map("ttd_to_branch_id")
+  ttdToAddrId         String?   @db.Uuid                             @map("ttd_to_addr_id")
+  ttdToName           String?   @db.VarChar(200)                     @map("ttd_to_name")
+  ttdToAddr           String?   @db.VarChar(500)                     @map("ttd_to_addr")
+  ttdToPlace          String?   @db.VarChar(100)                     @map("ttd_to_place")
+  ttdToPin            String?   @db.VarChar(10)                      @map("ttd_to_pin")
+  ttdToPhone          String?   @db.VarChar(20)                      @map("ttd_to_phone")
+  ttdToStcd           String?   @db.Char(2)                          @map("ttd_to_stcd")
+  ttdToGstin          String?   @db.VarChar(15)                      @map("ttd_to_gstin")
+
+  // ── Carriage ─────────────────────────────────────────────────────────
+  /// ROAD | RAIL | AIR | SHIP
+  ttdTransportMode    String?   @db.VarChar(10)                      @map("ttd_transport_mode")
+  ttdTransporterId    String?   @db.Uuid                             @map("ttd_transporter_id")
+  ttdTransporterName  String?   @db.VarChar(200)                     @map("ttd_transporter_name")
+  /// The PORTAL's transporterId: a 15-character GSTIN or enrolment id, NOT the
+  /// TransporterMaster uuid in ttdTransporterId.
+  ttdTransporterGstin String?   @db.VarChar(15)                      @map("ttd_transporter_gstin")
+  /// e-way Part-B transDocNo / transDocDate.
+  ttdLrNo             String?   @db.VarChar(50)                      @map("ttd_lr_no")
+  ttdLrDate           DateTime? @db.Date                             @map("ttd_lr_date")
+  ttdDistanceKm       Int?                                           @map("ttd_distance_km")
+
+  ttdRemarks          String?   @db.VarChar(250)                     @map("ttd_remarks")
+
+  // ── Audit ────────────────────────────────────────────────────────────
+  ttdIsDeleted        Boolean   @default(false)                      @map("ttd_is_deleted")
+  ttdSyncDate         DateTime? @db.Timestamptz(6)                   @map("ttd_sync_date")
+  ttdCreatedOn        DateTime  @default(now()) @db.Timestamptz(6)   @map("ttd_created_on")
+  ttdCreatedBy        String    @db.VarChar(50)                      @map("ttd_created_by")
+  ttdModifiedOn       DateTime? @db.Timestamptz(6)                   @map("ttd_modified_on")
+  ttdModifiedBy       String?   @db.VarChar(50)                      @map("ttd_modified_by")
+
+  // Relations
+  transporter         TransporterMaster? @relation("TransportBandTransporter", fields: [ttdTransporterId], references: [trnId], onUpdate: Cascade, onDelete: Restrict, map: "fk_ttd_transporter")
+  fromGodown          GodownLocation?    @relation("TransportBandFromGodown",  fields: [ttdFromGodownId],  references: [gdlId], onUpdate: Cascade, onDelete: Restrict, map: "fk_ttd_from_godown")
+  toGodown            GodownLocation?    @relation("TransportBandToGodown",    fields: [ttdToGodownId],    references: [gdlId], onUpdate: Cascade, onDelete: Restrict, map: "fk_ttd_to_godown")
+
+  @@id([ttdId, ttdAccYear], map: "pk_txn_transport_detail")
+
+  // Partial indexes are DB-only — Prisma ignores WHERE predicates:
+  //
+  //   -- 1:1 with its document. The entry screen, the print template and the
+  //   -- e-way builder all read by this one.
+  //   CREATE UNIQUE INDEX ux_ttd_doc ON public.txn_transport_detail
+  //       (ttd_doc_type, ttd_doc_id, ttd_acc_year) WHERE ttd_is_deleted = false;
+  //
+  //   -- "what did this transporter carry" — leads on the COMPANY, so it is a
+  //   -- report index and NOT a cover for fk_ttd_transporter
+  //   CREATE INDEX ix_ttd_transporter ON public.txn_transport_detail
+  //       (ttd_company_id, ttd_transporter_id)
+  //       WHERE ttd_is_deleted = false AND ttd_transporter_id IS NOT NULL;
+  //
+  //   -- FK-covering: ix_ttd_transporter_fk, ix_ttd_from_godown, ix_ttd_to_godown
+  //
+  // CHECK constraints (DB-only): ck_ttd_doc_type, ck_ttd_direction,
+  //   ck_ttd_transport_mode, and ck_ttd_has_an_end — a row that names neither
+  //   end is a row that says nothing.
+
+  @@map("txn_transport_detail")
+  @@schema("public")
+}
