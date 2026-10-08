@@ -19,7 +19,11 @@ import { PromotionUsageService } from '../posting/promotion-usage.service';
 import { SalesContextService, type SalesCallContext } from '../posting/sales-context.service';
 import { SalesDocBlocksService } from '../posting/sales-doc-blocks.service';
 import { SalesDocStore, type DocKeys, type DocRow, type DocSpec } from '../posting/sales-doc-store';
-import { buildReturnLegs, chargePostsSeparately } from '../posting/sales-leg.sources';
+import {
+  buildReturnLegs,
+  chargePostsSeparately,
+  splitRegisterCharges,
+} from '../posting/sales-leg.sources';
 import { VoucherPostingService } from '../../../common/posting/voucher-posting.service';
 import { SalesStockService } from '../posting/sales-stock.service';
 import { StatutoryService } from '../../../common/posting/statutory.service';
@@ -1015,18 +1019,18 @@ export class SaleReturnService {
     actor: string,
   ): RegisterDoc {
     const d = (k: string) => num(row[k] as Prisma.Decimal);
-    const other = charges
-      .filter((c) => chargePostsSeparately(c))
-      .reduce(
-        (t, c) =>
-          t +
-          num(c.cdAmount) +
-          num(c.cdCgstAmt) +
-          num(c.cdSgstAmt) +
-          num(c.cdIgstAmt) +
-          num(c.cdCessAmt),
-        0,
-      );
+    const split = splitRegisterCharges(
+      charges
+        .filter((c) => chargePostsSeparately(c))
+        .map(
+          (c) =>
+            num(c.cdAmount) +
+            num(c.cdCgstAmt) +
+            num(c.cdSgstAmt) +
+            num(c.cdIgstAmt) +
+            num(c.cdCessAmt),
+        ),
+    );
     const lines: RegisterDetailLine[] = items.map((i): RegisterDetailLine => {
       const n = (k: string) => num(i[k] as Prisma.Decimal);
       const tax = n('sriCgstAmt') + n('sriSgstAmt') + n('sriIgstAmt') + n('sriCessAmt');
@@ -1092,9 +1096,11 @@ export class SaleReturnService {
       partyGstType: row.srCustGstType as string | null,
       partyGstin: ((row.srCustGstin as string | null) ?? '').trim() || null,
       grossValue: d('srGrossAmt'),
-      discountValue:
-        d('srDiscAmt') ||
-        d('srItemDisc') + d('srSplDisc') + d('srSchDisc') + d('srBillSchDisc') + d('srCashDisc'),
+      discountValue: round2(
+        (d('srDiscAmt') ||
+          d('srItemDisc') + d('srSplDisc') + d('srSchDisc') + d('srBillSchDisc') + d('srCashDisc')) +
+          split.deduction,
+      ),
       taxableValue: d('srTaxableAmt'),
       cgstValue: d('srCgstAmt'),
       sgstValue: d('srSgstAmt'),
@@ -1102,7 +1108,7 @@ export class SaleReturnService {
       cessValue: d('srCessAmt'),
       stateCessValue: 0,
       tcsValue: 0,
-      otherCharge: round2(other),
+      otherCharge: split.other,
       roundOff: d('srRoundOff'),
       billValue: d('srReturnAmt'),
       remarks: row.srReturnReason as string | null,

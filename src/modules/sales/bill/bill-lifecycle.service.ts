@@ -16,7 +16,7 @@ import { LoyaltyLedgerService } from '../posting/loyalty-ledger.service';
 import { PromotionUsageService } from '../posting/promotion-usage.service';
 import { SalesContextService, type SalesCallContext } from '../posting/sales-context.service';
 import { SalesDocBlocksService } from '../posting/sales-doc-blocks.service';
-import { buildBillLegs } from '../posting/sales-leg.sources';
+import { buildBillLegs, splitRegisterCharges } from '../posting/sales-leg.sources';
 import { VoucherPostingService } from '../../../common/posting/voucher-posting.service';
 import { SalesStockService } from '../posting/sales-stock.service';
 import { StockReservationService } from '../posting/stock-reservation.service';
@@ -2036,9 +2036,11 @@ export class BillLifecycleService {
     });
     const taxed = lines.filter((l) => l.taxability === 'TAXABLE').length;
     const services = snap.items.filter((i) => i.isService).length;
-    const other = snap.charges
-      .filter((c) => c.separatelyPosted)
-      .reduce((t, c) => t + c.amount + c.cgst + c.sgst + c.igst + c.cess, 0);
+    const charges = splitRegisterCharges(
+      snap.charges
+        .filter((c) => c.separatelyPosted)
+        .map((c) => c.amount + c.cgst + c.sgst + c.igst + c.cess),
+    );
     return {
       companyId: bill.sbCompanyId,
       branchId: bill.sbBranchId,
@@ -2071,7 +2073,14 @@ export class BillLifecycleService {
       partyGstType: snap.custGstType,
       partyGstin: snap.custGstin?.trim() || null,
       grossValue: snap.grossAmt,
-      discountValue: snap.itemDisc + snap.splDisc + snap.schDisc + snap.billSchDisc + snap.cashDisc,
+      discountValue: round2(
+        snap.itemDisc +
+          snap.splDisc +
+          snap.schDisc +
+          snap.billSchDisc +
+          snap.cashDisc +
+          charges.deduction,
+      ),
       taxableValue: snap.taxableAmt,
       cgstValue: snap.cgstAmt,
       sgstValue: snap.sgstAmt,
@@ -2079,7 +2088,7 @@ export class BillLifecycleService {
       cessValue: snap.cessAmt,
       stateCessValue: 0,
       tcsValue: snap.tcsAmt,
-      otherCharge: round2(other),
+      otherCharge: charges.other,
       roundOff: snap.roundOff,
       billValue: snap.billAmt,
       remarks: snap.remarks,

@@ -32,6 +32,25 @@ export function chargePostsSeparately(c: {
   return c.cdSepPost === true || c.cdBeforeTax !== true;
 }
 
+/**
+ * Separately posted charges as the GST register carries them. Every register
+ * amount is >= 0 (chk_gdr_amounts), so a charge that adds (amount + its GST) is
+ * an other charge and one that deducts joins the discount, beside the cash
+ * discount it sits with after tax. Pass each charge's net amount.
+ */
+export function splitRegisterCharges(nets: number[]): { other: number; deduction: number } {
+  let other = 0;
+  let deduction = 0;
+  for (const n of nets) {
+    if (n >= 0) {
+      other += n;
+    } else {
+      deduction -= n;
+    }
+  }
+  return { other: round2(other), deduction: round2(deduction) };
+}
+
 /** Order is the contract — `av_row_no` follows it. See `VoucherPostingService` (src/common/posting). */
 export function buildBillLegs(input: BillLegInput): SalesLeg[] {
   const legs: SalesLeg[] = [];
