@@ -2,6 +2,7 @@ import { Prisma, SaleBill, SaleBillItem } from '@prisma/client';
 import type { SaveBillDto } from './dto/save-bill.dto';
 import type { BillChargePayload, BillTenderPayload } from './types/bill-api.types';
 import { TENDER_TYPE, isoDate, isoToday, num, round2 } from '../posting/sales-doc.utils';
+import { chargePostsSeparately } from '../posting/sales-leg.sources';
 import { decodeTempCredit, type TempCreditDetails } from './bill-temp-credit';
 
 /**
@@ -279,7 +280,7 @@ export function snapshotFromRows(
       ledgerId: c.cdLedgerCode,
       name: c.cdChgName,
       amount: num(c.cdAmount),
-      separatelyPosted: c.cdSepPost,
+      separatelyPosted: chargePostsSeparately(c),
       beforeTax: c.cdBeforeTax,
       cgst: num(c.cdCgstAmt),
       sgst: num(c.cdSgstAmt),
@@ -452,7 +453,7 @@ export function snapshotFromDto(
       ledgerId: c.cdLedgerCode ?? null,
       name: c.cdChgName ?? null,
       amount: num(c.cdAmount),
-      separatelyPosted: c.cdSepPost ?? false,
+      separatelyPosted: chargePostsSeparately(c),
       beforeTax: c.cdBeforeTax ?? false,
       cgst: num(c.cdCgstAmt),
       sgst: num(c.cdSgstAmt),

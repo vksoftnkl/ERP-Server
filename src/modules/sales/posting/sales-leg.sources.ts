@@ -18,6 +18,20 @@ import type {
  * that pre-negates an amount writes a row `ck_av_amount` refuses.
  */
 
+/**
+ * Whether a charge posts to its own ledger. A before-tax charge is part of the
+ * taxable value, so SALES absorbs it unless cd_sep_post says otherwise. An
+ * after-tax charge is not, so SALES has nothing to absorb it into: it posts to
+ * its own ledger whatever cd_sep_post says, or the party debit and the bill
+ * amount part by exactly that charge (SALES_AMOUNT_MISMATCH).
+ */
+export function chargePostsSeparately(c: {
+  cdSepPost?: boolean | null;
+  cdBeforeTax?: boolean | null;
+}): boolean {
+  return c.cdSepPost === true || c.cdBeforeTax !== true;
+}
+
 /** Order is the contract — `av_row_no` follows it. See `VoucherPostingService` (src/common/posting). */
 export function buildBillLegs(input: BillLegInput): SalesLeg[] {
   const legs: SalesLeg[] = [];
@@ -47,7 +61,8 @@ export function buildBillLegs(input: BillLegInput): SalesLeg[] {
   pushTaxLegs(legs, input.taxes, input.supplyNature, 'CR');
 
   // 4 — charges that post separately. A charge "before tax" is already part of
-  //     the taxable value and posts inside SALES unless cd_sep_post.
+  //     the taxable value and posts inside SALES unless cd_sep_post; an
+  //     after-tax charge always posts here (see chargePostsSeparately).
   for (const charge of input.charges) {
     if (!charge.separatelyPosted || round2(charge.amount) === 0) {
       continue;

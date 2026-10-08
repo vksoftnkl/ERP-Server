@@ -19,7 +19,7 @@ import { PromotionUsageService } from '../posting/promotion-usage.service';
 import { SalesContextService, type SalesCallContext } from '../posting/sales-context.service';
 import { SalesDocBlocksService } from '../posting/sales-doc-blocks.service';
 import { SalesDocStore, type DocKeys, type DocRow, type DocSpec } from '../posting/sales-doc-store';
-import { buildReturnLegs } from '../posting/sales-leg.sources';
+import { buildReturnLegs, chargePostsSeparately } from '../posting/sales-leg.sources';
 import { VoucherPostingService } from '../../../common/posting/voucher-posting.service';
 import { SalesStockService } from '../posting/sales-stock.service';
 import { StatutoryService } from '../../../common/posting/statutory.service';
@@ -686,7 +686,7 @@ export class SaleReturnService {
       charges: charges.map((c) => ({
         ledgerId: c.cdLedgerCode,
         amount: num(c.cdAmount),
-        separatelyPosted: c.cdSepPost,
+        separatelyPosted: chargePostsSeparately(c),
         cgst: num(c.cdCgstAmt),
         sgst: num(c.cdSgstAmt),
         igst: num(c.cdIgstAmt),
@@ -1002,6 +1002,7 @@ export class SaleReturnService {
     items: DocRow[],
     charges: {
       cdSepPost: boolean;
+      cdBeforeTax: boolean;
       cdAmount: number | null;
       cdCgstAmt: number | null;
       cdSgstAmt: number | null;
@@ -1015,7 +1016,7 @@ export class SaleReturnService {
   ): RegisterDoc {
     const d = (k: string) => num(row[k] as Prisma.Decimal);
     const other = charges
-      .filter((c) => c.cdSepPost)
+      .filter((c) => chargePostsSeparately(c))
       .reduce(
         (t, c) =>
           t +
