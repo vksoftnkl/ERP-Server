@@ -219,6 +219,7 @@ VALUES
     ,(  76,   74, 'Sales Bills'                          , NULL                  , false,   1.00, NULL, NULL, NULL, true , false)
     ,( 106,    6, 'Audit Logs'                           , NULL                  , true ,   1.00, NULL, NULL, NULL, true , false)
     ,( 137,    6, 'Financial Statements'                 , NULL                  , true ,   7.00, NULL, NULL, NULL, true , false)
+    ,( 279,    6, 'Party Outstanding'                    , NULL                  , true ,   7.50, NULL, NULL, NULL, true , false)
     ,( 258,  137, 'Ledger Statement'                     , NULL                  , true ,   0.50, NULL, NULL, NULL, true , false)
     ,( 138,  137, 'Trial Balance'                        , NULL                  , false,   1.00, NULL, NULL, NULL, true , false)
     ,( 139,  137, 'Balance Sheet'                        , NULL                  , false,   2.00, NULL, NULL, NULL, true , false)
@@ -373,6 +374,15 @@ UPDATE fixed.menu_master
 UPDATE fixed.menu_master
    SET menu_verbs = '{VIEW,CREATE,EDIT,PRINT,EXPORT,POST,CANCEL,OVERRIDE}'
  WHERE menu_id = 278
+   AND menu_verbs = '{VIEW,CREATE,EDIT,DELETE,PRINT,EXPORT}';
+
+-- 279 Party Outstanding (reports/party-outstanding; 20261009100000_party_outstanding_menu,
+-- moved under Reports by 20261009150000_party_outstanding_menu_reports) is a
+-- read-only report like 258: view, print, export.
+-- Same guard as above.
+UPDATE fixed.menu_master
+   SET menu_verbs = '{VIEW,PRINT,EXPORT}'
+ WHERE menu_id = 279
    AND menu_verbs = '{VIEW,CREATE,EDIT,DELETE,PRINT,EXPORT}';
 
 -- Keep the identity sequence ahead of the seeded ids, otherwise the first menu

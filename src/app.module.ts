@@ -57,6 +57,7 @@ import { VouchersModule } from './modules/accountsModule/vouchers/vouchers.modul
 import { IssuedChequesModule } from './modules/accountsModule/issuedCheques/issued-cheques.module';
 import { LedgerStatementModule } from './modules/reports/ledger-statement/ledger-statement.module';
 import { LoyaltyStatusModule } from './modules/reports/loyalty-status/loyalty-status.module';
+import { ReportsPartyOutstandingModule } from './modules/reports/party-outstanding/party-outstanding.module';
 import { LedgerMapModule } from './modules/accountsModule/ledgerMap/ledger-map.module';
 import { BillBalanceModule } from './modules/accountsModule/billBalance/bill-balance.module';
 import { LedgerShippingAddressModule } from './modules/accountsModule/ledgerShippingAddress/ledger-shipping-address.module';
@@ -214,6 +215,7 @@ const isThrottlerEnabled = parseBoolean(process.env.THROTTLE_ENABLED, true);
     VouchersModule,
     IssuedChequesModule,
     LedgerStatementModule,
+    ReportsPartyOutstandingModule,
     LoyaltyStatusModule,
     LedgerMapModule,
     SupplierGroupModule,
