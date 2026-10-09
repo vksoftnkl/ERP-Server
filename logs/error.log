@@ -15690,3 +15690,18 @@ Unique constraint failed on the fields: (`atc_tender_id`,`atc_tender_acc_year`,`
     at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
     at async BillLifecycleService.amend (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill-lifecycle.service.ts:354:5)
     at async BillController.amend (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill.controller.ts:148:49)
+2026-10-09T11:36:06.265Z ERROR [AllExceptionsFilter] GET /api/v1/reports/party-outstanding/bills?companyId=019c8ea6-19e9-78a8-b15f-749e1cde7292&asOn=2026-10-09&side=RECEIVABLE&ageBy=BILL_DATE&buckets=30%2C60%2C90%2C180&onlyOverdue=false&includeOnAccount=true&deductPdc=false&hideZero=true&branchId=019c8ea7-b0f5-72d5-96a5-1abfc80cc8ab&partyId=01a0e6f1-991a-72f7-95cb-6bd2d3d20c25
+PrismaClientUnknownRequestError: 
+Invalid `prisma.$queryRaw()` invocation:
+
+
+Response from the Engine was empty
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:237:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async PartyOutstandingService.remarksOf (/home/vk/Dev/erp/ERP server/src/modules/reports/party-outstanding/party-outstanding.service.ts:1087:18)
+    at async PartyOutstandingService.billRows (/home/vk/Dev/erp/ERP server/src/modules/reports/party-outstanding/party-outstanding.service.ts:1009:21)
+    at async Promise.all (index 0)
+    at async PartyOutstandingService.bills (/home/vk/Dev/erp/ERP server/src/modules/reports/party-outstanding/party-outstanding.service.ts:301:29)
+    at async PartyOutstandingController.bills (/home/vk/Dev/erp/ERP server/src/modules/reports/party-outstanding/party-outstanding.controller.ts:133:18)
