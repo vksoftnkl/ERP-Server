@@ -475,12 +475,16 @@ describe('§5 · a statement: column map, import, match, post', () => {
       expect.objectContaining({ drCr: 'CR', amount: 500 }),
     );
 
-    const settled = await prisma.$queryRaw<{ status: string; amount: string; voucher: string }[]>`
-      SELECT td_settle_status AS status, td_settle_amount::text AS amount, td_settle_voucher_id::text AS voucher
+    // Not sales rows: their td_mdr_amt is the document's own split, never the statement's fee.
+    const settled = await prisma.$queryRaw<
+      { status: string; amount: string; voucher: string; mdr: string }[]
+    >`
+      SELECT td_settle_status AS status, td_settle_amount::text AS amount, td_settle_voucher_id::text AS voucher,
+             td_mdr_amt::text AS mdr
         FROM accounts.acc_tender_detail WHERE td_id IN (${rowAuth}::uuid, ${rowTime}::uuid) ORDER BY td_total_amt DESC`;
-    expect(settled.map((s) => [s.status, Number(s.amount), s.voucher])).toEqual([
-      ['SETTLED', 1250, posted.body.data.voucherId],
-      ['SETTLED', 300, posted.body.data.voucherId],
+    expect(settled.map((s) => [s.status, Number(s.amount), s.voucher, Number(s.mdr)])).toEqual([
+      ['SETTLED', 1250, posted.body.data.voucherId, 0],
+      ['SETTLED', 300, posted.body.data.voucherId, 0],
     ]);
 
     const [grid] = await prisma.$queryRaw<{ id: string }[]>`
@@ -590,6 +594,15 @@ describe('§5.5 · void', () => {
     const row = await tenderRow({ tdAmount: 400, tdAuthCode: 'B22222', tdCardLast4: '9999' });
     expectStatus(row, 201);
     const tdId = row.body.data.tdId;
+    // Stands in for a bill's card row: a sales row takes the acquirer's fee + tax (notes 99 §2).
+    await prisma.$executeRaw`
+      UPDATE accounts.acc_tender_detail SET td_src_module = 'SALES', td_src_doc_type = 'SALE_BILL'
+       WHERE td_id = ${tdId}::uuid`;
+    const mdrOf = async (): Promise<number> => {
+      const [r] = await prisma.$queryRaw<{ mdr: string }[]>`
+        SELECT td_mdr_amt::text AS mdr FROM accounts.acc_tender_detail WHERE td_id = ${tdId}::uuid`;
+      return Number(r.mdr);
+    };
     const csv = [
       HEADER,
       `${istStamp()},Sale,E2ET1${tag},V1${tag},B22222,9999,400.00,8.00,1.44,390.56,E2E-UTR2-${tag},${istStamp()}`,
@@ -605,6 +618,7 @@ describe('§5.5 · void', () => {
     expect(imp.status).toBe('MATCHED');
     const key = { ...scope, accYear: imp.accYear, asiId: imp.asiId };
     expectStatus(await postAs(officePc, 'tender-settlement/post', key), 201);
+    expect(await mdrOf()).toBe(9.44);
 
     const voided = await postAs(officePc, 'tender-settlement/void', {
       ...key,
@@ -616,6 +630,7 @@ describe('§5.5 · void', () => {
       SELECT td_settle_status AS status, td_settle_voucher_id::text AS voucher
         FROM accounts.acc_tender_detail WHERE td_id = ${tdId}::uuid`;
     expect(back).toEqual({ status: 'PENDING', voucher: null });
+    expect(await mdrOf()).toBe(0);
 
     const reread = await upload(
       'tender-settlement/import',
@@ -668,6 +683,35 @@ describe('§4 · the close: one line per terminal, the slip check', () => {
     });
     expectStatus(receipt, 201);
     payments.vouchers.push(receipt.body.data.voucherId ?? receipt.body.data.header?.voucherId);
+
+    // The Match tab's picker (notes 99 §4): a fresh row, not yet due, is pickable for a SALE
+    // line; a REFUND line wants money out, so the same terminal offers it nothing.
+    const [picker] = await prisma.$queryRaw<{ id: string }[]>`
+      SELECT grid_id::text AS id FROM fixed.grid_details WHERE grid_name = 'TENDER SETTLEMENT - PICK ROW'`;
+    const pick = (kind: string) =>
+      getAs(officePc, 'configured-grid-sql/run', {
+        grid_id: picker.id,
+        limit: '100',
+        grid_param: JSON.stringify({
+          itd_company_id: COMPANY,
+          itd_branch_id: BRANCH,
+          itender_id: T1,
+          iline_kind: kind,
+          ifrom_date: '',
+          ito_date: '',
+        }),
+      });
+    const sales = await pick('SALE');
+    expectStatus(sales, 200);
+    expect(
+      (sales.body.data.items as { td_total_amt: number; td_card_last4: string; td_created_on: string }[]).map(
+        (r) => [Number(r.td_total_amt), r.td_card_last4, r.td_created_on.endsWith('+05:30')],
+      ),
+    ).toEqual([[1250, '4432', true]]);
+    const refunds = await pick('REFUND');
+    expectStatus(refunds, 200);
+    expect(refunds.body.data.items).toEqual([]);
+
     const key = { ...scope, accYear: session.tssAccYear, tssId: session.tssId };
     expectStatus(await postAs(tillPc, 'till/sessions/end-billing', key), 200);
 
@@ -687,7 +731,28 @@ describe('§4 · the close: one line per terminal, the slip check', () => {
       ],
     });
     expect([200, 201]).toContain(counted.status);
-    expect(counted.body.data.outcome).toBe('RECOUNT_REQUIRED');
+    // The drawer (no cash in this session) agrees; T1's batch is 250 short. A slip gap never
+    // sends the cashier back to recount (notes 99 §1): the count is final, the gap PENDING.
+    expect(counted.body.data).toEqual(
+      expect.objectContaining({ outcome: 'ACCEPTED', slipCheckRequired: true, tssStatus: 'COUNTING' }),
+    );
+    const variances = await prisma.tillVariance.findMany({
+      where: { tvrSessionId: session.tssId, tvrStage: 'CLOSE' },
+      select: { tvrTenderId: true, tvrTreatment: true },
+    });
+    expect(variances.find((v) => v.tvrTenderId === T1)?.tvrTreatment).toBe('PENDING');
+    expect(variances.find((v) => v.tvrTenderId === T2)?.tvrTreatment).toBe('WITHIN_TOLERANCE');
+    const asked = await prisma.tillEvent.findMany({
+      where: { tevEventCode: 'APPROVAL_REQUESTED', tevSessionId: session.tssId },
+      select: { tevPayload: true },
+    });
+    expect(asked.map((e) => e.tevPayload)).toEqual([
+      expect.objectContaining({
+        event: 'NONCASH_VARIANCE',
+        enforced: false,
+        variance: [{ tenderTypeId: CARD_TYPE, tenderId: T1, variance: '-250.00' }],
+      }),
+    ]);
 
     const blind = await getAs(tillPc, 'till/sessions/slip-check', { ...key, tenderId: T1 });
     expectStatus(blind, 403);

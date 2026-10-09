@@ -273,7 +273,11 @@ describe('Temporary credit and re-tender (e2e, live DB)', () => {
     const tc = tenders.find((t) => Number(t.td_tender_type_id) === 8)!;
     expect(tc.td_is_voided).toBe(false);
 
-    // The contra: DR UPI 680 / CR cash 680, on voucher type 22, against the bill.
+    // The contra: DR UPI 680 / CR cash 680, on voucher type 22, against the bill. The UPI side
+    // is the tender's own ledger as the row recorded it — a clearing ledger once the tender
+    // settles by statement (notes 99 §0), the bank before that — so it is read, never pinned.
+    const upiLedger = await p.tenderLedger(TENDER.UPI);
+    expect(upi.td_tender_ledger_id).toBe(upiLedger);
     const contras = await p.retenderContras(bill.sbId);
     expect(contras).toHaveLength(1);
     expect(contras[0].avh_voucher_type_id).toBe(VCHR.TENDER_CHANGE);
@@ -281,7 +285,7 @@ describe('Temporary credit and re-tender (e2e, live DB)', () => {
     expect(num(contras[0].avh_doc_amount)).toBe(680);
     const legs = await p.legs(contras[0].avh_voucher_id);
     expect(legs.map((l) => [l.av_dr_cr.trim(), l.av_ledger_id, num(l.av_amount)])).toEqual([
-      ['DR', TENDER_LEDGER.UPI, 680],
+      ['DR', upiLedger, 680],
       ['CR', TENDER_LEDGER.CASH, 680],
     ]);
     expect(legs.some((l) => l.av_ledger_id === WALK_IN)).toBe(false);

@@ -40,6 +40,7 @@ export declare class TillSessionService {
         floatIssued?: number | null;
         prevSessionId?: string | null;
         lines: TillCountLineInput[];
+        reasonId?: string | null;
         notes?: string | null;
     }): Promise<TillSessionPayload>;
     current(scope: {
@@ -129,8 +130,8 @@ export declare class TillSessionService {
     }): Promise<void>;
     logMoneyDoc(tx: Tx, doc: {
         sessionId: string;
-        code: TillEventCode.RECEIPT_POSTED | TillEventCode.PAYMENT_POSTED | TillEventCode.EXPENSE_POSTED | TillEventCode.MONEY_DOC_CANCELLED;
-        srcDocType: 'RECEIPT' | 'PAYMENT' | 'EXPENSE';
+        code: TillEventCode.RECEIPT_POSTED | TillEventCode.PAYMENT_POSTED | TillEventCode.EXPENSE_POSTED | TillEventCode.MONEY_DOC_CANCELLED | TillEventCode.RETENDER;
+        srcDocType: 'RECEIPT' | 'PAYMENT' | 'EXPENSE' | 'SALE_BILL';
         srcDocId: string;
         srcRefno: string | null;
         amount: Prisma.Decimal | number;
@@ -169,6 +170,7 @@ export declare class TillSessionService {
     private assertDeviceFree;
     private assertCounterFree;
     private assertOperatorFree;
+    private floatMismatchReason;
     private carriedFrom;
     private lastClosed;
     private nextDaySeq;

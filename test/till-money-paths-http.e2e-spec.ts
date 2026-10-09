@@ -219,6 +219,51 @@ describe('A cash bill on a counter’s device', () => {
     expect(voucher.s).toBe(session.tssId);
   });
 
+  it('a re-tender in the session is a RETENDER in its journal (notes 99 §7)', async () => {
+    const created = await post(
+      'bills/create',
+      billBody({
+        custId: WALK_IN,
+        custName: WALK_IN_NAME,
+        lines: [{ item, qty: 1, rate: 100 }],
+        usrRefno: `E2E-TILL-${tag}-RETENDER`,
+        extra: { sbSessionId: session.tssId },
+      }),
+    );
+    expectStatus(created, 201);
+    const id: string = created.body.data.sbId;
+    const amount = Number(created.body.data.sbBillAmt);
+    expectStatus(await post('bills/post', billKeys(id)), 201);
+    postedBills.push(id);
+    const [cash] = await prisma.$queryRaw<{ td_id: string }[]>`
+      SELECT td_id::text FROM accounts.acc_tender_detail
+       WHERE td_src_doc_type = 'SALE_BILL' AND td_src_doc_id = ${id}::uuid
+         AND td_is_deleted = false AND td_is_voided = false AND td_tender_type_id = 1`;
+    // All of it to UPI, so the drawer's expectation is what it was before this bill.
+    const res = await post('bills/retender', {
+      ...billKeys(id),
+      voids: [{ tdId: cash.td_id, reason: 'KEYED_WRONG' }],
+      tenders: [{ tdTenderId: TENDER.UPI, tdAmount: amount, tdRefNo: `UTR-E2E-TILL-${tag}` }],
+      remark: `E2E-TILL-${tag} it was UPI`,
+    });
+    expectStatus(res, 201);
+    const events = await prisma.tillEvent.findMany({
+      where: { tevSessionId: session.tssId, tevEventCode: 'RETENDER' },
+      select: { tevSrcDocType: true, tevSrcDocId: true, tevAmount: true, tevCounterId: true, tevPayload: true },
+    });
+    expect(events).toHaveLength(1);
+    expect(events[0]).toEqual(
+      expect.objectContaining({ tevSrcDocType: 'SALE_BILL', tevSrcDocId: id, tevCounterId: counterId }),
+    );
+    expect(Number(events[0].tevAmount)).toBe(amount);
+    expect(events[0].tevPayload).toEqual(
+      expect.objectContaining({
+        voided: [expect.objectContaining({ tdId: cash.td_id, amount })],
+        added: [expect.objectContaining({ amount })],
+      }),
+    );
+  });
+
   it('REV 2 §2.7 — past the business-day cut-off the session bills no more, and says so in the journal', async () => {
     const created = await post(
       'bills/create',
@@ -279,7 +324,8 @@ describe('A cash bill on a counter’s device', () => {
     const close = await post('till/sessions/close', { ...key(), floatLeft: 0 });
     expectStatus(close, 200);
     expect(close.body.data.totals).toEqual(
-      expect.objectContaining({ billCount: 1, handedOver: 500 + billAmt, cashVariance: 0 }),
+      // the re-tendered bill counts as a bill; its money went to UPI, not the drawer
+      expect.objectContaining({ billCount: 2, handedOver: 500 + billAmt, cashVariance: 0 }),
     );
     // 1000 float − 500 dropped + the bill's cash.
     expect(close.body.data.tenders.find((t: { tenderTypeId: number }) => t.tenderTypeId === 1)).toEqual(

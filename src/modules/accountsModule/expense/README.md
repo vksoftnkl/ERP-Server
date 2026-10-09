@@ -54,7 +54,9 @@ it has no template until one is designed. Both: migration `20261008170000`.
   till → the default safe (`till.backoffice_cash_from = SAFE`: the tender row and the CR leg name
   the safe's ledger) or refused (`REFUSE` → `TILL_SESSION_REQUIRED`); no till in the branch → the
   tender's own ledger. Non-cash rows are always the tender's (or clearing) ledger, and at the
-  till's close they are "paid from bank" — shown, never counted.
+  till's close they are "paid from bank" — shown, never counted. `derived.safeName` names the safe:
+  `/validate` the one the route would take, `/get` (and so `/post`) the one a posted voucher's CASH
+  row was written to (notes 99 §6) — null on a draft, whose route the posting device decides.
 - **Cancel** only while the session the cash moved in still takes money; after → 409
   `TILL_SESSION_CLOSED` (correct it with a new document or a journal).
 - **40A(3)** (`payment/cash-payment-limit.ts`): the CASH rows, summed with the supplier's other

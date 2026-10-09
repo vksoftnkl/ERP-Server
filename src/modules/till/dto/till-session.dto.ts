@@ -173,6 +173,16 @@ export class OpenTillSessionDto extends TillScopeDto {
   @Type(() => TillCountLineDto)
   lines: TillCountLineDto[] = [];
 
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description:
+      'Counted ≠ issued: the reason, a till_reason of category FLOAT_MISMATCH, stored on the OPEN-stage variance. ' +
+      'Left out = the shipped UNKNOWN reason, which needs `notes`. Not read when the count matches.',
+  })
+  @NullableUuid()
+  reasonId?: string | null;
+
   @ApiPropertyOptional({ nullable: true })
   @NullableString(500)
   notes?: string | null;

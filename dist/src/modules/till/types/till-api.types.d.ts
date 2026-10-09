@@ -220,6 +220,7 @@ export interface TillVariancePayload {
     tvrVariance: number;
     tvrTolerance: number;
     tvrTreatment: TillVarianceTreatment;
+    tvrReasonId: string | null;
     tvrStatus: 'OPEN' | 'POSTED' | 'REVERSED';
     tvrVoucherId: string | null;
 }
@@ -230,6 +231,7 @@ export interface TillCountResultPayload {
     attemptNo: number;
     attemptsLeft: number;
     outcome: TillCountOutcome;
+    slipCheckRequired: boolean;
     tssStatus: TillSessionStatus;
     variances: TillVariancePayload[] | null;
 }

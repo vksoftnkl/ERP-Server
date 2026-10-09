@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.IMPORT_MAX_LINES = exports.IMPORT_MAX_BYTES = exports.NONCASH_REASON_CATEGORY = exports.SETTLEMENT_ERROR_STATUS = exports.SettlementErrorCode = exports.WriteOffTreatment = exports.SettlementResolution = exports.SettlementMatchRule = exports.SettlementMatchStatus = exports.SettlementLineKind = exports.SettlementImportStatus = exports.SettlementSource = exports.TenderSettingKey = exports.SettlementRole = exports.WRITE_OFF_SRC_DOC_TYPE = exports.RESOLVE_SRC_DOC_TYPE = exports.SETTLEMENT_SRC_DOC_TYPE = exports.SETTLEMENT_SRC_MODULE = exports.WRITE_OFF_VOUCHER_TYPE_CODE = exports.SETTLEMENT_VOUCHER_TYPE_CODE = exports.SETTLEMENT_RIGHT_PREFIX = exports.SETTLEMENT_MENU_ID = void 0;
+exports.IMPORT_MAX_LINES = exports.IMPORT_MAX_BYTES = exports.NONCASH_REASON_CATEGORY = exports.SETTLEMENT_ERROR_STATUS = exports.SettlementErrorCode = exports.WriteOffTreatment = exports.SettlementResolution = exports.SettlementMatchRule = exports.SettlementMatchStatus = exports.SettlementLineKind = exports.SettlementImportStatus = exports.SettlementSource = exports.TenderSettingKey = exports.SettlementRole = exports.MDR_FROM_STATEMENT_DOC_TYPES = exports.WRITE_OFF_SRC_DOC_TYPE = exports.RESOLVE_SRC_DOC_TYPE = exports.SETTLEMENT_SRC_DOC_TYPE = exports.SETTLEMENT_SRC_MODULE = exports.WRITE_OFF_VOUCHER_TYPE_CODE = exports.SETTLEMENT_VOUCHER_TYPE_CODE = exports.SETTLEMENT_RIGHT_PREFIX = exports.SETTLEMENT_MENU_ID = void 0;
 exports.SETTLEMENT_MENU_ID = 278;
 exports.SETTLEMENT_RIGHT_PREFIX = 'TSET';
 exports.SETTLEMENT_VOUCHER_TYPE_CODE = 'TSet';
@@ -9,6 +9,11 @@ exports.SETTLEMENT_SRC_MODULE = 'ACCOUNTS';
 exports.SETTLEMENT_SRC_DOC_TYPE = 'TENDER_SETTLEMENT';
 exports.RESOLVE_SRC_DOC_TYPE = 'SETTLEMENT_RESOLVE';
 exports.WRITE_OFF_SRC_DOC_TYPE = 'NONCASH_WRITE_OFF';
+exports.MDR_FROM_STATEMENT_DOC_TYPES = [
+    'SALE_BILL',
+    'SALE_RETURN',
+    'SALES_ORDER',
+];
 exports.SettlementRole = {
     TENDER_SUSPENSE: 'TENDER_SUSPENSE',
     BANK_CHARGES: 'BANK_CHARGES',

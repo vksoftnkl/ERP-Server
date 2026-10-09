@@ -55,10 +55,13 @@ export const TENDER = {
   TEMP_CR: '019fcbbc-6966-71fb-91a0-214c22e5885f',
   CREDIT: '019fcbbb-a9bb-7c2f-9a07-8c24e65bc9b1',
 } as const;
-/** tnd_ledger_id of the tenders above — where a settlement leg lands. */
+/**
+ * tnd_ledger_id of the cash tender — where a settlement leg lands. A non-cash tender's ledger is
+ * master data that moves (UPI went from the bank to UPI Clearing on 2026-10-09, notes 99 §0):
+ * read it with `probes().tenderLedger(TENDER.UPI)`.
+ */
 export const TENDER_LEDGER = {
   CASH: '019ef844-efba-755d-ab5d-b4d7281edf19',
-  UPI: '019ef849-aefe-7e27-8e8f-d4094cf5c254',
 } as const;
 
 /** accounts.acc_voucher_types.vchr_type_id */
@@ -600,6 +603,15 @@ export function probes(prisma: PrismaClient) {
         srId,
         ACC_YEAR,
       ).then((r) => r[0]);
+    },
+    /** A tender master's own ledger (`tnd_ledger_id`) — what a money-in row on it debits. */
+    async tenderLedger(tenderId: string): Promise<string> {
+      const [row] = await all<{ tnd_ledger_id: string }>(
+        `SELECT tnd_ledger_id FROM accounts.acc_tender_master WHERE tnd_id = $1::uuid`,
+        tenderId,
+      );
+      if (!row) throw new Error(`no tender ${tenderId}`);
+      return row.tnd_ledger_id;
     },
     /** The ledger a role resolves to: the company's own row first, else the global one. */
     async ledgerOfRole(role: string): Promise<string> {

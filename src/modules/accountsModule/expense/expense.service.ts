@@ -654,9 +654,10 @@ export class ExpenseService {
             select: { ledName: true },
           })
         : null;
+      let safeName: string | null = null;
       if (posted) {
         derived.payload.legs = await this.storedLegs(tx, key);
-        await this.markMoneyFrom(tx, header, derived);
+        safeName = await this.markMoneyFrom(tx, header, derived);
       }
       return {
         voucherId: header.avhVoucherId,
@@ -674,7 +675,7 @@ export class ExpenseService {
         sessionId: header.avhSessionId,
         gstBill: draft.gstBill,
         amount: derived.payload.total,
-        derived: { ...derived.payload, session: null, safeName: null },
+        derived: { ...derived.payload, session: null, safeName },
         postedOn: header.avhPostedOn?.toISOString() ?? null,
         cancelReason: header.avhCancelReason,
         reversalVoucherId: header.avhReversalVoucherId,
@@ -1169,12 +1170,16 @@ export class ExpenseService {
     } as RegisterDoc;
   }
 
-  /** A posted voucher's CASH rows: the drawer of a real till session, else the safe its ledger is. */
+  /**
+   * A posted voucher's CASH rows: the drawer of a real till session, else the safe its ledger is.
+   * Answers the safe's name when one did come from a safe — `derived.safeName`, which /validate
+   * fills from the route (notes 99 §6): this branch's safe on that ledger, the default first.
+   */
   private async markMoneyFrom(
     tx: Tx,
     header: StoredExpense,
     derived: DerivedExpense,
-  ): Promise<void> {
+  ): Promise<string | null> {
     const session = header.avhSessionId
       ? await tx.tillSession.findFirst({
           where: { tssId: header.avhSessionId, tssIsDeleted: false },
@@ -1184,7 +1189,8 @@ export class ExpenseService {
     const cash = derived.payload.tenders.filter((t) => t.tenderTypeId === CASH_TENDER_TYPE_ID);
     const safes = await tx.tillSafe.findMany({
       where: { tsfLedgerId: { in: cash.map((t) => t.ledgerId) }, tsfIsDeleted: false },
-      select: { tsfLedgerId: true },
+      select: { tsfLedgerId: true, tsfName: true, tsfCompanyId: true, tsfBranchId: true },
+      orderBy: [{ tsfIsDefault: 'desc' }, { tsfCode: 'asc' }],
     });
     const safeLedgers = new Set(safes.map((s) => s.tsfLedgerId));
     for (const t of cash) {
@@ -1194,6 +1200,19 @@ export class ExpenseService {
           ? ExpenseMoneyFrom.SAFE
           : ExpenseMoneyFrom.LEDGER;
     }
+    if (session) {
+      return null;
+    }
+    const used = new Set(
+      cash.filter((t) => t.moneyFrom === ExpenseMoneyFrom.SAFE).map((t) => t.ledgerId),
+    );
+    const safe = safes.find(
+      (s) =>
+        used.has(s.tsfLedgerId) &&
+        s.tsfCompanyId === header.avhCompanyId &&
+        s.tsfBranchId === header.avhBranchId,
+    );
+    return safe?.tsfName ?? null;
   }
 
   private refusalFromTill(ctx: VoucherGuardContext, error: unknown): void {

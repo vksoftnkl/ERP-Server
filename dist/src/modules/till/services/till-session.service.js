@@ -101,6 +101,14 @@ let TillSessionService = class TillSessionService {
             });
             const priced = await this.priceLines(tx, input.companyId, input.lines);
             const floatCounted = priced.reduce((s, l) => s.plus(l.amount), ZERO);
+            const floatVariance = floatCounted.minus(floatIssued);
+            const floatReason = floatVariance.isZero()
+                ? null
+                : await this.floatMismatchReason(tx, {
+                    companyId: input.companyId,
+                    reasonId: input.reasonId ?? null,
+                    notes: input.notes ?? null,
+                });
             const daySeq = await this.nextDaySeq(tx, counter.tcnId, day.businessDate);
             const session = await tx.tillSession
                 .create({
@@ -174,9 +182,9 @@ let TillSessionService = class TillSessionService {
                         countId: count.tctId,
                     });
                 }
-                if (!floatCounted.equals(floatIssued)) {
+                if (floatReason) {
                     const tillCash = await this.ledger.tillCashTender(tx, input.companyId, input.branchId);
-                    await tx.tillVariance.create({
+                    const variance = await tx.tillVariance.create({
                         data: {
                             tvrCompanyId: input.companyId,
                             tvrBranchId: input.branchId,
@@ -190,10 +198,32 @@ let TillSessionService = class TillSessionService {
                             tvrExpected: floatIssued,
                             tvrCounted: floatCounted,
                             tvrTolerance: ZERO,
-                            tvrTreatment: till_enum_1.TillVarianceTreatment.PENDING,
+                            tvrTreatment: till_enum_1.TillVarianceTreatment.EXPENSE,
+                            tvrReasonId: floatReason.trsId,
+                            tvrDecidedBy: caller.userId,
+                            tvrDecidedOn: new Date(),
+                            tvrNotes: input.notes ?? null,
                             tvrStatus: 'OPEN',
                             tvrCreatedBy: caller.actorName,
                         },
+                    });
+                    const voucherId = await this.posting.postVariance(tx, {
+                        session: postingSession,
+                        tvrId: variance.tvrId,
+                        tenderLedgerId: tillCash.ledgerId,
+                        tenderLabel: 'Cash at open',
+                        variance: floatVariance,
+                        treatment: till_enum_1.TillVarianceTreatment.EXPENSE,
+                        caller,
+                    });
+                    await this.logSessionEvent(tx, session, caller, till_enum_1.TillEventCode.VARIANCE_DECIDED, {
+                        tvrId: variance.tvrId,
+                        stage: 'OPEN',
+                        treatment: till_enum_1.TillVarianceTreatment.EXPENSE,
+                        byDefault: true,
+                        variance: floatVariance.toFixed(2),
+                        reasonId: floatReason.trsId,
+                        voucherId,
                     });
                 }
             }
@@ -513,14 +543,17 @@ let TillSessionService = class TillSessionService {
             const counted = this.countedByTender(priced, expectations);
             const rows = this.compare(expectations, counted, settings);
             const outOfTolerance = rows.filter((r) => !r.within);
+            const drawerOut = outOfTolerance.filter((r) => !isSlipRow(r));
+            const slipsOut = outOfTolerance.filter(isSlipRow);
             const attemptNo = session.tssCountAttempts + 1;
             const isLast = attemptNo >= maxAttempts;
-            const outcome = outOfTolerance.length === 0
+            const outcome = drawerOut.length === 0
                 ? till_enum_1.TillCountOutcome.ACCEPTED
                 : isLast
                     ? till_enum_1.TillCountOutcome.SENT_FOR_APPROVAL
                     : till_enum_1.TillCountOutcome.RECOUNT_REQUIRED;
             const isFinal = outcome !== till_enum_1.TillCountOutcome.RECOUNT_REQUIRED;
+            const slipCheckRequired = isFinal && slipsOut.length > 0;
             const countedRows = rows.filter((r) => r.counted !== null);
             const count = await this.writeCount(tx, session, {
                 kind: attemptNo === 1 ? till_enum_1.TillCountKind.CLOSE : till_enum_1.TillCountKind.RECOUNT,
@@ -556,7 +589,7 @@ let TillSessionService = class TillSessionService {
                     tssCashCounted: cash.counted ?? ZERO,
                     tssNoncashExpected: slips.reduce((s, r) => s.plus(r.expectation.expected), ZERO),
                     tssNoncashCounted: slips.reduce((s, r) => s.plus(r.counted ?? ZERO), ZERO),
-                    tssVarianceStatus: outcome === till_enum_1.TillCountOutcome.SENT_FOR_APPROVAL
+                    tssVarianceStatus: outcome === till_enum_1.TillCountOutcome.SENT_FOR_APPROVAL || slipCheckRequired
                         ? till_enum_1.TillSessionVarianceStatus.PENDING
                         : rows.every((r) => r.variance.isZero())
                             ? till_enum_1.TillSessionVarianceStatus.NONE
@@ -583,11 +616,23 @@ let TillSessionService = class TillSessionService {
                     })),
                 });
             }
+            else if (slipCheckRequired) {
+                await this.logSessionEvent(tx, session, caller, till_enum_1.TillEventCode.APPROVAL_REQUESTED, {
+                    event: 'NONCASH_VARIANCE',
+                    enforced: false,
+                    variance: slipsOut.map((r) => ({
+                        tenderTypeId: r.expectation.tenderTypeId,
+                        tenderId: r.expectation.tenderId,
+                        variance: r.variance.toFixed(2),
+                    })),
+                });
+            }
             return {
                 tctId: count.tctId,
                 attemptNo,
                 attemptsLeft: Math.max(0, maxAttempts - attemptNo),
                 outcome,
+                slipCheckRequired,
                 status: isFinal && outcome === till_enum_1.TillCountOutcome.SENT_FOR_APPROVAL
                     ? till_enum_1.TillSessionStatus.PENDING_APPROVAL
                     : session.tssStatus,
@@ -607,6 +652,7 @@ let TillSessionService = class TillSessionService {
             attemptNo: result.attemptNo,
             attemptsLeft: result.attemptsLeft,
             outcome: result.outcome,
+            slipCheckRequired: result.slipCheckRequired,
             tssStatus: result.status,
             variances,
         };
@@ -1325,6 +1371,27 @@ let TillSessionService = class TillSessionService {
             (0, till_errors_1.throwTill)(till_enum_1.TillErrorCode.OPERATOR_BUSY, `You already have session ${live.tssSessionNo} open; close or resume it first`, 'tssOperatorId', { sessionNo: live.tssSessionNo });
         }
     }
+    async floatMismatchReason(tx, input) {
+        const reason = await tx.tillReason.findFirst({
+            where: {
+                ...(input.reasonId ? { trsId: input.reasonId } : { trsCode: 'UNKNOWN' }),
+                trsCategory: 'FLOAT_MISMATCH',
+                trsIsDeleted: false,
+                trsIsActive: true,
+                OR: [{ trsCompanyId: null }, { trsCompanyId: input.companyId }],
+            },
+            orderBy: { trsCompanyId: { sort: 'asc', nulls: 'last' } },
+        });
+        if (!reason) {
+            (0, till_errors_1.throwTill)(till_enum_1.TillErrorCode.REASON_INVALID, input.reasonId
+                ? 'The reason must be an active FLOAT_MISMATCH reason'
+                : 'The count differs from the float issued: name a FLOAT_MISMATCH reason', 'reasonId');
+        }
+        if (reason.trsNeedsNote && !input.notes?.trim()) {
+            (0, till_errors_1.throwTill)(till_enum_1.TillErrorCode.REASON_INVALID, `“${reason.trsName}” needs a note`, 'notes');
+        }
+        return reason;
+    }
     async carriedFrom(tx, counterId, prevSessionId) {
         const { prev, takenBy } = await this.lastClosed(tx, counterId, prevSessionId);
         if (!prev) {
@@ -1601,7 +1668,7 @@ let TillSessionService = class TillSessionService {
     }
     varianceRow(session, row, settings, caller, outcome) {
         const e = row.expectation;
-        const pending = !row.within && outcome === till_enum_1.TillCountOutcome.SENT_FOR_APPROVAL;
+        const pending = !row.within && (outcome === till_enum_1.TillCountOutcome.SENT_FOR_APPROVAL || isSlipRow(row));
         return {
             tvrCompanyId: session.tssCompanyId,
             tvrBranchId: session.tssBranchId,
@@ -1891,6 +1958,7 @@ let TillSessionService = class TillSessionService {
                     tvrVariance: num(dec(v.tvrCounted).minus(dec(v.tvrExpected))),
                     tvrTolerance: num(v.tvrTolerance),
                     tvrTreatment: v.tvrTreatment,
+                    tvrReasonId: v.tvrReasonId,
                     tvrStatus: v.tvrStatus,
                     tvrVoucherId: v.tvrVoucherId,
                 }))
@@ -1953,5 +2021,8 @@ function isUuidLike(value) {
 }
 function tenderKey(typeId, tenderId) {
     return `${typeId}|${tenderId ?? '*'}`;
+}
+function isSlipRow(row) {
+    return row.expectation.closeMode === till_enum_1.TenderCloseMode.SLIPS;
 }
 //# sourceMappingURL=till-session.service.js.map

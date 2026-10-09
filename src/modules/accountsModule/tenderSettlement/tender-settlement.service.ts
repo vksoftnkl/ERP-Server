@@ -45,6 +45,7 @@ import type {
 import {
   IMPORT_MAX_BYTES,
   IMPORT_MAX_LINES,
+  MDR_FROM_STATEMENT_DOC_TYPES,
   SETTLEMENT_SRC_DOC_TYPE,
   SETTLEMENT_SRC_MODULE,
   SETTLEMENT_VOUCHER_TYPE_CODE,
@@ -98,10 +99,12 @@ export interface SettlementCaller {
  *       Cr  TENDER_SUSPENSE                          sales no row explains + adjustments
  *                                                    (+ rows a close variance parked there)
  * A matched row gets SETTLED (PARTIAL when the provider paid a different
- * amount), the payout date, the gross, the payout ref and the voucher. The
- * provider's fee stays on the line: `td_mdr_amt` is a receipt's own
- * bank-charge split (receipt-lines rebuilds its BANK_CHARGES leg from it), so
- * writing the acquirer's fee there would double it on an amend.
+ * amount), the payout date, the gross, the payout ref and the voucher. A sales
+ * row (MDR_FROM_STATEMENT_DOC_TYPES) also gets the line's fee + tax as
+ * `td_mdr_amt` (notes 99 §2), cleared again by a void. A receipt / payment /
+ * expense row keeps its own: there `td_mdr_amt` is the document's bank-charge
+ * split (receipt-lines rebuilds its BANK_CHARGES leg from it), so the
+ * acquirer's fee written there would be doubled on an amend.
  */
 @Injectable()
 export class TenderSettlementService {
@@ -673,6 +676,14 @@ export class TenderSettlementService {
           continue;
         }
         const exact = new Prisma.Decimal(l.aslAmountDiff).isZero();
+        // What the acquirer kept of this sale (fee + GST on it), on a sales row only.
+        const charges = new Prisma.Decimal(l.aslFeeAmount).plus(l.aslTaxAmount);
+        const mdr =
+          kind === SettlementLineKind.SALE &&
+          MDR_FROM_STATEMENT_DOC_TYPES.includes(row.srcDocType) &&
+          charges.gte(0)
+            ? charges
+            : null;
         await tx.$executeRaw`
           UPDATE accounts.acc_tender_detail
              SET td_settle_status     = ${exact ? 'SETTLED' : 'PARTIAL'},
@@ -680,6 +691,7 @@ export class TenderSettlementService {
                  td_settle_amount     = ${new Prisma.Decimal(l.aslGrossAmount)}::numeric,
                  td_settle_ref_no     = ${(head.asiPayoutRef ?? head.asiFileName).slice(0, 60)},
                  td_settle_voucher_id = ${voucher.voucherId}::uuid,
+                 td_mdr_amt           = COALESCE(${mdr}::numeric, td_mdr_amt),
                  td_modified_on       = now(),
                  td_modified_by       = ${caller.actorName}
            WHERE td_id = ${row.tdId}::uuid AND td_acc_year = ${row.tdAccYear}::char(9)`;
@@ -771,10 +783,13 @@ export class TenderSettlementService {
         if (!mirror) {
           throwSettlement(SettlementErrorCode.STATE, 'The payout’s voucher is not live', 'asiId');
         }
+        // A sales row's td_mdr_amt is only ever the TSet's (MDR_FROM_STATEMENT_DOC_TYPES).
         await tx.$executeRaw`
           UPDATE accounts.acc_tender_detail
              SET td_settle_status = 'PENDING', td_settled_on = NULL, td_settle_amount = NULL,
                  td_settle_ref_no = NULL, td_settle_voucher_id = NULL,
+                 td_mdr_amt = CASE WHEN td_src_doc_type = ANY(${[...MDR_FROM_STATEMENT_DOC_TYPES]}::text[])
+                                   THEN 0 ELSE td_mdr_amt END,
                  td_modified_on = now(), td_modified_by = ${caller.actorName}
            WHERE td_settle_voucher_id = ${head.asiVoucherId}::uuid`;
         await tx.$executeRaw`

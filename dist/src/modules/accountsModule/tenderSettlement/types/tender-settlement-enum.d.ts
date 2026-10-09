@@ -6,6 +6,7 @@ export declare const SETTLEMENT_SRC_MODULE = "ACCOUNTS";
 export declare const SETTLEMENT_SRC_DOC_TYPE = "TENDER_SETTLEMENT";
 export declare const RESOLVE_SRC_DOC_TYPE = "SETTLEMENT_RESOLVE";
 export declare const WRITE_OFF_SRC_DOC_TYPE = "NONCASH_WRITE_OFF";
+export declare const MDR_FROM_STATEMENT_DOC_TYPES: readonly string[];
 export declare const SettlementRole: {
     readonly TENDER_SUSPENSE: "TENDER_SUSPENSE";
     readonly BANK_CHARGES: "BANK_CHARGES";

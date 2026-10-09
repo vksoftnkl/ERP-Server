@@ -28,6 +28,7 @@ export declare class OpenTillSessionDto extends TillScopeDto {
     floatIssued?: number | null;
     prevSessionId?: string;
     lines: TillCountLineDto[];
+    reasonId?: string | null;
     notes?: string | null;
 }
 export declare class SuspendTillSessionDto extends TillSessionKeyDto {

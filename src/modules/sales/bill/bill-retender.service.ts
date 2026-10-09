@@ -45,6 +45,7 @@ import {
   type BillPayload,
 } from './types/bill-api.types';
 import { TillSessionService } from '../../till/services/till-session.service';
+import { TillEventCode } from '../../till/types/till-enum';
 
 /**
  * HANDOVER §2.13 — `/bills/retender`: change HOW it was paid, not what was
@@ -487,6 +488,33 @@ export class BillRetenderService {
         deviceId: bill.sbDeviceId,
         sessionId: moneySessionId,
       });
+      // The till journal's RETENDER (notes 99 §7): in the session the money moved in, which is
+      // what the cockpit's RE-TENDERS tile counts. No till session there, nothing logged.
+      if (moneySessionId) {
+        await this.till.logMoneyDoc(tx, {
+          sessionId: moneySessionId,
+          code: TillEventCode.RETENDER,
+          srcDocType: 'SALE_BILL',
+          srcDocId: bill.sbId,
+          srcRefno: bill.sbBillRefno,
+          amount: rows.reduce((s, r) => s.plus(r.td_amount), new Prisma.Decimal(0)),
+          payload: {
+            billSessionId: bill.sbSessionId,
+            remark: dto.remark,
+            contraVoucherId,
+            voided: rows.map((r) => ({
+              tdId: r.td_id,
+              amount: num(r.td_amount),
+              tender: r.tnd_name,
+            })),
+            added: newRows.map((t) => ({
+              tdId: t.tdId,
+              amount: num(t.tdAmount),
+              tender: t.tdTenderName,
+            })),
+          },
+        });
+      }
       await this.audit.logEntityChange(
         {
           action: 'update',

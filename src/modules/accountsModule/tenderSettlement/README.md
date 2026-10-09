@@ -42,7 +42,7 @@ Card, UPI and wallet money is never in the drawer, so it is proven by machines, 
 | `POST confirm` | EDIT | a SUGGESTED line accepted, or (with `tdId`) linked by hand — MANUAL |
 | `POST unlink` · `POST ignore` | EDIT | back to UNMATCHED · not part of this payout (out of its totals) |
 | `POST post` | POST | one **TSet**; refused while a suggestion waits (`SETTLEMENT_SUGGESTIONS_OPEN`); `SETTLEMENT_POSTED` |
-| `POST void` | CANCEL | unposted → VOIDED; posted → TSet reversed, rows PENDING again (a charged-back row SETTLED again), lines let go of their rows (the old link kept in `asl_notes`). Refused once a line was resolved or a row written off since (`SETTLEMENT_POSTED_LOCKED`). The file may be read again |
+| `POST void` | CANCEL | unposted → VOIDED; posted → TSet reversed, rows PENDING again (a sales row's `td_mdr_amt` 0 again, a charged-back row SETTLED again), lines let go of their rows (the old link kept in `asl_notes`). Refused once a line was resolved or a row written off since (`SETTLEMENT_POSTED_LOCKED`). The file may be read again |
 | `POST resolve` | **OVERRIDE** | an unmatched SALE line of a posted payout: LINKED (to the bill's row on this tender — re-tender the bill first if it was keyed as another), REFUNDED, INCOME (an Income ledger), SUSPENSE. LINKED / INCOME post a TSet journal Dr Tender suspense / Cr the row's ledger or the income ledger |
 | `POST write-off` | **OVERRIDE** | a PENDING / PARTIAL row (the unpaid part) or a charged-back one: RECOVER (a named ledger), SUSPENSE, LOSS (role WRITE_OFF). A **TVar** Dr that ledger / Cr the row's ledger (Tender suspense for a charged-back or close-parked row); nothing posts when both are suspense. Row FAILED; `NONCASH_WRITTEN_OFF` on the row's own session. A SETTLED row → `SETTLEMENT_POSTED_LOCKED` |
 
@@ -72,15 +72,21 @@ Dr  TENDER_SUSPENSE                                         chargebacks + refund
     Cr  TENDER_SUSPENSE                                     sales no row explains + adjustments
                                                             + rows a close variance parked (tvr_rows)
 ```
-Legs are netted per ledger. **"The row's own ledger" is `COALESCE(td_settle_ledger_id,
+`TENDER_SUSPENSE` is the house's one suspense role (47: label "Till variance under investigation",
+ledger **Till Variance Suspense**): the till's SUSPENSE treatment of a close variance and the TSet's
+unexplained money share it by design, so a variance the statement later explains nets out on one
+ledger (notes 99 §8). Legs are netted per ledger. **"The row's own ledger" is `COALESCE(td_settle_ledger_id,
 td_tender_ledger_id)`** — the ledger its own posting debited. That matters: a sale bill debits the
 tender's `tnd_ledger_id` (the clearing ledger the plan means), but the receipt and the voucher
 register treat `tnd_settlement_ledger_id` as the clearing ledger and debit it directly. Either way the
 TSet credits what was debited, so the bank ends at net. A matched row: SETTLED (PARTIAL when the
 provider paid another amount), `td_settled_on` = payout date, `td_settle_amount` = gross,
-`td_settle_ref_no` = payout UTR, `td_settle_voucher_id`. **`td_mdr_amt` is not written** (plan §5.5
-says fee + tax): it is a receipt's own bank-charge split, rebuilt into its BANK_CHARGES leg on an
-amend, so the acquirer's fee stays on the statement line.
+`td_settle_ref_no` = payout UTR, `td_settle_voucher_id`. **`td_mdr_amt` = the line's fee + tax on a
+sales row only** (`MDR_FROM_STATEMENT_DOC_TYPES`: SALE_BILL / SALE_RETURN / SALES_ORDER, notes 99 §2 —
+nothing posts from it there); a void puts it back to 0. A receipt / payment / expense row keeps its
+own: there it is the document's bank-charge split, rebuilt into its BANK_CHARGES leg on an amend, so
+the acquirer's fee written there would be booked twice. Migration `20261009170000` backfilled the
+sales rows settled before.
 
 ## Statement format (`settlement-format.ts`)
 
@@ -92,14 +98,27 @@ dateFormat: 'DD/MM/YYYY HH:mm', negativeIsRefund: true }` — headers case-blind
 **CSV only** (plan §12.1: no real file yet — XLSX waits for one, and a library). BANK source = UPI
 straight to the current account: no payout ref, no fee.
 
-## Lists (grids, `20261008190000`, ids 138–143 on the dev box)
+## Lists (grids, `20261008190000` + `20261009170000`, ids 138–143 and 153 on the dev box)
 
 `MAIN LIST - TENDER SETTLEMENTS` (iasi_company_id, iasi_branch_id, iasi_acc_year, iasi_status,
 ifrom_date, ito_date) · `TENDER SETTLEMENT - LINES` (iasi_id, iasi_acc_year) · `… - NOT RECEIVED`
-(itd_company_id, itd_branch_id, igrace_days '' = 2, itender_id) · `… - UNEXPLAINED` (iasi_company_id,
+(itd_company_id, itd_branch_id, igrace_days '' = 2, itender_id — a row with no expected date, saved
+PENDING by the client, is due from its document date) · `… - UNEXPLAINED` (iasi_company_id,
 iasi_branch_id) · `… - DUPLICATE REFS` (itd_company_id, ifrom_date, ito_date — company-wide: two
 stores' rows meet there) · `… - SUSPENSE` (iavh_company_id, iavh_branch_id, ifrom_date, ito_date —
-every Tender suspense leg and the document behind it).
+every Tender suspense leg and the document behind it) · `… - PICK ROW` (itd_company_id,
+itd_branch_id, itender_id, iline_kind SALE | REFUND | CHARGEBACK '' = SALE, ifrom_date, ito_date —
+the rows a line of that kind may take, as `kindTakes` + `assertTdFree` judge them, of POSTED
+documents: the Match tab's "Pick row" and Resolve LINKED's picker; NOT RECEIVED lists only rows past
+their date, money in).
+
+Every timestamptz these lists return leaves as IST text with its offset
+(`2026-10-09T15:10:00+05:30`, notes 99 §3): the runner would send a UTC instant, which the client
+shows as its clock face. Their `date` columns already leave as `YYYY-MM-DD`.
+
+Dropdown `INCOME LEDGERS` (69 on the dev box, icompany_id) is what `resolve` INCOME accepts —
+a ledger under an Income group at any level; dropdown 66 (TILL REASON LEDGERS) lists expense
+ledgers too.
 
 ## Not built
 

@@ -324,6 +324,8 @@ describe('§2.3 · back-office cash in a branch that runs a till', () => {
     expect(posted.body.data.status).toBe('POSTED');
     expect(posted.body.data.voucherNo).toMatch(/^exp/i);
     expect(posted.body.data.derived.tenders[0].moneyFrom).toBe('SAFE');
+    // The saved voucher names the safe, as /validate does (notes 99 §6).
+    expect(posted.body.data.derived.safeName).toBe('E2E expense safe');
     expect(await legsOf(voucherId)).toEqual([
       { dr_cr: 'DR', ledger: expenseLedger, amount: '250.00' },
       { dr_cr: 'CR', ledger: safeLedger, amount: '250.00' },

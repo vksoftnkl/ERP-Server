@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma, type TillCounter, type TillSession } from '@prisma/client';
+import { Prisma, type TillCounter, type TillReason, type TillSession } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { TillContextService, type TillCaller } from '../till-context.service';
 import {
@@ -118,6 +118,8 @@ export class TillSessionService {
     floatIssued?: number | null;
     prevSessionId?: string | null;
     lines: TillCountLineInput[];
+    /** Counted ≠ issued: the FLOAT_MISMATCH reason (notes 98 §2). */
+    reasonId?: string | null;
     notes?: string | null;
   }): Promise<TillSessionPayload> {
     const caller = await this.context.caller();
@@ -207,6 +209,14 @@ export class TillSessionService {
       });
       const priced = await this.priceLines(tx, input.companyId, input.lines);
       const floatCounted = priced.reduce((s, l) => s.plus(l.amount), ZERO);
+      const floatVariance = floatCounted.minus(floatIssued);
+      const floatReason = floatVariance.isZero()
+        ? null
+        : await this.floatMismatchReason(tx, {
+            companyId: input.companyId,
+            reasonId: input.reasonId ?? null,
+            notes: input.notes ?? null,
+          });
 
       // ── the row ──────────────────────────────────────────────────────
       const daySeq = await this.nextDaySeq(tx, counter.tcnId, day.businessDate);
@@ -283,11 +293,14 @@ export class TillSessionService {
             countId: count.tctId,
           });
         }
-        // Counted ≠ issued: the OPEN-stage variance (47 §6). It waits for the
-        // FLOAT_MISMATCH approval (phase 3); the session opens meanwhile.
-        if (!floatCounted.equals(floatIssued)) {
+        // Counted ≠ issued: the OPEN-stage variance (47 §6). Until the
+        // FLOAT_MISMATCH approval (phase 3) it is posted here with the default
+        // treatment — TVar Dr / Cr Cash Short & Excess against till cash — so
+        // the till ledger holds what was counted and a close nets to the float
+        // left (notes 98 §1, option b). The approver re-treats it later.
+        if (floatReason) {
           const tillCash = await this.ledger.tillCashTender(tx, input.companyId, input.branchId);
-          await tx.tillVariance.create({
+          const variance = await tx.tillVariance.create({
             data: {
               tvrCompanyId: input.companyId,
               tvrBranchId: input.branchId,
@@ -301,10 +314,32 @@ export class TillSessionService {
               tvrExpected: floatIssued,
               tvrCounted: floatCounted,
               tvrTolerance: ZERO,
-              tvrTreatment: TillVarianceTreatment.PENDING,
+              tvrTreatment: TillVarianceTreatment.EXPENSE,
+              tvrReasonId: floatReason.trsId,
+              tvrDecidedBy: caller.userId,
+              tvrDecidedOn: new Date(),
+              tvrNotes: input.notes ?? null,
               tvrStatus: 'OPEN',
               tvrCreatedBy: caller.actorName,
             },
+          });
+          const voucherId = await this.posting.postVariance(tx, {
+            session: postingSession,
+            tvrId: variance.tvrId,
+            tenderLedgerId: tillCash.ledgerId,
+            tenderLabel: 'Cash at open',
+            variance: floatVariance,
+            treatment: TillVarianceTreatment.EXPENSE,
+            caller,
+          });
+          await this.logSessionEvent(tx, session, caller, TillEventCode.VARIANCE_DECIDED, {
+            tvrId: variance.tvrId,
+            stage: 'OPEN',
+            treatment: TillVarianceTreatment.EXPENSE,
+            byDefault: true,
+            variance: floatVariance.toFixed(2),
+            reasonId: floatReason.trsId,
+            voucherId,
           });
         }
       }
@@ -693,11 +728,20 @@ export class TillSessionService {
    * (D5). The cashier is told only ACCEPTED / RECOUNT_REQUIRED /
    * SENT_FOR_APPROVAL — never the figure in blind mode.
    *
-   *  * every counted tender within its tolerance → ACCEPTED: this attempt is
+   *  * every drawer tender within its tolerance → ACCEPTED: this attempt is
    *    final and the variances are written (WITHIN_TOLERANCE); /close posts them;
    *  * out, with a recount left (till.max_recounts) → RECOUNT_REQUIRED;
    *  * out on the last attempt → SENT_FOR_APPROVAL: final, the out-of-tolerance
    *    variances PENDING, the session PENDING_APPROVAL.
+   *
+   * Only the drawer decides (notes 99 §1). A SLIPS line (a card / UPI batch
+   * total) out of tolerance never sends the cashier back: the gap is not in
+   * the drawer, so a recount of the cash cannot find it. Its variance is
+   * written PENDING with the final count (`slipCheckRequired`) for the
+   * supervisor's slip check, a re-tender, then the NONCASH_VARIANCE decision
+   * (non-cash plan §4.2). Until phase 3's gate that decision is reported, not
+   * enforced: the session still closes, /close posts nothing for it, and the
+   * card money's truth arrives with the statement (Not received / write-off).
    *
    * The expectation is frozen into the variance rows the moment the count is
    * final, so what the cashier was judged against is what the Z shows.
@@ -746,15 +790,18 @@ export class TillSessionService {
 
       const rows = this.compare(expectations, counted, settings);
       const outOfTolerance = rows.filter((r) => !r.within);
+      const drawerOut = outOfTolerance.filter((r) => !isSlipRow(r));
+      const slipsOut = outOfTolerance.filter(isSlipRow);
       const attemptNo = session.tssCountAttempts + 1;
       const isLast = attemptNo >= maxAttempts;
       const outcome =
-        outOfTolerance.length === 0
+        drawerOut.length === 0
           ? TillCountOutcome.ACCEPTED
           : isLast
             ? TillCountOutcome.SENT_FOR_APPROVAL
             : TillCountOutcome.RECOUNT_REQUIRED;
       const isFinal = outcome !== TillCountOutcome.RECOUNT_REQUIRED;
+      const slipCheckRequired = isFinal && slipsOut.length > 0;
 
       const countedRows = rows.filter((r) => r.counted !== null);
       const count = await this.writeCount(tx, session, {
@@ -794,7 +841,7 @@ export class TillSessionService {
           tssNoncashExpected: slips.reduce((s, r) => s.plus(r.expectation.expected), ZERO),
           tssNoncashCounted: slips.reduce((s, r) => s.plus(r.counted ?? ZERO), ZERO),
           tssVarianceStatus:
-            outcome === TillCountOutcome.SENT_FOR_APPROVAL
+            outcome === TillCountOutcome.SENT_FOR_APPROVAL || slipCheckRequired
               ? TillSessionVarianceStatus.PENDING
               : rows.every((r) => r.variance.isZero())
                 ? TillSessionVarianceStatus.NONE
@@ -827,6 +874,18 @@ export class TillSessionService {
             variance: r.variance.toFixed(2),
           })),
         });
+      } else if (slipCheckRequired) {
+        // The drawer agreed, a slip total did not: reported for the slip check
+        // and the approver (phase 3); nothing waits on it (`enforced: false`).
+        await this.logSessionEvent(tx, session, caller, TillEventCode.APPROVAL_REQUESTED, {
+          event: 'NONCASH_VARIANCE',
+          enforced: false,
+          variance: slipsOut.map((r) => ({
+            tenderTypeId: r.expectation.tenderTypeId,
+            tenderId: r.expectation.tenderId,
+            variance: r.variance.toFixed(2),
+          })),
+        });
       }
 
       return {
@@ -834,6 +893,7 @@ export class TillSessionService {
         attemptNo,
         attemptsLeft: Math.max(0, maxAttempts - attemptNo),
         outcome,
+        slipCheckRequired,
         status:
           isFinal && outcome === TillCountOutcome.SENT_FOR_APPROVAL
             ? TillSessionStatus.PENDING_APPROVAL
@@ -857,6 +917,7 @@ export class TillSessionService {
       attemptNo: result.attemptNo,
       attemptsLeft: result.attemptsLeft,
       outcome: result.outcome,
+      slipCheckRequired: result.slipCheckRequired,
       tssStatus: result.status,
       variances,
     };
@@ -969,7 +1030,9 @@ export class TillSessionService {
           treatment !== TillVarianceTreatment.WITHIN_TOLERANCE &&
           treatment !== TillVarianceTreatment.EXPENSE
         ) {
-          continue; // phase 3 posts RECOVER / SUSPENSE; RETENDERED posts nothing
+          // phase 3 posts RECOVER / SUSPENSE; RETENDERED posts nothing; a slip
+          // gap left PENDING by an accepted count stays OPEN for its decision
+          continue;
         }
         const tenderLedgerId =
           v.tvrTenderTypeId === CASH_TENDER_TYPE_ID
@@ -1522,7 +1585,11 @@ export class TillSessionService {
     );
   }
 
-  /** RECEIPT_POSTED / PAYMENT_POSTED / EXPENSE_POSTED / MONEY_DOC_CANCELLED in the session's journal. */
+  /**
+   * RECEIPT_POSTED / PAYMENT_POSTED / EXPENSE_POSTED / MONEY_DOC_CANCELLED / RETENDER in the
+   * session's journal. A session id that names no till session (an ungoverned device's random
+   * uuid) logs nothing.
+   */
   async logMoneyDoc(
     tx: Tx,
     doc: {
@@ -1531,8 +1598,9 @@ export class TillSessionService {
         | TillEventCode.RECEIPT_POSTED
         | TillEventCode.PAYMENT_POSTED
         | TillEventCode.EXPENSE_POSTED
-        | TillEventCode.MONEY_DOC_CANCELLED;
-      srcDocType: 'RECEIPT' | 'PAYMENT' | 'EXPENSE';
+        | TillEventCode.MONEY_DOC_CANCELLED
+        | TillEventCode.RETENDER;
+      srcDocType: 'RECEIPT' | 'PAYMENT' | 'EXPENSE' | 'SALE_BILL';
       srcDocId: string;
       srcRefno: string | null;
       amount: Prisma.Decimal | number;
@@ -2050,6 +2118,40 @@ export class TillSessionService {
   }
 
   /** The CLOSED session whose drawer this one inherits (CARRIED float). */
+  /**
+   * The FLOAT_MISMATCH reason an opening difference is filed under (notes 98
+   * §2): the one named, else the shipped UNKNOWN (a company row before the
+   * global one). A reason that needs a note needs the open's `notes`.
+   */
+  private async floatMismatchReason(
+    tx: Tx,
+    input: { companyId: string; reasonId: string | null; notes: string | null },
+  ): Promise<TillReason> {
+    const reason = await tx.tillReason.findFirst({
+      where: {
+        ...(input.reasonId ? { trsId: input.reasonId } : { trsCode: 'UNKNOWN' }),
+        trsCategory: 'FLOAT_MISMATCH',
+        trsIsDeleted: false,
+        trsIsActive: true,
+        OR: [{ trsCompanyId: null }, { trsCompanyId: input.companyId }],
+      },
+      orderBy: { trsCompanyId: { sort: 'asc', nulls: 'last' } },
+    });
+    if (!reason) {
+      throwTill(
+        TillErrorCode.REASON_INVALID,
+        input.reasonId
+          ? 'The reason must be an active FLOAT_MISMATCH reason'
+          : 'The count differs from the float issued: name a FLOAT_MISMATCH reason',
+        'reasonId',
+      );
+    }
+    if (reason.trsNeedsNote && !input.notes?.trim()) {
+      throwTill(TillErrorCode.REASON_INVALID, `“${reason.trsName}” needs a note`, 'notes');
+    }
+    return reason;
+  }
+
   private async carriedFrom(tx: Tx, counterId: string, prevSessionId: string | null) {
     const { prev, takenBy } = await this.lastClosed(tx, counterId, prevSessionId);
     if (!prev) {
@@ -2502,7 +2604,9 @@ export class TillSessionService {
     outcome: TillCountOutcome,
   ): Prisma.TillVarianceUncheckedCreateInput {
     const e = row.expectation;
-    const pending = !row.within && outcome === TillCountOutcome.SENT_FOR_APPROVAL;
+    // A slip gap waits for its decision even when the drawer was accepted (notes 99 §1).
+    const pending =
+      !row.within && (outcome === TillCountOutcome.SENT_FOR_APPROVAL || isSlipRow(row));
     return {
       tvrCompanyId: session.tssCompanyId,
       tvrBranchId: session.tssBranchId,
@@ -2846,6 +2950,7 @@ export class TillSessionService {
               tvrVariance: num(dec(v.tvrCounted).minus(dec(v.tvrExpected))),
               tvrTolerance: num(v.tvrTolerance),
               tvrTreatment: v.tvrTreatment as TillVarianceTreatment,
+              tvrReasonId: v.tvrReasonId,
               tvrStatus: v.tvrStatus as 'OPEN' | 'POSTED' | 'REVERSED',
               tvrVoucherId: v.tvrVoucherId,
             }),
@@ -2910,6 +3015,11 @@ function isUuidLike(value: string): boolean {
 
 function tenderKey(typeId: number, tenderId: string | null): string {
   return `${typeId}|${tenderId ?? '*'}`;
+}
+
+/** A batch-total line (card / UPI slips): its gap is not in the drawer (notes 99 §1). */
+function isSlipRow(row: { expectation: { closeMode: TenderCloseMode } }): boolean {
+  return row.expectation.closeMode === TenderCloseMode.SLIPS;
 }
 
 // re-exported for the controller's 400s

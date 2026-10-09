@@ -240,6 +240,8 @@ export enum TillEventCode {
   SETTLEMENT_IMPORTED = 'SETTLEMENT_IMPORTED',
   SETTLEMENT_POSTED = 'SETTLEMENT_POSTED',
   NONCASH_WRITTEN_OFF = 'NONCASH_WRITTEN_OFF',
+  /** A bill re-tendered, in the session the money moved in (notes 99 §7; in ck_tev_code since 47). */
+  RETENDER = 'RETENDER',
 }
 
 /**

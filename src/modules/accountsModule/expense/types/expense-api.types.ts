@@ -84,7 +84,11 @@ export interface ExpenseDerivedPayload {
   legs: ExpenseLegPayload[];
   /** The till session the cash moves in, when it does. */
   session: { sessionId: string; accYear: string } | null;
-  /** The safe a back-office CASH row comes from. */
+  /**
+   * The safe a back-office CASH row comes from: /validate names the safe the route would take;
+   * /get the safe a posted (or cancelled) voucher's CASH row was written to — null on a draft,
+   * whose route is decided by the device that posts it.
+   */
   safeName: string | null;
 }
 

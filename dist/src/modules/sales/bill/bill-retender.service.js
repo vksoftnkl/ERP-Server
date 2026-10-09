@@ -34,6 +34,7 @@ const books_reconcile_guard_1 = require("../../accountsModule/reconcile/books-re
 const bill_temp_credit_1 = require("./bill-temp-credit");
 const bill_api_types_1 = require("./types/bill-api.types");
 const till_session_service_1 = require("../../till/services/till-session.service");
+const till_enum_1 = require("../../till/types/till-enum");
 let BillRetenderService = class BillRetenderService {
     prisma;
     bills;
@@ -360,6 +361,31 @@ let BillRetenderService = class BillRetenderService {
                 deviceId: bill.sbDeviceId,
                 sessionId: moneySessionId,
             });
+            if (moneySessionId) {
+                await this.till.logMoneyDoc(tx, {
+                    sessionId: moneySessionId,
+                    code: till_enum_1.TillEventCode.RETENDER,
+                    srcDocType: 'SALE_BILL',
+                    srcDocId: bill.sbId,
+                    srcRefno: bill.sbBillRefno,
+                    amount: rows.reduce((s, r) => s.plus(r.td_amount), new client_1.Prisma.Decimal(0)),
+                    payload: {
+                        billSessionId: bill.sbSessionId,
+                        remark: dto.remark,
+                        contraVoucherId,
+                        voided: rows.map((r) => ({
+                            tdId: r.td_id,
+                            amount: (0, sales_doc_utils_1.num)(r.td_amount),
+                            tender: r.tnd_name,
+                        })),
+                        added: newRows.map((t) => ({
+                            tdId: t.tdId,
+                            amount: (0, sales_doc_utils_1.num)(t.tdAmount),
+                            tender: t.tdTenderName,
+                        })),
+                    },
+                });
+            }
             await this.audit.logEntityChange({
                 action: 'update',
                 tableName: 'acc_tender_detail',

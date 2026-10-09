@@ -18,6 +18,19 @@ export const SETTLEMENT_SRC_DOC_TYPE = 'TENDER_SETTLEMENT';
 export const RESOLVE_SRC_DOC_TYPE = 'SETTLEMENT_RESOLVE';
 export const WRITE_OFF_SRC_DOC_TYPE = 'NONCASH_WRITE_OFF';
 
+/**
+ * The documents whose tender rows take the statement line's fee + tax into `td_mdr_amt` when a
+ * TSet settles them (plan §5.5, notes 99 §2): the sales documents, which never post from that
+ * column. A receipt / payment / expense / register row is left alone — there `td_mdr_amt` is the
+ * document's own bank-charge split, rebuilt into its BANK_CHARGES leg on an amend, so the
+ * acquirer's fee written there would be booked twice.
+ */
+export const MDR_FROM_STATEMENT_DOC_TYPES: readonly string[] = [
+  'SALE_BILL',
+  'SALE_RETURN',
+  'SALES_ORDER',
+];
+
 /** The ledger roles a settlement posts to (47 / 49 seed them). */
 export const SettlementRole = {
   TENDER_SUSPENSE: 'TENDER_SUSPENSE',

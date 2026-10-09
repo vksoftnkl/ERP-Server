@@ -473,6 +473,12 @@ let TenderSettlementService = class TenderSettlementService {
                     continue;
                 }
                 const exact = new client_1.Prisma.Decimal(l.aslAmountDiff).isZero();
+                const charges = new client_1.Prisma.Decimal(l.aslFeeAmount).plus(l.aslTaxAmount);
+                const mdr = kind === tender_settlement_enum_1.SettlementLineKind.SALE &&
+                    tender_settlement_enum_1.MDR_FROM_STATEMENT_DOC_TYPES.includes(row.srcDocType) &&
+                    charges.gte(0)
+                    ? charges
+                    : null;
                 await tx.$executeRaw `
           UPDATE accounts.acc_tender_detail
              SET td_settle_status     = ${exact ? 'SETTLED' : 'PARTIAL'},
@@ -480,6 +486,7 @@ let TenderSettlementService = class TenderSettlementService {
                  td_settle_amount     = ${new client_1.Prisma.Decimal(l.aslGrossAmount)}::numeric,
                  td_settle_ref_no     = ${(head.asiPayoutRef ?? head.asiFileName).slice(0, 60)},
                  td_settle_voucher_id = ${voucher.voucherId}::uuid,
+                 td_mdr_amt           = COALESCE(${mdr}::numeric, td_mdr_amt),
                  td_modified_on       = now(),
                  td_modified_by       = ${caller.actorName}
            WHERE td_id = ${row.tdId}::uuid AND td_acc_year = ${row.tdAccYear}::char(9)`;
@@ -555,6 +562,8 @@ let TenderSettlementService = class TenderSettlementService {
           UPDATE accounts.acc_tender_detail
              SET td_settle_status = 'PENDING', td_settled_on = NULL, td_settle_amount = NULL,
                  td_settle_ref_no = NULL, td_settle_voucher_id = NULL,
+                 td_mdr_amt = CASE WHEN td_src_doc_type = ANY(${[...tender_settlement_enum_1.MDR_FROM_STATEMENT_DOC_TYPES]}::text[])
+                                   THEN 0 ELSE td_mdr_amt END,
                  td_modified_on = now(), td_modified_by = ${caller.actorName}
            WHERE td_settle_voucher_id = ${head.asiVoucherId}::uuid`;
                 await tx.$executeRaw `

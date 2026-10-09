@@ -536,9 +536,10 @@ let ExpenseService = class ExpenseService {
                     select: { ledName: true },
                 })
                 : null;
+            let safeName = null;
             if (posted) {
                 derived.payload.legs = await this.storedLegs(tx, key);
-                await this.markMoneyFrom(tx, header, derived);
+                safeName = await this.markMoneyFrom(tx, header, derived);
             }
             return {
                 voucherId: header.avhVoucherId,
@@ -556,7 +557,7 @@ let ExpenseService = class ExpenseService {
                 sessionId: header.avhSessionId,
                 gstBill: draft.gstBill,
                 amount: derived.payload.total,
-                derived: { ...derived.payload, session: null, safeName: null },
+                derived: { ...derived.payload, session: null, safeName },
                 postedOn: header.avhPostedOn?.toISOString() ?? null,
                 cancelReason: header.avhCancelReason,
                 reversalVoucherId: header.avhReversalVoucherId,
@@ -948,7 +949,8 @@ let ExpenseService = class ExpenseService {
         const cash = derived.payload.tenders.filter((t) => t.tenderTypeId === CASH_TENDER_TYPE_ID);
         const safes = await tx.tillSafe.findMany({
             where: { tsfLedgerId: { in: cash.map((t) => t.ledgerId) }, tsfIsDeleted: false },
-            select: { tsfLedgerId: true },
+            select: { tsfLedgerId: true, tsfName: true, tsfCompanyId: true, tsfBranchId: true },
+            orderBy: [{ tsfIsDefault: 'desc' }, { tsfCode: 'asc' }],
         });
         const safeLedgers = new Set(safes.map((s) => s.tsfLedgerId));
         for (const t of cash) {
@@ -958,6 +960,14 @@ let ExpenseService = class ExpenseService {
                     ? expense_enum_1.ExpenseMoneyFrom.SAFE
                     : expense_enum_1.ExpenseMoneyFrom.LEDGER;
         }
+        if (session) {
+            return null;
+        }
+        const used = new Set(cash.filter((t) => t.moneyFrom === expense_enum_1.ExpenseMoneyFrom.SAFE).map((t) => t.ledgerId));
+        const safe = safes.find((s) => used.has(s.tsfLedgerId) &&
+            s.tsfCompanyId === header.avhCompanyId &&
+            s.tsfBranchId === header.avhBranchId);
+        return safe?.tsfName ?? null;
     }
     refusalFromTill(ctx, error) {
         if (!(error instanceof common_1.HttpException)) {

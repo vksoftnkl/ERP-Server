@@ -381,6 +381,78 @@ describe('A carried float and a variance inside the tolerance', () => {
   });
 });
 
+describe('A float the safe gave short (notes 98)', () => {
+  let s: { tssId: string; tssAccYear: string };
+  // 2000 issued, 1990 counted: 3 × 500 + 4 × 100 + 18 × 5 (the ids load in beforeAll).
+  const lines = () => [
+    { tenderTypeId: 1, denominationId: note500, qty: 3 },
+    { tenderTypeId: 1, denominationId: note100, qty: 4 },
+    { tenderTypeId: 1, denominationId: coin5, qty: 18 },
+  ];
+
+  it('refuses a reason of another category, and the UNKNOWN reason without a note', async () => {
+    const [other] = await prisma.$queryRaw<{ trs_id: string }[]>`
+      SELECT trs_id FROM accounts.till_reason
+       WHERE trs_category <> 'FLOAT_MISMATCH' AND trs_company_id IS NULL AND trs_is_active AND NOT trs_is_deleted
+       LIMIT 1`;
+    const wrong = await openSession({ floatMode: 'ISSUED', floatIssued: 2000, lines: lines(), reasonId: other.trs_id });
+    expectStatus(wrong, 422);
+    expect(wrong.body.errors[0]).toEqual(expect.objectContaining({ code: 'TILL_REASON_INVALID', field: 'reasonId' }));
+
+    const bare = await openSession({ floatMode: 'ISSUED', floatIssued: 2000, lines: lines() });
+    expectStatus(bare, 422);
+    expect(bare.body.errors[0]).toEqual(expect.objectContaining({ code: 'TILL_REASON_INVALID', field: 'notes' }));
+  });
+
+  it('posts the −10 at open with its reason: TVar Dr Cash Short & Excess / Cr till cash', async () => {
+    const [reason] = await prisma.$queryRaw<{ trs_id: string }[]>`
+      SELECT trs_id FROM accounts.till_reason
+       WHERE trs_category = 'FLOAT_MISMATCH' AND trs_code = 'SAFE_SHORT' AND trs_company_id IS NULL`;
+    const res = await openSession({
+      floatMode: 'ISSUED',
+      floatIssued: 2000,
+      lines: lines(),
+      reasonId: reason.trs_id,
+      notes: 'Safe gave less',
+    });
+    expectStatus(res, 201);
+    s = data(res);
+    expect(data<{ tssFloatVariance: number }>(res).tssFloatVariance).toBe(-10);
+
+    const [v] = await prisma.tillVariance.findMany({
+      where: { tvrSessionId: s.tssId, tvrAccYear: s.tssAccYear, tvrStage: 'OPEN' },
+    });
+    expect(v).toEqual(
+      expect.objectContaining({
+        tvrTreatment: 'EXPENSE',
+        tvrStatus: 'POSTED',
+        tvrReasonId: reason.trs_id,
+        tvrNotes: 'Safe gave less',
+      }),
+    );
+    expect(v.tvrVoucherId).not.toBeNull();
+    const legs = await prisma.$queryRaw<{ dr_cr: string; amount: string; role: string | null; ledger: string }[]>`
+      SELECT av_dr_cr AS dr_cr, av_amount::text AS amount, av_role AS role, av_ledger_id::text AS ledger
+        FROM accounts.acc_vouchers WHERE av_voucher_id = ${v.tvrVoucherId}::uuid ORDER BY av_row_no`;
+    expect(legs).toEqual([
+      expect.objectContaining({ dr_cr: 'DR', amount: '10.00', role: 'CASH_SHORT_EXCESS' }),
+      { dr_cr: 'CR', amount: '10.00', role: null, ledger: tillCashLedger },
+    ]);
+    // TFlt +2000, TVar −10: the till ledger holds what was counted.
+    expect(await tillCashNet(s.tssId)).toBe(1990);
+  });
+
+  it('a close handing the 1990 to the safe leaves nothing on the till ledger (§5.7)', async () => {
+    expectStatus(await post('sessions/end-billing', key(s)), 200);
+    const count = await post('sessions/count', { ...key(s), lines: lines() });
+    expect(data<{ outcome: string }>(count).outcome).toBe('ACCEPTED');
+    const close = await post('sessions/close', { ...key(s), floatLeft: 0 });
+    expectStatus(close, 200);
+    expect(data<{ totals: { handedOver: number } }>(close).totals.handedOver).toBe(1990);
+    expect(await tillCashNet(s.tssId)).toBe(0);
+  });
+});
+
 describe('Out of tolerance on the last attempt', () => {
   let s: { tssId: string; tssAccYear: string };
 

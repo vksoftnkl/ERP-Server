@@ -182,6 +182,7 @@ var TillEventCode;
     TillEventCode["SETTLEMENT_IMPORTED"] = "SETTLEMENT_IMPORTED";
     TillEventCode["SETTLEMENT_POSTED"] = "SETTLEMENT_POSTED";
     TillEventCode["NONCASH_WRITTEN_OFF"] = "NONCASH_WRITTEN_OFF";
+    TillEventCode["RETENDER"] = "RETENDER";
 })(TillEventCode || (exports.TillEventCode = TillEventCode = {}));
 exports.CLIENT_EVENT_CODES = [
     TillEventCode.DRAWER_OPEN_SALE,

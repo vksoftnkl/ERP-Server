@@ -48,14 +48,14 @@ migration and in `prisma/seed/Menu_Master.sql`.
 |---|---|
 | `POST days/open` · `GET days/get` | Day Open (the only way in under `till.day_auto_open = false`); a day and its sessions by status |
 | `GET sessions/open-check` | everything S1 needs in one read: `requireSession`, the business day, the linked counter or the free / busy counters (each free one with its `carriedFrom`), the session this device holds, this user's session elsewhere. Advice only |
-| `POST sessions/open` | counter by the claim rule above; opens the day; ISSUED float → **TFlt** Dr till cash / Cr safe; CARRIED inherits the last close's `tss_float_left`; the opening count is cash only, counted ≠ issued → an OPEN-stage `till_variance` PENDING (FLOAT_MISMATCH) |
+| `POST sessions/open` | counter by the claim rule above; opens the day; ISSUED float → **TFlt** Dr till cash / Cr safe; CARRIED inherits the last close's `tss_float_left`; the opening count is cash only, counted ≠ issued → an OPEN-stage `till_variance` **posted at once** with the default treatment (notes 98): **TVar** Dr / Cr Cash Short & Excess against till cash, `EXPENSE`, the `reasonId` named (category FLOAT_MISMATCH, else 422 `TILL_REASON_INVALID`) or the shipped UNKNOWN, which needs `notes`; logged `VARIANCE_DECIDED` (`byDefault: true`). The phase-3 approver re-treats it |
 | `GET sessions/current` | the live session of this device, else of this user — superseded by `open-check`, kept for now |
 | `GET sessions/get` | header, per-tender expectation, the vouchers it posted, its variances. **Blind**: the cashier gets every expected / variance figure `null` (`expectedVisible: false`) until CLOSED |
 | `GET sessions/expected` | 273 OVERRIDE; refused to the session's own cashier before close (`TILL_BLIND_CLOSE`) |
 | `POST sessions/suspend` · `resume` | break / idle; the operator, on the session's device |
 | `POST sessions/end-billing` | → COUNTING; held bills go to the branch pool (`till.close_with_holds` RELEASE) or refuse (BLOCK → `TILL_HOLDS_OPEN`). **REV 2 §2.6:** the device sends `outboxCount` / `lastClientSeq`; anything unsent (or a journal the server has not received up to) → 409 `TILL_DEVICE_UNSYNCED`, logged `SYNC_PENDING_AT_CLOSE` outside the refused transaction. A client that sends neither is not checked |
-| `POST sessions/count` | one attempt, every attempt kept. **ACCEPTED** (all counted tenders within tolerance: variances written WITHIN_TOLERANCE, the count final) · **RECOUNT_REQUIRED** · **SENT_FOR_APPROVAL** (out on the last attempt: PENDING_APPROVAL). The cashier of a blind count never gets the figure, even holding 273 OVERRIDE |
-| `POST sessions/close` | posts the variances (**TVar** Dr / Cr Cash Short & Excess), the hand-over (**TDrp** Dr safe / Cr till cash) of counted − `floatLeft`, freezes the totals, issues the counter's Z. PENDING_APPROVAL → **428** `TILL_APPROVAL_REQUIRED` (event, amount, level) until phase 3 |
+| `POST sessions/count` | one attempt, every attempt kept. **ACCEPTED** (all counted drawer tenders within tolerance: variances written WITHIN_TOLERANCE, the count final) · **RECOUNT_REQUIRED** · **SENT_FOR_APPROVAL** (out on the last attempt: PENDING_APPROVAL). **Only the drawer decides** (notes 99 §1): a SLIPS line (card / UPI batch total) out of tolerance never asks for a recount — the count is final with `slipCheckRequired: true`, that variance PENDING, `tss_variance_status` PENDING and an `APPROVAL_REQUESTED` NONCASH_VARIANCE event (`enforced: false`). The cashier of a blind count never gets the figure, even holding 273 OVERRIDE |
+| `POST sessions/close` | posts the variances (**TVar** Dr / Cr Cash Short & Excess; a PENDING slip variance stays OPEN and posts nothing), the hand-over (**TDrp** Dr safe / Cr till cash) of counted − `floatLeft`, freezes the totals, issues the counter's Z. PENDING_APPROVAL → **428** `TILL_APPROVAL_REQUIRED` (event, amount, level) until phase 3 |
 | `POST movements/create` | **phase 2.** DROP (sealed bag, declared amount, bag / seal no) · PAID_IN (a PAID_IN reason; the ledger named or the reason's; **TPIn** Dr till cash / Cr ledger) · EXCHANGE (notes for notes, both sides counted and equal, no voucher, numbered `<session no>/X<n>`) — the session's cashier on its device, 272 EDIT. PICKUP (a PICKUP reason; witness = the cashier, never the supervisor; **TDrp**) · TOP_UP (**TFlt**) — a supervisor, 273 OVERRIDE, from any device. Denomination lines make the amount; each movement's count names it (`tct_movement_id`). Only while the session takes money (OPEN / SUSPENDED) |
 | `GET movements/get` | one movement with its counts — the slip (§9 TILL_MOVEMENT). Own session 272 VIEW, others 273 VIEW |
 | `POST movements/change` | **REV 2 §2.14** "Change from C02": a PICKUP on the giving session (its cashier witnesses, never the supervisor; a PICKUP reason) and a TOP_UP on the receiving one, in one call, each through its counter's safe — no till-to-till movement. 273 OVERRIDE |
@@ -87,9 +87,16 @@ UPI chase list, shown to a blind cashier too, since it is a count, not money).
   verdict as counts and exceptions (rows with no slip, slips with no row, amounts that differ) in a
   `SLIP_CHECK` event; the ticks are not stored. Both 273 OVERRIDE, refused to the session's own
   cashier before close (`TILL_BLIND_CLOSE`), only once billing has ended.
+- **A slip gap never goes back to the cashier (notes 99 §1):** recounting the cash cannot find it. The
+  count answers on the drawer alone; the slip gap is written PENDING with the final count
+  (`slipCheckRequired`) and waits for the slip check, a re-tender, then the NONCASH_VARIANCE decision.
 - What re-tender cannot explain is the NONCASH_VARIANCE the approver decides — phase 3, default
-  treatment SUSPENSE (`till.noncash_variance_default`). The statement side (import, match, TSet, the
-  not-received and unexplained lists) is `accountsModule/tenderSettlement` (its README).
+  treatment SUSPENSE (`till.noncash_variance_default`). Until that gate it is **reported, not
+  enforced**: the session closes, nothing posts for it (SUSPENSE needs the rows the slip check names,
+  `tvr_rows`, or a later TSet would credit the card ledger twice), and the card money's truth arrives
+  with the statement — a row never paid lands in NOT RECEIVED and is written off there. The statement
+  side (import, match, TSet, the not-received and unexplained lists) is
+  `accountsModule/tenderSettlement` (its README).
 
 ## The money paths (§7.4) — and the rollout rule
 
@@ -136,6 +143,9 @@ payment to pick that statutory row. The Qt screens (F11 rev 2, the till strip, t
   into it → 409 `TILL_SESSION_DAY_ENDED` (logged `SESSION_DAY_ENDED`); end and count it, open a
   session for today. Judged on the document's own time when it has one (a bill's
   `sb_bill_datetime`), so an offline bill made before the cut-off still lands.
+- **Re-tender:** `/bills/retender` logs **RETENDER** (in ck_tev_code since 47) in the session the money
+  moved in — the device's live session, else the bill's own when that is a till session — with the
+  voided and added rows, the TndC and the bill's session (notes 99 §7; the cockpit's RE-TENDERS tile).
 - **Late arrival (§2.6):** a bill naming a session that has stopped billing (COUNTING,
   PENDING_APPROVAL, CLOSED), MADE before billing stopped (`sb_bill_datetime`) and REACHING the
   server after it (`sb_created_on`), is accepted, stamped and logged `LATE_ARRIVAL` — the sale
@@ -172,8 +182,9 @@ voucher's number.
 **§5.7 invariant** — after a session closes, the till-cash legs carrying its id (POSTED and
 CANCELLED vouchers, as every balance in the house reads them — a voided movement's original and
 its mirror net out) net to
-`tss_float_left − (CARRIED ? tss_float_issued : 0)`. Off by `tss_float_variance` while a float
-mismatch waits for its approver (phase 3 posts it).
+`tss_float_left − (CARRIED ? tss_float_issued : 0)` — the open's TVar takes the till ledger to what
+was counted, so a float mismatch no longer leaves its difference behind (notes 98 §1). The session's
+`tss_variance_status` describes the close count; an opening difference shows as `tss_float_variance`.
 
 ## Single writers
 
@@ -184,7 +195,8 @@ mismatch waits for its approver (phase 3 posts it).
 ## Not in phase 1 (§13)
 
 - **Approvals** (phase 3): rule × authority × PIN gate, the inbox, the expiry sweep. Until then a
-  PENDING_APPROVAL session stays there; FLOAT_MISMATCH variances stay PENDING; CASH_PAYMENT and
+  PENDING_APPROVAL session stays there; a FLOAT_MISMATCH variance is posted at open with the default
+  treatment (EXPENSE) for the approver to re-treat; CASH_PAYMENT and
   EXPENSE are only reported (above).
 - **REV 2 items on modules not built yet:** §2.1–§2.3 and §2.5 (the settlement import / match /
   TSet of 49) are built in `accountsModule/tenderSettlement`, except the closed-session pairing
@@ -206,8 +218,8 @@ mismatch waits for its approver (phase 3 posts it).
 
 `test/till-session-http.e2e-spec.ts` (masters, the blind lifecycle, carried float, tolerance,
 PENDING_APPROVAL / 428, the journal), `test/till-money-paths-http.e2e-spec.ts` (a cash bill on a
-till device: refused without a session, stamped with it, expected by the count, not cancellable
-once counted), `test/till-event-single-writer.e2e-spec.ts`, `test/till-settle-pending.e2e-spec.ts` (REV 2 §2.4), `test/till-movements-http.e2e-spec.ts` (phase 2: a
+till device: refused without a session, stamped with it, a re-tender journalled RETENDER, expected
+by the count, not cancellable once counted), `test/till-event-single-writer.e2e-spec.ts`, `test/till-settle-pending.e2e-spec.ts` (REV 2 §2.4), `test/till-movements-http.e2e-spec.ts` (phase 2: a
 cashier and a supervisor — two users, two app instances — every kind, the gauge NORMAL → ALERT →
 BLOCKED → NORMAL, a void and its mirror, the close netting to the float left). The money-path
 suite also refuses a bill on a BLOCKED drawer until a drop. Each suite registers its own

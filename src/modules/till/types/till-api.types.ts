@@ -302,6 +302,8 @@ export interface TillVariancePayload {
   tvrVariance: number;
   tvrTolerance: number;
   tvrTreatment: TillVarianceTreatment;
+  /** till_reason — an OPEN-stage variance carries its FLOAT_MISMATCH reason. */
+  tvrReasonId: string | null;
   tvrStatus: 'OPEN' | 'POSTED' | 'REVERSED';
   tvrVoucherId: string | null;
 }
@@ -314,6 +316,12 @@ export interface TillCountResultPayload {
   attemptNo: number;
   attemptsLeft: number;
   outcome: TillCountOutcome;
+  /**
+   * A card / UPI slip total disagrees while the drawer was accepted (notes 99 §1): the count is
+   * final, the gap waits for the supervisor's slip check (`sessions/slip-check`), and the cashier is
+   * not asked to recount. No figure — shown to a blind cashier too.
+   */
+  slipCheckRequired: boolean;
   tssStatus: TillSessionStatus;
   /** Only when the caller may see expected figures (open mode, or a supervisor). */
   variances: TillVariancePayload[] | null;

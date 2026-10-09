@@ -122,6 +122,7 @@ let TillController = class TillController {
             floatIssued: dto.floatIssued ?? null,
             prevSessionId: dto.prevSessionId ?? null,
             lines: dto.lines,
+            reasonId: dto.reasonId ?? null,
             notes: dto.notes ?? null,
         });
         return { success: true, message: `Session ${data.tssSessionNo} opened`, data };
@@ -419,8 +420,10 @@ __decorate([
             'from open-check’s free list. Nothing is written to the counter: the session is stamped with this device and ' +
             'money posts only from it. One live session per counter, per device and per cashier. Opens the business day ' +
             'if till.day_auto_open. The float: ISSUED posts a TFlt (Dr till cash / Cr safe) for what the safe hands over; ' +
-            'CARRIED inherits what the previous close left. The opening count is cash only; counted ≠ issued records a ' +
-            'FLOAT_MISMATCH variance for the approver. Open Till (272) CREATE.',
+            'CARRIED inherits what the previous close left. The opening count is cash only; counted ≠ issued posts the ' +
+            'difference at once as an OPEN-stage variance (TVar Dr / Cr Cash Short & Excess against till cash, treatment ' +
+            'EXPENSE, the FLOAT_MISMATCH `reasonId` or the UNKNOWN reason) — the phase-3 approver re-treats it. ' +
+            'Open Till (272) CREATE.',
     }),
     (0, swagger_1.ApiCreatedResponse)({ type: till_response_dto_1.TillSuccessDto }),
     (0, swagger_1.ApiConflictResponse)({
@@ -432,7 +435,7 @@ __decorate([
     (0, swagger_1.ApiForbiddenResponse)({ type: till_response_dto_1.TillErrorResponseDto, description: 'TILL_DEVICE_BLOCKED' }),
     (0, swagger_1.ApiUnprocessableEntityResponse)({
         type: till_response_dto_1.TillErrorResponseDto,
-        description: 'TILL_FLOAT_INVALID · TILL_COUNT_INVALID · TILL_SAFE_MISSING · TILL_LEDGER_UNMAPPED',
+        description: 'TILL_FLOAT_INVALID · TILL_COUNT_INVALID · TILL_REASON_INVALID · TILL_SAFE_MISSING · TILL_LEDGER_UNMAPPED',
     }),
     __param(0, (0, common_1.Body)()),
     __metadata("design:type", Function),
@@ -568,7 +571,9 @@ __decorate([
     (0, swagger_1.ApiOperation)({
         summary: 'One count attempt — answers ACCEPTED / RECOUNT_REQUIRED / SENT_FOR_APPROVAL',
         description: 'Every attempt is kept. In a hidden-expected count the cashier is never told the figure (variances = null). Out of tolerance ' +
-            'after the last recount (till.max_recounts) the session goes PENDING_APPROVAL. Open Till (272) EDIT by the ' +
+            'after the last recount (till.max_recounts) the session goes PENDING_APPROVAL. Only the drawer decides: a card / UPI slip ' +
+            'total out of tolerance never asks for a recount — the count is final with slipCheckRequired = true, the gap PENDING for ' +
+            "the supervisor's slip check; the session still closes. Open Till (272) EDIT by the " +
             'cashier, or Till Sessions (273) OVERRIDE (cash office / supervisor).',
     }),
     (0, swagger_1.ApiOkResponse)({ type: till_response_dto_1.TillSuccessDto }),

@@ -147,6 +147,7 @@ class OpenTillSessionDto extends TillScopeDto {
     floatIssued;
     prevSessionId;
     lines = [];
+    reasonId;
     notes;
 }
 exports.OpenTillSessionDto = OpenTillSessionDto;
@@ -203,6 +204,16 @@ __decorate([
     (0, class_transformer_1.Type)(() => TillCountLineDto),
     __metadata("design:type", Array)
 ], OpenTillSessionDto.prototype, "lines", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        format: 'uuid',
+        nullable: true,
+        description: 'Counted ≠ issued: the reason, a till_reason of category FLOAT_MISMATCH, stored on the OPEN-stage variance. ' +
+            'Left out = the shipped UNKNOWN reason, which needs `notes`. Not read when the count matches.',
+    }),
+    (0, dtoDecorators_1.NullableUuid)(),
+    __metadata("design:type", Object)
+], OpenTillSessionDto.prototype, "reasonId", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
     (0, dtoDecorators_1.NullableString)(500),
