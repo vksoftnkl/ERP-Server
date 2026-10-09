@@ -20,6 +20,7 @@ import { BillService } from './bill.service';
 import { type BillSnapshot } from './bill-snapshot';
 import type { AmendBillDto, CancelBillDto, PostBillDto, ValidateBillDto } from './dto/bill-lifecycle.dto';
 import type { SaveBillAdjustmentDto } from './dto/save-bill-adjustment.dto';
+import { TillSessionService } from '../../till/services/till-session.service';
 import { type BillPayload } from './types/bill-api.types';
 interface PostResult {
     bill: SaleBill;
@@ -45,8 +46,9 @@ export declare class BillLifecycleService {
     private readonly docBlocks;
     private readonly gst;
     private readonly audit;
+    private readonly till;
     private readonly logger;
-    constructor(prisma: PrismaService, bills: BillService, salesContext: SalesContextService, statutory: StatutoryService, legs: VoucherPostingService, register: DocRegisterService, stock: SalesStockService, reservations: StockReservationService, loyalty: LoyaltyLedgerService, promo: PromotionUsageService, chargeCarry: ChargeCarryService, dcFulfilment: DcFulfilmentService, saleOrders: SaleOrderService, transportBand: TransportBandService, docBlocks: SalesDocBlocksService, gst: GstGatewayService, audit: AuditLogService);
+    constructor(prisma: PrismaService, bills: BillService, salesContext: SalesContextService, statutory: StatutoryService, legs: VoucherPostingService, register: DocRegisterService, stock: SalesStockService, reservations: StockReservationService, loyalty: LoyaltyLedgerService, promo: PromotionUsageService, chargeCarry: ChargeCarryService, dcFulfilment: DcFulfilmentService, saleOrders: SaleOrderService, transportBand: TransportBandService, docBlocks: SalesDocBlocksService, gst: GstGatewayService, audit: AuditLogService, till: TillSessionService);
     validate(dto: ValidateBillDto): Promise<Record<string, unknown>>;
     post(dto: PostBillDto): Promise<BillPayload>;
     cancel(dto: CancelBillDto): Promise<Record<string, unknown>>;
@@ -56,6 +58,7 @@ export declare class BillLifecycleService {
         adjustments?: SaveBillAdjustmentDto[];
     }): Promise<void>;
     private guardSources;
+    private stampTillSession;
     postCore(tx: Prisma.TransactionClient, bill: SaleBill, items: SaleBillItem[], snap: BillSnapshot, ctx: SalesCallContext, opts: {
         adjustments?: SaveBillAdjustmentDto[];
         now: Date;

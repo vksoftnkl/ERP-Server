@@ -32,6 +32,11 @@ const payment_lines_1 = require("./payment-lines");
 const payment_tds_1 = require("./payment-tds");
 const payment_guards_1 = require("./payment.guards");
 const payment_enum_1 = require("./types/payment-enum");
+const till_session_service_1 = require("../../till/services/till-session.service");
+const till_approval_service_1 = require("../../till/services/till-approval.service");
+const till_enum_1 = require("../../till/types/till-enum");
+const vouchers_errors_1 = require("../vouchers/vouchers.errors");
+const cash_payment_limit_1 = require("./cash-payment-limit");
 const POST_TRANSACTION_OPTIONS = { maxWait: 15_000, timeout: 120_000 };
 let PaymentPostingService = class PaymentPostingService {
     prisma;
@@ -39,12 +44,16 @@ let PaymentPostingService = class PaymentPostingService {
     paymentService;
     openItemsService;
     recompute;
-    constructor(prisma, requestContext, paymentService, openItemsService, recompute) {
+    till;
+    approvals;
+    constructor(prisma, requestContext, paymentService, openItemsService, recompute, till, approvals) {
         this.prisma = prisma;
         this.requestContext = requestContext;
         this.paymentService = paymentService;
         this.openItemsService = openItemsService;
         this.recompute = recompute;
+        this.till = till;
+        this.approvals = approvals;
     }
     async post(dto) {
         const actor = this.requestContext.getUserId() ?? module_service_utils_1.DEFAULT_ACTOR;
@@ -72,6 +81,73 @@ let PaymentPostingService = class PaymentPostingService {
         const party = await (0, payment_guards_1.loadPayee)(tx, header.avhCompanyId, header.avhPartyId);
         const paymentDate = startOfDay(header.avhVoucherDate);
         const { tenders, otherLines, tds } = await this.rebuildLines(tx, header, paymentDate, settings, party);
+        const till = await this.till.routeMoneyDoc(tx, {
+            companyId: header.avhCompanyId,
+            branchId: header.avhBranchId,
+            sessionId: header.avhSessionId,
+            field: 'avhSessionId',
+            hasCash: tenders.some((tender) => tender.tenderTypeId === till_enum_1.CASH_TENDER_TYPE_ID),
+        });
+        if (till.ref) {
+            await this.till.stampVoucher(tx, till.ref, { voucherId: header.avhVoucherId, accYear: header.avhAccYear, srcDocType: 'PAYMENT' }, actor);
+            header.avhSessionId = till.ref.tssId;
+        }
+        if (till.cashLedgerId) {
+            await this.till.routeCashToLedger(tx, {
+                srcDocType: 'PAYMENT',
+                srcDocId: header.avhVoucherId,
+                accYear: header.avhAccYear,
+                ledgerId: till.cashLedgerId,
+                actor,
+            });
+            for (const tender of tenders.filter((row) => row.tenderTypeId === till_enum_1.CASH_TENDER_TYPE_ID)) {
+                tender.tenderLedgerId = till.cashLedgerId;
+                tender.clearingLedgerId = null;
+            }
+        }
+        const cash = (0, receipt_utils_1.sum)(tenders.filter((row) => row.tenderTypeId === till_enum_1.CASH_TENDER_TYPE_ID).map((row) => row.amount));
+        const warnings = [];
+        const limit40A3 = await (0, cash_payment_limit_1.checkCashPaymentLimit)(tx, {
+            companyId: header.avhCompanyId,
+            accYear: header.avhAccYear,
+            onDate: (0, receipt_utils_1.toDateString)(header.avhVoucherDate),
+            payeeLedgerId: header.avhPartyId,
+            cash,
+            excludeDocId: header.avhVoucherId,
+            field: 'tenders',
+        });
+        if (limit40A3?.enforce === 'REFUSE') {
+            (0, vouchers_errors_1.throwRefusals)('Payment cannot be posted', [limit40A3]);
+        }
+        if (limit40A3) {
+            warnings.push({
+                code: limit40A3.code,
+                level: limit40A3.enforce === 'INFO' ? 'INFO' : 'WARN',
+                message: limit40A3.message,
+                field: limit40A3.field,
+                overridable: false,
+            });
+        }
+        const approval = till.ref && cash.greaterThan(0)
+            ? await this.approvals.assess(tx, {
+                companyId: header.avhCompanyId,
+                branchId: header.avhBranchId,
+                event: 'CASH_PAYMENT',
+                onDate: (0, receipt_utils_1.toDateString)(header.avhVoucherDate),
+                amount: cash,
+            })
+            : null;
+        if (approval) {
+            warnings.push({
+                code: till_enum_1.TillErrorCode.APPROVAL_REQUIRED,
+                level: 'INFO',
+                message: `Cash of ${cash.toFixed(2)} out of the drawer is above the CASH_PAYMENT threshold of ` +
+                    `${approval.threshold.toFixed(2)} (${approval.minRole}): recorded for review — ` +
+                    'the approval gate is not built yet',
+                field: 'tenders',
+                overridable: false,
+            });
+        }
         const locked = await (0, payment_guards_1.lockBills)(tx, [
             ...dto.allocations.map((row) => ({ billId: row.billId, billAccYear: row.billAccYear })),
             ...dto.creditsApplied.map((row) => ({ billId: row.billId, billAccYear: row.billAccYear })),
@@ -212,6 +288,21 @@ let PaymentPostingService = class PaymentPostingService {
             deviceId: this.requestContext.getDeviceId() ?? header.avhDeviceId,
             sessionId: header.avhSessionId,
         });
+        if (till.ref) {
+            await this.till.logMoneyDoc(tx, {
+                sessionId: till.ref.tssId,
+                code: till_enum_1.TillEventCode.PAYMENT_POSTED,
+                srcDocType: 'PAYMENT',
+                srcDocId: header.avhVoucherId,
+                srcRefno: paymentVoucher.voucherRefno,
+                amount: (0, receipt_utils_1.sum)(tenders.map((tender) => tender.amount)),
+                payload: {
+                    cash: Number(cash.toFixed(2)),
+                    ...(approval ? { approval: { ...approval } } : {}),
+                    ...(limit40A3 ? { statutory: { ...limit40A3.statutory } } : {}),
+                },
+            });
+        }
         const now = new Date();
         for (const tender of tenders.filter((row) => row.isCheque)) {
             const register = registerByTenderRow.get(tender.rowNo);
@@ -275,6 +366,8 @@ let PaymentPostingService = class PaymentPostingService {
                 postDatedHeld: (0, receipt_utils_1.toAmount)(held.get(`${bill.billId}|${bill.accYear}`) ?? receipt_utils_1.ZERO),
             })),
             totalOnAccount: (0, receipt_utils_1.toAmount)(plan.totalOnAccount),
+            warnings,
+            approval,
             cheques: tenders
                 .filter((tender) => tender.isCheque && leaves.has(tender.rowNo))
                 .map((tender) => {
@@ -844,7 +937,9 @@ exports.PaymentPostingService = PaymentPostingService = __decorate([
         request_context_service_1.RequestContextService,
         payment_service_1.PaymentService,
         payment_open_items_service_1.PaymentOpenItemsService,
-        bill_balance_recompute_service_1.BillBalanceRecomputeService])
+        bill_balance_recompute_service_1.BillBalanceRecomputeService,
+        till_session_service_1.TillSessionService,
+        till_approval_service_1.TillApprovalService])
 ], PaymentPostingService);
 function rethrowAllocationError(error) {
     if (error instanceof allocation_engine_1.AllocationError) {

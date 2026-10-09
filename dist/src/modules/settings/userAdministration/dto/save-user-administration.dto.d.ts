@@ -31,6 +31,7 @@ export declare class SaveUserAdministrationDto {
     usrTimezone?: string;
     usrLanguage?: string;
     usrPassword?: string;
+    usrPin?: string | null;
     usrMustChangePassword?: boolean;
     usrType?: UserType | null;
     usrEditDate?: boolean;

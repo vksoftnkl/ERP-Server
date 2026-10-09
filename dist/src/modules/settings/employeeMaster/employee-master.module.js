@@ -9,17 +9,19 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.EmployeeMasterModule = void 0;
 const common_1 = require("@nestjs/common");
 const audit_log_module_1 = require("../../audit-log/audit-log.module");
+const account_ledger_masters_module_1 = require("../../accountsModule/accountLedgerMasters/account-ledger-masters.module");
 const employee_master_controller_1 = require("./employee-master.controller");
 const employee_master_exception_filter_1 = require("./employee-master-exception.filter");
 const employee_master_service_1 = require("./employee-master.service");
+const staff_advance_ledger_service_1 = require("./staff-advance-ledger.service");
 let EmployeeMasterModule = class EmployeeMasterModule {
 };
 exports.EmployeeMasterModule = EmployeeMasterModule;
 exports.EmployeeMasterModule = EmployeeMasterModule = __decorate([
     (0, common_1.Module)({
-        imports: [audit_log_module_1.AuditLogModule],
+        imports: [audit_log_module_1.AuditLogModule, account_ledger_masters_module_1.AccountLedgerMastersModule],
         controllers: [employee_master_controller_1.EmployeeMasterController],
-        providers: [employee_master_service_1.EmployeeMasterService, employee_master_exception_filter_1.EmployeeMasterExceptionFilter],
+        providers: [employee_master_service_1.EmployeeMasterService, staff_advance_ledger_service_1.StaffAdvanceLedgerService, employee_master_exception_filter_1.EmployeeMasterExceptionFilter],
     })
 ], EmployeeMasterModule);
 //# sourceMappingURL=employee-master.module.js.map

@@ -24,6 +24,11 @@ export declare class AccountLedgerMastersService {
         deleted: true;
     }>;
     private ensureLedgerHasNoOwner;
+    findLedgerOwners(tx: AccountLedgerWriteClient, ledId: string, ledName: string): Promise<Array<{
+        role: string;
+        name: string;
+        master: string;
+    }>>;
     private createLedger;
     createLedgerWithinTx(saveAccountLedgerMasterDto: SaveAccountLedgerMasterDto, tx: AccountLedgerWriteClient): Promise<AccountLedgerMasterPayload>;
     private updateLedger;

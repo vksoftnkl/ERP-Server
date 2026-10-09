@@ -19,8 +19,9 @@ export declare class UserAdministrationService {
     private updateUser;
     private replaceUserMenus;
     private ensureLoginNameUnique;
+    private ensureEmployeeLinkable;
+    private applyPin;
     private applyOptionalUserFields;
-    private hashPassword;
     private toPayload;
     private toPayloadWithoutMenus;
     private toMenuPayload;

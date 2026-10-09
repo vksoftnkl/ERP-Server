@@ -8,13 +8,21 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
+var __param = (this && this.__param) || function (paramIndex, decorator) {
+    return function (target, key) { decorator(target, key, paramIndex); }
+};
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.TenderDetailService = void 0;
+exports.TenderDetailService = exports.TENDER_REF_DUPLICATE = exports.TENDER_REF_REQUIRED = void 0;
 const common_1 = require("@nestjs/common");
 const client_1 = require("@prisma/client");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
 const audit_log_service_1 = require("../../audit-log/audit-log.service");
+const app_setting_value_service_1 = require("../../settings/appSettings/app-setting-value.service");
+const till_event_service_1 = require("../../till/services/till-event.service");
+const till_enum_1 = require("../../till/types/till-enum");
+const module_shared_utils_1 = require("../../../common/utils/module-shared.utils");
+const tender_settlement_settings_1 = require("../tenderSettlement/tender-settlement.settings");
 const tender_detail_api_types_1 = require("./types/tender-detail-api.types");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
 const TENDER_DETAIL_TABLE_NAME = 'account tender detail';
@@ -92,14 +100,21 @@ const TENDER_DETAIL_FIELD_TRANSFORMS = {
         (value) => toDateOrNull(value, field),
     ])),
 };
+exports.TENDER_REF_REQUIRED = 'TENDER_REF_REQUIRED';
+exports.TENDER_REF_DUPLICATE = 'TENDER_REF_DUPLICATE';
+const STATEMENT_SETTLED_TYPES = ['CARD', 'UPI', 'WALLET'];
 let TenderDetailService = class TenderDetailService {
     prisma;
     auditLogService;
     requestContextService;
-    constructor(prisma, auditLogService, requestContextService) {
+    appSettings;
+    tillEvents;
+    constructor(prisma, auditLogService, requestContextService, appSettings, tillEvents) {
         this.prisma = prisma;
         this.auditLogService = auditLogService;
         this.requestContextService = requestContextService;
+        this.appSettings = appSettings;
+        this.tillEvents = tillEvents;
     }
     async save(saveTenderDetailDto) {
         if (saveTenderDetailDto.tdId) {
@@ -322,7 +337,28 @@ let TenderDetailService = class TenderDetailService {
             tdCreatedBy: (0, module_service_utils_1.resolveActor)(saveTenderDetailDto.tdCreatedBy, actorId),
         };
         (0, module_service_utils_1.applyPresentFields)(data, saveTenderDetailDto, TENDER_DETAIL_OPTIONAL_FIELDS, TENDER_DETAIL_FIELD_TRANSFORMS);
-        data.tdTotalAmt = this.resolveTotalAmt(saveTenderDetailDto, undefined);
+        const totalAmt = this.resolveTotalAmt(saveTenderDetailDto, undefined);
+        data.tdTotalAmt = totalAmt;
+        const last4 = await this.guardReference(tx, tender, {
+            tdId: null,
+            tdTenderId: tenderId,
+            tdTenderTypeId: tenderTypeId,
+            tdDrCr: data.tdDrCr,
+            tdRefNo: data.tdRefNo ?? null,
+            tdAuthCode: data.tdAuthCode ?? null,
+            tdCardLast4: data.tdCardLast4 ?? null,
+            tdTotalAmt: totalAmt,
+            tdCompanyId: data.tdCompanyId,
+            tdBranchId: data.tdBranchId,
+            tdAccYear: data.tdAccYear,
+            tdSrcDocType: data.tdSrcDocType,
+            tdSrcDocId: data.tdSrcDocId,
+            tdSessionId: data.tdSessionId ?? null,
+        });
+        if (last4 && !data.tdCardLast4) {
+            data.tdCardLast4 = last4;
+        }
+        await this.defaultSettlement(tx, data, tender, saveTenderDetailDto);
         this.ensureValuesAreAllowed(saveTenderDetailDto, undefined, data);
         const created = await tx.accTenderDetail.create({ data });
         await this.auditLogService.logEntityChange({
@@ -395,6 +431,35 @@ let TenderDetailService = class TenderDetailService {
             data.tdUserId = saveTenderDetailDto.tdUserId;
         }
         data.tdTotalAmt = this.resolveTotalAmt(saveTenderDetailDto, existing);
+        const pick = (value, stored) => (value === undefined ? stored : value);
+        const merged = {
+            tdId: existing.tdId,
+            tdTenderId: tenderId,
+            tdTenderTypeId: tenderTypeId,
+            tdDrCr: String(pick(data.tdDrCr, existing.tdDrCr)),
+            tdRefNo: pick(data.tdRefNo, existing.tdRefNo),
+            tdAuthCode: pick(data.tdAuthCode, existing.tdAuthCode),
+            tdCardLast4: pick(data.tdCardLast4, existing.tdCardLast4),
+            tdTotalAmt: new client_1.Prisma.Decimal(String(pick(data.tdTotalAmt, existing.tdTotalAmt) ?? 0)),
+            tdCompanyId: String(pick(data.tdCompanyId, existing.tdCompanyId)),
+            tdBranchId: String(pick(data.tdBranchId, existing.tdBranchId)),
+            tdAccYear: existing.tdAccYear,
+            tdSrcDocType: existing.tdSrcDocType,
+            tdSrcDocId: existing.tdSrcDocId,
+            tdSessionId: existing.tdSessionId,
+        };
+        const touched = tenderChanged ||
+            merged.tdDrCr !== existing.tdDrCr ||
+            merged.tdRefNo !== existing.tdRefNo ||
+            merged.tdAuthCode !== existing.tdAuthCode ||
+            merged.tdCardLast4 !== existing.tdCardLast4 ||
+            !merged.tdTotalAmt.equals(existing.tdTotalAmt);
+        if (touched) {
+            const last4 = await this.guardReference(tx, tender, merged);
+            if (last4 && !merged.tdCardLast4) {
+                data.tdCardLast4 = last4;
+            }
+        }
         this.ensureValuesAreAllowed(saveTenderDetailDto, existing, data);
         const updated = await tx.accTenderDetail.update({
             where: { tdId_tdAccYear: { tdId: existing.tdId, tdAccYear: existing.tdAccYear } },
@@ -487,10 +552,134 @@ let TenderDetailService = class TenderDetailService {
             (0, module_service_utils_1.throwAccountsBadRequest)('Tender line document is immutable', details);
         }
     }
+    async guardReference(tx, tender, row) {
+        if (row.tdDrCr.trim() !== String(tender_detail_api_types_1.TenderDrCr.DR)) {
+            return null;
+        }
+        const type = await tx.accTenderType.findFirst({
+            where: { ttmTypeId: row.tdTenderTypeId },
+            select: { ttmTypeName: true, ttmNeedsRef: true },
+        });
+        if (type?.ttmTypeName !== 'CARD') {
+            return null;
+        }
+        const field = 'tdCardLast4';
+        const refuse = (message, code, status, f = field) => {
+            throw new common_1.HttpException((0, module_shared_utils_1.buildErrorResponse)(message, [{ field: f, message, code }]), status);
+        };
+        const ref = row.tdRefNo?.trim() ?? '';
+        const last4 = row.tdCardLast4?.trim() || (/^\d{4}$/.test(ref) ? ref : null);
+        if (row.tdCardLast4 && !/^\d{4}$/.test(row.tdCardLast4.trim())) {
+            refuse('The card’s last 4 must be four digits', exports.TENDER_REF_REQUIRED, 422);
+        }
+        if ((tender.tndNeedsRef ?? type.ttmNeedsRef) && !last4) {
+            refuse(`${tender.tndName}: key the last 4 digits of the card (in the reference)`, exports.TENDER_REF_REQUIRED, 422);
+        }
+        const auth = row.tdAuthCode?.trim().toUpperCase() ?? '';
+        if (auth && !/^[A-Z0-9]{6}$/.test(auth)) {
+            refuse('The approval code on the slip is 6 letters / digits', exports.TENDER_REF_REQUIRED, 422, 'tdAuthCode');
+        }
+        if (!auth || !last4) {
+            return last4;
+        }
+        const [twin] = await tx.$queryRaw `
+      SELECT t.td_id::text, t.td_src_doc_type, t.td_src_doc_id::text
+        FROM accounts.acc_tender_detail t
+       WHERE t.td_company_id = ${row.tdCompanyId}::uuid
+         AND t.td_tender_id  = ${row.tdTenderId}::uuid
+         AND t.td_is_deleted = false AND t.td_is_voided = false
+         AND trim(t.td_dr_cr) = 'DR'
+         AND upper(t.td_auth_code) = ${auth}
+         AND t.td_card_last4 = ${last4}
+         AND t.td_total_amt  = ${row.tdTotalAmt}::numeric
+         AND t.td_src_doc_id <> ${row.tdSrcDocId}::uuid
+         AND (${row.tdId}::uuid IS NULL OR t.td_id <> ${row.tdId}::uuid)
+       LIMIT 1`;
+        if (!twin) {
+            return last4;
+        }
+        const mode = this.appSettings
+            ? (0, tender_settlement_settings_1.readTenderSettings)(await this.appSettings.resolveEffective({
+                companyId: row.tdCompanyId,
+                branchId: row.tdBranchId,
+                deviceId: null,
+                userId: null,
+            })).duplicateRef
+            : 'BLOCK';
+        if (mode === 'WARN') {
+            return last4;
+        }
+        await this.logDuplicate(row, { auth, last4, twin });
+        return refuse(`Approval code ${auth} on card …${last4} for ${row.tdTotalAmt.toFixed(2)} is already on another ${twin.td_src_doc_type.toLowerCase().replace('_', ' ')}`, exports.TENDER_REF_DUPLICATE, 409, 'tdAuthCode');
+    }
+    async logDuplicate(row, hit) {
+        if (!this.tillEvents) {
+            return;
+        }
+        try {
+            const session = row.tdSessionId
+                ? await this.prisma.tillSession.findFirst({
+                    where: { tssId: row.tdSessionId, tssIsDeleted: false },
+                    select: { tssId: true, tssDayId: true, tssCounterId: true },
+                })
+                : null;
+            await this.tillEvents.log(this.prisma, {
+                companyId: row.tdCompanyId,
+                branchId: row.tdBranchId,
+                accYear: row.tdAccYear,
+                code: till_enum_1.TillEventCode.DUPLICATE_REF_BLOCKED,
+                sessionId: session?.tssId ?? null,
+                dayId: session?.tssDayId ?? null,
+                counterId: session?.tssCounterId ?? null,
+                deviceId: this.requestContextService.getDeviceId() ?? null,
+                userId: this.requestContextService.getUserId() ?? null,
+                srcDocType: row.tdSrcDocType,
+                srcDocId: row.tdSrcDocId,
+                amount: row.tdTotalAmt,
+                payload: {
+                    tenderId: row.tdTenderId,
+                    authCode: hit.auth,
+                    cardLast4: hit.last4,
+                    otherTdId: hit.twin.td_id,
+                    otherDocType: hit.twin.td_src_doc_type,
+                    otherDocId: hit.twin.td_src_doc_id,
+                },
+            });
+        }
+        catch {
+        }
+    }
+    async defaultSettlement(tx, data, tender, saveTenderDetailDto) {
+        if (saveTenderDetailDto.tdSettleStatus !== undefined || !tender.tndSettlementLedgerId) {
+            return;
+        }
+        const type = await tx.accTenderType.findFirst({
+            where: { ttmTypeId: data.tdTenderTypeId },
+            select: { ttmTypeName: true, ttmCloseMode: true },
+        });
+        if (!type ||
+            !STATEMENT_SETTLED_TYPES.includes(type.ttmTypeName) ||
+            !['SLIPS', 'STATEMENT'].includes(type.ttmCloseMode)) {
+            return;
+        }
+        data.tdSettleStatus = tender_detail_api_types_1.TenderSettleStatus.PENDING;
+        if (data.tdExpectedSettleOn === undefined || data.tdExpectedSettleOn === null) {
+            const docDate = new Date(data.tdDocDate);
+            docDate.setUTCDate(docDate.getUTCDate() + Math.max(0, tender.tndSettlementDays));
+            data.tdExpectedSettleOn = docDate;
+        }
+    }
     async ensureTenderExists(tx, tenderId) {
         const tender = await tx.accTenderMaster.findFirst({
             where: { tndId: tenderId, tndIsDeleted: false, tndIsActive: true },
-            select: { tndName: true, tndTypeId: true, tndLedgerId: true },
+            select: {
+                tndName: true,
+                tndTypeId: true,
+                tndLedgerId: true,
+                tndSettlementLedgerId: true,
+                tndSettlementDays: true,
+                tndNeedsRef: true,
+            },
         });
         if (!tender) {
             (0, module_service_utils_1.throwAccountsBadRequest)('Tender does not exist', [
@@ -772,8 +961,12 @@ let TenderDetailService = class TenderDetailService {
 exports.TenderDetailService = TenderDetailService;
 exports.TenderDetailService = TenderDetailService = __decorate([
     (0, common_1.Injectable)(),
+    __param(3, (0, common_1.Optional)()),
+    __param(4, (0, common_1.Optional)()),
     __metadata("design:paramtypes", [prisma_service_1.PrismaService,
         audit_log_service_1.AuditLogService,
-        request_context_service_1.RequestContextService])
+        request_context_service_1.RequestContextService,
+        app_setting_value_service_1.AppSettingValueService,
+        till_event_service_1.TillEventService])
 ], TenderDetailService);
 //# sourceMappingURL=tender-detail.service.js.map

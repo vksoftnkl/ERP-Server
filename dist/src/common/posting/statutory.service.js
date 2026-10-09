@@ -10,6 +10,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.StatutoryService = void 0;
+exports.resolveStatutoryLimit = resolveStatutoryLimit;
 const common_1 = require("@nestjs/common");
 const prisma_service_1 = require("../../database/prisma/prisma.service");
 const statutory_types_1 = require("./statutory.types");
@@ -24,28 +25,7 @@ let StatutoryService = class StatutoryService {
         if (this.cache.has(key)) {
             return this.cache.get(key) ?? null;
         }
-        const client = tx ?? this.prisma;
-        const rows = await client.$queryRaw `
-      SELECT s.stl_id, s.stl_code, s.stl_section, s.stl_label, s.stl_value_type,
-             s.stl_value, s.stl_value_text, s.stl_enforce,
-             s.stl_effective_from, s.stl_effective_to, s.stl_source_ref,
-             (s.stl_company_id IS NOT NULL) AS is_company_override
-        FROM public.statutory_limits s
-       WHERE s.stl_code = ${code}
-         AND s.stl_is_deleted = false
-         AND s.stl_is_active = true
-         AND (s.stl_company_id IS NULL OR s.stl_company_id = ${companyId}::uuid)
-         AND (s.stl_applies_to = 'ALL' OR s.stl_applies_to = ${appliesTo})
-         AND (s.stl_aato_class IS NULL OR s.stl_aato_class = ${aatoClass})
-         AND s.stl_effective_from <= ${onDate}::date
-         AND (s.stl_effective_to IS NULL OR s.stl_effective_to >= ${onDate}::date)
-       -- This precedence IS the rule. Do not reorder.
-       ORDER BY (s.stl_company_id IS NOT NULL) DESC,
-                (s.stl_applies_to <> 'ALL')    DESC,
-                (s.stl_aato_class IS NOT NULL) DESC,
-                s.stl_effective_from           DESC
-       LIMIT 1`;
-        const resolved = rows.length === 0 ? null : this.toLimit(rows[0]);
+        const resolved = await resolveStatutoryLimit(tx ?? this.prisma, companyId, code, onDate, appliesTo, aatoClass);
         this.cache.set(key, resolved);
         return resolved;
     }
@@ -113,22 +93,6 @@ let StatutoryService = class StatutoryService {
         const cutoff = `${fyStartYear + 1}-${limit.valueText}`;
         return { limit, cutoff, passed: onDate > cutoff };
     }
-    toLimit(row) {
-        return {
-            id: row.stl_id,
-            code: row.stl_code,
-            section: row.stl_section,
-            label: row.stl_label,
-            valueType: row.stl_value_type,
-            value: row.stl_value === null ? null : Number(row.stl_value),
-            valueText: row.stl_value_text,
-            enforce: row.stl_enforce,
-            effectiveFrom: toDateString(row.stl_effective_from),
-            effectiveTo: row.stl_effective_to === null ? null : toDateString(row.stl_effective_to),
-            sourceRef: row.stl_source_ref,
-            isCompanyOverride: row.is_company_override,
-        };
-    }
 };
 exports.StatutoryService = StatutoryService;
 exports.StatutoryService = StatutoryService = __decorate([
@@ -137,5 +101,44 @@ exports.StatutoryService = StatutoryService = __decorate([
 ], StatutoryService);
 function toDateString(d) {
     return d.toISOString().slice(0, 10);
+}
+async function resolveStatutoryLimit(client, companyId, code, onDate, appliesTo = 'ALL', aatoClass = null) {
+    const rows = await client.$queryRaw `
+    SELECT s.stl_id, s.stl_code, s.stl_section, s.stl_label, s.stl_value_type,
+           s.stl_value, s.stl_value_text, s.stl_enforce,
+           s.stl_effective_from, s.stl_effective_to, s.stl_source_ref,
+           (s.stl_company_id IS NOT NULL) AS is_company_override
+      FROM public.statutory_limits s
+     WHERE s.stl_code = ${code}
+       AND s.stl_is_deleted = false
+       AND s.stl_is_active = true
+       AND (s.stl_company_id IS NULL OR s.stl_company_id = ${companyId}::uuid)
+       AND (s.stl_applies_to = 'ALL' OR s.stl_applies_to = ${appliesTo})
+       AND (s.stl_aato_class IS NULL OR s.stl_aato_class = ${aatoClass})
+       AND s.stl_effective_from <= ${onDate}::date
+       AND (s.stl_effective_to IS NULL OR s.stl_effective_to >= ${onDate}::date)
+     -- This precedence IS the rule. Do not reorder.
+     ORDER BY (s.stl_company_id IS NOT NULL) DESC,
+              (s.stl_applies_to <> 'ALL')    DESC,
+              (s.stl_aato_class IS NOT NULL) DESC,
+              s.stl_effective_from           DESC
+     LIMIT 1`;
+    return rows.length === 0 ? null : toLimit(rows[0]);
+}
+function toLimit(row) {
+    return {
+        id: row.stl_id,
+        code: row.stl_code,
+        section: row.stl_section,
+        label: row.stl_label,
+        valueType: row.stl_value_type,
+        value: row.stl_value === null ? null : Number(row.stl_value),
+        valueText: row.stl_value_text,
+        enforce: row.stl_enforce,
+        effectiveFrom: toDateString(row.stl_effective_from),
+        effectiveTo: row.stl_effective_to === null ? null : toDateString(row.stl_effective_to),
+        sourceRef: row.stl_source_ref,
+        isCompanyOverride: row.is_company_override,
+    };
 }
 //# sourceMappingURL=statutory.service.js.map

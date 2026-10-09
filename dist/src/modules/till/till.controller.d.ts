@@ -1,0 +1,45 @@
+import { PrismaService } from '../../database/prisma/prisma.service';
+import { TillContextService } from './till-context.service';
+import { TillDayService } from './services/till-day.service';
+import { TillEventService } from './services/till-event.service';
+import { TillSessionService } from './services/till-session.service';
+import { TillMovementService } from './services/till-movement.service';
+import { TillSlipCheckService } from './services/till-slip-check.service';
+import { CloseTillSessionDto, CountTillSessionDto, EndBillingTillSessionDto, OpenTillDayDto, OpenTillSessionDto, SuspendTillSessionDto, TillDayGetQueryDto, TillEventBatchDto, TillOpenCheckQueryDto, TillScopeDto, TillSessionKeyDto, CreateTillMovementDto, TillMovementKeyDto, VoidTillMovementDto, TillChangeDto, TillSlipCheckDto, TillSlipCheckQueryDto } from './dto/till-session.dto';
+import type { TillCountResultPayload, TillDayPayload, TillEventBatchPayload, TillMovementDetailPayload, TillOpenCheckPayload, TillSessionPayload, TillSlipCheckPayload, TillSlipCheckResultPayload, TillSuccessResponse } from './types/till-api.types';
+export declare class TillController {
+    private readonly prisma;
+    private readonly context;
+    private readonly days;
+    private readonly sessions;
+    private readonly events;
+    private readonly movements;
+    private readonly slipCheck;
+    constructor(prisma: PrismaService, context: TillContextService, days: TillDayService, sessions: TillSessionService, events: TillEventService, movements: TillMovementService, slipCheck: TillSlipCheckService);
+    openDay(dto: OpenTillDayDto): Promise<TillSuccessResponse<TillDayPayload>>;
+    getDay(query: TillDayGetQueryDto): Promise<TillSuccessResponse<TillDayPayload>>;
+    openCheck(query: TillOpenCheckQueryDto): Promise<TillSuccessResponse<TillOpenCheckPayload>>;
+    open(dto: OpenTillSessionDto): Promise<TillSuccessResponse<TillSessionPayload>>;
+    current(query: TillScopeDto): Promise<TillSuccessResponse<TillSessionPayload | null>>;
+    get(query: TillSessionKeyDto): Promise<TillSuccessResponse<TillSessionPayload>>;
+    slipCheckRows(query: TillSlipCheckQueryDto): Promise<TillSuccessResponse<TillSlipCheckPayload>>;
+    slipCheckRecord(dto: TillSlipCheckDto): Promise<TillSuccessResponse<TillSlipCheckResultPayload>>;
+    expected(query: TillSessionKeyDto): Promise<TillSuccessResponse<TillSessionPayload>>;
+    suspend(dto: SuspendTillSessionDto): Promise<TillSuccessResponse<TillSessionPayload>>;
+    resume(dto: TillSessionKeyDto): Promise<TillSuccessResponse<TillSessionPayload>>;
+    endBilling(dto: EndBillingTillSessionDto): Promise<TillSuccessResponse<TillSessionPayload>>;
+    count(dto: CountTillSessionDto): Promise<TillSuccessResponse<TillCountResultPayload>>;
+    close(dto: CloseTillSessionDto): Promise<TillSuccessResponse<TillSessionPayload>>;
+    createMovement(dto: CreateTillMovementDto): Promise<TillSuccessResponse<TillMovementDetailPayload>>;
+    change(dto: TillChangeDto): Promise<TillSuccessResponse<{
+        from: TillMovementDetailPayload;
+        to: TillMovementDetailPayload;
+    }>>;
+    getMovement(query: TillMovementKeyDto): Promise<TillSuccessResponse<TillMovementDetailPayload>>;
+    voidMovement(dto: VoidTillMovementDto): Promise<TillSuccessResponse<TillMovementDetailPayload>>;
+    batch(dto: TillEventBatchDto): Promise<TillSuccessResponse<TillEventBatchPayload>>;
+    private requireAny;
+    private requireSessionView;
+    private assertApprover;
+    private operatorOf;
+}

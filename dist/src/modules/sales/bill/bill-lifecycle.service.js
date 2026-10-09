@@ -43,6 +43,7 @@ const bill_counter_allocation_helper_1 = require("./bill-counter-allocation.help
 const bill_pdc_posting_helper_1 = require("./bill-pdc-posting.helper");
 const bill_adjustment_helper_1 = require("../../../common/posting/bill-adjustment.helper");
 const bill_snapshot_1 = require("./bill-snapshot");
+const till_session_service_1 = require("../../till/services/till-session.service");
 const bill_api_types_1 = require("./types/bill-api.types");
 const POST_TX_OPTIONS = { timeout: 60_000, maxWait: 10_000 };
 let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
@@ -63,8 +64,9 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
     docBlocks;
     gst;
     audit;
+    till;
     logger = new common_1.Logger(BillLifecycleService_1.name);
-    constructor(prisma, bills, salesContext, statutory, legs, register, stock, reservations, loyalty, promo, chargeCarry, dcFulfilment, saleOrders, transportBand, docBlocks, gst, audit) {
+    constructor(prisma, bills, salesContext, statutory, legs, register, stock, reservations, loyalty, promo, chargeCarry, dcFulfilment, saleOrders, transportBand, docBlocks, gst, audit, till) {
         this.prisma = prisma;
         this.bills = bills;
         this.salesContext = salesContext;
@@ -82,6 +84,7 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
         this.docBlocks = docBlocks;
         this.gst = gst;
         this.audit = audit;
+        this.till = till;
     }
     async validate(dto) {
         const ctx = await this.salesContext.resolve({ companyId: dto.sbCompanyId, branchId: dto.sbBranchId, deviceId: dto.sbDeviceId }, sales_doc_utils_1.SALES_MENU_ID.SALE_BILL);
@@ -118,6 +121,19 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
             const ctx = await this.salesContext.resolve({ companyId: bill.sbCompanyId, branchId: bill.sbBranchId, deviceId: bill.sbDeviceId }, sales_doc_utils_1.SALES_MENU_ID.SALE_BILL, tx);
             if (!ctx.rights.post) {
                 (0, sales_errors_1.throwSalesRight)('This user may not post on this menu', posting_types_1.SALES_ERROR_CODES.RIGHT_POST);
+            }
+            const till = await this.till.resolveForMoney(tx, {
+                companyId: bill.sbCompanyId,
+                branchId: bill.sbBranchId,
+                sessionId: bill.sbSessionId,
+                field: 'sbSessionId',
+                cashIn: true,
+                docTime: bill.sbBillDatetime ?? null,
+                arrivedAt: bill.sbCreatedOn,
+                lateArrivalOk: true,
+            });
+            if (till) {
+                await this.stampTillSession(tx, bill, till, ctx.actorName);
             }
             const parts = await this.bills.loadParts(tx, bill);
             const snap = (0, bill_snapshot_1.snapshotFromRows)(bill, parts.items, parts.charges, parts.tenders);
@@ -156,6 +172,13 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
             if (!ctx.rights.cancel) {
                 (0, sales_errors_1.throwSalesRight)('This user may not cancel on this menu', posting_types_1.SALES_ERROR_CODES.RIGHT_CANCEL);
             }
+            await this.till.assertCancellable(tx, {
+                sessionId: bill.sbSessionId,
+                srcDocType: 'SALE_BILL',
+                srcDocId: bill.sbId,
+                accYear: bill.sbAccYear,
+                field: 'sbId',
+            });
             await this.assertUnwindable(tx, bill, ctx, dto.reason, 'cancel');
             const items = await tx.saleBillItem.findMany({
                 where: { sbiBillId: bill.sbId, sbiAccYear: bill.sbAccYear, sbiIsDeleted: false },
@@ -574,6 +597,21 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
                 }
             }
         }
+    }
+    async stampTillSession(tx, bill, till, actorName) {
+        if (bill.sbSessionId !== till.tssId || bill.sbCounterId !== till.tssCounterId) {
+            await tx.$executeRaw `
+        UPDATE sales.sale_bill
+           SET sb_session_id  = ${till.tssId}::uuid,
+               sb_counter_id  = ${till.tssCounterId}::uuid,
+               sb_modified_on = now(),
+               sb_modified_by = ${actorName}
+         WHERE sb_id = ${bill.sbId}::uuid
+           AND sb_acc_year = ${bill.sbAccYear}::char(9)`;
+            bill.sbSessionId = till.tssId;
+            bill.sbCounterId = till.tssCounterId;
+        }
+        await this.till.stampTenderRows(tx, till, { srcDocType: 'SALE_BILL', srcDocId: bill.sbId, accYear: bill.sbAccYear }, actorName);
     }
     async postCore(tx, bill, items, snap, ctx, opts) {
         const { now } = opts;
@@ -1223,9 +1261,9 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
         });
         const taxed = lines.filter((l) => l.taxability === 'TAXABLE').length;
         const services = snap.items.filter((i) => i.isService).length;
-        const other = snap.charges
+        const charges = (0, sales_leg_sources_1.splitRegisterCharges)(snap.charges
             .filter((c) => c.separatelyPosted)
-            .reduce((t, c) => t + c.amount + c.cgst + c.sgst + c.igst + c.cess, 0);
+            .map((c) => c.amount + c.cgst + c.sgst + c.igst + c.cess));
         return {
             companyId: bill.sbCompanyId,
             branchId: bill.sbBranchId,
@@ -1258,7 +1296,12 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
             partyGstType: snap.custGstType,
             partyGstin: snap.custGstin?.trim() || null,
             grossValue: snap.grossAmt,
-            discountValue: snap.itemDisc + snap.splDisc + snap.schDisc + snap.billSchDisc + snap.cashDisc,
+            discountValue: (0, sales_doc_utils_1.round2)(snap.itemDisc +
+                snap.splDisc +
+                snap.schDisc +
+                snap.billSchDisc +
+                snap.cashDisc +
+                charges.deduction),
             taxableValue: snap.taxableAmt,
             cgstValue: snap.cgstAmt,
             sgstValue: snap.sgstAmt,
@@ -1266,7 +1309,7 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
             cessValue: snap.cessAmt,
             stateCessValue: 0,
             tcsValue: snap.tcsAmt,
-            otherCharge: (0, sales_doc_utils_1.round2)(other),
+            otherCharge: charges.other,
             roundOff: snap.roundOff,
             billValue: snap.billAmt,
             remarks: snap.remarks,
@@ -1556,7 +1599,8 @@ exports.BillLifecycleService = BillLifecycleService = BillLifecycleService_1 = _
         transport_band_service_1.TransportBandService,
         sales_doc_blocks_service_1.SalesDocBlocksService,
         gst_gateway_service_1.GstGatewayService,
-        audit_log_service_1.AuditLogService])
+        audit_log_service_1.AuditLogService,
+        till_session_service_1.TillSessionService])
 ], BillLifecycleService);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 function isUuid(v) {

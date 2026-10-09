@@ -6,6 +6,7 @@ var UserType;
     UserType["SUPER_ADMIN"] = "SUPER ADMIN";
     UserType["ADMIN"] = "ADMIN";
     UserType["MANAGER"] = "MANAGER";
+    UserType["SUPERVISOR"] = "SUPERVISOR";
     UserType["USER"] = "USER";
     UserType["CASHIER"] = "CASHIER";
     UserType["VIEWER"] = "VIEWER";

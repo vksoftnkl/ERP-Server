@@ -92,6 +92,17 @@ function assertBackdate(ctx, docDate, settings, today = isoToday(), field = 'bil
     }
 }
 async function loadDayClosed(client, companyId, branchId, docDate) {
+    const [till] = await client.$queryRaw `
+    SELECT count(*)::int AS n
+      FROM accounts.till_business_day
+     WHERE tbd_company_id    = ${companyId}::uuid
+       AND tbd_branch_id     = ${branchId}::uuid
+       AND tbd_business_date = ${docDate}::date
+       AND tbd_is_deleted    = false
+       AND tbd_status        = 'CLOSED'`;
+    if ((till?.n ?? 0) > 0) {
+        return true;
+    }
     const [exists] = await client.$queryRaw `
     SELECT to_regclass('accounts.acc_day_close')::text AS tbl`;
     if (!exists?.tbl) {

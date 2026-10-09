@@ -8,6 +8,7 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  Matches,
   MaxLength,
   Min,
   ValidateIf,
@@ -131,7 +132,13 @@ export class SaveUserAdministrationDto {
   @NullableUuid()
   usrBranchId?: string | null;
 
-  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description:
+      'The employee this user is. Must be a live employee of the user’s company (or of none), and ' +
+      'not linked to another active user (409).',
+  })
   @NullableUuid()
   usrEmployeeId?: string | null;
 
@@ -181,11 +188,33 @@ export class SaveUserAdministrationDto {
   @IsNotEmpty()
   usrPassword?: string;
 
+  // Notes 95 — the till approver's PIN. Hashed like the password into usr_pin_hash and never
+  // returned (GET answers usrPinSet). It is checked only inside the till approval service;
+  // there is no public verify route to brute-force.
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    example: '4321',
+    description:
+      'Till PIN, 4 to 6 digits. "" (or null) clears it; omit the key to leave the stored PIN alone.',
+  })
+  @IsOptional()
+  @IsString()
+  @Matches(/^(\d{4,6})?$/, { message: 'usrPin must be 4 to 6 digits, or "" to clear it' })
+  usrPin?: string | null;
+
   @ApiPropertyOptional()
   @OptionalBoolean()
   usrMustChangePassword?: boolean;
 
-  @ApiPropertyOptional({ enum: UserType, enumName: 'UserType', nullable: true })
+  @ApiPropertyOptional({
+    enum: UserType,
+    enumName: 'UserType',
+    nullable: true,
+    description:
+      'User Role. A label only: it grants nothing by itself (menus come from user_menus, till ' +
+      'approvals from till_approval_authority).',
+  })
   @IsOptional()
   @Transform(({ value }) =>
     value === '' || value === undefined ? undefined : value === null ? null : (value as unknown),

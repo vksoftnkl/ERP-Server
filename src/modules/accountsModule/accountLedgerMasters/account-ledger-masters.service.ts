@@ -198,35 +198,13 @@ export class AccountLedgerMastersService {
   // the ledger from here instead would leave that master live on a deleted ledger: still
   // pickable on a bill, with nothing to post to and no statement or outstanding. So the ledger
   // goes only through its master, the way a group with ledgers is refused in the group delete.
+  // Notes 95 adds the employee, whose staff advance ledger is named by emp_loan_ledger_id.
   private async ensureLedgerHasNoOwner(
     tx: AccountLedgerWriteClient,
     ledId: string,
     ledName: string,
   ): Promise<void> {
-    const [customer, supplier, saleAgent] = await Promise.all([
-      tx.customer.findFirst({
-        where: { cusId: ledId, cusIsDeleted: false },
-        select: { cusName: true },
-      }),
-      tx.supplier.findFirst({
-        where: { supId: ledId, supIsDeleted: false },
-        select: { supName: true },
-      }),
-      tx.saleAgent.findFirst({
-        where: { saId: ledId, saIsDeleted: false },
-        select: { saName: true },
-      }),
-    ]);
-    const owners: Array<{ role: string; name: string; master: string }> = [];
-    if (customer) {
-      owners.push({ role: 'customer', name: customer.cusName || ledName, master: 'Customer' });
-    }
-    if (supplier) {
-      owners.push({ role: 'supplier', name: supplier.supName, master: 'Supplier' });
-    }
-    if (saleAgent) {
-      owners.push({ role: 'sale agent', name: saleAgent.saName, master: 'Sale Agent' });
-    }
+    const owners = await this.findLedgerOwners(tx, ledId, ledName);
     if (owners.length === 0) {
       return;
     }
@@ -245,6 +223,46 @@ export class AccountLedgerMastersService {
         },
       ],
     );
+  }
+  // The live masters that own a ledger. Public so a master retiring its ledger (the employee
+  // delete, notes 95) can tell whether anything else still stands on it.
+  async findLedgerOwners(
+    tx: AccountLedgerWriteClient,
+    ledId: string,
+    ledName: string,
+  ): Promise<Array<{ role: string; name: string; master: string }>> {
+    const [customer, supplier, saleAgent, employee] = await Promise.all([
+      tx.customer.findFirst({
+        where: { cusId: ledId, cusIsDeleted: false },
+        select: { cusName: true },
+      }),
+      tx.supplier.findFirst({
+        where: { supId: ledId, supIsDeleted: false },
+        select: { supName: true },
+      }),
+      tx.saleAgent.findFirst({
+        where: { saId: ledId, saIsDeleted: false },
+        select: { saName: true },
+      }),
+      tx.employeeMaster.findFirst({
+        where: { empLoanLedgerId: ledId, empIsDeleted: false },
+        select: { empName: true },
+      }),
+    ]);
+    const owners: Array<{ role: string; name: string; master: string }> = [];
+    if (customer) {
+      owners.push({ role: 'customer', name: customer.cusName || ledName, master: 'Customer' });
+    }
+    if (supplier) {
+      owners.push({ role: 'supplier', name: supplier.supName, master: 'Supplier' });
+    }
+    if (saleAgent) {
+      owners.push({ role: 'sale agent', name: saleAgent.saName, master: 'Sale Agent' });
+    }
+    if (employee) {
+      owners.push({ role: 'employee', name: employee.empName, master: 'Employee' });
+    }
+    return owners;
   }
   private async createLedger(
     saveAccountLedgerMasterDto: SaveAccountLedgerMasterDto,

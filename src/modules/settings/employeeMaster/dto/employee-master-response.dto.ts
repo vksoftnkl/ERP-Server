@@ -6,6 +6,12 @@ export class EmployeeMasterErrorFieldDto {
 
   @ApiProperty({ example: 'Duplicate empName is not allowed' })
   message!: string;
+
+  @ApiPropertyOptional({
+    example: 'EMP_LEDGER_HAS_BALANCE',
+    description: 'A refusal the client branches on. EMP_LEDGER_HAS_BALANCE: delete refused (409).',
+  })
+  code?: string;
 }
 
 export class EmployeeMasterErrorResponseDto {
@@ -177,8 +183,21 @@ export class EmployeeMasterPayloadDto {
   @ApiPropertyOptional({ nullable: true })
   empEsiNo!: string | null;
 
-  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description:
+      'Staff advance ledger (notes 95). Created with the employee when none is given; a given one ' +
+      'must be a live ledger in Loans & Advances (Asset) or a sub-group, of this company or shared.',
+  })
   empLoanLedgerId!: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    example: 'Ravi - Staff Advance',
+    description: 'Name of the staff advance ledger (resolved on the get endpoint)',
+  })
+  empLoanLedgerName?: string | null;
 
   @ApiPropertyOptional({ nullable: true })
   empPhotoUrl!: string | null;
@@ -239,4 +258,51 @@ export class EmployeeMasterSuccessDeleteDto {
 
   @ApiProperty({ type: EmployeeMasterDeleteResultDto })
   data!: EmployeeMasterDeleteResultDto;
+}
+
+export class EmployeeLedgerBackfillCreatedDto {
+  @ApiProperty({ format: 'uuid' })
+  empId!: string;
+
+  @ApiProperty()
+  empName!: string;
+
+  @ApiProperty({ format: 'uuid' })
+  ledId!: string;
+
+  @ApiProperty({ example: 'Ravi - Staff Advance' })
+  ledName!: string;
+}
+
+export class EmployeeLedgerBackfillFailedDto {
+  @ApiProperty({ format: 'uuid' })
+  empId!: string;
+
+  @ApiProperty()
+  empName!: string;
+
+  @ApiProperty()
+  message!: string;
+}
+
+export class EmployeeLedgerBackfillReportDto {
+  @ApiProperty({ description: 'Live employees that had no staff advance ledger' })
+  walked!: number;
+
+  @ApiProperty({ type: EmployeeLedgerBackfillCreatedDto, isArray: true })
+  created!: EmployeeLedgerBackfillCreatedDto[];
+
+  @ApiProperty({ type: EmployeeLedgerBackfillFailedDto, isArray: true })
+  failed!: EmployeeLedgerBackfillFailedDto[];
+}
+
+export class EmployeeLedgerBackfillSuccessDto {
+  @ApiProperty({ example: true })
+  success!: true;
+
+  @ApiProperty({ example: '3 staff advance ledgers created for 3 employees' })
+  message!: string;
+
+  @ApiProperty({ type: EmployeeLedgerBackfillReportDto })
+  data!: EmployeeLedgerBackfillReportDto;
 }

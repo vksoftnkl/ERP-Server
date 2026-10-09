@@ -41,6 +41,7 @@ export declare class UserAdminPayloadDto {
     usrBranchId: string | null;
     usrBranchName?: string | null;
     usrEmployeeId: string | null;
+    usrEmployeeName?: string | null;
     usrLoginName: string;
     usrDisplayName: string;
     usrFullName: string | null;
@@ -52,6 +53,7 @@ export declare class UserAdminPayloadDto {
     usrMustChangePassword: boolean;
     usrPasswordExpiresOn: string | null;
     usrPasswordChangedOn: string | null;
+    usrPinSet: boolean;
     usrType: UserType | null;
     usrEditDate: boolean;
     usrEditEntry: boolean;

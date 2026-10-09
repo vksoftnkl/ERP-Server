@@ -15,7 +15,8 @@ export declare enum TenderSrcDocType {
     SALE_RETURN = "SALE_RETURN",
     RECEIPT = "RECEIPT",
     PAYMENT = "PAYMENT",
-    OTHER = "OTHER"
+    OTHER = "OTHER",
+    EXPENSE = "EXPENSE"
 }
 export declare enum TenderDrCr {
     DR = "DR",

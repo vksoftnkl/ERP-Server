@@ -1,13 +1,15 @@
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import { SaveEmployeeMasterDto } from './dto/save-employee-master.dto';
-import { EmployeeMasterPayload } from './types/employee-master-api.types';
+import { EmployeeLedgerBackfillReport, EmployeeMasterPayload } from './types/employee-master-api.types';
+import { StaffAdvanceLedgerService } from './staff-advance-ledger.service';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
 export declare class EmployeeMasterService {
     private readonly prisma;
     private readonly auditLogService;
     private readonly requestContextService;
-    constructor(prisma: PrismaService, auditLogService: AuditLogService, requestContextService: RequestContextService);
+    private readonly staffAdvanceLedgers;
+    constructor(prisma: PrismaService, auditLogService: AuditLogService, requestContextService: RequestContextService, staffAdvanceLedgers: StaffAdvanceLedgerService);
     save(saveEmployeeMasterDto: SaveEmployeeMasterDto): Promise<EmployeeMasterPayload>;
     getById(empId: string): Promise<EmployeeMasterPayload>;
     private resolveRelatedNames;
@@ -15,6 +17,8 @@ export declare class EmployeeMasterService {
         empId: string;
         deleted: true;
     }>;
+    backfillStaffAdvanceLedgers(): Promise<EmployeeLedgerBackfillReport>;
+    private provisionStaffAdvanceLedger;
     private createEmployee;
     private updateEmployee;
     private ensureCompanyExists;

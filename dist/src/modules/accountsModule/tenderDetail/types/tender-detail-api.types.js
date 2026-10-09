@@ -17,6 +17,7 @@ var TenderSrcDocType;
     TenderSrcDocType["RECEIPT"] = "RECEIPT";
     TenderSrcDocType["PAYMENT"] = "PAYMENT";
     TenderSrcDocType["OTHER"] = "OTHER";
+    TenderSrcDocType["EXPENSE"] = "EXPENSE";
 })(TenderSrcDocType || (exports.TenderSrcDocType = TenderSrcDocType = {}));
 var TenderDrCr;
 (function (TenderDrCr) {

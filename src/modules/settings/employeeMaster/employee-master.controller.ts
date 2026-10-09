@@ -24,6 +24,7 @@ import {
 } from '@nestjs/swagger';
 import { HttpErrorResponseDto } from '../../../common/dto/http-error-response.dto';
 import {
+  EmployeeLedgerBackfillSuccessDto,
   EmployeeMasterErrorResponseDto,
   EmployeeMasterSuccessDeleteDto,
   EmployeeMasterSuccessSingleDto,
@@ -32,6 +33,7 @@ import { SaveEmployeeMasterDto } from './dto/save-employee-master.dto';
 import { EmployeeMasterExceptionFilter } from './employee-master-exception.filter';
 import { EmployeeMasterService } from './employee-master.service';
 import {
+  EmployeeLedgerBackfillReport,
   EmployeeMasterPayload,
   EmployeeMasterSuccessResponse,
 } from './types/employee-master-api.types';
@@ -88,10 +90,16 @@ export class EmployeeMasterController {
 
   @Delete('delete')
   @Version(API_VERSION)
-  @ApiOperation({ summary: 'Soft delete employee by id' })
+  @ApiOperation({
+    summary: 'Soft delete employee by id',
+    description:
+      'Deletes the staff advance ledger with the employee. Refused with 409 ' +
+      'EMP_LEDGER_HAS_BALANCE (errors[0].code) while that ledger has a balance.',
+  })
   @ApiQuery({ name: 'empId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: EmployeeMasterSuccessDeleteDto })
   @ApiBadRequestResponse({ type: EmployeeMasterErrorResponseDto })
+  @ApiConflictResponse({ type: EmployeeMasterErrorResponseDto })
   @ApiNotFoundResponse({ type: EmployeeMasterErrorResponseDto })
   async remove(
     @Query('empId', new ParseUUIDPipe({ version: '7' })) empId: string,
@@ -101,6 +109,28 @@ export class EmployeeMasterController {
     return {
       success: true,
       message: 'Employee deleted successfully',
+      data,
+    };
+  }
+
+  @Post('backfill-staff-advance-ledgers')
+  @Version(API_VERSION)
+  @ApiOperation({
+    summary: 'Create the staff advance ledger of every live employee that has none (notes 95)',
+    description:
+      'One-off backfill through the same path an employee save takes. One transaction per ' +
+      'employee: a failure is reported and the rest still land. A second run walks nobody.',
+  })
+  @ApiCreatedResponse({ type: EmployeeLedgerBackfillSuccessDto })
+  async backfillStaffAdvanceLedgers(): Promise<
+    EmployeeMasterSuccessResponse<EmployeeLedgerBackfillReport>
+  > {
+    const data = await this.employeeMasterService.backfillStaffAdvanceLedgers();
+    return {
+      success: true,
+      message: `${data.created.length} staff advance ledgers created for ${data.walked} employees${
+        data.failed.length ? `, ${data.failed.length} failed` : ''
+      }`,
       data,
     };
   }

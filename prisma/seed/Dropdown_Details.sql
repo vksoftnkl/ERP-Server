@@ -1,4 +1,4 @@
--- Seed: fixed.dropdown_details -- the configured lookup popups and their SQL (60 rows).
+-- Seed: fixed.dropdown_details -- the configured lookup popups and their SQL (61 rows).
 --
 -- dropdown_sql is user-configurable SQL run through the read-only pool, same contract
 -- as grid_sql; dollar-quoted below so quotes and newlines survive verbatim.
@@ -462,6 +462,27 @@ ORDER BY br_name$seed$, NULL)
 FROM public.gst_provider
 WHERE gpv_is_deleted = false
 ORDER BY gpv_is_active DESC, gpv_code$seed$, NULL)
+    ,(63, 'STAFF ADVANCE LEDGERS'    , 'Staff advance ledgers for the Employee master (notes 95): live ledgers in Loans & Advances (Asset) or any sub-group of it - the rule /employee-masters/create applies to empLoanLedgerId. Shared (NULL company) plus this company. Param icompany_id, always sent.', 'led_name'            , 'Ascending', 12, true , 0   , 'Desktop', 'led_name'          , 'system', $seed$SELECT l.led_id,
+       l.led_name,
+       g.acc_group_name AS group_name,
+       l.led_short
+  FROM accounts.acc_ledger_master l
+  JOIN accounts.acc_group_master g ON g.acc_group_id = l.led_group_id
+ WHERE (l.led_company_id IS NULL OR l.led_company_id::text = 'icompany_id')
+   AND l.led_is_deleted = false
+   AND l.led_is_active = true
+   AND EXISTS (WITH RECURSIVE up(id, parent_id, d) AS (
+                    SELECT x.acc_group_id, x.acc_group_parent_id, 0
+                      FROM accounts.acc_group_master x WHERE x.acc_group_id = l.led_group_id
+                    UNION ALL
+                    SELECT p.acc_group_id, p.acc_group_parent_id, up.d + 1
+                      FROM up JOIN accounts.acc_group_master p ON p.acc_group_id = up.parent_id
+                     WHERE up.d < 24)
+                SELECT 1
+                  FROM up JOIN accounts.acc_group_master r ON r.acc_group_id = up.id
+                 WHERE r.acc_group_name = 'Loans & Advances (Asset)'
+                   AND r.acc_group_company_id IS NULL)
+ ORDER BY l.led_name$seed$, NULL)
 ON CONFLICT (dropdown_id) DO NOTHING;
 
 -- Keep the identity sequence ahead of the seeded ids, so the next row created from

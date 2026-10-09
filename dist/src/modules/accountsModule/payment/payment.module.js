@@ -19,12 +19,13 @@ const payment_posting_service_1 = require("./payment-posting.service");
 const payment_cancel_service_1 = require("./payment-cancel.service");
 const payment_amend_service_1 = require("./payment-amend.service");
 const payment_open_items_service_1 = require("./payment-open-items.service");
+const till_module_1 = require("../../till/till.module");
 let PaymentModule = class PaymentModule {
 };
 exports.PaymentModule = PaymentModule;
 exports.PaymentModule = PaymentModule = __decorate([
     (0, common_1.Module)({
-        imports: [app_settings_module_1.AppSettingsModule, tender_detail_module_1.TenderDetailModule, bill_balance_module_1.BillBalanceModule, audit_log_module_1.AuditLogModule],
+        imports: [app_settings_module_1.AppSettingsModule, tender_detail_module_1.TenderDetailModule, bill_balance_module_1.BillBalanceModule, audit_log_module_1.AuditLogModule, till_module_1.TillModule],
         controllers: [payment_controller_1.PaymentController],
         providers: [
             payment_service_1.PaymentService,

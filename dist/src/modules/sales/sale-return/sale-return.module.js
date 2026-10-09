@@ -15,12 +15,13 @@ const posting_module_1 = require("../posting/posting.module");
 const sale_return_controller_1 = require("./sale-return.controller");
 const sale_return_exception_filter_1 = require("./sale-return-exception.filter");
 const sale_return_service_1 = require("./sale-return.service");
+const till_module_1 = require("../../till/till.module");
 let SaleReturnModule = class SaleReturnModule {
 };
 exports.SaleReturnModule = SaleReturnModule;
 exports.SaleReturnModule = SaleReturnModule = __decorate([
     (0, common_1.Module)({
-        imports: [audit_log_module_1.AuditLogModule, charge_detail_module_1.ChargeDetailModule, tender_detail_module_1.TenderDetailModule, posting_module_1.SalesPostingModule],
+        imports: [audit_log_module_1.AuditLogModule, charge_detail_module_1.ChargeDetailModule, tender_detail_module_1.TenderDetailModule, posting_module_1.SalesPostingModule, till_module_1.TillModule],
         controllers: [sale_return_controller_1.SaleReturnController],
         providers: [sale_return_service_1.SaleReturnService, sale_return_exception_filter_1.SaleReturnExceptionFilter],
         exports: [sale_return_service_1.SaleReturnService],

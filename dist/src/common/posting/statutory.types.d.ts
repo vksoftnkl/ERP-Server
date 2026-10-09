@@ -18,6 +18,7 @@ export interface StatutoryLimit {
 }
 export declare const STATUTORY_CODES: {
     readonly CASH_TXN_LIMIT_269ST: "CASH_TXN_LIMIT_269ST";
+    readonly CASH_PAYMENT_LIMIT_40A3: "CASH_PAYMENT_LIMIT_40A3";
     readonly PAN_REQUIRED_CASH_SALE: "PAN_REQUIRED_CASH_SALE";
     readonly TCS_206C1H_THRESHOLD: "TCS_206C1H_THRESHOLD";
     readonly TCS_206C1H_RATE: "TCS_206C1H_RATE";

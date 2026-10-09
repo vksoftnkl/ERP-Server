@@ -9,6 +9,8 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.TenderDetailModule = void 0;
 const common_1 = require("@nestjs/common");
 const audit_log_module_1 = require("../../audit-log/audit-log.module");
+const app_settings_module_1 = require("../../settings/appSettings/app-settings.module");
+const till_module_1 = require("../../till/till.module");
 const tender_detail_controller_1 = require("./tender-detail.controller");
 const tender_detail_exception_filter_1 = require("./tender-detail-exception.filter");
 const tender_detail_service_1 = require("./tender-detail.service");
@@ -17,7 +19,7 @@ let TenderDetailModule = class TenderDetailModule {
 exports.TenderDetailModule = TenderDetailModule;
 exports.TenderDetailModule = TenderDetailModule = __decorate([
     (0, common_1.Module)({
-        imports: [audit_log_module_1.AuditLogModule],
+        imports: [audit_log_module_1.AuditLogModule, app_settings_module_1.AppSettingsModule, till_module_1.TillModule],
         controllers: [tender_detail_controller_1.TenderDetailController],
         providers: [tender_detail_service_1.TenderDetailService, tender_detail_exception_filter_1.TenderDetailExceptionFilter],
         exports: [tender_detail_service_1.TenderDetailService],

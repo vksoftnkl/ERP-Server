@@ -48,6 +48,7 @@ export interface UserAdminPayload {
   usrBranchId: string | null;
   usrBranchName?: string | null;
   usrEmployeeId: string | null;
+  usrEmployeeName?: string | null;
   usrLoginName: string;
   usrDisplayName: string;
   usrFullName: string | null;
@@ -59,6 +60,8 @@ export interface UserAdminPayload {
   usrMustChangePassword: boolean;
   usrPasswordExpiresOn: string | null;
   usrPasswordChangedOn: string | null;
+  /** Notes 95 — whether a till PIN is set. The hash itself is never returned. */
+  usrPinSet: boolean;
   usrType: UserType | null;
   usrEditDate: boolean;
   usrEditEntry: boolean;

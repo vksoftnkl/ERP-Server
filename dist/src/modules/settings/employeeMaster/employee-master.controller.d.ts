@@ -1,6 +1,6 @@
 import { SaveEmployeeMasterDto } from './dto/save-employee-master.dto';
 import { EmployeeMasterService } from './employee-master.service';
-import { EmployeeMasterPayload, EmployeeMasterSuccessResponse } from './types/employee-master-api.types';
+import { EmployeeLedgerBackfillReport, EmployeeMasterPayload, EmployeeMasterSuccessResponse } from './types/employee-master-api.types';
 export declare class EmployeeMasterController {
     private readonly employeeMasterService;
     constructor(employeeMasterService: EmployeeMasterService);
@@ -10,4 +10,5 @@ export declare class EmployeeMasterController {
         empId: string;
         deleted: true;
     }>>;
+    backfillStaffAdvanceLedgers(): Promise<EmployeeMasterSuccessResponse<EmployeeLedgerBackfillReport>>;
 }

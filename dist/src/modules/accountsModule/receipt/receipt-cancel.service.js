@@ -11,6 +11,8 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ReceiptCancelService = void 0;
 const common_1 = require("@nestjs/common");
+const till_session_service_1 = require("../../till/services/till-session.service");
+const till_enum_1 = require("../../till/types/till-enum");
 const voucher_books_helper_1 = require("../vouchers/voucher-books.helper");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
@@ -30,11 +32,13 @@ let ReceiptCancelService = class ReceiptCancelService {
     requestContext;
     receiptService;
     recompute;
-    constructor(prisma, requestContext, receiptService, recompute) {
+    till;
+    constructor(prisma, requestContext, receiptService, recompute, till) {
         this.prisma = prisma;
         this.requestContext = requestContext;
         this.receiptService = receiptService;
         this.recompute = recompute;
+        this.till = till;
     }
     async cancel(dto) {
         const actor = this.requestContext.getUserId() ?? module_service_utils_1.DEFAULT_ACTOR;
@@ -79,6 +83,10 @@ let ReceiptCancelService = class ReceiptCancelService {
             for (const voucher of vouchers) {
                 await (0, receipt_guards_1.assertAccYearWritable)(tx, voucher.avhCompanyId, voucher.avhAccYear, 'avhAccYear');
             }
+            await this.till.assertMoneyDocCancellable(tx, {
+                sessionId: header.avhSessionId,
+                field: 'avhVoucherId',
+            });
             const voucherIds = vouchers.map((voucher) => voucher.avhVoucherId);
             const years = [...new Set(vouchers.map((voucher) => voucher.avhAccYear))];
             await (0, receipt_unwind_guards_1.assertChequesStillHeld)(tx, { receiptVoucherId: header.avhVoucherId, voucherIds }, 'cancelled');
@@ -143,6 +151,17 @@ let ReceiptCancelService = class ReceiptCancelService {
                     deviceId: this.requestContext.getDeviceId(),
                     changedOn: now,
                     remarks: dto.reason,
+                });
+            }
+            if (header.avhSessionId) {
+                await this.till.logMoneyDoc(tx, {
+                    sessionId: header.avhSessionId,
+                    code: till_enum_1.TillEventCode.MONEY_DOC_CANCELLED,
+                    srcDocType: 'RECEIPT',
+                    srcDocId: header.avhVoucherId,
+                    srcRefno: header.avhVoucherRefno,
+                    amount: header.avhDocAmount,
+                    payload: { reason: dto.reason },
                 });
             }
             const movedLedgers = await tx.accVoucher.findMany({
@@ -376,6 +395,7 @@ exports.ReceiptCancelService = ReceiptCancelService = __decorate([
     __metadata("design:paramtypes", [prisma_service_1.PrismaService,
         request_context_service_1.RequestContextService,
         receipt_service_1.ReceiptService,
-        bill_balance_recompute_service_1.BillBalanceRecomputeService])
+        bill_balance_recompute_service_1.BillBalanceRecomputeService,
+        till_session_service_1.TillSessionService])
 ], ReceiptCancelService);
 //# sourceMappingURL=receipt-cancel.service.js.map

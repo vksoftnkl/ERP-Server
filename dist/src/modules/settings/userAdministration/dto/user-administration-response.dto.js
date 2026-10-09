@@ -173,6 +173,7 @@ class UserAdminPayloadDto {
     usrBranchId;
     usrBranchName;
     usrEmployeeId;
+    usrEmployeeName;
     usrLoginName;
     usrDisplayName;
     usrFullName;
@@ -184,6 +185,7 @@ class UserAdminPayloadDto {
     usrMustChangePassword;
     usrPasswordExpiresOn;
     usrPasswordChangedOn;
+    usrPinSet;
     usrType;
     usrEditDate;
     usrEditEntry;
@@ -241,6 +243,14 @@ __decorate([
     __metadata("design:type", Object)
 ], UserAdminPayloadDto.prototype, "usrEmployeeId", void 0);
 __decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        example: 'Ravi',
+        description: 'Name of the linked employee (resolved on the get endpoint)',
+    }),
+    __metadata("design:type", Object)
+], UserAdminPayloadDto.prototype, "usrEmployeeName", void 0);
+__decorate([
     (0, swagger_1.ApiProperty)(),
     __metadata("design:type", String)
 ], UserAdminPayloadDto.prototype, "usrLoginName", void 0);
@@ -284,6 +294,10 @@ __decorate([
     (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
     __metadata("design:type", Object)
 ], UserAdminPayloadDto.prototype, "usrPasswordChangedOn", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ description: 'A till PIN is set. The hash is never returned.' }),
+    __metadata("design:type", Boolean)
+], UserAdminPayloadDto.prototype, "usrPinSet", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ enum: user_administration_enum_1.UserType, enumName: 'UserType', nullable: true }),
     __metadata("design:type", Object)

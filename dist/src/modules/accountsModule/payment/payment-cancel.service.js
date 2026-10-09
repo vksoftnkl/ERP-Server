@@ -11,6 +11,8 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.PaymentCancelService = void 0;
 const common_1 = require("@nestjs/common");
+const till_session_service_1 = require("../../till/services/till-session.service");
+const till_enum_1 = require("../../till/types/till-enum");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
 const bill_balance_recompute_service_1 = require("../billBalance/bill-balance-recompute.service");
@@ -30,11 +32,13 @@ let PaymentCancelService = class PaymentCancelService {
     requestContext;
     paymentService;
     recompute;
-    constructor(prisma, requestContext, paymentService, recompute) {
+    till;
+    constructor(prisma, requestContext, paymentService, recompute, till) {
         this.prisma = prisma;
         this.requestContext = requestContext;
         this.paymentService = paymentService;
         this.recompute = recompute;
+        this.till = till;
     }
     async cancel(dto) {
         const actor = this.requestContext.getUserId() ?? module_service_utils_1.DEFAULT_ACTOR;
@@ -76,6 +80,10 @@ let PaymentCancelService = class PaymentCancelService {
             for (const voucher of vouchers) {
                 await (0, payment_guards_1.assertAccYearWritable)(tx, voucher.avhCompanyId, voucher.avhAccYear, 'avhAccYear');
             }
+            await this.till.assertMoneyDocCancellable(tx, {
+                sessionId: header.avhSessionId,
+                field: 'avhVoucherId',
+            });
             const voucherIds = vouchers.map((voucher) => voucher.avhVoucherId);
             const years = [...new Set(vouchers.map((voucher) => voucher.avhAccYear))];
             const scope = { receiptVoucherId: header.avhVoucherId, voucherIds };
@@ -147,6 +155,17 @@ let PaymentCancelService = class PaymentCancelService {
                     deviceId: this.requestContext.getDeviceId(),
                     changedOn: now,
                     remarks: dto.reason,
+                });
+            }
+            if (header.avhSessionId) {
+                await this.till.logMoneyDoc(tx, {
+                    sessionId: header.avhSessionId,
+                    code: till_enum_1.TillEventCode.MONEY_DOC_CANCELLED,
+                    srcDocType: 'PAYMENT',
+                    srcDocId: header.avhVoucherId,
+                    srcRefno: header.avhVoucherRefno,
+                    amount: header.avhDocAmount,
+                    payload: { reason: dto.reason },
                 });
             }
             const movedLedgers = await tx.accVoucher.findMany({
@@ -408,6 +427,7 @@ exports.PaymentCancelService = PaymentCancelService = __decorate([
     __metadata("design:paramtypes", [prisma_service_1.PrismaService,
         request_context_service_1.RequestContextService,
         payment_service_1.PaymentService,
-        bill_balance_recompute_service_1.BillBalanceRecomputeService])
+        bill_balance_recompute_service_1.BillBalanceRecomputeService,
+        till_session_service_1.TillSessionService])
 ], PaymentCancelService);
 //# sourceMappingURL=payment-cancel.service.js.map

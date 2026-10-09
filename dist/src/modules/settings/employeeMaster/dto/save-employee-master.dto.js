@@ -347,7 +347,13 @@ __decorate([
     __metadata("design:type", Object)
 ], SaveEmployeeMasterDto.prototype, "empEsiNo", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ format: 'uuid', nullable: true }),
+    (0, swagger_1.ApiPropertyOptional)({
+        format: 'uuid',
+        nullable: true,
+        description: 'Staff advance ledger (notes 95). Absent or null: keep the current one, or create ' +
+            '"<empName> - Staff Advance" in Loans & Advances (Asset) when there is none. Given: a live ' +
+            'ledger in that group or a sub-group, of this company or shared, and no other employee’s.',
+    }),
     (0, dtoDecorators_1.NullableUuid)(),
     __metadata("design:type", Object)
 ], SaveEmployeeMasterDto.prototype, "empLoanLedgerId", void 0);

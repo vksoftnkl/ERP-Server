@@ -11,18 +11,14 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.UserAdministrationService = void 0;
 const common_1 = require("@nestjs/common");
-const node_crypto_1 = require("node:crypto");
-const node_util_1 = require("node:util");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const audit_log_service_1 = require("../../audit-log/audit-log.service");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
+const secret_hash_utils_1 = require("../../../common/utils/secret-hash.utils");
 const user_administration_enum_1 = require("./types/user-administration.enum");
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
 const USER_MASTER_TABLE_NAME = 'user_master';
 const USER_ADMIN_AUDIT_SCREEN_NAME = 'User Administration';
-const PASSWORD_SALT_BYTES = 16;
-const PASSWORD_KEY_LENGTH = 64;
-const scryptAsync = (0, node_util_1.promisify)(node_crypto_1.scrypt);
 let UserAdministrationService = class UserAdministrationService {
     prisma;
     auditLogService;
@@ -56,7 +52,7 @@ let UserAdministrationService = class UserAdministrationService {
         return { ...payload, ...relatedNames };
     }
     async resolveRelatedNames(client, record) {
-        const [company, branch] = await Promise.all([
+        const [company, branch, employee] = await Promise.all([
             record.usrCompanyId
                 ? client.company.findFirst({
                     where: { compId: record.usrCompanyId },
@@ -69,10 +65,17 @@ let UserAdministrationService = class UserAdministrationService {
                     select: { brName: true },
                 })
                 : null,
+            record.usrEmployeeId
+                ? client.employeeMaster.findFirst({
+                    where: { empId: record.usrEmployeeId },
+                    select: { empName: true },
+                })
+                : null,
         ]);
         return {
             usrCompanyName: company?.compName ?? null,
             usrBranchName: branch?.brName ?? null,
+            usrEmployeeName: employee?.empName ?? null,
         };
     }
     async softDelete(usrId) {
@@ -128,8 +131,13 @@ let UserAdministrationService = class UserAdministrationService {
         try {
             return this.prisma.$transaction(async (tx) => {
                 await this.ensureLoginNameUnique(dto.usrLoginName, undefined, tx);
+                await this.ensureEmployeeLinkable(tx, {
+                    employeeId: dto.usrEmployeeId ?? null,
+                    companyId: dto.usrCompanyId ?? null,
+                    isActive: dto.usrIsActive ?? true,
+                });
                 const now = new Date();
-                const passwordHash = await this.hashPassword(dto.usrPassword);
+                const passwordHash = await (0, secret_hash_utils_1.hashSecret)(dto.usrPassword);
                 const data = {
                     usrLoginName: dto.usrLoginName.trim(),
                     usrDisplayName: dto.usrDisplayName?.trim() ?? '',
@@ -138,6 +146,7 @@ let UserAdministrationService = class UserAdministrationService {
                     usrCreatedBy: this.requestContextService.getUserId() ?? module_service_utils_1.DEFAULT_ACTOR,
                 };
                 this.applyOptionalUserFields(data, dto);
+                await this.applyPin(data, dto);
                 const created = await tx.userMaster.create({ data });
                 const menus = await this.replaceUserMenus(created.usrId, dto.menus ?? [], this.requestContextService.getUserId() ?? module_service_utils_1.DEFAULT_ACTOR, now, tx);
                 const payload = this.toPayload(created, menus);
@@ -172,6 +181,13 @@ let UserAdministrationService = class UserAdministrationService {
                     this.throwNotFound(usrId);
                 }
                 await this.ensureLoginNameUnique(dto.usrLoginName, usrId, tx);
+                await this.ensureEmployeeLinkable(tx, {
+                    employeeId: dto.usrEmployeeId !== undefined ? dto.usrEmployeeId : existing.usrEmployeeId,
+                    companyId: dto.usrCompanyId !== undefined ? dto.usrCompanyId : existing.usrCompanyId,
+                    isActive: dto.usrIsActive ?? existing.usrIsActive,
+                    usrId,
+                    previous: { employeeId: existing.usrEmployeeId, isActive: existing.usrIsActive },
+                });
                 const now = new Date();
                 const data = {
                     usrLoginName: dto.usrLoginName.trim(),
@@ -179,11 +195,12 @@ let UserAdministrationService = class UserAdministrationService {
                     usrModifiedBy: this.requestContextService.getUserId() ?? module_service_utils_1.DEFAULT_ACTOR,
                 };
                 if (dto.usrPassword?.trim()) {
-                    data.usrPasswordHash = await this.hashPassword(dto.usrPassword.trim());
+                    data.usrPasswordHash = await (0, secret_hash_utils_1.hashSecret)(dto.usrPassword.trim());
                     data.usrPasswordChangedOn = now;
                     data.usrMustChangePassword = false;
                 }
                 this.applyOptionalUserFields(data, dto);
+                await this.applyPin(data, dto);
                 const updated = await tx.userMaster.update({ where: { usrId }, data });
                 const menus = dto.menus !== undefined
                     ? await this.replaceUserMenus(usrId, dto.menus, this.requestContextService.getUserId() ?? module_service_utils_1.DEFAULT_ACTOR, now, tx)
@@ -293,6 +310,66 @@ let UserAdministrationService = class UserAdministrationService {
             ]);
         }
     }
+    async ensureEmployeeLinkable(tx, link) {
+        if (!link.employeeId) {
+            return;
+        }
+        const employee = await tx.employeeMaster.findFirst({
+            where: { empId: link.employeeId, empIsDeleted: false },
+            select: { empName: true, empCompanyId: true, empIsActive: true },
+        });
+        if (!employee) {
+            (0, module_service_utils_1.throwSettingsBadRequest)('Employee does not exist', [
+                {
+                    field: 'usrEmployeeId',
+                    message: `No active employee found with id ${link.employeeId}`,
+                },
+            ]);
+        }
+        if (link.companyId && employee.empCompanyId && employee.empCompanyId !== link.companyId) {
+            (0, module_service_utils_1.throwSettingsBadRequest)('Employee belongs to another company', [
+                {
+                    field: 'usrEmployeeId',
+                    message: `Employee "${employee.empName}" is not an employee of the user's company`,
+                },
+            ]);
+        }
+        if (!link.isActive) {
+            return;
+        }
+        const linkIsNew = !link.previous || link.previous.employeeId !== link.employeeId || !link.previous.isActive;
+        if (linkIsNew && !employee.empIsActive) {
+            (0, module_service_utils_1.throwSettingsBadRequest)('Employee is not active', [
+                {
+                    field: 'usrEmployeeId',
+                    message: `Employee "${employee.empName}" is not active`,
+                },
+            ]);
+        }
+        const other = await tx.userMaster.findFirst({
+            where: {
+                usrEmployeeId: link.employeeId,
+                usrIsDeleted: false,
+                usrIsActive: true,
+                ...(link.usrId ? { NOT: { usrId: link.usrId } } : {}),
+            },
+            select: { usrLoginName: true },
+        });
+        if (other) {
+            (0, module_service_utils_1.throwSettingsConflict)('Employee is linked to another user', [
+                {
+                    field: 'usrEmployeeId',
+                    message: `Employee "${employee.empName}" is already linked to active user '${other.usrLoginName}'`,
+                },
+            ]);
+        }
+    }
+    async applyPin(data, dto) {
+        if (dto.usrPin === undefined) {
+            return;
+        }
+        data.usrPinHash = dto.usrPin ? await (0, secret_hash_utils_1.hashSecret)(dto.usrPin) : null;
+    }
     applyOptionalUserFields(data, dto) {
         if (dto.usrCompanyId !== undefined)
             data.usrCompanyId = dto.usrCompanyId;
@@ -335,11 +412,6 @@ let UserAdministrationService = class UserAdministrationService {
         if (dto.usrNotes !== undefined)
             data.usrNotes = dto.usrNotes;
     }
-    async hashPassword(plain) {
-        const salt = (0, node_crypto_1.randomBytes)(PASSWORD_SALT_BYTES).toString('hex');
-        const derived = (await scryptAsync(plain, salt, PASSWORD_KEY_LENGTH));
-        return `scrypt$${salt}$${derived.toString('hex')}`;
-    }
     toPayload(record, menus) {
         return {
             ...this.toPayloadWithoutMenus(record),
@@ -363,6 +435,7 @@ let UserAdministrationService = class UserAdministrationService {
             usrMustChangePassword: record.usrMustChangePassword,
             usrPasswordExpiresOn: record.usrPasswordExpiresOn?.toISOString() ?? null,
             usrPasswordChangedOn: record.usrPasswordChangedOn?.toISOString() ?? null,
+            usrPinSet: Boolean(record.usrPinHash),
             usrType: record.usrType && Object.values(user_administration_enum_1.UserType).includes(record.usrType)
                 ? record.usrType
                 : null,

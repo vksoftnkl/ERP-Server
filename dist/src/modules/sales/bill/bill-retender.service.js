@@ -33,6 +33,7 @@ const bill_cheque_details_1 = require("./bill-cheque-details");
 const books_reconcile_guard_1 = require("../../accountsModule/reconcile/books-reconcile.guard");
 const bill_temp_credit_1 = require("./bill-temp-credit");
 const bill_api_types_1 = require("./types/bill-api.types");
+const till_session_service_1 = require("../../till/services/till-session.service");
 let BillRetenderService = class BillRetenderService {
     prisma;
     bills;
@@ -42,7 +43,8 @@ let BillRetenderService = class BillRetenderService {
     loyalty;
     audit;
     recompute;
-    constructor(prisma, bills, salesContext, tenders, legs, loyalty, audit, recompute) {
+    till;
+    constructor(prisma, bills, salesContext, tenders, legs, loyalty, audit, recompute, till) {
         this.prisma = prisma;
         this.bills = bills;
         this.salesContext = salesContext;
@@ -51,6 +53,7 @@ let BillRetenderService = class BillRetenderService {
         this.loyalty = loyalty;
         this.audit = audit;
         this.recompute = recompute;
+        this.till = till;
     }
     async retender(dto) {
         const now = new Date();
@@ -67,6 +70,13 @@ let BillRetenderService = class BillRetenderService {
             if (await (0, sales_guards_1.loadDayClosed)(tx, bill.sbCompanyId, bill.sbBranchId, docDate)) {
                 (0, sales_errors_1.throwSalesLocked)(`The books for ${docDate} are closed — correct the day book instead`, posting_types_1.SALES_ERROR_CODES.DAY_CLOSED, 'sbBillDate');
             }
+            const till = await this.till.resolveForMoney(tx, {
+                companyId: bill.sbCompanyId,
+                branchId: bill.sbBranchId,
+                sessionId: null,
+                field: 'sbSessionId',
+            });
+            const moneySessionId = till?.tssId ?? bill.sbSessionId;
             const voidIds = [...new Set(dto.voids.map((v) => v.tdId))];
             if (voidIds.length === 0) {
                 (0, sales_errors_1.throwSalesRefused)('Nothing to void', posting_types_1.SALES_ERROR_CODES.RETENDER_AMOUNT_MISMATCH, 'voids');
@@ -164,13 +174,13 @@ let BillRetenderService = class BillRetenderService {
                             changedOn: now,
                             remarks: `Tender voided: ${reasonById.get(r.td_id) ?? 'OTHER'}${dto.remark ? ` — ${dto.remark}` : ''} — balance ${c.atcBalanceAmount.toFixed(2)} cleared`,
                             deviceId: bill.sbDeviceId,
-                            sessionId: bill.sbSessionId,
+                            sessionId: moneySessionId,
                         });
                     }
                 }
             }
             const replaces = rows[0].td_id;
-            const scope = this.tenderScope(bill);
+            const scope = this.tenderScope(bill, moneySessionId);
             const existing = await this.tenders.getByDocument(tender_detail_api_types_1.TenderSrcModule.SALES, tender_detail_api_types_1.TenderSrcDocType.SALE_BILL, bill.sbId, tx);
             const keep = existing.map((t) => ({ tdId: t.tdId }));
             const created = await this.tenders.syncDocumentTenders(tx, scope, [...keep, ...((0, bill_temp_credit_1.encodeTempCreditTenders)(dto.tenders) ?? [])], actor, bill_api_types_1.BILL_TENDER_AUDIT);
@@ -280,7 +290,7 @@ let BillRetenderService = class BillRetenderService {
                         docAmount: newTotal,
                         partyId: bill.sbCustId,
                         userId: isUuid(bill.sbUserId) ? bill.sbUserId : actor,
-                        sessionId: bill.sbSessionId,
+                        sessionId: moneySessionId,
                         deviceType: bill.sbDeviceType,
                         remarks: dto.remark,
                         createdBy: actor,
@@ -348,7 +358,7 @@ let BillRetenderService = class BillRetenderService {
                 changedBy: actor,
                 remarks: dto.remark,
                 deviceId: bill.sbDeviceId,
-                sessionId: bill.sbSessionId,
+                sessionId: moneySessionId,
             });
             await this.audit.logEntityChange({
                 action: 'update',
@@ -383,7 +393,7 @@ let BillRetenderService = class BillRetenderService {
         });
         return this.bills.getById(dto.sbId, dto.sbCompanyId, dto.sbBranchId, dto.sbAccYear);
     }
-    tenderScope(bill) {
+    tenderScope(bill, sessionId) {
         return {
             tdSrcModule: tender_detail_api_types_1.TenderSrcModule.SALES,
             tdSrcDocType: tender_detail_api_types_1.TenderSrcDocType.SALE_BILL,
@@ -395,7 +405,7 @@ let BillRetenderService = class BillRetenderService {
             tdDocDate: bill.sbBillDate,
             tdPartyLedgerId: bill.sbCustId,
             tdUserId: bill.sbUserId,
-            tdSessionId: bill.sbSessionId,
+            tdSessionId: sessionId,
             tdDeviceId: bill.sbDeviceId,
             tdDrCr: tender_detail_api_types_1.TenderDrCr.DR,
         };
@@ -411,7 +421,8 @@ exports.BillRetenderService = BillRetenderService = __decorate([
         voucher_posting_service_1.VoucherPostingService,
         loyalty_ledger_service_1.LoyaltyLedgerService,
         audit_log_service_1.AuditLogService,
-        bill_balance_recompute_service_1.BillBalanceRecomputeService])
+        bill_balance_recompute_service_1.BillBalanceRecomputeService,
+        till_session_service_1.TillSessionService])
 ], BillRetenderService);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 function isUuid(v) {

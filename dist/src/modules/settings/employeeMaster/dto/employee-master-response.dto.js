@@ -9,11 +9,12 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.EmployeeMasterSuccessDeleteDto = exports.EmployeeMasterSuccessSingleDto = exports.EmployeeMasterDeleteResultDto = exports.EmployeeMasterPayloadDto = exports.EmployeeMasterErrorResponseDto = exports.EmployeeMasterErrorFieldDto = void 0;
+exports.EmployeeLedgerBackfillSuccessDto = exports.EmployeeLedgerBackfillReportDto = exports.EmployeeLedgerBackfillFailedDto = exports.EmployeeLedgerBackfillCreatedDto = exports.EmployeeMasterSuccessDeleteDto = exports.EmployeeMasterSuccessSingleDto = exports.EmployeeMasterDeleteResultDto = exports.EmployeeMasterPayloadDto = exports.EmployeeMasterErrorResponseDto = exports.EmployeeMasterErrorFieldDto = void 0;
 const swagger_1 = require("@nestjs/swagger");
 class EmployeeMasterErrorFieldDto {
     field;
     message;
+    code;
 }
 exports.EmployeeMasterErrorFieldDto = EmployeeMasterErrorFieldDto;
 __decorate([
@@ -24,6 +25,13 @@ __decorate([
     (0, swagger_1.ApiProperty)({ example: 'Duplicate empName is not allowed' }),
     __metadata("design:type", String)
 ], EmployeeMasterErrorFieldDto.prototype, "message", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        example: 'EMP_LEDGER_HAS_BALANCE',
+        description: 'A refusal the client branches on. EMP_LEDGER_HAS_BALANCE: delete refused (409).',
+    }),
+    __metadata("design:type", String)
+], EmployeeMasterErrorFieldDto.prototype, "code", void 0);
 class EmployeeMasterErrorResponseDto {
     success;
     message;
@@ -91,6 +99,7 @@ class EmployeeMasterPayloadDto {
     empPfNo;
     empEsiNo;
     empLoanLedgerId;
+    empLoanLedgerName;
     empPhotoUrl;
     empPhoto;
     empRemarks;
@@ -308,9 +317,22 @@ __decorate([
     __metadata("design:type", Object)
 ], EmployeeMasterPayloadDto.prototype, "empEsiNo", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ format: 'uuid', nullable: true }),
+    (0, swagger_1.ApiPropertyOptional)({
+        format: 'uuid',
+        nullable: true,
+        description: 'Staff advance ledger (notes 95). Created with the employee when none is given; a given one ' +
+            'must be a live ledger in Loans & Advances (Asset) or a sub-group, of this company or shared.',
+    }),
     __metadata("design:type", Object)
 ], EmployeeMasterPayloadDto.prototype, "empLoanLedgerId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        example: 'Ravi - Staff Advance',
+        description: 'Name of the staff advance ledger (resolved on the get endpoint)',
+    }),
+    __metadata("design:type", Object)
+], EmployeeMasterPayloadDto.prototype, "empLoanLedgerName", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
     __metadata("design:type", Object)
@@ -400,4 +422,81 @@ __decorate([
     (0, swagger_1.ApiProperty)({ type: EmployeeMasterDeleteResultDto }),
     __metadata("design:type", EmployeeMasterDeleteResultDto)
 ], EmployeeMasterSuccessDeleteDto.prototype, "data", void 0);
+class EmployeeLedgerBackfillCreatedDto {
+    empId;
+    empName;
+    ledId;
+    ledName;
+}
+exports.EmployeeLedgerBackfillCreatedDto = EmployeeLedgerBackfillCreatedDto;
+__decorate([
+    (0, swagger_1.ApiProperty)({ format: 'uuid' }),
+    __metadata("design:type", String)
+], EmployeeLedgerBackfillCreatedDto.prototype, "empId", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)(),
+    __metadata("design:type", String)
+], EmployeeLedgerBackfillCreatedDto.prototype, "empName", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ format: 'uuid' }),
+    __metadata("design:type", String)
+], EmployeeLedgerBackfillCreatedDto.prototype, "ledId", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 'Ravi - Staff Advance' }),
+    __metadata("design:type", String)
+], EmployeeLedgerBackfillCreatedDto.prototype, "ledName", void 0);
+class EmployeeLedgerBackfillFailedDto {
+    empId;
+    empName;
+    message;
+}
+exports.EmployeeLedgerBackfillFailedDto = EmployeeLedgerBackfillFailedDto;
+__decorate([
+    (0, swagger_1.ApiProperty)({ format: 'uuid' }),
+    __metadata("design:type", String)
+], EmployeeLedgerBackfillFailedDto.prototype, "empId", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)(),
+    __metadata("design:type", String)
+], EmployeeLedgerBackfillFailedDto.prototype, "empName", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)(),
+    __metadata("design:type", String)
+], EmployeeLedgerBackfillFailedDto.prototype, "message", void 0);
+class EmployeeLedgerBackfillReportDto {
+    walked;
+    created;
+    failed;
+}
+exports.EmployeeLedgerBackfillReportDto = EmployeeLedgerBackfillReportDto;
+__decorate([
+    (0, swagger_1.ApiProperty)({ description: 'Live employees that had no staff advance ledger' }),
+    __metadata("design:type", Number)
+], EmployeeLedgerBackfillReportDto.prototype, "walked", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ type: EmployeeLedgerBackfillCreatedDto, isArray: true }),
+    __metadata("design:type", Array)
+], EmployeeLedgerBackfillReportDto.prototype, "created", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ type: EmployeeLedgerBackfillFailedDto, isArray: true }),
+    __metadata("design:type", Array)
+], EmployeeLedgerBackfillReportDto.prototype, "failed", void 0);
+class EmployeeLedgerBackfillSuccessDto {
+    success;
+    message;
+    data;
+}
+exports.EmployeeLedgerBackfillSuccessDto = EmployeeLedgerBackfillSuccessDto;
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: true }),
+    __metadata("design:type", Boolean)
+], EmployeeLedgerBackfillSuccessDto.prototype, "success", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: '3 staff advance ledgers created for 3 employees' }),
+    __metadata("design:type", String)
+], EmployeeLedgerBackfillSuccessDto.prototype, "message", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ type: EmployeeLedgerBackfillReportDto }),
+    __metadata("design:type", EmployeeLedgerBackfillReportDto)
+], EmployeeLedgerBackfillSuccessDto.prototype, "data", void 0);
 //# sourceMappingURL=employee-master-response.dto.js.map

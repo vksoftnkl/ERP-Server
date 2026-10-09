@@ -36,6 +36,7 @@ export interface UserAdminPayload {
     usrBranchId: string | null;
     usrBranchName?: string | null;
     usrEmployeeId: string | null;
+    usrEmployeeName?: string | null;
     usrLoginName: string;
     usrDisplayName: string;
     usrFullName: string | null;
@@ -47,6 +48,7 @@ export interface UserAdminPayload {
     usrMustChangePassword: boolean;
     usrPasswordExpiresOn: string | null;
     usrPasswordChangedOn: string | null;
+    usrPinSet: boolean;
     usrType: UserType | null;
     usrEditDate: boolean;
     usrEditEntry: boolean;

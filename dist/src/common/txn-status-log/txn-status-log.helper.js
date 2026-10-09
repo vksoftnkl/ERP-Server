@@ -32,6 +32,7 @@ var TxnStatusDocType;
     TxnStatusDocType["RECEIPT"] = "RECEIPT";
     TxnStatusDocType["PAYMENT"] = "PAYMENT";
     TxnStatusDocType["JOURNAL"] = "JOURNAL";
+    TxnStatusDocType["EXPENSE"] = "EXPENSE";
     TxnStatusDocType["CHEQUE_RECEIVED"] = "CHEQUE_RECEIVED";
     TxnStatusDocType["CHEQUE_ISSUED"] = "CHEQUE_ISSUED";
     TxnStatusDocType["TEMP_CREDIT"] = "TEMP_CREDIT";

@@ -29,6 +29,8 @@ const receipt_guards_1 = require("./receipt.guards");
 const allocation_engine_1 = require("./allocation-engine");
 const receipt_utils_1 = require("./receipt.utils");
 const receipt_enum_1 = require("./types/receipt-enum");
+const till_session_service_1 = require("../../till/services/till-session.service");
+const till_enum_1 = require("../../till/types/till-enum");
 const POST_TRANSACTION_OPTIONS = { maxWait: 15_000, timeout: 120_000 };
 let ReceiptPostingService = class ReceiptPostingService {
     prisma;
@@ -36,12 +38,14 @@ let ReceiptPostingService = class ReceiptPostingService {
     receiptService;
     openItemsService;
     recompute;
-    constructor(prisma, requestContext, receiptService, openItemsService, recompute) {
+    till;
+    constructor(prisma, requestContext, receiptService, openItemsService, recompute, till) {
         this.prisma = prisma;
         this.requestContext = requestContext;
         this.receiptService = receiptService;
         this.openItemsService = openItemsService;
         this.recompute = recompute;
+        this.till = till;
     }
     async post(dto) {
         const actor = this.requestContext.getUserId() ?? module_service_utils_1.DEFAULT_ACTOR;
@@ -69,6 +73,31 @@ let ReceiptPostingService = class ReceiptPostingService {
         const party = await (0, receipt_guards_1.loadParty)(tx, header.avhCompanyId, header.avhPartyId);
         const receiptDate = startOfDay(header.avhVoucherDate);
         const { tenders, otherLines } = await this.rebuildLines(tx, header, receiptDate, settings, party);
+        const till = await this.till.routeMoneyDoc(tx, {
+            companyId: header.avhCompanyId,
+            branchId: header.avhBranchId,
+            sessionId: header.avhSessionId,
+            field: 'avhSessionId',
+            hasCash: tenders.some((tender) => tender.tenderTypeId === till_enum_1.CASH_TENDER_TYPE_ID),
+            cashIn: true,
+        });
+        if (till.ref) {
+            await this.till.stampVoucher(tx, till.ref, { voucherId: header.avhVoucherId, accYear: header.avhAccYear, srcDocType: 'RECEIPT' }, actor);
+            header.avhSessionId = till.ref.tssId;
+        }
+        if (till.cashLedgerId) {
+            await this.till.routeCashToLedger(tx, {
+                srcDocType: 'RECEIPT',
+                srcDocId: header.avhVoucherId,
+                accYear: header.avhAccYear,
+                ledgerId: till.cashLedgerId,
+                actor,
+            });
+            for (const tender of tenders.filter((row) => row.tenderTypeId === till_enum_1.CASH_TENDER_TYPE_ID)) {
+                tender.tenderLedgerId = till.cashLedgerId;
+                tender.clearingLedgerId = null;
+            }
+        }
         const locked = await (0, receipt_guards_1.lockBills)(tx, [
             ...dto.allocations.map((row) => ({ billId: row.billId, billAccYear: row.billAccYear })),
             ...dto.creditsApplied.map((row) => ({ billId: row.billId, billAccYear: row.billAccYear })),
@@ -203,6 +232,16 @@ let ReceiptPostingService = class ReceiptPostingService {
             deviceId: this.requestContext.getDeviceId() ?? header.avhDeviceId,
             sessionId: header.avhSessionId,
         });
+        if (till.ref) {
+            await this.till.logMoneyDoc(tx, {
+                sessionId: till.ref.tssId,
+                code: till_enum_1.TillEventCode.RECEIPT_POSTED,
+                srcDocType: 'RECEIPT',
+                srcDocId: header.avhVoucherId,
+                srcRefno: byKey.get(allocation_engine_1.RECEIPT_VOUCHER_KEY)?.voucherRefno ?? header.avhVoucherRefno,
+                amount: (0, receipt_utils_1.sum)(tenders.map((tender) => tender.amount)),
+            });
+        }
         const movedLedgers = await tx.accVoucher.findMany({
             where: {
                 avVoucherId: { in: vouchers.map((voucher) => voucher.voucherId) },
@@ -732,7 +771,8 @@ exports.ReceiptPostingService = ReceiptPostingService = __decorate([
         request_context_service_1.RequestContextService,
         receipt_service_1.ReceiptService,
         open_items_service_1.OpenItemsService,
-        bill_balance_recompute_service_1.BillBalanceRecomputeService])
+        bill_balance_recompute_service_1.BillBalanceRecomputeService,
+        till_session_service_1.TillSessionService])
 ], ReceiptPostingService);
 function rethrowAllocationError(error) {
     if (error instanceof allocation_engine_1.AllocationError) {

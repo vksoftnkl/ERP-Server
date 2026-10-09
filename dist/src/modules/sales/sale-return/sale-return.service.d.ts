@@ -9,6 +9,7 @@ import { PromotionUsageService } from '../posting/promotion-usage.service';
 import { SalesContextService } from '../posting/sales-context.service';
 import { SalesDocBlocksService } from '../posting/sales-doc-blocks.service';
 import { type DocKeys, type DocSpec } from '../posting/sales-doc-store';
+import { TillSessionService } from '../../till/services/till-session.service';
 import { VoucherPostingService } from '../../../common/posting/voucher-posting.service';
 import { SalesStockService } from '../posting/sales-stock.service';
 import { StatutoryService } from '../../../common/posting/statutory.service';
@@ -28,8 +29,9 @@ export declare class SaleReturnService {
     private readonly loyalty;
     private readonly promo;
     private readonly gst;
+    private readonly till;
     private readonly store;
-    constructor(prisma: PrismaService, salesContext: SalesContextService, statutory: StatutoryService, legs: VoucherPostingService, register: DocRegisterService, stock: SalesStockService, blocks: SalesDocBlocksService, transportBand: TransportBandService, loyalty: LoyaltyLedgerService, promo: PromotionUsageService, gst: GstGatewayService, audit: AuditLogService, charges: ChargeDetailService, tenders: TenderDetailService);
+    constructor(prisma: PrismaService, salesContext: SalesContextService, statutory: StatutoryService, legs: VoucherPostingService, register: DocRegisterService, stock: SalesStockService, blocks: SalesDocBlocksService, transportBand: TransportBandService, loyalty: LoyaltyLedgerService, promo: PromotionUsageService, gst: GstGatewayService, audit: AuditLogService, charges: ChargeDetailService, tenders: TenderDetailService, till: TillSessionService);
     private keys;
     save(dto: SaveSaleReturnDto): Promise<Record<string, unknown>>;
     get(keys: DocKeys): Promise<Record<string, unknown>>;
@@ -40,6 +42,7 @@ export declare class SaleReturnService {
     billLines(sbId: string, sbAccYear: string): Promise<Record<string, unknown>[]>;
     validate(dto: ValidateSaleReturnDto): Promise<Record<string, unknown>>;
     post(dto: PostSaleReturnDto): Promise<Record<string, unknown>>;
+    private stampTillSession;
     private ctxOf;
     private bill;
     private guards;

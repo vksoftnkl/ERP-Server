@@ -1,5 +1,7 @@
 import type { ModuleApiErrorDetail, ModuleApiErrorResponse, ModuleApiSuccessResponse } from "../../../../common/types/module-api.types";
-export type EmployeeMasterErrorDetail = ModuleApiErrorDetail;
+export type EmployeeMasterErrorDetail = ModuleApiErrorDetail & {
+    code?: string;
+};
 export type EmployeeMasterErrorResponse = ModuleApiErrorResponse<EmployeeMasterErrorDetail>;
 export type EmployeeMasterSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> = ModuleApiSuccessResponse<T, TMeta, TStyles>;
 export interface EmployeeMasterPayload {
@@ -51,6 +53,7 @@ export interface EmployeeMasterPayload {
     empPfNo: string | null;
     empEsiNo: string | null;
     empLoanLedgerId: string | null;
+    empLoanLedgerName?: string | null;
     empPhotoUrl: string | null;
     empPhoto: string | null;
     empRemarks: string | null;
@@ -61,4 +64,18 @@ export interface EmployeeMasterPayload {
     empCreatedBy: string | null;
     empModifiedOn: string;
     empModifiedBy: string | null;
+}
+export interface EmployeeLedgerBackfillReport {
+    walked: number;
+    created: Array<{
+        empId: string;
+        empName: string;
+        ledId: string;
+        ledName: string;
+    }>;
+    failed: Array<{
+        empId: string;
+        empName: string;
+        message: string;
+    }>;
 }

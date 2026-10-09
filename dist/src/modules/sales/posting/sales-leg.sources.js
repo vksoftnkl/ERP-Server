@@ -1,9 +1,27 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.chargePostsSeparately = chargePostsSeparately;
+exports.splitRegisterCharges = splitRegisterCharges;
 exports.buildBillLegs = buildBillLegs;
 exports.buildReturnLegs = buildReturnLegs;
 exports.buildCogsLegs = buildCogsLegs;
 exports.buildTenderLegs = buildTenderLegs;
+function chargePostsSeparately(c) {
+    return c.cdSepPost === true || c.cdBeforeTax !== true;
+}
+function splitRegisterCharges(nets) {
+    let other = 0;
+    let deduction = 0;
+    for (const n of nets) {
+        if (n >= 0) {
+            other += n;
+        }
+        else {
+            deduction -= n;
+        }
+    }
+    return { other: round2(other), deduction: round2(deduction) };
+}
 function buildBillLegs(input) {
     const legs = [];
     const partyDebit = billPartyDebit(input);

@@ -1,6 +1,8 @@
 import type { ModuleApiErrorDetail, ModuleApiErrorResponse, ModuleApiSuccessResponse } from "../../../../common/types/module-api.types";
 import type { AdjacentVoucher, AdjacentVoucherPayload, DuplicateCheckPayload, OpenCredit, ReceiptAdvanceBill, ReceiptAllocation, ReceiptHeader, ReceiptLeg, ReceiptOtherLine, ReceiptPdcVoucher, ReceiptStatusPayload, ReceiptTender } from '../../receipt/types/receipt-api.types';
 import type { BillStatus, BillType, PdcStatus, VoucherStatus } from './payment-enum';
+import type { VoucherWarning } from '../../vouchers/vouchers.errors';
+import type { TillApprovalNeed } from '../../../till/types/till-api.types';
 export type PaymentErrorDetail = ModuleApiErrorDetail;
 export type PaymentErrorResponse = ModuleApiErrorResponse<PaymentErrorDetail>;
 export type PaymentSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> = ModuleApiSuccessResponse<T, TMeta, TStyles>;
@@ -172,6 +174,8 @@ export interface PaymentPostPayload extends PaymentPayload {
         postDatedHeld: number;
     }>;
     totalOnAccount: number;
+    warnings: VoucherWarning[];
+    approval: TillApprovalNeed | null;
     cheques: Array<{
         tdRowNo: number;
         apdId: string;

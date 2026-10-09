@@ -1,3 +1,4 @@
+import { TillSessionService } from '../../till/services/till-session.service';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
 import { DocRegisterService } from '../../../common/posting/doc-register.service';
@@ -15,6 +16,7 @@ export declare class VoucherCancelService {
     private readonly posting;
     private readonly docRegister;
     private readonly recompute;
-    constructor(prisma: PrismaService, requestContext: RequestContextService, register: VoucherRegisterService, types: VoucherTypesService, posting: VoucherPostingService, docRegister: DocRegisterService, recompute: BillBalanceRecomputeService);
+    private readonly till;
+    constructor(prisma: PrismaService, requestContext: RequestContextService, register: VoucherRegisterService, types: VoucherTypesService, posting: VoucherPostingService, docRegister: DocRegisterService, recompute: BillBalanceRecomputeService, till: TillSessionService);
     cancel(dto: CancelVoucherDto): Promise<CancelPayload>;
 }

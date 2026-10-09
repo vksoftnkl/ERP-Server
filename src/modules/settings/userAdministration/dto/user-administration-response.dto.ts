@@ -121,6 +121,13 @@ export class UserAdminPayloadDto {
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   usrEmployeeId!: string | null;
 
+  @ApiPropertyOptional({
+    nullable: true,
+    example: 'Ravi',
+    description: 'Name of the linked employee (resolved on the get endpoint)',
+  })
+  usrEmployeeName?: string | null;
+
   @ApiProperty()
   usrLoginName!: string;
 
@@ -153,6 +160,9 @@ export class UserAdminPayloadDto {
 
   @ApiPropertyOptional({ nullable: true })
   usrPasswordChangedOn!: string | null;
+
+  @ApiProperty({ description: 'A till PIN is set. The hash is never returned.' })
+  usrPinSet!: boolean;
 
   @ApiPropertyOptional({ enum: UserType, enumName: 'UserType', nullable: true })
   usrType!: UserType | null;

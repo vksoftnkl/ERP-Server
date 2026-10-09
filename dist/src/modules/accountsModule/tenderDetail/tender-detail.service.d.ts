@@ -2,6 +2,8 @@ import { AccTenderDetail, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
+import { AppSettingValueService } from '../../settings/appSettings/app-setting-value.service';
+import { TillEventService } from '../../till/services/till-event.service';
 import { GetTenderDetailQueryDto } from './dto/get-tender-detail-query.dto';
 import { SaveTenderDetailDto } from './dto/save-tender-detail.dto';
 import { TenderDetailDeleteResult, TenderDetailPayload, TenderDocumentAudit, TenderDocumentScope, TenderSrcDocType, TenderSrcModule } from './types/tender-detail-api.types';
@@ -15,11 +17,15 @@ type TenderDetailRecord = AccTenderDetail & {
         ledName: string;
     } | null;
 };
+export declare const TENDER_REF_REQUIRED = "TENDER_REF_REQUIRED";
+export declare const TENDER_REF_DUPLICATE = "TENDER_REF_DUPLICATE";
 export declare class TenderDetailService {
     private readonly prisma;
     private readonly auditLogService;
     private readonly requestContextService;
-    constructor(prisma: PrismaService, auditLogService: AuditLogService, requestContextService: RequestContextService);
+    private readonly appSettings?;
+    private readonly tillEvents?;
+    constructor(prisma: PrismaService, auditLogService: AuditLogService, requestContextService: RequestContextService, appSettings?: AppSettingValueService | undefined, tillEvents?: TillEventService | undefined);
     save(saveTenderDetailDto: SaveTenderDetailDto): Promise<TenderDetailPayload>;
     get(getTenderDetailQueryDto: GetTenderDetailQueryDto): Promise<TenderDetailPayload | TenderDetailPayload[]>;
     getById(tdId: string): Promise<TenderDetailPayload>;
@@ -35,6 +41,9 @@ export declare class TenderDetailService {
     private softDeleteTenderLine;
     private ensureDocumentIsUnchanged;
     private ensureDocumentMatchesScope;
+    private guardReference;
+    private logDuplicate;
+    private defaultSettlement;
     private ensureTenderExists;
     private ensureTenderTypeExists;
     private ensureLedgerExists;

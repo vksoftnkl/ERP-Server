@@ -10,6 +10,8 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.VoucherCancelService = void 0;
+const till_session_service_1 = require("../../till/services/till-session.service");
+const till_enum_1 = require("../../till/types/till-enum");
 const common_1 = require("@nestjs/common");
 const client_1 = require("@prisma/client");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
@@ -35,7 +37,8 @@ let VoucherCancelService = class VoucherCancelService {
     posting;
     docRegister;
     recompute;
-    constructor(prisma, requestContext, register, types, posting, docRegister, recompute) {
+    till;
+    constructor(prisma, requestContext, register, types, posting, docRegister, recompute, till) {
         this.prisma = prisma;
         this.requestContext = requestContext;
         this.register = register;
@@ -43,6 +46,7 @@ let VoucherCancelService = class VoucherCancelService {
         this.posting = posting;
         this.docRegister = docRegister;
         this.recompute = recompute;
+        this.till = till;
     }
     async cancel(dto) {
         const userId = this.requestContext.getUserId();
@@ -161,6 +165,10 @@ let VoucherCancelService = class VoucherCancelService {
                     (0, vouchers_errors_1.throwState)(`${stored.avh_voucher_refno} carries IRN ${irn.gde_irn} — cancel it on the e-invoice screen first`, vouchers_errors_1.VCH.IRN_LIVE);
                 }
             }
+            await this.till.assertMoneyDocCancellable(tx, {
+                sessionId: stored.avh_session_id,
+                field: 'voucherId',
+            });
             const now = new Date();
             const touched = [];
             let allocationsReversed = 0;
@@ -260,6 +268,17 @@ let VoucherCancelService = class VoucherCancelService {
                 changedOn: now,
                 remarks: reason,
             });
+            if (stored.avh_session_id && (type.nature === 'RECEIPT' || type.nature === 'PAYMENT')) {
+                await this.till.logMoneyDoc(tx, {
+                    sessionId: stored.avh_session_id,
+                    code: till_enum_1.TillEventCode.MONEY_DOC_CANCELLED,
+                    srcDocType: type.nature,
+                    srcDocId: stored.avh_voucher_id,
+                    srcRefno: stored.avh_voucher_refno,
+                    amount: stored.avh_doc_amount,
+                    payload: { reason, typeCode: type.typeCode },
+                });
+            }
             const ledgers = await tx.$queryRaw `
         SELECT DISTINCT av_ledger_id AS id FROM accounts.acc_vouchers
          WHERE (av_voucher_id, av_acc_year) IN (${client_1.Prisma.join(vouchers.map((v) => client_1.Prisma.sql `(${v.voucherId}::uuid, ${v.accYear}::char(9))`))})`;
@@ -297,6 +316,7 @@ exports.VoucherCancelService = VoucherCancelService = __decorate([
         voucher_types_service_1.VoucherTypesService,
         voucher_posting_service_1.VoucherPostingService,
         doc_register_service_1.DocRegisterService,
-        bill_balance_recompute_service_1.BillBalanceRecomputeService])
+        bill_balance_recompute_service_1.BillBalanceRecomputeService,
+        till_session_service_1.TillSessionService])
 ], VoucherCancelService);
 //# sourceMappingURL=voucher-cancel.service.js.map

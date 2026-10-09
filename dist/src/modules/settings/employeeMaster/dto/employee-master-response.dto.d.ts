@@ -1,6 +1,7 @@
 export declare class EmployeeMasterErrorFieldDto {
     field: string;
     message: string;
+    code?: string;
 }
 export declare class EmployeeMasterErrorResponseDto {
     success: false;
@@ -56,6 +57,7 @@ export declare class EmployeeMasterPayloadDto {
     empPfNo: string | null;
     empEsiNo: string | null;
     empLoanLedgerId: string | null;
+    empLoanLedgerName?: string | null;
     empPhotoUrl: string | null;
     empPhoto: string | null;
     empRemarks: string | null;
@@ -80,4 +82,25 @@ export declare class EmployeeMasterSuccessDeleteDto {
     success: true;
     message: string;
     data: EmployeeMasterDeleteResultDto;
+}
+export declare class EmployeeLedgerBackfillCreatedDto {
+    empId: string;
+    empName: string;
+    ledId: string;
+    ledName: string;
+}
+export declare class EmployeeLedgerBackfillFailedDto {
+    empId: string;
+    empName: string;
+    message: string;
+}
+export declare class EmployeeLedgerBackfillReportDto {
+    walked: number;
+    created: EmployeeLedgerBackfillCreatedDto[];
+    failed: EmployeeLedgerBackfillFailedDto[];
+}
+export declare class EmployeeLedgerBackfillSuccessDto {
+    success: true;
+    message: string;
+    data: EmployeeLedgerBackfillReportDto;
 }

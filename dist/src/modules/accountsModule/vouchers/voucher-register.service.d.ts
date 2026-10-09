@@ -1,3 +1,4 @@
+import { TillSessionService } from '../../till/services/till-session.service';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
@@ -59,7 +60,8 @@ export declare class VoucherRegisterService {
     private readonly docRegister;
     private readonly recompute;
     private readonly tenderDetail;
-    constructor(prisma: PrismaService, requestContext: RequestContextService, types: VoucherTypesService, posting: VoucherPostingService, docRegister: DocRegisterService, recompute: BillBalanceRecomputeService, tenderDetail: TenderDetailService);
+    private readonly till;
+    constructor(prisma: PrismaService, requestContext: RequestContextService, types: VoucherTypesService, posting: VoucherPostingService, docRegister: DocRegisterService, recompute: BillBalanceRecomputeService, tenderDetail: TenderDetailService, till: TillSessionService);
     private caller;
     create(dto: VoucherPayloadDto, raw?: Record<string, unknown>): Promise<DraftSavedPayload>;
     validate(dto: ValidateVoucherDto): Promise<ValidatePayload>;
@@ -78,6 +80,7 @@ export declare class VoucherRegisterService {
         accYear: string;
     }): void;
     private assertDateInYear;
+    private checkCashPaymentLimit;
     private prepare;
     private allowAdvance;
     private backdateMode;

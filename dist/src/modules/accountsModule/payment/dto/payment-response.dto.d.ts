@@ -1,3 +1,4 @@
+import { TillApprovalNeedDto } from '../../../till/dto/till-response.dto';
 import { AdjacentVoucherSuccessDto, DuplicateCheckSuccessDto, OpenCreditDto, ReceiptAdvanceBillDto, ReceiptAllocationDto, ReceiptBillAfterDto, ReceiptBillReopenedDto, ReceiptErrorResponseDto, ReceiptHeaderDto, ReceiptLegDto, ReceiptNumberedVoucherDto, ReceiptOtherLineDto, ReceiptPdcVoucherDto, ReceiptReversalDto, ReceiptStatusPayloadDto, ReceiptTenderDto } from '../../receipt/dto/receipt-response.dto';
 import { BillStatus, BillType, PdcStatus, VoucherStatus } from '../types/payment-enum';
 import type { PayableBill, PartyChequeOut, PartyRecentPayment, PaymentAmendPayload, PaymentBeneficiary, PaymentCancelPayload, PaymentCheque, PaymentDeletePayload, PaymentDraftPayload, PaymentOpenItemsParty, PaymentOpenItemsPayload, PaymentOpenItemsSummary, PaymentOtherLine, PaymentPartyContextPayload, PaymentPartyContextSummary, PaymentPayload, PaymentPostPayload, PaymentTender, PaymentTenderCheque } from '../types/payment-api.types';
@@ -177,10 +178,19 @@ export declare class PaymentIssuedLeafDto {
     leaf: string;
     bookNo: string;
 }
+export declare class PaymentPostWarningDto {
+    code: string;
+    level: 'INFO' | 'WARN';
+    message: string;
+    field?: string;
+    overridable: boolean;
+}
 export declare class PaymentPostPayloadDto extends PaymentPayloadDto implements PaymentPostPayload {
     numberedVouchers: ReceiptNumberedVoucherDto[];
     billsAfter: ReceiptBillAfterDto[];
     totalOnAccount: number;
+    warnings: PaymentPostWarningDto[];
+    approval: TillApprovalNeedDto | null;
     cheques: PaymentIssuedLeafDto[];
 }
 export declare class PaymentPostSuccessDto {

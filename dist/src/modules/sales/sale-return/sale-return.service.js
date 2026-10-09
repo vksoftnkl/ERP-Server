@@ -27,6 +27,7 @@ const promotion_usage_service_1 = require("../posting/promotion-usage.service");
 const sales_context_service_1 = require("../posting/sales-context.service");
 const sales_doc_blocks_service_1 = require("../posting/sales-doc-blocks.service");
 const sales_doc_store_1 = require("../posting/sales-doc-store");
+const till_session_service_1 = require("../../till/services/till-session.service");
 const sales_leg_sources_1 = require("../posting/sales-leg.sources");
 const voucher_posting_service_1 = require("../../../common/posting/voucher-posting.service");
 const sales_stock_service_1 = require("../posting/sales-stock.service");
@@ -93,8 +94,9 @@ let SaleReturnService = class SaleReturnService {
     loyalty;
     promo;
     gst;
+    till;
     store;
-    constructor(prisma, salesContext, statutory, legs, register, stock, blocks, transportBand, loyalty, promo, gst, audit, charges, tenders) {
+    constructor(prisma, salesContext, statutory, legs, register, stock, blocks, transportBand, loyalty, promo, gst, audit, charges, tenders, till) {
         this.prisma = prisma;
         this.salesContext = salesContext;
         this.statutory = statutory;
@@ -106,6 +108,7 @@ let SaleReturnService = class SaleReturnService {
         this.loyalty = loyalty;
         this.promo = promo;
         this.gst = gst;
+        this.till = till;
         this.store = new sales_doc_store_1.SalesDocStore(exports.SR_SPEC, audit, charges, tenders, transportBand);
     }
     keys(dto) {
@@ -247,6 +250,15 @@ let SaleReturnService = class SaleReturnService {
             if (!ctx.rights.post) {
                 (0, sales_errors_1.throwSalesRight)('This user may not post on this menu', posting_types_1.SALES_ERROR_CODES.RIGHT_POST);
             }
+            const till = await this.till.resolveForMoney(tx, {
+                companyId: row.srCompanyId,
+                branchId: row.srBranchId,
+                sessionId: row.srSessionId,
+                field: 'srSessionId',
+            });
+            if (till) {
+                await this.stampTillSession(tx, row, till, ctx.actorName);
+            }
             const items = await this.store.loadItems(tx, row);
             const g = (0, posting_types_1.createGuardContext)({
                 overrides: dto.overrides ?? [],
@@ -263,6 +275,21 @@ let SaleReturnService = class SaleReturnService {
             this.gst.enqueueAfterPost(fire);
         }
         return this.get(this.keys(dto));
+    }
+    async stampTillSession(tx, row, till, actorName) {
+        if (row.srSessionId !== till.tssId || row.srCounterId !== till.tssCounterId) {
+            await tx.$executeRaw `
+        UPDATE sales.sale_return
+           SET sr_session_id  = ${till.tssId}::uuid,
+               sr_counter_id  = ${till.tssCounterId}::uuid,
+               sr_modified_on = now(),
+               sr_modified_by = ${actorName}
+         WHERE sr_id = ${row.srId}::uuid
+           AND sr_acc_year = ${row.srAccYear}::char(9)`;
+            row.srSessionId = till.tssId;
+            row.srCounterId = till.tssCounterId;
+        }
+        await this.till.stampTenderRows(tx, till, { srcDocType: 'SALE_RETURN', srcDocId: row.srId, accYear: row.srAccYear }, actorName);
     }
     async ctxOf(tx, row) {
         return this.salesContext.resolve({
@@ -479,7 +506,7 @@ let SaleReturnService = class SaleReturnService {
             charges: charges.map((c) => ({
                 ledgerId: c.cdLedgerCode,
                 amount: (0, sales_doc_utils_1.num)(c.cdAmount),
-                separatelyPosted: c.cdSepPost,
+                separatelyPosted: (0, sales_leg_sources_1.chargePostsSeparately)(c),
                 cgst: (0, sales_doc_utils_1.num)(c.cdCgstAmt),
                 sgst: (0, sales_doc_utils_1.num)(c.cdSgstAmt),
                 igst: (0, sales_doc_utils_1.num)(c.cdIgstAmt),
@@ -684,14 +711,13 @@ let SaleReturnService = class SaleReturnService {
     }
     registerDoc(row, items, charges, voucherId, voucherNo, nature, actor) {
         const d = (k) => (0, sales_doc_utils_1.num)(row[k]);
-        const other = charges
-            .filter((c) => c.cdSepPost)
-            .reduce((t, c) => t +
-            (0, sales_doc_utils_1.num)(c.cdAmount) +
+        const split = (0, sales_leg_sources_1.splitRegisterCharges)(charges
+            .filter((c) => (0, sales_leg_sources_1.chargePostsSeparately)(c))
+            .map((c) => (0, sales_doc_utils_1.num)(c.cdAmount) +
             (0, sales_doc_utils_1.num)(c.cdCgstAmt) +
             (0, sales_doc_utils_1.num)(c.cdSgstAmt) +
             (0, sales_doc_utils_1.num)(c.cdIgstAmt) +
-            (0, sales_doc_utils_1.num)(c.cdCessAmt), 0);
+            (0, sales_doc_utils_1.num)(c.cdCessAmt)));
         const lines = items.map((i) => {
             const n = (k) => (0, sales_doc_utils_1.num)(i[k]);
             const tax = n('sriCgstAmt') + n('sriSgstAmt') + n('sriIgstAmt') + n('sriCessAmt');
@@ -755,8 +781,9 @@ let SaleReturnService = class SaleReturnService {
             partyGstType: row.srCustGstType,
             partyGstin: (row.srCustGstin ?? '').trim() || null,
             grossValue: d('srGrossAmt'),
-            discountValue: d('srDiscAmt') ||
-                d('srItemDisc') + d('srSplDisc') + d('srSchDisc') + d('srBillSchDisc') + d('srCashDisc'),
+            discountValue: (0, sales_doc_utils_1.round2)((d('srDiscAmt') ||
+                d('srItemDisc') + d('srSplDisc') + d('srSchDisc') + d('srBillSchDisc') + d('srCashDisc')) +
+                split.deduction),
             taxableValue: d('srTaxableAmt'),
             cgstValue: d('srCgstAmt'),
             sgstValue: d('srSgstAmt'),
@@ -764,7 +791,7 @@ let SaleReturnService = class SaleReturnService {
             cessValue: d('srCessAmt'),
             stateCessValue: 0,
             tcsValue: 0,
-            otherCharge: (0, sales_doc_utils_1.round2)(other),
+            otherCharge: split.other,
             roundOff: d('srRoundOff'),
             billValue: d('srReturnAmt'),
             remarks: row.srReturnReason,
@@ -1062,7 +1089,8 @@ exports.SaleReturnService = SaleReturnService = __decorate([
         gst_gateway_service_1.GstGatewayService,
         audit_log_service_1.AuditLogService,
         charge_detail_service_1.ChargeDetailService,
-        tender_detail_service_1.TenderDetailService])
+        tender_detail_service_1.TenderDetailService,
+        till_session_service_1.TillSessionService])
 ], SaleReturnService);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 function isUuid(v) {

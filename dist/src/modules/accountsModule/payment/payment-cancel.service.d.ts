@@ -1,3 +1,4 @@
+import { TillSessionService } from '../../till/services/till-session.service';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
 import { BillBalanceRecomputeService } from '../billBalance/bill-balance-recompute.service';
@@ -9,7 +10,8 @@ export declare class PaymentCancelService {
     private readonly requestContext;
     private readonly paymentService;
     private readonly recompute;
-    constructor(prisma: PrismaService, requestContext: RequestContextService, paymentService: PaymentService, recompute: BillBalanceRecomputeService);
+    private readonly till;
+    constructor(prisma: PrismaService, requestContext: RequestContextService, paymentService: PaymentService, recompute: BillBalanceRecomputeService, till: TillSessionService);
     cancel(dto: CancelPaymentDto): Promise<PaymentCancelPayload>;
     private reverseVoucher;
     private cancelCheques;

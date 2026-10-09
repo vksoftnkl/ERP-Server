@@ -26,6 +26,8 @@ const transaction_module_1 = require("../modules/accountsModule/transaction/tran
 const opening_balance_module_1 = require("../modules/accountsModule/openingBalance/opening-balance.module");
 const receipt_module_1 = require("../modules/accountsModule/receipt/receipt.module");
 const payment_module_1 = require("../modules/accountsModule/payment/payment.module");
+const expense_module_1 = require("../modules/accountsModule/expense/expense.module");
+const tender_settlement_module_1 = require("../modules/accountsModule/tenderSettlement/tender-settlement.module");
 const cheques_module_1 = require("../modules/accountsModule/cheques/cheques.module");
 const vouchers_module_1 = require("../modules/accountsModule/vouchers/vouchers.module");
 const issued_cheques_module_1 = require("../modules/accountsModule/issuedCheques/issued-cheques.module");
@@ -386,6 +388,24 @@ exports.swaggerModuleDocuments = [
             'of its own dated the cheque. TDS is seeded server-side from accounts.tds_rates. The ' +
             'remainder is always held as an ADVANCE (DR) bill',
         include: [payment_module_1.PaymentModule],
+    },
+    {
+        path: 'expenses',
+        title: 'Expense Voucher API',
+        description: 'An expense paid by one or more tenders (ExpV, menu 277): expense-ledger lines, an optional supplier ' +
+            'GST bill (input tax + the GSTR-2 row), and the tenders. On a till device the cash is the live ' +
+            'session’s drawer; on a back-office device in a till branch it comes from the default safe. ' +
+            'DRAFT → POSTED → CANCELLED (a mirror in the Rev series)',
+        include: [expense_module_1.ExpenseModule],
+    },
+    {
+        path: 'tender-settlement',
+        title: 'Tender Settlement API',
+        description: 'Non-cash tender control (menu 278): a card / UPI / wallet provider statement imported with the ' +
+            'tender’s column map, matched to our tender rows (reference, approval code, amount + time), posted ' +
+            'as one TSet per payout; the not-received rows written off and the unexplained lines resolved ' +
+            '(OVERRIDE stands in for their approvals until the approval gate ships)',
+        include: [tender_settlement_module_1.TenderSettlementModule],
     },
     {
         path: 'vouchers',

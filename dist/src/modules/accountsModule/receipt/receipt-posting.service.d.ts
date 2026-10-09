@@ -6,13 +6,15 @@ import { OpenItemsService } from './open-items.service';
 import { ReceiptService } from './receipt.service';
 import { PostReceiptDto } from './dto/post-receipt.dto';
 import type { ReceiptPostPayload } from './types/receipt-api.types';
+import { TillSessionService } from '../../till/services/till-session.service';
 export declare class ReceiptPostingService {
     private readonly prisma;
     private readonly requestContext;
     private readonly receiptService;
     private readonly openItemsService;
     private readonly recompute;
-    constructor(prisma: PrismaService, requestContext: RequestContextService, receiptService: ReceiptService, openItemsService: OpenItemsService, recompute: BillBalanceRecomputeService);
+    private readonly till;
+    constructor(prisma: PrismaService, requestContext: RequestContextService, receiptService: ReceiptService, openItemsService: OpenItemsService, recompute: BillBalanceRecomputeService, till: TillSessionService);
     post(dto: PostReceiptDto): Promise<ReceiptPostPayload>;
     postInTransaction(tx: Prisma.TransactionClient, dto: PostReceiptDto, actor: string): Promise<ReceiptPostPayload>;
     private lockHeader;

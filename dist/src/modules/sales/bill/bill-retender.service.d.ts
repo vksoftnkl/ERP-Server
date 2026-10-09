@@ -8,6 +8,7 @@ import { BillService } from './bill.service';
 import { BillBalanceRecomputeService } from '../../accountsModule/billBalance/bill-balance-recompute.service';
 import type { RetenderBillDto } from './dto/bill-lifecycle.dto';
 import { type BillPayload } from './types/bill-api.types';
+import { TillSessionService } from '../../till/services/till-session.service';
 export declare class BillRetenderService {
     private readonly prisma;
     private readonly bills;
@@ -17,7 +18,8 @@ export declare class BillRetenderService {
     private readonly loyalty;
     private readonly audit;
     private readonly recompute;
-    constructor(prisma: PrismaService, bills: BillService, salesContext: SalesContextService, tenders: TenderDetailService, legs: VoucherPostingService, loyalty: LoyaltyLedgerService, audit: AuditLogService, recompute: BillBalanceRecomputeService);
+    private readonly till;
+    constructor(prisma: PrismaService, bills: BillService, salesContext: SalesContextService, tenders: TenderDetailService, legs: VoucherPostingService, loyalty: LoyaltyLedgerService, audit: AuditLogService, recompute: BillBalanceRecomputeService, till: TillSessionService);
     retender(dto: RetenderBillDto): Promise<BillPayload>;
     private tenderScope;
 }

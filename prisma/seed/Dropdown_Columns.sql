@@ -1,4 +1,4 @@
--- Seed: fixed.dropdown_columns -- the column layout of every configured lookup popup (180 rows).
+-- Seed: fixed.dropdown_columns -- the column layout of every configured lookup popup (184 rows).
 --
 -- Runs after Dropdown_Details.sql -- dropdown_columns_dropdown_id is a foreign key
 -- into it, ON DELETE CASCADE.
@@ -258,6 +258,11 @@ SELECT v.* FROM (VALUES
     ,('01a0fc6c-80da-7382-ab1a-a2fbc56bc872', 62, 0, '#'                   , 'gpv_id'            , NULL                  , 'Text'   , 10.00 , NULL    , false, false, 'system')
     ,('01a0fc6c-80da-7d5c-9c0e-804aa40f1740', 62, 1, 'Code'                , 'gpv_code'          , NULL                  , 'Text'   , 25.00 , NULL    , true , true , 'system')
     ,('01a0fc6c-80db-7533-ae22-bb778c8bdc13', 62, 2, 'Provider'            , 'gpv_name'          , NULL                  , 'Text'   , 75.00 , NULL    , true , true , 'system')
+    -- ============ STAFF ADVANCE LEDGERS (id 63) ============
+    ,('01a1167a-d774-7402-be5f-b22da5352e2e', 63, 0, '#'                   , 'led_id'            , NULL                  , 'text'   , 10.00 , NULL    , false, false, 'system')
+    ,('01a1167a-d774-7411-909e-885e1ab3e261', 63, 1, 'Ledger'              , 'led_name'          , NULL                  , 'text'   , 65.00 , NULL    , true , true , 'system')
+    ,('01a1167a-d774-7416-a5ad-7c583d156436', 63, 2, 'Group'               , 'group_name'        , NULL                  , 'text'   , 25.00 , NULL    , true , true , 'system')
+    ,('01a1167a-d774-741a-8aa0-9bb0827f8dde', 63, 3, 'Short'               , 'led_short'         , NULL                  , 'text'   , 10.00 , NULL    , false, true , 'system')
 ) AS v(dropdown_columns_id, dropdown_columns_dropdown_id, dropdown_columns_no, dropdown_columns_name, dropdown_columns_sql_name, dropdown_columns_alias, dropdown_columns_data_type, dropdown_columns_width, dropdown_columns_allignment, dropdown_columns_visiblity, dropdown_columns_filter, dropdown_columns_created_by)
 WHERE NOT EXISTS (
   SELECT 1 FROM fixed.dropdown_columns existing

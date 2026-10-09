@@ -10,6 +10,7 @@ exports.partyDebitOf = partyDebitOf;
 exports.decimal = decimal;
 const client_1 = require("@prisma/client");
 const sales_doc_utils_1 = require("../posting/sales-doc.utils");
+const sales_leg_sources_1 = require("../posting/sales-leg.sources");
 const bill_temp_credit_1 = require("./bill-temp-credit");
 function snapshotFromRows(bill, items, charges, tenders) {
     return {
@@ -123,7 +124,7 @@ function snapshotFromRows(bill, items, charges, tenders) {
             ledgerId: c.cdLedgerCode,
             name: c.cdChgName,
             amount: (0, sales_doc_utils_1.num)(c.cdAmount),
-            separatelyPosted: c.cdSepPost,
+            separatelyPosted: (0, sales_leg_sources_1.chargePostsSeparately)(c),
             beforeTax: c.cdBeforeTax,
             cgst: (0, sales_doc_utils_1.num)(c.cdCgstAmt),
             sgst: (0, sales_doc_utils_1.num)(c.cdSgstAmt),
@@ -278,7 +279,7 @@ function snapshotFromDto(dto, tenderMasters) {
             ledgerId: c.cdLedgerCode ?? null,
             name: c.cdChgName ?? null,
             amount: (0, sales_doc_utils_1.num)(c.cdAmount),
-            separatelyPosted: c.cdSepPost ?? false,
+            separatelyPosted: (0, sales_leg_sources_1.chargePostsSeparately)(c),
             beforeTax: c.cdBeforeTax ?? false,
             cgst: (0, sales_doc_utils_1.num)(c.cdCgstAmt),
             sgst: (0, sales_doc_utils_1.num)(c.cdSgstAmt),

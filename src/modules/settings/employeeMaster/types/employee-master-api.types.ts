@@ -3,7 +3,8 @@ import type {
   ModuleApiErrorResponse,
   ModuleApiSuccessResponse,
 } from 'src/common/types/module-api.types';
-export type EmployeeMasterErrorDetail = ModuleApiErrorDetail;
+// `code` names a refusal the client branches on, e.g. EMP_LEDGER_HAS_BALANCE on delete.
+export type EmployeeMasterErrorDetail = ModuleApiErrorDetail & { code?: string };
 export type EmployeeMasterErrorResponse = ModuleApiErrorResponse<EmployeeMasterErrorDetail>;
 export type EmployeeMasterSuccessResponse<
   T,
@@ -60,6 +61,7 @@ export interface EmployeeMasterPayload {
   empPfNo: string | null;
   empEsiNo: string | null;
   empLoanLedgerId: string | null;
+  empLoanLedgerName?: string | null;
   empPhotoUrl: string | null;
   empPhoto: string | null;
   empRemarks: string | null;
@@ -70,4 +72,12 @@ export interface EmployeeMasterPayload {
   empCreatedBy: string | null;
   empModifiedOn: string;
   empModifiedBy: string | null;
+}
+
+/** POST /employee-masters/backfill-staff-advance-ledgers (notes 95 §A.7). */
+export interface EmployeeLedgerBackfillReport {
+  /** Live employees that had no staff advance ledger. */
+  walked: number;
+  created: Array<{ empId: string; empName: string; ledId: string; ledName: string }>;
+  failed: Array<{ empId: string; empName: string; message: string }>;
 }

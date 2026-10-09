@@ -270,7 +270,14 @@ export class SaveEmployeeMasterDto {
   @NullableString(30)
   empEsiNo?: string | null;
 
-  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description:
+      'Staff advance ledger (notes 95). Absent or null: keep the current one, or create ' +
+      '"<empName> - Staff Advance" in Loans & Advances (Asset) when there is none. Given: a live ' +
+      'ledger in that group or a sub-group, of this company or shared, and no other employee’s.',
+  })
   @NullableUuid()
   empLoanLedgerId?: string | null;
 

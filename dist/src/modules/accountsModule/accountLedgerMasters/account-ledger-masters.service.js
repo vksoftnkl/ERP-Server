@@ -146,30 +146,7 @@ let AccountLedgerMastersService = class AccountLedgerMastersService {
         });
     }
     async ensureLedgerHasNoOwner(tx, ledId, ledName) {
-        const [customer, supplier, saleAgent] = await Promise.all([
-            tx.customer.findFirst({
-                where: { cusId: ledId, cusIsDeleted: false },
-                select: { cusName: true },
-            }),
-            tx.supplier.findFirst({
-                where: { supId: ledId, supIsDeleted: false },
-                select: { supName: true },
-            }),
-            tx.saleAgent.findFirst({
-                where: { saId: ledId, saIsDeleted: false },
-                select: { saName: true },
-            }),
-        ]);
-        const owners = [];
-        if (customer) {
-            owners.push({ role: 'customer', name: customer.cusName || ledName, master: 'Customer' });
-        }
-        if (supplier) {
-            owners.push({ role: 'supplier', name: supplier.supName, master: 'Supplier' });
-        }
-        if (saleAgent) {
-            owners.push({ role: 'sale agent', name: saleAgent.saName, master: 'Sale Agent' });
-        }
+        const owners = await this.findLedgerOwners(tx, ledId, ledName);
         if (owners.length === 0) {
             return;
         }
@@ -182,6 +159,40 @@ let AccountLedgerMastersService = class AccountLedgerMastersService {
                 message: `This ledger belongs to ${roles}. Delete it from the ${masters} ${owners.length === 1 ? 'master' : 'masters'}.`,
             },
         ]);
+    }
+    async findLedgerOwners(tx, ledId, ledName) {
+        const [customer, supplier, saleAgent, employee] = await Promise.all([
+            tx.customer.findFirst({
+                where: { cusId: ledId, cusIsDeleted: false },
+                select: { cusName: true },
+            }),
+            tx.supplier.findFirst({
+                where: { supId: ledId, supIsDeleted: false },
+                select: { supName: true },
+            }),
+            tx.saleAgent.findFirst({
+                where: { saId: ledId, saIsDeleted: false },
+                select: { saName: true },
+            }),
+            tx.employeeMaster.findFirst({
+                where: { empLoanLedgerId: ledId, empIsDeleted: false },
+                select: { empName: true },
+            }),
+        ]);
+        const owners = [];
+        if (customer) {
+            owners.push({ role: 'customer', name: customer.cusName || ledName, master: 'Customer' });
+        }
+        if (supplier) {
+            owners.push({ role: 'supplier', name: supplier.supName, master: 'Supplier' });
+        }
+        if (saleAgent) {
+            owners.push({ role: 'sale agent', name: saleAgent.saName, master: 'Sale Agent' });
+        }
+        if (employee) {
+            owners.push({ role: 'employee', name: employee.empName, master: 'Employee' });
+        }
+        return owners;
     }
     async createLedger(saveAccountLedgerMasterDto) {
         try {

@@ -53,6 +53,14 @@ let EmployeeMasterController = class EmployeeMasterController {
             data,
         };
     }
+    async backfillStaffAdvanceLedgers() {
+        const data = await this.employeeMasterService.backfillStaffAdvanceLedgers();
+        return {
+            success: true,
+            message: `${data.created.length} staff advance ledgers created for ${data.walked} employees${data.failed.length ? `, ${data.failed.length} failed` : ''}`,
+            data,
+        };
+    }
 };
 exports.EmployeeMasterController = EmployeeMasterController;
 __decorate([
@@ -84,16 +92,34 @@ __decorate([
 __decorate([
     (0, common_1.Delete)('delete'),
     (0, common_1.Version)(api_version_1.API_VERSION),
-    (0, swagger_1.ApiOperation)({ summary: 'Soft delete employee by id' }),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Soft delete employee by id',
+        description: 'Deletes the staff advance ledger with the employee. Refused with 409 ' +
+            'EMP_LEDGER_HAS_BALANCE (errors[0].code) while that ledger has a balance.',
+    }),
     (0, swagger_1.ApiQuery)({ name: 'empId', schema: { type: 'string', format: 'uuid' } }),
     (0, swagger_1.ApiOkResponse)({ type: employee_master_response_dto_1.EmployeeMasterSuccessDeleteDto }),
     (0, swagger_1.ApiBadRequestResponse)({ type: employee_master_response_dto_1.EmployeeMasterErrorResponseDto }),
+    (0, swagger_1.ApiConflictResponse)({ type: employee_master_response_dto_1.EmployeeMasterErrorResponseDto }),
     (0, swagger_1.ApiNotFoundResponse)({ type: employee_master_response_dto_1.EmployeeMasterErrorResponseDto }),
     __param(0, (0, common_1.Query)('empId', new common_1.ParseUUIDPipe({ version: '7' }))),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", Promise)
 ], EmployeeMasterController.prototype, "remove", null);
+__decorate([
+    (0, common_1.Post)('backfill-staff-advance-ledgers'),
+    (0, common_1.Version)(api_version_1.API_VERSION),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Create the staff advance ledger of every live employee that has none (notes 95)',
+        description: 'One-off backfill through the same path an employee save takes. One transaction per ' +
+            'employee: a failure is reported and the rest still land. A second run walks nobody.',
+    }),
+    (0, swagger_1.ApiCreatedResponse)({ type: employee_master_response_dto_1.EmployeeLedgerBackfillSuccessDto }),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", []),
+    __metadata("design:returntype", Promise)
+], EmployeeMasterController.prototype, "backfillStaffAdvanceLedgers", null);
 exports.EmployeeMasterController = EmployeeMasterController = __decorate([
     (0, swagger_1.ApiTags)('Employee Master'),
     (0, swagger_1.ApiBearerAuth)('access-token'),

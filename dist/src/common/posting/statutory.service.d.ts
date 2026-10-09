@@ -44,5 +44,5 @@ export declare class StatutoryService {
         cutoff: string | null;
         passed: boolean;
     }>;
-    private toLimit;
 }
+export declare function resolveStatutoryLimit(client: Prisma.TransactionClient | PrismaService, companyId: string, code: string, onDate: string, appliesTo?: StatutoryAppliesTo, aatoClass?: AatoClass | null): Promise<StatutoryLimit | null>;

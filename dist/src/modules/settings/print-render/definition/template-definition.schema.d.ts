@@ -91,8 +91,8 @@ export declare const textElementSchema: z.ZodObject<{
     }, z.core.$strip>>;
     align: z.ZodDefault<z.ZodEnum<{
         left: "left";
-        center: "center";
         right: "right";
+        center: "center";
     }>>;
     vAlign: z.ZodDefault<z.ZodEnum<{
         top: "top";
@@ -132,8 +132,8 @@ export declare const fieldElementSchema: z.ZodObject<{
     }, z.core.$strip>>;
     align: z.ZodDefault<z.ZodEnum<{
         left: "left";
-        center: "center";
         right: "right";
+        center: "center";
     }>>;
     vAlign: z.ZodDefault<z.ZodEnum<{
         top: "top";
@@ -286,8 +286,8 @@ export declare const qrcodeElementSchema: z.ZodObject<{
     size: z.ZodNumber;
     value: z.ZodString;
     errorCorrection: z.ZodDefault<z.ZodEnum<{
-        L: "L";
         M: "M";
+        L: "L";
         Q: "Q";
         H: "H";
     }>>;
@@ -461,8 +461,8 @@ export declare const elementSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     }, z.core.$strip>>;
     align: z.ZodDefault<z.ZodEnum<{
         left: "left";
-        center: "center";
         right: "right";
+        center: "center";
     }>>;
     vAlign: z.ZodDefault<z.ZodEnum<{
         top: "top";
@@ -501,8 +501,8 @@ export declare const elementSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     }, z.core.$strip>>;
     align: z.ZodDefault<z.ZodEnum<{
         left: "left";
-        center: "center";
         right: "right";
+        center: "center";
     }>>;
     vAlign: z.ZodDefault<z.ZodEnum<{
         top: "top";
@@ -650,8 +650,8 @@ export declare const elementSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     size: z.ZodNumber;
     value: z.ZodString;
     errorCorrection: z.ZodDefault<z.ZodEnum<{
-        L: "L";
         M: "M";
+        L: "L";
         Q: "Q";
         H: "H";
     }>>;
@@ -835,8 +835,8 @@ export declare const bandSchema: z.ZodObject<{
         }, z.core.$strip>>;
         align: z.ZodDefault<z.ZodEnum<{
             left: "left";
-            center: "center";
             right: "right";
+            center: "center";
         }>>;
         vAlign: z.ZodDefault<z.ZodEnum<{
             top: "top";
@@ -875,8 +875,8 @@ export declare const bandSchema: z.ZodObject<{
         }, z.core.$strip>>;
         align: z.ZodDefault<z.ZodEnum<{
             left: "left";
-            center: "center";
             right: "right";
+            center: "center";
         }>>;
         vAlign: z.ZodDefault<z.ZodEnum<{
             top: "top";
@@ -1024,8 +1024,8 @@ export declare const bandSchema: z.ZodObject<{
         size: z.ZodNumber;
         value: z.ZodString;
         errorCorrection: z.ZodDefault<z.ZodEnum<{
-            L: "L";
             M: "M";
+            L: "L";
             Q: "Q";
             H: "H";
         }>>;
@@ -1243,8 +1243,8 @@ export declare const templateDefinitionSchema: z.ZodObject<{
             }, z.core.$strip>>;
             align: z.ZodDefault<z.ZodEnum<{
                 left: "left";
-                center: "center";
                 right: "right";
+                center: "center";
             }>>;
             vAlign: z.ZodDefault<z.ZodEnum<{
                 top: "top";
@@ -1283,8 +1283,8 @@ export declare const templateDefinitionSchema: z.ZodObject<{
             }, z.core.$strip>>;
             align: z.ZodDefault<z.ZodEnum<{
                 left: "left";
-                center: "center";
                 right: "right";
+                center: "center";
             }>>;
             vAlign: z.ZodDefault<z.ZodEnum<{
                 top: "top";
@@ -1432,8 +1432,8 @@ export declare const templateDefinitionSchema: z.ZodObject<{
             size: z.ZodNumber;
             value: z.ZodString;
             errorCorrection: z.ZodDefault<z.ZodEnum<{
-                L: "L";
                 M: "M";
+                L: "L";
                 Q: "Q";
                 H: "H";
             }>>;

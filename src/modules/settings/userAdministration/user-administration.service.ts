@@ -1,6 +1,4 @@
 import { Injectable } from '@nestjs/common';
-import { randomBytes, scrypt as nodeScrypt } from 'node:crypto';
-import { promisify } from 'node:util';
 import { Prisma, UserMaster, UserMenus } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
@@ -15,17 +13,15 @@ import {
   SettingsWriteClient,
   throwOnUniqueConstraintError,
   throwSettingsBadRequest,
+  throwSettingsConflict,
   throwSettingsNotFound,
 } from 'src/common/utils/module-service.utils';
+import { hashSecret } from 'src/common/utils/secret-hash.utils';
 import { UserType } from './types/user-administration.enum';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
 
 const USER_MASTER_TABLE_NAME = 'user_master';
 const USER_ADMIN_AUDIT_SCREEN_NAME = 'User Administration';
-const PASSWORD_SALT_BYTES = 16;
-const PASSWORD_KEY_LENGTH = 64;
-
-const scryptAsync = promisify(nodeScrypt);
 
 type UserAdminWriteClient = SettingsWriteClient;
 
@@ -66,9 +62,13 @@ export class UserAdministrationService {
 
   private async resolveRelatedNames(
     client: UserAdminWriteClient,
-    record: Pick<UserMaster, 'usrCompanyId' | 'usrBranchId'>,
-  ): Promise<{ usrCompanyName: string | null; usrBranchName: string | null }> {
-    const [company, branch] = await Promise.all([
+    record: Pick<UserMaster, 'usrCompanyId' | 'usrBranchId' | 'usrEmployeeId'>,
+  ): Promise<{
+    usrCompanyName: string | null;
+    usrBranchName: string | null;
+    usrEmployeeName: string | null;
+  }> {
+    const [company, branch, employee] = await Promise.all([
       record.usrCompanyId
         ? client.company.findFirst({
             where: { compId: record.usrCompanyId },
@@ -81,11 +81,19 @@ export class UserAdministrationService {
             select: { brName: true },
           })
         : null,
+      // Not filtered on emp_is_deleted: a link to an employee deleted since still shows who it was.
+      record.usrEmployeeId
+        ? client.employeeMaster.findFirst({
+            where: { empId: record.usrEmployeeId },
+            select: { empName: true },
+          })
+        : null,
     ]);
 
     return {
       usrCompanyName: company?.compName ?? null,
       usrBranchName: branch?.brName ?? null,
+      usrEmployeeName: employee?.empName ?? null,
     };
   }
 
@@ -151,9 +159,14 @@ export class UserAdministrationService {
     try {
       return this.prisma.$transaction(async (tx) => {
         await this.ensureLoginNameUnique(dto.usrLoginName, undefined, tx);
+        await this.ensureEmployeeLinkable(tx, {
+          employeeId: dto.usrEmployeeId ?? null,
+          companyId: dto.usrCompanyId ?? null,
+          isActive: dto.usrIsActive ?? true,
+        });
 
         const now = new Date();
-        const passwordHash = await this.hashPassword(dto.usrPassword!);
+        const passwordHash = await hashSecret(dto.usrPassword!);
 
         const data: Prisma.UserMasterUncheckedCreateInput = {
           usrLoginName: dto.usrLoginName.trim(),
@@ -164,6 +177,7 @@ export class UserAdministrationService {
         };
 
         this.applyOptionalUserFields(data, dto);
+        await this.applyPin(data, dto);
 
         const created = await tx.userMaster.create({ data });
         const menus = await this.replaceUserMenus(
@@ -213,6 +227,14 @@ export class UserAdministrationService {
         }
 
         await this.ensureLoginNameUnique(dto.usrLoginName, usrId, tx);
+        // An omitted key keeps the stored value, so judge the link the save will leave behind.
+        await this.ensureEmployeeLinkable(tx, {
+          employeeId: dto.usrEmployeeId !== undefined ? dto.usrEmployeeId : existing.usrEmployeeId,
+          companyId: dto.usrCompanyId !== undefined ? dto.usrCompanyId : existing.usrCompanyId,
+          isActive: dto.usrIsActive ?? existing.usrIsActive,
+          usrId,
+          previous: { employeeId: existing.usrEmployeeId, isActive: existing.usrIsActive },
+        });
 
         const now = new Date();
         const data: Prisma.UserMasterUncheckedUpdateInput = {
@@ -222,12 +244,13 @@ export class UserAdministrationService {
         };
 
         if (dto.usrPassword?.trim()) {
-          data.usrPasswordHash = await this.hashPassword(dto.usrPassword.trim());
+          data.usrPasswordHash = await hashSecret(dto.usrPassword.trim());
           data.usrPasswordChangedOn = now;
           data.usrMustChangePassword = false;
         }
 
         this.applyOptionalUserFields(data, dto);
+        await this.applyPin(data, dto);
 
         const updated = await tx.userMaster.update({ where: { usrId }, data });
 
@@ -377,6 +400,93 @@ export class UserAdministrationService {
     }
   }
 
+  // Notes 95 — the till follows a user to an employee (usr_employee_id) and on to the staff
+  // advance ledger a shortage is recovered to, so the link must name a live employee the user's
+  // company can see, and only one active user may be any one employee. That second rule is a
+  // service check, not an index: two offline sites could each link one, and sync must not fail.
+  // An employee with no company is unscoped and may be linked from any company.
+  // `previous` is the stored link on an update (absent on create).
+  private async ensureEmployeeLinkable(
+    tx: UserAdminWriteClient,
+    link: {
+      employeeId: string | null;
+      companyId: string | null;
+      isActive: boolean;
+      usrId?: string;
+      previous?: { employeeId: string | null; isActive: boolean };
+    },
+  ): Promise<void> {
+    if (!link.employeeId) {
+      return;
+    }
+    const employee = await tx.employeeMaster.findFirst({
+      where: { empId: link.employeeId, empIsDeleted: false },
+      select: { empName: true, empCompanyId: true, empIsActive: true },
+    });
+    if (!employee) {
+      throwSettingsBadRequest<UserAdminErrorDetail>('Employee does not exist', [
+        {
+          field: 'usrEmployeeId',
+          message: `No active employee found with id ${link.employeeId}`,
+        },
+      ]);
+    }
+    if (link.companyId && employee.empCompanyId && employee.empCompanyId !== link.companyId) {
+      throwSettingsBadRequest<UserAdminErrorDetail>('Employee belongs to another company', [
+        {
+          field: 'usrEmployeeId',
+          message: `Employee "${employee.empName}" is not an employee of the user's company`,
+        },
+      ]);
+    }
+    // An inactive user holds the link without using it; re-activating them runs this again.
+    if (!link.isActive) {
+      return;
+    }
+    // Till plan §4: a new link, or a user made active again, needs an employee still on the
+    // rolls. A link that stands unchanged to an employee who has since left is kept, so that
+    // user can still be edited or switched off.
+    const linkIsNew =
+      !link.previous || link.previous.employeeId !== link.employeeId || !link.previous.isActive;
+    if (linkIsNew && !employee.empIsActive) {
+      throwSettingsBadRequest<UserAdminErrorDetail>('Employee is not active', [
+        {
+          field: 'usrEmployeeId',
+          message: `Employee "${employee.empName}" is not active`,
+        },
+      ]);
+    }
+    const other = await tx.userMaster.findFirst({
+      where: {
+        usrEmployeeId: link.employeeId,
+        usrIsDeleted: false,
+        usrIsActive: true,
+        ...(link.usrId ? { NOT: { usrId: link.usrId } } : {}),
+      },
+      select: { usrLoginName: true },
+    });
+    if (other) {
+      throwSettingsConflict<UserAdminErrorDetail>('Employee is linked to another user', [
+        {
+          field: 'usrEmployeeId',
+          message: `Employee "${employee.empName}" is already linked to active user '${other.usrLoginName}'`,
+        },
+      ]);
+    }
+  }
+
+  // usrPin: absent keeps the stored PIN, "" or null clears it, digits replace it. Same hash
+  // format as the password (secret-hash.utils), so the till approval check has one verifier.
+  private async applyPin(
+    data: Prisma.UserMasterUncheckedCreateInput | Prisma.UserMasterUncheckedUpdateInput,
+    dto: SaveUserAdministrationDto,
+  ): Promise<void> {
+    if (dto.usrPin === undefined) {
+      return;
+    }
+    data.usrPinHash = dto.usrPin ? await hashSecret(dto.usrPin) : null;
+  }
+
   private applyOptionalUserFields(
     data: Prisma.UserMasterUncheckedCreateInput | Prisma.UserMasterUncheckedUpdateInput,
     dto: SaveUserAdministrationDto,
@@ -406,12 +516,6 @@ export class UserAdministrationService {
     if (dto.usrNotes !== undefined) data.usrNotes = dto.usrNotes;
   }
 
-  private async hashPassword(plain: string): Promise<string> {
-    const salt = randomBytes(PASSWORD_SALT_BYTES).toString('hex');
-    const derived = (await scryptAsync(plain, salt, PASSWORD_KEY_LENGTH)) as Buffer;
-    return `scrypt$${salt}$${derived.toString('hex')}`;
-  }
-
   private toPayload(record: UserMaster, menus: UserMenus[]): UserAdminPayload {
     return {
       ...this.toPayloadWithoutMenus(record),
@@ -436,6 +540,7 @@ export class UserAdministrationService {
       usrMustChangePassword: record.usrMustChangePassword,
       usrPasswordExpiresOn: record.usrPasswordExpiresOn?.toISOString() ?? null,
       usrPasswordChangedOn: record.usrPasswordChangedOn?.toISOString() ?? null,
+      usrPinSet: Boolean(record.usrPinHash),
       usrType:
         record.usrType && (Object.values(UserType) as string[]).includes(record.usrType)
           ? (record.usrType as UserType)

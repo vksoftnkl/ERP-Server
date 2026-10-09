@@ -9,8 +9,9 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.PaymentDeleteSuccessDto = exports.PaymentDeletePayloadDto = exports.PaymentCancelSuccessDto = exports.PaymentCancelPayloadDto = exports.PaymentAmendSuccessDto = exports.PaymentAmendPayloadDto = exports.PaymentAmendUnwoundDto = exports.PaymentPostSuccessDto = exports.PaymentPostPayloadDto = exports.PaymentIssuedLeafDto = exports.PaymentHeaderSuccessDto = exports.PaymentSuccessDto = exports.PaymentPayloadDto = exports.PaymentDraftSuccessDto = exports.PaymentDraftPayloadDto = exports.PaymentChequeDto = exports.PaymentOtherLineDto = exports.PaymentTenderDto = exports.PaymentTenderChequeDto = exports.PaymentBeneficiaryResponseDto = exports.PaymentPartyContextSuccessDto = exports.PaymentPartyContextPayloadDto = exports.PaymentPartyContextSummaryDto = exports.PartyChequeOutDto = exports.PartyRecentPaymentDto = exports.PaymentOpenItemsSuccessDto = exports.PaymentOpenItemsPayloadDto = exports.PaymentOpenItemsSummaryDto = exports.PaymentOpenItemsPartyDto = exports.PaymentBankDto = exports.PayableBillDto = exports.PaymentHeaderDto = exports.PaymentErrorResponseDto = exports.DuplicateCheckSuccessDto = exports.AdjacentVoucherSuccessDto = void 0;
+exports.PaymentDeleteSuccessDto = exports.PaymentDeletePayloadDto = exports.PaymentCancelSuccessDto = exports.PaymentCancelPayloadDto = exports.PaymentAmendSuccessDto = exports.PaymentAmendPayloadDto = exports.PaymentAmendUnwoundDto = exports.PaymentPostSuccessDto = exports.PaymentPostPayloadDto = exports.PaymentPostWarningDto = exports.PaymentIssuedLeafDto = exports.PaymentHeaderSuccessDto = exports.PaymentSuccessDto = exports.PaymentPayloadDto = exports.PaymentDraftSuccessDto = exports.PaymentDraftPayloadDto = exports.PaymentChequeDto = exports.PaymentOtherLineDto = exports.PaymentTenderDto = exports.PaymentTenderChequeDto = exports.PaymentBeneficiaryResponseDto = exports.PaymentPartyContextSuccessDto = exports.PaymentPartyContextPayloadDto = exports.PaymentPartyContextSummaryDto = exports.PartyChequeOutDto = exports.PartyRecentPaymentDto = exports.PaymentOpenItemsSuccessDto = exports.PaymentOpenItemsPayloadDto = exports.PaymentOpenItemsSummaryDto = exports.PaymentOpenItemsPartyDto = exports.PaymentBankDto = exports.PayableBillDto = exports.PaymentHeaderDto = exports.PaymentErrorResponseDto = exports.DuplicateCheckSuccessDto = exports.AdjacentVoucherSuccessDto = void 0;
 const swagger_1 = require("@nestjs/swagger");
+const till_response_dto_1 = require("../../../till/dto/till-response.dto");
 const receipt_response_dto_1 = require("../../receipt/dto/receipt-response.dto");
 Object.defineProperty(exports, "AdjacentVoucherSuccessDto", { enumerable: true, get: function () { return receipt_response_dto_1.AdjacentVoucherSuccessDto; } });
 Object.defineProperty(exports, "DuplicateCheckSuccessDto", { enumerable: true, get: function () { return receipt_response_dto_1.DuplicateCheckSuccessDto; } });
@@ -831,10 +832,45 @@ __decorate([
     (0, swagger_1.ApiProperty)({ example: 'KVB-2026-A' }),
     __metadata("design:type", String)
 ], PaymentIssuedLeafDto.prototype, "bookNo", void 0);
+class PaymentPostWarningDto {
+    code;
+    level;
+    message;
+    field;
+    overridable;
+}
+exports.PaymentPostWarningDto = PaymentPostWarningDto;
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        example: 'STATUTORY_40A3',
+        description: 'STATUTORY_40A3 · TILL_APPROVAL_REQUIRED',
+    }),
+    __metadata("design:type", String)
+], PaymentPostWarningDto.prototype, "code", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 'WARN', enum: ['INFO', 'WARN'] }),
+    __metadata("design:type", String)
+], PaymentPostWarningDto.prototype, "level", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        example: 'Cash paid to Ravi Traders on 2026-10-08 comes to 12000.00, above the 40A(3) limit of 10000.00 …',
+    }),
+    __metadata("design:type", String)
+], PaymentPostWarningDto.prototype, "message", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ example: 'tenders' }),
+    __metadata("design:type", String)
+], PaymentPostWarningDto.prototype, "field", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: false }),
+    __metadata("design:type", Boolean)
+], PaymentPostWarningDto.prototype, "overridable", void 0);
 class PaymentPostPayloadDto extends PaymentPayloadDto {
     numberedVouchers;
     billsAfter;
     totalOnAccount;
+    warnings;
+    approval;
     cheques;
 }
 exports.PaymentPostPayloadDto = PaymentPostPayloadDto;
@@ -850,6 +886,23 @@ __decorate([
     (0, swagger_1.ApiProperty)({ example: 0 }),
     __metadata("design:type", Number)
 ], PaymentPostPayloadDto.prototype, "totalOnAccount", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        type: PaymentPostWarningDto,
+        isArray: true,
+        description: 'STATUTORY_40A3 (cash to one payee in a day above the 40A(3) limit; a company REFUSE row ' +
+            'answers 422 instead) and TILL_APPROVAL_REQUIRED (INFO, the CASH_PAYMENT rule).',
+    }),
+    __metadata("design:type", Array)
+], PaymentPostPayloadDto.prototype, "warnings", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        type: till_response_dto_1.TillApprovalNeedDto,
+        nullable: true,
+        description: 'In a till session: what the CASH_PAYMENT rule would ask. Reported until phase 3.',
+    }),
+    __metadata("design:type", Object)
+], PaymentPostPayloadDto.prototype, "approval", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)({
         type: PaymentIssuedLeafDto,

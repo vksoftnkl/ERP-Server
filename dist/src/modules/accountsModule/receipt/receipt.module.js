@@ -19,12 +19,13 @@ const receipt_posting_service_1 = require("./receipt-posting.service");
 const receipt_cancel_service_1 = require("./receipt-cancel.service");
 const receipt_amend_service_1 = require("./receipt-amend.service");
 const open_items_service_1 = require("./open-items.service");
+const till_module_1 = require("../../till/till.module");
 let ReceiptModule = class ReceiptModule {
 };
 exports.ReceiptModule = ReceiptModule;
 exports.ReceiptModule = ReceiptModule = __decorate([
     (0, common_1.Module)({
-        imports: [app_settings_module_1.AppSettingsModule, tender_detail_module_1.TenderDetailModule, bill_balance_module_1.BillBalanceModule, audit_log_module_1.AuditLogModule],
+        imports: [app_settings_module_1.AppSettingsModule, tender_detail_module_1.TenderDetailModule, bill_balance_module_1.BillBalanceModule, audit_log_module_1.AuditLogModule, till_module_1.TillModule],
         controllers: [receipt_controller_1.ReceiptController],
         providers: [
             receipt_service_1.ReceiptService,

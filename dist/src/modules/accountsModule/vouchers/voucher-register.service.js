@@ -14,6 +14,8 @@ exports.accYearOf = accYearOf;
 exports.quarterOf = quarterOf;
 exports.statusDocType = statusDocType;
 const common_1 = require("@nestjs/common");
+const till_session_service_1 = require("../../till/services/till-session.service");
+const till_enum_1 = require("../../till/types/till-enum");
 const client_1 = require("@prisma/client");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
@@ -26,6 +28,7 @@ const receipt_guards_1 = require("../receipt/receipt.guards");
 const receipt_cheque_links_1 = require("../receipt/receipt-cheque-links");
 const bill_balance_recompute_service_1 = require("../billBalance/bill-balance-recompute.service");
 const tender_detail_service_1 = require("../tenderDetail/tender-detail.service");
+const cash_payment_limit_1 = require("../payment/cash-payment-limit");
 const tender_detail_api_types_1 = require("../tenderDetail/types/tender-detail-api.types");
 const voucher_books_helper_1 = require("./voucher-books.helper");
 const voucher_derive_1 = require("./voucher-derive");
@@ -47,7 +50,8 @@ let VoucherRegisterService = class VoucherRegisterService {
     docRegister;
     recompute;
     tenderDetail;
-    constructor(prisma, requestContext, types, posting, docRegister, recompute, tenderDetail) {
+    till;
+    constructor(prisma, requestContext, types, posting, docRegister, recompute, tenderDetail, till) {
         this.prisma = prisma;
         this.requestContext = requestContext;
         this.types = types;
@@ -55,6 +59,7 @@ let VoucherRegisterService = class VoucherRegisterService {
         this.docRegister = docRegister;
         this.recompute = recompute;
         this.tenderDetail = tenderDetail;
+        this.till = till;
     }
     caller() {
         const userId = this.requestContext.getUserId();
@@ -215,6 +220,32 @@ let VoucherRegisterService = class VoucherRegisterService {
             }
             const d = p.derived;
             const now = new Date();
+            if (type.typeCode === 'Jrl' || type.typeCode === 'Con') {
+                await this.till.assertNoTillCashLeg(tx, {
+                    companyId: dto.header.companyId,
+                    branchId: dto.header.branchId,
+                    ledgerIds: d.legs.map((l) => l.ledger.ledId),
+                    field: 'lines',
+                });
+            }
+            const moneyDocType = tenderDocTypeOf(type);
+            const cashLineRows = new Set(d.legs
+                .filter((l) => l.instrument &&
+                l.lineRowNo !== null &&
+                l.instrument.tender.typeId === till_enum_1.CASH_TENDER_TYPE_ID)
+                .map((l) => l.lineRowNo));
+            const till = moneyDocType === tender_detail_api_types_1.TenderSrcDocType.OTHER || !d.legs.some((l) => l.instrument)
+                ? { ref: null, cashLedgerId: null, safeName: null }
+                : await this.till.routeMoneyDoc(tx, {
+                    companyId: dto.header.companyId,
+                    branchId: dto.header.branchId,
+                    sessionId: existing?.avh_session_id ?? null,
+                    field: 'header.sessionId',
+                    hasCash: cashLineRows.size > 0,
+                    cashIn: moneyDocType === tender_detail_api_types_1.TenderSrcDocType.RECEIPT,
+                });
+            const sessionId = till.ref?.tssId ?? existing?.avh_session_id ?? null;
+            const toSafe = (l) => !!till.cashLedgerId && l.source === 'INSTRUMENT' && cashLineRows.has(l.fromRows[0]);
             const partyIds = new Set();
             if (d.party)
                 partyIds.add(d.party.ledger.ledId);
@@ -230,7 +261,7 @@ let VoucherRegisterService = class VoucherRegisterService {
             const employeeIds = dto.header.employeeIds ?? [];
             const todayLegs = d.legs.filter((l) => !l.postDated);
             const toVoucherLeg = (l) => ({
-                ledgerId: l.ledger.ledId,
+                ledgerId: toSafe(l) ? till.cashLedgerId : l.ledger.ledId,
                 drCr: l.drCr,
                 amount: Number(l.amount.toFixed(2)),
                 remarks: l.remarks,
@@ -255,7 +286,7 @@ let VoucherRegisterService = class VoucherRegisterService {
                     roundOff: 0,
                     partyId: d.party?.ledger.ledId ?? null,
                     userId: actor,
-                    sessionId: existing?.avh_session_id ?? null,
+                    sessionId,
                     deviceType: existing?.avh_device_type ?? null,
                     deviceId: existing?.avh_device_id ?? null,
                     remarks: p.header.remarks,
@@ -294,7 +325,7 @@ let VoucherRegisterService = class VoucherRegisterService {
                         roundOff: 0,
                         partyId: pd.party.ledId,
                         userId: actor,
-                        sessionId: existing?.avh_session_id ?? null,
+                        sessionId,
                         deviceType: existing?.avh_device_type ?? null,
                         deviceId: existing?.avh_device_id ?? null,
                         remarks: `Post-dated ${pd.instrument.tender.name} ${pd.instrument.refNo ?? ''} on ${refno}`.trim(),
@@ -331,7 +362,7 @@ let VoucherRegisterService = class VoucherRegisterService {
                     tdDocDate: new Date(`${dto.header.date}T00:00:00Z`),
                     tdPartyLedgerId: null,
                     tdUserId: actor,
-                    tdSessionId: existing?.avh_session_id ?? null,
+                    tdSessionId: sessionId,
                     tdDeviceId: existing?.avh_device_id ?? null,
                     tdDrCr: type.partySide === 'DR' ? tender_detail_api_types_1.TenderDrCr.CR : tender_detail_api_types_1.TenderDrCr.DR,
                 };
@@ -358,8 +389,14 @@ let VoucherRegisterService = class VoucherRegisterService {
                         tdPartyLedgerId: l.ledger.ledId,
                         tdTenderId: ins.tender.tndId,
                         tdTenderTypeId: ins.tender.typeId,
-                        tdTenderLedgerId: ins.issued ? ins.ledgerId : ins.tender.ledgerId,
-                        tdSettleLedgerId: ins.issued ? null : ins.tender.settlementLedgerId,
+                        tdTenderLedgerId: till.cashLedgerId && cashLineRows.has(l.lineRowNo)
+                            ? till.cashLedgerId
+                            : ins.issued
+                                ? ins.ledgerId
+                                : ins.tender.ledgerId,
+                        tdSettleLedgerId: ins.issued || (till.cashLedgerId && cashLineRows.has(l.lineRowNo))
+                            ? null
+                            : ins.tender.settlementLedgerId,
                         tdAmount: paidBy(l).toFixed(2),
                         tdRefNo: ins.refNo,
                         tdBankName: ins.bankName,
@@ -545,14 +582,29 @@ let VoucherRegisterService = class VoucherRegisterService {
                 changedBy: actor,
                 changedOn: now,
                 deviceId: this.requestContext.getDeviceId() ?? existing?.avh_device_id ?? null,
-                sessionId: existing?.avh_session_id ?? null,
+                sessionId,
             });
+            if (till.ref) {
+                await this.till.logMoneyDoc(tx, {
+                    sessionId: till.ref.tssId,
+                    code: moneyDocType === tender_detail_api_types_1.TenderSrcDocType.RECEIPT
+                        ? till_enum_1.TillEventCode.RECEIPT_POSTED
+                        : till_enum_1.TillEventCode.PAYMENT_POSTED,
+                    srcDocType: moneyDocType === tender_detail_api_types_1.TenderSrcDocType.RECEIPT ? 'RECEIPT' : 'PAYMENT',
+                    srcDocId: voucherId,
+                    srcRefno: refno,
+                    amount: Number(docAmount.toFixed(2)),
+                    payload: { typeCode: type.typeCode },
+                });
+            }
             await (0, voucher_books_helper_1.assertVoucherBooksReconcile)(tx, {
                 companyId: dto.header.companyId,
                 accYear: dto.header.accYear,
                 ledgerIds: [
                     ...partyIds,
-                    ...d.legs.filter((l) => l.source === 'INSTRUMENT').map((l) => l.ledger.ledId),
+                    ...d.legs
+                        .filter((l) => l.source === 'INSTRUMENT')
+                        .map((l) => (toSafe(l) ? till.cashLedgerId : l.ledger.ledId)),
                 ],
             });
             const stored = await this.loadHeader(tx, voucherId, dto.header.accYear);
@@ -689,6 +741,44 @@ let VoucherRegisterService = class VoucherRegisterService {
     assertDateInYear(date, accYear) {
         if (accYearOf(date) !== accYear) {
             (0, vouchers_errors_1.throwInvalid)(`${date} falls in ${accYearOf(date)}, not ${accYear}`, vouchers_errors_1.VCH.DATE_OUTSIDE_YEAR, 'header.date');
+        }
+    }
+    async checkCashPaymentLimit(tx, h, d, ctx) {
+        const cashByPayee = new Map();
+        for (const l of d.legs) {
+            const ins = l.instrument;
+            if (!ins ||
+                l.lineRowNo === null ||
+                l.postDated ||
+                ins.tender.typeId !== till_enum_1.CASH_TENDER_TYPE_ID) {
+                continue;
+            }
+            const paid = d.legs.find((x) => x.source === 'INSTRUMENT' && x.fromRows[0] === l.lineRowNo)?.amount ??
+                l.amount;
+            cashByPayee.set(l.ledger.ledId, (cashByPayee.get(l.ledger.ledId) ?? new client_1.Prisma.Decimal(0)).plus(paid));
+        }
+        for (const [payee, cash] of cashByPayee) {
+            const hit = await (0, cash_payment_limit_1.checkCashPaymentLimit)(tx, {
+                companyId: h.companyId,
+                accYear: h.accYear,
+                onDate: h.date,
+                payeeLedgerId: payee,
+                cash,
+                excludeDocId: h.voucherId ?? null,
+                field: 'lines',
+            });
+            if (hit?.enforce === 'REFUSE') {
+                (0, vouchers_errors_1.refuse)(ctx, hit.code, hit.message, { field: hit.field });
+            }
+            else if (hit) {
+                ctx.warnings.push({
+                    code: hit.code,
+                    level: hit.enforce === 'INFO' ? 'INFO' : 'WARN',
+                    message: hit.message,
+                    field: hit.field,
+                    overridable: false,
+                });
+            }
         }
     }
     async prepare(tx, type, rights, dto, opts) {
@@ -937,6 +1027,9 @@ let VoucherRegisterService = class VoucherRegisterService {
             chequeBooks,
         };
         const derived = (0, voucher_derive_1.derive)(input);
+        if (type.nature === 'PAYMENT') {
+            await this.checkCashPaymentLimit(tx, h, derived, ctx);
+        }
         return {
             type,
             rights,
@@ -1443,7 +1536,8 @@ exports.VoucherRegisterService = VoucherRegisterService = __decorate([
         voucher_posting_service_1.VoucherPostingService,
         doc_register_service_1.DocRegisterService,
         bill_balance_recompute_service_1.BillBalanceRecomputeService,
-        tender_detail_service_1.TenderDetailService])
+        tender_detail_service_1.TenderDetailService,
+        till_session_service_1.TillSessionService])
 ], VoucherRegisterService);
 function tenderDocTypeOf(type) {
     switch (type.nature) {

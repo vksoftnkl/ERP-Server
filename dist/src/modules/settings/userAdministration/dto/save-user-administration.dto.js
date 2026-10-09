@@ -141,6 +141,7 @@ class SaveUserAdministrationDto {
     usrTimezone;
     usrLanguage;
     usrPassword;
+    usrPin;
     usrMustChangePassword;
     usrType;
     usrEditDate;
@@ -174,7 +175,12 @@ __decorate([
     __metadata("design:type", Object)
 ], SaveUserAdministrationDto.prototype, "usrBranchId", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ format: 'uuid', nullable: true }),
+    (0, swagger_1.ApiPropertyOptional)({
+        format: 'uuid',
+        nullable: true,
+        description: 'The employee this user is. Must be a live employee of the user’s company (or of none), and ' +
+            'not linked to another active user (409).',
+    }),
     (0, dtoDecorators_1.NullableUuid)(),
     __metadata("design:type", Object)
 ], SaveUserAdministrationDto.prototype, "usrEmployeeId", void 0);
@@ -233,12 +239,30 @@ __decorate([
     __metadata("design:type", String)
 ], SaveUserAdministrationDto.prototype, "usrPassword", void 0);
 __decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        type: String,
+        nullable: true,
+        example: '4321',
+        description: 'Till PIN, 4 to 6 digits. "" (or null) clears it; omit the key to leave the stored PIN alone.',
+    }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.Matches)(/^(\d{4,6})?$/, { message: 'usrPin must be 4 to 6 digits, or "" to clear it' }),
+    __metadata("design:type", Object)
+], SaveUserAdministrationDto.prototype, "usrPin", void 0);
+__decorate([
     (0, swagger_1.ApiPropertyOptional)(),
     (0, dtoDecorators_1.OptionalBoolean)(),
     __metadata("design:type", Boolean)
 ], SaveUserAdministrationDto.prototype, "usrMustChangePassword", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ enum: user_administration_enum_1.UserType, enumName: 'UserType', nullable: true }),
+    (0, swagger_1.ApiPropertyOptional)({
+        enum: user_administration_enum_1.UserType,
+        enumName: 'UserType',
+        nullable: true,
+        description: 'User Role. A label only: it grants nothing by itself (menus come from user_menus, till ' +
+            'approvals from till_approval_authority).',
+    }),
     (0, class_validator_1.IsOptional)(),
     (0, class_transformer_1.Transform)(({ value }) => value === '' || value === undefined ? undefined : value === null ? null : value),
     (0, class_validator_1.ValidateIf)((_, v) => v !== null && v !== undefined),

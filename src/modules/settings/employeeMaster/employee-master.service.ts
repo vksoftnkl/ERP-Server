@@ -4,10 +4,12 @@ import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import { SaveEmployeeMasterDto } from './dto/save-employee-master.dto';
 import {
+  EmployeeLedgerBackfillReport,
   EmployeeMasterErrorDetail,
   EmployeeMasterErrorResponse,
   EmployeeMasterPayload,
 } from './types/employee-master-api.types';
+import { StaffAdvanceLedgerService } from './staff-advance-ledger.service';
 import {
   DEFAULT_ACTOR,
   SettingsWriteClient,
@@ -66,7 +68,7 @@ const EMPLOYEE_MASTER_OPTIONAL_FIELDS = [
   'empAadharNo',
   'empPfNo',
   'empEsiNo',
-  'empLoanLedgerId',
+  // empLoanLedgerId is not copied as given: StaffAdvanceLedgerService.settle decides it.
   'empPhotoUrl',
   'empPhoto',
   'empRemarks',
@@ -79,6 +81,7 @@ export class EmployeeMasterService {
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
     private readonly requestContextService: RequestContextService,
+    private readonly staffAdvanceLedgers: StaffAdvanceLedgerService,
   ) {}
   async save(saveEmployeeMasterDto: SaveEmployeeMasterDto): Promise<EmployeeMasterPayload> {
     if (saveEmployeeMasterDto.empId) {
@@ -104,15 +107,16 @@ export class EmployeeMasterService {
     client: EmployeeMasterWriteClient,
     record: Pick<
       EmployeeMaster,
-      'empCompanyId' | 'empBranchId' | 'empDepartmentId' | 'empDesignationId'
+      'empCompanyId' | 'empBranchId' | 'empDepartmentId' | 'empDesignationId' | 'empLoanLedgerId'
     >,
   ): Promise<{
     empCompanyName: string | null;
     empBranchName: string | null;
     empDepartmentName: string | null;
     empDesignationName: string | null;
+    empLoanLedgerName: string | null;
   }> {
-    const [company, branch, department, designation] = await Promise.all([
+    const [company, branch, department, designation, loanLedger] = await Promise.all([
       record.empCompanyId
         ? client.company.findFirst({
             where: { compId: record.empCompanyId },
@@ -137,12 +141,19 @@ export class EmployeeMasterService {
             select: { edName: true },
           })
         : null,
+      record.empLoanLedgerId
+        ? client.accLedgerMaster.findFirst({
+            where: { ledId: record.empLoanLedgerId },
+            select: { ledName: true },
+          })
+        : null,
     ]);
     return {
       empCompanyName: company?.compName ?? null,
       empBranchName: branch?.brName ?? null,
       empDepartmentName: department?.edptName ?? null,
       empDesignationName: designation?.edName ?? null,
+      empLoanLedgerName: loanLedger?.ledName ?? null,
     };
   }
   async softDelete(empId: string): Promise<{ empId: string; deleted: true }> {
@@ -155,6 +166,12 @@ export class EmployeeMasterService {
       });
       if (!existing) {
         this.throwNotFound(empId);
+      }
+      // Notes 95 §A.4 — refused while the staff advance ledger holds money; on a zero balance
+      // the ledger is deleted with the employee.
+      const ledger = await this.staffAdvanceLedgers.liveLedgerOf(tx, existing);
+      if (ledger) {
+        await this.staffAdvanceLedgers.ensureSettled(tx, existing, ledger);
       }
       const modifiedOn = new Date();
       const result = await tx.employeeMaster.updateMany({
@@ -172,6 +189,14 @@ export class EmployeeMasterService {
       if (result.count === 0) {
         this.throwNotFound(empId);
       }
+      const ledgerRetired = ledger
+        ? await this.staffAdvanceLedgers.retire(
+            tx,
+            ledger,
+            this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
+            modifiedOn,
+          )
+        : false;
       const originalRecord = this.toPayload(existing);
       const modifiedRecord = this.toPayload({
         ...existing,
@@ -191,7 +216,9 @@ export class EmployeeMasterService {
           originalRecord,
           modifiedRecord,
           userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
-          notes: 'Employee soft deleted',
+          notes: ledgerRetired
+            ? `Employee soft deleted with staff advance ledger "${ledger!.ledName}"`
+            : 'Employee soft deleted',
         },
         tx,
       );
@@ -199,6 +226,75 @@ export class EmployeeMasterService {
         empId,
         deleted: true,
       };
+    });
+  }
+  // Notes 95 §A.7 — the one-off backfill: every live employee with no staff advance ledger gets
+  // one through the same settle() a save runs. One transaction per employee, so a name clash on
+  // one is reported and the rest still land. Idempotent: a second run walks nobody.
+  async backfillStaffAdvanceLedgers(): Promise<EmployeeLedgerBackfillReport> {
+    const pending = await this.prisma.employeeMaster.findMany({
+      where: { empIsDeleted: false, empLoanLedgerId: null },
+      select: { empId: true, empName: true },
+      orderBy: { empCreatedOn: 'asc' },
+    });
+    const report: EmployeeLedgerBackfillReport = {
+      walked: pending.length,
+      created: [],
+      failed: [],
+    };
+    for (const { empId, empName } of pending) {
+      try {
+        report.created.push(await this.provisionStaffAdvanceLedger(empId));
+      } catch (error: unknown) {
+        const response = (error as { response?: { errors?: Array<{ message?: string }> } })
+          .response;
+        report.failed.push({
+          empId,
+          empName,
+          message:
+            response?.errors?.[0]?.message ??
+            (error instanceof Error ? error.message : String(error)),
+        });
+      }
+    }
+    return report;
+  }
+  private async provisionStaffAdvanceLedger(
+    empId: string,
+  ): Promise<EmployeeLedgerBackfillReport['created'][number]> {
+    return this.prisma.$transaction(async (tx) => {
+      const existing = await tx.employeeMaster.findFirst({
+        where: { empId, empIsDeleted: false },
+      });
+      if (!existing) {
+        this.throwNotFound(empId);
+      }
+      const actor = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
+      const settled = await this.staffAdvanceLedgers.settle(tx, existing, null, null);
+      const updated = await tx.employeeMaster.update({
+        where: { empId },
+        data: { empModifiedOn: new Date(), empModifiedBy: actor },
+      });
+      const ledger = await tx.accLedgerMaster.findUniqueOrThrow({
+        where: { ledId: settled.empLoanLedgerId! },
+        select: { ledId: true, ledName: true },
+      });
+      await this.auditLogService.logEntityChange(
+        {
+          action: 'update',
+          tableName: EMPLOYEE_MASTER_TABLE_NAME,
+          screenName: EMPLOYEE_MASTER_AUDIT_SCREEN_NAME,
+          screenType: 'master',
+          pk: empId,
+          displayName: existing.empName,
+          originalRecord: this.toPayload(existing),
+          modifiedRecord: this.toPayload(updated),
+          userId: actor,
+          notes: `Staff advance ledger "${ledger.ledName}" created (backfill, notes 95)`,
+        },
+        tx,
+      );
+      return { empId, empName: existing.empName, ledId: ledger.ledId, ledName: ledger.ledName };
     });
   }
   private async createEmployee(
@@ -223,7 +319,12 @@ export class EmployeeMasterService {
           empCreatedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         };
         this.applyOptionalFields(data, saveEmployeeMasterDto);
-        const created = await tx.employeeMaster.create({ data });
+        const created = await this.staffAdvanceLedgers.settle(
+          tx,
+          await tx.employeeMaster.create({ data }),
+          null,
+          saveEmployeeMasterDto.empLoanLedgerId,
+        );
         const payload = this.toPayload(created);
         await this.auditLogService.logEntityChange(
           {
@@ -278,12 +379,17 @@ export class EmployeeMasterService {
           empModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         };
         this.applyOptionalFields(data, saveEmployeeMasterDto);
-        const updated = await tx.employeeMaster.update({
-          where: {
-            empId,
-          },
-          data,
-        });
+        const updated = await this.staffAdvanceLedgers.settle(
+          tx,
+          await tx.employeeMaster.update({
+            where: {
+              empId,
+            },
+            data,
+          }),
+          existing,
+          saveEmployeeMasterDto.empLoanLedgerId,
+        );
         const payload = this.toPayload(updated);
         await this.auditLogService.logEntityChange(
           {
