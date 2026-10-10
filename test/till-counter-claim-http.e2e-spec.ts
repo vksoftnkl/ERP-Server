@@ -50,7 +50,7 @@ const SUPERVISOR = TESTER;
 const CASHIER2 = PRATHAP;
 const OTHER_BRANCH = '019efa00-c227-7672-a55b-161842adf59c'; // Head Office
 const UNKNOWN_DEVICE = '01a00000-0000-7000-8000-0000000000aa';
-const TILL_MENUS = [271, 272, 273, 274, 275, 276];
+const TILL_MENUS = [271, 272, 273, 274, 275, 276, 280, 281, 282];
 const USERS = IDENTITIES;
 
 const tag = runTag().slice(-6);

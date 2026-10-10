@@ -20,7 +20,7 @@ import { grantMenuRights, restoreMenuRights, TESTER1, type MenuRightsMemo } from
 const SUPERVISOR = '019e44fb-5d08-7b17-ad05-9e519f179708'; // user 'tester'
 /** A second cashier, on a second counter, who receives change (REV 2 §2.14). */
 const CASHIER2 = '019e43d9-ac09-7676-aaeb-7fac92edb6a5'; // user 'prathap'
-const TILL_MENUS = [271, 272, 273, 274, 275, 276];
+const TILL_MENUS = [271, 272, 273, 274, 275, 276, 280, 281, 282];
 const stamp = () => Date.now().toString(36).toUpperCase().slice(-6);
 
 let cashierApp: INestApplication;

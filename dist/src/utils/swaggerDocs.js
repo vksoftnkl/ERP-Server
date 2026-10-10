@@ -101,6 +101,8 @@ const ledger_statement_module_1 = require("../modules/reports/ledger-statement/l
 const gstin_lookup_module_1 = require("../modules/settings/gstinLookup/gstin-lookup.module");
 const loyalty_members_module_1 = require("../modules/sales/loyalty/members/loyalty-members.module");
 const loyalty_status_module_1 = require("../modules/reports/loyalty-status/loyalty-status.module");
+const party_outstanding_module_1 = require("../modules/reports/party-outstanding/party-outstanding.module");
+const till_module_1 = require("../modules/till/till.module");
 const stock_adjustment_module_1 = require("../modules/stocks/stock-adjustment/stock-adjustment.module");
 const stock_posting_module_1 = require("../modules/stocks/posting/stock-posting.module");
 const txn_status_module_1 = require("../modules/txn-status/txn-status.module");
@@ -406,6 +408,17 @@ exports.swaggerModuleDocuments = [
             'as one TSet per payout; the not-received rows written off and the unexplained lines resolved ' +
             '(OVERRIDE stands in for their approvals until the approval gate ships)',
         include: [tender_settlement_module_1.TenderSettlementModule],
+    },
+    {
+        path: 'till',
+        title: 'Till API',
+        description: 'Till management under /till: the business day, the cashier’s session (open, suspend, ' +
+            'resume, end billing, count, close, slip check) and the till journal (movements, change, ' +
+            'void, offline event batch), judged on menus 272–274; and the till masters — counters, ' +
+            'safes, reasons, denominations, approval rules and authorities — each on its own screen’s ' +
+            'menu. GETs are never cached. Lists are configured grids, not routes, except ' +
+            '/denominations/list',
+        include: [till_module_1.TillModule],
     },
     {
         path: 'vouchers',
@@ -786,6 +799,15 @@ exports.swaggerModuleDocuments = [
             'monthly and gift breakdowns, and an export. companyId is required; branchId absent means ' +
             'every branch. Not cached',
         include: [loyalty_status_module_1.LoyaltyStatusModule],
+    },
+    {
+        path: 'reports-party-outstanding',
+        title: 'Reports — Party-wise Outstanding API',
+        description: 'Read-only Party-wise Outstanding report (menu 279): nine GET routes under ' +
+            'reports/party-outstanding — options, parties, one party, bills, bill-wise, bill history, ' +
+            'summary, due calendar and an export. Receivable or Payable, pending as on a date as the ' +
+            'books stand today; branchId absent means every branch. Not cached',
+        include: [party_outstanding_module_1.ReportsPartyOutstandingModule],
     },
     {
         path: 'txn-status',

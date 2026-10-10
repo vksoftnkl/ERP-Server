@@ -32,7 +32,7 @@ let TillMastersController = class TillMastersController {
         this.masters = masters;
     }
     async saveCounter(dto) {
-        await this.requireSave(till_enum_1.TILL_MENU.MASTERS, dto.tcnId, 'till counters');
+        await this.requireSave(till_enum_1.TILL_MENU.COUNTERS, dto.tcnId, 'till counters');
         const data = await this.masters.saveCounter(dto);
         return {
             success: true,
@@ -41,7 +41,7 @@ let TillMastersController = class TillMastersController {
         };
     }
     async getCounter(q) {
-        await this.context.requireRight(till_enum_1.TILL_MENU.MASTERS, 'view', 'view till counters');
+        await this.context.requireRight(till_enum_1.TILL_MENU.COUNTERS, 'view', 'view till counters');
         return {
             success: true,
             message: 'Counter fetched',
@@ -49,7 +49,7 @@ let TillMastersController = class TillMastersController {
         };
     }
     async deleteCounter(q) {
-        await this.context.requireRight(till_enum_1.TILL_MENU.MASTERS, 'delete', 'delete till counters');
+        await this.context.requireRight(till_enum_1.TILL_MENU.COUNTERS, 'delete', 'delete till counters');
         return {
             success: true,
             message: 'Counter deleted',
@@ -57,7 +57,7 @@ let TillMastersController = class TillMastersController {
         };
     }
     async saveSafe(dto) {
-        await this.requireSave(till_enum_1.TILL_MENU.MASTERS, dto.tsfId, 'till safes');
+        await this.requireSave(till_enum_1.TILL_MENU.SAFES, dto.tsfId, 'till safes');
         const data = await this.masters.saveSafe(dto);
         return {
             success: true,
@@ -66,7 +66,7 @@ let TillMastersController = class TillMastersController {
         };
     }
     async getSafe(q) {
-        await this.context.requireRight(till_enum_1.TILL_MENU.MASTERS, 'view', 'view till safes');
+        await this.context.requireRight(till_enum_1.TILL_MENU.SAFES, 'view', 'view till safes');
         return {
             success: true,
             message: 'Safe fetched',
@@ -74,7 +74,7 @@ let TillMastersController = class TillMastersController {
         };
     }
     async deleteSafe(q) {
-        await this.context.requireRight(till_enum_1.TILL_MENU.MASTERS, 'delete', 'delete till safes');
+        await this.context.requireRight(till_enum_1.TILL_MENU.SAFES, 'delete', 'delete till safes');
         return {
             success: true,
             message: 'Safe deleted',
@@ -82,12 +82,12 @@ let TillMastersController = class TillMastersController {
         };
     }
     async saveReason(dto) {
-        await this.requireSave(till_enum_1.TILL_MENU.MASTERS, dto.trsId, 'till reasons');
+        await this.requireSave(till_enum_1.TILL_MENU.REASONS, dto.trsId, 'till reasons');
         const data = await this.masters.saveReason(dto);
         return { success: true, message: dto.trsId ? 'Reason updated' : 'Reason created', data };
     }
     async getReason(q) {
-        await this.context.requireRight(till_enum_1.TILL_MENU.MASTERS, 'view', 'view till reasons');
+        await this.context.requireRight(till_enum_1.TILL_MENU.REASONS, 'view', 'view till reasons');
         return {
             success: true,
             message: 'Reason fetched',
@@ -95,7 +95,7 @@ let TillMastersController = class TillMastersController {
         };
     }
     async deleteReason(q) {
-        await this.context.requireRight(till_enum_1.TILL_MENU.MASTERS, 'delete', 'delete till reasons');
+        await this.context.requireRight(till_enum_1.TILL_MENU.REASONS, 'delete', 'delete till reasons');
         return {
             success: true,
             message: 'Reason deleted',
@@ -103,7 +103,7 @@ let TillMastersController = class TillMastersController {
         };
     }
     async saveDenomination(dto) {
-        await this.requireSave(till_enum_1.TILL_MENU.MASTERS, dto.tdnId, 'denominations');
+        await this.requireSave(till_enum_1.TILL_MENU.DENOMINATIONS, dto.tdnId, 'denominations');
         const data = await this.masters.saveDenomination(dto);
         return {
             success: true,
@@ -112,7 +112,7 @@ let TillMastersController = class TillMastersController {
         };
     }
     async getDenomination(q) {
-        await this.context.requireRight(till_enum_1.TILL_MENU.MASTERS, 'view', 'view denominations');
+        await this.context.requireRight(till_enum_1.TILL_MENU.DENOMINATIONS, 'view', 'view denominations');
         return {
             success: true,
             message: 'Denomination fetched',
@@ -122,13 +122,13 @@ let TillMastersController = class TillMastersController {
     async listDenominations(q) {
         const till = await this.context.rights(till_enum_1.TILL_MENU.OPEN_TILL);
         if (!till.view) {
-            await this.context.requireRight(till_enum_1.TILL_MENU.MASTERS, 'view', 'view denominations');
+            await this.context.requireRight(till_enum_1.TILL_MENU.DENOMINATIONS, 'view', 'view denominations');
         }
         const data = await this.masters.listDenominations(q.companyId);
         return { success: true, message: `${data.length} denomination(s)`, data };
     }
     async deleteDenomination(q) {
-        await this.context.requireRight(till_enum_1.TILL_MENU.MASTERS, 'delete', 'delete denominations');
+        await this.context.requireRight(till_enum_1.TILL_MENU.DENOMINATIONS, 'delete', 'delete denominations');
         return {
             success: true,
             message: 'Denomination deleted',
@@ -196,7 +196,7 @@ __decorate([
     (0, common_1.Version)(api_version_1.API_VERSION),
     (0, swagger_1.ApiOperation)({
         summary: 'Create or update a counter (by tcnId presence)',
-        description: 'Till Masters (275) CREATE / EDIT.',
+        description: 'Till Counters (275) CREATE / EDIT.',
     }),
     (0, swagger_1.ApiCreatedResponse)({ type: till_response_dto_1.TillSuccessDto }),
     (0, swagger_1.ApiBadRequestResponse)({ type: till_response_dto_1.TillErrorResponseDto }),
@@ -209,7 +209,7 @@ __decorate([
     (0, common_1.Get)('counters/get'),
     (0, common_1.Version)(api_version_1.API_VERSION),
     (0, cache_manager_1.CacheTTL)(0),
-    (0, swagger_1.ApiOperation)({ summary: 'One counter', description: 'Till Masters (275) VIEW.' }),
+    (0, swagger_1.ApiOperation)({ summary: 'One counter', description: 'Till Counters (275) VIEW.' }),
     (0, swagger_1.ApiOkResponse)({ type: till_response_dto_1.TillSuccessDto }),
     (0, swagger_1.ApiNotFoundResponse)({ type: till_response_dto_1.TillErrorResponseDto }),
     __param(0, (0, common_1.Query)()),
@@ -222,7 +222,7 @@ __decorate([
     (0, common_1.Version)(api_version_1.API_VERSION),
     (0, swagger_1.ApiOperation)({
         summary: 'Soft-delete a counter (refused while a session is live on it)',
-        description: 'Till Masters (275) DELETE.',
+        description: 'Till Counters (275) DELETE.',
     }),
     (0, swagger_1.ApiOkResponse)({ type: till_response_dto_1.TillSuccessDto }),
     __param(0, (0, common_1.Query)()),
@@ -235,7 +235,7 @@ __decorate([
     (0, common_1.Version)(api_version_1.API_VERSION),
     (0, swagger_1.ApiOperation)({
         summary: 'Create or update a safe (by tsfId presence)',
-        description: 'No ledger named on a new safe = the SAFE_CASH role’s ledger. Till Masters (275) CREATE / EDIT.',
+        description: 'No ledger named on a new safe = the SAFE_CASH role’s ledger. Till Safes (280) CREATE / EDIT.',
     }),
     (0, swagger_1.ApiCreatedResponse)({ type: till_response_dto_1.TillSuccessDto }),
     (0, swagger_1.ApiBadRequestResponse)({ type: till_response_dto_1.TillErrorResponseDto }),
@@ -248,7 +248,7 @@ __decorate([
     (0, common_1.Get)('safes/get'),
     (0, common_1.Version)(api_version_1.API_VERSION),
     (0, cache_manager_1.CacheTTL)(0),
-    (0, swagger_1.ApiOperation)({ summary: 'One safe', description: 'Till Masters (275) VIEW.' }),
+    (0, swagger_1.ApiOperation)({ summary: 'One safe', description: 'Till Safes (280) VIEW.' }),
     (0, swagger_1.ApiOkResponse)({ type: till_response_dto_1.TillSuccessDto }),
     __param(0, (0, common_1.Query)()),
     __metadata("design:type", Function),
@@ -260,7 +260,7 @@ __decorate([
     (0, common_1.Version)(api_version_1.API_VERSION),
     (0, swagger_1.ApiOperation)({
         summary: 'Soft-delete a safe (refused while a counter drops into it)',
-        description: 'Till Masters (275) DELETE.',
+        description: 'Till Safes (280) DELETE.',
     }),
     (0, swagger_1.ApiOkResponse)({ type: till_response_dto_1.TillSuccessDto }),
     __param(0, (0, common_1.Query)()),
@@ -273,7 +273,7 @@ __decorate([
     (0, common_1.Version)(api_version_1.API_VERSION),
     (0, swagger_1.ApiOperation)({
         summary: 'Create or update a company reason (by trsId presence)',
-        description: 'Shipped (shared) reasons are read-only. Till Masters (275) CREATE / EDIT.',
+        description: 'Shipped (shared) reasons are read-only. Till Reasons (281) CREATE / EDIT.',
     }),
     (0, swagger_1.ApiCreatedResponse)({ type: till_response_dto_1.TillSuccessDto }),
     __param(0, (0, common_1.Body)()),
@@ -287,7 +287,7 @@ __decorate([
     (0, cache_manager_1.CacheTTL)(0),
     (0, swagger_1.ApiOperation)({
         summary: 'One reason (a company row or a shipped one)',
-        description: 'Till Masters (275) VIEW.',
+        description: 'Till Reasons (281) VIEW.',
     }),
     (0, swagger_1.ApiOkResponse)({ type: till_response_dto_1.TillSuccessDto }),
     __param(0, (0, common_1.Query)()),
@@ -300,7 +300,7 @@ __decorate([
     (0, common_1.Version)(api_version_1.API_VERSION),
     (0, swagger_1.ApiOperation)({
         summary: 'Soft-delete a company reason',
-        description: 'Till Masters (275) DELETE.',
+        description: 'Till Reasons (281) DELETE.',
     }),
     (0, swagger_1.ApiOkResponse)({ type: till_response_dto_1.TillSuccessDto }),
     __param(0, (0, common_1.Query)()),
@@ -313,7 +313,7 @@ __decorate([
     (0, common_1.Version)(api_version_1.API_VERSION),
     (0, swagger_1.ApiOperation)({
         summary: 'Create or update a company denomination (by tdnId presence)',
-        description: 'Till Masters (275) CREATE / EDIT.',
+        description: 'Denominations (282) CREATE / EDIT.',
     }),
     (0, swagger_1.ApiCreatedResponse)({ type: till_response_dto_1.TillSuccessDto }),
     __param(0, (0, common_1.Body)()),
@@ -325,7 +325,7 @@ __decorate([
     (0, common_1.Get)('denominations/get'),
     (0, common_1.Version)(api_version_1.API_VERSION),
     (0, cache_manager_1.CacheTTL)(0),
-    (0, swagger_1.ApiOperation)({ summary: 'One denomination', description: 'Till Masters (275) VIEW.' }),
+    (0, swagger_1.ApiOperation)({ summary: 'One denomination', description: 'Denominations (282) VIEW.' }),
     (0, swagger_1.ApiOkResponse)({ type: till_response_dto_1.TillSuccessDto }),
     __param(0, (0, common_1.Query)()),
     __metadata("design:type", Function),
@@ -339,7 +339,7 @@ __decorate([
     (0, swagger_1.ApiOperation)({
         summary: 'The notes and coins a count offers this company, in screen order',
         description: 'Its own rows and the shipped ones valid today; a company row replaces the shipped row of the same value. ' +
-            'Open Till (272) VIEW or Till Masters (275) VIEW.',
+            'Open Till (272) VIEW or Denominations (282) VIEW.',
     }),
     (0, swagger_1.ApiOkResponse)({ type: till_response_dto_1.TillListSuccessDto }),
     __param(0, (0, common_1.Query)()),
@@ -352,7 +352,7 @@ __decorate([
     (0, common_1.Version)(api_version_1.API_VERSION),
     (0, swagger_1.ApiOperation)({
         summary: 'Soft-delete a company denomination',
-        description: 'Till Masters (275) DELETE.',
+        description: 'Denominations (282) DELETE.',
     }),
     (0, swagger_1.ApiOkResponse)({ type: till_response_dto_1.TillSuccessDto }),
     __param(0, (0, common_1.Query)()),

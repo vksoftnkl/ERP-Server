@@ -176,14 +176,14 @@ export class TillMastersService {
               tcnCreatedBy: caller.actorName,
             },
           });
-      const payload = this.counterPayload(saved);
+      const payload = await this.counterPayload(tx, saved);
       await this.logChange(
         tx,
         caller,
         'till_counter',
         saved.tcnId,
         saved.tcnCode,
-        existing ? this.counterPayload(existing) : null,
+        existing ? await this.counterPayload(tx, existing) : null,
         payload,
       );
       return payload;
@@ -197,7 +197,7 @@ export class TillMastersService {
     if (!row) {
       throwTillNotFound('Counter', 'tcnId', tcnId);
     }
-    return this.counterPayload(row);
+    return this.counterPayload(this.prisma, row);
   }
 
   async deleteCounter(tcnId: string, companyId: string): Promise<TillDeletePayload> {
@@ -227,7 +227,7 @@ export class TillMastersService {
         'till_counter',
         tcnId,
         row.tcnCode,
-        this.counterPayload(row),
+        await this.counterPayload(tx, row),
         null,
         'cancel',
       );
@@ -418,14 +418,14 @@ export class TillMastersService {
           : await tx.tillReason.create({
               data: { ...data, trsCompanyId: dto.trsCompanyId, trsCreatedBy: caller.actorName },
             });
-        const payload = this.reasonPayload(saved);
+        const payload = await this.reasonPayload(tx, saved);
         await this.logChange(
           tx,
           caller,
           'till_reason',
           saved.trsId,
           saved.trsCode,
-          existing ? this.reasonPayload(existing) : null,
+          existing ? await this.reasonPayload(tx, existing) : null,
           payload,
         );
         return payload;
@@ -452,7 +452,7 @@ export class TillMastersService {
     if (!row) {
       throwTillNotFound('Till reason', 'trsId', trsId);
     }
-    return this.reasonPayload(row);
+    return this.reasonPayload(this.prisma, row);
   }
 
   async deleteReason(trsId: string, companyId: string): Promise<TillDeletePayload> {
@@ -473,7 +473,7 @@ export class TillMastersService {
         'till_reason',
         trsId,
         row.trsCode,
-        this.reasonPayload(row),
+        await this.reasonPayload(tx, row),
         null,
         'cancel',
       );
@@ -991,7 +991,22 @@ export class TillMastersService {
     );
   }
 
-  private counterPayload(r: Prisma.TillCounterGetPayload<object>): TillCounterPayload {
+  /** The row, with the names a popup shows beside its ids (notes 101 §3). */
+  private async counterPayload(
+    tx: Tx | PrismaService,
+    r: Prisma.TillCounterGetPayload<object>,
+  ): Promise<TillCounterPayload> {
+    const [device, safe] = await Promise.all([
+      r.tcnDeviceId
+        ? tx.deviceMaster.findUnique({
+            where: { devId: r.tcnDeviceId },
+            select: { devDeviceName: true },
+          })
+        : null,
+      r.tcnSafeId
+        ? tx.tillSafe.findUnique({ where: { tsfId: r.tcnSafeId }, select: { tsfName: true } })
+        : null,
+    ]);
     return {
       tcnId: r.tcnId,
       tcnCompanyId: r.tcnCompanyId,
@@ -1001,7 +1016,9 @@ export class TillMastersService {
       tcnKind: r.tcnKind,
       tcnDrawerMode: r.tcnDrawerMode,
       tcnDeviceId: r.tcnDeviceId,
+      deviceName: device?.devDeviceName ?? null,
       tcnSafeId: r.tcnSafeId,
+      safeName: safe?.tsfName ?? null,
       tcnDefaultFloat: num(r.tcnDefaultFloat),
       tcnCashAlertLimit: num(r.tcnCashAlertLimit),
       tcnCashBlockLimit: num(r.tcnCashBlockLimit),
@@ -1040,7 +1057,16 @@ export class TillMastersService {
     };
   }
 
-  private reasonPayload(r: Prisma.TillReasonGetPayload<object>): TillReasonPayload {
+  private async reasonPayload(
+    tx: Tx | PrismaService,
+    r: Prisma.TillReasonGetPayload<object>,
+  ): Promise<TillReasonPayload> {
+    const ledger = r.trsLedgerId
+      ? await tx.accLedgerMaster.findUnique({
+          where: { ledId: r.trsLedgerId },
+          select: { ledName: true },
+        })
+      : null;
     return {
       trsId: r.trsId,
       trsCompanyId: r.trsCompanyId,
@@ -1048,6 +1074,7 @@ export class TillMastersService {
       trsCode: r.trsCode,
       trsName: r.trsName,
       trsLedgerId: r.trsLedgerId,
+      ledgerName: ledger?.ledName ?? null,
       trsNeedsNote: r.trsNeedsNote,
       trsNeedsRef: r.trsNeedsRef,
       trsMaxAmount: num(r.trsMaxAmount),

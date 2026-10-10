@@ -28,7 +28,7 @@ import { grantMenuRights, restoreMenuRights, TESTER1, type MenuRightsMemo } from
  * Run with --runInBand (the rights fixture is one row per menu).
  */
 
-const TILL_MENUS = [271, 272, 273, 274, 275, 276];
+const TILL_MENUS = [271, 272, 273, 274, 275, 276, 280, 281, 282];
 const ROUTE = (path: string) => `/api/v1/till/${path}`;
 const stamp = () => Date.now().toString(36).toUpperCase().slice(-6);
 
@@ -184,6 +184,52 @@ describe('Till masters', () => {
     });
     expectStatus(counter, 201);
     counterId = data<{ tcnId: string }>(counter).tcnId;
+    // The popup's names come with the row (notes 101 §3).
+    const read = await get('counters/get', { id: counterId, companyId: COMPANY });
+    expectStatus(read, 200);
+    expect(data<{ deviceName: string; safeName: string }>(read)).toEqual(
+      expect.objectContaining({ deviceName: 'E2E till PC', safeName: 'E2E safe' }),
+    );
+  });
+
+  it('judges each master on its own menu: no right on Till Safes (280), no safe (notes 101)', async () => {
+    const setSafeEdit = (on: boolean) => prisma.$executeRaw`
+      UPDATE public.user_menus SET um_can_create = ${on}, um_can_edit = ${on}
+       WHERE um_user_id = ${TESTER1}::uuid AND um_menu_id = 280 AND um_is_deleted = false`;
+    await setSafeEdit(false);
+    try {
+      const refused = await post('safes/create', {
+        tsfCompanyId: COMPANY,
+        tsfBranchId: BRANCH,
+        tsfCode: `E2E${stamp()}`,
+        tsfName: 'E2E refused safe',
+        tsfIsDefault: false,
+      });
+      expectStatus(refused, 403);
+      // Till Counters (275) still edits its own master.
+      const counter = await post('counters/create', {
+        tcnId: counterId,
+        tcnCompanyId: COMPANY,
+        tcnBranchId: BRANCH,
+        tcnCode: counterCode,
+        tcnName: 'E2E counter',
+        tcnDeviceId: deviceId,
+        tcnSafeId: safeId,
+        tcnDefaultFloat: 2000,
+      });
+      expectStatus(counter, 201);
+    } finally {
+      await setSafeEdit(true);
+    }
+    const [reason] = await prisma.$queryRaw<{ id: string; ledger: string }[]>`
+      SELECT r.trs_id::text AS id, l.led_name AS ledger FROM accounts.till_reason r
+        JOIN accounts.acc_ledger_master l ON l.led_id = r.trs_ledger_id
+       WHERE r.trs_is_deleted = false AND r.trs_company_id IS NULL LIMIT 1`;
+    if (reason) {
+      const read = await get('reasons/get', { id: reason.id, companyId: COMPANY });
+      expectStatus(read, 200);
+      expect(data<{ ledgerName: string }>(read).ledgerName).toBe(reason.ledger);
+    }
   });
 
   it('refuses a second counter with the same code, and a web device', async () => {

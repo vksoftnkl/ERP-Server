@@ -41,10 +41,11 @@ import type {
 } from './types/till-api.types';
 
 /**
- * The till masters (S10): counters, safes, reasons, denominations — Till
- * Masters (275); approval rules and approval authority — Till Approval Setup
- * (276), granted apart because "who may approve what, up to how much" is a
- * control in its own right. `/create` is CREATE without an id and EDIT with
+ * The till masters (S10), each judged on its own menu since the four screens
+ * split (notes 101): counters — Till Counters (275), safes — Till Safes (280),
+ * reasons — Till Reasons (281), denominations — Denominations (282); approval
+ * rules and approval authority — Till Approval Setup (276), granted apart
+ * because "who may approve what, up to how much" is a control in its own right. `/create` is CREATE without an id and EDIT with
  * one. Lists are the configured grids, not routes; /denominations/list is the
  * one exception, because a count screen needs the set before it can draw.
  */
@@ -66,14 +67,14 @@ export class TillMastersController {
   @Version(API_VERSION)
   @ApiOperation({
     summary: 'Create or update a counter (by tcnId presence)',
-    description: 'Till Masters (275) CREATE / EDIT.',
+    description: 'Till Counters (275) CREATE / EDIT.',
   })
   @ApiCreatedResponse({ type: TillSuccessDto })
   @ApiBadRequestResponse({ type: TillErrorResponseDto })
   async saveCounter(
     @Body() dto: SaveTillCounterDto,
   ): Promise<TillSuccessResponse<TillCounterPayload>> {
-    await this.requireSave(TILL_MENU.MASTERS, dto.tcnId, 'till counters');
+    await this.requireSave(TILL_MENU.COUNTERS, dto.tcnId, 'till counters');
     const data = await this.masters.saveCounter(dto);
     return {
       success: true,
@@ -85,13 +86,13 @@ export class TillMastersController {
   @Get('counters/get')
   @Version(API_VERSION)
   @CacheTTL(0)
-  @ApiOperation({ summary: 'One counter', description: 'Till Masters (275) VIEW.' })
+  @ApiOperation({ summary: 'One counter', description: 'Till Counters (275) VIEW.' })
   @ApiOkResponse({ type: TillSuccessDto })
   @ApiNotFoundResponse({ type: TillErrorResponseDto })
   async getCounter(
     @Query() q: TillMasterKeyQueryDto,
   ): Promise<TillSuccessResponse<TillCounterPayload>> {
-    await this.context.requireRight(TILL_MENU.MASTERS, 'view', 'view till counters');
+    await this.context.requireRight(TILL_MENU.COUNTERS, 'view', 'view till counters');
     return {
       success: true,
       message: 'Counter fetched',
@@ -103,13 +104,13 @@ export class TillMastersController {
   @Version(API_VERSION)
   @ApiOperation({
     summary: 'Soft-delete a counter (refused while a session is live on it)',
-    description: 'Till Masters (275) DELETE.',
+    description: 'Till Counters (275) DELETE.',
   })
   @ApiOkResponse({ type: TillSuccessDto })
   async deleteCounter(
     @Query() q: TillMasterKeyQueryDto,
   ): Promise<TillSuccessResponse<TillDeletePayload>> {
-    await this.context.requireRight(TILL_MENU.MASTERS, 'delete', 'delete till counters');
+    await this.context.requireRight(TILL_MENU.COUNTERS, 'delete', 'delete till counters');
     return {
       success: true,
       message: 'Counter deleted',
@@ -124,12 +125,12 @@ export class TillMastersController {
   @ApiOperation({
     summary: 'Create or update a safe (by tsfId presence)',
     description:
-      'No ledger named on a new safe = the SAFE_CASH role’s ledger. Till Masters (275) CREATE / EDIT.',
+      'No ledger named on a new safe = the SAFE_CASH role’s ledger. Till Safes (280) CREATE / EDIT.',
   })
   @ApiCreatedResponse({ type: TillSuccessDto })
   @ApiBadRequestResponse({ type: TillErrorResponseDto })
   async saveSafe(@Body() dto: SaveTillSafeDto): Promise<TillSuccessResponse<TillSafePayload>> {
-    await this.requireSave(TILL_MENU.MASTERS, dto.tsfId, 'till safes');
+    await this.requireSave(TILL_MENU.SAFES, dto.tsfId, 'till safes');
     const data = await this.masters.saveSafe(dto);
     return {
       success: true,
@@ -141,10 +142,10 @@ export class TillMastersController {
   @Get('safes/get')
   @Version(API_VERSION)
   @CacheTTL(0)
-  @ApiOperation({ summary: 'One safe', description: 'Till Masters (275) VIEW.' })
+  @ApiOperation({ summary: 'One safe', description: 'Till Safes (280) VIEW.' })
   @ApiOkResponse({ type: TillSuccessDto })
   async getSafe(@Query() q: TillMasterKeyQueryDto): Promise<TillSuccessResponse<TillSafePayload>> {
-    await this.context.requireRight(TILL_MENU.MASTERS, 'view', 'view till safes');
+    await this.context.requireRight(TILL_MENU.SAFES, 'view', 'view till safes');
     return {
       success: true,
       message: 'Safe fetched',
@@ -156,13 +157,13 @@ export class TillMastersController {
   @Version(API_VERSION)
   @ApiOperation({
     summary: 'Soft-delete a safe (refused while a counter drops into it)',
-    description: 'Till Masters (275) DELETE.',
+    description: 'Till Safes (280) DELETE.',
   })
   @ApiOkResponse({ type: TillSuccessDto })
   async deleteSafe(
     @Query() q: TillMasterKeyQueryDto,
   ): Promise<TillSuccessResponse<TillDeletePayload>> {
-    await this.context.requireRight(TILL_MENU.MASTERS, 'delete', 'delete till safes');
+    await this.context.requireRight(TILL_MENU.SAFES, 'delete', 'delete till safes');
     return {
       success: true,
       message: 'Safe deleted',
@@ -176,13 +177,13 @@ export class TillMastersController {
   @Version(API_VERSION)
   @ApiOperation({
     summary: 'Create or update a company reason (by trsId presence)',
-    description: 'Shipped (shared) reasons are read-only. Till Masters (275) CREATE / EDIT.',
+    description: 'Shipped (shared) reasons are read-only. Till Reasons (281) CREATE / EDIT.',
   })
   @ApiCreatedResponse({ type: TillSuccessDto })
   async saveReason(
     @Body() dto: SaveTillReasonDto,
   ): Promise<TillSuccessResponse<TillReasonPayload>> {
-    await this.requireSave(TILL_MENU.MASTERS, dto.trsId, 'till reasons');
+    await this.requireSave(TILL_MENU.REASONS, dto.trsId, 'till reasons');
     const data = await this.masters.saveReason(dto);
     return { success: true, message: dto.trsId ? 'Reason updated' : 'Reason created', data };
   }
@@ -192,13 +193,13 @@ export class TillMastersController {
   @CacheTTL(0)
   @ApiOperation({
     summary: 'One reason (a company row or a shipped one)',
-    description: 'Till Masters (275) VIEW.',
+    description: 'Till Reasons (281) VIEW.',
   })
   @ApiOkResponse({ type: TillSuccessDto })
   async getReason(
     @Query() q: TillMasterKeyQueryDto,
   ): Promise<TillSuccessResponse<TillReasonPayload>> {
-    await this.context.requireRight(TILL_MENU.MASTERS, 'view', 'view till reasons');
+    await this.context.requireRight(TILL_MENU.REASONS, 'view', 'view till reasons');
     return {
       success: true,
       message: 'Reason fetched',
@@ -210,13 +211,13 @@ export class TillMastersController {
   @Version(API_VERSION)
   @ApiOperation({
     summary: 'Soft-delete a company reason',
-    description: 'Till Masters (275) DELETE.',
+    description: 'Till Reasons (281) DELETE.',
   })
   @ApiOkResponse({ type: TillSuccessDto })
   async deleteReason(
     @Query() q: TillMasterKeyQueryDto,
   ): Promise<TillSuccessResponse<TillDeletePayload>> {
-    await this.context.requireRight(TILL_MENU.MASTERS, 'delete', 'delete till reasons');
+    await this.context.requireRight(TILL_MENU.REASONS, 'delete', 'delete till reasons');
     return {
       success: true,
       message: 'Reason deleted',
@@ -230,13 +231,13 @@ export class TillMastersController {
   @Version(API_VERSION)
   @ApiOperation({
     summary: 'Create or update a company denomination (by tdnId presence)',
-    description: 'Till Masters (275) CREATE / EDIT.',
+    description: 'Denominations (282) CREATE / EDIT.',
   })
   @ApiCreatedResponse({ type: TillSuccessDto })
   async saveDenomination(
     @Body() dto: SaveTillDenominationDto,
   ): Promise<TillSuccessResponse<TillDenominationPayload>> {
-    await this.requireSave(TILL_MENU.MASTERS, dto.tdnId, 'denominations');
+    await this.requireSave(TILL_MENU.DENOMINATIONS, dto.tdnId, 'denominations');
     const data = await this.masters.saveDenomination(dto);
     return {
       success: true,
@@ -248,12 +249,12 @@ export class TillMastersController {
   @Get('denominations/get')
   @Version(API_VERSION)
   @CacheTTL(0)
-  @ApiOperation({ summary: 'One denomination', description: 'Till Masters (275) VIEW.' })
+  @ApiOperation({ summary: 'One denomination', description: 'Denominations (282) VIEW.' })
   @ApiOkResponse({ type: TillSuccessDto })
   async getDenomination(
     @Query() q: TillMasterKeyQueryDto,
   ): Promise<TillSuccessResponse<TillDenominationPayload>> {
-    await this.context.requireRight(TILL_MENU.MASTERS, 'view', 'view denominations');
+    await this.context.requireRight(TILL_MENU.DENOMINATIONS, 'view', 'view denominations');
     return {
       success: true,
       message: 'Denomination fetched',
@@ -268,7 +269,7 @@ export class TillMastersController {
     summary: 'The notes and coins a count offers this company, in screen order',
     description:
       'Its own rows and the shipped ones valid today; a company row replaces the shipped row of the same value. ' +
-      'Open Till (272) VIEW or Till Masters (275) VIEW.',
+      'Open Till (272) VIEW or Denominations (282) VIEW.',
   })
   @ApiOkResponse({ type: TillListSuccessDto })
   async listDenominations(
@@ -276,7 +277,7 @@ export class TillMastersController {
   ): Promise<TillSuccessResponse<TillDenominationPayload[]>> {
     const till = await this.context.rights(TILL_MENU.OPEN_TILL);
     if (!till.view) {
-      await this.context.requireRight(TILL_MENU.MASTERS, 'view', 'view denominations');
+      await this.context.requireRight(TILL_MENU.DENOMINATIONS, 'view', 'view denominations');
     }
     const data = await this.masters.listDenominations(q.companyId);
     return { success: true, message: `${data.length} denomination(s)`, data };
@@ -286,13 +287,13 @@ export class TillMastersController {
   @Version(API_VERSION)
   @ApiOperation({
     summary: 'Soft-delete a company denomination',
-    description: 'Till Masters (275) DELETE.',
+    description: 'Denominations (282) DELETE.',
   })
   @ApiOkResponse({ type: TillSuccessDto })
   async deleteDenomination(
     @Query() q: TillMasterKeyQueryDto,
   ): Promise<TillSuccessResponse<TillDeletePayload>> {
-    await this.context.requireRight(TILL_MENU.MASTERS, 'delete', 'delete denominations');
+    await this.context.requireRight(TILL_MENU.DENOMINATIONS, 'delete', 'delete denominations');
     return {
       success: true,
       message: 'Denomination deleted',

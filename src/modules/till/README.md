@@ -36,11 +36,19 @@ moving a session to another device (§3.3 / §3.4) — both need the `COUNTER_RE
 | 272 | Open Till | VIEW `current` / `get` my session · CREATE `open` · EDIT `suspend` `resume` `end-billing` `count` `close` · PRINT (X read, later) |
 | 273 | Till Sessions | VIEW another cashier's session · OVERRIDE the expected figures, and count / close someone else's drawer (cash office, absent cashier) |
 | 274 | Business Day | VIEW `days/get` · CREATE `days/open` |
-| 275 | Till Masters | counters · safes · reasons · denominations |
+| 283 | Till Masters | the group of the four below (notes 102), VIEW only — granted to whoever views one of them |
+| 275 | Till Counters | counters (was "Till Masters", all four, until notes 101) |
+| 280 | Till Safes | safes |
+| 281 | Till Reasons | reasons |
+| 282 | Denominations | denominations; `denominations/list` also opens with Open Till (272) VIEW |
 | 276 | Till Approval Setup | approval rules · approval authority |
 
-All hidden until the client screens ship; rights work on a hidden menu. Ids are pinned in the
-migration and in `prisma/seed/Menu_Master.sql`.
+Each master is judged on its own menu since the client split Till Masters into four screens
+(notes 101, migration `20261009190000`, which copied 275's grants onto 280–282); notes 102
+(`20261009200000`) put the four under the group 283. The seed ships
+them hidden; rights work on a hidden menu. Ids are pinned in the migrations and in
+`prisma/seed/Menu_Master.sql`. `counters/get` carries `deviceName` / `safeName`, `reasons/get`
+`ledgerName`, `safes/get` `ledgerName`.
 
 ## Routes
 
@@ -146,6 +154,9 @@ payment to pick that statutory row. The Qt screens (F11 rev 2, the till strip, t
 - **Re-tender:** `/bills/retender` logs **RETENDER** (in ck_tev_code since 47) in the session the money
   moved in — the device's live session, else the bill's own when that is a till session — with the
   voided and added rows, the TndC and the bill's session (notes 99 §7; the cockpit's RE-TENDERS tile).
+  Every row it adds carries that same session, whatever the line sends (notes 100: today's client
+  sends `tdSessionId: null`, which beat the scope), so the drawer expects the cash taken at a
+  re-tender and the slip check sees its card rows.
 - **Late arrival (§2.6):** a bill naming a session that has stopped billing (COUNTING,
   PENDING_APPROVAL, CLOSED), MADE before billing stopped (`sb_bill_datetime`) and REACHING the
   server after it (`sb_created_on`), is accepted, stamped and logged `LATE_ARRIVAL` — the sale

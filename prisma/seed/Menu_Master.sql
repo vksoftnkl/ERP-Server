@@ -1,4 +1,4 @@
--- Seed: fixed.menu_master -- the full application menu tree (241 rows).
+-- Seed: fixed.menu_master -- the full application menu tree (246 rows).
 --
 -- Exported from the reference database, so a fresh environment comes up with the
 -- same menu ids every other table points at.
@@ -108,11 +108,18 @@ VALUES
     ,( 257,    1, 'Temp Credits'                         , NULL                  , true ,   6.20, NULL, NULL, NULL, true , false)
     -- Till (271-276, migration 20261008140000 / src/modules/till): hidden until the
     -- client screens ship; rights work on a hidden menu. Verbs are set below.
+    -- 275 was "Till Masters" until notes 101 split it into four screens:
+    -- 275 / 280 / 281 / 282 (20261009190000_till_masters_split_menus); notes 102
+    -- put them in the group 283 "Till Masters" (20261009200000_till_masters_group).
     ,( 271,    1, 'Till'                                 , NULL                  , false,  18.10, NULL, NULL, NULL, true , true)
     ,( 272,  271, 'Open Till'                            , NULL                  , false,   1.00, NULL, NULL, NULL, true , false)
     ,( 273,  271, 'Till Sessions'                        , NULL                  , false,   2.00, NULL, NULL, NULL, true , false)
     ,( 274,  271, 'Business Day'                         , NULL                  , false,   3.00, NULL, NULL, NULL, true , false)
-    ,( 275,  271, 'Till Masters'                         , NULL                  , false,   4.00, NULL, NULL, NULL, true , true)
+    ,( 283,  271, 'Till Masters'                         , NULL                  , false,   4.00, NULL, NULL, NULL, true , true)
+    ,( 275,  283, 'Till Counters'                        , NULL                  , false,   1.00, NULL, NULL, NULL, true , true)
+    ,( 280,  283, 'Till Safes'                           , NULL                  , false,   2.00, NULL, NULL, NULL, true , false)
+    ,( 281,  283, 'Till Reasons'                         , NULL                  , false,   3.00, NULL, NULL, NULL, true , false)
+    ,( 282,  283, 'Denominations'                        , NULL                  , false,   4.00, NULL, NULL, NULL, true , false)
     ,( 276,  271, 'Till Approval Setup'                  , NULL                  , false,   5.00, NULL, NULL, NULL, true , false)
     ,( 277,    5, 'Expense Voucher'                      , NULL                  , false,  11.50, NULL, NULL, NULL, true , false)
     ,( 278,    5, 'Settlement Reconciliation'            , NULL                  , false,  11.60, NULL, NULL, NULL, true , false)
@@ -347,7 +354,7 @@ UPDATE fixed.menu_master
  WHERE menu_id = 263
    AND menu_verbs = '{VIEW,CREATE,EDIT,DELETE,PRINT,EXPORT}';
 
--- Till (271-276, 20261008140000): what each till screen can do. The group holds
+-- Till (271-276 + 280-283, 20261008140000 / 20261009190000 / 20261009200000): what each till screen can do. The groups hold
 -- VIEW only; Open Till is the cashier's own session (CREATE = open, EDIT = suspend /
 -- resume / count / close, PRINT = X read); Till Sessions is the supervisor's view
 -- (OVERRIDE = the expected figures a blind close hides); Business Day opens the day.
@@ -356,7 +363,9 @@ UPDATE fixed.menu_master m
    SET menu_verbs = v.verbs::text[]
   FROM (VALUES (271, '{VIEW}'), (272, '{VIEW,CREATE,EDIT,PRINT}'),
                (273, '{VIEW,PRINT,EXPORT,OVERRIDE}'), (274, '{VIEW,CREATE}'),
-               (275, '{VIEW,CREATE,EDIT,DELETE,EXPORT}'), (276, '{VIEW,CREATE,EDIT,DELETE,EXPORT}')
+               (275, '{VIEW,CREATE,EDIT,DELETE,EXPORT}'), (276, '{VIEW,CREATE,EDIT,DELETE,EXPORT}'),
+               (280, '{VIEW,CREATE,EDIT,DELETE,EXPORT}'), (281, '{VIEW,CREATE,EDIT,DELETE,EXPORT}'),
+               (282, '{VIEW,CREATE,EDIT,DELETE,EXPORT}'), (283, '{VIEW}')
        ) AS v(id, verbs)
  WHERE m.menu_id = v.id
    AND m.menu_verbs = '{VIEW,CREATE,EDIT,DELETE,PRINT,EXPORT}';

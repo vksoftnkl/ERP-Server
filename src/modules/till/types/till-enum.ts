@@ -14,8 +14,16 @@ export const TILL_MENU = {
   SESSIONS: 273,
   /** VIEW · CREATE (Day Open). */
   BUSINESS_DAY: 274,
-  /** Counters · safes · reasons · denominations. */
-  MASTERS: 275,
+  /** The "Till Masters" group of the four master screens below (notes 102). VIEW only. */
+  MASTERS_GROUP: 283,
+  /** Till Counters — was "Till Masters" (all four) until the screens split (notes 101). */
+  COUNTERS: 275,
+  /** Till Safes (notes 101). */
+  SAFES: 280,
+  /** Till Reasons (notes 101). */
+  REASONS: 281,
+  /** Denominations (notes 101); also opens denominations/list without Open Till. */
+  DENOMINATIONS: 282,
   /** Approval rules · approval authority. */
   APPROVAL_SETUP: 276,
 } as const;

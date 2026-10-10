@@ -40,7 +40,7 @@ import {
 
 jest.setTimeout(300_000);
 
-const TILL_MENUS = [271, 272, 273, 274, 275, 276];
+const TILL_MENUS = [271, 272, 273, 274, 275, 276, 280, 281, 282];
 const RCPV_MENU = 260;
 const SETTLEMENT_MENU = 278;
 const GROUP = {

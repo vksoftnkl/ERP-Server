@@ -358,7 +358,11 @@ export interface TillCounterPayload {
   tcnKind: string;
   tcnDrawerMode: string;
   tcnDeviceId: string | null;
+  /** fixed.device_master.dev_device_name of tcnDeviceId (notes 101 §3). */
+  deviceName: string | null;
   tcnSafeId: string | null;
+  /** till_safe.tsf_name of tcnSafeId. */
+  safeName: string | null;
   tcnDefaultFloat: number;
   tcnCashAlertLimit: number;
   tcnCashBlockLimit: number;
@@ -394,6 +398,8 @@ export interface TillReasonPayload {
   trsCode: string;
   trsName: string;
   trsLedgerId: string | null;
+  /** The default ledger's name (notes 101 §3). */
+  ledgerName: string | null;
   trsNeedsNote: boolean;
   trsNeedsRef: boolean;
   trsMaxAmount: number;

@@ -14,6 +14,7 @@ import {
   WALK_IN_NAME,
   billBody,
   billKeys,
+  figures,
   grantSalesRights,
   makeItem,
   postOpeningStock,
@@ -41,7 +42,7 @@ import {
  */
 
 const tag = runTag();
-const TILL_MENUS = [271, 272, 273, 274, 275, 276];
+const TILL_MENUS = [271, 272, 273, 274, 275, 276, 280, 281, 282];
 
 let app: INestApplication;
 let h: Harness;
@@ -55,6 +56,8 @@ let item: Item;
 let note500: string;
 let sbId: string;
 let billAmt: number;
+/** The UPI bill re-tendered to cash in the session (notes 100): the drawer must expect it. */
+let retenderCash = 0;
 let session: { tssId: string; tssAccYear: string; tssBusinessDate: string };
 /** Bills a later test POSTS (cancelled in teardown) and leaves as DRAFT (deleted). */
 const postedBills: string[] = [];
@@ -219,34 +222,42 @@ describe('A cash bill on a counter’s device', () => {
     expect(voucher.s).toBe(session.tssId);
   });
 
-  it('a re-tender in the session is a RETENDER in its journal (notes 99 §7)', async () => {
+  it('a re-tender in the session books its rows there: the drawer expects its cash, the journal has a RETENDER (notes 99 §7, notes 100)', async () => {
+    const lines = [{ item, qty: 1, rate: 100 }];
+    retenderCash = figures(lines).total;
     const created = await post(
       'bills/create',
       billBody({
         custId: WALK_IN,
         custName: WALK_IN_NAME,
-        lines: [{ item, qty: 1, rate: 100 }],
+        lines,
+        tenders: [{ tenderId: TENDER.UPI, amount: retenderCash, refNo: `UTR-E2E-TILL-${tag}` }],
         usrRefno: `E2E-TILL-${tag}-RETENDER`,
         extra: { sbSessionId: session.tssId },
       }),
     );
     expectStatus(created, 201);
     const id: string = created.body.data.sbId;
-    const amount = Number(created.body.data.sbBillAmt);
     expectStatus(await post('bills/post', billKeys(id)), 201);
     postedBills.push(id);
-    const [cash] = await prisma.$queryRaw<{ td_id: string }[]>`
+    const [upi] = await prisma.$queryRaw<{ td_id: string }[]>`
       SELECT td_id::text FROM accounts.acc_tender_detail
        WHERE td_src_doc_type = 'SALE_BILL' AND td_src_doc_id = ${id}::uuid
-         AND td_is_deleted = false AND td_is_voided = false AND td_tender_type_id = 1`;
-    // All of it to UPI, so the drawer's expectation is what it was before this bill.
+         AND td_is_deleted = false AND td_is_voided = false AND td_tender_type_id = 3`;
+    // It was cash after all. The line names no session, as today's client sends it.
     const res = await post('bills/retender', {
       ...billKeys(id),
-      voids: [{ tdId: cash.td_id, reason: 'KEYED_WRONG' }],
-      tenders: [{ tdTenderId: TENDER.UPI, tdAmount: amount, tdRefNo: `UTR-E2E-TILL-${tag}` }],
-      remark: `E2E-TILL-${tag} it was UPI`,
+      voids: [{ tdId: upi.td_id, reason: 'KEYED_WRONG' }],
+      tenders: [{ tdTenderId: TENDER.CASH, tdAmount: retenderCash, tdSessionId: null, tdDeviceId: null }],
+      remark: `E2E-TILL-${tag} it was cash`,
     });
     expectStatus(res, 201);
+    const rows = await prisma.$queryRaw<{ type: number; s: string | null }[]>`
+      SELECT td_tender_type_id AS type, td_session_id::text AS s FROM accounts.acc_tender_detail
+       WHERE td_src_doc_type = 'SALE_BILL' AND td_src_doc_id = ${id}::uuid
+         AND td_is_deleted = false AND td_is_voided = false`;
+    expect(rows).toEqual([{ type: 1, s: session.tssId }]);
+
     const events = await prisma.tillEvent.findMany({
       where: { tevSessionId: session.tssId, tevEventCode: 'RETENDER' },
       select: { tevSrcDocType: true, tevSrcDocId: true, tevAmount: true, tevCounterId: true, tevPayload: true },
@@ -255,11 +266,11 @@ describe('A cash bill on a counter’s device', () => {
     expect(events[0]).toEqual(
       expect.objectContaining({ tevSrcDocType: 'SALE_BILL', tevSrcDocId: id, tevCounterId: counterId }),
     );
-    expect(Number(events[0].tevAmount)).toBe(amount);
+    expect(Number(events[0].tevAmount)).toBe(retenderCash);
     expect(events[0].tevPayload).toEqual(
       expect.objectContaining({
-        voided: [expect.objectContaining({ tdId: cash.td_id, amount })],
-        added: [expect.objectContaining({ amount })],
+        voided: [expect.objectContaining({ tdId: upi.td_id, amount: retenderCash })],
+        added: [expect.objectContaining({ amount: retenderCash })],
       }),
     );
   });
@@ -315,7 +326,7 @@ describe('A cash bill on a counter’s device', () => {
       ...key(),
       lines: [
         { tenderTypeId: 1, denominationId: note500, qty: 1 },
-        { tenderTypeId: 1, enteredAmount: billAmt },
+        { tenderTypeId: 1, enteredAmount: billAmt + retenderCash },
       ],
     });
     expectStatus(count, 200);
@@ -324,12 +335,17 @@ describe('A cash bill on a counter’s device', () => {
     const close = await post('till/sessions/close', { ...key(), floatLeft: 0 });
     expectStatus(close, 200);
     expect(close.body.data.totals).toEqual(
-      // the re-tendered bill counts as a bill; its money went to UPI, not the drawer
-      expect.objectContaining({ billCount: 2, handedOver: 500 + billAmt, cashVariance: 0 }),
+      // the re-tendered bill is the second; the cash taken at its re-tender leaves with the rest
+      expect.objectContaining({ billCount: 2, handedOver: 500 + billAmt + retenderCash, cashVariance: 0 }),
     );
-    // 1000 float − 500 dropped + the bill's cash.
+    // 1000 float − 500 dropped + both bills' cash.
     expect(close.body.data.tenders.find((t: { tenderTypeId: number }) => t.tenderTypeId === 1)).toEqual(
-      expect.objectContaining({ openAmount: 1000, salesAmount: billAmt, movedOut: 500, expected: 500 + billAmt }),
+      expect.objectContaining({
+        openAmount: 1000,
+        salesAmount: billAmt + retenderCash,
+        movedOut: 500,
+        expected: 500 + billAmt + retenderCash,
+      }),
     );
   });
 

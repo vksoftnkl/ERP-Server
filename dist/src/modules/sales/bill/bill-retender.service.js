@@ -184,7 +184,11 @@ let BillRetenderService = class BillRetenderService {
             const scope = this.tenderScope(bill, moneySessionId);
             const existing = await this.tenders.getByDocument(tender_detail_api_types_1.TenderSrcModule.SALES, tender_detail_api_types_1.TenderSrcDocType.SALE_BILL, bill.sbId, tx);
             const keep = existing.map((t) => ({ tdId: t.tdId }));
-            const created = await this.tenders.syncDocumentTenders(tx, scope, [...keep, ...((0, bill_temp_credit_1.encodeTempCreditTenders)(dto.tenders) ?? [])], actor, bill_api_types_1.BILL_TENDER_AUDIT);
+            const added = ((0, bill_temp_credit_1.encodeTempCreditTenders)(dto.tenders) ?? []).map((t) => ({
+                ...t,
+                tdSessionId: moneySessionId ?? t.tdSessionId ?? null,
+            }));
+            const created = await this.tenders.syncDocumentTenders(tx, scope, [...keep, ...added], actor, bill_api_types_1.BILL_TENDER_AUDIT);
             const newRows = created.filter((t) => !existing.some((e) => e.tdId === t.tdId));
             const chequeDetails = (0, bill_cheque_details_1.buildDraftCheques)([...keep, ...dto.tenders], created, {}) ?? {};
             if (bill.sbStatus !== 'POSTED' && Object.keys(chequeDetails).length > 0) {

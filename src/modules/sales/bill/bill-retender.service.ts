@@ -269,10 +269,17 @@ export class BillRetenderService {
         tx,
       );
       const keep = existing.map((t) => ({ tdId: t.tdId }) as never);
+      // The session a new row books in is the server's, never the line's (notes 100): a line's
+      // own tdSessionId — the client sends null — wins over the scope in insertTenderLine, and
+      // the drawer that took the money would then never expect it.
+      const added = (encodeTempCreditTenders(dto.tenders) ?? []).map((t) => ({
+        ...t,
+        tdSessionId: moneySessionId ?? t.tdSessionId ?? null,
+      }));
       const created = await this.tenders.syncDocumentTenders(
         tx,
         scope,
-        [...keep, ...(encodeTempCreditTenders(dto.tenders) ?? [])],
+        [...keep, ...added],
         actor,
         BILL_TENDER_AUDIT,
       );

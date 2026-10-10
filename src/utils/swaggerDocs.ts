@@ -98,6 +98,8 @@ import { LedgerStatementModule } from 'src/modules/reports/ledger-statement/ledg
 import { GstinLookupModule } from '../modules/settings/gstinLookup/gstin-lookup.module';
 import { LoyaltyMembersModule } from '../modules/sales/loyalty/members/loyalty-members.module';
 import { LoyaltyStatusModule } from '../modules/reports/loyalty-status/loyalty-status.module';
+import { ReportsPartyOutstandingModule } from '../modules/reports/party-outstanding/party-outstanding.module';
+import { TillModule } from '../modules/till/till.module';
 import { StockAdjustmentModule } from '../modules/stocks/stock-adjustment/stock-adjustment.module';
 import { StockPostingModule } from '../modules/stocks/posting/stock-posting.module';
 import { TxnStatusModule } from '../modules/txn-status/txn-status.module';
@@ -417,6 +419,18 @@ export const swaggerModuleDocuments = [
       'as one TSet per payout; the not-received rows written off and the unexplained lines resolved ' +
       '(OVERRIDE stands in for their approvals until the approval gate ships)',
     include: [TenderSettlementModule],
+  },
+  {
+    path: 'till',
+    title: 'Till API',
+    description:
+      'Till management under /till: the business day, the cashier’s session (open, suspend, ' +
+      'resume, end billing, count, close, slip check) and the till journal (movements, change, ' +
+      'void, offline event batch), judged on menus 272–274; and the till masters — counters, ' +
+      'safes, reasons, denominations, approval rules and authorities — each on its own screen’s ' +
+      'menu. GETs are never cached. Lists are configured grids, not routes, except ' +
+      '/denominations/list',
+    include: [TillModule],
   },
   {
     path: 'vouchers',
@@ -818,6 +832,16 @@ export const swaggerModuleDocuments = [
       'monthly and gift breakdowns, and an export. companyId is required; branchId absent means ' +
       'every branch. Not cached',
     include: [LoyaltyStatusModule],
+  },
+  {
+    path: 'reports-party-outstanding',
+    title: 'Reports — Party-wise Outstanding API',
+    description:
+      'Read-only Party-wise Outstanding report (menu 279): nine GET routes under ' +
+      'reports/party-outstanding — options, parties, one party, bills, bill-wise, bill history, ' +
+      'summary, due calendar and an export. Receivable or Payable, pending as on a date as the ' +
+      'books stand today; branchId absent means every branch. Not cached',
+    include: [ReportsPartyOutstandingModule],
   },
   {
     path: 'txn-status',

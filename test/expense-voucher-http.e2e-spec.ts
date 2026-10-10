@@ -48,7 +48,7 @@ import { EXPENSE_PRINT_PURPOSE_CODE } from '../src/modules/accountsModule/expens
 
 jest.setTimeout(240_000);
 
-const TILL_MENUS = [271, 272, 273, 274, 275, 276];
+const TILL_MENUS = [271, 272, 273, 274, 275, 276, 280, 281, 282];
 const EXPENSE_MENU = 277;
 const JOURNAL_MENU = 103;
 const TENDER = {

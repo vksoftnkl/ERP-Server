@@ -3,7 +3,11 @@ export declare const TILL_MENU: {
     readonly OPEN_TILL: 272;
     readonly SESSIONS: 273;
     readonly BUSINESS_DAY: 274;
-    readonly MASTERS: 275;
+    readonly MASTERS_GROUP: 283;
+    readonly COUNTERS: 275;
+    readonly SAFES: 280;
+    readonly REASONS: 281;
+    readonly DENOMINATIONS: 282;
     readonly APPROVAL_SETUP: 276;
 };
 export declare const TILL_RIGHT_CODE_PREFIX = "TILL";
