@@ -65,6 +65,8 @@ export interface MovementInput {
   sealNo?: string | null;
   countId?: string | null;
   approvalId?: string | null;
+  /** Notes 108: when the witness's till PIN was checked; null = no witness proven. */
+  witnessVerifiedOn?: Date | null;
   notes?: string | null;
   /** The device it was keyed on — a supervisor's pickup may be keyed on their own. */
   deviceId?: string | null;
@@ -196,6 +198,7 @@ export class TillPostingService {
         tcmSealNo: input.sealNo ?? null,
         tcmDoneBy: input.doneBy ?? caller.userId,
         tcmWitnessBy: input.witnessBy ?? null,
+        tcmWitnessVerifiedOn: input.witnessVerifiedOn ?? null,
         tcmApprovalId: input.approvalId ?? null,
         tcmVoucherId: voucherId,
         tcmVoucherAccYear: voucherId ? session.tssAccYear : null,
@@ -228,6 +231,7 @@ export class TillPostingService {
         voucherId,
         doneBy: input.doneBy ?? caller.userId,
         witnessBy: input.witnessBy ?? null,
+        witnessVerifiedOn: input.witnessVerifiedOn?.toISOString() ?? null,
       },
     });
 

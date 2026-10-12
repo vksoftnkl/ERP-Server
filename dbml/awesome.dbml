@@ -1973,6 +1973,8 @@ Table till_cash_movement {
   tcmCreatedBy String
   tcmModifiedOn DateTime
   tcmModifiedBy String
+  tcmWitnessVerifiedOn DateTime [note: 'Notes 108: when the witness\'s till PIN was checked (PICKUP / TOP_UP).
+NULL = no witness proven. Physically last (20261012140000).']
   ledger acc_ledger_master
   reason till_reason
   safe till_safe

@@ -3371,6 +3371,9 @@ model TillCashMovement {
   tcmCreatedBy        String?   @db.VarChar(50)                      @map("tcm_created_by")
   tcmModifiedOn       DateTime? @db.Timestamptz(6)                   @map("tcm_modified_on")
   tcmModifiedBy       String?   @db.VarChar(50)                      @map("tcm_modified_by")
+  /// Notes 108: when the witness's till PIN was checked (PICKUP / TOP_UP).
+  /// NULL = no witness proven. Physically last (20261012140000).
+  tcmWitnessVerifiedOn DateTime? @db.Timestamptz(6)                  @map("tcm_witness_verified_on")
 
   // Relations
   ledger              AccLedgerMaster? @relation("TillCashMovementLedger", fields: [tcmLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_tcm_ledger")
@@ -3386,7 +3389,7 @@ model TillCashMovement {
   //   a POSTED non-EXCHANGE movement with no voucher).
   // CHECKs: ck_tcm_kind, ck_tcm_status, ck_tcm_amount, ck_tcm_session, ck_tcm_safe, ck_tcm_ledger,
   //         ck_tcm_reason, ck_tcm_transfer, ck_tcm_witness, ck_tcm_pickup_witness, ck_tcm_void,
-  //         ck_tcm_voucher_pair.
+  //         ck_tcm_voucher_pair, ck_tcm_witness_verified (a verified witness is a named one).
   @@map("till_cash_movement")
   @@schema("accounts")
 }

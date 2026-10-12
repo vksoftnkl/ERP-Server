@@ -466,6 +466,12 @@ export enum TillErrorCode {
   APPROVER_LIMIT = 'TILL_APPROVER_LIMIT',
   /** Notes 105 A2 — the channel wants the approver's till PIN (usr_pin_hash, notes 95), and none or a wrong one came. */
   APPROVER_PIN = 'TILL_APPROVER_PIN',
+  /** Notes 108 — a PICKUP / TOP_UP came without the witness's till PIN. */
+  WITNESS_PIN_REQUIRED = 'TILL_WITNESS_PIN_REQUIRED',
+  /** Notes 108 — the witness's till PIN is wrong (journalled PIN_FAIL). */
+  WITNESS_PIN = 'TILL_WITNESS_PIN',
+  /** Notes 108 — the witness has no till PIN (usr_pin_hash, notes 95) to check. */
+  WITNESS_NO_PIN = 'TILL_WITNESS_NO_PIN',
 }
 
 export const TILL_ERROR_STATUS: Readonly<Record<TillErrorCode, number>> = {
@@ -515,4 +521,9 @@ export const TILL_ERROR_STATUS: Readonly<Record<TillErrorCode, number>> = {
   [TillErrorCode.APPROVER_NO_GRANT]: 403,
   [TillErrorCode.APPROVER_LIMIT]: 403,
   [TillErrorCode.APPROVER_PIN]: 403,
+  // Notes 108: no proof the witness was there — the same 403 as an approver's PIN.
+  [TillErrorCode.WITNESS_PIN_REQUIRED]: 403,
+  [TillErrorCode.WITNESS_PIN]: 403,
+  // A user master to fix first, as LEDGER_UNMAPPED / SAFE_MISSING are a master to fix.
+  [TillErrorCode.WITNESS_NO_PIN]: 422,
 };

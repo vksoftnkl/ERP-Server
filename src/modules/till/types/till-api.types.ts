@@ -271,8 +271,10 @@ export interface TillMovementDetailPayload extends TillMovementPayload {
   tcmSealNo: string | null;
   /** Who handled the cash (the supervisor on a pickup / top-up). */
   tcmDoneBy: string;
-  /** Who signed for it (the cashier on a pickup). */
+  /** Who signed for it (the cashier on a pickup / top-up). */
   tcmWitnessBy: string | null;
+  /** Notes 108: when the witness's till PIN was checked — "witnessed (PIN)"; null = no witness proven. */
+  tcmWitnessVerifiedOn: string | null;
   tcmVoidedOn: string | null;
   tcmVoidedBy: string | null;
   tcmVoidReasonId: string | null;

@@ -1,9 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma, type TillSession } from '@prisma/client';
+import { verifySecret } from '../../../common/utils/secret-hash.utils';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { TillContextService, type TillCaller } from '../till-context.service';
 import { isoDateOf } from '../till-dates';
 import { throwTill, throwTillNotFound } from '../till-errors';
+import { TillEventService } from './till-event.service';
 import { TillLedgerService } from './till-ledger.service';
 import { TillPostingService, type PostingSession } from './till-posting.service';
 import { TillSessionService } from './till-session.service';
@@ -13,6 +15,7 @@ import {
   SUPERVISOR_MOVEMENTS,
   TillCountKind,
   TillErrorCode,
+  TillEventCode,
   TillMovementKind,
   TillSessionStatus,
   VOIDABLE_MOVEMENTS,
@@ -61,6 +64,8 @@ export interface CreateMovementInput {
   bagNo?: string | null;
   sealNo?: string | null;
   witnessBy?: string | null;
+  /** PICKUP / TOP_UP: the witness's till PIN (notes 108). */
+  witnessPin?: string | null;
   notes?: string | null;
 }
 
@@ -81,7 +86,9 @@ export interface CreateMovementInput {
  * The approvals the shipped rules ask for (PICKUP / TOP_UP / MOVEMENT_VOID
  * ALWAYS, a supervisor) are met in phase 2 by WHO calls: the supervisor
  * movements and the void need Till Sessions (273) OVERRIDE, checked by the
- * controller. Phase 3's gate writes the till_approval row behind each.
+ * controller. Phase 3's gate writes the till_approval row behind each. The
+ * cashier who witnesses a pickup / top-up proves it with their till PIN
+ * (notes 108, `proveWitness`).
  */
 @Injectable()
 export class TillMovementService {
@@ -91,6 +98,7 @@ export class TillMovementService {
     private readonly ledger: TillLedgerService,
     private readonly posting: TillPostingService,
     private readonly sessions: TillSessionService,
+    private readonly events: TillEventService,
   ) {}
 
   async create(input: CreateMovementInput): Promise<TillMovementDetailPayload> {
@@ -103,6 +111,8 @@ export class TillMovementService {
       );
     }
     const supervisorKind = SUPERVISOR_MOVEMENTS.includes(input.kind);
+    // Notes 108: before the transaction, so a wrong PIN is journalled, not rolled back.
+    const witness = supervisorKind ? await this.proveWitness(input, caller) : null;
 
     const tcmId = await this.prisma.$transaction(async (tx) => {
       const session = await this.lockSession(tx, input);
@@ -111,18 +121,12 @@ export class TillMovementService {
       }
 
       // ── who handles it, who signs for it ─────────────────────────────
-      let witnessBy: string | null = input.witnessBy ?? null;
-      if (input.kind === TillMovementKind.PICKUP) {
-        // "The supervisor takes the cash, the cashier signs for it" (§5.6).
-        witnessBy = witnessBy ?? session.tssOperatorId;
-        if (witnessBy === caller.userId) {
-          throwTill(
-            TillErrorCode.MOVEMENT_INVALID,
-            'A pickup is two people — the supervisor taking it and the cashier signing for it. One person moves cash to the safe with a DROP.',
-            'witnessBy',
-          );
-        }
-      } else if (witnessBy === caller.userId) {
+      // A supervisor's witness was proven above (the session's cashier is
+      // fixed at its open, so the lock cannot have changed it).
+      let witnessBy: string | null = supervisorKind
+        ? (witness?.userId ?? null)
+        : (input.witnessBy ?? null);
+      if (witnessBy === caller.userId) {
         witnessBy = null;
       }
 
@@ -258,6 +262,7 @@ export class TillMovementService {
         countId,
         notes: input.notes ?? null,
         deviceId,
+        witnessVerifiedOn: witness?.verifiedOn ?? null,
       });
       return posted.tcmId;
     });
@@ -287,6 +292,10 @@ export class TillMovementService {
     toTssId: string;
     lines: TillCountLineInput[];
     reasonId: string;
+    /** Notes 108: the giving cashier's till PIN (they witness the pickup). */
+    fromWitnessPin?: string | null;
+    /** Notes 108: the receiving cashier's till PIN, unless the caller is that cashier. */
+    toWitnessPin?: string | null;
     notes?: string | null;
   }): Promise<{ from: TillMovementDetailPayload; to: TillMovementDetailPayload }> {
     const caller = await this.context.caller();
@@ -305,6 +314,41 @@ export class TillMovementService {
       );
     }
     this.assertCashLines(input.lines, 'lines');
+
+    // Notes 108: both cashiers prove they were there, before the transaction
+    // (a wrong PIN is journalled, not rolled back). The receiving one has
+    // nothing to prove when the caller is that cashier, as a top-up on /create.
+    const scope = { companyId: input.companyId, branchId: input.branchId, accYear: input.accYear };
+    const fromPeek = await this.peekSession({ ...scope, tssId: input.fromTssId });
+    const toPeek = await this.peekSession({ ...scope, tssId: input.toTssId });
+    if (fromPeek.tssOperatorId === caller.userId) {
+      throwTill(
+        TillErrorCode.MOVEMENT_INVALID,
+        'The cashier giving the change witnesses it; the supervisor carrying it must be someone else',
+        'fromTssId',
+      );
+    }
+    const fromVerifiedOn = await this.checkWitnessPin(fromPeek, {
+      witnessId: fromPeek.tssOperatorId,
+      pin: input.fromWitnessPin,
+      kind: TillMovementKind.PICKUP,
+      pinField: 'fromWitnessPin',
+      whoField: 'fromTssId',
+      action: 'change',
+      caller,
+    });
+    const toVerifiedOn =
+      toPeek.tssOperatorId === caller.userId
+        ? null
+        : await this.checkWitnessPin(toPeek, {
+            witnessId: toPeek.tssOperatorId,
+            pin: input.toWitnessPin,
+            kind: TillMovementKind.TOP_UP,
+            pinField: 'toWitnessPin',
+            whoField: 'toTssId',
+            action: 'change',
+            caller,
+          });
 
     const ids = await this.prisma.$transaction(async (tx) => {
       // Locked in id order: two supervisors carrying change both ways cannot deadlock.
@@ -388,6 +432,7 @@ export class TillMovementService {
         countId: pickupCount,
         notes: input.notes ?? `Change to ${taking.code} (${to.tssSessionNo})`,
         deviceId,
+        witnessVerifiedOn: fromVerifiedOn,
       });
 
       const topUpId = await this.newId(tx);
@@ -413,6 +458,7 @@ export class TillMovementService {
         countId: topUpCount,
         notes: input.notes ?? `Change from ${giving.code} (${from.tssSessionNo})`,
         deviceId,
+        witnessVerifiedOn: toVerifiedOn,
       });
       return { pickupId, topUpId };
     });
@@ -484,6 +530,7 @@ export class TillMovementService {
       tcmSealNo: m.tcmSealNo,
       tcmDoneBy: m.tcmDoneBy,
       tcmWitnessBy: m.tcmWitnessBy,
+      tcmWitnessVerifiedOn: m.tcmWitnessVerifiedOn?.toISOString() ?? null,
       tcmVoidedOn: m.tcmVoidedOn?.toISOString() ?? null,
       tcmVoidedBy: m.tcmVoidedBy,
       tcmVoidReasonId: m.tcmVoidReasonId,
@@ -650,6 +697,139 @@ export class TillMovementService {
 
   // ═════════════════════════════════════════════════════════════════════════
 
+  /**
+   * Notes 108 — the witness of a PICKUP / TOP_UP on /create proves they were
+   * there with their till PIN. The witness is `witnessBy`, else the session's
+   * cashier, and never the caller: a pickup by the session's own cashier is
+   * refused (one person moves cash to the safe with a DROP); a top-up the
+   * cashier brings to their own drawer has no witness to prove, as before.
+   */
+  private async proveWitness(
+    input: CreateMovementInput,
+    caller: TillCaller,
+  ): Promise<{ userId: string; verifiedOn: Date } | null> {
+    const session = await this.peekSession(input);
+
+    // "The supervisor takes the cash, the cashier signs for it" (§5.6).
+    const witnessId = input.witnessBy ?? session.tssOperatorId;
+    if (witnessId === caller.userId) {
+      if (input.kind === TillMovementKind.PICKUP) {
+        throwTill(
+          TillErrorCode.MOVEMENT_INVALID,
+          'A pickup is two people — the supervisor taking it and the cashier signing for it. One person moves cash to the safe with a DROP.',
+          'witnessBy',
+        );
+      }
+      return null;
+    }
+    const verifiedOn = await this.checkWitnessPin(session, {
+      witnessId,
+      pin: input.witnessPin,
+      kind: input.kind,
+      pinField: 'witnessPin',
+      whoField: 'witnessBy',
+      action: 'movement',
+      caller,
+    });
+    return { userId: witnessId, verifiedOn };
+  }
+
+  /**
+   * The witness's till PIN (usr_pin_hash, notes 95), checked as decide-variance
+   * checks approverPin: no PIN on the user → TILL_WITNESS_NO_PIN, none typed →
+   * TILL_WITNESS_PIN_REQUIRED, wrong → TILL_WITNESS_PIN, journalled PIN_FAIL on
+   * the session. Reads only, and called BEFORE the movement's transaction so
+   * the PIN_FAIL row is not rolled back with it. There is no lockout:
+   * decide-variance has none either. Returns when the PIN was checked.
+   */
+  private async checkWitnessPin(
+    session: TillSession,
+    ask: {
+      witnessId: string;
+      pin: string | null | undefined;
+      kind: TillMovementKind;
+      /** The body field the PIN came in. */
+      pinField: string;
+      /** The body field that named the witness (refused when not an active user). */
+      whoField: string;
+      action: 'movement' | 'change';
+      caller: TillCaller;
+    },
+  ): Promise<Date> {
+    const { witnessId, pinField } = ask;
+    const user = await this.prisma.userMaster.findUnique({
+      where: { usrId: witnessId },
+      select: { usrLoginName: true, usrPinHash: true, usrIsActive: true, usrIsDeleted: true },
+    });
+    if (!user || !user.usrIsActive || user.usrIsDeleted) {
+      throwTill(
+        TillErrorCode.MOVEMENT_INVALID,
+        `The witness ${user?.usrLoginName ?? witnessId} is not an active user`,
+        ask.whoField,
+      );
+    }
+    const what = ask.kind === TillMovementKind.PICKUP ? 'pickup' : 'top-up';
+    if (!user.usrPinHash) {
+      throwTill(
+        TillErrorCode.WITNESS_NO_PIN,
+        `${user.usrLoginName} witnesses this ${what} and has no till PIN: an administrator sets one in User Administration (menu 58)`,
+        pinField,
+        { witnessBy: witnessId },
+      );
+    }
+    const pin = ask.pin?.trim() || null;
+    if (pin === null) {
+      throwTill(
+        TillErrorCode.WITNESS_PIN_REQUIRED,
+        `A ${what} is witnessed: ${user.usrLoginName} types their till PIN`,
+        pinField,
+        { witnessBy: witnessId },
+      );
+    }
+    if (!(await verifySecret(pin, user.usrPinHash))) {
+      await this.events.log(this.prisma, {
+        companyId: session.tssCompanyId,
+        branchId: session.tssBranchId,
+        accYear: session.tssAccYear,
+        code: TillEventCode.PIN_FAIL,
+        sessionId: session.tssId,
+        dayId: session.tssDayId,
+        counterId: session.tssCounterId,
+        deviceId: ask.caller.deviceId ?? session.tssDeviceId,
+        userId: ask.caller.userId,
+        srcRefno: session.tssSessionNo,
+        payload: { action: ask.action, kind: ask.kind, witnessBy: witnessId },
+      });
+      throwTill(TillErrorCode.WITNESS_PIN, `${user.usrLoginName}'s till PIN is wrong`, pinField, {
+        witnessBy: witnessId,
+      });
+    }
+    return new Date();
+  }
+
+  /** The session read unlocked and judged as lockSession judges it — for checks made before the transaction. */
+  private async peekSession(key: {
+    companyId: string;
+    branchId: string;
+    accYear: string;
+    tssId: string;
+  }): Promise<TillSession> {
+    const session = await this.prisma.tillSession.findFirst({
+      where: {
+        tssId: key.tssId,
+        tssAccYear: key.accYear,
+        tssCompanyId: key.companyId,
+        tssBranchId: key.branchId,
+        tssIsDeleted: false,
+      },
+    });
+    if (!session) {
+      throwTillNotFound('Till session', 'tssId', key.tssId);
+    }
+    this.assertMovable(session, MOVABLE_STATUSES);
+    return session;
+  }
+
   private async lockSession(
     tx: Tx,
     key: { companyId: string; branchId: string; accYear: string; tssId: string },
@@ -667,6 +847,11 @@ export class TillMovementService {
     const session = await tx.tillSession.findUniqueOrThrow({
       where: { tssId_tssAccYear: { tssId: key.tssId, tssAccYear: key.accYear } },
     });
+    this.assertMovable(session, statuses);
+    return session;
+  }
+
+  private assertMovable(session: TillSession, statuses: readonly TillSessionStatus[]): void {
     if (!statuses.includes(session.tssStatus as TillSessionStatus)) {
       throwTill(
         statuses === VOIDABLE_STATUSES
@@ -677,7 +862,6 @@ export class TillMovementService {
         { status: session.tssStatus },
       );
     }
-    return session;
   }
 
   /** A cashier's movement: the session's own cashier, at its own counter. */

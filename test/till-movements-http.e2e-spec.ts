@@ -1,6 +1,7 @@
 import { INestApplication } from '@nestjs/common';
 import * as request from 'supertest';
 
+import { hashSecret } from '../src/common/utils/secret-hash.utils';
 import { BEARER, BRANCH, COMPANY, bootApp, prisma } from './helpers/payment-e2e';
 import { grantMenuRights, restoreMenuRights, TESTER1, type MenuRightsMemo } from './helpers/menu-rights';
 
@@ -13,6 +14,8 @@ import { grantMenuRights, restoreMenuRights, TESTER1, type MenuRightsMemo } from
  * is the SUPERVISOR (Till Sessions OVERRIDE) who takes the pickup, brings the
  * change and voids. At the end the session closes and its till-cash legs —
  * originals, the void's mirror and the hand-over — net to the float left (§5.7).
+ * The cashier witnesses the pickup and the top-up with a till PIN (notes 108),
+ * set on tester1 and prathap for the run and put back afterwards.
  *
  * Run with --runInBand.
  */
@@ -42,6 +45,11 @@ const reason: Record<string, string> = {};
 let session: { tssId: string; tssAccYear: string; tssSessionNo: string; tssDayId: string };
 let dayCreated = false;
 const ids: Record<string, string> = {};
+/** tester1's and prathap's own till PIN hashes, put back in afterAll. */
+let tester1PinHash: string | null = null;
+let cashier2PinHash: string | null = null;
+const WITNESS_PIN = '1357';
+const CASHIER2_PIN = '8642';
 
 const as = (app: INestApplication) => ({
   post: (path: string, body: object) =>
@@ -117,6 +125,14 @@ beforeAll(async () => {
     SELECT count(*)::int AS n FROM accounts.till_business_day
      WHERE tbd_company_id = ${COMPANY}::uuid AND tbd_branch_id = ${BRANCH}::uuid AND tbd_is_deleted = false`;
   dayCreated = day.n === 0;
+
+  const [pin] = await prisma.$queryRaw<{ h: string | null }[]>`
+    SELECT usr_pin_hash AS h FROM public.user_master WHERE usr_id = ${TESTER1}::uuid`;
+  tester1PinHash = pin.h;
+  const [pin2] = await prisma.$queryRaw<{ h: string | null }[]>`
+    SELECT usr_pin_hash AS h FROM public.user_master WHERE usr_id = ${CASHIER2}::uuid`;
+  cashier2PinHash = pin2.h;
+  await prisma.$executeRaw`UPDATE public.user_master SET usr_pin_hash = NULL WHERE usr_id IN (${TESTER1}::uuid, ${CASHIER2}::uuid)`;
 
   cashierRights = await grantMenuRights(prisma, TILL_MENUS, TESTER1);
   supervisorRights = await grantMenuRights(prisma, TILL_MENUS, SUPERVISOR);
@@ -202,6 +218,8 @@ afterAll(async () => {
   await restoreMenuRights(prisma, cashier2Rights);
   await restoreMenuRights(prisma, supervisorRights);
   await restoreMenuRights(prisma, cashierRights);
+  await prisma.$executeRaw`UPDATE public.user_master SET usr_pin_hash = ${tester1PinHash} WHERE usr_id = ${TESTER1}::uuid`;
+  await prisma.$executeRaw`UPDATE public.user_master SET usr_pin_hash = ${cashier2PinHash} WHERE usr_id = ${CASHIER2}::uuid`;
   await cashierApp?.close();
   await supervisorApp?.close();
   await cashier2App?.close();
@@ -268,26 +286,70 @@ describe('Till movements, voids and cash limits', () => {
     expect(res.body.errors[0].code).toBe('TILL_RIGHT_OVERRIDE');
   });
 
-  it('the supervisor’s pickup of 3000 (TDrp) is witnessed by the cashier and unblocks the drawer', async () => {
+  it('notes 108 — a pickup wants the cashier’s till PIN: none set, none typed, a wrong one (journalled PIN_FAIL), and nothing is written', async () => {
+    const pickup = (body: object = {}) =>
+      supervisor().post(
+        'movements/create',
+        move({ kind: 'PICKUP', lines: [{ tenderTypeId: 1, denominationId: denom['500N'], qty: 6 }], reasonId: reason['PICKUP/CASH_LIMIT'], ...body }),
+      );
+
+    const noPinSet = await pickup({ witnessPin: WITNESS_PIN });
+    expectStatus(noPinSet, 422);
+    expect(noPinSet.body.errors[0]).toEqual(
+      expect.objectContaining({ code: 'TILL_WITNESS_NO_PIN', field: 'witnessPin', witnessBy: TESTER1 }),
+    );
+    expect(noPinSet.body.errors[0].message).toContain('User Administration');
+
+    await prisma.$executeRaw`UPDATE public.user_master SET usr_pin_hash = ${await hashSecret(WITNESS_PIN)} WHERE usr_id = ${TESTER1}::uuid`;
+    const none = await pickup();
+    expectStatus(none, 403);
+    expect(none.body.errors[0]).toEqual(expect.objectContaining({ code: 'TILL_WITNESS_PIN_REQUIRED', field: 'witnessPin' }));
+
+    const wrong = await pickup({ witnessPin: '0000' });
+    expectStatus(wrong, 403);
+    expect(wrong.body.errors[0]).toEqual(expect.objectContaining({ code: 'TILL_WITNESS_PIN', field: 'witnessPin' }));
+    const [fail] = await prisma.$queryRaw<{ n: number; user_id: string; payload: { action: string; kind: string; witnessBy: string } }[]>`
+      SELECT count(*) OVER ()::int AS n, tev_user_id::text AS user_id, tev_payload AS payload FROM accounts.till_event
+       WHERE tev_session_id = ${session.tssId}::uuid AND tev_event_code = 'PIN_FAIL'`;
+    expect(fail).toEqual({ n: 1, user_id: SUPERVISOR, payload: { action: 'movement', kind: 'PICKUP', witnessBy: TESTER1 } });
+
+    const [written] = await prisma.$queryRaw<{ n: number }[]>`
+      SELECT count(*)::int AS n FROM accounts.till_cash_movement
+       WHERE tcm_session_id = ${session.tssId}::uuid AND tcm_kind = 'PICKUP'`;
+    expect(written.n).toBe(0);
+    expect((await cashLimit()).state).toBe('BLOCKED');
+  });
+
+  it('the supervisor’s pickup of 3000 (TDrp) is witnessed by the cashier’s PIN and unblocks the drawer', async () => {
     const res = await supervisor().post(
       'movements/create',
-      move({ kind: 'PICKUP', lines: [{ tenderTypeId: 1, denominationId: denom['500N'], qty: 6 }], reasonId: reason['PICKUP/CASH_LIMIT'] }),
+      move({
+        kind: 'PICKUP',
+        lines: [{ tenderTypeId: 1, denominationId: denom['500N'], qty: 6 }],
+        reasonId: reason['PICKUP/CASH_LIMIT'],
+        witnessPin: WITNESS_PIN,
+      }),
     );
     expectStatus(res, 201);
     expect(res.body.data).toEqual(
       expect.objectContaining({ tcmKind: 'PICKUP', tcmAmount: 3000, tcmDoneBy: SUPERVISOR, tcmWitnessBy: TESTER1, tcmSafeId: safeId }),
     );
+    expect(Date.parse(res.body.data.tcmWitnessVerifiedOn)).toBeGreaterThan(Date.now() - 60_000);
     expect(res.body.data.counts).toEqual([expect.objectContaining({ tctKind: 'PICKUP', tctTotalCounted: 3000 })]);
     expect(await cashLimit()).toEqual(expect.objectContaining({ state: 'NORMAL', gauge: 3 }));
   });
 
-  it('a top-up brings 200 of change (TFlt); a drop is a sealed bag of a declared amount', async () => {
-    const top = await supervisor().post(
-      'movements/create',
-      move({ kind: 'TOP_UP', lines: [{ tenderTypeId: 1, denominationId: denom['100N'], qty: 2 }] }),
-    );
+  it('a top-up brings 200 of change (TFlt), witnessed by the cashier’s PIN; a drop is a sealed bag of a declared amount', async () => {
+    const lines = [{ tenderTypeId: 1, denominationId: denom['100N'], qty: 2 }];
+    const unproven = await supervisor().post('movements/create', move({ kind: 'TOP_UP', lines }));
+    expectStatus(unproven, 403);
+    expect(unproven.body.errors[0].code).toBe('TILL_WITNESS_PIN_REQUIRED');
+
+    const top = await supervisor().post('movements/create', move({ kind: 'TOP_UP', lines, witnessPin: WITNESS_PIN }));
     expectStatus(top, 201);
     expect(top.body.data.counts[0]).toEqual(expect.objectContaining({ tctKind: 'FLOAT_ISSUE', tctTotalCounted: 200 }));
+    expect(top.body.data.tcmWitnessBy).toBe(TESTER1);
+    expect(top.body.data.tcmWitnessVerifiedOn).not.toBeNull();
 
     const counted = await cashier().post(
       'movements/create',
@@ -297,7 +359,9 @@ describe('Till movements, voids and cash limits', () => {
     const drop = await cashier().post('movements/create', move({ kind: 'DROP', amount: 1000, bagNo: 'B-17', sealNo: 'S-9017' }));
     expectStatus(drop, 201);
     ids.drop = drop.body.data.tcmId;
-    expect(drop.body.data).toEqual(expect.objectContaining({ tcmKind: 'DROP', tcmBagNo: 'B-17', tcmSealNo: 'S-9017' }));
+    expect(drop.body.data).toEqual(
+      expect.objectContaining({ tcmKind: 'DROP', tcmBagNo: 'B-17', tcmSealNo: 'S-9017', tcmWitnessVerifiedOn: null }),
+    );
   });
 
   it('an exchange counts both sides, books nothing and is numbered in the session', async () => {
@@ -378,15 +442,42 @@ describe('Till movements, voids and cash limits', () => {
     expectStatus(open2, 201);
     session2 = open2.body.data;
 
-    const res = await supervisor().post('movements/change', {
-      companyId: COMPANY,
-      branchId: BRANCH,
-      accYear: session.tssAccYear,
-      fromTssId: session.tssId,
-      toTssId: session2.tssId,
-      lines: [{ tenderTypeId: 1, denominationId: denom['100N'], qty: 2 }],
-      reasonId: reason['PICKUP/SCHEDULED'],
-    });
+    const change = (pins: object) =>
+      supervisor().post('movements/change', {
+        companyId: COMPANY,
+        branchId: BRANCH,
+        accYear: session.tssAccYear,
+        fromTssId: session.tssId,
+        toTssId: session2.tssId,
+        lines: [{ tenderTypeId: 1, denominationId: denom['100N'], qty: 2 }],
+        reasonId: reason['PICKUP/SCHEDULED'],
+        ...pins,
+      });
+
+    // Notes 108: each witnessing cashier types their PIN, and a refusal writes nothing.
+    const noFrom = await change({});
+    expectStatus(noFrom, 403);
+    expect(noFrom.body.errors[0]).toEqual(
+      expect.objectContaining({ code: 'TILL_WITNESS_PIN_REQUIRED', field: 'fromWitnessPin', witnessBy: TESTER1 }),
+    );
+    const noPinSet = await change({ fromWitnessPin: WITNESS_PIN, toWitnessPin: CASHIER2_PIN });
+    expectStatus(noPinSet, 422);
+    expect(noPinSet.body.errors[0]).toEqual(
+      expect.objectContaining({ code: 'TILL_WITNESS_NO_PIN', field: 'toWitnessPin', witnessBy: CASHIER2 }),
+    );
+    await prisma.$executeRaw`UPDATE public.user_master SET usr_pin_hash = ${await hashSecret(CASHIER2_PIN)} WHERE usr_id = ${CASHIER2}::uuid`;
+    const wrongTo = await change({ fromWitnessPin: WITNESS_PIN, toWitnessPin: '0000' });
+    expectStatus(wrongTo, 403);
+    expect(wrongTo.body.errors[0]).toEqual(expect.objectContaining({ code: 'TILL_WITNESS_PIN', field: 'toWitnessPin' }));
+    const fails = await prisma.$queryRaw<{ payload: object }[]>`
+      SELECT tev_payload AS payload FROM accounts.till_event
+       WHERE tev_session_id = ${session2.tssId}::uuid AND tev_event_code = 'PIN_FAIL'`;
+    expect(fails).toEqual([{ payload: { action: 'change', kind: 'TOP_UP', witnessBy: CASHIER2 } }]);
+    const [written] = await prisma.$queryRaw<{ n: number }[]>`
+      SELECT count(*)::int AS n FROM accounts.till_cash_movement WHERE tcm_session_id = ${session2.tssId}::uuid`;
+    expect(written.n).toBe(0);
+
+    const res = await change({ fromWitnessPin: WITNESS_PIN, toWitnessPin: CASHIER2_PIN });
     expectStatus(res, 201);
     expect(res.body.data.from).toEqual(
       expect.objectContaining({ tcmKind: 'PICKUP', tcmAmount: 200, tcmSessionId: session.tssId, tcmWitnessBy: TESTER1 }),
@@ -394,6 +485,8 @@ describe('Till movements, voids and cash limits', () => {
     expect(res.body.data.to).toEqual(
       expect.objectContaining({ tcmKind: 'TOP_UP', tcmAmount: 200, tcmSessionId: session2.tssId, tcmWitnessBy: CASHIER2 }),
     );
+    expect(res.body.data.from.tcmWitnessVerifiedOn).not.toBeNull();
+    expect(res.body.data.to.tcmWitnessVerifiedOn).not.toBeNull();
     expect(res.body.data.from.tcmVoucherId).not.toBeNull();
     expect(res.body.data.to.tcmVoucherId).not.toBeNull();
   });

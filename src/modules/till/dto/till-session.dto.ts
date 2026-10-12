@@ -406,7 +406,7 @@ export class CreateTillMovementDto extends TillSessionKeyDto {
     enum: ['DROP', 'PAID_IN', 'EXCHANGE', 'PICKUP', 'TOP_UP'],
     description:
       'DROP / PAID_IN / EXCHANGE: the session’s cashier. PICKUP / TOP_UP: a supervisor (Till Sessions OVERRIDE); ' +
-      'a pickup’s witness is the cashier.',
+      'the witness is the cashier, proven by witnessPin.',
   })
   @IsIn(['DROP', 'PAID_IN', 'EXCHANGE', 'PICKUP', 'TOP_UP'])
   kind!: 'DROP' | 'PAID_IN' | 'EXCHANGE' | 'PICKUP' | 'TOP_UP';
@@ -485,10 +485,23 @@ export class CreateTillMovementDto extends TillSessionKeyDto {
     format: 'uuid',
     nullable: true,
     description:
-      'A second person. PICKUP: defaults to the session’s cashier, and is never the supervisor.',
+      'A second person. PICKUP / TOP_UP: defaults to the session’s cashier, and is never the supervisor ' +
+      '(a top-up the session’s own cashier brings has no witness).',
   })
   @NullableUuid()
   witnessBy?: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    example: '4321',
+    description:
+      'Notes 108 — PICKUP / TOP_UP: the witness’s till PIN (usr_pin_hash, notes 95), typed by the witness on the ' +
+      'supervisor’s screen; required whenever there is a witness. None → 403 TILL_WITNESS_PIN_REQUIRED, wrong → ' +
+      '403 TILL_WITNESS_PIN (journalled PIN_FAIL), the witness has none → 422 TILL_WITNESS_NO_PIN. Ignored on ' +
+      'DROP / PAID_IN / EXCHANGE.',
+  })
+  @NullableString(20)
+  witnessPin?: string | null;
 
   @ApiPropertyOptional({ nullable: true })
   @NullableString(500)
@@ -546,6 +559,26 @@ export class TillChangeDto extends TillScopeDto {
   @ApiProperty({ format: 'uuid', description: 'A PICKUP reason, as every pickup names one.' })
   @RequiredUuid()
   reasonId!: string;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    example: '4321',
+    description:
+      'Notes 108 — the GIVING cashier’s till PIN (they witness the pickup). Required. Refusals on this field: ' +
+      '422 TILL_WITNESS_NO_PIN, 403 TILL_WITNESS_PIN_REQUIRED, 403 TILL_WITNESS_PIN (journalled PIN_FAIL).',
+  })
+  @NullableString(20)
+  fromWitnessPin?: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    example: '8642',
+    description:
+      'Notes 108 — the RECEIVING cashier’s till PIN (they witness the top-up). Required unless the caller is that ' +
+      'cashier; the same refusals, on this field.',
+  })
+  @NullableString(20)
+  toWitnessPin?: string | null;
 
   @ApiPropertyOptional({ nullable: true })
   @NullableString(500)
