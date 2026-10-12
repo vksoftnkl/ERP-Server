@@ -1,8 +1,5 @@
-export type Side = 'DR' | 'CR';
-export interface SidedAmount {
-    amount: string;
-    side: Side;
-}
+import type { Side, SidedAmount } from '../../common/voucher-books.sql';
+export type { Side, SidedAmount };
 export type RowKind = 'NORMAL' | 'CANCELLED' | 'REVERSAL';
 export declare const LEDGER_STATEMENT_ERROR: {
     readonly LEDGER_NOT_IN_COMPANY: "LEDGER_NOT_IN_COMPANY";

@@ -2,12 +2,13 @@ import { Prisma, type TillSession } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { TillContextService, type TillCaller } from '../till-context.service';
 import { throwTillBadRequest } from '../till-errors';
+import { TillApprovalService } from './till-approval.service';
 import { TillDayService } from './till-day.service';
 import { TillEventService } from './till-event.service';
 import { TillLedgerService } from './till-ledger.service';
 import { TillPostingService } from './till-posting.service';
-import { TillCountKind, TillEventCode, TillFloatMode } from '../types/till-enum';
-import type { TillCountLineInput, TillCountResultPayload, TillOpenCheckPayload, TillSessionPayload } from '../types/till-api.types';
+import { TillCountKind, TillEventCode, TillFloatMode, TillVarianceDecision, TillVarianceTreatment } from '../types/till-enum';
+import type { TillCountLineInput, TillCountResultPayload, TillOpenCheckPayload, TillSessionPayload, TillVarianceDecisionPayload } from '../types/till-api.types';
 type Tx = Prisma.TransactionClient;
 export interface SessionKey {
     companyId: string;
@@ -23,14 +24,22 @@ export interface LiveSessionRef {
     tssOperatorId: string;
     businessDate: string;
 }
+export interface DecideVarianceInput {
+    decision: TillVarianceDecision;
+    treatment: TillVarianceTreatment | null;
+    reasonId: string | null;
+    note: string;
+    approverPin: string | null;
+}
 export declare class TillSessionService {
     private readonly prisma;
+    private readonly approval;
     private readonly context;
     private readonly days;
     private readonly ledger;
     private readonly posting;
     private readonly events;
-    constructor(prisma: PrismaService, context: TillContextService, days: TillDayService, ledger: TillLedgerService, posting: TillPostingService, events: TillEventService);
+    constructor(prisma: PrismaService, approval: TillApprovalService, context: TillContextService, days: TillDayService, ledger: TillLedgerService, posting: TillPostingService, events: TillEventService);
     open(input: {
         companyId: string;
         branchId: string;
@@ -74,6 +83,12 @@ export declare class TillSessionService {
         floatLeft?: number | null;
         notes?: string | null;
     }): Promise<TillSessionPayload>;
+    decideVariance(key: SessionKey, input: DecideVarianceInput): Promise<TillVarianceDecisionPayload>;
+    private assertPendingApproval;
+    private pendingVariances;
+    private varianceAsk;
+    private varianceReason;
+    private staffLedgerOf;
     resolveForMoney(client: Tx | PrismaService, scope: {
         companyId: string;
         branchId: string;

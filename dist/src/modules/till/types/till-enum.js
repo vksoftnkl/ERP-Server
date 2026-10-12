@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.TILL_ERROR_STATUS = exports.TillErrorCode = exports.TillSettingKey = exports.TILL_APPROVER_ROLES = exports.TILL_APPROVAL_CHANNELS = exports.TILL_APPROVAL_MODES = exports.TILL_APPROVAL_EVENTS = exports.TILL_REASON_CATEGORIES = exports.CLIENT_EVENT_CODES = exports.TillEventCode = exports.TillCountOutcome = exports.CASH_TENDER_TYPE_ID = exports.TenderCloseMode = exports.TillSessionVarianceStatus = exports.TillVarianceTreatment = exports.VARIANCE_VOUCHER_TYPE = exports.VOIDABLE_MOVEMENTS = exports.SUPERVISOR_MOVEMENTS = exports.CASHIER_MOVEMENTS = exports.MOVEMENT_VOUCHER_TYPE = exports.TillMovementKind = exports.TillCountKind = exports.TILL_COUNTER_KINDS = exports.TillDrawerMode = exports.TillFloatMode = exports.TillDayStatus = exports.TillCounterClaim = exports.HOLDING_SESSION_STATUSES = exports.LIVE_SESSION_STATUSES = exports.TillSessionStatus = exports.TILL_RIGHT_CODE_PREFIX = exports.TILL_MENU = void 0;
+exports.TILL_ERROR_STATUS = exports.TillErrorCode = exports.TillSettingKey = exports.VARIANCE_STATUS_OF_TREATMENT = exports.APPROVABLE_TREATMENTS = exports.TillVarianceDecision = exports.TILL_APPROVER_ROLES = exports.TILL_APPROVAL_CHANNELS = exports.TILL_APPROVAL_MODES = exports.TILL_APPROVAL_EVENTS = exports.TILL_REASON_CATEGORIES = exports.CLIENT_EVENT_CODES = exports.TillEventCode = exports.TillCountOutcome = exports.CASH_TENDER_TYPE_ID = exports.TenderCloseMode = exports.TillSessionVarianceStatus = exports.TillVarianceTreatment = exports.VARIANCE_VOUCHER_TYPE = exports.VOIDABLE_MOVEMENTS = exports.SUPERVISOR_MOVEMENTS = exports.CASHIER_MOVEMENTS = exports.MOVEMENT_VOUCHER_TYPE = exports.TillMovementKind = exports.TillCountKind = exports.TILL_COUNTER_KINDS = exports.TillDrawerMode = exports.TillFloatMode = exports.TillDayStatus = exports.TillCounterClaim = exports.HOLDING_SESSION_STATUSES = exports.LIVE_SESSION_STATUSES = exports.TillSessionStatus = exports.TILL_RIGHT_CODE_PREFIX = exports.TILL_MENU = void 0;
+exports.approverRoleRank = approverRoleRank;
 exports.TILL_MENU = {
     GROUP: 271,
     OPEN_TILL: 272,
@@ -265,11 +266,29 @@ exports.TILL_APPROVAL_MODES = [
 exports.TILL_APPROVAL_CHANNELS = ['COUNTER', 'REMOTE', 'EITHER'];
 exports.TILL_APPROVER_ROLES = [
     'SUPERVISOR',
-    'STORE_MANAGER',
     'CASH_OFFICE',
+    'STORE_MANAGER',
     'AREA_MANAGER',
     'HO_FINANCE',
 ];
+function approverRoleRank(role) {
+    return exports.TILL_APPROVER_ROLES.indexOf(role);
+}
+var TillVarianceDecision;
+(function (TillVarianceDecision) {
+    TillVarianceDecision["APPROVE"] = "APPROVE";
+    TillVarianceDecision["RECOUNT"] = "RECOUNT";
+})(TillVarianceDecision || (exports.TillVarianceDecision = TillVarianceDecision = {}));
+exports.APPROVABLE_TREATMENTS = [
+    TillVarianceTreatment.EXPENSE,
+    TillVarianceTreatment.RECOVER,
+    TillVarianceTreatment.SUSPENSE,
+];
+exports.VARIANCE_STATUS_OF_TREATMENT = {
+    [TillVarianceTreatment.EXPENSE]: TillSessionVarianceStatus.ACCEPTED,
+    [TillVarianceTreatment.RECOVER]: TillSessionVarianceStatus.RECOVER,
+    [TillVarianceTreatment.SUSPENSE]: TillSessionVarianceStatus.INVESTIGATE,
+};
 var TillSettingKey;
 (function (TillSettingKey) {
     TillSettingKey["REQUIRE_SESSION"] = "till.require_session";
@@ -331,6 +350,10 @@ var TillErrorCode;
     TillErrorCode["COUNTER_INACTIVE"] = "TILL_COUNTER_INACTIVE";
     TillErrorCode["COUNTER_NOT_YOURS"] = "TILL_COUNTER_NOT_YOURS";
     TillErrorCode["CASH_LEDGER_DIRECT"] = "TILL_CASH_LEDGER_DIRECT";
+    TillErrorCode["APPROVER_SELF"] = "TILL_APPROVER_SELF";
+    TillErrorCode["APPROVER_NO_GRANT"] = "TILL_APPROVER_NO_GRANT";
+    TillErrorCode["APPROVER_LIMIT"] = "TILL_APPROVER_LIMIT";
+    TillErrorCode["APPROVER_PIN"] = "TILL_APPROVER_PIN";
 })(TillErrorCode || (exports.TillErrorCode = TillErrorCode = {}));
 exports.TILL_ERROR_STATUS = {
     [TillErrorCode.SESSION_REQUIRED]: 409,
@@ -373,5 +396,9 @@ exports.TILL_ERROR_STATUS = {
     [TillErrorCode.COUNTER_INACTIVE]: 409,
     [TillErrorCode.COUNTER_NOT_YOURS]: 409,
     [TillErrorCode.CASH_LEDGER_DIRECT]: 409,
+    [TillErrorCode.APPROVER_SELF]: 403,
+    [TillErrorCode.APPROVER_NO_GRANT]: 403,
+    [TillErrorCode.APPROVER_LIMIT]: 403,
+    [TillErrorCode.APPROVER_PIN]: 403,
 };
 //# sourceMappingURL=till-enum.js.map

@@ -340,14 +340,46 @@ export const TILL_APPROVAL_MODES = [
 ] as const;
 /** ck_tar_channel. */
 export const TILL_APPROVAL_CHANNELS = ['COUNTER', 'REMOTE', 'EITHER'] as const;
-/** ck_tar_role / ck_taa_role, lowest level first. */
+/**
+ * ck_tar_role / ck_taa_role, lowest level first — TILL_DESIGN.md §5.1's order
+ * (SUPERVISOR · CASH_OFFICE · STORE_MANAGER · AREA_MANAGER · HO_FINANCE), the
+ * one the Approval Setup screen (276) previews. A grant at one level covers
+ * every rule that asks for a lower one (notes 105 A2).
+ */
 export const TILL_APPROVER_ROLES = [
   'SUPERVISOR',
-  'STORE_MANAGER',
   'CASH_OFFICE',
+  'STORE_MANAGER',
   'AREA_MANAGER',
   'HO_FINANCE',
 ] as const;
+export type TillApproverRole = (typeof TILL_APPROVER_ROLES)[number];
+/** The level's rank in TILL_APPROVER_ROLES; −1 for a label outside the list. */
+export function approverRoleRank(role: string): number {
+  return TILL_APPROVER_ROLES.indexOf(role as TillApproverRole);
+}
+
+/** /till/sessions/decide-variance (notes 105 A1). */
+export enum TillVarianceDecision {
+  /** The PENDING variances take the treatment named; the session goes back to COUNTING for /close. */
+  APPROVE = 'APPROVE',
+  /** Back to COUNTING with one more count attempt; the next final count replaces the variances. */
+  RECOUNT = 'RECOUNT',
+}
+/** The treatments an approver may choose; WITHIN_TOLERANCE and RETENDERED are the system's. */
+export const APPROVABLE_TREATMENTS = [
+  TillVarianceTreatment.EXPENSE,
+  TillVarianceTreatment.RECOVER,
+  TillVarianceTreatment.SUSPENSE,
+] as const;
+/** What the session's variance status becomes under each approved treatment (ck_tss_variance_status). */
+export const VARIANCE_STATUS_OF_TREATMENT: Readonly<
+  Record<(typeof APPROVABLE_TREATMENTS)[number], TillSessionVarianceStatus>
+> = {
+  [TillVarianceTreatment.EXPENSE]: TillSessionVarianceStatus.ACCEPTED,
+  [TillVarianceTreatment.RECOVER]: TillSessionVarianceStatus.RECOVER,
+  [TillVarianceTreatment.SUSPENSE]: TillSessionVarianceStatus.INVESTIGATE,
+};
 
 /** The setting keys phase 1 reads (47 §10.3, 48 §8). */
 export enum TillSettingKey {
@@ -426,6 +458,14 @@ export enum TillErrorCode {
   COUNTER_NOT_YOURS = 'TILL_COUNTER_NOT_YOURS',
   /** 48 §2.2 — a journal / contra leg on the till cash ledger, on a device in session. */
   CASH_LEDGER_DIRECT = 'TILL_CASH_LEDGER_DIRECT',
+  /** Notes 105 A2 — the approver is the session's own cashier (tar_allow_self = false). */
+  APPROVER_SELF = 'TILL_APPROVER_SELF',
+  /** Notes 105 A2 — no till_approval_authority grant covers this event, branch and level (menu 276); a SUPER ADMIN needs none. */
+  APPROVER_NO_GRANT = 'TILL_APPROVER_NO_GRANT',
+  /** Notes 105 A2 — every grant at the level has a taa_max_amount below the variance. */
+  APPROVER_LIMIT = 'TILL_APPROVER_LIMIT',
+  /** Notes 105 A2 — the channel wants the approver's till PIN (usr_pin_hash, notes 95), and none or a wrong one came. */
+  APPROVER_PIN = 'TILL_APPROVER_PIN',
 }
 
 export const TILL_ERROR_STATUS: Readonly<Record<TillErrorCode, number>> = {
@@ -470,4 +510,9 @@ export const TILL_ERROR_STATUS: Readonly<Record<TillErrorCode, number>> = {
   [TillErrorCode.COUNTER_INACTIVE]: 409,
   [TillErrorCode.COUNTER_NOT_YOURS]: 409,
   [TillErrorCode.CASH_LEDGER_DIRECT]: 409,
+  // 403: the caller is not an approver this decision accepts (TILL_DESIGN.md §7.3 TILL_APPROVAL_DENIED, split four ways).
+  [TillErrorCode.APPROVER_SELF]: 403,
+  [TillErrorCode.APPROVER_NO_GRANT]: 403,
+  [TillErrorCode.APPROVER_LIMIT]: 403,
+  [TillErrorCode.APPROVER_PIN]: 403,
 };

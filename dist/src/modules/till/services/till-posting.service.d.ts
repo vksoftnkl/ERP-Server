@@ -72,9 +72,11 @@ export declare class TillPostingService {
         tenderLedgerId: string;
         tenderLabel: string;
         variance: Prisma.Decimal;
-        treatment: TillVarianceTreatment.WITHIN_TOLERANCE | TillVarianceTreatment.EXPENSE;
+        treatment: Exclude<TillVarianceTreatment, TillVarianceTreatment.PENDING | TillVarianceTreatment.RETENDERED>;
+        recoveryLedgerId?: string | null;
         caller: TillCaller;
     }): Promise<string | null>;
+    private varianceCounterLedger;
     voucherTypeId(tx: Tx, code: string): Promise<number>;
     private newId;
 }

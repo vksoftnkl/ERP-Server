@@ -137,27 +137,37 @@ let ExpenseService = class ExpenseService {
                 avhUserId: actor,
                 avhDraftLines: draft,
             };
-            const id = existing
-                ? (await tx.accVoucherHeader.update({
-                    where: {
-                        avhVoucherId_avhAccYear: {
-                            avhVoucherId: existing.avhVoucherId,
-                            avhAccYear: dto.accYear,
+            let id;
+            try {
+                id = existing
+                    ? (await tx.accVoucherHeader.update({
+                        where: {
+                            avhVoucherId_avhAccYear: {
+                                avhVoucherId: existing.avhVoucherId,
+                                avhAccYear: dto.accYear,
+                            },
                         },
-                    },
-                    data: { ...common, avhModifiedOn: now, avhModifiedBy: actor },
-                    select: { avhVoucherId: true },
-                })).avhVoucherId
-                : (await tx.accVoucherHeader.create({
-                    data: {
-                        ...common,
-                        avhAccYear: dto.accYear,
-                        avhVoucherStatus: expense_enum_1.ExpenseStatus.DRAFT,
-                        avhCreatedOn: now,
-                        avhCreatedBy: actor,
-                    },
-                    select: { avhVoucherId: true },
-                })).avhVoucherId;
+                        data: { ...common, avhModifiedOn: now, avhModifiedBy: actor },
+                        select: { avhVoucherId: true },
+                    })).avhVoucherId
+                    : (await tx.accVoucherHeader.create({
+                        data: {
+                            ...common,
+                            avhAccYear: dto.accYear,
+                            avhVoucherStatus: expense_enum_1.ExpenseStatus.DRAFT,
+                            avhCreatedOn: now,
+                            avhCreatedBy: actor,
+                        },
+                        select: { avhVoucherId: true },
+                    })).avhVoucherId;
+            }
+            catch (error) {
+                const what = (0, module_shared_utils_1.violatedConstraintOf)(error);
+                if ((0, module_shared_utils_1.isUniqueConstraintError)(error) && (what === null || what.includes('avh_doc_refno'))) {
+                    this.throwGstBillDuplicate('saved', draft.gstBill, null);
+                }
+                throw error;
+            }
             const scope = {
                 tdSrcModule: tender_detail_api_types_1.TenderSrcModule.ACCOUNTS,
                 tdSrcDocType: tender_detail_api_types_1.TenderSrcDocType.EXPENSE,
@@ -408,7 +418,32 @@ let ExpenseService = class ExpenseService {
              AND av_row_no = ${c.rowNo}::int AND av_is_deleted = false`;
             }
             if (derived.gst) {
-                await this.register.write(tx, await this.registerDoc(tx, header, derived, posted, voucherDate, actorName), { interState: derived.gst.supplyNature === 'INTER' });
+                const doc = await this.registerDoc(tx, header, derived, posted, voucherDate, actorName);
+                const holder = await this.register.liveInwardHolderOf(tx, doc);
+                if (holder) {
+                    this.throwGstBillDuplicate('posted', derived.gst, holder.voucherRefno ?? holder.voucherId);
+                }
+                try {
+                    await this.register.write(tx, doc, {
+                        interState: derived.gst.supplyNature === 'INTER',
+                    });
+                }
+                catch (error) {
+                    if ((0, module_shared_utils_1.isUniqueConstraintError)(error)) {
+                        const what = (0, module_shared_utils_1.violatedConstraintOf)(error) ?? '';
+                        if (what.includes('gdr_doc_no')) {
+                            this.throwGstBillDuplicate('posted', derived.gst, null);
+                        }
+                        (0, module_service_utils_1.throwAccountsConflict)('Expense voucher cannot be posted', [
+                            {
+                                field: 'voucherId',
+                                code: expense_enum_1.ExpenseErrorCode.GST_BILL_DUPLICATE,
+                                message: `The GST register already holds a row for this voucher${what ? ` (${what})` : ''}`,
+                            },
+                        ]);
+                    }
+                    throw error;
+                }
             }
             await (0, txn_status_log_helper_1.appendTxnStatusLog)(tx, {
                 companyId: key.companyId,
@@ -938,6 +973,18 @@ let ExpenseService = class ExpenseService {
             createdBy: actorName,
             lines,
         };
+    }
+    throwGstBillDuplicate(verb, bill, heldBy) {
+        const what = bill
+            ? `Supplier invoice ${bill.invoiceNo} dated ${bill.invoiceDate}`
+            : 'The supplier invoice';
+        (0, module_service_utils_1.throwAccountsConflict)(`Expense voucher cannot be ${verb}`, [
+            {
+                field: 'gstBill.invoiceNo',
+                code: expense_enum_1.ExpenseErrorCode.GST_BILL_DUPLICATE,
+                message: `${what} is already booked on a live expense voucher${heldBy ? ` (${heldBy})` : ''} of this supplier: cancel that voucher first, or correct the invoice no`,
+            },
+        ]);
     }
     async markMoneyFrom(tx, header, derived) {
         const session = header.avhSessionId

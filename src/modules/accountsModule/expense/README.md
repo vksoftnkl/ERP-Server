@@ -13,7 +13,7 @@ a bill-wise **Payment** (menu 100), a staff advance a Payment to the staff ledge
 | header | `acc_voucher_header`, type `ExpV` (48; `vchr_menu_id` 277): business date, `avh_session_id`, `avh_party_id` (optional supplier), `avh_doc_refno` / `avh_doc_date` (the supplier's invoice), `avh_remarks` (paid to / notes), `avh_draft_lines` (the lines as typed — kept after post, the list grid reads it) |
 | lines | `acc_vouchers` DR, one per line (`av_cost_centre_id`, `av_remarks`); input-tax legs DR on the `INPUT_CGST / SGST / IGST / CESS` roles when a GST bill is claimed |
 | tenders | `acc_tender_detail`, `td_src_doc_type 'EXPENSE'`, `td_dr_cr 'CR'`, `td_session_id`; `td_party_ledger_id` = the supplier, else the first line's ledger (NOT NULL) |
-| GST bill | the GSTR-2 register rows a purchase writes (`DocRegisterService`, INWARD, `docNo` = the supplier's invoice) |
+| GST bill | the GSTR-2 register rows a purchase writes (`DocRegisterService`, INWARD, `docNo` = the supplier's invoice); one LIVE row per supplier + invoice no + date in a branch and year (`uq_acc_voucher_doc_register_doc_in`, notes 104 — a CANCELED row no longer holds the key) |
 | quick picks | `till_reason` category `EXPENSE` (its ledger fills the line) |
 
 ## Routes (menu 277, every verb judged on `user_menus`, no SUPER ADMIN bypass)
@@ -27,7 +27,8 @@ a bill-wise **Payment** (menu 100), a staff advance a Payment to the staff ledge
 | `POST cancel` | a mirror in the Rev series; tender rows soft-deleted; the GSTR-2 row cancelled — CANCEL |
 | `GET quick-reasons` · `GET ledger-pick` | the EXPENSE reasons with their ledgers · live ledgers under an `Expenses` group (company + shared, 500 at most) — VIEW |
 
-Lifecycle DRAFT → POSTED → CANCELLED (no amend: cancel and re-enter). The number is issued at post.
+Lifecycle DRAFT → POSTED → CANCELLED (no amend: cancel and re-enter — the copy keeps the supplier's
+invoice no and date, which a CANCELLED voucher no longer holds). The number is issued at post.
 
 The list is the configured grid **`MAIN LIST - EXPENSE VOUCHERS`** (137 on the dev box; the client
 finds it by name) through `/configured-grid-sql/run`, tokens as the payments grid: `iavh_company_id`,
@@ -43,6 +44,9 @@ it has no template until one is designed. Both: migration `20261008170000`.
   date, each line a taxable value and a `tax_rate_master` rate — `EXPENSE_GST_INCOMPLETE` /
   `EXPENSE_GST_RATE_MISSING`; unmapped input-tax roles → `EXPENSE_GST_LEDGER_UNMAPPED`. A line
   with `itc: false` carries its tax in its cost. Place of supply defaults to the GSTIN's state.
+  A supplier's invoice no already on a LIVE (DRAFT or POSTED) voucher of that supplier → 409
+  `EXPENSE_GST_BILL_DUPLICATE` on `gstBill.invoiceNo` — at save `ux_avh_doc_refno`, at post the
+  register's key, naming the voucher that holds it — never a 500 (notes 103 / 104).
   RCM, TDS and import of services are not here (PurA / Payment).
   `accounts.expense_gst_bill_above` WARNs (`EXPENSE_GST_BILL_MISSING`) when a large expense has
   no bill.

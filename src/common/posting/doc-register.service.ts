@@ -174,6 +174,46 @@ export class DocRegisterService {
   }
 
   /**
+   * The LIVE register row already holding an INWARD document's key, as
+   * `uq_acc_voucher_doc_register_doc_in` (notes 104) keys it: company, branch,
+   * year, doc type, PARTY, doc no, doc date — neither deleted nor CANCELED. On
+   * the purchase side `gdr_doc_no` is the supplier's number, unique only per
+   * supplier, and a cancelled booking of it may be made again. Null when the
+   * document may be filed.
+   *
+   * A writer asks before `write()` so the operator is told WHICH voucher holds
+   * the number; the index stays the guard for the race between two posts.
+   */
+  async liveInwardHolderOf(
+    c: Prisma.TransactionClient,
+    doc: Pick<
+      RegisterDoc,
+      'companyId' | 'branchId' | 'accYear' | 'docType' | 'partyId' | 'docNo' | 'docDate'
+    >,
+  ): Promise<{ gdrId: string; voucherId: string; voucherRefno: string | null } | null> {
+    const rows = await c.$queryRaw<
+      { gdr_id: string; gdr_voucher_id: string; gdr_voucher_refno: string | null }[]
+    >`
+      SELECT gdr_id, gdr_voucher_id, gdr_voucher_refno
+        FROM accounts.acc_voucher_doc_register
+       WHERE gdr_company_id = ${doc.companyId}::uuid
+         AND gdr_branch_id  = ${doc.branchId}::uuid
+         AND gdr_acc_year   = ${doc.accYear}::char(9)
+         AND gdr_doc_type   = ${doc.docType}::accounts."GdrDocType"
+         AND gdr_party_id   = ${doc.partyId}::uuid
+         AND gdr_doc_no     = ${doc.docNo}
+         AND gdr_doc_date   = ${doc.docDate}::date
+         AND gdr_doc_flow   = 'INWARD'::accounts."GdrDocFlow"
+         AND gdr_is_deleted = false
+         AND gdr_doc_status <> 'CANCELED'::accounts."GdrDocStatus"
+       LIMIT 1`;
+    const row = rows[0];
+    return row
+      ? { gdrId: row.gdr_id, voucherId: row.gdr_voucher_id, voucherRefno: row.gdr_voucher_refno }
+      : null;
+  }
+
+  /**
    * Cancel the register row. `chk_gdr_doc_cancel_date` makes the date
    * mandatory, so nothing here may leave it out.
    */
@@ -200,10 +240,13 @@ export class DocRegisterService {
    * Amend of a document nothing was declared for: RETIRE the row (soft delete)
    * so the re-post can file the same document number again.
    *
-   * Not `cancel()`: the three unique rules in the way —
-   * `uq_acc_voucher_doc_register_source`, `_doc` and `_voucher` — are partial
-   * on `gdr_is_deleted` only, so a CANCELED row still holds the number and the
-   * re-post answered 23505. And not a lie either: a CANCELED row asserts the
+   * Not `cancel()`: the three unique rules in the way of an OUTWARD re-post —
+   * `uq_acc_voucher_doc_register_source`, `_doc_out` and `_voucher` — are
+   * partial on `gdr_is_deleted` only, so a CANCELED row still holds the number
+   * and the re-post answered 23505. (Only the INWARD key, `_doc_in`, skips
+   * CANCELED rows — notes 104: a SUPPLIER's number may be booked again once
+   * its voucher is cancelled; our own numbers may not.) And not a lie either:
+   * a CANCELED row asserts the
    * invoice was cancelled, and an amended one was not. There is no IRN or
    * e-way bill history to keep here — `assertAmendable` refuses the amend of a
    * declared document before anything is unwound; that case is `reissue()`.

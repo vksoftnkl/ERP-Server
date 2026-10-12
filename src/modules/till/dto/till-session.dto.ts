@@ -17,9 +17,15 @@ import {
   OptionalUuid,
   RequiredInteger,
   RequiredUuid,
+  TrimmedString,
   UpperMaxString,
 } from 'src/common/dto/dtoDecorators';
-import { TillFloatMode } from '../types/till-enum';
+import {
+  APPROVABLE_TREATMENTS,
+  TillFloatMode,
+  TillVarianceDecision,
+  type TillVarianceTreatment,
+} from '../types/till-enum';
 
 /** The house key on every verb: company · branch (· year · id for an existing record). */
 export class TillScopeDto {
@@ -256,6 +262,51 @@ export class CloseTillSessionDto extends TillSessionKeyDto {
   @ApiPropertyOptional({ nullable: true })
   @NullableString(500)
   notes?: string | null;
+}
+
+/** /till/sessions/decide-variance (notes 105 A1). */
+export class DecideTillVarianceDto extends TillSessionKeyDto {
+  @ApiProperty({
+    enum: TillVarianceDecision,
+    description:
+      'APPROVE: the PENDING variances take `treatment`, the session returns to COUNTING and /close posts them. ' +
+      'RECOUNT: back to COUNTING with one more count attempt; the next final count replaces the variances.',
+  })
+  @IsIn(Object.values(TillVarianceDecision))
+  decision!: TillVarianceDecision;
+
+  @ApiPropertyOptional({
+    enum: APPROVABLE_TREATMENTS,
+    nullable: true,
+    description:
+      'APPROVE only. EXPENSE → Cash Short & Excess · RECOVER → the cashier’s staff advance ledger (notes 95; ' +
+      'none → 422 TILL_LEDGER_UNMAPPED on this field) · SUSPENSE → Tender suspense, cleared later by a journal.',
+  })
+  @IsOptional()
+  @IsIn([...APPROVABLE_TREATMENTS])
+  treatment?: TillVarianceTreatment | null;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description:
+      'APPROVE only: a till_reason of category VARIANCE (a cash gap) or NONCASH (a slip gap) — 422 TILL_REASON_INVALID otherwise.',
+  })
+  @NullableUuid()
+  reasonId?: string | null;
+
+  @ApiProperty({ maxLength: 500, description: 'The decision note. Required.' })
+  @TrimmedString(500)
+  note!: string;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    description:
+      'The approver’s till PIN (usr_pin_hash, notes 95). Required when the rule’s channel is COUNTER; on EITHER it ' +
+      'stands in for remote authority (taa_can_remote). Wrong → 403 TILL_APPROVER_PIN, journalled PIN_FAIL.',
+  })
+  @NullableString(20)
+  approverPin?: string | null;
 }
 
 export class TillDayGetQueryDto extends TillScopeDto {

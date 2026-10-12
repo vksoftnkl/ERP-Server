@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { looseSearchSql } from '../../../common/search/loose-search';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
+import { countedLegsSql, isoDate, money, openingSetSql, sided } from '../common/voucher-books.sql';
 import {
   throwAccountsBadRequest,
   throwAccountsForbidden,
@@ -54,7 +55,7 @@ import {
  * every opening set (company-level + every branch's) and every leg (§4.2, L2).
  *
  * Deliberately NOT `accounts.fn_ledger_book_balance` (§2 / §13): the SQL lives
- * here.
+ * in ../common/voucher-books.sql.ts, which the Account Day Summary reads too.
  */
 
 const STATEMENT_MENU_ID = 258; // "Ledger Statement" under 137 (§10)
@@ -471,32 +472,14 @@ export class LedgerStatementService {
 
   /** This ledger's counted legs, up to `upTo`. Drives from ix_av_ledger. */
   private legsSql(scope: Scope, upTo: string): Prisma.Sql {
-    return Prisma.sql`
-      SELECT v.av_voucher_id, v.av_acc_year, v.av_voucher_date, v.av_dr_cr, v.av_amount,
-             v.av_signed_amount
-        FROM accounts.acc_vouchers v
-        JOIN accounts.acc_voucher_header h
-          ON h.avh_voucher_id = v.av_voucher_id AND h.avh_acc_year = v.av_acc_year
-       WHERE v.av_company_id = ${scope.companyId}::uuid
-         AND v.av_ledger_id  = ${scope.ledgerId}::uuid
-         AND v.av_acc_year   = ${scope.accYear}::char(9)
-         AND v.av_voucher_date <= ${upTo}::date
-         AND v.av_is_deleted = false
-         AND h.avh_is_deleted = false
-         AND h.avh_voucher_status IN ('POSTED', 'CANCELLED')
-         AND (${scope.branchId}::uuid IS NULL OR v.av_branch_id = ${scope.branchId}::uuid)`;
+    return countedLegsSql(scope, { upTo, ledgers: { ledgerId: scope.ledgerId } });
   }
 
   /** The opening set as one signed figure (`amt`). 'D' +, 'C' −. */
   private openingSql(scope: Scope): Prisma.Sql {
     return Prisma.sql`
-      SELECT COALESCE(SUM(CASE o.op_dr_cr WHEN 'D' THEN o.op_amount ELSE -o.op_amount END), 0) AS amt
-        FROM accounts.acc_opening_balance o
-       WHERE o.op_company_id = ${scope.companyId}::uuid
-         AND o.op_ledger_id  = ${scope.ledgerId}::uuid
-         AND o.op_acc_year   = ${scope.accYear}::char(9)
-         AND o.op_is_deleted = false
-         AND (${scope.branchId}::uuid IS NULL OR o.op_branch_id = ${scope.branchId}::uuid)`;
+      SELECT COALESCE(SUM(x.amt), 0) AS amt
+        FROM (${openingSetSql(scope, { ledgerId: scope.ledgerId })}) x`;
   }
 
   /** The opening, plus §4.2's note for a branch view of a company-level-only opening. */
@@ -882,20 +865,6 @@ function refuse(code: string, field: string, message: string): never {
   throwAccountsBadRequest('Ledger statement request refused', [
     { field, message, code } as { field: string; message: string; code: string },
   ]);
-}
-
-function money(value: Prisma.Decimal | string | number): string {
-  return new Prisma.Decimal(value).toFixed(2);
-}
-
-/** +DR / −CR, never a minus sign on the wire. */
-function sided(value: Prisma.Decimal | string | number): SidedAmount {
-  const d = new Prisma.Decimal(value);
-  return { amount: d.abs().toFixed(2), side: d.isNegative() ? 'CR' : 'DR' };
-}
-
-function isoDate(value: Date): string {
-  return value.toISOString().slice(0, 10);
 }
 
 function ddmm(value: Date): string {

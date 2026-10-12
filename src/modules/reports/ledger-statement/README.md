@@ -25,7 +25,10 @@ decimals; sides are `DR` / `CR`, never a minus sign.
 
 The module shares no URL, DTO or payload with any other module (plan §2), and
 calls none of the `accounts.fn_*reconcile*` functions — the SQL is in
-[ledger-statement.service.ts](ledger-statement.service.ts).
+[ledger-statement.service.ts](ledger-statement.service.ts), and the balance
+fragments (counted legs, opening set) in
+[../common/voucher-books.sql.ts](../common/voucher-books.sql.ts), which the
+Account Day Summary reads too.
 
 ## The one definition of a balance (§4)
 

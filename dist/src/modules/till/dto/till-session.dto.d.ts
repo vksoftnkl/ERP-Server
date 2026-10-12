@@ -1,4 +1,4 @@
-import { TillFloatMode } from '../types/till-enum';
+import { TillFloatMode, TillVarianceDecision, type TillVarianceTreatment } from '../types/till-enum';
 export declare class TillScopeDto {
     companyId: string;
     branchId: string;
@@ -46,6 +46,13 @@ export declare class CountTillSessionDto extends TillSessionKeyDto {
 export declare class CloseTillSessionDto extends TillSessionKeyDto {
     floatLeft?: number | null;
     notes?: string | null;
+}
+export declare class DecideTillVarianceDto extends TillSessionKeyDto {
+    decision: TillVarianceDecision;
+    treatment?: TillVarianceTreatment | null;
+    reasonId?: string | null;
+    note: string;
+    approverPin?: string | null;
 }
 export declare class TillDayGetQueryDto extends TillScopeDto {
     accYear?: string;

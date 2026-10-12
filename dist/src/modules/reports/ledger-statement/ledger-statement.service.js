@@ -15,6 +15,7 @@ const client_1 = require("@prisma/client");
 const loose_search_1 = require("../../../common/search/loose-search");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
+const voucher_books_sql_1 = require("../common/voucher-books.sql");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
 const ledger_statement_types_1 = require("./types/ledger-statement.types");
 const STATEMENT_MENU_ID = 258;
@@ -105,7 +106,7 @@ let LedgerStatementService = class LedgerStatementService {
             voucherId: q.voucherId,
             accYear: q.accYear,
             voucherNo: header.refno,
-            date: isoDate(header.vdate),
+            date: (0, voucher_books_sql_1.isoDate)(header.vdate),
             status: header.status,
             legs: legs.map((leg) => toLeg(leg, q.ledgerId)),
         };
@@ -134,15 +135,15 @@ let LedgerStatementService = class LedgerStatementService {
           FROM d ORDER BY d.d`,
         ]);
         return {
-            opening: sided(totals.openingAtFrom),
+            opening: (0, voucher_books_sql_1.sided)(totals.openingAtFrom),
             days: days.map((day) => ({
-                date: isoDate(day.d),
-                debit: money(day.dr),
-                credit: money(day.cr),
+                date: (0, voucher_books_sql_1.isoDate)(day.d),
+                debit: (0, voucher_books_sql_1.money)(day.dr),
+                credit: (0, voucher_books_sql_1.money)(day.cr),
                 vouchers: Number(day.n),
-                closing: sided(day.closing),
+                closing: (0, voucher_books_sql_1.sided)(day.closing),
             })),
-            closing: sided(totals.closing),
+            closing: (0, voucher_books_sql_1.sided)(totals.closing),
         };
     }
     async monthly(q) {
@@ -166,13 +167,13 @@ let LedgerStatementService = class LedgerStatementService {
             running = running.plus(m?.net ?? ZERO);
             return {
                 month: mon,
-                debit: money(m?.dr ?? ZERO),
-                credit: money(m?.cr ?? ZERO),
-                closing: sided(running),
+                debit: (0, voucher_books_sql_1.money)(m?.dr ?? ZERO),
+                credit: (0, voucher_books_sql_1.money)(m?.cr ?? ZERO),
+                closing: (0, voucher_books_sql_1.sided)(running),
                 isFuture: mon > thisMonth,
             };
         });
-        return { opening: sided(opening.amount), months: rows, closing: sided(running) };
+        return { opening: (0, voucher_books_sql_1.sided)(opening.amount), months: rows, closing: (0, voucher_books_sql_1.sided)(running) };
     }
     async export(q) {
         await this.assertMenuRight();
@@ -205,9 +206,9 @@ let LedgerStatementService = class LedgerStatementService {
         return {
             ledger,
             period,
-            broughtForward: sided(totals.openingAtFrom),
+            broughtForward: (0, voucher_books_sql_1.sided)(totals.openingAtFrom),
             rows,
-            carriedForward: sided(totals.closing),
+            carriedForward: (0, voucher_books_sql_1.sided)(totals.closing),
             totalRows: core.length,
         };
     }
@@ -257,8 +258,8 @@ let LedgerStatementService = class LedgerStatementService {
                 refuse(ledger_statement_types_1.LEDGER_STATEMENT_ERROR.BRANCH_NOT_IN_COMPANY, 'branchId', 'This branch does not belong to the company.');
             }
         }
-        const fyBegin = isoDate(fy.fy_begin_date);
-        const books = fy.fy_books_begin_date ? isoDate(fy.fy_books_begin_date) : fyBegin;
+        const fyBegin = (0, voucher_books_sql_1.isoDate)(fy.fy_begin_date);
+        const books = fy.fy_books_begin_date ? (0, voucher_books_sql_1.isoDate)(fy.fy_books_begin_date) : fyBegin;
         return {
             companyId: q.companyId,
             accYear: q.accYear,
@@ -266,7 +267,7 @@ let LedgerStatementService = class LedgerStatementService {
             ledgerId: q.ledgerId,
             yearBegin: books > fyBegin ? books : fyBegin,
             fyBegin,
-            fyEnd: isoDate(fy.fy_end_date),
+            fyEnd: (0, voucher_books_sql_1.isoDate)(fy.fy_end_date),
         };
     }
     assertRange(scope, from, to) {
@@ -278,30 +279,12 @@ let LedgerStatementService = class LedgerStatementService {
         }
     }
     legsSql(scope, upTo) {
-        return client_1.Prisma.sql `
-      SELECT v.av_voucher_id, v.av_acc_year, v.av_voucher_date, v.av_dr_cr, v.av_amount,
-             v.av_signed_amount
-        FROM accounts.acc_vouchers v
-        JOIN accounts.acc_voucher_header h
-          ON h.avh_voucher_id = v.av_voucher_id AND h.avh_acc_year = v.av_acc_year
-       WHERE v.av_company_id = ${scope.companyId}::uuid
-         AND v.av_ledger_id  = ${scope.ledgerId}::uuid
-         AND v.av_acc_year   = ${scope.accYear}::char(9)
-         AND v.av_voucher_date <= ${upTo}::date
-         AND v.av_is_deleted = false
-         AND h.avh_is_deleted = false
-         AND h.avh_voucher_status IN ('POSTED', 'CANCELLED')
-         AND (${scope.branchId}::uuid IS NULL OR v.av_branch_id = ${scope.branchId}::uuid)`;
+        return (0, voucher_books_sql_1.countedLegsSql)(scope, { upTo, ledgers: { ledgerId: scope.ledgerId } });
     }
     openingSql(scope) {
         return client_1.Prisma.sql `
-      SELECT COALESCE(SUM(CASE o.op_dr_cr WHEN 'D' THEN o.op_amount ELSE -o.op_amount END), 0) AS amt
-        FROM accounts.acc_opening_balance o
-       WHERE o.op_company_id = ${scope.companyId}::uuid
-         AND o.op_ledger_id  = ${scope.ledgerId}::uuid
-         AND o.op_acc_year   = ${scope.accYear}::char(9)
-         AND o.op_is_deleted = false
-         AND (${scope.branchId}::uuid IS NULL OR o.op_branch_id = ${scope.branchId}::uuid)`;
+      SELECT COALESCE(SUM(x.amt), 0) AS amt
+        FROM (${(0, voucher_books_sql_1.openingSetSql)(scope, { ledgerId: scope.ledgerId })}) x`;
     }
     async openingOf(scope) {
         const [row] = await this.prisma.$queryRaw `
@@ -356,10 +339,10 @@ let LedgerStatementService = class LedgerStatementService {
         return {
             fromDate: from,
             toDate: to,
-            opening: sided(totals.openingAtFrom),
-            debit: { amount: money(totals.dr), vouchers: totals.drVouchers },
-            credit: { amount: money(totals.cr), vouchers: totals.crVouchers },
-            closing: sided(totals.closing),
+            opening: (0, voucher_books_sql_1.sided)(totals.openingAtFrom),
+            debit: { amount: (0, voucher_books_sql_1.money)(totals.dr), vouchers: totals.drVouchers },
+            credit: { amount: (0, voucher_books_sql_1.money)(totals.cr), vouchers: totals.crVouchers },
+            closing: (0, voucher_books_sql_1.sided)(totals.closing),
             cancelledPairs: Number(pairs?.n ?? 0),
             openingNote: opening.note,
         };
@@ -446,12 +429,12 @@ let LedgerStatementService = class LedgerStatementService {
     forwards(core, totals, pastFirstPage) {
         if (core.length === 0) {
             const at = pastFirstPage ? totals.closing : totals.openingAtFrom;
-            return { broughtForward: sided(at), carriedForward: sided(at) };
+            return { broughtForward: (0, voucher_books_sql_1.sided)(at), carriedForward: (0, voucher_books_sql_1.sided)(at) };
         }
         const first = core[0];
         return {
-            broughtForward: sided(new client_1.Prisma.Decimal(first.running).minus(first.net)),
-            carriedForward: sided(core[core.length - 1].running),
+            broughtForward: (0, voucher_books_sql_1.sided)(new client_1.Prisma.Decimal(first.running).minus(first.net)),
+            carriedForward: (0, voucher_books_sql_1.sided)(core[core.length - 1].running),
         };
     }
     async decorate(scope, core, opts) {
@@ -478,7 +461,7 @@ let LedgerStatementService = class LedgerStatementService {
                 accYear: r.vyr,
                 branchId: r.branch_id,
                 branchName: r.branch_name,
-                date: isoDate(r.vdate),
+                date: (0, voucher_books_sql_1.isoDate)(r.vdate),
                 voucherTypeId: r.vtype_id,
                 voucherTypeName: r.vtype_name,
                 voucherTypeShort: r.vtype_short,
@@ -491,9 +474,9 @@ let LedgerStatementService = class LedgerStatementService {
                 legCount: vLegs.length,
                 narration: r.remarks?.trim() || r.usr_refno?.trim() || null,
                 billRefs: refs.get(key(r.vid, r.vyr)) ?? [],
-                debit: money(r.dr),
-                credit: money(r.cr),
-                balance: sided(r.running),
+                debit: (0, voucher_books_sql_1.money)(r.dr),
+                credit: (0, voucher_books_sql_1.money)(r.cr),
+                balance: (0, voucher_books_sql_1.sided)(r.running),
                 createdBy: r.created_by_name ?? r.created_by,
                 src: { module: r.src_module, docType: r.src_doc_type, docId: r.src_doc_id },
                 ...(opts.withLegs ? { legs: vLegs.map((leg) => toLeg(leg, scope.ledgerId)) } : {}),
@@ -573,7 +556,7 @@ let LedgerStatementService = class LedgerStatementService {
             gstin: r.led_gstin_no?.trim() || null,
             mobile: r.led_phone1?.trim() || r.led_whatsapp_no?.trim() || null,
             creditDays: r.cus_credit_days ?? r.sup_credit_days ?? null,
-            creditLimit: isCustomer && r.cus_credit_amt_limit !== null ? money(r.cus_credit_amt_limit) : null,
+            creditLimit: isCustomer && r.cus_credit_amt_limit !== null ? (0, voucher_books_sql_1.money)(r.cus_credit_amt_limit) : null,
         };
     }
 };
@@ -588,18 +571,8 @@ function refuse(code, field, message) {
         { field, message, code },
     ]);
 }
-function money(value) {
-    return new client_1.Prisma.Decimal(value).toFixed(2);
-}
-function sided(value) {
-    const d = new client_1.Prisma.Decimal(value);
-    return { amount: d.abs().toFixed(2), side: d.isNegative() ? 'CR' : 'DR' };
-}
-function isoDate(value) {
-    return value.toISOString().slice(0, 10);
-}
 function ddmm(value) {
-    const iso = isoDate(value);
+    const iso = (0, voucher_books_sql_1.isoDate)(value);
     return `${iso.slice(8, 10)}-${iso.slice(5, 7)}`;
 }
 function key(vid, vyr) {
@@ -643,7 +616,7 @@ function toLeg(leg, ledgerId) {
         side: leg.dr_cr.trim() === 'CR' ? 'CR' : 'DR',
         ledgerId: leg.ledger_id,
         ledgerName: leg.ledger_name,
-        amount: money(leg.amount),
+        amount: (0, voucher_books_sql_1.money)(leg.amount),
         role: leg.role,
         isThisLedger: leg.ledger_id === ledgerId,
         remarks: leg.remarks,

@@ -20,6 +20,7 @@ const SRC_MODULE = 'TILL';
 const SRC_MOVEMENT = 'TILL_MOVEMENT';
 const SRC_VARIANCE = 'TILL_VARIANCE';
 const CASH_SHORT_EXCESS = 'CASH_SHORT_EXCESS';
+const TENDER_SUSPENSE = 'TENDER_SUSPENSE';
 const INTO_TILL = [
     till_enum_1.TillMovementKind.FLOAT_ISSUE,
     till_enum_1.TillMovementKind.TOP_UP,
@@ -191,27 +192,37 @@ let TillPostingService = class TillPostingService {
         const { session, variance, caller } = input;
         let voucherId = null;
         if (!variance.isZero()) {
-            const shortExcess = await this.ledger.roleLedger(tx, CASH_SHORT_EXCESS, session.tssCompanyId, session.tssBranchId);
+            const counter = await this.varianceCounterLedger(tx, session, input.treatment, input.recoveryLedgerId ?? null);
             const size = money(variance.abs());
             const short = variance.isNegative();
             const legs = short
                 ? [
                     {
-                        ledgerId: shortExcess,
+                        ledgerId: counter.ledgerId,
                         drCr: 'DR',
                         amount: size,
-                        roleTag: CASH_SHORT_EXCESS,
+                        roleTag: counter.roleTag,
                         oppLedgerId: input.tenderLedgerId,
                     },
-                    { ledgerId: input.tenderLedgerId, drCr: 'CR', amount: size, oppLedgerId: shortExcess },
-                ]
-                : [
-                    { ledgerId: input.tenderLedgerId, drCr: 'DR', amount: size, oppLedgerId: shortExcess },
                     {
-                        ledgerId: shortExcess,
+                        ledgerId: input.tenderLedgerId,
                         drCr: 'CR',
                         amount: size,
-                        roleTag: CASH_SHORT_EXCESS,
+                        oppLedgerId: counter.ledgerId,
+                    },
+                ]
+                : [
+                    {
+                        ledgerId: input.tenderLedgerId,
+                        drCr: 'DR',
+                        amount: size,
+                        oppLedgerId: counter.ledgerId,
+                    },
+                    {
+                        ledgerId: counter.ledgerId,
+                        drCr: 'CR',
+                        amount: size,
+                        roleTag: counter.roleTag,
                         oppLedgerId: input.tenderLedgerId,
                     },
                 ];
@@ -251,6 +262,25 @@ let TillPostingService = class TillPostingService {
             },
         });
         return voucherId;
+    }
+    async varianceCounterLedger(tx, session, treatment, recoveryLedgerId) {
+        switch (treatment) {
+            case till_enum_1.TillVarianceTreatment.RECOVER:
+                if (!recoveryLedgerId) {
+                    (0, till_errors_1.throwTill)(till_enum_1.TillErrorCode.LEDGER_UNMAPPED, 'RECOVER posts to the cashier’s staff advance ledger, and this variance names none', 'treatment', { treatment });
+                }
+                return { ledgerId: recoveryLedgerId, roleTag: null };
+            case till_enum_1.TillVarianceTreatment.SUSPENSE:
+                return {
+                    ledgerId: await this.ledger.roleLedger(tx, TENDER_SUSPENSE, session.tssCompanyId, session.tssBranchId),
+                    roleTag: TENDER_SUSPENSE,
+                };
+            default:
+                return {
+                    ledgerId: await this.ledger.roleLedger(tx, CASH_SHORT_EXCESS, session.tssCompanyId, session.tssBranchId),
+                    roleTag: CASH_SHORT_EXCESS,
+                };
+        }
     }
     async voucherTypeId(tx, code) {
         const type = await tx.accVoucherType.findFirst({

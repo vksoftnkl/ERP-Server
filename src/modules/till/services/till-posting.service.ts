@@ -76,6 +76,8 @@ const SRC_MOVEMENT = 'TILL_MOVEMENT';
 const SRC_VARIANCE = 'TILL_VARIANCE';
 /** The role a WITHIN_TOLERANCE / EXPENSE variance posts against (47 §10.1). */
 const CASH_SHORT_EXCESS = 'CASH_SHORT_EXCESS';
+/** The role a SUSPENSE variance parks in until a journal clears it (49; notes 105). */
+const TENDER_SUSPENSE = 'TENDER_SUSPENSE';
 /** Into the drawer: the till cash ledger is debited. */
 const INTO_TILL: readonly TillMovementKind[] = [
   TillMovementKind.FLOAT_ISSUE,
@@ -314,39 +316,59 @@ export class TillPostingService {
       tenderLedgerId: string;
       tenderLabel: string;
       variance: Prisma.Decimal;
-      treatment: TillVarianceTreatment.WITHIN_TOLERANCE | TillVarianceTreatment.EXPENSE;
+      /** PENDING and RETENDERED never post: the close skips them. */
+      treatment: Exclude<
+        TillVarianceTreatment,
+        TillVarianceTreatment.PENDING | TillVarianceTreatment.RETENDERED
+      >;
+      /** RECOVER: the cashier's staff advance ledger (tvr_recovery_ledger_id). */
+      recoveryLedgerId?: string | null;
       caller: TillCaller;
     },
   ): Promise<string | null> {
     const { session, variance, caller } = input;
     let voucherId: string | null = null;
     if (!variance.isZero()) {
-      const shortExcess = await this.ledger.roleLedger(
+      // The counter leg: Cash Short & Excess for a WITHIN_TOLERANCE / EXPENSE
+      // gap; the cashier's staff advance ledger when the approver chose
+      // RECOVER; Tender suspense under SUSPENSE, cleared later by a journal
+      // (notes 105 A1). A short drawer debits it, an excess credits it.
+      const counter = await this.varianceCounterLedger(
         tx,
-        CASH_SHORT_EXCESS,
-        session.tssCompanyId,
-        session.tssBranchId,
+        session,
+        input.treatment,
+        input.recoveryLedgerId ?? null,
       );
       const size = money(variance.abs());
       const short = variance.isNegative();
       const legs: VoucherLeg[] = short
         ? [
             {
-              ledgerId: shortExcess,
+              ledgerId: counter.ledgerId,
               drCr: 'DR',
               amount: size,
-              roleTag: CASH_SHORT_EXCESS,
+              roleTag: counter.roleTag,
               oppLedgerId: input.tenderLedgerId,
             },
-            { ledgerId: input.tenderLedgerId, drCr: 'CR', amount: size, oppLedgerId: shortExcess },
-          ]
-        : [
-            { ledgerId: input.tenderLedgerId, drCr: 'DR', amount: size, oppLedgerId: shortExcess },
             {
-              ledgerId: shortExcess,
+              ledgerId: input.tenderLedgerId,
               drCr: 'CR',
               amount: size,
-              roleTag: CASH_SHORT_EXCESS,
+              oppLedgerId: counter.ledgerId,
+            },
+          ]
+        : [
+            {
+              ledgerId: input.tenderLedgerId,
+              drCr: 'DR',
+              amount: size,
+              oppLedgerId: counter.ledgerId,
+            },
+            {
+              ledgerId: counter.ledgerId,
+              drCr: 'CR',
+              amount: size,
+              roleTag: counter.roleTag,
               oppLedgerId: input.tenderLedgerId,
             },
           ];
@@ -387,6 +409,47 @@ export class TillPostingService {
       },
     });
     return voucherId;
+  }
+
+  /** The ledger a variance's counter leg goes to, by treatment (notes 105 A1). */
+  private async varianceCounterLedger(
+    tx: Tx,
+    session: PostingSession,
+    treatment: TillVarianceTreatment,
+    recoveryLedgerId: string | null,
+  ): Promise<{ ledgerId: string; roleTag: string | null }> {
+    switch (treatment) {
+      case TillVarianceTreatment.RECOVER:
+        if (!recoveryLedgerId) {
+          throwTill(
+            TillErrorCode.LEDGER_UNMAPPED,
+            'RECOVER posts to the cashier’s staff advance ledger, and this variance names none',
+            'treatment',
+            { treatment },
+          );
+        }
+        return { ledgerId: recoveryLedgerId, roleTag: null };
+      case TillVarianceTreatment.SUSPENSE:
+        return {
+          ledgerId: await this.ledger.roleLedger(
+            tx,
+            TENDER_SUSPENSE,
+            session.tssCompanyId,
+            session.tssBranchId,
+          ),
+          roleTag: TENDER_SUSPENSE,
+        };
+      default:
+        return {
+          ledgerId: await this.ledger.roleLedger(
+            tx,
+            CASH_SHORT_EXCESS,
+            session.tssCompanyId,
+            session.tssBranchId,
+          ),
+          roleTag: CASH_SHORT_EXCESS,
+        };
+    }
   }
 
   /** An ACTIVE voucher type's id by code; the till types are resolved by code, never pinned. */

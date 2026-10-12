@@ -40,6 +40,7 @@ export declare class ExpenseService {
     private storedTenders;
     private storedLegs;
     private registerDoc;
+    private throwGstBillDuplicate;
     private markMoneyFrom;
     private refusalFromTill;
     private assertUniqueRows;

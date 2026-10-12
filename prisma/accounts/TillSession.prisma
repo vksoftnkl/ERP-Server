@@ -64,6 +64,8 @@ model TillSession {
   /// The FINAL count (attempts are all kept).
   tssCloseCountId     String?   @db.Uuid                             @map("tss_close_count_id")
   tssCountAttempts    Int       @default(0) @db.SmallInt             @map("tss_count_attempts")
+  /// Further count attempts a RECOUNT decision allowed past till.max_recounts (notes 105).
+  tssRecountsGranted  Int       @default(0) @db.SmallInt             @map("tss_recounts_granted")
   tssCountedOn        DateTime? @db.Timestamptz(6)                   @map("tss_counted_on")
   tssCountedBy        String?   @db.Uuid                             @map("tss_counted_by")
   /// Second person at the count (setting till.close_witness).

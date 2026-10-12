@@ -5,8 +5,8 @@ import { TillEventService } from './services/till-event.service';
 import { TillSessionService } from './services/till-session.service';
 import { TillMovementService } from './services/till-movement.service';
 import { TillSlipCheckService } from './services/till-slip-check.service';
-import { CloseTillSessionDto, CountTillSessionDto, EndBillingTillSessionDto, OpenTillDayDto, OpenTillSessionDto, SuspendTillSessionDto, TillDayGetQueryDto, TillEventBatchDto, TillOpenCheckQueryDto, TillScopeDto, TillSessionKeyDto, CreateTillMovementDto, TillMovementKeyDto, VoidTillMovementDto, TillChangeDto, TillSlipCheckDto, TillSlipCheckQueryDto } from './dto/till-session.dto';
-import type { TillCountResultPayload, TillDayPayload, TillEventBatchPayload, TillMovementDetailPayload, TillOpenCheckPayload, TillSessionPayload, TillSlipCheckPayload, TillSlipCheckResultPayload, TillSuccessResponse } from './types/till-api.types';
+import { CloseTillSessionDto, CountTillSessionDto, DecideTillVarianceDto, EndBillingTillSessionDto, OpenTillDayDto, OpenTillSessionDto, SuspendTillSessionDto, TillDayGetQueryDto, TillEventBatchDto, TillOpenCheckQueryDto, TillScopeDto, TillSessionKeyDto, CreateTillMovementDto, TillMovementKeyDto, VoidTillMovementDto, TillChangeDto, TillSlipCheckDto, TillSlipCheckQueryDto } from './dto/till-session.dto';
+import type { TillCountResultPayload, TillDayPayload, TillEventBatchPayload, TillMovementDetailPayload, TillOpenCheckPayload, TillSessionPayload, TillSlipCheckPayload, TillSlipCheckResultPayload, TillSuccessResponse, TillVarianceDecisionPayload } from './types/till-api.types';
 export declare class TillController {
     private readonly prisma;
     private readonly context;
@@ -30,6 +30,7 @@ export declare class TillController {
     endBilling(dto: EndBillingTillSessionDto): Promise<TillSuccessResponse<TillSessionPayload>>;
     count(dto: CountTillSessionDto): Promise<TillSuccessResponse<TillCountResultPayload>>;
     close(dto: CloseTillSessionDto): Promise<TillSuccessResponse<TillSessionPayload>>;
+    decideVariance(dto: DecideTillVarianceDto): Promise<TillSuccessResponse<TillVarianceDecisionPayload>>;
     createMovement(dto: CreateTillMovementDto): Promise<TillSuccessResponse<TillMovementDetailPayload>>;
     change(dto: TillChangeDto): Promise<TillSuccessResponse<{
         from: TillMovementDetailPayload;

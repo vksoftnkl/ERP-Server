@@ -2266,6 +2266,7 @@ Table till_session {
   tssCountPlace String [note: 'COUNTER | CASH_OFFICE']
   tssCloseCountId String [note: 'The FINAL count (attempts are all kept).']
   tssCountAttempts Int [not null, default: 0]
+  tssRecountsGranted Int [not null, default: 0, note: 'Further count attempts a RECOUNT decision allowed past till.max_recounts (notes 105).']
   tssCountedOn DateTime
   tssCountedBy String
   tssWitnessBy String [note: 'Second person at the count (setting till.close_witness).']

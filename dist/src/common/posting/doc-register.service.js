@@ -115,6 +115,26 @@ let DocRegisterService = class DocRegisterService {
        LIMIT 1`;
         return rows[0]?.gdr_id ?? null;
     }
+    async liveInwardHolderOf(c, doc) {
+        const rows = await c.$queryRaw `
+      SELECT gdr_id, gdr_voucher_id, gdr_voucher_refno
+        FROM accounts.acc_voucher_doc_register
+       WHERE gdr_company_id = ${doc.companyId}::uuid
+         AND gdr_branch_id  = ${doc.branchId}::uuid
+         AND gdr_acc_year   = ${doc.accYear}::char(9)
+         AND gdr_doc_type   = ${doc.docType}::accounts."GdrDocType"
+         AND gdr_party_id   = ${doc.partyId}::uuid
+         AND gdr_doc_no     = ${doc.docNo}
+         AND gdr_doc_date   = ${doc.docDate}::date
+         AND gdr_doc_flow   = 'INWARD'::accounts."GdrDocFlow"
+         AND gdr_is_deleted = false
+         AND gdr_doc_status <> 'CANCELED'::accounts."GdrDocStatus"
+       LIMIT 1`;
+        const row = rows[0];
+        return row
+            ? { gdrId: row.gdr_id, voucherId: row.gdr_voucher_id, voucherRefno: row.gdr_voucher_refno }
+            : null;
+    }
     async cancel(tx, gdrId, accYear, reason, actor = 'SYSTEM') {
         return tx.$executeRaw `
       UPDATE accounts.acc_voucher_doc_register

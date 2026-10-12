@@ -57,7 +57,14 @@ function throwOnUniqueConstraintError(error, message, errors) {
     }
 }
 function isUniqueConstraintError(error) {
-    return isPrismaErrorCode(error, 'P2002');
+    return isPrismaErrorCode(error, 'P2002') || isRawSqlState(error, '23505');
+}
+function isRawSqlState(error, code) {
+    if (!isPrismaErrorCode(error, 'P2010')) {
+        return false;
+    }
+    const meta = error.meta;
+    return meta?.code === code;
 }
 function isForeignKeyConstraintError(error) {
     return isPrismaErrorCode(error, 'P2003');
@@ -73,6 +80,15 @@ function violatedConstraintOf(error) {
         }
         if (typeof value === 'string' && value) {
             return value.replace(/ \(index\)$/, '');
+        }
+    }
+    if (meta.code === '23505' && typeof meta.message === 'string') {
+        const key = /^Key \(([^)]+)\)=/.exec(meta.message);
+        if (key) {
+            return key[1]
+                .split(',')
+                .map((c) => c.trim().replace(/^"|"$/g, ''))
+                .join(',');
         }
     }
     return null;

@@ -23,6 +23,18 @@ export function throwTill(
   );
 }
 
+/** The TillErrorCode a thrown till refusal carries, or null for any other error. */
+export function tillErrorCodeOf(error: unknown): TillErrorCode | null {
+  if (!(error instanceof HttpException)) {
+    return null;
+  }
+  const body = error.getResponse() as { errors?: { code?: string }[] } | string;
+  const code = typeof body === 'object' ? body.errors?.[0]?.code : undefined;
+  return code && (Object.values(TillErrorCode) as string[]).includes(code)
+    ? (code as TillErrorCode)
+    : null;
+}
+
 /** 400 for a shape the DTO could not express (two fields that only make sense together). */
 export function throwTillBadRequest(message: string, field: string): never {
   throw new HttpException(

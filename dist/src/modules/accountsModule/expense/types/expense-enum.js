@@ -21,6 +21,7 @@ var ExpenseErrorCode;
     ExpenseErrorCode["GST_RATE_MISSING"] = "EXPENSE_GST_RATE_MISSING";
     ExpenseErrorCode["GST_LEDGER_UNMAPPED"] = "EXPENSE_GST_LEDGER_UNMAPPED";
     ExpenseErrorCode["GST_BILL_MISSING"] = "EXPENSE_GST_BILL_MISSING";
+    ExpenseErrorCode["GST_BILL_DUPLICATE"] = "EXPENSE_GST_BILL_DUPLICATE";
     ExpenseErrorCode["TENDER_NOT_ALLOWED"] = "EXPENSE_TENDER_NOT_ALLOWED";
     ExpenseErrorCode["NO_LINES"] = "EXPENSE_NO_LINES";
 })(ExpenseErrorCode || (exports.ExpenseErrorCode = ExpenseErrorCode = {}));

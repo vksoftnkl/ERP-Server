@@ -10,6 +10,7 @@ import type {
   TillMovementKind,
   TillSessionStatus,
   TillSessionVarianceStatus,
+  TillVarianceDecision,
   TillVarianceTreatment,
   TenderCloseMode,
 } from './till-enum';
@@ -306,6 +307,29 @@ export interface TillVariancePayload {
   tvrReasonId: string | null;
   tvrStatus: 'OPEN' | 'POSTED' | 'REVERSED';
   tvrVoucherId: string | null;
+  /** Notes 105: the till_approval row that decided it, who decided, and RECOVER's staff ledger. */
+  tvrApprovalId: string | null;
+  tvrDecidedBy: string | null;
+  tvrRecoveryLedgerId: string | null;
+}
+
+/** /till/sessions/decide-variance (notes 105 A1): the decision as recorded, and the session after it. */
+export interface TillVarianceDecisionPayload {
+  /** The till_approval row (A3). */
+  tapId: string;
+  decision: TillVarianceDecision;
+  /** CASH_VARIANCE | NONCASH_VARIANCE */
+  event: string;
+  /** Σ|counted − expected| over the PENDING variances. */
+  amount: number;
+  /** The rule's level. */
+  requiredRole: string;
+  /** The level the approver's grant conferred — HO_FINANCE for a SUPER ADMIN. */
+  approverRole: string;
+  channel: 'COUNTER' | 'REMOTE';
+  /** APPROVE: the treatment the variances took; null on RECOUNT. */
+  treatment: TillVarianceTreatment | null;
+  session: TillSessionPayload;
 }
 
 /** /till/sessions/count — what a (possibly blind) cashier is told. */

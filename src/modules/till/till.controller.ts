@@ -28,6 +28,7 @@ import { TillSlipCheckService } from './services/till-slip-check.service';
 import {
   CloseTillSessionDto,
   CountTillSessionDto,
+  DecideTillVarianceDto,
   EndBillingTillSessionDto,
   OpenTillDayDto,
   OpenTillSessionDto,
@@ -50,6 +51,7 @@ import {
   TILL_MENU,
   TillErrorCode,
   TillMovementKind,
+  TillVarianceDecision,
 } from './types/till-enum';
 import type {
   TillCountResultPayload,
@@ -61,6 +63,7 @@ import type {
   TillSlipCheckPayload,
   TillSlipCheckResultPayload,
   TillSuccessResponse,
+  TillVarianceDecisionPayload,
 } from './types/till-api.types';
 
 /**
@@ -467,8 +470,8 @@ export class TillController {
       'Close — post the variances (TVar) and the hand-over (TDrp), freeze the totals, issue the Z number',
     description:
       'floatLeft stays in the drawer; the rest of the cash counted goes to the safe. A session PENDING_APPROVAL ' +
-      'answers 428 TILL_APPROVAL_REQUIRED (the approval gate is build phase 3). Open Till (272) EDIT, or Till ' +
-      'Sessions (273) OVERRIDE.',
+      'answers 428 TILL_APPROVAL_REQUIRED (event, amount, the rule’s level and channel) until an approver decides ' +
+      'it on sessions/decide-variance (notes 105). Open Till (272) EDIT, or Till Sessions (273) OVERRIDE.',
   })
   @ApiOkResponse({ type: TillSuccessDto })
   @ApiResponse({ status: 428, type: TillErrorResponseDto, description: 'TILL_APPROVAL_REQUIRED' })
@@ -494,6 +497,58 @@ export class TillController {
   // ═════════════════════════════════════════════════════════════════════════
   //  Movements (build phase 2)
   // ═════════════════════════════════════════════════════════════════════════
+
+  @Post('sessions/decide-variance')
+  @Version(API_VERSION)
+  @HttpCode(200)
+  @ApiOperation({
+    summary:
+      'Decide a PENDING_APPROVAL session’s variance: APPROVE with a treatment, or RECOUNT (notes 105 A)',
+    description:
+      'By an approver who is not the session’s cashier and holds a Till Approval Setup (276) grant for the event ' +
+      '(CASH_VARIANCE when the cash gap is among the pending ones, else NONCASH_VARIANCE) at the rule’s level or ' +
+      'above, with taa_max_amount covering Σ|counted − expected|; a SUPER ADMIN is an implicit HO_FINANCE grant. ' +
+      'The rule’s channel decides the PIN: COUNTER needs approverPin, REMOTE needs taa_can_remote, EITHER takes ' +
+      'either. APPROVE: every PENDING variance takes the treatment and reason, the session returns to COUNTING ' +
+      'and /close posts the TVar (RECOVER to the cashier’s staff ledger, SUSPENSE to Tender suspense). RECOUNT: ' +
+      'back to COUNTING with one more count attempt. One till_approval row per decision, a VARIANCE_DECIDED ' +
+      'event. Till Sessions (273) OVERRIDE.',
+  })
+  @ApiOkResponse({ type: TillSuccessDto })
+  @ApiResponse({
+    status: 403,
+    type: TillErrorResponseDto,
+    description:
+      'TILL_APPROVER_SELF · TILL_APPROVER_NO_GRANT · TILL_APPROVER_LIMIT · TILL_APPROVER_PIN (or TILL_RIGHT_OVERRIDE)',
+  })
+  @ApiConflictResponse({
+    type: TillErrorResponseDto,
+    description: 'TILL_SESSION_NOT_OPEN — the session is not PENDING_APPROVAL',
+  })
+  @ApiUnprocessableEntityResponse({
+    type: TillErrorResponseDto,
+    description: 'TILL_REASON_INVALID · TILL_LEDGER_UNMAPPED (RECOVER with no staff ledger)',
+  })
+  async decideVariance(
+    @Body() dto: DecideTillVarianceDto,
+  ): Promise<TillSuccessResponse<TillVarianceDecisionPayload>> {
+    await this.context.requireRight(TILL_MENU.SESSIONS, 'override', 'decide a till variance');
+    const data = await this.sessions.decideVariance(dto, {
+      decision: dto.decision,
+      treatment: dto.treatment ?? null,
+      reasonId: dto.reasonId ?? null,
+      note: dto.note,
+      approverPin: dto.approverPin ?? null,
+    });
+    return {
+      success: true,
+      message:
+        data.decision === TillVarianceDecision.APPROVE
+          ? `Session ${data.session.tssSessionNo}: ${data.event} ${data.amount.toFixed(2)} approved as ${data.treatment}`
+          : `Session ${data.session.tssSessionNo}: a recount granted`,
+      data,
+    };
+  }
 
   @Post('movements/create')
   @Version(API_VERSION)

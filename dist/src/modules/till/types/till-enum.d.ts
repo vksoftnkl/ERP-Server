@@ -143,7 +143,15 @@ export declare const TILL_REASON_CATEGORIES: readonly ["VARIANCE", "FLOAT_MISMAT
 export declare const TILL_APPROVAL_EVENTS: readonly ["FLOAT_MISMATCH", "CASH_VARIANCE", "NONCASH_VARIANCE", "EXPENSE", "CASH_PAYMENT", "PAID_IN", "PICKUP", "TOP_UP", "NO_SALE", "CASH_LIMIT_OVERRIDE", "SUSPEND_LONG", "FORCE_CLOSE", "SESSION_REOPEN", "SESSION_VOID", "MOVEMENT_VOID", "RECOUNT", "DAY_CLOSE_EXCEPTION", "DAY_REOPEN", "SAFE_VARIANCE", "REMITTANCE", "VOID_BILL", "VOID_LINE", "PRICE_OVERRIDE", "DISCOUNT_OVER", "RETURN_NO_RECEIPT", "REFUND_CASH", "REPRINT", "RETENDER", "COUNTER_RELINK", "NONCASH_WRITE_OFF", "SETTLEMENT_RESOLVE"];
 export declare const TILL_APPROVAL_MODES: readonly ["NEVER", "ALWAYS", "OVER_AMOUNT", "OVER_COUNT", "OVER_PERCENT"];
 export declare const TILL_APPROVAL_CHANNELS: readonly ["COUNTER", "REMOTE", "EITHER"];
-export declare const TILL_APPROVER_ROLES: readonly ["SUPERVISOR", "STORE_MANAGER", "CASH_OFFICE", "AREA_MANAGER", "HO_FINANCE"];
+export declare const TILL_APPROVER_ROLES: readonly ["SUPERVISOR", "CASH_OFFICE", "STORE_MANAGER", "AREA_MANAGER", "HO_FINANCE"];
+export type TillApproverRole = (typeof TILL_APPROVER_ROLES)[number];
+export declare function approverRoleRank(role: string): number;
+export declare enum TillVarianceDecision {
+    APPROVE = "APPROVE",
+    RECOUNT = "RECOUNT"
+}
+export declare const APPROVABLE_TREATMENTS: readonly [TillVarianceTreatment.EXPENSE, TillVarianceTreatment.RECOVER, TillVarianceTreatment.SUSPENSE];
+export declare const VARIANCE_STATUS_OF_TREATMENT: Readonly<Record<(typeof APPROVABLE_TREATMENTS)[number], TillSessionVarianceStatus>>;
 export declare enum TillSettingKey {
     REQUIRE_SESSION = "till.require_session",
     DAY_CUTOFF = "till.day_cutoff",
@@ -202,6 +210,10 @@ export declare enum TillErrorCode {
     NO_FREE_COUNTER = "TILL_NO_FREE_COUNTER",
     COUNTER_INACTIVE = "TILL_COUNTER_INACTIVE",
     COUNTER_NOT_YOURS = "TILL_COUNTER_NOT_YOURS",
-    CASH_LEDGER_DIRECT = "TILL_CASH_LEDGER_DIRECT"
+    CASH_LEDGER_DIRECT = "TILL_CASH_LEDGER_DIRECT",
+    APPROVER_SELF = "TILL_APPROVER_SELF",
+    APPROVER_NO_GRANT = "TILL_APPROVER_NO_GRANT",
+    APPROVER_LIMIT = "TILL_APPROVER_LIMIT",
+    APPROVER_PIN = "TILL_APPROVER_PIN"
 }
 export declare const TILL_ERROR_STATUS: Readonly<Record<TillErrorCode, number>>;

@@ -40,6 +40,13 @@ export enum ExpenseErrorCode {
   GST_LEDGER_UNMAPPED = 'EXPENSE_GST_LEDGER_UNMAPPED',
   /** WARN, never blocks: a large expense with no GST bill (accounts.expense_gst_bill_above). */
   GST_BILL_MISSING = 'EXPENSE_GST_BILL_MISSING',
+  /**
+   * 409: the supplier's invoice no (and date) is already on a LIVE voucher of
+   * that supplier -- a DRAFT or POSTED one, never a CANCELLED one, which is
+   * what lets "Cancel & re-enter" keep the number (notes 104). At save it is
+   * `ux_avh_doc_refno`, at post the GSTR-2 register's own key.
+   */
+  GST_BILL_DUPLICATE = 'EXPENSE_GST_BILL_DUPLICATE',
   /** A cheque or a post-dated instrument: those go on a bill-wise Payment. */
   TENDER_NOT_ALLOWED = 'EXPENSE_TENDER_NOT_ALLOWED',
   NO_LINES = 'EXPENSE_NO_LINES',

@@ -69,6 +69,7 @@ let tillPc: string;
 let officePc: string;
 let expenseLedger: string;
 let supplier: string;
+let supplier2: string;
 let counterId: string;
 let safeId: string;
 let safeLedger: string;
@@ -182,6 +183,16 @@ beforeAll(async () => {
       },
     })
   ).ledId;
+  supplier2 = (
+    await prisma.accLedgerMaster.create({
+      data: {
+        ledName: `E2E-EXP-${tag} Supplier 2`,
+        ledGroupId: SUNDRY_CREDITORS,
+        ledCompanyId: COMPANY,
+        ledLedgerType: 'PARTY',
+      },
+    })
+  ).ledId;
   const [day] = await prisma.$queryRaw<{ n: number }[]>`
     SELECT count(*)::int AS n FROM accounts.till_business_day
      WHERE tbd_company_id = ${COMPANY}::uuid AND tbd_branch_id = ${BRANCH}::uuid AND tbd_is_deleted = false`;
@@ -259,7 +270,7 @@ afterAll(async () => {
   await prisma.$executeRaw`DELETE FROM accounts.till_counter WHERE tcn_id = ${counterId ?? null}::uuid`;
   await prisma.$executeRaw`DELETE FROM accounts.till_safe WHERE tsf_id = ${safeId ?? null}::uuid`;
   await prisma.$executeRaw`DELETE FROM public.app_setting_value WHERE asv_created_by = 'e2e-expense'`;
-  await prisma.$executeRaw`DELETE FROM accounts.acc_ledger_master WHERE led_id IN (${expenseLedger ?? null}::uuid, ${supplier ?? null}::uuid)`;
+  await prisma.$executeRaw`DELETE FROM accounts.acc_ledger_master WHERE led_id IN (${expenseLedger ?? null}::uuid, ${supplier ?? null}::uuid, ${supplier2 ?? null}::uuid)`;
   await prisma.$executeRaw`DELETE FROM fixed.device_master WHERE dev_id IN (${tillPc ?? null}::uuid, ${officePc ?? null}::uuid)`;
   for (const memo of rights.reverse()) {
     await restoreMenuRights(prisma, memo);
@@ -579,23 +590,31 @@ describe('§3.3 / §4.3 · approval rules — reported until phase 3, never enfo
 });
 
 describe('§4.3 · a GST bill', () => {
+  /** The supplier's bill: its own invoice no and date, which GSTR-2B matches on. */
+  const gstBody = (over: Record<string, unknown> = {}) => ({
+    partyId: supplier,
+    gstBill: { supplierGstin: '33ABCDE1234F1Z5', invoiceNo: `E2E-${tag}`, invoiceDate: today },
+    lines: [
+      { rowNo: 1, ledgerId: expenseLedger, amount: 1000, taxId: GST18, hsn: '998533' },
+      { rowNo: 2, ledgerId: expenseLedger, amount: 100, taxId: GST18, itc: false },
+    ],
+    tenders: [
+      {
+        tdRowNo: 1,
+        tdTenderId: TENDER.BANK.id,
+        tdTenderTypeId: TENDER.BANK.type,
+        tdAmount: 1298,
+      },
+    ],
+    ...over,
+  });
+  const duplicate = expect.objectContaining({
+    field: 'gstBill.invoiceNo',
+    code: 'EXPENSE_GST_BILL_DUPLICATE',
+  });
+
   it('posts input tax for the eligible line, puts the ineligible line’s tax in its cost, and files GSTR-2', async () => {
-    const { voucherId, posted } = await createAndPost(officePc, {
-      partyId: supplier,
-      gstBill: { supplierGstin: '33ABCDE1234F1Z5', invoiceNo: `E2E-${tag}`, invoiceDate: today },
-      lines: [
-        { rowNo: 1, ledgerId: expenseLedger, amount: 1000, taxId: GST18, hsn: '998533' },
-        { rowNo: 2, ledgerId: expenseLedger, amount: 100, taxId: GST18, itc: false },
-      ],
-      tenders: [
-        {
-          tdRowNo: 1,
-          tdTenderId: TENDER.BANK.id,
-          tdTenderTypeId: TENDER.BANK.type,
-          tdAmount: 1298,
-        },
-      ],
-    });
+    const { voucherId, posted } = await createAndPost(officePc, gstBody());
     expectStatus(posted, 201);
     const d = posted.body.data.derived;
     expect(d).toEqual(
@@ -630,6 +649,51 @@ describe('§4.3 · a GST bill', () => {
       SELECT gdr_doc_status::text AS status FROM accounts.acc_voucher_doc_register
        WHERE gdr_voucher_id = ${voucherId}::uuid`;
     expect(after.status).toBe('CANCELED');
+  });
+
+  it('notes 104 · cancel & re-enter keeps the supplier’s invoice no: the copy posts, a live duplicate is a 409 on the field, another supplier’s same number books', async () => {
+    // The cancelled voucher above left its register row CANCELED, not deleted;
+    // uq_acc_voucher_doc_register_doc_in no longer counts it, so the same
+    // supplier bill books again.
+    const copy = await createAndPost(officePc, gstBody());
+    expectStatus(copy.posted, 201);
+    const copyNo = copy.posted.body.data.voucherNo as string;
+    expect(copyNo).toBeTruthy();
+
+    // A THIRD copy while the second is live: the header's own key
+    // (ux_avh_doc_refno) refuses it at save -- a 409 with the field, not a 500.
+    const third = await postAs(officePc, 'expenses/create', body(gstBody()));
+    expectStatus(third, 409);
+    expect(third.body.errors).toEqual([duplicate]);
+
+    // The register's key, reached when the header's is not (a draft whose
+    // typed invoice no differs from its refno): the post names the holder and
+    // the draft stays a DRAFT.
+    const other = await postAs(
+      officePc,
+      'expenses/create',
+      body(gstBody({ gstBill: { ...gstBody().gstBill, invoiceNo: `E2E-${tag}-B` } })),
+    );
+    expectStatus(other, 201);
+    const otherId = other.body.data.voucherId as string;
+    vouchers.push(otherId);
+    await prisma.$executeRaw`
+      UPDATE accounts.acc_voucher_header
+         SET avh_draft_lines = jsonb_set(avh_draft_lines, '{gstBill,invoiceNo}', to_jsonb(${`E2E-${tag}`}::text))
+       WHERE avh_voucher_id = ${otherId}::uuid`;
+    const clash = await postAs(officePc, 'expenses/post', key(otherId));
+    expectStatus(clash, 409);
+    expect(clash.body.errors).toEqual([duplicate]);
+    expect(clash.body.errors[0].message).toContain(copyNo);
+    const [{ status }] = await prisma.$queryRaw<{ status: string }[]>`
+      SELECT avh_voucher_status::text AS status FROM accounts.acc_voucher_header
+       WHERE avh_voucher_id = ${otherId}::uuid`;
+    expect(status).toBe('DRAFT');
+
+    // The key is per supplier: another supplier's bill numbered the same, on
+    // the same date, books in the same branch.
+    const twin = await createAndPost(officePc, gstBody({ partyId: supplier2 }));
+    expectStatus(twin.posted, 201);
   });
 });
 

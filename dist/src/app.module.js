@@ -66,6 +66,7 @@ const issued_cheques_module_1 = require("./modules/accountsModule/issuedCheques/
 const ledger_statement_module_1 = require("./modules/reports/ledger-statement/ledger-statement.module");
 const loyalty_status_module_1 = require("./modules/reports/loyalty-status/loyalty-status.module");
 const party_outstanding_module_1 = require("./modules/reports/party-outstanding/party-outstanding.module");
+const day_summary_module_1 = require("./modules/reports/day-summary/day-summary.module");
 const ledger_map_module_1 = require("./modules/accountsModule/ledgerMap/ledger-map.module");
 const bill_balance_module_1 = require("./modules/accountsModule/billBalance/bill-balance.module");
 const ledger_shipping_address_module_1 = require("./modules/accountsModule/ledgerShippingAddress/ledger-shipping-address.module");
@@ -225,6 +226,7 @@ exports.AppModule = AppModule = __decorate([
             vouchers_module_1.VouchersModule,
             issued_cheques_module_1.IssuedChequesModule,
             ledger_statement_module_1.LedgerStatementModule,
+            day_summary_module_1.DaySummaryModule,
             party_outstanding_module_1.ReportsPartyOutstandingModule,
             loyalty_status_module_1.LoyaltyStatusModule,
             ledger_map_module_1.LedgerMapModule,

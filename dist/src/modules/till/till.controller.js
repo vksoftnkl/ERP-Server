@@ -207,6 +207,23 @@ let TillController = class TillController {
             data,
         };
     }
+    async decideVariance(dto) {
+        await this.context.requireRight(till_enum_1.TILL_MENU.SESSIONS, 'override', 'decide a till variance');
+        const data = await this.sessions.decideVariance(dto, {
+            decision: dto.decision,
+            treatment: dto.treatment ?? null,
+            reasonId: dto.reasonId ?? null,
+            note: dto.note,
+            approverPin: dto.approverPin ?? null,
+        });
+        return {
+            success: true,
+            message: data.decision === till_enum_1.TillVarianceDecision.APPROVE
+                ? `Session ${data.session.tssSessionNo}: ${data.event} ${data.amount.toFixed(2)} approved as ${data.treatment}`
+                : `Session ${data.session.tssSessionNo}: a recount granted`,
+            data,
+        };
+    }
     async createMovement(dto) {
         const kind = dto.kind;
         if (till_enum_1.SUPERVISOR_MOVEMENTS.includes(kind)) {
@@ -590,8 +607,8 @@ __decorate([
     (0, swagger_1.ApiOperation)({
         summary: 'Close — post the variances (TVar) and the hand-over (TDrp), freeze the totals, issue the Z number',
         description: 'floatLeft stays in the drawer; the rest of the cash counted goes to the safe. A session PENDING_APPROVAL ' +
-            'answers 428 TILL_APPROVAL_REQUIRED (the approval gate is build phase 3). Open Till (272) EDIT, or Till ' +
-            'Sessions (273) OVERRIDE.',
+            'answers 428 TILL_APPROVAL_REQUIRED (event, amount, the rule’s level and channel) until an approver decides ' +
+            'it on sessions/decide-variance (notes 105). Open Till (272) EDIT, or Till Sessions (273) OVERRIDE.',
     }),
     (0, swagger_1.ApiOkResponse)({ type: till_response_dto_1.TillSuccessDto }),
     (0, swagger_1.ApiResponse)({ status: 428, type: till_response_dto_1.TillErrorResponseDto, description: 'TILL_APPROVAL_REQUIRED' }),
@@ -600,6 +617,40 @@ __decorate([
     __metadata("design:paramtypes", [till_session_dto_1.CloseTillSessionDto]),
     __metadata("design:returntype", Promise)
 ], TillController.prototype, "close", null);
+__decorate([
+    (0, common_1.Post)('sessions/decide-variance'),
+    (0, common_1.Version)(api_version_1.API_VERSION),
+    (0, common_1.HttpCode)(200),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Decide a PENDING_APPROVAL session’s variance: APPROVE with a treatment, or RECOUNT (notes 105 A)',
+        description: 'By an approver who is not the session’s cashier and holds a Till Approval Setup (276) grant for the event ' +
+            '(CASH_VARIANCE when the cash gap is among the pending ones, else NONCASH_VARIANCE) at the rule’s level or ' +
+            'above, with taa_max_amount covering Σ|counted − expected|; a SUPER ADMIN is an implicit HO_FINANCE grant. ' +
+            'The rule’s channel decides the PIN: COUNTER needs approverPin, REMOTE needs taa_can_remote, EITHER takes ' +
+            'either. APPROVE: every PENDING variance takes the treatment and reason, the session returns to COUNTING ' +
+            'and /close posts the TVar (RECOVER to the cashier’s staff ledger, SUSPENSE to Tender suspense). RECOUNT: ' +
+            'back to COUNTING with one more count attempt. One till_approval row per decision, a VARIANCE_DECIDED ' +
+            'event. Till Sessions (273) OVERRIDE.',
+    }),
+    (0, swagger_1.ApiOkResponse)({ type: till_response_dto_1.TillSuccessDto }),
+    (0, swagger_1.ApiResponse)({
+        status: 403,
+        type: till_response_dto_1.TillErrorResponseDto,
+        description: 'TILL_APPROVER_SELF · TILL_APPROVER_NO_GRANT · TILL_APPROVER_LIMIT · TILL_APPROVER_PIN (or TILL_RIGHT_OVERRIDE)',
+    }),
+    (0, swagger_1.ApiConflictResponse)({
+        type: till_response_dto_1.TillErrorResponseDto,
+        description: 'TILL_SESSION_NOT_OPEN — the session is not PENDING_APPROVAL',
+    }),
+    (0, swagger_1.ApiUnprocessableEntityResponse)({
+        type: till_response_dto_1.TillErrorResponseDto,
+        description: 'TILL_REASON_INVALID · TILL_LEDGER_UNMAPPED (RECOVER with no staff ledger)',
+    }),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [till_session_dto_1.DecideTillVarianceDto]),
+    __metadata("design:returntype", Promise)
+], TillController.prototype, "decideVariance", null);
 __decorate([
     (0, common_1.Post)('movements/create'),
     (0, common_1.Version)(api_version_1.API_VERSION),

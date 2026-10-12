@@ -99,6 +99,7 @@ import { GstinLookupModule } from '../modules/settings/gstinLookup/gstin-lookup.
 import { LoyaltyMembersModule } from '../modules/sales/loyalty/members/loyalty-members.module';
 import { LoyaltyStatusModule } from '../modules/reports/loyalty-status/loyalty-status.module';
 import { ReportsPartyOutstandingModule } from '../modules/reports/party-outstanding/party-outstanding.module';
+import { DaySummaryModule } from '../modules/reports/day-summary/day-summary.module';
 import { TillModule } from '../modules/till/till.module';
 import { StockAdjustmentModule } from '../modules/stocks/stock-adjustment/stock-adjustment.module';
 import { StockPostingModule } from '../modules/stocks/posting/stock-posting.module';
@@ -822,6 +823,19 @@ export const swaggerModuleDocuments = [
       'CANCELLED vouchers (a cancelled pair nets to zero), never DRAFT. Shares no URL, DTO or ' +
       'payload with any other module.',
     include: [LedgerStatementModule],
+  },
+  {
+    path: 'reports-day-summary',
+    title: 'Reports — Account Day Summary API',
+    description:
+      'Read-only Account Day Summary — the day book (menu 284; 181 Day Book Detail opens it on ' +
+      'the Vouchers tab) over the acc_vouchers legs of one company, one branch or all, one day ' +
+      'or a range inside one fiscal year. Seven GET routes under reports/day-summary: the type ' +
+      'combo, the summary snapshot (tiles, type / money / group grids and checks), the paged ' +
+      'voucher list, the day-wise tab, a group’s ledgers, the rows behind a check, and an ' +
+      'export capped at 20,000 vouchers. Counts POSTED and CANCELLED vouchers and leaves out a ' +
+      'cancelled pair wholly inside the range. Not cached',
+    include: [DaySummaryModule],
   },
   {
     path: 'reports-loyalty-status',

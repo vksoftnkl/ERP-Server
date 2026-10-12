@@ -17,6 +17,7 @@ const till_context_service_1 = require("../till-context.service");
 const till_dates_1 = require("../till-dates");
 const till_errors_1 = require("../till-errors");
 Object.defineProperty(exports, "throwTillBadRequest", { enumerable: true, get: function () { return till_errors_1.throwTillBadRequest; } });
+const till_approval_service_1 = require("./till-approval.service");
 const till_day_service_1 = require("./till-day.service");
 const till_event_service_1 = require("./till-event.service");
 const till_ledger_service_1 = require("./till-ledger.service");
@@ -28,13 +29,15 @@ const dec = (v) => v === null || v === undefined ? ZERO : new client_1.Prisma.De
 const num = (v) => (v ? Number(v.toFixed(2)) : 0);
 let TillSessionService = class TillSessionService {
     prisma;
+    approval;
     context;
     days;
     ledger;
     posting;
     events;
-    constructor(prisma, context, days, ledger, posting, events) {
+    constructor(prisma, approval, context, days, ledger, posting, events) {
         this.prisma = prisma;
+        this.approval = approval;
         this.context = context;
         this.days = days;
         this.ledger = ledger;
@@ -527,7 +530,7 @@ let TillSessionService = class TillSessionService {
                 deviceId: session.tssDeviceId,
                 userId: session.tssOperatorId,
             });
-            const maxAttempts = 1 + settings.maxRecounts;
+            const maxAttempts = 1 + settings.maxRecounts + session.tssRecountsGranted;
             if (session.tssCountAttempts >= maxAttempts) {
                 (0, till_errors_1.throwTill)(till_enum_1.TillErrorCode.RECOUNT_LIMIT, `${session.tssCountAttempts} count(s) already made; a further recount needs RECOUNT approval`, 'tssId', { event: 'RECOUNT', attempts: session.tssCountAttempts });
             }
@@ -575,6 +578,16 @@ let TillSessionService = class TillSessionService {
                 tssModifiedBy: caller.actorName,
             };
             if (isFinal) {
+                await tx.tillVariance.updateMany({
+                    where: {
+                        tvrSessionId: session.tssId,
+                        tvrAccYear: session.tssAccYear,
+                        tvrStage: 'CLOSE',
+                        tvrStatus: 'OPEN',
+                        tvrIsDeleted: false,
+                    },
+                    data: { tvrIsDeleted: true, tvrModifiedOn: new Date(), tvrModifiedBy: caller.actorName },
+                });
                 for (const row of countedRows) {
                     await tx.tillVariance.create({
                         data: this.varianceRow(session, row, settings, caller, outcome),
@@ -666,21 +679,19 @@ let TillSessionService = class TillSessionService {
                 till_enum_1.TillSessionStatus.PENDING_APPROVAL,
             ]);
             if (session.tssStatus === till_enum_1.TillSessionStatus.PENDING_APPROVAL) {
-                const pending = await tx.tillVariance.findMany({
-                    where: {
-                        tvrSessionId: session.tssId,
-                        tvrAccYear: session.tssAccYear,
-                        tvrIsDeleted: false,
-                        tvrTreatment: till_enum_1.TillVarianceTreatment.PENDING,
-                    },
-                    select: { tvrTenderTypeId: true, tvrExpected: true, tvrCounted: true },
+                const ask = this.varianceAsk(await this.pendingVariances(tx, session));
+                const rule = await this.approval.ruleOrDefault(tx, {
+                    companyId: key.companyId,
+                    branchId: key.branchId,
+                    event: ask.event,
+                    onDate: (0, till_dates_1.isoDateOf)(session.tssBusinessDate),
                 });
-                const cashGap = pending.find((p) => p.tvrTenderTypeId === till_enum_1.CASH_TENDER_TYPE_ID);
-                (0, till_errors_1.throwTill)(till_enum_1.TillErrorCode.APPROVAL_REQUIRED, 'The count is outside tolerance: the variance needs an approver before this session can close', 'tssId', {
-                    event: cashGap ? 'CASH_VARIANCE' : 'NONCASH_VARIANCE',
-                    amount: num(pending.reduce((s, p) => s.plus(dec(p.tvrCounted).minus(dec(p.tvrExpected)).abs()), ZERO)),
-                    requiredRole: cashGap ? 'SUPERVISOR' : 'STORE_MANAGER',
-                    channel: 'EITHER',
+                (0, till_errors_1.throwTill)(till_enum_1.TillErrorCode.APPROVAL_REQUIRED, 'The count is outside tolerance: an approver decides the variance first (sessions/decide-variance)', 'tssId', {
+                    event: ask.event,
+                    amount: num(ask.amount),
+                    requiredRole: rule.tar_min_role,
+                    channel: rule.tar_channel,
+                    allowSelf: rule.tar_allow_self,
                 });
             }
             if (!session.tssCloseCountId) {
@@ -719,8 +730,8 @@ let TillSessionService = class TillSessionService {
             const tillCash = await this.ledger.tillCashTender(tx, key.companyId, key.branchId);
             for (const v of variances) {
                 const treatment = v.tvrTreatment;
-                if (treatment !== till_enum_1.TillVarianceTreatment.WITHIN_TOLERANCE &&
-                    treatment !== till_enum_1.TillVarianceTreatment.EXPENSE) {
+                if (treatment === till_enum_1.TillVarianceTreatment.PENDING ||
+                    treatment === till_enum_1.TillVarianceTreatment.RETENDERED) {
                     continue;
                 }
                 const tenderLedgerId = v.tvrTenderTypeId === till_enum_1.CASH_TENDER_TYPE_ID
@@ -733,6 +744,7 @@ let TillSessionService = class TillSessionService {
                     tenderLabel: v.tvrTenderTypeId === till_enum_1.CASH_TENDER_TYPE_ID ? 'Cash' : `tender type ${v.tvrTenderTypeId}`,
                     variance: dec(v.tvrCounted).minus(dec(v.tvrExpected)),
                     treatment,
+                    recoveryLedgerId: v.tvrRecoveryLedgerId,
                     caller,
                 });
             }
@@ -783,6 +795,258 @@ let TillSessionService = class TillSessionService {
             });
         });
         return this.get(key, { asOperator: true });
+    }
+    async decideVariance(key, input) {
+        const caller = await this.context.caller();
+        const approve = input.decision === till_enum_1.TillVarianceDecision.APPROVE;
+        if (!input.note.trim()) {
+            (0, till_errors_1.throwTillBadRequest)('A decision note is required', 'note');
+        }
+        if (approve && !till_enum_1.APPROVABLE_TREATMENTS.includes(input.treatment ?? '')) {
+            (0, till_errors_1.throwTillBadRequest)('APPROVE names a treatment: EXPENSE, RECOVER or SUSPENSE', 'treatment');
+        }
+        const peek = await this.prisma.tillSession.findFirst({
+            where: {
+                tssId: key.tssId,
+                tssAccYear: key.accYear,
+                tssCompanyId: key.companyId,
+                tssBranchId: key.branchId,
+                tssIsDeleted: false,
+            },
+        });
+        if (!peek) {
+            (0, till_errors_1.throwTillNotFound)('Till session', 'tssId', key.tssId);
+        }
+        this.assertPendingApproval(peek);
+        const ask = this.varianceAsk(await this.pendingVariances(this.prisma, peek));
+        const businessDate = (0, till_dates_1.isoDateOf)(peek.tssBusinessDate);
+        const rule = await this.approval.ruleOrDefault(this.prisma, {
+            companyId: key.companyId,
+            branchId: key.branchId,
+            event: ask.event,
+            onDate: businessDate,
+        });
+        let verdict;
+        try {
+            verdict = await this.approval.assertApprover(this.prisma, {
+                companyId: key.companyId,
+                branchId: key.branchId,
+                event: ask.event,
+                amount: ask.amount,
+                rule,
+                approverId: caller.userId,
+                requesterId: peek.tssOperatorId,
+                pin: input.approverPin,
+            });
+        }
+        catch (error) {
+            if (input.approverPin?.trim() && (0, till_errors_1.tillErrorCodeOf)(error) === till_enum_1.TillErrorCode.APPROVER_PIN) {
+                await this.events.log(this.prisma, {
+                    companyId: peek.tssCompanyId,
+                    branchId: peek.tssBranchId,
+                    accYear: peek.tssAccYear,
+                    code: till_enum_1.TillEventCode.PIN_FAIL,
+                    sessionId: peek.tssId,
+                    dayId: peek.tssDayId,
+                    counterId: peek.tssCounterId,
+                    deviceId: caller.deviceId ?? peek.tssDeviceId,
+                    userId: caller.userId,
+                    srcRefno: peek.tssSessionNo,
+                    payload: { action: 'decide-variance', event: ask.event },
+                });
+            }
+            throw error;
+        }
+        const treatment = approve ? input.treatment : null;
+        const reason = approve
+            ? await this.varianceReason(this.prisma, {
+                companyId: key.companyId,
+                reasonId: input.reasonId,
+                event: ask.event,
+            })
+            : null;
+        let recoveryLedgerId = null;
+        if (treatment === till_enum_1.TillVarianceTreatment.RECOVER) {
+            const staff = await this.staffLedgerOf(this.prisma, peek.tssOperatorId);
+            if (!staff.ledgerId) {
+                (0, till_errors_1.throwTill)(till_enum_1.TillErrorCode.LEDGER_UNMAPPED, `RECOVER posts to the cashier’s staff advance ledger, and ${staff.login} has none (an employee with a loan ledger, notes 95)`, 'treatment', { treatment, operatorId: peek.tssOperatorId });
+            }
+            recoveryLedgerId = staff.ledgerId;
+        }
+        const tapId = await this.prisma.$transaction(async (tx) => {
+            const session = await this.lock(tx, key, [till_enum_1.TillSessionStatus.PENDING_APPROVAL]);
+            const pending = await this.pendingVariances(tx, session);
+            const now = new Date();
+            const id = await this.approval.record(tx, {
+                companyId: session.tssCompanyId,
+                branchId: session.tssBranchId,
+                tenantId: session.tssTenantId,
+                accYear: session.tssAccYear,
+                event: ask.event,
+                sessionId: session.tssId,
+                counterId: session.tssCounterId,
+                srcDocType: 'TILL_SESSION',
+                srcDocId: session.tssId,
+                srcRefno: session.tssSessionNo,
+                amount: ask.amount,
+                rule,
+                verdict,
+                requestedBy: session.tssOperatorId,
+                requestedOn: session.tssCountedOn ?? now,
+                reasonId: reason?.trsId ?? null,
+                status: approve ? 'APPROVED' : 'REJECTED',
+                decidedBy: caller.userId,
+                decidedOn: now,
+                decidedDeviceId: caller.deviceId,
+                decisionNote: input.note.trim(),
+                payload: {
+                    decision: input.decision,
+                    treatment,
+                    variances: pending.map((v) => ({
+                        tvrId: v.tvrId,
+                        tenderTypeId: v.tvrTenderTypeId,
+                        variance: dec(v.tvrCounted).minus(dec(v.tvrExpected)).toFixed(2),
+                    })),
+                },
+            });
+            if (approve && treatment) {
+                for (const v of pending) {
+                    await tx.tillVariance.update({
+                        where: { tvrId_tvrAccYear: { tvrId: v.tvrId, tvrAccYear: v.tvrAccYear } },
+                        data: {
+                            tvrTreatment: treatment,
+                            tvrReasonId: reason.trsId,
+                            tvrRecoveryLedgerId: recoveryLedgerId,
+                            tvrApprovalId: id,
+                            tvrDecidedBy: caller.userId,
+                            tvrDecidedOn: now,
+                            tvrNotes: input.note.trim(),
+                            tvrModifiedOn: now,
+                            tvrModifiedBy: caller.actorName,
+                        },
+                    });
+                }
+                await tx.tillSession.update({
+                    where: { tssId_tssAccYear: { tssId: session.tssId, tssAccYear: session.tssAccYear } },
+                    data: {
+                        tssStatus: till_enum_1.TillSessionStatus.COUNTING,
+                        tssVarianceStatus: till_enum_1.VARIANCE_STATUS_OF_TREATMENT[treatment],
+                        tssCloseApprovalId: id,
+                        tssModifiedOn: now,
+                        tssModifiedBy: caller.actorName,
+                    },
+                });
+            }
+            else {
+                await tx.tillSession.update({
+                    where: { tssId_tssAccYear: { tssId: session.tssId, tssAccYear: session.tssAccYear } },
+                    data: {
+                        tssStatus: till_enum_1.TillSessionStatus.COUNTING,
+                        tssRecountsGranted: { increment: 1 },
+                        tssModifiedOn: now,
+                        tssModifiedBy: caller.actorName,
+                    },
+                });
+            }
+            await this.events.log(tx, {
+                companyId: session.tssCompanyId,
+                branchId: session.tssBranchId,
+                accYear: session.tssAccYear,
+                code: till_enum_1.TillEventCode.VARIANCE_DECIDED,
+                sessionId: session.tssId,
+                dayId: session.tssDayId,
+                counterId: session.tssCounterId,
+                deviceId: caller.deviceId ?? session.tssDeviceId,
+                userId: caller.userId,
+                srcDocType: 'TILL_SESSION',
+                srcDocId: session.tssId,
+                srcRefno: session.tssSessionNo,
+                amount: ask.amount,
+                reasonId: reason?.trsId ?? null,
+                approvalId: id,
+                payload: {
+                    stage: 'CLOSE',
+                    decision: input.decision,
+                    treatment,
+                    event: ask.event,
+                    amount: ask.amount.toFixed(2),
+                    requiredRole: rule.tar_min_role,
+                    approverRole: verdict.role,
+                    channel: verdict.channel,
+                    implicitGrant: verdict.implicit,
+                    grantId: verdict.grantId,
+                    reasonId: reason?.trsId ?? null,
+                    recoveryLedgerId,
+                    variances: pending.map((v) => v.tvrId),
+                },
+            });
+            return id;
+        });
+        return {
+            tapId,
+            decision: input.decision,
+            event: ask.event,
+            amount: num(ask.amount),
+            requiredRole: rule.tar_min_role,
+            approverRole: verdict.role,
+            channel: verdict.channel,
+            treatment,
+            session: await this.get(key),
+        };
+    }
+    assertPendingApproval(session) {
+        if (session.tssStatus !== till_enum_1.TillSessionStatus.PENDING_APPROVAL) {
+            (0, till_errors_1.throwTill)(till_enum_1.TillErrorCode.SESSION_NOT_OPEN, `Session ${session.tssSessionNo} is ${session.tssStatus}; a variance is decided on a PENDING_APPROVAL session`, 'tssId', { status: session.tssStatus });
+        }
+    }
+    async pendingVariances(client, session) {
+        return client.tillVariance.findMany({
+            where: {
+                tvrSessionId: session.tssId,
+                tvrAccYear: session.tssAccYear,
+                tvrIsDeleted: false,
+                tvrStage: 'CLOSE',
+                tvrStatus: 'OPEN',
+                tvrTreatment: till_enum_1.TillVarianceTreatment.PENDING,
+            },
+            orderBy: { tvrTenderTypeId: 'asc' },
+        });
+    }
+    varianceAsk(pending) {
+        return {
+            event: pending.some((p) => p.tvrTenderTypeId === till_enum_1.CASH_TENDER_TYPE_ID)
+                ? 'CASH_VARIANCE'
+                : 'NONCASH_VARIANCE',
+            amount: pending.reduce((s, p) => s.plus(dec(p.tvrCounted).minus(dec(p.tvrExpected)).abs()), ZERO),
+        };
+    }
+    async varianceReason(client, input) {
+        const category = input.event === 'CASH_VARIANCE' ? 'VARIANCE' : 'NONCASH';
+        if (!input.reasonId) {
+            (0, till_errors_1.throwTill)(till_enum_1.TillErrorCode.REASON_INVALID, `APPROVE names a ${category} reason`, 'reasonId');
+        }
+        const reason = await client.tillReason.findFirst({
+            where: {
+                trsId: input.reasonId,
+                trsCategory: category,
+                trsIsDeleted: false,
+                trsIsActive: true,
+                OR: [{ trsCompanyId: null }, { trsCompanyId: input.companyId }],
+            },
+        });
+        if (!reason) {
+            (0, till_errors_1.throwTill)(till_enum_1.TillErrorCode.REASON_INVALID, `The reason must be an active ${category} reason`, 'reasonId');
+        }
+        return reason;
+    }
+    async staffLedgerOf(client, userId) {
+        const [row] = await client.$queryRaw `
+      SELECT u.usr_login_name AS login, e.emp_loan_ledger_id::text AS ledger
+        FROM public.user_master u
+        LEFT JOIN public.employee_master e
+          ON e.emp_id = u.usr_employee_id AND e.emp_is_deleted = false
+       WHERE u.usr_id = ${userId}::uuid`;
+        return { login: row?.login ?? userId, ledgerId: row?.ledger ?? null };
     }
     async resolveForMoney(client, scope) {
         const caller = await this.context.caller(client);
@@ -1961,6 +2225,9 @@ let TillSessionService = class TillSessionService {
                     tvrReasonId: v.tvrReasonId,
                     tvrStatus: v.tvrStatus,
                     tvrVoucherId: v.tvrVoucherId,
+                    tvrApprovalId: v.tvrApprovalId,
+                    tvrDecidedBy: v.tvrDecidedBy,
+                    tvrRecoveryLedgerId: v.tvrRecoveryLedgerId,
                 }))
                 : [],
         };
@@ -2009,6 +2276,7 @@ exports.TillSessionService = TillSessionService;
 exports.TillSessionService = TillSessionService = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [prisma_service_1.PrismaService,
+        till_approval_service_1.TillApprovalService,
         till_context_service_1.TillContextService,
         till_day_service_1.TillDayService,
         till_ledger_service_1.TillLedgerService,

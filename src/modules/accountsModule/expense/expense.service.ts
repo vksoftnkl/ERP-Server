@@ -11,7 +11,11 @@ import {
   TxnStatusEvent,
   TxnStatusSrcModule,
 } from 'src/common/txn-status-log/txn-status-log.helper';
-import { DEFAULT_ACTOR } from 'src/common/utils/module-shared.utils';
+import {
+  DEFAULT_ACTOR,
+  isUniqueConstraintError,
+  violatedConstraintOf,
+} from 'src/common/utils/module-shared.utils';
 import {
   throwAccountsBadRequest,
   throwAccountsConflict,
@@ -32,6 +36,7 @@ import {
 import {
   newGuardContext,
   throwRefusals,
+  type VoucherErrorDetail,
   type VoucherGuardContext,
 } from '../vouchers/vouchers.errors';
 import { checkCashPaymentLimit, type CashPaymentLimitFinding } from '../payment/cash-payment-limit';
@@ -201,31 +206,43 @@ export class ExpenseService {
         avhUserId: actor,
         avhDraftLines: draft as unknown as Prisma.InputJsonValue,
       };
-      const id = existing
-        ? (
-            await tx.accVoucherHeader.update({
-              where: {
-                avhVoucherId_avhAccYear: {
-                  avhVoucherId: existing.avhVoucherId,
-                  avhAccYear: dto.accYear,
+      let id: string;
+      try {
+        id = existing
+          ? (
+              await tx.accVoucherHeader.update({
+                where: {
+                  avhVoucherId_avhAccYear: {
+                    avhVoucherId: existing.avhVoucherId,
+                    avhAccYear: dto.accYear,
+                  },
                 },
-              },
-              data: { ...common, avhModifiedOn: now, avhModifiedBy: actor },
-              select: { avhVoucherId: true },
-            })
-          ).avhVoucherId
-        : (
-            await tx.accVoucherHeader.create({
-              data: {
-                ...common,
-                avhAccYear: dto.accYear,
-                avhVoucherStatus: ExpenseStatus.DRAFT,
-                avhCreatedOn: now,
-                avhCreatedBy: actor,
-              },
-              select: { avhVoucherId: true },
-            })
-          ).avhVoucherId;
+                data: { ...common, avhModifiedOn: now, avhModifiedBy: actor },
+                select: { avhVoucherId: true },
+              })
+            ).avhVoucherId
+          : (
+              await tx.accVoucherHeader.create({
+                data: {
+                  ...common,
+                  avhAccYear: dto.accYear,
+                  avhVoucherStatus: ExpenseStatus.DRAFT,
+                  avhCreatedOn: now,
+                  avhCreatedBy: actor,
+                },
+                select: { avhVoucherId: true },
+              })
+            ).avhVoucherId;
+      } catch (error: unknown) {
+        // ux_avh_doc_refno: one live (DRAFT or POSTED, never CANCELLED) voucher
+        // of a type per supplier per invoice no in a year. The only unique rule
+        // a draft header can trip -- and it answered a 500 (notes 103 / 104).
+        const what = violatedConstraintOf(error);
+        if (isUniqueConstraintError(error) && (what === null || what.includes('avh_doc_refno'))) {
+          this.throwGstBillDuplicate('saved', draft.gstBill, null);
+        }
+        throw error;
+      }
 
       const scope: TenderDocumentScope = {
         tdSrcModule: TenderSrcModule.ACCOUNTS,
@@ -504,11 +521,40 @@ export class ExpenseService {
              AND av_row_no = ${c.rowNo}::int AND av_is_deleted = false`;
       }
       if (derived.gst) {
-        await this.register.write(
-          tx,
-          await this.registerDoc(tx, header, derived, posted, voucherDate, actorName),
-          { interState: derived.gst.supplyNature === 'INTER' },
-        );
+        const doc = await this.registerDoc(tx, header, derived, posted, voucherDate, actorName);
+        // Notes 104: the supplier's invoice is unique per supplier among LIVE
+        // register rows (uq_acc_voucher_doc_register_doc_in) -- a CANCELED one
+        // may be booked again, which is how "Cancel & re-enter" keeps the
+        // number. Name the voucher that holds it rather than let the index
+        // answer a 500; the catch is for the race between two posts.
+        const holder = await this.register.liveInwardHolderOf(tx, doc);
+        if (holder) {
+          this.throwGstBillDuplicate(
+            'posted',
+            derived.gst,
+            holder.voucherRefno ?? holder.voucherId,
+          );
+        }
+        try {
+          await this.register.write(tx, doc, {
+            interState: derived.gst.supplyNature === 'INTER',
+          });
+        } catch (error: unknown) {
+          if (isUniqueConstraintError(error)) {
+            const what = violatedConstraintOf(error) ?? '';
+            if (what.includes('gdr_doc_no')) {
+              this.throwGstBillDuplicate('posted', derived.gst, null);
+            }
+            throwAccountsConflict<VoucherErrorDetail>('Expense voucher cannot be posted', [
+              {
+                field: 'voucherId',
+                code: ExpenseErrorCode.GST_BILL_DUPLICATE,
+                message: `The GST register already holds a row for this voucher${what ? ` (${what})` : ''}`,
+              },
+            ]);
+          }
+          throw error;
+        }
       }
       await appendTxnStatusLog(tx, {
         companyId: key.companyId,
@@ -1168,6 +1214,27 @@ export class ExpenseService {
       createdBy: actorName,
       lines,
     } as RegisterDoc;
+  }
+
+  /**
+   * 409 `EXPENSE_GST_BILL_DUPLICATE` on `gstBill.invoiceNo`: the supplier's invoice is already on a
+   * live voucher of that supplier -- `heldBy` names it when the register could say (notes 104).
+   */
+  private throwGstBillDuplicate(
+    verb: 'saved' | 'posted',
+    bill: { invoiceNo: string; invoiceDate: string } | null | undefined,
+    heldBy: string | null,
+  ): never {
+    const what = bill
+      ? `Supplier invoice ${bill.invoiceNo} dated ${bill.invoiceDate}`
+      : 'The supplier invoice';
+    throwAccountsConflict<VoucherErrorDetail>(`Expense voucher cannot be ${verb}`, [
+      {
+        field: 'gstBill.invoiceNo',
+        code: ExpenseErrorCode.GST_BILL_DUPLICATE,
+        message: `${what} is already booked on a live expense voucher${heldBy ? ` (${heldBy})` : ''} of this supplier: cancel that voucher first, or correct the invoice no`,
+      },
+    ]);
   }
 
   /**

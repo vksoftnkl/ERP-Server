@@ -93,8 +93,23 @@ export function throwOnUniqueConstraintError<
     throwConflict<TErrorDetail, TErrorResponse>(message, errors);
   }
 }
+/**
+ * A unique index or constraint violated (SQLSTATE 23505), in both of Prisma's
+ * shapes: an ORM write surfaces as a P2002, a raw one (`$queryRaw` /
+ * `$executeRaw`) as a P2010 carrying the SQLSTATE in `meta.code` -- the shape
+ * every register and posting INSERT answers in, which a P2002-only check let
+ * through as a 500 (notes 103 / 104).
+ */
 export function isUniqueConstraintError(error: unknown): boolean {
-  return isPrismaErrorCode(error, 'P2002');
+  return isPrismaErrorCode(error, 'P2002') || isRawSqlState(error, '23505');
+}
+/** A raw-query failure (P2010) whose driver SQLSTATE is `code`. */
+function isRawSqlState(error: unknown, code: string): boolean {
+  if (!isPrismaErrorCode(error, 'P2010')) {
+    return false;
+  }
+  const meta = (error as { meta?: { code?: unknown } }).meta;
+  return meta?.code === code;
 }
 export function isForeignKeyConstraintError(error: unknown): boolean {
   return isPrismaErrorCode(error, 'P2003');
@@ -119,6 +134,18 @@ export function violatedConstraintOf(error: unknown): string | null {
     }
     if (typeof value === 'string' && value) {
       return value.replace(/ \(index\)$/, '');
+    }
+  }
+  // A raw write's 23505 (P2010) names no index: Postgres' detail -- "Key (a,
+  // b)=(1, x) already exists." -- is all there is, so the COLUMNS come back,
+  // as a P2002 on a partial index reports them.
+  if (meta.code === '23505' && typeof meta.message === 'string') {
+    const key = /^Key \(([^)]+)\)=/.exec(meta.message);
+    if (key) {
+      return key[1]
+        .split(',')
+        .map((c) => c.trim().replace(/^"|"$/g, ''))
+        .join(',');
     }
   }
   return null;

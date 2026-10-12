@@ -3,13 +3,9 @@
  * two decimals — never a float — and sides are 'DR' / 'CR'.
  */
 
-export type Side = 'DR' | 'CR';
+import type { Side, SidedAmount } from '../../common/voucher-books.sql';
 
-/** A balance: the magnitude and the side. Zero reads as '0.00' DR. */
-export interface SidedAmount {
-  amount: string;
-  side: Side;
-}
+export type { Side, SidedAmount };
 
 export type RowKind = 'NORMAL' | 'CANCELLED' | 'REVERSAL';
 

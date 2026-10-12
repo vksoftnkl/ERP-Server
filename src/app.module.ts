@@ -58,6 +58,7 @@ import { IssuedChequesModule } from './modules/accountsModule/issuedCheques/issu
 import { LedgerStatementModule } from './modules/reports/ledger-statement/ledger-statement.module';
 import { LoyaltyStatusModule } from './modules/reports/loyalty-status/loyalty-status.module';
 import { ReportsPartyOutstandingModule } from './modules/reports/party-outstanding/party-outstanding.module';
+import { DaySummaryModule } from './modules/reports/day-summary/day-summary.module';
 import { LedgerMapModule } from './modules/accountsModule/ledgerMap/ledger-map.module';
 import { BillBalanceModule } from './modules/accountsModule/billBalance/bill-balance.module';
 import { LedgerShippingAddressModule } from './modules/accountsModule/ledgerShippingAddress/ledger-shipping-address.module';
@@ -215,6 +216,8 @@ const isThrottlerEnabled = parseBoolean(process.env.THROTTLE_ENABLED, true);
     VouchersModule,
     IssuedChequesModule,
     LedgerStatementModule,
+    // Account Day Summary — the day book (menu 284, Day Book Detail 181).
+    DaySummaryModule,
     ReportsPartyOutstandingModule,
     LoyaltyStatusModule,
     LedgerMapModule,

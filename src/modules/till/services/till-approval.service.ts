@@ -1,42 +1,125 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
+import { verifySecret } from '../../../common/utils/secret-hash.utils';
+import { UserType } from '../../settings/userAdministration/types/user-administration.enum';
+import { throwTill } from '../till-errors';
+import { approverRoleRank, TillErrorCode, type TillApproverRole } from '../types/till-enum';
 import type { TillApprovalNeed } from '../types/till-api.types';
 
 type Client = Prisma.TransactionClient | PrismaService;
 
+/** One till_approval_rule row as ruleFor reads it; `tar_id` null = the built-in fallback. */
+export interface TillApprovalRuleRow {
+  tar_id: string | null;
+  tar_event_code: string;
+  tar_mode: string;
+  tar_threshold_amount: Prisma.Decimal;
+  tar_channel: string;
+  tar_min_role: string;
+  tar_two_person: boolean;
+  tar_allow_self: boolean;
+  tar_blocks_till: boolean;
+}
+
+/** Who wants to decide what (notes 105 A2). */
+export interface ApproverAsk {
+  companyId: string;
+  branchId: string;
+  /** ck_tar_event: CASH_VARIANCE, NONCASH_VARIANCE … */
+  event: string;
+  /** What is being approved: Σ|counted − expected| for a variance. */
+  amount: Prisma.Decimal;
+  rule: TillApprovalRuleRow;
+  /** The caller: the approver IS the login (the cockpit is a supervisor's screen). */
+  approverId: string;
+  /** The session's cashier — the request's author, the moment it went PENDING_APPROVAL. */
+  requesterId: string;
+  /** The approver's till PIN as typed, when the channel wants one. */
+  pin: string | null;
+}
+
+export interface ApproverVerdict {
+  /** The level the grant confers — HO_FINANCE for a SUPER ADMIN's implicit one. */
+  role: TillApproverRole;
+  /** The channel actually used (ck_tap_channel: never EITHER). */
+  channel: 'COUNTER' | 'REMOTE';
+  /** The till_approval_authority row, or null for the implicit SUPER ADMIN grant. */
+  grantId: string | null;
+  implicit: boolean;
+}
+
+/** One till_approval row (A3): a decision taken, recorded once. */
+export interface ApprovalRecordInput {
+  companyId: string;
+  branchId: string;
+  tenantId: string | null;
+  accYear: string;
+  event: string;
+  sessionId: string | null;
+  counterId: string | null;
+  srcDocType: string;
+  srcDocId: string;
+  srcRefno: string | null;
+  amount: Prisma.Decimal;
+  rule: TillApprovalRuleRow;
+  verdict: ApproverVerdict;
+  requestedBy: string;
+  requestedOn: Date;
+  reasonId: string | null;
+  status: 'APPROVED' | 'REJECTED';
+  decidedBy: string;
+  decidedOn: Date;
+  decidedDeviceId: string | null;
+  decisionNote: string;
+  payload?: Record<string, unknown>;
+}
+
+interface Grant {
+  id: string | null;
+  role: string;
+  maxAmount: Prisma.Decimal | null;
+  canRemote: boolean;
+  implicit: boolean;
+}
+
+/** What a session's /close answered before any rule row existed; still the fallback. */
+const FALLBACK_RULE = (event: string): TillApprovalRuleRow => ({
+  tar_id: null,
+  tar_event_code: event,
+  tar_mode: 'ALWAYS',
+  tar_threshold_amount: new Prisma.Decimal(0),
+  tar_channel: 'EITHER',
+  tar_min_role: 'SUPERVISOR',
+  tar_two_person: false,
+  tar_allow_self: false,
+  tar_blocks_till: true,
+});
+
 /**
- * The approval rules (share file 47 §1.6, `till_approval_rule`), READ ONLY.
- *
- * Phase 3 grows this into the gate (rule × authority × PIN, the inbox, the
- * expiry sweep). Until then a money document asks it only what a rule WOULD
- * ask — plan-till-receipt-payment-expense §3.3 (CASH_PAYMENT) and §4.3
- * (EXPENSE) — and reports the answer; nothing is refused (`enforced: false`).
+ * The approval rules (share file 47 §1.6, `till_approval_rule`) and — since
+ * notes 105 Part A — who may decide under one, and the record of a decision.
  *
  * Resolution, as TillApprovalRule.prisma states it: a branch row beats a
  * company row beats the shipped row (both NULL), then the latest
  * `tar_effective_from` on or before the business date. One row.
+ *
+ * `assess` is still the read-only report a money document asks for
+ * (plan-till-receipt-payment-expense §3.3 CASH_PAYMENT, §4.3 EXPENSE); the
+ * full gate — request · decide · get · cancel, the inbox, the expiry sweep
+ * (TILL_DESIGN.md §S7) — is Part B. `assertApprover` + `record` are what the
+ * variance decision needs of it today, written so Part B's `decide` can grow
+ * out of them rather than beside them.
  */
 @Injectable()
 export class TillApprovalService {
   async ruleFor(
     client: Client,
     scope: { companyId: string; branchId: string; event: string; onDate: string },
-  ) {
-    const [row] = await client.$queryRaw<
-      {
-        tar_id: string;
-        tar_event_code: string;
-        tar_mode: string;
-        tar_threshold_amount: Prisma.Decimal;
-        tar_channel: string;
-        tar_min_role: string;
-        tar_two_person: boolean;
-        tar_blocks_till: boolean;
-      }[]
-    >`
+  ): Promise<(TillApprovalRuleRow & { tar_id: string }) | null> {
+    const [row] = await client.$queryRaw<(TillApprovalRuleRow & { tar_id: string })[]>`
       SELECT tar_id, tar_event_code, tar_mode, tar_threshold_amount, tar_channel, tar_min_role,
-             tar_two_person, tar_blocks_till
+             tar_two_person, tar_allow_self, tar_blocks_till
         FROM accounts.till_approval_rule
        WHERE tar_event_code = ${scope.event}
          AND tar_is_active AND NOT tar_is_deleted
@@ -48,6 +131,14 @@ export class TillApprovalService {
                 tar_effective_from DESC
        LIMIT 1`;
     return row ?? null;
+  }
+
+  /** The rule, or the built-in one (SUPERVISOR, EITHER, no self-approval) when none is set up. */
+  async ruleOrDefault(
+    client: Client,
+    scope: { companyId: string; branchId: string; event: string; onDate: string },
+  ): Promise<TillApprovalRuleRow> {
+    return (await this.ruleFor(client, scope)) ?? FALLBACK_RULE(scope.event);
   }
 
   /**
@@ -89,5 +180,223 @@ export class TillApprovalService {
       blocksTill: rule.tar_blocks_till,
       enforced: false,
     };
+  }
+
+  /**
+   * May the caller decide this? Notes 105 A2, in order — every step a 403 with
+   * its own code so the screen can say which:
+   *
+   *   1. not the requester (`tar_allow_self = false`) — TILL_APPROVER_SELF;
+   *   2. a `till_approval_authority` grant, active today, for this company
+   *      (and branch, or every branch), this event (or every event), at the
+   *      rule's level or above — TILL_APPROVER_NO_GRANT. A SUPER ADMIN
+   *      (`usr_type`, decided 2026-10-12) holds an implicit HO_FINANCE grant on
+   *      every event and branch with no ceiling; an ADMIN needs a real one;
+   *   3. among those, one whose `taa_max_amount` covers the amount —
+   *      TILL_APPROVER_LIMIT, naming the highest ceiling held;
+   *   4. the channel: COUNTER verifies the till PIN; REMOTE wants
+   *      `taa_can_remote`; EITHER takes a PIN when one is typed, else remote
+   *      authority — TILL_APPROVER_PIN.
+   *
+   * Reads only: a caller judges before it writes, so a wrong PIN can be
+   * journalled (PIN_FAIL) outside the transaction it would have rolled back.
+   */
+  async assertApprover(client: Client, ask: ApproverAsk): Promise<ApproverVerdict> {
+    const { rule, event } = ask;
+    if (ask.approverId === ask.requesterId && !rule.tar_allow_self) {
+      throwTill(
+        TillErrorCode.APPROVER_SELF,
+        'The cashier of a session does not decide its own variance: the rule allows no self-approval',
+        'userId',
+        { event, requiredRole: rule.tar_min_role },
+      );
+    }
+    if (rule.tar_two_person) {
+      throwTill(
+        TillErrorCode.APPROVER_NO_GRANT,
+        `The ${event} rule asks for two approvers; the two-person gate is Part B of the approvals work`,
+        'decision',
+        { event, requiredRole: rule.tar_min_role, twoPerson: true },
+      );
+    }
+
+    const user = await client.userMaster.findUnique({
+      where: { usrId: ask.approverId },
+      select: { usrLoginName: true, usrType: true, usrPinHash: true, usrIsActive: true },
+    });
+    const login = user?.usrLoginName ?? ask.approverId;
+    const grants: Grant[] =
+      user?.usrIsActive && user.usrType === UserType.SUPER_ADMIN
+        ? [{ id: null, role: 'HO_FINANCE', maxAmount: null, canRemote: true, implicit: true }]
+        : [];
+    const rows = await client.$queryRaw<
+      {
+        taa_id: string;
+        taa_role: string;
+        taa_max_amount: Prisma.Decimal | null;
+        taa_can_remote: boolean;
+      }[]
+    >`
+      SELECT taa_id, taa_role, taa_max_amount, taa_can_remote
+        FROM accounts.till_approval_authority
+       WHERE taa_user_id = ${ask.approverId}::uuid
+         AND taa_is_active AND NOT taa_is_deleted
+         AND (taa_company_id IS NULL OR taa_company_id = ${ask.companyId}::uuid)
+         AND (taa_branch_id  IS NULL OR taa_branch_id  = ${ask.branchId}::uuid)
+         AND (taa_event_code IS NULL OR taa_event_code = ${event})
+         AND taa_valid_from <= current_date
+         AND (taa_valid_to IS NULL OR taa_valid_to >= current_date)`;
+    grants.push(
+      ...rows.map((r) => ({
+        id: r.taa_id,
+        role: r.taa_role,
+        maxAmount: r.taa_max_amount === null ? null : new Prisma.Decimal(r.taa_max_amount),
+        canRemote: r.taa_can_remote,
+        implicit: false,
+      })),
+    );
+
+    const minRank = approverRoleRank(rule.tar_min_role);
+    const atLevel = grants.filter((g) => approverRoleRank(g.role) >= minRank);
+    if (atLevel.length === 0) {
+      throwTill(
+        TillErrorCode.APPROVER_NO_GRANT,
+        `${login} holds no approval authority for ${event} at ${rule.tar_min_role} or above in this branch (Approval Setup, menu 276)`,
+        'userId',
+        { event, requiredRole: rule.tar_min_role },
+      );
+    }
+    const amount = new Prisma.Decimal(ask.amount.toFixed(2));
+    const covering = atLevel.filter((g) => g.maxAmount === null || g.maxAmount.gte(amount));
+    if (covering.length === 0) {
+      const ceiling = atLevel.reduce(
+        (max, g) => (g.maxAmount && g.maxAmount.gt(max) ? g.maxAmount : max),
+        new Prisma.Decimal(0),
+      );
+      throwTill(
+        TillErrorCode.APPROVER_LIMIT,
+        `${login}'s authority for ${event} stops at ${ceiling.toFixed(2)}; this one is ${amount.toFixed(2)}`,
+        'userId',
+        {
+          event,
+          requiredRole: rule.tar_min_role,
+          amount: Number(amount.toFixed(2)),
+          maxAmount: Number(ceiling.toFixed(2)),
+        },
+      );
+    }
+
+    const pin = ask.pin?.trim() || null;
+    const remoteOk = covering.some((g) => g.canRemote);
+    let channel: 'COUNTER' | 'REMOTE';
+    if (rule.tar_channel === 'REMOTE') {
+      if (!remoteOk) {
+        throwTill(
+          TillErrorCode.APPROVER_NO_GRANT,
+          `The ${event} rule is decided remotely, and ${login}'s authority is not a remote one (taa_can_remote)`,
+          'userId',
+          { event, requiredRole: rule.tar_min_role, channel: 'REMOTE' },
+        );
+      }
+      channel = 'REMOTE';
+    } else if (rule.tar_channel === 'COUNTER' || pin !== null || !remoteOk) {
+      if (pin === null) {
+        throwTill(
+          TillErrorCode.APPROVER_PIN,
+          rule.tar_channel === 'COUNTER'
+            ? `The ${event} rule is decided at the counter: type the approver's till PIN`
+            : `${login} has no remote authority for ${event}: type the till PIN`,
+          'approverPin',
+          { event, requiredRole: rule.tar_min_role, channel: 'COUNTER' },
+        );
+      }
+      if (!(await verifySecret(pin, user?.usrPinHash ?? null))) {
+        throwTill(
+          TillErrorCode.APPROVER_PIN,
+          user?.usrPinHash
+            ? 'The till PIN is wrong'
+            : `${login} has no till PIN (User Administration, notes 95)`,
+          'approverPin',
+          { event, requiredRole: rule.tar_min_role, channel: 'COUNTER' },
+        );
+      }
+      channel = 'COUNTER';
+    } else {
+      channel = 'REMOTE';
+    }
+
+    const usable = channel === 'REMOTE' ? covering.filter((g) => g.canRemote) : covering;
+    const grant = usable.reduce((best, g) =>
+      approverRoleRank(g.role) > approverRoleRank(best.role) ? g : best,
+    );
+    return {
+      role: grant.role as TillApproverRole,
+      channel,
+      grantId: grant.id,
+      implicit: grant.implicit,
+    };
+  }
+
+  /** The till_approval row of a decision (A3). Returns `tap_id`. */
+  async record(tx: Prisma.TransactionClient, input: ApprovalRecordInput): Promise<string> {
+    const countInSession = input.sessionId
+      ? await tx.tillApproval.count({
+          where: {
+            tapSessionId: input.sessionId,
+            tapAccYear: input.accYear,
+            tapEventCode: input.event,
+            tapIsDeleted: false,
+          },
+        })
+      : 0;
+    const snapshot: Prisma.InputJsonValue = {
+      ruleId: input.rule.tar_id,
+      mode: input.rule.tar_mode,
+      threshold: Number(input.rule.tar_threshold_amount.toFixed(2)),
+      channel: input.rule.tar_channel,
+      minRole: input.rule.tar_min_role,
+      allowSelf: input.rule.tar_allow_self,
+      twoPerson: input.rule.tar_two_person,
+      blocksTill: input.rule.tar_blocks_till,
+      approver: {
+        role: input.verdict.role,
+        grantId: input.verdict.grantId,
+        implicit: input.verdict.implicit,
+      },
+      ...(input.payload ?? {}),
+    };
+    const row = await tx.tillApproval.create({
+      data: {
+        tapCompanyId: input.companyId,
+        tapBranchId: input.branchId,
+        tapTenantId: input.tenantId,
+        tapAccYear: input.accYear,
+        tapEventCode: input.event,
+        tapSessionId: input.sessionId,
+        tapCounterId: input.counterId,
+        tapSrcDocType: input.srcDocType,
+        tapSrcDocId: input.srcDocId,
+        tapSrcRefno: input.srcRefno,
+        tapAmount: input.amount,
+        tapCountInSession: countInSession,
+        tapRuleId: input.rule.tar_id,
+        tapRuleSnapshot: snapshot,
+        tapRequiredRole: input.rule.tar_min_role,
+        tapTwoPerson: false,
+        tapSelfAllowed: input.rule.tar_allow_self,
+        tapChannel: input.verdict.channel,
+        tapRequestedBy: input.requestedBy,
+        tapRequestedOn: input.requestedOn,
+        tapReasonId: input.reasonId,
+        tapStatus: input.status,
+        tapDecidedBy: input.decidedBy,
+        tapDecidedOn: input.decidedOn,
+        tapDecidedDeviceId: input.decidedDeviceId,
+        tapDecisionNote: input.decisionNote,
+        tapDeviceId: input.decidedDeviceId,
+      },
+      select: { tapId: true },
+    });
+    return row.tapId;
   }
 }

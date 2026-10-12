@@ -9,7 +9,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.TillSlipCheckDto = exports.TillSlipWithoutRowDto = exports.TillSlipCheckQueryDto = exports.TillChangeDto = exports.VoidTillMovementDto = exports.TillMovementKeyDto = exports.CreateTillMovementDto = exports.TillEventBatchDto = exports.TillClientEventDto = exports.OpenTillDayDto = exports.TillDayGetQueryDto = exports.CloseTillSessionDto = exports.CountTillSessionDto = exports.EndBillingTillSessionDto = exports.SuspendTillSessionDto = exports.OpenTillSessionDto = exports.TillOpenCheckQueryDto = exports.TillCountLineDto = exports.TillSessionKeyDto = exports.TillScopeDto = void 0;
+exports.TillSlipCheckDto = exports.TillSlipWithoutRowDto = exports.TillSlipCheckQueryDto = exports.TillChangeDto = exports.VoidTillMovementDto = exports.TillMovementKeyDto = exports.CreateTillMovementDto = exports.TillEventBatchDto = exports.TillClientEventDto = exports.OpenTillDayDto = exports.TillDayGetQueryDto = exports.DecideTillVarianceDto = exports.CloseTillSessionDto = exports.CountTillSessionDto = exports.EndBillingTillSessionDto = exports.SuspendTillSessionDto = exports.OpenTillSessionDto = exports.TillOpenCheckQueryDto = exports.TillCountLineDto = exports.TillSessionKeyDto = exports.TillScopeDto = void 0;
 const swagger_1 = require("@nestjs/swagger");
 const class_transformer_1 = require("class-transformer");
 const class_validator_1 = require("class-validator");
@@ -305,6 +305,57 @@ __decorate([
     (0, dtoDecorators_1.NullableString)(500),
     __metadata("design:type", Object)
 ], CloseTillSessionDto.prototype, "notes", void 0);
+class DecideTillVarianceDto extends TillSessionKeyDto {
+    decision;
+    treatment;
+    reasonId;
+    note;
+    approverPin;
+}
+exports.DecideTillVarianceDto = DecideTillVarianceDto;
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        enum: till_enum_1.TillVarianceDecision,
+        description: 'APPROVE: the PENDING variances take `treatment`, the session returns to COUNTING and /close posts them. ' +
+            'RECOUNT: back to COUNTING with one more count attempt; the next final count replaces the variances.',
+    }),
+    (0, class_validator_1.IsIn)(Object.values(till_enum_1.TillVarianceDecision)),
+    __metadata("design:type", String)
+], DecideTillVarianceDto.prototype, "decision", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        enum: till_enum_1.APPROVABLE_TREATMENTS,
+        nullable: true,
+        description: 'APPROVE only. EXPENSE → Cash Short & Excess · RECOVER → the cashier’s staff advance ledger (notes 95; ' +
+            'none → 422 TILL_LEDGER_UNMAPPED on this field) · SUSPENSE → Tender suspense, cleared later by a journal.',
+    }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsIn)([...till_enum_1.APPROVABLE_TREATMENTS]),
+    __metadata("design:type", Object)
+], DecideTillVarianceDto.prototype, "treatment", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        format: 'uuid',
+        nullable: true,
+        description: 'APPROVE only: a till_reason of category VARIANCE (a cash gap) or NONCASH (a slip gap) — 422 TILL_REASON_INVALID otherwise.',
+    }),
+    (0, dtoDecorators_1.NullableUuid)(),
+    __metadata("design:type", Object)
+], DecideTillVarianceDto.prototype, "reasonId", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ maxLength: 500, description: 'The decision note. Required.' }),
+    (0, dtoDecorators_1.TrimmedString)(500),
+    __metadata("design:type", String)
+], DecideTillVarianceDto.prototype, "note", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        description: 'The approver’s till PIN (usr_pin_hash, notes 95). Required when the rule’s channel is COUNTER; on EITHER it ' +
+            'stands in for remote authority (taa_can_remote). Wrong → 403 TILL_APPROVER_PIN, journalled PIN_FAIL.',
+    }),
+    (0, dtoDecorators_1.NullableString)(20),
+    __metadata("design:type", Object)
+], DecideTillVarianceDto.prototype, "approverPin", void 0);
 class TillDayGetQueryDto extends TillScopeDto {
     accYear;
     tbdId;

@@ -212,8 +212,11 @@ model AccVoucherDocRegister {
   @@map("acc_voucher_doc_register")
   @@schema("accounts")
   // Partial unique indexes uq_acc_voucher_doc_register_source,
-  // uq_acc_voucher_doc_register_voucher, and uq_acc_voucher_doc_register_doc
-  // are not expressible in Prisma schema. All three carry gdr_acc_year since
+  // uq_acc_voucher_doc_register_voucher, uq_acc_voucher_doc_register_doc_in
+  // (INWARD rows: + gdr_party_id, CANCELED rows excluded -- notes 104,
+  // 20261012100000) and uq_acc_voucher_doc_register_doc_out (OUTWARD and
+  // INTERNAL rows, our own number, CANCELED rows still held) are not
+  // expressible in Prisma schema. All four carry gdr_acc_year since
   // 20260922100000 -- a unique index on a partitioned table must contain the
   // partition key.
   // Partial indexes idx_gdr_branch_voucher_date, idx_gdr_branch_doc_date,

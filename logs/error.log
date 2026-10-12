@@ -15705,3 +15705,72 @@ Response from the Engine was empty
     at async Promise.all (index 0)
     at async PartyOutstandingService.bills (/home/vk/Dev/erp/ERP server/src/modules/reports/party-outstanding/party-outstanding.service.ts:301:29)
     at async PartyOutstandingController.bills (/home/vk/Dev/erp/ERP server/src/modules/reports/party-outstanding/party-outstanding.controller.ts:133:18)
+2026-10-11T10:28:33.370Z ERROR [ModuleExceptionFilter] POST /api/v1/expenses/create
+PrismaClientKnownRequestError: 
+Invalid `tx.accVoucherHeader.create()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/accountsModule/expense/expense.service.ts:218:39
+
+  215     })
+  216   ).avhVoucherId
+  217 : (
+→ 218     await tx.accVoucherHeader.create(
+Unique constraint failed on the fields: (`avh_company_id`,`avh_party_id`,`avh_voucher_type_id`,`avh_acc_year`,`avh_doc_refno`)
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async <anonymous> (/home/vk/Dev/erp/ERP server/src/modules/accountsModule/expense/expense.service.ts:218:13)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async ExpenseService.save (/home/vk/Dev/erp/ERP server/src/modules/accountsModule/expense/expense.service.ts:121:23)
+    at async ExpenseController.create (/home/vk/Dev/erp/ERP server/src/modules/accountsModule/expense/expense.controller.ts:67:18)
+2026-10-11T10:29:28.780Z ERROR [ModuleExceptionFilter] POST /api/v1/expenses/create
+PrismaClientKnownRequestError: 
+Invalid `tx.accVoucherHeader.create()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/accountsModule/expense/expense.service.ts:218:39
+
+  215     })
+  216   ).avhVoucherId
+  217 : (
+→ 218     await tx.accVoucherHeader.create(
+Unique constraint failed on the fields: (`avh_company_id`,`avh_party_id`,`avh_voucher_type_id`,`avh_acc_year`,`avh_doc_refno`)
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async <anonymous> (/home/vk/Dev/erp/ERP server/src/modules/accountsModule/expense/expense.service.ts:218:13)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async ExpenseService.save (/home/vk/Dev/erp/ERP server/src/modules/accountsModule/expense/expense.service.ts:121:23)
+    at async ExpenseController.create (/home/vk/Dev/erp/ERP server/src/modules/accountsModule/expense/expense.controller.ts:67:18)
+2026-10-11T10:29:53.535Z ERROR [ModuleExceptionFilter] POST /api/v1/expenses/create
+PrismaClientKnownRequestError: 
+Invalid `tx.accVoucherHeader.create()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/accountsModule/expense/expense.service.ts:218:39
+
+  215     })
+  216   ).avhVoucherId
+  217 : (
+→ 218     await tx.accVoucherHeader.create(
+Unique constraint failed on the fields: (`avh_company_id`,`avh_party_id`,`avh_voucher_type_id`,`avh_acc_year`,`avh_doc_refno`)
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async <anonymous> (/home/vk/Dev/erp/ERP server/src/modules/accountsModule/expense/expense.service.ts:218:13)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async ExpenseService.save (/home/vk/Dev/erp/ERP server/src/modules/accountsModule/expense/expense.service.ts:121:23)
+    at async ExpenseController.create (/home/vk/Dev/erp/ERP server/src/modules/accountsModule/expense/expense.controller.ts:67:18)
+2026-10-12T04:28:52.819Z ERROR [ModuleExceptionFilter] POST /api/v1/expenses/post
+PrismaClientKnownRequestError: 
+Invalid `prisma.$queryRaw()` invocation:
+
+
+Raw query failed. Code: `23505`. Message: `Key (gdr_company_id, gdr_branch_id, gdr_acc_year, gdr_doc_type, gdr_doc_no, gdr_doc_date)=(019c8ea6-19e9-78a8-b15f-749e1cde7292, 019c8ea7-b0f5-72d5-96a5-1abfc80cc8ab, 2026-2027, INVOICE, ZT-EXPV-1791779304, 2026-10-12) already exists.`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async DocRegisterService.write (/home/vk/Dev/erp/ERP server/src/common/posting/doc-register.service.ts:76:19)
+    at async <anonymous> (/home/vk/Dev/erp/ERP server/src/modules/accountsModule/expense/expense.service.ts:507:9)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async ExpenseService.post (/home/vk/Dev/erp/ERP server/src/modules/accountsModule/expense/expense.service.ts:398:5)
+    at async ExpenseController.post (/home/vk/Dev/erp/ERP server/src/modules/accountsModule/expense/expense.controller.ts:120:18)

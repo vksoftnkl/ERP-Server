@@ -1,5 +1,5 @@
 import type { ModuleErrorDetail, ModuleErrorResponse } from '../../../common/utils/module-shared.utils';
-import type { TillCountKind, TillCountOutcome, TillDayStatus, TillFloatMode, TillMovementKind, TillSessionStatus, TillSessionVarianceStatus, TillVarianceTreatment, TenderCloseMode } from './till-enum';
+import type { TillCountKind, TillCountOutcome, TillDayStatus, TillFloatMode, TillMovementKind, TillSessionStatus, TillSessionVarianceStatus, TillVarianceDecision, TillVarianceTreatment, TenderCloseMode } from './till-enum';
 export interface TillErrorDetail extends ModuleErrorDetail {
     code?: string;
     event?: string;
@@ -223,6 +223,20 @@ export interface TillVariancePayload {
     tvrReasonId: string | null;
     tvrStatus: 'OPEN' | 'POSTED' | 'REVERSED';
     tvrVoucherId: string | null;
+    tvrApprovalId: string | null;
+    tvrDecidedBy: string | null;
+    tvrRecoveryLedgerId: string | null;
+}
+export interface TillVarianceDecisionPayload {
+    tapId: string;
+    decision: TillVarianceDecision;
+    event: string;
+    amount: number;
+    requiredRole: string;
+    approverRole: string;
+    channel: 'COUNTER' | 'REMOTE';
+    treatment: TillVarianceTreatment | null;
+    session: TillSessionPayload;
 }
 export interface TillCountResultPayload {
     tssId: string;
