@@ -51,6 +51,7 @@ class SaveStockVoucherHeaderDto {
     totalValueWot;
     rateSource;
     status;
+    post;
     remarks;
     lrNo;
     vehicleNo;
@@ -302,6 +303,14 @@ __decorate([
     }),
     __metadata("design:type", String)
 ], SaveStockVoucherHeaderDto.prototype, "status", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        default: false,
+        description: "Same as status: 'POSTED' — save and post in one transaction. A refusal leaves nothing behind.",
+    }),
+    (0, dtoDecorators_1.OptionalBoolean)(),
+    __metadata("design:type", Boolean)
+], SaveStockVoucherHeaderDto.prototype, "post", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ maxLength: 250, nullable: true }),
     (0, dtoDecorators_1.NullableStringStrict)(250),

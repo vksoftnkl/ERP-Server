@@ -28,6 +28,8 @@ export declare class BillService {
     private readonly billRead;
     constructor(prisma: PrismaService, auditLogService: AuditLogService, requestContextService: RequestContextService, chargeDetailService: ChargeDetailService, tenderDetailService: TenderDetailService, saleOrderService: SaleOrderService, quotationService: QuotationService, transportBand: TransportBandService, salesContext: SalesContextService, docBlocks: SalesDocBlocksService, billRead: BillReadService);
     save(saveBillDto: SaveBillDto): Promise<BillPayload>;
+    prepareSave(saveBillDto: SaveBillDto): void;
+    throwIfDuplicate(error: unknown): void;
     getById(sbId: string, sbCompanyId: string, sbBranchId: string, sbAccYear: string): Promise<BillPayload>;
     lockHeader(tx: Prisma.TransactionClient, keys: {
         sbId: string;
@@ -47,7 +49,9 @@ export declare class BillService {
     private saveDraftCheques;
     private toScope;
     private createBill;
+    createBillInTx(tx: Prisma.TransactionClient, saveBillDto: SaveBillDto): Promise<SaleBill>;
     private updateBill;
+    updateBillInTx(tx: Prisma.TransactionClient, saveBillDto: SaveBillDto): Promise<SaleBill>;
     applySaveInTx(tx: Prisma.TransactionClient, existing: SaleBill, saveBillDto: SaveBillDto, modifiedBy: string, now: Date, opts?: {
         notes?: string;
     }): Promise<{

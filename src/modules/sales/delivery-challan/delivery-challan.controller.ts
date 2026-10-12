@@ -28,6 +28,11 @@ import {
 type Ok<T> = { success: true; message: string; data: T };
 const ok = <T>(message: string, data: T): Ok<T> => ({ success: true, message, data });
 
+/** Notes 94 B / 106 — `post: true`, or the status the post would leave, asks for save-and-post. */
+function wantsPost(dto: SaveDeliveryChallanDto): boolean {
+  return dto.post === true || (dto.sdcStatus ?? '').toUpperCase() === 'POSTED';
+}
+
 /** HANDOVER §4 — `/api/v1/delivery-challans`. Body prefix `sdc` / `sdi`. */
 @ApiTags('Delivery Challans')
 @ApiBearerAuth('access-token')
@@ -39,8 +44,22 @@ export class DeliveryChallanController {
 
   @Post('create')
   @Version(API_VERSION)
-  @ApiOperation({ summary: 'Create or update a DRAFT challan (by sdcId presence)' })
+  @ApiOperation({
+    summary: 'Create or update a DRAFT challan (by sdcId presence) — or save and post in one call',
+    description:
+      "With `post: true` (or `sdcStatus: 'POSTED'`, the same instruction) the save, every guard and " +
+      'the whole of /delivery-challans/post run in ONE transaction; a refusal rolls all of it back — ' +
+      'no header, no lines, no number consumed — and answers exactly what /post answers. Notes 94 B / 106.',
+  })
   async save(@Body() dto: SaveDeliveryChallanDto) {
+    if (wantsPost(dto)) {
+      return ok(
+        dto.sdcId
+          ? 'Challan updated and posted successfully'
+          : 'Challan created and posted successfully',
+        await this.service.saveAndPost(dto),
+      );
+    }
     return ok(
       dto.sdcId ? 'Challan updated successfully' : 'Challan created successfully',
       await this.service.save(dto),

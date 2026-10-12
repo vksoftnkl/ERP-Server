@@ -5,12 +5,14 @@ import {
   ApiBearerAuth,
   ApiConflictResponse,
   ApiCreatedResponse,
+  ApiExtraModels,
   ApiForbiddenResponse,
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
   ApiUnauthorizedResponse,
+  getSchemaPath,
 } from '@nestjs/swagger';
 import { API_VERSION } from '../../../common/constants/api-version';
 import { assertMenuRight, type MenuRight } from '../../../common/posting/rights';
@@ -119,6 +121,7 @@ import { RECEIPT_MENU_ID } from './types/receipt-enum';
 @ApiForbiddenResponse({ type: ReceiptErrorResponseDto })
 @Controller('receipts')
 @UseFilters(ReceiptExceptionFilter)
+@ApiExtraModels(ReceiptDraftSuccessDto, ReceiptPostSuccessDto)
 export class ReceiptController {
   constructor(
     private readonly prisma: PrismaService,
@@ -311,7 +314,7 @@ export class ReceiptController {
   @Post('create')
   @Version(API_VERSION)
   @ApiOperation({
-    summary: 'Save a draft receipt',
+    summary: 'Save a draft receipt — or, with post: true, save and post it in one call',
     description:
       'Upsert on avhVoucherId. Writes the header (DRAFT, NO number — an abandoned draft must ' +
       'leave no gap in the series), the tender rows with td_voucher_id NULL, and the ' +
@@ -333,13 +336,30 @@ export class ReceiptController {
       'operator the whole draft to save one number. Omit either key to leave what is already ' +
       'remembered alone; send [] to clear it.',
   })
-  @ApiCreatedResponse({ type: ReceiptDraftSuccessDto })
+  @ApiCreatedResponse({
+    description:
+      'The draft (ReceiptDraftSuccessDto) — or, with post: true, the posted receipt (ReceiptPostSuccessDto, the /post shape).',
+    schema: {
+      oneOf: [
+        { $ref: getSchemaPath(ReceiptDraftSuccessDto) },
+        { $ref: getSchemaPath(ReceiptPostSuccessDto) },
+      ],
+    },
+  })
   @ApiBadRequestResponse({ type: ReceiptErrorResponseDto })
   @ApiConflictResponse({ type: ReceiptErrorResponseDto })
   @ApiNotFoundResponse({ type: ReceiptErrorResponseDto })
   async create(
     @Body() dto: SaveDraftReceiptDto,
-  ): Promise<ReceiptSuccessResponse<ReceiptDraftPayload>> {
+  ): Promise<ReceiptSuccessResponse<ReceiptDraftPayload | ReceiptPostPayload>> {
+    if (dto.post === true) {
+      // Notes 94 A: the save a posting request makes is part of the post, so
+      // it is judged on the Post right alone — a user with Post but not
+      // Create may raise a receipt this way.
+      await this.requireRight('post', 'post receipts');
+      const data = await this.postingService.saveAndPost(dto);
+      return { success: true, message: this.postedMessage(data), data };
+    }
     await this.requireRight(dto.avhVoucherId ? 'edit' : 'create', 'save receipt drafts');
     const data = await this.receiptService.save(dto);
 
@@ -378,15 +398,15 @@ export class ReceiptController {
   ): Promise<ReceiptSuccessResponse<ReceiptPostPayload>> {
     await this.requireRight('post', 'post receipts');
     const data = await this.postingService.post(dto);
-    const pdcCount = data.numberedVouchers.filter((voucher) => voucher.isPdcVoucher).length;
+    return { success: true, message: this.postedMessage(data), data };
+  }
 
-    return {
-      success: true,
-      message:
-        `Receipt ${data.header.avhVoucherRefno} posted` +
-        (pdcCount > 0 ? ` with ${pdcCount} post-dated cheque voucher(s)` : ''),
-      data,
-    };
+  private postedMessage(data: ReceiptPostPayload): string {
+    const pdcCount = data.numberedVouchers.filter((voucher) => voucher.isPdcVoucher).length;
+    return (
+      `Receipt ${data.header.avhVoucherRefno} posted` +
+      (pdcCount > 0 ? ` with ${pdcCount} post-dated cheque voucher(s)` : '')
+    );
   }
 
   @Put('update-header')

@@ -40,63 +40,95 @@ let SaleOrderLifecycleService = class SaleOrderLifecycleService {
     }
     async post(dto) {
         const now = new Date();
-        return this.prisma.$transaction(async (tx) => {
-            const order = await this.lock(tx, dto);
-            if (order.soStatus === ORDER_STATUS.CONFIRMED) {
-                return { soStatus: order.soStatus, warnings: [] };
-            }
-            if (order.soStatus !== ORDER_STATUS.DRAFT) {
-                (0, sales_errors_1.throwSalesLocked)(`This order is ${order.soStatus}`, posting_types_1.SALES_ERROR_CODES.DOC_NOT_DRAFT, 'soId');
-            }
-            const ctx = await this.salesContext.resolve({ companyId: order.soCompanyId, branchId: order.soBranchId }, sales_doc_utils_1.SALES_MENU_ID.SALES_ORDER, tx);
-            if (!ctx.rights.post) {
-                (0, sales_errors_1.throwSalesRight)('This user may not post on this menu', posting_types_1.SALES_ERROR_CODES.RIGHT_POST);
-            }
-            await (0, sales_guards_1.assertAccYearWritable)(tx, order.soCompanyId, order.soAccYear, 'soAccYear');
-            const docDate = (0, sales_doc_utils_1.isoDate)(order.soOrderDate) ?? (0, sales_doc_utils_1.isoToday)();
-            if (await (0, sales_guards_1.loadDayClosed)(tx, order.soCompanyId, order.soBranchId, docDate)) {
-                (0, sales_errors_1.throwSalesLocked)(`The books for ${docDate} are closed at this branch`, posting_types_1.SALES_ERROR_CODES.DAY_CLOSED, 'soOrderDate');
-            }
-            await (0, sales_guards_1.assertSalesmen)(tx, order.soCompanyId, order.soSalesmanId?.length ? order.soSalesmanId : null, { field: 'soSalesmanId' });
-            const lines = await tx.saleOrderItem.findMany({
-                where: { soiOrderId: order.soId, soiAccYear: order.soAccYear, soiIsDeleted: false },
-                orderBy: { soiLineNo: 'asc' },
+        return this.prisma.$transaction((tx) => this.postInTx(tx, dto, now));
+    }
+    async saveAndPost(dto) {
+        const { post: _post, ...rest } = dto;
+        void _post;
+        const saveDto = rest;
+        delete saveDto.soStatus;
+        this.orders.prepareSave(saveDto);
+        const now = new Date();
+        let keys = null;
+        let warnings = [];
+        try {
+            await this.prisma.$transaction(async (tx) => {
+                const saved = saveDto.soId
+                    ? await this.orders.updateOrderInTx(tx, saveDto)
+                    : await this.orders.createOrderInTx(tx, saveDto);
+                keys = {
+                    soId: saved.soId,
+                    soCompanyId: saved.soCompanyId,
+                    soBranchId: saved.soBranchId,
+                    soAccYear: saved.soAccYear,
+                };
+                warnings = (await this.postInTx(tx, keys, now)).warnings;
             });
-            const { reserved, warnings } = await this.reserve(tx, order, lines, ctx.actor, now);
-            for (const l of lines) {
-                const got = reserved.get(l.soiId) ?? 0;
-                await tx.saleOrderItem.update({
-                    where: { soiId_soiAccYear: { soiId: l.soiId, soiAccYear: l.soiAccYear } },
-                    data: {
-                        soiIsReserved: got > 0,
-                        soiReservedQty: new client_1.Prisma.Decimal(Math.min(got, (0, sales_doc_utils_1.num)(l.soiOrderQty)).toFixed(3)),
-                        soiModifiedOn: now,
-                        soiModifiedBy: ctx.actor,
-                    },
-                });
-            }
-            await tx.saleOrder.update({
-                where: { soId_soAccYear: { soId: order.soId, soAccYear: order.soAccYear } },
-                data: { soStatus: ORDER_STATUS.CONFIRMED, soModifiedOn: now, soModifiedBy: ctx.actorName },
-            });
-            await this.trail(tx, order, txn_status_log_helper_1.TxnStatusEvent.POSTED, order.soStatus, ORDER_STATUS.CONFIRMED, ctx.actor, now, warnings.length ? `${warnings.length} line(s) short on reservation` : null);
-            await this.audit.logEntityChange({
-                action: 'approve',
-                tableName: 'sale_order',
-                screenName: 'Sales Order',
-                screenType: 'transaction',
-                pk: order.soId,
-                displayName: order.soOrderRefno,
-                originalRecord: { soStatus: order.soStatus },
-                modifiedRecord: {
-                    soStatus: ORDER_STATUS.CONFIRMED,
-                    reservations: [...reserved.values()],
-                },
-                userId: ctx.actor,
-                notes: 'Order confirmed',
-            }, tx);
-            return { soStatus: ORDER_STATUS.CONFIRMED, warnings };
+        }
+        catch (error) {
+            this.orders.throwIfDuplicate(error);
+            throw error;
+        }
+        const k = keys;
+        const payload = await this.orders.getById(k.soId, k.soCompanyId, k.soBranchId, k.soAccYear);
+        return { ...payload, warnings };
+    }
+    async postInTx(tx, dto, now) {
+        const order = await this.lock(tx, dto);
+        if (order.soStatus === ORDER_STATUS.CONFIRMED) {
+            return { soStatus: order.soStatus, warnings: [] };
+        }
+        if (order.soStatus !== ORDER_STATUS.DRAFT) {
+            (0, sales_errors_1.throwSalesLocked)(`This order is ${order.soStatus}`, posting_types_1.SALES_ERROR_CODES.DOC_NOT_DRAFT, 'soId');
+        }
+        const ctx = await this.salesContext.resolve({ companyId: order.soCompanyId, branchId: order.soBranchId }, sales_doc_utils_1.SALES_MENU_ID.SALES_ORDER, tx);
+        if (!ctx.rights.post) {
+            (0, sales_errors_1.throwSalesRight)('This user may not post on this menu', posting_types_1.SALES_ERROR_CODES.RIGHT_POST);
+        }
+        await (0, sales_guards_1.assertAccYearWritable)(tx, order.soCompanyId, order.soAccYear, 'soAccYear');
+        const docDate = (0, sales_doc_utils_1.isoDate)(order.soOrderDate) ?? (0, sales_doc_utils_1.isoToday)();
+        if (await (0, sales_guards_1.loadDayClosed)(tx, order.soCompanyId, order.soBranchId, docDate)) {
+            (0, sales_errors_1.throwSalesLocked)(`The books for ${docDate} are closed at this branch`, posting_types_1.SALES_ERROR_CODES.DAY_CLOSED, 'soOrderDate');
+        }
+        await (0, sales_guards_1.assertSalesmen)(tx, order.soCompanyId, order.soSalesmanId?.length ? order.soSalesmanId : null, { field: 'soSalesmanId' });
+        const lines = await tx.saleOrderItem.findMany({
+            where: { soiOrderId: order.soId, soiAccYear: order.soAccYear, soiIsDeleted: false },
+            orderBy: { soiLineNo: 'asc' },
         });
+        const { reserved, warnings } = await this.reserve(tx, order, lines, ctx.actor, now);
+        for (const l of lines) {
+            const got = reserved.get(l.soiId) ?? 0;
+            await tx.saleOrderItem.update({
+                where: { soiId_soiAccYear: { soiId: l.soiId, soiAccYear: l.soiAccYear } },
+                data: {
+                    soiIsReserved: got > 0,
+                    soiReservedQty: new client_1.Prisma.Decimal(Math.min(got, (0, sales_doc_utils_1.num)(l.soiOrderQty)).toFixed(3)),
+                    soiModifiedOn: now,
+                    soiModifiedBy: ctx.actor,
+                },
+            });
+        }
+        await tx.saleOrder.update({
+            where: { soId_soAccYear: { soId: order.soId, soAccYear: order.soAccYear } },
+            data: { soStatus: ORDER_STATUS.CONFIRMED, soModifiedOn: now, soModifiedBy: ctx.actorName },
+        });
+        await this.trail(tx, order, txn_status_log_helper_1.TxnStatusEvent.POSTED, order.soStatus, ORDER_STATUS.CONFIRMED, ctx.actor, now, warnings.length ? `${warnings.length} line(s) short on reservation` : null);
+        await this.audit.logEntityChange({
+            action: 'approve',
+            tableName: 'sale_order',
+            screenName: 'Sales Order',
+            screenType: 'transaction',
+            pk: order.soId,
+            displayName: order.soOrderRefno,
+            originalRecord: { soStatus: order.soStatus },
+            modifiedRecord: {
+                soStatus: ORDER_STATUS.CONFIRMED,
+                reservations: [...reserved.values()],
+            },
+            userId: ctx.actor,
+            notes: 'Order confirmed',
+        }, tx);
+        return { soStatus: ORDER_STATUS.CONFIRMED, warnings };
     }
     async cancel(dto) {
         const now = new Date();

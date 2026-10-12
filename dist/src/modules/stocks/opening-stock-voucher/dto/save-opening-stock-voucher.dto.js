@@ -40,6 +40,7 @@ class SaveOpeningStockVoucherHeaderDto {
     userId;
     voucherType;
     status;
+    post;
     createdBy;
     modifiedBy;
 }
@@ -219,6 +220,14 @@ __decorate([
     }),
     __metadata("design:type", String)
 ], SaveOpeningStockVoucherHeaderDto.prototype, "status", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        default: false,
+        description: "Same as status: 'POSTED' — save and post in one transaction. A refusal leaves nothing behind.",
+    }),
+    (0, dtoDecorators_1.OptionalBoolean)(),
+    __metadata("design:type", Boolean)
+], SaveOpeningStockVoucherHeaderDto.prototype, "post", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({
         maxLength: 100,

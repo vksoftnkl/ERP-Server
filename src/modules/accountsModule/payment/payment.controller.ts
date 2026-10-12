@@ -5,12 +5,14 @@ import {
   ApiBearerAuth,
   ApiConflictResponse,
   ApiCreatedResponse,
+  ApiExtraModels,
   ApiForbiddenResponse,
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
   ApiUnauthorizedResponse,
+  getSchemaPath,
 } from '@nestjs/swagger';
 import { API_VERSION } from '../../../common/constants/api-version';
 import { assertMenuRight, type MenuRight } from '../../../common/posting/rights';
@@ -86,6 +88,7 @@ import { PAYMENT_MENU_ID } from './types/payment-enum';
 @ApiForbiddenResponse({ type: PaymentErrorResponseDto })
 @Controller('payments')
 @UseFilters(PaymentExceptionFilter)
+@ApiExtraModels(PaymentDraftSuccessDto, PaymentPostSuccessDto)
 export class PaymentController {
   constructor(
     private readonly prisma: PrismaService,
@@ -223,7 +226,7 @@ export class PaymentController {
   @Post('create')
   @Version(API_VERSION)
   @ApiOperation({
-    summary: 'Save a draft payment',
+    summary: 'Save a draft payment — or, with post: true, save and post it in one call',
     description:
       'Upsert on avhVoucherId. Writes the header (DRAFT, no number), the tender rows (td_dr_cr ' +
       'CR, td_voucher_id NULL) and the other-ledger lines into avh_draft_lines. Nothing touches a ' +
@@ -234,13 +237,30 @@ export class PaymentController {
       'disagrees is a 409.\n\n' +
       'allocations[] and creditsApplied[] are REMEMBERED, not applied (notes 30).',
   })
-  @ApiCreatedResponse({ type: PaymentDraftSuccessDto })
+  @ApiCreatedResponse({
+    description:
+      'The draft (PaymentDraftSuccessDto) — or, with post: true, the posted payment (PaymentPostSuccessDto, the /post shape).',
+    schema: {
+      oneOf: [
+        { $ref: getSchemaPath(PaymentDraftSuccessDto) },
+        { $ref: getSchemaPath(PaymentPostSuccessDto) },
+      ],
+    },
+  })
   @ApiBadRequestResponse({ type: PaymentErrorResponseDto })
   @ApiConflictResponse({ type: PaymentErrorResponseDto })
   @ApiNotFoundResponse({ type: PaymentErrorResponseDto })
   async create(
     @Body() dto: SaveDraftPaymentDto,
-  ): Promise<PaymentSuccessResponse<PaymentDraftPayload>> {
+  ): Promise<PaymentSuccessResponse<PaymentDraftPayload | PaymentPostPayload>> {
+    if (dto.post === true) {
+      // Notes 94 A: the save a posting request makes is part of the post, so
+      // it is judged on the Post right alone — a user with Post but not
+      // Create may raise a payment this way.
+      await this.requireRight('post', 'post payments');
+      const data = await this.postingService.saveAndPost(dto);
+      return { success: true, message: this.postedMessage(data), data };
+    }
     await this.requireRight(dto.avhVoucherId ? 'edit' : 'create', 'save payment drafts');
     const data = await this.paymentService.save(dto);
     return { success: true, message: 'Payment draft saved successfully', data };
@@ -266,17 +286,18 @@ export class PaymentController {
   ): Promise<PaymentSuccessResponse<PaymentPostPayload>> {
     await this.requireRight('post', 'post payments');
     const data = await this.postingService.post(dto);
+    return { success: true, message: this.postedMessage(data), data };
+  }
+
+  private postedMessage(data: PaymentPostPayload): string {
     const pdcCount = data.numberedVouchers.filter((voucher) => voucher.isPdcVoucher).length;
-    return {
-      success: true,
-      message:
-        `Payment ${data.header.avhVoucherRefno} posted` +
-        (data.cheques.length > 0
-          ? ` — cheque ${data.cheques.map((c) => c.leaf).join(', ')} issued`
-          : '') +
-        (pdcCount > 0 ? ` with ${pdcCount} post-dated cheque voucher(s)` : ''),
-      data,
-    };
+    return (
+      `Payment ${data.header.avhVoucherRefno} posted` +
+      (data.cheques.length > 0
+        ? ` — cheque ${data.cheques.map((c) => c.leaf).join(', ')} issued`
+        : '') +
+      (pdcCount > 0 ? ` with ${pdcCount} post-dated cheque voucher(s)` : '')
+    );
   }
 
   @Put('update-header')

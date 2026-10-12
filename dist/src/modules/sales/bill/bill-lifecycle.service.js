@@ -112,51 +112,90 @@ let BillLifecycleService = BillLifecycleService_1 = class BillLifecycleService {
         let posted = null;
         await this.prisma.$transaction(async (tx) => {
             const bill = await this.bills.lockHeader(tx, dto);
-            if (bill.sbStatus === bill_api_types_1.BILL_STATUS_POSTED) {
-                return;
-            }
-            if (bill.sbStatus === bill_api_types_1.BILL_STATUS_CANCELLED) {
-                (0, sales_errors_1.throwSalesLocked)('This bill is CANCELLED', posting_types_1.SALES_ERROR_CODES.BILL_CANCELLED, 'sbId');
-            }
-            const ctx = await this.salesContext.resolve({ companyId: bill.sbCompanyId, branchId: bill.sbBranchId, deviceId: bill.sbDeviceId }, sales_doc_utils_1.SALES_MENU_ID.SALE_BILL, tx);
-            if (!ctx.rights.post) {
-                (0, sales_errors_1.throwSalesRight)('This user may not post on this menu', posting_types_1.SALES_ERROR_CODES.RIGHT_POST);
-            }
-            const till = await this.till.resolveForMoney(tx, {
-                companyId: bill.sbCompanyId,
-                branchId: bill.sbBranchId,
-                sessionId: bill.sbSessionId,
-                field: 'sbSessionId',
-                cashIn: true,
-                docTime: bill.sbBillDatetime ?? null,
-                arrivedAt: bill.sbCreatedOn,
-                lateArrivalOk: true,
-            });
-            if (till) {
-                await this.stampTillSession(tx, bill, till, ctx.actorName);
-            }
-            const parts = await this.bills.loadParts(tx, bill);
-            const snap = (0, bill_snapshot_1.snapshotFromRows)(bill, parts.items, parts.charges, parts.tenders);
-            const guard = (0, posting_types_1.createGuardContext)({
-                overrides: dto.overrides ?? [],
-                canOverride: ctx.rights.override,
-                throwOnRefusal: false,
-            });
-            await this.runGuards(tx, snap, ctx, guard, { adjustments: dto.adjustments });
-            if (guard.refusals.length > 0) {
-                (0, sales_errors_1.throwSalesRefusals)('Bill cannot be posted', guard.refusals);
-            }
-            posted = await this.postCore(tx, bill, parts.items, snap, ctx, {
-                adjustments: dto.adjustments,
-                now: new Date(),
-                fromStatus: bill_api_types_1.BILL_STATUS_DRAFT,
-            });
+            posted = await this.postDraftInTx(tx, bill, dto, new Date());
         }, POST_TX_OPTIONS);
-        if (posted) {
-            const p = posted;
-            this.gst.enqueueAfterPost({ gdrId: p.gdrId, einvoice: p.einvoice, ewaybill: p.ewaybill });
-        }
+        this.afterPost(posted);
         return this.bills.getById(dto.sbId, dto.sbCompanyId, dto.sbBranchId, dto.sbAccYear);
+    }
+    async saveAndPost(dto) {
+        const { post: _post, overrides, ...saveDto } = dto;
+        void _post;
+        this.bills.prepareSave(saveDto);
+        let posted = null;
+        let keys = null;
+        try {
+            await this.prisma.$transaction(async (tx) => {
+                const now = new Date();
+                const saved = saveDto.sbId
+                    ? await this.bills.updateBillInTx(tx, saveDto)
+                    : await this.bills.createBillInTx(tx, saveDto);
+                keys = {
+                    sbId: saved.sbId,
+                    sbCompanyId: saved.sbCompanyId,
+                    sbBranchId: saved.sbBranchId,
+                    sbAccYear: saved.sbAccYear,
+                };
+                const bill = await this.bills.lockHeader(tx, keys);
+                posted = await this.postDraftInTx(tx, bill, { overrides, adjustments: saveDto.adjustments }, now);
+            }, POST_TX_OPTIONS);
+        }
+        catch (error) {
+            this.bills.throwIfDuplicate(error);
+            throw error;
+        }
+        this.afterPost(posted);
+        const k = keys;
+        return this.bills.getById(k.sbId, k.sbCompanyId, k.sbBranchId, k.sbAccYear);
+    }
+    async postDraftInTx(tx, bill, opts, now) {
+        if (bill.sbStatus === bill_api_types_1.BILL_STATUS_POSTED) {
+            return null;
+        }
+        if (bill.sbStatus === bill_api_types_1.BILL_STATUS_CANCELLED) {
+            (0, sales_errors_1.throwSalesLocked)('This bill is CANCELLED', posting_types_1.SALES_ERROR_CODES.BILL_CANCELLED, 'sbId');
+        }
+        const ctx = await this.salesContext.resolve({ companyId: bill.sbCompanyId, branchId: bill.sbBranchId, deviceId: bill.sbDeviceId }, sales_doc_utils_1.SALES_MENU_ID.SALE_BILL, tx);
+        if (!ctx.rights.post) {
+            (0, sales_errors_1.throwSalesRight)('This user may not post on this menu', posting_types_1.SALES_ERROR_CODES.RIGHT_POST);
+        }
+        const till = await this.till.resolveForMoney(tx, {
+            companyId: bill.sbCompanyId,
+            branchId: bill.sbBranchId,
+            sessionId: bill.sbSessionId,
+            field: 'sbSessionId',
+            cashIn: true,
+            docTime: bill.sbBillDatetime ?? null,
+            arrivedAt: bill.sbCreatedOn,
+            lateArrivalOk: true,
+        });
+        if (till) {
+            await this.stampTillSession(tx, bill, till, ctx.actorName);
+        }
+        const parts = await this.bills.loadParts(tx, bill);
+        const snap = (0, bill_snapshot_1.snapshotFromRows)(bill, parts.items, parts.charges, parts.tenders);
+        const guard = (0, posting_types_1.createGuardContext)({
+            overrides: opts.overrides ?? [],
+            canOverride: ctx.rights.override,
+            throwOnRefusal: false,
+        });
+        await this.runGuards(tx, snap, ctx, guard, { adjustments: opts.adjustments });
+        if (guard.refusals.length > 0) {
+            (0, sales_errors_1.throwSalesRefusals)('Bill cannot be posted', guard.refusals);
+        }
+        return this.postCore(tx, bill, parts.items, snap, ctx, {
+            adjustments: opts.adjustments,
+            now,
+            fromStatus: bill_api_types_1.BILL_STATUS_DRAFT,
+        });
+    }
+    afterPost(posted) {
+        if (posted) {
+            this.gst.enqueueAfterPost({
+                gdrId: posted.gdrId,
+                einvoice: posted.einvoice,
+                ewaybill: posted.ewaybill,
+            });
+        }
     }
     async cancel(dto) {
         const now = new Date();

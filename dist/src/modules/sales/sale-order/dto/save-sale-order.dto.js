@@ -171,6 +171,7 @@ class SaveSaleOrderDto {
     items;
     charges;
     tenders;
+    post;
 }
 exports.SaveSaleOrderDto = SaveSaleOrderDto;
 __decorate([
@@ -925,8 +926,9 @@ __decorate([
         maxLength: 20,
         nullable: true,
         description: 'DRAFT / CONFIRMED / PARTIAL / COMPLETED / CANCELLED / CLOSED / EXPIRED — ' +
-            "defaults to 'DRAFT'. The status TRAIL lives in public.txn_status_log; this " +
-            'column is the current state only.',
+            "defaults to 'DRAFT'. 'CONFIRMED' is the one-call instruction (same as post: true): " +
+            'the order is saved and confirmed in one transaction through /sale-orders/post. The ' +
+            'status TRAIL lives in public.txn_status_log; this column is the current state only.',
     }),
     (0, dtoDecorators_1.NullableStringStrict)(20),
     __metadata("design:type", Object)
@@ -1001,4 +1003,12 @@ __decorate([
     (0, class_transformer_1.Type)(() => save_tender_detail_dto_1.SaveTenderDetailDto),
     __metadata("design:type", Array)
 ], SaveSaleOrderDto.prototype, "tenders", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        default: false,
+        description: "Save and confirm in one transaction (same as soStatus: 'CONFIRMED'). A refusal leaves no draft and burns no number; the error is /sale-orders/post's. The response carries the order plus warnings[].",
+    }),
+    (0, dtoDecorators_1.OptionalBoolean)(),
+    __metadata("design:type", Boolean)
+], SaveSaleOrderDto.prototype, "post", void 0);
 //# sourceMappingURL=save-sale-order.dto.js.map

@@ -8,7 +8,6 @@ export declare class BillKeysDto {
     sbAccYear: string;
 }
 export declare class ValidateBillDto extends SaveBillDto {
-    overrides?: string[];
 }
 export declare class PostBillDto extends BillKeysDto {
     overrides?: string[];

@@ -1181,6 +1181,14 @@ party and opening rows. Every test in it failed on the code before the fix.
   this ships, grant `um_can_post`, `um_can_cancel` and `um_can_amend` on menu
   99 to everyone who takes receipts.** On dev on 2026-09-29 only VKPOS and
   VKPOS1 held them; ravi and VIJAY held view/create/edit/delete only.
+- **Save and post in one call (notes 94 A + B / 106).** `/create` with `post: true` runs §5.1
+  and §5.2 in ONE transaction (`ReceiptPostingService.saveAndPost`, composing `saveInTransaction`
+  and `postInTransaction` the way `/amend` does). The post reads `allocations`, `creditsApplied`,
+  `otherLineBills` and `onAccount` off the same body — `onAccount` is required when posting (400
+  naming the field), as it is on `/post`. A refusal rolls both back: no header, no tender rows,
+  nothing in the list. **Judged on the Post right alone**, so a user with Post but not Create
+  (VIGNESH on 2026-10-12) can take a receipt this way; a plain draft save still needs Create /
+  edit. The response is the `/post` shape (`ReceiptPostSuccessDto`).
 - **Only an `Rct`.** `loadHeaderOrThrow` and `/adjacent`'s starting row
   filter on `vchr_type_code`. `/create` with an existing id also checks type,
   company and branch, because the save rewrites all three and would turn a

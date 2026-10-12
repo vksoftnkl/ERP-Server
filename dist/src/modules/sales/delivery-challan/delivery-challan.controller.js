@@ -22,12 +22,20 @@ const delivery_challan_service_1 = require("./delivery-challan.service");
 const save_delivery_challan_dto_1 = require("./dto/save-delivery-challan.dto");
 const delivery_challan_lifecycle_dto_1 = require("./dto/delivery-challan-lifecycle.dto");
 const ok = (message, data) => ({ success: true, message, data });
+function wantsPost(dto) {
+    return dto.post === true || (dto.sdcStatus ?? '').toUpperCase() === 'POSTED';
+}
 let DeliveryChallanController = class DeliveryChallanController {
     service;
     constructor(service) {
         this.service = service;
     }
     async save(dto) {
+        if (wantsPost(dto)) {
+            return ok(dto.sdcId
+                ? 'Challan updated and posted successfully'
+                : 'Challan created and posted successfully', await this.service.saveAndPost(dto));
+        }
         return ok(dto.sdcId ? 'Challan updated successfully' : 'Challan created successfully', await this.service.save(dto));
     }
     async validate(dto) {
@@ -67,7 +75,12 @@ exports.DeliveryChallanController = DeliveryChallanController;
 __decorate([
     (0, common_1.Post)('create'),
     (0, common_1.Version)(api_version_1.API_VERSION),
-    (0, swagger_1.ApiOperation)({ summary: 'Create or update a DRAFT challan (by sdcId presence)' }),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Create or update a DRAFT challan (by sdcId presence) — or save and post in one call',
+        description: "With `post: true` (or `sdcStatus: 'POSTED'`, the same instruction) the save, every guard and " +
+            'the whole of /delivery-challans/post run in ONE transaction; a refusal rolls all of it back — ' +
+            'no header, no lines, no number consumed — and answers exactly what /post answers. Notes 94 B / 106.',
+    }),
     __param(0, (0, common_1.Body)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [save_delivery_challan_dto_1.SaveDeliveryChallanDto]),

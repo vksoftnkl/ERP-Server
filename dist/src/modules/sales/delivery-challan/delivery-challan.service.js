@@ -111,16 +111,37 @@ let DeliveryChallanService = class DeliveryChallanService {
     async save(dto) {
         const actor = this.salesContext.actor();
         const now = new Date();
-        const row = await this.prisma.$transaction(async (tx) => {
-            return this.store.saveDraft(tx, dto, actor, now, {
-                beforeWrite: (data) => {
-                    if (data.sdcDcDatetime === undefined && !data.sdcId) {
-                        data.sdcDcDatetime = now;
-                    }
-                },
-            });
-        }, TX);
+        const row = await this.prisma.$transaction((tx) => this.store.saveDraft(tx, this.draftRow(dto), actor, now, this.draftHooks(now)), TX);
         return this.get(this.store.keysOf(row));
+    }
+    async saveAndPost(dto) {
+        const actor = this.salesContext.actor();
+        const now = new Date();
+        let fire = null;
+        let keys = null;
+        await this.prisma.$transaction(async (tx) => {
+            const saved = await this.store.saveDraft(tx, this.draftRow(dto), actor, now, this.draftHooks(now));
+            keys = this.store.keysOf(saved);
+            const row = await this.store.lock(tx, keys);
+            fire = await this.postDraftInTx(tx, row, dto.overrides ?? [], now);
+        }, TX);
+        this.afterPost(fire);
+        return this.get(keys);
+    }
+    draftRow(dto) {
+        const { post: _post, overrides: _overrides, ...row } = dto;
+        void _post;
+        void _overrides;
+        return row;
+    }
+    draftHooks(now) {
+        return {
+            beforeWrite: (data) => {
+                if (data.sdcDcDatetime === undefined && !data.sdcId) {
+                    data.sdcDcDatetime = now;
+                }
+            },
+        };
     }
     async get(keys) {
         const row = await this.store.findOrThrow(this.prisma, keys);
@@ -189,33 +210,38 @@ let DeliveryChallanService = class DeliveryChallanService {
         let fire = null;
         await this.prisma.$transaction(async (tx) => {
             const row = await this.store.lock(tx, this.keys(dto));
-            if (row.sdcStatus === 'POSTED') {
-                return;
-            }
-            if (row.sdcStatus === 'CANCELLED') {
-                (0, sales_errors_1.throwSalesLocked)('This challan is CANCELLED', posting_types_1.SALES_ERROR_CODES.DOC_CANCELLED, 'sdcId');
-            }
-            const ctx = await this.ctxOf(tx, row);
-            if (!ctx.rights.post) {
-                (0, sales_errors_1.throwSalesRight)('This user may not post on this menu', posting_types_1.SALES_ERROR_CODES.RIGHT_POST);
-            }
-            const items = await this.store.loadItems(tx, row);
-            const g = (0, posting_types_1.createGuardContext)({
-                overrides: dto.overrides ?? [],
-                canOverride: ctx.rights.override,
-                throwOnRefusal: false,
-            });
-            await this.guards(tx, row, items, ctx, g);
-            if (g.refusals.length > 0) {
-                (0, sales_errors_1.throwSalesRefusals)('Challan cannot be posted', g.refusals);
-            }
-            fire = await this.postCore(tx, row, items, ctx, new Date(), 'DRAFT');
+            fire = await this.postDraftInTx(tx, row, dto.overrides ?? [], new Date());
         }, TX);
-        if (fire) {
-            const f = fire;
-            this.gst.enqueueAfterPost({ gdrId: f.gdrId, einvoice: false, ewaybill: f.ewaybill });
-        }
+        this.afterPost(fire);
         return this.get(this.keys(dto));
+    }
+    async postDraftInTx(tx, row, overrides, now) {
+        if (row.sdcStatus === 'POSTED') {
+            return null;
+        }
+        if (row.sdcStatus === 'CANCELLED') {
+            (0, sales_errors_1.throwSalesLocked)('This challan is CANCELLED', posting_types_1.SALES_ERROR_CODES.DOC_CANCELLED, 'sdcId');
+        }
+        const ctx = await this.ctxOf(tx, row);
+        if (!ctx.rights.post) {
+            (0, sales_errors_1.throwSalesRight)('This user may not post on this menu', posting_types_1.SALES_ERROR_CODES.RIGHT_POST);
+        }
+        const items = await this.store.loadItems(tx, row);
+        const g = (0, posting_types_1.createGuardContext)({
+            overrides,
+            canOverride: ctx.rights.override,
+            throwOnRefusal: false,
+        });
+        await this.guards(tx, row, items, ctx, g);
+        if (g.refusals.length > 0) {
+            (0, sales_errors_1.throwSalesRefusals)('Challan cannot be posted', g.refusals);
+        }
+        return this.postCore(tx, row, items, ctx, now, 'DRAFT');
+    }
+    afterPost(fire) {
+        if (fire) {
+            this.gst.enqueueAfterPost({ gdrId: fire.gdrId, einvoice: false, ewaybill: fire.ewaybill });
+        }
     }
     async ctxOf(tx, row) {
         return this.salesContext.resolve({

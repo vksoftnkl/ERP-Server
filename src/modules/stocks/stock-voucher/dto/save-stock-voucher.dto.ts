@@ -322,6 +322,20 @@ export class SaveStockVoucherHeaderDto {
   })
   status?: SaveableStockVoucherStatus;
 
+  /**
+   * Notes 94 B / 106 — the same instruction as `status: 'POSTED'`, spelt the
+   * way every other document's save body spells it. Either one saves and
+   * posts in ONE transaction; a refusal rolls the save back too, so no
+   * document and no number is left behind.
+   */
+  @ApiPropertyOptional({
+    default: false,
+    description:
+      "Same as status: 'POSTED' — save and post in one transaction. A refusal leaves nothing behind.",
+  })
+  @OptionalBoolean()
+  post?: boolean;
+
   @ApiPropertyOptional({ maxLength: 250, nullable: true })
   @NullableStringStrict(250)
   remarks?: string | null;

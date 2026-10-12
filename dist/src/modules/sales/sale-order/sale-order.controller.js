@@ -25,6 +25,9 @@ const save_sale_order_dto_1 = require("./dto/save-sale-order.dto");
 const cancel_sale_order_lines_dto_1 = require("./dto/cancel-sale-order-lines.dto");
 const sale_order_response_dto_1 = require("./dto/sale-order-response.dto");
 const api_version_1 = require("../../../common/constants/api-version");
+function wantsPost(dto) {
+    return dto.post === true || (dto.soStatus ?? '').toUpperCase() === 'CONFIRMED';
+}
 let SaleOrderController = class SaleOrderController {
     orderService;
     lifecycle;
@@ -33,6 +36,15 @@ let SaleOrderController = class SaleOrderController {
         this.lifecycle = lifecycle;
     }
     async save(saveOrderDto) {
+        if (wantsPost(saveOrderDto)) {
+            const data = await this.lifecycle.saveAndPost(saveOrderDto);
+            return {
+                success: true,
+                message: (saveOrderDto.soId ? 'Order updated and confirmed' : 'Order created and confirmed') +
+                    (data.warnings.length ? ` — ${data.warnings.length} line(s) short on reservation` : ''),
+                data,
+            };
+        }
         const data = await this.orderService.save(saveOrderDto);
         return {
             success: true,
@@ -89,7 +101,13 @@ exports.SaleOrderController = SaleOrderController;
 __decorate([
     (0, common_1.Post)('create'),
     (0, common_1.Version)(api_version_1.API_VERSION),
-    (0, swagger_1.ApiOperation)({ summary: 'Create or update a sales order (by soId presence)' }),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Create or update a sales order (by soId presence) — or save and confirm in one call',
+        description: "With `post: true` (or `soStatus: 'CONFIRMED'`, the same instruction) the save and the whole " +
+            'of /sale-orders/post — the reservations, CONFIRMED, the trail — run in ONE transaction, and a ' +
+            'refusal rolls all of it back: no header, no lines, no number consumed. The response is the ' +
+            'order plus warnings[] (SALES_RESERVE_SHORT lines). Notes 94 B / 106.',
+    }),
     (0, swagger_1.ApiCreatedResponse)({ type: sale_order_response_dto_1.SaleOrderSuccessSingleDto }),
     (0, swagger_1.ApiBadRequestResponse)({ type: sale_order_response_dto_1.SaleOrderErrorResponseDto }),
     (0, swagger_1.ApiConflictResponse)({ type: sale_order_response_dto_1.SaleOrderErrorResponseDto }),

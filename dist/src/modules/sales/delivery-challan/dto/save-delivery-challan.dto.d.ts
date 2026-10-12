@@ -91,6 +91,8 @@ export declare class SaveDeliveryChallanDto {
     charges?: SaveChargeDetailDto[];
     tenders?: SaveTenderDetailDto[];
     transport?: TransportBandDto | null;
+    post?: boolean;
+    overrides?: string[];
 }
 export declare const SDC_OPTIONAL_FIELDS: readonly ["sdcTenantId", "sdcSessionId", "sdcCounterId", "sdcDocType", "sdcPurpose", "sdcUsrRefno", "sdcUsrRefdate", "sdcDcDate", "sdcDcDatetime", "sdcPriceLevel", "sdcSrcDocType", "sdcSrcDocId", "sdcSrcDocAccYear", "sdcSrcDocRefno", "sdcSrcDocDate", "sdcCustAddr", "sdcCustPlace", "sdcCustPin", "sdcCustPhone", "sdcCustGstin", "sdcCustGstType", "sdcCustStcd", "sdcPosStcd", "sdcStateName", "sdcDriverId", "sdcSupervisorId", "sdcLoadmanId", "sdcVehicleId", "sdcVehicleNo", "sdcSalesmanId", "sdcAgentId", "sdcTotItems", "sdcTotWeight", "sdcTotBags", "sdcGrossAmt", "sdcDiscAmt", "sdcTaxableAmt", "sdcCgstAmt", "sdcSgstAmt", "sdcIgstAmt", "sdcCessAmt", "sdcTaxAmt", "sdcOtherAmt", "sdcRoundOff", "sdcDcAmt", "sdcTotalCost", "sdcHasLoad", "sdcHasUnload", "sdcHasFreight", "sdcHasPromo", "sdcPackedId", "sdcItemDisc", "sdcSplDisc", "sdcSchDisc", "sdcFreightAmt", "sdcLoadAmt", "sdcUnloadAmt", "sdcFreightCalcType", "sdcLoadingCalcType", "sdcDiscAlterBase", "sdcRoundOffStep", "sdcPaymentTerms", "sdcDeliveryTerms", "sdcRemarks", "sdcCreatedBy", "sdcModifiedBy"];
 export declare const SDC_DATE_FIELDS: readonly ["sdcUsrRefdate", "sdcDcDate", "sdcDcDatetime", "sdcSrcDocDate"];

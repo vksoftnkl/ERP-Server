@@ -1,5 +1,5 @@
 import { DrCr, VoucherDeviceType } from '../types/receipt-enum';
-import { PostReceiptAllocationDto, PostReceiptCreditDto, ReceiptKeysDto } from './post-receipt.dto';
+import { PostReceiptAllocationDto, PostReceiptCreditDto, PostReceiptOtherLinePinDto, ReceiptKeysDto } from './post-receipt.dto';
 import { TenderChequeDetailDto } from '../../tenderDetail/dto/save-tender-detail.dto';
 export declare class SaveReceiptChequeDto extends TenderChequeDetailDto {
     bankLedgerId?: string | null;
@@ -57,6 +57,9 @@ export declare class SaveReceiptDto {
 export declare class SaveDraftReceiptDto extends SaveReceiptDto {
     allocations?: PostReceiptAllocationDto[];
     creditsApplied?: PostReceiptCreditDto[];
+    post?: boolean;
+    onAccount?: number;
+    otherLineBills?: PostReceiptOtherLinePinDto[];
 }
 export declare class UpdateReceiptHeaderDto extends ReceiptKeysDto {
     avhRemarks?: string | null;

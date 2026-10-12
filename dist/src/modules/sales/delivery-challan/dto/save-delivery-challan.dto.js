@@ -123,6 +123,8 @@ class SaveDeliveryChallanDto {
     charges;
     tenders;
     transport;
+    post;
+    overrides;
 }
 exports.SaveDeliveryChallanDto = SaveDeliveryChallanDto;
 __decorate([
@@ -536,8 +538,7 @@ __decorate([
     (0, swagger_1.ApiPropertyOptional)({
         maxLength: 20,
         nullable: true,
-        readOnly: true,
-        description: 'Ignored — server-owned',
+        description: "Server-owned, with one exception: 'POSTED' is the one-call instruction (same as post: true) and saves and posts in one transaction. Anything else is ignored.",
     }),
     (0, dtoDecorators_1.NullableStringStrict)(20),
     __metadata("design:type", Object)
@@ -607,6 +608,25 @@ __decorate([
     (0, class_transformer_1.Type)(() => bill_lifecycle_dto_1.TransportBandDto),
     __metadata("design:type", Object)
 ], SaveDeliveryChallanDto.prototype, "transport", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        default: false,
+        description: "Save and post in one transaction (same as sdcStatus: 'POSTED'). A refusal leaves no draft and burns no number; the error is /delivery-challans/post's.",
+    }),
+    (0, dtoDecorators_1.OptionalBoolean)(),
+    __metadata("design:type", Boolean)
+], SaveDeliveryChallanDto.prototype, "post", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        type: [String],
+        description: 'Only read with post: true. WARN codes the operator overrides (needs um_can_override).',
+    }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsArray)(),
+    (0, class_validator_1.ArrayMaxSize)(50),
+    (0, class_validator_1.IsString)({ each: true }),
+    __metadata("design:type", Array)
+], SaveDeliveryChallanDto.prototype, "overrides", void 0);
 exports.SDC_OPTIONAL_FIELDS = [
     'sdcTenantId',
     'sdcSessionId',

@@ -33,6 +33,7 @@ export declare class SaveStockVoucherHeaderDto {
     totalValueWot?: number;
     rateSource?: StockRateSource | null;
     status?: SaveableStockVoucherStatus;
+    post?: boolean;
     remarks?: string | null;
     lrNo?: string | null;
     vehicleNo?: string | null;

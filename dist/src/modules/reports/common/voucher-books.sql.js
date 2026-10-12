@@ -59,10 +59,12 @@ function openingNoteSql(scope, ledgers) {
        GROUP BY o.op_ledger_id`;
 }
 function createdByJoinSql(column, alias) {
+    const col = client_1.Prisma.raw(column);
     return client_1.Prisma.sql `
         LEFT JOIN public.user_master ${client_1.Prisma.raw(alias)}
-          ON ${client_1.Prisma.raw(column)} ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
-         AND ${client_1.Prisma.raw(alias)}.usr_id = ${client_1.Prisma.raw(column)}::uuid`;
+          ON ${client_1.Prisma.raw(alias)}.usr_id =
+             CASE WHEN ${col} ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+                  THEN ${col}::uuid END`;
 }
 function money(value) {
     return new client_1.Prisma.Decimal(value ?? 0).toFixed(2);

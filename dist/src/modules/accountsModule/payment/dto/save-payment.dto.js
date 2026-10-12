@@ -408,6 +408,9 @@ __decorate([
 class SaveDraftPaymentDto extends SavePaymentDto {
     allocations;
     creditsApplied;
+    post;
+    onAccount;
+    otherLineBills;
 }
 exports.SaveDraftPaymentDto = SaveDraftPaymentDto;
 __decorate([
@@ -437,6 +440,35 @@ __decorate([
     (0, class_transformer_1.Type)(() => post_receipt_dto_1.PostReceiptCreditDto),
     __metadata("design:type", Array)
 ], SaveDraftPaymentDto.prototype, "creditsApplied", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        default: false,
+        description: 'Save and post in one transaction. Needs onAccount; allocations / creditsApplied / otherLineBills are applied, not just remembered. A refusal leaves no draft. Judged on the Post right alone.',
+    }),
+    (0, dtoDecorators_1.OptionalBoolean)(),
+    __metadata("design:type", Boolean)
+], SaveDraftPaymentDto.prototype, "post", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        minimum: 0,
+        description: 'Only with post: true, and then required — what is left over and held as an ADVANCE bill, recomputed server-side and refused if it disagrees (the same figure /post takes).',
+    }),
+    (0, dtoDecorators_1.OptionalNumber)(0),
+    __metadata("design:type", Number)
+], SaveDraftPaymentDto.prototype, "onAccount", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        type: () => post_receipt_dto_1.PostReceiptOtherLinePinDto,
+        isArray: true,
+        description: 'Only with post: true — the other-ledger lines pinned to a bill, as /post takes them.',
+    }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsArray)(),
+    (0, class_validator_1.ArrayMaxSize)(200),
+    (0, class_validator_1.ValidateNested)({ each: true }),
+    (0, class_transformer_1.Type)(() => post_receipt_dto_1.PostReceiptOtherLinePinDto),
+    __metadata("design:type", Array)
+], SaveDraftPaymentDto.prototype, "otherLineBills", void 0);
 class UpdatePaymentHeaderDto extends post_receipt_dto_1.ReceiptKeysDto {
     avhRemarks;
     avhUsrRefno;

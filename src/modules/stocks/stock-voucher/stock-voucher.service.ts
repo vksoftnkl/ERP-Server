@@ -341,7 +341,9 @@ export class StockVoucherService {
     // unit. Its route has its own line DTO, which omits all three.
     // 'POSTED' on the payload is an INSTRUCTION, not a column value — see the
     // DTO's status field. Anything else, including nothing, saves a draft.
-    const postAfterSave = header.status === 'POSTED';
+    // `post: true` is the same instruction spelt the way every other document's
+    // save body spells it (notes 94 B / 106).
+    const postAfterSave = header.status === 'POSTED' || header.post === true;
     // ONE instant for the whole request. The CREATED row and the POSTED row of a
     // save-and-post used to take two clocks fifty milliseconds apart, with the
     // CREATED row stamped LATER — and a day-end query ordering by time then

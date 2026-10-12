@@ -151,4 +151,6 @@ export declare class SaveBillDto {
     charges?: SaveChargeDetailDto[];
     tenders?: SaveTenderDetailDto[];
     adjustments?: SaveBillAdjustmentDto[];
+    post?: boolean;
+    overrides?: string[];
 }

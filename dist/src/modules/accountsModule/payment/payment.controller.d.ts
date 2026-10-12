@@ -24,8 +24,9 @@ export declare class PaymentController {
     get(query: GetPaymentQueryDto): Promise<PaymentSuccessResponse<PaymentPayload>>;
     adjacent(query: AdjacentVoucherQueryDto): Promise<PaymentSuccessResponse<AdjacentVoucherPayload>>;
     duplicateCheck(query: DuplicateCheckQueryDto): Promise<PaymentSuccessResponse<DuplicateCheckPayload>>;
-    create(dto: SaveDraftPaymentDto): Promise<PaymentSuccessResponse<PaymentDraftPayload>>;
+    create(dto: SaveDraftPaymentDto): Promise<PaymentSuccessResponse<PaymentDraftPayload | PaymentPostPayload>>;
     postPayment(dto: PostPaymentDto): Promise<PaymentSuccessResponse<PaymentPostPayload>>;
+    private postedMessage;
     updateHeader(dto: UpdatePaymentHeaderDto, body: Record<string, unknown>): Promise<PaymentSuccessResponse<PaymentHeader>>;
     cancel(dto: CancelPaymentDto): Promise<PaymentSuccessResponse<PaymentCancelPayload>>;
     delete(dto: DeletePaymentDto): Promise<PaymentSuccessResponse<PaymentDeletePayload>>;

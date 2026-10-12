@@ -54,17 +54,9 @@ const OverridesList = () =>
   [IsOptional(), IsArray(), ArrayMaxSize(50), IsString({ each: true })] as const;
 
 /** §2.2 — `/bills/validate`: the create body plus the codes the operator overrides. */
-export class ValidateBillDto extends SaveBillDto {
-  @ApiPropertyOptional({
-    type: [String],
-    description: 'WARN codes the operator overrides (needs um_can_override)',
-  })
-  @IsOptional()
-  @IsArray()
-  @ArrayMaxSize(50)
-  @IsString({ each: true })
-  overrides?: string[];
-}
+// `overrides` now lives on the save body itself (notes 94 B / 106): the one-call
+// save-and-post reads it there, and a validate inherits it.
+export class ValidateBillDto extends SaveBillDto {}
 
 /** §2.3 — `/bills/post`. */
 export class PostBillDto extends BillKeysDto {

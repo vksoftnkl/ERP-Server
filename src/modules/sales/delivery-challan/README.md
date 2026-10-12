@@ -4,7 +4,7 @@ HANDOVER 2026-09-20 §4. Body prefix `sdc` (header) / `sdi` (lines).
 
 | route | what it does |
 |---|---|
-| `POST /create` | DRAFT upsert by `sdcId` presence. A POSTED id → 409 `SALES_DOC_POSTED`. Ship/transport goes through `transport` (the band). |
+| `POST /create` | DRAFT upsert by `sdcId` presence. A POSTED id → 409 `SALES_DOC_POSTED`. Ship/transport goes through `transport` (the band). **With `post: true` (or `sdcStatus: 'POSTED'`) the save, the guards and `/post` run in ONE transaction** (`saveAndPost`, sharing `postDraftInTx` with `/post`): a refusal leaves no header, no lines and no number, and answers exactly what `/post` answers. Judged on the Post right. Notes 94 B / 106. |
 | `POST /validate` | Dry run: every refusal and warning, writes nothing. |
 | `POST /post` | Stock OUT (`DC_ISSUE`) through the shadow stock voucher, COGS pair on a `DCh` voucher under PERPETUAL (none under PERIODIC), an e-way register row (never an IRN — Q8). Status last. |
 | `POST /cancel` | Reversal, never a delete. Refused with `SALES_DC_BILLED` / `SALES_DC_RETURNED` once a line is billed or returned; past `EWAY_CANCEL_HOURS` with a live e-way bill. |

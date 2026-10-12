@@ -13,6 +13,7 @@ import {
 } from '../../../common/txn-status-log/txn-status-log.helper';
 import {
   DEFAULT_ACTOR,
+  resolveActor,
   throwAccountsBadRequest,
   throwAccountsConflict,
 } from 'src/common/utils/module-service.utils';
@@ -53,6 +54,7 @@ import {
 } from './payment.guards';
 import type { PaymentSettings } from './payment.settings';
 import { PostPaymentDto } from './dto/post-payment.dto';
+import type { SaveDraftPaymentDto } from './dto/save-payment.dto';
 import {
   BillType,
   debitRouting,
@@ -124,6 +126,57 @@ export class PaymentPostingService {
         (tx) => this.postInTransaction(tx, dto, actor),
         POST_TRANSACTION_OPTIONS,
       );
+    } catch (error) {
+      throw rethrowAllocationError(error);
+    }
+  }
+
+  /**
+   * Notes 94 B / 106 — `/payments/create` with `post: true`: §5.1 (the
+   * draft) and §5.2 (the steps of `/post`) in ONE transaction, the way
+   * `/amend` already composes them. A refusal rolls both back: no header, no
+   * tender rows, nothing in the list — and it is exactly what `/post` answers,
+   * because it is the same run. The post reads `allocations`,
+   * `creditsApplied`, `otherLineBills` and `onAccount` off the same body;
+   * `onAccount` is required, as it is on `/post`, because it is the figure
+   * that proves the client and the server read the same payment.
+   *
+   * The draft keeps its own actor rule (`avhUserId` falls back to the caller)
+   * and the post keeps its (the caller), as the two routes do today.
+   */
+  async saveAndPost(dto: SaveDraftPaymentDto): Promise<PaymentPostPayload> {
+    if (dto.onAccount === undefined || dto.onAccount === null) {
+      throwAccountsBadRequest<PaymentErrorDetail>('Validation failed', [
+        {
+          field: 'onAccount',
+          message:
+            'onAccount is required when post is true — it is the figure that proves the client and the server read the same payment',
+        },
+      ]);
+    }
+    const userId = this.requestContext.getUserId();
+    const draftActor = resolveActor(dto.avhUserId, userId) ?? DEFAULT_ACTOR;
+    const postActor = userId ?? DEFAULT_ACTOR;
+    const { post: _post, onAccount, otherLineBills, ...draft } = dto;
+    void _post;
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const saved = await this.paymentService.saveInTransaction(tx, draft, draftActor);
+        return this.postInTransaction(
+          tx,
+          {
+            avhVoucherId: saved.header.avhVoucherId,
+            avhCompanyId: dto.avhCompanyId,
+            avhBranchId: dto.avhBranchId,
+            avhAccYear: dto.avhAccYear,
+            allocations: dto.allocations ?? [],
+            creditsApplied: dto.creditsApplied ?? [],
+            otherLineBills: otherLineBills ?? [],
+            onAccount,
+          },
+          postActor,
+        );
+      }, POST_TRANSACTION_OPTIONS);
     } catch (error) {
       throw rethrowAllocationError(error);
     }

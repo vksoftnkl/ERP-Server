@@ -14,7 +14,12 @@ import {
   UpperMaxString,
 } from 'src/common/dto/dtoDecorators';
 import { DrCr, VoucherDeviceType } from '../types/receipt-enum';
-import { PostReceiptAllocationDto, PostReceiptCreditDto, ReceiptKeysDto } from './post-receipt.dto';
+import {
+  PostReceiptAllocationDto,
+  PostReceiptCreditDto,
+  PostReceiptOtherLinePinDto,
+  ReceiptKeysDto,
+} from './post-receipt.dto';
 import { TenderChequeDetailDto } from '../../tenderDetail/dto/save-tender-detail.dto';
 
 /**
@@ -401,6 +406,45 @@ export class SaveDraftReceiptDto extends SaveReceiptDto {
   @ValidateNested({ each: true })
   @Type(() => PostReceiptCreditDto)
   creditsApplied?: PostReceiptCreditDto[];
+
+  /**
+   * Notes 94 B / 106 — SAVE AND POST IN ONE CALL. `post: true` runs §5.1 (the
+   * draft) and §5.2 (the fifteen steps of `/receipts/post`) in ONE
+   * transaction. A refusal rolls both back: no header, no tender rows, nothing
+   * in the list — and the refusal is exactly what `/post` answers. The post
+   * reads `allocations`, `creditsApplied`, `otherLineBills` and `onAccount`
+   * off this same body, so `onAccount` is REQUIRED when posting (400 without
+   * it). Judged on the Post right alone: a user with Post but not Create may
+   * raise a receipt this way (notes 94 A). Omitted or false saves a draft.
+   */
+  @ApiPropertyOptional({
+    default: false,
+    description:
+      'Save and post in one transaction. Needs onAccount; allocations / creditsApplied / otherLineBills are applied, not just remembered. A refusal leaves no draft. Judged on the Post right alone.',
+  })
+  @OptionalBoolean()
+  post?: boolean;
+
+  @ApiPropertyOptional({
+    minimum: 0,
+    description:
+      'Only with post: true, and then required — what is left over and held as an ADVANCE bill, recomputed server-side and refused if it disagrees (the same figure /post takes).',
+  })
+  @OptionalNumber(0)
+  onAccount?: number;
+
+  @ApiPropertyOptional({
+    type: () => PostReceiptOtherLinePinDto,
+    isArray: true,
+    description:
+      'Only with post: true — the other-ledger lines pinned to a bill, as /post takes them.',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(200)
+  @ValidateNested({ each: true })
+  @Type(() => PostReceiptOtherLinePinDto)
+  otherLineBills?: PostReceiptOtherLinePinDto[];
 }
 
 /**

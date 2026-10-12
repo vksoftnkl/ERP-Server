@@ -1,5 +1,5 @@
 import { TenderChequeDetailDto } from '../../tenderDetail/dto/save-tender-detail.dto';
-import { PostReceiptAllocationDto, PostReceiptCreditDto, ReceiptKeysDto } from '../../receipt/dto/post-receipt.dto';
+import { PostReceiptAllocationDto, PostReceiptCreditDto, PostReceiptOtherLinePinDto, ReceiptKeysDto } from '../../receipt/dto/post-receipt.dto';
 import { DrCr, VoucherDeviceType } from '../types/payment-enum';
 export declare class SavePaymentChequeDto extends TenderChequeDetailDto {
     chequeBookId: string;
@@ -62,6 +62,9 @@ export declare class SavePaymentDto {
 export declare class SaveDraftPaymentDto extends SavePaymentDto {
     allocations?: PostReceiptAllocationDto[];
     creditsApplied?: PostReceiptCreditDto[];
+    post?: boolean;
+    onAccount?: number;
+    otherLineBills?: PostReceiptOtherLinePinDto[];
 }
 export declare class UpdatePaymentHeaderDto extends ReceiptKeysDto {
     avhRemarks?: string | null;

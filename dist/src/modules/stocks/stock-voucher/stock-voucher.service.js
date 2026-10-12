@@ -46,7 +46,7 @@ let StockVoucherService = class StockVoucherService {
         const actor = (0, module_service_utils_1.resolveActor)(header.userId, this.requestContextService.getUserId());
         this.assertPayloadRules(rules, dto);
         await this.assertReasons(rules, dto);
-        const postAfterSave = header.status === 'POSTED';
+        const postAfterSave = header.status === 'POSTED' || header.post === true;
         const postedOn = new Date();
         const { svhId, rowsPosted } = await this.prisma.$transaction(async (tx) => {
             const before = header.svhId

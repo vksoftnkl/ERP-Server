@@ -15,6 +15,8 @@ export declare class SaleOrderService {
     private readonly tenderDetailService;
     constructor(prisma: PrismaService, auditLogService: AuditLogService, requestContextService: RequestContextService, chargeDetailService: ChargeDetailService, tenderDetailService: TenderDetailService);
     save(saveOrderDto: SaveSaleOrderDto): Promise<SaleOrderPayload>;
+    prepareSave(saveOrderDto: SaveSaleOrderDto): void;
+    throwIfDuplicate(error: unknown): void;
     getById(soId: string, soCompanyId: string, soBranchId: string, soAccYear: string): Promise<SaleOrderPayload>;
     getSrcDocPendingAmount(ablSrcDocType: string, ablSrcDocId: string, ablSrcAccYear: string): Promise<SaleOrderSrcDocPendingAmount>;
     softDelete(soId: string, soCompanyId: string, soBranchId: string, soAccYear: string): Promise<{
@@ -41,7 +43,9 @@ export declare class SaleOrderService {
     private syncOneOrderFulfilment;
     private logStatusStep;
     private createOrder;
+    createOrderInTx(tx: Prisma.TransactionClient, saveOrderDto: SaveSaleOrderDto): Promise<SaleOrderPayload>;
     private updateOrder;
+    updateOrderInTx(tx: Prisma.TransactionClient, saveOrderDto: SaveSaleOrderDto): Promise<SaleOrderPayload>;
     private syncItems;
     private softDeleteItems;
     private syncAdvanceVoucher;

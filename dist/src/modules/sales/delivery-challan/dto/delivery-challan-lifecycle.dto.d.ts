@@ -7,7 +7,6 @@ export declare class DeliveryChallanKeysDto {
     sdcAccYear: string;
 }
 export declare class ValidateDeliveryChallanDto extends SaveDeliveryChallanDto {
-    overrides?: string[];
 }
 export declare class PostDeliveryChallanDto extends DeliveryChallanKeysDto {
     overrides?: string[];

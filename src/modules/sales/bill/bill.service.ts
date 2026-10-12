@@ -480,12 +480,34 @@ export class BillService {
    * ("use /bills/amend"). The response is the `/get` shape.
    */
   async save(saveBillDto: SaveBillDto): Promise<BillPayload> {
-    this.ensureBillValuesAreAllowed(saveBillDto);
-    stripServerOwned(saveBillDto);
+    this.prepareSave(saveBillDto);
     const saved = saveBillDto.sbId
       ? await this.updateBill(saveBillDto)
       : await this.createBill(saveBillDto);
     return this.getById(saved.sbId, saved.sbCompanyId, saved.sbBranchId, saved.sbAccYear);
+  }
+  /**
+   * What every save runs before it writes: the value guards, then the
+   * server-owned columns stripped off the payload. Public because the one-call
+   * save-and-post (notes 94 B / 106, `BillLifecycleService.saveAndPost`) runs
+   * the same draft write inside its own transaction.
+   */
+  prepareSave(saveBillDto: SaveBillDto): void {
+    this.ensureBillValuesAreAllowed(saveBillDto);
+    stripServerOwned(saveBillDto);
+  }
+  /**
+   * Re-throws a unique-index clash as the 409 `/bills/create` answers; any
+   * other error passes through untouched. For a caller that owns the
+   * transaction `createBillInTx` / `updateBillInTx` run in.
+   */
+  throwIfDuplicate(error: unknown): void {
+    const duplicate = this.describeDuplicate(error);
+    throwOnUniqueConstraintError<BillErrorDetail, BillErrorResponse>(
+      error,
+      duplicate.message,
+      duplicate.errors,
+    );
   }
   async getById(
     sbId: string,
@@ -759,6 +781,20 @@ export class BillService {
     };
   }
   private async createBill(saveBillDto: SaveBillDto): Promise<SaleBill> {
+    try {
+      return await this.prisma.$transaction((tx) => this.createBillInTx(tx, saveBillDto));
+    } catch (error: unknown) {
+      this.throwIfDuplicate(error);
+      throw error;
+    }
+  }
+  /**
+   * The create, inside a transaction the CALLER owns. `/bills/create` wraps it
+   * in its own; the one-call save-and-post (notes 94 B / 106) runs it in the
+   * same transaction as the post, so a refusal there rolls the header, the
+   * lines AND the number back. Run `prepareSave` first.
+   */
+  async createBillInTx(tx: Prisma.TransactionClient, saveBillDto: SaveBillDto): Promise<SaleBill> {
     const normalizedCustName = normalizeRequiredText<BillErrorDetail, BillErrorResponse>(
       saveBillDto.sbCustName ?? '',
       'sbCustName',
@@ -766,172 +802,161 @@ export class BillService {
     const now = new Date();
     const createdBy = resolveActor(saveBillDto.sbCreatedBy, this.requestContextService.getUserId());
     const billDate = saveBillDto.sbBillDate ? new Date(saveBillDto.sbBillDate) : now;
+    await this.ensurePosStateExists(tx, saveBillDto);
+    // Voucher type 3 numbers the document: the running number consumed from
+    // accounts.acc_voucher_seq becomes sbBillSlno and its printable form
+    // sbBillRefno. Both are server-assigned. POS bills draw on the device's
+    // own series; WHOLESALE shares the branch 'MAIN' counter.
+    const settings = await this.salesContext.settings(
+      saveBillDto.sbCompanyId,
+      saveBillDto.sbBranchId,
+    );
+    const posSeries =
+      (saveBillDto.sbBillMode ?? 'WHOLESALE') === 'POS' && settings.posSeriesPerDevice;
+    const billNumber = await allocateVoucherNumber(tx, {
+      vchrTypeId: BILL_VCHR_TYPE_ID,
+      companyId: saveBillDto.sbCompanyId,
+      branchId: saveBillDto.sbBranchId,
+      accYear: saveBillDto.sbAccYear,
+      deviceCode: posSeries ? saveBillDto.sbDeviceId : null,
+      documentDate: billDate,
+    });
+    const data: Prisma.SaleBillUncheckedCreateInput = {
+      sbCompanyId: saveBillDto.sbCompanyId,
+      sbBranchId: saveBillDto.sbBranchId,
+      sbTenantId: saveBillDto.sbTenantId,
+      sbAccYear: saveBillDto.sbAccYear,
+      sbCounterId: saveBillDto.sbCounterId,
+      sbDeviceType: saveBillDto.sbDeviceType,
+      sbDeviceId: saveBillDto.sbDeviceId,
+      sbPriceLevel: saveBillDto.sbPriceLevel,
+      sbBillSlno: billNumber.lastNo,
+      sbBillRefno: billNumber.refno,
+      sbBillDate: billDate,
+      sbCustId: saveBillDto.sbCustId,
+      sbCustName: normalizedCustName,
+      sbUserId: saveBillDto.sbUserId,
+      sbCreatedOn: now,
+      sbCreatedBy: createdBy,
+      // Server-owned: a saved bill is a DRAFT until /bills/post.
+      sbStatus: BILL_STATUS_DRAFT,
+      sbRevisionNo: 1,
+    };
+    this.applyOptionalFields(data, saveBillDto);
+    data.sbCustName = normalizedCustName;
+    data.sbBillDate = billDate;
+    await this.applyCustomerSnapshot(tx, data, saveBillDto, settings.defaultCustomerId);
+    const created = await tx.saleBill.create({ data });
+    const scope = this.toScope(created);
+    const items = await this.syncItems(tx, scope, saveBillDto.items, createdBy);
+    const charges = await this.chargeDetailService.syncDocumentCharges(
+      tx,
+      this.toChargeScope(scope),
+      saveBillDto.charges,
+      createdBy,
+      BILL_CHARGE_AUDIT,
+    );
+    const tenders = await this.tenderDetailService.syncDocumentTenders(
+      tx,
+      this.toTenderScope(scope, saveBillDto.tenders),
+      encodeTempCreditTenders(saveBillDto.tenders),
+      createdBy,
+      BILL_TENDER_AUDIT,
+    );
+    // notes (48): the cheque details wait here until /post registers them.
+    const draftCheques = await this.saveDraftCheques(tx, created, saveBillDto.tenders, tenders);
+    // A DRAFT has no receivable yet, so the set-offs are only CHECKED here
+    // (the credit exists, belongs to the party, covers the amount) and their
+    // totals are kept in sbAdvanceAmt / sbNoteAdjAmt; /bills/post writes the rows.
+    await this.validateDraftAdjustments(tx, created, saveBillDto.adjustments);
+    await this.writeTransportBand(tx, created, saveBillDto, createdBy, now);
+    // Draws nothing off the order yet — only a POSTED bill counts — but the
+    // recompute is idempotent and keeps the refs validated.
+    await this.saleOrderService.syncOrderFulfilment(
+      tx,
+      { refs: [...this.toOrderHeaderRefs(created), ...this.toOrderLineRefs(items)] },
+      createdBy,
+      now,
+    );
+    await this.quotationService.syncQuotationConversion(
+      tx,
+      { refs: this.toQuotationRefs(created) },
+      createdBy,
+      now,
+    );
+    await this.logStatusChange(tx, created, null, createdBy, now, null);
+    const payload = this.toPayload({
+      ...created,
+      sbDraftCheques: draftCheques,
+      items,
+      charges,
+      tenders,
+    });
+    await this.auditLogService.logEntityChange(
+      {
+        action: 'New',
+        tableName: BILL_TABLE_NAME,
+        screenName: BILL_AUDIT_SCREEN_NAME,
+        screenType: 'transaction',
+        pk: payload.sbId,
+        displayName: payload.sbBillRefno || payload.sbId,
+        originalRecord: null,
+        modifiedRecord: payload,
+        userId: createdBy,
+        notes: 'Bill created',
+      },
+      tx,
+    );
+    return created;
+  }
+  private async updateBill(saveBillDto: SaveBillDto): Promise<SaleBill> {
     try {
-      return await this.prisma.$transaction(async (tx) => {
-        await this.ensurePosStateExists(tx, saveBillDto);
-        // Voucher type 3 numbers the document: the running number consumed from
-        // accounts.acc_voucher_seq becomes sbBillSlno and its printable form
-        // sbBillRefno. Both are server-assigned. POS bills draw on the device's
-        // own series; WHOLESALE shares the branch 'MAIN' counter.
-        const settings = await this.salesContext.settings(
-          saveBillDto.sbCompanyId,
-          saveBillDto.sbBranchId,
-        );
-        const posSeries =
-          (saveBillDto.sbBillMode ?? 'WHOLESALE') === 'POS' && settings.posSeriesPerDevice;
-        const billNumber = await allocateVoucherNumber(tx, {
-          vchrTypeId: BILL_VCHR_TYPE_ID,
-          companyId: saveBillDto.sbCompanyId,
-          branchId: saveBillDto.sbBranchId,
-          accYear: saveBillDto.sbAccYear,
-          deviceCode: posSeries ? saveBillDto.sbDeviceId : null,
-          documentDate: billDate,
-        });
-        const data: Prisma.SaleBillUncheckedCreateInput = {
-          sbCompanyId: saveBillDto.sbCompanyId,
-          sbBranchId: saveBillDto.sbBranchId,
-          sbTenantId: saveBillDto.sbTenantId,
-          sbAccYear: saveBillDto.sbAccYear,
-          sbCounterId: saveBillDto.sbCounterId,
-          sbDeviceType: saveBillDto.sbDeviceType,
-          sbDeviceId: saveBillDto.sbDeviceId,
-          sbPriceLevel: saveBillDto.sbPriceLevel,
-          sbBillSlno: billNumber.lastNo,
-          sbBillRefno: billNumber.refno,
-          sbBillDate: billDate,
-          sbCustId: saveBillDto.sbCustId,
-          sbCustName: normalizedCustName,
-          sbUserId: saveBillDto.sbUserId,
-          sbCreatedOn: now,
-          sbCreatedBy: createdBy,
-          // Server-owned: a saved bill is a DRAFT until /bills/post.
-          sbStatus: BILL_STATUS_DRAFT,
-          sbRevisionNo: 1,
-        };
-        this.applyOptionalFields(data, saveBillDto);
-        data.sbCustName = normalizedCustName;
-        data.sbBillDate = billDate;
-        await this.applyCustomerSnapshot(tx, data, saveBillDto, settings.defaultCustomerId);
-        const created = await tx.saleBill.create({ data });
-        const scope = this.toScope(created);
-        const items = await this.syncItems(tx, scope, saveBillDto.items, createdBy);
-        const charges = await this.chargeDetailService.syncDocumentCharges(
-          tx,
-          this.toChargeScope(scope),
-          saveBillDto.charges,
-          createdBy,
-          BILL_CHARGE_AUDIT,
-        );
-        const tenders = await this.tenderDetailService.syncDocumentTenders(
-          tx,
-          this.toTenderScope(scope, saveBillDto.tenders),
-          encodeTempCreditTenders(saveBillDto.tenders),
-          createdBy,
-          BILL_TENDER_AUDIT,
-        );
-        // notes (48): the cheque details wait here until /post registers them.
-        const draftCheques = await this.saveDraftCheques(tx, created, saveBillDto.tenders, tenders);
-        // A DRAFT has no receivable yet, so the set-offs are only CHECKED here
-        // (the credit exists, belongs to the party, covers the amount) and their
-        // totals are kept in sbAdvanceAmt / sbNoteAdjAmt; /bills/post writes the rows.
-        await this.validateDraftAdjustments(tx, created, saveBillDto.adjustments);
-        await this.writeTransportBand(tx, created, saveBillDto, createdBy, now);
-        // Draws nothing off the order yet — only a POSTED bill counts — but the
-        // recompute is idempotent and keeps the refs validated.
-        await this.saleOrderService.syncOrderFulfilment(
-          tx,
-          { refs: [...this.toOrderHeaderRefs(created), ...this.toOrderLineRefs(items)] },
-          createdBy,
-          now,
-        );
-        await this.quotationService.syncQuotationConversion(
-          tx,
-          { refs: this.toQuotationRefs(created) },
-          createdBy,
-          now,
-        );
-        await this.logStatusChange(tx, created, null, createdBy, now, null);
-        const payload = this.toPayload({
-          ...created,
-          sbDraftCheques: draftCheques,
-          items,
-          charges,
-          tenders,
-        });
-        await this.auditLogService.logEntityChange(
-          {
-            action: 'New',
-            tableName: BILL_TABLE_NAME,
-            screenName: BILL_AUDIT_SCREEN_NAME,
-            screenType: 'transaction',
-            pk: payload.sbId,
-            displayName: payload.sbBillRefno || payload.sbId,
-            originalRecord: null,
-            modifiedRecord: payload,
-            userId: createdBy,
-            notes: 'Bill created',
-          },
-          tx,
-        );
-        return created;
-      });
+      return await this.prisma.$transaction((tx) => this.updateBillInTx(tx, saveBillDto));
     } catch (error: unknown) {
-      const duplicate = this.describeDuplicate(error);
-      throwOnUniqueConstraintError<BillErrorDetail, BillErrorResponse>(
-        error,
-        duplicate.message,
-        duplicate.errors,
-      );
+      this.throwIfDuplicate(error);
       throw error;
     }
   }
-  private async updateBill(saveBillDto: SaveBillDto): Promise<SaleBill> {
+  /**
+   * The DRAFT edit, inside a transaction the CALLER owns — the same split as
+   * `createBillInTx`, for the same one-call save-and-post. Run `prepareSave`
+   * first.
+   */
+  async updateBillInTx(tx: Prisma.TransactionClient, saveBillDto: SaveBillDto): Promise<SaleBill> {
     const sbId = saveBillDto.sbId!;
-    try {
-      return await this.prisma.$transaction(async (tx) => {
-        const existing = await tx.saleBill.findFirst({
-          where: { sbId, sbIsDeleted: false },
-        });
-        if (!existing) {
-          throwSalesNotFound<BillErrorDetail, BillErrorResponse>(
-            'Bill not found',
-            'sbId',
-            `No active bill found with id ${sbId}`,
-          );
-        }
-        // Lock 1. A POSTED bill is corrected through /bills/amend, a CANCELLED
-        // one not at all.
-        if (existing.sbStatus === BILL_STATUS_POSTED) {
-          throwSalesLocked(
-            'This bill is POSTED — use /bills/amend',
-            SALES_ERROR_CODES.BILL_POSTED,
-            'sbId',
-          );
-        }
-        if (existing.sbStatus === BILL_STATUS_CANCELLED) {
-          throwSalesLocked(
-            'This bill is CANCELLED and cannot be edited',
-            SALES_ERROR_CODES.BILL_CANCELLED,
-            'sbId',
-          );
-        }
-        const now = new Date();
-        const modifiedBy = resolveActor(
-          saveBillDto.sbModifiedBy,
-          this.requestContextService.getUserId(),
-        );
-        const { updated } = await this.applySaveInTx(tx, existing, saveBillDto, modifiedBy, now);
-        return updated;
-      });
-    } catch (error: unknown) {
-      const duplicate = this.describeDuplicate(error);
-      throwOnUniqueConstraintError<BillErrorDetail, BillErrorResponse>(
-        error,
-        duplicate.message,
-        duplicate.errors,
+    const existing = await tx.saleBill.findFirst({
+      where: { sbId, sbIsDeleted: false },
+    });
+    if (!existing) {
+      throwSalesNotFound<BillErrorDetail, BillErrorResponse>(
+        'Bill not found',
+        'sbId',
+        `No active bill found with id ${sbId}`,
       );
-      throw error;
     }
+    // Lock 1. A POSTED bill is corrected through /bills/amend, a CANCELLED
+    // one not at all.
+    if (existing.sbStatus === BILL_STATUS_POSTED) {
+      throwSalesLocked(
+        'This bill is POSTED — use /bills/amend',
+        SALES_ERROR_CODES.BILL_POSTED,
+        'sbId',
+      );
+    }
+    if (existing.sbStatus === BILL_STATUS_CANCELLED) {
+      throwSalesLocked(
+        'This bill is CANCELLED and cannot be edited',
+        SALES_ERROR_CODES.BILL_CANCELLED,
+        'sbId',
+      );
+    }
+    const now = new Date();
+    const modifiedBy = resolveActor(
+      saveBillDto.sbModifiedBy,
+      this.requestContextService.getUserId(),
+    );
+    const { updated } = await this.applySaveInTx(tx, existing, saveBillDto, modifiedBy, now);
+    return updated;
   }
   /**
    * Apply a save payload to an existing DRAFT header inside the CALLER's

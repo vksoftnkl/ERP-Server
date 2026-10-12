@@ -48,6 +48,11 @@ import {
   SaleOrderSuccessResponse,
 } from './types/sale-order-api.types';
 import { API_VERSION } from '../../../common/constants/api-version';
+/** Notes 94 B / 106 — `post: true`, or the status the post would leave, asks for save-and-confirm. */
+function wantsPost(dto: SaveSaleOrderDto): boolean {
+  return dto.post === true || (dto.soStatus ?? '').toUpperCase() === 'CONFIRMED';
+}
+
 @ApiTags('Sale Orders')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
@@ -61,7 +66,14 @@ export class SaleOrderController {
   ) {}
   @Post('create')
   @Version(API_VERSION)
-  @ApiOperation({ summary: 'Create or update a sales order (by soId presence)' })
+  @ApiOperation({
+    summary: 'Create or update a sales order (by soId presence) — or save and confirm in one call',
+    description:
+      "With `post: true` (or `soStatus: 'CONFIRMED'`, the same instruction) the save and the whole " +
+      'of /sale-orders/post — the reservations, CONFIRMED, the trail — run in ONE transaction, and a ' +
+      'refusal rolls all of it back: no header, no lines, no number consumed. The response is the ' +
+      'order plus warnings[] (SALES_RESERVE_SHORT lines). Notes 94 B / 106.',
+  })
   @ApiCreatedResponse({ type: SaleOrderSuccessSingleDto })
   @ApiBadRequestResponse({ type: SaleOrderErrorResponseDto })
   @ApiConflictResponse({ type: SaleOrderErrorResponseDto })
@@ -69,6 +81,16 @@ export class SaleOrderController {
   async save(
     @Body() saveOrderDto: SaveSaleOrderDto,
   ): Promise<SaleOrderSuccessResponse<SaleOrderPayload>> {
+    if (wantsPost(saveOrderDto)) {
+      const data = await this.lifecycle.saveAndPost(saveOrderDto);
+      return {
+        success: true,
+        message:
+          (saveOrderDto.soId ? 'Order updated and confirmed' : 'Order created and confirmed') +
+          (data.warnings.length ? ` — ${data.warnings.length} line(s) short on reservation` : ''),
+        data,
+      };
+    }
     const data = await this.orderService.save(saveOrderDto);
     return {
       success: true,

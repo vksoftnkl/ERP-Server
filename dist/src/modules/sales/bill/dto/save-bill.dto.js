@@ -187,6 +187,8 @@ class SaveBillDto {
     charges;
     tenders;
     adjustments;
+    post;
+    overrides;
 }
 exports.SaveBillDto = SaveBillDto;
 __decorate([
@@ -785,7 +787,7 @@ __decorate([
     (0, swagger_1.ApiPropertyOptional)({
         maxLength: 20,
         nullable: true,
-        description: "DRAFT / POSTED / CANCELLED — defaults to 'DRAFT'",
+        description: "Server-owned. A saved bill is a DRAFT; 'POSTED' here is the one-call instruction (same as post: true) and saves and posts in one transaction. Anything else is ignored.",
     }),
     (0, dtoDecorators_1.NullableStringStrict)(20),
     __metadata("design:type", Object)
@@ -1076,4 +1078,23 @@ __decorate([
     (0, class_transformer_1.Type)(() => save_bill_adjustment_dto_1.SaveBillAdjustmentDto),
     __metadata("design:type", Array)
 ], SaveBillDto.prototype, "adjustments", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        default: false,
+        description: "Save and post in one transaction (same as sbStatus: 'POSTED'). A refusal leaves no draft and burns no number; the error is /bills/post's.",
+    }),
+    (0, dtoDecorators_1.OptionalBoolean)(),
+    __metadata("design:type", Boolean)
+], SaveBillDto.prototype, "post", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        type: [String],
+        description: 'Only read with post: true. WARN codes the operator overrides (needs um_can_override).',
+    }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsArray)(),
+    (0, class_validator_1.ArrayMaxSize)(50),
+    (0, class_validator_1.IsString)({ each: true }),
+    __metadata("design:type", Array)
+], SaveBillDto.prototype, "overrides", void 0);
 //# sourceMappingURL=save-bill.dto.js.map

@@ -1,7 +1,15 @@
 import { applyDecorators } from '@nestjs/common';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
-import { IsArray, IsNotEmpty, IsOptional, IsUUID, ValidateNested } from 'class-validator';
+import {
+  ArrayMaxSize,
+  IsArray,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  IsUUID,
+  ValidateNested,
+} from 'class-validator';
 import {
   NullableDateString,
   NullableInteger,
@@ -297,8 +305,8 @@ export class SaveDeliveryChallanDto {
   @ApiPropertyOptional({
     maxLength: 20,
     nullable: true,
-    readOnly: true,
-    description: 'Ignored — server-owned',
+    description:
+      "Server-owned, with one exception: 'POSTED' is the one-call instruction (same as post: true) and saves and posts in one transaction. Anything else is ignored.",
   })
   @NullableStringStrict(20)
   sdcStatus?: string | null;
@@ -353,6 +361,34 @@ export class SaveDeliveryChallanDto {
   @ValidateNested()
   @Type(() => TransportBandDto)
   transport?: TransportBandDto | null;
+
+  /**
+   * Notes 94 B / 106 — SAVE AND POST IN ONE CALL. `post: true` (or
+   * `sdcStatus: 'POSTED'`, the same instruction) runs the draft save, every
+   * guard and the whole of `/delivery-challans/post` in ONE transaction. A
+   * refusal rolls all of it back: no header, no lines, no number consumed —
+   * and the refusal is exactly what `/post` answers. Omitted or false saves a
+   * DRAFT, as before.
+   */
+  @ApiPropertyOptional({
+    default: false,
+    description:
+      "Save and post in one transaction (same as sdcStatus: 'POSTED'). A refusal leaves no draft and burns no number; the error is /delivery-challans/post's.",
+  })
+  @OptionalBoolean()
+  post?: boolean;
+
+  /** With `post: true` — the WARN codes the operator overrides (needs um_can_override). */
+  @ApiPropertyOptional({
+    type: [String],
+    description:
+      'Only read with post: true. WARN codes the operator overrides (needs um_can_override).',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(50)
+  @IsString({ each: true })
+  overrides?: string[];
 }
 
 /** The columns a save copies when present (server-owned ones excluded). */

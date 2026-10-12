@@ -96,6 +96,11 @@ let ReceiptController = class ReceiptController {
         };
     }
     async create(dto) {
+        if (dto.post === true) {
+            await this.requireRight('post', 'post receipts');
+            const data = await this.postingService.saveAndPost(dto);
+            return { success: true, message: this.postedMessage(data), data };
+        }
         await this.requireRight(dto.avhVoucherId ? 'edit' : 'create', 'save receipt drafts');
         const data = await this.receiptService.save(dto);
         return {
@@ -109,13 +114,12 @@ let ReceiptController = class ReceiptController {
     async postReceipt(dto) {
         await this.requireRight('post', 'post receipts');
         const data = await this.postingService.post(dto);
+        return { success: true, message: this.postedMessage(data), data };
+    }
+    postedMessage(data) {
         const pdcCount = data.numberedVouchers.filter((voucher) => voucher.isPdcVoucher).length;
-        return {
-            success: true,
-            message: `Receipt ${data.header.avhVoucherRefno} posted` +
-                (pdcCount > 0 ? ` with ${pdcCount} post-dated cheque voucher(s)` : ''),
-            data,
-        };
+        return (`Receipt ${data.header.avhVoucherRefno} posted` +
+            (pdcCount > 0 ? ` with ${pdcCount} post-dated cheque voucher(s)` : ''));
     }
     async updateHeader(dto, body) {
         await this.requireRight('edit', 'edit receipts');
@@ -306,7 +310,7 @@ __decorate([
     (0, common_1.Post)('create'),
     (0, common_1.Version)(api_version_1.API_VERSION),
     (0, swagger_1.ApiOperation)({
-        summary: 'Save a draft receipt',
+        summary: 'Save a draft receipt — or, with post: true, save and post it in one call',
         description: 'Upsert on avhVoucherId. Writes the header (DRAFT, NO number — an abandoned draft must ' +
             'leave no gap in the series), the tender rows with td_voucher_id NULL, and the ' +
             'other-ledger lines into avh_draft_lines.\n\n' +
@@ -327,7 +331,15 @@ __decorate([
             'operator the whole draft to save one number. Omit either key to leave what is already ' +
             'remembered alone; send [] to clear it.',
     }),
-    (0, swagger_1.ApiCreatedResponse)({ type: receipt_response_dto_1.ReceiptDraftSuccessDto }),
+    (0, swagger_1.ApiCreatedResponse)({
+        description: 'The draft (ReceiptDraftSuccessDto) — or, with post: true, the posted receipt (ReceiptPostSuccessDto, the /post shape).',
+        schema: {
+            oneOf: [
+                { $ref: (0, swagger_1.getSchemaPath)(receipt_response_dto_1.ReceiptDraftSuccessDto) },
+                { $ref: (0, swagger_1.getSchemaPath)(receipt_response_dto_1.ReceiptPostSuccessDto) },
+            ],
+        },
+    }),
     (0, swagger_1.ApiBadRequestResponse)({ type: receipt_response_dto_1.ReceiptErrorResponseDto }),
     (0, swagger_1.ApiConflictResponse)({ type: receipt_response_dto_1.ReceiptErrorResponseDto }),
     (0, swagger_1.ApiNotFoundResponse)({ type: receipt_response_dto_1.ReceiptErrorResponseDto }),
@@ -502,6 +514,7 @@ exports.ReceiptController = ReceiptController = __decorate([
     (0, swagger_1.ApiForbiddenResponse)({ type: receipt_response_dto_1.ReceiptErrorResponseDto }),
     (0, common_1.Controller)('receipts'),
     (0, common_1.UseFilters)(receipt_exception_filter_1.ReceiptExceptionFilter),
+    (0, swagger_1.ApiExtraModels)(receipt_response_dto_1.ReceiptDraftSuccessDto, receipt_response_dto_1.ReceiptPostSuccessDto),
     __metadata("design:paramtypes", [prisma_service_1.PrismaService,
         request_context_service_1.RequestContextService,
         receipt_service_1.ReceiptService,

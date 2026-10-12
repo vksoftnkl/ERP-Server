@@ -329,12 +329,19 @@ let BillService = class BillService {
         this.billRead = billRead;
     }
     async save(saveBillDto) {
-        this.ensureBillValuesAreAllowed(saveBillDto);
-        stripServerOwned(saveBillDto);
+        this.prepareSave(saveBillDto);
         const saved = saveBillDto.sbId
             ? await this.updateBill(saveBillDto)
             : await this.createBill(saveBillDto);
         return this.getById(saved.sbId, saved.sbCompanyId, saved.sbBranchId, saved.sbAccYear);
+    }
+    prepareSave(saveBillDto) {
+        this.ensureBillValuesAreAllowed(saveBillDto);
+        stripServerOwned(saveBillDto);
+    }
+    throwIfDuplicate(error) {
+        const duplicate = this.describeDuplicate(error);
+        (0, module_service_utils_1.throwOnUniqueConstraintError)(error, duplicate.message, duplicate.errors);
     }
     async getById(sbId, sbCompanyId, sbBranchId, sbAccYear) {
         const record = await this.prisma.saleBill.findFirst({
@@ -496,113 +503,113 @@ let BillService = class BillService {
         };
     }
     async createBill(saveBillDto) {
+        try {
+            return await this.prisma.$transaction((tx) => this.createBillInTx(tx, saveBillDto));
+        }
+        catch (error) {
+            this.throwIfDuplicate(error);
+            throw error;
+        }
+    }
+    async createBillInTx(tx, saveBillDto) {
         const normalizedCustName = (0, module_service_utils_1.normalizeRequiredText)(saveBillDto.sbCustName ?? '', 'sbCustName');
         const now = new Date();
         const createdBy = (0, module_service_utils_1.resolveActor)(saveBillDto.sbCreatedBy, this.requestContextService.getUserId());
         const billDate = saveBillDto.sbBillDate ? new Date(saveBillDto.sbBillDate) : now;
+        await this.ensurePosStateExists(tx, saveBillDto);
+        const settings = await this.salesContext.settings(saveBillDto.sbCompanyId, saveBillDto.sbBranchId);
+        const posSeries = (saveBillDto.sbBillMode ?? 'WHOLESALE') === 'POS' && settings.posSeriesPerDevice;
+        const billNumber = await (0, voucher_sequence_helper_1.allocateVoucherNumber)(tx, {
+            vchrTypeId: BILL_VCHR_TYPE_ID,
+            companyId: saveBillDto.sbCompanyId,
+            branchId: saveBillDto.sbBranchId,
+            accYear: saveBillDto.sbAccYear,
+            deviceCode: posSeries ? saveBillDto.sbDeviceId : null,
+            documentDate: billDate,
+        });
+        const data = {
+            sbCompanyId: saveBillDto.sbCompanyId,
+            sbBranchId: saveBillDto.sbBranchId,
+            sbTenantId: saveBillDto.sbTenantId,
+            sbAccYear: saveBillDto.sbAccYear,
+            sbCounterId: saveBillDto.sbCounterId,
+            sbDeviceType: saveBillDto.sbDeviceType,
+            sbDeviceId: saveBillDto.sbDeviceId,
+            sbPriceLevel: saveBillDto.sbPriceLevel,
+            sbBillSlno: billNumber.lastNo,
+            sbBillRefno: billNumber.refno,
+            sbBillDate: billDate,
+            sbCustId: saveBillDto.sbCustId,
+            sbCustName: normalizedCustName,
+            sbUserId: saveBillDto.sbUserId,
+            sbCreatedOn: now,
+            sbCreatedBy: createdBy,
+            sbStatus: bill_api_types_1.BILL_STATUS_DRAFT,
+            sbRevisionNo: 1,
+        };
+        this.applyOptionalFields(data, saveBillDto);
+        data.sbCustName = normalizedCustName;
+        data.sbBillDate = billDate;
+        await this.applyCustomerSnapshot(tx, data, saveBillDto, settings.defaultCustomerId);
+        const created = await tx.saleBill.create({ data });
+        const scope = this.toScope(created);
+        const items = await this.syncItems(tx, scope, saveBillDto.items, createdBy);
+        const charges = await this.chargeDetailService.syncDocumentCharges(tx, this.toChargeScope(scope), saveBillDto.charges, createdBy, bill_api_types_1.BILL_CHARGE_AUDIT);
+        const tenders = await this.tenderDetailService.syncDocumentTenders(tx, this.toTenderScope(scope, saveBillDto.tenders), (0, bill_temp_credit_1.encodeTempCreditTenders)(saveBillDto.tenders), createdBy, bill_api_types_1.BILL_TENDER_AUDIT);
+        const draftCheques = await this.saveDraftCheques(tx, created, saveBillDto.tenders, tenders);
+        await this.validateDraftAdjustments(tx, created, saveBillDto.adjustments);
+        await this.writeTransportBand(tx, created, saveBillDto, createdBy, now);
+        await this.saleOrderService.syncOrderFulfilment(tx, { refs: [...this.toOrderHeaderRefs(created), ...this.toOrderLineRefs(items)] }, createdBy, now);
+        await this.quotationService.syncQuotationConversion(tx, { refs: this.toQuotationRefs(created) }, createdBy, now);
+        await this.logStatusChange(tx, created, null, createdBy, now, null);
+        const payload = this.toPayload({
+            ...created,
+            sbDraftCheques: draftCheques,
+            items,
+            charges,
+            tenders,
+        });
+        await this.auditLogService.logEntityChange({
+            action: 'New',
+            tableName: BILL_TABLE_NAME,
+            screenName: BILL_AUDIT_SCREEN_NAME,
+            screenType: 'transaction',
+            pk: payload.sbId,
+            displayName: payload.sbBillRefno || payload.sbId,
+            originalRecord: null,
+            modifiedRecord: payload,
+            userId: createdBy,
+            notes: 'Bill created',
+        }, tx);
+        return created;
+    }
+    async updateBill(saveBillDto) {
         try {
-            return await this.prisma.$transaction(async (tx) => {
-                await this.ensurePosStateExists(tx, saveBillDto);
-                const settings = await this.salesContext.settings(saveBillDto.sbCompanyId, saveBillDto.sbBranchId);
-                const posSeries = (saveBillDto.sbBillMode ?? 'WHOLESALE') === 'POS' && settings.posSeriesPerDevice;
-                const billNumber = await (0, voucher_sequence_helper_1.allocateVoucherNumber)(tx, {
-                    vchrTypeId: BILL_VCHR_TYPE_ID,
-                    companyId: saveBillDto.sbCompanyId,
-                    branchId: saveBillDto.sbBranchId,
-                    accYear: saveBillDto.sbAccYear,
-                    deviceCode: posSeries ? saveBillDto.sbDeviceId : null,
-                    documentDate: billDate,
-                });
-                const data = {
-                    sbCompanyId: saveBillDto.sbCompanyId,
-                    sbBranchId: saveBillDto.sbBranchId,
-                    sbTenantId: saveBillDto.sbTenantId,
-                    sbAccYear: saveBillDto.sbAccYear,
-                    sbCounterId: saveBillDto.sbCounterId,
-                    sbDeviceType: saveBillDto.sbDeviceType,
-                    sbDeviceId: saveBillDto.sbDeviceId,
-                    sbPriceLevel: saveBillDto.sbPriceLevel,
-                    sbBillSlno: billNumber.lastNo,
-                    sbBillRefno: billNumber.refno,
-                    sbBillDate: billDate,
-                    sbCustId: saveBillDto.sbCustId,
-                    sbCustName: normalizedCustName,
-                    sbUserId: saveBillDto.sbUserId,
-                    sbCreatedOn: now,
-                    sbCreatedBy: createdBy,
-                    sbStatus: bill_api_types_1.BILL_STATUS_DRAFT,
-                    sbRevisionNo: 1,
-                };
-                this.applyOptionalFields(data, saveBillDto);
-                data.sbCustName = normalizedCustName;
-                data.sbBillDate = billDate;
-                await this.applyCustomerSnapshot(tx, data, saveBillDto, settings.defaultCustomerId);
-                const created = await tx.saleBill.create({ data });
-                const scope = this.toScope(created);
-                const items = await this.syncItems(tx, scope, saveBillDto.items, createdBy);
-                const charges = await this.chargeDetailService.syncDocumentCharges(tx, this.toChargeScope(scope), saveBillDto.charges, createdBy, bill_api_types_1.BILL_CHARGE_AUDIT);
-                const tenders = await this.tenderDetailService.syncDocumentTenders(tx, this.toTenderScope(scope, saveBillDto.tenders), (0, bill_temp_credit_1.encodeTempCreditTenders)(saveBillDto.tenders), createdBy, bill_api_types_1.BILL_TENDER_AUDIT);
-                const draftCheques = await this.saveDraftCheques(tx, created, saveBillDto.tenders, tenders);
-                await this.validateDraftAdjustments(tx, created, saveBillDto.adjustments);
-                await this.writeTransportBand(tx, created, saveBillDto, createdBy, now);
-                await this.saleOrderService.syncOrderFulfilment(tx, { refs: [...this.toOrderHeaderRefs(created), ...this.toOrderLineRefs(items)] }, createdBy, now);
-                await this.quotationService.syncQuotationConversion(tx, { refs: this.toQuotationRefs(created) }, createdBy, now);
-                await this.logStatusChange(tx, created, null, createdBy, now, null);
-                const payload = this.toPayload({
-                    ...created,
-                    sbDraftCheques: draftCheques,
-                    items,
-                    charges,
-                    tenders,
-                });
-                await this.auditLogService.logEntityChange({
-                    action: 'New',
-                    tableName: BILL_TABLE_NAME,
-                    screenName: BILL_AUDIT_SCREEN_NAME,
-                    screenType: 'transaction',
-                    pk: payload.sbId,
-                    displayName: payload.sbBillRefno || payload.sbId,
-                    originalRecord: null,
-                    modifiedRecord: payload,
-                    userId: createdBy,
-                    notes: 'Bill created',
-                }, tx);
-                return created;
-            });
+            return await this.prisma.$transaction((tx) => this.updateBillInTx(tx, saveBillDto));
         }
         catch (error) {
-            const duplicate = this.describeDuplicate(error);
-            (0, module_service_utils_1.throwOnUniqueConstraintError)(error, duplicate.message, duplicate.errors);
+            this.throwIfDuplicate(error);
             throw error;
         }
     }
-    async updateBill(saveBillDto) {
+    async updateBillInTx(tx, saveBillDto) {
         const sbId = saveBillDto.sbId;
-        try {
-            return await this.prisma.$transaction(async (tx) => {
-                const existing = await tx.saleBill.findFirst({
-                    where: { sbId, sbIsDeleted: false },
-                });
-                if (!existing) {
-                    (0, module_service_utils_1.throwSalesNotFound)('Bill not found', 'sbId', `No active bill found with id ${sbId}`);
-                }
-                if (existing.sbStatus === bill_api_types_1.BILL_STATUS_POSTED) {
-                    (0, sales_errors_1.throwSalesLocked)('This bill is POSTED — use /bills/amend', posting_types_1.SALES_ERROR_CODES.BILL_POSTED, 'sbId');
-                }
-                if (existing.sbStatus === bill_api_types_1.BILL_STATUS_CANCELLED) {
-                    (0, sales_errors_1.throwSalesLocked)('This bill is CANCELLED and cannot be edited', posting_types_1.SALES_ERROR_CODES.BILL_CANCELLED, 'sbId');
-                }
-                const now = new Date();
-                const modifiedBy = (0, module_service_utils_1.resolveActor)(saveBillDto.sbModifiedBy, this.requestContextService.getUserId());
-                const { updated } = await this.applySaveInTx(tx, existing, saveBillDto, modifiedBy, now);
-                return updated;
-            });
+        const existing = await tx.saleBill.findFirst({
+            where: { sbId, sbIsDeleted: false },
+        });
+        if (!existing) {
+            (0, module_service_utils_1.throwSalesNotFound)('Bill not found', 'sbId', `No active bill found with id ${sbId}`);
         }
-        catch (error) {
-            const duplicate = this.describeDuplicate(error);
-            (0, module_service_utils_1.throwOnUniqueConstraintError)(error, duplicate.message, duplicate.errors);
-            throw error;
+        if (existing.sbStatus === bill_api_types_1.BILL_STATUS_POSTED) {
+            (0, sales_errors_1.throwSalesLocked)('This bill is POSTED — use /bills/amend', posting_types_1.SALES_ERROR_CODES.BILL_POSTED, 'sbId');
         }
+        if (existing.sbStatus === bill_api_types_1.BILL_STATUS_CANCELLED) {
+            (0, sales_errors_1.throwSalesLocked)('This bill is CANCELLED and cannot be edited', posting_types_1.SALES_ERROR_CODES.BILL_CANCELLED, 'sbId');
+        }
+        const now = new Date();
+        const modifiedBy = (0, module_service_utils_1.resolveActor)(saveBillDto.sbModifiedBy, this.requestContextService.getUserId());
+        const { updated } = await this.applySaveInTx(tx, existing, saveBillDto, modifiedBy, now);
+        return updated;
     }
     async applySaveInTx(tx, existing, saveBillDto, modifiedBy, now, opts = {}) {
         const settings = await this.salesContext.settings(existing.sbCompanyId, existing.sbBranchId);

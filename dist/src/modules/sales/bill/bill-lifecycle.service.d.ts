@@ -20,6 +20,7 @@ import { BillService } from './bill.service';
 import { type BillSnapshot } from './bill-snapshot';
 import type { AmendBillDto, CancelBillDto, PostBillDto, ValidateBillDto } from './dto/bill-lifecycle.dto';
 import type { SaveBillAdjustmentDto } from './dto/save-bill-adjustment.dto';
+import type { SaveBillDto } from './dto/save-bill.dto';
 import { TillSessionService } from '../../till/services/till-session.service';
 import { type BillPayload } from './types/bill-api.types';
 interface PostResult {
@@ -51,6 +52,9 @@ export declare class BillLifecycleService {
     constructor(prisma: PrismaService, bills: BillService, salesContext: SalesContextService, statutory: StatutoryService, legs: VoucherPostingService, register: DocRegisterService, stock: SalesStockService, reservations: StockReservationService, loyalty: LoyaltyLedgerService, promo: PromotionUsageService, chargeCarry: ChargeCarryService, dcFulfilment: DcFulfilmentService, saleOrders: SaleOrderService, transportBand: TransportBandService, docBlocks: SalesDocBlocksService, gst: GstGatewayService, audit: AuditLogService, till: TillSessionService);
     validate(dto: ValidateBillDto): Promise<Record<string, unknown>>;
     post(dto: PostBillDto): Promise<BillPayload>;
+    saveAndPost(dto: SaveBillDto): Promise<BillPayload>;
+    private postDraftInTx;
+    private afterPost;
     cancel(dto: CancelBillDto): Promise<Record<string, unknown>>;
     private cancelResponse;
     amend(dto: AmendBillDto): Promise<BillPayload>;

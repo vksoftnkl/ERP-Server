@@ -135,7 +135,9 @@ describe('Sale bill — DRAFT → /validate → /post → /cancel (e2e, live DB)
     expect(trail[0].tsl_to_status.trim()).toBe('DRAFT');
   });
 
-  it('sbStatus: POSTED in a create body is ignored — the bill stays a DRAFT', async () => {
+  it('a server-owned sbStatus in a create body is ignored — the bill stays a DRAFT', async () => {
+    // Notes 94 B / 106: 'POSTED' is now the one-call instruction (see
+    // test/sales/save-and-post-http.e2e-spec.ts); any other value is ignored.
     const res = await post('create', {
       ...billBody({
         custId: WALK_IN,
@@ -144,7 +146,7 @@ describe('Sale bill — DRAFT → /validate → /post → /cancel (e2e, live DB)
         usrRefno: `E2E-BILL-${tag}-CASH`,
       }),
       sbId: cashBill.sbId,
-      sbStatus: 'POSTED',
+      sbStatus: 'CANCELLED',
     });
     expect(res.status).toBe(201);
     expect(res.body.data.sbStatus).toBe('DRAFT');

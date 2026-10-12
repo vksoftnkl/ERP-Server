@@ -45,17 +45,8 @@ __decorate([
     __metadata("design:type", String)
 ], DeliveryChallanKeysDto.prototype, "sdcAccYear", void 0);
 class ValidateDeliveryChallanDto extends save_delivery_challan_dto_1.SaveDeliveryChallanDto {
-    overrides;
 }
 exports.ValidateDeliveryChallanDto = ValidateDeliveryChallanDto;
-__decorate([
-    (0, swagger_1.ApiPropertyOptional)({ type: [String] }),
-    (0, class_validator_1.IsOptional)(),
-    (0, class_validator_1.IsArray)(),
-    (0, class_validator_1.ArrayMaxSize)(50),
-    (0, class_validator_1.IsString)({ each: true }),
-    __metadata("design:type", Array)
-], ValidateDeliveryChallanDto.prototype, "overrides", void 0);
 class PostDeliveryChallanDto extends DeliveryChallanKeysDto {
     overrides;
     printAfter;

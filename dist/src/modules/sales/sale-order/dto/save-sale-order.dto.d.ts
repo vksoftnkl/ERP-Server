@@ -135,4 +135,5 @@ export declare class SaveSaleOrderDto {
     items?: SaveSaleOrderItemDto[];
     charges?: SaveChargeDetailDto[];
     tenders?: SaveTenderDetailDto[];
+    post?: boolean;
 }

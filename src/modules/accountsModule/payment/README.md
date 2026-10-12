@@ -177,6 +177,11 @@ charge is sent as `tdAmount: 5012.50, tdMdrAmt: 12.50`.
   reads, create / edit for `/create`, edit for `/update-header`, and post / cancel / delete /
   amend for their own routes). A refusal is a 403 with code `PMT_RIGHT_<RIGHT>` that names the
   column. `/receipts` does the same on menu 99 (`RCT_RIGHT_<RIGHT>`).
+- **D2a · Save and post in one call (notes 94 A + B / 106).** `/create` with `post: true` runs
+  the draft and the post in ONE transaction (`PaymentPostingService.saveAndPost`); `onAccount` is
+  required when posting, `allocations` / `creditsApplied` / `otherLineBills` are applied, a refusal
+  leaves no header, and the route is judged on the Post right alone — a Post-only user may raise a
+  payment this way. The response is the `/post` shape. `/receipts` does the same.
 - **D3 · `/open-items` refuses `mobile`.** It has its own query DTO.
 - **E1 · The write-off approver is kept** on the bill rows the BALANCES_WRITTEN_BACK line settles
   (`abj_approved_by`).

@@ -93,6 +93,15 @@ company/branch/year scope. `POST /delete` takes the same four in its **body**, p
 - On **create**, `sbCustName` is normalized via `normalizeRequiredText` (trimmed and
   required-non-empty), `sbBillSlno` / `sbBillRefno` are allocated from the voucher sequence,
   `sbBillDate` defaults to _now_ when omitted, and `sbStatus` defaults to `'DRAFT'`.
+- **Save and post in one call (notes 94 B / 106).** `post: true` — or `sbStatus: 'POSTED'`, the
+  same instruction — runs the draft save, every guard `/bills/validate` runs and the whole of
+  `/bills/post` in ONE transaction (`BillLifecycleService.saveAndPost`, which shares `postDraftInTx`
+  with `/post`). A refusal rolls all of it back: no header, no lines, **no number consumed**,
+  nothing in the list — and the answer is exactly `/post`'s (codes, line numbers, the WARN list,
+  `overrides[]`), because it is the same guard run. Judged on the Post right (94 A). Any other
+  `sbStatus` is ignored. `/post` stays, for a draft somebody saved on purpose. Why: every Save & Post
+  used to be `/create` then `/post`, and when `/post` refused something `/validate` had not caught,
+  the draft already existed and its number was gone (eleven of them on 2026-10-12 alone).
 - Optional header fields are copied through only when present on the payload
   (`applyPresentFields` over the `BILL_OPTIONAL_FIELDS` list); absent fields are left as-is on
   update. The partition/scope keys (`sbCompanyId`, `sbBranchId`, `sbAccYear`, `sbPriceLevel`,

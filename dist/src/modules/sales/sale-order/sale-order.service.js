@@ -394,11 +394,18 @@ let SaleOrderService = class SaleOrderService {
         this.tenderDetailService = tenderDetailService;
     }
     async save(saveOrderDto) {
-        this.ensureOrderValuesAreAllowed(saveOrderDto);
+        this.prepareSave(saveOrderDto);
         if (saveOrderDto.soId) {
             return this.updateOrder(saveOrderDto);
         }
         return this.createOrder(saveOrderDto);
+    }
+    prepareSave(saveOrderDto) {
+        this.ensureOrderValuesAreAllowed(saveOrderDto);
+    }
+    throwIfDuplicate(error) {
+        const duplicate = this.describeDuplicate(error);
+        (0, module_service_utils_1.throwOnUniqueConstraintError)(error, duplicate.message, duplicate.errors);
     }
     async getById(soId, soCompanyId, soBranchId, soAccYear) {
         const record = await this.prisma.saleOrder.findFirst({
@@ -1149,171 +1156,171 @@ let SaleOrderService = class SaleOrderService {
         });
     }
     async createOrder(saveOrderDto) {
+        try {
+            return await this.prisma.$transaction((tx) => this.createOrderInTx(tx, saveOrderDto));
+        }
+        catch (error) {
+            this.throwIfDuplicate(error);
+            throw error;
+        }
+    }
+    async createOrderInTx(tx, saveOrderDto) {
         const normalizedCustName = (0, module_service_utils_1.normalizeRequiredText)(saveOrderDto.soCustName ?? '', 'soCustName');
         this.ensureAdvanceRollupsAreConsistent(saveOrderDto, undefined);
         const now = new Date();
         const createdBy = (0, module_service_utils_1.resolveActor)(saveOrderDto.soCreatedBy, this.requestContextService.getUserId());
         const orderDate = saveOrderDto.soOrderDate ? new Date(saveOrderDto.soOrderDate) : now;
+        const orderNumber = await (0, voucher_sequence_helper_1.allocateVoucherNumber)(tx, {
+            vchrTypeId: SALE_ORDER_VCHR_TYPE_ID,
+            companyId: saveOrderDto.soCompanyId,
+            branchId: saveOrderDto.soBranchId,
+            accYear: saveOrderDto.soAccYear,
+            documentDate: orderDate,
+        });
+        const data = {
+            soCompanyId: saveOrderDto.soCompanyId,
+            soBranchId: saveOrderDto.soBranchId,
+            soTenantId: saveOrderDto.soTenantId,
+            soAccYear: saveOrderDto.soAccYear,
+            soDeviceId: saveOrderDto.soDeviceId,
+            soPriceLevel: saveOrderDto.soPriceLevel,
+            soOrderSlno: orderNumber.lastNo,
+            soOrderRefno: orderNumber.refno,
+            soOrderDate: orderDate,
+            soCustId: saveOrderDto.soCustId,
+            soCustName: normalizedCustName,
+            soUserId: saveOrderDto.soUserId,
+            soCreatedOn: now,
+            soCreatedBy: createdBy,
+            soStatus: saveOrderDto.soStatus || 'DRAFT',
+        };
+        this.applyOptionalFields(data, saveOrderDto);
+        data.soCustName = normalizedCustName;
+        data.soOrderDate = orderDate;
+        if (saveOrderDto.soAdvanceBalanceAmt === undefined) {
+            data.soAdvanceBalanceAmt = this.deriveAdvanceBalance(saveOrderDto, undefined);
+        }
+        const created = await tx.saleOrder.create({ data });
+        const scope = {
+            soId: created.soId,
+            soCompanyId: created.soCompanyId,
+            soBranchId: created.soBranchId,
+            soTenantId: created.soTenantId,
+            soAccYear: created.soAccYear,
+            soPriceLevel: created.soPriceLevel,
+            soOrderSlno: created.soOrderSlno,
+            soOrderDate: created.soOrderDate,
+            soCustId: created.soCustId,
+            soUserId: created.soUserId,
+            soSessionId: created.soSessionId,
+            soDeviceId: created.soDeviceId,
+        };
+        const items = await this.syncItems(tx, scope, saveOrderDto.items, createdBy);
+        const charges = await this.chargeDetailService.syncDocumentCharges(tx, this.toChargeScope(scope), saveOrderDto.charges, createdBy, sale_order_api_types_1.SALE_ORDER_CHARGE_AUDIT);
+        const tenders = await this.tenderDetailService.syncDocumentTenders(tx, this.toTenderScope(scope), saveOrderDto.tenders, createdBy, sale_order_api_types_1.SALE_ORDER_TENDER_AUDIT);
+        const posting = await this.syncAdvanceVoucher(tx, created, createdBy, now, (0, pdc_register_helper_1.matchChequeDetails)(saveOrderDto.tenders ?? [], tenders));
+        const restated = await this.restateAdvanceRollups(tx, created, posting, saveOrderDto);
+        await this.logStatusStep(tx, restated, { event: txn_status_log_helper_1.TxnStatusEvent.CREATED, fromStatus: null, toStatus: restated.soStatus }, createdBy, now);
+        const payload = this.toPayload({
+            ...restated,
+            items,
+            charges,
+            tenders: await this.withChequeDetails(tx, tenders),
+        });
+        await this.auditLogService.logEntityChange({
+            action: 'New',
+            tableName: SALE_ORDER_TABLE_NAME,
+            screenName: SALE_ORDER_AUDIT_SCREEN_NAME,
+            screenType: 'transaction',
+            pk: payload.soId,
+            displayName: payload.soOrderRefno || payload.soId,
+            originalRecord: null,
+            modifiedRecord: payload,
+            userId: createdBy,
+            notes: 'Order created',
+        }, tx);
+        return payload;
+    }
+    async updateOrder(saveOrderDto) {
         try {
-            return await this.prisma.$transaction(async (tx) => {
-                const orderNumber = await (0, voucher_sequence_helper_1.allocateVoucherNumber)(tx, {
-                    vchrTypeId: SALE_ORDER_VCHR_TYPE_ID,
-                    companyId: saveOrderDto.soCompanyId,
-                    branchId: saveOrderDto.soBranchId,
-                    accYear: saveOrderDto.soAccYear,
-                    documentDate: orderDate,
-                });
-                const data = {
-                    soCompanyId: saveOrderDto.soCompanyId,
-                    soBranchId: saveOrderDto.soBranchId,
-                    soTenantId: saveOrderDto.soTenantId,
-                    soAccYear: saveOrderDto.soAccYear,
-                    soDeviceId: saveOrderDto.soDeviceId,
-                    soPriceLevel: saveOrderDto.soPriceLevel,
-                    soOrderSlno: orderNumber.lastNo,
-                    soOrderRefno: orderNumber.refno,
-                    soOrderDate: orderDate,
-                    soCustId: saveOrderDto.soCustId,
-                    soCustName: normalizedCustName,
-                    soUserId: saveOrderDto.soUserId,
-                    soCreatedOn: now,
-                    soCreatedBy: createdBy,
-                    soStatus: saveOrderDto.soStatus || 'DRAFT',
-                };
-                this.applyOptionalFields(data, saveOrderDto);
-                data.soCustName = normalizedCustName;
-                data.soOrderDate = orderDate;
-                if (saveOrderDto.soAdvanceBalanceAmt === undefined) {
-                    data.soAdvanceBalanceAmt = this.deriveAdvanceBalance(saveOrderDto, undefined);
-                }
-                const created = await tx.saleOrder.create({ data });
-                const scope = {
-                    soId: created.soId,
-                    soCompanyId: created.soCompanyId,
-                    soBranchId: created.soBranchId,
-                    soTenantId: created.soTenantId,
-                    soAccYear: created.soAccYear,
-                    soPriceLevel: created.soPriceLevel,
-                    soOrderSlno: created.soOrderSlno,
-                    soOrderDate: created.soOrderDate,
-                    soCustId: created.soCustId,
-                    soUserId: created.soUserId,
-                    soSessionId: created.soSessionId,
-                    soDeviceId: created.soDeviceId,
-                };
-                const items = await this.syncItems(tx, scope, saveOrderDto.items, createdBy);
-                const charges = await this.chargeDetailService.syncDocumentCharges(tx, this.toChargeScope(scope), saveOrderDto.charges, createdBy, sale_order_api_types_1.SALE_ORDER_CHARGE_AUDIT);
-                const tenders = await this.tenderDetailService.syncDocumentTenders(tx, this.toTenderScope(scope), saveOrderDto.tenders, createdBy, sale_order_api_types_1.SALE_ORDER_TENDER_AUDIT);
-                const posting = await this.syncAdvanceVoucher(tx, created, createdBy, now, (0, pdc_register_helper_1.matchChequeDetails)(saveOrderDto.tenders ?? [], tenders));
-                const restated = await this.restateAdvanceRollups(tx, created, posting, saveOrderDto);
-                await this.logStatusStep(tx, restated, { event: txn_status_log_helper_1.TxnStatusEvent.CREATED, fromStatus: null, toStatus: restated.soStatus }, createdBy, now);
-                const payload = this.toPayload({
-                    ...restated,
-                    items,
-                    charges,
-                    tenders: await this.withChequeDetails(tx, tenders),
-                });
-                await this.auditLogService.logEntityChange({
-                    action: 'New',
-                    tableName: SALE_ORDER_TABLE_NAME,
-                    screenName: SALE_ORDER_AUDIT_SCREEN_NAME,
-                    screenType: 'transaction',
-                    pk: payload.soId,
-                    displayName: payload.soOrderRefno || payload.soId,
-                    originalRecord: null,
-                    modifiedRecord: payload,
-                    userId: createdBy,
-                    notes: 'Order created',
-                }, tx);
-                return payload;
-            });
+            return await this.prisma.$transaction((tx) => this.updateOrderInTx(tx, saveOrderDto));
         }
         catch (error) {
-            const duplicate = this.describeDuplicate(error);
-            (0, module_service_utils_1.throwOnUniqueConstraintError)(error, duplicate.message, duplicate.errors);
+            this.throwIfDuplicate(error);
             throw error;
         }
     }
-    async updateOrder(saveOrderDto) {
+    async updateOrderInTx(tx, saveOrderDto) {
         const soId = saveOrderDto.soId;
-        try {
-            return await this.prisma.$transaction(async (tx) => {
-                const existing = await tx.saleOrder.findFirst({
-                    where: {
-                        soId,
-                        soIsDeleted: false,
-                    },
-                });
-                if (!existing) {
-                    (0, module_service_utils_1.throwSalesNotFound)('Order not found', 'soId', `No active order found with id ${soId}`);
-                }
-                this.ensureAdvanceRollupsAreConsistent(saveOrderDto, existing);
-                const now = new Date();
-                const modifiedBy = (0, module_service_utils_1.resolveActor)(saveOrderDto.soModifiedBy, this.requestContextService.getUserId());
-                const data = {
-                    soModifiedOn: now,
-                    soModifiedBy: modifiedBy,
-                };
-                this.applyOptionalFields(data, saveOrderDto);
-                if (saveOrderDto.soAdvanceBalanceAmt === undefined &&
-                    (saveOrderDto.soAdvanceRecdAmt !== undefined ||
-                        saveOrderDto.soAdvanceAdjustedAmt !== undefined ||
-                        saveOrderDto.soAdvanceRefundAmt !== undefined ||
-                        saveOrderDto.soAdvanceForfeitAmt !== undefined)) {
-                    data.soAdvanceBalanceAmt = this.deriveAdvanceBalance(saveOrderDto, existing);
-                }
-                const updated = await tx.saleOrder.update({
-                    where: { soId_soAccYear: { soId: existing.soId, soAccYear: existing.soAccYear } },
-                    data,
-                });
-                const scope = {
-                    soId: updated.soId,
-                    soCompanyId: updated.soCompanyId,
-                    soBranchId: updated.soBranchId,
-                    soTenantId: updated.soTenantId,
-                    soAccYear: updated.soAccYear,
-                    soPriceLevel: updated.soPriceLevel,
-                    soOrderSlno: updated.soOrderSlno,
-                    soOrderDate: updated.soOrderDate,
-                    soCustId: updated.soCustId,
-                    soUserId: updated.soUserId,
-                    soSessionId: updated.soSessionId,
-                    soDeviceId: updated.soDeviceId,
-                };
-                const items = await this.syncItems(tx, scope, saveOrderDto.items, modifiedBy);
-                const charges = await this.chargeDetailService.syncDocumentCharges(tx, this.toChargeScope(scope), saveOrderDto.charges, modifiedBy, sale_order_api_types_1.SALE_ORDER_CHARGE_AUDIT);
-                const tenders = await this.tenderDetailService.syncDocumentTenders(tx, this.toTenderScope(scope), saveOrderDto.tenders, modifiedBy, sale_order_api_types_1.SALE_ORDER_TENDER_AUDIT);
-                const postingSource = saveOrderDto.tenders !== undefined && saveOrderDto.soAdvanceRecdAmt === undefined
-                    ? { ...updated, soAdvanceRecdAmt: ZERO }
-                    : updated;
-                const posting = await this.syncAdvanceVoucher(tx, postingSource, modifiedBy, now, (0, pdc_register_helper_1.matchChequeDetails)(saveOrderDto.tenders ?? [], tenders));
-                const restated = await this.restateAdvanceRollups(tx, updated, posting, saveOrderDto);
-                const payload = this.toPayload({
-                    ...restated,
-                    items,
-                    charges,
-                    tenders: await this.withChequeDetails(tx, tenders),
-                });
-                await this.auditLogService.logEntityChange({
-                    action: 'update',
-                    tableName: SALE_ORDER_TABLE_NAME,
-                    screenName: SALE_ORDER_AUDIT_SCREEN_NAME,
-                    screenType: 'transaction',
-                    pk: soId,
-                    displayName: payload.soOrderRefno || payload.soId,
-                    originalRecord: this.toPayload(existing),
-                    modifiedRecord: payload,
-                    userId: payload.soModifiedBy || payload.soCreatedBy,
-                    notes: 'Order updated',
-                }, tx);
-                return payload;
-            });
+        const existing = await tx.saleOrder.findFirst({
+            where: {
+                soId,
+                soIsDeleted: false,
+            },
+        });
+        if (!existing) {
+            (0, module_service_utils_1.throwSalesNotFound)('Order not found', 'soId', `No active order found with id ${soId}`);
         }
-        catch (error) {
-            const duplicate = this.describeDuplicate(error);
-            (0, module_service_utils_1.throwOnUniqueConstraintError)(error, duplicate.message, duplicate.errors);
-            throw error;
+        this.ensureAdvanceRollupsAreConsistent(saveOrderDto, existing);
+        const now = new Date();
+        const modifiedBy = (0, module_service_utils_1.resolveActor)(saveOrderDto.soModifiedBy, this.requestContextService.getUserId());
+        const data = {
+            soModifiedOn: now,
+            soModifiedBy: modifiedBy,
+        };
+        this.applyOptionalFields(data, saveOrderDto);
+        if (saveOrderDto.soAdvanceBalanceAmt === undefined &&
+            (saveOrderDto.soAdvanceRecdAmt !== undefined ||
+                saveOrderDto.soAdvanceAdjustedAmt !== undefined ||
+                saveOrderDto.soAdvanceRefundAmt !== undefined ||
+                saveOrderDto.soAdvanceForfeitAmt !== undefined)) {
+            data.soAdvanceBalanceAmt = this.deriveAdvanceBalance(saveOrderDto, existing);
         }
+        const updated = await tx.saleOrder.update({
+            where: { soId_soAccYear: { soId: existing.soId, soAccYear: existing.soAccYear } },
+            data,
+        });
+        const scope = {
+            soId: updated.soId,
+            soCompanyId: updated.soCompanyId,
+            soBranchId: updated.soBranchId,
+            soTenantId: updated.soTenantId,
+            soAccYear: updated.soAccYear,
+            soPriceLevel: updated.soPriceLevel,
+            soOrderSlno: updated.soOrderSlno,
+            soOrderDate: updated.soOrderDate,
+            soCustId: updated.soCustId,
+            soUserId: updated.soUserId,
+            soSessionId: updated.soSessionId,
+            soDeviceId: updated.soDeviceId,
+        };
+        const items = await this.syncItems(tx, scope, saveOrderDto.items, modifiedBy);
+        const charges = await this.chargeDetailService.syncDocumentCharges(tx, this.toChargeScope(scope), saveOrderDto.charges, modifiedBy, sale_order_api_types_1.SALE_ORDER_CHARGE_AUDIT);
+        const tenders = await this.tenderDetailService.syncDocumentTenders(tx, this.toTenderScope(scope), saveOrderDto.tenders, modifiedBy, sale_order_api_types_1.SALE_ORDER_TENDER_AUDIT);
+        const postingSource = saveOrderDto.tenders !== undefined && saveOrderDto.soAdvanceRecdAmt === undefined
+            ? { ...updated, soAdvanceRecdAmt: ZERO }
+            : updated;
+        const posting = await this.syncAdvanceVoucher(tx, postingSource, modifiedBy, now, (0, pdc_register_helper_1.matchChequeDetails)(saveOrderDto.tenders ?? [], tenders));
+        const restated = await this.restateAdvanceRollups(tx, updated, posting, saveOrderDto);
+        const payload = this.toPayload({
+            ...restated,
+            items,
+            charges,
+            tenders: await this.withChequeDetails(tx, tenders),
+        });
+        await this.auditLogService.logEntityChange({
+            action: 'update',
+            tableName: SALE_ORDER_TABLE_NAME,
+            screenName: SALE_ORDER_AUDIT_SCREEN_NAME,
+            screenType: 'transaction',
+            pk: soId,
+            displayName: payload.soOrderRefno || payload.soId,
+            originalRecord: this.toPayload(existing),
+            modifiedRecord: payload,
+            userId: payload.soModifiedBy || payload.soCreatedBy,
+            notes: 'Order updated',
+        }, tx);
+        return payload;
     }
     async syncItems(tx, scope, inputItems, actorId) {
         const existing = await tx.saleOrderItem.findMany({

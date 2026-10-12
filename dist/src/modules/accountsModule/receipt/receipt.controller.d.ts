@@ -26,8 +26,9 @@ export declare class ReceiptController {
     get(query: GetReceiptQueryDto): Promise<ReceiptSuccessResponse<ReceiptPayload>>;
     adjacent(query: AdjacentVoucherQueryDto): Promise<ReceiptSuccessResponse<AdjacentVoucherPayload>>;
     duplicateCheck(query: DuplicateCheckQueryDto): Promise<ReceiptSuccessResponse<DuplicateCheckPayload>>;
-    create(dto: SaveDraftReceiptDto): Promise<ReceiptSuccessResponse<ReceiptDraftPayload>>;
+    create(dto: SaveDraftReceiptDto): Promise<ReceiptSuccessResponse<ReceiptDraftPayload | ReceiptPostPayload>>;
     postReceipt(dto: PostReceiptDto): Promise<ReceiptSuccessResponse<ReceiptPostPayload>>;
+    private postedMessage;
     updateHeader(dto: UpdateReceiptHeaderDto, body: Record<string, unknown>): Promise<ReceiptSuccessResponse<ReceiptHeader>>;
     cancel(dto: CancelReceiptDto): Promise<ReceiptSuccessResponse<ReceiptCancelPayload>>;
     delete(dto: DeleteReceiptDto): Promise<ReceiptSuccessResponse<ReceiptDeletePayload>>;

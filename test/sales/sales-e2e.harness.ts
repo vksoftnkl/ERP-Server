@@ -38,7 +38,14 @@ export const COMPANY = '019c8ea6-19e9-78a8-b15f-749e1cde7292'; // Acme Foods Pvt
 export const BRANCH = '019c8ea7-b0f5-72d5-96a5-1abfc80cc8ab'; // Acme Foods - Coimbatore Branch
 export const ACC_YEAR = '2026-2027';
 export const GODOWN = '019daae6-c65c-7eb8-9ba2-7659611b0a01'; // Coimbatore — this branch's own
-export const DEVICE_ID = '019e7286-d0d9-7916-8d9f-9de260d523ed'; // fixed.device_master 'raman', this branch
+/**
+ * The harness's OWN device, resolved by `bootApp` — see `ensureHarnessDevice`.
+ * It used to be the real 'raman' device of this branch, which somebody deleted
+ * through the device screen on 2026-10-12 and every sales suite died at its
+ * opening stock. Read it after `bootApp`, never at module load.
+ */
+export let DEVICE_ID = '00000000-0000-0000-0000-000000000000';
+const HARNESS_DEVICE_UID = 'E2E-SALES-HARNESS';
 export const ACTOR = '019e4f64-1d3f-7717-b252-cbe2b6ce0f8d'; // tester1 (SUPER ADMIN)
 
 /** `sales.default_customer_id` — the walk-in. Cannot carry a credit balance. */
@@ -121,7 +128,30 @@ export interface Harness {
   prisma: PrismaClient;
 }
 
+/**
+ * One device row this harness owns, keyed by `dev_device_uid`: created on the
+ * first run, un-deleted and un-blocked on every later one. Never bind it to a
+ * till counter (TILL_DESIGN.md: the sales suites post outside a session).
+ */
+async function ensureHarnessDevice(prisma: PrismaClient): Promise<string> {
+  const rows = await prisma.$queryRaw<{ dev_id: string }[]>`
+    INSERT INTO fixed.device_master (
+      dev_company_id, dev_branch_id, dev_user_id, dev_device_uid, dev_device_name,
+      dev_device_type, dev_platform, dev_created_by
+    ) VALUES (
+      ${COMPANY}::uuid, ${BRANCH}::uuid, ${ACTOR}::uuid, ${HARNESS_DEVICE_UID},
+      'E2E sales harness', 'PC', 'Linux', ${ACTOR}::uuid
+    )
+    ON CONFLICT (dev_device_uid) DO UPDATE
+      SET dev_is_deleted = false, dev_is_active = true, dev_is_blocked = false,
+          dev_company_id = EXCLUDED.dev_company_id, dev_branch_id = EXCLUDED.dev_branch_id
+    RETURNING dev_id`;
+  return rows[0].dev_id;
+}
+
 export async function bootApp(sessionId: string): Promise<Harness> {
+  const prisma = new PrismaClient();
+  DEVICE_ID = await ensureHarnessDevice(prisma);
   const claims: AccessTokenPayload = {
     sub: ACTOR,
     user_name: 'tester1',
@@ -157,7 +187,7 @@ export async function bootApp(sessionId: string): Promise<Harness> {
   });
   app.setGlobalPrefix((process.env.API_PREFIX ?? 'api').replace(/^\/+|\/+$/g, ''));
   await app.init();
-  return { app, http: request(app.getHttpServer()), prisma: new PrismaClient() };
+  return { app, http: request(app.getHttpServer()), prisma };
 }
 
 export async function shutdown(h: Harness | undefined): Promise<void> {

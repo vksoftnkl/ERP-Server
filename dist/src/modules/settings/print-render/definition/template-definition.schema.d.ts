@@ -154,8 +154,8 @@ export declare const fieldElementSchema: z.ZodObject<{
         }>;
         scope: z.ZodEnum<{
             GROUP: "GROUP";
-            PAGE: "PAGE";
             REPORT: "REPORT";
+            PAGE: "PAGE";
         }>;
         dataset: z.ZodOptional<z.ZodString>;
         over: z.ZodOptional<z.ZodString>;
@@ -523,8 +523,8 @@ export declare const elementSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         }>;
         scope: z.ZodEnum<{
             GROUP: "GROUP";
-            PAGE: "PAGE";
             REPORT: "REPORT";
+            PAGE: "PAGE";
         }>;
         dataset: z.ZodOptional<z.ZodString>;
         over: z.ZodOptional<z.ZodString>;
@@ -897,8 +897,8 @@ export declare const bandSchema: z.ZodObject<{
             }>;
             scope: z.ZodEnum<{
                 GROUP: "GROUP";
-                PAGE: "PAGE";
                 REPORT: "REPORT";
+                PAGE: "PAGE";
             }>;
             dataset: z.ZodOptional<z.ZodString>;
             over: z.ZodOptional<z.ZodString>;
@@ -1305,8 +1305,8 @@ export declare const templateDefinitionSchema: z.ZodObject<{
                 }>;
                 scope: z.ZodEnum<{
                     GROUP: "GROUP";
-                    PAGE: "PAGE";
                     REPORT: "REPORT";
+                    PAGE: "PAGE";
                 }>;
                 dataset: z.ZodOptional<z.ZodString>;
                 over: z.ZodOptional<z.ZodString>;

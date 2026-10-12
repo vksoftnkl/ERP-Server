@@ -146,6 +146,7 @@ class SavePhysicalStockVoucherHeaderDto {
     totalValueWot;
     rateSource;
     status;
+    post;
     remarks;
     userId;
     createdBy;
@@ -347,6 +348,14 @@ __decorate([
     }),
     __metadata("design:type", String)
 ], SavePhysicalStockVoucherHeaderDto.prototype, "status", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        default: false,
+        description: "Same as status: 'POSTED' — save and post in one transaction. A refusal leaves nothing behind.",
+    }),
+    (0, dtoDecorators_1.OptionalBoolean)(),
+    __metadata("design:type", Boolean)
+], SavePhysicalStockVoucherHeaderDto.prototype, "post", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ maxLength: 250, nullable: true }),
     (0, dtoDecorators_1.NullableStringStrict)(250),

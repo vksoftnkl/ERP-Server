@@ -5,6 +5,7 @@ import { BillBalanceRecomputeService } from '../billBalance/bill-balance-recompu
 import { PaymentService } from './payment.service';
 import { PaymentOpenItemsService } from './payment-open-items.service';
 import { PostPaymentDto } from './dto/post-payment.dto';
+import type { SaveDraftPaymentDto } from './dto/save-payment.dto';
 import type { PaymentPostPayload } from './types/payment-api.types';
 import { TillSessionService } from '../../till/services/till-session.service';
 import { TillApprovalService } from '../../till/services/till-approval.service';
@@ -18,6 +19,7 @@ export declare class PaymentPostingService {
     private readonly approvals;
     constructor(prisma: PrismaService, requestContext: RequestContextService, paymentService: PaymentService, openItemsService: PaymentOpenItemsService, recompute: BillBalanceRecomputeService, till: TillSessionService, approvals: TillApprovalService);
     post(dto: PostPaymentDto): Promise<PaymentPostPayload>;
+    saveAndPost(dto: SaveDraftPaymentDto): Promise<PaymentPostPayload>;
     postInTransaction(tx: Prisma.TransactionClient, dto: PostPaymentDto, actor: string): Promise<PaymentPostPayload>;
     private lockHeader;
     private assertStatusMayPost;

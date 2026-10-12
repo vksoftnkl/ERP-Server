@@ -71,7 +71,7 @@ and `tenders[]` the tender-detail module's
 
 | Method | Path | Description |
 | --- | --- | --- |
-| `POST` | `/create` | Create **or** update a sale order, chosen by `soId` presence in the body. |
+| `POST` | `/create` | Create **or** update a sale order, chosen by `soId` presence in the body. With `post: true` (or `soStatus: 'CONFIRMED'`) the save and `/post` run in ONE transaction — notes 94 B / 106, below. |
 | `GET` | `/get` | Fetch one active order by `soId` (query param), including its active line items, applied charges and tender lines. |
 | `GET` | `/pending-amount` | `acc_bill_balance.abl_pending_amount` — and nothing else — for the bill rows raised against one source document, addressed by the `(ablSrcDocType, ablSrcDocId, ablSrcAccYear)` tuple. For an order that is the advance it still holds. |
 | `PUT` | `/cancel-lines` | Cancel the remaining open quantity of one order line (`srcDocId` = `soi_id`) or of the whole order (`srcDocId` = `so_id`), addressed by the `(srcModule, srcDocId, srcAccYear)` tuple a downstream document holds it as. |
@@ -94,6 +94,13 @@ below).
 - On **create**, `soCustName` is normalized via `normalizeRequiredText`, `soOrderSlno` /
   `soOrderRefno` are allocated from the voucher sequence, `soOrderDate` defaults to *now* when
   omitted, and `soStatus` defaults to `'DRAFT'`.
+- **Save and confirm in one call (notes 94 B / 106).** `post: true` — or `soStatus: 'CONFIRMED'`,
+  which is now the INSTRUCTION rather than a column value — runs the draft save and the whole of
+  `/sale-orders/post` (the reservations, CONFIRMED, the trail) in ONE transaction
+  (`SaleOrderLifecycleService.saveAndPost`, sharing `postInTx` with `/post`). A refusal rolls all of
+  it back: no header, no lines, no number consumed. The response is the order plus `warnings[]`
+  (`SALES_RESERVE_SHORT` lines). Judged on the Post right (94 A). A plain save still honours the
+  other `soStatus` values as before (a save with `CANCELLED` still cancels the advance receipt).
 - Optional header fields are copied through only when present on the payload
   (`applyPresentFields` over the `SALE_ORDER_OPTIONAL_FIELDS` list); absent fields are left as-is on
   update. The partition/scope keys (`soCompanyId`, `soBranchId`, `soTenantId`, `soAccYear`,

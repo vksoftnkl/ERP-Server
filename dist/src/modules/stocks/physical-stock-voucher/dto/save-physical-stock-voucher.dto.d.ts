@@ -37,6 +37,7 @@ export declare class SavePhysicalStockVoucherHeaderDto {
     totalValueWot?: number;
     rateSource?: StockRateSource | null;
     status?: SaveableStockVoucherStatus;
+    post?: boolean;
     remarks?: string | null;
     userId?: string;
     createdBy?: string | null;

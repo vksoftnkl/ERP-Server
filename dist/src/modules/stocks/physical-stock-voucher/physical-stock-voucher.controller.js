@@ -60,11 +60,12 @@ let PhysicalStockVoucherController = class PhysicalStockVoucherController {
     }
     async save(dto) {
         const data = await this.stockVoucherService.save(PHYSICAL_RULES, dto);
+        const saved = dto.header.svhId ? 'updated' : 'created';
         return {
             success: true,
-            message: dto.header.svhId
-                ? 'Physical stock count updated successfully'
-                : 'Physical stock count created successfully',
+            message: data.rowsPosted === null
+                ? `Physical stock count ${saved} successfully`
+                : `Physical stock count ${saved} and posted — ${data.rowsPosted} line(s) varied`,
             data,
         };
     }
@@ -145,7 +146,7 @@ __decorate([
     (0, common_1.Version)(api_version_1.API_VERSION),
     (0, swagger_1.ApiOperation)({
         summary: 'Create or update a physical count draft (by header.svhId presence)',
-        description: 'Update is a full replace of the lines. The saved status is always DRAFT — posting is a separate call, not a status field.\n\n' +
+        description: "Update is a full replace of the lines. Saves a DRAFT unless header.status is 'POSTED' (or header.post is true), which saves and posts in one transaction — preflight, lots, ledger, balance and the status trail — so a line the preflight refuses fails the save too and leaves no document behind (notes 94 B / 106). rowsPosted on the response is null for a draft.\n\n" +
             'THE SERVER READS RATHER THAN TRUSTS: svi_book_qty comes from stock_balance for the lot the line names, and the unit, batch, expiry, MRP, sale price, serial and supplier are copied from the same holding. A lotId with no live balance row in this godown is a 422 telling you to regenerate the sheet.\n\n' +
             'THE HEADER TOTALS ARE THE EXCEPTION — header.lineCount, totalQty, totalValue and totalValueWot are taken verbatim from the payload, because nothing server-side sums the grid. They are written AFTER the lines, each is optional against a NOT NULL DEFAULT 0 column, and on a count they may be NEGATIVE: the intended reading is the net variance, and a shortage is negative. Omit one and its stored value is left alone.',
     }),

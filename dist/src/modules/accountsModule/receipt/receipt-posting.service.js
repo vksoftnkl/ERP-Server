@@ -56,6 +56,39 @@ let ReceiptPostingService = class ReceiptPostingService {
             throw rethrowAllocationError(error);
         }
     }
+    async saveAndPost(dto) {
+        if (dto.onAccount === undefined || dto.onAccount === null) {
+            (0, module_service_utils_1.throwAccountsBadRequest)('Validation failed', [
+                {
+                    field: 'onAccount',
+                    message: 'onAccount is required when post is true — it is the figure that proves the client and the server read the same receipt',
+                },
+            ]);
+        }
+        const userId = this.requestContext.getUserId();
+        const draftActor = (0, module_service_utils_1.resolveActor)(dto.avhUserId, userId) ?? module_service_utils_1.DEFAULT_ACTOR;
+        const postActor = userId ?? module_service_utils_1.DEFAULT_ACTOR;
+        const { post: _post, onAccount, otherLineBills, ...draft } = dto;
+        void _post;
+        try {
+            return await this.prisma.$transaction(async (tx) => {
+                const saved = await this.receiptService.saveInTransaction(tx, draft, draftActor);
+                return this.postInTransaction(tx, {
+                    avhVoucherId: saved.header.avhVoucherId,
+                    avhCompanyId: dto.avhCompanyId,
+                    avhBranchId: dto.avhBranchId,
+                    avhAccYear: dto.avhAccYear,
+                    allocations: dto.allocations ?? [],
+                    creditsApplied: dto.creditsApplied ?? [],
+                    otherLineBills: otherLineBills ?? [],
+                    onAccount,
+                }, postActor);
+            }, POST_TRANSACTION_OPTIONS);
+        }
+        catch (error) {
+            throw rethrowAllocationError(error);
+        }
+    }
     async postInTransaction(tx, dto, actor) {
         await this.lockHeader(tx, dto.avhVoucherId, dto.avhAccYear);
         const header = await this.receiptService.loadHeaderOrThrow(tx, dto.avhVoucherId, dto.avhAccYear);

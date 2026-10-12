@@ -47,20 +47,8 @@ __decorate([
 ], BillKeysDto.prototype, "sbAccYear", void 0);
 const OverridesList = () => [(0, class_validator_1.IsOptional)(), (0, class_validator_1.IsArray)(), (0, class_validator_1.ArrayMaxSize)(50), (0, class_validator_1.IsString)({ each: true })];
 class ValidateBillDto extends save_bill_dto_1.SaveBillDto {
-    overrides;
 }
 exports.ValidateBillDto = ValidateBillDto;
-__decorate([
-    (0, swagger_1.ApiPropertyOptional)({
-        type: [String],
-        description: 'WARN codes the operator overrides (needs um_can_override)',
-    }),
-    (0, class_validator_1.IsOptional)(),
-    (0, class_validator_1.IsArray)(),
-    (0, class_validator_1.ArrayMaxSize)(50),
-    (0, class_validator_1.IsString)({ each: true }),
-    __metadata("design:type", Array)
-], ValidateBillDto.prototype, "overrides", void 0);
 class PostBillDto extends BillKeysDto {
     overrides;
     printAfter;

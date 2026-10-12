@@ -5,6 +5,7 @@ import { BillBalanceRecomputeService } from '../billBalance/bill-balance-recompu
 import { OpenItemsService } from './open-items.service';
 import { ReceiptService } from './receipt.service';
 import { PostReceiptDto } from './dto/post-receipt.dto';
+import type { SaveDraftReceiptDto } from './dto/save-receipt.dto';
 import type { ReceiptPostPayload } from './types/receipt-api.types';
 import { TillSessionService } from '../../till/services/till-session.service';
 export declare class ReceiptPostingService {
@@ -16,6 +17,7 @@ export declare class ReceiptPostingService {
     private readonly till;
     constructor(prisma: PrismaService, requestContext: RequestContextService, receiptService: ReceiptService, openItemsService: OpenItemsService, recompute: BillBalanceRecomputeService, till: TillSessionService);
     post(dto: PostReceiptDto): Promise<ReceiptPostPayload>;
+    saveAndPost(dto: SaveDraftReceiptDto): Promise<ReceiptPostPayload>;
     postInTransaction(tx: Prisma.TransactionClient, dto: PostReceiptDto, actor: string): Promise<ReceiptPostPayload>;
     private lockHeader;
     private assertStatusMayPost;

@@ -558,6 +558,18 @@ let TillSessionService = class TillSessionService {
             const isFinal = outcome !== till_enum_1.TillCountOutcome.RECOUNT_REQUIRED;
             const slipCheckRequired = isFinal && slipsOut.length > 0;
             const countedRows = rows.filter((r) => r.counted !== null);
+            if (isFinal) {
+                await tx.tillCount.updateMany({
+                    where: {
+                        tctSessionId: session.tssId,
+                        tctAccYear: session.tssAccYear,
+                        tctKind: { in: [till_enum_1.TillCountKind.CLOSE, till_enum_1.TillCountKind.RECOUNT] },
+                        tctIsFinal: true,
+                        tctIsDeleted: false,
+                    },
+                    data: { tctIsFinal: false },
+                });
+            }
             const count = await this.writeCount(tx, session, {
                 kind: attemptNo === 1 ? till_enum_1.TillCountKind.CLOSE : till_enum_1.TillCountKind.RECOUNT,
                 attemptNo,

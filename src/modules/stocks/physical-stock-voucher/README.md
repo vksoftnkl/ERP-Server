@@ -15,7 +15,7 @@ was dropped by `20260509061137_remove_four_tables`. Nothing here imports from th
 | Route | What it is |
 |---|---|
 | `GET /stock/physical/count-sheet` | **generate** the sheet from `stock_balance` — a read, not a document |
-| `POST /stock/physical` | save a draft. Update is a **full replace of the lines**. |
+| `POST /stock/physical` | save a draft. Update is a **full replace of the lines**. `header.status: 'POSTED'` or `header.post: true` saves **and posts in one transaction** (notes 94 B / 106); a line the preflight refuses fails the save too and leaves no document. `rowsPosted` is null on a draft. |
 | `GET /stock/physical` | `svhId` present loads one count; absent lists them |
 | `GET /stock/physical/validate` | the preflight — every line, `problem` null on the clean ones |
 | `POST /stock/physical/post` | the whole engine, one statement |

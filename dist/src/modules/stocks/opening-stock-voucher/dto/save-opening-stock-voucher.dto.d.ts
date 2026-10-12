@@ -22,6 +22,7 @@ export declare class SaveOpeningStockVoucherHeaderDto {
     userId?: string;
     voucherType?: 'OPENING';
     status?: SaveableStockVoucherStatus;
+    post?: boolean;
     createdBy?: string | null;
     modifiedBy?: string | null;
 }

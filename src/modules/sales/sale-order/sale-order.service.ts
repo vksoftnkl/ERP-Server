@@ -619,11 +619,33 @@ export class SaleOrderService {
     private readonly tenderDetailService: TenderDetailService,
   ) {}
   async save(saveOrderDto: SaveSaleOrderDto): Promise<SaleOrderPayload> {
-    this.ensureOrderValuesAreAllowed(saveOrderDto);
+    this.prepareSave(saveOrderDto);
     if (saveOrderDto.soId) {
       return this.updateOrder(saveOrderDto);
     }
     return this.createOrder(saveOrderDto);
+  }
+  /**
+   * What every save runs before it writes — the value guards. Public because
+   * the one-call save-and-confirm (notes 94 B / 106,
+   * `SaleOrderLifecycleService.saveAndPost`) runs the same draft write inside
+   * its own transaction.
+   */
+  prepareSave(saveOrderDto: SaveSaleOrderDto): void {
+    this.ensureOrderValuesAreAllowed(saveOrderDto);
+  }
+  /**
+   * Re-throws a unique-index clash as the 409 `/sale-orders/create` answers;
+   * any other error passes through untouched. For a caller that owns the
+   * transaction `createOrderInTx` / `updateOrderInTx` run in.
+   */
+  throwIfDuplicate(error: unknown): void {
+    const duplicate = this.describeDuplicate(error);
+    throwOnUniqueConstraintError<SaleOrderErrorDetail, SaleOrderErrorResponse>(
+      error,
+      duplicate.message,
+      duplicate.errors,
+    );
   }
   async getById(
     soId: string,
@@ -2037,6 +2059,23 @@ export class SaleOrderService {
     });
   }
   private async createOrder(saveOrderDto: SaveSaleOrderDto): Promise<SaleOrderPayload> {
+    try {
+      return await this.prisma.$transaction((tx) => this.createOrderInTx(tx, saveOrderDto));
+    } catch (error: unknown) {
+      this.throwIfDuplicate(error);
+      throw error;
+    }
+  }
+  /**
+   * The create, inside a transaction the CALLER owns. `/sale-orders/create`
+   * wraps it in its own; the one-call save-and-confirm (notes 94 B / 106) runs
+   * it in the same transaction as the post, so a refusal there rolls the
+   * header, the lines AND the number back. Run `prepareSave` first.
+   */
+  async createOrderInTx(
+    tx: Prisma.TransactionClient,
+    saveOrderDto: SaveSaleOrderDto,
+  ): Promise<SaleOrderPayload> {
     const normalizedCustName = normalizeRequiredText<SaleOrderErrorDetail, SaleOrderErrorResponse>(
       saveOrderDto.soCustName ?? '',
       'soCustName',
@@ -2048,253 +2087,245 @@ export class SaleOrderService {
       this.requestContextService.getUserId(),
     );
     const orderDate = saveOrderDto.soOrderDate ? new Date(saveOrderDto.soOrderDate) : now;
+    // Voucher type 4 numbers the document: the running number consumed from
+    // accounts.acc_voucher_seq becomes soOrderSlno and its printable form
+    // becomes soOrderRefno. Both are server-assigned — the voucher type is
+    // AUTO-numbered with manual numbers disallowed, so whatever the client
+    // sent for either field is ignored.
+    const orderNumber = await allocateVoucherNumber(tx, {
+      vchrTypeId: SALE_ORDER_VCHR_TYPE_ID,
+      companyId: saveOrderDto.soCompanyId,
+      branchId: saveOrderDto.soBranchId,
+      accYear: saveOrderDto.soAccYear,
+      documentDate: orderDate,
+    });
+    const data: Prisma.SaleOrderUncheckedCreateInput = {
+      soCompanyId: saveOrderDto.soCompanyId,
+      soBranchId: saveOrderDto.soBranchId,
+      soTenantId: saveOrderDto.soTenantId,
+      soAccYear: saveOrderDto.soAccYear,
+      soDeviceId: saveOrderDto.soDeviceId,
+      soPriceLevel: saveOrderDto.soPriceLevel,
+      soOrderSlno: orderNumber.lastNo,
+      soOrderRefno: orderNumber.refno,
+      soOrderDate: orderDate,
+      soCustId: saveOrderDto.soCustId,
+      soCustName: normalizedCustName,
+      soUserId: saveOrderDto.soUserId,
+      soCreatedOn: now,
+      soCreatedBy: createdBy,
+      soStatus: saveOrderDto.soStatus || 'DRAFT',
+    };
+    this.applyOptionalFields(data, saveOrderDto);
+    data.soCustName = normalizedCustName;
+    data.soOrderDate = orderDate;
+    // The balance roll-up is derived when the payload does not carry it —
+    // see ensureAdvanceRollupsAreConsistent.
+    if (saveOrderDto.soAdvanceBalanceAmt === undefined) {
+      data.soAdvanceBalanceAmt = this.deriveAdvanceBalance(saveOrderDto, undefined);
+    }
+    const created = await tx.saleOrder.create({ data });
+    const scope: SaleOrderScope = {
+      soId: created.soId,
+      soCompanyId: created.soCompanyId,
+      soBranchId: created.soBranchId,
+      soTenantId: created.soTenantId,
+      soAccYear: created.soAccYear,
+      soPriceLevel: created.soPriceLevel,
+      soOrderSlno: created.soOrderSlno,
+      soOrderDate: created.soOrderDate,
+      soCustId: created.soCustId,
+      soUserId: created.soUserId,
+      soSessionId: created.soSessionId,
+      soDeviceId: created.soDeviceId,
+    };
+    const items = await this.syncItems(tx, scope, saveOrderDto.items, createdBy);
+    const charges = await this.chargeDetailService.syncDocumentCharges(
+      tx,
+      this.toChargeScope(scope),
+      saveOrderDto.charges,
+      createdBy,
+      SALE_ORDER_CHARGE_AUDIT,
+    );
+    const tenders = await this.tenderDetailService.syncDocumentTenders(
+      tx,
+      this.toTenderScope(scope),
+      saveOrderDto.tenders,
+      createdBy,
+      SALE_ORDER_TENDER_AUDIT,
+    );
+    // The tendered money is now stored; posting it is what puts it in the
+    // ledgers. On create there is never a live receipt, so this always
+    // either creates one or does nothing.
+    const posting = await this.syncAdvanceVoucher(
+      tx,
+      created,
+      createdBy,
+      now,
+      matchChequeDetails(saveOrderDto.tenders ?? [], tenders),
+    );
+    const restated = await this.restateAdvanceRollups(tx, created, posting, saveOrderDto);
+    // The first row of the order's trail. Every other document logs its
+    // birth; orders did not, and a day-end "what is still unposted" walk
+    // over txn_status_log could not see a single draft order (§1.10).
+    await this.logStatusStep(
+      tx,
+      restated,
+      { event: TxnStatusEvent.CREATED, fromStatus: null, toStatus: restated.soStatus },
+      createdBy,
+      now,
+    );
+    const payload = this.toPayload({
+      ...restated,
+      items,
+      charges,
+      tenders: await this.withChequeDetails(tx, tenders),
+    });
+    await this.auditLogService.logEntityChange(
+      {
+        action: 'New',
+        tableName: SALE_ORDER_TABLE_NAME,
+        screenName: SALE_ORDER_AUDIT_SCREEN_NAME,
+        screenType: 'transaction',
+        pk: payload.soId,
+        displayName: payload.soOrderRefno || payload.soId,
+        originalRecord: null,
+        modifiedRecord: payload,
+        userId: createdBy,
+        notes: 'Order created',
+      },
+      tx,
+    );
+    return payload;
+  }
+  private async updateOrder(saveOrderDto: SaveSaleOrderDto): Promise<SaleOrderPayload> {
     try {
-      return await this.prisma.$transaction(async (tx) => {
-        // Voucher type 4 numbers the document: the running number consumed from
-        // accounts.acc_voucher_seq becomes soOrderSlno and its printable form
-        // becomes soOrderRefno. Both are server-assigned — the voucher type is
-        // AUTO-numbered with manual numbers disallowed, so whatever the client
-        // sent for either field is ignored.
-        const orderNumber = await allocateVoucherNumber(tx, {
-          vchrTypeId: SALE_ORDER_VCHR_TYPE_ID,
-          companyId: saveOrderDto.soCompanyId,
-          branchId: saveOrderDto.soBranchId,
-          accYear: saveOrderDto.soAccYear,
-          documentDate: orderDate,
-        });
-        const data: Prisma.SaleOrderUncheckedCreateInput = {
-          soCompanyId: saveOrderDto.soCompanyId,
-          soBranchId: saveOrderDto.soBranchId,
-          soTenantId: saveOrderDto.soTenantId,
-          soAccYear: saveOrderDto.soAccYear,
-          soDeviceId: saveOrderDto.soDeviceId,
-          soPriceLevel: saveOrderDto.soPriceLevel,
-          soOrderSlno: orderNumber.lastNo,
-          soOrderRefno: orderNumber.refno,
-          soOrderDate: orderDate,
-          soCustId: saveOrderDto.soCustId,
-          soCustName: normalizedCustName,
-          soUserId: saveOrderDto.soUserId,
-          soCreatedOn: now,
-          soCreatedBy: createdBy,
-          soStatus: saveOrderDto.soStatus || 'DRAFT',
-        };
-        this.applyOptionalFields(data, saveOrderDto);
-        data.soCustName = normalizedCustName;
-        data.soOrderDate = orderDate;
-        // The balance roll-up is derived when the payload does not carry it —
-        // see ensureAdvanceRollupsAreConsistent.
-        if (saveOrderDto.soAdvanceBalanceAmt === undefined) {
-          data.soAdvanceBalanceAmt = this.deriveAdvanceBalance(saveOrderDto, undefined);
-        }
-        const created = await tx.saleOrder.create({ data });
-        const scope: SaleOrderScope = {
-          soId: created.soId,
-          soCompanyId: created.soCompanyId,
-          soBranchId: created.soBranchId,
-          soTenantId: created.soTenantId,
-          soAccYear: created.soAccYear,
-          soPriceLevel: created.soPriceLevel,
-          soOrderSlno: created.soOrderSlno,
-          soOrderDate: created.soOrderDate,
-          soCustId: created.soCustId,
-          soUserId: created.soUserId,
-          soSessionId: created.soSessionId,
-          soDeviceId: created.soDeviceId,
-        };
-        const items = await this.syncItems(tx, scope, saveOrderDto.items, createdBy);
-        const charges = await this.chargeDetailService.syncDocumentCharges(
-          tx,
-          this.toChargeScope(scope),
-          saveOrderDto.charges,
-          createdBy,
-          SALE_ORDER_CHARGE_AUDIT,
-        );
-        const tenders = await this.tenderDetailService.syncDocumentTenders(
-          tx,
-          this.toTenderScope(scope),
-          saveOrderDto.tenders,
-          createdBy,
-          SALE_ORDER_TENDER_AUDIT,
-        );
-        // The tendered money is now stored; posting it is what puts it in the
-        // ledgers. On create there is never a live receipt, so this always
-        // either creates one or does nothing.
-        const posting = await this.syncAdvanceVoucher(
-          tx,
-          created,
-          createdBy,
-          now,
-          matchChequeDetails(saveOrderDto.tenders ?? [], tenders),
-        );
-        const restated = await this.restateAdvanceRollups(tx, created, posting, saveOrderDto);
-        // The first row of the order's trail. Every other document logs its
-        // birth; orders did not, and a day-end "what is still unposted" walk
-        // over txn_status_log could not see a single draft order (§1.10).
-        await this.logStatusStep(
-          tx,
-          restated,
-          { event: TxnStatusEvent.CREATED, fromStatus: null, toStatus: restated.soStatus },
-          createdBy,
-          now,
-        );
-        const payload = this.toPayload({
-          ...restated,
-          items,
-          charges,
-          tenders: await this.withChequeDetails(tx, tenders),
-        });
-        await this.auditLogService.logEntityChange(
-          {
-            action: 'New',
-            tableName: SALE_ORDER_TABLE_NAME,
-            screenName: SALE_ORDER_AUDIT_SCREEN_NAME,
-            screenType: 'transaction',
-            pk: payload.soId,
-            displayName: payload.soOrderRefno || payload.soId,
-            originalRecord: null,
-            modifiedRecord: payload,
-            userId: createdBy,
-            notes: 'Order created',
-          },
-          tx,
-        );
-        return payload;
-      });
+      return await this.prisma.$transaction((tx) => this.updateOrderInTx(tx, saveOrderDto));
     } catch (error: unknown) {
-      const duplicate = this.describeDuplicate(error);
-      throwOnUniqueConstraintError<SaleOrderErrorDetail, SaleOrderErrorResponse>(
-        error,
-        duplicate.message,
-        duplicate.errors,
-      );
+      this.throwIfDuplicate(error);
       throw error;
     }
   }
-  private async updateOrder(saveOrderDto: SaveSaleOrderDto): Promise<SaleOrderPayload> {
+  /**
+   * The edit, inside a transaction the CALLER owns — the same split as
+   * `createOrderInTx`, for the same one-call save-and-confirm. Run
+   * `prepareSave` first.
+   */
+  async updateOrderInTx(
+    tx: Prisma.TransactionClient,
+    saveOrderDto: SaveSaleOrderDto,
+  ): Promise<SaleOrderPayload> {
     const soId = saveOrderDto.soId!;
-    try {
-      return await this.prisma.$transaction(async (tx) => {
-        const existing = await tx.saleOrder.findFirst({
-          where: {
-            soId,
-            soIsDeleted: false,
-          },
-        });
-        if (!existing) {
-          throwSalesNotFound<SaleOrderErrorDetail, SaleOrderErrorResponse>(
-            'Order not found',
-            'soId',
-            `No active order found with id ${soId}`,
-          );
-        }
-        this.ensureAdvanceRollupsAreConsistent(saveOrderDto, existing);
-        const now = new Date();
-        const modifiedBy = resolveActor(
-          saveOrderDto.soModifiedBy,
-          this.requestContextService.getUserId(),
-        );
-        const data: Prisma.SaleOrderUncheckedUpdateInput = {
-          soModifiedOn: now,
-          soModifiedBy: modifiedBy,
-        };
-        this.applyOptionalFields(data, saveOrderDto);
-        // Keep the derived balance in step when the payload moves any of the
-        // four components without restating the balance itself.
-        if (
-          saveOrderDto.soAdvanceBalanceAmt === undefined &&
-          (saveOrderDto.soAdvanceRecdAmt !== undefined ||
-            saveOrderDto.soAdvanceAdjustedAmt !== undefined ||
-            saveOrderDto.soAdvanceRefundAmt !== undefined ||
-            saveOrderDto.soAdvanceForfeitAmt !== undefined)
-        ) {
-          data.soAdvanceBalanceAmt = this.deriveAdvanceBalance(saveOrderDto, existing);
-        }
-        const updated = await tx.saleOrder.update({
-          where: { soId_soAccYear: { soId: existing.soId, soAccYear: existing.soAccYear } },
-          data,
-        });
-        const scope: SaleOrderScope = {
-          soId: updated.soId,
-          soCompanyId: updated.soCompanyId,
-          soBranchId: updated.soBranchId,
-          soTenantId: updated.soTenantId,
-          soAccYear: updated.soAccYear,
-          soPriceLevel: updated.soPriceLevel,
-          soOrderSlno: updated.soOrderSlno,
-          soOrderDate: updated.soOrderDate,
-          soCustId: updated.soCustId,
-          soUserId: updated.soUserId,
-          soSessionId: updated.soSessionId,
-          soDeviceId: updated.soDeviceId,
-        };
-        const items = await this.syncItems(tx, scope, saveOrderDto.items, modifiedBy);
-        const charges = await this.chargeDetailService.syncDocumentCharges(
-          tx,
-          this.toChargeScope(scope),
-          saveOrderDto.charges,
-          modifiedBy,
-          SALE_ORDER_CHARGE_AUDIT,
-        );
-        const tenders = await this.tenderDetailService.syncDocumentTenders(
-          tx,
-          this.toTenderScope(scope),
-          saveOrderDto.tenders,
-          modifiedBy,
-          SALE_ORDER_TENDER_AUDIT,
-        );
-        // Brings the receipt in line with whatever the edit did to the tenders:
-        // creates one for money just taken, re-syncs an existing one, or cancels
-        // it when the last tender is gone or the order was cancelled.
-        // A payload that re-sends the tenders but not soAdvanceRecdAmt lets the
-        // tenders decide what is held. The stored figure is otherwise the one
-        // restateAdvanceRollups wrote off the LAST tenders, and resolveAdvanceHeld
-        // prefers a stated figure — so an edit from 100 to 50 would go on
-        // booking 100.
-        const postingSource =
-          saveOrderDto.tenders !== undefined && saveOrderDto.soAdvanceRecdAmt === undefined
-            ? { ...updated, soAdvanceRecdAmt: ZERO }
-            : updated;
-        const posting = await this.syncAdvanceVoucher(
-          tx,
-          postingSource,
-          modifiedBy,
-          now,
-          matchChequeDetails(saveOrderDto.tenders ?? [], tenders),
-        );
-        const restated = await this.restateAdvanceRollups(tx, updated, posting, saveOrderDto);
-        const payload = this.toPayload({
-          ...restated,
-          items,
-          charges,
-          tenders: await this.withChequeDetails(tx, tenders),
-        });
-        await this.auditLogService.logEntityChange(
-          {
-            action: 'update',
-            tableName: SALE_ORDER_TABLE_NAME,
-            screenName: SALE_ORDER_AUDIT_SCREEN_NAME,
-            screenType: 'transaction',
-            pk: soId,
-            displayName: payload.soOrderRefno || payload.soId,
-            originalRecord: this.toPayload(existing),
-            modifiedRecord: payload,
-            userId: payload.soModifiedBy || payload.soCreatedBy,
-            notes: 'Order updated',
-          },
-          tx,
-        );
-        return payload;
-      });
-    } catch (error: unknown) {
-      const duplicate = this.describeDuplicate(error);
-      throwOnUniqueConstraintError<SaleOrderErrorDetail, SaleOrderErrorResponse>(
-        error,
-        duplicate.message,
-        duplicate.errors,
+    const existing = await tx.saleOrder.findFirst({
+      where: {
+        soId,
+        soIsDeleted: false,
+      },
+    });
+    if (!existing) {
+      throwSalesNotFound<SaleOrderErrorDetail, SaleOrderErrorResponse>(
+        'Order not found',
+        'soId',
+        `No active order found with id ${soId}`,
       );
-      throw error;
     }
+    this.ensureAdvanceRollupsAreConsistent(saveOrderDto, existing);
+    const now = new Date();
+    const modifiedBy = resolveActor(
+      saveOrderDto.soModifiedBy,
+      this.requestContextService.getUserId(),
+    );
+    const data: Prisma.SaleOrderUncheckedUpdateInput = {
+      soModifiedOn: now,
+      soModifiedBy: modifiedBy,
+    };
+    this.applyOptionalFields(data, saveOrderDto);
+    // Keep the derived balance in step when the payload moves any of the
+    // four components without restating the balance itself.
+    if (
+      saveOrderDto.soAdvanceBalanceAmt === undefined &&
+      (saveOrderDto.soAdvanceRecdAmt !== undefined ||
+        saveOrderDto.soAdvanceAdjustedAmt !== undefined ||
+        saveOrderDto.soAdvanceRefundAmt !== undefined ||
+        saveOrderDto.soAdvanceForfeitAmt !== undefined)
+    ) {
+      data.soAdvanceBalanceAmt = this.deriveAdvanceBalance(saveOrderDto, existing);
+    }
+    const updated = await tx.saleOrder.update({
+      where: { soId_soAccYear: { soId: existing.soId, soAccYear: existing.soAccYear } },
+      data,
+    });
+    const scope: SaleOrderScope = {
+      soId: updated.soId,
+      soCompanyId: updated.soCompanyId,
+      soBranchId: updated.soBranchId,
+      soTenantId: updated.soTenantId,
+      soAccYear: updated.soAccYear,
+      soPriceLevel: updated.soPriceLevel,
+      soOrderSlno: updated.soOrderSlno,
+      soOrderDate: updated.soOrderDate,
+      soCustId: updated.soCustId,
+      soUserId: updated.soUserId,
+      soSessionId: updated.soSessionId,
+      soDeviceId: updated.soDeviceId,
+    };
+    const items = await this.syncItems(tx, scope, saveOrderDto.items, modifiedBy);
+    const charges = await this.chargeDetailService.syncDocumentCharges(
+      tx,
+      this.toChargeScope(scope),
+      saveOrderDto.charges,
+      modifiedBy,
+      SALE_ORDER_CHARGE_AUDIT,
+    );
+    const tenders = await this.tenderDetailService.syncDocumentTenders(
+      tx,
+      this.toTenderScope(scope),
+      saveOrderDto.tenders,
+      modifiedBy,
+      SALE_ORDER_TENDER_AUDIT,
+    );
+    // Brings the receipt in line with whatever the edit did to the tenders:
+    // creates one for money just taken, re-syncs an existing one, or cancels
+    // it when the last tender is gone or the order was cancelled.
+    // A payload that re-sends the tenders but not soAdvanceRecdAmt lets the
+    // tenders decide what is held. The stored figure is otherwise the one
+    // restateAdvanceRollups wrote off the LAST tenders, and resolveAdvanceHeld
+    // prefers a stated figure — so an edit from 100 to 50 would go on
+    // booking 100.
+    const postingSource =
+      saveOrderDto.tenders !== undefined && saveOrderDto.soAdvanceRecdAmt === undefined
+        ? { ...updated, soAdvanceRecdAmt: ZERO }
+        : updated;
+    const posting = await this.syncAdvanceVoucher(
+      tx,
+      postingSource,
+      modifiedBy,
+      now,
+      matchChequeDetails(saveOrderDto.tenders ?? [], tenders),
+    );
+    const restated = await this.restateAdvanceRollups(tx, updated, posting, saveOrderDto);
+    const payload = this.toPayload({
+      ...restated,
+      items,
+      charges,
+      tenders: await this.withChequeDetails(tx, tenders),
+    });
+    await this.auditLogService.logEntityChange(
+      {
+        action: 'update',
+        tableName: SALE_ORDER_TABLE_NAME,
+        screenName: SALE_ORDER_AUDIT_SCREEN_NAME,
+        screenType: 'transaction',
+        pk: soId,
+        displayName: payload.soOrderRefno || payload.soId,
+        originalRecord: this.toPayload(existing),
+        modifiedRecord: payload,
+        userId: payload.soModifiedBy || payload.soCreatedBy,
+        notes: 'Order updated',
+      },
+      tx,
+    );
+    return payload;
   }
   // Reconciles the order's line items with the payload array:
   //   - a line carrying soiId updates that existing line

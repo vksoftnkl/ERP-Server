@@ -27,6 +27,9 @@ const bill_retender_service_1 = require("./bill-retender.service");
 const save_bill_dto_1 = require("./dto/save-bill.dto");
 const bill_lifecycle_dto_1 = require("./dto/bill-lifecycle.dto");
 const bill_response_dto_1 = require("./dto/bill-response.dto");
+function wantsPost(dto) {
+    return dto.post === true || (dto.sbStatus ?? '').toUpperCase() === 'POSTED';
+}
 let BillController = class BillController {
     billService;
     lifecycle;
@@ -44,6 +47,9 @@ let BillController = class BillController {
         return { success: true, message, data };
     }
     async save(dto) {
+        if (wantsPost(dto)) {
+            return this.ok(dto.sbId ? 'Bill updated and posted successfully' : 'Bill created and posted successfully', await this.lifecycle.saveAndPost(dto));
+        }
         const data = await this.billService.save(dto);
         return this.ok(dto.sbId ? 'Bill updated successfully' : 'Bill created successfully', data);
     }
@@ -105,8 +111,12 @@ __decorate([
     (0, common_1.Post)('create'),
     (0, common_1.Version)(api_version_1.API_VERSION),
     (0, swagger_1.ApiOperation)({
-        summary: 'Create or update a DRAFT bill (by sbId presence)',
-        description: 'sbStatus in the body is ignored — a saved bill is a DRAFT until /bills/post. A POSTED sbId ' +
+        summary: 'Create or update a DRAFT bill (by sbId presence) — or save and post in one call',
+        description: 'A saved bill is a DRAFT until /bills/post, unless the body carries `post: true` (or ' +
+            "`sbStatus: 'POSTED'`, the same instruction): then the save, every guard and the whole of " +
+            '/bills/post run in ONE transaction, and a refusal rolls all of it back — no header, no lines, ' +
+            'no number consumed — answering exactly what /bills/post answers (codes, line numbers, the ' +
+            'WARN list, overrides[]). Notes 94 B / 106. Any other sbStatus is ignored. A POSTED sbId ' +
             'answers 409 SALES_BILL_POSTED (use /bills/amend). Ship-to / dispatch / transport fields write ' +
             'the OUTWARD transport band. Answers the /get shape.',
     }),

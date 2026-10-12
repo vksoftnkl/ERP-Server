@@ -109,12 +109,19 @@ export function openingNoteSql(scope: BooksScope, ledgers: LedgerFilter): Prisma
        GROUP BY o.op_ledger_id`;
 }
 
-/** user_master row of a text `*_created_by` column that holds a uuid (else no row). */
+/**
+ * user_master row of a text `*_created_by` column that holds a uuid (else no
+ * row). The cast sits inside a CASE: PG does not evaluate AND operands in
+ * order, and a hash join computes `usr_id = col::uuid` on its own — a regex
+ * guard beside it still let `'VKPOS'` reach the cast (22P02).
+ */
 export function createdByJoinSql(column: string, alias: string): Prisma.Sql {
+  const col = Prisma.raw(column);
   return Prisma.sql`
         LEFT JOIN public.user_master ${Prisma.raw(alias)}
-          ON ${Prisma.raw(column)} ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
-         AND ${Prisma.raw(alias)}.usr_id = ${Prisma.raw(column)}::uuid`;
+          ON ${Prisma.raw(alias)}.usr_id =
+             CASE WHEN ${col} ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+                  THEN ${col}::uuid END`;
 }
 
 // ── wire formatting ─────────────────────────────────────────────────────────

@@ -823,6 +823,21 @@ export class TillSessionService {
       const slipCheckRequired = isFinal && slipsOut.length > 0;
 
       const countedRows = rows.filter((r) => r.counted !== null);
+      if (isFinal) {
+        // A RECOUNT decision (notes 105) sent a PENDING_APPROVAL session back to
+        // COUNTING with its last final count still flagged: this one takes the
+        // flag (ux_tct_final keeps one per session; every attempt stays, numbered).
+        await tx.tillCount.updateMany({
+          where: {
+            tctSessionId: session.tssId,
+            tctAccYear: session.tssAccYear,
+            tctKind: { in: [TillCountKind.CLOSE, TillCountKind.RECOUNT] },
+            tctIsFinal: true,
+            tctIsDeleted: false,
+          },
+          data: { tctIsFinal: false },
+        });
+      }
       const count = await this.writeCount(tx, session, {
         kind: attemptNo === 1 ? TillCountKind.CLOSE : TillCountKind.RECOUNT,
         attemptNo,
@@ -847,7 +862,8 @@ export class TillSessionService {
       if (isFinal) {
         // A RECOUNT decision (notes 105) sent a PENDING_APPROVAL session back to
         // COUNTING with its last final count's variances still on file: this
-        // count replaces them (ux_tvr_live holds one live row per tender).
+        // count replaces them (ux_tvr_live holds one live row per tender); the
+        // count itself took the final flag above.
         await tx.tillVariance.updateMany({
           where: {
             tvrSessionId: session.tssId,

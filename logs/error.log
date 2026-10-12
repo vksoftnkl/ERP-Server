@@ -15774,3 +15774,146 @@ Raw query failed. Code: `23505`. Message: `Key (gdr_company_id, gdr_branch_id, g
     at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
     at async ExpenseService.post (/home/vk/Dev/erp/ERP server/src/modules/accountsModule/expense/expense.service.ts:398:5)
     at async ExpenseController.post (/home/vk/Dev/erp/ERP server/src/modules/accountsModule/expense/expense.controller.ts:120:18)
+2026-10-12T07:49:48.852Z ERROR [AllExceptionsFilter] GET /api/v1/reports/day-summary/vouchers?companyId=019c8ea6-19e9-78a8-b15f-749e1cde7292&accYear=2026-2027&fromDate=2026-10-12&toDate=2026-10-12&branchId=019c8ea7-b0f5-72d5-96a5-1abfc80cc8ab&clearingAsBank=true&page=1&pageSize=200&withLegs=false&includeCancelledPairs=true
+PrismaClientKnownRequestError: 
+Invalid `prisma.$queryRaw()` invocation:
+
+
+Raw query failed. Code: `22P02`. Message: `ERROR: invalid input syntax for type uuid: "VKPOS"`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async DaySummaryService.buildVouchers (/home/vk/Dev/erp/ERP server/src/modules/reports/day-summary/day-summary.service.ts:1357:18)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async DaySummaryController.vouchers (/home/vk/Dev/erp/ERP server/src/modules/reports/day-summary/day-summary.controller.ts:107:18)
+2026-10-12T07:49:51.801Z ERROR [AllExceptionsFilter] GET /api/v1/reports/day-summary/vouchers?companyId=019c8ea6-19e9-78a8-b15f-749e1cde7292&accYear=2026-2027&fromDate=2026-10-12&toDate=2026-10-12&branchId=019c8ea7-b0f5-72d5-96a5-1abfc80cc8ab&clearingAsBank=true&page=1&pageSize=200&withLegs=false&includeCancelledPairs=true
+PrismaClientKnownRequestError: 
+Invalid `prisma.$queryRaw()` invocation:
+
+
+Raw query failed. Code: `22P02`. Message: `ERROR: invalid input syntax for type uuid: "VKPOS"`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async DaySummaryService.buildVouchers (/home/vk/Dev/erp/ERP server/src/modules/reports/day-summary/day-summary.service.ts:1357:18)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async DaySummaryController.vouchers (/home/vk/Dev/erp/ERP server/src/modules/reports/day-summary/day-summary.controller.ts:107:18)
+2026-10-12T07:49:52.039Z ERROR [AllExceptionsFilter] GET /api/v1/reports/day-summary/vouchers?companyId=019c8ea6-19e9-78a8-b15f-749e1cde7292&accYear=2026-2027&fromDate=2026-10-12&toDate=2026-10-12&branchId=019c8ea7-b0f5-72d5-96a5-1abfc80cc8ab&clearingAsBank=true&page=1&pageSize=200&withLegs=false&includeCancelledPairs=true
+PrismaClientKnownRequestError: 
+Invalid `prisma.$queryRaw()` invocation:
+
+
+Raw query failed. Code: `22P02`. Message: `ERROR: invalid input syntax for type uuid: "VKPOS"`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async DaySummaryService.buildVouchers (/home/vk/Dev/erp/ERP server/src/modules/reports/day-summary/day-summary.service.ts:1357:18)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async DaySummaryController.vouchers (/home/vk/Dev/erp/ERP server/src/modules/reports/day-summary/day-summary.controller.ts:107:18)
+2026-10-12T07:49:52.289Z ERROR [AllExceptionsFilter] GET /api/v1/reports/day-summary/vouchers?companyId=019c8ea6-19e9-78a8-b15f-749e1cde7292&accYear=2026-2027&fromDate=2026-10-12&toDate=2026-10-12&branchId=019c8ea7-b0f5-72d5-96a5-1abfc80cc8ab&clearingAsBank=true&page=1&pageSize=200&withLegs=false&includeCancelledPairs=true
+PrismaClientKnownRequestError: 
+Invalid `prisma.$queryRaw()` invocation:
+
+
+Raw query failed. Code: `22P02`. Message: `ERROR: invalid input syntax for type uuid: "VKPOS"`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async DaySummaryService.buildVouchers (/home/vk/Dev/erp/ERP server/src/modules/reports/day-summary/day-summary.service.ts:1357:18)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async DaySummaryController.vouchers (/home/vk/Dev/erp/ERP server/src/modules/reports/day-summary/day-summary.controller.ts:107:18)
+2026-10-12T07:49:52.495Z ERROR [AllExceptionsFilter] GET /api/v1/reports/day-summary/vouchers?companyId=019c8ea6-19e9-78a8-b15f-749e1cde7292&accYear=2026-2027&fromDate=2026-10-12&toDate=2026-10-12&branchId=019c8ea7-b0f5-72d5-96a5-1abfc80cc8ab&clearingAsBank=true&page=1&pageSize=200&withLegs=false&includeCancelledPairs=true
+PrismaClientKnownRequestError: 
+Invalid `prisma.$queryRaw()` invocation:
+
+
+Raw query failed. Code: `22P02`. Message: `ERROR: invalid input syntax for type uuid: "VKPOS"`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async DaySummaryService.buildVouchers (/home/vk/Dev/erp/ERP server/src/modules/reports/day-summary/day-summary.service.ts:1357:18)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async DaySummaryController.vouchers (/home/vk/Dev/erp/ERP server/src/modules/reports/day-summary/day-summary.controller.ts:107:18)
+2026-10-12T07:50:07.481Z ERROR [AllExceptionsFilter] GET /api/v1/reports/day-summary/vouchers?companyId=019c8ea6-19e9-78a8-b15f-749e1cde7292&accYear=2026-2027&fromDate=2026-10-12&toDate=2026-10-12&branchId=019c8ea7-b0f5-72d5-96a5-1abfc80cc8ab&clearingAsBank=true&page=1&pageSize=200&withLegs=false&includeCancelledPairs=true
+PrismaClientKnownRequestError: 
+Invalid `prisma.$queryRaw()` invocation:
+
+
+Raw query failed. Code: `22P02`. Message: `ERROR: invalid input syntax for type uuid: "VKPOS"`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async DaySummaryService.buildVouchers (/home/vk/Dev/erp/ERP server/src/modules/reports/day-summary/day-summary.service.ts:1357:18)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async DaySummaryController.vouchers (/home/vk/Dev/erp/ERP server/src/modules/reports/day-summary/day-summary.controller.ts:107:18)
+2026-10-12T07:52:17.682Z ERROR [AllExceptionsFilter] GET /api/v1/reports/day-summary/vouchers?companyId=019c8ea6-19e9-78a8-b15f-749e1cde7292&accYear=2026-2027&fromDate=2026-10-12&toDate=2026-10-12&branchId=019c8ea7-b0f5-72d5-96a5-1abfc80cc8ab&clearingAsBank=true&page=1&pageSize=200&withLegs=false&includeCancelledPairs=true
+PrismaClientKnownRequestError: 
+Invalid `prisma.$queryRaw()` invocation:
+
+
+Raw query failed. Code: `22P02`. Message: `ERROR: invalid input syntax for type uuid: "VKPOS"`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async DaySummaryService.buildVouchers (/home/vk/Dev/erp/ERP server/src/modules/reports/day-summary/day-summary.service.ts:1357:18)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async DaySummaryController.vouchers (/home/vk/Dev/erp/ERP server/src/modules/reports/day-summary/day-summary.controller.ts:107:18)
+2026-10-12T07:52:19.390Z ERROR [AllExceptionsFilter] GET /api/v1/reports/day-summary/vouchers?companyId=019c8ea6-19e9-78a8-b15f-749e1cde7292&accYear=2026-2027&fromDate=2026-10-12&toDate=2026-10-12&branchId=019c8ea7-b0f5-72d5-96a5-1abfc80cc8ab&clearingAsBank=true&page=1&pageSize=200&withLegs=false&includeCancelledPairs=true
+PrismaClientKnownRequestError: 
+Invalid `prisma.$queryRaw()` invocation:
+
+
+Raw query failed. Code: `22P02`. Message: `ERROR: invalid input syntax for type uuid: "VKPOS"`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async DaySummaryService.buildVouchers (/home/vk/Dev/erp/ERP server/src/modules/reports/day-summary/day-summary.service.ts:1357:18)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async DaySummaryController.vouchers (/home/vk/Dev/erp/ERP server/src/modules/reports/day-summary/day-summary.controller.ts:107:18)
+2026-10-12T07:52:22.871Z ERROR [AllExceptionsFilter] GET /api/v1/reports/day-summary/vouchers?companyId=019c8ea6-19e9-78a8-b15f-749e1cde7292&accYear=2026-2027&fromDate=2026-10-12&toDate=2026-10-12&branchId=019c8ea7-b0f5-72d5-96a5-1abfc80cc8ab&clearingAsBank=true&page=1&pageSize=200&withLegs=false&includeCancelledPairs=true
+PrismaClientKnownRequestError: 
+Invalid `prisma.$queryRaw()` invocation:
+
+
+Raw query failed. Code: `22P02`. Message: `ERROR: invalid input syntax for type uuid: "VKPOS"`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async DaySummaryService.buildVouchers (/home/vk/Dev/erp/ERP server/src/modules/reports/day-summary/day-summary.service.ts:1357:18)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async DaySummaryController.vouchers (/home/vk/Dev/erp/ERP server/src/modules/reports/day-summary/day-summary.controller.ts:107:18)
+2026-10-12T08:18:21.502Z ERROR [AllExceptionsFilter] GET /api/v1/reports/ledger-statement/vouchers?companyId=019c8ea6-19e9-78a8-b15f-749e1cde7292&accYear=2026-2027&branchId=019c8ea7-b0f5-72d5-96a5-1abfc80cc8ab&ledgerId=019ef844-efba-755d-ab5d-b4d7281edf19&fromDate=2026-10-12&toDate=2026-10-12&includeCancelled=true&withBillRefs=true&withLegs=false&page=1&pageSize=200
+PrismaClientKnownRequestError: 
+Invalid `prisma.$queryRaw()` invocation:
+
+
+Raw query failed. Code: `22P02`. Message: `ERROR: invalid input syntax for type uuid: "VKPOS"`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async Promise.all (index 1)
+    at async LedgerStatementService.vouchers (/home/vk/Dev/erp/ERP server/src/modules/reports/ledger-statement/ledger-statement.service.ts:193:28)
+    at async LedgerStatementController.vouchers (/home/vk/Dev/erp/ERP server/src/modules/reports/ledger-statement/ledger-statement.controller.ts:110:18)
+2026-10-12T08:18:25.408Z ERROR [AllExceptionsFilter] GET /api/v1/reports/ledger-statement/vouchers?companyId=019c8ea6-19e9-78a8-b15f-749e1cde7292&accYear=2026-2027&branchId=019c8ea7-b0f5-72d5-96a5-1abfc80cc8ab&ledgerId=019ef844-efba-755d-ab5d-b4d7281edf19&fromDate=2026-10-12&toDate=2026-10-12&includeCancelled=true&withBillRefs=true&withLegs=false&page=1&pageSize=200
+PrismaClientKnownRequestError: 
+Invalid `prisma.$queryRaw()` invocation:
+
+
+Raw query failed. Code: `22P02`. Message: `ERROR: invalid input syntax for type uuid: "VKPOS"`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async Promise.all (index 1)
+    at async LedgerStatementService.vouchers (/home/vk/Dev/erp/ERP server/src/modules/reports/ledger-statement/ledger-statement.service.ts:193:28)
+    at async LedgerStatementController.vouchers (/home/vk/Dev/erp/ERP server/src/modules/reports/ledger-statement/ledger-statement.controller.ts:110:18)

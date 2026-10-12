@@ -93,6 +93,7 @@ import type {
   ValidateBillDto,
 } from './dto/bill-lifecycle.dto';
 import type { SaveBillAdjustmentDto } from './dto/save-bill-adjustment.dto';
+import type { SaveBillDto } from './dto/save-bill.dto';
 import { TillSessionService, type LiveSessionRef } from '../../till/services/till-session.service';
 import {
   BILL_STATUS_CANCELLED,
@@ -114,6 +115,8 @@ import {
  * re-post, one transaction, `sb_revision_no + 1`.
  */
 const POST_TX_OPTIONS = { timeout: 60_000, maxWait: 10_000 } as const;
+
+type BillKeys = Pick<PostBillDto, 'sbId' | 'sbCompanyId' | 'sbBranchId' | 'sbAccYear'>;
 
 interface PostResult {
   bill: SaleBill;
@@ -190,63 +193,143 @@ export class BillLifecycleService {
     let posted: PostResult | null = null;
     await this.prisma.$transaction(async (tx) => {
       const bill = await this.bills.lockHeader(tx, dto);
-      if (bill.sbStatus === BILL_STATUS_POSTED) {
-        // Idempotent: a POSTED id answers 200 with the same response.
-        return;
-      }
-      if (bill.sbStatus === BILL_STATUS_CANCELLED) {
-        throwSalesLocked('This bill is CANCELLED', SALES_ERROR_CODES.BILL_CANCELLED, 'sbId');
-      }
-      const ctx = await this.salesContext.resolve(
-        { companyId: bill.sbCompanyId, branchId: bill.sbBranchId, deviceId: bill.sbDeviceId },
-        SALES_MENU_ID.SALE_BILL,
-        tx,
-      );
-      if (!ctx.rights.post) {
-        throwSalesRight('This user may not post on this menu', SALES_ERROR_CODES.RIGHT_POST);
-      }
-      // The till (TILL_DESIGN.md §7.4): on a counter's device the bill posts
-      // in the live session, stamped on the bill and its tender rows BEFORE
-      // the snapshot and the voucher read them. Any other device posts as
-      // before (resolveForMoney answers null).
-      const till = await this.till.resolveForMoney(tx, {
-        companyId: bill.sbCompanyId,
-        branchId: bill.sbBranchId,
-        sessionId: bill.sbSessionId,
-        field: 'sbSessionId',
-        cashIn: true,
-        // An offline till's bill reaches us after its session stopped billing:
-        // judged on when it was MADE (REV 2 §2.6 late arrival, §2.7 cut-off).
-        docTime: bill.sbBillDatetime ?? null,
-        arrivedAt: bill.sbCreatedOn,
-        lateArrivalOk: true,
-      });
-      if (till) {
-        await this.stampTillSession(tx, bill, till, ctx.actorName);
-      }
-      const parts = await this.bills.loadParts(tx, bill);
-      const snap = snapshotFromRows(bill, parts.items, parts.charges, parts.tenders);
-      const guard = createGuardContext({
-        overrides: dto.overrides ?? [],
-        canOverride: ctx.rights.override,
-        throwOnRefusal: false,
-      });
-      await this.runGuards(tx, snap, ctx, guard, { adjustments: dto.adjustments });
-      if (guard.refusals.length > 0) {
-        throwSalesRefusals('Bill cannot be posted', guard.refusals);
-      }
-      posted = await this.postCore(tx, bill, parts.items, snap, ctx, {
-        adjustments: dto.adjustments,
-        now: new Date(),
-        fromStatus: BILL_STATUS_DRAFT,
-      });
+      posted = await this.postDraftInTx(tx, bill, dto, new Date());
     }, POST_TX_OPTIONS);
-
-    if (posted) {
-      const p = posted as PostResult;
-      this.gst.enqueueAfterPost({ gdrId: p.gdrId, einvoice: p.einvoice, ewaybill: p.ewaybill });
-    }
+    this.afterPost(posted);
     return this.bills.getById(dto.sbId, dto.sbCompanyId, dto.sbBranchId, dto.sbAccYear);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  //  §2.1 + §2.3 in one call — notes 94 B / 106
+  // ═══════════════════════════════════════════════════════════════════════
+
+  /**
+   * `/bills/create` with `post: true` (or `sbStatus: 'POSTED'`): the draft
+   * save and the whole of `/post` in ONE transaction.
+   *
+   * Every Save & Post used to be two calls — `/create` (a DRAFT, and the
+   * number is issued here) then `/post` — and when `/post` refused something
+   * `/validate` had not caught, the draft already existed and its number was
+   * gone (on 2026-10-12 alone: bil01125, 26, 27, 32, 34–38, 41, 42 created and
+   * deleted again). Here a refusal rolls the save back with the post: no
+   * header, no lines, no number consumed, nothing in the list — and the
+   * refusal is exactly what `/post` answers (codes, line numbers, the WARN
+   * list and `overrides[]`), because it is the same guard run.
+   *
+   * Judged on the Post right alone (notes 94 A): the save that a posting
+   * request makes is part of the post. `/create` without the flag and `/post`
+   * on a draft somebody saved on purpose are unchanged.
+   */
+  async saveAndPost(dto: SaveBillDto): Promise<BillPayload> {
+    const { post: _post, overrides, ...saveDto } = dto;
+    void _post;
+    this.bills.prepareSave(saveDto);
+    let posted: PostResult | null = null;
+    let keys: BillKeys | null = null;
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        const now = new Date();
+        const saved = saveDto.sbId
+          ? await this.bills.updateBillInTx(tx, saveDto)
+          : await this.bills.createBillInTx(tx, saveDto);
+        keys = {
+          sbId: saved.sbId,
+          sbCompanyId: saved.sbCompanyId,
+          sbBranchId: saved.sbBranchId,
+          sbAccYear: saved.sbAccYear,
+        };
+        // Re-read under the row lock, exactly as /post does, so the post sees
+        // the row the save left rather than the object the create returned.
+        const bill = await this.bills.lockHeader(tx, keys);
+        posted = await this.postDraftInTx(
+          tx,
+          bill,
+          { overrides, adjustments: saveDto.adjustments },
+          now,
+        );
+      }, POST_TX_OPTIONS);
+    } catch (error: unknown) {
+      this.bills.throwIfDuplicate(error);
+      throw error;
+    }
+    this.afterPost(posted);
+    const k = keys as unknown as BillKeys;
+    return this.bills.getById(k.sbId, k.sbCompanyId, k.sbBranchId, k.sbAccYear);
+  }
+
+  /**
+   * The one-way door itself, on a bill the caller has locked: the status
+   * gates, the right, the till, the guards, then `postCore`. Null when the
+   * bill is already POSTED (idempotent). Shared by `/post` and the one-call
+   * save-and-post so there is one definition of what posting a bill means.
+   */
+  private async postDraftInTx(
+    tx: Prisma.TransactionClient,
+    bill: SaleBill,
+    opts: { overrides?: string[]; adjustments?: SaveBillAdjustmentDto[] },
+    now: Date,
+  ): Promise<PostResult | null> {
+    if (bill.sbStatus === BILL_STATUS_POSTED) {
+      // Idempotent: a POSTED id answers 200 with the same response.
+      return null;
+    }
+    if (bill.sbStatus === BILL_STATUS_CANCELLED) {
+      throwSalesLocked('This bill is CANCELLED', SALES_ERROR_CODES.BILL_CANCELLED, 'sbId');
+    }
+    const ctx = await this.salesContext.resolve(
+      { companyId: bill.sbCompanyId, branchId: bill.sbBranchId, deviceId: bill.sbDeviceId },
+      SALES_MENU_ID.SALE_BILL,
+      tx,
+    );
+    if (!ctx.rights.post) {
+      throwSalesRight('This user may not post on this menu', SALES_ERROR_CODES.RIGHT_POST);
+    }
+    // The till (TILL_DESIGN.md §7.4): on a counter's device the bill posts
+    // in the live session, stamped on the bill and its tender rows BEFORE
+    // the snapshot and the voucher read them. Any other device posts as
+    // before (resolveForMoney answers null).
+    const till = await this.till.resolveForMoney(tx, {
+      companyId: bill.sbCompanyId,
+      branchId: bill.sbBranchId,
+      sessionId: bill.sbSessionId,
+      field: 'sbSessionId',
+      cashIn: true,
+      // An offline till's bill reaches us after its session stopped billing:
+      // judged on when it was MADE (REV 2 §2.6 late arrival, §2.7 cut-off).
+      docTime: bill.sbBillDatetime ?? null,
+      arrivedAt: bill.sbCreatedOn,
+      lateArrivalOk: true,
+    });
+    if (till) {
+      await this.stampTillSession(tx, bill, till, ctx.actorName);
+    }
+    const parts = await this.bills.loadParts(tx, bill);
+    const snap = snapshotFromRows(bill, parts.items, parts.charges, parts.tenders);
+    const guard = createGuardContext({
+      overrides: opts.overrides ?? [],
+      canOverride: ctx.rights.override,
+      throwOnRefusal: false,
+    });
+    await this.runGuards(tx, snap, ctx, guard, { adjustments: opts.adjustments });
+    if (guard.refusals.length > 0) {
+      throwSalesRefusals('Bill cannot be posted', guard.refusals);
+    }
+    return this.postCore(tx, bill, parts.items, snap, ctx, {
+      adjustments: opts.adjustments,
+      now,
+      fromStatus: BILL_STATUS_DRAFT,
+    });
+  }
+
+  /** After the commit: the e-invoice / e-way bill queue, never inside the transaction. */
+  private afterPost(posted: PostResult | null): void {
+    if (posted) {
+      this.gst.enqueueAfterPost({
+        gdrId: posted.gdrId,
+        einvoice: posted.einvoice,
+        ewaybill: posted.ewaybill,
+      });
+    }
   }
 
   // ═══════════════════════════════════════════════════════════════════════

@@ -92,6 +92,11 @@ let PaymentController = class PaymentController {
         };
     }
     async create(dto) {
+        if (dto.post === true) {
+            await this.requireRight('post', 'post payments');
+            const data = await this.postingService.saveAndPost(dto);
+            return { success: true, message: this.postedMessage(data), data };
+        }
         await this.requireRight(dto.avhVoucherId ? 'edit' : 'create', 'save payment drafts');
         const data = await this.paymentService.save(dto);
         return { success: true, message: 'Payment draft saved successfully', data };
@@ -99,16 +104,15 @@ let PaymentController = class PaymentController {
     async postPayment(dto) {
         await this.requireRight('post', 'post payments');
         const data = await this.postingService.post(dto);
+        return { success: true, message: this.postedMessage(data), data };
+    }
+    postedMessage(data) {
         const pdcCount = data.numberedVouchers.filter((voucher) => voucher.isPdcVoucher).length;
-        return {
-            success: true,
-            message: `Payment ${data.header.avhVoucherRefno} posted` +
-                (data.cheques.length > 0
-                    ? ` — cheque ${data.cheques.map((c) => c.leaf).join(', ')} issued`
-                    : '') +
-                (pdcCount > 0 ? ` with ${pdcCount} post-dated cheque voucher(s)` : ''),
-            data,
-        };
+        return (`Payment ${data.header.avhVoucherRefno} posted` +
+            (data.cheques.length > 0
+                ? ` — cheque ${data.cheques.map((c) => c.leaf).join(', ')} issued`
+                : '') +
+            (pdcCount > 0 ? ` with ${pdcCount} post-dated cheque voucher(s)` : ''));
     }
     async updateHeader(dto, body) {
         await this.requireRight('edit', 'edit payments');
@@ -244,7 +248,7 @@ __decorate([
     (0, common_1.Post)('create'),
     (0, common_1.Version)(api_version_1.API_VERSION),
     (0, swagger_1.ApiOperation)({
-        summary: 'Save a draft payment',
+        summary: 'Save a draft payment — or, with post: true, save and post it in one call',
         description: 'Upsert on avhVoucherId. Writes the header (DRAFT, no number), the tender rows (td_dr_cr ' +
             'CR, td_voucher_id NULL) and the other-ledger lines into avh_draft_lines. Nothing touches a ' +
             'bill (R10).\n\n' +
@@ -254,7 +258,15 @@ __decorate([
             'disagrees is a 409.\n\n' +
             'allocations[] and creditsApplied[] are REMEMBERED, not applied (notes 30).',
     }),
-    (0, swagger_1.ApiCreatedResponse)({ type: payment_response_dto_1.PaymentDraftSuccessDto }),
+    (0, swagger_1.ApiCreatedResponse)({
+        description: 'The draft (PaymentDraftSuccessDto) — or, with post: true, the posted payment (PaymentPostSuccessDto, the /post shape).',
+        schema: {
+            oneOf: [
+                { $ref: (0, swagger_1.getSchemaPath)(payment_response_dto_1.PaymentDraftSuccessDto) },
+                { $ref: (0, swagger_1.getSchemaPath)(payment_response_dto_1.PaymentPostSuccessDto) },
+            ],
+        },
+    }),
     (0, swagger_1.ApiBadRequestResponse)({ type: payment_response_dto_1.PaymentErrorResponseDto }),
     (0, swagger_1.ApiConflictResponse)({ type: payment_response_dto_1.PaymentErrorResponseDto }),
     (0, swagger_1.ApiNotFoundResponse)({ type: payment_response_dto_1.PaymentErrorResponseDto }),
@@ -357,6 +369,7 @@ exports.PaymentController = PaymentController = __decorate([
     (0, swagger_1.ApiForbiddenResponse)({ type: payment_response_dto_1.PaymentErrorResponseDto }),
     (0, common_1.Controller)('payments'),
     (0, common_1.UseFilters)(payment_exception_filter_1.PaymentExceptionFilter),
+    (0, swagger_1.ApiExtraModels)(payment_response_dto_1.PaymentDraftSuccessDto, payment_response_dto_1.PaymentPostSuccessDto),
     __metadata("design:paramtypes", [prisma_service_1.PrismaService,
         request_context_service_1.RequestContextService,
         payment_service_1.PaymentService,

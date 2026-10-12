@@ -1,7 +1,15 @@
 import { applyDecorators } from '@nestjs/common';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
-import { IsArray, IsNotEmpty, IsOptional, IsUUID, ValidateNested } from 'class-validator';
+import {
+  ArrayMaxSize,
+  IsArray,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  IsUUID,
+  ValidateNested,
+} from 'class-validator';
 import {
   NullableDateString,
   NullableInteger,
@@ -462,7 +470,8 @@ export class SaveBillDto {
   @ApiPropertyOptional({
     maxLength: 20,
     nullable: true,
-    description: "DRAFT / POSTED / CANCELLED — defaults to 'DRAFT'",
+    description:
+      "Server-owned. A saved bill is a DRAFT; 'POSTED' here is the one-call instruction (same as post: true) and saves and posts in one transaction. Anything else is ignored.",
   })
   @NullableStringStrict(20)
   sbStatus?: string | null;
@@ -688,4 +697,33 @@ export class SaveBillDto {
   @ValidateNested({ each: true })
   @Type(() => SaveBillAdjustmentDto)
   adjustments?: SaveBillAdjustmentDto[];
+
+  /**
+   * Notes 94 B / 106 — SAVE AND POST IN ONE CALL. `post: true` (or
+   * `sbStatus: 'POSTED'`, the same instruction) runs the draft save, every
+   * guard `/bills/validate` runs and the whole of `/bills/post` in ONE
+   * transaction. A refusal rolls all of it back: no header, no lines, no
+   * number consumed, nothing in the list — and the refusal is exactly what
+   * `/bills/post` answers (codes, line numbers, the WARN list, `overrides[]`).
+   * Omitted or false saves a DRAFT, as before.
+   */
+  @ApiPropertyOptional({
+    default: false,
+    description:
+      "Save and post in one transaction (same as sbStatus: 'POSTED'). A refusal leaves no draft and burns no number; the error is /bills/post's.",
+  })
+  @OptionalBoolean()
+  post?: boolean;
+
+  /** With `post: true` — the WARN codes the operator overrides (needs um_can_override). */
+  @ApiPropertyOptional({
+    type: [String],
+    description:
+      'Only read with post: true. WARN codes the operator overrides (needs um_can_override).',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(50)
+  @IsString({ each: true })
+  overrides?: string[];
 }

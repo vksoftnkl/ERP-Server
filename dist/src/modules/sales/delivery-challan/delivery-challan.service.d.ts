@@ -32,6 +32,9 @@ export declare class DeliveryChallanService {
     constructor(prisma: PrismaService, salesContext: SalesContextService, statutory: StatutoryService, legs: VoucherPostingService, register: DocRegisterService, stock: SalesStockService, blocks: SalesDocBlocksService, transportBand: TransportBandService, fulfilment: DcFulfilmentService, gst: GstGatewayService, billRead: BillReadService, audit: AuditLogService, charges: ChargeDetailService, tenders: TenderDetailService);
     private keys;
     save(dto: SaveDeliveryChallanDto): Promise<Record<string, unknown>>;
+    saveAndPost(dto: SaveDeliveryChallanDto): Promise<Record<string, unknown>>;
+    private draftRow;
+    private draftHooks;
     get(keys: DocKeys): Promise<Record<string, unknown>>;
     delete(dto: DeliveryChallanKeysDto): Promise<{
         sdcId: string;
@@ -46,6 +49,8 @@ export declare class DeliveryChallanService {
     private payload;
     validate(dto: ValidateDeliveryChallanDto): Promise<Record<string, unknown>>;
     post(dto: PostDeliveryChallanDto): Promise<Record<string, unknown>>;
+    private postDraftInTx;
+    private afterPost;
     private ctxOf;
     private guards;
     private postCore;

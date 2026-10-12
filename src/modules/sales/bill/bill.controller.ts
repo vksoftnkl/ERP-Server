@@ -55,6 +55,11 @@ import type { BillPayload, BillSuccessResponse } from './types/bill-api.types';
  * where each error carries the `code` the client switches on. A 422 from
  * `/validate`-style refusals carries every refusal, not just the first.
  */
+/** Notes 94 B / 106 — `post: true`, or the status the post would leave, asks for save-and-post. */
+function wantsPost(dto: SaveBillDto): boolean {
+  return dto.post === true || (dto.sbStatus ?? '').toUpperCase() === 'POSTED';
+}
+
 @ApiTags('Bills')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
@@ -81,9 +86,13 @@ export class BillController {
   @Post('create')
   @Version(API_VERSION)
   @ApiOperation({
-    summary: 'Create or update a DRAFT bill (by sbId presence)',
+    summary: 'Create or update a DRAFT bill (by sbId presence) — or save and post in one call',
     description:
-      'sbStatus in the body is ignored — a saved bill is a DRAFT until /bills/post. A POSTED sbId ' +
+      'A saved bill is a DRAFT until /bills/post, unless the body carries `post: true` (or ' +
+      "`sbStatus: 'POSTED'`, the same instruction): then the save, every guard and the whole of " +
+      '/bills/post run in ONE transaction, and a refusal rolls all of it back — no header, no lines, ' +
+      'no number consumed — answering exactly what /bills/post answers (codes, line numbers, the ' +
+      'WARN list, overrides[]). Notes 94 B / 106. Any other sbStatus is ignored. A POSTED sbId ' +
       'answers 409 SALES_BILL_POSTED (use /bills/amend). Ship-to / dispatch / transport fields write ' +
       'the OUTWARD transport band. Answers the /get shape.',
   })
@@ -91,6 +100,12 @@ export class BillController {
   @ApiBadRequestResponse({ type: BillErrorResponseDto })
   @ApiNotFoundResponse({ type: BillErrorResponseDto })
   async save(@Body() dto: SaveBillDto): Promise<BillSuccessResponse<BillPayload>> {
+    if (wantsPost(dto)) {
+      return this.ok(
+        dto.sbId ? 'Bill updated and posted successfully' : 'Bill created and posted successfully',
+        await this.lifecycle.saveAndPost(dto),
+      );
+    }
     const data = await this.billService.save(dto);
     return this.ok(dto.sbId ? 'Bill updated successfully' : 'Bill created successfully', data);
   }

@@ -4,6 +4,7 @@ import { SalesContextService } from '../posting/sales-context.service';
 import { StockReservationService, type ReservationShort } from '../posting/stock-reservation.service';
 import { SaleOrderService } from './sale-order.service';
 import type { AmendSaleOrderDto, CancelSaleOrderDto, PostSaleOrderDto, SaleOrderKeysDto } from './dto/sale-order-lifecycle.dto';
+import type { SaveSaleOrderDto } from './dto/save-sale-order.dto';
 import { type SaleOrderPayload } from './types/sale-order-api.types';
 export declare class SaleOrderLifecycleService {
     private readonly prisma;
@@ -16,6 +17,10 @@ export declare class SaleOrderLifecycleService {
         soStatus: string;
         warnings: ReservationShort[];
     }>;
+    saveAndPost(dto: SaveSaleOrderDto): Promise<SaleOrderPayload & {
+        warnings: ReservationShort[];
+    }>;
+    private postInTx;
     cancel(dto: CancelSaleOrderDto): Promise<{
         soStatus: string;
         cancelledLines: number;

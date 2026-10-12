@@ -569,8 +569,9 @@ export class SaveSaleOrderDto {
     nullable: true,
     description:
       'DRAFT / CONFIRMED / PARTIAL / COMPLETED / CANCELLED / CLOSED / EXPIRED — ' +
-      "defaults to 'DRAFT'. The status TRAIL lives in public.txn_status_log; this " +
-      'column is the current state only.',
+      "defaults to 'DRAFT'. 'CONFIRMED' is the one-call instruction (same as post: true): " +
+      'the order is saved and confirmed in one transaction through /sale-orders/post. The ' +
+      'status TRAIL lives in public.txn_status_log; this column is the current state only.',
   })
   @NullableStringStrict(20)
   soStatus?: string | null;
@@ -636,4 +637,19 @@ export class SaveSaleOrderDto {
   @ValidateNested({ each: true })
   @Type(() => SaveTenderDetailDto)
   tenders?: SaveTenderDetailDto[];
+
+  /**
+   * Notes 94 B / 106 — SAVE AND CONFIRM IN ONE CALL. `post: true` (or
+   * `soStatus: 'CONFIRMED'`, the same instruction) runs the draft save and the
+   * whole of `/sale-orders/post` — the reservations, CONFIRMED, the trail — in
+   * ONE transaction. A refusal rolls all of it back: no header, no lines, no
+   * number consumed. Omitted or false saves a DRAFT, as before.
+   */
+  @ApiPropertyOptional({
+    default: false,
+    description:
+      "Save and confirm in one transaction (same as soStatus: 'CONFIRMED'). A refusal leaves no draft and burns no number; the error is /sale-orders/post's. The response carries the order plus warnings[].",
+  })
+  @OptionalBoolean()
+  post?: boolean;
 }

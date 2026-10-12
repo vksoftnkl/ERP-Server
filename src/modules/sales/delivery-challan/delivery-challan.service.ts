@@ -110,6 +110,9 @@ export const DC_SPEC: DocSpec = {
 
 const TX = { timeout: 60_000, maxWait: 10_000 } as const;
 
+/** What a post leaves for the GST queue once the transaction has committed. */
+type DcPostFire = { gdrId: string | null; ewaybill: boolean };
+
 @Injectable()
 export class DeliveryChallanService {
   private readonly store: SalesDocStore;
@@ -147,16 +150,58 @@ export class DeliveryChallanService {
   async save(dto: SaveDeliveryChallanDto): Promise<Record<string, unknown>> {
     const actor = this.salesContext.actor();
     const now = new Date();
-    const row = await this.prisma.$transaction(async (tx) => {
-      return this.store.saveDraft(tx, dto as unknown as DocRow, actor, now, {
-        beforeWrite: (data) => {
-          if (data.sdcDcDatetime === undefined && !data.sdcId) {
-            data.sdcDcDatetime = now;
-          }
-        },
-      });
-    }, TX);
+    const row = await this.prisma.$transaction(
+      (tx) => this.store.saveDraft(tx, this.draftRow(dto), actor, now, this.draftHooks(now)),
+      TX,
+    );
     return this.get(this.store.keysOf(row));
+  }
+
+  /**
+   * Notes 94 B / 106 — `/create` with `post: true` (or `sdcStatus: 'POSTED'`):
+   * the draft save, every guard and the whole of `/post` in ONE transaction.
+   * A refusal rolls the save back with the post — no header, no lines, no
+   * number consumed — and is exactly what `/post` answers, because it is the
+   * same guard run. Judged on the Post right alone (94 A).
+   */
+  async saveAndPost(dto: SaveDeliveryChallanDto): Promise<Record<string, unknown>> {
+    const actor = this.salesContext.actor();
+    const now = new Date();
+    let fire: DcPostFire | null = null;
+    let keys: DocKeys | null = null;
+    await this.prisma.$transaction(async (tx) => {
+      const saved = await this.store.saveDraft(
+        tx,
+        this.draftRow(dto),
+        actor,
+        now,
+        this.draftHooks(now),
+      );
+      keys = this.store.keysOf(saved);
+      // Re-read under the row lock, exactly as /post does.
+      const row = await this.store.lock(tx, keys);
+      fire = await this.postDraftInTx(tx, row, dto.overrides ?? [], now);
+    }, TX);
+    this.afterPost(fire);
+    return this.get(keys as unknown as DocKeys);
+  }
+
+  /** The save body as the store takes it: the one-call fields are instructions, not columns. */
+  private draftRow(dto: SaveDeliveryChallanDto): DocRow {
+    const { post: _post, overrides: _overrides, ...row } = dto;
+    void _post;
+    void _overrides;
+    return row;
+  }
+
+  private draftHooks(now: Date) {
+    return {
+      beforeWrite: (data: DocRow) => {
+        if (data.sdcDcDatetime === undefined && !data.sdcId) {
+          data.sdcDcDatetime = now;
+        }
+      },
+    };
   }
 
   async get(keys: DocKeys): Promise<Record<string, unknown>> {
@@ -258,36 +303,54 @@ export class DeliveryChallanService {
   }
 
   async post(dto: PostDeliveryChallanDto): Promise<Record<string, unknown>> {
-    let fire: { gdrId: string | null; ewaybill: boolean } | null = null;
+    let fire: DcPostFire | null = null;
     await this.prisma.$transaction(async (tx) => {
       const row = await this.store.lock(tx, this.keys(dto));
-      if (row.sdcStatus === 'POSTED') {
-        return;
-      }
-      if (row.sdcStatus === 'CANCELLED') {
-        throwSalesLocked('This challan is CANCELLED', SALES_ERROR_CODES.DOC_CANCELLED, 'sdcId');
-      }
-      const ctx = await this.ctxOf(tx, row);
-      if (!ctx.rights.post) {
-        throwSalesRight('This user may not post on this menu', SALES_ERROR_CODES.RIGHT_POST);
-      }
-      const items = await this.store.loadItems(tx, row);
-      const g = createGuardContext({
-        overrides: dto.overrides ?? [],
-        canOverride: ctx.rights.override,
-        throwOnRefusal: false,
-      });
-      await this.guards(tx, row, items, ctx, g);
-      if (g.refusals.length > 0) {
-        throwSalesRefusals('Challan cannot be posted', g.refusals);
-      }
-      fire = await this.postCore(tx, row, items, ctx, new Date(), 'DRAFT');
+      fire = await this.postDraftInTx(tx, row, dto.overrides ?? [], new Date());
     }, TX);
-    if (fire) {
-      const f = fire as { gdrId: string | null; ewaybill: boolean };
-      this.gst.enqueueAfterPost({ gdrId: f.gdrId, einvoice: false, ewaybill: f.ewaybill });
-    }
+    this.afterPost(fire);
     return this.get(this.keys(dto));
+  }
+
+  /**
+   * The one-way door itself, on a row the caller has locked: the status
+   * gates, the right, the guards, then `postCore`. Null when already POSTED
+   * (idempotent). Shared by `/post` and the one-call save-and-post.
+   */
+  private async postDraftInTx(
+    tx: Prisma.TransactionClient,
+    row: DocRow,
+    overrides: string[],
+    now: Date,
+  ): Promise<DcPostFire | null> {
+    if (row.sdcStatus === 'POSTED') {
+      return null;
+    }
+    if (row.sdcStatus === 'CANCELLED') {
+      throwSalesLocked('This challan is CANCELLED', SALES_ERROR_CODES.DOC_CANCELLED, 'sdcId');
+    }
+    const ctx = await this.ctxOf(tx, row);
+    if (!ctx.rights.post) {
+      throwSalesRight('This user may not post on this menu', SALES_ERROR_CODES.RIGHT_POST);
+    }
+    const items = await this.store.loadItems(tx, row);
+    const g = createGuardContext({
+      overrides,
+      canOverride: ctx.rights.override,
+      throwOnRefusal: false,
+    });
+    await this.guards(tx, row, items, ctx, g);
+    if (g.refusals.length > 0) {
+      throwSalesRefusals('Challan cannot be posted', g.refusals);
+    }
+    return this.postCore(tx, row, items, ctx, now, 'DRAFT');
+  }
+
+  /** After the commit: the e-way bill queue, never inside the transaction. */
+  private afterPost(fire: DcPostFire | null): void {
+    if (fire) {
+      this.gst.enqueueAfterPost({ gdrId: fire.gdrId, einvoice: false, ewaybill: fire.ewaybill });
+    }
   }
 
   private async ctxOf(tx: Prisma.TransactionClient, row: DocRow): Promise<SalesCallContext> {

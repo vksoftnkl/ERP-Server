@@ -37,14 +37,9 @@ export class DeliveryChallanKeysDto {
   sdcAccYear!: string;
 }
 
-export class ValidateDeliveryChallanDto extends SaveDeliveryChallanDto {
-  @ApiPropertyOptional({ type: [String] })
-  @IsOptional()
-  @IsArray()
-  @ArrayMaxSize(50)
-  @IsString({ each: true })
-  overrides?: string[];
-}
+// `overrides` now lives on the save body itself (notes 94 B / 106): the one-call
+// save-and-post reads it there, and a validate inherits it.
+export class ValidateDeliveryChallanDto extends SaveDeliveryChallanDto {}
 
 export class PostDeliveryChallanDto extends DeliveryChallanKeysDto {
   @ApiPropertyOptional({ type: [String] })
