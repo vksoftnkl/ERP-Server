@@ -20,6 +20,7 @@ import {
   postOpeningStock,
   revokeSalesRights,
   runTag,
+  useHarnessDevice,
   type Harness,
   type Item,
   type RightsMemo,
@@ -96,6 +97,7 @@ beforeAll(async () => {
   h = { app, http: request(app.getHttpServer()), prisma };
 
   item = await makeItem(prisma, `E2E-TILL-${tag}`);
+  await useHarnessDevice(prisma); // the opening stock posts on the sales harness's device
   await postOpeningStock(h, item, 20, 20, `E2E-TILL-${tag} opening`);
 
   const safe = await post('till/safes/create', {

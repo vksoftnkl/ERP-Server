@@ -21,6 +21,7 @@ import {
   postOpeningStock,
   revokeSalesRights,
   runTag,
+  useHarnessDevice,
   type Item,
   type RightsMemo,
 } from './sales/sales-e2e.harness';
@@ -186,6 +187,7 @@ beforeAll(async () => {
   salesRights = await grantSalesRights(prisma);
   app = await bootIdentityApp();
   item = await makeItem(prisma, `E2E-CLAIM-${tag}`);
+  await useHarnessDevice(prisma); // the opening stock posts on the sales harness's device
   await postOpeningStock(
     { app, http: request(app.getHttpServer()), prisma },
     item,

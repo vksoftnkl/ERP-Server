@@ -149,9 +149,18 @@ async function ensureHarnessDevice(prisma: PrismaClient): Promise<string> {
   return rows[0].dev_id;
 }
 
+/**
+ * Resolves DEVICE_ID for a suite that boots its own app but posts through these
+ * helpers (till-money-paths: its counter has a device of its own).
+ */
+export async function useHarnessDevice(prisma: PrismaClient): Promise<string> {
+  DEVICE_ID = await ensureHarnessDevice(prisma);
+  return DEVICE_ID;
+}
+
 export async function bootApp(sessionId: string): Promise<Harness> {
   const prisma = new PrismaClient();
-  DEVICE_ID = await ensureHarnessDevice(prisma);
+  await useHarnessDevice(prisma);
   const claims: AccessTokenPayload = {
     sub: ACTOR,
     user_name: 'tester1',
