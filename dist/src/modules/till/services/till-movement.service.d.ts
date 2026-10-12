@@ -1,5 +1,6 @@
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { TillContextService } from '../till-context.service';
+import { TillEventService } from './till-event.service';
 import { TillLedgerService } from './till-ledger.service';
 import { TillPostingService } from './till-posting.service';
 import { TillSessionService } from './till-session.service';
@@ -22,6 +23,7 @@ export interface CreateMovementInput {
     bagNo?: string | null;
     sealNo?: string | null;
     witnessBy?: string | null;
+    witnessPin?: string | null;
     notes?: string | null;
 }
 export declare class TillMovementService {
@@ -30,7 +32,8 @@ export declare class TillMovementService {
     private readonly ledger;
     private readonly posting;
     private readonly sessions;
-    constructor(prisma: PrismaService, context: TillContextService, ledger: TillLedgerService, posting: TillPostingService, sessions: TillSessionService);
+    private readonly events;
+    constructor(prisma: PrismaService, context: TillContextService, ledger: TillLedgerService, posting: TillPostingService, sessions: TillSessionService, events: TillEventService);
     create(input: CreateMovementInput): Promise<TillMovementDetailPayload>;
     change(input: {
         companyId: string;
@@ -40,6 +43,8 @@ export declare class TillMovementService {
         toTssId: string;
         lines: TillCountLineInput[];
         reasonId: string;
+        fromWitnessPin?: string | null;
+        toWitnessPin?: string | null;
         notes?: string | null;
     }): Promise<{
         from: TillMovementDetailPayload;
@@ -65,7 +70,11 @@ export declare class TillMovementService {
         accYear: string;
         tcmId: string;
     }): Promise<string | null>;
+    private proveWitness;
+    private checkWitnessPin;
+    private peekSession;
     private lockSession;
+    private assertMovable;
     private assertOperator;
     private assertCashLines;
     private loadReason;

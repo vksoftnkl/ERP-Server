@@ -354,6 +354,9 @@ var TillErrorCode;
     TillErrorCode["APPROVER_NO_GRANT"] = "TILL_APPROVER_NO_GRANT";
     TillErrorCode["APPROVER_LIMIT"] = "TILL_APPROVER_LIMIT";
     TillErrorCode["APPROVER_PIN"] = "TILL_APPROVER_PIN";
+    TillErrorCode["WITNESS_PIN_REQUIRED"] = "TILL_WITNESS_PIN_REQUIRED";
+    TillErrorCode["WITNESS_PIN"] = "TILL_WITNESS_PIN";
+    TillErrorCode["WITNESS_NO_PIN"] = "TILL_WITNESS_NO_PIN";
 })(TillErrorCode || (exports.TillErrorCode = TillErrorCode = {}));
 exports.TILL_ERROR_STATUS = {
     [TillErrorCode.SESSION_REQUIRED]: 409,
@@ -400,5 +403,8 @@ exports.TILL_ERROR_STATUS = {
     [TillErrorCode.APPROVER_NO_GRANT]: 403,
     [TillErrorCode.APPROVER_LIMIT]: 403,
     [TillErrorCode.APPROVER_PIN]: 403,
+    [TillErrorCode.WITNESS_PIN_REQUIRED]: 403,
+    [TillErrorCode.WITNESS_PIN]: 403,
+    [TillErrorCode.WITNESS_NO_PIN]: 422,
 };
 //# sourceMappingURL=till-enum.js.map

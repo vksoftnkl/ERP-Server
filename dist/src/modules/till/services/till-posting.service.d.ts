@@ -41,6 +41,7 @@ export interface MovementInput {
     sealNo?: string | null;
     countId?: string | null;
     approvalId?: string | null;
+    witnessVerifiedOn?: Date | null;
     notes?: string | null;
     deviceId?: string | null;
 }

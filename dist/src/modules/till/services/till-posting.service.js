@@ -115,6 +115,7 @@ let TillPostingService = class TillPostingService {
                 tcmSealNo: input.sealNo ?? null,
                 tcmDoneBy: input.doneBy ?? caller.userId,
                 tcmWitnessBy: input.witnessBy ?? null,
+                tcmWitnessVerifiedOn: input.witnessVerifiedOn ?? null,
                 tcmApprovalId: input.approvalId ?? null,
                 tcmVoucherId: voucherId,
                 tcmVoucherAccYear: voucherId ? session.tssAccYear : null,
@@ -146,6 +147,7 @@ let TillPostingService = class TillPostingService {
                 voucherId,
                 doneBy: input.doneBy ?? caller.userId,
                 witnessBy: input.witnessBy ?? null,
+                witnessVerifiedOn: input.witnessVerifiedOn?.toISOString() ?? null,
             },
         });
         return { tcmId, docNo, voucherId };

@@ -492,6 +492,7 @@ class CreateTillMovementDto extends TillSessionKeyDto {
     bagNo;
     sealNo;
     witnessBy;
+    witnessPin;
     notes;
 }
 exports.CreateTillMovementDto = CreateTillMovementDto;
@@ -499,7 +500,7 @@ __decorate([
     (0, swagger_1.ApiProperty)({
         enum: ['DROP', 'PAID_IN', 'EXCHANGE', 'PICKUP', 'TOP_UP'],
         description: 'DROP / PAID_IN / EXCHANGE: the session’s cashier. PICKUP / TOP_UP: a supervisor (Till Sessions OVERRIDE); ' +
-            'a pickup’s witness is the cashier.',
+            'the witness is the cashier, proven by witnessPin.',
     }),
     (0, class_validator_1.IsIn)(['DROP', 'PAID_IN', 'EXCHANGE', 'PICKUP', 'TOP_UP']),
     __metadata("design:type", String)
@@ -586,11 +587,24 @@ __decorate([
     (0, swagger_1.ApiPropertyOptional)({
         format: 'uuid',
         nullable: true,
-        description: 'A second person. PICKUP: defaults to the session’s cashier, and is never the supervisor.',
+        description: 'A second person. PICKUP / TOP_UP: defaults to the session’s cashier, and is never the supervisor ' +
+            '(a top-up the session’s own cashier brings has no witness).',
     }),
     (0, dtoDecorators_1.NullableUuid)(),
     __metadata("design:type", Object)
 ], CreateTillMovementDto.prototype, "witnessBy", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        example: '4321',
+        description: 'Notes 108 — PICKUP / TOP_UP: the witness’s till PIN (usr_pin_hash, notes 95), typed by the witness on the ' +
+            'supervisor’s screen; required whenever there is a witness. None → 403 TILL_WITNESS_PIN_REQUIRED, wrong → ' +
+            '403 TILL_WITNESS_PIN (journalled PIN_FAIL), the witness has none → 422 TILL_WITNESS_NO_PIN. Ignored on ' +
+            'DROP / PAID_IN / EXCHANGE.',
+    }),
+    (0, dtoDecorators_1.NullableString)(20),
+    __metadata("design:type", Object)
+], CreateTillMovementDto.prototype, "witnessPin", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
     (0, dtoDecorators_1.NullableString)(500),
@@ -632,6 +646,8 @@ class TillChangeDto extends TillScopeDto {
     toTssId;
     lines;
     reasonId;
+    fromWitnessPin;
+    toWitnessPin;
     notes;
 }
 exports.TillChangeDto = TillChangeDto;
@@ -670,6 +686,26 @@ __decorate([
     (0, dtoDecorators_1.RequiredUuid)(),
     __metadata("design:type", String)
 ], TillChangeDto.prototype, "reasonId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        example: '4321',
+        description: 'Notes 108 — the GIVING cashier’s till PIN (they witness the pickup). Required. Refusals on this field: ' +
+            '422 TILL_WITNESS_NO_PIN, 403 TILL_WITNESS_PIN_REQUIRED, 403 TILL_WITNESS_PIN (journalled PIN_FAIL).',
+    }),
+    (0, dtoDecorators_1.NullableString)(20),
+    __metadata("design:type", Object)
+], TillChangeDto.prototype, "fromWitnessPin", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        example: '8642',
+        description: 'Notes 108 — the RECEIVING cashier’s till PIN (they witness the top-up). Required unless the caller is that ' +
+            'cashier; the same refusals, on this field.',
+    }),
+    (0, dtoDecorators_1.NullableString)(20),
+    __metadata("design:type", Object)
+], TillChangeDto.prototype, "toWitnessPin", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
     (0, dtoDecorators_1.NullableString)(500),

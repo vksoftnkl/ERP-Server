@@ -249,6 +249,7 @@ let TillController = class TillController {
             bagNo: dto.bagNo ?? null,
             sealNo: dto.sealNo ?? null,
             witnessBy: dto.witnessBy ?? null,
+            witnessPin: dto.witnessPin ?? null,
             notes: dto.notes ?? null,
         });
         return { success: true, message: `${data.tcmKind} ${data.tcmDocNo} posted`, data };
@@ -263,6 +264,8 @@ let TillController = class TillController {
             toTssId: dto.toTssId,
             lines: dto.lines,
             reasonId: dto.reasonId,
+            fromWitnessPin: dto.fromWitnessPin ?? null,
+            toWitnessPin: dto.toWitnessPin ?? null,
             notes: dto.notes ?? null,
         });
         return {
@@ -659,12 +662,18 @@ __decorate([
         description: 'Each posts its voucher in the session: DROP / PICKUP a TDrp (Dr safe / Cr till cash), TOP_UP a TFlt, ' +
             'PAID_IN a TPIn (Dr till cash / Cr the ledger); an EXCHANGE posts none and counts both sides. The ' +
             'session must still take money (OPEN / SUSPENDED). Cashier kinds: Open Till (272) EDIT, the session’s ' +
-            'cashier on its device. PICKUP / TOP_UP: Till Sessions (273) OVERRIDE; a pickup’s witness is the cashier.',
+            'cashier on its device. PICKUP / TOP_UP: Till Sessions (273) OVERRIDE; the witness (the cashier) types ' +
+            'their till PIN as witnessPin (notes 108), checked before anything is written, a wrong one journalled ' +
+            'PIN_FAIL; the movement records tcmWitnessVerifiedOn. A top-up the session’s own cashier brings has no witness.',
     }),
     (0, swagger_1.ApiCreatedResponse)({ type: till_response_dto_1.TillSuccessDto }),
+    (0, swagger_1.ApiForbiddenResponse)({
+        type: till_response_dto_1.TillErrorResponseDto,
+        description: 'TILL_WITNESS_PIN_REQUIRED · TILL_WITNESS_PIN',
+    }),
     (0, swagger_1.ApiUnprocessableEntityResponse)({
         type: till_response_dto_1.TillErrorResponseDto,
-        description: 'TILL_MOVEMENT_INVALID · TILL_REASON_INVALID · TILL_SAFE_MISSING',
+        description: 'TILL_MOVEMENT_INVALID · TILL_REASON_INVALID · TILL_SAFE_MISSING · TILL_WITNESS_NO_PIN',
     }),
     __param(0, (0, common_1.Body)()),
     __metadata("design:type", Function),
@@ -678,9 +687,19 @@ __decorate([
         summary: 'Change from another counter — a PICKUP there and a TOP_UP here, in one call',
         description: 'REV 2 §2.14: no till-to-till movement; the pair passes each counter’s safe (TDrp on the giving session, ' +
             'TFlt on the receiving one). Both sessions OPEN / SUSPENDED. Till Sessions (273) OVERRIDE; the giving cashier ' +
-            'witnesses and is never the supervisor.',
+            'witnesses and is never the supervisor. Notes 108: each witnessing cashier types their till PIN — ' +
+            'fromWitnessPin, and toWitnessPin unless the caller is the receiving cashier — checked before anything is ' +
+            'written; both rows record tcmWitnessVerifiedOn.',
     }),
     (0, swagger_1.ApiCreatedResponse)({ type: till_response_dto_1.TillSuccessDto }),
+    (0, swagger_1.ApiForbiddenResponse)({
+        type: till_response_dto_1.TillErrorResponseDto,
+        description: 'TILL_WITNESS_PIN_REQUIRED · TILL_WITNESS_PIN',
+    }),
+    (0, swagger_1.ApiUnprocessableEntityResponse)({
+        type: till_response_dto_1.TillErrorResponseDto,
+        description: 'TILL_MOVEMENT_INVALID · TILL_REASON_INVALID · TILL_SAFE_MISSING · TILL_WITNESS_NO_PIN',
+    }),
     __param(0, (0, common_1.Body)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [till_session_dto_1.TillChangeDto]),

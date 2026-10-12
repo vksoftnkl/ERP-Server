@@ -90,6 +90,7 @@ export declare class CreateTillMovementDto extends TillSessionKeyDto {
     bagNo?: string | null;
     sealNo?: string | null;
     witnessBy?: string | null;
+    witnessPin?: string | null;
     notes?: string | null;
 }
 export declare class TillMovementKeyDto extends TillScopeDto {
@@ -106,6 +107,8 @@ export declare class TillChangeDto extends TillScopeDto {
     toTssId: string;
     lines: TillCountLineDto[];
     reasonId: string;
+    fromWitnessPin?: string | null;
+    toWitnessPin?: string | null;
     notes?: string | null;
 }
 export declare class TillSlipCheckQueryDto extends TillSessionKeyDto {

@@ -192,6 +192,7 @@ export interface TillMovementDetailPayload extends TillMovementPayload {
     tcmSealNo: string | null;
     tcmDoneBy: string;
     tcmWitnessBy: string | null;
+    tcmWitnessVerifiedOn: string | null;
     tcmVoidedOn: string | null;
     tcmVoidedBy: string | null;
     tcmVoidReasonId: string | null;
