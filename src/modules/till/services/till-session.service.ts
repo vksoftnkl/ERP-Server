@@ -521,7 +521,7 @@ export class TillSessionService {
         tssBranchId: key.branchId,
         tssIsDeleted: false,
       },
-      include: { counter: { select: { tcnCode: true, tcnName: true } } },
+      include: { counter: { select: { tcnCode: true, tcnName: true, tcnSafeId: true } } },
     });
     if (!session) {
       throwTillNotFound('Till session', 'tssId', key.tssId);
@@ -546,7 +546,7 @@ export class TillSessionService {
         tssBranchId: key.branchId,
         tssIsDeleted: false,
       },
-      include: { counter: { select: { tcnCode: true, tcnName: true } } },
+      include: { counter: { select: { tcnCode: true, tcnName: true, tcnSafeId: true } } },
     });
     if (!session) {
       throwTillNotFound('Till session', 'tssId', key.tssId);
@@ -1163,7 +1163,7 @@ export class TillSessionService {
    * `till_approval` row (A3) and a VARIANCE_DECIDED event.
    *
    * Who may (A2) is `TillApprovalService.assertApprover`: not the cashier, a
-   * 276 grant at the rule's level covering the amount (a SUPER ADMIN's is
+   * 285 grant at the rule's level covering the amount (a SUPER ADMIN's is
    * implicit), the channel's PIN. It is judged BEFORE the transaction so a
    * wrong PIN is journalled (PIN_FAIL) rather than rolled back with it.
    */
@@ -3143,12 +3143,19 @@ export class TillSessionService {
   }
 
   private async toPayload(
-    session: TillSession & { counter: { tcnCode: string; tcnName: string } },
+    session: TillSession & {
+      counter: { tcnCode: string; tcnName: string; tcnSafeId: string | null };
+    },
     visible: boolean,
   ): Promise<TillSessionPayload> {
     const operator = await this.prisma.userMaster.findUnique({
       where: { usrId: session.tssOperatorId },
       select: { usrLoginName: true, usrDisplayName: true },
+    });
+    const dropSafe = await this.ledger.dropSafeFor(this.prisma, {
+      companyId: session.tssCompanyId,
+      branchId: session.tssBranchId,
+      counterSafeId: session.counter.tcnSafeId,
     });
     const [movements, variances, finalLines] = await Promise.all([
       this.prisma.tillCashMovement.findMany({
@@ -3235,6 +3242,7 @@ export class TillSessionService {
       tssCounterId: session.tssCounterId,
       counterCode: session.counter.tcnCode,
       counterName: session.counter.tcnName,
+      dropSafeName: dropSafe?.name ?? null,
       tssDeviceId: session.tssDeviceId,
       tssOperatorId: session.tssOperatorId,
       operatorName: operator?.usrDisplayName ?? operator?.usrLoginName ?? null,

@@ -158,6 +158,15 @@ export class SaveTillSafeDto {
   @OptionalBoolean()
   tsfIsDefault?: boolean;
 
+  @ApiPropertyOptional({
+    description:
+      'Notes 110 — a drop box at the counter. A counter takes a DROP only into its own safe, and only when this ' +
+      'is set (else 422 TILL_NO_DROP_SAFE: the bag is handed to a supervisor as a PICKUP). Left out = unchanged ' +
+      '(false on a new safe).',
+  })
+  @OptionalBoolean()
+  tsfIsDropSafe?: boolean;
+
   @ApiPropertyOptional({ nullable: true })
   @NullableString(250)
   tsfRemarks?: string | null;

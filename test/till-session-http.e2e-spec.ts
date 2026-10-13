@@ -28,7 +28,7 @@ import { grantMenuRights, restoreMenuRights, TESTER1, type MenuRightsMemo } from
  * Run with --runInBand (the rights fixture is one row per menu).
  */
 
-const TILL_MENUS = [271, 272, 273, 274, 275, 276, 280, 281, 282];
+const TILL_MENUS = [271, 272, 273, 274, 275, 276, 280, 281, 282, 285];
 const ROUTE = (path: string) => `/api/v1/till/${path}`;
 const stamp = () => Date.now().toString(36).toUpperCase().slice(-6);
 
@@ -229,6 +229,39 @@ describe('Till masters', () => {
       const read = await get('reasons/get', { id: reason.id, companyId: COMPANY });
       expectStatus(read, 200);
       expect(data<{ ledgerName: string }>(read).ledgerName).toBe(reason.ledger);
+    }
+  });
+
+  it('judges approval authority on its own menu: Till Approval Rules (276) hands out no grant (notes 111)', async () => {
+    const setGrantCreate = (on: boolean) => prisma.$executeRaw`
+      UPDATE public.user_menus SET um_can_create = ${on}
+       WHERE um_user_id = ${TESTER1}::uuid AND um_menu_id = 285 AND um_is_deleted = false`;
+    // Inactive, so no approval anywhere can lean on it while it exists.
+    const grant = {
+      taaUserId: TESTER1,
+      taaCompanyId: COMPANY,
+      taaBranchId: BRANCH,
+      taaRole: 'SUPERVISOR',
+      taaEventCode: 'CASH_VARIANCE',
+      taaMaxAmount: 1,
+      taaIsActive: false,
+    };
+    let taaId: string | null = null;
+    await setGrantCreate(false);
+    try {
+      const refused = await post('approval-authorities/create', grant);
+      expectStatus(refused, 403);
+      expect(refused.body.errors[0].code).toBe('TILL_RIGHT_CREATE');
+      expect(refused.body.errors[0].message).toContain('menu 285');
+      await setGrantCreate(true);
+      const granted = await post('approval-authorities/create', grant);
+      expectStatus(granted, 201);
+      taaId = data<{ taaId: string }>(granted).taaId;
+      expectStatus(await get('approval-authorities/get', { id: taaId, companyId: COMPANY }), 200);
+      expectStatus(await del('approval-authorities/delete', { id: taaId, companyId: COMPANY }), 200);
+    } finally {
+      await setGrantCreate(true);
+      await prisma.$executeRaw`DELETE FROM accounts.till_approval_authority WHERE taa_id = ${taaId}::uuid`;
     }
   });
 

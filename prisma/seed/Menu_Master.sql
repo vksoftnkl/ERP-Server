@@ -1,4 +1,4 @@
--- Seed: fixed.menu_master -- the full application menu tree (246 rows).
+-- Seed: fixed.menu_master -- the full application menu tree (248 rows).
 --
 -- Exported from the reference database, so a fresh environment comes up with the
 -- same menu ids every other table points at.
@@ -39,7 +39,7 @@ INSERT INTO fixed.menu_master
      menu_icon_location_desktop, menu_icon_location_web, menu_icon_location_mobile,
      menu_is_active, menu_separator)
 VALUES
-    -- ============ &1 Sales (menu 1, 71 rows) ============
+    -- ============ &1 Sales (menu 1, 79 rows) ============
      (   1, NULL, '&1 Sales'                             , NULL                  , true ,   1.00, '0', NULL, NULL, true , true)
     ,(  10,    1, 'Customers'                            , 'CTRL+SHIFT+C'        , true ,   1.00, '0', NULL, NULL, true , true)
     ,(  11,    1, 'Sales Order'                          , 'CTRL+SHIFT+S'        , true ,   2.00, NULL, NULL, NULL, true , false)
@@ -111,6 +111,8 @@ VALUES
     -- 275 was "Till Masters" until notes 101 split it into four screens:
     -- 275 / 280 / 281 / 282 (20261009190000_till_masters_split_menus); notes 102
     -- put them in the group 283 "Till Masters" (20261009200000_till_masters_group).
+    -- 276 was "Till Approval Setup" until notes 111 split off its authority tab as
+    -- 285 (20261013120000_till_approval_authority_menu).
     ,( 271,    1, 'Till'                                 , NULL                  , false,  18.10, NULL, NULL, NULL, true , true)
     ,( 272,  271, 'Open Till'                            , NULL                  , false,   1.00, NULL, NULL, NULL, true , false)
     ,( 273,  271, 'Till Sessions'                        , NULL                  , false,   2.00, NULL, NULL, NULL, true , false)
@@ -120,7 +122,8 @@ VALUES
     ,( 280,  283, 'Till Safes'                           , NULL                  , false,   2.00, NULL, NULL, NULL, true , false)
     ,( 281,  283, 'Till Reasons'                         , NULL                  , false,   3.00, NULL, NULL, NULL, true , false)
     ,( 282,  283, 'Denominations'                        , NULL                  , false,   4.00, NULL, NULL, NULL, true , false)
-    ,( 276,  271, 'Till Approval Setup'                  , NULL                  , false,   5.00, NULL, NULL, NULL, true , false)
+    ,( 276,  271, 'Till Approval Rules'                  , NULL                  , false,   5.00, NULL, NULL, NULL, true , false)
+    ,( 285,  271, 'Till Approval Authority'              , NULL                  , false,   5.10, NULL, NULL, NULL, true , false)
     ,( 277,    5, 'Expense Voucher'                      , NULL                  , false,  11.50, NULL, NULL, NULL, true , false)
     ,( 278,    5, 'Settlement Reconciliation'            , NULL                  , false,  11.60, NULL, NULL, NULL, true , false)
     -- ============ &2 Purchase (menu 2, 18 rows) ============
@@ -245,7 +248,7 @@ VALUES
     ,( 194,  183, 'Customer Statement'                   , NULL                  , false,   3.00, NULL, NULL, NULL, true , false)
     ,( 232,  183, 'Dash Board'                           , 'true'                , false,   0.01, NULL, NULL, NULL, true , false)
     ,( 234,  183, 'Tender wise Collection'               , 'false'               , false,   5.00, NULL, NULL, NULL, true , false)
-    -- ============ &7 Settings (menu 7, 39 rows) ============
+    -- ============ &7 Settings (menu 7, 38 rows) ============
     ,(   7, NULL, '&7 Settings'                          , NULL                  , true ,   7.00, '0', NULL, NULL, true , false)
     ,(  56,    7, 'Company Master'                       , NULL                  , true ,   0.00, NULL, NULL, NULL, true , false)
     ,(  57,    7, 'Employee Master'                      , NULL                  , true ,   1.00, NULL, NULL, NULL, true , false)
@@ -355,7 +358,7 @@ UPDATE fixed.menu_master
  WHERE menu_id = 263
    AND menu_verbs = '{VIEW,CREATE,EDIT,DELETE,PRINT,EXPORT}';
 
--- Till (271-276 + 280-283, 20261008140000 / 20261009190000 / 20261009200000): what each till screen can do. The groups hold
+-- Till (271-276 + 280-283 + 285, 20261008140000 / 20261009190000 / 20261009200000 / 20261013120000): what each till screen can do. The groups hold
 -- VIEW only; Open Till is the cashier's own session (CREATE = open, EDIT = suspend /
 -- resume / count / close, PRINT = X read); Till Sessions is the supervisor's view
 -- (OVERRIDE = the expected figures a blind close hides); Business Day opens the day.
@@ -366,7 +369,8 @@ UPDATE fixed.menu_master m
                (273, '{VIEW,PRINT,EXPORT,OVERRIDE}'), (274, '{VIEW,CREATE}'),
                (275, '{VIEW,CREATE,EDIT,DELETE,EXPORT}'), (276, '{VIEW,CREATE,EDIT,DELETE,EXPORT}'),
                (280, '{VIEW,CREATE,EDIT,DELETE,EXPORT}'), (281, '{VIEW,CREATE,EDIT,DELETE,EXPORT}'),
-               (282, '{VIEW,CREATE,EDIT,DELETE,EXPORT}'), (283, '{VIEW}')
+               (282, '{VIEW,CREATE,EDIT,DELETE,EXPORT}'), (283, '{VIEW}'),
+               (285, '{VIEW,CREATE,EDIT,DELETE,EXPORT}')
        ) AS v(id, verbs)
  WHERE m.menu_id = v.id
    AND m.menu_verbs = '{VIEW,CREATE,EDIT,DELETE,PRINT,EXPORT}';

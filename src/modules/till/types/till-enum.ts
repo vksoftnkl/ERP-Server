@@ -5,7 +5,7 @@
  * with a constraint name.
  */
 
-/** Menus 271–276 (migration 20261008140000). Rights are judged on these. */
+/** Menus 271–276 (migration 20261008140000), 280–283 (notes 101 / 102), 285 (notes 111). Rights are judged on these. */
 export const TILL_MENU = {
   GROUP: 271,
   /** The cashier's own session: VIEW · CREATE (open) · EDIT (suspend … close) · PRINT. */
@@ -24,8 +24,10 @@ export const TILL_MENU = {
   REASONS: 281,
   /** Denominations (notes 101); also opens denominations/list without Open Till. */
   DENOMINATIONS: 282,
-  /** Approval rules · approval authority. */
-  APPROVAL_SETUP: 276,
+  /** Till Approval Rules — "Till Approval Setup", with authority as a tab, until notes 111. */
+  APPROVAL_RULES: 276,
+  /** Till Approval Authority (notes 111): who may approve what, up to how much. */
+  APPROVAL_AUTHORITY: 285,
 } as const;
 
 /** `<prefix>_RIGHT_<RIGHT>` codes for the menu-right refusals (rights.ts). */
@@ -140,10 +142,12 @@ export const MOVEMENT_VOUCHER_TYPE: Readonly<Record<TillMovementKind, string | n
 };
 
 /**
- * The movements a till posts by hand (§5, S3) and who may: a cashier drops a
- * sealed bag, takes money in, or changes notes; a SUPERVISOR takes a pickup or
- * brings change. FLOAT_ISSUE and CLOSE_HANDOVER are written by the session's
- * open and close; REMIT and SAFE_TRANSFER are the cash office's (phase 5).
+ * The movements a till posts by hand (§5, S3), every one entered at the counter
+ * by the session's cashier: a drop of a sealed bag into the drop safe, money in,
+ * notes changed — and, signed by a SUPERVISOR standing there with their till PIN
+ * (notes 110), a pickup handed to them or change they bring. FLOAT_ISSUE and
+ * CLOSE_HANDOVER are written by the session's open and close; REMIT and
+ * SAFE_TRANSFER are the cash office's (phase 5).
  */
 export const CASHIER_MOVEMENTS: readonly TillMovementKind[] = [
   TillMovementKind.DROP,
@@ -343,7 +347,7 @@ export const TILL_APPROVAL_CHANNELS = ['COUNTER', 'REMOTE', 'EITHER'] as const;
 /**
  * ck_tar_role / ck_taa_role, lowest level first — TILL_DESIGN.md §5.1's order
  * (SUPERVISOR · CASH_OFFICE · STORE_MANAGER · AREA_MANAGER · HO_FINANCE), the
- * one the Approval Setup screen (276) previews. A grant at one level covers
+ * one the Till Approval Authority screen (285) previews. A grant at one level covers
  * every rule that asks for a lower one (notes 105 A2).
  */
 export const TILL_APPROVER_ROLES = [
@@ -460,7 +464,7 @@ export enum TillErrorCode {
   CASH_LEDGER_DIRECT = 'TILL_CASH_LEDGER_DIRECT',
   /** Notes 105 A2 — the approver is the session's own cashier (tar_allow_self = false). */
   APPROVER_SELF = 'TILL_APPROVER_SELF',
-  /** Notes 105 A2 — no till_approval_authority grant covers this event, branch and level (menu 276); a SUPER ADMIN needs none. */
+  /** Notes 105 A2 — no till_approval_authority grant covers this event, branch and level (Till Approval Authority, menu 285); a SUPER ADMIN needs none. */
   APPROVER_NO_GRANT = 'TILL_APPROVER_NO_GRANT',
   /** Notes 105 A2 — every grant at the level has a taa_max_amount below the variance. */
   APPROVER_LIMIT = 'TILL_APPROVER_LIMIT',
@@ -472,6 +476,20 @@ export enum TillErrorCode {
   WITNESS_PIN = 'TILL_WITNESS_PIN',
   /** Notes 108 — the witness has no till PIN (usr_pin_hash, notes 95) to check. */
   WITNESS_NO_PIN = 'TILL_WITNESS_NO_PIN',
+  /** Notes 110 — a PICKUP / TOP_UP is entered at the counter by the session's cashier, never from the office. */
+  MOVEMENT_AT_COUNTER = 'TILL_MOVEMENT_AT_COUNTER',
+  /** Notes 110 — the supervisor signing a PICKUP / TOP_UP is the session's own cashier. */
+  SUPERVISOR_SELF = 'TILL_SUPERVISOR_SELF',
+  /** Notes 110 — the supervisor named does not hold Till Sessions (273) OVERRIDE. */
+  SUPERVISOR_RIGHT = 'TILL_SUPERVISOR_RIGHT',
+  /** Notes 110 — the supervisor has no till PIN (usr_pin_hash, notes 95) to sign with. */
+  SUPERVISOR_NO_PIN = 'TILL_SUPERVISOR_NO_PIN',
+  /** Notes 110 — a PICKUP / TOP_UP came without the supervisor's till PIN. */
+  SUPERVISOR_PIN_REQUIRED = 'TILL_SUPERVISOR_PIN_REQUIRED',
+  /** Notes 110 — the supervisor's till PIN is wrong (journalled PIN_FAIL). */
+  SUPERVISOR_PIN = 'TILL_SUPERVISOR_PIN',
+  /** Notes 110 §3 — the counter's own safe is not a drop safe (or it has none). */
+  NO_DROP_SAFE = 'TILL_NO_DROP_SAFE',
 }
 
 export const TILL_ERROR_STATUS: Readonly<Record<TillErrorCode, number>> = {
@@ -526,4 +544,14 @@ export const TILL_ERROR_STATUS: Readonly<Record<TillErrorCode, number>> = {
   [TillErrorCode.WITNESS_PIN]: 403,
   // A user master to fix first, as LEDGER_UNMAPPED / SAFE_MISSING are a master to fix.
   [TillErrorCode.WITNESS_NO_PIN]: 422,
+  // Notes 110: the call is right, it comes from the wrong place — as MOVEMENT_INVALID.
+  [TillErrorCode.MOVEMENT_AT_COUNTER]: 422,
+  [TillErrorCode.SUPERVISOR_SELF]: 422,
+  // The person signing is not someone this signature accepts, as an approver's 403s.
+  [TillErrorCode.SUPERVISOR_RIGHT]: 403,
+  [TillErrorCode.SUPERVISOR_NO_PIN]: 422,
+  [TillErrorCode.SUPERVISOR_PIN_REQUIRED]: 403,
+  [TillErrorCode.SUPERVISOR_PIN]: 403,
+  // A master to fix (tick the counter's safe as a drop safe), as SAFE_MISSING.
+  [TillErrorCode.NO_DROP_SAFE]: 422,
 };

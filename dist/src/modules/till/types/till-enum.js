@@ -12,7 +12,8 @@ exports.TILL_MENU = {
     SAFES: 280,
     REASONS: 281,
     DENOMINATIONS: 282,
-    APPROVAL_SETUP: 276,
+    APPROVAL_RULES: 276,
+    APPROVAL_AUTHORITY: 285,
 };
 exports.TILL_RIGHT_CODE_PREFIX = 'TILL';
 var TillSessionStatus;
@@ -357,6 +358,13 @@ var TillErrorCode;
     TillErrorCode["WITNESS_PIN_REQUIRED"] = "TILL_WITNESS_PIN_REQUIRED";
     TillErrorCode["WITNESS_PIN"] = "TILL_WITNESS_PIN";
     TillErrorCode["WITNESS_NO_PIN"] = "TILL_WITNESS_NO_PIN";
+    TillErrorCode["MOVEMENT_AT_COUNTER"] = "TILL_MOVEMENT_AT_COUNTER";
+    TillErrorCode["SUPERVISOR_SELF"] = "TILL_SUPERVISOR_SELF";
+    TillErrorCode["SUPERVISOR_RIGHT"] = "TILL_SUPERVISOR_RIGHT";
+    TillErrorCode["SUPERVISOR_NO_PIN"] = "TILL_SUPERVISOR_NO_PIN";
+    TillErrorCode["SUPERVISOR_PIN_REQUIRED"] = "TILL_SUPERVISOR_PIN_REQUIRED";
+    TillErrorCode["SUPERVISOR_PIN"] = "TILL_SUPERVISOR_PIN";
+    TillErrorCode["NO_DROP_SAFE"] = "TILL_NO_DROP_SAFE";
 })(TillErrorCode || (exports.TillErrorCode = TillErrorCode = {}));
 exports.TILL_ERROR_STATUS = {
     [TillErrorCode.SESSION_REQUIRED]: 409,
@@ -406,5 +414,12 @@ exports.TILL_ERROR_STATUS = {
     [TillErrorCode.WITNESS_PIN_REQUIRED]: 403,
     [TillErrorCode.WITNESS_PIN]: 403,
     [TillErrorCode.WITNESS_NO_PIN]: 422,
+    [TillErrorCode.MOVEMENT_AT_COUNTER]: 422,
+    [TillErrorCode.SUPERVISOR_SELF]: 422,
+    [TillErrorCode.SUPERVISOR_RIGHT]: 403,
+    [TillErrorCode.SUPERVISOR_NO_PIN]: 422,
+    [TillErrorCode.SUPERVISOR_PIN_REQUIRED]: 403,
+    [TillErrorCode.SUPERVISOR_PIN]: 403,
+    [TillErrorCode.NO_DROP_SAFE]: 422,
 };
 //# sourceMappingURL=till-enum.js.map

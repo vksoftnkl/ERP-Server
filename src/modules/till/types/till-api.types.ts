@@ -180,6 +180,11 @@ export interface TillSessionPayload {
   tssCounterId: string;
   counterCode: string;
   counterName: string;
+  /**
+   * Notes 110 §3 — the counter's own safe when it is a drop safe, else null:
+   * a DROP is refused (TILL_NO_DROP_SAFE) and the screen disables its tile.
+   */
+  dropSafeName: string | null;
   tssDeviceId: string;
   tssOperatorId: string;
   operatorName: string | null;
@@ -254,6 +259,16 @@ export interface TillMovementPayload {
   tcmCreatedOn: string;
 }
 
+/** GET /till/movements/supervisors — one person who can sign a pickup / top-up on the session (notes 110 §2). */
+export interface TillSupervisorPayload {
+  userId: string;
+  loginName: string;
+  /** usr_full_name, else usr_display_name; null when both are blank. */
+  fullName: string | null;
+  /** False: the screen says to set a till PIN in User Administration (menu 58) before the count. */
+  hasPin: boolean;
+}
+
 /** One movement in full — what the slip prints (§9 TILL_MOVEMENT). */
 export interface TillMovementDetailPayload extends TillMovementPayload {
   safeName: string | null;
@@ -269,11 +284,19 @@ export interface TillMovementDetailPayload extends TillMovementPayload {
   tcmPartyName: string | null;
   tcmBagNo: string | null;
   tcmSealNo: string | null;
-  /** Who handled the cash (the supervisor on a pickup / top-up). */
+  /**
+   * Who entered it. A pickup / top-up on /create (notes 110): the session's
+   * cashier, at the counter. On /change, and on rows posted before notes 110:
+   * the supervisor who carried the cash.
+   */
   tcmDoneBy: string;
-  /** Who signed for it (the cashier on a pickup / top-up). */
+  /**
+   * The second signature. A pickup / top-up on /create (notes 110): the
+   * supervisor — given TO them on a PICKUP, given BY them on a TOP_UP. On
+   * /change and before notes 110: the cashier.
+   */
   tcmWitnessBy: string | null;
-  /** Notes 108: when the witness's till PIN was checked — "witnessed (PIN)"; null = no witness proven. */
+  /** When the second signer's till PIN was checked (notes 108 / 110); null = nobody's PIN was checked. */
   tcmWitnessVerifiedOn: string | null;
   tcmVoidedOn: string | null;
   tcmVoidedBy: string | null;
@@ -411,6 +434,8 @@ export interface TillSafePayload {
   ledgerName: string | null;
   tsfInsuredLimit: number;
   tsfIsDefault: boolean;
+  /** Notes 110 §3 — a drop box at the counter: a counter whose own safe has it takes DROPs. */
+  tsfIsDropSafe: boolean;
   tsfRemarks: string | null;
   tsfIsActive: boolean;
   tsfCreatedOn: string;

@@ -346,7 +346,7 @@ let TillSessionService = class TillSessionService {
                 tssBranchId: key.branchId,
                 tssIsDeleted: false,
             },
-            include: { counter: { select: { tcnCode: true, tcnName: true } } },
+            include: { counter: { select: { tcnCode: true, tcnName: true, tcnSafeId: true } } },
         });
         if (!session) {
             (0, till_errors_1.throwTillNotFound)('Till session', 'tssId', key.tssId);
@@ -369,7 +369,7 @@ let TillSessionService = class TillSessionService {
                 tssBranchId: key.branchId,
                 tssIsDeleted: false,
             },
-            include: { counter: { select: { tcnCode: true, tcnName: true } } },
+            include: { counter: { select: { tcnCode: true, tcnName: true, tcnSafeId: true } } },
         });
         if (!session) {
             (0, till_errors_1.throwTillNotFound)('Till session', 'tssId', key.tssId);
@@ -2087,6 +2087,11 @@ let TillSessionService = class TillSessionService {
             where: { usrId: session.tssOperatorId },
             select: { usrLoginName: true, usrDisplayName: true },
         });
+        const dropSafe = await this.ledger.dropSafeFor(this.prisma, {
+            companyId: session.tssCompanyId,
+            branchId: session.tssBranchId,
+            counterSafeId: session.counter.tcnSafeId,
+        });
         const [movements, variances, finalLines] = await Promise.all([
             this.prisma.tillCashMovement.findMany({
                 where: { tcmSessionId: session.tssId, tcmAccYear: session.tssAccYear, tcmIsDeleted: false },
@@ -2161,6 +2166,7 @@ let TillSessionService = class TillSessionService {
             tssCounterId: session.tssCounterId,
             counterCode: session.counter.tcnCode,
             counterName: session.counter.tcnName,
+            dropSafeName: dropSafe?.name ?? null,
             tssDeviceId: session.tssDeviceId,
             tssOperatorId: session.tssOperatorId,
             operatorName: operator?.usrDisplayName ?? operator?.usrLoginName ?? null,

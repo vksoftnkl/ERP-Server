@@ -44,8 +44,9 @@ import type {
  * The till masters (S10), each judged on its own menu since the four screens
  * split (notes 101): counters — Till Counters (275), safes — Till Safes (280),
  * reasons — Till Reasons (281), denominations — Denominations (282); approval
- * rules and approval authority — Till Approval Setup (276), granted apart
- * because "who may approve what, up to how much" is a control in its own right. `/create` is CREATE without an id and EDIT with
+ * rules — Till Approval Rules (276); approval authority — Till Approval
+ * Authority (285, notes 111), apart from the rules because handing out "who may
+ * approve what, up to how much" is a control in its own right. `/create` is CREATE without an id and EDIT with
  * one. Lists are the configured grids, not routes; /denominations/list is the
  * one exception, because a count screen needs the set before it can draw.
  */
@@ -125,7 +126,8 @@ export class TillMastersController {
   @ApiOperation({
     summary: 'Create or update a safe (by tsfId presence)',
     description:
-      'No ledger named on a new safe = the SAFE_CASH role’s ledger. Till Safes (280) CREATE / EDIT.',
+      'No ledger named on a new safe = the SAFE_CASH role’s ledger. tsfIsDropSafe (notes 110) makes it a drop ' +
+      'box: a counter whose own safe it is takes DROPs. Till Safes (280) CREATE / EDIT.',
   })
   @ApiCreatedResponse({ type: TillSuccessDto })
   @ApiBadRequestResponse({ type: TillErrorResponseDto })
@@ -308,13 +310,13 @@ export class TillMastersController {
   @ApiOperation({
     summary: 'Create or update a company / branch approval rule (by tarId presence)',
     description:
-      'A branch rule beats the company rule, which beats the shipped one. Till Approval Setup (276) CREATE / EDIT.',
+      'A branch rule beats the company rule, which beats the shipped one. Till Approval Rules (276) CREATE / EDIT.',
   })
   @ApiCreatedResponse({ type: TillSuccessDto })
   async saveRule(
     @Body() dto: SaveTillApprovalRuleDto,
   ): Promise<TillSuccessResponse<TillApprovalRulePayload>> {
-    await this.requireSave(TILL_MENU.APPROVAL_SETUP, dto.tarId, 'till approval rules');
+    await this.requireSave(TILL_MENU.APPROVAL_RULES, dto.tarId, 'till approval rules');
     const data = await this.masters.saveRule(dto);
     return {
       success: true,
@@ -326,12 +328,12 @@ export class TillMastersController {
   @Get('approval-rules/get')
   @Version(API_VERSION)
   @CacheTTL(0)
-  @ApiOperation({ summary: 'One approval rule', description: 'Till Approval Setup (276) VIEW.' })
+  @ApiOperation({ summary: 'One approval rule', description: 'Till Approval Rules (276) VIEW.' })
   @ApiOkResponse({ type: TillSuccessDto })
   async getRule(
     @Query() q: TillMasterKeyQueryDto,
   ): Promise<TillSuccessResponse<TillApprovalRulePayload>> {
-    await this.context.requireRight(TILL_MENU.APPROVAL_SETUP, 'view', 'view till approval rules');
+    await this.context.requireRight(TILL_MENU.APPROVAL_RULES, 'view', 'view till approval rules');
     return {
       success: true,
       message: 'Approval rule fetched',
@@ -343,14 +345,14 @@ export class TillMastersController {
   @Version(API_VERSION)
   @ApiOperation({
     summary: 'Soft-delete a company / branch approval rule',
-    description: 'Till Approval Setup (276) DELETE.',
+    description: 'Till Approval Rules (276) DELETE.',
   })
   @ApiOkResponse({ type: TillSuccessDto })
   async deleteRule(
     @Query() q: TillMasterKeyQueryDto,
   ): Promise<TillSuccessResponse<TillDeletePayload>> {
     await this.context.requireRight(
-      TILL_MENU.APPROVAL_SETUP,
+      TILL_MENU.APPROVAL_RULES,
       'delete',
       'delete till approval rules',
     );
@@ -368,13 +370,13 @@ export class TillMastersController {
   @ApiOperation({
     summary: 'Grant or change an approval authority (by taaId presence)',
     description:
-      'Who may approve which event, at which level, up to how much, and whether remotely. Till Approval Setup (276) CREATE / EDIT.',
+      'Who may approve which event, at which level, up to how much, and whether remotely. Till Approval Authority (285) CREATE / EDIT.',
   })
   @ApiCreatedResponse({ type: TillSuccessDto })
   async saveAuthority(
     @Body() dto: SaveTillApprovalAuthorityDto,
   ): Promise<TillSuccessResponse<TillApprovalAuthorityPayload>> {
-    await this.requireSave(TILL_MENU.APPROVAL_SETUP, dto.taaId, 'till approval authority');
+    await this.requireSave(TILL_MENU.APPROVAL_AUTHORITY, dto.taaId, 'till approval authority');
     const data = await this.masters.saveAuthority(dto);
     return {
       success: true,
@@ -388,14 +390,14 @@ export class TillMastersController {
   @CacheTTL(0)
   @ApiOperation({
     summary: 'One approval authority grant',
-    description: 'Till Approval Setup (276) VIEW.',
+    description: 'Till Approval Authority (285) VIEW.',
   })
   @ApiOkResponse({ type: TillSuccessDto })
   async getAuthority(
     @Query() q: TillMasterKeyQueryDto,
   ): Promise<TillSuccessResponse<TillApprovalAuthorityPayload>> {
     await this.context.requireRight(
-      TILL_MENU.APPROVAL_SETUP,
+      TILL_MENU.APPROVAL_AUTHORITY,
       'view',
       'view till approval authority',
     );
@@ -410,14 +412,14 @@ export class TillMastersController {
   @Version(API_VERSION)
   @ApiOperation({
     summary: 'Withdraw an approval authority grant',
-    description: 'Till Approval Setup (276) DELETE.',
+    description: 'Till Approval Authority (285) DELETE.',
   })
   @ApiOkResponse({ type: TillSuccessDto })
   async deleteAuthority(
     @Query() q: TillMasterKeyQueryDto,
   ): Promise<TillSuccessResponse<TillDeletePayload>> {
     await this.context.requireRight(
-      TILL_MENU.APPROVAL_SETUP,
+      TILL_MENU.APPROVAL_AUTHORITY,
       'delete',
       'withdraw till approval authority',
     );

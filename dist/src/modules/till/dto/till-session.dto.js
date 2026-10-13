@@ -493,14 +493,20 @@ class CreateTillMovementDto extends TillSessionKeyDto {
     sealNo;
     witnessBy;
     witnessPin;
+    supervisorId;
+    supervisorPin;
     notes;
 }
 exports.CreateTillMovementDto = CreateTillMovementDto;
 __decorate([
     (0, swagger_1.ApiProperty)({
         enum: ['DROP', 'PAID_IN', 'EXCHANGE', 'PICKUP', 'TOP_UP'],
-        description: 'DROP / PAID_IN / EXCHANGE: the session’s cashier. PICKUP / TOP_UP: a supervisor (Till Sessions OVERRIDE); ' +
-            'the witness is the cashier, proven by witnessPin.',
+        description: 'Every kind is entered at the counter by the session’s cashier, on its device (Open Till 272 EDIT). ' +
+            'PICKUP / TOP_UP are two signatures (notes 110): the cashier calling, and the supervisor standing there ' +
+            '(supervisorId + supervisorPin). On a PICKUP the cashier gives and the supervisor receives; on a TOP_UP ' +
+            'the supervisor gives and the cashier receives. Recorded as tcmDoneBy = the cashier, tcmWitnessBy = the ' +
+            'supervisor, tcmWitnessVerifiedOn = when the supervisor’s PIN was checked. A DROP goes into the counter’s ' +
+            'own drop safe (422 TILL_NO_DROP_SAFE when it has none).',
     }),
     (0, class_validator_1.IsIn)(['DROP', 'PAID_IN', 'EXCHANGE', 'PICKUP', 'TOP_UP']),
     __metadata("design:type", String)
@@ -587,8 +593,8 @@ __decorate([
     (0, swagger_1.ApiPropertyOptional)({
         format: 'uuid',
         nullable: true,
-        description: 'A second person. PICKUP / TOP_UP: defaults to the session’s cashier, and is never the supervisor ' +
-            '(a top-up the session’s own cashier brings has no witness).',
+        description: 'DROP / PAID_IN / EXCHANGE: a second person, named only (never the caller). Not read on PICKUP / ' +
+            'TOP_UP, whose second person is supervisorId (notes 110).',
     }),
     (0, dtoDecorators_1.NullableUuid)(),
     __metadata("design:type", Object)
@@ -596,15 +602,39 @@ __decorate([
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({
         nullable: true,
-        example: '4321',
-        description: 'Notes 108 — PICKUP / TOP_UP: the witness’s till PIN (usr_pin_hash, notes 95), typed by the witness on the ' +
-            'supervisor’s screen; required whenever there is a witness. None → 403 TILL_WITNESS_PIN_REQUIRED, wrong → ' +
-            '403 TILL_WITNESS_PIN (journalled PIN_FAIL), the witness has none → 422 TILL_WITNESS_NO_PIN. Ignored on ' +
-            'DROP / PAID_IN / EXCHANGE.',
+        deprecated: true,
+        description: 'Notes 108, retired by notes 110: no longer read. A PICKUP / TOP_UP is signed by supervisorPin. Still ' +
+            'accepted so a client built for notes 108 is not refused on an unknown field.',
     }),
     (0, dtoDecorators_1.NullableString)(20),
     __metadata("design:type", Object)
 ], CreateTillMovementDto.prototype, "witnessPin", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        format: 'uuid',
+        nullable: true,
+        description: 'Notes 110 — PICKUP / TOP_UP, required: the supervisor signing at the counter (GET ' +
+            '/till/movements/supervisors lists who can). On a PICKUP they receive the cash from the cashier; on a ' +
+            'TOP_UP they give it. An active user (422 TILL_MOVEMENT_INVALID), not the session’s cashier (422 ' +
+            'TILL_SUPERVISOR_SELF), holding Till Sessions (273) OVERRIDE themselves (403 TILL_SUPERVISOR_RIGHT). ' +
+            'Ignored on DROP / PAID_IN / EXCHANGE.',
+    }),
+    (0, dtoDecorators_1.NullableUuid)(),
+    __metadata("design:type", Object)
+], CreateTillMovementDto.prototype, "supervisorId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        nullable: true,
+        example: '4321',
+        description: 'Notes 110 — PICKUP / TOP_UP, required: the supervisor’s till PIN (usr_pin_hash, notes 95), typed by the ' +
+            'supervisor on the cashier’s screen after the count, so it signs the counted amount. Checked before ' +
+            'anything is written: none set → 422 TILL_SUPERVISOR_NO_PIN, none typed → 403 ' +
+            'TILL_SUPERVISOR_PIN_REQUIRED, wrong → 403 TILL_SUPERVISOR_PIN (journalled PIN_FAIL). Ignored on DROP / ' +
+            'PAID_IN / EXCHANGE.',
+    }),
+    (0, dtoDecorators_1.NullableString)(20),
+    __metadata("design:type", Object)
+], CreateTillMovementDto.prototype, "supervisorPin", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
     (0, dtoDecorators_1.NullableString)(500),

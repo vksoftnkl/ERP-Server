@@ -310,6 +310,33 @@ export class TillLedgerService {
   }
 
   /**
+   * Notes 110 §3 — where a counter's DROP goes: its OWN safe, active and
+   * flagged tsf_is_drop_safe, with no fallback to the branch default (a sealed
+   * bag goes into the box at that counter, or into a supervisor's hand as a
+   * pickup). Null when the counter has none.
+   */
+  async dropSafeFor(
+    tx: Tx,
+    scope: { companyId: string; branchId: string; counterSafeId: string | null },
+  ): Promise<SafeRef | null> {
+    if (!scope.counterSafeId) {
+      return null;
+    }
+    const safe = await tx.tillSafe.findFirst({
+      where: {
+        tsfId: scope.counterSafeId,
+        tsfCompanyId: scope.companyId,
+        tsfBranchId: scope.branchId,
+        tsfIsDropSafe: true,
+        tsfIsActive: true,
+        tsfIsDeleted: false,
+      },
+      select: { tsfId: true, tsfLedgerId: true, tsfName: true },
+    });
+    return safe ? { safeId: safe.tsfId, ledgerId: safe.tsfLedgerId, name: safe.tsfName } : null;
+  }
+
+  /**
    * A till role's ledger, or 422 TILL_LEDGER_UNMAPPED naming it (§6: the map
    * rows are set on the Ledger Map screen). Resolved here rather than left to
    * the posting service, whose refusal is a generic 400.

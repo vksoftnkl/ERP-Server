@@ -136,7 +136,7 @@ let TillMastersController = class TillMastersController {
         };
     }
     async saveRule(dto) {
-        await this.requireSave(till_enum_1.TILL_MENU.APPROVAL_SETUP, dto.tarId, 'till approval rules');
+        await this.requireSave(till_enum_1.TILL_MENU.APPROVAL_RULES, dto.tarId, 'till approval rules');
         const data = await this.masters.saveRule(dto);
         return {
             success: true,
@@ -145,7 +145,7 @@ let TillMastersController = class TillMastersController {
         };
     }
     async getRule(q) {
-        await this.context.requireRight(till_enum_1.TILL_MENU.APPROVAL_SETUP, 'view', 'view till approval rules');
+        await this.context.requireRight(till_enum_1.TILL_MENU.APPROVAL_RULES, 'view', 'view till approval rules');
         return {
             success: true,
             message: 'Approval rule fetched',
@@ -153,7 +153,7 @@ let TillMastersController = class TillMastersController {
         };
     }
     async deleteRule(q) {
-        await this.context.requireRight(till_enum_1.TILL_MENU.APPROVAL_SETUP, 'delete', 'delete till approval rules');
+        await this.context.requireRight(till_enum_1.TILL_MENU.APPROVAL_RULES, 'delete', 'delete till approval rules');
         return {
             success: true,
             message: 'Approval rule deleted',
@@ -161,7 +161,7 @@ let TillMastersController = class TillMastersController {
         };
     }
     async saveAuthority(dto) {
-        await this.requireSave(till_enum_1.TILL_MENU.APPROVAL_SETUP, dto.taaId, 'till approval authority');
+        await this.requireSave(till_enum_1.TILL_MENU.APPROVAL_AUTHORITY, dto.taaId, 'till approval authority');
         const data = await this.masters.saveAuthority(dto);
         return {
             success: true,
@@ -170,7 +170,7 @@ let TillMastersController = class TillMastersController {
         };
     }
     async getAuthority(q) {
-        await this.context.requireRight(till_enum_1.TILL_MENU.APPROVAL_SETUP, 'view', 'view till approval authority');
+        await this.context.requireRight(till_enum_1.TILL_MENU.APPROVAL_AUTHORITY, 'view', 'view till approval authority');
         return {
             success: true,
             message: 'Approval authority fetched',
@@ -178,7 +178,7 @@ let TillMastersController = class TillMastersController {
         };
     }
     async deleteAuthority(q) {
-        await this.context.requireRight(till_enum_1.TILL_MENU.APPROVAL_SETUP, 'delete', 'withdraw till approval authority');
+        await this.context.requireRight(till_enum_1.TILL_MENU.APPROVAL_AUTHORITY, 'delete', 'withdraw till approval authority');
         return {
             success: true,
             message: 'Approval authority withdrawn',
@@ -235,7 +235,8 @@ __decorate([
     (0, common_1.Version)(api_version_1.API_VERSION),
     (0, swagger_1.ApiOperation)({
         summary: 'Create or update a safe (by tsfId presence)',
-        description: 'No ledger named on a new safe = the SAFE_CASH role’s ledger. Till Safes (280) CREATE / EDIT.',
+        description: 'No ledger named on a new safe = the SAFE_CASH role’s ledger. tsfIsDropSafe (notes 110) makes it a drop ' +
+            'box: a counter whose own safe it is takes DROPs. Till Safes (280) CREATE / EDIT.',
     }),
     (0, swagger_1.ApiCreatedResponse)({ type: till_response_dto_1.TillSuccessDto }),
     (0, swagger_1.ApiBadRequestResponse)({ type: till_response_dto_1.TillErrorResponseDto }),
@@ -365,7 +366,7 @@ __decorate([
     (0, common_1.Version)(api_version_1.API_VERSION),
     (0, swagger_1.ApiOperation)({
         summary: 'Create or update a company / branch approval rule (by tarId presence)',
-        description: 'A branch rule beats the company rule, which beats the shipped one. Till Approval Setup (276) CREATE / EDIT.',
+        description: 'A branch rule beats the company rule, which beats the shipped one. Till Approval Rules (276) CREATE / EDIT.',
     }),
     (0, swagger_1.ApiCreatedResponse)({ type: till_response_dto_1.TillSuccessDto }),
     __param(0, (0, common_1.Body)()),
@@ -377,7 +378,7 @@ __decorate([
     (0, common_1.Get)('approval-rules/get'),
     (0, common_1.Version)(api_version_1.API_VERSION),
     (0, cache_manager_1.CacheTTL)(0),
-    (0, swagger_1.ApiOperation)({ summary: 'One approval rule', description: 'Till Approval Setup (276) VIEW.' }),
+    (0, swagger_1.ApiOperation)({ summary: 'One approval rule', description: 'Till Approval Rules (276) VIEW.' }),
     (0, swagger_1.ApiOkResponse)({ type: till_response_dto_1.TillSuccessDto }),
     __param(0, (0, common_1.Query)()),
     __metadata("design:type", Function),
@@ -389,7 +390,7 @@ __decorate([
     (0, common_1.Version)(api_version_1.API_VERSION),
     (0, swagger_1.ApiOperation)({
         summary: 'Soft-delete a company / branch approval rule',
-        description: 'Till Approval Setup (276) DELETE.',
+        description: 'Till Approval Rules (276) DELETE.',
     }),
     (0, swagger_1.ApiOkResponse)({ type: till_response_dto_1.TillSuccessDto }),
     __param(0, (0, common_1.Query)()),
@@ -402,7 +403,7 @@ __decorate([
     (0, common_1.Version)(api_version_1.API_VERSION),
     (0, swagger_1.ApiOperation)({
         summary: 'Grant or change an approval authority (by taaId presence)',
-        description: 'Who may approve which event, at which level, up to how much, and whether remotely. Till Approval Setup (276) CREATE / EDIT.',
+        description: 'Who may approve which event, at which level, up to how much, and whether remotely. Till Approval Authority (285) CREATE / EDIT.',
     }),
     (0, swagger_1.ApiCreatedResponse)({ type: till_response_dto_1.TillSuccessDto }),
     __param(0, (0, common_1.Body)()),
@@ -416,7 +417,7 @@ __decorate([
     (0, cache_manager_1.CacheTTL)(0),
     (0, swagger_1.ApiOperation)({
         summary: 'One approval authority grant',
-        description: 'Till Approval Setup (276) VIEW.',
+        description: 'Till Approval Authority (285) VIEW.',
     }),
     (0, swagger_1.ApiOkResponse)({ type: till_response_dto_1.TillSuccessDto }),
     __param(0, (0, common_1.Query)()),
@@ -429,7 +430,7 @@ __decorate([
     (0, common_1.Version)(api_version_1.API_VERSION),
     (0, swagger_1.ApiOperation)({
         summary: 'Withdraw an approval authority grant',
-        description: 'Till Approval Setup (276) DELETE.',
+        description: 'Till Approval Authority (285) DELETE.',
     }),
     (0, swagger_1.ApiOkResponse)({ type: till_response_dto_1.TillSuccessDto }),
     __param(0, (0, common_1.Query)()),

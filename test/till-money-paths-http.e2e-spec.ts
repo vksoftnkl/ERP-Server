@@ -43,7 +43,7 @@ import {
  */
 
 const tag = runTag();
-const TILL_MENUS = [271, 272, 273, 274, 275, 276, 280, 281, 282];
+const TILL_MENUS = [271, 272, 273, 274, 275, 276, 280, 281, 282, 285];
 
 let app: INestApplication;
 let h: Harness;
@@ -105,6 +105,7 @@ beforeAll(async () => {
     tsfBranchId: BRANCH,
     tsfCode: `E2EM${tag}`.slice(0, 20),
     tsfName: 'E2E money safe',
+    tsfIsDropSafe: true, // notes 110 §3: the drop below goes into the counter's own drop safe
   });
   expectStatus(safe, 201);
   safeId = safe.body.data.tsfId;

@@ -25,6 +25,7 @@ export declare class SaveTillSafeDto {
     tsfLedgerId?: string;
     tsfInsuredLimit?: number;
     tsfIsDefault?: boolean;
+    tsfIsDropSafe?: boolean;
     tsfRemarks?: string | null;
     tsfIsActive?: boolean;
 }

@@ -104,7 +104,7 @@ let TillApprovalService = class TillApprovalService {
         const minRank = (0, till_enum_1.approverRoleRank)(rule.tar_min_role);
         const atLevel = grants.filter((g) => (0, till_enum_1.approverRoleRank)(g.role) >= minRank);
         if (atLevel.length === 0) {
-            (0, till_errors_1.throwTill)(till_enum_1.TillErrorCode.APPROVER_NO_GRANT, `${login} holds no approval authority for ${event} at ${rule.tar_min_role} or above in this branch (Approval Setup, menu 276)`, 'userId', { event, requiredRole: rule.tar_min_role });
+            (0, till_errors_1.throwTill)(till_enum_1.TillErrorCode.APPROVER_NO_GRANT, `${login} holds no approval authority for ${event} at ${rule.tar_min_role} or above in this branch (Till Approval Authority, menu 285)`, 'userId', { event, requiredRole: rule.tar_min_role });
         }
         const amount = new client_1.Prisma.Decimal(ask.amount.toFixed(2));
         const covering = atLevel.filter((g) => g.maxAmount === null || g.maxAmount.gte(amount));

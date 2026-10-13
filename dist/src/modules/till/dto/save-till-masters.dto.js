@@ -150,6 +150,7 @@ class SaveTillSafeDto {
     tsfLedgerId;
     tsfInsuredLimit;
     tsfIsDefault;
+    tsfIsDropSafe;
     tsfRemarks;
     tsfIsActive;
 }
@@ -199,6 +200,15 @@ __decorate([
     (0, dtoDecorators_1.OptionalBoolean)(),
     __metadata("design:type", Boolean)
 ], SaveTillSafeDto.prototype, "tsfIsDefault", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        description: 'Notes 110 — a drop box at the counter. A counter takes a DROP only into its own safe, and only when this ' +
+            'is set (else 422 TILL_NO_DROP_SAFE: the bag is handed to a supervisor as a PICKUP). Left out = unchanged ' +
+            '(false on a new safe).',
+    }),
+    (0, dtoDecorators_1.OptionalBoolean)(),
+    __metadata("design:type", Boolean)
+], SaveTillSafeDto.prototype, "tsfIsDropSafe", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
     (0, dtoDecorators_1.NullableString)(250),

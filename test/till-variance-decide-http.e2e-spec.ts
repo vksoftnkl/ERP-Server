@@ -16,7 +16,7 @@ import { BRANCH, COMPANY, data, expectStatus, prisma } from './helpers/payment-e
  * POST /till/sessions/decide-variance, against the dev database.
  *
  *   A2  who may: the cashier never (TILL_APPROVER_SELF, even a SUPER ADMIN);
- *       no 276 grant (TILL_APPROVER_NO_GRANT); a grant whose ceiling is below
+ *       no 285 grant (TILL_APPROVER_NO_GRANT); a grant whose ceiling is below
  *       the gap (TILL_APPROVER_LIMIT); the EITHER channel with no remote
  *       authority wants the till PIN, and a wrong one is journalled PIN_FAIL
  *       (TILL_APPROVER_PIN)
@@ -35,7 +35,7 @@ import { BRANCH, COMPANY, data, expectStatus, prisma } from './helpers/payment-e
 
 jest.setTimeout(240_000);
 
-const TILL_MENUS = [271, 272, 273, 274, 275, 276, 280, 281, 282];
+const TILL_MENUS = [271, 272, 273, 274, 275, 276, 280, 281, 282, 285];
 const tag = Date.now().toString(36).toUpperCase().slice(-6);
 let app: INestApplication;
 const rights: MenuRightsMemo[] = [];
@@ -250,7 +250,7 @@ describe('A2 · who may decide', () => {
     );
   });
 
-  it('a user with no 276 grant is refused, told the event and the level (TILL_APPROVER_NO_GRANT)', async () => {
+  it('a user with no approval authority grant (285) is refused, told the event and the level (TILL_APPROVER_NO_GRANT)', async () => {
     const res = await decideAs('prathap', s, { decision: 'RECOUNT' });
     expectStatus(res, 403);
     expect(firstError(res)).toEqual(

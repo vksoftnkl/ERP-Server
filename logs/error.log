@@ -15917,3 +15917,5 @@ Raw query failed. Code: `22P02`. Message: `ERROR: invalid input syntax for type 
     at async Promise.all (index 1)
     at async LedgerStatementService.vouchers (/home/vk/Dev/erp/ERP server/src/modules/reports/ledger-statement/ledger-statement.service.ts:193:28)
     at async LedgerStatementController.vouchers (/home/vk/Dev/erp/ERP server/src/modules/reports/ledger-statement/ledger-statement.controller.ts:110:18)
+2026-10-13T05:07:06.809Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-10-13T05:07:57.956Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011

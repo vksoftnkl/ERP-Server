@@ -2228,6 +2228,8 @@ Table till_safe {
   tsfCreatedBy String
   tsfModifiedOn DateTime
   tsfModifiedBy String
+  tsfIsDropSafe Boolean [not null, default: false, note: 'A drop box at the counter (notes 110, migration 20261013100000; physically
+last). A DROP goes only to the counter\'s own safe, and only when this is set.']
   ledger acc_ledger_master [not null]
   counters till_counter [not null]
   cashMovements till_cash_movement [not null]

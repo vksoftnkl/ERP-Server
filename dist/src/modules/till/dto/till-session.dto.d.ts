@@ -91,6 +91,8 @@ export declare class CreateTillMovementDto extends TillSessionKeyDto {
     sealNo?: string | null;
     witnessBy?: string | null;
     witnessPin?: string | null;
+    supervisorId?: string | null;
+    supervisorPin?: string | null;
     notes?: string | null;
 }
 export declare class TillMovementKeyDto extends TillScopeDto {

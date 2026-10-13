@@ -290,6 +290,7 @@ export class TillMastersService {
         tsfLedgerId: ledgerId,
         tsfInsuredLimit: dec(dto.tsfInsuredLimit ?? num(existing?.tsfInsuredLimit)),
         tsfIsDefault: isDefault,
+        tsfIsDropSafe: dto.tsfIsDropSafe ?? existing?.tsfIsDropSafe ?? false,
         tsfRemarks: dto.tsfRemarks === undefined ? (existing?.tsfRemarks ?? null) : dto.tsfRemarks,
         tsfIsActive: dto.tsfIsActive ?? existing?.tsfIsActive ?? true,
       };
@@ -1050,6 +1051,7 @@ export class TillMastersService {
       ledgerName: ledger?.ledName ?? null,
       tsfInsuredLimit: num(r.tsfInsuredLimit),
       tsfIsDefault: r.tsfIsDefault,
+      tsfIsDropSafe: r.tsfIsDropSafe,
       tsfRemarks: r.tsfRemarks,
       tsfIsActive: r.tsfIsActive,
       tsfCreatedOn: r.tsfCreatedOn.toISOString(),

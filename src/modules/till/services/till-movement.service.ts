@@ -1,18 +1,20 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma, type TillSession } from '@prisma/client';
+import { loadRights } from '../../../common/posting/rights';
 import { verifySecret } from '../../../common/utils/secret-hash.utils';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { TillContextService, type TillCaller } from '../till-context.service';
 import { isoDateOf } from '../till-dates';
 import { throwTill, throwTillNotFound } from '../till-errors';
 import { TillEventService } from './till-event.service';
-import { TillLedgerService } from './till-ledger.service';
+import { TillLedgerService, type SafeRef } from './till-ledger.service';
 import { TillPostingService, type PostingSession } from './till-posting.service';
 import { TillSessionService } from './till-session.service';
 import {
   CASH_TENDER_TYPE_ID,
   CASHIER_MOVEMENTS,
   SUPERVISOR_MOVEMENTS,
+  TILL_MENU,
   TillCountKind,
   TillErrorCode,
   TillEventCode,
@@ -20,7 +22,11 @@ import {
   TillSessionStatus,
   VOIDABLE_MOVEMENTS,
 } from '../types/till-enum';
-import type { TillCountLineInput, TillMovementDetailPayload } from '../types/till-api.types';
+import type {
+  TillCountLineInput,
+  TillMovementDetailPayload,
+  TillSupervisorPayload,
+} from '../types/till-api.types';
 
 type Tx = Prisma.TransactionClient;
 const ZERO = new Prisma.Decimal(0);
@@ -63,9 +69,12 @@ export interface CreateMovementInput {
   partyName?: string | null;
   bagNo?: string | null;
   sealNo?: string | null;
+  /** DROP / PAID_IN / EXCHANGE: a second person, named only. Not read on PICKUP / TOP_UP. */
   witnessBy?: string | null;
-  /** PICKUP / TOP_UP: the witness's till PIN (notes 108). */
-  witnessPin?: string | null;
+  /** PICKUP / TOP_UP: the supervisor signing at the counter (notes 110). */
+  supervisorId?: string | null;
+  /** PICKUP / TOP_UP: that supervisor's till PIN (notes 110). */
+  supervisorPin?: string | null;
   notes?: string | null;
 }
 
@@ -73,22 +82,25 @@ export interface CreateMovementInput {
  * Every non-sale movement of money through a drawer (§5, build phase 2): the
  * documents behind the F11 till menu, each with its accounting voucher (D6).
  *
- *   DROP      the cashier drops a sealed bag into the safe     TDrp  Dr safe / Cr till cash
+ *   DROP      the cashier drops a sealed bag into the drop safe TDrp  Dr safe / Cr till cash
  *   PAID_IN   money in that is not a sale (scrap, staff refund) TPIn  Dr till cash / Cr ledger
  *   EXCHANGE  notes changed with the safe, counted both ways   —     nothing to book
- *   PICKUP    a SUPERVISOR takes cash, the cashier witnesses    TDrp  Dr safe / Cr till cash
- *   TOP_UP    a SUPERVISOR brings change                        TFlt  Dr till cash / Cr safe
+ *   PICKUP    the cashier hands cash to a SUPERVISOR            TDrp  Dr safe / Cr till cash
+ *   TOP_UP    a SUPERVISOR hands change to the cashier          TFlt  Dr till cash / Cr safe
  *
  * PAID_OUT is not here: 48 moved an expense to the expense voucher (ExpV) and
  * a supplier to a bill-wise Payment. Only a session still taking money (OPEN /
  * SUSPENDED) moves cash; once it is being counted the expectation is frozen.
  *
- * The approvals the shipped rules ask for (PICKUP / TOP_UP / MOVEMENT_VOID
- * ALWAYS, a supervisor) are met in phase 2 by WHO calls: the supervisor
- * movements and the void need Till Sessions (273) OVERRIDE, checked by the
- * controller. Phase 3's gate writes the till_approval row behind each. The
- * cashier who witnesses a pickup / top-up proves it with their till PIN
- * (notes 108, `proveWitness`).
+ * Notes 110: every kind on /create is entered AT THE COUNTER by the session's
+ * cashier, on its device — nothing is recorded behind the cashier's back. A
+ * pickup / top-up is two signatures, not "do + approve": the cashier calling,
+ * and the supervisor standing there, who picks their name and types their till
+ * PIN on the same screen (`proveSupervisor`). The supervisor must hold Till
+ * Sessions (273) OVERRIDE themselves. /change (counter to counter, a
+ * supervisor's call whose cashiers witness by PIN, notes 108) and the void
+ * (273 OVERRIDE) are unchanged; the approval rules (276) stay for exceptions,
+ * and phase 3's gate writes the till_approval row behind each.
  */
 @Injectable()
 export class TillMovementService {
@@ -110,21 +122,25 @@ export class TillMovementService {
         'kind',
       );
     }
-    const supervisorKind = SUPERVISOR_MOVEMENTS.includes(input.kind);
-    // Notes 108: before the transaction, so a wrong PIN is journalled, not rolled back.
-    const witness = supervisorKind ? await this.proveWitness(input, caller) : null;
+    const signedKind = SUPERVISOR_MOVEMENTS.includes(input.kind);
+    // Notes 110: before the transaction, so a wrong PIN is journalled, not rolled back.
+    const supervisor = signedKind ? await this.proveSupervisor(input, caller) : null;
 
     const tcmId = await this.prisma.$transaction(async (tx) => {
       const session = await this.lockSession(tx, input);
-      if (!supervisorKind) {
+      if (signedKind) {
+        this.assertAtCounter(session, caller);
+      } else {
         this.assertOperator(session, caller);
       }
 
-      // ── who handles it, who signs for it ─────────────────────────────
-      // A supervisor's witness was proven above (the session's cashier is
-      // fixed at its open, so the lock cannot have changed it).
-      let witnessBy: string | null = supervisorKind
-        ? (witness?.userId ?? null)
+      // ── who enters it, who signs for it ──────────────────────────────
+      // The caller is the session's cashier (asserted above). A pickup /
+      // top-up's second signature is the supervisor proven before the
+      // transaction: the session's cashier is fixed at its open, so the lock
+      // cannot have made them the same person.
+      let witnessBy: string | null = signedKind
+        ? (supervisor?.userId ?? null)
         : (input.witnessBy ?? null);
       if (witnessBy === caller.userId) {
         witnessBy = null;
@@ -184,14 +200,25 @@ export class TillMovementService {
       const counter = await tx.tillCounter.findUniqueOrThrow({
         where: { tcnId: session.tssCounterId },
       });
-      const safe =
-        input.kind === TillMovementKind.PAID_IN
-          ? null
-          : await this.ledger.safeFor(tx, {
-              companyId: input.companyId,
-              branchId: input.branchId,
-              counterSafeId: counter.tcnSafeId,
-            });
+      const safeScope = {
+        companyId: input.companyId,
+        branchId: input.branchId,
+        counterSafeId: counter.tcnSafeId,
+      };
+      let safe: SafeRef | null = null;
+      if (input.kind === TillMovementKind.DROP) {
+        // Notes 110 §3: the bag goes into the box AT this counter, never the branch default.
+        safe = await this.ledger.dropSafeFor(tx, safeScope);
+        if (!safe) {
+          throwTill(
+            TillErrorCode.NO_DROP_SAFE,
+            `Counter ${counter.tcnCode} has no drop safe: give the bag to a supervisor as a Pickup, or set a drop safe on the counter (Till Masters, menu 275)`,
+            'kind',
+          );
+        }
+      } else if (input.kind !== TillMovementKind.PAID_IN) {
+        safe = await this.ledger.safeFor(tx, safeScope);
+      }
       if (input.kind !== TillMovementKind.PAID_IN && !safe) {
         throwTill(
           TillErrorCode.SAFE_MISSING,
@@ -262,7 +289,7 @@ export class TillMovementService {
         countId,
         notes: input.notes ?? null,
         deviceId,
-        witnessVerifiedOn: witness?.verifiedOn ?? null,
+        witnessVerifiedOn: supervisor?.verifiedOn ?? null,
       });
       return posted.tcmId;
     });
@@ -695,52 +722,153 @@ export class TillMovementService {
     return s?.tssOperatorId ?? null;
   }
 
+  /**
+   * Notes 110 §2 — who can sign a pickup / top-up on this session: the users
+   * `proveSupervisor` would accept, less the PIN. `hasPin` lets the screen say
+   * "set a till PIN" before the cashier counts. The session's status does not
+   * matter (a read).
+   */
+  async supervisors(key: {
+    companyId: string;
+    branchId: string;
+    accYear: string;
+    tssId: string;
+  }): Promise<TillSupervisorPayload[]> {
+    const session = await this.prisma.tillSession.findFirst({
+      where: {
+        tssId: key.tssId,
+        tssAccYear: key.accYear,
+        tssCompanyId: key.companyId,
+        tssBranchId: key.branchId,
+        tssIsDeleted: false,
+      },
+      select: { tssOperatorId: true },
+    });
+    if (!session) {
+      throwTillNotFound('Till session', 'tssId', key.tssId);
+    }
+    const users = await this.prisma.userMaster.findMany({
+      where: {
+        usrId: { not: session.tssOperatorId },
+        ...this.signerScope,
+        // What loadRights reads in proveSupervisor (uq_user_menus_user_menu: one row).
+        userMenus: {
+          some: { umMenuId: TILL_MENU.SESSIONS, umCanOverride: true, umIsDeleted: false },
+        },
+      },
+      select: {
+        usrId: true,
+        usrLoginName: true,
+        usrFullName: true,
+        usrDisplayName: true,
+        usrPinHash: true,
+      },
+      orderBy: { usrLoginName: 'asc' },
+    });
+    return users.map((u) => ({
+      userId: u.usrId,
+      loginName: u.usrLoginName,
+      fullName: u.usrFullName?.trim() || u.usrDisplayName?.trim() || null,
+      hasPin: u.usrPinHash !== null && u.usrPinHash !== '',
+    }));
+  }
+
   // ═════════════════════════════════════════════════════════════════════════
 
   /**
-   * Notes 108 — the witness of a PICKUP / TOP_UP on /create proves they were
-   * there with their till PIN. The witness is `witnessBy`, else the session's
-   * cashier, and never the caller: a pickup by the session's own cashier is
-   * refused (one person moves cash to the safe with a DROP); a top-up the
-   * cashier brings to their own drawer has no witness to prove, as before.
+   * Notes 110 — the second signature on a PICKUP / TOP_UP, checked before the
+   * movement's transaction so a wrong PIN is journalled, not rolled back. The
+   * caller is the session's cashier at its counter (TILL_MOVEMENT_AT_COUNTER
+   * otherwise: no pickup is entered from the office); the supervisor is an
+   * active user, not that cashier, holding Till Sessions (273) OVERRIDE
+   * themselves, who types their till PIN.
    */
-  private async proveWitness(
+  private async proveSupervisor(
     input: CreateMovementInput,
     caller: TillCaller,
-  ): Promise<{ userId: string; verifiedOn: Date } | null> {
+  ): Promise<{ userId: string; verifiedOn: Date }> {
     const session = await this.peekSession(input);
+    this.assertAtCounter(session, caller);
 
-    // "The supervisor takes the cash, the cashier signs for it" (§5.6).
-    const witnessId = input.witnessBy ?? session.tssOperatorId;
-    if (witnessId === caller.userId) {
-      if (input.kind === TillMovementKind.PICKUP) {
-        throwTill(
-          TillErrorCode.MOVEMENT_INVALID,
-          'A pickup is two people — the supervisor taking it and the cashier signing for it. One person moves cash to the safe with a DROP.',
-          'witnessBy',
-        );
-      }
-      return null;
+    const what = input.kind === TillMovementKind.PICKUP ? 'pickup' : 'top-up';
+    const supervisorId = input.supervisorId ?? null;
+    if (!supervisorId) {
+      throwTill(
+        TillErrorCode.MOVEMENT_INVALID,
+        `A ${what} is signed by the supervisor standing at the counter: pick their name`,
+        'supervisorId',
+      );
     }
-    const verifiedOn = await this.checkWitnessPin(session, {
-      witnessId,
-      pin: input.witnessPin,
-      kind: input.kind,
-      pinField: 'witnessPin',
-      whoField: 'witnessBy',
-      action: 'movement',
+    const user = await this.prisma.userMaster.findFirst({
+      where: {
+        usrId: supervisorId,
+        ...this.signerScope,
+      },
+      select: { usrLoginName: true, usrPinHash: true },
+    });
+    if (!user) {
+      const named = await this.prisma.userMaster.findUnique({
+        where: { usrId: supervisorId },
+        select: { usrLoginName: true },
+      });
+      throwTill(
+        TillErrorCode.MOVEMENT_INVALID,
+        `The supervisor ${named?.usrLoginName ?? supervisorId} is not an active user`,
+        'supervisorId',
+      );
+    }
+    if (supervisorId === session.tssOperatorId) {
+      throwTill(
+        TillErrorCode.SUPERVISOR_SELF,
+        `A ${what} is two people: the cashier at the counter and a supervisor signing with their own till PIN`,
+        'supervisorId',
+      );
+    }
+    if (!(await loadRights(this.prisma, supervisorId, TILL_MENU.SESSIONS)).override) {
+      throwTill(
+        TillErrorCode.SUPERVISOR_RIGHT,
+        `${user.usrLoginName} has no Till Sessions override right`,
+        'supervisorId',
+        { supervisorId },
+      );
+    }
+    const verifiedOn = await this.verifyPin(session, user.usrLoginName, user.usrPinHash, {
+      pin: input.supervisorPin,
+      field: 'supervisorPin',
+      codes: {
+        noPin: TillErrorCode.SUPERVISOR_NO_PIN,
+        required: TillErrorCode.SUPERVISOR_PIN_REQUIRED,
+        wrong: TillErrorCode.SUPERVISOR_PIN,
+      },
+      noPinMessage: `${user.usrLoginName} signs this ${what} and has no till PIN: an administrator sets one in User Administration (menu 58)`,
+      requiredMessage: `A ${what} is signed by the supervisor: ${user.usrLoginName} types their till PIN`,
+      payload: { action: 'movement', kind: input.kind, supervisorId },
+      detail: { supervisorId },
       caller,
     });
-    return { userId: witnessId, verifiedOn };
+    return { userId: supervisorId, verifiedOn };
   }
 
   /**
-   * The witness's till PIN (usr_pin_hash, notes 95), checked as decide-variance
-   * checks approverPin: no PIN on the user → TILL_WITNESS_NO_PIN, none typed →
-   * TILL_WITNESS_PIN_REQUIRED, wrong → TILL_WITNESS_PIN, journalled PIN_FAIL on
-   * the session. Reads only, and called BEFORE the movement's transaction so
-   * the PIN_FAIL row is not rolled back with it. There is no lockout:
-   * decide-variance has none either. Returns when the PIN was checked.
+   * The users a pickup / top-up may name as its supervisor (notes 110), shared
+   * by the check and the list, before the right: active and not deleted. Not
+   * narrowed to a company or branch: user_menus is not scoped, and a user's
+   * home usr_company_id does not bind where they work (a SUPER ADMIN of one
+   * company supervises counters of another), so 273 OVERRIDE is judged here
+   * as it is for every other till right.
+   */
+  private readonly signerScope: Prisma.UserMasterWhereInput = {
+    usrIsActive: true,
+    usrIsDeleted: false,
+  };
+
+  /**
+   * The witness's till PIN on /change (usr_pin_hash, notes 95), checked as
+   * decide-variance checks approverPin: no PIN on the user →
+   * TILL_WITNESS_NO_PIN, none typed → TILL_WITNESS_PIN_REQUIRED, wrong →
+   * TILL_WITNESS_PIN, journalled PIN_FAIL on the session. Reads only, and
+   * called BEFORE the movement's transaction so the PIN_FAIL row is not rolled
+   * back with it. Returns when the PIN was checked.
    */
   private async checkWitnessPin(
     session: TillSession,
@@ -752,11 +880,11 @@ export class TillMovementService {
       pinField: string;
       /** The body field that named the witness (refused when not an active user). */
       whoField: string;
-      action: 'movement' | 'change';
+      action: 'change';
       caller: TillCaller;
     },
   ): Promise<Date> {
-    const { witnessId, pinField } = ask;
+    const { witnessId } = ask;
     const user = await this.prisma.userMaster.findUnique({
       where: { usrId: witnessId },
       select: { usrLoginName: true, usrPinHash: true, usrIsActive: true, usrIsDeleted: true },
@@ -769,24 +897,53 @@ export class TillMovementService {
       );
     }
     const what = ask.kind === TillMovementKind.PICKUP ? 'pickup' : 'top-up';
-    if (!user.usrPinHash) {
-      throwTill(
-        TillErrorCode.WITNESS_NO_PIN,
-        `${user.usrLoginName} witnesses this ${what} and has no till PIN: an administrator sets one in User Administration (menu 58)`,
-        pinField,
-        { witnessBy: witnessId },
-      );
+    return this.verifyPin(session, user.usrLoginName, user.usrPinHash, {
+      pin: ask.pin,
+      field: ask.pinField,
+      codes: {
+        noPin: TillErrorCode.WITNESS_NO_PIN,
+        required: TillErrorCode.WITNESS_PIN_REQUIRED,
+        wrong: TillErrorCode.WITNESS_PIN,
+      },
+      noPinMessage: `${user.usrLoginName} witnesses this ${what} and has no till PIN: an administrator sets one in User Administration (menu 58)`,
+      requiredMessage: `A ${what} is witnessed: ${user.usrLoginName} types their till PIN`,
+      payload: { action: ask.action, kind: ask.kind, witnessBy: witnessId },
+      detail: { witnessBy: witnessId },
+      caller: ask.caller,
+    });
+  }
+
+  /**
+   * The PIN half of a signature (usr_pin_hash, notes 95): none set → `noPin`
+   * (422), none typed → `required` (403), wrong → `wrong` (403) after a PIN_FAIL
+   * row on the session (tev_user_id = the caller). There is no lockout:
+   * decide-variance has none either. Returns when the PIN was checked.
+   */
+  private async verifyPin(
+    session: TillSession,
+    login: string,
+    pinHash: string | null,
+    ask: {
+      pin: string | null | undefined;
+      field: string;
+      codes: { noPin: TillErrorCode; required: TillErrorCode; wrong: TillErrorCode };
+      noPinMessage: string;
+      requiredMessage: string;
+      /** The PIN_FAIL event's payload. */
+      payload: Record<string, string>;
+      /** Carried on every refusal, beside field / message / code. */
+      detail: Record<string, string>;
+      caller: TillCaller;
+    },
+  ): Promise<Date> {
+    if (!pinHash) {
+      throwTill(ask.codes.noPin, ask.noPinMessage, ask.field, ask.detail);
     }
     const pin = ask.pin?.trim() || null;
     if (pin === null) {
-      throwTill(
-        TillErrorCode.WITNESS_PIN_REQUIRED,
-        `A ${what} is witnessed: ${user.usrLoginName} types their till PIN`,
-        pinField,
-        { witnessBy: witnessId },
-      );
+      throwTill(ask.codes.required, ask.requiredMessage, ask.field, ask.detail);
     }
-    if (!(await verifySecret(pin, user.usrPinHash))) {
+    if (!(await verifySecret(pin, pinHash))) {
       await this.events.log(this.prisma, {
         companyId: session.tssCompanyId,
         branchId: session.tssBranchId,
@@ -798,11 +955,9 @@ export class TillMovementService {
         deviceId: ask.caller.deviceId ?? session.tssDeviceId,
         userId: ask.caller.userId,
         srcRefno: session.tssSessionNo,
-        payload: { action: ask.action, kind: ask.kind, witnessBy: witnessId },
+        payload: ask.payload,
       });
-      throwTill(TillErrorCode.WITNESS_PIN, `${user.usrLoginName}'s till PIN is wrong`, pinField, {
-        witnessBy: witnessId,
-      });
+      throwTill(ask.codes.wrong, `${login}'s till PIN is wrong`, ask.field, ask.detail);
     }
     return new Date();
   }
@@ -880,6 +1035,22 @@ export class TillMovementService {
         'tssId',
       );
     }
+  }
+
+  /**
+   * Notes 110 — a pickup / top-up is entered at the counter by the session's
+   * cashier, on its device, with the supervisor there: never from the office,
+   * so a supervisor can never post one behind the cashier's back.
+   */
+  private assertAtCounter(session: TillSession, caller: TillCaller): void {
+    if (session.tssOperatorId !== caller.userId) {
+      throwTill(
+        TillErrorCode.MOVEMENT_AT_COUNTER,
+        'A pickup / top-up is entered at the counter by the session’s cashier, with the supervisor there',
+        'kind',
+      );
+    }
+    this.assertOperator(session, caller);
   }
 
   private assertCashLines(lines: TillCountLineInput[], field: string): void {

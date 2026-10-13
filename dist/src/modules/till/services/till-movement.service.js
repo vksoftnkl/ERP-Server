@@ -12,6 +12,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.TillMovementService = void 0;
 const common_1 = require("@nestjs/common");
 const client_1 = require("@prisma/client");
+const rights_1 = require("../../../common/posting/rights");
 const secret_hash_utils_1 = require("../../../common/utils/secret-hash.utils");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const till_context_service_1 = require("../till-context.service");
@@ -57,15 +58,18 @@ let TillMovementService = class TillMovementService {
         if (!till_enum_1.CASHIER_MOVEMENTS.includes(input.kind) && !till_enum_1.SUPERVISOR_MOVEMENTS.includes(input.kind)) {
             (0, till_errors_1.throwTill)(till_enum_1.TillErrorCode.MOVEMENT_INVALID, `${input.kind} is not posted by hand (the open issues the float, the close hands over, the cash office remits)`, 'kind');
         }
-        const supervisorKind = till_enum_1.SUPERVISOR_MOVEMENTS.includes(input.kind);
-        const witness = supervisorKind ? await this.proveWitness(input, caller) : null;
+        const signedKind = till_enum_1.SUPERVISOR_MOVEMENTS.includes(input.kind);
+        const supervisor = signedKind ? await this.proveSupervisor(input, caller) : null;
         const tcmId = await this.prisma.$transaction(async (tx) => {
             const session = await this.lockSession(tx, input);
-            if (!supervisorKind) {
+            if (signedKind) {
+                this.assertAtCounter(session, caller);
+            }
+            else {
                 this.assertOperator(session, caller);
             }
-            let witnessBy = supervisorKind
-                ? (witness?.userId ?? null)
+            let witnessBy = signedKind
+                ? (supervisor?.userId ?? null)
                 : (input.witnessBy ?? null);
             if (witnessBy === caller.userId) {
                 witnessBy = null;
@@ -105,13 +109,21 @@ let TillMovementService = class TillMovementService {
             const counter = await tx.tillCounter.findUniqueOrThrow({
                 where: { tcnId: session.tssCounterId },
             });
-            const safe = input.kind === till_enum_1.TillMovementKind.PAID_IN
-                ? null
-                : await this.ledger.safeFor(tx, {
-                    companyId: input.companyId,
-                    branchId: input.branchId,
-                    counterSafeId: counter.tcnSafeId,
-                });
+            const safeScope = {
+                companyId: input.companyId,
+                branchId: input.branchId,
+                counterSafeId: counter.tcnSafeId,
+            };
+            let safe = null;
+            if (input.kind === till_enum_1.TillMovementKind.DROP) {
+                safe = await this.ledger.dropSafeFor(tx, safeScope);
+                if (!safe) {
+                    (0, till_errors_1.throwTill)(till_enum_1.TillErrorCode.NO_DROP_SAFE, `Counter ${counter.tcnCode} has no drop safe: give the bag to a supervisor as a Pickup, or set a drop safe on the counter (Till Masters, menu 275)`, 'kind');
+                }
+            }
+            else if (input.kind !== till_enum_1.TillMovementKind.PAID_IN) {
+                safe = await this.ledger.safeFor(tx, safeScope);
+            }
             if (input.kind !== till_enum_1.TillMovementKind.PAID_IN && !safe) {
                 (0, till_errors_1.throwTill)(till_enum_1.TillErrorCode.SAFE_MISSING, `A ${input.kind.toLowerCase().replace('_', ' ')} moves cash to or from a safe, and this branch has none (Till Masters, menu 275)`, 'kind');
             }
@@ -171,7 +183,7 @@ let TillMovementService = class TillMovementService {
                 countId,
                 notes: input.notes ?? null,
                 deviceId,
-                witnessVerifiedOn: witness?.verifiedOn ?? null,
+                witnessVerifiedOn: supervisor?.verifiedOn ?? null,
             });
             return posted.tcmId;
         });
@@ -479,28 +491,94 @@ let TillMovementService = class TillMovementService {
         });
         return s?.tssOperatorId ?? null;
     }
-    async proveWitness(input, caller) {
-        const session = await this.peekSession(input);
-        const witnessId = input.witnessBy ?? session.tssOperatorId;
-        if (witnessId === caller.userId) {
-            if (input.kind === till_enum_1.TillMovementKind.PICKUP) {
-                (0, till_errors_1.throwTill)(till_enum_1.TillErrorCode.MOVEMENT_INVALID, 'A pickup is two people — the supervisor taking it and the cashier signing for it. One person moves cash to the safe with a DROP.', 'witnessBy');
-            }
-            return null;
+    async supervisors(key) {
+        const session = await this.prisma.tillSession.findFirst({
+            where: {
+                tssId: key.tssId,
+                tssAccYear: key.accYear,
+                tssCompanyId: key.companyId,
+                tssBranchId: key.branchId,
+                tssIsDeleted: false,
+            },
+            select: { tssOperatorId: true },
+        });
+        if (!session) {
+            (0, till_errors_1.throwTillNotFound)('Till session', 'tssId', key.tssId);
         }
-        const verifiedOn = await this.checkWitnessPin(session, {
-            witnessId,
-            pin: input.witnessPin,
-            kind: input.kind,
-            pinField: 'witnessPin',
-            whoField: 'witnessBy',
-            action: 'movement',
+        const users = await this.prisma.userMaster.findMany({
+            where: {
+                usrId: { not: session.tssOperatorId },
+                ...this.signerScope,
+                userMenus: {
+                    some: { umMenuId: till_enum_1.TILL_MENU.SESSIONS, umCanOverride: true, umIsDeleted: false },
+                },
+            },
+            select: {
+                usrId: true,
+                usrLoginName: true,
+                usrFullName: true,
+                usrDisplayName: true,
+                usrPinHash: true,
+            },
+            orderBy: { usrLoginName: 'asc' },
+        });
+        return users.map((u) => ({
+            userId: u.usrId,
+            loginName: u.usrLoginName,
+            fullName: u.usrFullName?.trim() || u.usrDisplayName?.trim() || null,
+            hasPin: u.usrPinHash !== null && u.usrPinHash !== '',
+        }));
+    }
+    async proveSupervisor(input, caller) {
+        const session = await this.peekSession(input);
+        this.assertAtCounter(session, caller);
+        const what = input.kind === till_enum_1.TillMovementKind.PICKUP ? 'pickup' : 'top-up';
+        const supervisorId = input.supervisorId ?? null;
+        if (!supervisorId) {
+            (0, till_errors_1.throwTill)(till_enum_1.TillErrorCode.MOVEMENT_INVALID, `A ${what} is signed by the supervisor standing at the counter: pick their name`, 'supervisorId');
+        }
+        const user = await this.prisma.userMaster.findFirst({
+            where: {
+                usrId: supervisorId,
+                ...this.signerScope,
+            },
+            select: { usrLoginName: true, usrPinHash: true },
+        });
+        if (!user) {
+            const named = await this.prisma.userMaster.findUnique({
+                where: { usrId: supervisorId },
+                select: { usrLoginName: true },
+            });
+            (0, till_errors_1.throwTill)(till_enum_1.TillErrorCode.MOVEMENT_INVALID, `The supervisor ${named?.usrLoginName ?? supervisorId} is not an active user`, 'supervisorId');
+        }
+        if (supervisorId === session.tssOperatorId) {
+            (0, till_errors_1.throwTill)(till_enum_1.TillErrorCode.SUPERVISOR_SELF, `A ${what} is two people: the cashier at the counter and a supervisor signing with their own till PIN`, 'supervisorId');
+        }
+        if (!(await (0, rights_1.loadRights)(this.prisma, supervisorId, till_enum_1.TILL_MENU.SESSIONS)).override) {
+            (0, till_errors_1.throwTill)(till_enum_1.TillErrorCode.SUPERVISOR_RIGHT, `${user.usrLoginName} has no Till Sessions override right`, 'supervisorId', { supervisorId });
+        }
+        const verifiedOn = await this.verifyPin(session, user.usrLoginName, user.usrPinHash, {
+            pin: input.supervisorPin,
+            field: 'supervisorPin',
+            codes: {
+                noPin: till_enum_1.TillErrorCode.SUPERVISOR_NO_PIN,
+                required: till_enum_1.TillErrorCode.SUPERVISOR_PIN_REQUIRED,
+                wrong: till_enum_1.TillErrorCode.SUPERVISOR_PIN,
+            },
+            noPinMessage: `${user.usrLoginName} signs this ${what} and has no till PIN: an administrator sets one in User Administration (menu 58)`,
+            requiredMessage: `A ${what} is signed by the supervisor: ${user.usrLoginName} types their till PIN`,
+            payload: { action: 'movement', kind: input.kind, supervisorId },
+            detail: { supervisorId },
             caller,
         });
-        return { userId: witnessId, verifiedOn };
+        return { userId: supervisorId, verifiedOn };
     }
+    signerScope = {
+        usrIsActive: true,
+        usrIsDeleted: false,
+    };
     async checkWitnessPin(session, ask) {
-        const { witnessId, pinField } = ask;
+        const { witnessId } = ask;
         const user = await this.prisma.userMaster.findUnique({
             where: { usrId: witnessId },
             select: { usrLoginName: true, usrPinHash: true, usrIsActive: true, usrIsDeleted: true },
@@ -509,14 +587,30 @@ let TillMovementService = class TillMovementService {
             (0, till_errors_1.throwTill)(till_enum_1.TillErrorCode.MOVEMENT_INVALID, `The witness ${user?.usrLoginName ?? witnessId} is not an active user`, ask.whoField);
         }
         const what = ask.kind === till_enum_1.TillMovementKind.PICKUP ? 'pickup' : 'top-up';
-        if (!user.usrPinHash) {
-            (0, till_errors_1.throwTill)(till_enum_1.TillErrorCode.WITNESS_NO_PIN, `${user.usrLoginName} witnesses this ${what} and has no till PIN: an administrator sets one in User Administration (menu 58)`, pinField, { witnessBy: witnessId });
+        return this.verifyPin(session, user.usrLoginName, user.usrPinHash, {
+            pin: ask.pin,
+            field: ask.pinField,
+            codes: {
+                noPin: till_enum_1.TillErrorCode.WITNESS_NO_PIN,
+                required: till_enum_1.TillErrorCode.WITNESS_PIN_REQUIRED,
+                wrong: till_enum_1.TillErrorCode.WITNESS_PIN,
+            },
+            noPinMessage: `${user.usrLoginName} witnesses this ${what} and has no till PIN: an administrator sets one in User Administration (menu 58)`,
+            requiredMessage: `A ${what} is witnessed: ${user.usrLoginName} types their till PIN`,
+            payload: { action: ask.action, kind: ask.kind, witnessBy: witnessId },
+            detail: { witnessBy: witnessId },
+            caller: ask.caller,
+        });
+    }
+    async verifyPin(session, login, pinHash, ask) {
+        if (!pinHash) {
+            (0, till_errors_1.throwTill)(ask.codes.noPin, ask.noPinMessage, ask.field, ask.detail);
         }
         const pin = ask.pin?.trim() || null;
         if (pin === null) {
-            (0, till_errors_1.throwTill)(till_enum_1.TillErrorCode.WITNESS_PIN_REQUIRED, `A ${what} is witnessed: ${user.usrLoginName} types their till PIN`, pinField, { witnessBy: witnessId });
+            (0, till_errors_1.throwTill)(ask.codes.required, ask.requiredMessage, ask.field, ask.detail);
         }
-        if (!(await (0, secret_hash_utils_1.verifySecret)(pin, user.usrPinHash))) {
+        if (!(await (0, secret_hash_utils_1.verifySecret)(pin, pinHash))) {
             await this.events.log(this.prisma, {
                 companyId: session.tssCompanyId,
                 branchId: session.tssBranchId,
@@ -528,11 +622,9 @@ let TillMovementService = class TillMovementService {
                 deviceId: ask.caller.deviceId ?? session.tssDeviceId,
                 userId: ask.caller.userId,
                 srcRefno: session.tssSessionNo,
-                payload: { action: ask.action, kind: ask.kind, witnessBy: witnessId },
+                payload: ask.payload,
             });
-            (0, till_errors_1.throwTill)(till_enum_1.TillErrorCode.WITNESS_PIN, `${user.usrLoginName}'s till PIN is wrong`, pinField, {
-                witnessBy: witnessId,
-            });
+            (0, till_errors_1.throwTill)(ask.codes.wrong, `${login}'s till PIN is wrong`, ask.field, ask.detail);
         }
         return new Date();
     }
@@ -582,6 +674,12 @@ let TillMovementService = class TillMovementService {
         if (caller.deviceId !== session.tssDeviceId) {
             (0, till_errors_1.throwTill)(till_enum_1.TillErrorCode.SESSION_WRONG_DEVICE, `Session ${session.tssSessionNo} moves cash only from the device it was opened on`, 'tssId');
         }
+    }
+    assertAtCounter(session, caller) {
+        if (session.tssOperatorId !== caller.userId) {
+            (0, till_errors_1.throwTill)(till_enum_1.TillErrorCode.MOVEMENT_AT_COUNTER, 'A pickup / top-up is entered at the counter by the session’s cashier, with the supervisor there', 'kind');
+        }
+        this.assertOperator(session, caller);
     }
     assertCashLines(lines, field) {
         lines.forEach((line, i) => {

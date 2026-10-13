@@ -167,6 +167,23 @@ let TillLedgerService = class TillLedgerService {
         const pick = own ?? rows.find((r) => r.tsf_is_default) ?? (rows.length === 1 ? rows[0] : undefined);
         return pick ? { safeId: pick.tsf_id, ledgerId: pick.tsf_ledger_id, name: pick.tsf_name } : null;
     }
+    async dropSafeFor(tx, scope) {
+        if (!scope.counterSafeId) {
+            return null;
+        }
+        const safe = await tx.tillSafe.findFirst({
+            where: {
+                tsfId: scope.counterSafeId,
+                tsfCompanyId: scope.companyId,
+                tsfBranchId: scope.branchId,
+                tsfIsDropSafe: true,
+                tsfIsActive: true,
+                tsfIsDeleted: false,
+            },
+            select: { tsfId: true, tsfLedgerId: true, tsfName: true },
+        });
+        return safe ? { safeId: safe.tsfId, ledgerId: safe.tsfLedgerId, name: safe.tsfName } : null;
+    }
     async roleLedger(tx, role, companyId, branchId) {
         const resolved = await (0, ledger_map_helper_1.resolveRoleLedgers)(tx, [{ role }], {
             companyId,

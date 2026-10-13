@@ -261,7 +261,7 @@ export class TillApprovalService {
     if (atLevel.length === 0) {
       throwTill(
         TillErrorCode.APPROVER_NO_GRANT,
-        `${login} holds no approval authority for ${event} at ${rule.tar_min_role} or above in this branch (Approval Setup, menu 276)`,
+        `${login} holds no approval authority for ${event} at ${rule.tar_min_role} or above in this branch (Till Approval Authority, menu 285)`,
         'userId',
         { event, requiredRole: rule.tar_min_role },
       );

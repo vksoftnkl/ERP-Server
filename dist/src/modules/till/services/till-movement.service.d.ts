@@ -5,7 +5,7 @@ import { TillLedgerService } from './till-ledger.service';
 import { TillPostingService } from './till-posting.service';
 import { TillSessionService } from './till-session.service';
 import { TillMovementKind } from '../types/till-enum';
-import type { TillCountLineInput, TillMovementDetailPayload } from '../types/till-api.types';
+import type { TillCountLineInput, TillMovementDetailPayload, TillSupervisorPayload } from '../types/till-api.types';
 export interface CreateMovementInput {
     companyId: string;
     branchId: string;
@@ -23,7 +23,8 @@ export interface CreateMovementInput {
     bagNo?: string | null;
     sealNo?: string | null;
     witnessBy?: string | null;
-    witnessPin?: string | null;
+    supervisorId?: string | null;
+    supervisorPin?: string | null;
     notes?: string | null;
 }
 export declare class TillMovementService {
@@ -70,12 +71,21 @@ export declare class TillMovementService {
         accYear: string;
         tcmId: string;
     }): Promise<string | null>;
-    private proveWitness;
+    supervisors(key: {
+        companyId: string;
+        branchId: string;
+        accYear: string;
+        tssId: string;
+    }): Promise<TillSupervisorPayload[]>;
+    private proveSupervisor;
+    private readonly signerScope;
     private checkWitnessPin;
+    private verifyPin;
     private peekSession;
     private lockSession;
     private assertMovable;
     private assertOperator;
+    private assertAtCounter;
     private assertCashLines;
     private loadReason;
     private assertLedger;

@@ -114,6 +114,7 @@ export interface TillSessionPayload {
     tssCounterId: string;
     counterCode: string;
     counterName: string;
+    dropSafeName: string | null;
     tssDeviceId: string;
     tssOperatorId: string;
     operatorName: string | null;
@@ -175,6 +176,12 @@ export interface TillMovementPayload {
     tcmVoucherId: string | null;
     tcmStatus: 'POSTED' | 'VOIDED';
     tcmCreatedOn: string;
+}
+export interface TillSupervisorPayload {
+    userId: string;
+    loginName: string;
+    fullName: string | null;
+    hasPin: boolean;
 }
 export interface TillMovementDetailPayload extends TillMovementPayload {
     safeName: string | null;
@@ -301,6 +308,7 @@ export interface TillSafePayload {
     ledgerName: string | null;
     tsfInsuredLimit: number;
     tsfIsDefault: boolean;
+    tsfIsDropSafe: boolean;
     tsfRemarks: string | null;
     tsfIsActive: boolean;
     tsfCreatedOn: string;

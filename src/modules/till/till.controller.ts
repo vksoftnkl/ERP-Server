@@ -63,13 +63,14 @@ import type {
   TillSlipCheckPayload,
   TillSlipCheckResultPayload,
   TillSuccessResponse,
+  TillSupervisorPayload,
   TillVarianceDecisionPayload,
 } from './types/till-api.types';
 
 /**
  * /till/* — the business day, the cashier's session and the till journal
  * (TILL_DESIGN.md REV 1 §7.2, build phase 1). Every route is judged on a
- * user_menus flag (menus 271–276); GETs are never cached (@CacheTTL(0)): a
+ * user_menus flag (menus 271–276, 280–285); GETs are never cached (@CacheTTL(0)): a
  * session's state is exactly what must not be served stale.
  *
  *   Open Till (272)      VIEW current / get my session · CREATE open · EDIT the rest
@@ -505,7 +506,7 @@ export class TillController {
     summary:
       'Decide a PENDING_APPROVAL session’s variance: APPROVE with a treatment, or RECOUNT (notes 105 A)',
     description:
-      'By an approver who is not the session’s cashier and holds a Till Approval Setup (276) grant for the event ' +
+      'By an approver who is not the session’s cashier and holds a Till Approval Authority (285) grant for the event ' +
       '(CASH_VARIANCE when the cash gap is among the pending ones, else NONCASH_VARIANCE) at the rule’s level or ' +
       'above, with taa_max_amount covering Σ|counted − expected|; a SUPER ADMIN is an implicit HO_FINANCE grant. ' +
       'The rule’s channel decides the PIN: COUNTER needs approverPin, REMOTE needs taa_can_remote, EITHER takes ' +
@@ -553,42 +554,45 @@ export class TillController {
   @Post('movements/create')
   @Version(API_VERSION)
   @ApiOperation({
-    summary: 'A drawer movement — drop, paid-in, exchange (cashier) · pickup, top-up (supervisor)',
+    summary:
+      'A drawer movement, entered at the counter — drop, paid-in, exchange · pickup, top-up (two signatures)',
     description:
       'Each posts its voucher in the session: DROP / PICKUP a TDrp (Dr safe / Cr till cash), TOP_UP a TFlt, ' +
       'PAID_IN a TPIn (Dr till cash / Cr the ledger); an EXCHANGE posts none and counts both sides. The ' +
-      'session must still take money (OPEN / SUSPENDED). Cashier kinds: Open Till (272) EDIT, the session’s ' +
-      'cashier on its device. PICKUP / TOP_UP: Till Sessions (273) OVERRIDE; the witness (the cashier) types ' +
-      'their till PIN as witnessPin (notes 108), checked before anything is written, a wrong one journalled ' +
-      'PIN_FAIL; the movement records tcmWitnessVerifiedOn. A top-up the session’s own cashier brings has no witness.',
+      'session must still take money (OPEN / SUSPENDED). Every kind: Open Till (272) EDIT, the session’s ' +
+      'cashier on its device. Notes 110 — PICKUP / TOP_UP are signed at the counter by two people: the cashier ' +
+      'calling (anyone else 422 TILL_MOVEMENT_AT_COUNTER) and the supervisor standing there, named by ' +
+      'supervisorId (an active user, not the cashier, holding Till Sessions (273) OVERRIDE themselves) and ' +
+      'proven by supervisorPin, checked before anything is written, a wrong one journalled PIN_FAIL. Recorded ' +
+      'as tcmDoneBy = the cashier, tcmWitnessBy = the supervisor, tcmWitnessVerifiedOn. A DROP goes only into ' +
+      'the counter’s own safe, which must be a drop safe (notes 110 §3).',
   })
   @ApiCreatedResponse({ type: TillSuccessDto })
   @ApiForbiddenResponse({
     type: TillErrorResponseDto,
-    description: 'TILL_WITNESS_PIN_REQUIRED · TILL_WITNESS_PIN',
+    description:
+      'TILL_RIGHT_EDIT · TILL_SESSION_NOT_YOURS · TILL_SUPERVISOR_RIGHT · TILL_SUPERVISOR_PIN_REQUIRED · ' +
+      'TILL_SUPERVISOR_PIN',
   })
   @ApiUnprocessableEntityResponse({
     type: TillErrorResponseDto,
     description:
-      'TILL_MOVEMENT_INVALID · TILL_REASON_INVALID · TILL_SAFE_MISSING · TILL_WITNESS_NO_PIN',
+      'TILL_MOVEMENT_INVALID · TILL_MOVEMENT_AT_COUNTER · TILL_SUPERVISOR_SELF · TILL_SUPERVISOR_NO_PIN · ' +
+      'TILL_REASON_INVALID · TILL_SAFE_MISSING · TILL_NO_DROP_SAFE',
   })
   async createMovement(
     @Body() dto: CreateTillMovementDto,
   ): Promise<TillSuccessResponse<TillMovementDetailPayload>> {
     const kind = dto.kind as TillMovementKind;
-    if (SUPERVISOR_MOVEMENTS.includes(kind)) {
-      await this.context.requireRight(
-        TILL_MENU.SESSIONS,
-        'override',
-        `take a till ${kind.toLowerCase()}`,
-      );
-    } else {
-      await this.context.requireRight(
-        TILL_MENU.OPEN_TILL,
-        'edit',
-        `post a till ${kind.toLowerCase()}`,
-      );
-    }
+    // Notes 110: every kind is the cashier's at the counter; a pickup's supervisor
+    // proves their own 273 OVERRIDE by name + PIN in the service.
+    await this.context.requireRight(
+      TILL_MENU.OPEN_TILL,
+      'edit',
+      SUPERVISOR_MOVEMENTS.includes(kind)
+        ? `enter a till ${kind.toLowerCase().replace('_', '-')} at the counter`
+        : `post a till ${kind.toLowerCase().replace('_', '-')}`,
+    );
     const data = await this.movements.create({
       companyId: dto.companyId,
       branchId: dto.branchId,
@@ -606,10 +610,32 @@ export class TillController {
       bagNo: dto.bagNo ?? null,
       sealNo: dto.sealNo ?? null,
       witnessBy: dto.witnessBy ?? null,
-      witnessPin: dto.witnessPin ?? null,
+      supervisorId: dto.supervisorId ?? null,
+      supervisorPin: dto.supervisorPin ?? null,
       notes: dto.notes ?? null,
     });
     return { success: true, message: `${data.tcmKind} ${data.tcmDocNo} posted`, data };
+  }
+
+  @Get('movements/supervisors')
+  @Version(API_VERSION)
+  @CacheTTL(0)
+  @ApiOperation({
+    summary: 'Who can sign a pickup / top-up on this session (notes 110)',
+    description:
+      'Active, not deleted, holding Till Sessions (273) OVERRIDE, and not the session’s cashier — exactly whom ' +
+      'movements/create accepts as supervisorId. hasPin = false: the screen asks for a till PIN to be set in ' +
+      'User Administration (menu 58) before the count. The session’s cashier: Open Till (272) VIEW; anyone ' +
+      'else: Till Sessions (273) VIEW.',
+  })
+  @ApiOkResponse({ type: TillSuccessDto })
+  @ApiNotFoundResponse({ type: TillErrorResponseDto })
+  async supervisors(
+    @Query() query: TillSessionKeyDto,
+  ): Promise<TillSuccessResponse<TillSupervisorPayload[]>> {
+    await this.requireSessionView(query);
+    const data = await this.movements.supervisors(query);
+    return { success: true, message: `${data.length} supervisor(s) can sign`, data };
   }
 
   @Post('movements/change')

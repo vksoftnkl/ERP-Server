@@ -3702,6 +3702,9 @@ model TillSafe {
   tsfCreatedBy        String?   @db.VarChar(50)                      @map("tsf_created_by")
   tsfModifiedOn       DateTime? @db.Timestamptz(6)                   @map("tsf_modified_on")
   tsfModifiedBy       String?   @db.VarChar(50)                      @map("tsf_modified_by")
+  /// A drop box at the counter (notes 110, migration 20261013100000; physically
+  /// last). A DROP goes only to the counter's own safe, and only when this is set.
+  tsfIsDropSafe       Boolean   @default(false)                      @map("tsf_is_drop_safe")
 
   // Relations
   ledger              AccLedgerMaster    @relation("TillSafeLedger", fields: [tsfLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_tsf_ledger")

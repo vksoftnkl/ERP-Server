@@ -48,6 +48,11 @@ export declare class TillLedgerService {
         branchId: string;
         counterSafeId: string | null;
     }): Promise<SafeRef | null>;
+    dropSafeFor(tx: Tx, scope: {
+        companyId: string;
+        branchId: string;
+        counterSafeId: string | null;
+    }): Promise<SafeRef | null>;
     roleLedger(tx: Tx, role: string, companyId: string, branchId: string): Promise<string>;
 }
 export {};
