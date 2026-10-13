@@ -165,8 +165,8 @@ export declare const textElementSchema: z.ZodObject<{
     }, z.core.$strip>>;
     align: z.ZodDefault<z.ZodEnum<{
         left: "left";
-        center: "center";
         right: "right";
+        center: "center";
         justify: "justify";
     }>>;
     vAlign: z.ZodDefault<z.ZodEnum<{
@@ -250,8 +250,8 @@ export declare const fieldElementSchema: z.ZodObject<{
     }, z.core.$strip>>;
     align: z.ZodDefault<z.ZodEnum<{
         left: "left";
-        center: "center";
         right: "right";
+        center: "center";
         justify: "justify";
     }>>;
     vAlign: z.ZodDefault<z.ZodEnum<{
@@ -276,16 +276,16 @@ export declare const fieldElementSchema: z.ZodObject<{
     kind: z.ZodLiteral<"FIELD">;
     aggregate: z.ZodOptional<z.ZodObject<{
         fn: z.ZodEnum<{
-            sum: "sum";
+            max: "max";
+            min: "min";
             count: "count";
             avg: "avg";
-            min: "min";
-            max: "max";
+            sum: "sum";
         }>;
         scope: z.ZodEnum<{
             GROUP: "GROUP";
-            PAGE: "PAGE";
             REPORT: "REPORT";
+            PAGE: "PAGE";
         }>;
         dataset: z.ZodOptional<z.ZodString>;
         over: z.ZodOptional<z.ZodString>;
@@ -588,8 +588,8 @@ export declare const qrcodeElementSchema: z.ZodObject<{
     size: z.ZodNumber;
     value: z.ZodString;
     errorCorrection: z.ZodDefault<z.ZodEnum<{
-        L: "L";
         M: "M";
+        L: "L";
         Q: "Q";
         H: "H";
     }>>;
@@ -655,11 +655,11 @@ export declare const crosstabMeasureSchema: z.ZodObject<{
     expression: z.ZodString;
     label: z.ZodDefault<z.ZodString>;
     fn: z.ZodDefault<z.ZodEnum<{
-        sum: "sum";
+        max: "max";
+        min: "min";
         count: "count";
         avg: "avg";
-        min: "min";
-        max: "max";
+        sum: "sum";
     }>>;
     format: z.ZodDefault<z.ZodString>;
     blankWhenZero: z.ZodDefault<z.ZodBoolean>;
@@ -719,11 +719,11 @@ export declare const crosstabElementSchema: z.ZodObject<{
     columnBy: z.ZodString;
     measure: z.ZodString;
     fn: z.ZodDefault<z.ZodEnum<{
-        sum: "sum";
+        max: "max";
+        min: "min";
         count: "count";
         avg: "avg";
-        min: "min";
-        max: "max";
+        sum: "sum";
     }>>;
     format: z.ZodDefault<z.ZodString>;
     blankWhenZero: z.ZodDefault<z.ZodBoolean>;
@@ -742,11 +742,11 @@ export declare const crosstabElementSchema: z.ZodObject<{
         expression: z.ZodString;
         label: z.ZodDefault<z.ZodString>;
         fn: z.ZodDefault<z.ZodEnum<{
-            sum: "sum";
+            max: "max";
+            min: "min";
             count: "count";
             avg: "avg";
-            min: "min";
-            max: "max";
+            sum: "sum";
         }>>;
         format: z.ZodDefault<z.ZodString>;
         blankWhenZero: z.ZodDefault<z.ZodBoolean>;
@@ -871,11 +871,11 @@ export declare const chartElementSchema: z.ZodObject<{
         color: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
     }, z.core.$strip>>;
     fn: z.ZodDefault<z.ZodEnum<{
-        sum: "sum";
+        max: "max";
+        min: "min";
         count: "count";
         avg: "avg";
-        min: "min";
-        max: "max";
+        sum: "sum";
     }>>;
     title: z.ZodDefault<z.ZodString>;
     showLegend: z.ZodDefault<z.ZodBoolean>;
@@ -979,8 +979,8 @@ export declare const elementSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     }, z.core.$strip>>;
     align: z.ZodDefault<z.ZodEnum<{
         left: "left";
-        center: "center";
         right: "right";
+        center: "center";
         justify: "justify";
     }>>;
     vAlign: z.ZodDefault<z.ZodEnum<{
@@ -1063,8 +1063,8 @@ export declare const elementSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     }, z.core.$strip>>;
     align: z.ZodDefault<z.ZodEnum<{
         left: "left";
-        center: "center";
         right: "right";
+        center: "center";
         justify: "justify";
     }>>;
     vAlign: z.ZodDefault<z.ZodEnum<{
@@ -1089,16 +1089,16 @@ export declare const elementSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     kind: z.ZodLiteral<"FIELD">;
     aggregate: z.ZodOptional<z.ZodObject<{
         fn: z.ZodEnum<{
-            sum: "sum";
+            max: "max";
+            min: "min";
             count: "count";
             avg: "avg";
-            min: "min";
-            max: "max";
+            sum: "sum";
         }>;
         scope: z.ZodEnum<{
             GROUP: "GROUP";
-            PAGE: "PAGE";
             REPORT: "REPORT";
+            PAGE: "PAGE";
         }>;
         dataset: z.ZodOptional<z.ZodString>;
         over: z.ZodOptional<z.ZodString>;
@@ -1396,8 +1396,8 @@ export declare const elementSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     size: z.ZodNumber;
     value: z.ZodString;
     errorCorrection: z.ZodDefault<z.ZodEnum<{
-        L: "L";
         M: "M";
+        L: "L";
         Q: "Q";
         H: "H";
     }>>;
@@ -1507,11 +1507,11 @@ export declare const elementSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     columnBy: z.ZodString;
     measure: z.ZodString;
     fn: z.ZodDefault<z.ZodEnum<{
-        sum: "sum";
+        max: "max";
+        min: "min";
         count: "count";
         avg: "avg";
-        min: "min";
-        max: "max";
+        sum: "sum";
     }>>;
     format: z.ZodDefault<z.ZodString>;
     blankWhenZero: z.ZodDefault<z.ZodBoolean>;
@@ -1530,11 +1530,11 @@ export declare const elementSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         expression: z.ZodString;
         label: z.ZodDefault<z.ZodString>;
         fn: z.ZodDefault<z.ZodEnum<{
-            sum: "sum";
+            max: "max";
+            min: "min";
             count: "count";
             avg: "avg";
-            min: "min";
-            max: "max";
+            sum: "sum";
         }>>;
         format: z.ZodDefault<z.ZodString>;
         blankWhenZero: z.ZodDefault<z.ZodBoolean>;
@@ -1653,11 +1653,11 @@ export declare const elementSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         color: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
     }, z.core.$strip>>;
     fn: z.ZodDefault<z.ZodEnum<{
-        sum: "sum";
+        max: "max";
+        min: "min";
         count: "count";
         avg: "avg";
-        min: "min";
-        max: "max";
+        sum: "sum";
     }>>;
     title: z.ZodDefault<z.ZodString>;
     showLegend: z.ZodDefault<z.ZodBoolean>;
@@ -1727,10 +1727,10 @@ export declare const watermarkSchema: z.ZodObject<{
 }, z.core.$strip>;
 export declare const bandSchema: z.ZodObject<{
     type: z.ZodEnum<{
+        DETAIL: "DETAIL";
         REPORT_HEADER: "REPORT_HEADER";
         PAGE_HEADER: "PAGE_HEADER";
         GROUP_HEADER: "GROUP_HEADER";
-        DETAIL: "DETAIL";
         GROUP_FOOTER: "GROUP_FOOTER";
         SUMMARY: "SUMMARY";
         PAGE_FOOTER: "PAGE_FOOTER";
@@ -1819,8 +1819,8 @@ export declare const bandSchema: z.ZodObject<{
         }, z.core.$strip>>;
         align: z.ZodDefault<z.ZodEnum<{
             left: "left";
-            center: "center";
             right: "right";
+            center: "center";
             justify: "justify";
         }>>;
         vAlign: z.ZodDefault<z.ZodEnum<{
@@ -1903,8 +1903,8 @@ export declare const bandSchema: z.ZodObject<{
         }, z.core.$strip>>;
         align: z.ZodDefault<z.ZodEnum<{
             left: "left";
-            center: "center";
             right: "right";
+            center: "center";
             justify: "justify";
         }>>;
         vAlign: z.ZodDefault<z.ZodEnum<{
@@ -1929,16 +1929,16 @@ export declare const bandSchema: z.ZodObject<{
         kind: z.ZodLiteral<"FIELD">;
         aggregate: z.ZodOptional<z.ZodObject<{
             fn: z.ZodEnum<{
-                sum: "sum";
+                max: "max";
+                min: "min";
                 count: "count";
                 avg: "avg";
-                min: "min";
-                max: "max";
+                sum: "sum";
             }>;
             scope: z.ZodEnum<{
                 GROUP: "GROUP";
-                PAGE: "PAGE";
                 REPORT: "REPORT";
+                PAGE: "PAGE";
             }>;
             dataset: z.ZodOptional<z.ZodString>;
             over: z.ZodOptional<z.ZodString>;
@@ -2236,8 +2236,8 @@ export declare const bandSchema: z.ZodObject<{
         size: z.ZodNumber;
         value: z.ZodString;
         errorCorrection: z.ZodDefault<z.ZodEnum<{
-            L: "L";
             M: "M";
+            L: "L";
             Q: "Q";
             H: "H";
         }>>;
@@ -2347,11 +2347,11 @@ export declare const bandSchema: z.ZodObject<{
         columnBy: z.ZodString;
         measure: z.ZodString;
         fn: z.ZodDefault<z.ZodEnum<{
-            sum: "sum";
+            max: "max";
+            min: "min";
             count: "count";
             avg: "avg";
-            min: "min";
-            max: "max";
+            sum: "sum";
         }>>;
         format: z.ZodDefault<z.ZodString>;
         blankWhenZero: z.ZodDefault<z.ZodBoolean>;
@@ -2370,11 +2370,11 @@ export declare const bandSchema: z.ZodObject<{
             expression: z.ZodString;
             label: z.ZodDefault<z.ZodString>;
             fn: z.ZodDefault<z.ZodEnum<{
-                sum: "sum";
+                max: "max";
+                min: "min";
                 count: "count";
                 avg: "avg";
-                min: "min";
-                max: "max";
+                sum: "sum";
             }>>;
             format: z.ZodDefault<z.ZodString>;
             blankWhenZero: z.ZodDefault<z.ZodBoolean>;
@@ -2493,11 +2493,11 @@ export declare const bandSchema: z.ZodObject<{
             color: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
         }, z.core.$strip>>;
         fn: z.ZodDefault<z.ZodEnum<{
-            sum: "sum";
+            max: "max";
+            min: "min";
             count: "count";
             avg: "avg";
-            min: "min";
-            max: "max";
+            sum: "sum";
         }>>;
         title: z.ZodDefault<z.ZodString>;
         showLegend: z.ZodDefault<z.ZodBoolean>;
@@ -2601,10 +2601,10 @@ export declare const templateDefinitionSchema: z.ZodObject<{
     }, z.core.$strip>>>;
     bands: z.ZodArray<z.ZodObject<{
         type: z.ZodEnum<{
+            DETAIL: "DETAIL";
             REPORT_HEADER: "REPORT_HEADER";
             PAGE_HEADER: "PAGE_HEADER";
             GROUP_HEADER: "GROUP_HEADER";
-            DETAIL: "DETAIL";
             GROUP_FOOTER: "GROUP_FOOTER";
             SUMMARY: "SUMMARY";
             PAGE_FOOTER: "PAGE_FOOTER";
@@ -2693,8 +2693,8 @@ export declare const templateDefinitionSchema: z.ZodObject<{
             }, z.core.$strip>>;
             align: z.ZodDefault<z.ZodEnum<{
                 left: "left";
-                center: "center";
                 right: "right";
+                center: "center";
                 justify: "justify";
             }>>;
             vAlign: z.ZodDefault<z.ZodEnum<{
@@ -2777,8 +2777,8 @@ export declare const templateDefinitionSchema: z.ZodObject<{
             }, z.core.$strip>>;
             align: z.ZodDefault<z.ZodEnum<{
                 left: "left";
-                center: "center";
                 right: "right";
+                center: "center";
                 justify: "justify";
             }>>;
             vAlign: z.ZodDefault<z.ZodEnum<{
@@ -2803,16 +2803,16 @@ export declare const templateDefinitionSchema: z.ZodObject<{
             kind: z.ZodLiteral<"FIELD">;
             aggregate: z.ZodOptional<z.ZodObject<{
                 fn: z.ZodEnum<{
-                    sum: "sum";
+                    max: "max";
+                    min: "min";
                     count: "count";
                     avg: "avg";
-                    min: "min";
-                    max: "max";
+                    sum: "sum";
                 }>;
                 scope: z.ZodEnum<{
                     GROUP: "GROUP";
-                    PAGE: "PAGE";
                     REPORT: "REPORT";
+                    PAGE: "PAGE";
                 }>;
                 dataset: z.ZodOptional<z.ZodString>;
                 over: z.ZodOptional<z.ZodString>;
@@ -3110,8 +3110,8 @@ export declare const templateDefinitionSchema: z.ZodObject<{
             size: z.ZodNumber;
             value: z.ZodString;
             errorCorrection: z.ZodDefault<z.ZodEnum<{
-                L: "L";
                 M: "M";
+                L: "L";
                 Q: "Q";
                 H: "H";
             }>>;
@@ -3221,11 +3221,11 @@ export declare const templateDefinitionSchema: z.ZodObject<{
             columnBy: z.ZodString;
             measure: z.ZodString;
             fn: z.ZodDefault<z.ZodEnum<{
-                sum: "sum";
+                max: "max";
+                min: "min";
                 count: "count";
                 avg: "avg";
-                min: "min";
-                max: "max";
+                sum: "sum";
             }>>;
             format: z.ZodDefault<z.ZodString>;
             blankWhenZero: z.ZodDefault<z.ZodBoolean>;
@@ -3244,11 +3244,11 @@ export declare const templateDefinitionSchema: z.ZodObject<{
                 expression: z.ZodString;
                 label: z.ZodDefault<z.ZodString>;
                 fn: z.ZodDefault<z.ZodEnum<{
-                    sum: "sum";
+                    max: "max";
+                    min: "min";
                     count: "count";
                     avg: "avg";
-                    min: "min";
-                    max: "max";
+                    sum: "sum";
                 }>>;
                 format: z.ZodDefault<z.ZodString>;
                 blankWhenZero: z.ZodDefault<z.ZodBoolean>;
@@ -3367,11 +3367,11 @@ export declare const templateDefinitionSchema: z.ZodObject<{
                 color: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
             }, z.core.$strip>>;
             fn: z.ZodDefault<z.ZodEnum<{
-                sum: "sum";
+                max: "max";
+                min: "min";
                 count: "count";
                 avg: "avg";
-                min: "min";
-                max: "max";
+                sum: "sum";
             }>>;
             title: z.ZodDefault<z.ZodString>;
             showLegend: z.ZodDefault<z.ZodBoolean>;
