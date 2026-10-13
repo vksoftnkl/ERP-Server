@@ -16,6 +16,7 @@ export declare const BARCODE_SYMBOLOGIES: readonly ["code128", "ean13", "ean8", 
 export type BarcodeSymbology = (typeof BARCODE_SYMBOLOGIES)[number];
 export declare const CROSSTAB_SORTS: readonly ["LABEL_ASC", "LABEL_DESC", "VALUE_DESC", "VALUE_ASC", "FIRST_SEEN"];
 export declare const CROSSTAB_OVERFLOWS: readonly ["FOLD", "CLIP"];
+export declare const POSITION_TYPES: readonly ["FIX", "FLOAT"];
 export declare const CROSSTAB_BANDS: readonly string[];
 export declare const marginsSchema: z.ZodObject<{
     top: z.ZodNumber;
@@ -81,6 +82,11 @@ export declare const textElementSchema: z.ZodObject<{
         padding: z.ZodOptional<z.ZodNumber>;
     }, z.core.$strip>>;
     z: z.ZodDefault<z.ZodNumber>;
+    positionType: z.ZodDefault<z.ZodEnum<{
+        FIX: "FIX";
+        FLOAT: "FLOAT";
+    }>>;
+    removeLineWhenBlank: z.ZodDefault<z.ZodBoolean>;
     value: z.ZodString;
     font: z.ZodOptional<z.ZodObject<{
         family: z.ZodOptional<z.ZodDefault<z.ZodString>>;
@@ -91,8 +97,8 @@ export declare const textElementSchema: z.ZodObject<{
     }, z.core.$strip>>;
     align: z.ZodDefault<z.ZodEnum<{
         left: "left";
-        right: "right";
         center: "center";
+        right: "right";
     }>>;
     vAlign: z.ZodDefault<z.ZodEnum<{
         top: "top";
@@ -122,6 +128,11 @@ export declare const fieldElementSchema: z.ZodObject<{
         padding: z.ZodOptional<z.ZodNumber>;
     }, z.core.$strip>>;
     z: z.ZodDefault<z.ZodNumber>;
+    positionType: z.ZodDefault<z.ZodEnum<{
+        FIX: "FIX";
+        FLOAT: "FLOAT";
+    }>>;
+    removeLineWhenBlank: z.ZodDefault<z.ZodBoolean>;
     value: z.ZodString;
     font: z.ZodOptional<z.ZodObject<{
         family: z.ZodOptional<z.ZodDefault<z.ZodString>>;
@@ -132,8 +143,8 @@ export declare const fieldElementSchema: z.ZodObject<{
     }, z.core.$strip>>;
     align: z.ZodDefault<z.ZodEnum<{
         left: "left";
-        right: "right";
         center: "center";
+        right: "right";
     }>>;
     vAlign: z.ZodDefault<z.ZodEnum<{
         top: "top";
@@ -146,16 +157,16 @@ export declare const fieldElementSchema: z.ZodObject<{
     kind: z.ZodLiteral<"FIELD">;
     aggregate: z.ZodOptional<z.ZodObject<{
         fn: z.ZodEnum<{
-            max: "max";
-            min: "min";
+            sum: "sum";
             count: "count";
             avg: "avg";
-            sum: "sum";
+            min: "min";
+            max: "max";
         }>;
         scope: z.ZodEnum<{
             GROUP: "GROUP";
-            REPORT: "REPORT";
             PAGE: "PAGE";
+            REPORT: "REPORT";
         }>;
         dataset: z.ZodOptional<z.ZodString>;
         over: z.ZodOptional<z.ZodString>;
@@ -179,6 +190,11 @@ export declare const lineElementSchema: z.ZodObject<{
         padding: z.ZodOptional<z.ZodNumber>;
     }, z.core.$strip>>;
     z: z.ZodDefault<z.ZodNumber>;
+    positionType: z.ZodDefault<z.ZodEnum<{
+        FIX: "FIX";
+        FLOAT: "FLOAT";
+    }>>;
+    removeLineWhenBlank: z.ZodDefault<z.ZodBoolean>;
     kind: z.ZodLiteral<"LINE">;
     x1: z.ZodNumber;
     y1: z.ZodNumber;
@@ -203,6 +219,11 @@ export declare const rectElementSchema: z.ZodObject<{
         padding: z.ZodOptional<z.ZodNumber>;
     }, z.core.$strip>>;
     z: z.ZodDefault<z.ZodNumber>;
+    positionType: z.ZodDefault<z.ZodEnum<{
+        FIX: "FIX";
+        FLOAT: "FLOAT";
+    }>>;
+    removeLineWhenBlank: z.ZodDefault<z.ZodBoolean>;
     kind: z.ZodLiteral<"RECT">;
     w: z.ZodNumber;
     h: z.ZodNumber;
@@ -224,6 +245,11 @@ export declare const imageElementSchema: z.ZodObject<{
         padding: z.ZodOptional<z.ZodNumber>;
     }, z.core.$strip>>;
     z: z.ZodDefault<z.ZodNumber>;
+    positionType: z.ZodDefault<z.ZodEnum<{
+        FIX: "FIX";
+        FLOAT: "FLOAT";
+    }>>;
+    removeLineWhenBlank: z.ZodDefault<z.ZodBoolean>;
     kind: z.ZodLiteral<"IMAGE">;
     w: z.ZodNumber;
     h: z.ZodNumber;
@@ -250,6 +276,11 @@ export declare const barcodeElementSchema: z.ZodObject<{
         padding: z.ZodOptional<z.ZodNumber>;
     }, z.core.$strip>>;
     z: z.ZodDefault<z.ZodNumber>;
+    positionType: z.ZodDefault<z.ZodEnum<{
+        FIX: "FIX";
+        FLOAT: "FLOAT";
+    }>>;
+    removeLineWhenBlank: z.ZodDefault<z.ZodBoolean>;
     kind: z.ZodLiteral<"BARCODE">;
     w: z.ZodNumber;
     h: z.ZodNumber;
@@ -282,12 +313,17 @@ export declare const qrcodeElementSchema: z.ZodObject<{
         padding: z.ZodOptional<z.ZodNumber>;
     }, z.core.$strip>>;
     z: z.ZodDefault<z.ZodNumber>;
+    positionType: z.ZodDefault<z.ZodEnum<{
+        FIX: "FIX";
+        FLOAT: "FLOAT";
+    }>>;
+    removeLineWhenBlank: z.ZodDefault<z.ZodBoolean>;
     kind: z.ZodLiteral<"QRCODE">;
     size: z.ZodNumber;
     value: z.ZodString;
     errorCorrection: z.ZodDefault<z.ZodEnum<{
-        M: "M";
         L: "L";
+        M: "M";
         Q: "Q";
         H: "H";
     }>>;
@@ -310,6 +346,11 @@ export declare const pagebreakElementSchema: z.ZodObject<{
         padding: z.ZodOptional<z.ZodNumber>;
     }, z.core.$strip>>;
     z: z.ZodDefault<z.ZodNumber>;
+    positionType: z.ZodDefault<z.ZodEnum<{
+        FIX: "FIX";
+        FLOAT: "FLOAT";
+    }>>;
+    removeLineWhenBlank: z.ZodDefault<z.ZodBoolean>;
     kind: z.ZodLiteral<"PAGEBREAK">;
     when: z.ZodOptional<z.ZodString>;
 }, z.core.$strip>;
@@ -322,11 +363,11 @@ export declare const crosstabMeasureSchema: z.ZodObject<{
     expression: z.ZodString;
     label: z.ZodDefault<z.ZodString>;
     fn: z.ZodDefault<z.ZodEnum<{
-        max: "max";
-        min: "min";
+        sum: "sum";
         count: "count";
         avg: "avg";
-        sum: "sum";
+        min: "min";
+        max: "max";
     }>>;
     format: z.ZodDefault<z.ZodString>;
     blankWhenZero: z.ZodDefault<z.ZodBoolean>;
@@ -347,6 +388,11 @@ export declare const crosstabElementSchema: z.ZodObject<{
         padding: z.ZodOptional<z.ZodNumber>;
     }, z.core.$strip>>;
     z: z.ZodDefault<z.ZodNumber>;
+    positionType: z.ZodDefault<z.ZodEnum<{
+        FIX: "FIX";
+        FLOAT: "FLOAT";
+    }>>;
+    removeLineWhenBlank: z.ZodDefault<z.ZodBoolean>;
     kind: z.ZodLiteral<"CROSSTAB">;
     w: z.ZodNumber;
     h: z.ZodDefault<z.ZodNumber>;
@@ -355,11 +401,11 @@ export declare const crosstabElementSchema: z.ZodObject<{
     columnBy: z.ZodString;
     measure: z.ZodString;
     fn: z.ZodDefault<z.ZodEnum<{
-        max: "max";
-        min: "min";
+        sum: "sum";
         count: "count";
         avg: "avg";
-        sum: "sum";
+        min: "min";
+        max: "max";
     }>>;
     format: z.ZodDefault<z.ZodString>;
     blankWhenZero: z.ZodDefault<z.ZodBoolean>;
@@ -378,11 +424,11 @@ export declare const crosstabElementSchema: z.ZodObject<{
         expression: z.ZodString;
         label: z.ZodDefault<z.ZodString>;
         fn: z.ZodDefault<z.ZodEnum<{
-            max: "max";
-            min: "min";
+            sum: "sum";
             count: "count";
             avg: "avg";
-            sum: "sum";
+            min: "min";
+            max: "max";
         }>>;
         format: z.ZodDefault<z.ZodString>;
         blankWhenZero: z.ZodDefault<z.ZodBoolean>;
@@ -451,6 +497,11 @@ export declare const elementSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         padding: z.ZodOptional<z.ZodNumber>;
     }, z.core.$strip>>;
     z: z.ZodDefault<z.ZodNumber>;
+    positionType: z.ZodDefault<z.ZodEnum<{
+        FIX: "FIX";
+        FLOAT: "FLOAT";
+    }>>;
+    removeLineWhenBlank: z.ZodDefault<z.ZodBoolean>;
     value: z.ZodString;
     font: z.ZodOptional<z.ZodObject<{
         family: z.ZodOptional<z.ZodDefault<z.ZodString>>;
@@ -461,8 +512,8 @@ export declare const elementSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     }, z.core.$strip>>;
     align: z.ZodDefault<z.ZodEnum<{
         left: "left";
-        right: "right";
         center: "center";
+        right: "right";
     }>>;
     vAlign: z.ZodDefault<z.ZodEnum<{
         top: "top";
@@ -491,6 +542,11 @@ export declare const elementSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         padding: z.ZodOptional<z.ZodNumber>;
     }, z.core.$strip>>;
     z: z.ZodDefault<z.ZodNumber>;
+    positionType: z.ZodDefault<z.ZodEnum<{
+        FIX: "FIX";
+        FLOAT: "FLOAT";
+    }>>;
+    removeLineWhenBlank: z.ZodDefault<z.ZodBoolean>;
     value: z.ZodString;
     font: z.ZodOptional<z.ZodObject<{
         family: z.ZodOptional<z.ZodDefault<z.ZodString>>;
@@ -501,8 +557,8 @@ export declare const elementSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     }, z.core.$strip>>;
     align: z.ZodDefault<z.ZodEnum<{
         left: "left";
-        right: "right";
         center: "center";
+        right: "right";
     }>>;
     vAlign: z.ZodDefault<z.ZodEnum<{
         top: "top";
@@ -515,16 +571,16 @@ export declare const elementSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     kind: z.ZodLiteral<"FIELD">;
     aggregate: z.ZodOptional<z.ZodObject<{
         fn: z.ZodEnum<{
-            max: "max";
-            min: "min";
+            sum: "sum";
             count: "count";
             avg: "avg";
-            sum: "sum";
+            min: "min";
+            max: "max";
         }>;
         scope: z.ZodEnum<{
             GROUP: "GROUP";
-            REPORT: "REPORT";
             PAGE: "PAGE";
+            REPORT: "REPORT";
         }>;
         dataset: z.ZodOptional<z.ZodString>;
         over: z.ZodOptional<z.ZodString>;
@@ -547,6 +603,11 @@ export declare const elementSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         padding: z.ZodOptional<z.ZodNumber>;
     }, z.core.$strip>>;
     z: z.ZodDefault<z.ZodNumber>;
+    positionType: z.ZodDefault<z.ZodEnum<{
+        FIX: "FIX";
+        FLOAT: "FLOAT";
+    }>>;
+    removeLineWhenBlank: z.ZodDefault<z.ZodBoolean>;
     kind: z.ZodLiteral<"LINE">;
     x1: z.ZodNumber;
     y1: z.ZodNumber;
@@ -570,6 +631,11 @@ export declare const elementSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         padding: z.ZodOptional<z.ZodNumber>;
     }, z.core.$strip>>;
     z: z.ZodDefault<z.ZodNumber>;
+    positionType: z.ZodDefault<z.ZodEnum<{
+        FIX: "FIX";
+        FLOAT: "FLOAT";
+    }>>;
+    removeLineWhenBlank: z.ZodDefault<z.ZodBoolean>;
     kind: z.ZodLiteral<"RECT">;
     w: z.ZodNumber;
     h: z.ZodNumber;
@@ -590,6 +656,11 @@ export declare const elementSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         padding: z.ZodOptional<z.ZodNumber>;
     }, z.core.$strip>>;
     z: z.ZodDefault<z.ZodNumber>;
+    positionType: z.ZodDefault<z.ZodEnum<{
+        FIX: "FIX";
+        FLOAT: "FLOAT";
+    }>>;
+    removeLineWhenBlank: z.ZodDefault<z.ZodBoolean>;
     kind: z.ZodLiteral<"IMAGE">;
     w: z.ZodNumber;
     h: z.ZodNumber;
@@ -615,6 +686,11 @@ export declare const elementSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         padding: z.ZodOptional<z.ZodNumber>;
     }, z.core.$strip>>;
     z: z.ZodDefault<z.ZodNumber>;
+    positionType: z.ZodDefault<z.ZodEnum<{
+        FIX: "FIX";
+        FLOAT: "FLOAT";
+    }>>;
+    removeLineWhenBlank: z.ZodDefault<z.ZodBoolean>;
     kind: z.ZodLiteral<"BARCODE">;
     w: z.ZodNumber;
     h: z.ZodNumber;
@@ -646,12 +722,17 @@ export declare const elementSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         padding: z.ZodOptional<z.ZodNumber>;
     }, z.core.$strip>>;
     z: z.ZodDefault<z.ZodNumber>;
+    positionType: z.ZodDefault<z.ZodEnum<{
+        FIX: "FIX";
+        FLOAT: "FLOAT";
+    }>>;
+    removeLineWhenBlank: z.ZodDefault<z.ZodBoolean>;
     kind: z.ZodLiteral<"QRCODE">;
     size: z.ZodNumber;
     value: z.ZodString;
     errorCorrection: z.ZodDefault<z.ZodEnum<{
-        M: "M";
         L: "L";
+        M: "M";
         Q: "Q";
         H: "H";
     }>>;
@@ -673,6 +754,11 @@ export declare const elementSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         padding: z.ZodOptional<z.ZodNumber>;
     }, z.core.$strip>>;
     z: z.ZodDefault<z.ZodNumber>;
+    positionType: z.ZodDefault<z.ZodEnum<{
+        FIX: "FIX";
+        FLOAT: "FLOAT";
+    }>>;
+    removeLineWhenBlank: z.ZodDefault<z.ZodBoolean>;
     kind: z.ZodLiteral<"PAGEBREAK">;
     when: z.ZodOptional<z.ZodString>;
 }, z.core.$strip>, z.ZodObject<{
@@ -691,6 +777,11 @@ export declare const elementSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         padding: z.ZodOptional<z.ZodNumber>;
     }, z.core.$strip>>;
     z: z.ZodDefault<z.ZodNumber>;
+    positionType: z.ZodDefault<z.ZodEnum<{
+        FIX: "FIX";
+        FLOAT: "FLOAT";
+    }>>;
+    removeLineWhenBlank: z.ZodDefault<z.ZodBoolean>;
     kind: z.ZodLiteral<"CROSSTAB">;
     w: z.ZodNumber;
     h: z.ZodDefault<z.ZodNumber>;
@@ -699,11 +790,11 @@ export declare const elementSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     columnBy: z.ZodString;
     measure: z.ZodString;
     fn: z.ZodDefault<z.ZodEnum<{
-        max: "max";
-        min: "min";
+        sum: "sum";
         count: "count";
         avg: "avg";
-        sum: "sum";
+        min: "min";
+        max: "max";
     }>>;
     format: z.ZodDefault<z.ZodString>;
     blankWhenZero: z.ZodDefault<z.ZodBoolean>;
@@ -722,11 +813,11 @@ export declare const elementSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         expression: z.ZodString;
         label: z.ZodDefault<z.ZodString>;
         fn: z.ZodDefault<z.ZodEnum<{
-            max: "max";
-            min: "min";
+            sum: "sum";
             count: "count";
             avg: "avg";
-            sum: "sum";
+            min: "min";
+            max: "max";
         }>>;
         format: z.ZodDefault<z.ZodString>;
         blankWhenZero: z.ZodDefault<z.ZodBoolean>;
@@ -777,12 +868,18 @@ export declare const elementSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     headerFill: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
     repeatHeader: z.ZodDefault<z.ZodBoolean>;
 }, z.core.$strip>], "kind">;
+export declare const pageBorderSchema: z.ZodObject<{
+    insetMm: z.ZodDefault<z.ZodNullable<z.ZodNumber>>;
+    widthPt: z.ZodDefault<z.ZodNumber>;
+    color: z.ZodDefault<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+    radiusMm: z.ZodDefault<z.ZodNumber>;
+}, z.core.$strip>;
 export declare const bandSchema: z.ZodObject<{
     type: z.ZodEnum<{
-        DETAIL: "DETAIL";
         REPORT_HEADER: "REPORT_HEADER";
         PAGE_HEADER: "PAGE_HEADER";
         GROUP_HEADER: "GROUP_HEADER";
+        DETAIL: "DETAIL";
         GROUP_FOOTER: "GROUP_FOOTER";
         SUMMARY: "SUMMARY";
         PAGE_FOOTER: "PAGE_FOOTER";
@@ -802,6 +899,7 @@ export declare const bandSchema: z.ZodObject<{
         NOT_LAST_PAGE: "NOT_LAST_PAGE";
     }>>;
     autoGrow: z.ZodDefault<z.ZodBoolean>;
+    flowLayout: z.ZodDefault<z.ZodBoolean>;
     keepTogether: z.ZodDefault<z.ZodBoolean>;
     keepWithNext: z.ZodDefault<z.ZodBoolean>;
     keepWithLastDetail: z.ZodDefault<z.ZodBoolean>;
@@ -825,6 +923,11 @@ export declare const bandSchema: z.ZodObject<{
             padding: z.ZodOptional<z.ZodNumber>;
         }, z.core.$strip>>;
         z: z.ZodDefault<z.ZodNumber>;
+        positionType: z.ZodDefault<z.ZodEnum<{
+            FIX: "FIX";
+            FLOAT: "FLOAT";
+        }>>;
+        removeLineWhenBlank: z.ZodDefault<z.ZodBoolean>;
         value: z.ZodString;
         font: z.ZodOptional<z.ZodObject<{
             family: z.ZodOptional<z.ZodDefault<z.ZodString>>;
@@ -835,8 +938,8 @@ export declare const bandSchema: z.ZodObject<{
         }, z.core.$strip>>;
         align: z.ZodDefault<z.ZodEnum<{
             left: "left";
-            right: "right";
             center: "center";
+            right: "right";
         }>>;
         vAlign: z.ZodDefault<z.ZodEnum<{
             top: "top";
@@ -865,6 +968,11 @@ export declare const bandSchema: z.ZodObject<{
             padding: z.ZodOptional<z.ZodNumber>;
         }, z.core.$strip>>;
         z: z.ZodDefault<z.ZodNumber>;
+        positionType: z.ZodDefault<z.ZodEnum<{
+            FIX: "FIX";
+            FLOAT: "FLOAT";
+        }>>;
+        removeLineWhenBlank: z.ZodDefault<z.ZodBoolean>;
         value: z.ZodString;
         font: z.ZodOptional<z.ZodObject<{
             family: z.ZodOptional<z.ZodDefault<z.ZodString>>;
@@ -875,8 +983,8 @@ export declare const bandSchema: z.ZodObject<{
         }, z.core.$strip>>;
         align: z.ZodDefault<z.ZodEnum<{
             left: "left";
-            right: "right";
             center: "center";
+            right: "right";
         }>>;
         vAlign: z.ZodDefault<z.ZodEnum<{
             top: "top";
@@ -889,16 +997,16 @@ export declare const bandSchema: z.ZodObject<{
         kind: z.ZodLiteral<"FIELD">;
         aggregate: z.ZodOptional<z.ZodObject<{
             fn: z.ZodEnum<{
-                max: "max";
-                min: "min";
+                sum: "sum";
                 count: "count";
                 avg: "avg";
-                sum: "sum";
+                min: "min";
+                max: "max";
             }>;
             scope: z.ZodEnum<{
                 GROUP: "GROUP";
-                REPORT: "REPORT";
                 PAGE: "PAGE";
+                REPORT: "REPORT";
             }>;
             dataset: z.ZodOptional<z.ZodString>;
             over: z.ZodOptional<z.ZodString>;
@@ -921,6 +1029,11 @@ export declare const bandSchema: z.ZodObject<{
             padding: z.ZodOptional<z.ZodNumber>;
         }, z.core.$strip>>;
         z: z.ZodDefault<z.ZodNumber>;
+        positionType: z.ZodDefault<z.ZodEnum<{
+            FIX: "FIX";
+            FLOAT: "FLOAT";
+        }>>;
+        removeLineWhenBlank: z.ZodDefault<z.ZodBoolean>;
         kind: z.ZodLiteral<"LINE">;
         x1: z.ZodNumber;
         y1: z.ZodNumber;
@@ -944,6 +1057,11 @@ export declare const bandSchema: z.ZodObject<{
             padding: z.ZodOptional<z.ZodNumber>;
         }, z.core.$strip>>;
         z: z.ZodDefault<z.ZodNumber>;
+        positionType: z.ZodDefault<z.ZodEnum<{
+            FIX: "FIX";
+            FLOAT: "FLOAT";
+        }>>;
+        removeLineWhenBlank: z.ZodDefault<z.ZodBoolean>;
         kind: z.ZodLiteral<"RECT">;
         w: z.ZodNumber;
         h: z.ZodNumber;
@@ -964,6 +1082,11 @@ export declare const bandSchema: z.ZodObject<{
             padding: z.ZodOptional<z.ZodNumber>;
         }, z.core.$strip>>;
         z: z.ZodDefault<z.ZodNumber>;
+        positionType: z.ZodDefault<z.ZodEnum<{
+            FIX: "FIX";
+            FLOAT: "FLOAT";
+        }>>;
+        removeLineWhenBlank: z.ZodDefault<z.ZodBoolean>;
         kind: z.ZodLiteral<"IMAGE">;
         w: z.ZodNumber;
         h: z.ZodNumber;
@@ -989,6 +1112,11 @@ export declare const bandSchema: z.ZodObject<{
             padding: z.ZodOptional<z.ZodNumber>;
         }, z.core.$strip>>;
         z: z.ZodDefault<z.ZodNumber>;
+        positionType: z.ZodDefault<z.ZodEnum<{
+            FIX: "FIX";
+            FLOAT: "FLOAT";
+        }>>;
+        removeLineWhenBlank: z.ZodDefault<z.ZodBoolean>;
         kind: z.ZodLiteral<"BARCODE">;
         w: z.ZodNumber;
         h: z.ZodNumber;
@@ -1020,12 +1148,17 @@ export declare const bandSchema: z.ZodObject<{
             padding: z.ZodOptional<z.ZodNumber>;
         }, z.core.$strip>>;
         z: z.ZodDefault<z.ZodNumber>;
+        positionType: z.ZodDefault<z.ZodEnum<{
+            FIX: "FIX";
+            FLOAT: "FLOAT";
+        }>>;
+        removeLineWhenBlank: z.ZodDefault<z.ZodBoolean>;
         kind: z.ZodLiteral<"QRCODE">;
         size: z.ZodNumber;
         value: z.ZodString;
         errorCorrection: z.ZodDefault<z.ZodEnum<{
-            M: "M";
             L: "L";
+            M: "M";
             Q: "Q";
             H: "H";
         }>>;
@@ -1047,6 +1180,11 @@ export declare const bandSchema: z.ZodObject<{
             padding: z.ZodOptional<z.ZodNumber>;
         }, z.core.$strip>>;
         z: z.ZodDefault<z.ZodNumber>;
+        positionType: z.ZodDefault<z.ZodEnum<{
+            FIX: "FIX";
+            FLOAT: "FLOAT";
+        }>>;
+        removeLineWhenBlank: z.ZodDefault<z.ZodBoolean>;
         kind: z.ZodLiteral<"PAGEBREAK">;
         when: z.ZodOptional<z.ZodString>;
     }, z.core.$strip>, z.ZodObject<{
@@ -1065,6 +1203,11 @@ export declare const bandSchema: z.ZodObject<{
             padding: z.ZodOptional<z.ZodNumber>;
         }, z.core.$strip>>;
         z: z.ZodDefault<z.ZodNumber>;
+        positionType: z.ZodDefault<z.ZodEnum<{
+            FIX: "FIX";
+            FLOAT: "FLOAT";
+        }>>;
+        removeLineWhenBlank: z.ZodDefault<z.ZodBoolean>;
         kind: z.ZodLiteral<"CROSSTAB">;
         w: z.ZodNumber;
         h: z.ZodDefault<z.ZodNumber>;
@@ -1073,11 +1216,11 @@ export declare const bandSchema: z.ZodObject<{
         columnBy: z.ZodString;
         measure: z.ZodString;
         fn: z.ZodDefault<z.ZodEnum<{
-            max: "max";
-            min: "min";
+            sum: "sum";
             count: "count";
             avg: "avg";
-            sum: "sum";
+            min: "min";
+            max: "max";
         }>>;
         format: z.ZodDefault<z.ZodString>;
         blankWhenZero: z.ZodDefault<z.ZodBoolean>;
@@ -1096,11 +1239,11 @@ export declare const bandSchema: z.ZodObject<{
             expression: z.ZodString;
             label: z.ZodDefault<z.ZodString>;
             fn: z.ZodDefault<z.ZodEnum<{
-                max: "max";
-                min: "min";
+                sum: "sum";
                 count: "count";
                 avg: "avg";
-                sum: "sum";
+                min: "min";
+                max: "max";
             }>>;
             format: z.ZodDefault<z.ZodString>;
             blankWhenZero: z.ZodDefault<z.ZodBoolean>;
@@ -1176,6 +1319,12 @@ export declare const templateDefinitionSchema: z.ZodObject<{
         columns: z.ZodOptional<z.ZodNumber>;
         rows: z.ZodOptional<z.ZodNumber>;
     }, z.core.$strip>;
+    pageBorder: z.ZodOptional<z.ZodObject<{
+        insetMm: z.ZodDefault<z.ZodNullable<z.ZodNumber>>;
+        widthPt: z.ZodDefault<z.ZodNumber>;
+        color: z.ZodDefault<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+        radiusMm: z.ZodDefault<z.ZodNumber>;
+    }, z.core.$strip>>;
     datasets: z.ZodDefault<z.ZodArray<z.ZodObject<{
         name: z.ZodString;
         provider: z.ZodString;
@@ -1187,10 +1336,10 @@ export declare const templateDefinitionSchema: z.ZodObject<{
     }, z.core.$strip>>>;
     bands: z.ZodArray<z.ZodObject<{
         type: z.ZodEnum<{
-            DETAIL: "DETAIL";
             REPORT_HEADER: "REPORT_HEADER";
             PAGE_HEADER: "PAGE_HEADER";
             GROUP_HEADER: "GROUP_HEADER";
+            DETAIL: "DETAIL";
             GROUP_FOOTER: "GROUP_FOOTER";
             SUMMARY: "SUMMARY";
             PAGE_FOOTER: "PAGE_FOOTER";
@@ -1210,6 +1359,7 @@ export declare const templateDefinitionSchema: z.ZodObject<{
             NOT_LAST_PAGE: "NOT_LAST_PAGE";
         }>>;
         autoGrow: z.ZodDefault<z.ZodBoolean>;
+        flowLayout: z.ZodDefault<z.ZodBoolean>;
         keepTogether: z.ZodDefault<z.ZodBoolean>;
         keepWithNext: z.ZodDefault<z.ZodBoolean>;
         keepWithLastDetail: z.ZodDefault<z.ZodBoolean>;
@@ -1233,6 +1383,11 @@ export declare const templateDefinitionSchema: z.ZodObject<{
                 padding: z.ZodOptional<z.ZodNumber>;
             }, z.core.$strip>>;
             z: z.ZodDefault<z.ZodNumber>;
+            positionType: z.ZodDefault<z.ZodEnum<{
+                FIX: "FIX";
+                FLOAT: "FLOAT";
+            }>>;
+            removeLineWhenBlank: z.ZodDefault<z.ZodBoolean>;
             value: z.ZodString;
             font: z.ZodOptional<z.ZodObject<{
                 family: z.ZodOptional<z.ZodDefault<z.ZodString>>;
@@ -1243,8 +1398,8 @@ export declare const templateDefinitionSchema: z.ZodObject<{
             }, z.core.$strip>>;
             align: z.ZodDefault<z.ZodEnum<{
                 left: "left";
-                right: "right";
                 center: "center";
+                right: "right";
             }>>;
             vAlign: z.ZodDefault<z.ZodEnum<{
                 top: "top";
@@ -1273,6 +1428,11 @@ export declare const templateDefinitionSchema: z.ZodObject<{
                 padding: z.ZodOptional<z.ZodNumber>;
             }, z.core.$strip>>;
             z: z.ZodDefault<z.ZodNumber>;
+            positionType: z.ZodDefault<z.ZodEnum<{
+                FIX: "FIX";
+                FLOAT: "FLOAT";
+            }>>;
+            removeLineWhenBlank: z.ZodDefault<z.ZodBoolean>;
             value: z.ZodString;
             font: z.ZodOptional<z.ZodObject<{
                 family: z.ZodOptional<z.ZodDefault<z.ZodString>>;
@@ -1283,8 +1443,8 @@ export declare const templateDefinitionSchema: z.ZodObject<{
             }, z.core.$strip>>;
             align: z.ZodDefault<z.ZodEnum<{
                 left: "left";
-                right: "right";
                 center: "center";
+                right: "right";
             }>>;
             vAlign: z.ZodDefault<z.ZodEnum<{
                 top: "top";
@@ -1297,16 +1457,16 @@ export declare const templateDefinitionSchema: z.ZodObject<{
             kind: z.ZodLiteral<"FIELD">;
             aggregate: z.ZodOptional<z.ZodObject<{
                 fn: z.ZodEnum<{
-                    max: "max";
-                    min: "min";
+                    sum: "sum";
                     count: "count";
                     avg: "avg";
-                    sum: "sum";
+                    min: "min";
+                    max: "max";
                 }>;
                 scope: z.ZodEnum<{
                     GROUP: "GROUP";
-                    REPORT: "REPORT";
                     PAGE: "PAGE";
+                    REPORT: "REPORT";
                 }>;
                 dataset: z.ZodOptional<z.ZodString>;
                 over: z.ZodOptional<z.ZodString>;
@@ -1329,6 +1489,11 @@ export declare const templateDefinitionSchema: z.ZodObject<{
                 padding: z.ZodOptional<z.ZodNumber>;
             }, z.core.$strip>>;
             z: z.ZodDefault<z.ZodNumber>;
+            positionType: z.ZodDefault<z.ZodEnum<{
+                FIX: "FIX";
+                FLOAT: "FLOAT";
+            }>>;
+            removeLineWhenBlank: z.ZodDefault<z.ZodBoolean>;
             kind: z.ZodLiteral<"LINE">;
             x1: z.ZodNumber;
             y1: z.ZodNumber;
@@ -1352,6 +1517,11 @@ export declare const templateDefinitionSchema: z.ZodObject<{
                 padding: z.ZodOptional<z.ZodNumber>;
             }, z.core.$strip>>;
             z: z.ZodDefault<z.ZodNumber>;
+            positionType: z.ZodDefault<z.ZodEnum<{
+                FIX: "FIX";
+                FLOAT: "FLOAT";
+            }>>;
+            removeLineWhenBlank: z.ZodDefault<z.ZodBoolean>;
             kind: z.ZodLiteral<"RECT">;
             w: z.ZodNumber;
             h: z.ZodNumber;
@@ -1372,6 +1542,11 @@ export declare const templateDefinitionSchema: z.ZodObject<{
                 padding: z.ZodOptional<z.ZodNumber>;
             }, z.core.$strip>>;
             z: z.ZodDefault<z.ZodNumber>;
+            positionType: z.ZodDefault<z.ZodEnum<{
+                FIX: "FIX";
+                FLOAT: "FLOAT";
+            }>>;
+            removeLineWhenBlank: z.ZodDefault<z.ZodBoolean>;
             kind: z.ZodLiteral<"IMAGE">;
             w: z.ZodNumber;
             h: z.ZodNumber;
@@ -1397,6 +1572,11 @@ export declare const templateDefinitionSchema: z.ZodObject<{
                 padding: z.ZodOptional<z.ZodNumber>;
             }, z.core.$strip>>;
             z: z.ZodDefault<z.ZodNumber>;
+            positionType: z.ZodDefault<z.ZodEnum<{
+                FIX: "FIX";
+                FLOAT: "FLOAT";
+            }>>;
+            removeLineWhenBlank: z.ZodDefault<z.ZodBoolean>;
             kind: z.ZodLiteral<"BARCODE">;
             w: z.ZodNumber;
             h: z.ZodNumber;
@@ -1428,12 +1608,17 @@ export declare const templateDefinitionSchema: z.ZodObject<{
                 padding: z.ZodOptional<z.ZodNumber>;
             }, z.core.$strip>>;
             z: z.ZodDefault<z.ZodNumber>;
+            positionType: z.ZodDefault<z.ZodEnum<{
+                FIX: "FIX";
+                FLOAT: "FLOAT";
+            }>>;
+            removeLineWhenBlank: z.ZodDefault<z.ZodBoolean>;
             kind: z.ZodLiteral<"QRCODE">;
             size: z.ZodNumber;
             value: z.ZodString;
             errorCorrection: z.ZodDefault<z.ZodEnum<{
-                M: "M";
                 L: "L";
+                M: "M";
                 Q: "Q";
                 H: "H";
             }>>;
@@ -1455,6 +1640,11 @@ export declare const templateDefinitionSchema: z.ZodObject<{
                 padding: z.ZodOptional<z.ZodNumber>;
             }, z.core.$strip>>;
             z: z.ZodDefault<z.ZodNumber>;
+            positionType: z.ZodDefault<z.ZodEnum<{
+                FIX: "FIX";
+                FLOAT: "FLOAT";
+            }>>;
+            removeLineWhenBlank: z.ZodDefault<z.ZodBoolean>;
             kind: z.ZodLiteral<"PAGEBREAK">;
             when: z.ZodOptional<z.ZodString>;
         }, z.core.$strip>, z.ZodObject<{
@@ -1473,6 +1663,11 @@ export declare const templateDefinitionSchema: z.ZodObject<{
                 padding: z.ZodOptional<z.ZodNumber>;
             }, z.core.$strip>>;
             z: z.ZodDefault<z.ZodNumber>;
+            positionType: z.ZodDefault<z.ZodEnum<{
+                FIX: "FIX";
+                FLOAT: "FLOAT";
+            }>>;
+            removeLineWhenBlank: z.ZodDefault<z.ZodBoolean>;
             kind: z.ZodLiteral<"CROSSTAB">;
             w: z.ZodNumber;
             h: z.ZodDefault<z.ZodNumber>;
@@ -1481,11 +1676,11 @@ export declare const templateDefinitionSchema: z.ZodObject<{
             columnBy: z.ZodString;
             measure: z.ZodString;
             fn: z.ZodDefault<z.ZodEnum<{
-                max: "max";
-                min: "min";
+                sum: "sum";
                 count: "count";
                 avg: "avg";
-                sum: "sum";
+                min: "min";
+                max: "max";
             }>>;
             format: z.ZodDefault<z.ZodString>;
             blankWhenZero: z.ZodDefault<z.ZodBoolean>;
@@ -1504,11 +1699,11 @@ export declare const templateDefinitionSchema: z.ZodObject<{
                 expression: z.ZodString;
                 label: z.ZodDefault<z.ZodString>;
                 fn: z.ZodDefault<z.ZodEnum<{
-                    max: "max";
-                    min: "min";
+                    sum: "sum";
                     count: "count";
                     avg: "avg";
-                    sum: "sum";
+                    min: "min";
+                    max: "max";
                 }>>;
                 format: z.ZodDefault<z.ZodString>;
                 blankWhenZero: z.ZodDefault<z.ZodBoolean>;
@@ -1568,6 +1763,7 @@ export type BandType = (typeof BAND_TYPES)[number];
 export type ReportElement = z.infer<typeof elementSchema>;
 export type ElementKind = (typeof ELEMENT_KINDS)[number];
 export type PaperSpec = z.infer<typeof paperSchema>;
+export type PageBorder = z.infer<typeof pageBorderSchema>;
 export type Margins = z.infer<typeof marginsSchema>;
 export type DatasetBinding = z.infer<typeof datasetSchema>;
 export type FontSpec = z.infer<typeof fontSchema>;
@@ -1580,6 +1776,7 @@ export type AggregateFunction = (typeof AGGREGATE_FUNCTIONS)[number];
 export type AggregateScope = (typeof AGGREGATE_SCOPES)[number];
 export type CrosstabSort = (typeof CROSSTAB_SORTS)[number];
 export type CrosstabOverflow = (typeof CROSSTAB_OVERFLOWS)[number];
+export type PositionType = (typeof POSITION_TYPES)[number];
 export type CrosstabAxis = z.infer<typeof crosstabAxisSchema>;
 export type CrosstabMeasure = z.infer<typeof crosstabMeasureSchema>;
 export type CrosstabElement = z.infer<typeof crosstabElementSchema>;

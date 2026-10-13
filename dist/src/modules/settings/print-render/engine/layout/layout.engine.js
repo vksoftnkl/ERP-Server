@@ -17,6 +17,7 @@ const text_1 = require("../expression/transforms/text");
 const aggregate_accumulator_1 = require("./aggregate.accumulator");
 const text_measure_1 = require("./text-measure");
 const crosstab_1 = require("./crosstab");
+const flow_layout_1 = require("./flow-layout");
 const MAX_PAGES = 2_000;
 const MAX_DETAIL_ROWS = 100_000;
 let LayoutEngine = class LayoutEngine {
@@ -116,6 +117,7 @@ class LayoutRun {
         if (this.pages.length === 0) {
             this.pages.push({ index: 0, primitives: [] });
         }
+        this.drawPageBorders();
         for (const failure of this.evaluator.getFailures()) {
             this.warnings.push({
                 kind: 'expression',
@@ -330,9 +332,11 @@ class LayoutRun {
         }
         const heightMm = this.bandHeight(band, context);
         const reserveMm = options.reserveMm ?? 0;
-        const crosstab = this.soleCrosstab(band);
-        if (crosstab && !this.fitsInRemainingBody(heightMm + reserveMm)) {
-            this.emitCrosstabBand(band, context, crosstab, reserveMm);
+        const flow = this.flowLayoutFor(band, context);
+        const crosstab = this.soleCrosstab(band, context);
+        const keptWhole = flow !== null && band.keepTogether && heightMm + reserveMm <= this.bodyHeightMm;
+        if (crosstab && !keptWhole && !this.fitsInRemainingBody(heightMm + reserveMm)) {
+            this.emitCrosstabBand(band, context, crosstab, reserveMm, flow);
             return;
         }
         if (this.needsPageBreak(heightMm + reserveMm)) {
@@ -340,7 +344,7 @@ class LayoutRun {
             this.startPage();
         }
         const bandTopMm = this.bodyTopMm() + this.cursorMm;
-        this.drawBandElements(band, context, bandTopMm);
+        this.drawBandElements(band, context, bandTopMm, { placed: flow?.elements });
         this.cursorMm += heightMm;
         this.bandsEmitted += 1;
         if (this.bandRequestsPageBreak(band, context)) {
@@ -348,9 +352,15 @@ class LayoutRun {
             this.startPage();
         }
     }
-    soleCrosstab(band) {
-        const found = band.elements.filter((element) => element.kind === 'CROSSTAB');
+    soleCrosstab(band, context) {
+        const found = band.elements.filter((element) => element.kind === 'CROSSTAB' && this.evaluator.evaluateCondition(element.visible, context));
         return found.length === 1 ? found[0] : null;
+    }
+    flowLayoutFor(band, context) {
+        if (!band.flowLayout || this.definition.layoutMode === 'GRID') {
+            return null;
+        }
+        return (0, flow_layout_1.applyFlowLayout)(band, (element) => this.evaluator.evaluateCondition(element.visible, context), (element) => this.crosstabPlanFor(element, context).fullHeightMm);
     }
     crosstabPlanFor(element, context) {
         const cached = this.crosstabPlans.get(element.id);
@@ -401,15 +411,26 @@ class LayoutRun {
         });
         this.currentPage.primitives.push(...primitives);
     }
-    emitCrosstabBand(band, context, element, reserveMm) {
+    emitCrosstabBand(band, context, element, reserveMm, flow) {
         const plan = this.crosstabPlanFor(element, context);
-        const offsetMm = this.elementY(element);
+        const placedTable = flow?.elements.find((placed) => placed.id === element.id);
+        const offsetMm = placedTable ? placedTable.y : this.elementY(element);
+        const tableEndInBandMm = offsetMm + plan.fullHeightMm;
+        const trailing = flow
+            ? flow.elements.filter((placed) => placed.positionType === 'FLOAT' &&
+                placed.id !== element.id &&
+                (0, flow_layout_1.verticalSpan)(placed)[0] >= tableEndInBandMm - flow_layout_1.FLOW_EPSILON_MM)
+            : [];
+        const leading = flow?.elements.filter((placed) => !trailing.includes(placed));
         if (this.needsPageBreak(offsetMm + plan.headerHeightMm + plan.rowHeightMm + reserveMm)) {
             this.finishPage();
             this.startPage();
         }
         const bandTopMm = this.bodyTopMm() + this.cursorMm;
-        this.drawBandElements(band, context, bandTopMm, { skipCrosstabId: element.id });
+        this.drawBandElements(band, context, bandTopMm, {
+            skipCrosstabId: element.id,
+            placed: leading,
+        });
         this.bandsEmitted += 1;
         let tableTopMm = bandTopMm + offsetMm;
         let fromRow = 0;
@@ -447,6 +468,12 @@ class LayoutRun {
             this.drawCrosstab(plan, context, this.elementX(element), tableTopMm, slice);
             fromRow = slice.fromRow + slice.rowCount;
             if ((0, crosstab_1.crosstabIsComplete)(plan, slice)) {
+                if (flow) {
+                    this.finishFlowBandAfterTable(band, context, trailing, tableEndInBandMm, {
+                        tableEndMm: tableTopMm + slice.heightMm,
+                    });
+                    return;
+                }
                 const tableBottomMm = tableTopMm + slice.heightMm + this.spacingMm(band);
                 const bottomMm = pagesBroken === 0
                     ? Math.max(tableBottomMm, bandTopMm + this.bandHeight(band, context))
@@ -463,6 +490,23 @@ class LayoutRun {
             pagesBroken += 1;
             tableTopMm = this.bodyTopMm();
             withHeader = element.repeatHeader;
+        }
+    }
+    finishFlowBandAfterTable(band, context, trailing, tableEndInBandMm, at) {
+        const heightMm = this.bandHeight(band, context);
+        let originMm = at.tableEndMm - tableEndInBandMm;
+        const bodyBottomMm = this.bodyTopMm() + this.bodyHeightMm;
+        const tailFits = originMm + heightMm <= bodyBottomMm + 0.001;
+        if (trailing.length > 0 && !tailFits) {
+            this.finishPage();
+            this.startPage();
+            originMm = this.bodyTopMm() - tableEndInBandMm;
+        }
+        this.drawBandElements(band, context, originMm, { placed: trailing });
+        this.cursorMm = Math.max(0, originMm + heightMm - this.bodyTopMm());
+        if (this.bandRequestsPageBreak(band, context)) {
+            this.finishPage();
+            this.startPage();
         }
     }
     fitsInRemainingBody(requiredMm) {
@@ -501,26 +545,32 @@ class LayoutRun {
     }
     bandHeight(band, context) {
         const declaredMm = this.definition.layoutMode === 'GRID' ? (band.heightRows ?? band.heightMm) : band.heightMm;
+        const flow = this.flowLayoutFor(band, context);
         let crosstabMm = declaredMm;
-        for (const element of band.elements) {
-            if (element.kind !== 'CROSSTAB') {
-                continue;
+        if (flow) {
+            crosstabMm = flow.heightMm;
+        }
+        else {
+            for (const element of band.elements) {
+                if (element.kind !== 'CROSSTAB') {
+                    continue;
+                }
+                if (!this.evaluator.evaluateCondition(element.visible, context)) {
+                    continue;
+                }
+                const plan = this.crosstabPlanFor(element, context);
+                crosstabMm = Math.max(crosstabMm, element.y + plan.fullHeightMm);
             }
-            if (!this.evaluator.evaluateCondition(element.visible, context)) {
-                continue;
-            }
-            const plan = this.crosstabPlanFor(element, context);
-            crosstabMm = Math.max(crosstabMm, element.y + plan.fullHeightMm);
         }
         if (!band.autoGrow) {
             return crosstabMm + this.spacingMm(band);
         }
         let neededMm = crosstabMm;
-        for (const element of band.elements) {
+        for (const element of flow?.elements ?? band.elements) {
             if (!(0, template_definition_schema_1.isTextLike)(element) || !element.wrap) {
                 continue;
             }
-            if (!this.evaluator.evaluateCondition(element.visible, context)) {
+            if (!flow && !this.evaluator.evaluateCondition(element.visible, context)) {
                 continue;
             }
             const text = this.evaluator.evaluateText(element.value, context);
@@ -585,6 +635,36 @@ class LayoutRun {
         }
         this.currentPage = null;
     }
+    drawPageBorders() {
+        const border = this.definition.pageBorder;
+        if (!border || this.definition.layoutMode === 'GRID' || this.paper.heightMm === null) {
+            return;
+        }
+        const { widthMm, heightMm, margins } = this.paper;
+        const left = border.insetMm ?? margins.left;
+        const right = border.insetMm ?? margins.right;
+        const top = border.insetMm ?? margins.top;
+        const bottom = border.insetMm ?? margins.bottom;
+        const w = widthMm - left - right;
+        const h = heightMm - top - bottom;
+        if (w <= 0 || h <= 0) {
+            return;
+        }
+        const stroke = this.resolveColour(border.color, this.rootContext, '#000000');
+        for (const page of this.pages) {
+            page.primitives.unshift({
+                k: 'rect',
+                x: left,
+                y: top,
+                w,
+                h,
+                fill: null,
+                stroke,
+                strokeWidthPt: border.widthPt,
+                radiusMm: border.radiusMm,
+            });
+        }
+    }
     shouldPrintOnPage(band, pageIndex) {
         switch (band.printOn) {
             case 'FIRST_PAGE':
@@ -603,12 +683,13 @@ class LayoutRun {
             return;
         }
         const page = this.currentPage;
-        const ordered = [...band.elements].sort((left, right) => left.z - right.z);
+        const { placed } = options;
+        const ordered = [...(placed ?? band.elements)].sort((left, right) => left.z - right.z);
         for (const element of ordered) {
             if (element.kind === 'PAGEBREAK') {
                 continue;
             }
-            if (!this.evaluator.evaluateCondition(element.visible, context)) {
+            if (!placed && !this.evaluator.evaluateCondition(element.visible, context)) {
                 continue;
             }
             if (element.kind === 'CROSSTAB') {

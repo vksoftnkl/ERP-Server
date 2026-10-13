@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.isTextLike = exports.templateDefinitionSchema = exports.bandSchema = exports.elementSchema = exports.crosstabElementSchema = exports.crosstabMeasureSchema = exports.crosstabAxisSchema = exports.pagebreakElementSchema = exports.qrcodeElementSchema = exports.barcodeElementSchema = exports.imageElementSchema = exports.rectElementSchema = exports.lineElementSchema = exports.fieldElementSchema = exports.textElementSchema = exports.styleSchema = exports.fontSchema = exports.datasetSchema = exports.paperSchema = exports.marginsSchema = exports.CROSSTAB_BANDS = exports.CROSSTAB_OVERFLOWS = exports.CROSSTAB_SORTS = exports.BARCODE_SYMBOLOGIES = exports.AGGREGATE_SCOPES = exports.AGGREGATE_FUNCTIONS = exports.CARDINALITY = exports.IMAGE_FIT = exports.V_ALIGN = exports.H_ALIGN = exports.PRINT_ON = exports.ELEMENT_KINDS = exports.BAND_TYPES = exports.ORIENTATIONS = exports.OUTPUT_MODES = exports.LAYOUT_MODES = exports.SCHEMA_VERSION = void 0;
+exports.isTextLike = exports.templateDefinitionSchema = exports.bandSchema = exports.pageBorderSchema = exports.elementSchema = exports.crosstabElementSchema = exports.crosstabMeasureSchema = exports.crosstabAxisSchema = exports.pagebreakElementSchema = exports.qrcodeElementSchema = exports.barcodeElementSchema = exports.imageElementSchema = exports.rectElementSchema = exports.lineElementSchema = exports.fieldElementSchema = exports.textElementSchema = exports.styleSchema = exports.fontSchema = exports.datasetSchema = exports.paperSchema = exports.marginsSchema = exports.CROSSTAB_BANDS = exports.POSITION_TYPES = exports.CROSSTAB_OVERFLOWS = exports.CROSSTAB_SORTS = exports.BARCODE_SYMBOLOGIES = exports.AGGREGATE_SCOPES = exports.AGGREGATE_FUNCTIONS = exports.CARDINALITY = exports.IMAGE_FIT = exports.V_ALIGN = exports.H_ALIGN = exports.PRINT_ON = exports.ELEMENT_KINDS = exports.BAND_TYPES = exports.ORIENTATIONS = exports.OUTPUT_MODES = exports.LAYOUT_MODES = exports.SCHEMA_VERSION = void 0;
 const zod_1 = require("zod");
 exports.SCHEMA_VERSION = 1;
 exports.LAYOUT_MODES = ['GRAPHIC', 'GRID'];
@@ -50,6 +50,7 @@ exports.CROSSTAB_SORTS = [
     'FIRST_SEEN',
 ];
 exports.CROSSTAB_OVERFLOWS = ['FOLD', 'CLIP'];
+exports.POSITION_TYPES = ['FIX', 'FLOAT'];
 exports.CROSSTAB_BANDS = [
     'REPORT_HEADER',
     'SUMMARY',
@@ -116,6 +117,8 @@ const elementBase = zod_1.z.object({
     visible: expressionString.optional(),
     style: exports.styleSchema.optional(),
     z: zod_1.z.number().int().min(0).max(1_000).default(0),
+    positionType: zod_1.z.enum(exports.POSITION_TYPES).default('FIX'),
+    removeLineWhenBlank: zod_1.z.boolean().default(false),
 });
 const textLikeElement = elementBase.extend({
     value: expressionString,
@@ -235,6 +238,12 @@ exports.elementSchema = zod_1.z.discriminatedUnion('kind', [
     exports.pagebreakElementSchema,
     exports.crosstabElementSchema,
 ]);
+exports.pageBorderSchema = zod_1.z.object({
+    insetMm: millimetreSize.nullable().default(null),
+    widthPt: zod_1.z.number().min(0.1).max(10).default(0.75),
+    color: hexColour.default('#000000'),
+    radiusMm: zod_1.z.number().min(0).max(50).default(0),
+});
 exports.bandSchema = zod_1.z.object({
     type: zod_1.z.enum(exports.BAND_TYPES),
     heightMm: millimetreSize.default(0),
@@ -244,6 +253,7 @@ exports.bandSchema = zod_1.z.object({
     groupLevel: zod_1.z.number().int().min(0).max(1).default(0),
     printOn: zod_1.z.enum(exports.PRINT_ON).default('ALL_PAGES'),
     autoGrow: zod_1.z.boolean().default(false),
+    flowLayout: zod_1.z.boolean().default(false),
     keepTogether: zod_1.z.boolean().default(false),
     keepWithNext: zod_1.z.boolean().default(false),
     keepWithLastDetail: zod_1.z.boolean().default(false),
@@ -257,6 +267,7 @@ exports.templateDefinitionSchema = zod_1.z
     layoutMode: zod_1.z.enum(exports.LAYOUT_MODES),
     meta: zod_1.z.record(zod_1.z.string(), zod_1.z.unknown()).optional(),
     paper: exports.paperSchema,
+    pageBorder: exports.pageBorderSchema.optional(),
     datasets: zod_1.z.array(exports.datasetSchema).max(20).default([]),
     bands: zod_1.z.array(exports.bandSchema).min(1).max(60),
 })

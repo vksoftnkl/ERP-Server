@@ -201,6 +201,24 @@ describe('buildDefinition — the version wins', () => {
   it('derives the layout mode from the engine', () => {
     expect(buildDefinition(version(), [dataset()]).layoutMode).toBe('GRAPHIC');
   });
+
+  it("carries the body's page border, with the schema's defaults filled in", () => {
+    const built = buildDefinition(
+      version({ ptvBody: JSON.stringify({ bands: [DETAIL_BAND], pageBorder: { widthPt: 1.5 } }) }),
+      [dataset()],
+    );
+
+    expect(built.definition.pageBorder).toEqual({
+      insetMm: null,
+      widthPt: 1.5,
+      color: '#000000',
+      radiusMm: 0,
+    });
+  });
+
+  it('has no page border when the body declares none', () => {
+    expect(buildDefinition(version(), [dataset()]).definition.pageBorder).toBeUndefined();
+  });
 });
 
 describe('buildDefinition — what it refuses', () => {

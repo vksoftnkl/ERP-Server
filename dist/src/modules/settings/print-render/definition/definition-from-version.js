@@ -105,6 +105,11 @@ function buildDefinition(version, datasets) {
             ? { meta: body.meta }
             : {}),
         paper: paperFor(version),
+        ...(typeof body.pageBorder === 'object' &&
+            body.pageBorder !== null &&
+            !Array.isArray(body.pageBorder)
+            ? { pageBorder: body.pageBorder }
+            : {}),
         datasets: datasetsFor(datasets),
         bands: (body.bands ?? []),
     };

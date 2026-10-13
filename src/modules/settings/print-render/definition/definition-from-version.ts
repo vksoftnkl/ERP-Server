@@ -212,6 +212,13 @@ export function buildDefinition(
       ? { meta: body.meta as Record<string, unknown> }
       : {}),
     paper: paperFor(version),
+    // Named, or it never reaches the engine: this candidate is built key by
+    // key, and the paper itself comes from the row, not the body.
+    ...(typeof body.pageBorder === 'object' &&
+    body.pageBorder !== null &&
+    !Array.isArray(body.pageBorder)
+      ? { pageBorder: body.pageBorder as TemplateDefinitionInput['pageBorder'] }
+      : {}),
     datasets: datasetsFor(datasets),
     // The one thing the body owns. Left exactly as stored: the schema is what
     // decides whether it is a design, and repairing it here would hide the

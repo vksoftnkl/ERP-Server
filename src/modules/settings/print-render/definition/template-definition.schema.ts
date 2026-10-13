@@ -102,6 +102,16 @@ export const CROSSTAB_SORTS = [
 export const CROSSTAB_OVERFLOWS = ['FOLD', 'CLIP'] as const;
 
 /**
+ * How an element in a `flowLayout` band reacts to the space above it changing.
+ *
+ * FIX stays at its design `y` whatever happens above it. FLOAT moves by the sum
+ * of every growth (a crosstab printing more rows than its design height) and
+ * every collapse (a hidden `removeLineWhenBlank` line) above it. Outside a flow
+ * band both mean "fixed", which is what every element was before flow existed.
+ */
+export const POSITION_TYPES = ['FIX', 'FLOAT'] as const;
+
+/**
  * The bands a CROSSTAB may sit in: the ones that appear at most once.
  *
  * See the placement check in the definition's superRefine for why every other
@@ -228,6 +238,13 @@ const elementBase = z.object({
   style: styleSchema.optional(),
   /** Draw order within the band; higher paints later. */
   z: z.number().int().min(0).max(1_000).default(0),
+  /** Flow bands only: whether growth or collapse above moves this element. */
+  positionType: z.enum(POSITION_TYPES).default('FIX'),
+  /**
+   * Flow bands only: when `visible` hides this element, close up its vertical
+   * span -- unless a visible element still occupies part of it.
+   */
+  removeLineWhenBlank: z.boolean().default(false),
 });
 
 const textLikeElement = elementBase.extend({
@@ -483,6 +500,27 @@ export const elementSchema = z.discriminatedUnion('kind', [
   crosstabElementSchema,
 ]);
 
+// ─── Page border ─────────────────────────────────────────────────────────────
+
+/**
+ * A frame drawn on every page of a GRAPHIC report, behind everything else.
+ *
+ * It lives on the definition, not on `paper`: the paper is rebuilt from the
+ * version row's columns on every render, and a border is part of the design
+ * the body carries. GRID stationery has no frame to draw and continuous paper
+ * has no bottom edge until the content ends, so the engine skips both.
+ */
+export const pageBorderSchema = z.object({
+  /**
+   * Distance from the paper edge on all four sides. Null: the frame sits on
+   * the margin line, wherever each margin puts it.
+   */
+  insetMm: millimetreSize.nullable().default(null),
+  widthPt: z.number().min(0.1).max(10).default(0.75),
+  color: hexColour.default('#000000'),
+  radiusMm: z.number().min(0).max(50).default(0),
+});
+
 // ─── Bands ───────────────────────────────────────────────────────────────────
 
 export const bandSchema = z.object({
@@ -503,6 +541,13 @@ export const bandSchema = z.object({
   printOn: z.enum(PRINT_ON).default('ALL_PAGES'),
   /** Grow the band to fit wrapped text, then reflow what follows. */
   autoGrow: z.boolean().default(false),
+  /**
+   * Position elements by flow instead of at their fixed design `y`: a crosstab
+   * takes only the height its rows need, hidden `removeLineWhenBlank` elements
+   * close up, FLOAT elements move with both, and the band's height follows.
+   * GRAPHIC mode only. Off is fixed positions, exactly as before flow existed.
+   */
+  flowLayout: z.boolean().default(false),
   /** Never split this band across a page boundary. */
   keepTogether: z.boolean().default(false),
   /** Do not leave this band as the last thing on a page. */
@@ -529,6 +574,7 @@ export const templateDefinitionSchema = z
      */
     meta: z.record(z.string(), z.unknown()).optional(),
     paper: paperSchema,
+    pageBorder: pageBorderSchema.optional(),
     datasets: z.array(datasetSchema).max(20).default([]),
     bands: z.array(bandSchema).min(1).max(60),
   })
@@ -846,6 +892,7 @@ export type BandType = (typeof BAND_TYPES)[number];
 export type ReportElement = z.infer<typeof elementSchema>;
 export type ElementKind = (typeof ELEMENT_KINDS)[number];
 export type PaperSpec = z.infer<typeof paperSchema>;
+export type PageBorder = z.infer<typeof pageBorderSchema>;
 export type Margins = z.infer<typeof marginsSchema>;
 export type DatasetBinding = z.infer<typeof datasetSchema>;
 export type FontSpec = z.infer<typeof fontSchema>;
@@ -858,6 +905,7 @@ export type AggregateFunction = (typeof AGGREGATE_FUNCTIONS)[number];
 export type AggregateScope = (typeof AGGREGATE_SCOPES)[number];
 export type CrosstabSort = (typeof CROSSTAB_SORTS)[number];
 export type CrosstabOverflow = (typeof CROSSTAB_OVERFLOWS)[number];
+export type PositionType = (typeof POSITION_TYPES)[number];
 export type CrosstabAxis = z.infer<typeof crosstabAxisSchema>;
 export type CrosstabMeasure = z.infer<typeof crosstabMeasureSchema>;
 export type CrosstabElement = z.infer<typeof crosstabElementSchema>;

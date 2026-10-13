@@ -34,6 +34,7 @@ import {
   planCrosstab,
   sliceCrosstab,
 } from './crosstab';
+import { FLOW_EPSILON_MM, FlowLayout, applyFlowLayout, verticalSpan } from './flow-layout';
 
 /**
  * Phase 3b -- the layout engine.
@@ -266,6 +267,8 @@ class LayoutRun {
     if (this.pages.length === 0) {
       this.pages.push({ index: 0, primitives: [] });
     }
+
+    this.drawPageBorders();
 
     for (const failure of this.evaluator.getFailures()) {
       this.warnings.push({
@@ -643,15 +646,24 @@ class LayoutRun {
 
     const heightMm = this.bandHeight(band, context);
     const reserveMm = options.reserveMm ?? 0;
+    const flow = this.flowLayoutFor(band, context);
 
     // A crosstab is the one element that can be taller than the paper. When a
     // band carries exactly one, and the whole band will not fit where the
     // cursor stands, the table is split across pages instead of overflowing --
     // see emitCrosstabBand. Two crosstabs in one band have no single split to
     // make, so they fall through and are drawn whole.
-    const crosstab = this.soleCrosstab(band);
-    if (crosstab && !this.fitsInRemainingBody(heightMm + reserveMm)) {
-      this.emitCrosstabBand(band, context, crosstab, reserveMm);
+    //
+    // A FLOW band that asks to be kept together and fits on a fresh page moves
+    // there whole instead: an invoice's totals block is one unit, and splitting
+    // it would strand the Grand Total from its charges. Fixed bands keep
+    // splitting -- flow is opt-in exactly so that fixed designs print as they
+    // always have.
+    const crosstab = this.soleCrosstab(band, context);
+    const keptWhole =
+      flow !== null && band.keepTogether && heightMm + reserveMm <= this.bodyHeightMm;
+    if (crosstab && !keptWhole && !this.fitsInRemainingBody(heightMm + reserveMm)) {
+      this.emitCrosstabBand(band, context, crosstab, reserveMm, flow);
       return;
     }
 
@@ -661,7 +673,7 @@ class LayoutRun {
     }
 
     const bandTopMm = this.bodyTopMm() + this.cursorMm;
-    this.drawBandElements(band, context, bandTopMm);
+    this.drawBandElements(band, context, bandTopMm, { placed: flow?.elements });
 
     this.cursorMm += heightMm;
     this.bandsEmitted += 1;
@@ -676,12 +688,35 @@ class LayoutRun {
 
   // ─── Crosstabs ─────────────────────────────────────────────────────────
 
-  /** The band's only crosstab, or null when it has none or more than one. */
-  private soleCrosstab(band: Band): CrosstabElement | null {
+  /**
+   * The band's only VISIBLE crosstab, or null when it has none or more than one.
+   *
+   * Visible, because the split path draws the table itself: counting a hidden
+   * one would route the band there and print a table its own `visible` hid.
+   */
+  private soleCrosstab(band: Band, context: Record<string, unknown>): CrosstabElement | null {
     const found = band.elements.filter(
-      (element): element is CrosstabElement => element.kind === 'CROSSTAB',
+      (element): element is CrosstabElement =>
+        element.kind === 'CROSSTAB' && this.evaluator.evaluateCondition(element.visible, context),
     );
     return found.length === 1 ? found[0] : null;
+  }
+
+  /**
+   * A flow band's elements where they actually print, and its real height --
+   * see flow-layout.ts. Null for a fixed band, and for every band in GRID
+   * mode: a character grid has no crosstab to stretch, and its rows are not
+   * millimetres the flow pass could close up.
+   */
+  private flowLayoutFor(band: Band, context: Record<string, unknown>): FlowLayout | null {
+    if (!band.flowLayout || this.definition.layoutMode === 'GRID') {
+      return null;
+    }
+    return applyFlowLayout(
+      band,
+      (element) => this.evaluator.evaluateCondition(element.visible, context),
+      (element) => this.crosstabPlanFor(element, context).fullHeightMm,
+    );
   }
 
   /**
@@ -790,15 +825,33 @@ class LayoutRun {
    * caption above a two-page table belongs with its first page, and repeating
    * it would read as two separate tables; the column header repeats instead,
    * which is what `repeatHeader` is for.
+   *
+   * In a flow band the FLOAT elements below the table are the exception: they
+   * follow the table, so they print after its last row, on whichever page
+   * that lands -- the Grand Total under a long charges table, not beside its
+   * first page.
    */
   private emitCrosstabBand(
     band: Band,
     context: Record<string, unknown>,
     element: CrosstabElement,
     reserveMm: number,
+    flow: FlowLayout | null,
   ): void {
     const plan = this.crosstabPlanFor(element, context);
-    const offsetMm = this.elementY(element);
+    const placedTable = flow?.elements.find((placed) => placed.id === element.id);
+    const offsetMm = placedTable ? placedTable.y : this.elementY(element);
+
+    const tableEndInBandMm = offsetMm + plan.fullHeightMm;
+    const trailing = flow
+      ? flow.elements.filter(
+          (placed) =>
+            placed.positionType === 'FLOAT' &&
+            placed.id !== element.id &&
+            verticalSpan(placed)[0] >= tableEndInBandMm - FLOW_EPSILON_MM,
+        )
+      : [];
+    const leading = flow?.elements.filter((placed) => !trailing.includes(placed));
 
     // Start on the next page unless the caption, the column header and at
     // least one row fit here -- a heading stranded above a page break is worse
@@ -809,7 +862,10 @@ class LayoutRun {
     }
 
     const bandTopMm = this.bodyTopMm() + this.cursorMm;
-    this.drawBandElements(band, context, bandTopMm, { skipCrosstabId: element.id });
+    this.drawBandElements(band, context, bandTopMm, {
+      skipCrosstabId: element.id,
+      placed: leading,
+    });
     this.bandsEmitted += 1;
 
     let tableTopMm = bandTopMm + offsetMm;
@@ -854,6 +910,13 @@ class LayoutRun {
       fromRow = slice.fromRow + slice.rowCount;
 
       if (crosstabIsComplete(plan, slice)) {
+        if (flow) {
+          this.finishFlowBandAfterTable(band, context, trailing, tableEndInBandMm, {
+            tableEndMm: tableTopMm + slice.heightMm,
+          });
+          return;
+        }
+
         const tableBottomMm = tableTopMm + slice.heightMm + this.spacingMm(band);
         const bottomMm =
           pagesBroken === 0
@@ -873,6 +936,41 @@ class LayoutRun {
       pagesBroken += 1;
       tableTopMm = this.bodyTopMm();
       withHeader = element.repeatHeader;
+    }
+  }
+
+  /**
+   * The rest of a split flow band, once its table has ended at `tableEndMm`.
+   *
+   * The band is re-anchored so the table's end in band coordinates lands on
+   * the table's real end: everything that floated below the table keeps its
+   * distance from it. When that tail will not fit under the table it moves to
+   * the next page whole, the same rule every other band follows.
+   */
+  private finishFlowBandAfterTable(
+    band: Band,
+    context: Record<string, unknown>,
+    trailing: readonly ReportElement[],
+    tableEndInBandMm: number,
+    at: { tableEndMm: number },
+  ): void {
+    const heightMm = this.bandHeight(band, context);
+    let originMm = at.tableEndMm - tableEndInBandMm;
+
+    const bodyBottomMm = this.bodyTopMm() + this.bodyHeightMm;
+    const tailFits = originMm + heightMm <= bodyBottomMm + 0.001;
+    if (trailing.length > 0 && !tailFits) {
+      this.finishPage();
+      this.startPage();
+      originMm = this.bodyTopMm() - tableEndInBandMm;
+    }
+
+    this.drawBandElements(band, context, originMm, { placed: trailing });
+    this.cursorMm = Math.max(0, originMm + heightMm - this.bodyTopMm());
+
+    if (this.bandRequestsPageBreak(band, context)) {
+      this.finishPage();
+      this.startPage();
     }
   }
 
@@ -936,16 +1034,24 @@ class LayoutRun {
     // not autoGrow is on. autoGrow is a promise about WRAPPED TEXT the designer
     // could have measured by eye; a table whose row count the query decides is
     // not something a declared height can ever be right about.
+    //
+    // A flow band has already worked that out -- and closed up its blank
+    // lines -- so its height replaces the fixed-band rule outright.
+    const flow = this.flowLayoutFor(band, context);
     let crosstabMm = declaredMm;
-    for (const element of band.elements) {
-      if (element.kind !== 'CROSSTAB') {
-        continue;
+    if (flow) {
+      crosstabMm = flow.heightMm;
+    } else {
+      for (const element of band.elements) {
+        if (element.kind !== 'CROSSTAB') {
+          continue;
+        }
+        if (!this.evaluator.evaluateCondition(element.visible, context)) {
+          continue;
+        }
+        const plan = this.crosstabPlanFor(element, context);
+        crosstabMm = Math.max(crosstabMm, element.y + plan.fullHeightMm);
       }
-      if (!this.evaluator.evaluateCondition(element.visible, context)) {
-        continue;
-      }
-      const plan = this.crosstabPlanFor(element, context);
-      crosstabMm = Math.max(crosstabMm, element.y + plan.fullHeightMm);
     }
 
     if (!band.autoGrow) {
@@ -954,11 +1060,13 @@ class LayoutRun {
 
     let neededMm = crosstabMm;
 
-    for (const element of band.elements) {
+    // A flow band's list is already visible-only and already moved, so wrapped
+    // text is measured from where it will actually print.
+    for (const element of flow?.elements ?? band.elements) {
       if (!isTextLike(element) || !element.wrap) {
         continue;
       }
-      if (!this.evaluator.evaluateCondition(element.visible, context)) {
+      if (!flow && !this.evaluator.evaluateCondition(element.visible, context)) {
         continue;
       }
 
@@ -1061,6 +1169,51 @@ class LayoutRun {
   }
 
   /**
+   * The definition's page border, on every page.
+   *
+   * Put at the FRONT of each page so it paints first and every element sits
+   * on top of it -- and added only now, after last-page band suppression and
+   * page-number resolution, because both address primitives by position and a
+   * border inserted earlier would shift every index they counted.
+   *
+   * Skipped in GRID mode (no frame on a character grid) and on continuous
+   * paper, whose page is as tall as its content -- a bottom edge there would
+   * be measuring itself.
+   */
+  private drawPageBorders(): void {
+    const border = this.definition.pageBorder;
+    if (!border || this.definition.layoutMode === 'GRID' || this.paper.heightMm === null) {
+      return;
+    }
+
+    const { widthMm, heightMm, margins } = this.paper;
+    const left = border.insetMm ?? margins.left;
+    const right = border.insetMm ?? margins.right;
+    const top = border.insetMm ?? margins.top;
+    const bottom = border.insetMm ?? margins.bottom;
+    const w = widthMm - left - right;
+    const h = heightMm - top - bottom;
+    if (w <= 0 || h <= 0) {
+      return;
+    }
+
+    const stroke = this.resolveColour(border.color, this.rootContext, '#000000');
+    for (const page of this.pages) {
+      page.primitives.unshift({
+        k: 'rect',
+        x: left,
+        y: top,
+        w,
+        h,
+        fill: null,
+        stroke,
+        strokeWidthPt: border.widthPt,
+        radiusMm: border.radiusMm,
+      });
+    }
+  }
+
+  /**
    * printOn, evaluated against the page index.
    *
    * LAST_PAGE and NOT_LAST_PAGE cannot be decided during pass 1 -- the last
@@ -1084,27 +1237,32 @@ class LayoutRun {
 
   // ─── Element drawing ───────────────────────────────────────────────────
 
+  /**
+   * `placed` replaces the band's own elements: a flow band's list, already
+   * filtered to the visible ones and moved to where they print.
+   */
   private drawBandElements(
     band: Band,
     context: Record<string, unknown>,
     bandTopMm: number,
-    options: { skipCrosstabId?: string } = {},
+    options: { skipCrosstabId?: string; placed?: readonly ReportElement[] } = {},
   ): void {
     if (!this.currentPage) {
       return;
     }
 
     const page = this.currentPage;
+    const { placed } = options;
 
     // z-order within the band: a background rect must paint before the text
     // that sits on it, whatever order the designer happened to add them in.
-    const ordered = [...band.elements].sort((left, right) => left.z - right.z);
+    const ordered = [...(placed ?? band.elements)].sort((left, right) => left.z - right.z);
 
     for (const element of ordered) {
       if (element.kind === 'PAGEBREAK') {
         continue;
       }
-      if (!this.evaluator.evaluateCondition(element.visible, context)) {
+      if (!placed && !this.evaluator.evaluateCondition(element.visible, context)) {
         continue;
       }
 
